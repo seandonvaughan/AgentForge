@@ -109,9 +109,23 @@ function buildForgeLog(
 
   lines.push(`Model Routing`);
   lines.push(`${"─".repeat(30)}`);
-  lines.push(`Opus: ${manifest.model_routing.opus.join(", ") || "none"}`);
-  lines.push(`Sonnet: ${manifest.model_routing.sonnet.join(", ") || "none"}`);
-  lines.push(`Haiku: ${manifest.model_routing.haiku.join(", ") || "none"}`);
+  const opusCount = manifest.model_routing.opus.length;
+  const sonnetCount = manifest.model_routing.sonnet.length;
+  const haikuCount = manifest.model_routing.haiku.length;
+  lines.push(`Opus (strategic):       ${manifest.model_routing.opus.join(", ") || "none"} [${opusCount} agents]`);
+  lines.push(`Sonnet (implementation): ${manifest.model_routing.sonnet.join(", ") || "none"} [${sonnetCount} agents]`);
+  lines.push(`Haiku (utility):        ${manifest.model_routing.haiku.join(", ") || "none"} [${haikuCount} agents]`);
+  lines.push(``);
+
+  // Cost optimization summary — show how much model routing saves
+  lines.push(`Cost Optimization`);
+  lines.push(`${"─".repeat(30)}`);
+  const allOnOpusCost = agents.size; // normalized: 1 unit per agent on opus
+  const routedCost = opusCount * 1 + sonnetCount * 0.2 + haikuCount * 0.017; // relative to opus pricing
+  const savingsPercent = Math.round((1 - routedCost / allOnOpusCost) * 100);
+  lines.push(`If all agents ran on Opus: ${agents.size} agents × Opus pricing = baseline`);
+  lines.push(`With model routing: ${opusCount} Opus + ${sonnetCount} Sonnet + ${haikuCount} Haiku`);
+  lines.push(`Estimated cost savings: ~${savingsPercent}% vs all-Opus baseline`);
   lines.push(``);
 
   lines.push(`Delegation Graph`);

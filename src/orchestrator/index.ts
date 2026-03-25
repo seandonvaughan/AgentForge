@@ -32,7 +32,7 @@ export type { HandoffValidation } from "./handoff-manager.js";
 export { ContextManager } from "./context-manager.js";
 export type { Decision, AssembleOptions, FileReader } from "./context-manager.js";
 
-import type { AgentTemplate } from "../types/agent.js";
+import type { AgentTemplate, ModelTier } from "../types/agent.js";
 import type { TeamManifest } from "../types/team.js";
 import type { CollaborationTemplate } from "../types/collaboration.js";
 import type { RouteMatch } from "./task-router.js";
@@ -172,10 +172,78 @@ export class Orchestrator {
   }
 
   /**
+   * Validates that an agent's model assignment matches the team manifest's
+   * model routing. Logs a warning if there's a mismatch — this catches
+   * the expensive mistake of running a Haiku-tier agent on Opus.
+   */
+  validateModelRouting(agentName: string): { valid: boolean; expected?: ModelTier; actual?: ModelTier; warning?: string } {
+    const agent = this.agents.get(agentName);
+    if (!agent) return { valid: false, warning: `Agent "${agentName}" not found` };
+
+    const routing = this.teamManifest.model_routing;
+    let expectedTier: ModelTier | undefined;
+
+    for (const tier of ['opus', 'sonnet', 'haiku'] as ModelTier[]) {
+      if (routing[tier].includes(agentName)) {
+        expectedTier = tier;
+        break;
+      }
+    }
+
+    if (!expectedTier) return { valid: true }; // Agent not in routing table, trust template
+
+    if (agent.model !== expectedTier) {
+      return {
+        valid: false,
+        expected: expectedTier,
+        actual: agent.model,
+        warning: `Model routing mismatch for "${agentName}": manifest routes to ${expectedTier} but template uses ${agent.model}. ` +
+          `This may waste tokens — ${agent.model} costs ${this.getModelCostMultiplier(agent.model, expectedTier)}x more than ${expectedTier}.`,
+      };
+    }
+
+    return { valid: true, expected: expectedTier, actual: agent.model };
+  }
+
+  /**
+   * Returns the approximate cost multiplier between two model tiers.
+   */
+  private getModelCostMultiplier(actual: ModelTier, expected: ModelTier): string {
+    const costs: Record<ModelTier, number> = { opus: 15, sonnet: 3, haiku: 0.25 };
+    const ratio = costs[actual] / costs[expected];
+    return ratio.toFixed(0);
+  }
+
+  /**
+   * Validates model routing for all agents in the team and returns
+   * any mismatches. Use this after forging to catch configuration errors.
+   */
+  validateAllModelRouting(): { agent: string; expected: ModelTier; actual: ModelTier; warning: string }[] {
+    const mismatches: { agent: string; expected: ModelTier; actual: ModelTier; warning: string }[] = [];
+    for (const agentName of this.agents.keys()) {
+      const result = this.validateModelRouting(agentName);
+      if (!result.valid && result.expected && result.actual && result.warning) {
+        mismatches.push({
+          agent: agentName,
+          expected: result.expected,
+          actual: result.actual,
+          warning: result.warning,
+        });
+      }
+    }
+    return mismatches;
+  }
+
+  /**
    * Invokes an agent by name, sending the task to the Anthropic API.
    *
-   * Looks up the agent template, calls the API via `runAgent`,
-   * records token usage in the cost tracker, and updates execution state.
+   * Uses the agent's configured model tier — never overrides it.
+   * This ensures model routing is respected: Opus for strategic,
+   * Sonnet for implementation, Haiku for utility. Running agents
+   * on a more expensive model than configured wastes tokens.
+   *
+   * Validates model routing before invocation and logs warnings
+   * for any mismatches.
    */
   async invokeAgent(
     agentName: string,
@@ -189,12 +257,19 @@ export class Orchestrator {
       );
     }
 
+    // Validate model routing before invocation.
+    const routingCheck = this.validateModelRouting(agentName);
+    if (!routingCheck.valid && routingCheck.warning) {
+      console.warn(`[AgentForge] ${routingCheck.warning}`);
+    }
+
     // Create an execution record and mark it as running.
     const execution = this.executionEngine.createExecution(agentName, task);
     execution.status = "running";
     execution.started_at = new Date().toISOString();
 
     try {
+      // Agent.model is the source of truth — never override it.
       const result = await runAgent(agent, task, context);
 
       // Record token usage in the cost tracker.
