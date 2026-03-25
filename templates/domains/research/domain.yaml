@@ -1,0 +1,30 @@
+name: research
+version: "1.0"
+description: >
+  Research domain — covers research methodology, data science,
+  machine learning engineering, statistical analysis, and academic research workflows.
+
+scanner:
+  type: "hybrid"
+  activates_when:
+    - file_patterns: ["*.ipynb", "*.csv", "*.parquet", "*.json", "*.h5", "*.pkl", "*.pt", "*.onnx"]
+    - directories: ["notebooks/", "data/", "datasets/", "experiments/", "research/", "models/"]
+    - files: ["experiment-config.yaml", "experiment-config.json", "research-plan.md", "hypothesis.md", "dataset-readme.md"]
+  scanners:
+    - document-analyzer
+    - web-researcher
+    - integration-detector
+
+agents:
+  strategic: [research-lead]
+  implementation: [data-scientist, ml-engineer]
+  utility: [research-analyst]
+
+default_collaboration: research-team
+
+signals:
+  - notebooks_detected
+  - datasets_detected
+  - experiment_configs_detected
+  - ml_models_detected
+  - research_papers_detected

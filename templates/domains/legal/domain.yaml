@@ -1,0 +1,29 @@
+name: legal
+version: "1.0"
+description: >
+  Legal domain — covers legal strategy, contract management, regulatory
+  compliance, intellectual property, and corporate governance.
+
+scanner:
+  type: "document"
+  activates_when:
+    - file_patterns: ["*.pdf", "*.docx", "*.doc"]
+    - directories: ["docs/legal/", "legal/", "contracts/", "compliance/", "policies/"]
+    - files: ["terms-of-service.md", "privacy-policy.md", "nda.md", "contract.md", "license.md"]
+  scanners:
+    - document-analyzer
+    - web-researcher
+
+agents:
+  strategic: [general-counsel]
+  implementation: [compliance-officer, contract-analyst, ip-specialist]
+  utility: []
+
+default_collaboration: legal-team
+
+signals:
+  - contract_documents_present
+  - compliance_docs_detected
+  - regulatory_references_detected
+  - ip_documents_detected
+  - legal_policy_detected

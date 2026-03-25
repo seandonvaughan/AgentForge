@@ -7,7 +7,7 @@
  */
 
 export { loadTemplate, loadAllTemplates, getDefaultTemplatesDir, loadDomainTemplates } from "./template-loader.js";
-export { composeTeam } from "./team-composer.js";
+export { composeTeam, composeTeamFromDomains } from "./team-composer.js";
 export type { TeamComposition, CustomAgentSpec } from "./team-composer.js";
 export { customizeTemplate } from "./template-customizer.js";
 export { writeTeam } from "./team-writer.js";
@@ -20,11 +20,14 @@ import type { TeamManifest, TeamAgents } from "../types/team.js";
 import type { FullScanResult } from "../scanner/index.js";
 
 import { runFullScan } from "../scanner/index.js";
-import { loadAllTemplates, getDefaultTemplatesDir } from "./template-loader.js";
-import { composeTeam } from "./team-composer.js";
+import { loadAllTemplates, getDefaultTemplatesDir, loadDomainTemplates } from "./template-loader.js";
+import { composeTeam, composeTeamFromDomains } from "./team-composer.js";
 import type { TeamComposition } from "./team-composer.js";
 import { customizeTemplate } from "./template-customizer.js";
 import { writeTeam } from "./team-writer.js";
+import { loadAllDomains, getDefaultDomainsDir } from "../domains/index.js";
+import { activateDomains } from "../domains/domain-activator.js";
+import type { DomainId } from "../types/domain.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -132,13 +135,15 @@ function buildCustomAgentTemplate(
 /**
  * Run the full AgentForge pipeline against a project directory.
  *
+ * Uses the domain-aware pipeline when domain packs are available:
  * 1. Scan the project (files, git, dependencies, CI).
- * 2. Load agent templates from the default templates directory.
- * 3. Compose the optimal team based on scan results.
- * 4. Customize each template with project-specific context.
- * 5. Build a {@link TeamManifest}.
- * 6. Write everything to `.agentforge/` inside the project.
- * 7. Return the manifest.
+ * 2. Load domain packs and determine which domains are active.
+ * 3. Load agent templates (domain-organized when packs exist, flat otherwise).
+ * 4. Compose the optimal team via domain-aware or legacy composition.
+ * 5. Customize each template with project-specific context.
+ * 6. Build a {@link TeamManifest}.
+ * 7. Write everything to `.agentforge/` inside the project.
+ * 8. Return the manifest.
  *
  * @param projectRoot - Absolute path to the project to forge a team for.
  * @returns The generated {@link TeamManifest}.
@@ -147,12 +152,43 @@ export async function forgeTeam(projectRoot: string): Promise<TeamManifest> {
   // 1. Run full scan
   const scan: FullScanResult = await runFullScan(projectRoot);
 
-  // 2. Load templates
-  const templatesDir = getDefaultTemplatesDir();
-  const templates = await loadAllTemplates(templatesDir);
+  // 2. Attempt to load domain packs
+  const domainsDir = getDefaultDomainsDir();
+  const domainPacks = await loadAllDomains(domainsDir);
 
-  // 3. Compose team
-  const composition: TeamComposition = composeTeam(scan);
+  // 3. Load templates and compose team (domain-aware or legacy)
+  let composition: TeamComposition;
+  let templates: Map<string, AgentTemplate>;
+
+  if (domainPacks.size > 0) {
+    // Domain-aware pipeline: activate domains, load domain templates, compose
+    const activeDomainIds: DomainId[] = activateDomains(scan, domainPacks);
+    const domainTemplates = await loadDomainTemplates(domainsDir);
+
+    // Flatten domain templates into a single map for customization
+    templates = new Map<string, AgentTemplate>();
+    for (const [, agentMap] of domainTemplates) {
+      for (const [agentName, agentTemplate] of agentMap) {
+        templates.set(agentName, agentTemplate);
+      }
+    }
+
+    // Fall back to flat templates for any agents not found in domain templates
+    const templatesDir = getDefaultTemplatesDir();
+    const flatTemplates = await loadAllTemplates(templatesDir);
+    for (const [name, tmpl] of flatTemplates) {
+      if (!templates.has(name)) {
+        templates.set(name, tmpl);
+      }
+    }
+
+    composition = composeTeamFromDomains(scan, activeDomainIds, domainPacks);
+  } else {
+    // Legacy pipeline: flat template loading + original composition
+    const templatesDir = getDefaultTemplatesDir();
+    templates = await loadAllTemplates(templatesDir);
+    composition = composeTeam(scan);
+  }
 
   // 4. Customize each template
   const projectName = deriveProjectName(projectRoot);

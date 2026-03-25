@@ -1,0 +1,53 @@
+name: hr-team
+type: flat
+description: >
+  HR team collaboration structure with a flat topology. The HR Director serves
+  as the coordinator, setting people strategy and synthesizing inputs from the
+  three specialist agents — Recruiter, L&D Specialist, and Compensation Analyst.
+  All specialists operate as peers with direct access to the HR Director, and
+  cross-specialist coordination is encouraged for initiatives that span
+  multiple HR functions.
+
+topology:
+  root: hr-director
+  levels:
+    - agents: [hr-director]
+      role: strategic
+    - agents: [recruiter, l-and-d-specialist, compensation-analyst]
+      role: implementation
+
+delegation_rules:
+  direction: top-down
+  cross_level: false
+  peer_collaboration: true
+  review_flow: bottom-up
+
+communication:
+  patterns:
+    - fan-out
+    - review-loop
+    - broadcast
+  gates:
+    - name: org-change-approval
+      type: hard-gate
+      rule: "Organizational restructuring and major policy changes require explicit user approval before implementation"
+    - name: compensation-data-required
+      type: hard-gate
+      rule: "All compensation decisions must include Compensation Analyst benchmarking data"
+    - name: compliance-check
+      type: soft-gate
+      rule: "HR recommendations should be reviewed for legal and regulatory compliance implications"
+    - name: cross-function-alignment
+      type: soft-gate
+      rule: "Initiatives spanning recruitment, development, and compensation should incorporate input from all relevant specialists"
+
+escalation:
+  max_retries: 3
+  escalate_to: root
+  human_escalation: true
+
+loop_limits:
+  review_cycle: 3
+  delegation_depth: 3
+  retry_same_agent: 2
+  total_actions: 30

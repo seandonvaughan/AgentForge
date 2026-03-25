@@ -7,6 +7,7 @@
 
 import type { ModelTier } from "../types/agent.js";
 import type { FullScanResult } from "../scanner/index.js";
+import type { DomainPack, DomainId } from "../types/domain.js";
 
 // ---------------------------------------------------------------------------
 // Interfaces
@@ -181,10 +182,121 @@ function hasMLPatterns(scan: FullScanResult): boolean {
 // ---------------------------------------------------------------------------
 
 /**
+ * Compose a team by merging agents from all active domain packs.
+ *
+ * Collects agents declared in every active domain pack, deduplicates them,
+ * applies scan-based conditional logic (custom agent generation), and
+ * assigns model tiers.
+ *
+ * @param scan - Full scan result from all scanners.
+ * @param activeDomains - Domain IDs that have been activated for this project.
+ * @param domainPacks - All available domain packs (keyed by DomainId).
+ * @returns A {@link TeamComposition} with merged, deduplicated agent list.
+ */
+export function composeTeamFromDomains(
+  scan: FullScanResult,
+  activeDomains: DomainId[],
+  domainPacks: Map<DomainId, DomainPack>,
+): TeamComposition {
+  const agentSet = new Set<string>();
+  const custom_agents: CustomAgentSpec[] = [];
+  const model_assignments: Record<string, ModelTier> = {};
+
+  // ── Merge agents from all active domain packs ──────────────────────────
+
+  for (const domainId of activeDomains) {
+    const pack = domainPacks.get(domainId);
+    if (!pack) continue;
+
+    for (const category of ["strategic", "implementation", "quality", "utility"] as const) {
+      for (const agent of pack.agents[category]) {
+        agentSet.add(agent);
+      }
+    }
+  }
+
+  // ── Conditional standard agents (scan-driven, additive) ────────────────
+
+  // Security Auditor: vuln-risk deps, custom auth, or large project
+  if (
+    hasSecurityRiskDependencies(scan) ||
+    hasCustomAuth(scan) ||
+    scan.files.total_files > 20
+  ) {
+    agentSet.add("security-auditor");
+  }
+
+  // Test Engineer: test frameworks detected or coverage gaps
+  if (needsTestEngineer(scan)) {
+    agentSet.add("test-engineer");
+  }
+
+  // DevOps Engineer: CI config exists or Docker detected
+  if (scan.ci.ci_provider !== "none" || scan.ci.has_docker) {
+    agentSet.add("devops-engineer");
+  }
+
+  // Documentation Writer: large project or multiple languages
+  const languageCount = Object.keys(scan.files.languages).length;
+  if (scan.files.total_files > 50 || languageCount > 1) {
+    agentSet.add("documentation-writer");
+  }
+
+  // Test Runner: included when test-engineer is present
+  if (agentSet.has("test-engineer")) {
+    agentSet.add("test-runner");
+  }
+
+  // ── Custom agents (scan-driven) ────────────────────────────────────────
+
+  if (hasHeavyAPISurface(scan)) {
+    custom_agents.push({
+      name: "api-specialist",
+      base_template: "coder",
+      reason:
+        "Project has a heavy API surface with many route/controller files.",
+    });
+  }
+
+  if (isDatabaseHeavy(scan)) {
+    custom_agents.push({
+      name: "db-specialist",
+      base_template: "coder",
+      reason:
+        "Project relies heavily on databases with multiple ORM/migration patterns.",
+    });
+  }
+
+  if (hasMLPatterns(scan)) {
+    custom_agents.push({
+      name: "ml-engineer",
+      base_template: "coder",
+      reason:
+        "Project contains ML/AI libraries and patterns requiring specialized knowledge.",
+    });
+  }
+
+  // ── Model assignments ──────────────────────────────────────────────────
+
+  const agents = [...agentSet];
+
+  for (const agent of agents) {
+    model_assignments[agent] = DEFAULT_MODELS[agent] ?? "sonnet";
+  }
+  for (const custom of custom_agents) {
+    model_assignments[custom.name] = "sonnet";
+  }
+
+  return { agents, custom_agents, model_assignments };
+}
+
+/**
  * Analyze scan results and decide which agents to include in the team.
  *
- * Always includes the core five agents. Conditionally adds specialists
- * and generates custom agents for project-specific patterns.
+ * This is the original v1 API. It uses the core agent list directly
+ * (without domain packs) for backward compatibility.
+ *
+ * @deprecated Prefer {@link composeTeamFromDomains} for domain-aware composition.
  */
 export function composeTeam(scan: FullScanResult): TeamComposition {
   const agents: string[] = [...CORE_AGENTS];

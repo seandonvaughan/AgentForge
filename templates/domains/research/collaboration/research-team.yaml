@@ -1,0 +1,57 @@
+name: research-team
+type: flat
+description: >
+  Research team collaboration structure with a flat topology where the Research
+  Lead coordinates rather than commands. All team members operate as peers with
+  specialized expertise — the Data Scientist handles quantitative analysis, the
+  ML Engineer handles model building, and the Research Analyst handles literature
+  and data collection. The Research Lead synthesizes findings and sets direction
+  but does not impose a strict hierarchy, reflecting the collaborative nature of
+  research where the best idea wins regardless of who proposes it.
+
+topology:
+  root: research-lead
+  levels:
+    - agents: [research-lead]
+      role: strategic
+    - agents: [data-scientist, ml-engineer]
+      role: implementation
+    - agents: [research-analyst]
+      role: utility
+
+delegation_rules:
+  direction: collaborative
+  cross_level: true
+  peer_collaboration: true
+  review_flow: peer
+
+communication:
+  patterns:
+    - broadcast
+    - peer-review
+    - pipeline
+    - fan-out
+  gates:
+    - name: reproducibility-check
+      type: hard-gate
+      rule: "All experiments and analyses must be documented with sufficient detail for full reproducibility before results are accepted as findings"
+    - name: statistical-validation
+      type: hard-gate
+      rule: "Conclusions must be supported by appropriate statistical tests with reported confidence levels, p-values, and effect sizes"
+    - name: ethical-review
+      type: soft-gate
+      rule: "Research involving personal data, potential bias, or sensitive applications should include ethical considerations review"
+    - name: literature-grounding
+      type: soft-gate
+      rule: "Novel claims should be contextualized against prior work and existing literature"
+
+escalation:
+  max_retries: 3
+  escalate_to: root
+  human_escalation: true
+
+loop_limits:
+  review_cycle: 4
+  delegation_depth: 3
+  retry_same_agent: 2
+  total_actions: 30

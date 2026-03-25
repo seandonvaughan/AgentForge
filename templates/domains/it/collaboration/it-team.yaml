@@ -1,0 +1,59 @@
+name: it-team
+type: hierarchy
+description: >
+  IT team collaboration structure with the IT Director as the strategic root,
+  implementation specialists (Systems Administrator, Network Engineer, DBA, and
+  Cloud Architect) as the second-level technical experts, and the Help Desk Lead
+  as the utility support agent. The Cloud Architect operates as a strategic peer
+  to the IT Director on infrastructure direction. Information flows top-down for
+  delegation and bottom-up for reporting, escalation, and technical review.
+
+topology:
+  root: it-director
+  levels:
+    - agents: [it-director]
+      role: strategic
+    - agents: [systems-administrator, network-engineer, dba, cloud-architect]
+      role: implementation
+    - agents: [help-desk-lead]
+      role: utility
+
+delegation_rules:
+  direction: top-down
+  cross_level: false
+  peer_collaboration: true
+  review_flow: bottom-up
+
+communication:
+  patterns:
+    - fan-out
+    - pipeline
+    - review-loop
+    - broadcast
+  gates:
+    - name: infrastructure-change-approval
+      type: hard-gate
+      rule: "Major infrastructure changes, vendor commitments, and architectural shifts require explicit user approval before implementation"
+    - name: security-escalation
+      type: hard-gate
+      rule: "Security vulnerabilities and incidents must be escalated immediately to the IT Director and relevant specialist"
+    - name: change-documentation
+      type: soft-gate
+      rule: "All infrastructure changes should be documented with before/after state and rollback procedures"
+    - name: cross-specialist-review
+      type: soft-gate
+      rule: "Changes affecting multiple infrastructure domains (servers, network, database, cloud) should incorporate review from all affected specialists"
+    - name: dr-validation
+      type: hard-gate
+      rule: "Disaster recovery and backup procedures must be validated before production deployment"
+
+escalation:
+  max_retries: 3
+  escalate_to: root
+  human_escalation: true
+
+loop_limits:
+  review_cycle: 3
+  delegation_depth: 4
+  retry_same_agent: 2
+  total_actions: 50

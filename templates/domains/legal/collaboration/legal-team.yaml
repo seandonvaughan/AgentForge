@@ -1,0 +1,53 @@
+name: legal-team
+type: hierarchy
+description: >
+  Legal team collaboration structure with General Counsel as the strategic root,
+  Compliance Officer, Contract Analyst, and IP Specialist as implementation-level
+  agents handling their respective legal disciplines. Information flows top-down
+  for legal strategy and risk prioritization, and bottom-up for legal analysis,
+  contract reviews, compliance assessments, and IP evaluations.
+
+topology:
+  root: general-counsel
+  levels:
+    - agents: [general-counsel]
+      role: strategic
+    - agents: [compliance-officer, contract-analyst, ip-specialist]
+      role: implementation
+
+delegation_rules:
+  direction: top-down
+  cross_level: false
+  peer_collaboration: true
+  review_flow: bottom-up
+
+communication:
+  patterns:
+    - fan-out
+    - pipeline
+    - review-loop
+    - broadcast
+  gates:
+    - name: legal-risk-approval
+      type: hard-gate
+      rule: "Matters involving material legal risk or potential litigation exposure require General Counsel review and explicit user approval before proceeding"
+    - name: contract-execution
+      type: hard-gate
+      rule: "All contracts must be reviewed by the Contract Analyst and approved by General Counsel before execution"
+    - name: regulatory-compliance
+      type: hard-gate
+      rule: "Product launches and new market entries must include Compliance Officer regulatory assessment before commitment"
+    - name: ip-clearance
+      type: soft-gate
+      rule: "New product names, features, and technical approaches should include IP Specialist review for freedom-to-operate assessment"
+
+escalation:
+  max_retries: 3
+  escalate_to: root
+  human_escalation: true
+
+loop_limits:
+  review_cycle: 3
+  delegation_depth: 3
+  retry_same_agent: 2
+  total_actions: 35

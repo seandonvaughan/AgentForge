@@ -1,0 +1,30 @@
+name: marketing
+version: "1.0"
+description: >
+  Marketing domain — covers marketing strategy, brand management,
+  content planning, SEO, growth experimentation, social media, and copywriting.
+
+scanner:
+  type: "document"
+  activates_when:
+    - file_patterns: ["*.docx", "*.pdf", "*.pptx", "*.xlsx", "*.csv"]
+    - directories: ["docs/marketing/", "marketing/", "campaigns/", "brand/", "content/"]
+    - files: ["marketing-plan.md", "brand-guide.md", "content-calendar.md", "campaign-brief.md", "media-plan.md"]
+  scanners:
+    - document-analyzer
+    - web-researcher
+    - integration-detector
+
+agents:
+  strategic: [cmo]
+  implementation: [content-strategist, seo-specialist, brand-manager, growth-hacker, copywriter]
+  utility: [social-media-manager]
+
+default_collaboration: marketing-team
+
+signals:
+  - marketing_documents_present
+  - brand_guidelines_detected
+  - campaign_assets_detected
+  - analytics_data_detected
+  - content_calendar_detected

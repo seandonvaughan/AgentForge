@@ -1,0 +1,40 @@
+name: hr
+version: "1.0"
+description: >
+  Human resources domain — covers people strategy, talent acquisition,
+  learning and development, compensation planning, and organizational design.
+
+scanner:
+  type: "document"
+  activates_when:
+    - file_patterns: ["*.docx", "*.pdf", "*.pptx", "*.xlsx"]
+    - directories: ["docs/hr/", "docs/people/", "hr/", "policies/"]
+    - files:
+        - "org-chart*"
+        - "employee-handbook*"
+        - "job-description*"
+        - "job-posting*"
+        - "offer-letter*"
+        - "compensation*"
+        - "benefits*"
+        - "onboarding*"
+        - "training*"
+        - "performance-review*"
+        - "hiring-plan*"
+  scanners:
+    - document-analyzer
+    - web-researcher
+
+agents:
+  strategic: [hr-director]
+  implementation: [recruiter, l-and-d-specialist, compensation-analyst]
+  utility: []
+
+default_collaboration: hr-team
+
+signals:
+  - org_documents_detected
+  - job_descriptions_detected
+  - employee_handbook_detected
+  - compensation_data_detected
+  - training_materials_detected

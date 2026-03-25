@@ -1,0 +1,55 @@
+name: sales-team
+type: hierarchy
+description: >
+  Sales team collaboration structure with the Sales Director as the strategic
+  root, Account Executive and Sales Engineer as deal-execution agents, and the
+  BDR as the prospecting utility agent. Information flows top-down for pipeline
+  strategy and deal prioritization, and bottom-up for pipeline updates, prospect
+  research, and deal progress reporting.
+
+topology:
+  root: sales-director
+  levels:
+    - agents: [sales-director]
+      role: strategic
+    - agents: [account-executive, sales-engineer]
+      role: implementation
+    - agents: [bdr]
+      role: utility
+
+delegation_rules:
+  direction: top-down
+  cross_level: false
+  peer_collaboration: true
+  review_flow: bottom-up
+
+communication:
+  patterns:
+    - fan-out
+    - pipeline
+    - review-loop
+    - broadcast
+  gates:
+    - name: deal-approval
+      type: hard-gate
+      rule: "Deals exceeding standard discount thresholds or requiring custom terms must receive Sales Director approval before proposal submission"
+    - name: pricing-review
+      type: hard-gate
+      rule: "Non-standard pricing structures must be reviewed by the Sales Director before being presented to prospects"
+    - name: technical-validation
+      type: soft-gate
+      rule: "Complex deals with integration requirements should include Sales Engineer technical assessment before committing to timelines"
+    - name: qualification-check
+      type: soft-gate
+      rule: "Leads should meet minimum qualification criteria (BANT/MEDDIC) before advancing to Account Executive engagement"
+
+escalation:
+  max_retries: 3
+  escalate_to: root
+  human_escalation: true
+
+loop_limits:
+  review_cycle: 3
+  delegation_depth: 3
+  retry_same_agent: 2
+  total_actions: 35

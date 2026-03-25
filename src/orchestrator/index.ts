@@ -3,7 +3,8 @@
  *
  * Re-exports all orchestrator sub-modules and provides a unified
  * {@link Orchestrator} class that composes routing, delegation,
- * execution, and cost tracking.
+ * execution, cost tracking, and v2 runtime subsystems (progress
+ * ledger, loop guard, event bus, handoff manager, context manager).
  */
 
 export { routeTask } from "./task-router.js";
@@ -18,38 +19,129 @@ export type { TaskExecution, ExecutionPlan } from "./execution-engine.js";
 export { CostTracker } from "./cost-tracker.js";
 export type { TokenUsage, CostReport } from "./cost-tracker.js";
 
+export { ProgressLedgerManager } from "./progress-ledger.js";
+
+export { LoopGuard } from "./loop-guard.js";
+export type { LimitCheckResult } from "./loop-guard.js";
+
+export { EventBus } from "./event-bus.js";
+
+export { HandoffManager } from "./handoff-manager.js";
+export type { HandoffValidation } from "./handoff-manager.js";
+
+export { ContextManager } from "./context-manager.js";
+export type { Decision, AssembleOptions, FileReader } from "./context-manager.js";
+
 import type { AgentTemplate } from "../types/agent.js";
 import type { TeamManifest } from "../types/team.js";
+import type { CollaborationTemplate } from "../types/collaboration.js";
 import type { RouteMatch } from "./task-router.js";
 import type { DelegationRequest } from "./delegation-manager.js";
 import type { TaskExecution } from "./execution-engine.js";
 import type { CostReport } from "./cost-tracker.js";
+import type { TeamEvent, Handoff } from "../types/orchestration.js";
 
 import { routeTask } from "./task-router.js";
 import { DelegationManager } from "./delegation-manager.js";
 import { ExecutionEngine } from "./execution-engine.js";
 import { CostTracker } from "./cost-tracker.js";
+import { ProgressLedgerManager } from "./progress-ledger.js";
+import { LoopGuard } from "./loop-guard.js";
+import { EventBus } from "./event-bus.js";
+import { HandoffManager } from "./handoff-manager.js";
+import { ContextManager } from "./context-manager.js";
 import { runAgent } from "../api/agent-runner.js";
 import type { AgentRunResult } from "../api/agent-runner.js";
 
+/** Combined health status returned by {@link Orchestrator.checkHealth}. */
+export interface HealthStatus {
+  /** Whether the task appears to be looping (same step repeated). */
+  is_in_loop: boolean;
+  /** Whether forward progress is being made. */
+  is_progress_being_made: boolean;
+  /** Snapshot of the loop guard counters. */
+  loopGuardCounters: Record<string, number>;
+}
+
+/** Result of recording progress via {@link Orchestrator.recordProgress}. */
+export interface ProgressResult {
+  /** Whether the task appears to be looping. */
+  is_in_loop: boolean;
+  /** Whether forward progress is being made. */
+  is_progress_being_made: boolean;
+  /** Whether a loop guard limit was exceeded. */
+  limitExceeded: boolean;
+  /** Human-readable reason when a limit is exceeded. */
+  reason?: string;
+}
+
+/** Optional parameters for {@link Orchestrator.handoff}. */
+export interface HandoffOptions {
+  /** Questions the receiving agent should address. */
+  openQuestions?: string[];
+  /** Decisions already made that must be respected. */
+  constraints?: string[];
+  /** Completion status of the work being handed off. */
+  status?: Handoff["status"];
+}
+
 /**
  * Unified facade that combines all orchestrator components.
+ *
+ * Accepts an optional {@link CollaborationTemplate} to configure loop
+ * limits and sets up event subscriptions from agent templates.
  */
 export class Orchestrator {
   readonly delegationManager: DelegationManager;
   readonly executionEngine: ExecutionEngine;
   readonly costTracker: CostTracker;
+  readonly contextManager: ContextManager;
 
   private readonly teamManifest: TeamManifest;
   private readonly agents: Map<string, AgentTemplate>;
+  private readonly collaborationTemplate?: CollaborationTemplate;
 
-  constructor(teamManifest: TeamManifest, agents: Map<string, AgentTemplate>) {
+  private readonly eventBus: EventBus;
+  private readonly handoffManager: HandoffManager;
+  private readonly loopGuard: LoopGuard;
+
+  /** taskId -> ProgressLedgerManager for active tasks. */
+  private readonly ledgers = new Map<string, ProgressLedgerManager>();
+
+  /** Monotonically increasing counter for generating unique task ids. */
+  private taskCounter = 0;
+
+  constructor(
+    teamManifest: TeamManifest,
+    agents: Map<string, AgentTemplate>,
+    collaborationTemplate?: CollaborationTemplate,
+  ) {
     this.teamManifest = teamManifest;
     this.agents = agents;
+    this.collaborationTemplate = collaborationTemplate;
+
+    // --- Existing subsystems ---
     this.delegationManager = new DelegationManager(teamManifest.delegation_graph);
     this.executionEngine = new ExecutionEngine(teamManifest);
     this.costTracker = new CostTracker();
+
+    // --- v2 runtime subsystems ---
+    this.loopGuard = new LoopGuard(collaborationTemplate?.loop_limits);
+    this.eventBus = new EventBus();
+    this.handoffManager = new HandoffManager();
+    this.contextManager = new ContextManager();
+
+    // --- Set up event subscriptions from agent templates ---
+    for (const [agentName, agentTemplate] of agents) {
+      if (agentTemplate.subscriptions && agentTemplate.subscriptions.length > 0) {
+        this.eventBus.subscribe(agentName, agentTemplate.subscriptions);
+      }
+    }
   }
+
+  // ==================================================================
+  //  Existing v1 methods
+  // ==================================================================
 
   /**
    * Routes a task to the best-matching agents.
@@ -124,5 +216,143 @@ export class Orchestrator {
       execution.completed_at = new Date().toISOString();
       throw error;
     }
+  }
+
+  // ==================================================================
+  //  v2 runtime methods
+  // ==================================================================
+
+  /**
+   * Creates a progress ledger for a new task and returns a unique task id.
+   *
+   * The loop guard is shared across all tasks but the ledger is per-task.
+   */
+  startTask(agent: string, task: string): string {
+    this.taskCounter += 1;
+    const taskId = `task-${this.taskCounter}-${Date.now()}`;
+
+    const ledger = new ProgressLedgerManager(taskId, task);
+    ledger.setNextSpeaker(agent, task);
+    this.ledgers.set(taskId, ledger);
+
+    return taskId;
+  }
+
+  /**
+   * Records a completed step for the given task.
+   *
+   * Updates the progress ledger, runs a health check, and increments
+   * the loop guard's `total_actions` counter.
+   *
+   * @returns Combined health and limit status.
+   */
+  recordProgress(taskId: string, step: string): ProgressResult {
+    const ledger = this.getLedgerOrThrow(taskId);
+    ledger.recordStep(step);
+
+    const health = ledger.checkHealth();
+    const limitCheck = this.loopGuard.increment("total_actions");
+
+    return {
+      is_in_loop: health.is_in_loop,
+      is_progress_being_made: health.is_progress_being_made,
+      limitExceeded: !limitCheck.allowed,
+      reason: limitCheck.reason,
+    };
+  }
+
+  /**
+   * Publishes a {@link TeamEvent} to all subscribed agents via the event bus.
+   *
+   * @returns Names of agents that were notified.
+   */
+  broadcast(event: TeamEvent): string[] {
+    return this.eventBus.publish(event);
+  }
+
+  /**
+   * Creates a structured handoff between agents.
+   *
+   * @param from   Agent handing off work.
+   * @param to     Agent receiving work.
+   * @param artifact  The artifact being handed off.
+   * @param options   Optional open questions, constraints, and status.
+   * @returns The created {@link Handoff} record.
+   */
+  handoff(
+    from: string,
+    to: string,
+    artifact: Handoff["artifact"],
+    options?: HandoffOptions,
+  ): Handoff {
+    return this.handoffManager.createHandoff(
+      from,
+      to,
+      artifact,
+      options?.openQuestions ?? [],
+      options?.constraints ?? [],
+      options?.status ?? "needs_review",
+    );
+  }
+
+  /**
+   * Returns the combined health status for a task.
+   *
+   * Includes the progress ledger health check results and a snapshot
+   * of the loop guard counters.
+   *
+   * @throws Error if the task id is not found.
+   */
+  checkHealth(taskId: string): HealthStatus {
+    const ledger = this.getLedgerOrThrow(taskId);
+    const health = ledger.checkHealth();
+
+    return {
+      is_in_loop: health.is_in_loop,
+      is_progress_being_made: health.is_progress_being_made,
+      loopGuardCounters: this.loopGuard.getCounters(),
+    };
+  }
+
+  /**
+   * Assembles a scoped context string for an agent invocation using
+   * the {@link ContextManager}.
+   *
+   * @param agentName  Name of the agent to assemble context for.
+   * @param task       The task description.
+   * @param options    Optional additional files to include.
+   * @returns The assembled context string.
+   * @throws Error if the agent is not found.
+   */
+  assembleContext(
+    agentName: string,
+    task: string,
+    options?: { files?: string[] },
+  ): string {
+    const agent = this.agents.get(agentName);
+    if (!agent) {
+      throw new Error(
+        `Agent "${agentName}" not found. Available agents: ${[...this.agents.keys()].join(", ")}`,
+      );
+    }
+
+    return this.contextManager.assembleTaskContext(agent, task, options);
+  }
+
+  // ==================================================================
+  //  Private helpers
+  // ==================================================================
+
+  /**
+   * Retrieves the progress ledger for a task or throws if not found.
+   */
+  private getLedgerOrThrow(taskId: string): ProgressLedgerManager {
+    const ledger = this.ledgers.get(taskId);
+    if (!ledger) {
+      throw new Error(
+        `No progress ledger found for task "${taskId}". Call startTask() first.`,
+      );
+    }
+    return ledger;
   }
 }

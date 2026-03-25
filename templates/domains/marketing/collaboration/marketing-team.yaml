@@ -1,0 +1,56 @@
+name: marketing-team
+type: hierarchy
+description: >
+  Marketing team collaboration structure with the CMO as the strategic root,
+  implementation specialists (Content Strategist, SEO Specialist, Brand Manager,
+  Growth Hacker, Copywriter) as the execution layer, and the Social Media Manager
+  as a utility agent. The CMO delegates strategic workstreams to specialists, the
+  Content Strategist manages the Copywriter for content production, and all agents
+  coordinate to ensure consistent brand voice and aligned marketing execution.
+
+topology:
+  root: cmo
+  levels:
+    - agents: [cmo]
+      role: strategic
+    - agents: [content-strategist, seo-specialist, brand-manager, growth-hacker]
+      role: implementation
+    - agents: [copywriter, social-media-manager]
+      role: utility
+
+delegation_rules:
+  direction: top-down
+  cross_level: false
+  peer_collaboration: true
+  review_flow: bottom-up
+
+communication:
+  patterns:
+    - fan-out
+    - pipeline
+    - review-loop
+    - broadcast
+  gates:
+    - name: brand-approval
+      type: hard-gate
+      rule: "Brand repositioning, visual identity changes, and brand voice modifications require explicit user approval before execution"
+    - name: budget-review
+      type: hard-gate
+      rule: "Marketing budget allocations exceeding predefined thresholds must include CMO analysis before commitment"
+    - name: content-review
+      type: soft-gate
+      rule: "All published content should be reviewed by the Content Strategist for strategic alignment and the Brand Manager for voice consistency"
+    - name: seo-alignment
+      type: soft-gate
+      rule: "Content planned for organic channels should incorporate SEO Specialist keyword targets and optimization recommendations"
+
+escalation:
+  max_retries: 3
+  escalate_to: root
+  human_escalation: true
+
+loop_limits:
+  review_cycle: 3
+  delegation_depth: 3
+  retry_same_agent: 2
+  total_actions: 35

@@ -11,6 +11,6 @@ scanner:
     - web-researcher
 agents:
   strategic: [genesis, meta-architect]
-  utility: [project-manager, researcher, file-reader]
+  utility: [project-manager, researcher, file-reader, skill-designer, team-reviewer, template-optimizer]
 default_collaboration: flat
 signals: []  # Always active

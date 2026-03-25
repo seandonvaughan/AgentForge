@@ -1,0 +1,29 @@
+name: sales
+version: "1.0"
+description: >
+  Sales domain — covers sales strategy, pipeline management, deal execution,
+  technical selling, prospecting, and revenue forecasting.
+
+scanner:
+  type: "document"
+  activates_when:
+    - file_patterns: ["*.pptx", "*.pdf", "*.docx", "*.xlsx"]
+    - directories: ["docs/sales/", "sales/", "proposals/", "decks/"]
+    - files: ["sales-deck.md", "pricing.md", "pricing.xlsx", "crm-export.csv", "pipeline.md", "quota.md"]
+  scanners:
+    - document-analyzer
+    - web-researcher
+
+agents:
+  strategic: [sales-director]
+  implementation: [account-executive, sales-engineer]
+  utility: [bdr]
+
+default_collaboration: sales-team
+
+signals:
+  - sales_documents_present
+  - pricing_data_detected
+  - crm_references_detected
+  - pipeline_data_detected
+  - proposal_documents_detected

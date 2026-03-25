@@ -1,0 +1,67 @@
+name: it
+version: "1.0"
+description: >
+  Information technology domain — covers IT strategy, systems administration,
+  network engineering, database management, cloud architecture, and help desk
+  operations.
+
+scanner:
+  type: "hybrid"
+  activates_when:
+    - file_patterns:
+        - "Dockerfile"
+        - "docker-compose*.yml"
+        - "docker-compose*.yaml"
+        - "*.tf"
+        - "*.tfvars"
+        - "*.hcl"
+        - "*.yml"
+        - "*.yaml"
+        - "*.conf"
+        - "*.cfg"
+        - "*.ini"
+        - "*.toml"
+    - directories:
+        - "infrastructure/"
+        - "terraform/"
+        - "ansible/"
+        - "monitoring/"
+        - "runbooks/"
+        - "docs/it/"
+        - "docs/infrastructure/"
+        - "k8s/"
+        - "kubernetes/"
+        - "helm/"
+    - files:
+        - "Dockerfile"
+        - "docker-compose.yml"
+        - "ansible.cfg"
+        - "playbook.yml"
+        - "inventory*"
+        - "prometheus.yml"
+        - "alertmanager.yml"
+        - "grafana*"
+        - "nginx.conf"
+        - "haproxy.cfg"
+        - "Vagrantfile"
+  scanners:
+    - document-analyzer
+    - code-scanner
+    - integration-detector
+
+agents:
+  strategic: [it-director]
+  implementation: [systems-administrator, network-engineer, dba, cloud-architect]
+  utility: [help-desk-lead]
+
+default_collaboration: it-team
+
+signals:
+  - infrastructure_configs_detected
+  - monitoring_configs_detected
+  - runbooks_detected
+  - dockerfile_detected
+  - terraform_detected
+  - ansible_detected
+  - database_configs_detected
+  - network_configs_detected
