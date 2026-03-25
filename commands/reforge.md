@@ -1,14 +1,25 @@
 ---
-description: Re-analyze project and update agent team
-argument-hint: Optional --auto-apply or --upgrade flags
+description: Manage agent runtime overrides and tuning mutations
+argument-hint: Subcommand — apply <proposal-id> | list | rollback <agent> | status
 ---
 
 # AgentForge Reforge
 
-Re-analyze the project and propose team updates.
+Apply and manage per-agent tuning overrides. Does NOT re-scan the project (use `rebuild` for that).
 
-1. Read existing `.agentforge/analysis/project-scan.json`
-2. Run a fresh scan
-3. Compare for significant changes (new frameworks, languages, dependencies)
-4. If `--upgrade` flag: migrate v1 directory to v2 format
-5. Otherwise: generate a team diff and present to user for approval
+## Subcommands
+
+- `apply <proposal-id>` — Apply a reforge proposal (agent system prompt or config mutation)
+- `list` — List all active reforge overrides
+- `rollback <agent>` — Roll back a specific agent to its baseline configuration
+- `status` — Show current reforge state across all agents
+
+## What to Do
+
+1. Read `.agentforge/` to understand current agent configurations
+2. Execute the requested subcommand
+3. For `apply`: validate the proposal ID, apply the override, confirm success
+4. For `rollback`: restore the agent's baseline from templates or git history
+5. For `list`/`status`: summarize active mutations with agent name, what changed, and when
+
+Note: To re-scan the project and update the team composition, use `agentforge rebuild` instead.
