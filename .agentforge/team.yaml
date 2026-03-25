@@ -1,0 +1,311 @@
+name: "Intelligent Forge v3 Development Team"
+forged_at: "2026-03-25T02:30:00.000Z"
+forged_by: genesis
+project_hash: d9d3d50
+agents:
+  # Executive Team — Opus strategic layer (4)
+  strategic:
+    - cto
+    - vp-engineering
+    - vp-product
+    - lead-architect
+
+  # Core Platform Team — types, scanner, builder, domains (11)
+  core_platform:
+    - core-platform-lead
+    - type-system-designer
+    - scanner-pipeline-designer
+    - type-implementer
+    - type-migrator
+    - file-git-scanner-dev
+    - dependency-ci-scanner-dev
+    - doc-integration-scanner-dev
+    - team-composer-dev
+    - domain-pack-dev
+    - agent-template-author
+
+  # Runtime Team — orchestrator, execution, cost tracking (9)
+  runtime:
+    - runtime-platform-lead
+    - cost-engine-designer
+    - delegation-execution-dev
+    - progress-loop-guard-dev
+    - event-handoff-context-dev
+    - cost-tracker-dev
+    - cost-projector-dev
+    - feedback-pipeline-dev
+    - agent-api-dev
+
+  # Experience Team — CLI, Genesis, docs (6)
+  experience:
+    - experience-design-lead
+    - genesis-pipeline-dev
+    - workflow-replication-dev
+    - command-interface-dev
+    - technical-writer
+    - system-prompt-crafter
+
+  # R&D — Cost Optimization (4)
+  rd_cost:
+    - cost-optimization-lead
+    - model-routing-researcher
+    - parallel-execution-researcher
+    - budget-strategy-researcher
+
+  # R&D — Agent Intelligence (4)
+  rd_intelligence:
+    - agent-intelligence-lead
+    - feedback-analysis-researcher
+    - multi-agent-framework-researcher
+    - self-improvement-researcher
+
+  # R&D — Integration (3)
+  rd_integration:
+    - integration-architecture-lead
+    - external-tools-researcher
+    - agent-protocol-researcher
+
+  # QA Team (7)
+  quality:
+    - quality-assurance-lead
+    - type-scanner-tester
+    - builder-domain-tester
+    - orchestrator-tester
+    - end-to-end-tester
+    - security-vulnerability-tester
+    - test-executor
+
+  # DevOps Team (3)
+  devops:
+    - build-release-lead
+    - build-pipeline-runner
+    - release-packager
+
+  # Cross-Team & Meta (4)
+  cross_team:
+    - feedback-analyst
+    - type-propagation-checker
+    - coverage-gap-checker
+    - docs-sync-checker
+
+model_routing:
+  opus:
+    - cto
+    - vp-engineering
+    - vp-product
+    - lead-architect
+  sonnet:
+    - core-platform-lead
+    - type-system-designer
+    - scanner-pipeline-designer
+    - runtime-platform-lead
+    - cost-engine-designer
+    - experience-design-lead
+    - cost-optimization-lead
+    - agent-intelligence-lead
+    - integration-architecture-lead
+    - quality-assurance-lead
+    - build-release-lead
+    - feedback-analyst
+  haiku:
+    - type-implementer
+    - type-migrator
+    - file-git-scanner-dev
+    - dependency-ci-scanner-dev
+    - doc-integration-scanner-dev
+    - team-composer-dev
+    - domain-pack-dev
+    - agent-template-author
+    - delegation-execution-dev
+    - progress-loop-guard-dev
+    - event-handoff-context-dev
+    - cost-tracker-dev
+    - cost-projector-dev
+    - feedback-pipeline-dev
+    - agent-api-dev
+    - genesis-pipeline-dev
+    - workflow-replication-dev
+    - command-interface-dev
+    - technical-writer
+    - system-prompt-crafter
+    - model-routing-researcher
+    - parallel-execution-researcher
+    - budget-strategy-researcher
+    - feedback-analysis-researcher
+    - multi-agent-framework-researcher
+    - self-improvement-researcher
+    - external-tools-researcher
+    - agent-protocol-researcher
+    - type-scanner-tester
+    - builder-domain-tester
+    - orchestrator-tester
+    - end-to-end-tester
+    - security-vulnerability-tester
+    - test-executor
+    - build-pipeline-runner
+    - release-packager
+    - type-propagation-checker
+    - coverage-gap-checker
+    - docs-sync-checker
+
+delegation_graph:
+  # Executive delegates to team leads only
+  cto:
+    - lead-architect
+    - core-platform-lead
+    - runtime-platform-lead
+    - experience-design-lead
+  vp-engineering:
+    - core-platform-lead
+    - runtime-platform-lead
+    - quality-assurance-lead
+    - build-release-lead
+    - cost-optimization-lead
+    - agent-intelligence-lead
+    - integration-architecture-lead
+  vp-product:
+    - experience-design-lead
+    - agent-intelligence-lead
+  lead-architect:
+    - core-platform-lead
+    - runtime-platform-lead
+    - experience-design-lead
+    - type-system-designer
+    - cost-engine-designer
+
+  # Core Platform — lead to architects to coders
+  core-platform-lead:
+    - type-system-designer
+    - scanner-pipeline-designer
+    - team-composer-dev
+    - domain-pack-dev
+    - agent-template-author
+  type-system-designer:
+    - type-implementer
+    - type-migrator
+  scanner-pipeline-designer:
+    - file-git-scanner-dev
+    - dependency-ci-scanner-dev
+    - doc-integration-scanner-dev
+
+  # Runtime — lead to architect to coders
+  runtime-platform-lead:
+    - cost-engine-designer
+    - delegation-execution-dev
+    - progress-loop-guard-dev
+    - event-handoff-context-dev
+    - feedback-pipeline-dev
+    - agent-api-dev
+  cost-engine-designer:
+    - cost-tracker-dev
+    - cost-projector-dev
+
+  # Experience — lead to all devs
+  experience-design-lead:
+    - genesis-pipeline-dev
+    - workflow-replication-dev
+    - command-interface-dev
+    - technical-writer
+    - system-prompt-crafter
+
+  # R&D — leads to researchers
+  cost-optimization-lead:
+    - model-routing-researcher
+    - parallel-execution-researcher
+    - budget-strategy-researcher
+  agent-intelligence-lead:
+    - feedback-analysis-researcher
+    - multi-agent-framework-researcher
+    - self-improvement-researcher
+  integration-architecture-lead:
+    - external-tools-researcher
+    - agent-protocol-researcher
+
+  # QA — lead to testers
+  quality-assurance-lead:
+    - type-scanner-tester
+    - builder-domain-tester
+    - orchestrator-tester
+    - end-to-end-tester
+    - security-vulnerability-tester
+    - test-executor
+
+  # DevOps — lead to workers
+  build-release-lead:
+    - build-pipeline-runner
+    - release-packager
+
+  # Cross-team — feedback analyst reports to VP Engineering
+  feedback-analyst:
+    - cost-optimization-lead
+    - agent-intelligence-lead
+
+domains:
+  - core
+  - software
+  - research
+
+collaboration:
+  name: v3-development
+  type: matrix
+  topology:
+    root: cto
+    levels:
+      - [cto, vp-engineering, vp-product, lead-architect]
+      - [core-platform-lead, runtime-platform-lead, experience-design-lead, cost-optimization-lead, agent-intelligence-lead, integration-architecture-lead, quality-assurance-lead, build-release-lead, feedback-analyst]
+      - [type-system-designer, scanner-pipeline-designer, cost-engine-designer]
+      - [type-implementer, type-migrator, file-git-scanner-dev, dependency-ci-scanner-dev, doc-integration-scanner-dev, team-composer-dev, domain-pack-dev, agent-template-author, delegation-execution-dev, progress-loop-guard-dev, event-handoff-context-dev, cost-tracker-dev, cost-projector-dev, feedback-pipeline-dev, agent-api-dev, genesis-pipeline-dev, workflow-replication-dev, command-interface-dev, technical-writer, system-prompt-crafter, model-routing-researcher, parallel-execution-researcher, budget-strategy-researcher, feedback-analysis-researcher, multi-agent-framework-researcher, self-improvement-researcher, external-tools-researcher, agent-protocol-researcher, type-scanner-tester, builder-domain-tester, orchestrator-tester, end-to-end-tester, security-vulnerability-tester, test-executor, build-pipeline-runner, release-packager, type-propagation-checker, coverage-gap-checker, docs-sync-checker]
+  delegation_rules:
+    direction: top-down
+    cross_level: true
+    peer_collaboration: true
+    review_flow: bottom-up
+  communication:
+    patterns:
+      - fan-out
+      - pipeline
+      - review-loop
+      - feedback-loop
+    gates:
+      - name: review-before-complete
+        type: hard-gate
+      - name: verify-before-claim
+        type: hard-gate
+      - name: cost-check-before-opus
+        type: soft-gate
+  escalation:
+    max_retries: 3
+    escalate_to: root
+    human_escalation: true
+  loop_limits:
+    review_cycle: 3
+    delegation_depth: 5
+    retry_same_agent: 2
+    total_actions: 100
+
+project_brief:
+  project:
+    name: AgentForge
+    type: software
+    stage: growth
+  goals:
+    - "Build cost-aware agent architecture with budget enforcement and projection"
+    - "Create R&D teams for cost optimization, agent intelligence, and integration"
+    - "Close the feedback loop — agents submit feedback that drives reforge decisions"
+    - "Organize teams by function, not job title — Core Platform, Runtime, Experience"
+    - "Enable workflow replication — generate teams from workflow descriptions"
+    - "Implement rich agent communication — structured handoffs, knowledge bases, decision logs"
+  domains:
+    - core
+    - software
+    - research
+  constraints:
+    opus_budget: "<15% of total token spend"
+    haiku_target: ">55% of total token spend"
+    model_justification: "Every agent must have a documented reason for its model tier"
+
+# Cost Profile
+# Opus:  4 agents (7%)  — ~14% estimated token spend
+# Sonnet: 12 agents (22%) — ~31% estimated token spend
+# Haiku: 39 agents (71%) — ~55% estimated token spend
+# Total: 55 agents

@@ -1,0 +1,3775 @@
+{
+  "files": {
+    "files": [
+      {
+        "file_path": ".claude/settings.local.json",
+        "language": "JSON",
+        "loc": 14,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": ".claude-plugin/plugin.json",
+        "language": "JSON",
+        "loc": 9,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "README.md",
+        "language": "Markdown",
+        "loc": 188,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "commands/cost-report.md",
+        "language": "Markdown",
+        "loc": 17,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "commands/forge.md",
+        "language": "Markdown",
+        "loc": 22,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "commands/genesis.md",
+        "language": "Markdown",
+        "loc": 34,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "commands/reforge.md",
+        "language": "Markdown",
+        "loc": 15,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "commands/team.md",
+        "language": "Markdown",
+        "loc": 16,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "docs/design.md",
+        "language": "Markdown",
+        "loc": 413,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics"
+        ]
+      },
+      {
+        "file_path": "docs/superpowers/plans/2026-03-25-universal-forge.md",
+        "language": "Markdown",
+        "loc": 1429,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "spread operator",
+          "optional chaining",
+          "nullish coalescing",
+          "template literals",
+          "classes",
+          "interfaces"
+        ]
+      },
+      {
+        "file_path": "docs/superpowers/specs/2026-03-25-universal-forge-design.md",
+        "language": "Markdown",
+        "loc": 1280,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [
+          "Next.js"
+        ],
+        "patterns": [
+          "generics",
+          "classes",
+          "interfaces",
+          "type aliases"
+        ]
+      },
+      {
+        "file_path": "docs/v3-genesis-prompt.md",
+        "language": "Markdown",
+        "loc": 101,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "package-lock.json",
+        "language": "JSON",
+        "loc": 3081,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "package.json",
+        "language": "JSON",
+        "loc": 29,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "plugin.json",
+        "language": "JSON",
+        "loc": 41,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "src/api/agent-runner.ts",
+        "language": "TypeScript",
+        "loc": 81,
+        "imports": [
+          "../types/index.js",
+          "./client.js"
+        ],
+        "exports": [
+          "AgentRunResult",
+          "RunContext"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "optional chaining",
+          "template literals",
+          "interfaces"
+        ]
+      },
+      {
+        "file_path": "src/api/client.ts",
+        "language": "TypeScript",
+        "loc": 118,
+        "imports": [
+          "@anthropic-ai/sdk",
+          "../types/index.js"
+        ],
+        "exports": [
+          "ModelConfig",
+          "MODEL_MAP",
+          "MODEL_DEFAULTS",
+          "createClient",
+          "SendMessageParams",
+          "SendMessageResult"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "nullish coalescing",
+          "interfaces"
+        ]
+      },
+      {
+        "file_path": "src/api/delegation-executor.ts",
+        "language": "TypeScript",
+        "loc": 53,
+        "imports": [
+          "../types/index.js",
+          "./agent-runner.js"
+        ],
+        "exports": [
+          "DelegationExecResult"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "template literals",
+          "interfaces"
+        ]
+      },
+      {
+        "file_path": "src/api/index.ts",
+        "language": "TypeScript",
+        "loc": 26,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "src/builder/index.ts",
+        "language": "TypeScript",
+        "loc": 266,
+        "imports": [
+          "node:crypto",
+          "node:path",
+          "../types/agent.js",
+          "../types/team.js",
+          "../scanner/index.js",
+          "./template-loader.js",
+          "./team-composer.js",
+          "./template-customizer.js",
+          "./team-writer.js",
+          "../domains/index.js",
+          "../domains/domain-activator.js",
+          "../types/domain.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "destructuring",
+          "spread operator",
+          "nullish coalescing",
+          "template literals"
+        ]
+      },
+      {
+        "file_path": "src/builder/team-composer.ts",
+        "language": "TypeScript",
+        "loc": 379,
+        "imports": [
+          "../types/agent.js",
+          "../scanner/index.js",
+          "../types/domain.js"
+        ],
+        "exports": [
+          "CustomAgentSpec",
+          "TeamComposition",
+          "composeTeamFromDomains",
+          "composeTeam"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "spread operator",
+          "nullish coalescing",
+          "interfaces"
+        ]
+      },
+      {
+        "file_path": "src/builder/team-writer.ts",
+        "language": "TypeScript",
+        "loc": 243,
+        "imports": [
+          "node:fs/promises",
+          "node:path",
+          "js-yaml",
+          "../types/agent.js",
+          "../types/team.js",
+          "../scanner/index.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "destructuring",
+          "spread operator",
+          "optional chaining",
+          "nullish coalescing",
+          "template literals"
+        ]
+      },
+      {
+        "file_path": "src/builder/template-customizer.ts",
+        "language": "TypeScript",
+        "loc": 274,
+        "imports": [
+          "../types/agent.js",
+          "../scanner/index.js"
+        ],
+        "exports": [
+          "customizeTemplate"
+        ],
+        "framework_indicators": [
+          "Vue",
+          "Svelte",
+          "GraphQL"
+        ],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "spread operator",
+          "nullish coalescing",
+          "template literals"
+        ]
+      },
+      {
+        "file_path": "src/builder/template-loader.ts",
+        "language": "TypeScript",
+        "loc": 189,
+        "imports": [
+          "node:fs/promises",
+          "node:path",
+          "node:url",
+          "js-yaml",
+          "../types/agent.js",
+          "../types/domain.js"
+        ],
+        "exports": [
+          "getDefaultTemplatesDir"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "optional chaining",
+          "nullish coalescing",
+          "template literals"
+        ]
+      },
+      {
+        "file_path": "src/cli/commands/cost-report.ts",
+        "language": "TypeScript",
+        "loc": 44,
+        "imports": [
+          "commander",
+          "node:fs/promises",
+          "node:path"
+        ],
+        "exports": [
+          "registerCostReportCommand",
+          "default"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "template literals",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "src/cli/commands/delegate.ts",
+        "language": "TypeScript",
+        "loc": 191,
+        "imports": [
+          "commander",
+          "node:fs/promises",
+          "node:path",
+          "js-yaml",
+          "../../types/team.js",
+          "../../types/agent.js"
+        ],
+        "exports": [
+          "registerDelegateCommand",
+          "default"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "destructuring",
+          "spread operator",
+          "template literals",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "src/cli/commands/forge.ts",
+        "language": "TypeScript",
+        "loc": 100,
+        "imports": [
+          "commander",
+          "../../builder/index.js",
+          "../../scanner/index.js"
+        ],
+        "exports": [
+          "registerForgeCommand",
+          "default"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "destructuring",
+          "spread operator",
+          "template literals",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "src/cli/commands/genesis.ts",
+        "language": "TypeScript",
+        "loc": 79,
+        "imports": [
+          "commander",
+          "../../genesis/index.js",
+          "../../types/domain.js"
+        ],
+        "exports": [
+          "registerGenesisCommand",
+          "default"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "destructuring",
+          "template literals",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "src/cli/commands/invoke.ts",
+        "language": "TypeScript",
+        "loc": 134,
+        "imports": [
+          "commander",
+          "node:fs/promises",
+          "node:path",
+          "js-yaml",
+          "../../types/team.js",
+          "../../types/agent.js",
+          "../../orchestrator/index.js"
+        ],
+        "exports": [
+          "registerInvokeCommand",
+          "default"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "spread operator",
+          "template literals",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "src/cli/commands/reforge.ts",
+        "language": "TypeScript",
+        "loc": 106,
+        "imports": [
+          "commander",
+          "../../reforge/index.js"
+        ],
+        "exports": [
+          "registerReforgeCommand",
+          "default"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "template literals",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "src/cli/commands/status.ts",
+        "language": "TypeScript",
+        "loc": 73,
+        "imports": [
+          "commander",
+          "node:fs/promises",
+          "node:path",
+          "js-yaml",
+          "../../types/team.js"
+        ],
+        "exports": [
+          "registerStatusCommand",
+          "default"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "template literals",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "src/cli/commands/team.ts",
+        "language": "TypeScript",
+        "loc": 100,
+        "imports": [
+          "commander",
+          "node:fs/promises",
+          "node:path",
+          "js-yaml",
+          "../../types/team.js",
+          "../../types/agent.js"
+        ],
+        "exports": [
+          "registerTeamCommand",
+          "default"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "destructuring",
+          "spread operator",
+          "template literals",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "src/cli/index.ts",
+        "language": "TypeScript",
+        "loc": 30,
+        "imports": [
+          "commander",
+          "./commands/forge.js",
+          "./commands/genesis.js",
+          "./commands/reforge.js",
+          "./commands/team.js",
+          "./commands/status.js",
+          "./commands/invoke.js",
+          "./commands/delegate.js",
+          "./commands/cost-report.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "src/collaboration/bridge-builder.ts",
+        "language": "TypeScript",
+        "loc": 135,
+        "imports": [
+          "../types/team.js"
+        ],
+        "exports": [
+          "buildBridges",
+          "mergeTopology"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "destructuring",
+          "nullish coalescing",
+          "template literals"
+        ]
+      },
+      {
+        "file_path": "src/collaboration/index.ts",
+        "language": "TypeScript",
+        "loc": 14,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "src/collaboration/template-loader.ts",
+        "language": "TypeScript",
+        "loc": 153,
+        "imports": [
+          "node:fs/promises",
+          "node:path",
+          "js-yaml",
+          "../types/collaboration.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "optional chaining",
+          "nullish coalescing",
+          "template literals"
+        ]
+      },
+      {
+        "file_path": "src/collaboration/topology-selector.ts",
+        "language": "TypeScript",
+        "loc": 58,
+        "imports": [
+          "../types/analysis.js",
+          "../types/domain.js",
+          "../types/collaboration.js"
+        ],
+        "exports": [
+          "selectTopology"
+        ],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "src/domains/domain-activator.ts",
+        "language": "TypeScript",
+        "loc": 113,
+        "imports": [
+          "../scanner/index.js",
+          "../scanner/file-scanner.js"
+        ],
+        "exports": [
+          "activateDomains"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "template literals"
+        ]
+      },
+      {
+        "file_path": "src/domains/domain-loader.ts",
+        "language": "TypeScript",
+        "loc": 166,
+        "imports": [
+          "node:fs/promises",
+          "node:path",
+          "node:url",
+          "js-yaml",
+          "../types/domain.js"
+        ],
+        "exports": [
+          "getDefaultDomainsDir"
+        ],
+        "framework_indicators": [
+          "Next.js"
+        ],
+        "patterns": [
+          "async/await",
+          "generics",
+          "spread operator",
+          "optional chaining",
+          "nullish coalescing",
+          "template literals",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "src/domains/index.ts",
+        "language": "TypeScript",
+        "loc": 14,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "src/feedback/feedback-collector.ts",
+        "language": "TypeScript",
+        "loc": 263,
+        "imports": [
+          "node:fs",
+          "node:path",
+          "node:crypto"
+        ],
+        "exports": [
+          "FeedbackCollector"
+        ],
+        "framework_indicators": [
+          "Next.js"
+        ],
+        "patterns": [
+          "async/await",
+          "generics",
+          "nullish coalescing",
+          "template literals",
+          "classes",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "src/feedback/index.ts",
+        "language": "TypeScript",
+        "loc": 6,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "src/genesis/brief-builder.ts",
+        "language": "TypeScript",
+        "loc": 317,
+        "imports": [
+          "../scanner/index.js",
+          "../types/domain.js"
+        ],
+        "exports": [
+          "BuildBriefParams",
+          "buildBrief"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "spread operator",
+          "optional chaining",
+          "nullish coalescing",
+          "interfaces"
+        ]
+      },
+      {
+        "file_path": "src/genesis/discovery.ts",
+        "language": "TypeScript",
+        "loc": 244,
+        "imports": [
+          "node:fs/promises",
+          "node:path",
+          "node:fs"
+        ],
+        "exports": [
+          "DiscoveryState",
+          "DiscoveryResult"
+        ],
+        "framework_indicators": [
+          "Next.js",
+          "Nuxt"
+        ],
+        "patterns": [
+          "async/await",
+          "generics",
+          "destructuring",
+          "interfaces",
+          "type aliases",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "src/genesis/index.ts",
+        "language": "TypeScript",
+        "loc": 234,
+        "imports": [
+          "node:path",
+          "node:url",
+          "./discovery.js",
+          "./brief-builder.js",
+          "./team-designer.js",
+          "../builder/index.js",
+          "../scanner/index.js",
+          "../domains/index.js",
+          "../builder/template-loader.js",
+          "../types/team.js",
+          "../types/analysis.js",
+          "../types/domain.js"
+        ],
+        "exports": [
+          "GenesisOptions",
+          "GenesisResult"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "spread operator",
+          "nullish coalescing",
+          "interfaces",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "src/genesis/interviewer.ts",
+        "language": "TypeScript",
+        "loc": 249,
+        "imports": [
+          "./discovery.js"
+        ],
+        "exports": [
+          "InterviewQuestion",
+          "getInterviewQuestions"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "spread operator",
+          "interfaces"
+        ]
+      },
+      {
+        "file_path": "src/genesis/team-designer.ts",
+        "language": "TypeScript",
+        "loc": 364,
+        "imports": [
+          "../types/analysis.js",
+          "../types/domain.js",
+          "../types/agent.js",
+          "../types/team.js",
+          "../types/collaboration.js",
+          "../collaboration/index.js"
+        ],
+        "exports": [
+          "designTeam"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "destructuring",
+          "spread operator",
+          "optional chaining",
+          "nullish coalescing",
+          "template literals"
+        ]
+      },
+      {
+        "file_path": "src/index.ts",
+        "language": "TypeScript",
+        "loc": 20,
+        "imports": [],
+        "exports": [
+          "AgentForgePlugin",
+          "default"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "interfaces"
+        ]
+      },
+      {
+        "file_path": "src/orchestrator/context-manager.ts",
+        "language": "TypeScript",
+        "loc": 166,
+        "imports": [
+          "../types/agent.js"
+        ],
+        "exports": [
+          "Decision",
+          "AssembleOptions",
+          "FileReader",
+          "ContextManager"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "spread operator",
+          "optional chaining",
+          "nullish coalescing",
+          "template literals",
+          "classes",
+          "interfaces",
+          "type aliases",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "src/orchestrator/cost-tracker.ts",
+        "language": "TypeScript",
+        "loc": 182,
+        "imports": [
+          "../types/agent.js"
+        ],
+        "exports": [
+          "TokenUsage",
+          "CostReport",
+          "CostTracker"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "destructuring",
+          "spread operator",
+          "template literals",
+          "classes",
+          "interfaces"
+        ]
+      },
+      {
+        "file_path": "src/orchestrator/delegation-manager.ts",
+        "language": "TypeScript",
+        "loc": 179,
+        "imports": [
+          "node:crypto",
+          "../types/message.js",
+          "../types/team.js"
+        ],
+        "exports": [
+          "DelegationRequest",
+          "DelegationResult",
+          "DelegationManager"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "nullish coalescing",
+          "template literals",
+          "classes",
+          "interfaces"
+        ]
+      },
+      {
+        "file_path": "src/orchestrator/event-bus.ts",
+        "language": "TypeScript",
+        "loc": 74,
+        "imports": [
+          "../types/orchestration.js"
+        ],
+        "exports": [
+          "EventBus"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "spread operator",
+          "classes"
+        ]
+      },
+      {
+        "file_path": "src/orchestrator/execution-engine.ts",
+        "language": "TypeScript",
+        "loc": 176,
+        "imports": [
+          "node:crypto",
+          "./delegation-manager.js",
+          "../types/team.js"
+        ],
+        "exports": [
+          "TaskExecution",
+          "ExecutionPlan",
+          "ExecutionEngine"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "nullish coalescing",
+          "classes",
+          "interfaces"
+        ]
+      },
+      {
+        "file_path": "src/orchestrator/handoff-manager.ts",
+        "language": "TypeScript",
+        "loc": 148,
+        "imports": [
+          "../types/orchestration.js"
+        ],
+        "exports": [
+          "HandoffValidation",
+          "HandoffManager"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "template literals",
+          "classes",
+          "interfaces"
+        ]
+      },
+      {
+        "file_path": "src/orchestrator/index.ts",
+        "language": "TypeScript",
+        "loc": 475,
+        "imports": [
+          "../types/agent.js",
+          "../types/team.js",
+          "../types/collaboration.js",
+          "./task-router.js",
+          "./delegation-manager.js",
+          "./execution-engine.js",
+          "./cost-tracker.js",
+          "../types/orchestration.js",
+          "../types/feedback.js",
+          "./progress-ledger.js",
+          "./loop-guard.js",
+          "./event-bus.js",
+          "./handoff-manager.js",
+          "./context-manager.js",
+          "../feedback/feedback-collector.js",
+          "../api/agent-runner.js",
+          "node:crypto"
+        ],
+        "exports": [
+          "HealthStatus",
+          "ProgressResult",
+          "HandoffOptions",
+          "Orchestrator"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "destructuring",
+          "spread operator",
+          "optional chaining",
+          "nullish coalescing",
+          "template literals",
+          "classes",
+          "interfaces",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "src/orchestrator/loop-guard.ts",
+        "language": "TypeScript",
+        "loc": 87,
+        "imports": [
+          "../types/collaboration.js"
+        ],
+        "exports": [
+          "LimitCheckResult",
+          "LoopGuard"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "spread operator",
+          "template literals",
+          "classes",
+          "interfaces"
+        ]
+      },
+      {
+        "file_path": "src/orchestrator/progress-ledger.ts",
+        "language": "TypeScript",
+        "loc": 152,
+        "imports": [
+          "../types/orchestration.js"
+        ],
+        "exports": [
+          "ProgressLedgerManager"
+        ],
+        "framework_indicators": [
+          "Next.js"
+        ],
+        "patterns": [
+          "spread operator",
+          "classes"
+        ]
+      },
+      {
+        "file_path": "src/orchestrator/task-router.ts",
+        "language": "TypeScript",
+        "loc": 181,
+        "imports": [
+          "../types/agent.js",
+          "../types/team.js"
+        ],
+        "exports": [
+          "RouteMatch",
+          "routeTask"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "destructuring",
+          "spread operator",
+          "template literals",
+          "interfaces"
+        ]
+      },
+      {
+        "file_path": "src/reforge/index.ts",
+        "language": "TypeScript",
+        "loc": 400,
+        "imports": [
+          "node:fs/promises",
+          "node:path",
+          "js-yaml",
+          "../types/domain.js",
+          "../scanner/index.js",
+          "../builder/index.js",
+          "../types/team.js",
+          "../types/agent.js"
+        ],
+        "exports": [
+          "AgentModification",
+          "ModelChange",
+          "SkillUpdate",
+          "TeamDiff"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "destructuring",
+          "spread operator",
+          "nullish coalescing",
+          "template literals",
+          "interfaces",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "src/scanner/ci-auditor.ts",
+        "language": "TypeScript",
+        "loc": 631,
+        "imports": [
+          "node:fs/promises",
+          "node:path",
+          "js-yaml"
+        ],
+        "exports": [
+          "CIProvider",
+          "CIPipeline",
+          "CIAnalysis"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "destructuring",
+          "spread operator",
+          "nullish coalescing",
+          "template literals",
+          "interfaces",
+          "type aliases",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "src/scanner/comment-miner.ts",
+        "language": "TypeScript",
+        "loc": 251,
+        "imports": [
+          "node:fs/promises",
+          "node:path"
+        ],
+        "exports": [
+          "CommentNote",
+          "CommentMineResult"
+        ],
+        "framework_indicators": [
+          "Next.js",
+          "Vue",
+          "Nuxt",
+          "Svelte"
+        ],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "spread operator",
+          "interfaces",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "src/scanner/dependency-mapper.ts",
+        "language": "TypeScript",
+        "loc": 679,
+        "imports": [
+          "node:fs/promises",
+          "node:path"
+        ],
+        "exports": [
+          "DependencyInfo",
+          "DependencyAnalysis",
+          "categorizeDependency"
+        ],
+        "framework_indicators": [
+          "React",
+          "Next.js",
+          "Vue",
+          "Nuxt",
+          "Svelte",
+          "Express",
+          "Fastify",
+          "FastAPI",
+          "Django",
+          "Flask",
+          "Tailwind CSS",
+          "Actix",
+          "Gin",
+          "Fiber"
+        ],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "spread operator",
+          "nullish coalescing",
+          "template literals",
+          "interfaces",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "src/scanner/document-analyzer.ts",
+        "language": "TypeScript",
+        "loc": 262,
+        "imports": [
+          "node:fs/promises",
+          "node:path",
+          "../types/analysis.js"
+        ],
+        "exports": [],
+        "framework_indicators": [
+          "Next.js",
+          "Nuxt"
+        ],
+        "patterns": [
+          "async/await",
+          "spread operator",
+          "interfaces",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "src/scanner/file-scanner.ts",
+        "language": "TypeScript",
+        "loc": 628,
+        "imports": [
+          "node:fs/promises",
+          "node:path",
+          "module"
+        ],
+        "exports": [
+          "FileAnalysis",
+          "FileScanResult",
+          "detectFrameworks",
+          "default"
+        ],
+        "framework_indicators": [
+          "Next.js",
+          "Vue",
+          "Nuxt",
+          "Svelte",
+          "GraphQL"
+        ],
+        "patterns": [
+          "async/await",
+          "generics",
+          "destructuring",
+          "spread operator",
+          "nullish coalescing",
+          "classes",
+          "interfaces",
+          "enums",
+          "error handling",
+          "closures"
+        ]
+      },
+      {
+        "file_path": "src/scanner/git-analyzer.ts",
+        "language": "TypeScript",
+        "loc": 278,
+        "imports": [
+          "node:child_process"
+        ],
+        "exports": [
+          "GitContributor",
+          "ActiveFile",
+          "ChurnEntry",
+          "CommitFrequency",
+          "GitAnalysis"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "spread operator",
+          "nullish coalescing",
+          "template literals",
+          "interfaces",
+          "error handling",
+          "closures"
+        ]
+      },
+      {
+        "file_path": "src/scanner/index.ts",
+        "language": "TypeScript",
+        "loc": 178,
+        "imports": [
+          "./file-scanner.js",
+          "./git-analyzer.js",
+          "./dependency-mapper.js",
+          "./ci-auditor.js",
+          "./document-analyzer.js",
+          "./integration-detector.js",
+          "./comment-miner.js",
+          "../types/analysis.js"
+        ],
+        "exports": [
+          "FullScanResult"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "destructuring",
+          "interfaces"
+        ]
+      },
+      {
+        "file_path": "src/scanner/integration-detector.ts",
+        "language": "TypeScript",
+        "loc": 263,
+        "imports": [
+          "node:fs/promises",
+          "node:path",
+          "../types/analysis.js"
+        ],
+        "exports": [],
+        "framework_indicators": [
+          "Next.js",
+          "Nuxt"
+        ],
+        "patterns": [
+          "async/await",
+          "generics",
+          "spread operator",
+          "template literals",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "src/scanner/web-researcher.ts",
+        "language": "TypeScript",
+        "loc": 56,
+        "imports": [
+          "../types/analysis.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "template literals"
+        ]
+      },
+      {
+        "file_path": "src/skills/index.ts",
+        "language": "TypeScript",
+        "loc": 11,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "src/skills/skill-loader.ts",
+        "language": "TypeScript",
+        "loc": 185,
+        "imports": [
+          "node:fs/promises",
+          "node:path",
+          "js-yaml",
+          "../types/skill.js",
+          "../types/agent.js",
+          "../types/domain.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "spread operator",
+          "optional chaining",
+          "nullish coalescing",
+          "template literals",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "src/skills/skill-registry.ts",
+        "language": "TypeScript",
+        "loc": 129,
+        "imports": [
+          "../types/skill.js",
+          "../types/domain.js"
+        ],
+        "exports": [
+          "AgentSkillQuery",
+          "SkillRegistry"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "template literals",
+          "classes",
+          "interfaces"
+        ]
+      },
+      {
+        "file_path": "src/types/agent.ts",
+        "language": "TypeScript",
+        "loc": 85,
+        "imports": [
+          "./domain.js"
+        ],
+        "exports": [
+          "ModelTier",
+          "AgentCategory",
+          "AgentSkill",
+          "AgentTriggers",
+          "AgentCollaboration",
+          "AgentContext",
+          "AgentTemplate"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "interfaces",
+          "type aliases"
+        ]
+      },
+      {
+        "file_path": "src/types/analysis.ts",
+        "language": "TypeScript",
+        "loc": 164,
+        "imports": [
+          "./domain.js"
+        ],
+        "exports": [
+          "ProjectInfo",
+          "RiskArea",
+          "CoverageGap",
+          "RecommendedTeam",
+          "ProjectAssessment",
+          "DocumentAnalysis",
+          "ResearchFindings",
+          "IntegrationRef",
+          "ProjectBrief"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "interfaces"
+        ]
+      },
+      {
+        "file_path": "src/types/collaboration.ts",
+        "language": "TypeScript",
+        "loc": 157,
+        "imports": [],
+        "exports": [
+          "TopologyDefinition",
+          "DelegationRules",
+          "GateDefinition",
+          "CommunicationConfig",
+          "EscalationConfig",
+          "LoopLimits",
+          "CollaborationTemplate",
+          "DomainTeam",
+          "Bridge",
+          "CrossDomainTeam"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "interfaces"
+        ]
+      },
+      {
+        "file_path": "src/types/domain.ts",
+        "language": "TypeScript",
+        "loc": 83,
+        "imports": [
+          "./agent.js"
+        ],
+        "exports": [
+          "DomainId",
+          "ActivationRule",
+          "DomainScanner",
+          "DomainPack"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "classes",
+          "interfaces",
+          "type aliases"
+        ]
+      },
+      {
+        "file_path": "src/types/feedback.ts",
+        "language": "TypeScript",
+        "loc": 43,
+        "imports": [
+          "./agent.js"
+        ],
+        "exports": [
+          "FeedbackCategory",
+          "FeedbackPriority",
+          "AgentFeedback",
+          "FeedbackSummary"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "interfaces",
+          "type aliases"
+        ]
+      },
+      {
+        "file_path": "src/types/index.ts",
+        "language": "TypeScript",
+        "loc": 88,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "src/types/message.ts",
+        "language": "TypeScript",
+        "loc": 43,
+        "imports": [],
+        "exports": [
+          "MessageType",
+          "MessagePriority",
+          "MessageContext",
+          "AgentMessage"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "interfaces",
+          "type aliases"
+        ]
+      },
+      {
+        "file_path": "src/types/orchestration.ts",
+        "language": "TypeScript",
+        "loc": 131,
+        "imports": [],
+        "exports": [
+          "ProgressLedger",
+          "TeamEvent",
+          "Handoff",
+          "DelegationPrimitives"
+        ],
+        "framework_indicators": [
+          "Next.js"
+        ],
+        "patterns": [
+          "interfaces"
+        ]
+      },
+      {
+        "file_path": "src/types/scanner.ts",
+        "language": "TypeScript",
+        "loc": 45,
+        "imports": [
+          "./domain.js",
+          "./agent.js"
+        ],
+        "exports": [
+          "DomainScannerPlugin",
+          "ScanOutput"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "interfaces"
+        ]
+      },
+      {
+        "file_path": "src/types/skill.ts",
+        "language": "TypeScript",
+        "loc": 68,
+        "imports": [
+          "./domain.js",
+          "./agent.js"
+        ],
+        "exports": [
+          "SkillCategory",
+          "SkillParameter",
+          "Skill"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "classes",
+          "interfaces",
+          "type aliases"
+        ]
+      },
+      {
+        "file_path": "src/types/team.ts",
+        "language": "TypeScript",
+        "loc": 67,
+        "imports": [
+          "./domain.js",
+          "./collaboration.js",
+          "./analysis.js"
+        ],
+        "exports": [
+          "TeamAgents",
+          "ModelRouting",
+          "DelegationGraph",
+          "TeamManifest"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "interfaces",
+          "type aliases"
+        ]
+      },
+      {
+        "file_path": "templates/agents/architect.yaml",
+        "language": "YAML",
+        "loc": 101,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [
+          "GraphQL"
+        ],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/agents/coder.yaml",
+        "language": "YAML",
+        "loc": 115,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [
+          "Vue",
+          "Svelte"
+        ],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/agents/devops-engineer.yaml",
+        "language": "YAML",
+        "loc": 139,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/agents/documentation-writer.yaml",
+        "language": "YAML",
+        "loc": 132,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/agents/file-reader.yaml",
+        "language": "YAML",
+        "loc": 85,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "classes"
+        ]
+      },
+      {
+        "file_path": "templates/agents/linter.yaml",
+        "language": "YAML",
+        "loc": 115,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await"
+        ]
+      },
+      {
+        "file_path": "templates/agents/researcher.yaml",
+        "language": "YAML",
+        "loc": 100,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/agents/security-auditor.yaml",
+        "language": "YAML",
+        "loc": 130,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/agents/test-engineer.yaml",
+        "language": "YAML",
+        "loc": 128,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/agents/test-runner.yaml",
+        "language": "YAML",
+        "loc": 124,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/business/agents/business-analyst.yaml",
+        "language": "YAML",
+        "loc": 132,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/business/agents/ceo.yaml",
+        "language": "YAML",
+        "loc": 140,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/business/agents/cfo.yaml",
+        "language": "YAML",
+        "loc": 141,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/business/agents/coo.yaml",
+        "language": "YAML",
+        "loc": 126,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/business/agents/cto.yaml",
+        "language": "YAML",
+        "loc": 137,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/business/agents/operations-manager.yaml",
+        "language": "YAML",
+        "loc": 113,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/business/collaboration/executive-team.yaml",
+        "language": "YAML",
+        "loc": 55,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/business/domain.yaml",
+        "language": "YAML",
+        "loc": 30,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/core/agents/file-reader.yaml",
+        "language": "YAML",
+        "loc": 85,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "classes"
+        ]
+      },
+      {
+        "file_path": "templates/domains/core/agents/genesis.yaml",
+        "language": "YAML",
+        "loc": 119,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/core/agents/meta-architect.yaml",
+        "language": "YAML",
+        "loc": 130,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/core/agents/project-manager.yaml",
+        "language": "YAML",
+        "loc": 120,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [
+          "Next.js"
+        ],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/core/agents/researcher.yaml",
+        "language": "YAML",
+        "loc": 100,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/core/agents/skill-designer.yaml",
+        "language": "YAML",
+        "loc": 138,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/core/agents/team-reviewer.yaml",
+        "language": "YAML",
+        "loc": 148,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/core/agents/template-optimizer.yaml",
+        "language": "YAML",
+        "loc": 157,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/core/collaboration/flat.yaml",
+        "language": "YAML",
+        "loc": 38,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/core/domain.yaml",
+        "language": "YAML",
+        "loc": 17,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/core/skills/analysis/summarize.yaml",
+        "language": "YAML",
+        "loc": 35,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/core/skills/communication/status_report.yaml",
+        "language": "YAML",
+        "loc": 34,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [
+          "Next.js"
+        ],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/core/skills/creation/file_write.yaml",
+        "language": "YAML",
+        "loc": 34,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/core/skills/planning/brainstorm.yaml",
+        "language": "YAML",
+        "loc": 36,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/core/skills/research/web_search.yaml",
+        "language": "YAML",
+        "loc": 30,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/core/skills/review/verify_before_claim.yaml",
+        "language": "YAML",
+        "loc": 37,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/hr/agents/compensation-analyst.yaml",
+        "language": "YAML",
+        "loc": 140,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/hr/agents/hr-director.yaml",
+        "language": "YAML",
+        "loc": 150,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/hr/agents/l-and-d-specialist.yaml",
+        "language": "YAML",
+        "loc": 138,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/hr/agents/recruiter.yaml",
+        "language": "YAML",
+        "loc": 132,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/hr/collaboration/hr-team.yaml",
+        "language": "YAML",
+        "loc": 54,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/hr/domain.yaml",
+        "language": "YAML",
+        "loc": 41,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/it/agents/cloud-architect.yaml",
+        "language": "YAML",
+        "loc": 160,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/it/agents/dba.yaml",
+        "language": "YAML",
+        "loc": 145,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/it/agents/help-desk-lead.yaml",
+        "language": "YAML",
+        "loc": 131,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/it/agents/it-director.yaml",
+        "language": "YAML",
+        "loc": 159,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "classes"
+        ]
+      },
+      {
+        "file_path": "templates/domains/it/agents/network-engineer.yaml",
+        "language": "YAML",
+        "loc": 143,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/it/agents/systems-administrator.yaml",
+        "language": "YAML",
+        "loc": 142,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/it/collaboration/it-team.yaml",
+        "language": "YAML",
+        "loc": 60,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/it/domain.yaml",
+        "language": "YAML",
+        "loc": 68,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/legal/agents/compliance-officer.yaml",
+        "language": "YAML",
+        "loc": 162,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/legal/agents/contract-analyst.yaml",
+        "language": "YAML",
+        "loc": 164,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/legal/agents/general-counsel.yaml",
+        "language": "YAML",
+        "loc": 169,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/legal/agents/ip-specialist.yaml",
+        "language": "YAML",
+        "loc": 179,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/legal/collaboration/legal-team.yaml",
+        "language": "YAML",
+        "loc": 54,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/legal/domain.yaml",
+        "language": "YAML",
+        "loc": 30,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/marketing/agents/brand-manager.yaml",
+        "language": "YAML",
+        "loc": 136,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/marketing/agents/cmo.yaml",
+        "language": "YAML",
+        "loc": 159,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/marketing/agents/content-strategist.yaml",
+        "language": "YAML",
+        "loc": 136,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/marketing/agents/copywriter.yaml",
+        "language": "YAML",
+        "loc": 141,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/marketing/agents/growth-hacker.yaml",
+        "language": "YAML",
+        "loc": 142,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [
+          "Next.js"
+        ],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/marketing/agents/seo-specialist.yaml",
+        "language": "YAML",
+        "loc": 140,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/marketing/agents/social-media-manager.yaml",
+        "language": "YAML",
+        "loc": 129,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/marketing/collaboration/marketing-team.yaml",
+        "language": "YAML",
+        "loc": 57,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/marketing/domain.yaml",
+        "language": "YAML",
+        "loc": 31,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/product/agents/product-analyst.yaml",
+        "language": "YAML",
+        "loc": 218,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/product/agents/product-manager.yaml",
+        "language": "YAML",
+        "loc": 174,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [
+          "Next.js"
+        ],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/product/agents/product-marketing-manager.yaml",
+        "language": "YAML",
+        "loc": 203,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/product/agents/ux-designer.yaml",
+        "language": "YAML",
+        "loc": 170,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/product/agents/ux-researcher.yaml",
+        "language": "YAML",
+        "loc": 198,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/product/collaboration/product-team.yaml",
+        "language": "YAML",
+        "loc": 51,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/product/domain.yaml",
+        "language": "YAML",
+        "loc": 31,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/research/agents/data-scientist.yaml",
+        "language": "YAML",
+        "loc": 149,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/research/agents/ml-engineer.yaml",
+        "language": "YAML",
+        "loc": 156,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [
+          "Next.js"
+        ],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/research/agents/research-analyst.yaml",
+        "language": "YAML",
+        "loc": 128,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/research/agents/research-lead.yaml",
+        "language": "YAML",
+        "loc": 156,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [
+          "Next.js"
+        ],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/research/collaboration/research-team.yaml",
+        "language": "YAML",
+        "loc": 58,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/research/domain.yaml",
+        "language": "YAML",
+        "loc": 31,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/sales/agents/account-executive.yaml",
+        "language": "YAML",
+        "loc": 153,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [
+          "Next.js"
+        ],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/sales/agents/bdr.yaml",
+        "language": "YAML",
+        "loc": 147,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [
+          "Next.js"
+        ],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/sales/agents/sales-director.yaml",
+        "language": "YAML",
+        "loc": 164,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/sales/agents/sales-engineer.yaml",
+        "language": "YAML",
+        "loc": 155,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [
+          "Next.js"
+        ],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/sales/collaboration/sales-team.yaml",
+        "language": "YAML",
+        "loc": 56,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/sales/domain.yaml",
+        "language": "YAML",
+        "loc": 30,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/software/agents/architect.yaml",
+        "language": "YAML",
+        "loc": 101,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [
+          "GraphQL"
+        ],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/software/agents/code-explorer.yaml",
+        "language": "YAML",
+        "loc": 163,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/software/agents/coder.yaml",
+        "language": "YAML",
+        "loc": 115,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [
+          "Vue",
+          "Svelte"
+        ],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/software/agents/debugger.yaml",
+        "language": "YAML",
+        "loc": 322,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/software/agents/devops-engineer.yaml",
+        "language": "YAML",
+        "loc": 139,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/software/agents/documentation-writer.yaml",
+        "language": "YAML",
+        "loc": 132,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/software/agents/frontend-designer.yaml",
+        "language": "YAML",
+        "loc": 187,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [
+          "Next.js",
+          "Vue",
+          "Nuxt",
+          "Svelte"
+        ],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/software/agents/linter.yaml",
+        "language": "YAML",
+        "loc": 115,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await"
+        ]
+      },
+      {
+        "file_path": "templates/domains/software/agents/security-auditor.yaml",
+        "language": "YAML",
+        "loc": 130,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/software/agents/test-engineer.yaml",
+        "language": "YAML",
+        "loc": 128,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/software/agents/test-runner.yaml",
+        "language": "YAML",
+        "loc": 124,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/software/collaboration/dev-team.yaml",
+        "language": "YAML",
+        "loc": 49,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/software/domain.yaml",
+        "language": "YAML",
+        "loc": 32,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/software/skills/creation/code_write.yaml",
+        "language": "YAML",
+        "loc": 39,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "templates/domains/software/skills/review/code_review.yaml",
+        "language": "YAML",
+        "loc": 40,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "tests/builder/team-composer.test.ts",
+        "language": "TypeScript",
+        "loc": 644,
+        "imports": [
+          "vitest",
+          "../../src/builder/team-composer.js",
+          "../../src/scanner/index.js",
+          "../../src/types/domain.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "spread operator",
+          "template literals"
+        ]
+      },
+      {
+        "file_path": "tests/builder/template-loader.test.ts",
+        "language": "TypeScript",
+        "loc": 309,
+        "imports": [
+          "vitest",
+          "node:fs/promises",
+          "node:path",
+          "node:os"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "arrow functions"
+        ]
+      },
+      {
+        "file_path": "tests/collaboration/bridge-builder.test.ts",
+        "language": "TypeScript",
+        "loc": 219,
+        "imports": [
+          "vitest",
+          "../../src/types/collaboration.js",
+          "../../src/types/team.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "template literals"
+        ]
+      },
+      {
+        "file_path": "tests/collaboration/topology-selector.test.ts",
+        "language": "TypeScript",
+        "loc": 78,
+        "imports": [
+          "vitest",
+          "../../src/collaboration/topology-selector.js",
+          "../../src/types/analysis.js",
+          "../../src/types/domain.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "nullish coalescing"
+        ]
+      },
+      {
+        "file_path": "tests/domains/domain-activator.test.ts",
+        "language": "TypeScript",
+        "loc": 433,
+        "imports": [
+          "vitest",
+          "../../src/domains/domain-activator.js",
+          "../../src/types/domain.js",
+          "../../src/scanner/index.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "spread operator"
+        ]
+      },
+      {
+        "file_path": "tests/domains/domain-loader.test.ts",
+        "language": "TypeScript",
+        "loc": 248,
+        "imports": [
+          "vitest",
+          "node:fs/promises",
+          "node:path",
+          "node:os"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "arrow functions"
+        ]
+      },
+      {
+        "file_path": "tests/feedback/feedback-collector.test.ts",
+        "language": "TypeScript",
+        "loc": 351,
+        "imports": [
+          "vitest",
+          "node:fs",
+          "node:path",
+          "node:os",
+          "../../src/feedback/feedback-collector.js",
+          "../../src/types/feedback.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "spread operator",
+          "template literals"
+        ]
+      },
+      {
+        "file_path": "tests/genesis/brief-builder.test.ts",
+        "language": "TypeScript",
+        "loc": 586,
+        "imports": [
+          "vitest",
+          "../../src/genesis/brief-builder.js",
+          "../../src/scanner/index.js"
+        ],
+        "exports": [],
+        "framework_indicators": [
+          "React",
+          "Express"
+        ],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "spread operator",
+          "template literals"
+        ]
+      },
+      {
+        "file_path": "tests/genesis/discovery.test.ts",
+        "language": "TypeScript",
+        "loc": 283,
+        "imports": [
+          "vitest",
+          "node:fs/promises",
+          "node:os",
+          "node:path",
+          "../../src/genesis/discovery.js"
+        ],
+        "exports": [
+          "x",
+          "y",
+          "app"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions"
+        ]
+      },
+      {
+        "file_path": "tests/genesis/team-designer.test.ts",
+        "language": "TypeScript",
+        "loc": 416,
+        "imports": [
+          "vitest",
+          "../../src/genesis/team-designer.js",
+          "../../src/types/analysis.js",
+          "../../src/types/domain.js",
+          "../../src/types/agent.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "spread operator",
+          "nullish coalescing",
+          "template literals"
+        ]
+      },
+      {
+        "file_path": "tests/integration/forge-workflow.test.ts",
+        "language": "TypeScript",
+        "loc": 263,
+        "imports": [
+          "vitest",
+          "node:fs/promises",
+          "node:os",
+          "node:path",
+          "js-yaml",
+          "../../src/builder/index.js",
+          "../../src/genesis/discovery.js",
+          "../../src/domains/domain-loader.js",
+          "../../src/domains/domain-activator.js",
+          "../../src/types/team.js"
+        ],
+        "exports": [
+          "hello",
+          "version"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "template literals",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "tests/orchestrator/context-manager.test.ts",
+        "language": "TypeScript",
+        "loc": 269,
+        "imports": [
+          "vitest",
+          "../../src/orchestrator/context-manager.js",
+          "../../src/types/agent.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "spread operator",
+          "template literals"
+        ]
+      },
+      {
+        "file_path": "tests/orchestrator/cost-tracker.test.ts",
+        "language": "TypeScript",
+        "loc": 158,
+        "imports": [
+          "vitest",
+          "../../src/orchestrator/cost-tracker.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "arrow functions"
+        ]
+      },
+      {
+        "file_path": "tests/orchestrator/delegation-manager.test.ts",
+        "language": "TypeScript",
+        "loc": 299,
+        "imports": [
+          "vitest",
+          "../../src/orchestrator/delegation-manager.js",
+          "../../src/types/team.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "arrow functions"
+        ]
+      },
+      {
+        "file_path": "tests/orchestrator/event-bus.test.ts",
+        "language": "TypeScript",
+        "loc": 190,
+        "imports": [
+          "vitest",
+          "../../src/orchestrator/event-bus.js",
+          "../../src/types/orchestration.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "arrow functions"
+        ]
+      },
+      {
+        "file_path": "tests/orchestrator/execution-engine.test.ts",
+        "language": "TypeScript",
+        "loc": 187,
+        "imports": [
+          "vitest",
+          "../../src/orchestrator/execution-engine.js",
+          "../../src/types/team.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "arrow functions"
+        ]
+      },
+      {
+        "file_path": "tests/orchestrator/handoff-manager.test.ts",
+        "language": "TypeScript",
+        "loc": 530,
+        "imports": [
+          "vitest",
+          "../../src/orchestrator/handoff-manager.js",
+          "../../src/types/orchestration.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "arrow functions",
+          "template literals"
+        ]
+      },
+      {
+        "file_path": "tests/orchestrator/loop-guard.test.ts",
+        "language": "TypeScript",
+        "loc": 236,
+        "imports": [
+          "vitest",
+          "../../src/orchestrator/loop-guard.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "arrow functions"
+        ]
+      },
+      {
+        "file_path": "tests/orchestrator/orchestrator-v2.test.ts",
+        "language": "TypeScript",
+        "loc": 331,
+        "imports": [
+          "vitest",
+          "../../src/orchestrator/index.js",
+          "../../src/types/agent.js",
+          "../../src/types/team.js",
+          "../../src/types/collaboration.js",
+          "../../src/types/orchestration.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "spread operator"
+        ]
+      },
+      {
+        "file_path": "tests/orchestrator/progress-ledger.test.ts",
+        "language": "TypeScript",
+        "loc": 312,
+        "imports": [
+          "vitest",
+          "../../src/orchestrator/progress-ledger.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "arrow functions"
+        ]
+      },
+      {
+        "file_path": "tests/orchestrator/task-router.test.ts",
+        "language": "TypeScript",
+        "loc": 271,
+        "imports": [
+          "vitest",
+          "../../src/orchestrator/task-router.js",
+          "../../src/types/team.js",
+          "../../src/types/agent.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "spread operator"
+        ]
+      },
+      {
+        "file_path": "tests/scanner/ci-auditor.test.ts",
+        "language": "TypeScript",
+        "loc": 278,
+        "imports": [
+          "vitest",
+          "node:fs/promises",
+          "node:path",
+          "node:os",
+          "../../src/scanner/ci-auditor.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "arrow functions"
+        ]
+      },
+      {
+        "file_path": "tests/scanner/comment-miner.test.ts",
+        "language": "TypeScript",
+        "loc": 287,
+        "imports": [
+          "vitest",
+          "node:fs/promises",
+          "node:path",
+          "node:os",
+          "../../src/scanner/comment-miner.js",
+          "redis"
+        ],
+        "exports": [
+          "parse",
+          "loadConfig",
+          "value"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "arrow functions"
+        ]
+      },
+      {
+        "file_path": "tests/scanner/dependency-mapper.test.ts",
+        "language": "TypeScript",
+        "loc": 268,
+        "imports": [
+          "vitest",
+          "node:fs/promises",
+          "node:path",
+          "node:os"
+        ],
+        "exports": [],
+        "framework_indicators": [
+          "React",
+          "Vue",
+          "Express",
+          "Django",
+          "Flask",
+          "Tailwind CSS",
+          "Gin"
+        ],
+        "patterns": [
+          "async/await",
+          "arrow functions",
+          "optional chaining"
+        ]
+      },
+      {
+        "file_path": "tests/scanner/document-analyzer.test.ts",
+        "language": "TypeScript",
+        "loc": 269,
+        "imports": [
+          "vitest",
+          "node:fs/promises",
+          "node:path",
+          "node:os",
+          "../../src/scanner/document-analyzer.js",
+          "../../src/types/analysis.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "arrow functions"
+        ]
+      },
+      {
+        "file_path": "tests/scanner/file-scanner.test.ts",
+        "language": "TypeScript",
+        "loc": 307,
+        "imports": [
+          "vitest",
+          "node:fs/promises",
+          "node:path",
+          "node:os",
+          "../../src/scanner/file-scanner.js",
+          "./foo.js",
+          "react",
+          "vue",
+          "express"
+        ],
+        "exports": [
+          "bar",
+          "foo",
+          "FOO",
+          "Baz",
+          "default"
+        ],
+        "framework_indicators": [
+          "React",
+          "Next.js",
+          "Vue",
+          "Express",
+          "Django"
+        ],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "optional chaining",
+          "nullish coalescing",
+          "classes"
+        ]
+      },
+      {
+        "file_path": "tests/scanner/integration-detector.test.ts",
+        "language": "TypeScript",
+        "loc": 287,
+        "imports": [
+          "vitest",
+          "node:fs/promises",
+          "node:path",
+          "node:os",
+          "../../src/scanner/integration-detector.js",
+          "../../src/types/analysis.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "arrow functions"
+        ]
+      },
+      {
+        "file_path": "tests/scanner/web-researcher.test.ts",
+        "language": "TypeScript",
+        "loc": 106,
+        "imports": [
+          "vitest",
+          "../../src/types/analysis.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "arrow functions",
+          "destructuring",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "tests/skills/skill-loader.test.ts",
+        "language": "TypeScript",
+        "loc": 262,
+        "imports": [
+          "vitest",
+          "node:fs/promises",
+          "node:path",
+          "node:os",
+          "../../src/skills/skill-loader.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "arrow functions"
+        ]
+      },
+      {
+        "file_path": "tests/skills/skill-registry.test.ts",
+        "language": "TypeScript",
+        "loc": 179,
+        "imports": [
+          "vitest",
+          "../../src/skills/skill-registry.js",
+          "../../src/types/skill.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "spread operator"
+        ]
+      },
+      {
+        "file_path": "tests/types/domain.test.ts",
+        "language": "TypeScript",
+        "loc": 911,
+        "imports": [
+          "vitest",
+          "../../src/types/agent.js",
+          "../../src/types/team.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "arrow functions",
+          "optional chaining"
+        ]
+      },
+      {
+        "file_path": "tsconfig.json",
+        "language": "JSON",
+        "loc": 19,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "vitest.config.ts",
+        "language": "TypeScript",
+        "loc": 10,
+        "imports": [
+          "vitest/config"
+        ],
+        "exports": [
+          "default"
+        ],
+        "framework_indicators": [],
+        "patterns": []
+      }
+    ],
+    "languages": {
+      "JSON": 6,
+      "Markdown": 10,
+      "TypeScript": 99,
+      "YAML": 97
+    },
+    "frameworks_detected": [
+      "Next.js",
+      "Vue",
+      "Svelte",
+      "Nuxt",
+      "GraphQL",
+      "React",
+      "Express",
+      "Django",
+      "Flask",
+      "Tailwind CSS",
+      "Gin",
+      "Fastify",
+      "FastAPI",
+      "Actix",
+      "Fiber"
+    ],
+    "total_files": 212,
+    "total_loc": 39103,
+    "directory_structure": [
+      ".claude",
+      ".claude-plugin",
+      ".remember",
+      "commands",
+      "docs",
+      "src",
+      "templates",
+      "tests"
+    ]
+  },
+  "git": {
+    "total_commits": 14,
+    "contributors": [
+      {
+        "commits": 14,
+        "name": "Sean Vaughan",
+        "email": "sean@vaughanfamily.org"
+      }
+    ],
+    "active_files": [
+      {
+        "path": "src/orchestrator/index.ts",
+        "changes": 5,
+        "last_modified": "2026-03-25T01:41:06-05:00"
+      },
+      {
+        "path": "src/types/index.ts",
+        "changes": 3,
+        "last_modified": "2026-03-25T01:41:06-05:00"
+      },
+      {
+        "path": "src/cli/commands/forge.ts",
+        "changes": 3,
+        "last_modified": "2026-03-25T01:20:32-05:00"
+      },
+      {
+        "path": "src/cli/commands/reforge.ts",
+        "changes": 3,
+        "last_modified": "2026-03-25T01:20:32-05:00"
+      },
+      {
+        "path": "src/builder/index.ts",
+        "changes": 3,
+        "last_modified": "2026-03-25T01:12:24-05:00"
+      },
+      {
+        "path": "src/cli/commands/delegate.ts",
+        "changes": 3,
+        "last_modified": "2026-03-24T23:45:37-05:00"
+      },
+      {
+        "path": "src/cli/commands/invoke.ts",
+        "changes": 3,
+        "last_modified": "2026-03-24T23:45:37-05:00"
+      },
+      {
+        "path": "README.md",
+        "changes": 2,
+        "last_modified": "2026-03-25T01:41:06-05:00"
+      },
+      {
+        "path": "plugin.json",
+        "changes": 2,
+        "last_modified": "2026-03-25T01:20:32-05:00"
+      },
+      {
+        "path": "src/cli/index.ts",
+        "changes": 2,
+        "last_modified": "2026-03-25T01:20:32-05:00"
+      },
+      {
+        "path": "src/reforge/index.ts",
+        "changes": 2,
+        "last_modified": "2026-03-25T01:20:32-05:00"
+      },
+      {
+        "path": "src/scanner/index.ts",
+        "changes": 2,
+        "last_modified": "2026-03-25T01:20:32-05:00"
+      },
+      {
+        "path": "src/builder/team-writer.ts",
+        "changes": 2,
+        "last_modified": "2026-03-25T01:15:14-05:00"
+      },
+      {
+        "path": "src/builder/team-composer.ts",
+        "changes": 2,
+        "last_modified": "2026-03-25T01:12:24-05:00"
+      },
+      {
+        "path": "templates/domains/core/domain.yaml",
+        "changes": 2,
+        "last_modified": "2026-03-25T01:12:24-05:00"
+      },
+      {
+        "path": "tests/builder/team-composer.test.ts",
+        "changes": 2,
+        "last_modified": "2026-03-25T01:12:24-05:00"
+      },
+      {
+        "path": "src/builder/template-loader.ts",
+        "changes": 2,
+        "last_modified": "2026-03-25T01:04:56-05:00"
+      },
+      {
+        "path": "src/orchestrator/delegation-manager.ts",
+        "changes": 2,
+        "last_modified": "2026-03-25T01:04:56-05:00"
+      },
+      {
+        "path": "src/types/agent.ts",
+        "changes": 2,
+        "last_modified": "2026-03-25T01:04:56-05:00"
+      },
+      {
+        "path": "src/types/analysis.ts",
+        "changes": 2,
+        "last_modified": "2026-03-25T01:04:56-05:00"
+      }
+    ],
+    "branch_count": 2,
+    "branch_strategy": "trunk-based",
+    "churn_rate": [
+      {
+        "path": "package-lock.json",
+        "additions": 3080,
+        "deletions": 0
+      },
+      {
+        "path": "docs/superpowers/plans/2026-03-25-universal-forge.md",
+        "additions": 1428,
+        "deletions": 0
+      },
+      {
+        "path": "docs/superpowers/specs/2026-03-25-universal-forge-design.md",
+        "additions": 1283,
+        "deletions": 4
+      },
+      {
+        "path": "tests/types/domain.test.ts",
+        "additions": 910,
+        "deletions": 0
+      },
+      {
+        "path": "src/scanner/dependency-mapper.ts",
+        "additions": 678,
+        "deletions": 0
+      },
+      {
+        "path": "tests/builder/team-composer.test.ts",
+        "additions": 644,
+        "deletions": 1
+      },
+      {
+        "path": "src/scanner/ci-auditor.ts",
+        "additions": 630,
+        "deletions": 0
+      },
+      {
+        "path": "src/scanner/file-scanner.ts",
+        "additions": 627,
+        "deletions": 0
+      },
+      {
+        "path": "tests/genesis/brief-builder.test.ts",
+        "additions": 585,
+        "deletions": 0
+      },
+      {
+        "path": "tests/orchestrator/handoff-manager.test.ts",
+        "additions": 529,
+        "deletions": 0
+      },
+      {
+        "path": "src/orchestrator/index.ts",
+        "additions": 479,
+        "deletions": 5
+      },
+      {
+        "path": "tests/domains/domain-activator.test.ts",
+        "additions": 432,
+        "deletions": 0
+      },
+      {
+        "path": "tests/genesis/team-designer.test.ts",
+        "additions": 415,
+        "deletions": 0
+      },
+      {
+        "path": "docs/design.md",
+        "additions": 412,
+        "deletions": 0
+      },
+      {
+        "path": "src/reforge/index.ts",
+        "additions": 399,
+        "deletions": 0
+      },
+      {
+        "path": "src/builder/team-composer.ts",
+        "additions": 380,
+        "deletions": 2
+      },
+      {
+        "path": "src/genesis/team-designer.ts",
+        "additions": 363,
+        "deletions": 0
+      },
+      {
+        "path": "tests/feedback/feedback-collector.test.ts",
+        "additions": 350,
+        "deletions": 0
+      },
+      {
+        "path": "tests/orchestrator/orchestrator-v2.test.ts",
+        "additions": 330,
+        "deletions": 0
+      },
+      {
+        "path": "templates/domains/software/agents/debugger.yaml",
+        "additions": 321,
+        "deletions": 0
+      }
+    ],
+    "commit_frequency": [
+      {
+        "period": "2026-03",
+        "count": 14
+      }
+    ],
+    "age_days": 0
+  },
+  "dependencies": {
+    "package_manager": "npm",
+    "dependencies": [
+      {
+        "name": "@anthropic-ai/sdk",
+        "version": "^0.39.0",
+        "type": "production",
+        "category": "utility"
+      },
+      {
+        "name": "commander",
+        "version": "^13.1.0",
+        "type": "production",
+        "category": "utility"
+      },
+      {
+        "name": "js-yaml",
+        "version": "^4.1.0",
+        "type": "production",
+        "category": "utility"
+      },
+      {
+        "name": "@types/js-yaml",
+        "version": "^4.0.9",
+        "type": "development",
+        "category": "utility"
+      },
+      {
+        "name": "@types/node",
+        "version": "^22.13.0",
+        "type": "development",
+        "category": "utility"
+      },
+      {
+        "name": "eslint",
+        "version": "^9.19.0",
+        "type": "development",
+        "category": "linting"
+      },
+      {
+        "name": "typescript",
+        "version": "^5.7.3",
+        "type": "development",
+        "category": "build-tool"
+      },
+      {
+        "name": "vitest",
+        "version": "^3.0.4",
+        "type": "development",
+        "category": "testing"
+      }
+    ],
+    "total_production": 3,
+    "total_development": 5,
+    "framework_dependencies": [],
+    "test_frameworks": [
+      "vitest"
+    ],
+    "build_tools": [
+      "typescript"
+    ],
+    "linters": [
+      "eslint"
+    ]
+  },
+  "ci": {
+    "ci_provider": "none",
+    "config_files": [],
+    "pipelines": [],
+    "test_commands": [],
+    "build_commands": [],
+    "deploy_targets": [],
+    "has_linting": false,
+    "has_type_checking": false,
+    "has_security_scanning": false,
+    "has_docker": false,
+    "dockerfile_count": 0
+  },
+  "documents": [
+    {
+      "type": "readme",
+      "path": "README.md",
+      "summary": "# AgentForge\n\n**Universal Agent Team Builder**\n\nAgentForge assembles optimized AI agent teams for any project type — software, business, marketing, research, and beyond. It ships with 59 agent templates across 9 domain packs, an adaptive Genesis workflow that guides you from idea to team, and intelligent model routing that cuts costs by ~80% vs. running everything through Opus.\n\n## Key Features\n\n- **9 Domain Packs** — Modular agent packs for Software, Business, Marketing, Product, Research, Sale"
+    },
+    {
+      "type": "unknown",
+      "path": "commands/cost-report.md",
+      "summary": "---\ndescription: Show token usage and cost breakdown by agent and model\n---\n\n# AgentForge Cost Report\n\nDisplay token usage and cost breakdown.\n\nShow:\n- Total tokens consumed and estimated cost\n- Breakdown by model tier (Opus, Sonnet, Haiku)\n- Breakdown by agent\n- Cost savings vs. all-Opus baseline\n- Recommendations for model routing optimization\n\nIf no runtime cost data exists yet, show the team's model routing configuration and projected cost profile based on agent assignments.\n"
+    },
+    {
+      "type": "unknown",
+      "path": "commands/forge.md",
+      "summary": "---\ndescription: Analyze project and generate an optimized agent team\nargument-hint: Optional --domains flag (comma-separated)\n---\n\n# AgentForge Forge\n\nAnalyze the current project and generate an optimized agent team.\n\n## What to Do\n\n1. Scan the project: files, git history, dependencies, CI configuration\n2. Detect which domain packs should activate based on what's found\n3. Compose a team from activated domain packs\n4. Customize each agent template with project-specific context\n5. Write the team "
+    },
+    {
+      "type": "unknown",
+      "path": "commands/genesis.md",
+      "summary": "---\ndescription: Start from an idea and build an optimized agent team\nargument-hint: Optional project description or path to brief\n---\n\n# AgentForge Genesis\n\nYou are running the AgentForge Genesis workflow — the adaptive idea-to-team pipeline.\n\n## What Genesis Does\n\nGenesis analyzes your project (or starts from scratch) and builds an optimized team of AI agents tailored to your specific needs. It assigns the right model tier (Opus/Sonnet/Haiku) to each agent based on task complexity.\n\n## Workflo"
+    },
+    {
+      "type": "unknown",
+      "path": "commands/reforge.md",
+      "summary": "---\ndescription: Re-analyze project and update agent team\nargument-hint: Optional --auto-apply or --upgrade flags\n---\n\n# AgentForge Reforge\n\nRe-analyze the project and propose team updates.\n\n1. Read existing `.agentforge/analysis/project-scan.json`\n2. Run a fresh scan\n3. Compare for significant changes (new frameworks, languages, dependencies)\n4. If `--upgrade` flag: migrate v1 directory to v2 format\n5. Otherwise: generate a team diff and present to user for approval\n"
+    },
+    {
+      "type": "unknown",
+      "path": "commands/team.md",
+      "summary": "---\ndescription: View current team composition and model routing\n---\n\n# AgentForge Team\n\nDisplay the current agent team composition.\n\nRead `.agentforge/team.yaml` and show:\n- Team name and forge date\n- Agents organized by category (strategic, implementation, quality, utility)\n- Model routing (which agents use Opus, Sonnet, Haiku)\n- Delegation graph\n- Active domains\n- Cost optimization summary\n"
+    },
+    {
+      "type": "unknown",
+      "path": "docs/design.md",
+      "summary": "# AgentForge Technical Design Document\n\n**Version 1.0 | March 2026**\n\n## 1. Overview\n\nAgentForge is a Claude Code plugin that analyzes a software project and automatically assembles an optimized team of AI agents tailored to that project's specific needs. It ships with a library of generic agent templates (coder, architect, security auditor, researcher, etc.) and uses deep project analysis to customize, combine, and configure these templates into a purpose-built team.\n\nThe generated team is save"
+    },
+    {
+      "type": "prd",
+      "path": "docs/superpowers/plans/2026-03-25-universal-forge.md",
+      "summary": "# Universal Forge Implementation Plan\n\n> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.\n>\n> **Parallelization guidance:** Tasks marked `[PARALLEL]` are independent and should be dispatched as concurrent subagents. Tasks marked `[SEQUENTIAL]` depend on prior tasks. Use Haiku-model agents for mechanical file moves and YAML cre"
+    },
+    {
+      "type": "business-plan",
+      "path": "docs/superpowers/specs/2026-03-25-universal-forge-design.md",
+      "summary": "# AgentForge v2: Universal Forge\n\n**Design Spec | March 2026 | Status: Approved**\n\n## 1. Overview\n\nAgentForge v2 (\"Universal Forge\") expands AgentForge from a software-focused agent team builder into a universal platform that assembles optimized AI agent teams for any project type — software, business, marketing, research, and beyond.\n\n### Key Changes from v1\n\n1. **Domain Packs** — Agent templates organized into modular domain packs (software, business, marketing, product, research, sales, legal"
+    },
+    {
+      "type": "unknown",
+      "path": "docs/v3-genesis-prompt.md",
+      "summary": "# AgentForge v3 Genesis Prompt\n\nUse this prompt with the `/genesis` command to build the v3 development team.\n\n---\n\n## The Prompt\n\n```\nBuild a large, cost-optimized development team for AgentForge v3 — \"Intelligent Forge.\"\n\nPROJECT CONTEXT:\nAgentForge is a Claude Code plugin that assembles optimized AI agent teams. v2 is complete with 59 agent templates across 9 domains, a Genesis workflow, collaboration templates, and runtime orchestration. The codebase is TypeScript/Node.js with 517 tests and "
+    }
+  ],
+  "integrations": [
+    {
+      "type": "jira",
+      "ref": "PROJECT-123"
+    },
+    {
+      "type": "jira",
+      "ref": "BSD-2"
+    },
+    {
+      "type": "jira",
+      "ref": "BSD-3"
+    },
+    {
+      "type": "jira",
+      "ref": "Z0-9"
+    },
+    {
+      "type": "jira",
+      "ref": "ISO-8601"
+    },
+    {
+      "type": "jira",
+      "ref": "PROJ-123"
+    },
+    {
+      "type": "jira",
+      "ref": "MYPROJECT-1"
+    },
+    {
+      "type": "jira",
+      "ref": "BACKEND-42"
+    },
+    {
+      "type": "slack",
+      "ref": "#channel"
+    },
+    {
+      "type": "jira",
+      "ref": "CVE-2026"
+    },
+    {
+      "type": "jira",
+      "ref": "PROJ-456"
+    },
+    {
+      "type": "jira",
+      "ref": "PROJ-789"
+    },
+    {
+      "type": "jira",
+      "ref": "FEAT-100"
+    },
+    {
+      "type": "jira",
+      "ref": "BACKEND-55"
+    },
+    {
+      "type": "jira",
+      "ref": "WORK-42"
+    },
+    {
+      "type": "jira",
+      "ref": "PROJ-10"
+    },
+    {
+      "type": "jira",
+      "ref": "INTERNAL-99"
+    },
+    {
+      "type": "jira",
+      "ref": "SKIP-1"
+    },
+    {
+      "type": "jira",
+      "ref": "DIST-999"
+    },
+    {
+      "type": "jira",
+      "ref": "https://mycompany.atlassian.net/browse/FEAT-100\\n"
+    },
+    {
+      "type": "confluence",
+      "ref": "confluence:https://mycompany.atlassian.net/wiki/spaces/ENG/pages/123456\\n"
+    },
+    {
+      "type": "confluence",
+      "ref": "confluence:https://mycompany.atlassian.net/wiki/spaces/TECH/pages/1\\n"
+    },
+    {
+      "type": "confluence",
+      "ref": "confluence:https://example.atlassian.net/wiki/spaces/ENG/pages/1\\n"
+    },
+    {
+      "type": "confluence",
+      "ref": "confluence:https://confluence.example.com/display/SPACE/Page+Title\\n"
+    },
+    {
+      "type": "slack",
+      "ref": "https://hooks.slack.com/services/"
+    },
+    {
+      "type": "slack",
+      "ref": "https://hooks.slack.com/services/T123/B456/abc"
+    },
+    {
+      "type": "slack",
+      "ref": "https://hooks.slack.com/services/T000/B000/xxx\\n"
+    },
+    {
+      "type": "slack",
+      "ref": "https://myteam.slack.com/archives/C12345678\\n"
+    },
+    {
+      "type": "slack",
+      "ref": "#engineering-alerts"
+    },
+    {
+      "type": "jira",
+      "ref": "CVE-2024"
+    }
+  ],
+  "comments": {
+    "todos": [
+      {
+        "text": "refactor this to use a factory pattern\",",
+        "file": "tests/scanner/comment-miner.test.ts",
+        "line": 25,
+        "type": "TODO"
+      },
+      {
+        "text": "this crashes on null input\",",
+        "file": "tests/scanner/comment-miner.test.ts",
+        "line": 43,
+        "type": "FIXME"
+      },
+      {
+        "text": "temporary workaround for upstream bug\",",
+        "file": "tests/scanner/comment-miner.test.ts",
+        "line": 64,
+        "type": "HACK"
+      },
+      {
+        "text": "first thing\\n// FIXME: second thing\\n\"",
+        "file": "tests/scanner/comment-miner.test.ts",
+        "line": 80,
+        "type": "TODO"
+      },
+      {
+        "text": "python todo\\n\"",
+        "file": "tests/scanner/comment-miner.test.ts",
+        "line": 84,
+        "type": "TODO"
+      },
+      {
+        "text": "this should be ignored\\n\"",
+        "file": "tests/scanner/comment-miner.test.ts",
+        "line": 159,
+        "type": "TODO"
+      },
+      {
+        "text": "should not appear\\n\"",
+        "file": "tests/scanner/comment-miner.test.ts",
+        "line": 172,
+        "type": "TODO"
+      },
+      {
+        "text": "should not appear\\n\"",
+        "file": "tests/scanner/comment-miner.test.ts",
+        "line": 185,
+        "type": "TODO"
+      },
+      {
+        "text": "add error handling\",",
+        "file": "tests/scanner/comment-miner.test.ts",
+        "line": 227,
+        "type": "TODO"
+      },
+      {
+        "text": "verify fields\\n\"",
+        "file": "tests/scanner/comment-miner.test.ts",
+        "line": 244,
+        "type": "TODO"
+      },
+      {
+        "text": "fix line 4 logic\",",
+        "file": "tests/scanner/comment-miner.test.ts",
+        "line": 263,
+        "type": "TODO"
+      },
+      {
+        "text": "replace with lookup table\\n\"",
+        "file": "tests/scanner/comment-miner.test.ts",
+        "line": 277,
+        "type": "TODO"
+      }
+    ],
+    "decisions": [
+      {
+        "text": "use Redis for session storage\",",
+        "file": "tests/scanner/comment-miner.test.ts",
+        "line": 96,
+        "type": "DECISION"
+      },
+      {
+        "text": "Redis provides sub-millisecond latency for hot paths\",",
+        "file": "tests/scanner/comment-miner.test.ts",
+        "line": 97,
+        "type": "RATIONALE"
+      },
+      {
+        "text": "adopt event sourcing\\n\"",
+        "file": "tests/scanner/comment-miner.test.ts",
+        "line": 114,
+        "type": "DECISION"
+      },
+      {
+        "text": "simplifies the deployment pipeline\\n\"",
+        "file": "tests/scanner/comment-miner.test.ts",
+        "line": 128,
+        "type": "RATIONALE"
+      }
+    ],
+    "notes": [
+      {
+        "text": "this function is called on every request\",",
+        "file": "tests/scanner/comment-miner.test.ts",
+        "line": 141,
+        "type": "NOTE"
+      }
+    ]
+  }
+}

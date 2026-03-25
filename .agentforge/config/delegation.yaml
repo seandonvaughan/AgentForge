@@ -1,0 +1,110 @@
+# Delegation Graph — AgentForge v3 Development Team
+# Direction: top-down with peer collaboration within teams
+# Cross-team: via bridges and executive layer only
+
+# ─── Executive Team ──────────────────────────────────────
+cto:
+  - lead-architect
+  - core-platform-lead
+  - runtime-platform-lead
+  - experience-design-lead
+
+vp-engineering:
+  - core-platform-lead
+  - runtime-platform-lead
+  - quality-assurance-lead
+  - build-release-lead
+  - cost-optimization-lead
+  - agent-intelligence-lead
+  - integration-architecture-lead
+
+vp-product:
+  - experience-design-lead
+  - agent-intelligence-lead
+
+lead-architect:
+  - core-platform-lead
+  - runtime-platform-lead
+  - experience-design-lead
+  - type-system-designer
+  - cost-engine-designer
+
+# ─── Core Platform Team ─────────────────────────────────
+core-platform-lead:
+  - type-system-designer
+  - scanner-pipeline-designer
+  - team-composer-dev
+  - domain-pack-dev
+  - agent-template-author
+
+type-system-designer:
+  - type-implementer
+  - type-migrator
+
+scanner-pipeline-designer:
+  - file-git-scanner-dev
+  - dependency-ci-scanner-dev
+  - doc-integration-scanner-dev
+
+# ─── Runtime Team ────────────────────────────────────────
+runtime-platform-lead:
+  - cost-engine-designer
+  - delegation-execution-dev
+  - progress-loop-guard-dev
+  - event-handoff-context-dev
+  - feedback-pipeline-dev
+  - agent-api-dev
+
+cost-engine-designer:
+  - cost-tracker-dev
+  - cost-projector-dev
+
+# ─── Experience Team ─────────────────────────────────────
+experience-design-lead:
+  - genesis-pipeline-dev
+  - workflow-replication-dev
+  - command-interface-dev
+  - technical-writer
+  - system-prompt-crafter
+
+# ─── R&D — Cost Optimization ─────────────────────────────
+cost-optimization-lead:
+  - model-routing-researcher
+  - parallel-execution-researcher
+  - budget-strategy-researcher
+
+# ─── R&D — Agent Intelligence ─────────────────────────────
+agent-intelligence-lead:
+  - feedback-analysis-researcher
+  - multi-agent-framework-researcher
+  - self-improvement-researcher
+
+# ─── R&D — Integration ──────────────────────────────────
+integration-architecture-lead:
+  - external-tools-researcher
+  - agent-protocol-researcher
+
+# ─── QA Team ─────────────────────────────────────────────
+quality-assurance-lead:
+  - type-scanner-tester
+  - builder-domain-tester
+  - orchestrator-tester
+  - end-to-end-tester
+  - security-vulnerability-tester
+  - test-executor
+
+# ─── DevOps Team ─────────────────────────────────────────
+build-release-lead:
+  - build-pipeline-runner
+  - release-packager
+
+# ─── Cross-Team ──────────────────────────────────────────
+feedback-analyst:
+  - cost-optimization-lead
+  - agent-intelligence-lead
+
+# ─── Cross-Team Bridges ─────────────────────────────────
+# These agents can read across teams but not delegate
+type-propagation-checker: []
+coverage-gap-checker: []
+docs-sync-checker: []
