@@ -1,5 +1,6 @@
 name: Chief Technology Officer
 model: opus
+effort: max
 version: "3.0"
 team: strategic
 description: >

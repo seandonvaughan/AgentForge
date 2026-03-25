@@ -1,5 +1,6 @@
 name: VP Product
 model: opus
+effort: high
 version: "3.0"
 team: strategic
 description: >

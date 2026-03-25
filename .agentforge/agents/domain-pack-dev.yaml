@@ -1,5 +1,6 @@
 name: Domain Pack Dev
 model: haiku
+effort: low
 version: "3.0"
 team: core_platform
 description: >

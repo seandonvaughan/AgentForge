@@ -1,5 +1,6 @@
 name: Doc-Integration Scanner Dev
 model: haiku
+effort: low
 version: "3.0"
 team: core_platform
 description: >

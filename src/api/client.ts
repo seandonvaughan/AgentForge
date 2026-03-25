@@ -6,7 +6,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
-import type { ModelTier } from "../types/index.js";
+import type { ModelTier, EffortLevel } from "../types/index.js";
 
 /** Configuration for a specific model invocation. */
 export interface ModelConfig {
@@ -69,6 +69,8 @@ export interface SendMessageParams {
   maxTokens?: number;
   /** Override default temperature for this tier. */
   temperature?: number;
+  /** Reasoning effort level for this invocation. */
+  effort?: EffortLevel;
 }
 
 /** Structured result returned by {@link sendMessage}. */

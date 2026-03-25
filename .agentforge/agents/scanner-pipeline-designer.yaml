@@ -1,5 +1,6 @@
 name: Scanner Pipeline Designer
 model: sonnet
+effort: high
 version: "3.0"
 team: core_platform
 description: >

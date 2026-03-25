@@ -1,5 +1,6 @@
 name: Build Pipeline Runner
 model: haiku
+effort: low
 version: "3.0"
 team: devops
 description: >

@@ -1,5 +1,6 @@
 name: Event Handoff Context Developer
 model: haiku
+effort: low
 version: "3.0"
 team: runtime
 description: >

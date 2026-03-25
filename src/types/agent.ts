@@ -10,6 +10,15 @@ import type { DomainId } from "./domain.js";
 /** The Claude model tier an agent runs on. */
 export type ModelTier = "opus" | "sonnet" | "haiku";
 
+/**
+ * Reasoning effort level for an agent's model invocation.
+ *
+ * Controls how much computation the model spends per request.
+ * Higher effort = deeper reasoning but more tokens/cost.
+ * Lower effort = faster, cheaper responses for mechanical tasks.
+ */
+export type EffortLevel = "low" | "medium" | "high" | "max";
+
 /** Broad functional category that an agent belongs to. */
 export type AgentCategory = "strategic" | "implementation" | "quality" | "utility";
 
@@ -59,6 +68,8 @@ export interface AgentTemplate {
   name: string;
   /** Claude model tier this agent should run on. */
   model: ModelTier;
+  /** Reasoning effort level — controls cost/quality trade-off per invocation. */
+  effort?: EffortLevel;
   /** Semantic version of the agent template. */
   version: string;
   /** Human-readable summary of the agent's purpose. */

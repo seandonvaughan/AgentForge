@@ -1,5 +1,6 @@
 name: Quality Assurance Lead
 model: sonnet
+effort: high
 version: "3.0"
 team: quality
 description: >

@@ -1,5 +1,6 @@
 name: Budget Strategy Researcher
 model: haiku
+effort: low
 version: "3.0"
 team: rd_cost
 description: >

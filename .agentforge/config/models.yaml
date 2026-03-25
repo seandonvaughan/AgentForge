@@ -37,6 +37,10 @@ sonnet:
 
 haiku:
   agents:
+    - cto-assistant
+    - vp-engineering-assistant
+    - vp-product-assistant
+    - lead-architect-assistant
     - type-implementer
     - type-migrator
     - file-git-scanner-dev

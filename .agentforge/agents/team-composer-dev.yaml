@@ -1,5 +1,6 @@
 name: Team Composer Dev
 model: haiku
+effort: low
 version: "3.0"
 team: core_platform
 description: >

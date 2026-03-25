@@ -1,5 +1,6 @@
 name: Type & Scanner Tester
 model: haiku
+effort: low
 version: "3.0"
 team: quality
 description: >

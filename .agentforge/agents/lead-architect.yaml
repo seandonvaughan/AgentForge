@@ -1,5 +1,6 @@
 name: Lead Architect
 model: opus
+effort: max
 version: "3.0"
 team: strategic
 description: >

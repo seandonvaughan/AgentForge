@@ -1,5 +1,6 @@
 name: System Prompt Crafter
 model: haiku
+effort: medium
 version: "3.0"
 team: experience
 description: >

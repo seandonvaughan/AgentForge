@@ -1,5 +1,6 @@
 name: Feedback Pipeline Developer
 model: haiku
+effort: low
 version: "3.0"
 team: runtime
 description: >

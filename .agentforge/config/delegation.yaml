@@ -2,6 +2,12 @@
 # Direction: top-down with peer collaboration within teams
 # Cross-team: via bridges and executive layer only
 
+# ─── Executive Assistants (gatekeepers, no delegation) ────
+cto-assistant: []
+vp-engineering-assistant: []
+vp-product-assistant: []
+lead-architect-assistant: []
+
 # ─── Executive Team ──────────────────────────────────────
 cto:
   - lead-architect

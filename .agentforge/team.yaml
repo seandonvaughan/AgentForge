@@ -3,12 +3,16 @@ forged_at: "2026-03-25T02:30:00.000Z"
 forged_by: genesis
 project_hash: d9d3d50
 agents:
-  # Executive Team — Opus strategic layer (4)
+  # Executive Team — Opus principals + Haiku assistants (8)
   strategic:
     - cto
+    - cto-assistant
     - vp-engineering
+    - vp-engineering-assistant
     - vp-product
+    - vp-product-assistant
     - lead-architect
+    - lead-architect-assistant
 
   # Core Platform Team — types, scanner, builder, domains (11)
   core_platform:
@@ -108,6 +112,10 @@ model_routing:
     - build-release-lead
     - feedback-analyst
   haiku:
+    - cto-assistant
+    - vp-engineering-assistant
+    - vp-product-assistant
+    - lead-architect-assistant
     - type-implementer
     - type-migrator
     - file-git-scanner-dev
@@ -149,6 +157,12 @@ model_routing:
     - docs-sync-checker
 
 delegation_graph:
+  # Executive assistants (gatekeepers — no delegation, only briefing)
+  cto-assistant: []
+  vp-engineering-assistant: []
+  vp-product-assistant: []
+  lead-architect-assistant: []
+
   # Executive delegates to team leads only
   cto:
     - lead-architect
@@ -304,8 +318,14 @@ project_brief:
     haiku_target: ">55% of total token spend"
     model_justification: "Every agent must have a documented reason for its model tier"
 
-# Cost Profile
-# Opus:  4 agents (7%)  — ~14% estimated token spend
-# Sonnet: 12 agents (22%) — ~31% estimated token spend
-# Haiku: 39 agents (71%) — ~55% estimated token spend
-# Total: 55 agents
+# Cost Profile (with executive assistants)
+# Opus:  4 agents (7%)  — ~5-7% estimated token spend (assistants reduce invocations 80%+)
+# Sonnet: 12 agents (20%) — ~28% estimated token spend
+# Haiku: 43 agents (73%) — ~65% estimated token spend
+# Total: 59 agents
+#
+# Effort Levels:
+# max:    2 agents (cto, lead-architect) — deepest reasoning
+# high:  14 agents (VPs, team leads, analysts) — complex bounded work
+# medium: 6 agents (migration, security, e2e, prompts) — judgment-required implementation
+# low:   37 agents (coders, testers, researchers, assistants) — mechanical/parallel work

@@ -1,5 +1,6 @@
 name: Cost Tracker Developer
 model: haiku
+effort: low
 version: "3.0"
 team: runtime
 description: >

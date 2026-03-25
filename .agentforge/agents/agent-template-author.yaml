@@ -1,5 +1,6 @@
 name: Agent Template Author
 model: haiku
+effort: low
 version: "3.0"
 team: core_platform
 description: >
