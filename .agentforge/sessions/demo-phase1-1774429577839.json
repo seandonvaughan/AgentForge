@@ -1,0 +1,26 @@
+{
+  "task_id": "demo-phase1",
+  "objective": "Verify SessionStore works",
+  "facts": {
+    "given": [
+      "Phase 1 complete"
+    ],
+    "to_look_up": [],
+    "to_derive": [],
+    "educated_guesses": []
+  },
+  "plan": [
+    "Save snapshot",
+    "Load it back"
+  ],
+  "steps_completed": [
+    "Save snapshot"
+  ],
+  "current_step": "Load it back",
+  "is_request_satisfied": false,
+  "is_in_loop": false,
+  "is_progress_being_made": true,
+  "confidence": 0.95,
+  "next_speaker": "quality-assurance-lead",
+  "instruction": "Verify round-trip"
+}
