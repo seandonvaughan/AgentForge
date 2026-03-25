@@ -86,6 +86,8 @@ export interface AgentTemplate {
   context: AgentContext;
   /** Domain this agent belongs to. Defaults to 'software' when omitted. */
   domain?: DomainId;
+  /** Functional category for routing and escalation decisions. */
+  category?: AgentCategory;
   /** Non-negotiable rules this agent must always follow. */
   iron_laws?: string[];
   /** Pre- and post-execution gate checks for this agent. */

@@ -41,7 +41,7 @@ export interface CostReport {
  * Per-million-token pricing for each model tier.
  * Based on approximate Anthropic API pricing.
  */
-const MODEL_COSTS: Record<ModelTier, { input: number; output: number }> = {
+export const MODEL_COSTS: Record<ModelTier, { input: number; output: number }> = {
   opus: { input: 15.0, output: 75.0 },
   sonnet: { input: 3.0, output: 15.0 },
   haiku: { input: 0.25, output: 1.25 },
