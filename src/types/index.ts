@@ -92,3 +92,32 @@ export type {
   RecommendedAction,
   FeedbackAnalysis,
 } from "./feedback.js";
+
+export type {
+  TokenEstimate,
+  BudgetCheckResult,
+  FanOutConfig,
+  FanOutResult,
+  CostAwareRunDirective,
+  CostAwareRunResult,
+} from "./budget.js";
+
+export type {
+  ReforgeClass,
+  AgentMutation,
+  ReforgePlan,
+  ReforgeResult,
+  AgentOverride,
+} from "./reforge.js";
+
+export type {
+  IntegrationTarget,
+  JiraCreateIssueAction,
+  GithubCreateIssueAction,
+  ConfluenceCreatePageAction,
+  SlackPostMessageAction,
+  IntegrationAction,
+  IntegrationResult,
+  McpServerConfig,
+  McpConfig,
+} from "./integration.js";
