@@ -1,5 +1,7 @@
 name: "Intelligent Forge v3 Development Team"
 forged_at: "2026-03-25T02:30:00.000Z"
+updated_at: "2026-03-25T12:00:00.000Z"
+update_reason: "Phase 2 trigger refresh — 6 agents updated with new module coverage"
 forged_by: genesis
 project_hash: d9d3d50
 agents:

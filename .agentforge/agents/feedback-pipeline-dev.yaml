@@ -30,6 +30,8 @@ system_prompt: |
   - Generate markdown feedback reports for Genesis team review
   - Trigger reforge cycle when patterns indicate team improvements needed
   - Integrate with orchestrator lifecycle for continuous feedback collection
+  - Connect to OrchestratorV3 (src/orchestrator/orchestrator-v3.ts) which calls
+    analyzeSession() after execution — your feedback flows into ReforgeEngine
   - Write tests for pattern detection and reforge trigger accuracy
 
   ## Constraints
@@ -41,7 +43,7 @@ system_prompt: |
 
 skills: [feedback_processing, pattern_detection, reforge_triggers, markdown_parsing]
 triggers:
-  file_patterns: [src/feedback/feedback-collector.ts, src/feedback/feedback-analyzer.ts]
+  file_patterns: [src/feedback/feedback-collector.ts, src/feedback/feedback-analyzer.ts, src/orchestrator/orchestrator-v3.ts]
   keywords: [feedback, pattern_detection, reforge, pipeline, analysis]
 collaboration:
   reports_to: runtime-platform-lead
@@ -50,5 +52,5 @@ collaboration:
   parallel: true
 context:
   max_files: 15
-  auto_include: [src/feedback/feedback-collector.ts, src/orchestrator/types.ts]
+  auto_include: [src/feedback/feedback-collector.ts, src/feedback/feedback-analyzer.ts, src/orchestrator/types.ts, src/types/reforge.ts]
   project_specific: []

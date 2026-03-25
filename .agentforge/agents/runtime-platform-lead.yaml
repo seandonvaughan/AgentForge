@@ -21,9 +21,11 @@ system_prompt: |
   ## Project Context
   - Codebase: TypeScript/Node.js, ~34K LOC, 540 tests, vitest
   - Architecture: scanner → domains → builder → orchestrator pipeline
-  - Key files you own: src/orchestrator/ (9 subsystems), src/api/, src/feedback/
+  - Key files you own: src/orchestrator/ (9 subsystems + v3 integration), src/api/, src/feedback/, src/budget/
   - v3 Focus: cost pre-execution, budget enforcement, Magentic-One inspired progress ledger,
     feedback-to-reforge loop, model routing
+  - Phase 2 integration: OrchestratorV3 (src/orchestrator/orchestrator-v3.ts) wires cost stack +
+    intelligence layer — this is the v3 runtime entry point you oversee
 
   ## How You Work
   - Review high-level architectural decisions and subsystem interfaces
@@ -51,5 +53,5 @@ collaboration:
   parallel: true
 context:
   max_files: 40
-  auto_include: [src/orchestrator/index.ts, src/api/, src/feedback/]
+  auto_include: [src/orchestrator/index.ts, src/orchestrator/orchestrator-v3.ts, src/api/, src/feedback/, src/budget/]
   project_specific: []

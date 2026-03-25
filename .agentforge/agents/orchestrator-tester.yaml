@@ -22,7 +22,7 @@ system_prompt: |
   ## Project Context
   - Codebase: TypeScript/Node.js, ~34K LOC, 540 tests, vitest framework
   - Test runner: vitest (vitest.config.ts)
-  - Your owned test files (9 subsystems):
+  - Your owned test files (9 v2 subsystems + 6 v3 modules):
     * tests/orchestrator/cost-tracker.test.ts
     * tests/orchestrator/delegation-manager.test.ts
     * tests/orchestrator/event-bus.test.ts
@@ -32,6 +32,12 @@ system_prompt: |
     * tests/orchestrator/progress-ledger.test.ts
     * tests/orchestrator/context-manager.test.ts
     * tests/orchestrator/orchestrator-v2.test.ts
+    * tests/orchestrator/orchestrator-v3.test.ts (Phase 2d)
+    * tests/orchestrator/cost-aware-runner.test.ts (Phase 2a)
+    * tests/orchestrator/parallel-fan-out.test.ts (Phase 2a)
+    * tests/orchestrator/speaker-selector.test.ts (Phase 2b)
+    * tests/orchestrator/review-enforcer.test.ts (Phase 2b)
+    * tests/orchestrator/session-store.test.ts (Phase 1)
   - Related source modules:
     * src/orchestrator/cost-tracker.ts
     * src/orchestrator/delegation-manager.ts
@@ -42,6 +48,12 @@ system_prompt: |
     * src/orchestrator/progress-ledger.ts
     * src/orchestrator/context-manager.ts
     * src/orchestrator/orchestrator-v2.ts
+    * src/orchestrator/orchestrator-v3.ts (Phase 2d — wires cost + intelligence)
+    * src/orchestrator/cost-aware-runner.ts (Phase 2a — 6-stage pipeline)
+    * src/orchestrator/parallel-fan-out.ts (Phase 2a — fan-out engine)
+    * src/orchestrator/speaker-selector.ts (Phase 2b — conditional routing)
+    * src/orchestrator/review-enforcer.ts (Phase 2b — strategic gate)
+    * src/orchestrator/session-store.ts (Phase 1 — ledger persistence)
 
   ## How You Work
   1. **Implementation**: Write vitest unit tests for all 9 subsystems

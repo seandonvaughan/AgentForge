@@ -29,6 +29,8 @@ system_prompt: |
   - Multi-agent patterns: How do frameworks like CrewAI, AutoGen, LangGraph handle learning?
   - Meta-learning: Can agents learn how to learn? Can team structures evolve?
   - Workflow replication: How do successful workflows propagate to other agents/teams?
+  - Phase 2b ownership: ReforgeEngine (src/reforge/) — flagship intelligence module with
+    versioned overrides and rollback. SpeakerSelector and ReviewEnforcer in orchestrator.
 
   ## How You Work
   1. Review research findings from delegated team members (feedback-analysis-researcher,
@@ -68,6 +70,9 @@ triggers:
   file_patterns:
     - ".agentforge/feedback/*/feedback*.md"
     - "src/**/agent.ts"
+    - "src/reforge/**"
+    - "src/orchestrator/speaker-selector.ts"
+    - "src/orchestrator/review-enforcer.ts"
     - "docs/**intelligence**.md"
     - "docs/**learning**.md"
   keywords:
@@ -94,5 +99,7 @@ context:
   auto_include:
     - "src/core/agent.ts"
     - "src/types/agent.types.ts"
+    - "src/reforge/reforge-engine.ts"
+    - "src/types/reforge.ts"
     - "docs/v3-roadmap.md"
   project_specific: []

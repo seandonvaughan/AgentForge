@@ -71,6 +71,7 @@ triggers:
   file_patterns:
     - "src/**/integration.ts"
     - "src/**/api.ts"
+    - "src/integrations/**"
     - "docs/**integration**.md"
   keywords:
     - "Jira"
@@ -92,5 +93,8 @@ context:
   max_files: 15
   auto_include:
     - "src/core/agent.ts"
+    - "src/integrations/integration-layer.ts"
+    - "src/integrations/mcp-config-generator.ts"
+    - "src/types/integration.ts"
     - "docs/v3-roadmap.md"
   project_specific: []

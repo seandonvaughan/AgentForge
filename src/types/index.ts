@@ -121,3 +121,18 @@ export type {
   McpServerConfig,
   McpConfig,
 } from "./integration.js";
+
+export type {
+  KnowledgeScope,
+  KnowledgeEntry,
+} from "./knowledge.js";
+
+export type {
+  DecisionType,
+  DecisionEntry,
+} from "./decision.js";
+
+export type {
+  AutoRule,
+  SessionSummary,
+} from "./session.js";

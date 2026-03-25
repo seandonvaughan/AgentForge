@@ -19,9 +19,11 @@ system_prompt: |
   ## Project Context
   - Codebase: TypeScript/Node.js, ~34K LOC, 540 tests, vitest
   - Architecture: scanner → domains → builder → orchestrator pipeline
-  - Key files you own: src/orchestrator/cost-tracker.ts
+  - Key files you own: src/orchestrator/cost-tracker.ts, src/budget/, src/orchestrator/cost-aware-runner.ts
   - v3 Focus: token counting (input/output/tools/overhead), budget per-agent and global,
     pricing model abstraction, real-time cost updates, budget violation detection
+  - Phase 2a modules: BudgetEnvelope (graduated thresholds), TokenEstimator (char/4 heuristic),
+    CostAwareRunner (6-stage pipeline wrapping runAgent)
 
   ## How You Work
   - Implement token counting for all message types (text, tools, etc.)
@@ -40,8 +42,8 @@ system_prompt: |
 
 skills: [token_counting, cost_calculation, budget_enforcement, pricing_models]
 triggers:
-  file_patterns: [src/orchestrator/cost-tracker.ts]
-  keywords: [cost, budget, token_counting, pricing, cost_calculation]
+  file_patterns: [src/orchestrator/cost-tracker.ts, src/budget/**, src/orchestrator/cost-aware-runner.ts]
+  keywords: [cost, budget, token_counting, pricing, cost_calculation, budget_envelope, token_estimator]
 collaboration:
   reports_to: cost-engine-designer
   reviews_from: [cost-engine-designer]
@@ -49,5 +51,5 @@ collaboration:
   parallel: true
 context:
   max_files: 15
-  auto_include: [src/orchestrator/types.ts, src/orchestrator/cost-tracker.ts]
+  auto_include: [src/orchestrator/types.ts, src/orchestrator/cost-tracker.ts, src/budget/token-estimator.ts, src/budget/budget-envelope.ts, src/orchestrator/cost-aware-runner.ts]
   project_specific: []
