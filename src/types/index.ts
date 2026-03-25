@@ -67,6 +67,9 @@ export type {
   TeamEvent,
   Handoff,
   DelegationPrimitives,
+  EdgeCondition,
+  DelegationEdge,
+  ConditionalDelegationGraph,
 } from "./orchestration.js";
 
 export type {
@@ -85,4 +88,7 @@ export type {
   FeedbackPriority,
   AgentFeedback,
   FeedbackSummary,
+  FeedbackTheme,
+  RecommendedAction,
+  FeedbackAnalysis,
 } from "./feedback.js";

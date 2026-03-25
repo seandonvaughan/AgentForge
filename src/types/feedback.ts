@@ -40,3 +40,41 @@ export interface FeedbackSummary {
   by_agent: Record<string, number>;
   entries: AgentFeedback[];
 }
+
+/** A detected theme cluster from feedback analysis. */
+export interface FeedbackTheme {
+  label: string;
+  keywords: string[];
+  corroborating_agents: string[];
+  entry_count: number;
+  peak_priority: FeedbackPriority;
+  signal_strength: number;
+  entry_ids: string[];
+}
+
+/** A recommended action derived from a detected feedback theme. */
+export interface RecommendedAction {
+  action:
+    | "reforge-team"
+    | "adjust-model-routing"
+    | "increase-budget-ceiling"
+    | "add-agent"
+    | "remove-agent"
+    | "update-system-prompt"
+    | "review-manually";
+  rationale: string;
+  urgency: FeedbackPriority;
+  theme_label: string;
+  confidence: number;
+}
+
+/** Enriched analysis output from FeedbackAnalyzer. */
+export interface FeedbackAnalysis {
+  analyzed_at: string;
+  total_entries: number;
+  date_range: { earliest: string; latest: string };
+  themes: FeedbackTheme[];
+  recommended_actions: RecommendedAction[];
+  requires_escalation: boolean;
+  summary: FeedbackSummary;
+}

@@ -128,3 +128,21 @@ export interface DelegationPrimitives {
     coworker: string;
   };
 }
+
+/** Condition for a conditional delegation edge. */
+export interface EdgeCondition {
+  type: "ledger-state" | "confidence" | "cost-budget" | "feedback-theme";
+  field: string;
+  operator: "equals" | "not-equals" | "greater-than" | "less-than" | "contains";
+  value: unknown;
+}
+
+/** A delegation edge that may be conditional on runtime state. */
+export interface DelegationEdge {
+  from: string;
+  to: string;
+  condition?: EdgeCondition;
+}
+
+/** Delegation graph where edges can have runtime conditions. */
+export type ConditionalDelegationGraph = Record<string, DelegationEdge[]>;
