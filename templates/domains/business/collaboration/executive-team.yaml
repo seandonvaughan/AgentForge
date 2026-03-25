@@ -1,0 +1,54 @@
+name: executive-team
+type: hierarchy
+description: >
+  Executive team collaboration structure with the CEO as the strategic root,
+  C-suite executives (CTO, COO, CFO) as the second-level decision-makers,
+  and the Business Analyst and Operations Manager as supporting utility agents.
+  Information flows top-down for delegation and bottom-up for reporting and review.
+
+topology:
+  root: ceo
+  levels:
+    - agents: [ceo]
+      role: strategic
+    - agents: [cto, coo, cfo]
+      role: implementation
+    - agents: [business-analyst, operations-manager]
+      role: utility
+
+delegation_rules:
+  direction: top-down
+  cross_level: false
+  peer_collaboration: true
+  review_flow: bottom-up
+
+communication:
+  patterns:
+    - fan-out
+    - pipeline
+    - review-loop
+    - broadcast
+  gates:
+    - name: strategic-approval
+      type: hard-gate
+      rule: "Strategic pivots and irreversible commitments require explicit user approval before execution"
+    - name: financial-review
+      type: hard-gate
+      rule: "Initiatives with material financial impact must include CFO analysis before CEO decision"
+    - name: cross-functional-alignment
+      type: soft-gate
+      rule: "Cross-functional decisions should incorporate input from all affected C-suite agents"
+    - name: evidence-before-decision
+      type: soft-gate
+      rule: "Major decisions should be grounded in Business Analyst findings or equivalent evidence"
+
+escalation:
+  max_retries: 3
+  escalate_to: root
+  human_escalation: true
+
+loop_limits:
+  review_cycle: 3
+  delegation_depth: 4
+  retry_same_agent: 2
+  total_actions: 40

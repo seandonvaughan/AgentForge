@@ -1,0 +1,29 @@
+name: business
+version: "1.0"
+description: >
+  Business operations domain — covers executive strategy,
+  financial planning, operations, and business analysis.
+
+scanner:
+  type: "document"
+  activates_when:
+    - file_patterns: ["*.docx", "*.pdf", "*.pptx", "*.xlsx"]
+    - directories: ["docs/", "plans/", "strategy/"]
+    - files: ["business-plan.md", "pitch-deck.md", "financials.xlsx"]
+  scanners:
+    - document-analyzer
+    - web-researcher
+    - integration-detector
+
+agents:
+  strategic: [ceo, cto]
+  implementation: [coo, cfo, business-analyst]
+  utility: [operations-manager]
+
+default_collaboration: executive-team
+
+signals:
+  - business_documents_present
+  - financial_data_detected
+  - strategy_documents_detected
+  - organizational_docs_detected
