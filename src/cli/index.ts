@@ -3,6 +3,7 @@
 import { Command } from "commander";
 import registerForgeCommand from "./commands/forge.js";
 import registerGenesisCommand from "./commands/genesis.js";
+import registerRebuildCommand from "./commands/rebuild.js";
 import registerReforgeCommand from "./commands/reforge.js";
 import registerTeamCommand from "./commands/team.js";
 import registerStatusCommand from "./commands/status.js";
@@ -19,6 +20,7 @@ program
 
 registerForgeCommand(program);
 registerGenesisCommand(program);
+registerRebuildCommand(program);
 registerReforgeCommand(program);
 registerTeamCommand(program);
 registerStatusCommand(program);

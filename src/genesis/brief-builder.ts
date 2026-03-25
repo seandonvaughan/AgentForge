@@ -49,11 +49,16 @@ export function buildBrief(params: BuildBriefParams): ProjectBrief {
 
   const codebase = scan ? buildCodebaseInfo(scan) : undefined;
   const domains = inferDomains(scan, answers);
-  const projectType = inferProjectType(scan);
+  let projectType = inferProjectType(scan);
   const stage = inferStage(scan);
   const name = inferName(answers, codebase);
   const { primary, secondary } = inferGoals(answers);
   const constraints = extractConstraints(answers);
+
+  // Thread through research-informed project type updates
+  if (answers?.output_artifact === "Academic paper or report") {
+    projectType = "research";
+  }
 
   return {
     project: {
@@ -69,8 +74,9 @@ export function buildBrief(params: BuildBriefParams): ProjectBrief {
     constraints,
     context: {
       codebase,
-      research,
-      integrations,
+      documents: scan?.documents,
+      integrations: scan?.integrations || integrations,
+      research: research || scan?.research,
     },
   };
 }
@@ -280,36 +286,76 @@ function extractConstraints(
  * - "core" is always included.
  * - "software" is included when source code files are detected.
  * - "business" is included when document-oriented files/directories are found.
+ * - "research" is included when research documents are detected or research-modality answers indicate research.
  *
  * Returns a sorted, deduplicated array of domain IDs.
  */
 function inferDomains(
   scan?: FullScanResult,
-  _answers?: Record<string, string>,
+  answers?: Record<string, string>,
 ): DomainId[] {
   const domains = new Set<DomainId>(["core"]);
 
-  if (!scan) return [...domains].sort();
+  if (!scan && !answers) return [...domains].sort();
 
-  // Check for source code → software domain
-  const languages = Object.keys(scan.files.languages);
-  const hasCode = languages.some((lang) => CODE_EXTENSIONS.has(lang));
-  if (hasCode) {
-    domains.add("software");
+  if (scan) {
+    // Check for source code → software domain
+    const languages = Object.keys(scan.files.languages);
+    const hasCode = languages.some((lang) => CODE_EXTENSIONS.has(lang));
+    if (hasCode) {
+      domains.add("software");
+    }
+
+    // Check for document-oriented signals → business domain
+    const dirs = scan.files.directory_structure;
+    const hasDocsDirs = dirs.some((d) =>
+      ["docs", "documents", "business", "plans"].includes(d),
+    );
+    const hasDocFiles = scan.files.files.some((f) => {
+      const ext = f.file_path.split(".").pop()?.toLowerCase();
+      return ext === "md" || ext === "pdf" || ext === "docx";
+    });
+
+    if (hasDocsDirs || hasDocFiles) {
+      domains.add("business");
+    }
+
+    // Check for document types that signal business or research domains
+    if (scan.documents && scan.documents.length > 0) {
+      const docTypes = new Set(scan.documents.map((d) => d.type));
+
+      // Business domain signals
+      if (
+        docTypes.has("business-plan") ||
+        docTypes.has("prd") ||
+        docTypes.has("marketing-plan") ||
+        docTypes.has("research-paper") ||
+        docTypes.has("contract") ||
+        docTypes.has("policy")
+      ) {
+        domains.add("business");
+      }
+
+      // Research domain signals
+      if (docTypes.has("research-paper")) {
+        domains.add("research");
+      }
+    }
   }
 
-  // Check for document-oriented signals → business domain
-  const dirs = scan.files.directory_structure;
-  const hasDocsDirs = dirs.some((d) =>
-    ["docs", "documents", "business", "plans"].includes(d),
-  );
-  const hasDocFiles = scan.files.files.some((f) => {
-    const ext = f.file_path.split(".").pop()?.toLowerCase();
-    return ext === "md" || ext === "pdf" || ext === "docx";
-  });
-
-  if (hasDocsDirs || hasDocFiles) {
-    domains.add("business");
+  // Check answer-based research modality signals
+  if (answers?.research_modality) {
+    const modality = answers.research_modality.toLowerCase();
+    if (
+      modality === "literature review and synthesis" ||
+      modality === "mixed methods"
+    ) {
+      domains.add("research");
+      domains.delete("software");
+    } else if (modality === "machine learning / model training") {
+      domains.add("research");
+      domains.add("software");
+    }
   }
 
   return [...domains].sort();

@@ -230,6 +230,17 @@ export async function writeTeam(
       "utf-8",
     ),
 
+    // config/topology.yaml — written only when collaboration data is present
+    ...(fullManifest.collaboration
+      ? [
+          writeFile(
+            join(configDir, "topology.yaml"),
+            yaml.dump(fullManifest.collaboration, { lineWidth: 120, noRefs: true }),
+            "utf-8",
+          ),
+        ]
+      : []),
+
     // agents/*.yaml — one per agent
     ...[...agents.entries()].map(([name, template]) =>
       writeFile(

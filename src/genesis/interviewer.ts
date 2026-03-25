@@ -208,6 +208,43 @@ const FULL_QUESTIONS: InterviewQuestion[] = [
   },
 ];
 
+/**
+ * Questions asked when the user selects "Research project" as their project type.
+ * These capture research-specific context about methodology, deliverables, and data sensitivity.
+ */
+const RESEARCH_QUESTIONS: InterviewQuestion[] = [
+  {
+    id: "research_modality",
+    question: "What best describes your research process?",
+    type: "choice",
+    choices: [
+      "Literature review and synthesis",
+      "Experiment design and data collection",
+      "Data analysis and modeling",
+      "Machine learning / model training",
+      "Mixed methods",
+    ],
+  },
+  {
+    id: "output_artifact",
+    question: "What is the primary deliverable of this research?",
+    type: "choice",
+    choices: [
+      "Academic paper or report",
+      "Dataset or benchmark",
+      "Trained model or prototype",
+      "Internal analysis memo",
+      "Dashboard or visualization",
+    ],
+  },
+  {
+    id: "data_sensitivity",
+    question:
+      "Does this research involve sensitive or proprietary data? If yes, briefly describe the constraint. (Press enter to skip)",
+    type: "text",
+  },
+];
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -218,11 +255,16 @@ const FULL_QUESTIONS: InterviewQuestion[] = [
  * All states receive the core questions (project name, primary goal) followed
  * by state-specific questions that fill in what the scanner could not determine.
  *
+ * If answers include a project_type of "research", RESEARCH_QUESTIONS are appended
+ * to gather research-specific context.
+ *
  * @param discoveryState - The project state returned by {@link discover}.
+ * @param answers - Optional object of collected answers so far; used to determine if research questions should be included.
  * @returns Ordered array of {@link InterviewQuestion} objects to ask.
  */
 export function getInterviewQuestions(
   discoveryState: DiscoveryState | string,
+  answers?: Record<string, string>,
 ): InterviewQuestion[] {
   let stateQuestions: InterviewQuestion[];
 
@@ -244,5 +286,15 @@ export function getInterviewQuestions(
       stateQuestions = EMPTY_QUESTIONS;
   }
 
-  return [...CORE_QUESTIONS, ...stateQuestions];
+  const allQuestions = [...CORE_QUESTIONS, ...stateQuestions];
+
+  // Conditionally append research questions if the project type is research
+  if (answers?.project_type) {
+    const projectType = answers.project_type.toLowerCase();
+    if (projectType.includes("research")) {
+      allQuestions.push(...RESEARCH_QUESTIONS);
+    }
+  }
+
+  return allQuestions;
 }

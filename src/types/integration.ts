@@ -10,7 +10,7 @@
 // ---------------------------------------------------------------------------
 
 /** The external tools AgentForge natively supports via MCP. */
-export type IntegrationTarget = "jira" | "github" | "confluence" | "slack";
+export type IntegrationTarget = "jira" | "github" | "confluence" | "slack" | "filesystem";
 
 // ---------------------------------------------------------------------------
 // Typed action interfaces
@@ -66,12 +66,34 @@ export interface SlackPostMessageAction {
   triggeredBy: string;
 }
 
+/** Action to write a file to the filesystem. */
+export interface FilesystemWriteFileAction {
+  type: "filesystem:write_file";
+  /** Absolute path to the file to write. */
+  path: string;
+  /** Content to write to the file. */
+  content: string;
+  /** Agent name that triggered this action, for audit trail. */
+  triggeredBy: string;
+}
+
+/** Action to read a file from the filesystem. */
+export interface FilesystemReadFileAction {
+  type: "filesystem:read_file";
+  /** Absolute path to the file to read. */
+  path: string;
+  /** Agent name that triggered this action, for audit trail. */
+  triggeredBy: string;
+}
+
 /** Discriminated union of all supported integration actions. */
 export type IntegrationAction =
   | JiraCreateIssueAction
   | GithubCreateIssueAction
   | ConfluenceCreatePageAction
-  | SlackPostMessageAction;
+  | SlackPostMessageAction
+  | FilesystemWriteFileAction
+  | FilesystemReadFileAction;
 
 // ---------------------------------------------------------------------------
 // Result

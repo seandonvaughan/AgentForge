@@ -93,6 +93,26 @@ function resolveModelTier(
 }
 
 /**
+ * Get a human-readable description for a topology type.
+ */
+function getTopologyDescription(
+  type: CollaborationTemplate["type"],
+): string {
+  const descriptions: Record<CollaborationTemplate["type"], string> = {
+    flat: "All agents operate as peers with equal delegation rights.",
+    hierarchy:
+      "Strategic agents delegate to implementation and quality; implementation delegates to quality and utility.",
+    "hub-and-spoke":
+      "A central coordinator agent connects specialized domain teams.",
+    matrix:
+      "Agents collaborate across both functional and domain boundaries.",
+    custom: "Custom collaboration topology defined by team configuration.",
+  };
+
+  return descriptions[type] || "Custom collaboration topology.";
+}
+
+/**
  * Collect every unique agent name declared across all active domain packs,
  * grouped by functional category.
  *
@@ -346,7 +366,39 @@ export function designTeam(
   const collaborationStub: CollaborationTemplate["type"] = topologyType;
   const delegationGraph = buildDelegationGraph(agents, collaborationStub, bridges);
 
-  // ── 6. Assemble TeamManifest ────────────────────────────────────────────
+  // ── 6. Build minimal collaboration object ──────────────────────────────
+  const collaboration: CollaborationTemplate = {
+    name: topologyType,
+    type: topologyType,
+    description: getTopologyDescription(topologyType),
+    topology: {
+      root: null,
+      levels: [],
+    },
+    delegation_rules: {
+      direction: topologyType === "flat" ? "peer" : "top-down",
+      cross_level: topologyType !== "flat",
+      peer_collaboration: true,
+      review_flow: topologyType === "flat" ? "peer" : "bottom-up",
+    },
+    communication: {
+      patterns: ["request-response"],
+      gates: [],
+    },
+    escalation: {
+      max_retries: 3,
+      escalate_to: agents.strategic?.[0] ?? "unknown",
+      human_escalation: false,
+    },
+    loop_limits: {
+      review_cycle: 5,
+      delegation_depth: 4,
+      retry_same_agent: 3,
+      total_actions: 50,
+    },
+  };
+
+  // ── 7. Assemble TeamManifest ────────────────────────────────────────────
   const manifest: TeamManifest = {
     name: `${brief.project.name} Team`,
     forged_at: new Date().toISOString(),
@@ -355,6 +407,7 @@ export function designTeam(
     agents,
     model_routing: modelRouting,
     delegation_graph: delegationGraph,
+    collaboration,
     project_brief: brief,
     domains: activeDomains,
   };

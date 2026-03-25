@@ -104,10 +104,12 @@ describe("IntegrationLayer", () => {
       expect(targets).toContain("github");
     });
 
-    it("returns empty targets when mcpConfig has no servers", () => {
+    it("returns only filesystem target when mcpConfig has no servers", () => {
       const emptyConfig: McpConfig = { mcpServers: {} };
       const layer = new IntegrationLayer(emptyConfig);
-      expect(layer.getAvailableTargets()).toHaveLength(0);
+      const targets = layer.getAvailableTargets();
+      expect(targets).toHaveLength(1);
+      expect(targets).toContain("filesystem");
     });
   });
 
