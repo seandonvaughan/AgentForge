@@ -23,26 +23,46 @@ export { mapDependencies, categorizeDependency } from "./dependency-mapper.js";
 export type { CIProvider, CIPipeline, CIAnalysis } from "./ci-auditor.js";
 export { auditCI } from "./ci-auditor.js";
 
+export type { DocumentAnalysis, IntegrationRef, ResearchFindings } from "../types/analysis.js";
+export { analyzeDocuments } from "./document-analyzer.js";
+export { detectIntegrations } from "./integration-detector.js";
+export type { CommentNote, CommentMineResult } from "./comment-miner.js";
+export { mineComments } from "./comment-miner.js";
+export { researchProject } from "./web-researcher.js";
+
 import { scanFiles } from "./file-scanner.js";
 import { analyzeGit } from "./git-analyzer.js";
 import { mapDependencies } from "./dependency-mapper.js";
 import { auditCI } from "./ci-auditor.js";
+import { analyzeDocuments } from "./document-analyzer.js";
+import { detectIntegrations } from "./integration-detector.js";
+import { mineComments } from "./comment-miner.js";
 
 import type { FileScanResult } from "./file-scanner.js";
 import type { GitAnalysis } from "./git-analyzer.js";
 import type { DependencyAnalysis } from "./dependency-mapper.js";
 import type { CIAnalysis } from "./ci-auditor.js";
+import type { DocumentAnalysis, IntegrationRef, ResearchFindings } from "../types/analysis.js";
+import type { CommentNote } from "./comment-miner.js";
 
 // ---------------------------------------------------------------------------
 // Combined result
 // ---------------------------------------------------------------------------
 
-/** Combined result of running all four scanners against a project. */
+/** Combined result of running all scanners against a project. */
 export interface FullScanResult {
   files: FileScanResult;
   git: GitAnalysis;
   dependencies: DependencyAnalysis;
   ci: CIAnalysis;
+  /** Analyzed document files (.md, .txt) found in the project. */
+  documents?: DocumentAnalysis[];
+  /** External integration references (Jira, Confluence, Slack) detected in the project. */
+  integrations?: IntegrationRef[];
+  /** Structured comment annotations extracted from source files. */
+  comments?: { todos: CommentNote[]; decisions: CommentNote[]; notes: CommentNote[] };
+  /** Web research findings (only populated when triggered externally with an API key). */
+  research?: ResearchFindings;
 }
 
 // ---------------------------------------------------------------------------
@@ -99,24 +119,30 @@ const DEFAULT_CI_ANALYSIS: CIAnalysis = {
 // ---------------------------------------------------------------------------
 
 /**
- * Run all four scanners in parallel against a project root.
+ * Run all scanners in parallel against a project root.
  *
  * Uses `Promise.allSettled` so that a failure in one scanner does not
  * prevent the others from completing. Any scanner that rejects will
  * contribute sensible defaults to the combined result.
+ *
+ * Note: The web-researcher is intentionally excluded from the default scan.
+ * It requires an API key and is triggered separately by the Genesis pipeline.
  */
 export async function runFullScan(
   projectRoot: string,
 ): Promise<FullScanResult> {
-  const [fileResult, gitResult, depResult, ciResult] =
+  const [fileResult, gitResult, depResult, ciResult, docResult, intResult, commentResult] =
     await Promise.allSettled([
       scanFiles(projectRoot),
       analyzeGit(projectRoot),
       mapDependencies(projectRoot),
       auditCI(projectRoot),
+      analyzeDocuments(projectRoot),
+      detectIntegrations(projectRoot),
+      mineComments(projectRoot),
     ]);
 
-  return {
+  const result: FullScanResult = {
     files:
       fileResult.status === "fulfilled"
         ? fileResult.value
@@ -134,4 +160,18 @@ export async function runFullScan(
         ? ciResult.value
         : DEFAULT_CI_ANALYSIS,
   };
+
+  if (docResult.status === "fulfilled") {
+    result.documents = docResult.value;
+  }
+
+  if (intResult.status === "fulfilled") {
+    result.integrations = intResult.value;
+  }
+
+  if (commentResult.status === "fulfilled") {
+    result.comments = commentResult.value;
+  }
+
+  return result;
 }

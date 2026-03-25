@@ -2,6 +2,7 @@
 
 import { Command } from "commander";
 import registerForgeCommand from "./commands/forge.js";
+import registerGenesisCommand from "./commands/genesis.js";
 import registerReforgeCommand from "./commands/reforge.js";
 import registerTeamCommand from "./commands/team.js";
 import registerStatusCommand from "./commands/status.js";
@@ -17,6 +18,7 @@ program
   .description("Adaptive Agent Team Builder for Claude Code");
 
 registerForgeCommand(program);
+registerGenesisCommand(program);
 registerReforgeCommand(program);
 registerTeamCommand(program);
 registerStatusCommand(program);

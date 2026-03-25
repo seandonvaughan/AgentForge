@@ -9,6 +9,7 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import yaml from "js-yaml";
+import type { DomainId } from "../types/domain.js";
 
 import { runFullScan } from "../scanner/index.js";
 import type { FullScanResult } from "../scanner/index.js";
@@ -227,6 +228,52 @@ function diffManifests(
 // ---------------------------------------------------------------------------
 
 /**
+ * Migrate a v1 `.agentforge/team.yaml` to v2 format in-place.
+ *
+ * Adds the following optional v2 fields with sensible defaults when
+ * they are absent from the existing manifest:
+ *  - `domains`: defaults to `['software']`
+ *  - `collaboration`: defaults to `{}`
+ *  - `project_brief`: defaults to `{}`
+ *
+ * Safe to call on a manifest that is already at v2 — missing fields
+ * are added; existing fields are never overwritten.
+ */
+export async function migrateV1ToV2(projectRoot: string): Promise<void> {
+  const teamPath = join(projectRoot, ".agentforge", "team.yaml");
+
+  let raw: string;
+  try {
+    raw = await readFile(teamPath, "utf-8");
+  } catch {
+    throw new Error("No team.yaml found. Run 'agentforge forge' first.");
+  }
+
+  const manifest = yaml.load(raw) as Record<string, unknown>;
+
+  let modified = false;
+
+  if (!manifest.domains) {
+    manifest.domains = ["software"] as DomainId[];
+    modified = true;
+  }
+
+  if (!manifest.collaboration) {
+    manifest.collaboration = {};
+    modified = true;
+  }
+
+  if (!manifest.project_brief) {
+    manifest.project_brief = {};
+    modified = true;
+  }
+
+  if (modified) {
+    await writeFile(teamPath, yaml.dump(manifest), "utf-8");
+  }
+}
+
+/**
  * Analyze the project for changes since the last forge and produce
  * a TeamDiff describing how the team should be updated.
  *
@@ -257,6 +304,14 @@ export async function reforgeTeam(projectRoot: string): Promise<TeamDiff> {
     throw new Error(
       "No existing team manifest found. Run 'agentforge forge' first.",
     );
+  }
+
+  // 2b. Auto-migrate v1 manifests that are missing v2 fields
+  if (!oldManifest.domains || !oldManifest.collaboration || !oldManifest.project_brief) {
+    await migrateV1ToV2(projectRoot);
+    // Re-read the updated manifest
+    const raw = await readFile(teamPath, "utf-8");
+    oldManifest = yaml.load(raw) as TeamManifest;
   }
 
   // 3. Run a fresh scan

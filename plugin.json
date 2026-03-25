@@ -9,6 +9,10 @@
       "description": "Create a new agent team from a task description"
     },
     {
+      "name": "genesis",
+      "description": "Start from an idea and build an optimized agent team"
+    },
+    {
       "name": "reforge",
       "description": "Rebuild or reconfigure an existing agent team"
     },

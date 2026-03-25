@@ -1,9 +1,24 @@
 import type { Command } from "commander";
-import { reforgeTeam, applyDiff, logReforge } from "../../reforge/index.js";
+import { reforgeTeam, applyDiff, logReforge, migrateV1ToV2 } from "../../reforge/index.js";
 
 async function reforgeAction(options: {
   autoApply?: boolean;
+  upgrade?: boolean;
 }): Promise<void> {
+  // --upgrade: migrate v1 team.yaml to v2 format and exit
+  if (options.upgrade) {
+    console.log("Upgrading team to v2 format...");
+    try {
+      await migrateV1ToV2(process.cwd());
+      console.log("Team upgraded to v2 format successfully.");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`Error upgrading team: ${message}`);
+      process.exitCode = 1;
+    }
+    return;
+  }
+
   console.log("Re-analyzing project for changes...\n");
 
   try {
@@ -85,5 +100,6 @@ export default function registerReforgeCommand(program: Command): void {
     .command("reforge")
     .description("Re-analyze project and update agent team")
     .option("--auto-apply", "Apply changes without review")
+    .option("--upgrade", "Migrate v1 team to v2 format without running full reforge")
     .action(reforgeAction);
 }

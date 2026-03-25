@@ -5,6 +5,7 @@ import { runFullScan } from "../../scanner/index.js";
 async function forgeAction(options: {
   dryRun?: boolean;
   verbose?: boolean;
+  domains?: string;
 }): Promise<void> {
   console.log("Forging agent team...");
 
@@ -93,5 +94,6 @@ export default function registerForgeCommand(program: Command): void {
     .description("Analyze project and generate optimized agent team")
     .option("--dry-run", "Show what would be generated without writing files")
     .option("--verbose", "Show detailed analysis output")
+    .option("--domains <domains>", "Comma-separated list of domains to activate (e.g. software,business)")
     .action(forgeAction);
 }
