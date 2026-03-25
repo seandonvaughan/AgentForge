@@ -78,3 +78,10 @@ export type {
   DomainScannerPlugin,
   ScanOutput,
 } from "./scanner.js";
+
+export type {
+  FeedbackCategory,
+  FeedbackPriority,
+  AgentFeedback,
+  FeedbackSummary,
+} from "./feedback.js";

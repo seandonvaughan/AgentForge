@@ -1,0 +1,8 @@
+{
+  "name": "agentforge",
+  "description": "Universal Agent Team Builder — assembles optimized AI agent teams for any project with intelligent model routing across 9 domain packs",
+  "version": "0.2.0",
+  "author": {
+    "name": "Sean Vaughan"
+  }
+}

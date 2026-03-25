@@ -40,6 +40,7 @@ import type { DelegationRequest } from "./delegation-manager.js";
 import type { TaskExecution } from "./execution-engine.js";
 import type { CostReport } from "./cost-tracker.js";
 import type { TeamEvent, Handoff } from "../types/orchestration.js";
+import type { FeedbackCategory, FeedbackPriority, AgentFeedback } from "../types/feedback.js";
 
 import { routeTask } from "./task-router.js";
 import { DelegationManager } from "./delegation-manager.js";
@@ -50,8 +51,10 @@ import { LoopGuard } from "./loop-guard.js";
 import { EventBus } from "./event-bus.js";
 import { HandoffManager } from "./handoff-manager.js";
 import { ContextManager } from "./context-manager.js";
+import { FeedbackCollector } from "../feedback/feedback-collector.js";
 import { runAgent } from "../api/agent-runner.js";
 import type { AgentRunResult } from "../api/agent-runner.js";
+import { randomUUID } from "node:crypto";
 
 /** Combined health status returned by {@link Orchestrator.checkHealth}. */
 export interface HealthStatus {
@@ -96,6 +99,7 @@ export class Orchestrator {
   readonly executionEngine: ExecutionEngine;
   readonly costTracker: CostTracker;
   readonly contextManager: ContextManager;
+  readonly feedbackCollector: FeedbackCollector;
 
   private readonly teamManifest: TeamManifest;
   private readonly agents: Map<string, AgentTemplate>;
@@ -115,6 +119,7 @@ export class Orchestrator {
     teamManifest: TeamManifest,
     agents: Map<string, AgentTemplate>,
     collaborationTemplate?: CollaborationTemplate,
+    projectRoot: string = process.cwd(),
   ) {
     this.teamManifest = teamManifest;
     this.agents = agents;
@@ -130,6 +135,7 @@ export class Orchestrator {
     this.eventBus = new EventBus();
     this.handoffManager = new HandoffManager();
     this.contextManager = new ContextManager();
+    this.feedbackCollector = new FeedbackCollector(projectRoot);
 
     // --- Set up event subscriptions from agent templates ---
     for (const [agentName, agentTemplate] of agents) {
@@ -412,6 +418,41 @@ export class Orchestrator {
     }
 
     return this.contextManager.assembleTaskContext(agent, task, options);
+  }
+
+  // ==================================================================
+  //  Feedback
+  // ==================================================================
+
+  /**
+   * Convenience method for an agent to submit a feedback entry.
+   *
+   * Generates a UUID for the entry, stamps it with the current ISO
+   * timestamp, and delegates to the {@link FeedbackCollector}.
+   *
+   * @returns The file path of the written feedback markdown file.
+   */
+  async submitFeedback(
+    agentName: string,
+    category: FeedbackCategory,
+    priority: FeedbackPriority,
+    title: string,
+    description: string,
+    suggestion: string,
+    context?: AgentFeedback["context"],
+  ): Promise<string> {
+    const feedback: AgentFeedback = {
+      id: randomUUID(),
+      agent: agentName,
+      category,
+      priority,
+      title,
+      description,
+      context: context ?? {},
+      suggestion,
+      timestamp: new Date().toISOString(),
+    };
+    return this.feedbackCollector.submitFeedback(feedback);
   }
 
   // ==================================================================
