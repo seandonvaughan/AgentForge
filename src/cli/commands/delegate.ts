@@ -135,7 +135,50 @@ async function delegateAction(taskParts: string[]): Promise<void> {
 
   const best = scored[0];
   console.log(`\nBest match: ${best.name} (${best.model} tier)`);
-  console.log(`Use 'agentforge invoke ${best.name.toLowerCase().replace(/\s+/g, "-")} ${task}' to run this agent.`);
+
+  // If ANTHROPIC_API_KEY is set, offer to run the selected agent directly.
+  if (process.env.ANTHROPIC_API_KEY) {
+    console.log(`\nRunning ${best.name} via the Anthropic API...\n`);
+
+    const { Orchestrator } = await import("../../orchestrator/index.js");
+
+    // Build agents map for the orchestrator.
+    const agentsMap = new Map<string, AgentTemplate>();
+    for (const agentName of allAgents) {
+      const fname = agentName.toLowerCase().replace(/\s+/g, "-") + ".yaml";
+      const aPath = join(agentforgeDir, "agents", fname);
+      try {
+        const raw = await readFile(aPath, "utf-8");
+        const tmpl = yaml.load(raw) as AgentTemplate;
+        agentsMap.set(agentName, tmpl);
+      } catch {
+        // Skip agents without configs.
+      }
+    }
+
+    const orchestrator = new Orchestrator(manifest, agentsMap);
+
+    try {
+      const result = await orchestrator.invokeAgent(best.name, task);
+
+      console.log("--- Response ---");
+      console.log(result.response);
+      console.log("\n--- Usage ---");
+      console.log(`  Input tokens:  ${result.inputTokens.toLocaleString()}`);
+      console.log(`  Output tokens: ${result.outputTokens.toLocaleString()}`);
+      console.log(`  Duration:      ${result.duration_ms}ms`);
+
+      const report = orchestrator.getCostReport();
+      console.log(`  Est. cost:     $${report.total_cost_usd.toFixed(4)}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`\nAgent invocation failed: ${message}`);
+      console.log(`\nYou can also run manually: agentforge invoke ${best.name.toLowerCase().replace(/\s+/g, "-")} ${task}`);
+    }
+  } else {
+    console.log(`Use 'agentforge invoke ${best.name.toLowerCase().replace(/\s+/g, "-")} ${task}' to run this agent.`);
+    console.log(`Set the ANTHROPIC_API_KEY environment variable to enable direct API invocation.`);
+  }
 }
 
 export default function registerDelegateCommand(program: Command): void {

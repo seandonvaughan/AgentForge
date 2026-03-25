@@ -29,6 +29,8 @@ import { routeTask } from "./task-router.js";
 import { DelegationManager } from "./delegation-manager.js";
 import { ExecutionEngine } from "./execution-engine.js";
 import { CostTracker } from "./cost-tracker.js";
+import { runAgent } from "../api/agent-runner.js";
+import type { AgentRunResult } from "../api/agent-runner.js";
 
 /**
  * Unified facade that combines all orchestrator components.
@@ -75,5 +77,52 @@ export class Orchestrator {
    */
   getCostReport(): CostReport {
     return this.costTracker.getReport();
+  }
+
+  /**
+   * Invokes an agent by name, sending the task to the Anthropic API.
+   *
+   * Looks up the agent template, calls the API via `runAgent`,
+   * records token usage in the cost tracker, and updates execution state.
+   */
+  async invokeAgent(
+    agentName: string,
+    task: string,
+    context?: { files?: string[] },
+  ): Promise<AgentRunResult> {
+    const agent = this.agents.get(agentName);
+    if (!agent) {
+      throw new Error(
+        `Agent "${agentName}" not found. Available agents: ${[...this.agents.keys()].join(", ")}`,
+      );
+    }
+
+    // Create an execution record and mark it as running.
+    const execution = this.executionEngine.createExecution(agentName, task);
+    execution.status = "running";
+    execution.started_at = new Date().toISOString();
+
+    try {
+      const result = await runAgent(agent, task, context);
+
+      // Record token usage in the cost tracker.
+      this.costTracker.recordUsage(
+        agentName,
+        agent.model,
+        result.inputTokens,
+        result.outputTokens,
+      );
+
+      // Mark execution as completed.
+      execution.status = "completed";
+      execution.completed_at = new Date().toISOString();
+      execution.result = result.response;
+
+      return result;
+    } catch (error) {
+      execution.status = "failed";
+      execution.completed_at = new Date().toISOString();
+      throw error;
+    }
   }
 }

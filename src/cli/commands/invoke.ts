@@ -4,7 +4,8 @@ import { join } from "node:path";
 import yaml from "js-yaml";
 
 import type { TeamManifest } from "../../types/team.js";
-import type { AgentTemplate } from "../../types/agent.js";
+import type { AgentTemplate, ModelTier } from "../../types/agent.js";
+import { Orchestrator } from "../../orchestrator/index.js";
 
 async function invokeAction(
   agentName: string,
@@ -59,7 +60,7 @@ async function invokeAction(
   }
 
   // Determine model tier
-  let model = "sonnet";
+  let model: ModelTier = "sonnet";
   if (manifest.model_routing.opus.includes(match)) model = "opus";
   else if (manifest.model_routing.haiku.includes(match)) model = "haiku";
 
@@ -74,7 +75,52 @@ async function invokeAction(
     }
   }
 
-  console.log(`\n[pending] Agent invocation queued. API integration will be available in a future release.`);
+  // If ANTHROPIC_API_KEY is set, actually run the agent via the Orchestrator.
+  if (process.env.ANTHROPIC_API_KEY && agent) {
+    console.log(`\nSending task to Claude (${model})...\n`);
+
+    // Build agents map for the orchestrator.
+    const agentsMap = new Map<string, AgentTemplate>();
+    for (const name of allAgents) {
+      const fname = name.toLowerCase().replace(/\s+/g, "-") + ".yaml";
+      const aPath = join(agentforgeDir, "agents", fname);
+      try {
+        const raw = await readFile(aPath, "utf-8");
+        const tmpl = yaml.load(raw) as AgentTemplate;
+        agentsMap.set(name, tmpl);
+      } catch {
+        // Skip agents without configs.
+      }
+    }
+
+    const orchestrator = new Orchestrator(manifest, agentsMap);
+
+    try {
+      const result = await orchestrator.invokeAgent(match, task);
+
+      console.log("--- Response ---");
+      console.log(result.response);
+      console.log("\n--- Usage ---");
+      console.log(`  Input tokens:  ${result.inputTokens.toLocaleString()}`);
+      console.log(`  Output tokens: ${result.outputTokens.toLocaleString()}`);
+      console.log(`  Duration:      ${result.duration_ms}ms`);
+
+      const report = orchestrator.getCostReport();
+      console.log(`  Est. cost:     $${report.total_cost_usd.toFixed(4)}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`\nAgent invocation failed: ${message}`);
+      process.exitCode = 1;
+    }
+  } else if (!process.env.ANTHROPIC_API_KEY) {
+    console.log(
+      `\n[pending] Set the ANTHROPIC_API_KEY environment variable to run agents against the Claude API.`,
+    );
+  } else {
+    console.log(
+      `\n[pending] Agent config not found. Run 'agentforge forge' to generate agent configurations.`,
+    );
+  }
 }
 
 export default function registerInvokeCommand(program: Command): void {
