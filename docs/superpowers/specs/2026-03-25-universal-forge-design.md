@@ -458,6 +458,12 @@ escalation:
   max_retries: 3
   escalate_to: root
   human_escalation: true
+
+loop_limits:
+  review_cycle: 3
+  delegation_depth: 5
+  retry_same_agent: 2
+  total_actions: 50
 ```
 
 ### 4.3 Cross-Domain Collaboration
@@ -803,6 +809,7 @@ interface CollaborationTemplate {
   delegation_rules: DelegationRules;
   communication: CommunicationConfig;
   escalation: EscalationConfig;
+  loop_limits: LoopLimits;
 }
 
 interface TopologyDefinition {
@@ -894,6 +901,55 @@ interface Bridge {
   to: string | string[];
   reason: string;
 }
+
+// Runtime orchestration (Section 11)
+interface ProgressLedger {
+  task_id: string;
+  objective: string;
+  facts: {
+    given: string[];
+    to_look_up: string[];
+    to_derive: string[];
+    educated_guesses: string[];
+  };
+  plan: string[];
+  steps_completed: string[];
+  current_step: string | null;
+  is_request_satisfied: boolean;
+  is_in_loop: boolean;
+  is_progress_being_made: boolean;
+  confidence: number;
+  next_speaker: string | null;
+  instruction: string;
+}
+
+interface LoopLimits {
+  review_cycle: number;
+  delegation_depth: number;
+  retry_same_agent: number;
+  total_actions: number;
+}
+
+interface TeamEvent {
+  type: string;
+  source: string;
+  payload: unknown;
+  notify: string[];
+}
+
+interface Handoff {
+  from: string;
+  to: string;
+  artifact: {
+    type: 'code' | 'document' | 'analysis' | 'plan' | 'review' | 'data';
+    summary: string;
+    location: string;
+    confidence: number;
+  };
+  open_questions: string[];
+  constraints: string[];
+  status: 'complete' | 'partial' | 'needs_review';
+}
 ```
 
 ### 7.3 Updated Types (Backward Compatible)
@@ -916,6 +972,7 @@ interface AgentTemplate {
     pre: string[];
     post: string[];
   };
+  subscriptions?: string[];       // NEW — event types this agent listens for
 }
 
 // TeamAgents becomes extensible
@@ -1011,7 +1068,7 @@ The expansion is backward-compatible with v1:
 | **Phase A: Restructure** | Move existing templates into `templates/domains/software/`, add `domain.yaml` manifests, create core domain with universal agents, add new types (all changes are additive — new optional fields only, no data migration required, v1 consumers continue to work unchanged) | Existing codebase |
 | **Phase B: Genesis Agent** | Adaptive entry-point workflow (discovery → context → interview → domain selection → team design → forge), Project Brief system | Phase A |
 | **Phase C: Domain Packs (Business + Product)** | Business and product domain packs with templates, skills, document analyzer scanner, collaboration templates | Phase A |
-| **Phase D: Collaboration Engine** | Collaboration template system, topology selection, cross-domain bridge builder, merged delegation graphs | Phases A, C |
+| **Phase D: Collaboration Engine** | Collaboration template system, topology selection, cross-domain bridge builder, merged delegation graphs, progress ledger with stall/loop detection, delegation primitives (delegate_work / ask_coworker), loop counters, broadcast event system, structured handoff protocol, shared context manager | Phases A, C |
 | **Phase E: Skill System v2** | Structured skill schema, skill registry, gates, composability, core + domain-specific skills | Phase A |
 | **Phase F: Remaining Domains** | Marketing, Research, Sales, Legal, HR, IT domain packs (parallelizable — each pack is independent) | Phase C (pattern established) |
 | **Phase G: Meta-Agents** | Meta-Architect, Skill Designer, Team Reviewer, Template Optimizer | Phase E |
@@ -1033,9 +1090,167 @@ Phase A ──┬──▶ Phase B ──▶ Phase H
           └──▶ Phase E ──▶ Phase G
 ```
 
-## 11. Key Architectural Patterns (from Research)
+## 11. Runtime Orchestration
 
-The following patterns from Anthropic's built-in agents and the Superpowers plugin are adopted throughout the system:
+### 11.1 Progress Ledger (from AutoGen Magentic-One)
+
+The orchestrator maintains a **progress ledger** — a structured state tracker that monitors team execution and prevents stalls, loops, and wasted work. The ledger is evaluated after every agent action.
+
+```typescript
+interface ProgressLedger {
+  task_id: string;
+  objective: string;
+
+  // Fact tracking
+  facts: {
+    given: string[];              // Known facts from the task/context
+    to_look_up: string[];         // Facts that need research
+    to_derive: string[];          // Facts that need computation/reasoning
+    educated_guesses: string[];   // Uncertain but useful assumptions
+  };
+
+  // Progress tracking
+  plan: string[];                 // Current step-by-step plan
+  steps_completed: string[];      // What's been done
+  current_step: string | null;    // What's in progress
+
+  // Health checks (evaluated after every agent action)
+  is_request_satisfied: boolean;  // Is the objective met?
+  is_in_loop: boolean;            // Are we repeating the same actions?
+  is_progress_being_made: boolean; // Are we moving forward?
+  confidence: number;             // 0-1 confidence in current approach
+
+  // Routing
+  next_speaker: string | null;    // Which agent should act next
+  instruction: string;            // What to tell the next agent
+}
+```
+
+When `is_in_loop` is true or `is_progress_being_made` is false for 3 consecutive checks, the orchestrator:
+1. Re-evaluates the plan
+2. Tries a different agent or approach
+3. Escalates to a higher-tier agent (e.g., Sonnet → Opus)
+4. Escalates to human if all else fails
+
+### 11.2 Delegation Primitives (from CrewAI)
+
+Two battle-tested delegation primitives are injected into every agent that has `can_delegate_to` configured:
+
+```typescript
+interface DelegationPrimitives {
+  // Delegate a complete task to a coworker
+  delegate_work: {
+    task: string;         // What needs to be done
+    context: string;      // Relevant background/constraints
+    coworker: string;     // Target agent name
+    response_format: 'summary' | 'full' | 'structured';
+  };
+
+  // Ask a coworker a question without delegating the full task
+  ask_coworker: {
+    question: string;     // What you need to know
+    context: string;      // Why you need it
+    coworker: string;     // Target agent name
+  };
+}
+```
+
+The key distinction: `delegate_work` hands off responsibility (the delegate owns the outcome), while `ask_coworker` requests information (the asker retains ownership). This prevents ambiguity about who is responsible for what.
+
+These primitives are automatically available to any agent whose `collaboration.can_delegate_to` list is non-empty. The orchestrator validates that the target coworker is in the delegation graph before executing.
+
+### 11.3 Loop Prevention (from ChatDev)
+
+Every collaboration template includes **loop counters** at key iteration points to prevent infinite cycles:
+
+```yaml
+loop_limits:
+  review_cycle: 3          # max review-fix-review iterations before escalation
+  delegation_depth: 5      # max nested delegation chain length
+  retry_same_agent: 2      # max retries with same agent on same task
+  total_actions: 50         # max total agent actions per top-level task
+```
+
+When a limit is hit, the orchestrator:
+1. Logs the loop with full context to `forge.log`
+2. Escalates to the next level (agent lead → domain lead → coordinator → human)
+3. Never silently continues
+
+Loop counters are configurable per collaboration template and can be overridden in `.agentforge/config/delegation.yaml`.
+
+### 11.4 Shared Context & Memory
+
+Agents working together need shared understanding. The orchestrator manages three levels of context:
+
+**Task Context** — Scoped to a single task. The orchestrator constructs exactly what each agent needs (subagent context isolation). Agents never inherit the full session history of other agents.
+
+**Team Context** — Shared across the team for the current session. Includes:
+- Project Brief (goals, constraints, domains)
+- Decisions made by strategic agents (architecture choices, strategy decisions)
+- Artifacts produced (code, docs, plans)
+- Current progress ledger state
+
+**Project Context** — Persistent across sessions. Stored in `.agentforge/`:
+- `analysis/project-scan.json` — Latest scan results
+- `forge.log` — All team decisions and rationale
+- `config/decisions.yaml` — Key decisions with rationale, made by strategic agents, that downstream agents should respect
+
+When an agent is invoked, the orchestrator assembles its context from these three levels based on the agent's `context.max_files` and `context.auto_include` settings.
+
+### 11.5 Broadcast & Event System
+
+Beyond point-to-point delegation, the orchestrator supports broadcasts for events that affect multiple agents:
+
+```typescript
+interface TeamEvent {
+  type: 'dependency_change' | 'architecture_decision' | 'security_alert' |
+        'constraint_change' | 'milestone_reached' | 'context_update';
+  source: string;           // Agent that triggered the event
+  payload: unknown;          // Event-specific data
+  notify: string[];          // Agents to notify (or '*' for all)
+}
+```
+
+Example events:
+- A Security Auditor discovers a vulnerability → broadcasts `security_alert` to Coder, DevOps, Architect
+- An Architect makes an API design decision → broadcasts `architecture_decision` to all implementation agents
+- A CMO changes brand guidelines → broadcasts `context_update` to Content Strategist, Copywriter, Social Media Manager
+
+Agents declare which event types they subscribe to in their template:
+
+```yaml
+# In agent template YAML
+subscriptions:
+  - architecture_decision
+  - security_alert
+  - dependency_change
+```
+
+### 11.6 Handoff Protocol
+
+When one agent completes work and another needs to continue (pipeline pattern), the handoff includes structured metadata:
+
+```typescript
+interface Handoff {
+  from: string;
+  to: string;
+  artifact: {
+    type: 'code' | 'document' | 'analysis' | 'plan' | 'review' | 'data';
+    summary: string;          // What was produced
+    location: string;         // Where the artifact lives (file path, etc.)
+    confidence: number;       // 0-1 how confident the producing agent is
+  };
+  open_questions: string[];   // Things the next agent should address
+  constraints: string[];      // Decisions already made that must be respected
+  status: 'complete' | 'partial' | 'needs_review';
+}
+```
+
+This prevents the "context loss" problem where an agent in a pipeline doesn't understand what the previous agent intended or what decisions were already made.
+
+## 12. Key Architectural Patterns (Summary)
+
+The following patterns from Anthropic's built-in agents, the Superpowers plugin, and open-source frameworks are adopted throughout the system:
 
 1. **Iron Laws** — Non-negotiable rules stated emphatically, with no-exception framing and rationalization prevention tables.
 2. **Hard Gates** — Explicit blocks that prevent proceeding without meeting conditions (review-before-complete, verify-before-claim).
@@ -1047,8 +1262,13 @@ The following patterns from Anthropic's built-in agents and the Superpowers plug
 8. **Meta-Agent Pattern** — Agents that create and validate other agents for self-improving systems.
 9. **Phased Workflows** — Different agent types dispatched at each phase of a workflow (discovery → explore → implement → review).
 10. **Verification-Before-Claim** — Run verification commands and read output before claiming success. Evidence before assertions.
+11. **Progress Ledger** (AutoGen Magentic-One) — Structured state tracking with stall/loop detection and automatic re-planning.
+12. **Delegation Primitives** (CrewAI) — `delegate_work` vs `ask_coworker` distinction for clear responsibility ownership.
+13. **Loop Counters** (ChatDev) — Configurable iteration limits at every cycle point to prevent infinite loops.
+14. **Broadcast Events** — Pub-sub system for notifying multiple agents of cross-cutting changes.
+15. **Structured Handoffs** — Artifact metadata, open questions, and constraint propagation between pipeline stages.
 
-## 12. Security Considerations
+## 13. Security Considerations
 
 All v1 security principles carry forward, plus:
 
