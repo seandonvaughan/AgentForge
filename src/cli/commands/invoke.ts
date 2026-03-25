@@ -36,13 +36,8 @@ async function invokeAction(options: {
     return;
   }
 
-  // Collect all agent names
-  const allAgents = [
-    ...manifest.agents.strategic,
-    ...manifest.agents.implementation,
-    ...manifest.agents.quality,
-    ...manifest.agents.utility,
-  ];
+  // Collect all agent names from all categories (supports arbitrary category names)
+  const allAgents = Object.values(manifest.agents).flat();
 
   // Find the requested agent (case-insensitive, slug-aware match)
   const match = allAgents.find(
