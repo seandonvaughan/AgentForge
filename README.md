@@ -2,87 +2,63 @@
 
 **Universal Agent Team Builder**
 
-AgentForge assembles optimized AI agent teams for any project type — software, business, marketing, research, and beyond. It ships with 59 agent templates across 9 domain packs, an adaptive Genesis workflow that guides you from idea to team, and intelligent model routing that cuts costs by ~80% vs. running everything through Opus.
+AgentForge assembles optimized AI agent teams for any project type — software, business, marketing, research, and beyond. Sprint 1+2 are complete with 770+ tests. The system includes intelligent model routing that cuts costs by ~80% vs. running everything through Opus, a Genesis workflow for building teams from scratch, and runtime orchestration that keeps multi-agent workflows on track.
 
-## Key Features
+## What Works Today (Sprint 1+2 Complete)
 
-- **9 Domain Packs** — Modular agent packs for Software, Business, Marketing, Product, Research, Sales, Legal, HR, and IT. Mix and match domains per project.
-- **Genesis Workflow** — Adaptive idea-to-team pipeline (Discovery → Context → Interview → Design → Forge). Works from a blank slate or an existing codebase.
-- **Collaboration Templates** — Reusable topology patterns (hierarchy, flat, matrix, hub-and-spoke, custom) that define how agents relate across domains.
-- **Intelligent Model Routing** — Assigns Opus, Sonnet, or Haiku to each agent based on task complexity. Saves ~80% vs. routing all work through Opus.
-- **Runtime Orchestration** — Progress ledger, loop prevention, and an event bus keep multi-agent workflows on track.
-- **59 Agent Templates** — Pre-built, customizable templates across all domains plus a universal core layer.
-- **Versioned Configuration** — The generated team lives in `.agentforge/` at your project root, versioned alongside your code.
-- **Continuous Re-optimization** — The `reforge` workflow detects project changes and proposes team updates.
+### Commands
 
-## How It Works
+- **`genesis`** — Adaptive team-building workflow
+  - Auto-interview for empty projects (or use `--interview` on existing projects)
+  - Discovery phase detects project state
+  - Approval gate before writing `.agentforge/` (use `--yes` to skip)
+  - Supports domain selection: `--domains software,business`
 
-```
-┌──────────────────────────────────────────────────────────┐
-│                    Layer 4: Genesis                        │
-│   Adaptive idea-to-team workflow engine                   │
-│   (Discovery → Context → Interview → Design → Forge)     │
-├──────────────────────────────────────────────────────────┤
-│                Layer 3: Collaboration                      │
-│   Topology templates (hierarchy, flat, matrix,            │
-│   hub-and-spoke, custom) + cross-domain bridges           │
-├──────────────────────────────────────────────────────────┤
-│                 Layer 2: Domain Packs                      │
-│   ┌─────────┬──────────┬───────────┬──────────┐          │
-│   │Software │ Business │ Marketing │ Product  │ ...      │
-│   │11 agents│ 6 agents │ 7 agents  │ 5 agents │          │
-│   └─────────┴──────────┴───────────┴──────────┘          │
-│   + Research(4) Sales(4) Legal(4) HR(4) IT(6)            │
-├──────────────────────────────────────────────────────────┤
-│                    Layer 1: Core                           │
-│   Universal agents (Genesis, PM, Researcher, File Reader, │
-│   Meta-Architect) + universal skills + base scanner       │
-└──────────────────────────────────────────────────────────┘
-```
+- **`forge`** — Analyze a codebase and generate an agent team
+  - Scans project structure, dependencies, and conventions
+  - Generates customized agents with appropriate model assignments
+  - Produces `.agentforge/team.yaml` with team manifest
 
-## Quick Start
+- **`invoke --agent AGENT_NAME --task "TASK_DESCRIPTION"`** — Dispatch work to a specific agent
+  - Loads agent from `.agentforge/agents/{agent}.yaml`
+  - Wires to AgentForgeSession for multi-agent coordination
+  - Control loop available via `--loop` flag (Sprint 2 feature)
+  - Set `ANTHROPIC_API_KEY` to run against live Claude API
 
-```bash
-# Install the plugin
-claude plugin add agentforge
+- **`rebuild --auto-apply --upgrade`** — Re-analyze project for changes
+  - `--auto-apply` applies suggested team updates automatically
+  - `--upgrade` migrates v1 team.yaml to v2 format
 
-# Start from an idea or existing project (new in v2)
-/genesis
+- **`reforge` subcommands** — Team tuning and proposal management
+  - `reforge apply <proposal-id>` — Apply a structural reforge proposal
+  - `reforge list` — Show pending proposals
+  - `reforge rollback` — Revert to previous team version
+  - `reforge status` — View reforge history
 
-# Analyze a codebase and generate a software team
-/forge
+- **`cost-report`** — Analyze token spend
+  - Scans `.agentforge/cost-entry-*.json` files
+  - Summarizes model usage and costs per agent
 
-# Check your team composition
-/team
+### Features
 
-# Re-optimize after project changes
-/reforge
+- **Intelligent Model Routing** — Assigns Opus for strategy, Sonnet for implementation, Haiku for utility tasks. Saves ~80% vs. running all work through Opus.
 
-# Delegate a task to the best agent
-/delegate "Review the authentication flow for security issues"
+- **Filesystem Integration** — Real dispatch for `filesystem:write_file` and `filesystem:read_file` actions. Agents can read/modify project files directly.
 
-# Invoke a specific agent
-/ask architect "Should we split the API into microservices?"
-```
+- **Control Loop** — Multi-turn agent coordination available via `invoke --loop` (in Sprint 2).
 
-## Domain Packs
+- **AgentForgeSession** — Structured communication layer for multi-agent workflows with cost tracking and progress ledger.
 
-| Domain | Agents | Primary Use |
-|--------|--------|-------------|
-| Software | 11 | Code, architecture, security, testing, DevOps |
-| Business | 6 | Strategy, operations, finance, stakeholder management |
-| Marketing | 7 | Brand, content, campaigns, analytics |
-| Product | 5 | Roadmap, discovery, prioritization, specs |
-| Research | 4 | Literature review, synthesis, methodology |
-| Sales | 4 | Pipeline, proposals, competitive intel |
-| Legal | 4 | Contracts, compliance, risk review |
-| HR | 4 | Recruiting, onboarding, policy, org design |
-| IT | 6 | Infrastructure, security, support, monitoring |
-| Core | 5 | Genesis, PM, Researcher, File Reader, Meta-Architect |
+## Coming in v3.1+
 
-Total: 56 domain agents + core layer = 59 agent templates across 87 YAML definitions.
+- **Hard Activation Command** — Explicit `--reforge-requested` flow to trigger team re-evaluation
+- **Peer-to-Peer Agent Communication** — Direct agent-to-agent messaging without escalation
+- **$EDITOR Flow** — Interactive editing of proposals and team configs
+- **Full MCP Integration** — Extended integration with Memory, Web, Shell, and Filesystem MCPs
+- **Domain Packs** — 9 modular packs (Software, Business, Marketing, Product, Research, Sales, Legal, HR, IT) with 56+ agent templates
+- **Collaboration Templates** — Topology patterns (hierarchy, flat, matrix, hub-and-spoke) and cross-domain bridges
 
-## Generated Team Structure
+## Project Structure
 
 ```
 your-project/
@@ -92,41 +68,12 @@ your-project/
     analysis/
       project-scan.json    # Latest scan results
     agents/
-      architect.yaml       # Opus — system design, API contracts
-      coder.yaml           # Sonnet — implementation, refactoring
-      security.yaml        # Sonnet — vulnerability scanning
-      test-engineer.yaml   # Sonnet — test generation, coverage
-      researcher.yaml      # Haiku — web search, doc lookup
+      architect.yaml       # Agent definition
+      coder.yaml           # Agent definition
       ...
-    skills/
-      project-conventions.yaml
-    config/
-      models.yaml          # Model routing overrides
-      delegation.yaml      # Team collaboration graph
+    reforge-proposals/     # Pending team updates
+    cost-entry-*.json      # Token spend tracking
 ```
-
-## Model Routing
-
-Intelligent routing assigns the cheapest model capable of each task. Typical savings are ~80% compared to running all work through Opus.
-
-| Tier | Model | Use For | Cost |
-|------|-------|---------|------|
-| Strategic | Opus | Architecture decisions, Genesis orchestration, complex reasoning | Highest — reserved for deep reasoning |
-| Implementation | Sonnet | Code generation, security analysis, test writing, coordination | Medium — workhorse for bounded tasks |
-| Utility | Haiku | Web search, file reading, summarization, parallel scanning | Lowest — high volume, fast |
-
-Delegation compounds the savings: a Sonnet coder needing API docs delegates to a Haiku researcher rather than spending Sonnet tokens on retrieval.
-
-## Architecture
-
-AgentForge v2 is built on four layers:
-
-1. **Core** — Universal agents and skills present in every team regardless of domain
-2. **Domain Packs** — Self-contained modules (agents, skills, scanners) for each domain
-3. **Collaboration** — Topology templates and cross-domain bridges that define how agents relate
-4. **Genesis** — Adaptive workflow engine that guides any project from idea to a running team
-
-For detailed architecture and design decisions, see [docs/design.md](docs/design.md) (v1) and [docs/superpowers/specs/2026-03-25-universal-forge-design.md](docs/superpowers/specs/2026-03-25-universal-forge-design.md) (v2).
 
 ## Development
 
@@ -141,7 +88,7 @@ npm install
 # Build
 npm run build
 
-# Run tests (517 tests across 64 source files)
+# Run tests (770+ tests, Sprint 1+2 complete)
 npm test
 
 # Development mode
@@ -151,36 +98,10 @@ npm run dev
 ## Tech Stack
 
 - **Runtime**: TypeScript / Node.js 18+
-- **Agent Configs**: YAML (87 templates, human-readable, git-friendly)
-- **Analysis Output**: JSON (structured, parseable, diffable)
+- **Agent Configs**: YAML (human-readable, git-friendly)
 - **CLI**: Commander.js
 - **API**: Anthropic SDK (multi-model dispatch: Opus, Sonnet, Haiku)
-
-## Roadmap
-
-**v1 — Software Forge (complete)**
-
-- [x] Phase 1: Foundation — Plugin skeleton, CLI, YAML schema, template library
-- [x] Phase 2: Scanner — Parallel file scanner, git analyzer, dependency mapper
-- [x] Phase 3: Team Builder — Template customization, project-specific agents
-- [x] Phase 4: Orchestrator — Message passing, model dispatch, parallel execution
-- [x] Phase 5: Reforge — Delta detection, team diff, re-optimization loop
-
-**v2 — Universal Forge (complete)**
-
-- [x] Phase 6: Domain Packs — 9 domain modules with 56 agent templates
-- [x] Phase 7: Genesis Workflow — Adaptive idea-to-team pipeline
-- [x] Phase 8: Collaboration Templates — Topology patterns and cross-domain bridges
-- [x] Phase 9: Runtime Orchestration — Progress ledger, loop prevention, event bus
-- [x] Phase 10: Meta-Architect — Self-improving agent that creates custom templates
-
-**v3 — Intelligent Forge (upcoming)**
-
-- [ ] Phase 11: Learning Engine — Track accepted vs. modified suggestions to improve forge decisions
-- [ ] Phase 12: Cross-project Intelligence — Learn patterns across projects (opt-in)
-- [ ] Phase 13: Real-time Dashboard — Agent activity, token spend, and task throughput
-- [ ] Phase 14: Team Marketplace — Community-contributed templates for common archetypes
-- [ ] Phase 15: Automated Reforge — Git hook and CI integration triggers
+- **Testing**: Vitest
 
 ## License
 

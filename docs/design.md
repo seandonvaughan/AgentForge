@@ -410,3 +410,34 @@ Organizations can create and share team templates for common project archetypes 
 - **Real-time monitoring**: Dashboard showing agent activity, token spend, and task throughput.
 - **Team sharing marketplace**: Community-contributed templates for specific tech stacks.
 - **Automated reforge triggers**: Git hooks or CI integration that triggers reforge on significant PRs.
+
+## 14. Development History
+
+### v1 — Software Forge (Complete)
+
+**Phases 1–5** (Foundation → Scanner → Team Builder → Orchestrator → Reforge)
+
+- Phase 1: Foundation — Plugin skeleton, CLI, YAML schema, template library
+- Phase 2: Scanner — Parallel file scanner, git analyzer, dependency mapper
+- Phase 3: Team Builder — Template customization, project-specific agents
+- Phase 4: Orchestrator — Message passing, model dispatch, parallel execution
+- Phase 5: Reforge — Delta detection, team diff, re-optimization loop
+
+### v2 — Universal Forge (Complete)
+
+**Phases 6–10** (Domain Packs → Genesis → Collaboration → Runtime Orchestration → Meta-Architect)
+
+- Phase 6: Domain Packs — 9 domain modules with 56 agent templates
+- Phase 7: Genesis Workflow — Adaptive idea-to-team pipeline (Discovery → Context → Interview → Design → Forge)
+- Phase 8: Collaboration Templates — Topology patterns (hierarchy, flat, matrix, hub-and-spoke) and cross-domain bridges
+- Phase 9: Runtime Orchestration — Progress ledger, loop prevention, event bus
+- Phase 10: Meta-Architect — Self-improving agent that creates custom templates
+
+### v3 — Intelligent Forge (In Progress)
+
+**Phase 11–13 (Sprint 1+2 complete, 770+ tests)**
+
+- Phase 11a: Cost Tracking & Intelligence Layer — Cost-entry tracking, token estimator, budget envelope
+- Phase 11b: Session Architecture & Communication — AgentForgeSession, structured message protocol, REFORGE REQUESTED detection
+- Phase 11c: OrchestratorV3 & Cost Stack — Integration point wiring, cost-aware routing, review enforcer
+- Phase 12+: (Coming in v3.1+) Hard activation, peer-to-peer comms, $EDITOR flow, full MCP integration
