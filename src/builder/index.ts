@@ -6,7 +6,7 @@
  * functions.
  */
 
-export { loadTemplate, loadAllTemplates, getDefaultTemplatesDir } from "./template-loader.js";
+export { loadTemplate, loadAllTemplates, getDefaultTemplatesDir, loadDomainTemplates } from "./template-loader.js";
 export { composeTeam } from "./team-composer.js";
 export type { TeamComposition, CustomAgentSpec } from "./team-composer.js";
 export { customizeTemplate } from "./template-customizer.js";

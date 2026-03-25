@@ -1,0 +1,31 @@
+name: software
+version: "1.0"
+description: >
+  Software development domain — covers architecture, implementation,
+  testing, security, DevOps, and documentation.
+
+scanner:
+  type: "codebase"
+  activates_when:
+    - file_patterns: ["*.ts", "*.py", "*.rs", "*.go", "*.java", "*.rb"]
+    - directories: ["src/", "lib/", "app/"]
+    - files: ["package.json", "Cargo.toml", "go.mod", "requirements.txt"]
+  scanners:
+    - file-scanner
+    - git-analyzer
+    - dependency-mapper
+    - ci-auditor
+
+agents:
+  strategic: [architect]
+  implementation: [coder, devops-engineer, frontend-designer, debugger]
+  quality: [security-auditor, test-engineer, test-runner]
+  utility: [linter, documentation-writer, code-explorer]
+
+default_collaboration: dev-team
+
+signals:
+  - codebase_present
+  - programming_languages_detected
+  - ci_config_detected
+  - package_manager_detected

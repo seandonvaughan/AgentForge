@@ -1,0 +1,37 @@
+name: flat
+type: flat
+description: >
+  Flat peer topology where all agents collaborate as equals.
+  Best for small teams and startups with five or fewer agents.
+
+topology:
+  root: null
+  levels:
+    - agents: [researcher, file-reader, project-manager]
+      role: peers
+
+delegation_rules:
+  direction: peer
+  cross_level: false
+  peer_collaboration: true
+  review_flow: peer
+
+communication:
+  patterns:
+    - request-response
+    - broadcast
+  gates:
+    - name: verify-before-claim
+      type: hard-gate
+      rule: "Run verification commands before claiming success"
+
+escalation:
+  max_retries: 3
+  escalate_to: project-manager
+  human_escalation: true
+
+loop_limits:
+  review_cycle: 3
+  delegation_depth: 3
+  retry_same_agent: 2
+  total_actions: 30

@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   loadTemplate,
   loadAllTemplates,
+  loadDomainTemplates,
 } from "../../src/builder/template-loader.js";
 
 describe("template-loader", () => {
@@ -200,6 +201,108 @@ name: Minimal Agent
       const templates = await loadAllTemplates(tempDir);
 
       expect(templates.size).toBe(0);
+    });
+  });
+
+  describe("loadDomainTemplates", () => {
+    it("should load templates grouped by domain", async () => {
+      // Set up domain directory structure
+      const coreAgents = join(tempDir, "core", "agents");
+      const swAgents = join(tempDir, "software", "agents");
+      await mkdir(coreAgents, { recursive: true });
+      await mkdir(swAgents, { recursive: true });
+
+      await writeFile(
+        join(coreAgents, "genesis.yaml"),
+        "name: Genesis\nmodel: opus\n"
+      );
+      await writeFile(
+        join(coreAgents, "researcher.yaml"),
+        "name: Researcher\nmodel: haiku\n"
+      );
+      await writeFile(
+        join(swAgents, "coder.yaml"),
+        "name: Coder\nmodel: sonnet\n"
+      );
+      await writeFile(
+        join(swAgents, "architect.yaml"),
+        "name: Architect\nmodel: opus\n"
+      );
+
+      const domains = await loadDomainTemplates(tempDir);
+
+      expect(domains.size).toBe(2);
+      expect(domains.has("core")).toBe(true);
+      expect(domains.has("software")).toBe(true);
+
+      const core = domains.get("core")!;
+      expect(core.size).toBe(2);
+      expect(core.has("genesis")).toBe(true);
+      expect(core.has("researcher")).toBe(true);
+      expect(core.get("genesis")!.model).toBe("opus");
+
+      const sw = domains.get("software")!;
+      expect(sw.size).toBe(2);
+      expect(sw.has("coder")).toBe(true);
+      expect(sw.has("architect")).toBe(true);
+    });
+
+    it("should skip domains with no agents directory", async () => {
+      const coreAgents = join(tempDir, "core", "agents");
+      await mkdir(coreAgents, { recursive: true });
+      // marketing has skills but no agents
+      await mkdir(join(tempDir, "marketing", "skills"), { recursive: true });
+
+      await writeFile(
+        join(coreAgents, "genesis.yaml"),
+        "name: Genesis\nmodel: opus\n"
+      );
+
+      const domains = await loadDomainTemplates(tempDir);
+
+      expect(domains.size).toBe(1);
+      expect(domains.has("core")).toBe(true);
+      expect(domains.has("marketing")).toBe(false);
+    });
+
+    it("should skip domains whose agents directory is empty", async () => {
+      const coreAgents = join(tempDir, "core", "agents");
+      const emptyAgents = join(tempDir, "business", "agents");
+      await mkdir(coreAgents, { recursive: true });
+      await mkdir(emptyAgents, { recursive: true });
+
+      await writeFile(
+        join(coreAgents, "genesis.yaml"),
+        "name: Genesis\nmodel: opus\n"
+      );
+
+      const domains = await loadDomainTemplates(tempDir);
+
+      expect(domains.size).toBe(1);
+      expect(domains.has("core")).toBe(true);
+      expect(domains.has("business")).toBe(false);
+    });
+
+    it("should return empty map for empty domains directory", async () => {
+      const domains = await loadDomainTemplates(tempDir);
+
+      expect(domains.size).toBe(0);
+    });
+
+    it("should skip non-directory entries", async () => {
+      const coreAgents = join(tempDir, "core", "agents");
+      await mkdir(coreAgents, { recursive: true });
+      await writeFile(
+        join(coreAgents, "genesis.yaml"),
+        "name: Genesis\nmodel: opus\n"
+      );
+      // Add a regular file alongside domain directories
+      await writeFile(join(tempDir, "README.md"), "# Domains\n");
+
+      const domains = await loadDomainTemplates(tempDir);
+
+      expect(domains.size).toBe(1);
+      expect(domains.has("core")).toBe(true);
     });
   });
 });

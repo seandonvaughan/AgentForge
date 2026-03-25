@@ -1,0 +1,50 @@
+name: product-team
+type: flat
+description: >
+  Product team with flat peer topology. The Product Manager coordinates
+  and sets direction, but all product agents operate as peers with equal
+  authority in their domains. The PM does not gatekeep — agents can
+  collaborate directly and share findings across the team. The PM
+  synthesizes inputs and makes final prioritization decisions.
+
+topology:
+  coordinator: product-manager
+  levels:
+    - agents: [product-manager, ux-designer, ux-researcher, product-analyst, product-marketing-manager]
+      role: peer
+
+delegation_rules:
+  direction: any
+  cross_level: false
+  peer_collaboration: true
+  review_flow: peer
+
+communication:
+  patterns:
+    - broadcast
+    - peer-exchange
+    - review-loop
+  gates:
+    - name: research-before-design
+      type: soft-gate
+      rule: "UX Designer should review available research findings before producing wireframes"
+    - name: data-before-decision
+      type: soft-gate
+      rule: "Product decisions should reference metrics or research evidence when available"
+    - name: positioning-review
+      type: hard-gate
+      rule: "Launch plans require positioning review from Product Manager before finalization"
+    - name: hypothesis-before-experiment
+      type: hard-gate
+      rule: "A/B tests require a documented hypothesis approved by Product Manager before execution"
+
+escalation:
+  max_retries: 3
+  escalate_to: coordinator
+  human_escalation: true
+
+loop_limits:
+  review_cycle: 3
+  delegation_depth: 3
+  retry_same_agent: 2
+  total_actions: 40

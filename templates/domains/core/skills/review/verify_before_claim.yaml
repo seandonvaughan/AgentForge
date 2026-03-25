@@ -1,0 +1,36 @@
+name: verify_before_claim
+version: "1.0"
+category: review
+domain: core
+model_preference: sonnet
+
+description: >
+  Verification gate that ensures all claims and assertions are
+  backed by evidence before they are presented. Acts as a
+  quality checkpoint to prevent hallucination and unsubstantiated
+  statements.
+
+parameters:
+  - name: claim
+    type: string
+    required: true
+  - name: evidence
+    type: "string[]"
+    required: true
+  - name: confidence_threshold
+    type: number
+    required: false
+    default: 80
+
+gates:
+  pre:
+    - "Claim must be a specific, testable assertion"
+    - "At least one piece of evidence must be provided"
+  post:
+    - "Confidence score must meet threshold"
+    - "All cited sources must be verifiable"
+
+composable_with:
+  - web_search
+  - summarize
+  - code_review

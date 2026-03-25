@@ -28,6 +28,10 @@ export type {
   CoverageGap,
   RecommendedTeam,
   ProjectAssessment,
+  DocumentAnalysis,
+  ResearchFindings,
+  IntegrationRef,
+  ProjectBrief,
 } from "./analysis.js";
 
 export type {
@@ -36,3 +40,41 @@ export type {
   MessageContext,
   AgentMessage,
 } from "./message.js";
+
+export type {
+  DomainId,
+  DomainPack,
+  DomainScanner,
+  ActivationRule,
+} from "./domain.js";
+
+export type {
+  CollaborationTemplate,
+  TopologyDefinition,
+  DelegationRules,
+  CommunicationConfig,
+  GateDefinition,
+  EscalationConfig,
+  LoopLimits,
+  CrossDomainTeam,
+  DomainTeam,
+  Bridge,
+} from "./collaboration.js";
+
+export type {
+  ProgressLedger,
+  TeamEvent,
+  Handoff,
+  DelegationPrimitives,
+} from "./orchestration.js";
+
+export type {
+  Skill,
+  SkillCategory,
+  SkillParameter,
+} from "./skill.js";
+
+export type {
+  DomainScannerPlugin,
+  ScanOutput,
+} from "./scanner.js";

@@ -1,0 +1,34 @@
+name: summarize
+version: "1.0"
+category: analysis
+domain: core
+model_preference: haiku
+
+description: >
+  Condense lengthy content into a concise, structured summary
+  preserving key insights and actionable information.
+
+parameters:
+  - name: content
+    type: string
+    required: true
+  - name: max_length
+    type: number
+    required: false
+    default: 300
+  - name: format
+    type: "enum [bullets, paragraph, structured]"
+    required: false
+    default: structured
+
+gates:
+  pre:
+    - "Input content must not be empty"
+  post:
+    - "Summary must be shorter than original"
+    - "Key points must be preserved"
+
+composable_with:
+  - web_search
+  - doc_lookup
+  - status_report

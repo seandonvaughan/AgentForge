@@ -133,6 +133,142 @@ describe("delegation-manager", () => {
     });
   });
 
+  describe("delegateWork", () => {
+    it("should create a delegation request with ownership_transfer: true", () => {
+      const req = manager.delegateWork(
+        "architect",
+        "coder",
+        "implement the login page",
+        "user needs OAuth support",
+        "full",
+      );
+
+      expect(req.id).toBeTruthy();
+      expect(typeof req.id).toBe("string");
+      expect(req.from).toBe("architect");
+      expect(req.to).toBe("coder");
+      expect(req.task).toBe("implement the login page");
+      expect(req.ownership_transfer).toBe(true);
+      expect(req.context.parent_task).toBe("user needs OAuth support");
+      expect(req.priority).toBe("normal");
+    });
+
+    it("should use response_format 'full' by default", () => {
+      const req = manager.delegateWork(
+        "architect",
+        "coder",
+        "implement feature",
+      );
+
+      expect(req.ownership_transfer).toBe(true);
+    });
+
+    it("should generate unique IDs for separate calls", () => {
+      const req1 = manager.delegateWork("architect", "coder", "task 1");
+      const req2 = manager.delegateWork("architect", "coder", "task 2");
+
+      expect(req1.id).not.toBe(req2.id);
+    });
+
+    it("should validate against delegation graph and reject invalid paths", () => {
+      const req = manager.delegateWork(
+        "coder",
+        "architect",
+        "reverse delegation",
+        "some context",
+        "summary",
+      );
+      const result = manager.validateDelegation(req);
+
+      expect(result.valid).toBe(false);
+      expect(result.reason).toContain("not permitted to delegate");
+    });
+
+    it("should validate against delegation graph and accept valid paths", () => {
+      const req = manager.delegateWork(
+        "architect",
+        "coder",
+        "implement feature",
+        "context here",
+        "structured",
+      );
+      const result = manager.validateDelegation(req);
+
+      expect(result.valid).toBe(true);
+    });
+  });
+
+  describe("askCoworker", () => {
+    it("should create a delegation request with ownership_transfer: false", () => {
+      const req = manager.askCoworker(
+        "architect",
+        "security-auditor",
+        "Is the auth module safe?",
+        "reviewing login flow",
+      );
+
+      expect(req.id).toBeTruthy();
+      expect(typeof req.id).toBe("string");
+      expect(req.from).toBe("architect");
+      expect(req.to).toBe("security-auditor");
+      expect(req.task).toBe("Is the auth module safe?");
+      expect(req.ownership_transfer).toBe(false);
+      expect(req.context.parent_task).toBe("reviewing login flow");
+      expect(req.priority).toBe("normal");
+    });
+
+    it("should generate unique IDs for separate calls", () => {
+      const req1 = manager.askCoworker(
+        "architect",
+        "coder",
+        "question 1",
+      );
+      const req2 = manager.askCoworker(
+        "architect",
+        "coder",
+        "question 2",
+      );
+
+      expect(req1.id).not.toBe(req2.id);
+    });
+
+    it("should validate against delegation graph and reject invalid paths", () => {
+      const req = manager.askCoworker(
+        "file-reader",
+        "architect",
+        "who are you?",
+        "just curious",
+      );
+      const result = manager.validateDelegation(req);
+
+      expect(result.valid).toBe(false);
+    });
+
+    it("should validate against delegation graph and accept valid paths", () => {
+      const req = manager.askCoworker(
+        "test-engineer",
+        "test-runner",
+        "what tests are failing?",
+        "need status update",
+      );
+      const result = manager.validateDelegation(req);
+
+      expect(result.valid).toBe(true);
+    });
+
+    it("should default context to empty when not provided", () => {
+      const req = manager.askCoworker(
+        "architect",
+        "coder",
+        "what is the status?",
+      );
+
+      expect(req.context.parent_task).toBeNull();
+      expect(req.context.files_in_scope).toEqual([]);
+      expect(req.context.deadline).toBeNull();
+    });
+  });
+
   describe("getAvailableDelegates", () => {
     it("should return delegates for an agent in the graph", () => {
       const delegates = manager.getAvailableDelegates("architect");

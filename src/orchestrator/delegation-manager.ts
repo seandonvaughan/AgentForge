@@ -23,6 +23,8 @@ export interface DelegationRequest {
   context: MessageContext;
   /** Urgency of the delegation. */
   priority: MessagePriority;
+  /** Whether task ownership transfers to the delegate. */
+  ownership_transfer: boolean;
 }
 
 /** The outcome of a completed delegation. */
@@ -78,6 +80,60 @@ export class DelegationManager {
         deadline: null,
       },
       priority,
+      ownership_transfer: false,
+    };
+  }
+
+  /**
+   * Delegates a complete task to a coworker, transferring ownership.
+   *
+   * The delegate owns the outcome. Inspired by CrewAI's `delegate_work`.
+   */
+  delegateWork(
+    from: string,
+    to: string,
+    task: string,
+    context?: string,
+    responseFormat?: "summary" | "full" | "structured",
+  ): DelegationRequest {
+    return {
+      id: randomUUID(),
+      from,
+      to,
+      task,
+      context: {
+        parent_task: context ?? null,
+        files_in_scope: [],
+        deadline: null,
+      },
+      priority: "normal",
+      ownership_transfer: true,
+    };
+  }
+
+  /**
+   * Asks a coworker a question without delegating the full task.
+   *
+   * The asker retains ownership. Inspired by CrewAI's `ask_coworker`.
+   */
+  askCoworker(
+    from: string,
+    to: string,
+    question: string,
+    context?: string,
+  ): DelegationRequest {
+    return {
+      id: randomUUID(),
+      from,
+      to,
+      task: question,
+      context: {
+        parent_task: context ?? null,
+        files_in_scope: [],
+        deadline: null,
+      },
+      priority: "normal",
+      ownership_transfer: false,
     };
   }
 

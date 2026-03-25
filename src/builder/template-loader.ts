@@ -3,14 +3,17 @@
  *
  * Provides functions to load individual templates or an entire directory
  * of templates, returning strongly-typed {@link AgentTemplate} objects.
+ * Supports both the legacy flat directory layout (`templates/agents/`)
+ * and the new domain-based layout (`templates/domains/<domain>/agents/`).
  */
 
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import { join, dirname, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
 
 import type { AgentTemplate } from "../types/agent.js";
+import type { DomainId } from "../types/domain.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -129,7 +132,11 @@ export async function loadAllTemplates(
 }
 
 /**
- * Return the default templates directory (`<package-root>/templates/agents/`).
+ * Return the default templates directory.
+ *
+ * Points to `<package-root>/templates/domains/` so callers can iterate
+ * over domain sub-directories.  The legacy `templates/agents/` path is
+ * still readable via {@link loadAllTemplates} when passed explicitly.
  *
  * Works whether the code is running from `src/` (ts-node / tsx) or from
  * `dist/` (compiled JS).
@@ -138,5 +145,44 @@ export function getDefaultTemplatesDir(): string {
   const thisFile = fileURLToPath(import.meta.url);
   // From src/builder/ or dist/builder/, go up two levels to package root.
   const packageRoot = join(dirname(thisFile), "..", "..");
-  return join(packageRoot, "templates", "agents");
+  return join(packageRoot, "templates", "domains");
+}
+
+/**
+ * Load agent templates organized by domain.
+ *
+ * Scans `domainsDir` for sub-directories that contain an `agents/`
+ * folder, loads every `.yaml`/`.yml` file in each, and returns a
+ * two-level map: `DomainId -> (agentKey -> AgentTemplate)`.
+ *
+ * @param domainsDir - Root directory containing domain sub-directories
+ *   (e.g. `templates/domains/`).
+ * @returns A map from domain id to a map of agent templates.
+ */
+export async function loadDomainTemplates(
+  domainsDir: string,
+): Promise<Map<DomainId, Map<string, AgentTemplate>>> {
+  const result = new Map<DomainId, Map<string, AgentTemplate>>();
+
+  const entries = await readdir(domainsDir);
+
+  for (const entry of entries) {
+    const domainPath = join(domainsDir, entry);
+    const agentsPath = join(domainPath, "agents");
+
+    // Skip entries that are not directories
+    const domainStat = await stat(domainPath).catch(() => null);
+    if (!domainStat?.isDirectory()) continue;
+
+    // Skip domains that have no agents/ sub-directory
+    const agentsStat = await stat(agentsPath).catch(() => null);
+    if (!agentsStat?.isDirectory()) continue;
+
+    const templates = await loadAllTemplates(agentsPath);
+    if (templates.size > 0) {
+      result.set(entry as DomainId, templates);
+    }
+  }
+
+  return result;
 }

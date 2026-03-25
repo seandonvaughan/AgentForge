@@ -1,0 +1,29 @@
+name: web_search
+version: "1.0"
+category: research
+domain: core
+model_preference: haiku
+
+description: >
+  Search the web for information, documentation, articles,
+  and references relevant to a task.
+
+parameters:
+  - name: query
+    type: string
+    required: true
+  - name: depth
+    type: "enum [quick, thorough, exhaustive]"
+    required: false
+    default: thorough
+
+gates:
+  pre: []
+  post:
+    - "Results must include source URLs"
+    - "Summary must be under 500 words"
+
+composable_with:
+  - doc_lookup
+  - summarize
+  - competitive_analysis

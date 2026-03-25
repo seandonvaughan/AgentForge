@@ -1,0 +1,39 @@
+name: code_review
+version: "1.0"
+category: review
+domain: software
+model_preference: sonnet
+
+description: >
+  Review source code for correctness, style, performance, and
+  security issues. Produces structured findings with severity
+  levels and suggested fixes.
+
+parameters:
+  - name: code
+    type: string
+    required: true
+  - name: language
+    type: string
+    required: true
+  - name: review_focus
+    type: "enum [correctness, performance, security, style, all]"
+    required: false
+    default: all
+  - name: severity_threshold
+    type: "enum [info, warning, error, critical]"
+    required: false
+    default: warning
+
+gates:
+  pre:
+    - "Code must not be empty"
+    - "Language must be specified"
+  post:
+    - "Only report findings with confidence >= 80"
+    - "Each finding must include line reference and suggested fix"
+
+composable_with:
+  - code_write
+  - verify_before_claim
+  - summarize

@@ -1,0 +1,48 @@
+name: dev-team
+type: hierarchy
+description: >
+  Standard software development team with architect leading implementation
+  agents. Includes strategic, implementation, quality, and utility tiers.
+  Enforces review-before-complete and verify-before-claim gates, with
+  escalation to the architect and ultimately to a human when retries
+  are exhausted.
+
+topology:
+  root: architect
+  levels:
+    - agents: [architect]
+      role: strategic
+    - agents: [coder, security-auditor, test-engineer, devops-engineer, frontend-designer, debugger]
+      role: implementation
+    - agents: [researcher, file-reader, linter, test-runner, documentation-writer, code-explorer]
+      role: utility
+
+delegation_rules:
+  direction: top-down              # top-down | peer | any
+  cross_level: false               # can agents skip levels?
+  peer_collaboration: true         # can same-level agents talk?
+  review_flow: bottom-up           # who reviews whose work?
+
+communication:
+  patterns:
+    - fan-out
+    - pipeline
+    - review-loop
+  gates:
+    - name: review-before-complete
+      type: hard-gate
+      rule: "No task is complete without review from reviews_from agents"
+    - name: verify-before-claim
+      type: hard-gate
+      rule: "Run verification commands before claiming success"
+
+escalation:
+  max_retries: 3
+  escalate_to: root
+  human_escalation: true
+
+loop_limits:
+  review_cycle: 3
+  delegation_depth: 5
+  retry_same_agent: 2
+  total_actions: 50

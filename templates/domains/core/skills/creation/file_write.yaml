@@ -1,0 +1,33 @@
+name: file_write
+version: "1.0"
+category: creation
+domain: core
+model_preference: haiku
+
+description: >
+  Create or overwrite a file with specified content. Supports
+  any text-based file format and validates output structure
+  when a schema is provided.
+
+parameters:
+  - name: path
+    type: string
+    required: true
+  - name: content
+    type: string
+    required: true
+  - name: overwrite
+    type: boolean
+    required: false
+    default: false
+
+gates:
+  pre:
+    - "Path must be a valid file path"
+    - "Content must not be empty"
+  post:
+    - "File must exist at specified path after write"
+
+composable_with:
+  - code_write
+  - summarize

@@ -1,0 +1,35 @@
+name: brainstorm
+version: "1.0"
+category: planning
+domain: core
+model_preference: sonnet
+
+description: >
+  Generate creative ideas, approaches, and solutions for a given
+  problem or opportunity. Produces diverse options ranked by
+  feasibility and impact.
+
+parameters:
+  - name: topic
+    type: string
+    required: true
+  - name: num_ideas
+    type: number
+    required: false
+    default: 5
+  - name: constraints
+    type: "string[]"
+    required: false
+    default: []
+
+gates:
+  pre:
+    - "Topic must be clearly defined"
+  post:
+    - "Must produce at least 3 distinct ideas"
+    - "Each idea must include feasibility assessment"
+
+composable_with:
+  - web_search
+  - summarize
+  - strategic_planning

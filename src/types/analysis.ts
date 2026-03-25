@@ -3,7 +3,12 @@
  *
  * Used during the "forge" phase to assess a project's structure,
  * identify risks and coverage gaps, and recommend an agent team.
+ *
+ * v2 additions: ProjectBrief (universal input replacing code-only
+ * ProjectAssessment), DocumentAnalysis, ResearchFindings, IntegrationRef.
  */
+
+import type { DomainId } from "./domain.js";
 
 /** High-level metadata about the project being analyzed. */
 export interface ProjectInfo {
@@ -69,4 +74,90 @@ export interface ProjectAssessment {
   coverage_gaps: CoverageGap[];
   /** Recommended agent team composition. */
   recommended_team: RecommendedTeam;
+}
+
+// ── v2 Additions ───────────────────────────────────────────────────────
+
+/**
+ * Summary of a document discovered during project scanning.
+ *
+ * Used in the ProjectBrief to represent analyzed business documents,
+ * PRDs, strategy docs, and other non-code artifacts.
+ */
+export interface DocumentAnalysis {
+  /** Document type (e.g. "business-plan", "prd", "pitch-deck"). */
+  type: string;
+  /** Path to the document relative to the project root. */
+  path: string;
+  /** AI-generated summary of the document's contents. */
+  summary: string;
+}
+
+/**
+ * Findings from autonomous web research performed during scanning.
+ *
+ * Known fields are typed for convenience; additional dynamic fields
+ * are permitted via the index signature.
+ */
+export interface ResearchFindings {
+  /** Estimated total addressable market size. */
+  market_size?: string;
+  /** Known competitors in the space. */
+  competitors?: string[];
+  /** Current industry trends relevant to the project. */
+  industry_trends?: string[];
+  /** Additional research data keyed by topic. */
+  [key: string]: unknown;
+}
+
+/**
+ * A reference to an external integration discovered during scanning.
+ *
+ * Examples: Jira project keys, Confluence space IDs, GitHub repos.
+ */
+export interface IntegrationRef {
+  /** Integration type (e.g. "jira", "confluence", "github"). */
+  type: string;
+  /** Integration-specific reference identifier. */
+  ref: string;
+}
+
+/**
+ * Universal project input that replaces the code-only ProjectAssessment.
+ *
+ * The Project Brief works for both dev and business projects and is the
+ * primary input to the team composition pipeline in v2.
+ */
+export interface ProjectBrief {
+  /** High-level project metadata. */
+  project: {
+    /** Project name. */
+    name: string;
+    /** Project type descriptor (e.g. "saas-product", "internal-tool"). */
+    type: string;
+    /** Current project lifecycle stage. */
+    stage: "early" | "growth" | "mature" | "pivot";
+  };
+  /** Project goals. */
+  goals: {
+    /** The primary objective. */
+    primary: string;
+    /** Additional objectives. */
+    secondary: string[];
+  };
+  /** Domain packs relevant to this project. */
+  domains: DomainId[];
+  /** Named constraints (e.g. budget, timeline, team_size). */
+  constraints: Record<string, string>;
+  /** Gathered context from scanners, research, and integrations. */
+  context: {
+    /** Codebase analysis results, if a repo was found. */
+    codebase?: ProjectInfo;
+    /** Analyzed documents found in the project. */
+    documents?: DocumentAnalysis[];
+    /** Autonomous web research findings. */
+    research?: ResearchFindings;
+    /** Discovered integration points. */
+    integrations?: IntegrationRef[];
+  };
 }

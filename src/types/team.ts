@@ -6,6 +6,10 @@
  * between agents.
  */
 
+import type { DomainId } from "./domain.js";
+import type { CollaborationTemplate } from "./collaboration.js";
+import type { ProjectBrief } from "./analysis.js";
+
 /** Agent names grouped by their functional category within a team. */
 export interface TeamAgents {
   /** Agents responsible for high-level planning and decision-making. */
@@ -16,6 +20,8 @@ export interface TeamAgents {
   quality: string[];
   /** Agents providing support services (docs, CI, refactoring, etc.). */
   utility: string[];
+  /** Custom agent categories added by domain packs. */
+  [category: string]: string[];
 }
 
 /** Maps each model tier to the agent names that run on it. */
@@ -51,4 +57,10 @@ export interface TeamManifest {
   model_routing: ModelRouting;
   /** Directed graph describing which agents can delegate to which. */
   delegation_graph: DelegationGraph;
+  /** Universal project brief used to compose this team. */
+  project_brief?: ProjectBrief;
+  /** Domain packs that were activated for this team. */
+  domains?: DomainId[];
+  /** Collaboration template governing team topology and delegation. */
+  collaboration?: CollaborationTemplate;
 }

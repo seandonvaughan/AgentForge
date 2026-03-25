@@ -1,0 +1,38 @@
+name: code_write
+version: "1.0"
+category: creation
+domain: software
+model_preference: sonnet
+
+description: >
+  Generate production-quality source code in a specified language
+  and framework. Follows project conventions, includes error
+  handling, and produces testable output.
+
+parameters:
+  - name: language
+    type: string
+    required: true
+  - name: specification
+    type: string
+    required: true
+  - name: style_guide
+    type: string
+    required: false
+  - name: include_tests
+    type: boolean
+    required: false
+    default: true
+
+gates:
+  pre:
+    - "Language must be specified"
+    - "Specification must describe desired behavior"
+  post:
+    - "Code must be syntactically valid"
+    - "All public functions must have documentation"
+
+composable_with:
+  - code_review
+  - file_write
+  - web_search

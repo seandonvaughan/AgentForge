@@ -1,0 +1,33 @@
+name: status_report
+version: "1.0"
+category: communication
+domain: core
+model_preference: haiku
+
+description: >
+  Generate a structured status report summarizing progress,
+  blockers, and next steps for a task or project phase.
+
+parameters:
+  - name: task_context
+    type: string
+    required: true
+  - name: format
+    type: "enum [brief, detailed, executive]"
+    required: false
+    default: brief
+  - name: include_blockers
+    type: boolean
+    required: false
+    default: true
+
+gates:
+  pre:
+    - "Task context must be provided"
+  post:
+    - "Report must include completion percentage"
+    - "Blockers section must be present if blockers exist"
+
+composable_with:
+  - summarize
+  - escalate

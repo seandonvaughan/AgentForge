@@ -5,6 +5,8 @@
  * including their model tier, skills, triggers, and collaboration rules.
  */
 
+import type { DomainId } from "./domain.js";
+
 /** The Claude model tier an agent runs on. */
 export type ModelTier = "opus" | "sonnet" | "haiku";
 
@@ -71,4 +73,12 @@ export interface AgentTemplate {
   collaboration: AgentCollaboration;
   /** File-context configuration. */
   context: AgentContext;
+  /** Domain this agent belongs to. Defaults to 'software' when omitted. */
+  domain?: DomainId;
+  /** Non-negotiable rules this agent must always follow. */
+  iron_laws?: string[];
+  /** Pre- and post-execution gate checks for this agent. */
+  gates?: { pre: string[]; post: string[] };
+  /** Event types this agent subscribes to for broadcast notifications. */
+  subscriptions?: string[];
 }

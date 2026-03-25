@@ -1,0 +1,30 @@
+name: product
+version: "1.0"
+description: >
+  Product management domain — covers product strategy, UX design,
+  user research, product analytics, and product marketing.
+
+scanner:
+  type: "hybrid"
+  activates_when:
+    - file_patterns: ["*.prd", "*.prd.md", "*-prd.md", "*_prd.md"]
+    - file_patterns: ["*.fig", "*.sketch", "*.xd", "*.wireframe"]
+    - file_patterns: ["*roadmap*", "*-roadmap.*", "*_roadmap.*"]
+    - file_patterns: ["*user-research*", "*user_research*", "*personas*", "*journey-map*"]
+    - directories: ["docs/product/", "docs/prd/", "product/", "wireframes/", "mockups/", "research/"]
+    - files: ["PRD.md", "product-requirements.md", "roadmap.md", "product-roadmap.md"]
+  scanners:
+    - document-analyzer
+    - ux-artifact-scanner
+
+agents:
+  strategic: [product-manager]
+  implementation: [ux-designer, ux-researcher, product-analyst, product-marketing-manager]
+  quality: []
+  utility: []
+
+default_collaboration: product-team
+
+signals:
+  - prd_detected
+  - ux_artifacts_present

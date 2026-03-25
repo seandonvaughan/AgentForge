@@ -1,0 +1,16 @@
+name: core
+version: "1.0"
+description: >
+  Universal core domain — agents and skills available to every team.
+scanner:
+  type: "hybrid"
+  activates_when: []  # Always active
+  scanners:
+    - document-analyzer
+    - integration-detector
+    - web-researcher
+agents:
+  strategic: [genesis, meta-architect]
+  utility: [project-manager, researcher, file-reader]
+default_collaboration: flat
+signals: []  # Always active
