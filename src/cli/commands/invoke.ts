@@ -69,13 +69,6 @@ async function invokeAction(options: {
     return;
   }
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    console.log(
-      `[pending] Set the ANTHROPIC_API_KEY environment variable to run agents against the Claude API.`,
-    );
-    return;
-  }
-
   // Parse optional budget
   const sessionBudgetUsd = options.budget ? parseFloat(options.budget) : 1.0;
   if (isNaN(sessionBudgetUsd) || sessionBudgetUsd <= 0) {

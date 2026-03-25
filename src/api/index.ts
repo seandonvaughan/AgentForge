@@ -6,14 +6,12 @@
  */
 
 export {
-  createClient,
   sendMessage,
   MODEL_MAP,
-  MODEL_DEFAULTS,
+  MODEL_EFFORT_DEFAULTS,
 } from "./client.js";
 
 export type {
-  ModelConfig,
   SendMessageParams,
   SendMessageResult,
 } from "./client.js";

@@ -1,8 +1,9 @@
 /**
  * Agent Runner for the AgentForge system.
  *
- * Executes an agent against a task by calling the Anthropic API
- * with the agent's configured model tier and system prompt.
+ * Executes an agent against a task by calling `claude -p` (print mode)
+ * with the agent's configured model tier, effort, and system prompt.
+ * Uses Claude Code's Max-plan OAuth auth — no API key required.
  */
 
 import type { AgentTemplate, ModelTier } from "../types/index.js";
@@ -20,6 +21,10 @@ export interface AgentRunResult {
   inputTokens: number;
   /** Number of output (completion) tokens consumed. */
   outputTokens: number;
+  /** Total cost in USD for this run. */
+  costUsd: number;
+  /** Actual model ID used by the CLI. */
+  modelUsed: string;
   /** Wall-clock duration in milliseconds. */
   duration_ms: number;
   /** Names of agents this run delegated to (populated externally). */
@@ -36,7 +41,7 @@ export interface RunContext {
 
 /**
  * Runs an agent by sending its system prompt and the user's task
- * to the Anthropic API using the agent's configured model tier.
+ * to `claude -p` using the agent's configured model tier.
  */
 export async function runAgent(
   agent: AgentTemplate,
@@ -60,7 +65,7 @@ export async function runAgent(
 
   const start = Date.now();
 
-  const result = await sendMessage({
+  const result = sendMessage({
     model: agent.model,
     systemPrompt: agent.system_prompt,
     userMessage,
@@ -75,6 +80,8 @@ export async function runAgent(
     response: result.content,
     inputTokens: result.inputTokens,
     outputTokens: result.outputTokens,
+    costUsd: result.costUsd,
+    modelUsed: result.modelUsed,
     duration_ms,
     delegations: [],
   };
