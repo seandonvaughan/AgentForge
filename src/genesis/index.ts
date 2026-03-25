@@ -18,10 +18,11 @@ import { fileURLToPath } from "node:url";
 import { discover } from "./discovery.js";
 import { buildBrief } from "./brief-builder.js";
 import { designTeam } from "./team-designer.js";
-import { forgeTeam } from "../builder/index.js";
+import { writeTeam } from "../builder/index.js";
 import { runFullScan } from "../scanner/index.js";
 import { loadAllDomains, activateDomains } from "../domains/index.js";
 import { loadDomainTemplates } from "../builder/template-loader.js";
+import { customizeTemplate } from "../builder/index.js";
 import type { TeamManifest } from "../types/team.js";
 import type { ProjectBrief } from "../types/analysis.js";
 import type { DomainId } from "../types/domain.js";
@@ -35,6 +36,8 @@ export type { DiscoveryResult, DiscoveryState } from "./discovery.js";
 
 export { getInterviewQuestions } from "./interviewer.js";
 export type { InterviewQuestion } from "./interviewer.js";
+
+export { runInteractiveInterview } from "./interview-runner.js";
 
 export { designTeam } from "./team-designer.js";
 
@@ -199,7 +202,26 @@ export async function runGenesis(options: GenesisOptions = {}): Promise<GenesisR
     scan = undefined;
   }
 
-  // 2. Determine domains
+  // 2. Load domain packs and templates
+  const domainsDir = getDefaultDomainsDir();
+  let domainPacks = new Map<DomainId, import("../types/domain.js").DomainPack>();
+  try {
+    domainPacks = await loadAllDomains(domainsDir);
+  } catch {
+    // No domain packs found — proceed with empty map.
+  }
+
+  let templates = new Map<
+    DomainId,
+    Map<string, import("../types/agent.js").AgentTemplate>
+  >();
+  try {
+    templates = await loadDomainTemplates(domainsDir);
+  } catch {
+    // No templates available — designTeam still works with empty map.
+  }
+
+  // 3. Determine domains
   let domains: DomainId[];
   if (options.domains && options.domains.length > 0) {
     // Caller supplied explicit domains; ensure 'core' is always present
@@ -211,7 +233,7 @@ export async function runGenesis(options: GenesisOptions = {}): Promise<GenesisR
     domains = tempBrief.domains;
   }
 
-  // 3. Build the project brief
+  // 4. Build the project brief
   const brief = buildBrief({
     scan,
     answers: options.answers,
@@ -222,11 +244,41 @@ export async function runGenesis(options: GenesisOptions = {}): Promise<GenesisR
     brief.domains = domains;
   }
 
-  // 4. Forge the team using the existing builder pipeline
-  const manifest = await forgeTeam(projectRoot);
+  // 5. Design the team using designTeam (uses scan data assembled above)
+  const manifest = designTeam(brief, domains, domainPacks, templates);
 
-  // 5. Attach v2 fields to the manifest
-  manifest.domains = domains;
+  // 6. Customize templates and write the team
+  if (scan) {
+    const customizedAgents = new Map<string, import("../types/agent.js").AgentTemplate>();
+
+    // Collect all agent templates from domain templates
+    for (const domainTemplates of templates.values()) {
+      for (const [agentName, template] of domainTemplates) {
+        customizedAgents.set(agentName, template);
+      }
+    }
+
+    // Customize each agent template with project-specific context
+    for (const agentName of [
+      ...manifest.agents.strategic,
+      ...manifest.agents.implementation,
+      ...manifest.agents.quality,
+      ...manifest.agents.utility,
+    ]) {
+      const template = customizedAgents.get(agentName);
+      if (template) {
+        customizedAgents.set(
+          agentName,
+          customizeTemplate(template, scan, brief.project.name),
+        );
+      }
+    }
+
+    // Write the team to .agentforge/
+    await writeTeam(projectRoot, manifest, customizedAgents, scan);
+  }
+
+  // 7. Return the manifest with genesis fields attached
   manifest.project_brief = brief;
 
   return { manifest, brief, domains };

@@ -4,16 +4,26 @@ import { join } from "node:path";
 import yaml from "js-yaml";
 
 import type { TeamManifest } from "../../types/team.js";
-import type { AgentTemplate, ModelTier } from "../../types/agent.js";
-import { Orchestrator } from "../../orchestrator/index.js";
+import type { AgentTemplate } from "../../types/agent.js";
+import { AgentForgeSession, type SessionConfig } from "../../orchestrator/session.js";
 
-async function invokeAction(
-  agentName: string,
-  taskParts: string[],
-): Promise<void> {
-  const task = taskParts.join(" ");
+async function invokeAction(options: {
+  agent: string;
+  task: string;
+  loop?: boolean;
+  budget?: string;
+}): Promise<void> {
+  const { agent: agentName, task } = options;
   const agentforgeDir = join(process.cwd(), ".agentforge");
   const teamPath = join(agentforgeDir, "team.yaml");
+
+  // --loop notice (Sprint 2 placeholder)
+  if (options.loop) {
+    console.log(
+      "[loop mode: use --loop flag once control-loop.ts ships in Sprint 2]",
+    );
+    return;
+  }
 
   // Load team manifest
   let manifest: TeamManifest;
@@ -34,10 +44,11 @@ async function invokeAction(
     ...manifest.agents.utility,
   ];
 
-  // Find the requested agent (case-insensitive match)
+  // Find the requested agent (case-insensitive, slug-aware match)
   const match = allAgents.find(
-    (a) => a.toLowerCase() === agentName.toLowerCase() ||
-           a.toLowerCase().replace(/\s+/g, "-") === agentName.toLowerCase(),
+    (a) =>
+      a.toLowerCase() === agentName.toLowerCase() ||
+      a.toLowerCase().replace(/\s+/g, "-") === agentName.toLowerCase(),
   );
 
   if (!match) {
@@ -47,87 +58,103 @@ async function invokeAction(
     return;
   }
 
-  // Load agent config
+  // Load agent YAML from .agentforge/agents/{agent-name}.yaml
   const filename = match.toLowerCase().replace(/\s+/g, "-") + ".yaml";
   const agentPath = join(agentforgeDir, "agents", filename);
 
-  let agent: AgentTemplate | null = null;
+  let agentTemplate: AgentTemplate | null = null;
   try {
     const raw = await readFile(agentPath, "utf-8");
-    agent = yaml.load(raw) as AgentTemplate;
+    agentTemplate = yaml.load(raw) as AgentTemplate;
   } catch {
-    // Agent config missing but agent is in manifest — proceed with basic info
+    console.error(
+      `Agent config not found at ${agentPath}. Run 'agentforge forge' to generate agent configurations.`,
+    );
+    process.exitCode = 1;
+    return;
   }
 
-  // Determine model tier
-  let model: ModelTier = "sonnet";
-  if (manifest.model_routing.opus.includes(match)) model = "opus";
-  else if (manifest.model_routing.haiku.includes(match)) model = "haiku";
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.log(
+      `[pending] Set the ANTHROPIC_API_KEY environment variable to run agents against the Claude API.`,
+    );
+    return;
+  }
+
+  // Parse optional budget
+  const sessionBudgetUsd = options.budget ? parseFloat(options.budget) : 1.0;
+  if (isNaN(sessionBudgetUsd) || sessionBudgetUsd <= 0) {
+    console.error(`Invalid budget value: "${options.budget}". Must be a positive number.`);
+    process.exitCode = 1;
+    return;
+  }
+
+  // Construct SessionConfig
+  const sessionConfig: SessionConfig = {
+    projectRoot: process.cwd(),
+    sessionBudgetUsd,
+    enableReforge: false,
+    enableCostAwareRouting: true,
+    enableReviewEnforcement: false,
+  };
 
   console.log(`Invoking agent: ${match}`);
-  console.log(`  Model tier: ${model}`);
-  console.log(`  Task: ${task}`);
+  console.log(`  Model tier:  ${agentTemplate.model}`);
+  console.log(`  Budget:      $${sessionBudgetUsd.toFixed(2)}`);
+  console.log(`  Task:        ${task}`);
+  console.log();
 
-  if (agent) {
-    console.log(`  Skills: ${agent.skills.length > 0 ? agent.skills.join(", ") : "(none)"}`);
-    if (agent.collaboration.can_delegate_to.length > 0) {
-      console.log(`  Can delegate to: ${agent.collaboration.can_delegate_to.join(", ")}`);
-    }
+  let session: AgentForgeSession;
+  try {
+    session = await AgentForgeSession.create(sessionConfig);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`Failed to create session: ${message}`);
+    process.exitCode = 1;
+    return;
   }
 
-  // If ANTHROPIC_API_KEY is set, actually run the agent via the Orchestrator.
-  if (process.env.ANTHROPIC_API_KEY && agent) {
-    console.log(`\nSending task to Claude (${model})...\n`);
+  try {
+    const result = await session.runAgent(agentTemplate, task, {});
 
-    // Build agents map for the orchestrator.
-    const agentsMap = new Map<string, AgentTemplate>();
-    for (const name of allAgents) {
-      const fname = name.toLowerCase().replace(/\s+/g, "-") + ".yaml";
-      const aPath = join(agentforgeDir, "agents", fname);
-      try {
-        const raw = await readFile(aPath, "utf-8");
-        const tmpl = yaml.load(raw) as AgentTemplate;
-        agentsMap.set(name, tmpl);
-      } catch {
-        // Skip agents without configs.
-      }
+    console.log("--- Response ---");
+    console.log(result.content);
+
+    const summary = await session.end();
+
+    console.log("\n--- Usage ---");
+    console.log(`  Input tokens:  ${result.inputTokens.toLocaleString()}`);
+    console.log(`  Output tokens: ${result.outputTokens.toLocaleString()}`);
+    console.log(`  Model used:    ${result.modelUsed}`);
+    if (result.escalated) {
+      console.log(`  Escalated:     yes`);
     }
 
-    const orchestrator = new Orchestrator(manifest, agentsMap);
-
+    console.log("\n--- Cost Summary ---");
+    console.log(`  Session ID:    ${summary.sessionId}`);
+    console.log(`  Total spent:   $${summary.totalSpentUsd.toFixed(6)}`);
+    console.log(`  Agent runs:    ${summary.totalAgentRuns}`);
+    console.log(`  Budget:        $${sessionBudgetUsd.toFixed(2)}`);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`\nAgent invocation failed: ${message}`);
+    // Still attempt to end the session to write the cost artifact
     try {
-      const result = await orchestrator.invokeAgent(match, task);
-
-      console.log("--- Response ---");
-      console.log(result.response);
-      console.log("\n--- Usage ---");
-      console.log(`  Input tokens:  ${result.inputTokens.toLocaleString()}`);
-      console.log(`  Output tokens: ${result.outputTokens.toLocaleString()}`);
-      console.log(`  Duration:      ${result.duration_ms}ms`);
-
-      const report = orchestrator.getCostReport();
-      console.log(`  Est. cost:     $${report.total_cost_usd.toFixed(4)}`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(`\nAgent invocation failed: ${message}`);
-      process.exitCode = 1;
+      await session.end();
+    } catch {
+      // Best-effort
     }
-  } else if (!process.env.ANTHROPIC_API_KEY) {
-    console.log(
-      `\n[pending] Set the ANTHROPIC_API_KEY environment variable to run agents against the Claude API.`,
-    );
-  } else {
-    console.log(
-      `\n[pending] Agent config not found. Run 'agentforge forge' to generate agent configurations.`,
-    );
+    process.exitCode = 1;
   }
 }
 
 export default function registerInvokeCommand(program: Command): void {
   program
     .command("invoke")
-    .description("Invoke a specific agent")
-    .argument("<agent>", "Name of the agent to invoke")
-    .argument("<task...>", "Task description")
+    .description("Invoke a specific agent using the v3 AgentForgeSession runtime")
+    .requiredOption("--agent <agent>", "Name of the agent to invoke")
+    .requiredOption("--task <task>", "Task description")
+    .option("--loop", "Enable control-loop mode (Sprint 2)")
+    .option("--budget <usd>", "Maximum USD spend for this session (default: 1.00)")
     .action(invokeAction);
 }

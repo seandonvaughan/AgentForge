@@ -1,7 +1,7 @@
 name: "Intelligent Forge v3 Development Team"
 forged_at: "2026-03-25T02:30:00.000Z"
-updated_at: "2026-03-25T12:00:00.000Z"
-update_reason: "Phase 2 trigger refresh — 6 agents updated with new module coverage"
+updated_at: "2026-03-25T14:00:00.000Z"
+update_reason: "v3.1 reforge — +4 agents covering benchmark, budget, routing, integration runtime modules"
 forged_by: genesis
 project_hash: d9d3d50
 agents:
@@ -30,7 +30,7 @@ agents:
     - domain-pack-dev
     - agent-template-author
 
-  # Runtime Team — orchestrator, execution, cost tracking (9)
+  # Runtime Team — orchestrator, execution, cost tracking (13)
   runtime:
     - runtime-platform-lead
     - cost-engine-designer
@@ -41,6 +41,10 @@ agents:
     - cost-projector-dev
     - feedback-pipeline-dev
     - agent-api-dev
+    - benchmark-lead
+    - budget-runtime-dev
+    - routing-dev
+    - integration-runtime-dev
 
   # Experience Team — CLI, Genesis, docs (6)
   experience:
@@ -113,6 +117,7 @@ model_routing:
     - quality-assurance-lead
     - build-release-lead
     - feedback-analyst
+    - benchmark-lead
   haiku:
     - cto-assistant
     - vp-engineering-assistant
@@ -157,6 +162,9 @@ model_routing:
     - type-propagation-checker
     - coverage-gap-checker
     - docs-sync-checker
+    - budget-runtime-dev
+    - routing-dev
+    - integration-runtime-dev
 
 delegation_graph:
   # Executive assistants (gatekeepers — no delegation, only briefing)
@@ -212,9 +220,12 @@ delegation_graph:
     - event-handoff-context-dev
     - feedback-pipeline-dev
     - agent-api-dev
+    - benchmark-lead
+    - routing-dev
   cost-engine-designer:
     - cost-tracker-dev
     - cost-projector-dev
+    - budget-runtime-dev
 
   # Experience — lead to all devs
   experience-design-lead:
@@ -236,6 +247,7 @@ delegation_graph:
   integration-architecture-lead:
     - external-tools-researcher
     - agent-protocol-researcher
+    - integration-runtime-dev
 
   # QA — lead to testers
   quality-assurance-lead:
@@ -321,13 +333,13 @@ project_brief:
     model_justification: "Every agent must have a documented reason for its model tier"
 
 # Cost Profile (with executive assistants)
-# Opus:  4 agents (7%)  — ~5-7% estimated token spend (assistants reduce invocations 80%+)
-# Sonnet: 12 agents (20%) — ~28% estimated token spend
-# Haiku: 43 agents (73%) — ~65% estimated token spend
-# Total: 59 agents
+# Opus:   4 agents  (6%)  — ~5-7% estimated token spend (assistants reduce invocations 80%+)
+# Sonnet: 13 agents (20%) — ~28% estimated token spend
+# Haiku:  46 agents (72%) — ~65% estimated token spend
+# Total: 63 agents (v3.1 reforge: +benchmark-lead/Sonnet, +budget-runtime-dev/Haiku, +routing-dev/Haiku, +integration-runtime-dev/Haiku)
 #
 # Effort Levels:
 # max:    2 agents (cto, lead-architect) — deepest reasoning
-# high:  14 agents (VPs, team leads, analysts) — complex bounded work
-# medium: 6 agents (migration, security, e2e, prompts) — judgment-required implementation
-# low:   37 agents (coders, testers, researchers, assistants) — mechanical/parallel work
+# high:  15 agents (VPs, team leads, analysts, benchmark-lead) — complex bounded work
+# medium: 7 agents (migration, security, e2e, prompts, integration-runtime-dev) — judgment-required implementation
+# low:   39 agents (coders, testers, researchers, assistants) — mechanical/parallel work

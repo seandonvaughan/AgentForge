@@ -19,6 +19,8 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { promises as fs } from "node:fs";
+import path from "node:path";
 
 import type { AgentTemplate } from "../types/agent.js";
 import type {
@@ -263,11 +265,12 @@ export class AgentForgeSession {
     this.knowledgeStore.clearSession();
 
     const costReport = this.orchestrator.getSessionCostReport();
+    const endedAt = new Date().toISOString();
 
-    return {
+    const summary: SessionSummary = {
       sessionId: this.sessionId,
       startedAt: this.startedAt,
-      endedAt: new Date().toISOString(),
+      endedAt,
       totalAgentRuns: this.totalAgentRuns,
       totalSpentUsd: costReport.totalSpentUsd,
       decisionsRecorded: this.decisionLog.getDecisionsRecordedCount(),
@@ -275,6 +278,25 @@ export class AgentForgeSession {
       reforgeActionsApplied: this.reforgeActionsApplied,
       eventsProcessed: this.messageBus.getEventsProcessedCount(),
     };
+
+    // Write cost artifact
+    const sessionsDir = path.join(this.config.projectRoot, ".agentforge", "sessions");
+    await fs.mkdir(sessionsDir, { recursive: true });
+    const costEntry = {
+      sessionId: this.sessionId,
+      startedAt: this.startedAt,
+      endedAt,
+      totalSpentUsd: costReport.totalSpentUsd,
+      totalAgentRuns: this.totalAgentRuns,
+      agentBreakdown: costReport.agentBreakdown,
+    };
+    const filename = `cost-entry-${this.sessionId}-${Date.now()}.json`;
+    await fs.writeFile(
+      path.join(sessionsDir, filename),
+      JSON.stringify(costEntry, null, 2),
+    );
+
+    return summary;
   }
 
   // =========================================================================

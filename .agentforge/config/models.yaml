@@ -33,6 +33,7 @@ sonnet:
     - "Code review requiring cross-module reasoning"
     - "Research synthesis and proposal evaluation"
     - "Test strategy and security analysis"
+    - benchmark-lead
   estimated_spend_pct: 31
 
 haiku:
@@ -80,6 +81,9 @@ haiku:
     - type-propagation-checker
     - coverage-gap-checker
     - docs-sync-checker
+    - budget-runtime-dev
+    - routing-dev
+    - integration-runtime-dev
   invocation_rules:
     - "Implementation from specs — code writing, test writing, template authoring"
     - "Parallel research tasks — web search, pattern scanning, API exploration"
