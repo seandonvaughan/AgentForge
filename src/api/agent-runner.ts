@@ -6,7 +6,7 @@
  */
 
 import type { AgentTemplate, ModelTier } from "../types/index.js";
-import { sendMessage } from "./client.js";
+import { sendMessage, MODEL_EFFORT_DEFAULTS } from "./client.js";
 
 /** Result of running an agent against a task. */
 export interface AgentRunResult {
@@ -64,6 +64,7 @@ export async function runAgent(
     model: agent.model,
     systemPrompt: agent.system_prompt,
     userMessage,
+    effort: agent.effort ?? MODEL_EFFORT_DEFAULTS[agent.model],
   });
 
   const duration_ms = Date.now() - start;

@@ -32,6 +32,13 @@ export const MODEL_DEFAULTS: Record<ModelTier, { maxTokens: number; temperature:
   haiku: { maxTokens: 2048, temperature: 0.3 },
 };
 
+/** Default effort level per model tier — prevents cheap tiers from inheriting expensive effort. */
+export const MODEL_EFFORT_DEFAULTS: Record<ModelTier, EffortLevel> = {
+  opus: "high",
+  sonnet: "medium",
+  haiku: "low",
+};
+
 /** Cached singleton client instance. */
 let cachedClient: Anthropic | null = null;
 
@@ -101,7 +108,7 @@ export async function sendMessage(params: SendMessageParams): Promise<SendMessag
     temperature: params.temperature ?? defaults.temperature,
     system: params.systemPrompt,
     messages: [
-      { role: "user", content: params.userMessage },
+      { role: "user" as const, content: params.userMessage },
     ],
   });
 
