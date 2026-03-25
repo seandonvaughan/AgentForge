@@ -94,4 +94,16 @@ export interface AgentTemplate {
   gates?: { pre: string[]; post: string[] };
   /** Event types this agent subscribes to for broadcast notifications. */
   subscriptions?: string[];
+  /** Per-invocation and per-session cost limits for this agent. */
+  budget?: {
+    /** Maximum cost in USD for a single invocation. */
+    maxCostPerInvocationUsd: number;
+    /** Maximum total cost in USD for an entire session. */
+    maxCostPerSessionUsd: number;
+  };
+  /**
+   * Confidence score (0–1) below which the agent should escalate to a
+   * higher-tier model. Populated by CostAwareRunner escalation logic.
+   */
+  confidenceEscalationThreshold?: number;
 }
