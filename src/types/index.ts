@@ -138,6 +138,47 @@ export type {
   SessionSummary,
 } from "./session.js";
 
+// v4 Integration API
+export type {
+  AutonomyTier,
+  AgentState,
+  V4MessagePriority,
+  MessageCategory,
+  DisplayTierHint,
+  ReviewStatus,
+  MemoryCategory,
+  TopicDomain,
+  ToolPermission,
+  MessageEnvelope,
+  TaskAssignPayload,
+  TaskResultPayload,
+  AgentStatusPayload,
+  ReviewLifecyclePayload,
+  MeetingCoordinationPayload,
+  MemoryQueryPayload,
+  MemoryResultPayload,
+  MemoryHit,
+  ReforgeProposalPayload,
+  ReforgeApprovalPayload,
+  ReforgeApplicationPayload,
+  EscalationPayload,
+  AgentStatusFile,
+  ToolRegistryEntry,
+  MemoryRegistryEntry,
+  AgentCapabilityEntry,
+  RoleRegistryEntry,
+  OrgNode,
+  DelegationContext,
+  SprintVelocityRecord,
+  LearnedPattern,
+  ApiVersionManifest,
+  AutonomyLevelCompat,
+} from "./v4-api.js";
+export {
+  autonomyLevelToTier,
+  tierToAutonomyLevel,
+} from "./v4-api.js";
+
 // Team Mode (v3.2)
 export type {
   TeamModeState,
