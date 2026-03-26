@@ -3019,54 +3019,14 @@ function fireNotification(title, body) {
   }
 }
 
-// ── Simulate Data Updates ─────────────────────────────────
-function simulateUpdate() {
-  // Slightly vary agent task counts
-  const rows = document.querySelectorAll('#ceo-tasks, #ceo-cost');
-  window._data.agents.forEach(agent => {
-    if (Math.random() < 0.3 && agent.status === 'active') {
-      agent.tasks += 1;
-      agent.cost = parseFloat((agent.cost + Math.random() * 0.05).toFixed(2));
-    }
-  });
-
-  // Randomly add bus event
-  if (Math.random() < 0.4) {
-    const topics = ['agent.task.complete','system.heartbeat','flywheel.updated','review.requested','sprint.item.done'];
-    const agents_list = ['ceo','cto','architect','coder','debugger','linter','genesis'];
-    const priorities = ['normal','normal','normal','high','low'];
-    const topic = topics[Math.floor(Math.random()*topics.length)];
-    const from = agents_list[Math.floor(Math.random()*agents_list.length)];
-    const to = agents_list[Math.floor(Math.random()*agents_list.length)];
-    const priority = priorities[Math.floor(Math.random()*priorities.length)];
-    const now = new Date();
-    const time = now.toLocaleTimeString('en-US',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
-
-    const feed = document.getElementById('bus-feed');
-    if (feed) {
-      const msg = document.createElement('div');
-      msg.className = `bus-msg priority-${priority}`;
-      msg.innerHTML = `
-        <span class="bus-timestamp">${time}</span>
-        <span class="bus-topic">${topic}</span>
-        <span class="bus-message">${from} → ${to}: simulated event</span>
-        <span class="priority-badge ${priority}">${priority}</span>
-        <span class="bus-agents">${from}→${to}</span>
-        <span class="bus-timing">${Math.floor(Math.random()*300)}s</span>
-        <span class="topic-badge">${Math.floor(Math.random()*12)+1}</span>
-      `;
-      msg.onclick = () => showPayload(msg, topic, `${from}→${to}`, `{"from":"${from}","to":"${to}","ts":"${now.toISOString()}"}`);
-      feed.insertBefore(msg, feed.firstChild);
-      // Keep max 20 rows
-      while (feed.children.length > 20) feed.removeChild(feed.lastChild);
-      const counter = document.getElementById('bus-counter');
-      if (counter) counter.textContent = feed.children.length + ' events';
-
-      if (priority === 'urgent') {
-        fireNotification('AgentForge — Urgent Bus Event', `${topic}: ${from}→${to}`);
-      }
-    }
+// ── Bus empty state ────────────────────────────────────────
+function showBusEmptyState() {
+  const feed = document.getElementById('bus-feed');
+  const counter = document.getElementById('bus-counter');
+  if (feed && feed.children.length === 0) {
+    feed.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px;">No events yet — invoke an agent to see real bus events here.</div>';
   }
+  if (counter) counter.textContent = '0 events';
 }
 
 // ── Auto Refresh ──────────────────────────────────────────
@@ -3220,7 +3180,6 @@ function renderBusFromJSON(events) {
 }
 
 function refreshData() {
-  // Try fetching live data files, fallback to simulate
   const files = [
     ['/.agentforge/data/activity-feed.json', 'activity'],
     ['/.agentforge/data/cost-analytics.json', 'costAnalytics'],
@@ -3244,7 +3203,7 @@ function refreshData() {
           renderSprintFromJSON(parsed);
         }
       })
-      .catch(() => { /* silently use simulated data */ });
+      .catch(() => { /* file not available yet — section shows last loaded state */ });
   });
 
   // P2-4: fetch real bus events
@@ -3255,12 +3214,11 @@ function refreshData() {
         window._data.busEvents = events;
         renderBusFromJSON(events);
       } else {
-        simulateUpdate();
+        showBusEmptyState();
       }
     })
     .catch(() => {
-      // No real bus events — fall through to simulated update
-      simulateUpdate();
+      showBusEmptyState();
     });
 
   refreshCountdown = 5;
