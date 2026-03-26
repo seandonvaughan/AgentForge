@@ -91,9 +91,9 @@ triggers:
     - cash-flow*
     - fundraising*
     - '**/*.json'
+    - '**/*.yaml'
     - '**/*.html'
     - '**/*.ts'
-    - '**/*.yaml'
     - '**/*.tsx'
   keywords:
     - financial model
@@ -130,3 +130,5 @@ context:
     - README.md
     - package.json
     - tsconfig.json
+    - .github/workflows/ci.yml
+    - .github/workflows/release.yml

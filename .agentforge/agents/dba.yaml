@@ -102,9 +102,9 @@ triggers:
     - mongod.conf
     - redis.conf
     - '**/*.json'
+    - '**/*.yaml'
     - '**/*.html'
     - '**/*.ts'
-    - '**/*.yaml'
     - '**/*.tsx'
   keywords:
     - database
@@ -139,3 +139,5 @@ context:
     - README.md
     - package.json
     - tsconfig.json
+    - .github/workflows/ci.yml
+    - .github/workflows/release.yml

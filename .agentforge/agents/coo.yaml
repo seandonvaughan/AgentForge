@@ -86,9 +86,9 @@ triggers:
     - status-report*
     - milestone*
     - '**/*.json'
+    - '**/*.yaml'
     - '**/*.html'
     - '**/*.ts'
-    - '**/*.yaml'
     - '**/*.tsx'
   keywords:
     - operations
@@ -121,3 +121,5 @@ context:
     - README.md
     - package.json
     - tsconfig.json
+    - .github/workflows/ci.yml
+    - .github/workflows/release.yml

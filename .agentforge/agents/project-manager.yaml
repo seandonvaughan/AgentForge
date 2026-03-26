@@ -23,7 +23,7 @@ system_prompt: >
   ## Project Context
 
   - Detected stack: TypeScript, YAML, Markdown, JSON, HTML | Next.js, Vue, Svelte, Nuxt, React, GraphQL, Express,
-  Django, FastAPI, Flask, Tailwind CSS, Gin, Fastify, Actix, Fiber | Package manager: npm
+  Django, FastAPI, Flask, Tailwind CSS, Gin, Fastify, Actix, Fiber | Package manager: npm | CI: github-actions
 
   - Project root: AgentForge
 
@@ -139,9 +139,9 @@ skills:
 triggers:
   file_patterns:
     - '**/*.json'
+    - '**/*.yaml'
     - '**/*.html'
     - '**/*.ts'
-    - '**/*.yaml'
     - '**/*.tsx'
   keywords:
     - status
@@ -173,3 +173,5 @@ context:
     - README.md
     - package.json
     - tsconfig.json
+    - .github/workflows/ci.yml
+    - .github/workflows/release.yml

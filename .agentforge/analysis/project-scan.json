@@ -20,6 +20,26 @@
         "patterns": []
       },
       {
+        "file_path": ".github/workflows/ci.yml",
+        "language": "YAML",
+        "loc": 107,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics"
+        ]
+      },
+      {
+        "file_path": ".github/workflows/release.yml",
+        "language": "YAML",
+        "loc": 76,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
         "file_path": "README.md",
         "language": "Markdown",
         "loc": 109,
@@ -466,6 +486,15 @@
         "patterns": []
       },
       {
+        "file_path": "docs/v4/v4.3-ui-directive.md",
+        "language": "Markdown",
+        "loc": 50,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
         "file_path": "package-lock.json",
         "language": "JSON",
         "loc": 3081,
@@ -581,6 +610,40 @@
         "exports": [],
         "framework_indicators": [],
         "patterns": []
+      },
+      {
+        "file_path": "src/autonomous/index.ts",
+        "language": "TypeScript",
+        "loc": 8,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "src/autonomous/sprint-framework.ts",
+        "language": "TypeScript",
+        "loc": 247,
+        "imports": [
+          "node:crypto"
+        ],
+        "exports": [
+          "SprintPhase",
+          "SprintItem",
+          "SprintPlan",
+          "SprintResult",
+          "AutonomousSprintFramework"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "spread operator",
+          "template literals",
+          "classes",
+          "interfaces",
+          "type aliases"
+        ]
       },
       {
         "file_path": "src/benchmark/benchmark-agents.ts",
@@ -1265,6 +1328,32 @@
         ]
       },
       {
+        "file_path": "src/communication/multi-reviewer.ts",
+        "language": "TypeScript",
+        "loc": 165,
+        "imports": [
+          "node:crypto"
+        ],
+        "exports": [
+          "ConsensusRule",
+          "InlineComment",
+          "ReviewerVerdict",
+          "MultiReviewRecord",
+          "MultiReviewer"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "spread operator",
+          "nullish coalescing",
+          "template literals",
+          "classes",
+          "interfaces",
+          "type aliases"
+        ]
+      },
+      {
         "file_path": "src/communication/review-router.ts",
         "language": "TypeScript",
         "loc": 234,
@@ -1475,11 +1564,12 @@
       {
         "file_path": "src/flywheel/capability-inheritance.ts",
         "language": "TypeScript",
-        "loc": 144,
+        "loc": 187,
         "imports": [
           "../communication/v4-message-bus.js"
         ],
         "exports": [
+          "SkillCategory",
           "AgentSkill",
           "PropagationResult",
           "CapabilityInheritance"
@@ -1488,30 +1578,41 @@
         "patterns": [
           "generics",
           "arrow functions",
+          "destructuring",
           "spread operator",
           "optional chaining",
           "template literals",
           "classes",
-          "interfaces"
+          "interfaces",
+          "type aliases"
         ]
       },
       {
         "file_path": "src/flywheel/flywheel-monitor.ts",
         "language": "TypeScript",
-        "loc": 128,
+        "loc": 246,
         "imports": [
+          "node:fs",
           "../communication/v4-message-bus.js"
         ],
         "exports": [
           "SprintVelocity",
           "FlywheelComponent",
           "FlywheelHealth",
+          "FlywheelFileAdapter",
+          "RealFlywheelFileAdapter",
+          "InMemoryFlywheelFileAdapter",
+          "FlywheelMonitorOptions",
+          "FlywheelSnapshot",
           "FlywheelMonitor"
         ],
         "framework_indicators": [],
         "patterns": [
+          "generics",
           "arrow functions",
           "spread operator",
+          "nullish coalescing",
+          "template literals",
           "classes",
           "interfaces"
         ]
@@ -2639,7 +2740,7 @@
       {
         "file_path": "src/org-graph/org-graph.ts",
         "language": "TypeScript",
-        "loc": 326,
+        "loc": 353,
         "imports": [
           "../types/v4-api.js",
           "../communication/v4-message-bus.js"
@@ -4555,6 +4656,19 @@
         ]
       },
       {
+        "file_path": "tests/autonomous/sprint-framework.test.ts",
+        "language": "TypeScript",
+        "loc": 226,
+        "imports": [
+          "vitest"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "arrow functions"
+        ]
+      },
+      {
         "file_path": "tests/benchmark/benchmark.test.ts",
         "language": "TypeScript",
         "loc": 76,
@@ -4719,6 +4833,20 @@
         ]
       },
       {
+        "file_path": "tests/communication/multi-reviewer.test.ts",
+        "language": "TypeScript",
+        "loc": 133,
+        "imports": [
+          "vitest",
+          "../../src/communication/multi-reviewer.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "arrow functions"
+        ]
+      },
+      {
         "file_path": "tests/communication/review-router.test.ts",
         "language": "TypeScript",
         "loc": 147,
@@ -4867,7 +4995,7 @@
       {
         "file_path": "tests/flywheel/capability-inheritance.test.ts",
         "language": "TypeScript",
-        "loc": 110,
+        "loc": 177,
         "imports": [
           "vitest",
           "../../src/flywheel/capability-inheritance.js",
@@ -4882,7 +5010,7 @@
       {
         "file_path": "tests/flywheel/flywheel-monitor.test.ts",
         "language": "TypeScript",
-        "loc": 99,
+        "loc": 180,
         "imports": [
           "vitest",
           "../../src/flywheel/flywheel-monitor.js",
@@ -5779,7 +5907,7 @@
       {
         "file_path": "tests/org-graph/org-graph.test.ts",
         "language": "TypeScript",
-        "loc": 382,
+        "loc": 423,
         "imports": [
           "vitest",
           "../../src/org-graph/org-graph.js",
@@ -6264,10 +6392,10 @@
     ],
     "languages": {
       "JSON": 5,
-      "Markdown": 37,
+      "YAML": 99,
+      "Markdown": 38,
       "HTML": 1,
-      "TypeScript": 236,
-      "YAML": 97
+      "TypeScript": 241
     },
     "frameworks_detected": [
       "Next.js",
@@ -6286,11 +6414,12 @@
       "Actix",
       "Fiber"
     ],
-    "total_files": 376,
-    "total_loc": 74907,
+    "total_files": 384,
+    "total_loc": 76296,
     "directory_structure": [
       ".claude",
       ".claude-plugin",
+      ".github",
       ".remember",
       "commands",
       "dashboard",
@@ -6301,10 +6430,10 @@
     ]
   },
   "git": {
-    "total_commits": 81,
+    "total_commits": 82,
     "contributors": [
       {
-        "commits": 80,
+        "commits": 81,
         "name": "Sean Vaughan",
         "email": "sean@vaughanfamily.org"
       },
@@ -6317,8 +6446,8 @@
     "active_files": [
       {
         "path": ".agentforge/team.yaml",
-        "changes": 10,
-        "last_modified": "2026-03-26T11:07:24-05:00"
+        "changes": 11,
+        "last_modified": "2026-03-26T11:22:02-05:00"
       },
       {
         "path": "src/types/index.ts",
@@ -6327,8 +6456,8 @@
       },
       {
         "path": ".agentforge/analysis/project-scan.json",
-        "changes": 6,
-        "last_modified": "2026-03-26T11:07:24-05:00"
+        "changes": 7,
+        "last_modified": "2026-03-26T11:22:02-05:00"
       },
       {
         "path": "src/cli/commands/invoke.ts",
@@ -6356,6 +6485,11 @@
         "last_modified": "2026-03-25T01:41:06-05:00"
       },
       {
+        "path": ".claude-plugin/plugin.json",
+        "changes": 4,
+        "last_modified": "2026-03-26T11:22:02-05:00"
+      },
+      {
         "path": "src/memory/semantic-search.ts",
         "changes": 4,
         "last_modified": "2026-03-26T11:03:35-05:00"
@@ -6374,6 +6508,11 @@
         "path": "src/api/client.ts",
         "changes": 4,
         "last_modified": "2026-03-25T18:55:20-05:00"
+      },
+      {
+        "path": "dashboard/index.html",
+        "changes": 3,
+        "last_modified": "2026-03-26T11:22:02-05:00"
       },
       {
         "path": "tests/reforge/v4-reforge-engine.test.ts",
@@ -6396,11 +6535,6 @@
         "last_modified": "2026-03-26T10:46:44-05:00"
       },
       {
-        "path": ".claude-plugin/plugin.json",
-        "changes": 3,
-        "last_modified": "2026-03-26T00:22:30-05:00"
-      },
-      {
         "path": "commands/reforge.md",
         "changes": 3,
         "last_modified": "2026-03-26T00:22:30-05:00"
@@ -6409,11 +6543,6 @@
         "path": ".agentforge/reviews/active/v4-cto-sprint-plan/metadata.yaml",
         "changes": 3,
         "last_modified": "2026-03-25T23:01:53-05:00"
-      },
-      {
-        "path": "package.json",
-        "changes": 3,
-        "last_modified": "2026-03-25T21:28:49-05:00"
       }
     ],
     "branch_count": 3,
@@ -6421,8 +6550,8 @@
     "churn_rate": [
       {
         "path": ".agentforge/analysis/project-scan.json",
-        "additions": 8353,
-        "deletions": 1311
+        "additions": 8461,
+        "deletions": 1337
       },
       {
         "path": "docs/superpowers/plans/2026-03-25-v32-team-mode-implementation-plan.md",
@@ -6436,8 +6565,8 @@
       },
       {
         "path": "dashboard/index.html",
-        "additions": 1652,
-        "deletions": 13
+        "additions": 2276,
+        "deletions": 57
       },
       {
         "path": "docs/v4/architecture.md",
@@ -6465,6 +6594,11 @@
         "deletions": 0
       },
       {
+        "path": ".agentforge/team.yaml",
+        "additions": 562,
+        "deletions": 409
+      },
+      {
         "path": ".agentforge/reviews/active/v4-cto-sprint-plan/document.md",
         "additions": 954,
         "deletions": 0
@@ -6483,11 +6617,6 @@
         "path": "docs/v4/cto-sprint-plan-v2.md",
         "additions": 905,
         "deletions": 0
-      },
-      {
-        "path": ".agentforge/team.yaml",
-        "additions": 482,
-        "deletions": 391
       },
       {
         "path": "src/scanner/dependency-mapper.ts",
@@ -6523,7 +6652,7 @@
     "commit_frequency": [
       {
         "period": "2026-03",
-        "count": 81
+        "count": 82
       }
     ],
     "age_days": 1
@@ -6594,14 +6723,95 @@
     ]
   },
   "ci": {
-    "ci_provider": "none",
-    "config_files": [],
-    "pipelines": [],
-    "test_commands": [],
-    "build_commands": [],
-    "deploy_targets": [],
-    "has_linting": false,
-    "has_type_checking": false,
+    "ci_provider": "github-actions",
+    "config_files": [
+      ".github/workflows/ci.yml",
+      ".github/workflows/release.yml"
+    ],
+    "pipelines": [
+      {
+        "name": "CI",
+        "triggers": [
+          "push",
+          "pull_request"
+        ],
+        "steps": [
+          "actions/checkout@v4",
+          "Setup Node.js ${{ matrix.node-version }}",
+          "actions/setup-node@v4",
+          "Install dependencies",
+          "npm ci",
+          "Run ESLint",
+          "npm run lint",
+          "actions/checkout@v4",
+          "Setup Node.js ${{ matrix.node-version }}",
+          "actions/setup-node@v4",
+          "Install dependencies",
+          "npm ci",
+          "Run tests",
+          "npx vitest run --reporter=junit --outputFile=test-results/junit.xml",
+          "Upload test results",
+          "actions/upload-artifact@v4",
+          "actions/checkout@v4",
+          "Setup Node.js ${{ matrix.node-version }}",
+          "actions/setup-node@v4",
+          "Install dependencies",
+          "npm ci",
+          "Build",
+          "npm run build",
+          "actions/checkout@v4",
+          "Setup Node.js ${{ matrix.node-version }}",
+          "actions/setup-node@v4",
+          "Install dependencies",
+          "npm ci",
+          "Type check",
+          "npx tsc --noEmit"
+        ]
+      },
+      {
+        "name": "Release",
+        "triggers": [
+          "push"
+        ],
+        "steps": [
+          "actions/checkout@v4",
+          "Setup Node.js",
+          "actions/setup-node@v4",
+          "Install dependencies",
+          "npm ci",
+          "Run lint",
+          "npm run lint",
+          "Run tests",
+          "npx vitest run",
+          "Type check",
+          "npx tsc --noEmit",
+          "actions/checkout@v4",
+          "Setup Node.js",
+          "actions/setup-node@v4",
+          "Install dependencies",
+          "npm ci",
+          "Build",
+          "npm run build",
+          "Generate changelog",
+          "PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || git rev-list --max-parents=0 HEAD)\necho \"## What's Changed\" > changelog.md\necho \"\" >> changelog.md\ngit log \"${PREV_TAG}..HEAD\" --pretty=format:\"- %s (%h)\" --no-merges >> changelog.md\necho \"\" >> changelog.md\n",
+          "Create GitHub Release",
+          "softprops/action-gh-release@v2"
+        ]
+      }
+    ],
+    "test_commands": [
+      "npx vitest"
+    ],
+    "build_commands": [
+      "npm run build",
+      "tsc",
+      "npx tsc"
+    ],
+    "deploy_targets": [
+      "Release"
+    ],
+    "has_linting": true,
+    "has_type_checking": true,
     "has_security_scanning": false,
     "has_docker": false,
     "dockerfile_count": 0
@@ -6791,6 +7001,11 @@
       "type": "handbook",
       "path": "docs/v4/v4.2-roadmap.md",
       "summary": "# AgentForge v4.2 Roadmap — Production Polish & Autonomous Readiness\n\n**Planned by:** CTO\n**Date:** 2026-03-26\n**Source:** v4.1 audit, deferred P2 items, new team capabilities\n**Team:** 34 agents (10 new hires)\n**Budget:** $400\n\n---\n\n## Goal\n\nPrepare AgentForge for autonomous self-improvement (v4.3+). Everything the team needs to plan, execute, test, and ship a version upgrade without human direction must work by the end of v4.2.\n\n---\n\n## Priority Matrix\n\n### P0 — Foundation for Autonomy (Weeks "
+    },
+    {
+      "type": "unknown",
+      "path": "docs/v4/v4.3-ui-directive.md",
+      "summary": "# v4.3 Autonomous Sprint — UI/Dashboard Directive\n\n**From:** CEO\n**To:** R&D Lead, Dashboard Architect, Sprint Planner\n**Priority:** High — this is the primary focus area for v4.3\n\n---\n\n## Directive\n\nThe Command Center dashboard must evolve from a simulated monitoring tool into a **real-time, production-grade operations center**. The team should autonomously plan and execute a comprehensive dashboard overhaul.\n\n## Required Dashboard Sections (v4.3 target)\n\n### New Sections to Add\n1. **Agent Acti"
     }
   ],
   "integrations": [
@@ -6873,6 +7088,10 @@
     {
       "type": "jira",
       "ref": "BSD-3"
+    },
+    {
+      "type": "jira",
+      "ref": "P1-10"
     },
     {
       "type": "jira",

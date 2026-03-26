@@ -91,9 +91,9 @@ triggers:
     - build-vs-buy*
     - '*.rfc.md'
     - '**/*.json'
+    - '**/*.yaml'
     - '**/*.html'
     - '**/*.ts'
-    - '**/*.yaml'
     - '**/*.tsx'
   keywords:
     - technology strategy
@@ -128,3 +128,5 @@ context:
     - README.md
     - package.json
     - tsconfig.json
+    - .github/workflows/ci.yml
+    - .github/workflows/release.yml

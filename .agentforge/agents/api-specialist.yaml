@@ -20,7 +20,7 @@ system_prompt: >
   ## Project Context
 
   - Tech stack: TypeScript, YAML, Markdown, JSON, HTML | Next.js, Vue, Svelte, Nuxt, React, GraphQL, Express, Django,
-  FastAPI, Flask, Tailwind CSS, Gin, Fastify, Actix, Fiber | Package manager: npm
+  FastAPI, Flask, Tailwind CSS, Gin, Fastify, Actix, Fiber | Package manager: npm | CI: github-actions
 
   - Conventions: Linters: eslint | Testing: vitest | Build: typescript | Common patterns: generics, arrow functions,
   template literals, async/await, spread operator
@@ -98,8 +98,8 @@ triggers:
     - '**/*.vue'
     - '**/*.svelte'
     - '**/*.json'
-    - '**/*.html'
     - '**/*.yaml'
+    - '**/*.html'
   keywords:
     - implement
     - refactor
@@ -138,3 +138,5 @@ context:
     - README.md
     - package.json
     - tsconfig.json
+    - .github/workflows/ci.yml
+    - .github/workflows/release.yml

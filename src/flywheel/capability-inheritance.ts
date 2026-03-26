@@ -5,11 +5,15 @@
  * Agents can inherit skills from peers, with proficiency scaling.
  */
 
+export type SkillCategory = "technical" | "strategic" | "operational" | "quality";
+
 export interface AgentSkill {
   skillId: string;
   proficiency: number;       // 0.0–1.0
   exerciseCount: number;
   sourceAgentId?: string;     // set if inherited
+  category?: SkillCategory;
+  version?: string;           // semver
 }
 
 export interface PropagationResult {
@@ -109,6 +113,8 @@ export class CapabilityInheritance {
       proficiency: inheritedProficiency,
       exerciseCount: 0,
       sourceAgentId,
+      ...(sourceSkill.category !== undefined && { category: sourceSkill.category }),
+      ...(sourceSkill.version !== undefined && { version: sourceSkill.version }),
     };
 
     let targetSkills = this.skills.get(targetAgentId);
@@ -139,5 +145,42 @@ export class CapabilityInheritance {
 
   getPropagationHistory(): PropagationResult[] {
     return this.history.map((r) => ({ ...r }));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Skill Taxonomy
+  // ---------------------------------------------------------------------------
+
+  /** Returns skills for a given agent filtered by category. */
+  getSkillsByCategory(agentId: string, category: SkillCategory): AgentSkill[] {
+    const agentSkills = this.skills.get(agentId);
+    if (!agentSkills) return [];
+    return Array.from(agentSkills.values())
+      .filter((s) => s.category === category)
+      .map((s) => ({ ...s }));
+  }
+
+  /** Aggregates all skills across all agents, grouping by skillId. */
+  listAllSkills(): { skillId: string; agents: string[]; category?: SkillCategory }[] {
+    const map = new Map<string, { agents: string[]; category?: SkillCategory }>();
+    for (const [agentId, agentSkills] of this.skills.entries()) {
+      for (const skill of agentSkills.values()) {
+        let entry = map.get(skill.skillId);
+        if (!entry) {
+          entry = { agents: [], category: skill.category };
+          map.set(skill.skillId, entry);
+        }
+        entry.agents.push(agentId);
+        // If category wasn't set on the first entry but is set on a later one, update it
+        if (!entry.category && skill.category) {
+          entry.category = skill.category;
+        }
+      }
+    }
+    return Array.from(map.entries()).map(([skillId, data]) => ({
+      skillId,
+      agents: data.agents,
+      category: data.category,
+    }));
   }
 }

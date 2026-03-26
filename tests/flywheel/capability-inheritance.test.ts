@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { CapabilityInheritance, type AgentSkill, type PropagationResult } from "../../src/flywheel/capability-inheritance.js";
+import { CapabilityInheritance, type AgentSkill, type PropagationResult, type SkillCategory } from "../../src/flywheel/capability-inheritance.js";
 import { V4MessageBus } from "../../src/communication/v4-message-bus.js";
 
 describe("CapabilityInheritance", () => {
@@ -82,6 +82,73 @@ describe("CapabilityInheritance", () => {
       const history = ci.getPropagationHistory();
       expect(history).toHaveLength(1);
       expect(history[0].success).toBe(true);
+    });
+  });
+
+  // --- getSkillsByCategory ---
+
+  describe("getSkillsByCategory", () => {
+    it("filters skills by category", () => {
+      ci.registerSkill("cto", { skillId: "typescript", proficiency: 0.9, exerciseCount: 10, category: "technical" });
+      ci.registerSkill("cto", { skillId: "planning", proficiency: 0.8, exerciseCount: 5, category: "strategic" });
+      ci.registerSkill("cto", { skillId: "code-review", proficiency: 0.7, exerciseCount: 3, category: "quality" });
+
+      const technical = ci.getSkillsByCategory("cto", "technical");
+      expect(technical).toHaveLength(1);
+      expect(technical[0].skillId).toBe("typescript");
+
+      const strategic = ci.getSkillsByCategory("cto", "strategic");
+      expect(strategic).toHaveLength(1);
+      expect(strategic[0].skillId).toBe("planning");
+    });
+
+    it("returns empty array when no skills match category", () => {
+      ci.registerSkill("cto", { skillId: "typescript", proficiency: 0.9, exerciseCount: 10, category: "technical" });
+      expect(ci.getSkillsByCategory("cto", "operational")).toHaveLength(0);
+    });
+
+    it("returns empty array for unknown agent", () => {
+      expect(ci.getSkillsByCategory("ghost", "technical")).toHaveLength(0);
+    });
+  });
+
+  // --- listAllSkills ---
+
+  describe("listAllSkills", () => {
+    it("aggregates skills across agents", () => {
+      ci.registerSkill("cto", { skillId: "typescript", proficiency: 0.9, exerciseCount: 10, category: "technical" });
+      ci.registerSkill("architect", { skillId: "typescript", proficiency: 0.7, exerciseCount: 5, category: "technical" });
+      ci.registerSkill("cto", { skillId: "planning", proficiency: 0.8, exerciseCount: 3, category: "strategic" });
+
+      const all = ci.listAllSkills();
+      const tsEntry = all.find((s) => s.skillId === "typescript")!;
+      expect(tsEntry.agents).toContain("cto");
+      expect(tsEntry.agents).toContain("architect");
+      expect(tsEntry.category).toBe("technical");
+
+      const planEntry = all.find((s) => s.skillId === "planning")!;
+      expect(planEntry.agents).toEqual(["cto"]);
+      expect(planEntry.category).toBe("strategic");
+    });
+
+    it("returns empty array when no skills registered", () => {
+      expect(ci.listAllSkills()).toHaveLength(0);
+    });
+  });
+
+  // --- category preserved through propagation ---
+
+  describe("category preservation through propagation", () => {
+    it("preserves category field when skill is propagated", () => {
+      ci.registerSkill("cto", { skillId: "typescript", proficiency: 0.9, exerciseCount: 10, category: "technical", version: "1.0.0" });
+      ci.optIn("architect", "typescript");
+      ci.propagate("cto", "architect", "typescript");
+
+      const skills = ci.getSkills("architect");
+      const ts = skills.find((s) => s.skillId === "typescript")!;
+      expect(ts.sourceAgentId).toBe("cto");
+      expect(ts.category).toBe("technical");
+      expect(ts.version).toBe("1.0.0");
     });
   });
 

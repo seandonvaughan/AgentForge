@@ -292,6 +292,33 @@ export class OrgGraph {
   }
 
   // ---------------------------------------------------------------------------
+  // Visualization exports
+  // ---------------------------------------------------------------------------
+
+  /** Export the org graph as a Mermaid diagram string. */
+  toMermaid(): string {
+    const lines: string[] = ["graph TD"];
+    for (const node of this.nodes.values()) {
+      for (const reportId of node.directReportIds) {
+        lines.push(`  ${node.agentId} --> ${reportId}`);
+      }
+    }
+    return lines.join("\n");
+  }
+
+  /** Export the org graph as a Graphviz DOT format string. */
+  toDOT(): string {
+    const lines: string[] = ["digraph OrgGraph {"];
+    for (const node of this.nodes.values()) {
+      for (const reportId of node.directReportIds) {
+        lines.push(`  "${node.agentId}" -> "${reportId}";`);
+      }
+    }
+    lines.push("}");
+    return lines.join("\n");
+  }
+
+  // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
 

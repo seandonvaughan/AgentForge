@@ -357,6 +357,47 @@ describe("OrgGraph", () => {
     });
   });
 
+  // --- toMermaid ---
+
+  describe("toMermaid", () => {
+    it("produces valid Mermaid with correct edges", () => {
+      graph = buildStandardOrg();
+      const mermaid = graph.toMermaid();
+      expect(mermaid).toContain("graph TD");
+      expect(mermaid).toContain("ceo --> cto");
+      expect(mermaid).toContain("ceo --> coo");
+      expect(mermaid).toContain("ceo --> cfo");
+      expect(mermaid).toContain("cto --> architect");
+      expect(mermaid).toContain("cto --> team-mode-lead");
+    });
+
+    it("produces minimal valid output for empty graph", () => {
+      const mermaid = graph.toMermaid();
+      expect(mermaid).toBe("graph TD");
+    });
+  });
+
+  // --- toDOT ---
+
+  describe("toDOT", () => {
+    it("produces valid DOT with correct edges", () => {
+      graph = buildStandardOrg();
+      const dot = graph.toDOT();
+      expect(dot).toContain("digraph OrgGraph {");
+      expect(dot).toContain('"ceo" -> "cto";');
+      expect(dot).toContain('"ceo" -> "coo";');
+      expect(dot).toContain('"ceo" -> "cfo";');
+      expect(dot).toContain('"cto" -> "architect";');
+      expect(dot).toContain('"cto" -> "team-mode-lead";');
+      expect(dot).toMatch(/\}$/);
+    });
+
+    it("produces minimal valid output for empty graph", () => {
+      const dot = graph.toDOT();
+      expect(dot).toBe("digraph OrgGraph {\n}");
+    });
+  });
+
   // --- bus integration ---
 
   describe("bus integration", () => {
