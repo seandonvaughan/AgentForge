@@ -3,15 +3,229 @@
  *
  * Creates the full directory structure including manifests, agent configs,
  * model routing, delegation graph, analysis artifacts, and a forge log.
+ *
+ * Merge behaviour (P0-4): before writing team.yaml the writer reads any
+ * existing manifest and merges it with the newly-scanned one so that
+ * manually-added agents, delegation_graph entries, model_routing slots,
+ * team_size, version, and other custom metadata are never lost.
  */
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import yaml from "js-yaml";
 
 import type { AgentTemplate } from "../types/agent.js";
-import type { TeamManifest, ModelRouting, DelegationGraph } from "../types/team.js";
+import type { TeamManifest, ModelRouting, DelegationGraph, TeamAgents } from "../types/team.js";
 import type { FullScanResult } from "../scanner/index.js";
+
+// ---------------------------------------------------------------------------
+// Merge helpers (P0-4: preserve manually-added agents on re-forge)
+// ---------------------------------------------------------------------------
+
+/**
+ * Attempt to read and parse the existing `team.yaml` in `.agentforge/`.
+ * Returns `null` if the file does not exist or cannot be parsed.
+ */
+async function readExistingManifest(baseDir: string): Promise<TeamManifest | null> {
+  const teamYamlPath = join(baseDir, "team.yaml");
+  try {
+    const raw = await readFile(teamYamlPath, "utf-8");
+    const parsed = yaml.load(raw);
+    if (parsed && typeof parsed === "object") {
+      return parsed as TeamManifest;
+    }
+    return null;
+  } catch {
+    // File does not exist or is unreadable — treat as no existing manifest
+    return null;
+  }
+}
+
+/**
+ * Merge all agent names from every category in `existing` that are not
+ * already present in `scanned` into the corresponding category bucket.
+ *
+ * Rules:
+ * - An agent already in `scanned` keeps its scanned category.
+ * - An agent only in `existing` is preserved in its existing category.
+ * - No agent is ever removed.
+ */
+function mergeAgents(
+  scanned: TeamAgents,
+  existing: TeamAgents,
+): TeamAgents {
+  // Collect the full set of agent names already in the scanned manifest
+  const scannedNames = new Set<string>([
+    ...scanned.strategic,
+    ...scanned.implementation,
+    ...scanned.quality,
+    ...scanned.utility,
+    // include any extra dynamic categories
+    ...Object.entries(scanned)
+      .filter(([k]) => !["strategic", "implementation", "quality", "utility"].includes(k))
+      .flatMap(([, v]) => v),
+  ]);
+
+  const merged: TeamAgents = {
+    strategic: [...scanned.strategic],
+    implementation: [...scanned.implementation],
+    quality: [...scanned.quality],
+    utility: [...scanned.utility],
+  };
+
+  // Copy over any extra dynamic categories from the scanned manifest first
+  for (const [cat, agents] of Object.entries(scanned)) {
+    if (!["strategic", "implementation", "quality", "utility"].includes(cat)) {
+      merged[cat] = [...agents];
+    }
+  }
+
+  // Now walk every category in the existing manifest
+  for (const [cat, agents] of Object.entries(existing)) {
+    if (!Array.isArray(agents)) continue;
+    for (const agent of agents) {
+      if (scannedNames.has(agent)) continue; // already present — skip
+      // Ensure the category bucket exists in merged
+      if (!merged[cat]) {
+        merged[cat] = [];
+      }
+      merged[cat].push(agent);
+      scannedNames.add(agent); // prevent duplicates if the same agent appears in multiple existing categories
+    }
+  }
+
+  return merged;
+}
+
+/**
+ * Merge model routing: keep all existing tier assignments for agents that
+ * appear in the merged agent list but are not in the scanned routing.
+ */
+function mergeModelRouting(
+  scanned: ModelRouting,
+  existing: ModelRouting,
+  mergedAgentNames: Set<string>,
+): ModelRouting {
+  const scannedAgentNames = new Set<string>([
+    ...scanned.opus,
+    ...scanned.sonnet,
+    ...scanned.haiku,
+  ]);
+
+  const merged: ModelRouting = {
+    opus: [...scanned.opus],
+    sonnet: [...scanned.sonnet],
+    haiku: [...scanned.haiku],
+  };
+
+  for (const tier of ["opus", "sonnet", "haiku"] as const) {
+    for (const agent of existing[tier] ?? []) {
+      if (!scannedAgentNames.has(agent) && mergedAgentNames.has(agent)) {
+        merged[tier].push(agent);
+        scannedAgentNames.add(agent);
+      }
+    }
+  }
+
+  return merged;
+}
+
+/**
+ * Merge delegation graph: keep all existing entries that are not already
+ * present in the scanned graph.
+ */
+function mergeDelegationGraph(
+  scanned: DelegationGraph,
+  existing: DelegationGraph,
+): DelegationGraph {
+  const merged: DelegationGraph = { ...scanned };
+
+  for (const [agent, delegates] of Object.entries(existing)) {
+    if (!(agent in merged)) {
+      merged[agent] = [...delegates];
+    }
+  }
+
+  return merged;
+}
+
+/**
+ * Merge a newly-scanned {@link TeamManifest} with an existing one so that
+ * manually-added agents and metadata are never lost.
+ *
+ * Merge rules:
+ * 1. All agents already in `existing` that are NOT in `scanned` are
+ *    preserved in their original category.
+ * 2. Newly discovered agents from `scanned` are added.
+ * 3. `model_routing` follows the same additive rule.
+ * 4. `delegation_graph` entries not in `scanned` are preserved from
+ *    `existing`.
+ * 5. `team_size`, `version`, and any extra top-level metadata fields from
+ *    `existing` that are absent from `scanned` are carried forward.
+ * 6. `forged_at` and `project_hash` are always taken from `scanned`
+ *    (they reflect the latest run).
+ */
+export function mergeManifests(
+  scanned: TeamManifest,
+  existing: TeamManifest,
+): TeamManifest {
+  const mergedAgents = mergeAgents(scanned.agents, existing.agents);
+
+  // Build the full set of merged agent names for routing validation
+  const mergedAgentNames = new Set<string>(
+    Object.values(mergedAgents).flatMap((v) => (Array.isArray(v) ? v : [])),
+  );
+
+  const mergedRouting = mergeModelRouting(
+    scanned.model_routing,
+    existing.model_routing,
+    mergedAgentNames,
+  );
+
+  const mergedDelegation = mergeDelegationGraph(
+    scanned.delegation_graph,
+    existing.delegation_graph,
+  );
+
+  // Carry forward top-level metadata from both manifests that is outside the
+  // set of core managed keys (e.g. team_size, version).
+  // Priority: scanned fields win over existing fields when both define the same key.
+  const coreKeys = new Set([
+    "name", "forged_at", "forged_by", "project_hash",
+    "agents", "model_routing", "delegation_graph",
+    "project_brief", "domains", "collaboration",
+  ]);
+
+  const extraMeta: Record<string, unknown> = {};
+
+  // First, pull extra fields from existing (lower priority)
+  for (const [key, value] of Object.entries(existing as Record<string, unknown>)) {
+    if (!coreKeys.has(key)) {
+      extraMeta[key] = value;
+    }
+  }
+
+  // Then, override / add extra fields from scanned (higher priority)
+  for (const [key, value] of Object.entries(scanned as Record<string, unknown>)) {
+    if (!coreKeys.has(key)) {
+      extraMeta[key] = value;
+    }
+  }
+
+  return {
+    ...extraMeta,
+    name: scanned.name,
+    forged_at: scanned.forged_at,
+    forged_by: scanned.forged_by,
+    project_hash: scanned.project_hash,
+    agents: mergedAgents,
+    model_routing: mergedRouting,
+    delegation_graph: mergedDelegation,
+    ...(scanned.project_brief !== undefined ? { project_brief: scanned.project_brief } : {}),
+    ...(scanned.domains !== undefined ? { domains: scanned.domains } : existing.domains !== undefined ? { domains: existing.domains } : {}),
+    ...(scanned.collaboration !== undefined ? { collaboration: scanned.collaboration } : {}),
+  } as TeamManifest;
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -183,16 +397,24 @@ export async function writeTeam(
     ensureDir(configDir),
   ]);
 
-  // Build derived artifacts
+  // Build derived artifacts from the scanned agents
   const modelRouting = buildModelRouting(manifest, agents);
   const delegationGraph = buildDelegationGraph(agents);
 
   // Update manifest with computed routing and delegation
-  const fullManifest: TeamManifest = {
+  const scannedManifest: TeamManifest = {
     ...manifest,
     model_routing: modelRouting,
     delegation_graph: delegationGraph,
   };
+
+  // P0-4: Merge with any existing team.yaml so manually-added agents are
+  // never lost.  If no existing file is found, proceed with the scanned
+  // manifest unchanged.
+  const existingManifest = await readExistingManifest(baseDir);
+  const fullManifest: TeamManifest = existingManifest
+    ? mergeManifests(scannedManifest, existingManifest)
+    : scannedManifest;
 
   // Build forge log
   const forgeLog = buildForgeLog(fullManifest, agents, scanResult);

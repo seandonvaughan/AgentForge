@@ -2,7 +2,11 @@
 
 export {
   MetaLearningEngine,
+  InMemoryTierPersistence,
   type TaskOutcome,
+  type SessionOutcome,
+  type PromotionEvent,
+  type TierPersistence,
   type PatternStat,
   type Insight,
   type KnowledgeGraphEdge,

@@ -40,3 +40,8 @@ export {
   ReviewSessionSerializer,
   type SerializedReviewSession,
 } from "./review-session-serializer.js";
+
+export {
+  BusFileAdapter,
+  type BusEvent,
+} from "./bus-file-adapter.js";

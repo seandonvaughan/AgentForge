@@ -1,39 +1,120 @@
 ---
-description: Invoke an agent via AgentForgeSession
-argument-hint: --agent <name> --task <description> [--budget <usd>] [--loop]
+description: Invoke an agent as a real Claude Code subagent
+argument-hint: <agent-name> "<task description>"
 ---
 
 # AgentForge Invoke
 
-Run a task through a specific agent using the V4 session runtime. Creates a tracked session via `V4SessionManager` and writes a cost entry to `.agentforge/sessions/` on completion.
+Dispatch a real Claude Code subagent using the specified agent's YAML configuration.
+The agent runs with its own system prompt and model, producing a tracked session record.
 
-## Flags
+## Usage
 
-- `--agent <name>` — Agent to invoke (e.g., `genesis-pipeline-dev`, `cost-engine-designer`)
-- `--task <description>` — Task description to pass to the agent
-- `--budget <usd>` — Optional spend cap in USD (e.g., `0.50`)
-- `--loop` — Enable the control loop (experimental — runs multiple iterations until task satisfied or exit condition hit)
+```
+/agentforge:invoke <agent-name> "<task description>"
+```
+
+Example:
+```
+/agentforge:invoke cto "assess technical feasibility of v4.4"
+```
 
 ## What to Do
 
-1. Read `.agentforge/team.yaml` to find the target agent and its configuration
-2. Look up the agent's system prompt from `.agentforge/agents/<name>.yaml`
-3. Run the agent with the given task using the appropriate model (from model_routing)
-4. On completion, write a cost entry: `.agentforge/sessions/cost-entry-<sessionId>-<timestamp>.json`
-5. Display the result and cost summary
+1. **Read the agent YAML** from `.agentforge/agents/<agent-name>.yaml`:
+   - Extract `name`, `system_prompt`, `model`, and `skills`
+   - If the file does not exist, stop and report: "Agent '<name>' not found at .agentforge/agents/<name>.yaml"
 
-## Control Loop (--loop)
+2. **Map model field to Claude model ID**:
+   - `opus`   → `claude-opus-4-6`
+   - `sonnet` → `claude-sonnet-4-6`
+   - `haiku`  → `claude-haiku-4-5`
+   - Any unrecognized value defaults to `claude-sonnet-4-6`
 
-When `--loop` is set, the session runs iteratively:
-- Selects the next speaker each iteration
-- Checks exit conditions: max iterations (20), budget exhausted, loop detected, no progress, task satisfied
-- Reports exit reason on completion
+3. **Dispatch a subagent** using the Agent tool with:
+   - `description`: `"Running <AgentName> agent: <first 80 chars of task>"`
+   - `prompt`: The user's task description verbatim
+   - `model`: The mapped Claude model ID (from step 2)
+   - The agent's `system_prompt` as the subagent's context/instructions
 
-Note: `--loop` is experimental. Validate results carefully before relying on multi-iteration sessions.
+   The subagent prompt should be structured as:
+   ```
+   <system>
+   <agent-system-prompt-here>
+   </system>
+
+   <task>
+   <user-task-here>
+   </task>
+   ```
+
+4. **Capture the result** — the subagent's full response text.
+
+5. **Write a session record** to disk:
+   - Generate a session ID: `session-<timestamp>-<random-6-chars>`
+   - Write `.agentforge/sessions/<sessionId>.json`:
+     ```json
+     {
+       "sessionId": "<id>",
+       "agentId": "<agent-name>",
+       "agentName": "<name from yaml>",
+       "model": "<mapped model id>",
+       "task": "<user task>",
+       "response": "<subagent response>",
+       "startedAt": "<ISO timestamp>",
+       "completedAt": "<ISO timestamp>",
+       "estimatedTokens": <rough estimate: (system_prompt.length + task.length + response.length) / 4>
+     }
+     ```
+   - Append a summary entry to `.agentforge/sessions/index.json` (create the array if file doesn't exist):
+     ```json
+     [
+       {
+         "sessionId": "<id>",
+         "agentId": "<agent-name>",
+         "model": "<mapped model id>",
+         "task": "<first 120 chars of task>",
+         "status": "completed",
+         "completedAt": "<ISO timestamp>"
+       }
+     ]
+     ```
+
+6. **Emit bus events** (if a `V4MessageBus` instance is available in context):
+   - `agent.invoked` — published before the subagent runs
+   - `agent.responded` — published after the subagent returns
+   - `agent.error` — published if the subagent throws
+
+7. **Display the result**:
+   ```
+   ✓ Agent: <AgentName> (<model>)
+   ✓ Task: <task description>
+   ✓ Session: <sessionId>
+
+   <subagent response>
+
+   Session saved to .agentforge/sessions/<sessionId>.json
+   ```
+
+## Flags (future)
+
+- `--budget <usd>` — Optional spend cap (not enforced in v4.4, recorded only)
+- `--parallel <agent1,agent2,...>` — Fan-out to multiple agents (P1-3, not yet implemented)
+- `--loop` — Iterative control loop (experimental, reserved for future use)
+
+## Model Routing
+
+| YAML `model` | Claude Model ID       | Use When                         |
+|-------------|----------------------|----------------------------------|
+| `opus`      | `claude-opus-4-6`    | Strategic, complex reasoning     |
+| `sonnet`    | `claude-sonnet-4-6`  | General tasks, balanced cost     |
+| `haiku`     | `claude-haiku-4-5`   | Simple, fast, low-cost tasks     |
+
+Always respect the agent's configured model. Do not upgrade or downgrade without explicit instruction.
 
 ## V4 Integration
 
-- Sessions are tracked via `V4SessionManager` (`src/session/v4-session-manager.ts`) — supports persist/resume across crashes
-- Delegations route through the org graph (`src/org-graph/delegation-protocol.ts`) — checks ancestor authority
-- All invocation events publish to the `V4MessageBus` — use `/agentforge:bus history` to inspect
-- Task outcomes feed the meta-learning engine for flywheel insights
+- Sessions written to `.agentforge/sessions/` are read by the dashboard Session Timeline
+- Bus events from invocations feed the Bus Monitor (when `BusFileAdapter` is active)
+- `MetaLearningEngine` reads `sessions/index.json` for flywheel promotion decisions
+- Delegation authority checks (`DelegationProtocol`) apply when an agent sub-delegates

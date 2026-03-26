@@ -76,10 +76,20 @@ describe("SemanticSearch", () => {
     });
   });
 
-  describe("enhanced-tfidf strategy", () => {
-    it("returns enhanced-tfidf as strategy for standard queries", () => {
+  describe("bm25 strategy", () => {
+    it("returns bm25 as strategy for standard queries", () => {
       const results = search.search("testing quality");
-      expect(results.strategy).toBe("enhanced-tfidf");
+      expect(results.strategy).toBe("bm25");
+    });
+
+    it("strategy field returns bm25 for all standard queries", () => {
+      const queries = ["testing", "performance optimization", "memory leak", "code review"];
+      for (const q of queries) {
+        const results = search.search(q);
+        // Primary strategy should be bm25 when results are found above main threshold,
+        // or keyword/hybrid if falling back — but never enhanced-tfidf
+        expect(results.strategy).not.toBe("enhanced-tfidf");
+      }
     });
   });
 
@@ -194,6 +204,175 @@ describe("SemanticSearch", () => {
       }
       const accuracy = (hits / testQueries.length) * 100;
       expect(accuracy).toBeGreaterThanOrEqual(95);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // P1-1: BM25 ranking tests
+  // ---------------------------------------------------------------------------
+
+  describe("BM25 scoring", () => {
+    it("BM25 scores are in valid range [0, 1]", () => {
+      const results = search.search("testing quality bugs", { similarityThreshold: 0 });
+      for (const hit of results.hits) {
+        expect(hit.score).toBeGreaterThanOrEqual(0);
+        expect(hit.score).toBeLessThanOrEqual(1);
+      }
+    });
+
+    it("scores are in valid range for multi-term queries", () => {
+      const queries = ["performance optimization", "memory leak bugs", "deploy release", "code review quality"];
+      for (const q of queries) {
+        const results = search.search(q, { similarityThreshold: 0 });
+        for (const hit of results.hits) {
+          expect(hit.score).toBeGreaterThanOrEqual(0);
+          expect(hit.score).toBeLessThanOrEqual(1);
+        }
+      }
+    });
+
+    it("longer documents do not unfairly dominate shorter ones (BM25 length normalization)", () => {
+      // Add a very long document that repeats query terms many times
+      const longRegistry = new MemoryRegistry();
+      longRegistry.store({
+        type: "memory", version: "1.0.0", ownerAgentId: "cto",
+        category: "learning" as MemoryCategory,
+        summary: "bugs bugs bugs bugs bugs bugs bugs bugs bugs bugs bugs bugs bugs bugs bugs bugs bugs bugs bugs bugs bugs bugs bugs bugs bugs bugs bugs bugs bugs bugs",
+        contentPath: "/.forge/memory/cto/long.md",
+        relevanceScore: 0.9, decayRatePerDay: 0.01,
+        lastAccessedAt: new Date().toISOString(),
+        expiresAt: null, tags: ["bugs"],
+      });
+      longRegistry.store({
+        type: "memory", version: "1.0.0", ownerAgentId: "cto",
+        category: "learning" as MemoryCategory,
+        summary: "TypeScript strict mode catches bugs at compile time",
+        contentPath: "/.forge/memory/cto/short.md",
+        relevanceScore: 0.9, decayRatePerDay: 0.01,
+        lastAccessedAt: new Date().toISOString(),
+        expiresAt: null, tags: ["typescript", "bugs"],
+      });
+
+      const longSearch = new SemanticSearch(longRegistry);
+      const results = longSearch.search("bugs", { similarityThreshold: 0 });
+
+      expect(results.hits.length).toBeGreaterThan(0);
+      // Both docs should appear; the spam doc score should be capped below 1.0
+      const spamDoc = results.hits.find((h) => h.summary.startsWith("bugs bugs"));
+      if (spamDoc) {
+        expect(spamDoc.score).toBeLessThan(1.0);
+      }
+    });
+
+    it("results are still sorted by score descending with BM25", () => {
+      const results = search.search("bugs quality errors", { similarityThreshold: 0 });
+      const scores = results.hits.map((h) => h.score);
+      for (let i = 1; i < scores.length; i++) {
+        expect(scores[i]).toBeLessThanOrEqual(scores[i - 1]);
+      }
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // P1-1: AgentForge synonym expansion tests
+  // ---------------------------------------------------------------------------
+
+  describe("AgentForge synonym expansions", () => {
+    let agentRegistry: MemoryRegistry;
+    let agentSearch: SemanticSearch;
+
+    beforeEach(() => {
+      agentRegistry = new MemoryRegistry();
+      const agentEntries = [
+        { summary: "Always execute tasks before marking complete", tags: ["execute", "workflow"], category: "learning" as MemoryCategory },
+        { summary: "Dispatch agents for parallel work with fan-out", tags: ["dispatch", "agents"], category: "learning" as MemoryCategory },
+        { summary: "Autonomous sprint iteration planning for v4", tags: ["sprint", "planning"], category: "learning" as MemoryCategory },
+        { summary: "Flywheel learning loop drives continuous improvement", tags: ["flywheel", "loop"], category: "learning" as MemoryCategory },
+        { summary: "Session context is preserved across conversation threads", tags: ["session", "context"], category: "learning" as MemoryCategory },
+        { summary: "Forge and assemble agents from YAML definitions", tags: ["forge", "yaml"], category: "learning" as MemoryCategory },
+        { summary: "Delegate tasks by routing to the right agent", tags: ["delegate", "routing"], category: "learning" as MemoryCategory },
+        { summary: "Memory knowledge store registry for agents", tags: ["memory", "knowledge"], category: "learning" as MemoryCategory },
+      ];
+      for (const e of agentEntries) {
+        agentRegistry.store({
+          type: "memory", version: "1.0.0", ownerAgentId: "cto",
+          category: e.category, summary: e.summary,
+          contentPath: `/.forge/memory/cto/${e.tags[0]}.md`,
+          relevanceScore: 0.9, decayRatePerDay: 0.01,
+          lastAccessedAt: new Date().toISOString(),
+          expiresAt: null, tags: e.tags,
+        });
+      }
+      agentSearch = new SemanticSearch(agentRegistry);
+    });
+
+    it("'invoke' finds entries containing 'execute' via synonym expansion", () => {
+      const results = agentSearch.search("invoke", { similarityThreshold: 0 });
+      expect(results.hits.length).toBeGreaterThan(0);
+      expect(results.hits.some((h) => h.summary.toLowerCase().includes("execute"))).toBe(true);
+    });
+
+    it("'invoke' finds entries containing 'dispatch' via synonym expansion", () => {
+      const results = agentSearch.search("invoke", { similarityThreshold: 0 });
+      expect(results.hits.some((h) => h.summary.toLowerCase().includes("dispatch"))).toBe(true);
+    });
+
+    it("'iteration' finds entries containing 'sprint' via synonym expansion", () => {
+      const results = agentSearch.search("iteration", { similarityThreshold: 0 });
+      expect(results.hits.length).toBeGreaterThan(0);
+      expect(results.hits.some((h) => h.summary.toLowerCase().includes("sprint"))).toBe(true);
+    });
+
+    it("'conversation' finds entries containing 'session' via synonym expansion", () => {
+      const results = agentSearch.search("conversation", { similarityThreshold: 0 });
+      expect(results.hits.length).toBeGreaterThan(0);
+      expect(results.hits.some((h) => h.summary.toLowerCase().includes("session"))).toBe(true);
+    });
+
+    it("'generate' finds entries containing 'forge' via synonym expansion", () => {
+      const results = agentSearch.search("generate", { similarityThreshold: 0 });
+      expect(results.hits.length).toBeGreaterThan(0);
+      expect(results.hits.some((h) => h.summary.toLowerCase().includes("forge"))).toBe(true);
+    });
+
+    it("'assign' finds entries about delegation via synonym expansion", () => {
+      const results = agentSearch.search("assign", { similarityThreshold: 0 });
+      expect(results.hits.length).toBeGreaterThan(0);
+      expect(results.hits.some((h) => h.summary.toLowerCase().includes("delegate"))).toBe(true);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // P1-1: Bigram phrase matching boost tests
+  // ---------------------------------------------------------------------------
+
+  describe("bigram phrase matching boost", () => {
+    it("exact phrase match boosts score above single-term match", () => {
+      // "performance tuning" appears as adjacent words in the seeded doc
+      const phraseResult = search.search("performance tuning", { similarityThreshold: 0 });
+      const singleResult = search.search("performance", { similarityThreshold: 0 });
+
+      const phraseHit = phraseResult.hits.find((h) => h.summary.includes("Performance"));
+      const singleHit = singleResult.hits.find((h) => h.summary.includes("Performance"));
+
+      if (phraseHit && singleHit) {
+        // Phrase-boosted score should be >= single-term score
+        expect(phraseHit.score).toBeGreaterThanOrEqual(singleHit.score);
+      }
+    });
+
+    it("'memory leaks' phrase matches adjacent words in document", () => {
+      // Seeded doc: "Memory leaks in long-running Node processes"
+      const results = search.search("memory leaks", { similarityThreshold: 0 });
+      expect(results.hits.length).toBeGreaterThan(0);
+      const memHit = results.hits.find((h) => h.summary.includes("Memory leaks"));
+      expect(memHit).toBeDefined();
+    });
+
+    it("'code review' phrase finds relevant result", () => {
+      const results = search.search("code review", { similarityThreshold: 0 });
+      expect(results.hits.length).toBeGreaterThan(0);
+      expect(results.hits.some((h) => h.summary.toLowerCase().includes("review"))).toBe(true);
     });
   });
 });

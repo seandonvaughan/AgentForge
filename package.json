@@ -1,6 +1,6 @@
 {
   "name": "agentforge",
-  "version": "0.4.2",
+  "version": "0.4.4",
   "description": "Adaptive Agent Team Builder for Claude Code",
   "type": "module",
   "main": "dist/index.js",
@@ -11,7 +11,8 @@
     "test:run": "vitest run",
     "lint": "eslint src/",
     "sprint": "npx tsx scripts/run-sprint.ts",
-    "dashboard": "npx serve . -l 3000"
+    "dashboard": "npx serve . -l 3000",
+    "docs": "npx typedoc --out docs/api src/index.ts --plugin none"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

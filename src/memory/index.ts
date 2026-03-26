@@ -16,3 +16,9 @@ export {
   type SearchResult,
   type SearchOptions,
 } from "./semantic-search.js";
+
+export {
+  KnowledgeIngester,
+  type CodeSymbol,
+  type KnowledgeIndex,
+} from "./knowledge-ingester.js";

@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 /**
- * v4.3 Sprint Simulation
+ * Sprint Simulation — accepts version arg, defaults to latest
  *
  * Demonstrates the AutonomousSprintFramework running a full 9-phase
- * sprint cycle for the v4.3 dashboard overhaul. Run with:
- *   npx tsx scripts/run-sprint.ts
+ * sprint cycle. Run with:
+ *   npx tsx scripts/run-sprint.ts        # runs v4.4
+ *   npx tsx scripts/run-sprint.ts 4.3   # runs v4.3
  */
 
 import { AutonomousSprintFramework } from "../src/autonomous/sprint-framework.js";
 
+const SPRINT_VERSION = process.argv[2] ?? "4.4";
 const fw = new AutonomousSprintFramework();
 
 function log(msg: string) {
@@ -23,7 +25,17 @@ function separator(phase: string) {
 }
 
 // ── CREATE SPRINT ────────────────────────────────────────────────
-const sprint = fw.createSprint("4.3", "AgentForge v4.3 Dashboard Overhaul", 400, 37);
+const SPRINT_TITLES: Record<string, string> = {
+  "4.3": "AgentForge v4.3 Dashboard Overhaul",
+  "4.4": "AgentForge v4.4 Real Execution Sprint",
+};
+const SPRINT_BUDGETS: Record<string, number> = { "4.3": 400, "4.4": 450 };
+const sprint = fw.createSprint(
+  SPRINT_VERSION,
+  SPRINT_TITLES[SPRINT_VERSION] ?? `AgentForge v${SPRINT_VERSION}`,
+  SPRINT_BUDGETS[SPRINT_VERSION] ?? 400,
+  37,
+);
 log(`Sprint created: ${sprint.sprintId}`);
 log(`Version: ${sprint.version} | Budget: $${sprint.budget} | Team: ${sprint.teamSize} agents`);
 
@@ -291,14 +303,14 @@ log(`Final progress: ${finalProgress.pct}% (${finalProgress.completed}/${finalPr
 import { writeFileSync, mkdirSync } from "node:fs";
 mkdirSync(".agentforge/sprints", { recursive: true });
 writeFileSync(
-  ".agentforge/sprints/v4.3.json",
+  `.agentforge/sprints/v${SPRINT_VERSION}.json`,
   JSON.stringify(fw.toJSON(), null, 2),
   "utf8"
 );
-log("Sprint record persisted to .agentforge/sprints/v4.3.json");
+log(`Sprint record persisted to .agentforge/sprints/v${SPRINT_VERSION}.json`);
 
 console.log(`\n${"═".repeat(60)}`);
-console.log(`  v4.3 Sprint COMPLETE — ${result.gateVerdict.toUpperCase()}`);
+console.log(`  v${SPRINT_VERSION} Sprint COMPLETE — ${result.gateVerdict.toUpperCase()}`);
 console.log(`  Items: ${finalProgress.completed}/${finalProgress.total} | Budget: $${result.budgetUsed}/$${sprint.budget}`);
 console.log(`  Tests: ${result.testsPassing}/${result.testsTotal} passing`);
 console.log(`${"═".repeat(60)}\n`);

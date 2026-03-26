@@ -89,7 +89,7 @@
       {
         "file_path": "commands/forge.md",
         "language": "Markdown",
-        "loc": 22,
+        "loc": 39,
         "imports": [],
         "exports": [],
         "framework_indicators": [],
@@ -107,12 +107,10 @@
       {
         "file_path": "commands/invoke.md",
         "language": "Markdown",
-        "loc": 40,
+        "loc": 121,
         "imports": [],
         "exports": [],
-        "framework_indicators": [
-          "Next.js"
-        ],
+        "framework_indicators": [],
         "patterns": [
           "generics"
         ]
@@ -182,6 +180,17 @@
         ]
       },
       {
+        "file_path": "commands/status.md",
+        "language": "Markdown",
+        "loc": 66,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics"
+        ]
+      },
+      {
         "file_path": "commands/team.md",
         "language": "Markdown",
         "loc": 23,
@@ -193,13 +202,19 @@
       {
         "file_path": "dashboard/index.html",
         "language": "HTML",
-        "loc": 2220,
+        "loc": 3310,
         "imports": [],
         "exports": [],
-        "framework_indicators": [],
+        "framework_indicators": [
+          "Next.js"
+        ],
         "patterns": [
           "decorators",
-          "generics"
+          "generics",
+          "arrow functions",
+          "spread operator",
+          "template literals",
+          "error handling"
         ]
       },
       {
@@ -495,6 +510,17 @@
         "patterns": []
       },
       {
+        "file_path": "docs/v4/v4.4-roadmap.md",
+        "language": "Markdown",
+        "loc": 174,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics"
+        ]
+      },
+      {
         "file_path": "package-lock.json",
         "language": "JSON",
         "loc": 3081,
@@ -506,11 +532,27 @@
       {
         "file_path": "package.json",
         "language": "JSON",
-        "loc": 29,
+        "loc": 33,
         "imports": [],
         "exports": [],
         "framework_indicators": [],
         "patterns": []
+      },
+      {
+        "file_path": "scripts/run-sprint.ts",
+        "language": "TypeScript",
+        "loc": 317,
+        "imports": [
+          "../src/autonomous/sprint-framework.js",
+          "node:fs"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "nullish coalescing",
+          "template literals"
+        ]
       },
       {
         "file_path": "src/api/agent-runner.ts",
@@ -743,6 +785,32 @@
         "patterns": []
       },
       {
+        "file_path": "src/builder/agent-validator.ts",
+        "language": "TypeScript",
+        "loc": 220,
+        "imports": [
+          "node:fs/promises",
+          "node:path",
+          "js-yaml"
+        ],
+        "exports": [
+          "ValidationError",
+          "ValidationResult",
+          "AgentValidator"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "spread operator",
+          "nullish coalescing",
+          "template literals",
+          "classes",
+          "interfaces",
+          "error handling"
+        ]
+      },
+      {
         "file_path": "src/builder/index.ts",
         "language": "TypeScript",
         "loc": 266,
@@ -797,7 +865,7 @@
       {
         "file_path": "src/builder/team-writer.ts",
         "language": "TypeScript",
-        "loc": 254,
+        "loc": 476,
         "imports": [
           "node:fs/promises",
           "node:path",
@@ -806,16 +874,20 @@
           "../types/team.js",
           "../scanner/index.js"
         ],
-        "exports": [],
+        "exports": [
+          "mergeManifests"
+        ],
         "framework_indicators": [],
         "patterns": [
           "async/await",
           "generics",
+          "arrow functions",
           "destructuring",
           "spread operator",
           "optional chaining",
           "nullish coalescing",
-          "template literals"
+          "template literals",
+          "error handling"
         ]
       },
       {
@@ -1240,6 +1312,31 @@
         "patterns": []
       },
       {
+        "file_path": "src/communication/bus-file-adapter.ts",
+        "language": "TypeScript",
+        "loc": 134,
+        "imports": [
+          "node:fs/promises",
+          "node:path",
+          "./v4-message-bus.js",
+          "../types/v4-api.js"
+        ],
+        "exports": [
+          "BusEvent",
+          "BusFileAdapter"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "spread operator",
+          "classes",
+          "interfaces",
+          "error handling"
+        ]
+      },
+      {
         "file_path": "src/communication/channel-manager.ts",
         "language": "TypeScript",
         "loc": 234,
@@ -1292,7 +1389,7 @@
       {
         "file_path": "src/communication/index.ts",
         "language": "TypeScript",
-        "loc": 43,
+        "loc": 48,
         "imports": [],
         "exports": [],
         "framework_indicators": [],
@@ -1620,7 +1717,7 @@
       {
         "file_path": "src/flywheel/index.ts",
         "language": "TypeScript",
-        "loc": 30,
+        "loc": 34,
         "imports": [],
         "exports": [],
         "framework_indicators": [],
@@ -1629,12 +1726,16 @@
       {
         "file_path": "src/flywheel/meta-learning-engine.ts",
         "language": "TypeScript",
-        "loc": 158,
+        "loc": 304,
         "imports": [
           "../communication/v4-message-bus.js"
         ],
         "exports": [
           "TaskOutcome",
+          "SessionOutcome",
+          "PromotionEvent",
+          "TierPersistence",
+          "InMemoryTierPersistence",
           "PatternStat",
           "Insight",
           "KnowledgeGraphEdge",
@@ -1643,6 +1744,7 @@
         ],
         "framework_indicators": [],
         "patterns": [
+          "async/await",
           "generics",
           "arrow functions",
           "destructuring",
@@ -1854,11 +1956,35 @@
       {
         "file_path": "src/memory/index.ts",
         "language": "TypeScript",
-        "loc": 19,
+        "loc": 25,
         "imports": [],
         "exports": [],
         "framework_indicators": [],
         "patterns": []
+      },
+      {
+        "file_path": "src/memory/knowledge-ingester.ts",
+        "language": "TypeScript",
+        "loc": 192,
+        "imports": [
+          "node:fs/promises",
+          "node:path"
+        ],
+        "exports": [
+          "CodeSymbol",
+          "KnowledgeIndex",
+          "KnowledgeIngester"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "spread operator",
+          "classes",
+          "interfaces",
+          "error handling",
+          "closures"
+        ]
       },
       {
         "file_path": "src/memory/mcp-memory-provider.ts",
@@ -1888,7 +2014,7 @@
       {
         "file_path": "src/memory/semantic-search.ts",
         "language": "TypeScript",
-        "loc": 331,
+        "loc": 349,
         "imports": [
           "../registry/memory-registry.js",
           "../types/v4-api.js"
@@ -3220,11 +3346,35 @@
       {
         "file_path": "src/session/index.ts",
         "language": "TypeScript",
-        "loc": 10,
+        "loc": 16,
         "imports": [],
         "exports": [],
         "framework_indicators": [],
         "patterns": []
+      },
+      {
+        "file_path": "src/session/session-persistence.ts",
+        "language": "TypeScript",
+        "loc": 145,
+        "imports": [
+          "node:fs/promises",
+          "node:path",
+          "./v4-session-manager.js"
+        ],
+        "exports": [
+          "SessionRecord",
+          "SessionSummary",
+          "SessionPersistence"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "template literals",
+          "classes",
+          "interfaces",
+          "error handling"
+        ]
       },
       {
         "file_path": "src/session/v4-session-manager.ts",
@@ -4714,6 +4864,27 @@
         ]
       },
       {
+        "file_path": "tests/builder/agent-validator.test.ts",
+        "language": "TypeScript",
+        "loc": 390,
+        "imports": [
+          "vitest",
+          "node:fs/promises",
+          "node:os",
+          "node:path",
+          "js-yaml",
+          "../../src/builder/agent-validator.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "template literals"
+        ]
+      },
+      {
         "file_path": "tests/builder/team-composer.test.ts",
         "language": "TypeScript",
         "loc": 644,
@@ -4728,6 +4899,32 @@
         "patterns": [
           "generics",
           "arrow functions",
+          "spread operator",
+          "template literals"
+        ]
+      },
+      {
+        "file_path": "tests/builder/team-writer-merge.test.ts",
+        "language": "TypeScript",
+        "loc": 571,
+        "imports": [
+          "vitest",
+          "node:fs/promises",
+          "node:os",
+          "node:path",
+          "js-yaml",
+          "../../src/builder/team-writer.js",
+          "../../src/types/team.js",
+          "../../src/types/agent.js",
+          "../../src/scanner/index.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "destructuring",
           "spread operator",
           "template literals"
         ]
@@ -4782,6 +4979,26 @@
           "generics",
           "arrow functions",
           "nullish coalescing"
+        ]
+      },
+      {
+        "file_path": "tests/communication/bus-file-adapter.test.ts",
+        "language": "TypeScript",
+        "loc": 266,
+        "imports": [
+          "vitest",
+          "node:fs/promises",
+          "node:os",
+          "node:path",
+          "../../src/communication/bus-file-adapter.js",
+          "../../src/communication/v4-message-bus.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "arrow functions",
+          "template literals"
         ]
       },
       {
@@ -5034,6 +5251,24 @@
         "exports": [],
         "framework_indicators": [],
         "patterns": [
+          "generics",
+          "arrow functions",
+          "spread operator",
+          "template literals"
+        ]
+      },
+      {
+        "file_path": "tests/flywheel/meta-learning-feedback.test.ts",
+        "language": "TypeScript",
+        "loc": 184,
+        "imports": [
+          "vitest",
+          "../../src/communication/v4-message-bus.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
           "generics",
           "arrow functions",
           "spread operator",
@@ -5294,6 +5529,48 @@
         ]
       },
       {
+        "file_path": "tests/memory/knowledge-ingester.test.ts",
+        "language": "TypeScript",
+        "loc": 272,
+        "imports": [
+          "vitest",
+          "node:fs/promises",
+          "node:path",
+          "node:os",
+          "../../src/memory/knowledge-ingester.js"
+        ],
+        "exports": [
+          "AgentRunner",
+          "AgentConfig",
+          "createAgent",
+          "AgentId",
+          "DEFAULT_TIER",
+          "MyAgent",
+          "Engine",
+          "DeepClass",
+          "Alpha",
+          "Beta",
+          "gamma",
+          "SequentialRunner",
+          "Orchestrator",
+          "PlainAgent",
+          "SpacedAgent",
+          "Thing",
+          "X"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "optional chaining",
+          "template literals",
+          "classes",
+          "interfaces",
+          "type aliases"
+        ]
+      },
+      {
         "file_path": "tests/memory/mcp-memory-provider.test.ts",
         "language": "TypeScript",
         "loc": 156,
@@ -5312,7 +5589,7 @@
       {
         "file_path": "tests/memory/semantic-search.test.ts",
         "language": "TypeScript",
-        "loc": 200,
+        "loc": 379,
         "imports": [
           "vitest",
           "../../src/memory/semantic-search.js",
@@ -6203,6 +6480,27 @@
         ]
       },
       {
+        "file_path": "tests/session/session-persistence.test.ts",
+        "language": "TypeScript",
+        "loc": 229,
+        "imports": [
+          "vitest",
+          "node:fs/promises",
+          "node:os",
+          "node:path",
+          "../../src/session/session-persistence.js",
+          "../../src/session/v4-session-manager.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "spread operator"
+        ]
+      },
+      {
         "file_path": "tests/session/v4-session-manager.test.ts",
         "language": "TypeScript",
         "loc": 236,
@@ -6393,9 +6691,9 @@
     "languages": {
       "JSON": 5,
       "YAML": 99,
-      "Markdown": 38,
+      "Markdown": 40,
       "HTML": 1,
-      "TypeScript": 241
+      "TypeScript": 252
     },
     "frameworks_detected": [
       "Next.js",
@@ -6414,8 +6712,8 @@
       "Actix",
       "Fiber"
     ],
-    "total_files": 384,
-    "total_loc": 76296,
+    "total_files": 397,
+    "total_loc": 81234,
     "directory_structure": [
       ".claude",
       ".claude-plugin",
@@ -6424,16 +6722,17 @@
       "commands",
       "dashboard",
       "docs",
+      "scripts",
       "src",
       "templates",
       "tests"
     ]
   },
   "git": {
-    "total_commits": 82,
+    "total_commits": 85,
     "contributors": [
       {
-        "commits": 81,
+        "commits": 84,
         "name": "Sean Vaughan",
         "email": "sean@vaughanfamily.org"
       },
@@ -6446,8 +6745,8 @@
     "active_files": [
       {
         "path": ".agentforge/team.yaml",
-        "changes": 11,
-        "last_modified": "2026-03-26T11:22:02-05:00"
+        "changes": 13,
+        "last_modified": "2026-03-26T12:19:52-05:00"
       },
       {
         "path": "src/types/index.ts",
@@ -6456,13 +6755,23 @@
       },
       {
         "path": ".agentforge/analysis/project-scan.json",
-        "changes": 7,
-        "last_modified": "2026-03-26T11:22:02-05:00"
+        "changes": 8,
+        "last_modified": "2026-03-26T11:32:14-05:00"
       },
       {
         "path": "src/cli/commands/invoke.ts",
         "changes": 6,
         "last_modified": "2026-03-25T18:55:20-05:00"
+      },
+      {
+        "path": ".claude-plugin/plugin.json",
+        "changes": 5,
+        "last_modified": "2026-03-26T12:19:52-05:00"
+      },
+      {
+        "path": ".agentforge/agents/cto.yaml",
+        "changes": 5,
+        "last_modified": "2026-03-26T11:32:14-05:00"
       },
       {
         "path": "src/cli/index.ts",
@@ -6485,19 +6794,19 @@
         "last_modified": "2026-03-25T01:41:06-05:00"
       },
       {
-        "path": ".claude-plugin/plugin.json",
+        "path": "dashboard/index.html",
         "changes": 4,
-        "last_modified": "2026-03-26T11:22:02-05:00"
+        "last_modified": "2026-03-26T12:19:52-05:00"
+      },
+      {
+        "path": "package.json",
+        "changes": 4,
+        "last_modified": "2026-03-26T12:19:52-05:00"
       },
       {
         "path": "src/memory/semantic-search.ts",
         "changes": 4,
         "last_modified": "2026-03-26T11:03:35-05:00"
-      },
-      {
-        "path": ".agentforge/agents/cto.yaml",
-        "changes": 4,
-        "last_modified": "2026-03-26T11:01:15-05:00"
       },
       {
         "path": ".agentforge/config/models.yaml",
@@ -6510,39 +6819,29 @@
         "last_modified": "2026-03-25T18:55:20-05:00"
       },
       {
-        "path": "dashboard/index.html",
+        "path": ".agentforge/agents/api-specialist.yaml",
         "changes": 3,
-        "last_modified": "2026-03-26T11:22:02-05:00"
+        "last_modified": "2026-03-26T11:32:14-05:00"
       },
       {
-        "path": "tests/reforge/v4-reforge-engine.test.ts",
+        "path": ".agentforge/agents/architect.yaml",
         "changes": 3,
-        "last_modified": "2026-03-26T11:07:24-05:00"
+        "last_modified": "2026-03-26T11:32:14-05:00"
       },
       {
-        "path": "src/flywheel/autonomy-governor.ts",
+        "path": ".agentforge/agents/ceo.yaml",
         "changes": 3,
-        "last_modified": "2026-03-26T11:03:35-05:00"
+        "last_modified": "2026-03-26T11:32:14-05:00"
       },
       {
-        "path": "src/reforge/v4-reforge-engine.ts",
+        "path": ".agentforge/agents/cfo.yaml",
         "changes": 3,
-        "last_modified": "2026-03-26T11:01:37-05:00"
+        "last_modified": "2026-03-26T11:32:14-05:00"
       },
       {
-        "path": "src/api/index.ts",
+        "path": ".agentforge/agents/coder.yaml",
         "changes": 3,
-        "last_modified": "2026-03-26T10:46:44-05:00"
-      },
-      {
-        "path": "commands/reforge.md",
-        "changes": 3,
-        "last_modified": "2026-03-26T00:22:30-05:00"
-      },
-      {
-        "path": ".agentforge/reviews/active/v4-cto-sprint-plan/metadata.yaml",
-        "changes": 3,
-        "last_modified": "2026-03-25T23:01:53-05:00"
+        "last_modified": "2026-03-26T11:32:14-05:00"
       }
     ],
     "branch_count": 3,
@@ -6550,8 +6849,13 @@
     "churn_rate": [
       {
         "path": ".agentforge/analysis/project-scan.json",
-        "additions": 8461,
-        "deletions": 1337
+        "additions": 8726,
+        "deletions": 1383
+      },
+      {
+        "path": "dashboard/index.html",
+        "additions": 5069,
+        "deletions": 1929
       },
       {
         "path": "docs/superpowers/plans/2026-03-25-v32-team-mode-implementation-plan.md",
@@ -6562,11 +6866,6 @@
         "path": "package-lock.json",
         "additions": 3082,
         "deletions": 2
-      },
-      {
-        "path": "dashboard/index.html",
-        "additions": 2276,
-        "deletions": 57
       },
       {
         "path": "docs/v4/architecture.md",
@@ -6589,14 +6888,14 @@
         "deletions": 0
       },
       {
+        "path": ".agentforge/team.yaml",
+        "additions": 582,
+        "deletions": 491
+      },
+      {
         "path": ".agentforge/feedback/2026-03-25-lead-architect-async-communication-design.md",
         "additions": 1003,
         "deletions": 0
-      },
-      {
-        "path": ".agentforge/team.yaml",
-        "additions": 562,
-        "deletions": 409
       },
       {
         "path": ".agentforge/reviews/active/v4-cto-sprint-plan/document.md",
@@ -6652,7 +6951,7 @@
     "commit_frequency": [
       {
         "period": "2026-03",
-        "count": 82
+        "count": 85
       }
     ],
     "age_days": 1
@@ -6845,7 +7144,7 @@
     {
       "type": "unknown",
       "path": "commands/forge.md",
-      "summary": "---\ndescription: Analyze project and generate an optimized agent team\nargument-hint: Optional --domains flag (comma-separated)\n---\n\n# AgentForge Forge\n\nAnalyze the current project and generate an optimized agent team.\n\n## What to Do\n\n1. Scan the project: files, git history, dependencies, CI configuration\n2. Detect which domain packs should activate based on what's found\n3. Compose a team from activated domain packs\n4. Customize each agent template with project-specific context\n5. Write the team "
+      "summary": "---\ndescription: Analyze project and generate an optimized agent team\nargument-hint: Optional --domains flag (comma-separated)\n---\n\n# AgentForge Forge\n\nAnalyze the current project and generate an optimized agent team.\n\n## What to Do\n\n1. Scan the project: files, git history, dependencies, CI configuration\n2. Detect which domain packs should activate based on what's found\n3. Compose a team from activated domain packs\n4. Customize each agent template with project-specific context\n5. Merge the new s"
     },
     {
       "type": "unknown",
@@ -6855,7 +7154,7 @@
     {
       "type": "unknown",
       "path": "commands/invoke.md",
-      "summary": "---\ndescription: Invoke an agent via AgentForgeSession\nargument-hint: --agent <name> --task <description> [--budget <usd>] [--loop]\n---\n\n# AgentForge Invoke\n\nRun a task through a specific agent using the V4 session runtime. Creates a tracked session via `V4SessionManager` and writes a cost entry to `.agentforge/sessions/` on completion.\n\n## Flags\n\n- `--agent <name>` — Agent to invoke (e.g., `genesis-pipeline-dev`, `cost-engine-designer`)\n- `--task <description>` — Task description to pass to the"
+      "summary": "---\ndescription: Invoke an agent as a real Claude Code subagent\nargument-hint: <agent-name> \"<task description>\"\n---\n\n# AgentForge Invoke\n\nDispatch a real Claude Code subagent using the specified agent's YAML configuration.\nThe agent runs with its own system prompt and model, producing a tracked session record.\n\n## Usage\n\n```\n/agentforge:invoke <agent-name> \"<task description>\"\n```\n\nExample:\n```\n/agentforge:invoke cto \"assess technical feasibility of v4.4\"\n```\n\n## What to Do\n\n1. **Read the agent"
     },
     {
       "type": "unknown",
@@ -6886,6 +7185,11 @@
       "type": "policy",
       "path": "commands/session.md",
       "summary": "---\ndescription: Manage V4 agent sessions — create, persist, resume, expire, and thread context\nargument-hint: Subcommand — list | status <sessionId> | persist <sessionId> | resume <sessionId> | cleanup\n---\n\n# AgentForge Session\n\nManage V4 session lifecycle and cross-session context threading.\n\n## Subcommands\n\n- `list` — List all sessions (filterable: `--active`, `--persisted`, `--completed`, `--expired`)\n- `status <sessionId>` — Show session details including context chain\n- `persist <sessionId"
+    },
+    {
+      "type": "unknown",
+      "path": "commands/status.md",
+      "summary": "---\ndescription: Print a concise live summary of the AgentForge workspace\n---\n\n# AgentForge Status\n\nPrint a concise live summary of the current AgentForge workspace by reading real files.\n\n## What to Do\n\n1. **Read `.agentforge/team.yaml`** (if it exists):\n   - Extract `team_size` field (fall back to counting all agents listed under `agents:` if `team_size` is absent)\n   - Extract `version` field (fall back to `\"4.4\"` if absent)\n   - If the file does not exist, show `—` for team size and version\n"
     },
     {
       "type": "unknown",
@@ -7006,16 +7310,21 @@
       "type": "unknown",
       "path": "docs/v4/v4.3-ui-directive.md",
       "summary": "# v4.3 Autonomous Sprint — UI/Dashboard Directive\n\n**From:** CEO\n**To:** R&D Lead, Dashboard Architect, Sprint Planner\n**Priority:** High — this is the primary focus area for v4.3\n\n---\n\n## Directive\n\nThe Command Center dashboard must evolve from a simulated monitoring tool into a **real-time, production-grade operations center**. The team should autonomously plan and execute a comprehensive dashboard overhaul.\n\n## Required Dashboard Sections (v4.3 target)\n\n### New Sections to Add\n1. **Agent Acti"
+    },
+    {
+      "type": "research-paper",
+      "path": "docs/v4/v4.4-roadmap.md",
+      "summary": "# AgentForge v4.4 Roadmap\n\n**Status:** Draft — pending v4.3 gate approval\n**Sprint:** Autonomous v4.4\n**Budget:** $450\n**Team:** 37 agents (6 Opus, 27 Sonnet, 4 Haiku)\n**Focus:** Real execution — agents run as Claude Code subagents, not external API calls\n\n---\n\n## Architectural Principle\n\nAgentForge is a **Claude Code plugin**. It runs inside Claude Code and inherits Claude\nCode's existing session, authentication, and model access (including Max Pro). There is\nno separate API key — agents execut"
     }
   ],
   "integrations": [
     {
       "type": "jira",
-      "ref": "PROJECT-123"
+      "ref": "P1-3"
     },
     {
       "type": "jira",
-      "ref": "P1-3"
+      "ref": "PROJECT-123"
     },
     {
       "type": "jira",
@@ -7080,6 +7389,38 @@
     {
       "type": "jira",
       "ref": "P1-6"
+    },
+    {
+      "type": "jira",
+      "ref": "P1-1"
+    },
+    {
+      "type": "jira",
+      "ref": "P1-2"
+    },
+    {
+      "type": "jira",
+      "ref": "P1-4"
+    },
+    {
+      "type": "jira",
+      "ref": "P2-1"
+    },
+    {
+      "type": "jira",
+      "ref": "P2-2"
+    },
+    {
+      "type": "jira",
+      "ref": "P2-3"
+    },
+    {
+      "type": "jira",
+      "ref": "P2-4"
+    },
+    {
+      "type": "jira",
+      "ref": "P2-5"
     },
     {
       "type": "jira",

@@ -1,11 +1,11 @@
 /**
- * SemanticSearch — v4.1 P0-2: Enhanced Semantic Search
+ * SemanticSearch — v4.4 P1-1: BM25 Ranking with Synonym Expansion
  *
- * Upgraded from basic TF-IDF to enhanced-tfidf with:
- *   - Synonym expansion dictionary for programming/software terms
+ * Upgraded from enhanced-tfidf to BM25 ranking with:
+ *   - BM25 scoring (k1=1.5, b=0.75) replacing raw TF-IDF cosine similarity
+ *   - Expanded synonym map with AgentForge-specific domain terms
+ *   - Bigram phrase matching with 1.5x score boost for adjacent-pair matches
  *   - Query expansion with weighted synonym tokens
- *   - IDF weighting across all entries
- *   - N-gram overlap for short queries
  *
  * Thresholds from Architect condition:
  *   - Default similarity: 0.82 (configurable per query)
@@ -38,6 +38,16 @@ const SYNONYM_GROUPS: string[][] = [
   ["memory", "storage", "persistence", "cache"],
   ["security", "auth", "authentication", "authorization", "vulnerability"],
   ["communication", "messaging", "async", "pubsub", "events"],
+  // AgentForge-specific domain terms
+  ["invoke", "call", "run", "execute", "dispatch", "trigger"],
+  ["agent", "bot", "model", "assistant", "worker"],
+  ["sprint", "iteration", "cycle"],
+  ["reforge", "mutate", "patch", "override", "tune"],
+  ["flywheel", "feedback", "loop", "compounding", "learning"],
+  ["bus", "pubsub", "pubsub"],
+  ["session", "conversation", "context", "thread"],
+  ["forge", "generate", "create", "build", "assemble"],
+  ["delegate", "assign", "route", "escalate"],
 ];
 
 /** Pre-computed lookup: token -> set of synonyms (excluding itself) */
@@ -90,7 +100,7 @@ export interface SearchHit {
 export interface SearchResult {
   hits: SearchHit[];
   searchDurationMs: number;
-  strategy: "semantic" | "keyword" | "hybrid" | "enhanced-tfidf";
+  strategy: "semantic" | "keyword" | "hybrid" | "enhanced-tfidf" | "bm25";
   query: string;
 }
 
@@ -116,31 +126,78 @@ export class SemanticSearch {
 
     const rawQueryTokens = this.tokenize(query);
     if (rawQueryTokens.size === 0 && !options?.categories) {
-      return { hits: [], searchDurationMs: performance.now() - start, strategy: "enhanced-tfidf", query };
+      return { hits: [], searchDurationMs: performance.now() - start, strategy: "bm25", query };
     }
 
-    // Build document token maps (expanded with synonyms for matching)
+    // Build document token maps (raw, without synonym expansion — BM25 uses raw TF)
     const docTokenMaps = entries.map((entry) =>
       this.tokenize(`${entry.summary} ${entry.tags.join(" ")}`)
     );
 
+    // Compute average document length (in tokens) for BM25 normalization
+    const totalTokens = docTokenMaps.reduce((sum, d) => {
+      let count = 0;
+      for (const freq of d.values()) count += freq;
+      return sum + count;
+    }, 0);
+    const avgdl = docTokenMaps.length > 0 ? totalTokens / docTokenMaps.length : 1;
+
     // Compute IDF across all documents
     const idf = this.computeIDF(docTokenMaps);
 
-    // Expand both query and document tokens with synonyms for matching
+    // Expand query tokens with synonyms for matching
     const expandedQuery = this.expandWithSynonyms(rawQueryTokens);
-    const expandedDocs = docTokenMaps.map((d) => this.expandWithSynonyms(d));
 
-    // Score all entries
+    // Extract query bigrams for phrase-match boost
+    const queryBigrams = this.wordBigrams(query);
+
+    // Score all entries using BM25
     const scored = entries.map((entry, idx) => {
-      const docTokens = expandedDocs[idx];
-      let score = this.weightedCosineSimilarity(expandedQuery, docTokens, idf);
+      const docText = `${entry.summary} ${entry.tags.join(" ")}`;
+      const docTokens = docTokenMaps[idx];
+      let docLen = 0;
+      for (const freq of docTokens.values()) docLen += freq;
 
-      // N-gram bonus for short queries (1-2 raw tokens)
-      if (rawQueryTokens.size <= 2) {
-        const ngramBonus = this.bigramOverlap(query, `${entry.summary} ${entry.tags.join(" ")}`);
-        score = score + ngramBonus * 0.15; // blend bigram signal
+      // BM25 parameters
+      const k1 = 1.5;
+      const b = 0.75;
+
+      // Sum BM25 contributions for each (possibly synonym-expanded) query term
+      let bm25Score = 0;
+      for (const [word, queryWeight] of expandedQuery) {
+        const idfWeight = idf.get(word) ?? 0;
+        if (idfWeight === 0) continue;
+        // Try to find raw term OR its synonym forms in the document
+        const rawDocFreq = this.resolvedDocFreq(word, docTokens);
+        if (rawDocFreq === 0) continue;
+        const tf = rawDocFreq;
+        const numerator = tf * (k1 + 1);
+        const denominator = tf + k1 * (1 - b + b * (docLen / avgdl));
+        bm25Score += idfWeight * queryWeight * (numerator / denominator);
       }
+
+      // Bigram phrase-match boost (1.5x multiplier for each matching phrase)
+      let phraseBoost = 1.0;
+      if (queryBigrams.size > 0) {
+        const docBigrams = this.wordBigrams(docText);
+        let matchingPhrases = 0;
+        for (const phrase of queryBigrams) {
+          if (docBigrams.has(phrase)) matchingPhrases++;
+        }
+        if (matchingPhrases > 0) {
+          phraseBoost = 1.5;
+        }
+      }
+
+      let score = bm25Score * phraseBoost;
+
+      // Normalize BM25 scores into [0, 1].
+      // Reference scale: each matched query term contributes ~1 BM25 unit on average;
+      // using 0.2 * rawQueryTokens.size as the half-saturation point means a doc
+      // scoring ≥ 1 BM25 unit per raw query token reaches ≥ 0.83, consistent with
+      // the existing 0.82 similarity threshold.
+      const halfSat = Math.max(rawQueryTokens.size, 1) * 0.2;
+      score = score / (score + halfSat);
 
       // Clamp to [0, 1]
       score = Math.min(1, Math.max(0, score));
@@ -150,7 +207,7 @@ export class SemanticSearch {
 
     // Filter by threshold; if too few results, fall back to progressively lower thresholds
     let filtered = scored.filter((s) => s.score >= threshold);
-    let strategy: SearchResult["strategy"] = "enhanced-tfidf";
+    let strategy: SearchResult["strategy"] = "bm25";
 
     if (filtered.length === 0) {
       filtered = scored.filter((s) => s.score >= KEYWORD_FALLBACK_THRESHOLD);
@@ -163,11 +220,11 @@ export class SemanticSearch {
 
     // If the user set a threshold lower than the fallback that was used,
     // include all entries above the user's threshold (monotonicity guarantee)
-    if (threshold < KEYWORD_FALLBACK_THRESHOLD && strategy !== "enhanced-tfidf") {
+    if (threshold < KEYWORD_FALLBACK_THRESHOLD && strategy !== "bm25") {
       const wider = scored.filter((s) => s.score >= threshold);
       if (wider.length > filtered.length) {
         filtered = wider;
-        strategy = "enhanced-tfidf";
+        strategy = "bm25";
       }
     }
 
@@ -236,11 +293,11 @@ export class SemanticSearch {
   }
 
   // ---------------------------------------------------------------------------
-  // IDF computation
+  // IDF computation (BM25-style: log((N - df + 0.5) / (df + 0.5) + 1))
   // ---------------------------------------------------------------------------
 
   private computeIDF(docs: Map<string, number>[]): Map<string, number> {
-    const docCount = docs.length;
+    const N = docs.length;
     const df = new Map<string, number>();
 
     for (const doc of docs) {
@@ -254,77 +311,38 @@ export class SemanticSearch {
       if (STOP_WORDS.has(word)) {
         idf.set(word, 0.1); // near-zero weight for stop words
       } else {
-        // Standard IDF: log(N / df) + 1 (smoothed)
-        idf.set(word, Math.log(docCount / freq) + 1);
+        // BM25 IDF: log((N - df + 0.5) / (df + 0.5) + 1)
+        idf.set(word, Math.log((N - freq + 0.5) / (freq + 0.5) + 1));
       }
     }
     return idf;
   }
 
   // ---------------------------------------------------------------------------
-  // Weighted cosine similarity with IDF
+  // Resolve document frequency for a query term, considering synonym forms
   // ---------------------------------------------------------------------------
 
-  private weightedCosineSimilarity(
-    query: Map<string, number>,
-    doc: Map<string, number>,
-    idf: Map<string, number>,
-  ): number {
-    if (query.size === 0 || doc.size === 0) return 0;
-
-    let dot = 0;
-    let normQ = 0;
-    let normD = 0;
-
-    for (const [word, qWeight] of query) {
-      const idfWeight = idf.get(word) ?? 1;
-      const weightedQ = qWeight * idfWeight;
-      normQ += weightedQ * weightedQ;
-
-      const dWeight = doc.get(word) ?? 0;
-      const weightedD = dWeight * idfWeight;
-      dot += weightedQ * weightedD;
-    }
-
-    for (const [word, dWeight] of doc) {
-      const idfWeight = idf.get(word) ?? 1;
-      const weightedD = dWeight * idfWeight;
-      normD += weightedD * weightedD;
-    }
-
-    if (normQ === 0 || normD === 0) return 0;
-    return dot / (Math.sqrt(normQ) * Math.sqrt(normD));
+  /**
+   * Returns the raw frequency of `word` in `docTokens`.
+   * For synonym-expanded query terms, the document stores raw (non-expanded) tokens,
+   * so we look up the word directly.
+   */
+  private resolvedDocFreq(word: string, docTokens: Map<string, number>): number {
+    return docTokens.get(word) ?? 0;
   }
 
   // ---------------------------------------------------------------------------
-  // Bigram overlap for short queries
+  // Word-level bigrams for phrase matching
   // ---------------------------------------------------------------------------
 
-  private bigrams(text: string): Set<string> {
+  /** Returns the set of adjacent word pairs (bigrams) in `text`. */
+  private wordBigrams(text: string): Set<string> {
     const normalized = text.toLowerCase().replace(/[^\w\s]/g, "");
     const words = normalized.split(/\s+/).filter(Boolean);
     const grams = new Set<string>();
     for (let i = 0; i < words.length - 1; i++) {
       grams.add(`${words[i]} ${words[i + 1]}`);
     }
-    // Also add character-level bigrams for single words
-    for (const word of words) {
-      for (let i = 0; i < word.length - 1; i++) {
-        grams.add(word.substring(i, i + 2));
-      }
-    }
     return grams;
-  }
-
-  private bigramOverlap(query: string, document: string): number {
-    const qBigrams = this.bigrams(query);
-    const dBigrams = this.bigrams(document);
-    if (qBigrams.size === 0 || dBigrams.size === 0) return 0;
-
-    let overlap = 0;
-    for (const bg of qBigrams) {
-      if (dBigrams.has(bg)) overlap++;
-    }
-    return overlap / qBigrams.size;
   }
 }

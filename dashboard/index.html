@@ -3073,6 +3073,152 @@ function simulateUpdate() {
 let refreshCountdown = 5;
 const refreshStatus = document.getElementById('refresh-status');
 
+// ── P2-3: Sprint Tracker — render from real JSON ──────────
+function renderSprintFromJSON(data) {
+  // data is the parsed sprint JSON: { sprints: [...], results: [...] }
+  const sprints = data && data.sprints;
+  if (!sprints || !sprints.length) return;
+
+  // Prefer latest sprint (last entry)
+  const sprint = sprints[sprints.length - 1];
+  const items = sprint.items || [];
+  const total = items.length;
+  const complete = items.filter(i => i.status === 'completed' || i.status === 'done').length;
+  const pct = total > 0 ? Math.round((complete / total) * 100) : 0;
+  const version = sprint.version || sprint.sprintId || '?';
+  const phase = sprint.phase || '';
+  const uniqueAssignees = [...new Set(items.map(i => i.assignee).filter(Boolean))].length;
+
+  const section = document.getElementById('sprint-tracker');
+  if (!section) return;
+
+  // Update section title
+  const titleEl = section.querySelector('.section-title');
+  if (titleEl) titleEl.textContent = 'Sprint Tracker — v' + version;
+
+  // Update header bar
+  const headerBar = section.querySelector('.sprint-header-bar');
+  if (headerBar) {
+    const titleRow = headerBar.querySelector('div > div > strong');
+    if (titleRow) titleRow.textContent = 'Sprint v' + version;
+
+    const phaseSpan = headerBar.querySelector('div > div > span');
+    if (phaseSpan) phaseSpan.textContent = phase ? 'Phase: ' + phase : sprint.title || '';
+
+    const completionEl = headerBar.querySelector('[style*="font-mono"]');
+    if (completionEl) completionEl.textContent = complete + '/' + total + ' complete — ' + pct + '%';
+
+    const bar = headerBar.querySelector('.sprint-progress-inner');
+    if (bar) bar.style.width = pct + '%';
+
+    const meta = headerBar.querySelector('.sprint-meta');
+    if (meta) {
+      meta.innerHTML =
+        '<span>Items: <strong>' + total + '</strong></span>' +
+        '<span>Complete: <strong>' + complete + '</strong></span>' +
+        '<span>Agents: <strong>' + uniqueAssignees + '</strong></span>' +
+        '<span>Budget: <strong>$' + (sprint.budget || '?') + '</strong></span>' +
+        '<span>Team size: <strong>' + (sprint.teamSize || '?') + '</strong></span>';
+    }
+  }
+
+  // Update tbody with real items
+  const tbody = section.querySelector('.sprint-table tbody');
+  if (tbody) {
+    const priorityColor = {P0: 'var(--red, #f85149)', P1: 'var(--orange)', P2: 'var(--text-muted)', P3: 'var(--text-muted)'};
+    tbody.innerHTML = items.map((item, idx) => {
+      const num = String(idx + 1).padStart(2, '0');
+      const isDone = item.status === 'completed' || item.status === 'done';
+      const isActive = item.status === 'in_progress' || item.status === 'active';
+      const badgeClass = isDone ? 'complete' : isActive ? 'active' : 'pending';
+      const badgeLabel = isDone ? 'done' : isActive ? 'active' : item.status || 'pending';
+      const barFillClass = isDone ? 'done' : isActive ? 'active' : '';
+      const barWidth = isDone ? '100%' : isActive ? '50%' : '0%';
+      const priority = item.priority || '';
+      const pColor = priorityColor[priority] || 'var(--text-muted)';
+      const assignee = item.assignee || '—';
+      return '<tr>' +
+        '<td style="font-family:var(--font-mono);color:var(--text-muted)">' + num + '</td>' +
+        '<td>' + (item.title || item.id || '(unnamed)') + (priority ? ' <span style="font-size:10px;color:' + pColor + ';font-weight:700">' + priority + '</span>' : '') + '</td>' +
+        '<td><span class="chip" style="border-color:var(--blue);color:var(--blue)">' + assignee + '</span></td>' +
+        '<td>—</td>' +
+        '<td><span class="status-badge ' + badgeClass + '">' + badgeLabel + '</span></td>' +
+        '<td><div class="sprint-bar-track"><div class="sprint-bar-fill ' + barFillClass + '" style="width:' + barWidth + '"></div></div></td>' +
+        '</tr>';
+    }).join('');
+  }
+}
+
+// ── P2-4: Bus Monitor — render from real bus-events.json ──
+function renderBusFromJSON(events) {
+  if (!events || !Array.isArray(events) || events.length === 0) return;
+
+  const topicLabels = {
+    'agent.invoked':    'agent.invoked',
+    'agent.responded':  'agent.responded',
+    'agent.error':      'agent.error',
+    'agent.task.complete': 'agent.task.complete',
+    'agent.delegated':  'agent.delegated',
+    'sprint.item.done': 'sprint.item.done',
+    'flywheel.updated': 'flywheel.updated',
+    'review.requested': 'review.requested',
+    'system.error':     'system.error',
+    'system.heartbeat': 'system.heartbeat',
+    'memory.persisted': 'memory.persisted',
+    'linter.scan.done': 'linter.scan.done',
+    'flywheel.agent.promoted': 'flywheel.agent.promoted'
+  };
+
+  function formatBusTime(ts) {
+    try {
+      const d = new Date(ts);
+      return d.toLocaleTimeString('en-US', {hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit'});
+    } catch (e) { return ts || ''; }
+  }
+
+  function payloadToMessage(topic, payload) {
+    if (!payload) return topic;
+    if (topic === 'agent.invoked') return (payload.agent || '?') + ' invoked: ' + (payload.task || '');
+    if (topic === 'agent.responded') return (payload.agent || '?') + ' responded in ' + (payload.duration || '?');
+    if (topic === 'agent.error') return (payload.agent || '?') + ' error: ' + (payload.error || '');
+    if (topic === 'agent.task.complete') return (payload.agent || payload.from || '?') + ' completed: ' + (payload.task || '');
+    if (topic === 'flywheel.agent.promoted') return (payload.agent || '?') + ' promoted to tier ' + (payload.tier || '?');
+    const from = payload.from || payload.agent || '';
+    const to = payload.to || '';
+    const msg = payload.message || payload.task || payload.doc || payload.metric || payload.item || '';
+    if (from && to) return from + ' → ' + to + (msg ? ': ' + msg : '');
+    if (from) return from + (msg ? ': ' + msg : '');
+    return msg || JSON.stringify(payload).slice(0, 60);
+  }
+
+  const feed = document.getElementById('bus-feed');
+  const counter = document.getElementById('bus-counter');
+  if (!feed) return;
+
+  // Show most recent first, max 20 entries
+  const recent = events.slice(-20).reverse();
+  feed.innerHTML = recent.map(ev => {
+    const priority = ev.priority || 'normal';
+    const topic = ev.topic || '';
+    const label = topicLabels[topic] || topic;
+    const time = formatBusTime(ev.timestamp);
+    const payload = ev.payload || {};
+    const message = payloadToMessage(topic, payload);
+    const payloadStr = JSON.stringify(payload);
+    return '<div class="bus-msg priority-' + priority + '" onclick="showPayload(this,\'' + label.replace(/'/g, "\\'") + '\',\'bus\',\'' + payloadStr.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\')">' +
+      '<span class="bus-timestamp">' + time + '</span>' +
+      '<span class="bus-topic">' + label + '</span>' +
+      '<span class="bus-message">' + message + '</span>' +
+      '<span class="priority-badge ' + priority + '">' + priority + '</span>' +
+      '<span class="bus-agents">—</span>' +
+      '<span class="bus-timing">—</span>' +
+      '<span class="topic-badge">—</span>' +
+      '</div>';
+  }).join('');
+
+  if (counter) counter.textContent = events.length + ' events';
+}
+
 function refreshData() {
   // Try fetching live data files, fallback to simulate
   const files = [
@@ -3083,17 +3229,40 @@ function refreshData() {
     ['/.agentforge/data/reviews.json', 'reviews'],
     ['/.agentforge/data/meetings.json', 'meetings'],
     ['/.agentforge/data/reforge-activity.json', 'reforge'],
-    ['/.agentforge/sprints/v4.3.json', 'sprint']
+    ['/.agentforge/sprints/v4.3.json', 'sprint'],
+    ['/.agentforge/sprints/v4.4.json', 'sprint']
   ];
 
   files.forEach(([url, key]) => {
     fetch(url)
       .then(r => { if (!r.ok) throw new Error('not found'); return r.json(); })
-      .then(data => { window._data[key] = data; })
+      .then(data => {
+        window._data[key] = data;
+        // P2-3: render sprint from real JSON when loaded
+        if (key === 'sprint') {
+          const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+          renderSprintFromJSON(parsed);
+        }
+      })
       .catch(() => { /* silently use simulated data */ });
   });
 
-  simulateUpdate();
+  // P2-4: fetch real bus events
+  fetch('/.agentforge/data/bus-events.json')
+    .then(r => { if (!r.ok) throw new Error('not found'); return r.json(); })
+    .then(events => {
+      if (Array.isArray(events) && events.length > 0) {
+        window._data.busEvents = events;
+        renderBusFromJSON(events);
+      } else {
+        simulateUpdate();
+      }
+    })
+    .catch(() => {
+      // No real bus events — fall through to simulated update
+      simulateUpdate();
+    });
+
   refreshCountdown = 5;
 }
 
