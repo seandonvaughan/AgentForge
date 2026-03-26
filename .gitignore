@@ -34,3 +34,6 @@ npm-debug.log*
 # Claude Code local
 .claude/
 .remember/
+
+# Git worktrees
+.worktrees/
