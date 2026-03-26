@@ -49,6 +49,15 @@
         "patterns": []
       },
       {
+        "file_path": "commands/dashboard.md",
+        "language": "Markdown",
+        "loc": 31,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
         "file_path": "commands/flywheel.md",
         "language": "Markdown",
         "loc": 52,
@@ -164,7 +173,7 @@
       {
         "file_path": "dashboard/index.html",
         "language": "HTML",
-        "loc": 1640,
+        "loc": 2220,
         "imports": [],
         "exports": [],
         "framework_indicators": [],
@@ -428,6 +437,15 @@
         ]
       },
       {
+        "file_path": "docs/v4/v4.1-audit.md",
+        "language": "Markdown",
+        "loc": 59,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
         "file_path": "docs/v4/v4.1-roadmap.md",
         "language": "Markdown",
         "loc": 129,
@@ -437,6 +455,15 @@
         "patterns": [
           "classes"
         ]
+      },
+      {
+        "file_path": "docs/v4/v4.2-roadmap.md",
+        "language": "Markdown",
+        "loc": 133,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
       },
       {
         "file_path": "package-lock.json",
@@ -6237,7 +6264,7 @@
     ],
     "languages": {
       "JSON": 5,
-      "Markdown": 34,
+      "Markdown": 37,
       "HTML": 1,
       "TypeScript": 236,
       "YAML": 97
@@ -6259,8 +6286,8 @@
       "Actix",
       "Fiber"
     ],
-    "total_files": 373,
-    "total_loc": 74104,
+    "total_files": 376,
+    "total_loc": 74907,
     "directory_structure": [
       ".claude",
       ".claude-plugin",
@@ -6274,10 +6301,10 @@
     ]
   },
   "git": {
-    "total_commits": 80,
+    "total_commits": 81,
     "contributors": [
       {
-        "commits": 79,
+        "commits": 80,
         "name": "Sean Vaughan",
         "email": "sean@vaughanfamily.org"
       },
@@ -6290,8 +6317,8 @@
     "active_files": [
       {
         "path": ".agentforge/team.yaml",
-        "changes": 9,
-        "last_modified": "2026-03-26T11:03:35-05:00"
+        "changes": 10,
+        "last_modified": "2026-03-26T11:07:24-05:00"
       },
       {
         "path": "src/types/index.ts",
@@ -6299,14 +6326,14 @@
         "last_modified": "2026-03-25T23:27:36-05:00"
       },
       {
+        "path": ".agentforge/analysis/project-scan.json",
+        "changes": 6,
+        "last_modified": "2026-03-26T11:07:24-05:00"
+      },
+      {
         "path": "src/cli/commands/invoke.ts",
         "changes": 6,
         "last_modified": "2026-03-25T18:55:20-05:00"
-      },
-      {
-        "path": ".agentforge/analysis/project-scan.json",
-        "changes": 5,
-        "last_modified": "2026-03-26T11:03:35-05:00"
       },
       {
         "path": "src/cli/index.ts",
@@ -6349,6 +6376,11 @@
         "last_modified": "2026-03-25T18:55:20-05:00"
       },
       {
+        "path": "tests/reforge/v4-reforge-engine.test.ts",
+        "changes": 3,
+        "last_modified": "2026-03-26T11:07:24-05:00"
+      },
+      {
         "path": "src/flywheel/autonomy-governor.ts",
         "changes": 3,
         "last_modified": "2026-03-26T11:03:35-05:00"
@@ -6382,11 +6414,6 @@
         "path": "package.json",
         "changes": 3,
         "last_modified": "2026-03-25T21:28:49-05:00"
-      },
-      {
-        "path": ".agentforge/config/delegation.yaml",
-        "changes": 3,
-        "last_modified": "2026-03-25T19:41:43-05:00"
       }
     ],
     "branch_count": 3,
@@ -6394,8 +6421,8 @@
     "churn_rate": [
       {
         "path": ".agentforge/analysis/project-scan.json",
-        "additions": 8303,
-        "deletions": 1270
+        "additions": 8353,
+        "deletions": 1311
       },
       {
         "path": "docs/superpowers/plans/2026-03-25-v32-team-mode-implementation-plan.md",
@@ -6459,8 +6486,8 @@
       },
       {
         "path": ".agentforge/team.yaml",
-        "additions": 480,
-        "deletions": 389
+        "additions": 482,
+        "deletions": 391
       },
       {
         "path": "src/scanner/dependency-mapper.ts",
@@ -6496,7 +6523,7 @@
     "commit_frequency": [
       {
         "period": "2026-03",
-        "count": 80
+        "count": 81
       }
     ],
     "age_days": 1
@@ -6594,6 +6621,11 @@
       "type": "unknown",
       "path": "commands/cost-report.md",
       "summary": "---\ndescription: Show token usage and cost breakdown by agent and model\n---\n\n# AgentForge Cost Report\n\nDisplay token usage and cost breakdown.\n\nShow:\n- Total tokens consumed and estimated cost\n- Breakdown by model tier (Opus, Sonnet, Haiku)\n- Breakdown by agent\n- Cost savings vs. all-Opus baseline\n- Recommendations for model routing optimization\n\nIf no runtime cost data exists yet, show the team's model routing configuration and projected cost profile based on agent assignments.\n"
+    },
+    {
+      "type": "unknown",
+      "path": "commands/dashboard.md",
+      "summary": "---\ndescription: Open the V4 Command Center dashboard in your browser\nargument-hint: Optional --refresh to force reload\n---\n\n# AgentForge Dashboard\n\nOpen the AgentForge V4 Command Center — a real-time monitoring dashboard.\n\n## What to Do\n\n1. Open `dashboard/index.html` in the default browser\n2. If `--refresh` flag is set, also reload the page\n\n## Dashboard Sections\n\n- **Team Overview** — 24 agent cards with model tier and status indicators\n- **Org Graph** — Visual delegation hierarchy\n- **Flywhe"
     },
     {
       "type": "unknown",
@@ -6746,9 +6778,19 @@
       "summary": "# AgentForge v4 — Integration API Specification\n\n**Sprint 1.0 Deliverable**\n**Status:** Complete\n**Owner:** integration-api-architect (Opus)\n**Blocks:** All of Phase 1 Sprints 1.1–1.3 and all subsequent phases\n\n---\n\n## Overview\n\nThe Integration API is the stable internal contract that all v4 pillars build against. Defining it first prevents integration rework and guarantees that agents built in Sprints 1.1 through Phase 5 can communicate without breaking changes.\n\nAll types are implemented in `s"
     },
     {
+      "type": "research-paper",
+      "path": "docs/v4/v4.1-audit.md",
+      "summary": "# v4.1 Audit Report\n\n**Auditor:** CTO + Meta-Architect\n**Date:** 2026-03-26\n**Scope:** Full v4.1 process review — what shipped, what's missing, what needs polish\n\n---\n\n## What Shipped (P0 + P1)\n\n| Item | Quality | Notes |\n|------|---------|-------|\n| Bus unification | A | All 12 modules wired. 22 standard topics. Backward compatible. |\n| Enhanced search | B+ | Synonyms + IDF + query expansion. >95% accuracy. Still keyword-based (not embeddings). |\n| REFORGE git integration | A | GitAdapter/FileA"
+    },
+    {
       "type": "business-plan",
       "path": "docs/v4/v4.1-roadmap.md",
       "summary": "# AgentForge v4.1 Roadmap — Polish & Production Integration\n\n**Synthesized by:** CTO\n**Date:** 2026-03-26\n**Source:** 17 agent dogfood feedback reports (all agents reported)\n**Verdicts:** 15 pass, 2 partial (debugger, researcher — both on semantic search)\n\n---\n\n## Executive Summary\n\nv4.0 delivered 20 modules across 5 pillars with 381 tests and 100% gate pass rate. The dogfood sprint confirmed the architecture is sound and composable. However, **the modules exist in isolation** — they aren't wire"
+    },
+    {
+      "type": "handbook",
+      "path": "docs/v4/v4.2-roadmap.md",
+      "summary": "# AgentForge v4.2 Roadmap — Production Polish & Autonomous Readiness\n\n**Planned by:** CTO\n**Date:** 2026-03-26\n**Source:** v4.1 audit, deferred P2 items, new team capabilities\n**Team:** 34 agents (10 new hires)\n**Budget:** $400\n\n---\n\n## Goal\n\nPrepare AgentForge for autonomous self-improvement (v4.3+). Everything the team needs to plan, execute, test, and ship a version upgrade without human direction must work by the end of v4.2.\n\n---\n\n## Priority Matrix\n\n### P0 — Foundation for Autonomy (Weeks "
     }
   ],
   "integrations": [
@@ -6762,6 +6804,50 @@
     },
     {
       "type": "jira",
+      "ref": "P2-11"
+    },
+    {
+      "type": "jira",
+      "ref": "P2-12"
+    },
+    {
+      "type": "jira",
+      "ref": "P2-13"
+    },
+    {
+      "type": "jira",
+      "ref": "P2-14"
+    },
+    {
+      "type": "jira",
+      "ref": "P2-15"
+    },
+    {
+      "type": "jira",
+      "ref": "P2-16"
+    },
+    {
+      "type": "jira",
+      "ref": "P2-17"
+    },
+    {
+      "type": "jira",
+      "ref": "P2-18"
+    },
+    {
+      "type": "jira",
+      "ref": "P2-19"
+    },
+    {
+      "type": "jira",
+      "ref": "P2-20"
+    },
+    {
+      "type": "jira",
+      "ref": "P0-4"
+    },
+    {
+      "type": "jira",
       "ref": "P0-1"
     },
     {
@@ -6771,10 +6857,6 @@
     {
       "type": "jira",
       "ref": "P0-3"
-    },
-    {
-      "type": "jira",
-      "ref": "P0-4"
     },
     {
       "type": "jira",

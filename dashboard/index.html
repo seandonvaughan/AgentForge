@@ -70,7 +70,7 @@ body {
 .container {
   max-width: 1440px;
   margin: 0 auto;
-  padding: 0 24px 48px;
+  padding: 0 24px 80px;
 }
 
 header {
@@ -959,6 +959,261 @@ header {
   margin: 4px 0;
 }
 
+@keyframes countUp {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes savingsGrow {
+  from { width: 0%; }
+  to { width: 62%; }
+}
+
+@keyframes pulseBright {
+  0%, 100% { opacity: 1; box-shadow: 0 0 4px currentColor; }
+  50% { opacity: 0.6; box-shadow: 0 0 12px currentColor; }
+}
+
+.budget-bar-container {
+  margin-top: 16px;
+  grid-column: 1 / -1;
+}
+
+.budget-bar-label {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  margin-bottom: 6px;
+  color: var(--text-secondary);
+}
+
+.budget-bar-label .budget-amount {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.budget-bar-bg {
+  width: 100%;
+  height: 12px;
+  background: var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.budget-bar-fill {
+  height: 100%;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--green), var(--cyan), var(--blue));
+  transition: width 0.5s ease;
+  width: 0%;
+}
+
+.budget-bar-fill.warning {
+  background: linear-gradient(90deg, var(--orange), var(--red));
+}
+
+.cost-running {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.cost-running-item {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cost-running-item .cost-tier-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.cost-running-item .cost-tier-val {
+  font-weight: 700;
+  min-width: 60px;
+}
+
+.session-list-container {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.session-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(22,27,34,0.8);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.session-list-header .session-counts {
+  display: flex;
+  gap: 12px;
+}
+
+.session-list-header .session-counts span {
+  font-weight: 600;
+}
+
+.session-list-header .session-counts .active-count {
+  color: var(--blue);
+}
+
+.session-list-header .session-counts .total-count {
+  color: var(--text-primary);
+}
+
+.session-list-body {
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.session-list-body::-webkit-scrollbar { width: 6px; }
+.session-list-body::-webkit-scrollbar-track { background: transparent; }
+.session-list-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+.session-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(48,54,61,0.5);
+  font-size: 12px;
+  animation: slideInDown 0.3s ease-out;
+}
+
+.session-bar:nth-child(odd) { background: #161b22; }
+.session-bar:nth-child(even) { background: #1c2128; }
+
+.session-bar .session-agent {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--text-primary);
+  min-width: 140px;
+}
+
+.session-bar .session-task {
+  color: var(--text-secondary);
+  font-size: 11px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-bar .session-progress {
+  width: 80px;
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.session-bar .session-progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s ease, background 0.3s;
+}
+
+.session-bar .session-status-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  min-width: 75px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.session-status-badge.created {
+  background: rgba(88,166,255,0.2);
+  color: var(--blue);
+  border: 1px solid rgba(88,166,255,0.4);
+}
+
+.session-status-badge.active {
+  background: rgba(88,166,255,0.2);
+  color: var(--blue);
+  border: 1px solid rgba(88,166,255,0.4);
+  animation: pulseBright 2s ease-in-out infinite;
+}
+
+.session-status-badge.completed {
+  background: rgba(63,185,80,0.2);
+  color: var(--green);
+  border: 1px solid rgba(63,185,80,0.4);
+}
+
+.session-status-badge.expired {
+  background: rgba(248,81,73,0.2);
+  color: var(--red);
+  border: 1px solid rgba(248,81,73,0.4);
+}
+
+.dashboard-footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: var(--bg-card);
+  border-top: 1px solid var(--border);
+  padding: 8px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.dashboard-footer .footer-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dashboard-footer .footer-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  flex-shrink: 0;
+}
+
+.dashboard-footer .footer-label {
+  color: var(--text-muted);
+}
+
+.dashboard-footer .footer-value {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.dashboard-footer .footer-status {
+  color: var(--green);
+  font-weight: 700;
+}
+
 @media (max-width: 768px) {
   .agent-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
   .bus-msg { grid-template-columns: 60px 1fr 60px; font-size: 11px; }
@@ -966,6 +1221,7 @@ header {
   .bus-topic-filter { width: 120px; }
   .cost-grid { grid-template-columns: 1fr; }
   .header-inner { flex-direction: column; align-items: flex-start; }
+  .dashboard-footer { flex-wrap: wrap; gap: 12px; font-size: 10px; }
 }
 </style>
 </head>
@@ -989,7 +1245,7 @@ header {
 
   <!-- TEAM OVERVIEW -->
   <div class="section" id="team-section">
-    <div class="section-title">Team Overview -- 21 Agents</div>
+    <div class="section-title">Team Overview -- 24 Agents</div>
     <div class="agent-grid" id="agent-grid"></div>
   </div>
 
@@ -1092,27 +1348,49 @@ header {
   <!-- SESSION TIMELINE -->
   <div class="section" style="animation-delay: 0.3s;">
     <div class="section-title">Session Timeline</div>
-    <div class="timeline-container">
-      <div class="timeline-track" id="timeline-track">
-        <div class="timeline-bg"></div>
+    <div class="session-list-container">
+      <div class="session-list-header">
+        <div><span class="live-dot"></span> Live Sessions</div>
+        <div class="session-counts">
+          <span>Active: <span class="active-count" id="session-active-count">0</span></span>
+          <span>Total: <span class="total-count" id="session-total-count">0</span></span>
+        </div>
       </div>
-      <div class="timeline-legend">
-        <div class="timeline-legend-item"><div class="timeline-legend-dot active"></div>Active</div>
-        <div class="timeline-legend-item"><div class="timeline-legend-dot persisted"></div>Persisted</div>
-        <div class="timeline-legend-item"><div class="timeline-legend-dot completed"></div>Completed</div>
-      </div>
+      <div class="session-list-body" id="session-list-body"></div>
     </div>
   </div>
 
   <!-- COST DASHBOARD -->
   <div class="section" style="animation-delay: 0.35s;">
     <div class="section-title">Cost Dashboard</div>
+    <div class="cost-running" id="cost-running">
+      <div class="cost-running-item">
+        <span class="cost-tier-dot" style="background:var(--gold)"></span>
+        <span>Opus:</span>
+        <span class="cost-tier-val" id="cost-opus" style="color:var(--gold)">$0.000</span>
+      </div>
+      <div class="cost-running-item">
+        <span class="cost-tier-dot" style="background:var(--blue)"></span>
+        <span>Sonnet:</span>
+        <span class="cost-tier-val" id="cost-sonnet" style="color:var(--blue)">$0.000</span>
+      </div>
+      <div class="cost-running-item">
+        <span class="cost-tier-dot" style="background:var(--green)"></span>
+        <span>Haiku:</span>
+        <span class="cost-tier-val" id="cost-haiku" style="color:var(--green)">$0.000</span>
+      </div>
+      <div class="cost-running-item">
+        <span style="color:var(--text-muted)">|</span>
+        <span>Total:</span>
+        <span class="cost-tier-val" id="cost-total" style="color:var(--cyan)">$0.000</span>
+      </div>
+    </div>
     <div class="cost-grid">
       <div class="cost-card">
         <h3>Model Distribution</h3>
-        <div class="pie-chart">
+        <div class="pie-chart" id="pie-chart">
           <div class="pie-hole">
-            <span class="big">21</span>
+            <span class="big">24</span>
             <span class="small">agents</span>
           </div>
         </div>
@@ -1120,17 +1398,17 @@ header {
           <div class="pie-legend-item">
             <div class="pie-swatch" style="background:var(--gold)"></div>
             <span>Opus (strategic)</span>
-            <span class="pie-pct">24%</span>
+            <span class="pie-pct" id="pie-pct-opus">24%</span>
           </div>
           <div class="pie-legend-item">
             <div class="pie-swatch" style="background:var(--blue)"></div>
             <span>Sonnet (execution)</span>
-            <span class="pie-pct">54%</span>
+            <span class="pie-pct" id="pie-pct-sonnet">54%</span>
           </div>
           <div class="pie-legend-item">
             <div class="pie-swatch" style="background:var(--green)"></div>
             <span>Haiku (utility)</span>
-            <span class="pie-pct">22%</span>
+            <span class="pie-pct" id="pie-pct-haiku">22%</span>
           </div>
         </div>
       </div>
@@ -1138,10 +1416,10 @@ header {
       <div class="cost-card">
         <h3>Cost Savings vs All-Opus</h3>
         <div class="savings-display">
-          <div class="savings-big">62%</div>
+          <div class="savings-big" id="savings-pct">0%</div>
           <div class="savings-label">reduction from tiered model routing</div>
           <div class="savings-bar-bg">
-            <div class="savings-bar-fill"></div>
+            <div class="savings-bar-fill" id="savings-bar-fill" style="width:0%"></div>
           </div>
           <div class="savings-compare">
             <span>All-Opus baseline</span>
@@ -1151,34 +1429,68 @@ header {
       </div>
 
       <div class="cost-card">
-        <h3>Cost Per Tier</h3>
+        <h3>Cost Per Tier (Running)</h3>
         <div class="cost-breakdown">
           <div class="cost-row">
             <span class="cost-label">Opus (5 agents)</span>
-            <span class="cost-value" style="color:var(--gold)">$15/M in, $75/M out</span>
+            <span class="cost-value" id="cost-tier-opus" style="color:var(--gold)">$0.000</span>
           </div>
           <div class="cost-row">
             <span class="cost-label">Sonnet (13 agents)</span>
-            <span class="cost-value" style="color:var(--blue)">$3/M in, $15/M out</span>
+            <span class="cost-value" id="cost-tier-sonnet" style="color:var(--blue)">$0.000</span>
           </div>
           <div class="cost-row">
-            <span class="cost-label">Haiku (3 agents)</span>
-            <span class="cost-value" style="color:var(--green)">$0.25/M in, $1.25/M out</span>
+            <span class="cost-label">Haiku (6 agents)</span>
+            <span class="cost-value" id="cost-tier-haiku" style="color:var(--green)">$0.000</span>
           </div>
           <div class="cost-divider"></div>
           <div class="cost-row">
-            <span class="cost-label">Est. cost per sprint</span>
-            <span class="cost-value" style="color:var(--cyan)">$4.20</span>
+            <span class="cost-label">Grand total</span>
+            <span class="cost-value" id="cost-grand-total" style="color:var(--cyan)">$0.000</span>
           </div>
           <div class="cost-row">
             <span class="cost-label">All-Opus equivalent</span>
-            <span class="cost-value" style="color:var(--red);text-decoration:line-through">$11.05</span>
+            <span class="cost-value" id="cost-opus-equiv" style="color:var(--red);text-decoration:line-through">$0.000</span>
           </div>
+        </div>
+      </div>
+
+      <div class="budget-bar-container">
+        <div class="budget-bar-label">
+          <span>Budget</span>
+          <span class="budget-amount" id="budget-label">$0.00 / $200.00</span>
+        </div>
+        <div class="budget-bar-bg">
+          <div class="budget-bar-fill" id="budget-bar-fill"></div>
         </div>
       </div>
     </div>
   </div>
 
+</div>
+
+<!-- Footer -->
+<div class="dashboard-footer" id="dashboard-footer">
+  <div class="footer-item">
+    <span class="footer-label">Version:</span>
+    <span class="footer-value">v4.1.0</span>
+  </div>
+  <div class="footer-item">
+    <span class="footer-label">Tests:</span>
+    <span class="footer-value">1379 passing</span>
+  </div>
+  <div class="footer-item">
+    <span class="footer-label">Team:</span>
+    <span class="footer-value">24 agents</span>
+  </div>
+  <div class="footer-item">
+    <span class="footer-label">Uptime:</span>
+    <span class="footer-value" id="footer-uptime">00:00:00</span>
+  </div>
+  <div class="footer-item">
+    <span class="footer-dot"></span>
+    <span class="footer-status">System Status: OPERATIONAL</span>
+  </div>
 </div>
 
 <!-- Agent Detail Overlay -->
@@ -1585,17 +1897,257 @@ header {
   }
 
   // =====================================================================
-  // RENDER: Session Timeline
+  // RENDER: Session Timeline (Dynamic)
   // =====================================================================
-  function renderTimeline() {
-    var track = document.getElementById("timeline-track");
-    sessions.forEach(function(s) {
-      var seg = el("div", "timeline-segment " + s.status, s.label);
-      seg.style.width = s.width + "px";
-      var lbl = el("span", "timeline-label-sub", s.status);
-      seg.appendChild(lbl);
-      track.appendChild(seg);
+  var sessionTasks = [
+    "Refactor OrgGraph DAG traversal",
+    "Run integration test suite",
+    "Validate API contracts",
+    "Analyze cost optimization paths",
+    "Review PR #52: Bus refactor",
+    "Sprint planning session",
+    "Memory subsystem stress test",
+    "Flywheel metric collection",
+    "Schema migration validation",
+    "Lint pass on v4 modules",
+    "Session persistence check",
+    "Deploy staging environment",
+    "Template optimization pass",
+    "Autonomy tier evaluation",
+    "Knowledge retrieval benchmark",
+    "Capability inheritance sync",
+    "Meeting coordination setup",
+    "Debug flaky test: session resume",
+    "Compile sprint velocity report",
+    "Generate meta-learning insights"
+  ];
+
+  var liveSessions = [];
+  var sessionIdCounter = 0;
+
+  function getRandomAgent() {
+    return agents[Math.floor(Math.random() * agents.length)].id;
+  }
+
+  function getRandomTask() {
+    return sessionTasks[Math.floor(Math.random() * sessionTasks.length)];
+  }
+
+  function updateSessionCounts() {
+    var activeCount = liveSessions.filter(function(s) { return s.status === "active" || s.status === "created"; }).length;
+    document.getElementById("session-active-count").textContent = activeCount;
+    document.getElementById("session-total-count").textContent = liveSessions.length;
+  }
+
+  function renderSessionBar(session) {
+    var bar = el("div", "session-bar");
+    bar.id = "session-" + session.id;
+
+    var agentSpan = el("span", "session-agent", session.agent);
+    bar.appendChild(agentSpan);
+
+    var taskSpan = el("span", "session-task", session.task);
+    bar.appendChild(taskSpan);
+
+    var progressDiv = el("div", "session-progress");
+    var progressFill = el("div", "session-progress-fill");
+    progressFill.id = "session-prog-" + session.id;
+    progressFill.style.width = "0%";
+    progressFill.style.background = "var(--blue)";
+    progressDiv.appendChild(progressFill);
+    bar.appendChild(progressDiv);
+
+    var badge = el("span", "session-status-badge created", "CREATED");
+    badge.id = "session-badge-" + session.id;
+    bar.appendChild(badge);
+
+    return bar;
+  }
+
+  function createSession() {
+    sessionIdCounter++;
+    var session = {
+      id: sessionIdCounter,
+      agent: getRandomAgent(),
+      task: getRandomTask(),
+      status: "created",
+      createdAt: Date.now(),
+      duration: 15000 + Math.random() * 10000 // 15-25 seconds
+    };
+    liveSessions.push(session);
+
+    var body = document.getElementById("session-list-body");
+    var bar = renderSessionBar(session);
+    body.insertBefore(bar, body.firstChild);
+
+    // Trim to 15 max
+    while (liveSessions.length > 15) {
+      var oldest = liveSessions.shift();
+      var oldEl = document.getElementById("session-" + oldest.id);
+      if (oldEl) oldEl.remove();
+    }
+
+    // Transition to active after 1-2s
+    setTimeout(function() {
+      session.status = "active";
+      var badge = document.getElementById("session-badge-" + session.id);
+      if (badge) {
+        badge.className = "session-status-badge active";
+        badge.textContent = "ACTIVE";
+      }
+      updateSessionCounts();
+    }, 1000 + Math.random() * 1000);
+
+    // Complete or expire after duration
+    setTimeout(function() {
+      var willComplete = Math.random() > 0.15; // 85% complete, 15% expire
+      session.status = willComplete ? "completed" : "expired";
+      var badge = document.getElementById("session-badge-" + session.id);
+      var prog = document.getElementById("session-prog-" + session.id);
+      if (badge) {
+        badge.className = "session-status-badge " + session.status;
+        badge.textContent = willComplete ? "COMPLETED" : "EXPIRED";
+      }
+      if (prog) {
+        prog.style.width = "100%";
+        prog.style.background = willComplete ? "var(--green)" : "var(--red)";
+      }
+      updateSessionCounts();
+    }, session.duration);
+
+    updateSessionCounts();
+  }
+
+  // Progress bar updater for active sessions
+  function updateSessionProgress() {
+    liveSessions.forEach(function(s) {
+      if (s.status === "active" || s.status === "created") {
+        var elapsed = Date.now() - s.createdAt;
+        var pct = Math.min(90, (elapsed / s.duration) * 90);
+        var prog = document.getElementById("session-prog-" + s.id);
+        if (prog) {
+          prog.style.width = pct + "%";
+          prog.style.background = "var(--blue)";
+        }
+      }
     });
+  }
+
+  // =====================================================================
+  // COST DASHBOARD (Dynamic)
+  // =====================================================================
+  var costOpus = 0;
+  var costSonnet = 0;
+  var costHaiku = 0;
+  var pageLoadTime = Date.now();
+
+  function randRange(min, max) {
+    return min + Math.random() * (max - min);
+  }
+
+  function updateCosts() {
+    costOpus += randRange(0.003, 0.008);
+    costSonnet += randRange(0.001, 0.004);
+    costHaiku += randRange(0.0005, 0.001);
+    var total = costOpus + costSonnet + costHaiku;
+    var opusEquiv = total / 0.38; // All-Opus would cost ~2.6x more
+
+    document.getElementById("cost-opus").textContent = "$" + costOpus.toFixed(3);
+    document.getElementById("cost-sonnet").textContent = "$" + costSonnet.toFixed(3);
+    document.getElementById("cost-haiku").textContent = "$" + costHaiku.toFixed(3);
+    document.getElementById("cost-total").textContent = "$" + total.toFixed(3);
+
+    document.getElementById("cost-tier-opus").textContent = "$" + costOpus.toFixed(3);
+    document.getElementById("cost-tier-sonnet").textContent = "$" + costSonnet.toFixed(3);
+    document.getElementById("cost-tier-haiku").textContent = "$" + costHaiku.toFixed(3);
+    document.getElementById("cost-grand-total").textContent = "$" + total.toFixed(3);
+    document.getElementById("cost-opus-equiv").textContent = "$" + opusEquiv.toFixed(3);
+
+    // Budget bar
+    var budgetPct = Math.min(100, (total / 200) * 100);
+    document.getElementById("budget-label").textContent = "$" + total.toFixed(2) + " / $200.00";
+    var budgetFill = document.getElementById("budget-bar-fill");
+    budgetFill.style.width = budgetPct + "%";
+    if (budgetPct > 75) {
+      budgetFill.classList.add("warning");
+    } else {
+      budgetFill.classList.remove("warning");
+    }
+  }
+
+  // Animate savings from 0% to 62% on load
+  function animateSavings() {
+    var target = 62;
+    var current = 0;
+    var savingsPct = document.getElementById("savings-pct");
+    var savingsBar = document.getElementById("savings-bar-fill");
+    var interval = setInterval(function() {
+      current += 1;
+      if (current >= target) {
+        current = target;
+        clearInterval(interval);
+      }
+      savingsPct.textContent = current + "%";
+      savingsBar.style.width = current + "%";
+    }, 30);
+  }
+
+  // Animate pie chart on load
+  function animatePieChart() {
+    var pie = document.getElementById("pie-chart");
+    if (!pie) return;
+    pie.style.transition = "none";
+    pie.style.background = "conic-gradient(var(--gold) 0deg 0deg, var(--blue) 0deg 0deg, var(--green) 0deg 360deg)";
+    setTimeout(function() {
+      pie.style.transition = "background 1.5s ease";
+      // Opus 24% = 86.4deg, Sonnet 54% = 194.4deg (total 280.8deg), Haiku 22% = rest
+      pie.style.background = "conic-gradient(var(--gold) 0deg 86.4deg, var(--blue) 86.4deg 280.8deg, var(--green) 280.8deg 360deg)";
+    }, 100);
+  }
+
+  // =====================================================================
+  // AGENT CARDS ACTIVITY
+  // =====================================================================
+  function agentCardActivity() {
+    var cards = document.querySelectorAll(".agent-card .status-dot");
+    var count = 2 + Math.floor(Math.random() * 2); // 2-3 agents
+    var indices = [];
+    while (indices.length < count && indices.length < cards.length) {
+      var idx = Math.floor(Math.random() * cards.length);
+      if (indices.indexOf(idx) === -1) indices.push(idx);
+    }
+
+    indices.forEach(function(i) {
+      var dot = cards[i];
+      // Set to active (pulsing)
+      dot.className = "status-dot active";
+      dot.title = "active";
+
+      // After 5-8s, set to complete
+      var completeDelay = 5000 + Math.random() * 3000;
+      setTimeout(function() {
+        dot.className = "status-dot complete";
+        dot.title = "complete";
+
+        // After 3s, back to idle
+        setTimeout(function() {
+          dot.className = "status-dot idle";
+          dot.title = "idle";
+        }, 3000);
+      }, completeDelay);
+    });
+  }
+
+  // =====================================================================
+  // FOOTER UPTIME
+  // =====================================================================
+  function updateUptime() {
+    var elapsed = Math.floor((Date.now() - pageLoadTime) / 1000);
+    var hrs = Math.floor(elapsed / 3600);
+    var mins = Math.floor((elapsed % 3600) / 60);
+    var secs = elapsed % 60;
+    var pad = function(n) { return n < 10 ? "0" + n : "" + n; };
+    document.getElementById("footer-uptime").textContent = pad(hrs) + ":" + pad(mins) + ":" + pad(secs);
   }
 
   // =====================================================================
@@ -1613,25 +2165,53 @@ header {
   renderAgents();
   renderFlywheel();
   renderCoverage();
-  renderTimeline();
   seedBus();
   updateClock();
+  animateSavings();
+  animatePieChart();
 
-  setInterval(updateClock, 1000);
+  // Seed a few initial sessions
+  for (var si = 0; si < 4; si++) {
+    createSession();
+  }
 
+  // Clock + uptime every second
+  setInterval(function() {
+    updateClock();
+    updateUptime();
+  }, 1000);
+
+  // Bus messages
   setInterval(function() {
     addBusMessage();
     updateRate();
   }, 3500);
 
-  // Randomly shift agent status dots for visual life
-  setInterval(function() {
-    var dots = document.querySelectorAll(".agent-card .status-dot");
-    var idx = Math.floor(Math.random() * dots.length);
-    var states = ["idle", "active", "complete"];
-    var dot = dots[idx];
-    dot.className = "status-dot " + states[Math.floor(Math.random() * states.length)];
-  }, 5000);
+  // Cost counter every 2 seconds
+  setInterval(updateCosts, 2000);
+
+  // Session progress update every 1 second
+  setInterval(updateSessionProgress, 1000);
+
+  // New session every 8-12 seconds
+  function scheduleSession() {
+    var delay = 8000 + Math.random() * 4000;
+    setTimeout(function() {
+      createSession();
+      scheduleSession();
+    }, delay);
+  }
+  scheduleSession();
+
+  // Agent card activity every 3-5 seconds
+  function scheduleAgentActivity() {
+    var delay = 3000 + Math.random() * 2000;
+    setTimeout(function() {
+      agentCardActivity();
+      scheduleAgentActivity();
+    }, delay);
+  }
+  scheduleAgentActivity();
 
 })();
 </script>

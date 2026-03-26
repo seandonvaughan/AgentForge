@@ -1,29 +1,47 @@
 name: AgentForge-team
-forged_at: '2026-03-26T16:07:11.726Z'
+forged_at: '2026-03-26T16:30:00.000Z'
 forged_by: agentforge
-project_hash: b4ca988722c3
+forged_version: '0.4.1'
+project_hash: e46f5d3a0b1c
 agents:
   strategic:
     - ceo
     - genesis
     - architect
-  implementation:
     - cto
+    - meta-architect
+    - rd-lead
+  implementation:
     - coo
     - cfo
-    - meta-architect
     - project-manager
     - skill-designer
     - template-optimizer
     - coder
+    - bus-unification-engineer
+    - search-engineer
+    - observability-engineer
+    - frontend-dev
+    - prototype-dev
+    - devops-engineer
+    - sprint-planner
   quality:
     - team-reviewer
     - dba
     - debugger
     - linter
     - api-specialist
+    - bus-integration-tester
+    - memory-stress-tester
+    - flywheel-validator
+    - session-resilience-tester
+    - qa-automation-engineer
+    - performance-engineer
+    - ui-ux-designer
   utility:
     - researcher
+    - experiment-runner
+    - documentation-writer
 model_routing:
   opus:
     - ceo
@@ -31,6 +49,7 @@ model_routing:
     - architect
     - cto
     - meta-architect
+    - rd-lead
   sonnet:
     - coo
     - cfo
@@ -42,9 +61,25 @@ model_routing:
     - dba
     - debugger
     - api-specialist
+    - bus-unification-engineer
+    - search-engineer
+    - observability-engineer
+    - bus-integration-tester
+    - memory-stress-tester
+    - flywheel-validator
+    - frontend-dev
+    - prototype-dev
+    - devops-engineer
+    - sprint-planner
+    - qa-automation-engineer
+    - performance-engineer
+    - ui-ux-designer
+    - experiment-runner
   haiku:
     - linter
     - researcher
+    - session-resilience-tester
+    - documentation-writer
 delegation_graph:
   ceo:
     - cto
@@ -52,6 +87,25 @@ delegation_graph:
     - cfo
   cto:
     - architect
+    - rd-lead
+    - devops-engineer
+  rd-lead:
+    - experiment-runner
+    - prototype-dev
+    - researcher
+  architect:
+    - coder
+    - bus-unification-engineer
+    - search-engineer
+    - performance-engineer
+    - ui-ux-designer
+    - researcher
+  ui-ux-designer:
+    - frontend-dev
+    - researcher
+  meta-architect:
+    - observability-engineer
+    - researcher
   coo:
     - business-analyst
     - operations-manager
@@ -59,33 +113,41 @@ delegation_graph:
     - project-manager
     - researcher
     - meta-architect
-  meta-architect:
-    - researcher
-    - file-reader
   project-manager:
+    - sprint-planner
+    - documentation-writer
     - researcher
-    - file-reader
+  team-reviewer:
+    - qa-automation-engineer
   skill-designer:
     - researcher
-    - file-reader
-  team-reviewer:
-    - file-reader
   template-optimizer:
-    - researcher
-    - file-reader
-  architect:
-    - coder
     - researcher
   coder:
     - researcher
     - linter
-    - file-reader
   debugger:
-    - file-reader
     - researcher
     - test-runner
     - code-explorer
   api-specialist:
     - researcher
     - linter
-    - file-reader
+domains_activated:
+  - core
+  - software
+v4:
+  org_graph: true
+  message_bus: true
+  memory_registry: true
+  session_manager: true
+  reforge_engine: true
+  flywheel: true
+  observability: true
+autonomous_sprints:
+  enabled: true
+  start_version: "4.3"
+  end_version: "4.9"
+  planning_agent: rd-lead
+  execution_agents: all
+  review_gate: ceo
