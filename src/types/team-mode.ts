@@ -104,14 +104,11 @@ export interface TeamModeConfig {
 export interface HibernatedSession {
   sessionId: string;
   autonomyLevel: AutonomyLevel;
-  activatedAt: string;
   hibernatedAt: string;
-  inFlightTasks: TeamModeMessage[];
-  pendingMessages: TeamModeMessage[];
-  costSnapshot: {
-    totalSpentUsd: number;
-    remainingBudgetUsd: number;
-  };
-  gitHash: string;
-  teamManifestHash: string;
+  projectRoot: string;
+  teamManifest: TeamManifest;
+  feedEntries: FeedEntry[];
+  gitCommitAtHibernation: string;
+  sessionBudgetUsd: number;
+  spentUsd: number;
 }
