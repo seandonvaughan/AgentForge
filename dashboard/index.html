@@ -744,6 +744,260 @@ header {
 .status-fail { color: var(--red); font-family: var(--font-mono); font-weight: 700; }
 .agent-list-cell { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
 
+/* ── Session History ─────────────────────────────────────── */
+.session-summary-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.session-summary-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+}
+.session-summary-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.session-summary-value {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.session-summary-sub {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 3px;
+  font-family: var(--font-mono);
+}
+.session-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.session-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.session-table th {
+  background: var(--bg-card);
+  padding: 9px 14px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 1px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+}
+.session-table td {
+  padding: 8px 14px;
+  border-bottom: 1px solid rgba(48,54,61,0.4);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+.session-table tbody tr:hover { background: var(--bg-card); }
+.session-task-cell {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-cost-cell { color: var(--gold); font-weight: 700; }
+.session-date-cell { color: var(--text-muted); }
+.session-empty {
+  padding: 32px;
+  text-align: center;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+/* ── Investor Scorecard ───────────────────────────────────── */
+.scorecard-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.scorecard-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+}
+.scorecard-card-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.scorecard-card-title::before {
+  content: '';
+  display: inline-block;
+  width: 3px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--gold);
+}
+.velocity-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.velocity-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  width: 40px;
+  flex-shrink: 0;
+}
+.velocity-track {
+  flex: 1;
+  height: 18px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+.velocity-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--blue), var(--cyan));
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 6px;
+  transition: width 1s ease;
+}
+.velocity-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-primary);
+  width: 28px;
+  text-align: right;
+  flex-shrink: 0;
+}
+.efficiency-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(48,54,61,0.4);
+  font-size: 12px;
+}
+.efficiency-rank {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  width: 20px;
+  flex-shrink: 0;
+}
+.efficiency-agent {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  flex: 1;
+  padding: 0 8px;
+}
+.efficiency-cost-per { font-family: var(--font-mono); font-size: 11px; color: var(--text-primary); font-weight: 700; }
+.efficiency-sessions { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); }
+.model-breakdown-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.model-breakdown-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  width: 56px;
+  flex-shrink: 0;
+}
+.model-breakdown-track {
+  flex: 1;
+  height: 16px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.model-breakdown-fill {
+  height: 100%;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  padding-left: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.9);
+  white-space: nowrap;
+  overflow: hidden;
+  transition: width 1s ease;
+}
+.model-breakdown-fill.opus { background: var(--gold); }
+.model-breakdown-fill.sonnet { background: var(--blue); }
+.model-breakdown-fill.haiku { background: var(--green); }
+.model-breakdown-amount {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  width: 60px;
+  text-align: right;
+  flex-shrink: 0;
+}
+.sprint-cost-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(48,54,61,0.4);
+  font-size: 12px;
+}
+.sprint-cost-label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.sprint-cost-bar-wrap {
+  flex: 1;
+  margin: 0 12px;
+  height: 10px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.sprint-cost-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--gold), var(--orange));
+  transition: width 1s ease;
+}
+.sprint-cost-value {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--gold);
+  width: 60px;
+  text-align: right;
+}
+
 /* ── Responsive ──────────────────────────────────────────── */
 @media (max-width: 768px) {
   .sidebar { display: none; }
@@ -770,7 +1024,7 @@ header {
   <div class="header-inner">
     <div class="header-left">
       <div class="logo">Agent<span>Forge</span></div>
-      <div class="version-badge">v4.4</div>
+      <div class="version-badge">v4.6</div>
     </div>
     <div class="header-right">
       <span><span class="live-dot"></span>Live</span>
@@ -810,6 +1064,8 @@ header {
       <div class="sidebar-group-label">Intelligence</div>
       <a class="sidebar-link" href="#flywheel"><span class="nav-icon">🌀</span>Flywheel</a>
       <a class="sidebar-link" href="#cost-analytics"><span class="nav-icon">💰</span>Cost Analytics</a>
+      <a class="sidebar-link" href="#session-history"><span class="nav-icon">📊</span>Session History</a>
+      <a class="sidebar-link" href="#investor-scorecard"><span class="nav-icon">📈</span>Investor Scorecard</a>
       <a class="sidebar-link" href="#memory-browser"><span class="nav-icon">🧠</span>Memory Browser</a>
       <a class="sidebar-link" href="#reforge-panel"><span class="nav-icon">⚙</span>Reforge Panel</a>
     </div>
@@ -2480,6 +2736,210 @@ header {
       </div>
     </section>
 
+    <!-- Session History & Investment Tracker (P0-5) -->
+    <section class="section" id="session-history">
+      <div class="section-header">
+        <div class="section-title">Session History &amp; Investment Tracker</div>
+        <div class="section-actions">
+          <button class="export-btn" onclick="downloadJSON('session-history', window._data.sessionHistory)">⬇ JSON</button>
+        </div>
+      </div>
+      <!-- Summary Bar -->
+      <div class="session-summary-bar" id="session-summary-bar">
+        <div class="session-summary-card">
+          <div class="session-summary-label">All-Time Spend</div>
+          <div class="session-summary-value" id="sess-total-spend">—</div>
+          <div class="session-summary-sub" id="sess-session-count">Loading…</div>
+        </div>
+        <div class="session-summary-card">
+          <div class="session-summary-label">Opus Spend</div>
+          <div class="session-summary-value" id="sess-opus-spend" style="color:var(--gold)">—</div>
+          <div class="session-summary-sub" id="sess-opus-pct">—</div>
+        </div>
+        <div class="session-summary-card">
+          <div class="session-summary-label">Sonnet Spend</div>
+          <div class="session-summary-value" id="sess-sonnet-spend" style="color:var(--blue)">—</div>
+          <div class="session-summary-sub" id="sess-sonnet-pct">—</div>
+        </div>
+        <div class="session-summary-card">
+          <div class="session-summary-label">Haiku Spend</div>
+          <div class="session-summary-value" id="sess-haiku-spend" style="color:var(--green)">—</div>
+          <div class="session-summary-sub" id="sess-haiku-pct">—</div>
+        </div>
+      </div>
+      <!-- Session Table -->
+      <div class="session-table-wrap">
+        <table class="session-table">
+          <thead>
+            <tr>
+              <th>Agent</th>
+              <th>Model</th>
+              <th>Task</th>
+              <th>Cost</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody id="session-history-tbody">
+            <tr><td colspan="5" class="session-empty">Loading session data…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Investment Performance Scorecard (P0-6) -->
+    <section class="section" id="investor-scorecard">
+      <div class="section-header">
+        <div class="section-title">Investment Performance Scorecard</div>
+        <div class="section-actions">
+          <button class="export-btn" onclick="downloadJSON('investor-scorecard', window._data.sessionHistory)">⬇ JSON</button>
+        </div>
+      </div>
+      <div class="scorecard-grid">
+
+        <!-- Cost per Sprint -->
+        <div class="scorecard-card">
+          <div class="scorecard-card-title">Cost per Sprint</div>
+          <div id="scorecard-sprint-costs">
+            <div class="sprint-cost-row">
+              <span class="sprint-cost-label">v4.3</span>
+              <div class="sprint-cost-bar-wrap"><div class="sprint-cost-bar-fill" style="width:92%"></div></div>
+              <span class="sprint-cost-value">$18.47</span>
+            </div>
+            <div class="sprint-cost-row">
+              <span class="sprint-cost-label">v4.4</span>
+              <div class="sprint-cost-bar-wrap"><div class="sprint-cost-bar-fill" style="width:83%"></div></div>
+              <span class="sprint-cost-value">$16.82</span>
+            </div>
+            <div class="sprint-cost-row">
+              <span class="sprint-cost-label">v4.5</span>
+              <div class="sprint-cost-bar-wrap"><div class="sprint-cost-bar-fill" style="width:35%"></div></div>
+              <span class="sprint-cost-value" id="scorecard-v45-cost">$7.09</span>
+            </div>
+            <div class="sprint-cost-row" id="scorecard-v46-row" style="display:none">
+              <span class="sprint-cost-label">v4.6</span>
+              <div class="sprint-cost-bar-wrap"><div class="sprint-cost-bar-fill" id="scorecard-v46-bar" style="width:0%"></div></div>
+              <span class="sprint-cost-value" id="scorecard-v46-cost">$0.00</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Velocity Trend -->
+        <div class="scorecard-card">
+          <div class="scorecard-card-title">Velocity Trend (Tasks / Sprint)</div>
+          <div>
+            <div class="velocity-bar-row">
+              <span class="velocity-label">v4.3</span>
+              <div class="velocity-track"><div class="velocity-fill" style="width:100%"></div></div>
+              <span class="velocity-count">23</span>
+            </div>
+            <div class="velocity-bar-row">
+              <span class="velocity-label">v4.4</span>
+              <div class="velocity-track"><div class="velocity-fill" style="width:100%"></div></div>
+              <span class="velocity-count">23</span>
+            </div>
+            <div class="velocity-bar-row">
+              <span class="velocity-label">v4.5</span>
+              <div class="velocity-track"><div class="velocity-fill" style="width:35%"></div></div>
+              <span class="velocity-count">8</span>
+            </div>
+            <div class="velocity-bar-row" id="scorecard-v46-velocity-row" style="display:none">
+              <span class="velocity-label">v4.6</span>
+              <div class="velocity-track"><div class="velocity-fill" id="scorecard-v46-velocity-bar" style="width:0%"></div></div>
+              <span class="velocity-count" id="scorecard-v46-velocity-count">0</span>
+            </div>
+          </div>
+          <div style="margin-top:12px; padding-top:10px; border-top:1px solid var(--border)">
+            <div style="font-size:11px; color:var(--text-muted)">Cost/Task trend:</div>
+            <div style="display:flex; gap:8px; margin-top:6px; font-family:var(--font-mono); font-size:11px;">
+              <span style="color:var(--text-secondary)">v4.3 <strong style="color:var(--text-primary)">$0.80</strong></span>
+              <span style="color:var(--text-muted)">→</span>
+              <span style="color:var(--text-secondary)">v4.4 <strong style="color:var(--green)">$0.73</strong></span>
+              <span style="color:var(--text-muted)">→</span>
+              <span style="color:var(--text-secondary)">v4.5 <strong style="color:var(--green)" id="scorecard-v45-cpt">$0.89</strong></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Agent Efficiency Rankings -->
+        <div class="scorecard-card">
+          <div class="scorecard-card-title">Agent Efficiency Rankings</div>
+          <div id="scorecard-efficiency-list">
+            <!-- populated by JS -->
+            <div class="efficiency-row">
+              <span class="efficiency-rank">#1</span>
+              <span class="efficiency-agent" style="color:var(--green)">linter</span>
+              <span class="efficiency-cost-per">$0.003/task</span>
+              <span class="efficiency-sessions">13 tasks</span>
+            </div>
+            <div class="efficiency-row">
+              <span class="efficiency-rank">#2</span>
+              <span class="efficiency-agent" style="color:var(--green)">test-runner</span>
+              <span class="efficiency-cost-per">$0.005/task</span>
+              <span class="efficiency-sessions">7 tasks</span>
+            </div>
+            <div class="efficiency-row">
+              <span class="efficiency-rank">#3</span>
+              <span class="efficiency-agent" style="color:var(--blue)">coder</span>
+              <span class="efficiency-cost-per">$0.005/task</span>
+              <span class="efficiency-sessions">134 tasks</span>
+            </div>
+            <div class="efficiency-row">
+              <span class="efficiency-rank">#4</span>
+              <span class="efficiency-agent" style="color:var(--blue)">devops</span>
+              <span class="efficiency-cost-per">$0.013/task</span>
+              <span class="efficiency-sessions">24 tasks</span>
+            </div>
+            <div class="efficiency-row">
+              <span class="efficiency-rank">#5</span>
+              <span class="efficiency-agent" style="color:var(--gold)">ceo</span>
+              <span class="efficiency-cost-per">$0.046/task</span>
+              <span class="efficiency-sessions">47 tasks</span>
+            </div>
+            <div class="efficiency-row">
+              <span class="efficiency-rank">#6</span>
+              <span class="efficiency-agent" style="color:var(--gold)">architect</span>
+              <span class="efficiency-cost-per">$0.055/task</span>
+              <span class="efficiency-sessions">62 tasks</span>
+            </div>
+          </div>
+          <div style="margin-top:8px; font-size:10px; color:var(--text-muted); font-style:italic">Lower cost/task = more efficient</div>
+        </div>
+
+        <!-- Model Cost Breakdown -->
+        <div class="scorecard-card">
+          <div class="scorecard-card-title">Model Cost Breakdown</div>
+          <div id="scorecard-model-breakdown">
+            <div class="model-breakdown-row">
+              <span class="model-breakdown-label" style="color:var(--gold)">Opus</span>
+              <div class="model-breakdown-track"><div class="model-breakdown-fill opus" id="scorecard-opus-bar" style="width:68%">68%</div></div>
+              <span class="model-breakdown-amount" id="scorecard-opus-amt">$12.55</span>
+            </div>
+            <div class="model-breakdown-row">
+              <span class="model-breakdown-label" style="color:var(--blue)">Sonnet</span>
+              <div class="model-breakdown-track"><div class="model-breakdown-fill sonnet" id="scorecard-sonnet-bar" style="width:29%">29%</div></div>
+              <span class="model-breakdown-amount" id="scorecard-sonnet-amt">$5.36</span>
+            </div>
+            <div class="model-breakdown-row">
+              <span class="model-breakdown-label" style="color:var(--green)">Haiku</span>
+              <div class="model-breakdown-track"><div class="model-breakdown-fill haiku" id="scorecard-haiku-bar" style="width:3%">3%</div></div>
+              <span class="model-breakdown-amount" id="scorecard-haiku-amt">$0.56</span>
+            </div>
+          </div>
+          <div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--border);">
+            <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-secondary); margin-bottom:4px;">
+              <span>Total All-Time</span>
+              <span class="session-cost-cell" id="scorecard-total-display">$18.47</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-secondary);">
+              <span>Sessions Tracked</span>
+              <span style="font-family:var(--font-mono); color:var(--text-primary)" id="scorecard-sessions-display">—</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
     <!-- Meeting Schedule -->
     <section class="section" id="meeting-schedule">
       <div class="section-header">
@@ -3179,6 +3639,209 @@ function renderBusFromJSON(events) {
   if (counter) counter.textContent = events.length + ' events';
 }
 
+
+// ── P0-5: Session History & Cost Tracker ─────────────────
+// Known session filenames — loaded on every refresh
+var SESSION_FILES = [
+  'cost-entry-25d36e51-94bc-41fc-8c66-0732c3d3af0e-1774482786475.json',
+  'cost-entry-617ede91-aee8-46b1-843f-8cd32fa7e0d0-1774484687870.json',
+  'cost-entry-6d778289-81b6-49f4-b222-dafa45e23965-1774483866701.json',
+  'cost-entry-6fcc68c2-7726-4263-a11a-3a5312c2dd14-1774485022485.json',
+  'cost-entry-776948ff-42f1-422c-b11b-384ccdb412cc-1774482882499.json',
+  'cost-entry-7d18c8cd-e835-4af6-b5d9-9d37d7d1823d-1774484463768.json',
+  'cost-entry-895f338b-3c07-4d0c-adb6-234324dffa4d-1774484225316.json',
+  'cost-entry-b353fcf5-8494-4367-abad-b3dd03a6c913-1774482714038.json',
+  'cost-entry-b4f48987-90f4-4b9c-9f16-16e2b192cde0-1774493638556.json',
+  'cost-entry-c89b4156-ca49-4b24-b72a-bc452417d103-1774482730332.json',
+  'cost-entry-v4-dogfood-cto-1774497600000.json',
+  'cost-entry-v41-team-staffing-cto-1774498800000.json'
+];
+
+function normalizeCostEntry(data) {
+  if (data.costUsd !== undefined) {
+    return {
+      agent: data.agentName || data.agentId || '—',
+      model: data.model || '—',
+      task: data.task || '—',
+      costUsd: data.costUsd || 0,
+      completedAt: data.completedAt || data.startedAt || '—'
+    };
+  }
+  if (data.totalSpentUsd !== undefined) {
+    var agents = Object.keys(data.agentBreakdown || {});
+    return {
+      agent: agents.length > 0 ? agents[0] : '—',
+      model: '—',
+      task: '—',
+      costUsd: data.totalSpentUsd || 0,
+      completedAt: data.endedAt || data.startedAt || '—'
+    };
+  }
+  return null;
+}
+
+function modelTier(model) {
+  if (!model || model === '—') return 'unknown';
+  var m = model.toLowerCase();
+  if (m.indexOf('opus') !== -1) return 'opus';
+  if (m.indexOf('sonnet') !== -1) return 'sonnet';
+  if (m.indexOf('haiku') !== -1) return 'haiku';
+  return 'unknown';
+}
+
+function fmtUsd(v) {
+  if (v === 0) return '$0.00';
+  if (v < 0.01) return '$' + v.toFixed(4);
+  return '$' + v.toFixed(2);
+}
+
+function fmtDate(iso) {
+  if (!iso || iso === '—') return '—';
+  try {
+    var d = new Date(iso);
+    return d.toLocaleDateString('en-US', {month:'short', day:'numeric'}) + ' ' +
+           d.toLocaleTimeString('en-US', {hour12:false, hour:'2-digit', minute:'2-digit'});
+  } catch(e) { return iso.slice(0,10); }
+}
+
+function escAttr(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function renderSessionHistory(entries) {
+  var tbody = document.getElementById('session-history-tbody');
+  if (!entries || entries.length === 0) {
+    if (tbody) { while(tbody.firstChild) tbody.removeChild(tbody.firstChild); var tr = document.createElement('tr'); var td = document.createElement('td'); td.colSpan = 5; td.className = 'session-empty'; td.textContent = 'No session data found in .agentforge/sessions/'; tr.appendChild(td); tbody.appendChild(tr); }
+    return;
+  }
+
+  var totalCost = 0, opusCost = 0, sonnetCost = 0, haikuCost = 0;
+  entries.forEach(function(e) {
+    totalCost += e.costUsd;
+    var tier = modelTier(e.model);
+    if (tier === 'opus') opusCost += e.costUsd;
+    else if (tier === 'sonnet') sonnetCost += e.costUsd;
+    else if (tier === 'haiku') haikuCost += e.costUsd;
+    else opusCost += e.costUsd;
+  });
+
+  function setTxt(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; }
+  setTxt('sess-total-spend', fmtUsd(totalCost));
+  setTxt('sess-session-count', entries.length + ' sessions tracked');
+  setTxt('sess-opus-spend', fmtUsd(opusCost));
+  setTxt('sess-opus-pct', totalCost > 0 ? Math.round(opusCost/totalCost*100) + '% of spend' : '—');
+  setTxt('sess-sonnet-spend', fmtUsd(sonnetCost));
+  setTxt('sess-sonnet-pct', totalCost > 0 ? Math.round(sonnetCost/totalCost*100) + '% of spend' : '—');
+  setTxt('sess-haiku-spend', fmtUsd(haikuCost));
+  setTxt('sess-haiku-pct', totalCost > 0 ? Math.round(haikuCost/totalCost*100) + '% of spend' : '—');
+
+  var sorted = entries.slice().sort(function(a,b) {
+    var da = a.completedAt && a.completedAt !== '—' ? new Date(a.completedAt) : 0;
+    var db = b.completedAt && b.completedAt !== '—' ? new Date(b.completedAt) : 0;
+    return db - da;
+  });
+
+  if (tbody) {
+    while(tbody.firstChild) tbody.removeChild(tbody.firstChild);
+    sorted.forEach(function(e) {
+      var tier = modelTier(e.model);
+      var modelColor = tier === 'opus' ? 'var(--gold)' : tier === 'sonnet' ? 'var(--blue)' : tier === 'haiku' ? 'var(--green)' : 'var(--text-muted)';
+      var modelLabel = e.model && e.model !== '—' ? e.model.replace('claude-','').replace('-20251101','').replace('-20240229','') : '—';
+      var taskStr = e.task && e.task !== '—' ? (e.task.length > 60 ? e.task.slice(0,60)+'…' : e.task) : '—';
+
+      var tr = document.createElement('tr');
+
+      var td1 = document.createElement('td');
+      var badge = document.createElement('span');
+      badge.className = 'model-badge ' + (tier !== 'unknown' ? tier : '');
+      badge.textContent = e.agent;
+      td1.appendChild(badge);
+
+      var td2 = document.createElement('td');
+      var modelSpan = document.createElement('span');
+      modelSpan.style.cssText = 'font-family:var(--font-mono);font-size:10px;color:' + modelColor;
+      modelSpan.textContent = modelLabel;
+      td2.appendChild(modelSpan);
+
+      var td3 = document.createElement('td');
+      td3.className = 'session-task-cell';
+      td3.title = e.task || '';
+      td3.textContent = taskStr;
+
+      var td4 = document.createElement('td');
+      td4.className = 'session-cost-cell';
+      if (e.costUsd > 0) {
+        td4.textContent = fmtUsd(e.costUsd);
+      } else {
+        var span = document.createElement('span');
+        span.style.color = 'var(--text-muted)';
+        span.textContent = '$0.00';
+        td4.appendChild(span);
+      }
+
+      var td5 = document.createElement('td');
+      td5.className = 'session-date-cell';
+      td5.textContent = fmtDate(e.completedAt);
+
+      tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tr.appendChild(td4); tr.appendChild(td5);
+      tbody.appendChild(tr);
+    });
+  }
+
+  updateInvestorScorecard(entries, totalCost, opusCost, sonnetCost, haikuCost);
+}
+
+function updateInvestorScorecard(entries, totalCost, opusCost, sonnetCost, haikuCost) {
+  function setTxt(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; }
+  function setWidth(id, pct) { var el = document.getElementById(id); if (el) el.style.width = pct + '%'; }
+
+  if (totalCost > 0) {
+    var opusPct = Math.round(opusCost/totalCost*100);
+    var sonnetPct = Math.round(sonnetCost/totalCost*100);
+    var haikuPct = Math.round(haikuCost/totalCost*100);
+
+    setWidth('scorecard-opus-bar', opusPct);
+    setTxt('scorecard-opus-bar', opusPct + '%');
+    setWidth('scorecard-sonnet-bar', Math.max(sonnetPct,1));
+    setTxt('scorecard-sonnet-bar', sonnetPct + '%');
+    setWidth('scorecard-haiku-bar', Math.max(haikuPct,1));
+    setTxt('scorecard-haiku-bar', haikuPct + '%');
+
+    setTxt('scorecard-opus-amt', fmtUsd(opusCost));
+    setTxt('scorecard-sonnet-amt', fmtUsd(sonnetCost));
+    setTxt('scorecard-haiku-amt', fmtUsd(haikuCost));
+    setTxt('scorecard-total-display', fmtUsd(totalCost));
+    setTxt('scorecard-sessions-display', entries.length + ' sessions');
+  }
+
+  var v46Cost = entries.reduce(function(s,e) { return s + e.costUsd; }, 0);
+  if (v46Cost > 0) {
+    var maxSprint = 18.47;
+    var pct = Math.min(100, Math.round(v46Cost/maxSprint*100));
+    var row = document.getElementById('scorecard-v46-row');
+    if (row) row.style.display = '';
+    setWidth('scorecard-v46-bar', pct);
+    setTxt('scorecard-v46-cost', fmtUsd(v46Cost));
+  }
+}
+
+function fetchSessionHistory() {
+  var promises = SESSION_FILES.map(function(filename) {
+    return fetch('/.agentforge/sessions/' + filename)
+      .then(function(r) { if (!r.ok) throw new Error('not found'); return r.json(); })
+      .then(function(data) { return normalizeCostEntry(data); })
+      .catch(function() { return null; });
+  });
+
+  Promise.all(promises).then(function(results) {
+    var entries = results.filter(function(e) { return e !== null && e !== undefined; });
+    window._data.sessionHistory = entries;
+    renderSessionHistory(entries);
+  });
+}
+
+fetchSessionHistory();
+
 function refreshData() {
   const files = [
     ['/.agentforge/data/activity-feed.json', 'activity'],
@@ -3220,6 +3883,9 @@ function refreshData() {
     .catch(() => {
       showBusEmptyState();
     });
+
+  // P0-5: refresh session history every cycle
+  fetchSessionHistory();
 
   refreshCountdown = 5;
 }
