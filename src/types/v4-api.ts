@@ -579,7 +579,7 @@ export function autonomyLevelToTier(level: AutonomyLevelCompat): AutonomyTier {
 }
 
 export function tierToAutonomyLevel(tier: AutonomyTier): AutonomyLevelCompat {
-  if (tier >= AutonomyTier.Strategic) return "full";
-  if (tier >= AutonomyTier.Assisted)  return "supervised";
+  if (tier >= AutonomyTier.Autonomous) return "full";
+  if (tier >= AutonomyTier.Assisted)   return "supervised";
   return "guided";
 }
