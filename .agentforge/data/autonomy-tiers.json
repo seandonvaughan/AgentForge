@@ -1,0 +1,31 @@
+{
+  "generated": "2026-03-26T16:39:00.000Z",
+  "tiers": {
+    "1": { "name": "Supervised",  "description": "All actions require human approval",           "color": "#6e7681" },
+    "2": { "name": "Assisted",    "description": "Routine actions auto-approved, complex escalate", "color": "#58a6ff" },
+    "3": { "name": "Autonomous",  "description": "Full autonomy within defined guardrails",        "color": "#3fb950" },
+    "4": { "name": "Director",    "description": "Can delegate and manage other agents",           "color": "#f0b429" }
+  },
+  "agents": [
+    { "agentId": "ceo",                  "tier": 4, "promotedAt": "2026-02-01", "history": [{ "from": 3, "to": 4, "date": "2026-02-01", "reason": "Demonstrated consistent strategic judgment across 3 sprints" }] },
+    { "agentId": "cto",                  "tier": 4, "promotedAt": "2026-02-15", "history": [{ "from": 3, "to": 4, "date": "2026-02-15", "reason": "Successfully led v4.1 technical strategy" }] },
+    { "agentId": "architect",            "tier": 3, "promotedAt": "2026-03-01", "history": [{ "from": 2, "to": 3, "date": "2026-03-01", "reason": "Zero regressions across 4 design proposals" }] },
+    { "agentId": "genesis",              "tier": 4, "promotedAt": "2026-01-15", "history": [] },
+    { "agentId": "meta-architect",       "tier": 3, "promotedAt": "2026-02-20", "history": [] },
+    { "agentId": "coo",                  "tier": 3, "promotedAt": "2026-02-10", "history": [] },
+    { "agentId": "cfo",                  "tier": 3, "promotedAt": "2026-02-10", "history": [] },
+    { "agentId": "coder",                "tier": 3, "promotedAt": "2026-03-10", "history": [{ "from": 2, "to": 3, "date": "2026-03-10", "reason": "1422 tests passing, zero regressions introduced" }] },
+    { "agentId": "frontend-dev",         "tier": 2, "promotedAt": "2026-03-20", "history": [] },
+    { "agentId": "dashboard-architect",  "tier": 2, "promotedAt": "2026-03-20", "history": [] },
+    { "agentId": "data-viz-specialist",  "tier": 2, "promotedAt": "2026-03-20", "history": [] },
+    { "agentId": "team-reviewer",        "tier": 3, "promotedAt": "2026-02-25", "history": [] },
+    { "agentId": "debugger",             "tier": 3, "promotedAt": "2026-03-05", "history": [] },
+    { "agentId": "linter",               "tier": 3, "promotedAt": "2026-01-20", "history": [] },
+    { "agentId": "researcher",           "tier": 3, "promotedAt": "2026-01-20", "history": [] },
+    { "agentId": "sprint-planner",       "tier": 2, "promotedAt": "2026-03-20", "history": [] },
+    { "agentId": "performance-engineer", "tier": 2, "promotedAt": "2026-03-20", "history": [] },
+    { "agentId": "qa-automation-engineer","tier": 2, "promotedAt": "2026-03-20", "history": [] },
+    { "agentId": "interaction-designer", "tier": 2, "promotedAt": "2026-03-20", "history": [] },
+    { "agentId": "ui-ux-designer",       "tier": 2, "promotedAt": "2026-03-20", "history": [] }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "generated": "2026-03-26T16:39:00.000Z",
+  "skills": [
+    "typescript", "system-design", "testing", "code-review", "planning",
+    "frontend", "data-viz", "ux-design", "devops", "research",
+    "cost-analysis", "api-design", "debugging", "documentation", "security"
+  ],
+  "agents": [
+    { "agentId": "cto",                  "skills": { "typescript": 0.7, "system-design": 0.9, "planning": 0.95, "cost-analysis": 0.85, "api-design": 0.75 } },
+    { "agentId": "architect",            "skills": { "typescript": 0.9, "system-design": 0.95, "api-design": 0.9, "security": 0.8, "documentation": 0.7 } },
+    { "agentId": "meta-architect",       "skills": { "typescript": 0.85, "system-design": 0.9, "planning": 0.8, "code-review": 0.85 } },
+    { "agentId": "coder",                "skills": { "typescript": 0.95, "testing": 0.9, "debugging": 0.85, "api-design": 0.8 } },
+    { "agentId": "frontend-dev",         "skills": { "typescript": 0.85, "frontend": 0.9, "ux-design": 0.7, "data-viz": 0.65 } },
+    { "agentId": "dashboard-architect",  "skills": { "frontend": 0.95, "data-viz": 0.8, "ux-design": 0.85, "typescript": 0.7 } },
+    { "agentId": "data-viz-specialist",  "skills": { "data-viz": 0.95, "frontend": 0.8, "typescript": 0.75 } },
+    { "agentId": "interaction-designer", "skills": { "ux-design": 0.95, "frontend": 0.75, "documentation": 0.7 } },
+    { "agentId": "ui-ux-designer",       "skills": { "ux-design": 0.9, "frontend": 0.7, "documentation": 0.65 } },
+    { "agentId": "team-reviewer",        "skills": { "code-review": 0.95, "testing": 0.8, "documentation": 0.75 } },
+    { "agentId": "debugger",             "skills": { "debugging": 0.95, "typescript": 0.85, "testing": 0.8 } },
+    { "agentId": "linter",               "skills": { "typescript": 0.9, "code-review": 0.85 } },
+    { "agentId": "researcher",           "skills": { "research": 0.95, "documentation": 0.8 } },
+    { "agentId": "devops-engineer",      "skills": { "devops": 0.95, "security": 0.8, "documentation": 0.7 } },
+    { "agentId": "performance-engineer", "skills": { "typescript": 0.8, "debugging": 0.75, "frontend": 0.7 } },
+    { "agentId": "cfo",                  "skills": { "cost-analysis": 0.95, "planning": 0.8, "documentation": 0.75 } },
+    { "agentId": "api-specialist",       "skills": { "api-design": 0.95, "typescript": 0.85, "documentation": 0.8 } },
+    { "agentId": "dba",                  "skills": { "security": 0.85, "api-design": 0.75, "debugging": 0.7 } },
+    { "agentId": "qa-automation-engineer","skills": { "testing": 0.95, "typescript": 0.8, "debugging": 0.75 } }
+  ],
+  "inheritances": [
+    { "from": "coder",           "to": "frontend-dev",    "skill": "typescript",   "proficiency": 0.85 },
+    { "from": "architect",       "to": "meta-architect",  "skill": "system-design", "proficiency": 0.88 },
+    { "from": "dashboard-architect", "to": "frontend-dev", "skill": "data-viz",    "proficiency": 0.65 },
+    { "from": "researcher",      "to": "sprint-planner",  "skill": "research",     "proficiency": 0.80 }
+  ]
+}

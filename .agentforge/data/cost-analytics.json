@@ -1,0 +1,37 @@
+{
+  "generated": "2026-03-26T16:39:00.000Z",
+  "currentSprint": {
+    "version": "4.3",
+    "budget": 400,
+    "spent": 320,
+    "remaining": 80,
+    "burnRate": 35.6,
+    "projectedFinal": 342
+  },
+  "byModel": {
+    "opus":   { "invocations": 47,  "tokensIn": 284000, "tokensOut": 98000, "costUsd": 198.40 },
+    "sonnet": { "invocations": 312, "tokensIn": 891000, "tokensOut": 312000, "costUsd": 108.72 },
+    "haiku":  { "invocations": 124, "tokensIn": 198000, "tokensOut": 67000,  "costUsd": 12.88 }
+  },
+  "byAgent": [
+    { "agentId": "cto",                  "model": "opus",   "costUsd": 52.10, "invocations": 12 },
+    { "agentId": "architect",            "model": "opus",   "costUsd": 48.30, "invocations": 10 },
+    { "agentId": "meta-architect",       "model": "opus",   "costUsd": 44.80, "invocations": 9  },
+    { "agentId": "ceo",                  "model": "opus",   "costUsd": 38.20, "invocations": 8  },
+    { "agentId": "genesis",              "model": "opus",   "costUsd": 15.00, "invocations": 8  },
+    { "agentId": "frontend-dev",         "model": "sonnet", "costUsd": 28.40, "invocations": 41 },
+    { "agentId": "dashboard-architect",  "model": "sonnet", "costUsd": 22.10, "invocations": 31 },
+    { "agentId": "data-viz-specialist",  "model": "sonnet", "costUsd": 18.90, "invocations": 28 },
+    { "agentId": "coder",                "model": "sonnet", "costUsd": 16.20, "invocations": 24 },
+    { "agentId": "team-reviewer",        "model": "sonnet", "costUsd": 8.40,  "invocations": 14 },
+    { "agentId": "linter",               "model": "haiku",  "costUsd": 6.80,  "invocations": 62 },
+    { "agentId": "researcher",           "model": "haiku",  "costUsd": 4.10,  "invocations": 38 },
+    { "agentId": "test-runner",          "model": "haiku",  "costUsd": 1.98,  "invocations": 24 }
+  ],
+  "history": [
+    { "sprint": "4.0", "budget": 300, "spent": 287, "verdict": "approved" },
+    { "sprint": "4.1", "budget": 350, "spent": 298, "verdict": "approved" },
+    { "sprint": "4.2", "budget": 400, "spent": 320, "verdict": "approved" },
+    { "sprint": "4.3", "budget": 400, "spent": 320, "verdict": "approved" }
+  ]
+}

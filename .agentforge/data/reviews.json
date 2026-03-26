@@ -1,0 +1,60 @@
+{
+  "generated": "2026-03-26T16:39:00.000Z",
+  "reviews": [
+    {
+      "reviewId": "rev-001",
+      "documentId": "doc-sprint-framework",
+      "documentTitle": "AutonomousSprintFramework implementation",
+      "authorAgentId": "coder",
+      "reviewers": ["team-reviewer", "meta-architect", "architect"],
+      "consensusRule": "all",
+      "status": "approved",
+      "createdAt": "2026-03-26T14:00:00.000Z",
+      "updatedAt": "2026-03-26T15:30:00.000Z",
+      "verdicts": [
+        { "reviewerId": "team-reviewer",  "verdict": "approve",          "submittedAt": "2026-03-26T14:45:00.000Z" },
+        { "reviewerId": "meta-architect", "verdict": "approve",          "submittedAt": "2026-03-26T15:10:00.000Z" },
+        { "reviewerId": "architect",      "verdict": "approve",          "submittedAt": "2026-03-26T15:30:00.000Z" }
+      ]
+    },
+    {
+      "reviewId": "rev-002",
+      "documentId": "doc-multi-reviewer",
+      "documentTitle": "MultiReviewer consensus module",
+      "authorAgentId": "coder",
+      "reviewers": ["team-reviewer", "architect"],
+      "consensusRule": "all",
+      "status": "approved",
+      "createdAt": "2026-03-26T13:00:00.000Z",
+      "updatedAt": "2026-03-26T14:00:00.000Z",
+      "verdicts": [
+        { "reviewerId": "team-reviewer", "verdict": "approve", "submittedAt": "2026-03-26T13:30:00.000Z" },
+        { "reviewerId": "architect",     "verdict": "approve", "submittedAt": "2026-03-26T14:00:00.000Z" }
+      ]
+    },
+    {
+      "reviewId": "rev-003",
+      "documentId": "doc-dashboard-v43",
+      "documentTitle": "v4.3 Dashboard overhaul (23 items)",
+      "authorAgentId": "dashboard-architect",
+      "reviewers": ["team-reviewer", "ui-ux-designer", "performance-engineer"],
+      "consensusRule": "majority",
+      "status": "in_review",
+      "createdAt": "2026-03-26T16:35:00.000Z",
+      "updatedAt": "2026-03-26T16:39:00.000Z",
+      "verdicts": []
+    },
+    {
+      "reviewId": "rev-004",
+      "documentId": "doc-v44-roadmap",
+      "documentTitle": "v4.4 Roadmap proposal",
+      "authorAgentId": "sprint-planner",
+      "reviewers": ["cto", "ceo"],
+      "consensusRule": "all",
+      "status": "pending",
+      "createdAt": "2026-03-26T16:40:00.000Z",
+      "updatedAt": "2026-03-26T16:40:00.000Z",
+      "verdicts": []
+    }
+  ]
+}

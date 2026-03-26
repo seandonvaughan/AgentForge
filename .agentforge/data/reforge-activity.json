@@ -1,0 +1,57 @@
+{
+  "generated": "2026-03-26T16:39:00.000Z",
+  "proposals": [
+    {
+      "proposalId": "rfg-001",
+      "title": "Generalize bus adapter pattern to all modules",
+      "proposedBy": "meta-architect",
+      "status": "applied",
+      "guardrailResult": "passed",
+      "createdAt": "2026-03-26T12:00:00.000Z",
+      "appliedAt": "2026-03-26T13:30:00.000Z",
+      "filesChanged": ["src/communication/v4-message-bus.ts", "src/flywheel/flywheel-monitor.ts"],
+      "testsBeforeApply": 1389,
+      "testsAfterApply": 1422,
+      "rollbackAvailable": false
+    },
+    {
+      "proposalId": "rfg-002",
+      "title": "Add SkillCategory taxonomy to CapabilityInheritance",
+      "proposedBy": "rd-lead",
+      "status": "applied",
+      "guardrailResult": "passed",
+      "createdAt": "2026-03-26T13:45:00.000Z",
+      "appliedAt": "2026-03-26T14:15:00.000Z",
+      "filesChanged": ["src/flywheel/capability-inheritance.ts"],
+      "testsBeforeApply": 1405,
+      "testsAfterApply": 1422,
+      "rollbackAvailable": false
+    },
+    {
+      "proposalId": "rfg-003",
+      "title": "Add toMermaid() and toDOT() export to OrgGraph",
+      "proposedBy": "architect",
+      "status": "applied",
+      "guardrailResult": "passed",
+      "createdAt": "2026-03-26T14:30:00.000Z",
+      "appliedAt": "2026-03-26T15:00:00.000Z",
+      "filesChanged": ["src/org-graph/org-graph.ts"],
+      "testsBeforeApply": 1410,
+      "testsAfterApply": 1422,
+      "rollbackAvailable": false
+    },
+    {
+      "proposalId": "rfg-004",
+      "title": "Bus adapter for SprintReporter real-time events",
+      "proposedBy": "meta-architect",
+      "status": "pending",
+      "guardrailResult": null,
+      "createdAt": "2026-03-26T16:38:00.000Z",
+      "appliedAt": null,
+      "filesChanged": [],
+      "testsBeforeApply": 1422,
+      "testsAfterApply": null,
+      "rollbackAvailable": false
+    }
+  ]
+}

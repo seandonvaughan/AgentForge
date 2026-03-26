@@ -1,0 +1,50 @@
+{
+  "generated": "2026-03-26T16:39:00.000Z",
+  "meetings": [
+    {
+      "id": "mtg-001",
+      "title": "v4.3 Sprint Kickoff",
+      "status": "completed",
+      "scheduledAt": "2026-03-26T09:00:00.000Z",
+      "durationMins": 30,
+      "participants": ["ceo", "cto", "sprint-planner", "rd-lead"],
+      "outcome": "v4.3 directive approved, 23 items planned, $400 budget allocated"
+    },
+    {
+      "id": "mtg-002",
+      "title": "Dashboard Architecture Review",
+      "status": "completed",
+      "scheduledAt": "2026-03-26T10:30:00.000Z",
+      "durationMins": 45,
+      "participants": ["dashboard-architect", "frontend-dev", "data-viz-specialist", "interaction-designer"],
+      "outcome": "Single-file approach confirmed, section layout finalized, responsive breakpoints agreed"
+    },
+    {
+      "id": "mtg-003",
+      "title": "v4.3 Gate Review",
+      "status": "active",
+      "scheduledAt": "2026-03-26T17:00:00.000Z",
+      "durationMins": 30,
+      "participants": ["ceo", "cto", "team-reviewer", "meta-architect"],
+      "outcome": null
+    },
+    {
+      "id": "mtg-004",
+      "title": "v4.4 Roadmap Planning",
+      "status": "scheduled",
+      "scheduledAt": "2026-03-27T09:00:00.000Z",
+      "durationMins": 60,
+      "participants": ["ceo", "cto", "coo", "sprint-planner", "rd-lead", "architect"],
+      "outcome": null
+    },
+    {
+      "id": "mtg-005",
+      "title": "Team Retrospective — v4.3 Learnings",
+      "status": "scheduled",
+      "scheduledAt": "2026-03-27T14:00:00.000Z",
+      "durationMins": 45,
+      "participants": ["ceo", "cto", "all-agents"],
+      "outcome": null
+    }
+  ]
+}
