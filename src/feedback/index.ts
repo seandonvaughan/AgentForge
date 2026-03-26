@@ -3,3 +3,4 @@
  */
 
 export { FeedbackCollector } from "./feedback-collector.js";
+export * from "./feedback-protocol.js";
