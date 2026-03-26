@@ -11,3 +11,12 @@ export {
   loadCollaborationTemplate,
   loadAllCollaborationTemplates,
 } from "./template-loader.js";
+
+export {
+  CrossTeamProtocol,
+  type TeamId,
+  type ApiContract,
+  type HandoffRequest,
+  type ResearchTransfer,
+  type TeamStats,
+} from "./cross-team-protocol.js";
