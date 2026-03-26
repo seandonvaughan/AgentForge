@@ -4,6 +4,7 @@ import {
   type V4Session,
   type SessionCreateInput,
 } from "../../src/session/v4-session-manager.js";
+import { V4MessageBus } from "../../src/communication/v4-message-bus.js";
 
 function makeInput(overrides?: Partial<SessionCreateInput>): SessionCreateInput {
   return {
@@ -203,6 +204,32 @@ describe("V4SessionManager", () => {
       const restored2 = restored.get(s2.sessionId)!;
       expect(restored2.status).toBe("persisted");
       expect(restored2.contextChain).toHaveLength(1);
+    });
+  });
+
+  // --- bus integration ---
+
+  describe("bus integration", () => {
+    it("emits session lifecycle events when bus is provided", () => {
+      const bus = new V4MessageBus();
+      const busMgr = new V4SessionManager(bus);
+
+      const s = busMgr.create(makeInput());
+      expect(bus.getHistoryForTopic("session.created")).toHaveLength(1);
+
+      busMgr.persist(s.sessionId);
+      expect(bus.getHistoryForTopic("session.persisted")).toHaveLength(1);
+
+      busMgr.resume(s.sessionId);
+      expect(bus.getHistoryForTopic("session.resumed")).toHaveLength(1);
+
+      busMgr.complete(s.sessionId, "done");
+      expect(bus.getHistoryForTopic("session.completed")).toHaveLength(1);
+
+      // Test expire
+      const s2 = busMgr.create(makeInput());
+      busMgr.expire(s2.sessionId, "timeout");
+      expect(bus.getHistoryForTopic("session.expired")).toHaveLength(1);
     });
   });
 });

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { MemoryRegistry } from "../../src/registry/memory-registry.js";
+import { V4MessageBus } from "../../src/communication/v4-message-bus.js";
 import type { MemoryRegistryEntry, MemoryCategory } from "../../src/types/v4-api.js";
 
 function makeEntry(overrides: Partial<MemoryRegistryEntry> = {}): Omit<MemoryRegistryEntry, "id" | "createdAt" | "updatedAt"> {
@@ -210,6 +211,30 @@ describe("MemoryRegistry", () => {
       registry.store(makeEntry());
       registry.store(makeEntry());
       expect(registry.count()).toBe(2);
+    });
+  });
+
+  // --- bus integration ---
+
+  describe("bus integration", () => {
+    it("emits memory lifecycle events when bus is provided", () => {
+      const bus = new V4MessageBus();
+      const busRegistry = new MemoryRegistry(bus);
+
+      const entry = busRegistry.store(makeEntry());
+      expect(bus.getHistoryForTopic("memory.stored")).toHaveLength(1);
+
+      busRegistry.update(entry.id, { relevanceScore: 0.5 });
+      expect(bus.getHistoryForTopic("memory.updated")).toHaveLength(1);
+
+      busRegistry.remove(entry.id);
+      expect(bus.getHistoryForTopic("memory.removed")).toHaveLength(1);
+
+      // Test expired
+      const past = new Date(Date.now() - 1000).toISOString();
+      busRegistry.store(makeEntry({ expiresAt: past }));
+      busRegistry.removeExpired();
+      expect(bus.getHistoryForTopic("memory.expired")).toHaveLength(1);
     });
   });
 });

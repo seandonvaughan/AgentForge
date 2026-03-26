@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { AutonomyGovernor, type AgentAutonomyRecord } from "../../src/flywheel/autonomy-governor.js";
+import { V4MessageBus } from "../../src/communication/v4-message-bus.js";
 
 describe("AutonomyGovernor", () => {
   let gov: AutonomyGovernor;
@@ -99,6 +100,25 @@ describe("AutonomyGovernor", () => {
       gov.evaluatePromotion("x");
       expect(gov.getPromotionHistory()).toHaveLength(1);
       expect(gov.getPromotionHistory()[0].agentId).toBe("x");
+    });
+  });
+
+  // --- bus integration ---
+
+  describe("bus integration", () => {
+    it("emits flywheel.autonomy.promoted and flywheel.autonomy.demoted when bus is provided", () => {
+      const bus = new V4MessageBus();
+      const busGov = new AutonomyGovernor(bus);
+
+      busGov.register("x", 1);
+      for (let i = 0; i < 5; i++) busGov.recordSuccess("x");
+      busGov.evaluatePromotion("x");
+      expect(bus.getHistoryForTopic("flywheel.autonomy.promoted")).toHaveLength(1);
+
+      busGov.register("y", 3);
+      for (let i = 0; i < 3; i++) busGov.recordFailure("y");
+      busGov.evaluateDemotion("y");
+      expect(bus.getHistoryForTopic("flywheel.autonomy.demoted")).toHaveLength(1);
     });
   });
 });

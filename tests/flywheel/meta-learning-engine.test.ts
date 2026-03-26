@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { MetaLearningEngine, type TaskOutcome, type Insight } from "../../src/flywheel/meta-learning-engine.js";
+import { V4MessageBus } from "../../src/communication/v4-message-bus.js";
 
 function makeOutcome(overrides?: Partial<TaskOutcome>): TaskOutcome {
   return {
@@ -105,6 +106,31 @@ describe("MetaLearningEngine", () => {
       engine.recordOutcome(makeOutcome({ agentId: "cto" }));
       engine.recordOutcome(makeOutcome({ taskId: "t2", agentId: "arch" }));
       expect(engine.getOutcomesByAgent("cto")).toHaveLength(1);
+    });
+  });
+
+  // --- bus integration ---
+
+  describe("bus integration", () => {
+    it("emits flywheel.insight.generated when insights found", () => {
+      const bus = new V4MessageBus();
+      const busEngine = new MetaLearningEngine(bus);
+
+      // High-success pattern
+      for (let i = 0; i < 5; i++) {
+        busEngine.recordOutcome(makeOutcome({
+          taskId: `good${i}`, patternsUsed: ["pair-programming"], success: true,
+        }));
+      }
+      // Low-success pattern for contrast
+      for (let i = 0; i < 5; i++) {
+        busEngine.recordOutcome(makeOutcome({
+          taskId: `bad${i}`, patternsUsed: ["solo-hacking"], success: false,
+        }));
+      }
+
+      busEngine.generateInsights();
+      expect(bus.getHistoryForTopic("flywheel.insight.generated")).toHaveLength(1);
     });
   });
 });

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { FlywheelMonitor, type SprintVelocity, type FlywheelHealth } from "../../src/flywheel/flywheel-monitor.js";
+import { V4MessageBus } from "../../src/communication/v4-message-bus.js";
 
 describe("FlywheelMonitor", () => {
   let monitor: FlywheelMonitor;
@@ -81,6 +82,17 @@ describe("FlywheelMonitor", () => {
       monitor.recordSprintVelocity({ sprintId: "s1", tasksCompleted: 10, tasksPlanned: 10, durationMs: 604800000 });
       monitor.recordSprintVelocity({ sprintId: "s2", tasksCompleted: 12, tasksPlanned: 10, durationMs: 604800000 });
       expect(monitor.getFlywheelHealth().allActive).toBe(true);
+    });
+  });
+
+  // --- bus integration ---
+
+  describe("bus integration", () => {
+    it("emits flywheel.health.updated on getFlywheelHealth when bus is provided", () => {
+      const bus = new V4MessageBus();
+      const busMonitor = new FlywheelMonitor(bus);
+      busMonitor.getFlywheelHealth();
+      expect(bus.getHistoryForTopic("flywheel.health.updated")).toHaveLength(1);
     });
   });
 });

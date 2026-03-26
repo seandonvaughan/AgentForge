@@ -4825,10 +4825,11 @@
       {
         "file_path": "tests/flywheel/autonomy-governor.test.ts",
         "language": "TypeScript",
-        "loc": 105,
+        "loc": 125,
         "imports": [
           "vitest",
-          "../../src/flywheel/autonomy-governor.js"
+          "../../src/flywheel/autonomy-governor.js",
+          "../../src/communication/v4-message-bus.js"
         ],
         "exports": [],
         "framework_indicators": [],
@@ -4839,10 +4840,11 @@
       {
         "file_path": "tests/flywheel/capability-inheritance.test.ts",
         "language": "TypeScript",
-        "loc": 87,
+        "loc": 110,
         "imports": [
           "vitest",
-          "../../src/flywheel/capability-inheritance.js"
+          "../../src/flywheel/capability-inheritance.js",
+          "../../src/communication/v4-message-bus.js"
         ],
         "exports": [],
         "framework_indicators": [],
@@ -4853,10 +4855,11 @@
       {
         "file_path": "tests/flywheel/flywheel-monitor.test.ts",
         "language": "TypeScript",
-        "loc": 87,
+        "loc": 99,
         "imports": [
           "vitest",
-          "../../src/flywheel/flywheel-monitor.js"
+          "../../src/flywheel/flywheel-monitor.js",
+          "../../src/communication/v4-message-bus.js"
         ],
         "exports": [],
         "framework_indicators": [],
@@ -4867,10 +4870,11 @@
       {
         "file_path": "tests/flywheel/meta-learning-engine.test.ts",
         "language": "TypeScript",
-        "loc": 111,
+        "loc": 137,
         "imports": [
           "vitest",
-          "../../src/flywheel/meta-learning-engine.js"
+          "../../src/flywheel/meta-learning-engine.js",
+          "../../src/communication/v4-message-bus.js"
         ],
         "exports": [],
         "framework_indicators": [],
@@ -5790,9 +5794,10 @@
       {
         "file_path": "tests/reforge/v4-reforge-engine.test.ts",
         "language": "TypeScript",
-        "loc": 345,
+        "loc": 394,
         "imports": [
-          "vitest"
+          "vitest",
+          "../../src/communication/v4-message-bus.js"
         ],
         "exports": [],
         "framework_indicators": [],
@@ -5805,10 +5810,11 @@
       {
         "file_path": "tests/registry/accountability-tracker.test.ts",
         "language": "TypeScript",
-        "loc": 256,
+        "loc": 275,
         "imports": [
           "vitest",
-          "../../src/registry/accountability-tracker.js"
+          "../../src/registry/accountability-tracker.js",
+          "../../src/communication/v4-message-bus.js"
         ],
         "exports": [],
         "framework_indicators": [],
@@ -5819,10 +5825,11 @@
       {
         "file_path": "tests/registry/memory-registry.test.ts",
         "language": "TypeScript",
-        "loc": 216,
+        "loc": 241,
         "imports": [
           "vitest",
           "../../src/registry/memory-registry.js",
+          "../../src/communication/v4-message-bus.js",
           "../../src/types/v4-api.js"
         ],
         "exports": [],
@@ -5836,7 +5843,7 @@
       {
         "file_path": "tests/registry/role-registry.test.ts",
         "language": "TypeScript",
-        "loc": 226,
+        "loc": 244,
         "imports": [
           "vitest",
           "../../src/registry/role-registry.js",
@@ -5853,10 +5860,11 @@
       {
         "file_path": "tests/registry/storage-governor.test.ts",
         "language": "TypeScript",
-        "loc": 159,
+        "loc": 188,
         "imports": [
           "vitest",
-          "../../src/registry/storage-governor.js"
+          "../../src/registry/storage-governor.js",
+          "../../src/communication/v4-message-bus.js"
         ],
         "exports": [],
         "framework_indicators": [],
@@ -6042,9 +6050,10 @@
       {
         "file_path": "tests/session/v4-session-manager.test.ts",
         "language": "TypeScript",
-        "loc": 209,
+        "loc": 236,
         "imports": [
-          "vitest"
+          "vitest",
+          "../../src/communication/v4-message-bus.js"
         ],
         "exports": [],
         "framework_indicators": [],
@@ -6251,7 +6260,7 @@
       "Fiber"
     ],
     "total_files": 373,
-    "total_loc": 73856,
+    "total_loc": 74104,
     "directory_structure": [
       ".claude",
       ".claude-plugin",
@@ -6265,10 +6274,10 @@
     ]
   },
   "git": {
-    "total_commits": 79,
+    "total_commits": 80,
     "contributors": [
       {
-        "commits": 78,
+        "commits": 79,
         "name": "Sean Vaughan",
         "email": "sean@vaughanfamily.org"
       },
@@ -6280,19 +6289,24 @@
     ],
     "active_files": [
       {
+        "path": ".agentforge/team.yaml",
+        "changes": 9,
+        "last_modified": "2026-03-26T11:03:35-05:00"
+      },
+      {
         "path": "src/types/index.ts",
         "changes": 9,
         "last_modified": "2026-03-25T23:27:36-05:00"
       },
       {
-        "path": ".agentforge/team.yaml",
-        "changes": 8,
-        "last_modified": "2026-03-26T11:01:15-05:00"
-      },
-      {
         "path": "src/cli/commands/invoke.ts",
         "changes": 6,
         "last_modified": "2026-03-25T18:55:20-05:00"
+      },
+      {
+        "path": ".agentforge/analysis/project-scan.json",
+        "changes": 5,
+        "last_modified": "2026-03-26T11:03:35-05:00"
       },
       {
         "path": "src/cli/index.ts",
@@ -6315,12 +6329,12 @@
         "last_modified": "2026-03-25T01:41:06-05:00"
       },
       {
-        "path": ".agentforge/agents/cto.yaml",
+        "path": "src/memory/semantic-search.ts",
         "changes": 4,
-        "last_modified": "2026-03-26T11:01:15-05:00"
+        "last_modified": "2026-03-26T11:03:35-05:00"
       },
       {
-        "path": ".agentforge/analysis/project-scan.json",
+        "path": ".agentforge/agents/cto.yaml",
         "changes": 4,
         "last_modified": "2026-03-26T11:01:15-05:00"
       },
@@ -6335,9 +6349,9 @@
         "last_modified": "2026-03-25T18:55:20-05:00"
       },
       {
-        "path": "src/memory/semantic-search.ts",
+        "path": "src/flywheel/autonomy-governor.ts",
         "changes": 3,
-        "last_modified": "2026-03-26T11:01:37-05:00"
+        "last_modified": "2026-03-26T11:03:35-05:00"
       },
       {
         "path": "src/reforge/v4-reforge-engine.ts",
@@ -6373,11 +6387,6 @@
         "path": ".agentforge/config/delegation.yaml",
         "changes": 3,
         "last_modified": "2026-03-25T19:41:43-05:00"
-      },
-      {
-        "path": "src/orchestrator/team-mode-session.ts",
-        "changes": 3,
-        "last_modified": "2026-03-25T19:41:25-05:00"
       }
     ],
     "branch_count": 3,
@@ -6385,8 +6394,8 @@
     "churn_rate": [
       {
         "path": ".agentforge/analysis/project-scan.json",
-        "additions": 8229,
-        "deletions": 1215
+        "additions": 8303,
+        "deletions": 1270
       },
       {
         "path": "docs/superpowers/plans/2026-03-25-v32-team-mode-implementation-plan.md",
@@ -6450,8 +6459,8 @@
       },
       {
         "path": ".agentforge/team.yaml",
-        "additions": 478,
-        "deletions": 387
+        "additions": 480,
+        "deletions": 389
       },
       {
         "path": "src/scanner/dependency-mapper.ts",
@@ -6487,7 +6496,7 @@
     "commit_frequency": [
       {
         "period": "2026-03",
-        "count": 79
+        "count": 80
       }
     ],
     "age_days": 1

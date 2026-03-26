@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { AccountabilityTracker } from "../../src/registry/accountability-tracker.js";
 import type { RaciEntry } from "../../src/registry/accountability-tracker.js";
+import { V4MessageBus } from "../../src/communication/v4-message-bus.js";
 
 function raci(agentId: string, role: RaciEntry["role"]): RaciEntry {
   return { agentId, role };
@@ -250,6 +251,24 @@ describe("AccountabilityTracker", () => {
       buildTask(tracker);
       buildTask(tracker, "Task B");
       expect(tracker.size()).toBe(2);
+    });
+  });
+
+  // --- bus integration ---
+
+  describe("bus integration", () => {
+    it("emits accountability.task.registered and accountability.task.completed when bus is provided", () => {
+      const bus = new V4MessageBus();
+      const busTracker = new AccountabilityTracker(bus);
+      const record = busTracker.registerTask("Task A", "desc", [
+        raci("agent-cto", "accountable"),
+        raci("agent-coder", "responsible"),
+      ]);
+      expect(bus.getHistoryForTopic("accountability.task.registered")).toHaveLength(1);
+
+      busTracker.startTask(record.taskId, "agent-coder");
+      busTracker.completeTask(record.taskId, "agent-coder");
+      expect(bus.getHistoryForTopic("accountability.task.completed")).toHaveLength(1);
     });
   });
 });

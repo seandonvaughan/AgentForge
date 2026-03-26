@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { StorageGovernor, DEFAULT_FILE_LIMIT, WARNING_THRESHOLD_PCT } from "../../src/registry/storage-governor.js";
+import { V4MessageBus } from "../../src/communication/v4-message-bus.js";
 
 describe("StorageGovernor", () => {
   let gov: StorageGovernor;
@@ -153,6 +154,34 @@ describe("StorageGovernor", () => {
       const report = small.getUsageReport();
       small.registerFile("b", "cto");
       expect(report.totalFiles).toBe(1); // snapshot, not updated
+    });
+  });
+
+  // --- bus integration ---
+
+  describe("bus integration", () => {
+    it("emits storage events when bus is provided", () => {
+      const bus = new V4MessageBus();
+      // limit=10, warning at 90% = 9 files
+      const busGov = new StorageGovernor(10, bus);
+
+      // Fill to 9 files (90% threshold)
+      for (let i = 0; i < 9; i++) {
+        busGov.registerFile(`f${i}`, "cto");
+      }
+      // The 9th file crosses 90% threshold
+      expect(bus.getHistoryForTopic("storage.warning").length).toBeGreaterThanOrEqual(1);
+
+      // Evict and verify event
+      busGov.evictLRU();
+      expect(bus.getHistoryForTopic("storage.eviction")).toHaveLength(1);
+
+      // Test quota exceeded
+      const busGov2 = new StorageGovernor(100, bus);
+      busGov2.setAgentQuota("limited", 1);
+      busGov2.registerFile("q1", "limited");
+      expect(() => busGov2.registerFile("q2", "limited")).toThrow(/quota/i);
+      expect(bus.getHistoryForTopic("storage.quota.exceeded")).toHaveLength(1);
     });
   });
 });

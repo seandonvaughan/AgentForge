@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { CapabilityInheritance, type AgentSkill, type PropagationResult } from "../../src/flywheel/capability-inheritance.js";
+import { V4MessageBus } from "../../src/communication/v4-message-bus.js";
 
 describe("CapabilityInheritance", () => {
   let ci: CapabilityInheritance;
@@ -81,6 +82,28 @@ describe("CapabilityInheritance", () => {
       const history = ci.getPropagationHistory();
       expect(history).toHaveLength(1);
       expect(history[0].success).toBe(true);
+    });
+  });
+
+  // --- bus integration ---
+
+  describe("bus integration", () => {
+    it("emits flywheel.skill.propagated on successful propagation", () => {
+      const bus = new V4MessageBus();
+      const busCi = new CapabilityInheritance(bus);
+      busCi.registerSkill("cto", { skillId: "ts", proficiency: 0.9, exerciseCount: 10 });
+      busCi.optIn("arch", "ts");
+      busCi.propagate("cto", "arch", "ts");
+      expect(bus.getHistoryForTopic("flywheel.skill.propagated")).toHaveLength(1);
+    });
+
+    it("does not emit flywheel.skill.propagated on failed propagation", () => {
+      const bus = new V4MessageBus();
+      const busCi = new CapabilityInheritance(bus);
+      // No opt-in, so propagation fails
+      busCi.registerSkill("cto", { skillId: "ts", proficiency: 0.9, exerciseCount: 10 });
+      busCi.propagate("cto", "arch", "ts");
+      expect(bus.getHistoryForTopic("flywheel.skill.propagated")).toHaveLength(0);
     });
   });
 });

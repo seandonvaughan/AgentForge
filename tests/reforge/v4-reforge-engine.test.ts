@@ -8,6 +8,7 @@ import {
   InMemoryFileAdapter,
   InMemoryTestRunner,
 } from "../../src/reforge/v4-reforge-engine.js";
+import { V4MessageBus } from "../../src/communication/v4-message-bus.js";
 
 function makeProposal(overrides?: Partial<ReforgeProposal>): ReforgeProposal {
   return {
@@ -339,6 +340,54 @@ describe("V4ReforgeEngine", () => {
       engine.submit(makeProposal());
       engine.evaluate("test-proposal");
       expect(engine.getProposal("test-proposal")!.status).toBe("approved");
+    });
+  });
+
+  // --- bus integration ---
+
+  describe("bus integration", () => {
+    it("emits reforge lifecycle events when bus is provided", () => {
+      const bus = new V4MessageBus();
+      engine = new V4ReforgeEngine({
+        guardrails: [{ name: "pass", validate: () => ({ pass: true }) }],
+        bus,
+      });
+
+      engine.submit(makeProposal());
+      expect(bus.getHistoryForTopic("reforge.submitted")).toHaveLength(1);
+
+      engine.evaluate("test-proposal");
+      expect(bus.getHistoryForTopic("reforge.approved")).toHaveLength(1);
+
+      engine.apply("test-proposal");
+      expect(bus.getHistoryForTopic("reforge.applied")).toHaveLength(1);
+
+      engine.verify("test-proposal");
+      expect(bus.getHistoryForTopic("reforge.verified")).toHaveLength(1);
+    });
+
+    it("emits reforge.rejected on guardrail failure", () => {
+      const bus = new V4MessageBus();
+      engine = new V4ReforgeEngine({
+        guardrails: [{ name: "fail", validate: () => ({ pass: false, reason: "nope" }) }],
+        bus,
+      });
+      engine.submit(makeProposal({ proposalId: "reject-test" }));
+      engine.evaluate("reject-test");
+      expect(bus.getHistoryForTopic("reforge.rejected")).toHaveLength(1);
+    });
+
+    it("emits reforge.rolled_back on rollback and checkTimeouts", () => {
+      const bus = new V4MessageBus();
+      engine = new V4ReforgeEngine({
+        guardrails: [{ name: "pass", validate: () => ({ pass: true }) }],
+        bus,
+      });
+      engine.submit(makeProposal({ proposalId: "rb-test" }));
+      engine.evaluate("rb-test");
+      engine.apply("rb-test");
+      engine.rollback("rb-test");
+      expect(bus.getHistoryForTopic("reforge.rolled_back")).toHaveLength(1);
     });
   });
 });
