@@ -12,6 +12,7 @@ import registerDelegateCommand from "./commands/delegate.js";
 import registerCostReportCommand from "./commands/cost-report.js";
 import registerActivateCommand from "./commands/activate.js";
 import registerDeactivateCommand from "./commands/deactivate.js";
+import registerSessionsCommand from "./commands/sessions.js";
 
 const program = new Command();
 
@@ -31,5 +32,6 @@ registerDelegateCommand(program);
 registerCostReportCommand(program);
 registerActivateCommand(program);
 registerDeactivateCommand(program);
+registerSessionsCommand(program);
 
 program.parse();
