@@ -195,4 +195,67 @@ describe("TeamModeSession", () => {
       expect(names).toContain("coder-a");
     });
   });
+
+  describe("autonomy detection", () => {
+    it("should detect full autonomy when Opus agents present", async () => {
+      const session = new TeamModeSession(config);
+      await session.activate();
+      expect(session.getAutonomyLevel()).toBe("full");
+    });
+
+    it("should allow autonomy override", async () => {
+      const session = new TeamModeSession(config);
+      await session.activate("guided");
+      expect(session.getAutonomyLevel()).toBe("guided");
+    });
+  });
+
+  describe("submitUserInput", () => {
+    it("should route @direct messages to named agent", async () => {
+      const session = new TeamModeSession(config);
+      await session.activate();
+
+      const result = session.submitUserInput("@cto what is the plan?");
+      expect(result.isDirect).toBe(true);
+      expect(result.targetAgent).toBe("cto");
+      expect(result.message.type).toBe("direct");
+      expect(result.message.to).toBe("agent:cto");
+    });
+
+    it("should route task messages via smart router", async () => {
+      const session = new TeamModeSession(config);
+      await session.activate();
+
+      const result = session.submitUserInput("build the auth module");
+      expect(result.isDirect).toBe(false);
+      expect(result.message.type).toBe("task");
+    });
+
+    it("should throw when session is not active", () => {
+      const session = new TeamModeSession(config);
+      expect(() => session.submitUserInput("build something")).toThrow();
+    });
+
+    it("should return a display tier", async () => {
+      const session = new TeamModeSession(config);
+      await session.activate();
+
+      const result = session.submitUserInput("build the auth module");
+      expect(["full", "oneliner", "marker", "silent"]).toContain(result.displayTier);
+    });
+  });
+
+  describe("router and framer access", () => {
+    it("should expose router after activation", async () => {
+      const session = new TeamModeSession(config);
+      await session.activate();
+      expect(session.getRouter()).not.toBeNull();
+    });
+
+    it("should expose framer after activation", async () => {
+      const session = new TeamModeSession(config);
+      await session.activate();
+      expect(session.getFramer()).not.toBeNull();
+    });
+  });
 });

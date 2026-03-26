@@ -3,6 +3,9 @@ import { AgentAddressRegistry } from "./agent-address-registry.js";
 import { SessionLifecycle } from "./session-lifecycle.js";
 import { TeamModeBus } from "./team-mode-bus.js";
 import { FeedRenderer } from "./feed-renderer.js";
+import { SmartRouter } from "./smart-router.js";
+import { CtoFramer } from "./cto-framer.js";
+import { detectAutonomy } from "./autonomy-detector.js";
 import { AgentForgeSession } from "./session.js";
 import type {
   TeamModeConfig,
@@ -13,12 +16,22 @@ import type {
   AutonomyLevel,
 } from "../types/team-mode.js";
 
+export interface UserInputResult {
+  message: TeamModeMessage;
+  displayTier: string;
+  formatted: string | null;
+  isDirect: boolean;
+  targetAgent: string;
+}
+
 export class TeamModeSession {
   private config: TeamModeConfig;
   private lifecycle: SessionLifecycle;
   private registry: AgentAddressRegistry | null = null;
   private bus: TeamModeBus | null = null;
   private feed: FeedRenderer;
+  private router: SmartRouter | null = null;
+  private framer: CtoFramer | null = null;
   private innerSession: AgentForgeSession | null = null;
   private sessionId: string;
   private autonomyLevel: AutonomyLevel = "guided";
@@ -40,13 +53,15 @@ export class TeamModeSession {
 
     this.registry = new AgentAddressRegistry(this.config.teamManifest);
     this.bus = new TeamModeBus(this.registry);
+    this.router = new SmartRouter(this.config.teamManifest);
+    this.framer = new CtoFramer(this.registry);
 
     this.bus.onAnyMessage((msg) => {
       this.feed.addMessage(msg);
     });
 
     this.innerSession = await AgentForgeSession.create(this.config.sessionConfig);
-    this.autonomyLevel = overrideAutonomy ?? this.detectAutonomy();
+    this.autonomyLevel = overrideAutonomy ?? detectAutonomy(this.config.teamManifest);
     this.activatedAt = new Date().toISOString();
     this.lifecycle.transition("active");
   }
@@ -64,6 +79,45 @@ export class TeamModeSession {
     }
 
     this.lifecycle.transition("inactive");
+  }
+
+  submitUserInput(input: string): UserInputResult {
+    if (!this.lifecycle.canAcceptTasks()) {
+      throw new Error("Session not active — cannot accept input");
+    }
+
+    const direct = this.router!.parseDirectMessage(input);
+
+    let message: TeamModeMessage;
+    let isDirect = false;
+    let targetAgent: string;
+
+    if (direct) {
+      isDirect = true;
+      targetAgent = direct.agentName;
+      message = this.bus!.send({
+        from: "conduit:user",
+        to: `agent:${direct.agentName}`,
+        type: "direct",
+        content: direct.content,
+        priority: "normal",
+      });
+    } else {
+      const routed = this.router!.routeTask(input);
+      targetAgent = routed ?? (this.registry!.getAgentNames()[0] ?? "cto");
+      message = this.bus!.send({
+        from: "conduit:user",
+        to: `agent:${targetAgent}`,
+        type: "task",
+        content: input,
+        priority: "normal",
+      });
+    }
+
+    const displayTier = this.feed.getDisplayTier(message);
+    const formatted = this.feed.formatByTier(message);
+
+    return { message, displayTier, formatted, isDirect, targetAgent };
   }
 
   submitTask(taskContent: string): TeamModeMessage {
@@ -127,6 +181,14 @@ export class TeamModeSession {
     return this.registry?.getAgentNames() ?? [];
   }
 
+  getRouter(): SmartRouter | null {
+    return this.router;
+  }
+
+  getFramer(): CtoFramer | null {
+    return this.framer;
+  }
+
   getBus(): TeamModeBus | null {
     return this.bus;
   }
@@ -141,12 +203,5 @@ export class TeamModeSession {
 
   getActivatedAt(): string | null {
     return this.activatedAt;
-  }
-
-  private detectAutonomy(): AutonomyLevel {
-    if (!this.registry) return "guided";
-    if (this.registry.getOpusAgents().length > 0) return "full";
-    if (this.registry.getSonnetAgents().length > 0) return "supervised";
-    return "guided";
   }
 }
