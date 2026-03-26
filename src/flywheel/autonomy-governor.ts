@@ -8,6 +8,8 @@
  * Demotion: 3 consecutive failures → demote one tier
  */
 
+import type { V4MessageBus } from "../communication/v4-message-bus.js";
+
 const PROMOTION_THRESHOLD = 5;
 const DEMOTION_THRESHOLD = 3;
 const MAX_TIER = 4;
@@ -34,6 +36,8 @@ export interface TierChangeResult {
 export class AutonomyGovernor {
   private records = new Map<string, AgentAutonomyRecord>();
   private promotionHistory: TierChangeResult[] = [];
+
+  constructor(private readonly bus?: V4MessageBus) {}
 
   register(agentId: string, startingTier: number): void {
     this.records.set(agentId, {

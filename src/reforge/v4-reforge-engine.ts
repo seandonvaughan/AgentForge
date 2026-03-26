@@ -288,6 +288,16 @@ export class V4ReforgeEngine {
       throw new Error(`Proposal "${proposalId}" must be applied to rollback (current: "${record.status}")`);
     }
     this.doRollback(record, proposalId);
+    if (this.bus) {
+      this.bus.publish({
+        from: "reforge-engine",
+        to: "broadcast",
+        topic: "reforge.rolled_back",
+        category: "status",
+        payload: { proposalId },
+        priority: "normal",
+      });
+    }
     return this.cloneRecord(record);
   }
 
@@ -328,6 +338,16 @@ export class V4ReforgeEngine {
         record.status = "rolled_back";
         record.history.push({ status: "rolled_back", timestamp: new Date().toISOString() });
         rolledBack.push(id);
+        if (this.bus) {
+          this.bus.publish({
+            from: "reforge-engine",
+            to: "broadcast",
+            topic: "reforge.rolled_back",
+            category: "status",
+            payload: { proposalId: id },
+            priority: "normal",
+          });
+        }
       }
     }
     return rolledBack;

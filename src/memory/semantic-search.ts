@@ -148,12 +148,14 @@ export class SemanticSearch {
       return { entry, score };
     });
 
-    // Filter by threshold; if too few results, fall back
-    let filtered = scored.filter((s) => s.score >= threshold);
+    // Filter by threshold; if too few results, fall back to progressively lower thresholds
+    const effectiveThreshold = Math.min(threshold, DEFAULT_SIMILARITY_THRESHOLD);
+    let filtered = scored.filter((s) => s.score >= effectiveThreshold);
     let strategy: SearchResult["strategy"] = "enhanced-tfidf";
 
     if (filtered.length === 0) {
-      filtered = scored.filter((s) => s.score >= KEYWORD_FALLBACK_THRESHOLD);
+      const fallback = Math.min(threshold, KEYWORD_FALLBACK_THRESHOLD);
+      filtered = scored.filter((s) => s.score >= fallback);
       strategy = "keyword";
     }
     if (filtered.length === 0) {

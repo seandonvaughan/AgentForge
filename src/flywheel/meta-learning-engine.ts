@@ -42,8 +42,12 @@ export interface KnowledgeGraph {
   edges: KnowledgeGraphEdge[];
 }
 
+import type { V4MessageBus } from "../communication/v4-message-bus.js";
+
 export class MetaLearningEngine {
   private outcomes: TaskOutcome[] = [];
+
+  constructor(private readonly bus?: V4MessageBus) {}
 
   recordOutcome(outcome: TaskOutcome): void {
     this.outcomes.push({ ...outcome, patternsUsed: [...outcome.patternsUsed], lessonsLearned: [...outcome.lessonsLearned] });
@@ -110,6 +114,16 @@ export class MetaLearningEngine {
           confidence: Math.min(p.frequency / 10, 1),
         });
       }
+    }
+    if (this.bus && insights.length > 0) {
+      this.bus.publish({
+        from: "meta-learning-engine",
+        to: "broadcast",
+        topic: "flywheel.insight.generated",
+        category: "status",
+        payload: { insights },
+        priority: "normal",
+      });
     }
     return insights;
   }
