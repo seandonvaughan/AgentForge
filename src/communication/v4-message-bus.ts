@@ -278,24 +278,41 @@ export class V4MessageBus {
 
 export function registerStandardTopics(bus: V4MessageBus): void {
   const topics: TopicRegistration[] = [
+    // Agent
     { topic: "agent.task.assign",           description: "Task assignment from supervisor to agent" },
     { topic: "agent.task.result",           description: "Task completion report from agent" },
     { topic: "agent.status.update",         description: "Agent state change notification" },
+    // Review
     { topic: "review.lifecycle.assigned",   description: "Review assigned to reviewer" },
     { topic: "review.lifecycle.responded",  description: "Reviewer submitted feedback" },
     { topic: "review.lifecycle.resolved",   description: "Author acknowledged feedback" },
     { topic: "review.lifecycle.approved",   description: "Final approval granted" },
+    // Meeting
     { topic: "meeting.coordination.requested", description: "Meeting requested by agent" },
     { topic: "meeting.coordination.scheduled", description: "Meeting confirmed by coordinator" },
     { topic: "meeting.coordination.completed", description: "Meeting concluded" },
     { topic: "meeting.coordination.queued",    description: "Meeting queued (at 3-meeting cap)" },
-    { topic: "memory.query",                description: "Knowledge base query" },
-    { topic: "memory.result",               description: "Knowledge base query result" },
-    { topic: "reforge.propose",             description: "REFORGE proposal from improvement-analyst" },
-    { topic: "reforge.approve",             description: "REFORGE approval decision" },
-    { topic: "reforge.apply",               description: "REFORGE application result" },
+    // Escalation
     { topic: "escalation.raised",           description: "Issue escalated to supervisor chain" },
     { topic: "escalation.resolved",         description: "Escalation resolved" },
+    // Org-graph (v4.1)
+    { topic: "org.*",                       description: "Org-graph node lifecycle events" },
+    // Delegation (v4.1)
+    { topic: "delegation.*",               description: "Delegation lifecycle events" },
+    // Role (v4.1)
+    { topic: "role.*",                     description: "Role assignment lifecycle events" },
+    // Accountability (v4.1)
+    { topic: "accountability.*",           description: "Task accountability lifecycle events" },
+    // Memory (v4.1)
+    { topic: "memory.*",                   description: "Memory registry lifecycle events" },
+    // Storage (v4.1)
+    { topic: "storage.*",                  description: "Storage governor events" },
+    // Session (v4.1)
+    { topic: "session.*",                  description: "Session lifecycle events" },
+    // Reforge (v4.1)
+    { topic: "reforge.*",                 description: "REFORGE lifecycle events" },
+    // Flywheel (v4.1)
+    { topic: "flywheel.*",               description: "Flywheel subsystem events" },
   ];
   for (const t of topics) bus.registerTopic(t);
 }

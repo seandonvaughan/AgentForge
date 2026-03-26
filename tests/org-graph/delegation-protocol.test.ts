@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { OrgGraph } from "../../src/org-graph/org-graph.js";
 import { DelegationProtocol } from "../../src/org-graph/delegation-protocol.js";
+import { V4MessageBus } from "../../src/communication/v4-message-bus.js";
 import type { OrgNode } from "../../src/types/v4-api.js";
 
 function makeNode(agentId: string, supervisorAgentId: string | null, canDelegateTo: string[] = []): OrgNode {
@@ -245,6 +246,39 @@ describe("DelegationProtocol", () => {
 
     it("throws for unknown task ID", () => {
       expect(() => proto.getRecord("no-such-id")).toThrow(/not found/);
+    });
+  });
+
+  // --- bus integration ---
+
+  describe("bus integration", () => {
+    it("emits delegation lifecycle events when bus is provided", () => {
+      const bus = new V4MessageBus();
+      const graph = new OrgGraph();
+      graph.addNode(makeNode("ceo", null, ["cto"]));
+      graph.addNode(makeNode("cto", "ceo", ["arch"]));
+      graph.addNode(makeNode("arch", "cto"));
+      const busProto = new DelegationProtocol(graph, bus);
+
+      const result = busProto.delegate("cto", "arch", "Task", "Rationale", [], [], "Output");
+      expect(bus.getHistoryForTopic("delegation.issued")).toHaveLength(1);
+
+      const taskId = result.context!.taskId;
+      busProto.accept(taskId);
+      expect(bus.getHistoryForTopic("delegation.accepted")).toHaveLength(1);
+
+      busProto.complete(taskId, "done");
+      expect(bus.getHistoryForTopic("delegation.completed")).toHaveLength(1);
+
+      // Test reject
+      const r2 = busProto.delegate("cto", "arch", "Task2", "R", [], [], "O");
+      busProto.reject(r2.context!.taskId, "no capacity");
+      expect(bus.getHistoryForTopic("delegation.rejected")).toHaveLength(1);
+
+      // Test escalate
+      const r3 = busProto.delegate("cto", "arch", "Task3", "R", [], [], "O");
+      busProto.escalate(r3.context!.taskId, "blocked");
+      expect(bus.getHistoryForTopic("delegation.escalated")).toHaveLength(1);
     });
   });
 });

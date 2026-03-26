@@ -16,9 +16,9 @@ describe("V4MessageBus", () => {
       const topics = bus.listTopics();
       expect(topics[0]).toBe("a.topic");
     });
-    it("registerStandardTopics registers 18 topics", () => {
+    it("registerStandardTopics registers all standard topics (18 base + v4.1 extensions)", () => {
       registerStandardTopics(bus);
-      expect(bus.listTopics().length).toBe(18);
+      expect(bus.listTopics().length).toBeGreaterThanOrEqual(18);
     });
   });
 

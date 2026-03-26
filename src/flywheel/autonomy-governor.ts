@@ -90,6 +90,16 @@ export class AutonomyGovernor {
       result.promoted = true;
       result.newTier = r.tier;
       this.promotionHistory.push(result);
+      if (this.bus) {
+        this.bus.publish({
+          from: "autonomy-governor",
+          to: "broadcast",
+          topic: "flywheel.autonomy.promoted",
+          category: "status",
+          payload: { ...result },
+          priority: "normal",
+        });
+      }
     }
     return result;
   }
@@ -111,6 +121,16 @@ export class AutonomyGovernor {
       result.demoted = true;
       result.newTier = r.tier;
       this.promotionHistory.push(result);
+      if (this.bus) {
+        this.bus.publish({
+          from: "autonomy-governor",
+          to: "broadcast",
+          topic: "flywheel.autonomy.demoted",
+          category: "status",
+          payload: { ...result },
+          priority: "normal",
+        });
+      }
     }
     return result;
   }

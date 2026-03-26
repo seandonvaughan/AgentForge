@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { OrgGraph } from "../../src/org-graph/org-graph.js";
+import { V4MessageBus } from "../../src/communication/v4-message-bus.js";
 import type { OrgNode } from "../../src/types/v4-api.js";
 
 // ---------------------------------------------------------------------------
@@ -353,6 +354,28 @@ describe("OrgGraph", () => {
       // Internal state should be unchanged
       const fresh = graph.getNode("ceo")!;
       expect(fresh.directReportIds).not.toContain("fake");
+    });
+  });
+
+  // --- bus integration ---
+
+  describe("bus integration", () => {
+    it("emits org.node.added and org.node.removed when bus is provided", () => {
+      const bus = new V4MessageBus();
+      const busGraph = new OrgGraph(bus);
+      busGraph.addNode(makeNode("ceo", null));
+      busGraph.addNode(makeNode("cto", "ceo"));
+      bus.drain();
+
+      const addedMsgs = bus.getHistoryForTopic("org.node.added");
+      expect(addedMsgs).toHaveLength(2);
+      expect(addedMsgs[0].payload).toHaveProperty("agentId", "ceo");
+
+      busGraph.removeNode("cto");
+      bus.drain();
+      const removedMsgs = bus.getHistoryForTopic("org.node.removed");
+      expect(removedMsgs).toHaveLength(1);
+      expect(removedMsgs[0].payload).toHaveProperty("nodeId", "cto");
     });
   });
 });

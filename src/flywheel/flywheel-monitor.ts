@@ -26,11 +26,15 @@ export interface FlywheelHealth {
   timestamp: string;
 }
 
+import type { V4MessageBus } from "../communication/v4-message-bus.js";
+
 export class FlywheelMonitor {
   private velocities: SprintVelocity[] = [];
   private insights: string[] = [];
   private promotions: { agentId: string; fromTier: number; toTier: number }[] = [];
   private inheritances: { source: string; target: string; skillId: string }[] = [];
+
+  constructor(private readonly bus?: V4MessageBus) {}
 
   // ---------------------------------------------------------------------------
   // Recording
@@ -102,11 +106,22 @@ export class FlywheelMonitor {
       },
     ];
 
-    return {
+    const health: FlywheelHealth = {
       components,
       allActive: components.every((c) => c.active),
       velocityRatio,
       timestamp: new Date().toISOString(),
     };
+    if (this.bus) {
+      this.bus.publish({
+        from: "flywheel-monitor",
+        to: "broadcast",
+        topic: "flywheel.health.updated",
+        category: "status",
+        payload: health,
+        priority: "normal",
+      });
+    }
+    return health;
   }
 }

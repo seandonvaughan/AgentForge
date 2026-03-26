@@ -430,7 +430,7 @@
       {
         "file_path": "docs/v4/v4.1-roadmap.md",
         "language": "Markdown",
-        "loc": 117,
+        "loc": 129,
         "imports": [],
         "exports": [],
         "framework_indicators": [],
@@ -1287,7 +1287,7 @@
       {
         "file_path": "src/communication/v4-message-bus.ts",
         "language": "TypeScript",
-        "loc": 302,
+        "loc": 319,
         "imports": [
           "node:crypto"
         ],
@@ -1424,8 +1424,10 @@
       {
         "file_path": "src/flywheel/autonomy-governor.ts",
         "language": "TypeScript",
-        "loc": 130,
-        "imports": [],
+        "loc": 154,
+        "imports": [
+          "../communication/v4-message-bus.js"
+        ],
         "exports": [
           "AgentAutonomyRecord",
           "TierChangeResult",
@@ -1446,8 +1448,10 @@
       {
         "file_path": "src/flywheel/capability-inheritance.ts",
         "language": "TypeScript",
-        "loc": 130,
-        "imports": [],
+        "loc": 144,
+        "imports": [
+          "../communication/v4-message-bus.js"
+        ],
         "exports": [
           "AgentSkill",
           "PropagationResult",
@@ -1467,8 +1471,10 @@
       {
         "file_path": "src/flywheel/flywheel-monitor.ts",
         "language": "TypeScript",
-        "loc": 113,
-        "imports": [],
+        "loc": 128,
+        "imports": [
+          "../communication/v4-message-bus.js"
+        ],
         "exports": [
           "SprintVelocity",
           "FlywheelComponent",
@@ -1495,8 +1501,10 @@
       {
         "file_path": "src/flywheel/meta-learning-engine.ts",
         "language": "TypeScript",
-        "loc": 144,
-        "imports": [],
+        "loc": 158,
+        "imports": [
+          "../communication/v4-message-bus.js"
+        ],
         "exports": [
           "TaskOutcome",
           "PatternStat",
@@ -1752,7 +1760,7 @@
       {
         "file_path": "src/memory/semantic-search.ts",
         "language": "TypeScript",
-        "loc": 321,
+        "loc": 331,
         "imports": [
           "../registry/memory-registry.js",
           "../types/v4-api.js"
@@ -2687,7 +2695,7 @@
       {
         "file_path": "src/reforge/v4-reforge-engine.ts",
         "language": "TypeScript",
-        "loc": 362,
+        "loc": 402,
         "imports": [
           "node:fs",
           "node:child_process",
@@ -5722,11 +5730,12 @@
       {
         "file_path": "tests/org-graph/delegation-protocol.test.ts",
         "language": "TypeScript",
-        "loc": 251,
+        "loc": 285,
         "imports": [
           "vitest",
           "../../src/org-graph/org-graph.js",
           "../../src/org-graph/delegation-protocol.js",
+          "../../src/communication/v4-message-bus.js",
           "../../src/types/v4-api.js"
         ],
         "exports": [],
@@ -5739,10 +5748,11 @@
       {
         "file_path": "tests/org-graph/org-graph.test.ts",
         "language": "TypeScript",
-        "loc": 359,
+        "loc": 382,
         "imports": [
           "vitest",
           "../../src/org-graph/org-graph.js",
+          "../../src/communication/v4-message-bus.js",
           "../../src/types/v4-api.js"
         ],
         "exports": [],
@@ -5826,10 +5836,11 @@
       {
         "file_path": "tests/registry/role-registry.test.ts",
         "language": "TypeScript",
-        "loc": 225,
+        "loc": 226,
         "imports": [
           "vitest",
-          "../../src/registry/role-registry.js"
+          "../../src/registry/role-registry.js",
+          "../../src/communication/v4-message-bus.js"
         ],
         "exports": [],
         "framework_indicators": [],
@@ -6240,7 +6251,7 @@
       "Fiber"
     ],
     "total_files": 373,
-    "total_loc": 73652,
+    "total_loc": 73856,
     "directory_structure": [
       ".claude",
       ".claude-plugin",
@@ -6254,10 +6265,10 @@
     ]
   },
   "git": {
-    "total_commits": 76,
+    "total_commits": 79,
     "contributors": [
       {
-        "commits": 75,
+        "commits": 78,
         "name": "Sean Vaughan",
         "email": "sean@vaughanfamily.org"
       },
@@ -6275,8 +6286,8 @@
       },
       {
         "path": ".agentforge/team.yaml",
-        "changes": 7,
-        "last_modified": "2026-03-26T10:46:44-05:00"
+        "changes": 8,
+        "last_modified": "2026-03-26T11:01:15-05:00"
       },
       {
         "path": "src/cli/commands/invoke.ts",
@@ -6304,6 +6315,16 @@
         "last_modified": "2026-03-25T01:41:06-05:00"
       },
       {
+        "path": ".agentforge/agents/cto.yaml",
+        "changes": 4,
+        "last_modified": "2026-03-26T11:01:15-05:00"
+      },
+      {
+        "path": ".agentforge/analysis/project-scan.json",
+        "changes": 4,
+        "last_modified": "2026-03-26T11:01:15-05:00"
+      },
+      {
         "path": ".agentforge/config/models.yaml",
         "changes": 4,
         "last_modified": "2026-03-25T19:41:43-05:00"
@@ -6314,9 +6335,14 @@
         "last_modified": "2026-03-25T18:55:20-05:00"
       },
       {
-        "path": ".agentforge/analysis/project-scan.json",
+        "path": "src/memory/semantic-search.ts",
         "changes": 3,
-        "last_modified": "2026-03-26T10:46:44-05:00"
+        "last_modified": "2026-03-26T11:01:37-05:00"
+      },
+      {
+        "path": "src/reforge/v4-reforge-engine.ts",
+        "changes": 3,
+        "last_modified": "2026-03-26T11:01:37-05:00"
       },
       {
         "path": "src/api/index.ts",
@@ -6344,11 +6370,6 @@
         "last_modified": "2026-03-25T21:28:49-05:00"
       },
       {
-        "path": ".agentforge/agents/cto.yaml",
-        "changes": 3,
-        "last_modified": "2026-03-25T19:41:43-05:00"
-      },
-      {
         "path": ".agentforge/config/delegation.yaml",
         "changes": 3,
         "last_modified": "2026-03-25T19:41:43-05:00"
@@ -6357,16 +6378,6 @@
         "path": "src/orchestrator/team-mode-session.ts",
         "changes": 3,
         "last_modified": "2026-03-25T19:41:25-05:00"
-      },
-      {
-        "path": "tests/orchestrator/team-mode-session.test.ts",
-        "changes": 3,
-        "last_modified": "2026-03-25T19:41:25-05:00"
-      },
-      {
-        "path": "src/types/team-mode.ts",
-        "changes": 3,
-        "last_modified": "2026-03-25T19:39:38-05:00"
       }
     ],
     "branch_count": 3,
@@ -6374,8 +6385,8 @@
     "churn_rate": [
       {
         "path": ".agentforge/analysis/project-scan.json",
-        "additions": 8050,
-        "deletions": 1167
+        "additions": 8229,
+        "deletions": 1215
       },
       {
         "path": "docs/superpowers/plans/2026-03-25-v32-team-mode-implementation-plan.md",
@@ -6388,13 +6399,13 @@
         "deletions": 2
       },
       {
-        "path": "docs/v4/architecture.md",
-        "additions": 1563,
-        "deletions": 0
+        "path": "dashboard/index.html",
+        "additions": 1652,
+        "deletions": 13
       },
       {
-        "path": "dashboard/index.html",
-        "additions": 1509,
+        "path": "docs/v4/architecture.md",
+        "additions": 1563,
         "deletions": 0
       },
       {
@@ -6439,8 +6450,8 @@
       },
       {
         "path": ".agentforge/team.yaml",
-        "additions": 476,
-        "deletions": 385
+        "additions": 478,
+        "deletions": 387
       },
       {
         "path": "src/scanner/dependency-mapper.ts",
@@ -6476,7 +6487,7 @@
     "commit_frequency": [
       {
         "period": "2026-03",
-        "count": 76
+        "count": 79
       }
     ],
     "age_days": 1
@@ -6742,6 +6753,30 @@
     },
     {
       "type": "jira",
+      "ref": "P0-1"
+    },
+    {
+      "type": "jira",
+      "ref": "P0-2"
+    },
+    {
+      "type": "jira",
+      "ref": "P0-3"
+    },
+    {
+      "type": "jira",
+      "ref": "P0-4"
+    },
+    {
+      "type": "jira",
+      "ref": "P1-5"
+    },
+    {
+      "type": "jira",
+      "ref": "P1-6"
+    },
+    {
+      "type": "jira",
       "ref": "BSD-2"
     },
     {
@@ -6754,23 +6789,7 @@
     },
     {
       "type": "jira",
-      "ref": "P0-2"
-    },
-    {
-      "type": "jira",
-      "ref": "P1-6"
-    },
-    {
-      "type": "jira",
-      "ref": "P1-5"
-    },
-    {
-      "type": "jira",
       "ref": "ISO-8601"
-    },
-    {
-      "type": "jira",
-      "ref": "P0-3"
     },
     {
       "type": "jira",

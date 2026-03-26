@@ -149,18 +149,26 @@ export class SemanticSearch {
     });
 
     // Filter by threshold; if too few results, fall back to progressively lower thresholds
-    const effectiveThreshold = Math.min(threshold, DEFAULT_SIMILARITY_THRESHOLD);
-    let filtered = scored.filter((s) => s.score >= effectiveThreshold);
+    let filtered = scored.filter((s) => s.score >= threshold);
     let strategy: SearchResult["strategy"] = "enhanced-tfidf";
 
     if (filtered.length === 0) {
-      const fallback = Math.min(threshold, KEYWORD_FALLBACK_THRESHOLD);
-      filtered = scored.filter((s) => s.score >= fallback);
+      filtered = scored.filter((s) => s.score >= KEYWORD_FALLBACK_THRESHOLD);
       strategy = "keyword";
     }
     if (filtered.length === 0) {
       filtered = scored.filter((s) => s.score > 0);
       strategy = "hybrid";
+    }
+
+    // If the user set a threshold lower than the fallback that was used,
+    // include all entries above the user's threshold (monotonicity guarantee)
+    if (threshold < KEYWORD_FALLBACK_THRESHOLD && strategy !== "enhanced-tfidf") {
+      const wider = scored.filter((s) => s.score >= threshold);
+      if (wider.length > filtered.length) {
+        filtered = wider;
+        strategy = "enhanced-tfidf";
+      }
     }
 
     // Sort by score descending, apply relevanceScore as tiebreaker

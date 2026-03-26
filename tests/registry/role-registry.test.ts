@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { RoleRegistry } from "../../src/registry/role-registry.js";
+import { V4MessageBus } from "../../src/communication/v4-message-bus.js";
 
 describe("RoleRegistry", () => {
   let registry: RoleRegistry;
@@ -219,6 +220,24 @@ describe("RoleRegistry", () => {
       registry.assignRole("coo", "COO", "agent-coo", "ceo", "initial");
       registry.deactivateRole("cto", "ceo", "removed");
       expect(registry.size()).toBe(2);
+    });
+  });
+
+  // --- bus integration ---
+
+  describe("bus integration", () => {
+    it("emits role.assigned, role.reassigned, and role.deactivated when bus is provided", () => {
+      const bus = new V4MessageBus();
+      const busRegistry = new RoleRegistry(bus);
+
+      busRegistry.assignRole("cto", "CTO", "agent-cto", "ceo", "initial");
+      expect(bus.getHistoryForTopic("role.assigned")).toHaveLength(1);
+
+      busRegistry.reassignRole("cto", "agent-cto-v2", "ceo", "upgrade");
+      expect(bus.getHistoryForTopic("role.reassigned")).toHaveLength(1);
+
+      busRegistry.deactivateRole("cto", "ceo", "removed");
+      expect(bus.getHistoryForTopic("role.deactivated")).toHaveLength(1);
     });
   });
 });
