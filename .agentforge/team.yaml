@@ -1,14 +1,14 @@
 name: AgentForge-team
-forged_at: '2026-03-26T00:41:38.370Z'
-forged_by: agentforge
-project_hash: 2e1558f86c77
+forged_at: '2026-03-26T03:42:00.000Z'
+forged_by: agentforge-rebuild
+project_hash: 03063fe
 agents:
   strategic:
     - ceo
     - genesis
     - architect
-  implementation:
     - cto
+  implementation:
     - coo
     - cfo
     - meta-architect
@@ -16,6 +16,9 @@ agents:
     - skill-designer
     - template-optimizer
     - coder
+    - team-mode-lead
+    - intelligence-lead
+    - persistence-lead
   quality:
     - team-reviewer
     - dba
@@ -42,6 +45,9 @@ model_routing:
     - dba
     - debugger
     - api-specialist
+    - team-mode-lead
+    - intelligence-lead
+    - persistence-lead
   haiku:
     - linter
     - researcher
@@ -52,9 +58,11 @@ delegation_graph:
     - cfo
   cto:
     - architect
+    - team-mode-lead
+    - intelligence-lead
+    - persistence-lead
   coo:
-    - business-analyst
-    - operations-manager
+    - project-manager
   genesis:
     - project-manager
     - researcher
@@ -88,4 +96,19 @@ delegation_graph:
   api-specialist:
     - researcher
     - linter
+    - file-reader
+  team-mode-lead:
+    - coder
+    - linter
+    - researcher
+    - file-reader
+  intelligence-lead:
+    - coder
+    - linter
+    - researcher
+    - file-reader
+  persistence-lead:
+    - coder
+    - linter
+    - researcher
     - file-reader
