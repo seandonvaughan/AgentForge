@@ -133,6 +133,27 @@ export type {
 } from "./decision.js";
 
 export type {
+  SessionConfig,
   AutoRule,
   SessionSummary,
 } from "./session.js";
+
+// Team Mode (v3.2)
+export type {
+  TeamModeState,
+  AutonomyLevel,
+  AddressType,
+  AgentAddress,
+  TeamModeMessageType,
+  TeamModeMessage,
+  FeedEntry,
+  FeedDisplayTier,
+  TeamModeConfig,
+  HibernatedSession,
+} from "./team-mode.js";
+export {
+  createAddress,
+  formatAddress,
+  parseAddress,
+  USER_CONDUIT,
+} from "./team-mode.js";

@@ -1,9 +1,20 @@
 /**
  * Session type definitions for the AgentForge v3 AgentForgeSession factory.
  *
+ * SessionConfig configures session creation parameters.
  * AutoRule connects MessageBus events to automatic actions.
  * SessionSummary captures the outcome of a completed session.
  */
+
+/** Configuration for creating an AgentForgeSession. */
+export interface SessionConfig {
+  /** Path to the project root. */
+  projectRoot: string;
+  /** Maximum USD spend for the entire session. */
+  sessionBudgetUsd: number;
+  /** Whether to apply ReforgeEngine overrides. Default: true. */
+  enableReforge?: boolean;
+}
 
 /**
  * An automatic dispatch rule that fires when a matching event is published
