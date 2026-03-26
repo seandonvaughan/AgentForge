@@ -15,6 +15,6 @@ skills:
   - release_management
   - test_automation
 collaboration:
-  reports_to: cto
+  reports_to: engineering-manager-infra
   can_delegate_to:
     - researcher

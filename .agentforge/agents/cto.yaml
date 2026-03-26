@@ -119,6 +119,7 @@ collaboration:
   can_delegate_to:
     - architect
     - vp-research
+    - vp-engineering
   parallel: false
 context:
   max_files: 30

@@ -68,7 +68,7 @@ triggers:
     - "build strategy"
 
 collaboration:
-  reports_to: vp-engineering
+  reports_to: engineering-manager-infra
   reviews_from: [vp-engineering]
   can_delegate_to: [build-pipeline-runner, release-packager]
   parallel: false

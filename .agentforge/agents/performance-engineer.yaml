@@ -15,6 +15,6 @@ skills:
   - optimization
   - bottleneck_analysis
 collaboration:
-  reports_to: architect
+  reports_to: engineering-manager-infra
   can_delegate_to:
     - researcher

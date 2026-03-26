@@ -8,6 +8,7 @@ agents:
     - genesis
     - architect
     - vp-research
+    - vp-engineering
   implementation:
     - cto
     - coo
@@ -19,15 +20,20 @@ agents:
     - coder
     - ml-engineer
     - research-scientist
+    - engineering-manager-frontend
+    - engineering-manager-backend
+    - engineering-manager-infra
   quality:
     - team-reviewer
     - dba
     - debugger
     - linter
     - api-specialist
+    - qa-manager
   utility:
     - researcher
     - experiment-runner
+    - feedback-analyst
 model_routing:
   opus:
     - ceo
@@ -36,6 +42,7 @@ model_routing:
     - cto
     - meta-architect
     - vp-research
+    - vp-engineering
   sonnet:
     - coo
     - cfo
@@ -49,10 +56,15 @@ model_routing:
     - api-specialist
     - ml-engineer
     - research-scientist
+    - engineering-manager-frontend
+    - engineering-manager-backend
+    - engineering-manager-infra
+    - qa-manager
   haiku:
     - linter
     - researcher
     - experiment-runner
+    - feedback-analyst
 delegation_graph:
   ceo:
     - cto
@@ -61,13 +73,36 @@ delegation_graph:
   cto:
     - architect
     - vp-research
+    - vp-engineering
   vp-research:
     - ml-engineer
     - research-scientist
     - experiment-runner
+  vp-engineering:
+    - engineering-manager-frontend
+    - engineering-manager-backend
+    - engineering-manager-infra
+  engineering-manager-frontend:
+    - frontend-dev
+    - ui-ux-designer
+    - dashboard-architect
+  engineering-manager-backend:
+    - coder
+    - api-specialist
+    - dba
+  engineering-manager-infra:
+    - devops-engineer
+    - performance-engineer
+    - build-release-lead
   coo:
     - business-analyst
     - operations-manager
+    - qa-manager
+    - feedback-analyst
+  qa-manager:
+    - team-reviewer
+    - debugger
+    - linter
   genesis:
     - project-manager
     - researcher

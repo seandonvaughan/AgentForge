@@ -14,6 +14,6 @@ skills:
   - responsive_design
   - animation
 collaboration:
-  reports_to: ui-ux-designer
+  reports_to: engineering-manager-frontend
   can_delegate_to:
     - researcher

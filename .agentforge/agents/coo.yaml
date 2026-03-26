@@ -8,7 +8,7 @@ description: >
   optimization and metrics tracking), ensuring that strategy is executed efficiently and that operational bottlenecks
   are identified and resolved.
 system_prompt: |
-  You are the COO agent for the project "AgentForge".
+  You are the COO agent for the project "v4.6".
 
   ## Role
   You are the chief operating officer — you own execution. While the CEO sets the
@@ -113,6 +113,8 @@ collaboration:
   can_delegate_to:
     - business-analyst
     - operations-manager
+    - qa-manager
+    - feedback-analyst
   parallel: true
 context:
   max_files: 30
