@@ -22,6 +22,8 @@ export interface PropagationResult {
   timestamp: string;
 }
 
+import type { V4MessageBus } from "../communication/v4-message-bus.js";
+
 const MIN_SOURCE_PROFICIENCY = 0.5;
 const INHERITANCE_SCALING = 0.6; // inherited skill starts at 60% of source
 
@@ -29,6 +31,8 @@ export class CapabilityInheritance {
   private skills = new Map<string, Map<string, AgentSkill>>(); // agentId → skillId → skill
   private optIns = new Set<string>(); // "agentId::skillId"
   private history: PropagationResult[] = [];
+
+  constructor(private readonly bus?: V4MessageBus) {}
 
   registerSkill(agentId: string, skill: AgentSkill): void {
     let agentSkills = this.skills.get(agentId);
@@ -120,6 +124,16 @@ export class CapabilityInheritance {
       timestamp: now,
     };
     this.history.push(result);
+    if (this.bus) {
+      this.bus.publish({
+        from: "capability-inheritance",
+        to: "broadcast",
+        topic: "flywheel.skill.propagated",
+        category: "status",
+        payload: { ...result },
+        priority: "normal",
+      });
+    }
     return result;
   }
 
