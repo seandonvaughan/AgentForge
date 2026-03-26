@@ -6,14 +6,14 @@ status: in_review
 
 review_chain:
   - agent: architect
-    status: pending
-    started_at: null
-    completed_at: null
-    verdict: null
+    status: complete
+    started_at: "2026-03-26T04:20:00Z"
+    completed_at: "2026-03-26T04:22:00Z"
+    verdict: request_changes
 
   - agent: meta-architect
-    status: pending
-    started_at: null
+    status: reviewing
+    started_at: "2026-03-26T04:22:00Z"
     completed_at: null
     verdict: null
 
