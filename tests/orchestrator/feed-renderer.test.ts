@@ -70,6 +70,89 @@ describe("FeedRenderer", () => {
     });
   });
 
+  describe("getDisplayTier", () => {
+    it("should return full for urgent messages", () => {
+      const msg = makeMessage({ priority: "urgent" });
+      expect(renderer.getDisplayTier(msg)).toBe("full");
+    });
+
+    it("should return full for escalation", () => {
+      expect(renderer.getDisplayTier(makeMessage({ type: "escalation" }))).toBe("full");
+    });
+
+    it("should return full for decision", () => {
+      expect(renderer.getDisplayTier(makeMessage({ type: "decision" }))).toBe("full");
+    });
+
+    it("should return oneliner for task", () => {
+      expect(renderer.getDisplayTier(makeMessage({ type: "task" }))).toBe("oneliner");
+    });
+
+    it("should return oneliner for result", () => {
+      expect(renderer.getDisplayTier(makeMessage({ type: "result" }))).toBe("oneliner");
+    });
+
+    it("should return marker for status", () => {
+      expect(renderer.getDisplayTier(makeMessage({ type: "status" }))).toBe("marker");
+    });
+
+    it("should return full for direct from user", () => {
+      const msg = makeMessage({ type: "direct", from: "conduit:user" });
+      expect(renderer.getDisplayTier(msg)).toBe("full");
+    });
+
+    it("should return oneliner for direct from agent", () => {
+      const msg = makeMessage({ type: "direct", from: "agent:cto" });
+      expect(renderer.getDisplayTier(msg)).toBe("oneliner");
+    });
+  });
+
+  describe("formatByTier", () => {
+    it("should return full format for escalation", () => {
+      const msg = makeMessage({ type: "escalation", content: "Need guidance" });
+      const result = renderer.formatByTier(msg);
+      expect(result).toContain("escalation");
+    });
+
+    it("should return compact one-liner for task", () => {
+      const msg = makeMessage({ type: "task", content: "Build auth" });
+      const result = renderer.formatByTier(msg);
+      expect(result).not.toBeNull();
+      expect(result).toContain("cto");
+    });
+
+    it("should return dot-marker for status", () => {
+      const msg = makeMessage({ type: "status", from: "agent:coder-a" });
+      const result = renderer.formatByTier(msg);
+      expect(result).toContain("·");
+      expect(result).toContain("coder-a");
+    });
+  });
+
+  describe("formatCostMilestone", () => {
+    it("should return null below 50%", () => {
+      expect(renderer.formatCostMilestone(1.0, 10.0)).toBeNull();
+    });
+
+    it("should return milestone at 50%", () => {
+      const result = renderer.formatCostMilestone(5.0, 10.0);
+      expect(result).not.toBeNull();
+      expect(result).toContain("50%");
+    });
+
+    it("should return milestone at 75%", () => {
+      const result = renderer.formatCostMilestone(7.5, 10.0);
+      expect(result).not.toBeNull();
+      expect(result).toContain("75%");
+    });
+
+    it("should return warning at 90%", () => {
+      const result = renderer.formatCostMilestone(9.0, 10.0);
+      expect(result).not.toBeNull();
+      expect(result).toContain("90%");
+    });
+  });
+
   describe("feed accumulation", () => {
     it("should accumulate entries", () => {
       renderer.addMessage(makeMessage({ id: "1" }));

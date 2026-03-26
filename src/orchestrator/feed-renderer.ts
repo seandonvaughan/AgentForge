@@ -1,4 +1,4 @@
-import type { TeamModeMessage, FeedEntry } from "../types/team-mode.js";
+import type { TeamModeMessage, FeedEntry, FeedDisplayTier } from "../types/team-mode.js";
 
 function agentName(address: string): string {
   return address.split(":")[1] ?? address;
@@ -54,5 +54,48 @@ export class FeedRenderer {
 
   clear(): void {
     this.entries = [];
+  }
+
+  getDisplayTier(message: TeamModeMessage): FeedDisplayTier {
+    if (message.priority === "urgent") return "full";
+    switch (message.type) {
+      case "escalation":
+      case "decision":
+        return "full";
+      case "task":
+      case "result":
+        return "oneliner";
+      case "status":
+        return "marker";
+      case "direct":
+        return message.from === "conduit:user" ? "full" : "oneliner";
+      default:
+        return "silent";
+    }
+  }
+
+  formatByTier(message: TeamModeMessage): string | null {
+    const tier = this.getDisplayTier(message);
+    switch (tier) {
+      case "full":
+        return this.formatMessage(message);
+      case "oneliner": {
+        const from = agentName(message.from);
+        const summary = truncate(message.content, 60);
+        return `  ${from}: ${summary}`;
+      }
+      case "marker":
+        return `  · ${agentName(message.from)}`;
+      case "silent":
+        return null;
+    }
+  }
+
+  formatCostMilestone(spentUsd: number, budgetUsd: number): string | null {
+    const pct = spentUsd / budgetUsd;
+    if (pct >= 0.9) return `  ⚠ Budget 90% used ($${spentUsd.toFixed(2)} / $${budgetUsd.toFixed(2)})`;
+    if (pct >= 0.75) return `  ⚡ Budget 75% used ($${spentUsd.toFixed(2)} / $${budgetUsd.toFixed(2)})`;
+    if (pct >= 0.5) return `  · Budget 50% used ($${spentUsd.toFixed(2)} / $${budgetUsd.toFixed(2)})`;
+    return null;
   }
 }
