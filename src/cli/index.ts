@@ -10,6 +10,8 @@ import registerStatusCommand from "./commands/status.js";
 import registerInvokeCommand from "./commands/invoke.js";
 import registerDelegateCommand from "./commands/delegate.js";
 import registerCostReportCommand from "./commands/cost-report.js";
+import registerActivateCommand from "./commands/activate.js";
+import registerDeactivateCommand from "./commands/deactivate.js";
 
 const program = new Command();
 
@@ -27,5 +29,7 @@ registerStatusCommand(program);
 registerInvokeCommand(program);
 registerDelegateCommand(program);
 registerCostReportCommand(program);
+registerActivateCommand(program);
+registerDeactivateCommand(program);
 
 program.parse();

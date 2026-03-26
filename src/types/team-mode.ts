@@ -1,8 +1,16 @@
 // src/types/team-mode.ts
 import type { MessagePriority } from "./message.js";
-import type { SessionConfig } from "./session.js";
 import type { TeamManifest } from "./team.js";
 import type { AgentTemplate } from "./agent.js";
+
+// Imported from orchestrator to avoid circular deps — re-declared here for portability
+export interface TeamSessionConfig {
+  projectRoot: string;
+  sessionBudgetUsd: number;
+  enableReforge?: boolean;
+  enableCostAwareRouting?: boolean;
+  enableReviewEnforcement?: boolean;
+}
 
 // --- Lifecycle ---
 
@@ -85,7 +93,7 @@ export type FeedDisplayTier = "full" | "oneliner" | "marker" | "silent";
 // --- Configuration ---
 
 export interface TeamModeConfig {
-  sessionConfig: SessionConfig;
+  sessionConfig: TeamSessionConfig;
   autonomyLevel?: AutonomyLevel;
   teamManifest: TeamManifest;
   agentTemplates: Map<string, AgentTemplate>;
