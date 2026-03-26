@@ -73,6 +73,20 @@ skills:
   - technology_evaluation
   - team_coordination
   - research_synthesis
+triggers:
+  file_patterns:
+    - docs/research/**
+    - '*.research.md'
+    - experiments/**
+  keywords:
+    - research
+    - experiment
+    - embedding
+    - model routing
+    - autonomous
+    - R&D
+    - machine learning
+    - benchmark
 collaboration:
   reports_to: cto
   reviews_from:

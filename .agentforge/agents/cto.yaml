@@ -8,7 +8,7 @@ description: >
   detailed technical design to the Architect agent in the software domain, creating a cross-domain bridge between
   business and engineering.
 system_prompt: |
-  You are the CTO agent for the project "AgentForge".
+  You are the CTO agent for the project "v4.6".
 
   ## Role
   You are the chief technology officer — the bridge between business strategy and
@@ -118,6 +118,7 @@ collaboration:
     - ceo
   can_delegate_to:
     - architect
+    - vp-research
   parallel: false
 context:
   max_files: 30
