@@ -258,4 +258,44 @@ describe("TeamModeSession", () => {
       expect(session.getFramer()).not.toBeNull();
     });
   });
+
+  describe("hibernate", () => {
+    it("should transition to hibernated state", async () => {
+      const session = new TeamModeSession(config);
+      await session.activate();
+      await session.hibernate();
+      expect(session.getState()).toBe("hibernated");
+    });
+
+    it("should return a snapshot with session metadata", async () => {
+      const session = new TeamModeSession(config);
+      await session.activate();
+
+      session.submitTask("Build auth");
+      const snapshot = await session.hibernate();
+
+      expect(snapshot.sessionId).toBe(session.getSessionId());
+      expect(snapshot.autonomyLevel).toBe("full");
+      expect(snapshot.feedEntries.length).toBeGreaterThan(0);
+    });
+
+    it("should throw when not active", async () => {
+      const session = new TeamModeSession(config);
+      await expect(session.hibernate()).rejects.toThrow();
+    });
+  });
+
+  describe("spend tracking", () => {
+    it("should start at zero spend", () => {
+      const session = new TeamModeSession(config);
+      expect(session.getSpentUsd()).toBe(0);
+    });
+
+    it("should accumulate spend", () => {
+      const session = new TeamModeSession(config);
+      session.addSpend(0.5);
+      session.addSpend(0.25);
+      expect(session.getSpentUsd()).toBe(0.75);
+    });
+  });
 });

@@ -6,6 +6,8 @@ import { FeedRenderer } from "./feed-renderer.js";
 import { SmartRouter } from "./smart-router.js";
 import { CtoFramer } from "./cto-framer.js";
 import { detectAutonomy } from "./autonomy-detector.js";
+import { SessionSerializer } from "./session-serializer.js";
+import { StalenessDetector } from "./staleness-detector.js";
 import { AgentForgeSession } from "./session.js";
 import type {
   TeamModeConfig,
@@ -14,6 +16,7 @@ import type {
   TeamModeMessage,
   FeedEntry,
   AutonomyLevel,
+  HibernatedSession,
 } from "../types/team-mode.js";
 
 export interface UserInputResult {
@@ -36,6 +39,7 @@ export class TeamModeSession {
   private sessionId: string;
   private autonomyLevel: AutonomyLevel = "guided";
   private activatedAt: string | null = null;
+  private spentUsd = 0;
 
   constructor(config: TeamModeConfig) {
     this.config = config;
@@ -203,5 +207,47 @@ export class TeamModeSession {
 
   getActivatedAt(): string | null {
     return this.activatedAt;
+  }
+
+  getSpentUsd(): number {
+    return this.spentUsd;
+  }
+
+  addSpend(usd: number): void {
+    this.spentUsd += usd;
+  }
+
+  async hibernate(): Promise<HibernatedSession> {
+    if (!this.lifecycle.isActive()) {
+      throw new Error(`Cannot hibernate from state: ${this.lifecycle.getState()}`);
+    }
+
+    this.lifecycle.transition("hibernating");
+
+    const detector = new StalenessDetector(this.config.sessionConfig.projectRoot);
+    const gitCommit = await detector.getCurrentCommit();
+
+    const snapshot: HibernatedSession = {
+      sessionId: this.sessionId,
+      autonomyLevel: this.autonomyLevel,
+      hibernatedAt: new Date().toISOString(),
+      projectRoot: this.config.sessionConfig.projectRoot,
+      teamManifest: this.config.teamManifest,
+      feedEntries: this.feed.getEntries(),
+      gitCommitAtHibernation: gitCommit,
+      sessionBudgetUsd: this.config.sessionConfig.sessionBudgetUsd,
+      spentUsd: this.spentUsd,
+    };
+
+    const serializer = new SessionSerializer(this.config.sessionConfig.projectRoot);
+    await serializer.save(snapshot);
+
+    if (this.innerSession) {
+      await this.innerSession.end();
+      this.innerSession = null;
+    }
+
+    this.lifecycle.transition("hibernated");
+    return snapshot;
   }
 }
