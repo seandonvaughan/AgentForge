@@ -91,6 +91,7 @@ triggers:
     - build-vs-buy*
     - '*.rfc.md'
     - '**/*.json'
+    - '**/*.html'
     - '**/*.ts'
     - '**/*.yaml'
     - '**/*.tsx'

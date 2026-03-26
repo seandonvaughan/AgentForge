@@ -164,7 +164,7 @@
       {
         "file_path": "dashboard/index.html",
         "language": "HTML",
-        "loc": 1510,
+        "loc": 1640,
         "imports": [],
         "exports": [],
         "framework_indicators": [],
@@ -1752,7 +1752,7 @@
       {
         "file_path": "src/memory/semantic-search.ts",
         "language": "TypeScript",
-        "loc": 140,
+        "loc": 321,
         "imports": [
           "../registry/memory-registry.js",
           "../types/v4-api.js"
@@ -1775,6 +1775,83 @@
           "template literals",
           "classes",
           "interfaces"
+        ]
+      },
+      {
+        "file_path": "src/observability/index.ts",
+        "language": "TypeScript",
+        "loc": 6,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "src/observability/v4-errors.ts",
+        "language": "TypeScript",
+        "loc": 94,
+        "imports": [],
+        "exports": [
+          "V4Error",
+          "BusError",
+          "ReforgeError",
+          "MemoryError",
+          "SessionError",
+          "OrgGraphError",
+          "DelegationError",
+          "RegistryError",
+          "FlywheelError",
+          "StorageError"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "template literals",
+          "classes"
+        ]
+      },
+      {
+        "file_path": "src/observability/v4-health.ts",
+        "language": "TypeScript",
+        "loc": 37,
+        "imports": [],
+        "exports": [
+          "ModuleHealth",
+          "SystemHealth",
+          "HealthProbe",
+          "V4HealthCheck"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "classes",
+          "interfaces",
+          "type aliases"
+        ]
+      },
+      {
+        "file_path": "src/observability/v4-logger.ts",
+        "language": "TypeScript",
+        "loc": 88,
+        "imports": [],
+        "exports": [
+          "LogLevel",
+          "LogEntry",
+          "LogSink",
+          "setGlobalLogLevel",
+          "setGlobalLogSink",
+          "setModuleLogLevel",
+          "V4Logger"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "nullish coalescing",
+          "template literals",
+          "classes",
+          "interfaces",
+          "type aliases"
         ]
       },
       {
@@ -2501,11 +2578,12 @@
       {
         "file_path": "src/org-graph/delegation-protocol.ts",
         "language": "TypeScript",
-        "loc": 202,
+        "loc": 253,
         "imports": [
           "node:crypto",
           "../types/v4-api.js",
-          "./org-graph.js"
+          "./org-graph.js",
+          "../communication/v4-message-bus.js"
         ],
         "exports": [
           "DelegationResult",
@@ -2526,9 +2604,10 @@
       {
         "file_path": "src/org-graph/org-graph.ts",
         "language": "TypeScript",
-        "loc": 303,
+        "loc": 326,
         "imports": [
-          "../types/v4-api.js"
+          "../types/v4-api.js",
+          "../communication/v4-message-bus.js"
         ],
         "exports": [
           "OrgGraphValidationResult",
@@ -2608,14 +2687,27 @@
       {
         "file_path": "src/reforge/v4-reforge-engine.ts",
         "language": "TypeScript",
-        "loc": 188,
-        "imports": [],
+        "loc": 362,
+        "imports": [
+          "node:fs",
+          "node:child_process",
+          "../communication/v4-message-bus.js"
+        ],
         "exports": [
           "REFORGE_TIMEOUT_MS",
+          "GitAdapter",
+          "RealGitAdapter",
+          "InMemoryGitAdapter",
+          "FileAdapter",
+          "RealFileAdapter",
+          "InMemoryFileAdapter",
+          "TestRunner",
+          "InMemoryTestRunner",
           "ReforgeStatus",
           "ReforgeProposal",
           "GuardrailResult",
           "ReforgeGuardrail",
+          "ReforgeEngineOptions",
           "V4ReforgeEngine"
         ],
         "framework_indicators": [],
@@ -2624,18 +2716,21 @@
           "arrow functions",
           "destructuring",
           "spread operator",
+          "nullish coalescing",
           "template literals",
           "classes",
           "interfaces",
-          "type aliases"
+          "type aliases",
+          "error handling"
         ]
       },
       {
         "file_path": "src/registry/accountability-tracker.ts",
         "language": "TypeScript",
-        "loc": 238,
+        "loc": 262,
         "imports": [
-          "node:crypto"
+          "node:crypto",
+          "../communication/v4-message-bus.js"
         ],
         "exports": [
           "RaciRole",
@@ -2660,10 +2755,11 @@
       {
         "file_path": "src/registry/memory-registry.ts",
         "language": "TypeScript",
-        "loc": 150,
+        "loc": 193,
         "imports": [
           "node:crypto",
-          "../types/v4-api.js"
+          "../types/v4-api.js",
+          "../communication/v4-message-bus.js"
         ],
         "exports": [
           "MemoryRegistry"
@@ -2682,9 +2778,10 @@
       {
         "file_path": "src/registry/role-registry.ts",
         "language": "TypeScript",
-        "loc": 177,
+        "loc": 210,
         "imports": [
-          "../types/v4-api.js"
+          "../types/v4-api.js",
+          "../communication/v4-message-bus.js"
         ],
         "exports": [
           "RoleAssignmentEvent",
@@ -2703,8 +2800,10 @@
       {
         "file_path": "src/registry/storage-governor.ts",
         "language": "TypeScript",
-        "loc": 149,
-        "imports": [],
+        "loc": 183,
+        "imports": [
+          "../communication/v4-message-bus.js"
+        ],
         "exports": [
           "DEFAULT_FILE_LIMIT",
           "WARNING_THRESHOLD_PCT",
@@ -2994,9 +3093,10 @@
       {
         "file_path": "src/session/v4-session-manager.ts",
         "language": "TypeScript",
-        "loc": 213,
+        "loc": 270,
         "imports": [
-          "node:crypto"
+          "node:crypto",
+          "../communication/v4-message-bus.js"
         ],
         "exports": [
           "V4SessionStatus",
@@ -5045,7 +5145,7 @@
       {
         "file_path": "tests/memory/semantic-search.test.ts",
         "language": "TypeScript",
-        "loc": 145,
+        "loc": 200,
         "imports": [
           "vitest",
           "../../src/memory/semantic-search.js",
@@ -5058,6 +5158,21 @@
           "async/await",
           "arrow functions",
           "template literals"
+        ]
+      },
+      {
+        "file_path": "tests/observability/v4-observability.test.ts",
+        "language": "TypeScript",
+        "loc": 153,
+        "imports": [
+          "vitest",
+          "../../src/observability/v4-health.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "arrow functions",
+          "error handling"
         ]
       },
       {
@@ -5665,7 +5780,7 @@
       {
         "file_path": "tests/reforge/v4-reforge-engine.test.ts",
         "language": "TypeScript",
-        "loc": 197,
+        "loc": 345,
         "imports": [
           "vitest"
         ],
@@ -6104,7 +6219,7 @@
       "JSON": 5,
       "Markdown": 34,
       "HTML": 1,
-      "TypeScript": 231,
+      "TypeScript": 236,
       "YAML": 97
     },
     "frameworks_detected": [
@@ -6124,8 +6239,8 @@
       "Actix",
       "Fiber"
     ],
-    "total_files": 368,
-    "total_loc": 72321,
+    "total_files": 373,
+    "total_loc": 73652,
     "directory_structure": [
       ".claude",
       ".claude-plugin",
@@ -6139,10 +6254,10 @@
     ]
   },
   "git": {
-    "total_commits": 75,
+    "total_commits": 76,
     "contributors": [
       {
-        "commits": 74,
+        "commits": 75,
         "name": "Sean Vaughan",
         "email": "sean@vaughanfamily.org"
       },
@@ -6160,8 +6275,8 @@
       },
       {
         "path": ".agentforge/team.yaml",
-        "changes": 6,
-        "last_modified": "2026-03-25T20:56:03-05:00"
+        "changes": 7,
+        "last_modified": "2026-03-26T10:46:44-05:00"
       },
       {
         "path": "src/cli/commands/invoke.ts",
@@ -6197,6 +6312,16 @@
         "path": "src/api/client.ts",
         "changes": 4,
         "last_modified": "2026-03-25T18:55:20-05:00"
+      },
+      {
+        "path": ".agentforge/analysis/project-scan.json",
+        "changes": 3,
+        "last_modified": "2026-03-26T10:46:44-05:00"
+      },
+      {
+        "path": "src/api/index.ts",
+        "changes": 3,
+        "last_modified": "2026-03-26T10:46:44-05:00"
       },
       {
         "path": ".claude-plugin/plugin.json",
@@ -6242,16 +6367,6 @@
         "path": "src/types/team-mode.ts",
         "changes": 3,
         "last_modified": "2026-03-25T19:39:38-05:00"
-      },
-      {
-        "path": "src/api/agent-runner.ts",
-        "changes": 3,
-        "last_modified": "2026-03-25T18:55:20-05:00"
-      },
-      {
-        "path": "README.md",
-        "changes": 3,
-        "last_modified": "2026-03-25T16:18:49-05:00"
       }
     ],
     "branch_count": 3,
@@ -6259,8 +6374,8 @@
     "churn_rate": [
       {
         "path": ".agentforge/analysis/project-scan.json",
-        "additions": 6731,
-        "deletions": 1070
+        "additions": 8050,
+        "deletions": 1167
       },
       {
         "path": "docs/superpowers/plans/2026-03-25-v32-team-mode-implementation-plan.md",
@@ -6275,6 +6390,11 @@
       {
         "path": "docs/v4/architecture.md",
         "additions": 1563,
+        "deletions": 0
+      },
+      {
+        "path": "dashboard/index.html",
+        "additions": 1509,
         "deletions": 0
       },
       {
@@ -6319,8 +6439,8 @@
       },
       {
         "path": ".agentforge/team.yaml",
-        "additions": 470,
-        "deletions": 356
+        "additions": 476,
+        "deletions": 385
       },
       {
         "path": "src/scanner/dependency-mapper.ts",
@@ -6351,17 +6471,12 @@
         "path": "docs/superpowers/plans/2026-03-25-v3.1-spec-to-code-gap-matrix.md",
         "additions": 611,
         "deletions": 0
-      },
-      {
-        "path": ".agentforge/feedback/2026-03-25-self-improvement-researcher-reforge-engine.md",
-        "additions": 600,
-        "deletions": 0
       }
     ],
     "commit_frequency": [
       {
         "period": "2026-03",
-        "count": 75
+        "count": 76
       }
     ],
     "age_days": 1
@@ -6639,7 +6754,23 @@
     },
     {
       "type": "jira",
+      "ref": "P0-2"
+    },
+    {
+      "type": "jira",
+      "ref": "P1-6"
+    },
+    {
+      "type": "jira",
+      "ref": "P1-5"
+    },
+    {
+      "type": "jira",
       "ref": "ISO-8601"
+    },
+    {
+      "type": "jira",
+      "ref": "P0-3"
     },
     {
       "type": "jira",

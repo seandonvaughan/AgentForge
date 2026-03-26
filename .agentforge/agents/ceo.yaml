@@ -87,6 +87,7 @@ triggers:
     - board-deck*
     - investor-update*
     - '**/*.json'
+    - '**/*.html'
     - '**/*.ts'
     - '**/*.yaml'
     - '**/*.tsx'

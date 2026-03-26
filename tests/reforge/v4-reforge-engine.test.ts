@@ -4,6 +4,9 @@ import {
   type ReforgeProposal,
   type ReforgeGuardrail,
   REFORGE_TIMEOUT_MS,
+  InMemoryGitAdapter,
+  InMemoryFileAdapter,
+  InMemoryTestRunner,
 } from "../../src/reforge/v4-reforge-engine.js";
 
 function makeProposal(overrides?: Partial<ReforgeProposal>): ReforgeProposal {
@@ -191,6 +194,151 @@ describe("V4ReforgeEngine", () => {
       const p = engine.getProposal("test-proposal")!;
       p.description = "MUTATED";
       expect(engine.getProposal("test-proposal")!.description).not.toBe("MUTATED");
+    });
+  });
+
+  // ─── v4.1 P0-3: Git + File + TestRunner Integration ───────────────────
+
+  describe("git integration (v4.1)", () => {
+    it("apply creates a git tag via adapter", () => {
+      const git = new InMemoryGitAdapter();
+      engine = new V4ReforgeEngine({
+        guardrails: [{ name: "pass", validate: () => ({ pass: true }) }],
+        git,
+      });
+      engine.submit(makeProposal());
+      engine.evaluate("test-proposal");
+      const applied = engine.apply("test-proposal");
+      expect(git.tagExists(applied.snapshotTag)).toBe(true);
+    });
+
+    it("rollback deletes the git tag", () => {
+      const git = new InMemoryGitAdapter();
+      engine = new V4ReforgeEngine({
+        guardrails: [{ name: "pass", validate: () => ({ pass: true }) }],
+        git,
+      });
+      engine.submit(makeProposal());
+      engine.evaluate("test-proposal");
+      const applied = engine.apply("test-proposal");
+      engine.rollback("test-proposal");
+      expect(git.tagExists(applied.snapshotTag)).toBe(false);
+    });
+  });
+
+  describe("file integration (v4.1)", () => {
+    it("apply writes diff content to target file", () => {
+      const files = new InMemoryFileAdapter();
+      files.writeFile(".agentforge/agents/cto.yaml", "original content");
+      engine = new V4ReforgeEngine({
+        guardrails: [{ name: "pass", validate: () => ({ pass: true }) }],
+        files,
+      });
+      engine.submit(makeProposal({ diff: "new content" }));
+      engine.evaluate("test-proposal");
+      engine.apply("test-proposal");
+      expect(files.readFile(".agentforge/agents/cto.yaml")).toBe("new content");
+    });
+
+    it("rollback restores original file content", () => {
+      const files = new InMemoryFileAdapter();
+      files.writeFile(".agentforge/agents/cto.yaml", "original content");
+      engine = new V4ReforgeEngine({
+        guardrails: [{ name: "pass", validate: () => ({ pass: true }) }],
+        files,
+      });
+      engine.submit(makeProposal({ diff: "new content" }));
+      engine.evaluate("test-proposal");
+      engine.apply("test-proposal");
+      engine.rollback("test-proposal");
+      expect(files.readFile(".agentforge/agents/cto.yaml")).toBe("original content");
+    });
+
+    it("apply with changeType create writes new file", () => {
+      const files = new InMemoryFileAdapter();
+      engine = new V4ReforgeEngine({
+        guardrails: [{ name: "pass", validate: () => ({ pass: true }) }],
+        files,
+      });
+      engine.submit(makeProposal({
+        targetFile: ".agentforge/agents/new.yaml",
+        changeType: "create",
+        diff: "new agent config",
+      }));
+      engine.evaluate("test-proposal");
+      engine.apply("test-proposal");
+      expect(files.readFile(".agentforge/agents/new.yaml")).toBe("new agent config");
+    });
+
+    it("rollback of create deletes the file", () => {
+      const files = new InMemoryFileAdapter();
+      engine = new V4ReforgeEngine({
+        guardrails: [{ name: "pass", validate: () => ({ pass: true }) }],
+        files,
+      });
+      engine.submit(makeProposal({
+        targetFile: ".agentforge/agents/new.yaml",
+        changeType: "create",
+        diff: "content",
+      }));
+      engine.evaluate("test-proposal");
+      engine.apply("test-proposal");
+      engine.rollback("test-proposal");
+      expect(files.fileExists(".agentforge/agents/new.yaml")).toBe(false);
+    });
+  });
+
+  describe("test runner integration (v4.1)", () => {
+    it("verify with passing tests → verified", () => {
+      const testRunner = new InMemoryTestRunner();
+      testRunner.result = { pass: true, output: "All 1331 tests passed" };
+      engine = new V4ReforgeEngine({
+        guardrails: [{ name: "pass", validate: () => ({ pass: true }) }],
+        testRunner,
+      });
+      engine.submit(makeProposal());
+      engine.evaluate("test-proposal");
+      engine.apply("test-proposal");
+      const result = engine.verify("test-proposal");
+      expect(result.status).toBe("verified");
+    });
+
+    it("verify with failing tests → auto-rollback", () => {
+      const files = new InMemoryFileAdapter();
+      files.writeFile(".agentforge/agents/cto.yaml", "original");
+      const testRunner = new InMemoryTestRunner();
+      testRunner.result = { pass: false, output: "3 tests failed" };
+      engine = new V4ReforgeEngine({
+        guardrails: [{ name: "pass", validate: () => ({ pass: true }) }],
+        files,
+        testRunner,
+      });
+      engine.submit(makeProposal({ diff: "broken content" }));
+      engine.evaluate("test-proposal");
+      engine.apply("test-proposal");
+      const result = engine.verify("test-proposal");
+      expect(result.status).toBe("rolled_back");
+      expect(files.readFile(".agentforge/agents/cto.yaml")).toBe("original");
+    });
+  });
+
+  describe("options constructor (v4.1)", () => {
+    it("accepts options object instead of guardrails array", () => {
+      engine = new V4ReforgeEngine({
+        guardrails: [{ name: "pass", validate: () => ({ pass: true }) }],
+      });
+      engine.submit(makeProposal());
+      engine.evaluate("test-proposal");
+      expect(engine.getProposal("test-proposal")!.status).toBe("approved");
+    });
+
+    it("backward compatible with guardrails array", () => {
+      engine = new V4ReforgeEngine([
+        { name: "pass", validate: () => ({ pass: true }) },
+      ]);
+      engine.submit(makeProposal());
+      engine.evaluate("test-proposal");
+      expect(engine.getProposal("test-proposal")!.status).toBe("approved");
     });
   });
 });

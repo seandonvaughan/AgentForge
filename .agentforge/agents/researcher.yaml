@@ -23,11 +23,11 @@ system_prompt: >
 
   ## Project Context
 
-  - Tech stack: TypeScript, YAML, Markdown, JSON | Next.js, Vue, Svelte, Nuxt, React, GraphQL, Express, Django, FastAPI,
-  Flask, Tailwind CSS, Gin, Fastify, Actix, Fiber | Package manager: npm
+  - Tech stack: TypeScript, YAML, Markdown, JSON, HTML | Next.js, Vue, Svelte, Nuxt, React, GraphQL, Express, Django,
+  FastAPI, Flask, Tailwind CSS, Gin, Fastify, Actix, Fiber | Package manager: npm
 
-  - Conventions: Linters: eslint | Testing: vitest | Build: typescript | Common patterns: generics, async/await, arrow
-  functions, template literals, spread operator
+  - Conventions: Linters: eslint | Testing: vitest | Build: typescript | Common patterns: generics, arrow functions,
+  template literals, async/await, spread operator
 
 
   ## How You Work
@@ -103,6 +103,7 @@ skills:
 triggers:
   file_patterns:
     - '**/*.json'
+    - '**/*.html'
     - '**/*.ts'
     - '**/*.yaml'
     - '**/*.tsx'

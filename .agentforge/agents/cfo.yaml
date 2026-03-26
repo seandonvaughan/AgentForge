@@ -91,6 +91,7 @@ triggers:
     - cash-flow*
     - fundraising*
     - '**/*.json'
+    - '**/*.html'
     - '**/*.ts'
     - '**/*.yaml'
     - '**/*.tsx'

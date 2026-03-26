@@ -13,6 +13,7 @@
  */
 
 import type { RoleRegistryEntry } from "../types/v4-api.js";
+import type { V4MessageBus } from "../communication/v4-message-bus.js";
 
 export interface RoleAssignmentEvent {
   eventId: string;
@@ -28,6 +29,8 @@ export class RoleRegistry {
   private roles = new Map<string, RoleRegistryEntry>();
   private auditLog: RoleAssignmentEvent[] = [];
   private eventCounter = 0;
+
+  constructor(private readonly bus?: V4MessageBus) {}
 
   /**
    * Assign a role to an agent for the first time.
@@ -65,6 +68,16 @@ export class RoleRegistry {
     };
     this.roles.set(roleId, entry);
     this.appendAudit(roleId, null, agentId, assignedBy, reason);
+    if (this.bus) {
+      this.bus.publish({
+        from: "role-registry",
+        to: "broadcast",
+        topic: "role.assigned",
+        category: "status",
+        payload: { ...entry },
+        priority: "normal",
+      });
+    }
     return { ...entry };
   }
 
@@ -94,6 +107,16 @@ export class RoleRegistry {
     };
     this.roles.set(roleId, updated);
     this.appendAudit(roleId, existing.agentId, newAgentId, assignedBy, reason);
+    if (this.bus) {
+      this.bus.publish({
+        from: "role-registry",
+        to: "broadcast",
+        topic: "role.reassigned",
+        category: "status",
+        payload: { ...updated },
+        priority: "normal",
+      });
+    }
     return { ...updated };
   }
 
@@ -106,6 +129,16 @@ export class RoleRegistry {
     const now = new Date().toISOString();
     this.roles.set(roleId, { ...existing, active: false, updatedAt: now });
     this.appendAudit(roleId, existing.agentId, "(deactivated)", deactivatedBy, reason);
+    if (this.bus) {
+      this.bus.publish({
+        from: "role-registry",
+        to: "broadcast",
+        topic: "role.deactivated",
+        category: "status",
+        payload: { roleId, deactivatedBy, reason },
+        priority: "normal",
+      });
+    }
   }
 
   /** Look up a role by ID. Returns null if not found. */

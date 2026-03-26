@@ -102,6 +102,7 @@ triggers:
     - mongod.conf
     - redis.conf
     - '**/*.json'
+    - '**/*.html'
     - '**/*.ts'
     - '**/*.yaml'
     - '**/*.tsx'

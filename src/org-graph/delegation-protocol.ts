@@ -12,6 +12,7 @@
 import { randomUUID } from "node:crypto";
 import type { DelegationContext, OrgNode } from "../types/v4-api.js";
 import type { OrgGraph } from "./org-graph.js";
+import type { V4MessageBus } from "../communication/v4-message-bus.js";
 
 export interface DelegationResult {
   allowed: boolean;
@@ -30,7 +31,7 @@ export interface DelegationRecord {
 export class DelegationProtocol {
   private records = new Map<string, DelegationRecord>();
 
-  constructor(private readonly graph: OrgGraph) {}
+  constructor(private readonly graph: OrgGraph, private readonly bus?: V4MessageBus) {}
 
   /**
    * Create and record a delegation from one agent to another.
@@ -90,6 +91,16 @@ export class DelegationProtocol {
       status: "pending",
     };
     this.records.set(taskId, record);
+    if (this.bus) {
+      this.bus.publish({
+        from: "delegation-protocol",
+        to: "broadcast",
+        topic: "delegation.issued",
+        category: "status",
+        payload: { ...context },
+        priority: "normal",
+      });
+    }
     return { allowed: true, reason: "authorized", context };
   }
 
@@ -98,6 +109,16 @@ export class DelegationProtocol {
    */
   accept(taskId: string): void {
     this.transitionStatus(taskId, "pending", "accepted");
+    if (this.bus) {
+      this.bus.publish({
+        from: "delegation-protocol",
+        to: "broadcast",
+        topic: "delegation.accepted",
+        category: "status",
+        payload: { taskId },
+        priority: "normal",
+      });
+    }
   }
 
   /**
@@ -112,6 +133,16 @@ export class DelegationProtocol {
       completedAt: new Date().toISOString(),
       resultSummary,
     });
+    if (this.bus) {
+      this.bus.publish({
+        from: "delegation-protocol",
+        to: "broadcast",
+        topic: "delegation.completed",
+        category: "status",
+        payload: { taskId, resultSummary },
+        priority: "normal",
+      });
+    }
   }
 
   /**
@@ -122,6 +153,16 @@ export class DelegationProtocol {
     this.transitionStatus(taskId, "pending", "rejected");
     const updated = this.records.get(taskId)!;
     this.records.set(taskId, { ...updated, resultSummary: reason });
+    if (this.bus) {
+      this.bus.publish({
+        from: "delegation-protocol",
+        to: "broadcast",
+        topic: "delegation.rejected",
+        category: "status",
+        payload: { taskId, reason },
+        priority: "normal",
+      });
+    }
   }
 
   /**
@@ -134,6 +175,16 @@ export class DelegationProtocol {
       throw new Error(`Cannot escalate task "${taskId}" with status "${record.status}"`);
     }
     this.records.set(taskId, { ...record, status: "escalated", resultSummary: reason });
+    if (this.bus) {
+      this.bus.publish({
+        from: "delegation-protocol",
+        to: "broadcast",
+        topic: "delegation.escalated",
+        category: "status",
+        payload: { taskId, reason },
+        priority: "normal",
+      });
+    }
   }
 
   /** Look up a delegation record by task ID. */

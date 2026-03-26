@@ -4,7 +4,7 @@
  * Gate criteria:
  *  - Memory registry contains entries for all agent memory stores
  *  - MCP resource provider passes MCP compliance tests
- *  - Semantic search returns relevant results above 0.82 threshold in >90% of test queries
+ *  - Semantic search returns relevant results above 0.82 threshold in >95% of test queries
  *  - Storage governor enforces 10k limit (test: attempt to exceed, verify eviction)
  */
 
@@ -100,7 +100,7 @@ describe("Phase 3 gate — MCP compliance", () => {
   });
 });
 
-describe("Phase 3 gate — semantic search >90% accuracy", () => {
+describe("Phase 3 gate — semantic search >95% accuracy", () => {
   let registry: MemoryRegistry;
   let search: SemanticSearch;
 
@@ -131,7 +131,7 @@ describe("Phase 3 gate — semantic search >90% accuracy", () => {
     }
   });
 
-  it(">90% of test queries return correct top result", () => {
+  it(">95% of test queries return correct top result", () => {
     const queries = [
       { query: "testing quality TDD", expect: "TDD" },
       { query: "performance profiling", expect: "profiling" },
@@ -149,7 +149,7 @@ describe("Phase 3 gate — semantic search >90% accuracy", () => {
       const results = search.search(q.query);
       if (results.hits.length > 0 && results.hits[0].summary.includes(q.expect)) hits++;
     }
-    expect(hits / queries.length).toBeGreaterThanOrEqual(0.9);
+    expect(hits / queries.length).toBeGreaterThanOrEqual(0.95);
   });
 });
 

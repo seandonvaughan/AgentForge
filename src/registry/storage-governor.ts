@@ -8,6 +8,8 @@
  * Git archival support via eviction callbacks (future sprint).
  */
 
+import type { V4MessageBus } from "../communication/v4-message-bus.js";
+
 export const DEFAULT_FILE_LIMIT = 10_000;
 export const WARNING_THRESHOLD_PCT = 90;
 
@@ -31,7 +33,7 @@ export class StorageGovernor {
   private files = new Map<string, TrackedFile>();
   private agentQuotas = new Map<string, number>();
 
-  constructor(limit: number = DEFAULT_FILE_LIMIT) {
+  constructor(limit: number = DEFAULT_FILE_LIMIT, private readonly bus?: V4MessageBus) {
     this.limit = limit;
   }
 
@@ -50,12 +52,33 @@ export class StorageGovernor {
     if (quota !== undefined) {
       const agentCount = this.fileCountForAgent(agentId);
       if (agentCount >= quota) {
+        if (this.bus) {
+          this.bus.publish({
+            from: "storage-governor",
+            to: "broadcast",
+            topic: "storage.quota.exceeded",
+            category: "status",
+            payload: { agentId, count: agentCount, quota },
+            priority: "high",
+          });
+        }
         throw new Error(`Agent quota exceeded for "${agentId}": ${agentCount}/${quota} files`);
       }
     }
 
     const now = Date.now();
     this.files.set(path, { path, agentId, registeredAt: now, lastAccessedAt: now });
+
+    if (this.bus && this.isNearLimit()) {
+      this.bus.publish({
+        from: "storage-governor",
+        to: "broadcast",
+        topic: "storage.warning",
+        category: "status",
+        payload: { totalFiles: this.files.size, limit: this.limit },
+        priority: "high",
+      });
+    }
   }
 
   unregisterFile(path: string): void {
@@ -108,8 +131,19 @@ export class StorageGovernor {
         oldest = file;
       }
     }
-    this.files.delete(oldest!.path);
-    return oldest!.path;
+    const evictedPath = oldest!.path;
+    this.files.delete(evictedPath);
+    if (this.bus) {
+      this.bus.publish({
+        from: "storage-governor",
+        to: "broadcast",
+        topic: "storage.eviction",
+        category: "status",
+        payload: { path: evictedPath, agentId: oldest!.agentId },
+        priority: "normal",
+      });
+    }
+    return evictedPath;
   }
 
   evictUntilBelow(target: number): string[] {

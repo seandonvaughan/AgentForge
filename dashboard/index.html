@@ -59,6 +59,10 @@ body {
   from { opacity: 0; transform: translateX(20px); }
   to   { opacity: 1; transform: translateX(0); }
 }
+@keyframes slideInDown {
+  from { opacity: 0; transform: translateY(-8px); max-height: 0; }
+  to   { opacity: 1; transform: translateY(0); max-height: 50px; }
+}
 @keyframes gaugeGrow {
   from { stroke-dashoffset: 283; }
 }
@@ -580,6 +584,55 @@ header {
   color: var(--text-muted);
 }
 
+.bus-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(22,27,34,0.5);
+  flex-wrap: wrap;
+}
+
+.bus-filter-btn {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.bus-filter-btn:hover { background: var(--bg-card-hover); color: var(--text-primary); }
+.bus-filter-btn.active { background: var(--blue-dim); color: var(--blue); border-color: var(--blue); }
+.bus-filter-btn.active[data-priority="urgent"] { background: rgba(248,81,73,0.2); color: var(--red); border-color: var(--red); }
+.bus-filter-btn.active[data-priority="high"] { background: rgba(210,153,34,0.2); color: var(--orange); border-color: var(--orange); }
+.bus-filter-btn.active[data-priority="normal"] { background: var(--blue-dim); color: var(--blue); border-color: var(--blue); }
+.bus-filter-btn.active[data-priority="low"] { background: rgba(110,118,129,0.2); color: var(--text-muted); border-color: var(--text-muted); }
+
+.bus-topic-filter {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  outline: none;
+  width: 180px;
+  margin-left: auto;
+  transition: border-color 0.15s;
+}
+
+.bus-topic-filter::placeholder { color: var(--text-muted); }
+.bus-topic-filter:focus { border-color: var(--blue); }
+
 .bus-feed {
   height: 280px;
   overflow-y: auto;
@@ -592,17 +645,36 @@ header {
 
 .bus-msg {
   display: grid;
-  grid-template-columns: 90px 1fr 100px 80px 70px;
-  gap: 12px;
+  grid-template-columns: 70px 250px 1fr 120px 130px 80px;
+  gap: 8px;
   align-items: center;
-  padding: 8px 16px;
+  padding: 7px 16px;
   border-bottom: 1px solid rgba(48,54,61,0.5);
   font-size: 12px;
-  animation: slideInRight 0.3s ease-out;
+  animation: slideInDown 0.3s ease-out;
   transition: background 0.15s;
+  border-left: 3px solid transparent;
 }
 
-.bus-msg:hover { background: rgba(48,54,61,0.3); }
+.bus-msg:nth-child(odd) { background: #161b22; }
+.bus-msg:nth-child(even) { background: #1c2128; }
+
+.bus-msg:hover { background: rgba(48,54,61,0.4); }
+
+.bus-msg.priority-urgent { border-left-color: var(--red); }
+.bus-msg.priority-high   { border-left-color: var(--orange); }
+.bus-msg.priority-normal { border-left-color: var(--blue); }
+.bus-msg.priority-low    { border-left-color: var(--text-muted); }
+
+.bus-msg.bus-hidden { display: none; }
+
+.bus-message {
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .bus-timestamp {
   font-family: var(--font-mono);
@@ -642,10 +714,10 @@ header {
   letter-spacing: 0.5px;
 }
 
-.priority-badge.urgent { background: rgba(248,81,73,0.15); color: var(--red); }
-.priority-badge.high   { background: rgba(210,153,34,0.15); color: var(--orange); }
-.priority-badge.normal { background: rgba(88,166,255,0.15); color: var(--blue); }
-.priority-badge.low    { background: rgba(110,118,129,0.15); color: var(--text-muted); }
+.priority-badge.urgent { background: rgba(248,81,73,0.3); color: #ff7b73; border: 1px solid rgba(248,81,73,0.5); }
+.priority-badge.high   { background: rgba(210,153,34,0.3); color: #e0b040; border: 1px solid rgba(210,153,34,0.5); }
+.priority-badge.normal { background: rgba(88,166,255,0.25); color: var(--blue); border: 1px solid rgba(88,166,255,0.4); }
+.priority-badge.low    { background: rgba(110,118,129,0.2); color: var(--text-secondary); border: 1px solid rgba(110,118,129,0.3); }
 
 .timeline-container {
   background: var(--bg-card);
@@ -889,8 +961,9 @@ header {
 
 @media (max-width: 768px) {
   .agent-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
-  .bus-msg { grid-template-columns: 70px 1fr 60px; font-size: 11px; }
-  .bus-agents, .bus-direction { display: none; }
+  .bus-msg { grid-template-columns: 60px 1fr 60px; font-size: 11px; }
+  .bus-agents, .bus-direction, .bus-message { display: none; }
+  .bus-topic-filter { width: 120px; }
   .cost-grid { grid-template-columns: 1fr; }
   .header-inner { flex-direction: column; align-items: flex-start; }
 }
@@ -1003,6 +1076,14 @@ header {
           <span>TeamModeBus v4.0</span>
         </div>
         <span class="bus-counter" id="bus-counter">0 messages</span>
+      </div>
+      <div class="bus-filters" id="bus-filters">
+        <button class="bus-filter-btn active" data-priority="all">ALL</button>
+        <button class="bus-filter-btn" data-priority="urgent">URGENT</button>
+        <button class="bus-filter-btn" data-priority="high">HIGH</button>
+        <button class="bus-filter-btn" data-priority="normal">NORMAL</button>
+        <button class="bus-filter-btn" data-priority="low">LOW</button>
+        <input type="text" class="bus-topic-filter" id="bus-topic-filter" placeholder="Filter by topic...">
       </div>
       <div class="bus-feed" id="bus-feed"></div>
     </div>
@@ -1404,6 +1485,46 @@ header {
   var msgCount = 0;
   var msgIdx = 0;
   var rateHistory = [];
+  var busActivePriority = "all";
+  var busTopicQuery = "";
+
+  function busMatchesFilter(row) {
+    var prio = row.getAttribute("data-priority");
+    var topic = row.getAttribute("data-topic");
+    var prioMatch = (busActivePriority === "all" || prio === busActivePriority);
+    var topicMatch = (!busTopicQuery || topic.toLowerCase().indexOf(busTopicQuery.toLowerCase()) === 0 ||
+                      topic.toLowerCase().indexOf("." + busTopicQuery.toLowerCase()) !== -1 ||
+                      topic.toLowerCase().indexOf(busTopicQuery.toLowerCase()) !== -1);
+    return prioMatch && topicMatch;
+  }
+
+  function applyBusFilters() {
+    var feed = document.getElementById("bus-feed");
+    var rows = feed.querySelectorAll(".bus-msg");
+    rows.forEach(function(row) {
+      if (busMatchesFilter(row)) {
+        row.classList.remove("bus-hidden");
+      } else {
+        row.classList.add("bus-hidden");
+      }
+    });
+  }
+
+  // Priority filter buttons
+  document.getElementById("bus-filters").addEventListener("click", function(e) {
+    var btn = e.target.closest(".bus-filter-btn");
+    if (!btn) return;
+    document.querySelectorAll(".bus-filter-btn").forEach(function(b) { b.classList.remove("active"); });
+    btn.classList.add("active");
+    busActivePriority = btn.getAttribute("data-priority");
+    applyBusFilters();
+  });
+
+  // Topic filter input
+  document.getElementById("bus-topic-filter").addEventListener("input", function(e) {
+    busTopicQuery = e.target.value.trim();
+    applyBusFilters();
+  });
 
   function addBusMessage() {
     var feed = document.getElementById("bus-feed");
@@ -1414,7 +1535,9 @@ header {
     var now = new Date();
     var ts = now.toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
-    var row = el("div", "bus-msg");
+    var row = el("div", "bus-msg priority-" + m.priority);
+    row.setAttribute("data-priority", m.priority);
+    row.setAttribute("data-topic", m.topic);
     row.title = m.payload;
 
     var tsSpan = el("span", "bus-timestamp", ts);
@@ -1423,14 +1546,21 @@ header {
     var topicSpan = el("span", "bus-topic", m.topic);
     row.appendChild(topicSpan);
 
+    var msgSpan = el("span", "bus-message", m.payload);
+    row.appendChild(msgSpan);
+
     var agentsSpan = el("span", "bus-agents", m.from);
     row.appendChild(agentsSpan);
 
-    var dirSpan = el("span", "bus-direction", m.from + " -> " + m.to);
+    var dirSpan = el("span", "bus-direction", m.from + " \u2192 " + m.to);
     row.appendChild(dirSpan);
 
     var prioSpan = el("span", "priority-badge " + m.priority, m.priority);
     row.appendChild(prioSpan);
+
+    if (!busMatchesFilter(row)) {
+      row.classList.add("bus-hidden");
+    }
 
     feed.insertBefore(row, feed.firstChild);
 

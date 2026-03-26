@@ -12,6 +12,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import type { V4MessageBus } from "../communication/v4-message-bus.js";
 
 export type RaciRole = "responsible" | "accountable" | "consulted" | "informed";
 
@@ -43,6 +44,8 @@ export interface RaciMatrix {
 
 export class AccountabilityTracker {
   private tasks = new Map<string, TaskOwnershipRecord>();
+
+  constructor(private readonly bus?: V4MessageBus) {}
 
   /**
    * Register a new task with its RACI assignments.
@@ -79,6 +82,16 @@ export class AccountabilityTracker {
       status: "open",
     };
     this.tasks.set(id, record);
+    if (this.bus) {
+      this.bus.publish({
+        from: "accountability-tracker",
+        to: "broadcast",
+        topic: "accountability.task.registered",
+        category: "status",
+        payload: this.cloneRecord(record),
+        priority: "normal",
+      });
+    }
     return this.cloneRecord(record);
   }
 
@@ -107,11 +120,22 @@ export class AccountabilityTracker {
         `Agent "${completedByAgentId}" is not accountable or responsible for task "${taskId}"`
       );
     }
-    return this.updateRecord(taskId, {
+    const result = this.updateRecord(taskId, {
       status: "completed",
       completedAt: new Date().toISOString(),
       completedByAgentId,
     });
+    if (this.bus) {
+      this.bus.publish({
+        from: "accountability-tracker",
+        to: "broadcast",
+        topic: "accountability.task.completed",
+        category: "status",
+        payload: { taskId, completedByAgentId },
+        priority: "normal",
+      });
+    }
+    return result;
   }
 
   /** Cancel a task (accountable agent or supervisor only — caller enforces supervisor check). */

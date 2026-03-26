@@ -12,6 +12,7 @@
  */
 
 import type { OrgNode } from "../types/v4-api.js";
+import type { V4MessageBus } from "../communication/v4-message-bus.js";
 
 export interface OrgGraphValidationResult {
   valid: boolean;
@@ -20,6 +21,8 @@ export interface OrgGraphValidationResult {
 
 export class OrgGraph {
   private nodes = new Map<string, OrgNode>();
+
+  constructor(private readonly bus?: V4MessageBus) {}
 
   /** Add a node. Throws if it would create a cycle or violate DAG constraints. */
   addNode(node: OrgNode): void {
@@ -40,6 +43,16 @@ export class OrgGraph {
       }
     }
     this.nodes.set(node.agentId, { ...node });
+    if (this.bus) {
+      this.bus.publish({
+        from: "org-graph",
+        to: "broadcast",
+        topic: "org.node.added",
+        category: "status",
+        payload: { ...node },
+        priority: "normal",
+      });
+    }
     // Register as direct report on supervisor
     if (node.supervisorAgentId !== null) {
       const supervisor = this.nodes.get(node.supervisorAgentId)!;
@@ -74,6 +87,16 @@ export class OrgGraph {
       }
     }
     this.nodes.delete(agentId);
+    if (this.bus) {
+      this.bus.publish({
+        from: "org-graph",
+        to: "broadcast",
+        topic: "org.node.removed",
+        category: "status",
+        payload: { nodeId: agentId },
+        priority: "normal",
+      });
+    }
   }
 
   /** Look up a node by agent ID. Returns null if not found. */

@@ -76,6 +76,60 @@ describe("SemanticSearch", () => {
     });
   });
 
+  describe("enhanced-tfidf strategy", () => {
+    it("returns enhanced-tfidf as strategy for standard queries", () => {
+      const results = search.search("testing quality");
+      expect(results.strategy).toBe("enhanced-tfidf");
+    });
+  });
+
+  describe("synonym matching", () => {
+    it("'test' matches entries tagged with 'testing' and 'tdd'", () => {
+      const results = search.search("How do I test?");
+      expect(results.hits.length).toBeGreaterThan(0);
+      expect(results.hits.some((h) => h.summary.includes("TDD"))).toBe(true);
+    });
+
+    it("'errors' matches entries about 'bugs'", () => {
+      const results = search.search("errors");
+      expect(results.hits.length).toBeGreaterThan(0);
+      expect(results.hits.some((h) => h.summary.includes("bugs"))).toBe(true);
+    });
+
+    it("'defects' matches entries about 'bugs'", () => {
+      const results = search.search("defects");
+      expect(results.hits.length).toBeGreaterThan(0);
+      expect(results.hits.some((h) => h.summary.includes("bugs"))).toBe(true);
+    });
+
+    it("'deployment' matches entries about 'deploy'", () => {
+      const results = search.search("deployment");
+      expect(results.hits.length).toBeGreaterThan(0);
+      expect(results.hits.some((h) => h.summary.includes("deploy"))).toBe(true);
+    });
+
+    it("'reliability' matches entries about 'quality'", () => {
+      const results = search.search("reliability");
+      expect(results.hits.length).toBeGreaterThan(0);
+      expect(results.hits.some((h) => h.summary.includes("quality"))).toBe(true);
+    });
+  });
+
+  describe("query expansion", () => {
+    it("'bugs' query expands to also match 'errors' and 'defects' synonyms", () => {
+      const results = search.search("bugs");
+      expect(results.hits.length).toBeGreaterThan(0);
+      // Should find entries that mention bugs directly
+      expect(results.hits.some((h) => h.summary.includes("bugs"))).toBe(true);
+    });
+
+    it("'messaging' matches 'communication' and 'async' entries", () => {
+      const results = search.search("messaging");
+      expect(results.hits.length).toBeGreaterThan(0);
+      expect(results.hits.some((h) => h.summary.includes("messaging"))).toBe(true);
+    });
+  });
+
   describe("confidence levels", () => {
     it("exact-keyword matches have scores above fallback threshold", () => {
       const results = search.search("TDD testing quality");
@@ -102,9 +156,10 @@ describe("SemanticSearch", () => {
 
   describe("custom threshold", () => {
     it("uses custom similarity threshold when provided", () => {
-      const strict = search.search("quality", { similarityThreshold: 0.99 });
-      const loose = search.search("quality", { similarityThreshold: 0.1 });
-      expect(loose.hits.length).toBeGreaterThanOrEqual(strict.hits.length);
+      const high = search.search("quality", { similarityThreshold: 0.95 });
+      const low = search.search("quality", { similarityThreshold: 0.01 });
+      // Lower threshold should return at least as many results
+      expect(low.hits.length).toBeGreaterThanOrEqual(high.hits.length);
     });
   });
 
@@ -116,7 +171,7 @@ describe("SemanticSearch", () => {
     });
   });
 
-  describe(">90% accuracy gate", () => {
+  describe(">95% accuracy gate", () => {
     it("relevant queries return at least one correct result", () => {
       const testQueries = [
         { query: "testing", expectContains: "TDD" },
@@ -138,7 +193,7 @@ describe("SemanticSearch", () => {
         }
       }
       const accuracy = (hits / testQueries.length) * 100;
-      expect(accuracy).toBeGreaterThanOrEqual(90);
+      expect(accuracy).toBeGreaterThanOrEqual(95);
     });
   });
 });

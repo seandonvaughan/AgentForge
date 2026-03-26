@@ -10,11 +10,14 @@
 
 import { randomUUID } from "node:crypto";
 import type { MemoryRegistryEntry, MemoryCategory } from "../types/v4-api.js";
+import type { V4MessageBus } from "../communication/v4-message-bus.js";
 
 type StoreInput = Omit<MemoryRegistryEntry, "id" | "createdAt" | "updatedAt">;
 
 export class MemoryRegistry {
   private entries = new Map<string, MemoryRegistryEntry>();
+
+  constructor(private readonly bus?: V4MessageBus) {}
 
   // ---------------------------------------------------------------------------
   // CRUD
@@ -29,6 +32,16 @@ export class MemoryRegistry {
       updatedAt: now,
     };
     this.entries.set(entry.id, entry);
+    if (this.bus) {
+      this.bus.publish({
+        from: "memory-registry",
+        to: "broadcast",
+        topic: "memory.stored",
+        category: "status",
+        payload: this.clone(entry),
+        priority: "normal",
+      });
+    }
     return this.clone(entry);
   }
 
@@ -52,12 +65,32 @@ export class MemoryRegistry {
       updatedAt: new Date().toISOString(),
     };
     this.entries.set(id, updated);
+    if (this.bus) {
+      this.bus.publish({
+        from: "memory-registry",
+        to: "broadcast",
+        topic: "memory.updated",
+        category: "status",
+        payload: this.clone(updated),
+        priority: "normal",
+      });
+    }
     return this.clone(updated);
   }
 
   remove(id: string): void {
     if (!this.entries.has(id)) throw new Error(`Memory entry "${id}" not found`);
     this.entries.delete(id);
+    if (this.bus) {
+      this.bus.publish({
+        from: "memory-registry",
+        to: "broadcast",
+        topic: "memory.removed",
+        category: "status",
+        payload: { id },
+        priority: "normal",
+      });
+    }
   }
 
   count(): number {
@@ -135,6 +168,16 @@ export class MemoryRegistry {
         this.entries.delete(id);
         count++;
       }
+    }
+    if (this.bus && count > 0) {
+      this.bus.publish({
+        from: "memory-registry",
+        to: "broadcast",
+        topic: "memory.expired",
+        category: "status",
+        payload: { count },
+        priority: "normal",
+      });
     }
     return count;
   }

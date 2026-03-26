@@ -8,6 +8,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import type { V4MessageBus } from "../communication/v4-message-bus.js";
 
 export type V4SessionStatus = "active" | "persisted" | "completed" | "expired";
 
@@ -46,6 +47,8 @@ const TIMEOUT_BY_TIER: Record<number, number> = {
 export class V4SessionManager {
   private sessions = new Map<string, V4Session>();
 
+  constructor(private readonly bus?: V4MessageBus) {}
+
   // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------
@@ -64,6 +67,16 @@ export class V4SessionManager {
       contextChain: [],
     };
     this.sessions.set(session.sessionId, session);
+    if (this.bus) {
+      this.bus.publish({
+        from: "session-manager",
+        to: "broadcast",
+        topic: "session.created",
+        category: "status",
+        payload: this.clone(session),
+        priority: "normal",
+      });
+    }
     return this.clone(session);
   }
 
@@ -72,7 +85,18 @@ export class V4SessionManager {
     if (s.status !== "active") {
       throw new Error(`Session "${sessionId}" must be active to persist (current: "${s.status}")`);
     }
-    return this.update(sessionId, { status: "persisted" });
+    const result = this.update(sessionId, { status: "persisted" });
+    if (this.bus) {
+      this.bus.publish({
+        from: "session-manager",
+        to: "broadcast",
+        topic: "session.persisted",
+        category: "status",
+        payload: { sessionId },
+        priority: "normal",
+      });
+    }
+    return result;
   }
 
   resume(sessionId: string): V4Session {
@@ -80,7 +104,18 @@ export class V4SessionManager {
     if (s.status !== "persisted") {
       throw new Error(`Session "${sessionId}" must be persisted to resume (current: "${s.status}")`);
     }
-    return this.update(sessionId, { status: "active", resumeCount: s.resumeCount + 1 });
+    const result = this.update(sessionId, { status: "active", resumeCount: s.resumeCount + 1 });
+    if (this.bus) {
+      this.bus.publish({
+        from: "session-manager",
+        to: "broadcast",
+        topic: "session.resumed",
+        category: "status",
+        payload: { sessionId },
+        priority: "normal",
+      });
+    }
+    return result;
   }
 
   complete(sessionId: string, result: string): V4Session {
@@ -88,7 +123,18 @@ export class V4SessionManager {
     if (s.status === "completed" || s.status === "expired") {
       throw new Error(`Session "${sessionId}" is already completed/expired`);
     }
-    return this.update(sessionId, { status: "completed", result });
+    const updated = this.update(sessionId, { status: "completed", result });
+    if (this.bus) {
+      this.bus.publish({
+        from: "session-manager",
+        to: "broadcast",
+        topic: "session.completed",
+        category: "status",
+        payload: { sessionId, result },
+        priority: "normal",
+      });
+    }
+    return updated;
   }
 
   expire(sessionId: string, reason: string): V4Session {
@@ -96,7 +142,18 @@ export class V4SessionManager {
     if (s.status === "completed" || s.status === "expired") {
       throw new Error(`Session "${sessionId}" is already completed/expired`);
     }
-    return this.update(sessionId, { status: "expired", result: reason });
+    const updated = this.update(sessionId, { status: "expired", result: reason });
+    if (this.bus) {
+      this.bus.publish({
+        from: "session-manager",
+        to: "broadcast",
+        topic: "session.expired",
+        category: "status",
+        payload: { sessionId, reason },
+        priority: "normal",
+      });
+    }
+    return updated;
   }
 
   // ---------------------------------------------------------------------------

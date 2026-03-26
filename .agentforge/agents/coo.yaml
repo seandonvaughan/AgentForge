@@ -86,6 +86,7 @@ triggers:
     - status-report*
     - milestone*
     - '**/*.json'
+    - '**/*.html'
     - '**/*.ts'
     - '**/*.yaml'
     - '**/*.tsx'
