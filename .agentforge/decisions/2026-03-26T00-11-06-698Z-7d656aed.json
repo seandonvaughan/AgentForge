@@ -1,0 +1,15 @@
+{
+  "type": "routing",
+  "agent": "Runtime Platform Lead",
+  "description": "Routed task to sonnet tier",
+  "alternatives": [
+    "opus",
+    "haiku"
+  ],
+  "rationale": "TaskComplexityRouter selected sonnet based on task signals",
+  "artifacts": [],
+  "confidence": 0.9,
+  "sessionId": "6d778289-81b6-49f4-b222-dafa45e23965",
+  "id": "7d656aed-ae37-418a-839d-cccef94dac93",
+  "timestamp": "2026-03-26T00:11:06.698Z"
+}

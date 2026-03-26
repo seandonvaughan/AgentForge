@@ -1,345 +1,91 @@
-name: "Intelligent Forge v3 Development Team"
-forged_at: "2026-03-25T02:30:00.000Z"
-updated_at: "2026-03-25T14:00:00.000Z"
-update_reason: "v3.1 reforge — +4 agents covering benchmark, budget, routing, integration runtime modules"
-forged_by: genesis
-project_hash: d9d3d50
+name: AgentForge-team
+forged_at: '2026-03-26T00:41:38.370Z'
+forged_by: agentforge
+project_hash: 2e1558f86c77
 agents:
-  # Executive Team — Opus principals + Haiku assistants (8)
   strategic:
+    - ceo
+    - genesis
+    - architect
+  implementation:
     - cto
-    - cto-assistant
-    - vp-engineering
-    - vp-engineering-assistant
-    - vp-product
-    - vp-product-assistant
-    - lead-architect
-    - lead-architect-assistant
-
-  # Core Platform Team — types, scanner, builder, domains (11)
-  core_platform:
-    - core-platform-lead
-    - type-system-designer
-    - scanner-pipeline-designer
-    - type-implementer
-    - type-migrator
-    - file-git-scanner-dev
-    - dependency-ci-scanner-dev
-    - doc-integration-scanner-dev
-    - team-composer-dev
-    - domain-pack-dev
-    - agent-template-author
-
-  # Runtime Team — orchestrator, execution, cost tracking (13)
-  runtime:
-    - runtime-platform-lead
-    - cost-engine-designer
-    - delegation-execution-dev
-    - progress-loop-guard-dev
-    - event-handoff-context-dev
-    - cost-tracker-dev
-    - cost-projector-dev
-    - feedback-pipeline-dev
-    - agent-api-dev
-    - benchmark-lead
-    - budget-runtime-dev
-    - routing-dev
-    - integration-runtime-dev
-
-  # Experience Team — CLI, Genesis, docs (6)
-  experience:
-    - experience-design-lead
-    - genesis-pipeline-dev
-    - workflow-replication-dev
-    - command-interface-dev
-    - technical-writer
-    - system-prompt-crafter
-
-  # R&D — Cost Optimization (4)
-  rd_cost:
-    - cost-optimization-lead
-    - model-routing-researcher
-    - parallel-execution-researcher
-    - budget-strategy-researcher
-
-  # R&D — Agent Intelligence (4)
-  rd_intelligence:
-    - agent-intelligence-lead
-    - feedback-analysis-researcher
-    - multi-agent-framework-researcher
-    - self-improvement-researcher
-
-  # R&D — Integration (3)
-  rd_integration:
-    - integration-architecture-lead
-    - external-tools-researcher
-    - agent-protocol-researcher
-
-  # QA Team (7)
+    - coo
+    - cfo
+    - meta-architect
+    - project-manager
+    - skill-designer
+    - template-optimizer
+    - coder
   quality:
-    - quality-assurance-lead
-    - type-scanner-tester
-    - builder-domain-tester
-    - orchestrator-tester
-    - end-to-end-tester
-    - security-vulnerability-tester
-    - test-executor
-
-  # DevOps Team (3)
-  devops:
-    - build-release-lead
-    - build-pipeline-runner
-    - release-packager
-
-  # Cross-Team & Meta (4)
-  cross_team:
-    - feedback-analyst
-    - type-propagation-checker
-    - coverage-gap-checker
-    - docs-sync-checker
-
+    - team-reviewer
+    - dba
+    - debugger
+    - linter
+    - api-specialist
+  utility:
+    - researcher
 model_routing:
   opus:
+    - ceo
+    - genesis
+    - architect
     - cto
-    - vp-engineering
-    - vp-product
-    - lead-architect
+    - meta-architect
   sonnet:
-    - core-platform-lead
-    - type-system-designer
-    - scanner-pipeline-designer
-    - runtime-platform-lead
-    - cost-engine-designer
-    - experience-design-lead
-    - cost-optimization-lead
-    - agent-intelligence-lead
-    - integration-architecture-lead
-    - quality-assurance-lead
-    - build-release-lead
-    - feedback-analyst
-    - benchmark-lead
+    - coo
+    - cfo
+    - project-manager
+    - skill-designer
+    - template-optimizer
+    - coder
+    - team-reviewer
+    - dba
+    - debugger
+    - api-specialist
   haiku:
-    - cto-assistant
-    - vp-engineering-assistant
-    - vp-product-assistant
-    - lead-architect-assistant
-    - type-implementer
-    - type-migrator
-    - file-git-scanner-dev
-    - dependency-ci-scanner-dev
-    - doc-integration-scanner-dev
-    - team-composer-dev
-    - domain-pack-dev
-    - agent-template-author
-    - delegation-execution-dev
-    - progress-loop-guard-dev
-    - event-handoff-context-dev
-    - cost-tracker-dev
-    - cost-projector-dev
-    - feedback-pipeline-dev
-    - agent-api-dev
-    - genesis-pipeline-dev
-    - workflow-replication-dev
-    - command-interface-dev
-    - technical-writer
-    - system-prompt-crafter
-    - model-routing-researcher
-    - parallel-execution-researcher
-    - budget-strategy-researcher
-    - feedback-analysis-researcher
-    - multi-agent-framework-researcher
-    - self-improvement-researcher
-    - external-tools-researcher
-    - agent-protocol-researcher
-    - type-scanner-tester
-    - builder-domain-tester
-    - orchestrator-tester
-    - end-to-end-tester
-    - security-vulnerability-tester
-    - test-executor
-    - build-pipeline-runner
-    - release-packager
-    - type-propagation-checker
-    - coverage-gap-checker
-    - docs-sync-checker
-    - budget-runtime-dev
-    - routing-dev
-    - integration-runtime-dev
-
+    - linter
+    - researcher
 delegation_graph:
-  # Executive assistants (gatekeepers — no delegation, only briefing)
-  cto-assistant: []
-  vp-engineering-assistant: []
-  vp-product-assistant: []
-  lead-architect-assistant: []
-
-  # Executive delegates to team leads only
+  ceo:
+    - cto
+    - coo
+    - cfo
   cto:
-    - lead-architect
-    - core-platform-lead
-    - runtime-platform-lead
-    - experience-design-lead
-  vp-engineering:
-    - core-platform-lead
-    - runtime-platform-lead
-    - quality-assurance-lead
-    - build-release-lead
-    - cost-optimization-lead
-    - agent-intelligence-lead
-    - integration-architecture-lead
-  vp-product:
-    - experience-design-lead
-    - agent-intelligence-lead
-  lead-architect:
-    - core-platform-lead
-    - runtime-platform-lead
-    - experience-design-lead
-    - type-system-designer
-    - cost-engine-designer
-
-  # Core Platform — lead to architects to coders
-  core-platform-lead:
-    - type-system-designer
-    - scanner-pipeline-designer
-    - team-composer-dev
-    - domain-pack-dev
-    - agent-template-author
-  type-system-designer:
-    - type-implementer
-    - type-migrator
-  scanner-pipeline-designer:
-    - file-git-scanner-dev
-    - dependency-ci-scanner-dev
-    - doc-integration-scanner-dev
-
-  # Runtime — lead to architect to coders
-  runtime-platform-lead:
-    - cost-engine-designer
-    - delegation-execution-dev
-    - progress-loop-guard-dev
-    - event-handoff-context-dev
-    - feedback-pipeline-dev
-    - agent-api-dev
-    - benchmark-lead
-    - routing-dev
-  cost-engine-designer:
-    - cost-tracker-dev
-    - cost-projector-dev
-    - budget-runtime-dev
-
-  # Experience — lead to all devs
-  experience-design-lead:
-    - genesis-pipeline-dev
-    - workflow-replication-dev
-    - command-interface-dev
-    - technical-writer
-    - system-prompt-crafter
-
-  # R&D — leads to researchers
-  cost-optimization-lead:
-    - model-routing-researcher
-    - parallel-execution-researcher
-    - budget-strategy-researcher
-  agent-intelligence-lead:
-    - feedback-analysis-researcher
-    - multi-agent-framework-researcher
-    - self-improvement-researcher
-  integration-architecture-lead:
-    - external-tools-researcher
-    - agent-protocol-researcher
-    - integration-runtime-dev
-
-  # QA — lead to testers
-  quality-assurance-lead:
-    - type-scanner-tester
-    - builder-domain-tester
-    - orchestrator-tester
-    - end-to-end-tester
-    - security-vulnerability-tester
-    - test-executor
-
-  # DevOps — lead to workers
-  build-release-lead:
-    - build-pipeline-runner
-    - release-packager
-
-  # Cross-team — feedback analyst reports to VP Engineering
-  feedback-analyst:
-    - cost-optimization-lead
-    - agent-intelligence-lead
-
-domains:
-  - core
-  - software
-  - research
-
-collaboration:
-  name: v3-development
-  type: matrix
-  topology:
-    root: cto
-    levels:
-      - [cto, vp-engineering, vp-product, lead-architect]
-      - [core-platform-lead, runtime-platform-lead, experience-design-lead, cost-optimization-lead, agent-intelligence-lead, integration-architecture-lead, quality-assurance-lead, build-release-lead, feedback-analyst]
-      - [type-system-designer, scanner-pipeline-designer, cost-engine-designer]
-      - [type-implementer, type-migrator, file-git-scanner-dev, dependency-ci-scanner-dev, doc-integration-scanner-dev, team-composer-dev, domain-pack-dev, agent-template-author, delegation-execution-dev, progress-loop-guard-dev, event-handoff-context-dev, cost-tracker-dev, cost-projector-dev, feedback-pipeline-dev, agent-api-dev, genesis-pipeline-dev, workflow-replication-dev, command-interface-dev, technical-writer, system-prompt-crafter, model-routing-researcher, parallel-execution-researcher, budget-strategy-researcher, feedback-analysis-researcher, multi-agent-framework-researcher, self-improvement-researcher, external-tools-researcher, agent-protocol-researcher, type-scanner-tester, builder-domain-tester, orchestrator-tester, end-to-end-tester, security-vulnerability-tester, test-executor, build-pipeline-runner, release-packager, type-propagation-checker, coverage-gap-checker, docs-sync-checker]
-  delegation_rules:
-    direction: top-down
-    cross_level: true
-    peer_collaboration: true
-    review_flow: bottom-up
-  communication:
-    patterns:
-      - fan-out
-      - pipeline
-      - review-loop
-      - feedback-loop
-    gates:
-      - name: review-before-complete
-        type: hard-gate
-      - name: verify-before-claim
-        type: hard-gate
-      - name: cost-check-before-opus
-        type: soft-gate
-  escalation:
-    max_retries: 3
-    escalate_to: root
-    human_escalation: true
-  loop_limits:
-    review_cycle: 3
-    delegation_depth: 5
-    retry_same_agent: 2
-    total_actions: 100
-
-project_brief:
-  project:
-    name: AgentForge
-    type: software
-    stage: growth
-  goals:
-    - "Build cost-aware agent architecture with budget enforcement and projection"
-    - "Create R&D teams for cost optimization, agent intelligence, and integration"
-    - "Close the feedback loop — agents submit feedback that drives reforge decisions"
-    - "Organize teams by function, not job title — Core Platform, Runtime, Experience"
-    - "Enable workflow replication — generate teams from workflow descriptions"
-    - "Implement rich agent communication — structured handoffs, knowledge bases, decision logs"
-  domains:
-    - core
-    - software
-    - research
-  constraints:
-    opus_budget: "<15% of total token spend"
-    haiku_target: ">55% of total token spend"
-    model_justification: "Every agent must have a documented reason for its model tier"
-
-# Cost Profile (with executive assistants)
-# Opus:   4 agents  (6%)  — ~5-7% estimated token spend (assistants reduce invocations 80%+)
-# Sonnet: 13 agents (20%) — ~28% estimated token spend
-# Haiku:  46 agents (72%) — ~65% estimated token spend
-# Total: 63 agents (v3.1 reforge: +benchmark-lead/Sonnet, +budget-runtime-dev/Haiku, +routing-dev/Haiku, +integration-runtime-dev/Haiku)
-#
-# Effort Levels:
-# max:    2 agents (cto, lead-architect) — deepest reasoning
-# high:  15 agents (VPs, team leads, analysts, benchmark-lead) — complex bounded work
-# medium: 7 agents (migration, security, e2e, prompts, integration-runtime-dev) — judgment-required implementation
-# low:   39 agents (coders, testers, researchers, assistants) — mechanical/parallel work
+    - architect
+  coo:
+    - business-analyst
+    - operations-manager
+  genesis:
+    - project-manager
+    - researcher
+    - meta-architect
+  meta-architect:
+    - researcher
+    - file-reader
+  project-manager:
+    - researcher
+    - file-reader
+  skill-designer:
+    - researcher
+    - file-reader
+  team-reviewer:
+    - file-reader
+  template-optimizer:
+    - researcher
+    - file-reader
+  architect:
+    - coder
+    - researcher
+  coder:
+    - researcher
+    - linter
+    - file-reader
+  debugger:
+    - file-reader
+    - researcher
+    - test-runner
+    - code-explorer
+  api-specialist:
+    - researcher
+    - linter
+    - file-reader

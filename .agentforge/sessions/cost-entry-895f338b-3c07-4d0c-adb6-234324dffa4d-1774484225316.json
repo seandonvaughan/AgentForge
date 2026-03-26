@@ -1,0 +1,10 @@
+{
+  "sessionId": "895f338b-3c07-4d0c-adb6-234324dffa4d",
+  "startedAt": "2026-03-26T00:15:51.240Z",
+  "endedAt": "2026-03-26T00:17:05.316Z",
+  "totalSpentUsd": 0.057105,
+  "totalAgentRuns": 1,
+  "agentBreakdown": {
+    "Runtime Platform Lead": 0.057105
+  }
+}

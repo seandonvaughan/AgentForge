@@ -1,0 +1,19 @@
+{
+  "task_id": "57b3e550-b4a3-46a3-a31f-a2d50581d1cd",
+  "objective": "say hello in one sentence",
+  "facts": {
+    "given": [],
+    "to_look_up": [],
+    "to_derive": [],
+    "educated_guesses": []
+  },
+  "plan": [],
+  "steps_completed": [],
+  "current_step": null,
+  "is_request_satisfied": true,
+  "is_in_loop": false,
+  "is_progress_being_made": true,
+  "confidence": 0.9,
+  "next_speaker": null,
+  "instruction": ""
+}

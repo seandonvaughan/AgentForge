@@ -1,0 +1,19 @@
+{
+  "task_id": "de584d00-0ca4-41ce-90d8-34ca5e47734b",
+  "objective": "v3.2 Team Mode Implementation Mission\n\nThe v3.2 design spec and implementation plan are ready at:\n- Spec: docs/superpowers/specs/2026-03-25-v32-team-mode-design.md  \n- Plan: docs/superpowers/plans/2026-03-25-v32-team-mode-implementation-plan.md\n\nv3.2 introduces Team Mode: a persistent runtime where Claude Code drops to Haiku/Sonnet as a conduit, agents communicate peer-to-peer via the MessageBus, and autonomy adapts to team composition (Opus team = full autonomy, Sonnet leads = supervised, all Haiku = guided).\n\nSprint structure:\n- Sprint 1: Activation core (activate/deactivate lifecycle, peer-to-peer messaging, continuous drain loop, basic feed)\n- Sprint 2: Intelligence & routing (autonomy detection, smart router, CTO framing, direct messaging, tiered feed)\n- Sprint 3: Persistence & polish (hibernation, resume, staleness detection, feed.jsonl, session listing)\n\nYour job as CTO:\n1. Review the spec and plan — identify any architectural risks or gaps\n2. Frame the implementation mission — break into workstreams, assign to leads, set success criteria\n3. Identify which team leads should own each sprint (runtime-platform-lead, experience-design-lead, core-platform-lead, etc.)\n4. Flag any dependencies that must be resolved before implementation starts\n5. Set the definition of done for v3.2.0\n\nThis is the first task of the v3.2 sprint. Your framing determines how the team executes.",
+  "facts": {
+    "given": [],
+    "to_look_up": [],
+    "to_derive": [],
+    "educated_guesses": []
+  },
+  "plan": [],
+  "steps_completed": [],
+  "current_step": null,
+  "is_request_satisfied": true,
+  "is_in_loop": false,
+  "is_progress_being_made": true,
+  "confidence": 0.9,
+  "next_speaker": null,
+  "instruction": ""
+}

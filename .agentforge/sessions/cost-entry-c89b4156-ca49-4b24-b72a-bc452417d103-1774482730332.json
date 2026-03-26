@@ -1,0 +1,10 @@
+{
+  "sessionId": "c89b4156-ca49-4b24-b72a-bc452417d103",
+  "startedAt": "2026-03-25T23:52:01.680Z",
+  "endedAt": "2026-03-25T23:52:10.332Z",
+  "totalSpentUsd": 0,
+  "totalAgentRuns": 1,
+  "agentBreakdown": {
+    "CTO Assistant": 0
+  }
+}

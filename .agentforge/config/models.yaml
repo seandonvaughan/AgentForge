@@ -1,92 +1,20 @@
-# Model Routing — AgentForge v3 Development Team
-# Target: <15% Opus spend, >55% Haiku spend
-
 opus:
-  agents:
-    - cto
-    - vp-engineering
-    - vp-product
-    - lead-architect
-  invocation_rules:
-    - "Strategic decisions that shape the entire project"
-    - "Cross-team architectural disputes"
-    - "Milestone reviews and roadmap changes"
-    - "Never for implementation or execution"
-  estimated_spend_pct: 14
-
+  - ceo
+  - genesis
+  - architect
+  - cto
+  - meta-architect
 sonnet:
-  agents:
-    - core-platform-lead
-    - type-system-designer
-    - scanner-pipeline-designer
-    - runtime-platform-lead
-    - cost-engine-designer
-    - experience-design-lead
-    - cost-optimization-lead
-    - agent-intelligence-lead
-    - integration-architecture-lead
-    - quality-assurance-lead
-    - build-release-lead
-    - feedback-analyst
-  invocation_rules:
-    - "Team coordination and design decisions within bounded scope"
-    - "Code review requiring cross-module reasoning"
-    - "Research synthesis and proposal evaluation"
-    - "Test strategy and security analysis"
-    - benchmark-lead
-  estimated_spend_pct: 31
-
+  - coo
+  - cfo
+  - project-manager
+  - skill-designer
+  - template-optimizer
+  - coder
+  - team-reviewer
+  - dba
+  - debugger
+  - api-specialist
 haiku:
-  agents:
-    - cto-assistant
-    - vp-engineering-assistant
-    - vp-product-assistant
-    - lead-architect-assistant
-    - type-implementer
-    - type-migrator
-    - file-git-scanner-dev
-    - dependency-ci-scanner-dev
-    - doc-integration-scanner-dev
-    - team-composer-dev
-    - domain-pack-dev
-    - agent-template-author
-    - delegation-execution-dev
-    - progress-loop-guard-dev
-    - event-handoff-context-dev
-    - cost-tracker-dev
-    - cost-projector-dev
-    - feedback-pipeline-dev
-    - agent-api-dev
-    - genesis-pipeline-dev
-    - workflow-replication-dev
-    - command-interface-dev
-    - technical-writer
-    - system-prompt-crafter
-    - model-routing-researcher
-    - parallel-execution-researcher
-    - budget-strategy-researcher
-    - feedback-analysis-researcher
-    - multi-agent-framework-researcher
-    - self-improvement-researcher
-    - external-tools-researcher
-    - agent-protocol-researcher
-    - type-scanner-tester
-    - builder-domain-tester
-    - orchestrator-tester
-    - end-to-end-tester
-    - security-vulnerability-tester
-    - test-executor
-    - build-pipeline-runner
-    - release-packager
-    - type-propagation-checker
-    - coverage-gap-checker
-    - docs-sync-checker
-    - budget-runtime-dev
-    - routing-dev
-    - integration-runtime-dev
-  invocation_rules:
-    - "Implementation from specs — code writing, test writing, template authoring"
-    - "Parallel research tasks — web search, pattern scanning, API exploration"
-    - "Mechanical operations — linting, building, test execution, file scanning"
-    - "Cross-referencing — type propagation, coverage gaps, docs sync"
-  estimated_spend_pct: 55
+  - linter
+  - researcher

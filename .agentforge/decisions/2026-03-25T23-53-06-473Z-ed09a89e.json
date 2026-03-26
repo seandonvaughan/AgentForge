@@ -1,0 +1,15 @@
+{
+  "type": "routing",
+  "agent": "CTO Assistant",
+  "description": "Routed task to haiku tier",
+  "alternatives": [
+    "opus",
+    "sonnet"
+  ],
+  "rationale": "TaskComplexityRouter selected haiku based on task signals",
+  "artifacts": [],
+  "confidence": 0.9,
+  "sessionId": "25d36e51-94bc-41fc-8c66-0732c3d3af0e",
+  "id": "ed09a89e-fa18-4103-aafc-e7dcb150b946",
+  "timestamp": "2026-03-25T23:53:06.473Z"
+}
