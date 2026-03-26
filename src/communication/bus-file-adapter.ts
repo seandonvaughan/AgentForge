@@ -1,5 +1,5 @@
 /**
- * BusFileAdapter — Sprint 4.4 P0-3
+ * BusFileAdapter — Sprint 4.4 P0-3 + v4.5 P0-5 (auto-flush + recovery)
  *
  * Attaches to a V4MessageBus instance and persists every message to a
  * JSON array on disk. This lets the dashboard Bus Monitor and other
@@ -7,6 +7,12 @@
  *
  * File format: JSON array of BusEvent objects at `filePath`.
  * Rolling: only the last `maxEvents` entries are kept.
+ *
+ * v4.5 additions:
+ *   - autoFlush: automatically write to disk on every message (configurable)
+ *   - recover(): reload events from disk into memory after restart
+ *   - loadSince(timestamp): filter events by time for dashboard polling
+ *   - getEventCount(): total events tracked in memory
  *
  * Usage:
  *   const adapter = new BusFileAdapter(".agentforge/data/bus-events.json");
@@ -40,12 +46,18 @@ export interface BusEvent {
 
 export class BusFileAdapter {
   private pending: BusEvent[] = [];
+  private persisted: BusEvent[] = [];
   private unsubscribe?: () => void;
+  private autoFlushEnabled: boolean;
+  private flushQueue: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly filePath: string,
-    private readonly maxEvents: number = 500
-  ) {}
+    private readonly maxEvents: number = 500,
+    options?: { autoFlush?: boolean }
+  ) {
+    this.autoFlushEnabled = options?.autoFlush ?? false;
+  }
 
   /**
    * Subscribe to all messages on the bus via `onAnyMessage`.
@@ -59,6 +71,9 @@ export class BusFileAdapter {
     }
     this.unsubscribe = bus.onAnyMessage((envelope: MessageEnvelope) => {
       this.pending.push(envelopeToEvent(envelope));
+      if (this.autoFlushEnabled) {
+        this.flushQueue = this.flushQueue.then(() => this.flush()).catch(() => {});
+      }
     });
   }
 
@@ -109,6 +124,44 @@ export class BusFileAdapter {
    */
   pendingCount(): number {
     return this.pending.length;
+  }
+
+  /**
+   * Total events tracked in memory (persisted + pending).
+   * v4.5 addition.
+   */
+  getEventCount(): number {
+    return this.persisted.length + this.pending.length;
+  }
+
+  /**
+   * Reload events from disk into memory for recovery after restart.
+   * Returns the number of events recovered.
+   * v4.5 addition.
+   */
+  async recover(): Promise<number> {
+    const events = await this.load();
+    this.persisted = events;
+    return events.length;
+  }
+
+  /**
+   * Load events since a specific timestamp (ISO-8601).
+   * Useful for dashboard polling with incremental updates.
+   * v4.5 addition.
+   */
+  async loadSince(since: string): Promise<BusEvent[]> {
+    const events = await this.load();
+    const sinceTime = new Date(since).getTime();
+    return events.filter((e) => new Date(e.timestamp).getTime() >= sinceTime);
+  }
+
+  /**
+   * Enable or disable auto-flush mode.
+   * v4.5 addition.
+   */
+  setAutoFlush(enabled: boolean): void {
+    this.autoFlushEnabled = enabled;
   }
 }
 

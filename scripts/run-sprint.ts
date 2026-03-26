@@ -28,8 +28,9 @@ function separator(phase: string) {
 const SPRINT_TITLES: Record<string, string> = {
   "4.3": "AgentForge v4.3 Dashboard Overhaul",
   "4.4": "AgentForge v4.4 Real Execution Sprint",
+  "4.5": "AgentForge v4.5 Collaborative Intelligence Sprint",
 };
-const SPRINT_BUDGETS: Record<string, number> = { "4.3": 400, "4.4": 450 };
+const SPRINT_BUDGETS: Record<string, number> = { "4.3": 400, "4.4": 450, "4.5": 600 };
 const sprint = fw.createSprint(
   SPRINT_VERSION,
   SPRINT_TITLES[SPRINT_VERSION] ?? `AgentForge v${SPRINT_VERSION}`,
