@@ -5,7 +5,7 @@ argument-hint: --agent <name> --task <description> [--budget <usd>] [--loop]
 
 # AgentForge Invoke
 
-Run a task through a specific agent using the v3 AgentForgeSession runtime. Writes a cost entry to `.agentforge/sessions/` on completion.
+Run a task through a specific agent using the V4 session runtime. Creates a tracked session via `V4SessionManager` and writes a cost entry to `.agentforge/sessions/` on completion.
 
 ## Flags
 
@@ -30,3 +30,10 @@ When `--loop` is set, the session runs iteratively:
 - Reports exit reason on completion
 
 Note: `--loop` is experimental. Validate results carefully before relying on multi-iteration sessions.
+
+## V4 Integration
+
+- Sessions are tracked via `V4SessionManager` (`src/session/v4-session-manager.ts`) — supports persist/resume across crashes
+- Delegations route through the org graph (`src/org-graph/delegation-protocol.ts`) — checks ancestor authority
+- All invocation events publish to the `V4MessageBus` — use `/agentforge:bus history` to inspect
+- Task outcomes feed the meta-learning engine for flywheel insights

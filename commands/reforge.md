@@ -23,3 +23,15 @@ Apply and manage per-agent tuning overrides. Does NOT re-scan the project (use `
 5. For `list`/`status`: summarize active mutations with agent name, what changed, and when
 
 Note: To re-scan the project and update the team composition, use `agentforge rebuild` instead.
+
+## V4 REFORGE Engine
+
+In v4, reforge proposals go through a guardrail pipeline (`src/reforge/v4-reforge-engine.ts`):
+
+1. **Submit** — Register proposal with target file, diff, and rationale
+2. **Evaluate** — Run all guardrails (scope-boundary, safety-check, rationale-required)
+3. **Apply** — Create a git snapshot tag, apply the change
+4. **Verify** — Confirm the change works (tests pass, no regressions)
+5. **Auto-rollback** — If not verified within 120s, automatically rolls back
+
+Use `status` to see proposals in flight. The engine tracks full history: pending → approved → applied → verified (or rolled_back).
