@@ -1,6 +1,6 @@
 {
   "name": "agentforge",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "description": "Adaptive Agent Team Builder for Claude Code",
   "type": "module",
   "main": "dist/index.js",

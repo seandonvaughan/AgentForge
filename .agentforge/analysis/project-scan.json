@@ -200,9 +200,20 @@
         "patterns": []
       },
       {
+        "file_path": "commands/workflow.md",
+        "language": "Markdown",
+        "loc": 142,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics"
+        ]
+      },
+      {
         "file_path": "dashboard/index.html",
         "language": "HTML",
-        "loc": 3310,
+        "loc": 3268,
         "imports": [],
         "exports": [],
         "framework_indicators": [
@@ -521,6 +532,18 @@
         ]
       },
       {
+        "file_path": "docs/v4/v4.5-roadmap.md",
+        "language": "Markdown",
+        "loc": 251,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "classes"
+        ]
+      },
+      {
         "file_path": "package-lock.json",
         "language": "JSON",
         "loc": 3081,
@@ -541,7 +564,7 @@
       {
         "file_path": "scripts/run-sprint.ts",
         "language": "TypeScript",
-        "loc": 317,
+        "loc": 318,
         "imports": [
           "../src/autonomous/sprint-framework.js",
           "node:fs"
@@ -1314,7 +1337,7 @@
       {
         "file_path": "src/communication/bus-file-adapter.ts",
         "language": "TypeScript",
-        "loc": 134,
+        "loc": 187,
         "imports": [
           "node:fs/promises",
           "node:path",
@@ -1331,6 +1354,8 @@
           "generics",
           "arrow functions",
           "spread operator",
+          "optional chaining",
+          "nullish coalescing",
           "classes",
           "interfaces",
           "error handling"
@@ -1522,6 +1547,35 @@
           "template literals",
           "classes",
           "interfaces"
+        ]
+      },
+      {
+        "file_path": "src/delegation/delegation-protocol.ts",
+        "language": "TypeScript",
+        "loc": 330,
+        "imports": [
+          "node:crypto",
+          "../communication/v4-message-bus.js"
+        ],
+        "exports": [
+          "DelegationExecutor",
+          "DelegationProtocolOptions",
+          "DelegationProtocol"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "spread operator",
+          "optional chaining",
+          "nullish coalescing",
+          "template literals",
+          "classes",
+          "interfaces",
+          "type aliases",
+          "error handling"
         ]
       },
       {
@@ -2035,6 +2089,60 @@
           "optional chaining",
           "nullish coalescing",
           "template literals",
+          "classes",
+          "interfaces"
+        ]
+      },
+      {
+        "file_path": "src/memory/session-memory-manager.ts",
+        "language": "TypeScript",
+        "loc": 301,
+        "imports": [
+          "node:fs",
+          "node:path"
+        ],
+        "exports": [
+          "SessionMemoryEntry",
+          "SessionSummaryRecord",
+          "SessionMemoryState",
+          "SessionMemoryManager"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "spread operator",
+          "nullish coalescing",
+          "template literals",
+          "classes",
+          "interfaces",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "src/observability/agent-heartbeat.ts",
+        "language": "TypeScript",
+        "loc": 309,
+        "imports": [
+          "../types/v4-api.js",
+          "../communication/v4-message-bus.js"
+        ],
+        "exports": [
+          "AgentStatus",
+          "TeamHealthReport",
+          "HealthSnapshot",
+          "AgentHeartbeatOptions",
+          "AgentHeartbeat"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "spread operator",
+          "optional chaining",
+          "nullish coalescing",
           "classes",
           "interfaces"
         ]
@@ -2886,6 +2994,56 @@
         ]
       },
       {
+        "file_path": "src/pipeline/task-pipeline.ts",
+        "language": "TypeScript",
+        "loc": 380,
+        "imports": [
+          "node:crypto",
+          "../communication/v4-message-bus.js"
+        ],
+        "exports": [
+          "StageExecutor",
+          "TaskPipelineOptions",
+          "TaskPipeline"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "optional chaining",
+          "nullish coalescing",
+          "template literals",
+          "classes",
+          "interfaces",
+          "type aliases",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "src/pipeline/workflow-templates.ts",
+        "language": "TypeScript",
+        "loc": 299,
+        "imports": [
+          "node:crypto",
+          "../types/workflow.js",
+          "../types/pipeline.js"
+        ],
+        "exports": [
+          "WorkflowRegistry"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "spread operator",
+          "template literals",
+          "classes"
+        ]
+      },
+      {
         "file_path": "src/reforge/index.ts",
         "language": "TypeScript",
         "loc": 400,
@@ -3564,6 +3722,24 @@
         ]
       },
       {
+        "file_path": "src/types/delegation.ts",
+        "language": "TypeScript",
+        "loc": 91,
+        "imports": [],
+        "exports": [
+          "DelegationRequest",
+          "DelegationResult",
+          "DelegationStatus",
+          "DelegationLogEntry",
+          "DelegationGraph"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "interfaces",
+          "type aliases"
+        ]
+      },
+      {
         "file_path": "src/types/domain.ts",
         "language": "TypeScript",
         "loc": 83,
@@ -3689,6 +3865,24 @@
         "framework_indicators": [
           "Next.js"
         ],
+        "patterns": [
+          "interfaces",
+          "type aliases"
+        ]
+      },
+      {
+        "file_path": "src/types/pipeline.ts",
+        "language": "TypeScript",
+        "loc": 102,
+        "imports": [],
+        "exports": [
+          "PipelineStageStatus",
+          "PipelineStatus",
+          "PipelineStage",
+          "PipelineDefinition",
+          "PipelineResult"
+        ],
+        "framework_indicators": [],
         "patterns": [
           "interfaces",
           "type aliases"
@@ -3871,6 +4065,25 @@
           "classes",
           "interfaces",
           "enums",
+          "type aliases"
+        ]
+      },
+      {
+        "file_path": "src/types/workflow.ts",
+        "language": "TypeScript",
+        "loc": 45,
+        "imports": [
+          "./pipeline.js"
+        ],
+        "exports": [
+          "WorkflowStageTemplate",
+          "WorkflowTemplate",
+          "WorkflowParameters"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "interfaces",
           "type aliases"
         ]
       },
@@ -4982,6 +5195,25 @@
         ]
       },
       {
+        "file_path": "tests/communication/bus-file-adapter-v45.test.ts",
+        "language": "TypeScript",
+        "loc": 147,
+        "imports": [
+          "vitest",
+          "../../src/communication/bus-file-adapter.js",
+          "../../src/communication/v4-message-bus.js",
+          "node:fs",
+          "node:path",
+          "node:os"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "arrow functions"
+        ]
+      },
+      {
         "file_path": "tests/communication/bus-file-adapter.test.ts",
         "language": "TypeScript",
         "loc": 266,
@@ -5090,6 +5322,22 @@
         "framework_indicators": [],
         "patterns": [
           "arrow functions"
+        ]
+      },
+      {
+        "file_path": "tests/delegation/delegation-protocol.test.ts",
+        "language": "TypeScript",
+        "loc": 268,
+        "imports": [
+          "vitest",
+          "../../src/communication/v4-message-bus.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "arrow functions",
+          "spread operator"
         ]
       },
       {
@@ -5602,6 +5850,41 @@
           "async/await",
           "arrow functions",
           "template literals"
+        ]
+      },
+      {
+        "file_path": "tests/memory/session-memory-manager.test.ts",
+        "language": "TypeScript",
+        "loc": 241,
+        "imports": [
+          "vitest",
+          "node:fs",
+          "node:path",
+          "node:os"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "spread operator",
+          "template literals"
+        ]
+      },
+      {
+        "file_path": "tests/observability/agent-heartbeat.test.ts",
+        "language": "TypeScript",
+        "loc": 206,
+        "imports": [
+          "vitest",
+          "../../src/observability/agent-heartbeat.js",
+          "../../src/communication/v4-message-bus.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "arrow functions"
         ]
       },
       {
@@ -6200,6 +6483,41 @@
         ]
       },
       {
+        "file_path": "tests/pipeline/task-pipeline.test.ts",
+        "language": "TypeScript",
+        "loc": 263,
+        "imports": [
+          "vitest",
+          "../../src/pipeline/task-pipeline.js",
+          "../../src/types/pipeline.js",
+          "../../src/communication/v4-message-bus.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "optional chaining",
+          "nullish coalescing",
+          "template literals"
+        ]
+      },
+      {
+        "file_path": "tests/pipeline/workflow-templates.test.ts",
+        "language": "TypeScript",
+        "loc": 179,
+        "imports": [
+          "vitest",
+          "../../src/pipeline/workflow-templates.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "arrow functions"
+        ]
+      },
+      {
         "file_path": "tests/reforge/reforge-engine.test.ts",
         "language": "TypeScript",
         "loc": 408,
@@ -6691,9 +7009,9 @@
     "languages": {
       "JSON": 5,
       "YAML": 99,
-      "Markdown": 40,
+      "Markdown": 42,
       "HTML": 1,
-      "TypeScript": 252
+      "TypeScript": 266
     },
     "frameworks_detected": [
       "Next.js",
@@ -6712,8 +7030,8 @@
       "Actix",
       "Fiber"
     ],
-    "total_files": 397,
-    "total_loc": 81234,
+    "total_files": 413,
+    "total_loc": 84800,
     "directory_structure": [
       ".claude",
       ".claude-plugin",
@@ -6729,10 +7047,10 @@
     ]
   },
   "git": {
-    "total_commits": 85,
+    "total_commits": 90,
     "contributors": [
       {
-        "commits": 84,
+        "commits": 89,
         "name": "Sean Vaughan",
         "email": "sean@vaughanfamily.org"
       },
@@ -6745,8 +7063,13 @@
     "active_files": [
       {
         "path": ".agentforge/team.yaml",
-        "changes": 13,
-        "last_modified": "2026-03-26T12:19:52-05:00"
+        "changes": 14,
+        "last_modified": "2026-03-26T13:04:00-05:00"
+      },
+      {
+        "path": ".agentforge/analysis/project-scan.json",
+        "changes": 9,
+        "last_modified": "2026-03-26T13:04:00-05:00"
       },
       {
         "path": "src/types/index.ts",
@@ -6754,9 +7077,14 @@
         "last_modified": "2026-03-25T23:27:36-05:00"
       },
       {
-        "path": ".agentforge/analysis/project-scan.json",
+        "path": "dashboard/index.html",
         "changes": 8,
-        "last_modified": "2026-03-26T11:32:14-05:00"
+        "last_modified": "2026-03-26T15:10:35-05:00"
+      },
+      {
+        "path": ".claude-plugin/plugin.json",
+        "changes": 6,
+        "last_modified": "2026-03-26T13:04:00-05:00"
       },
       {
         "path": "src/cli/commands/invoke.ts",
@@ -6764,9 +7092,14 @@
         "last_modified": "2026-03-25T18:55:20-05:00"
       },
       {
-        "path": ".claude-plugin/plugin.json",
+        "path": "package.json",
         "changes": 5,
-        "last_modified": "2026-03-26T12:19:52-05:00"
+        "last_modified": "2026-03-26T13:04:00-05:00"
+      },
+      {
+        "path": "src/memory/semantic-search.ts",
+        "changes": 5,
+        "last_modified": "2026-03-26T13:04:00-05:00"
       },
       {
         "path": ".agentforge/agents/cto.yaml",
@@ -6794,19 +7127,9 @@
         "last_modified": "2026-03-25T01:41:06-05:00"
       },
       {
-        "path": "dashboard/index.html",
+        "path": "src/builder/team-writer.ts",
         "changes": 4,
-        "last_modified": "2026-03-26T12:19:52-05:00"
-      },
-      {
-        "path": "package.json",
-        "changes": 4,
-        "last_modified": "2026-03-26T12:19:52-05:00"
-      },
-      {
-        "path": "src/memory/semantic-search.ts",
-        "changes": 4,
-        "last_modified": "2026-03-26T11:03:35-05:00"
+        "last_modified": "2026-03-26T13:04:00-05:00"
       },
       {
         "path": ".agentforge/config/models.yaml",
@@ -6819,29 +7142,24 @@
         "last_modified": "2026-03-25T18:55:20-05:00"
       },
       {
-        "path": ".agentforge/agents/api-specialist.yaml",
+        "path": "scripts/run-sprint.ts",
         "changes": 3,
-        "last_modified": "2026-03-26T11:32:14-05:00"
+        "last_modified": "2026-03-26T15:23:32-05:00"
       },
       {
-        "path": ".agentforge/agents/architect.yaml",
+        "path": "commands/invoke.md",
         "changes": 3,
-        "last_modified": "2026-03-26T11:32:14-05:00"
+        "last_modified": "2026-03-26T13:04:00-05:00"
       },
       {
-        "path": ".agentforge/agents/ceo.yaml",
+        "path": "src/flywheel/meta-learning-engine.ts",
         "changes": 3,
-        "last_modified": "2026-03-26T11:32:14-05:00"
+        "last_modified": "2026-03-26T13:04:00-05:00"
       },
       {
-        "path": ".agentforge/agents/cfo.yaml",
+        "path": "tests/memory/semantic-search.test.ts",
         "changes": 3,
-        "last_modified": "2026-03-26T11:32:14-05:00"
-      },
-      {
-        "path": ".agentforge/agents/coder.yaml",
-        "changes": 3,
-        "last_modified": "2026-03-26T11:32:14-05:00"
+        "last_modified": "2026-03-26T13:04:00-05:00"
       }
     ],
     "branch_count": 3,
@@ -6849,13 +7167,13 @@
     "churn_rate": [
       {
         "path": ".agentforge/analysis/project-scan.json",
-        "additions": 8726,
-        "deletions": 1383
+        "additions": 9139,
+        "deletions": 1455
       },
       {
         "path": "dashboard/index.html",
-        "additions": 5069,
-        "deletions": 1929
+        "additions": 5257,
+        "deletions": 1990
       },
       {
         "path": "docs/superpowers/plans/2026-03-25-v32-team-mode-implementation-plan.md",
@@ -6889,8 +7207,8 @@
       },
       {
         "path": ".agentforge/team.yaml",
-        "additions": 582,
-        "deletions": 491
+        "additions": 584,
+        "deletions": 493
       },
       {
         "path": ".agentforge/feedback/2026-03-25-lead-architect-async-communication-design.md",
@@ -6951,7 +7269,7 @@
     "commit_frequency": [
       {
         "period": "2026-03",
-        "count": 85
+        "count": 90
       }
     ],
     "age_days": 1
@@ -7198,6 +7516,11 @@
     },
     {
       "type": "unknown",
+      "path": "commands/workflow.md",
+      "summary": "---\ndescription: Run a predefined multi-agent workflow\nargument-hint: <workflow-name> [--param key=value ...]\n---\n\n# AgentForge Workflow\n\nRun a predefined multi-agent workflow that coordinates multiple agents through a sequence of stages with dependency management.\n\n## Usage\n\n```\n/agentforge:workflow <workflow-name> --param key=value [--param key2=value2 ...]\n```\n\nExamples:\n```\n/agentforge:workflow code-review --param targetFile=src/foo.ts --param targetDescription=\"Add error handling\"\n/agentfor"
+    },
+    {
+      "type": "unknown",
       "path": "docs/commands/forge.md",
       "summary": "# forge\n\nAnalyze project and generate optimized agent team.\n\n## Overview\n\nThe `forge` command performs a full project scan and generates an optimized team manifest. It analyzes your codebase structure, dependencies, frameworks, CI/CD configuration, git history, and documentation to compose a team suited to your project.\n\nThis is typically used after `genesis` to create a production-ready team, or when you want a fresh analysis without an interactive interview.\n\n## Flags\n\n- `--dry-run` — Show wha"
     },
@@ -7315,6 +7638,11 @@
       "type": "research-paper",
       "path": "docs/v4/v4.4-roadmap.md",
       "summary": "# AgentForge v4.4 Roadmap\n\n**Status:** Draft — pending v4.3 gate approval\n**Sprint:** Autonomous v4.4\n**Budget:** $450\n**Team:** 37 agents (6 Opus, 27 Sonnet, 4 Haiku)\n**Focus:** Real execution — agents run as Claude Code subagents, not external API calls\n\n---\n\n## Architectural Principle\n\nAgentForge is a **Claude Code plugin**. It runs inside Claude Code and inherits Claude\nCode's existing session, authentication, and model access (including Max Pro). There is\nno separate API key — agents execut"
+    },
+    {
+      "type": "unknown",
+      "path": "docs/v4/v4.5-roadmap.md",
+      "summary": "# AgentForge v4.5 Roadmap\n\n**Status:** Active\n**Sprint:** Autonomous v4.5\n**Budget:** $600\n**Team:** 37 agents (6 Opus, 27 Sonnet, 4 Haiku)\n**Theme:** *Agents that think together, learn from everything, and never forget.*\n\n---\n\n## Focus\n\nv4.5 transforms AgentForge from a collection of capable individual agents into a genuinely collaborative system. Where v4.4 gave agents the ability to execute, v4.5 gives them the ability to *coordinate*: real task pipelines between agents, persistent cross-sess"
     }
   ],
   "integrations": [
@@ -7424,6 +7752,14 @@
     },
     {
       "type": "jira",
+      "ref": "P0-5"
+    },
+    {
+      "type": "jira",
+      "ref": "P0-6"
+    },
+    {
+      "type": "jira",
       "ref": "BSD-2"
     },
     {
@@ -7432,15 +7768,15 @@
     },
     {
       "type": "jira",
+      "ref": "ISO-8601"
+    },
+    {
+      "type": "jira",
       "ref": "P1-10"
     },
     {
       "type": "jira",
       "ref": "Z0-9"
-    },
-    {
-      "type": "jira",
-      "ref": "ISO-8601"
     },
     {
       "type": "jira",
