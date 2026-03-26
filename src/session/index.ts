@@ -1,0 +1,9 @@
+// Barrel exports — session module
+
+export {
+  V4SessionManager,
+  type V4SessionStatus,
+  type V4Session,
+  type SessionCreateInput,
+  type ContextLink,
+} from "./v4-session-manager.js";

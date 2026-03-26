@@ -1,0 +1,1509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgentForge v4 Command Center</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-primary: #0d1117;
+  --bg-card: #161b22;
+  --bg-card-hover: #1c2128;
+  --border: #30363d;
+  --border-light: #484f58;
+  --text-primary: #e6edf3;
+  --text-secondary: #8b949e;
+  --text-muted: #6e7681;
+  --gold: #f0b429;
+  --gold-dim: rgba(240,180,41,0.15);
+  --blue: #58a6ff;
+  --blue-dim: rgba(88,166,255,0.15);
+  --green: #3fb950;
+  --green-dim: rgba(63,185,80,0.15);
+  --red: #f85149;
+  --orange: #d29922;
+  --purple: #bc8cff;
+  --cyan: #39d2c0;
+  --font-mono: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  --radius: 8px;
+  --radius-sm: 4px;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: var(--font-sans);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
+}
+@keyframes pulseRing {
+  0%   { box-shadow: 0 0 0 0 rgba(63,185,80,0.5); }
+  70%  { box-shadow: 0 0 0 6px rgba(63,185,80,0); }
+  100% { box-shadow: 0 0 0 0 rgba(63,185,80,0); }
+}
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes gaugeGrow {
+  from { stroke-dashoffset: 283; }
+}
+
+.container {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 24px 48px;
+}
+
+header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: linear-gradient(180deg, var(--bg-primary) 0%, rgba(13,17,23,0.95) 100%);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  padding: 16px 24px;
+}
+
+.header-inner {
+  max-width: 1440px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.logo {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.5px;
+}
+
+.logo span { color: var(--gold); }
+
+.version-badge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  background: var(--gold-dim);
+  color: var(--gold);
+  border: 1px solid rgba(240,180,41,0.3);
+  font-weight: 600;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.live-dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  animation: pulse 2s ease-in-out infinite;
+  margin-right: 6px;
+}
+
+#clock { color: var(--text-primary); font-weight: 600; }
+
+.section {
+  margin-top: 32px;
+  animation: fadeInUp 0.5s ease-out both;
+}
+
+.section-title {
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-title::before {
+  content: '';
+  display: inline-block;
+  width: 3px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--blue);
+}
+
+.agent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(195px, 1fr));
+  gap: 12px;
+}
+
+.agent-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+  animation: fadeInUp 0.4s ease-out both;
+}
+
+.agent-card:hover {
+  background: var(--bg-card-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+}
+
+.agent-card.opus   { border-left: 3px solid var(--gold); }
+.agent-card.sonnet { border-left: 3px solid var(--blue); }
+.agent-card.haiku  { border-left: 3px solid var(--green); }
+
+.agent-name {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.agent-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.model-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.model-badge.opus   { background: var(--gold-dim); color: var(--gold); }
+.model-badge.sonnet { background: var(--blue-dim); color: var(--blue); }
+.model-badge.haiku  { background: var(--green-dim); color: var(--green); }
+
+.category-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  color: var(--text-secondary);
+  background: rgba(139,148,158,0.1);
+  border: 1px solid var(--border);
+}
+
+.status-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.status-dot.idle     { background: var(--text-muted); }
+.status-dot.active   { background: var(--green); animation: pulseRing 2s infinite; }
+.status-dot.complete { background: var(--blue); }
+
+.agent-detail-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(4px);
+  justify-content: center;
+  align-items: center;
+}
+
+.agent-detail-overlay.visible { display: flex; }
+
+.agent-detail-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 28px;
+  width: 90%;
+  max-width: 480px;
+  animation: fadeInUp 0.25s ease-out;
+}
+
+.agent-detail-panel h2 {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  margin-bottom: 16px;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.detail-row .label { color: var(--text-secondary); }
+.detail-row .value { font-family: var(--font-mono); font-weight: 600; }
+
+.close-btn {
+  margin-top: 16px;
+  padding: 8px 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  transition: background 0.2s;
+}
+
+.close-btn:hover { background: var(--border); }
+
+.org-graph {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px 24px;
+  overflow-x: auto;
+}
+
+.org-tree {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  min-width: 800px;
+}
+
+.org-level {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  position: relative;
+}
+
+.org-node {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 6px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  text-align: center;
+  position: relative;
+  white-space: nowrap;
+}
+
+.org-node.opus   { border-color: var(--gold); color: var(--gold); }
+.org-node.sonnet { border-color: var(--blue); color: var(--blue); }
+.org-node.haiku  { border-color: var(--green); color: var(--green); }
+
+.org-branch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+
+.org-branch-group {
+  display: flex;
+  gap: 40px;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.org-children {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.org-sub {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.org-vline {
+  width: 1px;
+  height: 16px;
+  background: var(--border-light);
+}
+
+.flywheel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.flywheel-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.flywheel-card:hover {
+  background: var(--bg-card-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+}
+
+.flywheel-card.active { border-color: var(--green); }
+
+.gauge-container {
+  width: 100px; height: 100px;
+  margin: 0 auto 12px;
+  position: relative;
+}
+
+.gauge-container svg {
+  width: 100px; height: 100px;
+  transform: rotate(-90deg);
+}
+
+.gauge-bg {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 6;
+}
+
+.gauge-fill {
+  fill: none;
+  stroke-width: 6;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 1s ease;
+  animation: gaugeGrow 1.5s ease-out;
+}
+
+.gauge-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.flywheel-card h3 {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.flywheel-sub {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.flywheel-status {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-top: 8px;
+  letter-spacing: 0.5px;
+}
+
+.flywheel-status.on  { color: var(--green); }
+.flywheel-status.off { color: var(--text-muted); }
+
+.flywheel-detail {
+  display: none;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  text-align: left;
+  font-size: 12px;
+}
+
+.flywheel-detail.visible { display: block; }
+
+.metric-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  color: var(--text-secondary);
+}
+
+.metric-row .val {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.matrix-wrapper {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.matrix-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.matrix-table th, .matrix-table td {
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.matrix-table th {
+  background: var(--bg-card);
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 1px;
+  position: sticky;
+  top: 0;
+}
+
+.matrix-table tbody tr {
+  background: var(--bg-primary);
+  transition: background 0.15s;
+}
+
+.matrix-table tbody tr:hover { background: var(--bg-card); }
+
+.matrix-table td:first-child {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.status-pass {
+  color: var(--green);
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+
+.status-fail {
+  color: var(--red);
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+
+.agent-list-cell {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.pillar-label {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-weight: 600;
+  white-space: nowrap;
+  display: inline-block;
+}
+
+.pillar-1 { background: rgba(240,180,41,0.15); color: var(--gold); }
+.pillar-2 { background: rgba(88,166,255,0.15); color: var(--blue); }
+.pillar-3 { background: rgba(188,140,255,0.15); color: var(--purple); }
+.pillar-4 { background: rgba(57,210,192,0.15); color: var(--cyan); }
+.pillar-5 { background: rgba(63,185,80,0.15); color: var(--green); }
+
+.bus-monitor {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.bus-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(22,27,34,0.8);
+}
+
+.bus-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.bus-counter {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.bus-feed {
+  height: 280px;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.bus-feed::-webkit-scrollbar { width: 6px; }
+.bus-feed::-webkit-scrollbar-track { background: transparent; }
+.bus-feed::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+.bus-msg {
+  display: grid;
+  grid-template-columns: 90px 1fr 100px 80px 70px;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 16px;
+  border-bottom: 1px solid rgba(48,54,61,0.5);
+  font-size: 12px;
+  animation: slideInRight 0.3s ease-out;
+  transition: background 0.15s;
+}
+
+.bus-msg:hover { background: rgba(48,54,61,0.3); }
+
+.bus-timestamp {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.bus-topic {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.bus-agents {
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bus-direction {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.priority-badge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  text-align: center;
+  letter-spacing: 0.5px;
+}
+
+.priority-badge.urgent { background: rgba(248,81,73,0.15); color: var(--red); }
+.priority-badge.high   { background: rgba(210,153,34,0.15); color: var(--orange); }
+.priority-badge.normal { background: rgba(88,166,255,0.15); color: var(--blue); }
+.priority-badge.low    { background: rgba(110,118,129,0.15); color: var(--text-muted); }
+
+.timeline-container {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px 24px;
+  overflow-x: auto;
+}
+
+.timeline-track {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-width: 900px;
+  position: relative;
+  height: 80px;
+}
+
+.timeline-bg {
+  position: absolute;
+  top: 36px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--border);
+}
+
+.timeline-segment {
+  position: relative;
+  height: 36px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  z-index: 1;
+  flex-shrink: 0;
+  margin: 0 3px;
+  padding: 0 10px;
+  top: 18px;
+}
+
+.timeline-segment.active {
+  background: rgba(63,185,80,0.2);
+  border: 1px solid var(--green);
+  color: var(--green);
+}
+
+.timeline-segment.persisted {
+  background: rgba(88,166,255,0.2);
+  border: 1px solid var(--blue);
+  color: var(--blue);
+}
+
+.timeline-segment.completed {
+  background: rgba(139,148,158,0.1);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.timeline-label-sub {
+  position: absolute;
+  bottom: -18px;
+  font-size: 9px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.timeline-legend {
+  display: flex;
+  gap: 20px;
+  margin-top: 28px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.timeline-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.timeline-legend-dot {
+  width: 10px; height: 10px;
+  border-radius: 3px;
+}
+
+.timeline-legend-dot.active   { background: rgba(63,185,80,0.3); border: 1px solid var(--green); }
+.timeline-legend-dot.persisted { background: rgba(88,166,255,0.3); border: 1px solid var(--blue); }
+.timeline-legend-dot.completed { background: rgba(139,148,158,0.15); border: 1px solid var(--border); }
+
+.cost-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 900px) {
+  .cost-grid { grid-template-columns: 1fr; }
+}
+
+.cost-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+}
+
+.cost-card h3 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+
+.pie-chart {
+  width: 160px; height: 160px;
+  border-radius: 50%;
+  margin: 0 auto 16px;
+  position: relative;
+  background: conic-gradient(
+    var(--gold) 0deg 86.4deg,
+    var(--blue) 86.4deg 280.8deg,
+    var(--green) 280.8deg 360deg
+  );
+}
+
+.pie-hole {
+  position: absolute;
+  inset: 30px;
+  border-radius: 50%;
+  background: var(--bg-card);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+}
+
+.pie-hole .big {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.pie-hole .small {
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+.pie-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pie-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.pie-swatch {
+  width: 10px; height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.pie-pct {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.savings-display { text-align: center; }
+
+.savings-big {
+  font-family: var(--font-mono);
+  font-size: 56px;
+  font-weight: 700;
+  color: var(--green);
+  line-height: 1;
+  margin-bottom: 8px;
+}
+
+.savings-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 20px;
+}
+
+.savings-bar-bg {
+  width: 100%;
+  height: 8px;
+  background: var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.savings-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--green), var(--cyan));
+  width: 62%;
+}
+
+.savings-compare {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.cost-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cost-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+}
+
+.cost-label { color: var(--text-secondary); }
+.cost-value { font-family: var(--font-mono); font-weight: 600; }
+
+.cost-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+@media (max-width: 768px) {
+  .agent-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+  .bus-msg { grid-template-columns: 70px 1fr 60px; font-size: 11px; }
+  .bus-agents, .bus-direction { display: none; }
+  .cost-grid { grid-template-columns: 1fr; }
+  .header-inner { flex-direction: column; align-items: flex-start; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="header-left">
+      <div class="logo">Agent<span>Forge</span> v4 Command Center</div>
+      <span class="version-badge">v0.4.0</span>
+    </div>
+    <div class="header-right">
+      <span><span class="live-dot"></span>LIVE</span>
+      <span id="clock">--:--:--</span>
+      <span id="msg-rate">0 msg/min</span>
+    </div>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- TEAM OVERVIEW -->
+  <div class="section" id="team-section">
+    <div class="section-title">Team Overview -- 21 Agents</div>
+    <div class="agent-grid" id="agent-grid"></div>
+  </div>
+
+  <!-- ORG GRAPH -->
+  <div class="section" style="animation-delay: 0.1s;">
+    <div class="section-title">Organization Graph</div>
+    <div class="org-graph">
+      <div class="org-tree">
+        <div class="org-level">
+          <div class="org-branch">
+            <div class="org-node opus">ceo</div>
+            <div class="org-vline"></div>
+            <div class="org-children">
+              <div class="org-sub">
+                <div class="org-node opus">cto</div>
+                <div class="org-vline"></div>
+                <div class="org-children">
+                  <div class="org-sub">
+                    <div class="org-node opus">architect</div>
+                    <div class="org-vline"></div>
+                    <div class="org-node sonnet">coder</div>
+                  </div>
+                </div>
+              </div>
+              <div class="org-sub">
+                <div class="org-node sonnet">coo</div>
+              </div>
+              <div class="org-sub">
+                <div class="org-node sonnet">cfo</div>
+              </div>
+            </div>
+          </div>
+          <div class="org-branch" style="margin-left: 60px;">
+            <div class="org-node opus">genesis</div>
+            <div class="org-vline"></div>
+            <div class="org-children">
+              <div class="org-sub">
+                <div class="org-node sonnet">project-manager</div>
+              </div>
+              <div class="org-sub">
+                <div class="org-node haiku">researcher</div>
+              </div>
+              <div class="org-sub">
+                <div class="org-node opus">meta-architect</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FLYWHEEL HEALTH -->
+  <div class="section" style="animation-delay: 0.15s;">
+    <div class="section-title">Flywheel Health</div>
+    <div class="flywheel-grid" id="flywheel-grid"></div>
+  </div>
+
+  <!-- V4 FEATURE COVERAGE MATRIX -->
+  <div class="section" style="animation-delay: 0.2s;">
+    <div class="section-title">V4 Feature Coverage Matrix</div>
+    <div class="matrix-wrapper">
+      <table class="matrix-table" id="coverage-table">
+        <thead>
+          <tr>
+            <th>Feature</th>
+            <th>Pillar</th>
+            <th>Testing Agents</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="coverage-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- MESSAGE BUS MONITOR -->
+  <div class="section" style="animation-delay: 0.25s;">
+    <div class="section-title">Message Bus Monitor</div>
+    <div class="bus-monitor">
+      <div class="bus-header">
+        <div class="bus-header-left">
+          <span class="live-dot"></span>
+          <span>TeamModeBus v4.0</span>
+        </div>
+        <span class="bus-counter" id="bus-counter">0 messages</span>
+      </div>
+      <div class="bus-feed" id="bus-feed"></div>
+    </div>
+  </div>
+
+  <!-- SESSION TIMELINE -->
+  <div class="section" style="animation-delay: 0.3s;">
+    <div class="section-title">Session Timeline</div>
+    <div class="timeline-container">
+      <div class="timeline-track" id="timeline-track">
+        <div class="timeline-bg"></div>
+      </div>
+      <div class="timeline-legend">
+        <div class="timeline-legend-item"><div class="timeline-legend-dot active"></div>Active</div>
+        <div class="timeline-legend-item"><div class="timeline-legend-dot persisted"></div>Persisted</div>
+        <div class="timeline-legend-item"><div class="timeline-legend-dot completed"></div>Completed</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- COST DASHBOARD -->
+  <div class="section" style="animation-delay: 0.35s;">
+    <div class="section-title">Cost Dashboard</div>
+    <div class="cost-grid">
+      <div class="cost-card">
+        <h3>Model Distribution</h3>
+        <div class="pie-chart">
+          <div class="pie-hole">
+            <span class="big">21</span>
+            <span class="small">agents</span>
+          </div>
+        </div>
+        <div class="pie-legend">
+          <div class="pie-legend-item">
+            <div class="pie-swatch" style="background:var(--gold)"></div>
+            <span>Opus (strategic)</span>
+            <span class="pie-pct">24%</span>
+          </div>
+          <div class="pie-legend-item">
+            <div class="pie-swatch" style="background:var(--blue)"></div>
+            <span>Sonnet (execution)</span>
+            <span class="pie-pct">54%</span>
+          </div>
+          <div class="pie-legend-item">
+            <div class="pie-swatch" style="background:var(--green)"></div>
+            <span>Haiku (utility)</span>
+            <span class="pie-pct">22%</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="cost-card">
+        <h3>Cost Savings vs All-Opus</h3>
+        <div class="savings-display">
+          <div class="savings-big">62%</div>
+          <div class="savings-label">reduction from tiered model routing</div>
+          <div class="savings-bar-bg">
+            <div class="savings-bar-fill"></div>
+          </div>
+          <div class="savings-compare">
+            <span>All-Opus baseline</span>
+            <span>Tiered actual</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="cost-card">
+        <h3>Cost Per Tier</h3>
+        <div class="cost-breakdown">
+          <div class="cost-row">
+            <span class="cost-label">Opus (5 agents)</span>
+            <span class="cost-value" style="color:var(--gold)">$15/M in, $75/M out</span>
+          </div>
+          <div class="cost-row">
+            <span class="cost-label">Sonnet (13 agents)</span>
+            <span class="cost-value" style="color:var(--blue)">$3/M in, $15/M out</span>
+          </div>
+          <div class="cost-row">
+            <span class="cost-label">Haiku (3 agents)</span>
+            <span class="cost-value" style="color:var(--green)">$0.25/M in, $1.25/M out</span>
+          </div>
+          <div class="cost-divider"></div>
+          <div class="cost-row">
+            <span class="cost-label">Est. cost per sprint</span>
+            <span class="cost-value" style="color:var(--cyan)">$4.20</span>
+          </div>
+          <div class="cost-row">
+            <span class="cost-label">All-Opus equivalent</span>
+            <span class="cost-value" style="color:var(--red);text-decoration:line-through">$11.05</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Agent Detail Overlay -->
+<div class="agent-detail-overlay" id="agent-detail-overlay">
+  <div class="agent-detail-panel" id="agent-detail-panel">
+    <h2 id="detail-agent-name"></h2>
+    <div id="detail-rows"></div>
+    <button class="close-btn" id="detail-close-btn">Close</button>
+  </div>
+</div>
+
+<script>
+(function() {
+  "use strict";
+
+  // =====================================================================
+  // DATA
+  // =====================================================================
+  var agents = [
+    { id: "ceo", model: "opus", category: "strategic", autonomy: 4, status: "active", role: "Chief Executive Officer", delegates: ["cto","coo","cfo"] },
+    { id: "genesis", model: "opus", category: "strategic", autonomy: 4, status: "active", role: "Team Forging Engine", delegates: ["project-manager","researcher","meta-architect"] },
+    { id: "architect", model: "opus", category: "strategic", autonomy: 3, status: "active", role: "System Architect", delegates: ["coder","researcher"] },
+    { id: "cto", model: "opus", category: "strategic", autonomy: 4, status: "idle", role: "Chief Technology Officer", delegates: ["architect"] },
+    { id: "meta-architect", model: "opus", category: "strategic", autonomy: 3, status: "idle", role: "Self-Improvement Architect", delegates: ["researcher"] },
+    { id: "coo", model: "sonnet", category: "implementation", autonomy: 2, status: "idle", role: "Chief Operations Officer", delegates: [] },
+    { id: "cfo", model: "sonnet", category: "implementation", autonomy: 2, status: "idle", role: "Chief Financial Officer", delegates: [] },
+    { id: "project-manager", model: "sonnet", category: "implementation", autonomy: 2, status: "active", role: "Sprint & Task Manager", delegates: ["researcher"] },
+    { id: "skill-designer", model: "sonnet", category: "implementation", autonomy: 2, status: "idle", role: "Skill Template Designer", delegates: ["researcher"] },
+    { id: "template-optimizer", model: "sonnet", category: "implementation", autonomy: 2, status: "idle", role: "Prompt Template Optimizer", delegates: ["researcher"] },
+    { id: "coder", model: "sonnet", category: "implementation", autonomy: 2, status: "active", role: "Implementation Engineer", delegates: ["linter","researcher"] },
+    { id: "team-reviewer", model: "sonnet", category: "quality", autonomy: 2, status: "idle", role: "Code & Design Reviewer", delegates: [] },
+    { id: "dba", model: "sonnet", category: "quality", autonomy: 2, status: "idle", role: "Registry & Data Architect", delegates: [] },
+    { id: "debugger", model: "sonnet", category: "quality", autonomy: 2, status: "complete", role: "Diagnostics Specialist", delegates: ["researcher"] },
+    { id: "api-specialist", model: "sonnet", category: "quality", autonomy: 2, status: "complete", role: "API Contract Validator", delegates: ["researcher","linter"] },
+    { id: "bus-integration-tester", model: "sonnet", category: "quality", autonomy: 2, status: "complete", role: "Message Bus Tester", delegates: [] },
+    { id: "memory-stress-tester", model: "sonnet", category: "quality", autonomy: 2, status: "complete", role: "Memory Subsystem Tester", delegates: [] },
+    { id: "flywheel-validator", model: "sonnet", category: "quality", autonomy: 2, status: "complete", role: "Flywheel Integration Tester", delegates: [] },
+    { id: "linter", model: "haiku", category: "quality", autonomy: 1, status: "idle", role: "Static Analysis Runner", delegates: [] },
+    { id: "researcher", model: "haiku", category: "utility", autonomy: 1, status: "active", role: "Knowledge Retrieval Agent", delegates: [] },
+    { id: "session-resilience-tester", model: "haiku", category: "quality", autonomy: 1, status: "complete", role: "Session Persistence Tester", delegates: [] }
+  ];
+
+  var flywheelData = [
+    { name: "Meta-Learning", sub: "Insights discovered", metric: 47, max: 100, active: true, color: "var(--gold)",
+      details: [["Patterns found","47"],["Validated","38"],["Applied","31"],["Confidence avg","0.87"],["Last scan","2m ago"]] },
+    { name: "Graduated Autonomy", sub: "Tier promotions", metric: 12, max: 21, active: true, color: "var(--blue)",
+      details: [["Promotions","12"],["Demotions","1"],["Tier 4 agents","3"],["Tier 3 agents","2"],["Tier 2 agents","13"]] },
+    { name: "Capability Inheritance", sub: "Skill propagations", metric: 23, max: 50, active: true, color: "var(--green)",
+      details: [["Propagations","23"],["Unique skills","14"],["Opt-in rate","91%"],["Avg proficiency","0.78"],["Source agents","6"]] },
+    { name: "Velocity Acceleration", sub: "Sprint-over-sprint ratio", metric: 1.12, max: 2, active: true, color: "var(--cyan)",
+      details: [["Current ratio","1.12x"],["3-sprint avg","1.09x"],["Peak ratio","1.24x"],["Decel alerts","0"],["Sprints tracked","8"]] }
+  ];
+
+  var features = [
+    { feature: "OrgGraph DAG", pillar: 1, agents: "architect, cto", status: "pass" },
+    { feature: "RoleRegistry CRUD", pillar: 1, agents: "dba, architect", status: "pass" },
+    { feature: "DelegationProtocol", pillar: 1, agents: "architect, coder", status: "pass" },
+    { feature: "AccountabilityTracker", pillar: 1, agents: "project-manager, coo", status: "pass" },
+    { feature: "TeamModeBus pub/sub", pillar: 2, agents: "bus-integration-tester, api-specialist", status: "pass" },
+    { feature: "ChannelManager", pillar: 2, agents: "bus-integration-tester", status: "pass" },
+    { feature: "MeetingCoordinator", pillar: 2, agents: "bus-integration-tester, coo", status: "pass" },
+    { feature: "ReviewRouter", pillar: 2, agents: "team-reviewer, api-specialist", status: "pass" },
+    { feature: "ExecAssistant filtering", pillar: 2, agents: "cto, ceo", status: "pass" },
+    { feature: "MemoryRegistry decay", pillar: 3, agents: "memory-stress-tester, dba", status: "pass" },
+    { feature: "Semantic search", pillar: 3, agents: "memory-stress-tester, researcher", status: "pass" },
+    { feature: "Memory TTL & archival", pillar: 3, agents: "memory-stress-tester", status: "pass" },
+    { feature: "SessionManager lifecycle", pillar: 4, agents: "session-resilience-tester", status: "pass" },
+    { feature: "Session serialization", pillar: 4, agents: "session-resilience-tester, debugger", status: "pass" },
+    { feature: "Session resume & replay", pillar: 4, agents: "session-resilience-tester", status: "pass" },
+    { feature: "Cost tracking per session", pillar: 4, agents: "cfo, session-resilience-tester", status: "pass" },
+    { feature: "Meta-learning engine", pillar: 5, agents: "flywheel-validator, meta-architect", status: "pass" },
+    { feature: "Graduated autonomy tiers", pillar: 5, agents: "flywheel-validator, ceo", status: "pass" },
+    { feature: "Capability inheritance", pillar: 5, agents: "flywheel-validator, skill-designer", status: "pass" },
+    { feature: "Velocity acceleration", pillar: 5, agents: "flywheel-validator, project-manager", status: "pass" }
+  ];
+
+  var busMessages = [
+    { topic: "agent.task.assign", from: "ceo", to: "cto", priority: "high", payload: "Design v4.1 roadmap" },
+    { topic: "agent.task.result", from: "coder", to: "architect", priority: "normal", payload: "SessionManager tests passing" },
+    { topic: "agent.status.update", from: "researcher", to: "broadcast", priority: "low", payload: "State: idle -> active" },
+    { topic: "review.lifecycle.submitted", from: "architect", to: "team-reviewer", priority: "normal", payload: "PR #47: OrgGraph refactor" },
+    { topic: "escalation.blocked", from: "debugger", to: "cto", priority: "urgent", payload: "Flaky test in session resume" },
+    { topic: "memory.query", from: "coder", to: "memory-bus", priority: "normal", payload: "Query: typescript pattern for DAG" },
+    { topic: "reforge.propose", from: "meta-architect", to: "ceo", priority: "high", payload: "Promote coder to Tier 3" },
+    { topic: "meeting.coordination.request", from: "coo", to: "broadcast", priority: "normal", payload: "Sprint retrospective scheduled" },
+    { topic: "agent.task.assign", from: "genesis", to: "project-manager", priority: "high", payload: "Plan v4.1 Sprint 1" },
+    { topic: "agent.task.result", from: "flywheel-validator", to: "meta-architect", priority: "normal", payload: "All 4 components green" },
+    { topic: "reforge.approve", from: "ceo", to: "meta-architect", priority: "high", payload: "Approved: coder Tier 3 promotion" },
+    { topic: "agent.status.update", from: "linter", to: "broadcast", priority: "low", payload: "Lint pass: 0 errors, 2 warnings" },
+    { topic: "memory.result", from: "memory-bus", to: "coder", priority: "normal", payload: "3 results, confidence 0.91" },
+    { topic: "escalation.resolved", from: "cto", to: "debugger", priority: "normal", payload: "Flaky test root cause: race condition" },
+    { topic: "agent.task.assign", from: "architect", to: "coder", priority: "normal", payload: "Implement ReforgeEngine rollback" },
+    { topic: "review.lifecycle.approved", from: "team-reviewer", to: "architect", priority: "normal", payload: "PR #47 approved" },
+    { topic: "agent.task.result", from: "api-specialist", to: "cto", priority: "normal", payload: "v4 API contract validation passed" },
+    { topic: "reforge.apply", from: "meta-architect", to: "broadcast", priority: "high", payload: "Applied: coder promoted to Tier 3" },
+    { topic: "agent.status.update", from: "bus-integration-tester", to: "broadcast", priority: "low", payload: "State: active -> complete" },
+    { topic: "escalation.timeout", from: "system", to: "ceo", priority: "urgent", payload: "Budget threshold 80% reached" }
+  ];
+
+  var sessions = [
+    { id: "sprint-5.1a", label: "Sprint 5.1a", status: "completed", width: 90 },
+    { id: "sprint-5.1b", label: "Sprint 5.1b", status: "completed", width: 90 },
+    { id: "sprint-5.2a", label: "Sprint 5.2a", status: "completed", width: 100 },
+    { id: "sprint-5.2b", label: "Sprint 5.2b", status: "completed", width: 100 },
+    { id: "review-47", label: "Review #47", status: "persisted", width: 70 },
+    { id: "dogfood-audit", label: "Dogfood Audit", status: "persisted", width: 90 },
+    { id: "v4-integration", label: "v4 Integration", status: "active", width: 110 },
+    { id: "flywheel-val", label: "Flywheel Val", status: "active", width: 90 },
+    { id: "cost-analysis", label: "Cost Analysis", status: "active", width: 90 }
+  ];
+
+  var pillarNames = { 1: "Org Structure", 2: "Communication", 3: "Memory", 4: "Sessions", 5: "Flywheel" };
+  var tierNames = { 1: "Supervised", 2: "Assisted", 3: "Autonomous", 4: "Strategic" };
+
+  // =====================================================================
+  // HELPERS
+  // =====================================================================
+  function el(tag, className, text) {
+    var e = document.createElement(tag);
+    if (className) e.className = className;
+    if (text) e.textContent = text;
+    return e;
+  }
+
+  function escapeText(str) {
+    return String(str);
+  }
+
+  // =====================================================================
+  // RENDER: Agent Grid
+  // =====================================================================
+  function renderAgents() {
+    var grid = document.getElementById("agent-grid");
+    agents.forEach(function(a, i) {
+      var card = el("div", "agent-card " + a.model);
+      card.style.animationDelay = (i * 30) + "ms";
+
+      var nameDiv = el("div", "agent-name", a.id);
+      card.appendChild(nameDiv);
+
+      var metaDiv = el("div", "agent-meta");
+
+      var modelBadge = el("span", "model-badge " + a.model, a.model);
+      metaDiv.appendChild(modelBadge);
+
+      var catBadge = el("span", "category-badge", a.category);
+      metaDiv.appendChild(catBadge);
+
+      var statusDot = el("span", "status-dot " + a.status);
+      statusDot.title = a.status;
+      metaDiv.appendChild(statusDot);
+
+      card.appendChild(metaDiv);
+      card.addEventListener("click", (function(agent) {
+        return function() { showDetail(agent); };
+      })(a));
+      grid.appendChild(card);
+    });
+  }
+
+  function showDetail(agent) {
+    var overlay = document.getElementById("agent-detail-overlay");
+    var nameEl = document.getElementById("detail-agent-name");
+    nameEl.textContent = agent.id;
+    var color = agent.model === "opus" ? "var(--gold)" : agent.model === "sonnet" ? "var(--blue)" : "var(--green)";
+    nameEl.style.color = color;
+
+    var rows = [
+      ["Role", agent.role],
+      ["Model Tier", agent.model.charAt(0).toUpperCase() + agent.model.slice(1)],
+      ["Category", agent.category],
+      ["Autonomy", "Tier " + agent.autonomy + " (" + tierNames[agent.autonomy] + ")"],
+      ["Status", agent.status],
+      ["Delegates To", agent.delegates.length ? agent.delegates.join(", ") : "None"]
+    ];
+
+    var container = document.getElementById("detail-rows");
+    container.textContent = "";
+    rows.forEach(function(r) {
+      var row = el("div", "detail-row");
+      var lbl = el("span", "label", r[0]);
+      var val = el("span", "value", r[1]);
+      row.appendChild(lbl);
+      row.appendChild(val);
+      container.appendChild(row);
+    });
+
+    overlay.classList.add("visible");
+  }
+
+  function closeDetail() {
+    document.getElementById("agent-detail-overlay").classList.remove("visible");
+  }
+
+  document.getElementById("detail-close-btn").addEventListener("click", closeDetail);
+  document.getElementById("agent-detail-overlay").addEventListener("click", function(e) {
+    if (e.target === this) closeDetail();
+  });
+
+  // =====================================================================
+  // RENDER: Flywheel
+  // =====================================================================
+  function renderFlywheel() {
+    var grid = document.getElementById("flywheel-grid");
+    flywheelData.forEach(function(fw, idx) {
+      var pct = fw.metric / fw.max;
+      var circumference = 2 * Math.PI * 45;
+      var offset = circumference - (pct * circumference);
+      var displayVal = fw.max <= 2 ? fw.metric.toFixed(2) + "x" : String(fw.metric);
+
+      var card = el("div", "flywheel-card" + (fw.active ? " active" : ""));
+
+      // Gauge
+      var gaugeContainer = el("div", "gauge-container");
+      var svgNS = "http://www.w3.org/2000/svg";
+      var svg = document.createElementNS(svgNS, "svg");
+      svg.setAttribute("viewBox", "0 0 100 100");
+
+      var bgCircle = document.createElementNS(svgNS, "circle");
+      bgCircle.setAttribute("class", "gauge-bg");
+      bgCircle.setAttribute("cx", "50");
+      bgCircle.setAttribute("cy", "50");
+      bgCircle.setAttribute("r", "45");
+      svg.appendChild(bgCircle);
+
+      var fillCircle = document.createElementNS(svgNS, "circle");
+      fillCircle.setAttribute("class", "gauge-fill");
+      fillCircle.setAttribute("cx", "50");
+      fillCircle.setAttribute("cy", "50");
+      fillCircle.setAttribute("r", "45");
+      fillCircle.setAttribute("stroke", fw.color);
+      fillCircle.setAttribute("stroke-dasharray", String(circumference));
+      fillCircle.setAttribute("stroke-dashoffset", String(offset));
+      svg.appendChild(fillCircle);
+
+      gaugeContainer.appendChild(svg);
+
+      var gaugeLabel = el("div", "gauge-label", displayVal);
+      gaugeLabel.style.color = fw.color;
+      gaugeContainer.appendChild(gaugeLabel);
+      card.appendChild(gaugeContainer);
+
+      var h3 = el("h3", null, fw.name);
+      card.appendChild(h3);
+
+      var sub = el("div", "flywheel-sub", fw.sub);
+      card.appendChild(sub);
+
+      var statusLabel = el("div", "flywheel-status " + (fw.active ? "on" : "off"), fw.active ? "Active" : "Inactive");
+      card.appendChild(statusLabel);
+
+      // Detail panel
+      var detailDiv = el("div", "flywheel-detail");
+      detailDiv.id = "fw-detail-" + idx;
+      fw.details.forEach(function(d) {
+        var mRow = el("div", "metric-row");
+        var mLabel = el("span", null, d[0]);
+        var mVal = el("span", "val", d[1]);
+        mRow.appendChild(mLabel);
+        mRow.appendChild(mVal);
+        detailDiv.appendChild(mRow);
+      });
+      card.appendChild(detailDiv);
+
+      card.addEventListener("click", (function(id) {
+        return function() {
+          document.getElementById(id).classList.toggle("visible");
+        };
+      })("fw-detail-" + idx));
+
+      grid.appendChild(card);
+    });
+  }
+
+  // =====================================================================
+  // RENDER: Coverage Matrix
+  // =====================================================================
+  function renderCoverage() {
+    var tbody = document.getElementById("coverage-body");
+    features.forEach(function(f) {
+      var tr = el("tr");
+
+      var tdFeature = el("td", null, f.feature);
+      tr.appendChild(tdFeature);
+
+      var tdPillar = el("td");
+      var pillarSpan = el("span", "pillar-label pillar-" + f.pillar, "P" + f.pillar + ": " + pillarNames[f.pillar]);
+      tdPillar.appendChild(pillarSpan);
+      tr.appendChild(tdPillar);
+
+      var tdAgents = el("td", "agent-list-cell", f.agents);
+      tr.appendChild(tdAgents);
+
+      var tdStatus = el("td", f.status === "pass" ? "status-pass" : "status-fail", f.status === "pass" ? "PASS" : "FAIL");
+      tr.appendChild(tdStatus);
+
+      tbody.appendChild(tr);
+    });
+  }
+
+  // =====================================================================
+  // RENDER: Message Bus
+  // =====================================================================
+  var msgCount = 0;
+  var msgIdx = 0;
+  var rateHistory = [];
+
+  function addBusMessage() {
+    var feed = document.getElementById("bus-feed");
+    var m = busMessages[msgIdx % busMessages.length];
+    msgIdx++;
+    msgCount++;
+
+    var now = new Date();
+    var ts = now.toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+    var row = el("div", "bus-msg");
+    row.title = m.payload;
+
+    var tsSpan = el("span", "bus-timestamp", ts);
+    row.appendChild(tsSpan);
+
+    var topicSpan = el("span", "bus-topic", m.topic);
+    row.appendChild(topicSpan);
+
+    var agentsSpan = el("span", "bus-agents", m.from);
+    row.appendChild(agentsSpan);
+
+    var dirSpan = el("span", "bus-direction", m.from + " -> " + m.to);
+    row.appendChild(dirSpan);
+
+    var prioSpan = el("span", "priority-badge " + m.priority, m.priority);
+    row.appendChild(prioSpan);
+
+    feed.insertBefore(row, feed.firstChild);
+
+    while (feed.children.length > 50) {
+      feed.removeChild(feed.lastChild);
+    }
+
+    document.getElementById("bus-counter").textContent = msgCount + " messages";
+  }
+
+  function seedBus() {
+    for (var i = 0; i < 8; i++) {
+      addBusMessage();
+    }
+  }
+
+  function updateRate() {
+    rateHistory.push(Date.now());
+    var oneMinAgo = Date.now() - 60000;
+    rateHistory = rateHistory.filter(function(t) { return t > oneMinAgo; });
+    document.getElementById("msg-rate").textContent = rateHistory.length + " msg/min";
+  }
+
+  // =====================================================================
+  // RENDER: Session Timeline
+  // =====================================================================
+  function renderTimeline() {
+    var track = document.getElementById("timeline-track");
+    sessions.forEach(function(s) {
+      var seg = el("div", "timeline-segment " + s.status, s.label);
+      seg.style.width = s.width + "px";
+      var lbl = el("span", "timeline-label-sub", s.status);
+      seg.appendChild(lbl);
+      track.appendChild(seg);
+    });
+  }
+
+  // =====================================================================
+  // CLOCK
+  // =====================================================================
+  function updateClock() {
+    var now = new Date();
+    document.getElementById("clock").textContent =
+      now.toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  }
+
+  // =====================================================================
+  // INIT
+  // =====================================================================
+  renderAgents();
+  renderFlywheel();
+  renderCoverage();
+  renderTimeline();
+  seedBus();
+  updateClock();
+
+  setInterval(updateClock, 1000);
+
+  setInterval(function() {
+    addBusMessage();
+    updateRate();
+  }, 3500);
+
+  // Randomly shift agent status dots for visual life
+  setInterval(function() {
+    var dots = document.querySelectorAll(".agent-card .status-dot");
+    var idx = Math.floor(Math.random() * dots.length);
+    var states = ["idle", "active", "complete"];
+    var dot = dots[idx];
+    dot.className = "status-dot " + states[Math.floor(Math.random() * states.length)];
+  }, 5000);
+
+})();
+</script>
+</body>
+</html>

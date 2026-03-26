@@ -21,3 +21,12 @@ export type { AgentRunResult, RunContext } from "./agent-runner.js";
 
 export { executeDelegation } from "./delegation-executor.js";
 export type { DelegationExecResult } from "./delegation-executor.js";
+
+export {
+  APIStabilityAuditor,
+  type StabilityLevel,
+  type ExportType,
+  type APIEntry,
+  type BreakingChange,
+  type StabilityReport,
+} from "./api-stability-auditor.js";
