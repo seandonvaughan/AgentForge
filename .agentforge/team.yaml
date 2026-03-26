@@ -1,12 +1,13 @@
-name: AgentForge-team
-forged_at: '2026-03-26T20:24:10.101Z'
+name: v4.6-team
+forged_at: '2026-03-26T21:09:31.841Z'
 forged_by: agentforge
-project_hash: 4b98b46899cd
+project_hash: 1ea414f2d251
 agents:
   strategic:
     - ceo
     - genesis
     - architect
+    - vp-research
   implementation:
     - cto
     - coo
@@ -16,6 +17,8 @@ agents:
     - skill-designer
     - template-optimizer
     - coder
+    - ml-engineer
+    - research-scientist
   quality:
     - team-reviewer
     - dba
@@ -24,6 +27,7 @@ agents:
     - api-specialist
   utility:
     - researcher
+    - experiment-runner
 model_routing:
   opus:
     - ceo
@@ -31,6 +35,7 @@ model_routing:
     - architect
     - cto
     - meta-architect
+    - vp-research
   sonnet:
     - coo
     - cfo
@@ -42,9 +47,12 @@ model_routing:
     - dba
     - debugger
     - api-specialist
+    - ml-engineer
+    - research-scientist
   haiku:
     - linter
     - researcher
+    - experiment-runner
 delegation_graph:
   ceo:
     - cto
@@ -52,6 +60,11 @@ delegation_graph:
     - cfo
   cto:
     - architect
+    - vp-research
+  vp-research:
+    - ml-engineer
+    - research-scientist
+    - experiment-runner
   coo:
     - business-analyst
     - operations-manager
