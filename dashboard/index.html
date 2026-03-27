@@ -3692,6 +3692,17 @@ header {
 </div>
 
 <script>
+// ── Security Utilities ────────────────────────────────────
+function escapeHtml(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // ── Data Store ────────────────────────────────────────────
 window._data = {
   agents: [
@@ -3772,12 +3783,12 @@ function openAgentModal(name) {
   const agent = window._data.agents.find(a => a.name === name) || {name, model:'sonnet', category:'Agent', tasks:0, cost:0, errRate:0, status:'idle'};
   const modelColor = agent.model === 'opus' ? 'var(--gold)' : agent.model === 'haiku' ? 'var(--green)' : 'var(--blue)';
   openModal(name, `
-    <div class="detail-row"><span class="label">Model</span><span class="value" style="color:${modelColor}">${agent.model.toUpperCase()}</span></div>
-    <div class="detail-row"><span class="label">Category</span><span class="value">${agent.category || '—'}</span></div>
-    <div class="detail-row"><span class="label">Status</span><span class="value" style="color:${agent.status==='active'?'var(--green)':agent.status==='idle'?'var(--text-muted)':'var(--blue)'}">${agent.status}</span></div>
+    <div class="detail-row"><span class="label">Model</span><span class="value" style="color:${modelColor}">${escapeHtml(agent.model.toUpperCase())}</span></div>
+    <div class="detail-row"><span class="label">Category</span><span class="value">${escapeHtml(agent.category || '—')}</span></div>
+    <div class="detail-row"><span class="label">Status</span><span class="value" style="color:${agent.status==='active'?'var(--green)':agent.status==='idle'?'var(--text-muted)':'var(--blue)'}">${escapeHtml(agent.status)}</span></div>
     <div class="detail-row"><span class="label">Tasks completed</span><span class="value">${agent.tasks}</span></div>
     <div class="detail-row"><span class="label">Total cost</span><span class="value">$${typeof agent.cost==='number'?agent.cost.toFixed(2):'0.00'}</span></div>
-    <div class="detail-row"><span class="label">Error rate</span><span class="value" style="color:${agent.errRate>0?'var(--orange)':'var(--green)'}">${agent.errRate}%</span></div>
+    <div class="detail-row"><span class="label">Error rate</span><span class="value" style="color:${agent.errRate>0?'var(--orange)':'var(--green)'}">${escapeHtml(String(agent.errRate))}%</span></div>
     <div class="detail-row"><span class="label">Cost/task</span><span class="value">$${agent.tasks>0?(agent.cost/agent.tasks).toFixed(3):'0.000'}</span></div>
   `);
 }
@@ -3787,7 +3798,7 @@ function openMeetingModal(title) {
 }
 
 function openReforgeModal(title) {
-  openModal('REFORGE: ' + title, `<div class="detail-row"><span class="label">Proposal</span><span class="value">${title}</span></div><div style="margin-top:12px;color:var(--text-secondary);font-size:13px">See reforge-activity.json for full diff, test results, and rollback procedures.</div>`);
+  openModal('REFORGE: ' + escapeHtml(title), `<div class="detail-row"><span class="label">Proposal</span><span class="value">${escapeHtml(title)}</span></div><div style="margin-top:12px;color:var(--text-secondary);font-size:13px">See reforge-activity.json for full diff, test results, and rollback procedures.</div>`);
 }
 
 // ── Keyboard Navigation ───────────────────────────────────
@@ -4022,10 +4033,10 @@ function renderSprintFromJSON(data) {
       const assignee = item.assignee || '—';
       return '<tr>' +
         '<td style="font-family:var(--font-mono);color:var(--text-muted)">' + num + '</td>' +
-        '<td>' + (item.title || item.id || '(unnamed)') + (priority ? ' <span style="font-size:10px;color:' + pColor + ';font-weight:700">' + priority + '</span>' : '') + '</td>' +
-        '<td><span class="chip" style="border-color:var(--blue);color:var(--blue)">' + assignee + '</span></td>' +
+        '<td>' + escapeHtml(item.title || item.id || '(unnamed)') + (priority ? ' <span style="font-size:10px;color:' + pColor + ';font-weight:700">' + escapeHtml(item.priority) + '</span>' : '') + '</td>' +
+        '<td><span class="chip" style="border-color:var(--blue);color:var(--blue)">' + escapeHtml(assignee) + '</span></td>' +
         '<td>—</td>' +
-        '<td><span class="status-badge ' + badgeClass + '">' + badgeLabel + '</span></td>' +
+        '<td><span class="status-badge ' + badgeClass + '">' + escapeHtml(badgeLabel) + '</span></td>' +
         '<td><div class="sprint-bar-track"><div class="sprint-bar-fill ' + barFillClass + '" style="width:' + barWidth + '"></div></div></td>' +
         '</tr>';
     }).join('');
@@ -4090,9 +4101,9 @@ function renderBusFromJSON(events) {
     const payloadStr = JSON.stringify(payload);
     return '<div class="bus-msg priority-' + priority + '" onclick="showPayload(this,\'' + label.replace(/'/g, "\\'") + '\',\'bus\',\'' + payloadStr.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\')">' +
       '<span class="bus-timestamp">' + time + '</span>' +
-      '<span class="bus-topic">' + label + '</span>' +
-      '<span class="bus-message">' + message + '</span>' +
-      '<span class="priority-badge ' + priority + '">' + priority + '</span>' +
+      '<span class="bus-topic">' + escapeHtml(label) + '</span>' +
+      '<span class="bus-message">' + escapeHtml(message) + '</span>' +
+      '<span class="priority-badge ' + priority + '">' + escapeHtml(priority) + '</span>' +
       '<span class="bus-agents">—</span>' +
       '<span class="bus-timing">—</span>' +
       '<span class="topic-badge">—</span>' +
@@ -4448,7 +4459,7 @@ function _buildRunRow(s) {
   const tr = document.createElement('tr');
   tr.style.cursor = 'pointer';
   const id = s.id || s.sessionId || '';
-  tr.addEventListener('click', () => Router.navigate('/runs/' + id));
+  if (id) tr.addEventListener('click', () => Router.navigate('/runs/' + id));
 
   const ts = s.startedAt || s.completedAt || s.createdAt || '';
   const tsStr = ts ? new Date(ts).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}) : '—';
@@ -4890,7 +4901,9 @@ function showAnomalyBanner(data) {
 const SSE = {
   source: null,
   reconnectDelay: 1000,
+  _reconnecting: false,
   connect() {
+    this._reconnecting = false;
     if (this.source) { try { this.source.close(); } catch(e) {} }
     try {
       this.source = new EventSource('/api/v1/stream');
@@ -4903,6 +4916,8 @@ const SSE = {
       this.reconnectDelay = 1000;
     };
     this.source.onerror = () => {
+      if (this._reconnecting) return;
+      this._reconnecting = true;
       updateConnectionStatus('reconnecting');
       this.source.close();
       this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000);
