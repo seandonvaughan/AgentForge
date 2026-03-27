@@ -1,12 +1,14 @@
-name: AgentForge-team
-forged_at: '2026-03-27T17:12:54.868Z'
+name: v4.7-team
+forged_at: '2026-03-27T12:45:00.000Z'
 forged_by: agentforge
-project_hash: f25d96bfc0f1
+project_hash: v47-platform
 agents:
   strategic:
     - ceo
     - genesis
     - architect
+    - vp-research
+    - vp-engineering
   implementation:
     - cto
     - coo
@@ -16,17 +18,26 @@ agents:
     - skill-designer
     - template-optimizer
     - coder
-    - data-analyst
+    - ml-engineer
+    - research-scientist
+    - engineering-manager-frontend
+    - engineering-manager-backend
+    - engineering-manager-infra
     - api-gateway-engineer
     - ui-engineer
+    - data-analyst
   quality:
     - team-reviewer
     - dba
     - debugger
     - linter
     - api-specialist
+    - qa-manager
+    - observability-engineer
   utility:
     - researcher
+    - experiment-runner
+    - feedback-analyst
 model_routing:
   opus:
     - ceo
@@ -34,6 +45,8 @@ model_routing:
     - architect
     - cto
     - meta-architect
+    - vp-research
+    - vp-engineering
   sonnet:
     - coo
     - cfo
@@ -45,12 +58,21 @@ model_routing:
     - dba
     - debugger
     - api-specialist
-    - data-analyst
+    - ml-engineer
+    - research-scientist
+    - engineering-manager-frontend
+    - engineering-manager-backend
+    - engineering-manager-infra
+    - qa-manager
     - api-gateway-engineer
     - ui-engineer
+    - data-analyst
+    - observability-engineer
   haiku:
     - linter
     - researcher
+    - experiment-runner
+    - feedback-analyst
 delegation_graph:
   ceo:
     - cto
@@ -95,23 +117,40 @@ delegation_graph:
     - researcher
     - linter
     - file-reader
-  cfo:
-    - business-analyst
-    - data-analyst
-  engineering-manager-backend:
-    - coder
-    - api-specialist
-    - dba
-    - api-gateway-engineer
+  vp-research:
+    - ml-engineer
+    - research-scientist
+    - experiment-runner
+  vp-engineering:
+    - engineering-manager-frontend
+    - engineering-manager-backend
+    - engineering-manager-infra
   engineering-manager-frontend:
     - frontend-dev
     - ui-ux-designer
     - dashboard-architect
     - ui-engineer
-  data-analyst:
-    - researcher
+  engineering-manager-backend:
+    - coder
+    - api-specialist
+    - dba
+    - api-gateway-engineer
+  engineering-manager-infra:
+    - devops-engineer
+    - performance-engineer
+    - build-release-lead
+    - observability-engineer
+  cfo:
+    - business-analyst
+    - data-analyst
+  qa-manager:
+    - team-reviewer
+    - debugger
+    - linter
   api-gateway-engineer:
     - coder
     - api-specialist
   ui-engineer:
     - frontend-dev
+  data-analyst:
+    - researcher
