@@ -21,7 +21,8 @@ function groupCosts(
       key = row.model;
     } else {
       // day: extract YYYY-MM-DD from created_at
-      key = row.created_at.slice(0, 10);
+      const dateStr = row.created_at;
+      key = dateStr && dateStr.length >= 10 ? dateStr.slice(0, 10) : 'unknown';
     }
 
     const entry = map.get(key) ?? { totalUsd: 0, rowCount: 0 };

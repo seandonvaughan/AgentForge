@@ -17,17 +17,18 @@ export async function sessionsRoutes(app: FastifyInstance, opts: { adapter: Sqli
       until?: string;
     };
 
-    const limit = query.limit !== undefined ? parseInt(query.limit, 10) : 50;
-    const offset = query.offset !== undefined ? parseInt(query.offset, 10) : 0;
+    const rawLimit = query.limit !== undefined ? parseInt(query.limit, 10) : 50;
+    const rawOffset = query.offset !== undefined ? parseInt(query.offset, 10) : 0;
+    const limit = isNaN(rawLimit) || rawLimit < 1 ? 50 : Math.min(rawLimit, 500);
+    const offset = isNaN(rawOffset) || rawOffset < 0 ? 0 : rawOffset;
 
-    // Get total count for meta (without limit/offset)
-    const allForCount = adapter.listSessions({
+    // Get total count for meta (without limit/offset) using COUNT(*) query
+    const total = adapter.countSessions({
       agentId: query.agentId,
       status: query.status,
       since: query.since,
       until: query.until,
     });
-    const total = allForCount.length;
 
     const data = adapter.listSessions({
       agentId: query.agentId,

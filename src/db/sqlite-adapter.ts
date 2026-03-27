@@ -287,6 +287,19 @@ export class SqliteAdapter implements FeedbackFileAdapter, FlywheelFileAdapter {
       .all(params);
   }
 
+  countSessions(opts?: { agentId?: string; status?: string; since?: string; until?: string }): number {
+    let query = 'SELECT COUNT(*) as total FROM sessions';
+    const conditions: string[] = [];
+    const params: Record<string, unknown> = {};
+    if (opts?.agentId) { conditions.push('agent_id = @agentId'); params.agentId = opts.agentId; }
+    if (opts?.status) { conditions.push('status = @status'); params.status = opts.status; }
+    if (opts?.since) { conditions.push('created_at >= @since'); params.since = opts.since; }
+    if (opts?.until) { conditions.push('created_at <= @until'); params.until = opts.until; }
+    if (conditions.length) query += ' WHERE ' + conditions.join(' AND ');
+    const row = this.db.getDb().prepare<Record<string, unknown>, { total: number }>(query).get(params);
+    return row?.total ?? 0;
+  }
+
   // -------------------------------------------------------------------------
   // Feedback CRUD
   // -------------------------------------------------------------------------

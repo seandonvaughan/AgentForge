@@ -84,14 +84,16 @@ export async function agentsRoutes(app: FastifyInstance, opts: { adapter: Sqlite
   app.get('/api/v1/agents/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
 
-    const recentSessions = adapter.listSessions({ agentId: id, limit: 50 });
-    if (recentSessions.length === 0) {
+    const allSessions = adapter.listSessions({ agentId: id });
+    if (allSessions.length === 0) {
       return reply.status(404).send({ error: 'Agent not found', id });
     }
 
-    const summary = buildAgentSummary(id, recentSessions);
+    const summary = buildAgentSummary(id, allSessions);
     const costs = adapter.getAgentCosts(id);
     summary.totalCostUsd = costs.reduce((sum, c) => sum + c.cost_usd, 0);
+
+    const recentSessions = allSessions.slice(0, 50);
 
     return reply.send({
       data: { ...summary, recentSessions },
