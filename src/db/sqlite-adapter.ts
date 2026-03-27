@@ -139,6 +139,10 @@ export class SqliteAdapter implements FeedbackFileAdapter, FlywheelFileAdapter {
 
   writeFile(path: string, content: string): void {
     if (path.startsWith('feedback/')) {
+      // NOTE: When persisting via writeFile('feedback/<sprintId>.json', ...),
+      // the category column is forced to sprintId to ensure readFile round-trips work.
+      // Direct insertFeedback() callers should set category = sprintId if they want
+      // the data to be accessible via readFile.
       const sprintId = this.sprintIdFromPath(path);
       const entries: FeedbackDbRow[] = JSON.parse(content);
 
@@ -234,6 +238,7 @@ export class SqliteAdapter implements FeedbackFileAdapter, FlywheelFileAdapter {
     limit?: number;
     offset?: number;
   }): SessionRow[] {
+    let query = 'SELECT * FROM sessions';
     const conditions: string[] = [];
     const params: Record<string, unknown> = {};
 
@@ -246,14 +251,24 @@ export class SqliteAdapter implements FeedbackFileAdapter, FlywheelFileAdapter {
       params.status = opts.status;
     }
 
-    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-    const limit = opts?.limit !== undefined ? `LIMIT ${opts.limit}` : '';
-    const offset = opts?.offset !== undefined ? `OFFSET ${opts.offset}` : '';
+    if (conditions.length > 0) query += ' WHERE ' + conditions.join(' AND ');
+    query += ' ORDER BY created_at DESC';
+
+    const hasOffset = opts?.offset !== undefined && opts.offset > 0;
+    if (opts?.limit !== undefined) {
+      query += ' LIMIT @limit';
+      params.limit = opts.limit;
+    } else if (hasOffset) {
+      query += ' LIMIT -1'; // unlimited, but needed for OFFSET to work
+    }
+
+    if (hasOffset) {
+      query += ' OFFSET @offset';
+      params.offset = opts!.offset;
+    }
 
     return this.db.getDb()
-      .prepare<Record<string, unknown>, SessionRow>(
-        `SELECT * FROM sessions ${where} ORDER BY created_at DESC ${limit} ${offset}`
-      )
+      .prepare<Record<string, unknown>, SessionRow>(query)
       .all(params);
   }
 

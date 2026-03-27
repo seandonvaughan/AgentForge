@@ -300,6 +300,14 @@ describe('listSessions', () => {
     expect(paged).toHaveLength(2);
     expect(paged[0].id).not.toBe(all[0].id);
   });
+
+  it('listSessions with offset but no limit uses LIMIT -1 for unlimited', () => {
+    const all = adapter.listSessions();
+    expect(all).toHaveLength(3);
+    const withOffset = adapter.listSessions({ offset: 2 });
+    expect(withOffset).toHaveLength(1);
+    expect(withOffset[0].id).toBe(all[2].id);
+  });
 });
 
 // ---------------------------------------------------------------------------

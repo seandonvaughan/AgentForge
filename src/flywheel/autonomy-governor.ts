@@ -132,6 +132,8 @@ export class AutonomyGovernor {
 
   private persistRecordWithTimestamp(agentId: string, field: 'promoted_at' | 'demoted_at'): void {
     if (!this.db) return;
+    const ALLOWED_FIELDS = new Set(['promoted_at', 'demoted_at']);
+    if (!ALLOWED_FIELDS.has(field)) return; // runtime guard
     const r = this.records.get(agentId);
     if (!r) return;
     const now = new Date().toISOString();
