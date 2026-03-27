@@ -42,6 +42,39 @@ export interface CostRow {
   created_at: string;
 }
 
+export interface TaskOutcomeRow {
+  id: string;
+  session_id: string;
+  agent_id: string;
+  task: string;
+  success: number;
+  quality_score: number | null;
+  model: string | null;
+  duration_ms: number | null;
+  created_at: string;
+}
+
+export interface PromotionRow {
+  id: string;
+  agent_id: string;
+  previous_tier: number;
+  new_tier: number;
+  promoted: number;
+  demoted: number;
+  reason: string | null;
+  created_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// SQL injection allowlist for updateSession
+// ---------------------------------------------------------------------------
+
+const SESSION_COLUMNS = new Set([
+  'agent_id', 'agent_name', 'model', 'task', 'response', 'status',
+  'started_at', 'completed_at', 'estimated_tokens', 'autonomy_tier',
+  'resume_count', 'parent_session_id', 'delegation_depth'
+]);
+
 // ---------------------------------------------------------------------------
 // Options
 // ---------------------------------------------------------------------------
@@ -123,7 +156,7 @@ export class SqliteAdapter implements FeedbackFileAdapter, FlywheelFileAdapter {
 
       const upsertAll = this.db.getDb().transaction((rows: FeedbackDbRow[]) => {
         for (const row of rows) {
-          insert.run({ ...row, category: row.category || sprintId });
+          insert.run({ ...row, category: sprintId });
         }
       });
 
@@ -186,15 +219,13 @@ export class SqliteAdapter implements FeedbackFileAdapter, FlywheelFileAdapter {
   }
 
   updateSession(id: string, updates: Partial<SessionRow>): void {
-    const fields = Object.keys(updates)
-      .filter(k => k !== 'id' && k !== 'created_at')
-      .map(k => `${k} = @${k}`)
-      .join(', ');
-
-    if (!fields) return;
-
+    const safeUpdates = Object.fromEntries(
+      Object.entries(updates).filter(([k]) => SESSION_COLUMNS.has(k))
+    );
+    if (Object.keys(safeUpdates).length === 0) return;
+    const fields = Object.keys(safeUpdates).map(k => `${k} = @${k}`).join(', ');
     this.db.getDb().prepare(`UPDATE sessions SET ${fields} WHERE id = @id`)
-      .run({ id, ...updates });
+      .run({ ...safeUpdates, id });
   }
 
   listSessions(opts?: {
@@ -280,6 +311,70 @@ export class SqliteAdapter implements FeedbackFileAdapter, FlywheelFileAdapter {
       .prepare<[], { total: number | null }>('SELECT SUM(cost_usd) as total FROM agent_costs')
       .get();
     return row?.total ?? 0;
+  }
+
+  // -------------------------------------------------------------------------
+  // Task Outcomes CRUD
+  // -------------------------------------------------------------------------
+
+  insertTaskOutcome(outcome: TaskOutcomeRow): void {
+    this.db.getDb().prepare(`
+      INSERT INTO task_outcomes (id, session_id, agent_id, task, success, quality_score, model, duration_ms, created_at)
+      VALUES (@id, @session_id, @agent_id, @task, @success, @quality_score, @model, @duration_ms, @created_at)
+    `).run(outcome);
+  }
+
+  listTaskOutcomes(opts?: { sessionId?: string; agentId?: string; limit?: number }): TaskOutcomeRow[] {
+    const conditions: string[] = [];
+    const params: Record<string, unknown> = {};
+
+    if (opts?.sessionId !== undefined) {
+      conditions.push('session_id = @sessionId');
+      params.sessionId = opts.sessionId;
+    }
+    if (opts?.agentId !== undefined) {
+      conditions.push('agent_id = @agentId');
+      params.agentId = opts.agentId;
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const limit = opts?.limit !== undefined ? `LIMIT ${opts.limit}` : '';
+
+    return this.db.getDb()
+      .prepare<Record<string, unknown>, TaskOutcomeRow>(
+        `SELECT * FROM task_outcomes ${where} ORDER BY created_at DESC ${limit}`
+      )
+      .all(params);
+  }
+
+  // -------------------------------------------------------------------------
+  // Promotions CRUD
+  // -------------------------------------------------------------------------
+
+  insertPromotion(promotion: PromotionRow): void {
+    this.db.getDb().prepare(`
+      INSERT INTO promotions (id, agent_id, previous_tier, new_tier, promoted, demoted, reason, created_at)
+      VALUES (@id, @agent_id, @previous_tier, @new_tier, @promoted, @demoted, @reason, @created_at)
+    `).run(promotion);
+  }
+
+  listPromotions(opts?: { agentId?: string; limit?: number }): PromotionRow[] {
+    const conditions: string[] = [];
+    const params: Record<string, unknown> = {};
+
+    if (opts?.agentId !== undefined) {
+      conditions.push('agent_id = @agentId');
+      params.agentId = opts.agentId;
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const limit = opts?.limit !== undefined ? `LIMIT ${opts.limit}` : '';
+
+    return this.db.getDb()
+      .prepare<Record<string, unknown>, PromotionRow>(
+        `SELECT * FROM promotions ${where} ORDER BY created_at DESC ${limit}`
+      )
+      .all(params);
   }
 
   // -------------------------------------------------------------------------

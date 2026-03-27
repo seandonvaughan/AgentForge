@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { AgentDatabase } from '../../src/db/database.js';
 import { SqliteAdapter } from '../../src/db/sqlite-adapter.js';
-import type { FeedbackDbRow, CostRow } from '../../src/db/sqlite-adapter.js';
+import type { FeedbackDbRow, CostRow, TaskOutcomeRow, PromotionRow } from '../../src/db/sqlite-adapter.js';
 import type { SessionRow } from '../../src/db/database.js';
 
 // ---------------------------------------------------------------------------
@@ -387,5 +387,199 @@ describe('insertFeedback / listFeedback', () => {
     adapter.insertFeedback(feedbackFixture({ id: 'fb-2' }));
     adapter.insertFeedback(feedbackFixture({ id: 'fb-3' }));
     expect(adapter.listFeedback({ limit: 2 })).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// updateSession: SQL injection allowlist
+// ---------------------------------------------------------------------------
+
+describe('updateSession SQL injection guard', () => {
+  let adapter: SqliteAdapter;
+  let db: AgentDatabase;
+
+  beforeEach(() => {
+    ({ adapter, db } = makeAdapter());
+    adapter.insertSession(sessionFixture());
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it('silently ignores injected keys not in the SESSION_COLUMNS allowlist', () => {
+    // Passing a key like "status = 'hacked' --" should be filtered out
+    adapter.updateSession('sess-1', {
+      status: 'completed',
+      // @ts-expect-error — intentional injection attempt
+      'evil = 1; DROP TABLE sessions; --': 'ignored',
+    } as Partial<SessionRow>);
+    // Session should still exist and status update should work
+    const result = adapter.getSession('sess-1');
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe('completed');
+  });
+
+  it('update with only non-allowlisted keys is a no-op and does not throw', () => {
+    adapter.updateSession('sess-1', {
+      // @ts-expect-error — intentional injection attempt
+      injected_column: 'bad',
+    } as Partial<SessionRow>);
+    expect(adapter.getSession('sess-1')!.status).toBe('pending');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// writeFile: feedback category enforcement
+// ---------------------------------------------------------------------------
+
+describe('writeFile feedback category enforcement', () => {
+  let adapter: SqliteAdapter;
+  let db: AgentDatabase;
+
+  beforeEach(() => {
+    ({ adapter, db } = makeAdapter());
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it('overwrites row.category with sprintId derived from path', () => {
+    const rows: FeedbackDbRow[] = [
+      feedbackFixture({ id: 'fb-cat-1', category: 'wrong-category', agent_id: 'agent-a' }),
+    ];
+    adapter.writeFile('feedback/v4.7.json', JSON.stringify(rows));
+
+    const result = JSON.parse(adapter.readFile('feedback/v4.7.json')) as FeedbackDbRow[];
+    expect(result).toHaveLength(1);
+    expect(result[0].category).toBe('v4.7');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task Outcomes CRUD
+// ---------------------------------------------------------------------------
+
+function taskOutcomeFixture(overrides: Partial<TaskOutcomeRow> = {}): TaskOutcomeRow {
+  return {
+    id: 'to-1',
+    session_id: 'sess-1',
+    agent_id: 'agent-a',
+    task: 'Test task',
+    success: 1,
+    quality_score: 0.9,
+    model: 'claude-sonnet-4-6',
+    duration_ms: 1200,
+    created_at: '2026-03-27T00:00:00Z',
+    ...overrides,
+  };
+}
+
+describe('insertTaskOutcome / listTaskOutcomes', () => {
+  let adapter: SqliteAdapter;
+  let db: AgentDatabase;
+
+  beforeEach(() => {
+    ({ adapter, db } = makeAdapter());
+    adapter.insertSession(sessionFixture({ id: 'sess-1' }));
+    adapter.insertSession(sessionFixture({ id: 'sess-2' }));
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it('listTaskOutcomes returns empty array when no outcomes exist', () => {
+    expect(adapter.listTaskOutcomes()).toHaveLength(0);
+  });
+
+  it('insertTaskOutcome then listTaskOutcomes returns the entry', () => {
+    adapter.insertTaskOutcome(taskOutcomeFixture());
+    const results = adapter.listTaskOutcomes();
+    expect(results).toHaveLength(1);
+    expect(results[0].id).toBe('to-1');
+    expect(results[0].success).toBe(1);
+  });
+
+  it('listTaskOutcomes filters by sessionId', () => {
+    adapter.insertTaskOutcome(taskOutcomeFixture({ id: 'to-a', session_id: 'sess-1' }));
+    adapter.insertTaskOutcome(taskOutcomeFixture({ id: 'to-b', session_id: 'sess-2' }));
+    const results = adapter.listTaskOutcomes({ sessionId: 'sess-1' });
+    expect(results).toHaveLength(1);
+    expect(results[0].id).toBe('to-a');
+  });
+
+  it('listTaskOutcomes filters by agentId', () => {
+    adapter.insertTaskOutcome(taskOutcomeFixture({ id: 'to-a', agent_id: 'agent-a' }));
+    adapter.insertTaskOutcome(taskOutcomeFixture({ id: 'to-b', agent_id: 'agent-b' }));
+    const results = adapter.listTaskOutcomes({ agentId: 'agent-b' });
+    expect(results).toHaveLength(1);
+    expect(results[0].id).toBe('to-b');
+  });
+
+  it('listTaskOutcomes respects limit', () => {
+    adapter.insertTaskOutcome(taskOutcomeFixture({ id: 'to-1' }));
+    adapter.insertTaskOutcome(taskOutcomeFixture({ id: 'to-2' }));
+    adapter.insertTaskOutcome(taskOutcomeFixture({ id: 'to-3' }));
+    expect(adapter.listTaskOutcomes({ limit: 2 })).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Promotions CRUD
+// ---------------------------------------------------------------------------
+
+function promotionFixture(overrides: Partial<PromotionRow> = {}): PromotionRow {
+  return {
+    id: 'promo-1',
+    agent_id: 'agent-a',
+    previous_tier: 1,
+    new_tier: 2,
+    promoted: 1,
+    demoted: 0,
+    reason: 'Consecutive successes',
+    created_at: '2026-03-27T00:00:00Z',
+    ...overrides,
+  };
+}
+
+describe('insertPromotion / listPromotions', () => {
+  let adapter: SqliteAdapter;
+  let db: AgentDatabase;
+
+  beforeEach(() => {
+    ({ adapter, db } = makeAdapter());
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it('listPromotions returns empty array when no entries exist', () => {
+    expect(adapter.listPromotions()).toHaveLength(0);
+  });
+
+  it('insertPromotion then listPromotions returns the entry', () => {
+    adapter.insertPromotion(promotionFixture());
+    const results = adapter.listPromotions();
+    expect(results).toHaveLength(1);
+    expect(results[0].id).toBe('promo-1');
+    expect(results[0].promoted).toBe(1);
+  });
+
+  it('listPromotions filters by agentId', () => {
+    adapter.insertPromotion(promotionFixture({ id: 'promo-a', agent_id: 'agent-a' }));
+    adapter.insertPromotion(promotionFixture({ id: 'promo-b', agent_id: 'agent-b' }));
+    const results = adapter.listPromotions({ agentId: 'agent-a' });
+    expect(results).toHaveLength(1);
+    expect(results[0].id).toBe('promo-a');
+  });
+
+  it('listPromotions respects limit', () => {
+    adapter.insertPromotion(promotionFixture({ id: 'promo-1' }));
+    adapter.insertPromotion(promotionFixture({ id: 'promo-2' }));
+    adapter.insertPromotion(promotionFixture({ id: 'promo-3' }));
+    expect(adapter.listPromotions({ limit: 2 })).toHaveLength(2);
   });
 });
