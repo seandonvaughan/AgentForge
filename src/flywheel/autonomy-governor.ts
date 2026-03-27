@@ -48,6 +48,9 @@ interface AgentAutonomyRow {
   total_failures: number;
   promoted_at: string | null;
   demoted_at: string | null;
+  reason: string | null;
+  session_count: number;
+  success_rate: number;
   created_at: string;
   updated_at: string;
 }
@@ -97,17 +100,22 @@ export class AutonomyGovernor {
     if (!this.db) return;
     const r = this.records.get(agentId);
     if (!r) return;
+    const sessionCount = r.totalSuccesses + r.totalFailures;
+    const successRate = sessionCount > 0 ? r.totalSuccesses / sessionCount : 0;
     this.db.getDb().prepare(`
       INSERT INTO agent_autonomy (
         agent_id, current_tier, consecutive_successes, consecutive_failures,
-        total_successes, total_failures, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+        total_successes, total_failures, reason, session_count, success_rate, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
       ON CONFLICT(agent_id) DO UPDATE SET
         current_tier = excluded.current_tier,
         consecutive_successes = excluded.consecutive_successes,
         consecutive_failures = excluded.consecutive_failures,
         total_successes = excluded.total_successes,
         total_failures = excluded.total_failures,
+        reason = excluded.reason,
+        session_count = excluded.session_count,
+        success_rate = excluded.success_rate,
         updated_at = excluded.updated_at
     `).run(
       r.agentId,
@@ -116,6 +124,9 @@ export class AutonomyGovernor {
       r.consecutiveFailures,
       r.totalSuccesses,
       r.totalFailures,
+      null,
+      sessionCount,
+      successRate,
     );
   }
 
@@ -124,11 +135,16 @@ export class AutonomyGovernor {
     const r = this.records.get(agentId);
     if (!r) return;
     const now = new Date().toISOString();
+    const sessionCount = r.totalSuccesses + r.totalFailures;
+    const successRate = sessionCount > 0 ? r.totalSuccesses / sessionCount : 0;
+    const reason = field === 'promoted_at'
+      ? `promoted to tier ${r.tier}`
+      : `demoted to tier ${r.tier}`;
     this.db.getDb().prepare(`
       INSERT INTO agent_autonomy (
         agent_id, current_tier, consecutive_successes, consecutive_failures,
-        total_successes, total_failures, ${field}, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        total_successes, total_failures, ${field}, reason, session_count, success_rate, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
       ON CONFLICT(agent_id) DO UPDATE SET
         current_tier = excluded.current_tier,
         consecutive_successes = excluded.consecutive_successes,
@@ -136,6 +152,9 @@ export class AutonomyGovernor {
         total_successes = excluded.total_successes,
         total_failures = excluded.total_failures,
         ${field} = excluded.${field},
+        reason = excluded.reason,
+        session_count = excluded.session_count,
+        success_rate = excluded.success_rate,
         updated_at = excluded.updated_at
     `).run(
       r.agentId,
@@ -145,6 +164,9 @@ export class AutonomyGovernor {
       r.totalSuccesses,
       r.totalFailures,
       now,
+      reason,
+      sessionCount,
+      successRate,
     );
   }
 

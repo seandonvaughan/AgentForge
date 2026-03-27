@@ -215,6 +215,63 @@ describe("AutonomyGovernor — loadFromDb()", () => {
   });
 });
 
+describe("AutonomyGovernor — derived columns (session_count, success_rate, reason)", () => {
+  let db: AgentDatabase;
+  let gov: AutonomyGovernor;
+
+  beforeEach(() => {
+    db = makeDb();
+    gov = new AutonomyGovernor({ db });
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it("after register + recordSuccess, DB row has session_count=1 and success_rate=1.0", () => {
+    gov.register("agent-sc", 1);
+    gov.recordSuccess("agent-sc");
+    const row = getAutonomyRow(db, "agent-sc");
+    expect(row!.session_count).toBe(1);
+    expect(row!.success_rate).toBe(1.0);
+  });
+
+  it("after promotion, DB row has non-null reason containing 'promoted'", () => {
+    gov.register("agent-promo", 1);
+    for (let i = 0; i < 5; i++) gov.recordSuccess("agent-promo");
+    gov.evaluatePromotion("agent-promo");
+    const row = getAutonomyRow(db, "agent-promo");
+    expect(row!.reason).not.toBeNull();
+    expect((row!.reason as string).toLowerCase()).toContain("promoted");
+  });
+
+  it("after demotion, DB row has non-null reason containing 'demoted'", () => {
+    gov.register("agent-demo", 3);
+    for (let i = 0; i < 3; i++) gov.recordFailure("agent-demo");
+    gov.evaluateDemotion("agent-demo");
+    const row = getAutonomyRow(db, "agent-demo");
+    expect(row!.reason).not.toBeNull();
+    expect((row!.reason as string).toLowerCase()).toContain("demoted");
+  });
+
+  it("session_count and success_rate reflect mixed success/failure history", () => {
+    gov.register("agent-mixed", 1);
+    gov.recordSuccess("agent-mixed");
+    gov.recordSuccess("agent-mixed");
+    gov.recordFailure("agent-mixed");
+    const row = getAutonomyRow(db, "agent-mixed");
+    expect(row!.session_count).toBe(3);
+    expect(row!.success_rate).toBeCloseTo(2 / 3);
+  });
+
+  it("session_count=0 and success_rate=0 on fresh register", () => {
+    gov.register("agent-zero", 1);
+    const row = getAutonomyRow(db, "agent-zero");
+    expect(row!.session_count).toBe(0);
+    expect(row!.success_rate).toBe(0);
+  });
+});
+
 describe("AutonomyGovernor — shared in-memory DB state", () => {
   let db: AgentDatabase;
 
