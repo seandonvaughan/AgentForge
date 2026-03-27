@@ -9,6 +9,7 @@
  */
 
 import type { V4MessageBus } from "../communication/v4-message-bus.js";
+import type { AgentDatabase } from "../db/database.js";
 
 const PROMOTION_THRESHOLD = 5;
 const DEMOTION_THRESHOLD = 3;
@@ -33,11 +34,119 @@ export interface TierChangeResult {
   timestamp: string;
 }
 
+export interface AutonomyGovernorOptions {
+  bus?: V4MessageBus;
+  db?: AgentDatabase; // optional SQLite persistence
+}
+
+interface AgentAutonomyRow {
+  agent_id: string;
+  current_tier: number;
+  consecutive_successes: number;
+  consecutive_failures: number;
+  total_successes: number;
+  total_failures: number;
+  promoted_at: string | null;
+  demoted_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export class AutonomyGovernor {
   private records = new Map<string, AgentAutonomyRecord>();
   private promotionHistory: TierChangeResult[] = [];
+  private readonly bus?: V4MessageBus;
+  private readonly db?: AgentDatabase;
 
-  constructor(private readonly bus?: V4MessageBus) {}
+  constructor(busOrOptions?: V4MessageBus | AutonomyGovernorOptions) {
+    if (!busOrOptions) {
+      // No args
+    } else if (busOrOptions instanceof Object && 'publish' in busOrOptions) {
+      // Legacy: V4MessageBus passed directly
+      this.bus = busOrOptions as V4MessageBus;
+    } else {
+      // New: AutonomyGovernorOptions object
+      const opts = busOrOptions as AutonomyGovernorOptions;
+      this.bus = opts.bus;
+      this.db = opts.db;
+    }
+  }
+
+  /**
+   * Factory: creates a governor and loads all agent records from the DB.
+   */
+  static loadFromDb(db: AgentDatabase, bus?: V4MessageBus): AutonomyGovernor {
+    const gov = new AutonomyGovernor({ bus, db });
+    const rows = db.getDb()
+      .prepare<[], AgentAutonomyRow>('SELECT * FROM agent_autonomy')
+      .all();
+    for (const row of rows) {
+      gov.records.set(row.agent_id, {
+        agentId: row.agent_id,
+        tier: row.current_tier,
+        consecutiveSuccesses: row.consecutive_successes,
+        consecutiveFailures: row.consecutive_failures,
+        totalSuccesses: row.total_successes,
+        totalFailures: row.total_failures,
+      });
+    }
+    return gov;
+  }
+
+  private persistRecord(agentId: string): void {
+    if (!this.db) return;
+    const r = this.records.get(agentId);
+    if (!r) return;
+    this.db.getDb().prepare(`
+      INSERT INTO agent_autonomy (
+        agent_id, current_tier, consecutive_successes, consecutive_failures,
+        total_successes, total_failures, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(agent_id) DO UPDATE SET
+        current_tier = excluded.current_tier,
+        consecutive_successes = excluded.consecutive_successes,
+        consecutive_failures = excluded.consecutive_failures,
+        total_successes = excluded.total_successes,
+        total_failures = excluded.total_failures,
+        updated_at = excluded.updated_at
+    `).run(
+      r.agentId,
+      r.tier,
+      r.consecutiveSuccesses,
+      r.consecutiveFailures,
+      r.totalSuccesses,
+      r.totalFailures,
+    );
+  }
+
+  private persistRecordWithTimestamp(agentId: string, field: 'promoted_at' | 'demoted_at'): void {
+    if (!this.db) return;
+    const r = this.records.get(agentId);
+    if (!r) return;
+    const now = new Date().toISOString();
+    this.db.getDb().prepare(`
+      INSERT INTO agent_autonomy (
+        agent_id, current_tier, consecutive_successes, consecutive_failures,
+        total_successes, total_failures, ${field}, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(agent_id) DO UPDATE SET
+        current_tier = excluded.current_tier,
+        consecutive_successes = excluded.consecutive_successes,
+        consecutive_failures = excluded.consecutive_failures,
+        total_successes = excluded.total_successes,
+        total_failures = excluded.total_failures,
+        ${field} = excluded.${field},
+        updated_at = excluded.updated_at
+    `).run(
+      r.agentId,
+      r.tier,
+      r.consecutiveSuccesses,
+      r.consecutiveFailures,
+      r.totalSuccesses,
+      r.totalFailures,
+      now,
+    );
+  }
 
   register(agentId: string, startingTier: number): void {
     this.records.set(agentId, {
@@ -48,6 +157,7 @@ export class AutonomyGovernor {
       totalSuccesses: 0,
       totalFailures: 0,
     });
+    this.persistRecord(agentId);
   }
 
   getTier(agentId: string): number | null {
@@ -64,6 +174,7 @@ export class AutonomyGovernor {
     r.consecutiveSuccesses++;
     r.consecutiveFailures = 0;
     r.totalSuccesses++;
+    this.persistRecord(agentId);
   }
 
   recordFailure(agentId: string): void {
@@ -71,6 +182,7 @@ export class AutonomyGovernor {
     r.consecutiveFailures++;
     r.consecutiveSuccesses = 0;
     r.totalFailures++;
+    this.persistRecord(agentId);
   }
 
   evaluatePromotion(agentId: string): TierChangeResult {
@@ -90,6 +202,7 @@ export class AutonomyGovernor {
       result.promoted = true;
       result.newTier = r.tier;
       this.promotionHistory.push(result);
+      this.persistRecordWithTimestamp(agentId, 'promoted_at');
       if (this.bus) {
         this.bus.publish({
           from: "autonomy-governor",
@@ -100,6 +213,8 @@ export class AutonomyGovernor {
           priority: "normal",
         });
       }
+    } else {
+      this.persistRecord(agentId);
     }
     return result;
   }
@@ -121,6 +236,7 @@ export class AutonomyGovernor {
       result.demoted = true;
       result.newTier = r.tier;
       this.promotionHistory.push(result);
+      this.persistRecordWithTimestamp(agentId, 'demoted_at');
       if (this.bus) {
         this.bus.publish({
           from: "autonomy-governor",
@@ -131,6 +247,8 @@ export class AutonomyGovernor {
           priority: "normal",
         });
       }
+    } else {
+      this.persistRecord(agentId);
     }
     return result;
   }
