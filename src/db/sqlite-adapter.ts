@@ -90,6 +90,11 @@ export interface SqliteAdapterOptions {
 export class SqliteAdapter implements FeedbackFileAdapter, FlywheelFileAdapter {
   private readonly db: AgentDatabase;
 
+  /** Expose AgentDatabase for delegation chain queries and other direct access */
+  getAgentDatabase(): AgentDatabase {
+    return this.db;
+  }
+
   constructor(options: SqliteAdapterOptions) {
     this.db = options.db;
     this.ensureKvTable();
@@ -326,6 +331,12 @@ export class SqliteAdapter implements FeedbackFileAdapter, FlywheelFileAdapter {
       .prepare<[], { total: number | null }>('SELECT SUM(cost_usd) as total FROM agent_costs')
       .get();
     return row?.total ?? 0;
+  }
+
+  getAllCosts(): CostRow[] {
+    return this.db.getDb()
+      .prepare<[], CostRow>('SELECT * FROM agent_costs ORDER BY created_at DESC')
+      .all();
   }
 
   // -------------------------------------------------------------------------

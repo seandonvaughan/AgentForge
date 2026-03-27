@@ -4,6 +4,10 @@ import FastifyCors from '@fastify/cors';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import type { SqliteAdapter } from '../db/index.js';
+import { sessionsRoutes } from './routes/sessions.js';
+import { agentsRoutes } from './routes/agents.js';
+import { costsRoutes } from './routes/costs.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -13,6 +17,7 @@ export interface ServerOptions {
   port?: number;        // default 4700
   host?: string;        // default '127.0.0.1'
   dashboardPath?: string; // path to serve static files from
+  adapter?: SqliteAdapter; // optional data layer for REST API routes
 }
 
 export async function createServer(options: ServerOptions = {}) {
@@ -53,6 +58,13 @@ export async function createServer(options: ServerOptions = {}) {
       timestamp: new Date().toISOString(),
     });
   });
+
+  // REST API routes — only registered when an adapter is provided
+  if (options.adapter) {
+    await app.register(sessionsRoutes, { adapter: options.adapter });
+    await app.register(agentsRoutes, { adapter: options.adapter });
+    await app.register(costsRoutes, { adapter: options.adapter });
+  }
 
   // SPA catch-all: return index.html for non-API routes
   app.setNotFoundHandler(async (req, reply) => {
