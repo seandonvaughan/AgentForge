@@ -4,11 +4,12 @@
  * All tests use in-memory bus + :memory: AgentDatabase for isolation.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { V4MessageBus } from '../../src/communication/v4-message-bus.js';
 import { AgentDatabase } from '../../src/db/database.js';
 import { SqliteAdapter } from '../../src/db/sqlite-adapter.js';
 import { EventCollector, createEventCollector } from '../../src/event-collector/index.js';
+import { SseManager } from '../../src/server/sse/sse-manager.js';
 
 // ---------------------------------------------------------------------------
 // Test setup helpers
@@ -567,5 +568,93 @@ describe('createEventCollector factory', () => {
     const row = adapter.getSession('factory-sess');
     expect(row).not.toBeNull();
     expect(row!.status).toBe('running');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 11. cost.anomaly → anomaly-detected SSE broadcast
+// ---------------------------------------------------------------------------
+
+describe('cost.anomaly', () => {
+  it('broadcasts anomaly-detected event via SSE when cost.anomaly is published', () => {
+    const bus = new V4MessageBus();
+    const db = new AgentDatabase({ path: ':memory:' });
+    const adapter = new SqliteAdapter({ db });
+    const sseManager = new SseManager();
+
+    const broadcastSpy = vi.spyOn(sseManager, 'broadcast');
+
+    const collector = new EventCollector({ bus, adapter, sseManager });
+
+    publishAndDrain(bus, {
+      from: 'cost-monitor',
+      to: 'collector',
+      topic: 'cost.anomaly',
+      category: 'event',
+      payload: {
+        agentId: 'agent-expensive',
+        amount: 42.5,
+        threshold: 10.0,
+      },
+    });
+
+    expect(broadcastSpy).toHaveBeenCalledWith('anomaly-detected', {
+      agentId: 'agent-expensive',
+      amount: 42.5,
+      threshold: 10.0,
+      timestamp: expect.any(String),
+    });
+  });
+
+  it('handles cost.anomaly with sessionId in payload', () => {
+    const bus = new V4MessageBus();
+    const db = new AgentDatabase({ path: ':memory:' });
+    const adapter = new SqliteAdapter({ db });
+    const sseManager = new SseManager();
+
+    const broadcastSpy = vi.spyOn(sseManager, 'broadcast');
+
+    const collector = new EventCollector({ bus, adapter, sseManager });
+
+    publishAndDrain(bus, {
+      from: 'cost-monitor',
+      to: 'collector',
+      topic: 'cost.anomaly',
+      category: 'event',
+      payload: {
+        sessionId: 'sess-anomaly',
+        agentId: 'agent-x',
+        amount: 100.0,
+        threshold: 50.0,
+      },
+    });
+
+    expect(broadcastSpy).toHaveBeenCalledWith('anomaly-detected', expect.objectContaining({
+      agentId: 'agent-x',
+      amount: 100.0,
+      threshold: 50.0,
+    }));
+  });
+
+  it('does not throw when cost.anomaly has no sseManager', () => {
+    const bus = new V4MessageBus();
+    const db = new AgentDatabase({ path: ':memory:' });
+    const adapter = new SqliteAdapter({ db });
+
+    const collector = new EventCollector({ bus, adapter }); // no sseManager
+
+    expect(() => {
+      publishAndDrain(bus, {
+        from: 'cost-monitor',
+        to: 'collector',
+        topic: 'cost.anomaly',
+        category: 'event',
+        payload: {
+          agentId: 'agent-x',
+          amount: 50.0,
+          threshold: 25.0,
+        },
+      });
+    }).not.toThrow();
   });
 });

@@ -31,15 +31,11 @@ export class SseManager {
   private readonly MAX_BUFFER = 100; // max simultaneous clients before evicting oldest
 
   /**
-   * Register a new SSE client. Sets required SSE response headers and stores
-   * the client in the registry. Call removeClient() when the connection closes.
+   * Register a new SSE client. Stores the client in the registry.
+   * Call removeClient() when the connection closes.
+   * Note: SSE response headers are set by the route handler.
    */
   addClient(id: string, reply: FastifyReply): void {
-    reply.raw.setHeader('Content-Type', 'text/event-stream');
-    reply.raw.setHeader('Cache-Control', 'no-cache');
-    reply.raw.setHeader('Connection', 'keep-alive');
-    reply.raw.setHeader('X-Accel-Buffering', 'no');
-
     // Evict the oldest client if we are at capacity
     if (this.clients.size >= this.MAX_BUFFER) {
       const oldestId = this.clients.keys().next().value;

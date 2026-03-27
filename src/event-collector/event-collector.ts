@@ -84,6 +84,13 @@ interface AutonomyPromotionPayload {
   reason?: string;
 }
 
+interface CostAnomalyPayload {
+  sessionId?: string;
+  agentId: string;
+  amount: number;
+  threshold: number;
+}
+
 // ---------------------------------------------------------------------------
 // EventCollector
 // ---------------------------------------------------------------------------
@@ -283,6 +290,25 @@ export class EventCollector {
     };
     this.unsubs.push(bus.subscribe<AutonomyPromotionPayload>('autonomy.demoted', demotionHandler));
     this.unsubs.push(bus.subscribe<AutonomyPromotionPayload>('flywheel.autonomy.demoted', demotionHandler));
+
+    // 9. cost.anomaly
+    this.unsubs.push(
+      bus.subscribe<CostAnomalyPayload>('cost.anomaly', (envelope) => {
+        try {
+          const payload = envelope.payload;
+          if (this.opts.sseManager) {
+            this.opts.sseManager.broadcast('anomaly-detected', {
+              agentId: payload.agentId,
+              amount: payload.amount,
+              threshold: payload.threshold,
+              timestamp: envelope.sentAt ?? new Date().toISOString(),
+            });
+          }
+        } catch (err) {
+          process.stderr.write(`[EventCollector] anomaly event error: ${String(err)}\n`);
+        }
+      })
+    );
   }
 
   destroy(): void {

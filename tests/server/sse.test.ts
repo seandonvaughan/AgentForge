@@ -45,14 +45,11 @@ describe('SseManager', () => {
       expect(manager.getClientCount()).toBe(1);
     });
 
-    it('sets SSE headers on the raw reply when adding a client', () => {
+    it('registers the client without setting headers (route handler sets them)', () => {
       const reply = makeMockReply();
       manager.addClient('c1', reply);
-      const { setHeader } = reply.raw as unknown as { setHeader: ReturnType<typeof vi.fn> };
-      expect(setHeader).toHaveBeenCalledWith('Content-Type', 'text/event-stream');
-      expect(setHeader).toHaveBeenCalledWith('Cache-Control', 'no-cache');
-      expect(setHeader).toHaveBeenCalledWith('Connection', 'keep-alive');
-      expect(setHeader).toHaveBeenCalledWith('X-Accel-Buffering', 'no');
+      // addClient just stores the client; the route handler is responsible for SSE headers
+      expect(manager.getClientCount()).toBe(1);
     });
 
     it('supports multiple clients with distinct IDs', () => {
