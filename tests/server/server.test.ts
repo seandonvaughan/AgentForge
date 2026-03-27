@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createServer } from '../../src/server/server.js';
 import type { FastifyInstance } from 'fastify';
 
@@ -136,6 +139,42 @@ describe('Fastify Server', () => {
       const result = await createServer({ host: '0.0.0.0' });
       expect(result.host).toBe('0.0.0.0');
       await result.app.close();
+    });
+  });
+
+  describe('SPA catch-all', () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+      tmpDir = mkdtempSync(join(tmpdir(), 'agentforge-test-'));
+      writeFileSync(join(tmpDir, 'index.html'), '<html><body>AgentForge</body></html>');
+    });
+
+    it('returns 200 with HTML content for /', async () => {
+      const { app: testApp } = await createServer({ dashboardPath: tmpDir });
+      await testApp.ready();
+      const res = await testApp.inject({ method: 'GET', url: '/' });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain('AgentForge');
+      await testApp.close();
+    });
+
+    it('returns 200 with HTML content for /settings', async () => {
+      const { app: testApp } = await createServer({ dashboardPath: tmpDir });
+      await testApp.ready();
+      const res = await testApp.inject({ method: 'GET', url: '/settings' });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain('AgentForge');
+      await testApp.close();
+    });
+
+    it('returns 200 with HTML content for /runs/:id', async () => {
+      const { app: testApp } = await createServer({ dashboardPath: tmpDir });
+      await testApp.ready();
+      const res = await testApp.inject({ method: 'GET', url: '/runs/some-run-id' });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain('AgentForge');
+      await testApp.close();
     });
   });
 });
