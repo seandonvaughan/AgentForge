@@ -74,6 +74,7 @@ export class CostAnomalyDetector {
             mean: anomaly.mean,
             stddev: anomaly.stddev,
             threshold: anomaly.threshold,
+            detectedAt: anomaly.detectedAt,
           },
           priority: "high",
         });
