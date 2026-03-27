@@ -1,12 +1,13 @@
 {
   "name": "agentforge",
-  "version": "0.4.5",
+  "version": "0.4.7",
   "description": "Adaptive Agent Team Builder for Claude Code",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch",
+    "start": "npm run build && node dist/server/main.js",
+    "dev": "tsc --watch & node --watch dist/server/main.js",
     "test": "vitest",
     "test:run": "vitest run",
     "lint": "eslint src/",
