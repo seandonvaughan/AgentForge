@@ -50,8 +50,8 @@ describe('schema exports', () => {
     expect(CREATE_INDEXES_SQL.length).toBeGreaterThan(0);
   });
 
-  it('exports exactly 7 CREATE INDEX statements', () => {
-    expect(CREATE_INDEXES_SQL).toHaveLength(7);
+  it('exports exactly 11 CREATE INDEX statements', () => {
+    expect(CREATE_INDEXES_SQL).toHaveLength(11);
   });
 
   it('ALL_DDL combines tables + indexes in order', () => {
@@ -107,8 +107,12 @@ describe('index creation', () => {
     { table: 'sessions', index: 'idx_sessions_parent' },
     { table: 'feedback', index: 'idx_feedback_created_at' },
     { table: 'task_outcomes', index: 'idx_task_outcomes_session' },
+    { table: 'task_outcomes', index: 'idx_task_outcomes_created_at' },
     { table: 'agent_costs', index: 'idx_agent_costs_session' },
+    { table: 'agent_costs', index: 'idx_agent_costs_created_at' },
     { table: 'promotions', index: 'idx_promotions_agent' },
+    { table: 'promotions', index: 'idx_promotions_created_at' },
+    { table: 'agent_autonomy', index: 'idx_agent_autonomy_updated_at' },
   ];
 
   for (const { table, index } of expectedIndexes) {
@@ -291,5 +295,35 @@ describe('getSessionTree', () => {
     `).run('deep-session', 'agent-deep', 'deep task', 'pending', '2026-01-01T00:00:00Z', null, 21);
 
     expect(() => db.getSessionTree('deep-session')).toThrow(/exceeds maximum/);
+  });
+
+  it('throws when traversing a cycle with corrupted delegation_depth', () => {
+    const rawDb = db.getDb();
+
+    // Set up a two-node cycle: cyc-a ↔ cyc-b.
+    // In practice, a real cycle would cause delegation_depth to grow unbounded;
+    // we simulate the corrupted state by setting cyc-b's depth to 21 and creating
+    // the back-edge via FK-off UPDATE. getSessionTree detects this via the depth guard.
+
+    rawDb.pragma('foreign_keys = OFF');
+
+    rawDb.prepare(`
+      INSERT INTO sessions (id, agent_id, task, status, started_at, parent_session_id, delegation_depth)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run('cyc-a', 'ag-a', 'task a', 'pending', '2026-01-01T00:00:00Z', null, 0);
+
+    rawDb.prepare(`
+      INSERT INTO sessions (id, agent_id, task, status, started_at, parent_session_id, delegation_depth)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run('cyc-b', 'ag-b', 'task b', 'pending', '2026-01-01T00:01:00Z', 'cyc-a', 21);
+
+    // Create the back-edge: cyc-a's parent = cyc-b (bypasses FK enforcement)
+    rawDb.prepare("UPDATE sessions SET parent_session_id = 'cyc-b' WHERE id = 'cyc-a'").run();
+
+    rawDb.pragma('foreign_keys = ON');
+
+    // BFS visits cyc-a (depth 0, OK), finds child cyc-b, enqueues it.
+    // Dequeues cyc-b: depth 21 > MAX_DELEGATION_DEPTH → throws.
+    expect(() => db.getSessionTree('cyc-a')).toThrow(/exceeds maximum/);
   });
 });

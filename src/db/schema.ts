@@ -81,6 +81,7 @@ export const CREATE_TABLES_SQL: string[] = [
   total_failures INTEGER NOT NULL DEFAULT 0,
   promoted_at TEXT,
   demoted_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 )`,
 ];
@@ -91,8 +92,12 @@ export const CREATE_INDEXES_SQL: string[] = [
   `CREATE INDEX IF NOT EXISTS idx_sessions_parent ON sessions(parent_session_id)`,
   `CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON feedback(created_at)`,
   `CREATE INDEX IF NOT EXISTS idx_task_outcomes_session ON task_outcomes(session_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_task_outcomes_created_at ON task_outcomes(created_at)`,
   `CREATE INDEX IF NOT EXISTS idx_agent_costs_session ON agent_costs(session_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_agent_costs_created_at ON agent_costs(created_at)`,
   `CREATE INDEX IF NOT EXISTS idx_promotions_agent ON promotions(agent_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_promotions_created_at ON promotions(created_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_agent_autonomy_updated_at ON agent_autonomy(updated_at)`,
 ];
 
 export const ALL_DDL: string[] = [...CREATE_TABLES_SQL, ...CREATE_INDEXES_SQL];
