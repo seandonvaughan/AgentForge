@@ -3500,6 +3500,12 @@ header {
         </select>
         <input type="date" id="runs-filter-since" title="Since">
         <input type="date" id="runs-filter-until" title="Until">
+        <select id="runs-page-size" title="Page size">
+          <option value="10">10 / page</option>
+          <option value="25" selected>25 / page</option>
+          <option value="50">50 / page</option>
+          <option value="100">100 / page</option>
+        </select>
       </div>
     </div>
 
@@ -3590,6 +3596,30 @@ header {
       <button onclick="Router.navigate('/runs')">Back to Audit Log</button>
     </div>
   </div><!-- /page-run-detail -->
+
+  <!-- ── Page: Agent Detail (/agents/:id) ──────────────────── -->
+  <div class="page" id="page-agent-detail" hidden>
+    <button data-route="/" class="back-btn">← Back</button>
+    <div id="agent-detail-loading" class="skeleton-card"></div>
+    <div id="agent-detail-content" hidden>
+      <div class="detail-header">
+        <h2 id="agent-detail-name"></h2>
+        <span id="agent-detail-model" class="chip"></span>
+      </div>
+      <div class="detail-grid">
+        <div class="detail-card"><h3>Total Sessions</h3><div id="agent-detail-sessions" class="stat-number"></div></div>
+        <div class="detail-card"><h3>Success Rate</h3><div id="agent-detail-success" class="stat-number"></div></div>
+        <div class="detail-card"><h3>Total Cost</h3><div id="agent-detail-cost" class="stat-number"></div></div>
+        <div class="detail-card"><h3>Avg Duration</h3><div id="agent-detail-duration" class="stat-number"></div></div>
+      </div>
+      <h3 style="margin: 16px 0 8px">Recent Sessions</h3>
+      <table class="data-table">
+        <thead><tr><th>Time</th><th>Task</th><th>Status</th><th>Cost</th></tr></thead>
+        <tbody id="agent-detail-sessions-tbody"></tbody>
+      </table>
+    </div>
+    <div id="agent-detail-empty" class="empty-state" hidden>Agent not found.</div>
+  </div><!-- /page-agent-detail -->
 
   <!-- ── Page: Cost Analytics (/cost) ──────────────────────── -->
   <div class="page" id="page-cost" hidden>
@@ -4411,7 +4441,7 @@ function showPage(id) {
 
 // ── Runs (Audit Log) state ────────────────────────────────
 let _runsCurrentPage = 1;
-const RUNS_PAGE_SIZE = 25;
+const getRunsPageSize = () => parseInt(document.getElementById('runs-page-size')?.value || '25', 10);
 let _runsTotal = 0;
 
 function _buildRunRow(s) {
@@ -4486,8 +4516,8 @@ function loadRunsPage(page) {
   const untilEl  = document.getElementById('runs-filter-until');
 
   const params = new URLSearchParams();
-  params.set('limit',  RUNS_PAGE_SIZE);
-  params.set('offset', (page - 1) * RUNS_PAGE_SIZE);
+  params.set('limit',  getRunsPageSize());
+  params.set('offset', (page - 1) * getRunsPageSize());
   if (agentEl  && agentEl.value)  params.set('agent',  agentEl.value);
   if (statusEl && statusEl.value) params.set('status', statusEl.value);
   if (sinceEl  && sinceEl.value)  params.set('since',  sinceEl.value + 'T00:00:00.000Z');
@@ -4529,7 +4559,7 @@ function loadRunsPage(page) {
 
       document.getElementById('runs-table').hidden = false;
 
-      const totalPages = Math.ceil(_runsTotal / RUNS_PAGE_SIZE) || 1;
+      const totalPages = Math.ceil(_runsTotal / getRunsPageSize()) || 1;
       document.getElementById('runs-page-info').textContent = 'Page ' + page + ' of ' + totalPages + ' (' + _runsTotal + ' sessions)';
       document.getElementById('runs-prev').disabled = page <= 1;
       document.getElementById('runs-next').disabled = page >= totalPages;
@@ -4552,6 +4582,8 @@ function runsPage(delta) {
     const el = document.getElementById(id);
     if (el) el.addEventListener('change', () => { _runsCurrentPage = 1; loadRunsPage(1); });
   });
+  const pageSizeEl = document.getElementById('runs-page-size');
+  if (pageSizeEl) pageSizeEl.addEventListener('change', () => loadRunsPage(1));
 })();
 
 // ── Session Detail ────────────────────────────────────────
@@ -4777,11 +4809,57 @@ function loadCostPage() {
     });
 }
 
+// ── Agent Detail ──────────────────────────────────────────
+async function loadAgentDetailPage(agentId) {
+  showPage('page-agent-detail');
+  const loading = document.getElementById('agent-detail-loading');
+  const content = document.getElementById('agent-detail-content');
+  const empty = document.getElementById('agent-detail-empty');
+  loading.hidden = false; content.hidden = true; empty.hidden = true;
+
+  try {
+    const res = await fetch(`/api/v1/agents/${encodeURIComponent(agentId)}`);
+    if (!res.ok) { loading.hidden = true; empty.hidden = false; return; }
+    const { data } = await res.json();
+
+    document.getElementById('agent-detail-name').textContent = data.agentId || agentId;
+    document.getElementById('agent-detail-sessions').textContent = data.sessionCount || 0;
+    document.getElementById('agent-detail-success').textContent =
+      data.sessionCount ? Math.round((data.successCount / data.sessionCount) * 100) + '%' : '—';
+    document.getElementById('agent-detail-cost').textContent =
+      '$' + (data.totalCostUsd || 0).toFixed(4);
+    document.getElementById('agent-detail-duration').textContent =
+      data.avgDurationMs ? Math.round(data.avgDurationMs / 1000) + 's' : '—';
+
+    const tbody = document.getElementById('agent-detail-sessions-tbody');
+    tbody.innerHTML = '';
+    (data.recentSessions || []).forEach(s => {
+      const tr = document.createElement('tr');
+      tr.style.cursor = 'pointer';
+      tr.addEventListener('click', () => Router.navigate(`/runs/${s.id}`));
+      ['started_at', 'task', 'status'].forEach(key => {
+        const td = document.createElement('td');
+        td.textContent = key === 'task' ? (s[key] || '').slice(0, 60) : (s[key] || '—');
+        tr.appendChild(td);
+      });
+      const costTd = document.createElement('td');
+      costTd.textContent = '—'; // cost not in session record directly
+      tr.appendChild(costTd);
+      tbody.appendChild(tr);
+    });
+
+    loading.hidden = true; content.hidden = false;
+  } catch (e) {
+    loading.hidden = true; empty.hidden = false;
+  }
+}
+
 // ── Router Routes ─────────────────────────────────────────
 Router.addRoute('/', () => showPage('page-home'));
 Router.addRoute('/runs', () => { showPage('page-runs'); loadRunsPage(1); });
 Router.addRoute(/^\/runs\/([^/]+)$/, ({ id }) => { showPage('page-run-detail'); loadRunDetail(id); });
 Router.addRoute('/cost', () => { showPage('page-cost'); loadCostPage(); });
+Router.addRoute('/agents/:id', ({ id }) => { loadAgentDetailPage(id); });
 
 // ── SSE Client ────────────────────────────────────────────
 function updateConnectionStatus(status) {
