@@ -6,6 +6,6 @@ export function setupGracefulShutdown(app: FastifyInstance): void {
     await app.close();
     process.exit(0);
   };
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
-  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.once('SIGTERM', () => shutdown('SIGTERM'));
+  process.once('SIGINT', () => shutdown('SIGINT'));
 }

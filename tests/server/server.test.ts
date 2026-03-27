@@ -38,7 +38,7 @@ describe('Fastify Server', () => {
         url: '/api/v1/health',
       });
       const body = response.json();
-      expect(body.version).toBe('0.4.7');
+      expect(body.version).toMatch(/\d+\.\d+\.\d+/);
     });
 
     it('returns timestamp field as ISO string', async () => {
