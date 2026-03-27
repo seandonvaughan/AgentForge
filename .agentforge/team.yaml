@@ -1,14 +1,12 @@
-name: v4.6-team
-forged_at: '2026-03-26T21:09:31.841Z'
+name: AgentForge-team
+forged_at: '2026-03-27T17:12:54.868Z'
 forged_by: agentforge
-project_hash: 1ea414f2d251
+project_hash: f25d96bfc0f1
 agents:
   strategic:
     - ceo
     - genesis
     - architect
-    - vp-research
-    - vp-engineering
   implementation:
     - cto
     - coo
@@ -18,22 +16,17 @@ agents:
     - skill-designer
     - template-optimizer
     - coder
-    - ml-engineer
-    - research-scientist
-    - engineering-manager-frontend
-    - engineering-manager-backend
-    - engineering-manager-infra
+    - data-analyst
+    - api-gateway-engineer
+    - ui-engineer
   quality:
     - team-reviewer
     - dba
     - debugger
     - linter
     - api-specialist
-    - qa-manager
   utility:
     - researcher
-    - experiment-runner
-    - feedback-analyst
 model_routing:
   opus:
     - ceo
@@ -41,8 +34,6 @@ model_routing:
     - architect
     - cto
     - meta-architect
-    - vp-research
-    - vp-engineering
   sonnet:
     - coo
     - cfo
@@ -54,17 +45,12 @@ model_routing:
     - dba
     - debugger
     - api-specialist
-    - ml-engineer
-    - research-scientist
-    - engineering-manager-frontend
-    - engineering-manager-backend
-    - engineering-manager-infra
-    - qa-manager
+    - data-analyst
+    - api-gateway-engineer
+    - ui-engineer
   haiku:
     - linter
     - researcher
-    - experiment-runner
-    - feedback-analyst
 delegation_graph:
   ceo:
     - cto
@@ -72,37 +58,9 @@ delegation_graph:
     - cfo
   cto:
     - architect
-    - vp-research
-    - vp-engineering
-  vp-research:
-    - ml-engineer
-    - research-scientist
-    - experiment-runner
-  vp-engineering:
-    - engineering-manager-frontend
-    - engineering-manager-backend
-    - engineering-manager-infra
-  engineering-manager-frontend:
-    - frontend-dev
-    - ui-ux-designer
-    - dashboard-architect
-  engineering-manager-backend:
-    - coder
-    - api-specialist
-    - dba
-  engineering-manager-infra:
-    - devops-engineer
-    - performance-engineer
-    - build-release-lead
   coo:
     - business-analyst
     - operations-manager
-    - qa-manager
-    - feedback-analyst
-  qa-manager:
-    - team-reviewer
-    - debugger
-    - linter
   genesis:
     - project-manager
     - researcher
@@ -137,3 +95,23 @@ delegation_graph:
     - researcher
     - linter
     - file-reader
+  cfo:
+    - business-analyst
+    - data-analyst
+  engineering-manager-backend:
+    - coder
+    - api-specialist
+    - dba
+    - api-gateway-engineer
+  engineering-manager-frontend:
+    - frontend-dev
+    - ui-ux-designer
+    - dashboard-architect
+    - ui-engineer
+  data-analyst:
+    - researcher
+  api-gateway-engineer:
+    - coder
+    - api-specialist
+  ui-engineer:
+    - frontend-dev
