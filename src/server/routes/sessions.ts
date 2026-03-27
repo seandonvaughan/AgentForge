@@ -5,7 +5,7 @@ export async function sessionsRoutes(app: FastifyInstance, opts: { adapter: Sqli
   const { adapter } = opts;
 
   // GET /api/v1/sessions
-  // Query params: agentId?, status?, limit? (default 50), offset? (default 0)
+  // Query params: agentId?, status?, limit? (default 50), offset? (default 0), since?, until?
   // Returns: { data: SessionRow[], meta: { limit, offset, total } }
   app.get('/api/v1/sessions', async (req, reply) => {
     const query = req.query as {
@@ -13,6 +13,8 @@ export async function sessionsRoutes(app: FastifyInstance, opts: { adapter: Sqli
       status?: string;
       limit?: string;
       offset?: string;
+      since?: string;
+      until?: string;
     };
 
     const limit = query.limit !== undefined ? parseInt(query.limit, 10) : 50;
@@ -22,6 +24,8 @@ export async function sessionsRoutes(app: FastifyInstance, opts: { adapter: Sqli
     const allForCount = adapter.listSessions({
       agentId: query.agentId,
       status: query.status,
+      since: query.since,
+      until: query.until,
     });
     const total = allForCount.length;
 
@@ -30,6 +34,8 @@ export async function sessionsRoutes(app: FastifyInstance, opts: { adapter: Sqli
       status: query.status,
       limit,
       offset,
+      since: query.since,
+      until: query.until,
     });
 
     return reply.send({

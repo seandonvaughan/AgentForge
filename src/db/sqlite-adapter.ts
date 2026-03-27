@@ -242,6 +242,8 @@ export class SqliteAdapter implements FeedbackFileAdapter, FlywheelFileAdapter {
     status?: string;
     limit?: number;
     offset?: number;
+    since?: string;
+    until?: string;
   }): SessionRow[] {
     let query = 'SELECT * FROM sessions';
     const conditions: string[] = [];
@@ -254,6 +256,14 @@ export class SqliteAdapter implements FeedbackFileAdapter, FlywheelFileAdapter {
     if (opts?.status !== undefined) {
       conditions.push('status = @status');
       params.status = opts.status;
+    }
+    if (opts?.since !== undefined) {
+      conditions.push('created_at >= @since');
+      params.since = opts.since;
+    }
+    if (opts?.until !== undefined) {
+      conditions.push('created_at <= @until');
+      params.until = opts.until;
     }
 
     if (conditions.length > 0) query += ' WHERE ' + conditions.join(' AND ');

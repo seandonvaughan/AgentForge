@@ -152,6 +152,26 @@ describe('REST API Routes', () => {
       expect(body.meta.total).toBe(10);
       expect(body.data.length).toBe(3);
     });
+
+    it('filters sessions by since date range', async () => {
+      const oldDate = '2023-01-01T00:00:00.000Z';
+      const newDate = '2025-01-01T00:00:00.000Z';
+      const cutoffDate = '2024-01-01T00:00:00.000Z';
+
+      // Insert using raw db to set created_at explicitly
+      adapter.insertSession(makeSession({ id: 'old-sess' }));
+      adapter.insertSession(makeSession({ id: 'new-sess' }));
+
+      // Update created_at directly
+      const db = adapter.getAgentDatabase().getDb();
+      db.prepare('UPDATE sessions SET created_at = ? WHERE id = ?').run(oldDate, 'old-sess');
+      db.prepare('UPDATE sessions SET created_at = ? WHERE id = ?').run(newDate, 'new-sess');
+
+      const res = await app.inject({ method: 'GET', url: `/api/v1/sessions?since=${encodeURIComponent(cutoffDate)}` });
+      const body = res.json();
+      expect(body.data.length).toBe(1);
+      expect(body.data[0].id).toBe('new-sess');
+    });
   });
 
   // -------------------------------------------------------------------------
