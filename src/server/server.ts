@@ -5,9 +5,11 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import type { SqliteAdapter } from '../db/index.js';
+import type { SseManager } from './sse/sse-manager.js';
 import { sessionsRoutes } from './routes/sessions.js';
 import { agentsRoutes } from './routes/agents.js';
 import { costsRoutes } from './routes/costs.js';
+import { sseRoute } from './sse/sse-route.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -18,6 +20,7 @@ export interface ServerOptions {
   host?: string;        // default '127.0.0.1'
   dashboardPath?: string; // path to serve static files from
   adapter?: SqliteAdapter; // optional data layer for REST API routes
+  sseManager?: SseManager; // optional SSE manager — registers GET /api/v1/stream when provided
 }
 
 export async function createServer(options: ServerOptions = {}) {
@@ -64,6 +67,11 @@ export async function createServer(options: ServerOptions = {}) {
     await app.register(sessionsRoutes, { adapter: options.adapter });
     await app.register(agentsRoutes, { adapter: options.adapter });
     await app.register(costsRoutes, { adapter: options.adapter });
+  }
+
+  // SSE streaming endpoint — only registered when an sseManager is provided
+  if (options.sseManager) {
+    await app.register(sseRoute, { sseManager: options.sseManager });
   }
 
   // SPA catch-all: return index.html for non-API routes

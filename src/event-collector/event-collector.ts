@@ -12,6 +12,7 @@
 import { randomUUID } from 'node:crypto';
 import type { V4MessageBus, EnvelopeHandler } from '../communication/v4-message-bus.js';
 import type { SqliteAdapter } from '../db/sqlite-adapter.js';
+import type { SseManager } from '../server/sse/sse-manager.js';
 
 // ---------------------------------------------------------------------------
 // Options
@@ -20,6 +21,8 @@ import type { SqliteAdapter } from '../db/sqlite-adapter.js';
 export interface EventCollectorOptions {
   bus: V4MessageBus;
   adapter: SqliteAdapter;
+  /** Optional SSE manager — when provided, events are broadcast in real time after SQLite write. */
+  sseManager?: SseManager;
 }
 
 // ---------------------------------------------------------------------------
@@ -93,7 +96,7 @@ export class EventCollector {
   }
 
   private attachListeners(): void {
-    const { bus, adapter } = this.opts;
+    const { bus, adapter, sseManager } = this.opts;
 
     // 1. session.started
     this.unsubs.push(
@@ -118,6 +121,7 @@ export class EventCollector {
             parent_session_id: null,
             delegation_depth: 0,
           });
+          sseManager?.broadcast('session.started', envelope.payload);
         } catch (err) {
           process.stderr.write(`[EventCollector] session.started error: ${String(err)}\n`);
         }
@@ -137,6 +141,7 @@ export class EventCollector {
             response: p.response ?? null,
             estimated_tokens: p.estimatedTokens ?? null,
           });
+          sseManager?.broadcast('session.completed', envelope.payload);
         } catch (err) {
           process.stderr.write(`[EventCollector] session.completed error: ${String(err)}\n`);
         }
@@ -154,6 +159,7 @@ export class EventCollector {
             status: 'failed',
             completed_at: envelope.timestamp ?? new Date().toISOString(),
           });
+          sseManager?.broadcast('session.failed', envelope.payload);
         } catch (err) {
           process.stderr.write(`[EventCollector] session.failed error: ${String(err)}\n`);
         }
@@ -176,6 +182,7 @@ export class EventCollector {
             sentiment: p.sentiment ?? null,
             created_at: envelope.timestamp ?? new Date().toISOString(),
           });
+          sseManager?.broadcast('feedback.submitted', envelope.payload);
         } catch (err) {
           process.stderr.write(`[EventCollector] feedback.submitted error: ${String(err)}\n`);
         }
@@ -200,6 +207,7 @@ export class EventCollector {
             duration_ms: p.durationMs ?? null,
             created_at: envelope.timestamp ?? new Date().toISOString(),
           });
+          sseManager?.broadcast('task.completed', envelope.payload);
         } catch (err) {
           process.stderr.write(`[EventCollector] task.completed error: ${String(err)}\n`);
         }
@@ -223,6 +231,7 @@ export class EventCollector {
             cost_usd: p.costUsd ?? 0,
             created_at: envelope.timestamp ?? new Date().toISOString(),
           });
+          sseManager?.broadcast('cost.incurred', envelope.payload);
         } catch (err) {
           process.stderr.write(`[EventCollector] cost.incurred error: ${String(err)}\n`);
         }
@@ -244,6 +253,7 @@ export class EventCollector {
           reason: p.reason ?? null,
           created_at: envelope.timestamp ?? new Date().toISOString(),
         });
+        sseManager?.broadcast('autonomy.promoted', envelope.payload);
       } catch (err) {
         process.stderr.write(`[EventCollector] autonomy.promoted error: ${String(err)}\n`);
       }
@@ -266,6 +276,7 @@ export class EventCollector {
           reason: p.reason ?? null,
           created_at: envelope.timestamp ?? new Date().toISOString(),
         });
+        sseManager?.broadcast('autonomy.demoted', envelope.payload);
       } catch (err) {
         process.stderr.write(`[EventCollector] autonomy.demoted error: ${String(err)}\n`);
       }
