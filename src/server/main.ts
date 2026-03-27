@@ -20,7 +20,7 @@ async function main() {
 
   // Initialize EventBus and EventCollector
   const bus = new V4MessageBus();
-  const collector = new EventCollector({ bus, adapter, sseManager });
+  const _collector = new EventCollector({ bus, adapter, sseManager });
 
   // Start server
   const app = await startServer({ port: PORT, adapter, sseManager });
@@ -30,6 +30,18 @@ async function main() {
   console.log(`Dashboard: http://localhost:${PORT}/app`);
   console.log(`API: http://localhost:${PORT}/api/v1/health`);
   console.log(`DB: ${DB_PATH}`);
+
+  // Open browser (best-effort, no crash if it fails)
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { exec } = await import('node:child_process');
+  const browserUrl = `http://localhost:${PORT}/app`;
+  const cmd = process.platform === 'darwin'
+    ? `open "${browserUrl}"`
+    : process.platform === 'win32'
+    ? `start "" "${browserUrl}"`
+    : `xdg-open "${browserUrl}"`;
+  // eslint-disable-next-line no-empty
+  exec(cmd, (err) => { if (err) console.log('(Browser auto-open failed, visit URL above)'); });
 }
 
 main().catch(err => {

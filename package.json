@@ -12,6 +12,7 @@
     "test:run": "vitest run",
     "lint": "eslint src/",
     "sprint": "npx tsx scripts/run-sprint.ts",
+    "reports": "npm run build && node dist/scripts/run-reports.js",
     "dashboard": "npx serve . -l 3000",
     "docs": "npx typedoc --out docs/api src/index.ts --plugin none"
   },
