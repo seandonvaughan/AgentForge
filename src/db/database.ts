@@ -42,9 +42,12 @@ export class AgentDatabase {
   }
 
   private applySchema(): void {
-    for (const ddl of ALL_DDL) {
-      this.db.prepare(ddl).run();
-    }
+    const applyAll = this.db.transaction(() => {
+      for (const ddl of ALL_DDL) {
+        this.db.prepare(ddl).run();
+      }
+    });
+    applyAll();
   }
 
   /**
@@ -62,53 +65,41 @@ export class AgentDatabase {
       return [];
     }
 
-    // Check if root already has suspicious depth
-    if (root.delegation_depth > MAX_DELEGATION_DEPTH) {
-      throw new Error(
-        `Delegation depth ${root.delegation_depth} exceeds maximum of ${MAX_DELEGATION_DEPTH} — possible circular reference`
-      );
-    }
-
-    // Iterative BFS to collect all descendants, guarding against cycles
+    // Iterative BFS to collect all descendants, guarding against cycles.
+    // Seed the queue with the already-fetched root row to avoid a double-fetch.
     const visited = new Set<string>();
     const results: SessionRow[] = [];
-    const queue: string[] = [rootId];
+    const queue: SessionRow[] = [root];
 
     while (queue.length > 0) {
-      const currentId = queue.shift()!;
+      const row = queue.shift()!;
 
-      if (visited.has(currentId)) {
-        // Cycle detected
+      if (visited.has(row.id)) {
+        // Cycle detected — skip (visited-set guard prevents re-enqueuing,
+        // but guard here for safety)
+        continue;
+      }
+
+      visited.add(row.id);
+
+      if (row.delegation_depth > MAX_DELEGATION_DEPTH) {
         throw new Error(
-          `Circular reference detected in delegation chain at session ${currentId}`
+          `Delegation depth ${row.delegation_depth} exceeds maximum of ${MAX_DELEGATION_DEPTH} — possible circular reference`
         );
       }
 
-      visited.add(currentId);
+      results.push(row);
 
-      const row = this.db
-        .prepare<[string], SessionRow>('SELECT * FROM sessions WHERE id = ?')
-        .get(currentId);
+      // Find all direct children
+      const children = this.db
+        .prepare<[string], SessionRow>(
+          'SELECT * FROM sessions WHERE parent_session_id = ?'
+        )
+        .all(row.id);
 
-      if (row) {
-        if (row.delegation_depth > MAX_DELEGATION_DEPTH) {
-          throw new Error(
-            `Delegation depth ${row.delegation_depth} exceeds maximum of ${MAX_DELEGATION_DEPTH} — possible circular reference`
-          );
-        }
-        results.push(row);
-
-        // Find all direct children
-        const children = this.db
-          .prepare<[string], SessionRow>(
-            'SELECT * FROM sessions WHERE parent_session_id = ?'
-          )
-          .all(currentId);
-
-        for (const child of children) {
-          if (!visited.has(child.id)) {
-            queue.push(child.id);
-          }
+      for (const child of children) {
+        if (!visited.has(child.id)) {
+          queue.push(child);
         }
       }
     }

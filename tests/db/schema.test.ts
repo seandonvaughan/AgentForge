@@ -297,6 +297,39 @@ describe('getSessionTree', () => {
     expect(() => db.getSessionTree('deep-session')).toThrow(/exceeds maximum/);
   });
 
+  it('shallow cycle (both depth 0) terminates via visited-set guard and returns bounded result', () => {
+    const rawDb = db.getDb();
+
+    // Create a genuine two-node cycle: cyc-a → cyc-b → cyc-a (back-edge).
+    // Both have delegation_depth = 0, so the depth guard never fires.
+    // The BFS visited-set prevents re-enqueuing cyc-a when processing cyc-b's children,
+    // so traversal terminates and returns both nodes without throwing.
+
+    rawDb.pragma('foreign_keys = OFF');
+
+    rawDb.prepare(`
+      INSERT INTO sessions (id, agent_id, task, status, started_at, parent_session_id, delegation_depth)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run('shcyc-a', 'ag-a', 'task a', 'pending', '2026-01-01T00:00:00Z', null, 0);
+
+    rawDb.prepare(`
+      INSERT INTO sessions (id, agent_id, task, status, started_at, parent_session_id, delegation_depth)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run('shcyc-b', 'ag-b', 'task b', 'pending', '2026-01-01T00:01:00Z', 'shcyc-a', 0);
+
+    // Back-edge: shcyc-a's parent = shcyc-b (creates cycle)
+    rawDb.prepare("UPDATE sessions SET parent_session_id = 'shcyc-b' WHERE id = 'shcyc-a'").run();
+
+    rawDb.pragma('foreign_keys = ON');
+
+    // BFS visited-set prevents infinite loop; result is bounded (2 nodes)
+    const result = db.getSessionTree('shcyc-a');
+    expect(result.length).toBe(2);
+    const ids = result.map(r => r.id);
+    expect(ids).toContain('shcyc-a');
+    expect(ids).toContain('shcyc-b');
+  });
+
   it('throws when traversing a cycle with corrupted delegation_depth', () => {
     const rawDb = db.getDb();
 
