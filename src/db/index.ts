@@ -5,3 +5,5 @@
 export { AgentDatabase } from './database.js';
 export type { DatabaseOptions, SessionRow } from './database.js';
 export { CREATE_TABLES_SQL, CREATE_INDEXES_SQL, ALL_DDL } from './schema.js';
+export { SqliteAdapter } from './sqlite-adapter.js';
+export type { SqliteAdapterOptions, FeedbackDbRow, CostRow } from './sqlite-adapter.js';
