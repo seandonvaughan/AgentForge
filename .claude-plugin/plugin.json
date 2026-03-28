@@ -1,7 +1,7 @@
 {
   "name": "agentforge",
-  "description": "Universal Agent Team Builder — assembles optimized AI agent teams with intelligent model routing, org-graph delegation, persistent memory, session management, self-modification (REFORGE), and a compounding flywheel that makes agents smarter over time",
-  "version": "0.4.7",
+  "description": "Universal Agent Team Builder \u2014 assembles optimized AI agent teams with intelligent model routing, org-graph delegation, persistent memory, session management, self-modification (REFORGE), and a compounding flywheel that makes agents smarter over time",
+  "version": "5.9.0",
   "author": {
     "name": "Sean Vaughan"
   }

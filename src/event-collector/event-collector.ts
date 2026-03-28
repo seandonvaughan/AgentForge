@@ -301,7 +301,7 @@ export class EventCollector {
               agentId: payload.agentId,
               amount: payload.amount,
               threshold: payload.threshold,
-              timestamp: envelope.sentAt ?? new Date().toISOString(),
+              timestamp: envelope.timestamp ?? new Date().toISOString(),
             });
           }
         } catch (err) {

@@ -10,6 +10,16 @@ import { sessionsRoutes } from './routes/sessions.js';
 import { agentsRoutes } from './routes/agents.js';
 import { costsRoutes } from './routes/costs.js';
 import { sseRoute } from './sse/sse-route.js';
+import { sprintsRoutes } from './routes/sprints.js';
+import { orgGraphRoutes } from './routes/org-graph.js';
+import { flywheelRoutes } from './routes/flywheel.js';
+import { autonomyRoutes } from './routes/autonomy.js';
+import { capabilitiesRoutes } from './routes/capabilities.js';
+import { reviewsRoutes } from './routes/reviews.js';
+import { memoryRoutes } from './routes/memory.js';
+import { reforgeRoutes } from './routes/reforge.js';
+import { teamsRoutes } from './routes/teams.js';
+import { careersRoutes } from './routes/careers.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -67,6 +77,16 @@ export async function createServer(options: ServerOptions = {}) {
     await app.register(sessionsRoutes, { adapter: options.adapter });
     await app.register(agentsRoutes, { adapter: options.adapter });
     await app.register(costsRoutes, { adapter: options.adapter });
+    await app.register(sprintsRoutes, { adapter: options.adapter });
+    await app.register(orgGraphRoutes, { adapter: options.adapter });
+    await app.register(flywheelRoutes, { adapter: options.adapter });
+    await app.register(autonomyRoutes, { adapter: options.adapter });
+    await app.register(capabilitiesRoutes, { adapter: options.adapter });
+    await app.register(reviewsRoutes, { adapter: options.adapter });
+    await app.register(memoryRoutes, { adapter: options.adapter });
+    await app.register(reforgeRoutes, { adapter: options.adapter });
+    await app.register(teamsRoutes, { adapter: options.adapter });
+    await app.register(careersRoutes, { adapter: options.adapter });
   }
 
   // SSE streaming endpoint — only registered when an sseManager is provided

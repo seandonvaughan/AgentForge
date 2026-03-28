@@ -9,6 +9,22 @@
 import type { DomainId } from "./domain.js";
 import type { CollaborationTemplate } from "./collaboration.js";
 import type { ProjectBrief } from "./analysis.js";
+import type {
+  TeamUnit,
+  TechnicalLayer,
+  AgentIdentity,
+  SeniorityLevel,
+  AgentRole,
+} from "./lifecycle.js";
+
+// Re-export lifecycle team types for convenience
+export type {
+  TeamUnit,
+  TechnicalLayer,
+  AgentIdentity,
+  SeniorityLevel,
+  AgentRole,
+};
 
 /** Agent names grouped by their functional category within a team. */
 export interface TeamAgents {
@@ -63,4 +79,6 @@ export interface TeamManifest {
   domains?: DomainId[];
   /** Collaboration template governing team topology and delegation. */
   collaboration?: CollaborationTemplate;
+  /** Team units organized by technical layer (v6.1 Agent Identity Hub). */
+  team_units?: TeamUnit[];
 }

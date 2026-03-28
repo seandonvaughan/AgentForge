@@ -70,6 +70,7 @@ export class MCPMemoryProvider {
       type: "memory",
       version: "1.0.0",
       ownerAgentId: input.ownerAgentId,
+      active: true,
       category: input.category,
       summary: input.summary,
       contentPath: input.contentPath ?? `/.forge/memory/${input.ownerAgentId}/${Date.now()}.md`,

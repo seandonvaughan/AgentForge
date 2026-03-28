@@ -1,0 +1,23 @@
+{
+  "name": "@agentforge/server",
+  "version": "6.0.0",
+  "description": "AgentForge v5 REST + WebSocket API server",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" } },
+  "scripts": { "build": "tsc", "dev": "tsc --watch", "start": "node dist/main.js", "start:dev": "node --watch dist/main.js", "clean": "rm -rf dist" },
+  "dependencies": {
+    "@agentforge/shared": "workspace:*",
+    "@agentforge/core": "workspace:*",
+    "@agentforge/db": "workspace:*",
+    "@agentforge/embeddings": "workspace:*",
+    "@agentforge/plugins-sdk": "workspace:*",
+    "fastify": "^5.8.0",
+    "@fastify/cors": "^11.0.0",
+    "@fastify/static": "^9.0.0",
+    "@fastify/websocket": "^11.0.0",
+    "pino-pretty": "^13.0.0"
+  },
+  "devDependencies": { "typescript": "^5.7.0" }
+}

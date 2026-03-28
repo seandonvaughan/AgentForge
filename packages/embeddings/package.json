@@ -1,0 +1,19 @@
+{
+  "name": "@agentforge/embeddings",
+  "version": "6.0.0",
+  "description": "AgentForge v5 embedding search — @xenova/transformers, all-MiniLM-L6-v2, SQLite BLOB storage",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" } },
+  "scripts": { "build": "tsc", "dev": "tsc --watch", "clean": "rm -rf dist" },
+  "dependencies": {
+    "@agentforge/shared": "workspace:*",
+    "better-sqlite3": "^12.8.0",
+    "@xenova/transformers": "^2.17.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/better-sqlite3": "^7.6.0"
+  }
+}

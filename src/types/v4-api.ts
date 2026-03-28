@@ -464,6 +464,12 @@ export interface OrgNode {
   peerAgentIds: string[];
   /** Delegation authority: which roles this agent can delegate to. */
   canDelegateTo: string[];
+  /** Technical layer this agent belongs to (lifecycle hub). */
+  layer?: string;
+  /** Seniority level within the team hierarchy (lifecycle hub). */
+  seniority?: string;
+  /** Team ID this agent belongs to (lifecycle hub). */
+  teamId?: string;
 }
 
 /**

@@ -41,8 +41,8 @@ describe('schema exports', () => {
     expect(CREATE_TABLES_SQL.length).toBeGreaterThan(0);
   });
 
-  it('exports exactly 6 CREATE TABLE statements', () => {
-    expect(CREATE_TABLES_SQL).toHaveLength(6);
+  it('exports exactly 14 CREATE TABLE statements', () => {
+    expect(CREATE_TABLES_SQL).toHaveLength(14);
   });
 
   it('exports CREATE_INDEXES_SQL as a non-empty array', () => {
@@ -50,8 +50,8 @@ describe('schema exports', () => {
     expect(CREATE_INDEXES_SQL.length).toBeGreaterThan(0);
   });
 
-  it('exports exactly 11 CREATE INDEX statements', () => {
-    expect(CREATE_INDEXES_SQL).toHaveLength(11);
+  it('exports exactly 23 CREATE INDEX statements', () => {
+    expect(CREATE_INDEXES_SQL).toHaveLength(23);
   });
 
   it('ALL_DDL combines tables + indexes in order', () => {

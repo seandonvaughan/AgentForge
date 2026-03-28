@@ -8,6 +8,7 @@
 
 import type { Skill, SkillCategory } from "../types/skill.js";
 import type { DomainId } from "../types/domain.js";
+import type { ExecutiveTool, AgentRole, SeniorityLevel } from "../types/lifecycle.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -41,8 +42,12 @@ export interface AgentSkillQuery {
  * 3. **Cross-domain skills** — available if the delegation graph connects
  *    the agent's domain to the skill's domain.
  */
+/** Seniority ordering for permission checks. */
+const SENIORITY_ORDER: SeniorityLevel[] = ["junior", "mid", "senior", "lead", "principal"];
+
 export class SkillRegistry {
   private readonly skills = new Map<string, Skill>();
+  private readonly executiveTools = new Map<string, ExecutiveTool>();
 
   /**
    * Register a skill. Throws if a skill with the same name already exists.
@@ -124,5 +129,54 @@ export class SkillRegistry {
       }
     }
     return result;
+  }
+
+  // ── Executive Tool Registration (v6.1) ──────────────────────────────────
+
+  /**
+   * Register an executive tool with permission-gated access.
+   */
+  registerExecutiveTool(tool: ExecutiveTool): void {
+    if (this.executiveTools.has(tool.name)) {
+      throw new Error(`Executive tool "${tool.name}" is already registered.`);
+    }
+    this.executiveTools.set(tool.name, tool);
+  }
+
+  /**
+   * Get an executive tool by name.
+   */
+  getExecutiveTool(name: string): ExecutiveTool | undefined {
+    return this.executiveTools.get(name);
+  }
+
+  /**
+   * Get all executive tools available to an agent based on their role and seniority.
+   */
+  getAvailableExecutiveTools(agentRole: AgentRole, agentId: string, agentSeniority: SeniorityLevel): ExecutiveTool[] {
+    const agentSeniorityIdx = SENIORITY_ORDER.indexOf(agentSeniority);
+    const result: ExecutiveTool[] = [];
+
+    for (const tool of this.executiveTools.values()) {
+      const perm = tool.permission;
+      // Check role match
+      if (perm.requiredRole !== agentRole && perm.requiredRole !== "specialist") continue;
+      // Check specific agent ID if required
+      if (perm.requiredAgentId && perm.requiredAgentId !== agentId) continue;
+      // Check seniority
+      const requiredIdx = SENIORITY_ORDER.indexOf(perm.minSeniority);
+      if (agentSeniorityIdx < requiredIdx) continue;
+
+      result.push(tool);
+    }
+
+    return result;
+  }
+
+  /**
+   * Get all registered executive tools.
+   */
+  getAllExecutiveTools(): ExecutiveTool[] {
+    return Array.from(this.executiveTools.values());
   }
 }

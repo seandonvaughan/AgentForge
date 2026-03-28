@@ -15,7 +15,7 @@ import { join } from "node:path";
 import yaml from "js-yaml";
 
 import type { AgentTemplate } from "../types/agent.js";
-import type { TeamManifest, ModelRouting, DelegationGraph, TeamAgents } from "../types/team.js";
+import type { TeamManifest, ModelRouting, DelegationGraph, TeamAgents, TeamUnit } from "../types/team.js";
 import type { FullScanResult } from "../scanner/index.js";
 
 // ---------------------------------------------------------------------------
@@ -199,14 +199,14 @@ export function mergeManifests(
   const extraMeta: Record<string, unknown> = {};
 
   // First, pull extra fields from existing (lower priority)
-  for (const [key, value] of Object.entries(existing as Record<string, unknown>)) {
+  for (const [key, value] of Object.entries(existing as unknown as Record<string, unknown>)) {
     if (!coreKeys.has(key)) {
       extraMeta[key] = value;
     }
   }
 
   // Then, override / add extra fields from scanned (higher priority)
-  for (const [key, value] of Object.entries(scanned as Record<string, unknown>)) {
+  for (const [key, value] of Object.entries(scanned as unknown as Record<string, unknown>)) {
     if (!coreKeys.has(key)) {
       extraMeta[key] = value;
     }
@@ -452,6 +452,17 @@ export async function writeTeam(
       "utf-8",
     ),
 
+    // config/teams.yaml — team units organized by layer (v6.1+)
+    ...(fullManifest.team_units && fullManifest.team_units.length > 0
+      ? [
+          writeFile(
+            join(configDir, "teams.yaml"),
+            yaml.dump(fullManifest.team_units, { lineWidth: 120, noRefs: true }),
+            "utf-8",
+          ),
+        ]
+      : []),
+
     // config/topology.yaml — written only when collaboration data is present
     ...(fullManifest.collaboration
       ? [
@@ -463,13 +474,19 @@ export async function writeTeam(
         ]
       : []),
 
-    // agents/*.yaml — one per agent
-    ...[...agents.entries()].map(([name, template]) =>
-      writeFile(
-        join(agentsDir, `${name}.yaml`),
-        yaml.dump(template, { lineWidth: 120, noRefs: true }),
-        "utf-8",
-      ),
-    ),
+    // agents/*.yaml — one per agent, preserving existing reports_to overrides
+    ...[...agents.entries()].map(([name, template]) => {
+      const existingPath = join(agentsDir, `${name}.yaml`);
+      return readFile(existingPath, "utf-8")
+        .then((raw) => {
+          const existing = yaml.load(raw) as { collaboration?: { reports_to?: string } } | null;
+          const existingReportsTo = existing?.collaboration?.reports_to;
+          const merged = existingReportsTo && existingReportsTo !== template.collaboration.reports_to
+            ? { ...template, collaboration: { ...template.collaboration, reports_to: existingReportsTo } }
+            : template;
+          return writeFile(existingPath, yaml.dump(merged, { lineWidth: 120, noRefs: true }), "utf-8");
+        })
+        .catch(() => writeFile(existingPath, yaml.dump(template, { lineWidth: 120, noRefs: true }), "utf-8"));
+    }),
   ]);
 }

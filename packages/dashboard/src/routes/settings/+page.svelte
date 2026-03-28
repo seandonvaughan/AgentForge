@@ -1,0 +1,245 @@
+<script lang="ts">
+  import { onMount } from 'svelte';
+
+  interface Settings {
+    workspaceName?: string;
+    defaultModel?: 'opus' | 'sonnet' | 'haiku';
+    maxConcurrentAgents?: number;
+    sessionTimeoutMinutes?: number;
+    theme?: 'dark' | 'light';
+  }
+
+  let settings: Settings = {
+    workspaceName: 'AgentForge',
+    defaultModel: 'sonnet',
+    maxConcurrentAgents: 10,
+    sessionTimeoutMinutes: 60,
+    theme: 'dark',
+  };
+
+  let loading = true;
+  let saving = false;
+  let saveSuccess = false;
+  let error: string | null = null;
+  let saveError: string | null = null;
+
+  async function load() {
+    loading = true;
+    error = null;
+    try {
+      const res = await fetch('/api/v5/settings');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      settings = { ...settings, ...(json.data ?? json) };
+    } catch (e) {
+      // Settings endpoint may not exist yet; use defaults
+      error = null;
+    } finally {
+      loading = false;
+    }
+  }
+
+  async function save() {
+    saving = true;
+    saveError = null;
+    saveSuccess = false;
+    try {
+      const res = await fetch('/api/v5/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      saveSuccess = true;
+      setTimeout(() => { saveSuccess = false; }, 3000);
+    } catch (e) {
+      saveError = String(e);
+    } finally {
+      saving = false;
+    }
+  }
+
+  function applyTheme(theme: 'dark' | 'light') {
+    settings.theme = theme;
+    if (typeof document !== 'undefined') {
+      document.documentElement.setAttribute('data-theme', theme === 'light' ? 'light' : '');
+    }
+  }
+
+  onMount(async () => {
+    await load();
+    // Apply theme from loaded settings
+    if (settings.theme) applyTheme(settings.theme);
+  });
+</script>
+
+<svelte:head><title>Settings — AgentForge v5</title></svelte:head>
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Settings</h1>
+    <p class="page-subtitle">Workspace configuration</p>
+  </div>
+</div>
+
+{#if loading}
+  <div class="card">
+    {#each Array(5) as _}
+      <div class="skeleton" style="height: 40px; width: 100%; margin-bottom: var(--space-4);"></div>
+    {/each}
+  </div>
+{:else}
+  <form on:submit|preventDefault={save}>
+    <!-- Workspace -->
+    <div class="card settings-section">
+      <div class="card-header">
+        <span class="card-title">Workspace</span>
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="workspace-name">Workspace Name</label>
+        <input
+          id="workspace-name"
+          class="field-input"
+          type="text"
+          bind:value={settings.workspaceName}
+          placeholder="AgentForge"
+        />
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="default-model">Default Model</label>
+        <select id="default-model" class="field-input" bind:value={settings.defaultModel}>
+          <option value="opus">Opus — Most capable</option>
+          <option value="sonnet">Sonnet — Balanced</option>
+          <option value="haiku">Haiku — Fast &amp; efficient</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="max-agents">Max Concurrent Agents</label>
+        <input
+          id="max-agents"
+          class="field-input"
+          type="number"
+          min="1"
+          max="100"
+          bind:value={settings.maxConcurrentAgents}
+        />
+        <p class="field-hint">Maximum number of agents that can run simultaneously.</p>
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="session-timeout">Session Timeout (minutes)</label>
+        <input
+          id="session-timeout"
+          class="field-input"
+          type="number"
+          min="1"
+          max="1440"
+          bind:value={settings.sessionTimeoutMinutes}
+        />
+      </div>
+    </div>
+
+    <!-- Appearance -->
+    <div class="card settings-section">
+      <div class="card-header">
+        <span class="card-title">Appearance</span>
+      </div>
+
+      <div class="field">
+        <label class="field-label">Theme</label>
+        <div class="theme-toggle">
+          <button
+            type="button"
+            class="theme-btn {settings.theme === 'dark' ? 'active' : ''}"
+            on:click={() => applyTheme('dark')}
+          >
+            Dark
+          </button>
+          <button
+            type="button"
+            class="theme-btn {settings.theme === 'light' ? 'active' : ''}"
+            on:click={() => applyTheme('light')}
+          >
+            Light
+          </button>
+        </div>
+        <p class="field-hint">Switch between dark and light mode.</p>
+      </div>
+    </div>
+
+    <!-- Save bar -->
+    <div class="save-bar">
+      {#if saveError}
+        <span class="save-error">{saveError}</span>
+      {/if}
+      {#if saveSuccess}
+        <span class="save-success">Settings saved.</span>
+      {/if}
+      <button type="submit" class="btn btn-primary" disabled={saving}>
+        {saving ? 'Saving…' : 'Save Settings'}
+      </button>
+    </div>
+  </form>
+{/if}
+
+<style>
+  .settings-section {
+    margin-bottom: var(--space-5);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+  }
+  .field { display: flex; flex-direction: column; gap: var(--space-1); }
+  .field-label {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-text);
+  }
+  .field-input {
+    padding: var(--space-2) var(--space-3);
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    color: var(--color-text);
+    font-size: var(--text-sm);
+    outline: none;
+    max-width: 400px;
+  }
+  .field-input:focus { border-color: var(--color-brand); box-shadow: 0 0 0 2px rgba(91,138,245,0.15); }
+  .field-hint {
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    margin: 0;
+  }
+  .theme-toggle {
+    display: inline-flex;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+  .theme-btn {
+    padding: var(--space-2) var(--space-5);
+    border: none;
+    background: transparent;
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--duration-fast);
+  }
+  .theme-btn:first-child { border-right: 1px solid var(--color-border); }
+  .theme-btn.active { background: var(--color-brand); color: white; }
+  .theme-btn:not(.active):hover { background: var(--color-surface-2); color: var(--color-text); }
+  .save-bar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-4);
+    padding-top: var(--space-2);
+  }
+  .save-error { font-size: var(--text-sm); color: var(--color-danger); }
+  .save-success { font-size: var(--text-sm); color: var(--color-success); }
+</style>

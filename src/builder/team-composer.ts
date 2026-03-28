@@ -8,6 +8,8 @@
 import type { ModelTier } from "../types/agent.js";
 import type { FullScanResult } from "../scanner/index.js";
 import type { DomainPack, DomainId } from "../types/domain.js";
+import type { TeamUnit, TechnicalLayer, SeniorityLevel } from "../types/lifecycle.js";
+import { SENIORITY_CONFIG } from "../types/lifecycle.js";
 
 // ---------------------------------------------------------------------------
 // Interfaces
@@ -31,6 +33,8 @@ export interface TeamComposition {
   custom_agents: CustomAgentSpec[];
   /** Model tier assignment for each agent (keyed by agent name). */
   model_assignments: Record<string, ModelTier>;
+  /** Team units organized by technical layer (v6.1+). */
+  team_units?: TeamUnit[];
 }
 
 // ---------------------------------------------------------------------------
@@ -375,4 +379,125 @@ export function composeTeam(scan: FullScanResult): TeamComposition {
   }
 
   return { agents, custom_agents, model_assignments };
+}
+
+// ---------------------------------------------------------------------------
+// v6.1 — Team Unit Composition
+// ---------------------------------------------------------------------------
+
+/** Layer detection indicators. */
+const LAYER_INDICATORS: Record<TechnicalLayer, string[]> = {
+  frontend: ["component", "page", "layout", "view", "ui", "css", "style", "react", "vue", "svelte", "angular"],
+  backend: ["controller", "handler", "route", "service", "middleware", "api", "server", "endpoint"],
+  infra: ["ci", "docker", "deploy", "pipeline", "terraform", "ansible", "k8s", "helm", "github/workflows"],
+  data: ["migration", "model", "schema", "entity", "repository", "prisma", "sequelize", "typeorm", "drizzle"],
+  platform: ["plugin", "sdk", "extension", "provider", "adapter", "connector"],
+  qa: ["test", "spec", "__tests__", "e2e", "integration", "fixture", "mock"],
+  research: [],
+  executive: [],
+};
+
+/**
+ * Determine which technical layers are active based on scan results.
+ */
+function detectActiveLayers(scan: FullScanResult): TechnicalLayer[] {
+  const layers = new Set<TechnicalLayer>();
+  layers.add("executive");
+  layers.add("qa");
+
+  for (const file of scan.files.files) {
+    const path = file.file_path.toLowerCase();
+    for (const [layer, indicators] of Object.entries(LAYER_INDICATORS) as [TechnicalLayer, string[]][]) {
+      if (indicators.some((ind) => path.includes(ind))) {
+        layers.add(layer);
+      }
+    }
+  }
+
+  if (scan.files.total_files > 0) layers.add("backend");
+  if (scan.ci.ci_provider !== "none" || scan.ci.has_docker) layers.add("infra");
+  if (isDatabaseHeavy(scan)) layers.add("data");
+
+  return [...layers];
+}
+
+/** Infer an agent's seniority from its name and model tier. */
+function inferSeniority(agentName: string, model: ModelTier): SeniorityLevel {
+  const name = agentName.toLowerCase();
+  if (["ceo", "cto", "coo", "cfo"].includes(name)) return "principal";
+  if (name.includes("vp-") || name.includes("lead")) return "lead";
+  if (name.includes("manager")) return "lead";
+  if (name.includes("architect") || name.includes("tech-lead")) return "lead";
+  if (model === "opus") return "senior";
+  if (model === "haiku") return "junior";
+  return "mid";
+}
+
+/** Infer which layer an agent belongs to based on its name. */
+function inferLayer(agentName: string): TechnicalLayer {
+  const name = agentName.toLowerCase();
+  if (["ceo", "cto", "coo", "cfo"].some((e) => name === e) || name.startsWith("vp-")) return "executive";
+  if (["frontend", "ui", "ux", "dashboard", "component"].some((f) => name.includes(f))) return "frontend";
+  if (["devops", "ci-", "security", "platform-engineer", "infra"].some((i) => name.includes(i))) return "infra";
+  if (["dba", "db-", "data-pipeline", "migration", "embedding"].some((d) => name.includes(d))) return "data";
+  if (["test", "qa", "linter", "reviewer", "quality"].some((q) => name.includes(q))) return "qa";
+  if (["research", "ml-engineer", "scientist"].some((r) => name.includes(r))) return "research";
+  if (["plugin", "sdk"].some((p) => name.includes(p))) return "platform";
+  return "backend";
+}
+
+/**
+ * Compose team units organized by technical layer.
+ *
+ * Produces TeamUnit[] from a TeamComposition, assigning agents to layers
+ * with manager, tech lead, and specialist roles.
+ */
+export function composeTeamUnits(
+  composition: TeamComposition,
+  scan: FullScanResult,
+): TeamUnit[] {
+  const activeLayers = detectActiveLayers(scan);
+  const agentsByLayer = new Map<TechnicalLayer, Array<{ name: string; seniority: SeniorityLevel; model: ModelTier }>>();
+
+  for (const layer of activeLayers) agentsByLayer.set(layer, []);
+
+  const allAgents = [
+    ...composition.agents,
+    ...composition.custom_agents.map((c) => c.name),
+  ];
+
+  for (const agentName of allAgents) {
+    const model = composition.model_assignments[agentName] ?? "sonnet";
+    const layer = inferLayer(agentName);
+    const seniority = inferSeniority(agentName, model);
+    const targetLayer = agentsByLayer.has(layer) ? layer : "backend";
+    agentsByLayer.get(targetLayer)?.push({ name: agentName, seniority, model });
+  }
+
+  const units: TeamUnit[] = [];
+  const seniorityOrder: SeniorityLevel[] = ["principal", "lead", "senior", "mid", "junior"];
+
+  for (const [layer, agents] of agentsByLayer) {
+    if (agents.length === 0) continue;
+    agents.sort((a, b) => seniorityOrder.indexOf(a.seniority) - seniorityOrder.indexOf(b.seniority));
+
+    const manager = agents.find((a) => a.seniority === "principal" || a.seniority === "lead")?.name ?? agents[0].name;
+    const techLead = agents.find((a) => a.name !== manager && (a.seniority === "lead" || a.seniority === "senior"))?.name
+      ?? (agents.length > 1 ? agents[1].name : manager);
+    const specialists = agents.filter((a) => a.name !== manager && a.name !== techLead).map((a) => a.name);
+    const defaultCapacity = layer === "executive" ? 6 : 10;
+
+    units.push({
+      id: `${layer}-team`,
+      layer,
+      manager,
+      techLead,
+      specialists,
+      maxCapacity: Math.max(defaultCapacity, specialists.length + 2),
+      currentLoad: 0,
+      domain: LAYER_INDICATORS[layer]?.slice(0, 5) ?? [],
+    });
+  }
+
+  return units;
 }

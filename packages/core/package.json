@@ -1,0 +1,20 @@
+{
+  "name": "@agentforge/core",
+  "version": "6.0.0",
+  "description": "AgentForge v5 core runtime — agent execution, message bus, protocol",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" } },
+  "scripts": { "build": "tsc", "dev": "tsc --watch", "clean": "rm -rf dist" },
+  "dependencies": {
+    "@agentforge/shared": "workspace:*",
+    "@agentforge/db": "workspace:*",
+    "@anthropic-ai/sdk": "^0.36.3",
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "typescript": "^5.7.0"
+  }
+}

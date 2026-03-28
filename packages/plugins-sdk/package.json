@@ -1,0 +1,12 @@
+{
+  "name": "@agentforge/plugins-sdk",
+  "version": "6.0.0",
+  "description": "AgentForge v5 Plugin SDK — child_process.fork sandboxing, JSON-RPC 2.0 IPC",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" } },
+  "scripts": { "build": "tsc", "dev": "tsc --watch", "clean": "rm -rf dist" },
+  "dependencies": { "@agentforge/shared": "workspace:*" },
+  "devDependencies": { "typescript": "^5.7.0" }
+}

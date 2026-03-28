@@ -1,0 +1,22 @@
+{
+  "name": "@agentforge/dashboard",
+  "version": "6.0.0",
+  "description": "AgentForge v5 Dashboard — SvelteKit enterprise UI",
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev --port 4751",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "lint": "eslint src/"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-node": "^5.5.4",
+    "@sveltejs/kit": "^2.55.0",
+    "@sveltejs/vite-plugin-svelte": "^5.1.1",
+    "svelte": "^5.55.0",
+    "svelte-check": "^4.4.5",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.1"
+  }
+}

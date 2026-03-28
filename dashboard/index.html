@@ -475,6 +475,7 @@ header {
   padding: 10px 16px;
   border-bottom: 1px solid var(--border);
   background: rgba(22,27,34,0.8);
+  flex-wrap: wrap;
 }
 .org-graph-toolbar button {
   font-family: var(--font-mono);
@@ -488,8 +489,19 @@ header {
   transition: all 0.15s;
 }
 .org-graph-toolbar button:hover { background: var(--bg-card-hover); color: var(--text-primary); }
-#org-svg { width: 100%; height: 480px; cursor: grab; user-select: none; }
+.org-graph-toolbar button.active { background: var(--bg-card-hover); color: var(--text-primary); border-color: var(--blue); }
+.org-graph-legend { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+.org-graph-legend span { display: flex; align-items: center; gap: 4px; font-size: 10px; font-family: var(--font-mono); color: var(--text-muted); }
+.org-graph-legend .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+#org-svg { width: 100%; height: 600px; cursor: grab; user-select: none; }
 #org-svg:active { cursor: grabbing; }
+.org-node-group { cursor: pointer; transition: opacity 0.15s; }
+.org-node-group:hover rect { filter: brightness(1.2); }
+.org-node-group .collapse-btn { opacity: 0; transition: opacity 0.15s; }
+.org-node-group:hover .collapse-btn { opacity: 1; }
+.org-edge-elbow { fill: none; stroke: var(--border-light); stroke-width: 1.2; opacity: 0.5; }
+.org-node-collapsed rect { stroke-dasharray: 4 2; }
+.org-depth-label { font-family: var(--font-mono); font-size: 9px; fill: var(--text-muted); opacity: 0.4; }
 
 /* ── Bus Monitor ─────────────────────────────────────────── */
 .bus-monitor { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
@@ -1138,6 +1150,30 @@ header {
 }
 .error-state button:hover { background: var(--bg-card-hover); }
 
+/* ── Skeleton Loader (text-based pulse) ─────────────────── */
+.skeleton-loader {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+.load-error {
+  padding: 16px;
+  color: var(--red);
+  font-size: 13px;
+}
+.load-error button {
+  margin-left: 8px;
+  padding: 2px 8px;
+  cursor: pointer;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
 /* ── Data Table ──────────────────────────────────────────── */
 .data-table {
   width: 100%;
@@ -1253,6 +1289,97 @@ header {
 }
 .detail-meta strong { color: var(--text-primary); font-family: var(--font-mono); }
 
+/* ── Enterprise UI Polish (p2-1) ─────────────────────────── */
+
+/* 1. Consistent section spacing */
+.section { margin-bottom: 32px; }
+
+/* 2. Typography hierarchy */
+.section-title { font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; }
+.stat-value-lg { font-size: 24px; font-weight: 700; font-family: var(--font-mono); }
+th, .data-table th, .session-table th, .sprint-table th, .activity-table th,
+.heatmap-table th, .matrix-table th, .cost-history-table th {
+  font-size: 11px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.06em !important;
+  color: var(--text-muted) !important;
+}
+
+/* 3. Table row hover */
+tbody tr:hover { background: var(--bg-card-hover) !important; cursor: pointer; }
+
+/* 4. Status badge variants */
+.status-badge.complete    { background: var(--green-dim); color: var(--green); border: 1px solid rgba(63,185,80,0.4); }
+.status-badge.in-progress { background: var(--blue-dim);  color: var(--blue);  border: 1px solid rgba(88,166,255,0.4); }
+.status-badge.planned     { background: rgba(110,118,129,0.12); color: var(--text-muted); border: 1px solid rgba(110,118,129,0.3); }
+.status-badge.failed      { background: var(--red-dim);   color: var(--red);   border: 1px solid rgba(248,81,73,0.4); }
+
+/* 5. Chip and model badge polish */
+.chip {
+  padding: 3px 8px !important;
+  border-radius: 4px !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.04em !important;
+}
+.model-badge {
+  padding: 3px 8px !important;
+  border-radius: 4px !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.04em !important;
+}
+
+/* 6. Agent card hover */
+.agent-card {
+  transition: transform 0.15s, box-shadow 0.15s !important;
+}
+.agent-card:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
+}
+
+/* 7. Scrollbar styling */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* 8. Section header border */
+.section-header {
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+}
+
+/* Agent Detail Page stats */
+.agent-detail-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.agent-detail-stat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+}
+.agent-detail-stat-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+.agent-detail-stat-value {
+  font-family: var(--font-mono);
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
 /* ── Anomaly Banner ──────────────────────────────────────── */
 .anomaly-banner {
   position: fixed;
@@ -1310,6 +1437,7 @@ header {
       <a class="sidebar-link" data-route="/" href="/"><span class="nav-icon">🏠</span>Command Center</a>
       <a class="sidebar-link" data-route="/runs" href="/runs"><span class="nav-icon">📋</span>Audit Log</a>
       <a class="sidebar-link" data-route="/cost" href="/cost"><span class="nav-icon">💰</span>Cost Analytics</a>
+      <a class="sidebar-link" data-route="/agents" href="/agents"><span class="nav-icon">🤖</span>Agents</a>
     </div>
     <div class="sidebar-group">
       <div class="sidebar-group-label">Agents</div>
@@ -1356,7 +1484,7 @@ header {
       </div>
       <div class="agent-grid" id="agent-grid">
         <!-- Opus Agents -->
-        <div class="agent-card opus" onclick="openAgentModal('ceo')">
+        <div class="agent-card opus" onclick="navigateToAgent('ceo')">
           <div class="agent-name">ceo</div>
           <div class="agent-meta">
             <span class="model-badge opus">Opus</span>
@@ -1373,7 +1501,7 @@ header {
             <polyline points="0,22 20,18 40,20 60,14 80,16 100,10 120,12 140,8 160,6 160,28 0,28" fill="url(#gold-fade)" opacity="0.15"/>
           </svg>
         </div>
-        <div class="agent-card opus" onclick="openAgentModal('genesis')">
+        <div class="agent-card opus" onclick="navigateToAgent('genesis')">
           <div class="agent-name">genesis</div>
           <div class="agent-meta">
             <span class="model-badge opus">Opus</span>
@@ -1389,7 +1517,7 @@ header {
             <polyline points="0,20 20,16 40,18 60,12 80,10 100,8 120,10 140,6 160,4" fill="none" stroke="var(--gold)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
           </svg>
         </div>
-        <div class="agent-card opus" onclick="openAgentModal('architect')">
+        <div class="agent-card opus" onclick="navigateToAgent('architect')">
           <div class="agent-name">architect</div>
           <div class="agent-meta">
             <span class="model-badge opus">Opus</span>
@@ -1405,7 +1533,7 @@ header {
             <polyline points="0,24 20,20 40,22 60,16 80,14 100,10 120,8 140,10 160,6" fill="none" stroke="var(--gold)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
           </svg>
         </div>
-        <div class="agent-card opus" onclick="openAgentModal('cto')">
+        <div class="agent-card opus" onclick="navigateToAgent('cto')">
           <div class="agent-name">cto</div>
           <div class="agent-meta">
             <span class="model-badge opus">Opus</span>
@@ -1421,7 +1549,7 @@ header {
             <polyline points="0,22 20,18 40,16 60,14 80,12 100,10 120,8 140,6 160,4" fill="none" stroke="var(--gold)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
           </svg>
         </div>
-        <div class="agent-card opus" onclick="openAgentModal('meta-architect')">
+        <div class="agent-card opus" onclick="navigateToAgent('meta-architect')">
           <div class="agent-name">meta-architect</div>
           <div class="agent-meta">
             <span class="model-badge opus">Opus</span>
@@ -1437,7 +1565,7 @@ header {
             <polyline points="0,18 20,16 40,14 60,16 80,12 100,10 120,8 140,10 160,8" fill="none" stroke="var(--gold)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
           </svg>
         </div>
-        <div class="agent-card opus" onclick="openAgentModal('rd-lead')">
+        <div class="agent-card opus" onclick="navigateToAgent('rd-lead')">
           <div class="agent-name">rd-lead</div>
           <div class="agent-meta">
             <span class="model-badge opus">Opus</span>
@@ -1454,7 +1582,7 @@ header {
           </svg>
         </div>
         <!-- Sonnet Agents (selected key ones) -->
-        <div class="agent-card sonnet" onclick="openAgentModal('coo')">
+        <div class="agent-card sonnet" onclick="navigateToAgent('coo')">
           <div class="agent-name">coo</div>
           <div class="agent-meta">
             <span class="model-badge sonnet">Sonnet</span>
@@ -1470,7 +1598,7 @@ header {
             <polyline points="0,24 20,20 40,22 60,18 80,14 100,12 120,10 140,8 160,6" fill="none" stroke="var(--blue)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
           </svg>
         </div>
-        <div class="agent-card sonnet" onclick="openAgentModal('cfo')">
+        <div class="agent-card sonnet" onclick="navigateToAgent('cfo')">
           <div class="agent-name">cfo</div>
           <div class="agent-meta">
             <span class="model-badge sonnet">Sonnet</span>
@@ -1486,7 +1614,7 @@ header {
             <polyline points="0,22 20,20 40,18 60,16 80,14 100,16 120,12 140,10 160,8" fill="none" stroke="var(--blue)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
           </svg>
         </div>
-        <div class="agent-card sonnet" onclick="openAgentModal('coder')">
+        <div class="agent-card sonnet" onclick="navigateToAgent('coder')">
           <div class="agent-name">coder</div>
           <div class="agent-meta">
             <span class="model-badge sonnet">Sonnet</span>
@@ -1502,7 +1630,7 @@ header {
             <polyline points="0,26 20,22 40,24 60,18 80,16 100,12 120,10 140,8 160,4" fill="none" stroke="var(--blue)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
           </svg>
         </div>
-        <div class="agent-card sonnet" onclick="openAgentModal('debugger')">
+        <div class="agent-card sonnet" onclick="navigateToAgent('debugger')">
           <div class="agent-name">debugger</div>
           <div class="agent-meta">
             <span class="model-badge sonnet">Sonnet</span>
@@ -1518,7 +1646,7 @@ header {
             <polyline points="0,20 20,22 40,18 60,16 80,20 100,14 120,10 140,12 160,8" fill="none" stroke="var(--blue)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
           </svg>
         </div>
-        <div class="agent-card sonnet" onclick="openAgentModal('dashboard-architect')">
+        <div class="agent-card sonnet" onclick="navigateToAgent('dashboard-architect')">
           <div class="agent-name">dashboard-architect</div>
           <div class="agent-meta">
             <span class="model-badge sonnet">Sonnet</span>
@@ -1534,7 +1662,7 @@ header {
             <polyline points="0,28 20,24 40,22 60,18 80,16 100,14 120,10 140,8 160,4" fill="none" stroke="var(--blue)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
           </svg>
         </div>
-        <div class="agent-card sonnet" onclick="openAgentModal('sprint-planner')">
+        <div class="agent-card sonnet" onclick="navigateToAgent('sprint-planner')">
           <div class="agent-name">sprint-planner</div>
           <div class="agent-meta">
             <span class="model-badge sonnet">Sonnet</span>
@@ -1551,7 +1679,7 @@ header {
           </svg>
         </div>
         <!-- Haiku Agents -->
-        <div class="agent-card haiku" onclick="openAgentModal('linter')">
+        <div class="agent-card haiku" onclick="navigateToAgent('linter')">
           <div class="agent-name">linter</div>
           <div class="agent-meta">
             <span class="model-badge haiku">Haiku</span>
@@ -1567,7 +1695,7 @@ header {
             <polyline points="0,18 20,14 40,16 60,12 80,10 100,8 120,6 140,8 160,4" fill="none" stroke="var(--green)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
           </svg>
         </div>
-        <div class="agent-card haiku" onclick="openAgentModal('researcher')">
+        <div class="agent-card haiku" onclick="navigateToAgent('researcher')">
           <div class="agent-name">researcher</div>
           <div class="agent-meta">
             <span class="model-badge haiku">Haiku</span>
@@ -1583,7 +1711,7 @@ header {
             <polyline points="0,20 20,18 40,16 60,18 80,14 100,12 120,10 140,8 160,6" fill="none" stroke="var(--green)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
           </svg>
         </div>
-        <div class="agent-card haiku" onclick="openAgentModal('test-runner')">
+        <div class="agent-card haiku" onclick="navigateToAgent('test-runner')">
           <div class="agent-name">test-runner</div>
           <div class="agent-meta">
             <span class="model-badge haiku">Haiku</span>
@@ -1599,7 +1727,7 @@ header {
             <polyline points="0,22 20,18 40,20 60,16 80,12 100,10 120,8 140,6 160,4" fill="none" stroke="var(--green)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
           </svg>
         </div>
-        <div class="agent-card haiku" onclick="openAgentModal('file-reader')">
+        <div class="agent-card haiku" onclick="navigateToAgent('file-reader')">
           <div class="agent-name">file-reader</div>
           <div class="agent-meta">
             <span class="model-badge haiku">Haiku</span>
@@ -1629,122 +1757,25 @@ header {
       <div class="org-graph-container">
         <div class="org-graph-toolbar">
           <button onclick="orgZoom(1.2)">+ Zoom</button>
-          <button onclick="orgZoom(0.8)">− Zoom</button>
+          <button onclick="orgZoom(0.8)">- Zoom</button>
           <button onclick="orgReset()">Reset</button>
-          <span style="font-size:11px;color:var(--text-muted);margin-left:8px">Drag to pan • Click node to inspect</span>
+          <button onclick="orgFitView()">Fit</button>
+          <button onclick="orgExpandAll()">Expand All</button>
+          <button onclick="orgCollapseToDepth(2)">C-Suite View</button>
+          <span style="font-size:11px;color:var(--text-muted);margin-left:8px">Drag to pan | Scroll to zoom | Click +/- to collapse</span>
+          <div class="org-graph-legend">
+            <span><span class="dot" style="background:var(--gold)"></span> Opus</span>
+            <span><span class="dot" style="background:var(--blue)"></span> Sonnet</span>
+            <span><span class="dot" style="background:var(--green)"></span> Haiku</span>
+          </div>
         </div>
-        <svg id="org-svg" viewBox="0 0 900 480">
+        <svg id="org-svg" viewBox="0 0 900 600">
           <defs>
-            <marker id="org-arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-              <polygon points="0 0, 8 3, 0 6" fill="var(--border-light)"/>
+            <marker id="org-arrow" markerWidth="6" markerHeight="4" refX="6" refY="2" orient="auto">
+              <polygon points="0 0, 6 2, 0 4" fill="var(--border-light)"/>
             </marker>
           </defs>
-          <g id="org-canvas">
-            <!-- Lines -->
-            <line x1="450" y1="62" x2="180" y2="132" stroke="var(--border-light)" stroke-width="1.5" marker-end="url(#org-arrow)" opacity="0.6"/>
-            <line x1="450" y1="62" x2="450" y2="132" stroke="var(--border-light)" stroke-width="1.5" marker-end="url(#org-arrow)" opacity="0.6"/>
-            <line x1="450" y1="62" x2="720" y2="132" stroke="var(--border-light)" stroke-width="1.5" marker-end="url(#org-arrow)" opacity="0.6"/>
-            <line x1="180" y1="162" x2="100" y2="242" stroke="var(--border-light)" stroke-width="1" marker-end="url(#org-arrow)" opacity="0.5"/>
-            <line x1="180" y1="162" x2="260" y2="242" stroke="var(--border-light)" stroke-width="1" marker-end="url(#org-arrow)" opacity="0.5"/>
-            <line x1="450" y1="162" x2="380" y2="242" stroke="var(--border-light)" stroke-width="1" marker-end="url(#org-arrow)" opacity="0.5"/>
-            <line x1="450" y1="162" x2="520" y2="242" stroke="var(--border-light)" stroke-width="1" marker-end="url(#org-arrow)" opacity="0.5"/>
-            <line x1="720" y1="162" x2="640" y2="242" stroke="var(--border-light)" stroke-width="1" marker-end="url(#org-arrow)" opacity="0.5"/>
-            <line x1="720" y1="162" x2="800" y2="242" stroke="var(--border-light)" stroke-width="1" marker-end="url(#org-arrow)" opacity="0.5"/>
-            <line x1="100" y1="272" x2="60" y2="362" stroke="var(--border-light)" stroke-width="1" opacity="0.4"/>
-            <line x1="100" y1="272" x2="140" y2="362" stroke="var(--border-light)" stroke-width="1" opacity="0.4"/>
-            <line x1="260" y1="272" x2="220" y2="362" stroke="var(--border-light)" stroke-width="1" opacity="0.4"/>
-            <line x1="260" y1="272" x2="300" y2="362" stroke="var(--border-light)" stroke-width="1" opacity="0.4"/>
-            <line x1="380" y1="272" x2="340" y2="362" stroke="var(--border-light)" stroke-width="1" opacity="0.4"/>
-            <line x1="380" y1="272" x2="420" y2="362" stroke="var(--border-light)" stroke-width="1" opacity="0.4"/>
-            <line x1="640" y1="272" x2="600" y2="362" stroke="var(--border-light)" stroke-width="1" opacity="0.4"/>
-            <line x1="640" y1="272" x2="680" y2="362" stroke="var(--border-light)" stroke-width="1" opacity="0.4"/>
-            <line x1="800" y1="272" x2="760" y2="362" stroke="var(--border-light)" stroke-width="1" opacity="0.4"/>
-            <line x1="800" y1="272" x2="840" y2="362" stroke="var(--border-light)" stroke-width="1" opacity="0.4"/>
-            <!-- Level 0: CEO -->
-            <g class="org-node-g" onclick="openAgentModal('ceo')" style="cursor:pointer">
-              <rect x="390" y="30" width="120" height="32" rx="6" fill="var(--bg-primary)" stroke="var(--gold)" stroke-width="2"/>
-              <text x="450" y="51" text-anchor="middle" font-family="var(--font-mono)" font-size="13" font-weight="700" fill="var(--gold)">ceo</text>
-            </g>
-            <!-- Level 1 -->
-            <g class="org-node-g" onclick="openAgentModal('cto')" style="cursor:pointer">
-              <rect x="120" y="130" width="120" height="32" rx="6" fill="var(--bg-primary)" stroke="var(--gold)" stroke-width="1.5"/>
-              <text x="180" y="151" text-anchor="middle" font-family="var(--font-mono)" font-size="12" font-weight="600" fill="var(--gold)">cto</text>
-            </g>
-            <g class="org-node-g" onclick="openAgentModal('coo')" style="cursor:pointer">
-              <rect x="390" y="130" width="120" height="32" rx="6" fill="var(--bg-primary)" stroke="var(--blue)" stroke-width="1.5"/>
-              <text x="450" y="151" text-anchor="middle" font-family="var(--font-mono)" font-size="12" font-weight="600" fill="var(--blue)">coo</text>
-            </g>
-            <g class="org-node-g" onclick="openAgentModal('genesis')" style="cursor:pointer">
-              <rect x="660" y="130" width="120" height="32" rx="6" fill="var(--bg-primary)" stroke="var(--gold)" stroke-width="1.5"/>
-              <text x="720" y="151" text-anchor="middle" font-family="var(--font-mono)" font-size="12" font-weight="600" fill="var(--gold)">genesis</text>
-            </g>
-            <!-- Level 2 -->
-            <g onclick="openAgentModal('architect')" style="cursor:pointer">
-              <rect x="46" y="240" width="108" height="28" rx="5" fill="var(--bg-primary)" stroke="var(--gold)" stroke-width="1.5"/>
-              <text x="100" y="258" text-anchor="middle" font-family="var(--font-mono)" font-size="11" fill="var(--gold)">architect</text>
-            </g>
-            <g onclick="openAgentModal('meta-architect')" style="cursor:pointer">
-              <rect x="196" y="240" width="128" height="28" rx="5" fill="var(--bg-primary)" stroke="var(--gold)" stroke-width="1.5"/>
-              <text x="260" y="258" text-anchor="middle" font-family="var(--font-mono)" font-size="11" fill="var(--gold)">meta-architect</text>
-            </g>
-            <g onclick="openAgentModal('project-manager')" style="cursor:pointer">
-              <rect x="318" y="240" width="124" height="28" rx="5" fill="var(--bg-primary)" stroke="var(--blue)" stroke-width="1"/>
-              <text x="380" y="258" text-anchor="middle" font-family="var(--font-mono)" font-size="11" fill="var(--blue)">project-manager</text>
-            </g>
-            <g onclick="openAgentModal('sprint-planner')" style="cursor:pointer">
-              <rect x="458" y="240" width="124" height="28" rx="5" fill="var(--bg-primary)" stroke="var(--blue)" stroke-width="1"/>
-              <text x="520" y="258" text-anchor="middle" font-family="var(--font-mono)" font-size="11" fill="var(--blue)">sprint-planner</text>
-            </g>
-            <g onclick="openAgentModal('rd-lead')" style="cursor:pointer">
-              <rect x="578" y="240" width="124" height="28" rx="5" fill="var(--bg-primary)" stroke="var(--gold)" stroke-width="1.5"/>
-              <text x="640" y="258" text-anchor="middle" font-family="var(--font-mono)" font-size="11" fill="var(--gold)">rd-lead</text>
-            </g>
-            <g onclick="openAgentModal('cfo')" style="cursor:pointer">
-              <rect x="738" y="240" width="124" height="28" rx="5" fill="var(--bg-primary)" stroke="var(--blue)" stroke-width="1"/>
-              <text x="800" y="258" text-anchor="middle" font-family="var(--font-mono)" font-size="11" fill="var(--blue)">cfo</text>
-            </g>
-            <!-- Level 3 leaf nodes -->
-            <g onclick="openAgentModal('coder')" style="cursor:pointer">
-              <rect x="26" y="352" width="68" height="24" rx="4" fill="var(--bg-card)" stroke="var(--blue)" stroke-width="1"/>
-              <text x="60" y="368" text-anchor="middle" font-family="var(--font-mono)" font-size="10" fill="var(--blue)">coder</text>
-            </g>
-            <g onclick="openAgentModal('debugger')" style="cursor:pointer">
-              <rect x="100" y="352" width="78" height="24" rx="4" fill="var(--bg-card)" stroke="var(--blue)" stroke-width="1"/>
-              <text x="139" y="368" text-anchor="middle" font-family="var(--font-mono)" font-size="10" fill="var(--blue)">debugger</text>
-            </g>
-            <g onclick="openAgentModal('skill-designer')" style="cursor:pointer">
-              <rect x="184" y="352" width="78" height="24" rx="4" fill="var(--bg-card)" stroke="var(--blue)" stroke-width="1"/>
-              <text x="223" y="368" text-anchor="middle" font-family="var(--font-mono)" font-size="10" fill="var(--blue)">skill-designer</text>
-            </g>
-            <g onclick="openAgentModal('template-optimizer')" style="cursor:pointer">
-              <rect x="268" y="352" width="68" height="24" rx="4" fill="var(--bg-card)" stroke="var(--blue)" stroke-width="1"/>
-              <text x="302" y="368" text-anchor="middle" font-family="var(--font-mono)" font-size="10" fill="var(--blue)">template-opt</text>
-            </g>
-            <g onclick="openAgentModal('devops-engineer')" style="cursor:pointer">
-              <rect x="305" y="352" width="68" height="24" rx="4" fill="var(--bg-card)" stroke="var(--blue)" stroke-width="1"/>
-              <text x="339" y="368" text-anchor="middle" font-family="var(--font-mono)" font-size="10" fill="var(--blue)">devops</text>
-            </g>
-            <g onclick="openAgentModal('qa-automation-engineer')" style="cursor:pointer">
-              <rect x="379" y="352" width="82" height="24" rx="4" fill="var(--bg-card)" stroke="var(--blue)" stroke-width="1"/>
-              <text x="420" y="368" text-anchor="middle" font-family="var(--font-mono)" font-size="10" fill="var(--blue)">qa-automation</text>
-            </g>
-            <g onclick="openAgentModal('experiment-runner')" style="cursor:pointer">
-              <rect x="560" y="352" width="80" height="24" rx="4" fill="var(--bg-card)" stroke="var(--blue)" stroke-width="1"/>
-              <text x="600" y="368" text-anchor="middle" font-family="var(--font-mono)" font-size="10" fill="var(--blue)">experiment-runner</text>
-            </g>
-            <g onclick="openAgentModal('prototype-dev')" style="cursor:pointer">
-              <rect x="646" y="352" width="68" height="24" rx="4" fill="var(--bg-card)" stroke="var(--blue)" stroke-width="1"/>
-              <text x="680" y="368" text-anchor="middle" font-family="var(--font-mono)" font-size="10" fill="var(--blue)">prototype-dev</text>
-            </g>
-            <g onclick="openAgentModal('linter')" style="cursor:pointer">
-              <rect x="726" y="352" width="62" height="24" rx="4" fill="var(--bg-card)" stroke="var(--green)" stroke-width="1"/>
-              <text x="757" y="368" text-anchor="middle" font-family="var(--font-mono)" font-size="10" fill="var(--green)">linter</text>
-            </g>
-            <g onclick="openAgentModal('test-runner')" style="cursor:pointer">
-              <rect x="795" y="352" width="74" height="24" rx="4" fill="var(--bg-card)" stroke="var(--green)" stroke-width="1"/>
-              <text x="832" y="368" text-anchor="middle" font-family="var(--font-mono)" font-size="10" fill="var(--green)">test-runner</text>
-            </g>
-          </g>
+          <g id="org-canvas"></g>
         </svg>
       </div>
     </section>
@@ -3599,26 +3630,67 @@ header {
 
   <!-- ── Page: Agent Detail (/agents/:id) ──────────────────── -->
   <div class="page" id="page-agent-detail" hidden>
-    <button data-route="/" class="back-btn">← Back</button>
+    <button class="back-btn" onclick="navigateToAgents()">&#8592; All Agents</button>
+
     <div id="agent-detail-loading" class="skeleton-card"></div>
+
     <div id="agent-detail-content" hidden>
-      <div class="detail-header">
-        <h2 id="agent-detail-name"></h2>
-        <span id="agent-detail-model" class="chip"></span>
+      <!-- Header: agent name + model badge -->
+      <div class="page-header" style="margin-bottom: 20px;">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <h2 id="agent-detail-name" style="font-family:var(--font-mono);font-size:22px;font-weight:700;"></h2>
+          <span id="agent-detail-model" class="model-badge"></span>
+        </div>
       </div>
-      <div class="detail-grid">
-        <div class="detail-card"><h3>Total Sessions</h3><div id="agent-detail-sessions" class="stat-number"></div></div>
-        <div class="detail-card"><h3>Success Rate</h3><div id="agent-detail-success" class="stat-number"></div></div>
-        <div class="detail-card"><h3>Total Cost</h3><div id="agent-detail-cost" class="stat-number"></div></div>
-        <div class="detail-card"><h3>Avg Duration</h3><div id="agent-detail-duration" class="stat-number"></div></div>
+
+      <!-- Stats row -->
+      <div class="agent-detail-stats">
+        <div class="agent-detail-stat-card">
+          <div class="agent-detail-stat-label">Total Sessions</div>
+          <div class="agent-detail-stat-value" id="agent-detail-sessions">—</div>
+        </div>
+        <div class="agent-detail-stat-card">
+          <div class="agent-detail-stat-label">Success Rate</div>
+          <div class="agent-detail-stat-value" id="agent-detail-success" style="color:var(--green)">—</div>
+        </div>
+        <div class="agent-detail-stat-card">
+          <div class="agent-detail-stat-label">Total Cost</div>
+          <div class="agent-detail-stat-value" id="agent-detail-cost" style="color:var(--gold)">—</div>
+        </div>
+        <div class="agent-detail-stat-card">
+          <div class="agent-detail-stat-label">Avg Duration</div>
+          <div class="agent-detail-stat-value" id="agent-detail-duration">—</div>
+        </div>
       </div>
-      <h3 style="margin: 16px 0 8px">Recent Sessions</h3>
-      <table class="data-table">
-        <thead><tr><th>Time</th><th>Task</th><th>Status</th><th>Cost</th></tr></thead>
-        <tbody id="agent-detail-sessions-tbody"></tbody>
-      </table>
+
+      <!-- Recent Sessions table -->
+      <div class="section-header">
+        <div class="section-title">Recent Sessions</div>
+      </div>
+      <div class="session-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Started</th>
+              <th>Task</th>
+              <th>Status</th>
+              <th>Duration</th>
+              <th>Cost</th>
+            </tr>
+          </thead>
+          <tbody id="agent-detail-sessions-tbody"></tbody>
+        </table>
+      </div>
     </div>
+
+    <!-- Empty state -->
     <div id="agent-detail-empty" class="empty-state" hidden>Agent not found.</div>
+
+    <!-- Error state -->
+    <div id="agent-detail-error" class="error-state" hidden>
+      <p id="agent-detail-error-msg">Failed to load agent data.</p>
+      <button onclick="loadAgentDetailPage(window._currentAgentId)">Retry</button>
+    </div>
   </div><!-- /page-agent-detail -->
 
   <!-- ── Page: Cost Analytics (/cost) ──────────────────────── -->
@@ -3898,7 +3970,7 @@ function applyMemFilters() {
   }
 
   svg.addEventListener('mousedown', function(e) {
-    if (e.target.closest('.org-node-g, g[onclick]')) return;
+    if (e.target.closest('.org-node-g, .org-node-group, .collapse-btn, g[onclick]')) return;
     dragging = true; lastX = e.clientX; lastY = e.clientY;
   });
   window.addEventListener('mousemove', function(e) {
@@ -4433,7 +4505,8 @@ const Router = {
     document.querySelectorAll('.sidebar-link[data-route]').forEach(link => {
       const route = link.dataset.route;
       const isActive = route === normPath ||
-        (route === '/runs' && normPath.startsWith('/runs'));
+        (route === '/runs' && normPath.startsWith('/runs')) ||
+        (route === '/agents' && normPath.startsWith('/agents'));
       link.classList.toggle('active', isActive);
     });
     const match = this.match(normPath);
@@ -4821,47 +4894,130 @@ function loadCostPage() {
 }
 
 // ── Agent Detail ──────────────────────────────────────────
+window._currentAgentId = null;
+
+function navigateToAgent(agentId) {
+  Router.navigate('/agents/' + encodeURIComponent(agentId));
+}
+
+function navigateToAgents() {
+  Router.navigate('/');
+}
+
 async function loadAgentDetailPage(agentId) {
+  window._currentAgentId = agentId;
   showPage('page-agent-detail');
   const loading = document.getElementById('agent-detail-loading');
   const content = document.getElementById('agent-detail-content');
-  const empty = document.getElementById('agent-detail-empty');
+  const empty   = document.getElementById('agent-detail-empty');
+  const errDiv  = document.getElementById('agent-detail-error');
   loading.hidden = false; content.hidden = true; empty.hidden = true;
+  if (errDiv) errDiv.hidden = true;
 
   try {
     const res = await fetch(`/api/v1/agents/${encodeURIComponent(agentId)}`);
-    if (!res.ok) { loading.hidden = true; empty.hidden = false; return; }
+    if (!res.ok) {
+      loading.hidden = true;
+      if (res.status === 404) { empty.hidden = false; }
+      else { if (errDiv) { document.getElementById('agent-detail-error-msg').textContent = 'HTTP ' + res.status; errDiv.hidden = false; } else { empty.hidden = false; } }
+      return;
+    }
     const { data } = await res.json();
 
-    document.getElementById('agent-detail-name').textContent = data.agentId || agentId;
+    // Header: name + model badge
+    const nameEl = document.getElementById('agent-detail-name');
+    nameEl.textContent = data.agentId || agentId;
+
+    const modelEl = document.getElementById('agent-detail-model');
+    const m = (data.agentId || agentId).toLowerCase();
+    let tier = 'sonnet';
+    if (['ceo','cto','genesis','architect','meta-architect','rd-lead'].indexOf(m) !== -1) tier = 'opus';
+    else if (['linter','test-runner','researcher','file-reader'].indexOf(m) !== -1) tier = 'haiku';
+    modelEl.className = 'model-badge ' + tier;
+    modelEl.textContent = tier.charAt(0).toUpperCase() + tier.slice(1);
+
+    // Stats
     document.getElementById('agent-detail-sessions').textContent = data.sessionCount || 0;
     document.getElementById('agent-detail-success').textContent =
-      data.sessionCount ? Math.round((data.successCount / data.sessionCount) * 100) + '%' : '—';
+      data.sessionCount ? Math.round(((data.successCount || 0) / data.sessionCount) * 100) + '%' : '—';
     document.getElementById('agent-detail-cost').textContent =
       '$' + (data.totalCostUsd || 0).toFixed(4);
     document.getElementById('agent-detail-duration').textContent =
-      data.avgDurationMs ? Math.round(data.avgDurationMs / 1000) + 's' : '—';
+      data.avgDurationMs ? (data.avgDurationMs >= 60000 ? Math.round(data.avgDurationMs / 60000) + 'm' : Math.round(data.avgDurationMs / 1000) + 's') : '—';
 
+    // Recent sessions table
     const tbody = document.getElementById('agent-detail-sessions-tbody');
     tbody.innerHTML = '';
-    (data.recentSessions || []).forEach(s => {
+    const sessions = data.recentSessions || [];
+    if (sessions.length === 0) {
       const tr = document.createElement('tr');
-      tr.style.cursor = 'pointer';
-      tr.addEventListener('click', () => Router.navigate(`/runs/${s.id}`));
-      ['started_at', 'task', 'status'].forEach(key => {
-        const td = document.createElement('td');
-        td.textContent = key === 'task' ? (s[key] || '').slice(0, 60) : (s[key] || '—');
-        tr.appendChild(td);
-      });
-      const costTd = document.createElement('td');
-      costTd.textContent = '—'; // cost not in session record directly
-      tr.appendChild(costTd);
+      const td = document.createElement('td');
+      td.colSpan = 5;
+      td.className = 'session-empty';
+      td.textContent = 'No sessions recorded yet.';
+      tr.appendChild(td);
       tbody.appendChild(tr);
-    });
+    } else {
+      sessions.forEach(s => {
+        const tr = document.createElement('tr');
+        tr.style.cursor = 'pointer';
+        const sid = s.id || s.sessionId || '';
+        if (sid) tr.addEventListener('click', () => Router.navigate(`/runs/${sid}`));
+
+        // Started
+        const ts = s.startedAt || s.started_at || s.createdAt || '';
+        const tsStr = ts ? new Date(ts).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}) : '—';
+        const tsTd = document.createElement('td');
+        tsTd.style.color = 'var(--text-muted)';
+        tsTd.textContent = tsStr;
+
+        // Task (truncated 80 chars)
+        const taskRaw = s.task || s.input || s.prompt || '—';
+        const taskTd = document.createElement('td');
+        taskTd.style.cssText = 'max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px';
+        taskTd.title = taskRaw;
+        taskTd.textContent = taskRaw.length > 80 ? taskRaw.slice(0, 80) + '…' : taskRaw;
+
+        // Status
+        const statusVal = s.status || 'completed';
+        const statusClass = statusVal === 'completed' ? 'complete' : statusVal === 'running' ? 'active' : statusVal === 'failed' ? 'failed' : 'idle';
+        const badgeSpan = document.createElement('span');
+        badgeSpan.className = 'status-badge ' + statusClass;
+        badgeSpan.textContent = statusVal;
+        const statusTd = document.createElement('td');
+        statusTd.appendChild(badgeSpan);
+
+        // Duration
+        const durMs = s.durationMs || s.duration || (s.completedAt && s.startedAt ? new Date(s.completedAt) - new Date(s.startedAt) : null);
+        const durTd = document.createElement('td');
+        durTd.style.color = 'var(--text-muted)';
+        durTd.textContent = durMs ? (durMs >= 60000 ? Math.round(durMs / 60000) + 'm' : Math.round(durMs / 1000) + 's') : '—';
+
+        // Cost
+        const costTd = document.createElement('td');
+        const costVal = typeof s.costUsd === 'number' ? '$' + s.costUsd.toFixed(4) : (s.cost ? '$' + Number(s.cost).toFixed(4) : '—');
+        costTd.style.color = 'var(--gold)';
+        costTd.textContent = costVal;
+
+        tr.appendChild(tsTd);
+        tr.appendChild(taskTd);
+        tr.appendChild(statusTd);
+        tr.appendChild(durTd);
+        tr.appendChild(costTd);
+        tbody.appendChild(tr);
+      });
+    }
 
     loading.hidden = true; content.hidden = false;
   } catch (e) {
-    loading.hidden = true; empty.hidden = false;
+    loading.hidden = true;
+    if (errDiv) {
+      const errMsg = document.getElementById('agent-detail-error-msg');
+      if (errMsg) errMsg.textContent = 'Failed to load agent data: ' + e.message;
+      errDiv.hidden = false;
+    } else {
+      empty.hidden = false;
+    }
   }
 }
 
@@ -4870,7 +5026,8 @@ Router.addRoute('/', () => showPage('page-home'));
 Router.addRoute('/runs', () => { showPage('page-runs'); loadRunsPage(1); });
 Router.addRoute(/^\/runs\/([^/]+)$/, ({ id }) => { showPage('page-run-detail'); loadRunDetail(id); });
 Router.addRoute('/cost', () => { showPage('page-cost'); loadCostPage(); });
-Router.addRoute('/agents/:id', ({ id }) => { loadAgentDetailPage(id); });
+Router.addRoute('/agents', () => showPage('page-home'));
+Router.addRoute(/^\/agents\/([^/]+)$/, ({ id }) => { loadAgentDetailPage(decodeURIComponent(id)); });
 
 // ── SSE Client ────────────────────────────────────────────
 function updateConnectionStatus(status) {
@@ -4925,10 +5082,13 @@ const SSE = {
     };
     this.source.addEventListener('session-started', () => {
       if (location.pathname === '/runs') loadRunsPage(_runsCurrentPage);
+      if (typeof loadActivityFeed === 'function') loadActivityFeed();
     });
     this.source.addEventListener('session-completed', () => {
       if (location.pathname === '/runs') loadRunsPage(_runsCurrentPage);
       if (location.pathname === '/cost') loadCostPage();
+      if (typeof loadActivityFeed === 'function') loadActivityFeed();
+      if (typeof loadSessionTimeline === 'function') loadSessionTimeline();
     });
     this.source.addEventListener('cost-update', () => {
       if (location.pathname === '/cost') loadCostPage();
@@ -4948,6 +5108,1374 @@ const SSE = {
     });
   }
 };
+
+// ── P1: Version Badge from /api/v1/health ─────────────────
+async function loadVersion() {
+  try {
+    const res = await fetch('/api/v1/health');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const ver = data.version || null;
+    if (ver) {
+      const badge = document.querySelector('.version-badge');
+      if (badge) badge.textContent = 'v' + ver;
+      const sprintTitle = document.querySelector('#sprint-tracker .section-title');
+      if (sprintTitle && sprintTitle.textContent.indexOf('v4.4') !== -1) {
+        sprintTitle.textContent = 'Sprint Tracker';
+      }
+    }
+  } catch (e) {
+    console.warn('loadVersion failed:', e);
+  }
+}
+
+// ── P1: Agent Cards from /api/v1/agents ───────────────────
+async function loadAgentCards() {
+  const grid = document.getElementById('agent-grid');
+  if (!grid) return;
+  grid.innerHTML = '<div class="skeleton-loader" style="grid-column:1/-1">Loading agents…</div>';
+  try {
+    const res = await fetch('/api/v1/agents');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    const data = json.data || [];
+    if (!data.length) {
+      const div = document.createElement('div');
+      div.className = 'empty-state';
+      div.style.gridColumn = '1/-1';
+      div.textContent = 'No agent sessions yet — invoke an agent to see stats here.';
+      grid.innerHTML = '';
+      grid.appendChild(div);
+      return;
+    }
+    window._data.agents = data.map(function(a) {
+      const m = (a.agentId || '').toLowerCase();
+      let tier = 'sonnet';
+      if (['ceo','cto','genesis','architect','meta-architect','rd-lead'].indexOf(m) !== -1) tier = 'opus';
+      else if (['linter','test-runner','researcher','file-reader'].indexOf(m) !== -1) tier = 'haiku';
+      return {
+        name: a.agentId, model: tier, category: a.team || 'Agent',
+        tasks: a.sessionCount || 0, cost: a.totalCostUsd || 0,
+        errRate: a.sessionCount > 0 ? Math.round((a.failureCount || 0) / a.sessionCount * 100) : 0,
+        status: 'idle', successCount: a.successCount || 0
+      };
+    });
+    const sparkColors = {opus: 'var(--gold)', sonnet: 'var(--blue)', haiku: 'var(--green)'};
+    grid.innerHTML = '';
+    data.forEach(function(a, i) {
+      const m = (a.agentId || '').toLowerCase();
+      let tier = 'sonnet';
+      if (['ceo','cto','genesis','architect','meta-architect','rd-lead'].indexOf(m) !== -1) tier = 'opus';
+      else if (['linter','test-runner','researcher','file-reader'].indexOf(m) !== -1) tier = 'haiku';
+      const cost = (a.totalCostUsd || 0).toFixed(2);
+      const successRate = a.sessionCount > 0 ? Math.round((a.successCount || 0) / a.sessionCount * 100) : 100;
+      const errRate = 100 - successRate;
+      const errColor = errRate > 5 ? 'var(--orange)' : 'var(--green)';
+      const sc = sparkColors[tier] || 'var(--blue)';
+      const card = document.createElement('div');
+      card.className = 'agent-card ' + tier;
+      card.style.animationDelay = (i * 0.03).toFixed(2) + 's';
+      const agentIdSafe = a.agentId;
+      card.addEventListener('click', function() { navigateToAgent(agentIdSafe); });
+      const nameDiv = document.createElement('div');
+      nameDiv.className = 'agent-name';
+      nameDiv.textContent = a.agentId;
+      const metaDiv = document.createElement('div');
+      metaDiv.className = 'agent-meta';
+      const modelBadge = document.createElement('span');
+      modelBadge.className = 'model-badge ' + tier;
+      modelBadge.textContent = tier.charAt(0).toUpperCase() + tier.slice(1);
+      const statusDot = document.createElement('span');
+      statusDot.className = 'status-dot idle';
+      statusDot.title = 'idle';
+      metaDiv.appendChild(modelBadge);
+      if (a.team) {
+        const catBadge = document.createElement('span');
+        catBadge.className = 'category-badge';
+        catBadge.textContent = a.team;
+        metaDiv.appendChild(catBadge);
+      }
+      metaDiv.appendChild(statusDot);
+      const statsDiv = document.createElement('div');
+      statsDiv.className = 'agent-stats';
+      [[a.sessionCount || 0, 'Sessions'],[cost, 'Cost'],[errRate + '%', 'Err%']].forEach(function(pair) {
+        const sd = document.createElement('div');
+        sd.className = 'agent-stat';
+        const sv = document.createElement('div');
+        sv.className = 'stat-val';
+        sv.textContent = pair[0] === cost ? '$' + cost : String(pair[0]);
+        if (pair[1] === 'Cost') sv.textContent = '$' + cost;
+        if (pair[1] === 'Err%') sv.style.color = errColor;
+        const sl = document.createElement('div');
+        sl.className = 'stat-lbl';
+        sl.textContent = pair[1];
+        sd.appendChild(sv);
+        sd.appendChild(sl);
+        statsDiv.appendChild(sd);
+      });
+      const ns = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      ns.classList.add('sparkline');
+      ns.setAttribute('width', '100%');
+      ns.setAttribute('height', '28');
+      ns.setAttribute('viewBox', '0 0 160 28');
+      const pl = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+      pl.setAttribute('points', '0,22 40,18 80,14 120,10 160,6');
+      pl.setAttribute('fill', 'none');
+      pl.setAttribute('stroke', sc);
+      pl.setAttribute('stroke-width', '1.5');
+      pl.setAttribute('stroke-linecap', 'round');
+      pl.setAttribute('opacity', '0.8');
+      ns.appendChild(pl);
+      card.appendChild(nameDiv);
+      card.appendChild(metaDiv);
+      card.appendChild(statsDiv);
+      card.appendChild(ns);
+      grid.appendChild(card);
+    });
+  } catch (e) {
+    console.warn('loadAgentCards failed:', e);
+    if (grid) grid.innerHTML = '<div class="load-error" style="grid-column:1/-1">Failed to load agents. <button onclick="loadAgentCards()">Retry</button></div>';
+  }
+}
+
+// ── P3: Sprint Tracker from /api/v1/sprints ───────────────
+async function loadSprintFromApi() {
+  const sprintContent = document.querySelector('#sprint-tracker .sprint-content') || document.querySelector('#sprint-tracker');
+  try {
+    const res = await fetch('/api/v1/sprints');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    const data = json.data || [];
+    if (!data.length) return;
+    const sprint = data[data.length - 1];
+    renderSprintFromJSON({ sprints: [sprint] });
+  } catch (e) {
+    console.warn('loadSprintFromApi failed:', e);
+  }
+}
+
+// ── P4: Org Graph from /api/v1/org-graph ──────────────────
+// Redesigned: top-down tree layout with full labels, elbow connectors,
+// collapsible subtrees, team color coding (opus=gold, sonnet=blue, haiku=green),
+// default zoomed to C-suite + VP layer (depth 2).
+(function() {
+  // ── State ──────────────────────────────────────────────
+  var _orgNodes = [];
+  var _orgEdges = [];
+  var _childrenOf = {};
+  var _parentOf = {};
+  var _depthOf = {};
+  var _positions = {};
+  var _collapsed = new Set();
+  var _nodeMap = {};
+
+  // Layout constants — wide nodes for full labels
+  var NODE_H = 34, ROW_H = 80, GAP_X = 16, PADDING = 40;
+  var ns = 'http://www.w3.org/2000/svg';
+
+  function modelColor(model) {
+    var m = (model || '').toLowerCase();
+    if (m.indexOf('opus') !== -1) return '#f5c842';
+    if (m.indexOf('haiku') !== -1) return '#4caf82';
+    return '#4a9eff';
+  }
+
+  // Measure node width based on label length (7.5px per char + padding)
+  function nodeWidth(id) {
+    var label = (_nodeMap[id] && (_nodeMap[id].name || _nodeMap[id].id)) || id;
+    return Math.max(90, label.length * 7.5 + 32);
+  }
+
+  // ── Build adjacency ─────────────────────────────────────
+  function buildGraph(nodes, edges) {
+    _nodeMap = {};
+    _childrenOf = {};
+    _parentOf = {};
+    _depthOf = {};
+    nodes.forEach(function(n) { _nodeMap[n.id] = n; });
+
+    edges.forEach(function(e) {
+      var parent = e.to, child = e.from;
+      if (!_childrenOf[parent]) _childrenOf[parent] = [];
+      if (_childrenOf[parent].indexOf(child) === -1) {
+        _childrenOf[parent].push(child);
+      }
+      _parentOf[child] = parent;
+    });
+
+    // BFS to assign depths
+    var roots = nodes.filter(function(n) { return !_parentOf[n.id]; });
+    if (!roots.length && nodes.length) roots = [nodes[0]];
+    var queue = roots.map(function(r) { return {id: r.id, depth: 0}; });
+    var vi = 0;
+    while (vi < queue.length) {
+      var item = queue[vi++];
+      _depthOf[item.id] = item.depth;
+      (_childrenOf[item.id] || []).forEach(function(cid) {
+        if (_depthOf[cid] === undefined) {
+          queue.push({id: cid, depth: item.depth + 1});
+        }
+      });
+    }
+    nodes.forEach(function(n) {
+      if (_depthOf[n.id] === undefined) _depthOf[n.id] = 99;
+    });
+    return roots;
+  }
+
+  // ── Recursive tree layout (Reingold-Tilford style) ─────
+  // Each node gets a pixel-x center and pixel-y top.
+  // Returns { left, right } bounding x of the subtree.
+  function layoutNode(id, depth, xOffset) {
+    var children = _childrenOf[id] || [];
+    var visibleChildren = _collapsed.has(id) ? [] : children;
+    var nw = nodeWidth(id);
+    var ypx = PADDING + depth * ROW_H;
+
+    if (!visibleChildren.length) {
+      _positions[id] = { x: xOffset + nw / 2, y: ypx, w: nw };
+      return { left: xOffset, right: xOffset + nw };
+    }
+
+    // Layout children left-to-right
+    var cursor = xOffset;
+    var childBounds = [];
+    visibleChildren.forEach(function(cid, i) {
+      if (i > 0) cursor += GAP_X;
+      var bounds = layoutNode(cid, depth + 1, cursor);
+      childBounds.push(bounds);
+      cursor = bounds.right;
+    });
+
+    var childrenLeft = childBounds[0].left;
+    var childrenRight = childBounds[childBounds.length - 1].right;
+    var childrenCenter = (childrenLeft + childrenRight) / 2;
+
+    // Center parent over children
+    var parentLeft = childrenCenter - nw / 2;
+    var parentRight = childrenCenter + nw / 2;
+
+    var subtreeLeft = Math.min(childrenLeft, parentLeft);
+    var subtreeRight = Math.max(childrenRight, parentRight);
+
+    // If parent overflows left, shift everything right
+    if (parentLeft < xOffset) {
+      var shift = xOffset - parentLeft;
+      shiftSubtree(id, shift);
+      subtreeLeft += shift;
+      subtreeRight += shift;
+      parentLeft += shift;
+    }
+
+    _positions[id] = { x: parentLeft + nw / 2, y: ypx, w: nw };
+    return { left: subtreeLeft, right: subtreeRight };
+  }
+
+  function shiftSubtree(id, dx) {
+    if (_positions[id]) {
+      _positions[id].x += dx;
+    }
+    var children = _collapsed.has(id) ? [] : (_childrenOf[id] || []);
+    children.forEach(function(cid) {
+      shiftSubtree(cid, dx);
+    });
+  }
+
+  function computeLayout(roots) {
+    _positions = {};
+    var cursor = PADDING;
+    roots.forEach(function(r, i) {
+      if (i > 0) cursor += GAP_X * 3;
+      var bounds = layoutNode(r.id, 0, cursor);
+      cursor = bounds.right;
+    });
+  }
+
+  // ── Collect visible node IDs ────────────────────────────
+  function getVisibleIds(roots) {
+    var visible = [];
+    function walk(id) {
+      visible.push(id);
+      if (!_collapsed.has(id)) {
+        (_childrenOf[id] || []).forEach(walk);
+      }
+    }
+    roots.forEach(function(r) { walk(r.id); });
+    return visible;
+  }
+
+  // Count all descendants (for collapse badge)
+  function countDescendants(id) {
+    var count = 0;
+    function walk(nid) {
+      var ch = _childrenOf[nid] || [];
+      count += ch.length;
+      ch.forEach(walk);
+    }
+    walk(id);
+    return count;
+  }
+
+  // ── Render ──────────────────────────────────────────────
+  function render(roots) {
+    var canvas = document.getElementById('org-canvas');
+    var svg    = document.getElementById('org-svg');
+    if (!canvas || !svg) return;
+
+    computeLayout(roots);
+    var visibleIds = getVisibleIds(roots);
+
+    // Compute bounding box
+    var minX = Infinity, maxX = 0, maxY = 0;
+    visibleIds.forEach(function(id) {
+      var p = _positions[id];
+      if (!p) return;
+      var nw = p.w || nodeWidth(id);
+      minX = Math.min(minX, p.x - nw / 2);
+      maxX = Math.max(maxX, p.x + nw / 2);
+      maxY = Math.max(maxY, p.y + NODE_H);
+    });
+
+    var svgW = Math.max(900, maxX + PADDING);
+    var svgH = Math.max(400, maxY + PADDING * 2);
+    svg.setAttribute('viewBox', '0 0 ' + svgW + ' ' + svgH);
+
+    canvas.textContent = '';
+
+    // ── Draw edges: clean elbow connectors ───────────────
+    visibleIds.forEach(function(id) {
+      var children = _collapsed.has(id) ? [] : (_childrenOf[id] || []);
+      if (!children.length) return;
+      var pPos = _positions[id];
+      if (!pPos) return;
+
+      var x1 = pPos.x;
+      var y1 = pPos.y + NODE_H;
+      var visibleChildPositions = children.map(function(cid) { return _positions[cid]; }).filter(Boolean);
+      if (!visibleChildPositions.length) return;
+
+      var midY = y1 + (ROW_H - NODE_H) / 2;
+
+      // Vertical from parent down to midY
+      var vLine = document.createElementNS(ns, 'line');
+      vLine.setAttribute('x1', x1); vLine.setAttribute('y1', y1);
+      vLine.setAttribute('x2', x1); vLine.setAttribute('y2', midY);
+      vLine.setAttribute('stroke', 'var(--border-light)');
+      vLine.setAttribute('stroke-width', '1.2');
+      vLine.setAttribute('opacity', '0.5');
+      canvas.appendChild(vLine);
+
+      // Horizontal bar across children
+      var leftmost = Infinity, rightmost = -Infinity;
+      visibleChildPositions.forEach(function(cp) {
+        leftmost = Math.min(leftmost, cp.x);
+        rightmost = Math.max(rightmost, cp.x);
+      });
+
+      if (visibleChildPositions.length > 1) {
+        var hLine = document.createElementNS(ns, 'line');
+        hLine.setAttribute('x1', leftmost); hLine.setAttribute('y1', midY);
+        hLine.setAttribute('x2', rightmost); hLine.setAttribute('y2', midY);
+        hLine.setAttribute('stroke', 'var(--border-light)');
+        hLine.setAttribute('stroke-width', '1.2');
+        hLine.setAttribute('opacity', '0.5');
+        canvas.appendChild(hLine);
+      }
+
+      // Vertical stubs down from horizontal bar to each child
+      visibleChildPositions.forEach(function(cp) {
+        var stub = document.createElementNS(ns, 'line');
+        stub.setAttribute('x1', cp.x); stub.setAttribute('y1', midY);
+        stub.setAttribute('x2', cp.x); stub.setAttribute('y2', cp.y);
+        stub.setAttribute('stroke', 'var(--border-light)');
+        stub.setAttribute('stroke-width', '1.2');
+        stub.setAttribute('opacity', '0.5');
+        canvas.appendChild(stub);
+      });
+    });
+
+    // ── Draw nodes ──────────────────────────────────────
+    visibleIds.forEach(function(id) {
+      var node = _nodeMap[id];
+      if (!node) return;
+      var pos = _positions[id];
+      if (!pos) return;
+
+      var nw = pos.w || nodeWidth(id);
+      var color = modelColor(node.model);
+      var children = _childrenOf[id] || [];
+      var isCollapsed = _collapsed.has(id);
+      var hasChildren = children.length > 0;
+      var depth = _depthOf[id] || 0;
+
+      var g = document.createElementNS(ns, 'g');
+      g.setAttribute('class', 'org-node-group');
+      g.setAttribute('data-id', id);
+
+      var rx = pos.x - nw / 2;
+      var ry = pos.y;
+
+      // Background rect
+      var rect = document.createElementNS(ns, 'rect');
+      rect.setAttribute('x', String(rx));
+      rect.setAttribute('y', String(ry));
+      rect.setAttribute('width', String(nw));
+      rect.setAttribute('height', String(NODE_H));
+      rect.setAttribute('rx', '6');
+      rect.setAttribute('fill', 'var(--bg-card)');
+      rect.setAttribute('stroke', color);
+      rect.setAttribute('stroke-width', depth === 0 ? '2.5' : depth <= 2 ? '1.8' : '1.2');
+      if (isCollapsed && hasChildren) rect.setAttribute('stroke-dasharray', '4 2');
+      g.appendChild(rect);
+
+      // Full name label — NO truncation
+      var label = node.name || id;
+      var txt = document.createElementNS(ns, 'text');
+      txt.setAttribute('x', String(pos.x));
+      txt.setAttribute('y', String(ry + NODE_H / 2 + 4));
+      txt.setAttribute('text-anchor', 'middle');
+      txt.setAttribute('font-family', 'var(--font-mono)');
+      txt.setAttribute('font-size', depth <= 1 ? '12' : '11');
+      txt.setAttribute('font-weight', depth <= 1 ? '700' : '500');
+      txt.setAttribute('fill', color);
+      txt.textContent = label;
+      g.appendChild(txt);
+
+      // Expand/collapse button (bottom center, circular)
+      if (hasChildren) {
+        var totalDesc = countDescendants(id);
+        var btnR = 8;
+        var btnCx = pos.x;
+        var btnCy = ry + NODE_H + btnR + 1;
+
+        var btnCircle = document.createElementNS(ns, 'circle');
+        btnCircle.setAttribute('cx', btnCx);
+        btnCircle.setAttribute('cy', btnCy);
+        btnCircle.setAttribute('r', btnR);
+        btnCircle.setAttribute('fill', 'var(--bg-primary)');
+        btnCircle.setAttribute('stroke', color);
+        btnCircle.setAttribute('stroke-width', '1.2');
+        btnCircle.setAttribute('class', 'collapse-btn');
+        btnCircle.setAttribute('style', 'cursor:pointer');
+        g.appendChild(btnCircle);
+
+        var btnTxt = document.createElementNS(ns, 'text');
+        btnTxt.setAttribute('x', btnCx);
+        btnTxt.setAttribute('y', btnCy + 3.5);
+        btnTxt.setAttribute('text-anchor', 'middle');
+        btnTxt.setAttribute('font-family', 'var(--font-mono)');
+        btnTxt.setAttribute('font-size', '10');
+        btnTxt.setAttribute('font-weight', '700');
+        btnTxt.setAttribute('fill', color);
+        btnTxt.setAttribute('class', 'collapse-btn');
+        btnTxt.setAttribute('style', 'cursor:pointer');
+        btnTxt.textContent = isCollapsed ? '+' : '-';
+        g.appendChild(btnTxt);
+
+        // Badge showing hidden count when collapsed
+        if (isCollapsed) {
+          var badge = document.createElementNS(ns, 'text');
+          badge.setAttribute('x', String(btnCx + btnR + 3));
+          badge.setAttribute('y', String(btnCy + 3));
+          badge.setAttribute('font-family', 'var(--font-mono)');
+          badge.setAttribute('font-size', '8');
+          badge.setAttribute('fill', 'var(--text-muted)');
+          badge.textContent = totalDesc + ' hidden';
+          g.appendChild(badge);
+        }
+
+        // Click on collapse button: toggle subtree
+        btnCircle.addEventListener('click', function(evt) {
+          evt.stopPropagation();
+          toggleCollapse(id, roots);
+        });
+        btnTxt.addEventListener('click', function(evt) {
+          evt.stopPropagation();
+          toggleCollapse(id, roots);
+        });
+      }
+
+      // Click on node body: open agent modal
+      g.addEventListener('click', function(evt) {
+        if (evt.target.classList && evt.target.classList.contains('collapse-btn')) return;
+        evt.stopPropagation();
+        openAgentModal(id);
+      });
+
+      canvas.appendChild(g);
+    });
+  }
+
+  function toggleCollapse(id, roots) {
+    if (_collapsed.has(id)) {
+      _collapsed.delete(id);
+    } else {
+      _collapsed.add(id);
+    }
+    render(roots);
+  }
+
+  // ── Public API ──────────────────────────────────────────
+  window._orgState = {
+    roots: [],
+    expandAll: function() {
+      _collapsed.clear();
+      render(window._orgState.roots);
+    },
+    collapseToDepth: function(maxDepth) {
+      _collapsed.clear();
+      Object.keys(_childrenOf).forEach(function(id) {
+        if (_childrenOf[id].length > 0 && _depthOf[id] >= maxDepth) {
+          _collapsed.add(id);
+        }
+      });
+      render(window._orgState.roots);
+    }
+  };
+
+  window.orgExpandAll = function() { window._orgState.expandAll(); };
+  window.orgCollapseToDepth = function(d) { window._orgState.collapseToDepth(d || 2); };
+
+  window.orgFitView = function() {
+    var canvas = document.getElementById('org-canvas');
+    var svg = document.getElementById('org-svg');
+    if (!canvas || !svg) return;
+    canvas.setAttribute('transform', 'translate(0,0) scale(1)');
+    if (window._orgState.roots.length) render(window._orgState.roots);
+  };
+
+  // ── Main entry ──────────────────────────────────────────
+  function renderOrgTree(nodes, edges) {
+    _orgNodes = nodes;
+    _orgEdges = edges;
+    var roots = buildGraph(nodes, edges);
+    window._orgState.roots = roots;
+
+    // Default view: show C-suite + VP layer (depth 0, 1, 2 visible)
+    // Collapse nodes at depth 2+ that have children
+    _collapsed.clear();
+    Object.keys(_childrenOf).forEach(function(id) {
+      var d = _depthOf[id];
+      if (d !== undefined && d >= 2 && _childrenOf[id].length > 0) {
+        _collapsed.add(id);
+      }
+    });
+
+    render(roots);
+  }
+
+  window.loadOrgGraph = async function() {
+    try {
+      var res = await fetch('/api/v1/org-graph');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      var json = await res.json();
+      var data = json.data || {};
+      var nodes = data.nodes || [];
+      var edges = data.edges || [];
+      window._data.orgGraph = data;
+
+      if (!nodes.length) {
+        var canvas = document.getElementById('org-canvas');
+        if (!canvas) return;
+        canvas.textContent = '';
+        var t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        t.setAttribute('x', '450'); t.setAttribute('y', '300');
+        t.setAttribute('text-anchor', 'middle');
+        t.setAttribute('font-family', 'var(--font-sans)');
+        t.setAttribute('font-size', '14');
+        t.setAttribute('fill', 'var(--text-muted)');
+        t.textContent = 'No org graph data \u2014 delegation.yaml not loaded';
+        canvas.appendChild(t);
+        return;
+      }
+
+      renderOrgTree(nodes, edges);
+    } catch(e) {
+      console.warn('loadOrgGraph failed:', e);
+    }
+  };
+})();
+// ── P5: Activity Feed from /api/v1/sessions ───────────────
+async function loadActivityFeed() {
+  const tbody = document.getElementById('activity-tbody');
+  if (!tbody) return;
+  // Show skeleton row while loading
+  while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+  const skelTr = document.createElement('tr');
+  const skelTd = document.createElement('td');
+  skelTd.colSpan = 6;
+  skelTd.innerHTML = '<div class="skeleton-loader">Loading activity…</div>';
+  skelTr.appendChild(skelTd);
+  tbody.appendChild(skelTr);
+  try {
+    const res = await fetch('/api/v1/sessions?limit=50');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    const sessions = Array.isArray(json) ? json : (json.sessions || json.data || []);
+    if (!sessions.length) {
+      while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = 6; td.className = 'session-empty';
+      td.textContent = 'No recent activity — invoke an agent to see live tasks here.';
+      tr.appendChild(td); tbody.appendChild(tr);
+      return;
+    }
+    while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+    sessions.forEach(function(s) {
+      const agent = s.agentName || s.agent_id || s.agent || '—';
+      const model = (s.model || '').toLowerCase();
+      const tier = model.indexOf('opus') !== -1 ? 'opus' : model.indexOf('haiku') !== -1 ? 'haiku' : 'sonnet';
+      const tierColor = tier === 'opus' ? 'var(--gold)' : tier === 'haiku' ? 'var(--green)' : 'var(--blue)';
+      let task = (s.task || s.input || s.prompt || '—');
+      if (task.length > 60) task = task.slice(0, 60) + '…';
+      const status = s.status || 'completed';
+      const statusClass = status === 'completed' ? 'complete' : status === 'running' ? 'active' : status === 'failed' ? 'error' : 'idle';
+      const ts = s.completed_at || s.completedAt || s.started_at || s.startedAt || '';
+      const tsStr = ts ? fmtDate(ts) : '—';
+      const tr = document.createElement('tr');
+      const agentTd = document.createElement('td');
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.style.cssText = 'border-color:' + tierColor + ';color:' + tierColor + ';cursor:pointer';
+      chip.textContent = agent;
+      chip.title = 'View ' + agent + ' profile';
+      chip.addEventListener('click', function(e) { e.stopPropagation(); if (agent !== '—') navigateToAgent(agent); });
+      agentTd.appendChild(chip);
+      const modelTd = document.createElement('td');
+      const modelBadge = document.createElement('span');
+      modelBadge.className = 'model-badge ' + tier;
+      modelBadge.textContent = tier.charAt(0).toUpperCase() + tier.slice(1);
+      modelTd.appendChild(modelBadge);
+      const actionTd = document.createElement('td');
+      actionTd.textContent = 'session';
+      const taskTd = document.createElement('td');
+      taskTd.className = 'task-cell';
+      taskTd.textContent = task;
+      const durTd = document.createElement('td');
+      durTd.className = 'duration-cell';
+      durTd.textContent = tsStr;
+      const statusTd = document.createElement('td');
+      const statusBadge = document.createElement('span');
+      statusBadge.className = 'status-badge ' + statusClass;
+      statusBadge.textContent = status;
+      statusTd.appendChild(statusBadge);
+      tr.appendChild(agentTd); tr.appendChild(modelTd); tr.appendChild(actionTd);
+      tr.appendChild(taskTd); tr.appendChild(durTd); tr.appendChild(statusTd);
+      tbody.appendChild(tr);
+    });
+  } catch (e) {
+    console.warn('loadActivityFeed failed:', e);
+    while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+    const errTr = document.createElement('tr');
+    const errTd = document.createElement('td');
+    errTd.colSpan = 6;
+    errTd.innerHTML = '<div class="load-error">Failed to load activity. <button onclick="loadActivityFeed()">Retry</button></div>';
+    errTr.appendChild(errTd);
+    tbody.appendChild(errTr);
+  }
+}
+
+// ── P6: Flywheel Metrics from /api/v1/flywheel ────────────
+async function loadFlywheel() {
+  const compoundIds = ['cov-compound','skill-compound','cost-compound','auto-compound','mem-compound','reforge-compound'];
+  function setCompound(id, txt) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = txt;
+  }
+  compoundIds.forEach(function(id) { setCompound(id, '…'); });
+  try {
+    const res = await fetch('/api/v1/flywheel');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    const d = json.data || {};
+    const noData = !d.sessionCount && !d.successRate && !d.totalCostUsd;
+    if (noData) {
+      compoundIds.forEach(function(id) { setCompound(id, '— no data'); });
+      return;
+    }
+    setCompound('cov-compound', d.sessionCount + ' sessions tracked');
+    setCompound('skill-compound', Math.round((d.successRate || 0) * 100) + '% success rate');
+    setCompound('cost-compound', '$' + (d.totalCostUsd || 0).toFixed(2) + ' total spend');
+    if (d.recentTrend) setCompound('auto-compound', 'Trend: ' + d.recentTrend);
+  } catch (e) {
+    console.warn('loadFlywheel failed:', e);
+    compoundIds.forEach(function(id) { setCompound(id, '— failed'); });
+  }
+}
+
+// ── P7: Delegation Flow from /api/v1/org-graph ────────────
+async function loadDelegationFlow() {
+  const svg = document.getElementById('delegation-svg');
+  if (!svg) return;
+  // Show loading skeleton in SVG
+  svg.textContent = '';
+  const skelText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  skelText.setAttribute('x', '450'); skelText.setAttribute('y', '160');
+  skelText.setAttribute('text-anchor', 'middle');
+  skelText.setAttribute('font-family', 'var(--font-sans)');
+  skelText.setAttribute('font-size', '13');
+  skelText.setAttribute('fill', 'var(--text-muted)');
+  skelText.textContent = 'Loading delegation flow…';
+  svg.appendChild(skelText);
+  try {
+    const res = await fetch('/api/v1/org-graph');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    const orgData = json.data || {};
+    const nodes = orgData.nodes || [];
+    const edges = orgData.edges || [];
+    if (!nodes.length || !edges.length) {
+      svg.textContent = '';
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      t.setAttribute('x', '450'); t.setAttribute('y', '160');
+      t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('font-family', 'var(--font-sans)');
+      t.setAttribute('font-size', '14');
+      t.setAttribute('fill', 'var(--text-muted)');
+      t.textContent = 'No delegation data — delegation.yaml not loaded';
+      svg.appendChild(t);
+      return;
+    }
+    const ns = 'http://www.w3.org/2000/svg';
+    svg.textContent = '';
+    // Add defs/markers
+    const defs = document.createElementNS(ns, 'defs');
+    [['del-arrow','var(--blue)'],['del-arrow-gold','var(--gold)'],['del-arrow-green','var(--green)']].forEach(function(pair) {
+      const marker = document.createElementNS(ns, 'marker');
+      marker.setAttribute('id', pair[0]); marker.setAttribute('markerWidth', '8'); marker.setAttribute('markerHeight', '6');
+      marker.setAttribute('refX', '8'); marker.setAttribute('refY', '3'); marker.setAttribute('orient', 'auto');
+      const poly = document.createElementNS(ns, 'polygon');
+      poly.setAttribute('points', '0 0, 8 3, 0 6'); poly.setAttribute('fill', pair[1]);
+      marker.appendChild(poly); defs.appendChild(marker);
+    });
+    svg.appendChild(defs);
+    // Find root node(s)
+    const toSet = new Set(edges.map(function(e) { return e.from; }));
+    const roots = nodes.filter(function(n) { return !toSet.has(n.id); });
+    const root = roots.length ? roots[0] : nodes[0];
+    const childrenOf = {};
+    edges.forEach(function(e) {
+      if (!childrenOf[e.to]) childrenOf[e.to] = [];
+      childrenOf[e.to].push(e.from);
+    });
+    // Chain: root + up to 5 direct reports
+    const chain = [root.id].concat((childrenOf[root.id] || []).slice(0, 5));
+    const nodeMap = {};
+    nodes.forEach(function(n) { nodeMap[n.id] = n; });
+    const W = 900, boxW = 110, boxH = 44, gap = 20;
+    const totalW = chain.length * (boxW + gap) - gap;
+    const startX = Math.max(20, (W - totalW) / 2);
+    const cy = 140;
+    function nodeColor(id) {
+      const n = nodeMap[id];
+      if (!n) return 'var(--blue)';
+      const m = (n.model || '').toLowerCase();
+      if (m.indexOf('opus') !== -1) return 'var(--gold)';
+      if (m.indexOf('haiku') !== -1) return 'var(--green)';
+      return 'var(--blue)';
+    }
+    chain.forEach(function(id, i) {
+      const x = startX + i * (boxW + gap);
+      const cx = x + boxW / 2;
+      const color = nodeColor(id);
+      const markerId = color === 'var(--gold)' ? 'del-arrow-gold' : color === 'var(--green)' ? 'del-arrow-green' : 'del-arrow';
+      if (i < chain.length - 1) {
+        const line = document.createElementNS(ns, 'line');
+        line.setAttribute('x1', String(x + boxW)); line.setAttribute('y1', String(cy));
+        line.setAttribute('x2', String(startX + (i+1) * (boxW + gap))); line.setAttribute('y2', String(cy));
+        line.setAttribute('stroke', color); line.setAttribute('stroke-width', '1.5');
+        line.setAttribute('marker-end', 'url(#' + markerId + ')');
+        svg.appendChild(line);
+      }
+      const g = document.createElementNS(ns, 'g');
+      g.setAttribute('style', 'cursor:pointer');
+      const rect = document.createElementNS(ns, 'rect');
+      rect.setAttribute('x', String(x)); rect.setAttribute('y', String(cy - boxH/2));
+      rect.setAttribute('width', String(boxW)); rect.setAttribute('height', String(boxH));
+      rect.setAttribute('rx', '7'); rect.setAttribute('fill', 'var(--bg-card)');
+      rect.setAttribute('stroke', color); rect.setAttribute('stroke-width', '1.5');
+      const txt = document.createElementNS(ns, 'text');
+      txt.setAttribute('x', String(cx)); txt.setAttribute('y', String(cy + 4));
+      txt.setAttribute('text-anchor', 'middle'); txt.setAttribute('font-family', 'var(--font-mono)');
+      txt.setAttribute('font-size', '11'); txt.setAttribute('font-weight', '600');
+      txt.setAttribute('fill', color);
+      txt.textContent = id;
+      const nodeId = id;
+      g.addEventListener('click', function() { openAgentModal(nodeId); });
+      g.appendChild(rect); g.appendChild(txt);
+      svg.appendChild(g);
+    });
+  } catch (e) {
+    console.warn('loadDelegationFlow failed:', e);
+    svg.textContent = '';
+    const errText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    errText.setAttribute('x', '450'); errText.setAttribute('y', '160');
+    errText.setAttribute('text-anchor', 'middle');
+    errText.setAttribute('font-family', 'var(--font-sans)');
+    errText.setAttribute('font-size', '13');
+    errText.setAttribute('fill', 'var(--red)');
+    errText.textContent = 'Failed to load delegation flow.';
+    svg.appendChild(errText);
+  }
+}
+
+/// ── P8: Bus Monitor — try /api/v1/bus-events ──────────────
+async function loadBusEvents() {
+  const busFeed = document.getElementById('bus-feed');
+  if (busFeed && busFeed.children.length === 0) {
+    const skelDiv = document.createElement('div');
+    skelDiv.className = 'skeleton-loader';
+    skelDiv.textContent = 'Loading bus events…';
+    busFeed.appendChild(skelDiv);
+  }
+  try {
+    const res = await fetch('/api/v1/bus-events');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    const events = json.data || json;
+    if (Array.isArray(events) && events.length > 0) {
+      window._data.busEvents = events;
+      renderBusFromJSON(events);
+    } else {
+      showBusEmptyState();
+    }
+  } catch (e) {
+    showBusEmptyState();
+    console.warn('loadBusEvents: /api/v1/bus-events not available');
+  }
+}
+
+// ── P9: Session Timeline from /api/v1/sessions ────────────
+async function loadSessionTimeline() {
+  const container = document.querySelector('#session-timeline .timeline-gantt');
+  if (!container) return;
+  container.textContent = '';
+  const skelDiv = document.createElement('div');
+  skelDiv.className = 'skeleton-loader';
+  skelDiv.textContent = 'Loading session timeline…';
+  container.appendChild(skelDiv);
+  try {
+    const res = await fetch('/api/v1/sessions?limit=20');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    const sessions = Array.isArray(json) ? json : (json.sessions || json.data || []);
+    if (!sessions.length) {
+      container.textContent = '';
+      const div = document.createElement('div');
+      div.className = 'empty-state';
+      div.style.margin = '16px';
+      div.textContent = 'No session data yet — invoke an agent to populate the timeline.';
+      container.appendChild(div);
+      return;
+    }
+    let minTs = null, maxTs = null;
+    sessions.forEach(function(s) {
+      const st = s.started_at || s.startedAt;
+      const en = s.completed_at || s.completedAt;
+      if (st) { const d = new Date(st).getTime(); if (!minTs || d < minTs) minTs = d; }
+      if (en) { const d = new Date(en).getTime(); if (!maxTs || d > maxTs) maxTs = d; }
+    });
+    const span = (maxTs && minTs && maxTs > minTs) ? (maxTs - minTs) : 1;
+    container.textContent = '';
+    // Header
+    const header = document.createElement('div');
+    header.className = 'gantt-header';
+    const labelCol = document.createElement('div');
+    labelCol.className = 'gantt-label-col';
+    labelCol.textContent = 'Session';
+    const timeCol = document.createElement('div');
+    timeCol.className = 'gantt-time-col';
+    const ticks = document.createElement('div');
+    ticks.className = 'gantt-ticks';
+    ['Start','25%','50%','75%','End'].forEach(function(t) {
+      const s = document.createElement('span'); s.textContent = t; ticks.appendChild(s);
+    });
+    timeCol.appendChild(ticks);
+    header.appendChild(labelCol); header.appendChild(timeCol);
+    container.appendChild(header);
+    sessions.slice(0, 12).forEach(function(s) {
+      const agent = s.agentName || s.agent_id || s.agent || '—';
+      const status = s.status || 'completed';
+      const barClass = status === 'completed' ? 'bar-complete' : status === 'running' ? 'bar-active' : status === 'failed' ? 'bar-error' : 'bar-idle';
+      const model = (s.model || '').toLowerCase();
+      const labelColor = model.indexOf('opus') !== -1 ? 'var(--gold)' : model.indexOf('haiku') !== -1 ? 'var(--green)' : 'var(--blue)';
+      const st = s.started_at || s.startedAt;
+      const en = s.completed_at || s.completedAt;
+      let leftPct = '0%', widthPct = '100%';
+      if (st && minTs) {
+        const left = Math.max(0, (new Date(st).getTime() - minTs) / span * 100);
+        const rawWidth = en
+          ? Math.max(2, (new Date(en).getTime() - new Date(st).getTime()) / span * 100)
+          : Math.max(2, (Date.now() - new Date(st).getTime()) / span * 100);
+        leftPct = left.toFixed(1) + '%';
+        widthPct = Math.min(100 - left, rawWidth).toFixed(1) + '%';
+      }
+      const task = (s.task || s.input || '').slice(0, 20) || status;
+      const row = document.createElement('div');
+      row.className = 'gantt-row';
+      const rowLabel = document.createElement('div');
+      rowLabel.className = 'gantt-row-label';
+      rowLabel.style.color = labelColor;
+      rowLabel.textContent = agent.slice(0, 18);
+      const rowTrack = document.createElement('div');
+      rowTrack.className = 'gantt-row-track';
+      const bar = document.createElement('div');
+      bar.className = 'gantt-bar ' + barClass;
+      bar.style.left = leftPct; bar.style.width = widthPct;
+      bar.textContent = task;
+      rowTrack.appendChild(bar);
+      row.appendChild(rowLabel); row.appendChild(rowTrack);
+      container.appendChild(row);
+    });
+  } catch (e) {
+    console.warn('loadSessionTimeline failed:', e);
+    container.textContent = '';
+    const errDiv = document.createElement('div');
+    errDiv.innerHTML = '<div class="load-error">Failed to load session timeline. <button onclick="loadSessionTimeline()">Retry</button></div>';
+    container.appendChild(errDiv);
+  }
+}
+
+// ── P10: Autonomy Tiers from /api/v1/autonomy ─────────────
+async function loadAutonomyTiers() {
+  const grid = document.querySelector('#autonomy-tiers .tiers-grid');
+  if (!grid) return;
+  grid.innerHTML = '<div class="skeleton-loader" style="grid-column:1/-1">Loading autonomy tiers…</div>';
+  try {
+    const res = await fetch('/api/v1/autonomy');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    const data = json.data || [];
+    if (!data.length) {
+      const div = document.createElement('div');
+      div.className = 'empty-state';
+      div.style.gridColumn = '1/-1';
+      div.textContent = 'No promotion history yet';
+      grid.textContent = ''; grid.appendChild(div);
+      return;
+    }
+    const tiers = {1: [], 2: [], 3: [], 4: []};
+    data.forEach(function(p) {
+      const t = p.tier || p.toTier || 1;
+      if (!tiers[t]) tiers[t] = [];
+      tiers[t].push(p);
+    });
+    const tierMeta = {
+      1: {label: 'Supervised', desc: 'Requires approval', cls: 't1'},
+      2: {label: 'Delegated', desc: 'Self-directed tasks', cls: 't2'},
+      3: {label: 'Autonomous', desc: 'Own initiative', cls: 't3'},
+      4: {label: 'Strategic', desc: 'System-level authority', cls: 't4'}
+    };
+    grid.textContent = '';
+    [1,2,3,4].forEach(function(t) {
+      const meta = tierMeta[t];
+      const agents = tiers[t] || [];
+      const col = document.createElement('div'); col.className = 'tier-col';
+      const hdr = document.createElement('div'); hdr.className = 'tier-header';
+      const badge = document.createElement('div'); badge.className = 'tier-badge ' + meta.cls;
+      badge.textContent = String(t);
+      const titleDiv = document.createElement('div');
+      const titleEl = document.createElement('div'); titleEl.className = 'tier-title'; titleEl.textContent = meta.label;
+      const descEl = document.createElement('div'); descEl.style.cssText = 'font-size:11px;color:var(--text-muted)'; descEl.textContent = meta.desc;
+      titleDiv.appendChild(titleEl); titleDiv.appendChild(descEl);
+      hdr.appendChild(badge); hdr.appendChild(titleDiv); col.appendChild(hdr);
+      const agentsList = document.createElement('div'); agentsList.className = 'tier-agents';
+      if (agents.length) {
+        agents.forEach(function(p) {
+          const name = p.agentId || p.agent || '—';
+          const days = p.daysAtTier || p.days || '—';
+          const chip = document.createElement('div'); chip.className = 'tier-agent-chip';
+          const nameDiv = document.createElement('div');
+          const nameEl = document.createElement('div'); nameEl.style.color = 'var(--blue)'; nameEl.textContent = name;
+          nameDiv.appendChild(nameEl);
+          const daysSpan = document.createElement('span'); daysSpan.className = 'tier-agent-days'; daysSpan.textContent = days + ' days';
+          chip.appendChild(nameDiv); chip.appendChild(daysSpan);
+          agentsList.appendChild(chip);
+        });
+      } else {
+        const empty = document.createElement('div');
+        empty.style.cssText = 'padding:8px;color:var(--text-muted);font-size:11px';
+        empty.textContent = 'No agents at this tier yet';
+        agentsList.appendChild(empty);
+      }
+      col.appendChild(agentsList); grid.appendChild(col);
+    });
+  } catch (e) {
+    console.warn('loadAutonomyTiers failed:', e);
+    if (grid) grid.innerHTML = '<div class="load-error" style="grid-column:1/-1">Failed to load autonomy tiers. <button onclick="loadAutonomyTiers()">Retry</button></div>';
+  }
+}
+
+/// ── P11: Capability Matrix from /api/v1/capabilities ──────
+async function loadCapabilityMatrix() {
+  const tbody = document.getElementById('heatmap-tbody');
+  if (!tbody) return;
+  while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+  const skelTr = document.createElement('tr');
+  const skelTd = document.createElement('td');
+  skelTd.colSpan = 9;
+  skelTd.innerHTML = '<div class="skeleton-loader">Loading capability matrix…</div>';
+  skelTr.appendChild(skelTd);
+  tbody.appendChild(skelTr);
+  try {
+    const res = await fetch('/api/v1/capabilities');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    const data = json.data || [];
+    if (!data.length) {
+      while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+      const tr = document.createElement('tr');
+      const td = document.createElement('td'); td.colSpan = 9; td.className = 'session-empty';
+      td.textContent = 'No capability data yet'; tr.appendChild(td); tbody.appendChild(tr);
+      return;
+    }
+    const skillHeaders = ['Coding', 'Testing', 'Design', 'Planning', 'Analysis', 'Comms', 'DevOps', 'Research'];
+    while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+    data.forEach(function(a) {
+      const m = (a.model || '').toLowerCase();
+      const tier = m.indexOf('opus') !== -1 ? 'opus' : m.indexOf('haiku') !== -1 ? 'haiku' : 'sonnet';
+      const tierLabel = tier === 'opus' ? 'O' : tier === 'haiku' ? 'H' : 'S';
+      const agentSkills = (a.skills || []).map(function(s) { return s.toLowerCase(); });
+      const tr = document.createElement('tr');
+      const nameTd = document.createElement('td');
+      const badge = document.createElement('span');
+      badge.className = 'model-badge ' + tier;
+      badge.style.marginRight = '4px';
+      badge.textContent = tierLabel;
+      nameTd.appendChild(badge);
+      nameTd.appendChild(document.createTextNode(a.agentId));
+      tr.appendChild(nameTd);
+      skillHeaders.forEach(function(sk) {
+        const skLow = sk.toLowerCase();
+        const match = agentSkills.some(function(as) { return as.indexOf(skLow) !== -1 || skLow.indexOf(as) !== -1; });
+        const opacity = match ? 0.8 : 0.1;
+        const colorRgb = tier === 'opus' ? '240,180,41' : tier === 'haiku' ? '63,185,80' : '88,166,255';
+        const td = document.createElement('td');
+        const cell = document.createElement('div');
+        cell.className = 'heat-cell';
+        cell.style.background = 'rgba(' + colorRgb + ',' + opacity + ')';
+        cell.title = sk + ': ' + (match ? 'Yes' : 'No');
+        td.appendChild(cell); tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+  } catch (e) {
+    console.warn('loadCapabilityMatrix failed:', e);
+    while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+    const errTr = document.createElement('tr');
+    const errTd = document.createElement('td');
+    errTd.colSpan = 9;
+    errTd.innerHTML = '<div class="load-error">Failed to load capabilities. <button onclick="loadCapabilityMatrix()">Retry</button></div>';
+    errTr.appendChild(errTd);
+    tbody.appendChild(errTr);
+  }
+}
+
+/// ── P12: Review Pipeline from /api/v1/reviews ─────────────
+async function loadReviewPipeline() {
+  const board = document.querySelector('#review-pipeline .kanban-board');
+  if (!board) return;
+  board.innerHTML = '<div class="skeleton-loader" style="grid-column:1/-1">Loading review pipeline…</div>';
+  try {
+    const res = await fetch('/api/v1/reviews');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    const data = json.data || [];
+    if (!data.length) {
+      const div = document.createElement('div');
+      div.className = 'empty-state';
+      div.style.gridColumn = '1/-1';
+      div.textContent = 'No reviews yet';
+      board.textContent = ''; board.appendChild(div);
+      return;
+    }
+    // Update first kanban column with real data
+    const col = board.querySelector('.kanban-col');
+    if (col) {
+      const hdr = col.querySelector('.kanban-col-header');
+      if (hdr) {
+        const cnt = hdr.querySelector('.kanban-count');
+        if (cnt) cnt.textContent = data.length;
+      }
+      const cardsContainer = col.querySelector('.kanban-cards');
+      if (cardsContainer) {
+        while (cardsContainer.firstChild) cardsContainer.removeChild(cardsContainer.firstChild);
+        data.slice(0, 6).forEach(function(r) {
+          const name = (r.filename || r.id || '').replace('.md', '');
+          const date = r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '';
+          const card = document.createElement('div');
+          card.className = 'review-card';
+          const titleDiv = document.createElement('div');
+          titleDiv.className = 'review-card-title';
+          titleDiv.textContent = name;
+          const metaDiv = document.createElement('div');
+          metaDiv.className = 'review-card-meta';
+          if (date) {
+            const dateChip = document.createElement('span');
+            dateChip.className = 'chip';
+            dateChip.textContent = date;
+            metaDiv.appendChild(dateChip);
+          }
+          card.appendChild(titleDiv); card.appendChild(metaDiv);
+          cardsContainer.appendChild(card);
+        });
+      }
+    }
+  } catch (e) {
+    console.warn('loadReviewPipeline failed:', e);
+    if (board) board.innerHTML = '<div class="load-error" style="grid-column:1/-1">Failed to load reviews. <button onclick="loadReviewPipeline()">Retry</button></div>';
+  }
+}
+
+/// ── P13: Investor Scorecard augment from /api/v1/costs ─────
+async function loadInvestorScorecard() {
+  const totalEl = document.getElementById('scorecard-total-display');
+  const sessEl = document.getElementById('scorecard-sessions-display');
+  if (totalEl) totalEl.textContent = '…';
+  if (sessEl) sessEl.textContent = '…';
+  try {
+    const res = await fetch('/api/v1/costs');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const totalUsd = typeof data.totalUsd === 'number' ? data.totalUsd : (typeof data.total === 'number' ? data.total : null);
+    const sessionCount = data.sessionCount || data.sessions || null;
+    if (totalUsd !== null) {
+      const el = document.getElementById('scorecard-total-display');
+      if (el) el.textContent = fmtUsd(totalUsd);
+    }
+    if (sessionCount !== null) {
+      const el = document.getElementById('scorecard-sessions-display');
+      if (el) el.textContent = sessionCount + ' sessions';
+    }
+  } catch (e) {
+    console.warn('loadInvestorScorecard failed:', e);
+    if (totalEl) totalEl.textContent = '—';
+    if (sessEl) sessEl.textContent = '—';
+  }
+}
+
+// ── P14: Memory Browser from /api/v1/memory ───────────────
+async function loadMemoryBrowser() {
+  const list = document.getElementById('memory-list');
+  if (!list) return;
+  list.innerHTML = '<div class="skeleton-loader">Loading memory entries…</div>';
+  try {
+    const res = await fetch('/api/v1/memory');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    const data = json.data || [];
+    if (!data.length) {
+      const div = document.createElement('div');
+      div.className = 'empty-state';
+      div.textContent = 'No memory entries yet';
+      list.textContent = ''; list.appendChild(div);
+      return;
+    }
+    function detectCat(key) {
+      const k = (key || '').toLowerCase();
+      if (k.indexOf('feedback') !== -1) return 'feedback';
+      if (k.indexOf('project') !== -1) return 'project';
+      if (k.indexOf('lesson') !== -1 || k.indexOf('concept') !== -1) return 'lesson';
+      if (k.indexOf('config') !== -1 || k.indexOf('version') !== -1) return 'config';
+      return 'project';
+    }
+    list.textContent = '';
+    data.slice(0, 20).forEach(function(entry) {
+      const key = entry.key || '—';
+      const val = (entry.value || '—').slice(0, 120);
+      const cat = detectCat(key);
+      const catLabel = cat.charAt(0).toUpperCase() + cat.slice(1);
+      const name = key.replace('sessions/', '').replace('.json', '').replace('.md', '');
+      const div = document.createElement('div');
+      div.className = 'memory-entry';
+      div.setAttribute('data-cat', cat);
+      const hdr = document.createElement('div');
+      hdr.className = 'memory-entry-header';
+      const titleSpan = document.createElement('span');
+      titleSpan.className = 'memory-entry-title';
+      titleSpan.textContent = name;
+      const catSpan = document.createElement('span');
+      catSpan.className = 'category-badge ' + cat;
+      catSpan.textContent = catLabel;
+      hdr.appendChild(titleSpan); hdr.appendChild(catSpan);
+      const preview = document.createElement('div');
+      preview.className = 'memory-entry-preview';
+      preview.textContent = val;
+      div.appendChild(hdr); div.appendChild(preview);
+      list.appendChild(div);
+    });
+  } catch (e) {
+    console.warn('loadMemoryBrowser failed:', e);
+    if (list) list.innerHTML = '<div class="load-error">Failed to load memory. <button onclick="loadMemoryBrowser()">Retry</button></div>';
+  }
+}
+
+/// ── P15: REFORGE Panel from /api/v1/reforge ───────────────
+async function loadReforgePanel() {
+  const list = document.querySelector('#reforge-panel .reforge-list');
+  if (!list) return;
+  list.innerHTML = '<div class="skeleton-loader">Loading REFORGE proposals…</div>';
+  try {
+    const res = await fetch('/api/v1/reforge');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    const data = json.data || [];
+    if (!data.length) {
+      const div = document.createElement('div');
+      div.className = 'empty-state';
+      div.textContent = 'No REFORGE proposals yet';
+      list.textContent = ''; list.appendChild(div);
+      return;
+    }
+    const statusClassMap = {proposed: 'pending', approved: 'applied', executed: 'applied', rejected: 'rolled-back'};
+    list.textContent = '';
+    data.forEach(function(p) {
+      const title = p.title || p.filename || '—';
+      const status = p.status || 'proposed';
+      const cls = statusClassMap[status] || 'pending';
+      const date = p.createdAt ? new Date(p.createdAt).toLocaleDateString() : '';
+      const row = document.createElement('div');
+      row.className = 'reforge-row';
+      row.addEventListener('click', function() { openReforgeModal(title); });
+      const titleDiv = document.createElement('div');
+      titleDiv.className = 'reforge-title';
+      titleDiv.textContent = title;
+      const proposerSpan = document.createElement('span');
+      proposerSpan.className = 'reforge-proposer';
+      proposerSpan.textContent = '—';
+      const statusSpan = document.createElement('span');
+      statusSpan.className = 'reforge-status ' + cls;
+      statusSpan.textContent = status;
+      const metaSpan = document.createElement('span');
+      metaSpan.className = 'reforge-meta';
+      metaSpan.textContent = date;
+      row.appendChild(titleDiv); row.appendChild(proposerSpan);
+      row.appendChild(statusSpan); row.appendChild(metaSpan);
+      list.appendChild(row);
+    });
+  } catch (e) {
+    console.warn('loadReforgePanel failed:', e);
+    if (list) list.innerHTML = '<div class="load-error">Failed to load REFORGE proposals. <button onclick="loadReforgePanel()">Retry</button></div>';
+  }
+}
+
+/// ── P16: Meeting Schedule from /api/v1/sprints ────────────
+async function loadMeetingSchedule() {
+  const grid = document.querySelector('#meeting-schedule .meetings-grid');
+  if (!grid) return;
+  grid.innerHTML = '<div class="skeleton-loader" style="grid-column:1/-1">Loading meeting schedule…</div>';
+  try {
+    const res = await fetch('/api/v1/sprints');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    const data = json.data || [];
+    if (!data.length) {
+      const div = document.createElement('div');
+      div.className = 'empty-state';
+      div.style.gridColumn = '1/-1';
+      div.textContent = 'No meetings scheduled';
+      grid.textContent = ''; grid.appendChild(div);
+      return;
+    }
+    const sprint = data[data.length - 1];
+    const items = sprint.items || sprint.tasks || [];
+    const version = sprint.version || sprint.sprintId || sprint.filename || '?';
+    if (!items.length) {
+      const div = document.createElement('div');
+      div.className = 'empty-state';
+      div.style.gridColumn = '1/-1';
+      div.textContent = 'No meetings scheduled';
+      grid.textContent = ''; grid.appendChild(div);
+      return;
+    }
+    const pending = items.filter(function(i) { return i.status !== 'completed' && i.status !== 'done'; }).slice(0, 4);
+    const done = items.filter(function(i) { return i.status === 'completed' || i.status === 'done'; }).slice(0, 3);
+    function makeCol(headerCls, headerText, itemsList, outcomeStr) {
+      const col = document.createElement('div');
+      const hdr = document.createElement('div');
+      hdr.className = 'meetings-col-header ' + headerCls;
+      hdr.textContent = headerText;
+      col.appendChild(hdr);
+      if (!itemsList.length) {
+        const empty = document.createElement('div');
+        empty.style.cssText = 'color:var(--text-muted);font-size:12px;padding:8px';
+        empty.textContent = 'No items';
+        col.appendChild(empty);
+      } else {
+        itemsList.forEach(function(item) {
+          const titleText = item.title || item.id || '—';
+          const assignee = item.assignee || '—';
+          const card = document.createElement('div');
+          card.className = 'meeting-card';
+          const titleDiv = document.createElement('div');
+          titleDiv.className = 'meeting-title';
+          titleDiv.textContent = titleText;
+          const participants = document.createElement('div');
+          participants.className = 'meeting-participants';
+          const chip = document.createElement('span');
+          chip.className = 'chip';
+          chip.textContent = assignee;
+          participants.appendChild(chip);
+          const footer = document.createElement('div');
+          footer.className = 'meeting-footer';
+          const dur = document.createElement('span');
+          dur.className = 'meeting-duration';
+          dur.textContent = 'Sprint ' + version;
+          const oc = document.createElement('span');
+          oc.className = 'meeting-outcome ' + outcomeStr;
+          oc.textContent = outcomeStr === 'resolved' ? 'Done' : outcomeStr === 'in-progress' ? 'Active' : 'Scheduled';
+          footer.appendChild(dur); footer.appendChild(oc);
+          card.appendChild(titleDiv); card.appendChild(participants); card.appendChild(footer);
+          col.appendChild(card);
+        });
+      }
+      return col;
+    }
+    grid.textContent = '';
+    grid.appendChild(makeCol('past', 'Completed', done, 'resolved'));
+    const activeCol = document.createElement('div');
+    const activeHdr = document.createElement('div');
+    activeHdr.className = 'meetings-col-header active';
+    activeHdr.textContent = 'Active Sprint';
+    const activeMsg = document.createElement('div');
+    activeMsg.className = 'empty-state';
+    activeMsg.style.cssText = 'padding:16px;font-size:12px';
+    activeMsg.textContent = 'Sprint ' + version + ' in progress';
+    activeCol.appendChild(activeHdr); activeCol.appendChild(activeMsg);
+    grid.appendChild(activeCol);
+    grid.appendChild(makeCol('upcoming', 'Scheduled Items', pending, 'scheduled'));
+  } catch (e) {
+    console.warn('loadMeetingSchedule failed:', e);
+    if (grid) grid.innerHTML = '<div class="load-error" style="grid-column:1/-1">Failed to load schedule. <button onclick="loadMeetingSchedule()">Retry</button></div>';
+  }
+}
+
+// ── Wire SSE session events to Activity Feed ───────────────
+// loadActivityFeed() is called from DOMContentLoaded on page init.
+// SSE session events also refresh the feed when new sessions arrive.
+// The existing SSE.connect() already listens to session-started/completed;
+// we patch it by adding a listener after connect() is called below.
+
+// ── DOMContentLoaded: call all load functions ──────────────
+document.addEventListener('DOMContentLoaded', function() {
+  loadVersion();
+  loadAgentCards();
+  loadSprintFromApi();
+  loadOrgGraph();
+  loadActivityFeed();
+  loadFlywheel();
+  loadDelegationFlow();
+  loadBusEvents();
+  loadSessionTimeline();
+  loadAutonomyTiers();
+  loadCapabilityMatrix();
+  loadReviewPipeline();
+  loadInvestorScorecard();
+  loadMemoryBrowser();
+  loadReforgePanel();
+  loadMeetingSchedule();
+});
 
 // ── Initialize Router + SSE ───────────────────────────────
 Router.init();

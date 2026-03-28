@@ -87,6 +87,110 @@ export const CREATE_TABLES_SQL: string[] = [
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 )`,
+
+  // Agent Identity Hub — Phase 1.2 tables
+
+  // Agent career records
+  `CREATE TABLE IF NOT EXISTS agent_careers (
+  agent_id TEXT PRIMARY KEY,
+  hired_at TEXT NOT NULL,
+  current_team TEXT NOT NULL,
+  current_role TEXT NOT NULL,
+  seniority TEXT NOT NULL,
+  autonomy_tier INTEGER NOT NULL DEFAULT 1,
+  tasks_completed INTEGER DEFAULT 0,
+  success_rate REAL DEFAULT 0.0,
+  avg_task_duration REAL DEFAULT 0.0,
+  peer_review_score REAL DEFAULT 0.0,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`,
+
+  // Agent skill levels
+  `CREATE TABLE IF NOT EXISTS agent_skills (
+  agent_id TEXT NOT NULL,
+  skill_name TEXT NOT NULL,
+  level INTEGER NOT NULL DEFAULT 1,
+  exercise_count INTEGER DEFAULT 0,
+  success_rate REAL DEFAULT 0.0,
+  last_exercised TEXT,
+  unlocked_capabilities TEXT,
+  PRIMARY KEY (agent_id, skill_name)
+)`,
+
+  // Task memories
+  `CREATE TABLE IF NOT EXISTS task_memories (
+  id TEXT PRIMARY KEY,
+  agent_id TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  timestamp TEXT NOT NULL,
+  objective TEXT,
+  approach TEXT,
+  outcome TEXT NOT NULL,
+  lessons_learned TEXT,
+  files_modified TEXT,
+  collaborators TEXT,
+  difficulty INTEGER,
+  tokens_used INTEGER
+)`,
+
+  // Career events
+  `CREATE TABLE IF NOT EXISTS career_events (
+  id TEXT PRIMARY KEY,
+  agent_id TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  details TEXT,
+  timestamp TEXT NOT NULL
+)`,
+
+  // Institutional knowledge
+  `CREATE TABLE IF NOT EXISTS institutional_knowledge (
+  id TEXT PRIMARY KEY,
+  team_id TEXT NOT NULL,
+  category TEXT NOT NULL,
+  content TEXT NOT NULL,
+  source TEXT,
+  confidence REAL DEFAULT 1.0,
+  reference_links TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  last_validated TEXT
+)`,
+
+  // Execution slots
+  `CREATE TABLE IF NOT EXISTS execution_slots (
+  slot_id TEXT PRIMARY KEY,
+  agent_id TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active',
+  working_files TEXT,
+  started_at TEXT NOT NULL,
+  completed_at TEXT
+)`,
+
+  // Teams
+  `CREATE TABLE IF NOT EXISTS teams (
+  id TEXT PRIMARY KEY,
+  layer TEXT NOT NULL,
+  manager_id TEXT,
+  tech_lead_id TEXT,
+  max_capacity INTEGER DEFAULT 10,
+  domain TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`,
+
+  // Hiring recommendations
+  `CREATE TABLE IF NOT EXISTS hiring_recommendations (
+  id TEXT PRIMARY KEY,
+  team_id TEXT NOT NULL,
+  requested_role TEXT NOT NULL,
+  requested_seniority TEXT NOT NULL,
+  requested_skills TEXT,
+  justification TEXT,
+  status TEXT DEFAULT 'pending',
+  requested_by TEXT,
+  decided_by TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  decided_at TEXT
+)`,
 ];
 
 export const CREATE_INDEXES_SQL: string[] = [
@@ -101,6 +205,20 @@ export const CREATE_INDEXES_SQL: string[] = [
   `CREATE INDEX IF NOT EXISTS idx_promotions_agent ON promotions(agent_id)`,
   `CREATE INDEX IF NOT EXISTS idx_promotions_created_at ON promotions(created_at)`,
   `CREATE INDEX IF NOT EXISTS idx_agent_autonomy_updated_at ON agent_autonomy(updated_at)`,
+
+  // Agent Identity Hub indexes
+  `CREATE INDEX IF NOT EXISTS idx_agent_careers_current_team ON agent_careers(current_team)`,
+  `CREATE INDEX IF NOT EXISTS idx_agent_skills_agent_id ON agent_skills(agent_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_task_memories_agent_id ON task_memories(agent_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_task_memories_timestamp ON task_memories(timestamp)`,
+  `CREATE INDEX IF NOT EXISTS idx_career_events_agent_id ON career_events(agent_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_career_events_timestamp ON career_events(timestamp)`,
+  `CREATE INDEX IF NOT EXISTS idx_institutional_knowledge_team_id ON institutional_knowledge(team_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_execution_slots_agent_id ON execution_slots(agent_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_execution_slots_status ON execution_slots(status)`,
+  `CREATE INDEX IF NOT EXISTS idx_teams_layer ON teams(layer)`,
+  `CREATE INDEX IF NOT EXISTS idx_hiring_recommendations_team_id ON hiring_recommendations(team_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_hiring_recommendations_status ON hiring_recommendations(status)`,
 ];
 
 export const ALL_DDL: string[] = [...CREATE_TABLES_SQL, ...CREATE_INDEXES_SQL];

@@ -1,9 +1,13 @@
 {
   "name": "agentforge",
-  "version": "0.4.7",
+  "version": "6.0.0",
   "description": "Adaptive Agent Team Builder for Claude Code",
   "type": "module",
   "main": "dist/index.js",
+  "workspaces": [
+    "packages/*",
+    "plugins/*"
+  ],
   "scripts": {
     "build": "tsc",
     "start": "npm run build && node dist/server/main.js",
@@ -14,7 +18,15 @@
     "sprint": "npx tsx scripts/run-sprint.ts",
     "reports": "npm run build && node dist/scripts/run-reports.js",
     "dashboard": "npx serve . -l 3000",
-    "docs": "npx typedoc --out docs/api src/index.ts --plugin none"
+    "docs": "npx typedoc --out docs/api src/index.ts --plugin none",
+    "v5:build": "bash scripts/build-v5.sh",
+    "v5:check": "bash scripts/check-v5.sh",
+    "v5:start": "node packages/server/dist/main.js",
+    "v5:dev": "concurrently --names \"server,dash\" --prefix-colors \"blue,green\" \"npm run v5:server\" \"npm run v5:dash\"",
+    "v5:server": "node --watch packages/server/dist/main.js",
+    "v5:dash": "cd packages/dashboard && npx vite --port 4751",
+    "v5:server:dev": "cd packages/server && node --watch dist/main.js",
+    "v5:dash:dev": "cd packages/dashboard && npx vite dev --port 4751"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
@@ -30,6 +42,7 @@
     "@types/better-sqlite3": "^7.6.13",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.13.0",
+    "concurrently": "^9.0.0",
     "eslint": "^9.19.0",
     "typescript": "^5.7.3",
     "vitest": "^3.0.4"

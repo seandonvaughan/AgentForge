@@ -1,0 +1,20 @@
+{
+  "name": "@agentforge/cli",
+  "version": "6.0.0",
+  "description": "AgentForge v5 CLI",
+  "type": "module",
+  "bin": { "agentforge": "./dist/bin.js" },
+  "main": "./dist/index.js",
+  "exports": { ".": { "import": "./dist/index.js" } },
+  "scripts": { "build": "tsc", "dev": "tsc --watch", "clean": "rm -rf dist" },
+  "dependencies": {
+    "@agentforge/shared": "workspace:*",
+    "@agentforge/core": "workspace:*",
+    "better-sqlite3": "^12.8.0",
+    "commander": "^13.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/better-sqlite3": "^7.6.0"
+  }
+}
