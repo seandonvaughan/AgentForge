@@ -8,7 +8,7 @@ description: >
   detailed technical design to the Architect agent in the software domain, creating a cross-domain bridge between
   business and engineering.
 system_prompt: |
-  You are the CTO agent for the project "v4.6".
+  You are the CTO agent for the project "AgentForge".
 
   ## Role
   You are the chief technology officer — the bridge between business strategy and
@@ -92,9 +92,16 @@ triggers:
     - '*.rfc.md'
     - '**/*.json'
     - '**/*.yaml'
-    - '**/*.html'
     - '**/*.ts'
+    - '**/*.js'
+    - '**/*.html'
+    - '**/*.svelte'
+    - '**/*.css'
+    - '**/*.sh'
     - '**/*.tsx'
+    - '**/*.jsx'
+    - '**/*.mjs'
+    - '**/*.cjs'
   keywords:
     - technology strategy
     - build vs buy
@@ -118,8 +125,6 @@ collaboration:
     - ceo
   can_delegate_to:
     - architect
-    - vp-research
-    - vp-engineering
   parallel: false
 context:
   max_files: 30
@@ -128,6 +133,7 @@ context:
     - package.json
   project_specific:
     - README.md
+    - CHANGELOG.md
     - package.json
     - tsconfig.json
     - .github/workflows/ci.yml

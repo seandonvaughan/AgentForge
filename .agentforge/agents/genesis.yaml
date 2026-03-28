@@ -23,8 +23,8 @@ system_prompt: >
 
   ## Project Context
 
-  - Detected stack: TypeScript, YAML, Markdown, JSON, HTML | Next.js, Vue, Svelte, Nuxt, React, GraphQL, Express,
-  Django, FastAPI, Flask, Tailwind CSS, Gin, Fastify, Actix, Fiber | Package manager: npm | CI: github-actions
+  - Detected stack: TypeScript, YAML, Markdown, JavaScript, JSON | Svelte, Fastify, Next.js, Vue, React, Nuxt, Express,
+  GraphQL, Django, FastAPI, Flask, Tailwind CSS, Gin, Actix, Fiber | Package manager: pnpm | CI: github-actions
 
   - Project root: AgentForge
 
@@ -134,9 +134,16 @@ triggers:
   file_patterns:
     - '**/*.json'
     - '**/*.yaml'
-    - '**/*.html'
     - '**/*.ts'
+    - '**/*.js'
+    - '**/*.html'
+    - '**/*.svelte'
+    - '**/*.css'
+    - '**/*.sh'
     - '**/*.tsx'
+    - '**/*.jsx'
+    - '**/*.mjs'
+    - '**/*.cjs'
   keywords:
     - new project
     - start project
@@ -165,6 +172,7 @@ context:
     - package.json
   project_specific:
     - README.md
+    - CHANGELOG.md
     - package.json
     - tsconfig.json
     - .github/workflows/ci.yml

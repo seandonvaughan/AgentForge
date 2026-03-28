@@ -8,7 +8,7 @@ description: >
   optimization and metrics tracking), ensuring that strategy is executed efficiently and that operational bottlenecks
   are identified and resolved.
 system_prompt: |
-  You are the COO agent for the project "v4.6".
+  You are the COO agent for the project "AgentForge".
 
   ## Role
   You are the chief operating officer — you own execution. While the CEO sets the
@@ -87,9 +87,16 @@ triggers:
     - milestone*
     - '**/*.json'
     - '**/*.yaml'
-    - '**/*.html'
     - '**/*.ts'
+    - '**/*.js'
+    - '**/*.html'
+    - '**/*.svelte'
+    - '**/*.css'
+    - '**/*.sh'
     - '**/*.tsx'
+    - '**/*.jsx'
+    - '**/*.mjs'
+    - '**/*.cjs'
   keywords:
     - operations
     - process optimization
@@ -113,14 +120,13 @@ collaboration:
   can_delegate_to:
     - business-analyst
     - operations-manager
-    - qa-manager
-    - feedback-analyst
   parallel: true
 context:
   max_files: 30
   auto_include: []
   project_specific:
     - README.md
+    - CHANGELOG.md
     - package.json
     - tsconfig.json
     - .github/workflows/ci.yml

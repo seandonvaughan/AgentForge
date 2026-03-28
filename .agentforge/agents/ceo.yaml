@@ -88,9 +88,16 @@ triggers:
     - investor-update*
     - '**/*.json'
     - '**/*.yaml'
-    - '**/*.html'
     - '**/*.ts'
+    - '**/*.js'
+    - '**/*.html'
+    - '**/*.svelte'
+    - '**/*.css'
+    - '**/*.sh'
     - '**/*.tsx'
+    - '**/*.jsx'
+    - '**/*.mjs'
+    - '**/*.cjs'
   keywords:
     - strategy
     - vision
@@ -127,6 +134,7 @@ context:
     - README.md
   project_specific:
     - README.md
+    - CHANGELOG.md
     - package.json
     - tsconfig.json
     - .github/workflows/ci.yml

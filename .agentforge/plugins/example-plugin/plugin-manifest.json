@@ -1,0 +1,129 @@
+{
+  "$schema": "https://agentforge.dev/schemas/plugin-manifest-v1.json",
+  "name": "@agentforge/plugin-example",
+  "version": "1.0.0",
+  "displayName": "Example Plugin",
+  "description": "Demonstrates all AgentForge v5 plugin capabilities: custom agents, dashboard sections, webhooks, CLI commands, and API routes.",
+  "author": {
+    "name": "AgentForge Team",
+    "email": "plugins@agentforge.dev",
+    "url": "https://agentforge.dev"
+  },
+  "license": "MIT",
+  "engine": ">=5.0.0",
+  "entry": "./dist/index.js",
+
+  "permissions": [
+    "agents:read",
+    "sessions:read",
+    "sessions:write",
+    "events:subscribe",
+    "dashboard:section",
+    "api:route",
+    "commands:register",
+    "webhooks:outbound",
+    "storage:kv"
+  ],
+
+  "agents": [
+    {
+      "name": "example-analyzer",
+      "yamlPath": "./agents/example-analyzer.yaml",
+      "description": "Analyzes session outcomes and generates improvement suggestions"
+    }
+  ],
+
+  "dashboardSections": [
+    {
+      "id": "example-session-insights",
+      "title": "Session Insights",
+      "componentPath": "./components/SessionInsights.svelte",
+      "position": "main",
+      "order": 100,
+      "icon": "bar-chart-2",
+      "description": "Visual breakdown of session success rates, cost trends, and agent performance"
+    },
+    {
+      "id": "example-health-check",
+      "title": "System Health",
+      "componentPath": "./components/HealthCheck.svelte",
+      "position": "sidebar",
+      "order": 50,
+      "icon": "activity",
+      "description": "Real-time system health indicators"
+    }
+  ],
+
+  "webhooks": [
+    {
+      "id": "session-complete-notify",
+      "events": ["session.completed", "session.failed"],
+      "description": "Sends session completion/failure data to an external endpoint (e.g., Slack, PagerDuty)"
+    },
+    {
+      "id": "cost-alert",
+      "events": ["cost.anomaly"],
+      "description": "Sends cost anomaly alerts to a configured endpoint"
+    }
+  ],
+
+  "commands": [
+    {
+      "name": "example-report",
+      "description": "Generate a session analysis report",
+      "args": [
+        { "name": "format", "type": "string", "required": false, "default": "json", "description": "Output format: json, markdown, or csv" },
+        { "name": "days", "type": "number", "required": false, "default": 7, "description": "Number of days to include in the report" }
+      ]
+    },
+    {
+      "name": "example-health",
+      "description": "Run a system health check and report status",
+      "args": []
+    }
+  ],
+
+  "apiRoutes": [
+    {
+      "method": "GET",
+      "path": "/stats",
+      "description": "Get aggregated session statistics"
+    },
+    {
+      "method": "GET",
+      "path": "/insights",
+      "description": "Get AI-generated insights from recent sessions"
+    },
+    {
+      "method": "POST",
+      "path": "/analyze",
+      "description": "Trigger analysis of a specific session or date range"
+    }
+  ],
+
+  "config": {
+    "webhookUrl": {
+      "type": "string",
+      "description": "Default webhook endpoint URL for notifications",
+      "required": false
+    },
+    "analysisDepth": {
+      "type": "number",
+      "description": "Number of recent sessions to include in analysis",
+      "default": 100,
+      "min": 10,
+      "max": 10000
+    },
+    "costAlertThreshold": {
+      "type": "number",
+      "description": "Cost threshold (USD) that triggers an alert",
+      "default": 5.0,
+      "min": 0.01
+    },
+    "enableAutoAnalysis": {
+      "type": "boolean",
+      "description": "Automatically analyze sessions on completion",
+      "default": false
+    }
+  }
+}

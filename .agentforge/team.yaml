@@ -1,7 +1,7 @@
-name: v4.7-team
-forged_at: '2026-03-27T12:45:00.000Z'
+name: AgentForge-team
+forged_at: '2026-03-28T18:49:21.774Z'
 forged_by: agentforge
-project_hash: v47-platform
+project_hash: e54792d01093
 agents:
   strategic:
     - ceo
@@ -18,7 +18,6 @@ agents:
     - skill-designer
     - template-optimizer
     - coder
-    - ml-engineer
     - research-scientist
     - engineering-manager-frontend
     - engineering-manager-backend
@@ -32,6 +31,8 @@ agents:
     - debugger
     - linter
     - api-specialist
+    - db-specialist
+    - ml-engineer
     - qa-manager
     - observability-engineer
   utility:
@@ -58,6 +59,7 @@ model_routing:
     - dba
     - debugger
     - api-specialist
+    - db-specialist
     - ml-engineer
     - research-scientist
     - engineering-manager-frontend
@@ -114,6 +116,14 @@ delegation_graph:
     - test-runner
     - code-explorer
   api-specialist:
+    - researcher
+    - linter
+    - file-reader
+  db-specialist:
+    - researcher
+    - linter
+    - file-reader
+  ml-engineer:
     - researcher
     - linter
     - file-reader

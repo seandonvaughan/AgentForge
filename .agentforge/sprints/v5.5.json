@@ -1,0 +1,85 @@
+{
+  "version": "5.5",
+  "name": "v5.5 — Enterprise Command Center",
+  "phase": "completed",
+  "startedAt": "2026-03-27T19:10:00.000Z",
+  "completedAt": "2026-03-27T19:30:00.000Z",
+  "ceo_brief": "Founder directive: max Pro plan barely used. Expand to 20+ parallel agents. Build real enterprise dashboard (SSE live updates, agent comms, branch states, cost burn). Git branch-per-agent model. Playwright monitoring. New agent roles.",
+  "items": [
+    {
+      "id": "v55-p0-1",
+      "priority": "P0",
+      "title": "Enterprise Dashboard — SSE Live Feed",
+      "status": "completed",
+      "description": "SSE endpoint GET /api/v5/stream live-streams all events. Dashboard /live page with auto-reconnect, event type filter, refresh signal banner. POST /api/v5/dashboard/refresh-signal."
+    },
+    {
+      "id": "v55-p0-2",
+      "priority": "P0",
+      "title": "Git Branch-Per-Agent Model",
+      "status": "completed",
+      "description": "GitBranchManager: createBranch(agentId,taskId), submitForReview, mergeBranch, markConflict, deleteBranch, report. MergeQueueItem lifecycle. REST: /api/v5/branches, /api/v5/merge-queue. New agents: merge-controller, conflict-resolver, code-reviewer, git-ops-engineer."
+    },
+    {
+      "id": "v55-p0-3",
+      "priority": "P0",
+      "title": "20-Agent Parallel Fleet Expansion",
+      "status": "completed",
+      "description": "AgentPool class: maxConcurrent=20, async acquire/release, queue depth tracking. WorkflowRunner already supports unlimited fan-out. BudgetEnforcer daily ceiling configurable."
+    },
+    {
+      "id": "v55-p0-4",
+      "priority": "P0",
+      "title": "Playwright Dashboard Monitor",
+      "status": "completed",
+      "description": "scripts/dashboard-monitor.ts: headless Chromium + SSE watcher. Sends refresh signal on stale detection. API-only fallback if Playwright unavailable."
+    },
+    {
+      "id": "v55-p1-1",
+      "priority": "P1",
+      "title": "Dashboard Navigation + Homepage Upgrade",
+      "status": "completed",
+      "description": "Sidebar nav updated with Live Feed + Branches links. Homepage rebuilt as enterprise command center: health check, quick stats, navigation cards."
+    },
+    {
+      "id": "v55-p2-1",
+      "priority": "P2",
+      "title": "v5.5 Release",
+      "status": "completed",
+      "description": "Bumped to 5.5.0. 2965 tests passing (46 new). All P0 gates passed."
+    }
+  ],
+  "results": {
+    "testsPassingBefore": 2914,
+    "testsPassingAfter": 2965,
+    "newTests": 51,
+    "testFiles": 159,
+    "newFiles": [
+      "packages/core/src/git/git-branch-manager.ts",
+      "packages/core/src/git/agent-pool.ts",
+      "packages/core/src/git/types.ts",
+      "packages/server/src/routes/v5/stream.ts",
+      "packages/server/src/routes/v5/merge-queue.ts",
+      "packages/dashboard/src/routes/live/+page.svelte",
+      "packages/dashboard/src/routes/branches/+page.svelte",
+      "scripts/dashboard-monitor.ts",
+      ".agentforge/agents/merge-controller.yaml",
+      ".agentforge/agents/conflict-resolver.yaml",
+      ".agentforge/agents/code-reviewer.yaml",
+      ".agentforge/agents/git-ops-engineer.yaml"
+    ],
+    "newAPIEndpoints": [
+      "GET /api/v5/stream",
+      "GET /api/v5/stream/status",
+      "POST /api/v5/stream/emit",
+      "POST /api/v5/dashboard/refresh-signal",
+      "GET /api/v5/branches",
+      "POST /api/v5/branches",
+      "GET /api/v5/branches/report",
+      "POST /api/v5/branches/:id/submit",
+      "POST /api/v5/branches/:id/merge",
+      "POST /api/v5/branches/:id/conflict",
+      "GET /api/v5/merge-queue"
+    ]
+  }
+}

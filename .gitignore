@@ -37,3 +37,16 @@ npm-debug.log*
 
 # Git worktrees
 .worktrees/
+
+# SQLite runtime files
+*.db-shm
+*.db-wal
+
+# SvelteKit build cache
+.svelte-kit/
+
+# Playwright MCP
+.playwright-mcp/
+
+# Broken template sprint file
+.agentforge/sprints/v${SPRINT_VERSION}.json

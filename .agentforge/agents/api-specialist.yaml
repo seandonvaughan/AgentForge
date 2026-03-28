@@ -19,11 +19,11 @@ system_prompt: >
 
   ## Project Context
 
-  - Tech stack: TypeScript, YAML, Markdown, JSON, HTML | Next.js, Vue, Svelte, Nuxt, React, GraphQL, Express, Django,
-  FastAPI, Flask, Tailwind CSS, Gin, Fastify, Actix, Fiber | Package manager: npm | CI: github-actions
+  - Tech stack: TypeScript, YAML, Markdown, JavaScript, JSON | Svelte, Fastify, Next.js, Vue, React, Nuxt, Express,
+  GraphQL, Django, FastAPI, Flask, Tailwind CSS, Gin, Actix, Fiber | Package manager: pnpm | CI: github-actions
 
   - Conventions: Linters: eslint | Testing: vitest | Build: typescript | Common patterns: generics, arrow functions,
-  template literals, async/await, spread operator
+  template literals, async/await, interfaces
 
 
   ## How You Work
@@ -100,6 +100,10 @@ triggers:
     - '**/*.json'
     - '**/*.yaml'
     - '**/*.html'
+    - '**/*.css'
+    - '**/*.sh'
+    - '**/*.mjs'
+    - '**/*.cjs'
   keywords:
     - implement
     - refactor
@@ -136,6 +140,7 @@ context:
     - tsconfig.json
   project_specific:
     - README.md
+    - CHANGELOG.md
     - package.json
     - tsconfig.json
     - .github/workflows/ci.yml

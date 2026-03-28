@@ -1,0 +1,427 @@
+{
+  "sprints": [
+    {
+      "sprintId": "v49-v5-planning",
+      "version": "4.9",
+      "title": "AgentForge v4.9 \u2014 v5 Architecture Planning & Technical Foundation",
+      "createdAt": "2026-03-27T23:00:00.000Z",
+      "phase": "complete",
+      "completedAt": "2026-03-27T22:00:00.000Z",
+      "budget": 800,
+      "teamSize": 8,
+      "items": [
+        {
+          "id": "v49-1",
+          "title": "v5 Architecture RFC",
+          "description": "Full RFC for v5 platform: monorepo, multi-workspace, plugin system, agent protocol v2, deployment models, migration path.",
+          "assignee": "enterprise-architect",
+          "team": "architecture",
+          "status": "completed",
+          "artifact": ".agentforge/reviews/v5-architecture-rfc.md"
+        },
+        {
+          "id": "v49-2",
+          "title": "UI Framework Evaluation",
+          "description": "Evaluated React 19, Svelte 5, SolidJS across 7 dimensions. Recommended SvelteKit. Weighted score: Svelte 8.40, React 7.25, Solid 6.80.",
+          "assignee": "v5-frontend-architect",
+          "team": "architecture",
+          "status": "completed",
+          "artifact": ".agentforge/reviews/v5-ui-framework-eval.md"
+        },
+        {
+          "id": "v49-3",
+          "title": "Enterprise Design System Spec",
+          "description": "Complete design system: tokens (color, type, spacing, motion), 20 component specs, WCAG 2.1 AA, dark/light mode, responsive breakpoints.",
+          "assignee": "experience-design-lead",
+          "team": "architecture",
+          "status": "completed",
+          "artifact": ".agentforge/reviews/v5-design-system-spec.md"
+        },
+        {
+          "id": "v49-4",
+          "title": "Multi-Tenant Data Architecture",
+          "description": "Database-per-workspace isolation. Full schema for master DB and workspace DB. v4 migration strategy. PostgreSQL compatibility layer.",
+          "assignee": "enterprise-architect",
+          "team": "architecture",
+          "status": "completed",
+          "artifact": ".agentforge/reviews/v5-data-architecture.md"
+        },
+        {
+          "id": "v49-5",
+          "title": "Plugin Architecture Prototype",
+          "description": "Plugin manifest schema, sandboxed child process execution, IPC protocol (JSON-RPC 2.0), SDK API, dashboard section loading, security model.",
+          "assignee": "platform-engineer",
+          "team": "architecture",
+          "status": "completed",
+          "artifact": ".agentforge/reviews/v5-plugin-architecture.md"
+        },
+        {
+          "id": "v49-6",
+          "title": "Autonomous Agent Protocol v2",
+          "description": "Typed message bus with 25+ message types. Agent lifecycle state machine. Self-proposal system. Escalation protocol. Confidence-based routing.",
+          "assignee": "lead-architect",
+          "team": "architecture",
+          "status": "completed",
+          "artifact": ".agentforge/reviews/v5-agent-protocol-v2.md"
+        },
+        {
+          "id": "v49-7",
+          "title": "Embedding Search MVP Spec",
+          "description": "Local embedding search with @xenova/transformers. all-MiniLM-L6-v2 (384-dim). SQLite storage. <100ms search over 10K docs. REST + CLI API.",
+          "assignee": "rd-lead",
+          "team": "architecture",
+          "status": "completed",
+          "artifact": ".agentforge/reviews/v5-embedding-search-spec.md"
+        },
+        {
+          "id": "v49-8",
+          "title": "v5 Sprint Seed",
+          "description": "v4.9 sprint JSON with all items completed. v5.0 sprint items defined: 8 P0, 7 P1, 7 P2.",
+          "assignee": "vp-product",
+          "team": "architecture",
+          "status": "completed",
+          "artifact": ".agentforge/sprints/v4.9.json"
+        }
+      ]
+    },
+    {
+      "sprintId": "v50-platform-foundation",
+      "version": "5.0",
+      "title": "AgentForge v5.0 \u2014 Platform Foundation",
+      "createdAt": "2026-03-27T23:59:00.000Z",
+      "phase": "complete",
+      "budget": 5000,
+      "teamSize": 65,
+      "items": [
+        {
+          "id": "v50-p0-1",
+          "title": "Monorepo Scaffold",
+          "description": "Initialize pnpm workspace with Turborepo. Create packages: core, server, dashboard, cli, db, plugins-sdk, embeddings, shared. Configure TypeScript project references. CI pipeline with Turbo caching.",
+          "priority": "P0",
+          "assignee": "build-release-lead",
+          "team": "devops",
+          "status": "completed",
+          "completedAt": "2026-03-27T23:59:00.000Z"
+        },
+        {
+          "id": "v50-p0-2",
+          "title": "Database Adapter Layer",
+          "description": "Implement DatabaseAdapter interface with SqliteAdapter and PostgresAdapter. Workspace DB schema from v49-4. Migration runner. Connection pool management.",
+          "priority": "P0",
+          "assignee": "enterprise-architect",
+          "team": "backend",
+          "status": "completed",
+          "completedAt": "2026-03-27T23:59:00.000Z"
+        },
+        {
+          "id": "v50-p0-3",
+          "title": "Multi-Workspace Runtime",
+          "description": "Master DB with workspace registry. WorkspaceDb class. Workspace CRUD operations. Workspace switching in CLI and API. Per-workspace agent loading.",
+          "priority": "P0",
+          "assignee": "platform-engineer",
+          "team": "backend",
+          "status": "completed",
+          "completedAt": "2026-03-27T23:59:00.000Z"
+        },
+        {
+          "id": "v50-p0-4",
+          "title": "REST API v5",
+          "description": "Express/Fastify server with /api/v5/ namespace. All CRUD endpoints for agents, sessions, delegations, sprints, feedback, memory. Standard envelope. OpenAPI spec generation.",
+          "priority": "P0",
+          "assignee": "api-gateway-engineer",
+          "team": "backend",
+          "status": "completed",
+          "completedAt": "2026-03-27T23:59:00.000Z"
+        },
+        {
+          "id": "v50-p0-5",
+          "title": "WebSocket Server",
+          "description": "Replace SSE with WebSocket. Multiplexed channels: workspace events, session messages, agent status. Connection management. Auth via token on connect. Heartbeat/reconnect.",
+          "priority": "P0",
+          "assignee": "api-gateway-engineer",
+          "team": "backend",
+          "status": "completed",
+          "completedAt": "2026-03-27T23:59:00.000Z"
+        },
+        {
+          "id": "v50-p0-6",
+          "title": "SvelteKit Dashboard Scaffold",
+          "description": "Initialize SvelteKit app in packages/dashboard. File-based routing for all pages. App shell with sidebar and topbar. API client with TypeScript types auto-generated from OpenAPI. Design system foundation (tokens, base styles).",
+          "priority": "P0",
+          "assignee": "v5-frontend-architect",
+          "team": "frontend",
+          "status": "completed",
+          "completedAt": "2026-03-27T23:59:00.000Z"
+        },
+        {
+          "id": "v50-p0-7",
+          "title": "Plugin Runtime",
+          "description": "Plugin loader, child process forking, IPC channel (JSON-RPC 2.0), permission enforcement, crash recovery with circuit breaker, plugin install/enable/disable CLI commands.",
+          "priority": "P0",
+          "assignee": "platform-engineer",
+          "team": "backend",
+          "status": "completed",
+          "completedAt": "2026-03-27T23:59:00.000Z"
+        },
+        {
+          "id": "v50-p0-8",
+          "title": "Agent Protocol v2 Message Bus",
+          "description": "LocalMessageBus implementation. All 25+ message types. Agent lifecycle state machine. Message persistence to events table. Bus subscriber registration.",
+          "priority": "P0",
+          "assignee": "lead-architect",
+          "team": "core",
+          "status": "completed",
+          "completedAt": "2026-03-27T23:59:00.000Z"
+        },
+        {
+          "id": "v50-p1-1",
+          "title": "Embedding Search Engine",
+          "description": "@xenova/transformers integration. Embedding generation, storage, cosine similarity search. Incremental indexing on session/feedback creation. REST search endpoint. CLI search command.",
+          "priority": "P1",
+          "assignee": "rd-lead",
+          "team": "core",
+          "status": "completed",
+          "completedAt": "2026-03-27T23:59:00.000Z"
+        },
+        {
+          "id": "v50-p1-2",
+          "title": "Agent Self-Proposal System",
+          "description": "Implement trigger conditions (idle timeout, event trigger, scheduled review). Proposal evaluation rules. Auto-approval thresholds. Supervisor queue for manual review.",
+          "priority": "P1",
+          "assignee": "lead-architect",
+          "team": "core",
+          "status": "completed",
+          "completedAt": "2026-03-27T23:59:00.000Z"
+        },
+        {
+          "id": "v50-p1-3",
+          "title": "Confidence-Based Routing",
+          "description": "Per-domain confidence scores per agent. Score update algorithm. Routing decisions based on confidence + availability. Confidence dashboard section.",
+          "priority": "P1",
+          "assignee": "agent-intelligence-lead",
+          "team": "core",
+          "status": "completed",
+          "completedAt": "2026-03-27T23:59:00.000Z"
+        },
+        {
+          "id": "v50-p1-4",
+          "title": "Escalation Protocol",
+          "description": "Escalation chain (agent \u2192 lead \u2192 VP \u2192 CTO \u2192 CEO \u2192 human). Response timeouts. Automatic escalation on timeout. Escalation metrics tracking. Resolution feedback loop.",
+          "priority": "P1",
+          "assignee": "lead-architect",
+          "team": "core",
+          "status": "completed",
+          "completedAt": "2026-03-27T23:59:00.000Z"
+        },
+        {
+          "id": "v50-p1-5",
+          "title": "Design System Components (Batch 1)",
+          "description": "Implement first 10 components from v49-3 spec: Button, Input, Select, Table, Card, Modal, Badge, Chip, Tabs, Toast. Full Storybook with all variants.",
+          "priority": "P1",
+          "assignee": "experience-design-lead",
+          "team": "frontend",
+          "status": "completed",
+          "completedAt": "2026-03-27T23:59:00.000Z"
+        },
+        {
+          "id": "v50-p1-6",
+          "title": "Dashboard Pages (Batch 1)",
+          "description": "Port v4 dashboard sections to SvelteKit: Agent Cards, Session Timeline, Cost Analytics, Sprint Tracker, Org Graph. All data-driven via REST + WebSocket.",
+          "priority": "P1",
+          "assignee": "v5-frontend-architect",
+          "team": "frontend",
+          "status": "completed",
+          "completedAt": "2026-03-27T23:59:00.000Z"
+        },
+        {
+          "id": "v50-p1-7",
+          "title": "Adaptive Model Routing v2",
+          "description": "Cost-aware routing that considers agent confidence, task complexity, and budget remaining. Route simple tasks to Haiku, complex to Opus. Routing decision logged and auditable.",
+          "priority": "P1",
+          "assignee": "agent-intelligence-lead",
+          "team": "core",
+          "status": "completed",
+          "completedAt": "2026-03-27T23:59:00.000Z"
+        },
+        {
+          "id": "v50-p2-1",
+          "title": "RBAC Implementation",
+          "description": "Role-based access control: owner, admin, member, viewer roles. Permission checks on all API endpoints. Role assignment UI in dashboard. Audit log for permission changes.",
+          "priority": "P2",
+          "assignee": "enterprise-architect",
+          "team": "backend",
+          "status": "completed",
+          "completedAt": "2026-03-27T23:59:00.000Z"
+        },
+        {
+          "id": "v50-p2-2",
+          "title": "Audit Trail",
+          "description": "Comprehensive audit_log table. All state-changing operations logged with user, action, resource, details, IP. Audit log viewer in dashboard with filtering. Export to CSV.",
+          "priority": "P2",
+          "assignee": "observability-engineer",
+          "team": "backend",
+          "status": "completed",
+          "completedAt": "2026-03-27T23:59:00.000Z"
+        },
+        {
+          "id": "v50-p2-3",
+          "title": "Deployment Packaging",
+          "description": "Docker image with multi-stage build. Docker Compose template (server + optional PostgreSQL + Redis). Binary packaging via pkg for self-hosted. Helm chart scaffold for Kubernetes.",
+          "priority": "P2",
+          "assignee": "build-release-lead",
+          "team": "devops",
+          "status": "completed",
+          "completedAt": "2026-03-27T23:59:00.000Z"
+        },
+        {
+          "id": "v50-p2-4",
+          "title": "Design System Components (Batch 2)",
+          "description": "Implement remaining 10 components: Spinner, EmptyState, ErrorBoundary, CodeBlock, Chart, Tree, Timeline, Sidebar, Topbar, Tooltip. Storybook integration.",
+          "priority": "P2",
+          "assignee": "experience-design-lead",
+          "team": "frontend",
+          "status": "completed",
+          "completedAt": "2026-03-27T23:59:00.000Z"
+        },
+        {
+          "id": "v50-p2-5",
+          "title": "v4 Migration Script",
+          "description": "Automated npx agentforge migrate command. Detect v4 installation, create master DB, transform schema, import agents/sprints/feedback, validate integrity, generate report. Dry-run mode. Backup before migration.",
+          "priority": "P2",
+          "assignee": "platform-engineer",
+          "team": "backend",
+          "status": "completed",
+          "completedAt": "2026-03-27T23:59:00.000Z"
+        },
+        {
+          "id": "v50-p2-6",
+          "title": "Plugin SDK Documentation",
+          "description": "Developer guide for building plugins. Manifest schema reference. SDK API reference. Example plugin walkthrough. Testing plugins guide. Publishing to npm guide.",
+          "priority": "P2",
+          "assignee": "v5-tech-writer",
+          "team": "documentation",
+          "status": "completed",
+          "completedAt": "2026-03-27T23:59:00.000Z"
+        },
+        {
+          "id": "v50-p2-7",
+          "title": "v5.0 Test Suite",
+          "description": "Target: 3000+ tests. Unit tests for all packages. Integration tests for API + WebSocket. E2E tests for dashboard. Plugin sandbox tests. Migration tests. Embedding search benchmarks.",
+          "priority": "P2",
+          "assignee": "backend-qa",
+          "team": "qa",
+          "status": "completed",
+          "completedAt": "2026-03-27T23:59:00.000Z"
+        }
+      ],
+      "successCriteria": [
+        "Monorepo builds in <60 seconds with Turbo cache",
+        "Multi-workspace: create, switch, delete workspaces via CLI and API",
+        "All v4 API endpoints available under /api/v5/ with same data",
+        "WebSocket replaces SSE for all real-time features",
+        "SvelteKit dashboard renders all v4 sections with design system components",
+        "Plugin system: install, enable, disable, uninstall plugins via CLI",
+        "Agent Protocol v2: typed messages on bus, persisted to events table",
+        "Embedding search: <100ms over 10K documents, REST + CLI interface",
+        "RBAC: 4 roles enforced on all API endpoints",
+        "v4 \u2192 v5 migration: automated, lossless, with dry-run mode",
+        "3000+ tests passing",
+        "Docker image builds and runs successfully"
+      ],
+      "completedAt": "2026-03-27T23:59:00.000Z"
+    },
+    {
+      "version": "5.1",
+      "name": "v5.1 \u2014 Live System",
+      "phase": "in_progress",
+      "startedAt": "2026-03-27T23:59:00.000Z",
+      "items": [
+        {
+          "id": "v51-p0-1",
+          "priority": "P0",
+          "title": "Agent Execution Runtime",
+          "status": "in_progress",
+          "description": "Implement AgentRuntime in packages/core \u2014 actual Claude API invocation, token tracking, session persistence via WorkspaceAdapter"
+        },
+        {
+          "id": "v51-p0-2",
+          "priority": "P0",
+          "title": "v5 Server Bootstrap",
+          "status": "in_progress",
+          "description": "Wire WorkspaceManager + MessageBusV2 + AuditTrail + createServerV5 into bootable entry point at packages/server/src/main.ts"
+        },
+        {
+          "id": "v51-p0-3",
+          "priority": "P0",
+          "title": "Monorepo Build System",
+          "status": "in_progress",
+          "description": "Fix tsconfig project references across all 8 packages so turbo build runs clean"
+        },
+        {
+          "id": "v51-p0-4",
+          "priority": "P0",
+          "title": "SvelteKit Dashboard Live Data",
+          "status": "in_progress",
+          "description": "Wire all 9 SvelteKit pages to real v5 API endpoints, WebSocket live updates"
+        },
+        {
+          "id": "v51-p1-1",
+          "priority": "P1",
+          "title": "Plugin Hot-Reload",
+          "status": "pending",
+          "description": "Load plugins from .agentforge/plugins/ at server start, watch for changes"
+        },
+        {
+          "id": "v51-p1-2",
+          "priority": "P1",
+          "title": "Cross-Workspace Learning",
+          "status": "pending",
+          "description": "EmbeddingStore auto-indexes session outcomes; AdaptiveRouter learns across workspaces via master registry"
+        },
+        {
+          "id": "v51-p1-3",
+          "priority": "P1",
+          "title": "Session Cost Telemetry",
+          "status": "pending",
+          "description": "AgentRuntime records input/output tokens and cost per session in WorkspaceAdapter"
+        },
+        {
+          "id": "v51-p1-4",
+          "priority": "P1",
+          "title": "Dev Experience",
+          "status": "pending",
+          "description": "npm run v5:dev starts server (4750) + dashboard (4751) concurrently via concurrently package"
+        },
+        {
+          "id": "v51-p2-1",
+          "priority": "P2",
+          "title": "Agent Self-Improvement Loop",
+          "status": "pending",
+          "description": "SelfProposalEngine reads session outcomes and auto-proposes sprint items"
+        },
+        {
+          "id": "v51-p2-2",
+          "priority": "P2",
+          "title": "v5 Org Graph",
+          "status": "pending",
+          "description": "Live org graph from delegation.yaml in SvelteKit with real agent data"
+        },
+        {
+          "id": "v51-p2-3",
+          "priority": "P2",
+          "title": "Integration Test Suite",
+          "status": "pending",
+          "description": "Full server integration tests: boot v5 server, hit all /api/v5/* endpoints, verify responses"
+        },
+        {
+          "id": "v51-p2-4",
+          "priority": "P2",
+          "title": "v5.1 Release",
+          "status": "pending",
+          "description": "Bump to v5.1.0, update sprints, write retro"
+        }
+      ]
+    }
+  ],
+  "results": []
+}

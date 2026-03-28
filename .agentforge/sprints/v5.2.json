@@ -1,0 +1,50 @@
+{
+  "version": "5.2",
+  "name": "v5.2 — Intelligence & Observability",
+  "phase": "completed",
+  "startedAt": "2026-03-27T18:00:00.000Z",
+  "items": [
+    {
+      "id": "v52-p0-1",
+      "priority": "P0",
+      "title": "Org Graph API Endpoint",
+      "status": "completed",
+      "description": "Implement GET /api/v5/org-graph — reads .agentforge/agents/*.yaml + delegation.yaml, returns {nodes, edges}. Dashboard already calls this URL."
+    },
+    {
+      "id": "v52-p0-2",
+      "priority": "P0",
+      "title": "Cross-Workspace Learning",
+      "status": "completed",
+      "description": "EmbeddingStore.indexSession() helper auto-indexes session outcomes (task + response text). POST /api/v5/embeddings/learn-session endpoint wires AgentRuntime results into the embedding index."
+    },
+    {
+      "id": "v52-p1-1",
+      "priority": "P1",
+      "title": "Agent Self-Improvement Loop",
+      "status": "completed",
+      "description": "SelfProposalEngine.fromSessions(sessions) reads recent session outcomes and auto-proposes sprint items. POST /api/v5/proposals/from-sessions endpoint triggers generation."
+    },
+    {
+      "id": "v52-p1-2",
+      "priority": "P1",
+      "title": "Cost Telemetry Summary",
+      "status": "completed",
+      "description": "GET /api/v5/costs/summary returns per-model totals, daily rollups, and token breakdown. Dashboard cost page updated with summary stat cards."
+    },
+    {
+      "id": "v52-p2-1",
+      "priority": "P2",
+      "title": "Integration Test Expansion",
+      "status": "completed",
+      "description": "Expand tests/v5/server-integration.test.ts to cover org-graph, proposals/from-sessions, costs/summary, embeddings/learn-session, agents list."
+    },
+    {
+      "id": "v52-p2-2",
+      "priority": "P2",
+      "title": "v5.2 Release",
+      "status": "pending",
+      "description": "Bump package.json + plugin.json to 5.2.0, mark sprint complete, write retro."
+    }
+  ]
+}
