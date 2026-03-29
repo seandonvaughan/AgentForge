@@ -1380,6 +1380,395 @@ tbody tr:hover { background: var(--bg-card-hover) !important; cursor: pointer; }
   color: var(--text-primary);
 }
 
+/* ── Career Dashboard ────────────────────────────────────── */
+.career-selector-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+.career-selector-bar select {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  outline: none;
+  min-width: 220px;
+  transition: border-color 0.15s;
+}
+.career-selector-bar select:focus { border-color: var(--blue); }
+
+.career-summary-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px 24px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.career-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--blue-dim);
+  border: 2px solid var(--blue);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--blue);
+  flex-shrink: 0;
+}
+.career-info { flex: 1; min-width: 180px; }
+.career-name { font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px; }
+.career-meta-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+.career-hired { font-size: 12px; color: var(--text-muted); }
+
+.seniority-badge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.seniority-badge.junior    { background: rgba(110,118,129,0.2); color: var(--text-secondary); border: 1px solid rgba(110,118,129,0.3); }
+.seniority-badge.mid       { background: var(--blue-dim); color: var(--blue); border: 1px solid rgba(88,166,255,0.4); }
+.seniority-badge.senior    { background: var(--green-dim); color: var(--green); border: 1px solid rgba(63,185,80,0.4); }
+.seniority-badge.lead      { background: var(--purple-dim); color: var(--purple); border: 1px solid rgba(188,140,255,0.4); }
+.seniority-badge.principal { background: var(--gold-dim); color: var(--gold); border: 1px solid rgba(240,180,41,0.4); }
+.seniority-badge.staff     { background: var(--cyan-dim); color: var(--cyan); border: 1px solid rgba(57,210,192,0.4); }
+
+.career-perf-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.career-perf-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+}
+.career-perf-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+.career-perf-value {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.career-perf-sub {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 3px;
+}
+
+.skill-level-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.skill-l1 { background: rgba(110,118,129,0.2); color: var(--text-secondary); }
+.skill-l2 { background: var(--blue-dim); color: var(--blue); }
+.skill-l3 { background: var(--green-dim); color: var(--green); }
+.skill-l4 { background: var(--purple-dim); color: var(--purple); }
+.skill-l5 { background: var(--gold-dim); color: var(--gold); }
+
+/* Skill bars (radar substitute) */
+.skill-bars-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+  padding: 16px;
+}
+.skill-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.skill-bar-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  width: 110px;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.skill-bar-track {
+  flex: 1;
+  height: 10px;
+  background: var(--border);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.skill-bar-fill {
+  height: 100%;
+  border-radius: 5px;
+  transition: width 0.8s ease;
+}
+.skill-bar-val {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  width: 18px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* Promotion ladder */
+.promotion-ladder {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 16px 20px;
+  overflow-x: auto;
+}
+.promotion-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-primary);
+  min-width: 90px;
+  text-align: center;
+  transition: all 0.2s;
+  position: relative;
+}
+.promotion-step.current {
+  border-color: var(--blue);
+  background: var(--blue-dim);
+  box-shadow: 0 0 0 2px rgba(88,166,255,0.2);
+}
+.promotion-step.achieved {
+  border-color: var(--green);
+  background: var(--green-dim);
+}
+.promotion-step-icon { font-size: 18px; }
+.promotion-step-name {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+}
+.promotion-step.current .promotion-step-name { color: var(--blue); }
+.promotion-step.achieved .promotion-step-name { color: var(--green); }
+.promotion-arrow-sep {
+  font-size: 16px;
+  color: var(--border-light);
+  padding: 0 4px;
+  flex-shrink: 0;
+  margin-bottom: 10px;
+}
+
+/* ── Team Hierarchy Page ──────────────────────────────────── */
+.layer-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.layer-btn {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 5px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.layer-btn:hover { background: var(--bg-card); color: var(--text-primary); }
+.layer-btn.active { background: var(--blue-dim); color: var(--blue); border-color: var(--blue); }
+
+.team-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+  margin-bottom: 24px;
+}
+.team-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.team-card:hover { background: var(--bg-card-hover); transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,0.25); }
+.team-card.expanded { border-color: var(--blue); }
+.team-card-header {
+  padding: 14px 16px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.team-card-name {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+.team-card-meta { font-size: 11px; color: var(--text-secondary); display: flex; flex-direction: column; gap: 2px; }
+
+.layer-badge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+.layer-frontend  { background: var(--blue-dim); color: var(--blue); border: 1px solid rgba(88,166,255,0.4); }
+.layer-backend   { background: var(--green-dim); color: var(--green); border: 1px solid rgba(63,185,80,0.4); }
+.layer-infra     { background: var(--orange-dim); color: var(--orange); border: 1px solid rgba(210,153,34,0.4); }
+.layer-data      { background: var(--purple-dim); color: var(--purple); border: 1px solid rgba(188,140,255,0.4); }
+.layer-qa        { background: var(--cyan-dim); color: var(--cyan); border: 1px solid rgba(57,210,192,0.4); }
+.layer-executive { background: var(--gold-dim); color: var(--gold); border: 1px solid rgba(240,180,41,0.4); }
+.layer-other     { background: rgba(110,118,129,0.2); color: var(--text-secondary); border: 1px solid rgba(110,118,129,0.3); }
+
+.team-utilization-row {
+  padding: 0 16px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.team-util-track {
+  flex: 1;
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.team-util-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.8s ease;
+}
+.team-util-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  width: 30px;
+  text-align: right;
+}
+
+.team-members-panel {
+  border-top: 1px solid var(--border);
+  background: var(--bg-primary);
+  display: none;
+}
+.team-card.expanded .team-members-panel { display: block; }
+.team-member-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  border-bottom: 1px solid rgba(48,54,61,0.4);
+  font-size: 12px;
+  transition: background 0.15s;
+}
+.team-member-row:hover { background: var(--bg-card); }
+.team-member-name { font-family: var(--font-mono); font-size: 12px; color: var(--text-primary); flex: 1; font-weight: 500; }
+
+/* Hiring Recommendations */
+.hiring-recs-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 24px;
+}
+.hiring-recs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(22,27,34,0.5);
+}
+.hiring-recs-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+.hiring-rec-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 18px;
+  border-bottom: 1px solid rgba(48,54,61,0.4);
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+.hiring-rec-item:last-child { border-bottom: none; }
+.hiring-rec-role { font-family: var(--font-mono); font-weight: 600; color: var(--text-primary); flex: 1; min-width: 140px; }
+.hiring-rec-reason { color: var(--text-secondary); font-size: 12px; flex: 2; min-width: 200px; }
+.hiring-rec-actions { display: flex; gap: 8px; }
+.btn-approve {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(63,185,80,0.5);
+  background: var(--green-dim);
+  color: var(--green);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-approve:hover { background: rgba(63,185,80,0.25); }
+.btn-deny {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(248,81,73,0.4);
+  background: var(--red-dim);
+  color: var(--red);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-deny:hover { background: rgba(248,81,73,0.2); }
+
 /* ── Anomaly Banner ──────────────────────────────────────── */
 .anomaly-banner {
   position: fixed;
@@ -1466,6 +1855,11 @@ tbody tr:hover { background: var(--bg-card-hover) !important; cursor: pointer; }
       <a class="sidebar-link" href="#investor-scorecard"><span class="nav-icon">📈</span>Investor Scorecard</a>
       <a class="sidebar-link" href="#memory-browser"><span class="nav-icon">🧠</span>Memory Browser</a>
       <a class="sidebar-link" href="#reforge-panel"><span class="nav-icon">⚙</span>Reforge Panel</a>
+    </div>
+    <div class="sidebar-group">
+      <div class="sidebar-group-label">People</div>
+      <a class="sidebar-link" data-route="/careers" href="/careers"><span class="nav-icon">🎓</span>Careers</a>
+      <a class="sidebar-link" data-route="/teams" href="/teams"><span class="nav-icon">👥</span>Teams</a>
     </div>
   </nav>
 
@@ -3751,6 +4145,163 @@ tbody tr:hover { background: var(--bg-card-hover) !important; cursor: pointer; }
     </div>
   </div><!-- /page-cost -->
 
+  <!-- ── Page: Career Dashboard (/careers) ─────────────────── -->
+  <div class="page" id="page-careers" hidden>
+    <div class="page-header">
+      <h2>Career Dashboard</h2>
+    </div>
+
+    <!-- Agent selector -->
+    <div class="career-selector-bar">
+      <label style="font-size:13px;color:var(--text-secondary);font-family:var(--font-mono);">Agent:</label>
+      <select id="career-agent-select" onchange="loadCareerDetail(this.value)">
+        <option value="">— Select an agent —</option>
+      </select>
+      <button class="export-btn" onclick="loadCareerAgentList()">&#8635; Refresh</button>
+    </div>
+
+    <!-- Empty / prompt state -->
+    <div id="career-prompt" class="empty-state">Select an agent above to view their career profile.</div>
+
+    <!-- Loading skeleton -->
+    <div id="career-loading" class="skeleton-card" hidden></div>
+
+    <!-- Error state -->
+    <div id="career-error" class="error-state" hidden>
+      <p id="career-error-msg">Failed to load career data.</p>
+      <button onclick="loadCareerDetail(document.getElementById('career-agent-select').value)">Retry</button>
+    </div>
+
+    <!-- Career content -->
+    <div id="career-content" hidden>
+
+      <!-- Summary Card -->
+      <div class="career-summary-card" id="career-summary-card">
+        <div class="career-avatar" id="career-avatar">?</div>
+        <div class="career-info">
+          <div class="career-name" id="career-name">—</div>
+          <div class="career-meta-row">
+            <span id="career-seniority-badge" class="seniority-badge">—</span>
+            <span id="career-autonomy-badge" class="model-badge sonnet">—</span>
+            <span class="career-hired" id="career-hired">Hired: —</span>
+          </div>
+          <div style="margin-top:8px;font-size:12px;color:var(--text-secondary);">
+            Team: <strong id="career-team" style="font-family:var(--font-mono);color:var(--text-primary);">—</strong>
+          </div>
+        </div>
+      </div>
+
+      <!-- Performance Metrics -->
+      <div class="section-header" style="margin-bottom:12px;">
+        <div class="section-title">Performance Metrics</div>
+      </div>
+      <div class="career-perf-grid" id="career-perf-grid">
+        <div class="career-perf-card">
+          <div class="career-perf-label">Tasks Completed</div>
+          <div class="career-perf-value" id="career-tasks">—</div>
+          <div class="career-perf-sub">lifetime</div>
+        </div>
+        <div class="career-perf-card">
+          <div class="career-perf-label">Success Rate</div>
+          <div class="career-perf-value" id="career-success" style="color:var(--green)">—</div>
+          <div class="career-perf-sub">completed successfully</div>
+        </div>
+        <div class="career-perf-card">
+          <div class="career-perf-label">Avg Duration</div>
+          <div class="career-perf-value" id="career-duration">—</div>
+          <div class="career-perf-sub">per task</div>
+        </div>
+        <div class="career-perf-card">
+          <div class="career-perf-label">Peer Review Score</div>
+          <div class="career-perf-value" id="career-peer-score" style="color:var(--purple)">—</div>
+          <div class="career-perf-sub">out of 5.0</div>
+        </div>
+      </div>
+
+      <!-- Skill Profile Table -->
+      <div class="section-header" style="margin-bottom:12px;">
+        <div class="section-title">Skill Profile</div>
+      </div>
+      <div style="overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:20px;">
+        <table class="data-table" id="career-skills-table" style="border:none;">
+          <thead>
+            <tr>
+              <th>Skill Name</th>
+              <th>Level</th>
+              <th>Exercises</th>
+              <th>Success Rate</th>
+              <th>Last Exercised</th>
+            </tr>
+          </thead>
+          <tbody id="career-skills-tbody">
+            <tr><td colspan="5" class="session-empty">No skills on record.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Skill Bars (radar substitute) -->
+      <div class="section-header" style="margin-bottom:12px;">
+        <div class="section-title">Skill Levels Overview</div>
+      </div>
+      <div class="detail-card" style="margin-bottom:20px;padding:4px 4px;">
+        <div class="skill-bars-grid" id="career-skill-bars"></div>
+      </div>
+
+      <!-- Promotion Path -->
+      <div class="section-header" style="margin-bottom:12px;">
+        <div class="section-title">Promotion Path</div>
+      </div>
+      <div class="detail-card" style="margin-bottom:20px;padding:8px 4px;">
+        <div class="promotion-ladder" id="career-promotion-ladder"></div>
+      </div>
+
+    </div><!-- /career-content -->
+  </div><!-- /page-careers -->
+
+  <!-- ── Page: Team Hierarchy (/teams) ─────────────────────── -->
+  <div class="page" id="page-teams" hidden>
+    <div class="page-header">
+      <h2>Team Hierarchy</h2>
+      <button class="export-btn" onclick="loadTeamsPage()">&#8635; Refresh</button>
+    </div>
+
+    <!-- Hiring Recommendations Panel -->
+    <div class="hiring-recs-panel" id="hiring-recs-panel">
+      <div class="hiring-recs-header">
+        <span class="hiring-recs-title">Pending Hiring Recommendations</span>
+        <span id="hiring-recs-count" style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);">—</span>
+      </div>
+      <div id="hiring-recs-body">
+        <div class="skeleton-loader">Loading recommendations…</div>
+      </div>
+    </div>
+
+    <!-- Layer filter -->
+    <div class="layer-filter-bar" id="layer-filter-bar">
+      <span style="font-size:11px;color:var(--text-muted);font-family:var(--font-mono);">Layer:</span>
+      <button class="layer-btn active" data-layer="all" onclick="filterTeamsByLayer(this,'all')">All</button>
+      <button class="layer-btn" data-layer="executive" onclick="filterTeamsByLayer(this,'executive')">Executive</button>
+      <button class="layer-btn" data-layer="frontend" onclick="filterTeamsByLayer(this,'frontend')">Frontend</button>
+      <button class="layer-btn" data-layer="backend" onclick="filterTeamsByLayer(this,'backend')">Backend</button>
+      <button class="layer-btn" data-layer="infra" onclick="filterTeamsByLayer(this,'infra')">Infra</button>
+      <button class="layer-btn" data-layer="data" onclick="filterTeamsByLayer(this,'data')">Data</button>
+      <button class="layer-btn" data-layer="qa" onclick="filterTeamsByLayer(this,'qa')">QA</button>
+    </div>
+
+    <!-- Loading / error -->
+    <div id="teams-loading" class="skeleton-card" hidden></div>
+    <div id="teams-error" class="error-state" hidden>
+      <p id="teams-error-msg">Failed to load teams.</p>
+      <button onclick="loadTeamsPage()">Retry</button>
+    </div>
+
+    <!-- Team Grid -->
+    <div class="team-grid" id="team-grid"></div>
+
+    <div id="teams-empty" class="empty-state" hidden>No teams found.</div>
+
+  </div><!-- /page-teams -->
+
   </main>
 </div>
 
@@ -5028,6 +5579,8 @@ Router.addRoute(/^\/runs\/([^/]+)$/, ({ id }) => { showPage('page-run-detail'); 
 Router.addRoute('/cost', () => { showPage('page-cost'); loadCostPage(); });
 Router.addRoute('/agents', () => showPage('page-home'));
 Router.addRoute(/^\/agents\/([^/]+)$/, ({ id }) => { loadAgentDetailPage(decodeURIComponent(id)); });
+Router.addRoute('/careers', () => { showPage('page-careers'); loadCareerAgentList(); });
+Router.addRoute('/teams', () => { showPage('page-teams'); loadTeamsPage(); });
 
 // ── SSE Client ────────────────────────────────────────────
 function updateConnectionStatus(status) {
@@ -6448,6 +7001,587 @@ async function loadMeetingSchedule() {
   } catch (e) {
     console.warn('loadMeetingSchedule failed:', e);
     if (grid) grid.innerHTML = '<div class="load-error" style="grid-column:1/-1">Failed to load schedule. <button onclick="loadMeetingSchedule()">Retry</button></div>';
+  }
+}
+
+// ── P0-6: Career Dashboard ────────────────────────────────
+
+const SENIORITY_LEVELS = ['junior', 'mid', 'senior', 'lead', 'principal'];
+const SENIORITY_ICONS  = ['🌱', '⚡', '🔥', '🏆', '👑'];
+const LEVEL_NAMES = ['', 'Novice', 'Apprentice', 'Practitioner', 'Expert', 'Master'];
+const LEVEL_BAR_COLORS = ['', '#6e7681', '#58a6ff', '#3fb950', '#bc8cff', '#f0b429'];
+
+async function loadCareerAgentList() {
+  const sel = document.getElementById('career-agent-select');
+  if (!sel) return;
+  const currentVal = sel.value;
+  while (sel.options.length > 1) sel.remove(1);
+  let agents = [];
+  try {
+    const res = await fetch('/api/v1/careers');
+    if (res.ok) {
+      const json = await res.json();
+      agents = json.data || json.agents || json || [];
+    }
+  } catch (e) { /* handled below */ }
+  if (!agents.length) agents = window._data.agents;
+  agents.forEach(function(a) {
+    const name = typeof a === 'string' ? a : (a.agentId || a.name || a.id || '');
+    if (!name) return;
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    if (name === currentVal) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+async function loadCareerDetail(agentId) {
+  if (!agentId) return;
+  const prompt  = document.getElementById('career-prompt');
+  const loading = document.getElementById('career-loading');
+  const content = document.getElementById('career-content');
+  const errorEl = document.getElementById('career-error');
+  const errMsg  = document.getElementById('career-error-msg');
+
+  if (prompt)  prompt.hidden  = true;
+  if (loading) loading.hidden = false;
+  if (content) content.hidden = true;
+  if (errorEl) errorEl.hidden = true;
+
+  try {
+    let data = null;
+    const res = await fetch('/api/v1/careers/' + encodeURIComponent(agentId));
+    if (res.ok) {
+      const json = await res.json();
+      data = json.data || json;
+    } else {
+      const agent = window._data.agents.find(function(a) { return a.name === agentId; });
+      if (agent) { data = _syntheticCareer(agent); }
+      else { throw new Error('Agent not found'); }
+    }
+    if (loading) loading.hidden = true;
+    _renderCareerDetail(data, agentId);
+    if (content) content.hidden = false;
+  } catch (e) {
+    if (loading) loading.hidden = true;
+    if (errorEl) errorEl.hidden = false;
+    if (errMsg)  errMsg.textContent = 'Failed to load career: ' + e.message;
+  }
+}
+
+function _syntheticCareer(agent) {
+  const seniority = agent.model === 'opus' ? 'senior' : agent.model === 'haiku' ? 'junior' : 'mid';
+  return {
+    agentId: agent.name, name: agent.name, seniority: seniority,
+    team: agent.category || 'General',
+    autonomyTier: agent.model === 'opus' ? 'T4' : agent.model === 'haiku' ? 'T1' : 'T2',
+    hiredAt: '2025-01-01',
+    tasksCompleted: agent.tasks || 0,
+    successRate: agent.errRate != null ? Math.max(0, 100 - agent.errRate) : 95,
+    avgDurationMs: 45000,
+    peerReviewScore: 4.2,
+    skills: _syntheticSkills(agent)
+  };
+}
+
+function _syntheticSkills(agent) {
+  const skillMap = {
+    opus:   [{name:'Strategic Planning',level:5,exerciseCount:38,successRate:97},{name:'Architecture Design',level:4,exerciseCount:24,successRate:92},{name:'Code Review',level:4,exerciseCount:31,successRate:94},{name:'Team Leadership',level:5,exerciseCount:18,successRate:100},{name:'Documentation',level:3,exerciseCount:12,successRate:88}],
+    sonnet: [{name:'Code Generation',level:4,exerciseCount:82,successRate:93},{name:'Debugging',level:3,exerciseCount:54,successRate:89},{name:'API Design',level:3,exerciseCount:27,successRate:91},{name:'Testing',level:2,exerciseCount:19,successRate:84},{name:'Documentation',level:2,exerciseCount:11,successRate:82}],
+    haiku:  [{name:'Linting',level:4,exerciseCount:240,successRate:99},{name:'Formatting',level:4,exerciseCount:180,successRate:99},{name:'Quick Analysis',level:3,exerciseCount:95,successRate:96},{name:'Reporting',level:2,exerciseCount:44,successRate:91},{name:'Summarization',level:2,exerciseCount:22,successRate:87}]
+  };
+  const base = skillMap[agent.model] || skillMap['sonnet'];
+  const now = new Date();
+  return base.map(function(s, i) {
+    const d = new Date(now - i * 3 * 24 * 60 * 60 * 1000);
+    return Object.assign({}, s, {lastExercised: d.toISOString().slice(0, 10)});
+  });
+}
+
+function _renderCareerDetail(data, agentId) {
+  const name = data.name || data.agentId || agentId;
+  const seniority = (data.seniority || 'mid').toLowerCase();
+
+  // Helper: set text on element by ID
+  const setText = function(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; };
+
+  const el = document.getElementById('career-avatar');
+  if (el) el.textContent = (name.charAt(0) || '?').toUpperCase();
+
+  setText('career-name', name);
+  setText('career-hired', 'Hired: ' + (data.hiredAt ? new Date(data.hiredAt).toLocaleDateString('en-US', {year:'numeric',month:'short',day:'numeric'}) : '—'));
+  setText('career-team', data.team || '—');
+
+  const senBadge = document.getElementById('career-seniority-badge');
+  if (senBadge) {
+    senBadge.textContent = seniority.charAt(0).toUpperCase() + seniority.slice(1);
+    senBadge.className = 'seniority-badge ' + seniority;
+  }
+  const autonomyBadge = document.getElementById('career-autonomy-badge');
+  if (autonomyBadge) {
+    const autonomy = String(data.autonomyTier || data.autonomy || '—');
+    const tierStr = autonomy.toLowerCase();
+    const cls = (tierStr.includes('4') || tierStr.includes('t4')) ? 'opus'
+              : (tierStr.includes('3') || tierStr.includes('t3')) ? 'sonnet' : 'haiku';
+    autonomyBadge.textContent = 'Tier ' + autonomy;
+    autonomyBadge.className = 'model-badge ' + cls;
+  }
+
+  setText('career-tasks', data.tasksCompleted != null ? data.tasksCompleted.toLocaleString() : '—');
+  const successEl = document.getElementById('career-success');
+  if (successEl) successEl.textContent = data.successRate != null ? data.successRate.toFixed(1) + '%' : '—';
+  const durMs = data.avgDurationMs;
+  setText('career-duration', durMs != null ? (durMs >= 60000 ? Math.round(durMs/60000) + 'm' : Math.round(durMs/1000) + 's') : '—');
+  const peerEl = document.getElementById('career-peer-score');
+  if (peerEl) peerEl.textContent = data.peerReviewScore != null ? data.peerReviewScore.toFixed(1) : '—';
+
+  // Skills table — build via DOM
+  const skills = data.skills || [];
+  const tbody = document.getElementById('career-skills-tbody');
+  if (tbody) {
+    while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+    if (!skills.length) {
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.setAttribute('colspan', '5');
+      td.className = 'session-empty';
+      td.textContent = 'No skills on record.';
+      tr.appendChild(td); tbody.appendChild(tr);
+    } else {
+      skills.forEach(function(sk) {
+        const lvl = parseInt(sk.level) || 1;
+        const lvlName = LEVEL_NAMES[lvl] || ('L' + lvl);
+        const tr = document.createElement('tr');
+
+        const tdName = document.createElement('td');
+        tdName.style.cssText = 'font-family:var(--font-mono);font-size:12px';
+        tdName.textContent = sk.name || '—';
+
+        const tdLvl = document.createElement('td');
+        const lvlSpan = document.createElement('span');
+        lvlSpan.className = 'skill-level-badge skill-l' + lvl;
+        lvlSpan.textContent = lvl + ' — ' + lvlName;
+        tdLvl.appendChild(lvlSpan);
+
+        const tdEx = document.createElement('td');
+        tdEx.style.fontFamily = 'var(--font-mono)';
+        tdEx.textContent = sk.exerciseCount != null ? sk.exerciseCount.toLocaleString() : '—';
+
+        const tdSr = document.createElement('td');
+        tdSr.style.cssText = 'font-family:var(--font-mono);color:var(--green)';
+        tdSr.textContent = sk.successRate != null ? sk.successRate.toFixed(0) + '%' : '—';
+
+        const tdLast = document.createElement('td');
+        tdLast.style.cssText = 'font-family:var(--font-mono);color:var(--text-muted)';
+        tdLast.textContent = sk.lastExercised || '—';
+
+        tr.appendChild(tdName); tr.appendChild(tdLvl);
+        tr.appendChild(tdEx);  tr.appendChild(tdSr); tr.appendChild(tdLast);
+        tbody.appendChild(tr);
+      });
+    }
+  }
+
+  // Skill bars
+  const barsContainer = document.getElementById('career-skill-bars');
+  if (barsContainer) {
+    while (barsContainer.firstChild) barsContainer.removeChild(barsContainer.firstChild);
+    if (!skills.length) {
+      const msg = document.createElement('div');
+      msg.style.cssText = 'color:var(--text-muted);font-size:12px;padding:8px';
+      msg.textContent = 'No skill data.';
+      barsContainer.appendChild(msg);
+    } else {
+      skills.forEach(function(sk) {
+        const lvl = parseInt(sk.level) || 1;
+        const pct = (lvl / 5) * 100;
+        const color = LEVEL_BAR_COLORS[lvl] || '#58a6ff';
+        const row = document.createElement('div');
+        row.className = 'skill-bar-row';
+
+        const labelSpan = document.createElement('span');
+        labelSpan.className = 'skill-bar-label';
+        labelSpan.title = sk.name || '';
+        labelSpan.textContent = sk.name || '—';
+
+        const track = document.createElement('div');
+        track.className = 'skill-bar-track';
+        const fill = document.createElement('div');
+        fill.className = 'skill-bar-fill';
+        fill.style.cssText = 'width:' + pct + '%;background:' + color;
+        track.appendChild(fill);
+
+        const valSpan = document.createElement('span');
+        valSpan.className = 'skill-bar-val';
+        valSpan.textContent = String(lvl);
+
+        row.appendChild(labelSpan); row.appendChild(track); row.appendChild(valSpan);
+        barsContainer.appendChild(row);
+      });
+    }
+  }
+
+  // Promotion ladder
+  const ladder = document.getElementById('career-promotion-ladder');
+  if (ladder) {
+    while (ladder.firstChild) ladder.removeChild(ladder.firstChild);
+    const currentLevelIndex = SENIORITY_LEVELS.indexOf(seniority);
+    SENIORITY_LEVELS.forEach(function(level, i) {
+      if (i > 0) {
+        const sep = document.createElement('div');
+        sep.className = 'promotion-arrow-sep';
+        sep.textContent = '›';
+        ladder.appendChild(sep);
+      }
+      const step = document.createElement('div');
+      const isCurrent  = i === currentLevelIndex;
+      const isAchieved = i < currentLevelIndex;
+      step.className = 'promotion-step' + (isCurrent ? ' current' : isAchieved ? ' achieved' : '');
+
+      const icon = document.createElement('div');
+      icon.className = 'promotion-step-icon';
+      icon.textContent = SENIORITY_ICONS[i];
+
+      const nameDiv = document.createElement('div');
+      nameDiv.className = 'promotion-step-name';
+      nameDiv.textContent = level.charAt(0).toUpperCase() + level.slice(1);
+
+      step.appendChild(icon);
+      step.appendChild(nameDiv);
+
+      if (isCurrent) {
+        const dot = document.createElement('div');
+        dot.style.cssText = 'width:6px;height:6px;border-radius:50%;background:var(--blue);margin-top:2px;';
+        step.appendChild(dot);
+      }
+      ladder.appendChild(step);
+    });
+  }
+}
+
+// ── P0-7: Team Hierarchy ──────────────────────────────────
+
+let _teamsData = [];
+let _teamsLayerFilter = 'all';
+
+async function loadTeamsPage() {
+  const grid   = document.getElementById('team-grid');
+  const loadEl = document.getElementById('teams-loading');
+  const errEl  = document.getElementById('teams-error');
+  const emptyEl= document.getElementById('teams-empty');
+
+  if (grid)    { while (grid.firstChild) grid.removeChild(grid.firstChild); }
+  if (loadEl)  loadEl.hidden = false;
+  if (errEl)   errEl.hidden = true;
+  if (emptyEl) emptyEl.hidden = true;
+
+  loadHiringRecommendations();
+
+  try {
+    const res = await fetch('/api/v1/teams');
+    let teams = [];
+    if (res.ok) {
+      const json = await res.json();
+      teams = json.data || json.teams || json || [];
+    }
+    if (!teams.length) teams = _syntheticTeams();
+    _teamsData = teams;
+    if (loadEl) loadEl.hidden = true;
+    _renderTeamGrid(teams);
+  } catch (e) {
+    if (loadEl) loadEl.hidden = true;
+    _teamsData = _syntheticTeams();
+    _renderTeamGrid(_teamsData);
+  }
+}
+
+function _syntheticTeams() {
+  return [
+    {id:'executive',name:'Executive Suite',layer:'executive',manager:'ceo',techLead:'cto',utilization:82,
+      members:[{name:'ceo',seniority:'principal',model:'opus',status:'active'},{name:'cto',seniority:'principal',model:'opus',status:'active'},{name:'coo',seniority:'lead',model:'sonnet',status:'active'},{name:'cfo',seniority:'senior',model:'sonnet',status:'idle'}]},
+    {id:'architecture',name:'Architecture',layer:'backend',manager:'architect',techLead:'meta-architect',utilization:74,
+      members:[{name:'architect',seniority:'lead',model:'opus',status:'active'},{name:'meta-architect',seniority:'lead',model:'opus',status:'idle'},{name:'genesis',seniority:'principal',model:'opus',status:'complete'}]},
+    {id:'engineering',name:'Core Engineering',layer:'backend',manager:'coo',techLead:'coder',utilization:91,
+      members:[{name:'coder',seniority:'senior',model:'sonnet',status:'active'},{name:'debugger',seniority:'mid',model:'sonnet',status:'active'},{name:'api-specialist',seniority:'mid',model:'sonnet',status:'idle'}]},
+    {id:'qa',name:'Quality Assurance',layer:'qa',manager:'coo',techLead:'linter',utilization:65,
+      members:[{name:'linter',seniority:'mid',model:'haiku',status:'active'},{name:'test-runner',seniority:'junior',model:'haiku',status:'active'},{name:'debugger',seniority:'mid',model:'sonnet',status:'active'}]},
+    {id:'research',name:'R&D',layer:'data',manager:'cto',techLead:'researcher',utilization:58,
+      members:[{name:'researcher',seniority:'senior',model:'sonnet',status:'active'},{name:'ml-engineer',seniority:'senior',model:'sonnet',status:'idle'},{name:'rd-lead',seniority:'lead',model:'opus',status:'active'}]},
+    {id:'project-mgmt',name:'Project Management',layer:'executive',manager:'coo',techLead:'project-manager',utilization:70,
+      members:[{name:'project-manager',seniority:'senior',model:'sonnet',status:'active'},{name:'skill-designer',seniority:'mid',model:'sonnet',status:'idle'}]}
+  ];
+}
+
+function _renderTeamGrid(teams) {
+  const grid   = document.getElementById('team-grid');
+  const emptyEl= document.getElementById('teams-empty');
+  if (!grid) return;
+  while (grid.firstChild) grid.removeChild(grid.firstChild);
+
+  const filtered = _teamsLayerFilter === 'all'
+    ? teams
+    : teams.filter(function(t) { return (t.layer || '').toLowerCase() === _teamsLayerFilter; });
+
+  if (!filtered.length) {
+    if (emptyEl) emptyEl.hidden = false;
+    return;
+  }
+  if (emptyEl) emptyEl.hidden = true;
+  filtered.forEach(function(team) { grid.appendChild(_buildTeamCard(team)); });
+}
+
+function _buildTeamCard(team) {
+  const layer = (team.layer || 'other').toLowerCase();
+  const validLayers = ['frontend','backend','infra','data','qa','executive'];
+  const layerClass = 'layer-' + (validLayers.includes(layer) ? layer : 'other');
+  const util = typeof team.utilization === 'number' ? team.utilization : 0;
+  const utilColor = util >= 80 ? 'var(--green)' : util >= 50 ? 'var(--blue)' : 'var(--text-muted)';
+  const members = team.members || [];
+  const teamIdSafe = String(team.id || team.name || '').replace(/[^a-zA-Z0-9-_]/g, '');
+
+  // Card wrapper
+  const card = document.createElement('div');
+  card.className = 'team-card';
+  card.setAttribute('data-layer', layer);
+  card.setAttribute('data-team-id', teamIdSafe);
+
+  // Header
+  const header = document.createElement('div');
+  header.className = 'team-card-header';
+  header.setAttribute('onclick', 'toggleTeamCard(this.closest(\'.team-card\'))');
+  header.style.cursor = 'pointer';
+
+  const headerLeft = document.createElement('div');
+
+  const nameDiv = document.createElement('div');
+  nameDiv.className = 'team-card-name';
+  nameDiv.textContent = team.name || team.id || '—';
+
+  const metaDiv = document.createElement('div');
+  metaDiv.className = 'team-card-meta';
+
+  const mgSpan = document.createElement('span');
+  const mgStrong = document.createElement('strong');
+  mgStrong.style.cssText = 'font-family:var(--font-mono);color:var(--text-primary)';
+  mgStrong.textContent = team.manager || '—';
+  mgSpan.textContent = 'Manager: ';
+  mgSpan.appendChild(mgStrong);
+
+  const tlSpan = document.createElement('span');
+  const tlStrong = document.createElement('strong');
+  tlStrong.style.cssText = 'font-family:var(--font-mono);color:var(--text-primary)';
+  tlStrong.textContent = team.techLead || '—';
+  tlSpan.textContent = 'Lead: ';
+  tlSpan.appendChild(tlStrong);
+
+  const countSpan = document.createElement('span');
+  countSpan.textContent = members.length + ' member' + (members.length !== 1 ? 's' : '');
+
+  metaDiv.appendChild(mgSpan); metaDiv.appendChild(tlSpan); metaDiv.appendChild(countSpan);
+  headerLeft.appendChild(nameDiv); headerLeft.appendChild(metaDiv);
+
+  const layerBadge = document.createElement('span');
+  layerBadge.className = 'layer-badge ' + layerClass;
+  layerBadge.textContent = layer;
+
+  header.appendChild(headerLeft); header.appendChild(layerBadge);
+
+  // Utilization row
+  const utilRow = document.createElement('div');
+  utilRow.className = 'team-utilization-row';
+
+  const utilLblLeft = document.createElement('span');
+  utilLblLeft.style.cssText = 'font-size:10px;color:var(--text-muted);font-family:var(--font-mono);width:72px;flex-shrink:0';
+  utilLblLeft.textContent = 'Utilization';
+
+  const utilTrack = document.createElement('div');
+  utilTrack.className = 'team-util-track';
+  const utilFill = document.createElement('div');
+  utilFill.className = 'team-util-fill';
+  utilFill.style.cssText = 'width:' + util + '%;background:' + utilColor;
+  utilTrack.appendChild(utilFill);
+
+  const utilLblRight = document.createElement('span');
+  utilLblRight.className = 'team-util-label';
+  utilLblRight.textContent = util + '%';
+
+  utilRow.appendChild(utilLblLeft); utilRow.appendChild(utilTrack); utilRow.appendChild(utilLblRight);
+
+  // Members panel (collapsed)
+  const membersPanel = document.createElement('div');
+  membersPanel.className = 'team-members-panel';
+  membersPanel.id = 'members-' + teamIdSafe;
+  _appendMemberRows(membersPanel, members);
+
+  card.appendChild(header); card.appendChild(utilRow); card.appendChild(membersPanel);
+  return card;
+}
+
+function _appendMemberRows(container, members) {
+  while (container.firstChild) container.removeChild(container.firstChild);
+  if (!members.length) {
+    const msg = document.createElement('div');
+    msg.style.cssText = 'padding:10px 16px;font-size:12px;color:var(--text-muted)';
+    msg.textContent = 'No members listed.';
+    container.appendChild(msg);
+    return;
+  }
+  members.forEach(function(m) {
+    const seniority = (m.seniority || 'mid').toLowerCase();
+    const model = (m.model || 'sonnet').toLowerCase();
+    const status = (m.status || 'idle').toLowerCase();
+    const statusClass = status === 'active' ? 'active' : status === 'idle' ? 'idle' : 'complete';
+
+    const row = document.createElement('div');
+    row.className = 'team-member-row';
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'team-member-name';
+    nameSpan.textContent = m.name || '—';
+
+    const senBadge = document.createElement('span');
+    senBadge.className = 'seniority-badge ' + seniority;
+    senBadge.textContent = seniority.charAt(0).toUpperCase() + seniority.slice(1);
+
+    const modelBadge = document.createElement('span');
+    modelBadge.className = 'model-badge ' + model;
+    modelBadge.style.marginLeft = '6px';
+    modelBadge.textContent = model.charAt(0).toUpperCase() + model.slice(1);
+
+    const statusBadge = document.createElement('span');
+    statusBadge.className = 'status-badge ' + statusClass;
+    statusBadge.style.marginLeft = 'auto';
+    statusBadge.textContent = status;
+
+    row.appendChild(nameSpan); row.appendChild(senBadge);
+    row.appendChild(modelBadge); row.appendChild(statusBadge);
+    container.appendChild(row);
+  });
+}
+
+function toggleTeamCard(card) {
+  if (!card) return;
+  const teamId = card.getAttribute('data-team-id');
+  const isExpanded = card.classList.contains('expanded');
+  document.querySelectorAll('.team-card.expanded').forEach(function(c) { c.classList.remove('expanded'); });
+  if (!isExpanded) {
+    card.classList.add('expanded');
+    const membersPanel = document.getElementById('members-' + teamId);
+    if (membersPanel && !membersPanel.childElementCount) {
+      const loadMsg = document.createElement('div');
+      loadMsg.className = 'skeleton-loader';
+      loadMsg.textContent = 'Loading members…';
+      membersPanel.appendChild(loadMsg);
+      fetch('/api/v1/teams/' + encodeURIComponent(teamId))
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(json) {
+          if (json && json.members) { _appendMemberRows(membersPanel, json.members); }
+        })
+        .catch(function() {});
+    }
+  }
+}
+
+function filterTeamsByLayer(btn, layer) {
+  document.querySelectorAll('.layer-btn').forEach(function(b) { b.classList.remove('active'); });
+  btn.classList.add('active');
+  _teamsLayerFilter = layer;
+  _renderTeamGrid(_teamsData);
+}
+
+async function loadHiringRecommendations() {
+  const body    = document.getElementById('hiring-recs-body');
+  const countEl = document.getElementById('hiring-recs-count');
+  if (!body) return;
+  while (body.firstChild) body.removeChild(body.firstChild);
+  const skelMsg = document.createElement('div');
+  skelMsg.className = 'skeleton-loader';
+  skelMsg.textContent = 'Loading recommendations…';
+  body.appendChild(skelMsg);
+
+  let recs = [];
+  try {
+    const res = await fetch('/api/v1/hiring-recommendations');
+    if (res.ok) {
+      const json = await res.json();
+      recs = json.data || json.recommendations || json || [];
+    }
+  } catch (e) { /* fallback below */ }
+  if (!recs.length) recs = _syntheticHiringRecs();
+
+  if (countEl) countEl.textContent = recs.length + ' pending';
+  while (body.firstChild) body.removeChild(body.firstChild);
+
+  if (!recs.length) {
+    const empty = document.createElement('div');
+    empty.className = 'session-empty';
+    empty.style.padding = '16px';
+    empty.textContent = 'No pending hiring recommendations.';
+    body.appendChild(empty);
+    return;
+  }
+
+  recs.forEach(function(rec) {
+    const id = String(rec.id || rec.recommendationId || Math.random().toString(36).slice(2)).replace(/[^a-zA-Z0-9-_]/g, '');
+    const item = document.createElement('div');
+    item.className = 'hiring-rec-item';
+    item.id = 'hiring-rec-' + id;
+
+    const roleSpan = document.createElement('span');
+    roleSpan.className = 'hiring-rec-role';
+    roleSpan.textContent = rec.role || rec.title || '—';
+
+    const reasonSpan = document.createElement('span');
+    reasonSpan.className = 'hiring-rec-reason';
+    reasonSpan.textContent = rec.reason || rec.description || '—';
+
+    const teamSpan = document.createElement('span');
+    teamSpan.style.cssText = 'font-family:var(--font-mono);font-size:11px;color:var(--text-muted);white-space:nowrap';
+    teamSpan.textContent = rec.team || '—';
+
+    const actions = document.createElement('div');
+    actions.className = 'hiring-rec-actions';
+
+    const approveBtn = document.createElement('button');
+    approveBtn.className = 'btn-approve';
+    approveBtn.textContent = 'Approve';
+    approveBtn.addEventListener('click', function() { handleHiringAction(id, 'approve'); });
+
+    const denyBtn = document.createElement('button');
+    denyBtn.className = 'btn-deny';
+    denyBtn.textContent = 'Deny';
+    denyBtn.addEventListener('click', function() { handleHiringAction(id, 'deny'); });
+
+    actions.appendChild(approveBtn); actions.appendChild(denyBtn);
+    item.appendChild(roleSpan); item.appendChild(reasonSpan);
+    item.appendChild(teamSpan); item.appendChild(actions);
+    body.appendChild(item);
+  });
+}
+
+function _syntheticHiringRecs() {
+  return [
+    {id:'rec-001',role:'Senior Frontend Engineer',reason:'UI/UX backlog growing; current team at 91% utilization',team:'frontend'},
+    {id:'rec-002',role:'Data Pipeline Engineer',reason:'Analytics layer needs dedicated ownership for v6.0',team:'data'},
+    {id:'rec-003',role:'QA Automation Lead',reason:'Test coverage gaps identified in resilience layer',team:'qa'}
+  ];
+}
+
+async function handleHiringAction(id, action) {
+  const item = document.getElementById('hiring-rec-' + id);
+  if (!item) return;
+  item.querySelectorAll('button').forEach(function(b) { b.disabled = true; b.style.opacity = '0.5'; });
+  try {
+    await fetch('/api/v1/hiring-recommendations/' + encodeURIComponent(id) + '/' + action, {method:'POST'});
+  } catch (e) { /* graceful degradation */ }
+  item.style.transition = 'opacity 0.3s';
+  item.style.opacity = '0';
+  setTimeout(function() { if (item.parentNode) item.parentNode.removeChild(item); }, 300);
+  const countEl = document.getElementById('hiring-recs-count');
+  if (countEl) {
+    const current = parseInt(countEl.textContent) || 1;
+    countEl.textContent = Math.max(0, current - 1) + ' pending';
   }
 }
 

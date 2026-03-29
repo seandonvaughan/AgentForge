@@ -21,6 +21,10 @@ import { multiWorkspaceRoutes } from './multi-workspace.js';
 import { agentVersioningRoutes } from './agent-versioning.js';
 import { federationRoutes } from './federation.js';
 import { registerHealthServicesRoutes } from './health-services.js';
+import { sprintOrchestrationRoutes } from './sprint-orchestration.js';
+import { settingsRoutes } from './settings.js';
+import { agentCrudRoutes } from './agent-crud.js';
+import { chatRoutes } from './chat.js';
 
 export interface V5RouteOptions {
   adapter: WorkspaceAdapter;
@@ -204,4 +208,16 @@ export async function registerV5Routes(
 
   // ── Service-level health (per-service circuit breaker status) ─────────────
   registerHealthServicesRoutes(app);
+
+  // ── Sprint Orchestration (create, advance, item updates, execute) ──────────
+  await sprintOrchestrationRoutes(app, opts.projectRoot ? { projectRoot: opts.projectRoot } : undefined);
+
+  // ── Settings persistence ───────────────────────────────────────────────────
+  await settingsRoutes(app);
+
+  // ── Agent CRUD (create, edit, delete, fork, promote) ──────────────────────
+  await agentCrudRoutes(app, opts.projectRoot ? { projectRoot: opts.projectRoot } : {});
+
+  // ── Agent Chat Interface (P0-3) ────────────────────────────────────────────
+  await chatRoutes(app);
 }

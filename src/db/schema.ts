@@ -191,6 +191,18 @@ export const CREATE_TABLES_SQL: string[] = [
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   decided_at TEXT
 )`,
+
+  // Chat messages — agent chat history (P0-3)
+  `CREATE TABLE IF NOT EXISTS chat_messages (
+  id TEXT PRIMARY KEY,
+  agent_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  role TEXT NOT NULL,
+  content TEXT NOT NULL,
+  timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+  tokens_used INTEGER DEFAULT 0,
+  cost_usd REAL DEFAULT 0.0
+)`,
 ];
 
 export const CREATE_INDEXES_SQL: string[] = [
@@ -219,6 +231,11 @@ export const CREATE_INDEXES_SQL: string[] = [
   `CREATE INDEX IF NOT EXISTS idx_teams_layer ON teams(layer)`,
   `CREATE INDEX IF NOT EXISTS idx_hiring_recommendations_team_id ON hiring_recommendations(team_id)`,
   `CREATE INDEX IF NOT EXISTS idx_hiring_recommendations_status ON hiring_recommendations(status)`,
+
+  // Chat message indexes
+  `CREATE INDEX IF NOT EXISTS idx_chat_messages_agent_id ON chat_messages(agent_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_chat_messages_session_id ON chat_messages(session_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_chat_messages_timestamp ON chat_messages(timestamp)`,
 ];
 
 export const ALL_DDL: string[] = [...CREATE_TABLES_SQL, ...CREATE_INDEXES_SQL];

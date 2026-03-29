@@ -92,22 +92,4 @@ export async function dashboardStubRoutes(
     return reply.send({ ok: true });
   });
 
-  // ── Settings ──────────────────────────────────────────────────────────────
-  app.get('/api/v5/settings', async (_req, reply) => {
-    return reply.send({
-      data: {
-        workspaceName: 'AgentForge',
-        defaultModel: 'sonnet',
-        maxConcurrentAgents: 10,
-        sessionTimeoutMinutes: 60,
-        theme: 'dark',
-        version: '6.1.0',
-      },
-    });
-  });
-
-  app.put('/api/v5/settings', async (req, reply) => {
-    // Accept but don't persist (would need file/db storage)
-    return reply.send({ data: req.body, meta: { saved: true } });
-  });
 }

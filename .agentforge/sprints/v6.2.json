@@ -1,0 +1,183 @@
+{
+  "sprints": [{
+    "sprintId": "v62-dashboard-command-center",
+    "version": "6.2",
+    "title": "AgentForge v6.2 — Dashboard Command Center + Full Agent Orchestration",
+    "createdAt": "2026-03-29T00:00:00.000Z",
+    "phase": "planned",
+    "startedAt": null,
+    "completedAt": null,
+    "items": [
+      {
+        "id": "p0-1",
+        "title": "Sprint Orchestration Engine — Create & Execute Sprints from Dashboard",
+        "description": "Build the full sprint orchestration pipeline. POST /api/v6/sprints creates a sprint from dashboard input. PATCH /api/v6/sprints/:id/advance moves through phases (audit→plan→assign→execute→test→review→gate→release→learn). Each phase transition triggers the appropriate executive agent: CEO approves, CTO plans, VP Eng distributes, Tech Leads assign. The execute phase fans out to agents in parallel via ConcurrencyManager. Budget gates pause execution when thresholds are hit. Sprint state persisted to SQLite. Real-time phase updates broadcast via SSE.",
+        "priority": "P0",
+        "assignee": "api-specialist",
+        "status": "planned"
+      },
+      {
+        "id": "p0-2",
+        "title": "Agent CRUD API — Full Agent Lifecycle from Dashboard",
+        "description": "Implement complete agent CRUD endpoints. POST /api/v6/agents creates a new agent (writes YAML to .agentforge/agents/, registers in AgentRegistry, records career event). PATCH /api/v6/agents/:id updates agent config (system prompt, skills, model tier, seniority). DELETE /api/v6/agents/:id terminates agent (knowledge transfer first, then removal). POST /api/v6/agents/:id/fork creates a copy with modified config. POST /api/v6/agents/:id/promote advances seniority level. All mutations update delegation graph, model routing, and team.yaml atomically.",
+        "priority": "P0",
+        "assignee": "api-specialist",
+        "status": "planned"
+      },
+      {
+        "id": "p0-3",
+        "title": "Agent Chat Interface — Conversational Dashboard",
+        "description": "Build a full chat interface in the dashboard at /chat. Users can select any agent and have a real-time conversation. Messages stream via SSE using AgentRuntime.runStreaming(). Chat history persisted per agent in SQLite (new chat_messages table: id, agent_id, role, content, timestamp, session_id). Agent receives its career record, team knowledge, and recent task memories as context automatically. Support multi-agent chat rooms where multiple agents can be brought into one conversation thread. Each agent responds in character based on its system prompt and role.",
+        "priority": "P0",
+        "assignee": "coder",
+        "status": "planned"
+      },
+      {
+        "id": "p0-4",
+        "title": "Sprint Dashboard Page — Full Sprint Control UI",
+        "description": "Rebuild /sprints page as a full sprint command center. Sprint creation wizard: title, items with priority/assignee, budget, success criteria. Phase timeline visualization showing current phase with progress. Per-item status cards with agent avatar, progress bar, cost. Phase advance button (triggers PATCH /api/v6/sprints/:id/advance). Budget burn-down chart updating in real-time. Sprint comparison view (compare velocity across sprints). Gate approval UI: CEO reviews results, approves/rejects with inline comments.",
+        "priority": "P0",
+        "assignee": "dashboard-architect",
+        "status": "planned"
+      },
+      {
+        "id": "p0-5",
+        "title": "Task Assignment & Delegation UI",
+        "description": "Build task management interface at /tasks. Shows all active tasks across all agents with status, cost, duration. Drag-and-drop task reassignment between agents. Task creation form that routes through the delegation graph (user creates task → COO assigns → Tech Lead routes to specialist). Task dependency visualization (which tasks block which). Parallel execution slots view: see how many slots each agent is using. Filter by team, layer, priority, status. Real-time updates via SSE as agents complete tasks.",
+        "priority": "P0",
+        "assignee": "coder",
+        "status": "planned"
+      },
+      {
+        "id": "p0-6",
+        "title": "Career Dashboard Page — Agent Growth Visualization",
+        "description": "Build /careers page showing agent career progression. Skill radar chart (d3.js) showing all skills with levels 1-5. Task history timeline with outcome coloring (green=success, yellow=partial, red=failure). Promotion path visualization showing seniority ladder and next milestone. Performance metrics dashboard: tasks completed, success rate, avg duration, peer review score. Career event log. Compare agents side-by-side. Drill into any skill to see exercise history.",
+        "priority": "P0",
+        "assignee": "dashboard-architect",
+        "status": "planned"
+      },
+      {
+        "id": "p0-7",
+        "title": "Team Hierarchy Visualization — Interactive Org Chart",
+        "description": "Build /teams page with interactive organizational chart. D3.js force-directed graph showing all agents grouped by team/layer. Click any node to see agent details, career record, active tasks. Drag-and-drop reassignment between teams (calls PATCH /api/v6/agents/:id/reassign). Team health cards showing utilization, capacity, skill coverage. Hiring recommendation panel: pending hires with approve/deny buttons. Color-coding by seniority level. Real-time status indicators (idle/active/multitasking).",
+        "priority": "P0",
+        "assignee": "coder",
+        "status": "planned"
+      },
+      {
+        "id": "p1-1",
+        "title": "Executive Decision Flow UI",
+        "description": "Build /decisions page showing all executive actions and approval workflows. Timeline of CEO strategic decisions, CTO technology decisions, COO operational plans. Pending approval queue with context (what's being approved, by whom, impact). One-click approve/deny with mandatory rationale field. Decision audit trail: who decided what, when, why. OKR progress tracker showing objectives with key results as progress bars. Budget approval workflow with CFO cost projections inline.",
+        "priority": "P1",
+        "assignee": "coder",
+        "status": "planned"
+      },
+      {
+        "id": "p1-2",
+        "title": "Real-time Observability Dashboard",
+        "description": "Build /observe page as the system nerve center. Live agent execution stream showing current token output, cost accumulation, duration. Team utilization heatmap: grid of teams × time with color intensity showing load. Cost burn-down chart per sprint with budget line. Bottleneck detection: highlight agents that are blocking downstream tasks. Execution slot matrix: visual grid showing each agent's parallel task slots (filled/empty). Alert feed: anomalous spend, stalled tasks, failed executions. All data real-time via SSE.",
+        "priority": "P1",
+        "assignee": "dashboard-architect",
+        "status": "planned"
+      },
+      {
+        "id": "p1-3",
+        "title": "Knowledge & Memory Browser",
+        "description": "Rebuild /knowledge and /memory pages as unified knowledge management interface. Institutional knowledge browser: searchable list per team with category filters (convention, pattern, decision, pitfall, domain_fact). Confidence score visualization with decay indicator. Add/edit/validate knowledge entries. Agent memory viewer: see the exact context any agent will receive on its next run (last N task memories, team knowledge, skill profile). Knowledge graph visualization: D3.js network showing relationships between entries, files, and agents. Bulk import/export as JSON.",
+        "priority": "P1",
+        "assignee": "coder",
+        "status": "planned"
+      },
+      {
+        "id": "p1-4",
+        "title": "API v6 Unification — Consolidate v1 + v5 into v6",
+        "description": "Create unified /api/v6/ namespace that consolidates all endpoints. Map all v5 routes to v6 equivalents. Map v1 lifecycle routes (teams, careers, hiring-recommendations) to v6. Add OpenAPI 3.1 spec auto-generation from route definitions. Add request validation middleware using Zod schemas on all v6 endpoints. Deprecation headers on v1 and v5 routes pointing to v6 equivalents. Rate limiting middleware (configurable per-route). CORS configuration for production deployments.",
+        "priority": "P1",
+        "assignee": "api-specialist",
+        "status": "planned"
+      },
+      {
+        "id": "p1-5",
+        "title": "WebSocket Upgrade — Bi-directional Agent Communication",
+        "description": "Replace SSE-only streaming with WebSocket support for bi-directional communication. WebSocket server on /ws with authentication. Client can send messages to agents in real-time (not just receive). Agent-to-agent communication routed through WebSocket bus. Reconnection with exponential backoff. Message queuing when client disconnects (replay on reconnect). Dashboard WebSocket client with automatic fallback to SSE for browsers that don't support WS. Heartbeat keepalive.",
+        "priority": "P1",
+        "assignee": "api-specialist",
+        "status": "planned"
+      },
+      {
+        "id": "p1-6",
+        "title": "Settings Persistence & Workspace Configuration",
+        "description": "Make /settings page functional with full persistence. Save workspace settings to .agentforge/config/settings.yaml. Configurable: default model tier, budget limits per sprint/agent, auto-approval thresholds, SSE reconnect interval, dashboard theme, notification preferences. Import/export settings. Per-team settings overrides. Environment variable overrides for CI/CD. Settings validation with Zod schema. Settings change audit log.",
+        "priority": "P1",
+        "assignee": "coder",
+        "status": "planned"
+      },
+      {
+        "id": "p1-7",
+        "title": "Sprint Auto-Delegation Pipeline",
+        "description": "Implement the full auto-delegation chain when a sprint enters 'assign' phase. CTO receives sprint items and produces a technical plan (grouped by domain). VP Engineering receives tech plan and distributes to engineering managers by team layer. Engineering managers break items into tasks and assign to tech leads. Tech leads evaluate complexity and route to specialists based on seniority, skill match, and capacity. All delegation steps recorded as career events. Blocked tasks auto-escalate through the hierarchy. Uses DelegationProtocol and AgentLifecycleManager.",
+        "priority": "P1",
+        "assignee": "architect",
+        "status": "planned"
+      },
+      {
+        "id": "p2-1",
+        "title": "Skill Gap Analysis & Training Recommendations",
+        "description": "Build skill gap analysis engine. For each team, compare required skills (from sprint items and domain) against actual skill profiles of team members. Generate gap report showing which skills are missing or below proficiency threshold. Generate training recommendations: which agents should exercise which skills. VP Engineering tool requestTraining() creates training tasks that agents complete to build skills. Visualize gaps on career dashboard as overlay on skill radar chart.",
+        "priority": "P2",
+        "assignee": "architect",
+        "status": "planned"
+      },
+      {
+        "id": "p2-2",
+        "title": "Performance Leaderboard & Team Analytics",
+        "description": "Build /analytics page with team and agent performance analytics. Agent leaderboard: ranked by composite score (success rate × tasks completed × skill breadth). Team velocity charts: tasks per sprint over time. Model tier efficiency: cost-per-successful-task by model. Seniority distribution pie charts per team. Promotion rate tracking. Sprint completion prediction based on historical velocity. Export analytics as PDF report.",
+        "priority": "P2",
+        "assignee": "data-analyst",
+        "status": "planned"
+      },
+      {
+        "id": "p2-3",
+        "title": "Dashboard Theme System & Design Tokens",
+        "description": "Implement a comprehensive design token system for the dashboard. Light and dark themes with smooth transitions. Custom color palettes per team layer (frontend=blue, backend=green, infra=orange, etc.). Consistent typography scale. Responsive breakpoints for mobile/tablet/desktop. Component library documentation page at /design-system showing all components with usage examples. CSS custom properties for all tokens. Theme persistence in localStorage.",
+        "priority": "P2",
+        "assignee": "coder",
+        "status": "planned"
+      },
+      {
+        "id": "p2-4",
+        "title": "Notification System & Alert Management",
+        "description": "Build notification center accessible from the dashboard topbar. Real-time notifications for: task completed, task failed, budget threshold hit, agent promoted, hiring recommendation, approval needed, sprint phase advanced. Notification preferences (which events to show). Mark as read/unread. Notification history with search. Desktop push notifications via Notification API. Notification bell with unread badge count. Group by category. Auto-dismiss after configurable timeout.",
+        "priority": "P2",
+        "assignee": "coder",
+        "status": "planned"
+      },
+      {
+        "id": "p2-5",
+        "title": "Comprehensive Test Suite for v6.2 Features",
+        "description": "Write tests for all v6.2 features. API tests: sprint CRUD, agent CRUD, chat messages, task assignment, career endpoints, knowledge CRUD, settings persistence. Integration tests: sprint orchestration flow (create → advance → complete), auto-delegation pipeline, executive decision flows. Dashboard component tests: sprint wizard, org chart, career dashboard, chat interface. WebSocket tests: connection, message delivery, reconnection. Target: 500+ new tests. All existing 3457+ tests must pass.",
+        "priority": "P2",
+        "assignee": "backend-qa",
+        "status": "planned"
+      }
+    ],
+    "budget": 2000,
+    "teamSize": 40,
+    "successCriteria": [
+      "Sprint creation and full phase advancement works from dashboard",
+      "Agent CRUD (create, edit, delete, fork, promote) fully operational",
+      "Agent chat interface with streaming responses and history",
+      "Career dashboard with skill radar chart and promotion path",
+      "Interactive org chart with drag-drop team reassignment",
+      "Task management with delegation routing and parallel slot view",
+      "Executive decision flows with approval workflows",
+      "Real-time observability with utilization heatmap and cost burn-down",
+      "Knowledge browser with search, add, validate, and graph visualization",
+      "Unified v6 API with OpenAPI spec and Zod validation",
+      "WebSocket bi-directional communication operational",
+      "Settings persistence to disk with import/export",
+      "Auto-delegation pipeline: CEO → CTO → VP Eng → Tech Lead → Specialist",
+      "4000+ total tests passing with zero regressions"
+    ]
+  }]
+}

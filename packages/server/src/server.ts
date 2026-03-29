@@ -23,6 +23,7 @@ import { agentStreamingRoutes } from './routes/v5/streaming.js';
 import { multiWorkspaceRoutes } from './routes/v5/multi-workspace.js';
 import { agentVersioningRoutes } from './routes/v5/agent-versioning.js';
 import { federationRoutes } from './routes/v5/federation.js';
+import { chatRoutes } from './routes/v5/chat.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -127,6 +128,9 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
 
   // ── Execution API (reads .agentforge/agents/*.yaml — optional adapter for persistence) ──
   await runRoutes(app, { adapter: options.adapter });
+
+  // ── Agent Chat Interface (P0-3) — no adapter required, uses audit.db directly ──
+  await chatRoutes(app);
 
   // ── Plugin loader (hot-reload when pluginsDir provided) ───────────────────────
   if (options.pluginsDir) {
