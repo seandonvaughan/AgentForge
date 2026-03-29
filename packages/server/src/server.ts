@@ -6,7 +6,10 @@ import { fileURLToPath } from 'node:url';
 import type { MessageBusV2 } from '@agentforge/core';
 import type { WorkspaceAdapter, WorkspaceRegistry } from '@agentforge/db';
 import { registerWebSocketRoutes } from './websocket/index.js';
+import { registerWsHandler } from './websocket/ws-handler.js';
 import { registerV5Routes } from './routes/v5/index.js';
+import { registerV6Routes } from './routes/v6/index.js';
+import { openApiRoutes } from './routes/v6/openapi.js';
 import { agentRoutes } from './routes/v5/agents.js';
 import { orgGraphRoutes } from './routes/v5/org-graph.js';
 import { pluginRoutes } from './routes/v5/plugins.js';
@@ -151,7 +154,21 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
   // ── Embedding routes ──────────────────────────────────────────────────────────
   await embeddingRoutes(app, { dataDir });
 
-  // ── WebSocket routes (enabled when bus is provided) ──────────────────────────
+  // ── v6 Unified API routes + OpenAPI spec ────────────────────────────────────
+  if (options.adapter && options.registry) {
+    await registerV6Routes(app, {
+      adapter: options.adapter,
+      registry: options.registry,
+      projectRoot,
+    });
+  }
+  // OpenAPI spec is always available (no adapter required)
+  await openApiRoutes(app);
+
+  // ── WebSocket handler on /ws (P1-5) — always available ─────────────────────
+  await registerWsHandler(app);
+
+  // ── WebSocket bus bridge on /api/v5/ws (enabled when bus is provided) ───────
   if (options.bus && options.adapter) {
     await registerWebSocketRoutes(app, {
       bus: options.bus,

@@ -358,7 +358,7 @@
       {
         "file_path": "dashboard/index.html",
         "language": "HTML",
-        "loc": 6487,
+        "loc": 10443,
         "imports": [],
         "exports": [],
         "framework_indicators": [
@@ -4969,6 +4969,35 @@
         ]
       },
       {
+        "file_path": "packages/server/src/routes/v5/agent-crud.ts",
+        "language": "TypeScript",
+        "loc": 499,
+        "imports": [
+          "fastify",
+          "node:path",
+          "node:url",
+          "js-yaml",
+          "./stream.js"
+        ],
+        "exports": [],
+        "framework_indicators": [
+          "Fastify"
+        ],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "spread operator",
+          "optional chaining",
+          "nullish coalescing",
+          "template literals",
+          "interfaces",
+          "type aliases",
+          "error handling"
+        ]
+      },
+      {
         "file_path": "packages/server/src/routes/v5/agent-versioning.ts",
         "language": "TypeScript",
         "loc": 78,
@@ -5076,6 +5105,36 @@
         ]
       },
       {
+        "file_path": "packages/server/src/routes/v5/chat.ts",
+        "language": "TypeScript",
+        "loc": 486,
+        "imports": [
+          "fastify",
+          "@agentforge/core",
+          "@agentforge/shared",
+          "node:path",
+          "node:url",
+          "better-sqlite3",
+          "./stream.js"
+        ],
+        "exports": [],
+        "framework_indicators": [
+          "Next.js",
+          "Fastify"
+        ],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "spread operator",
+          "nullish coalescing",
+          "template literals",
+          "interfaces",
+          "error handling"
+        ]
+      },
+      {
         "file_path": "packages/server/src/routes/v5/cost-autopilot.ts",
         "language": "TypeScript",
         "loc": 65,
@@ -5118,7 +5177,7 @@
       {
         "file_path": "packages/server/src/routes/v5/dashboard-stubs.ts",
         "language": "TypeScript",
-        "loc": 114,
+        "loc": 96,
         "imports": [
           "fastify",
           "node:fs",
@@ -5219,7 +5278,7 @@
       {
         "file_path": "packages/server/src/routes/v5/index.ts",
         "language": "TypeScript",
-        "loc": 208,
+        "loc": 224,
         "imports": [
           "fastify",
           "@agentforge/db",
@@ -5242,7 +5301,11 @@
           "./multi-workspace.js",
           "./agent-versioning.js",
           "./federation.js",
-          "./health-services.js"
+          "./health-services.js",
+          "./sprint-orchestration.js",
+          "./settings.js",
+          "./agent-crud.js",
+          "./chat.js"
         ],
         "exports": [
           "V5RouteOptions"
@@ -5520,6 +5583,63 @@
         ]
       },
       {
+        "file_path": "packages/server/src/routes/v5/settings.ts",
+        "language": "TypeScript",
+        "loc": 161,
+        "imports": [
+          "fastify",
+          "node:fs",
+          "node:path",
+          "node:url",
+          "js-yaml",
+          "./stream.js"
+        ],
+        "exports": [],
+        "framework_indicators": [
+          "Fastify"
+        ],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "nullish coalescing",
+          "interfaces",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "packages/server/src/routes/v5/sprint-orchestration.ts",
+        "language": "TypeScript",
+        "loc": 486,
+        "imports": [
+          "fastify",
+          "node:fs",
+          "node:path",
+          "node:url",
+          "@agentforge/core",
+          "@agentforge/shared",
+          "./stream.js"
+        ],
+        "exports": [],
+        "framework_indicators": [
+          "Next.js",
+          "Fastify"
+        ],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "spread operator",
+          "optional chaining",
+          "nullish coalescing",
+          "template literals",
+          "interfaces",
+          "type aliases",
+          "error handling"
+        ]
+      },
+      {
         "file_path": "packages/server/src/routes/v5/sprints.ts",
         "language": "TypeScript",
         "loc": 92,
@@ -5633,9 +5753,84 @@
         ]
       },
       {
+        "file_path": "packages/server/src/routes/v6/index.ts",
+        "language": "TypeScript",
+        "loc": 485,
+        "imports": [
+          "fastify",
+          "@agentforge/db",
+          "node:fs",
+          "node:path",
+          "node:url",
+          "js-yaml",
+          "better-sqlite3",
+          "../v5/rbac.js",
+          "../v5/costs.js",
+          "../v5/approvals.js",
+          "../v5/workflows.js",
+          "../v5/budget.js",
+          "../v5/observability.js",
+          "../v5/stream.js",
+          "../v5/merge-queue.js",
+          "../v5/knowledge.js",
+          "../v5/canary.js",
+          "../v5/tracing.js",
+          "../v5/cost-autopilot.js",
+          "../v5/predictive-planning.js",
+          "../v5/marketplace.js",
+          "../v5/nl-interface.js",
+          "../v5/streaming.js",
+          "../v5/multi-workspace.js",
+          "../v5/agent-versioning.js",
+          "../v5/federation.js",
+          "../v5/health-services.js",
+          "../v5/sprint-orchestration.js",
+          "../v5/settings.js",
+          "../v5/agent-crud.js",
+          "../v5/chat.js"
+        ],
+        "exports": [
+          "V6RouteOptions"
+        ],
+        "framework_indicators": [
+          "Next.js",
+          "Fastify"
+        ],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "spread operator",
+          "nullish coalescing",
+          "template literals",
+          "interfaces",
+          "type aliases",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "packages/server/src/routes/v6/openapi.ts",
+        "language": "TypeScript",
+        "loc": 741,
+        "imports": [
+          "fastify"
+        ],
+        "exports": [],
+        "framework_indicators": [
+          "Fastify"
+        ],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "interfaces"
+        ]
+      },
+      {
         "file_path": "packages/server/src/server.ts",
         "language": "TypeScript",
-        "loc": 180,
+        "loc": 201,
         "imports": [
           "fastify",
           "@fastify/cors",
@@ -5645,7 +5840,10 @@
           "@agentforge/core",
           "@agentforge/db",
           "./websocket/index.js",
+          "./websocket/ws-handler.js",
           "./routes/v5/index.js",
+          "./routes/v6/index.js",
+          "./routes/v6/openapi.js",
           "./routes/v5/agents.js",
           "./routes/v5/org-graph.js",
           "./routes/v5/plugins.js",
@@ -5661,7 +5859,8 @@
           "./routes/v5/streaming.js",
           "./routes/v5/multi-workspace.js",
           "./routes/v5/agent-versioning.js",
-          "./routes/v5/federation.js"
+          "./routes/v5/federation.js",
+          "./routes/v5/chat.js"
         ],
         "exports": [
           "ServerOptionsV5"
@@ -5681,11 +5880,71 @@
       {
         "file_path": "packages/server/src/websocket/index.ts",
         "language": "TypeScript",
-        "loc": 2,
+        "loc": 7,
         "imports": [],
         "exports": [],
         "framework_indicators": [],
         "patterns": []
+      },
+      {
+        "file_path": "packages/server/src/websocket/ws-client.ts",
+        "language": "TypeScript",
+        "loc": 260,
+        "imports": [
+          "@agentforge/server/websocket/ws-client.js"
+        ],
+        "exports": [
+          "WsEventType",
+          "WsEventHandler",
+          "WsClientOptions",
+          "WsClient"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "optional chaining",
+          "nullish coalescing",
+          "template literals",
+          "classes",
+          "interfaces",
+          "type aliases",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "packages/server/src/websocket/ws-handler.ts",
+        "language": "TypeScript",
+        "loc": 334,
+        "imports": [
+          "fastify",
+          "@fastify/websocket",
+          "@agentforge/shared"
+        ],
+        "exports": [
+          "WsClientRecord",
+          "WsEvent",
+          "broadcastWs",
+          "getEventsSince",
+          "getConnectedCount",
+          "teardown"
+        ],
+        "framework_indicators": [
+          "Fastify"
+        ],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "optional chaining",
+          "template literals",
+          "interfaces",
+          "type aliases",
+          "generators",
+          "promises",
+          "error handling"
+        ]
       },
       {
         "file_path": "packages/server/src/websocket/ws-server.ts",
@@ -6001,6 +6260,30 @@
         "exports": [],
         "framework_indicators": [],
         "patterns": []
+      },
+      {
+        "file_path": "src/analytics/performance-leaderboard.ts",
+        "language": "TypeScript",
+        "loc": 288,
+        "imports": [
+          "../types/lifecycle.js"
+        ],
+        "exports": [
+          "LeaderboardEntry",
+          "TeamVelocityReport",
+          "ModelEfficiencyReport",
+          "PerformanceLeaderboard"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "spread operator",
+          "nullish coalescing",
+          "classes",
+          "interfaces"
+        ]
       },
       {
         "file_path": "src/analytics/report-generator.ts",
@@ -7068,7 +7351,7 @@
       {
         "file_path": "src/db/schema.ts",
         "language": "TypeScript",
-        "loc": 225,
+        "loc": 242,
         "imports": [],
         "exports": [
           "CREATE_TABLES_SQL",
@@ -7786,6 +8069,26 @@
         "patterns": []
       },
       {
+        "file_path": "src/lifecycle/skill-gap-analyzer.ts",
+        "language": "TypeScript",
+        "loc": 225,
+        "imports": [
+          "../types/lifecycle.js"
+        ],
+        "exports": [
+          "SkillGapReport",
+          "TrainingRecommendation",
+          "SkillGapAnalyzer"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "arrow functions",
+          "spread operator",
+          "classes",
+          "interfaces"
+        ]
+      },
+      {
         "file_path": "src/lifecycle/team-registry.ts",
         "language": "TypeScript",
         "loc": 207,
@@ -8086,6 +8389,34 @@
           "nullish coalescing",
           "template literals",
           "classes"
+        ]
+      },
+      {
+        "file_path": "src/orchestrator/auto-delegation.ts",
+        "language": "TypeScript",
+        "loc": 520,
+        "imports": [
+          "../types/lifecycle.js"
+        ],
+        "exports": [
+          "SprintItem",
+          "DelegationStep",
+          "AutoDelegationResult",
+          "AutoDelegationPipeline"
+        ],
+        "framework_indicators": [
+          "React",
+          "Svelte",
+          "GraphQL"
+        ],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "nullish coalescing",
+          "template literals",
+          "classes",
+          "interfaces"
         ]
       },
       {
@@ -11479,6 +11810,26 @@
         "patterns": []
       },
       {
+        "file_path": "tests/analytics/performance-leaderboard.test.ts",
+        "language": "TypeScript",
+        "loc": 406,
+        "imports": [
+          "vitest",
+          "../../src/analytics/performance-leaderboard.js",
+          "../../src/types/lifecycle.js",
+          "../../src/types/v4-api.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "spread operator",
+          "template literals"
+        ]
+      },
+      {
         "file_path": "tests/analytics/report-generator.test.ts",
         "language": "TypeScript",
         "loc": 480,
@@ -11593,6 +11944,40 @@
           "async/await",
           "generics",
           "arrow functions",
+          "template literals"
+        ]
+      },
+      {
+        "file_path": "tests/builder/team-composer-integration.test.ts",
+        "language": "TypeScript",
+        "loc": 645,
+        "imports": [
+          "vitest",
+          "../../src/scanner/index.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "spread operator",
+          "template literals"
+        ]
+      },
+      {
+        "file_path": "tests/builder/team-composer-units.test.ts",
+        "language": "TypeScript",
+        "loc": 410,
+        "imports": [
+          "vitest",
+          "../../src/scanner/index.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "spread operator",
           "template literals"
         ]
       },
@@ -12469,6 +12854,23 @@
         ]
       },
       {
+        "file_path": "tests/lifecycle/agent-lifecycle-manager.test.ts",
+        "language": "TypeScript",
+        "loc": 438,
+        "imports": [
+          "vitest",
+          "../../src/lifecycle/agent-lifecycle-manager.js",
+          "../../src/types/lifecycle.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "spread operator"
+        ]
+      },
+      {
         "file_path": "tests/lifecycle/agent-registry.test.ts",
         "language": "TypeScript",
         "loc": 330,
@@ -12486,6 +12888,25 @@
         ]
       },
       {
+        "file_path": "tests/lifecycle/career-store.test.ts",
+        "language": "TypeScript",
+        "loc": 479,
+        "imports": [
+          "vitest",
+          "../../src/lifecycle/career-store.js",
+          "../../src/types/lifecycle.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "spread operator",
+          "template literals"
+        ]
+      },
+      {
         "file_path": "tests/lifecycle/concurrency-manager.test.ts",
         "language": "TypeScript",
         "loc": 391,
@@ -12499,6 +12920,27 @@
         "patterns": [
           "arrow functions",
           "destructuring"
+        ]
+      },
+      {
+        "file_path": "tests/lifecycle/skill-gap-analyzer.test.ts",
+        "language": "TypeScript",
+        "loc": 333,
+        "imports": [
+          "vitest",
+          "../../src/lifecycle/skill-gap-analyzer.js",
+          "../../src/types/lifecycle.js"
+        ],
+        "exports": [],
+        "framework_indicators": [
+          "GraphQL"
+        ],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "spread operator",
+          "optional chaining"
         ]
       },
       {
@@ -12695,6 +13137,24 @@
           "async/await",
           "arrow functions",
           "spread operator"
+        ]
+      },
+      {
+        "file_path": "tests/orchestrator/auto-delegation.test.ts",
+        "language": "TypeScript",
+        "loc": 457,
+        "imports": [
+          "vitest",
+          "../../src/types/lifecycle.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "spread operator",
+          "template literals"
         ]
       },
       {
@@ -13618,6 +14078,29 @@
         ]
       },
       {
+        "file_path": "tests/server/routes/agent-crud.test.ts",
+        "language": "TypeScript",
+        "loc": 695,
+        "imports": [
+          "node:path",
+          "node:os",
+          "js-yaml"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "spread operator",
+          "optional chaining",
+          "nullish coalescing",
+          "template literals",
+          "interfaces",
+          "type aliases",
+          "error handling"
+        ]
+      },
+      {
         "file_path": "tests/server/routes/autonomy.test.ts",
         "language": "TypeScript",
         "loc": 182,
@@ -13768,6 +14251,49 @@
         ]
       },
       {
+        "file_path": "tests/server/routes/settings.test.ts",
+        "language": "TypeScript",
+        "loc": 425,
+        "imports": [
+          "node:path",
+          "node:os",
+          "js-yaml",
+          "node:fs"
+        ],
+        "exports": [],
+        "framework_indicators": [
+          "Next.js"
+        ],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "spread operator",
+          "nullish coalescing",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "tests/server/routes/sprint-orchestration.test.ts",
+        "language": "TypeScript",
+        "loc": 536,
+        "imports": [
+          "node:path",
+          "node:os"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "spread operator",
+          "nullish coalescing",
+          "template literals",
+          "interfaces",
+          "type aliases",
+          "error handling"
+        ]
+      },
+      {
         "file_path": "tests/server/routes/sprints.test.ts",
         "language": "TypeScript",
         "loc": 240,
@@ -13885,6 +14411,27 @@
         "imports": [
           "vitest",
           "../../src/communication/v4-message-bus.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "spread operator"
+        ]
+      },
+      {
+        "file_path": "tests/skills/executive-tools.test.ts",
+        "language": "TypeScript",
+        "loc": 322,
+        "imports": [
+          "vitest",
+          "../../src/skills/executive-tools/ceo-tools.js",
+          "../../src/skills/executive-tools/cto-tools.js",
+          "../../src/skills/executive-tools/coo-tools.js",
+          "../../src/skills/executive-tools/cfo-tools.js",
+          "../../src/skills/executive-tools/vp-eng-tools.js",
+          "../../src/types/lifecycle.js"
         ],
         "exports": [],
         "framework_indicators": [],
@@ -14718,7 +15265,7 @@
     "languages": {
       "JSON": 29,
       "YAML": 101,
-      "TypeScript": 591,
+      "TypeScript": 613,
       "JavaScript": 30,
       "Markdown": 45,
       "HTML": 2,
@@ -14733,8 +15280,8 @@
       "Vue",
       "React",
       "Nuxt",
-      "Express",
       "GraphQL",
+      "Express",
       "Django",
       "FastAPI",
       "Flask",
@@ -14743,8 +15290,8 @@
       "Actix",
       "Fiber"
     ],
-    "total_files": 830,
-    "total_loc": 145967,
+    "total_files": 852,
+    "total_loc": 159595,
     "directory_structure": [
       ".claude",
       ".claude-plugin",
@@ -14764,10 +15311,10 @@
     ]
   },
   "git": {
-    "total_commits": 130,
+    "total_commits": 134,
     "contributors": [
       {
-        "commits": 129,
+        "commits": 133,
         "name": "Sean Vaughan",
         "email": "sean@vaughanfamily.org"
       },
@@ -14780,23 +15327,28 @@
     "active_files": [
       {
         "path": ".agentforge/team.yaml",
-        "changes": 19,
-        "last_modified": "2026-03-27T15:20:49-05:00"
+        "changes": 20,
+        "last_modified": "2026-03-28T13:52:45-05:00"
       },
       {
         "path": "dashboard/index.html",
-        "changes": 12,
-        "last_modified": "2026-03-27T15:04:47-05:00"
+        "changes": 14,
+        "last_modified": "2026-03-29T10:58:26-05:00"
       },
       {
         "path": ".agentforge/analysis/project-scan.json",
-        "changes": 11,
-        "last_modified": "2026-03-27T14:04:32-05:00"
+        "changes": 12,
+        "last_modified": "2026-03-28T13:52:45-05:00"
       },
       {
         "path": "package.json",
+        "changes": 10,
+        "last_modified": "2026-03-28T13:53:04-05:00"
+      },
+      {
+        "path": ".claude-plugin/plugin.json",
         "changes": 9,
-        "last_modified": "2026-03-27T15:13:40-05:00"
+        "last_modified": "2026-03-28T13:53:04-05:00"
       },
       {
         "path": "src/types/index.ts",
@@ -14804,14 +15356,9 @@
         "last_modified": "2026-03-25T23:27:36-05:00"
       },
       {
-        "path": ".claude-plugin/plugin.json",
-        "changes": 8,
-        "last_modified": "2026-03-27T15:07:08-05:00"
-      },
-      {
         "path": ".agentforge/agents/cto.yaml",
-        "changes": 7,
-        "last_modified": "2026-03-26T16:20:35-05:00"
+        "changes": 8,
+        "last_modified": "2026-03-28T13:52:45-05:00"
       },
       {
         "path": "src/db/sqlite-adapter.ts",
@@ -14827,6 +15374,36 @@
         "path": "src/cli/commands/invoke.ts",
         "changes": 6,
         "last_modified": "2026-03-25T18:55:20-05:00"
+      },
+      {
+        "path": "src/db/schema.ts",
+        "changes": 5,
+        "last_modified": "2026-03-29T10:58:26-05:00"
+      },
+      {
+        "path": "tests/db/schema.test.ts",
+        "changes": 5,
+        "last_modified": "2026-03-29T10:58:26-05:00"
+      },
+      {
+        "path": "src/builder/team-writer.ts",
+        "changes": 5,
+        "last_modified": "2026-03-28T13:53:04-05:00"
+      },
+      {
+        "path": "src/server/server.ts",
+        "changes": 5,
+        "last_modified": "2026-03-28T13:53:04-05:00"
+      },
+      {
+        "path": ".agentforge/agents/coo.yaml",
+        "changes": 5,
+        "last_modified": "2026-03-28T13:52:45-05:00"
+      },
+      {
+        "path": ".agentforge/config/models.yaml",
+        "changes": 5,
+        "last_modified": "2026-03-28T13:52:45-05:00"
       },
       {
         "path": "src/memory/semantic-search.ts",
@@ -14847,36 +15424,6 @@
         "path": "src/types/agent.ts",
         "changes": 5,
         "last_modified": "2026-03-25T04:21:06-05:00"
-      },
-      {
-        "path": "src/orchestrator/index.ts",
-        "changes": 5,
-        "last_modified": "2026-03-25T01:41:06-05:00"
-      },
-      {
-        "path": "src/server/server.ts",
-        "changes": 4,
-        "last_modified": "2026-03-27T14:44:55-05:00"
-      },
-      {
-        "path": ".agentforge/agents/coo.yaml",
-        "changes": 4,
-        "last_modified": "2026-03-26T16:20:35-05:00"
-      },
-      {
-        "path": "src/builder/team-writer.ts",
-        "changes": 4,
-        "last_modified": "2026-03-26T13:04:00-05:00"
-      },
-      {
-        "path": ".agentforge/config/models.yaml",
-        "changes": 4,
-        "last_modified": "2026-03-25T19:41:43-05:00"
-      },
-      {
-        "path": "src/api/client.ts",
-        "changes": 4,
-        "last_modified": "2026-03-25T18:55:20-05:00"
       }
     ],
     "branch_count": 3,
@@ -14884,22 +15431,32 @@
     "churn_rate": [
       {
         "path": ".agentforge/analysis/project-scan.json",
-        "additions": 17332,
-        "deletions": 1992
+        "additions": 26238,
+        "deletions": 10418
       },
       {
         "path": "dashboard/index.html",
-        "additions": 6983,
-        "deletions": 2025
+        "additions": 9808,
+        "deletions": 2188
       },
       {
         "path": "package-lock.json",
-        "additions": 4552,
-        "deletions": 12
+        "additions": 4554,
+        "deletions": 14
+      },
+      {
+        "path": "pnpm-lock.yaml",
+        "additions": 3989,
+        "deletions": 0
       },
       {
         "path": "docs/superpowers/plans/2026-03-25-v32-team-mode-implementation-plan.md",
         "additions": 3347,
+        "deletions": 0
+      },
+      {
+        "path": "packages/dashboard/package-lock.json",
+        "additions": 1862,
         "deletions": 0
       },
       {
@@ -14913,14 +15470,14 @@
         "deletions": 0
       },
       {
+        "path": ".agentforge/team.yaml",
+        "additions": 734,
+        "deletions": 568
+      },
+      {
         "path": "docs/superpowers/specs/2026-03-25-universal-forge-design.md",
         "additions": 1283,
         "deletions": 4
-      },
-      {
-        "path": ".agentforge/team.yaml",
-        "additions": 720,
-        "deletions": 564
       },
       {
         "path": "docs/superpowers/plans/2026-03-25-v3-phase1-foundation.md",
@@ -14953,43 +15510,33 @@
         "deletions": 0
       },
       {
-        "path": "src/scanner/dependency-mapper.ts",
-        "additions": 678,
+        "path": "packages/plugins-sdk/PLUGIN_GUIDE.md",
+        "additions": 884,
         "deletions": 0
       },
       {
-        "path": "tests/event-collector/event-collector.test.ts",
-        "additions": 661,
-        "deletions": 1
-      },
-      {
-        "path": "tests/builder/team-composer.test.ts",
-        "additions": 644,
-        "deletions": 1
-      },
-      {
-        "path": "src/scanner/ci-auditor.ts",
-        "additions": 630,
+        "path": "packages/dashboard/src/routes/runner/+page.svelte",
+        "additions": 832,
         "deletions": 0
       },
       {
-        "path": "src/scanner/file-scanner.ts",
-        "additions": 627,
+        "path": "src/lifecycle/career-store.ts",
+        "additions": 742,
         "deletions": 0
       },
       {
-        "path": ".agentforge/feedback/2026-03-25-agent-protocol-researcher-communication-protocols.md",
-        "additions": 612,
+        "path": "tests/server/routes/agent-crud.test.ts",
+        "additions": 694,
         "deletions": 0
       }
     ],
     "commit_frequency": [
       {
         "period": "2026-03",
-        "count": 130
+        "count": 134
       }
     ],
-    "age_days": 3
+    "age_days": 4
   },
   "dependencies": {
     "package_manager": "pnpm",
@@ -15564,6 +16111,10 @@
     },
     {
       "type": "jira",
+      "ref": "P1-7"
+    },
+    {
+      "type": "jira",
       "ref": "PROJ-123"
     },
     {
@@ -15692,6 +16243,12 @@
         "type": "TODO"
       },
       {
+        "text": "replace this stub with a real AgentRuntime dispatch.",
+        "file": "packages/server/src/websocket/ws-handler.ts",
+        "line": 144,
+        "type": "TODO"
+      },
+      {
         "text": "refactor this to use a factory pattern\",",
         "file": "tests/scanner/comment-miner.test.ts",
         "line": 25,
@@ -15792,9 +16349,21 @@
     ],
     "notes": [
       {
+        "text": "`started` / `skipped` counts in reply body reflect planning-time counts.",
+        "file": "packages/server/src/routes/v5/sprint-orchestration.ts",
+        "line": 479,
+        "type": "NOTE"
+      },
+      {
         "text": "When persisting via writeFile('feedback/<sprintId>.json', ...),",
         "file": "src/db/sqlite-adapter.ts",
         "line": 147,
+        "type": "NOTE"
+      },
+      {
+        "text": "pipeline is pure — it doesn't mutate agent.currentTasks as it runs,",
+        "file": "tests/orchestrator/auto-delegation.test.ts",
+        "line": 437,
         "type": "NOTE"
       },
       {
