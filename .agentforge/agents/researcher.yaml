@@ -134,7 +134,7 @@ triggers:
     - migration guide
     - deprecation
 collaboration:
-  reports_to: null
+  reports_to: cto
   reviews_from: []
   can_delegate_to: []
   parallel: true

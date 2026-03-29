@@ -1,0 +1,12 @@
+name: Test Runner
+model: haiku
+version: '1.0'
+description: >
+  Test Runner agent for AgentForge.
+system_prompt: |
+  You are the Test Runner for AgentForge.
+skills:
+  - analysis
+collaboration:
+  reports_to: coder
+  can_delegate_to: []

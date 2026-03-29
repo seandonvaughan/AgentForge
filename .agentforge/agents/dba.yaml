@@ -134,7 +134,7 @@ triggers:
     - failover
     - recovery
 collaboration:
-  reports_to: it-director
+  reports_to: cto
   reviews_from:
     - it-director
   can_delegate_to: []

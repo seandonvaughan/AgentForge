@@ -1,0 +1,12 @@
+name: Operations Manager
+model: sonnet
+version: '1.0'
+description: >
+  Operations Manager agent for AgentForge.
+system_prompt: |
+  You are the Operations Manager for AgentForge.
+skills:
+  - analysis
+collaboration:
+  reports_to: coo
+  can_delegate_to: []

@@ -9913,7 +9913,7 @@
       {
         "file_path": "src/server/routes/org-graph.ts",
         "language": "TypeScript",
-        "loc": 141,
+        "loc": 142,
         "imports": [
           "fastify",
           "../../db/index.js",
@@ -15291,7 +15291,7 @@
       "Fiber"
     ],
     "total_files": 852,
-    "total_loc": 159595,
+    "total_loc": 159596,
     "directory_structure": [
       ".claude",
       ".claude-plugin",
@@ -15311,10 +15311,10 @@
     ]
   },
   "git": {
-    "total_commits": 134,
+    "total_commits": 135,
     "contributors": [
       {
-        "commits": 133,
+        "commits": 134,
         "name": "Sean Vaughan",
         "email": "sean@vaughanfamily.org"
       },
@@ -15327,28 +15327,28 @@
     "active_files": [
       {
         "path": ".agentforge/team.yaml",
-        "changes": 20,
-        "last_modified": "2026-03-28T13:52:45-05:00"
+        "changes": 21,
+        "last_modified": "2026-03-29T11:47:08-05:00"
       },
       {
         "path": "dashboard/index.html",
-        "changes": 14,
-        "last_modified": "2026-03-29T10:58:26-05:00"
+        "changes": 15,
+        "last_modified": "2026-03-29T11:47:08-05:00"
       },
       {
         "path": ".agentforge/analysis/project-scan.json",
-        "changes": 12,
-        "last_modified": "2026-03-28T13:52:45-05:00"
+        "changes": 13,
+        "last_modified": "2026-03-29T11:47:08-05:00"
       },
       {
         "path": "package.json",
-        "changes": 10,
-        "last_modified": "2026-03-28T13:53:04-05:00"
+        "changes": 11,
+        "last_modified": "2026-03-29T11:47:08-05:00"
       },
       {
         "path": ".claude-plugin/plugin.json",
-        "changes": 9,
-        "last_modified": "2026-03-28T13:53:04-05:00"
+        "changes": 10,
+        "last_modified": "2026-03-29T11:47:08-05:00"
       },
       {
         "path": "src/types/index.ts",
@@ -15376,54 +15376,54 @@
         "last_modified": "2026-03-25T18:55:20-05:00"
       },
       {
-        "path": "src/db/schema.ts",
+        "path": ".agentforge/agents/api-specialist.yaml",
         "changes": 5,
-        "last_modified": "2026-03-29T10:58:26-05:00"
+        "last_modified": "2026-03-29T11:47:08-05:00"
       },
       {
-        "path": "tests/db/schema.test.ts",
+        "path": ".agentforge/agents/architect.yaml",
         "changes": 5,
-        "last_modified": "2026-03-29T10:58:26-05:00"
+        "last_modified": "2026-03-29T11:47:08-05:00"
       },
       {
-        "path": "src/builder/team-writer.ts",
+        "path": ".agentforge/agents/coder.yaml",
         "changes": 5,
-        "last_modified": "2026-03-28T13:53:04-05:00"
+        "last_modified": "2026-03-29T11:47:08-05:00"
       },
       {
-        "path": "src/server/server.ts",
+        "path": ".agentforge/agents/debugger.yaml",
         "changes": 5,
-        "last_modified": "2026-03-28T13:53:04-05:00"
+        "last_modified": "2026-03-29T11:47:08-05:00"
       },
       {
-        "path": ".agentforge/agents/coo.yaml",
+        "path": ".agentforge/agents/genesis.yaml",
         "changes": 5,
-        "last_modified": "2026-03-28T13:52:45-05:00"
+        "last_modified": "2026-03-29T11:47:08-05:00"
       },
       {
-        "path": ".agentforge/config/models.yaml",
+        "path": ".agentforge/agents/linter.yaml",
         "changes": 5,
-        "last_modified": "2026-03-28T13:52:45-05:00"
+        "last_modified": "2026-03-29T11:47:08-05:00"
       },
       {
-        "path": "src/memory/semantic-search.ts",
+        "path": ".agentforge/agents/meta-architect.yaml",
         "changes": 5,
-        "last_modified": "2026-03-26T13:04:00-05:00"
+        "last_modified": "2026-03-29T11:47:08-05:00"
       },
       {
-        "path": "src/cli/index.ts",
+        "path": ".agentforge/agents/project-manager.yaml",
         "changes": 5,
-        "last_modified": "2026-03-25T19:40:36-05:00"
+        "last_modified": "2026-03-29T11:47:08-05:00"
       },
       {
-        "path": "src/cli/commands/reforge.ts",
+        "path": ".agentforge/agents/researcher.yaml",
         "changes": 5,
-        "last_modified": "2026-03-25T16:13:33-05:00"
+        "last_modified": "2026-03-29T11:47:08-05:00"
       },
       {
-        "path": "src/types/agent.ts",
+        "path": ".agentforge/agents/skill-designer.yaml",
         "changes": 5,
-        "last_modified": "2026-03-25T04:21:06-05:00"
+        "last_modified": "2026-03-29T11:47:08-05:00"
       }
     ],
     "branch_count": 3,
@@ -15431,13 +15431,13 @@
     "churn_rate": [
       {
         "path": ".agentforge/analysis/project-scan.json",
-        "additions": 26238,
-        "deletions": 10418
+        "additions": 26891,
+        "deletions": 10502
       },
       {
         "path": "dashboard/index.html",
-        "additions": 9808,
-        "deletions": 2188
+        "additions": 12753,
+        "deletions": 2311
       },
       {
         "path": "package-lock.json",
@@ -15471,8 +15471,8 @@
       },
       {
         "path": ".agentforge/team.yaml",
-        "additions": 734,
-        "deletions": 568
+        "additions": 736,
+        "deletions": 570
       },
       {
         "path": "docs/superpowers/specs/2026-03-25-universal-forge-design.md",
@@ -15525,15 +15525,15 @@
         "deletions": 0
       },
       {
-        "path": "tests/server/routes/agent-crud.test.ts",
-        "additions": 694,
+        "path": "packages/server/src/routes/v6/openapi.ts",
+        "additions": 740,
         "deletions": 0
       }
     ],
     "commit_frequency": [
       {
         "period": "2026-03",
-        "count": 134
+        "count": 135
       }
     ],
     "age_days": 4

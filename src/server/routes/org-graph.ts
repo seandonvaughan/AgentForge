@@ -119,12 +119,13 @@ export async function orgGraphRoutes(
         });
       }
 
-      // Build edges from delegation graph
-      for (const [manager, reports] of Object.entries(delegation)) {
-        if (Array.isArray(reports)) {
-          for (const report of reports) {
-            edges.push({ from: report, to: manager, type: 'reports_to' });
-          }
+      // Build edges from each agent's collaboration.reports_to field
+      // This gives the actual reporting hierarchy, not just delegation authority
+      for (const agentId of allAgentIds) {
+        const agentYaml = readAgentYaml(agentId);
+        const reportsTo = agentYaml?.collaboration?.reports_to;
+        if (reportsTo && typeof reportsTo === 'string' && reportsTo !== 'null' && allAgentIds.has(reportsTo)) {
+          edges.push({ from: agentId, to: reportsTo, type: 'reports_to' });
         }
       }
 

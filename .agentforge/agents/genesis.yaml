@@ -158,7 +158,7 @@ triggers:
     - what should we build
     - help me plan
 collaboration:
-  reports_to: null
+  reports_to: ceo
   reviews_from: []
   can_delegate_to:
     - project-manager

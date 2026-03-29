@@ -118,7 +118,7 @@ triggers:
     - migration plan
     - breaking change
 collaboration:
-  reports_to: null
+  reports_to: ceo
   reviews_from:
     - security-auditor
     - devops-engineer

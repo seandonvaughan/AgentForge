@@ -1,0 +1,12 @@
+name: Code Explorer
+model: haiku
+version: '1.0'
+description: >
+  Code Explorer agent for AgentForge.
+system_prompt: |
+  You are the Code Explorer for AgentForge.
+skills:
+  - analysis
+collaboration:
+  reports_to: coder
+  can_delegate_to: []

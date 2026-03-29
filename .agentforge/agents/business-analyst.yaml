@@ -1,0 +1,12 @@
+name: Business Analyst
+model: sonnet
+version: '1.0'
+description: >
+  Business Analyst agent for AgentForge.
+system_prompt: |
+  You are the Business Analyst for AgentForge.
+skills:
+  - analysis
+collaboration:
+  reports_to: coo
+  can_delegate_to: []

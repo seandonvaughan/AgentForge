@@ -26,7 +26,7 @@ async function main() {
   const app = await startServer({ port: PORT, adapter, sseManager });
   setupGracefulShutdown(app);
 
-  console.log(`AgentForge v4.7 running at http://localhost:${PORT}`);
+  console.log(`AgentForge v6.2 running at http://localhost:${PORT}`);
   console.log(`Dashboard: http://localhost:${PORT}/app`);
   console.log(`API: http://localhost:${PORT}/api/v1/health`);
   console.log(`DB: ${DB_PATH}`);
