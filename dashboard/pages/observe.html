@@ -1,0 +1,141 @@
+  <div class="page" id="page-observe" hidden>
+    <div class="page-header">
+      <h2>Observability</h2>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span id="observe-sse-status" style="display:flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:11px;color:var(--text-muted)">
+          <span class="connection-dot disconnected" id="observe-conn-dot"></span> SSE
+        </span>
+        <button class="export-btn" onclick="refreshObservePage()">&#8635; Refresh</button>
+      </div>
+    </div>
+
+    <!-- Stat Row -->
+    <div class="observe-header">
+      <div class="observe-stat">
+        <div class="observe-stat-label">Active Agents</div>
+        <div class="observe-stat-value" id="obs-active-agents">0</div>
+        <div class="observe-stat-sub" id="obs-agent-sub">of 0 total</div>
+      </div>
+      <div class="observe-stat">
+        <div class="observe-stat-label">Tokens / min</div>
+        <div class="observe-stat-value" id="obs-tokens-rate">0</div>
+        <div class="observe-stat-sub" id="obs-tokens-sub">live rate</div>
+      </div>
+      <div class="observe-stat">
+        <div class="observe-stat-label">Cost Accrued</div>
+        <div class="observe-stat-value" id="obs-cost-total">$0.00</div>
+        <div class="observe-stat-sub" id="obs-cost-sub">this session</div>
+      </div>
+      <div class="observe-stat">
+        <div class="observe-stat-label">Alerts</div>
+        <div class="observe-stat-value" id="obs-alert-count" style="color:var(--red)">0</div>
+        <div class="observe-stat-sub" id="obs-alert-sub">anomalies detected</div>
+      </div>
+    </div>
+
+    <!-- Execution Stream -->
+    <div class="exec-stream-card">
+      <div class="exec-stream-header">
+        <span class="exec-stream-title">Live Execution Stream</span>
+        <div class="exec-stream-controls">
+          <button class="stream-ctrl-btn active" id="stream-live-btn" onclick="toggleStreamLive(this)">LIVE</button>
+          <button class="stream-ctrl-btn" onclick="clearExecStream()">CLEAR</button>
+          <select class="stream-ctrl-btn" id="stream-filter-agent" onchange="filterExecStream()" style="border-radius:3px;padding:3px 6px">
+            <option value="">All Agents</option>
+          </select>
+        </div>
+        <!-- Column headers -->
+        <div style="width:100%;margin-top:8px"></div>
+      </div>
+      <!-- Column label row -->
+      <div style="display:grid;grid-template-columns:68px 110px 1fr 80px 72px 56px;gap:8px;padding:5px 16px;border-bottom:1px solid var(--border);background:rgba(13,17,23,0.6)">
+        <span style="font-size:9px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);font-family:var(--font-mono)">Time</span>
+        <span style="font-size:9px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);font-family:var(--font-mono)">Agent</span>
+        <span style="font-size:9px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);font-family:var(--font-mono)">Task</span>
+        <span style="font-size:9px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);font-family:var(--font-mono);text-align:right">Tokens</span>
+        <span style="font-size:9px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);font-family:var(--font-mono);text-align:right">Cost</span>
+        <span style="font-size:9px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);font-family:var(--font-mono);text-align:right">Dur</span>
+      </div>
+      <div class="exec-stream-feed" id="exec-stream-feed">
+        <div class="alert-feed-empty">Waiting for agent executions…</div>
+      </div>
+    </div>
+
+    <!-- Two-col: Heatmap + Burndown -->
+    <div class="observe-two-col">
+
+      <!-- Team Utilization Heatmap -->
+      <div class="util-heatmap-card">
+        <div class="util-heatmap-header">
+          <span class="util-heatmap-title">Team Utilization Heatmap</span>
+          <span style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted)">Teams × Time Buckets</span>
+        </div>
+        <div class="util-heatmap-body">
+          <table class="util-grid-table" id="util-heatmap-table">
+            <thead id="util-heatmap-thead"></thead>
+            <tbody id="util-heatmap-tbody"></tbody>
+          </table>
+        </div>
+        <div class="util-legend">
+          <span>Load:</span>
+          <div class="util-legend-scale" id="util-legend-scale"></div>
+          <span>Low</span>
+          <span style="margin-left:auto">High</span>
+        </div>
+      </div>
+
+      <!-- Cost Burndown per Sprint -->
+      <div class="observe-burndown-card">
+        <div class="observe-burndown-title">
+          <span>Cost Burn-Down by Sprint</span>
+          <select id="obs-burndown-sprint" onchange="renderObserveBurndown()" style="font-family:var(--font-mono);font-size:10px;padding:2px 6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);border-radius:3px;outline:none">
+            <option value="current">Current Sprint</option>
+          </select>
+        </div>
+        <svg id="observe-burndown-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+      </div>
+
+    </div><!-- /observe-two-col -->
+
+    <!-- Two-col: Slot Matrix + Alert Feed -->
+    <div class="observe-two-col">
+
+      <!-- Execution Slot Matrix -->
+      <div class="slot-matrix-card">
+        <div class="slot-matrix-header">
+          <span class="slot-matrix-title">Execution Slot Matrix</span>
+          <span style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted)" id="slot-matrix-caption">Parallel task slots per agent</span>
+        </div>
+        <div class="slot-matrix-body" id="slot-matrix-body">
+          <div class="alert-feed-empty">No active slots</div>
+        </div>
+        <div style="padding:8px 16px;border-top:1px solid var(--border);display:flex;gap:14px;font-size:10px;font-family:var(--font-mono);color:var(--text-muted)">
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--green);vertical-align:middle;margin-right:4px"></span>Active</span>
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--blue);vertical-align:middle;margin-right:4px"></span>Queued</span>
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--red);vertical-align:middle;margin-right:4px"></span>Error</span>
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--bg-primary);border:1px solid var(--border);vertical-align:middle;margin-right:4px"></span>Empty</span>
+        </div>
+      </div>
+
+      <!-- Alert Feed -->
+      <div class="alert-feed-card">
+        <div class="alert-feed-header">
+          <span class="alert-feed-title">Alert Feed</span>
+          <span class="alert-badge" id="alert-feed-badge">0</span>
+        </div>
+        <div class="alert-feed-list" id="alert-feed-list">
+          <div class="alert-feed-empty">No alerts — system nominal</div>
+        </div>
+      </div>
+
+    </div><!-- /observe-two-col -->
+
+  </div><!-- /page-observe -->
+
+  <!-- ── Page: Tasks (/tasks) ───────────────────────── -->
+
+<script>
+(function() {
+  if (typeof window.loadObservePage === "function") window.loadObservePage();
+})();
+</script>

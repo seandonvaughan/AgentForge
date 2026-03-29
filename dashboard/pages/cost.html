@@ -1,0 +1,64 @@
+  <div class="page" id="page-cost" hidden>
+    <div class="page-header">
+      <h2>Cost Analytics</h2>
+    </div>
+    <div id="cost-loading" class="skeleton-card"></div>
+    <div id="cost-content" hidden>
+      <div class="cost-stat-row">
+        <div class="cost-stat-card">
+          <div class="cost-stat-label">Total Spend</div>
+          <div class="cost-stat-value" id="cost-page-total">—</div>
+          <div class="cost-stat-sub" id="cost-page-sessions">—</div>
+        </div>
+        <div class="cost-stat-card">
+          <div class="cost-stat-label">Burn Rate</div>
+          <div class="cost-stat-value" id="cost-page-rate">—</div>
+          <div class="cost-stat-sub">per day (30d avg)</div>
+        </div>
+        <div class="cost-stat-card">
+          <div class="cost-stat-label">Largest Session</div>
+          <div class="cost-stat-value" id="cost-page-max">—</div>
+          <div class="cost-stat-sub" id="cost-page-max-agent">—</div>
+        </div>
+      </div>
+
+      <div class="detail-card">
+        <h3>By Agent</h3>
+        <div id="cost-by-agent"></div>
+      </div>
+
+      <div class="detail-card">
+        <h3>By Model</h3>
+        <div id="cost-by-model"></div>
+      </div>
+
+      <div class="detail-card">
+        <h3>Recent Sessions</h3>
+        <table class="data-table" id="cost-recent-table" style="border:none">
+          <thead>
+            <tr>
+              <th>Agent</th>
+              <th>Model</th>
+              <th>Task</th>
+              <th>Cost</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody id="cost-recent-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div id="cost-empty" class="empty-state" hidden>No cost data available yet.</div>
+    <div id="cost-error" class="error-state" hidden>
+      <p id="cost-error-msg">Failed to load cost data.</p>
+      <button onclick="loadCostPage()">Retry</button>
+    </div>
+  </div><!-- /page-cost -->
+
+  <!-- ── Page: Career Dashboard (/careers) ─────────────────── -->
+
+<script>
+(function() {
+  if (typeof loadCostPage === "function") loadCostPage();
+})();
+</script>

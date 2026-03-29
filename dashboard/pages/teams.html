@@ -1,0 +1,50 @@
+  <div class="page" id="page-teams" hidden>
+    <div class="page-header">
+      <h2>Team Hierarchy</h2>
+      <button class="export-btn" onclick="loadTeamsPage()">&#8635; Refresh</button>
+    </div>
+
+    <!-- Hiring Recommendations Panel -->
+    <div class="hiring-recs-panel" id="hiring-recs-panel">
+      <div class="hiring-recs-header">
+        <span class="hiring-recs-title">Pending Hiring Recommendations</span>
+        <span id="hiring-recs-count" style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);">—</span>
+      </div>
+      <div id="hiring-recs-body">
+        <div class="skeleton-loader">Loading recommendations…</div>
+      </div>
+    </div>
+
+    <!-- Layer filter -->
+    <div class="layer-filter-bar" id="layer-filter-bar">
+      <span style="font-size:11px;color:var(--text-muted);font-family:var(--font-mono);">Layer:</span>
+      <button class="layer-btn active" data-layer="all" onclick="filterTeamsByLayer(this,'all')">All</button>
+      <button class="layer-btn" data-layer="executive" onclick="filterTeamsByLayer(this,'executive')">Executive</button>
+      <button class="layer-btn" data-layer="frontend" onclick="filterTeamsByLayer(this,'frontend')">Frontend</button>
+      <button class="layer-btn" data-layer="backend" onclick="filterTeamsByLayer(this,'backend')">Backend</button>
+      <button class="layer-btn" data-layer="infra" onclick="filterTeamsByLayer(this,'infra')">Infra</button>
+      <button class="layer-btn" data-layer="data" onclick="filterTeamsByLayer(this,'data')">Data</button>
+      <button class="layer-btn" data-layer="qa" onclick="filterTeamsByLayer(this,'qa')">QA</button>
+    </div>
+
+    <!-- Loading / error -->
+    <div id="teams-loading" class="skeleton-card" hidden></div>
+    <div id="teams-error" class="error-state" hidden>
+      <p id="teams-error-msg">Failed to load teams.</p>
+      <button onclick="loadTeamsPage()">Retry</button>
+    </div>
+
+    <!-- Team Grid -->
+    <div class="team-grid" id="team-grid"></div>
+
+    <div id="teams-empty" class="empty-state" hidden>No teams found.</div>
+
+  </div><!-- /page-teams -->
+
+  <!-- ── Page: Sprint Command Center (/sprints) ────────────── -->
+
+<script>
+(function() {
+  if (typeof loadTeamsPage === "function") loadTeamsPage();
+})();
+</script>

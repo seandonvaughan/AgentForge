@@ -1,0 +1,119 @@
+  <div class="page" id="page-careers" hidden>
+    <div class="page-header">
+      <h2>Career Dashboard</h2>
+    </div>
+
+    <!-- Agent selector -->
+    <div class="career-selector-bar">
+      <label style="font-size:13px;color:var(--text-secondary);font-family:var(--font-mono);">Agent:</label>
+      <select id="career-agent-select" onchange="loadCareerDetail(this.value)">
+        <option value="">— Select an agent —</option>
+      </select>
+      <button class="export-btn" onclick="loadCareerAgentList()">&#8635; Refresh</button>
+    </div>
+
+    <!-- Empty / prompt state -->
+    <div id="career-prompt" class="empty-state">Select an agent above to view their career profile.</div>
+
+    <!-- Loading skeleton -->
+    <div id="career-loading" class="skeleton-card" hidden></div>
+
+    <!-- Error state -->
+    <div id="career-error" class="error-state" hidden>
+      <p id="career-error-msg">Failed to load career data.</p>
+      <button onclick="loadCareerDetail(document.getElementById('career-agent-select').value)">Retry</button>
+    </div>
+
+    <!-- Career content -->
+    <div id="career-content" hidden>
+
+      <!-- Summary Card -->
+      <div class="career-summary-card" id="career-summary-card">
+        <div class="career-avatar" id="career-avatar">?</div>
+        <div class="career-info">
+          <div class="career-name" id="career-name">—</div>
+          <div class="career-meta-row">
+            <span id="career-seniority-badge" class="seniority-badge">—</span>
+            <span id="career-autonomy-badge" class="model-badge sonnet">—</span>
+            <span class="career-hired" id="career-hired">Hired: —</span>
+          </div>
+          <div style="margin-top:8px;font-size:12px;color:var(--text-secondary);">
+            Team: <strong id="career-team" style="font-family:var(--font-mono);color:var(--text-primary);">—</strong>
+          </div>
+        </div>
+      </div>
+
+      <!-- Performance Metrics -->
+      <div class="section-header" style="margin-bottom:12px;">
+        <div class="section-title">Performance Metrics</div>
+      </div>
+      <div class="career-perf-grid" id="career-perf-grid">
+        <div class="career-perf-card">
+          <div class="career-perf-label">Tasks Completed</div>
+          <div class="career-perf-value" id="career-tasks">—</div>
+          <div class="career-perf-sub">lifetime</div>
+        </div>
+        <div class="career-perf-card">
+          <div class="career-perf-label">Success Rate</div>
+          <div class="career-perf-value" id="career-success" style="color:var(--green)">—</div>
+          <div class="career-perf-sub">completed successfully</div>
+        </div>
+        <div class="career-perf-card">
+          <div class="career-perf-label">Avg Duration</div>
+          <div class="career-perf-value" id="career-duration">—</div>
+          <div class="career-perf-sub">per task</div>
+        </div>
+        <div class="career-perf-card">
+          <div class="career-perf-label">Peer Review Score</div>
+          <div class="career-perf-value" id="career-peer-score" style="color:var(--purple)">—</div>
+          <div class="career-perf-sub">out of 5.0</div>
+        </div>
+      </div>
+
+      <!-- Skill Profile Table -->
+      <div class="section-header" style="margin-bottom:12px;">
+        <div class="section-title">Skill Profile</div>
+      </div>
+      <div style="overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:20px;">
+        <table class="data-table" id="career-skills-table" style="border:none;">
+          <thead>
+            <tr>
+              <th>Skill Name</th>
+              <th>Level</th>
+              <th>Exercises</th>
+              <th>Success Rate</th>
+              <th>Last Exercised</th>
+            </tr>
+          </thead>
+          <tbody id="career-skills-tbody">
+            <tr><td colspan="5" class="session-empty">No skills on record.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Skill Bars (radar substitute) -->
+      <div class="section-header" style="margin-bottom:12px;">
+        <div class="section-title">Skill Levels Overview</div>
+      </div>
+      <div class="detail-card" style="margin-bottom:20px;padding:4px 4px;">
+        <div class="skill-bars-grid" id="career-skill-bars"></div>
+      </div>
+
+      <!-- Promotion Path -->
+      <div class="section-header" style="margin-bottom:12px;">
+        <div class="section-title">Promotion Path</div>
+      </div>
+      <div class="detail-card" style="margin-bottom:20px;padding:8px 4px;">
+        <div class="promotion-ladder" id="career-promotion-ladder"></div>
+      </div>
+
+    </div><!-- /career-content -->
+  </div><!-- /page-careers -->
+
+  <!-- ── Page: Team Hierarchy (/teams) ─────────────────────── -->
+
+<script>
+(function() {
+  if (typeof loadCareerAgentList === "function") loadCareerAgentList();
+})();
+</script>

@@ -1,0 +1,2046 @@
+  <div class="page" id="page-home">
+
+    <!-- Agent Cards -->
+    <section class="section" id="agent-cards">
+      <div class="section-header">
+        <div class="section-title">Agent Cards</div>
+        <div class="section-actions">
+          <button class="export-btn" onclick="downloadJSON('agent-cards', window._data.agents)">⬇ JSON</button>
+        </div>
+      </div>
+      <div class="agent-grid" id="agent-grid">
+        <!-- Opus Agents -->
+        <div class="agent-card opus" onclick="navigateToAgent('ceo')">
+          <div class="agent-name">ceo</div>
+          <div class="agent-meta">
+            <span class="model-badge opus">Opus</span>
+            <span class="category-badge">Executive</span>
+            <span class="status-dot active" title="active"></span>
+          </div>
+          <div class="agent-stats">
+            <div class="agent-stat"><div class="stat-val" id="ceo-tasks">47</div><div class="stat-lbl">Tasks</div></div>
+            <div class="agent-stat"><div class="stat-val" id="ceo-cost">$2.18</div><div class="stat-lbl">Cost</div></div>
+            <div class="agent-stat"><div class="stat-val" style="color:var(--green)">0%</div><div class="stat-lbl">Err%</div></div>
+          </div>
+          <svg class="sparkline" width="100%" height="28" viewBox="0 0 160 28">
+            <polyline points="0,22 20,18 40,20 60,14 80,16 100,10 120,12 140,8 160,6" fill="none" stroke="var(--gold)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
+            <polyline points="0,22 20,18 40,20 60,14 80,16 100,10 120,12 140,8 160,6 160,28 0,28" fill="url(#gold-fade)" opacity="0.15"/>
+          </svg>
+        </div>
+        <div class="agent-card opus" onclick="navigateToAgent('genesis')">
+          <div class="agent-name">genesis</div>
+          <div class="agent-meta">
+            <span class="model-badge opus">Opus</span>
+            <span class="category-badge">Core</span>
+            <span class="status-dot complete" title="complete"></span>
+          </div>
+          <div class="agent-stats">
+            <div class="agent-stat"><div class="stat-val">31</div><div class="stat-lbl">Tasks</div></div>
+            <div class="agent-stat"><div class="stat-val">$1.74</div><div class="stat-lbl">Cost</div></div>
+            <div class="agent-stat"><div class="stat-val" style="color:var(--green)">0%</div><div class="stat-lbl">Err%</div></div>
+          </div>
+          <svg class="sparkline" width="100%" height="28" viewBox="0 0 160 28">
+            <polyline points="0,20 20,16 40,18 60,12 80,10 100,8 120,10 140,6 160,4" fill="none" stroke="var(--gold)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
+          </svg>
+        </div>
+        <div class="agent-card opus" onclick="navigateToAgent('architect')">
+          <div class="agent-name">architect</div>
+          <div class="agent-meta">
+            <span class="model-badge opus">Opus</span>
+            <span class="category-badge">Design</span>
+            <span class="status-dot active" title="active"></span>
+          </div>
+          <div class="agent-stats">
+            <div class="agent-stat"><div class="stat-val">62</div><div class="stat-lbl">Tasks</div></div>
+            <div class="agent-stat"><div class="stat-val">$3.41</div><div class="stat-lbl">Cost</div></div>
+            <div class="agent-stat"><div class="stat-val" style="color:var(--orange)">2%</div><div class="stat-lbl">Err%</div></div>
+          </div>
+          <svg class="sparkline" width="100%" height="28" viewBox="0 0 160 28">
+            <polyline points="0,24 20,20 40,22 60,16 80,14 100,10 120,8 140,10 160,6" fill="none" stroke="var(--gold)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
+          </svg>
+        </div>
+        <div class="agent-card opus" onclick="navigateToAgent('cto')">
+          <div class="agent-name">cto</div>
+          <div class="agent-meta">
+            <span class="model-badge opus">Opus</span>
+            <span class="category-badge">Executive</span>
+            <span class="status-dot active" title="active"></span>
+          </div>
+          <div class="agent-stats">
+            <div class="agent-stat"><div class="stat-val">54</div><div class="stat-lbl">Tasks</div></div>
+            <div class="agent-stat"><div class="stat-val">$2.93</div><div class="stat-lbl">Cost</div></div>
+            <div class="agent-stat"><div class="stat-val" style="color:var(--green)">1%</div><div class="stat-lbl">Err%</div></div>
+          </div>
+          <svg class="sparkline" width="100%" height="28" viewBox="0 0 160 28">
+            <polyline points="0,22 20,18 40,16 60,14 80,12 100,10 120,8 140,6 160,4" fill="none" stroke="var(--gold)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
+          </svg>
+        </div>
+        <div class="agent-card opus" onclick="navigateToAgent('meta-architect')">
+          <div class="agent-name">meta-architect</div>
+          <div class="agent-meta">
+            <span class="model-badge opus">Opus</span>
+            <span class="category-badge">Design</span>
+            <span class="status-dot idle" title="idle"></span>
+          </div>
+          <div class="agent-stats">
+            <div class="agent-stat"><div class="stat-val">28</div><div class="stat-lbl">Tasks</div></div>
+            <div class="agent-stat"><div class="stat-val">$1.52</div><div class="stat-lbl">Cost</div></div>
+            <div class="agent-stat"><div class="stat-val" style="color:var(--green)">0%</div><div class="stat-lbl">Err%</div></div>
+          </div>
+          <svg class="sparkline" width="100%" height="28" viewBox="0 0 160 28">
+            <polyline points="0,18 20,16 40,14 60,16 80,12 100,10 120,8 140,10 160,8" fill="none" stroke="var(--gold)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
+          </svg>
+        </div>
+        <div class="agent-card opus" onclick="navigateToAgent('rd-lead')">
+          <div class="agent-name">rd-lead</div>
+          <div class="agent-meta">
+            <span class="model-badge opus">Opus</span>
+            <span class="category-badge">R&amp;D</span>
+            <span class="status-dot active" title="active"></span>
+          </div>
+          <div class="agent-stats">
+            <div class="agent-stat"><div class="stat-val">19</div><div class="stat-lbl">Tasks</div></div>
+            <div class="agent-stat"><div class="stat-val">$1.08</div><div class="stat-lbl">Cost</div></div>
+            <div class="agent-stat"><div class="stat-val" style="color:var(--green)">0%</div><div class="stat-lbl">Err%</div></div>
+          </div>
+          <svg class="sparkline" width="100%" height="28" viewBox="0 0 160 28">
+            <polyline points="0,26 20,22 40,18 60,20 80,14 100,12 120,10 140,8 160,6" fill="none" stroke="var(--gold)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
+          </svg>
+        </div>
+        <!-- Sonnet Agents (selected key ones) -->
+        <div class="agent-card sonnet" onclick="navigateToAgent('coo')">
+          <div class="agent-name">coo</div>
+          <div class="agent-meta">
+            <span class="model-badge sonnet">Sonnet</span>
+            <span class="category-badge">Executive</span>
+            <span class="status-dot active" title="active"></span>
+          </div>
+          <div class="agent-stats">
+            <div class="agent-stat"><div class="stat-val">88</div><div class="stat-lbl">Tasks</div></div>
+            <div class="agent-stat"><div class="stat-val">$0.44</div><div class="stat-lbl">Cost</div></div>
+            <div class="agent-stat"><div class="stat-val" style="color:var(--green)">1%</div><div class="stat-lbl">Err%</div></div>
+          </div>
+          <svg class="sparkline" width="100%" height="28" viewBox="0 0 160 28">
+            <polyline points="0,24 20,20 40,22 60,18 80,14 100,12 120,10 140,8 160,6" fill="none" stroke="var(--blue)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
+          </svg>
+        </div>
+        <div class="agent-card sonnet" onclick="navigateToAgent('cfo')">
+          <div class="agent-name">cfo</div>
+          <div class="agent-meta">
+            <span class="model-badge sonnet">Sonnet</span>
+            <span class="category-badge">Finance</span>
+            <span class="status-dot idle" title="idle"></span>
+          </div>
+          <div class="agent-stats">
+            <div class="agent-stat"><div class="stat-val">41</div><div class="stat-lbl">Tasks</div></div>
+            <div class="agent-stat"><div class="stat-val">$0.21</div><div class="stat-lbl">Cost</div></div>
+            <div class="agent-stat"><div class="stat-val" style="color:var(--green)">0%</div><div class="stat-lbl">Err%</div></div>
+          </div>
+          <svg class="sparkline" width="100%" height="28" viewBox="0 0 160 28">
+            <polyline points="0,22 20,20 40,18 60,16 80,14 100,16 120,12 140,10 160,8" fill="none" stroke="var(--blue)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
+          </svg>
+        </div>
+        <div class="agent-card sonnet" onclick="navigateToAgent('coder')">
+          <div class="agent-name">coder</div>
+          <div class="agent-meta">
+            <span class="model-badge sonnet">Sonnet</span>
+            <span class="category-badge">Engineering</span>
+            <span class="status-dot active" title="active"></span>
+          </div>
+          <div class="agent-stats">
+            <div class="agent-stat"><div class="stat-val">134</div><div class="stat-lbl">Tasks</div></div>
+            <div class="agent-stat"><div class="stat-val">$0.67</div><div class="stat-lbl">Cost</div></div>
+            <div class="agent-stat"><div class="stat-val" style="color:var(--orange)">3%</div><div class="stat-lbl">Err%</div></div>
+          </div>
+          <svg class="sparkline" width="100%" height="28" viewBox="0 0 160 28">
+            <polyline points="0,26 20,22 40,24 60,18 80,16 100,12 120,10 140,8 160,4" fill="none" stroke="var(--blue)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
+          </svg>
+        </div>
+        <div class="agent-card sonnet" onclick="navigateToAgent('debugger')">
+          <div class="agent-name">debugger</div>
+          <div class="agent-meta">
+            <span class="model-badge sonnet">Sonnet</span>
+            <span class="category-badge">Engineering</span>
+            <span class="status-dot active" title="active"></span>
+          </div>
+          <div class="agent-stats">
+            <div class="agent-stat"><div class="stat-val">76</div><div class="stat-lbl">Tasks</div></div>
+            <div class="agent-stat"><div class="stat-val">$0.38</div><div class="stat-lbl">Cost</div></div>
+            <div class="agent-stat"><div class="stat-val" style="color:var(--green)">1%</div><div class="stat-lbl">Err%</div></div>
+          </div>
+          <svg class="sparkline" width="100%" height="28" viewBox="0 0 160 28">
+            <polyline points="0,20 20,22 40,18 60,16 80,20 100,14 120,10 140,12 160,8" fill="none" stroke="var(--blue)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
+          </svg>
+        </div>
+        <div class="agent-card sonnet" onclick="navigateToAgent('dashboard-architect')">
+          <div class="agent-name">dashboard-architect</div>
+          <div class="agent-meta">
+            <span class="model-badge sonnet">Sonnet</span>
+            <span class="category-badge">UI/UX</span>
+            <span class="status-dot active" title="active"></span>
+          </div>
+          <div class="agent-stats">
+            <div class="agent-stat"><div class="stat-val">22</div><div class="stat-lbl">Tasks</div></div>
+            <div class="agent-stat"><div class="stat-val">$0.11</div><div class="stat-lbl">Cost</div></div>
+            <div class="agent-stat"><div class="stat-val" style="color:var(--green)">0%</div><div class="stat-lbl">Err%</div></div>
+          </div>
+          <svg class="sparkline" width="100%" height="28" viewBox="0 0 160 28">
+            <polyline points="0,28 20,24 40,22 60,18 80,16 100,14 120,10 140,8 160,4" fill="none" stroke="var(--blue)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
+          </svg>
+        </div>
+        <div class="agent-card sonnet" onclick="navigateToAgent('sprint-planner')">
+          <div class="agent-name">sprint-planner</div>
+          <div class="agent-meta">
+            <span class="model-badge sonnet">Sonnet</span>
+            <span class="category-badge">Planning</span>
+            <span class="status-dot idle" title="idle"></span>
+          </div>
+          <div class="agent-stats">
+            <div class="agent-stat"><div class="stat-val">33</div><div class="stat-lbl">Tasks</div></div>
+            <div class="agent-stat"><div class="stat-val">$0.17</div><div class="stat-lbl">Cost</div></div>
+            <div class="agent-stat"><div class="stat-val" style="color:var(--green)">0%</div><div class="stat-lbl">Err%</div></div>
+          </div>
+          <svg class="sparkline" width="100%" height="28" viewBox="0 0 160 28">
+            <polyline points="0,22 20,20 40,18 60,22 80,16 100,14 120,12 140,10 160,8" fill="none" stroke="var(--blue)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
+          </svg>
+        </div>
+        <!-- Haiku Agents -->
+        <div class="agent-card haiku" onclick="navigateToAgent('linter')">
+          <div class="agent-name">linter</div>
+          <div class="agent-meta">
+            <span class="model-badge haiku">Haiku</span>
+            <span class="category-badge">QA</span>
+            <span class="status-dot active" title="active"></span>
+          </div>
+          <div class="agent-stats">
+            <div class="agent-stat"><div class="stat-val">312</div><div class="stat-lbl">Tasks</div></div>
+            <div class="agent-stat"><div class="stat-val">$0.04</div><div class="stat-lbl">Cost</div></div>
+            <div class="agent-stat"><div class="stat-val" style="color:var(--green)">0%</div><div class="stat-lbl">Err%</div></div>
+          </div>
+          <svg class="sparkline" width="100%" height="28" viewBox="0 0 160 28">
+            <polyline points="0,18 20,14 40,16 60,12 80,10 100,8 120,6 140,8 160,4" fill="none" stroke="var(--green)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
+          </svg>
+        </div>
+        <div class="agent-card haiku" onclick="navigateToAgent('researcher')">
+          <div class="agent-name">researcher</div>
+          <div class="agent-meta">
+            <span class="model-badge haiku">Haiku</span>
+            <span class="category-badge">R&amp;D</span>
+            <span class="status-dot idle" title="idle"></span>
+          </div>
+          <div class="agent-stats">
+            <div class="agent-stat"><div class="stat-val">89</div><div class="stat-lbl">Tasks</div></div>
+            <div class="agent-stat"><div class="stat-val">$0.01</div><div class="stat-lbl">Cost</div></div>
+            <div class="agent-stat"><div class="stat-val" style="color:var(--green)">0%</div><div class="stat-lbl">Err%</div></div>
+          </div>
+          <svg class="sparkline" width="100%" height="28" viewBox="0 0 160 28">
+            <polyline points="0,20 20,18 40,16 60,18 80,14 100,12 120,10 140,8 160,6" fill="none" stroke="var(--green)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
+          </svg>
+        </div>
+        <div class="agent-card haiku" onclick="navigateToAgent('test-runner')">
+          <div class="agent-name">test-runner</div>
+          <div class="agent-meta">
+            <span class="model-badge haiku">Haiku</span>
+            <span class="category-badge">QA</span>
+            <span class="status-dot active" title="active"></span>
+          </div>
+          <div class="agent-stats">
+            <div class="agent-stat"><div class="stat-val">245</div><div class="stat-lbl">Tasks</div></div>
+            <div class="agent-stat"><div class="stat-val">$0.03</div><div class="stat-lbl">Cost</div></div>
+            <div class="agent-stat"><div class="stat-val" style="color:var(--green)">0%</div><div class="stat-lbl">Err%</div></div>
+          </div>
+          <svg class="sparkline" width="100%" height="28" viewBox="0 0 160 28">
+            <polyline points="0,22 20,18 40,20 60,16 80,12 100,10 120,8 140,6 160,4" fill="none" stroke="var(--green)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
+          </svg>
+        </div>
+        <div class="agent-card haiku" onclick="navigateToAgent('file-reader')">
+          <div class="agent-name">file-reader</div>
+          <div class="agent-meta">
+            <span class="model-badge haiku">Haiku</span>
+            <span class="category-badge">Utility</span>
+            <span class="status-dot idle" title="idle"></span>
+          </div>
+          <div class="agent-stats">
+            <div class="agent-stat"><div class="stat-val">178</div><div class="stat-lbl">Tasks</div></div>
+            <div class="agent-stat"><div class="stat-val">$0.02</div><div class="stat-lbl">Cost</div></div>
+            <div class="agent-stat"><div class="stat-val" style="color:var(--green)">0%</div><div class="stat-lbl">Err%</div></div>
+          </div>
+          <svg class="sparkline" width="100%" height="28" viewBox="0 0 160 28">
+            <polyline points="0,24 20,20 40,22 60,18 80,16 100,14 120,12 140,10 160,8" fill="none" stroke="var(--green)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
+          </svg>
+        </div>
+      </div>
+    </section>
+
+    <!-- Org Graph -->
+    <section class="section" id="org-graph">
+      <div class="section-header">
+        <div class="section-title">Org Graph</div>
+        <div class="section-actions">
+          <button class="export-btn" onclick="downloadJSON('org-graph', window._data.orgGraph)">⬇ JSON</button>
+        </div>
+      </div>
+      <div class="org-graph-container">
+        <div class="org-graph-toolbar">
+          <button onclick="orgZoom(1.2)">+ Zoom</button>
+          <button onclick="orgZoom(0.8)">- Zoom</button>
+          <button onclick="orgReset()">Reset</button>
+          <button onclick="orgFitView()">Fit</button>
+          <button onclick="orgExpandAll()">Expand All</button>
+          <button onclick="orgCollapseToDepth(2)">C-Suite View</button>
+          <span style="font-size:11px;color:var(--text-muted);margin-left:8px">Drag to pan | Scroll to zoom | Click +/- to collapse</span>
+          <div class="org-graph-legend">
+            <span><span class="dot" style="background:var(--gold)"></span> Opus</span>
+            <span><span class="dot" style="background:var(--blue)"></span> Sonnet</span>
+            <span><span class="dot" style="background:var(--green)"></span> Haiku</span>
+          </div>
+        </div>
+        <svg id="org-svg" viewBox="0 0 900 600">
+          <defs>
+            <marker id="org-arrow" markerWidth="6" markerHeight="4" refX="6" refY="2" orient="auto">
+              <polygon points="0 0, 6 2, 0 4" fill="var(--border-light)"/>
+            </marker>
+          </defs>
+          <g id="org-canvas"></g>
+        </svg>
+      </div>
+    </section>
+
+    <!-- Bus Monitor -->
+    <section class="section" id="bus-monitor">
+      <div class="section-header">
+        <div class="section-title">Bus Monitor</div>
+        <div class="section-actions">
+          <button class="export-btn" onclick="downloadJSON('bus-monitor', window._data.busEvents)">⬇ JSON</button>
+        </div>
+      </div>
+      <div class="bus-monitor">
+        <div class="bus-header">
+          <div class="bus-header-left">
+            <span class="live-dot"></span>
+            <span>Event Bus</span>
+            <span class="topic-badge" title="Active topics">12 topics</span>
+          </div>
+          <span class="bus-counter" id="bus-counter">0 events</span>
+        </div>
+        <div class="bus-filters">
+          <button class="bus-filter-btn active" data-priority="all" onclick="filterBus(this,'all')">All</button>
+          <button class="bus-filter-btn" data-priority="urgent" onclick="filterBus(this,'urgent')">Urgent</button>
+          <button class="bus-filter-btn" data-priority="high" onclick="filterBus(this,'high')">High</button>
+          <button class="bus-filter-btn" data-priority="normal" onclick="filterBus(this,'normal')">Normal</button>
+          <button class="bus-filter-btn" data-priority="low" onclick="filterBus(this,'low')">Low</button>
+          <input class="bus-topic-filter" type="text" id="bus-topic-filter" placeholder="Filter by topic…" oninput="filterBusTopic(this.value)"/>
+        </div>
+        <div style="display:grid;grid-template-columns:72px 220px 1fr 80px 100px 80px 70px;gap:8px;padding:6px 16px;border-bottom:1px solid var(--border);background:var(--bg-card);">
+          <span style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted)">Time</span>
+          <span style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted)">Topic</span>
+          <span style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted)">Message</span>
+          <span style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted)">Priority</span>
+          <span style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted)">Agents</span>
+          <span style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted)">Timing</span>
+          <span style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted)">Subs</span>
+        </div>
+        <div class="bus-feed" id="bus-feed">
+          <div class="bus-msg priority-normal" onclick="showPayload(this,'agent.task.complete','coder→cto','{\"task\":\"implement flywheel persistence\",\"duration\":\"4m32s\",\"tokens\":2847,\"cost\":0.014}')">
+            <span class="bus-timestamp">14:22:01</span>
+            <span class="bus-topic">agent.task.complete</span>
+            <span class="bus-message">coder completed: implement flywheel persistence</span>
+            <span class="priority-badge normal">normal</span>
+            <span class="bus-agents">coder→cto</span>
+            <span class="bus-timing">4m32s</span>
+            <span class="topic-badge">8</span>
+          </div>
+          <div class="bus-msg priority-high" onclick="showPayload(this,'review.requested','architect→team-reviewer','{\"doc\":\"v4.3 Architecture Spec\",\"priority\":\"high\",\"deadline\":\"2026-03-26T18:00Z\"}')">
+            <span class="bus-timestamp">14:21:48</span>
+            <span class="bus-topic">review.requested</span>
+            <span class="bus-message">architect requested review of v4.3 Architecture Spec</span>
+            <span class="priority-badge high">high</span>
+            <span class="bus-agents">architect→reviewer</span>
+            <span class="bus-timing">0m12s</span>
+            <span class="topic-badge">3</span>
+          </div>
+          <div class="bus-msg priority-urgent" onclick="showPayload(this,'system.error','debugger→cto','{\"error\":\"test_runner timeout\",\"retries\":3,\"stack\":\"TimeoutError at run_tests:42\"}')">
+            <span class="bus-timestamp">14:21:33</span>
+            <span class="bus-topic">system.error</span>
+            <span class="bus-message">debugger: test_runner timeout after 3 retries</span>
+            <span class="priority-badge urgent">urgent</span>
+            <span class="bus-agents">debugger→cto</span>
+            <span class="bus-timing">0m27s</span>
+            <span class="topic-badge">5</span>
+          </div>
+          <div class="bus-msg priority-normal" onclick="showPayload(this,'flywheel.updated','genesis→all','{\"metric\":\"test_coverage\",\"value\":96.2,\"delta\":\"+1.4\"}')">
+            <span class="bus-timestamp">14:21:20</span>
+            <span class="bus-topic">flywheel.updated</span>
+            <span class="bus-message">genesis: test_coverage updated to 96.2% (+1.4%)</span>
+            <span class="priority-badge normal">normal</span>
+            <span class="bus-agents">genesis→all</span>
+            <span class="bus-timing">2m15s</span>
+            <span class="topic-badge">12</span>
+          </div>
+          <div class="bus-msg priority-low" onclick="showPayload(this,'linter.scan.done','linter→coder','{\"files\":42,\"warnings\":3,\"errors\":0,\"duration\":\"0.8s\"}')">
+            <span class="bus-timestamp">14:21:05</span>
+            <span class="bus-topic">linter.scan.done</span>
+            <span class="bus-message">linter: 42 files scanned, 3 warnings, 0 errors</span>
+            <span class="priority-badge low">low</span>
+            <span class="bus-agents">linter→coder</span>
+            <span class="bus-timing">0m48s</span>
+            <span class="topic-badge">2</span>
+          </div>
+          <div class="bus-msg priority-normal" onclick="showPayload(this,'sprint.item.done','sprint-planner→coo','{\"item\":\"autonomous sprint framework\",\"sprint\":\"v4.3\",\"points\":8}')">
+            <span class="bus-timestamp">14:20:51</span>
+            <span class="bus-topic">sprint.item.done</span>
+            <span class="bus-message">sprint-planner: autonomous sprint framework complete (8pts)</span>
+            <span class="priority-badge normal">normal</span>
+            <span class="bus-agents">sprint-planner→coo</span>
+            <span class="bus-timing">1m08s</span>
+            <span class="topic-badge">4</span>
+          </div>
+          <div class="bus-msg priority-high" onclick="showPayload(this,'agent.delegated','cto→architect','{\"task\":\"dashboard v4.3 design\",\"deadline\":\"2026-03-26\",\"priority\":\"high\"}')">
+            <span class="bus-timestamp">14:20:38</span>
+            <span class="bus-topic">agent.delegated</span>
+            <span class="bus-message">cto delegated dashboard v4.3 design to architect</span>
+            <span class="priority-badge high">high</span>
+            <span class="bus-agents">cto→architect</span>
+            <span class="bus-timing">0m22s</span>
+            <span class="topic-badge">6</span>
+          </div>
+          <div class="bus-msg priority-low" onclick="showPayload(this,'memory.persisted','genesis→all','{\"entries\":3,\"categories\":[\"feedback\",\"lesson\"],\"size\":\"4.2kb\"}')">
+            <span class="bus-timestamp">14:20:22</span>
+            <span class="bus-topic">memory.persisted</span>
+            <span class="bus-message">genesis persisted 3 memory entries (4.2kb)</span>
+            <span class="priority-badge low">low</span>
+            <span class="bus-agents">genesis→all</span>
+            <span class="bus-timing">3m41s</span>
+            <span class="topic-badge">7</span>
+          </div>
+        </div>
+        <div class="payload-panel" id="payload-panel">
+          <div class="payload-label">Payload Inspector — <span id="payload-topic"></span></div>
+          <div class="payload-content" id="payload-content"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Session Timeline -->
+    <section class="section" id="session-timeline">
+      <div class="section-header">
+        <div class="section-title">Session Timeline</div>
+        <div class="section-actions">
+          <button class="export-btn" onclick="downloadJSON('session-timeline', window._data.sessions)">⬇ JSON</button>
+        </div>
+      </div>
+      <div class="timeline-container">
+        <div class="timeline-gantt">
+          <div class="gantt-header">
+            <div class="gantt-label-col">Session</div>
+            <div class="gantt-time-col">
+              <div class="gantt-ticks">
+                <span>00:00</span><span>02:00</span><span>04:00</span><span>06:00</span>
+                <span>08:00</span><span>10:00</span><span>12:00</span>
+              </div>
+            </div>
+          </div>
+          <!-- Session rows -->
+          <div class="gantt-row">
+            <div class="gantt-row-label" style="color:var(--gold)">ceo/s001</div>
+            <div class="gantt-row-track">
+              <div class="gantt-bar bar-complete" style="left:0%;width:35%">sprint planning</div>
+              <div class="gantt-bar bar-active" style="left:38%;width:25%">delegation<span class="context-arrow">→</span></div>
+            </div>
+          </div>
+          <div class="gantt-row">
+            <div class="gantt-row-label" style="color:var(--gold)">cto/s002</div>
+            <div class="gantt-row-track">
+              <div class="gantt-bar bar-complete" style="left:5%;width:30%">arch review</div>
+              <div class="gantt-bar bar-complete" style="left:38%;width:20%">delegate tasks<span class="context-arrow">→</span></div>
+              <div class="gantt-bar bar-active" style="left:62%;width:22%">CI/CD oversight</div>
+            </div>
+          </div>
+          <div class="gantt-row">
+            <div class="gantt-row-label" style="color:var(--gold)">architect/s003</div>
+            <div class="gantt-row-track">
+              <div class="gantt-bar bar-complete" style="left:10%;width:40%">v4.3 design spec</div>
+              <div class="gantt-bar bar-active" style="left:53%;width:30%">dashboard design</div>
+            </div>
+          </div>
+          <div class="gantt-row">
+            <div class="gantt-row-label" style="color:var(--blue)">coder/s004</div>
+            <div class="gantt-row-track">
+              <div class="gantt-bar bar-complete" style="left:8%;width:25%">flywheel persist</div>
+              <div class="gantt-bar bar-complete" style="left:36%;width:20%">bus unify</div>
+              <div class="gantt-bar bar-active" style="left:59%;width:28%">dashboard impl</div>
+            </div>
+          </div>
+          <div class="gantt-row">
+            <div class="gantt-row-label" style="color:var(--blue)">debugger/s005</div>
+            <div class="gantt-row-track">
+              <div class="gantt-bar bar-complete" style="left:15%;width:22%">fix bus tests</div>
+              <div class="gantt-bar bar-error" style="left:40%;width:12%" title="test_runner timeout">timeout<span class="crash-icon">⚠</span></div>
+              <div class="gantt-bar bar-active" style="left:55%;width:25%">retry debug</div>
+            </div>
+          </div>
+          <div class="gantt-row">
+            <div class="gantt-row-label" style="color:var(--blue)">sprint-planner/s006</div>
+            <div class="gantt-row-track">
+              <div class="gantt-bar bar-complete" style="left:0%;width:45%">v4.3 sprint items</div>
+              <div class="gantt-bar bar-idle" style="left:48%;width:52%">idle — waiting</div>
+            </div>
+          </div>
+          <div class="gantt-row">
+            <div class="gantt-row-label" style="color:var(--green)">linter/s007</div>
+            <div class="gantt-row-track">
+              <div class="gantt-bar bar-complete" style="left:0%;width:12%;background:var(--green);color:#000">scan</div>
+              <div class="gantt-bar bar-complete" style="left:15%;width:12%;background:var(--green);color:#000">scan</div>
+              <div class="gantt-bar bar-complete" style="left:30%;width:12%;background:var(--green);color:#000">scan</div>
+              <div class="gantt-bar bar-complete" style="left:45%;width:12%;background:var(--green);color:#000">scan</div>
+              <div class="gantt-bar bar-active" style="left:60%;width:12%;background:var(--green);color:#000">scan</div>
+            </div>
+          </div>
+          <div class="gantt-row">
+            <div class="gantt-row-label" style="color:var(--green)">test-runner/s008</div>
+            <div class="gantt-row-track">
+              <div class="gantt-bar bar-complete" style="left:0%;width:20%;background:var(--green);color:#000">745 tests</div>
+              <div class="gantt-bar bar-error" style="left:25%;width:10%">timeout<span class="crash-icon">⚠</span></div>
+              <div class="gantt-bar bar-active" style="left:40%;width:20%;background:var(--green);color:#000">retry</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Flywheel -->
+    <section class="section" id="flywheel">
+      <div class="section-header">
+        <div class="section-title">Flywheel Metrics</div>
+        <div class="section-actions">
+          <button class="export-btn" onclick="downloadJSON('flywheel', window._data.flywheel)">⬇ JSON</button>
+        </div>
+      </div>
+      <div class="flywheel-grid">
+        <div class="flywheel-card active" onclick="toggleFlywheelDetail(this)">
+          <div class="gauge-container">
+            <svg viewBox="0 0 100 100"><circle class="gauge-bg" cx="50" cy="50" r="45"/><circle class="gauge-fill" cx="50" cy="50" r="45" stroke="var(--green)" stroke-dasharray="283" stroke-dashoffset="10"/></svg>
+            <div class="gauge-label" style="color:var(--green)">96%</div>
+          </div>
+          <h3>Test Coverage</h3>
+          <div class="flywheel-sub">745 tests passing</div>
+          <div class="flywheel-compound" id="cov-compound">+1.4% this sprint</div>
+          <svg class="sparkline-trend" width="120" height="32" viewBox="0 0 120 32">
+            <polyline points="0,28 20,24 40,22 60,20 80,16 100,12 120,8" fill="none" stroke="var(--green)" stroke-width="1.5" opacity="0.7"/>
+            <polyline points="0,28 20,24 40,22 60,20 80,16 100,12 120,8 120,32 0,32" fill="var(--green)" opacity="0.1"/>
+          </svg>
+          <div class="flywheel-status on">● ACTIVE</div>
+          <div class="flywheel-detail">
+            <div class="metric-row"><span>Baseline</span><span class="val">82.0%</span></div>
+            <div class="metric-row"><span>Growth rate</span><span class="val">+1.4%/sprint</span></div>
+            <div class="metric-row"><span>Target</span><span class="val">98%</span></div>
+            <div class="metric-row"><span>ETA at rate</span><span class="val">~1.4 sprints</span></div>
+          </div>
+        </div>
+        <div class="flywheel-card active" onclick="toggleFlywheelDetail(this)">
+          <div class="gauge-container">
+            <svg viewBox="0 0 100 100"><circle class="gauge-bg" cx="50" cy="50" r="45"/><circle class="gauge-fill" cx="50" cy="50" r="45" stroke="var(--blue)" stroke-dasharray="283" stroke-dashoffset="57"/></svg>
+            <div class="gauge-label" style="color:var(--blue)">80%</div>
+          </div>
+          <h3>Skill Templates</h3>
+          <div class="flywheel-sub">34 / 42 optimized</div>
+          <div class="flywheel-compound" id="skill-compound">+4 this sprint</div>
+          <svg class="sparkline-trend" width="120" height="32" viewBox="0 0 120 32">
+            <polyline points="0,30 20,26 40,24 60,20 80,18 100,14 120,10" fill="none" stroke="var(--blue)" stroke-width="1.5" opacity="0.7"/>
+            <polyline points="0,30 20,26 40,24 60,20 80,18 100,14 120,10 120,32 0,32" fill="var(--blue)" opacity="0.1"/>
+          </svg>
+          <div class="flywheel-status on">● ACTIVE</div>
+          <div class="flywheel-detail">
+            <div class="metric-row"><span>Baseline</span><span class="val">18 templates</span></div>
+            <div class="metric-row"><span>Growth rate</span><span class="val">+4/sprint</span></div>
+            <div class="metric-row"><span>Target</span><span class="val">42 templates</span></div>
+            <div class="metric-row"><span>ETA at rate</span><span class="val">~2 sprints</span></div>
+          </div>
+        </div>
+        <div class="flywheel-card active" onclick="toggleFlywheelDetail(this)">
+          <div class="gauge-container">
+            <svg viewBox="0 0 100 100"><circle class="gauge-bg" cx="50" cy="50" r="45"/><circle class="gauge-fill" cx="50" cy="50" r="45" stroke="var(--gold)" stroke-dasharray="283" stroke-dashoffset="198"/></svg>
+            <div class="gauge-label" style="color:var(--gold)">30%</div>
+          </div>
+          <h3>Cost Efficiency</h3>
+          <div class="flywheel-sub">$0.31 avg/task</div>
+          <div class="flywheel-compound" id="cost-compound">-8% vs last sprint</div>
+          <svg class="sparkline-trend" width="120" height="32" viewBox="0 0 120 32">
+            <polyline points="0,8 20,10 40,12 60,10 80,14 100,18 120,22" fill="none" stroke="var(--gold)" stroke-width="1.5" opacity="0.7"/>
+            <polyline points="0,8 20,10 40,12 60,10 80,14 100,18 120,22 120,32 0,32" fill="var(--gold)" opacity="0.1"/>
+          </svg>
+          <div class="flywheel-status on">● ACTIVE</div>
+          <div class="flywheel-detail">
+            <div class="metric-row"><span>Baseline cost</span><span class="val">$0.54/task</span></div>
+            <div class="metric-row"><span>Reduction rate</span><span class="val">-8%/sprint</span></div>
+            <div class="metric-row"><span>Target</span><span class="val">$0.15/task</span></div>
+            <div class="metric-row"><span>ETA at rate</span><span class="val">~8 sprints</span></div>
+          </div>
+        </div>
+        <div class="flywheel-card" onclick="toggleFlywheelDetail(this)">
+          <div class="gauge-container">
+            <svg viewBox="0 0 100 100"><circle class="gauge-bg" cx="50" cy="50" r="45"/><circle class="gauge-fill" cx="50" cy="50" r="45" stroke="var(--purple)" stroke-dasharray="283" stroke-dashoffset="141"/></svg>
+            <div class="gauge-label" style="color:var(--purple)">50%</div>
+          </div>
+          <h3>Autonomy Score</h3>
+          <div class="flywheel-sub">17 / 34 Tier-2+</div>
+          <div class="flywheel-compound" id="auto-compound">+3 promotions</div>
+          <svg class="sparkline-trend" width="120" height="32" viewBox="0 0 120 32">
+            <polyline points="0,28 20,26 40,24 60,22 80,18 100,14 120,10" fill="none" stroke="var(--purple)" stroke-width="1.5" opacity="0.7"/>
+            <polyline points="0,28 20,26 40,24 60,22 80,18 100,14 120,10 120,32 0,32" fill="var(--purple)" opacity="0.1"/>
+          </svg>
+          <div class="flywheel-status on">● ACTIVE</div>
+          <div class="flywheel-detail">
+            <div class="metric-row"><span>Tier 1</span><span class="val">17 agents</span></div>
+            <div class="metric-row"><span>Tier 2</span><span class="val">12 agents</span></div>
+            <div class="metric-row"><span>Tier 3</span><span class="val">4 agents</span></div>
+            <div class="metric-row"><span>Tier 4</span><span class="val">1 agent</span></div>
+          </div>
+        </div>
+        <div class="flywheel-card" onclick="toggleFlywheelDetail(this)">
+          <div class="gauge-container">
+            <svg viewBox="0 0 100 100"><circle class="gauge-bg" cx="50" cy="50" r="45"/><circle class="gauge-fill" cx="50" cy="50" r="45" stroke="var(--cyan)" stroke-dasharray="283" stroke-dashoffset="85"/></svg>
+            <div class="gauge-label" style="color:var(--cyan)">70%</div>
+          </div>
+          <h3>Memory Retention</h3>
+          <div class="flywheel-sub">7 active memories</div>
+          <div class="flywheel-compound" id="mem-compound">+2 this sprint</div>
+          <svg class="sparkline-trend" width="120" height="32" viewBox="0 0 120 32">
+            <polyline points="0,26 20,22 40,20 60,18 80,14 100,12 120,8" fill="none" stroke="var(--cyan)" stroke-width="1.5" opacity="0.7"/>
+          </svg>
+          <div class="flywheel-status on">● ACTIVE</div>
+          <div class="flywheel-detail">
+            <div class="metric-row"><span>Entries</span><span class="val">7 docs</span></div>
+            <div class="metric-row"><span>Reuse rate</span><span class="val">4.2x</span></div>
+            <div class="metric-row"><span>Avg age</span><span class="val">2.1 sprints</span></div>
+          </div>
+        </div>
+        <div class="flywheel-card" onclick="toggleFlywheelDetail(this)">
+          <div class="gauge-container">
+            <svg viewBox="0 0 100 100"><circle class="gauge-bg" cx="50" cy="50" r="45"/><circle class="gauge-fill" cx="50" cy="50" r="45" stroke="var(--orange)" stroke-dasharray="283" stroke-dashoffset="170"/></svg>
+            <div class="gauge-label" style="color:var(--orange)">40%</div>
+          </div>
+          <h3>REFORGE Rate</h3>
+          <div class="flywheel-sub">6 / 15 applied</div>
+          <div class="flywheel-compound" id="reforge-compound">+2 this sprint</div>
+          <svg class="sparkline-trend" width="120" height="32" viewBox="0 0 120 32">
+            <polyline points="0,30 20,28 40,24 60,22 80,18 100,16 120,12" fill="none" stroke="var(--orange)" stroke-width="1.5" opacity="0.7"/>
+          </svg>
+          <div class="flywheel-status off">○ MONITORING</div>
+          <div class="flywheel-detail">
+            <div class="metric-row"><span>Proposals</span><span class="val">15</span></div>
+            <div class="metric-row"><span>Applied</span><span class="val">6</span></div>
+            <div class="metric-row"><span>Rolled back</span><span class="val">1</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Activity Feed -->
+    <section class="section" id="activity-feed">
+      <div class="section-header">
+        <div class="section-title">Activity Feed</div>
+        <div class="section-actions">
+          <button class="export-btn" onclick="downloadJSON('activity-feed', window._data.activity)">⬇ JSON</button>
+        </div>
+      </div>
+      <div class="activity-table-wrap">
+        <table class="activity-table">
+          <thead>
+            <tr>
+              <th>Agent</th>
+              <th>Model</th>
+              <th>Action</th>
+              <th>Task</th>
+              <th>Duration</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="activity-tbody">
+            <tr>
+              <td><span class="chip" style="border-color:var(--gold);color:var(--gold)">ceo</span></td>
+              <td><span class="model-badge opus">Opus</span></td>
+              <td>delegate</td>
+              <td class="task-cell">Assign dashboard v4.3 rebuild to architect</td>
+              <td class="duration-cell">0m18s</td>
+              <td><span class="status-badge complete">complete</span></td>
+            </tr>
+            <tr>
+              <td><span class="chip" style="border-color:var(--gold);color:var(--gold)">architect</span></td>
+              <td><span class="model-badge opus">Opus</span></td>
+              <td>design</td>
+              <td class="task-cell">Write v4.3 dashboard section specifications</td>
+              <td class="duration-cell">12m44s</td>
+              <td><span class="status-badge complete">complete</span></td>
+            </tr>
+            <tr>
+              <td><span class="chip" style="border-color:var(--blue);color:var(--blue)">dashboard-architect</span></td>
+              <td><span class="model-badge sonnet">Sonnet</span></td>
+              <td>implement</td>
+              <td class="task-cell">Build v4.3 dashboard skeleton CSS and structure</td>
+              <td class="duration-cell">8m02s</td>
+              <td><span class="status-badge active">active</span></td>
+            </tr>
+            <tr>
+              <td><span class="chip" style="border-color:var(--blue);color:var(--blue)">coder</span></td>
+              <td><span class="model-badge sonnet">Sonnet</span></td>
+              <td>implement</td>
+              <td class="task-cell">Implement flywheel persistence layer</td>
+              <td class="duration-cell">4m32s</td>
+              <td><span class="status-badge complete">complete</span></td>
+            </tr>
+            <tr>
+              <td><span class="chip" style="border-color:var(--blue);color:var(--blue)">debugger</span></td>
+              <td><span class="model-badge sonnet">Sonnet</span></td>
+              <td>debug</td>
+              <td class="task-cell">Investigate test_runner timeout after 3 retries</td>
+              <td class="duration-cell">2m11s</td>
+              <td><span class="status-badge active">active</span></td>
+            </tr>
+            <tr>
+              <td><span class="chip" style="border-color:var(--gold);color:var(--gold)">cto</span></td>
+              <td><span class="model-badge opus">Opus</span></td>
+              <td>review</td>
+              <td class="task-cell">Review CI/CD pipeline configuration for v4.3</td>
+              <td class="duration-cell">5m58s</td>
+              <td><span class="status-badge complete">complete</span></td>
+            </tr>
+            <tr>
+              <td><span class="chip" style="border-color:var(--green);color:var(--green)">linter</span></td>
+              <td><span class="model-badge haiku">Haiku</span></td>
+              <td>scan</td>
+              <td class="task-cell">Lint 42 modified files in dashboard module</td>
+              <td class="duration-cell">0m48s</td>
+              <td><span class="status-badge complete">complete</span></td>
+            </tr>
+            <tr>
+              <td><span class="chip" style="border-color:var(--green);color:var(--green)">test-runner</span></td>
+              <td><span class="model-badge haiku">Haiku</span></td>
+              <td>test</td>
+              <td class="task-cell">Execute 745-test suite for v4.3 integration</td>
+              <td class="duration-cell">1m27s</td>
+              <td><span class="status-badge error">error</span></td>
+            </tr>
+            <tr>
+              <td><span class="chip" style="border-color:var(--blue);color:var(--blue)">sprint-planner</span></td>
+              <td><span class="model-badge sonnet">Sonnet</span></td>
+              <td>plan</td>
+              <td class="task-cell">Generate v4.3 sprint items (23 items, all complete)</td>
+              <td class="duration-cell">3m15s</td>
+              <td><span class="status-badge complete">complete</span></td>
+            </tr>
+            <tr>
+              <td><span class="chip" style="border-color:var(--gold);color:var(--gold)">genesis</span></td>
+              <td><span class="model-badge opus">Opus</span></td>
+              <td>persist</td>
+              <td class="task-cell">Persist flywheel metrics snapshot to disk</td>
+              <td class="duration-cell">0m33s</td>
+              <td><span class="status-badge complete">complete</span></td>
+            </tr>
+            <tr>
+              <td><span class="chip" style="border-color:var(--blue);color:var(--blue)">team-reviewer</span></td>
+              <td><span class="model-badge sonnet">Sonnet</span></td>
+              <td>review</td>
+              <td class="task-cell">Multi-reviewer pass on v4.3 architecture spec</td>
+              <td class="duration-cell">7m41s</td>
+              <td><span class="status-badge complete">complete</span></td>
+            </tr>
+            <tr>
+              <td><span class="chip" style="border-color:var(--blue);color:var(--blue)">devops-engineer</span></td>
+              <td><span class="model-badge sonnet">Sonnet</span></td>
+              <td>deploy</td>
+              <td class="task-cell">Configure GitHub Actions workflow for v4.3 CI</td>
+              <td class="duration-cell">6m12s</td>
+              <td><span class="status-badge complete">complete</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Delegation Flow -->
+    <section class="section" id="delegation-flow">
+      <div class="section-header">
+        <div class="section-title">Delegation Flow</div>
+        <div class="section-actions">
+          <button class="export-btn" onclick="downloadJSON('delegation-flow', window._data.delegationChains)">⬇ JSON</button>
+        </div>
+      </div>
+      <div class="delegation-container">
+        <svg id="delegation-svg" viewBox="0 0 900 320">
+          <defs>
+            <marker id="del-arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="var(--blue)"/>
+            </marker>
+            <marker id="del-arrow-gold" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="var(--gold)"/>
+            </marker>
+            <marker id="del-arrow-green" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="var(--green)"/>
+            </marker>
+          </defs>
+          <!-- Main chain: CEO → CTO → Architect → Coder -->
+          <!-- CEO -->
+          <g onclick="openAgentModal('ceo')" style="cursor:pointer">
+            <rect x="30" y="120" width="110" height="48" rx="8" fill="var(--bg-card)" stroke="var(--gold)" stroke-width="2"/>
+            <text x="85" y="139" text-anchor="middle" font-family="var(--font-mono)" font-size="13" font-weight="700" fill="var(--gold)">ceo</text>
+            <text x="85" y="156" text-anchor="middle" font-family="var(--font-sans)" font-size="10" fill="var(--text-muted)">Opus • Tier 4</text>
+          </g>
+          <!-- Arrow CEO→CTO with label -->
+          <line x1="141" y1="144" x2="198" y2="144" stroke="var(--gold)" stroke-width="1.5" marker-end="url(#del-arrow-gold)" stroke-dasharray="none"/>
+          <text x="169" y="136" text-anchor="middle" font-family="var(--font-sans)" font-size="9" fill="var(--text-muted)">dashboard v4.3</text>
+          <!-- CTO -->
+          <g onclick="openAgentModal('cto')" style="cursor:pointer">
+            <rect x="200" y="120" width="110" height="48" rx="8" fill="var(--bg-card)" stroke="var(--gold)" stroke-width="2"/>
+            <text x="255" y="139" text-anchor="middle" font-family="var(--font-mono)" font-size="13" font-weight="700" fill="var(--gold)">cto</text>
+            <text x="255" y="156" text-anchor="middle" font-family="var(--font-sans)" font-size="10" fill="var(--text-muted)">Opus • Tier 4</text>
+          </g>
+          <!-- Arrow CTO→Architect -->
+          <line x1="311" y1="144" x2="368" y2="144" stroke="var(--gold)" stroke-width="1.5" marker-end="url(#del-arrow-gold)"/>
+          <text x="340" y="136" text-anchor="middle" font-family="var(--font-sans)" font-size="9" fill="var(--text-muted)">design spec</text>
+          <!-- Architect -->
+          <g onclick="openAgentModal('architect')" style="cursor:pointer">
+            <rect x="370" y="120" width="120" height="48" rx="8" fill="var(--bg-card)" stroke="var(--gold)" stroke-width="2"/>
+            <text x="430" y="139" text-anchor="middle" font-family="var(--font-mono)" font-size="13" font-weight="700" fill="var(--gold)">architect</text>
+            <text x="430" y="156" text-anchor="middle" font-family="var(--font-sans)" font-size="10" fill="var(--text-muted)">Opus • Tier 3</text>
+          </g>
+          <!-- Arrow Architect→Coder -->
+          <line x1="491" y1="144" x2="548" y2="144" stroke="var(--blue)" stroke-width="1.5" marker-end="url(#del-arrow)"/>
+          <text x="520" y="136" text-anchor="middle" font-family="var(--font-sans)" font-size="9" fill="var(--text-muted)">implement</text>
+          <!-- Coder -->
+          <g onclick="openAgentModal('coder')" style="cursor:pointer">
+            <rect x="550" y="120" width="110" height="48" rx="8" fill="var(--bg-card)" stroke="var(--blue)" stroke-width="2"/>
+            <text x="605" y="139" text-anchor="middle" font-family="var(--font-mono)" font-size="13" font-weight="700" fill="var(--blue)">coder</text>
+            <text x="605" y="156" text-anchor="middle" font-family="var(--font-sans)" font-size="10" fill="var(--text-muted)">Sonnet • Tier 2</text>
+          </g>
+          <!-- Coder→Linter branch -->
+          <line x1="605" y1="168" x2="605" y2="210" stroke="var(--green)" stroke-width="1" marker-end="url(#del-arrow-green)"/>
+          <g onclick="openAgentModal('linter')" style="cursor:pointer">
+            <rect x="555" y="212" width="100" height="38" rx="6" fill="var(--bg-card)" stroke="var(--green)" stroke-width="1.5"/>
+            <text x="605" y="228" text-anchor="middle" font-family="var(--font-mono)" font-size="12" fill="var(--green)">linter</text>
+            <text x="605" y="242" text-anchor="middle" font-family="var(--font-sans)" font-size="9" fill="var(--text-muted)">Haiku • lint</text>
+          </g>
+          <!-- Coder→Debugger branch -->
+          <line x1="660" y1="144" x2="720" y2="144" stroke="var(--blue)" stroke-width="1" marker-end="url(#del-arrow)"/>
+          <g onclick="openAgentModal('debugger')" style="cursor:pointer">
+            <rect x="722" y="120" width="110" height="48" rx="8" fill="var(--bg-card)" stroke="var(--blue)" stroke-width="1.5"/>
+            <text x="777" y="139" text-anchor="middle" font-family="var(--font-mono)" font-size="12" fill="var(--blue)">debugger</text>
+            <text x="777" y="156" text-anchor="middle" font-family="var(--font-sans)" font-size="10" fill="var(--text-muted)">Sonnet • debug</text>
+          </g>
+          <!-- Debugger→test-runner -->
+          <line x1="777" y1="168" x2="777" y2="210" stroke="var(--green)" stroke-width="1" marker-end="url(#del-arrow-green)"/>
+          <g onclick="openAgentModal('test-runner')" style="cursor:pointer">
+            <rect x="727" y="212" width="100" height="38" rx="6" fill="var(--bg-card)" stroke="var(--green)" stroke-width="1.5"/>
+            <text x="777" y="228" text-anchor="middle" font-family="var(--font-mono)" font-size="11" fill="var(--green)">test-runner</text>
+            <text x="777" y="242" text-anchor="middle" font-family="var(--font-sans)" font-size="9" fill="var(--text-muted)">Haiku • test</text>
+          </g>
+          <!-- CTO→Sprint-Planner branch -->
+          <line x1="255" y1="168" x2="255" y2="230" stroke="var(--blue)" stroke-width="1" marker-end="url(#del-arrow)"/>
+          <g onclick="openAgentModal('sprint-planner')" style="cursor:pointer">
+            <rect x="195" y="232" width="120" height="38" rx="6" fill="var(--bg-card)" stroke="var(--blue)" stroke-width="1"/>
+            <text x="255" y="250" text-anchor="middle" font-family="var(--font-mono)" font-size="11" fill="var(--blue)">sprint-planner</text>
+            <text x="255" y="263" text-anchor="middle" font-family="var(--font-sans)" font-size="9" fill="var(--text-muted)">Sonnet • plan</text>
+          </g>
+          <!-- Legend -->
+          <line x1="30" y1="295" x2="60" y2="295" stroke="var(--gold)" stroke-width="2"/>
+          <text x="65" y="299" font-family="var(--font-sans)" font-size="11" fill="var(--text-muted)">Opus delegation</text>
+          <line x1="190" y1="295" x2="220" y2="295" stroke="var(--blue)" stroke-width="1.5"/>
+          <text x="225" y="299" font-family="var(--font-sans)" font-size="11" fill="var(--text-muted)">Sonnet delegation</text>
+          <line x1="360" y1="295" x2="390" y2="295" stroke="var(--green)" stroke-width="1"/>
+          <text x="395" y="299" font-family="var(--font-sans)" font-size="11" fill="var(--text-muted)">Haiku task</text>
+        </svg>
+      </div>
+    </section>
+
+    <!-- Sprint Tracker -->
+    <section class="section" id="sprint-tracker">
+      <div class="section-header">
+        <div class="section-title">Sprint Tracker — v4.4</div>
+        <div class="section-actions">
+          <button class="export-btn" onclick="downloadJSON('sprint-tracker', window._data.sprint)">⬇ JSON</button>
+        </div>
+      </div>
+      <div class="sprint-header-bar">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div>
+            <strong style="font-size:15px">Sprint v4.4</strong>
+            <span style="font-size:12px;color:var(--text-muted);margin-left:12px">2026-03-20 → 2026-03-26</span>
+          </div>
+          <div style="font-family:var(--font-mono);font-size:13px;color:var(--green);font-weight:700">23/23 complete — 100%</div>
+        </div>
+        <div class="sprint-progress-outer"><div class="sprint-progress-inner" style="width:100%"></div></div>
+        <div class="sprint-meta">
+          <span>Total points: <strong>89</strong></span>
+          <span>Agents involved: <strong>12</strong></span>
+          <span>Tests: <strong>745</strong></span>
+          <span>Velocity: <strong>89pts/sprint</strong></span>
+        </div>
+      </div>
+      <div class="sprint-table-wrap">
+        <table class="sprint-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Item</th>
+              <th>Assignee</th>
+              <th>Points</th>
+              <th>Status</th>
+              <th>Progress</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td style="font-family:var(--font-mono);color:var(--text-muted)">01</td><td>Autonomous sprint framework</td><td><span class="chip" style="border-color:var(--gold);color:var(--gold)">cto</span></td><td>8</td><td><span class="status-badge complete">done</span></td><td><div class="sprint-bar-track"><div class="sprint-bar-fill done" style="width:100%"></div></div></td></tr>
+            <tr><td style="font-family:var(--font-mono);color:var(--text-muted)">02</td><td>CI/CD pipeline v2</td><td><span class="chip" style="border-color:var(--blue);color:var(--blue)">devops-engineer</span></td><td>5</td><td><span class="status-badge complete">done</span></td><td><div class="sprint-bar-track"><div class="sprint-bar-fill done" style="width:100%"></div></td></tr>
+            <tr><td style="font-family:var(--font-mono);color:var(--text-muted)">03</td><td>Multi-reviewer framework</td><td><span class="chip" style="border-color:var(--blue);color:var(--blue)">team-reviewer</span></td><td>5</td><td><span class="status-badge complete">done</span></td><td><div class="sprint-bar-track"><div class="sprint-bar-fill done" style="width:100%"></div></td></tr>
+            <tr><td style="font-family:var(--font-mono);color:var(--text-muted)">04</td><td>Flywheel persistence layer</td><td><span class="chip" style="border-color:var(--blue);color:var(--blue)">coder</span></td><td>6</td><td><span class="status-badge complete">done</span></td><td><div class="sprint-bar-track"><div class="sprint-bar-fill done" style="width:100%"></div></td></tr>
+            <tr><td style="font-family:var(--font-mono);color:var(--text-muted)">05</td><td>Graph visualization module</td><td><span class="chip" style="border-color:var(--blue);color:var(--blue)">data-viz-specialist</span></td><td>4</td><td><span class="status-badge complete">done</span></td><td><div class="sprint-bar-track"><div class="sprint-bar-fill done" style="width:100%"></div></td></tr>
+            <tr><td style="font-family:var(--font-mono);color:var(--text-muted)">06</td><td>Bus unification — all 12 modules</td><td><span class="chip" style="border-color:var(--gold);color:var(--gold)">architect</span></td><td>8</td><td><span class="status-badge complete">done</span></td><td><div class="sprint-bar-track"><div class="sprint-bar-fill done" style="width:100%"></div></td></tr>
+            <tr><td style="font-family:var(--font-mono);color:var(--text-muted)">07</td><td>Standard topics test suite</td><td><span class="chip" style="border-color:var(--green);color:var(--green)">test-runner</span></td><td>3</td><td><span class="status-badge complete">done</span></td><td><div class="sprint-bar-track"><div class="sprint-bar-fill done" style="width:100%"></div></td></tr>
+            <tr><td style="font-family:var(--font-mono);color:var(--text-muted)">08</td><td>Linter sync to v4.1 extensions</td><td><span class="chip" style="border-color:var(--green);color:var(--green)">linter</span></td><td>2</td><td><span class="status-badge complete">done</span></td><td><div class="sprint-bar-track"><div class="sprint-bar-fill done" style="width:100%"></div></td></tr>
+            <tr><td style="font-family:var(--font-mono);color:var(--text-muted)">09</td><td>Team expansion to 34 agents</td><td><span class="chip" style="border-color:var(--gold);color:var(--gold)">genesis</span></td><td>5</td><td><span class="status-badge complete">done</span></td><td><div class="sprint-bar-track"><div class="sprint-bar-fill done" style="width:100%"></div></td></tr>
+            <tr><td style="font-family:var(--font-mono);color:var(--text-muted)">10</td><td>v4.2 roadmap documentation</td><td><span class="chip" style="border-color:var(--blue);color:var(--blue)">documentation-writer</span></td><td>2</td><td><span class="status-badge complete">done</span></td><td><div class="sprint-bar-track"><div class="sprint-bar-fill done" style="width:100%"></div></td></tr>
+            <tr><td style="font-family:var(--font-mono);color:var(--text-muted)">11</td><td>Autonomy tier framework</td><td><span class="chip" style="border-color:var(--gold);color:var(--gold)">meta-architect</span></td><td>6</td><td><span class="status-badge complete">done</span></td><td><div class="sprint-bar-track"><div class="sprint-bar-fill done" style="width:100%"></div></td></tr>
+            <tr><td style="font-family:var(--font-mono);color:var(--text-muted)">12</td><td>Review pipeline kanban board</td><td><span class="chip" style="border-color:var(--blue);color:var(--blue)">project-manager</span></td><td>4</td><td><span class="status-badge complete">done</span></td><td><div class="sprint-bar-track"><div class="sprint-bar-fill done" style="width:100%"></div></td></tr>
+            <tr><td style="font-family:var(--font-mono);color:var(--text-muted)">13</td><td>Cost analytics dashboard</td><td><span class="chip" style="border-color:var(--blue);color:var(--blue)">cfo</span></td><td>5</td><td><span class="status-badge complete">done</span></td><td><div class="sprint-bar-track"><div class="sprint-bar-fill done" style="width:100%"></div></td></tr>
+            <tr><td style="font-family:var(--font-mono);color:var(--text-muted)">14</td><td>Capability heatmap matrix</td><td><span class="chip" style="border-color:var(--blue);color:var(--blue)">skill-designer</span></td><td>4</td><td><span class="status-badge complete">done</span></td><td><div class="sprint-bar-track"><div class="sprint-bar-fill done" style="width:100%"></div></td></tr>
+            <tr><td style="font-family:var(--font-mono);color:var(--text-muted)">15</td><td>Memory browser with search</td><td><span class="chip" style="border-color:var(--blue);color:var(--blue)">code-explorer</span></td><td>3</td><td><span class="status-badge complete">done</span></td><td><div class="sprint-bar-track"><div class="sprint-bar-fill done" style="width:100%"></div></td></tr>
+            <tr><td style="font-family:var(--font-mono);color:var(--text-muted)">16</td><td>REFORGE proposals tracker</td><td><span class="chip" style="border-color:var(--gold);color:var(--gold)">rd-lead</span></td><td>3</td><td><span class="status-badge complete">done</span></td><td><div class="sprint-bar-track"><div class="sprint-bar-fill done" style="width:100%"></div></td></tr>
+            <tr><td style="font-family:var(--font-mono);color:var(--text-muted)">17</td><td>Delegation flow SVG diagram</td><td><span class="chip" style="border-color:var(--blue);color:var(--blue)">frontend-dev</span></td><td>3</td><td><span class="status-badge complete">done</span></td><td><div class="sprint-bar-track"><div class="sprint-bar-fill done" style="width:100%"></div></td></tr>
+            <tr><td style="font-family:var(--font-mono);color:var(--text-muted)">18</td><td>Activity feed real-time table</td><td><span class="chip" style="border-color:var(--blue);color:var(--blue)">dashboard-architect</span></td><td>3</td><td><span class="status-badge complete">done</span></td><td><div class="sprint-bar-track"><div class="sprint-bar-fill done" style="width:100%"></div></td></tr>
+            <tr><td style="font-family:var(--font-mono);color:var(--text-muted)">19</td><td>Dark/light theme toggle</td><td><span class="chip" style="border-color:var(--blue);color:var(--blue)">ui-ux-designer</span></td><td>2</td><td><span class="status-badge complete">done</span></td><td><div class="sprint-bar-track"><div class="sprint-bar-fill done" style="width:100%"></div></td></tr>
+            <tr><td style="font-family:var(--font-mono);color:var(--text-muted)">20</td><td>Sidebar sticky navigation</td><td><span class="chip" style="border-color:var(--blue);color:var(--blue)">interaction-designer</span></td><td>2</td><td><span class="status-badge complete">done</span></td><td><div class="sprint-bar-track"><div class="sprint-bar-fill done" style="width:100%"></div></td></tr>
+            <tr><td style="font-family:var(--font-mono);color:var(--text-muted)">21</td><td>Keyboard navigation + search shortcut</td><td><span class="chip" style="border-color:var(--blue);color:var(--blue)">frontend-dev</span></td><td>2</td><td><span class="status-badge complete">done</span></td><td><div class="sprint-bar-track"><div class="sprint-bar-fill done" style="width:100%"></div></td></tr>
+            <tr><td style="font-family:var(--font-mono);color:var(--text-muted)">22</td><td>Auto-refresh with simulateUpdate</td><td><span class="chip" style="border-color:var(--blue);color:var(--blue)">coder</span></td><td>2</td><td><span class="status-badge complete">done</span></td><td><div class="sprint-bar-track"><div class="sprint-bar-fill done" style="width:100%"></div></td></tr>
+            <tr><td style="font-family:var(--font-mono);color:var(--text-muted)">23</td><td>JSON export per section</td><td><span class="chip" style="border-color:var(--blue);color:var(--blue)">dashboard-architect</span></td><td>1</td><td><span class="status-badge complete">done</span></td><td><div class="sprint-bar-track"><div class="sprint-bar-fill done" style="width:100%"></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Review Pipeline -->
+    <section class="section" id="review-pipeline">
+      <div class="section-header">
+        <div class="section-title">Review Pipeline</div>
+        <div class="section-actions">
+          <button class="export-btn" onclick="downloadJSON('review-pipeline', window._data.reviews)">⬇ JSON</button>
+        </div>
+      </div>
+      <div class="kanban-board">
+        <!-- Pending -->
+        <div class="kanban-col">
+          <div class="kanban-col-header" style="color:var(--text-muted)">Pending <span class="kanban-count">2</span></div>
+          <div class="kanban-cards">
+            <div class="review-card">
+              <div class="review-card-title">v4.3 Sprint Retrospective</div>
+              <div class="review-card-meta">
+                <span class="chip" style="color:var(--gold);border-color:var(--gold)">genesis</span>
+              </div>
+            </div>
+            <div class="review-card">
+              <div class="review-card-title">Memory Browser UX Spec</div>
+              <div class="review-card-meta">
+                <span class="chip" style="color:var(--blue);border-color:var(--blue)">ui-ux-designer</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- Assigned -->
+        <div class="kanban-col">
+          <div class="kanban-col-header" style="color:var(--orange)">Assigned <span class="kanban-count">3</span></div>
+          <div class="kanban-cards">
+            <div class="review-card">
+              <div class="review-card-title">Dashboard v4.3 Section Specs</div>
+              <div class="review-card-meta">
+                <span class="chip" style="color:var(--gold);border-color:var(--gold)">architect</span>
+                <span class="reviewer-chip">team-reviewer</span>
+              </div>
+            </div>
+            <div class="review-card">
+              <div class="review-card-title">Flywheel Persistence Design</div>
+              <div class="review-card-meta">
+                <span class="chip" style="color:var(--blue);border-color:var(--blue)">coder</span>
+                <span class="reviewer-chip">cto</span>
+              </div>
+            </div>
+            <div class="review-card">
+              <div class="review-card-title">CI/CD Pipeline Config</div>
+              <div class="review-card-meta">
+                <span class="chip" style="color:var(--blue);border-color:var(--blue)">devops-engineer</span>
+                <span class="reviewer-chip">cto</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- In Review -->
+        <div class="kanban-col">
+          <div class="kanban-col-header" style="color:var(--blue)">In Review <span class="kanban-count">2</span></div>
+          <div class="kanban-cards">
+            <div class="review-card" style="border-color:var(--blue)">
+              <div class="review-card-title">Bus Unification — All 12 Modules</div>
+              <div class="review-card-meta">
+                <span class="chip" style="color:var(--gold);border-color:var(--gold)">architect</span>
+                <span class="reviewer-chip">cto</span>
+                <span class="reviewer-chip">genesis</span>
+              </div>
+            </div>
+            <div class="review-card" style="border-color:var(--blue)">
+              <div class="review-card-title">Autonomy Tier Framework v1.0</div>
+              <div class="review-card-meta">
+                <span class="chip" style="color:var(--gold);border-color:var(--gold)">meta-architect</span>
+                <span class="reviewer-chip">ceo</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- Responded -->
+        <div class="kanban-col">
+          <div class="kanban-col-header" style="color:var(--purple)">Responded <span class="kanban-count">2</span></div>
+          <div class="kanban-cards">
+            <div class="review-card">
+              <div class="review-card-title">Multi-Reviewer Framework</div>
+              <div class="review-card-meta">
+                <span class="chip" style="color:var(--blue);border-color:var(--blue)">team-reviewer</span>
+                <span class="reviewer-chip">architect</span>
+              </div>
+            </div>
+            <div class="review-card">
+              <div class="review-card-title">Cost Analytics Section Design</div>
+              <div class="review-card-meta">
+                <span class="chip" style="color:var(--blue);border-color:var(--blue)">cfo</span>
+                <span class="reviewer-chip">coo</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- Resolved -->
+        <div class="kanban-col">
+          <div class="kanban-col-header" style="color:var(--cyan)">Resolved <span class="kanban-count">3</span></div>
+          <div class="kanban-cards">
+            <div class="review-card">
+              <div class="review-card-title">Standard Topics Test Fix</div>
+              <div class="review-card-meta">
+                <span class="chip" style="color:var(--green);border-color:var(--green)">linter</span>
+                <span class="reviewer-chip">debugger</span>
+              </div>
+            </div>
+            <div class="review-card">
+              <div class="review-card-title">v4.1 Roadmap P0/P1 Docs</div>
+              <div class="review-card-meta">
+                <span class="chip" style="color:var(--blue);border-color:var(--blue)">documentation-writer</span>
+                <span class="reviewer-chip">ceo</span>
+              </div>
+            </div>
+            <div class="review-card">
+              <div class="review-card-title">Team Expansion Agent Profiles</div>
+              <div class="review-card-meta">
+                <span class="chip" style="color:var(--gold);border-color:var(--gold)">genesis</span>
+                <span class="reviewer-chip">coo</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- Approved -->
+        <div class="kanban-col">
+          <div class="kanban-col-header" style="color:var(--green)">Approved <span class="kanban-count">4</span></div>
+          <div class="kanban-cards">
+            <div class="review-card" style="border-color:var(--green)">
+              <div class="review-card-title">v4.2 Architecture Spec</div>
+              <div class="review-card-meta">
+                <span class="chip" style="color:var(--gold);border-color:var(--gold)">ceo</span>
+                <span class="reviewer-chip">cto</span>
+                <span class="reviewer-chip">genesis</span>
+              </div>
+            </div>
+            <div class="review-card" style="border-color:var(--green)">
+              <div class="review-card-title">Bus Lifecycle Events RFC</div>
+              <div class="review-card-meta">
+                <span class="chip" style="color:var(--gold);border-color:var(--gold)">architect</span>
+                <span class="reviewer-chip">cto</span>
+              </div>
+            </div>
+            <div class="review-card" style="border-color:var(--green)">
+              <div class="review-card-title">Skill Designer v2.0 Templates</div>
+              <div class="review-card-meta">
+                <span class="chip" style="color:var(--blue);border-color:var(--blue)">skill-designer</span>
+                <span class="reviewer-chip">genesis</span>
+              </div>
+            </div>
+            <div class="review-card" style="border-color:var(--green)">
+              <div class="review-card-title">REFORGE Protocol Spec</div>
+              <div class="review-card-meta">
+                <span class="chip" style="color:var(--gold);border-color:var(--gold)">rd-lead</span>
+                <span class="reviewer-chip">ceo</span>
+                <span class="reviewer-chip">meta-architect</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Autonomy Tiers -->
+    <section class="section" id="autonomy-tiers">
+      <div class="section-header">
+        <div class="section-title">Autonomy Tiers</div>
+        <div class="section-actions">
+          <button class="export-btn" onclick="downloadJSON('autonomy-tiers', window._data.autonomyTiers)">⬇ JSON</button>
+        </div>
+      </div>
+      <div class="tiers-grid">
+        <!-- Tier 1 -->
+        <div class="tier-col">
+          <div class="tier-header">
+            <div class="tier-badge t1">1</div>
+            <div>
+              <div class="tier-title">Supervised</div>
+              <div style="font-size:11px;color:var(--text-muted)">Requires approval</div>
+            </div>
+          </div>
+          <div class="tier-agents">
+            <div class="tier-agent-chip">
+              <div>
+                <div style="color:var(--blue)">file-reader</div>
+                <div class="tier-agent-days">Haiku</div>
+              </div>
+              <span class="tier-agent-days">12 days</span>
+            </div>
+            <div class="tier-agent-chip">
+              <div>
+                <div style="color:var(--blue)">researcher</div>
+                <div class="tier-agent-days">Haiku</div>
+              </div>
+              <span class="tier-agent-days">18 days</span>
+            </div>
+            <div class="tier-agent-chip">
+              <div>
+                <div style="color:var(--blue)">documentation-writer</div>
+                <div class="tier-agent-days">Sonnet</div>
+              </div>
+              <span class="tier-agent-days">8 days</span>
+            </div>
+            <div class="tier-agent-chip">
+              <div>
+                <div style="color:var(--blue)">business-analyst</div>
+                <div class="tier-agent-days">Sonnet</div>
+              </div>
+              <span class="tier-agent-days">5 days</span>
+            </div>
+            <div class="tier-agent-chip">
+              <div>
+                <div style="color:var(--blue)">ui-ux-designer</div>
+                <div class="tier-agent-days">Sonnet</div>
+              </div>
+              <span class="tier-agent-days">7 days</span>
+            </div>
+            <div class="tier-agent-chip">
+              <div>
+                <div style="color:var(--blue)">interaction-designer</div>
+                <div class="tier-agent-days">Sonnet</div>
+              </div>
+              <span class="tier-agent-days">7 days</span>
+            </div>
+            <div class="tier-agent-chip">
+              <div>
+                <div style="color:var(--blue)">operations-manager</div>
+                <div class="tier-agent-days">Sonnet</div>
+              </div>
+              <span class="tier-agent-days">4 days</span>
+            </div>
+          </div>
+        </div>
+        <!-- Tier 2 -->
+        <div class="tier-col">
+          <div class="tier-header">
+            <div class="tier-badge t2">2</div>
+            <div>
+              <div class="tier-title">Delegated</div>
+              <div style="font-size:11px;color:var(--text-muted)">Self-directed tasks</div>
+            </div>
+          </div>
+          <div class="tier-agents">
+            <div class="tier-agent-chip">
+              <div>
+                <div style="color:var(--blue)">coder</div>
+                <div class="tier-agent-days">Sonnet</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:4px"><span class="tier-agent-days">45 days</span><span class="promotion-arrow">↑</span></div>
+            </div>
+            <div class="tier-agent-chip">
+              <div>
+                <div style="color:var(--blue)">debugger</div>
+                <div class="tier-agent-days">Sonnet</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:4px"><span class="tier-agent-days">38 days</span><span class="promotion-arrow">↑</span></div>
+            </div>
+            <div class="tier-agent-chip">
+              <div>
+                <div style="color:var(--blue)">sprint-planner</div>
+                <div class="tier-agent-days">Sonnet</div>
+              </div>
+              <span class="tier-agent-days">29 days</span>
+            </div>
+            <div class="tier-agent-chip">
+              <div>
+                <div style="color:var(--blue)">devops-engineer</div>
+                <div class="tier-agent-days">Sonnet</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:4px"><span class="tier-agent-days">22 days</span><span class="promotion-arrow">↑</span></div>
+            </div>
+            <div class="tier-agent-chip">
+              <div>
+                <div style="color:var(--green)">linter</div>
+                <div class="tier-agent-days">Haiku</div>
+              </div>
+              <span class="tier-agent-days">60 days</span>
+            </div>
+            <div class="tier-agent-chip">
+              <div>
+                <div style="color:var(--green)">test-runner</div>
+                <div class="tier-agent-days">Haiku</div>
+              </div>
+              <span class="tier-agent-days">55 days</span>
+            </div>
+            <div class="tier-agent-chip">
+              <div>
+                <div style="color:var(--blue)">team-reviewer</div>
+                <div class="tier-agent-days">Sonnet</div>
+              </div>
+              <span class="tier-agent-days">31 days</span>
+            </div>
+            <div class="tier-agent-chip">
+              <div>
+                <div style="color:var(--blue)">performance-engineer</div>
+                <div class="tier-agent-days">Sonnet</div>
+              </div>
+              <span class="tier-agent-days">19 days</span>
+            </div>
+          </div>
+        </div>
+        <!-- Tier 3 -->
+        <div class="tier-col">
+          <div class="tier-header">
+            <div class="tier-badge t3">3</div>
+            <div>
+              <div class="tier-title">Autonomous</div>
+              <div style="font-size:11px;color:var(--text-muted)">Own initiative</div>
+            </div>
+          </div>
+          <div class="tier-agents">
+            <div class="tier-agent-chip">
+              <div>
+                <div style="color:var(--gold)">architect</div>
+                <div class="tier-agent-days">Opus</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:4px"><span class="tier-agent-days">90 days</span><span class="promotion-arrow">↑</span></div>
+            </div>
+            <div class="tier-agent-chip">
+              <div>
+                <div style="color:var(--blue)">coo</div>
+                <div class="tier-agent-days">Sonnet</div>
+              </div>
+              <span class="tier-agent-days">75 days</span>
+            </div>
+            <div class="tier-agent-chip">
+              <div>
+                <div style="color:var(--blue)">cfo</div>
+                <div class="tier-agent-days">Sonnet</div>
+              </div>
+              <span class="tier-agent-days">60 days</span>
+            </div>
+            <div class="tier-agent-chip">
+              <div>
+                <div style="color:var(--gold)">rd-lead</div>
+                <div class="tier-agent-days">Opus</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:4px"><span class="tier-agent-days">45 days</span><span class="promotion-arrow">↑</span></div>
+            </div>
+            <div class="tier-agent-chip">
+              <div>
+                <div style="color:var(--gold)">meta-architect</div>
+                <div class="tier-agent-days">Opus</div>
+              </div>
+              <span class="tier-agent-days">55 days</span>
+            </div>
+          </div>
+        </div>
+        <!-- Tier 4 -->
+        <div class="tier-col">
+          <div class="tier-header">
+            <div class="tier-badge t4">4</div>
+            <div>
+              <div class="tier-title">Strategic</div>
+              <div style="font-size:11px;color:var(--text-muted)">System-level authority</div>
+            </div>
+          </div>
+          <div class="tier-agents">
+            <div class="tier-agent-chip" style="border-color:var(--gold)">
+              <div>
+                <div style="color:var(--gold)">ceo</div>
+                <div class="tier-agent-days">Opus • Founder</div>
+              </div>
+              <span class="tier-agent-days">120 days</span>
+            </div>
+            <div class="tier-agent-chip" style="border-color:var(--gold)">
+              <div>
+                <div style="color:var(--gold)">cto</div>
+                <div class="tier-agent-days">Opus</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:4px"><span class="tier-agent-days">105 days</span><span class="promotion-arrow">↑</span></div>
+            </div>
+            <div class="tier-agent-chip" style="border-color:var(--gold)">
+              <div>
+                <div style="color:var(--gold)">genesis</div>
+                <div class="tier-agent-days">Opus • System</div>
+              </div>
+              <span class="tier-agent-days">120 days</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Capability Matrix -->
+    <section class="section" id="capability-matrix">
+      <div class="section-header">
+        <div class="section-title">Capability Matrix</div>
+        <div class="section-actions">
+          <button class="export-btn" onclick="downloadJSON('capability-matrix', window._data.capabilityMatrix)">⬇ JSON</button>
+        </div>
+      </div>
+      <div class="heatmap-wrap">
+        <table class="heatmap-table" id="heatmap-table">
+          <thead>
+            <tr>
+              <th>Agent</th>
+              <th>Coding</th>
+              <th>Testing</th>
+              <th>Design</th>
+              <th>Planning</th>
+              <th>Analysis</th>
+              <th>Comms</th>
+              <th>DevOps</th>
+              <th>Research</th>
+            </tr>
+          </thead>
+          <tbody id="heatmap-tbody">
+            <!-- Rendered by JS / static fallback below -->
+            <tr>
+              <td><span class="model-badge opus" style="margin-right:4px">O</span>ceo</td>
+              <td><div class="heat-cell" style="background:rgba(240,180,41,0.2)" title="0.2 — Basic"></div></td>
+              <td><div class="heat-cell" style="background:rgba(240,180,41,0.2)" title="0.2 — Basic"></div></td>
+              <td><div class="heat-cell" style="background:rgba(240,180,41,0.7)" title="0.7 — Proficient"></div></td>
+              <td><div class="heat-cell" style="background:rgba(240,180,41,0.95)" title="0.95 — Expert"></div></td>
+              <td><div class="heat-cell" style="background:rgba(240,180,41,0.9)" title="0.9 — Expert"></div></td>
+              <td><div class="heat-cell" style="background:rgba(240,180,41,0.95)" title="0.95 — Expert"></div></td>
+              <td><div class="heat-cell" style="background:rgba(240,180,41,0.3)" title="0.3 — Learning"></div></td>
+              <td><div class="heat-cell" style="background:rgba(240,180,41,0.8)" title="0.8 — Advanced"></div></td>
+            </tr>
+            <tr>
+              <td><span class="model-badge opus" style="margin-right:4px">O</span>cto</td>
+              <td><div class="heat-cell" style="background:rgba(240,180,41,0.7)" title="0.7 — Proficient"></div></td>
+              <td><div class="heat-cell" style="background:rgba(240,180,41,0.6)" title="0.6 — Proficient"></div></td>
+              <td><div class="heat-cell" style="background:rgba(240,180,41,0.85)" title="0.85 — Advanced"></div></td>
+              <td><div class="heat-cell" style="background:rgba(240,180,41,0.9)" title="0.9 — Expert"></div></td>
+              <td><div class="heat-cell" style="background:rgba(240,180,41,0.85)" title="0.85 — Advanced"></div></td>
+              <td><div class="heat-cell" style="background:rgba(240,180,41,0.8)" title="0.8 — Advanced"></div></td>
+              <td><div class="heat-cell" style="background:rgba(240,180,41,0.9)" title="0.9 — Expert"></div></td>
+              <td><div class="heat-cell" style="background:rgba(240,180,41,0.75)" title="0.75 — Proficient"></div></td>
+            </tr>
+            <tr>
+              <td><span class="model-badge opus" style="margin-right:4px">O</span>architect</td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.7)" title="0.7 — Proficient"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.5)" title="0.5 — Moderate"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.95)" title="0.95 — Expert"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.9)" title="0.9 — Expert"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.85)" title="0.85 — Advanced"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.7)" title="0.7 — Proficient"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.6)" title="0.6 — Proficient"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.8)" title="0.8 — Advanced"></div></td>
+            </tr>
+            <tr>
+              <td><span class="model-badge sonnet" style="margin-right:4px">S</span>coder</td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.95)" title="0.95 — Expert"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.75)" title="0.75 — Proficient"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.3)" title="0.3 — Learning"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.4)" title="0.4 — Basic"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.6)" title="0.6 — Proficient"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.3)" title="0.3 — Learning"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.7)" title="0.7 — Proficient"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.5)" title="0.5 — Moderate"></div></td>
+            </tr>
+            <tr>
+              <td><span class="model-badge sonnet" style="margin-right:4px">S</span>debugger</td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.85)" title="0.85 — Advanced"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.9)" title="0.9 — Expert"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.2)" title="0.2 — Basic"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.3)" title="0.3 — Learning"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.85)" title="0.85 — Advanced"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.4)" title="0.4 — Basic"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.5)" title="0.5 — Moderate"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.4)" title="0.4 — Basic"></div></td>
+            </tr>
+            <tr>
+              <td><span class="model-badge sonnet" style="margin-right:4px">S</span>devops-engineer</td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.6)" title="0.6 — Proficient"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.5)" title="0.5 — Moderate"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.3)" title="0.3 — Learning"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.6)" title="0.6 — Proficient"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.5)" title="0.5 — Moderate"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.4)" title="0.4 — Basic"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.95)" title="0.95 — Expert"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.4)" title="0.4 — Basic"></div></td>
+            </tr>
+            <tr>
+              <td><span class="model-badge sonnet" style="margin-right:4px">S</span>sprint-planner</td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.3)" title="0.3 — Learning"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.3)" title="0.3 — Learning"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.4)" title="0.4 — Basic"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.95)" title="0.95 — Expert"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.85)" title="0.85 — Advanced"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.7)" title="0.7 — Proficient"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.2)" title="0.2 — Basic"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.5)" title="0.5 — Moderate"></div></td>
+            </tr>
+            <tr>
+              <td><span class="model-badge sonnet" style="margin-right:4px">S</span>team-reviewer</td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.6)" title="0.6 — Proficient"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.7)" title="0.7 — Proficient"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.6)" title="0.6 — Proficient"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.5)" title="0.5 — Moderate"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.85)" title="0.85 — Advanced"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.9)" title="0.9 — Expert"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.3)" title="0.3 — Learning"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.6)" title="0.6 — Proficient"></div></td>
+            </tr>
+            <tr>
+              <td><span class="model-badge haiku" style="margin-right:4px">H</span>linter</td>
+              <td><div class="heat-cell" style="background:rgba(63,185,80,0.6)" title="0.6 — Proficient"></div></td>
+              <td><div class="heat-cell" style="background:rgba(63,185,80,0.4)" title="0.4 — Basic"></div></td>
+              <td><div class="heat-cell" style="background:rgba(63,185,80,0.1)" title="0.1 — Minimal"></div></td>
+              <td><div class="heat-cell" style="background:rgba(63,185,80,0.1)" title="0.1 — Minimal"></div></td>
+              <td><div class="heat-cell" style="background:rgba(63,185,80,0.5)" title="0.5 — Moderate"></div></td>
+              <td><div class="heat-cell" style="background:rgba(63,185,80,0.1)" title="0.1 — Minimal"></div></td>
+              <td><div class="heat-cell" style="background:rgba(63,185,80,0.2)" title="0.2 — Basic"></div></td>
+              <td><div class="heat-cell" style="background:rgba(63,185,80,0.1)" title="0.1 — Minimal"></div></td>
+            </tr>
+            <tr>
+              <td><span class="model-badge haiku" style="margin-right:4px">H</span>test-runner</td>
+              <td><div class="heat-cell" style="background:rgba(63,185,80,0.5)" title="0.5 — Moderate"></div></td>
+              <td><div class="heat-cell" style="background:rgba(63,185,80,0.95)" title="0.95 — Expert"></div></td>
+              <td><div class="heat-cell" style="background:rgba(63,185,80,0.1)" title="0.1 — Minimal"></div></td>
+              <td><div class="heat-cell" style="background:rgba(63,185,80,0.2)" title="0.2 — Basic"></div></td>
+              <td><div class="heat-cell" style="background:rgba(63,185,80,0.6)" title="0.6 — Proficient"></div></td>
+              <td><div class="heat-cell" style="background:rgba(63,185,80,0.1)" title="0.1 — Minimal"></div></td>
+              <td><div class="heat-cell" style="background:rgba(63,185,80,0.3)" title="0.3 — Learning"></div></td>
+              <td><div class="heat-cell" style="background:rgba(63,185,80,0.2)" title="0.2 — Basic"></div></td>
+            </tr>
+            <tr>
+              <td><span class="model-badge sonnet" style="margin-right:4px">S</span>coo</td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.2)" title="0.2 — Basic"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.3)" title="0.3 — Learning"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.6)" title="0.6 — Proficient"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.9)" title="0.9 — Expert"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.85)" title="0.85 — Advanced"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.95)" title="0.95 — Expert"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.5)" title="0.5 — Moderate"></div></td>
+              <td><div class="heat-cell" style="background:rgba(88,166,255,0.6)" title="0.6 — Proficient"></div></td>
+            </tr>
+            <tr>
+              <td><span class="model-badge opus" style="margin-right:4px">O</span>genesis</td>
+              <td><div class="heat-cell" style="background:rgba(240,180,41,0.8)" title="0.8 — Advanced"></div></td>
+              <td><div class="heat-cell" style="background:rgba(240,180,41,0.7)" title="0.7 — Proficient"></div></td>
+              <td><div class="heat-cell" style="background:rgba(240,180,41,0.75)" title="0.75 — Proficient"></div></td>
+              <td><div class="heat-cell" style="background:rgba(240,180,41,0.8)" title="0.8 — Advanced"></div></td>
+              <td><div class="heat-cell" style="background:rgba(240,180,41,0.9)" title="0.9 — Expert"></div></td>
+              <td><div class="heat-cell" style="background:rgba(240,180,41,0.85)" title="0.85 — Advanced"></div></td>
+              <td><div class="heat-cell" style="background:rgba(240,180,41,0.7)" title="0.7 — Proficient"></div></td>
+              <td><div class="heat-cell" style="background:rgba(240,180,41,0.95)" title="0.95 — Expert"></div></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="heatmap-legend">
+        <span>Proficiency:</span>
+        <div class="legend-scale">
+          <div class="legend-cell" style="background:rgba(88,166,255,0.1)" title="0.0-0.2 Minimal"></div>
+          <div class="legend-cell" style="background:rgba(88,166,255,0.25)" title="0.2-0.4 Basic"></div>
+          <div class="legend-cell" style="background:rgba(88,166,255,0.45)" title="0.4-0.6 Moderate"></div>
+          <div class="legend-cell" style="background:rgba(88,166,255,0.65)" title="0.6-0.8 Proficient"></div>
+          <div class="legend-cell" style="background:rgba(88,166,255,0.85)" title="0.8-0.95 Advanced"></div>
+          <div class="legend-cell" style="background:rgba(88,166,255,1)" title="0.95-1.0 Expert"></div>
+        </div>
+        <span>Low → High</span>
+        <span style="margin-left:16px">Hover cell for score</span>
+      </div>
+    </section>
+
+    <!-- Cost Analytics -->
+    <section class="section" id="cost-analytics">
+      <div class="section-header">
+        <div class="section-title">Cost Analytics</div>
+        <div class="section-actions">
+          <button class="export-btn" onclick="downloadJSON('cost-analytics', window._data.costAnalytics)">⬇ JSON</button>
+        </div>
+      </div>
+      <div class="cost-stat-row">
+        <div class="cost-stat-card">
+          <div class="cost-stat-label">Total Spent (v4.4)</div>
+          <div class="cost-stat-value" id="cost-total">$18.47</div>
+          <div class="cost-stat-sub">Across 23 sprint items</div>
+        </div>
+        <div class="cost-stat-card">
+          <div class="cost-stat-label">Burn Rate</div>
+          <div class="cost-stat-value" id="cost-burn" style="color:var(--orange)">$2.64/hr</div>
+          <div class="cost-stat-sub" id="cost-burn-delta">↓ 8% vs last sprint</div>
+        </div>
+        <div class="cost-stat-card">
+          <div class="cost-stat-label">Projected (next 7d)</div>
+          <div class="cost-stat-value" id="cost-proj" style="color:var(--blue)">$18.48</div>
+          <div class="cost-stat-sub">At current burn rate</div>
+        </div>
+      </div>
+      <div class="cost-charts-row">
+        <div class="cost-chart-card">
+          <div class="cost-chart-title">Cost by Agent</div>
+          <svg id="cost-bar-svg" viewBox="0 0 400 180">
+            <!-- Bar chart: agent costs -->
+            <g transform="translate(80,10)">
+              <!-- Y axis -->
+              <line x1="0" y1="0" x2="0" y2="140" stroke="var(--border)" stroke-width="1"/>
+              <!-- Bars -->
+              <rect x="5" y="31" width="18" height="109" fill="var(--gold)" opacity="0.8" rx="2"/><text x="14" y="160" text-anchor="middle" font-size="9" fill="var(--text-muted)" font-family="var(--font-mono)">ceo</text><text x="14" y="28" text-anchor="middle" font-size="9" fill="var(--gold)" font-family="var(--font-mono)">$2.18</text>
+              <rect x="30" y="49" width="18" height="91" fill="var(--gold)" opacity="0.7" rx="2"/><text x="39" y="160" text-anchor="middle" font-size="9" fill="var(--text-muted)" font-family="var(--font-mono)">arch</text><text x="39" y="46" text-anchor="middle" font-size="9" fill="var(--gold)" font-family="var(--font-mono)">$1.82</text>
+              <rect x="55" y="14" width="18" height="126" fill="var(--gold)" opacity="0.9" rx="2"/><text x="64" y="160" text-anchor="middle" font-size="9" fill="var(--text-muted)" font-family="var(--font-mono)">cto</text><text x="64" y="11" text-anchor="middle" font-size="9" fill="var(--gold)" font-family="var(--font-mono)">$2.93</text>
+              <rect x="80" y="62" width="18" height="78" fill="var(--blue)" opacity="0.8" rx="2"/><text x="89" y="160" text-anchor="middle" font-size="9" fill="var(--text-muted)" font-family="var(--font-mono)">coder</text><text x="89" y="59" text-anchor="middle" font-size="9" fill="var(--blue)" font-family="var(--font-mono)">$0.67</text>
+              <rect x="105" y="75" width="18" height="65" fill="var(--blue)" opacity="0.7" rx="2"/><text x="114" y="160" text-anchor="middle" font-size="9" fill="var(--text-muted)" font-family="var(--font-mono)">debug</text><text x="114" y="72" text-anchor="middle" font-size="9" fill="var(--blue)" font-family="var(--font-mono)">$0.38</text>
+              <rect x="130" y="57" width="18" height="83" fill="var(--gold)" opacity="0.65" rx="2"/><text x="139" y="160" text-anchor="middle" font-size="9" fill="var(--text-muted)" font-family="var(--font-mono)">genesis</text><text x="139" y="54" text-anchor="middle" font-size="9" fill="var(--gold)" font-family="var(--font-mono)">$1.74</text>
+              <rect x="155" y="55" width="18" height="85" fill="var(--gold)" opacity="0.6" rx="2"/><text x="164" y="160" text-anchor="middle" font-size="9" fill="var(--text-muted)" font-family="var(--font-mono)">meta-a</text><text x="164" y="52" text-anchor="middle" font-size="9" fill="var(--gold)" font-family="var(--font-mono)">$1.52</text>
+              <rect x="180" y="80" width="18" height="60" fill="var(--blue)" opacity="0.65" rx="2"/><text x="189" y="160" text-anchor="middle" font-size="9" fill="var(--text-muted)" font-family="var(--font-mono)">coo</text><text x="189" y="77" text-anchor="middle" font-size="9" fill="var(--blue)" font-family="var(--font-mono)">$0.44</text>
+              <rect x="205" y="100" width="18" height="40" fill="var(--blue)" opacity="0.6" rx="2"/><text x="214" y="160" text-anchor="middle" font-size="9" fill="var(--text-muted)" font-family="var(--font-mono)">devops</text><text x="214" y="97" text-anchor="middle" font-size="9" fill="var(--blue)" font-family="var(--font-mono)">$0.31</text>
+              <rect x="230" y="115" width="18" height="25" fill="var(--green)" opacity="0.8" rx="2"/><text x="239" y="160" text-anchor="middle" font-size="9" fill="var(--text-muted)" font-family="var(--font-mono)">linter</text><text x="239" y="112" text-anchor="middle" font-size="9" fill="var(--green)" font-family="var(--font-mono)">$0.04</text>
+              <rect x="255" y="108" width="18" height="32" fill="var(--green)" opacity="0.75" rx="2"/><text x="264" y="160" text-anchor="middle" font-size="9" fill="var(--text-muted)" font-family="var(--font-mono)">test</text><text x="264" y="105" text-anchor="middle" font-size="9" fill="var(--green)" font-family="var(--font-mono)">$0.03</text>
+              <!-- X axis -->
+              <line x1="0" y1="140" x2="290" y2="140" stroke="var(--border)" stroke-width="1"/>
+            </g>
+          </svg>
+        </div>
+        <div class="cost-chart-card">
+          <div class="cost-chart-title">Cost by Model</div>
+          <svg id="cost-model-svg" viewBox="0 0 300 180">
+            <!-- Donut chart -->
+            <g transform="translate(150,90)">
+              <!-- Opus: 68% = 244deg -->
+              <circle cx="0" cy="0" r="60" fill="none" stroke="var(--gold)" stroke-width="24" stroke-dasharray="256 145" stroke-dashoffset="0" transform="rotate(-90)"/>
+              <!-- Sonnet: 29% = 104deg -->
+              <circle cx="0" cy="0" r="60" fill="none" stroke="var(--blue)" stroke-width="24" stroke-dasharray="109 292" stroke-dashoffset="-256" transform="rotate(-90)"/>
+              <!-- Haiku: 3% = 11deg -->
+              <circle cx="0" cy="0" r="60" fill="none" stroke="var(--green)" stroke-width="24" stroke-dasharray="12 389" stroke-dashoffset="-365" transform="rotate(-90)"/>
+              <circle cx="0" cy="0" r="48" fill="var(--bg-card)"/>
+              <text x="0" y="-6" text-anchor="middle" font-family="var(--font-mono)" font-size="18" font-weight="700" fill="var(--text-primary)">$18.47</text>
+              <text x="0" y="12" text-anchor="middle" font-family="var(--font-sans)" font-size="10" fill="var(--text-muted)">total</text>
+            </g>
+            <!-- Legend -->
+            <rect x="10" y="155" width="10" height="10" fill="var(--gold)" rx="2"/>
+            <text x="24" y="164" font-size="10" fill="var(--text-muted)" font-family="var(--font-sans)">Opus 68% ($12.55)</text>
+            <rect x="130" y="155" width="10" height="10" fill="var(--blue)" rx="2"/>
+            <text x="144" y="164" font-size="10" fill="var(--text-muted)" font-family="var(--font-sans)">Sonnet 29% ($5.36)</text>
+            <rect x="240" y="155" width="10" height="10" fill="var(--green)" rx="2"/>
+            <text x="254" y="164" font-size="10" fill="var(--text-muted)" font-family="var(--font-sans)">Haiku 3%</text>
+          </svg>
+        </div>
+      </div>
+      <div class="cost-history-wrap">
+        <table class="cost-history-table">
+          <thead>
+            <tr><th>Sprint</th><th>Total Cost</th><th>Opus</th><th>Sonnet</th><th>Haiku</th><th>Tasks</th><th>Cost/Task</th><th>vs Prior</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>v4.3</td><td style="color:var(--text-primary)">$18.47</td><td style="color:var(--gold)">$12.55</td><td style="color:var(--blue)">$5.36</td><td style="color:var(--green)">$0.56</td><td>23</td><td>$0.80</td><td style="color:var(--green)">↓ 8%</td></tr>
+            <tr><td>v4.2</td><td>$20.08</td><td style="color:var(--gold)">$14.10</td><td style="color:var(--blue)">$5.54</td><td style="color:var(--green)">$0.44</td><td>21</td><td>$0.96</td><td style="color:var(--green)">↓ 12%</td></tr>
+            <tr><td>v4.1</td><td>$22.83</td><td style="color:var(--gold)">$16.40</td><td style="color:var(--blue)">$5.90</td><td style="color:var(--green)">$0.53</td><td>18</td><td>$1.27</td><td style="color:var(--green)">↓ 5%</td></tr>
+            <tr><td>v4.0</td><td>$24.05</td><td style="color:var(--gold)">$17.80</td><td style="color:var(--blue)">$5.80</td><td style="color:var(--green)">$0.45</td><td>16</td><td>$1.50</td><td style="color:var(--orange)">+2%</td></tr>
+            <tr><td>v3.2</td><td>$23.62</td><td style="color:var(--gold)">$18.10</td><td style="color:var(--blue)">$5.10</td><td style="color:var(--green)">$0.42</td><td>14</td><td>$1.69</td><td style="color:var(--green)">↓ 18%</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Session History & Investment Tracker (P0-5) -->
+    <section class="section" id="session-history">
+      <div class="section-header">
+        <div class="section-title">Session History &amp; Investment Tracker</div>
+        <div class="section-actions">
+          <button class="export-btn" onclick="downloadJSON('session-history', window._data.sessionHistory)">⬇ JSON</button>
+        </div>
+      </div>
+      <!-- Summary Bar -->
+      <div class="session-summary-bar" id="session-summary-bar">
+        <div class="session-summary-card">
+          <div class="session-summary-label">All-Time Spend</div>
+          <div class="session-summary-value" id="sess-total-spend">—</div>
+          <div class="session-summary-sub" id="sess-session-count">Loading…</div>
+        </div>
+        <div class="session-summary-card">
+          <div class="session-summary-label">Opus Spend</div>
+          <div class="session-summary-value" id="sess-opus-spend" style="color:var(--gold)">—</div>
+          <div class="session-summary-sub" id="sess-opus-pct">—</div>
+        </div>
+        <div class="session-summary-card">
+          <div class="session-summary-label">Sonnet Spend</div>
+          <div class="session-summary-value" id="sess-sonnet-spend" style="color:var(--blue)">—</div>
+          <div class="session-summary-sub" id="sess-sonnet-pct">—</div>
+        </div>
+        <div class="session-summary-card">
+          <div class="session-summary-label">Haiku Spend</div>
+          <div class="session-summary-value" id="sess-haiku-spend" style="color:var(--green)">—</div>
+          <div class="session-summary-sub" id="sess-haiku-pct">—</div>
+        </div>
+      </div>
+      <!-- Session Table -->
+      <div class="session-table-wrap">
+        <table class="session-table">
+          <thead>
+            <tr>
+              <th>Agent</th>
+              <th>Model</th>
+              <th>Task</th>
+              <th>Cost</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody id="session-history-tbody">
+            <tr><td colspan="5" class="session-empty">Loading session data…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Investment Performance Scorecard (P0-6) -->
+    <section class="section" id="investor-scorecard">
+      <div class="section-header">
+        <div class="section-title">Investment Performance Scorecard</div>
+        <div class="section-actions">
+          <button class="export-btn" onclick="downloadJSON('investor-scorecard', window._data.sessionHistory)">⬇ JSON</button>
+        </div>
+      </div>
+      <div class="scorecard-grid">
+
+        <!-- Cost per Sprint -->
+        <div class="scorecard-card">
+          <div class="scorecard-card-title">Cost per Sprint</div>
+          <div id="scorecard-sprint-costs">
+            <div class="sprint-cost-row">
+              <span class="sprint-cost-label">v4.3</span>
+              <div class="sprint-cost-bar-wrap"><div class="sprint-cost-bar-fill" style="width:92%"></div></div>
+              <span class="sprint-cost-value">$18.47</span>
+            </div>
+            <div class="sprint-cost-row">
+              <span class="sprint-cost-label">v4.4</span>
+              <div class="sprint-cost-bar-wrap"><div class="sprint-cost-bar-fill" style="width:83%"></div></div>
+              <span class="sprint-cost-value">$16.82</span>
+            </div>
+            <div class="sprint-cost-row">
+              <span class="sprint-cost-label">v4.5</span>
+              <div class="sprint-cost-bar-wrap"><div class="sprint-cost-bar-fill" style="width:35%"></div></div>
+              <span class="sprint-cost-value" id="scorecard-v45-cost">$7.09</span>
+            </div>
+            <div class="sprint-cost-row" id="scorecard-v46-row" style="display:none">
+              <span class="sprint-cost-label">v4.6</span>
+              <div class="sprint-cost-bar-wrap"><div class="sprint-cost-bar-fill" id="scorecard-v46-bar" style="width:0%"></div></div>
+              <span class="sprint-cost-value" id="scorecard-v46-cost">$0.00</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Velocity Trend -->
+        <div class="scorecard-card">
+          <div class="scorecard-card-title">Velocity Trend (Tasks / Sprint)</div>
+          <div>
+            <div class="velocity-bar-row">
+              <span class="velocity-label">v4.3</span>
+              <div class="velocity-track"><div class="velocity-fill" style="width:100%"></div></div>
+              <span class="velocity-count">23</span>
+            </div>
+            <div class="velocity-bar-row">
+              <span class="velocity-label">v4.4</span>
+              <div class="velocity-track"><div class="velocity-fill" style="width:100%"></div></div>
+              <span class="velocity-count">23</span>
+            </div>
+            <div class="velocity-bar-row">
+              <span class="velocity-label">v4.5</span>
+              <div class="velocity-track"><div class="velocity-fill" style="width:35%"></div></div>
+              <span class="velocity-count">8</span>
+            </div>
+            <div class="velocity-bar-row" id="scorecard-v46-velocity-row" style="display:none">
+              <span class="velocity-label">v4.6</span>
+              <div class="velocity-track"><div class="velocity-fill" id="scorecard-v46-velocity-bar" style="width:0%"></div></div>
+              <span class="velocity-count" id="scorecard-v46-velocity-count">0</span>
+            </div>
+          </div>
+          <div style="margin-top:12px; padding-top:10px; border-top:1px solid var(--border)">
+            <div style="font-size:11px; color:var(--text-muted)">Cost/Task trend:</div>
+            <div style="display:flex; gap:8px; margin-top:6px; font-family:var(--font-mono); font-size:11px;">
+              <span style="color:var(--text-secondary)">v4.3 <strong style="color:var(--text-primary)">$0.80</strong></span>
+              <span style="color:var(--text-muted)">→</span>
+              <span style="color:var(--text-secondary)">v4.4 <strong style="color:var(--green)">$0.73</strong></span>
+              <span style="color:var(--text-muted)">→</span>
+              <span style="color:var(--text-secondary)">v4.5 <strong style="color:var(--green)" id="scorecard-v45-cpt">$0.89</strong></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Agent Efficiency Rankings -->
+        <div class="scorecard-card">
+          <div class="scorecard-card-title">Agent Efficiency Rankings</div>
+          <div id="scorecard-efficiency-list">
+            <!-- populated by JS -->
+            <div class="efficiency-row">
+              <span class="efficiency-rank">#1</span>
+              <span class="efficiency-agent" style="color:var(--green)">linter</span>
+              <span class="efficiency-cost-per">$0.003/task</span>
+              <span class="efficiency-sessions">13 tasks</span>
+            </div>
+            <div class="efficiency-row">
+              <span class="efficiency-rank">#2</span>
+              <span class="efficiency-agent" style="color:var(--green)">test-runner</span>
+              <span class="efficiency-cost-per">$0.005/task</span>
+              <span class="efficiency-sessions">7 tasks</span>
+            </div>
+            <div class="efficiency-row">
+              <span class="efficiency-rank">#3</span>
+              <span class="efficiency-agent" style="color:var(--blue)">coder</span>
+              <span class="efficiency-cost-per">$0.005/task</span>
+              <span class="efficiency-sessions">134 tasks</span>
+            </div>
+            <div class="efficiency-row">
+              <span class="efficiency-rank">#4</span>
+              <span class="efficiency-agent" style="color:var(--blue)">devops</span>
+              <span class="efficiency-cost-per">$0.013/task</span>
+              <span class="efficiency-sessions">24 tasks</span>
+            </div>
+            <div class="efficiency-row">
+              <span class="efficiency-rank">#5</span>
+              <span class="efficiency-agent" style="color:var(--gold)">ceo</span>
+              <span class="efficiency-cost-per">$0.046/task</span>
+              <span class="efficiency-sessions">47 tasks</span>
+            </div>
+            <div class="efficiency-row">
+              <span class="efficiency-rank">#6</span>
+              <span class="efficiency-agent" style="color:var(--gold)">architect</span>
+              <span class="efficiency-cost-per">$0.055/task</span>
+              <span class="efficiency-sessions">62 tasks</span>
+            </div>
+          </div>
+          <div style="margin-top:8px; font-size:10px; color:var(--text-muted); font-style:italic">Lower cost/task = more efficient</div>
+        </div>
+
+        <!-- Model Cost Breakdown -->
+        <div class="scorecard-card">
+          <div class="scorecard-card-title">Model Cost Breakdown</div>
+          <div id="scorecard-model-breakdown">
+            <div class="model-breakdown-row">
+              <span class="model-breakdown-label" style="color:var(--gold)">Opus</span>
+              <div class="model-breakdown-track"><div class="model-breakdown-fill opus" id="scorecard-opus-bar" style="width:68%">68%</div></div>
+              <span class="model-breakdown-amount" id="scorecard-opus-amt">$12.55</span>
+            </div>
+            <div class="model-breakdown-row">
+              <span class="model-breakdown-label" style="color:var(--blue)">Sonnet</span>
+              <div class="model-breakdown-track"><div class="model-breakdown-fill sonnet" id="scorecard-sonnet-bar" style="width:29%">29%</div></div>
+              <span class="model-breakdown-amount" id="scorecard-sonnet-amt">$5.36</span>
+            </div>
+            <div class="model-breakdown-row">
+              <span class="model-breakdown-label" style="color:var(--green)">Haiku</span>
+              <div class="model-breakdown-track"><div class="model-breakdown-fill haiku" id="scorecard-haiku-bar" style="width:3%">3%</div></div>
+              <span class="model-breakdown-amount" id="scorecard-haiku-amt">$0.56</span>
+            </div>
+          </div>
+          <div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--border);">
+            <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-secondary); margin-bottom:4px;">
+              <span>Total All-Time</span>
+              <span class="session-cost-cell" id="scorecard-total-display">$18.47</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-secondary);">
+              <span>Sessions Tracked</span>
+              <span style="font-family:var(--font-mono); color:var(--text-primary)" id="scorecard-sessions-display">—</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Meeting Schedule -->
+    <section class="section" id="meeting-schedule">
+      <div class="section-header">
+        <div class="section-title">Meeting Schedule</div>
+        <div class="section-actions">
+          <button class="export-btn" onclick="downloadJSON('meeting-schedule', window._data.meetings)">⬇ JSON</button>
+        </div>
+      </div>
+      <div class="meetings-grid">
+        <!-- Past -->
+        <div>
+          <div class="meetings-col-header past">Past</div>
+          <div class="meeting-card" onclick="openMeetingModal('Sprint v4.2 Retro')">
+            <div class="meeting-title">Sprint v4.2 Retrospective</div>
+            <div class="meeting-participants">
+              <span class="chip" style="color:var(--gold);border-color:var(--gold)">ceo</span>
+              <span class="chip" style="color:var(--gold);border-color:var(--gold)">cto</span>
+              <span class="chip" style="color:var(--blue);border-color:var(--blue)">coo</span>
+              <span class="chip" style="color:var(--gold);border-color:var(--gold)">genesis</span>
+            </div>
+            <div class="meeting-footer">
+              <span class="meeting-duration">45 min</span>
+              <span class="meeting-outcome resolved">Resolved</span>
+            </div>
+          </div>
+          <div class="meeting-card" onclick="openMeetingModal('Bus Unification Review')">
+            <div class="meeting-title">Bus Unification Architecture Review</div>
+            <div class="meeting-participants">
+              <span class="chip" style="color:var(--gold);border-color:var(--gold)">architect</span>
+              <span class="chip" style="color:var(--gold);border-color:var(--gold)">cto</span>
+              <span class="chip" style="color:var(--blue);border-color:var(--blue)">coder</span>
+            </div>
+            <div class="meeting-footer">
+              <span class="meeting-duration">30 min</span>
+              <span class="meeting-outcome resolved">Resolved</span>
+            </div>
+          </div>
+          <div class="meeting-card" onclick="openMeetingModal('Autonomy Tier Design')">
+            <div class="meeting-title">Autonomy Tier Framework Design</div>
+            <div class="meeting-participants">
+              <span class="chip" style="color:var(--gold);border-color:var(--gold)">ceo</span>
+              <span class="chip" style="color:var(--gold);border-color:var(--gold)">meta-architect</span>
+              <span class="chip" style="color:var(--gold);border-color:var(--gold)">genesis</span>
+            </div>
+            <div class="meeting-footer">
+              <span class="meeting-duration">60 min</span>
+              <span class="meeting-outcome resolved">Resolved</span>
+            </div>
+          </div>
+        </div>
+        <!-- Active -->
+        <div>
+          <div class="meetings-col-header active">Active</div>
+          <div class="meeting-card" style="border-color:var(--green)" onclick="openMeetingModal('Dashboard v4.3 Build')">
+            <div class="meeting-title">Dashboard v4.3 Build Session</div>
+            <div class="meeting-participants">
+              <span class="chip" style="color:var(--blue);border-color:var(--blue)">dashboard-architect</span>
+              <span class="chip" style="color:var(--blue);border-color:var(--blue)">frontend-dev</span>
+              <span class="chip" style="color:var(--blue);border-color:var(--blue)">ui-ux-designer</span>
+            </div>
+            <div class="meeting-footer">
+              <span class="meeting-duration" style="color:var(--green)">▶ 8m12s</span>
+              <span class="meeting-outcome in-progress">In Progress</span>
+            </div>
+          </div>
+          <div class="meeting-card" style="border-color:var(--green)" onclick="openMeetingModal('Debug Standup')">
+            <div class="meeting-title">Debug Standup — test_runner issue</div>
+            <div class="meeting-participants">
+              <span class="chip" style="color:var(--gold);border-color:var(--gold)">cto</span>
+              <span class="chip" style="color:var(--blue);border-color:var(--blue)">debugger</span>
+              <span class="chip" style="color:var(--green);border-color:var(--green)">test-runner</span>
+            </div>
+            <div class="meeting-footer">
+              <span class="meeting-duration" style="color:var(--green)">▶ 2m31s</span>
+              <span class="meeting-outcome in-progress">In Progress</span>
+            </div>
+          </div>
+        </div>
+        <!-- Upcoming -->
+        <div>
+          <div class="meetings-col-header upcoming">Upcoming</div>
+          <div class="meeting-card" onclick="openMeetingModal('Sprint v4.3 Retro')">
+            <div class="meeting-title">Sprint v4.3 Retrospective</div>
+            <div class="meeting-participants">
+              <span class="chip" style="color:var(--gold);border-color:var(--gold)">ceo</span>
+              <span class="chip" style="color:var(--gold);border-color:var(--gold)">cto</span>
+              <span class="chip" style="color:var(--blue);border-color:var(--blue)">coo</span>
+              <span class="chip">+3 more</span>
+            </div>
+            <div class="meeting-footer">
+              <span class="meeting-duration">Today 18:00</span>
+              <span class="meeting-outcome scheduled">Scheduled</span>
+            </div>
+          </div>
+          <div class="meeting-card" onclick="openMeetingModal('v4.4 Sprint Planning')">
+            <div class="meeting-title">v4.4 Sprint Planning Session</div>
+            <div class="meeting-participants">
+              <span class="chip" style="color:var(--gold);border-color:var(--gold)">ceo</span>
+              <span class="chip" style="color:var(--blue);border-color:var(--blue)">sprint-planner</span>
+              <span class="chip" style="color:var(--gold);border-color:var(--gold)">rd-lead</span>
+            </div>
+            <div class="meeting-footer">
+              <span class="meeting-duration">Tomorrow 10:00</span>
+              <span class="meeting-outcome scheduled">Scheduled</span>
+            </div>
+          </div>
+          <div class="meeting-card" onclick="openMeetingModal('REFORGE Review')">
+            <div class="meeting-title">REFORGE Proposals Review</div>
+            <div class="meeting-participants">
+              <span class="chip" style="color:var(--gold);border-color:var(--gold)">meta-architect</span>
+              <span class="chip" style="color:var(--gold);border-color:var(--gold)">genesis</span>
+              <span class="chip" style="color:var(--gold);border-color:var(--gold)">ceo</span>
+            </div>
+            <div class="meeting-footer">
+              <span class="meeting-duration">2026-03-28</span>
+              <span class="meeting-outcome scheduled">Scheduled</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Memory Browser -->
+    <section class="section" id="memory-browser">
+      <div class="section-header">
+        <div class="section-title">Memory Browser</div>
+        <div class="section-actions">
+          <button class="export-btn" onclick="downloadJSON('memory-browser', window._data.memory)">⬇ JSON</button>
+        </div>
+      </div>
+      <div class="memory-search-bar">
+        <input class="memory-search-input" type="text" id="memory-search" placeholder="Search memories… (press / to focus)" oninput="filterMemory(this.value)"/>
+      </div>
+      <div class="memory-filter-row">
+        <button class="mem-filter-btn active" data-cat="all" onclick="memFilterCat(this,'all')">All</button>
+        <button class="mem-filter-btn" data-cat="feedback" onclick="memFilterCat(this,'feedback')">Feedback</button>
+        <button class="mem-filter-btn" data-cat="project" onclick="memFilterCat(this,'project')">Project</button>
+        <button class="mem-filter-btn" data-cat="lesson" onclick="memFilterCat(this,'lesson')">Lesson</button>
+        <button class="mem-filter-btn" data-cat="config" onclick="memFilterCat(this,'config')">Config</button>
+      </div>
+      <div class="memory-list" id="memory-list">
+        <div class="memory-entry" data-cat="feedback">
+          <div class="memory-entry-header">
+            <span class="memory-entry-title">feedback_model_routing.md</span>
+            <span class="category-badge feedback">Feedback</span>
+            <span class="chip" style="color:var(--gold);border-color:var(--gold)">ceo</span>
+          </div>
+          <div class="memory-entry-preview">Always set model parameter on Agent dispatches to avoid wasting Opus tokens on Sonnet/Haiku tasks. Route by complexity: Opus for strategy, Sonnet for implementation, Haiku for utilities.</div>
+        </div>
+        <div class="memory-entry" data-cat="project">
+          <div class="memory-entry-header">
+            <span class="memory-entry-title">project_dogfood_audit.md</span>
+            <span class="category-badge project">Project</span>
+            <span class="chip" style="color:var(--gold);border-color:var(--gold)">genesis</span>
+          </div>
+          <div class="memory-entry-preview">Lessons from building v2 with parallel agents: cost waste, product improvements, future opportunities. Key finding: parallel agents reduce wall-clock time 3x but require careful cost control.</div>
+        </div>
+        <div class="memory-entry" data-cat="feedback">
+          <div class="memory-entry-header">
+            <span class="memory-entry-title">feedback_agent_communication.md</span>
+            <span class="category-badge feedback">Feedback</span>
+            <span class="chip" style="color:var(--gold);border-color:var(--gold)">ceo</span>
+          </div>
+          <div class="memory-entry-preview">Async agent messaging (DMs, channels, inboxes) to reduce Opus invocations. Teams should resolve issues internally before escalating to Opus-tier agents.</div>
+        </div>
+        <div class="memory-entry" data-cat="feedback">
+          <div class="memory-entry-header">
+            <span class="memory-entry-title">feedback_executive_assistants.md</span>
+            <span class="category-badge feedback">Feedback</span>
+            <span class="chip" style="color:var(--blue);border-color:var(--blue)">coo</span>
+          </div>
+          <div class="memory-entry-preview">Opus agents get Haiku assistants that filter inbox, prepare briefings, reduce Opus invocations by 80%+. Proven pattern across v3.2 and v4 sprints.</div>
+        </div>
+        <div class="memory-entry" data-cat="config">
+          <div class="memory-entry-header">
+            <span class="memory-entry-title">feedback_always_use_team.md</span>
+            <span class="category-badge config">Config</span>
+            <span class="chip" style="color:var(--gold);border-color:var(--gold)">ceo</span>
+          </div>
+          <div class="memory-entry-preview">CRITICAL: All work must route through forged team agents, never bypass with generic subagents. This ensures skill templates are applied and cost tracking is accurate.</div>
+        </div>
+        <div class="memory-entry" data-cat="project">
+          <div class="memory-entry-header">
+            <span class="memory-entry-title">project_v3_phase1_complete.md</span>
+            <span class="category-badge project">Project</span>
+            <span class="chip" style="color:var(--gold);border-color:var(--gold)">genesis</span>
+          </div>
+          <div class="memory-entry-preview">All 3 phases complete (745 tests): foundation, cost+intelligence, communication+session. REFORGE REQUESTED for v3.2 design overhaul.</div>
+        </div>
+        <div class="memory-entry" data-cat="lesson">
+          <div class="memory-entry-header">
+            <span class="memory-entry-title">project_v32_concept.md</span>
+            <span class="category-badge lesson">Lesson</span>
+            <span class="chip" style="color:var(--gold);border-color:var(--gold)">meta-architect</span>
+          </div>
+          <div class="memory-entry-preview">v3.2 design: hard activation command, Sonnet as conduit, peer-to-peer agent comms, Opus only for strategic escalations. Reduces cost by estimated 40%.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Reforge Panel -->
+    <section class="section" id="reforge-panel">
+      <div class="section-header">
+        <div class="section-title">Reforge Panel</div>
+        <div class="section-actions">
+          <button class="export-btn" onclick="downloadJSON('reforge-panel', window._data.reforge)">⬇ JSON</button>
+        </div>
+      </div>
+      <div class="reforge-list">
+        <div class="reforge-row" onclick="openReforgeModal('Bus Unification Protocol')">
+          <div class="reforge-title">Bus Unification Protocol — Emit lifecycle events from all 12 modules</div>
+          <span class="reforge-proposer">rd-lead</span>
+          <span class="reforge-status applied">Applied</span>
+          <span class="reforge-meta">12 files • 745→745 tests</span>
+        </div>
+        <div class="reforge-row" onclick="openReforgeModal('Haiku Executive Assistants')">
+          <div class="reforge-title">Haiku Executive Assistants — Filter Opus inbox to reduce invocations 80%</div>
+          <span class="reforge-proposer">ceo</span>
+          <span class="reforge-status applied">Applied</span>
+          <span class="reforge-meta">4 files • 680→745 tests</span>
+        </div>
+        <div class="reforge-row" onclick="openReforgeModal('Autonomous Sprint Framework')">
+          <div class="reforge-title">Autonomous Sprint Framework — Self-directed sprint planning and execution</div>
+          <span class="reforge-proposer">cto</span>
+          <span class="reforge-status applied">Applied</span>
+          <span class="reforge-meta">8 files • 720→745 tests</span>
+        </div>
+        <div class="reforge-row" onclick="openReforgeModal('Multi-Reviewer System')">
+          <div class="reforge-title">Multi-Reviewer System — Parallel review with conflict resolution</div>
+          <span class="reforge-proposer">team-reviewer</span>
+          <span class="reforge-status applied">Applied</span>
+          <span class="reforge-meta">6 files • 710→745 tests</span>
+        </div>
+        <div class="reforge-row" onclick="openReforgeModal('Flywheel Persistence')">
+          <div class="reforge-title">Flywheel Persistence — Graph-based metric storage with trend analysis</div>
+          <span class="reforge-proposer">genesis</span>
+          <span class="reforge-status applied">Applied</span>
+          <span class="reforge-meta">5 files • 700→745 tests</span>
+        </div>
+        <div class="reforge-row" onclick="openReforgeModal('Peer-to-Peer Agent Comms')">
+          <div class="reforge-title">Peer-to-Peer Agent Comms — Direct DM channels between agents, skip Opus</div>
+          <span class="reforge-proposer">meta-architect</span>
+          <span class="reforge-status applied">Applied</span>
+          <span class="reforge-meta">9 files • 690→745 tests</span>
+        </div>
+        <div class="reforge-row" onclick="openReforgeModal('Dynamic Model Routing')">
+          <div class="reforge-title">Dynamic Model Routing — Auto-select model based on task complexity score</div>
+          <span class="reforge-proposer">cfo</span>
+          <span class="reforge-status pending">Pending</span>
+          <span class="reforge-meta">7 files • TBD</span>
+        </div>
+        <div class="reforge-row" onclick="openReforgeModal('Skill Template Auto-generation')">
+          <div class="reforge-title">Skill Template Auto-generation — LLM-generated skill specs from task history</div>
+          <span class="reforge-proposer">skill-designer</span>
+          <span class="reforge-status pending">Pending</span>
+          <span class="reforge-meta">3 files • TBD</span>
+        </div>
+        <div class="reforge-row" onclick="openReforgeModal('Context Chain Compression')">
+          <div class="reforge-title">Context Chain Compression — Summarize session history to reduce token usage</div>
+          <span class="reforge-proposer">rd-lead</span>
+          <span class="reforge-status pending">Pending</span>
+          <span class="reforge-meta">6 files • TBD</span>
+        </div>
+        <div class="reforge-row" onclick="openReforgeModal('Hard Activation Command v1.0')">
+          <div class="reforge-title">Hard Activation Command v1.0 — Explicit FORGE command to bootstrap sessions</div>
+          <span class="reforge-proposer">ceo</span>
+          <span class="reforge-status rolled-back">Rolled Back</span>
+          <span class="reforge-meta">11 files • 660→680 tests (regression)</span>
+        </div>
+      </div>
+    </section>
+
+  </div><!-- /page-home -->
+
+  <!-- ── Page: Audit Log (/runs) ───────────────────────────── -->

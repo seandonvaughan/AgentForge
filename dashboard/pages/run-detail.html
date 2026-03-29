@@ -1,0 +1,44 @@
+  <div class="page" id="page-run-detail" hidden>
+    <button class="back-btn" data-route="/runs">&#8592; Back to Audit Log</button>
+
+    <div id="run-detail-loading" class="skeleton-card"></div>
+
+    <div id="run-detail-content" hidden>
+      <div class="detail-header">
+        <h2 id="run-detail-agent"></h2>
+        <span id="run-detail-status" class="status-badge"></span>
+      </div>
+
+      <div class="detail-grid">
+        <div class="detail-card">
+          <h3>Input</h3>
+          <pre id="run-detail-task" class="code-block"></pre>
+        </div>
+        <div class="detail-card">
+          <h3>Output</h3>
+          <pre id="run-detail-response" class="code-block"></pre>
+        </div>
+      </div>
+
+      <div class="detail-meta">
+        <span>Model: <strong id="run-detail-model"></strong></span>
+        <span>Started: <strong id="run-detail-started"></strong></span>
+        <span>Duration: <strong id="run-detail-duration"></strong></span>
+        <span>Tokens: <strong id="run-detail-tokens"></strong></span>
+        <span>Cost: <strong id="run-detail-cost"></strong></span>
+      </div>
+
+      <div id="run-delegation" class="detail-card" hidden>
+        <h3>Delegation Chain</h3>
+        <div id="run-delegation-tree"></div>
+      </div>
+    </div>
+
+    <div id="run-detail-empty" class="empty-state" hidden>Session not found.</div>
+    <div id="run-detail-error" class="error-state" hidden>
+      <p id="run-detail-error-msg">Failed to load session.</p>
+      <button onclick="Router.navigate('/runs')">Back to Audit Log</button>
+    </div>
+  </div><!-- /page-run-detail -->
+
+  <!-- ── Page: Agent Detail (/agents/:id) ──────────────────── -->

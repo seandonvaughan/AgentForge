@@ -1,0 +1,73 @@
+  <div class="page" id="page-runs" hidden>
+    <div class="page-header">
+      <h2>Audit Log</h2>
+      <div class="filter-bar">
+        <select id="runs-filter-agent"><option value="">All Agents</option></select>
+        <select id="runs-filter-status">
+          <option value="">All Status</option>
+          <option value="completed">Completed</option>
+          <option value="running">Running</option>
+          <option value="failed">Failed</option>
+        </select>
+        <input type="date" id="runs-filter-since" title="Since">
+        <input type="date" id="runs-filter-until" title="Until">
+        <select id="runs-page-size" title="Page size">
+          <option value="10">10 / page</option>
+          <option value="25" selected>25 / page</option>
+          <option value="50">50 / page</option>
+          <option value="100">100 / page</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Loading skeleton -->
+    <div id="runs-skeleton" hidden>
+      <div class="skeleton-row"></div>
+      <div class="skeleton-row"></div>
+      <div class="skeleton-row"></div>
+      <div class="skeleton-row"></div>
+      <div class="skeleton-row"></div>
+    </div>
+
+    <!-- Data table -->
+    <table id="runs-table" class="data-table" hidden>
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>Agent</th>
+          <th>Task</th>
+          <th>Status</th>
+          <th>Cost</th>
+          <th>Duration</th>
+          <th>Depth</th>
+        </tr>
+      </thead>
+      <tbody id="runs-tbody"></tbody>
+    </table>
+
+    <!-- Empty state -->
+    <div id="runs-empty" class="empty-state" hidden>
+      No sessions recorded yet. Run an agent to see activity here.
+    </div>
+
+    <!-- Error state -->
+    <div id="runs-error" class="error-state" hidden>
+      <p id="runs-error-msg">Failed to load sessions.</p>
+      <button onclick="loadRunsPage()">Retry</button>
+    </div>
+
+    <!-- Pagination -->
+    <div id="runs-pagination" class="pagination" hidden>
+      <button id="runs-prev" onclick="runsPage(-1)" disabled>&#8592; Prev</button>
+      <span id="runs-page-info"></span>
+      <button id="runs-next" onclick="runsPage(1)">Next &#8594;</button>
+    </div>
+  </div><!-- /page-runs -->
+
+  <!-- ── Page: Session Detail (/runs/:id) ──────────────────── -->
+
+<script>
+(function() {
+  if (typeof loadRunsPage === "function") loadRunsPage(1);
+})();
+</script>

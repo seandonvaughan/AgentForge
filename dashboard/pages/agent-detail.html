@@ -1,0 +1,65 @@
+  <div class="page" id="page-agent-detail" hidden>
+    <button class="back-btn" onclick="navigateToAgents()">&#8592; All Agents</button>
+
+    <div id="agent-detail-loading" class="skeleton-card"></div>
+
+    <div id="agent-detail-content" hidden>
+      <!-- Header: agent name + model badge -->
+      <div class="page-header" style="margin-bottom: 20px;">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <h2 id="agent-detail-name" style="font-family:var(--font-mono);font-size:22px;font-weight:700;"></h2>
+          <span id="agent-detail-model" class="model-badge"></span>
+        </div>
+      </div>
+
+      <!-- Stats row -->
+      <div class="agent-detail-stats">
+        <div class="agent-detail-stat-card">
+          <div class="agent-detail-stat-label">Total Sessions</div>
+          <div class="agent-detail-stat-value" id="agent-detail-sessions">—</div>
+        </div>
+        <div class="agent-detail-stat-card">
+          <div class="agent-detail-stat-label">Success Rate</div>
+          <div class="agent-detail-stat-value" id="agent-detail-success" style="color:var(--green)">—</div>
+        </div>
+        <div class="agent-detail-stat-card">
+          <div class="agent-detail-stat-label">Total Cost</div>
+          <div class="agent-detail-stat-value" id="agent-detail-cost" style="color:var(--gold)">—</div>
+        </div>
+        <div class="agent-detail-stat-card">
+          <div class="agent-detail-stat-label">Avg Duration</div>
+          <div class="agent-detail-stat-value" id="agent-detail-duration">—</div>
+        </div>
+      </div>
+
+      <!-- Recent Sessions table -->
+      <div class="section-header">
+        <div class="section-title">Recent Sessions</div>
+      </div>
+      <div class="session-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Started</th>
+              <th>Task</th>
+              <th>Status</th>
+              <th>Duration</th>
+              <th>Cost</th>
+            </tr>
+          </thead>
+          <tbody id="agent-detail-sessions-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Empty state -->
+    <div id="agent-detail-empty" class="empty-state" hidden>Agent not found.</div>
+
+    <!-- Error state -->
+    <div id="agent-detail-error" class="error-state" hidden>
+      <p id="agent-detail-error-msg">Failed to load agent data.</p>
+      <button onclick="loadAgentDetailPage(window._currentAgentId)">Retry</button>
+    </div>
+  </div><!-- /page-agent-detail -->
+
+  <!-- ── Page: Cost Analytics (/cost) ──────────────────────── -->

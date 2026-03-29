@@ -6,6 +6,7 @@ import { globalStream } from './stream.js';
 import { join } from 'node:path';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { careerHook } from '../../lib/career-hook.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -17,6 +18,8 @@ interface RunRequestBody {
   task: string;
   projectRoot?: string;
 }
+
+// careerHook singleton is imported from lib/career-hook.ts
 
 /** In-memory run log — stores completed/failed runs for session replay. */
 const runLog = new Map<string, {
@@ -114,9 +117,40 @@ export async function runRoutes(
         inputTokens: result.inputTokens,
         outputTokens: result.outputTokens,
         startedAt,
-        completedAt: result.completedAt,
-        error: result.error,
+        ...(result.completedAt !== undefined ? { completedAt: result.completedAt } : {}),
+        ...(result.error !== undefined ? { error: result.error } : {}),
       });
+
+      // Post-task lifecycle hook: record task memory, update skills, check level-ups
+      try {
+        // AgentRuntimeConfig has no skills field; derive from agentId for now
+        const agentSkills: string[] = agentId.toLowerCase().split(/[-_]/);
+
+        const durationMs = result.completedAt
+          ? new Date(result.completedAt).getTime() - new Date(startedAt).getTime()
+          : undefined;
+
+        const { skillLevelUps } = careerHook.postTaskHook(agentId, {
+          taskId: sessionId,
+          success: result.status === 'completed',
+          summary: task.slice(0, 200),
+          tokensUsed: (result.inputTokens ?? 0) + (result.outputTokens ?? 0),
+          ...(durationMs !== undefined ? { durationMs } : {}),
+          skills: agentSkills,
+        });
+
+        // Emit SSE events for any skill level-ups
+        for (const levelUp of skillLevelUps) {
+          globalStream.emit({
+            type: 'agent_activity',
+            category: 'skill_levelup',
+            message: `[${agentId}] skill "${levelUp.skill}" leveled up to ${levelUp.newLevel}`,
+            data: { agentId, skill: levelUp.skill, newLevel: levelUp.newLevel, sessionId },
+          });
+        }
+      } catch {
+        // Career hook failures must never break the run response
+      }
 
       // Emit completion event
       globalStream.emit({

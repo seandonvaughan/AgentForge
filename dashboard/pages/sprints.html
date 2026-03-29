@@ -1,0 +1,152 @@
+  <div class="page" id="page-sprints" hidden>
+    <div class="page-header">
+      <h2>Sprint Control</h2>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="export-btn" onclick="loadSprintsPage()">&#8635; Refresh</button>
+        <button class="btn-primary" onclick="toggleSprintWizard()">+ New Sprint</button>
+      </div>
+    </div>
+
+    <!-- Sprint Creation Wizard (collapsed by default) -->
+    <div class="sprint-wizard" id="sprint-wizard">
+      <div class="sprint-wizard-header" onclick="toggleSprintWizard()">
+        <span class="sprint-wizard-title">+ New Sprint Wizard</span>
+        <span id="wizard-toggle-icon" style="color:var(--text-muted);font-size:12px;font-family:var(--font-mono)">EXPAND</span>
+      </div>
+      <div class="sprint-wizard-body" id="sprint-wizard-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          <div class="wizard-field">
+            <label class="wizard-label" for="wizard-version">Version</label>
+            <input class="wizard-input" id="wizard-version" placeholder="v6.2" />
+          </div>
+          <div class="wizard-field">
+            <label class="wizard-label" for="wizard-budget">Budget ($)</label>
+            <input class="wizard-input" id="wizard-budget" type="number" placeholder="50" min="1" />
+          </div>
+        </div>
+        <div class="wizard-field">
+          <label class="wizard-label" for="wizard-title">Sprint Title</label>
+          <input class="wizard-input" id="wizard-title" placeholder="Sprint v6.2 — Observability & Sprint Control" />
+        </div>
+        <div class="wizard-field">
+          <label class="wizard-label" for="wizard-criteria">Success Criteria</label>
+          <textarea class="wizard-input" id="wizard-criteria" rows="2" placeholder="All P0/P1 items shipped, tests passing, no regressions"></textarea>
+        </div>
+        <div class="wizard-field">
+          <label class="wizard-label">Items</label>
+          <div class="wizard-items-list" id="wizard-items-list">
+            <!-- rows inserted by JS -->
+          </div>
+          <button class="wizard-add-item" onclick="addWizardItem()">+ Add Item</button>
+        </div>
+        <div class="wizard-actions">
+          <button class="btn-primary" id="wizard-create-btn" onclick="submitSprintWizard()">Create Sprint</button>
+          <button class="close-btn" onclick="toggleSprintWizard()">Cancel</button>
+          <span id="wizard-status" style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted)"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Two-col layout: sprint list + detail -->
+    <div class="sprint-cmd-layout">
+
+      <!-- Left: Sprint List -->
+      <div class="sprint-sidebar-panel">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:10px">Sprints</div>
+        <div id="sprint-list-loading" class="skeleton-loader">Loading sprints…</div>
+        <div id="sprint-list-items"></div>
+        <div id="sprint-list-empty" class="empty-state" hidden>No sprints found.</div>
+      </div>
+
+      <!-- Right: Sprint Detail -->
+      <div id="sprint-detail-panel">
+        <div id="sprint-detail-empty" style="padding:48px 24px;text-align:center;color:var(--text-muted);font-family:var(--font-mono);font-size:12px;border:1px dashed var(--border);border-radius:var(--radius)">
+          Select a sprint from the list to view details
+        </div>
+
+        <div id="sprint-detail-content" hidden>
+          <!-- Stat header row -->
+          <div class="sprint-cmd-header" id="sprint-stats-row">
+            <div class="sprint-stat-card card-blue">
+              <div class="sprint-stat-label">Version</div>
+              <div class="sprint-stat-value" id="sd-version">—</div>
+              <div class="sprint-stat-sub" id="sd-title-sub">—</div>
+            </div>
+            <div class="sprint-stat-card card-green">
+              <div class="sprint-stat-label">Progress</div>
+              <div class="sprint-stat-value" id="sd-progress">0%</div>
+              <div class="sprint-stat-sub" id="sd-items-sub">0 / 0 items</div>
+            </div>
+            <div class="sprint-stat-card card-gold">
+              <div class="sprint-stat-label">Budget</div>
+              <div class="sprint-stat-value" id="sd-budget">$0</div>
+              <div class="sprint-stat-sub" id="sd-budget-sub">$0 spent</div>
+            </div>
+            <div class="sprint-stat-card card-red">
+              <div class="sprint-stat-label">Phase</div>
+              <div class="sprint-stat-value" id="sd-phase">—</div>
+              <div class="sprint-stat-sub" id="sd-phase-sub">—</div>
+            </div>
+          </div>
+
+          <!-- Phase Timeline -->
+          <div class="phase-timeline">
+            <div class="phase-timeline-title">
+              <span>Phase Timeline</span>
+              <button class="btn-primary" id="sd-advance-btn" onclick="advanceSprintPhase()" style="font-size:11px;padding:5px 14px">Advance Phase &rarr;</button>
+            </div>
+            <div class="phase-track" id="phase-track">
+              <!-- Rendered by JS -->
+            </div>
+            <div class="phase-progress-bar">
+              <div class="phase-progress-fill" id="phase-progress-fill" style="width:0%"></div>
+            </div>
+          </div>
+
+          <!-- Budget Burndown Chart -->
+          <div class="burndown-card">
+            <div class="burndown-title">Budget Burn-Down</div>
+            <svg id="burndown-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+          </div>
+
+          <!-- Item Cards -->
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:12px">Sprint Items</div>
+          <div class="sprint-items-grid" id="sprint-items-grid">
+            <!-- Rendered by JS -->
+          </div>
+
+          <!-- Gate Approval Card -->
+          <div class="gate-approval-card" id="gate-approval-card">
+            <div class="gate-approval-header">
+              <span class="gate-approval-title">
+                <span id="gate-icon">&#128282;</span>
+                CEO Gate Review
+              </span>
+              <span id="gate-status-badge" class="status-badge pending">Pending</span>
+            </div>
+            <div class="gate-results-list" id="gate-results-list">
+              <div style="padding:16px;text-align:center;color:var(--text-muted);font-size:12px;font-family:var(--font-mono)">
+                Gate criteria will appear here after sprint execution
+              </div>
+            </div>
+            <div class="gate-actions">
+              <button class="btn-success" id="gate-approve-btn" onclick="approveGate()">Approve &amp; Ship</button>
+              <button class="btn-danger"  id="gate-reject-btn"  onclick="rejectGate()">Reject</button>
+              <span class="gate-reviewer-note">Reviewer: CEO (claude-opus)</span>
+            </div>
+          </div>
+
+        </div><!-- /sprint-detail-content -->
+      </div><!-- /sprint-detail-panel -->
+
+    </div><!-- /sprint-cmd-layout -->
+
+  </div><!-- /page-sprints -->
+
+  <!-- ── Page: Real-time Observability (/observe) ──────────── -->
+
+<script>
+(function() {
+  if (typeof window.loadSprintsPage === "function") window.loadSprintsPage();
+})();
+</script>

@@ -1,0 +1,92 @@
+  <div class="page" id="page-knowledge" hidden>
+    <div class="page-header">
+      <h2>Knowledge &amp; Memory Browser</h2>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-primary" onclick="toggleKnowledgeForm()">+ Add Entry</button>
+        <button class="export-btn" onclick="loadKnowledgePage()">&#8635; Refresh</button>
+      </div>
+    </div>
+    <div class="knowledge-search-bar">
+      <input type="search" class="knowledge-search-input" id="knowledge-search" placeholder="Search across all knowledge entries…" oninput="filterKnowledge()">
+    </div>
+    <div class="knowledge-layout">
+      <div>
+        <div class="knowledge-sidebar-panel" id="knowledge-teams-sidebar">
+          <div class="knowledge-sidebar-header">Teams</div>
+          <div class="knowledge-team-link active" data-team="all" onclick="selectKnowledgeTeam(this,'all')">All Teams <span class="knowledge-team-count" id="knowledge-count-all">—</span></div>
+          <div class="knowledge-team-link" data-team="executive" onclick="selectKnowledgeTeam(this,'executive')">Executive <span class="knowledge-team-count" id="knowledge-count-executive">—</span></div>
+          <div class="knowledge-team-link" data-team="engineering" onclick="selectKnowledgeTeam(this,'engineering')">Engineering <span class="knowledge-team-count" id="knowledge-count-engineering">—</span></div>
+          <div class="knowledge-team-link" data-team="architecture" onclick="selectKnowledgeTeam(this,'architecture')">Architecture <span class="knowledge-team-count" id="knowledge-count-architecture">—</span></div>
+          <div class="knowledge-team-link" data-team="qa" onclick="selectKnowledgeTeam(this,'qa')">QA <span class="knowledge-team-count" id="knowledge-count-qa">—</span></div>
+          <div class="knowledge-team-link" data-team="research" onclick="selectKnowledgeTeam(this,'research')">R&amp;D <span class="knowledge-team-count" id="knowledge-count-research">—</span></div>
+        </div>
+      </div>
+      <div>
+        <div class="knowledge-cat-filters">
+          <button class="knowledge-cat-btn active" data-cat="all" onclick="selectKnowledgeCat(this,'all')">All</button>
+          <button class="knowledge-cat-btn" data-cat="convention" onclick="selectKnowledgeCat(this,'convention')">Convention</button>
+          <button class="knowledge-cat-btn" data-cat="pattern" onclick="selectKnowledgeCat(this,'pattern')">Pattern</button>
+          <button class="knowledge-cat-btn" data-cat="decision" onclick="selectKnowledgeCat(this,'decision')">Decision</button>
+          <button class="knowledge-cat-btn" data-cat="pitfall" onclick="selectKnowledgeCat(this,'pitfall')">Pitfall</button>
+          <button class="knowledge-cat-btn" data-cat="domain_fact" onclick="selectKnowledgeCat(this,'domain_fact')">Domain Fact</button>
+        </div>
+        <div id="knowledge-loading" class="skeleton-loader" hidden>Loading knowledge…</div>
+        <div id="knowledge-error" class="error-state" hidden>
+          <p id="knowledge-error-msg">Failed to load knowledge.</p><button onclick="loadKnowledgePage()">Retry</button>
+        </div>
+        <div class="knowledge-entry-list" id="knowledge-entry-list"></div>
+        <div id="knowledge-empty" class="empty-state" hidden>No entries found.</div>
+        <div class="knowledge-add-form" id="knowledge-add-form">
+          <h4>Add Knowledge Entry</h4>
+          <div class="knowledge-form-grid">
+            <div class="knowledge-form-field knowledge-form-full"><label>Title</label><input type="text" id="new-know-title" placeholder="e.g. Always set model on agent dispatch"></div>
+            <div class="knowledge-form-field knowledge-form-full"><label>Content</label><textarea id="new-know-content" rows="3" placeholder="Describe the convention, pattern, pitfall, or fact…"></textarea></div>
+            <div class="knowledge-form-field"><label>Category</label>
+              <select id="new-know-category">
+                <option value="convention">Convention</option><option value="pattern">Pattern</option>
+                <option value="decision">Decision</option><option value="pitfall">Pitfall</option>
+                <option value="domain_fact">Domain Fact</option>
+              </select>
+            </div>
+            <div class="knowledge-form-field"><label>Team</label>
+              <select id="new-know-team">
+                <option value="all">All Teams</option><option value="executive">Executive</option>
+                <option value="engineering">Engineering</option><option value="architecture">Architecture</option>
+                <option value="qa">QA</option><option value="research">R&amp;D</option>
+              </select>
+            </div>
+            <div class="knowledge-form-field"><label>Confidence (0–1)</label><input type="number" id="new-know-confidence" min="0" max="1" step="0.05" value="0.9"></div>
+            <div class="knowledge-form-field"><label>Agent (optional)</label><input type="text" id="new-know-agent" placeholder="e.g. coder"></div>
+          </div>
+          <div class="knowledge-form-actions">
+            <button class="btn-primary" onclick="submitKnowledgeEntry()">Save Entry</button>
+            <button class="btn-ghost" onclick="toggleKnowledgeForm()">Cancel</button>
+          </div>
+        </div>
+        <div class="agent-memory-panel">
+          <div class="agent-memory-header">
+            <span class="agent-memory-title">Agent Task Memory</span>
+            <select class="agent-memory-select" id="memory-agent-select" onchange="loadAgentMemory(this.value)">
+              <option value="">— Select agent —</option>
+              <option value="ceo">ceo</option><option value="cto">cto</option>
+              <option value="architect">architect</option><option value="coo">coo</option>
+              <option value="coder">coder</option><option value="debugger">debugger</option>
+              <option value="project-manager">project-manager</option>
+              <option value="linter">linter</option><option value="researcher">researcher</option>
+            </select>
+          </div>
+          <div id="agent-memory-list" class="agent-memory-list">
+            <div class="session-empty" style="padding:20px 16px;color:var(--text-muted);font-family:var(--font-mono);font-size:12px;">Select an agent to view task memories.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div><!-- /page-knowledge -->
+
+  <!-- ── Page: Chat (/chat) ────────────────────────────────── -->
+
+<script>
+(function() {
+  if (typeof loadKnowledgePage === "function") loadKnowledgePage();
+})();
+</script>

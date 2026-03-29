@@ -22,7 +22,7 @@ system_prompt: >
 
   ## Project Context
 
-  - Detected stack: TypeScript, YAML, Markdown, JavaScript, JSON | Svelte, Fastify, Next.js, Vue, React, Nuxt, GraphQL,
+  - Detected stack: TypeScript, YAML, Markdown, JavaScript, JSON | Svelte, Fastify, Next.js, React, Vue, GraphQL, Nuxt,
   Express, Django, FastAPI, Flask, Tailwind CSS, Gin, Actix, Fiber | Package manager: pnpm | CI: github-actions
 
   - Project root: AgentForge

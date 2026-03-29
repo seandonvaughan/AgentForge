@@ -1,0 +1,85 @@
+  <div class="page" id="page-tasks" hidden>
+    <div class="page-header">
+      <h2>Task Assignment &amp; Delegation</h2>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="font-family:var(--font-mono);font-size:11px;color:var(--green);display:flex;align-items:center;gap:5px;"><span class="live-dot" style="flex-shrink:0;"></span>Live</span>
+        <button class="btn-primary" onclick="toggleTaskForm()">+ New Task</button>
+        <button class="export-btn" onclick="loadTasksPage()">&#8635; Refresh</button>
+      </div>
+    </div>
+    <div class="tasks-summary-row">
+      <div class="tasks-summary-card"><div class="tasks-summary-label">Total Active</div><div class="tasks-summary-value" id="tasks-stat-active">—</div></div>
+      <div class="tasks-summary-card"><div class="tasks-summary-label">In Progress</div><div class="tasks-summary-value" id="tasks-stat-inprogress" style="color:var(--blue)">—</div></div>
+      <div class="tasks-summary-card"><div class="tasks-summary-label">Completed</div><div class="tasks-summary-value" id="tasks-stat-completed" style="color:var(--green)">—</div></div>
+      <div class="tasks-summary-card"><div class="tasks-summary-label">Blocked</div><div class="tasks-summary-value" id="tasks-stat-blocked" style="color:var(--red)">—</div></div>
+    </div>
+    <div class="task-form-panel" id="task-form-panel">
+      <h3>Create New Task</h3>
+      <div class="task-form-grid">
+        <div class="task-form-field task-form-full"><label>Title</label><input type="text" id="new-task-title" placeholder="e.g. Implement SSE reconnection logic"></div>
+        <div class="task-form-field task-form-full"><label>Description</label><textarea id="new-task-desc" rows="2" placeholder="Optional: additional context for the assignee"></textarea></div>
+        <div class="task-form-field"><label>Assignee</label>
+          <select id="new-task-assignee">
+            <option value="">— Select agent —</option>
+            <option value="ceo">ceo (Opus)</option><option value="cto">cto (Opus)</option>
+            <option value="architect">architect (Opus)</option><option value="meta-architect">meta-architect (Opus)</option>
+            <option value="coo">coo (Sonnet)</option><option value="cfo">cfo (Sonnet)</option>
+            <option value="coder">coder (Sonnet)</option><option value="debugger">debugger (Sonnet)</option>
+            <option value="project-manager">project-manager (Sonnet)</option>
+            <option value="linter">linter (Haiku)</option><option value="researcher">researcher (Haiku)</option>
+          </select>
+        </div>
+        <div class="task-form-field"><label>Priority</label>
+          <select id="new-task-priority"><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option><option value="low">Low</option></select>
+        </div>
+        <div class="task-form-field"><label>Team</label>
+          <select id="new-task-team">
+            <option value="">Any</option><option value="executive">Executive</option>
+            <option value="engineering">Engineering</option><option value="architecture">Architecture</option>
+            <option value="qa">QA</option><option value="research">R&amp;D</option><option value="project-mgmt">Project Mgmt</option>
+          </select>
+        </div>
+        <div class="task-form-field"><label>Sprint</label><input type="text" id="new-task-sprint" placeholder="e.g. v6.2"></div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-primary" onclick="submitNewTask()">Create Task</button>
+        <button class="btn-ghost" onclick="toggleTaskForm()">Cancel</button>
+      </div>
+    </div>
+    <div class="task-filter-bar">
+      <input type="search" id="tasks-search" placeholder="Search tasks…" oninput="filterTasks()">
+      <select id="tasks-filter-team" onchange="filterTasks()">
+        <option value="">All Teams</option><option value="executive">Executive</option>
+        <option value="engineering">Engineering</option><option value="architecture">Architecture</option>
+        <option value="qa">QA</option><option value="research">R&amp;D</option><option value="project-mgmt">Project Mgmt</option>
+      </select>
+      <select id="tasks-filter-priority" onchange="filterTasks()">
+        <option value="">All Priorities</option><option value="urgent">Urgent</option>
+        <option value="high">High</option><option value="normal">Normal</option><option value="low">Low</option>
+      </select>
+      <select id="tasks-filter-status" onchange="filterTasks()">
+        <option value="">All Statuses</option><option value="planned">Planned</option>
+        <option value="in_progress">In Progress</option><option value="completed">Completed</option><option value="blocked">Blocked</option>
+      </select>
+    </div>
+    <div id="tasks-loading" class="skeleton-loader" hidden>Loading tasks…</div>
+    <div id="tasks-error" class="error-state" hidden>
+      <p id="tasks-error-msg">Failed to load tasks.</p>
+      <button onclick="loadTasksPage()">Retry</button>
+    </div>
+    <div class="tasks-table-wrap" id="tasks-table-wrap">
+      <table class="tasks-table">
+        <thead><tr><th>Title</th><th>Assignee</th><th>Status</th><th>Priority</th><th>Team</th><th>Cost</th><th>Duration</th><th>Updated</th></tr></thead>
+        <tbody id="tasks-tbody"></tbody>
+      </table>
+    </div>
+    <div id="tasks-empty" class="empty-state" hidden>No tasks found.</div>
+  </div><!-- /page-tasks -->
+
+  <!-- ── Page: Decisions (/decisions) ────────────────────── -->
+
+<script>
+(function() {
+  if (typeof loadTasksPage === "function") loadTasksPage();
+})();
+</script>

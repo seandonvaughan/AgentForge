@@ -1,0 +1,31 @@
+  <div class="page" id="page-decisions" hidden>
+    <div class="page-header">
+      <h2>Executive Decision Flow</h2>
+      <button class="export-btn" onclick="loadDecisionsPage()">&#8635; Refresh</button>
+    </div>
+    <div class="section-header"><div class="section-title">OKR Progress</div></div>
+    <div class="decisions-okr-grid" id="decisions-okr-grid"></div>
+    <div class="section-header">
+      <div class="section-title">Pending Approvals</div>
+      <span id="decisions-pending-count" style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);">—</span>
+    </div>
+    <div class="pending-decisions-panel">
+      <div class="pending-decisions-header">
+        <span class="pending-decisions-title">Awaiting Human Decision</span>
+        <span style="font-family:var(--font-mono);font-size:11px;color:var(--orange);" id="decisions-queue-count">—</span>
+      </div>
+      <div id="decisions-pending-body"><div class="skeleton-loader">Loading pending decisions…</div></div>
+    </div>
+    <div class="section-header"><div class="section-title">Decision Audit Trail</div></div>
+    <div class="detail-card" style="padding:0 20px;">
+      <div class="decisions-timeline" id="decisions-timeline"></div>
+    </div>
+  </div><!-- /page-decisions -->
+
+  <!-- ── Page: Knowledge Browser (/knowledge) ───────────────── -->
+
+<script>
+(function() {
+  if (typeof loadDecisionsPage === "function") loadDecisionsPage();
+})();
+</script>

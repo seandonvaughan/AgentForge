@@ -1,0 +1,158 @@
+{
+  "sprints": [{
+    "sprintId": "v63-autonomous-agent-runtime",
+    "version": "6.3",
+    "title": "AgentForge v6.3 — Autonomous Agent Runtime & Dashboard Decomposition",
+    "createdAt": "2026-03-29T17:00:00.000Z",
+    "phase": "planned",
+    "startedAt": null,
+    "completedAt": null,
+    "items": [
+      {
+        "id": "p0-1",
+        "title": "Dashboard Decomposition — Split 10K-line HTML into Modular Pages",
+        "description": "The 528KB monolithic dashboard/index.html is unmaintainable. Decompose into: dashboard/index.html (shell: sidebar, topbar, router, SSE client, notification manager — ~500 lines), dashboard/pages/*.html (one per page: home, sprints, observe, tasks, decisions, careers, teams, knowledge, runs, cost, org-graph, chat — loaded dynamically via fetch). Each page file is a self-contained HTML fragment with its own <style> and <script> sections. Router loads page fragments on navigation via fetch('/app/pages/home.html') and injects into <main>. Shared CSS tokens stay in index.html <style>. Shared utilities (escapeHtml, formatDate, etc.) stay in index.html <script>. This makes concurrent agent edits safe — each agent works on a different page file.",
+        "priority": "P0",
+        "assignee": "dashboard-architect",
+        "status": "planned"
+      },
+      {
+        "id": "p0-2",
+        "title": "Live Agent Runtime Integration — Dashboard Triggers Real Agent Execution",
+        "description": "Wire the dashboard sprint execution flow to actually run agents through AgentRuntime. When the user clicks 'Execute Sprint' on the sprint command center, POST /api/v5/sprints/:version/execute dispatches each sprint item's assigned agent with the item description as the task. The agent loads its system prompt from .agentforge/agents/:id.yaml, executes via Anthropic API with streaming, and the dashboard shows live token output per agent. Sprint item status auto-updates (planned→in_progress→completed/failed) based on agent results. Career store postTaskHook fires after each agent run to record task memory, update skills, evaluate promotions. Cost tracking updates in real-time. This is the core test: can the system actually orchestrate work?",
+        "priority": "P0",
+        "assignee": "api-specialist",
+        "status": "planned"
+      },
+      {
+        "id": "p0-3",
+        "title": "Agent-to-Agent Delegation at Runtime — CTO Plans, VP Distributes, Leads Assign",
+        "description": "Implement the actual delegation chain at runtime using the AutoDelegationPipeline. When a sprint enters 'assign' phase: 1) Run the CTO agent with 'Create technical plan for these sprint items: [items]' — parse the response to extract domain assignments. 2) Run the VP Engineering agent with 'Distribute this technical plan to teams: [plan]' — parse to get per-team assignments. 3) For each team, run the Tech Lead with 'Assign these items to your specialists: [items]' — parse to get agent assignments. 4) Update sprint items with the assigned agents. Each delegation step is a real Anthropic API call to the agent with its system prompt. Results recorded as DelegationSteps in the sprint. Dashboard shows the delegation chain in real-time.",
+        "priority": "P0",
+        "assignee": "architect",
+        "status": "planned"
+      },
+      {
+        "id": "p0-4",
+        "title": "Chat Page in Dashboard — Talk to Any Agent",
+        "description": "Build the /chat page in the dashboard (as a separate page file per P0-1). Full conversational interface: agent selector dropdown showing all 134+ agents grouped by team/layer with model tier badge. Message input with send button. Chat history panel with alternating user/assistant bubbles. Messages stream in real-time via SSE as the agent responds. Chat sessions persisted via POST /api/v5/chat/:agentId. Session list sidebar showing previous conversations. Multi-agent room: select 2+ agents, send a message, each responds in sequence seeing previous responses. Agent avatar with model tier color (gold=opus, blue=sonnet, green=haiku).",
+        "priority": "P0",
+        "assignee": "coder",
+        "status": "planned"
+      },
+      {
+        "id": "p0-5",
+        "title": "PostTaskHook Integration — Career Updates After Every Agent Run",
+        "description": "Wire the CareerStore.postTaskHook() into the actual agent execution pipeline. After every POST /api/v5/run or sprint execution completes: 1) Create TaskMemory from the result (objective, approach extracted from agent response, outcome, files mentioned, tokens used). 2) Record skill exercises based on the agent's defined skills. 3) Evaluate skill level-ups against SKILL_LEVEL_THRESHOLDS. 4) Record success/failure with AutonomyGovernor. 5) Update agent_careers table with new performance metrics. 6) Emit SSE events for level-ups and promotions. 7) If an agent gets promoted, update the sprint item to reflect the agent's new capabilities. The career page should show real data after agents run.",
+        "priority": "P0",
+        "assignee": "coder",
+        "status": "planned"
+      },
+      {
+        "id": "p0-6",
+        "title": "Sprint Phase Automation — Each Phase Triggers the Right Executive",
+        "description": "Automate sprint phase transitions. When advancing phases via PATCH /api/v5/sprints/:version/advance: AUDIT phase → run the researcher agent to scan codebase and produce audit findings. PLAN phase → run the CTO agent to produce a technical plan from audit findings. ASSIGN phase → run the AutoDelegationPipeline (P0-3). EXECUTE phase → dispatch all assigned agents in parallel. TEST phase → run the backend-qa agent to execute test suite and report results. REVIEW phase → run the code-reviewer agent to review all changes. GATE phase → run the CEO agent to approve/reject based on test results and review. Each phase runs the agent and waits for completion before the dashboard allows advancing to the next phase.",
+        "priority": "P0",
+        "assignee": "api-specialist",
+        "status": "planned"
+      },
+      {
+        "id": "p1-1",
+        "title": "Team Knowledge Accumulation — Agents Learn from Each Other",
+        "description": "After each agent run, extract institutional knowledge from the response. Use a simple heuristic: if the agent mentions 'convention:', 'pattern:', 'decision:', 'pitfall:', or 'note:' in its response, extract that as a KnowledgeEntry and store it for the team. When any team member starts a task, inject the team's institutional knowledge into its context. This creates a feedback loop: agents learn from their teammates' discoveries. Knowledge confidence decays over time (30 days). Knowledge entries validated when re-encountered in a new task. Dashboard /knowledge page shows real accumulated knowledge with team filtering.",
+        "priority": "P1",
+        "assignee": "coder",
+        "status": "planned"
+      },
+      {
+        "id": "p1-2",
+        "title": "Hiring Workflow — CEO Approves, Genesis Forges New Agents",
+        "description": "Complete the hiring pipeline end-to-end. TeamScaler detects overloaded teams (>85% utilization for 3+ sprints) and generates HiringRecommendations. Dashboard /teams page shows pending hires. User clicks 'Approve' → POST /api/v5/hiring-recommendations/:id/approve. On approval: 1) Run the Genesis agent with 'Create a new {role} agent for the {team} team with skills: {skills}'. 2) Parse Genesis response to extract agent YAML config. 3) Write the new agent YAML file. 4) Register in AgentLifecycleManager. 5) Update team.yaml, delegation.yaml, models.yaml. 6) Record 'hired' career event. 7) The new agent is immediately available for sprint assignment.",
+        "priority": "P1",
+        "assignee": "architect",
+        "status": "planned"
+      },
+      {
+        "id": "p1-3",
+        "title": "Budget Enforcement — Hard Gates on Spend Per Sprint and Per Agent",
+        "description": "Enforce budget limits from settings. Settings define: budgetLimitPerSprint (default $500), budgetLimitPerAgent (default $50). During sprint execution, track cumulative cost from AgentRuntime results. When an agent's cumulative cost exceeds its limit, pause its execution and emit an SSE alert. When sprint total exceeds budget, pause ALL execution and require CEO gate approval to continue (with budget increase). CFO tool analyzeBudget() now returns real data. Dashboard /observe page shows budget burn-down with limit line. Cost burn rate visible in sprint command center.",
+        "priority": "P1",
+        "assignee": "api-specialist",
+        "status": "planned"
+      },
+      {
+        "id": "p1-4",
+        "title": "Parallel Execution with ConcurrencyManager — Senior Agents Multitask",
+        "description": "Integrate ConcurrencyManager into sprint execution. During the EXECUTE phase, check each agent's maxConcurrentTasks (from SENIORITY_CONFIG based on their seniority level). Senior agents (3 slots) can work on multiple sprint items simultaneously. Allocate execution slots via ConcurrencyManager.allocateSlot(). Check for file conflicts before assigning parallel tasks. When slots complete, merge results via mergeCompletedSlots(). Dashboard /observe page slot matrix shows real parallel execution state. This is the test of the multitasking system built in v6.1.",
+        "priority": "P1",
+        "assignee": "coder",
+        "status": "planned"
+      },
+      {
+        "id": "p1-5",
+        "title": "Executive Tools as Real Agent Actions — CEO/CTO/COO Tools Actually Execute",
+        "description": "Wire the executive tool suites to real actions. When the CEO agent runs and its response contains tool invocations (e.g., 'I will use createSprint to...' or structured JSON tool calls), parse and execute the corresponding tool. CEO.createSprint → creates sprint JSON. CTO.defineStandard → writes standard to .agentforge/config/standards.yaml. COO.assignTask → updates sprint item assignee. CFO.analyzeBudget → returns real cost data from DB. VP Eng.performanceReview → returns career metrics from CareerStore. Tools are registered in SkillRegistry with permission gates. Only the correct executive can invoke their tools.",
+        "priority": "P1",
+        "assignee": "architect",
+        "status": "planned"
+      },
+      {
+        "id": "p1-6",
+        "title": "Agent Promotion Pipeline — Automatic Seniority Advancement",
+        "description": "Implement automatic agent promotion based on career performance. After each sprint completes (LEARN phase), evaluate all agents that participated: 1) Check skill levels against promotion thresholds (e.g., 3+ skills at Level 3 → eligible for 'senior' promotion). 2) Check sustained success rate (>85% over last 20 tasks). 3) Check autonomy tier (must be at least Tier 2 for mid, Tier 3 for senior). 4) Generate promotion recommendations for VP Engineering's performanceReview tool. 5) If auto-approval enabled (settings), promote automatically. 6) Otherwise, queue for human approval on /decisions page. 7) On promotion: update seniority, model tier, maxConcurrentTasks. 8) Emit SSE event and notification.",
+        "priority": "P1",
+        "assignee": "coder",
+        "status": "planned"
+      },
+      {
+        "id": "p2-1",
+        "title": "Sprint Retrospective — Automated Learn Phase",
+        "description": "Implement the LEARN phase of the sprint lifecycle. After the CEO approves the sprint at GATE phase: 1) Run the data-analyst agent to compile sprint metrics (items completed, cost, velocity, per-agent performance). 2) Run the researcher agent to identify patterns (what went well, what didn't, recurring blockers). 3) Store learnings as institutional knowledge for the team. 4) Update sprint JSON with results section. 5) Emit sprint_event SSE with learnings summary. 6) Dashboard /sprints detail page shows the retrospective results. 7) Learnings feed into the next sprint's AUDIT phase.",
+        "priority": "P2",
+        "assignee": "data-analyst",
+        "status": "planned"
+      },
+      {
+        "id": "p2-2",
+        "title": "Agent Performance Scorecards — Real Metrics from Real Runs",
+        "description": "Build agent scorecards that reflect actual execution data. For each agent: total runs, success rate, avg tokens per run, avg cost per run, skill levels, career events, promotion history. Scorecard pulls from: task_memories table, agent_skills table, agent_careers table, agent_costs table. Dashboard /agents/:id page shows the full scorecard. Leaderboard on /analytics uses real data from PerformanceLeaderboard.rankAgents(). Compare agents on the career dashboard. Export scorecards as JSON.",
+        "priority": "P2",
+        "assignee": "coder",
+        "status": "planned"
+      },
+      {
+        "id": "p2-3",
+        "title": "End-to-End Sprint Smoke Test — Full Automated Pipeline Verification",
+        "description": "Create a comprehensive integration test that verifies the full sprint pipeline works. Test creates a mini sprint with 3 items, advances through all 9 phases, verifies: sprint creation, phase advancement, auto-delegation (CTO→VP→Lead→Specialist chain), agent execution (mocked Anthropic API), task completion updates, career store postTaskHook, skill level-ups, budget tracking, cost recording, sprint results. Uses test fixtures with mocked AgentRuntime. Verifies the entire pipeline from sprint creation to sprint completion without any manual intervention. Target: 50+ assertions in a single integration test.",
+        "priority": "P2",
+        "assignee": "backend-qa",
+        "status": "planned"
+      },
+      {
+        "id": "p2-4",
+        "title": "Version Sync Guard — Prevent Version Drift Between Plugin and Package",
+        "description": "Create a version sync utility and pre-commit check. src/utils/version-sync.ts: reads version from package.json and .claude-plugin/plugin.json, throws if they differ. Add to the build pipeline and as a vitest test. When bumping version, both files must match. The version badge in the dashboard reads from /api/v1/health which returns package.json version. Add GET /api/v6/version that returns { package, plugin, dashboard, match: boolean }. Dashboard shows a warning banner if versions don't match.",
+        "priority": "P2",
+        "assignee": "coder",
+        "status": "planned"
+      }
+    ],
+    "budget": 3000,
+    "teamSize": 50,
+    "successCriteria": [
+      "Dashboard decomposed into modular page files — no single file >1000 lines",
+      "Sprint execution actually runs agents through AgentRuntime with streaming output",
+      "Agent-to-agent delegation chain works: CTO plans → VP distributes → Lead assigns",
+      "Chat page functional with real agent conversations and session persistence",
+      "CareerStore.postTaskHook fires after every agent run with real data",
+      "Sprint phases automated: each phase triggers the right executive agent",
+      "Budget enforcement pauses execution at limits",
+      "ConcurrencyManager used for parallel agent execution",
+      "Hiring pipeline: recommend → approve → Genesis forges → agent registered",
+      "Agent promotions evaluated automatically after sprints",
+      "End-to-end sprint smoke test passes with 50+ assertions",
+      "Version sync guard prevents plugin/package drift",
+      "3900+ total tests passing"
+    ]
+  }]
+}

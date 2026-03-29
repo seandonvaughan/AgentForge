@@ -358,7 +358,7 @@
       {
         "file_path": "dashboard/index.html",
         "language": "HTML",
-        "loc": 10443,
+        "loc": 7940,
         "imports": [],
         "exports": [],
         "framework_indicators": [
@@ -374,6 +374,153 @@
           "optional chaining",
           "template literals",
           "error handling"
+        ]
+      },
+      {
+        "file_path": "dashboard/pages/agent-detail.html",
+        "language": "HTML",
+        "loc": 66,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics"
+        ]
+      },
+      {
+        "file_path": "dashboard/pages/careers.html",
+        "language": "HTML",
+        "loc": 120,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics"
+        ]
+      },
+      {
+        "file_path": "dashboard/pages/chat.html",
+        "language": "HTML",
+        "loc": 77,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics"
+        ]
+      },
+      {
+        "file_path": "dashboard/pages/cost.html",
+        "language": "HTML",
+        "loc": 65,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics"
+        ]
+      },
+      {
+        "file_path": "dashboard/pages/decisions.html",
+        "language": "HTML",
+        "loc": 32,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics"
+        ]
+      },
+      {
+        "file_path": "dashboard/pages/home.html",
+        "language": "HTML",
+        "loc": 2047,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [
+          "Next.js"
+        ],
+        "patterns": [
+          "generics"
+        ]
+      },
+      {
+        "file_path": "dashboard/pages/knowledge.html",
+        "language": "HTML",
+        "loc": 93,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics"
+        ]
+      },
+      {
+        "file_path": "dashboard/pages/observe.html",
+        "language": "HTML",
+        "loc": 142,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics"
+        ]
+      },
+      {
+        "file_path": "dashboard/pages/run-detail.html",
+        "language": "HTML",
+        "loc": 45,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics"
+        ]
+      },
+      {
+        "file_path": "dashboard/pages/runs.html",
+        "language": "HTML",
+        "loc": 74,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [
+          "Next.js"
+        ],
+        "patterns": [
+          "generics"
+        ]
+      },
+      {
+        "file_path": "dashboard/pages/sprints.html",
+        "language": "HTML",
+        "loc": 153,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics"
+        ]
+      },
+      {
+        "file_path": "dashboard/pages/tasks.html",
+        "language": "HTML",
+        "loc": 86,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics"
+        ]
+      },
+      {
+        "file_path": "dashboard/pages/teams.html",
+        "language": "HTML",
+        "loc": 51,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics"
         ]
       },
       {
@@ -4870,6 +5017,55 @@
         "patterns": []
       },
       {
+        "file_path": "packages/server/src/lib/auto-delegation.ts",
+        "language": "TypeScript",
+        "loc": 159,
+        "imports": [],
+        "exports": [
+          "SprintItemInput",
+          "DelegationStep",
+          "AutoDelegationResult",
+          "AutoDelegationPipeline"
+        ],
+        "framework_indicators": [
+          "React",
+          "Svelte",
+          "GraphQL"
+        ],
+        "patterns": [
+          "generics",
+          "destructuring",
+          "nullish coalescing",
+          "template literals",
+          "classes",
+          "interfaces",
+          "type aliases"
+        ]
+      },
+      {
+        "file_path": "packages/server/src/lib/career-hook.ts",
+        "language": "TypeScript",
+        "loc": 113,
+        "imports": [],
+        "exports": [
+          "TaskMemory",
+          "PostTaskInput",
+          "SkillLevelUp",
+          "InMemoryCareerHook",
+          "careerHook"
+        ],
+        "framework_indicators": [
+          "Next.js"
+        ],
+        "patterns": [
+          "generics",
+          "spread operator",
+          "nullish coalescing",
+          "classes",
+          "interfaces"
+        ]
+      },
+      {
         "file_path": "packages/server/src/main.ts",
         "language": "TypeScript",
         "loc": 127,
@@ -5553,7 +5749,7 @@
       {
         "file_path": "packages/server/src/routes/v5/run.ts",
         "language": "TypeScript",
-        "loc": 214,
+        "loc": 248,
         "imports": [
           "fastify",
           "@agentforge/db",
@@ -5561,7 +5757,8 @@
           "@agentforge/shared",
           "./stream.js",
           "node:path",
-          "node:url"
+          "node:url",
+          "../../lib/career-hook.js"
         ],
         "exports": [
           "getRunLog"
@@ -5610,7 +5807,7 @@
       {
         "file_path": "packages/server/src/routes/v5/sprint-orchestration.ts",
         "language": "TypeScript",
-        "loc": 486,
+        "loc": 1056,
         "imports": [
           "fastify",
           "node:fs",
@@ -5618,7 +5815,9 @@
           "node:url",
           "@agentforge/core",
           "@agentforge/shared",
-          "./stream.js"
+          "./stream.js",
+          "../../lib/career-hook.js",
+          "../../lib/auto-delegation.js"
         ],
         "exports": [],
         "framework_indicators": [
@@ -6253,6 +6452,26 @@
         ]
       },
       {
+        "file_path": "src/analytics/agent-scorecard.ts",
+        "language": "TypeScript",
+        "loc": 219,
+        "imports": [],
+        "exports": [
+          "AgentScorecard",
+          "buildScorecard",
+          "buildLeaderboard",
+          "exportScorecard"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "optional chaining",
+          "nullish coalescing",
+          "interfaces"
+        ]
+      },
+      {
         "file_path": "src/analytics/index.ts",
         "language": "TypeScript",
         "loc": 7,
@@ -6443,6 +6662,32 @@
           "classes",
           "interfaces",
           "type aliases"
+        ]
+      },
+      {
+        "file_path": "src/autonomous/sprint-retrospective.ts",
+        "language": "TypeScript",
+        "loc": 429,
+        "imports": [
+          "../types/lifecycle.js"
+        ],
+        "exports": [
+          "SprintRetrospective",
+          "SprintDataItem",
+          "SprintData",
+          "generateRetrospective"
+        ],
+        "framework_indicators": [
+          "Next.js"
+        ],
+        "patterns": [
+          "generics",
+          "destructuring",
+          "spread operator",
+          "optional chaining",
+          "nullish coalescing",
+          "template literals",
+          "interfaces"
         ]
       },
       {
@@ -8060,6 +8305,33 @@
         ]
       },
       {
+        "file_path": "src/lifecycle/hiring-pipeline.ts",
+        "language": "TypeScript",
+        "loc": 220,
+        "imports": [
+          "node:fs/promises",
+          "node:path",
+          "../../packages/core/src/agent-runtime/index.js",
+          "./agent-lifecycle-manager.js",
+          "../types/lifecycle.js"
+        ],
+        "exports": [
+          "HiringExecutionOptions",
+          "HiringResult"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "destructuring",
+          "optional chaining",
+          "nullish coalescing",
+          "template literals",
+          "interfaces",
+          "closures"
+        ]
+      },
+      {
         "file_path": "src/lifecycle/index.ts",
         "language": "TypeScript",
         "loc": 13,
@@ -8067,6 +8339,29 @@
         "exports": [],
         "framework_indicators": [],
         "patterns": []
+      },
+      {
+        "file_path": "src/lifecycle/promotion-evaluator.ts",
+        "language": "TypeScript",
+        "loc": 144,
+        "imports": [
+          "./career-store.js",
+          "../types/lifecycle.js"
+        ],
+        "exports": [
+          "PromotionCandidate",
+          "evaluatePromotions",
+          "applyPromotions"
+        ],
+        "framework_indicators": [
+          "Next.js"
+        ],
+        "patterns": [
+          "optional chaining",
+          "nullish coalescing",
+          "template literals",
+          "interfaces"
+        ]
       },
       {
         "file_path": "src/lifecycle/skill-gap-analyzer.ts",
@@ -8642,6 +8937,36 @@
         ]
       },
       {
+        "file_path": "src/orchestrator/executive-tool-executor.ts",
+        "language": "TypeScript",
+        "loc": 399,
+        "imports": [
+          "node:fs/promises",
+          "node:fs",
+          "node:path",
+          "../lifecycle/agent-lifecycle-manager.js"
+        ],
+        "exports": [
+          "ToolInvocation",
+          "ToolExecutionResult",
+          "ExecutiveToolContext",
+          "parseToolInvocations"
+        ],
+        "framework_indicators": [
+          "Next.js"
+        ],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "spread operator",
+          "nullish coalescing",
+          "template literals",
+          "interfaces",
+          "error handling"
+        ]
+      },
+      {
         "file_path": "src/orchestrator/feed-renderer.ts",
         "language": "TypeScript",
         "loc": 101,
@@ -8718,6 +9043,28 @@
           "classes",
           "interfaces",
           "error handling"
+        ]
+      },
+      {
+        "file_path": "src/orchestrator/knowledge-extractor.ts",
+        "language": "TypeScript",
+        "loc": 187,
+        "imports": [
+          "node:crypto",
+          "../types/lifecycle.js"
+        ],
+        "exports": [
+          "extractKnowledge"
+        ],
+        "framework_indicators": [
+          "Next.js"
+        ],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "template literals",
+          "interfaces"
         ]
       },
       {
@@ -8852,6 +9199,36 @@
         ]
       },
       {
+        "file_path": "src/orchestrator/parallel-sprint-executor.ts",
+        "language": "TypeScript",
+        "loc": 265,
+        "imports": [
+          "../lifecycle/concurrency-manager.js",
+          "../types/lifecycle.js"
+        ],
+        "exports": [
+          "SprintItem",
+          "SprintItemResult",
+          "ParallelSprintResult",
+          "TaskExecutorFn"
+        ],
+        "framework_indicators": [
+          "Next.js"
+        ],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "spread operator",
+          "nullish coalescing",
+          "template literals",
+          "interfaces",
+          "type aliases",
+          "error handling"
+        ]
+      },
+      {
         "file_path": "src/orchestrator/progress-ledger.ts",
         "language": "TypeScript",
         "loc": 152,
@@ -8886,6 +9263,32 @@
           "generics",
           "classes",
           "interfaces"
+        ]
+      },
+      {
+        "file_path": "src/orchestrator/runtime-delegation.ts",
+        "language": "TypeScript",
+        "loc": 349,
+        "imports": [
+          "../../packages/core/src/agent-runtime/index.js",
+          "./auto-delegation.js"
+        ],
+        "exports": [
+          "DelegationChainEvent",
+          "DelegationChainResult"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "spread operator",
+          "optional chaining",
+          "nullish coalescing",
+          "template literals",
+          "interfaces",
+          "error handling"
         ]
       },
       {
@@ -10894,6 +11297,26 @@
         ]
       },
       {
+        "file_path": "src/utils/version-sync.ts",
+        "language": "TypeScript",
+        "loc": 62,
+        "imports": [
+          "node:fs",
+          "node:path",
+          "node:url"
+        ],
+        "exports": [
+          "VersionSyncResult",
+          "checkVersionSync"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "nullish coalescing",
+          "interfaces"
+        ]
+      },
+      {
         "file_path": "templates/agents/architect.yaml",
         "language": "YAML",
         "loc": 101,
@@ -11810,6 +12233,26 @@
         "patterns": []
       },
       {
+        "file_path": "tests/analytics/agent-scorecard.test.ts",
+        "language": "TypeScript",
+        "loc": 438,
+        "imports": [
+          "vitest",
+          "../../src/types/v4-api.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "spread operator",
+          "optional chaining",
+          "nullish coalescing",
+          "template literals"
+        ]
+      },
+      {
         "file_path": "tests/analytics/performance-leaderboard.test.ts",
         "language": "TypeScript",
         "loc": 406,
@@ -11879,6 +12322,23 @@
         "framework_indicators": [],
         "patterns": [
           "arrow functions"
+        ]
+      },
+      {
+        "file_path": "tests/autonomous/sprint-retrospective.test.ts",
+        "language": "TypeScript",
+        "loc": 420,
+        "imports": [
+          "vitest",
+          "../../src/types/lifecycle.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "spread operator",
+          "template literals"
         ]
       },
       {
@@ -12816,6 +13276,33 @@
           "arrow functions",
           "optional chaining",
           "enums"
+        ]
+      },
+      {
+        "file_path": "tests/integration/sprint-pipeline.test.ts",
+        "language": "TypeScript",
+        "loc": 1023,
+        "imports": [
+          "vitest",
+          "node:fs",
+          "node:path",
+          "node:os",
+          "node:crypto",
+          "../../src/orchestrator/auto-delegation.js",
+          "../../src/lifecycle/career-store.js",
+          "../../src/lifecycle/concurrency-manager.js",
+          "../../src/types/lifecycle.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "spread operator",
+          "nullish coalescing",
+          "template literals",
+          "interfaces"
         ]
       },
       {
@@ -14629,6 +15116,21 @@
         ]
       },
       {
+        "file_path": "tests/utils/version-sync.test.ts",
+        "language": "TypeScript",
+        "loc": 97,
+        "imports": [
+          "vitest",
+          "../../src/utils/version-sync.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "arrow functions",
+          "template literals"
+        ]
+      },
+      {
         "file_path": "tests/v5/adversarial.test.ts",
         "language": "TypeScript",
         "loc": 311,
@@ -15265,10 +15767,10 @@
     "languages": {
       "JSON": 29,
       "YAML": 101,
-      "TypeScript": 613,
+      "TypeScript": 628,
       "JavaScript": 30,
       "Markdown": 45,
-      "HTML": 2,
+      "HTML": 15,
       "Svelte": 28,
       "CSS": 1,
       "Shell": 3
@@ -15277,10 +15779,10 @@
       "Svelte",
       "Fastify",
       "Next.js",
-      "Vue",
       "React",
-      "Nuxt",
+      "Vue",
       "GraphQL",
+      "Nuxt",
       "Express",
       "Django",
       "FastAPI",
@@ -15290,8 +15792,8 @@
       "Actix",
       "Fiber"
     ],
-    "total_files": 852,
-    "total_loc": 159596,
+    "total_files": 880,
+    "total_loc": 165272,
     "directory_structure": [
       ".claude",
       ".claude-plugin",
@@ -15311,10 +15813,10 @@
     ]
   },
   "git": {
-    "total_commits": 135,
+    "total_commits": 136,
     "contributors": [
       {
-        "commits": 134,
+        "commits": 135,
         "name": "Sean Vaughan",
         "email": "sean@vaughanfamily.org"
       },
@@ -15327,18 +15829,18 @@
     "active_files": [
       {
         "path": ".agentforge/team.yaml",
-        "changes": 21,
-        "last_modified": "2026-03-29T11:47:08-05:00"
+        "changes": 22,
+        "last_modified": "2026-03-29T11:58:01-05:00"
       },
       {
         "path": "dashboard/index.html",
-        "changes": 15,
-        "last_modified": "2026-03-29T11:47:08-05:00"
+        "changes": 16,
+        "last_modified": "2026-03-29T11:58:01-05:00"
       },
       {
         "path": ".agentforge/analysis/project-scan.json",
-        "changes": 13,
-        "last_modified": "2026-03-29T11:47:08-05:00"
+        "changes": 14,
+        "last_modified": "2026-03-29T11:58:01-05:00"
       },
       {
         "path": "package.json",
@@ -15361,6 +15863,26 @@
         "last_modified": "2026-03-28T13:52:45-05:00"
       },
       {
+        "path": ".agentforge/agents/architect.yaml",
+        "changes": 6,
+        "last_modified": "2026-03-29T11:58:01-05:00"
+      },
+      {
+        "path": ".agentforge/agents/genesis.yaml",
+        "changes": 6,
+        "last_modified": "2026-03-29T11:58:01-05:00"
+      },
+      {
+        "path": ".agentforge/agents/linter.yaml",
+        "changes": 6,
+        "last_modified": "2026-03-29T11:58:01-05:00"
+      },
+      {
+        "path": ".agentforge/agents/researcher.yaml",
+        "changes": 6,
+        "last_modified": "2026-03-29T11:58:01-05:00"
+      },
+      {
         "path": "src/db/sqlite-adapter.ts",
         "changes": 6,
         "last_modified": "2026-03-27T14:42:34-05:00"
@@ -15376,12 +15898,12 @@
         "last_modified": "2026-03-25T18:55:20-05:00"
       },
       {
-        "path": ".agentforge/agents/api-specialist.yaml",
+        "path": ".agentforge/agents/dba.yaml",
         "changes": 5,
-        "last_modified": "2026-03-29T11:47:08-05:00"
+        "last_modified": "2026-03-29T11:58:01-05:00"
       },
       {
-        "path": ".agentforge/agents/architect.yaml",
+        "path": ".agentforge/agents/api-specialist.yaml",
         "changes": 5,
         "last_modified": "2026-03-29T11:47:08-05:00"
       },
@@ -15396,32 +15918,12 @@
         "last_modified": "2026-03-29T11:47:08-05:00"
       },
       {
-        "path": ".agentforge/agents/genesis.yaml",
-        "changes": 5,
-        "last_modified": "2026-03-29T11:47:08-05:00"
-      },
-      {
-        "path": ".agentforge/agents/linter.yaml",
-        "changes": 5,
-        "last_modified": "2026-03-29T11:47:08-05:00"
-      },
-      {
         "path": ".agentforge/agents/meta-architect.yaml",
         "changes": 5,
         "last_modified": "2026-03-29T11:47:08-05:00"
       },
       {
         "path": ".agentforge/agents/project-manager.yaml",
-        "changes": 5,
-        "last_modified": "2026-03-29T11:47:08-05:00"
-      },
-      {
-        "path": ".agentforge/agents/researcher.yaml",
-        "changes": 5,
-        "last_modified": "2026-03-29T11:47:08-05:00"
-      },
-      {
-        "path": ".agentforge/agents/skill-designer.yaml",
         "changes": 5,
         "last_modified": "2026-03-29T11:47:08-05:00"
       }
@@ -15431,13 +15933,13 @@
     "churn_rate": [
       {
         "path": ".agentforge/analysis/project-scan.json",
-        "additions": 26891,
-        "deletions": 10502
+        "additions": 26934,
+        "deletions": 10545
       },
       {
         "path": "dashboard/index.html",
-        "additions": 12753,
-        "deletions": 2311
+        "additions": 12755,
+        "deletions": 2313
       },
       {
         "path": "package-lock.json",
@@ -15471,8 +15973,8 @@
       },
       {
         "path": ".agentforge/team.yaml",
-        "additions": 736,
-        "deletions": 570
+        "additions": 738,
+        "deletions": 572
       },
       {
         "path": "docs/superpowers/specs/2026-03-25-universal-forge-design.md",
@@ -15533,7 +16035,7 @@
     "commit_frequency": [
       {
         "period": "2026-03",
-        "count": 135
+        "count": 136
       }
     ],
     "age_days": 4
@@ -16348,12 +16850,6 @@
       }
     ],
     "notes": [
-      {
-        "text": "`started` / `skipped` counts in reply body reflect planning-time counts.",
-        "file": "packages/server/src/routes/v5/sprint-orchestration.ts",
-        "line": 479,
-        "type": "NOTE"
-      },
       {
         "text": "When persisting via writeFile('feedback/<sprintId>.json', ...),",
         "file": "src/db/sqlite-adapter.ts",
