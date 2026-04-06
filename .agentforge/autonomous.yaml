@@ -1,0 +1,68 @@
+# .agentforge/autonomous.yaml
+# AgentForge autonomous cycle configuration
+# See docs/superpowers/specs/2026-04-06-autonomous-loop-design.md
+
+budget:
+  perCycleUsd: 50
+  perItemUsd: 10
+  perAgentUsd: 15
+  allowOverageApproval: true
+
+limits:
+  maxItemsPerSprint: 20
+  maxDurationMinutes: 180
+  maxConsecutiveFailures: 5
+  maxExecutePhaseFailureRate: 0.5
+
+quality:
+  testPassRateFloor: 0.95
+  allowRegression: false
+  requireBuildSuccess: true
+  requireTypeCheckSuccess: true
+
+git:
+  branchPrefix: "autonomous/"
+  baseBranch: "main"
+  refuseCommitToBaseBranch: true
+  includeDiagnosticBranchOnFailure: true
+  maxFilesPerCommit: 100
+
+pr:
+  draft: false
+  assignReviewer: "seandonvaughan"
+  labelPrefix: "autonomous"
+  labels:
+    - "autonomous"
+    - "needs-review"
+  titleTemplate: "autonomous(v{version}): {summary}"
+
+sourcing:
+  lookbackDays: 7
+  minProposalConfidence: 0.6
+  includeTodoMarkers: true
+  todoMarkerPattern: "TODO\\(autonomous\\)|FIXME\\(autonomous\\)"
+
+testing:
+  command: "npm run test:run"
+  timeoutMinutes: 20
+  reporter: "json"
+  saveRawLog: true
+  buildCommand: "npm run build"
+  typeCheckCommand: "npx tsc --noEmit"
+
+scoring:
+  agentId: "backlog-scorer"
+  maxRetries: 3
+  fallbackToStatic: true
+
+logging:
+  logDir: ".agentforge/cycles"
+  retainCycles: 50
+
+safety:
+  stopFilePath: ".agentforge/cycles/{cycleId}/STOP"
+  secretScanEnabled: true
+  verifyCleanWorkingTreeBeforeStart: true
+  workingTreeWhitelist:
+    - ".agentforge/cycles/**"
+    - ".agentforge/audit.db-*"
