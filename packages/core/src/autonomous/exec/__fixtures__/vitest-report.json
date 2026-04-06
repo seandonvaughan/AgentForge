@@ -1,0 +1,22 @@
+{
+  "numTotalTests": 3,
+  "numPassedTests": 2,
+  "numFailedTests": 1,
+  "numPendingTests": 0,
+  "startTime": 1743958800000,
+  "testResults": [
+    {
+      "name": "sample.test.ts",
+      "assertionResults": [
+        { "title": "passes", "status": "passed", "ancestorTitles": ["sample"] },
+        { "title": "also passes", "status": "passed", "ancestorTitles": ["sample"] },
+        {
+          "title": "fails deliberately",
+          "status": "failed",
+          "ancestorTitles": ["sample"],
+          "failureMessages": ["AssertionError: expected 1 to be 2"]
+        }
+      ]
+    }
+  ]
+}
