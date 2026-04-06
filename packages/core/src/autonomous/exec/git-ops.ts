@@ -21,13 +21,62 @@
 // See docs/superpowers/specs/2026-04-06-autonomous-loop-design.md §8.2
 // and docs/superpowers/plans/2026-04-06-autonomous-loop.md Task 11.
 
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { resolve, relative } from 'node:path';
 import type { CycleConfig } from '../types.js';
 import type { CycleLogger } from '../cycle-logger.js';
 
 const execFileAsync = promisify(execFile);
+
+/**
+ * Run git with input piped to stdin. Used for `git commit -F -` so we can
+ * pass the commit message without shell escaping or temp files. The
+ * promisified `execFile` does NOT honor the `input` option (that only works
+ * on the *Sync variants), so we go through `spawn` ourselves.
+ */
+function gitWithStdin(
+  args: string[],
+  cwd: string,
+  input: string,
+  timeoutMs = 120_000,
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolveP, rejectP) => {
+    const child = spawn('git', args, { cwd });
+    let stdout = '';
+    let stderr = '';
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      rejectP(new Error(`git ${args.join(' ')} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      rejectP(err);
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code === 0) {
+        resolveP({ stdout, stderr });
+      } else {
+        const err: any = new Error(
+          `git ${args.join(' ')} exited with code ${code}: ${stderr}`,
+        );
+        err.code = code;
+        err.stdout = stdout;
+        err.stderr = stderr;
+        rejectP(err);
+      }
+    });
+    child.stdin.write(input);
+    child.stdin.end();
+  });
+}
 
 export class GitSafetyError extends Error {
   constructor(msg: string) {
@@ -144,11 +193,7 @@ export class GitOps {
     await this.scanStagedForSecrets();
 
     // Commit via stdin to avoid shell escaping
-    await execFileAsync('git', ['commit', '-F', '-'], {
-      cwd: this.cwd,
-      input: message,
-      timeout: 120_000,
-    } as any);
+    await gitWithStdin(['commit', '-F', '-'], this.cwd, message);
 
     const sha = (await this.git(['rev-parse', 'HEAD'])).stdout.trim();
 
@@ -164,17 +209,37 @@ export class GitOps {
     return sha;
   }
 
-  // Placeholder methods — implemented in Task 12
-  async createBranch(_version: string, _suffix?: string): Promise<string> {
-    throw new Error('createBranch: not yet implemented (Task 12)');
+  async createBranch(version: string, suffix: string = ''): Promise<string> {
+    const branch = `${this.config.branchPrefix}v${version}${suffix}`;
+
+    // Check if branch already exists
+    try {
+      await this.git(['rev-parse', '--verify', `refs/heads/${branch}`]);
+      throw new GitSafetyError(
+        `REFUSED: branch ${branch} already exists — previous cycle may be uncleaned`,
+      );
+    } catch (err: any) {
+      if (err instanceof GitSafetyError) throw err;
+      // Expected: git rev-parse fails if branch does not exist
+    }
+
+    await this.git(['checkout', '-b', branch, this.config.baseBranch]);
+    this.logger.logGitEvent({ type: 'branch-created', branch });
+    return branch;
   }
 
-  async push(_branch: string): Promise<void> {
-    throw new Error('push: not yet implemented (Task 12)');
+  async push(branch: string): Promise<void> {
+    await this.git(['push', '-u', 'origin', branch]);
+    this.logger.logGitEvent({ type: 'pushed', branch });
   }
 
-  async rollbackCommit(_branch: string, _sha: string): Promise<void> {
-    throw new Error('rollbackCommit: not yet implemented (Task 12)');
+  async rollbackCommit(branch: string, sha: string): Promise<void> {
+    const current = (await this.git(['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim();
+    if (current !== branch) {
+      throw new GitSafetyError(`Cannot rollback: not on branch ${branch} (current: ${current})`);
+    }
+    await this.git(['reset', '--hard', `${sha}~1`]);
+    this.logger.logGitEvent({ type: 'rolled-back', branch, fromSha: sha });
   }
 
   private async git(args: string[]): Promise<{ stdout: string; stderr: string }> {

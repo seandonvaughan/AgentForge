@@ -149,4 +149,76 @@ describe('GitOps safety guards', () => {
     const ops = makeOps();
     await expect(ops.stage([])).rejects.toThrow(/no files/i);
   });
+
+  it('createBranch creates and checks out feature branch', async () => {
+    const ops = makeOps();
+    const branch = await ops.createBranch('6.4.0');
+    expect(branch).toBe('autonomous/v6.4.0');
+    const current = (await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: tmpRepo })).stdout.trim();
+    expect(current).toBe(branch);
+  });
+
+  it('createBranch appends suffix (e.g., -failed)', async () => {
+    const ops = makeOps();
+    const branch = await ops.createBranch('6.4.0', '-failed');
+    expect(branch).toBe('autonomous/v6.4.0-failed');
+  });
+
+  it('createBranch refuses if branch already exists', async () => {
+    const ops = makeOps();
+    await ops.createBranch('6.4.0');
+    // Go back to main first to try re-creating
+    await execFileAsync('git', ['checkout', 'main'], { cwd: tmpRepo });
+    await expect(ops.createBranch('6.4.0')).rejects.toThrow(/already exists/);
+  });
+
+  it('full happy path: createBranch → stage → commit', async () => {
+    const ops = makeOps();
+    await ops.createBranch('6.4.0');
+    writeFileSync(join(tmpRepo, 'new-file.ts'), 'export const x = 1;\n');
+    await ops.stage(['new-file.ts']);
+    const sha = await ops.commit('autonomous(v6.4.0): add new file\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>');
+    expect(sha).toMatch(/^[0-9a-f]{40}$/);
+    const current = (await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: tmpRepo })).stdout.trim();
+    expect(current).toBe('autonomous/v6.4.0');
+  });
+
+  it('rollbackCommit resets to previous state on feature branch', async () => {
+    const ops = makeOps();
+    await ops.createBranch('6.4.0');
+    writeFileSync(join(tmpRepo, 'new-file.ts'), 'export const x = 1;\n');
+    await ops.stage(['new-file.ts']);
+    const sha = await ops.commit('test commit');
+
+    await ops.rollbackCommit('autonomous/v6.4.0', sha);
+
+    const log = (await execFileAsync('git', ['log', '--oneline'], { cwd: tmpRepo })).stdout;
+    expect(log).not.toContain('test commit');
+  });
+
+  it('rollbackCommit refuses if not on the expected branch', async () => {
+    const ops = makeOps();
+    await ops.createBranch('6.4.0');
+    writeFileSync(join(tmpRepo, 'new.ts'), 'x');
+    await ops.stage(['new.ts']);
+    const sha = await ops.commit('test');
+    await execFileAsync('git', ['checkout', 'main'], { cwd: tmpRepo });
+    await expect(
+      ops.rollbackCommit('autonomous/v6.4.0', sha),
+    ).rejects.toThrow(/not on branch/i);
+  });
+
+  it('never passes -A or . to git add', async () => {
+    const ops = makeOps();
+    await ops.createBranch('6.4.0');
+    writeFileSync(join(tmpRepo, 'a.ts'), 'a');
+    writeFileSync(join(tmpRepo, 'b.ts'), 'b');
+    // If the impl used git add -A or git add ., this would still pass, but
+    // our impl uses `git add -- a.ts b.ts`. Verify by spying on execFile would be nice.
+    // Simpler: verify we can selectively stage.
+    await ops.stage(['a.ts']);
+    const staged = (await execFileAsync('git', ['diff', '--cached', '--name-only'], { cwd: tmpRepo })).stdout;
+    expect(staged.trim()).toBe('a.ts');
+    expect(staged).not.toContain('b.ts');
+  });
 });
