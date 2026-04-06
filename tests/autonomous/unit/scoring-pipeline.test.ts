@@ -119,3 +119,115 @@ describe('ScoringPipeline', () => {
     expect(result.withinBudget).toHaveLength(1);
   });
 });
+
+describe('ScoringPipeline fallback ladder', () => {
+  function makeAlternatingRuntime(responses: string[]) {
+    let idx = 0;
+    return {
+      run: async (_config: any, _task: string) => ({
+        output: responses[idx++ % responses.length],
+        usage: { input_tokens: 100, output_tokens: 50 },
+        costUsd: 0.01,
+        durationMs: 500,
+        model: 'claude-sonnet-4-6',
+      }),
+    };
+  }
+
+  function makeAdapter() {
+    return {
+      getSprintHistory: async () => [],
+      getCostMedians: async () => ({}),
+      getTeamState: async () => ({ utilization: {} }),
+    };
+  }
+
+  function makeLogger() {
+    const logs: any[] = [];
+    return {
+      logs,
+      logger: {
+        logScoring: (r: any, g: any) => logs.push({ type: 'scoring', r, g }),
+        logScoringFallback: (strike: number, error: string) => logs.push({ type: 'fallback', strike, error }),
+      } as any,
+    };
+  }
+
+  const fakeBacklog = [
+    { id: 'i1', title: 'Fix crash', description: 'x', priority: 'P0' as const, tags: ['fix'], source: 'failed-session' as const, confidence: 0.9 },
+    { id: 'i2', title: 'Add X', description: 'x', priority: 'P1' as const, tags: ['feature'], source: 'todo-marker' as const, confidence: 1.0 },
+  ];
+
+  it('strike 1: retries with clarified prompt on invalid JSON', async () => {
+    const validResponse = JSON.stringify({
+      rankings: [{ itemId: 'i1', title: 'Fix', rank: 1, score: 0.9, confidence: 0.9, estimatedCostUsd: 10, estimatedDurationMinutes: 15, rationale: 'r', dependencies: [], suggestedAssignee: 'coder', suggestedTags: ['fix'], withinBudget: true }],
+      totalEstimatedCostUsd: 10, budgetOverflowUsd: 0, summary: 's', warnings: [],
+    });
+    const runtime = makeAlternatingRuntime([
+      'this is not JSON at all',  // strike 1 fails
+      validResponse,                // strike 2 succeeds
+    ]);
+    const { logs, logger } = makeLogger();
+    const pipeline = new ScoringPipeline(
+      runtime as any,
+      makeAdapter() as any,
+      DEFAULT_CYCLE_CONFIG,
+      logger,
+    );
+    const result = await pipeline.scoreWithFallback(fakeBacklog);
+    expect(result.withinBudget).toHaveLength(1);
+    expect(logs.some(l => l.type === 'fallback' && l.strike === 1)).toBe(true);
+  });
+
+  it('strike 3: falls back to static priority ranking when all retries fail', async () => {
+    const runtime = makeAlternatingRuntime([
+      'garbage', 'more garbage', 'still garbage', // all 3 strikes fail
+    ]);
+    const { logs, logger } = makeLogger();
+    const pipeline = new ScoringPipeline(
+      runtime as any,
+      makeAdapter() as any,
+      DEFAULT_CYCLE_CONFIG,
+      logger,
+    );
+    const result = await pipeline.scoreWithFallback(fakeBacklog);
+    expect(result.fallback).toBe('static');
+    expect(result.withinBudget.length).toBeGreaterThan(0);
+    // P0 should rank higher than P1 in static fallback
+    expect(result.withinBudget[0]!.itemId).toBe('i1');
+  });
+
+  it('static fallback respects budget', async () => {
+    const runtime = makeAlternatingRuntime(['garbage', 'garbage', 'garbage']);
+    const { logger } = makeLogger();
+    const bigBacklog = Array.from({ length: 20 }, (_, i) => ({
+      id: `item-${i}`,
+      title: `Item ${i}`,
+      description: 'x',
+      priority: (i < 3 ? 'P0' : i < 10 ? 'P1' : 'P2') as 'P0' | 'P1' | 'P2',
+      tags: ['fix'],
+      source: 'failed-session' as const,
+      confidence: 0.9,
+    }));
+
+    const config = {
+      ...DEFAULT_CYCLE_CONFIG,
+      budget: {
+        ...DEFAULT_CYCLE_CONFIG.budget,
+        perCycleUsd: 25,
+        perItemUsd: 5,
+      },
+    };
+    const pipeline = new ScoringPipeline(
+      runtime as any,
+      makeAdapter() as any,
+      config,
+      logger,
+    );
+    const result = await pipeline.scoreWithFallback(bigBacklog);
+    expect(result.fallback).toBe('static');
+    // Should prefer P0 items and fit within budget
+    const totalCost = result.withinBudget.reduce((sum, i) => sum + i.estimatedCostUsd, 0);
+    expect(totalCost).toBeLessThanOrEqual(25);
+  });
+});

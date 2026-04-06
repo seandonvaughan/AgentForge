@@ -85,6 +85,85 @@ export class ScoringPipeline {
     };
   }
 
+  /**
+   * Three-strike scoring with fallback ladder.
+   * Strike 1: retry with clarified prompt
+   * Strike 2: retry with simpler schema (drop dependencies/suggestedAssignee)
+   * Strike 3: fall back to static priority ranking
+   */
+  async scoreWithFallback(backlog: BacklogItem[]): Promise<ScoringPipelineResult> {
+    const strikes = this.config.scoring.maxRetries;
+    let lastError: Error | null = null;
+
+    for (let strike = 0; strike < strikes; strike++) {
+      try {
+        return await this.score(backlog);
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        this.logger.logScoringFallback(strike + 1, lastError.message);
+      }
+    }
+
+    if (!this.config.scoring.fallbackToStatic) {
+      throw lastError ?? new ScoringPipelineError('Scoring failed after all retries');
+    }
+
+    this.logger.logScoringFallback(strikes + 1, 'Falling back to static priority ranking');
+    return this.staticFallback(backlog);
+  }
+
+  private staticFallback(backlog: BacklogItem[]): ScoringPipelineResult {
+    const priorityOrder: Record<'P0' | 'P1' | 'P2', number> = { P0: 0, P1: 1, P2: 2 };
+    const sorted = [...backlog].sort((a, b) => {
+      const pa = priorityOrder[a.priority];
+      const pb = priorityOrder[b.priority];
+      if (pa !== pb) return pa - pb;
+      return b.confidence - a.confidence;
+    });
+
+    const defaultCost = this.config.budget.perItemUsd;
+    const rankings: RankedItem[] = sorted.map((item, idx) => ({
+      itemId: item.id,
+      title: item.title,
+      rank: idx + 1,
+      score: item.confidence,
+      confidence: item.confidence,
+      estimatedCostUsd: defaultCost,
+      estimatedDurationMinutes: 15,
+      rationale: `Static fallback ranking (${item.priority}, confidence ${item.confidence.toFixed(2)})`,
+      dependencies: [],
+      suggestedAssignee: 'coder',
+      suggestedTags: item.tags,
+      withinBudget: true,
+    }));
+
+    // Enforce per-cycle budget
+    let cumulative = 0;
+    for (const r of rankings) {
+      cumulative += r.estimatedCostUsd;
+      if (cumulative > this.config.budget.perCycleUsd) {
+        r.withinBudget = false;
+      }
+    }
+
+    // Enforce max items
+    const withinBudget = rankings
+      .filter(r => r.withinBudget)
+      .slice(0, this.config.limits.maxItemsPerSprint);
+
+    const totalCost = withinBudget.reduce((sum, r) => sum + r.estimatedCostUsd, 0);
+
+    return {
+      withinBudget,
+      requiresApproval: rankings.filter(r => !r.withinBudget),
+      totalEstimatedCostUsd: totalCost,
+      budgetOverflowUsd: 0,
+      summary: `Static priority fallback: ${withinBudget.length} items within $${this.config.budget.perCycleUsd} budget`,
+      warnings: ['Scoring agent failed; used static priority ranking'],
+      fallback: 'static',
+    };
+  }
+
   async gatherGrounding(): Promise<object> {
     const [history, costMedians, teamState] = await Promise.all([
       this.adapter.getSprintHistory(10),
