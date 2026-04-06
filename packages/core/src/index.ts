@@ -24,3 +24,4 @@ export * from './multi-workspace/index.js';
 export * from './agent-versioning/index.js';
 export * from './federation/index.js';
 export * from './resilience/index.js';
+export * from './autonomous/index.js';
