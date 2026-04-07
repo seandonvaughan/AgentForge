@@ -71,7 +71,7 @@ export class AgentRuntime {
     }
 
     try {
-      const cliResult = await this.invokeClaudeCli(modelId, userContent);
+      const cliResult = await this.invokeClaudeCli(modelId, userContent, opts.allowedTools);
 
       const completedAt = new Date().toISOString();
 
@@ -183,6 +183,7 @@ export class AgentRuntime {
   private async invokeClaudeCli(
     modelId: string,
     userContent: string,
+    allowedTools?: string[],
   ): Promise<ClaudeCliResult> {
     const args = [
       '-p',
@@ -191,6 +192,12 @@ export class AgentRuntime {
       '--no-session-persistence',
       '--system-prompt', this.config.systemPrompt,
     ];
+
+    if (allowedTools && allowedTools.length > 0) {
+      // claude CLI accepts comma- or space-separated tool list. We pass
+      // a comma-joined string as a single argv to be unambiguous.
+      args.push('--allowed-tools', allowedTools.join(','));
+    }
 
     // Default timeout: 10 minutes. Agents with heavier workloads should
     // raise this via AgentRuntimeConfig.maxTokens as a rough proxy for now.

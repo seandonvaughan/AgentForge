@@ -56,7 +56,7 @@ export class RuntimeAdapter implements RuntimeForScoring {
   async run(
     agentId: string,
     task: string,
-    _options?: { responseFormat?: string },
+    options?: { responseFormat?: string; allowedTools?: string[] },
   ): Promise<{
     output: string;
     usage: { input_tokens: number; output_tokens: number };
@@ -66,7 +66,9 @@ export class RuntimeAdapter implements RuntimeForScoring {
   }> {
     const runtime = await this.getOrCreateRuntime(agentId);
     const startedAt = Date.now();
-    const result: RunResult = await runtime.run({ task });
+    const runOpts: { task: string; allowedTools?: string[] } = { task };
+    if (options?.allowedTools) runOpts.allowedTools = options.allowedTools;
+    const result: RunResult = await runtime.run(runOpts);
     const durationMs = Date.now() - startedAt;
 
     if (result.status === 'failed') {

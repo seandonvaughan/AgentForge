@@ -46,6 +46,7 @@ export function registerAutonomousCommand(program: Command): void {
           GitOps,
           PROpener,
           RuntimeAdapter,
+          runExecutePhase,
         } = await import('@agentforge/core');
 
         const config = loadCycleConfig(cwd);
@@ -108,7 +109,11 @@ export function registerAutonomousCommand(program: Command): void {
           audit: makeStubPhaseHandler('audit'),
           plan: makeStubPhaseHandler('plan'),
           assign: makeStubPhaseHandler('assign'),
-          execute: makeStubPhaseHandler('execute'),
+          // v6.5.1: real execute phase — dispatches each sprint item to its
+          // assignee agent via RuntimeAdapter (claude -p with Read/Write/Edit/
+          // Bash/Glob/Grep tools enabled). The git stage picks up working-tree
+          // changes after the phase completes.
+          execute: (ctx: any) => runExecutePhase(ctx),
           test: makeStubPhaseHandler('test'),
           review: makeStubPhaseHandler('review'),
           gate: makeStubPhaseHandler('gate'),

@@ -15,6 +15,14 @@ export interface RunOptions {
   parentSessionId?: string;
   context?: string;          // additional context injected before user message
   budgetUsd?: number;        // hard stop if cost would exceed this
+  /**
+   * Optional list of Claude Code tool names to enable on this run
+   * (e.g. ['Read','Write','Edit','Bash','Glob','Grep']). When set, the
+   * AgentRuntime appends `--allowed-tools <list>` to the `claude -p`
+   * subprocess args. Omit to leave the CLI's default behavior in place
+   * (no tools enabled for non-interactive `claude -p`).
+   */
+  allowedTools?: string[];
 }
 
 export interface RunResult {
