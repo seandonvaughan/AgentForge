@@ -2,6 +2,115 @@
 
 All notable changes to AgentForge are documented in this file.
 
+## [6.5.0] — 2026-04-07
+
+### Autonomous Command Center — dashboard UI for the v6.4 loop
+
+v6.5.0 ships the first full-fidelity UI for the autonomous development cycle. The SvelteKit dashboard at `packages/dashboard/` now has dedicated pages for launching, monitoring, and auditing autonomous cycles, plus a refreshed home page, a sprint kanban view, and a restructured navigation with an "Autonomous" section.
+
+Built by 4 parallel Opus agents in ~12 minutes of wall-clock time, each owning disjoint files (server routes, cycles list+detail, launcher+home, kanban+nav). Zero merge conflicts.
+
+### New REST API (Agent A)
+
+New file: `packages/server/src/routes/v5/cycles.ts` (+ wiring in `server.ts`).
+
+- `GET /api/v5/cycles` — list all cycles from `.agentforge/cycles/*/cycle.json`, sorted by `startedAt` DESC. Supports `?limit=N`. Synthesizes in-progress rows from partial data when `cycle.json` doesn't exist yet.
+- `GET /api/v5/cycles/:id` — raw parsed `cycle.json`. Returns 404 with `{ cycleInProgress: true }` if the dir exists but `cycle.json` doesn't.
+- `GET /api/v5/cycles/:id/scoring` — parsed `scoring.json` (ScoringResult + grounding context).
+- `GET /api/v5/cycles/:id/events?since=N` — parsed `events.jsonl`, supports incremental polling.
+- `GET /api/v5/cycles/:id/phases/:phase` — parsed phase JSON (9-phase whitelist).
+- `GET /api/v5/cycles/:id/files/:name` — tests/git/pr/approval-pending/approval-decision readers.
+- `POST /api/v5/cycles` — spawns `node packages/cli/dist/bin.js autonomous:cycle` as a detached subprocess, returns 202 with `{ cycleId, startedAt, pid }`. Subprocess stdout streams to `.agentforge/cycles/{id}/cli-stdout.log`.
+
+**Safety:** all endpoints path-sanitize via `safeJoin()` — cycle IDs validated against `/^[a-zA-Z0-9_-]+$/`, resolved paths verified to stay inside the cycles base dir (prevents traversal). 24 new tests cover happy paths, traversal rejection, sort order, 404s, and the POST spawn flow.
+
+### New pages (Agents B, C)
+
+**`/cycles`** — history browser. Fetches `/api/v5/cycles?limit=50`, renders a table sorted by `startedAt` DESC with stage badge, cycle ID, sprint version, duration, cost bar, test summary, PR link, approval indicator. Auto-refreshes every 5s while any cycle is in a non-terminal stage. Empty state links to `/cycles/new`.
+
+**`/cycles/[id]`** — 5-tab detail view:
+- **Overview**: stage badge, duration, cost bar, test summary, git branch + commit SHA, PR link, kill switch info
+- **Scoring**: full ranked list from `scoring.json` with agent rationale, confidence, dependencies, suggested assignees
+- **Events**: timeline of `events.jsonl`, polls every 3s while cycle is running
+- **Phases**: lazy-loaded accordion of 9 phase JSON files
+- **Files**: tabbed viewer for tests/git/pr/approval-*.json
+
+**`/cycles/new`** — cycle launcher. Config form (budget, max items, dry-run, branch prefix, purpose comment) → POST `/api/v5/cycles`. Live 6-stage pill progress (PLAN→STAGE→RUN→VERIFY→COMMIT→REVIEW) polling `/events` every 1s, elapsed clock, budget burn bar, "View details" redirect on terminal stage.
+
+### Home page refresh (Agent C)
+
+`packages/dashboard/src/routes/+page.svelte` now opens with an **Autonomous Loop hero card** + CTA ("Launch New Cycle"), a **running-cycle mini panel** (shows current stage + budget burn if a cycle is live), and a **Recent Cycles list** (5 most recent, polled every 5s). All existing stat grid / agent table / sessions list content preserved below.
+
+### Sprint kanban view (Agent D)
+
+`packages/dashboard/src/routes/sprints/[version]/+page.svelte` now opens with a **4-column kanban** (Planned / In Progress / Completed / Blocked) above the existing sprint detail. Item cards show priority pill, title (truncated, full on hover), assignee, cost estimate, and tag pills. Columns show live counts. Cards click to expand full description inline. Responsive: stacks vertically under 900px. All existing sprint detail content preserved below.
+
+### Navigation refresh (Agent D)
+
+`packages/dashboard/src/lib/components/Sidebar.svelte` now groups autonomous-related routes under a new **"Autonomous"** section header: `/cycles`, `/cycles/new`, `/sprints`, `/runner`, `/live`. No existing nav entries removed — just regrouped for discoverability. Sidebar is now scrollable for overflow.
+
+### New components + utilities
+
+- `packages/dashboard/src/lib/components/StageBadge.svelte` — reusable colored stage badge with pulse animation for in-progress stages
+- `packages/dashboard/src/lib/util/relative-time.ts` — `relativeTime()` and `formatDuration()` helpers
+
+### Design system additions
+
+`packages/dashboard/src/app.css` — additive only. New `@keyframes pulse` + `.pulse` utility class for active stage pills. Existing `--color-success/warning/danger/info` tokens were already present and are now reused consistently. No renames or deletions.
+
+### Test Coverage
+
+- **271 autonomous tests passing** (up from 247 in v6.4.4)
+- +24 new tests: all in `tests/autonomous/integration/cycles-api.test.ts` covering the new REST endpoints
+- svelte-check on the dashboard: no new errors from v6.5.0 files (remaining errors are pre-existing environmental issues in `runner/`, `cost/`, `sprints/[version]/`)
+
+### Files Changed
+
+Server:
+- `packages/server/src/routes/v5/cycles.ts` (new)
+- `packages/server/src/server.ts` (register cycles routes)
+
+Dashboard:
+- `packages/dashboard/src/routes/cycles/+page.svelte` (new)
+- `packages/dashboard/src/routes/cycles/[id]/+page.svelte` (new)
+- `packages/dashboard/src/routes/cycles/new/+page.svelte` (new)
+- `packages/dashboard/src/routes/+page.svelte` (home refresh)
+- `packages/dashboard/src/routes/sprints/[version]/+page.svelte` (kanban)
+- `packages/dashboard/src/lib/components/Sidebar.svelte` (nav section)
+- `packages/dashboard/src/lib/components/StageBadge.svelte` (new)
+- `packages/dashboard/src/lib/util/relative-time.ts` (new)
+- `packages/dashboard/src/app.css` (additive: pulse animation)
+
+Tests:
+- `tests/autonomous/integration/cycles-api.test.ts` (new, 24 tests)
+
+Versions:
+- `.claude-plugin/plugin.json` 6.4.4 → 6.5.0
+- `package.json` 6.4.4 → 6.5.0
+
+### What's still deferred (v6.5.1+)
+
+- **Phase handlers still stubs** — the CLI's phaseHandlers just publish `phase.completed` events. Real per-phase agent dispatch is v6.5.1+ scope.
+- **Kanban drag-and-drop** — agent D added the layout but skipped drag-reorder. Future polish.
+- **SSE cycle events** — cycles update via polling, not push. Full SSE integration via `sprint.phase.*` → `/live` feed is v6.5.1 scope.
+- **Test suite rewrite to tmpdir** — the `TEST_POLLUTION_PATTERNS` filter from v6.4.4 is still in place as a workaround.
+- **Dashboard build environment** — worktree-based agents hit `@sveltejs/adapter-node` node_modules issues. Not a code problem; environment only.
+
+### Running the new UI
+
+```bash
+# Start the v5 server (port 4750)
+cd packages/server && npm run build && npm start
+
+# In another terminal, start the SvelteKit dev server (port 4751)
+cd packages/dashboard && npx vite --port 4751
+
+# Visit http://localhost:4751
+# Home page → Launch New Cycle → watch it run
+```
+
+---
+
 ## [6.4.4] — 2026-04-07
 
 ### What's Fixed
