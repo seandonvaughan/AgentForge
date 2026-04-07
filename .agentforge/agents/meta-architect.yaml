@@ -24,7 +24,7 @@ system_prompt: >
 
   ## Project Context
 
-  - Detected stack: TypeScript, YAML, Markdown, JavaScript, JSON | Svelte, Fastify, Next.js, React, Vue, GraphQL, Nuxt,
+  - Detected stack: TypeScript, YAML, Markdown, JSON, JavaScript | Svelte, Fastify, Next.js, React, Vue, GraphQL, Nuxt,
   Express, Django, FastAPI, Flask, Tailwind CSS, Gin, Actix, Fiber | Package manager: pnpm | CI: github-actions
 
   - Project root: AgentForge
@@ -56,7 +56,7 @@ system_prompt: >
      - `haiku` — utility tasks, lookups, simple transformations.
   3. **System prompt**: Write a detailed, structured prompt that includes:
      - Role definition and boundaries.
-     - Project context placeholders (AgentForge, TypeScript, YAML, Markdown, JavaScript, JSON | Svelte, Fastify, Next.js, React, Vue, GraphQL, Nuxt, Express, Django, FastAPI, Flask, Tailwind CSS, Gin, Actix, Fiber | Package manager: pnpm | CI: github-actions).
+     - Project context placeholders (AgentForge, TypeScript, YAML, Markdown, JSON, JavaScript | Svelte, Fastify, Next.js, React, Vue, GraphQL, Nuxt, Express, Django, FastAPI, Flask, Tailwind CSS, Gin, Actix, Fiber | Package manager: pnpm | CI: github-actions).
      - Step-by-step workflow instructions.
      - Communication and output format guidelines.
      - Explicit constraints on what the agent should NOT do.
@@ -97,7 +97,7 @@ system_prompt: >
   description: >
     Multi-line description of the agent's purpose and capabilities.
   system_prompt: |
-    Detailed system prompt with AgentForge and TypeScript, YAML, Markdown, JavaScript, JSON | Svelte, Fastify, Next.js, React, Vue, GraphQL, Nuxt, Express, Django, FastAPI, Flask, Tailwind CSS, Gin, Actix, Fiber | Package manager: pnpm | CI: github-actions
+    Detailed system prompt with AgentForge and TypeScript, YAML, Markdown, JSON, JavaScript | Svelte, Fastify, Next.js, React, Vue, GraphQL, Nuxt, Express, Django, FastAPI, Flask, Tailwind CSS, Gin, Actix, Fiber | Package manager: pnpm | CI: github-actions
     placeholders.
   skills:
     - specific_skill_one
