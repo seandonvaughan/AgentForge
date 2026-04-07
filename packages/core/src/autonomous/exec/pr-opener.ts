@@ -8,10 +8,59 @@
 // See docs/superpowers/specs/2026-04-06-autonomous-loop-design.md §8.3
 // and docs/superpowers/plans/2026-04-06-autonomous-loop.md Task 13.
 
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
+
+/**
+ * v6.7.4: spawn-based gh runner that actually pipes the body to stdin.
+ *
+ * Why this exists: the original implementation used `execFileAsync('gh', args,
+ * { input: req.body })` — but the `input` option is only supported on the
+ * SYNCHRONOUS variants of execFile. The async/promisified version silently
+ * drops `input`, so gh saw `--body-file -` with no stdin data, hung waiting
+ * for content, and then crashed with a confusing "command failed" error.
+ * Same root cause as the v6.4.3 fix in agent-runtime.ts. Every autonomous
+ * cycle since v6.4 has died here.
+ */
+function runGh(
+  args: string[],
+  opts: { cwd: string; input: string; timeoutMs?: number },
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('gh', args, {
+      cwd: opts.cwd,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    const timer = opts.timeoutMs
+      ? setTimeout(() => {
+          child.kill('SIGKILL');
+          reject(new Error(`gh timed out after ${opts.timeoutMs}ms`));
+        }, opts.timeoutMs)
+      : null;
+    child.stdout.on('data', (c) => stdoutChunks.push(c));
+    child.stderr.on('data', (c) => stderrChunks.push(c));
+    child.on('error', (err) => {
+      if (timer) clearTimeout(timer);
+      reject(err);
+    });
+    child.on('close', (code) => {
+      if (timer) clearTimeout(timer);
+      const stdout = Buffer.concat(stdoutChunks).toString('utf8');
+      const stderr = Buffer.concat(stderrChunks).toString('utf8');
+      if (code !== 0) {
+        reject(new Error(`gh exited ${code}: ${stderr || stdout}`));
+        return;
+      }
+      resolve({ stdout, stderr });
+    });
+    child.stdin.write(opts.input);
+    child.stdin.end();
+  });
+}
 
 export class PROpenerError extends Error {
   constructor(msg: string) {
@@ -105,13 +154,13 @@ export class PROpener {
     });
 
     try {
-      const result = await execFileAsync('gh', args, {
+      const result = await runGh(args, {
         cwd: this.cwd,
         input: req.body,
-        timeout: 60_000,
-      } as any);
+        timeoutMs: 60_000,
+      });
 
-      const url = result.stdout.toString().trim().split('\n').pop() ?? '';
+      const url = result.stdout.trim().split('\n').pop() ?? '';
       if (!url.startsWith('https://')) {
         throw new PROpenerError(`Unexpected gh output: ${result.stdout}`);
       }

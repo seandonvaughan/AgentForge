@@ -148,9 +148,10 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleListRow | null 
   }
 
   // No cycle.json — synthesize an in-progress row from whatever's on disk.
-  const scoring = readJsonIfExists(join(cycleDir, 'scoring.json')) as
-    | Record<string, unknown>
-    | null;
+  // The detail endpoint does the same thing more thoroughly; this lighter
+  // version covers the fields the list page renders (stage, startedAt, cost,
+  // tests). Both must read `phase.start` events because the cycle-runner
+  // emits `phase` not `stage` on phase transitions.
   const eventsPath = join(cycleDir, 'events.jsonl');
   let stage = 'plan';
   let startedAt = deriveStartedAt(cycleDir) ?? new Date(0).toISOString();
@@ -163,6 +164,9 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleListRow | null 
         try {
           const ev = JSON.parse(line) as Record<string, unknown>;
           if (typeof ev['stage'] === 'string') stage = ev['stage'] as string;
+          else if (ev['type'] === 'phase.start' && typeof ev['phase'] === 'string') {
+            stage = ev['phase'] as string;
+          }
           if (!startedAt || startedAt === new Date(0).toISOString()) {
             if (typeof ev['at'] === 'string') startedAt = ev['at'] as string;
           }
@@ -171,21 +175,41 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleListRow | null 
     } catch { /* ignore */ }
   }
 
+  // Aggregate live cost + test totals from phases/<name>.json so the list
+  // row matches what the detail page shows. Without this, running cycles
+  // appear as "$0.00 / 0 tests" until they write cycle.json at terminal.
+  const phasesDir = join(cycleDir, 'phases');
+  let costUsd = 0;
+  let testsPassed = 0;
+  let testsTotal = 0;
+  if (existsSync(phasesDir)) {
+    for (const name of ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate', 'release', 'learn']) {
+      const phaseFile = join(phasesDir, `${name}.json`);
+      if (!existsSync(phaseFile)) continue;
+      try {
+        const phase = JSON.parse(readFileSync(phaseFile, 'utf-8')) as Record<string, unknown>;
+        if (typeof phase['costUsd'] === 'number') costUsd += phase['costUsd'] as number;
+        if (name === 'test') {
+          if (typeof phase['passed'] === 'number') testsPassed = phase['passed'] as number;
+          if (typeof phase['total'] === 'number') testsTotal = phase['total'] as number;
+        }
+      } catch { /* skip */ }
+    }
+  }
+
   return {
     cycleId,
     sprintVersion: null,
     stage,
     startedAt,
     completedAt: null,
-    durationMs: null,
-    costUsd: 0,
-    budgetUsd: 0,
-    testsPassed: 0,
-    testsTotal: 0,
+    durationMs: Date.now() - new Date(startedAt).getTime(),
+    costUsd,
+    budgetUsd: 50,
+    testsPassed,
+    testsTotal,
     prUrl: null,
     hasApprovalPending,
-    // Note: scoring presence is a hint but we don't surface it in the list row.
-    ...(scoring ? {} : {}),
   };
 }
 
