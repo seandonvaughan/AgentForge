@@ -60,7 +60,7 @@
   let modelTier = $derived(MODEL_TIER_META[getAgentModel(selectedAgent)] ?? MODEL_TIER_META['sonnet']);
 
   // Derived: agents filtered by search, grouped by model tier
-  let filteredAgents = $derived(() => {
+  let filteredAgents = $derived.by(() => {
     const q = agentSearch.toLowerCase().trim();
     const filtered = q
       ? agentEntries.filter(a => a.agentId.toLowerCase().includes(q) || a.name.toLowerCase().includes(q))
@@ -189,7 +189,7 @@
 
       const json = await res.json();
       const sessionId = json.sessionId ?? json.id ?? `local-${Date.now()}`;
-      outputModel = json.model ?? MODEL_TIERS[selectedAgent]?.label ?? 'Sonnet';
+      outputModel = json.model ?? MODEL_TIER_META[getAgentModel(selectedAgent)]?.label ?? 'Sonnet';
       currentSessionId = sessionId;
 
       // Add to history immediately as "running"
@@ -225,7 +225,7 @@
     output = run.output ?? '(No output captured)';
     outputAgentName = run.agentId;
     outputTimestamp = new Date(run.startedAt).toLocaleTimeString('en-US', { hour12: false });
-    outputModel = MODEL_TIERS[run.agentId]?.label ?? '—';
+    outputModel = MODEL_TIER_META[getAgentModel(run.agentId)]?.label ?? '—';
     currentSessionId = run.sessionId ?? null;
   }
 
@@ -284,8 +284,8 @@
             bind:value={agentSearch}
             disabled={running}
           />
-          <select id="agent-select" class="form-select" bind:value={selectedAgent} disabled={running} size={Math.min(filteredAgents().length, 8)}>
-            {#each filteredAgents() as agent (agent.agentId)}
+          <select id="agent-select" class="form-select" bind:value={selectedAgent} disabled={running} size={Math.min(filteredAgents.length, 8)}>
+            {#each filteredAgents as agent (agent.agentId)}
               <option value={agent.agentId}>
                 [{agent.model.charAt(0).toUpperCase()}] {agent.agentId}
               </option>

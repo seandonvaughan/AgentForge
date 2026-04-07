@@ -10,7 +10,7 @@ const PROJECT_ROOT = join(__dirname, '../../../');
 
 interface OrgNode {
   id: string;
-  name: string;
+  label: string;
   model: string;
   team?: string;
   role?: string;
@@ -112,20 +112,20 @@ export async function orgGraphRoutes(
         const model = agentYaml?.model ?? inferModel(agentId);
         nodeMap.set(agentId, {
           id: agentId,
-          name: agentYaml?.name ?? agentId,
+          label: agentYaml?.name ?? agentId,
           model,
           team: agentYaml?.team,
           role: agentYaml?.role,
         });
       }
 
-      // Build edges from each agent's collaboration.reports_to field
-      // This gives the actual reporting hierarchy, not just delegation authority
-      for (const agentId of allAgentIds) {
-        const agentYaml = readAgentYaml(agentId);
-        const reportsTo = agentYaml?.collaboration?.reports_to;
-        if (reportsTo && typeof reportsTo === 'string' && reportsTo !== 'null' && allAgentIds.has(reportsTo)) {
-          edges.push({ from: agentId, to: reportsTo, type: 'reports_to' });
+      // Build edges directly from delegation.yaml: manager → [reports].
+      // Edge direction is parent → child so the frontend buildTree() can
+      // treat e.from as the parent and e.to as the child without inversion.
+      for (const [manager, reports] of Object.entries(delegation)) {
+        if (!Array.isArray(reports)) continue;
+        for (const report of reports) {
+          edges.push({ from: manager, to: report, type: 'reports_to' });
         }
       }
 

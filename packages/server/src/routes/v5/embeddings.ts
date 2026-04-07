@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import type { WorkspaceAdapter } from '@agentforge/db';
 import { EmbeddingStore } from '@agentforge/embeddings';
 import { join } from 'node:path';
 
@@ -12,7 +13,39 @@ function getStore(dataDir: string): EmbeddingStore {
   return store;
 }
 
-export async function embeddingRoutes(app: FastifyInstance, opts: { dataDir: string }): Promise<void> {
+/**
+ * Seed the embedding store with completed sessions from the adapter.
+ * Runs at most once per process (when the store is empty).
+ * This ensures the /search dashboard page returns results immediately without
+ * requiring a separate index-population step.
+ */
+async function maybeSeedFromSessions(s: EmbeddingStore, adapter: WorkspaceAdapter): Promise<void> {
+  if (s.stats().totalDocuments > 0) return;
+
+  const sessions = adapter.listSessions({ status: 'completed', limit: 500 });
+  if (sessions.length === 0) return;
+
+  const docs = sessions.map(session => ({
+    id: `session:${session.id}`,
+    content: `Agent: ${session.agent_id}\nTask: ${session.task}`,
+    metadata: {
+      type: 'session',
+      source: session.agent_id,
+      agentId: session.agent_id,
+      status: session.status,
+      model: session.model ?? 'sonnet',
+      costUsd: session.cost_usd,
+      startedAt: session.started_at,
+    },
+  }));
+
+  await s.indexBatch(docs);
+}
+
+export async function embeddingRoutes(
+  app: FastifyInstance,
+  opts: { dataDir: string; adapter?: WorkspaceAdapter },
+): Promise<void> {
   const s = getStore(opts.dataDir);
 
   // POST /api/v5/embeddings/index
@@ -34,11 +67,19 @@ export async function embeddingRoutes(app: FastifyInstance, opts: { dataDir: str
   });
 
   // POST /api/v5/embeddings/search
+  // Accepts `limit` as an alias for `topK` (the dashboard sends `limit`).
   app.post('/api/v5/embeddings/search', async (req, reply) => {
-    const { query, topK, minScore, workspaceId } = req.body as {
-      query: string; topK?: number; minScore?: number; workspaceId?: string;
+    const { query, topK, limit, minScore, workspaceId } = req.body as {
+      query: string; topK?: number; limit?: number; minScore?: number; workspaceId?: string;
     };
-    const results = await s.search(query, { topK, minScore, workspaceId });
+
+    // Seed from sessions on first search if store is empty and adapter is available.
+    if (opts.adapter) {
+      await maybeSeedFromSessions(s, opts.adapter);
+    }
+
+    const k = topK ?? limit ?? 10;
+    const results = await s.search(query, { topK: k, minScore, workspaceId });
     return reply.send({ data: results, meta: { total: results.length } });
   });
 

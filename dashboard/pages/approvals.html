@@ -1,0 +1,618 @@
+  <div class="page" id="page-approvals" hidden>
+    <div class="page-header">
+      <h2>Approvals Queue</h2>
+      <button class="export-btn" onclick="loadApprovalsPage()">&#8635; Refresh</button>
+    </div>
+
+    <!-- Approval Queue Stats -->
+    <div class="section-header">
+      <div class="section-title">Queue Status</div>
+    </div>
+    <div class="approval-stats-grid">
+      <div class="stat-card">
+        <div class="stat-value" id="approvals-pending-count">—</div>
+        <div class="stat-label">Pending</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="approvals-approved-count">—</div>
+        <div class="stat-label">Approved</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="approvals-rejected-count">—</div>
+        <div class="stat-label">Rejected</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="approvals-rolled-back-count">—</div>
+        <div class="stat-label">Rolled Back</div>
+      </div>
+    </div>
+
+    <!-- Pending Approvals -->
+    <div class="section-header">
+      <div class="section-title">Pending Decisions</div>
+      <span id="approvals-pending-badge" style="font-family:var(--font-mono);font-size:11px;color:var(--orange);">—</span>
+    </div>
+    <div class="approvals-pending-panel">
+      <div id="approvals-pending-list">
+        <div class="skeleton-loader">Loading pending approvals…</div>
+      </div>
+    </div>
+
+    <!-- Approved Approvals -->
+    <div class="section-header">
+      <div class="section-title">Approved</div>
+    </div>
+    <div class="approvals-list-panel">
+      <div id="approvals-approved-list">
+        <div style="padding:20px;color:var(--text-muted);text-align:center;">No approved items</div>
+      </div>
+    </div>
+
+    <!-- Rejected Approvals -->
+    <div class="section-header">
+      <div class="section-title">Rejected</div>
+    </div>
+    <div class="approvals-list-panel">
+      <div id="approvals-rejected-list">
+        <div style="padding:20px;color:var(--text-muted);text-align:center;">No rejected items</div>
+      </div>
+    </div>
+  </div><!-- /page-approvals -->
+
+  <style>
+    .approval-stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .stat-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      text-align: center;
+    }
+
+    .stat-value {
+      font-family: var(--font-mono);
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text-primary);
+      line-height: 1;
+      margin-bottom: 6px;
+    }
+
+    .stat-label {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .approvals-pending-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin-bottom: 24px;
+    }
+
+    .approvals-pending-list-item {
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--border);
+      animation: fadeInUp 0.3s ease-out both;
+    }
+
+    .approvals-pending-list-item:last-child {
+      border-bottom: none;
+    }
+
+    .approval-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .approval-title {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+      flex: 1;
+    }
+
+    .approval-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-muted);
+      flex-wrap: wrap;
+    }
+
+    .approval-badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: var(--bg-primary);
+      color: var(--text-muted);
+      font-size: 9px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .approval-badge.pending {
+      background: rgba(255, 159, 0, 0.15);
+      color: var(--orange);
+    }
+
+    .approval-badge.approved {
+      background: rgba(34, 197, 94, 0.15);
+      color: var(--green);
+    }
+
+    .approval-badge.rejected {
+      background: rgba(239, 68, 68, 0.15);
+      color: var(--red);
+    }
+
+    .approval-summary {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin: 8px 0;
+      line-height: 1.4;
+      padding: 8px 10px;
+      background: var(--bg-primary);
+      border-radius: 4px;
+    }
+
+    .approval-test-results {
+      display: flex;
+      gap: 16px;
+      margin: 8px 0;
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+
+    .test-result {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .test-result.passed {
+      color: var(--green);
+    }
+
+    .test-result.failed {
+      color: var(--red);
+    }
+
+    .approval-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .approval-btn {
+      flex: 1;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      cursor: pointer;
+      transition: all 0.15s;
+      background: transparent;
+      color: var(--text-primary);
+    }
+
+    .approval-btn:hover {
+      background: var(--bg-primary);
+      border-color: var(--border-light);
+    }
+
+    .approval-btn.approve {
+      border-color: var(--green);
+      color: var(--green);
+    }
+
+    .approval-btn.approve:hover {
+      background: rgba(34, 197, 94, 0.1);
+    }
+
+    .approval-btn.reject {
+      border-color: var(--red);
+      color: var(--red);
+    }
+
+    .approval-btn.reject:hover {
+      background: rgba(239, 68, 68, 0.1);
+    }
+
+    .approvals-list-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin-bottom: 24px;
+    }
+
+    .approval-item {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      animation: fadeInUp 0.3s ease-out both;
+    }
+
+    .approval-item:last-child {
+      border-bottom: none;
+    }
+
+    .approval-item-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .approval-item-title {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .approval-item-time {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+
+    .approval-item-reviewer {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin: 4px 0;
+    }
+
+    .approval-item-notes {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-secondary);
+      padding: 6px 10px;
+      background: var(--bg-primary);
+      border-radius: 4px;
+      margin-top: 6px;
+      border-left: 2px solid var(--border-light);
+      word-break: break-word;
+    }
+
+    .approval-diff {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      padding: 8px 10px;
+      background: var(--bg-primary);
+      border-radius: 4px;
+      margin: 8px 0;
+      max-height: 120px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: var(--text-secondary);
+    }
+
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+  </style>
+
+  <script>
+    /**
+     * Load and render the approvals dashboard page
+     * Fetches from /api/v5/approvals and displays by status
+     */
+    async function loadApprovalsPage() {
+      try {
+        const res = await fetch('/api/v5/approvals').catch(() => null);
+        const data = res && res.ok ? await res.json() : {};
+        const approvals = data.data || [];
+        const meta = data.meta || {};
+
+        // Group by status
+        const pending = approvals.filter((a) => a.status === 'pending');
+        const approved = approvals.filter((a) => a.status === 'approved');
+        const rejected = approvals.filter((a) => a.status === 'rejected');
+        const rolledBack = approvals.filter((a) => a.status === 'rolled_back');
+
+        // Update stats using textContent (safe)
+        const pendingEl = document.getElementById('approvals-pending-count');
+        if (pendingEl) pendingEl.textContent = String(pending.length);
+
+        const approvedEl = document.getElementById('approvals-approved-count');
+        if (approvedEl) approvedEl.textContent = String(approved.length);
+
+        const rejectedEl = document.getElementById('approvals-rejected-count');
+        if (rejectedEl) rejectedEl.textContent = String(rejected.length);
+
+        const rolledBackEl = document.getElementById('approvals-rolled-back-count');
+        if (rolledBackEl) rolledBackEl.textContent = String(rolledBack.length);
+
+        const badgeEl = document.getElementById('approvals-pending-badge');
+        if (badgeEl) {
+          badgeEl.textContent = pending.length > 0 ? `${pending.length} awaiting decision` : '—';
+        }
+
+        // Render pending (most important)
+        _renderPendingApprovals(pending);
+
+        // Render approved and rejected
+        _renderApprovedList(approved);
+        _renderRejectedList(rejected);
+      } catch (e) {
+        console.error('loadApprovalsPage error:', e);
+      }
+    }
+
+    function _renderPendingApprovals(items) {
+      const container = document.getElementById('approvals-pending-list');
+      if (!container) return;
+
+      if (items.length === 0) {
+        container.textContent = '';
+        const msg = document.createElement('div');
+        msg.style.cssText = 'padding:20px;color:var(--text-muted);text-align:center;';
+        msg.textContent = 'No pending approvals';
+        container.appendChild(msg);
+        return;
+      }
+
+      container.textContent = '';
+      items.forEach((item) => {
+        const el = document.createElement('div');
+        el.className = 'approvals-pending-list-item';
+
+        // Header
+        const header = document.createElement('div');
+        header.className = 'approval-header';
+        const title = document.createElement('div');
+        title.className = 'approval-title';
+        title.textContent = item.proposalTitle;
+        const badge = document.createElement('span');
+        badge.className = 'approval-badge pending';
+        badge.textContent = 'Pending';
+        header.appendChild(title);
+        header.appendChild(badge);
+        el.appendChild(header);
+
+        // Meta
+        const meta = document.createElement('div');
+        meta.className = 'approval-meta';
+        meta.textContent = `Proposal: ${item.proposalId} • Execution: ${item.executionId} • ${_formatTime(item.submittedAt)}`;
+        el.appendChild(meta);
+
+        // Summary
+        const summary = document.createElement('div');
+        summary.className = 'approval-summary';
+        summary.textContent = item.impactSummary;
+        el.appendChild(summary);
+
+        // Test results
+        if (item.testSummary) {
+          const tests = document.createElement('div');
+          tests.className = 'approval-test-results';
+          const passed = document.createElement('div');
+          passed.className = 'test-result passed';
+          passed.textContent = `✓ ${item.testSummary.passed} passed`;
+          tests.appendChild(passed);
+          if (item.testSummary.failed > 0) {
+            const failed = document.createElement('div');
+            failed.className = 'test-result failed';
+            failed.textContent = `✕ ${item.testSummary.failed} failed`;
+            tests.appendChild(failed);
+          }
+          const total = document.createElement('div');
+          total.className = 'test-result';
+          total.textContent = `${item.testSummary.total} total`;
+          tests.appendChild(total);
+          el.appendChild(tests);
+        }
+
+        // Diff (if present)
+        if (item.diff) {
+          const diff = document.createElement('div');
+          diff.className = 'approval-diff';
+          diff.textContent = item.diff.substring(0, 500);
+          el.appendChild(diff);
+        }
+
+        // Actions
+        const actions = document.createElement('div');
+        actions.className = 'approval-actions';
+        const approveBtnEl = document.createElement('button');
+        approveBtnEl.className = 'approval-btn approve';
+        approveBtnEl.textContent = '✓ Approve';
+        approveBtnEl.onclick = () => _approveApproval(item.id);
+        const rejectBtnEl = document.createElement('button');
+        rejectBtnEl.className = 'approval-btn reject';
+        rejectBtnEl.textContent = '✕ Reject';
+        rejectBtnEl.onclick = () => _rejectApproval(item.id);
+        actions.appendChild(approveBtnEl);
+        actions.appendChild(rejectBtnEl);
+        el.appendChild(actions);
+
+        container.appendChild(el);
+      });
+    }
+
+    function _renderApprovedList(items) {
+      const container = document.getElementById('approvals-approved-list');
+      if (!container) return;
+
+      if (items.length === 0) {
+        container.textContent = '';
+        const msg = document.createElement('div');
+        msg.style.cssText = 'padding:20px;color:var(--text-muted);text-align:center;';
+        msg.textContent = 'No approved items';
+        container.appendChild(msg);
+        return;
+      }
+
+      container.textContent = '';
+      items.forEach((item) => {
+        const el = document.createElement('div');
+        el.className = 'approval-item';
+
+        const header = document.createElement('div');
+        header.className = 'approval-item-header';
+        const title = document.createElement('span');
+        title.className = 'approval-item-title';
+        title.textContent = item.proposalTitle;
+        const badge = document.createElement('span');
+        badge.className = 'approval-badge approved';
+        badge.textContent = 'Approved';
+        header.appendChild(title);
+        header.appendChild(badge);
+        el.appendChild(header);
+
+        const reviewer = document.createElement('div');
+        reviewer.className = 'approval-item-reviewer';
+        reviewer.textContent = `By: ${item.reviewedBy || 'unknown'} at ${_formatTime(item.reviewedAt)}`;
+        el.appendChild(reviewer);
+
+        if (item.notes) {
+          const notes = document.createElement('div');
+          notes.className = 'approval-item-notes';
+          notes.textContent = item.notes;
+          el.appendChild(notes);
+        }
+
+        container.appendChild(el);
+      });
+    }
+
+    function _renderRejectedList(items) {
+      const container = document.getElementById('approvals-rejected-list');
+      if (!container) return;
+
+      if (items.length === 0) {
+        container.textContent = '';
+        const msg = document.createElement('div');
+        msg.style.cssText = 'padding:20px;color:var(--text-muted);text-align:center;';
+        msg.textContent = 'No rejected items';
+        container.appendChild(msg);
+        return;
+      }
+
+      container.textContent = '';
+      items.forEach((item) => {
+        const el = document.createElement('div');
+        el.className = 'approval-item';
+
+        const header = document.createElement('div');
+        header.className = 'approval-item-header';
+        const title = document.createElement('span');
+        title.className = 'approval-item-title';
+        title.textContent = item.proposalTitle;
+        const badge = document.createElement('span');
+        badge.className = 'approval-badge rejected';
+        badge.textContent = 'Rejected';
+        header.appendChild(title);
+        header.appendChild(badge);
+        el.appendChild(header);
+
+        const reviewer = document.createElement('div');
+        reviewer.className = 'approval-item-reviewer';
+        reviewer.textContent = `By: ${item.reviewedBy || 'unknown'} at ${_formatTime(item.reviewedAt)}`;
+        el.appendChild(reviewer);
+
+        if (item.notes) {
+          const notes = document.createElement('div');
+          notes.className = 'approval-item-notes';
+          notes.textContent = item.notes;
+          el.appendChild(notes);
+        }
+
+        container.appendChild(el);
+      });
+    }
+
+    async function _approveApproval(id) {
+      const reviewedBy = prompt('Approve as (name/email):') || 'unknown';
+      const notes = prompt('Notes (optional):') || undefined;
+
+      try {
+        const res = await fetch(`/api/v5/approvals/${id}/approve`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reviewedBy, notes }),
+        });
+
+        if (res.ok) {
+          await loadApprovalsPage();
+        } else {
+          const err = await res.json();
+          alert('Error: ' + (err.error || 'Failed to approve'));
+        }
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    }
+
+    async function _rejectApproval(id) {
+      const reviewedBy = prompt('Reject as (name/email):') || 'unknown';
+      const notes = prompt('Rejection reason (required):');
+      if (!notes) return;
+
+      try {
+        const res = await fetch(`/api/v5/approvals/${id}/reject`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reviewedBy, notes }),
+        });
+
+        if (res.ok) {
+          await loadApprovalsPage();
+        } else {
+          const err = await res.json();
+          alert('Error: ' + (err.error || 'Failed to reject'));
+        }
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    }
+
+    function _formatTime(iso) {
+      if (!iso) return '—';
+      const d = new Date(iso);
+      return d.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    }
+
+    // Auto-load on script init
+    (function () {
+      if (typeof loadApprovalsPage === 'function') loadApprovalsPage();
+    })();
+  </script>

@@ -519,10 +519,26 @@ export async function cyclesRoutes(
     const dir = safeJoin(base, id);
     if (!dir || !existsSync(dir)) return reply.status(404).send({ error: 'Cycle not found' });
 
-    // The cycle doesn't store its sprint version directly — find it by
-    // matching the sprint file whose `createdAt` is closest to (and >=)
-    // the cycle's startedAt. This keys off the cycle's scoring.complete
-    // event timestamp which the SprintGenerator uses as createdAt.
+    // Fast path: cycle writes sprint-link.json right after plan phase,
+    // containing the authoritative sprintVersion for this cycle. Check
+    // that first — no timestamp matching needed.
+    const linkFile = join(dir, 'sprint-link.json');
+    if (existsSync(linkFile)) {
+      try {
+        const link = JSON.parse(readFileSync(linkFile, 'utf8'));
+        if (link?.sprintVersion) {
+          const sprintFile = join(opts.projectRoot, '.agentforge/sprints', `v${link.sprintVersion}.json`);
+          if (existsSync(sprintFile)) {
+            const raw = JSON.parse(readFileSync(sprintFile, 'utf8'));
+            const sprint = Array.isArray(raw.sprints) ? raw.sprints[0] : raw;
+            return reply.send({ file: `v${link.sprintVersion}.json`, sprint });
+          }
+        }
+      } catch { /* fall through to timestamp matching */ }
+    }
+
+    // Legacy path: match by cycle startedAt ↔ sprint createdAt proximity.
+    // Only used for cycles started before sprint-link.json existed.
     const cycleStartedAt = (() => {
       const eventsFile = join(dir, 'events.jsonl');
       if (!existsSync(eventsFile)) return null;

@@ -1,8 +1,8 @@
 // packages/core/src/autonomous/sprint-generator.ts
-import { readdirSync, writeFileSync, existsSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { CycleConfig, RankedItem } from './types.js';
-import { bumpVersion } from './version-bumper.js';
+import { bumpVersion, determineVersionTier } from './version-bumper.js';
 
 export interface SprintPlan {
   version: string;
@@ -14,6 +14,32 @@ export interface SprintPlan {
   budget: number;
   teamSize: number;
   successCriteria: string[];
+  /** v6.7.4 — Explicit record of how the sprint version was chosen. */
+  versionDecision?: {
+    previousVersion: string;
+    nextVersion: string;
+    tier: 'major' | 'minor' | 'patch';
+    tagsSeen: string[];
+    rationale: string;
+  };
+}
+
+function buildBumpRationale(
+  prev: string,
+  next: string,
+  tier: 'major' | 'minor' | 'patch',
+  tags: string[],
+): string {
+  const unique = Array.from(new Set(tags));
+  const reason =
+    tier === 'major'
+      ? `breaking/architecture/platform tags found (${unique.filter(t => ['breaking','architecture','platform','major-ui','rewrite'].includes(t)).join(', ')})`
+      : tier === 'minor'
+        ? unique.some(t => ['feature','capability','enhancement','new'].includes(t))
+          ? `feature/capability tags found (${unique.filter(t => ['feature','capability','enhancement','new'].includes(t)).join(', ')})`
+          : 'no patch-only or breaking tags — autonomous default is minor'
+        : `only patch-level tags (${unique.filter(t => ['fix','bug','security','patch','chore','docs','refactor'].includes(t)).join(', ')})`;
+  return `${prev} → ${next} (${tier} bump — ${reason})`;
 }
 
 export interface SprintPlanItem {
@@ -43,6 +69,7 @@ export class SprintGenerator {
   async generate(approvedItems: RankedItem[]): Promise<SprintPlan> {
     const currentVersion = this.findLatestSprintVersion();
     const allTags = approvedItems.flatMap(i => i.suggestedTags);
+    const tier = determineVersionTier(allTags);
     const nextVersion = bumpVersion(currentVersion, allTags);
 
     const maxItems = this.config.limits.maxItemsPerSprint;
@@ -62,6 +89,13 @@ export class SprintGenerator {
         `Test pass rate >= ${(this.config.quality.testPassRateFloor * 100).toFixed(0)}%`,
         `Total cost <= $${this.config.budget.perCycleUsd}`,
       ],
+      versionDecision: {
+        previousVersion: currentVersion,
+        nextVersion,
+        tier,
+        tagsSeen: Array.from(new Set(allTags)),
+        rationale: buildBumpRationale(currentVersion, nextVersion, tier, allTags),
+      },
     };
 
     const wrapper = { sprints: [plan] };
@@ -91,21 +125,39 @@ export class SprintGenerator {
   }
 
   private findLatestSprintVersion(): string {
+    const candidates: string[] = [];
+
+    // Candidate 1: the max version found in .agentforge/sprints/
     const sprintsDir = join(this.cwd, '.agentforge/sprints');
-    if (!existsSync(sprintsDir)) return DEFAULT_STARTING_VERSION;
+    if (existsSync(sprintsDir)) {
+      const files = readdirSync(sprintsDir)
+        .filter(f => f.startsWith('v') && f.endsWith('.json'));
+      for (const f of files) {
+        const v = f.slice(1, -5);
+        if (/^\d+(\.\d+)*$/.test(v)) candidates.push(v);
+      }
+    }
 
-    const files = readdirSync(sprintsDir)
-      .filter(f => f.startsWith('v') && f.endsWith('.json'));
+    // Candidate 2: the root package.json version — authoritative for the
+    // shipped code. Without this the cycle would pick stale sprint files
+    // (e.g. v6.4.0) even when the code is at v6.7.3, producing wrong
+    // sprint versions that don't reflect what's actually being shipped.
+    try {
+      const pkgPath = join(this.cwd, 'package.json');
+      if (existsSync(pkgPath)) {
+        const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+        if (typeof pkg.version === 'string' && /^\d+(\.\d+)*$/.test(pkg.version)) {
+          candidates.push(pkg.version);
+        }
+      }
+    } catch { /* ignore */ }
 
-    if (files.length === 0) return DEFAULT_STARTING_VERSION;
+    if (candidates.length === 0) return DEFAULT_STARTING_VERSION;
 
-    const versions = files
-      .map(f => f.slice(1, -5)) // strip "v" prefix and ".json" suffix
-      .filter(v => /^\d+(\.\d+)*$/.test(v))
+    const sorted = candidates
       .map(v => ({ raw: v, parts: padVersion(v) }))
       .sort((a, b) => compareVersions(b.parts, a.parts)); // descending
-
-    return versions[0]?.raw ?? DEFAULT_STARTING_VERSION;
+    return sorted[0]?.raw ?? DEFAULT_STARTING_VERSION;
   }
 }
 

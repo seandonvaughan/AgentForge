@@ -2835,12 +2835,18 @@ function toggleFlywheelDetail(card) {
 
 // ── Memory Browser ────────────────────────────────────────
 let memCatFilter = 'all';
+let memAgentFilter = 'all';
 let memSearchFilter = '';
 
 function memFilterCat(btn, cat) {
   document.querySelectorAll('.mem-filter-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   memCatFilter = cat;
+  applyMemFilters();
+}
+
+function memFilterAgent(val) {
+  memAgentFilter = val || 'all';
   applyMemFilters();
 }
 
@@ -2852,10 +2858,12 @@ function filterMemory(val) {
 function applyMemFilters() {
   document.querySelectorAll('.memory-entry').forEach(entry => {
     const cat = entry.getAttribute('data-cat') || '';
+    const agent = entry.getAttribute('data-agent') || '';
     const text = entry.textContent.toLowerCase();
     const catOk = memCatFilter === 'all' || cat === memCatFilter;
+    const agentOk = memAgentFilter === 'all' || agent === memAgentFilter;
     const searchOk = !memSearchFilter || text.includes(memSearchFilter);
-    entry.style.display = catOk && searchOk ? '' : 'none';
+    entry.style.display = catOk && agentOk && searchOk ? '' : 'none';
   });
 }
 
@@ -3835,12 +3843,14 @@ async function loadAgentDetailPage(agentId) {
     nameEl.textContent = data.agentId || agentId;
 
     const modelEl = document.getElementById('agent-detail-model');
-    const m = (data.agentId || agentId).toLowerCase();
-    let tier = 'sonnet';
-    if (['ceo','cto','genesis','architect','meta-architect','rd-lead'].indexOf(m) !== -1) tier = 'opus';
-    else if (['linter','test-runner','researcher','file-reader'].indexOf(m) !== -1) tier = 'haiku';
+    // Use model tier directly from API (sourced from YAML definition)
+    var tier = data.model || 'sonnet';
     modelEl.className = 'model-badge ' + tier;
     modelEl.textContent = tier.charAt(0).toUpperCase() + tier.slice(1);
+
+    // Description (from YAML definition)
+    var descEl = document.getElementById('agent-detail-description');
+    if (descEl) descEl.textContent = data.description || '';
 
     // Stats
     document.getElementById('agent-detail-sessions').textContent = data.sessionCount || 0;
@@ -3940,6 +3950,7 @@ Router.addRoute('/sprints', async () => { await _loadPageRoute('sprints', () => 
 Router.addRoute('/observe', async () => { await _loadPageRoute('observe', () => { if (typeof window.loadObservePage === 'function') window.loadObservePage(); }); });
 Router.addRoute('/tasks', async () => { await _loadPageRoute('tasks', () => loadTasksPage()); });
 Router.addRoute('/decisions', async () => { await _loadPageRoute('decisions', () => loadDecisionsPage()); });
+Router.addRoute('/approvals', async () => { await _loadPageRoute('approvals', () => { if (typeof window.loadApprovalsPage === 'function') window.loadApprovalsPage(); }); });
 Router.addRoute('/knowledge', async () => { await _loadPageRoute('knowledge', () => loadKnowledgePage()); });
 Router.addRoute('/chat', async () => { await _loadPageRoute('chat'); });
 
@@ -5449,16 +5460,14 @@ async function loadAgentCards() {
       const div = document.createElement('div');
       div.className = 'empty-state';
       div.style.gridColumn = '1/-1';
-      div.textContent = 'No agent sessions yet — invoke an agent to see stats here.';
+      div.textContent = 'No agents found — add YAML definitions to .agentforge/agents/ to populate this view.';
       grid.innerHTML = '';
       grid.appendChild(div);
       return;
     }
     window._data.agents = data.map(function(a) {
-      const m = (a.agentId || '').toLowerCase();
-      let tier = 'sonnet';
-      if (['ceo','cto','genesis','architect','meta-architect','rd-lead'].indexOf(m) !== -1) tier = 'opus';
-      else if (['linter','test-runner','researcher','file-reader'].indexOf(m) !== -1) tier = 'haiku';
+      // Use model tier directly from API (sourced from YAML definition)
+      var tier = a.model || 'sonnet';
       return {
         name: a.agentId, model: tier, category: a.team || 'Agent',
         tasks: a.sessionCount || 0, cost: a.totalCostUsd || 0,
@@ -5469,10 +5478,8 @@ async function loadAgentCards() {
     const sparkColors = {opus: 'var(--gold)', sonnet: 'var(--blue)', haiku: 'var(--green)'};
     grid.innerHTML = '';
     data.forEach(function(a, i) {
-      const m = (a.agentId || '').toLowerCase();
-      let tier = 'sonnet';
-      if (['ceo','cto','genesis','architect','meta-architect','rd-lead'].indexOf(m) !== -1) tier = 'opus';
-      else if (['linter','test-runner','researcher','file-reader'].indexOf(m) !== -1) tier = 'haiku';
+      // Model tier is authoritative from the YAML definition returned by the API
+      var tier = a.model || 'sonnet';
       const cost = (a.totalCostUsd || 0).toFixed(2);
       const successRate = a.sessionCount > 0 ? Math.round((a.successCount || 0) / a.sessionCount * 100) : 100;
       const errRate = 100 - successRate;
@@ -6562,58 +6569,118 @@ async function loadInvestorScorecard() {
 }
 
 // ── P14: Memory Browser from /api/v1/memory ───────────────
+function _memMakeEl(tag, cls, text) {
+  const el = document.createElement(tag);
+  if (cls) el.className = cls;
+  if (text !== undefined) el.textContent = text;
+  return el;
+}
+
 async function loadMemoryBrowser() {
   const list = document.getElementById('memory-list');
   if (!list) return;
-  list.innerHTML = '<div class="skeleton-loader">Loading memory entries…</div>';
+  list.textContent = '';
+  list.appendChild(_memMakeEl('div', 'skeleton-loader', 'Loading memory entries\u2026'));
+
   try {
     const res = await fetch('/api/v1/memory');
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
     const data = json.data || [];
+    list.textContent = '';
+
     if (!data.length) {
-      const div = document.createElement('div');
-      div.className = 'empty-state';
-      div.textContent = 'No memory entries yet';
-      list.textContent = ''; list.appendChild(div);
+      list.appendChild(_memMakeEl('div', 'empty-state', 'No memory entries yet.'));
       return;
     }
-    function detectCat(key) {
-      const k = (key || '').toLowerCase();
-      if (k.indexOf('feedback') !== -1) return 'feedback';
-      if (k.indexOf('project') !== -1) return 'project';
-      if (k.indexOf('lesson') !== -1 || k.indexOf('concept') !== -1) return 'lesson';
-      if (k.indexOf('config') !== -1 || k.indexOf('version') !== -1) return 'config';
+
+    // Infer category when not explicitly provided by backend
+    function inferCat(entry) {
+      if (entry.category) return entry.category;
+      const k = (entry.key || '').toLowerCase();
+      if (k.includes('feedback')) return 'feedback';
+      if (k.includes('lesson') || k.includes('concept')) return 'lesson';
+      if (k.includes('config') || k.includes('version')) return 'config';
       return 'project';
     }
-    list.textContent = '';
-    data.slice(0, 20).forEach(function(entry) {
-      const key = entry.key || '—';
-      const val = (entry.value || '—').slice(0, 120);
-      const cat = detectCat(key);
+
+    // Populate agent filter dropdown from unique agentIds in the response
+    const agentSel = document.getElementById('memory-agent-filter');
+    if (agentSel) {
+      const agents = [...new Set(data.map(function(e) { return e.agentId; }).filter(Boolean))].sort();
+      agentSel.textContent = '';
+      const allOpt = document.createElement('option');
+      allOpt.value = 'all';
+      allOpt.textContent = 'All Agents';
+      agentSel.appendChild(allOpt);
+      agents.forEach(function(id) {
+        const opt = document.createElement('option');
+        opt.value = id;
+        opt.textContent = id;
+        agentSel.appendChild(opt);
+      });
+      memAgentFilter = 'all';
+      agentSel.value = 'all';
+    }
+
+    data.forEach(function(entry) {
+      const cat = inferCat(entry);
       const catLabel = cat.charAt(0).toUpperCase() + cat.slice(1);
-      const name = key.replace('sessions/', '').replace('.json', '').replace('.md', '');
-      const div = document.createElement('div');
-      div.className = 'memory-entry';
+      const agentId = entry.agentId || '';
+      const rawName = entry.filename || entry.key || '\u2014';
+      const displayName = rawName.replace(/\.md$/, '').replace(/\.json$/, '').replace(/^sessions\//, '');
+      const summary = (entry.summary || entry.value || '\u2014').slice(0, 200);
+      const tags = Array.isArray(entry.tags) ? entry.tags : [];
+      const updatedAt = entry.updatedAt || entry.createdAt || '';
+      const dateLabel = updatedAt ? new Date(updatedAt).toLocaleDateString() : '';
+
+      const div = _memMakeEl('div', 'memory-entry');
       div.setAttribute('data-cat', cat);
-      const hdr = document.createElement('div');
-      hdr.className = 'memory-entry-header';
-      const titleSpan = document.createElement('span');
-      titleSpan.className = 'memory-entry-title';
-      titleSpan.textContent = name;
-      const catSpan = document.createElement('span');
-      catSpan.className = 'category-badge ' + cat;
-      catSpan.textContent = catLabel;
-      hdr.appendChild(titleSpan); hdr.appendChild(catSpan);
-      const preview = document.createElement('div');
-      preview.className = 'memory-entry-preview';
-      preview.textContent = val;
-      div.appendChild(hdr); div.appendChild(preview);
+      div.setAttribute('data-agent', agentId);
+
+      const hdr = _memMakeEl('div', 'memory-entry-header');
+      hdr.appendChild(_memMakeEl('span', 'memory-entry-title', displayName));
+
+      const catBadge = _memMakeEl('span', 'category-badge ' + cat, catLabel);
+      hdr.appendChild(catBadge);
+
+      if (agentId) {
+        const chip = _memMakeEl('span', 'chip', agentId);
+        chip.style.cssText = 'color:var(--gold);border-color:var(--gold);font-size:10px;';
+        hdr.appendChild(chip);
+      }
+
+      div.appendChild(hdr);
+      div.appendChild(_memMakeEl('div', 'memory-entry-preview', summary));
+
+      if (tags.length || dateLabel) {
+        const footer = document.createElement('div');
+        footer.style.cssText = 'margin-top:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;';
+        tags.forEach(function(tag) {
+          const t = _memMakeEl('span', null, '#' + tag);
+          t.style.cssText = 'font-family:var(--font-mono);font-size:9px;padding:1px 5px;border-radius:3px;background:var(--bg-primary);color:var(--text-muted);border:1px solid var(--border);';
+          footer.appendChild(t);
+        });
+        if (dateLabel) {
+          const ts = _memMakeEl('span', null, dateLabel);
+          ts.style.cssText = 'font-family:var(--font-mono);font-size:10px;color:var(--text-muted);margin-left:auto;';
+          footer.appendChild(ts);
+        }
+        div.appendChild(footer);
+      }
+
       list.appendChild(div);
     });
+
+    applyMemFilters();
   } catch (e) {
     console.warn('loadMemoryBrowser failed:', e);
-    if (list) list.innerHTML = '<div class="load-error">Failed to load memory. <button onclick="loadMemoryBrowser()">Retry</button></div>';
+    list.textContent = '';
+    const errWrap = _memMakeEl('div', 'load-error', 'Failed to load memory. ');
+    const retryBtn = _memMakeEl('button', null, 'Retry');
+    retryBtn.setAttribute('onclick', 'loadMemoryBrowser()');
+    errWrap.appendChild(retryBtn);
+    list.appendChild(errWrap);
   }
 }
 

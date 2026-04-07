@@ -200,7 +200,16 @@ export class ProposalToBacklog {
           // etc. won't match even without the prefix requirement.
           // `pattern` (from config) is retained as a capability gate; the
           // real extraction uses markerLine below.
-          const markerLine = /^\s*(?:(?:\/\/|\/\*+|\*|<!--|#)[^\n]*?)?(TODO|FIXME)\(autonomous\):\s*(.+)$/;
+          // [^<\n]*? (not [^\n]*?) prevents the non-greedy scan from
+          // crossing a `<` character.  Without this, a line like:
+          //   // (<!-- TODO(autonomous): ... -->) and from plain text lines.
+          // would match because `//` is the prefix and `[^\n]*?` expands
+          // past the `<` in `<!--` to reach the marker.  Blocking `<`
+          // ensures that a `//` line comment can only match when the marker
+          // appears directly after the `//` prefix (no embedded `<!--`).
+          // `<!--` itself as a *prefix* still works: after the prefix is
+          // consumed the remaining text starts with a space, not `<`.
+          const markerLine = /^\s*(?:(?:\/\/|\/\*+|\*|<!--|#)[^<\n]*?)?(TODO|FIXME)\(autonomous\):\s*(.+)$/;
           const lines = content.split('\n');
           for (let i = 0; i < lines.length; i++) {
             if (!pattern.test(lines[i]!)) continue;
@@ -248,11 +257,19 @@ export class ProposalToBacklog {
   // before items are written into the backlog schema.  The equivalent
   // input-side strip lives in scanTodoMarkers(); this ensures every code
   // path through build() respects the same contract.
+  //
+  // stripClosers removes trailing --> and */ tokens.  The regex targets only
+  // the trailing position so mid-string arrows (e.g. "a -> b") are preserved.
+  private stripClosers(s: string): string {
+    return s.replace(/\s*-->\s*$/, '').replace(/\s*\*\/\s*$/, '').trim();
+  }
+
   private sanitizeItems(items: BacklogItem[]): BacklogItem[] {
     return items.map(item => ({
       ...item,
-      id: item.id.replace(/\s*-->\s*$/, '').replace(/\s*\*\/\s*$/, '').trim(),
-      title: item.title.replace(/\s*-->\s*$/, '').replace(/\s*\*\/\s*$/, '').trim(),
+      id: this.stripClosers(item.id),
+      title: this.stripClosers(item.title),
+      description: this.stripClosers(item.description),
     }));
   }
 

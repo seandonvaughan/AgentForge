@@ -247,6 +247,9 @@ export class CycleRunner {
     const generator = new SprintGenerator(this.options.cwd, this.options.config);
     const plan: SprintPlan = await generator.generate(approved.approvedItems);
     this.sprintVersion = plan.version;
+    // Persist the cycle→sprint link immediately so the dashboard can resolve
+    // the Items tab without needing to match sprint files by timestamp.
+    this.logger.logSprintAssigned(plan.version);
     this.checkKillSwitch();
 
     // ─────────────────────────────────────────────────────────────────

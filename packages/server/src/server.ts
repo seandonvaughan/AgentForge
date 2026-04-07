@@ -184,7 +184,8 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
   await intelligenceRoutes(app);
 
   // ── Embedding routes ──────────────────────────────────────────────────────────
-  await embeddingRoutes(app, { dataDir });
+  // Pass adapter so the store can be seeded from sessions on first search.
+  await embeddingRoutes(app, { dataDir, adapter: options.adapter });
 
   // ── v6 Unified API routes + OpenAPI spec ────────────────────────────────────
   if (options.adapter && options.registry) {

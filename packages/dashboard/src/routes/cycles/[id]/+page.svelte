@@ -326,8 +326,13 @@
         <div class="card" style="margin-bottom: var(--space-5);">
           <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-3);">
             <div>
-              <div style="font-family: var(--font-mono); font-weight: 700; font-size: var(--text-lg);">{sprint.version ?? sprint.sprintId}</div>
+              <div style="font-family: var(--font-mono); font-weight: 700; font-size: var(--text-lg);">v{sprint.version ?? sprint.sprintId}</div>
               {#if sprint.title}<div class="muted" style="font-size: var(--text-sm);">{sprint.title}</div>{/if}
+              {#if sprint.versionDecision}
+                <div class="muted" style="font-size: var(--text-xs); margin-top: var(--space-1); font-family: var(--font-mono);">
+                  {sprint.versionDecision.rationale}
+                </div>
+              {/if}
             </div>
             <div style="text-align: right;">
               <div style="font-size: var(--text-2xl); font-weight: 700;">{pct}%</div>

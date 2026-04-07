@@ -38,6 +38,19 @@ export class CycleLogger {
     this.appendEvent({ type: 'phase.start', phase, at: new Date().toISOString() });
   }
 
+  /**
+   * Record the sprint version for this cycle. Emitted immediately after the
+   * SprintGenerator returns so the dashboard cycle detail page can resolve
+   * cycle→sprint without timestamp-proximity matching. Also writes a small
+   * sprint-link.json file in the cycle dir as a fast lookup key.
+   */
+  logSprintAssigned(sprintVersion: string): void {
+    this.appendEvent({ type: 'sprint.assigned', sprintVersion, at: new Date().toISOString() });
+    try {
+      this.writeJson(join(this.cycleDir, 'sprint-link.json'), { sprintVersion, assignedAt: new Date().toISOString() });
+    } catch { /* non-fatal */ }
+  }
+
   logPhaseResult(phase: string, result: unknown): void {
     this.writeJson(join(this.cycleDir, 'phases', `${phase}.json`), result);
     this.appendEvent({ type: 'phase.result', phase, at: new Date().toISOString() });

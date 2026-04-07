@@ -30,6 +30,10 @@ export function bumpVersion(
   }
 }
 
+export function determineVersionTier(tags: string[]): VersionBumpTier {
+  return determineTier(tags);
+}
+
 function determineTier(tags: string[]): VersionBumpTier {
   if (tags.some(t => MAJOR_TAGS.has(t))) return 'major';
   if (tags.some(t => MINOR_TAGS.has(t))) return 'minor';

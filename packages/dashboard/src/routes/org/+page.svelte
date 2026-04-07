@@ -85,7 +85,7 @@
   async function load() {
     loading = true; error = null;
     try {
-      const res = await fetch('/api/v5/org-graph');
+      const res = await fetch('/api/v1/org-graph');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       const data = json.data ?? json ?? { nodes: [], edges: [] };

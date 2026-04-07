@@ -240,6 +240,24 @@ describe('ProposalToBacklog', () => {
     expect(sessionItem?.title).toContain('TypeError: undefined');
   });
 
+  it('strips --> from description field at the output boundary', async () => {
+    // The description field is built from adapter data and may also carry
+    // trailing --> tokens.  sanitizeItems() must cover all three string fields.
+    const adapter = makeMockAdapter({
+      getRecentFailedSessions: async () => [
+        { id: 's2', agent: 'planner', error: 'bad plan -->', confidence: 0.9 },
+      ],
+    });
+    const bridge = new ProposalToBacklog(adapter, tmpDir, DEFAULT_CYCLE_CONFIG);
+    const items = await bridge.build();
+
+    expect(items.every(i => !i.description.trimEnd().endsWith('-->'))).toBe(true);
+
+    // Text before --> in description must not be lost
+    const item = items.find(i => i.id.startsWith('sess-s2'));
+    expect(item?.description).toContain('s2');
+  });
+
   it('every BacklogItem has required fields', async () => {
     const adapter = makeMockAdapter({
       getRecentFailedSessions: async () => [
