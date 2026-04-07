@@ -45,7 +45,3 @@ db-specialist:
   - researcher
   - linter
   - file-reader
-ml-engineer:
-  - researcher
-  - linter
-  - file-reader

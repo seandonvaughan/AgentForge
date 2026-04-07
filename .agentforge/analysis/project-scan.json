@@ -4,7 +4,7 @@
       {
         "file_path": ".claude/settings.local.json",
         "language": "JSON",
-        "loc": 23,
+        "loc": 24,
         "imports": [],
         "exports": [],
         "framework_indicators": [],
@@ -176,18 +176,23 @@
       {
         "file_path": "CHANGELOG.md",
         "language": "Markdown",
-        "loc": 28,
+        "loc": 143,
         "imports": [],
         "exports": [],
         "framework_indicators": [
+          "Next.js",
           "Svelte"
         ],
-        "patterns": []
+        "patterns": [
+          "async/await",
+          "classes",
+          "interfaces"
+        ]
       },
       {
         "file_path": "README.md",
         "language": "Markdown",
-        "loc": 109,
+        "loc": 111,
         "imports": [],
         "exports": [],
         "framework_indicators": [],
@@ -677,6 +682,58 @@
         ]
       },
       {
+        "file_path": "docs/superpowers/plans/2026-04-06-autonomous-loop-part2.md",
+        "language": "Markdown",
+        "loc": 2719,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [
+          "Next.js"
+        ],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "spread operator",
+          "optional chaining",
+          "nullish coalescing",
+          "template literals",
+          "classes",
+          "interfaces",
+          "type aliases",
+          "promises",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "docs/superpowers/plans/2026-04-06-autonomous-loop.md",
+        "language": "Markdown",
+        "loc": 3943,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [
+          "Next.js",
+          "Fastify"
+        ],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "spread operator",
+          "optional chaining",
+          "nullish coalescing",
+          "template literals",
+          "classes",
+          "interfaces",
+          "enums",
+          "type aliases",
+          "error handling",
+          "closures"
+        ]
+      },
+      {
         "file_path": "docs/superpowers/specs/2026-03-25-universal-forge-design.md",
         "language": "Markdown",
         "loc": 1280,
@@ -719,6 +776,44 @@
           "generics",
           "interfaces",
           "type aliases"
+        ]
+      },
+      {
+        "file_path": "docs/superpowers/specs/2026-04-06-autonomous-loop-design.md",
+        "language": "Markdown",
+        "loc": 1928,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [
+          "Next.js",
+          "Fastify"
+        ],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "spread operator",
+          "optional chaining",
+          "nullish coalescing",
+          "template literals",
+          "classes",
+          "interfaces",
+          "enums",
+          "type aliases",
+          "promises",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "docs/superpowers/specs/2026-04-06-autonomous-smoke-test.md",
+        "language": "Markdown",
+        "loc": 118,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "generics"
         ]
       },
       {
@@ -868,7 +963,7 @@
       {
         "file_path": "package.json",
         "language": "JSON",
-        "loc": 54,
+        "loc": 55,
         "imports": [],
         "exports": [],
         "framework_indicators": [
@@ -888,12 +983,13 @@
       {
         "file_path": "packages/cli/src/bin.ts",
         "language": "TypeScript",
-        "loc": 65,
+        "loc": 68,
         "imports": [
           "commander",
           "node:path",
           "./commands/migrate.js",
-          "./commands/build-info.js"
+          "./commands/build-info.js",
+          "./commands/autonomous.js"
         ],
         "exports": [],
         "framework_indicators": [],
@@ -903,6 +999,30 @@
           "arrow functions",
           "nullish coalescing",
           "template literals"
+        ]
+      },
+      {
+        "file_path": "packages/cli/src/commands/autonomous.ts",
+        "language": "TypeScript",
+        "loc": 227,
+        "imports": [
+          "commander"
+        ],
+        "exports": [
+          "registerAutonomousCommand"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "spread operator",
+          "optional chaining",
+          "nullish coalescing",
+          "template literals",
+          "interfaces",
+          "error handling"
         ]
       },
       {
@@ -1092,9 +1212,9 @@
       {
         "file_path": "packages/core/src/agent-runtime/agent-runtime.ts",
         "language": "TypeScript",
-        "loc": 232,
+        "loc": 299,
         "imports": [
-          "@anthropic-ai/sdk",
+          "node:child_process",
           "./types.js",
           "@agentforge/db"
         ],
@@ -1106,9 +1226,13 @@
           "async/await",
           "generics",
           "arrow functions",
+          "spread operator",
+          "optional chaining",
           "nullish coalescing",
           "template literals",
           "classes",
+          "interfaces",
+          "promises",
           "error handling"
         ]
       },
@@ -1229,6 +1353,450 @@
         "patterns": [
           "generics",
           "interfaces",
+          "type aliases"
+        ]
+      },
+      {
+        "file_path": "packages/core/src/autonomous/budget-approval.ts",
+        "language": "TypeScript",
+        "loc": 185,
+        "imports": [
+          "node:fs",
+          "node:path",
+          "node:readline",
+          "./types.js",
+          "./cycle-logger.js"
+        ],
+        "exports": [
+          "ApprovalRequest",
+          "ApprovalResult",
+          "ApprovalOptions",
+          "BudgetApprovalError",
+          "BudgetApproval"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "spread operator",
+          "nullish coalescing",
+          "template literals",
+          "classes",
+          "interfaces",
+          "promises"
+        ]
+      },
+      {
+        "file_path": "packages/core/src/autonomous/config-loader.ts",
+        "language": "TypeScript",
+        "loc": 134,
+        "imports": [
+          "node:fs",
+          "node:path",
+          "js-yaml",
+          "./types.js"
+        ],
+        "exports": [
+          "DEFAULT_CYCLE_CONFIG",
+          "loadCycleConfig"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "spread operator",
+          "template literals",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "packages/core/src/autonomous/cycle-logger.ts",
+        "language": "TypeScript",
+        "loc": 107,
+        "imports": [
+          "node:fs",
+          "node:path",
+          "./types.js"
+        ],
+        "exports": [
+          "GitEvent",
+          "PREvent",
+          "CycleLogger"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "spread operator",
+          "template literals",
+          "classes",
+          "interfaces"
+        ]
+      },
+      {
+        "file_path": "packages/core/src/autonomous/cycle-runner.ts",
+        "language": "TypeScript",
+        "loc": 505,
+        "imports": [
+          "node:crypto",
+          "node:child_process",
+          "node:util",
+          "./types.js",
+          "./budget-approval.js",
+          "./sprint-generator.js",
+          "./kill-switch.js",
+          "./cycle-logger.js",
+          "./pr-body-renderer.js",
+          "./exec/real-test-runner.js",
+          "./exec/git-ops.js",
+          "./exec/pr-opener.js"
+        ],
+        "exports": [
+          "CycleRunnerOptions",
+          "CycleRunner"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "spread operator",
+          "optional chaining",
+          "template literals",
+          "classes",
+          "interfaces",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "packages/core/src/autonomous/exec/__fixtures__/vitest-report.json",
+        "language": "JSON",
+        "loc": 23,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "packages/core/src/autonomous/exec/git-ops.ts",
+        "language": "TypeScript",
+        "loc": 254,
+        "imports": [
+          "node:child_process",
+          "node:util",
+          "node:path",
+          "../types.js",
+          "../cycle-logger.js"
+        ],
+        "exports": [
+          "GitSafetyError",
+          "GitOps"
+        ],
+        "framework_indicators": [
+          "Next.js"
+        ],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "spread operator",
+          "template literals",
+          "classes",
+          "promises",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "packages/core/src/autonomous/exec/pr-opener.ts",
+        "language": "TypeScript",
+        "loc": 120,
+        "imports": [
+          "node:child_process",
+          "node:util"
+        ],
+        "exports": [
+          "PROpenerError",
+          "PROpenRequest",
+          "PROpenResult",
+          "PROpener"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "nullish coalescing",
+          "template literals",
+          "classes",
+          "interfaces",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "packages/core/src/autonomous/exec/real-test-runner.ts",
+        "language": "TypeScript",
+        "loc": 198,
+        "imports": [
+          "node:child_process",
+          "node:util",
+          "node:fs",
+          "node:path",
+          "../types.js"
+        ],
+        "exports": [
+          "TestRunnerError",
+          "TestRunTimeoutError",
+          "RealTestRunner"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "spread operator",
+          "optional chaining",
+          "nullish coalescing",
+          "template literals",
+          "classes",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "packages/core/src/autonomous/index.ts",
+        "language": "TypeScript",
+        "loc": 20,
+        "imports": [],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": []
+      },
+      {
+        "file_path": "packages/core/src/autonomous/kill-switch.ts",
+        "language": "TypeScript",
+        "loc": 137,
+        "imports": [
+          "node:fs",
+          "node:path",
+          "./types.js"
+        ],
+        "exports": [
+          "RegressionResult",
+          "KillSwitch"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "arrow functions",
+          "nullish coalescing",
+          "template literals",
+          "classes",
+          "interfaces"
+        ]
+      },
+      {
+        "file_path": "packages/core/src/autonomous/phase-scheduler.ts",
+        "language": "TypeScript",
+        "loc": 191,
+        "imports": [
+          "./kill-switch.js",
+          "./cycle-logger.js",
+          "./types.js"
+        ],
+        "exports": [
+          "PhaseName",
+          "PHASE_SEQUENCE",
+          "nextPhase",
+          "PhaseContext",
+          "PhaseResult",
+          "PhaseHandler",
+          "SprintRunSummary",
+          "PhaseScheduler"
+        ],
+        "framework_indicators": [
+          "Next.js"
+        ],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "template literals",
+          "classes",
+          "interfaces",
+          "type aliases",
+          "promises",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "packages/core/src/autonomous/pr-body-renderer.ts",
+        "language": "TypeScript",
+        "loc": 66,
+        "imports": [
+          "./types.js"
+        ],
+        "exports": [
+          "PrBodyInput",
+          "renderPrBody"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "destructuring",
+          "template literals",
+          "interfaces"
+        ]
+      },
+      {
+        "file_path": "packages/core/src/autonomous/proposal-to-backlog.ts",
+        "language": "TypeScript",
+        "loc": 248,
+        "imports": [
+          "node:fs",
+          "node:path",
+          "./types.js"
+        ],
+        "exports": [
+          "BacklogItem",
+          "ProposalAdapter",
+          "ProposalToBacklog"
+        ],
+        "framework_indicators": [
+          "Next.js"
+        ],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "nullish coalescing",
+          "template literals",
+          "classes",
+          "interfaces",
+          "error handling",
+          "closures"
+        ]
+      },
+      {
+        "file_path": "packages/core/src/autonomous/runtime-adapter.ts",
+        "language": "TypeScript",
+        "loc": 130,
+        "imports": [
+          "node:path",
+          "../agent-runtime/index.js",
+          "../agent-runtime/types.js",
+          "@agentforge/db",
+          "./scoring-pipeline.js"
+        ],
+        "exports": [
+          "RuntimeAdapterError",
+          "RuntimeAdapterOptions",
+          "RuntimeAdapter"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "nullish coalescing",
+          "template literals",
+          "classes",
+          "interfaces"
+        ]
+      },
+      {
+        "file_path": "packages/core/src/autonomous/scoring-pipeline.ts",
+        "language": "TypeScript",
+        "loc": 267,
+        "imports": [
+          "./types.js",
+          "./proposal-to-backlog.js",
+          "./cycle-logger.js"
+        ],
+        "exports": [
+          "AdapterForScoring",
+          "RuntimeForScoring",
+          "ScoringPipelineResult",
+          "ScoringPipelineError",
+          "ScoringPipeline"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "spread operator",
+          "nullish coalescing",
+          "template literals",
+          "classes",
+          "interfaces",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "packages/core/src/autonomous/sprint-generator.ts",
+        "language": "TypeScript",
+        "loc": 119,
+        "imports": [
+          "node:fs",
+          "node:path",
+          "./types.js",
+          "./version-bumper.js"
+        ],
+        "exports": [
+          "SprintPlan",
+          "SprintPlanItem",
+          "SprintGenerator"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "optional chaining",
+          "nullish coalescing",
+          "template literals",
+          "classes",
+          "interfaces"
+        ]
+      },
+      {
+        "file_path": "packages/core/src/autonomous/types.ts",
+        "language": "TypeScript",
+        "loc": 191,
+        "imports": [],
+        "exports": [
+          "CycleStage",
+          "KillReason",
+          "KillSwitchTrip",
+          "CycleConfig",
+          "FailedTest",
+          "TestResult",
+          "RankedItem",
+          "ScoringResult",
+          "CycleResult",
+          "CycleKilledError",
+          "PhaseFailedError"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "template literals",
+          "classes",
+          "interfaces",
+          "enums",
+          "type aliases"
+        ]
+      },
+      {
+        "file_path": "packages/core/src/autonomous/version-bumper.ts",
+        "language": "TypeScript",
+        "loc": 56,
+        "imports": [],
+        "exports": [
+          "VersionBumpTier",
+          "bumpVersion"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "destructuring",
+          "nullish coalescing",
+          "template literals",
           "type aliases"
         ]
       },
@@ -1684,7 +2252,7 @@
       {
         "file_path": "packages/core/src/index.ts",
         "language": "TypeScript",
-        "loc": 27,
+        "loc": 28,
         "imports": [],
         "exports": [],
         "framework_indicators": [],
@@ -5066,6 +5634,64 @@
         ]
       },
       {
+        "file_path": "packages/server/src/lib/phase-handlers.ts",
+        "language": "TypeScript",
+        "loc": 1078,
+        "imports": [
+          "node:fs",
+          "node:path",
+          "@agentforge/core",
+          "@agentforge/shared",
+          "../routes/v5/stream.js",
+          "./career-hook.js",
+          "./auto-delegation.js"
+        ],
+        "exports": [
+          "PHASE_ORDER",
+          "Phase",
+          "PHASE_SEQUENCE",
+          "PhaseName",
+          "nextPhase",
+          "PHASE_AGENT_MAP",
+          "SprintItem",
+          "PhaseAgentResult",
+          "SprintFile",
+          "sprintsDir",
+          "sprintPath",
+          "readSprint",
+          "writeSprint",
+          "EventBus",
+          "PhaseTopic",
+          "PhaseStartedEvent",
+          "PhaseCompletedEvent",
+          "PhaseFailedEvent",
+          "PhaseItemEvent",
+          "PhaseEventPayload",
+          "createNoopBus",
+          "PhaseContext",
+          "AgentRunSummary",
+          "SprintItemResult",
+          "PhaseResult",
+          "PHASE_HANDLERS"
+        ],
+        "framework_indicators": [
+          "Next.js"
+        ],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "spread operator",
+          "optional chaining",
+          "nullish coalescing",
+          "template literals",
+          "interfaces",
+          "type aliases",
+          "error handling"
+        ]
+      },
+      {
         "file_path": "packages/server/src/main.ts",
         "language": "TypeScript",
         "loc": 127,
@@ -5807,7 +6433,7 @@
       {
         "file_path": "packages/server/src/routes/v5/sprint-orchestration.ts",
         "language": "TypeScript",
-        "loc": 1056,
+        "loc": 670,
         "imports": [
           "fastify",
           "node:fs",
@@ -5816,8 +6442,7 @@
           "@agentforge/core",
           "@agentforge/shared",
           "./stream.js",
-          "../../lib/career-hook.js",
-          "../../lib/auto-delegation.js"
+          "../../lib/career-hook.js"
         ],
         "exports": [],
         "framework_indicators": [
@@ -5834,7 +6459,6 @@
           "nullish coalescing",
           "template literals",
           "interfaces",
-          "type aliases",
           "error handling"
         ]
       },
@@ -12312,6 +12936,146 @@
         ]
       },
       {
+        "file_path": "tests/autonomous/fixtures/mock-anthropic.ts",
+        "language": "TypeScript",
+        "loc": 91,
+        "imports": [],
+        "exports": [
+          "MockRuntimeCall",
+          "MockRuntimeOptions",
+          "MockRunResult",
+          "MockRuntime",
+          "createMockRuntime"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "generics",
+          "arrow functions",
+          "spread operator",
+          "nullish coalescing",
+          "interfaces"
+        ]
+      },
+      {
+        "file_path": "tests/autonomous/fixtures/tmp-workspace.ts",
+        "language": "TypeScript",
+        "loc": 139,
+        "imports": [
+          "node:fs",
+          "node:os",
+          "node:path",
+          "node:child_process",
+          "node:util",
+          "vitest"
+        ],
+        "exports": [
+          "x"
+        ],
+        "framework_indicators": [
+          "Next.js"
+        ],
+        "patterns": [
+          "async/await",
+          "generics",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "tests/autonomous/integration/full-cycle.test.ts",
+        "language": "TypeScript",
+        "loc": 348,
+        "imports": [
+          "vitest",
+          "node:fs",
+          "node:path",
+          "node:child_process",
+          "node:util",
+          "../fixtures/tmp-workspace.js",
+          "../fixtures/mock-anthropic.js",
+          "../../../packages/core/src/autonomous/phase-scheduler.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "nullish coalescing",
+          "template literals",
+          "interfaces"
+        ]
+      },
+      {
+        "file_path": "tests/autonomous/integration/phase-handlers-events.test.ts",
+        "language": "TypeScript",
+        "loc": 410,
+        "imports": [
+          "vitest",
+          "node:os",
+          "node:path"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "destructuring",
+          "spread operator",
+          "nullish coalescing",
+          "template literals",
+          "interfaces"
+        ]
+      },
+      {
+        "file_path": "tests/autonomous/integration/phase-handlers-http.test.ts",
+        "language": "TypeScript",
+        "loc": 821,
+        "imports": [
+          "vitest",
+          "fastify",
+          "node:os",
+          "node:path",
+          "../../../packages/server/src/routes/v5/sprint-orchestration.js"
+        ],
+        "exports": [],
+        "framework_indicators": [
+          "Next.js",
+          "Fastify"
+        ],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "nullish coalescing",
+          "template literals",
+          "interfaces"
+        ]
+      },
+      {
+        "file_path": "tests/autonomous/integration/real-test-runner.integration.test.ts",
+        "language": "TypeScript",
+        "loc": 73,
+        "imports": [
+          "vitest",
+          "node:fs",
+          "node:os",
+          "node:path",
+          "node:child_process",
+          "node:util",
+          "../../../packages/core/src/autonomous/exec/real-test-runner.js",
+          "../../../packages/core/src/autonomous/config-loader.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "arrow functions",
+          "spread operator"
+        ]
+      },
+      {
         "file_path": "tests/autonomous/sprint-framework.test.ts",
         "language": "TypeScript",
         "loc": 226,
@@ -12339,6 +13103,288 @@
           "arrow functions",
           "spread operator",
           "template literals"
+        ]
+      },
+      {
+        "file_path": "tests/autonomous/unit/budget-approval.test.ts",
+        "language": "TypeScript",
+        "loc": 153,
+        "imports": [
+          "vitest",
+          "node:fs",
+          "node:os",
+          "node:path",
+          "../../../packages/core/src/autonomous/budget-approval.js",
+          "../../../packages/core/src/autonomous/cycle-logger.js",
+          "../../../packages/core/src/autonomous/types.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "arrow functions"
+        ]
+      },
+      {
+        "file_path": "tests/autonomous/unit/config-loader.test.ts",
+        "language": "TypeScript",
+        "loc": 84,
+        "imports": [
+          "vitest",
+          "node:fs",
+          "node:os",
+          "node:path",
+          "../../../packages/core/src/autonomous/config-loader.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "arrow functions"
+        ]
+      },
+      {
+        "file_path": "tests/autonomous/unit/cycle-logger.test.ts",
+        "language": "TypeScript",
+        "loc": 125,
+        "imports": [
+          "vitest",
+          "node:fs",
+          "node:os",
+          "node:path",
+          "../../../packages/core/src/autonomous/cycle-logger.js",
+          "../../../packages/core/src/autonomous/types.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "arrow functions"
+        ]
+      },
+      {
+        "file_path": "tests/autonomous/unit/cycle-runner.test.ts",
+        "language": "TypeScript",
+        "loc": 453,
+        "imports": [
+          "vitest",
+          "node:os",
+          "node:path",
+          "../../../packages/core/src/autonomous/cycle-runner.js",
+          "../../../packages/core/src/autonomous/config-loader.js",
+          "../../../packages/core/src/autonomous/types.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "arrow functions",
+          "optional chaining",
+          "nullish coalescing",
+          "template literals"
+        ]
+      },
+      {
+        "file_path": "tests/autonomous/unit/git-ops.test.ts",
+        "language": "TypeScript",
+        "loc": 225,
+        "imports": [
+          "vitest",
+          "node:fs",
+          "node:os",
+          "node:path",
+          "node:child_process",
+          "node:util",
+          "../../../packages/core/src/autonomous/exec/git-ops.js",
+          "../../../packages/core/src/autonomous/config-loader.js",
+          "../../../packages/core/src/autonomous/cycle-logger.js"
+        ],
+        "exports": [
+          "x"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "generics",
+          "arrow functions",
+          "spread operator",
+          "error handling"
+        ]
+      },
+      {
+        "file_path": "tests/autonomous/unit/kill-switch.test.ts",
+        "language": "TypeScript",
+        "loc": 206,
+        "imports": [
+          "vitest",
+          "node:fs",
+          "node:os",
+          "node:path",
+          "../../../packages/core/src/autonomous/kill-switch.js",
+          "../../../packages/core/src/autonomous/config-loader.js",
+          "../../../packages/core/src/autonomous/types.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "arrow functions",
+          "spread operator",
+          "optional chaining"
+        ]
+      },
+      {
+        "file_path": "tests/autonomous/unit/phase-scheduler.test.ts",
+        "language": "TypeScript",
+        "loc": 420,
+        "imports": [
+          "vitest",
+          "node:fs",
+          "node:os",
+          "node:path",
+          "../../../packages/core/src/autonomous/phase-scheduler.js",
+          "../../../packages/core/src/autonomous/kill-switch.js",
+          "../../../packages/core/src/autonomous/cycle-logger.js",
+          "../../../packages/core/src/autonomous/config-loader.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "arrow functions",
+          "destructuring",
+          "spread operator",
+          "nullish coalescing"
+        ]
+      },
+      {
+        "file_path": "tests/autonomous/unit/pr-body-renderer.test.ts",
+        "language": "TypeScript",
+        "loc": 114,
+        "imports": [
+          "vitest",
+          "../../../packages/core/src/autonomous/pr-body-renderer.js",
+          "../../../packages/core/src/autonomous/types.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "arrow functions"
+        ]
+      },
+      {
+        "file_path": "tests/autonomous/unit/pr-opener.test.ts",
+        "language": "TypeScript",
+        "loc": 103,
+        "imports": [
+          "vitest",
+          "../../../packages/core/src/autonomous/exec/pr-opener.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "arrow functions"
+        ]
+      },
+      {
+        "file_path": "tests/autonomous/unit/proposal-to-backlog.test.ts",
+        "language": "TypeScript",
+        "loc": 117,
+        "imports": [
+          "vitest",
+          "node:fs",
+          "node:os",
+          "node:path",
+          "../../../packages/core/src/autonomous/proposal-to-backlog.js",
+          "../../../packages/core/src/autonomous/config-loader.js"
+        ],
+        "exports": [
+          "x",
+          "y",
+          "z"
+        ],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "arrow functions",
+          "nullish coalescing"
+        ]
+      },
+      {
+        "file_path": "tests/autonomous/unit/real-test-runner.test.ts",
+        "language": "TypeScript",
+        "loc": 121,
+        "imports": [
+          "vitest",
+          "node:fs",
+          "node:os",
+          "node:path",
+          "node:url",
+          "../../../packages/core/src/autonomous/exec/real-test-runner.js",
+          "../../../packages/core/src/autonomous/config-loader.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "arrow functions",
+          "destructuring",
+          "spread operator"
+        ]
+      },
+      {
+        "file_path": "tests/autonomous/unit/scoring-pipeline.test.ts",
+        "language": "TypeScript",
+        "loc": 234,
+        "imports": [
+          "vitest",
+          "../../../packages/core/src/autonomous/scoring-pipeline.js",
+          "../../../packages/core/src/autonomous/config-loader.js",
+          "../../../packages/core/src/autonomous/proposal-to-backlog.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "arrow functions",
+          "destructuring",
+          "spread operator",
+          "template literals"
+        ]
+      },
+      {
+        "file_path": "tests/autonomous/unit/sprint-generator.test.ts",
+        "language": "TypeScript",
+        "loc": 111,
+        "imports": [
+          "vitest",
+          "node:fs",
+          "node:os",
+          "node:path",
+          "../../../packages/core/src/autonomous/sprint-generator.js",
+          "../../../packages/core/src/autonomous/config-loader.js",
+          "../../../packages/core/src/autonomous/types.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "async/await",
+          "arrow functions",
+          "spread operator",
+          "template literals"
+        ]
+      },
+      {
+        "file_path": "tests/autonomous/unit/version-bumper.test.ts",
+        "language": "TypeScript",
+        "loc": 56,
+        "imports": [
+          "vitest",
+          "../../../packages/core/src/autonomous/version-bumper.js"
+        ],
+        "exports": [],
+        "framework_indicators": [],
+        "patterns": [
+          "arrow functions",
+          "spread operator"
         ]
       },
       {
@@ -15765,11 +16811,11 @@
       }
     ],
     "languages": {
-      "JSON": 29,
+      "JSON": 30,
       "YAML": 101,
-      "TypeScript": 628,
+      "TypeScript": 667,
       "JavaScript": 30,
-      "Markdown": 45,
+      "Markdown": 49,
       "HTML": 15,
       "Svelte": 28,
       "CSS": 1,
@@ -15792,8 +16838,8 @@
       "Actix",
       "Fiber"
     ],
-    "total_files": 880,
-    "total_loc": 165272,
+    "total_files": 924,
+    "total_loc": 182444,
     "directory_structure": [
       ".claude",
       ".claude-plugin",
@@ -15813,10 +16859,10 @@
     ]
   },
   "git": {
-    "total_commits": 136,
+    "total_commits": 175,
     "contributors": [
       {
-        "commits": 135,
+        "commits": 174,
         "name": "Sean Vaughan",
         "email": "sean@vaughanfamily.org"
       },
@@ -15829,23 +16875,23 @@
     "active_files": [
       {
         "path": ".agentforge/team.yaml",
-        "changes": 22,
-        "last_modified": "2026-03-29T11:58:01-05:00"
+        "changes": 23,
+        "last_modified": "2026-03-29T12:13:52-05:00"
       },
       {
         "path": "dashboard/index.html",
-        "changes": 16,
-        "last_modified": "2026-03-29T11:58:01-05:00"
+        "changes": 17,
+        "last_modified": "2026-03-29T12:13:52-05:00"
       },
       {
         "path": ".agentforge/analysis/project-scan.json",
-        "changes": 14,
-        "last_modified": "2026-03-29T11:58:01-05:00"
+        "changes": 15,
+        "last_modified": "2026-03-29T12:13:52-05:00"
       },
       {
         "path": "package.json",
-        "changes": 11,
-        "last_modified": "2026-03-29T11:47:08-05:00"
+        "changes": 12,
+        "last_modified": "2026-04-06T19:11:51-05:00"
       },
       {
         "path": ".claude-plugin/plugin.json",
@@ -15864,82 +16910,87 @@
       },
       {
         "path": ".agentforge/agents/architect.yaml",
-        "changes": 6,
-        "last_modified": "2026-03-29T11:58:01-05:00"
+        "changes": 7,
+        "last_modified": "2026-03-29T12:13:52-05:00"
       },
       {
         "path": ".agentforge/agents/genesis.yaml",
-        "changes": 6,
-        "last_modified": "2026-03-29T11:58:01-05:00"
+        "changes": 7,
+        "last_modified": "2026-03-29T12:13:52-05:00"
       },
       {
         "path": ".agentforge/agents/linter.yaml",
-        "changes": 6,
-        "last_modified": "2026-03-29T11:58:01-05:00"
+        "changes": 7,
+        "last_modified": "2026-03-29T12:13:52-05:00"
       },
       {
         "path": ".agentforge/agents/researcher.yaml",
-        "changes": 6,
-        "last_modified": "2026-03-29T11:58:01-05:00"
+        "changes": 7,
+        "last_modified": "2026-03-29T12:13:52-05:00"
       },
       {
-        "path": "src/db/sqlite-adapter.ts",
+        "path": "packages/core/src/autonomous/index.ts",
         "changes": 6,
-        "last_modified": "2026-03-27T14:42:34-05:00"
-      },
-      {
-        "path": "src/flywheel/autonomy-governor.ts",
-        "changes": 6,
-        "last_modified": "2026-03-27T14:33:18-05:00"
-      },
-      {
-        "path": "src/cli/commands/invoke.ts",
-        "changes": 6,
-        "last_modified": "2026-03-25T18:55:20-05:00"
-      },
-      {
-        "path": ".agentforge/agents/dba.yaml",
-        "changes": 5,
-        "last_modified": "2026-03-29T11:58:01-05:00"
+        "last_modified": "2026-04-06T21:37:21-05:00"
       },
       {
         "path": ".agentforge/agents/api-specialist.yaml",
-        "changes": 5,
-        "last_modified": "2026-03-29T11:47:08-05:00"
+        "changes": 6,
+        "last_modified": "2026-03-29T12:13:52-05:00"
       },
       {
         "path": ".agentforge/agents/coder.yaml",
-        "changes": 5,
-        "last_modified": "2026-03-29T11:47:08-05:00"
+        "changes": 6,
+        "last_modified": "2026-03-29T12:13:52-05:00"
       },
       {
         "path": ".agentforge/agents/debugger.yaml",
-        "changes": 5,
-        "last_modified": "2026-03-29T11:47:08-05:00"
+        "changes": 6,
+        "last_modified": "2026-03-29T12:13:52-05:00"
       },
       {
         "path": ".agentforge/agents/meta-architect.yaml",
-        "changes": 5,
-        "last_modified": "2026-03-29T11:47:08-05:00"
+        "changes": 6,
+        "last_modified": "2026-03-29T12:13:52-05:00"
       },
       {
         "path": ".agentforge/agents/project-manager.yaml",
-        "changes": 5,
-        "last_modified": "2026-03-29T11:47:08-05:00"
+        "changes": 6,
+        "last_modified": "2026-03-29T12:13:52-05:00"
+      },
+      {
+        "path": ".agentforge/agents/skill-designer.yaml",
+        "changes": 6,
+        "last_modified": "2026-03-29T12:13:52-05:00"
+      },
+      {
+        "path": ".agentforge/agents/team-reviewer.yaml",
+        "changes": 6,
+        "last_modified": "2026-03-29T12:13:52-05:00"
+      },
+      {
+        "path": ".agentforge/agents/template-optimizer.yaml",
+        "changes": 6,
+        "last_modified": "2026-03-29T12:13:52-05:00"
       }
     ],
-    "branch_count": 3,
-    "branch_strategy": "trunk-based",
+    "branch_count": 5,
+    "branch_strategy": "unknown",
     "churn_rate": [
       {
         "path": ".agentforge/analysis/project-scan.json",
-        "additions": 26934,
-        "deletions": 10545
+        "additions": 27485,
+        "deletions": 10600
       },
       {
         "path": "dashboard/index.html",
-        "additions": 12755,
-        "deletions": 2313
+        "additions": 13282,
+        "deletions": 5342
+      },
+      {
+        "path": "dashboard/index.html.new",
+        "additions": 7577,
+        "deletions": 0
       },
       {
         "path": "package-lock.json",
@@ -15952,14 +17003,39 @@
         "deletions": 0
       },
       {
+        "path": "docs/superpowers/plans/2026-04-06-autonomous-loop.md",
+        "additions": 3942,
+        "deletions": 0
+      },
+      {
         "path": "docs/superpowers/plans/2026-03-25-v32-team-mode-implementation-plan.md",
         "additions": 3347,
+        "deletions": 0
+      },
+      {
+        "path": "docs/superpowers/plans/2026-04-06-autonomous-loop-part2.md",
+        "additions": 2718,
+        "deletions": 0
+      },
+      {
+        "path": "dashboard/pages/home.html",
+        "additions": 2046,
+        "deletions": 0
+      },
+      {
+        "path": "docs/superpowers/specs/2026-04-06-autonomous-loop-design.md",
+        "additions": 1927,
         "deletions": 0
       },
       {
         "path": "packages/dashboard/package-lock.json",
         "additions": 1862,
         "deletions": 0
+      },
+      {
+        "path": "packages/server/src/routes/v5/sprint-orchestration.ts",
+        "additions": 1185,
+        "deletions": 516
       },
       {
         "path": "docs/v4/architecture.md",
@@ -15973,8 +17049,8 @@
       },
       {
         "path": ".agentforge/team.yaml",
-        "additions": 738,
-        "deletions": 572
+        "additions": 740,
+        "deletions": 574
       },
       {
         "path": "docs/superpowers/specs/2026-03-25-universal-forge-design.md",
@@ -15987,58 +17063,32 @@
         "deletions": 0
       },
       {
+        "path": "packages/server/src/lib/phase-handlers.ts",
+        "additions": 1077,
+        "deletions": 0
+      },
+      {
+        "path": "tests/integration/sprint-pipeline.test.ts",
+        "additions": 1022,
+        "deletions": 0
+      },
+      {
         "path": ".agentforge/feedback/2026-03-25-lead-architect-async-communication-design.md",
         "additions": 1003,
-        "deletions": 0
-      },
-      {
-        "path": ".agentforge/reviews/active/v4-cto-sprint-plan/document.md",
-        "additions": 954,
-        "deletions": 0
-      },
-      {
-        "path": "docs/v4/cto-sprint-plan.md",
-        "additions": 954,
-        "deletions": 0
-      },
-      {
-        "path": "tests/types/domain.test.ts",
-        "additions": 910,
-        "deletions": 0
-      },
-      {
-        "path": "docs/v4/cto-sprint-plan-v2.md",
-        "additions": 905,
-        "deletions": 0
-      },
-      {
-        "path": "packages/plugins-sdk/PLUGIN_GUIDE.md",
-        "additions": 884,
-        "deletions": 0
-      },
-      {
-        "path": "packages/dashboard/src/routes/runner/+page.svelte",
-        "additions": 832,
-        "deletions": 0
-      },
-      {
-        "path": "src/lifecycle/career-store.ts",
-        "additions": 742,
-        "deletions": 0
-      },
-      {
-        "path": "packages/server/src/routes/v6/openapi.ts",
-        "additions": 740,
         "deletions": 0
       }
     ],
     "commit_frequency": [
       {
         "period": "2026-03",
-        "count": 136
+        "count": 137
+      },
+      {
+        "period": "2026-04",
+        "count": 38
       }
     ],
-    "age_days": 4
+    "age_days": 12
   },
   "dependencies": {
     "package_manager": "pnpm",
@@ -16247,12 +17297,12 @@
     {
       "type": "unknown",
       "path": "CHANGELOG.md",
-      "summary": "# Changelog\n\nAll notable changes to AgentForge are documented in this file.\n\n## [6.0.0] — 2026-03-27\n\n### What's New\n\n- **Execution API** — `POST /api/v5/run` triggers real AgentRuntime calls with live Anthropic API streaming. `GET /api/v5/run/:sessionId` for session retrieval. Agent YAML is resolved from `.agentforge/agents/` and model tier is mapped automatically.\n- **AgentRuntime Streaming** — New `runStreaming()` method on `AgentRuntime` using the Anthropic SDK streaming API. Exposes `onChun"
+      "summary": "# Changelog\n\nAll notable changes to AgentForge are documented in this file.\n\n## [6.4.1-plan-auth] — 2026-04-06\n\n### What's Fixed\n\n- **`AgentRuntime` now uses the logged-in Claude Code session (Max/Pro plan) instead of requiring `ANTHROPIC_API_KEY`.** v6.4.0 inherited an SDK-based runtime from v5.x that hardcoded `new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })`, which bypassed the user's plan quota and forced a separate API key. v6.4.1 refactors `AgentRuntime.run()` and `AgentRuntime.ru"
     },
     {
       "type": "readme",
       "path": "README.md",
-      "summary": "# AgentForge\n\n**Universal Agent Team Builder**\n\nAgentForge assembles optimized AI agent teams for any project type — software, business, marketing, research, and beyond. Sprint 1+2 are complete with 770+ tests. The system includes intelligent model routing that cuts costs by ~80% vs. running everything through Opus, a Genesis workflow for building teams from scratch, and runtime orchestration that keeps multi-agent workflows on track.\n\n## What Works Today (Sprint 1+2 Complete)\n\n### Commands\n\n- *"
+      "summary": "# AgentForge\n\n<!-- TODO(autonomous): add a one-sentence description of the v6.4 autonomous development loop to this README. Briefly explain that `npm run autonomous:cycle` runs a supervised end-to-end cycle (plan → execute → test → commit → PR) using the logged-in Claude Code session. Keep it under 200 characters. -->\n\n**Universal Agent Team Builder**\n\nAgentForge assembles optimized AI agent teams for any project type — software, business, marketing, research, and beyond. Sprint 1+2 are complete"
     },
     {
       "type": "unknown",
@@ -16390,6 +17440,16 @@
       "summary": "# v3.2 Team Mode Implementation Plan\n\n> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.\n\n**Goal:** Transform AgentForge from single-agent invocation to persistent team mode — agents communicate peer-to-peer, Claude Code becomes a thin conduit, autonomy adapts to team composition.\n\n**Architecture:** Extend AgentForgeSession wi"
     },
     {
+      "type": "prd",
+      "path": "docs/superpowers/plans/2026-04-06-autonomous-loop-part2.md",
+      "summary": "# Autonomous Development Loop Implementation Plan — Part 2\n\n> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.\n\n**Continuation of:** `docs/superpowers/plans/2026-04-06-autonomous-loop.md`\n\n**Spec reference:** `docs/superpowers/specs/2026-04-06-autonomous-loop-design.md`\n\nThis file contains Tasks 17-26. Tasks 1-16 are in Part 1"
+    },
+    {
+      "type": "prd",
+      "path": "docs/superpowers/plans/2026-04-06-autonomous-loop.md",
+      "summary": "# Autonomous Development Loop Implementation Plan\n\n> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.\n\n**Goal:** Build a supervised autonomous development loop that plans, executes, tests, commits, and opens PRs with minimal human intervention.\n\n**Architecture:** Single-process CLI (`npm run autonomous:cycle`) drives a `CycleR"
+    },
+    {
       "type": "business-plan",
       "path": "docs/superpowers/specs/2026-03-25-universal-forge-design.md",
       "summary": "# AgentForge v2: Universal Forge\n\n**Design Spec | March 2026 | Status: Approved**\n\n## 1. Overview\n\nAgentForge v2 (\"Universal Forge\") expands AgentForge from a software-focused agent team builder into a universal platform that assembles optimized AI agent teams for any project type — software, business, marketing, research, and beyond.\n\n### Key Changes from v1\n\n1. **Domain Packs** — Agent templates organized into modular domain packs (software, business, marketing, product, research, sales, legal"
@@ -16403,6 +17463,16 @@
       "type": "unknown",
       "path": "docs/superpowers/specs/2026-03-28-agent-identity-hub-design.md",
       "summary": "# Agent Identity Hub — Team Building & Executive Tooling Overhaul\n\n**Date:** 2026-03-28\n**Status:** Proposed\n**Approach:** B — Centralized Agent Lifecycle Manager\n\n## Problem\n\nAgentForge's team building logic is static and shallow. Teams are composed at forge-time by scanning file patterns, with no runtime adaptation. Agent state is scattered across OrgGraph, AutonomyGovernor, SessionMemory, SkillRegistry, and ExecutionEngine with no consistency guarantees. Executives (CEO, CTO, COO, CFO) have d"
+    },
+    {
+      "type": "business-plan",
+      "path": "docs/superpowers/specs/2026-04-06-autonomous-loop-design.md",
+      "summary": "# AgentForge Autonomous Development Loop — Design Spec\n\n**Date:** 2026-04-06\n**Version target:** v6.4.0 (first autonomous cycle output)\n**Status:** Approved\n**Approach:** Supervised Loop + Phase Auto-Advance (Approach B from brainstorming)\n**Implementation estimate:** ~18 new source files, ~2,800 LOC, ~75 new tests\n\n---\n\n## 1. Executive Summary\n\nAgentForge v6.3 shipped real agent execution via `AgentRuntime.runStreaming()`, phase-to-agent mapping (audit→researcher, plan→CTO, assign→AutoDelegatio"
+    },
+    {
+      "type": "prd",
+      "path": "docs/superpowers/specs/2026-04-06-autonomous-smoke-test.md",
+      "summary": "# Autonomous Loop Manual Smoke Test\n\n**Purpose:** Prove the autonomous cycle works end-to-end against the real AgentForge repository before declaring the feature shipped.\n\n**Prerequisites:**\n- `npm install` complete, `npm run build` passes with 0 errors\n- All unit + integration tests green: `cd packages/core && npx vitest run`\n- `gh auth status` shows authenticated\n- `ANTHROPIC_API_KEY` exported in shell\n- Working tree is clean: `git status` shows nothing\n- On branch `main` (or a throwaway branc"
     },
     {
       "type": "unknown",
@@ -16478,6 +17548,10 @@
     {
       "type": "jira",
       "ref": "PROJECT-123"
+    },
+    {
+      "type": "jira",
+      "ref": "Z0-9"
     },
     {
       "type": "jira",
@@ -16590,10 +17664,6 @@
     {
       "type": "jira",
       "ref": "BSD-3"
-    },
-    {
-      "type": "jira",
-      "ref": "Z0-9"
     },
     {
       "type": "jira",
@@ -16739,6 +17809,12 @@
   "comments": {
     "todos": [
       {
+        "text": "markers. Scanning them fills the backlog with fixture noise.",
+        "file": "packages/core/src/autonomous/proposal-to-backlog.ts",
+        "line": 55,
+        "type": "TODO"
+      },
+      {
         "text": "\\n+  // Implemented\\n }`;",
         "file": "packages/executor/src/executor.ts",
         "line": 87,
@@ -16749,6 +17825,30 @@
         "file": "packages/server/src/websocket/ws-handler.ts",
         "line": 144,
         "type": "TODO"
+      },
+      {
+        "text": "add a meaningful comment to this file\\nexport const x = 1;\\n`,",
+        "file": "tests/autonomous/fixtures/tmp-workspace.ts",
+        "line": 114,
+        "type": "TODO"
+      },
+      {
+        "text": "migrate workspace-adapter to postgres\\nexport const x = 1;`,",
+        "file": "tests/autonomous/unit/proposal-to-backlog.test.ts",
+        "line": 51,
+        "type": "TODO"
+      },
+      {
+        "text": "regular human todo — should be ignored\\nexport const y = 2;`,",
+        "file": "tests/autonomous/unit/proposal-to-backlog.test.ts",
+        "line": 55,
+        "type": "TODO"
+      },
+      {
+        "text": "broken parser\\nexport const z = 3;`,",
+        "file": "tests/autonomous/unit/proposal-to-backlog.test.ts",
+        "line": 59,
+        "type": "FIXME"
       },
       {
         "text": "refactor this to use a factory pattern\",",
@@ -16851,9 +17951,33 @@
     ],
     "notes": [
       {
+        "text": "on lazy imports: the autonomous module and AgentRuntime touch the",
+        "file": "packages/cli/src/commands/autonomous.ts",
+        "line": 11,
+        "type": "NOTE"
+      },
+      {
+        "text": "on adapter stubs: Task 23 (this file) ships with minimal stubs",
+        "file": "packages/cli/src/commands/autonomous.ts",
+        "line": 17,
+        "type": "NOTE"
+      },
+      {
         "text": "When persisting via writeFile('feedback/<sprintId>.json', ...),",
         "file": "src/db/sqlite-adapter.ts",
         "line": 147,
+        "type": "NOTE"
+      },
+      {
+        "text": "this test may skip or be marked pending if gh is not authed locally",
+        "file": "tests/autonomous/unit/git-ops.test.ts",
+        "line": 44,
+        "type": "NOTE"
+      },
+      {
+        "text": "stage() will refuse .pem; this test uses direct git add to reach the scan",
+        "file": "tests/autonomous/unit/git-ops.test.ts",
+        "line": 101,
         "type": "NOTE"
       },
       {
