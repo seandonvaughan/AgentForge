@@ -60,8 +60,15 @@ export async function registerWebSocketRoutes(
   app: FastifyInstance,
   opts: WebSocketServerOptions,
 ): Promise<void> {
-  // Register @fastify/websocket — idempotent if already registered
-  await app.register(import('@fastify/websocket'));
+  // v6.7.1 fix: Register @fastify/websocket only if not already registered.
+  // The plugin throws FST_ERR_DEC_ALREADY_PRESENT('ws') when registered
+  // twice. registerWsHandler() also registers it for the /ws endpoint, so
+  // when both registerWsHandler and registerWebSocketRoutes run in the
+  // same boot sequence (adapter+bus path), the second registration explodes.
+  // hasRequestDecorator checks if the 'ws' decorator already exists.
+  if (!app.hasRequestDecorator('ws')) {
+    await app.register(import('@fastify/websocket'));
+  }
 
   // ── Bus → WebSocket bridge ───────────────────────────────────────────────────
 

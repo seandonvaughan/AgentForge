@@ -139,7 +139,13 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
   await runRoutes(app, { adapter: options.adapter });
 
   // ── Agent Chat Interface (P0-3) — no adapter required, uses audit.db directly ──
-  await chatRoutes(app);
+  // v6.7.1 fix: only register here when adapter is NOT present, because
+  // registerV5Routes already registers chatRoutes when an adapter exists.
+  // Without this guard, the chat routes get declared twice and Fastify
+  // throws FST_ERR_DUPLICATED_ROUTE on startup.
+  if (!options.adapter) {
+    await chatRoutes(app);
+  }
 
   // ── Plugin loader (hot-reload when pluginsDir provided) ───────────────────────
   if (options.pluginsDir) {
