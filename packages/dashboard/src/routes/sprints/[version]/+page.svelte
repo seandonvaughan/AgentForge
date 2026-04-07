@@ -95,7 +95,7 @@
 </script>
 
 <svelte:head>
-  <title>Sprint {version} — AgentForge v6</title>
+  <title>Sprint {version} — AgentForge</title>
 </svelte:head>
 
 <div class="page-header">

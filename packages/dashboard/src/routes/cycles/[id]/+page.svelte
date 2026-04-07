@@ -212,7 +212,7 @@
   let scoringResult = $derived(scoring?.result ?? scoring ?? null);
 </script>
 
-<svelte:head><title>Cycle {id?.slice(0, 8) ?? ''} — AgentForge v6</title></svelte:head>
+<svelte:head><title>Cycle {id?.slice(0, 8) ?? ''} — AgentForge</title></svelte:head>
 
 <div class="page-header">
   <div>

@@ -87,10 +87,20 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
     });
   } else {
     // Minimal stubs so the server is usable without a database adapter
+    // v6.7.3: read version from root package.json so dashboard + health
+    // endpoint always agree with the actual shipped version. Single source
+    // of truth — no more hardcoded "6.1.0" drift.
+    let pkgVersion = 'unknown';
+    try {
+      const pkgPath = join(projectRoot, 'package.json');
+      const { readFileSync } = await import('node:fs');
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+      pkgVersion = String(pkg.version ?? 'unknown');
+    } catch { /* fall back to 'unknown' */ }
     app.get('/api/v5/health', async (_req, reply) => {
       return reply.send({
         status: 'ok',
-        version: '6.1.0',
+        version: pkgVersion,
         api: 'v5',
         timestamp: new Date().toISOString(),
       });

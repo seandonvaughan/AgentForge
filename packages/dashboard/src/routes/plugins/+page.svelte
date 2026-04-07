@@ -59,7 +59,7 @@
   onMount(load);
 </script>
 
-<svelte:head><title>Plugins — AgentForge v5</title></svelte:head>
+<svelte:head><title>Plugins — AgentForge</title></svelte:head>
 
 <div class="page-header">
   <div>

@@ -73,7 +73,7 @@
   onMount(load);
 </script>
 
-<svelte:head><title>Memory — AgentForge v5</title></svelte:head>
+<svelte:head><title>Memory — AgentForge</title></svelte:head>
 
 <div class="page-header">
   <div>

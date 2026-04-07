@@ -25,7 +25,7 @@
   }
 </script>
 
-<svelte:head><title>Agents — AgentForge v5</title></svelte:head>
+<svelte:head><title>Agents — AgentForge</title></svelte:head>
 
 <div class="page-header">
   <div>

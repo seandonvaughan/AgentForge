@@ -64,7 +64,7 @@
   }
 </script>
 
-<svelte:head><title>{agent?.name ?? agentId} — AgentForge v5</title></svelte:head>
+<svelte:head><title>{agent?.name ?? agentId} — AgentForge</title></svelte:head>
 
 <div class="page-header">
   <div style="display:flex; align-items:center; gap: var(--space-4);">

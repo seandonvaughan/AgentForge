@@ -145,6 +145,35 @@ describe('ProposalToBacklog', () => {
     expect(titles.some(t => t.includes('nope'))).toBe(false);
   });
 
+  it('does not capture TODO(autonomous) that appears inside a nested HTML comment within a line comment', async () => {
+    // Regression for the line-68 false-positive: description-of-the-pattern
+    // comments (e.g. "// (<!-- TODO(autonomous): ... -->)") must not generate
+    // backlog items.  The fix is [^<\n]*? in markerLine which prevents the
+    // non-greedy scan from crossing a `<` character.
+    mkdirSync(join(tmpDir, 'src'), { recursive: true });
+    writeFileSync(
+      join(tmpDir, 'src/meta.ts'),
+      [
+        '// (<!-- TODO(autonomous): ... -->) and from plain text lines.',
+        '// titles from README <!-- TODO(autonomous): X --> are described here',
+        '// TODO(autonomous): this one is a real marker',
+      ].join('\n'),
+    );
+
+    const bridge = new ProposalToBacklog(makeMockAdapter(), tmpDir, DEFAULT_CYCLE_CONFIG);
+    const items = await bridge.build();
+    const titles = items.map(i => i.title);
+
+    // The real marker must be captured
+    expect(titles).toContain('this one is a real marker');
+
+    // The description-of-the-pattern comments must NOT generate items
+    expect(titles.some(t => t.includes('from plain text lines'))).toBe(false);
+    expect(titles.some(t => t.includes('are described here'))).toBe(false);
+    expect(titles.some(t => t.includes('... -->'))).toBe(false);
+    expect(titles.some(t => t.includes('X -->'))).toBe(false);
+  });
+
   it('captures plain-text TODO markers in markdown files (no comment prefix)', async () => {
     writeFileSync(
       join(tmpDir, 'NOTES.md'),

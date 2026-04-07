@@ -73,7 +73,7 @@
   });
 </script>
 
-<svelte:head><title>Settings — AgentForge v5</title></svelte:head>
+<svelte:head><title>Settings — AgentForge</title></svelte:head>
 
 <div class="page-header">
   <div>

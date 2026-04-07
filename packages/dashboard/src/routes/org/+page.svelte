@@ -99,7 +99,7 @@
   onMount(load);
 </script>
 
-<svelte:head><title>Org Chart — AgentForge v6</title></svelte:head>
+<svelte:head><title>Org Chart — AgentForge</title></svelte:head>
 
 <div class="page-header">
   <div>

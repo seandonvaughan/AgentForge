@@ -70,7 +70,7 @@
   onMount(load);
 </script>
 
-<svelte:head><title>Sprints — AgentForge v6</title></svelte:head>
+<svelte:head><title>Sprints — AgentForge</title></svelte:head>
 
 <div class="page-header">
   <div>

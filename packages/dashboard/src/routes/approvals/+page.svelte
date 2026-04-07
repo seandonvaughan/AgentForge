@@ -212,7 +212,7 @@
   });
 </script>
 
-<svelte:head><title>Approvals — AgentForge v5</title></svelte:head>
+<svelte:head><title>Approvals — AgentForge</title></svelte:head>
 
 <div class="page-header">
   <div>

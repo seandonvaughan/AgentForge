@@ -49,7 +49,7 @@
   }
 </script>
 
-<svelte:head><title>Cost Analytics — AgentForge v5</title></svelte:head>
+<svelte:head><title>Cost Analytics — AgentForge</title></svelte:head>
 
 <div class="page-header">
   <div>

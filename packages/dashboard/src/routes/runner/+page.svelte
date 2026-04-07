@@ -249,7 +249,7 @@
   });
 </script>
 
-<svelte:head><title>Agent Runner — AgentForge v6</title></svelte:head>
+<svelte:head><title>Agent Runner — AgentForge</title></svelte:head>
 
 <div class="page-header">
   <div>

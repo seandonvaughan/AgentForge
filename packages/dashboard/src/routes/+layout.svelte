@@ -6,11 +6,12 @@
   import { loadAgents } from '$lib/stores/agents.js';
   import { loadSessions } from '$lib/stores/sessions.js';
   import { loadCosts } from '$lib/stores/costs.js';
+  import { loadVersion } from '$lib/stores/version.js';
   import { onMount } from 'svelte';
 
   onMount(() => {
     // Kick off all data loads in parallel
-    Promise.all([loadAgents(), loadSessions({ limit: 100 }), loadCosts()]);
+    Promise.all([loadAgents(), loadSessions({ limit: 100 }), loadCosts(), loadVersion()]);
 
     // Connect WebSocket — auto-reconnects internally
     wsStore.connect();

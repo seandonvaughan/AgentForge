@@ -67,7 +67,7 @@
   onMount(load);
 </script>
 
-<svelte:head><title>Flywheel — AgentForge v5</title></svelte:head>
+<svelte:head><title>Flywheel — AgentForge</title></svelte:head>
 
 <div class="page-header">
   <div>

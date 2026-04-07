@@ -189,7 +189,7 @@
   $: conflictBranches = $branches.filter((b) => b.status === 'conflict').length;
 </script>
 
-<svelte:head><title>Branches — AgentForge v5</title></svelte:head>
+<svelte:head><title>Branches — AgentForge</title></svelte:head>
 
 <div class="page-header">
   <div>

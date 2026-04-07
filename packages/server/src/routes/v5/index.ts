@@ -195,11 +195,22 @@ export async function registerV5Routes(
 
   // ── Health ────────────────────────────────────────────────────────────────────
 
+  // v6.7.3: read version from root package.json — single source of truth.
+  // Resolves at registration time so the file is read once, not per request.
+  let pkgVersion = 'unknown';
+  try {
+    const { readFileSync } = await import('node:fs');
+    const { join: pathJoin } = await import('node:path');
+    // Walk up from this module to find the workspace root package.json
+    const candidate = pathJoin(process.cwd(), 'package.json');
+    pkgVersion = String(JSON.parse(readFileSync(candidate, 'utf8')).version ?? 'unknown');
+  } catch { /* fall back to 'unknown' */ }
+
   /** v5 health check — includes workspace context. */
   app.get('/api/v5/health', async (_req, reply) => {
     return reply.send({
       status: 'ok',
-      version: '6.1.0',
+      version: pkgVersion,
       api: 'v5',
       workspaceId: adapter.workspaceId,
       timestamp: new Date().toISOString(),

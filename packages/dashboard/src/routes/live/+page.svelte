@@ -152,7 +152,7 @@
   }
 </script>
 
-<svelte:head><title>Live Feed — AgentForge v5</title></svelte:head>
+<svelte:head><title>Live Feed — AgentForge</title></svelte:head>
 
 <div class="page-header">
   <div>

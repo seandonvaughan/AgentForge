@@ -51,7 +51,7 @@
   }
 </script>
 
-<svelte:head><title>Search — AgentForge v5</title></svelte:head>
+<svelte:head><title>Search — AgentForge</title></svelte:head>
 
 <div class="page-header">
   <div>
