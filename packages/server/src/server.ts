@@ -63,6 +63,11 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
     logger: { transport: { target: 'pino-pretty', options: { colorize: true } } },
   });
 
+  // Register @fastify/websocket exactly once for the entire app. Both
+  // registerWsHandler (/ws) and registerWebSocketRoutes (/api/v5/ws) depend on
+  // it; registering twice throws FST_ERR_DEC_ALREADY_PRESENT('ws').
+  await app.register(import('@fastify/websocket'));
+
   await app.register(FastifyCors, {
     origin: [
       `http://${host}:${port}`,

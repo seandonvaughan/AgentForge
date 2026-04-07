@@ -186,13 +186,10 @@ function startHeartbeat(): void {
 /**
  * Register the /ws WebSocket endpoint on the given Fastify instance.
  *
- * The caller must have already registered @fastify/websocket — this function
- * is safe to call multiple times because Fastify deduplicates plugins.
+ * The caller must have already registered @fastify/websocket on the app.
+ * createServerV5 hoists that registration so it happens exactly once.
  */
 export async function registerWsHandler(app: FastifyInstance): Promise<void> {
-  // Ensure @fastify/websocket is registered (idempotent)
-  await app.register(import('@fastify/websocket'));
-
   startHeartbeat();
 
   app.get('/ws', { websocket: true }, (socket: WebSocket, req) => {
