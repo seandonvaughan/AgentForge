@@ -26,6 +26,10 @@ export interface SprintPlanItem {
   estimatedCostUsd: number;
   tags: string[];
   source?: string;
+  /** v6.6.0 — Optional list of files (paths or globs) this item is expected
+   *  to touch. Used by the execute phase's FileLockManager to serialize
+   *  items that would race on the same file. */
+  files?: string[];
 }
 
 const DEFAULT_STARTING_VERSION = '6.4.0';

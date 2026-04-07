@@ -37,6 +37,72 @@ interface SprintItem {
   status: string;
   source?: string;
   tags?: string[];
+  /** v6.6.0 — Optional declared file paths the item will touch. If absent,
+   *  the FileLockManager falls back to a heuristic regex over title +
+   *  description, then to "empty" (conservative — serializes against all). */
+  files?: string[];
+}
+
+/** v6.6.0 — File-aware lock manager used by the execute-phase dispatch loop.
+ *  Items with overlapping file declarations serialize; disjoint items still
+ *  run in parallel up to the numeric concurrency cap. Items with no declared
+ *  or inferred files are conservative — they only run when nothing else is
+ *  in flight. */
+export class FileLockManager {
+  private readonly heldFiles = new Map<string, string>(); // file → itemId
+  private readonly itemsHoldingEmpty = new Set<string>();
+
+  canAcquire(_itemId: string, files: string[]): boolean {
+    if (files.length === 0) {
+      // Conservative: empty files = "could touch anything" — only run when
+      // nothing else is in flight.
+      return this.heldFiles.size === 0 && this.itemsHoldingEmpty.size === 0;
+    }
+    // If any item is currently holding an empty (unknown-files) lock, we
+    // must wait — that item could touch any file.
+    if (this.itemsHoldingEmpty.size > 0) return false;
+    return !files.some((f) => this.heldFiles.has(f));
+  }
+
+  acquire(itemId: string, files: string[]): void {
+    if (files.length === 0) {
+      this.itemsHoldingEmpty.add(itemId);
+      return;
+    }
+    for (const f of files) this.heldFiles.set(f, itemId);
+  }
+
+  release(itemId: string): void {
+    this.itemsHoldingEmpty.delete(itemId);
+    for (const [f, id] of this.heldFiles.entries()) {
+      if (id === itemId) this.heldFiles.delete(f);
+    }
+  }
+
+  pendingForItem(files: string[]): string[] {
+    return files.filter((f) => this.heldFiles.has(f));
+  }
+
+  get inFlightCount(): number {
+    // For introspection in tests.
+    return this.itemsHoldingEmpty.size + new Set(this.heldFiles.values()).size;
+  }
+}
+
+/** v6.6.0 — Heuristic file extraction. Scans title + description for tokens
+ *  that look like file paths with common code/doc extensions. Returns an
+ *  empty array if nothing matches. */
+export function extractFilesFromItem(item: {
+  files?: string[];
+  title?: string;
+  description?: string;
+}): string[] {
+  if (item.files && item.files.length > 0) return item.files;
+  const haystack = `${item.title ?? ''}\n${item.description ?? ''}`;
+  const regex = /[\w\-./]+\.(?:ts|tsx|js|jsx|mjs|cjs|md|ya?ml|json|svelte|css|scss|html)/g;
+  const matches = haystack.match(regex);
+  if (!matches) return [];
+  return Array.from(new Set(matches));
 }
 
 interface SprintFile {
@@ -145,32 +211,15 @@ export async function runExecutePhase(
 
   let totalCost = 0;
 
-  // ---- Dispatch items in parallel with a numeric concurrency cap ----
-  // We use a simple semaphore (no file-conflict detection in v6.5.3 — known
-  // limitation for v6.5.4+). Promise.allSettled ensures we collect every
-  // result even when some items fail.
-  let active = 0;
-  const queue: Array<() => void> = [];
-  const acquire = (): Promise<void> =>
-    new Promise((resolve) => {
-      const tryAcquire = () => {
-        if (active < maxParallelism) {
-          active += 1;
-          resolve();
-        } else {
-          queue.push(tryAcquire);
-        }
-      };
-      tryAcquire();
-    });
-  const release = () => {
-    active -= 1;
-    const next = queue.shift();
-    if (next) next();
-  };
+  // ---- Dispatch items in parallel with numeric + file-lock concurrency ----
+  // v6.6.0 — FileLockManager serializes items whose declared (or inferred)
+  // files overlap, while still running disjoint items in parallel up to
+  // maxParallelism.
+  const lockMgr = new FileLockManager();
+  const itemFiles = new Map<string, string[]>();
+  for (const it of items) itemFiles.set(it.id, extractFilesFromItem(it));
 
   const dispatchItem = async (item: SprintItem): Promise<ItemResult> => {
-    await acquire();
     const itemStartedAt = Date.now();
     let lastError: string | undefined;
     let attempts = 0;
@@ -238,11 +287,41 @@ export async function runExecutePhase(
       } catch {
         // Non-fatal
       }
-      release();
     }
   };
 
-  const settled = await Promise.allSettled(items.map((it) => dispatchItem(it)));
+  // Scheduling loop: for each item, wait until both numeric capacity AND
+  // the file-lock manager allow dispatch, then launch.
+  const inFlight = new Map<Promise<unknown>, string>();
+  const settledResults: Array<PromiseSettledResult<ItemResult>> = [];
+  const indexById = new Map<string, number>();
+  items.forEach((it, idx) => indexById.set(it.id, idx));
+
+  for (const item of items) {
+    const files = itemFiles.get(item.id) ?? [];
+    while (
+      inFlight.size >= maxParallelism ||
+      !lockMgr.canAcquire(item.id, files)
+    ) {
+      await Promise.race(inFlight.keys());
+    }
+    lockMgr.acquire(item.id, files);
+    const p: Promise<unknown> = dispatchItem(item).then(
+      (value) => {
+        settledResults[indexById.get(item.id)!] = { status: 'fulfilled', value };
+        lockMgr.release(item.id);
+        inFlight.delete(p);
+      },
+      (reason) => {
+        settledResults[indexById.get(item.id)!] = { status: 'rejected', reason };
+        lockMgr.release(item.id);
+        inFlight.delete(p);
+      },
+    );
+    inFlight.set(p, item.id);
+  }
+  await Promise.allSettled(inFlight.keys());
+  const settled = settledResults;
   const itemResults: ItemResult[] = settled.map((s, i) => {
     if (s.status === 'fulfilled') return s.value;
     const item = items[i]!;

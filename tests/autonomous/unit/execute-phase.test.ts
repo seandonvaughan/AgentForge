@@ -10,6 +10,8 @@ import { join } from 'node:path';
 import {
   runExecutePhase,
   EXECUTE_PHASE_DEFAULT_TOOLS,
+  FileLockManager,
+  extractFilesFromItem,
 } from '../../../packages/core/src/autonomous/phase-handlers/execute-phase.js';
 import type { PhaseContext } from '../../../packages/core/src/autonomous/phase-scheduler.js';
 
@@ -220,9 +222,9 @@ describe('runExecutePhase', () => {
 
   it('dispatches items in parallel up to the parallelism cap', async () => {
     writeSprintFile(tmpDir, '9.9.9', [
-      { id: 'i1', title: 'a', assignee: 'coder' },
-      { id: 'i2', title: 'b', assignee: 'coder' },
-      { id: 'i3', title: 'c', assignee: 'coder' },
+      { id: 'i1', title: 'a', assignee: 'coder', files: ['src/a.ts'] } as any,
+      { id: 'i2', title: 'b', assignee: 'coder', files: ['src/b.ts'] } as any,
+      { id: 'i3', title: 'c', assignee: 'coder', files: ['src/c.ts'] } as any,
     ]);
     let inFlight = 0;
     let maxInFlight = 0;
@@ -355,5 +357,112 @@ describe('runExecutePhase', () => {
       expect.any(String),
       expect.objectContaining({ allowedTools: EXECUTE_PHASE_DEFAULT_TOOLS }),
     );
+  });
+
+  // ---- v6.6.0 file-conflict detection ----
+
+  it('runs items with disjoint files in parallel', async () => {
+    writeSprintFile(tmpDir, '9.9.9', [
+      { id: 'i1', title: 'a', assignee: 'coder', files: ['src/a.ts'] } as any,
+      { id: 'i2', title: 'b', assignee: 'coder', files: ['src/b.ts'] } as any,
+      { id: 'i3', title: 'c', assignee: 'coder', files: ['src/c.ts'] } as any,
+    ]);
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const runtime = {
+      run: vi.fn().mockImplementation(async () => {
+        inFlight += 1;
+        if (inFlight > maxInFlight) maxInFlight = inFlight;
+        await new Promise((r) => setTimeout(r, 30));
+        inFlight -= 1;
+        return { output: '', costUsd: 0, durationMs: 0, model: 'm', usage: { input_tokens: 0, output_tokens: 0 } };
+      }),
+    };
+    const { bus } = makeMockBus();
+    await runExecutePhase(
+      makeCtx({ cwd: tmpDir, sprintVersion: '9.9.9', runtime, bus }),
+      { maxParallelism: 3, maxItemRetries: 0 },
+    );
+    expect(maxInFlight).toBeGreaterThanOrEqual(2);
+  });
+
+  it('serializes items with overlapping files even when parallelism > 1', async () => {
+    writeSprintFile(tmpDir, '9.9.9', [
+      { id: 'i1', title: 'a', assignee: 'coder', files: ['src/shared.ts'] } as any,
+      { id: 'i2', title: 'b', assignee: 'coder', files: ['src/shared.ts'] } as any,
+      { id: 'i3', title: 'c', assignee: 'coder', files: ['src/shared.ts'] } as any,
+    ]);
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const runtime = {
+      run: vi.fn().mockImplementation(async () => {
+        inFlight += 1;
+        if (inFlight > maxInFlight) maxInFlight = inFlight;
+        await new Promise((r) => setTimeout(r, 20));
+        inFlight -= 1;
+        return { output: '', costUsd: 0, durationMs: 0, model: 'm', usage: { input_tokens: 0, output_tokens: 0 } };
+      }),
+    };
+    const { bus } = makeMockBus();
+    await runExecutePhase(
+      makeCtx({ cwd: tmpDir, sprintVersion: '9.9.9', runtime, bus }),
+      { maxParallelism: 3, maxItemRetries: 0 },
+    );
+    expect(maxInFlight).toBe(1);
+    expect(runtime.run).toHaveBeenCalledTimes(3);
+  });
+
+  it('items without declared or inferred files serialize against everything', async () => {
+    writeSprintFile(tmpDir, '9.9.9', [
+      { id: 'i1', title: 'just a vague task', assignee: 'coder', description: 'no paths here' },
+      { id: 'i2', title: 'another vague task', assignee: 'coder', description: 'still nothing' },
+      { id: 'i3', title: 'one more', assignee: 'coder', description: 'empty' },
+    ]);
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const runtime = {
+      run: vi.fn().mockImplementation(async () => {
+        inFlight += 1;
+        if (inFlight > maxInFlight) maxInFlight = inFlight;
+        await new Promise((r) => setTimeout(r, 15));
+        inFlight -= 1;
+        return { output: '', costUsd: 0, durationMs: 0, model: 'm', usage: { input_tokens: 0, output_tokens: 0 } };
+      }),
+    };
+    const { bus } = makeMockBus();
+    await runExecutePhase(
+      makeCtx({ cwd: tmpDir, sprintVersion: '9.9.9', runtime, bus }),
+      { maxParallelism: 3, maxItemRetries: 0 },
+    );
+    expect(maxInFlight).toBe(1);
+  });
+
+  it('extractFilesFromItem heuristically finds .ts/.md/.yaml paths in description', () => {
+    const f = extractFilesFromItem({
+      title: 'Fix the scanner',
+      description: 'Update packages/core/src/foo.ts and docs/readme.md and config.yaml',
+    });
+    expect(f).toContain('packages/core/src/foo.ts');
+    expect(f).toContain('docs/readme.md');
+    expect(f).toContain('config.yaml');
+  });
+
+  it('extractFilesFromItem prefers explicit files declaration over heuristic', () => {
+    const f = extractFilesFromItem({
+      files: ['explicit/path.ts'],
+      title: 'mentions other.ts',
+      description: 'and other.md',
+    });
+    expect(f).toEqual(['explicit/path.ts']);
+  });
+
+  it('FileLockManager.release drops locks so the next item can acquire', () => {
+    const m = new FileLockManager();
+    expect(m.canAcquire('i1', ['a.ts'])).toBe(true);
+    m.acquire('i1', ['a.ts']);
+    expect(m.canAcquire('i2', ['a.ts'])).toBe(false);
+    expect(m.canAcquire('i3', ['b.ts'])).toBe(true);
+    m.release('i1');
+    expect(m.canAcquire('i2', ['a.ts'])).toBe(true);
   });
 });
