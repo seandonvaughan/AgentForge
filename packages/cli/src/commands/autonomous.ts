@@ -47,6 +47,11 @@ export function registerAutonomousCommand(program: Command): void {
           PROpener,
           RuntimeAdapter,
           runExecutePhase,
+          runAuditPhase,
+          runPlanPhase,
+          runAssignPhase,
+          runGatePhase,
+          runLearnPhase,
         } = await import('@agentforge/core');
 
         const config = loadCycleConfig(cwd);
@@ -106,9 +111,13 @@ export function registerAutonomousCommand(program: Command): void {
           };
 
         const phaseHandlers = {
-          audit: makeStubPhaseHandler('audit'),
-          plan: makeStubPhaseHandler('plan'),
-          assign: makeStubPhaseHandler('assign'),
+          // v6.5.2-A: real strategic phase handlers — researcher/cto/ceo/
+          // data-analyst dispatches via RuntimeAdapter with read-only tools
+          // (Read/Bash/Glob/Grep). They analyze and report; they don't
+          // modify code (that's execute's job).
+          audit: (ctx: any) => runAuditPhase(ctx),
+          plan: (ctx: any) => runPlanPhase(ctx),
+          assign: (ctx: any) => runAssignPhase(ctx),
           // v6.5.1: real execute phase — dispatches each sprint item to its
           // assignee agent via RuntimeAdapter (claude -p with Read/Write/Edit/
           // Bash/Glob/Grep tools enabled). The git stage picks up working-tree
@@ -116,9 +125,9 @@ export function registerAutonomousCommand(program: Command): void {
           execute: (ctx: any) => runExecutePhase(ctx),
           test: makeStubPhaseHandler('test'),
           review: makeStubPhaseHandler('review'),
-          gate: makeStubPhaseHandler('gate'),
+          gate: (ctx: any) => runGatePhase(ctx),
           release: makeStubPhaseHandler('release'),
-          learn: makeStubPhaseHandler('learn'),
+          learn: (ctx: any) => runLearnPhase(ctx),
         };
 
         // ---- Real exec adapters ----
