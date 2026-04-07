@@ -2,6 +2,129 @@
 
 All notable changes to AgentForge are documented in this file.
 
+## [6.6.0] — 2026-04-07
+
+### Two complementary features in one release
+
+v6.6.0 ships file-conflict detection for the parallel execute phase (originally scoped as v6.5.4) AND multi-workspace support (originally v6.6.0). Both shipped via 2 parallel agents in worktrees, zero merge conflicts.
+
+### 1. File-conflict detection in parallel execute (Agent A)
+
+v6.5.3 shipped parallel item dispatch but had no conflict detection — agents could race on the same file with last-writer-wins semantics. v6.6.0 adds a `FileLockManager` that serializes items with overlapping file declarations while still running disjoint items in parallel.
+
+**How it works:**
+
+1. Sprint items can declare an optional `files: string[]` field listing paths the item is expected to touch:
+   ```json
+   {
+     "id": "fix-scanner",
+     "title": "Fix scanner self-match",
+     "assignee": "coder",
+     "files": ["packages/core/src/autonomous/proposal-to-backlog.ts"]
+   }
+   ```
+2. For items WITHOUT a `files` declaration, a heuristic regex extracts file mentions from the title and description (matches `.ts/.tsx/.js/.jsx/.md/.yaml/.json/.svelte/.css` patterns).
+3. The dispatch loop now checks both **numeric parallelism** (from v6.5.3) AND **lock availability** before launching each item. Items contending for the same file wait via `Promise.race(inFlight)` until the lock is released.
+4. Items with NO declared OR inferred files are conservative: they only dispatch when nothing else is in flight, and block new dispatches while running. (Empty files = "could touch anything" = serialize against everything.)
+
+**Files modified:**
+- `packages/core/src/autonomous/phase-handlers/execute-phase.ts` — `FileLockManager` class + heuristic extractor + reworked dispatch loop
+- `packages/core/src/autonomous/sprint-generator.ts` — added optional `files?: string[]` to `SprintPlanItem`
+- `tests/autonomous/unit/execute-phase.test.ts` — 6 new tests
+
+### 2. Multi-workspace support (Agent B)
+
+A single AgentForge server instance can now manage cycles across multiple project directories. Adds a global workspace registry, REST endpoints, CLI subcommands, and a dashboard switcher.
+
+**Workspace registry**: `~/.agentforge/workspaces.json` — shared across CLI and server processes. Lists registered workspaces with `id`, `name`, `path`, `addedAt`, and a `defaultWorkspaceId`. New module `packages/core/src/autonomous/workspace-registry.ts` exports `loadWorkspaceRegistry()`, `saveWorkspaceRegistry()`, `addWorkspace()`, `removeWorkspace()`, `getWorkspace()`, `getDefaultWorkspace()`.
+
+**Server REST endpoints**: new `packages/server/src/routes/v5/workspaces.ts`:
+- `GET /api/v5/workspaces` — list all
+- `POST /api/v5/workspaces` — register a new one (`{ name, path }` → 201)
+- `DELETE /api/v5/workspaces/:id` — remove
+- `GET /api/v5/workspaces/default` — fetch the default
+- `PATCH /api/v5/workspaces/default` — set the default
+
+**Existing cycles endpoints accept `?workspaceId=foo` query param** OR an `X-Workspace-Id` header. Looks up the workspace path via `getWorkspace(id)` and uses it as the project root for that request. Unknown workspace ID → 404 with `{ error: "workspace not found", workspaceId }`. Backwards compatible: no param = use the server's launch cwd (existing behavior).
+
+**CLI**: `--workspace <id>` option on `autonomous:cycle`. Resolution order:
+1. `--workspace` flag (explicit)
+2. Registry default (only if user didn't override `--project-root`)
+3. `--project-root` / `process.cwd()` (existing behavior)
+
+New `agentforge workspaces` command with subcommands: `list`, `add <name> <path>`, `remove <id>`, `default <id>`.
+
+**Dashboard**:
+- New `packages/dashboard/src/lib/stores/workspace.ts` — Svelte store with localStorage persistence + `withWorkspace(url)` helper
+- Sidebar dropdown showing the current workspace name + a list of all registered workspaces; clicking switches and reloads
+- All cycles API fetches now include the current `workspaceId` query param via `withWorkspace()`
+- New `/workspaces` management page with list/add/remove/set-default actions
+
+### Test Coverage
+
+- **348 autonomous tests passing** (was 320 in v6.5.3, +28 new)
+- +6 file-conflict detection tests (Agent A)
+- +9 workspace registry unit tests (Agent B)
+- +13 workspaces API integration tests (Agent B)
+
+### Files Changed
+
+Agent A:
+- `packages/core/src/autonomous/phase-handlers/execute-phase.ts`
+- `packages/core/src/autonomous/sprint-generator.ts`
+- `tests/autonomous/unit/execute-phase.test.ts`
+
+Agent B:
+- `packages/core/src/autonomous/workspace-registry.ts` (new)
+- `packages/core/src/autonomous/index.ts` (export new module)
+- `packages/server/src/routes/v5/workspaces.ts` (new)
+- `packages/server/src/routes/v5/cycles.ts` (workspaceId query param)
+- `packages/server/src/routes/v5/cycles-preview.ts` (same)
+- `packages/server/src/server.ts` (register workspaces routes)
+- `packages/cli/src/commands/workspaces.ts` (new)
+- `packages/cli/src/commands/autonomous.ts` (--workspace option)
+- `packages/cli/src/bin.ts` (register workspaces command)
+- `packages/dashboard/src/lib/stores/workspace.ts` (new)
+- `packages/dashboard/src/lib/components/Sidebar.svelte` (workspace dropdown)
+- `packages/dashboard/src/routes/workspaces/+page.svelte` (new)
+- `packages/dashboard/src/routes/cycles/+page.svelte` (use withWorkspace)
+- `packages/dashboard/src/routes/cycles/[id]/+page.svelte` (same)
+- `packages/dashboard/src/routes/cycles/new/+page.svelte` (same)
+- `packages/dashboard/src/routes/+page.svelte` (same)
+- `tests/autonomous/integration/workspaces-api.test.ts` (new, 13 tests)
+- `tests/autonomous/unit/workspace-registry.test.ts` (new, 9 tests)
+
+Versions: `plugin.json` 6.5.3 → 6.6.0, `package.json` 6.5.3 → 6.6.0.
+
+### Migration / usage
+
+```bash
+# Register a workspace
+agentforge workspaces add "My App" /Users/me/projects/myapp
+
+# List workspaces
+agentforge workspaces list
+
+# Set default
+agentforge workspaces default myapp
+
+# Run a cycle against a specific workspace
+agentforge autonomous:cycle --workspace myapp
+
+# Or just use the default
+agentforge autonomous:cycle
+
+# Dashboard: workspace dropdown in the sidebar — click to switch
+```
+
+### What's still deferred (v6.6.1+)
+
+- **Cross-workspace cycle queue** — currently each workspace runs independently. A queue that schedules cycles across workspaces (e.g., "run all default workspaces nightly") is daemon-tier work (v7.0.0).
+- **Per-workspace cost ceilings** — workspaces share the global budget config. Per-workspace overrides would need a `.agentforge/autonomous.yaml` per workspace (already supported by `loadCycleConfig(cwd)` since the cwd switches per workspace, so this technically works today).
+- **Workspace permissions** — no auth on the workspace endpoints. Anyone with server access can list/add/remove. v7.0.0 is when auth becomes important.
+
+---
+
 ## [6.5.3] — 2026-04-07
 
 ### Four improvements shipped in parallel
