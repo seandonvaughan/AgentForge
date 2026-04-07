@@ -10,7 +10,7 @@
   const FILES = ['tests', 'git', 'pr', 'approval-pending', 'approval-decision'] as const;
   type Phase = (typeof PHASES)[number];
   type FileName = (typeof FILES)[number];
-  type Tab = 'overview' | 'scoring' | 'events' | 'phases' | 'files';
+  type Tab = 'overview' | 'items' | 'scoring' | 'events' | 'phases' | 'files';
 
   let id = $derived($page.params.id);
 
@@ -19,7 +19,48 @@
   let loading = $state(true);
   let error: string | null = $state(null);
 
-  let activeTab: Tab = $state('overview');
+  let activeTab: Tab = $state('items');
+
+  // Live sprint view — polls /cycles/:id/sprint every 3s while cycle is
+  // running. Execute phase writes to the sprint file incrementally per
+  // item completion, so this is the only surface that shows real-time
+  // per-item progress during the long execute phase. Same beautiful kanban
+  // used on /sprints/[version].
+  let sprint: any = $state(null);
+  let sprintLoading = $state(false);
+  let sprintError: string | null = $state(null);
+  let sprintPollTimer: ReturnType<typeof setInterval> | null = null;
+
+  async function loadSprint() {
+    if (!id) return;
+    sprintLoading = true;
+    try {
+      const res = await fetch(`/api/v5/cycles/${id}/sprint`);
+      if (res.ok) {
+        const json = await res.json();
+        sprint = json.sprint ?? json;
+        sprintError = null;
+      } else if (res.status === 404) {
+        sprint = null;
+        sprintError = 'Sprint not generated yet — still in audit/plan phase';
+      } else {
+        sprintError = `HTTP ${res.status}`;
+      }
+    } catch (e) {
+      sprintError = String(e);
+    } finally {
+      sprintLoading = false;
+    }
+  }
+
+  function startSprintPoll() {
+    if (sprintPollTimer) return;
+    loadSprint();
+    sprintPollTimer = setInterval(loadSprint, 3000);
+  }
+  function stopSprintPoll() {
+    if (sprintPollTimer) { clearInterval(sprintPollTimer); sprintPollTimer = null; }
+  }
 
   // Events
   let events: any[] = $state([]);
@@ -191,12 +232,21 @@
 
   onMount(() => {
     loadInitial();
-    // Eager-load default file tab
     loadFile('tests');
+    // Start the live sprint poll immediately — this drives the Items tab
+    // which is the default on load. Auto-stops when the cycle is terminal.
+    startSprintPoll();
   });
 
   onDestroy(() => {
     teardownSse();
+    stopSprintPoll();
+  });
+
+  // Auto-stop the sprint poll once the cycle hits a terminal stage.
+  $effect(() => {
+    void stage;
+    if (isTerminal) stopSprintPoll();
   });
 
   // Overview helpers
@@ -243,6 +293,12 @@
   </div>
 {:else if cycle}
   <nav class="tabs">
+    <button class="tab" class:active={activeTab === 'items'} onclick={() => setTab('items')}>
+      Items
+      {#if sprint?.items}
+        <span class="tab-count">{sprint.items.filter((i: any) => i.status === 'completed').length}/{sprint.items.length}</span>
+      {/if}
+    </button>
     <button class="tab" class:active={activeTab === 'overview'} onclick={() => setTab('overview')}>Overview</button>
     <button class="tab" class:active={activeTab === 'scoring'} onclick={() => setTab('scoring')}>Scoring</button>
     <button class="tab" class:active={activeTab === 'events'} onclick={() => setTab('events')}>Events</button>
@@ -251,7 +307,68 @@
   </nav>
 
   <section class="tab-panel">
-    {#if activeTab === 'overview'}
+    {#if activeTab === 'items'}
+      {#if sprintLoading && !sprint}
+        <div class="card"><div class="skeleton" style="height:80px"></div></div>
+      {:else if sprintError && !sprint}
+        <div class="empty-state">
+          <p>{sprintError}</p>
+          <p class="muted" style="font-size: var(--text-xs); margin-top: var(--space-2);">The sprint file is created during the plan phase. Poll refreshes every 3s.</p>
+        </div>
+      {:else if sprint?.items}
+        {@const items = sprint.items}
+        {@const completed = items.filter((i: any) => i.status === 'completed')}
+        {@const inProgress = items.filter((i: any) => i.status === 'in_progress')}
+        {@const planned = items.filter((i: any) => i.status === 'planned' || i.status === 'pending')}
+        {@const failed = items.filter((i: any) => i.status === 'failed')}
+        {@const pct = items.length > 0 ? Math.round((completed.length / items.length) * 100) : 0}
+
+        <div class="card" style="margin-bottom: var(--space-5);">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-3);">
+            <div>
+              <div style="font-family: var(--font-mono); font-weight: 700; font-size: var(--text-lg);">{sprint.version ?? sprint.sprintId}</div>
+              {#if sprint.title}<div class="muted" style="font-size: var(--text-sm);">{sprint.title}</div>{/if}
+            </div>
+            <div style="text-align: right;">
+              <div style="font-size: var(--text-2xl); font-weight: 700;">{pct}%</div>
+              <div class="muted" style="font-size: var(--text-xs);">{completed.length}/{items.length} items</div>
+            </div>
+          </div>
+          <div class="cost-bar"><div class="cost-bar-fill" style="width:{pct}%"></div></div>
+        </div>
+
+        <div class="kanban">
+          <div class="kanban-col">
+            <div class="kanban-header">Planned <span class="kanban-count">{planned.length}</span></div>
+            {#each planned as item (item.id)}
+              <div class="kanban-item"><div class="item-title">{item.title}</div>{#if item.assignee}<div class="item-meta">{item.assignee}</div>{/if}</div>
+            {/each}
+          </div>
+          <div class="kanban-col">
+            <div class="kanban-header">In Progress <span class="kanban-count">{inProgress.length}</span></div>
+            {#each inProgress as item (item.id)}
+              <div class="kanban-item in-progress"><div class="item-title">{item.title}</div>{#if item.assignee}<div class="item-meta">{item.assignee}</div>{/if}</div>
+            {/each}
+          </div>
+          <div class="kanban-col">
+            <div class="kanban-header">Completed <span class="kanban-count">{completed.length}</span></div>
+            {#each completed as item (item.id)}
+              <div class="kanban-item completed"><div class="item-title">{item.title}</div>{#if item.assignee}<div class="item-meta">{item.assignee}</div>{/if}</div>
+            {/each}
+          </div>
+          {#if failed.length > 0}
+            <div class="kanban-col">
+              <div class="kanban-header">Failed <span class="kanban-count">{failed.length}</span></div>
+              {#each failed as item (item.id)}
+                <div class="kanban-item failed"><div class="item-title">{item.title}</div>{#if item.error}<div class="item-meta">{item.error}</div>{/if}</div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {:else}
+        <div class="empty-state">No sprint data yet.</div>
+      {/if}
+    {:else if activeTab === 'overview'}
       <div class="stat-grid">
         <div class="stat-card">
           <div class="stat-label">Stage</div>
@@ -697,6 +814,74 @@
   }
 
   .kill-card { border-color: rgba(224,90,90,0.4); }
+
+  .tab-count {
+    display: inline-block;
+    margin-left: var(--space-2);
+    padding: 0 var(--space-2);
+    background: var(--color-bg-card);
+    color: var(--color-text-muted);
+    border-radius: 9999px;
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+  }
+
+  .kanban {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: var(--space-4);
+  }
+  .kanban-col {
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-3);
+    min-height: 120px;
+  }
+  .kanban-header {
+    font-size: var(--text-xs);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+    padding-bottom: var(--space-2);
+    margin-bottom: var(--space-2);
+    border-bottom: 1px solid var(--color-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .kanban-count {
+    padding: 0 var(--space-2);
+    background: var(--color-bg-card);
+    border-radius: 9999px;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+  }
+  .kanban-item {
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: var(--space-3);
+    margin-bottom: var(--space-2);
+    transition: border-color var(--duration-fast);
+  }
+  .kanban-item:hover { border-color: var(--color-brand); }
+  .kanban-item.in-progress { border-left: 3px solid var(--color-brand); }
+  .kanban-item.completed { border-left: 3px solid var(--color-success); opacity: 0.85; }
+  .kanban-item.failed { border-left: 3px solid var(--color-danger); }
+  .kanban-item .item-title {
+    font-size: var(--text-sm);
+    color: var(--color-text);
+    line-height: 1.4;
+    margin-bottom: var(--space-1);
+  }
+  .kanban-item.completed .item-title { text-decoration: line-through; color: var(--color-text-muted); }
+  .kanban-item .item-meta {
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+  }
 
   @media (max-width: 700px) {
     .event-row { grid-template-columns: 1fr; }

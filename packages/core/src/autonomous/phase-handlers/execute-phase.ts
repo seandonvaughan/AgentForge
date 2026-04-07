@@ -223,6 +223,15 @@ export async function runExecutePhase(
     const itemStartedAt = Date.now();
     let lastError: string | undefined;
     let attempts = 0;
+    // Mark the item as in_progress and persist immediately so the dashboard
+    // Items kanban shows it moving from Planned → In Progress the moment
+    // the agent starts. Without this, items jump straight from planned to
+    // completed and the "In Progress" column always looks empty even when
+    // multiple agents are actively working.
+    item.status = 'in_progress';
+    try {
+      writeFileSync(sprintPath, JSON.stringify(sprintFile, null, 2));
+    } catch { /* non-fatal */ }
     try {
       for (let attempt = 0; attempt <= maxItemRetries; attempt++) {
         attempts = attempt + 1;

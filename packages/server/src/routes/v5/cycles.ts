@@ -503,6 +503,61 @@ export async function cyclesRoutes(
     });
   });
 
+  // GET /api/v5/cycles/:id/sprint ────────────────────────────────────────────
+  // Returns the live sprint file for this cycle so the UI can render the
+  // same beautiful kanban view used on /sprints/[version] inside the cycle
+  // detail page. Execute phase writes this file incrementally on every
+  // item completion, so polling this endpoint shows real-time progress
+  // (completed/planned/in_progress item counts) while execute is running —
+  // the missing live feedback that made the cost look "stuck".
+  app.get('/api/v5/cycles/:id/sprint', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!SAFE_ID.test(id)) return reply.status(400).send({ error: 'Invalid cycle id' });
+    const br = baseForRequest(req);
+    if ('error' in br) return reply.status(br.error.status).send(br.error.body);
+    const base = br.base;
+    const dir = safeJoin(base, id);
+    if (!dir || !existsSync(dir)) return reply.status(404).send({ error: 'Cycle not found' });
+
+    // The cycle doesn't store its sprint version directly — find it by
+    // matching the sprint file whose `createdAt` is closest to (and >=)
+    // the cycle's startedAt. This keys off the cycle's scoring.complete
+    // event timestamp which the SprintGenerator uses as createdAt.
+    const cycleStartedAt = (() => {
+      const eventsFile = join(dir, 'events.jsonl');
+      if (!existsSync(eventsFile)) return null;
+      try {
+        const first = readFileSync(eventsFile, 'utf8').split('\n').find(Boolean);
+        if (!first) return null;
+        const ev = JSON.parse(first);
+        return typeof ev.at === 'string' ? new Date(ev.at).getTime() : null;
+      } catch { return null; }
+    })();
+    if (cycleStartedAt === null) return reply.status(404).send({ error: 'Cannot determine cycle start time' });
+
+    const sprintsDir = join(opts.projectRoot, '.agentforge/sprints');
+    if (!existsSync(sprintsDir)) return reply.status(404).send({ error: 'No sprints directory' });
+
+    let bestMatch: { file: string; sprint: any; delta: number } | null = null;
+    for (const name of readdirSync(sprintsDir)) {
+      if (!name.endsWith('.json')) continue;
+      try {
+        const raw = JSON.parse(readFileSync(join(sprintsDir, name), 'utf8'));
+        const sprint = Array.isArray(raw.sprints) ? raw.sprints[0] : raw;
+        if (!sprint?.createdAt) continue;
+        const createdAt = new Date(sprint.createdAt).getTime();
+        // Match if sprint createdAt is within 2 minutes of cycle start (either direction)
+        const delta = Math.abs(createdAt - cycleStartedAt);
+        if (delta > 120_000) continue;
+        if (bestMatch === null || delta < bestMatch.delta) {
+          bestMatch = { file: name, sprint, delta };
+        }
+      } catch { /* skip */ }
+    }
+    if (!bestMatch) return reply.status(404).send({ error: 'No matching sprint file found for this cycle' });
+    return reply.send({ file: bestMatch.file, sprint: bestMatch.sprint });
+  });
+
   // GET /api/v5/cycles/:id/scoring ──────────────────────────────────────────
   app.get('/api/v5/cycles/:id/scoring', async (req, reply) => {
     const { id } = req.params as { id: string };
