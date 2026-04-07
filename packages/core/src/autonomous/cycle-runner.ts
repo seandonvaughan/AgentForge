@@ -346,7 +346,18 @@ export class CycleRunner {
     const prRequest = {
       branch: this.branch,
       baseBranch: this.options.config.git.baseBranch,
-      title: `autonomous(v${plan.version}): ${scored.summary.slice(0, 50)}`,
+      // Title is sanitized: parens removed (gh CLI parses (...) as option
+      // groups when unquoted), collapsed to single line, truncated on a word
+      // boundary at 65 chars to avoid mid-word cuts like "budg".
+      title: (() => {
+        const prefix = `autonomous v${plan.version}: `;
+        const room = 65 - prefix.length;
+        const oneLine = scored.summary.replace(/[\r\n]+/g, ' ').replace(/[()]/g, '').trim();
+        if (oneLine.length <= room) return prefix + oneLine;
+        const cut = oneLine.slice(0, room);
+        const lastSpace = cut.lastIndexOf(' ');
+        return prefix + (lastSpace > 20 ? cut.slice(0, lastSpace) : cut) + '…';
+      })(),
       body: prBody,
       draft: this.options.config.pr.draft,
       labels: this.options.config.pr.labels,
