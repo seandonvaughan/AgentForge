@@ -1,0 +1,51 @@
+{
+  "sprints": [
+    {
+      "version": "7.0.0",
+      "sprintId": "v7-0-0-autonomous",
+      "title": "AgentForge v7.0.0 — Autonomous Cycle",
+      "createdAt": "2026-04-07T13:43:49.735Z",
+      "phase": "planned",
+      "items": [
+        {
+          "id": "todo-docs-superpowers-plans-2026-04-06-autonomous-loop-md-1657",
+          "title": "broken parser\nexport const z = 3;",
+          "description": "Sole P0 item in the backlog; a broken parser represents an active regression that can corrupt the autonomous loop's proposal ingestion pipeline. Although the TODO originates in a planning document, the P0 label mandates immediate triage — the assignee must trace and fix the root cause in the actual parser module before it propagates to live cycles.",
+          "priority": "P0",
+          "assignee": "CodeRefactorAgent",
+          "status": "planned",
+          "estimatedCostUsd": 2,
+          "tags": [
+            "P0",
+            "chore",
+            "regression",
+            "parser",
+            "needs-triage"
+          ]
+        },
+        {
+          "id": "todo-README-md-2",
+          "title": "add a one-sentence description of the v6.4 autonomous loop (plan → execute → test → commit → PR via `npm run autonomous:cycle`) to this README. Max 200 characters.",
+          "description": "Highest-value, lowest-cost item in the backlog: a single atomic sentence in README.md costs ~$0.75, carries zero regression risk, and directly improves onboarding and sprint visibility for every future cycle. The 200-character constraint makes scope unambiguous and the commit fast.",
+          "priority": "P0",
+          "assignee": "DocumentationAgent",
+          "status": "planned",
+          "estimatedCostUsd": 0.75,
+          "tags": [
+            "P1",
+            "feature",
+            "docs",
+            "autonomous-loop"
+          ]
+        }
+      ],
+      "budget": 25,
+      "teamSize": 2,
+      "successCriteria": [
+        "All sprint items completed",
+        "Test pass rate >= 95%",
+        "Total cost <= $25"
+      ]
+    }
+  ]
+}

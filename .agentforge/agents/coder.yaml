@@ -23,7 +23,7 @@ system_prompt: >
 
   ## Project Context
 
-  - Tech stack: TypeScript, YAML, Markdown, JavaScript, JSON | Svelte, Fastify, Next.js, React, Vue, GraphQL, Nuxt,
+  - Tech stack: TypeScript, YAML, Markdown, JSON, JavaScript | Svelte, Fastify, Next.js, React, Vue, GraphQL, Nuxt,
   Express, Django, FastAPI, Flask, Tailwind CSS, Gin, Actix, Fiber | Package manager: pnpm | CI: github-actions
 
   - Conventions: Linters: eslint | Testing: vitest | Build: typescript | Common patterns: generics, arrow functions,
