@@ -26,7 +26,8 @@
     "v5:server": "node --watch packages/server/dist/main.js",
     "v5:dash": "cd packages/dashboard && npx vite --port 4751",
     "v5:server:dev": "cd packages/server && node --watch dist/main.js",
-    "v5:dash:dev": "cd packages/dashboard && npx vite dev --port 4751"
+    "v5:dash:dev": "cd packages/dashboard && npx vite dev --port 4751",
+    "autonomous:cycle": "node packages/cli/dist/bin.js autonomous:cycle"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

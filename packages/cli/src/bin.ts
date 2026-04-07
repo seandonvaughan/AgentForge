@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import { join } from 'node:path';
 import { migrateV4ToV5 } from './commands/migrate.js';
 import { printBuildInfo } from './commands/build-info.js';
+import { registerAutonomousCommand } from './commands/autonomous.js';
 
 const program = new Command();
 program
@@ -60,5 +61,7 @@ program
   .action(async (opts: { projectRoot: string }) => {
     await printBuildInfo(opts.projectRoot);
   });
+
+registerAutonomousCommand(program);
 
 program.parse();
