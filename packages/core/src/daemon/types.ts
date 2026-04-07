@@ -61,13 +61,6 @@ export interface DaemonState {
   shutdownRequested: boolean;
 }
 
-/** Cost ceiling configuration. All values in USD. */
-export interface CostCeilingConfig {
-  dailyUsd: number;
-  weeklyUsd: number;
-  monthlyUsd: number;
-}
-
 /** Failure recovery configuration. */
 export interface FailureRecoveryConfig {
   /** Pause the daemon after N consecutive failures. */
@@ -79,7 +72,8 @@ export interface FailureRecoveryConfig {
 /** Top-level daemon configuration loaded from ~/.agentforge/daemon.yaml. */
 export interface DaemonConfig {
   workspaces: string[];
-  costCeiling: CostCeilingConfig;
+  /** Forwarded to BudgetEnforcer — daemon does not duplicate ceiling logic. */
+  budget: import('../cost-governance/types.js').BudgetConfig;
   failureRecovery: FailureRecoveryConfig;
   /** Admin API bind address. Defaults to 127.0.0.1:4760. */
   adminApi: { host: string; port: number };

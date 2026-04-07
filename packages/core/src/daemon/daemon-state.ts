@@ -7,7 +7,7 @@
  */
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, existsSync, chmodSync } from 'node:fs';
 import type { DaemonState } from './types.js';
 
 const STATE_DIR = join(homedir(), '.agentforge');
@@ -45,8 +45,12 @@ export function loadState(): DaemonState {
 }
 
 export function saveState(state: DaemonState): void {
-  if (!existsSync(STATE_DIR)) mkdirSync(STATE_DIR, { recursive: true });
-  writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
+  if (!existsSync(STATE_DIR)) mkdirSync(STATE_DIR, { mode: 0o700, recursive: true });
+  // Owner-only (0o600). The state file may eventually contain spend totals,
+  // workspace paths, and other operator data — never world-readable.
+  writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), { mode: 0o600 });
+  // chmod explicitly in case the file already existed with looser perms.
+  try { chmodSync(STATE_FILE, 0o600); } catch { /* best effort on platforms without chmod */ }
 }
 
 /**
