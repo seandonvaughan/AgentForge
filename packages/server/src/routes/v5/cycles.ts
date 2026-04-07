@@ -407,11 +407,10 @@ export async function cyclesRoutes(
     // running, synthesize a partial payload from events.jsonl so the dashboard
     // detail page can render the live feed instead of showing HTTP 404.
     const eventsFile = join(dir, 'events.jsonl');
-    const stat = existsSync(eventsFile) ? statSync(eventsFile) : null;
     let lastStage = 'plan';
     let startedAt: string | null = null;
     let sprintVersion: string | null = null;
-    if (stat) {
+    if (existsSync(eventsFile)) {
       try {
         const text = readFileSync(eventsFile, 'utf8');
         const lines = text.split('\n').filter(Boolean);
