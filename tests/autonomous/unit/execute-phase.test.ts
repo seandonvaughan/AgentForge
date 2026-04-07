@@ -130,7 +130,10 @@ describe('runExecutePhase', () => {
         .mockRejectedValueOnce(new Error('boom')),
     };
     const { bus } = makeMockBus();
-    const result = await runExecutePhase(makeCtx({ cwd: tmpDir, sprintVersion: '9.9.9', runtime, bus }));
+    const result = await runExecutePhase(
+      makeCtx({ cwd: tmpDir, sprintVersion: '9.9.9', runtime, bus }),
+      { maxParallelism: 1, maxItemRetries: 0 },
+    );
 
     expect(result.itemResults).toHaveLength(2);
     expect((result.itemResults as any[])[1].status).toBe('failed');
@@ -164,7 +167,10 @@ describe('runExecutePhase', () => {
         .mockResolvedValueOnce({ output: '', costUsd: 0, durationMs: 0, model: 'm', usage: { input_tokens: 0, output_tokens: 0 } }),
     };
     const { bus } = makeMockBus();
-    const result = await runExecutePhase(makeCtx({ cwd: tmpDir, sprintVersion: '9.9.9', runtime, bus }));
+    const result = await runExecutePhase(
+      makeCtx({ cwd: tmpDir, sprintVersion: '9.9.9', runtime, bus }),
+      { maxParallelism: 1, maxItemRetries: 0 },
+    );
     expect(result.status).toBe('failed');
   });
 
@@ -210,6 +216,133 @@ describe('runExecutePhase', () => {
     const json = JSON.parse(readFileSync(phaseJsonPath, 'utf8'));
     expect(json.phase).toBe('execute');
     expect(json.totalItems).toBe(1);
+  });
+
+  it('dispatches items in parallel up to the parallelism cap', async () => {
+    writeSprintFile(tmpDir, '9.9.9', [
+      { id: 'i1', title: 'a', assignee: 'coder' },
+      { id: 'i2', title: 'b', assignee: 'coder' },
+      { id: 'i3', title: 'c', assignee: 'coder' },
+    ]);
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const runtime = {
+      run: vi.fn().mockImplementation(async () => {
+        inFlight += 1;
+        if (inFlight > maxInFlight) maxInFlight = inFlight;
+        await new Promise((r) => setTimeout(r, 30));
+        inFlight -= 1;
+        return { output: '', costUsd: 0, durationMs: 0, model: 'm', usage: { input_tokens: 0, output_tokens: 0 } };
+      }),
+    };
+    const { bus } = makeMockBus();
+    await runExecutePhase(
+      makeCtx({ cwd: tmpDir, sprintVersion: '9.9.9', runtime, bus }),
+      { maxParallelism: 3, maxItemRetries: 0 },
+    );
+    expect(maxInFlight).toBeGreaterThanOrEqual(2);
+    expect(maxInFlight).toBeLessThanOrEqual(3);
+  });
+
+  it('respects parallelism cap of 1 (sequential)', async () => {
+    writeSprintFile(tmpDir, '9.9.9', [
+      { id: 'i1', title: 'a', assignee: 'coder' },
+      { id: 'i2', title: 'b', assignee: 'coder' },
+      { id: 'i3', title: 'c', assignee: 'coder' },
+    ]);
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const runtime = {
+      run: vi.fn().mockImplementation(async () => {
+        inFlight += 1;
+        if (inFlight > maxInFlight) maxInFlight = inFlight;
+        await new Promise((r) => setTimeout(r, 10));
+        inFlight -= 1;
+        return { output: '', costUsd: 0, durationMs: 0, model: 'm', usage: { input_tokens: 0, output_tokens: 0 } };
+      }),
+    };
+    const { bus } = makeMockBus();
+    await runExecutePhase(
+      makeCtx({ cwd: tmpDir, sprintVersion: '9.9.9', runtime, bus }),
+      { maxParallelism: 1, maxItemRetries: 0 },
+    );
+    expect(maxInFlight).toBe(1);
+  });
+
+  it('retries a failing item once and succeeds', async () => {
+    writeSprintFile(tmpDir, '9.9.9', [
+      { id: 'i1', title: 'a', assignee: 'coder' },
+    ]);
+    const runtime = {
+      run: vi
+        .fn()
+        .mockRejectedValueOnce(new Error('first-fail'))
+        .mockResolvedValueOnce({ output: 'ok', costUsd: 0.01, durationMs: 1, model: 'm', usage: { input_tokens: 0, output_tokens: 0 } }),
+    };
+    const { bus } = makeMockBus();
+    const result = await runExecutePhase(
+      makeCtx({ cwd: tmpDir, sprintVersion: '9.9.9', runtime, bus }),
+      { maxItemRetries: 1 },
+    );
+    expect(runtime.run).toHaveBeenCalledTimes(2);
+    expect((result.itemResults as any[])[0].status).toBe('completed');
+    expect((result.itemResults as any[])[0].attempts).toBe(2);
+  });
+
+  it('retry prompt includes the previous error', async () => {
+    writeSprintFile(tmpDir, '9.9.9', [
+      { id: 'i1', title: 'a', assignee: 'coder' },
+    ]);
+    const runtime = {
+      run: vi
+        .fn()
+        .mockRejectedValueOnce(new Error('boom-xyz'))
+        .mockResolvedValueOnce({ output: '', costUsd: 0, durationMs: 0, model: 'm', usage: { input_tokens: 0, output_tokens: 0 } }),
+    };
+    const { bus } = makeMockBus();
+    await runExecutePhase(
+      makeCtx({ cwd: tmpDir, sprintVersion: '9.9.9', runtime, bus }),
+      { maxItemRetries: 1 },
+    );
+    const secondCallPrompt = runtime.run.mock.calls[1]![1] as string;
+    expect(secondCallPrompt).toContain('PREVIOUS ATTEMPT FAILED');
+    expect(secondCallPrompt).toContain('boom-xyz');
+    expect(secondCallPrompt).toContain('different approach');
+  });
+
+  it('marks item failed with attempts=2 when both attempts fail', async () => {
+    writeSprintFile(tmpDir, '9.9.9', [
+      { id: 'i1', title: 'a', assignee: 'coder' },
+    ]);
+    const runtime = {
+      run: vi.fn().mockRejectedValue(new Error('always-fail')),
+    };
+    const { bus } = makeMockBus();
+    const result = await runExecutePhase(
+      makeCtx({ cwd: tmpDir, sprintVersion: '9.9.9', runtime, bus }),
+      { maxItemRetries: 1 },
+    );
+    expect(runtime.run).toHaveBeenCalledTimes(2);
+    const r0 = (result.itemResults as any[])[0];
+    expect(r0.status).toBe('failed');
+    expect(r0.attempts).toBe(2);
+    expect(r0.error).toContain('always-fail');
+  });
+
+  it('writes attempts field to execute.json per-item', async () => {
+    writeSprintFile(tmpDir, '9.9.9', [
+      { id: 'i1', title: 'a', assignee: 'coder' },
+    ]);
+    const runtime = {
+      run: vi.fn().mockResolvedValue({ output: '', costUsd: 0, durationMs: 0, model: 'm', usage: { input_tokens: 0, output_tokens: 0 } }),
+    };
+    const { bus } = makeMockBus();
+    await runExecutePhase(
+      makeCtx({ cwd: tmpDir, sprintVersion: '9.9.9', cycleId: 'cy-9', runtime, bus }),
+      { maxItemRetries: 1 },
+    );
+    const json = JSON.parse(readFileSync(join(tmpDir, '.agentforge/cycles/cy-9/phases/execute.json'), 'utf8'));
+    expect(json.itemResults[0].attempts).toBe(1);
   });
 
   it('passes allowedTools through to runtime.run', async () => {

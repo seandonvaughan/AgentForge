@@ -25,6 +25,12 @@ describe('loadCycleConfig', () => {
     expect(config.git.refuseCommitToBaseBranch).toBe(true);
   });
 
+  it('exposes v6.5.3 execute parallelism + retry defaults', () => {
+    const config = loadCycleConfig(tmpDir);
+    expect(config.limits.maxExecutePhaseParallelism).toBe(3);
+    expect(config.limits.maxItemRetries).toBe(1);
+  });
+
   it('merges user overrides over defaults', () => {
     mkdirSync(join(tmpDir, '.agentforge'), { recursive: true });
     writeFileSync(

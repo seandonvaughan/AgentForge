@@ -16,6 +16,8 @@ export const DEFAULT_CYCLE_CONFIG: CycleConfig = Object.freeze({
     maxDurationMinutes: 180,
     maxConsecutiveFailures: 5,
     maxExecutePhaseFailureRate: 0.5,
+    maxExecutePhaseParallelism: 3,
+    maxItemRetries: 1,
   }),
   quality: Object.freeze({
     testPassRateFloor: 0.95,

@@ -53,6 +53,7 @@ interface ItemResult {
   costUsd: number;
   durationMs: number;
   response: string;
+  attempts: number;
   error?: string;
 }
 
@@ -62,6 +63,11 @@ export interface ExecutePhaseOptions {
   /** Failure-rate threshold above which the phase returns 'failed'.
    *  Default 0.5. */
   maxFailureRate?: number;
+  /** Max concurrent item dispatches. Default 3. */
+  maxParallelism?: number;
+  /** Max retries per failing item (additional attempts beyond the first).
+   *  Default 1 (so each item gets up to 2 total tries). */
+  maxItemRetries?: number;
 }
 
 export function makeExecutePhaseHandler(options: ExecutePhaseOptions = {}) {
@@ -76,6 +82,8 @@ export async function runExecutePhase(
   const startedAt = Date.now();
   const allowedTools = options.allowedTools ?? EXECUTE_PHASE_DEFAULT_TOOLS;
   const maxFailureRate = options.maxFailureRate ?? 0.5;
+  const maxParallelism = Math.max(1, options.maxParallelism ?? 3);
+  const maxItemRetries = Math.max(0, options.maxItemRetries ?? 1);
 
   ctx.bus.publish('sprint.phase.started', {
     sprintId: ctx.sprintId,
@@ -135,65 +143,120 @@ export async function runExecutePhase(
         : null;
   const items: SprintItem[] = (sprintObj?.items ?? []) as SprintItem[];
 
-  const itemResults: ItemResult[] = [];
   let totalCost = 0;
 
-  // ---- Dispatch each item sequentially ----
-  for (const item of items) {
-    const task = buildItemPrompt(item, ctx.projectRoot);
+  // ---- Dispatch items in parallel with a numeric concurrency cap ----
+  // We use a simple semaphore (no file-conflict detection in v6.5.3 — known
+  // limitation for v6.5.4+). Promise.allSettled ensures we collect every
+  // result even when some items fail.
+  let active = 0;
+  const queue: Array<() => void> = [];
+  const acquire = (): Promise<void> =>
+    new Promise((resolve) => {
+      const tryAcquire = () => {
+        if (active < maxParallelism) {
+          active += 1;
+          resolve();
+        } else {
+          queue.push(tryAcquire);
+        }
+      };
+      tryAcquire();
+    });
+  const release = () => {
+    active -= 1;
+    const next = queue.shift();
+    if (next) next();
+  };
+
+  const dispatchItem = async (item: SprintItem): Promise<ItemResult> => {
+    await acquire();
     const itemStartedAt = Date.now();
-
+    let lastError: string | undefined;
+    let attempts = 0;
     try {
-      const result = await ctx.runtime.run(item.assignee, task, {
-        allowedTools,
-      });
+      for (let attempt = 0; attempt <= maxItemRetries; attempt++) {
+        attempts = attempt + 1;
+        const task = buildItemPrompt(item, ctx.projectRoot, attempt, lastError);
+        try {
+          const result = await ctx.runtime.run(item.assignee, task, {
+            allowedTools,
+          });
+          const durationMs = Date.now() - itemStartedAt;
+          const costUsd =
+            typeof result?.costUsd === 'number' ? result.costUsd : 0;
+          totalCost += costUsd;
+          item.status = 'completed';
+          return {
+            itemId: item.id,
+            status: 'completed',
+            costUsd,
+            durationMs,
+            response: typeof result?.output === 'string' ? result.output : '',
+            attempts,
+          };
+        } catch (err) {
+          lastError = err instanceof Error ? err.message : String(err);
+          if (attempt >= maxItemRetries) {
+            const durationMs = Date.now() - itemStartedAt;
+            item.status = 'failed';
+            return {
+              itemId: item.id,
+              status: 'failed',
+              costUsd: 0,
+              durationMs,
+              response: '',
+              attempts,
+              error: lastError,
+            };
+          }
+        }
+      }
+      // unreachable
       const durationMs = Date.now() - itemStartedAt;
-      const costUsd = typeof result?.costUsd === 'number' ? result.costUsd : 0;
-      totalCost += costUsd;
-
-      itemResults.push({
-        itemId: item.id,
-        status: 'completed',
-        costUsd,
-        durationMs,
-        response: typeof result?.output === 'string' ? result.output : '',
-      });
-
-      item.status = 'completed';
-    } catch (err) {
-      const durationMs = Date.now() - itemStartedAt;
-      const errorMsg = err instanceof Error ? err.message : String(err);
-
-      itemResults.push({
+      item.status = 'failed';
+      return {
         itemId: item.id,
         status: 'failed',
         costUsd: 0,
         durationMs,
         response: '',
-        error: errorMsg,
+        attempts,
+        error: lastError ?? 'unknown',
+      };
+    } finally {
+      ctx.bus.publish('sprint.phase.item.completed', {
+        sprintId: ctx.sprintId,
+        phase,
+        cycleId: ctx.cycleId,
+        itemId: item.id,
+        status: item.status,
+        completedAt: new Date().toISOString(),
       });
-
-      item.status = 'failed';
+      try {
+        writeFileSync(sprintPath, JSON.stringify(sprintFile, null, 2));
+      } catch {
+        // Non-fatal
+      }
+      release();
     }
+  };
 
-    // Publish per-item event
-    ctx.bus.publish('sprint.phase.item.completed', {
-      sprintId: ctx.sprintId,
-      phase,
-      cycleId: ctx.cycleId,
+  const settled = await Promise.allSettled(items.map((it) => dispatchItem(it)));
+  const itemResults: ItemResult[] = settled.map((s, i) => {
+    if (s.status === 'fulfilled') return s.value;
+    const item = items[i]!;
+    item.status = 'failed';
+    return {
       itemId: item.id,
-      status: item.status,
-      completedAt: new Date().toISOString(),
-    });
-
-    // Persist updated sprint JSON after each item so a crash mid-phase
-    // doesn't lose progress.
-    try {
-      writeFileSync(sprintPath, JSON.stringify(sprintFile, null, 2));
-    } catch {
-      // Non-fatal — log via the result, but keep going.
-    }
-  }
+      status: 'failed',
+      costUsd: 0,
+      durationMs: 0,
+      response: '',
+      attempts: 0,
+      error: s.reason instanceof Error ? s.reason.message : String(s.reason),
+    };
+  });
 
   // ---- Compute phase status ----
   const total = itemResults.length;
@@ -272,12 +335,17 @@ export async function runExecutePhase(
   return phaseResult;
 }
 
-function buildItemPrompt(item: SprintItem, cwd: string): string {
+function buildItemPrompt(
+  item: SprintItem,
+  cwd: string,
+  attempt: number = 0,
+  lastError?: string,
+): string {
   const tags =
     item.tags && item.tags.length > 0 ? item.tags.join(', ') : 'none';
   const description = item.description || item.title;
   const source = item.source || 'manual';
-  return `You are working on sprint item "${item.title}" in the AgentForge repository at ${cwd}.
+  const base = `You are working on sprint item "${item.title}" in the AgentForge repository at ${cwd}.
 
 Description: ${description}
 Source: ${source} (e.g., TODO(autonomous) marker)
@@ -286,4 +354,14 @@ Tags: ${tags}
 Your job: use the Read, Write, Edit, Bash, Glob, and Grep tools to make the code change required to resolve this item. Do NOT commit anything — the autonomous cycle's Git stage will commit everything that changed in the working tree after all items are done.
 
 Work efficiently. Report what you changed when done.`;
+
+  if (attempt > 0 && lastError) {
+    return `${base}
+
+PREVIOUS ATTEMPT FAILED:
+${lastError}
+
+Please take a different approach. Read the relevant files carefully before making changes.`;
+  }
+  return base;
 }

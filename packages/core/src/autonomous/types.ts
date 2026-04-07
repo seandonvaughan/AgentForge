@@ -44,6 +44,8 @@ export interface CycleConfig {
     maxDurationMinutes: number;
     maxConsecutiveFailures: number;
     maxExecutePhaseFailureRate: number;
+    maxExecutePhaseParallelism: number;
+    maxItemRetries: number;
   };
   quality: {
     testPassRateFloor: number;
