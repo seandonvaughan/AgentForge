@@ -21,6 +21,10 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFile);
 
 import { CycleRunner } from '../../../packages/core/src/autonomous/cycle-runner.js';
 import { DEFAULT_CYCLE_CONFIG } from '../../../packages/core/src/autonomous/config-loader.js';
@@ -448,5 +452,97 @@ describe('CycleRunner', () => {
       'cycle.json',
     );
     expect(existsSync(cycleJsonPath)).toBe(true);
+  });
+
+  // v6.4.4 bug #2
+  it('propagates error message to CycleResult on FAILED stage', async () => {
+    const deps = makeMockDeps();
+    deps.proposalAdapter.getRecentFailedSessions = async () => {
+      throw new Error('database connection refused');
+    };
+
+    const runner = new CycleRunner({
+      cwd: tmpDir,
+      config: DEFAULT_CYCLE_CONFIG,
+      runtime: deps.runtime as any,
+      proposalAdapter: deps.proposalAdapter as any,
+      scoringAdapter: deps.scoringAdapter as any,
+      phaseHandlers: deps.mockPhaseHandlers as any,
+      testRunner: deps.testRunner as any,
+      gitOps: deps.gitOps as any,
+      prOpener: deps.prOpener as any,
+      bus: deps.bus as any,
+      dryRun: { prOpener: true },
+    });
+
+    const result = await runner.start();
+    expect(result.stage).toBe(CycleStage.FAILED);
+    expect(result.error).toBe('database connection refused');
+
+    const cycleJsonPath = join(
+      tmpDir,
+      '.agentforge/cycles',
+      result.cycleId,
+      'cycle.json',
+    );
+    const parsed = JSON.parse(readFileSync(cycleJsonPath, 'utf8'));
+    expect(parsed.error).toBe('database connection refused');
+  });
+
+  // v6.4.4 bug #3
+  it('filters test-pollution paths from collectChangedFiles', async () => {
+    // Init a real git repo so `git status --porcelain` works.
+    await execFileAsync('git', ['init', '-b', 'main'], { cwd: tmpDir });
+    await execFileAsync('git', ['config', 'user.email', 't@t.com'], { cwd: tmpDir });
+    await execFileAsync('git', ['config', 'user.name', 't'], { cwd: tmpDir });
+    await execFileAsync('git', ['config', 'commit.gpgsign', 'false'], { cwd: tmpDir });
+    writeFileSync(join(tmpDir, 'README.md'), '# test\n');
+    await execFileAsync('git', ['add', 'README.md'], { cwd: tmpDir });
+    await execFileAsync('git', ['commit', '-m', 'init'], { cwd: tmpDir });
+
+    // Create a mix of legitimate and pollution files.
+    writeFileSync(join(tmpDir, 'src-change.ts'), 'x\n');
+    mkdirSync(join(tmpDir, '.agentforge/agents'), { recursive: true });
+    writeFileSync(join(tmpDir, '.agentforge/agents/coder.yaml'), 'a\n');
+    mkdirSync(join(tmpDir, '.agentforge/v5'), { recursive: true });
+    writeFileSync(join(tmpDir, '.agentforge/v5/embeddings.db'), 'b\n');
+    mkdirSync(join(tmpDir, '.agentforge/analysis'), { recursive: true });
+    writeFileSync(join(tmpDir, '.agentforge/analysis/project-scan.json'), '{}\n');
+    mkdirSync(join(tmpDir, '.agentforge/config'), { recursive: true });
+    writeFileSync(join(tmpDir, '.agentforge/config/models.yaml'), 'x\n');
+    writeFileSync(join(tmpDir, '.agentforge/team.yaml'), 'x\n');
+    mkdirSync(join(tmpDir, '.agentforge/data'), { recursive: true });
+    writeFileSync(join(tmpDir, '.agentforge/data/state.json'), '{}\n');
+
+    const deps = makeMockDeps();
+    const capturedFiles: string[][] = [];
+    deps.gitOps.stage = async (files: string[]) => {
+      capturedFiles.push(files);
+    };
+
+    const runner = new CycleRunner({
+      cwd: tmpDir,
+      config: DEFAULT_CYCLE_CONFIG,
+      runtime: deps.runtime as any,
+      proposalAdapter: deps.proposalAdapter as any,
+      scoringAdapter: deps.scoringAdapter as any,
+      phaseHandlers: deps.mockPhaseHandlers as any,
+      testRunner: deps.testRunner as any,
+      gitOps: deps.gitOps as any,
+      prOpener: deps.prOpener as any,
+      bus: deps.bus as any,
+      dryRun: { prOpener: true },
+    });
+
+    const result = await runner.start();
+    expect(result.stage).toBe(CycleStage.COMPLETED);
+    const committed = result.git.filesChanged;
+    expect(committed).toContain('src-change.ts');
+    expect(committed).not.toContain('.agentforge/agents/coder.yaml');
+    expect(committed).not.toContain('.agentforge/v5/embeddings.db');
+    expect(committed).not.toContain('.agentforge/analysis/project-scan.json');
+    expect(committed).not.toContain('.agentforge/config/models.yaml');
+    expect(committed).not.toContain('.agentforge/team.yaml');
+    expect(committed).not.toContain('.agentforge/data/state.json');
   });
 });

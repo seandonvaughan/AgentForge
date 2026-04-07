@@ -164,6 +164,19 @@ describe('GitOps safety guards', () => {
     expect(branch).toBe('autonomous/v6.4.0-failed');
   });
 
+  // v6.4.4 bug #4: prefix ending in "v" must not produce "vv<version>".
+  it('createBranch strips trailing "v" from branchPrefix to avoid double-v', async () => {
+    const logger = new CycleLogger(tmpRepo, cycleId);
+    const ops = new GitOps(
+      tmpRepo,
+      { ...DEFAULT_CYCLE_CONFIG.git, branchPrefix: 'test-v' },
+      logger,
+    );
+    const branch = await ops.createBranch('7.0.0');
+    expect(branch).toBe('test-v7.0.0');
+    expect(branch).not.toContain('vv');
+  });
+
   it('createBranch refuses if branch already exists', async () => {
     const ops = makeOps();
     await ops.createBranch('6.4.0');

@@ -210,7 +210,10 @@ export class GitOps {
   }
 
   async createBranch(version: string, suffix: string = ''): Promise<string> {
-    const branch = `${this.config.branchPrefix}v${version}${suffix}`;
+    // v6.4.4 bug #4: strip trailing "v" from prefix so "autonomous-v" +
+    // "7.0.0" doesn't produce "autonomous-vv7.0.0".
+    const normalizedPrefix = this.config.branchPrefix.replace(/v$/, '');
+    const branch = `${normalizedPrefix}v${version}${suffix}`;
 
     // Check if branch already exists
     try {

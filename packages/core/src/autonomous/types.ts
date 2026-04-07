@@ -173,6 +173,7 @@ export interface CycleResult {
   };
   killSwitch?: KillSwitchTrip;
   scoringFallback?: 'static';
+  error?: string;
 }
 
 export class CycleKilledError extends Error {
