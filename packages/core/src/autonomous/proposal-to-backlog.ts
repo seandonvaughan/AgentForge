@@ -64,8 +64,8 @@ const SKIP_FILE_PATTERNS = [
 ];
 
 // v6.4.2: added `.md` so README and docs can carry real TODO(autonomous)
-// markers. The scanner extracts the comment text from HTML-style comments
-// (<!-- TODO(autonomous): ... -->) and from plain text lines.
+// markers. The scanner handles two syntactic forms: HTML-style comment wrappers
+// (<!-- MARKER: text -->) and bare plain-text lines in markdown files.
 const SCANNABLE_EXTENSIONS = new Set([
   '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.md',
 ]);
@@ -211,7 +211,7 @@ export class ProposalToBacklog {
               if (!text) continue;
 
               // v6.4.2: strip trailing HTML/markdown comment closers so
-              // titles from README <!-- TODO(autonomous): X --> don't include "-->"
+              // titles extracted from <!-- MARKER: text --> form don't include "-->"
               text = text.replace(/\s*-->\s*$/, '').replace(/\s*\*\/\s*$/, '').trim();
               if (!text) continue;
 
@@ -249,10 +249,13 @@ export class ProposalToBacklog {
   // input-side strip lives in scanTodoMarkers(); this ensures every code
   // path through build() respects the same contract.
   private sanitizeItems(items: BacklogItem[]): BacklogItem[] {
+    const strip = (s: string): string =>
+      s.replace(/\s*-->\s*$/, '').replace(/\s*\*\/\s*$/, '').trim();
     return items.map(item => ({
       ...item,
-      id: item.id.replace(/\s*-->\s*$/, '').replace(/\s*\*\/\s*$/, '').trim(),
-      title: item.title.replace(/\s*-->\s*$/, '').replace(/\s*\*\/\s*$/, '').trim(),
+      id: strip(item.id),
+      title: strip(item.title),
+      description: strip(item.description),
     }));
   }
 

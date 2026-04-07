@@ -1,0 +1,64 @@
+{
+  "sprints": [
+    {
+      "version": "6.4.0",
+      "sprintId": "v6-4-0-autonomous",
+      "title": "AgentForge v6.4.0 — Autonomous Cycle",
+      "createdAt": "2026-04-07T20:35:33.009Z",
+      "phase": "release",
+      "items": [
+        {
+          "id": "todo-packages-core-src-autonomous-proposal-to-backlog-ts-67",
+          "title": "Fix proposal-to-backlog parser: handle HTML comment arrows and plain-text lines",
+          "description": "This TODO sits inside the core autonomous pipeline's proposal ingestion module. Correct parsing of comment-arrow syntax directly affects every item that flows from session failures into the backlog; a silent mis-parse here produces malformed candidates that waste downstream budget. It should land before item 3, which appears to address the complementary 'strip the arrow from output' side of the same parsing concern.",
+          "priority": "P0",
+          "assignee": "CodeAgent",
+          "status": "failed",
+          "estimatedCostUsd": 1.5,
+          "tags": [
+            "chore",
+            "parser",
+            "autonomous-pipeline",
+            "core"
+          ]
+        },
+        {
+          "id": "todo-packages-core-src-autonomous-proposal-to-backlog-ts-208",
+          "title": "Fix proposal-to-backlog output: strip trailing '-->' from extracted text",
+          "description": "Companion fix to rank-1 item in the same file; both TODOs address opposite ends of HTML-comment-arrow handling (input recognition vs. output sanitisation). Batching them in one cycle minimises context-switching cost and reduces the risk of shipping half a fix. Depends on rank-1 landing first so the parsing contract is established before output formatting is adjusted.",
+          "priority": "P0",
+          "assignee": "CodeAgent",
+          "status": "failed",
+          "estimatedCostUsd": 1.5,
+          "tags": [
+            "chore",
+            "parser",
+            "autonomous-pipeline",
+            "core"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-plans-2026-04-06-autonomous-loop-part2-md-2541",
+          "title": "Add one-sentence autonomous-loop description to plans doc",
+          "description": "Pure documentation change with zero regression risk and fast execution. It does not unblock any other item, but it does reduce onboarding friction for agents and humans reading the plan file. Low cost and high confidence make it a safe tail item that rounds out the sprint without consuming meaningful budget.",
+          "priority": "P0",
+          "assignee": "DocAgent",
+          "status": "failed",
+          "estimatedCostUsd": 0.5,
+          "tags": [
+            "feature",
+            "docs",
+            "autonomous-loop"
+          ]
+        }
+      ],
+      "budget": 50,
+      "teamSize": 2,
+      "successCriteria": [
+        "All sprint items completed",
+        "Test pass rate >= 95%",
+        "Total cost <= $50"
+      ]
+    }
+  ]
+}

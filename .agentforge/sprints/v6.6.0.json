@@ -1,0 +1,64 @@
+{
+  "sprints": [
+    {
+      "version": "6.6.0",
+      "sprintId": "v6-6-0-autonomous",
+      "title": "AgentForge v6.6.0 — Autonomous Cycle",
+      "createdAt": "2026-04-07T20:53:57.295Z",
+      "phase": "release",
+      "items": [
+        {
+          "id": "todo-packages-core-src-autonomous-proposal-to-backlog-ts-67",
+          "title": "Parse proposal comment syntax (arrows and plain text lines) in proposal-to-backlog.ts",
+          "description": "This TODO lives in the core autonomous pipeline's proposal parser, which is a direct dependency of the backlog-scoring loop itself. Fixing comment-syntax parsing unblocks correct proposal ingestion and likely enables the sibling fix at line 209 to be applied cleanly. Core pipeline correctness outranks documentation.",
+          "priority": "P0",
+          "assignee": "feature-dev-agent",
+          "status": "failed",
+          "estimatedCostUsd": 2.5,
+          "tags": [
+            "chore",
+            "parser",
+            "autonomous-loop",
+            "proposal-to-backlog"
+          ]
+        },
+        {
+          "id": "todo-packages-core-src-autonomous-proposal-to-backlog-ts-208",
+          "title": "Strip '-->' arrow from parsed proposal output in proposal-to-backlog.ts",
+          "description": "Closely related to rank-1 item and in the same file; both touch the proposal comment-parsing logic. Fixing the arrow-stripping ensures downstream consumers (including this scorer) receive clean proposal text rather than raw comment syntax. Should be batched with rank-1 item in the same agent session to minimize cost.",
+          "priority": "P0",
+          "assignee": "feature-dev-agent",
+          "status": "failed",
+          "estimatedCostUsd": 1.75,
+          "tags": [
+            "chore",
+            "parser",
+            "autonomous-loop",
+            "proposal-to-backlog"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-plans-2026-04-06-autonomous-loop-part2-md-2541",
+          "title": "Add one-sentence description of the autonomous loop to plans doc",
+          "description": "Pure documentation touch with no functional impact on the running system; cheapest item in the sprint and low risk. Ranks last because it neither unblocks other items nor addresses a regression. Still worth including given the negligible cost and the fact that plan documents serve as onboarding context for future autonomous cycles.",
+          "priority": "P0",
+          "assignee": "general-purpose",
+          "status": "failed",
+          "estimatedCostUsd": 0.4,
+          "tags": [
+            "feature",
+            "docs",
+            "autonomous-loop"
+          ]
+        }
+      ],
+      "budget": 50,
+      "teamSize": 2,
+      "successCriteria": [
+        "All sprint items completed",
+        "Test pass rate >= 95%",
+        "Total cost <= $50"
+      ]
+    }
+  ]
+}

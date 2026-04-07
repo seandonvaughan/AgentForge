@@ -1,0 +1,79 @@
+{
+  "sprints": [
+    {
+      "version": "6.8.0",
+      "sprintId": "v6-8-0-autonomous",
+      "title": "AgentForge v6.8.0 — Autonomous Cycle",
+      "createdAt": "2026-04-07T21:19:59.205Z",
+      "phase": "release",
+      "items": [
+        {
+          "id": "todo-packages-core-src-autonomous-proposal-to-backlog-ts-67",
+          "title": "Fix arrow/comment parsing in proposal-to-backlog.ts (line 68)",
+          "description": "Core parsing logic in proposal-to-backlog.ts directly affects how the autonomous loop ingests and converts proposals into backlog items. A defect here corrupts every downstream cycle. Fixing it unblocks item 4 in the same file and ensures clean input to the scorer.",
+          "priority": "P0",
+          "assignee": "code-agent",
+          "status": "completed",
+          "estimatedCostUsd": 0.75,
+          "tags": [
+            "parsing",
+            "core",
+            "autonomous-loop",
+            "chore"
+          ]
+        },
+        {
+          "id": "todo-packages-core-src-autonomous-proposal-to-backlog-ts-213",
+          "title": "Fix '-->' exclusion in proposal-to-backlog.ts output (line 214)",
+          "description": "Directly related to the sibling TODO at line 68 in the same file; both address malformed arrow syntax leaking into parsed output. Must run after rank-1 to avoid merge conflicts on the same source region. Combined, the two fixes harden the proposal ingestion path.",
+          "priority": "P0",
+          "assignee": "code-agent",
+          "status": "completed",
+          "estimatedCostUsd": 0.6,
+          "tags": [
+            "parsing",
+            "core",
+            "autonomous-loop",
+            "chore"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-06-autonomous-smoke-test-md-48",
+          "title": "Add one-sentence autonomous loop description to smoke-test spec",
+          "description": "Trivial effort (one sentence) but improves onboarding clarity for the smoke-test spec. Useful before new contributors or automated reviewers read the spec. No code risk whatsoever; high confidence, lowest cost in the sprint.",
+          "priority": "P0",
+          "assignee": "docs-agent",
+          "status": "completed",
+          "estimatedCostUsd": 0.15,
+          "tags": [
+            "docs",
+            "autonomous-loop",
+            "feature",
+            "quick-win"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-plans-2026-04-06-autonomous-loop-part2-md-2541",
+          "title": "Document autonomous loop behavior in plans/2026-04-06-autonomous-loop-part2.md",
+          "description": "Plan-file documentation of the autonomous loop's plan-execute-test-commit cycle is valuable for audit and onboarding but carries no execution risk and does not unblock any other item. Lowest priority because plan files are historical artifacts; a stale or incomplete description here has minimal operational impact compared to the parsing bugs above.",
+          "priority": "P1",
+          "assignee": "docs-agent",
+          "status": "completed",
+          "estimatedCostUsd": 0.5,
+          "tags": [
+            "docs",
+            "autonomous-loop",
+            "chore"
+          ]
+        }
+      ],
+      "budget": 50,
+      "teamSize": 2,
+      "successCriteria": [
+        "All sprint items completed",
+        "Test pass rate >= 95%",
+        "Total cost <= $50"
+      ]
+    }
+  ]
+}

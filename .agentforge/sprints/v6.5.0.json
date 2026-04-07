@@ -1,0 +1,65 @@
+{
+  "sprints": [
+    {
+      "version": "6.5.0",
+      "sprintId": "v6-5-0-autonomous",
+      "title": "AgentForge v6.5.0 — Autonomous Cycle",
+      "createdAt": "2026-04-07T20:47:07.490Z",
+      "phase": "release",
+      "items": [
+        {
+          "id": "todo-packages-core-src-autonomous-proposal-to-backlog-ts-67",
+          "title": "Fix TODO marker parser: strip `-->` and handle plain-text lines",
+          "description": "This TODO lives in the core proposal-to-backlog pipeline (packages/core/src/autonomous/proposal-to-backlog.ts:68) and directly affects how candidate work items are ingested into the autonomous loop. A malformed parser that leaks `-->` tokens into item titles or descriptions would silently corrupt every downstream backlog item, making this the highest-risk defect in the set. It should be resolved before the companion fix at line 209, since the two are likely sequential parsing steps in the same function.",
+          "priority": "P0",
+          "assignee": "code-agent",
+          "status": "failed",
+          "estimatedCostUsd": 1.25,
+          "tags": [
+            "parser",
+            "autonomous-loop",
+            "chore",
+            "p1"
+          ]
+        },
+        {
+          "id": "todo-packages-core-src-autonomous-proposal-to-backlog-ts-208",
+          "title": "Fix TODO marker parser: exclude `-->` token from extracted text",
+          "description": "A second parsing defect in the same file (line 209) that ensures the `-->` arrow is not included in the extracted proposal text. This is a companion fix to rank-1 and should be executed immediately after; the two items share context and a single code-review pass, so batching them reduces total cycle cost. Marked as a dependency on the rank-1 item because both touch the same parsing logic and resolving them out of order risks merge conflicts.",
+          "priority": "P0",
+          "assignee": "code-agent",
+          "status": "failed",
+          "estimatedCostUsd": 1,
+          "tags": [
+            "parser",
+            "autonomous-loop",
+            "chore",
+            "p1"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-plans-2026-04-06-autonomous-loop-part2-md-2541",
+          "title": "Add one-sentence description of the autonomous loop to plan doc",
+          "description": "A low-effort documentation touch in a planning markdown file. It carries no regression risk and does not block any other item, making it the right candidate to fill remaining cycle capacity after the two parser fixes ship. The high confidence score reflects the simplicity of the task; the lower priority score reflects that missing docs do not impede the running autonomous loop.",
+          "priority": "P0",
+          "assignee": "docs-agent",
+          "status": "failed",
+          "estimatedCostUsd": 0.25,
+          "tags": [
+            "docs",
+            "autonomous-loop",
+            "feature",
+            "p1"
+          ]
+        }
+      ],
+      "budget": 50,
+      "teamSize": 2,
+      "successCriteria": [
+        "All sprint items completed",
+        "Test pass rate >= 95%",
+        "Total cost <= $50"
+      ]
+    }
+  ]
+}

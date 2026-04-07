@@ -10,6 +10,164 @@ This file contains Tasks 17-26. Tasks 1-16 are in Part 1. Start Part 2 only afte
 
 ---
 
+## Autonomous Cycle Behavior
+
+**Reference for audit and onboarding:** This section documents the actual behavior of a complete autonomous development cycle once all 26 implementation tasks are complete. For a deeper architectural explanation, see the design spec (§5.3).
+
+### Six-Stage Cycle Flow
+
+An autonomous cycle is invoked via `npm run autonomous:cycle` and completes in six sequential stages. Each stage has a clear entry and exit condition. The cycle writes structured logs to `.agentforge/cycles/{cycleId}/` for full audit trail.
+
+#### Stage 1: PLAN
+**Goal:** Build a prioritized work backlog and secure budget approval.
+
+**Steps:**
+1. **Proposal collection:** Scan the codebase and SQLite logs for work signals:
+   - Failed test sessions (from `WorkspaceAdapter.logSession()`)
+   - Cost anomalies (sessions costing 2+ standard deviations from median)
+   - `TODO(autonomous)` markers in source code (configurable pattern, default: `TODO\(autonomous\)`)
+   - Production incidents or canary rollbacks recorded in session metadata
+2. **Confidence filtering:** Filter proposals to only those meeting `config.sourcing.minProposalConfidence` (typically 0.7). A proposal's confidence reflects the signal certainty (failed session = 0.9, cost anomaly = 0.6, TODO marker = 1.0).
+3. **Backlog generation:** Convert filtered proposals into `BacklogItem[]` with priority (P0/P1/P2), estimated cost/duration, and tags.
+4. **Scoring:** Pass the backlog to the `backlog-scorer` agent (via `ScoringPipeline.scoreWithFallback()`):
+   - The agent receives grounding: sprint history (last 10 completed sprints), cost medians by agent, team utilization.
+   - Agent returns ranked items with per-item cost estimates, dependencies, assignees, and a binary `withinBudget` flag.
+   - If the agent's response is invalid JSON or missing schema fields, retry up to 3 times with progressively simpler schemas.
+   - If all retries fail, fall back to static priority ranking (P0 > P1 > P2, sorted by confidence).
+5. **Budget gate:** Split scored items into `withinBudget` and `requiresApproval`. If any items require approval:
+   - Write `.agentforge/cycles/{cycleId}/approval-pending.json` with the overflow items.
+   - In TTY mode: prompt the operator `[y/N/edit]` to approve additional spend.
+   - In non-TTY mode: block on `.agentforge/cycles/{cycleId}/approval-decision.json` being written (waits up to 5 minutes).
+   - If operator rejects, the cycle halts (exit code 0, decision logged).
+
+**Outcome:** A list of approved work items ranked by score, with total estimated cost ≤ `config.budget.perCycleUsd`.
+
+#### Stage 2: STAGE
+**Goal:** Convert approved items into a concrete sprint plan with a version number.
+
+**Steps:**
+1. **Version bumping:** Determine the next version from `config.git.baseBranch`:
+   - If any approved item has tag `breaking`, bump major (e.g., v6.5.0 → v7.0.0).
+   - If any item has tag `feature`, bump minor (e.g., v6.5.0 → v6.6.0).
+   - Otherwise, bump patch (e.g., v6.5.0 → v6.5.1).
+2. **Sprint prediction:** `SprintPredictor.predict(approved)` filters items that are safe to run in parallel (no circular dependencies) and estimates total duration.
+3. **Sprint planning:** `SprintPlanner.plan()` assigns items to the 9-phase workflow (audit, plan, assign, execute, test, review, gate, release, learn), produces a `SprintPlan` object.
+4. **Persistence:**
+   - Write `.agentforge/sprints/v{version}.json` with the plan (human-readable, git-tracked).
+   - Call `WorkspaceAdapter.createSprint()` to record the sprint in SQLite.
+
+**Outcome:** A concrete sprint with a version, written to both filesystem and database.
+
+#### Stage 3: RUN
+**Goal:** Execute all nine sprint phases in sequence, dispatching agents, running code generation, collecting outputs.
+
+**Steps:**
+1. **Phase scheduler:** `PhaseScheduler` orchestrates the 9-phase pipeline:
+   - **audit:** Review the backlog items, identify any items that seem risky or duplicative.
+   - **plan:** CTO writes sprint objectives and per-item technical plans.
+   - **assign:** AutoDelegationPipeline maps each item to a team agent (coder, devops, qa, etc.).
+   - **execute:** Dispatch assigned agents in parallel (up to `config.limits.maxConcurrentExecutions`). Each agent writes code, runs builds, logs output.
+   - **test:** Backend-QA agent runs unit tests on generated code, reports failures.
+   - **review:** Code-reviewer agent scans generated code for quality, security, and style violations.
+   - **gate:** CEO agent decides if the sprint output meets release criteria (no regressions, all tests green, no critical issues).
+   - **release:** (if gate passes) Tag the commit, update version in package.json, write release notes.
+   - **learn:** Career agent records team skill growth, promotes agents, suggests future roles.
+2. **Event-driven auto-advance:** Each phase completion fires an event on the in-process EventBus. The scheduler subscribes and auto-advances to the next phase (no manual intervention).
+3. **Kill-switch monitoring:** Between every phase, check if cost/duration/failure thresholds are exceeded. If yes, stop immediately (see Stage 4).
+4. **Cost tracking:** `ScoringPipeline` and phase handlers report per-agent costs; these are summed into `runSummary.totalCostUsd`.
+
+**Outcome:** A completed sprint with all generated code staged, all agent logs recorded, and total cost within or slightly over budget.
+
+#### Stage 4: VERIFY
+**Goal:** Run the project's full test suite and verify no regressions were introduced.
+
+**Steps:**
+1. **Real test execution:** Call `RealTestRunner.run()` which shells `npx vitest run --reporter=json` and parses the JSON output.
+2. **Baseline comparison:** Compare new test failures against a baseline of the previous cycle's passing tests. Identify `newFailures`.
+3. **Kill-switch post-verify:** Check:
+   - If `testPassRate` falls below `config.quality.testPassRateFloor` (typically 98%), kill the cycle.
+   - If `newFailures.length > 0` and `config.quality.allowRegression === false`, kill the cycle.
+   - If `requireBuildSuccess === true` and the build failed, kill the cycle.
+4. **Test result logging:** Record all test stats (passed, failed, skipped, pass rate, new failures) in cycle.json.
+
+**Outcome:** Confirmed that the generated code passes the project's quality gates. If any gate fails, the cycle halts (Stage 5/6 skipped).
+
+#### Stage 5: COMMIT
+**Goal:** Persist all generated code changes to a feature branch and push to remote.
+
+**Steps:**
+1. **Precondition checks:**
+   - Verify `git` and `gh` CLIs are available and in $PATH.
+   - Verify no uncommitted changes on the base branch (safety: prevent accidental base-branch modification).
+   - Verify remote is reachable (`git fetch origin` succeeds).
+2. **Branch creation:** Create a new local branch `autonomous/v{version}` based on `config.git.baseBranch`.
+3. **File collection:** `collectChangedFiles()` scans git status (modified, untracked, deleted files) and returns the list. Applies `.gitignore` and denylist patterns (e.g., `.agentforge/` is excluded).
+4. **Staging:** Call `git add {files...}` to stage only changed files (not the entire working tree).
+5. **Secret scanning:** Before committing, scan staged files for hardcoded secrets (ANTHROPIC_API_KEY, OPENAI_API_KEY, GitHub PATs, AWS credentials). If found, unstage and fail the cycle.
+6. **Commit:** `git commit -m "{message}"` with a message in the form `autonomous(v{version}): {scoringSummary}` (e.g., `autonomous(v6.5.0): Fix parser crash and add feature-X, 3 items, $28 cost`).
+7. **Push:** `git push -u origin autonomous/v{version}` to make the branch available on the remote.
+
+**Outcome:** A feature branch on the remote with all changes committed and ready for review.
+
+#### Stage 6: REVIEW
+**Goal:** Open a pull request on the remote for human review and eventual merge.
+
+**Steps:**
+1. **PR body rendering:** `renderPrBody()` builds a comprehensive markdown body:
+   - Sprint summary (version, items, assignments).
+   - Scoring detail (ranked items, costs, warnings).
+   - Test results (pass rate, new failures, test count delta).
+   - Git detail (files changed, commit SHA, branch name).
+   - Cost breakdown (by agent, by phase).
+2. **Title sanitization:** Build the PR title and clean it:
+   - Replace parens (gh CLI parses them as option groups).
+   - Remove newlines.
+   - Truncate to ~65 chars on a word boundary.
+   - Example: `autonomous(v6.5.0): Fix crash and add feature-X, 2 items`
+3. **PR creation:** Call `gh pr create`:
+   - Set base branch to `config.git.baseBranch`.
+   - Mark as draft if `config.pr.draft === true`.
+   - Assign to reviewer if `config.pr.assignReviewer` is set.
+   - Apply labels from `config.pr.labels` (e.g., `autonomous`, `auto-generated`).
+4. **Result logging:** Record the PR URL, number, and draft status in cycle.json and `.agentforge/cycles/{cycleId}/pr-event.json`.
+
+**Outcome:** A pull request open on GitHub (or similar remote). The cycle is complete. A human can now review, request changes, or merge.
+
+### Kill Switch Behavior
+
+At any point during Stages 1–5, the `KillSwitch` may terminate the cycle with a reason:
+- `budget`: Total cost exceeded `config.budget.perCycleUsd` and human approval was denied.
+- `duration`: Elapsed time exceeded `config.limits.maxDurationMinutes`.
+- `testFloor`: Test pass rate fell below `config.quality.testPassRateFloor`.
+- `regression`: New test failures detected and `allowRegression === false`.
+- `buildFailure`: Project build failed during RUN or VERIFY stage.
+- `consecutiveFailures`: More than `config.limits.maxConsecutiveFailures` phases failed in sequence.
+- `manualStop`: Operator created `.agentforge/cycles/{cycleId}/stop.json`.
+
+When the kill switch trips:
+- The cycle halts immediately and exits Stage 4 or 5.
+- The `CycleResult.stage` is set to `KILLED` (not `FAILED`).
+- The kill reason and timestamp are logged.
+- If `git` operations have begun, they are rolled back (branch deleted locally and on remote).
+- The cycle.json is written with the final state.
+
+### Cycle Logging and Audit Trail
+
+Every cycle writes structured logs to `.agentforge/cycles/{cycleId}/`:
+- `cycle.json` — terminal state (success/killed/failed, versions, timings, costs, test stats, PR URL).
+- `backlog-{stage}.json` — backlog at each stage (initial, scored, approved, final).
+- `sprint-plan.json` — the generated sprint plan.
+- `phase-{name}-result.json` — per-phase output, agent logs, cost.
+- `test-report.json` — full vitest JSON output.
+- `approval-pending.json` — (if budget overflow) pending approval details.
+- `approval-decision.json` — (if approval gate invoked) operator decision.
+- `pr-event.json` — PR URL and metadata.
+- `git-log.txt` — transcript of all git commands executed.
+
+These logs remain indefinitely for audit and post-mortem analysis.
+
+---
+
 ## Task 17: Scoring pipeline (agent invocation)
 
 **Files:**

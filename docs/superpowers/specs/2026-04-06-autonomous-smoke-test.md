@@ -2,6 +2,8 @@
 
 **Purpose:** Prove the autonomous cycle works end-to-end against the real AgentForge repository before declaring the feature shipped.
 
+**What is the Autonomous Loop?** An agent-driven cycle that automatically scores sprint items, executes implementation tasks, runs tests, and opens pull requests with cost and quality guardrails.
+
 **Prerequisites:**
 - `npm install` complete, `npm run build` passes with 0 errors
 - All unit + integration tests green: `cd packages/core && npx vitest run`

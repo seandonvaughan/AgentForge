@@ -1,0 +1,64 @@
+{
+  "sprints": [
+    {
+      "version": "6.7.0",
+      "sprintId": "v6-7-0-autonomous",
+      "title": "AgentForge v6.7.0 — Autonomous Cycle",
+      "createdAt": "2026-04-07T21:01:18.663Z",
+      "phase": "release",
+      "items": [
+        {
+          "id": "todo-packages-core-src-autonomous-proposal-to-backlog-ts-67",
+          "title": "Fix proposal-to-backlog comment parser: handle --> and plain text lines",
+          "description": "This is a parsing correctness fix in the core autonomous pipeline (proposal-to-backlog.ts). Malformed comment extraction directly corrupts the backlog the Backlog Scorer and SprintGenerator consume, making every downstream cycle less reliable. Fixing the ingestion layer first unblocks the dependent output-filter fix at line 209.",
+          "priority": "P0",
+          "assignee": "CorePipelineAgent",
+          "status": "completed",
+          "estimatedCostUsd": 1.25,
+          "tags": [
+            "parsing",
+            "chore",
+            "autonomous-loop",
+            "core"
+          ]
+        },
+        {
+          "id": "todo-packages-core-src-autonomous-proposal-to-backlog-ts-208",
+          "title": "Fix proposal-to-backlog output: strip '-->' from emitted backlog items",
+          "description": "This is the output-side complement to rank-1: even after correct parsing, the '-->' arrow must be stripped before items are written into the backlog schema. Leaving it in would cause itemId or title fields to contain arrow artifacts, potentially breaking JSON consumers. Depends on rank-1 being resolved first to avoid double-fixing related logic.",
+          "priority": "P0",
+          "assignee": "CorePipelineAgent",
+          "status": "completed",
+          "estimatedCostUsd": 1,
+          "tags": [
+            "parsing",
+            "chore",
+            "autonomous-loop",
+            "core"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-plans-2026-04-06-autonomous-loop-part2-md-2541",
+          "title": "Add one-sentence autonomous loop description to plan doc",
+          "description": "Pure documentation addition with no runtime impact. Valuable for onboarding and auditability of the autonomous loop, but carries zero regression risk and does not unblock any other item. Ranked last because it is a leaf node with no downstream dependencies and no active failure to resolve.",
+          "priority": "P0",
+          "assignee": "DocsAgent",
+          "status": "completed",
+          "estimatedCostUsd": 0.15,
+          "tags": [
+            "docs",
+            "feature",
+            "autonomous-loop"
+          ]
+        }
+      ],
+      "budget": 50,
+      "teamSize": 2,
+      "successCriteria": [
+        "All sprint items completed",
+        "Test pass rate >= 95%",
+        "Total cost <= $50"
+      ]
+    }
+  ]
+}
