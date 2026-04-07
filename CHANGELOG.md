@@ -2,6 +2,32 @@
 
 All notable changes to AgentForge are documented in this file.
 
+## [6.7.0] — 2026-04-07
+
+### Slash command points to the canonical dashboard
+
+The `/agentforge:dashboard` plugin command was still pointing at the legacy v4-era HTML dashboard at `dashboard/index.html`. That dashboard predates the autonomous loop work, hardcodes v6.2 in its UI, and uses a mix of `/api/v1/` and `/api/v5/` endpoints. The v6.5+ Autonomous Command Center lives in `packages/dashboard/` (SvelteKit) and is the canonical UI from v6.5 onward.
+
+v6.7.0 updates `commands/dashboard.md` to:
+1. Check if the Fastify v5 server is running on port 4750; if not, build + start it in the background
+2. Check if Vite is running on port 4751; if not, start it in the background
+3. Open `http://localhost:4751` in the default browser
+4. Support an optional `--restart` flag to kill running instances and re-launch
+
+The legacy `dashboard/index.html` is now explicitly marked deprecated in the slash command's notes.
+
+### Files changed
+
+- `commands/dashboard.md` — full rewrite to launch SvelteKit dashboard with auto-start of dev servers
+- `.claude-plugin/plugin.json` — version 6.6.0 → 6.7.0
+- `package.json` — version 6.6.0 → 6.7.0
+
+### What v6.7.0 ships
+
+This is a small patch focused on fixing the slash command and bumping versions. No new features. The autonomous loop, multi-workspace, parallel execute, file-conflict detection, SSE push, cost preview, and 9 real phase handlers from v6.4.0 → v6.6.0 are all preserved unchanged. 348 autonomous tests still passing.
+
+---
+
 ## [6.6.0] — 2026-04-07
 
 ### Two complementary features in one release
