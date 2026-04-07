@@ -574,6 +574,82 @@ export async function cyclesRoutes(
     return reply.send({ file: bestMatch.file, sprint: bestMatch.sprint });
   });
 
+  // GET /api/v5/cycles/:id/agents ────────────────────────────────────────────
+  // Returns a flat list of agent runs aggregated across every phase JSON
+  // in the cycle dir, plus per-agent totals. Drives the dashboard Agents
+  // tab on the cycle detail page. Updates live because the execute phase
+  // now writes incremental execute.json snapshots on every item finish.
+  app.get('/api/v5/cycles/:id/agents', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!SAFE_ID.test(id)) return reply.status(400).send({ error: 'Invalid cycle id' });
+    const br = baseForRequest(req);
+    if ('error' in br) return reply.status(br.error.status).send(br.error.body);
+    const base = br.base;
+    const dir = safeJoin(base, id);
+    if (!dir || !existsSync(dir)) return reply.status(404).send({ error: 'Cycle not found' });
+
+    const phasesDir = join(dir, 'phases');
+    if (!existsSync(phasesDir)) return reply.send({ runs: [], byAgent: {}, totalCostUsd: 0, totalRuns: 0 });
+
+    interface AgentRunRow {
+      phase: string;
+      agentId: string;
+      itemId?: string;
+      status: string;
+      costUsd: number;
+      durationMs: number;
+      response?: string;
+      error?: string;
+      attempts?: number;
+    }
+    const runs: AgentRunRow[] = [];
+    const byAgent: Record<string, { runs: number; totalCostUsd: number; totalDurationMs: number; phases: Set<string> }> = {};
+
+    for (const name of ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate', 'release', 'learn']) {
+      const phaseFile = join(phasesDir, `${name}.json`);
+      if (!existsSync(phaseFile)) continue;
+      try {
+        const phase = JSON.parse(readFileSync(phaseFile, 'utf8'));
+        const phaseRuns = Array.isArray(phase.agentRuns) ? phase.agentRuns : [];
+        for (const run of phaseRuns) {
+          const agentId = String(run.agentId ?? 'unknown');
+          const row: AgentRunRow = {
+            phase: name,
+            agentId,
+            itemId: typeof run.itemId === 'string' ? run.itemId : undefined,
+            status: String(run.status ?? 'unknown'),
+            costUsd: typeof run.costUsd === 'number' ? run.costUsd : 0,
+            durationMs: typeof run.durationMs === 'number' ? run.durationMs : 0,
+            response: typeof run.response === 'string' ? run.response : undefined,
+            error: typeof run.error === 'string' ? run.error : undefined,
+            attempts: typeof run.attempts === 'number' ? run.attempts : undefined,
+          };
+          runs.push(row);
+          if (!byAgent[agentId]) {
+            byAgent[agentId] = { runs: 0, totalCostUsd: 0, totalDurationMs: 0, phases: new Set() };
+          }
+          byAgent[agentId].runs++;
+          byAgent[agentId].totalCostUsd += row.costUsd;
+          byAgent[agentId].totalDurationMs += row.durationMs;
+          byAgent[agentId].phases.add(name);
+        }
+      } catch { /* skip malformed */ }
+    }
+
+    // Convert phases Set → array for JSON
+    const byAgentSerialized: Record<string, { runs: number; totalCostUsd: number; totalDurationMs: number; phases: string[] }> = {};
+    for (const [k, v] of Object.entries(byAgent)) {
+      byAgentSerialized[k] = { runs: v.runs, totalCostUsd: v.totalCostUsd, totalDurationMs: v.totalDurationMs, phases: Array.from(v.phases) };
+    }
+
+    return reply.send({
+      runs,
+      byAgent: byAgentSerialized,
+      totalCostUsd: runs.reduce((s, r) => s + r.costUsd, 0),
+      totalRuns: runs.length,
+    });
+  });
+
   // GET /api/v5/cycles/:id/scoring ──────────────────────────────────────────
   app.get('/api/v5/cycles/:id/scoring', async (req, reply) => {
     const { id } = req.params as { id: string };

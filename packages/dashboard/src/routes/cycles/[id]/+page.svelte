@@ -10,7 +10,7 @@
   const FILES = ['tests', 'git', 'pr', 'approval-pending', 'approval-decision'] as const;
   type Phase = (typeof PHASES)[number];
   type FileName = (typeof FILES)[number];
-  type Tab = 'overview' | 'items' | 'scoring' | 'events' | 'phases' | 'files';
+  type Tab = 'overview' | 'items' | 'agents' | 'scoring' | 'events' | 'phases' | 'files';
 
   let id = $derived($page.params.id);
 
@@ -51,6 +51,26 @@
     } finally {
       sprintLoading = false;
     }
+    // Also refresh the cycle summary (cost/tests/stage) and agents on each tick.
+    try {
+      const res = await fetch(`/api/v5/cycles/${id}`);
+      if (res.ok) cycle = await res.json();
+    } catch {}
+    loadAgents();
+  }
+
+  // Agents tab state — live list of every agent run in the cycle with cost,
+  // duration, per-phase aggregates, and response snippets. Polled alongside
+  // the sprint endpoint so the Cost stat updates live during execute.
+  let agentsData: any = $state(null);
+  let agentsLoading = $state(false);
+  async function loadAgents() {
+    if (!id) return;
+    agentsLoading = true;
+    try {
+      const res = await fetch(`/api/v5/cycles/${id}/agents`);
+      if (res.ok) agentsData = await res.json();
+    } catch {} finally { agentsLoading = false; }
   }
 
   function startSprintPoll() {
@@ -299,6 +319,12 @@
         <span class="tab-count">{sprint.items.filter((i: any) => i.status === 'completed').length}/{sprint.items.length}</span>
       {/if}
     </button>
+    <button class="tab" class:active={activeTab === 'agents'} onclick={() => setTab('agents')}>
+      Agents
+      {#if agentsData?.totalRuns != null}
+        <span class="tab-count">{agentsData.totalRuns}</span>
+      {/if}
+    </button>
     <button class="tab" class:active={activeTab === 'overview'} onclick={() => setTab('overview')}>Overview</button>
     <button class="tab" class:active={activeTab === 'scoring'} onclick={() => setTab('scoring')}>Scoring</button>
     <button class="tab" class:active={activeTab === 'events'} onclick={() => setTab('events')}>Events</button>
@@ -372,6 +398,71 @@
         </div>
       {:else}
         <div class="empty-state">No sprint data yet.</div>
+      {/if}
+    {:else if activeTab === 'agents'}
+      {#if !agentsData || agentsLoading && !agentsData}
+        <div class="card"><div class="skeleton" style="height:80px"></div></div>
+      {:else if agentsData.totalRuns === 0}
+        <div class="empty-state">No agent runs yet — cycle is still in early phases.</div>
+      {:else}
+        {@const agents = Object.entries(agentsData.byAgent || {}).sort((a: any, b: any) => b[1].totalCostUsd - a[1].totalCostUsd)}
+        <div class="card" style="margin-bottom: var(--space-5);">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <div style="font-weight: 700; font-size: var(--text-lg);">{agents.length} agents · {agentsData.totalRuns} runs</div>
+              <div class="muted" style="font-size: var(--text-sm);">Live — updates every 3s</div>
+            </div>
+            <div style="text-align: right;">
+              <div style="font-size: var(--text-2xl); font-weight: 700;">${Number(agentsData.totalCostUsd).toFixed(2)}</div>
+              <div class="muted" style="font-size: var(--text-xs);">total cost</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="agent-grid">
+          {#each agents as [agentId, stats] (agentId)}
+            {@const s = stats as any}
+            <div class="card agent-summary">
+              <div class="agent-name">{agentId}</div>
+              <div class="agent-stats">
+                <div><span class="muted">runs</span> <strong>{s.runs}</strong></div>
+                <div><span class="muted">cost</span> <strong>${Number(s.totalCostUsd).toFixed(3)}</strong></div>
+                <div><span class="muted">duration</span> <strong>{formatDuration(s.totalDurationMs)}</strong></div>
+              </div>
+              <div class="agent-phases">
+                {#each s.phases as p}<span class="phase-chip">{p}</span>{/each}
+              </div>
+            </div>
+          {/each}
+        </div>
+
+        <h3 style="margin-top: var(--space-5);">Run details</h3>
+        <div class="run-list">
+          {#each agentsData.runs as run}
+            <div class="card run-row" class:failed={run.status === 'failed'}>
+              <div class="run-header">
+                <span class="run-phase">{run.phase}</span>
+                <span class="run-agent mono">{run.agentId}</span>
+                <span class="run-status {run.status}">{run.status}</span>
+                {#if run.itemId}<span class="run-item muted">{run.itemId.slice(0, 60)}</span>{/if}
+              </div>
+              <div class="run-meta">
+                <span>${Number(run.costUsd).toFixed(4)}</span>
+                <span>·</span>
+                <span>{formatDuration(run.durationMs)}</span>
+                {#if run.attempts}<span>·</span><span>{run.attempts} attempt{run.attempts === 1 ? '' : 's'}</span>{/if}
+              </div>
+              {#if run.error}
+                <div class="run-error">{run.error}</div>
+              {:else if run.response}
+                <details class="run-response">
+                  <summary>Response ({run.response.length} chars)</summary>
+                  <pre>{run.response.slice(0, 2000)}{run.response.length > 2000 ? '\n… (truncated)' : ''}</pre>
+                </details>
+              {/if}
+            </div>
+          {/each}
+        </div>
       {/if}
     {:else if activeTab === 'overview'}
       <div class="stat-grid">
@@ -886,6 +977,97 @@
     font-size: var(--text-xs);
     color: var(--color-text-muted);
     font-family: var(--font-mono);
+  }
+
+  .agent-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: var(--space-3);
+  }
+  .agent-summary { padding: var(--space-3); }
+  .agent-name {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-size: var(--text-md);
+    color: var(--color-text);
+    margin-bottom: var(--space-2);
+  }
+  .agent-stats {
+    display: flex;
+    gap: var(--space-4);
+    font-size: var(--text-sm);
+    margin-bottom: var(--space-2);
+  }
+  .agent-phases { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+  .phase-chip {
+    padding: 2px var(--space-2);
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border);
+    border-radius: 9999px;
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+    color: var(--color-text-muted);
+  }
+
+  .run-list { display: flex; flex-direction: column; gap: var(--space-2); }
+  .run-row { padding: var(--space-3); }
+  .run-row.failed { border-left: 3px solid var(--color-danger); }
+  .run-header {
+    display: flex;
+    gap: var(--space-3);
+    align-items: center;
+    margin-bottom: var(--space-1);
+    font-size: var(--text-sm);
+    flex-wrap: wrap;
+  }
+  .run-phase {
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-text-muted);
+    font-weight: 700;
+  }
+  .run-agent { color: var(--color-brand); font-weight: 600; }
+  .run-status {
+    padding: 2px var(--space-2);
+    border-radius: 9999px;
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+  }
+  .run-status.completed { background: rgba(76,175,130,0.15); color: var(--color-success); }
+  .run-status.failed { background: rgba(224,90,90,0.15); color: var(--color-danger); }
+  .run-item { font-size: var(--text-xs); font-family: var(--font-mono); }
+  .run-meta {
+    display: flex;
+    gap: var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    margin-bottom: var(--space-2);
+  }
+  .run-error {
+    background: rgba(224,90,90,0.08);
+    padding: var(--space-2);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-danger);
+  }
+  .run-response summary {
+    cursor: pointer;
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    padding: var(--space-1) 0;
+  }
+  .run-response pre {
+    margin-top: var(--space-2);
+    padding: var(--space-2);
+    background: var(--color-bg-card);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-xs);
+    max-height: 300px;
+    overflow: auto;
+    white-space: pre-wrap;
   }
 
   @media (max-width: 700px) {

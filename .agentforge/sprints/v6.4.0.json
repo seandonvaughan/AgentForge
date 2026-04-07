@@ -130,7 +130,7 @@
           "description": "The flywheel view is the primary health signal for the autonomous loop's self-improvement trajectory; static gauges give false confidence. Computing live metrics requires joining cycle, sprint, and session data, making this slightly more complex than the memory wiring but equally important for operator trust.",
           "priority": "P2",
           "assignee": "FrontendAgent",
-          "status": "planned",
+          "status": "completed",
           "estimatedCostUsd": 3.5,
           "tags": [
             "chore",

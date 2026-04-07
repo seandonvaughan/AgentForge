@@ -210,6 +210,49 @@ export async function runExecutePhase(
   const items: SprintItem[] = (sprintObj?.items ?? []) as SprintItem[];
 
   let totalCost = 0;
+  const liveResults = new Map<string, ItemResult>();
+
+  // Write an incremental execute.json snapshot so the dashboard can show
+  // live cost + agent runs during the (long) execute phase instead of
+  // waiting until every item finishes. Without this, the cycle detail
+  // page's Cost stat stays frozen at ~$0.20 for 20-40 minutes while
+  // execute is in flight. Called from the dispatchItem finally block.
+  function snapshotExecuteProgress(): void {
+    if (!ctx.cycleId) return;
+    const snapshotPath = join(
+      ctx.projectRoot,
+      '.agentforge',
+      'cycles',
+      ctx.cycleId,
+      'phases',
+      'execute.json',
+    );
+    try {
+      mkdirSync(dirname(snapshotPath), { recursive: true });
+      const runs = Array.from(liveResults.values());
+      writeFileSync(
+        snapshotPath,
+        JSON.stringify(
+          {
+            phase: 'execute',
+            sprintId: ctx.sprintId,
+            sprintVersion: ctx.sprintVersion,
+            cycleId: ctx.cycleId,
+            status: 'in_progress',
+            totalItems: items.length,
+            completedItems: runs.filter((r) => r.status === 'completed').length,
+            failedItems: runs.filter((r) => r.status === 'failed').length,
+            costUsd: totalCost,
+            agentRuns: runs,
+            itemResults: runs,
+            snapshotAt: new Date().toISOString(),
+          },
+          null,
+          2,
+        ),
+      );
+    } catch { /* non-fatal */ }
+  }
 
   // ---- Dispatch items in parallel with numeric + file-lock concurrency ----
   // v6.6.0 — FileLockManager serializes items whose declared (or inferred)
@@ -245,43 +288,52 @@ export async function runExecutePhase(
             typeof result?.costUsd === 'number' ? result.costUsd : 0;
           totalCost += costUsd;
           item.status = 'completed';
-          return {
+          const completedResult = {
             itemId: item.id,
-            status: 'completed',
+            status: 'completed' as const,
             costUsd,
             durationMs,
             response: typeof result?.output === 'string' ? result.output : '',
             attempts,
+            agentId: item.assignee,
           };
+          liveResults.set(item.id, completedResult as ItemResult);
+          return completedResult;
         } catch (err) {
           lastError = err instanceof Error ? err.message : String(err);
           if (attempt >= maxItemRetries) {
             const durationMs = Date.now() - itemStartedAt;
             item.status = 'failed';
-            return {
+            const failedResult = {
               itemId: item.id,
-              status: 'failed',
+              status: 'failed' as const,
               costUsd: 0,
               durationMs,
               response: '',
               attempts,
               error: lastError,
+              agentId: item.assignee,
             };
+            liveResults.set(item.id, failedResult as ItemResult);
+            return failedResult;
           }
         }
       }
       // unreachable
       const durationMs = Date.now() - itemStartedAt;
       item.status = 'failed';
-      return {
+      const fallthroughResult = {
         itemId: item.id,
-        status: 'failed',
+        status: 'failed' as const,
         costUsd: 0,
         durationMs,
         response: '',
         attempts,
         error: lastError ?? 'unknown',
+        agentId: item.assignee,
       };
+      liveResults.set(item.id, fallthroughResult as ItemResult);
+      return fallthroughResult;
     } finally {
       ctx.bus.publish('sprint.phase.item.completed', {
         sprintId: ctx.sprintId,
@@ -296,6 +348,9 @@ export async function runExecutePhase(
       } catch {
         // Non-fatal
       }
+      // Update the live execute.json snapshot so the dashboard sees
+      // real-time cost + per-agent activity as items complete.
+      snapshotExecuteProgress();
     }
   };
 
