@@ -7,16 +7,20 @@
       { href: '/sessions', label: 'Sessions' },
       { href: '/cost', label: 'Cost Analytics' },
     ]},
-    { section: 'Operations', items: [
-      { href: '/live', label: 'Live Feed' },
-      { href: '/branches', label: 'Branches' },
+    { section: 'Autonomous', items: [
+      { href: '/cycles', label: 'Cycles' },
+      { href: '/cycles/new', label: 'Launch' },
+      { href: '/sprints', label: 'Sprints' },
       { href: '/runner', label: 'Agent Runner' },
+      { href: '/live', label: 'Activity Feed' },
+    ]},
+    { section: 'Operations', items: [
+      { href: '/branches', label: 'Branches' },
       { href: '/approvals', label: 'Approvals' },
     ]},
     { section: 'Organization', items: [
       { href: '/agents', label: 'Agents' },
       { href: '/org', label: 'Org Graph' },
-      { href: '/sprints', label: 'Sprints' },
     ]},
     { section: 'Intelligence', items: [
       { href: '/flywheel', label: 'Flywheel' },
@@ -44,3 +48,10 @@
     </div>
   {/each}
 </nav>
+
+<style>
+  .sidebar {
+    overflow-y: auto;
+    max-height: 100vh;
+  }
+</style>

@@ -9,7 +9,9 @@
     description?: string;
     priority: 'P0' | 'P1' | 'P2';
     assignee?: string;
-    status: 'completed' | 'in_progress' | 'pending';
+    status: 'completed' | 'in_progress' | 'pending' | 'blocked';
+    estimatedCost?: number;
+    tags?: string[];
   }
 
   interface SprintDetail {
@@ -58,6 +60,20 @@
   let p0Items = $derived(sprint?.items?.filter(i => i.priority === 'P0') ?? []);
   let p1Items = $derived(sprint?.items?.filter(i => i.priority === 'P1') ?? []);
   let p2Items = $derived(sprint?.items?.filter(i => i.priority === 'P2') ?? []);
+
+  // Kanban columns
+  let plannedItems = $derived(sprint?.items?.filter(i => i.status === 'pending') ?? []);
+  let inProgressItems = $derived(sprint?.items?.filter(i => i.status === 'in_progress') ?? []);
+  let completedItems = $derived(sprint?.items?.filter(i => i.status === 'completed') ?? []);
+  let blockedItems = $derived(sprint?.items?.filter(i => i.status === 'blocked') ?? []);
+
+  let expandedItemId: string | null = $state(null);
+  function toggleExpand(id: string) {
+    expandedItemId = expandedItemId === id ? null : id;
+  }
+  function truncate(s: string, n = 60): string {
+    return s.length > n ? s.slice(0, n - 1) + '\u2026' : s;
+  }
 
   const STATUS_LABEL: Record<string, string> = {
     completed: 'Completed',
@@ -152,6 +168,58 @@
       label="Sprint Progress"
       color={sprint.status === 'completed' ? 'var(--color-success)' : 'var(--color-brand)'}
     />
+  </div>
+
+  <!-- Kanban Board -->
+  <div class="kanban-board">
+    {#each [
+      { key: 'planned', label: 'Planned', items: plannedItems },
+      { key: 'in_progress', label: 'In Progress', items: inProgressItems },
+      { key: 'completed', label: 'Completed', items: completedItems },
+      { key: 'blocked', label: 'Blocked', items: blockedItems },
+    ] as col (col.key)}
+      <div class="kanban-column">
+        <div class="kanban-col-header">
+          <span class="kanban-col-title">{col.label}</span>
+          <span class="kanban-col-count">({col.items.length})</span>
+        </div>
+        <div class="kanban-col-body">
+          {#if col.items.length === 0}
+            <div class="kanban-empty">No items</div>
+          {:else}
+            {#each col.items as item (item.id)}
+              <button
+                type="button"
+                class="kanban-card"
+                onclick={() => toggleExpand(item.id)}
+                title={item.title}
+              >
+                <div class="kanban-card-top">
+                  <span class="priority-badge {item.priority === 'P0' ? 'danger' : item.priority === 'P1' ? 'warning' : 'muted'}">{item.priority}</span>
+                  {#if item.estimatedCost != null}
+                    <span class="kanban-cost">${item.estimatedCost.toFixed(2)}</span>
+                  {/if}
+                </div>
+                <div class="kanban-card-title">{truncate(item.title)}</div>
+                {#if item.assignee}
+                  <div class="kanban-card-assignee">{item.assignee}</div>
+                {/if}
+                {#if item.tags && item.tags.length > 0}
+                  <div class="kanban-tags">
+                    {#each item.tags as tag}
+                      <span class="kanban-tag">{tag}</span>
+                    {/each}
+                  </div>
+                {/if}
+                {#if expandedItemId === item.id && item.description}
+                  <div class="kanban-card-desc">{item.description}</div>
+                {/if}
+              </button>
+            {/each}
+          {/if}
+        </div>
+      </div>
+    {/each}
   </div>
 
   <!-- Items by Priority -->
@@ -416,5 +484,138 @@
 
   .criterion.finding {
     border-left-color: var(--color-warning);
+  }
+
+  /* Kanban */
+  .kanban-board {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--space-3);
+    margin-bottom: var(--space-5);
+  }
+
+  @media (max-width: 900px) {
+    .kanban-board {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .kanban-column {
+    background: var(--color-surface-1);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-3);
+    display: flex;
+    flex-direction: column;
+    min-height: 200px;
+  }
+
+  .kanban-col-header {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
+    padding-bottom: var(--space-2);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .kanban-col-title {
+    font-size: var(--text-xs);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text);
+  }
+
+  .kanban-col-count {
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+    font-family: var(--font-mono);
+  }
+
+  .kanban-col-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    flex: 1;
+  }
+
+  .kanban-empty {
+    border: 1px dashed var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: var(--space-4);
+    text-align: center;
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+  }
+
+  .kanban-card {
+    text-align: left;
+    cursor: pointer;
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: var(--space-2) var(--space-3);
+    color: inherit;
+    font: inherit;
+    transition: border-color var(--duration-fast), transform var(--duration-fast);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  .kanban-card:hover {
+    border-color: var(--color-brand);
+  }
+
+  .kanban-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .kanban-cost {
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+    color: var(--color-text-muted);
+  }
+
+  .kanban-card-title {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-text);
+    line-height: 1.3;
+  }
+
+  .kanban-card-assignee {
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+    color: var(--color-text-muted);
+  }
+
+  .kanban-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: var(--space-1);
+  }
+
+  .kanban-tag {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: var(--radius-full);
+    background: rgba(91, 138, 245, 0.1);
+    color: var(--color-brand);
+    border: 1px solid rgba(91, 138, 245, 0.3);
+  }
+
+  .kanban-card-desc {
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    line-height: 1.5;
+    margin-top: var(--space-2);
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--color-border);
+    white-space: pre-wrap;
   }
 </style>
