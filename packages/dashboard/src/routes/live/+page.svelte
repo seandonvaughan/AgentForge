@@ -11,7 +11,8 @@
     | 'workflow_event'
     | 'branch_event'
     | 'system'
-    | 'refresh_signal';
+    | 'refresh_signal'
+    | 'cycle_event';
 
   interface FeedEvent {
     id: string;
@@ -43,6 +44,7 @@
     branch_event:   'var(--color-haiku)',
     system:         'var(--color-text-muted)',
     refresh_signal: 'var(--color-danger)',
+    cycle_event:    'var(--color-sonnet, var(--color-info))',
   };
 
   const TYPE_LABELS: Record<string, string> = {
@@ -53,6 +55,7 @@
     branch_event:   'Branch',
     system:         'System',
     refresh_signal: 'Refresh',
+    cycle_event:    'Cycle',
   };
 
   function connect() {
@@ -183,6 +186,7 @@
     <option value="branch_event">Branch Events</option>
     <option value="system">System</option>
     <option value="refresh_signal">Refresh Signals</option>
+    <option value="cycle_event">Cycle Events</option>
   </select>
   <span class="event-count">{filteredEvents.length} event{filteredEvents.length !== 1 ? 's' : ''}</span>
 </div>

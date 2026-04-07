@@ -23,7 +23,9 @@
   // Events
   let events: any[] = $state([]);
   let eventsSince = 0;
-  let eventsTimer: ReturnType<typeof setInterval> | null = null;
+  let eventSource: EventSource | null = null;
+  let sseReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let sseConnected = $state(false);
 
   // Phases (lazy)
   let openPhases: Record<string, boolean> = $state({});
@@ -56,7 +58,7 @@
         // non-fatal
         scoring = null;
       }
-      manageEventPolling();
+      ensureSseSubscription();
     } catch (e) {
       error = String(e);
     } finally {
@@ -65,13 +67,15 @@
   }
 
   async function loadEvents() {
+    // Historical bootstrap — fetched once on mount and on manual refresh.
     try {
       const res = await fetch(`/api/v5/cycles/${id}/events?since=${eventsSince}`);
       if (!res.ok) return;
       const json = await res.json();
       const list = Array.isArray(json) ? json : (json.events ?? []);
       if (list.length > 0) {
-        events = [...events, ...list];
+        // Newest first
+        events = [...list.slice().reverse(), ...events];
         eventsSince += list.length;
       }
     } catch {
@@ -79,15 +83,40 @@
     }
   }
 
-  function manageEventPolling() {
-    if (!isTerminal && activeTab === 'events') {
-      if (!eventsTimer) {
-        eventsTimer = setInterval(loadEvents, 3000);
-      }
-    } else if (eventsTimer) {
-      clearInterval(eventsTimer);
-      eventsTimer = null;
+  function ensureSseSubscription() {
+    if (eventSource || isTerminal) return;
+    try {
+      const es = new EventSource('/api/v5/stream');
+      eventSource = es;
+      es.onopen = () => { sseConnected = true; };
+      es.onmessage = (e) => {
+        try {
+          const parsed = JSON.parse(e.data);
+          if (parsed?.type !== 'cycle_event') return;
+          const data = parsed.data ?? {};
+          if (data.cycleId !== id) return;
+          // Prepend (most recent first)
+          events = [data.payload ?? data, ...events];
+          eventsSince += 1;
+        } catch { /* ignore */ }
+      };
+      es.onerror = () => {
+        sseConnected = false;
+        es.close();
+        eventSource = null;
+        if (!isTerminal) {
+          sseReconnectTimer = setTimeout(() => ensureSseSubscription(), 3000);
+        }
+      };
+    } catch {
+      // EventSource unavailable — fall back silently.
     }
+  }
+
+  function teardownSse() {
+    if (sseReconnectTimer) { clearTimeout(sseReconnectTimer); sseReconnectTimer = null; }
+    if (eventSource) { eventSource.close(); eventSource = null; }
+    sseConnected = false;
   }
 
   function setTab(t: Tab) {
@@ -95,7 +124,6 @@
     if (t === 'events' && events.length === 0) {
       loadEvents();
     }
-    manageEventPolling();
   }
 
   async function togglePhase(phase: Phase) {
@@ -155,9 +183,9 @@
   }
 
   $effect(() => {
-    // re-evaluate polling when stage changes
+    // Close SSE once cycle reaches terminal stage
     void stage;
-    manageEventPolling();
+    if (isTerminal) teardownSse();
   });
 
   onMount(() => {
@@ -167,7 +195,7 @@
   });
 
   onDestroy(() => {
-    if (eventsTimer) clearInterval(eventsTimer);
+    teardownSse();
   });
 
   // Overview helpers
@@ -331,7 +359,7 @@
 
     {#if activeTab === 'events'}
       <div class="events-toolbar">
-        <span class="muted">{events.length} events {!isTerminal ? '· auto-refreshing' : ''}</span>
+        <span class="muted">{events.length} events {!isTerminal ? (sseConnected ? '· live (SSE)' : '· connecting…') : ''}</span>
         <button class="btn btn-ghost btn-sm" onclick={loadEvents}>Refresh</button>
       </div>
       {#if events.length === 0}

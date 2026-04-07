@@ -19,10 +19,14 @@ import {
   statSync,
   mkdirSync,
   openSync,
+  open as fsOpen,
+  read as fsRead,
+  close as fsClose,
 } from 'node:fs';
-import { join, resolve, sep } from 'node:path';
+import { join, resolve, sep, basename, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
+import { globalStream } from './stream.js';
 
 // ── constants ───────────────────────────────────────────────────────────────
 
@@ -161,6 +165,143 @@ function deriveStartedAt(cycleDir: string): string | null {
   }
 }
 
+// ── cycle events watcher (v6.5.3-B) ─────────────────────────────────────────
+//
+// Polls .agentforge/cycles/*/events.jsonl files every 500ms. Tracks the byte
+// offset per file at the moment we first see it so historical events are NOT
+// re-emitted on server start. Only bytes appended after the watcher began
+// are parsed and pushed to the SSE stream.
+
+export interface CycleEventsWatcher {
+  stop: () => void;
+  /** Process one tick immediately. Exposed for testing. */
+  tick: () => Promise<void>;
+}
+
+interface WatcherPublish {
+  emit: (msg: { cycleId: string; type: string; phase?: string; at: string; payload: unknown }) => void;
+}
+
+export function startCycleEventsWatcher(
+  projectRoot: string,
+  publish: WatcherPublish = {
+    emit: (msg) => globalStream.emit({
+      type: 'cycle_event',
+      category: msg.type,
+      message: `${msg.cycleId.slice(0, 8)} · ${msg.type}${msg.phase ? ` · ${msg.phase}` : ''}`,
+      data: msg as unknown as Record<string, unknown>,
+    }),
+  },
+  intervalMs = 500,
+): CycleEventsWatcher {
+  const base = cyclesBaseDir(projectRoot);
+  // Map from absolute file path -> last-known byte offset (cycle id derived from path)
+  const offsets = new Map<string, number>();
+  // Leftover buffer for partial last lines (no trailing newline yet)
+  const leftover = new Map<string, string>();
+
+  function discoverFiles(): string[] {
+    if (!existsSync(base)) return [];
+    let entries: import('node:fs').Dirent[];
+    try {
+      entries = readdirSync(base, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+    const files: string[] = [];
+    for (const d of entries) {
+      if (!d.isDirectory() || !SAFE_ID.test(d.name)) continue;
+      const f = join(base, d.name, 'events.jsonl');
+      if (existsSync(f)) files.push(f);
+    }
+    return files;
+  }
+
+  async function tick(): Promise<void> {
+    const files = discoverFiles();
+    for (const file of files) {
+      let size: number;
+      try {
+        size = statSync(file).size;
+      } catch {
+        continue;
+      }
+      const known = offsets.get(file);
+      if (known === undefined) {
+        // First time seeing this file — anchor at current size, do NOT emit history.
+        offsets.set(file, size);
+        continue;
+      }
+      if (size <= known) {
+        // No new bytes (or file truncated/rotated — reset anchor)
+        if (size < known) offsets.set(file, size);
+        continue;
+      }
+      // Read appended bytes
+      const len = size - known;
+      const buf = Buffer.alloc(len);
+      try {
+        await new Promise<void>((res, rej) => {
+          fsOpen(file, 'r', (err, fd) => {
+            if (err) return rej(err);
+            fsRead(fd, buf, 0, len, known, (rerr) => {
+              fsClose(fd, () => {
+                if (rerr) rej(rerr); else res();
+              });
+            });
+          });
+        });
+      } catch {
+        continue;
+      }
+      offsets.set(file, size);
+      const text = (leftover.get(file) ?? '') + buf.toString('utf-8');
+      const lines = text.split('\n');
+      const last = lines.pop() ?? '';
+      leftover.set(file, last); // partial trailing line, may complete next tick
+      const cycleId = basename(dirname(file));
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        let parsed: Record<string, unknown>;
+        try {
+          parsed = JSON.parse(trimmed) as Record<string, unknown>;
+        } catch {
+          continue;
+        }
+        const msg: { cycleId: string; type: string; phase?: string; at: string; payload: unknown } = {
+          cycleId,
+          type: typeof parsed['type'] === 'string' ? (parsed['type'] as string) : 'event',
+          at: typeof parsed['at'] === 'string'
+            ? (parsed['at'] as string)
+            : (typeof parsed['timestamp'] === 'string' ? (parsed['timestamp'] as string) : new Date().toISOString()),
+          payload: parsed,
+        };
+        if (typeof parsed['phase'] === 'string') msg.phase = parsed['phase'] as string;
+        publish.emit(msg);
+      }
+    }
+  }
+
+  let stopped = false;
+  const handle = setInterval(() => {
+    if (stopped) return;
+    void tick().catch(() => { /* swallow */ });
+  }, intervalMs);
+  // Don't keep the event loop alive solely for the watcher
+  if (typeof (handle as unknown as { unref?: () => void }).unref === 'function') {
+    (handle as unknown as { unref: () => void }).unref();
+  }
+
+  return {
+    stop: () => {
+      stopped = true;
+      clearInterval(handle);
+    },
+    tick,
+  };
+}
+
 // ── plugin ──────────────────────────────────────────────────────────────────
 
 export async function cyclesRoutes(
@@ -168,6 +309,12 @@ export async function cyclesRoutes(
   opts: CyclesOpts,
 ): Promise<void> {
   const base = cyclesBaseDir(opts.projectRoot);
+
+  // v6.5.3-B: fan cycle events out to the SSE stream.
+  const watcher = startCycleEventsWatcher(opts.projectRoot);
+  app.addHook('onClose', async () => {
+    watcher.stop();
+  });
 
   // GET /api/v5/cycles ─────────────────────────────────────────────────────
   app.get('/api/v5/cycles', async (req, reply) => {

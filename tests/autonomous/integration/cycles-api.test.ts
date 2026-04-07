@@ -11,7 +11,8 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { cyclesRoutes } from '../../../packages/server/src/routes/v5/cycles.js';
+import { cyclesRoutes, startCycleEventsWatcher } from '../../../packages/server/src/routes/v5/cycles.js';
+import { appendFileSync } from 'node:fs';
 
 let tmpRoot: string;
 let app: FastifyInstance;
@@ -302,5 +303,83 @@ describe('POST /api/v5/cycles', () => {
     expect(body.cycleId).toMatch(/^[a-f0-9-]{36}$/i);
     expect(typeof body.startedAt).toBe('string');
     expect(typeof body.pid).toBe('number');
+  });
+});
+
+describe('startCycleEventsWatcher (v6.5.3-B)', () => {
+  it('emits only events appended after watching began', async () => {
+    // Pre-existing event — must NOT be emitted
+    seedCycle('cycle-watch', makeCycleJson({ cycleId: 'cycle-watch' }), {
+      events: [{ type: 'phase.start', phase: 'audit', at: '2026-04-06T10:00:00.000Z' }],
+    });
+
+    const seen: Array<Record<string, unknown>> = [];
+    const watcher = startCycleEventsWatcher(
+      tmpRoot,
+      { emit: (msg) => { seen.push(msg as unknown as Record<string, unknown>); } },
+      10_000, // long interval — we drive ticks manually
+    );
+
+    try {
+      // First tick anchors the file size — should NOT emit history
+      await watcher.tick();
+      expect(seen).toHaveLength(0);
+
+      // Append a new event line
+      const eventsFile = join(tmpRoot, '.agentforge', 'cycles', 'cycle-watch', 'events.jsonl');
+      appendFileSync(
+        eventsFile,
+        JSON.stringify({ type: 'phase.result', phase: 'audit', at: '2026-04-06T10:01:00.000Z' }) + '\n',
+      );
+
+      await watcher.tick();
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toMatchObject({
+        cycleId: 'cycle-watch',
+        type: 'phase.result',
+        phase: 'audit',
+      });
+
+      // Append two more
+      appendFileSync(
+        eventsFile,
+        JSON.stringify({ type: 'phase.start', phase: 'plan', at: '2026-04-06T10:02:00.000Z' }) + '\n' +
+        JSON.stringify({ type: 'phase.result', phase: 'plan', at: '2026-04-06T10:03:00.000Z' }) + '\n',
+      );
+      await watcher.tick();
+      expect(seen).toHaveLength(3);
+      expect((seen[2] as { phase: string }).phase).toBe('plan');
+    } finally {
+      watcher.stop();
+    }
+  });
+
+  it('handles a new cycle dir created after watching began', async () => {
+    const seen: Array<Record<string, unknown>> = [];
+    const watcher = startCycleEventsWatcher(
+      tmpRoot,
+      { emit: (msg) => { seen.push(msg as unknown as Record<string, unknown>); } },
+      10_000,
+    );
+    try {
+      await watcher.tick(); // no files yet
+      // Create a brand-new cycle with one event
+      seedCycle('fresh-cycle', null, {
+        events: [{ type: 'phase.start', phase: 'audit', at: '2026-04-06T11:00:00.000Z' }],
+      });
+      // First tick: anchors size, emits nothing
+      await watcher.tick();
+      expect(seen).toHaveLength(0);
+      // Append another
+      appendFileSync(
+        join(tmpRoot, '.agentforge', 'cycles', 'fresh-cycle', 'events.jsonl'),
+        JSON.stringify({ type: 'phase.result', phase: 'audit', at: '2026-04-06T11:01:00.000Z' }) + '\n',
+      );
+      await watcher.tick();
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toMatchObject({ cycleId: 'fresh-cycle', type: 'phase.result' });
+    } finally {
+      watcher.stop();
+    }
   });
 });
