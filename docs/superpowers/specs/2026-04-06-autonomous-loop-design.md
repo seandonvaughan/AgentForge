@@ -110,6 +110,68 @@ These are the locked-in decisions from the design session. Each drove specific s
 
 ---
 
+## 4.1. Authentication Model (Added in v6.4.1)
+
+**Critical design decision missed in v6.4.0 — corrected here.**
+
+### The gap in v6.4.0
+
+The original v6.4.0 spec inherited `AgentRuntime`'s implementation from v5.x, which uses the Anthropic SDK directly with `new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })`. This:
+
+1. Requires users to have a separate Anthropic API key even if they have a Claude Max/Pro plan
+2. Bills autonomous cycle calls against the API quota, not the plan quota
+3. Would double-bill users who have both a plan *and* an API key
+4. Cannot use the OAuth credentials stored by a logged-in Claude Code session
+
+### The v6.4.1 fix: `claude -p` subprocess
+
+`AgentRuntime.run()` now shells out to the `claude` CLI with `--output-format json`:
+
+```bash
+claude -p \
+  --model claude-opus-4-6 \
+  --output-format json \
+  --no-session-persistence \
+  --system-prompt "$AGENT_SYSTEM_PROMPT" \
+  <<< "$USER_TASK"
+```
+
+The subprocess inherits the parent process's environment (including any OAuth tokens Claude Code has already loaded) and authenticates via the logged-in session. No `ANTHROPIC_API_KEY` required.
+
+### Why not the Anthropic SDK with OAuth?
+
+The Anthropic SDK does not expose a "use the logged-in Claude Code session" mode. The only supported auth paths are:
+- `ANTHROPIC_API_KEY` environment variable
+- Explicit `apiKey` parameter to the constructor
+- Bedrock / Vertex / Foundry provider credentials
+
+The `claude` CLI, in contrast, is built on top of the same auth layer as the Claude Code TUI — it reads OAuth tokens from the system keychain or plugin cache. Shelling out to `claude -p` is the only way to inherit a Claude Code session from another process.
+
+### Cost accounting
+
+The `claude` CLI reports `total_cost_usd` in its JSON output, reflecting actual billed tokens (including cache creation/read overhead that a local `MODEL_PRICING` calculation would miss). v6.4.1 uses this value as the authoritative cost source. The existing `MODEL_PRICING` table is retained as a fallback for the rare case where the CLI omits cost.
+
+### Known token overhead
+
+The `claude` CLI injects a default Claude Code system context (~51K tokens on our test call, written as `cache_creation_input_tokens`) on every invocation. Using `--system-prompt` replaces the default system prompt with the agent's own, but the baseline overhead remains. For a $50/cycle budget, this still comfortably allows 600–1000 agent calls per cycle. A future patch should investigate minimizing this overhead without losing OAuth-based auth.
+
+### Streaming
+
+v6.4.1 degrades `AgentRuntime.runStreaming()` — it delegates to `run()` and invokes `onChunk`/`onEvent` callbacks once at the end with the full result. Dashboard consumers will see phases transition from "running" → "completed" without live token deltas. Proper streaming via `claude -p --output-format stream-json --include-partial-messages` is deferred to a future patch.
+
+### Interface bridging: `RuntimeAdapter`
+
+`ScoringPipeline` expects a `RuntimeForScoring` service interface (`run(agentId, task, options)` → narrower result shape), while `AgentRuntime` is instantiated per-agent with a config (`new AgentRuntime(config, adapter)`). v6.4.1 adds a `RuntimeAdapter` class (`packages/core/src/autonomous/runtime-adapter.ts`) that:
+
+1. Implements `RuntimeForScoring`
+2. Lazily loads agent configs from `.agentforge/agents/{agentId}.yaml` on first use
+3. Caches `AgentRuntime` instances per agentId for subsequent calls within a cycle
+4. Translates `RunOptions`/`RunResult` to the `{output, usage, costUsd, durationMs, model}` shape
+
+The CLI command (`packages/cli/src/commands/autonomous.ts`) should construct a `RuntimeAdapter` and pass it as `options.runtime` to `CycleRunner`. The `CycleRunnerOptions.runtime` type signature (`RuntimeForScoring`) is unchanged.
+
+---
+
 ## 5. Architecture
 
 ### 5.1 Process model

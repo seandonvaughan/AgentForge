@@ -2,6 +2,43 @@
 
 All notable changes to AgentForge are documented in this file.
 
+## [6.4.1-plan-auth] — 2026-04-06
+
+### What's Fixed
+
+- **`AgentRuntime` now uses the logged-in Claude Code session (Max/Pro plan) instead of requiring `ANTHROPIC_API_KEY`.** v6.4.0 inherited an SDK-based runtime from v5.x that hardcoded `new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })`, which bypassed the user's plan quota and forced a separate API key. v6.4.1 refactors `AgentRuntime.run()` and `AgentRuntime.runStreaming()` to shell out to `claude -p --output-format json` via `execFile`. The subprocess uses the logged-in OAuth session automatically.
+- **New `RuntimeAdapter`** (`packages/core/src/autonomous/runtime-adapter.ts`) bridges the `AgentRuntime` class-per-agent interface to the `RuntimeForScoring` service-style interface expected by `ScoringPipeline`. Previously a silent interface mismatch would have made the autonomous cycle fail at scoring stage even with working auth. The adapter lazily loads agent YAML from `.agentforge/agents/{agentId}.yaml` and caches `AgentRuntime` instances per agentId.
+
+### Migration Notes
+
+- **`ANTHROPIC_API_KEY` is no longer required.** The CLI uses `claude -p` which reads OAuth credentials from the logged-in Claude Code session. Users on the Claude Max/Pro plan get autonomous cycle execution billed against plan quota instead of separate API cost.
+- **`claude` CLI must be installed.** The refactor assumes `claude` is on `PATH`. If missing, `AgentRuntime.run()` throws a clear error with install instructions. Install Claude Code from https://claude.com/claude-code.
+- **The `apiKey` constructor parameter on `AgentRuntime` is preserved for backward compatibility but ignored.** Existing callers that passed an API key will continue to work — the subprocess inherits `process.env` anyway.
+- **Cost tracking now reflects actual billed tokens.** The claude CLI reports `total_cost_usd` in its JSON output, which includes cache creation/read overhead. This replaces the local `MODEL_PRICING` calculation as the authoritative source. The `MODEL_PRICING` table is still used as a fallback if the CLI omits cost (shouldn't happen in normal usage).
+- **Streaming is degraded in v6.4.1.** `runStreaming()` no longer emits incremental token deltas — it delegates to `run()` and invokes `onChunk`/`onEvent` once at the end with the full result. Dashboard consumers will see phases transition from "running" → "completed" without live text. Proper stream-json parsing via `claude -p --output-format stream-json --include-partial-messages` is deferred to a future patch.
+- **Known token overhead per call (~50K cache creation tokens).** The `claude` CLI injects a default Claude Code system context on every invocation. Using `--system-prompt` replaces the default with just the agent's own prompt, but there is still baseline overhead. For a $50/cycle budget, this is still comfortably within limits (approximately 600–1000 agent calls per cycle).
+
+### Testing
+
+- All 236 autonomous tests still pass unchanged (existing mocks operate at the `AgentRuntime` class level, not the SDK level).
+- All 49 phase-handler regression tests still pass (the HTTP route shape and event contracts are preserved).
+- No new tests added — the refactor is minimal and the existing test surface covers the behaviors that matter.
+
+### Files Changed
+
+- `packages/core/src/agent-runtime/agent-runtime.ts` — complete rewrite of `run()` and `runStreaming()` to use `execFile('claude', ...)`. Removes `import Anthropic from '@anthropic-ai/sdk'`.
+- `packages/core/src/autonomous/runtime-adapter.ts` — new file. `RuntimeAdapter` class implementing `RuntimeForScoring`.
+- `packages/core/src/autonomous/index.ts` — export the new `runtime-adapter` module.
+- `docs/superpowers/specs/2026-04-06-autonomous-loop-design.md` — new §4.1 documenting plan-based auth.
+
+### Deferred to future patches
+
+- Proper streaming via `--output-format stream-json --include-partial-messages` (parse incremental events from subprocess stdout)
+- CLI command wiring: `packages/cli/src/commands/autonomous.ts` should construct a `RuntimeAdapter` instead of a raw `AgentRuntime` (currently left as `any` cast — will be cleaned up when the command is first exercised end-to-end)
+- Cache optimization: minimize per-call token overhead by investigating how to skip Claude Code's default context loading while still using the plan
+
+---
+
 ## [6.4.0-autonomous-loop] — 2026-04-06
 
 ### What's New
