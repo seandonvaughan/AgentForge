@@ -3,6 +3,7 @@
   import { page } from '$app/stores';
   import StageBadge from '$lib/components/StageBadge.svelte';
   import { relativeTime, formatDuration } from '$lib/util/relative-time';
+  import { withWorkspace } from '$lib/stores/workspace';
 
   const TERMINAL = new Set(['completed', 'failed', 'killed']);
   const PHASES = ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate', 'release', 'learn'] as const;
@@ -47,8 +48,8 @@
     error = null;
     try {
       const [cRes, sRes] = await Promise.all([
-        fetch(`/api/v5/cycles/${id}`),
-        fetch(`/api/v5/cycles/${id}/scoring`),
+        fetch(withWorkspace(`/api/v5/cycles/${id}`)),
+        fetch(withWorkspace(`/api/v5/cycles/${id}/scoring`)),
       ]);
       if (!cRes.ok) throw new Error(`cycle: HTTP ${cRes.status}`);
       cycle = await cRes.json();
@@ -69,7 +70,7 @@
   async function loadEvents() {
     // Historical bootstrap — fetched once on mount and on manual refresh.
     try {
-      const res = await fetch(`/api/v5/cycles/${id}/events?since=${eventsSince}`);
+      const res = await fetch(withWorkspace(`/api/v5/cycles/${id}/events?since=${eventsSince}`));
       if (!res.ok) return;
       const json = await res.json();
       const list = Array.isArray(json) ? json : (json.events ?? []);
@@ -132,7 +133,7 @@
       phaseLoading[phase] = true;
       phaseError[phase] = null;
       try {
-        const res = await fetch(`/api/v5/cycles/${id}/phases/${phase}`);
+        const res = await fetch(withWorkspace(`/api/v5/cycles/${id}/phases/${phase}`));
         if (res.status === 404) {
           phaseData[phase] = null;
         } else if (!res.ok) {
@@ -154,7 +155,7 @@
     fileLoading[name] = true;
     fileError[name] = null;
     try {
-      const res = await fetch(`/api/v5/cycles/${id}/files/${name}`);
+      const res = await fetch(withWorkspace(`/api/v5/cycles/${id}/files/${name}`));
       if (res.status === 404) {
         fileData[name] = null;
       } else if (!res.ok) {

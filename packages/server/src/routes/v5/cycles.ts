@@ -27,6 +27,38 @@ import { join, resolve, sep, basename, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { globalStream } from './stream.js';
+import { getWorkspace } from '@agentforge/core';
+
+/**
+ * v6.6.0 — resolve which project root a request targets.
+ *
+ * Returns:
+ *   { projectRoot } if no workspaceId was supplied (use server default)
+ *   { projectRoot } if the supplied workspaceId resolves to a workspace
+ *   { error: 404 } if the workspaceId is unknown
+ *
+ * Reads workspaceId from the `?workspaceId=` query param OR the
+ * `x-workspace-id` header (query takes precedence).
+ */
+function resolveProjectRoot(
+  req: { query: unknown; headers: Record<string, unknown> },
+  fallbackRoot: string,
+): { projectRoot: string } | { error: { status: number; body: unknown } } {
+  const q = (req.query ?? {}) as { workspaceId?: string };
+  const headerVal = req.headers['x-workspace-id'];
+  const workspaceId =
+    (typeof q.workspaceId === 'string' && q.workspaceId.length > 0
+      ? q.workspaceId
+      : typeof headerVal === 'string' && headerVal.length > 0
+        ? headerVal
+        : null);
+  if (!workspaceId) return { projectRoot: fallbackRoot };
+  const ws = getWorkspace(workspaceId);
+  if (!ws) {
+    return { error: { status: 404, body: { error: 'workspace not found', workspaceId } } };
+  }
+  return { projectRoot: ws.path };
+}
 
 // ── constants ───────────────────────────────────────────────────────────────
 
@@ -308,7 +340,7 @@ export async function cyclesRoutes(
   app: FastifyInstance,
   opts: CyclesOpts,
 ): Promise<void> {
-  const base = cyclesBaseDir(opts.projectRoot);
+  const defaultBase = cyclesBaseDir(opts.projectRoot);
 
   // v6.5.3-B: fan cycle events out to the SSE stream.
   const watcher = startCycleEventsWatcher(opts.projectRoot);
@@ -316,10 +348,29 @@ export async function cyclesRoutes(
     watcher.stop();
   });
 
+  /**
+   * v6.6.0 — given an inbound request, return either the cycles base
+   * directory to use for that request, or a 404-shaped error object.
+   * Default base (server's projectRoot) is used when no workspaceId is
+   * supplied — backwards compatible.
+   */
+  function baseForRequest(
+    req: { query: unknown; headers: Record<string, unknown> },
+  ): { base: string } | { error: { status: number; body: unknown } } {
+    const r = resolveProjectRoot(req, opts.projectRoot);
+    if ('error' in r) return r;
+    if (r.projectRoot === opts.projectRoot) return { base: defaultBase };
+    return { base: cyclesBaseDir(r.projectRoot) };
+  }
+
   // GET /api/v5/cycles ─────────────────────────────────────────────────────
   app.get('/api/v5/cycles', async (req, reply) => {
     const q = req.query as { limit?: string } | undefined;
     const limit = Math.max(1, Math.min(1000, parseInt(q?.limit ?? '50', 10) || 50));
+
+    const br = baseForRequest(req);
+    if ('error' in br) return reply.status(br.error.status).send(br.error.body);
+    const base = br.base;
 
     if (!existsSync(base)) {
       return reply.send({ cycles: [] });
@@ -341,6 +392,9 @@ export async function cyclesRoutes(
   app.get('/api/v5/cycles/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
     if (!SAFE_ID.test(id)) return reply.status(400).send({ error: 'Invalid cycle id' });
+    const br = baseForRequest(req);
+    if ('error' in br) return reply.status(br.error.status).send(br.error.body);
+    const base = br.base;
     const dir = safeJoin(base, id);
     if (!dir || !existsSync(dir)) return reply.status(404).send({ error: 'Cycle not found' });
     const cycleFile = join(dir, 'cycle.json');
@@ -356,6 +410,9 @@ export async function cyclesRoutes(
   app.get('/api/v5/cycles/:id/scoring', async (req, reply) => {
     const { id } = req.params as { id: string };
     if (!SAFE_ID.test(id)) return reply.status(400).send({ error: 'Invalid cycle id' });
+    const br = baseForRequest(req);
+    if ('error' in br) return reply.status(br.error.status).send(br.error.body);
+    const base = br.base;
     const dir = safeJoin(base, id);
     if (!dir || !existsSync(dir)) return reply.status(404).send({ error: 'Cycle not found' });
     const file = join(dir, 'scoring.json');
@@ -369,6 +426,9 @@ export async function cyclesRoutes(
   app.get('/api/v5/cycles/:id/events', async (req, reply) => {
     const { id } = req.params as { id: string };
     if (!SAFE_ID.test(id)) return reply.status(400).send({ error: 'Invalid cycle id' });
+    const br = baseForRequest(req);
+    if ('error' in br) return reply.status(br.error.status).send(br.error.body);
+    const base = br.base;
     const dir = safeJoin(base, id);
     if (!dir || !existsSync(dir)) return reply.status(404).send({ error: 'Cycle not found' });
     const file = join(dir, 'events.jsonl');
@@ -396,6 +456,9 @@ export async function cyclesRoutes(
     const { id, phase } = req.params as { id: string; phase: string };
     if (!SAFE_ID.test(id)) return reply.status(400).send({ error: 'Invalid cycle id' });
     if (!SAFE_PHASE.has(phase)) return reply.status(400).send({ error: 'Invalid phase' });
+    const br = baseForRequest(req);
+    if ('error' in br) return reply.status(br.error.status).send(br.error.body);
+    const base = br.base;
     const dir = safeJoin(base, id);
     if (!dir || !existsSync(dir)) return reply.status(404).send({ error: 'Cycle not found' });
     const file = safeJoin(dir, 'phases', `${phase}.json`);
@@ -410,6 +473,9 @@ export async function cyclesRoutes(
     const { id, name } = req.params as { id: string; name: string };
     if (!SAFE_ID.test(id)) return reply.status(400).send({ error: 'Invalid cycle id' });
     if (!SAFE_FILE_NAMES.has(name)) return reply.status(400).send({ error: 'Invalid file name' });
+    const br = baseForRequest(req);
+    if ('error' in br) return reply.status(br.error.status).send(br.error.body);
+    const base = br.base;
     const dir = safeJoin(base, id);
     if (!dir || !existsSync(dir)) return reply.status(404).send({ error: 'Cycle not found' });
     const file = safeJoin(dir, `${name}.json`);
@@ -420,7 +486,11 @@ export async function cyclesRoutes(
   });
 
   // POST /api/v5/cycles ─────────────────────────────────────────────────────
-  app.post('/api/v5/cycles', async (_req, reply) => {
+  app.post('/api/v5/cycles', async (req, reply) => {
+    const r = resolveProjectRoot(req as any, opts.projectRoot);
+    if ('error' in r) return reply.status(r.error.status).send(r.error.body);
+    const reqProjectRoot = r.projectRoot;
+    const base = cyclesBaseDir(reqProjectRoot);
     const cycleId = randomUUID();
     const startedAt = new Date().toISOString();
     const cycleDir = safeJoin(base, cycleId);
@@ -447,12 +517,14 @@ export async function cyclesRoutes(
     // response's cycleId. Clients should treat the API cycleId as the
     // canonical pointer and fall back to scanning recent dirs if needed.
     const nodeBin = process.execPath;
+    // CLI binary always lives in the server's project root (it's the
+    // AgentForge monorepo), NOT in the target workspace.
     const cliEntry = resolve(join(opts.projectRoot, 'packages', 'cli', 'dist', 'bin.js'));
 
     let pid: number;
     try {
       const child = spawn(nodeBin, [cliEntry, 'autonomous:cycle'], {
-        cwd: opts.projectRoot,
+        cwd: reqProjectRoot,
         detached: true,
         stdio: ['ignore', logFd, logFd],
         env: { ...process.env, AUTONOMOUS_CYCLE_ID: cycleId },

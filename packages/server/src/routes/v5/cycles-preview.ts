@@ -11,6 +11,7 @@
 // the parallel v6.5.3-B SSE work on cycles.ts.
 
 import type { FastifyInstance } from 'fastify';
+import { getWorkspace } from '@agentforge/core';
 
 interface CyclesPreviewOpts {
   projectRoot: string;
@@ -126,16 +127,32 @@ export async function cyclesPreviewRoutes(
       return reply.status(400).send({ error: 'Invalid request body' });
     }
 
+    // v6.6.0 — resolve project root from ?workspaceId= query param or
+    // x-workspace-id header. Backwards compatible: no param = use the
+    // route's launch projectRoot.
+    const q = (req.query ?? {}) as { workspaceId?: string };
+    const headerVal = (req.headers['x-workspace-id'] ?? '') as string;
+    const workspaceId =
+      (typeof q.workspaceId === 'string' && q.workspaceId.length > 0
+        ? q.workspaceId
+        : headerVal.length > 0 ? headerVal : null);
+    let projectRoot = opts.projectRoot;
+    if (workspaceId) {
+      const ws = getWorkspace(workspaceId);
+      if (!ws) return reply.status(404).send({ error: 'workspace not found', workspaceId });
+      projectRoot = ws.path;
+    }
+
     let result;
     try {
       const mod = await loadAutonomous();
 
-      const baseConfig = mod.loadCycleConfig(opts.projectRoot);
+      const baseConfig = mod.loadCycleConfig(projectRoot);
       const config = applyOverrides(baseConfig, body as PreviewBody);
 
       const bridge = new mod.ProposalToBacklog(
         noopProposalAdapter(),
-        opts.projectRoot,
+        projectRoot,
         config,
       );
       const backlog = await bridge.build();
@@ -158,7 +175,7 @@ export async function cyclesPreviewRoutes(
         });
       }
 
-      const runtime = new mod.RuntimeAdapter({ cwd: opts.projectRoot });
+      const runtime = new mod.RuntimeAdapter({ cwd: projectRoot });
       const pipeline = new mod.ScoringPipeline(
         runtime,
         noopScoringAdapter(),

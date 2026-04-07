@@ -6,6 +6,7 @@
   import { sessions, sessionsLoading } from '$lib/stores/sessions.js';
   import { totalUsd, costsLoading } from '$lib/stores/costs.js';
   import { wsConnected } from '$lib/stores/ws.js';
+  import { withWorkspace } from '$lib/stores/workspace';
   import { onMount } from 'svelte';
 
   const API_BASE = '';
@@ -72,7 +73,7 @@
 
   async function loadCycles() {
     try {
-      const res = await fetch(`${API_BASE}/api/v5/cycles?limit=5`);
+      const res = await fetch(withWorkspace(`${API_BASE}/api/v5/cycles?limit=5`));
       if (!res.ok) return;
       const body = await res.json();
       const list: CycleSummary[] = body.cycles ?? body.data ?? body ?? [];

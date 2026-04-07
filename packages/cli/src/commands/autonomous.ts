@@ -32,8 +32,35 @@ export function registerAutonomousCommand(program: Command): void {
     .description('Run one autonomous development cycle (PLAN → REVIEW → PR)')
     .option('--dry-run', 'Do not actually open the PR; still runs all other stages', false)
     .option('--project-root <path>', 'Project root', process.cwd())
-    .action(async (opts: { dryRun: boolean; projectRoot: string }) => {
-      const cwd = opts.projectRoot;
+    .option('--workspace <id>', 'Run against a registered workspace from ~/.agentforge/workspaces.json')
+    .action(async (opts: { dryRun: boolean; projectRoot: string; workspace?: string }) => {
+      // v6.6.0 — workspace resolution order:
+      //   1. --workspace <id> (explicit)
+      //   2. registry default (if any workspaces registered)
+      //   3. --project-root / process.cwd() (existing behavior)
+      let cwd = opts.projectRoot;
+      try {
+        const { getWorkspace, getDefaultWorkspace } = await import('@agentforge/core');
+        if (opts.workspace) {
+          const ws = getWorkspace(opts.workspace);
+          if (!ws) {
+            console.error(`[autonomous:cycle] unknown workspace: ${opts.workspace}`);
+            process.exit(1);
+          }
+          cwd = ws.path;
+          console.log(`[autonomous:cycle] workspace=${ws.id} (${ws.path})`);
+        } else {
+          const def = getDefaultWorkspace();
+          if (def && opts.projectRoot === process.cwd()) {
+            // Only auto-use the default when the user did NOT pass an
+            // explicit --project-root override.
+            cwd = def.path;
+            console.log(`[autonomous:cycle] workspace=${def.id} (default, ${def.path})`);
+          }
+        }
+      } catch {
+        // Registry unreadable — fall through to existing behavior.
+      }
       try {
         // Lazy-import the autonomous module. This avoids loading the
         // Anthropic SDK, better-sqlite3, and the rest of the runtime stack

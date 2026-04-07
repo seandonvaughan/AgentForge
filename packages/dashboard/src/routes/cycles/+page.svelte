@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import StageBadge from '$lib/components/StageBadge.svelte';
   import { relativeTime, formatDuration } from '$lib/util/relative-time';
+  import { withWorkspace } from '$lib/stores/workspace';
 
   interface CycleSummary {
     cycleId: string;
@@ -27,7 +28,7 @@
 
   async function loadCycles() {
     try {
-      const res = await fetch('/api/v5/cycles?limit=50');
+      const res = await fetch(withWorkspace('/api/v5/cycles?limit=50'));
       if (!res.ok) {
         error = `HTTP ${res.status}`;
         return;

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { migrateV4ToV5 } from './commands/migrate.js';
 import { printBuildInfo } from './commands/build-info.js';
 import { registerAutonomousCommand } from './commands/autonomous.js';
+import { registerWorkspacesCommand } from './commands/workspaces.js';
 
 const program = new Command();
 program
@@ -63,5 +64,6 @@ program
   });
 
 registerAutonomousCommand(program);
+registerWorkspacesCommand(program);
 
 program.parse();

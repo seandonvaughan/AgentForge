@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
+  import { withWorkspace } from '$lib/stores/workspace';
 
   // ── Form state ────────────────────────────────────────────────────────────
   let budgetUsd = $state(25);
@@ -46,7 +47,7 @@
     previewError = null;
     previewing = true;
     try {
-      const res = await fetch('/api/v5/cycles/preview', {
+      const res = await fetch(withWorkspace('/api/v5/cycles/preview'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ budgetUsd, maxItems, dryRun, branchPrefix, comment }),
@@ -155,7 +156,7 @@
   async function pollEvents() {
     if (!cycleId) return;
     try {
-      const res = await fetch(`/api/v5/cycles/${cycleId}/events?since=${lastEventSeq}`);
+      const res = await fetch(withWorkspace(`/api/v5/cycles/${cycleId}/events?since=${lastEventSeq}`));
       if (!res.ok) return;
       const body = await res.json();
       const events: any[] = Array.isArray(body) ? body : (body.events ?? body.data ?? []);
@@ -165,7 +166,7 @@
         else lastEventSeq += 1;
       }
       // Also fetch the cycle for cost/stage if available
-      const r2 = await fetch(`/api/v5/cycles/${cycleId}`);
+      const r2 = await fetch(withWorkspace(`/api/v5/cycles/${cycleId}`));
       if (r2.ok) {
         const cy = await r2.json();
         const stage = (cy.stage ?? cy.currentStage ?? '').toString().toUpperCase();
@@ -195,7 +196,7 @@
     launching = true;
 
     try {
-      const res = await fetch('/api/v5/cycles', {
+      const res = await fetch(withWorkspace('/api/v5/cycles'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

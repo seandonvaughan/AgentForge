@@ -26,6 +26,7 @@ import { streamRoutes } from './routes/v5/stream.js';
 import { mergeQueueRoutes } from './routes/v5/merge-queue.js';
 import { agentStreamingRoutes } from './routes/v5/streaming.js';
 import { multiWorkspaceRoutes } from './routes/v5/multi-workspace.js';
+import { workspacesRoutes } from './routes/v5/workspaces.js';
 import { agentVersioningRoutes } from './routes/v5/agent-versioning.js';
 import { federationRoutes } from './routes/v5/federation.js';
 import { chatRoutes } from './routes/v5/chat.js';
@@ -90,9 +91,8 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
       });
     });
 
-    app.get('/api/v5/workspaces', async (_req, reply) => {
-      return reply.send({ data: [], meta: { total: 0, timestamp: new Date().toISOString() } });
-    });
+    // v6.6.0 — workspace registry CRUD (~/.agentforge/workspaces.json)
+    await workspacesRoutes(app);
 
     // RBAC routes use in-memory state only — always available
     await rbacRoutes(app);
