@@ -2,6 +2,108 @@
 
 All notable changes to AgentForge are documented in this file.
 
+## [6.5.2] — 2026-04-07
+
+### Full executive delegation — all 9 phases are real
+
+v6.5.2 wires the remaining 8 stub phase handlers in the CLI's autonomous cycle to real agent dispatches. Combined with v6.5.1's execute phase, **all 9 sprint phases are now real** and the cycle has the full executive delegation chain the v6.3 vision originally called for.
+
+### The complete phase chain
+
+| # | Phase | Agent | Tools | Role |
+|---|---|---|---|---|
+| 1 | **audit** | `researcher` | read-only | Scans codebase, produces audit report with recent commits, TODO markers, failing tests, cost concerns |
+| 2 | **plan** | `cto` | read-only | Reads audit + sprint items, produces technical plan with execution order, risk, team allocation |
+| 3 | **assign** | (keyword-based) | none | Pure data transformation — infers assignees from item tags (fix→coder, breaking→architect, etc.) |
+| 4 | **execute** | per-item assignee | **Read/Write/Edit/Bash/Glob/Grep** | Dispatches each item to its assignee; the ONLY phase that modifies code |
+| 5 | **test** | `backend-qa` | read-only | Analyzes execute results + git diff for testing concerns, produces risk report + 1-5 confidence |
+| 6 | **review** | `code-reviewer` | read-only | Reads the diff, produces structured code review with 1-5 verdict |
+| 7 | **gate** | `ceo` | read-only | Reads all prior phase outputs + test results + cost, returns APPROVE/REJECT JSON; throws `GateRejectedError` on reject |
+| 8 | **release** | (metadata marker) | none | No-op phase that updates sprint JSON field + emits completion event. The real release is the commit + push + PR |
+| 9 | **learn** | `data-analyst` | read-only | Writes retrospective covering what went well/poorly, cost accuracy, flaky tests, next-cycle recommendations |
+
+Only the **execute** phase can modify source files. All other phases are analytical — they read, think, and report. This is the intended safety boundary.
+
+### New files
+
+Agent A (strategic phases):
+- `packages/core/src/autonomous/phase-handlers/audit-phase.ts`
+- `packages/core/src/autonomous/phase-handlers/plan-phase.ts`
+- `packages/core/src/autonomous/phase-handlers/assign-phase.ts` (no agent call — pure keyword mapping)
+- `packages/core/src/autonomous/phase-handlers/gate-phase.ts` (+ `GateRejectedError` class)
+- `packages/core/src/autonomous/phase-handlers/learn-phase.ts`
+- `tests/autonomous/unit/phase-handlers-strategic.test.ts` (10 tests)
+
+Agent B (verification phases):
+- `packages/core/src/autonomous/phase-handlers/test-phase.ts` (analyzes, does NOT run tests — VERIFY stage still runs real vitest)
+- `packages/core/src/autonomous/phase-handlers/review-phase.ts`
+- `packages/core/src/autonomous/phase-handlers/release-phase.ts` (metadata marker, no agent call)
+- `tests/autonomous/unit/phase-handlers-verification.test.ts` (10 tests)
+
+Modified:
+- `packages/core/src/autonomous/phase-handlers/index.ts` — all 9 handlers exported
+- `packages/cli/src/commands/autonomous.ts` — all 9 stubs replaced with real handlers (merged from 2 parallel worktrees)
+
+### Test Coverage
+
+- **300 autonomous tests passing** (was 280 in v6.5.1)
+- +20 new tests: 10 for strategic phases, 10 for verification phases
+- All mocked runtime — no real claude -p calls in tests
+
+### `GateRejectedError`
+
+New error class exported from `phase-handlers/index.ts`. The gate phase's CEO agent returns JSON with `{ verdict: "APPROVE" | "REJECT", rationale: string }`. On REJECT, the handler throws `GateRejectedError(rationale)`, which `CycleRunner.start()` catches at the top level and converts to `stage: failed` with the rationale stored in the new `error` field (v6.4.4 addition). The CEO can now halt a cycle that shouldn't ship.
+
+### What this means in practice
+
+When you run `npm run autonomous:cycle` now, the full chain runs:
+
+1. **Audit** — researcher agent scans the repo, summary goes to phases/audit.json
+2. **Plan** — CTO produces a technical plan, reads audit output for context
+3. **Assign** — any unassigned items get an assignee from tag-based rules
+4. **Execute** — each item dispatches to its assignee agent with full Read/Write/Edit tools. Real code changes happen.
+5. **Test** — backend-qa analyzes the changes and flags testing concerns
+6. **Review** — code-reviewer reads the diff and produces structured feedback
+7. **Gate** — CEO reads everything and decides APPROVE/REJECT. If REJECT, cycle halts with the CEO's rationale.
+8. **Release** — metadata marker; the real "release" is the commit+push+PR
+9. **Learn** — data-analyst writes a retrospective for the next cycle's backlog
+
+Each phase produces a JSON artifact in `.agentforge/cycles/{cycleId}/phases/{phase}.json` that the dashboard's detail view (v6.5.0) renders. The cycle's cost meter sums all phase costs.
+
+### Cost estimates per cycle (approximate, plan-equivalent quota)
+
+Based on the v6.5.1 execute phase dispatching 3 items per sprint:
+
+| Phase | Calls | Typical quota cost |
+|---|---|---|
+| Plan (scoring) | 1 (backlog-scorer) | ~$1.00 |
+| Audit | 1 (researcher) | ~$0.50 |
+| Plan | 1 (cto) | ~$0.50 |
+| Assign | 0 | $0 |
+| Execute | N=3 items × assignee | ~$4.50 |
+| Test | 1 (backend-qa) | ~$0.50 |
+| Review | 1 (code-reviewer) | ~$1.00 |
+| Gate | 1 (ceo) | ~$0.50 |
+| Release | 0 | $0 |
+| Learn | 1 (data-analyst) | ~$0.50 |
+| **Total** | ~9 agent calls | **~$9.00/cycle** |
+
+At ~$9/cycle, the default $50 budget comfortably runs 5+ cycles per day on plan quota without hitting the kill switch.
+
+### Files Changed
+
+See commits `39de05e` (strategic phases) and `e4374e6` (verification phases). Version bumps in `plugin.json` and `package.json` from 6.5.1 to 6.5.2.
+
+### What's still deferred (v6.5.3+)
+
+- **Parallel execute phase** — currently dispatches items sequentially. With file-conflict detection (already in `packages/core/src/orchestration/`), could run 3-5x faster.
+- **SSE cycle events** — dashboard polls instead of push. Full SSE wiring would make `/live` show cycle events in real-time.
+- **Cost/quota meter at cycle start** — surface plan quota consumption vs. cost in the dashboard launcher so the user sees projected cost before clicking "Run Cycle".
+- **Adaptive retry in execute phase** — if an item fails, automatically retry once with a "fix this" prompt pointing at the error output.
+- **Per-phase kill switches** — the CEO gate can already halt the cycle, but test and review phases could also halt on very low confidence/verdict scores.
+
+---
+
 ## [6.5.1] — 2026-04-07
 
 ### The cycle goes from "proposer" to "doer"
