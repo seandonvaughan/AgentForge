@@ -2,6 +2,75 @@
 
 All notable changes to AgentForge are documented in this file.
 
+## [6.4.4] — 2026-04-07
+
+### What's Fixed
+
+Six bugs surfaced by the v6.4.3 first self-directed autonomous cycle (PR #4, closed). The cycle proposed these fixes as its top-priority sprint; three parallel Opus agents implemented them in a single shipping wave.
+
+**#1 — Scanner self-matches TODO(autonomous) in documentation strings** (`proposal-to-backlog.ts`)
+
+The scanner's line-level regex matched `TODO(autonomous)` anywhere on a line, so source comments documenting the marker syntax got ingested as real backlog items. Fix: require the marker to be preceded only by comment characters (`//`, `/*`, `*`, `<!--`, `#`) plus optional text. Strings in code, regex literals, and object literals no longer match. The scoring agent called this out as the highest-priority fix because *"it contaminates every subsequent backlog scan and must land first."*
+
+**#2 — CycleResult drops `error` field on FAILED stage** (`types.ts`, `cycle-runner.ts`)
+
+When `CycleRunner.start()` caught an exception and set `stage=FAILED`, the error message was dropped because `CycleResult` had no place to store it. Downstream consumers had to reconstruct the failure from `events.jsonl`. Fix: added `error?: string` to `CycleResult` alongside `killSwitch?` and `scoringFallback?`, and made `buildResult` propagate the field.
+
+**#3 — Test suite pollutes `.agentforge/`** (`cycle-runner.ts`)
+
+`npm run test:run` mutates `.agentforge/agents/`, `.agentforge/v5/`, `.agentforge/analysis/`, `.agentforge/config/`, `team.yaml`, and `data/`. Then `collectChangedFiles` picked them all up via `git status --porcelain` and committed them as cycle "work product". Fix: added `TEST_POLLUTION_PATTERNS` filter in `collectChangedFiles` that excludes the six known pollution paths alongside the existing `.agentforge/cycles/**` exclusion. The real fix (tests using `os.tmpdir()` workspaces) is deferred to v6.5.0 — this is the safer short-term workaround.
+
+**#4 — Branch name double-"v" concat** (`exec/git-ops.ts`)
+
+`"smoke-test/autonomous-v"` + `createBranch("7.0.0")` produced `"smoke-test/autonomous-vv7.0.0"` because `GitOps.createBranch` hardcoded a `"v"` prefix after the configured branch prefix. Fix: strip a trailing `"v"` from the branch prefix before concatenation. Existing prefixes without trailing `v` are unaffected.
+
+**#5 — PROpener requests review from PR author** (`exec/pr-opener.ts`)
+
+Every cycle's auto-PR-creation failed because `gh pr create --reviewer <self>` is rejected by GitHub when reviewer matches the authenticated user. Fix: PROpener now queries `gh api user --jq .login` once per instance, filters the authenticated user out of the reviewers list before building args, and omits `--reviewer` entirely if the filtered list is empty. Accepts a `getAuthUser` callback for testability.
+
+**#6 — PROpener fails hard on unknown labels** (`exec/pr-opener.ts`)
+
+`gh pr create --label foo` fails the entire PR creation if `foo` doesn't exist on the repo. Fix: PROpener now queries `gh label list` once per instance, filters `req.labels` to only labels that exist on the repo, and logs a warning for skipped labels. Accepts a `getRepoLabels` callback for testability.
+
+### Test Coverage
+
+- **247 autonomous tests passing** (up from 236 in v6.4.3)
+- +11 new tests: 1 for scanner strict matching, 7 for pr-opener filter logic, 3 for cycle-runner fixes
+- All existing tests unchanged
+
+### Files Changed
+
+- `packages/core/src/autonomous/proposal-to-backlog.ts` — strict comment-prefix regex
+- `packages/core/src/autonomous/exec/pr-opener.ts` — auth user + label filtering, optional callbacks
+- `packages/core/src/autonomous/types.ts` — `error?: string` on `CycleResult`
+- `packages/core/src/autonomous/cycle-runner.ts` — error propagation + `TEST_POLLUTION_PATTERNS` filter
+- `packages/core/src/autonomous/exec/git-ops.ts` — strip trailing "v" in `createBranch`
+- `tests/autonomous/unit/proposal-to-backlog.test.ts` — 1 new test
+- `tests/autonomous/unit/pr-opener.test.ts` — 7 new tests
+- `tests/autonomous/unit/cycle-runner.test.ts` — 2 new tests
+- `tests/autonomous/unit/git-ops.test.ts` — 1 new test
+- `.claude-plugin/plugin.json` — version bump to 6.4.4
+- `package.json` — version bump to 6.4.4
+
+### What this means for the autonomous loop
+
+With these six fixes, the cycle now runs end-to-end without any manual intervention:
+
+1. **Cleaner backlog** — the scanner no longer matches its own documentation
+2. **Real debuggability** — `cycle.json` now shows WHY a cycle failed
+3. **Clean commits** — test pollution no longer leaks into cycle commits
+4. **Correct branch names** — no more double-v artifacts
+5. **Auto PR creation works** — the self-reviewer bug and unknown-label bug no longer block `gh pr create`
+
+The next run of `npm run autonomous:cycle` should produce a PR automatically, with no manual `gh pr create` fallback needed.
+
+### What's still deferred
+
+- **Phase handlers are still stubs** in the CLI path — cycles propose work but don't implement it. Real per-phase agent dispatch is scheduled for v6.5.0.
+- **Tests still write to `.agentforge/`** — the pollution filter is a workaround. Test suite rewrite is v6.5.0 scope.
+
+---
+
 ## [6.4.1-plan-auth] — 2026-04-06
 
 ### What's Fixed
