@@ -292,6 +292,13 @@ body {
 }
 @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
+/* ── Pulse (active stage indicator) ─────────────────────────────────────── */
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(74,158,255,0.45); }
+  50%      { box-shadow: 0 0 0 6px rgba(74,158,255,0); }
+}
+.pulse { animation: pulse 1.6s ease-in-out infinite; }
+
 .empty-state {
   display: flex;
   flex-direction: column;
