@@ -15,6 +15,66 @@
   let cycleId: string | null = $state(null);
   let startedAt: number | null = $state(null);
 
+  // ── Preview state (v6.5.3) ────────────────────────────────────────────────
+  type PreviewItem = {
+    itemId: string;
+    title: string;
+    rank: number;
+    estimatedCostUsd: number;
+    suggestedAssignee?: string;
+    withinBudget: boolean;
+  };
+  type PreviewResult = {
+    candidateCount: number;
+    rankedItems: PreviewItem[];
+    totalEstimatedCostUsd: number;
+    budgetOverflowUsd: number;
+    withinBudget: number;
+    requiresApproval: number;
+    summary: string;
+    warnings: string[];
+    durationMs: number;
+    scoringCostUsd: number;
+    fallback: 'static' | null;
+  };
+  let previewing = $state(false);
+  let previewError: string | null = $state(null);
+  let preview: PreviewResult | null = $state(null);
+
+  async function handlePreview() {
+    if (previewing) return;
+    previewError = null;
+    previewing = true;
+    try {
+      const res = await fetch('/api/v5/cycles/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ budgetUsd, maxItems, dryRun, branchPrefix, comment }),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => `HTTP ${res.status}`);
+        try {
+          const j = JSON.parse(text);
+          previewError = j.error ?? text;
+        } catch {
+          previewError = text || `HTTP ${res.status}`;
+        }
+        previewing = false;
+        return;
+      }
+      preview = await res.json();
+    } catch (e) {
+      previewError = String(e);
+    } finally {
+      previewing = false;
+    }
+  }
+
+  function clearPreview() {
+    preview = null;
+    previewError = null;
+  }
+
   // ── Progress state ────────────────────────────────────────────────────────
   const STAGES = ['PLAN', 'STAGE', 'RUN', 'VERIFY', 'COMMIT', 'REVIEW'] as const;
   type Stage = typeof STAGES[number];
@@ -258,10 +318,115 @@
       </div>
     {/if}
 
-    <button class="btn btn-primary launch-btn" onclick={handleLaunch} disabled={launching}>
-      {#if launching}Launching…{:else}Run Cycle{/if}
-    </button>
+    <div class="button-row">
+      <button class="btn btn-ghost preview-btn" onclick={handlePreview} disabled={launching || previewing}>
+        {#if previewing}Previewing…{:else}Preview Cost{/if}
+      </button>
+      <button class="btn btn-primary launch-btn" onclick={handleLaunch} disabled={launching || previewing}>
+        {#if launching}Launching…{:else}Run Cycle{/if}
+      </button>
+    </div>
   </div>
+
+  {#if previewError}
+    <div class="card preview-card">
+      <div class="error-msg">
+        Preview failed: {previewError}
+        <button class="btn btn-ghost btn-sm retry-btn" onclick={handlePreview}>Retry</button>
+      </div>
+    </div>
+  {/if}
+
+  {#if preview}
+    {@const overflow = preview.budgetOverflowUsd > 0 || preview.totalEstimatedCostUsd > budgetUsd}
+    <div class="card preview-card">
+      <div class="card-header">
+        <span class="card-title">Cost Preview</span>
+        <button class="btn btn-ghost btn-sm" onclick={clearPreview}>Clear</button>
+      </div>
+
+      <div class="preview-headline">
+        <div class="preview-total">
+          <span class="preview-total-amount">${preview.totalEstimatedCostUsd.toFixed(2)}</span>
+          <span class="preview-total-budget">/ ${budgetUsd.toFixed(2)} budget</span>
+        </div>
+        <div class="preview-badges">
+          {#if overflow}
+            <span class="badge badge-danger">Overflow: ${preview.budgetOverflowUsd.toFixed(2)}</span>
+          {:else}
+            <span class="badge badge-success">Within budget</span>
+          {/if}
+          {#if preview.fallback === 'static'}
+            <span class="badge badge-warning">Static fallback</span>
+          {/if}
+        </div>
+      </div>
+
+      <div class="preview-meta">
+        <span>{preview.candidateCount} candidate{preview.candidateCount === 1 ? '' : 's'}</span>
+        <span>·</span>
+        <span>{preview.withinBudget} within budget</span>
+        {#if preview.requiresApproval > 0}
+          <span>·</span>
+          <span>{preview.requiresApproval} need approval</span>
+        {/if}
+        <span>·</span>
+        <span>preview took {(preview.durationMs / 1000).toFixed(1)}s</span>
+      </div>
+
+      {#if overflow}
+        <div class="overflow-warning">
+          This cycle will exceed your budget. Consider raising the budget or splitting into smaller sprints.
+        </div>
+      {/if}
+
+      {#if preview.rankedItems.length > 0}
+        <div class="preview-table-wrap">
+          <table class="preview-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Title</th>
+                <th>Cost</th>
+                <th>Assignee</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each preview.rankedItems as item (item.itemId)}
+                <tr>
+                  <td class="num">{item.rank}</td>
+                  <td class="title">{item.title}</td>
+                  <td class="num">${item.estimatedCostUsd.toFixed(2)}</td>
+                  <td>{item.suggestedAssignee ?? '—'}</td>
+                  <td>
+                    {#if item.withinBudget}
+                      <span class="dot dot-success"></span> ok
+                    {:else}
+                      <span class="dot dot-danger"></span> over
+                    {/if}
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {/if}
+
+      {#if preview.summary}
+        <blockquote class="preview-summary">{preview.summary}</blockquote>
+      {/if}
+
+      {#if preview.warnings.length > 0}
+        <div class="preview-warnings">
+          <strong>Warnings</strong>
+          <ul>
+            {#each preview.warnings as w}<li>{w}</li>{/each}
+          </ul>
+        </div>
+      {/if}
+    </div>
+  {/if}
 {:else}
   <!-- ── Live Progress ────────────────────────────────────────────────────── -->
   <div class="card progress-card">
@@ -512,4 +677,140 @@
     color: var(--color-text-faint);
     font-style: italic;
   }
+
+  /* ── Preview (v6.5.3) ──────────────────────────────────────────────────── */
+  .button-row {
+    display: flex;
+    gap: var(--space-3);
+    align-items: stretch;
+  }
+  .preview-btn {
+    flex: 0 0 auto;
+    padding: var(--space-3) var(--space-4);
+    font-size: var(--text-sm);
+    font-weight: 600;
+  }
+  .button-row .launch-btn { flex: 1; }
+
+  .preview-card {
+    max-width: 820px;
+    margin-top: var(--space-4);
+  }
+  .preview-headline {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: var(--space-3) 0;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+  }
+  .preview-total-amount {
+    font-size: var(--text-2xl, 1.8rem);
+    font-weight: 700;
+    color: var(--color-text);
+    font-family: var(--font-mono);
+  }
+  .preview-total-budget {
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+    margin-left: var(--space-2);
+  }
+  .preview-badges { display: flex; gap: var(--space-2); }
+  .badge {
+    display: inline-block;
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-full);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .badge-success {
+    background: rgba(76,175,130,0.15);
+    color: var(--color-success);
+    border: 1px solid rgba(76,175,130,0.4);
+  }
+  .badge-danger {
+    background: rgba(224,90,90,0.12);
+    color: var(--color-danger);
+    border: 1px solid rgba(224,90,90,0.4);
+  }
+  .badge-warning {
+    background: rgba(240,180,40,0.12);
+    color: #f0b428;
+    border: 1px solid rgba(240,180,40,0.4);
+  }
+  .preview-meta {
+    display: flex;
+    gap: var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    margin-bottom: var(--space-3);
+    flex-wrap: wrap;
+  }
+  .overflow-warning {
+    background: rgba(224,90,90,0.08);
+    border: 1px solid rgba(224,90,90,0.3);
+    border-radius: var(--radius-md);
+    color: var(--color-danger);
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-xs);
+    margin-bottom: var(--space-3);
+  }
+  .preview-table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-3);
+  }
+  .preview-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-sm);
+  }
+  .preview-table th,
+  .preview-table td {
+    padding: var(--space-2) var(--space-3);
+    text-align: left;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .preview-table th {
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-muted);
+    background: var(--color-surface-2);
+  }
+  .preview-table tr:last-child td { border-bottom: none; }
+  .preview-table .num { font-family: var(--font-mono); text-align: right; }
+  .preview-table .title { color: var(--color-text); }
+  .dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: var(--space-1);
+    vertical-align: middle;
+  }
+  .dot-success { background: var(--color-success); }
+  .dot-danger  { background: var(--color-danger); }
+  .preview-summary {
+    border-left: 3px solid var(--color-brand);
+    padding: var(--space-2) var(--space-3);
+    color: var(--color-text-muted);
+    font-style: italic;
+    font-size: var(--text-sm);
+    margin: 0 0 var(--space-3) 0;
+    background: var(--color-surface-1);
+    border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  }
+  .preview-warnings {
+    background: rgba(240,180,40,0.06);
+    border: 1px solid rgba(240,180,40,0.25);
+    border-radius: var(--radius-md);
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+  }
+  .preview-warnings ul { margin: var(--space-1) 0 0 var(--space-4); }
 </style>
