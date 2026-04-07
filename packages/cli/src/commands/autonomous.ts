@@ -45,6 +45,7 @@ export function registerAutonomousCommand(program: Command): void {
           RealTestRunner,
           GitOps,
           PROpener,
+          RuntimeAdapter,
         } = await import('@agentforge/core');
 
         const config = loadCycleConfig(cwd);
@@ -68,17 +69,14 @@ export function registerAutonomousCommand(program: Command): void {
           getTeamState: async () => ({ utilization: {} }),
         };
 
-        // ---- Scoring runtime stub ----
-        // With an empty backlog we never reach scoring, but CycleRunner
-        // still requires a runtime shaped like RuntimeForScoring. A stub
-        // that throws is acceptable because it won't be invoked.
-        const runtime = {
-          run: async (_agentId: string, _task: string) => {
-            throw new Error(
-              '[autonomous:cycle] scoring runtime not wired yet — Task 24 will inject AgentRuntime',
-            );
-          },
-        };
+        // ---- Real scoring runtime via RuntimeAdapter (v6.4.1) ----
+        // RuntimeAdapter bridges the AgentRuntime class-per-agent interface
+        // to the RuntimeForScoring service interface ScoringPipeline expects.
+        // It lazily loads agent YAML from .agentforge/agents/{id}.yaml and
+        // caches AgentRuntime instances per agentId. AgentRuntime itself
+        // shells out to `claude -p` so this uses the logged-in Max/Pro plan
+        // session, not ANTHROPIC_API_KEY.
+        const runtime = new RuntimeAdapter({ cwd });
 
         // ---- Phase handlers (Task 24 will wire real 9-phase implementations) ----
         // For Task 23 the handlers simply publish the `sprint.phase.completed`
@@ -162,7 +160,7 @@ export function registerAutonomousCommand(program: Command): void {
         const runner = new CycleRunner({
           cwd,
           config,
-          runtime: runtime as unknown as import('@agentforge/core').RuntimeForScoring,
+          runtime,
           proposalAdapter: proposalAdapter as unknown as import('@agentforge/core').ProposalAdapter,
           scoringAdapter: scoringAdapter as unknown as import('@agentforge/core').AdapterForScoring,
           phaseHandlers: phaseHandlers as unknown as Record<

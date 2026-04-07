@@ -18,6 +18,10 @@
 // docs/superpowers/plans/2026-04-06-autonomous-loop-part2.md Task 21.
 
 import { randomUUID } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFile);
 import {
   CycleStage,
   CycleKilledError,
@@ -264,7 +268,7 @@ export class CycleRunner {
     await this.options.gitOps.verifyPreconditions();
     this.branch = await this.options.gitOps.createBranch(plan.version);
 
-    const filesToCommit = this.collectChangedFiles(runSummary);
+    const filesToCommit = await this.collectChangedFiles(runSummary);
     this.filesChanged = filesToCommit;
 
     // Only call gitOps.stage if we have files. Real GitOps refuses an empty
@@ -395,16 +399,37 @@ export class CycleRunner {
   /**
    * Collect the file paths that the cycle modified during the RUN stage.
    *
-   * MVP: returns an empty array. The smoke test (Task 25) is responsible for
-   * the end-to-end file collection — for the real path we will query git for
-   * working-tree modifications after the RUN stage. A future improvement is
-   * to track per-agent file writes via runtime hooks so we don't depend on
-   * the git working tree.
+   * v6.4.1: queries `git status --porcelain` for all working-tree changes
+   * (modified, added, untracked). Filters out `.agentforge/cycles/**` because
+   * those are the cycle's own log files, not "work product" to be committed.
    *
-   * TODO(Task 21 follow-up): Extract file paths from phase results.
+   * Limitation: this approach assumes the working tree was clean at cycle
+   * start. If the user has other uncommitted changes when the cycle runs,
+   * those will also be captured. A future improvement is to track per-agent
+   * file writes via runtime hooks so we don't depend on the git working tree.
    */
-  private collectChangedFiles(_runSummary: SprintRunSummary): string[] {
-    return [];
+  private async collectChangedFiles(_runSummary: SprintRunSummary): Promise<string[]> {
+    try {
+      const { stdout } = await execFileAsync('git', ['status', '--porcelain'], {
+        cwd: this.options.cwd,
+        maxBuffer: 10 * 1024 * 1024,
+      });
+      return stdout
+        .toString()
+        .split('\n')
+        .filter(line => line.length > 0)
+        // Porcelain format: "XY path" where XY is 2-char status and path is tab/space-separated
+        // For renames: "R  old -> new" — we only care about the new path
+        .map(line => {
+          const rest = line.slice(3);
+          const arrowIdx = rest.indexOf(' -> ');
+          return arrowIdx >= 0 ? rest.slice(arrowIdx + 4).trim() : rest.trim();
+        })
+        .filter(file => file.length > 0)
+        .filter(file => !file.startsWith('.agentforge/cycles/'));
+    } catch {
+      return [];
+    }
   }
 
   /**
