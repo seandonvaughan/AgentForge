@@ -200,8 +200,8 @@
   });
 
   // Overview helpers
-  let costUsd = $derived(cycle?.costUsd ?? cycle?.cost?.usd ?? cycle?.budget?.spentUsd ?? null);
-  let budgetUsd = $derived(cycle?.budgetUsd ?? cycle?.budget?.limitUsd ?? cycle?.budget?.budgetUsd ?? null);
+  let costUsd = $derived(cycle?.cost?.totalUsd ?? cycle?.costUsd ?? cycle?.cost?.usd ?? cycle?.budget?.spentUsd ?? null);
+  let budgetUsd = $derived(cycle?.cost?.budgetUsd ?? cycle?.budgetUsd ?? cycle?.budget?.limitUsd ?? cycle?.budget?.budgetUsd ?? null);
   let testsPassed = $derived(cycle?.testsPassed ?? cycle?.tests?.passed ?? null);
   let testsTotal = $derived(cycle?.testsTotal ?? cycle?.tests?.total ?? null);
   let prUrl = $derived(cycle?.prUrl ?? cycle?.pr?.url ?? null);

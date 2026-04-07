@@ -425,17 +425,56 @@ export async function cyclesRoutes(
         }
       } catch { /* fall through to defaults */ }
     }
+    // Aggregate live progress from phases/<name>.json. Each phase handler
+    // writes its own JSON on completion with costUsd / durationMs / agentRuns.
+    // This gives the dashboard real numbers (cost, agent activity, test
+    // pass/fail) without waiting for terminal cycle.json to be written.
+    const phasesDir = join(dir, 'phases');
+    let totalCostUsd = 0;
+    const costByPhase: Record<string, number> = {};
+    const costByAgent: Record<string, number> = {};
+    let testsPassed = 0;
+    let testsFailed = 0;
+    let testsTotal = 0;
+    let agentRunCount = 0;
+    if (existsSync(phasesDir)) {
+      for (const name of ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate', 'release', 'learn']) {
+        const phaseFile = join(phasesDir, `${name}.json`);
+        if (!existsSync(phaseFile)) continue;
+        try {
+          const phase = JSON.parse(readFileSync(phaseFile, 'utf8'));
+          const phaseCost = typeof phase.costUsd === 'number' ? phase.costUsd : 0;
+          totalCostUsd += phaseCost;
+          if (phaseCost > 0) costByPhase[name] = phaseCost;
+          if (Array.isArray(phase.agentRuns)) {
+            for (const run of phase.agentRuns) {
+              agentRunCount++;
+              const aid = run.agentId ?? 'unknown';
+              const c = typeof run.costUsd === 'number' ? run.costUsd : 0;
+              costByAgent[aid] = (costByAgent[aid] ?? 0) + c;
+            }
+          }
+          if (name === 'test') {
+            if (typeof phase.passed === 'number') testsPassed = phase.passed;
+            if (typeof phase.failed === 'number') testsFailed = phase.failed;
+            if (typeof phase.total === 'number') testsTotal = phase.total;
+          }
+        } catch { /* skip malformed phase file */ }
+      }
+    }
+    const passRate = testsTotal > 0 ? testsPassed / testsTotal : 0;
     return reply.send({
       cycleId: id,
       sprintVersion,
       stage: lastStage,
       startedAt: startedAt ?? new Date().toISOString(),
       completedAt: null,
-      durationMs: null,
-      cost: { totalUsd: 0, budgetUsd: 0, byAgent: {}, byPhase: {} },
-      tests: { passed: 0, failed: 0, skipped: 0, total: 0, passRate: 0, newFailures: [] },
+      durationMs: startedAt ? Date.now() - new Date(startedAt).getTime() : null,
+      cost: { totalUsd: totalCostUsd, budgetUsd: 50, byAgent: costByAgent, byPhase: costByPhase },
+      tests: { passed: testsPassed, failed: testsFailed, skipped: 0, total: testsTotal, passRate, newFailures: [] },
       git: { branch: '', commitSha: null, filesChanged: [] },
       pr: { url: null, number: null, draft: false },
+      agentRunCount,
       cycleInProgress: true,
     });
   });
