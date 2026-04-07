@@ -30,6 +30,7 @@ import { workspacesRoutes } from './routes/v5/workspaces.js';
 import { agentVersioningRoutes } from './routes/v5/agent-versioning.js';
 import { federationRoutes } from './routes/v5/federation.js';
 import { chatRoutes } from './routes/v5/chat.js';
+import { settingsRoutes } from './routes/v5/settings.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -108,6 +109,10 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
 
     // v6.6.0 — workspace registry CRUD (~/.agentforge/workspaces.json)
     await workspacesRoutes(app);
+
+    // Settings — file-backed YAML, no adapter required. Registering here
+    // unconditionally fixes the 404 the dashboard hit when saving settings.
+    await settingsRoutes(app);
 
     // RBAC routes use in-memory state only — always available
     await rbacRoutes(app);

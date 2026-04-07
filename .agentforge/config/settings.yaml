@@ -1,0 +1,27 @@
+workspace:
+  name: AgentForge
+  version: '6.7'
+execution:
+  defaultModel: opus
+  maxConcurrentAgents: 20
+  budgetLimitPerSprint: 500
+  budgetLimitPerAgent: 50
+  autoApprovalThreshold: 0.85
+  taskTimeoutMs: 300000
+dashboard:
+  theme: dark
+  refreshIntervalMs: 5000
+  notificationsEnabled: true
+  sseReconnectIntervalMs: 3000
+teams:
+  defaultTeamCapacity: 20
+  autoScalingEnabled: true
+  utilizationAlertThreshold: 0.85
+notifications:
+  taskCompleted: true
+  taskFailed: true
+  budgetThresholdHit: true
+  agentPromoted: true
+  hiringRecommendation: true
+  approvalNeeded: true
+  sprintPhaseAdvanced: true
