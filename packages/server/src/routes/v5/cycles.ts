@@ -605,6 +605,7 @@ export async function cyclesRoutes(
     const runs: AgentRunRow[] = [];
     const byAgent: Record<string, { runs: number; totalCostUsd: number; totalDurationMs: number; phases: Set<string> }> = {};
 
+    const seenExecuteItemIds = new Set<string>();
     for (const name of ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate', 'release', 'learn']) {
       const phaseFile = join(phasesDir, `${name}.json`);
       if (!existsSync(phaseFile)) continue;
@@ -625,6 +626,7 @@ export async function cyclesRoutes(
             attempts: typeof run.attempts === 'number' ? run.attempts : undefined,
           };
           runs.push(row);
+          if (row.itemId && name === 'execute') seenExecuteItemIds.add(row.itemId);
           if (!byAgent[agentId]) {
             byAgent[agentId] = { runs: 0, totalCostUsd: 0, totalDurationMs: 0, phases: new Set() };
           }
@@ -635,6 +637,64 @@ export async function cyclesRoutes(
         }
       } catch { /* skip malformed */ }
     }
+
+    // Fallback: if phases/execute.json hasn't been written yet (legacy
+    // cycles without the v6.7.4 live snapshot, or while execute is still
+    // in flight), synthesize execute runs from the incrementally-updated
+    // sprint file. This way the Agents tab shows real progress even for
+    // in-flight cycles that predate the incremental snapshot fix.
+    try {
+      const linkFile = join(dir, 'sprint-link.json');
+      let sprintVersion: string | null = null;
+      if (existsSync(linkFile)) {
+        const link = JSON.parse(readFileSync(linkFile, 'utf8'));
+        sprintVersion = link?.sprintVersion ?? null;
+      }
+      // Legacy fallback: newest sprint file by mtime
+      if (!sprintVersion) {
+        const sprintsDir = join(opts.projectRoot, '.agentforge/sprints');
+        if (existsSync(sprintsDir)) {
+          const files = readdirSync(sprintsDir)
+            .filter((f) => f.startsWith('v') && f.endsWith('.json'))
+            .map((f) => ({ f, mtime: statSync(join(sprintsDir, f)).mtimeMs }))
+            .sort((a, b) => b.mtime - a.mtime);
+          if (files[0]) sprintVersion = files[0].f.slice(1, -5);
+        }
+      }
+      if (sprintVersion) {
+        const sprintFile = join(opts.projectRoot, '.agentforge/sprints', `v${sprintVersion}.json`);
+        if (existsSync(sprintFile)) {
+          const raw = JSON.parse(readFileSync(sprintFile, 'utf8'));
+          const sprint = Array.isArray(raw.sprints) ? raw.sprints[0] : raw;
+          const sprintItems = sprint?.items ?? [];
+          for (const it of sprintItems) {
+            if (seenExecuteItemIds.has(it.id)) continue;
+            if (it.status !== 'completed' && it.status !== 'failed' && it.status !== 'in_progress') continue;
+            const agentId = String(it.assignee ?? 'unknown');
+            const synthesized: AgentRunRow = {
+              phase: 'execute',
+              agentId,
+              itemId: it.id,
+              status: it.status,
+              // We can't know actual cost until execute.json is written,
+              // so use the estimated cost as a placeholder for UI display.
+              costUsd: typeof it.estimatedCostUsd === 'number' ? it.estimatedCostUsd : 0,
+              durationMs: 0,
+              response: undefined,
+              error: undefined,
+              attempts: undefined,
+            };
+            runs.push(synthesized);
+            if (!byAgent[agentId]) {
+              byAgent[agentId] = { runs: 0, totalCostUsd: 0, totalDurationMs: 0, phases: new Set() };
+            }
+            byAgent[agentId].runs++;
+            byAgent[agentId].totalCostUsd += synthesized.costUsd;
+            byAgent[agentId].phases.add('execute');
+          }
+        }
+      }
+    } catch { /* non-fatal */ }
 
     // Convert phases Set → array for JSON
     const byAgentSerialized: Record<string, { runs: number; totalCostUsd: number; totalDurationMs: number; phases: string[] }> = {};
