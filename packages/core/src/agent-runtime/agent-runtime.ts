@@ -13,13 +13,10 @@
 // invokes callbacks once at the end with the full result. Proper incremental
 // streaming via --output-format stream-json is future work (see CHANGELOG).
 
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { spawn } from 'node:child_process';
 import type { AgentRuntimeConfig, RunOptions, RunResult } from './types.js';
 import { MODEL_PRICING, MODEL_IDS } from './types.js';
 import type { WorkspaceAdapter } from '@agentforge/db';
-
-const execFileAsync = promisify(execFile);
 
 /** JSON shape returned by `claude -p --output-format json`. */
 interface ClaudeCliResult {
@@ -176,6 +173,12 @@ export class AgentRuntime {
   /**
    * Invoke `claude -p` with the agent's system prompt and user content.
    * Pipes the user content via stdin, receives JSON on stdout.
+   *
+   * v6.4.2 fix: uses `spawn` instead of `execFileAsync`. Node's
+   * `execFile` does NOT support the `input` option in async form — only
+   * the *Sync variants do. Using execFileAsync with `{input}` silently
+   * failed to write stdin, causing `claude -p` to hang on "no stdin
+   * data received in 3s" and then exit with "Input must be provided".
    */
   private async invokeClaudeCli(
     modelId: string,
@@ -193,49 +196,84 @@ export class AgentRuntime {
     // raise this via AgentRuntimeConfig.maxTokens as a rough proxy for now.
     const timeoutMs = 10 * 60 * 1000;
 
-    try {
-      const { stdout } = await execFileAsync('claude', args, {
-        input: userContent,
-        maxBuffer: 50 * 1024 * 1024,
-        timeout: timeoutMs,
+    return new Promise<ClaudeCliResult>((resolve, reject) => {
+      const proc = spawn('claude', args, {
         env: { ...process.env },
+        stdio: ['pipe', 'pipe', 'pipe'],
       });
 
-      const trimmed = stdout.toString().trim();
-      if (!trimmed) {
-        throw new Error('claude CLI returned empty output');
-      }
+      let stdout = '';
+      let stderr = '';
+      let settled = false;
 
-      try {
-        return JSON.parse(trimmed) as ClaudeCliResult;
-      } catch (parseErr) {
-        throw new Error(
-          `Failed to parse claude CLI output as JSON: ${
-            parseErr instanceof Error ? parseErr.message : String(parseErr)
-          }\nFirst 500 chars: ${trimmed.slice(0, 500)}`,
-        );
-      }
-    } catch (err: unknown) {
-      // execFileAsync wraps errors — unwrap code/signal if present
-      if (err && typeof err === 'object') {
-        const e = err as { code?: string | number; killed?: boolean; signal?: string; stderr?: Buffer | string; message?: string };
-        if (e.code === 'ENOENT') {
-          throw new Error(
-            'claude CLI not found. Install Claude Code: https://claude.com/claude-code',
-          );
+      const finish = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        fn();
+      };
+
+      const timer = setTimeout(() => {
+        proc.kill('SIGTERM');
+        finish(() => reject(new Error(`claude CLI timed out after ${timeoutMs}ms`)));
+      }, timeoutMs);
+
+      proc.stdout.on('data', (chunk: Buffer) => {
+        stdout += chunk.toString('utf8');
+      });
+      proc.stderr.on('data', (chunk: Buffer) => {
+        stderr += chunk.toString('utf8');
+      });
+
+      proc.on('error', (err: NodeJS.ErrnoException) => {
+        finish(() => {
+          if (err.code === 'ENOENT') {
+            reject(new Error(
+              'claude CLI not found. Install Claude Code: https://claude.com/claude-code',
+            ));
+          } else {
+            reject(err);
+          }
+        });
+      });
+
+      proc.on('close', (code: number | null) => {
+        finish(() => {
+          if (code !== 0) {
+            reject(new Error(
+              `claude CLI exited with code ${code}\nstderr: ${stderr.slice(0, 1000)}`,
+            ));
+            return;
+          }
+          const trimmed = stdout.trim();
+          if (!trimmed) {
+            reject(new Error('claude CLI returned empty output'));
+            return;
+          }
+          try {
+            resolve(JSON.parse(trimmed) as ClaudeCliResult);
+          } catch (parseErr) {
+            reject(new Error(
+              `Failed to parse claude CLI output as JSON: ${
+                parseErr instanceof Error ? parseErr.message : String(parseErr)
+              }\nFirst 500 chars: ${trimmed.slice(0, 500)}`,
+            ));
+          }
+        });
+      });
+
+      // Write the user content to stdin and close it to signal EOF
+      proc.stdin.on('error', (err: Error) => {
+        finish(() => reject(new Error(`Failed to write to claude CLI stdin: ${err.message}`)));
+      });
+      proc.stdin.write(userContent, 'utf8', (writeErr) => {
+        if (writeErr) {
+          finish(() => reject(new Error(`stdin write failed: ${writeErr.message}`)));
+          return;
         }
-        if (e.killed || e.signal === 'SIGTERM') {
-          throw new Error(`claude CLI timed out after ${timeoutMs}ms`);
-        }
-        if (e.stderr) {
-          const stderrText = typeof e.stderr === 'string' ? e.stderr : e.stderr.toString();
-          throw new Error(
-            `claude CLI failed: ${e.message ?? 'unknown'}\nstderr: ${stderrText.slice(0, 500)}`,
-          );
-        }
-      }
-      throw err;
-    }
+        proc.stdin.end();
+      });
+    });
   }
 
   /** Sum all categories of input tokens (new + cache_creation + cache_read). */

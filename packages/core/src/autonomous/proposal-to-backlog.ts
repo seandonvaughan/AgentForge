@@ -50,9 +50,25 @@ export interface ProposalAdapter {
 const SKIP_DIRS = new Set([
   'node_modules', 'dist', '.git', '.agentforge',
   'coverage', '.turbo', '.next', 'build',
+  // v6.4.2: test dirs are excluded because test fixtures often contain
+  // escaped TODO(autonomous) marker strings that are test data, not real
+  // TODO markers. Scanning them fills the backlog with fixture noise.
+  'tests', '__tests__', '__fixtures__', 'fixtures',
 ]);
 
-const SCANNABLE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
+// v6.4.2: additional per-file exclusions for test files that may live
+// outside a tests/ directory (e.g., co-located *.test.ts next to source).
+const SKIP_FILE_PATTERNS = [
+  /\.test\.(ts|tsx|js|jsx|mjs|cjs)$/,
+  /\.spec\.(ts|tsx|js|jsx|mjs|cjs)$/,
+];
+
+// v6.4.2: added `.md` so README and docs can carry real TODO(autonomous)
+// markers. The scanner extracts the comment text from HTML-style comments
+// (<!-- TODO(autonomous): ... -->) and from plain text lines.
+const SCANNABLE_EXTENSIONS = new Set([
+  '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.md',
+]);
 
 export class ProposalToBacklog {
   constructor(
@@ -163,6 +179,9 @@ export class ProposalToBacklog {
           const ext = entry.slice(entry.lastIndexOf('.'));
           if (!SCANNABLE_EXTENSIONS.has(ext)) continue;
 
+          // v6.4.2: skip test files even when they live next to source
+          if (SKIP_FILE_PATTERNS.some(p => p.test(entry))) continue;
+
           let content: string;
           try {
             content = readFileSync(full, 'utf8');
@@ -174,7 +193,12 @@ export class ProposalToBacklog {
           for (let i = 0; i < lines.length; i++) {
             if (pattern.test(lines[i]!)) {
               const marker = lines[i]!.match(/TODO\(autonomous\):\s*(.*)|FIXME\(autonomous\):\s*(.*)/);
-              const text = (marker?.[1] ?? marker?.[2] ?? '').trim();
+              let text = (marker?.[1] ?? marker?.[2] ?? '').trim();
+              if (!text) continue;
+
+              // v6.4.2: strip trailing HTML/markdown comment closers so
+              // titles from README <!-- TODO(autonomous): X --> don't include "-->"
+              text = text.replace(/\s*-->\s*$/, '').replace(/\s*\*\/\s*$/, '').trim();
               if (!text) continue;
 
               const rel = full.slice(this.cwd.length + 1);

@@ -50,3 +50,4 @@ npm-debug.log*
 
 # Broken template sprint file
 .agentforge/sprints/v${SPRINT_VERSION}.json
+.agentforge/cycles/
