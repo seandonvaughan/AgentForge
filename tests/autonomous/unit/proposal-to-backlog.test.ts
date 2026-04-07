@@ -145,6 +145,72 @@ describe('ProposalToBacklog', () => {
     expect(titles.some(t => t.includes('nope'))).toBe(false);
   });
 
+  it('captures plain-text TODO markers in markdown files (no comment prefix)', async () => {
+    writeFileSync(
+      join(tmpDir, 'NOTES.md'),
+      [
+        '# Notes',
+        '',
+        'TODO(autonomous): plain text line in markdown',
+        'FIXME(autonomous): plain text fixme in markdown',
+        '',
+        '<!-- TODO(autonomous): html comment in markdown -->',
+      ].join('\n'),
+    );
+
+    const bridge = new ProposalToBacklog(makeMockAdapter(), tmpDir, DEFAULT_CYCLE_CONFIG);
+    const items = await bridge.build();
+    const titles = items.map(i => i.title);
+
+    expect(titles).toContain('plain text line in markdown');
+    expect(titles).toContain('plain text fixme in markdown');
+    expect(titles).toContain('html comment in markdown');
+  });
+
+  it('strips --> closers from captured text', async () => {
+    writeFileSync(
+      join(tmpDir, 'README.md'),
+      [
+        '<!-- TODO(autonomous): trailing closer stripped -->',
+        '<!-- TODO(autonomous): mid-text arrow -> preserved -->',
+      ].join('\n'),
+    );
+
+    const bridge = new ProposalToBacklog(makeMockAdapter(), tmpDir, DEFAULT_CYCLE_CONFIG);
+    const items = await bridge.build();
+    const titles = items.map(i => i.title);
+
+    // Trailing --> must be stripped
+    expect(titles).toContain('trailing closer stripped');
+    // The -> inside the description text is NOT a closer, should remain
+    expect(titles.some(t => t.includes('mid-text arrow -> preserved'))).toBe(true);
+    // No title should end with -->
+    expect(titles.every(t => !t.trimEnd().endsWith('-->'))).toBe(true);
+  });
+
+  it('strips --> artifacts from non-todo-marker items at the output boundary', async () => {
+    // Adapter data (session errors, task descriptions) may contain --> from
+    // HTML comment fragments.  The output-side sanitizeItems() pass must strip
+    // these before they reach the backlog schema.
+    const adapter = makeMockAdapter({
+      getRecentFailedSessions: async () => [
+        { id: 's1', agent: 'coder', error: 'TypeError: undefined -->', confidence: 0.9 },
+      ],
+      getFailedTaskOutcomes: async () => [
+        { taskId: 't1', description: 'broken task -->', confidence: 0.9 },
+      ],
+    });
+    const bridge = new ProposalToBacklog(adapter, tmpDir, DEFAULT_CYCLE_CONFIG);
+    const items = await bridge.build();
+
+    expect(items.every(i => !i.title.trimEnd().endsWith('-->'))).toBe(true);
+    expect(items.every(i => !i.id.trimEnd().endsWith('-->'))).toBe(true);
+
+    // Content before --> must survive
+    const sessionItem = items.find(i => i.id.startsWith('sess-'));
+    expect(sessionItem?.title).toContain('TypeError: undefined');
+  });
+
   it('every BacklogItem has required fields', async () => {
     const adapter = makeMockAdapter({
       getRecentFailedSessions: async () => [

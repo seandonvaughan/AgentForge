@@ -58,6 +58,32 @@ import type { RealTestRunner } from './exec/real-test-runner.js';
 import type { GitOps } from './exec/git-ops.js';
 import type { PROpener } from './exec/pr-opener.js';
 
+/**
+ * Build a PR title that's safe for `gh pr create` and never truncated mid-word.
+ *
+ * Why this is a pure exported function: the autonomous loop's first
+ * end-to-end successful cycle (b8755f16) crashed at the very last step
+ * because the inline title-building logic produced "autonomous(v6.7.0): All
+ * three items are well within the $50 cycle budg" — gh's arg parser choked
+ * on the unquoted parens, and slice(0, 50) cut a word in half. Extracting
+ * this lets the test suite pin both behaviors directly without spinning up
+ * a CycleRunner.
+ *
+ * Rules:
+ *   1. Strip parens (gh CLI parses unquoted (...) as option groups)
+ *   2. Collapse newlines into single spaces
+ *   3. Truncate at 65 chars on the nearest word boundary (ellipsis appended)
+ */
+export function sanitizePrTitle(version: string, summary: string): string {
+  const prefix = `autonomous v${version}: `;
+  const room = 65 - prefix.length;
+  const oneLine = summary.replace(/[\r\n]+/g, ' ').replace(/[()]/g, '').trim();
+  if (oneLine.length <= room) return prefix + oneLine;
+  const cut = oneLine.slice(0, room);
+  const lastSpace = cut.lastIndexOf(' ');
+  return prefix + (lastSpace > 20 ? cut.slice(0, lastSpace) : cut) + '…';
+}
+
 export interface CycleRunnerOptions {
   cwd: string;
   config: CycleConfig;
@@ -346,18 +372,7 @@ export class CycleRunner {
     const prRequest = {
       branch: this.branch,
       baseBranch: this.options.config.git.baseBranch,
-      // Title is sanitized: parens removed (gh CLI parses (...) as option
-      // groups when unquoted), collapsed to single line, truncated on a word
-      // boundary at 65 chars to avoid mid-word cuts like "budg".
-      title: (() => {
-        const prefix = `autonomous v${plan.version}: `;
-        const room = 65 - prefix.length;
-        const oneLine = scored.summary.replace(/[\r\n]+/g, ' ').replace(/[()]/g, '').trim();
-        if (oneLine.length <= room) return prefix + oneLine;
-        const cut = oneLine.slice(0, room);
-        const lastSpace = cut.lastIndexOf(' ');
-        return prefix + (lastSpace > 20 ? cut.slice(0, lastSpace) : cut) + '…';
-      })(),
+      title: sanitizePrTitle(plan.version, scored.summary),
       body: prBody,
       draft: this.options.config.pr.draft,
       labels: this.options.config.pr.labels,

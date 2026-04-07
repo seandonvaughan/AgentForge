@@ -148,7 +148,7 @@ export class ProposalToBacklog {
       }
     }
 
-    return this.deduplicate(items);
+    return this.sanitizeItems(this.deduplicate(items));
   }
 
   private scanTodoMarkers(): BacklogItem[] {
@@ -193,9 +193,14 @@ export class ProposalToBacklog {
           // only by comment characters (//, /*, *, <!--, #) plus optional
           // text. This prevents false positives from strings, regex
           // literals, and object literals that embed the marker pattern.
+          // The comment-prefix group is optional so plain-text lines in
+          // Markdown files (no <!-- wrapper needed) are also captured.
+          // False positives from embedded strings are still blocked because
+          // `^` anchors the pattern — a line starting with `const`/`let`/
+          // etc. won't match even without the prefix requirement.
           // `pattern` (from config) is retained as a capability gate; the
           // real extraction uses markerLine below.
-          const markerLine = /^\s*(?:\/\/|\/\*+|\*|<!--|#)[^\n]*?(TODO|FIXME)\(autonomous\):\s*(.+)$/;
+          const markerLine = /^\s*(?:(?:\/\/|\/\*+|\*|<!--|#)[^\n]*?)?(TODO|FIXME)\(autonomous\):\s*(.+)$/;
           const lines = content.split('\n');
           for (let i = 0; i < lines.length; i++) {
             if (!pattern.test(lines[i]!)) continue;
@@ -236,6 +241,19 @@ export class ProposalToBacklog {
     if (/\b(add|new|feature|implement)\b/.test(lower)) return ['feature'];
     if (/\b(fix|bug|security)\b/.test(lower)) return ['fix'];
     return ['chore'];
+  }
+
+  // Output-side guard: strip HTML/Markdown comment closers (-->, */) that
+  // may arrive via adapter data (session errors, task descriptions, etc.)
+  // before items are written into the backlog schema.  The equivalent
+  // input-side strip lives in scanTodoMarkers(); this ensures every code
+  // path through build() respects the same contract.
+  private sanitizeItems(items: BacklogItem[]): BacklogItem[] {
+    return items.map(item => ({
+      ...item,
+      id: item.id.replace(/\s*-->\s*$/, '').replace(/\s*\*\/\s*$/, '').trim(),
+      title: item.title.replace(/\s*-->\s*$/, '').replace(/\s*\*\/\s*$/, '').trim(),
+    }));
   }
 
   private deduplicate(items: BacklogItem[]): BacklogItem[] {

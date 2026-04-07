@@ -117,7 +117,31 @@ export class RuntimeAdapter implements RuntimeForScoring {
     }
 
     // Load from .agentforge/agents/{agentId}.yaml
-    const config = await loadAgentConfig(agentId, this.agentforgeDir);
+    let config = await loadAgentConfig(agentId, this.agentforgeDir);
+
+    // Fallback resolution: the scoring agent invents agent names per cycle
+    // ("CodeAgent", "feature-dev-agent", "DocsAgent", "general-purpose"...).
+    // Rather than fail the entire execute phase, route unknown ids to a
+    // sensible default based on simple keyword classification. This is the
+    // difference between a cycle that can ship code and one that gates on
+    // an empty diff because no agent ever ran.
+    if (!config) {
+      const lower = agentId.toLowerCase();
+      const fallbackId = /doc|writer|tech-writer/.test(lower)
+        ? 'documentation-writer'
+        : /test|qa/.test(lower)
+        ? 'backend-qa'
+        : /review/.test(lower)
+        ? 'code-reviewer'
+        : 'coder';
+      const fallback = await loadAgentConfig(fallbackId, this.agentforgeDir);
+      if (fallback) {
+        // eslint-disable-next-line no-console
+        console.warn(`[runtime-adapter] unknown agent "${agentId}" → falling back to "${fallbackId}"`);
+        config = fallback;
+      }
+    }
+
     if (!config) {
       throw new RuntimeAdapterError(
         `Agent config not found: ${join(this.agentforgeDir, 'agents', agentId + '.yaml')}`,

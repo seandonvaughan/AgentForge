@@ -2539,7 +2539,7 @@ Create `docs/superpowers/specs/2026-04-06-autonomous-smoke-test.md`:
 
    Pick a README or docs file and append:
    ```
-   <!-- TODO(autonomous): add a one-sentence description of the autonomous loop to this file -->
+   <!-- TODO(autonomous): The autonomous loop automatically plans, executes, tests, and commits code improvements based on backlog proposals and failure detection, opening pull requests for human review. -->
    ```
    Commit this seed change to the smoke-test branch so the cycle has a clear target.
 
