@@ -92,7 +92,7 @@
 {:else if error}
   <div class="empty-state">
     Failed to load sprints.
-    <button class="btn btn-ghost btn-sm" style="margin-top: var(--space-3)" on:click={load}>Retry</button>
+    <button class="btn btn-ghost btn-sm" style="margin-top: var(--space-3)" onclick={load}>Retry</button>
   </div>
 {:else if sprints.length === 0}
   <div class="empty-state">No sprint data available.</div>

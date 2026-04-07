@@ -108,7 +108,14 @@ export class CycleRunner {
   private scoringFallback: 'static' | undefined;
 
   constructor(private readonly options: CycleRunnerOptions) {
-    this.cycleId = randomUUID();
+    // Honor AUTONOMOUS_CYCLE_ID when set (server's POST /api/v5/cycles route
+     // pre-allocates the id and pre-creates the dir, then spawns the CLI with
+     // this env var set so the CLI writes to the same dir the API client
+     // already has a pointer to). Falls back to a fresh UUID for direct CLI use.
+    const envId = process.env['AUTONOMOUS_CYCLE_ID'];
+    this.cycleId = envId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(envId)
+      ? envId
+      : randomUUID();
     this.startedAt = Date.now();
     this.logger = new CycleLogger(options.cwd, this.cycleId);
     this.killSwitch = new KillSwitch(

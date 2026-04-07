@@ -398,12 +398,47 @@ export async function cyclesRoutes(
     const dir = safeJoin(base, id);
     if (!dir || !existsSync(dir)) return reply.status(404).send({ error: 'Cycle not found' });
     const cycleFile = join(dir, 'cycle.json');
-    if (!existsSync(cycleFile)) {
-      return reply.status(404).send({ error: 'cycle.json not yet written', cycleInProgress: true });
+    if (existsSync(cycleFile)) {
+      const parsed = readJsonIfExists(cycleFile);
+      if (parsed === null) return reply.status(500).send({ error: 'Failed to parse cycle.json' });
+      return reply.send(parsed);
     }
-    const parsed = readJsonIfExists(cycleFile);
-    if (parsed === null) return reply.status(500).send({ error: 'Failed to parse cycle.json' });
-    return reply.send(parsed);
+    // cycle.json is only written at terminal stage. While the cycle is still
+    // running, synthesize a partial payload from events.jsonl so the dashboard
+    // detail page can render the live feed instead of showing HTTP 404.
+    const eventsFile = join(dir, 'events.jsonl');
+    const stat = existsSync(eventsFile) ? statSync(eventsFile) : null;
+    let lastStage = 'plan';
+    let startedAt: string | null = null;
+    let sprintVersion: string | null = null;
+    if (stat) {
+      try {
+        const text = readFileSync(eventsFile, 'utf8');
+        const lines = text.split('\n').filter(Boolean);
+        for (const line of lines) {
+          try {
+            const ev = JSON.parse(line) as { type?: string; phase?: string; stage?: string; at?: string; sprintVersion?: string };
+            if (!startedAt && ev.at) startedAt = ev.at;
+            if (ev.sprintVersion && !sprintVersion) sprintVersion = ev.sprintVersion;
+            if (ev.stage) lastStage = ev.stage;
+            else if (ev.type === 'phase.start' && ev.phase) lastStage = ev.phase;
+          } catch { /* skip malformed lines */ }
+        }
+      } catch { /* fall through to defaults */ }
+    }
+    return reply.send({
+      cycleId: id,
+      sprintVersion,
+      stage: lastStage,
+      startedAt: startedAt ?? new Date().toISOString(),
+      completedAt: null,
+      durationMs: null,
+      cost: { totalUsd: 0, budgetUsd: 0, byAgent: {}, byPhase: {} },
+      tests: { passed: 0, failed: 0, skipped: 0, total: 0, passRate: 0, newFailures: [] },
+      git: { branch: '', commitSha: null, filesChanged: [] },
+      pr: { url: null, number: null, draft: false },
+      cycleInProgress: true,
+    });
   });
 
   // GET /api/v5/cycles/:id/scoring ──────────────────────────────────────────
