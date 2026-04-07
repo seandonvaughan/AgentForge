@@ -2,6 +2,118 @@
 
 All notable changes to AgentForge are documented in this file.
 
+## [6.5.3] — 2026-04-07
+
+### Four improvements shipped in parallel
+
+v6.5.3 bundles four independent improvements to the autonomous cycle: parallel item dispatch, adaptive retry on item failure, SSE push updates for cycle events, and a cost preview endpoint. Three parallel agents shipped in ~5 minutes of wall-clock time.
+
+### 1. Parallel execute phase (Agent A)
+
+`runExecutePhase` in `packages/core/src/autonomous/phase-handlers/execute-phase.ts` now dispatches sprint items concurrently via an inline semaphore, capped at `config.limits.maxExecutePhaseParallelism` (default 3). Target speedup: ~3x on multi-item sprints.
+
+- Uses `Promise.allSettled()` to collect every result even when some items fail
+- File-conflict detection between parallel items is a known limitation for v6.5.4+; current implementation uses numeric parallelism only
+- New config field: `CycleConfig.limits.maxExecutePhaseParallelism` (default 3)
+
+### 2. Adaptive retry on item failure (Agent A)
+
+Items that fail on first dispatch are automatically retried once with a "previous attempt failed, here's the error, please take a different approach" prompt. Bounded at 1 retry per item to prevent runaway quota burn.
+
+- New config field: `CycleConfig.limits.maxItemRetries` (default 1)
+- Per-item result in `phases/execute.json` now includes an `attempts` field showing which items needed retries
+- Retry prompt includes the original task plus: `"PREVIOUS ATTEMPT FAILED:\n${lastError}\n\nPlease take a different approach..."`
+
+### 3. SSE cycle events (Agent B)
+
+The dashboard's cycle detail view no longer polls `/api/v5/cycles/:id/events` every 3 seconds. Instead, the server runs a filesystem watcher on `.agentforge/cycles/*/events.jsonl` and pushes new events to SSE clients in real time.
+
+- **Server approach**: 500ms polling watcher (not `fs.watch` — more reliable cross-platform). Anchors at file size when first seen, only emits appended bytes. Works for both `POST /api/v5/cycles`-spawned cycles and manually-invoked `npm run autonomous:cycle`.
+- **New cycle_event SSE type**: emitted via `globalStream.emit()` with `{ cycleId, type, phase, at, payload }` structure
+- **Dashboard**: `/cycles/[id]` Events tab uses `EventSource('/api/v5/stream')`, filters by `cycleId === $page.params.id`, prepends new events. Historical load still uses the REST endpoint; switches to SSE for incremental updates. Reconnect logic mirrored from `/live/+page.svelte`.
+- **Global live feed**: `/live` now recognizes `cycle_event` in its filter list — users can see cycle activity alongside other system events
+- Zero re-emission of historical events on server start (watcher anchors per-cycle file size at first sight)
+
+### 4. Cost preview endpoint (Agent C)
+
+New `POST /api/v5/cycles/preview` endpoint runs ONLY the PLAN stage (proposal scan + scoring agent) without spawning a full cycle. Users can see projected cost + ranked items + agent rationale before clicking "Run Cycle".
+
+- **Server**: new file `packages/server/src/routes/v5/cycles-preview.ts` (separate from `cycles.ts` to avoid merge conflicts with Agent B's SSE work). Registered alongside `cyclesRoutes` in `server.ts`.
+- **Cost**: the scoring agent IS called for real (~$0.50-2.00 plan quota), but NO other agents run, NO sprint JSON written, NO files modified. Preview is a pure planning dry-run.
+- **Dashboard**: `/cycles/new` now has a "Preview Cost" button next to "Run Cycle". Clicking it POSTs to `/preview` and renders a result panel with total cost vs budget, ranked items table with per-item cost/assignee/within-budget status, agent summary as blockquote, warnings list, and an overflow warning if the projected total exceeds the budget. Users can still run the cycle directly without previewing.
+- Response shape:
+  ```typescript
+  {
+    candidateCount: number;
+    rankedItems: RankedItem[];
+    totalEstimatedCostUsd: number;
+    budgetOverflowUsd: number;
+    withinBudget: number;
+    requiresApproval: number;
+    summary: string;
+    warnings: string[];
+    durationMs: number;
+    scoringCostUsd: number;
+    fallback: 'static' | null;
+  }
+  ```
+
+### Test Coverage
+
+- **320 autonomous tests passing** (was 300 in v6.5.2)
+- +7 execute phase tests (parallel dispatch cap, retry on failure, retry prompt content, double failure, attempts field, new config defaults)
+- +2 SSE watcher tests (pre-existing events not re-emitted, new events emitted correctly)
+- +11 cycles-preview tests (shape validation, empty backlog, body validation, no-side-effect invariant, fallback propagation, 500 on failures)
+
+### Files Changed
+
+Agent A:
+- `packages/core/src/autonomous/phase-handlers/execute-phase.ts` — parallel + retry
+- `packages/core/src/autonomous/types.ts` — new config fields
+- `packages/core/src/autonomous/config-loader.ts` — defaults
+- `tests/autonomous/unit/execute-phase.test.ts` — +6 tests
+- `tests/autonomous/unit/config-loader.test.ts` — +1 test
+
+Agent B:
+- `packages/server/src/routes/v5/cycles.ts` — startCycleEventsWatcher
+- `packages/server/src/routes/v5/stream.ts` — cycle_event type
+- `packages/dashboard/src/routes/cycles/[id]/+page.svelte` — EventSource subscription
+- `packages/dashboard/src/routes/live/+page.svelte` — filter list
+- `tests/autonomous/integration/cycles-api.test.ts` — +2 watcher tests
+
+Agent C:
+- `packages/server/src/routes/v5/cycles-preview.ts` (new)
+- `packages/server/src/server.ts` — register cyclesPreviewRoutes
+- `packages/dashboard/src/routes/cycles/new/+page.svelte` — preview button + panel
+- `tests/autonomous/integration/cycles-preview.test.ts` (new, 11 tests)
+
+Versions: `plugin.json` 6.5.2 → 6.5.3, `package.json` 6.5.2 → 6.5.3.
+
+### Running the new features
+
+```bash
+# Preview a cycle's cost before running
+curl -X POST http://localhost:4750/api/v5/cycles/preview \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+# → { candidateCount: 5, totalEstimatedCostUsd: 7.25, ... }
+
+# Watch cycle events live
+curl http://localhost:4750/api/v5/stream
+# → event stream with cycle_event messages as cycles run
+
+# Dashboard: visit /cycles/new, click "Preview Cost", see projected spend,
+# then click "Run Cycle" to actually execute.
+```
+
+### What's still deferred
+
+- **File-conflict detection between parallel execute items** — agents can currently race on the same file. Serialization on overlap is v6.5.4+ scope.
+- **Retry count > 1** — bounded at 1 retry intentionally to limit quota burn. Configurable per-cycle.
+- **Preview cost includes only scoring** — does not estimate execute phase agent calls. The scoring agent's per-item `estimatedCostUsd` is used for totals but execute reality may diverge.
+
+---
+
 ## [6.5.2] — 2026-04-07
 
 ### Full executive delegation — all 9 phases are real
