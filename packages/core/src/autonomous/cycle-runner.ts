@@ -23,21 +23,10 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 
-// v6.4.4 bug #3: the VERIFY stage runs `npm run test:run`, and several
-// tests write to `.agentforge/**` as a side effect (regenerating agent
-// YAMLs, embeddings.db, project-scan.json, team.yaml, models.yaml, etc.).
-// `collectChangedFiles` previously picked these up via `git status
-// --porcelain` and committed them as "cycle work product", polluting the PR.
-// This filter is a SHORT-TERM workaround — the real fix is to make tests
-// use `os.tmpdir()` workspaces (tracked for v6.5.0).
-const TEST_POLLUTION_PATTERNS: RegExp[] = [
-  /^\.agentforge\/agents\//,
-  /^\.agentforge\/v5\//,
-  /^\.agentforge\/analysis\//,
-  /^\.agentforge\/config\//,
-  /^\.agentforge\/team\.yaml$/,
-  /^\.agentforge\/data\//,
-];
+// v6.5.1: the TEST_POLLUTION_PATTERNS workaround from v6.4.4 has been removed.
+// Tests that previously mutated the real repo's .agentforge/ now use
+// os.tmpdir() workspaces (see tests/e2e/cli.test.ts), so collectChangedFiles
+// can rely on git status alone — no path-based denylist needed.
 import {
   CycleStage,
   CycleKilledError,
@@ -446,8 +435,7 @@ export class CycleRunner {
           return arrowIdx >= 0 ? rest.slice(arrowIdx + 4).trim() : rest.trim();
         })
         .filter(file => file.length > 0)
-        .filter(file => !file.startsWith('.agentforge/cycles/'))
-        .filter(file => !TEST_POLLUTION_PATTERNS.some(p => p.test(file)));
+        .filter(file => !file.startsWith('.agentforge/cycles/'));
     } catch {
       return [];
     }

@@ -238,8 +238,30 @@ describe("CLI E2E Tests", () => {
 
   describe("forge", () => {
     it("analyzes TypeScript project and writes team.yaml with model routing", async () => {
-      // Use the AgentForge project itself (it's a TypeScript project)
-      const projectDir = process.cwd();
+      // v6.5.1: previously ran against process.cwd() (the real AgentForge
+      // repo), which mutated the live .agentforge/ directory and forced
+      // cycle-runner to ship a TEST_POLLUTION_PATTERNS workaround. Now we
+      // seed a minimal TypeScript project inside an os.tmpdir() workspace.
+      const projectDir = createTempDir();
+      tempDirs.push(projectDir);
+
+      await fs.writeFile(
+        join(projectDir, "package.json"),
+        JSON.stringify({
+          name: "ts-forge-test",
+          version: "1.0.0",
+          devDependencies: { typescript: "^5.0.0" },
+        }, null, 2)
+      );
+      await fs.writeFile(
+        join(projectDir, "tsconfig.json"),
+        JSON.stringify({ compilerOptions: { target: "es2022" } }, null, 2)
+      );
+      await fs.mkdir(join(projectDir, "src"), { recursive: true });
+      await fs.writeFile(
+        join(projectDir, "src", "index.ts"),
+        "export const hello = (name: string): string => `hi ${name}`;\n"
+      );
 
       const result = await runCLI(["forge"], { cwd: projectDir });
 

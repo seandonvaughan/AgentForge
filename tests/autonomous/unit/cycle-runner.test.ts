@@ -489,60 +489,7 @@ describe('CycleRunner', () => {
     expect(parsed.error).toBe('database connection refused');
   });
 
-  // v6.4.4 bug #3
-  it('filters test-pollution paths from collectChangedFiles', async () => {
-    // Init a real git repo so `git status --porcelain` works.
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: tmpDir });
-    await execFileAsync('git', ['config', 'user.email', 't@t.com'], { cwd: tmpDir });
-    await execFileAsync('git', ['config', 'user.name', 't'], { cwd: tmpDir });
-    await execFileAsync('git', ['config', 'commit.gpgsign', 'false'], { cwd: tmpDir });
-    writeFileSync(join(tmpDir, 'README.md'), '# test\n');
-    await execFileAsync('git', ['add', 'README.md'], { cwd: tmpDir });
-    await execFileAsync('git', ['commit', '-m', 'init'], { cwd: tmpDir });
-
-    // Create a mix of legitimate and pollution files.
-    writeFileSync(join(tmpDir, 'src-change.ts'), 'x\n');
-    mkdirSync(join(tmpDir, '.agentforge/agents'), { recursive: true });
-    writeFileSync(join(tmpDir, '.agentforge/agents/coder.yaml'), 'a\n');
-    mkdirSync(join(tmpDir, '.agentforge/v5'), { recursive: true });
-    writeFileSync(join(tmpDir, '.agentforge/v5/embeddings.db'), 'b\n');
-    mkdirSync(join(tmpDir, '.agentforge/analysis'), { recursive: true });
-    writeFileSync(join(tmpDir, '.agentforge/analysis/project-scan.json'), '{}\n');
-    mkdirSync(join(tmpDir, '.agentforge/config'), { recursive: true });
-    writeFileSync(join(tmpDir, '.agentforge/config/models.yaml'), 'x\n');
-    writeFileSync(join(tmpDir, '.agentforge/team.yaml'), 'x\n');
-    mkdirSync(join(tmpDir, '.agentforge/data'), { recursive: true });
-    writeFileSync(join(tmpDir, '.agentforge/data/state.json'), '{}\n');
-
-    const deps = makeMockDeps();
-    const capturedFiles: string[][] = [];
-    deps.gitOps.stage = async (files: string[]) => {
-      capturedFiles.push(files);
-    };
-
-    const runner = new CycleRunner({
-      cwd: tmpDir,
-      config: DEFAULT_CYCLE_CONFIG,
-      runtime: deps.runtime as any,
-      proposalAdapter: deps.proposalAdapter as any,
-      scoringAdapter: deps.scoringAdapter as any,
-      phaseHandlers: deps.mockPhaseHandlers as any,
-      testRunner: deps.testRunner as any,
-      gitOps: deps.gitOps as any,
-      prOpener: deps.prOpener as any,
-      bus: deps.bus as any,
-      dryRun: { prOpener: true },
-    });
-
-    const result = await runner.start();
-    expect(result.stage).toBe(CycleStage.COMPLETED);
-    const committed = result.git.filesChanged;
-    expect(committed).toContain('src-change.ts');
-    expect(committed).not.toContain('.agentforge/agents/coder.yaml');
-    expect(committed).not.toContain('.agentforge/v5/embeddings.db');
-    expect(committed).not.toContain('.agentforge/analysis/project-scan.json');
-    expect(committed).not.toContain('.agentforge/config/models.yaml');
-    expect(committed).not.toContain('.agentforge/team.yaml');
-    expect(committed).not.toContain('.agentforge/data/state.json');
-  });
+  // v6.5.1: the v6.4.4 TEST_POLLUTION_PATTERNS workaround was removed because
+  // tests no longer mutate the real repo's .agentforge/. The filter that this
+  // test used to assert is gone — see tests/e2e/cli.test.ts for the cleanup.
 });
