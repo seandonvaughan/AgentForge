@@ -52,6 +52,9 @@ export function registerAutonomousCommand(program: Command): void {
           runAssignPhase,
           runGatePhase,
           runLearnPhase,
+          runTestPhase,
+          runReviewPhase,
+          runReleasePhase,
         } = await import('@agentforge/core');
 
         const config = loadCycleConfig(cwd);
@@ -123,10 +126,13 @@ export function registerAutonomousCommand(program: Command): void {
           // Bash/Glob/Grep tools enabled). The git stage picks up working-tree
           // changes after the phase completes.
           execute: (ctx: any) => runExecutePhase(ctx),
-          test: makeStubPhaseHandler('test'),
-          review: makeStubPhaseHandler('review'),
+          // v6.5.2: real verification phases — test/review dispatch read-only
+          // analysis agents (backend-qa, code-reviewer); release is a metadata
+          // marker phase (no agent call).
+          test: (ctx: any) => runTestPhase(ctx),
+          review: (ctx: any) => runReviewPhase(ctx),
           gate: (ctx: any) => runGatePhase(ctx),
-          release: makeStubPhaseHandler('release'),
+          release: (ctx: any) => runReleasePhase(ctx),
           learn: (ctx: any) => runLearnPhase(ctx),
         };
 

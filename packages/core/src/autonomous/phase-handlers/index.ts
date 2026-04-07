@@ -6,3 +6,6 @@ export * from './execute-phase.js';
 export * from './gate-phase.js';
 export * from './learn-phase.js';
 export * from './plan-phase.js';
+export * from './release-phase.js';
+export * from './review-phase.js';
+export * from './test-phase.js';
