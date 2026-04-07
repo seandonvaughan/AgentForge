@@ -189,11 +189,20 @@ export class ProposalToBacklog {
             continue;
           }
 
+          // v6.4.4: strict line-level match — the marker must be preceded
+          // only by comment characters (//, /*, *, <!--, #) plus optional
+          // text. This prevents false positives from strings, regex
+          // literals, and object literals that embed the marker pattern.
+          // `pattern` (from config) is retained as a capability gate; the
+          // real extraction uses markerLine below.
+          const markerLine = /^\s*(?:\/\/|\/\*+|\*|<!--|#)[^\n]*?(TODO|FIXME)\(autonomous\):\s*(.+)$/;
           const lines = content.split('\n');
           for (let i = 0; i < lines.length; i++) {
-            if (pattern.test(lines[i]!)) {
-              const marker = lines[i]!.match(/TODO\(autonomous\):\s*(.*)|FIXME\(autonomous\):\s*(.*)/);
-              let text = (marker?.[1] ?? marker?.[2] ?? '').trim();
+            if (!pattern.test(lines[i]!)) continue;
+            const marker = lines[i]!.match(markerLine);
+            if (!marker) continue;
+            {
+              let text = (marker[2] ?? '').trim();
               if (!text) continue;
 
               // v6.4.2: strip trailing HTML/markdown comment closers so

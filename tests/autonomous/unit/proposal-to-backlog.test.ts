@@ -96,6 +96,55 @@ describe('ProposalToBacklog', () => {
     expect(items.some(i => i.priority === 'P1')).toBe(true); // cost = P1
   });
 
+  it('requires a comment prefix before TODO(autonomous) markers', async () => {
+    mkdirSync(join(tmpDir, 'src'), { recursive: true });
+    // Positive cases — real comment markers in varied styles
+    writeFileSync(
+      join(tmpDir, 'src/a.ts'),
+      [
+        '// TODO(autonomous): fix line comment case',
+        '  // FIXME(autonomous): indented line comment',
+        '/* TODO(autonomous): block comment case */',
+        ' * TODO(autonomous): inside block comment',
+        '  * v6.4.2: FIXME(autonomous): versioned block comment',
+      ].join('\n'),
+    );
+    writeFileSync(
+      join(tmpDir, 'readme.md'),
+      '<!-- TODO(autonomous): add docs case -->',
+    );
+    writeFileSync(
+      join(tmpDir, 'src/b.js'),
+      '# TODO(autonomous): update YAML case',
+    );
+    // Negative cases — marker appears inside source strings/regex/object literals
+    writeFileSync(
+      join(tmpDir, 'src/neg.ts'),
+      [
+        'const text = "TODO(autonomous): should not match embedded";',
+        'const pattern = /TODO\\(autonomous\\):\\s*(.*)/;',
+        "const x = { type: 'FIXME(autonomous): nope' };",
+      ].join('\n'),
+    );
+
+    const bridge = new ProposalToBacklog(makeMockAdapter(), tmpDir, DEFAULT_CYCLE_CONFIG);
+    const items = await bridge.build();
+    const titles = items.map(i => i.title);
+
+    // Positives must be present
+    expect(titles).toContain('fix line comment case');
+    expect(titles).toContain('indented line comment');
+    expect(titles).toContain('block comment case');
+    expect(titles).toContain('inside block comment');
+    expect(titles).toContain('versioned block comment');
+    expect(titles).toContain('add docs case');
+    expect(titles).toContain('update YAML case');
+
+    // Negatives must NOT be present
+    expect(titles.some(t => t.includes('should not match embedded'))).toBe(false);
+    expect(titles.some(t => t.includes('nope'))).toBe(false);
+  });
+
   it('every BacklogItem has required fields', async () => {
     const adapter = makeMockAdapter({
       getRecentFailedSessions: async () => [
