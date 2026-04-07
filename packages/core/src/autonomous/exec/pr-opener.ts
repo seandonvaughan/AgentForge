@@ -37,8 +37,23 @@ export interface PROpenResult {
   draft: boolean;
 }
 
+export interface PROpenerConfig {
+  /** Returns the authenticated gh user's login. Defaults to `gh api user --jq .login`. */
+  getAuthUser?: () => Promise<string>;
+  /** Returns the list of label names that exist on the repo. Defaults to `gh label list`. */
+  getRepoLabels?: () => Promise<string[]>;
+  /** Warning callback for skipped labels/reviewers. Defaults to console.warn. */
+  onWarn?: (msg: string) => void;
+}
+
 export class PROpener {
-  constructor(private readonly cwd: string) {}
+  private authUserCache: string | null = null;
+  private repoLabelsCache: string[] | null = null;
+
+  constructor(
+    private readonly cwd: string,
+    private readonly config: PROpenerConfig = {},
+  ) {}
 
   async open(req: PROpenRequest): Promise<PROpenResult> {
     if (req.dryRun) {
@@ -52,7 +67,42 @@ export class PROpener {
     await this.requireGhInstalled();
     await this.requireGhAuthed();
 
-    const args = this.renderArgs(req);
+    // Filter reviewers: drop the authenticated user (GitHub rejects self-review).
+    let filteredReviewers: string[] | undefined = req.reviewers;
+    if (req.reviewers && req.reviewers.length > 0) {
+      try {
+        const authUser = await this.getAuthUser();
+        filteredReviewers = req.reviewers.filter((r) => r !== authUser);
+        const dropped = req.reviewers.filter((r) => r === authUser);
+        for (const d of dropped) {
+          this.warn(`skipping reviewer "${d}": cannot request review from PR author`);
+        }
+      } catch (err: any) {
+        this.warn(`failed to query authenticated gh user: ${err.message}`);
+      }
+    }
+
+    // Filter labels: drop any that don't exist on the repo.
+    let filteredLabels = req.labels;
+    if (req.labels.length > 0) {
+      try {
+        const existing = await this.getRepoLabels();
+        const existingSet = new Set(existing);
+        filteredLabels = req.labels.filter((l) => existingSet.has(l));
+        const dropped = req.labels.filter((l) => !existingSet.has(l));
+        for (const d of dropped) {
+          this.warn(`skipping label "${d}": label not found on repo`);
+        }
+      } catch (err: any) {
+        this.warn(`failed to query repo labels: ${err.message}`);
+      }
+    }
+
+    const args = this.renderArgs({
+      ...req,
+      labels: filteredLabels,
+      reviewers: filteredReviewers,
+    });
 
     try {
       const result = await execFileAsync('gh', args, {
@@ -87,8 +137,10 @@ export class PROpener {
     for (const label of req.labels) {
       args.push('--label', label);
     }
-    for (const reviewer of req.reviewers ?? []) {
-      args.push('--reviewer', reviewer);
+    if (req.reviewers && req.reviewers.length > 0) {
+      for (const reviewer of req.reviewers) {
+        args.push('--reviewer', reviewer);
+      }
     }
     return args;
   }
@@ -99,6 +151,49 @@ export class PROpener {
       throw new PROpenerError(`Cannot parse PR number from URL: ${url}`);
     }
     return parseInt(match[1]!, 10);
+  }
+
+  private async getAuthUser(): Promise<string> {
+    if (this.authUserCache !== null) return this.authUserCache;
+    const fn =
+      this.config.getAuthUser ??
+      (async () => {
+        const result = await execFileAsync('gh', ['api', 'user', '--jq', '.login'], {
+          timeout: 10_000,
+        });
+        return result.stdout.toString().trim();
+      });
+    this.authUserCache = await fn();
+    return this.authUserCache;
+  }
+
+  private async getRepoLabels(): Promise<string[]> {
+    if (this.repoLabelsCache !== null) return this.repoLabelsCache;
+    const fn =
+      this.config.getRepoLabels ??
+      (async () => {
+        const result = await execFileAsync(
+          'gh',
+          ['label', 'list', '--limit', '200', '--json', 'name', '--jq', '.[].name'],
+          { cwd: this.cwd, timeout: 15_000 },
+        );
+        return result.stdout
+          .toString()
+          .split('\n')
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0);
+      });
+    this.repoLabelsCache = await fn();
+    return this.repoLabelsCache;
+  }
+
+  private warn(msg: string): void {
+    if (this.config.onWarn) {
+      this.config.onWarn(msg);
+    } else {
+      // eslint-disable-next-line no-console
+      console.warn(`[PROpener] ${msg}`);
+    }
   }
 
   private async requireGhInstalled(): Promise<void> {
