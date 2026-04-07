@@ -17,6 +17,7 @@ import { rbacRoutes } from './routes/v5/rbac.js';
 import { intelligenceRoutes } from './routes/v5/intelligence.js';
 import { embeddingRoutes } from './routes/v5/embeddings.js';
 import { sprintsRoutes } from './routes/v5/sprints.js';
+import { cyclesRoutes } from './routes/v5/cycles.js';
 import { dashboardStubRoutes } from './routes/v5/dashboard-stubs.js';
 import { runRoutes } from './routes/v5/run.js';
 import { approvalsRoutes } from './routes/v5/approvals.js';
@@ -125,6 +126,9 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
 
   // ── Sprints (reads .agentforge/sprints/*.json — no adapter required) ─────────
   await sprintsRoutes(app, { projectRoot });
+
+  // ── Cycles (reads .agentforge/cycles/*/ — no adapter required) ───────────────
+  await cyclesRoutes(app, { projectRoot });
 
   // ── Dashboard stubs (flywheel, memory, settings — file-based, no adapter) ──
   await dashboardStubRoutes(app, { projectRoot });
