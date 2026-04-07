@@ -200,7 +200,11 @@ export class ProposalToBacklog {
           // etc. won't match even without the prefix requirement.
           // `pattern` (from config) is retained as a capability gate; the
           // real extraction uses markerLine below.
-          const markerLine = /^\s*(?:(?:\/\/|\/\*+|\*|<!--|#)[^\n]*?)?(TODO|FIXME)\(autonomous\):\s*(.+)$/;
+          // [^<\n]*? (not [^\n]*?) prevents the lazy scan from crossing a `<`
+          // character — which would allow the prefix to swallow `<!--` embedded
+          // inside a line comment (e.g. `// (<!-- TODO(autonomous): ... -->) ...`)
+          // and produce a false-positive backlog item.
+          const markerLine = /^\s*(?:(?:\/\/|\/\*+|\*|<!--|#)[^<\n]*?)?(TODO|FIXME)\(autonomous\):\s*(.+)$/;
           const lines = content.split('\n');
           for (let i = 0; i < lines.length; i++) {
             if (!pattern.test(lines[i]!)) continue;
@@ -248,11 +252,21 @@ export class ProposalToBacklog {
   // before items are written into the backlog schema.  The equivalent
   // input-side strip lives in scanTodoMarkers(); this ensures every code
   // path through build() respects the same contract.
+  //
+  // Note: `-->` is stripped globally (not just at string end) because adapter
+  // data can embed the delimiter mid-string, e.g.
+  //   "Session s1 failed with: TypeError -->. Investigate root cause and fix."
+  // Single-arrow operators (`->`) are preserved — the regex requires the full
+  // two-char `--` prefix before `>`.
   private sanitizeItems(items: BacklogItem[]): BacklogItem[] {
+    const stripClosers = (s: string): string =>
+      s.replace(/ *-->/g, '').replace(/\s*\*\/\s*$/, '').trim();
+
     return items.map(item => ({
       ...item,
-      id: item.id.replace(/\s*-->\s*$/, '').replace(/\s*\*\/\s*$/, '').trim(),
-      title: item.title.replace(/\s*-->\s*$/, '').replace(/\s*\*\/\s*$/, '').trim(),
+      id: stripClosers(item.id),
+      title: stripClosers(item.title),
+      description: stripClosers(item.description),
     }));
   }
 

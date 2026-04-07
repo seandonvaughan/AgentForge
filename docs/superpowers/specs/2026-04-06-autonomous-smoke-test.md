@@ -2,6 +2,8 @@
 
 **Purpose:** Prove the autonomous cycle works end-to-end against the real AgentForge repository before declaring the feature shipped.
 
+**What it validates:** The smoke test verifies the full 9-phase autonomous cycle: sprint discovery, item scoring, test execution, code changes, git workflow, and PR creation with structured metadata.
+
 **Prerequisites:**
 - `npm install` complete, `npm run build` passes with 0 errors
 - All unit + integration tests green: `cd packages/core && npx vitest run`

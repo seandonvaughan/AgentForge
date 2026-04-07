@@ -1,0 +1,81 @@
+{
+  "sprints": [
+    {
+      "version": "7.0.0",
+      "sprintId": "v7-0-0-autonomous",
+      "title": "AgentForge v7.0.0 — Autonomous Cycle",
+      "createdAt": "2026-04-07T22:13:13.396Z",
+      "phase": "release",
+      "items": [
+        {
+          "id": "todo-packages-core-src-autonomous-proposal-to-backlog-ts-67",
+          "title": "Parse --> markers and plain text lines in proposal-to-backlog",
+          "description": "Core pipeline code in proposal-to-backlog.ts directly affects how raw proposals are ingested into the backlog. A parsing bug here corrupts every downstream item — sprint generation, cost estimation, and execution all depend on clean backlog items. Fixing this first unblocks item ranked 2, which lives in the same file.",
+          "priority": "P0",
+          "assignee": "CoreAutonomyAgent",
+          "status": "completed",
+          "estimatedCostUsd": 2.5,
+          "tags": [
+            "parser",
+            "autonomous-loop",
+            "core",
+            "P1"
+          ]
+        },
+        {
+          "id": "todo-packages-core-src-autonomous-proposal-to-backlog-ts-213",
+          "title": "Exclude --> delimiter from parsed proposal content",
+          "description": "Same file as rank-1; this is the complementary fix ensuring the --> token is stripped from extracted content rather than included as literal text in the proposal body. Both fixes together restore correct end-to-end parsing; neither is fully useful without the other. Depends on rank-1 to avoid redundant context-switching overhead.",
+          "priority": "P0",
+          "assignee": "CoreAutonomyAgent",
+          "status": "completed",
+          "estimatedCostUsd": 2,
+          "tags": [
+            "parser",
+            "autonomous-loop",
+            "core",
+            "P1"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-06-autonomous-smoke-test-md-48",
+          "title": "Add one-sentence autonomous loop description to smoke-test spec",
+          "description": "Minimal-effort, high-confidence doc task. A single sentence in the smoke-test spec improves onboarding clarity and reduces future ambiguity about what the smoke test covers. Low risk, fast to verify, no code changes.",
+          "priority": "P0",
+          "assignee": "DocsAgent",
+          "status": "completed",
+          "estimatedCostUsd": 0.8,
+          "tags": [
+            "documentation",
+            "smoke-test",
+            "autonomous-loop",
+            "P1"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-plans-2026-04-06-autonomous-loop-part2-md-2541",
+          "title": "Document autonomous loop planning, execution, testing, commit, and PR flow",
+          "description": "Valuable architectural documentation describing the full autonomous loop lifecycle (plan → execute → test → commit → PR). However, the TODO sits inside a plans document at line 2542, suggesting it is large and context-heavy. Risk of scope creep is higher than the other items. Ranked last because the code fixes (ranks 1-2) are prerequisites for the loop to run correctly, and the spec doc (rank 3) is cheaper to close first.",
+          "priority": "P1",
+          "assignee": "DocsAgent",
+          "status": "completed",
+          "estimatedCostUsd": 2,
+          "tags": [
+            "documentation",
+            "autonomous-loop",
+            "architecture",
+            "chore",
+            "P1"
+          ]
+        }
+      ],
+      "budget": 50,
+      "teamSize": 2,
+      "successCriteria": [
+        "All sprint items completed",
+        "Test pass rate >= 95%",
+        "Total cost <= $50"
+      ]
+    }
+  ]
+}

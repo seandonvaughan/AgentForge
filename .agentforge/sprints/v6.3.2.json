@@ -1,0 +1,51 @@
+{
+  "sprints": [
+    {
+      "version": "6.3.2",
+      "sprintId": "v6-3-2-autonomous",
+      "title": "AgentForge v6.3.2 — Autonomous Cycle",
+      "createdAt": "2026-04-07T22:01:01.896Z",
+      "phase": "release",
+      "items": [
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-06-autonomous-smoke-test-md-50",
+          "title": "add a one-sentence description of the autonomous loop to this file",
+          "description": "Tightly scoped, single-line documentation change with a crystal-clear acceptance criterion. Zero regression risk, no dependencies, and unblocks readers trying to understand the autonomous loop spec at a glance. Completing this first establishes a canonical one-liner that other items (such as the broader loop documentation chore) can reference.",
+          "priority": "P0",
+          "assignee": "DocumentationAgent",
+          "status": "completed",
+          "estimatedCostUsd": 0.5,
+          "tags": [
+            "docs",
+            "autonomous-loop",
+            "quick-win",
+            "p1"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-plans-2026-04-06-autonomous-loop-part2-md-2541",
+          "title": "The autonomous loop (CycleRunner) scans for TODO markers, failed sessions, and cost anomalies to build a backlog…",
+          "description": "This TODO marker contains a dense prose description of the autonomous loop's full behavior rather than a discrete actionable instruction, which lowers confidence in scoping. The work is most likely a documentation or inline-comment chore that validates the plan doc against the current implementation. Ranked second because its scope is fuzzier and it carries light regression risk if the doc is used as a normative reference by the CycleRunner itself. Completing item 1 first provides the canonical summary sentence this doc may need to cite.",
+          "priority": "P0",
+          "assignee": "DocumentationAgent",
+          "status": "completed",
+          "estimatedCostUsd": 4.5,
+          "tags": [
+            "docs",
+            "autonomous-loop",
+            "chore",
+            "p1",
+            "needs-scoping"
+          ]
+        }
+      ],
+      "budget": 50,
+      "teamSize": 1,
+      "successCriteria": [
+        "All sprint items completed",
+        "Test pass rate >= 95%",
+        "Total cost <= $50"
+      ]
+    }
+  ]
+}

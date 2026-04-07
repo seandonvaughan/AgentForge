@@ -240,6 +240,25 @@ describe('ProposalToBacklog', () => {
     expect(sessionItem?.title).toContain('TypeError: undefined');
   });
 
+  it('strips --> from description field at the output boundary', async () => {
+    // The description field embeds raw adapter strings, which may carry -->
+    // from HTML comment fragments.  sanitizeItems() must clean those up too.
+    const adapter = makeMockAdapter({
+      getRecentFailedSessions: async () => [
+        { id: 's1', agent: 'coder', error: 'TypeError: undefined -->', confidence: 0.9 },
+      ],
+    });
+    const bridge = new ProposalToBacklog(adapter, tmpDir, DEFAULT_CYCLE_CONFIG);
+    const items = await bridge.build();
+
+    const sessionItem = items.find(i => i.id.startsWith('sess-'));
+    expect(sessionItem).toBeDefined();
+    // --> must not appear anywhere in the description
+    expect(sessionItem!.description).not.toContain('-->');
+    // The text before --> must survive
+    expect(sessionItem!.description).toContain('TypeError: undefined');
+  });
+
   it('every BacklogItem has required fields', async () => {
     const adapter = makeMockAdapter({
       getRecentFailedSessions: async () => [
