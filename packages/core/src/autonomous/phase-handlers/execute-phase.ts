@@ -296,6 +296,9 @@ export async function runExecutePhase(
             response: typeof result?.output === 'string' ? result.output : '',
             attempts,
             agentId: item.assignee,
+            // v6.7.4: surface model + effort to the Agents tab
+            model: typeof (result as any)?.model === 'string' ? (result as any).model : undefined,
+            effort: typeof (result as any)?.effort === 'string' ? (result as any).effort : 'high',
           };
           liveResults.set(item.id, completedResult as ItemResult);
           return completedResult;

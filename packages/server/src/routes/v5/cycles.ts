@@ -182,10 +182,12 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleListRow | null 
   let costUsd = 0;
   let testsPassed = 0;
   let testsTotal = 0;
+  let executeJsonExists = false;
   if (existsSync(phasesDir)) {
     for (const name of ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate', 'release', 'learn']) {
       const phaseFile = join(phasesDir, `${name}.json`);
       if (!existsSync(phaseFile)) continue;
+      if (name === 'execute') executeJsonExists = true;
       try {
         const phase = JSON.parse(readFileSync(phaseFile, 'utf-8')) as Record<string, unknown>;
         if (typeof phase['costUsd'] === 'number') costUsd += phase['costUsd'] as number;
@@ -195,6 +197,45 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleListRow | null 
         }
       } catch { /* skip */ }
     }
+  }
+
+  // Fallback: if execute.json isn't written yet (legacy cycles without
+  // incremental snapshots, or execute phase still running), synthesize
+  // execute cost from the sprint file item estimatedCostUsd sums. This
+  // way the list row shows ~$28 instead of $0.24 for a cycle that's
+  // 10 items deep into execute.
+  if (!executeJsonExists) {
+    try {
+      const linkFile = join(cycleDir, 'sprint-link.json');
+      let sprintVersion: string | null = null;
+      if (existsSync(linkFile)) {
+        sprintVersion = JSON.parse(readFileSync(linkFile, 'utf-8'))?.sprintVersion ?? null;
+      }
+      if (!sprintVersion) {
+        // Legacy: newest sprint file by mtime
+        const sd = join(process.cwd(), '.agentforge/sprints');
+        if (existsSync(sd)) {
+          const files = readdirSync(sd)
+            .filter(f => f.startsWith('v') && f.endsWith('.json'))
+            .map(f => ({ f, m: statSync(join(sd, f)).mtimeMs }))
+            .sort((a, b) => b.m - a.m);
+          if (files[0]) sprintVersion = files[0].f.slice(1, -5);
+        }
+      }
+      if (sprintVersion) {
+        const sprintFile = join(process.cwd(), '.agentforge/sprints', `v${sprintVersion}.json`);
+        if (existsSync(sprintFile)) {
+          const raw = JSON.parse(readFileSync(sprintFile, 'utf-8'));
+          const sprint = Array.isArray(raw.sprints) ? raw.sprints[0] : raw;
+          const items = sprint?.items ?? [];
+          for (const it of items) {
+            if ((it.status === 'completed' || it.status === 'in_progress') && typeof it.estimatedCostUsd === 'number') {
+              costUsd += it.estimatedCostUsd;
+            }
+          }
+        }
+      }
+    } catch { /* non-fatal */ }
   }
 
   return {
@@ -601,6 +642,42 @@ export async function cyclesRoutes(
       response?: string;
       error?: string;
       attempts?: number;
+      model?: string;
+      effort?: string;
+    }
+
+    // Load default model + effort for each agent from .agentforge/agents/*.yaml.
+    // Used as a fallback when phase JSONs don't record the model actually used
+    // (legacy runs, or the synthesized sprint-file fallback below). Read once
+    // per request and cached in this closure. Also honors the runtime-adapter's
+    // fallback classification when the exact agentId YAML doesn't exist.
+    const agentYamlDefaults = new Map<string, { model?: string; effort?: string }>();
+    function resolveFallbackAgentId(agentId: string): string {
+      const lower = agentId.toLowerCase();
+      if (/doc|writer|tech-writer/.test(lower)) return 'documentation-writer';
+      if (/test|qa/.test(lower)) return 'backend-qa';
+      if (/review/.test(lower)) return 'code-reviewer';
+      return 'coder';
+    }
+    function getAgentDefaults(agentId: string): { model?: string; effort?: string } {
+      if (agentYamlDefaults.has(agentId)) return agentYamlDefaults.get(agentId)!;
+      const tryRead = (id: string): { model?: string; effort?: string } | null => {
+        try {
+          const yamlPath = join(opts.projectRoot, '.agentforge/agents', `${id}.yaml`);
+          if (!existsSync(yamlPath)) return null;
+          const content = readFileSync(yamlPath, 'utf-8');
+          const out: { model?: string; effort?: string } = {};
+          const m = content.match(/^model:\s*(\S+)/m);
+          if (m) out.model = m[1];
+          const e = content.match(/^effort:\s*(\S+)/m);
+          if (e) out.effort = e[1];
+          return out;
+        } catch { return null; }
+      };
+      const direct = tryRead(agentId);
+      const out = direct ?? tryRead(resolveFallbackAgentId(agentId)) ?? { model: 'opus', effort: 'high' };
+      agentYamlDefaults.set(agentId, out);
+      return out;
     }
     const runs: AgentRunRow[] = [];
     const byAgent: Record<string, { runs: number; totalCostUsd: number; totalDurationMs: number; phases: Set<string> }> = {};
@@ -614,6 +691,7 @@ export async function cyclesRoutes(
         const phaseRuns = Array.isArray(phase.agentRuns) ? phase.agentRuns : [];
         for (const run of phaseRuns) {
           const agentId = String(run.agentId ?? 'unknown');
+          const defaults = getAgentDefaults(agentId);
           const row: AgentRunRow = {
             phase: name,
             agentId,
@@ -624,6 +702,8 @@ export async function cyclesRoutes(
             response: typeof run.response === 'string' ? run.response : undefined,
             error: typeof run.error === 'string' ? run.error : undefined,
             attempts: typeof run.attempts === 'number' ? run.attempts : undefined,
+            model: typeof run.model === 'string' ? run.model : defaults.model,
+            effort: typeof run.effort === 'string' ? run.effort : (defaults.effort ?? 'high'),
           };
           runs.push(row);
           if (row.itemId && name === 'execute') seenExecuteItemIds.add(row.itemId);
@@ -671,6 +751,7 @@ export async function cyclesRoutes(
             if (seenExecuteItemIds.has(it.id)) continue;
             if (it.status !== 'completed' && it.status !== 'failed' && it.status !== 'in_progress') continue;
             const agentId = String(it.assignee ?? 'unknown');
+            const defaults = getAgentDefaults(agentId);
             const synthesized: AgentRunRow = {
               phase: 'execute',
               agentId,
@@ -683,6 +764,8 @@ export async function cyclesRoutes(
               response: undefined,
               error: undefined,
               attempts: undefined,
+              model: defaults.model,
+              effort: defaults.effort ?? 'high',
             };
             runs.push(synthesized);
             if (!byAgent[agentId]) {

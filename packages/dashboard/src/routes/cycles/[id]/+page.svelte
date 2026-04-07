@@ -4,6 +4,7 @@
   import StageBadge from '$lib/components/StageBadge.svelte';
   import { relativeTime, formatDuration } from '$lib/util/relative-time';
   import { withWorkspace } from '$lib/stores/workspace';
+  import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
 
   const TERMINAL = new Set(['completed', 'failed', 'killed']);
   const PHASES = ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate', 'release', 'learn'] as const;
@@ -239,6 +240,45 @@
     }
   }
 
+  // Fields that contain markdown prose — rendered by MarkdownRenderer rather
+  // than dumped raw into the JSON pre-block.
+  const MARKDOWN_FIELDS = new Set(['review', 'rationale', 'retrospective', 'response']);
+
+  /** Returns a copy of a phase object with markdown prose fields removed,
+   *  leaving only the structured metadata that benefits from JSON display. */
+  function stripMarkdownFields(data: Record<string, unknown>): Record<string, unknown> {
+    const copy: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(data)) {
+      if (!MARKDOWN_FIELDS.has(k)) copy[k] = v;
+    }
+    return copy;
+  }
+
+  /** Collect all markdown prose sections present in a phase object. */
+  function markdownSections(data: Record<string, unknown>): Array<{ label: string; content: string }> {
+    const sections: Array<{ label: string; content: string }> = [];
+    for (const field of MARKDOWN_FIELDS) {
+      const val = data[field];
+      if (typeof val === 'string' && val.trim()) {
+        sections.push({ label: field, content: val });
+      }
+    }
+    return sections;
+  }
+
+  /** Collect markdown prose from each agentRun's response field. */
+  function agentRunSections(data: Record<string, unknown>): Array<{ agentId: string; response: string }> {
+    const runs = data['agentRuns'];
+    if (!Array.isArray(runs)) return [];
+    return runs
+      .filter((r): r is Record<string, unknown> => r != null && typeof r === 'object')
+      .filter((r) => typeof r['response'] === 'string' && (r['response'] as string).trim())
+      .map((r) => ({
+        agentId: String(r['agentId'] ?? 'agent'),
+        response: r['response'] as string,
+      }));
+  }
+
   function costFraction(cost?: number | null, budget?: number | null): number {
     if (cost == null || budget == null || budget <= 0) return 0;
     return Math.min(1, cost / budget);
@@ -444,6 +484,8 @@
                 <span class="run-phase">{run.phase}</span>
                 <span class="run-agent mono">{run.agentId}</span>
                 <span class="run-status {run.status}">{run.status}</span>
+                {#if run.model}<span class="model-chip {run.model.replace(/[^a-z]/gi, '')}">{run.model}</span>{/if}
+                {#if run.effort}<span class="effort-chip">effort: {run.effort}</span>{/if}
                 {#if run.itemId}<span class="run-item muted">{run.itemId.slice(0, 60)}</span>{/if}
               </div>
               <div class="run-meta">
@@ -608,12 +650,28 @@
                 {:else if phaseData[phase] == null}
                   <div class="muted">Not present.</div>
                 {:else}
-                  {#if phaseData[phase].agentRuns}
-                    <div class="phase-runs">
-                      <strong>agentRuns:</strong> {phaseData[phase].agentRuns.length ?? 0}
+                    {@const phaseSections = markdownSections(phaseData[phase])}
+                  {@const phaseAgentRuns = agentRunSections(phaseData[phase])}
+                  {@const metaOnly = stripMarkdownFields(phaseData[phase])}
+
+                  <!-- Structured metadata (status, cost, duration, etc.) -->
+                  <pre class="json">{pretty(metaOnly)}</pre>
+
+                  <!-- Markdown prose sections (review, rationale, retrospective) -->
+                  {#each phaseSections as section}
+                    <div class="phase-md-section">
+                      <div class="phase-md-label">{section.label}</div>
+                      <MarkdownRenderer content={section.content} />
                     </div>
-                  {/if}
-                  <pre class="json">{pretty(phaseData[phase])}</pre>
+                  {/each}
+
+                  <!-- Per-agent run responses rendered as markdown -->
+                  {#each phaseAgentRuns as run, i}
+                    <div class="phase-md-section">
+                      <div class="phase-md-label">agentRun[{i}] response — {run.agentId}</div>
+                      <MarkdownRenderer content={run.response} />
+                    </div>
+                  {/each}
                 {/if}
               </div>
             {/if}
@@ -887,6 +945,22 @@
   }
   .phase-runs { font-size: var(--text-xs); color: var(--color-text-muted); }
 
+  .phase-md-section {
+    border-top: 1px solid var(--color-border);
+    padding-top: var(--space-3);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .phase-md-label {
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-muted);
+  }
+
   .file-tabs {
     display: flex;
     gap: var(--space-1);
@@ -1037,6 +1111,26 @@
   .run-status.completed { background: rgba(76,175,130,0.15); color: var(--color-success); }
   .run-status.failed { background: rgba(224,90,90,0.15); color: var(--color-danger); }
   .run-item { font-size: var(--text-xs); font-family: var(--font-mono); }
+  .model-chip {
+    padding: 2px var(--space-2);
+    border-radius: 9999px;
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+    font-weight: 600;
+    border: 1px solid currentColor;
+  }
+  .model-chip[class*="opus"] { color: var(--color-opus, #f5c842); background: rgba(245,200,66,0.08); }
+  .model-chip[class*="sonnet"] { color: var(--color-sonnet, #4a9eff); background: rgba(74,158,255,0.08); }
+  .model-chip[class*="haiku"] { color: var(--color-haiku, #4cb071); background: rgba(76,175,130,0.08); }
+  .effort-chip {
+    padding: 2px var(--space-2);
+    border-radius: 9999px;
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+    color: var(--color-text-muted);
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border);
+  }
   .run-meta {
     display: flex;
     gap: var(--space-2);
