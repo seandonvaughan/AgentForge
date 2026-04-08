@@ -14,9 +14,105 @@
 // when more than `config.limits.maxExecutePhaseFailureRate` (default 0.5)
 // of items fail. All-failures returns 'blocked'.
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
+
+// ---- Memory injection ----
+// Reads tag-filtered past failure entries from .agentforge/memory/*.jsonl so
+// each agent can avoid mistakes made on similar work in prior cycles.
+
+/** Minimal shape of a cross-cycle memory entry.  The full schema lives in
+ *  packages/core/src/memory/types.ts but we redeclare only what we need here
+ *  to stay free of a hard import dependency while the memory module is being
+ *  built in parallel. */
+export interface MemoryEntry {
+  id?: string;
+  key: string;
+  /** Human-readable summary or structured value of the entry. */
+  value: string | Record<string, unknown>;
+  type: 'cycle-outcome' | 'gate-verdict' | 'review-finding' | 'failure-pattern' | 'learned-fact' | string;
+  createdAt: string;
+  source?: string;
+  tags?: string[];
+}
+
+/** Types we prioritise when selecting entries to inject into a prompt.
+ *  cycle-outcome is skipped — it's high-level and less actionable. */
+const PRIORITY_TYPES = new Set(['failure-pattern', 'review-finding', 'gate-verdict', 'learned-fact']);
+
+/**
+ * Reads .agentforge/memory/*.jsonl, parses each JSONL line, filters to
+ * entries whose tags overlap with `itemTags`, and returns up to `maxEntries`
+ * of the most-recent, highest-priority results.
+ *
+ * Failures are silently tolerated — a missing or corrupt memory dir must
+ * never block an execute phase run.
+ */
+export function readRelevantMemoryEntries(
+  projectRoot: string,
+  itemTags: string[],
+  maxEntries: number = 5,
+): MemoryEntry[] {
+  const memoryDir = join(projectRoot, '.agentforge', 'memory');
+  let files: string[];
+  try {
+    files = readdirSync(memoryDir).filter((f) => f.endsWith('.jsonl'));
+  } catch {
+    // Memory directory doesn't exist yet — that's fine.
+    return [];
+  }
+
+  const tagSet = new Set(itemTags.map((t) => t.toLowerCase()));
+  const all: MemoryEntry[] = [];
+
+  for (const file of files) {
+    let raw: string;
+    try {
+      raw = readFileSync(join(memoryDir, file), 'utf8');
+    } catch {
+      continue;
+    }
+    for (const line of raw.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        const entry = JSON.parse(trimmed) as MemoryEntry;
+        // Only include entries that share at least one tag with the item.
+        const entryTags = (entry.tags ?? []).map((t: string) => t.toLowerCase());
+        if (tagSet.size > 0 && !entryTags.some((t) => tagSet.has(t))) continue;
+        all.push(entry);
+      } catch {
+        // Malformed line — skip.
+      }
+    }
+  }
+
+  // Prioritize failure-related types, then sort by recency (most recent first).
+  all.sort((a, b) => {
+    const aPriority = PRIORITY_TYPES.has(a.type) ? 0 : 1;
+    const bPriority = PRIORITY_TYPES.has(b.type) ? 0 : 1;
+    if (aPriority !== bPriority) return aPriority - bPriority;
+    return (b.createdAt ?? '').localeCompare(a.createdAt ?? '');
+  });
+
+  return all.slice(0, maxEntries);
+}
+
+/** Formats a list of memory entries as a markdown section suitable for
+ *  inclusion in an agent prompt.  Returns an empty string when the list
+ *  is empty so callers can safely concatenate without extra whitespace. */
+export function formatMemorySection(entries: MemoryEntry[]): string {
+  if (entries.length === 0) return '';
+  const lines = entries.map((e) => {
+    const value =
+      typeof e.value === 'string'
+        ? e.value
+        : JSON.stringify(e.value, null, 2);
+    return `- [${e.type}] **${e.key}**: ${value}`;
+  });
+  return `\n## Memory: Past Failures on Similar Work\n\nThe following entries from prior cycles matched this item's tags. Use them to avoid repeating past mistakes:\n\n${lines.join('\n')}\n`;
+}
 
 /** Default tools enabled for execute-phase agent runs. Task is intentionally
  *  excluded to prevent recursive subagent dispatch from burning quota. */
@@ -165,7 +261,7 @@ export async function runExecutePhase(
   const startedAt = Date.now();
   const allowedTools = options.allowedTools ?? EXECUTE_PHASE_DEFAULT_TOOLS;
   const maxFailureRate = options.maxFailureRate ?? 0.5;
-  const maxParallelism = Math.max(1, options.maxParallelism ?? 3);
+  const ceilingParallelism = Math.max(1, options.maxParallelism ?? 3);
   const maxItemRetries = Math.max(0, options.maxItemRetries ?? 1);
 
   ctx.bus.publish('sprint.phase.started', {
@@ -225,6 +321,77 @@ export async function runExecutePhase(
         ? sprintFile.sprints[0]!
         : null;
   const items: SprintItem[] = (sprintObj?.items ?? []) as SprintItem[];
+
+  // ── v6.7.4 Load Assessment ──────────────────────────────────────────────
+  // Pick a parallelism that respects BOTH the configured ceiling and the
+  // sprint's actual workload. The "team should assess the load" — instead
+  // of blindly running at the ceiling, look at item count, declared file
+  // overlap, and complexity tags to pick a smarter starting parallelism.
+  // Also wires a runtime circuit breaker that halves parallelism mid-phase
+  // if items start failing with the rate-limit fingerprint.
+  function assessLoad(): { initial: number; rationale: string } {
+    const itemCount = items.length;
+    if (itemCount === 0) return { initial: 1, rationale: 'no items' };
+
+    // Cap A: never exceed item count
+    let cap = Math.min(ceilingParallelism, itemCount);
+
+    // Cap B: complex / heavy items need lower parallelism. Tags like
+    // "heavy", "compute", "long-running", "p0" reduce the cap.
+    const heavyTags = new Set(['heavy', 'compute', 'long-running', 'architecture']);
+    const heavyCount = items.filter((i: any) =>
+      Array.isArray(i.tags) && i.tags.some((t: string) => heavyTags.has(t))
+    ).length;
+    if (heavyCount > itemCount / 2) cap = Math.max(2, Math.floor(cap / 2));
+
+    // Cap C: if MOST items declare overlapping files, dispatch fewer at once
+    // (the FileLockManager would serialize them anyway). Cheap heuristic:
+    // if every item touches the same directory, lower the cap.
+    const allFiles = items.flatMap((i: any) => Array.isArray(i.files) ? i.files : []);
+    if (allFiles.length > 0) {
+      const dirs = new Set(allFiles.map((f: string) => f.split('/').slice(0, 2).join('/')));
+      if (dirs.size <= 2) cap = Math.max(2, Math.min(cap, 3));
+    }
+
+    // Cap D: fewer items than ceiling means run them all at once
+    if (itemCount <= 3) cap = itemCount;
+
+    const rationale = `${itemCount} items, ceiling ${ceilingParallelism}, ${heavyCount} heavy → ${cap} parallel`;
+    return { initial: cap, rationale };
+  }
+
+  const loadAssessment = assessLoad();
+  let maxParallelism = loadAssessment.initial;
+  // eslint-disable-next-line no-console
+  console.log(`[execute] load assessment: ${loadAssessment.rationale}`);
+
+  // Circuit breaker: track consecutive rate-limit-style failures.
+  // If we see N in a row, halve parallelism (down to floor of 1).
+  let consecutiveRateLimitFails = 0;
+  const RATE_LIMIT_TRIP_THRESHOLD = 3;
+  function looksLikeRateLimit(err: string): boolean {
+    const lower = err.toLowerCase();
+    return lower.includes('rate') || lower.includes('quota') ||
+           lower.includes('429') || lower.includes('exited with code 1');
+  }
+  function recordItemResult(success: boolean, errStr?: string): void {
+    if (success) {
+      consecutiveRateLimitFails = 0;
+      return;
+    }
+    if (errStr && looksLikeRateLimit(errStr)) {
+      consecutiveRateLimitFails++;
+      if (consecutiveRateLimitFails >= RATE_LIMIT_TRIP_THRESHOLD && maxParallelism > 1) {
+        const newCap = Math.max(1, Math.floor(maxParallelism / 2));
+        // eslint-disable-next-line no-console
+        console.warn(`[execute] circuit breaker tripped: ${consecutiveRateLimitFails} rate-limit failures in a row, halving parallelism ${maxParallelism} → ${newCap}`);
+        maxParallelism = newCap;
+        consecutiveRateLimitFails = 0;
+      }
+    } else {
+      consecutiveRateLimitFails = 0;
+    }
+  }
 
   let totalCost = 0;
   const liveResults = new Map<string, ItemResult>();
@@ -293,9 +460,15 @@ export async function runExecutePhase(
       writeFileSync(sprintPath, JSON.stringify(sprintFile, null, 2));
     } catch { /* non-fatal */ }
     try {
+      // Read tag-filtered memory entries once per item (before retry loop) so
+      // every attempt benefits from the same historical context.
+      const memoryEntries = readRelevantMemoryEntries(
+        ctx.projectRoot,
+        item.tags ?? [],
+      );
       for (let attempt = 0; attempt <= maxItemRetries; attempt++) {
         attempts = attempt + 1;
-        const task = buildItemPrompt(item, ctx.projectRoot, attempt, lastError);
+        const task = buildItemPrompt(item, ctx.projectRoot, attempt, lastError, memoryEntries);
         try {
           const result = await ctx.runtime.run(item.assignee, task, {
             allowedTools,
@@ -371,6 +544,13 @@ export async function runExecutePhase(
       // Update the live execute.json snapshot so the dashboard sees
       // real-time cost + per-agent activity as items complete.
       snapshotExecuteProgress();
+      // v6.7.4: feed result into the circuit breaker so a streak of
+      // rate-limit failures dynamically halves parallelism.
+      const liveResult = liveResults.get(item.id);
+      recordItemResult(
+        liveResult?.status === 'completed',
+        liveResult?.error ?? lastError,
+      );
     }
   };
 
@@ -503,17 +683,19 @@ function buildItemPrompt(
   cwd: string,
   attempt: number = 0,
   lastError?: string,
+  memoryEntries: MemoryEntry[] = [],
 ): string {
   const tags =
     item.tags && item.tags.length > 0 ? item.tags.join(', ') : 'none';
   const description = item.description || item.title;
   const source = item.source || 'manual';
+  const memorySec = formatMemorySection(memoryEntries);
   const base = `You are working on sprint item "${item.title}" in the AgentForge repository at ${cwd}.
 
 Description: ${description}
 Source: ${source} (e.g., TODO(autonomous) marker)
 Tags: ${tags}
-
+${memorySec}
 Your job: use the Read, Write, Edit, Bash, Glob, and Grep tools to make the code change required to resolve this item. Do NOT commit anything — the autonomous cycle's Git stage will commit everything that changed in the working tree after all items are done.
 
 Work efficiently. Report what you changed when done.`;
