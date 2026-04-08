@@ -4,6 +4,7 @@
   "description": "Adaptive Agent Team Builder for Claude Code",
   "type": "module",
   "main": "dist/index.js",
+  "packageManager": "pnpm@9.15.0",
   "workspaces": [
     "packages/*",
     "plugins/*"
