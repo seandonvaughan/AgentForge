@@ -919,28 +919,18 @@ export async function cyclesRoutes(
       } catch { /* skip malformed */ }
     }
 
-    // Fallback: if phases/execute.json hasn't been written yet (legacy
-    // cycles without the v6.7.4 live snapshot, or while execute is still
-    // in flight), synthesize execute runs from the incrementally-updated
-    // sprint file. This way the Agents tab shows real progress even for
-    // in-flight cycles that predate the incremental snapshot fix.
+    // Fallback: if phases/execute.json hasn't been written yet, synthesize
+    // execute runs from this cycle's sprint file — but ONLY if the cycle
+    // has its own sprint-link.json. The previous mtime-based "newest sprint"
+    // fallback caused PLAN-stage cycles to display fake $148 / 20 runs
+    // sourced from a totally unrelated previous cycle's sprint (v6.7.4
+    // user-reported bug — same root cause as the cost list bleed).
     try {
       const linkFile = join(dir, 'sprint-link.json');
       let sprintVersion: string | null = null;
       if (existsSync(linkFile)) {
         const link = JSON.parse(readFileSync(linkFile, 'utf8'));
         sprintVersion = link?.sprintVersion ?? null;
-      }
-      // Legacy fallback: newest sprint file by mtime
-      if (!sprintVersion) {
-        const sprintsDir = join(opts.projectRoot, '.agentforge/sprints');
-        if (existsSync(sprintsDir)) {
-          const files = readdirSync(sprintsDir)
-            .filter((f) => f.startsWith('v') && f.endsWith('.json'))
-            .map((f) => ({ f, mtime: statSync(join(sprintsDir, f)).mtimeMs }))
-            .sort((a, b) => b.mtime - a.mtime);
-          if (files[0]) sprintVersion = files[0].f.slice(1, -5);
-        }
       }
       if (sprintVersion) {
         const sprintFile = join(opts.projectRoot, '.agentforge/sprints', `v${sprintVersion}.json`);
