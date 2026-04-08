@@ -51,22 +51,39 @@ interface SprintItem {
 export class FileLockManager {
   private readonly heldFiles = new Map<string, string>(); // file → itemId
   private readonly itemsHoldingEmpty = new Set<string>();
+  /**
+   * v6.7.4: when true, items with no declared files run unconstrained
+   * (no lock acquired) so they don't serialize against each other. The
+   * old conservative behavior treated empty-files items as "could touch
+   * anything", which serialized the entire execute phase down to 1
+   * concurrent agent because the scoring agent rarely populates the
+   * `files` field on backlog items. This was the root cause of cycles
+   * showing only 1-2 active agents even with maxParallelism: 10.
+   *
+   * Trade-off: file conflicts between unconstrained items are now
+   * possible. They surface as git stage failures or test failures and
+   * the loop's retry/gate logic catches them. Worth the 5-10x speedup.
+   */
+  constructor(private readonly optimistic = true) {}
 
   canAcquire(_itemId: string, files: string[]): boolean {
     if (files.length === 0) {
-      // Conservative: empty files = "could touch anything" — only run when
-      // nothing else is in flight.
+      if (this.optimistic) return true;
+      // Conservative fallback: empty files = "could touch anything" —
+      // only run when nothing else is in flight.
       return this.heldFiles.size === 0 && this.itemsHoldingEmpty.size === 0;
     }
     // If any item is currently holding an empty (unknown-files) lock, we
     // must wait — that item could touch any file.
-    if (this.itemsHoldingEmpty.size > 0) return false;
+    if (!this.optimistic && this.itemsHoldingEmpty.size > 0) return false;
     return !files.some((f) => this.heldFiles.has(f));
   }
 
   acquire(itemId: string, files: string[]): void {
     if (files.length === 0) {
-      this.itemsHoldingEmpty.add(itemId);
+      // In optimistic mode, don't track empty-file items at all so they
+      // never block other items.
+      if (!this.optimistic) this.itemsHoldingEmpty.add(itemId);
       return;
     }
     for (const f of files) this.heldFiles.set(f, itemId);
