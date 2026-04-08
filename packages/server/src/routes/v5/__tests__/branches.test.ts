@@ -108,7 +108,7 @@ describe('GET /api/v5/autonomous-branches', () => {
     expect(new Date(branch.lastCommitAt).getTime()).toBeGreaterThan(0);
     expect(typeof branch.ageMs).toBe('number');
     expect(branch.ageMs).toBeGreaterThanOrEqual(0);
-    expect(['open-pr', 'merged', 'stale']).toContain(branch.status);
+    expect(['open-pr', 'merged', 'active', 'stale']).toContain(branch.status);
     // gh is unavailable in test env — PR fields must be null
     expect(branch.prNumber).toBeNull();
     expect(branch.prUrl).toBeNull();

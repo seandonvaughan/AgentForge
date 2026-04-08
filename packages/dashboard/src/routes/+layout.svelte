@@ -2,12 +2,14 @@
   import '../app.css';
   import Sidebar from '$lib/components/Sidebar.svelte';
   import Topbar from '$lib/components/Topbar.svelte';
+  import ApprovalModal from '$lib/components/ApprovalModal.svelte';
   import { wsStore } from '$lib/stores/ws.js';
+  import { approvalsStore } from '$lib/stores/approvals.js';
   import { loadAgents } from '$lib/stores/agents.js';
   import { loadSessions } from '$lib/stores/sessions.js';
   import { loadCosts } from '$lib/stores/costs.js';
   import { loadVersion } from '$lib/stores/version.js';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
 
   onMount(() => {
     // Kick off all data loads in parallel
@@ -16,7 +18,13 @@
     // Connect WebSocket — auto-reconnects internally
     wsStore.connect();
 
-    return () => wsStore.disconnect();
+    // Connect SSE for cycle approval notifications + start polling fallback
+    approvalsStore.connectSSE();
+  });
+
+  onDestroy(() => {
+    wsStore.disconnect();
+    approvalsStore.disconnectSSE();
   });
 </script>
 
@@ -27,3 +35,6 @@
     <slot />
   </main>
 </div>
+
+<!-- Global approval modal — rendered above all pages, opened via approvalsStore.open() -->
+<ApprovalModal />

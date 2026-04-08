@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
 
-  type BranchStatus = 'open-pr' | 'merged' | 'stale';
+  type BranchStatus = 'open-pr' | 'merged' | 'active' | 'stale';
 
   interface AutonomousBranch {
     name: string;
@@ -83,12 +83,14 @@
   const STATUS_COLOR: Record<BranchStatus, string> = {
     'open-pr': 'var(--color-info)',
     'merged':  'var(--color-success)',
+    'active':  'var(--color-brand)',
     'stale':   'var(--color-warning)',
   };
 
   const STATUS_LABEL: Record<BranchStatus, string> = {
     'open-pr': 'Open PR',
     'merged':  'Merged',
+    'active':  'Active',
     'stale':   'Stale',
   };
 
@@ -102,6 +104,7 @@
   });
 
   let openCount = $derived(branches.filter((b) => b.status === 'open-pr').length);
+  let activeCount = $derived(branches.filter((b) => b.status === 'active').length);
   let mergedCount = $derived(branches.filter((b) => b.status === 'merged').length);
   let staleCount = $derived(branches.filter((b) => b.status === 'stale').length);
 </script>
@@ -123,6 +126,10 @@
   <div class="pill open-pr">
     <span class="pill-count">{openCount}</span>
     <span class="pill-label">Open PR</span>
+  </div>
+  <div class="pill active">
+    <span class="pill-count">{activeCount}</span>
+    <span class="pill-label">Active</span>
   </div>
   <div class="pill merged">
     <span class="pill-count">{mergedCount}</span>
@@ -171,7 +178,7 @@
       </thead>
       <tbody>
         {#each branches as branch (branch.name)}
-          <tr class:stale-row={branch.status === 'stale'}>
+          <tr class:stale-row={branch.status === 'stale'} class:merged-row={branch.status === 'merged'}>
             <td>
               <span class="branch-name">{branch.name}</span>
             </td>
@@ -202,12 +209,12 @@
               {/if}
             </td>
             <td class="action-cell">
-              {#if branch.status === 'stale'}
+              {#if branch.status === 'stale' || branch.status === 'merged'}
                 <button
                   class="btn-delete"
                   disabled={deletingBranch === branch.name}
                   onclick={() => deleteBranch(branch)}
-                  title="Delete stale branch"
+                  title={branch.status === 'merged' ? 'Delete merged branch' : 'Delete stale branch'}
                 >
                   {deletingBranch === branch.name ? '…' : 'Delete'}
                 </button>
@@ -268,6 +275,7 @@
   }
 
   .pill.open-pr  { border-color: color-mix(in srgb, var(--color-info) 26%, transparent);    }
+  .pill.active   { border-color: color-mix(in srgb, var(--color-brand) 26%, transparent);   }
   .pill.merged   { border-color: color-mix(in srgb, var(--color-success) 26%, transparent); }
   .pill.stale    { border-color: color-mix(in srgb, var(--color-warning) 26%, transparent); }
 
@@ -278,6 +286,7 @@
   }
 
   .pill.open-pr  .pill-count { color: var(--color-info);    }
+  .pill.active   .pill-count { color: var(--color-brand);    }
   .pill.merged   .pill-count { color: var(--color-success);  }
   .pill.stale    .pill-count { color: var(--color-warning);  }
 
@@ -299,6 +308,10 @@
      visual result and works across all browsers. */
   .stale-row > td:first-child {
     box-shadow: inset 3px 0 0 var(--color-warning);
+  }
+
+  .merged-row > td:first-child {
+    box-shadow: inset 3px 0 0 color-mix(in srgb, var(--color-success) 60%, transparent);
   }
 
   .branch-name {

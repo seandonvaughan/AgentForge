@@ -258,6 +258,43 @@ describe('ProposalToBacklog', () => {
     expect(item?.description).toContain('s2');
   });
 
+  it('ignores TODO markers inside markdown code fences', async () => {
+    // Regression: documentation guide files use code fences to show
+    // example markers (e.g. "// TODO(autonomous): fix memory leak in
+    // compression module").  The scanner must not treat these as real
+    // backlog items — only markers OUTSIDE fences are actionable.
+    writeFileSync(
+      join(tmpDir, 'GUIDE.md'),
+      [
+        '# Guide',
+        '',
+        '```typescript',
+        '// TODO(autonomous): fix memory leak in compression module',
+        '// Affects large file uploads. See issue #1234.',
+        '```',
+        '',
+        '~~~',
+        '/* TODO(autonomous): tilde fence example */',
+        '~~~',
+        '',
+        '<!-- TODO(autonomous): real marker outside any fence -->',
+        'TODO(autonomous): plain real marker outside fence',
+      ].join('\n'),
+    );
+
+    const bridge = new ProposalToBacklog(makeMockAdapter(), tmpDir, DEFAULT_CYCLE_CONFIG);
+    const items = await bridge.build();
+    const titles = items.map(i => i.title);
+
+    // Markers OUTSIDE fences must be captured
+    expect(titles).toContain('real marker outside any fence');
+    expect(titles).toContain('plain real marker outside fence');
+
+    // Markers INSIDE fences must be silently skipped
+    expect(titles.some(t => t.includes('fix memory leak in compression module'))).toBe(false);
+    expect(titles.some(t => t.includes('tilde fence example'))).toBe(false);
+  });
+
   it('every BacklogItem has required fields', async () => {
     const adapter = makeMockAdapter({
       getRecentFailedSessions: async () => [

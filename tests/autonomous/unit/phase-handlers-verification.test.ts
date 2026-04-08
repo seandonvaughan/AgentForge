@@ -199,6 +199,108 @@ describe('verification phase handlers', () => {
     expect(parseVerdict('garbage')).toBe(3);
   });
 
+  it('writes review-finding memory entries for CRITICAL findings', async () => {
+    const cycleId = 'mem-critical';
+    const runtime = {
+      run: vi.fn().mockResolvedValue({
+        output: '## Review\n- CRITICAL: missing auth check on write endpoint\n- Minor: variable naming\nVerdict: 1/5',
+        costUsd: 0.05,
+      }),
+    };
+    const { bus } = makeMockBus();
+    await runReviewPhase(
+      makeCtx({ cwd: tmpDir, sprintVersion: '6.8', cycleId, runtime, bus }),
+    );
+
+    const memFile = join(tmpDir, '.agentforge', 'memory', 'review-finding.jsonl');
+    expect(existsSync(memFile)).toBe(true);
+    const entries = readFileSync(memFile, 'utf8')
+      .split('\n')
+      .filter((l) => l.trim().length > 0)
+      .map((l) => JSON.parse(l));
+    expect(entries).toHaveLength(1);
+    expect(entries[0].type).toBe('review-finding');
+    expect(entries[0].value).toContain('CRITICAL');
+    expect(entries[0].tags).toContain('critical');
+    expect(entries[0].tags).toContain('review');
+    expect(entries[0].tags).toContain('sprint:v6.8');
+    expect(entries[0].source).toBe(cycleId);
+  });
+
+  it('writes review-finding memory entries for MAJOR findings', async () => {
+    const cycleId = 'mem-major';
+    const runtime = {
+      run: vi.fn().mockResolvedValue({
+        output: '## Review\n- MAJOR: untyped (i: any) silently swallows errors\nVerdict: 2/5',
+        costUsd: 0.04,
+      }),
+    };
+    const { bus } = makeMockBus();
+    await runReviewPhase(
+      makeCtx({ cwd: tmpDir, sprintVersion: '6.8', cycleId, runtime, bus }),
+    );
+
+    const memFile = join(tmpDir, '.agentforge', 'memory', 'review-finding.jsonl');
+    expect(existsSync(memFile)).toBe(true);
+    const entries = readFileSync(memFile, 'utf8')
+      .split('\n')
+      .filter((l) => l.trim().length > 0)
+      .map((l) => JSON.parse(l));
+    expect(entries).toHaveLength(1);
+    expect(entries[0].type).toBe('review-finding');
+    expect(entries[0].value).toContain('MAJOR');
+    expect(entries[0].tags).toContain('major');
+    expect(entries[0].tags).not.toContain('critical');
+  });
+
+  it('writes one entry per CRITICAL/MAJOR finding line', async () => {
+    const cycleId = 'mem-multi';
+    const runtime = {
+      run: vi.fn().mockResolvedValue({
+        output: [
+          '## Review',
+          '- CRITICAL: zero test coverage on approval endpoint',
+          '- MAJOR: untyped (i: any) silently swallows errors',
+          '- MINOR: variable naming could be clearer',
+          'Verdict: 1/5',
+        ].join('\n'),
+        costUsd: 0.06,
+      }),
+    };
+    const { bus } = makeMockBus();
+    await runReviewPhase(
+      makeCtx({ cwd: tmpDir, sprintVersion: '6.8', cycleId, runtime, bus }),
+    );
+
+    const memFile = join(tmpDir, '.agentforge', 'memory', 'review-finding.jsonl');
+    const entries = readFileSync(memFile, 'utf8')
+      .split('\n')
+      .filter((l) => l.trim().length > 0)
+      .map((l) => JSON.parse(l));
+    // CRITICAL + MAJOR = 2 entries; MINOR is excluded
+    expect(entries).toHaveLength(2);
+    const types = entries.map((e: any) => e.tags).flat();
+    expect(types).toContain('critical');
+    expect(types).toContain('major');
+  });
+
+  it('does not write memory entries when review has no CRITICAL or MAJOR findings', async () => {
+    const cycleId = 'mem-none';
+    const runtime = {
+      run: vi.fn().mockResolvedValue({
+        output: '## Review\n- Minor: variable naming\nVerdict: 4/5',
+        costUsd: 0.03,
+      }),
+    };
+    const { bus } = makeMockBus();
+    await runReviewPhase(
+      makeCtx({ cwd: tmpDir, sprintVersion: '6.8', cycleId, runtime, bus }),
+    );
+
+    const memFile = join(tmpDir, '.agentforge', 'memory', 'review-finding.jsonl');
+    expect(existsSync(memFile)).toBe(false);
+  });
+
   // ----- RELEASE phase -----
 
   it('release phase is a no-op that writes release.json with releasedAt', async () => {

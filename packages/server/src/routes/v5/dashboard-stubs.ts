@@ -42,6 +42,8 @@ export async function dashboardStubRoutes(
       createdAt: string;
       updatedAt?: string;
       agentId?: string;
+      /** Original source field (cycleId or agentId) from the JSONL entry. */
+      source?: string;
       summary?: string;
       tags?: string[];
     }
@@ -82,8 +84,10 @@ export async function dashboardStubRoutes(
                 type,
                 createdAt,
                 updatedAt: createdAt,
-                // source is cycleId or agentId produced by phase handlers
-                ...(entry.source !== undefined ? { agentId: entry.source } : {}),
+                // source is cycleId or agentId produced by phase handlers.
+                // Expose both as agentId (existing agent-filter UI) and source
+                // (new source-link UI in the memory dashboard).
+                ...(entry.source !== undefined ? { agentId: entry.source, source: entry.source } : {}),
                 ...(typeof entry.value === 'string'
                   ? { summary: entry.value.slice(0, 120) }
                   : {}),
@@ -123,9 +127,15 @@ export async function dashboardStubRoutes(
       entries.map(e => e.agentId).filter((a): a is string => Boolean(a)),
     )];
 
+    // Unique entry types for the dashboard's type-chip filter row.
+    const types = [...new Set(
+      entries.map(e => e.type).filter((t): t is string => Boolean(t)),
+    )].sort();
+
     return reply.send({
       data: entries,
       agents,
+      types,
       meta: { total: entries.length },
     });
   });
@@ -374,8 +384,14 @@ export interface AutonomousBranch {
   lastCommitAt: string;
   /** Age of the last commit in milliseconds */
   ageMs: number;
-  /** Derived status: open-pr | merged | stale */
-  status: 'open-pr' | 'merged' | 'stale';
+  /**
+   * Derived status:
+   * - open-pr   → branch has an open PR on GitHub
+   * - merged    → branch PR was merged
+   * - active    → branch is fresh (< STALE_DAYS old) but no PR yet
+   * - stale     → branch has no PR and is older than STALE_DAYS days
+   */
+  status: 'open-pr' | 'merged' | 'active' | 'stale';
   prNumber: number | null;
   prUrl: string | null;
 }
@@ -468,7 +484,10 @@ function listAutonomousBranches(cwd: string): AutonomousBranch[] {
       prNumber = mergedPr.number;
       prUrl = mergedPr.url;
     } else {
-      status = ageMs > STALE_MS ? 'stale' : 'open-pr'; // treat fresh branches without PRs as active
+      // No open or merged PR found — classify by age.
+      // 'active' = fresh branch, PR likely being created soon.
+      // 'stale'  = old branch, no PR, should be cleaned up.
+      status = ageMs > STALE_MS ? 'stale' : 'active';
       const firstPr = prs.at(0);
       if (firstPr) {
         prNumber = firstPr.number;

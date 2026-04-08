@@ -211,7 +211,18 @@ export class ProposalToBacklog {
           // consumed the remaining text starts with a space, not `<`.
           const markerLine = /^\s*(?:(?:\/\/|\/\*+|\*|<!--|#)[^<\n]*?)?(TODO|FIXME)\(autonomous\):\s*(.+)$/;
           const lines = content.split('\n');
+          // For markdown files, track whether we are inside a fenced code
+          // block (``` or ~~~).  Lines inside fences are documentation
+          // examples — they must not be treated as real TODO markers.
+          // inCodeFence is reset per-file because the outer loop continues
+          // to the next file after this inner loop exits.
+          let inCodeFence = false;
           for (let i = 0; i < lines.length; i++) {
+            if (ext === '.md' && /^\s*(`{3,}|~{3,})/.test(lines[i]!)) {
+              inCodeFence = !inCodeFence;
+              continue;
+            }
+            if (inCodeFence) continue;
             if (!pattern.test(lines[i]!)) continue;
             const marker = lines[i]!.match(markerLine);
             if (!marker) continue;

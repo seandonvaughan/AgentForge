@@ -242,7 +242,18 @@
 
   // Fields that contain markdown prose — rendered by MarkdownRenderer rather
   // than dumped raw into the JSON pre-block.
-  const MARKDOWN_FIELDS = new Set(['review', 'rationale', 'retrospective', 'response']);
+  // Covers all core phase handlers:
+  //   audit → findings, plan → plan, test → strategy,
+  //   review → review, gate → rationale, learn → retrospective
+  const MARKDOWN_FIELDS = new Set([
+    'findings',      // audit phase: researcher executive summary
+    'plan',          // plan phase: CTO technical plan
+    'strategy',      // test phase: QA risk assessment report
+    'review',        // review phase: code-reviewer markdown report
+    'rationale',     // gate phase: CEO approve/reject reasoning
+    'retrospective', // learn phase: data-analyst sprint retrospective
+    'response',      // fallback: top-level response string on any phase
+  ]);
 
   /** Returns a copy of a phase object with markdown prose fields removed,
    *  leaving only the structured metadata that benefits from JSON display. */

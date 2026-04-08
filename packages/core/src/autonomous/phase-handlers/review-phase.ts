@@ -3,10 +3,16 @@
 // v6.5.2 — Review phase handler. Dispatches the code-reviewer agent to
 // review the actual diff produced by the execute phase. Read-only —
 // does NOT modify any files.
+//
+// v6.8.0 — Writes review-finding memory entries for MAJOR and CRITICAL
+// findings so the audit phase can surface recurring anti-patterns in
+// subsequent cycles.
 
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
+import { writeMemoryEntry } from '../../memory/types.js';
+import { extractFindingsByLevel } from './gate-phase.js';
 
 export const REVIEW_PHASE_DEFAULT_TOOLS = ['Read', 'Bash', 'Glob', 'Grep'];
 export const REVIEW_PHASE_AGENT = 'code-reviewer';
@@ -73,6 +79,28 @@ Do NOT modify any files.`;
   const verdict = parseVerdict(review);
   const concerns = parseConcerns(review);
   const durationMs = Date.now() - startedAt;
+
+  // Persist CRITICAL and MAJOR findings to the cross-cycle memory store so the
+  // audit phase can detect recurring anti-patterns across sprints. One entry
+  // per finding line — granularity enables per-file pattern counting.
+  const criticalLines = extractFindingsByLevel(review, 'CRITICAL');
+  const majorLines = extractFindingsByLevel(review, 'MAJOR');
+  for (const line of criticalLines) {
+    writeMemoryEntry(ctx.projectRoot, {
+      type: 'review-finding',
+      value: line,
+      source: ctx.cycleId,
+      tags: ['review', 'finding', 'critical', `sprint:v${ctx.sprintVersion}`],
+    });
+  }
+  for (const line of majorLines) {
+    writeMemoryEntry(ctx.projectRoot, {
+      type: 'review-finding',
+      value: line,
+      source: ctx.cycleId,
+      tags: ['review', 'finding', 'major', `sprint:v${ctx.sprintVersion}`],
+    });
+  }
 
   const phaseResult: PhaseResult = {
     phase,

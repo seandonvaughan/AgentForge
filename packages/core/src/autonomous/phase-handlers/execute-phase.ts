@@ -22,14 +22,33 @@ import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
 // Reads tag-filtered past failure entries from .agentforge/memory/*.jsonl so
 // each agent can avoid mistakes made on similar work in prior cycles.
 
-/** Cross-cycle memory entry — re-exported from the canonical schema in
- *  packages/core/src/memory/types.ts so producers and consumers stay in
- *  sync. Earlier we declared a duplicate MemoryEntry with a `key` field
- *  here, which silently rendered "undefined" in agent prompts because
- *  cycle-logger writes entries with `id` (the canonical field). One type
- *  now, no schism. */
-export type { CycleMemoryEntry as MemoryEntry } from '../../memory/types.js';
-import type { CycleMemoryEntry as MemoryEntry } from '../../memory/types.js';
+/**
+ * Memory entry shape used by the execute phase for prompt injection.
+ *
+ * Intentionally broader than `CycleMemoryEntry` from memory/types.ts:
+ *  - `id`  — canonical UUID written by writeMemoryEntry / cycle-logger
+ *  - `key` — short human-readable slug used in backlog JSONL files and
+ *             legacy test data (e.g. 'guard-sprint-items')
+ *
+ * Both fields are optional so that entries written with either convention
+ * parse cleanly. `formatMemorySection` uses `key ?? id ?? type` as the
+ * label, ensuring whichever identifier is present appears in the prompt.
+ *
+ * We keep this type local (rather than re-exporting CycleMemoryEntry)
+ * because CycleMemoryEntry has `id: string` as a required field, which
+ * would make test entries that only supply `key` fail strict type checks.
+ */
+export interface MemoryEntry {
+  /** UUID produced by writeMemoryEntry (canonical). */
+  id?: string;
+  /** Short slug used by backlog generators and test fixtures. */
+  key?: string;
+  type: string;
+  value: string;
+  createdAt?: string;
+  tags?: string[];
+  source?: string;
+}
 
 /** Types we prioritise when selecting entries to inject into a prompt.
  *  cycle-outcome is skipped — it's high-level and less actionable. */
@@ -99,11 +118,12 @@ export function readRelevantMemoryEntries(
 export function formatMemorySection(entries: MemoryEntry[]): string {
   if (entries.length === 0) return '';
   const lines = entries.map((e) => {
-    // The canonical schema stores value as a string (often JSON-stringified
-    // for structured data). Use id as the lead identifier; older entries
-    // may have neither, so fall back to type.
+    // Value may be a raw string or a JSON-stringified object — normalise to string.
     const value = typeof e.value === 'string' ? e.value : JSON.stringify(e.value, null, 2);
-    const label = e.id ?? e.type;
+    // Prefer the human-readable `key` slug (used by backlog generators and
+    // test fixtures), then fall back to the canonical UUID `id`, then to the
+    // entry type so the label is always non-empty.
+    const label = e.key ?? e.id ?? e.type;
     return `- [${e.type}] **${label}**: ${value}`;
   });
   return `\n## Memory: Past Failures on Similar Work\n\nThe following entries from prior cycles matched this item's tags. Use them to avoid repeating past mistakes:\n\n${lines.join('\n')}\n`;

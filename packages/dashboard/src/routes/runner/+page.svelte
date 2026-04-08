@@ -191,7 +191,9 @@
         return;
       }
 
-      const json = await res.json();
+      const envelope = await res.json();
+      // Server wraps the result in { data: { ...result, sessionId } }
+      const json = envelope.data ?? envelope;
       const sessionId = json.sessionId ?? json.id ?? `local-${Date.now()}`;
       outputModel = json.model ?? MODEL_TIER_META[getAgentModel(selectedAgent)]?.label ?? 'Sonnet';
       currentSessionId = sessionId;
@@ -210,11 +212,13 @@
       // Connect SSE to stream output
       connectSSE(sessionId);
 
-      // Also handle synchronous response if output is in the response body
-      if (json.output) {
-        output = json.output;
+      // Synchronous response: server returns full output when run completes inline.
+      // The field is `response` in RunResult (not `output`).
+      const syncOutput = json.response ?? json.output;
+      if (syncOutput) {
+        output = syncOutput;
         running = false;
-        syncHistoryStatus(sessionId, 'completed', json.costUsd);
+        syncHistoryStatus(sessionId, json.status === 'failed' ? 'failed' : 'completed', json.costUsd);
         if (eventSource) { eventSource.close(); eventSource = null; }
       }
 

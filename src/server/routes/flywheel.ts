@@ -5,6 +5,15 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 
+const MEMORY_JSONL_DIR = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../../.agentforge/memory'
+);
+const CYCLES_DIR = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../../.agentforge/cycles'
+);
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, '../../../');
 
@@ -32,10 +41,32 @@ interface FlywheelMetric {
   description: string;
 }
 
+/** Per-cycle entry count for the trend sparkline (last ≤10 cycles). */
+interface CycleEntryPoint {
+  cycleId: string;
+  count: number;
+  startedAt: string;
+}
+
+/** Memory loop health stats shown in the dedicated flywheel card. */
+interface MemoryStats {
+  /** Total entries across all JSONL files. */
+  totalEntries: number;
+  /** Entry counts per cycle, oldest→newest, last ≤10 cycles that have entries. */
+  entriesPerCycleTrend: CycleEntryPoint[];
+  /**
+   * Fraction [0–1] of cycles whose audit phase had at least one prior memory
+   * entry available to consume. Computed as: for each cycle after the first
+   * ever memory write, did that cycle start after ≥1 entry already existed?
+   */
+  hitRate: number;
+}
+
 interface FlywheelV5Response {
   metrics: FlywheelMetric[];
   overallScore: number;
   updatedAt: string;
+  memoryStats: MemoryStats;
 }
 
 // ---------------------------------------------------------------------------
@@ -150,6 +181,105 @@ function computeInheritance(): FlywheelMetric {
     score,
     description: `${totalSkills} skills across ${files.length} agents (avg ${avgSkills.toFixed(1)})`,
   };
+}
+
+/**
+ * Memory stats: total entries, entries-per-cycle trend, and hit rate.
+ *
+ * Hit rate = fraction of cycles that started after at least one memory entry
+ * already existed. Cycles with no prior entries (i.e., the very first ones
+ * before any memory was written) cannot have "hit" the memory, so they count
+ * as misses. Cycles that ran before any memory existed are included in the
+ * denominator so the metric reflects the overall wiring health truthfully.
+ */
+function computeMemoryStats(): MemoryStats {
+  const EMPTY: MemoryStats = { totalEntries: 0, entriesPerCycleTrend: [], hitRate: 0 };
+
+  // ── 1. Read all JSONL memory entries ─────────────────────────────────────
+  if (!existsSync(MEMORY_JSONL_DIR)) return EMPTY;
+
+  interface RawEntry { id?: string; type?: string; createdAt?: string; source?: string }
+  const allEntries: RawEntry[] = [];
+
+  try {
+    const files = readdirSync(MEMORY_JSONL_DIR).filter(f => f.endsWith('.jsonl'));
+    for (const filename of files) {
+      try {
+        const raw = readFileSync(join(MEMORY_JSONL_DIR, filename), 'utf8');
+        for (const line of raw.split('\n').filter(l => l.trim())) {
+          try {
+            const e = JSON.parse(line) as RawEntry;
+            if (e.id && e.type) allEntries.push(e);
+          } catch { /* skip malformed line */ }
+        }
+      } catch { /* skip unreadable file */ }
+    }
+  } catch {
+    return EMPTY;
+  }
+
+  const totalEntries = allEntries.length;
+  if (totalEntries === 0) return EMPTY;
+
+  // ── 2. Build entries-per-cycle trend (last 10 cycles with entries) ────────
+  // Group by source (cycleId); entries without a source get bucketed as 'unknown'.
+  const countByCycle = new Map<string, number>();
+  for (const e of allEntries) {
+    const key = e.source ?? 'unknown';
+    countByCycle.set(key, (countByCycle.get(key) ?? 0) + 1);
+  }
+
+  // Cross-reference with cycle.json to get startedAt timestamps
+  const cyclePoints: CycleEntryPoint[] = [];
+  for (const [cycleId, count] of countByCycle) {
+    let startedAt = '';
+    if (existsSync(CYCLES_DIR)) {
+      try {
+        const cycleFile = join(CYCLES_DIR, cycleId, 'cycle.json');
+        if (existsSync(cycleFile)) {
+          const c = JSON.parse(readFileSync(cycleFile, 'utf8')) as { startedAt?: string };
+          startedAt = c.startedAt ?? '';
+        }
+      } catch { /* cycle file unreadable — leave startedAt empty */ }
+    }
+    cyclePoints.push({ cycleId, count, startedAt });
+  }
+
+  // Sort oldest → newest; cycles without timestamps sort to the front
+  cyclePoints.sort((a, b) => (a.startedAt ?? '').localeCompare(b.startedAt ?? ''));
+  const entriesPerCycleTrend = cyclePoints.slice(-10);
+
+  // ── 3. Compute hit rate ────────────────────────────────────────────────────
+  // Sort all entries by createdAt ascending so we can compute the "earliest entry" timestamp
+  const sortedEntries = [...allEntries]
+    .filter(e => e.createdAt)
+    .sort((a, b) => (a.createdAt!).localeCompare(b.createdAt!));
+
+  const firstEntryAt = sortedEntries.length > 0 ? sortedEntries[0].createdAt! : '';
+
+  let hits = 0;
+  let evaluated = 0;
+
+  if (existsSync(CYCLES_DIR) && firstEntryAt) {
+    try {
+      for (const dir of readdirSync(CYCLES_DIR)) {
+        try {
+          const cycleFile = join(CYCLES_DIR, dir, 'cycle.json');
+          if (!existsSync(cycleFile)) continue;
+          const c = JSON.parse(readFileSync(cycleFile, 'utf8')) as { startedAt?: string };
+          if (!c.startedAt) continue;
+
+          evaluated++;
+          // A "hit" means at least one entry existed before this cycle started
+          if (firstEntryAt < c.startedAt) hits++;
+        } catch { /* skip unreadable cycles */ }
+      }
+    } catch { /* cycles dir unreadable */ }
+  }
+
+  const hitRate = evaluated > 0 ? hits / evaluated : 0;
+
+  return { totalEntries, entriesPerCycleTrend, hitRate };
 }
 
 interface CycleRecord {
@@ -344,6 +474,7 @@ export async function flywheelRoutes(
         metrics,
         overallScore,
         updatedAt: new Date().toISOString(),
+        memoryStats: computeMemoryStats(),
       };
 
       return reply.send({
@@ -360,6 +491,7 @@ export async function flywheelRoutes(
         ],
         overallScore: 0,
         updatedAt: new Date().toISOString(),
+        memoryStats: { totalEntries: 0, entriesPerCycleTrend: [], hitRate: 0 },
       };
       return reply.send({
         data: fallback,

@@ -74,12 +74,32 @@ export async function createServer(options: ServerOptions = {}) {
     prefix: '/app',
   });
 
-  // Health check
+  // Health check — liveness + basic readiness signals
   app.get('/api/v1/health', async (_req, reply) => {
+    const mem = process.memoryUsage();
+
+    // Probe DB connectivity when an adapter is present
+    let dbStatus: 'ok' | 'unavailable' | 'error' = 'unavailable';
+    if (options.adapter) {
+      try {
+        options.adapter.getAgentDatabase().getDb().prepare('SELECT 1').get();
+        dbStatus = 'ok';
+      } catch {
+        dbStatus = 'error';
+      }
+    }
+
     return reply.send({
       status: 'ok',
       version,
       timestamp: new Date().toISOString(),
+      uptime: Math.floor(process.uptime()),
+      db: dbStatus,
+      memory: {
+        rssBytes: mem.rss,
+        heapUsedBytes: mem.heapUsed,
+        heapTotalBytes: mem.heapTotal,
+      },
     });
   });
 

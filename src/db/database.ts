@@ -6,6 +6,7 @@
 
 import Sqlite from 'better-sqlite3';
 import { ALL_DDL } from './schema.js';
+import { QueryCache, SESSION_TREE_TTL_MS } from './query-cache.js';
 
 export interface DatabaseOptions {
   path: string; // ':memory:' for tests
@@ -33,6 +34,7 @@ const MAX_DELEGATION_DEPTH = 20;
 
 export class AgentDatabase {
   private db: Sqlite.Database;
+  private readonly cache = new QueryCache();
 
   constructor(options: DatabaseOptions) {
     this.db = new Sqlite(options.path);
@@ -56,12 +58,18 @@ export class AgentDatabase {
    * Throws if depth exceeds MAX_DELEGATION_DEPTH (circular reference guard).
    */
   getSessionTree(rootId: string): SessionRow[] {
+    const cacheKey = `session-tree:${rootId}`;
+    const cached = this.cache.get<SessionRow[]>(cacheKey);
+    if (cached !== undefined) return cached;
+
     // First verify the root exists
     const root = this.db
       .prepare<[string], SessionRow>('SELECT * FROM sessions WHERE id = ?')
       .get(rootId);
 
     if (!root) {
+      // Cache negative result to avoid repeated missing-root queries
+      this.cache.set(cacheKey, [], SESSION_TREE_TTL_MS, ['sessions']);
       return [];
     }
 
@@ -107,7 +115,13 @@ export class AgentDatabase {
     // Sort by delegation_depth ascending
     results.sort((a, b) => a.delegation_depth - b.delegation_depth);
 
+    this.cache.set(cacheKey, results, SESSION_TREE_TTL_MS, ['sessions']);
     return results;
+  }
+
+  /** Expose the shared QueryCache for use by SqliteAdapter. */
+  getCache(): QueryCache {
+    return this.cache;
   }
 
   getDb(): Sqlite.Database {

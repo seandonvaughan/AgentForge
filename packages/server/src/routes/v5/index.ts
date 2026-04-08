@@ -24,7 +24,9 @@ import { registerHealthServicesRoutes } from './health-services.js';
 import { sprintOrchestrationRoutes } from './sprint-orchestration.js';
 import { settingsRoutes } from './settings.js';
 import { agentCrudRoutes } from './agent-crud.js';
+import { agentRoutes } from './agents.js';
 import { chatRoutes } from './chat.js';
+import { runRoutes } from './run.js';
 
 export interface V5RouteOptions {
   adapter: WorkspaceAdapter;
@@ -226,9 +228,15 @@ export async function registerV5Routes(
   // ── Settings persistence ───────────────────────────────────────────────────
   await settingsRoutes(app);
 
+  // ── Agent listing (GET /api/v5/agents — reads .agentforge/agents/*.yaml) ───
+  await agentRoutes(app, { adapter, projectRoot: opts.projectRoot ?? process.cwd() });
+
   // ── Agent CRUD (create, edit, delete, fork, promote) ──────────────────────
   await agentCrudRoutes(app, opts.projectRoot ? { projectRoot: opts.projectRoot } : {});
 
   // ── Agent Chat Interface (P0-3) ────────────────────────────────────────────
   await chatRoutes(app);
+
+  // ── Agent Runner (manual dispatch from dashboard) ─────────────────────────
+  await runRoutes(app, { adapter });
 }

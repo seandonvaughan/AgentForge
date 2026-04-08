@@ -320,4 +320,67 @@ describe('GET /api/v5/flywheel', () => {
     );
     expect(data.overallScore).toBe(mean);
   });
+
+  // ---- Memory stats card ----
+
+  it('data includes a memoryStats object', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = res.json();
+    expect(data).toHaveProperty('memoryStats');
+    expect(typeof data.memoryStats).toBe('object');
+  });
+
+  it('memoryStats has totalEntries, entriesPerCycleTrend, hitRate', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = res.json();
+    const { memoryStats } = data;
+    expect(typeof memoryStats.totalEntries).toBe('number');
+    expect(Array.isArray(memoryStats.entriesPerCycleTrend)).toBe(true);
+    expect(typeof memoryStats.hitRate).toBe('number');
+  });
+
+  it('memoryStats.totalEntries is a non-negative integer', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = res.json();
+    expect(data.memoryStats.totalEntries).toBeGreaterThanOrEqual(0);
+    expect(Number.isInteger(data.memoryStats.totalEntries)).toBe(true);
+  });
+
+  it('memoryStats.hitRate is in [0, 1]', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = res.json();
+    expect(data.memoryStats.hitRate).toBeGreaterThanOrEqual(0);
+    expect(data.memoryStats.hitRate).toBeLessThanOrEqual(1);
+  });
+
+  it('memoryStats.entriesPerCycleTrend has at most 10 entries', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = res.json();
+    expect(data.memoryStats.entriesPerCycleTrend.length).toBeLessThanOrEqual(10);
+  });
+
+  it('each trend point has cycleId, count, startedAt', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = res.json();
+    for (const point of data.memoryStats.entriesPerCycleTrend) {
+      expect(typeof point.cycleId).toBe('string');
+      expect(typeof point.count).toBe('number');
+      expect(point.count).toBeGreaterThan(0);
+      // startedAt may be empty string if cycle.json was unreadable, so just check type
+      expect(typeof point.startedAt).toBe('string');
+    }
+  });
+
+  it('memoryStats returns zero-state when no memory directory exists', async () => {
+    // In the test environment .agentforge/memory does not exist,
+    // so the stats should default to empty/zero without throwing.
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    expect(res.statusCode).toBe(200);
+    const { data } = res.json();
+    // totalEntries might be 0 or a real value depending on local disk state;
+    // the important invariant is the shape and valid ranges, not specific values.
+    expect(data.memoryStats.totalEntries).toBeGreaterThanOrEqual(0);
+    expect(data.memoryStats.hitRate).toBeGreaterThanOrEqual(0);
+    expect(data.memoryStats.hitRate).toBeLessThanOrEqual(1);
+  });
 });

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { approvalsStore, type CycleApproval } from '$lib/stores/approvals.js';
 
   interface ApprovalItem {
     id: string;
@@ -203,166 +204,31 @@
   ];
 
   // ────────────────────────────────────────────────────────────────────────
-  // Cycle Approvals — v6.7.4
+  // Cycle Approvals — v6.7.4+
   //
-  // The autonomous loop's BudgetApproval gate blocks a cycle in the planning
-  // phase when the scoring estimate exceeds the per-cycle budget. The dashboard
-  // surfaces these as a separate section above the legacy /api/v5/approvals
-  // queue. Each pending cycle approval displays its scored items, lets the
-  // operator select which to approve, and posts to the new
-  // POST /api/v5/cycles/:id/approve endpoint.
+  // Driven by the global approvalsStore (src/lib/stores/approvals.ts).
+  // The store maintains the pending list via SSE + 10-second fallback poll,
+  // so this page just subscribes and delegates. Opening a cycle card opens
+  // the global ApprovalModal (mounted in +layout.svelte).
   // ────────────────────────────────────────────────────────────────────────
 
-  interface CycleApprovalItem {
-    itemId: string;
-    title: string;
-    rank: number;
-    score: number;
-    estimatedCostUsd: number;
-    estimatedDurationMinutes: number;
-    rationale: string;
-    suggestedAssignee: string;
-    suggestedTags: string[];
-    withinBudget: boolean;
-  }
-
-  interface CycleApproval {
-    cycleId: string;
-    sprintVersion?: string | null;
-    requestedAt: string;
-    budgetUsd: number;
-    newTotalUsd: number;
-    withinBudgetItems: CycleApprovalItem[];
-    overflowItems: CycleApprovalItem[];
-    agentSummary?: string;
-  }
-
-  let cycleApprovals: CycleApproval[] = $state([]);
-  let cycleApprovalsLoading = $state(false);
-  let cycleApprovalsError: string | null = $state(null);
-  let approvingCycle: Set<string> = $state(new Set());
-  // Per-cycle item-level approval selection. Default: all within-budget items selected.
-  let cycleSelections: Record<string, Set<string>> = $state({});
-
-  async function loadCycleApprovals(silent = false) {
-    if (!silent) cycleApprovalsLoading = true;
-    cycleApprovalsError = null;
-    try {
-      // Discover candidate cycles via the cycles list (which exposes
-      // hasApprovalPending). Then fetch each one's full approval payload.
-      const res = await fetch('/api/v5/cycles?limit=20');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      const list = (json?.cycles ?? []) as Array<{ cycleId: string; hasApprovalPending?: boolean; sprintVersion?: string | null }>;
-      const pending = list.filter((c) => c.hasApprovalPending === true);
-
-      const fetched: CycleApproval[] = [];
-      for (const c of pending) {
-        try {
-          const r = await fetch(`/api/v5/cycles/${c.cycleId}/approval`);
-          if (!r.ok) continue;
-          const data = await r.json();
-          fetched.push({
-            cycleId: c.cycleId,
-            sprintVersion: c.sprintVersion ?? null,
-            requestedAt: data.requestedAt ?? new Date().toISOString(),
-            budgetUsd: Number(data.budgetUsd ?? 200),
-            newTotalUsd: Number(data.newTotalUsd ?? 0),
-            withinBudgetItems: (data.withinBudget?.items ?? []) as CycleApprovalItem[],
-            overflowItems: (data.overflow?.items ?? []) as CycleApprovalItem[],
-            agentSummary: data.agentSummary,
-          });
-          // Initialize selection: every within-budget item checked, overflow unchecked
-          if (!cycleSelections[c.cycleId]) {
-            cycleSelections[c.cycleId] = new Set((data.withinBudget?.items ?? []).map((i: CycleApprovalItem) => i.itemId));
-          }
-        } catch { /* skip individual fetch errors */ }
-      }
-      cycleApprovals = fetched;
-    } catch (e) {
-      cycleApprovalsError = String(e);
-    } finally {
-      cycleApprovalsLoading = false;
-    }
-  }
-
-  function toggleItem(cycleId: string, itemId: string) {
-    const sel = cycleSelections[cycleId] ?? new Set();
-    if (sel.has(itemId)) sel.delete(itemId); else sel.add(itemId);
-    cycleSelections = { ...cycleSelections, [cycleId]: sel };
-  }
-
-  function selectAllItems(approval: CycleApproval) {
-    cycleSelections = {
-      ...cycleSelections,
-      [approval.cycleId]: new Set([
-        ...approval.withinBudgetItems.map((i) => i.itemId),
-        ...approval.overflowItems.map((i) => i.itemId),
-      ]),
-    };
-  }
-
-  function selectWithinBudget(approval: CycleApproval) {
-    cycleSelections = {
-      ...cycleSelections,
-      [approval.cycleId]: new Set(approval.withinBudgetItems.map((i) => i.itemId)),
-    };
-  }
-
-  function selectNone(approval: CycleApproval) {
-    cycleSelections = { ...cycleSelections, [approval.cycleId]: new Set() };
-  }
-
-  function selectedCost(approval: CycleApproval): number {
-    const sel = cycleSelections[approval.cycleId] ?? new Set();
-    const all = [...approval.withinBudgetItems, ...approval.overflowItems];
-    return all.filter((i) => sel.has(i.itemId)).reduce((sum, i) => sum + i.estimatedCostUsd, 0);
-  }
-
-  async function approveCycle(approval: CycleApproval, mode: 'selected' | 'approveAll' | 'reject') {
-    approvingCycle = new Set([...approvingCycle, approval.cycleId]);
-    try {
-      let body: { approveAll?: boolean; approvedItemIds?: string[]; rejectedItemIds?: string[]; decidedBy: string };
-      if (mode === 'approveAll') {
-        body = { approveAll: true, decidedBy: 'dashboard' };
-      } else if (mode === 'reject') {
-        const all = [...approval.withinBudgetItems, ...approval.overflowItems].map((i) => i.itemId);
-        body = { approvedItemIds: [], rejectedItemIds: all, decidedBy: 'dashboard' };
-      } else {
-        const sel = cycleSelections[approval.cycleId] ?? new Set();
-        const allIds = [...approval.withinBudgetItems, ...approval.overflowItems].map((i) => i.itemId);
-        body = {
-          approvedItemIds: allIds.filter((id) => sel.has(id)),
-          rejectedItemIds: allIds.filter((id) => !sel.has(id)),
-          decidedBy: 'dashboard',
-        };
-      }
-      const res = await fetch(`/api/v5/cycles/${approval.cycleId}/approve`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      // Optimistic: drop this approval from the list. Next poll will refresh.
-      cycleApprovals = cycleApprovals.filter((c) => c.cycleId !== approval.cycleId);
-    } catch (e) {
-      cycleApprovalsError = `Failed to approve ${approval.cycleId.slice(0, 8)}: ${e}`;
-    } finally {
-      approvingCycle = new Set([...approvingCycle].filter((id) => id !== approval.cycleId));
-    }
-  }
+  // Derived from the store — no local fetch needed.
+  $: cycleApprovals = $approvalsStore.pending;
+  $: cycleApprovalsLoading = $approvalsStore.loading;
+  $: cycleApprovalsError = $approvalsStore.error;
 
   function fmtCost(n: number): string {
     return `$${n.toFixed(2)}`;
   }
 
+  function openApprovalModal(approval: CycleApproval) {
+    approvalsStore.open(approval);
+  }
+
   onMount(() => {
     load();
-    loadCycleApprovals();
-    pollTimer = setInterval(() => {
-      load(true);
-      loadCycleApprovals(true);
-    }, 5000);
+    // Legacy approvals still poll every 5s; cycle approvals are handled by the store.
+    pollTimer = setInterval(() => load(true), 5000);
   });
 
   onDestroy(() => {
@@ -392,101 +258,73 @@
 
 <!-- ───────────────────────────────────────────────────────────────────────
      Cycle Approvals — autonomous loop budget gates that need a human decision
+     Driven by approvalsStore; clicking "Review" opens the global ApprovalModal.
      ─────────────────────────────────────────────────────────────────────── -->
 {#if cycleApprovals.length > 0 || cycleApprovalsLoading}
   <div class="cycle-approvals-section">
     <div class="section-header">
       <h2>Cycle Budget Approvals</h2>
-      <span class="muted">{cycleApprovals.length} pending — auto-refreshes every 5s</span>
+      <span class="muted">
+        {cycleApprovals.length} pending
+        {#if cycleApprovalsLoading}<span class="ca-refreshing">· refreshing…</span>{/if}
+      </span>
     </div>
     {#if cycleApprovalsError}
       <div class="error-banner">{cycleApprovalsError}</div>
     {/if}
 
     {#each cycleApprovals as approval (approval.cycleId)}
-      {@const isApproving = approvingCycle.has(approval.cycleId)}
-      {@const sel = cycleSelections[approval.cycleId] ?? new Set()}
-      {@const selCost = selectedCost(approval)}
-      {@const overBudget = selCost > approval.budgetUsd}
+      {@const totalItems = approval.withinBudgetItems.length + approval.overflowItems.length}
+      {@const withinCost = approval.withinBudgetItems.reduce((s, i) => s + i.estimatedCostUsd, 0)}
 
       <div class="cycle-approval-card">
         <div class="ca-header">
-          <div>
+          <div class="ca-id-row">
             <a class="ca-cycleid mono" href={`/cycles/${approval.cycleId}`}>{approval.cycleId.slice(0, 8)}</a>
             {#if approval.sprintVersion}<span class="ca-version mono">v{approval.sprintVersion}</span>{/if}
             <span class="muted ca-relative">{fmtRelative(approval.requestedAt)}</span>
           </div>
           <div class="ca-totals">
-            <div class="ca-cost {overBudget ? 'over' : 'ok'}">
-              <span class="ca-cost-num">{fmtCost(selCost)}</span>
+            <div class="ca-cost ok">
+              <span class="ca-cost-num">{fmtCost(withinCost)}</span>
               <span class="ca-cost-budget">/ {fmtCost(approval.budgetUsd)}</span>
             </div>
-            <div class="muted ca-cost-label">{sel.size} of {approval.withinBudgetItems.length + approval.overflowItems.length} items selected</div>
+            <div class="muted ca-cost-label">
+              {approval.withinBudgetItems.length} within budget
+              {#if approval.overflowItems.length > 0}
+                · {approval.overflowItems.length} overflow
+              {/if}
+            </div>
           </div>
         </div>
 
         {#if approval.agentSummary}
-          <div class="ca-summary muted">{approval.agentSummary}</div>
+          <p class="ca-summary muted">{approval.agentSummary}</p>
         {/if}
 
-        <div class="ca-quick-actions">
-          <button class="btn btn-ghost btn-sm" onclick={() => selectWithinBudget(approval)}>Within budget only</button>
-          <button class="btn btn-ghost btn-sm" onclick={() => selectAllItems(approval)}>Select all</button>
-          <button class="btn btn-ghost btn-sm" onclick={() => selectNone(approval)}>Clear</button>
-        </div>
-
-        <div class="ca-items">
-          {#each approval.withinBudgetItems as item (item.itemId)}
-            <label class="ca-item" class:selected={sel.has(item.itemId)}>
-              <input type="checkbox" checked={sel.has(item.itemId)} onchange={() => toggleItem(approval.cycleId, item.itemId)} />
-              <div class="ca-item-body">
-                <div class="ca-item-title">
-                  <span class="ca-item-rank">#{item.rank}</span>
-                  {item.title}
-                </div>
-                <div class="ca-item-meta muted">
-                  <span>{item.suggestedAssignee}</span>
-                  <span>·</span>
-                  <span>{fmtCost(item.estimatedCostUsd)}</span>
-                  <span>·</span>
-                  <span>{item.estimatedDurationMinutes}m</span>
-                </div>
-              </div>
-            </label>
-          {/each}
-          {#if approval.overflowItems.length > 0}
-            <div class="ca-overflow-divider muted">Overflow — over budget</div>
-            {#each approval.overflowItems as item (item.itemId)}
-              <label class="ca-item overflow" class:selected={sel.has(item.itemId)}>
-                <input type="checkbox" checked={sel.has(item.itemId)} onchange={() => toggleItem(approval.cycleId, item.itemId)} />
-                <div class="ca-item-body">
-                  <div class="ca-item-title">
-                    <span class="ca-item-rank">#{item.rank}</span>
-                    {item.title}
-                  </div>
-                  <div class="ca-item-meta muted">
-                    <span>{item.suggestedAssignee}</span>
-                    <span>·</span>
-                    <span>{fmtCost(item.estimatedCostUsd)}</span>
-                    <span>·</span>
-                    <span>{item.estimatedDurationMinutes}m</span>
-                  </div>
-                </div>
-              </label>
+        <!-- Item preview — first 3 titles so the operator can orient before opening modal -->
+        {#if totalItems > 0}
+          <div class="ca-preview">
+            {#each [...approval.withinBudgetItems, ...approval.overflowItems].slice(0, 3) as item}
+              <span class="ca-preview-item">
+                <span class="mono muted">#{item.rank}</span>
+                {item.title}
+              </span>
             {/each}
-          {/if}
-        </div>
+            {#if totalItems > 3}
+              <span class="ca-preview-more muted">+{totalItems - 3} more</span>
+            {/if}
+          </div>
+        {/if}
 
         <div class="ca-footer">
-          <button class="btn btn-primary" disabled={isApproving || sel.size === 0} onclick={() => approveCycle(approval, 'selected')}>
-            {isApproving ? 'Approving…' : `Approve ${sel.size} items (${fmtCost(selCost)})`}
+          <button
+            class="btn btn-primary btn-sm"
+            onclick={() => openApprovalModal(approval)}
+          >
+            Review {totalItems} items
           </button>
-          <button class="btn btn-ghost" disabled={isApproving} onclick={() => approveCycle(approval, 'approveAll')}>
-            Approve all
-          </button>
-          <button class="btn btn-ghost danger" disabled={isApproving} onclick={() => approveCycle(approval, 'reject')}>
-            Reject all
-          </button>
+          <span class="ca-hint muted">Opens approval modal with item selection</span>
         </div>
       </div>
     {/each}
@@ -923,7 +761,7 @@
     color: var(--color-text-faint);
     font-family: var(--font-mono);
   }
-  /* ── Cycle approvals (v6.7.4) ─────────────────────────────────────── */
+  /* ── Cycle approvals (v6.7.4+) ───────────────────────────────────── */
   .cycle-approvals-section {
     margin-bottom: var(--space-6);
   }
@@ -937,128 +775,97 @@
     font-size: var(--text-lg);
     margin: 0;
   }
+  .ca-refreshing {
+    font-style: italic;
+    opacity: 0.7;
+  }
   .cycle-approval-card {
     background: var(--color-bg-elevated);
     border: 1px solid var(--color-border);
     border-left: 3px solid var(--color-warning);
     border-radius: var(--radius-md);
     padding: var(--space-4);
-    margin-bottom: var(--space-4);
+    margin-bottom: var(--space-3);
   }
   .ca-header {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    margin-bottom: var(--space-3);
+    margin-bottom: var(--space-2);
+  }
+  .ca-id-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
   }
   .ca-cycleid {
     color: var(--color-brand);
     font-weight: 700;
     text-decoration: none;
-    font-size: var(--text-md);
+    font-size: var(--text-sm);
   }
   .ca-cycleid:hover { text-decoration: underline; }
   .ca-version {
-    margin-left: var(--space-2);
-    padding: 2px var(--space-2);
+    padding: 1px var(--space-2);
     background: var(--color-bg-card);
     border: 1px solid var(--color-border);
     border-radius: 9999px;
     font-size: var(--text-xs);
     color: var(--color-text-muted);
   }
-  .ca-relative {
-    margin-left: var(--space-2);
-    font-size: var(--text-xs);
-  }
-  .ca-totals { text-align: right; }
+  .ca-relative { font-size: var(--text-xs); }
+  .ca-totals { text-align: right; flex-shrink: 0; }
   .ca-cost {
-    font-size: var(--text-xl);
+    font-size: var(--text-lg);
     font-weight: 700;
     font-family: var(--font-mono);
+    white-space: nowrap;
   }
   .ca-cost.ok { color: var(--color-success); }
-  .ca-cost.over { color: var(--color-warning); }
   .ca-cost-budget {
-    font-size: var(--text-sm);
+    font-size: var(--text-xs);
     color: var(--color-text-muted);
     margin-left: var(--space-1);
   }
   .ca-cost-label {
     font-size: var(--text-xs);
-    margin-top: var(--space-1);
+    margin-top: 2px;
   }
   .ca-summary {
-    background: var(--color-bg-card);
-    border-radius: var(--radius-sm);
-    padding: var(--space-2) var(--space-3);
-    margin-bottom: var(--space-3);
     font-size: var(--text-xs);
     line-height: 1.5;
-    border-left: 2px solid var(--color-border);
-  }
-  .ca-quick-actions {
-    display: flex;
-    gap: var(--space-2);
-    margin-bottom: var(--space-3);
-  }
-  .ca-items {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    max-height: 400px;
-    overflow-y: auto;
-    margin-bottom: var(--space-3);
-    padding: var(--space-2);
+    margin: var(--space-1) 0 var(--space-2);
+    padding: var(--space-2) var(--space-3);
     background: var(--color-bg-card);
     border-radius: var(--radius-sm);
+    border-left: 2px solid var(--color-border);
   }
-  .ca-item {
+  /* Compact item preview (first 3 titles) */
+  .ca-preview {
     display: flex;
-    align-items: flex-start;
-    gap: var(--space-3);
-    padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    transition: background var(--duration-fast);
-  }
-  .ca-item:hover { background: var(--color-bg-elevated); }
-  .ca-item.selected { background: rgba(91,138,245,0.06); }
-  .ca-item input[type="checkbox"] {
-    margin-top: 4px;
-    flex-shrink: 0;
-  }
-  .ca-item-body { flex: 1; min-width: 0; }
-  .ca-item-title {
-    font-size: var(--text-sm);
-    color: var(--color-text);
-    line-height: 1.4;
-  }
-  .ca-item-rank {
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-3);
+    margin-bottom: var(--space-3);
+    font-size: var(--text-xs);
     color: var(--color-text-muted);
-    font-family: var(--font-mono);
-    margin-right: var(--space-2);
   }
-  .ca-item-meta {
-    font-size: var(--text-xs);
-    margin-top: var(--space-1);
-    display: flex;
-    gap: var(--space-2);
+  .ca-preview-item {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 260px;
   }
-  .ca-item.overflow .ca-item-rank { color: var(--color-warning); }
-  .ca-overflow-divider {
-    font-size: var(--text-xs);
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    padding: var(--space-2) var(--space-3);
-    border-top: 1px solid var(--color-border);
-    margin-top: var(--space-2);
+  .ca-preview-more {
+    font-style: italic;
   }
   .ca-footer {
     display: flex;
-    gap: var(--space-2);
     align-items: center;
+    gap: var(--space-3);
   }
-  .btn.danger { color: var(--color-danger); }
-  .btn.danger:hover { background: rgba(224,90,90,0.08); }
+  .ca-hint {
+    font-size: var(--text-xs);
+    font-style: italic;
+  }
 </style>

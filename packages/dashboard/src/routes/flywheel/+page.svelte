@@ -19,11 +19,24 @@
     completedItems: number;
   }
 
+  interface CycleEntryPoint {
+    cycleId: string;
+    count: number;
+    startedAt: string;
+  }
+
+  interface MemoryStats {
+    totalEntries: number;
+    entriesPerCycleTrend: CycleEntryPoint[];
+    hitRate: number;
+  }
+
   interface FlywheelData {
     metrics: FlywheelMetric[];
     updatedAt?: string;
     overallScore?: number;
     debug?: FlywheelDebug;
+    memoryStats?: MemoryStats;
   }
 
   const DEFAULT_METRICS: FlywheelMetric[] = [
@@ -85,6 +98,13 @@
     { label: 'Sprint items', value: `${flywheel.debug.completedItems} / ${flywheel.debug.totalItems}` },
   ] : [];
 
+  // Memory stats card — visible when the server reports at least a memoryStats field
+  $: memStats = flywheel.memoryStats;
+  $: memHitPct = memStats ? Math.round(memStats.hitRate * 100) : 0;
+  $: memTrendMax = memStats
+    ? Math.max(1, ...memStats.entriesPerCycleTrend.map(p => p.count))
+    : 1;
+
   onMount(load);
 </script>
 
@@ -143,6 +163,40 @@
             <dd class="stat-value">{row.value}</dd>
           </div>
         {/each}
+      </dl>
+    </div>
+  {/if}
+
+  {#if memStats}
+    <div class="card memory-card" data-testid="memory-stats-card">
+      <h2 class="stats-title">Memory</h2>
+      <dl class="stats-grid">
+        <div class="stat-row">
+          <dt class="stat-label">Total entries</dt>
+          <dd class="stat-value">{memStats.totalEntries}</dd>
+        </div>
+        <div class="stat-row">
+          <dt class="stat-label">Hit rate</dt>
+          <dd class="stat-value hit-rate" class:hit-rate--active={memHitPct > 0}>
+            {memHitPct}%
+          </dd>
+        </div>
+        <div class="stat-row trend-row">
+          <dt class="stat-label">Entries per cycle</dt>
+          <dd class="trend-bars" aria-label="Entries per cycle trend">
+            {#if memStats.entriesPerCycleTrend.length === 0}
+              <span class="trend-empty">—</span>
+            {:else}
+              {#each memStats.entriesPerCycleTrend as point (point.cycleId)}
+                <span
+                  class="trend-bar"
+                  style="height: {Math.round((point.count / memTrendMax) * 40) + 4}px"
+                  title="{point.cycleId.slice(0, 8)}: {point.count} {point.count === 1 ? 'entry' : 'entries'}"
+                ></span>
+              {/each}
+            {/if}
+          </dd>
+        </div>
       </dl>
     </div>
   {/if}
@@ -231,5 +285,41 @@
     font-weight: 700;
     color: var(--color-text);
     margin: 0;
+  }
+
+  /* ── Memory stats card ────────────────────────────────────────────────── */
+  .memory-card {
+    margin-bottom: var(--space-4);
+    padding: var(--space-5) var(--space-6);
+  }
+  .hit-rate--active {
+    color: var(--color-success, #4caf82);
+  }
+  .trend-row {
+    grid-column: 1 / -1;
+  }
+  .trend-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 48px;
+    margin: 0;
+    padding-top: var(--space-1);
+  }
+  .trend-bar {
+    width: 10px;
+    min-height: 4px;
+    background: var(--color-brand, #4a9eff);
+    border-radius: 2px 2px 0 0;
+    opacity: 0.75;
+    transition: opacity 0.15s;
+  }
+  .trend-bar:hover {
+    opacity: 1;
+  }
+  .trend-empty {
+    font-size: var(--text-sm);
+    color: var(--color-text-faint);
+    line-height: 48px;
   }
 </style>

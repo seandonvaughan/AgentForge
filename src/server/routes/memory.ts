@@ -12,15 +12,80 @@ interface MemoryEntry {
   filename?: string;
   key: string;
   value: string;
+  type?: string;
   category?: string;
   agentId?: string;
+  /** Original source field from JSONL (cycleId or agentId). */
+  source?: string;
   summary?: string;
   tags?: string[];
   updatedAt?: string;
   createdAt?: string;
 }
 
+/** Maximum entries returned by the v5 memory endpoint. */
+const V5_MEMORY_LIMIT = 200;
+
 const MEMORIES_JSON_PATH = join(PROJECT_ROOT, '.agentforge/data/memories.json');
+const MEMORY_JSONL_DIR = join(PROJECT_ROOT, '.agentforge/memory');
+
+/**
+ * Read all `.agentforge/memory/*.jsonl` files and return entries sorted
+ * newest-first (by createdAt). This is the primary data source for the v5
+ * memory endpoint — it covers cycle-outcome, gate-verdict, review-finding,
+ * failure-pattern, and learned-fact entries emitted by cycle phases.
+ */
+function readJsonlMemories(): MemoryEntry[] {
+  if (!existsSync(MEMORY_JSONL_DIR)) return [];
+
+  const entries: MemoryEntry[] = [];
+  try {
+    const files = readdirSync(MEMORY_JSONL_DIR).filter(f => f.endsWith('.jsonl'));
+    for (const filename of files) {
+      try {
+        const raw = readFileSync(join(MEMORY_JSONL_DIR, filename), 'utf8');
+        const lines = raw.split('\n').filter(l => l.trim().length > 0);
+        for (const line of lines) {
+          try {
+            const e = JSON.parse(line) as {
+              id?: string;
+              type?: string;
+              value?: string;
+              createdAt?: string;
+              source?: string;
+              tags?: string[];
+            };
+            if (!e.id || !e.type) continue;
+            entries.push({
+              id: e.id,
+              // key follows the convention <type>/<source> so the dashboard
+              // can display a meaningful identifier without a dedicated field.
+              key: e.source ? `${e.type}/${e.source}` : e.type,
+              value: (e.value ?? '').slice(0, 500),
+              type: e.type,
+              // Map source → agentId for the existing agent-filter UI, and
+              // also surface it as `source` so the dashboard can build links.
+              agentId: e.source,
+              source: e.source,
+              tags: e.tags ?? [],
+              createdAt: e.createdAt,
+              updatedAt: e.createdAt,
+            });
+          } catch {
+            // skip malformed lines without failing the whole file
+          }
+        }
+      } catch {
+        // skip unreadable files
+      }
+    }
+  } catch {
+    return [];
+  }
+
+  // Newest entries first — ISO-8601 strings sort lexicographically
+  return entries.sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
+}
 
 /** Read structured memory entries from the canonical data file. */
 function readMemoriesJson(): MemoryEntry[] {
@@ -143,7 +208,17 @@ export async function memoryRoutes(
     return reply.send({ data: afterAgent, meta: { total: afterAgent.length } });
   });
 
-  // GET /api/v5/memory — v5 alias; same logic with guaranteed id + agents list
+  // GET /api/v5/memory — serves the latest 200 cross-cycle memory entries.
+  //
+  // Data source priority:
+  //   1. .agentforge/memory/*.jsonl  (new primary — cycle-outcome, gate-verdict, etc.)
+  //   2. KV store (SQLite kv_store table — real-time agent writes)
+  //   3. .agentforge/data/memories.json (operator-curated + autonomous-loop entries)
+  //   4. .agentforge/sessions/*.json  (legacy file-listing fallback)
+  //
+  // Query params:
+  //   search — substring match across key, value, summary, tags
+  //   agent  — exact match on agentId (maps to `source` in JSONL entries)
   app.get('/api/v5/memory', async (req, reply) => {
     const query = req.query as { search?: string; agent?: string };
     const searchTerm = (query.search ?? '').toLowerCase().trim();
@@ -151,7 +226,11 @@ export async function memoryRoutes(
 
     const entries: MemoryEntry[] = [];
 
-    // Primary: KV store
+    // Primary: JSONL files — the authoritative cross-cycle memory store
+    const jsonlEntries = readJsonlMemories();
+    entries.push(...jsonlEntries);
+
+    // Secondary: KV store (real-time agent-written memory; merged on top of JSONL)
     try {
       const db = adapter.getAgentDatabase().getDb();
       const rows = db
@@ -172,7 +251,7 @@ export async function memoryRoutes(
       // kv_store may not exist or be empty — fall through
     }
 
-    // Secondary: memories.json
+    // Tertiary: memories.json (operator-curated entries; only if nothing found yet)
     if (entries.length === 0) {
       const fileEntries = readMemoriesJson();
       for (const e of fileEntries) {
@@ -180,7 +259,7 @@ export async function memoryRoutes(
       }
     }
 
-    // Tertiary: raw session file listing
+    // Quaternary: raw session file listing (legacy fallback)
     if (entries.length === 0) {
       try {
         const sessionsDir = join(PROJECT_ROOT, '.agentforge/sessions');
@@ -206,18 +285,23 @@ export async function memoryRoutes(
       }
     }
 
-    // Collect unique agents before filtering (for the client dropdown)
-    const agents = [...new Set(entries.map(e => e.agentId).filter(Boolean) as string[])].sort();
+    // Cap to latest V5_MEMORY_LIMIT entries before building the agents/types
+    // lists so filters and dropdowns reflect only what the client will see.
+    const capped = entries.slice(0, V5_MEMORY_LIMIT);
+
+    // Collect unique agents and types before filtering (for client dropdowns)
+    const agents = [...new Set(capped.map(e => e.agentId).filter(Boolean) as string[])].sort();
+    const types = [...new Set(capped.map(e => e.type).filter(Boolean) as string[])].sort();
 
     // Apply search filter
     const afterSearch = searchTerm
-      ? entries.filter(e => {
+      ? capped.filter(e => {
           const haystack = [e.key, e.value, e.summary ?? '', (e.tags ?? []).join(' ')]
             .join(' ')
             .toLowerCase();
           return haystack.includes(searchTerm);
         })
-      : entries;
+      : capped;
 
     // Apply agent filter
     const afterAgent =
@@ -225,7 +309,7 @@ export async function memoryRoutes(
         ? afterSearch.filter(e => e.agentId === agentFilter)
         : afterSearch;
 
-    return reply.send({ data: afterAgent, agents, meta: { total: afterAgent.length } });
+    return reply.send({ data: afterAgent, agents, types, meta: { total: afterAgent.length } });
   });
 
   // DELETE /api/v5/memory/:id — remove a kv_store entry by key
