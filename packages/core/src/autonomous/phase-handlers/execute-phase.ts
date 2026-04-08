@@ -22,20 +22,14 @@ import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
 // Reads tag-filtered past failure entries from .agentforge/memory/*.jsonl so
 // each agent can avoid mistakes made on similar work in prior cycles.
 
-/** Minimal shape of a cross-cycle memory entry.  The full schema lives in
- *  packages/core/src/memory/types.ts but we redeclare only what we need here
- *  to stay free of a hard import dependency while the memory module is being
- *  built in parallel. */
-export interface MemoryEntry {
-  id?: string;
-  key: string;
-  /** Human-readable summary or structured value of the entry. */
-  value: string | Record<string, unknown>;
-  type: 'cycle-outcome' | 'gate-verdict' | 'review-finding' | 'failure-pattern' | 'learned-fact' | string;
-  createdAt: string;
-  source?: string;
-  tags?: string[];
-}
+/** Cross-cycle memory entry — re-exported from the canonical schema in
+ *  packages/core/src/memory/types.ts so producers and consumers stay in
+ *  sync. Earlier we declared a duplicate MemoryEntry with a `key` field
+ *  here, which silently rendered "undefined" in agent prompts because
+ *  cycle-logger writes entries with `id` (the canonical field). One type
+ *  now, no schism. */
+export type { CycleMemoryEntry as MemoryEntry } from '../../memory/types.js';
+import type { CycleMemoryEntry as MemoryEntry } from '../../memory/types.js';
 
 /** Types we prioritise when selecting entries to inject into a prompt.
  *  cycle-outcome is skipped — it's high-level and less actionable. */
@@ -105,11 +99,12 @@ export function readRelevantMemoryEntries(
 export function formatMemorySection(entries: MemoryEntry[]): string {
   if (entries.length === 0) return '';
   const lines = entries.map((e) => {
-    const value =
-      typeof e.value === 'string'
-        ? e.value
-        : JSON.stringify(e.value, null, 2);
-    return `- [${e.type}] **${e.key}**: ${value}`;
+    // The canonical schema stores value as a string (often JSON-stringified
+    // for structured data). Use id as the lead identifier; older entries
+    // may have neither, so fall back to type.
+    const value = typeof e.value === 'string' ? e.value : JSON.stringify(e.value, null, 2);
+    const label = e.id ?? e.type;
+    return `- [${e.type}] **${label}**: ${value}`;
   });
   return `\n## Memory: Past Failures on Similar Work\n\nThe following entries from prior cycles matched this item's tags. Use them to avoid repeating past mistakes:\n\n${lines.join('\n')}\n`;
 }
