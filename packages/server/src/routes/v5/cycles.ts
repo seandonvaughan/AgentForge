@@ -130,6 +130,27 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleListRow | null 
     const cost = (cycleJson['cost'] ?? {}) as Record<string, unknown>;
     const tests = (cycleJson['tests'] ?? {}) as Record<string, unknown>;
     const pr = (cycleJson['pr'] ?? {}) as Record<string, unknown>;
+    let costUsd = Number(cost['totalUsd'] ?? 0);
+    let testsPassed = Number(tests['passed'] ?? 0);
+    let testsTotal = Number(tests['total'] ?? 0);
+    // v6.7.4 cost heal: cycle.json with $0 cost on a gate-rejected cycle
+    // is missing real spend. Aggregate from phases/*.json same way the
+    // detail endpoint does.
+    if (costUsd === 0 && existsSync(join(cycleDir, 'phases'))) {
+      const phasesDir = join(cycleDir, 'phases');
+      for (const name of ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate', 'release', 'learn']) {
+        const pf = join(phasesDir, `${name}.json`);
+        if (!existsSync(pf)) continue;
+        try {
+          const ph = JSON.parse(readFileSync(pf, 'utf-8')) as Record<string, unknown>;
+          if (typeof ph['costUsd'] === 'number') costUsd += ph['costUsd'] as number;
+          if (name === 'test') {
+            if (typeof ph['passed'] === 'number') testsPassed = ph['passed'] as number;
+            if (typeof ph['total'] === 'number') testsTotal = ph['total'] as number;
+          }
+        } catch { /* skip */ }
+      }
+    }
     return {
       cycleId: (cycleJson['cycleId'] as string) ?? cycleId,
       sprintVersion: (cycleJson['sprintVersion'] as string) ?? null,
@@ -140,10 +161,10 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleListRow | null 
         new Date(0).toISOString(),
       completedAt: (cycleJson['completedAt'] as string) ?? null,
       durationMs: (cycleJson['durationMs'] as number) ?? null,
-      costUsd: Number(cost['totalUsd'] ?? 0),
-      budgetUsd: Number(cost['budgetUsd'] ?? 0),
-      testsPassed: Number(tests['passed'] ?? 0),
-      testsTotal: Number(tests['total'] ?? 0),
+      costUsd,
+      budgetUsd: Number(cost['budgetUsd'] ?? 200),
+      testsPassed,
+      testsTotal,
       prUrl: (pr['url'] as string) ?? null,
       hasApprovalPending,
     };
@@ -218,38 +239,28 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleListRow | null 
     }
   }
 
-  // Fallback: if execute.json isn't written yet (legacy cycles without
-  // incremental snapshots, or execute phase still running), synthesize
-  // execute cost from the sprint file item estimatedCostUsd sums. This
-  // way the list row shows ~$28 instead of $0.24 for a cycle that's
-  // 10 items deep into execute.
+  // Fallback: if execute.json isn't written yet, synthesize cost from
+  // the sprint file item estimatedCostUsd sums — but ONLY when this
+  // cycle has its own sprint-link.json. Without the link we cannot
+  // know which sprint file belongs to this cycle, and the previous
+  // mtime-based "newest sprint" fallback caused PLAN-stage cycles to
+  // show $143 by reading a leftover sprint from a totally unrelated
+  // earlier cycle (v6.7.4 user-reported bug).
   if (!executeJsonExists) {
     try {
       const linkFile = join(cycleDir, 'sprint-link.json');
-      let sprintVersion: string | null = null;
       if (existsSync(linkFile)) {
-        sprintVersion = JSON.parse(readFileSync(linkFile, 'utf-8'))?.sprintVersion ?? null;
-      }
-      if (!sprintVersion) {
-        // Legacy: newest sprint file by mtime
-        const sd = join(process.cwd(), '.agentforge/sprints');
-        if (existsSync(sd)) {
-          const files = readdirSync(sd)
-            .filter(f => f.startsWith('v') && f.endsWith('.json'))
-            .map(f => ({ f, m: statSync(join(sd, f)).mtimeMs }))
-            .sort((a, b) => b.m - a.m);
-          if (files[0]) sprintVersion = files[0].f.slice(1, -5);
-        }
-      }
-      if (sprintVersion) {
-        const sprintFile = join(process.cwd(), '.agentforge/sprints', `v${sprintVersion}.json`);
-        if (existsSync(sprintFile)) {
-          const raw = JSON.parse(readFileSync(sprintFile, 'utf-8'));
-          const sprint = Array.isArray(raw.sprints) ? raw.sprints[0] : raw;
-          const items = sprint?.items ?? [];
-          for (const it of items) {
-            if ((it.status === 'completed' || it.status === 'in_progress') && typeof it.estimatedCostUsd === 'number') {
-              costUsd += it.estimatedCostUsd;
+        const sprintVersion = JSON.parse(readFileSync(linkFile, 'utf-8'))?.sprintVersion ?? null;
+        if (sprintVersion) {
+          const sprintFile = join(process.cwd(), '.agentforge/sprints', `v${sprintVersion}.json`);
+          if (existsSync(sprintFile)) {
+            const raw = JSON.parse(readFileSync(sprintFile, 'utf-8'));
+            const sprint = Array.isArray(raw.sprints) ? raw.sprints[0] : raw;
+            const items = sprint?.items ?? [];
+            for (const it of items) {
+              if ((it.status === 'completed' || it.status === 'in_progress') && typeof it.estimatedCostUsd === 'number') {
+                costUsd += it.estimatedCostUsd;
+              }
             }
           }
         }
