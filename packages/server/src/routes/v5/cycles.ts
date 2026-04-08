@@ -16,6 +16,7 @@ import {
   existsSync,
   readdirSync,
   readFileSync,
+  writeFileSync,
   statSync,
   mkdirSync,
   openSync,
@@ -457,6 +458,89 @@ export async function cyclesRoutes(
   // POST /api/v5/cycle-sessions/reap ───────────────────────────────────────
   app.post('/api/v5/cycle-sessions/reap', async (_req, reply) => {
     return reply.send(cycleSessions.reap());
+  });
+
+  // GET /api/v5/cycles/:id/approval ─────────────────────────────────────────
+  // Returns the approval-pending.json contents if a cycle is awaiting human
+  // approval, or 404 if there's nothing to approve. Drives the dashboard
+  // approval modal.
+  app.get('/api/v5/cycles/:id/approval', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!SAFE_ID.test(id)) return reply.status(400).send({ error: 'Invalid cycle id' });
+    const br = baseForRequest(req);
+    if ('error' in br) return reply.status(br.error.status).send(br.error.body);
+    const dir = safeJoin(br.base, id);
+    if (!dir) return reply.status(404).send({ error: 'Cycle not found' });
+    const pendingFile = join(dir, 'approval-pending.json');
+    if (!existsSync(pendingFile)) return reply.status(404).send({ error: 'No pending approval' });
+    const decisionFile = join(dir, 'approval-decision.json');
+    if (existsSync(decisionFile)) return reply.status(409).send({ error: 'Already decided' });
+    try {
+      const pending = JSON.parse(readFileSync(pendingFile, 'utf8'));
+      return reply.send(pending);
+    } catch (err) {
+      return reply.status(500).send({ error: `Failed to read approval-pending.json: ${(err as Error).message}` });
+    }
+  });
+
+  // POST /api/v5/cycles/:id/approve ──────────────────────────────────────────
+  // Writes the approval-decision.json that BudgetApproval.pollDecisionFile
+  // is waiting for. Body shape: { approvedItemIds: string[], rejectedItemIds?: string[] }
+  // If body.approveAll === true, every within-budget item is approved and
+  // every overflow item rejected (the common "yes, ship the within-budget
+  // batch" path). Drives the dashboard approval modal.
+  app.post('/api/v5/cycles/:id/approve', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!SAFE_ID.test(id)) return reply.status(400).send({ error: 'Invalid cycle id' });
+    const br = baseForRequest(req);
+    if ('error' in br) return reply.status(br.error.status).send(br.error.body);
+    const dir = safeJoin(br.base, id);
+    if (!dir) return reply.status(404).send({ error: 'Cycle not found' });
+    const pendingFile = join(dir, 'approval-pending.json');
+    if (!existsSync(pendingFile)) return reply.status(404).send({ error: 'No pending approval' });
+    const decisionFile = join(dir, 'approval-decision.json');
+    if (existsSync(decisionFile)) return reply.status(409).send({ error: 'Already decided' });
+
+    const body = (req.body ?? {}) as {
+      approveAll?: boolean;
+      approvedItemIds?: string[];
+      rejectedItemIds?: string[];
+      decidedBy?: string;
+    };
+
+    let approvedItemIds: string[] = [];
+    let rejectedItemIds: string[] = [];
+    if (body.approveAll) {
+      try {
+        const pending = JSON.parse(readFileSync(pendingFile, 'utf8'));
+        approvedItemIds = (pending?.withinBudget?.items ?? []).map((i: any) => i.itemId);
+        rejectedItemIds = (pending?.overflow?.items ?? []).map((i: any) => i.itemId);
+      } catch (err) {
+        return reply.status(500).send({ error: `Failed to read approval-pending.json: ${(err as Error).message}` });
+      }
+    } else {
+      approvedItemIds = Array.isArray(body.approvedItemIds) ? body.approvedItemIds : [];
+      rejectedItemIds = Array.isArray(body.rejectedItemIds) ? body.rejectedItemIds : [];
+    }
+
+    if (approvedItemIds.length === 0 && rejectedItemIds.length === 0) {
+      return reply.status(400).send({ error: 'No items provided. Pass approveAll: true or approvedItemIds: [...]' });
+    }
+
+    const decision = {
+      cycleId: id,
+      decision: approvedItemIds.length > 0 ? 'approved' : 'rejected',
+      approvedItemIds,
+      rejectedItemIds,
+      decidedBy: body.decidedBy ?? 'dashboard',
+      decidedAt: new Date().toISOString(),
+    };
+    try {
+      writeFileSync(decisionFile, JSON.stringify(decision, null, 2));
+      return reply.send({ ok: true, decision });
+    } catch (err) {
+      return reply.status(500).send({ error: `Failed to write decision: ${(err as Error).message}` });
+    }
   });
 
   // POST /api/v5/cycles/:id/stop ────────────────────────────────────────────

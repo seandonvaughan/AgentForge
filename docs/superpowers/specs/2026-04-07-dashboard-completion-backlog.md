@@ -24,7 +24,7 @@ TODO(autonomous): Fix the /search dashboard route — currently returns no resul
 
 ## Approvals
 
-TODO(autonomous): Test and verify the /approvals dashboard page works end-to-end — create a test approval pending, render it on the page, allow approve/reject from UI, verify the decision is written to .agentforge/cycles/<id>/approval-decision.json. Check packages/dashboard/src/routes/approvals/+page.svelte.
+TODO(autonomous): Wire the /approvals dashboard page to the new server endpoints GET /api/v5/cycles/:id/approval and POST /api/v5/cycles/:id/approve. The endpoints already exist in packages/server/src/routes/v5/cycles.ts (v6.7.4). The dashboard needs to: (1) poll /api/v5/cycle-sessions for cycles with hasApprovalPending, (2) for each pending one fetch /api/v5/cycles/:id/approval and render the within-budget items as a checkbox list with cost totals, (3) POST to /api/v5/cycles/:id/approve with either {approveAll: true} or {approvedItemIds: [...], rejectedItemIds: [...]} when the user clicks Approve. Should also be triggered automatically as a global modal when an approval.pending event arrives via SSE. Update packages/dashboard/src/routes/approvals/+page.svelte and add a global ApprovalModal component to the layout.
 
 ## Branches
 
