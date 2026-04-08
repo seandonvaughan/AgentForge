@@ -3,14 +3,30 @@ import type { WorkspaceAdapter } from '@agentforge/db';
 import { EmbeddingStore } from '@agentforge/embeddings';
 import { join } from 'node:path';
 
-// Singleton store per server process
+// Singleton store per server process. v6.7.4 review fix: removed sticky
+// initError cache. The previous design cached the first init failure and
+// re-threw it forever, permanently disabling /search until server restart
+// even if the underlying problem (missing dir, locked file, transient
+// disk error) cleared. New design retries init on every getStore() call
+// after a failure, with a cooldown to avoid hammering a broken backend.
 let store: EmbeddingStore | null = null;
+let lastFailedInitAt = 0;
+const INIT_RETRY_COOLDOWN_MS = 5_000;
 
 function getStore(dataDir: string): EmbeddingStore {
-  if (!store) {
-    store = new EmbeddingStore(join(dataDir, 'embeddings.db'));
+  if (store) return store;
+  // Cooldown — don't retry init more than once per 5 seconds. Otherwise a
+  // /search request storm against a permanently-broken backend would spin.
+  if (Date.now() - lastFailedInitAt < INIT_RETRY_COOLDOWN_MS) {
+    throw new Error('Embedding store init failed recently — retry after cooldown');
   }
-  return store;
+  try {
+    store = new EmbeddingStore(join(dataDir, 'embeddings.db'));
+    return store;
+  } catch (e) {
+    lastFailedInitAt = Date.now();
+    throw e instanceof Error ? e : new Error(String(e));
+  }
 }
 
 /**
@@ -46,10 +62,14 @@ export async function embeddingRoutes(
   app: FastifyInstance,
   opts: { dataDir: string; adapter?: WorkspaceAdapter },
 ): Promise<void> {
-  const s = getStore(opts.dataDir);
+  // NOTE: Lazy initialization of store on first request. This allows the server
+  // to start up even if better-sqlite3 is unavailable (e.g., in test environments
+  // with Node version mismatches). Embedding routes will fail gracefully with
+  // 500 errors if the store can't be initialized on first request.
 
   // POST /api/v5/embeddings/index
   app.post('/api/v5/embeddings/index', async (req, reply) => {
+    const s = getStore(opts.dataDir);
     const { id, content, metadata, workspaceId } = req.body as {
       id: string; content: string; metadata?: Record<string, unknown>; workspaceId?: string;
     };
@@ -59,6 +79,7 @@ export async function embeddingRoutes(
 
   // POST /api/v5/embeddings/index/batch
   app.post('/api/v5/embeddings/index/batch', async (req, reply) => {
+    const s = getStore(opts.dataDir);
     const { documents } = req.body as {
       documents: Array<{ id: string; content: string; metadata?: Record<string, unknown>; workspaceId?: string }>;
     };
@@ -69,6 +90,7 @@ export async function embeddingRoutes(
   // POST /api/v5/embeddings/search
   // Accepts `limit` as an alias for `topK` (the dashboard sends `limit`).
   app.post('/api/v5/embeddings/search', async (req, reply) => {
+    const s = getStore(opts.dataDir);
     const { query, topK, limit, minScore, workspaceId } = req.body as {
       query: string; topK?: number; limit?: number; minScore?: number; workspaceId?: string;
     };
@@ -85,11 +107,13 @@ export async function embeddingRoutes(
 
   // GET /api/v5/embeddings/stats
   app.get('/api/v5/embeddings/stats', async (_req, reply) => {
+    const s = getStore(opts.dataDir);
     return reply.send({ data: s.stats() });
   });
 
   // POST /api/v5/embeddings/learn-session
   app.post('/api/v5/embeddings/learn-session', async (req, reply) => {
+    const s = getStore(opts.dataDir);
     const { sessionId, agentId, task, response, model, costUsd, workspaceId } = req.body as {
       sessionId: string;
       agentId: string;
@@ -105,6 +129,7 @@ export async function embeddingRoutes(
 
   // DELETE /api/v5/embeddings/:id
   app.delete<{ Params: { id: string } }>('/api/v5/embeddings/:id', async (req, reply) => {
+    const s = getStore(opts.dataDir);
     s.delete(req.params.id);
     return reply.send({ ok: true });
   });

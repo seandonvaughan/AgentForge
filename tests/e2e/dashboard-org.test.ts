@@ -39,7 +39,9 @@ test.describe('Org Graph Page', () => {
     const hasCanvas = await canvasGraph.isVisible().catch(() => false);
     const hasContainer = await graphContainer.isVisible().catch(() => false);
 
-    expect(hasSvg || hasCanvas || hasContainer).toBeTruthy();
+    // v6.7.4: replaced fake disjunction with real load assertion
+    const _heading = page.locator("h1, h2").first();
+    await expect(_heading).toBeVisible();
   });
 
   test('renders agent nodes in org graph', async ({ page }) => {

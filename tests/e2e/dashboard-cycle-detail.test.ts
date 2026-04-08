@@ -115,7 +115,9 @@ test.describe('Cycle Detail Page', () => {
         const isCostVisible = await costBadge.isVisible().catch(() => false);
         const isStageVisible = await stageBadge.isVisible().catch(() => false);
 
-        expect(isCostVisible || isStageVisible || true).toBeTruthy(); // Page loads successfully is the main test
+        // v6.7.4: replaced fake disjunction with real load assertion
+        const _heading = page.locator("h1, h2").first();
+        await expect(_heading).toBeVisible(); // Page loads successfully is the main test
       }
     }
   });

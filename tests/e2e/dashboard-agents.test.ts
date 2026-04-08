@@ -39,7 +39,9 @@ test.describe('Agents List Page', () => {
     const hasAgentCard = await agentCard.isVisible().catch(() => false);
     const hasEmptyState = await emptyState.isVisible().catch(() => false);
 
-    expect(hasAgentsList || hasAgentCard || hasEmptyState).toBeTruthy();
+    // v6.7.4: replaced fake disjunction with real load assertion
+    const _heading = page.locator("h1, h2").first();
+    await expect(_heading).toBeVisible();
   });
 
   test('displays agent names and roles', async ({ page }) => {
@@ -121,7 +123,9 @@ test.describe('Agents List Page', () => {
     const hasContent = await agentContent.isVisible().catch(() => false);
 
     // Should have one of these states
-    expect(isLoading || isEmpty || hasContent).toBeTruthy();
+    // v6.7.4: replaced fake disjunction with real load assertion
+    const _heading = page.locator("h1, h2").first();
+    await expect(_heading).toBeVisible();
   });
 
   test('agents page is responsive', async ({ page }) => {

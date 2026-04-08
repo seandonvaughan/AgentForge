@@ -15,9 +15,18 @@ export async function dashboardStubRoutes(
   const projectRoot = opts.projectRoot ?? process.cwd();
 
   // ── Flywheel metrics ──────────────────────────────────────────────────────
+  // v6.7.4 review fix: the underlying computeFlywheelMetrics() does ~50 sync
+  // file reads (every cycle.json, every sprint file, every agent yaml). On a
+  // busy server that blocks the Fastify event loop for ~50-200ms per request.
+  // Fix: cache the result for 30s. The flywheel display doesn't need
+  // sub-second freshness; even a 30s TTL eliminates 99% of repeated I/O.
+  let flywheelCache: { at: number; data: ReturnType<typeof computeFlywheelMetrics> } | null = null;
+  const FLYWHEEL_TTL_MS = 30_000;
   app.get('/api/v5/flywheel', async (_req, reply) => {
-    const metrics = computeFlywheelMetrics(projectRoot);
-    return reply.send({ data: metrics });
+    if (!flywheelCache || Date.now() - flywheelCache.at > FLYWHEEL_TTL_MS) {
+      flywheelCache = { at: Date.now(), data: computeFlywheelMetrics(projectRoot) };
+    }
+    return reply.send({ data: flywheelCache.data, meta: { cachedAtMs: flywheelCache.at } });
   });
 
   // ── Memory store ──────────────────────────────────────────────────────────
@@ -60,19 +69,29 @@ export async function dashboardStubRoutes(
     }
   });
 
-  // DELETE /api/v5/autonomous-branches/:name — delete a stale branch by encoded name
-  app.delete<{ Params: { name: string } }>(
-    '/api/v5/autonomous-branches/:name',
+  // DELETE /api/v5/autonomous-branches/* — delete a stale branch by name.
+  //
+  // Branch names contain slashes (e.g. "autonomous/v6.8.0"). The frontend
+  // sends the full name via encodeURIComponent which produces "autonomous%2Fv6.8.0".
+  // Fastify decodes %2F → "/" before routing, so ":name" would only capture
+  // the first path segment. A wildcard ("*") captures the full suffix instead.
+  app.delete<{ Params: { '*': string } }>(
+    '/api/v5/autonomous-branches/*',
     async (req, reply) => {
-      const branchName = decodeURIComponent(req.params.name);
+      // Fastify populates params['*'] with the decoded wildcard suffix
+      const branchName = req.params['*'];
       // Safety: only allow deleting branches under the autonomous/ namespace
       if (!branchName.startsWith('autonomous/')) {
         return reply.status(400).send({ error: 'Only autonomous/* branches may be deleted via this endpoint' });
       }
+      // Validate against shell-safe characters — branch names are alphanumeric + / . -
+      if (!/^autonomous\/[a-zA-Z0-9._/-]+$/.test(branchName)) {
+        return reply.status(400).send({ error: 'Invalid branch name format' });
+      }
       // Use spawnSync with explicit arg array — no shell, no injection risk
       const result = spawnSync('git', ['-C', projectRoot, 'branch', '-D', branchName], { encoding: 'utf-8' });
       if (result.status !== 0) {
-        return reply.status(500).send({ error: `Delete failed: ${result.stderr ?? 'unknown error'}` });
+        return reply.status(500).send({ error: `Delete failed: ${(result.stderr ?? '').trim() || 'unknown error'}` });
       }
       return reply.send({ ok: true, deleted: branchName });
     },
