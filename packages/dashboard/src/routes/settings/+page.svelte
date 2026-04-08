@@ -154,14 +154,14 @@
           <button
             type="button"
             class="theme-btn {settings.theme === 'dark' ? 'active' : ''}"
-            on:click={() => applyTheme('dark')}
+            onclick={() => applyTheme('dark')}
           >
             Dark
           </button>
           <button
             type="button"
             class="theme-btn {settings.theme === 'light' ? 'active' : ''}"
-            on:click={() => applyTheme('light')}
+            onclick={() => applyTheme('light')}
           >
             Light
           </button>

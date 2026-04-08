@@ -164,14 +164,14 @@
     <span class="status-label">
       {#if $connected}Live{:else if $reconnecting}Reconnecting…{:else}Offline{/if}
     </span>
-    <button class="btn-ghost" on:click={clearFeed}>Clear</button>
+    <button class="btn-ghost" onclick={clearFeed}>Clear</button>
   </div>
 </div>
 
 {#if $showRefreshBanner}
   <div class="refresh-banner">
     <span>New updates available — data may be stale</span>
-    <button class="btn-ghost small" on:click={handleRefreshClick}>Dismiss</button>
+    <button class="btn-ghost small" onclick={handleRefreshClick}>Dismiss</button>
   </div>
 {/if}
 
@@ -222,7 +222,7 @@
 </div>
 
 {#if userScrolled && filteredEvents.length > 0}
-  <button class="scroll-to-bottom" on:click={() => { userScrolled = false; scrollToBottom(); }}>
+  <button class="scroll-to-bottom" onclick={() => { userScrolled = false; scrollToBottom(); }}>
     ↓ Scroll to latest
   </button>
 {/if}

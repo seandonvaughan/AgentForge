@@ -293,8 +293,12 @@
   }
 
   /* Table rows */
-  .stale-row {
-    border-left: 3px solid var(--color-warning);
+  /* Use box-shadow instead of border-left: with border-collapse:collapse,
+     borders belong to cells, not rows — border-left on <tr> is ignored by
+     most browsers. An inset box-shadow on the first cell gives the same
+     visual result and works across all browsers. */
+  .stale-row > td:first-child {
+    box-shadow: inset 3px 0 0 var(--color-warning);
   }
 
   .branch-name {

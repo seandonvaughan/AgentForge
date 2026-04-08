@@ -66,7 +66,7 @@
     <h1 class="page-title">Plugins</h1>
     <p class="page-subtitle">{plugins.length} plugins installed · {plugins.filter(p => p.status === 'running').length} running</p>
   </div>
-  <button class="btn btn-ghost btn-sm" on:click={load} disabled={loading}>
+  <button class="btn btn-ghost btn-sm" onclick={load} disabled={loading}>
     {loading ? 'Loading…' : 'Refresh'}
   </button>
 </div>
@@ -89,7 +89,7 @@
 {:else if error}
   <div class="empty-state">
     Failed to load plugins.
-    <button class="btn btn-ghost btn-sm" style="margin-top: var(--space-3)" on:click={load}>Retry</button>
+    <button class="btn btn-ghost btn-sm" style="margin-top: var(--space-3)" onclick={load}>Retry</button>
   </div>
 {:else if plugins.length === 0}
   <div class="empty-state">No plugins installed.</div>
@@ -129,7 +129,7 @@
         <div class="plugin-actions">
           <button
             class="btn {plugin.status === 'running' ? 'btn-ghost' : 'btn-primary'} btn-sm"
-            on:click={() => togglePlugin(plugin)}
+            onclick={() => togglePlugin(plugin)}
             disabled={actionPending.has(plugin.id) || plugin.status === 'error' || plugin.status === 'loading'}
           >
             {#if actionPending.has(plugin.id)}

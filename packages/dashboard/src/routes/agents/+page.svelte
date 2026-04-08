@@ -33,7 +33,7 @@
     <h1 class="page-title">Agents</h1>
     <p class="page-subtitle">{$agents.length} agent{$agents.length === 1 ? '' : 's'} registered</p>
   </div>
-  <button class="btn btn-ghost btn-sm" on:click={loadAgents} disabled={$agentsLoading}>
+  <button class="btn btn-ghost btn-sm" onclick={loadAgents} disabled={$agentsLoading}>
     {$agentsLoading ? 'Loading…' : 'Refresh'}
   </button>
 </div>
@@ -50,7 +50,7 @@
     {#each (['', 'opus', 'sonnet', 'haiku'] as const) as tier}
       <button
         class="pill {filterModel === tier ? 'active' : ''} {tier || 'all'}"
-        on:click={() => (filterModel = tier)}
+        onclick={() => (filterModel = tier)}
       >
         {tier || 'All'}
       </button>
@@ -67,7 +67,7 @@
 {:else if $agentsError}
   <div class="empty-state">
     {$agentsError}
-    <button class="btn btn-ghost btn-sm" style="margin-top:var(--space-3)" on:click={loadAgents}>Retry</button>
+    <button class="btn btn-ghost btn-sm" style="margin-top:var(--space-3)" onclick={loadAgents}>Retry</button>
   </div>
 {:else if filtered.length === 0}
   <div class="empty-state">No agents found{search ? ` for "${search}"` : ''}.</div>
@@ -85,7 +85,7 @@
       </thead>
       <tbody>
         {#each filtered as agent (agent.agentId ?? agent.id)}
-          <tr on:click={() => goto(`/agents/${agentNavId(agent)}`)}>
+          <tr onclick={() => goto(`/agents/${agentNavId(agent)}`)}>
             <td style="font-weight:600; white-space:nowrap;">{agentLabel(agent)}</td>
             <td style="font-family:var(--font-mono); font-size:var(--text-xs); color:var(--color-text-muted); white-space:nowrap;">
               {agent.agentId || agent.id || '—'}

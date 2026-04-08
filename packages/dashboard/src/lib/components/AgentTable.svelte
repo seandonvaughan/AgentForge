@@ -34,7 +34,7 @@
       </thead>
       <tbody>
         {#each $agents.slice(0, 10) as agent (agent.agentId ?? agent.id)}
-          <tr on:click={() => goto(`/agents/${agentNavId(agent)}`)}>
+          <tr onclick={() => goto(`/agents/${agentNavId(agent)}`)}>
             <td style="font-weight:600;">{agentLabel(agent)}</td>
             <td>
               {#if agent.model}

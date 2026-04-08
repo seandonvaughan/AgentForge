@@ -9,10 +9,18 @@
     description?: string;
     priority: 'P0' | 'P1' | 'P2';
     assignee?: string;
-    status: 'completed' | 'in_progress' | 'pending' | 'blocked';
+    status: 'completed' | 'in_progress' | 'pending' | 'blocked' | 'failed';
     estimatedCost?: number;
     tags?: string[];
     source?: string;
+  }
+
+  interface VersionDecision {
+    previousVersion?: string;
+    nextVersion?: string;
+    tier?: string;
+    rationale?: string;
+    tagsSeen?: string[];
   }
 
   interface SprintDetail {
@@ -32,6 +40,8 @@
     testCountDelta?: number;
     totalCostUsd?: number;
     autonomous?: boolean;
+    theme?: string;
+    versionDecision?: VersionDecision;
     items: SprintItem[];
   }
 
@@ -80,6 +90,7 @@
   let inProgressItems = $derived(allItems.filter((i: SprintItem) => i.status === 'in_progress'));
   let completedItems = $derived(allItems.filter((i: SprintItem) => i.status === 'completed'));
   let blockedItems = $derived(allItems.filter((i: SprintItem) => i.status === 'blocked'));
+  let failedItems = $derived(allItems.filter((i: SprintItem) => i.status === 'failed'));
 
   let expandedItemId: string | null = $state(null);
   function toggleExpand(id: string) {
@@ -97,6 +108,7 @@
     in_progress: 'In Progress',
     pending: 'Planned',
     blocked: 'Blocked',
+    failed: 'Failed',
   };
 
   const STATUS_BADGE: Record<string, string> = {
@@ -104,6 +116,7 @@
     in_progress: 'sonnet',
     pending: 'muted',
     blocked: 'danger',
+    failed: 'danger',
   };
 
   const PHASE_LABEL: Record<string, string> = {
@@ -120,6 +133,7 @@
     in_progress: '#5b8af5',
     pending: '#64748b',
     blocked: '#e05a5a',
+    failed: '#e05a5a',
   };
 
   // Column accent colors for the kanban headers
@@ -128,6 +142,7 @@
     in_progress: 'var(--color-brand)',
     completed: 'var(--color-success)',
     blocked: 'var(--color-danger)',
+    failed: 'var(--color-danger)',
   };
 </script>
 
@@ -142,6 +157,9 @@
       <h1 class="page-title">v{sprint.version}</h1>
       {#if sprint.title}
         <p class="page-subtitle">{sprint.title}</p>
+      {/if}
+      {#if sprint.theme}
+        <p class="page-theme">✦ {sprint.theme}</p>
       {/if}
     {:else}
       <h1 class="page-title">Sprint {version}</h1>
@@ -236,12 +254,13 @@
   </div>
 
   <!-- Kanban Board -->
-  <div class="kanban-board">
+  <div class="kanban-board" class:has-failed={failedItems.length > 0}>
     {#each [
       { key: 'planned', label: 'Planned', items: plannedItems },
       { key: 'in_progress', label: 'In Progress', items: inProgressItems },
       { key: 'completed', label: 'Completed', items: completedItems },
       { key: 'blocked', label: 'Blocked', items: blockedItems },
+      ...(failedItems.length > 0 ? [{ key: 'failed', label: 'Failed', items: failedItems }] : []),
     ] as col (col.key)}
       <div class="kanban-column">
         <div class="kanban-col-header" style="border-bottom-color: {KANBAN_COL_COLOR[col.key]};">
@@ -322,6 +341,13 @@
                     <span class="item-source">{item.source}</span>
                   {/if}
                 </div>
+                {#if item.tags && item.tags.length > 0}
+                  <div class="item-tags">
+                    {#each item.tags as tag}
+                      <span class="item-tag">{tag}</span>
+                    {/each}
+                  </div>
+                {/if}
               </div>
             </div>
           {/each}
@@ -359,6 +385,33 @@
       </ul>
     </div>
   {/if}
+
+  <!-- Version Decision -->
+  {#if sprint.versionDecision}
+    {@const vd = sprint.versionDecision}
+    <div class="card version-decision-card" style="margin-bottom:var(--space-4);">
+      <div class="card-header">
+        <span class="card-title">⬆ Version Decision</span>
+        {#if vd.tier}
+          <span class="badge version-tier-badge version-tier-{vd.tier}">{vd.tier}</span>
+        {/if}
+      </div>
+      {#if vd.previousVersion || vd.nextVersion}
+        <div class="version-bump-row">
+          {#if vd.previousVersion}
+            <span class="version-chip muted">v{vd.previousVersion}</span>
+          {/if}
+          <span class="version-arrow">→</span>
+          {#if vd.nextVersion}
+            <span class="version-chip highlight">v{vd.nextVersion}</span>
+          {/if}
+        </div>
+      {/if}
+      {#if vd.rationale}
+        <p class="version-rationale">{vd.rationale}</p>
+      {/if}
+    </div>
+  {/if}
 {/if}
 
 <style>
@@ -393,6 +446,14 @@
     font-size: var(--text-sm);
     color: var(--color-text-muted);
     margin: 0;
+  }
+
+  .page-theme {
+    font-size: var(--text-xs);
+    color: var(--color-brand);
+    font-style: italic;
+    margin: var(--space-1) 0 0 0;
+    opacity: 0.85;
   }
 
   .header-badges {
@@ -611,6 +672,12 @@
   .item-status-label.status-in_progress { color: var(--color-brand); }
   .item-status-label.status-blocked { color: var(--color-danger); }
   .item-status-label.status-pending { color: var(--color-text-faint); }
+  .item-status-label.status-failed { color: var(--color-danger); }
+
+  .sprint-item.failed {
+    border-left: 3px solid var(--color-danger);
+    opacity: 0.8;
+  }
 
   .item-cost {
     font-family: var(--font-mono);
@@ -625,6 +692,22 @@
     color: var(--color-text-faint);
     border: 1px solid rgba(100, 116, 139, 0.2);
     font-family: var(--font-mono);
+  }
+
+  .item-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: var(--space-2);
+  }
+
+  .item-tag {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: var(--radius-full);
+    background: rgba(91, 138, 245, 0.08);
+    color: var(--color-brand);
+    border: 1px solid rgba(91, 138, 245, 0.25);
   }
 
   /* Criteria / findings */
@@ -788,5 +871,85 @@
     padding-top: var(--space-2);
     border-top: 1px solid var(--color-border);
     white-space: pre-wrap;
+  }
+
+  /* 5-column kanban when failed items exist */
+  .kanban-board.has-failed {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  @media (max-width: 1100px) {
+    .kanban-board.has-failed {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  /* Version decision card */
+  .version-tier-badge {
+    font-size: var(--text-xs);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 2px 10px;
+    border-radius: var(--radius-full);
+  }
+
+  .version-tier-major {
+    background: rgba(224, 90, 90, 0.12);
+    color: var(--color-danger);
+    border: 1px solid rgba(224, 90, 90, 0.35);
+  }
+
+  .version-tier-minor {
+    background: rgba(245, 166, 35, 0.12);
+    color: var(--color-warning);
+    border: 1px solid rgba(245, 166, 35, 0.35);
+  }
+
+  .version-tier-patch {
+    background: rgba(100, 116, 139, 0.1);
+    color: var(--color-text-muted);
+    border: 1px solid rgba(100, 116, 139, 0.3);
+  }
+
+  .version-bump-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
+  }
+
+  .version-chip {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    padding: 2px 10px;
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-1);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-muted);
+  }
+
+  .version-chip.highlight {
+    background: rgba(91, 138, 245, 0.08);
+    border-color: rgba(91, 138, 245, 0.35);
+    color: var(--color-brand);
+  }
+
+  .version-arrow {
+    font-size: var(--text-sm);
+    color: var(--color-text-faint);
+  }
+
+  .version-rationale {
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    margin: 0;
+    padding: var(--space-2) var(--space-3);
+    background: var(--color-surface-1);
+    border-radius: var(--radius-sm);
+    border-left: 3px solid var(--color-border-strong);
+    line-height: 1.6;
   }
 </style>

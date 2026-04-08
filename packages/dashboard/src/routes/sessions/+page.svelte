@@ -58,7 +58,7 @@
     <h1 class="page-title">Sessions</h1>
     <p class="page-subtitle">All agent execution history</p>
   </div>
-  <button class="btn btn-ghost btn-sm" on:click={refresh} disabled={$sessionsLoading}>
+  <button class="btn btn-ghost btn-sm" onclick={refresh} disabled={$sessionsLoading}>
     {$sessionsLoading ? 'Loading…' : 'Refresh'}
   </button>
 </div>
@@ -66,7 +66,7 @@
 {#if $sessionsError}
   <div class="empty-state" style="color:var(--color-danger);">
     {$sessionsError}
-    <button class="btn btn-ghost btn-sm" style="margin-top:var(--space-3)" on:click={refresh}>Retry</button>
+    <button class="btn btn-ghost btn-sm" style="margin-top:var(--space-3)" onclick={refresh}>Retry</button>
   </div>
 {:else if $sessionsLoading}
   <div class="card">

@@ -68,7 +68,7 @@
 
 <div class="page-header">
   <div style="display:flex; align-items:center; gap: var(--space-4);">
-    <button class="btn btn-ghost btn-sm" on:click={() => goto('/agents')}>← Back</button>
+    <button class="btn btn-ghost btn-sm" onclick={() => goto('/agents')}>← Back</button>
     {#if agent}
       <div>
         <h1 class="page-title">{agent.name ?? agent.id}</h1>
@@ -92,7 +92,7 @@
 {:else if error}
   <div class="empty-state">
     Failed to load agent.
-    <button class="btn btn-ghost btn-sm" style="margin-top: var(--space-3)" on:click={load}>Retry</button>
+    <button class="btn btn-ghost btn-sm" style="margin-top: var(--space-3)" onclick={load}>Retry</button>
   </div>
 {:else if agent}
   <!-- Stats Row -->

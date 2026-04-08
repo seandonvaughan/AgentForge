@@ -115,7 +115,7 @@
 {:else if error}
   <div class="empty-state">
     Failed to load flywheel data.
-    <button class="btn btn-ghost btn-sm" style="margin-top: var(--space-3)" on:click={load}>Retry</button>
+    <button class="btn btn-ghost btn-sm" style="margin-top: var(--space-3)" onclick={load}>Retry</button>
   </div>
 {:else}
   <div class="gauges-grid">

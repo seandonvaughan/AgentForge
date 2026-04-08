@@ -43,7 +43,7 @@
       </thead>
       <tbody>
         {#each $sessions.slice(0, 8) as s (s.id)}
-          <tr on:click={() => goto(`/sessions/${s.id}`)}>
+          <tr onclick={() => goto(`/sessions/${s.id}`)}>
             <td><span class="badge muted">{agentLabel(s)}</span></td>
             <td style="max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px;">
               {s.task || '—'}

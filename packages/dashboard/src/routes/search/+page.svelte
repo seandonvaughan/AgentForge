@@ -72,7 +72,7 @@
   />
   <button
     class="btn btn-primary"
-    on:click={search}
+    onclick={search}
     disabled={searching || !query.trim()}
   >
     {searching ? 'Searching…' : 'Search'}
@@ -92,7 +92,7 @@
 {:else if error}
   <div class="empty-state">
     Search failed: {error}
-    <button class="btn btn-ghost btn-sm" style="margin-top: var(--space-3)" on:click={search}>Retry</button>
+    <button class="btn btn-ghost btn-sm" style="margin-top: var(--space-3)" onclick={search}>Retry</button>
   </div>
 {:else if searched && results.length === 0}
   <div class="empty-state">No results found for "{query}".</div>

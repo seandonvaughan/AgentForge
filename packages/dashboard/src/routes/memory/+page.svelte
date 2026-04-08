@@ -104,7 +104,7 @@
       {filteredEntries.length}{filteredEntries.length !== entries.length ? ` of ${entries.length}` : ''} entr{filteredEntries.length === 1 ? 'y' : 'ies'}
     </p>
   </div>
-  <button class="btn btn-ghost btn-sm" on:click={load} disabled={loading}>
+  <button class="btn btn-ghost btn-sm" onclick={load} disabled={loading}>
     {loading ? 'Loading…' : 'Refresh'}
   </button>
 </div>
@@ -153,7 +153,7 @@
 {:else if error}
   <div class="empty-state">
     Failed to load memory.
-    <button class="btn btn-ghost btn-sm" style="margin-top: var(--space-3)" on:click={load}>Retry</button>
+    <button class="btn btn-ghost btn-sm" style="margin-top: var(--space-3)" onclick={load}>Retry</button>
   </div>
 {:else if entries.length === 0}
   <div class="empty-state">No memory entries found.</div>
@@ -188,7 +188,7 @@
             <td>
               <button
                 class="btn btn-ghost btn-sm delete-btn"
-                on:click={() => deleteEntry(entry.id)}
+                onclick={() => deleteEntry(entry.id)}
                 disabled={deleting.has(entry.id)}
                 aria-label="Delete {entry.key}"
               >
