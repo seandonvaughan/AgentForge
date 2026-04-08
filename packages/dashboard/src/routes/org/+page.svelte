@@ -99,7 +99,7 @@
   onMount(load);
 </script>
 
-<svelte:head><title>Org Chart — AgentForge v6</title></svelte:head>
+<svelte:head><title>Org Chart — AgentForge</title></svelte:head>
 
 <div class="page-header">
   <div>
@@ -112,15 +112,15 @@
         <span class="legend-item"><span class="legend-dot" style="background:{color}"></span>{tier}</span>
       {/each}
     </div>
-    <button class="btn-ghost" on:click={() => { collapsed = new Set(); }}>Expand All</button>
-    <button class="btn-ghost" on:click={() => autoCollapse(roots, 2)}>Collapse</button>
+    <button class="btn-ghost" onclick={() => { collapsed = new Set(); }}>Expand All</button>
+    <button class="btn-ghost" onclick={() => autoCollapse(roots, 2)}>Collapse</button>
   </div>
 </div>
 
 {#if loading}
   <div class="loading-state">Loading organization…</div>
 {:else if error}
-  <div class="error-state">Failed to load org graph. <button class="btn-ghost" on:click={load}>Retry</button></div>
+  <div class="error-state">Failed to load org graph. <button class="btn-ghost" onclick={load}>Retry</button></div>
 {:else}
   <div class="tree-container">
     {#each roots as root (root.id)}
@@ -143,7 +143,7 @@
       class:is-root={node.depth === 0}
       class:is-exec={node.depth <= 1}
       style="border-left-color:{color}; background:{node.depth <= 1 ? bg : 'var(--color-surface-1)'};"
-      on:click={() => hasKids && toggle(node.id)}
+      onclick={() => hasKids && toggle(node.id)}
     >
       <span class="node-expand">{#if hasKids}{isClosed ? '▸' : '▾'}{:else}<span class="node-leaf">·</span>{/if}</span>
       <span class="node-name">{node.label ?? node.id}</span>

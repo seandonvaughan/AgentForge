@@ -4,13 +4,14 @@
   import StageBadge from '$lib/components/StageBadge.svelte';
   import { relativeTime, formatDuration } from '$lib/util/relative-time';
   import { withWorkspace } from '$lib/stores/workspace';
+  import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
 
   const TERMINAL = new Set(['completed', 'failed', 'killed']);
   const PHASES = ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate', 'release', 'learn'] as const;
   const FILES = ['tests', 'git', 'pr', 'approval-pending', 'approval-decision'] as const;
   type Phase = (typeof PHASES)[number];
   type FileName = (typeof FILES)[number];
-  type Tab = 'overview' | 'scoring' | 'events' | 'phases' | 'files';
+  type Tab = 'overview' | 'items' | 'agents' | 'scoring' | 'events' | 'phases' | 'files';
 
   let id = $derived($page.params.id);
 
@@ -19,7 +20,68 @@
   let loading = $state(true);
   let error: string | null = $state(null);
 
-  let activeTab: Tab = $state('overview');
+  let activeTab: Tab = $state('items');
+
+  // Live sprint view — polls /cycles/:id/sprint every 3s while cycle is
+  // running. Execute phase writes to the sprint file incrementally per
+  // item completion, so this is the only surface that shows real-time
+  // per-item progress during the long execute phase. Same beautiful kanban
+  // used on /sprints/[version].
+  let sprint: any = $state(null);
+  let sprintLoading = $state(false);
+  let sprintError: string | null = $state(null);
+  let sprintPollTimer: ReturnType<typeof setInterval> | null = null;
+
+  async function loadSprint() {
+    if (!id) return;
+    sprintLoading = true;
+    try {
+      const res = await fetch(`/api/v5/cycles/${id}/sprint`);
+      if (res.ok) {
+        const json = await res.json();
+        sprint = json.sprint ?? json;
+        sprintError = null;
+      } else if (res.status === 404) {
+        sprint = null;
+        sprintError = 'Sprint not generated yet — still in audit/plan phase';
+      } else {
+        sprintError = `HTTP ${res.status}`;
+      }
+    } catch (e) {
+      sprintError = String(e);
+    } finally {
+      sprintLoading = false;
+    }
+    // Also refresh the cycle summary (cost/tests/stage) and agents on each tick.
+    try {
+      const res = await fetch(`/api/v5/cycles/${id}`);
+      if (res.ok) cycle = await res.json();
+    } catch {}
+    loadAgents();
+  }
+
+  // Agents tab state — live list of every agent run in the cycle with cost,
+  // duration, per-phase aggregates, and response snippets. Polled alongside
+  // the sprint endpoint so the Cost stat updates live during execute.
+  let agentsData: any = $state(null);
+  let agentsLoading = $state(false);
+  async function loadAgents() {
+    if (!id) return;
+    agentsLoading = true;
+    try {
+      const res = await fetch(`/api/v5/cycles/${id}/agents`);
+      if (res.ok) agentsData = await res.json();
+    } catch {} finally { agentsLoading = false; }
+  }
+
+  function startSprintPoll() {
+    if (sprintPollTimer) return;
+    loadSprint();
+    sprintPollTimer = setInterval(loadSprint, 3000);
+  }
+  function stopSprintPoll() {
+    if (sprintPollTimer) { clearInterval(sprintPollTimer); sprintPollTimer = null; }
+  }
 
   // Events
   let events: any[] = $state([]);
@@ -178,6 +240,56 @@
     }
   }
 
+  // Fields that contain markdown prose — rendered by MarkdownRenderer rather
+  // than dumped raw into the JSON pre-block.
+  // Covers all core phase handlers:
+  //   audit → findings, plan → plan, test → strategy,
+  //   review → review, gate → rationale, learn → retrospective
+  const MARKDOWN_FIELDS = new Set([
+    'findings',      // audit phase: researcher executive summary
+    'plan',          // plan phase: CTO technical plan
+    'strategy',      // test phase: QA risk assessment report
+    'review',        // review phase: code-reviewer markdown report
+    'rationale',     // gate phase: CEO approve/reject reasoning
+    'retrospective', // learn phase: data-analyst sprint retrospective
+    'response',      // fallback: top-level response string on any phase
+  ]);
+
+  /** Returns a copy of a phase object with markdown prose fields removed,
+   *  leaving only the structured metadata that benefits from JSON display. */
+  function stripMarkdownFields(data: Record<string, unknown>): Record<string, unknown> {
+    const copy: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(data)) {
+      if (!MARKDOWN_FIELDS.has(k)) copy[k] = v;
+    }
+    return copy;
+  }
+
+  /** Collect all markdown prose sections present in a phase object. */
+  function markdownSections(data: Record<string, unknown>): Array<{ label: string; content: string }> {
+    const sections: Array<{ label: string; content: string }> = [];
+    for (const field of MARKDOWN_FIELDS) {
+      const val = data[field];
+      if (typeof val === 'string' && val.trim()) {
+        sections.push({ label: field, content: val });
+      }
+    }
+    return sections;
+  }
+
+  /** Collect markdown prose from each agentRun's response field. */
+  function agentRunSections(data: Record<string, unknown>): Array<{ agentId: string; response: string }> {
+    const runs = data['agentRuns'];
+    if (!Array.isArray(runs)) return [];
+    return runs
+      .filter((r): r is Record<string, unknown> => r != null && typeof r === 'object')
+      .filter((r) => typeof r['response'] === 'string' && (r['response'] as string).trim())
+      .map((r) => ({
+        agentId: String(r['agentId'] ?? 'agent'),
+        response: r['response'] as string,
+      }));
+  }
+
   function costFraction(cost?: number | null, budget?: number | null): number {
     if (cost == null || budget == null || budget <= 0) return 0;
     return Math.min(1, cost / budget);
@@ -191,17 +303,26 @@
 
   onMount(() => {
     loadInitial();
-    // Eager-load default file tab
     loadFile('tests');
+    // Start the live sprint poll immediately — this drives the Items tab
+    // which is the default on load. Auto-stops when the cycle is terminal.
+    startSprintPoll();
   });
 
   onDestroy(() => {
     teardownSse();
+    stopSprintPoll();
+  });
+
+  // Auto-stop the sprint poll once the cycle hits a terminal stage.
+  $effect(() => {
+    void stage;
+    if (isTerminal) stopSprintPoll();
   });
 
   // Overview helpers
-  let costUsd = $derived(cycle?.costUsd ?? cycle?.cost?.usd ?? cycle?.budget?.spentUsd ?? null);
-  let budgetUsd = $derived(cycle?.budgetUsd ?? cycle?.budget?.limitUsd ?? cycle?.budget?.budgetUsd ?? null);
+  let costUsd = $derived(cycle?.cost?.totalUsd ?? cycle?.costUsd ?? cycle?.cost?.usd ?? cycle?.budget?.spentUsd ?? null);
+  let budgetUsd = $derived(cycle?.cost?.budgetUsd ?? cycle?.budgetUsd ?? cycle?.budget?.limitUsd ?? cycle?.budget?.budgetUsd ?? null);
   let testsPassed = $derived(cycle?.testsPassed ?? cycle?.tests?.passed ?? null);
   let testsTotal = $derived(cycle?.testsTotal ?? cycle?.tests?.total ?? null);
   let prUrl = $derived(cycle?.prUrl ?? cycle?.pr?.url ?? null);
@@ -212,7 +333,7 @@
   let scoringResult = $derived(scoring?.result ?? scoring ?? null);
 </script>
 
-<svelte:head><title>Cycle {id?.slice(0, 8) ?? ''} — AgentForge v6</title></svelte:head>
+<svelte:head><title>Cycle {id?.slice(0, 8) ?? ''} — AgentForge</title></svelte:head>
 
 <div class="page-header">
   <div>
@@ -243,6 +364,18 @@
   </div>
 {:else if cycle}
   <nav class="tabs">
+    <button class="tab" class:active={activeTab === 'items'} onclick={() => setTab('items')}>
+      Items
+      {#if sprint?.items}
+        <span class="tab-count">{sprint.items.filter((i: any) => i.status === 'completed').length}/{sprint.items.length}</span>
+      {/if}
+    </button>
+    <button class="tab" class:active={activeTab === 'agents'} onclick={() => setTab('agents')}>
+      Agents
+      {#if agentsData?.totalRuns != null}
+        <span class="tab-count">{agentsData.totalRuns}</span>
+      {/if}
+    </button>
     <button class="tab" class:active={activeTab === 'overview'} onclick={() => setTab('overview')}>Overview</button>
     <button class="tab" class:active={activeTab === 'scoring'} onclick={() => setTab('scoring')}>Scoring</button>
     <button class="tab" class:active={activeTab === 'events'} onclick={() => setTab('events')}>Events</button>
@@ -251,7 +384,140 @@
   </nav>
 
   <section class="tab-panel">
-    {#if activeTab === 'overview'}
+    {#if activeTab === 'items'}
+      {#if sprintLoading && !sprint}
+        <div class="card"><div class="skeleton" style="height:80px"></div></div>
+      {:else if sprintError && !sprint}
+        <div class="empty-state">
+          <p>{sprintError}</p>
+          <p class="muted" style="font-size: var(--text-xs); margin-top: var(--space-2);">The sprint file is created during the plan phase. Poll refreshes every 3s.</p>
+        </div>
+      {:else if sprint?.items}
+        {@const items = sprint.items}
+        {@const completed = items.filter((i: any) => i.status === 'completed')}
+        {@const inProgress = items.filter((i: any) => i.status === 'in_progress')}
+        {@const planned = items.filter((i: any) => i.status === 'planned' || i.status === 'pending')}
+        {@const failed = items.filter((i: any) => i.status === 'failed')}
+        {@const pct = items.length > 0 ? Math.round((completed.length / items.length) * 100) : 0}
+
+        <div class="card" style="margin-bottom: var(--space-5);">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-3);">
+            <div>
+              <div style="font-family: var(--font-mono); font-weight: 700; font-size: var(--text-lg);">v{sprint.version ?? sprint.sprintId}</div>
+              {#if sprint.title}<div class="muted" style="font-size: var(--text-sm);">{sprint.title}</div>{/if}
+              {#if sprint.versionDecision}
+                <div class="muted" style="font-size: var(--text-xs); margin-top: var(--space-1); font-family: var(--font-mono);">
+                  {sprint.versionDecision.rationale}
+                </div>
+              {/if}
+            </div>
+            <div style="text-align: right;">
+              <div style="font-size: var(--text-2xl); font-weight: 700;">{pct}%</div>
+              <div class="muted" style="font-size: var(--text-xs);">{completed.length}/{items.length} items</div>
+            </div>
+          </div>
+          <div class="cost-bar"><div class="cost-bar-fill" style="width:{pct}%"></div></div>
+        </div>
+
+        <div class="kanban">
+          <div class="kanban-col">
+            <div class="kanban-header">Planned <span class="kanban-count">{planned.length}</span></div>
+            {#each planned as item (item.id)}
+              <div class="kanban-item"><div class="item-title">{item.title}</div>{#if item.assignee}<div class="item-meta">{item.assignee}</div>{/if}</div>
+            {/each}
+          </div>
+          <div class="kanban-col">
+            <div class="kanban-header">In Progress <span class="kanban-count">{inProgress.length}</span></div>
+            {#each inProgress as item (item.id)}
+              <div class="kanban-item in-progress"><div class="item-title">{item.title}</div>{#if item.assignee}<div class="item-meta">{item.assignee}</div>{/if}</div>
+            {/each}
+          </div>
+          <div class="kanban-col">
+            <div class="kanban-header">Completed <span class="kanban-count">{completed.length}</span></div>
+            {#each completed as item (item.id)}
+              <div class="kanban-item completed"><div class="item-title">{item.title}</div>{#if item.assignee}<div class="item-meta">{item.assignee}</div>{/if}</div>
+            {/each}
+          </div>
+          {#if failed.length > 0}
+            <div class="kanban-col">
+              <div class="kanban-header">Failed <span class="kanban-count">{failed.length}</span></div>
+              {#each failed as item (item.id)}
+                <div class="kanban-item failed"><div class="item-title">{item.title}</div>{#if item.error}<div class="item-meta">{item.error}</div>{/if}</div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {:else}
+        <div class="empty-state">No sprint data yet.</div>
+      {/if}
+    {:else if activeTab === 'agents'}
+      {#if !agentsData || agentsLoading && !agentsData}
+        <div class="card"><div class="skeleton" style="height:80px"></div></div>
+      {:else if agentsData.totalRuns === 0}
+        <div class="empty-state">No agent runs yet — cycle is still in early phases.</div>
+      {:else}
+        {@const agents = Object.entries(agentsData.byAgent || {}).sort((a: any, b: any) => b[1].totalCostUsd - a[1].totalCostUsd)}
+        <div class="card" style="margin-bottom: var(--space-5);">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <div style="font-weight: 700; font-size: var(--text-lg);">{agents.length} agents · {agentsData.totalRuns} runs</div>
+              <div class="muted" style="font-size: var(--text-sm);">Live — updates every 3s</div>
+            </div>
+            <div style="text-align: right;">
+              <div style="font-size: var(--text-2xl); font-weight: 700;">${Number(agentsData.totalCostUsd).toFixed(2)}</div>
+              <div class="muted" style="font-size: var(--text-xs);">total cost</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="agent-grid">
+          {#each agents as [agentId, stats] (agentId)}
+            {@const s = stats as any}
+            <div class="card agent-summary">
+              <div class="agent-name">{agentId}</div>
+              <div class="agent-stats">
+                <div><span class="muted">runs</span> <strong>{s.runs}</strong></div>
+                <div><span class="muted">cost</span> <strong>${Number(s.totalCostUsd).toFixed(3)}</strong></div>
+                <div><span class="muted">duration</span> <strong>{formatDuration(s.totalDurationMs)}</strong></div>
+              </div>
+              <div class="agent-phases">
+                {#each s.phases as p}<span class="phase-chip">{p}</span>{/each}
+              </div>
+            </div>
+          {/each}
+        </div>
+
+        <h3 style="margin-top: var(--space-5);">Run details</h3>
+        <div class="run-list">
+          {#each agentsData.runs as run}
+            <div class="card run-row" class:failed={run.status === 'failed'}>
+              <div class="run-header">
+                <span class="run-phase">{run.phase}</span>
+                <span class="run-agent mono">{run.agentId}</span>
+                <span class="run-status {run.status}">{run.status}</span>
+                {#if run.model}<span class="model-chip {run.model.replace(/[^a-z]/gi, '')}">{run.model}</span>{/if}
+                {#if run.effort}<span class="effort-chip">effort: {run.effort}</span>{/if}
+                {#if run.itemId}<span class="run-item muted">{run.itemId.slice(0, 60)}</span>{/if}
+              </div>
+              <div class="run-meta">
+                <span>${Number(run.costUsd).toFixed(4)}</span>
+                <span>·</span>
+                <span>{formatDuration(run.durationMs)}</span>
+                {#if run.attempts}<span>·</span><span>{run.attempts} attempt{run.attempts === 1 ? '' : 's'}</span>{/if}
+              </div>
+              {#if run.error}
+                <div class="run-error">{run.error}</div>
+              {:else if run.response}
+                <details class="run-response">
+                  <summary>Response ({run.response.length} chars)</summary>
+                  <pre>{run.response.slice(0, 2000)}{run.response.length > 2000 ? '\n… (truncated)' : ''}</pre>
+                </details>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      {/if}
+    {:else if activeTab === 'overview'}
       <div class="stat-grid">
         <div class="stat-card">
           <div class="stat-label">Stage</div>
@@ -395,12 +661,28 @@
                 {:else if phaseData[phase] == null}
                   <div class="muted">Not present.</div>
                 {:else}
-                  {#if phaseData[phase].agentRuns}
-                    <div class="phase-runs">
-                      <strong>agentRuns:</strong> {phaseData[phase].agentRuns.length ?? 0}
+                    {@const phaseSections = markdownSections(phaseData[phase])}
+                  {@const phaseAgentRuns = agentRunSections(phaseData[phase])}
+                  {@const metaOnly = stripMarkdownFields(phaseData[phase])}
+
+                  <!-- Structured metadata (status, cost, duration, etc.) -->
+                  <pre class="json">{pretty(metaOnly)}</pre>
+
+                  <!-- Markdown prose sections (review, rationale, retrospective) -->
+                  {#each phaseSections as section}
+                    <div class="phase-md-section">
+                      <div class="phase-md-label">{section.label}</div>
+                      <MarkdownRenderer content={section.content} />
                     </div>
-                  {/if}
-                  <pre class="json">{pretty(phaseData[phase])}</pre>
+                  {/each}
+
+                  <!-- Per-agent run responses rendered as markdown -->
+                  {#each phaseAgentRuns as run, i}
+                    <div class="phase-md-section">
+                      <div class="phase-md-label">agentRun[{i}] response — {run.agentId}</div>
+                      <MarkdownRenderer content={run.response} />
+                    </div>
+                  {/each}
                 {/if}
               </div>
             {/if}
@@ -674,6 +956,22 @@
   }
   .phase-runs { font-size: var(--text-xs); color: var(--color-text-muted); }
 
+  .phase-md-section {
+    border-top: 1px solid var(--color-border);
+    padding-top: var(--space-3);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .phase-md-label {
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-muted);
+  }
+
   .file-tabs {
     display: flex;
     gap: var(--space-1);
@@ -697,6 +995,185 @@
   }
 
   .kill-card { border-color: rgba(224,90,90,0.4); }
+
+  .tab-count {
+    display: inline-block;
+    margin-left: var(--space-2);
+    padding: 0 var(--space-2);
+    background: var(--color-bg-card);
+    color: var(--color-text-muted);
+    border-radius: 9999px;
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+  }
+
+  .kanban {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: var(--space-4);
+  }
+  .kanban-col {
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-3);
+    min-height: 120px;
+  }
+  .kanban-header {
+    font-size: var(--text-xs);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+    padding-bottom: var(--space-2);
+    margin-bottom: var(--space-2);
+    border-bottom: 1px solid var(--color-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .kanban-count {
+    padding: 0 var(--space-2);
+    background: var(--color-bg-card);
+    border-radius: 9999px;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+  }
+  .kanban-item {
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: var(--space-3);
+    margin-bottom: var(--space-2);
+    transition: border-color var(--duration-fast);
+  }
+  .kanban-item:hover { border-color: var(--color-brand); }
+  .kanban-item.in-progress { border-left: 3px solid var(--color-brand); }
+  .kanban-item.completed { border-left: 3px solid var(--color-success); opacity: 0.85; }
+  .kanban-item.failed { border-left: 3px solid var(--color-danger); }
+  .kanban-item .item-title {
+    font-size: var(--text-sm);
+    color: var(--color-text);
+    line-height: 1.4;
+    margin-bottom: var(--space-1);
+  }
+  .kanban-item.completed .item-title { text-decoration: line-through; color: var(--color-text-muted); }
+  .kanban-item .item-meta {
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+  }
+
+  .agent-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: var(--space-3);
+  }
+  .agent-summary { padding: var(--space-3); }
+  .agent-name {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-size: var(--text-md);
+    color: var(--color-text);
+    margin-bottom: var(--space-2);
+  }
+  .agent-stats {
+    display: flex;
+    gap: var(--space-4);
+    font-size: var(--text-sm);
+    margin-bottom: var(--space-2);
+  }
+  .agent-phases { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+  .phase-chip {
+    padding: 2px var(--space-2);
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border);
+    border-radius: 9999px;
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+    color: var(--color-text-muted);
+  }
+
+  .run-list { display: flex; flex-direction: column; gap: var(--space-2); }
+  .run-row { padding: var(--space-3); }
+  .run-row.failed { border-left: 3px solid var(--color-danger); }
+  .run-header {
+    display: flex;
+    gap: var(--space-3);
+    align-items: center;
+    margin-bottom: var(--space-1);
+    font-size: var(--text-sm);
+    flex-wrap: wrap;
+  }
+  .run-phase {
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-text-muted);
+    font-weight: 700;
+  }
+  .run-agent { color: var(--color-brand); font-weight: 600; }
+  .run-status {
+    padding: 2px var(--space-2);
+    border-radius: 9999px;
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+  }
+  .run-status.completed { background: rgba(76,175,130,0.15); color: var(--color-success); }
+  .run-status.failed { background: rgba(224,90,90,0.15); color: var(--color-danger); }
+  .run-item { font-size: var(--text-xs); font-family: var(--font-mono); }
+  .model-chip {
+    padding: 2px var(--space-2);
+    border-radius: 9999px;
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+    font-weight: 600;
+    border: 1px solid currentColor;
+  }
+  .model-chip[class*="opus"] { color: var(--color-opus, #f5c842); background: rgba(245,200,66,0.08); }
+  .model-chip[class*="sonnet"] { color: var(--color-sonnet, #4a9eff); background: rgba(74,158,255,0.08); }
+  .model-chip[class*="haiku"] { color: var(--color-haiku, #4cb071); background: rgba(76,175,130,0.08); }
+  .effort-chip {
+    padding: 2px var(--space-2);
+    border-radius: 9999px;
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+    color: var(--color-text-muted);
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border);
+  }
+  .run-meta {
+    display: flex;
+    gap: var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    margin-bottom: var(--space-2);
+  }
+  .run-error {
+    background: rgba(224,90,90,0.08);
+    padding: var(--space-2);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-danger);
+  }
+  .run-response summary {
+    cursor: pointer;
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    padding: var(--space-1) 0;
+  }
+  .run-response pre {
+    margin-top: var(--space-2);
+    padding: var(--space-2);
+    background: var(--color-bg-card);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-xs);
+    max-height: 300px;
+    overflow: auto;
+    white-space: pre-wrap;
+  }
 
   @media (max-width: 700px) {
     .event-row { grid-template-columns: 1fr; }

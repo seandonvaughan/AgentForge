@@ -152,7 +152,13 @@ export function registerAutonomousCommand(program: Command): void {
           // assignee agent via RuntimeAdapter (claude -p with Read/Write/Edit/
           // Bash/Glob/Grep tools enabled). The git stage picks up working-tree
           // changes after the phase completes.
-          execute: (ctx: any) => runExecutePhase(ctx),
+          // v6.7.4: honor config.limits.maxExecutePhaseParallelism — without
+          // this, runExecutePhase fell back to its internal default of 3,
+          // which was the root cause of cycles running only 1-2 agents in
+          // parallel even with maxConcurrentAgents: 20 in settings.yaml.
+          execute: (ctx: any) => runExecutePhase(ctx, {
+            maxParallelism: config.limits.maxExecutePhaseParallelism,
+          }),
           // v6.5.2: real verification phases — test/review dispatch read-only
           // analysis agents (backend-qa, code-reviewer); release is a metadata
           // marker phase (no agent call).

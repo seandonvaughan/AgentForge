@@ -1,0 +1,186 @@
+{
+  "version": "1.0",
+  "generated": "2026-04-07T00:00:00.000Z",
+  "entries": [
+    {
+      "id": "mem-001",
+      "filename": "feedback_model_routing.md",
+      "category": "feedback",
+      "agentId": "ceo",
+      "summary": "Always set model parameter on Agent dispatches to avoid wasting Opus tokens on Sonnet/Haiku tasks. Route by complexity: Opus for strategy, Sonnet for implementation, Haiku for utilities.",
+      "tags": ["cost", "routing", "models"],
+      "createdAt": "2026-03-15T10:00:00.000Z",
+      "updatedAt": "2026-03-15T10:00:00.000Z"
+    },
+    {
+      "id": "mem-002",
+      "filename": "project_dogfood_audit.md",
+      "category": "project",
+      "agentId": "genesis",
+      "summary": "Lessons from building v2 with parallel agents: cost waste, product improvements, future opportunities. Key finding: parallel agents reduce wall-clock time 3x but require careful cost control.",
+      "tags": ["parallel", "cost", "dogfood"],
+      "createdAt": "2026-03-17T09:00:00.000Z",
+      "updatedAt": "2026-03-17T09:00:00.000Z"
+    },
+    {
+      "id": "mem-003",
+      "filename": "feedback_agent_communication.md",
+      "category": "feedback",
+      "agentId": "ceo",
+      "summary": "Async agent messaging (DMs, channels, inboxes) to reduce Opus invocations. Teams should resolve issues internally before escalating to Opus-tier agents.",
+      "tags": ["communication", "cost", "escalation"],
+      "createdAt": "2026-03-18T11:00:00.000Z",
+      "updatedAt": "2026-03-18T11:00:00.000Z"
+    },
+    {
+      "id": "mem-004",
+      "filename": "feedback_executive_assistants.md",
+      "category": "feedback",
+      "agentId": "coo",
+      "summary": "Opus agents get Haiku assistants that filter inbox, prepare briefings, reduce Opus invocations by 80%+. Proven pattern across v3.2 and v4 sprints.",
+      "tags": ["assistants", "haiku", "efficiency"],
+      "createdAt": "2026-03-20T08:30:00.000Z",
+      "updatedAt": "2026-03-20T08:30:00.000Z"
+    },
+    {
+      "id": "mem-005",
+      "filename": "feedback_always_use_team.md",
+      "category": "config",
+      "agentId": "ceo",
+      "summary": "CRITICAL: All work must route through forged team agents, never bypass with generic subagents. This ensures skill templates are applied and cost tracking is accurate.",
+      "tags": ["critical", "routing", "team"],
+      "createdAt": "2026-03-21T14:00:00.000Z",
+      "updatedAt": "2026-03-21T14:00:00.000Z"
+    },
+    {
+      "id": "mem-006",
+      "filename": "project_v3_phase1_complete.md",
+      "category": "project",
+      "agentId": "genesis",
+      "summary": "All 3 phases complete (745 tests): foundation, cost+intelligence, communication+session. REFORGE REQUESTED for v3.2 design overhaul.",
+      "tags": ["milestone", "tests", "reforge"],
+      "createdAt": "2026-03-22T16:00:00.000Z",
+      "updatedAt": "2026-03-22T16:00:00.000Z"
+    },
+    {
+      "id": "mem-007",
+      "filename": "project_v32_concept.md",
+      "category": "lesson",
+      "agentId": "meta-architect",
+      "summary": "v3.2 design: hard activation command, Sonnet as conduit, peer-to-peer agent comms, Opus only for strategic escalations. Reduces cost by estimated 40%.",
+      "tags": ["architecture", "sonnet", "cost"],
+      "createdAt": "2026-03-23T10:00:00.000Z",
+      "updatedAt": "2026-03-23T10:00:00.000Z"
+    },
+    {
+      "id": "mem-008",
+      "filename": "feedback_version_sync.md",
+      "category": "config",
+      "agentId": "coder",
+      "summary": "plugin.json + package.json version must match sprint number: v4.3 → 0.4.3, v4.4 → 0.4.4. Mismatch causes plugin load failures in the harness.",
+      "tags": ["versioning", "plugin", "packaging"],
+      "createdAt": "2026-03-24T09:00:00.000Z",
+      "updatedAt": "2026-03-24T09:00:00.000Z"
+    },
+    {
+      "id": "mem-009",
+      "filename": "project_v48_complete.md",
+      "category": "project",
+      "agentId": "genesis",
+      "summary": "v5.4 SHIPPED: WorkflowRunner, SprintLoop, BudgetEnforcer, SelfCorrection, ExecutionLog, 2914 tests. All 5 autonomy gates passed. Autonomous from v5.5+.",
+      "tags": ["milestone", "autonomy", "v5"],
+      "createdAt": "2026-03-25T12:00:00.000Z",
+      "updatedAt": "2026-03-25T12:00:00.000Z"
+    },
+    {
+      "id": "mem-010",
+      "filename": "project_v59_complete.md",
+      "category": "project",
+      "agentId": "genesis",
+      "summary": "v5.9 SHIPPED: Resilience layer, health dashboard, 3309 tests. All backlog items done. Server startup fix documented. v6.0 gate: 7 failing test files need adapter mock fixtures.",
+      "tags": ["milestone", "resilience", "v5"],
+      "createdAt": "2026-03-26T14:00:00.000Z",
+      "updatedAt": "2026-03-26T14:00:00.000Z"
+    },
+    {
+      "id": "mem-011",
+      "filename": "project_v54_autonomous_brief.md",
+      "category": "lesson",
+      "agentId": "ceo",
+      "summary": "v5.4 is last human-directed sprint (100x spend); after it ships, Claude runs autonomously to v6.0. 5 gates defined for measuring autonomous progress.",
+      "tags": ["autonomy", "strategy", "gates"],
+      "createdAt": "2026-03-27T08:00:00.000Z",
+      "updatedAt": "2026-03-27T08:00:00.000Z"
+    },
+    {
+      "id": "mem-012",
+      "filename": "project_v7_vision.md",
+      "category": "project",
+      "agentId": "architect",
+      "summary": "v7 north star: OpenClaw runtime, Browser Use agents, CUA agents. Zero v7 work before v6.0 stable. Hard gate enforced by BudgetEnforcer.",
+      "tags": ["vision", "v7", "roadmap"],
+      "createdAt": "2026-03-28T10:00:00.000Z",
+      "updatedAt": "2026-03-28T10:00:00.000Z"
+    },
+    {
+      "id": "mem-013",
+      "filename": "project_v64_autonomous_loop.md",
+      "category": "project",
+      "agentId": "genesis",
+      "summary": "v6.4 autonomous loop in progress: supervised PR-based loop, $50 budget, agent-driven scoring, parallel-agent execution.",
+      "tags": ["autonomy", "loop", "budget"],
+      "createdAt": "2026-03-30T09:00:00.000Z",
+      "updatedAt": "2026-03-30T09:00:00.000Z"
+    },
+    {
+      "id": "mem-014",
+      "filename": "project_v644_shipped.md",
+      "category": "project",
+      "agentId": "genesis",
+      "summary": "v6.4.4 shipped: autonomous loop hands-off to PR via Max/Pro plan, 247 tests. Now heading into v6.5 big UI updates.",
+      "tags": ["milestone", "pr", "ui"],
+      "createdAt": "2026-04-01T11:00:00.000Z",
+      "updatedAt": "2026-04-01T11:00:00.000Z"
+    },
+    {
+      "id": "mem-015",
+      "filename": "project_v653_shipped.md",
+      "category": "project",
+      "agentId": "genesis",
+      "summary": "v6.5.3 shipped: full 9-phase chain real, parallel exec+retry, SSE push, cost preview. 320 tests. Heading to v6.6.0 then v7 daemon.",
+      "tags": ["milestone", "sse", "parallel"],
+      "createdAt": "2026-04-03T14:00:00.000Z",
+      "updatedAt": "2026-04-03T14:00:00.000Z"
+    },
+    {
+      "id": "mem-016",
+      "filename": "project_v670_shipped.md",
+      "category": "project",
+      "agentId": "genesis",
+      "summary": "v6.7.1 final state: 12 releases in one day, server boot fixes, live cycle 43a67677 running PID 53000 against real repo. Dashboard demo working. v7.0.0 spec ready, impl deferred.",
+      "tags": ["milestone", "dashboard", "v6"],
+      "createdAt": "2026-04-05T16:00:00.000Z",
+      "updatedAt": "2026-04-05T16:00:00.000Z"
+    },
+    {
+      "id": "mem-017",
+      "filename": "lesson_parallel_agents_cost.md",
+      "category": "lesson",
+      "agentId": "coder",
+      "summary": "Dispatching 3+ parallel subagents simultaneously cuts wall-clock time but multiplies token spend. Always estimate cost before parallelizing; prefer sequential for tasks under 5 minutes.",
+      "tags": ["cost", "parallel", "performance"],
+      "createdAt": "2026-04-06T09:00:00.000Z",
+      "updatedAt": "2026-04-06T09:00:00.000Z"
+    },
+    {
+      "id": "mem-018",
+      "filename": "lesson_test_adapter_mocks.md",
+      "category": "lesson",
+      "agentId": "debugger",
+      "summary": "Test failures for missing adapter mock fixtures are the #1 blocker for new route tests. Always create a minimal in-memory SqliteAdapter in beforeEach before writing route integration tests.",
+      "tags": ["testing", "adapters", "vitest"],
+      "createdAt": "2026-04-06T11:00:00.000Z",
+      "updatedAt": "2026-04-06T11:00:00.000Z"
+    }
+  ]
+}

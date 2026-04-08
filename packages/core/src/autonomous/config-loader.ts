@@ -6,9 +6,14 @@ import type { CycleConfig } from './types.js';
 
 export const DEFAULT_CYCLE_CONFIG: CycleConfig = Object.freeze({
   budget: Object.freeze({
-    perCycleUsd: 50,
-    perItemUsd: 10,
-    perAgentUsd: 15,
+    // v6.7.4: default budget raised from $50 → $200 per user request.
+    // The kill-switch budget check is now warn-only (see kill-switch.ts);
+    // cycles continue to completion even when cumulative spend crosses
+    // this ceiling. The number is still used by the approval gate and
+    // the dashboard cost bars as a reference line.
+    perCycleUsd: 200,
+    perItemUsd: 40,
+    perAgentUsd: 60,
     allowOverageApproval: true,
   }),
   limits: Object.freeze({
@@ -16,7 +21,10 @@ export const DEFAULT_CYCLE_CONFIG: CycleConfig = Object.freeze({
     maxDurationMinutes: 180,
     maxConsecutiveFailures: 5,
     maxExecutePhaseFailureRate: 0.5,
-    maxExecutePhaseParallelism: 3,
+    // v6.7.4: raised from 3 → 10. The old value capped execute to 3
+    // concurrent agent dispatches even when 18+ items were approved,
+    // making cycles take 60+ minutes for work that could finish in 15.
+    maxExecutePhaseParallelism: 10,
     maxItemRetries: 1,
   }),
   quality: Object.freeze({

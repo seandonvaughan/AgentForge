@@ -1,0 +1,83 @@
+{
+  "sprints": [
+    {
+      "version": "6.5.0",
+      "sprintId": "v6-5-0-autonomous-command-center-ui",
+      "title": "AgentForge v6.5.0 — Autonomous Command Center UI",
+      "createdAt": "2026-04-07T06:00:00.000Z",
+      "phase": "completed",
+      "startedAt": "2026-04-07T06:00:00.000Z",
+      "completedAt": "2026-04-07T10:00:00.000Z",
+      "items": [
+        {
+          "id": "v650-p0-1",
+          "title": "Cycles history browser — /cycles route",
+          "description": "New /cycles route in the SvelteKit dashboard listing all past autonomous cycles with status badges, timestamps, and score summaries. Reads from .agentforge/cycles/*. Auto-refreshes every 10s. Commits: 350a53c, c958df5.",
+          "priority": "P0",
+          "assignee": "FrontendAgent",
+          "status": "completed",
+          "tags": ["feature", "dashboard", "cycles", "svelte"]
+        },
+        {
+          "id": "v650-p0-2",
+          "title": "Cycle detail page — /cycles/[id] with 5 tabs",
+          "description": "Detail page at /cycles/[id] with Overview, Scoring, Events, Phases, and Files tabs. Connects to GET /api/v5/cycles/:id and sub-resource endpoints. Commits: 5f16b8c, e7e7e75.",
+          "priority": "P0",
+          "assignee": "FrontendAgent",
+          "status": "completed",
+          "tags": ["feature", "dashboard", "cycles", "svelte"]
+        },
+        {
+          "id": "v650-p0-3",
+          "title": "Cycle launcher — /cycles/new with 6-stage live progress",
+          "description": "New /cycles/new page that lets operators launch an autonomous cycle from the browser. Shows a 6-stage progress indicator (plan → stage → run → verify → commit → review) that updates via SSE as the cycle advances. Commit: b5eec7f.",
+          "priority": "P0",
+          "assignee": "FrontendAgent",
+          "status": "completed",
+          "tags": ["feature", "dashboard", "cycles", "sse", "launcher"]
+        },
+        {
+          "id": "v650-p1-1",
+          "title": "Sprint kanban view",
+          "description": "Kanban board view on the sprints page showing items grouped by status (planned / in_progress / completed / failed) with drag-free visual grouping.",
+          "priority": "P1",
+          "assignee": "FrontendAgent",
+          "status": "completed",
+          "tags": ["feature", "dashboard", "sprints", "kanban"]
+        },
+        {
+          "id": "v650-p1-2",
+          "title": "Autonomous nav section in sidebar",
+          "description": "New 'Autonomous' navigation section in the SvelteKit sidebar grouping cycles, runner, and approvals links for the autonomous loop operator workflow.",
+          "priority": "P1",
+          "assignee": "FrontendAgent",
+          "status": "completed",
+          "tags": ["feature", "dashboard", "navigation"]
+        },
+        {
+          "id": "v650-p1-3",
+          "title": "Home page hero + recent cycles widget",
+          "description": "Updated dashboard home page with an autonomous loop hero section and a recent cycles widget pulling the latest 5 cycle records.",
+          "priority": "P1",
+          "assignee": "FrontendAgent",
+          "status": "completed",
+          "tags": ["feature", "dashboard", "home"]
+        }
+      ],
+      "budget": 15,
+      "teamSize": 4,
+      "successCriteria": [
+        "/cycles lists all past autonomous cycles with correct status and metadata",
+        "/cycles/[id] shows 5-tab detail with real cycle data",
+        "/cycles/new launches a real cycle and shows live 6-stage progress",
+        "Sprint kanban view renders items by status column",
+        "Autonomous nav section visible in sidebar",
+        "All 247 autonomous tests continue to pass"
+      ],
+      "autonomous": true,
+      "testCountBefore": 247,
+      "testCountAfter": 270,
+      "testCountDelta": 23
+    }
+  ]
+}

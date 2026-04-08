@@ -49,14 +49,14 @@
   }
 </script>
 
-<svelte:head><title>Cost Analytics — AgentForge v5</title></svelte:head>
+<svelte:head><title>Cost Analytics — AgentForge</title></svelte:head>
 
 <div class="page-header">
   <div>
     <h1 class="page-title">Cost Analytics</h1>
     <p class="page-subtitle">Token usage and spend by agent and model</p>
   </div>
-  <button class="btn btn-ghost btn-sm" on:click={loadCosts} disabled={$costsLoading}>
+  <button class="btn btn-ghost btn-sm" onclick={loadCosts} disabled={$costsLoading}>
     {$costsLoading ? 'Loading…' : 'Refresh'}
   </button>
 </div>
@@ -74,7 +74,7 @@
     {#if summary.byModel.length > 0}
       <div class="stat-card">
         <div class="stat-label">Top Model</div>
-        <div class="stat-value">{summary.byModel.sort((a, b) => b.costUsd - a.costUsd)[0].model.split('-')[1] ?? summary.byModel[0].model}</div>
+        <div class="stat-value">{summary.byModel.slice().sort((a, b) => b.costUsd - a.costUsd)[0]?.model.split('-')[1] ?? summary.byModel[0]?.model ?? '—'}</div>
       </div>
     {/if}
   </div>
@@ -83,7 +83,7 @@
 {#if $costsError}
   <div class="empty-state" style="color:var(--color-danger);">
     {$costsError}
-    <button class="btn btn-ghost btn-sm" style="margin-top:var(--space-3)" on:click={loadCosts}>Retry</button>
+    <button class="btn btn-ghost btn-sm" style="margin-top:var(--space-3)" onclick={loadCosts}>Retry</button>
   </div>
 {:else if $costsLoading}
   <div class="skeleton" style="height:120px;"></div>

@@ -59,6 +59,40 @@ describe('Fastify Server', () => {
       });
       expect(response.headers['content-type']).toMatch(/application\/json/);
     });
+
+    it('returns uptime as a non-negative integer', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/v1/health',
+      });
+      const body = response.json();
+      expect(typeof body.uptime).toBe('number');
+      expect(body.uptime).toBeGreaterThanOrEqual(0);
+      expect(Number.isInteger(body.uptime)).toBe(true);
+    });
+
+    it('returns db status of unavailable when no adapter provided', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/v1/health',
+      });
+      const body = response.json();
+      expect(body.db).toBe('unavailable');
+    });
+
+    it('returns memory object with rssBytes, heapUsedBytes, heapTotalBytes', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/v1/health',
+      });
+      const body = response.json();
+      expect(body.memory).toBeDefined();
+      expect(typeof body.memory.rssBytes).toBe('number');
+      expect(typeof body.memory.heapUsedBytes).toBe('number');
+      expect(typeof body.memory.heapTotalBytes).toBe('number');
+      expect(body.memory.rssBytes).toBeGreaterThan(0);
+      expect(body.memory.heapUsedBytes).toBeGreaterThan(0);
+    });
   });
 
   describe('404 handling', () => {

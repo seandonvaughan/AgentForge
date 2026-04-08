@@ -14,6 +14,12 @@ import type { AgentDatabase } from './database.js';
 import type { SessionRow } from './database.js';
 import type { FeedbackFileAdapter } from '../feedback/feedback-protocol.js';
 import type { FlywheelFileAdapter } from '../flywheel/flywheel-monitor.js';
+import {
+  SESSION_TTL_MS,
+  SESSIONS_LIST_TTL_MS,
+  COSTS_TTL_MS,
+  MISC_TTL_MS,
+} from './query-cache.js';
 
 // ---------------------------------------------------------------------------
 // Row types matching the SQLite schema
@@ -170,6 +176,7 @@ export class SqliteAdapter implements FeedbackFileAdapter, FlywheelFileAdapter {
       });
 
       upsertAll(entries);
+      this.db.getCache().invalidateTag('feedback');
       return;
     }
 
@@ -218,13 +225,21 @@ export class SqliteAdapter implements FeedbackFileAdapter, FlywheelFileAdapter {
         @resume_count, @parent_session_id, @delegation_depth
       )
     `).run(record);
+    // Invalidate all session-related cache entries (lists, counts, trees)
+    this.db.getCache().invalidateTag('sessions');
   }
 
   getSession(id: string): SessionRow | null {
+    const cacheKey = `session:${id}`;
+    const cached = this.db.getCache().get<SessionRow | null>(cacheKey);
+    if (cached !== undefined) return cached;
+
     const row = this.db.getDb()
       .prepare<[string], SessionRow>('SELECT * FROM sessions WHERE id = ?')
       .get(id);
-    return row ?? null;
+    const result = row ?? null;
+    this.db.getCache().set(cacheKey, result, SESSION_TTL_MS, ['sessions']);
+    return result;
   }
 
   updateSession(id: string, updates: Partial<SessionRow>): void {
@@ -235,6 +250,8 @@ export class SqliteAdapter implements FeedbackFileAdapter, FlywheelFileAdapter {
     const fields = Object.keys(safeUpdates).map(k => `${k} = @${k}`).join(', ');
     this.db.getDb().prepare(`UPDATE sessions SET ${fields} WHERE id = @id`)
       .run({ ...safeUpdates, id });
+    // Invalidate all session-related cache entries (individual, lists, counts, trees)
+    this.db.getCache().invalidateTag('sessions');
   }
 
   listSessions(opts?: {
@@ -245,6 +262,10 @@ export class SqliteAdapter implements FeedbackFileAdapter, FlywheelFileAdapter {
     since?: string;
     until?: string;
   }): SessionRow[] {
+    const cacheKey = `sessions:list:${JSON.stringify(opts ?? {})}`;
+    const cached = this.db.getCache().get<SessionRow[]>(cacheKey);
+    if (cached !== undefined) return cached;
+
     let query = 'SELECT * FROM sessions';
     const conditions: string[] = [];
     const params: Record<string, unknown> = {};
@@ -282,12 +303,18 @@ export class SqliteAdapter implements FeedbackFileAdapter, FlywheelFileAdapter {
       params.offset = opts!.offset;
     }
 
-    return this.db.getDb()
+    const result = this.db.getDb()
       .prepare<Record<string, unknown>, SessionRow>(query)
       .all(params);
+    this.db.getCache().set(cacheKey, result, SESSIONS_LIST_TTL_MS, ['sessions']);
+    return result;
   }
 
   countSessions(opts?: { agentId?: string; status?: string; since?: string; until?: string }): number {
+    const cacheKey = `sessions:count:${JSON.stringify(opts ?? {})}`;
+    const cached = this.db.getCache().get<number>(cacheKey);
+    if (cached !== undefined) return cached;
+
     let query = 'SELECT COUNT(*) as total FROM sessions';
     const conditions: string[] = [];
     const params: Record<string, unknown> = {};
@@ -297,7 +324,9 @@ export class SqliteAdapter implements FeedbackFileAdapter, FlywheelFileAdapter {
     if (opts?.until) { conditions.push('created_at <= @until'); params.until = opts.until; }
     if (conditions.length) query += ' WHERE ' + conditions.join(' AND ');
     const row = this.db.getDb().prepare<Record<string, unknown>, { total: number }>(query).get(params);
-    return row?.total ?? 0;
+    const result = row?.total ?? 0;
+    this.db.getCache().set(cacheKey, result, SESSIONS_LIST_TTL_MS, ['sessions']);
+    return result;
   }
 
   // -------------------------------------------------------------------------
@@ -309,9 +338,14 @@ export class SqliteAdapter implements FeedbackFileAdapter, FlywheelFileAdapter {
       INSERT INTO feedback (id, agent_id, session_id, category, message, sentiment, created_at)
       VALUES (@id, @agent_id, @session_id, @category, @message, @sentiment, @created_at)
     `).run(entry);
+    this.db.getCache().invalidateTag('feedback');
   }
 
   listFeedback(opts?: { agentId?: string; limit?: number }): FeedbackDbRow[] {
+    const cacheKey = `feedback:list:${JSON.stringify(opts ?? {})}`;
+    const cached = this.db.getCache().get<FeedbackDbRow[]>(cacheKey);
+    if (cached !== undefined) return cached;
+
     const conditions: string[] = [];
     const params: Record<string, unknown> = {};
 
@@ -323,11 +357,13 @@ export class SqliteAdapter implements FeedbackFileAdapter, FlywheelFileAdapter {
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     const limit = opts?.limit !== undefined ? `LIMIT ${opts.limit}` : '';
 
-    return this.db.getDb()
+    const result = this.db.getDb()
       .prepare<Record<string, unknown>, FeedbackDbRow>(
         `SELECT * FROM feedback ${where} ORDER BY created_at DESC ${limit}`
       )
       .all(params);
+    this.db.getCache().set(cacheKey, result, MISC_TTL_MS, ['feedback']);
+    return result;
   }
 
   // -------------------------------------------------------------------------
@@ -339,27 +375,46 @@ export class SqliteAdapter implements FeedbackFileAdapter, FlywheelFileAdapter {
       INSERT INTO agent_costs (id, session_id, agent_id, model, input_tokens, output_tokens, cost_usd, created_at)
       VALUES (@id, @session_id, @agent_id, @model, @input_tokens, @output_tokens, @cost_usd, @created_at)
     `).run(entry);
+    this.db.getCache().invalidateTag('costs');
   }
 
   getAgentCosts(agentId: string): CostRow[] {
-    return this.db.getDb()
+    const cacheKey = `costs:agent:${agentId}`;
+    const cached = this.db.getCache().get<CostRow[]>(cacheKey);
+    if (cached !== undefined) return cached;
+
+    const result = this.db.getDb()
       .prepare<[string], CostRow>(
         'SELECT * FROM agent_costs WHERE agent_id = ? ORDER BY created_at DESC'
       )
       .all(agentId);
+    this.db.getCache().set(cacheKey, result, COSTS_TTL_MS, ['costs']);
+    return result;
   }
 
   getTotalCostUsd(): number {
+    const cacheKey = 'costs:total';
+    const cached = this.db.getCache().get<number>(cacheKey);
+    if (cached !== undefined) return cached;
+
     const row = this.db.getDb()
       .prepare<[], { total: number | null }>('SELECT SUM(cost_usd) as total FROM agent_costs')
       .get();
-    return row?.total ?? 0;
+    const result = row?.total ?? 0;
+    this.db.getCache().set(cacheKey, result, COSTS_TTL_MS, ['costs']);
+    return result;
   }
 
   getAllCosts(): CostRow[] {
-    return this.db.getDb()
+    const cacheKey = 'costs:all';
+    const cached = this.db.getCache().get<CostRow[]>(cacheKey);
+    if (cached !== undefined) return cached;
+
+    const result = this.db.getDb()
       .prepare<[], CostRow>('SELECT * FROM agent_costs ORDER BY created_at DESC')
       .all();
+    this.db.getCache().set(cacheKey, result, COSTS_TTL_MS, ['costs']);
+    return result;
   }
 
   // -------------------------------------------------------------------------
@@ -371,9 +426,14 @@ export class SqliteAdapter implements FeedbackFileAdapter, FlywheelFileAdapter {
       INSERT INTO task_outcomes (id, session_id, agent_id, task, success, quality_score, model, duration_ms, created_at)
       VALUES (@id, @session_id, @agent_id, @task, @success, @quality_score, @model, @duration_ms, @created_at)
     `).run(outcome);
+    this.db.getCache().invalidateTag('outcomes');
   }
 
   listTaskOutcomes(opts?: { sessionId?: string; agentId?: string; limit?: number }): TaskOutcomeRow[] {
+    const cacheKey = `outcomes:list:${JSON.stringify(opts ?? {})}`;
+    const cached = this.db.getCache().get<TaskOutcomeRow[]>(cacheKey);
+    if (cached !== undefined) return cached;
+
     const conditions: string[] = [];
     const params: Record<string, unknown> = {};
 
@@ -389,11 +449,13 @@ export class SqliteAdapter implements FeedbackFileAdapter, FlywheelFileAdapter {
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     const limit = opts?.limit !== undefined ? `LIMIT ${opts.limit}` : '';
 
-    return this.db.getDb()
+    const result = this.db.getDb()
       .prepare<Record<string, unknown>, TaskOutcomeRow>(
         `SELECT * FROM task_outcomes ${where} ORDER BY created_at DESC ${limit}`
       )
       .all(params);
+    this.db.getCache().set(cacheKey, result, MISC_TTL_MS, ['outcomes']);
+    return result;
   }
 
   // -------------------------------------------------------------------------
@@ -405,9 +467,14 @@ export class SqliteAdapter implements FeedbackFileAdapter, FlywheelFileAdapter {
       INSERT INTO promotions (id, agent_id, previous_tier, new_tier, promoted, demoted, reason, created_at)
       VALUES (@id, @agent_id, @previous_tier, @new_tier, @promoted, @demoted, @reason, @created_at)
     `).run(promotion);
+    this.db.getCache().invalidateTag('promotions');
   }
 
   listPromotions(opts?: { agentId?: string; limit?: number }): PromotionRow[] {
+    const cacheKey = `promotions:list:${JSON.stringify(opts ?? {})}`;
+    const cached = this.db.getCache().get<PromotionRow[]>(cacheKey);
+    if (cached !== undefined) return cached;
+
     const conditions: string[] = [];
     const params: Record<string, unknown> = {};
 
@@ -419,11 +486,13 @@ export class SqliteAdapter implements FeedbackFileAdapter, FlywheelFileAdapter {
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     const limit = opts?.limit !== undefined ? `LIMIT ${opts.limit}` : '';
 
-    return this.db.getDb()
+    const result = this.db.getDb()
       .prepare<Record<string, unknown>, PromotionRow>(
         `SELECT * FROM promotions ${where} ORDER BY created_at DESC ${limit}`
       )
       .all(params);
+    this.db.getCache().set(cacheKey, result, MISC_TTL_MS, ['promotions']);
+    return result;
   }
 
   // -------------------------------------------------------------------------

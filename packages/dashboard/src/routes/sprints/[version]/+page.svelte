@@ -9,15 +9,25 @@
     description?: string;
     priority: 'P0' | 'P1' | 'P2';
     assignee?: string;
-    status: 'completed' | 'in_progress' | 'pending' | 'blocked';
+    status: 'completed' | 'in_progress' | 'pending' | 'blocked' | 'failed';
     estimatedCost?: number;
     tags?: string[];
+    source?: string;
+  }
+
+  interface VersionDecision {
+    previousVersion?: string;
+    nextVersion?: string;
+    tier?: string;
+    rationale?: string;
+    tagsSeen?: string[];
   }
 
   interface SprintDetail {
     id: string;
     version: string;
     title?: string;
+    phase?: string;
     status: 'completed' | 'in_progress' | 'pending';
     startDate?: string;
     endDate?: string;
@@ -25,6 +35,13 @@
     teamSize?: number;
     successCriteria?: string[];
     auditFindings?: string[];
+    testCountBefore?: number;
+    testCountAfter?: number;
+    testCountDelta?: number;
+    totalCostUsd?: number;
+    autonomous?: boolean;
+    theme?: string;
+    versionDecision?: VersionDecision;
     items: SprintItem[];
   }
 
@@ -32,7 +49,7 @@
   let loading = $state(true);
   let error: string | null = $state(null);
 
-  const version = $derived(page.params.version);
+  const version = $derived(page.params.version ?? '');
 
   async function load(ver: string) {
     loading = true;
@@ -53,19 +70,27 @@
     if (version) load(version);
   });
 
-  // Derived stats
-  let completedCount = $derived(sprint?.items?.filter(i => i.status === 'completed').length ?? 0);
-  let totalCount = $derived(sprint?.items?.length ?? 0);
+  // Svelte 5's $derived has a type inference limitation: state variables
+  // initialised with `null` are narrowed to `never` inside the rune's scope
+  // when accessed via property access. The workaround is to read items through
+  // a helper that carries the explicit generic, keeping the cast isolated here.
+  function sprintItems(s: SprintDetail | null): SprintItem[] {
+    return s?.items ?? [];
+  }
+  let allItems = $derived(sprintItems(sprint));
+  let completedCount = $derived(allItems.filter((i: SprintItem) => i.status === 'completed').length);
+  let totalCount = $derived(allItems.length);
   let pct = $derived(totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0);
-  let p0Items = $derived(sprint?.items?.filter(i => i.priority === 'P0') ?? []);
-  let p1Items = $derived(sprint?.items?.filter(i => i.priority === 'P1') ?? []);
-  let p2Items = $derived(sprint?.items?.filter(i => i.priority === 'P2') ?? []);
+  let p0Items = $derived(allItems.filter((i: SprintItem) => i.priority === 'P0'));
+  let p1Items = $derived(allItems.filter((i: SprintItem) => i.priority === 'P1'));
+  let p2Items = $derived(allItems.filter((i: SprintItem) => i.priority === 'P2'));
 
   // Kanban columns
-  let plannedItems = $derived(sprint?.items?.filter(i => i.status === 'pending') ?? []);
-  let inProgressItems = $derived(sprint?.items?.filter(i => i.status === 'in_progress') ?? []);
-  let completedItems = $derived(sprint?.items?.filter(i => i.status === 'completed') ?? []);
-  let blockedItems = $derived(sprint?.items?.filter(i => i.status === 'blocked') ?? []);
+  let plannedItems = $derived(allItems.filter((i: SprintItem) => i.status === 'pending'));
+  let inProgressItems = $derived(allItems.filter((i: SprintItem) => i.status === 'in_progress'));
+  let completedItems = $derived(allItems.filter((i: SprintItem) => i.status === 'completed'));
+  let blockedItems = $derived(allItems.filter((i: SprintItem) => i.status === 'blocked'));
+  let failedItems = $derived(allItems.filter((i: SprintItem) => i.status === 'failed'));
 
   let expandedItemId: string | null = $state(null);
   function toggleExpand(id: string) {
@@ -74,28 +99,55 @@
   function truncate(s: string, n = 60): string {
     return s.length > n ? s.slice(0, n - 1) + '\u2026' : s;
   }
+  function formatDate(iso: string): string {
+    return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  }
 
   const STATUS_LABEL: Record<string, string> = {
     completed: 'Completed',
     in_progress: 'In Progress',
     pending: 'Planned',
+    blocked: 'Blocked',
+    failed: 'Failed',
   };
 
   const STATUS_BADGE: Record<string, string> = {
     completed: 'success',
     in_progress: 'sonnet',
     pending: 'muted',
+    blocked: 'danger',
+    failed: 'danger',
   };
 
-  const ITEM_STATUS_ICON: Record<string, string> = {
+  const PHASE_LABEL: Record<string, string> = {
+    planned: 'Planned',
+    active: 'Active',
+    executing: 'Executing',
+    completed: 'Completed',
+    done: 'Done',
+    draft: 'Draft',
+  };
+
+  const ITEM_STATUS_COLOR: Record<string, string> = {
     completed: '#22c55e',
     in_progress: '#5b8af5',
     pending: '#64748b',
+    blocked: '#e05a5a',
+    failed: '#e05a5a',
+  };
+
+  // Column accent colors for the kanban headers
+  const KANBAN_COL_COLOR: Record<string, string> = {
+    planned: 'var(--color-text-faint)',
+    in_progress: 'var(--color-brand)',
+    completed: 'var(--color-success)',
+    blocked: 'var(--color-danger)',
+    failed: 'var(--color-danger)',
   };
 </script>
 
 <svelte:head>
-  <title>Sprint {version} — AgentForge v6</title>
+  <title>Sprint {version} — AgentForge</title>
 </svelte:head>
 
 <div class="page-header">
@@ -103,14 +155,27 @@
     <a href="/sprints" class="back-link">&larr; All Sprints</a>
     {#if sprint}
       <h1 class="page-title">v{sprint.version}</h1>
-      <p class="page-subtitle">{sprint.title ?? ''}</p>
+      {#if sprint.title}
+        <p class="page-subtitle">{sprint.title}</p>
+      {/if}
+      {#if sprint.theme}
+        <p class="page-theme">✦ {sprint.theme}</p>
+      {/if}
     {:else}
       <h1 class="page-title">Sprint {version}</h1>
     {/if}
   </div>
-  {#if sprint}
-    <span class="badge {STATUS_BADGE[sprint.status] ?? 'muted'}">{STATUS_LABEL[sprint.status] ?? sprint.status}</span>
-  {/if}
+  <div class="header-badges">
+    {#if sprint}
+      {#if sprint.autonomous}
+        <span class="badge autonomous-badge">⚡ Autonomous</span>
+      {/if}
+      <span class="badge {STATUS_BADGE[sprint.status] ?? 'muted'}">{STATUS_LABEL[sprint.status] ?? sprint.status}</span>
+      {#if sprint.phase && sprint.phase !== sprint.status}
+        <span class="badge muted phase-badge">{PHASE_LABEL[sprint.phase] ?? sprint.phase}</span>
+      {/if}
+    {/if}
+  </div>
 </div>
 
 {#if loading}
@@ -127,13 +192,13 @@
 {:else if sprint}
   <!-- Summary Row -->
   <div class="summary-row">
+    <div class="summary-card highlight">
+      <div class="summary-value">{pct}%</div>
+      <div class="summary-label">Complete</div>
+    </div>
     <div class="summary-card">
       <div class="summary-value">{completedCount}/{totalCount}</div>
       <div class="summary-label">Items Done</div>
-    </div>
-    <div class="summary-card">
-      <div class="summary-value">{pct}%</div>
-      <div class="summary-label">Complete</div>
     </div>
     {#if sprint.teamSize}
       <div class="summary-card">
@@ -147,21 +212,39 @@
         <div class="summary-label">Budget</div>
       </div>
     {/if}
+    {#if sprint.totalCostUsd != null}
+      <div class="summary-card">
+        <div class="summary-value">${sprint.totalCostUsd.toFixed(2)}</div>
+        <div class="summary-label">Actual Cost</div>
+      </div>
+    {/if}
+    {#if sprint.testCountDelta != null}
+      <div class="summary-card {sprint.testCountDelta > 0 ? 'highlight-success' : ''}">
+        <div class="summary-value test-delta">{sprint.testCountDelta > 0 ? '+' : ''}{sprint.testCountDelta}</div>
+        <div class="summary-label">Tests Added</div>
+      </div>
+    {/if}
+    {#if sprint.testCountAfter != null}
+      <div class="summary-card">
+        <div class="summary-value">{sprint.testCountAfter.toLocaleString()}</div>
+        <div class="summary-label">Total Tests</div>
+      </div>
+    {/if}
     {#if sprint.startDate}
       <div class="summary-card">
-        <div class="summary-value date-value">{new Date(sprint.startDate).toLocaleDateString()}</div>
+        <div class="summary-value date-value">{formatDate(sprint.startDate ?? '')}</div>
         <div class="summary-label">Started</div>
       </div>
     {/if}
     {#if sprint.endDate}
       <div class="summary-card">
-        <div class="summary-value date-value">{new Date(sprint.endDate).toLocaleDateString()}</div>
+        <div class="summary-value date-value">{formatDate(sprint.endDate ?? '')}</div>
         <div class="summary-label">Ended</div>
       </div>
     {/if}
   </div>
 
-  <!-- Progress -->
+  <!-- Progress Bar -->
   <div class="card" style="margin-bottom:var(--space-5);">
     <ProgressBar
       value={pct}
@@ -171,16 +254,17 @@
   </div>
 
   <!-- Kanban Board -->
-  <div class="kanban-board">
+  <div class="kanban-board" class:has-failed={failedItems.length > 0}>
     {#each [
       { key: 'planned', label: 'Planned', items: plannedItems },
       { key: 'in_progress', label: 'In Progress', items: inProgressItems },
       { key: 'completed', label: 'Completed', items: completedItems },
       { key: 'blocked', label: 'Blocked', items: blockedItems },
+      ...(failedItems.length > 0 ? [{ key: 'failed', label: 'Failed', items: failedItems }] : []),
     ] as col (col.key)}
       <div class="kanban-column">
-        <div class="kanban-col-header">
-          <span class="kanban-col-title">{col.label}</span>
+        <div class="kanban-col-header" style="border-bottom-color: {KANBAN_COL_COLOR[col.key]};">
+          <span class="kanban-col-title" style="color: {KANBAN_COL_COLOR[col.key]};">{col.label}</span>
           <span class="kanban-col-count">({col.items.length})</span>
         </div>
         <div class="kanban-col-body">
@@ -202,7 +286,7 @@
                 </div>
                 <div class="kanban-card-title">{truncate(item.title)}</div>
                 {#if item.assignee}
-                  <div class="kanban-card-assignee">{item.assignee}</div>
+                  <div class="kanban-card-assignee">@{item.assignee}</div>
                 {/if}
                 {#if item.tags && item.tags.length > 0}
                   <div class="kanban-tags">
@@ -223,19 +307,23 @@
   </div>
 
   <!-- Items by Priority -->
-  {#each [{ label: 'P0 — Critical', items: p0Items, cls: 'danger' }, { label: 'P1 — Important', items: p1Items, cls: 'warning' }, { label: 'P2 — Nice-to-Have', items: p2Items, cls: 'muted' }] as group}
+  {#each [
+    { label: 'P0 — Critical', items: p0Items, cls: 'danger' },
+    { label: 'P1 — Important', items: p1Items, cls: 'warning' },
+    { label: 'P2 — Nice-to-Have', items: p2Items, cls: 'muted' },
+  ] as group}
     {#if group.items.length > 0}
       <div class="card item-group" style="margin-bottom:var(--space-4);">
         <div class="group-header">
           <span class="priority-badge {group.cls}">{group.label}</span>
           <span class="group-count">
-            {group.items.filter(i => i.status === 'completed').length}/{group.items.length} done
+            {group.items.filter((i: SprintItem) => i.status === 'completed').length}/{group.items.length} done
           </span>
         </div>
         <div class="item-list">
           {#each group.items as item (item.id)}
             <div class="sprint-item {item.status}">
-              <div class="item-dot" style="background: {ITEM_STATUS_ICON[item.status] ?? '#64748b'}"></div>
+              <div class="item-dot" style="background: {ITEM_STATUS_COLOR[item.status] ?? '#64748b'}"></div>
               <div class="item-body">
                 <div class="item-title">{item.title}</div>
                 {#if item.description}
@@ -243,10 +331,23 @@
                 {/if}
                 <div class="item-meta">
                   {#if item.assignee}
-                    <span class="item-assignee">{item.assignee}</span>
+                    <span class="item-assignee">@{item.assignee}</span>
                   {/if}
-                  <span class="item-status-label">{STATUS_LABEL[item.status] ?? item.status}</span>
+                  <span class="item-status-label status-{item.status}">{STATUS_LABEL[item.status] ?? item.status}</span>
+                  {#if item.estimatedCost != null}
+                    <span class="item-cost">${item.estimatedCost.toFixed(2)}</span>
+                  {/if}
+                  {#if item.source}
+                    <span class="item-source">{item.source}</span>
+                  {/if}
                 </div>
+                {#if item.tags && item.tags.length > 0}
+                  <div class="item-tags">
+                    {#each item.tags as tag}
+                      <span class="item-tag">{tag}</span>
+                    {/each}
+                  </div>
+                {/if}
               </div>
             </div>
           {/each}
@@ -259,7 +360,8 @@
   {#if sprint.successCriteria && sprint.successCriteria.length > 0}
     <div class="card" style="margin-bottom:var(--space-4);">
       <div class="card-header">
-        <span class="card-title">Success Criteria</span>
+        <span class="card-title">✓ Success Criteria</span>
+        <span class="card-count">{sprint.successCriteria.length}</span>
       </div>
       <ul class="criteria-list">
         {#each sprint.successCriteria as criterion}
@@ -273,13 +375,41 @@
   {#if sprint.auditFindings && sprint.auditFindings.length > 0}
     <div class="card" style="margin-bottom:var(--space-4);">
       <div class="card-header">
-        <span class="card-title">Audit Findings</span>
+        <span class="card-title">⚠ Audit Findings</span>
+        <span class="card-count">{sprint.auditFindings.length}</span>
       </div>
       <ul class="criteria-list findings">
         {#each sprint.auditFindings as finding}
           <li class="criterion finding">{finding}</li>
         {/each}
       </ul>
+    </div>
+  {/if}
+
+  <!-- Version Decision -->
+  {#if sprint.versionDecision}
+    {@const vd = sprint.versionDecision}
+    <div class="card version-decision-card" style="margin-bottom:var(--space-4);">
+      <div class="card-header">
+        <span class="card-title">⬆ Version Decision</span>
+        {#if vd.tier}
+          <span class="badge version-tier-badge version-tier-{vd.tier}">{vd.tier}</span>
+        {/if}
+      </div>
+      {#if vd.previousVersion || vd.nextVersion}
+        <div class="version-bump-row">
+          {#if vd.previousVersion}
+            <span class="version-chip muted">v{vd.previousVersion}</span>
+          {/if}
+          <span class="version-arrow">→</span>
+          {#if vd.nextVersion}
+            <span class="version-chip highlight">v{vd.nextVersion}</span>
+          {/if}
+        </div>
+      {/if}
+      {#if vd.rationale}
+        <p class="version-rationale">{vd.rationale}</p>
+      {/if}
     </div>
   {/if}
 {/if}
@@ -318,6 +448,35 @@
     margin: 0;
   }
 
+  .page-theme {
+    font-size: var(--text-xs);
+    color: var(--color-brand);
+    font-style: italic;
+    margin: var(--space-1) 0 0 0;
+    opacity: 0.85;
+  }
+
+  .header-badges {
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .phase-badge {
+    font-family: var(--font-mono);
+    font-size: 10px;
+  }
+
+  .autonomous-badge {
+    background: rgba(91, 138, 245, 0.12);
+    color: var(--color-brand);
+    border: 1px solid rgba(91, 138, 245, 0.35);
+    font-size: var(--text-xs);
+    font-weight: 700;
+  }
+
   /* Summary row */
   .summary-row {
     display: flex;
@@ -333,6 +492,20 @@
     padding: var(--space-3) var(--space-4);
     text-align: center;
     min-width: 90px;
+  }
+
+  .summary-card.highlight {
+    border-color: var(--color-brand);
+    background: rgba(91, 138, 245, 0.06);
+  }
+
+  .summary-card.highlight-success {
+    border-color: var(--color-success);
+    background: rgba(34, 197, 94, 0.06);
+  }
+
+  .test-delta {
+    color: var(--color-success);
   }
 
   .summary-value {
@@ -352,6 +525,30 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
     margin-top: var(--space-1);
+  }
+
+  /* Card headers for criteria / findings sections */
+  .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--space-3);
+  }
+
+  .card-title {
+    font-size: var(--text-sm);
+    font-weight: 700;
+    color: var(--color-text);
+  }
+
+  .card-count {
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+    color: var(--color-text-faint);
+    background: var(--color-surface-1);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-full);
+    padding: 1px 8px;
   }
 
   /* Item groups */
@@ -415,7 +612,11 @@
   }
 
   .sprint-item.completed {
-    opacity: 0.7;
+    opacity: 0.65;
+  }
+
+  .sprint-item.blocked {
+    border-left: 3px solid var(--color-danger);
   }
 
   .item-dot {
@@ -455,11 +656,58 @@
     gap: var(--space-3);
     font-size: var(--text-xs);
     color: var(--color-text-faint);
+    flex-wrap: wrap;
+    align-items: center;
   }
 
   .item-assignee {
     font-family: var(--font-mono);
     color: var(--color-text-muted);
+  }
+
+  .item-status-label {
+    font-weight: 600;
+  }
+  .item-status-label.status-completed { color: var(--color-success); }
+  .item-status-label.status-in_progress { color: var(--color-brand); }
+  .item-status-label.status-blocked { color: var(--color-danger); }
+  .item-status-label.status-pending { color: var(--color-text-faint); }
+  .item-status-label.status-failed { color: var(--color-danger); }
+
+  .sprint-item.failed {
+    border-left: 3px solid var(--color-danger);
+    opacity: 0.8;
+  }
+
+  .item-cost {
+    font-family: var(--font-mono);
+    color: var(--color-text-faint);
+  }
+
+  .item-source {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: var(--radius-full);
+    background: rgba(100, 116, 139, 0.1);
+    color: var(--color-text-faint);
+    border: 1px solid rgba(100, 116, 139, 0.2);
+    font-family: var(--font-mono);
+  }
+
+  .item-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: var(--space-2);
+  }
+
+  .item-tag {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: var(--radius-full);
+    background: rgba(91, 138, 245, 0.08);
+    color: var(--color-brand);
+    border: 1px solid rgba(91, 138, 245, 0.25);
   }
 
   /* Criteria / findings */
@@ -496,6 +744,12 @@
 
   @media (max-width: 900px) {
     .kanban-board {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (max-width: 580px) {
+    .kanban-board {
       grid-template-columns: 1fr;
     }
   }
@@ -507,7 +761,7 @@
     padding: var(--space-3);
     display: flex;
     flex-direction: column;
-    min-height: 200px;
+    min-height: 160px;
   }
 
   .kanban-col-header {
@@ -516,7 +770,7 @@
     gap: var(--space-2);
     margin-bottom: var(--space-3);
     padding-bottom: var(--space-2);
-    border-bottom: 1px solid var(--color-border);
+    border-bottom: 2px solid var(--color-border);
   }
 
   .kanban-col-title {
@@ -524,7 +778,6 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: var(--color-text);
   }
 
   .kanban-col-count {
@@ -558,7 +811,7 @@
     padding: var(--space-2) var(--space-3);
     color: inherit;
     font: inherit;
-    transition: border-color var(--duration-fast), transform var(--duration-fast);
+    transition: border-color var(--duration-fast), box-shadow var(--duration-fast);
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
@@ -566,6 +819,7 @@
 
   .kanban-card:hover {
     border-color: var(--color-brand);
+    box-shadow: 0 2px 8px rgba(91,138,245,0.12);
   }
 
   .kanban-card-top {
@@ -617,5 +871,85 @@
     padding-top: var(--space-2);
     border-top: 1px solid var(--color-border);
     white-space: pre-wrap;
+  }
+
+  /* 5-column kanban when failed items exist */
+  .kanban-board.has-failed {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  @media (max-width: 1100px) {
+    .kanban-board.has-failed {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  /* Version decision card */
+  .version-tier-badge {
+    font-size: var(--text-xs);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 2px 10px;
+    border-radius: var(--radius-full);
+  }
+
+  .version-tier-major {
+    background: rgba(224, 90, 90, 0.12);
+    color: var(--color-danger);
+    border: 1px solid rgba(224, 90, 90, 0.35);
+  }
+
+  .version-tier-minor {
+    background: rgba(245, 166, 35, 0.12);
+    color: var(--color-warning);
+    border: 1px solid rgba(245, 166, 35, 0.35);
+  }
+
+  .version-tier-patch {
+    background: rgba(100, 116, 139, 0.1);
+    color: var(--color-text-muted);
+    border: 1px solid rgba(100, 116, 139, 0.3);
+  }
+
+  .version-bump-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
+  }
+
+  .version-chip {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    padding: 2px 10px;
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-1);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-muted);
+  }
+
+  .version-chip.highlight {
+    background: rgba(91, 138, 245, 0.08);
+    border-color: rgba(91, 138, 245, 0.35);
+    color: var(--color-brand);
+  }
+
+  .version-arrow {
+    font-size: var(--text-sm);
+    color: var(--color-text-faint);
+  }
+
+  .version-rationale {
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    margin: 0;
+    padding: var(--space-2) var(--space-3);
+    background: var(--color-surface-1);
+    border-radius: var(--radius-sm);
+    border-left: 3px solid var(--color-border-strong);
+    line-height: 1.6;
   }
 </style>

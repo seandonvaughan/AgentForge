@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { approvalsStore, type CycleApproval } from '$lib/stores/approvals.js';
 
   interface ApprovalItem {
     id: string;
@@ -202,8 +203,31 @@
     },
   ];
 
+  // ────────────────────────────────────────────────────────────────────────
+  // Cycle Approvals — v6.7.4+
+  //
+  // Driven by the global approvalsStore (src/lib/stores/approvals.ts).
+  // The store maintains the pending list via SSE + 10-second fallback poll,
+  // so this page just subscribes and delegates. Opening a cycle card opens
+  // the global ApprovalModal (mounted in +layout.svelte).
+  // ────────────────────────────────────────────────────────────────────────
+
+  // Derived from the store — no local fetch needed.
+  $: cycleApprovals = $approvalsStore.pending;
+  $: cycleApprovalsLoading = $approvalsStore.loading;
+  $: cycleApprovalsError = $approvalsStore.error;
+
+  function fmtCost(n: number): string {
+    return `$${n.toFixed(2)}`;
+  }
+
+  function openApprovalModal(approval: CycleApproval) {
+    approvalsStore.open(approval);
+  }
+
   onMount(() => {
     load();
+    // Legacy approvals still poll every 5s; cycle approvals are handled by the store.
     pollTimer = setInterval(() => load(true), 5000);
   });
 
@@ -212,7 +236,7 @@
   });
 </script>
 
-<svelte:head><title>Approvals — AgentForge v5</title></svelte:head>
+<svelte:head><title>Approvals — AgentForge</title></svelte:head>
 
 <div class="page-header">
   <div>
@@ -231,6 +255,81 @@
     </button>
   </div>
 </div>
+
+<!-- ───────────────────────────────────────────────────────────────────────
+     Cycle Approvals — autonomous loop budget gates that need a human decision
+     Driven by approvalsStore; clicking "Review" opens the global ApprovalModal.
+     ─────────────────────────────────────────────────────────────────────── -->
+{#if cycleApprovals.length > 0 || cycleApprovalsLoading}
+  <div class="cycle-approvals-section">
+    <div class="section-header">
+      <h2>Cycle Budget Approvals</h2>
+      <span class="muted">
+        {cycleApprovals.length} pending
+        {#if cycleApprovalsLoading}<span class="ca-refreshing">· refreshing…</span>{/if}
+      </span>
+    </div>
+    {#if cycleApprovalsError}
+      <div class="error-banner">{cycleApprovalsError}</div>
+    {/if}
+
+    {#each cycleApprovals as approval (approval.cycleId)}
+      {@const totalItems = approval.withinBudgetItems.length + approval.overflowItems.length}
+      {@const withinCost = approval.withinBudgetItems.reduce((s, i) => s + i.estimatedCostUsd, 0)}
+
+      <div class="cycle-approval-card">
+        <div class="ca-header">
+          <div class="ca-id-row">
+            <a class="ca-cycleid mono" href={`/cycles/${approval.cycleId}`}>{approval.cycleId.slice(0, 8)}</a>
+            {#if approval.sprintVersion}<span class="ca-version mono">v{approval.sprintVersion}</span>{/if}
+            <span class="muted ca-relative">{fmtRelative(approval.requestedAt)}</span>
+          </div>
+          <div class="ca-totals">
+            <div class="ca-cost ok">
+              <span class="ca-cost-num">{fmtCost(withinCost)}</span>
+              <span class="ca-cost-budget">/ {fmtCost(approval.budgetUsd)}</span>
+            </div>
+            <div class="muted ca-cost-label">
+              {approval.withinBudgetItems.length} within budget
+              {#if approval.overflowItems.length > 0}
+                · {approval.overflowItems.length} overflow
+              {/if}
+            </div>
+          </div>
+        </div>
+
+        {#if approval.agentSummary}
+          <p class="ca-summary muted">{approval.agentSummary}</p>
+        {/if}
+
+        <!-- Item preview — first 3 titles so the operator can orient before opening modal -->
+        {#if totalItems > 0}
+          <div class="ca-preview">
+            {#each [...approval.withinBudgetItems, ...approval.overflowItems].slice(0, 3) as item}
+              <span class="ca-preview-item">
+                <span class="mono muted">#{item.rank}</span>
+                {item.title}
+              </span>
+            {/each}
+            {#if totalItems > 3}
+              <span class="ca-preview-more muted">+{totalItems - 3} more</span>
+            {/if}
+          </div>
+        {/if}
+
+        <div class="ca-footer">
+          <button
+            class="btn btn-primary btn-sm"
+            onclick={() => openApprovalModal(approval)}
+          >
+            Review {totalItems} items
+          </button>
+          <span class="ca-hint muted">Opens approval modal with item selection</span>
+        </div>
+      </div>
+    {/each}
+  </div>
+{/if}
 
 <!-- Stats bar -->
 <div class="stats-bar">
@@ -661,5 +760,112 @@
     font-size: var(--text-xs);
     color: var(--color-text-faint);
     font-family: var(--font-mono);
+  }
+  /* ── Cycle approvals (v6.7.4+) ───────────────────────────────────── */
+  .cycle-approvals-section {
+    margin-bottom: var(--space-6);
+  }
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: var(--space-4);
+  }
+  .section-header h2 {
+    font-size: var(--text-lg);
+    margin: 0;
+  }
+  .ca-refreshing {
+    font-style: italic;
+    opacity: 0.7;
+  }
+  .cycle-approval-card {
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border);
+    border-left: 3px solid var(--color-warning);
+    border-radius: var(--radius-md);
+    padding: var(--space-4);
+    margin-bottom: var(--space-3);
+  }
+  .ca-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: var(--space-2);
+  }
+  .ca-id-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+  }
+  .ca-cycleid {
+    color: var(--color-brand);
+    font-weight: 700;
+    text-decoration: none;
+    font-size: var(--text-sm);
+  }
+  .ca-cycleid:hover { text-decoration: underline; }
+  .ca-version {
+    padding: 1px var(--space-2);
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border);
+    border-radius: 9999px;
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+  }
+  .ca-relative { font-size: var(--text-xs); }
+  .ca-totals { text-align: right; flex-shrink: 0; }
+  .ca-cost {
+    font-size: var(--text-lg);
+    font-weight: 700;
+    font-family: var(--font-mono);
+    white-space: nowrap;
+  }
+  .ca-cost.ok { color: var(--color-success); }
+  .ca-cost-budget {
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    margin-left: var(--space-1);
+  }
+  .ca-cost-label {
+    font-size: var(--text-xs);
+    margin-top: 2px;
+  }
+  .ca-summary {
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    margin: var(--space-1) 0 var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    background: var(--color-bg-card);
+    border-radius: var(--radius-sm);
+    border-left: 2px solid var(--color-border);
+  }
+  /* Compact item preview (first 3 titles) */
+  .ca-preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-3);
+    margin-bottom: var(--space-3);
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+  }
+  .ca-preview-item {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 260px;
+  }
+  .ca-preview-more {
+    font-style: italic;
+  }
+  .ca-footer {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+  .ca-hint {
+    font-size: var(--text-xs);
+    font-style: italic;
   }
 </style>

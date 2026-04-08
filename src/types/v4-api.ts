@@ -77,14 +77,15 @@ export type ReviewStatus =
  * @stable
  */
 export type MemoryCategory =
-  | "learning"      // Pattern learned from task outcomes
-  | "research"      // External knowledge acquired via research
-  | "mistake"       // Error record with corrective action
-  | "preference"    // User or team preference
-  | "relationship"  // Agent-to-agent collaboration data
-  | "context"       // Short-term task context
-  | "capability"    // Acquired skill or proficiency data
-  | "metric";       // Performance measurement
+  | "learning"        // Pattern learned from task outcomes
+  | "research"        // External knowledge acquired via research
+  | "mistake"         // Error record with corrective action
+  | "preference"      // User or team preference
+  | "relationship"    // Agent-to-agent collaboration data
+  | "context"         // Short-term task context
+  | "capability"      // Acquired skill or proficiency data
+  | "metric"          // Performance measurement
+  | "review-finding"; // MAJOR/CRITICAL finding from a sprint review phase
 
 /** Top-level domain grouping for bus topics. @stable */
 export type TopicDomain =

@@ -12,6 +12,9 @@
     haiku:  { label: 'Haiku',  range: '$0.0003-$0.002', color: 'var(--color-haiku)' },
   };
 
+  // A guaranteed-non-undefined fallback for MODEL_TIER_META lookups
+  const SONNET_TIER = { label: 'Sonnet', range: '$0.003-$0.015', color: 'var(--color-sonnet)' };
+
   interface AgentEntry {
     agentId: string;
     name: string;
@@ -29,27 +32,27 @@
     sessionId?: string;
   }
 
-  let agentEntries: AgentEntry[] = [];
-  let agents: string[] = [];
-  let agentsLoading = true;
-  let selectedAgent = 'coder';
-  let agentSearch = '';
-  let taskInput = '';
-  let running = false;
-  let runError: string | null = null;
-  let apiUnavailable = false;
+  let agentEntries: AgentEntry[] = $state([]);
+  let agents: string[] = $state([]);
+  let agentsLoading = $state(true);
+  let selectedAgent = $state('coder');
+  let agentSearch = $state('');
+  let taskInput = $state('');
+  let running = $state(false);
+  let runError: string | null = $state(null);
+  let apiUnavailable = $state(false);
 
-  let output = '';
-  let outputAgentName = '';
-  let outputModel = '';
-  let outputTimestamp = '';
-  let currentSessionId: string | null = null;
+  let output = $state('');
+  let outputAgentName = $state('');
+  let outputModel = $state('');
+  let outputTimestamp = $state('');
+  let currentSessionId: string | null = $state(null);
 
-  let history: RunHistory[] = [];
-  let selectedHistoryRun: RunHistory | null = null;
+  let history: RunHistory[] = $state([]);
+  let selectedHistoryRun: RunHistory | null = $state(null);
 
   let eventSource: EventSource | null = null;
-  let outputEl: HTMLPreElement | null = null;
+  let outputEl: HTMLPreElement | null = $state(null);
 
   // Derived: look up model tier from the full agent roster
   function getAgentModel(id: string): 'opus' | 'sonnet' | 'haiku' {
@@ -57,10 +60,11 @@
     return entry?.model ?? 'sonnet';
   }
 
-  let modelTier = $derived(MODEL_TIER_META[getAgentModel(selectedAgent)] ?? MODEL_TIER_META['sonnet']);
+  // Use a concrete fallback so TypeScript knows modelTier is always defined
+  let modelTier = $derived(MODEL_TIER_META[getAgentModel(selectedAgent)] ?? SONNET_TIER);
 
   // Derived: agents filtered by search, grouped by model tier
-  let filteredAgents = $derived(() => {
+  let filteredAgents = $derived.by(() => {
     const q = agentSearch.toLowerCase().trim();
     const filtered = q
       ? agentEntries.filter(a => a.agentId.toLowerCase().includes(q) || a.name.toLowerCase().includes(q))
@@ -187,9 +191,11 @@
         return;
       }
 
-      const json = await res.json();
+      const envelope = await res.json();
+      // Server wraps the result in { data: { ...result, sessionId } }
+      const json = envelope.data ?? envelope;
       const sessionId = json.sessionId ?? json.id ?? `local-${Date.now()}`;
-      outputModel = json.model ?? MODEL_TIERS[selectedAgent]?.label ?? 'Sonnet';
+      outputModel = json.model ?? MODEL_TIER_META[getAgentModel(selectedAgent)]?.label ?? 'Sonnet';
       currentSessionId = sessionId;
 
       // Add to history immediately as "running"
@@ -206,11 +212,13 @@
       // Connect SSE to stream output
       connectSSE(sessionId);
 
-      // Also handle synchronous response if output is in the response body
-      if (json.output) {
-        output = json.output;
+      // Synchronous response: server returns full output when run completes inline.
+      // The field is `response` in RunResult (not `output`).
+      const syncOutput = json.response ?? json.output;
+      if (syncOutput) {
+        output = syncOutput;
         running = false;
-        syncHistoryStatus(sessionId, 'completed', json.costUsd);
+        syncHistoryStatus(sessionId, json.status === 'failed' ? 'failed' : 'completed', json.costUsd);
         if (eventSource) { eventSource.close(); eventSource = null; }
       }
 
@@ -225,7 +233,7 @@
     output = run.output ?? '(No output captured)';
     outputAgentName = run.agentId;
     outputTimestamp = new Date(run.startedAt).toLocaleTimeString('en-US', { hour12: false });
-    outputModel = MODEL_TIERS[run.agentId]?.label ?? '—';
+    outputModel = MODEL_TIER_META[getAgentModel(run.agentId)]?.label ?? '—';
     currentSessionId = run.sessionId ?? null;
   }
 
@@ -249,7 +257,7 @@
   });
 </script>
 
-<svelte:head><title>Agent Runner — AgentForge v6</title></svelte:head>
+<svelte:head><title>Agent Runner — AgentForge</title></svelte:head>
 
 <div class="page-header">
   <div>
@@ -284,8 +292,8 @@
             bind:value={agentSearch}
             disabled={running}
           />
-          <select id="agent-select" class="form-select" bind:value={selectedAgent} disabled={running} size={Math.min(filteredAgents().length, 8)}>
-            {#each filteredAgents() as agent (agent.agentId)}
+          <select id="agent-select" class="form-select" bind:value={selectedAgent} disabled={running} size={Math.min(filteredAgents.length, 8)}>
+            {#each filteredAgents as agent (agent.agentId)}
               <option value={agent.agentId}>
                 [{agent.model.charAt(0).toUpperCase()}] {agent.agentId}
               </option>

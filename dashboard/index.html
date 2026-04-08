@@ -460,6 +460,25 @@ header {
   justify-content: center;
   align-items: center;
 }
+/* ── Approval nav badge ──────────────────────────────────── */
+.approval-nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--orange);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  margin-left: auto;
+  font-family: var(--font-mono);
+  animation: pulse 2s ease-in-out infinite;
+}
+.approval-nav-badge.hidden { display: none; }
+
 .modal-overlay.visible { display: flex; }
 .modal-panel {
   background: var(--bg-card);
@@ -2593,7 +2612,7 @@ tbody tr:hover { background: var(--bg-card-hover) !important; cursor: pointer; }
     </div>
     <div class="sidebar-group">
       <div class="sidebar-group-label">Intelligence</div>
-      <a class="sidebar-link" href="#flywheel"><span class="nav-icon">🌀</span>Flywheel</a>
+      <a class="sidebar-link" data-route="/flywheel" href="/flywheel"><span class="nav-icon">🌀</span>Flywheel</a>
       <a class="sidebar-link" href="#session-history"><span class="nav-icon">📊</span>Session History</a>
       <a class="sidebar-link" href="#investor-scorecard"><span class="nav-icon">📈</span>Investor Scorecard</a>
       <a class="sidebar-link" href="#memory-browser"><span class="nav-icon">🧠</span>Memory Browser</a>
@@ -2608,6 +2627,7 @@ tbody tr:hover { background: var(--bg-card-hover) !important; cursor: pointer; }
       <div class="sidebar-group-label">Execution</div>
       <a class="sidebar-link" data-route="/sprints" href="/sprints"><span class="nav-icon">🏃</span>Sprint Control</a>
       <a class="sidebar-link" data-route="/observe" href="/observe"><span class="nav-icon">📡</span>Observability</a>
+      <a class="sidebar-link" data-route="/branches" href="/branches"><span class="nav-icon">🌿</span>Branches</a>
     </div>
     <div class="sidebar-group">
       <div class="sidebar-group-label">Work</div>
@@ -2615,6 +2635,13 @@ tbody tr:hover { background: var(--bg-card-hover) !important; cursor: pointer; }
       <a class="sidebar-link" data-route="/decisions" href="/decisions"><span class="nav-icon">⚖️</span>Decisions</a>
       <a class="sidebar-link" data-route="/knowledge" href="/knowledge"><span class="nav-icon">📖</span>Knowledge</a>
       <a class="sidebar-link" data-route="/chat" href="/chat"><span class="nav-icon">💬</span>Chat</a>
+    </div>
+    <div class="sidebar-group">
+      <div class="sidebar-group-label">Autonomous</div>
+      <a class="sidebar-link" data-route="/approvals" href="/approvals" id="sidebar-approvals-link">
+        <span class="nav-icon">✅</span>Approvals
+        <span id="sidebar-approvals-badge" class="approval-nav-badge hidden">0</span>
+      </a>
     </div>
   </nav>
 
@@ -2629,6 +2656,18 @@ tbody tr:hover { background: var(--bg-card-hover) !important; cursor: pointer; }
     <h2 id="modal-title">Detail</h2>
     <div id="modal-body"></div>
     <button class="close-btn" style="margin-top:16px" onclick="closeModal()">Close</button>
+  </div>
+</div>
+
+<!-- ── Global Approval Modal ──────────────────────────────── -->
+<div class="modal-overlay" id="approval-modal-overlay" style="z-index:310;">
+  <div class="modal-panel" id="approval-modal-panel" style="max-width:680px;width:94%;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+      <h2 style="margin:0;">Budget Approval Required</h2>
+      <button class="close-btn" onclick="closeApprovalModal()" style="margin:0;">✕</button>
+    </div>
+    <div id="approval-modal-body"><!-- content injected by openApprovalModal() --></div>
+    <div id="approval-modal-actions" style="display:flex;gap:8px;margin-top:18px;flex-wrap:wrap;"></div>
   </div>
 </div>
 
@@ -2835,12 +2874,18 @@ function toggleFlywheelDetail(card) {
 
 // ── Memory Browser ────────────────────────────────────────
 let memCatFilter = 'all';
+let memAgentFilter = 'all';
 let memSearchFilter = '';
 
 function memFilterCat(btn, cat) {
   document.querySelectorAll('.mem-filter-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   memCatFilter = cat;
+  applyMemFilters();
+}
+
+function memFilterAgent(val) {
+  memAgentFilter = val || 'all';
   applyMemFilters();
 }
 
@@ -2852,10 +2897,12 @@ function filterMemory(val) {
 function applyMemFilters() {
   document.querySelectorAll('.memory-entry').forEach(entry => {
     const cat = entry.getAttribute('data-cat') || '';
+    const agent = entry.getAttribute('data-agent') || '';
     const text = entry.textContent.toLowerCase();
     const catOk = memCatFilter === 'all' || cat === memCatFilter;
+    const agentOk = memAgentFilter === 'all' || agent === memAgentFilter;
     const searchOk = !memSearchFilter || text.includes(memSearchFilter);
-    entry.style.display = catOk && searchOk ? '' : 'none';
+    entry.style.display = catOk && agentOk && searchOk ? '' : 'none';
   });
 }
 
@@ -3835,12 +3882,14 @@ async function loadAgentDetailPage(agentId) {
     nameEl.textContent = data.agentId || agentId;
 
     const modelEl = document.getElementById('agent-detail-model');
-    const m = (data.agentId || agentId).toLowerCase();
-    let tier = 'sonnet';
-    if (['ceo','cto','genesis','architect','meta-architect','rd-lead'].indexOf(m) !== -1) tier = 'opus';
-    else if (['linter','test-runner','researcher','file-reader'].indexOf(m) !== -1) tier = 'haiku';
+    // Use model tier directly from API (sourced from YAML definition)
+    var tier = data.model || 'sonnet';
     modelEl.className = 'model-badge ' + tier;
     modelEl.textContent = tier.charAt(0).toUpperCase() + tier.slice(1);
+
+    // Description (from YAML definition)
+    var descEl = document.getElementById('agent-detail-description');
+    if (descEl) descEl.textContent = data.description || '';
 
     // Stats
     document.getElementById('agent-detail-sessions').textContent = data.sessionCount || 0;
@@ -3940,8 +3989,11 @@ Router.addRoute('/sprints', async () => { await _loadPageRoute('sprints', () => 
 Router.addRoute('/observe', async () => { await _loadPageRoute('observe', () => { if (typeof window.loadObservePage === 'function') window.loadObservePage(); }); });
 Router.addRoute('/tasks', async () => { await _loadPageRoute('tasks', () => loadTasksPage()); });
 Router.addRoute('/decisions', async () => { await _loadPageRoute('decisions', () => loadDecisionsPage()); });
+Router.addRoute('/approvals', async () => { await _loadPageRoute('approvals', () => { if (typeof window.loadApprovalsPage === 'function') window.loadApprovalsPage(); }); });
 Router.addRoute('/knowledge', async () => { await _loadPageRoute('knowledge', () => loadKnowledgePage()); });
 Router.addRoute('/chat', async () => { await _loadPageRoute('chat'); });
+Router.addRoute('/branches', async () => { await _loadPageRoute('branches', () => loadBranchesPage()); });
+Router.addRoute('/flywheel', async () => { await _loadPageRoute('flywheel', () => { if (typeof window.loadFlywheelPage === 'function') window.loadFlywheelPage(); }); });
 
 // ── Chat Module (P0-4 Chat Page) ────────────────────────────
 (function() {
@@ -5412,8 +5464,243 @@ const SSE = {
         }
       } catch(ex) {}
     });
+    // P0-7: cycle_event — live autonomous loop activity feed
+    this.source.addEventListener('cycle_event', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        renderCycleEventRow(data);
+        NotificationManager.add({
+          type: 'sprint',
+          text: 'Cycle ' + (data.cycleId || '') + ': ' + (data.phase || '') + ' — ' + (data.status || ''),
+        });
+        // Trigger approval badge refresh when a budget-gate event arrives
+        const cat = data.category || data.phase || '';
+        if (cat === 'approval_pending' || cat === 'budget_gate' || cat === 'planning_complete') {
+          window._refreshApprovalsBadge();
+        }
+      } catch(ex) {}
+    });
   }
 };
+
+
+// ── Global Approval Store & Modal ────────────────────────
+// Manages per-cycle pending approvals globally so the badge and modal
+// work from any page, not just /approvals.
+
+(function initApprovalStore() {
+  'use strict';
+
+  var _pendingApprovals = [];
+  var _pollTimer = null;
+  var _destroyed = false;
+
+  function _updateBadge() {
+    var badge = document.getElementById('sidebar-approvals-badge');
+    if (!badge) return;
+    var n = _pendingApprovals.length;
+    badge.textContent = String(n);
+    badge.classList.toggle('hidden', n === 0);
+  }
+
+  async function _refresh() {
+    try {
+      var res = await fetch('/api/v5/cycles?limit=50');
+      if (!res.ok) return;
+      var json = await res.json();
+      var pending = (json.cycles || []).filter(function(c) { return c.hasApprovalPending; });
+      var fetched = await Promise.all(
+        pending.map(async function(c) {
+          try {
+            var r = await fetch('/api/v5/cycles/' + encodeURIComponent(c.cycleId) + '/approval');
+            if (!r.ok) return null;
+            var data = await r.json();
+            return { cycleId: c.cycleId, sprintVersion: c.sprintVersion || null, data: data };
+          } catch (ex) { return null; }
+        })
+      );
+      _pendingApprovals = fetched.filter(Boolean);
+      _updateBadge();
+    } catch (ex) { /* silent */ }
+  }
+
+  function _startPoll() {
+    if (_pollTimer) return;
+    _pollTimer = setInterval(function() {
+      if (!_destroyed) _refresh();
+    }, 15000);
+  }
+
+  window._refreshApprovalsBadge = function() { _refresh(); };
+
+  window.openApprovalModal = function(opts) {
+    var overlay = document.getElementById('approval-modal-overlay');
+    var body    = document.getElementById('approval-modal-body');
+    var actions = document.getElementById('approval-modal-actions');
+    if (!overlay || !body || !actions) return;
+
+    var cycleId       = opts.cycleId;
+    var sprintVersion = opts.sprintVersion || null;
+    var data          = opts.data || {};
+    var onDecide      = opts.onDecide;
+
+    var withinItems   = (data.withinBudget && data.withinBudget.items) ? data.withinBudget.items : [];
+    var overflowItems = (data.overflow && data.overflow.items) ? data.overflow.items : [];
+    var withinCost    = withinItems.reduce(function(s, i) { return s + (Number(i.estimatedCostUsd) || 0); }, 0);
+    var budgetUsd     = Number(data.budgetUsd || 200);
+
+    while (body.firstChild) body.removeChild(body.firstChild);
+    while (actions.firstChild) actions.removeChild(actions.firstChild);
+
+    // Meta row
+    var metaDiv = document.createElement('div');
+    metaDiv.style.cssText = 'font-family:var(--font-mono);font-size:11px;color:var(--text-muted);margin-bottom:14px;';
+    metaDiv.textContent = [
+      'Cycle: ' + cycleId,
+      sprintVersion ? 'Sprint: ' + sprintVersion : '',
+      'Budget: $' + budgetUsd.toFixed(0),
+      'Within-budget cost: $' + withinCost.toFixed(2),
+    ].filter(Boolean).join('  \u00b7  ');
+    body.appendChild(metaDiv);
+
+    // Budget bar
+    var pct = Math.min((withinCost / budgetUsd) * 100, 100);
+    var barWrap = document.createElement('div');
+    barWrap.style.marginBottom = '14px';
+    var barLabels = document.createElement('div');
+    barLabels.style.cssText = 'display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:10px;color:var(--text-muted);margin-bottom:4px;';
+    var barLeft = document.createElement('span');
+    barLeft.textContent = '$' + withinCost.toFixed(2) + ' within budget';
+    var barRight = document.createElement('span');
+    barRight.textContent = '$' + budgetUsd.toFixed(0) + ' limit';
+    barLabels.appendChild(barLeft);
+    barLabels.appendChild(barRight);
+    var barTrack = document.createElement('div');
+    barTrack.style.cssText = 'height:6px;background:var(--border);border-radius:3px;overflow:hidden;';
+    var barFill = document.createElement('div');
+    barFill.style.cssText = 'height:100%;border-radius:3px;width:' + pct + '%;background:' + (withinCost > budgetUsd ? 'var(--red)' : 'var(--green)') + ';';
+    barTrack.appendChild(barFill);
+    barWrap.appendChild(barLabels);
+    barWrap.appendChild(barTrack);
+    body.appendChild(barWrap);
+
+    // Agent summary
+    if (data.agentSummary) {
+      var s = document.createElement('div');
+      s.style.cssText = 'font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);padding:8px 10px;background:var(--bg-primary);border-radius:4px;border-left:2px solid var(--blue);margin-bottom:12px;line-height:1.5;word-break:break-word;';
+      s.textContent = data.agentSummary;
+      body.appendChild(s);
+    }
+
+    // Within-budget items
+    if (withinItems.length > 0) {
+      var lbl1 = document.createElement('div');
+      lbl1.style.cssText = 'font-family:var(--font-mono);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--green);margin:10px 0 6px;';
+      lbl1.textContent = '\u2713 Within Budget \u2014 ' + withinItems.length + ' item(s) will be approved';
+      body.appendChild(lbl1);
+      withinItems.forEach(function(item) { body.appendChild(_buildModalItemRow(item)); });
+    }
+
+    // Overflow items
+    if (overflowItems.length > 0) {
+      var lbl2 = document.createElement('div');
+      lbl2.style.cssText = 'font-family:var(--font-mono);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--orange);margin:12px 0 6px;';
+      lbl2.textContent = '\u26a0 Overflow \u2014 ' + overflowItems.length + ' item(s) will be rejected';
+      body.appendChild(lbl2);
+      overflowItems.forEach(function(item) { body.appendChild(_buildModalItemRow(item)); });
+    }
+
+    // Decision submission
+    async function _submitDecision(decisionBody) {
+      var btns = actions.querySelectorAll('button');
+      btns.forEach(function(b) { b.disabled = true; });
+      try {
+        var payload = Object.assign({ decidedBy: 'dashboard' }, decisionBody);
+        var res2 = await fetch('/api/v5/cycles/' + encodeURIComponent(cycleId) + '/approve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (res2.ok) {
+          window.closeApprovalModal();
+          _refresh();
+          if (typeof onDecide === 'function') onDecide();
+          if (typeof window.loadApprovalsPage === 'function') window.loadApprovalsPage();
+        } else {
+          var err = await res2.json().catch(function() { return {}; });
+          alert('Decision failed: ' + (err.error || 'HTTP ' + res2.status));
+          btns.forEach(function(b) { b.disabled = false; });
+        }
+      } catch (e) {
+        alert('Error: ' + e.message);
+        btns.forEach(function(b) { b.disabled = false; });
+      }
+    }
+
+    var approveAllBtn = document.createElement('button');
+    approveAllBtn.className = 'btn-primary';
+    approveAllBtn.style.cssText = 'flex:1;font-family:var(--font-mono);font-size:12px;font-weight:600;';
+    approveAllBtn.textContent = '\u2713 Approve Within Budget (' + withinItems.length + ' items)';
+    approveAllBtn.onclick = function() { _submitDecision({ approveAll: true }); };
+    actions.appendChild(approveAllBtn);
+
+    var rejectAllBtn = document.createElement('button');
+    rejectAllBtn.className = 'close-btn';
+    rejectAllBtn.style.cssText = 'font-family:var(--font-mono);font-size:12px;font-weight:600;border-color:var(--red);color:var(--red);';
+    rejectAllBtn.textContent = '\u2715 Reject All';
+    rejectAllBtn.onclick = function() {
+      var allIds = withinItems.concat(overflowItems).map(function(i) { return i.itemId; });
+      _submitDecision({ rejectedItemIds: allIds });
+    };
+    actions.appendChild(rejectAllBtn);
+
+    overlay.classList.add('visible');
+  };
+
+  window.closeApprovalModal = function() {
+    var overlay = document.getElementById('approval-modal-overlay');
+    if (overlay) overlay.classList.remove('visible');
+  };
+
+  // Close on backdrop click
+  (function() {
+    var el = document.getElementById('approval-modal-overlay');
+    if (el) {
+      el.addEventListener('click', function(e) {
+        if (e.target === el) window.closeApprovalModal();
+      });
+    }
+  })();
+
+  // Initial fetch after a short delay, then start polling
+  setTimeout(_refresh, 2000);
+  _startPoll();
+
+})();
+
+/** Build a single item row for the ApprovalModal. */
+function _buildModalItemRow(item) {
+  var row = document.createElement('div');
+  row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:5px 10px;background:var(--bg-primary);border-radius:4px;margin-bottom:3px;font-family:var(--font-mono);font-size:11px;';
+  var rank = document.createElement('span');
+  rank.style.cssText = 'color:var(--text-muted);min-width:20px;';
+  rank.textContent = '#' + (item.rank || '?');
+  var title = document.createElement('span');
+  title.style.cssText = 'flex:1;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+  title.title = item.rationale || '';
+  title.textContent = item.title || item.itemId;
+  var cost = document.createElement('span');
+  cost.style.cssText = 'color:var(--gold);white-space:nowrap;';
+  cost.textContent = item.estimatedCostUsd != null ? '$' + Number(item.estimatedCostUsd).toFixed(2) : '\u2014';
+  var assignee = document.createElement('span');
+  assignee.style.cssText = 'color:var(--text-muted);white-space:nowrap;';
+  assignee.textContent = item.suggestedAssignee || '';
+  row.appendChild(rank);
+  row.appendChild(title);
+  row.appendChild(cost);
+  row.appendChild(assignee);
+  return row;
+}
 
 // ── P1: Version Badge from /api/v1/health ─────────────────
 async function loadVersion() {
@@ -5449,16 +5736,14 @@ async function loadAgentCards() {
       const div = document.createElement('div');
       div.className = 'empty-state';
       div.style.gridColumn = '1/-1';
-      div.textContent = 'No agent sessions yet — invoke an agent to see stats here.';
+      div.textContent = 'No agents found — add YAML definitions to .agentforge/agents/ to populate this view.';
       grid.innerHTML = '';
       grid.appendChild(div);
       return;
     }
     window._data.agents = data.map(function(a) {
-      const m = (a.agentId || '').toLowerCase();
-      let tier = 'sonnet';
-      if (['ceo','cto','genesis','architect','meta-architect','rd-lead'].indexOf(m) !== -1) tier = 'opus';
-      else if (['linter','test-runner','researcher','file-reader'].indexOf(m) !== -1) tier = 'haiku';
+      // Use model tier directly from API (sourced from YAML definition)
+      var tier = a.model || 'sonnet';
       return {
         name: a.agentId, model: tier, category: a.team || 'Agent',
         tasks: a.sessionCount || 0, cost: a.totalCostUsd || 0,
@@ -5469,10 +5754,8 @@ async function loadAgentCards() {
     const sparkColors = {opus: 'var(--gold)', sonnet: 'var(--blue)', haiku: 'var(--green)'};
     grid.innerHTML = '';
     data.forEach(function(a, i) {
-      const m = (a.agentId || '').toLowerCase();
-      let tier = 'sonnet';
-      if (['ceo','cto','genesis','architect','meta-architect','rd-lead'].indexOf(m) !== -1) tier = 'opus';
-      else if (['linter','test-runner','researcher','file-reader'].indexOf(m) !== -1) tier = 'haiku';
+      // Model tier is authoritative from the YAML definition returned by the API
+      var tier = a.model || 'sonnet';
       const cost = (a.totalCostUsd || 0).toFixed(2);
       const successRate = a.sessionCount > 0 ? Math.round((a.successCount || 0) / a.sessionCount * 100) : 100;
       const errRate = 100 - successRate;
@@ -6082,7 +6365,90 @@ async function loadActivityFeed() {
   }
 }
 
-// ── P6: Flywheel Metrics from /api/v1/flywheel ────────────
+// ── P0-7: Render a cycle_event row into the live activity feed ──
+/**
+ * Maps a cycle event status to the dashboard's CSS color variable.
+ * Matches the color semantics verified by sse-live-feed.test.ts.
+ *   started   → green  (new work beginning)
+ *   progress  → blue   (in-flight)
+ *   completed → green  (successful finish)
+ *   failed    → red    (error state)
+ */
+function cycleStatusColor(status) {
+  if (status === 'failed')    return 'var(--red)';
+  if (status === 'progress')  return 'var(--blue)';
+  return 'var(--green)'; // started | completed
+}
+
+/**
+ * Prepend a live cycle_event row to #activity-tbody so operators can watch
+ * the autonomous loop in real-time without a full page reload.
+ */
+function renderCycleEventRow(data) {
+  const tbody = document.getElementById('activity-tbody');
+  if (!tbody) return;
+
+  const status    = data.status    || 'started';
+  const phase     = data.phase     || '—';
+  const cycleId   = data.cycleId   || '—';
+  const ts        = data.timestamp ? fmtDate(data.timestamp) : '—';
+  const color     = data.color     || cycleStatusColor(status);
+  const statusCss = status === 'completed' ? 'complete'
+                  : status === 'failed'    ? 'error'
+                  : status === 'progress'  ? 'active'
+                  : 'idle';
+
+  const tr = document.createElement('tr');
+
+  // Agent column — cycle ID chip coloured by status
+  const agentTd = document.createElement('td');
+  const chip = document.createElement('span');
+  chip.className = 'chip';
+  chip.style.cssText = 'border-color:' + color + ';color:' + color;
+  chip.textContent = cycleId.length > 12 ? cycleId.slice(0, 12) + '…' : cycleId;
+  chip.title = cycleId;
+  agentTd.appendChild(chip);
+
+  // Model column — "cycle" type badge
+  const modelTd = document.createElement('td');
+  const typeBadge = document.createElement('span');
+  typeBadge.className = 'model-badge sonnet';
+  typeBadge.textContent = 'cycle';
+  modelTd.appendChild(typeBadge);
+
+  // Action column
+  const actionTd = document.createElement('td');
+  actionTd.textContent = 'cycle_event';
+
+  // Task column — human-readable phase description
+  const taskTd = document.createElement('td');
+  taskTd.className = 'task-cell';
+  taskTd.textContent = 'phase: ' + phase;
+
+  // Duration column — ISO-8601 timestamp formatted
+  const durTd = document.createElement('td');
+  durTd.className = 'duration-cell';
+  durTd.textContent = ts;
+
+  // Status column
+  const statusTd = document.createElement('td');
+  const statusBadge = document.createElement('span');
+  statusBadge.className = 'status-badge ' + statusCss;
+  statusBadge.textContent = status;
+  statusTd.appendChild(statusBadge);
+
+  tr.appendChild(agentTd);
+  tr.appendChild(modelTd);
+  tr.appendChild(actionTd);
+  tr.appendChild(taskTd);
+  tr.appendChild(durTd);
+  tr.appendChild(statusTd);
+
+  // Prepend so newest events appear at the top
+  tbody.insertBefore(tr, tbody.firstChild);
+}
+
+// ── P6: Flywheel Metrics — v1 (session stats) + v5 (computed gauges) ────────
 async function loadFlywheel() {
   const compoundIds = ['cov-compound','skill-compound','cost-compound','auto-compound','mem-compound','reforge-compound'];
   function setCompound(id, txt) {
@@ -6090,23 +6456,57 @@ async function loadFlywheel() {
     if (el) el.textContent = txt;
   }
   compoundIds.forEach(function(id) { setCompound(id, '…'); });
-  try {
-    const res = await fetch('/api/v1/flywheel');
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const json = await res.json();
-    const d = json.data || {};
+
+  // Fetch v1 (session-level) and v5 (computed gauges) in parallel
+  const [v1Result, v5Result] = await Promise.allSettled([
+    fetch('/api/v1/flywheel').then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }),
+    fetch('/api/v5/flywheel').then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }),
+  ]);
+
+  // Apply v1 data (session counts, cost, trend) to the compound text fields
+  if (v1Result.status === 'fulfilled') {
+    const d = (v1Result.value || {}).data || {};
     const noData = !d.sessionCount && !d.successRate && !d.totalCostUsd;
     if (noData) {
-      compoundIds.forEach(function(id) { setCompound(id, '— no data'); });
-      return;
+      setCompound('cov-compound', '— no data');
+      setCompound('cost-compound', '— no data');
+    } else {
+      setCompound('cov-compound', d.sessionCount + ' sessions tracked');
+      setCompound('cost-compound', '$' + (d.totalCostUsd || 0).toFixed(2) + ' total spend');
     }
-    setCompound('cov-compound', d.sessionCount + ' sessions tracked');
-    setCompound('skill-compound', Math.round((d.successRate || 0) * 100) + '% success rate');
-    setCompound('cost-compound', '$' + (d.totalCostUsd || 0).toFixed(2) + ' total spend');
-    if (d.recentTrend) setCompound('auto-compound', 'Trend: ' + d.recentTrend);
-  } catch (e) {
-    console.warn('loadFlywheel failed:', e);
-    compoundIds.forEach(function(id) { setCompound(id, '— failed'); });
+  } else {
+    console.warn('loadFlywheel v1 failed:', v1Result.reason);
+    setCompound('cov-compound', '— unavailable');
+    setCompound('cost-compound', '— unavailable');
+  }
+
+  // Apply v5 data (computed autonomy score, meta-learning rate, velocity, inheritance)
+  if (v5Result.status === 'fulfilled') {
+    const metrics = ((v5Result.value || {}).data || {}).metrics || [];
+    const byKey = {};
+    metrics.forEach(function(m) { byKey[m.key] = m; });
+
+    // Autonomy score → auto-compound
+    if (byKey.autonomy) {
+      setCompound('auto-compound', byKey.autonomy.score + '/100 · ' + byKey.autonomy.description);
+    }
+    // Meta-learning rate → skill-compound (reflects learning trajectory)
+    if (byKey.meta_learning) {
+      setCompound('skill-compound', byKey.meta_learning.score + '/100 · ' + byKey.meta_learning.description);
+    }
+    // Velocity → mem-compound (sprint/cycle velocity reflects throughput)
+    if (byKey.velocity) {
+      setCompound('mem-compound', byKey.velocity.score + '/100 · ' + byKey.velocity.description);
+    }
+    // Capability inheritance → reforge-compound (agent skill accumulation)
+    if (byKey.inheritance) {
+      setCompound('reforge-compound', byKey.inheritance.score + '/100 · ' + byKey.inheritance.description);
+    }
+  } else {
+    console.warn('loadFlywheel v5 failed:', v5Result.reason);
+    ['auto-compound','skill-compound','mem-compound','reforge-compound'].forEach(function(id) {
+      setCompound(id, '— unavailable');
+    });
   }
 }
 
@@ -6562,58 +6962,118 @@ async function loadInvestorScorecard() {
 }
 
 // ── P14: Memory Browser from /api/v1/memory ───────────────
+function _memMakeEl(tag, cls, text) {
+  const el = document.createElement(tag);
+  if (cls) el.className = cls;
+  if (text !== undefined) el.textContent = text;
+  return el;
+}
+
 async function loadMemoryBrowser() {
   const list = document.getElementById('memory-list');
   if (!list) return;
-  list.innerHTML = '<div class="skeleton-loader">Loading memory entries…</div>';
+  list.textContent = '';
+  list.appendChild(_memMakeEl('div', 'skeleton-loader', 'Loading memory entries\u2026'));
+
   try {
     const res = await fetch('/api/v1/memory');
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
     const data = json.data || [];
+    list.textContent = '';
+
     if (!data.length) {
-      const div = document.createElement('div');
-      div.className = 'empty-state';
-      div.textContent = 'No memory entries yet';
-      list.textContent = ''; list.appendChild(div);
+      list.appendChild(_memMakeEl('div', 'empty-state', 'No memory entries yet.'));
       return;
     }
-    function detectCat(key) {
-      const k = (key || '').toLowerCase();
-      if (k.indexOf('feedback') !== -1) return 'feedback';
-      if (k.indexOf('project') !== -1) return 'project';
-      if (k.indexOf('lesson') !== -1 || k.indexOf('concept') !== -1) return 'lesson';
-      if (k.indexOf('config') !== -1 || k.indexOf('version') !== -1) return 'config';
+
+    // Infer category when not explicitly provided by backend
+    function inferCat(entry) {
+      if (entry.category) return entry.category;
+      const k = (entry.key || '').toLowerCase();
+      if (k.includes('feedback')) return 'feedback';
+      if (k.includes('lesson') || k.includes('concept')) return 'lesson';
+      if (k.includes('config') || k.includes('version')) return 'config';
       return 'project';
     }
-    list.textContent = '';
-    data.slice(0, 20).forEach(function(entry) {
-      const key = entry.key || '—';
-      const val = (entry.value || '—').slice(0, 120);
-      const cat = detectCat(key);
+
+    // Populate agent filter dropdown from unique agentIds in the response
+    const agentSel = document.getElementById('memory-agent-filter');
+    if (agentSel) {
+      const agents = [...new Set(data.map(function(e) { return e.agentId; }).filter(Boolean))].sort();
+      agentSel.textContent = '';
+      const allOpt = document.createElement('option');
+      allOpt.value = 'all';
+      allOpt.textContent = 'All Agents';
+      agentSel.appendChild(allOpt);
+      agents.forEach(function(id) {
+        const opt = document.createElement('option');
+        opt.value = id;
+        opt.textContent = id;
+        agentSel.appendChild(opt);
+      });
+      memAgentFilter = 'all';
+      agentSel.value = 'all';
+    }
+
+    data.forEach(function(entry) {
+      const cat = inferCat(entry);
       const catLabel = cat.charAt(0).toUpperCase() + cat.slice(1);
-      const name = key.replace('sessions/', '').replace('.json', '').replace('.md', '');
-      const div = document.createElement('div');
-      div.className = 'memory-entry';
+      const agentId = entry.agentId || '';
+      const rawName = entry.filename || entry.key || '\u2014';
+      const displayName = rawName.replace(/\.md$/, '').replace(/\.json$/, '').replace(/^sessions\//, '');
+      const summary = (entry.summary || entry.value || '\u2014').slice(0, 200);
+      const tags = Array.isArray(entry.tags) ? entry.tags : [];
+      const updatedAt = entry.updatedAt || entry.createdAt || '';
+      const dateLabel = updatedAt ? new Date(updatedAt).toLocaleDateString() : '';
+
+      const div = _memMakeEl('div', 'memory-entry');
       div.setAttribute('data-cat', cat);
-      const hdr = document.createElement('div');
-      hdr.className = 'memory-entry-header';
-      const titleSpan = document.createElement('span');
-      titleSpan.className = 'memory-entry-title';
-      titleSpan.textContent = name;
-      const catSpan = document.createElement('span');
-      catSpan.className = 'category-badge ' + cat;
-      catSpan.textContent = catLabel;
-      hdr.appendChild(titleSpan); hdr.appendChild(catSpan);
-      const preview = document.createElement('div');
-      preview.className = 'memory-entry-preview';
-      preview.textContent = val;
-      div.appendChild(hdr); div.appendChild(preview);
+      div.setAttribute('data-agent', agentId);
+
+      const hdr = _memMakeEl('div', 'memory-entry-header');
+      hdr.appendChild(_memMakeEl('span', 'memory-entry-title', displayName));
+
+      const catBadge = _memMakeEl('span', 'category-badge ' + cat, catLabel);
+      hdr.appendChild(catBadge);
+
+      if (agentId) {
+        const chip = _memMakeEl('span', 'chip', agentId);
+        chip.style.cssText = 'color:var(--gold);border-color:var(--gold);font-size:10px;';
+        hdr.appendChild(chip);
+      }
+
+      div.appendChild(hdr);
+      div.appendChild(_memMakeEl('div', 'memory-entry-preview', summary));
+
+      if (tags.length || dateLabel) {
+        const footer = document.createElement('div');
+        footer.style.cssText = 'margin-top:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;';
+        tags.forEach(function(tag) {
+          const t = _memMakeEl('span', null, '#' + tag);
+          t.style.cssText = 'font-family:var(--font-mono);font-size:9px;padding:1px 5px;border-radius:3px;background:var(--bg-primary);color:var(--text-muted);border:1px solid var(--border);';
+          footer.appendChild(t);
+        });
+        if (dateLabel) {
+          const ts = _memMakeEl('span', null, dateLabel);
+          ts.style.cssText = 'font-family:var(--font-mono);font-size:10px;color:var(--text-muted);margin-left:auto;';
+          footer.appendChild(ts);
+        }
+        div.appendChild(footer);
+      }
+
       list.appendChild(div);
     });
+
+    applyMemFilters();
   } catch (e) {
     console.warn('loadMemoryBrowser failed:', e);
-    if (list) list.innerHTML = '<div class="load-error">Failed to load memory. <button onclick="loadMemoryBrowser()">Retry</button></div>';
+    list.textContent = '';
+    const errWrap = _memMakeEl('div', 'load-error', 'Failed to load memory. ');
+    const retryBtn = _memMakeEl('button', null, 'Retry');
+    retryBtn.setAttribute('onclick', 'loadMemoryBrowser()');
+    errWrap.appendChild(retryBtn);
+    list.appendChild(errWrap);
   }
 }
 

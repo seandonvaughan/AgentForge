@@ -1,0 +1,54 @@
+{
+  "sprints": [
+    {
+      "version": "6.5.2",
+      "sprintId": "v6-5-2-all-9-phases-real",
+      "title": "AgentForge v6.5.2 — All 9 Phases Real (Full Executive Delegation)",
+      "createdAt": "2026-04-07T12:00:00.000Z",
+      "phase": "completed",
+      "startedAt": "2026-04-07T12:00:00.000Z",
+      "completedAt": "2026-04-07T14:00:00.000Z",
+      "items": [
+        {
+          "id": "v652-p0-1",
+          "title": "Implement real audit phase handler",
+          "description": "Replace the audit phase stub with a real researcher agent dispatch that scans the codebase for issues, TODOs, and improvement opportunities and records findings in the cycle audit file. Commits: 39de05e.",
+          "priority": "P0",
+          "assignee": "CoreAgent",
+          "status": "completed",
+          "tags": ["feature", "audit-phase", "autonomous-loop", "phase-handlers"]
+        },
+        {
+          "id": "v652-p0-2",
+          "title": "Implement real plan, assign, test, review, gate, release, learn phases",
+          "description": "Replace all remaining stub phase handlers with real agent dispatches: plan (CTO), assign (VP Eng delegation chain), test (vitest runner), review (code-reviewer agent), gate (CEO approval — can halt via GateRejectedError), release (version bump + changelog), learn (retrospective). Commits: e4374e6, 950f12c.",
+          "priority": "P0",
+          "assignee": "CoreAgent",
+          "status": "completed",
+          "tags": ["feature", "phase-handlers", "autonomous-loop", "executive-delegation"]
+        },
+        {
+          "id": "v652-p0-3",
+          "title": "CEO gate can halt cycles via GateRejectedError",
+          "description": "The gate phase now evaluates CEO agent output; if the CEO rejects the cycle (test failures, budget overrun, quality concerns), it throws GateRejectedError which aborts the remaining phases and records the rejection in the cycle log. Commits: 950f12c.",
+          "priority": "P0",
+          "assignee": "CoreAgent",
+          "status": "completed",
+          "tags": ["feature", "gate-phase", "autonomous-loop", "safety"]
+        }
+      ],
+      "budget": 10,
+      "teamSize": 3,
+      "successCriteria": [
+        "All 9 phases (audit/plan/assign/execute/test/review/gate/release/learn) dispatch real agents",
+        "CEO gate can halt and record a rejected cycle",
+        "Full end-to-end cycle completes without any phase stubs",
+        "All 290+ autonomous tests pass"
+      ],
+      "autonomous": true,
+      "testCountBefore": 290,
+      "testCountAfter": 305,
+      "testCountDelta": 15
+    }
+  ]
+}

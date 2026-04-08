@@ -52,6 +52,9 @@ export async function orgGraphRoutes(
         const raw = readFileSync(delegationPath, 'utf-8');
         const delegation = yaml.load(raw) as Record<string, string[]>;
         for (const [from, targets] of Object.entries(delegation)) {
+          // Skip edges from excluded agents — their children would otherwise
+          // gain a parent and vanish from the tree (no renderable parent node).
+          if (EXCLUDED_AGENTS.has(from)) continue;
           if (Array.isArray(targets)) {
             for (const to of targets) {
               edges.push({ from, to });

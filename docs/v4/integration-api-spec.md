@@ -20,6 +20,20 @@ All types are implemented in `src/types/v4-api.ts` and exported from `src/types/
 3. **Agent-owned status files** — Agents write their own state; coordinators only read. Eliminates coordination bottlenecks and metadata.yaml race conditions.
 4. **Backward compatibility** — All v3.2 types remain valid. Compatibility shims bridge `AutonomyLevel` → `AutonomyTier`.
 5. **Stability guarantees** — Interfaces marked `@stable` follow semver. `@experimental` interfaces may change without notice.
+6. **OAuth-based authentication** — External systems integrate via Claude Code OAuth sessions, not API keys. See [API Reference](../api-reference.md) for details.
+
+---
+
+## Authentication for External Systems
+
+All downstream consumers (external systems, autonomous agents, CLI tools) integrate with AgentForge using **Claude Code OAuth** rather than API keys:
+
+- **Method:** OAuth session via `claude` CLI (inherited from Claude Code Max-plan login)
+- **No keys required:** Authentication is automatic if logged into Claude Code
+- **Rate limiting:** Per-session, respects plan tier (Pro, Max)
+- **Scope:** Full model access (Opus, Sonnet, Haiku) within subscription limits
+
+For detailed setup and integration patterns, see **[API Reference § 1 — Authentication](../api-reference.md#-1--authentication)**.
 
 ---
 

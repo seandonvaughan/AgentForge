@@ -145,6 +145,156 @@ describe('ProposalToBacklog', () => {
     expect(titles.some(t => t.includes('nope'))).toBe(false);
   });
 
+  it('does not capture TODO(autonomous) that appears inside a nested HTML comment within a line comment', async () => {
+    // Regression for the line-68 false-positive: description-of-the-pattern
+    // comments (e.g. "// (<!-- TODO(autonomous): ... -->)") must not generate
+    // backlog items.  The fix is [^<\n]*? in markerLine which prevents the
+    // non-greedy scan from crossing a `<` character.
+    mkdirSync(join(tmpDir, 'src'), { recursive: true });
+    writeFileSync(
+      join(tmpDir, 'src/meta.ts'),
+      [
+        '// (<!-- TODO(autonomous): ... -->) and from plain text lines.',
+        '// titles from README <!-- TODO(autonomous): X --> are described here',
+        '// TODO(autonomous): this one is a real marker',
+      ].join('\n'),
+    );
+
+    const bridge = new ProposalToBacklog(makeMockAdapter(), tmpDir, DEFAULT_CYCLE_CONFIG);
+    const items = await bridge.build();
+    const titles = items.map(i => i.title);
+
+    // The real marker must be captured
+    expect(titles).toContain('this one is a real marker');
+
+    // The description-of-the-pattern comments must NOT generate items
+    expect(titles.some(t => t.includes('from plain text lines'))).toBe(false);
+    expect(titles.some(t => t.includes('are described here'))).toBe(false);
+    expect(titles.some(t => t.includes('... -->'))).toBe(false);
+    expect(titles.some(t => t.includes('X -->'))).toBe(false);
+  });
+
+  it('captures plain-text TODO markers in markdown files (no comment prefix)', async () => {
+    writeFileSync(
+      join(tmpDir, 'NOTES.md'),
+      [
+        '# Notes',
+        '',
+        'TODO(autonomous): plain text line in markdown',
+        'FIXME(autonomous): plain text fixme in markdown',
+        '',
+        '<!-- TODO(autonomous): html comment in markdown -->',
+      ].join('\n'),
+    );
+
+    const bridge = new ProposalToBacklog(makeMockAdapter(), tmpDir, DEFAULT_CYCLE_CONFIG);
+    const items = await bridge.build();
+    const titles = items.map(i => i.title);
+
+    expect(titles).toContain('plain text line in markdown');
+    expect(titles).toContain('plain text fixme in markdown');
+    expect(titles).toContain('html comment in markdown');
+  });
+
+  it('strips --> closers from captured text', async () => {
+    writeFileSync(
+      join(tmpDir, 'README.md'),
+      [
+        '<!-- TODO(autonomous): trailing closer stripped -->',
+        '<!-- TODO(autonomous): mid-text arrow -> preserved -->',
+      ].join('\n'),
+    );
+
+    const bridge = new ProposalToBacklog(makeMockAdapter(), tmpDir, DEFAULT_CYCLE_CONFIG);
+    const items = await bridge.build();
+    const titles = items.map(i => i.title);
+
+    // Trailing --> must be stripped
+    expect(titles).toContain('trailing closer stripped');
+    // The -> inside the description text is NOT a closer, should remain
+    expect(titles.some(t => t.includes('mid-text arrow -> preserved'))).toBe(true);
+    // No title should end with -->
+    expect(titles.every(t => !t.trimEnd().endsWith('-->'))).toBe(true);
+  });
+
+  it('strips --> artifacts from non-todo-marker items at the output boundary', async () => {
+    // Adapter data (session errors, task descriptions) may contain --> from
+    // HTML comment fragments.  The output-side sanitizeItems() pass must strip
+    // these before they reach the backlog schema.
+    const adapter = makeMockAdapter({
+      getRecentFailedSessions: async () => [
+        { id: 's1', agent: 'coder', error: 'TypeError: undefined -->', confidence: 0.9 },
+      ],
+      getFailedTaskOutcomes: async () => [
+        { taskId: 't1', description: 'broken task -->', confidence: 0.9 },
+      ],
+    });
+    const bridge = new ProposalToBacklog(adapter, tmpDir, DEFAULT_CYCLE_CONFIG);
+    const items = await bridge.build();
+
+    expect(items.every(i => !i.title.trimEnd().endsWith('-->'))).toBe(true);
+    expect(items.every(i => !i.id.trimEnd().endsWith('-->'))).toBe(true);
+
+    // Content before --> must survive
+    const sessionItem = items.find(i => i.id.startsWith('sess-'));
+    expect(sessionItem?.title).toContain('TypeError: undefined');
+  });
+
+  it('strips --> from description field at the output boundary', async () => {
+    // The description field is built from adapter data and may also carry
+    // trailing --> tokens.  sanitizeItems() must cover all three string fields.
+    const adapter = makeMockAdapter({
+      getRecentFailedSessions: async () => [
+        { id: 's2', agent: 'planner', error: 'bad plan -->', confidence: 0.9 },
+      ],
+    });
+    const bridge = new ProposalToBacklog(adapter, tmpDir, DEFAULT_CYCLE_CONFIG);
+    const items = await bridge.build();
+
+    expect(items.every(i => !i.description.trimEnd().endsWith('-->'))).toBe(true);
+
+    // Text before --> in description must not be lost
+    const item = items.find(i => i.id.startsWith('sess-s2'));
+    expect(item?.description).toContain('s2');
+  });
+
+  it('ignores TODO markers inside markdown code fences', async () => {
+    // Regression: documentation guide files use code fences to show
+    // example markers (e.g. "// TODO(autonomous): fix memory leak in
+    // compression module").  The scanner must not treat these as real
+    // backlog items — only markers OUTSIDE fences are actionable.
+    writeFileSync(
+      join(tmpDir, 'GUIDE.md'),
+      [
+        '# Guide',
+        '',
+        '```typescript',
+        '// TODO(autonomous): fix memory leak in compression module',
+        '// Affects large file uploads. See issue #1234.',
+        '```',
+        '',
+        '~~~',
+        '/* TODO(autonomous): tilde fence example */',
+        '~~~',
+        '',
+        '<!-- TODO(autonomous): real marker outside any fence -->',
+        'TODO(autonomous): plain real marker outside fence',
+      ].join('\n'),
+    );
+
+    const bridge = new ProposalToBacklog(makeMockAdapter(), tmpDir, DEFAULT_CYCLE_CONFIG);
+    const items = await bridge.build();
+    const titles = items.map(i => i.title);
+
+    // Markers OUTSIDE fences must be captured
+    expect(titles).toContain('real marker outside any fence');
+    expect(titles).toContain('plain real marker outside fence');
+
+    // Markers INSIDE fences must be silently skipped
+    expect(titles.some(t => t.includes('fix memory leak in compression module'))).toBe(false);
+    expect(titles.some(t => t.includes('tilde fence example'))).toBe(false);
+  });
+
   it('every BacklogItem has required fields', async () => {
     const adapter = makeMockAdapter({
       getRecentFailedSessions: async () => [

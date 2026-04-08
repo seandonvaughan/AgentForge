@@ -16,6 +16,7 @@ import {
   existsSync,
   readdirSync,
   readFileSync,
+  writeFileSync,
   statSync,
   mkdirSync,
   openSync,
@@ -28,6 +29,7 @@ import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { globalStream } from './stream.js';
 import { getWorkspace } from '@agentforge/core';
+import * as cycleSessions from '../../lib/cycle-sessions.js';
 
 /**
  * v6.6.0 — resolve which project root a request targets.
@@ -128,6 +130,27 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleListRow | null 
     const cost = (cycleJson['cost'] ?? {}) as Record<string, unknown>;
     const tests = (cycleJson['tests'] ?? {}) as Record<string, unknown>;
     const pr = (cycleJson['pr'] ?? {}) as Record<string, unknown>;
+    let costUsd = Number(cost['totalUsd'] ?? 0);
+    let testsPassed = Number(tests['passed'] ?? 0);
+    let testsTotal = Number(tests['total'] ?? 0);
+    // v6.7.4 cost heal: cycle.json with $0 cost on a gate-rejected cycle
+    // is missing real spend. Aggregate from phases/*.json same way the
+    // detail endpoint does.
+    if (costUsd === 0 && existsSync(join(cycleDir, 'phases'))) {
+      const phasesDir = join(cycleDir, 'phases');
+      for (const name of ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate', 'release', 'learn']) {
+        const pf = join(phasesDir, `${name}.json`);
+        if (!existsSync(pf)) continue;
+        try {
+          const ph = JSON.parse(readFileSync(pf, 'utf-8')) as Record<string, unknown>;
+          if (typeof ph['costUsd'] === 'number') costUsd += ph['costUsd'] as number;
+          if (name === 'test') {
+            if (typeof ph['passed'] === 'number') testsPassed = ph['passed'] as number;
+            if (typeof ph['total'] === 'number') testsTotal = ph['total'] as number;
+          }
+        } catch { /* skip */ }
+      }
+    }
     return {
       cycleId: (cycleJson['cycleId'] as string) ?? cycleId,
       sprintVersion: (cycleJson['sprintVersion'] as string) ?? null,
@@ -138,22 +161,20 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleListRow | null 
         new Date(0).toISOString(),
       completedAt: (cycleJson['completedAt'] as string) ?? null,
       durationMs: (cycleJson['durationMs'] as number) ?? null,
-      costUsd: Number(cost['totalUsd'] ?? 0),
-      budgetUsd: Number(cost['budgetUsd'] ?? 0),
-      testsPassed: Number(tests['passed'] ?? 0),
-      testsTotal: Number(tests['total'] ?? 0),
+      costUsd,
+      budgetUsd: Number(cost['budgetUsd'] ?? 200),
+      testsPassed,
+      testsTotal,
       prUrl: (pr['url'] as string) ?? null,
       hasApprovalPending,
     };
   }
 
   // No cycle.json — synthesize an in-progress row from whatever's on disk.
-  const scoring = readJsonIfExists(join(cycleDir, 'scoring.json')) as
-    | Record<string, unknown>
-    | null;
   const eventsPath = join(cycleDir, 'events.jsonl');
   let stage = 'plan';
   let startedAt = deriveStartedAt(cycleDir) ?? new Date(0).toISOString();
+  let lastEventAt = 0;
   if (existsSync(eventsPath)) {
     try {
       const lines = readFileSync(eventsPath, 'utf-8')
@@ -163,12 +184,88 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleListRow | null 
         try {
           const ev = JSON.parse(line) as Record<string, unknown>;
           if (typeof ev['stage'] === 'string') stage = ev['stage'] as string;
+          else if (ev['type'] === 'phase.start' && typeof ev['phase'] === 'string') {
+            stage = ev['phase'] as string;
+          }
           if (!startedAt || startedAt === new Date(0).toISOString()) {
             if (typeof ev['at'] === 'string') startedAt = ev['at'] as string;
+          }
+          if (typeof ev['at'] === 'string') {
+            const t = new Date(ev['at'] as string).getTime();
+            if (t > lastEventAt) lastEventAt = t;
           }
         } catch { /* skip */ }
       }
     } catch { /* ignore */ }
+  }
+
+  // v6.7.4 stale-cycle detection: if the last event is older than 5 minutes
+  // AND the session manager has no live record of this cycle, the parent
+  // process must be dead. Mark it crashed instead of showing it as running
+  // forever. This catches cycles spawned before the session manager existed
+  // and parent processes that died without writing cycle.json.
+  if (lastEventAt > 0 && Date.now() - lastEventAt > 5 * 60_000) {
+    try {
+      const cycleSessions = require('../../lib/cycle-sessions.js') as typeof import('../../lib/cycle-sessions.js');
+      const session = cycleSessions.get(cycleId);
+      const isLive = session && session.status === 'running' && cycleSessions.isPidAlive(session.pid);
+      if (!isLive) {
+        stage = 'crashed';
+      }
+    } catch { /* if session manager unavailable, fall through */ }
+  }
+
+  // Aggregate live cost + test totals from phases/<name>.json so the list
+  // row matches what the detail page shows. Without this, running cycles
+  // appear as "$0.00 / 0 tests" until they write cycle.json at terminal.
+  const phasesDir = join(cycleDir, 'phases');
+  let costUsd = 0;
+  let testsPassed = 0;
+  let testsTotal = 0;
+  let executeJsonExists = false;
+  if (existsSync(phasesDir)) {
+    for (const name of ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate', 'release', 'learn']) {
+      const phaseFile = join(phasesDir, `${name}.json`);
+      if (!existsSync(phaseFile)) continue;
+      if (name === 'execute') executeJsonExists = true;
+      try {
+        const phase = JSON.parse(readFileSync(phaseFile, 'utf-8')) as Record<string, unknown>;
+        if (typeof phase['costUsd'] === 'number') costUsd += phase['costUsd'] as number;
+        if (name === 'test') {
+          if (typeof phase['passed'] === 'number') testsPassed = phase['passed'] as number;
+          if (typeof phase['total'] === 'number') testsTotal = phase['total'] as number;
+        }
+      } catch { /* skip */ }
+    }
+  }
+
+  // Fallback: if execute.json isn't written yet, synthesize cost from
+  // the sprint file item estimatedCostUsd sums — but ONLY when this
+  // cycle has its own sprint-link.json. Without the link we cannot
+  // know which sprint file belongs to this cycle, and the previous
+  // mtime-based "newest sprint" fallback caused PLAN-stage cycles to
+  // show $143 by reading a leftover sprint from a totally unrelated
+  // earlier cycle (v6.7.4 user-reported bug).
+  if (!executeJsonExists) {
+    try {
+      const linkFile = join(cycleDir, 'sprint-link.json');
+      if (existsSync(linkFile)) {
+        const sprintVersion = JSON.parse(readFileSync(linkFile, 'utf-8'))?.sprintVersion ?? null;
+        if (sprintVersion) {
+          const sprintFile = join(process.cwd(), '.agentforge/sprints', `v${sprintVersion}.json`);
+          if (existsSync(sprintFile)) {
+            const raw = JSON.parse(readFileSync(sprintFile, 'utf-8'));
+            const sprint = Array.isArray(raw.sprints) ? raw.sprints[0] : raw;
+            const items = sprint?.items ?? [];
+            for (const it of items) {
+              if ((it.status === 'completed' || it.status === 'in_progress') && typeof it.estimatedCostUsd === 'number') {
+                costUsd += it.estimatedCostUsd;
+              }
+            }
+          }
+        }
+      }
+    } catch { /* non-fatal */ }
   }
 
   return {
@@ -177,15 +274,13 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleListRow | null 
     stage,
     startedAt,
     completedAt: null,
-    durationMs: null,
-    costUsd: 0,
-    budgetUsd: 0,
-    testsPassed: 0,
-    testsTotal: 0,
+    durationMs: Date.now() - new Date(startedAt).getTime(),
+    costUsd,
+    budgetUsd: 200,
+    testsPassed,
+    testsTotal,
     prUrl: null,
     hasApprovalPending,
-    // Note: scoring presence is a hint but we don't surface it in the list row.
-    ...(scoring ? {} : {}),
   };
 }
 
@@ -344,8 +439,130 @@ export async function cyclesRoutes(
 
   // v6.5.3-B: fan cycle events out to the SSE stream.
   const watcher = startCycleEventsWatcher(opts.projectRoot);
+  // v6.7.4: cycle session manager — periodic reaper that catches dead PIDs
+  // and flips their session status to crashed. Probes every 30s.
+  cycleSessions.reap();
+  const reaper = cycleSessions.startReaper(30_000);
   app.addHook('onClose', async () => {
     watcher.stop();
+    reaper.stop();
+  });
+
+  // GET /api/v5/cycle-sessions ────────────────────────────────────────────
+  // Lists every cycle the session manager knows about (running + terminal).
+  // Path is /cycle-sessions (not /cycles/sessions) so it doesn't collide
+  // with the /cycles/:id parameterized route.
+  app.get('/api/v5/cycle-sessions', async (_req, reply) => {
+    cycleSessions.reap();
+    const sessions = cycleSessions.list();
+    return reply.send({
+      sessions,
+      counts: {
+        total: sessions.length,
+        running: sessions.filter((s) => s.status === 'running').length,
+        crashed: sessions.filter((s) => s.status === 'crashed').length,
+        killed: sessions.filter((s) => s.status === 'killed').length,
+      },
+    });
+  });
+
+  // POST /api/v5/cycle-sessions/reap ───────────────────────────────────────
+  app.post('/api/v5/cycle-sessions/reap', async (_req, reply) => {
+    return reply.send(cycleSessions.reap());
+  });
+
+  // GET /api/v5/cycles/:id/approval ─────────────────────────────────────────
+  // Returns the approval-pending.json contents if a cycle is awaiting human
+  // approval, or 404 if there's nothing to approve. Drives the dashboard
+  // approval modal.
+  app.get('/api/v5/cycles/:id/approval', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!SAFE_ID.test(id)) return reply.status(400).send({ error: 'Invalid cycle id' });
+    const br = baseForRequest(req);
+    if ('error' in br) return reply.status(br.error.status).send(br.error.body);
+    const dir = safeJoin(br.base, id);
+    if (!dir) return reply.status(404).send({ error: 'Cycle not found' });
+    const pendingFile = join(dir, 'approval-pending.json');
+    if (!existsSync(pendingFile)) return reply.status(404).send({ error: 'No pending approval' });
+    const decisionFile = join(dir, 'approval-decision.json');
+    if (existsSync(decisionFile)) return reply.status(409).send({ error: 'Already decided' });
+    try {
+      const pending = JSON.parse(readFileSync(pendingFile, 'utf8'));
+      return reply.send(pending);
+    } catch (err) {
+      return reply.status(500).send({ error: `Failed to read approval-pending.json: ${(err as Error).message}` });
+    }
+  });
+
+  // POST /api/v5/cycles/:id/approve ──────────────────────────────────────────
+  // Writes the approval-decision.json that BudgetApproval.pollDecisionFile
+  // is waiting for. Body shape: { approvedItemIds: string[], rejectedItemIds?: string[] }
+  // If body.approveAll === true, every within-budget item is approved and
+  // every overflow item rejected (the common "yes, ship the within-budget
+  // batch" path). Drives the dashboard approval modal.
+  app.post('/api/v5/cycles/:id/approve', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!SAFE_ID.test(id)) return reply.status(400).send({ error: 'Invalid cycle id' });
+    const br = baseForRequest(req);
+    if ('error' in br) return reply.status(br.error.status).send(br.error.body);
+    const dir = safeJoin(br.base, id);
+    if (!dir) return reply.status(404).send({ error: 'Cycle not found' });
+    const pendingFile = join(dir, 'approval-pending.json');
+    if (!existsSync(pendingFile)) return reply.status(404).send({ error: 'No pending approval' });
+    const decisionFile = join(dir, 'approval-decision.json');
+    if (existsSync(decisionFile)) return reply.status(409).send({ error: 'Already decided' });
+
+    const body = (req.body ?? {}) as {
+      approveAll?: boolean;
+      approvedItemIds?: string[];
+      rejectedItemIds?: string[];
+      decidedBy?: string;
+    };
+
+    let approvedItemIds: string[] = [];
+    let rejectedItemIds: string[] = [];
+    if (body.approveAll) {
+      try {
+        const pending = JSON.parse(readFileSync(pendingFile, 'utf8'));
+        approvedItemIds = (pending?.withinBudget?.items ?? []).map((i: any) => i.itemId);
+        rejectedItemIds = (pending?.overflow?.items ?? []).map((i: any) => i.itemId);
+      } catch (err) {
+        return reply.status(500).send({ error: `Failed to read approval-pending.json: ${(err as Error).message}` });
+      }
+    } else {
+      approvedItemIds = Array.isArray(body.approvedItemIds) ? body.approvedItemIds : [];
+      rejectedItemIds = Array.isArray(body.rejectedItemIds) ? body.rejectedItemIds : [];
+    }
+
+    if (approvedItemIds.length === 0 && rejectedItemIds.length === 0) {
+      return reply.status(400).send({ error: 'No items provided. Pass approveAll: true or approvedItemIds: [...]' });
+    }
+
+    const decision = {
+      cycleId: id,
+      decision: approvedItemIds.length > 0 ? 'approved' : 'rejected',
+      approvedItemIds,
+      rejectedItemIds,
+      decidedBy: body.decidedBy ?? 'dashboard',
+      decidedAt: new Date().toISOString(),
+    };
+    try {
+      writeFileSync(decisionFile, JSON.stringify(decision, null, 2));
+      return reply.send({ ok: true, decision });
+    } catch (err) {
+      return reply.status(500).send({ error: `Failed to write decision: ${(err as Error).message}` });
+    }
+  });
+
+  // POST /api/v5/cycles/:id/stop ────────────────────────────────────────────
+  // Graceful stop: SIGTERM to the process group, wait 10s, then SIGKILL.
+  app.post('/api/v5/cycles/:id/stop', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!SAFE_ID.test(id)) return reply.status(400).send({ error: 'Invalid cycle id' });
+    const session = cycleSessions.get(id);
+    if (!session) return reply.status(404).send({ error: 'No session for this cycle id' });
+    const result = await cycleSessions.stop(id);
+    return reply.send({ cycleId: id, ...result });
   });
 
   /**
@@ -398,12 +615,373 @@ export async function cyclesRoutes(
     const dir = safeJoin(base, id);
     if (!dir || !existsSync(dir)) return reply.status(404).send({ error: 'Cycle not found' });
     const cycleFile = join(dir, 'cycle.json');
-    if (!existsSync(cycleFile)) {
-      return reply.status(404).send({ error: 'cycle.json not yet written', cycleInProgress: true });
+    if (existsSync(cycleFile)) {
+      const parsed = readJsonIfExists(cycleFile) as Record<string, unknown> | null;
+      if (parsed === null) return reply.status(500).send({ error: 'Failed to parse cycle.json' });
+      // v6.7.4 heal: cycles that fail at gate have cycle.json with
+      // cost.totalUsd = 0 even though phases/*.json contain real costs.
+      // Roll those forward so the dashboard shows truth.
+      const cost = (parsed.cost as Record<string, unknown> | undefined) ?? {};
+      const costZero = (cost.totalUsd ?? 0) === 0;
+      if (costZero && existsSync(join(dir, 'phases'))) {
+        const phasesDir = join(dir, 'phases');
+        let totalCostUsd = 0;
+        const costByPhase: Record<string, number> = {};
+        const costByAgent: Record<string, number> = {};
+        let agentRunCount = 0;
+        let tp = 0; let tf = 0; let tt = 0;
+        for (const name of ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate', 'release', 'learn']) {
+          const pf = join(phasesDir, `${name}.json`);
+          if (!existsSync(pf)) continue;
+          try {
+            const ph = JSON.parse(readFileSync(pf, 'utf8')) as Record<string, unknown>;
+            const c = typeof ph.costUsd === 'number' ? ph.costUsd : 0;
+            totalCostUsd += c;
+            if (c > 0) costByPhase[name] = c;
+            if (Array.isArray(ph.agentRuns)) {
+              for (const run of ph.agentRuns as any[]) {
+                agentRunCount++;
+                const aid = run.agentId ?? 'unknown';
+                const rc = typeof run.costUsd === 'number' ? run.costUsd : 0;
+                costByAgent[aid] = (costByAgent[aid] ?? 0) + rc;
+              }
+            }
+            if (name === 'test') {
+              if (typeof ph.passed === 'number') tp = ph.passed;
+              if (typeof ph.failed === 'number') tf = ph.failed;
+              if (typeof ph.total === 'number') tt = ph.total;
+            }
+          } catch { /* skip */ }
+        }
+        if (totalCostUsd > 0 || agentRunCount > 0) {
+          (parsed as any).cost = {
+            totalUsd: totalCostUsd,
+            budgetUsd: (cost.budgetUsd as number | undefined) ?? 200,
+            byAgent: costByAgent,
+            byPhase: costByPhase,
+          };
+          if (tt > 0) {
+            (parsed as any).tests = { passed: tp, failed: tf, skipped: 0, total: tt, passRate: tp / tt, newFailures: [] };
+          }
+          (parsed as any).agentRunCount = agentRunCount;
+          (parsed as any).costHealedFromPhases = true;
+        }
+      }
+      return reply.send(parsed);
     }
-    const parsed = readJsonIfExists(cycleFile);
-    if (parsed === null) return reply.status(500).send({ error: 'Failed to parse cycle.json' });
-    return reply.send(parsed);
+    // cycle.json is only written at terminal stage. While the cycle is still
+    // running, synthesize a partial payload from events.jsonl so the dashboard
+    // detail page can render the live feed instead of showing HTTP 404.
+    const eventsFile = join(dir, 'events.jsonl');
+    let lastStage = 'plan';
+    let startedAt: string | null = null;
+    let sprintVersion: string | null = null;
+    if (existsSync(eventsFile)) {
+      try {
+        const text = readFileSync(eventsFile, 'utf8');
+        const lines = text.split('\n').filter(Boolean);
+        for (const line of lines) {
+          try {
+            const ev = JSON.parse(line) as { type?: string; phase?: string; stage?: string; at?: string; sprintVersion?: string };
+            if (!startedAt && ev.at) startedAt = ev.at;
+            if (ev.sprintVersion && !sprintVersion) sprintVersion = ev.sprintVersion;
+            if (ev.stage) lastStage = ev.stage;
+            else if (ev.type === 'phase.start' && ev.phase) lastStage = ev.phase;
+          } catch { /* skip malformed lines */ }
+        }
+      } catch { /* fall through to defaults */ }
+    }
+    // Aggregate live progress from phases/<name>.json. Each phase handler
+    // writes its own JSON on completion with costUsd / durationMs / agentRuns.
+    // This gives the dashboard real numbers (cost, agent activity, test
+    // pass/fail) without waiting for terminal cycle.json to be written.
+    const phasesDir = join(dir, 'phases');
+    let totalCostUsd = 0;
+    const costByPhase: Record<string, number> = {};
+    const costByAgent: Record<string, number> = {};
+    let testsPassed = 0;
+    let testsFailed = 0;
+    let testsTotal = 0;
+    let agentRunCount = 0;
+    if (existsSync(phasesDir)) {
+      for (const name of ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate', 'release', 'learn']) {
+        const phaseFile = join(phasesDir, `${name}.json`);
+        if (!existsSync(phaseFile)) continue;
+        try {
+          const phase = JSON.parse(readFileSync(phaseFile, 'utf8'));
+          const phaseCost = typeof phase.costUsd === 'number' ? phase.costUsd : 0;
+          totalCostUsd += phaseCost;
+          if (phaseCost > 0) costByPhase[name] = phaseCost;
+          if (Array.isArray(phase.agentRuns)) {
+            for (const run of phase.agentRuns) {
+              agentRunCount++;
+              const aid = run.agentId ?? 'unknown';
+              const c = typeof run.costUsd === 'number' ? run.costUsd : 0;
+              costByAgent[aid] = (costByAgent[aid] ?? 0) + c;
+            }
+          }
+          if (name === 'test') {
+            if (typeof phase.passed === 'number') testsPassed = phase.passed;
+            if (typeof phase.failed === 'number') testsFailed = phase.failed;
+            if (typeof phase.total === 'number') testsTotal = phase.total;
+          }
+        } catch { /* skip malformed phase file */ }
+      }
+    }
+    const passRate = testsTotal > 0 ? testsPassed / testsTotal : 0;
+    return reply.send({
+      cycleId: id,
+      sprintVersion,
+      stage: lastStage,
+      startedAt: startedAt ?? new Date().toISOString(),
+      completedAt: null,
+      durationMs: startedAt ? Date.now() - new Date(startedAt).getTime() : null,
+      cost: { totalUsd: totalCostUsd, budgetUsd: 200, byAgent: costByAgent, byPhase: costByPhase },
+      tests: { passed: testsPassed, failed: testsFailed, skipped: 0, total: testsTotal, passRate, newFailures: [] },
+      git: { branch: '', commitSha: null, filesChanged: [] },
+      pr: { url: null, number: null, draft: false },
+      agentRunCount,
+      cycleInProgress: true,
+    });
+  });
+
+  // GET /api/v5/cycles/:id/sprint ────────────────────────────────────────────
+  // Returns the live sprint file for this cycle so the UI can render the
+  // same beautiful kanban view used on /sprints/[version] inside the cycle
+  // detail page. Execute phase writes this file incrementally on every
+  // item completion, so polling this endpoint shows real-time progress
+  // (completed/planned/in_progress item counts) while execute is running —
+  // the missing live feedback that made the cost look "stuck".
+  app.get('/api/v5/cycles/:id/sprint', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!SAFE_ID.test(id)) return reply.status(400).send({ error: 'Invalid cycle id' });
+    const br = baseForRequest(req);
+    if ('error' in br) return reply.status(br.error.status).send(br.error.body);
+    const base = br.base;
+    const dir = safeJoin(base, id);
+    if (!dir || !existsSync(dir)) return reply.status(404).send({ error: 'Cycle not found' });
+
+    // Fast path: cycle writes sprint-link.json right after plan phase,
+    // containing the authoritative sprintVersion for this cycle. Check
+    // that first — no timestamp matching needed.
+    const linkFile = join(dir, 'sprint-link.json');
+    if (existsSync(linkFile)) {
+      try {
+        const link = JSON.parse(readFileSync(linkFile, 'utf8'));
+        if (link?.sprintVersion) {
+          const sprintFile = join(opts.projectRoot, '.agentforge/sprints', `v${link.sprintVersion}.json`);
+          if (existsSync(sprintFile)) {
+            const raw = JSON.parse(readFileSync(sprintFile, 'utf8'));
+            const sprint = Array.isArray(raw.sprints) ? raw.sprints[0] : raw;
+            return reply.send({ file: `v${link.sprintVersion}.json`, sprint });
+          }
+        }
+      } catch { /* fall through to timestamp matching */ }
+    }
+
+    // Legacy path: match by cycle startedAt ↔ sprint createdAt proximity.
+    // Only used for cycles started before sprint-link.json existed.
+    const cycleStartedAt = (() => {
+      const eventsFile = join(dir, 'events.jsonl');
+      if (!existsSync(eventsFile)) return null;
+      try {
+        const first = readFileSync(eventsFile, 'utf8').split('\n').find(Boolean);
+        if (!first) return null;
+        const ev = JSON.parse(first);
+        return typeof ev.at === 'string' ? new Date(ev.at).getTime() : null;
+      } catch { return null; }
+    })();
+    if (cycleStartedAt === null) return reply.status(404).send({ error: 'Cannot determine cycle start time' });
+
+    const sprintsDir = join(opts.projectRoot, '.agentforge/sprints');
+    if (!existsSync(sprintsDir)) return reply.status(404).send({ error: 'No sprints directory' });
+
+    let bestMatch: { file: string; sprint: any; delta: number } | null = null;
+    for (const name of readdirSync(sprintsDir)) {
+      if (!name.endsWith('.json')) continue;
+      try {
+        const raw = JSON.parse(readFileSync(join(sprintsDir, name), 'utf8'));
+        const sprint = Array.isArray(raw.sprints) ? raw.sprints[0] : raw;
+        if (!sprint?.createdAt) continue;
+        const createdAt = new Date(sprint.createdAt).getTime();
+        // Match if sprint createdAt is within 2 minutes of cycle start (either direction)
+        const delta = Math.abs(createdAt - cycleStartedAt);
+        if (delta > 120_000) continue;
+        if (bestMatch === null || delta < bestMatch.delta) {
+          bestMatch = { file: name, sprint, delta };
+        }
+      } catch { /* skip */ }
+    }
+    if (!bestMatch) return reply.status(404).send({ error: 'No matching sprint file found for this cycle' });
+    return reply.send({ file: bestMatch.file, sprint: bestMatch.sprint });
+  });
+
+  // GET /api/v5/cycles/:id/agents ────────────────────────────────────────────
+  // Returns a flat list of agent runs aggregated across every phase JSON
+  // in the cycle dir, plus per-agent totals. Drives the dashboard Agents
+  // tab on the cycle detail page. Updates live because the execute phase
+  // now writes incremental execute.json snapshots on every item finish.
+  app.get('/api/v5/cycles/:id/agents', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!SAFE_ID.test(id)) return reply.status(400).send({ error: 'Invalid cycle id' });
+    const br = baseForRequest(req);
+    if ('error' in br) return reply.status(br.error.status).send(br.error.body);
+    const base = br.base;
+    const dir = safeJoin(base, id);
+    if (!dir || !existsSync(dir)) return reply.status(404).send({ error: 'Cycle not found' });
+
+    const phasesDir = join(dir, 'phases');
+    if (!existsSync(phasesDir)) return reply.send({ runs: [], byAgent: {}, totalCostUsd: 0, totalRuns: 0 });
+
+    interface AgentRunRow {
+      phase: string;
+      agentId: string;
+      itemId?: string;
+      status: string;
+      costUsd: number;
+      durationMs: number;
+      response?: string;
+      error?: string;
+      attempts?: number;
+      model?: string;
+      effort?: string;
+    }
+
+    // Load default model + effort for each agent from .agentforge/agents/*.yaml.
+    // Used as a fallback when phase JSONs don't record the model actually used
+    // (legacy runs, or the synthesized sprint-file fallback below). Read once
+    // per request and cached in this closure. Also honors the runtime-adapter's
+    // fallback classification when the exact agentId YAML doesn't exist.
+    const agentYamlDefaults = new Map<string, { model?: string; effort?: string }>();
+    function resolveFallbackAgentId(agentId: string): string {
+      const lower = agentId.toLowerCase();
+      if (/doc|writer|tech-writer/.test(lower)) return 'documentation-writer';
+      if (/test|qa/.test(lower)) return 'backend-qa';
+      if (/review/.test(lower)) return 'code-reviewer';
+      return 'coder';
+    }
+    function getAgentDefaults(agentId: string): { model?: string; effort?: string } {
+      if (agentYamlDefaults.has(agentId)) return agentYamlDefaults.get(agentId)!;
+      const tryRead = (id: string): { model?: string; effort?: string } | null => {
+        try {
+          const yamlPath = join(opts.projectRoot, '.agentforge/agents', `${id}.yaml`);
+          if (!existsSync(yamlPath)) return null;
+          const content = readFileSync(yamlPath, 'utf-8');
+          const out: { model?: string; effort?: string } = {};
+          const m = content.match(/^model:\s*(\S+)/m);
+          if (m) out.model = m[1];
+          const e = content.match(/^effort:\s*(\S+)/m);
+          if (e) out.effort = e[1];
+          return out;
+        } catch { return null; }
+      };
+      const direct = tryRead(agentId);
+      const out = direct ?? tryRead(resolveFallbackAgentId(agentId)) ?? { model: 'opus', effort: 'high' };
+      agentYamlDefaults.set(agentId, out);
+      return out;
+    }
+    const runs: AgentRunRow[] = [];
+    const byAgent: Record<string, { runs: number; totalCostUsd: number; totalDurationMs: number; phases: Set<string> }> = {};
+
+    const seenExecuteItemIds = new Set<string>();
+    for (const name of ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate', 'release', 'learn']) {
+      const phaseFile = join(phasesDir, `${name}.json`);
+      if (!existsSync(phaseFile)) continue;
+      try {
+        const phase = JSON.parse(readFileSync(phaseFile, 'utf8'));
+        const phaseRuns = Array.isArray(phase.agentRuns) ? phase.agentRuns : [];
+        for (const run of phaseRuns) {
+          const agentId = String(run.agentId ?? 'unknown');
+          const defaults = getAgentDefaults(agentId);
+          const row: AgentRunRow = {
+            phase: name,
+            agentId,
+            itemId: typeof run.itemId === 'string' ? run.itemId : undefined,
+            status: String(run.status ?? 'unknown'),
+            costUsd: typeof run.costUsd === 'number' ? run.costUsd : 0,
+            durationMs: typeof run.durationMs === 'number' ? run.durationMs : 0,
+            response: typeof run.response === 'string' ? run.response : undefined,
+            error: typeof run.error === 'string' ? run.error : undefined,
+            attempts: typeof run.attempts === 'number' ? run.attempts : undefined,
+            model: typeof run.model === 'string' ? run.model : defaults.model,
+            effort: typeof run.effort === 'string' ? run.effort : (defaults.effort ?? 'high'),
+          };
+          runs.push(row);
+          if (row.itemId && name === 'execute') seenExecuteItemIds.add(row.itemId);
+          if (!byAgent[agentId]) {
+            byAgent[agentId] = { runs: 0, totalCostUsd: 0, totalDurationMs: 0, phases: new Set() };
+          }
+          byAgent[agentId].runs++;
+          byAgent[agentId].totalCostUsd += row.costUsd;
+          byAgent[agentId].totalDurationMs += row.durationMs;
+          byAgent[agentId].phases.add(name);
+        }
+      } catch { /* skip malformed */ }
+    }
+
+    // Fallback: if phases/execute.json hasn't been written yet, synthesize
+    // execute runs from this cycle's sprint file — but ONLY if the cycle
+    // has its own sprint-link.json. The previous mtime-based "newest sprint"
+    // fallback caused PLAN-stage cycles to display fake $148 / 20 runs
+    // sourced from a totally unrelated previous cycle's sprint (v6.7.4
+    // user-reported bug — same root cause as the cost list bleed).
+    try {
+      const linkFile = join(dir, 'sprint-link.json');
+      let sprintVersion: string | null = null;
+      if (existsSync(linkFile)) {
+        const link = JSON.parse(readFileSync(linkFile, 'utf8'));
+        sprintVersion = link?.sprintVersion ?? null;
+      }
+      if (sprintVersion) {
+        const sprintFile = join(opts.projectRoot, '.agentforge/sprints', `v${sprintVersion}.json`);
+        if (existsSync(sprintFile)) {
+          const raw = JSON.parse(readFileSync(sprintFile, 'utf8'));
+          const sprint = Array.isArray(raw.sprints) ? raw.sprints[0] : raw;
+          const sprintItems = sprint?.items ?? [];
+          for (const it of sprintItems) {
+            if (seenExecuteItemIds.has(it.id)) continue;
+            if (it.status !== 'completed' && it.status !== 'failed' && it.status !== 'in_progress') continue;
+            const agentId = String(it.assignee ?? 'unknown');
+            const defaults = getAgentDefaults(agentId);
+            const synthesized: AgentRunRow = {
+              phase: 'execute',
+              agentId,
+              itemId: it.id,
+              status: it.status,
+              // We can't know actual cost until execute.json is written,
+              // so use the estimated cost as a placeholder for UI display.
+              costUsd: typeof it.estimatedCostUsd === 'number' ? it.estimatedCostUsd : 0,
+              durationMs: 0,
+              response: undefined,
+              error: undefined,
+              attempts: undefined,
+              model: defaults.model,
+              effort: defaults.effort ?? 'high',
+            };
+            runs.push(synthesized);
+            if (!byAgent[agentId]) {
+              byAgent[agentId] = { runs: 0, totalCostUsd: 0, totalDurationMs: 0, phases: new Set() };
+            }
+            byAgent[agentId].runs++;
+            byAgent[agentId].totalCostUsd += synthesized.costUsd;
+            byAgent[agentId].phases.add('execute');
+          }
+        }
+      }
+    } catch { /* non-fatal */ }
+
+    // Convert phases Set → array for JSON
+    const byAgentSerialized: Record<string, { runs: number; totalCostUsd: number; totalDurationMs: number; phases: string[] }> = {};
+    for (const [k, v] of Object.entries(byAgent)) {
+      byAgentSerialized[k] = { runs: v.runs, totalCostUsd: v.totalCostUsd, totalDurationMs: v.totalDurationMs, phases: Array.from(v.phases) };
+    }
+
+    return reply.send({
+      runs,
+      byAgent: byAgentSerialized,
+      totalCostUsd: runs.reduce((s, r) => s + r.costUsd, 0),
+      totalRuns: runs.length,
+    });
   });
 
   // GET /api/v5/cycles/:id/scoring ──────────────────────────────────────────
@@ -522,7 +1100,10 @@ export async function cyclesRoutes(
     const cliEntry = resolve(join(opts.projectRoot, 'packages', 'cli', 'dist', 'bin.js'));
 
     let pid: number;
+    let pgid: number;
     try {
+      // detached: true makes the child a process group leader (pgid === pid),
+      // which lets the stop endpoint kill the entire group via -pgid.
       const child = spawn(nodeBin, [cliEntry, 'autonomous:cycle'], {
         cwd: reqProjectRoot,
         detached: true,
@@ -531,10 +1112,26 @@ export async function cyclesRoutes(
       });
       child.unref();
       pid = child.pid ?? -1;
+      pgid = pid;
     } catch (err) {
       return reply.status(500).send({ error: `Failed to spawn cycle: ${(err as Error).message}` });
     }
 
-    return reply.status(202).send({ cycleId, startedAt, pid });
+    if (pid > 0) {
+      try {
+        cycleSessions.register({
+          cycleId,
+          pid,
+          pgid,
+          workspaceId: 'default',
+          workspaceRoot: reqProjectRoot,
+        });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn(`[cycles] failed to register session ${cycleId}:`, err);
+      }
+    }
+
+    return reply.status(202).send({ cycleId, startedAt, pid, pgid });
   });
 }

@@ -30,6 +30,8 @@ import { workspacesRoutes } from './routes/v5/workspaces.js';
 import { agentVersioningRoutes } from './routes/v5/agent-versioning.js';
 import { federationRoutes } from './routes/v5/federation.js';
 import { chatRoutes } from './routes/v5/chat.js';
+import { settingsRoutes } from './routes/v5/settings.js';
+import { searchRoutes } from './routes/v5/search.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -63,6 +65,11 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
     logger: { transport: { target: 'pino-pretty', options: { colorize: true } } },
   });
 
+  // Register @fastify/websocket exactly once for the entire app. Both
+  // registerWsHandler (/ws) and registerWebSocketRoutes (/api/v5/ws) depend on
+  // it; registering twice throws FST_ERR_DEC_ALREADY_PRESENT('ws').
+  await app.register(import('@fastify/websocket'));
+
   await app.register(FastifyCors, {
     origin: [
       `http://${host}:${port}`,
@@ -82,10 +89,20 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
     });
   } else {
     // Minimal stubs so the server is usable without a database adapter
+    // v6.7.3: read version from root package.json so dashboard + health
+    // endpoint always agree with the actual shipped version. Single source
+    // of truth — no more hardcoded "6.1.0" drift.
+    let pkgVersion = 'unknown';
+    try {
+      const pkgPath = join(projectRoot, 'package.json');
+      const { readFileSync } = await import('node:fs');
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+      pkgVersion = String(pkg.version ?? 'unknown');
+    } catch { /* fall back to 'unknown' */ }
     app.get('/api/v5/health', async (_req, reply) => {
       return reply.send({
         status: 'ok',
-        version: '6.1.0',
+        version: pkgVersion,
         api: 'v5',
         timestamp: new Date().toISOString(),
       });
@@ -94,10 +111,14 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
     // v6.6.0 — workspace registry CRUD (~/.agentforge/workspaces.json)
     await workspacesRoutes(app);
 
+    // Settings — file-backed YAML, no adapter required. Registering here
+    // unconditionally fixes the 404 the dashboard hit when saving settings.
+    await settingsRoutes(app);
+
     // RBAC routes use in-memory state only — always available
     await rbacRoutes(app);
 
-    // Approvals gateway — in-memory, no adapter required
+    // Approvals gateway — in-memory, no adapter required.
     await approvalsRoutes(app);
 
     // SSE stream + dashboard refresh signal — in-memory, no adapter required
@@ -132,6 +153,10 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
   await cyclesRoutes(app, { projectRoot });
   await cyclesPreviewRoutes(app, { projectRoot });
 
+  // ── Unified keyword search (sessions, agents, sprints, cycles, memory) ────────
+  // No adapter required — falls back gracefully; adapter enables session search.
+  await searchRoutes(app, { projectRoot, adapter: options.adapter });
+
   // ── Dashboard stubs (flywheel, memory, settings — file-based, no adapter) ──
   await dashboardStubRoutes(app, { projectRoot });
 
@@ -164,7 +189,8 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
   await intelligenceRoutes(app);
 
   // ── Embedding routes ──────────────────────────────────────────────────────────
-  await embeddingRoutes(app, { dataDir });
+  // Pass adapter so the store can be seeded from sessions on first search.
+  await embeddingRoutes(app, { dataDir, adapter: options.adapter });
 
   // ── v6 Unified API routes + OpenAPI spec ────────────────────────────────────
   if (options.adapter && options.registry) {

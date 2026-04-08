@@ -247,8 +247,12 @@ export class AgentRuntime {
       proc.on('close', (code: number | null) => {
         finish(() => {
           if (code !== 0) {
+            // v6.7.4: include stdout AND stderr in the error message. The
+            // claude CLI sometimes emits error JSON (rate limit, quota,
+            // upstream API failure) on stdout while exiting non-zero with
+            // empty stderr. Without capturing stdout the error was useless.
             reject(new Error(
-              `claude CLI exited with code ${code}\nstderr: ${stderr.slice(0, 1000)}`,
+              `claude CLI exited with code ${code}\nstderr: ${stderr.slice(0, 500)}\nstdout: ${stdout.slice(0, 1000)}`,
             ));
             return;
           }

@@ -1,1 +1,268 @@
-"{\"sprints\":[{\"sprintId\":\"8e78bfeb-e0bf-449f-94b9-3e910b111513\",\"version\":\"4.4\",\"title\":\"AgentForge v4.4 Real Execution Sprint\",\"createdAt\":\"2026-03-26T18:00:41.193Z\",\"phase\":\"learn\",\"items\":[{\"title\":\"Agent Activity Feed\",\"description\":\"Real-time log of agent tasks with durations\",\"priority\":\"P0\",\"assignee\":\"frontend-dev\",\"id\":\"a1d26747-f000-4864-8c4e-561f58245a04\",\"status\":\"completed\",\"completedAt\":\"2026-03-26T18:00:41.195Z\"},{\"title\":\"Sprint Progress Tracker\",\"description\":\"Gantt-style view of current sprint items, completion %\",\"priority\":\"P0\",\"assignee\":\"dashboard-architect\",\"id\":\"4208f3a8-c1b3-4039-a73f-e9d5f995265b\",\"status\":\"completed\",\"completedAt\":\"2026-03-26T18:00:41.195Z\"},{\"title\":\"Real data binding\",\"description\":\"Dashboard reads from .agentforge/ files via fetch() with fallback\",\"priority\":\"P0\",\"assignee\":\"backend-dev\",\"id\":\"e4748658-87c1-4c8c-9d98-63c75ffbd6a8\",\"status\":\"completed\",\"completedAt\":\"2026-03-26T18:00:41.195Z\"},{\"title\":\"Dark/light theme toggle\",\"description\":\"User preference persisted in localStorage\",\"priority\":\"P0\",\"assignee\":\"interaction-designer\",\"id\":\"19784ea4-f1cd-4421-bf89-41f32664e769\",\"status\":\"completed\",\"completedAt\":\"2026-03-26T18:00:41.195Z\"},{\"title\":\"Auto-refresh every 5 seconds\",\"description\":\"All sections refresh data without page reload\",\"priority\":\"P0\",\"assignee\":\"frontend-dev\",\"id\":\"3009a86e-69eb-4287-a8d7-4fdacd0f90ca\",\"status\":\"completed\",\"completedAt\":\"2026-03-26T18:00:41.195Z\"},{\"title\":\"Delegation Flow Diagram\",\"description\":\"Interactive SVG showing live delegation chains\",\"priority\":\"P1\",\"assignee\":\"data-viz-specialist\",\"id\":\"888605ca-c827-4268-8e45-720ef93ba759\",\"status\":\"completed\",\"completedAt\":\"2026-03-26T18:00:41.195Z\"},{\"title\":\"Capability Matrix\",\"description\":\"Heatmap of agent skills with inheritance arrows\",\"priority\":\"P1\",\"assignee\":\"data-viz-specialist\",\"id\":\"73190229-1ac1-4677-a978-0fc53d5ca6fe\",\"status\":\"completed\",\"completedAt\":\"2026-03-26T18:00:41.195Z\"},{\"title\":\"Cost Analytics Section\",\"description\":\"Detailed cost breakdown, historical trends, budget burn rate\",\"priority\":\"P1\",\"assignee\":\"cfo\",\"id\":\"0a291280-ba7c-4401-875b-e4f6446eecef\",\"status\":\"completed\",\"completedAt\":\"2026-03-26T18:00:41.195Z\"},{\"title\":\"Review Pipeline Kanban\",\"description\":\"Visual board: pending→assigned→in_review→responded→resolved→approved\",\"priority\":\"P1\",\"assignee\":\"team-reviewer\",\"id\":\"faab0135-39f9-46ad-a39d-4cef61ea085e\",\"status\":\"completed\",\"completedAt\":\"2026-03-26T18:00:41.195Z\"},{\"title\":\"Autonomy Tier Dashboard\",\"description\":\"Per-agent tier with promotion/demotion history timeline\",\"priority\":\"P1\",\"assignee\":\"rd-lead\",\"id\":\"518ed543-af4a-4f93-9321-f85b79b5ed73\",\"status\":\"completed\",\"completedAt\":\"2026-03-26T18:00:41.195Z\"},{\"title\":\"Memory Knowledge Base Browser\",\"description\":\"Search/browse memory entries, filter by agent/category/tags\",\"priority\":\"P1\",\"assignee\":\"prototype-dev\",\"id\":\"db0b196c-c193-431c-9145-945ac1374258\",\"status\":\"completed\",\"completedAt\":\"2026-03-26T18:00:41.195Z\"},{\"title\":\"REFORGE Activity Panel\",\"description\":\"Active proposals, guardrail results, apply/verify/rollback history\",\"priority\":\"P1\",\"assignee\":\"meta-architect\",\"id\":\"afec59c0-6e81-47cf-ba2e-aef9b79d005e\",\"status\":\"completed\",\"completedAt\":\"2026-03-26T18:00:41.195Z\"},{\"title\":\"Meeting Schedule Calendar\",\"description\":\"Calendar view of meetings with participant lists\",\"priority\":\"P1\",\"assignee\":\"coo\",\"id\":\"477e8281-6ef9-4364-a7fc-cd01d494b74c\",\"status\":\"completed\",\"completedAt\":\"2026-03-26T18:00:41.195Z\"},{\"title\":\"Interactive Org Graph SVG\",\"description\":\"Replace static tree with draggable, zoom/pan, click-to-inspect SVG\",\"priority\":\"P1\",\"assignee\":\"data-viz-specialist\",\"id\":\"8f6c0dc0-613f-473d-92d0-55bac9fb1f0b\",\"status\":\"completed\",\"completedAt\":\"2026-03-26T18:00:41.195Z\"},{\"title\":\"Bus Monitor enhancements\",\"description\":\"Payload inspection panel, delivery timing metrics, topic subscription map\",\"priority\":\"P1\",\"assignee\":\"frontend-dev\",\"id\":\"11847ab1-3ef3-4e94-aac3-b3736a597154\",\"status\":\"completed\",\"completedAt\":\"2026-03-26T18:00:41.195Z\"},{\"title\":\"Session Timeline Gantt bars\",\"description\":\"Gantt bars, context chain visualization, crash/resume indicators\",\"priority\":\"P2\",\"assignee\":\"interaction-designer\",\"id\":\"6d480322-f920-4c4f-bf88-251f3fcbeaaa\",\"status\":\"completed\",\"completedAt\":\"2026-03-26T18:00:41.195Z\"},{\"title\":\"Flywheel historical trend lines\",\"description\":\"Trend lines, component correlation analysis, compound rate graph\",\"priority\":\"P2\",\"assignee\":\"data-viz-specialist\",\"id\":\"9b059e92-a6bc-423b-baef-b665d70d9bd0\",\"status\":\"completed\",\"completedAt\":\"2026-03-26T18:00:41.195Z\"},{\"title\":\"Agent Cards mini charts\",\"description\":\"Mini charts per agent: tasks completed, cost, error rate; expandable panels\",\"priority\":\"P2\",\"assignee\":\"frontend-dev\",\"id\":\"2fb2d6ca-be1a-4125-801d-f030b3f0a607\",\"status\":\"completed\",\"completedAt\":\"2026-03-26T18:00:41.195Z\"},{\"title\":\"Keyboard navigation\",\"description\":\"Tab sections, Escape closes modals, / focuses search\",\"priority\":\"P2\",\"assignee\":\"interaction-designer\",\"id\":\"d1e59c37-6e4f-450c-ad46-67c76805b5e3\",\"status\":\"completed\",\"completedAt\":\"2026-03-26T18:00:41.195Z\"},{\"title\":\"Export section as PNG or JSON\",\"description\":\"html2canvas via CDN for PNG, JSON download for data\",\"priority\":\"P2\",\"assignee\":\"frontend-dev\",\"id\":\"8b1eb603-c8cf-4786-b57b-17ad108d8958\",\"status\":\"completed\",\"completedAt\":\"2026-03-26T18:00:41.195Z\"},{\"title\":\"Browser notifications for urgent bus events\",\"description\":\"Ask permission on load, show notifications for priority events\",\"priority\":\"P2\",\"assignee\":\"frontend-dev\",\"id\":\"6f76079c-d3ff-4775-8193-137d0c00d598\",\"status\":\"completed\",\"completedAt\":\"2026-03-26T18:00:41.195Z\"},{\"title\":\"Responsive layout\",\"description\":\"Desktop, tablet, and mobile breakpoints\",\"priority\":\"P2\",\"assignee\":\"ui-ux-designer\",\"id\":\"7b180a2d-ebd2-417d-a31d-3989971089ed\",\"status\":\"completed\",\"completedAt\":\"2026-03-26T18:00:41.195Z\"},{\"title\":\"Performance: <2s load, 60fps animations\",\"description\":\"Profile and optimize all animations and initial render\",\"priority\":\"P2\",\"assignee\":\"performance-engineer\",\"id\":\"5783d78f-980a-4ff8-ba26-1c107830ec35\",\"status\":\"completed\",\"completedAt\":\"2026-03-26T18:00:41.195Z\"}],\"budget\":450,\"teamSize\":37,\"successCriteria\":[\"All 23 directive items implemented in dashboard/index.html\",\"Dark/light theme toggle works and persists preference\",\"All sections have live simulated data with 5-second refresh\",\"Keyboard navigation: Escape closes modals, / focuses search\",\"Org graph is interactive SVG with zoom/pan\",\"Sprint Progress Tracker shows v4.3 items with realistic completion %\",\"Agent Activity Feed shows simulated real-time agent tasks\",\"All 1422+ tests still passing\"],\"auditFindings\":[\"Dashboard uses simulated data — not connected to .agentforge/ file system\",\"Missing 10 new sections from v4.3 directive (Activity Feed, Delegation Flow, etc.)\",\"No dark/light theme toggle\",\"No keyboard navigation\",\"No export functionality\",\"Agent cards have no mini charts\",\"Org graph is static tree, not interactive SVG\",\"Bus monitor lacks payload inspection panel\",\"Session timeline has no Gantt bars\",\"Flywheel gauges have no historical trend lines\",\"No responsive mobile layout\",\"No auto-refresh mechanism (5-second interval needed)\"]}],\"results\":[{\"phase\":\"gate\",\"itemsCompleted\":23,\"itemsTotal\":23,\"testsPassing\":1422,\"testsTotal\":1422,\"budgetUsed\":320,\"gateVerdict\":\"approved\",\"learnings\":[\"Single-file HTML dashboard scales well to 4000+ lines with sections\",\"Simulated data with 5s refresh gives convincing live feel before real data binding\",\"Interactive SVG org graph requires careful viewport/pan math\",\"Dark/light theme via CSS custom property swap is zero-cost performance\",\"Mini charts in agent cards add significant visual value\",\"Keyboard navigation with tabindex and keydown events works without libraries\"],\"sprintId\":\"8e78bfeb-e0bf-449f-94b9-3e910b111513\",\"version\":\"4.4\",\"completedAt\":\"2026-03-26T18:00:41.195Z\"}]}"
+{
+  "sprints": [
+    {
+      "sprintId": "8e78bfeb-e0bf-449f-94b9-3e910b111513",
+      "version": "4.4",
+      "title": "AgentForge v4.4 Real Execution Sprint",
+      "createdAt": "2026-03-26T18:00:41.193Z",
+      "phase": "learn",
+      "items": [
+        {
+          "title": "Agent Activity Feed",
+          "description": "Real-time log of agent tasks with durations",
+          "priority": "P0",
+          "assignee": "frontend-dev",
+          "id": "a1d26747-f000-4864-8c4e-561f58245a04",
+          "status": "completed",
+          "completedAt": "2026-03-26T18:00:41.195Z"
+        },
+        {
+          "title": "Sprint Progress Tracker",
+          "description": "Gantt-style view of current sprint items, completion %",
+          "priority": "P0",
+          "assignee": "dashboard-architect",
+          "id": "4208f3a8-c1b3-4039-a73f-e9d5f995265b",
+          "status": "completed",
+          "completedAt": "2026-03-26T18:00:41.195Z"
+        },
+        {
+          "title": "Real data binding",
+          "description": "Dashboard reads from .agentforge/ files via fetch() with fallback",
+          "priority": "P0",
+          "assignee": "backend-dev",
+          "id": "e4748658-87c1-4c8c-9d98-63c75ffbd6a8",
+          "status": "completed",
+          "completedAt": "2026-03-26T18:00:41.195Z"
+        },
+        {
+          "title": "Dark/light theme toggle",
+          "description": "User preference persisted in localStorage",
+          "priority": "P0",
+          "assignee": "interaction-designer",
+          "id": "19784ea4-f1cd-4421-bf89-41f32664e769",
+          "status": "completed",
+          "completedAt": "2026-03-26T18:00:41.195Z"
+        },
+        {
+          "title": "Auto-refresh every 5 seconds",
+          "description": "All sections refresh data without page reload",
+          "priority": "P0",
+          "assignee": "frontend-dev",
+          "id": "3009a86e-69eb-4287-a8d7-4fdacd0f90ca",
+          "status": "completed",
+          "completedAt": "2026-03-26T18:00:41.195Z"
+        },
+        {
+          "title": "Delegation Flow Diagram",
+          "description": "Interactive SVG showing live delegation chains",
+          "priority": "P1",
+          "assignee": "data-viz-specialist",
+          "id": "888605ca-c827-4268-8e45-720ef93ba759",
+          "status": "completed",
+          "completedAt": "2026-03-26T18:00:41.195Z"
+        },
+        {
+          "title": "Capability Matrix",
+          "description": "Heatmap of agent skills with inheritance arrows",
+          "priority": "P1",
+          "assignee": "data-viz-specialist",
+          "id": "73190229-1ac1-4677-a978-0fc53d5ca6fe",
+          "status": "completed",
+          "completedAt": "2026-03-26T18:00:41.195Z"
+        },
+        {
+          "title": "Cost Analytics Section",
+          "description": "Detailed cost breakdown, historical trends, budget burn rate",
+          "priority": "P1",
+          "assignee": "cfo",
+          "id": "0a291280-ba7c-4401-875b-e4f6446eecef",
+          "status": "completed",
+          "completedAt": "2026-03-26T18:00:41.195Z"
+        },
+        {
+          "title": "Review Pipeline Kanban",
+          "description": "Visual board: pending→assigned→in_review→responded→resolved→approved",
+          "priority": "P1",
+          "assignee": "team-reviewer",
+          "id": "faab0135-39f9-46ad-a39d-4cef61ea085e",
+          "status": "completed",
+          "completedAt": "2026-03-26T18:00:41.195Z"
+        },
+        {
+          "title": "Autonomy Tier Dashboard",
+          "description": "Per-agent tier with promotion/demotion history timeline",
+          "priority": "P1",
+          "assignee": "rd-lead",
+          "id": "518ed543-af4a-4f93-9321-f85b79b5ed73",
+          "status": "completed",
+          "completedAt": "2026-03-26T18:00:41.195Z"
+        },
+        {
+          "title": "Memory Knowledge Base Browser",
+          "description": "Search/browse memory entries, filter by agent/category/tags",
+          "priority": "P1",
+          "assignee": "prototype-dev",
+          "id": "db0b196c-c193-431c-9145-945ac1374258",
+          "status": "completed",
+          "completedAt": "2026-03-26T18:00:41.195Z"
+        },
+        {
+          "title": "REFORGE Activity Panel",
+          "description": "Active proposals, guardrail results, apply/verify/rollback history",
+          "priority": "P1",
+          "assignee": "meta-architect",
+          "id": "afec59c0-6e81-47cf-ba2e-aef9b79d005e",
+          "status": "completed",
+          "completedAt": "2026-03-26T18:00:41.195Z"
+        },
+        {
+          "title": "Meeting Schedule Calendar",
+          "description": "Calendar view of meetings with participant lists",
+          "priority": "P1",
+          "assignee": "coo",
+          "id": "477e8281-6ef9-4364-a7fc-cd01d494b74c",
+          "status": "completed",
+          "completedAt": "2026-03-26T18:00:41.195Z"
+        },
+        {
+          "title": "Interactive Org Graph SVG",
+          "description": "Replace static tree with draggable, zoom/pan, click-to-inspect SVG",
+          "priority": "P1",
+          "assignee": "data-viz-specialist",
+          "id": "8f6c0dc0-613f-473d-92d0-55bac9fb1f0b",
+          "status": "completed",
+          "completedAt": "2026-03-26T18:00:41.195Z"
+        },
+        {
+          "title": "Bus Monitor enhancements",
+          "description": "Payload inspection panel, delivery timing metrics, topic subscription map",
+          "priority": "P1",
+          "assignee": "frontend-dev",
+          "id": "11847ab1-3ef3-4e94-aac3-b3736a597154",
+          "status": "completed",
+          "completedAt": "2026-03-26T18:00:41.195Z"
+        },
+        {
+          "title": "Session Timeline Gantt bars",
+          "description": "Gantt bars, context chain visualization, crash/resume indicators",
+          "priority": "P2",
+          "assignee": "interaction-designer",
+          "id": "6d480322-f920-4c4f-bf88-251f3fcbeaaa",
+          "status": "completed",
+          "completedAt": "2026-03-26T18:00:41.195Z"
+        },
+        {
+          "title": "Flywheel historical trend lines",
+          "description": "Trend lines, component correlation analysis, compound rate graph",
+          "priority": "P2",
+          "assignee": "data-viz-specialist",
+          "id": "9b059e92-a6bc-423b-baef-b665d70d9bd0",
+          "status": "completed",
+          "completedAt": "2026-03-26T18:00:41.195Z"
+        },
+        {
+          "title": "Agent Cards mini charts",
+          "description": "Mini charts per agent: tasks completed, cost, error rate; expandable panels",
+          "priority": "P2",
+          "assignee": "frontend-dev",
+          "id": "2fb2d6ca-be1a-4125-801d-f030b3f0a607",
+          "status": "completed",
+          "completedAt": "2026-03-26T18:00:41.195Z"
+        },
+        {
+          "title": "Keyboard navigation",
+          "description": "Tab sections, Escape closes modals, / focuses search",
+          "priority": "P2",
+          "assignee": "interaction-designer",
+          "id": "d1e59c37-6e4f-450c-ad46-67c76805b5e3",
+          "status": "completed",
+          "completedAt": "2026-03-26T18:00:41.195Z"
+        },
+        {
+          "title": "Export section as PNG or JSON",
+          "description": "html2canvas via CDN for PNG, JSON download for data",
+          "priority": "P2",
+          "assignee": "frontend-dev",
+          "id": "8b1eb603-c8cf-4786-b57b-17ad108d8958",
+          "status": "completed",
+          "completedAt": "2026-03-26T18:00:41.195Z"
+        },
+        {
+          "title": "Browser notifications for urgent bus events",
+          "description": "Ask permission on load, show notifications for priority events",
+          "priority": "P2",
+          "assignee": "frontend-dev",
+          "id": "6f76079c-d3ff-4775-8193-137d0c00d598",
+          "status": "completed",
+          "completedAt": "2026-03-26T18:00:41.195Z"
+        },
+        {
+          "title": "Responsive layout",
+          "description": "Desktop, tablet, and mobile breakpoints",
+          "priority": "P2",
+          "assignee": "ui-ux-designer",
+          "id": "7b180a2d-ebd2-417d-a31d-3989971089ed",
+          "status": "completed",
+          "completedAt": "2026-03-26T18:00:41.195Z"
+        },
+        {
+          "title": "Performance: <2s load, 60fps animations",
+          "description": "Profile and optimize all animations and initial render",
+          "priority": "P2",
+          "assignee": "performance-engineer",
+          "id": "5783d78f-980a-4ff8-ba26-1c107830ec35",
+          "status": "completed",
+          "completedAt": "2026-03-26T18:00:41.195Z"
+        }
+      ],
+      "budget": 450,
+      "teamSize": 37,
+      "successCriteria": [
+        "All 23 directive items implemented in dashboard/index.html",
+        "Dark/light theme toggle works and persists preference",
+        "All sections have live simulated data with 5-second refresh",
+        "Keyboard navigation: Escape closes modals, / focuses search",
+        "Org graph is interactive SVG with zoom/pan",
+        "Sprint Progress Tracker shows v4.3 items with realistic completion %",
+        "Agent Activity Feed shows simulated real-time agent tasks",
+        "All 1422+ tests still passing"
+      ],
+      "auditFindings": [
+        "Dashboard uses simulated data — not connected to .agentforge/ file system",
+        "Missing 10 new sections from v4.3 directive (Activity Feed, Delegation Flow, etc.)",
+        "No dark/light theme toggle",
+        "No keyboard navigation",
+        "No export functionality",
+        "Agent cards have no mini charts",
+        "Org graph is static tree, not interactive SVG",
+        "Bus monitor lacks payload inspection panel",
+        "Session timeline has no Gantt bars",
+        "Flywheel gauges have no historical trend lines",
+        "No responsive mobile layout",
+        "No auto-refresh mechanism (5-second interval needed)"
+      ]
+    }
+  ],
+  "results": [
+    {
+      "phase": "gate",
+      "itemsCompleted": 23,
+      "itemsTotal": 23,
+      "testsPassing": 1422,
+      "testsTotal": 1422,
+      "budgetUsed": 320,
+      "gateVerdict": "approved",
+      "learnings": [
+        "Single-file HTML dashboard scales well to 4000+ lines with sections",
+        "Simulated data with 5s refresh gives convincing live feel before real data binding",
+        "Interactive SVG org graph requires careful viewport/pan math",
+        "Dark/light theme via CSS custom property swap is zero-cost performance",
+        "Mini charts in agent cards add significant visual value",
+        "Keyboard navigation with tabindex and keydown events works without libraries"
+      ],
+      "sprintId": "8e78bfeb-e0bf-449f-94b9-3e910b111513",
+      "version": "4.4",
+      "completedAt": "2026-03-26T18:00:41.195Z"
+    }
+  ]
+}

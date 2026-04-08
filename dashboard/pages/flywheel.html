@@ -1,0 +1,312 @@
+  <div class="page" id="page-flywheel" hidden>
+    <div class="page-header">
+      <h2>&#127744; Flywheel Health</h2>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span id="fw-updated-at" style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted)">—</span>
+        <button class="export-btn" onclick="loadFlywheelPage()">&#8635; Refresh</button>
+      </div>
+    </div>
+
+    <!-- Loading / Error states -->
+    <div id="fw-loading" class="skeleton-card" style="height:120px"></div>
+    <div id="fw-error" hidden style="padding:32px;text-align:center;color:var(--red);font-family:var(--font-mono);font-size:13px;border:1px dashed var(--red);border-radius:var(--radius)">
+      <div id="fw-error-msg">Failed to load flywheel data.</div>
+      <button onclick="loadFlywheelPage()" style="margin-top:12px;padding:6px 14px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);cursor:pointer;font-family:var(--font-mono);font-size:12px">Retry</button>
+    </div>
+
+    <div id="fw-content" hidden>
+
+      <!-- Overall Score Banner -->
+      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:24px 32px;margin-bottom:20px;display:flex;align-items:center;gap:32px">
+        <div style="text-align:center;flex-shrink:0">
+          <div class="gauge-container" style="width:120px;height:120px;margin:0 auto 8px">
+            <svg viewBox="0 0 100 100" width="120" height="120">
+              <circle class="gauge-bg" cx="50" cy="50" r="45"/>
+              <circle class="gauge-fill" id="fw-overall-arc" cx="50" cy="50" r="45"
+                stroke="var(--cyan)" stroke-dasharray="283" stroke-dashoffset="283"/>
+            </svg>
+            <div class="gauge-label" id="fw-overall-pct" style="color:var(--cyan);font-size:22px">—</div>
+          </div>
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted)">Overall Health</div>
+        </div>
+        <div style="flex:1">
+          <div style="font-size:20px;font-weight:700;color:var(--text-primary);margin-bottom:6px">Autonomous Loop — Flywheel Status</div>
+          <div id="fw-summary-line" style="font-family:var(--font-mono);font-size:13px;color:var(--text-secondary);margin-bottom:12px">Computing&#x2026;</div>
+          <div id="fw-trend-badge" style="display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:99px;font-family:var(--font-mono);font-size:11px;font-weight:700;background:var(--bg-primary);border:1px solid var(--border)">
+            <span id="fw-trend-dot">&#9679;</span>
+            <span id="fw-trend-text">—</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4 Metric Gauge Cards — populated by JS via safe DOM methods -->
+      <div class="flywheel-grid" id="fw-gauge-grid"></div>
+
+      <!-- Metric Detail Table -->
+      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-top:20px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:14px">Metric Breakdown</div>
+        <table class="data-table" id="fw-breakdown-table" style="border:none">
+          <thead>
+            <tr>
+              <th>Metric</th>
+              <th style="text-align:right">Score</th>
+              <th>Status</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody id="fw-breakdown-tbody"></tbody>
+        </table>
+      </div>
+
+    </div><!-- /fw-content -->
+  </div><!-- /page-flywheel -->
+
+<script>
+(function () {
+  'use strict';
+
+  // SVG circumference for r=45: 2π×45 ≈ 283
+  var CIRCUMFERENCE = 283;
+
+  // Color palette per metric key (matches v5 API response keys)
+  var METRIC_COLORS = {
+    meta_learning: 'var(--blue)',
+    autonomy:      'var(--purple)',
+    inheritance:   'var(--green)',
+    velocity:      'var(--gold)',
+  };
+
+  var METRIC_ICONS = {
+    meta_learning: '🧠',
+    autonomy:      '🤖',
+    inheritance:   '🧬',
+    velocity:      '⚡',
+  };
+
+  function scoreToOffset(score) {
+    return Math.round(CIRCUMFERENCE - (score / 100) * CIRCUMFERENCE);
+  }
+
+  function scoreColor(score) {
+    if (score >= 70) return 'var(--green)';
+    if (score >= 40) return 'var(--gold)';
+    return 'var(--red)';
+  }
+
+  function scoreLabel(score) {
+    if (score >= 80) return 'Excellent';
+    if (score >= 60) return 'Good';
+    if (score >= 40) return 'Fair';
+    if (score >= 20) return 'Weak';
+    return 'Critical';
+  }
+
+  /** Creates one flywheel gauge card using safe DOM construction (no raw innerHTML). */
+  function buildGaugeCard(metric) {
+    var color  = METRIC_COLORS[metric.key] || 'var(--blue)';
+    var icon   = METRIC_ICONS[metric.key]  || '📊';
+    var offset = scoreToOffset(metric.score);
+
+    var card = document.createElement('div');
+    card.className = 'flywheel-card' + (metric.score >= 40 ? ' active' : '');
+
+    // Gauge SVG
+    var NS = 'http://www.w3.org/2000/svg';
+    var container = document.createElement('div');
+    container.className = 'gauge-container';
+
+    var svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 100 100');
+
+    var bgCircle = document.createElementNS(NS, 'circle');
+    bgCircle.setAttribute('class', 'gauge-bg');
+    bgCircle.setAttribute('cx', '50');
+    bgCircle.setAttribute('cy', '50');
+    bgCircle.setAttribute('r', '45');
+
+    var fillCircle = document.createElementNS(NS, 'circle');
+    fillCircle.setAttribute('class', 'gauge-fill');
+    fillCircle.setAttribute('cx', '50');
+    fillCircle.setAttribute('cy', '50');
+    fillCircle.setAttribute('r', '45');
+    fillCircle.setAttribute('stroke', color);
+    fillCircle.setAttribute('stroke-dasharray', String(CIRCUMFERENCE));
+    fillCircle.setAttribute('stroke-dashoffset', String(offset));
+
+    svg.appendChild(bgCircle);
+    svg.appendChild(fillCircle);
+
+    var label = document.createElement('div');
+    label.className = 'gauge-label';
+    label.style.color = color;
+    label.textContent = String(metric.score);
+
+    container.appendChild(svg);
+    container.appendChild(label);
+
+    // Heading: icon + label name
+    var heading = document.createElement('h3');
+    heading.textContent = icon + ' ' + metric.label;
+
+    // Sub-text: description from API
+    var sub = document.createElement('div');
+    sub.className = 'flywheel-sub';
+    sub.textContent = metric.description;
+
+    // Status indicator
+    var status = document.createElement('div');
+    status.className = 'flywheel-status ' + (metric.score >= 40 ? 'on' : 'off');
+    status.textContent = metric.score >= 40 ? '● ACTIVE' : '○ WEAK';
+
+    card.appendChild(container);
+    card.appendChild(heading);
+    card.appendChild(sub);
+    card.appendChild(status);
+
+    return card;
+  }
+
+  /** Creates one breakdown table row using safe DOM construction. */
+  function buildBreakdownRow(metric) {
+    var color = scoreColor(metric.score);
+    var icon  = METRIC_ICONS[metric.key] || '';
+    var tr    = document.createElement('tr');
+
+    // Metric name cell
+    var tdName = document.createElement('td');
+    tdName.style.fontWeight = '600';
+    tdName.textContent = (icon ? icon + ' ' : '') + metric.label;
+
+    // Score cell
+    var tdScore = document.createElement('td');
+    tdScore.style.textAlign     = 'right';
+    tdScore.style.fontFamily    = 'var(--font-mono)';
+    tdScore.style.color         = color;
+    tdScore.style.fontWeight    = '700';
+    tdScore.textContent         = metric.score + '/100';
+
+    // Status label cell
+    var tdStatus = document.createElement('td');
+    var statusSpan = document.createElement('span');
+    statusSpan.style.fontFamily    = 'var(--font-mono)';
+    statusSpan.style.fontSize      = '10px';
+    statusSpan.style.fontWeight    = '700';
+    statusSpan.style.textTransform = 'uppercase';
+    statusSpan.style.color         = color;
+    statusSpan.textContent         = scoreLabel(metric.score);
+    tdStatus.appendChild(statusSpan);
+
+    // Description cell
+    var tdDesc = document.createElement('td');
+    tdDesc.style.color    = 'var(--text-secondary)';
+    tdDesc.style.fontSize = '12px';
+    tdDesc.textContent    = metric.description;
+
+    tr.appendChild(tdName);
+    tr.appendChild(tdScore);
+    tr.appendChild(tdStatus);
+    tr.appendChild(tdDesc);
+    return tr;
+  }
+
+  /** Main loader: fetches /api/v5/flywheel and wires all DOM elements. */
+  window.loadFlywheelPage = async function () {
+    var loading  = document.getElementById('fw-loading');
+    var errorEl  = document.getElementById('fw-error');
+    var content  = document.getElementById('fw-content');
+    var errorMsg = document.getElementById('fw-error-msg');
+
+    if (loading) loading.hidden = false;
+    if (errorEl) errorEl.hidden = true;
+    if (content) content.hidden = true;
+
+    try {
+      var res = await fetch('/api/v5/flywheel');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      var json = await res.json();
+      var data    = json.data || {};
+      var metrics = Array.isArray(data.metrics) ? data.metrics : [];
+      var overall = typeof data.overallScore === 'number' ? data.overallScore : 0;
+
+      // ── Overall gauge ────────────────────────────────────
+      var arc = document.getElementById('fw-overall-arc');
+      if (arc) {
+        var overallColor = scoreColor(overall);
+        arc.setAttribute('stroke-dashoffset', String(scoreToOffset(overall)));
+        arc.setAttribute('stroke', overallColor);
+      }
+      var pctEl = document.getElementById('fw-overall-pct');
+      if (pctEl) {
+        pctEl.textContent = String(overall);
+        pctEl.style.color = scoreColor(overall);
+      }
+
+      // ── Updated-at timestamp ─────────────────────────────
+      var updEl = document.getElementById('fw-updated-at');
+      if (updEl && data.updatedAt) {
+        try {
+          updEl.textContent = 'Updated ' + new Date(data.updatedAt).toLocaleTimeString();
+        } catch (_) {
+          updEl.textContent = data.updatedAt;
+        }
+      }
+
+      // ── Summary line ─────────────────────────────────────
+      var summaryEl = document.getElementById('fw-summary-line');
+      if (summaryEl) {
+        summaryEl.textContent = metrics.length + ' metrics · Overall ' + scoreLabel(overall) + ' (' + overall + '/100)';
+      }
+
+      // ── Trend badge (derived from meta_learning description) ──
+      var trendDot   = document.getElementById('fw-trend-dot');
+      var trendText  = document.getElementById('fw-trend-text');
+      var trendBadge = document.getElementById('fw-trend-badge');
+      if (trendDot && trendText && trendBadge) {
+        var mlMetric   = metrics.find(function (m) { return m.key === 'meta_learning'; });
+        var desc       = mlMetric ? mlMetric.description : '';
+        var improving  = desc.indexOf('improving') !== -1;
+        var declining  = desc.indexOf('declining') !== -1;
+        var trendColor = improving ? 'var(--green)' : declining ? 'var(--red)' : 'var(--gold)';
+        trendDot.style.color         = trendColor;
+        trendBadge.style.borderColor = trendColor;
+        trendBadge.style.color       = trendColor;
+        trendText.textContent        = improving ? 'IMPROVING' : declining ? 'DECLINING' : 'STABLE';
+      }
+
+      // ── Gauge cards grid ─────────────────────────────────
+      var grid = document.getElementById('fw-gauge-grid');
+      if (grid) {
+        // Remove existing children safely
+        while (grid.firstChild) grid.removeChild(grid.firstChild);
+        if (metrics.length === 0) {
+          var empty = document.createElement('div');
+          empty.className = 'empty-state';
+          empty.textContent = 'No metric data available yet.';
+          grid.appendChild(empty);
+        } else {
+          metrics.forEach(function (m) { grid.appendChild(buildGaugeCard(m)); });
+        }
+      }
+
+      // ── Breakdown table ──────────────────────────────────
+      var tbody = document.getElementById('fw-breakdown-tbody');
+      if (tbody) {
+        while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+        metrics.forEach(function (m) { tbody.appendChild(buildBreakdownRow(m)); });
+      }
+
+      if (loading) loading.hidden = true;
+      if (content) content.hidden = false;
+
+    } catch (err) {
+      console.error('loadFlywheelPage:', err);
+      if (loading)  loading.hidden  = true;
+      if (errorEl)  errorEl.hidden  = false;
+      if (errorMsg) errorMsg.textContent = 'Failed to load flywheel data: ' + String(err.message || err);
+    }
+  };
+
+  // Auto-load when the page HTML is injected
+  window.loadFlywheelPage();
+})();
+</script>

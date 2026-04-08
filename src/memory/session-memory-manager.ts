@@ -25,7 +25,7 @@ export interface SessionMemoryEntry {
   /** Which session produced this entry. */
   sessionId: string;
   /** Category of memory. */
-  category: "task-outcome" | "pattern-discovered" | "agent-interaction" | "error-recovery";
+  category: "task-outcome" | "pattern-discovered" | "agent-interaction" | "error-recovery" | "gate-verdict";
   /** Agent that produced or is associated with this entry. */
   agentId: string;
   /** Summary of what happened. */

@@ -3,9 +3,9 @@
 # See docs/superpowers/specs/2026-04-06-autonomous-loop-design.md
 
 budget:
-  perCycleUsd: 50
-  perItemUsd: 10
-  perAgentUsd: 15
+  perCycleUsd: 200
+  perItemUsd: 40
+  perAgentUsd: 60
   allowOverageApproval: true
 
 limits:
@@ -13,6 +13,7 @@ limits:
   maxDurationMinutes: 180
   maxConsecutiveFailures: 5
   maxExecutePhaseFailureRate: 0.5
+  maxExecutePhaseParallelism: 5
 
 quality:
   testPassRateFloor: 0.95

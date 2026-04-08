@@ -12,6 +12,9 @@ import {
   EXECUTE_PHASE_DEFAULT_TOOLS,
   FileLockManager,
   extractFilesFromItem,
+  readRelevantMemoryEntries,
+  formatMemorySection,
+  type MemoryEntry,
 } from '../../../packages/core/src/autonomous/phase-handlers/execute-phase.js';
 import type { PhaseContext } from '../../../packages/core/src/autonomous/phase-scheduler.js';
 
@@ -464,5 +467,205 @@ describe('runExecutePhase', () => {
     expect(m.canAcquire('i3', ['b.ts'])).toBe(true);
     m.release('i1');
     expect(m.canAcquire('i2', ['a.ts'])).toBe(true);
+  });
+});
+
+// ---- Memory injection helpers ----
+
+describe('readRelevantMemoryEntries', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'agentforge-memory-'));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function writeMemoryFile(type: string, entries: MemoryEntry[]) {
+    const dir = join(tmpDir, '.agentforge', 'memory');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, `${type}.jsonl`),
+      entries.map((e) => JSON.stringify(e)).join('\n') + '\n',
+    );
+  }
+
+  it('returns empty array when memory directory does not exist', () => {
+    const entries = readRelevantMemoryEntries(tmpDir, ['memory', 'chore']);
+    expect(entries).toEqual([]);
+  });
+
+  it('returns empty array when no tags overlap', () => {
+    writeMemoryFile('review-finding', [
+      { key: 'past-bug', value: 'forgot null check', type: 'review-finding', createdAt: '2026-01-01T00:00:00Z', tags: ['api', 'auth'] },
+    ]);
+    const entries = readRelevantMemoryEntries(tmpDir, ['memory', 'chore']);
+    expect(entries).toHaveLength(0);
+  });
+
+  it('returns entries whose tags intersect with itemTags', () => {
+    writeMemoryFile('review-finding', [
+      { key: 'null-deref', value: 'forgot to guard undefined sprint items', type: 'review-finding', createdAt: '2026-01-02T00:00:00Z', tags: ['execute', 'memory'] },
+      { key: 'auth-bug', value: 'missing token validation', type: 'review-finding', createdAt: '2026-01-01T00:00:00Z', tags: ['auth'] },
+    ]);
+    const entries = readRelevantMemoryEntries(tmpDir, ['memory', 'execute']);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.key).toBe('null-deref');
+  });
+
+  it('respects maxEntries cap', () => {
+    writeMemoryFile('failure-pattern', [
+      { key: 'f1', value: 'v1', type: 'failure-pattern', createdAt: '2026-01-01T00:00:00Z', tags: ['execute'] },
+      { key: 'f2', value: 'v2', type: 'failure-pattern', createdAt: '2026-01-02T00:00:00Z', tags: ['execute'] },
+      { key: 'f3', value: 'v3', type: 'failure-pattern', createdAt: '2026-01-03T00:00:00Z', tags: ['execute'] },
+    ]);
+    const entries = readRelevantMemoryEntries(tmpDir, ['execute'], 2);
+    expect(entries).toHaveLength(2);
+  });
+
+  it('prioritizes failure-pattern and review-finding over cycle-outcome', () => {
+    writeMemoryFile('mixed', [
+      { key: 'cycle', value: 'completed fine', type: 'cycle-outcome', createdAt: '2026-01-03T00:00:00Z', tags: ['execute'] },
+      { key: 'bug', value: 'null deref in handler', type: 'review-finding', createdAt: '2026-01-01T00:00:00Z', tags: ['execute'] },
+    ]);
+    const entries = readRelevantMemoryEntries(tmpDir, ['execute']);
+    // review-finding should come before cycle-outcome despite older createdAt
+    expect(entries[0]!.type).toBe('review-finding');
+  });
+
+  it('skips malformed JSONL lines without throwing', () => {
+    const dir = join(tmpDir, '.agentforge', 'memory');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'mixed.jsonl'), [
+      JSON.stringify({ key: 'good', value: 'ok', type: 'learned-fact', createdAt: '2026-01-01T00:00:00Z', tags: ['execute'] }),
+      'not-valid-json',
+      JSON.stringify({ key: 'also-good', value: 'ok2', type: 'learned-fact', createdAt: '2026-01-02T00:00:00Z', tags: ['execute'] }),
+    ].join('\n'));
+    expect(() => readRelevantMemoryEntries(tmpDir, ['execute'])).not.toThrow();
+    const entries = readRelevantMemoryEntries(tmpDir, ['execute']);
+    expect(entries).toHaveLength(2);
+  });
+});
+
+describe('formatMemorySection', () => {
+  it('returns empty string for empty entries', () => {
+    expect(formatMemorySection([])).toBe('');
+  });
+
+  it('includes entry key, type, and value in the output', () => {
+    const entries: MemoryEntry[] = [
+      { key: 'null-check-missing', value: 'Always guard for undefined sprint items', type: 'review-finding', createdAt: '2026-01-01T00:00:00Z', tags: ['execute'] },
+    ];
+    const section = formatMemorySection(entries);
+    expect(section).toContain('null-check-missing');
+    expect(section).toContain('review-finding');
+    expect(section).toContain('Always guard for undefined sprint items');
+  });
+
+  it('includes a section header', () => {
+    const entries: MemoryEntry[] = [
+      { key: 'k', value: 'v', type: 'failure-pattern', createdAt: '2026-01-01T00:00:00Z', tags: [] },
+    ];
+    expect(formatMemorySection(entries)).toContain('Memory: Past Failures');
+  });
+});
+
+describe('execute phase prompt includes memory', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'agentforge-exec-mem-'));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('injects matching memory entries into agent prompt', async () => {
+    // Write a memory entry matching the item tags
+    const memDir = join(tmpDir, '.agentforge', 'memory');
+    mkdirSync(memDir, { recursive: true });
+    writeFileSync(join(memDir, 'review-finding.jsonl'), JSON.stringify({
+      key: 'guard-sprint-items',
+      value: 'Always check items array before iterating',
+      type: 'review-finding',
+      createdAt: '2026-01-01T00:00:00Z',
+      tags: ['execute', 'chore'],
+    }) + '\n');
+
+    // Write sprint with a matching-tag item
+    const sprintDir = join(tmpDir, '.agentforge', 'sprints');
+    mkdirSync(sprintDir, { recursive: true });
+    const sprint = {
+      sprints: [{
+        version: '1.0.0',
+        sprintId: 'v1.0.0-test',
+        title: 'test',
+        createdAt: new Date().toISOString(),
+        phase: 'planned',
+        items: [{ id: 'i1', title: 'update executor', assignee: 'coder', status: 'planned', tags: ['execute', 'chore'] }],
+        budget: 1,
+        teamSize: 1,
+        successCriteria: [],
+      }],
+    };
+    writeFileSync(join(sprintDir, 'v1.0.0.json'), JSON.stringify(sprint, null, 2));
+
+    let capturedPrompt = '';
+    const runtime = {
+      run: vi.fn().mockImplementation(async (_agentId: string, prompt: string) => {
+        capturedPrompt = prompt;
+        return { output: 'done', costUsd: 0, durationMs: 0, model: 'm', usage: { input_tokens: 0, output_tokens: 0 } };
+      }),
+    };
+    const { bus } = makeMockBus();
+    await runExecutePhase(makeCtx({ cwd: tmpDir, sprintVersion: '1.0.0', runtime, bus }));
+
+    expect(capturedPrompt).toContain('Memory: Past Failures');
+    expect(capturedPrompt).toContain('guard-sprint-items');
+  });
+
+  it('prompt has no memory section when no matching entries exist', async () => {
+    // Memory dir exists but no entries share tags with the item
+    const memDir = join(tmpDir, '.agentforge', 'memory');
+    mkdirSync(memDir, { recursive: true });
+    writeFileSync(join(memDir, 'review-finding.jsonl'), JSON.stringify({
+      key: 'auth-issue',
+      value: 'Some auth problem',
+      type: 'review-finding',
+      createdAt: '2026-01-01T00:00:00Z',
+      tags: ['auth'],
+    }) + '\n');
+
+    const sprintDir = join(tmpDir, '.agentforge', 'sprints');
+    mkdirSync(sprintDir, { recursive: true });
+    const sprint = {
+      sprints: [{
+        version: '1.0.0',
+        sprintId: 'v1.0.0-test',
+        title: 'test',
+        createdAt: new Date().toISOString(),
+        phase: 'planned',
+        items: [{ id: 'i1', title: 'update executor', assignee: 'coder', status: 'planned', tags: ['execute', 'chore'] }],
+        budget: 1,
+        teamSize: 1,
+        successCriteria: [],
+      }],
+    };
+    writeFileSync(join(sprintDir, 'v1.0.0.json'), JSON.stringify(sprint, null, 2));
+
+    let capturedPrompt = '';
+    const runtime = {
+      run: vi.fn().mockImplementation(async (_agentId: string, prompt: string) => {
+        capturedPrompt = prompt;
+        return { output: 'done', costUsd: 0, durationMs: 0, model: 'm', usage: { input_tokens: 0, output_tokens: 0 } };
+      }),
+    };
+    const { bus } = makeMockBus();
+    await runExecutePhase(makeCtx({ cwd: tmpDir, sprintVersion: '1.0.0', runtime, bus }));
+
+    expect(capturedPrompt).not.toContain('Memory: Past Failures');
   });
 });

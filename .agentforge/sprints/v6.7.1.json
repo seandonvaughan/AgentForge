@@ -1,0 +1,43 @@
+{
+  "sprints": [
+    {
+      "version": "6.7.1",
+      "sprintId": "v6-7-1-server-boot-fixes",
+      "title": "AgentForge v6.7.1 — Server Boot Duplicate-Registration Fixes",
+      "createdAt": "2026-04-07T20:00:00.000Z",
+      "phase": "completed",
+      "startedAt": "2026-04-07T20:00:00.000Z",
+      "completedAt": "2026-04-07T21:00:00.000Z",
+      "items": [
+        {
+          "id": "v671-p0-1",
+          "title": "Fix chatRoutes double-registration in createServerV5()",
+          "description": "chatRoutes was registered twice — once inside registerV5Routes() and once unconditionally at the end of createServerV5(). The unconditional call now guards on !options.adapter to prevent Fastify 'Method already declared' errors on startup. File: packages/server/src/server.ts. Commit: 00f2217.",
+          "priority": "P0",
+          "assignee": "CoreAgent",
+          "status": "completed",
+          "tags": ["fix", "server", "fastify", "boot", "routes"]
+        },
+        {
+          "id": "v671-p0-2",
+          "title": "Fix @fastify/websocket double-plugin registration",
+          "description": "@fastify/websocket was registered twice — once in registerWsHandler() and once in registerWebSocketRoutes(). The second registration now guards with app.hasRequestDecorator('ws') to prevent the duplicate. File: packages/server/src/websocket/ws-server.ts. Commit: 00f2217.",
+          "priority": "P0",
+          "assignee": "CoreAgent",
+          "status": "completed",
+          "tags": ["fix", "server", "websocket", "fastify", "boot"]
+        }
+      ],
+      "budget": 3,
+      "teamSize": 1,
+      "successCriteria": [
+        "Server starts cleanly with zero Fastify duplicate-registration errors",
+        "chatRoutes registered exactly once regardless of adapter option",
+        "@fastify/websocket registered exactly once",
+        "348 autonomous tests pass (no test changes this release)"
+      ],
+      "autonomous": true,
+      "testCountAfter": 348
+    }
+  ]
+}

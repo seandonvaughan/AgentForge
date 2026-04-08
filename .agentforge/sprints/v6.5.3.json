@@ -1,0 +1,64 @@
+{
+  "sprints": [
+    {
+      "version": "6.5.3",
+      "sprintId": "v6-5-3-parallel-retry-sse-cost-preview",
+      "title": "AgentForge v6.5.3 — Parallel Execution, Retry, SSE Push & Cost Preview",
+      "createdAt": "2026-04-07T14:00:00.000Z",
+      "phase": "completed",
+      "startedAt": "2026-04-07T14:00:00.000Z",
+      "completedAt": "2026-04-07T16:00:00.000Z",
+      "items": [
+        {
+          "id": "v653-p0-1",
+          "title": "Parallel item dispatch in execute phase (default 3 concurrent)",
+          "description": "Execute phase now dispatches sprint items in parallel batches (default concurrency = 3) rather than sequentially, dramatically reducing cycle wall-clock time for multi-item sprints. Commits: 1c5cb52.",
+          "priority": "P0",
+          "assignee": "CoreAgent",
+          "status": "completed",
+          "tags": ["feature", "execute-phase", "parallel", "autonomous-loop"]
+        },
+        {
+          "id": "v653-p0-2",
+          "title": "Adaptive retry on item failure (1 retry per item)",
+          "description": "Items that fail during the execute phase are automatically retried once before being marked failed. The retry uses the same agent prompt with the error appended as context to help the agent self-correct. Commits: fa86d0a.",
+          "priority": "P0",
+          "assignee": "CoreAgent",
+          "status": "completed",
+          "tags": ["feature", "retry", "execute-phase", "autonomous-loop", "resilience"]
+        },
+        {
+          "id": "v653-p0-3",
+          "title": "SSE push for cycle events (replace polling)",
+          "description": "Dashboard clients now receive cycle progress updates via Server-Sent Events pushed from the server instead of polling GET /api/v5/cycles/:id on an interval. Eliminates dashboard latency and reduces server load. Commits: 32f6ceb.",
+          "priority": "P0",
+          "assignee": "FrontendAgent",
+          "status": "completed",
+          "tags": ["feature", "sse", "dashboard", "cycles", "real-time"]
+        },
+        {
+          "id": "v653-p1-1",
+          "title": "Cost preview button in /cycles/new launcher",
+          "description": "The cycle launcher page gains a 'Preview Cost' button that calls POST /api/v5/cycles/preview (dry-run scoring only) and shows the estimated token and USD cost before the operator commits to launching a full cycle. Commits: befd101.",
+          "priority": "P1",
+          "assignee": "FrontendAgent",
+          "status": "completed",
+          "tags": ["feature", "dashboard", "cycles", "cost", "dry-run"]
+        }
+      ],
+      "budget": 12,
+      "teamSize": 3,
+      "successCriteria": [
+        "Execute phase dispatches items in parallel (3 concurrent default)",
+        "Failed items are retried once with error context",
+        "Dashboard receives cycle events via SSE with no polling",
+        "Cost preview button in /cycles/new shows estimated USD before launch",
+        "320 autonomous tests passing"
+      ],
+      "autonomous": true,
+      "testCountBefore": 305,
+      "testCountAfter": 320,
+      "testCountDelta": 15
+    }
+  ]
+}

@@ -148,7 +148,7 @@ export class ProposalToBacklog {
       }
     }
 
-    return this.deduplicate(items);
+    return this.sanitizeItems(this.deduplicate(items));
   }
 
   private scanTodoMarkers(): BacklogItem[] {
@@ -193,11 +193,36 @@ export class ProposalToBacklog {
           // only by comment characters (//, /*, *, <!--, #) plus optional
           // text. This prevents false positives from strings, regex
           // literals, and object literals that embed the marker pattern.
+          // The comment-prefix group is optional so plain-text lines in
+          // Markdown files (no <!-- wrapper needed) are also captured.
+          // False positives from embedded strings are still blocked because
+          // `^` anchors the pattern — a line starting with `const`/`let`/
+          // etc. won't match even without the prefix requirement.
           // `pattern` (from config) is retained as a capability gate; the
           // real extraction uses markerLine below.
-          const markerLine = /^\s*(?:\/\/|\/\*+|\*|<!--|#)[^\n]*?(TODO|FIXME)\(autonomous\):\s*(.+)$/;
+          // [^<\n]*? (not [^\n]*?) prevents the non-greedy scan from
+          // crossing a `<` character.  Without this, a line like:
+          //   // (<!-- TODO(autonomous): ... -->) and from plain text lines.
+          // would match because `//` is the prefix and `[^\n]*?` expands
+          // past the `<` in `<!--` to reach the marker.  Blocking `<`
+          // ensures that a `//` line comment can only match when the marker
+          // appears directly after the `//` prefix (no embedded `<!--`).
+          // `<!--` itself as a *prefix* still works: after the prefix is
+          // consumed the remaining text starts with a space, not `<`.
+          const markerLine = /^\s*(?:(?:\/\/|\/\*+|\*|<!--|#)[^<\n]*?)?(TODO|FIXME)\(autonomous\):\s*(.+)$/;
           const lines = content.split('\n');
+          // For markdown files, track whether we are inside a fenced code
+          // block (``` or ~~~).  Lines inside fences are documentation
+          // examples — they must not be treated as real TODO markers.
+          // inCodeFence is reset per-file because the outer loop continues
+          // to the next file after this inner loop exits.
+          let inCodeFence = false;
           for (let i = 0; i < lines.length; i++) {
+            if (ext === '.md' && /^\s*(`{3,}|~{3,})/.test(lines[i]!)) {
+              inCodeFence = !inCodeFence;
+              continue;
+            }
+            if (inCodeFence) continue;
             if (!pattern.test(lines[i]!)) continue;
             const marker = lines[i]!.match(markerLine);
             if (!marker) continue;
@@ -236,6 +261,27 @@ export class ProposalToBacklog {
     if (/\b(add|new|feature|implement)\b/.test(lower)) return ['feature'];
     if (/\b(fix|bug|security)\b/.test(lower)) return ['fix'];
     return ['chore'];
+  }
+
+  // Output-side guard: strip HTML/Markdown comment closers (-->, */) that
+  // may arrive via adapter data (session errors, task descriptions, etc.)
+  // before items are written into the backlog schema.  The equivalent
+  // input-side strip lives in scanTodoMarkers(); this ensures every code
+  // path through build() respects the same contract.
+  //
+  // stripClosers removes trailing --> and */ tokens.  The regex targets only
+  // the trailing position so mid-string arrows (e.g. "a -> b") are preserved.
+  private stripClosers(s: string): string {
+    return s.replace(/\s*-->\s*$/, '').replace(/\s*\*\/\s*$/, '').trim();
+  }
+
+  private sanitizeItems(items: BacklogItem[]): BacklogItem[] {
+    return items.map(item => ({
+      ...item,
+      id: this.stripClosers(item.id),
+      title: this.stripClosers(item.title),
+      description: this.stripClosers(item.description),
+    }));
   }
 
   private deduplicate(items: BacklogItem[]): BacklogItem[] {

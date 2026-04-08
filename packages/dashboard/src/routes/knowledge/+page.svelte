@@ -166,7 +166,7 @@
   }
 
   const MOCK_ENTRIES: KnowledgeEntry[] = [
-    { id: 'k1', content: 'The AgentForge v5 API uses SQLite for session storage, with WAL mode enabled for concurrent read performance. Connection pooling is handled by better-sqlite3.', sourceAgent: 'architect', tags: ['database', 'sqlite', 'performance'], createdAt: new Date(Date.now() - 86400000).toISOString() },
+    { id: 'k1', content: 'The AgentForge API uses SQLite for session storage, with WAL mode enabled for concurrent read performance. Connection pooling is handled by better-sqlite3.', sourceAgent: 'architect', tags: ['database', 'sqlite', 'performance'], createdAt: new Date(Date.now() - 86400000).toISOString() },
     { id: 'k2', content: 'Sprint velocity has been consistently 12–15 story points per cycle. P0 blockers tend to appear in the last 20% of a sprint and should be pre-identified in planning.', sourceAgent: 'project-manager', tags: ['sprints', 'velocity', 'planning'], createdAt: new Date(Date.now() - 172800000).toISOString() },
     { id: 'k3', content: 'SSE connections from the dashboard use /api/v5/stream. The server sends heartbeats every 15s to keep connections alive through proxies.', sourceAgent: 'api-specialist', tags: ['sse', 'api', 'streaming'], createdAt: new Date(Date.now() - 259200000).toISOString() },
     { id: 'k4', content: 'Opus model is reserved for strategic decisions (CEO, CTO, Architect). Coder and Debugger use Sonnet. Haiku handles lightweight coordination tasks.', sourceAgent: 'cto', tags: ['models', 'cost', 'routing'], createdAt: new Date(Date.now() - 345600000).toISOString() },
@@ -179,7 +179,7 @@
   });
 </script>
 
-<svelte:head><title>Knowledge — AgentForge v5</title></svelte:head>
+<svelte:head><title>Knowledge — AgentForge</title></svelte:head>
 
 <div class="page-header">
   <div>

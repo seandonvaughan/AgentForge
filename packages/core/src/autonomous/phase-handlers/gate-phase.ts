@@ -7,6 +7,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
+import { writeMemoryEntry } from '../../memory/types.js';
 
 export const GATE_PHASE_DEFAULT_TOOLS = ['Read', 'Bash', 'Glob', 'Grep'];
 
@@ -37,6 +38,23 @@ function tryReadJson(path: string): any | null {
 interface GateVerdict {
   verdict: 'APPROVE' | 'REJECT';
   rationale: string;
+}
+
+/**
+ * Extract finding lines from the code-review markdown output.
+ * Lines that contain a severity keyword (CRITICAL / MAJOR) are collected and
+ * returned so the gate-verdict memory entry can surface them to future audits.
+ */
+export function extractFindingsByLevel(
+  reviewText: string,
+  level: 'CRITICAL' | 'MAJOR',
+): string[] {
+  const pattern = new RegExp(level, 'i');
+  return reviewText
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0 && pattern.test(l))
+    .slice(0, 10); // cap to avoid bloating the memory entry
 }
 
 export function parseGateVerdict(text: string): GateVerdict {
@@ -233,6 +251,28 @@ Respond as JSON: { "verdict": "APPROVE" | "REJECT", "rationale": "..." }`;
       // non-fatal
     }
   }
+
+  // Write a gate-verdict memory entry for every cycle — both APPROVE and REJECT
+  // are high-signal because they record what the CEO agent found acceptable or
+  // not. Future audit phases read these entries to surface recurring patterns.
+  const criticalFindings = extractFindingsByLevel(reviewFindings, 'CRITICAL');
+  const majorFindings = extractFindingsByLevel(reviewFindings, 'MAJOR');
+  writeMemoryEntry(ctx.projectRoot, {
+    type: 'gate-verdict',
+    value: JSON.stringify({
+      cycleId: ctx.cycleId ?? null,
+      sprintVersion: ctx.sprintVersion,
+      verdict: verdict.verdict,
+      rationale: verdict.rationale,
+      criticalFindings,
+      majorFindings,
+    }),
+    source: ctx.cycleId,
+    tags: [
+      `verdict:${verdict.verdict.toLowerCase()}`,
+      `sprint:v${ctx.sprintVersion}`,
+    ],
+  });
 
   ctx.bus.publish('sprint.phase.completed', {
     sprintId: ctx.sprintId,

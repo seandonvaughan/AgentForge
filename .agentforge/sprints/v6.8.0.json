@@ -1,0 +1,297 @@
+{
+  "sprints": [
+    {
+      "version": "6.8.0",
+      "sprintId": "v6-8-0-autonomous",
+      "title": "AgentForge v6.8.0 — Autonomous Cycle",
+      "createdAt": "2026-04-08T02:13:50.065Z",
+      "phase": "release",
+      "items": [
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-26",
+          "title": "Test and verify the /approvals dashboard page works end-to-end — create a test approval pending, render it on the page, allow approve/reject from UI, verify the decision is written to .agentforge/cycles/<id>/approval-decision.json. Check packages/dashboard/src/routes/approvals/+page.svelte.",
+          "description": "The approvals page is the human-in-the-loop gate for the entire autonomous cycle; a broken approvals flow means the loop cannot safely self-direct. This is the highest-leverage correctness item and directly gates v6.4+ operation.",
+          "priority": "P0",
+          "assignee": "DashboardAgent",
+          "status": "completed",
+          "estimatedCostUsd": 10,
+          "tags": [
+            "fix",
+            "autonomous-loop",
+            "critical-path",
+            "human-gate"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-12",
+          "title": "Fix the /agents dashboard route — verify the agent listing shows real agents from .agentforge/agents/*.yaml with name, model tier, description, and clickable detail pages. Currently broken. Check packages/dashboard/src/routes/agents/+page.svelte.",
+          "description": "Agent visibility is foundational to operator trust; if the agents page is broken, no human reviewer can confirm what agents are running or verify team composition during autonomous cycles. Unblocks sprint-level debugging.",
+          "priority": "P0",
+          "assignee": "DashboardAgent",
+          "status": "completed",
+          "estimatedCostUsd": 8,
+          "tags": [
+            "fix",
+            "agents",
+            "foundational"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-10",
+          "title": "Fix the /org dashboard route — verify the org graph endpoint returns real delegation data and the page renders nodes/edges correctly. Currently shows empty or broken state. Check packages/dashboard/src/routes/org/+page.svelte and the matching server route in packages/server/src/routes/v5/org-graph.ts.",
+          "description": "The org graph exposes delegation topology and authority chains; its broken state hides structural mis-wiring. Fixing it improves reviewability of autonomous decisions and was a shipped feature in v6.7 that regressed.",
+          "priority": "P0",
+          "assignee": "BackendAgent",
+          "status": "completed",
+          "estimatedCostUsd": 8,
+          "tags": [
+            "fix",
+            "org-graph",
+            "foundational"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-42",
+          "title": "Complete the /runner dashboard route — fix the MODEL_TIERS undefined errors flagged by svelte-check, wire up the agent dispatch form to actually run agents, show output streaming back in real time. Check packages/dashboard/src/routes/runner/+page.svelte.",
+          "description": "The runner page has active compile errors (MODEL_TIERS undefined) that block the build and prevent manual agent dispatch — a key escape hatch when autonomous cycles stall. Fixing compile errors first prevents downstream test failures.",
+          "priority": "P1",
+          "assignee": "FrontendAgent",
+          "status": "completed",
+          "estimatedCostUsd": 10,
+          "tags": [
+            "fix",
+            "runner",
+            "compile-error",
+            "svelte-check"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-22",
+          "title": "Fix the /search dashboard route — currently returns no results regardless of query. Check what backend endpoint it hits and either implement the search backend or wire it to an existing one (sessions, cycles, agents, sprints, memories). Update packages/dashboard/src/routes/search/+page.svelte.",
+          "description": "Search is a cross-cutting discoverability tool; a broken search forces operators to manually browse cycles, sessions, and agents, significantly slowing incident response during autonomous operation. Backend wire-up is well-scoped.",
+          "priority": "P1",
+          "assignee": "BackendAgent",
+          "status": "completed",
+          "estimatedCostUsd": 8,
+          "tags": [
+            "fix",
+            "search",
+            "feature"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-44",
+          "title": "Verify the /live activity feed renders cycle_event messages from the SSE stream — confirm the page subscribes correctly and renders events with proper colors, types, and timestamps.",
+          "description": "Real-time visibility into the autonomous loop is a key operational safety feature; a broken SSE feed means operators are flying blind during active cycles. This is likely a small wiring fix with high observability payoff.",
+          "priority": "P1",
+          "assignee": "FrontendAgent",
+          "status": "completed",
+          "estimatedCostUsd": 6,
+          "tags": [
+            "fix",
+            "sse",
+            "live-feed",
+            "observability"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-16",
+          "title": "Wire up the /memory dashboard page to a real backend — currently shows static content. Read .agentforge/data/memories.json or similar and render real memory entries. Add a search box and filter by agent.",
+          "description": "Memory is the persistence layer of autonomous learning; surfacing real memory entries allows operators to audit what the loop has learned and catch bad priors before they compound across cycles.",
+          "priority": "P1",
+          "assignee": "BackendAgent",
+          "status": "completed",
+          "estimatedCostUsd": 10,
+          "tags": [
+            "feature",
+            "memory",
+            "wiring"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-18",
+          "title": "Wire up the /flywheel dashboard page to real data — currently shows static gauges. Compute real metrics from cycles + sprints + sessions: meta-learning rate, autonomy score, capability inheritance, velocity. Update packages/dashboard/src/routes/flywheel/+page.svelte.",
+          "description": "The flywheel page is the primary health signal for the autonomous loop; static gauges provide false confidence. Real metrics from cycles+sprints are available and this wire-up is a high-signal, moderate-effort task.",
+          "priority": "P1",
+          "assignee": "DataAgent",
+          "status": "completed",
+          "estimatedCostUsd": 10,
+          "tags": [
+            "chore",
+            "flywheel",
+            "metrics",
+            "wiring"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-34",
+          "title": "Create a sprint JSON file for every existing version v4.3 through v6.7 in .agentforge/sprints/ that doesn't already have one. Use the existing v6.5.0.json shape as a template.",
+          "description": "Missing sprint JSON files cause the sprints list and flywheel metrics to show incomplete history. This is a prerequisite for the sprint detail page and flywheel wiring items and is a well-bounded, mechanical task.",
+          "priority": "P2",
+          "assignee": "DataAgent",
+          "status": "completed",
+          "estimatedCostUsd": 6,
+          "tags": [
+            "chore",
+            "sprint-data",
+            "backfill",
+            "prerequisite"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-36",
+          "title": "Make sprint cards on /sprints page clickable — clicking should navigate to /sprints/{version} which already exists. Currently nothing happens. Wire up the onclick handler. Check packages/dashboard/src/routes/sprints/+page.svelte.",
+          "description": "This is a trivial onclick wire-up with high UX impact; the detail page already exists, so this is purely a navigation fix. Low cost, high confidence, depends on sprint data being present.",
+          "priority": "P2",
+          "assignee": "FrontendAgent",
+          "status": "completed",
+          "estimatedCostUsd": 3,
+          "tags": [
+            "chore",
+            "navigation",
+            "quick-win"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-38",
+          "title": "Ensure /sprints/[version] detail page renders all fields beautifully: title, status, items kanban, success criteria, audit findings, completion percentage, dates. Already mostly built — verify and fill any gaps.",
+          "description": "Sprint detail pages are the primary audit trail for each autonomous sprint; completing field rendering improves sprint retrospective quality. Already mostly built, so cost is low relative to completeness gain.",
+          "priority": "P2",
+          "assignee": "FrontendAgent",
+          "status": "completed",
+          "estimatedCostUsd": 5,
+          "tags": [
+            "chore",
+            "sprint-detail",
+            "ui-polish"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-6",
+          "title": "Render markdown content in cycle phases tab — use a markdown-to-HTML library so reviewer responses, gate rationales, and learn outputs display formatted text instead of raw JSON. Pick a small library like marked or markdown-it. Update packages/dashboard/src/routes/cycles/[id]/+page.svelte phases tab to render parsed JSON fields beautifully (cost, duration, agent runs, response markdown).",
+          "description": "Raw JSON in the cycle phases tab makes it difficult to read reviewer responses and gate rationales, slowing human review. A markdown library is a well-understood dependency with low regression risk.",
+          "priority": "P2",
+          "assignee": "FrontendAgent",
+          "status": "completed",
+          "estimatedCostUsd": 6,
+          "tags": [
+            "chore",
+            "markdown",
+            "ui-polish",
+            "cycle-detail"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-30",
+          "title": "Complete the /branches dashboard tab — show all autonomous/* branches with their cycle, age, status (open PR / merged / stale), and a button to delete stale branches. Update packages/dashboard/src/routes/branches/+page.svelte.",
+          "description": "Branch hygiene prevents repo clutter from autonomous cycles accumulating stale branches; useful but less urgent than broken routes. Git integration adds moderate complexity vs. other dashboard items.",
+          "priority": "P2",
+          "assignee": "BackendAgent",
+          "status": "completed",
+          "estimatedCostUsd": 8,
+          "tags": [
+            "chore",
+            "branches",
+            "git",
+            "hygiene"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-48",
+          "title": "Add Playwright e2e tests under tests/e2e/ that exercise: dashboard home loads, cycles list loads, cycle detail page loads with real data, sprints list loads, sprints detail loads, settings save round-trips, /org graph renders, /agents list renders. Use the @playwright/test runner. Add a script `npm run test:e2e` to root package.json.",
+          "description": "E2e tests provide a regression safety net for all dashboard fixes; they should run after the fixes above are complete so tests reflect the correct end state. Highest cost item but delivers long-term CI value.",
+          "priority": "P2",
+          "assignee": "QAAgent",
+          "status": "completed",
+          "estimatedCostUsd": 20,
+          "tags": [
+            "feature",
+            "e2e",
+            "playwright",
+            "testing"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-plans-2026-04-06-autonomous-loop-part2-md-2541",
+          "title": "The autonomous loop automatically plans, executes, tests, and commits code improvements based on backlog proposals and failure detection, opening pull requests for human review.",
+          "description": "This is a documentation clarification in a planning doc; extremely low effort and cost, but pure doc work with no runtime impact. Ranks low due to zero product behavior change.",
+          "priority": "P2",
+          "assignee": "DocsAgent",
+          "status": "completed",
+          "estimatedCostUsd": 1,
+          "tags": [
+            "chore",
+            "documentation",
+            "autonomous-loop"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-06-autonomous-smoke-test-md-48",
+          "title": "add a one-sentence description of the autonomous loop to this file",
+          "description": "Single-line doc addition to a smoke-test spec file; minimal effort and zero runtime risk. Lowest priority as it has no observable product impact beyond spec completeness.",
+          "priority": "P2",
+          "assignee": "DocsAgent",
+          "status": "completed",
+          "estimatedCostUsd": 0.5,
+          "tags": [
+            "chore",
+            "documentation",
+            "smoke-test"
+          ]
+        }
+      ],
+      "budget": 200,
+      "teamSize": 6,
+      "successCriteria": [
+        "All sprint items completed",
+        "Test pass rate >= 95%",
+        "Total cost <= $200"
+      ],
+      "versionDecision": {
+        "previousVersion": "6.7.3",
+        "nextVersion": "6.8.0",
+        "tier": "minor",
+        "tagsSeen": [
+          "fix",
+          "autonomous-loop",
+          "critical-path",
+          "human-gate",
+          "agents",
+          "foundational",
+          "org-graph",
+          "runner",
+          "compile-error",
+          "svelte-check",
+          "search",
+          "feature",
+          "sse",
+          "live-feed",
+          "observability",
+          "memory",
+          "wiring",
+          "chore",
+          "flywheel",
+          "metrics",
+          "sprint-data",
+          "backfill",
+          "prerequisite",
+          "navigation",
+          "quick-win",
+          "sprint-detail",
+          "ui-polish",
+          "markdown",
+          "cycle-detail",
+          "branches",
+          "git",
+          "hygiene",
+          "e2e",
+          "playwright",
+          "testing",
+          "documentation",
+          "smoke-test"
+        ],
+        "rationale": "6.7.3 → 6.8.0 (minor bump — feature/capability tags found (feature))"
+      }
+    }
+  ]
+}

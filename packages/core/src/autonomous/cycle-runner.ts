@@ -58,6 +58,32 @@ import type { RealTestRunner } from './exec/real-test-runner.js';
 import type { GitOps } from './exec/git-ops.js';
 import type { PROpener } from './exec/pr-opener.js';
 
+/**
+ * Build a PR title that's safe for `gh pr create` and never truncated mid-word.
+ *
+ * Why this is a pure exported function: the autonomous loop's first
+ * end-to-end successful cycle (b8755f16) crashed at the very last step
+ * because the inline title-building logic produced "autonomous(v6.7.0): All
+ * three items are well within the $50 cycle budg" — gh's arg parser choked
+ * on the unquoted parens, and slice(0, 50) cut a word in half. Extracting
+ * this lets the test suite pin both behaviors directly without spinning up
+ * a CycleRunner.
+ *
+ * Rules:
+ *   1. Strip parens (gh CLI parses unquoted (...) as option groups)
+ *   2. Collapse newlines into single spaces
+ *   3. Truncate at 65 chars on the nearest word boundary (ellipsis appended)
+ */
+export function sanitizePrTitle(version: string, summary: string): string {
+  const prefix = `autonomous v${version}: `;
+  const room = 65 - prefix.length;
+  const oneLine = summary.replace(/[\r\n]+/g, ' ').replace(/[()]/g, '').trim();
+  if (oneLine.length <= room) return prefix + oneLine;
+  const cut = oneLine.slice(0, room);
+  const lastSpace = cut.lastIndexOf(' ');
+  return prefix + (lastSpace > 20 ? cut.slice(0, lastSpace) : cut) + '…';
+}
+
 export interface CycleRunnerOptions {
   cwd: string;
   config: CycleConfig;
@@ -108,7 +134,14 @@ export class CycleRunner {
   private scoringFallback: 'static' | undefined;
 
   constructor(private readonly options: CycleRunnerOptions) {
-    this.cycleId = randomUUID();
+    // Honor AUTONOMOUS_CYCLE_ID when set (server's POST /api/v5/cycles route
+     // pre-allocates the id and pre-creates the dir, then spawns the CLI with
+     // this env var set so the CLI writes to the same dir the API client
+     // already has a pointer to). Falls back to a fresh UUID for direct CLI use.
+    const envId = process.env['AUTONOMOUS_CYCLE_ID'];
+    this.cycleId = envId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(envId)
+      ? envId
+      : randomUUID();
     this.startedAt = Date.now();
     this.logger = new CycleLogger(options.cwd, this.cycleId);
     this.killSwitch = new KillSwitch(
@@ -214,6 +247,9 @@ export class CycleRunner {
     const generator = new SprintGenerator(this.options.cwd, this.options.config);
     const plan: SprintPlan = await generator.generate(approved.approvedItems);
     this.sprintVersion = plan.version;
+    // Persist the cycle→sprint link immediately so the dashboard can resolve
+    // the Items tab without needing to match sprint files by timestamp.
+    this.logger.logSprintAssigned(plan.version);
     this.checkKillSwitch();
 
     // ─────────────────────────────────────────────────────────────────
@@ -339,7 +375,7 @@ export class CycleRunner {
     const prRequest = {
       branch: this.branch,
       baseBranch: this.options.config.git.baseBranch,
-      title: `autonomous(v${plan.version}): ${scored.summary.slice(0, 50)}`,
+      title: sanitizePrTitle(plan.version, scored.summary),
       body: prBody,
       draft: this.options.config.pr.draft,
       labels: this.options.config.pr.labels,

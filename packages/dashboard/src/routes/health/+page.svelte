@@ -94,7 +94,7 @@
     {#if lastRefreshed}
       <span class="refresh-time">Last refreshed {lastRefreshed}</span>
     {/if}
-    <button class="btn-refresh" on:click={fetchAll} disabled={loading}>
+    <button class="btn-refresh" onclick={fetchAll} disabled={loading}>
       {loading ? 'Refreshing…' : 'Refresh'}
     </button>
   </div>

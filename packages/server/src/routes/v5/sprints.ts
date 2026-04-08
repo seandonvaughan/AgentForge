@@ -13,35 +13,72 @@ function normalizeSprint(raw: Record<string, unknown>, fallbackId: string) {
 
   const version = (entry['version'] ?? fallbackId) as string;
   const title = (entry['title'] ?? entry['name'] ?? `Sprint ${version}`) as string;
-  const phase = entry['phase'] as string | undefined;
+  const phase = (entry['phase'] ?? entry['status']) as string | undefined;
   const items = (entry['items'] ?? []) as Record<string, unknown>[];
   const budget = entry['budget'] as number | undefined;
   const teamSize = entry['teamSize'] as number | undefined;
   const successCriteria = entry['successCriteria'] as string[] | undefined;
   const auditFindings = entry['auditFindings'] as string[] | undefined;
+  const testCountBefore = entry['testCountBefore'] as number | undefined;
+  const testCountAfter = entry['testCountAfter'] as number | undefined;
+  const testCountDelta = entry['testCountDelta'] as number | undefined;
+  const totalCostUsd = entry['totalCostUsd'] as number | undefined;
+  const autonomous = entry['autonomous'] as boolean | undefined;
+  const theme = entry['theme'] as string | undefined;
+  const versionDecision = entry['versionDecision'] as {
+    previousVersion?: string;
+    nextVersion?: string;
+    tier?: string;
+    rationale?: string;
+    tagsSeen?: string[];
+  } | undefined;
+
+  // Derive a canonical status from the phase/status field
+  function deriveStatus(p: string | undefined): 'completed' | 'in_progress' | 'pending' {
+    if (p === 'completed' || p === 'done') return 'completed';
+    if (p === 'in_progress' || p === 'active' || p === 'executing') return 'in_progress';
+    return 'pending';
+  }
+
+  // Normalize item status — older files use 'planned' instead of 'pending'
+  function normalizeItemStatus(s: unknown): 'completed' | 'in_progress' | 'pending' | 'blocked' | 'failed' {
+    if (s === 'completed') return 'completed';
+    if (s === 'in_progress') return 'in_progress';
+    if (s === 'blocked') return 'blocked';
+    if (s === 'failed') return 'failed';
+    // 'planned', 'pending', or anything else → pending
+    return 'pending';
+  }
 
   return {
     id: version,
     version,
     title,
-    status: phase === 'completed' ? 'completed' as const
-      : phase === 'in_progress' ? 'in_progress' as const
-      : 'pending' as const,
+    phase,
+    status: deriveStatus(phase),
     startDate: (entry['startedAt'] ?? entry['createdAt']) as string | undefined,
     endDate: entry['completedAt'] as string | undefined,
     budget,
     teamSize,
     successCriteria,
     auditFindings,
+    testCountBefore,
+    testCountAfter,
+    testCountDelta,
+    totalCostUsd,
+    autonomous,
+    theme,
+    versionDecision,
     items: items.map((item) => ({
       id: (item['id'] ?? '') as string,
       title: (item['title'] ?? '') as string,
       description: (item['description'] ?? '') as string,
       priority: (item['priority'] ?? 'P2') as string,
       assignee: (item['assignee'] ?? '') as string,
-      status: item['status'] === 'completed' ? 'completed' as const
-        : item['status'] === 'in_progress' ? 'in_progress' as const
-        : 'pending' as const,
+      status: normalizeItemStatus(item['status']),
+      estimatedCost: (item['estimatedCostUsd'] ?? item['estimatedCost']) as number | undefined,
+      tags: (item['tags'] ?? []) as string[],
+      source: item['source'] as string | undefined,
     })),
   };
 }

@@ -490,6 +490,8 @@ The `ProposalToBacklog` bridge queries SQLite within `config.sourcing.lookbackDa
 
 Then calls `SelfProposalEngine.fromSessions()` to generate proposals with confidence scores, filters by `minProposalConfidence` (default 0.6), and also scans the codebase for `TODO(autonomous)` and `FIXME(autonomous)` markers. The `(autonomous)` qualifier is required — plain `TODO` / `FIXME` are ignored to avoid scraping random human comments.
 
+**Marker format:** The marker must be preceded only by comment characters (`//`, `/*`, `*`, `<!--`, `#`) plus optional text. Markers embedded in strings, regex literals, or object literals are rejected by line-level prefix matching, preventing false positives from documentation strings or mock data within source comments. Test files and fixture directories are excluded to prevent ingesting escaped markers as real backlog items.
+
 Each proposal and marker becomes a `BacklogItem` with:
 - `priority: "P0" | "P1" | "P2"` based on proposal type
 - `estimatedCostUsd` using historical median for similar items

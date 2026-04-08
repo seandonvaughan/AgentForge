@@ -94,7 +94,7 @@
   });
 </script>
 
-<svelte:head><title>Cycles — AgentForge v6</title></svelte:head>
+<svelte:head><title>Cycles — AgentForge</title></svelte:head>
 
 <div class="page-header">
   <div>

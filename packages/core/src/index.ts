@@ -25,3 +25,4 @@ export * from './agent-versioning/index.js';
 export * from './federation/index.js';
 export * from './resilience/index.js';
 export * from './autonomous/index.js';
+export * from './memory/index.js';

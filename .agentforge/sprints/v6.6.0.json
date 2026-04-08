@@ -1,0 +1,45 @@
+{
+  "sprints": [
+    {
+      "version": "6.6.0",
+      "sprintId": "v6-6-0-file-conflict-multi-workspace",
+      "title": "AgentForge v6.6.0 — File-Conflict Detection & Multi-Workspace Support",
+      "createdAt": "2026-04-07T16:00:00.000Z",
+      "phase": "completed",
+      "startedAt": "2026-04-07T16:00:00.000Z",
+      "completedAt": "2026-04-07T19:00:00.000Z",
+      "items": [
+        {
+          "id": "v660-p0-1",
+          "title": "File-conflict detection in parallel execute phase",
+          "description": "Before dispatching parallel execute items, the phase scheduler performs a heuristic file-declaration check per item. Items that declare overlapping file paths are serialized rather than parallelized to prevent merge conflicts. Commits: 3ee397d.",
+          "priority": "P0",
+          "assignee": "CoreAgent",
+          "status": "completed",
+          "tags": ["feature", "execute-phase", "parallel", "file-conflict", "autonomous-loop"]
+        },
+        {
+          "id": "v660-p0-2",
+          "title": "Multi-workspace support — workspace registry + dashboard switcher",
+          "description": "The autonomous loop can now manage cycles across multiple project directories. A workspace registry tracks registered repos. The dashboard gains a workspace switcher in the header so operators can toggle between projects without restarting the server. Commits: 5b903cd, 1decf63.",
+          "priority": "P0",
+          "assignee": "CoreAgent",
+          "status": "completed",
+          "tags": ["feature", "multi-workspace", "dashboard", "autonomous-loop"]
+        }
+      ],
+      "budget": 12,
+      "teamSize": 2,
+      "successCriteria": [
+        "Parallel execute phase serializes items with overlapping file declarations",
+        "Workspace registry stores and retrieves multiple project directories",
+        "Dashboard workspace switcher lets operators change active project",
+        "All 320 autonomous tests continue to pass"
+      ],
+      "autonomous": true,
+      "testCountBefore": 320,
+      "testCountAfter": 348,
+      "testCountDelta": 28
+    }
+  ]
+}

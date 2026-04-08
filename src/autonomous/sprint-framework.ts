@@ -8,6 +8,20 @@
  */
 
 import { randomUUID } from "node:crypto";
+import type { SessionMemoryEntry } from "../memory/session-memory-manager.js";
+
+/**
+ * Minimal interface for writing gate-verdict memory entries.
+ * Satisfied by SessionMemoryManager.addEntry() — accepts any object with that method.
+ */
+export interface GateVerdictMemoryWriter {
+  addEntry(entry: SessionMemoryEntry): void;
+}
+
+export interface SprintFrameworkOptions {
+  /** When provided, every call to recordResult() writes a gate-verdict memory entry. */
+  memoryWriter?: GateVerdictMemoryWriter;
+}
 
 export type SprintPhase =
   | "audit"      // R&D lead scans codebase, metrics, feedback
@@ -64,6 +78,11 @@ const PHASE_ORDER: SprintPhase[] = [
 export class AutonomousSprintFramework {
   private sprints = new Map<string, SprintPlan>();
   private results = new Map<string, SprintResult>();
+  private readonly memoryWriter?: GateVerdictMemoryWriter;
+
+  constructor(options?: SprintFrameworkOptions) {
+    this.memoryWriter = options?.memoryWriter;
+  }
 
   // ---------------------------------------------------------------------------
   // Sprint lifecycle
@@ -167,6 +186,22 @@ export class AutonomousSprintFramework {
       completedAt: new Date().toISOString(),
     };
     this.results.set(sprintId, full);
+
+    // Write a gate-verdict memory entry so future audit phases can inspect
+    // what caused prior approvals or rejections across cycles.
+    if (this.memoryWriter) {
+      const entry: SessionMemoryEntry = {
+        id: randomUUID(),
+        sessionId: sprintId,
+        category: "gate-verdict",
+        agentId: "gate-phase",
+        summary: `Sprint ${sprint.version} gate ${full.gateVerdict}: ${full.itemsCompleted}/${full.itemsTotal} items completed, ${full.testsPassing}/${full.testsTotal} tests passing`,
+        success: full.gateVerdict === "approved",
+        timestamp: full.completedAt,
+      };
+      this.memoryWriter.addEntry(entry);
+    }
+
     return { ...full };
   }
 

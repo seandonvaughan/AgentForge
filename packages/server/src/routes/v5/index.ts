@@ -24,7 +24,9 @@ import { registerHealthServicesRoutes } from './health-services.js';
 import { sprintOrchestrationRoutes } from './sprint-orchestration.js';
 import { settingsRoutes } from './settings.js';
 import { agentCrudRoutes } from './agent-crud.js';
+import { agentRoutes } from './agents.js';
 import { chatRoutes } from './chat.js';
+import { runRoutes } from './run.js';
 
 export interface V5RouteOptions {
   adapter: WorkspaceAdapter;
@@ -195,11 +197,22 @@ export async function registerV5Routes(
 
   // ── Health ────────────────────────────────────────────────────────────────────
 
+  // v6.7.3: read version from root package.json — single source of truth.
+  // Resolves at registration time so the file is read once, not per request.
+  let pkgVersion = 'unknown';
+  try {
+    const { readFileSync } = await import('node:fs');
+    const { join: pathJoin } = await import('node:path');
+    // Walk up from this module to find the workspace root package.json
+    const candidate = pathJoin(process.cwd(), 'package.json');
+    pkgVersion = String(JSON.parse(readFileSync(candidate, 'utf8')).version ?? 'unknown');
+  } catch { /* fall back to 'unknown' */ }
+
   /** v5 health check — includes workspace context. */
   app.get('/api/v5/health', async (_req, reply) => {
     return reply.send({
       status: 'ok',
-      version: '6.1.0',
+      version: pkgVersion,
       api: 'v5',
       workspaceId: adapter.workspaceId,
       timestamp: new Date().toISOString(),
@@ -215,9 +228,15 @@ export async function registerV5Routes(
   // ── Settings persistence ───────────────────────────────────────────────────
   await settingsRoutes(app);
 
+  // ── Agent listing (GET /api/v5/agents — reads .agentforge/agents/*.yaml) ───
+  await agentRoutes(app, { adapter, projectRoot: opts.projectRoot ?? process.cwd() });
+
   // ── Agent CRUD (create, edit, delete, fork, promote) ──────────────────────
   await agentCrudRoutes(app, opts.projectRoot ? { projectRoot: opts.projectRoot } : {});
 
   // ── Agent Chat Interface (P0-3) ────────────────────────────────────────────
   await chatRoutes(app);
+
+  // ── Agent Runner (manual dispatch from dashboard) ─────────────────────────
+  await runRoutes(app, { adapter });
 }

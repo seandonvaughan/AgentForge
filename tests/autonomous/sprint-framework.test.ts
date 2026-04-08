@@ -2,7 +2,9 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   AutonomousSprintFramework,
   type SprintPhase,
+  type GateVerdictMemoryWriter,
 } from "../../src/autonomous/sprint-framework.js";
+import type { SessionMemoryEntry } from "../../src/memory/session-memory-manager.js";
 
 describe("AutonomousSprintFramework", () => {
   let fw: AutonomousSprintFramework;
@@ -156,6 +158,98 @@ describe("AutonomousSprintFramework", () => {
     });
     it("getPhaseOrder returns all 9 phases", () => {
       expect(fw.getPhaseOrder()).toHaveLength(9);
+    });
+  });
+
+  describe("gate-verdict memory integration", () => {
+    it("writes a gate-verdict entry via memoryWriter on approved result", () => {
+      const entries: SessionMemoryEntry[] = [];
+      const writer: GateVerdictMemoryWriter = { addEntry: (e) => entries.push(e) };
+      const fwWithMemory = new AutonomousSprintFramework({ memoryWriter: writer });
+
+      const s = fwWithMemory.createSprint("4.3", "T", 100, 10);
+      fwWithMemory.recordResult(s.sprintId, {
+        phase: "gate",
+        itemsCompleted: 10,
+        itemsTotal: 10,
+        testsPassing: 800,
+        testsTotal: 800,
+        budgetUsed: 50,
+        gateVerdict: "approved",
+        learnings: [],
+      });
+
+      expect(entries).toHaveLength(1);
+      expect(entries[0].category).toBe("gate-verdict");
+      expect(entries[0].agentId).toBe("gate-phase");
+      expect(entries[0].success).toBe(true);
+      expect(entries[0].summary).toContain("approved");
+      expect(entries[0].summary).toContain("4.3");
+    });
+
+    it("writes a gate-verdict entry with success=false on rejected result", () => {
+      const entries: SessionMemoryEntry[] = [];
+      const writer: GateVerdictMemoryWriter = { addEntry: (e) => entries.push(e) };
+      const fwWithMemory = new AutonomousSprintFramework({ memoryWriter: writer });
+
+      const s = fwWithMemory.createSprint("4.4", "T", 100, 10);
+      fwWithMemory.recordResult(s.sprintId, {
+        phase: "gate",
+        itemsCompleted: 5,
+        itemsTotal: 10,
+        testsPassing: 600,
+        testsTotal: 800,
+        budgetUsed: 90,
+        gateVerdict: "rejected",
+        learnings: [],
+      });
+
+      expect(entries).toHaveLength(1);
+      expect(entries[0].category).toBe("gate-verdict");
+      expect(entries[0].success).toBe(false);
+      expect(entries[0].summary).toContain("rejected");
+    });
+
+    it("does not write a memory entry when no memoryWriter is provided", () => {
+      // Default constructor — no writer injected
+      const fwNoMemory = new AutonomousSprintFramework();
+      const s = fwNoMemory.createSprint("4.5", "T", 100, 10);
+
+      // Should not throw; no side effects outside the framework
+      expect(() =>
+        fwNoMemory.recordResult(s.sprintId, {
+          phase: "gate",
+          itemsCompleted: 3,
+          itemsTotal: 3,
+          testsPassing: 100,
+          testsTotal: 100,
+          budgetUsed: 10,
+          gateVerdict: "approved",
+          learnings: [],
+        })
+      ).not.toThrow();
+    });
+
+    it("includes item and test counts in the memory summary", () => {
+      const entries: SessionMemoryEntry[] = [];
+      const writer: GateVerdictMemoryWriter = { addEntry: (e) => entries.push(e) };
+      const fwWithMemory = new AutonomousSprintFramework({ memoryWriter: writer });
+
+      const s = fwWithMemory.createSprint("4.6", "T", 100, 10);
+      fwWithMemory.recordResult(s.sprintId, {
+        phase: "gate",
+        itemsCompleted: 7,
+        itemsTotal: 9,
+        testsPassing: 450,
+        testsTotal: 500,
+        budgetUsed: 30,
+        gateVerdict: "approved",
+        learnings: [],
+      });
+
+      const summary = entries[0].summary;
+      expect(summary).toContain("7/9");
+      expect(summary).toContain("450/500");
     });
   });
 

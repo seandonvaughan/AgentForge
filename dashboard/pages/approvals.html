@@ -1,0 +1,626 @@
+  <div class="page" id="page-approvals" hidden>
+    <div class="page-header">
+      <h2>Approvals Queue</h2>
+      <button class="export-btn" onclick="loadApprovalsPage()">&#8635; Refresh</button>
+    </div>
+
+    <!-- Summary stats -->
+    <div class="approval-stats-grid">
+      <div class="stat-card">
+        <div class="stat-value" id="approvals-pending-count">—</div>
+        <div class="stat-label">Awaiting Decision</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="approvals-cycles-count">—</div>
+        <div class="stat-label">Active Cycles</div>
+      </div>
+    </div>
+
+    <!-- Pending cycle approvals -->
+    <div class="section-header">
+      <div class="section-title">Pending Decisions</div>
+      <span id="approvals-pending-badge" style="font-family:var(--font-mono);font-size:11px;color:var(--orange);">—</span>
+    </div>
+    <div class="approvals-pending-panel">
+      <div id="approvals-pending-list">
+        <div class="skeleton-loader">Loading pending approvals…</div>
+      </div>
+    </div>
+
+    <!-- Decided cycles -->
+    <div class="section-header">
+      <div class="section-title">Recently Decided</div>
+    </div>
+    <div class="approvals-list-panel">
+      <div id="approvals-decided-list">
+        <div style="padding:20px;color:var(--text-muted);text-align:center;">No recently decided cycles</div>
+      </div>
+    </div>
+  </div><!-- /page-approvals -->
+
+  <style>
+    .approval-stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .stat-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      text-align: center;
+    }
+
+    .stat-value {
+      font-family: var(--font-mono);
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text-primary);
+      line-height: 1;
+      margin-bottom: 6px;
+    }
+
+    .stat-label {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .approvals-pending-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin-bottom: 24px;
+    }
+
+    .approvals-list-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin-bottom: 24px;
+    }
+
+    /* ── Cycle approval card ── */
+    .cycle-approval-card {
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--border);
+      animation: fadeInUp 0.3s ease-out both;
+    }
+
+    .cycle-approval-card:last-child { border-bottom: none; }
+
+    .cycle-approval-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .cycle-approval-title {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .cycle-approval-meta {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+
+    /* Budget bar */
+    .budget-bar-wrap {
+      margin: 10px 0 14px;
+    }
+
+    .budget-bar-labels {
+      display: flex;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+
+    .budget-bar-track {
+      height: 6px;
+      background: var(--border);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .budget-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      background: var(--green);
+      transition: width 0.4s ease;
+    }
+
+    .budget-bar-fill.over { background: var(--red); }
+
+    /* Item lists */
+    .approval-section-label {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-muted);
+      margin: 10px 0 6px;
+    }
+
+    .approval-item-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-bottom: 8px;
+    }
+
+    .approval-item-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      background: var(--bg-primary);
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+
+    .approval-item-row.within-budget { border-left: 2px solid var(--green); }
+    .approval-item-row.overflow { border-left: 2px solid var(--orange); }
+
+    .approval-item-rank {
+      color: var(--text-muted);
+      min-width: 20px;
+    }
+
+    .approval-item-title-text {
+      flex: 1;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .approval-item-cost {
+      color: var(--gold);
+      white-space: nowrap;
+    }
+
+    .approval-item-assignee {
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .approval-agent-summary {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-secondary);
+      padding: 8px 10px;
+      background: var(--bg-primary);
+      border-radius: 4px;
+      margin: 10px 0;
+      line-height: 1.5;
+      border-left: 2px solid var(--blue);
+      word-break: break-word;
+    }
+
+    /* Action buttons */
+    .cycle-approval-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 14px;
+      flex-wrap: wrap;
+    }
+
+    .approval-btn {
+      padding: 8px 14px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      cursor: pointer;
+      transition: all 0.15s;
+      background: transparent;
+      color: var(--text-primary);
+    }
+
+    .approval-btn:hover { background: var(--bg-primary); border-color: var(--border-light); }
+    .approval-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .approval-btn.approve-all {
+      border-color: var(--green);
+      color: var(--green);
+      flex: 1;
+    }
+
+    .approval-btn.approve-all:hover { background: rgba(63,185,80,0.1); }
+
+    .approval-btn.reject-all {
+      border-color: var(--red);
+      color: var(--red);
+    }
+
+    .approval-btn.reject-all:hover { background: rgba(248,81,73,0.1); }
+
+    .approval-btn.open-modal {
+      border-color: var(--blue);
+      color: var(--blue);
+    }
+
+    .approval-btn.open-modal:hover { background: rgba(88,166,255,0.1); }
+
+    /* Decided items */
+    .decided-cycle-row {
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+
+    .decided-cycle-row:last-child { border-bottom: none; }
+
+    .approval-badge {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .approval-badge.pending { background: rgba(210,153,34,0.15); color: var(--orange); }
+    .approval-badge.approved { background: rgba(63,185,80,0.15); color: var(--green); }
+    .approval-badge.rejected { background: rgba(248,81,73,0.15); color: var(--red); }
+
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+
+  <script>
+    /**
+     * Load the approvals page by fetching cycles with pending budget-gate approvals.
+     *
+     * Flow:
+     *   1. GET /api/v5/cycles?limit=50  — find cycles with hasApprovalPending
+     *   2. For each, GET /api/v5/cycles/:id/approval  — load approval-pending.json
+     *   3. Render withinBudget/overflow items with Approve All / Reject All actions
+     *   4. POST /api/v5/cycles/:id/approve to write approval-decision.json
+     */
+    async function loadApprovalsPage() {
+      const pendingEl  = document.getElementById('approvals-pending-count');
+      const cyclesEl   = document.getElementById('approvals-cycles-count');
+      const badgeEl    = document.getElementById('approvals-pending-badge');
+      const pendingDiv = document.getElementById('approvals-pending-list');
+      const decidedDiv = document.getElementById('approvals-decided-list');
+
+      if (pendingDiv) {
+        pendingDiv.textContent = '';
+        const sk = document.createElement('div');
+        sk.className = 'skeleton-loader';
+        sk.textContent = 'Loading…';
+        pendingDiv.appendChild(sk);
+      }
+
+      try {
+        // Step 1: list cycles
+        const res = await fetch('/api/v5/cycles?limit=50');
+        const json = res.ok ? await res.json() : {};
+        const cycles = json.cycles || [];
+
+        if (cyclesEl) cyclesEl.textContent = String(cycles.length);
+
+        // Step 2: fetch approval details for pending cycles
+        const pendingCycles = cycles.filter(c => c.hasApprovalPending);
+        const decidedCycles = cycles.filter(c => !c.hasApprovalPending && c.cycleId);
+
+        if (pendingEl) pendingEl.textContent = String(pendingCycles.length);
+        if (badgeEl) {
+          badgeEl.textContent = pendingCycles.length > 0
+            ? `${pendingCycles.length} awaiting decision`
+            : '—';
+        }
+
+        // Fetch approval payload for each pending cycle
+        const approvalData = await Promise.all(
+          pendingCycles.map(async c => {
+            try {
+              const r = await fetch(`/api/v5/cycles/${c.cycleId}/approval`);
+              if (!r.ok) return null;
+              const data = await r.json();
+              return { cycle: c, data };
+            } catch {
+              return null;
+            }
+          })
+        );
+        const validApprovals = approvalData.filter(Boolean);
+
+        // Render pending
+        if (pendingDiv) {
+          pendingDiv.textContent = '';
+          if (validApprovals.length === 0) {
+            const msg = document.createElement('div');
+            msg.style.cssText = 'padding:32px;color:var(--text-muted);text-align:center;font-family:var(--font-mono);font-size:12px;';
+            msg.textContent = 'No pending approvals — the autonomous cycle is running within budget.';
+            pendingDiv.appendChild(msg);
+          } else {
+            validApprovals.forEach(({ cycle, data }) => {
+              pendingDiv.appendChild(_buildCycleApprovalCard(cycle, data));
+            });
+          }
+        }
+
+        // Render decided cycles (last 10)
+        if (decidedDiv) {
+          decidedDiv.textContent = '';
+          const recent = decidedCycles.slice(0, 10);
+          if (recent.length === 0) {
+            const msg = document.createElement('div');
+            msg.style.cssText = 'padding:20px;color:var(--text-muted);text-align:center;font-family:var(--font-mono);font-size:12px;';
+            msg.textContent = 'No recently decided cycles';
+            decidedDiv.appendChild(msg);
+          } else {
+            recent.forEach(c => {
+              const row = document.createElement('div');
+              row.className = 'decided-cycle-row';
+              const info = document.createElement('span');
+              info.style.color = 'var(--text-secondary)';
+              info.textContent = c.cycleId + (c.sprintVersion ? ` · ${c.sprintVersion}` : '');
+              const badge = document.createElement('span');
+              badge.className = 'approval-badge approved';
+              badge.textContent = 'Decided';
+              row.appendChild(info);
+              row.appendChild(badge);
+              decidedDiv.appendChild(row);
+            });
+          }
+        }
+      } catch (e) {
+        console.error('loadApprovalsPage error:', e);
+        if (pendingDiv) {
+          pendingDiv.textContent = '';
+          const err = document.createElement('div');
+          err.style.cssText = 'padding:20px;color:var(--red);text-align:center;font-family:var(--font-mono);font-size:12px;';
+          err.textContent = 'Failed to load approvals: ' + e.message;
+          pendingDiv.appendChild(err);
+        }
+      }
+    }
+
+    /** Build a cycle approval card DOM element. */
+    function _buildCycleApprovalCard(cycle, data) {
+      const card = document.createElement('div');
+      card.className = 'cycle-approval-card';
+
+      // Header
+      const header = document.createElement('div');
+      header.className = 'cycle-approval-header';
+
+      const title = document.createElement('div');
+      title.className = 'cycle-approval-title';
+      title.textContent = cycle.cycleId + (cycle.sprintVersion ? ` · ${cycle.sprintVersion}` : '');
+
+      const badge = document.createElement('span');
+      badge.className = 'approval-badge pending';
+      badge.textContent = 'Pending';
+
+      header.appendChild(title);
+      header.appendChild(badge);
+      card.appendChild(header);
+
+      // Meta: requested at + budget summary
+      const withinItems = data.withinBudget?.items ?? [];
+      const overflowItems = data.overflow?.items ?? [];
+      const withinCost = withinItems.reduce((s, i) => s + (i.estimatedCostUsd || 0), 0);
+      const totalNew = Number(data.newTotalUsd || 0);
+      const budgetUsd = Number(data.budgetUsd || 200);
+
+      const meta = document.createElement('div');
+      meta.className = 'cycle-approval-meta';
+      meta.textContent = [
+        data.requestedAt ? `Requested ${_formatTime(data.requestedAt)}` : '',
+        `Budget $${budgetUsd.toFixed(0)}`,
+        `Within-budget cost $${withinCost.toFixed(2)}`,
+        overflowItems.length > 0 ? `${overflowItems.length} overflow item(s)` : '',
+      ].filter(Boolean).join(' · ');
+      card.appendChild(meta);
+
+      // Budget bar
+      const pct = Math.min((withinCost / budgetUsd) * 100, 100);
+      const barWrap = document.createElement('div');
+      barWrap.className = 'budget-bar-wrap';
+      const barLabels = document.createElement('div');
+      barLabels.className = 'budget-bar-labels';
+      const barLeft = document.createElement('span');
+      barLeft.textContent = `$${withinCost.toFixed(2)} within budget`;
+      const barRight = document.createElement('span');
+      barRight.textContent = `$${budgetUsd.toFixed(0)} limit`;
+      barLabels.appendChild(barLeft);
+      barLabels.appendChild(barRight);
+      const barTrack = document.createElement('div');
+      barTrack.className = 'budget-bar-track';
+      const barFill = document.createElement('div');
+      barFill.className = 'budget-bar-fill' + (withinCost > budgetUsd ? ' over' : '');
+      barFill.style.width = pct + '%';
+      barTrack.appendChild(barFill);
+      barWrap.appendChild(barLabels);
+      barWrap.appendChild(barTrack);
+      card.appendChild(barWrap);
+
+      // Agent summary
+      if (data.agentSummary) {
+        const summary = document.createElement('div');
+        summary.className = 'approval-agent-summary';
+        summary.textContent = data.agentSummary;
+        card.appendChild(summary);
+      }
+
+      // Within-budget items
+      if (withinItems.length > 0) {
+        const label = document.createElement('div');
+        label.className = 'approval-section-label';
+        label.textContent = `✓ Within Budget (${withinItems.length})`;
+        card.appendChild(label);
+        const list = document.createElement('div');
+        list.className = 'approval-item-list';
+        withinItems.forEach(item => list.appendChild(_buildItemRow(item, 'within-budget')));
+        card.appendChild(list);
+      }
+
+      // Overflow items
+      if (overflowItems.length > 0) {
+        const label = document.createElement('div');
+        label.className = 'approval-section-label';
+        label.textContent = `⚠ Overflow — Requires Approval (${overflowItems.length})`;
+        label.style.color = 'var(--orange)';
+        card.appendChild(label);
+        const list = document.createElement('div');
+        list.className = 'approval-item-list';
+        overflowItems.forEach(item => list.appendChild(_buildItemRow(item, 'overflow')));
+        card.appendChild(list);
+      }
+
+      // Actions
+      const actions = document.createElement('div');
+      actions.className = 'cycle-approval-actions';
+
+      // Approve All button (approve withinBudget, reject overflow)
+      const approveAllBtn = document.createElement('button');
+      approveAllBtn.className = 'approval-btn approve-all';
+      approveAllBtn.textContent = `✓ Approve Within Budget (${withinItems.length} items)`;
+      approveAllBtn.onclick = () => _decideCycle(cycle.cycleId, { approveAll: true }, approveAllBtn, rejectAllBtn);
+      actions.appendChild(approveAllBtn);
+
+      // Reject All button
+      const rejectAllBtn = document.createElement('button');
+      rejectAllBtn.className = 'approval-btn reject-all';
+      rejectAllBtn.textContent = '✕ Reject All';
+      rejectAllBtn.onclick = () => _decideCycle(
+        cycle.cycleId,
+        { rejectedItemIds: [...withinItems, ...overflowItems].map(i => i.itemId) },
+        approveAllBtn,
+        rejectAllBtn
+      );
+      actions.appendChild(rejectAllBtn);
+
+      // Open in ApprovalModal button (global modal)
+      if (typeof window.openApprovalModal === 'function') {
+        const detailBtn = document.createElement('button');
+        detailBtn.className = 'approval-btn open-modal';
+        detailBtn.textContent = '⊞ Review in Modal';
+        detailBtn.onclick = () => window.openApprovalModal({
+          cycleId: cycle.cycleId,
+          sprintVersion: cycle.sprintVersion,
+          data,
+          onDecide: () => loadApprovalsPage(),
+        });
+        actions.appendChild(detailBtn);
+      }
+
+      card.appendChild(actions);
+      return card;
+    }
+
+    /** Build a single approval item row. */
+    function _buildItemRow(item, cls) {
+      const row = document.createElement('div');
+      row.className = 'approval-item-row ' + cls;
+
+      const rank = document.createElement('span');
+      rank.className = 'approval-item-rank';
+      rank.textContent = '#' + (item.rank || '?');
+
+      const titleText = document.createElement('span');
+      titleText.className = 'approval-item-title-text';
+      titleText.title = item.rationale || '';
+      titleText.textContent = item.title || item.itemId;
+
+      const cost = document.createElement('span');
+      cost.className = 'approval-item-cost';
+      cost.textContent = item.estimatedCostUsd != null ? `$${Number(item.estimatedCostUsd).toFixed(2)}` : '—';
+
+      const assignee = document.createElement('span');
+      assignee.className = 'approval-item-assignee';
+      assignee.textContent = item.suggestedAssignee || '';
+
+      row.appendChild(rank);
+      row.appendChild(titleText);
+      row.appendChild(cost);
+      row.appendChild(assignee);
+      return row;
+    }
+
+    /**
+     * POST a decision to /api/v5/cycles/:id/approve.
+     *
+     * @param {string} cycleId
+     * @param {{ approveAll?: boolean, approvedItemIds?: string[], rejectedItemIds?: string[] }} body
+     * @param {...HTMLButtonElement} btns - buttons to disable during request
+     */
+    async function _decideCycle(cycleId, body, ...btns) {
+      btns.forEach(b => { if (b) { b.disabled = true; } });
+      try {
+        const res = await fetch(`/api/v5/cycles/${encodeURIComponent(cycleId)}/approve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ decidedBy: 'dashboard', ...body }),
+        });
+
+        if (res.ok) {
+          // Refresh the approvals page after a short delay so server can settle
+          setTimeout(() => loadApprovalsPage(), 300);
+          // Also update the global approval badge if available
+          if (typeof window._refreshApprovalsBadge === 'function') {
+            window._refreshApprovalsBadge();
+          }
+        } else {
+          const err = await res.json().catch(() => ({}));
+          const msg = err.error || `HTTP ${res.status}`;
+          alert('Decision failed: ' + msg);
+          btns.forEach(b => { if (b) { b.disabled = false; } });
+        }
+      } catch (e) {
+        alert('Error submitting decision: ' + e.message);
+        btns.forEach(b => { if (b) { b.disabled = false; } });
+      }
+    }
+
+    function _formatTime(iso) {
+      if (!iso) return '—';
+      const d = new Date(iso);
+      return d.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    }
+
+    // Auto-load when page script is injected
+    (function () {
+      if (typeof loadApprovalsPage === 'function') loadApprovalsPage();
+    })();
+  </script>

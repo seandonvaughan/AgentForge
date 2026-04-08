@@ -1908,64 +1908,12 @@
         <button class="mem-filter-btn" data-cat="project" onclick="memFilterCat(this,'project')">Project</button>
         <button class="mem-filter-btn" data-cat="lesson" onclick="memFilterCat(this,'lesson')">Lesson</button>
         <button class="mem-filter-btn" data-cat="config" onclick="memFilterCat(this,'config')">Config</button>
+        <select id="memory-agent-filter" onchange="memFilterAgent(this.value)" style="margin-left:auto;font-family:var(--font-mono);font-size:11px;padding:4px 8px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-card);color:var(--text-secondary);outline:none;cursor:pointer;">
+          <option value="all">All Agents</option>
+        </select>
       </div>
       <div class="memory-list" id="memory-list">
-        <div class="memory-entry" data-cat="feedback">
-          <div class="memory-entry-header">
-            <span class="memory-entry-title">feedback_model_routing.md</span>
-            <span class="category-badge feedback">Feedback</span>
-            <span class="chip" style="color:var(--gold);border-color:var(--gold)">ceo</span>
-          </div>
-          <div class="memory-entry-preview">Always set model parameter on Agent dispatches to avoid wasting Opus tokens on Sonnet/Haiku tasks. Route by complexity: Opus for strategy, Sonnet for implementation, Haiku for utilities.</div>
-        </div>
-        <div class="memory-entry" data-cat="project">
-          <div class="memory-entry-header">
-            <span class="memory-entry-title">project_dogfood_audit.md</span>
-            <span class="category-badge project">Project</span>
-            <span class="chip" style="color:var(--gold);border-color:var(--gold)">genesis</span>
-          </div>
-          <div class="memory-entry-preview">Lessons from building v2 with parallel agents: cost waste, product improvements, future opportunities. Key finding: parallel agents reduce wall-clock time 3x but require careful cost control.</div>
-        </div>
-        <div class="memory-entry" data-cat="feedback">
-          <div class="memory-entry-header">
-            <span class="memory-entry-title">feedback_agent_communication.md</span>
-            <span class="category-badge feedback">Feedback</span>
-            <span class="chip" style="color:var(--gold);border-color:var(--gold)">ceo</span>
-          </div>
-          <div class="memory-entry-preview">Async agent messaging (DMs, channels, inboxes) to reduce Opus invocations. Teams should resolve issues internally before escalating to Opus-tier agents.</div>
-        </div>
-        <div class="memory-entry" data-cat="feedback">
-          <div class="memory-entry-header">
-            <span class="memory-entry-title">feedback_executive_assistants.md</span>
-            <span class="category-badge feedback">Feedback</span>
-            <span class="chip" style="color:var(--blue);border-color:var(--blue)">coo</span>
-          </div>
-          <div class="memory-entry-preview">Opus agents get Haiku assistants that filter inbox, prepare briefings, reduce Opus invocations by 80%+. Proven pattern across v3.2 and v4 sprints.</div>
-        </div>
-        <div class="memory-entry" data-cat="config">
-          <div class="memory-entry-header">
-            <span class="memory-entry-title">feedback_always_use_team.md</span>
-            <span class="category-badge config">Config</span>
-            <span class="chip" style="color:var(--gold);border-color:var(--gold)">ceo</span>
-          </div>
-          <div class="memory-entry-preview">CRITICAL: All work must route through forged team agents, never bypass with generic subagents. This ensures skill templates are applied and cost tracking is accurate.</div>
-        </div>
-        <div class="memory-entry" data-cat="project">
-          <div class="memory-entry-header">
-            <span class="memory-entry-title">project_v3_phase1_complete.md</span>
-            <span class="category-badge project">Project</span>
-            <span class="chip" style="color:var(--gold);border-color:var(--gold)">genesis</span>
-          </div>
-          <div class="memory-entry-preview">All 3 phases complete (745 tests): foundation, cost+intelligence, communication+session. REFORGE REQUESTED for v3.2 design overhaul.</div>
-        </div>
-        <div class="memory-entry" data-cat="lesson">
-          <div class="memory-entry-header">
-            <span class="memory-entry-title">project_v32_concept.md</span>
-            <span class="category-badge lesson">Lesson</span>
-            <span class="chip" style="color:var(--gold);border-color:var(--gold)">meta-architect</span>
-          </div>
-          <div class="memory-entry-preview">v3.2 design: hard activation command, Sonnet as conduit, peer-to-peer agent comms, Opus only for strategic escalations. Reduces cost by estimated 40%.</div>
-        </div>
+        <!-- Populated at runtime by loadMemoryBrowser() from /api/v1/memory -->
       </div>
     </section>
 

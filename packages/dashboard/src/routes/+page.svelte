@@ -7,6 +7,7 @@
   import { totalUsd, costsLoading } from '$lib/stores/costs.js';
   import { wsConnected } from '$lib/stores/ws.js';
   import { withWorkspace } from '$lib/stores/workspace';
+  import { versionFull, versionShort } from '$lib/stores/version.js';
   import { onMount } from 'svelte';
 
   const API_BASE = '';
@@ -172,20 +173,19 @@
   ];
 </script>
 
-<svelte:head><title>AgentForge v6.1 — Command Center</title></svelte:head>
+<svelte:head><title>AgentForge {$versionShort} — Command Center</title></svelte:head>
 
 <!-- ── Version banner ─────────────────────────────────────────────────────── -->
 <div class="version-banner">
-  <span class="version-badge-pill">agentforge v6.1.0</span>
-  <span class="sprint-label">v6.1 — Sprint Intelligence + Agent Roster + Session Persistence</span>
-  <span class="test-badge">3360+ tests</span>
+  <span class="version-badge-pill">agentforge v{$versionFull}</span>
+  <span class="sprint-label">{$versionShort} — Autonomous Cycle + Real-time Dashboard</span>
 </div>
 
 <!-- ── Page header ─────────────────────────────────────────────────────────── -->
 <div class="page-header">
   <div>
     <h1 class="page-title">Command Center</h1>
-    <p class="page-subtitle">AgentForge v6.1 — Real-time agent operations platform</p>
+    <p class="page-subtitle">AgentForge {$versionShort} — Real-time agent operations platform</p>
   </div>
   <div style="display:flex; align-items:center; gap: var(--space-3);">
     {#if isLoading}

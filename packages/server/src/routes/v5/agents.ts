@@ -2,7 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { AgentRuntime, loadAgentConfig } from '@agentforge/core';
 import type { WorkspaceAdapter } from '@agentforge/db';
 import { join } from 'node:path';
-import { readdirSync, existsSync } from 'node:fs';
+import { readdirSync, existsSync, readFileSync } from 'node:fs';
+import yaml from 'js-yaml';
 
 export async function agentRoutes(
   app: FastifyInstance,
@@ -10,17 +11,34 @@ export async function agentRoutes(
 ): Promise<void> {
   const agentforgeDir = join(opts.projectRoot, '.agentforge');
 
-  // GET /api/v5/agents — list agents from .agentforge/agents/
+  // GET /api/v5/agents — list agents from .agentforge/agents/*.yaml
+  // Returns rich display data (name, model, description, role) from YAML directly.
   app.get('/api/v5/agents', async (_req, reply) => {
     try {
       const agentsDir = join(agentforgeDir, 'agents');
       if (!existsSync(agentsDir)) return reply.send({ data: [], meta: { total: 0 } });
 
       const files = readdirSync(agentsDir).filter(f => f.endsWith('.yaml'));
-      const agents = await Promise.all(
-        files.map(f => loadAgentConfig(f.replace('.yaml', ''), agentforgeDir)),
-      );
-      const data = agents.filter(Boolean);
+      const data = files.flatMap(f => {
+        const agentId = f.replace(/\.ya?ml$/, '');
+        try {
+          const raw = yaml.load(readFileSync(join(agentsDir, f), 'utf-8')) as Record<string, unknown> | null;
+          if (!raw || typeof raw !== 'object') return [];
+          const modelRaw = typeof raw.model === 'string' ? raw.model : 'sonnet';
+          const model = (modelRaw === 'opus' || modelRaw === 'haiku') ? modelRaw : 'sonnet';
+          return [{
+            agentId,
+            name: typeof raw.name === 'string' ? raw.name : agentId,
+            model,
+            description: typeof raw.description === 'string' ? raw.description.trim() : null,
+            role: typeof raw.role === 'string' ? raw.role : null,
+          }];
+        } catch {
+          return [];
+        }
+      });
+
+      data.sort((a, b) => a.agentId.localeCompare(b.agentId));
       return reply.send({ data, meta: { total: data.length } });
     } catch {
       return reply.send({ data: [], meta: { total: 0 } });
@@ -29,9 +47,27 @@ export async function agentRoutes(
 
   // GET /api/v5/agents/:id
   app.get<{ Params: { id: string } }>('/api/v5/agents/:id', async (req, reply) => {
-    const config = await loadAgentConfig(req.params.id, agentforgeDir);
-    if (!config) return reply.status(404).send({ error: 'Agent not found' });
-    return reply.send({ data: config });
+    const agentId = req.params.id;
+    const filePath = join(agentforgeDir, 'agents', `${agentId}.yaml`);
+    if (!existsSync(filePath)) return reply.status(404).send({ error: 'Agent not found' });
+    try {
+      const raw = yaml.load(readFileSync(filePath, 'utf-8')) as Record<string, unknown> | null;
+      if (!raw || typeof raw !== 'object') return reply.status(404).send({ error: 'Agent not found' });
+      const modelRaw = typeof raw.model === 'string' ? raw.model : 'sonnet';
+      const model = (modelRaw === 'opus' || modelRaw === 'haiku') ? modelRaw : 'sonnet';
+      return reply.send({
+        data: {
+          agentId,
+          name: typeof raw.name === 'string' ? raw.name : agentId,
+          model,
+          description: typeof raw.description === 'string' ? raw.description.trim() : null,
+          role: typeof raw.role === 'string' ? raw.role : null,
+          systemPrompt: typeof raw.system_prompt === 'string' ? raw.system_prompt : null,
+        },
+      });
+    } catch {
+      return reply.status(404).send({ error: 'Agent not found' });
+    }
   });
 
   // POST /api/v5/agents/:id/run — invoke an agent
@@ -50,7 +86,13 @@ export async function agentRoutes(
 
     config.workspaceId = 'default';
     const runtime = new AgentRuntime(config, opts.adapter);
-    const result = await runtime.run({ task, context, parentSessionId, budgetUsd });
+    const runOpts = {
+      task,
+      ...(context !== undefined ? { context } : {}),
+      ...(parentSessionId !== undefined ? { parentSessionId } : {}),
+      ...(budgetUsd !== undefined ? { budgetUsd } : {}),
+    };
+    const result = await runtime.run(runOpts);
 
     return reply.send({ data: result });
   });
