@@ -8,11 +8,16 @@
     source?: string;
   }
 
+  const ALL_TYPES = ['session', 'agent', 'cycle', 'sprint', 'memory'] as const;
+  type ContentType = typeof ALL_TYPES[number];
+
   let query = '';
   let results: SearchResult[] = [];
   let searching = false;
   let error: string | null = null;
   let searched = false;
+  // Empty array = all types (no filter). Populated = include only selected types.
+  let selectedTypes: ContentType[] = [];
 
   async function search() {
     if (!query.trim()) return;
@@ -21,10 +26,16 @@
     searched = true;
     results = [];
     try {
-      const res = await fetch('/api/v5/embeddings/search', {
+      const body: { query: string; limit: number; types?: string[] } = {
+        query: query.trim(),
+        limit: 20,
+      };
+      if (selectedTypes.length > 0) body.types = selectedTypes;
+
+      const res = await fetch('/api/v5/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: query.trim(), limit: 20 }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
@@ -38,6 +49,14 @@
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter') search();
+  }
+
+  function toggleType(t: ContentType) {
+    if (selectedTypes.includes(t)) {
+      selectedTypes = selectedTypes.filter(s => s !== t);
+    } else {
+      selectedTypes = [...selectedTypes, t];
+    }
   }
 
   function scoreColor(score: number): string {
@@ -56,7 +75,7 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">Search</h1>
-    <p class="page-subtitle">Semantic search across agent memory and sessions</p>
+    <p class="page-subtitle">Search across agent memory, sessions, cycles, and sprints</p>
   </div>
 </div>
 
@@ -64,9 +83,9 @@
   <input
     class="search-input"
     type="search"
-    placeholder="Search by meaning, not just keywords…"
+    placeholder="Search agents, sessions, cycles, sprints…"
     bind:value={query}
-    on:keydown={handleKeydown}
+    onkeydown={handleKeydown}
     aria-label="Search query"
     disabled={searching}
   />
@@ -77,6 +96,26 @@
   >
     {searching ? 'Searching…' : 'Search'}
   </button>
+</div>
+
+<!-- Type filters -->
+<div class="type-filters" role="group" aria-label="Filter by type">
+  <span class="filter-label">Filter by type:</span>
+  {#each ALL_TYPES as t}
+    <button
+      class="type-chip"
+      class:active={selectedTypes.includes(t)}
+      onclick={() => toggleType(t)}
+      aria-pressed={selectedTypes.includes(t)}
+    >
+      {t}
+    </button>
+  {/each}
+  {#if selectedTypes.length > 0}
+    <button class="type-chip clear-chip" onclick={() => (selectedTypes = [])}>
+      clear filter
+    </button>
+  {/if}
 </div>
 
 {#if searching}
@@ -133,7 +172,7 @@
   </div>
 {:else}
   <div class="empty-state search-hint">
-    Enter a search query to find semantically similar content across agents, memory, and sessions.
+    Enter a search query to find content across agents, sessions, cycles, and sprints.
   </div>
 {/if}
 
@@ -141,7 +180,7 @@
   .search-bar {
     display: flex;
     gap: var(--space-3);
-    margin-bottom: var(--space-6);
+    margin-bottom: var(--space-3);
   }
   .search-input {
     flex: 1;
@@ -154,6 +193,40 @@
     outline: none;
   }
   .search-input:focus { border-color: var(--color-brand); box-shadow: 0 0 0 2px rgba(91,138,245,0.15); }
+
+  .type-filters {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-bottom: var(--space-6);
+  }
+  .filter-label {
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-right: var(--space-1);
+  }
+  .type-chip {
+    padding: var(--space-1) var(--space-3);
+    border-radius: var(--radius-full);
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+    cursor: pointer;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface-2);
+    color: var(--color-text-muted);
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .type-chip:hover { border-color: var(--color-brand); color: var(--color-text); }
+  .type-chip.active {
+    background: var(--color-brand);
+    border-color: var(--color-brand);
+    color: #fff;
+  }
+  .clear-chip { color: var(--color-text-faint); border-style: dashed; }
+
   .results-header {
     display: flex;
     align-items: center;

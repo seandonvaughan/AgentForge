@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import type { SqliteAdapter } from '../db/index.js';
 import type { SseManager } from './sse/sse-manager.js';
+import { registerOAuth2Hook } from './auth/index.js';
+import type { OAuth2Config } from './auth/index.js';
 import { sessionsRoutes } from './routes/sessions.js';
 import { agentsRoutes } from './routes/agents.js';
 import { costsRoutes } from './routes/costs.js';
@@ -32,6 +34,8 @@ export interface ServerOptions {
   dashboardPath?: string; // path to serve static files from
   adapter?: SqliteAdapter; // optional data layer for REST API routes
   sseManager?: SseManager; // optional SSE manager — registers GET /api/v1/stream when provided
+  /** OAuth2 authentication configuration. Defaults to disabled (no auth). */
+  auth?: OAuth2Config;
 }
 
 export async function createServer(options: ServerOptions = {}) {
@@ -56,6 +60,12 @@ export async function createServer(options: ServerOptions = {}) {
     origin: [`http://${host}:${port}`, `http://localhost:${port}`],
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
   });
+
+  // OAuth2 Bearer token authentication — registered at root scope so the
+  // onRequest hook covers all paths including 404 handlers.
+  // No-op when mode is "disabled" (the default).
+  const authConfig: OAuth2Config = options.auth ?? { mode: 'disabled' };
+  registerOAuth2Hook(app, authConfig);
 
   // Serve dashboard static files
   const staticPath = options.dashboardPath ?? join(__dirname, '../../dashboard');

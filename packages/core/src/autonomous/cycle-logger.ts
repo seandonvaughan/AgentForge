@@ -2,6 +2,7 @@
 import { mkdirSync, writeFileSync, appendFileSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { CycleResult, TestResult, ScoringResult, KillSwitchTrip } from './types.js';
+import { writeMemoryEntry } from '../memory/types.js';
 
 export interface GitEvent {
   type: 'branch-created' | 'staged' | 'committed' | 'pushed' | 'rolled-back';
@@ -92,12 +93,16 @@ export class CycleLogger {
       : { events: [] };
     existing.events.push({ ...event, at: new Date().toISOString() });
     this.writeJson(path, existing);
-    this.appendEvent({ type: 'git.' + event.type, ...event, at: new Date().toISOString() });
+    // v6.7.4: spread event FIRST, then override type to include the git.
+    // prefix. The previous `{ type: 'git.' + event.type, ...event, ... }`
+    // order had the spread clobber the typed event.type, producing a
+    // duplicate-key warning and a dropped prefix.
+    this.appendEvent({ ...event, type: 'git.' + event.type, at: new Date().toISOString() });
   }
 
   logPREvent(event: PREvent): void {
     this.writeJson(join(this.cycleDir, 'pr.json'), { ...event, at: new Date().toISOString() });
-    this.appendEvent({ type: 'pr.' + event.type, ...event, at: new Date().toISOString() });
+    this.appendEvent({ ...event, type: 'pr.' + event.type, at: new Date().toISOString() });
   }
 
   logKillSwitch(trip: KillSwitchTrip): void {
@@ -107,6 +112,19 @@ export class CycleLogger {
   logCycleResult(result: CycleResult): void {
     this.writeJson(join(this.cycleDir, 'cycle.json'), result);
     this.appendEvent({ type: 'cycle.complete', stage: result.stage, at: new Date().toISOString() });
+    writeMemoryEntry(this.cwd, {
+      type: 'cycle-outcome',
+      value: JSON.stringify({
+        cycleId: result.cycleId,
+        sprintVersion: result.sprintVersion,
+        stage: result.stage,
+        costUsd: result.cost.totalUsd,
+        testsPassed: result.tests.passed,
+        prUrl: result.pr.url,
+      }),
+      source: result.cycleId,
+      tags: ['cycle', result.stage],
+    });
   }
 
   private writeJson(path: string, data: unknown): void {

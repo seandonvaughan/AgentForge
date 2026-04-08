@@ -31,17 +31,78 @@ export async function dashboardStubRoutes(
 
   // ── Memory store ──────────────────────────────────────────────────────────
   app.get('/api/v5/memory', async (_req, reply) => {
-    // Read memory files from .agentforge if they exist
     const memoryDir = join(projectRoot, '.agentforge/memory');
-    const entries: Array<{ id: string; key: string; value: unknown; type: string; createdAt: string }> = [];
+
+    // Shape the dashboard expects for each row.
+    interface DashboardMemoryEntry {
+      id: string;
+      key: string;
+      value: unknown;
+      type: string;
+      createdAt: string;
+      updatedAt?: string;
+      agentId?: string;
+      summary?: string;
+      tags?: string[];
+    }
+
+    const entries: DashboardMemoryEntry[] = [];
+
     if (existsSync(memoryDir)) {
-      const files = readdirSync(memoryDir).filter(f => f.endsWith('.json') || f.endsWith('.md'));
-      for (const file of files) {
+      const files = readdirSync(memoryDir);
+
+      // ── JSONL files (primary path): each line is a CycleMemoryEntry ──────
+      // Written by writeMemoryEntry() as .agentforge/memory/<type>.jsonl
+      const jsonlFiles = files.filter(f => f.endsWith('.jsonl'));
+      for (const file of jsonlFiles) {
         try {
           const content = readFileSync(join(memoryDir, file), 'utf-8');
+          const lines = content.split('\n').filter(l => l.trim().length > 0);
+          for (const line of lines) {
+            try {
+              const entry = JSON.parse(line) as {
+                id?: string;
+                type?: string;
+                value?: string;
+                createdAt?: string;
+                source?: string;
+                tags?: string[];
+              };
+              const id = entry.id ?? `${file}-${entries.length}`;
+              const type = entry.type ?? file.replace(/\.jsonl$/, '');
+              const createdAt = entry.createdAt ?? new Date().toISOString();
+              // With exactOptionalPropertyTypes, omit optional fields rather than
+              // setting them to undefined — use conditional spread instead.
+              entries.push({
+                id,
+                // Use type as the human-readable key so the dashboard "Key" column
+                // shows e.g. "cycle-outcome" rather than a UUID.
+                key: type,
+                value: entry.value ?? '',
+                type,
+                createdAt,
+                updatedAt: createdAt,
+                // source is cycleId or agentId produced by phase handlers
+                ...(entry.source !== undefined ? { agentId: entry.source } : {}),
+                ...(typeof entry.value === 'string'
+                  ? { summary: entry.value.slice(0, 120) }
+                  : {}),
+                ...(entry.tags !== undefined ? { tags: entry.tags } : {}),
+              });
+            } catch { /* skip malformed line */ }
+          }
+        } catch { /* skip unreadable file */ }
+      }
+
+      // ── Legacy JSON / Markdown files (fallback for older data) ───────────
+      const legacyFiles = files.filter(f => f.endsWith('.json') || f.endsWith('.md'));
+      for (const file of legacyFiles) {
+        try {
+          const content = readFileSync(join(memoryDir, file), 'utf-8');
+          const stem = file.replace(/\.[^.]+$/, '');
           entries.push({
-            id: file.replace(/\.[^.]+$/, ''),
-            key: file.replace(/\.[^.]+$/, ''),
+            id: stem,
+            key: stem,
             value: file.endsWith('.json') ? JSON.parse(content) : content.slice(0, 500),
             type: file.endsWith('.json') ? 'json' : 'text',
             createdAt: new Date().toISOString(),
@@ -49,7 +110,24 @@ export async function dashboardStubRoutes(
         } catch { /* skip */ }
       }
     }
-    return reply.send({ data: entries, meta: { total: entries.length } });
+
+    // Newest entries first so the dashboard shows recent learning at the top.
+    entries.sort((a, b) => {
+      const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return tb - ta;
+    });
+
+    // Unique agent/source IDs for the dashboard's agent-filter dropdown.
+    const agents = [...new Set(
+      entries.map(e => e.agentId).filter((a): a is string => Boolean(a)),
+    )];
+
+    return reply.send({
+      data: entries,
+      agents,
+      meta: { total: entries.length },
+    });
   });
 
   app.delete('/api/v5/memory/:id', async (req, reply) => {

@@ -24,6 +24,14 @@ function normalizeSprint(raw: Record<string, unknown>, fallbackId: string) {
   const testCountDelta = entry['testCountDelta'] as number | undefined;
   const totalCostUsd = entry['totalCostUsd'] as number | undefined;
   const autonomous = entry['autonomous'] as boolean | undefined;
+  const theme = entry['theme'] as string | undefined;
+  const versionDecision = entry['versionDecision'] as {
+    previousVersion?: string;
+    nextVersion?: string;
+    tier?: string;
+    rationale?: string;
+    tagsSeen?: string[];
+  } | undefined;
 
   // Derive a canonical status from the phase/status field
   function deriveStatus(p: string | undefined): 'completed' | 'in_progress' | 'pending' {
@@ -33,10 +41,11 @@ function normalizeSprint(raw: Record<string, unknown>, fallbackId: string) {
   }
 
   // Normalize item status — older files use 'planned' instead of 'pending'
-  function normalizeItemStatus(s: unknown): 'completed' | 'in_progress' | 'pending' | 'blocked' {
+  function normalizeItemStatus(s: unknown): 'completed' | 'in_progress' | 'pending' | 'blocked' | 'failed' {
     if (s === 'completed') return 'completed';
     if (s === 'in_progress') return 'in_progress';
     if (s === 'blocked') return 'blocked';
+    if (s === 'failed') return 'failed';
     // 'planned', 'pending', or anything else → pending
     return 'pending';
   }
@@ -58,6 +67,8 @@ function normalizeSprint(raw: Record<string, unknown>, fallbackId: string) {
     testCountDelta,
     totalCostUsd,
     autonomous,
+    theme,
+    versionDecision,
     items: items.map((item) => ({
       id: (item['id'] ?? '') as string,
       title: (item['title'] ?? '') as string,

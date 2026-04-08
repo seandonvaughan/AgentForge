@@ -6,7 +6,7 @@ Invoke a specific agent using the v3 AgentForgeSession runtime.
 
 The `invoke` command runs a single agent from your team against the Claude API. It creates an AgentForgeSession, routes the task through the agent, and tracks cost, token usage, and escalations.
 
-Requires a team manifest to be present (generated via `genesis` or `forge`). Also requires `ANTHROPIC_API_KEY` environment variable to be set.
+Requires a team manifest to be present (generated via `genesis` or `forge`). Also requires Claude Code authentication (logged-in session or `CLAUDE_SESSION_TOKEN`). See [API Reference § 1 — Authentication](../api-reference.md#-1--authentication) for setup.
 
 ## Flags
 

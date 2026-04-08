@@ -1,0 +1,327 @@
+{
+  "sprints": [
+    {
+      "version": "6.10.0",
+      "sprintId": "v6-10-0-autonomous",
+      "title": "AgentForge v6.10.0 — Autonomous Cycle",
+      "createdAt": "2026-04-08T04:07:50.945Z",
+      "phase": "release",
+      "items": [
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-42",
+          "title": "Complete the /runner dashboard route — fix the MODEL_TIERS undefined errors flagged by svelte-check, wire up the agent dispatch form to actually run agents, show output streaming back in real time.",
+          "description": "Compile-time MODEL_TIERS undefined errors in svelte-check indicate a broken build path; this likely blocks CI and rendering of other dashboard pages. Fixing it first unblocks downstream UI verification work and is a prerequisite for the /runner being usable by the autonomous loop itself.",
+          "priority": "P0",
+          "assignee": "DashboardAgent",
+          "status": "completed",
+          "estimatedCostUsd": 12,
+          "tags": [
+            "fix",
+            "dashboard",
+            "svelte",
+            "runner",
+            "blocking"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-26",
+          "title": "Test and verify the /approvals dashboard page works end-to-end — create a test approval pending, render it on the page, allow approve/reject from UI, verify the decision is written to .agentforge/cycles/<id>/approval-decision.json.",
+          "description": "The approvals flow is the human-in-the-loop gate for the entire autonomous development cycle. A broken approvals page means humans cannot safely approve or reject autonomous PRs, which is the core safety mechanism. Verifying it end-to-end is critical before any cycle runs in production.",
+          "priority": "P0",
+          "assignee": "DashboardAgent",
+          "status": "completed",
+          "estimatedCostUsd": 8,
+          "tags": [
+            "fix",
+            "approvals",
+            "safety",
+            "autonomous-loop",
+            "human-review"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-10",
+          "title": "Fix the /org dashboard route — verify the org graph endpoint returns real delegation data and the page renders nodes/edges correctly. Currently shows empty or broken state.",
+          "description": "The org graph visualises agent delegation authority, which is critical for understanding the autonomous loop's team composition. An empty or broken state makes the dashboard a liability rather than an asset for operators monitoring the loop. Fixing it restores visibility into agent hierarchy.",
+          "priority": "P0",
+          "assignee": "BackendAgent",
+          "status": "completed",
+          "estimatedCostUsd": 10,
+          "tags": [
+            "fix",
+            "dashboard",
+            "org-graph",
+            "delegation"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-12",
+          "title": "Fix the /agents dashboard route — verify the agent listing shows real agents from .agentforge/agents/*.yaml with name, model tier, description, and clickable detail pages. Currently broken.",
+          "description": "The agents listing is a fundamental observability surface; operators need to see which agents are available, their model tiers, and descriptions to trust autonomous execution. The broken state makes it impossible to verify team composition during live cycles.",
+          "priority": "P1",
+          "assignee": "BackendAgent",
+          "status": "completed",
+          "estimatedCostUsd": 10,
+          "tags": [
+            "fix",
+            "dashboard",
+            "agents",
+            "yaml",
+            "model-tier"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-44",
+          "title": "Verify the /live activity feed renders cycle_event messages from the SSE stream — confirm the page subscribes correctly and renders events with proper colors, types, and timestamps.",
+          "description": "The live SSE feed is the primary real-time window into autonomous cycle execution. Without it, operators are blind to what the loop is doing between dashboard refreshes. Verifying SSE subscription and event rendering is relatively low effort and high operator value.",
+          "priority": "P1",
+          "assignee": "DashboardAgent",
+          "status": "completed",
+          "estimatedCostUsd": 6,
+          "tags": [
+            "chore",
+            "dashboard",
+            "sse",
+            "live",
+            "observability"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-22",
+          "title": "Fix the /search dashboard route — currently returns no results regardless of query. Check what backend endpoint it hits and either implement the search backend or wire it to an existing one.",
+          "description": "Search returning zero results for all queries is a silent failure that erodes trust in the dashboard. Fixing it enables operators to quickly locate cycles, sessions, agents, and sprints, which is especially valuable as the autonomous loop accumulates history. Estimated cost is higher due to potential backend implementation needed.",
+          "priority": "P1",
+          "assignee": "BackendAgent",
+          "status": "completed",
+          "estimatedCostUsd": 15,
+          "tags": [
+            "fix",
+            "feature",
+            "dashboard",
+            "search",
+            "backend"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-6",
+          "title": "Render markdown content in cycle phases tab — use a markdown-to-HTML library so reviewer responses, gate rationales, and learn outputs display formatted text instead of raw JSON.",
+          "description": "Reviewer responses and gate rationales contain structured markdown that is unreadable as raw JSON. Rendering formatted markdown significantly improves operator ability to audit what the autonomous loop decided and why. Library integration (marked or markdown-it) is low risk and well-scoped.",
+          "priority": "P1",
+          "assignee": "DashboardAgent",
+          "status": "completed",
+          "estimatedCostUsd": 8,
+          "tags": [
+            "chore",
+            "dashboard",
+            "markdown",
+            "ux",
+            "phases"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-16",
+          "title": "Wire up the /memory dashboard page to a real backend — currently shows static content. Read .agentforge/data/memories.json or similar and render real memory entries. Add a search box and filter by agent.",
+          "description": "Memory is a core component of the autonomous loop's learning flywheel. Static content here means operators cannot inspect what the loop has retained across sessions. Wiring to a real backend with agent filtering makes memory genuinely auditable.",
+          "priority": "P1",
+          "assignee": "BackendAgent",
+          "status": "completed",
+          "estimatedCostUsd": 12,
+          "tags": [
+            "feature",
+            "dashboard",
+            "memory",
+            "backend"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-18",
+          "title": "Wire up the /flywheel dashboard page to real data — currently shows static gauges. Compute real metrics from cycles + sprints + sessions: meta-learning rate, autonomy score, capability inheritance, velocity.",
+          "description": "The flywheel page is the north-star health indicator for the autonomous development loop. Static gauges provide false confidence. Computing real metrics from actual cycle and sprint data enables genuine assessment of loop effectiveness and guides human steering decisions.",
+          "priority": "P2",
+          "assignee": "BackendAgent",
+          "status": "completed",
+          "estimatedCostUsd": 10,
+          "tags": [
+            "chore",
+            "dashboard",
+            "flywheel",
+            "metrics",
+            "autonomy"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-30",
+          "title": "Complete the /branches dashboard tab — show all autonomous/* branches with their cycle, age, status (open PR / merged / stale), and a button to delete stale branches.",
+          "description": "Stale autonomous branches accumulate quickly during active development cycles. A functional branches tab prevents repository clutter and gives operators a single place to manage the lifecycle of autonomous work. Stale branch deletion button reduces manual git housekeeping.",
+          "priority": "P2",
+          "assignee": "DevOpsAgent",
+          "status": "completed",
+          "estimatedCostUsd": 10,
+          "tags": [
+            "chore",
+            "dashboard",
+            "branches",
+            "git",
+            "cleanup"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-36",
+          "title": "Make sprint cards on /sprints page clickable — clicking should navigate to /sprints/{version} which already exists. Currently nothing happens. Wire up the onclick handler.",
+          "description": "Sprint card navigation is a one-line onclick/href fix with very high confidence. The detail route already exists; the only gap is wiring the click handler. Low cost, quick win that immediately improves dashboard usability for sprint history review.",
+          "priority": "P2",
+          "assignee": "DashboardAgent",
+          "status": "completed",
+          "estimatedCostUsd": 4,
+          "tags": [
+            "chore",
+            "dashboard",
+            "sprints",
+            "navigation",
+            "quick-win"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-38",
+          "title": "Ensure /sprints/[version] detail page renders all fields beautifully: title, status, items kanban, success criteria, audit findings, completion percentage, dates.",
+          "description": "The sprint detail page is described as mostly built; this is a verification and gap-fill task. With sprint cards now navigable (rank 11 dependency), operators will land on this page and expect complete data. Completing it closes the sprint observability story.",
+          "priority": "P2",
+          "assignee": "DashboardAgent",
+          "status": "completed",
+          "estimatedCostUsd": 8,
+          "tags": [
+            "chore",
+            "dashboard",
+            "sprints",
+            "detail",
+            "kanban"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-34",
+          "title": "Create a sprint JSON file for every existing version v4.3 through v6.7 in .agentforge/sprints/ that doesn't already have one. Use the existing v6.5.0.json shape as a template.",
+          "description": "Historical sprint JSON files are needed to populate the /sprints listing and detail pages with real data. Without them, the dashboard shows an incomplete history. This is mechanical work (templating from existing shape) but spans many versions, so cost is non-trivial.",
+          "priority": "P2",
+          "assignee": "DevOpsAgent",
+          "status": "completed",
+          "estimatedCostUsd": 10,
+          "tags": [
+            "chore",
+            "sprints",
+            "data",
+            "history",
+            "backfill"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-48",
+          "title": "Add Playwright e2e tests under tests/e2e/ that exercise: dashboard home loads, cycles list, cycle detail, sprints list, sprints detail, settings save, /org graph renders, /agents list renders.",
+          "description": "Playwright e2e tests are the regression safety net that lets the autonomous loop confidently make dashboard changes in future cycles. Placing this after the fix items ensures the test suite validates a functional baseline rather than encoding broken behavior. Cost is higher due to test suite breadth.",
+          "priority": "P2",
+          "assignee": "QAAgent",
+          "status": "completed",
+          "estimatedCostUsd": 18,
+          "tags": [
+            "feature",
+            "testing",
+            "playwright",
+            "e2e",
+            "regression"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-plans-2026-04-06-autonomous-loop-part2-md-2541",
+          "title": "The autonomous loop automatically plans, executes, tests, and commits code improvements based on backlog proposals and failure detection, opening pull requests for human review.",
+          "description": "This is a documentation TODO in a plan file. The description reads like a one-sentence summary that belongs in a spec or README. It carries no code risk but provides context for future readers of the autonomous loop architecture. Low cost, low urgency.",
+          "priority": "P2",
+          "assignee": "DocsAgent",
+          "status": "completed",
+          "estimatedCostUsd": 2,
+          "tags": [
+            "chore",
+            "docs",
+            "autonomous-loop",
+            "plan"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-06-autonomous-smoke-test-md-50",
+          "title": "add a one-sentence description of the autonomous loop to this file",
+          "description": "A one-sentence doc addition to the smoke test spec is the smallest possible work item in this batch. It improves spec readability but has zero runtime impact. Ranked last as a quick close-out task for a DocsAgent after all functional work is complete.",
+          "priority": "P2",
+          "assignee": "DocsAgent",
+          "status": "completed",
+          "estimatedCostUsd": 1,
+          "tags": [
+            "chore",
+            "docs",
+            "smoke-test",
+            "one-liner"
+          ]
+        }
+      ],
+      "budget": 200,
+      "teamSize": 5,
+      "successCriteria": [
+        "All sprint items completed",
+        "Test pass rate >= 95%",
+        "Total cost <= $200"
+      ],
+      "versionDecision": {
+        "previousVersion": "6.9.0",
+        "nextVersion": "6.10.0",
+        "tier": "minor",
+        "tagsSeen": [
+          "fix",
+          "dashboard",
+          "svelte",
+          "runner",
+          "blocking",
+          "approvals",
+          "safety",
+          "autonomous-loop",
+          "human-review",
+          "org-graph",
+          "delegation",
+          "agents",
+          "yaml",
+          "model-tier",
+          "chore",
+          "sse",
+          "live",
+          "observability",
+          "feature",
+          "search",
+          "backend",
+          "markdown",
+          "ux",
+          "phases",
+          "memory",
+          "flywheel",
+          "metrics",
+          "autonomy",
+          "branches",
+          "git",
+          "cleanup",
+          "sprints",
+          "navigation",
+          "quick-win",
+          "detail",
+          "kanban",
+          "data",
+          "history",
+          "backfill",
+          "testing",
+          "playwright",
+          "e2e",
+          "regression",
+          "docs",
+          "plan",
+          "smoke-test",
+          "one-liner"
+        ],
+        "rationale": "6.9.0 → 6.10.0 (minor bump — feature/capability tags found (feature))"
+      }
+    }
+  ]
+}

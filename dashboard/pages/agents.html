@@ -1,0 +1,60 @@
+  <div class="page" id="page-agents">
+    <div class="page-header">
+      <h2>Agents</h2>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span id="agents-count" style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);"></span>
+        <button class="export-btn" onclick="loadAgentCards()">&#8635; Refresh</button>
+        <button class="export-btn" onclick="downloadJSON('agents', window._data.agents)">&#8595; JSON</button>
+      </div>
+    </div>
+
+    <!-- Model-tier filter bar -->
+    <div class="layer-filter-bar" id="agents-filter-bar" style="margin-bottom:16px;">
+      <span style="font-size:11px;color:var(--text-muted);font-family:var(--font-mono);">Tier:</span>
+      <button class="layer-btn active" data-tier="all"   onclick="_agentsFilterTier(this,'all')">All</button>
+      <button class="layer-btn"        data-tier="opus"  onclick="_agentsFilterTier(this,'opus')">Opus</button>
+      <button class="layer-btn"        data-tier="sonnet" onclick="_agentsFilterTier(this,'sonnet')">Sonnet</button>
+      <button class="layer-btn"        data-tier="haiku"  onclick="_agentsFilterTier(this,'haiku')">Haiku</button>
+    </div>
+
+    <!-- Agent grid — populated by loadAgentCards() in index.html -->
+    <div class="agent-grid" id="agent-grid">
+      <div class="skeleton-loader" style="grid-column:1/-1">Loading agents…</div>
+    </div>
+
+  </div><!-- /page-agents -->
+
+<script>
+(function() {
+  // Apply tier filter to already-rendered agent cards
+  window._agentsFilterTier = function(btn, tier) {
+    document.querySelectorAll('#agents-filter-bar .layer-btn').forEach(function(b) {
+      b.classList.toggle('active', b === btn);
+    });
+    document.querySelectorAll('#agent-grid .agent-card').forEach(function(card) {
+      if (tier === 'all') {
+        card.style.display = '';
+      } else {
+        var isTier = card.classList.contains(tier);
+        card.style.display = isTier ? '' : 'none';
+      }
+    });
+    // Update visible count
+    var visible = tier === 'all'
+      ? document.querySelectorAll('#agent-grid .agent-card').length
+      : document.querySelectorAll('#agent-grid .agent-card.' + tier).length;
+    var countEl = document.getElementById('agents-count');
+    if (countEl) countEl.textContent = visible + ' agent' + (visible !== 1 ? 's' : '');
+  };
+
+  // Load real agent data from /api/v1/agents (sources .agentforge/agents/*.yaml)
+  if (typeof loadAgentCards === 'function') {
+    loadAgentCards().then(function() {
+      // After cards are rendered, sync the count badge
+      var total = document.querySelectorAll('#agent-grid .agent-card').length;
+      var countEl = document.getElementById('agents-count');
+      if (countEl) countEl.textContent = total + ' agent' + (total !== 1 ? 's' : '');
+    });
+  }
+})();
+</script>

@@ -83,6 +83,37 @@ describe('CycleLogger', () => {
     expect(data.events[1].type).toBe('committed');
   });
 
+  it('logCycleResult writes a cycle-outcome memory entry', () => {
+    logger.logCycleResult({
+      cycleId,
+      sprintVersion: '6.4.0',
+      stage: CycleStage.COMPLETED,
+      startedAt: '2026-04-06T15:00:00Z',
+      completedAt: '2026-04-06T15:30:00Z',
+      durationMs: 1800000,
+      cost: { totalUsd: 42.50, budgetUsd: 50, byAgent: {}, byPhase: {} },
+      tests: { passed: 100, failed: 0, skipped: 0, total: 100, passRate: 1.0, newFailures: [] },
+      git: { branch: 'autonomous/v6.4.0', commitSha: 'abc123', filesChanged: [] },
+      pr: { url: 'https://github.com/x/y/pull/1', number: 1, draft: false },
+    });
+
+    const memoryPath = join(tmpDir, '.agentforge/memory/cycle-outcome.jsonl');
+    expect(existsSync(memoryPath)).toBe(true);
+    const entries = readFileSync(memoryPath, 'utf8').trim().split('\n').map(l => JSON.parse(l));
+    expect(entries).toHaveLength(1);
+    const entry = entries[0];
+    expect(entry.type).toBe('cycle-outcome');
+    expect(entry.source).toBe(cycleId);
+    expect(entry.tags).toContain('cycle');
+    const value = JSON.parse(entry.value);
+    expect(value.cycleId).toBe(cycleId);
+    expect(value.sprintVersion).toBe('6.4.0');
+    expect(value.stage).toBe('completed');
+    expect(value.costUsd).toBe(42.50);
+    expect(value.testsPassed).toBe(100);
+    expect(value.prUrl).toBe('https://github.com/x/y/pull/1');
+  });
+
   it('logCycleResult writes cycle.json with terminal state', () => {
     logger.logCycleResult({
       cycleId,

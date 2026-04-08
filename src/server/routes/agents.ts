@@ -206,4 +206,70 @@ export async function agentsRoutes(app: FastifyInstance, opts: AgentsRouteOption
 
     return reply.send({ data: { ...summary, recentSessions } });
   });
+
+  // ---------------------------------------------------------------------------
+  // /api/v5 aliases — same logic, versioned for the dashboard client
+  // ---------------------------------------------------------------------------
+
+  // GET /api/v5/agents
+  app.get('/api/v5/agents', async (_req, reply) => {
+    const [defs, allSessions] = await Promise.all([
+      loadAgentDefinitions(agentsDir),
+      Promise.resolve(adapter.listSessions()),
+    ]);
+
+    const sessionsByAgent = new Map<string, SessionRow[]>();
+    for (const s of allSessions) {
+      const arr = sessionsByAgent.get(s.agent_id) ?? [];
+      arr.push(s);
+      sessionsByAgent.set(s.agent_id, arr);
+    }
+
+    const summaries: AgentSummary[] = [];
+    for (const [agentId, def] of defs) {
+      const sessions = sessionsByAgent.get(agentId) ?? [];
+      const model = normalizeModel(def.model);
+      const summary = buildAgentSummaryFromSessions(agentId, model, def.description ?? '', sessions);
+      const costs = adapter.getAgentCosts(agentId);
+      summary.totalCostUsd = costs.reduce((sum, c) => sum + c.cost_usd, 0);
+      summaries.push(summary);
+    }
+
+    for (const [agentId, sessions] of sessionsByAgent) {
+      if (!defs.has(agentId)) {
+        const summary = buildAgentSummaryFromSessions(agentId, 'sonnet', '', sessions);
+        const costs = adapter.getAgentCosts(agentId);
+        summary.totalCostUsd = costs.reduce((sum, c) => sum + c.cost_usd, 0);
+        summaries.push(summary);
+      }
+    }
+
+    summaries.sort((a, b) => a.agentId.localeCompare(b.agentId));
+    return reply.send({ data: summaries, meta: { total: summaries.length } });
+  });
+
+  // GET /api/v5/agents/:id
+  app.get('/api/v5/agents/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+
+    const [defs, agentSessions] = await Promise.all([
+      loadAgentDefinitions(agentsDir),
+      Promise.resolve(adapter.listSessions({ agentId: id })),
+    ]);
+
+    const def = defs.get(id);
+
+    if (!def && agentSessions.length === 0) {
+      return reply.status(404).send({ error: 'Agent not found', id });
+    }
+
+    const model = normalizeModel(def?.model);
+    const description = def?.description ?? '';
+    const summary = buildAgentSummaryFromSessions(id, model, description, agentSessions);
+    const costs = adapter.getAgentCosts(id);
+    summary.totalCostUsd = costs.reduce((sum, c) => sum + c.cost_usd, 0);
+
+    const recentSessions = agentSessions.slice(0, 50);
+    return reply.send({ data: { ...summary, recentSessions } });
+  });
 }

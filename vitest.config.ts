@@ -13,9 +13,10 @@ export default defineConfig({
     },
   },
   test: {
-    globals: true,
+    globals: false,
     environment: 'node',
     include: ['tests/**/*.test.ts', 'packages/**/__tests__/*.test.ts'],
+    exclude: ['tests/e2e/**/*.test.ts', 'node_modules'],
     testTimeout: 15000,
     coverage: { provider: 'v8', reporter: ['text', 'json-summary'] }
   }

@@ -31,6 +31,7 @@ import { agentVersioningRoutes } from './routes/v5/agent-versioning.js';
 import { federationRoutes } from './routes/v5/federation.js';
 import { chatRoutes } from './routes/v5/chat.js';
 import { settingsRoutes } from './routes/v5/settings.js';
+import { searchRoutes } from './routes/v5/search.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -117,10 +118,8 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
     // RBAC routes use in-memory state only — always available
     await rbacRoutes(app);
 
-    // Approvals gateway — in-memory, no adapter required.  Pass projectRoot so
-    // approve/reject decisions are persisted to
-    // .agentforge/cycles/<cycleId>/approval-decision.json for the cycle runner.
-    await approvalsRoutes(app, { projectRoot });
+    // Approvals gateway — in-memory, no adapter required.
+    await approvalsRoutes(app);
 
     // SSE stream + dashboard refresh signal — in-memory, no adapter required
     await streamRoutes(app);
@@ -153,6 +152,10 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
   // ── Cycles (reads .agentforge/cycles/*/ — no adapter required) ───────────────
   await cyclesRoutes(app, { projectRoot });
   await cyclesPreviewRoutes(app, { projectRoot });
+
+  // ── Unified keyword search (sessions, agents, sprints, cycles, memory) ────────
+  // No adapter required — falls back gracefully; adapter enables session search.
+  await searchRoutes(app, { projectRoot, adapter: options.adapter });
 
   // ── Dashboard stubs (flywheel, memory, settings — file-based, no adapter) ──
   await dashboardStubRoutes(app, { projectRoot });

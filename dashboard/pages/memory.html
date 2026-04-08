@@ -1,0 +1,78 @@
+  <div class="page" id="page-memory">
+    <div class="page-header">
+      <div>
+        <h2>Memory Browser</h2>
+        <p style="color:var(--text-secondary);font-size:13px;margin-top:4px;">
+          Entries learned by agents across all sprint cycles.
+        </p>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <span id="memory-count-badge" style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);padding:4px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);"></span>
+        <button class="export-btn" onclick="loadMemoryBrowser()">&#8635; Refresh</button>
+      </div>
+    </div>
+
+    <!-- Search + agent filter row -->
+    <div class="memory-search-bar">
+      <input
+        class="memory-search-input"
+        type="search"
+        id="memory-search"
+        placeholder="Search memories by keyword, tag, or filename…"
+        oninput="filterMemory(this.value)"
+        autocomplete="off"
+      />
+      <select
+        id="memory-agent-filter"
+        onchange="memFilterAgent(this.value)"
+        style="font-family:var(--font-mono);font-size:12px;padding:8px 12px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);outline:none;cursor:pointer;min-width:150px;transition:border-color 0.15s;"
+      >
+        <option value="all">All Agents</option>
+      </select>
+    </div>
+
+    <!-- Category filter chips -->
+    <div class="memory-filter-row">
+      <button class="mem-filter-btn active" data-cat="all"      onclick="memFilterCat(this,'all')">All</button>
+      <button class="mem-filter-btn"        data-cat="feedback"  onclick="memFilterCat(this,'feedback')">Feedback</button>
+      <button class="mem-filter-btn"        data-cat="project"   onclick="memFilterCat(this,'project')">Project</button>
+      <button class="mem-filter-btn"        data-cat="lesson"    onclick="memFilterCat(this,'lesson')">Lesson</button>
+      <button class="mem-filter-btn"        data-cat="config"    onclick="memFilterCat(this,'config')">Config</button>
+    </div>
+
+    <!-- Memory entry list -->
+    <div class="memory-list" id="memory-list" style="max-height:none;"></div>
+
+  </div><!-- /page-memory -->
+
+<script>
+(function () {
+  // Reset filter state when the page loads fresh so stale state from the
+  // home-page memory section doesn't bleed into this dedicated view.
+  if (typeof memCatFilter !== 'undefined') memCatFilter = 'all';
+  if (typeof memAgentFilter !== 'undefined') memAgentFilter = 'all';
+  if (typeof memSearchFilter !== 'undefined') memSearchFilter = '';
+
+  // Patch loadMemoryBrowser's post-render hook to update the count badge.
+  const _origApplyMemFilters = typeof applyMemFilters === 'function' ? applyMemFilters : null;
+  window._memUpdateCountBadge = function () {
+    const badge = document.getElementById('memory-count-badge');
+    if (!badge) return;
+    const total = document.querySelectorAll('.memory-entry').length;
+    const visible = Array.from(document.querySelectorAll('.memory-entry')).filter(
+      e => e.style.display !== 'none',
+    ).length;
+    badge.textContent = visible === total ? `${total} entries` : `${visible} / ${total} entries`;
+  };
+
+  // Wrap applyMemFilters so the badge stays in sync after every filter change.
+  window.applyMemFilters = function () {
+    if (_origApplyMemFilters) _origApplyMemFilters();
+    window._memUpdateCountBadge();
+  };
+
+  if (typeof loadMemoryBrowser === 'function') {
+    loadMemoryBrowser().then(() => window._memUpdateCountBadge());
+  }
+})();
+</script>
