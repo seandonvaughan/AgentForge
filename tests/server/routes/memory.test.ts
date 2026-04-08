@@ -151,3 +151,145 @@ describe('GET /api/v1/memory', () => {
     expect(res.statusCode).toBe(404);
   });
 });
+
+// ---------------------------------------------------------------------------
+// GET /api/v5/memory
+// ---------------------------------------------------------------------------
+
+describe('GET /api/v5/memory', () => {
+  let app: FastifyInstance;
+  let adapter: SqliteAdapter;
+  let db: AgentDatabase;
+
+  beforeEach(async () => {
+    db = new AgentDatabase({ path: ':memory:' });
+    adapter = new SqliteAdapter({ db });
+    const result = await createServer({ adapter });
+    app = result.app;
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+    db.close();
+  });
+
+  it('returns 200', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory' });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('returns { data, agents, meta }', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory' });
+    const body = res.json();
+    expect(body).toHaveProperty('data');
+    expect(body).toHaveProperty('agents');
+    expect(body).toHaveProperty('meta');
+    expect(Array.isArray(body.data)).toBe(true);
+    expect(Array.isArray(body.agents)).toBe(true);
+  });
+
+  it('every entry has a stable id field', async () => {
+    adapter.writeFile('id-test-key', 'value');
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory' });
+    const body = res.json();
+    for (const entry of body.data) {
+      expect(typeof entry.id).toBe('string');
+      expect(entry.id.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('id equals key for kv_store entries', async () => {
+    adapter.writeFile('my-special-key', 'hello');
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory' });
+    const body = res.json();
+    const entry = body.data.find((e: { key: string }) => e.key === 'my-special-key');
+    expect(entry).toBeDefined();
+    expect(entry.id).toBe('my-special-key');
+  });
+
+  it('meta.total matches data.length', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory' });
+    const body = res.json();
+    expect(body.meta.total).toBe(body.data.length);
+  });
+
+  it('search param filters by key', async () => {
+    adapter.writeFile('needle-key', 'some value');
+    adapter.writeFile('haystack-key', 'other value');
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory?search=needle' });
+    const body = res.json();
+    const keys = body.data.map((e: { key: string }) => e.key);
+    expect(keys).toContain('needle-key');
+    expect(keys).not.toContain('haystack-key');
+  });
+
+  it('search param filters by value', async () => {
+    adapter.writeFile('alpha-key', 'find-me-value');
+    adapter.writeFile('beta-key', 'ignore-me-value');
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory?search=find-me' });
+    const body = res.json();
+    const keys = body.data.map((e: { key: string }) => e.key);
+    expect(keys).toContain('alpha-key');
+    expect(keys).not.toContain('beta-key');
+  });
+
+  it('search with no matches returns empty data array', async () => {
+    adapter.writeFile('some-key', 'some-value');
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory?search=zzz-no-match' });
+    const body = res.json();
+    expect(body.data).toHaveLength(0);
+    expect(body.meta.total).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/v5/memory/:id
+// ---------------------------------------------------------------------------
+
+describe('DELETE /api/v5/memory/:id', () => {
+  let app: FastifyInstance;
+  let adapter: SqliteAdapter;
+  let db: AgentDatabase;
+
+  beforeEach(async () => {
+    db = new AgentDatabase({ path: ':memory:' });
+    adapter = new SqliteAdapter({ db });
+    const result = await createServer({ adapter });
+    app = result.app;
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+    db.close();
+  });
+
+  it('returns 200 and removes a kv_store entry', async () => {
+    adapter.writeFile('delete-me', 'value');
+
+    const del = await app.inject({ method: 'DELETE', url: '/api/v5/memory/delete-me' });
+    expect(del.statusCode).toBe(200);
+    expect(del.json()).toMatchObject({ ok: true, key: 'delete-me' });
+
+    const get = await app.inject({ method: 'GET', url: '/api/v5/memory' });
+    const keys = get.json().data.map((e: { key: string }) => e.key);
+    expect(keys).not.toContain('delete-me');
+  });
+
+  it('returns 404 when key does not exist', async () => {
+    const res = await app.inject({ method: 'DELETE', url: '/api/v5/memory/no-such-key' });
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toHaveProperty('error');
+  });
+
+  it('handles URL-encoded keys', async () => {
+    adapter.writeFile('key/with/slashes', 'value');
+
+    const encoded = encodeURIComponent('key/with/slashes');
+    const del = await app.inject({ method: 'DELETE', url: `/api/v5/memory/${encoded}` });
+    expect(del.statusCode).toBe(200);
+  });
+});

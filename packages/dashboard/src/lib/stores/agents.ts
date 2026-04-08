@@ -5,12 +5,13 @@ export interface Agent {
   agentId: string;
   name: string;
   model: 'opus' | 'sonnet' | 'haiku';
+  description?: string | null;
   systemPrompt?: string;
   skills?: string[];
   workspaceId?: string;
   // Legacy / extended fields returned by some endpoints
   id?: string;
-  role?: string;
+  role?: string | null;
   sessionCount?: number;
   successCount?: number;
   totalCostUsd?: number;

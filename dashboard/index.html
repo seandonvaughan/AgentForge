@@ -5425,6 +5425,17 @@ const SSE = {
         }
       } catch(ex) {}
     });
+    // P0-7: cycle_event — live autonomous loop activity feed
+    this.source.addEventListener('cycle_event', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        renderCycleEventRow(data);
+        NotificationManager.add({
+          type: 'sprint',
+          text: 'Cycle ' + (data.cycleId || '') + ': ' + (data.phase || '') + ' — ' + (data.status || ''),
+        });
+      } catch(ex) {}
+    });
   }
 };
 
@@ -6089,6 +6100,89 @@ async function loadActivityFeed() {
     errTr.appendChild(errTd);
     tbody.appendChild(errTr);
   }
+}
+
+// ── P0-7: Render a cycle_event row into the live activity feed ──
+/**
+ * Maps a cycle event status to the dashboard's CSS color variable.
+ * Matches the color semantics verified by sse-live-feed.test.ts.
+ *   started   → green  (new work beginning)
+ *   progress  → blue   (in-flight)
+ *   completed → green  (successful finish)
+ *   failed    → red    (error state)
+ */
+function cycleStatusColor(status) {
+  if (status === 'failed')    return 'var(--red)';
+  if (status === 'progress')  return 'var(--blue)';
+  return 'var(--green)'; // started | completed
+}
+
+/**
+ * Prepend a live cycle_event row to #activity-tbody so operators can watch
+ * the autonomous loop in real-time without a full page reload.
+ */
+function renderCycleEventRow(data) {
+  const tbody = document.getElementById('activity-tbody');
+  if (!tbody) return;
+
+  const status    = data.status    || 'started';
+  const phase     = data.phase     || '—';
+  const cycleId   = data.cycleId   || '—';
+  const ts        = data.timestamp ? fmtDate(data.timestamp) : '—';
+  const color     = data.color     || cycleStatusColor(status);
+  const statusCss = status === 'completed' ? 'complete'
+                  : status === 'failed'    ? 'error'
+                  : status === 'progress'  ? 'active'
+                  : 'idle';
+
+  const tr = document.createElement('tr');
+
+  // Agent column — cycle ID chip coloured by status
+  const agentTd = document.createElement('td');
+  const chip = document.createElement('span');
+  chip.className = 'chip';
+  chip.style.cssText = 'border-color:' + color + ';color:' + color;
+  chip.textContent = cycleId.length > 12 ? cycleId.slice(0, 12) + '…' : cycleId;
+  chip.title = cycleId;
+  agentTd.appendChild(chip);
+
+  // Model column — "cycle" type badge
+  const modelTd = document.createElement('td');
+  const typeBadge = document.createElement('span');
+  typeBadge.className = 'model-badge sonnet';
+  typeBadge.textContent = 'cycle';
+  modelTd.appendChild(typeBadge);
+
+  // Action column
+  const actionTd = document.createElement('td');
+  actionTd.textContent = 'cycle_event';
+
+  // Task column — human-readable phase description
+  const taskTd = document.createElement('td');
+  taskTd.className = 'task-cell';
+  taskTd.textContent = 'phase: ' + phase;
+
+  // Duration column — ISO-8601 timestamp formatted
+  const durTd = document.createElement('td');
+  durTd.className = 'duration-cell';
+  durTd.textContent = ts;
+
+  // Status column
+  const statusTd = document.createElement('td');
+  const statusBadge = document.createElement('span');
+  statusBadge.className = 'status-badge ' + statusCss;
+  statusBadge.textContent = status;
+  statusTd.appendChild(statusBadge);
+
+  tr.appendChild(agentTd);
+  tr.appendChild(modelTd);
+  tr.appendChild(actionTd);
+  tr.appendChild(taskTd);
+  tr.appendChild(durTd);
+  tr.appendChild(statusTd);
+
+  // Prepend so newest events appear at the top
+  tbody.insertBefore(tr, tbody.firstChild);
 }
 
 // ── P6: Flywheel Metrics from /api/v1/flywheel ────────────

@@ -27,6 +27,11 @@
     teamSize?: number;
     successCriteria?: string[];
     auditFindings?: string[];
+    testCountBefore?: number;
+    testCountAfter?: number;
+    testCountDelta?: number;
+    totalCostUsd?: number;
+    autonomous?: boolean;
     items: SprintItem[];
   }
 
@@ -144,6 +149,9 @@
   </div>
   <div class="header-badges">
     {#if sprint}
+      {#if sprint.autonomous}
+        <span class="badge autonomous-badge">⚡ Autonomous</span>
+      {/if}
       <span class="badge {STATUS_BADGE[sprint.status] ?? 'muted'}">{STATUS_LABEL[sprint.status] ?? sprint.status}</span>
       {#if sprint.phase && sprint.phase !== sprint.status}
         <span class="badge muted phase-badge">{PHASE_LABEL[sprint.phase] ?? sprint.phase}</span>
@@ -184,6 +192,24 @@
       <div class="summary-card">
         <div class="summary-value">${sprint.budget}</div>
         <div class="summary-label">Budget</div>
+      </div>
+    {/if}
+    {#if sprint.totalCostUsd != null}
+      <div class="summary-card">
+        <div class="summary-value">${sprint.totalCostUsd.toFixed(2)}</div>
+        <div class="summary-label">Actual Cost</div>
+      </div>
+    {/if}
+    {#if sprint.testCountDelta != null}
+      <div class="summary-card {sprint.testCountDelta > 0 ? 'highlight-success' : ''}">
+        <div class="summary-value test-delta">{sprint.testCountDelta > 0 ? '+' : ''}{sprint.testCountDelta}</div>
+        <div class="summary-label">Tests Added</div>
+      </div>
+    {/if}
+    {#if sprint.testCountAfter != null}
+      <div class="summary-card">
+        <div class="summary-value">{sprint.testCountAfter.toLocaleString()}</div>
+        <div class="summary-label">Total Tests</div>
       </div>
     {/if}
     {#if sprint.startDate}
@@ -382,6 +408,14 @@
     font-size: 10px;
   }
 
+  .autonomous-badge {
+    background: rgba(91, 138, 245, 0.12);
+    color: var(--color-brand);
+    border: 1px solid rgba(91, 138, 245, 0.35);
+    font-size: var(--text-xs);
+    font-weight: 700;
+  }
+
   /* Summary row */
   .summary-row {
     display: flex;
@@ -402,6 +436,15 @@
   .summary-card.highlight {
     border-color: var(--color-brand);
     background: rgba(91, 138, 245, 0.06);
+  }
+
+  .summary-card.highlight-success {
+    border-color: var(--color-success);
+    background: rgba(34, 197, 94, 0.06);
+  }
+
+  .test-delta {
+    color: var(--color-success);
   }
 
   .summary-value {

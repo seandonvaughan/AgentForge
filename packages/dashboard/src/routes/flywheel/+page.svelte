@@ -9,10 +9,21 @@
     description?: string;
   }
 
+  interface FlywheelDebug {
+    cycleCount: number;
+    meaningfulCycleCount: number;
+    completedCycleCount: number;
+    sprintCount: number;
+    agentCount: number;
+    totalItems: number;
+    completedItems: number;
+  }
+
   interface FlywheelData {
     metrics: FlywheelMetric[];
     updatedAt?: string;
     overallScore?: number;
+    debug?: FlywheelDebug;
   }
 
   const DEFAULT_METRICS: FlywheelMetric[] = [
@@ -49,6 +60,7 @@
           metrics: raw.metrics ?? DEFAULT_METRICS,
           updatedAt: raw.updatedAt,
           overallScore: raw.overallScore,
+          debug: raw.debug,
         };
       }
     } catch (e) {
@@ -64,6 +76,15 @@
       ? Math.round(displayMetrics.reduce((s, m) => s + m.score, 0) / displayMetrics.length)
       : 0);
 
+  // Summary stat rows derived from debug payload
+  $: statRows = flywheel.debug ? [
+    { label: 'Cycles run', value: flywheel.debug.cycleCount },
+    { label: 'Completed autonomously', value: flywheel.debug.completedCycleCount },
+    { label: 'Sprint iterations', value: flywheel.debug.sprintCount },
+    { label: 'Agents on team', value: flywheel.debug.agentCount },
+    { label: 'Sprint items', value: `${flywheel.debug.completedItems} / ${flywheel.debug.totalItems}` },
+  ] : [];
+
   onMount(load);
 </script>
 
@@ -72,7 +93,7 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">Flywheel</h1>
-    <p class="page-subtitle">AI improvement loop health metrics</p>
+    <p class="page-subtitle">Autonomous loop health — computed from cycles, sprints &amp; agents</p>
   </div>
   {#if !loading && !error}
     <div class="overall-score">
@@ -111,6 +132,20 @@
       </div>
     {/each}
   </div>
+
+  {#if statRows.length > 0}
+    <div class="card stats-card">
+      <h2 class="stats-title">Loop Data</h2>
+      <dl class="stats-grid">
+        {#each statRows as row}
+          <div class="stat-row">
+            <dt class="stat-label">{row.label}</dt>
+            <dd class="stat-value">{row.value}</dd>
+          </div>
+        {/each}
+      </dl>
+    </div>
+  {/if}
 
   {#if flywheel.updatedAt}
     <p class="updated-at">Last updated: {new Date(flywheel.updatedAt).toLocaleString()}</p>
@@ -161,5 +196,40 @@
     font-size: var(--text-xs);
     color: var(--color-text-faint);
     margin-top: var(--space-2);
+  }
+  /* ── Loop Data stats panel ────────────────────────────────────────────── */
+  .stats-card {
+    margin-bottom: var(--space-4);
+    padding: var(--space-5) var(--space-6);
+  }
+  .stats-title {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    margin: 0 0 var(--space-4);
+  }
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: var(--space-3) var(--space-5);
+    margin: 0;
+  }
+  .stat-row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+  .stat-label {
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+  }
+  .stat-value {
+    font-family: var(--font-mono);
+    font-size: var(--text-lg);
+    font-weight: 700;
+    color: var(--color-text);
+    margin: 0;
   }
 </style>

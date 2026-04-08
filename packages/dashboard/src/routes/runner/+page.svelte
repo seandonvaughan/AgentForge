@@ -12,6 +12,9 @@
     haiku:  { label: 'Haiku',  range: '$0.0003-$0.002', color: 'var(--color-haiku)' },
   };
 
+  // A guaranteed-non-undefined fallback for MODEL_TIER_META lookups
+  const SONNET_TIER = { label: 'Sonnet', range: '$0.003-$0.015', color: 'var(--color-sonnet)' };
+
   interface AgentEntry {
     agentId: string;
     name: string;
@@ -29,27 +32,27 @@
     sessionId?: string;
   }
 
-  let agentEntries: AgentEntry[] = [];
-  let agents: string[] = [];
-  let agentsLoading = true;
-  let selectedAgent = 'coder';
-  let agentSearch = '';
-  let taskInput = '';
-  let running = false;
-  let runError: string | null = null;
-  let apiUnavailable = false;
+  let agentEntries: AgentEntry[] = $state([]);
+  let agents: string[] = $state([]);
+  let agentsLoading = $state(true);
+  let selectedAgent = $state('coder');
+  let agentSearch = $state('');
+  let taskInput = $state('');
+  let running = $state(false);
+  let runError: string | null = $state(null);
+  let apiUnavailable = $state(false);
 
-  let output = '';
-  let outputAgentName = '';
-  let outputModel = '';
-  let outputTimestamp = '';
-  let currentSessionId: string | null = null;
+  let output = $state('');
+  let outputAgentName = $state('');
+  let outputModel = $state('');
+  let outputTimestamp = $state('');
+  let currentSessionId: string | null = $state(null);
 
-  let history: RunHistory[] = [];
-  let selectedHistoryRun: RunHistory | null = null;
+  let history: RunHistory[] = $state([]);
+  let selectedHistoryRun: RunHistory | null = $state(null);
 
   let eventSource: EventSource | null = null;
-  let outputEl: HTMLPreElement | null = null;
+  let outputEl: HTMLPreElement | null = $state(null);
 
   // Derived: look up model tier from the full agent roster
   function getAgentModel(id: string): 'opus' | 'sonnet' | 'haiku' {
@@ -57,7 +60,8 @@
     return entry?.model ?? 'sonnet';
   }
 
-  let modelTier = $derived(MODEL_TIER_META[getAgentModel(selectedAgent)] ?? MODEL_TIER_META['sonnet']);
+  // Use a concrete fallback so TypeScript knows modelTier is always defined
+  let modelTier = $derived(MODEL_TIER_META[getAgentModel(selectedAgent)] ?? SONNET_TIER);
 
   // Derived: agents filtered by search, grouped by model tier
   let filteredAgents = $derived.by(() => {

@@ -11,7 +11,8 @@
   let filtered = $derived($agents.filter(a => {
     const q = search.toLowerCase();
     const label = (a.name ?? a.agentId ?? a.id ?? '').toLowerCase();
-    const nameMatch = label.includes(q);
+    const desc = (a.description ?? '').toLowerCase();
+    const nameMatch = label.includes(q) || desc.includes(q);
     const modelMatch = filterModel === '' || a.model === filterModel;
     return nameMatch && modelMatch;
   }));
@@ -79,15 +80,14 @@
           <th>Agent ID</th>
           <th>Model</th>
           <th>Role</th>
-          <th>Sessions</th>
-          <th>Status</th>
+          <th>Description</th>
         </tr>
       </thead>
       <tbody>
         {#each filtered as agent (agent.agentId ?? agent.id)}
           <tr on:click={() => goto(`/agents/${agentNavId(agent)}`)}>
-            <td style="font-weight:600;">{agentLabel(agent)}</td>
-            <td style="font-family:var(--font-mono); font-size:var(--text-xs); color:var(--color-text-muted);">
+            <td style="font-weight:600; white-space:nowrap;">{agentLabel(agent)}</td>
+            <td style="font-family:var(--font-mono); font-size:var(--text-xs); color:var(--color-text-muted); white-space:nowrap;">
               {agent.agentId || agent.id || '—'}
             </td>
             <td>
@@ -97,19 +97,8 @@
                 <span class="badge muted">—</span>
               {/if}
             </td>
-            <td style="color:var(--color-text-muted);">{agent.role ?? '—'}</td>
-            <td style="font-family:var(--font-mono);">{agent.sessionCount ?? 0}</td>
-            <td>
-              {#if agent.status === 'active'}
-                <span class="badge success">active</span>
-              {:else if agent.status === 'idle'}
-                <span class="badge muted">idle</span>
-              {:else if agent.status}
-                <span class="badge muted">{agent.status}</span>
-              {:else}
-                <span class="badge muted">—</span>
-              {/if}
-            </td>
+            <td style="color:var(--color-text-muted); white-space:nowrap;">{agent.role ?? '—'}</td>
+            <td class="description-cell">{agent.description ?? '—'}</td>
           </tr>
         {/each}
       </tbody>
@@ -154,4 +143,12 @@
   .pill.active.opus  { background: rgba(245,200,66,0.12); color: var(--color-opus); border-color: rgba(245,200,66,0.4); }
   .pill.active.sonnet { background: rgba(74,158,255,0.12); color: var(--color-sonnet); border-color: rgba(74,158,255,0.4); }
   .pill.active.haiku { background: rgba(76,175,130,0.12); color: var(--color-haiku); border-color: rgba(76,175,130,0.4); }
+  .description-cell {
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+    max-width: 360px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 </style>

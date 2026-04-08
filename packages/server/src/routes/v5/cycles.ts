@@ -464,8 +464,57 @@ export async function cyclesRoutes(
     if (!dir || !existsSync(dir)) return reply.status(404).send({ error: 'Cycle not found' });
     const cycleFile = join(dir, 'cycle.json');
     if (existsSync(cycleFile)) {
-      const parsed = readJsonIfExists(cycleFile);
+      const parsed = readJsonIfExists(cycleFile) as Record<string, unknown> | null;
       if (parsed === null) return reply.status(500).send({ error: 'Failed to parse cycle.json' });
+      // v6.7.4 heal: cycles that fail at gate have cycle.json with
+      // cost.totalUsd = 0 even though phases/*.json contain real costs.
+      // Roll those forward so the dashboard shows truth.
+      const cost = (parsed.cost as Record<string, unknown> | undefined) ?? {};
+      const costZero = (cost.totalUsd ?? 0) === 0;
+      if (costZero && existsSync(join(dir, 'phases'))) {
+        const phasesDir = join(dir, 'phases');
+        let totalCostUsd = 0;
+        const costByPhase: Record<string, number> = {};
+        const costByAgent: Record<string, number> = {};
+        let agentRunCount = 0;
+        let tp = 0; let tf = 0; let tt = 0;
+        for (const name of ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate', 'release', 'learn']) {
+          const pf = join(phasesDir, `${name}.json`);
+          if (!existsSync(pf)) continue;
+          try {
+            const ph = JSON.parse(readFileSync(pf, 'utf8')) as Record<string, unknown>;
+            const c = typeof ph.costUsd === 'number' ? ph.costUsd : 0;
+            totalCostUsd += c;
+            if (c > 0) costByPhase[name] = c;
+            if (Array.isArray(ph.agentRuns)) {
+              for (const run of ph.agentRuns as any[]) {
+                agentRunCount++;
+                const aid = run.agentId ?? 'unknown';
+                const rc = typeof run.costUsd === 'number' ? run.costUsd : 0;
+                costByAgent[aid] = (costByAgent[aid] ?? 0) + rc;
+              }
+            }
+            if (name === 'test') {
+              if (typeof ph.passed === 'number') tp = ph.passed;
+              if (typeof ph.failed === 'number') tf = ph.failed;
+              if (typeof ph.total === 'number') tt = ph.total;
+            }
+          } catch { /* skip */ }
+        }
+        if (totalCostUsd > 0 || agentRunCount > 0) {
+          (parsed as any).cost = {
+            totalUsd: totalCostUsd,
+            budgetUsd: (cost.budgetUsd as number | undefined) ?? 200,
+            byAgent: costByAgent,
+            byPhase: costByPhase,
+          };
+          if (tt > 0) {
+            (parsed as any).tests = { passed: tp, failed: tf, skipped: 0, total: tt, passRate: tp / tt, newFailures: [] };
+          }
+          (parsed as any).agentRunCount = agentRunCount;
+          (parsed as any).costHealedFromPhases = true;
+        }
+      }
       return reply.send(parsed);
     }
     // cycle.json is only written at terminal stage. While the cycle is still

@@ -74,7 +74,7 @@
     {#if summary.byModel.length > 0}
       <div class="stat-card">
         <div class="stat-label">Top Model</div>
-        <div class="stat-value">{summary.byModel.sort((a, b) => b.costUsd - a.costUsd)[0].model.split('-')[1] ?? summary.byModel[0].model}</div>
+        <div class="stat-value">{summary.byModel.slice().sort((a, b) => b.costUsd - a.costUsd)[0]?.model.split('-')[1] ?? summary.byModel[0]?.model ?? '—'}</div>
       </div>
     {/if}
   </div>
