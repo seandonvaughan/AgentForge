@@ -117,8 +117,10 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
     // RBAC routes use in-memory state only — always available
     await rbacRoutes(app);
 
-    // Approvals gateway — in-memory, no adapter required
-    await approvalsRoutes(app);
+    // Approvals gateway — in-memory, no adapter required.  Pass projectRoot so
+    // approve/reject decisions are persisted to
+    // .agentforge/cycles/<cycleId>/approval-decision.json for the cycle runner.
+    await approvalsRoutes(app, { projectRoot });
 
     // SSE stream + dashboard refresh signal — in-memory, no adapter required
     await streamRoutes(app);

@@ -28,6 +28,7 @@ import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { globalStream } from './stream.js';
 import { getWorkspace } from '@agentforge/core';
+import * as cycleSessions from '../../lib/cycle-sessions.js';
 
 /**
  * v6.6.0 — resolve which project root a request targets.
@@ -409,8 +410,47 @@ export async function cyclesRoutes(
 
   // v6.5.3-B: fan cycle events out to the SSE stream.
   const watcher = startCycleEventsWatcher(opts.projectRoot);
+  // v6.7.4: cycle session manager — periodic reaper that catches dead PIDs
+  // and flips their session status to crashed. Probes every 30s.
+  cycleSessions.reap();
+  const reaper = cycleSessions.startReaper(30_000);
   app.addHook('onClose', async () => {
     watcher.stop();
+    reaper.stop();
+  });
+
+  // GET /api/v5/cycle-sessions ────────────────────────────────────────────
+  // Lists every cycle the session manager knows about (running + terminal).
+  // Path is /cycle-sessions (not /cycles/sessions) so it doesn't collide
+  // with the /cycles/:id parameterized route.
+  app.get('/api/v5/cycle-sessions', async (_req, reply) => {
+    cycleSessions.reap();
+    const sessions = cycleSessions.list();
+    return reply.send({
+      sessions,
+      counts: {
+        total: sessions.length,
+        running: sessions.filter((s) => s.status === 'running').length,
+        crashed: sessions.filter((s) => s.status === 'crashed').length,
+        killed: sessions.filter((s) => s.status === 'killed').length,
+      },
+    });
+  });
+
+  // POST /api/v5/cycle-sessions/reap ───────────────────────────────────────
+  app.post('/api/v5/cycle-sessions/reap', async (_req, reply) => {
+    return reply.send(cycleSessions.reap());
+  });
+
+  // POST /api/v5/cycles/:id/stop ────────────────────────────────────────────
+  // Graceful stop: SIGTERM to the process group, wait 10s, then SIGKILL.
+  app.post('/api/v5/cycles/:id/stop', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!SAFE_ID.test(id)) return reply.status(400).send({ error: 'Invalid cycle id' });
+    const session = cycleSessions.get(id);
+    if (!session) return reply.status(404).send({ error: 'No session for this cycle id' });
+    const result = await cycleSessions.stop(id);
+    return reply.send({ cycleId: id, ...result });
   });
 
   /**
@@ -958,7 +998,10 @@ export async function cyclesRoutes(
     const cliEntry = resolve(join(opts.projectRoot, 'packages', 'cli', 'dist', 'bin.js'));
 
     let pid: number;
+    let pgid: number;
     try {
+      // detached: true makes the child a process group leader (pgid === pid),
+      // which lets the stop endpoint kill the entire group via -pgid.
       const child = spawn(nodeBin, [cliEntry, 'autonomous:cycle'], {
         cwd: reqProjectRoot,
         detached: true,
@@ -967,10 +1010,26 @@ export async function cyclesRoutes(
       });
       child.unref();
       pid = child.pid ?? -1;
+      pgid = pid;
     } catch (err) {
       return reply.status(500).send({ error: `Failed to spawn cycle: ${(err as Error).message}` });
     }
 
-    return reply.status(202).send({ cycleId, startedAt, pid });
+    if (pid > 0) {
+      try {
+        cycleSessions.register({
+          cycleId,
+          pid,
+          pgid,
+          workspaceId: 'default',
+          workspaceRoot: reqProjectRoot,
+        });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn(`[cycles] failed to register session ${cycleId}:`, err);
+      }
+    }
+
+    return reply.status(202).send({ cycleId, startedAt, pid, pgid });
   });
 }
