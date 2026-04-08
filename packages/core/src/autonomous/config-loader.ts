@@ -21,7 +21,10 @@ export const DEFAULT_CYCLE_CONFIG: CycleConfig = Object.freeze({
     maxDurationMinutes: 180,
     maxConsecutiveFailures: 5,
     maxExecutePhaseFailureRate: 0.5,
-    maxExecutePhaseParallelism: 3,
+    // v6.7.4: raised from 3 → 10. The old value capped execute to 3
+    // concurrent agent dispatches even when 18+ items were approved,
+    // making cycles take 60+ minutes for work that could finish in 15.
+    maxExecutePhaseParallelism: 10,
     maxItemRetries: 1,
   }),
   quality: Object.freeze({
