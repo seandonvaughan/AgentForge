@@ -149,13 +149,10 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleListRow | null 
   }
 
   // No cycle.json — synthesize an in-progress row from whatever's on disk.
-  // The detail endpoint does the same thing more thoroughly; this lighter
-  // version covers the fields the list page renders (stage, startedAt, cost,
-  // tests). Both must read `phase.start` events because the cycle-runner
-  // emits `phase` not `stage` on phase transitions.
   const eventsPath = join(cycleDir, 'events.jsonl');
   let stage = 'plan';
   let startedAt = deriveStartedAt(cycleDir) ?? new Date(0).toISOString();
+  let lastEventAt = 0;
   if (existsSync(eventsPath)) {
     try {
       const lines = readFileSync(eventsPath, 'utf-8')
@@ -171,9 +168,29 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleListRow | null 
           if (!startedAt || startedAt === new Date(0).toISOString()) {
             if (typeof ev['at'] === 'string') startedAt = ev['at'] as string;
           }
+          if (typeof ev['at'] === 'string') {
+            const t = new Date(ev['at'] as string).getTime();
+            if (t > lastEventAt) lastEventAt = t;
+          }
         } catch { /* skip */ }
       }
     } catch { /* ignore */ }
+  }
+
+  // v6.7.4 stale-cycle detection: if the last event is older than 5 minutes
+  // AND the session manager has no live record of this cycle, the parent
+  // process must be dead. Mark it crashed instead of showing it as running
+  // forever. This catches cycles spawned before the session manager existed
+  // and parent processes that died without writing cycle.json.
+  if (lastEventAt > 0 && Date.now() - lastEventAt > 5 * 60_000) {
+    try {
+      const cycleSessions = require('../../lib/cycle-sessions.js') as typeof import('../../lib/cycle-sessions.js');
+      const session = cycleSessions.get(cycleId);
+      const isLive = session && session.status === 'running' && cycleSessions.isPidAlive(session.pid);
+      if (!isLive) {
+        stage = 'crashed';
+      }
+    } catch { /* if session manager unavailable, fall through */ }
   }
 
   // Aggregate live cost + test totals from phases/<name>.json so the list
