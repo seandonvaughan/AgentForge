@@ -1,0 +1,33 @@
+{
+  "sprints": [
+    {
+      "version": "6.7.0",
+      "sprintId": "v6-7-0-dashboard-slash-command",
+      "title": "AgentForge v6.7.0 — /agentforge:dashboard Slash Command Rewrite",
+      "createdAt": "2026-04-07T19:00:00.000Z",
+      "phase": "completed",
+      "startedAt": "2026-04-07T19:00:00.000Z",
+      "completedAt": "2026-04-07T20:00:00.000Z",
+      "items": [
+        {
+          "id": "v670-p0-1",
+          "title": "Rewrite /agentforge:dashboard command to launch SvelteKit UI",
+          "description": "The dashboard slash command was pointing at the legacy v4 HTML single-file dashboard. Rewrote commands/dashboard.md to launch the SvelteKit dashboard on port 4751 (packages/dashboard/) instead. No code changes — pure command definition update. Commit: 60ed93f.",
+          "priority": "P0",
+          "assignee": "DocsAgent",
+          "status": "completed",
+          "tags": ["fix", "dashboard", "slash-command", "plugin"]
+        }
+      ],
+      "budget": 2,
+      "teamSize": 1,
+      "successCriteria": [
+        "/agentforge:dashboard launches packages/dashboard/ SvelteKit UI on port 4751",
+        "Legacy HTML dashboard reference removed from command definition",
+        "348 autonomous tests pass (no test changes this release)"
+      ],
+      "autonomous": true,
+      "testCountAfter": 348
+    }
+  ]
+}

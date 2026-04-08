@@ -4,8 +4,8 @@ workspace:
 execution:
   defaultModel: opus
   maxConcurrentAgents: 20
-  budgetLimitPerSprint: 500
-  budgetLimitPerAgent: 50
+  budgetLimitPerSprint: 200
+  budgetLimitPerAgent: 60
   autoApprovalThreshold: 0.85
   taskTimeoutMs: 300000
 dashboard:

@@ -1,0 +1,45 @@
+{
+  "sprints": [
+    {
+      "version": "6.5.1",
+      "sprintId": "v6-5-1-real-execute-phase",
+      "title": "AgentForge v6.5.1 — Real Execute Phase & tmpdir Test Isolation",
+      "createdAt": "2026-04-07T10:00:00.000Z",
+      "phase": "completed",
+      "startedAt": "2026-04-07T10:00:00.000Z",
+      "completedAt": "2026-04-07T12:00:00.000Z",
+      "items": [
+        {
+          "id": "v651-p0-1",
+          "title": "Real execute phase — spawn claude -p with --allowed-tools",
+          "description": "Replace the stubbed execute phase handler with a real implementation that spawns claude -p with --allowed-tools Read,Write,Edit,Bash,Glob,Grep for each sprint item. The execute agent receives the item description as its task prompt and modifies real source files. Commits: 0474ade, 0bf01b4.",
+          "priority": "P0",
+          "assignee": "CoreAgent",
+          "status": "completed",
+          "tags": ["feature", "execute-phase", "autonomous-loop", "agent-runtime"]
+        },
+        {
+          "id": "v651-p1-1",
+          "title": "Rewrite integration tests to use os.tmpdir() workspaces",
+          "description": "Replace the TEST_POLLUTION_PATTERNS workaround with proper test isolation using temporary directories (os.tmpdir()). Each test creates its own workspace and cleans up on teardown, eliminating cross-test file pollution. Commit: 042f261.",
+          "priority": "P1",
+          "assignee": "QAAgent",
+          "status": "completed",
+          "tags": ["chore", "testing", "test-isolation", "autonomous-loop"]
+        }
+      ],
+      "budget": 8,
+      "teamSize": 2,
+      "successCriteria": [
+        "Execute phase spawns real claude -p agents with file-editing tools",
+        "Sprint items are resolved by actual code changes, not stubs",
+        "Integration tests run in isolated tmpdir workspaces with no cross-test pollution",
+        "All 270+ autonomous tests pass"
+      ],
+      "autonomous": true,
+      "testCountBefore": 270,
+      "testCountAfter": 290,
+      "testCountDelta": 20
+    }
+  ]
+}

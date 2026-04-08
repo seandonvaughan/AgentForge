@@ -20,6 +20,7 @@ import { memoryRoutes } from './routes/memory.js';
 import { reforgeRoutes } from './routes/reforge.js';
 import { teamsRoutes } from './routes/teams.js';
 import { careersRoutes } from './routes/careers.js';
+import { branchesRoutes } from './routes/branches.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -88,6 +89,9 @@ export async function createServer(options: ServerOptions = {}) {
     await app.register(teamsRoutes, { adapter: options.adapter });
     await app.register(careersRoutes, { adapter: options.adapter });
   }
+
+  // Branches route — git-backed, no DB adapter required
+  await app.register(branchesRoutes, {});
 
   // SSE streaming endpoint — only registered when an sseManager is provided
   if (options.sseManager) {

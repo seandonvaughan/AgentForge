@@ -40,12 +40,20 @@ export class KillSwitch {
       return this.trip('manualStopFile', `STOP file at ${this.stopFilePath}`, CycleStage.RUN);
     }
 
+    // v6.7.4: budget is warn-only. Per user request, cycles continue to
+    // completion even when cumulative spend crosses the per-cycle ceiling
+    // — stopping a cycle mid-execute loses the work already paid for and
+    // leaves dangling state. The ceiling is still surfaced in the
+    // dashboard cost bar as a reference line. If the ceiling is ever
+    // needed as a hard stop, re-enable by uncommenting the trip below.
     if (state.cumulativeCostUsd >= this.config.budget.perCycleUsd) {
-      return this.trip(
-        'budget',
-        `Cumulative cost $${state.cumulativeCostUsd.toFixed(2)} exceeds limit $${this.config.budget.perCycleUsd}`,
-        CycleStage.RUN,
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[kill-switch] cumulative cost $${state.cumulativeCostUsd.toFixed(2)} ` +
+        `crossed the $${this.config.budget.perCycleUsd} reference ceiling — ` +
+        `continuing (warn-only since v6.7.4)`,
       );
+      // NOTE: no trip — cycle continues.
     }
 
     const elapsedMin = (Date.now() - this.cycleStartedAt) / 60000;

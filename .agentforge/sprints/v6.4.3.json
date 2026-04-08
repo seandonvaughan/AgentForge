@@ -1,0 +1,42 @@
+{
+  "sprints": [
+    {
+      "version": "6.4.3",
+      "sprintId": "v6-4-3-spawn-stdin-scanner",
+      "title": "AgentForge v6.4.3 — Spawn Stdin Fix & Scanner Hardening",
+      "createdAt": "2026-04-07T02:00:00.000Z",
+      "phase": "completed",
+      "startedAt": "2026-04-07T02:00:00.000Z",
+      "completedAt": "2026-04-07T03:00:00.000Z",
+      "items": [
+        {
+          "id": "v643-p0-1",
+          "title": "Fix spawn stdin — prevent claude subprocess from hanging on empty input",
+          "description": "Close the stdin stream immediately after spawning the claude -p subprocess so it does not block waiting for input when no prompt is piped. Fixes autonomous cycle hanging indefinitely on execute phase. Commit: f2f70ec.",
+          "priority": "P0",
+          "assignee": "CoreAgent",
+          "status": "completed",
+          "tags": ["fix", "spawn", "stdin", "autonomous-loop"]
+        },
+        {
+          "id": "v643-p0-2",
+          "title": "Harden TODO scanner comment-prefix matching",
+          "description": "Tighten the proposal-to-backlog scanner's regex so it correctly matches comment-style TODO markers (// TODO, # TODO) and does not emit false positives from prose or test fixture strings. Commit: f2f70ec.",
+          "priority": "P0",
+          "assignee": "CoreAgent",
+          "status": "completed",
+          "tags": ["fix", "scanner", "proposal-parser", "autonomous-loop"]
+        }
+      ],
+      "budget": 5,
+      "teamSize": 1,
+      "successCriteria": [
+        "Autonomous execute phase no longer hangs on spawn stdin",
+        "Scanner produces zero false-positive TODOs from prose or test files",
+        "All 236 autonomous tests pass"
+      ],
+      "autonomous": true,
+      "testCountAfter": 236
+    }
+  ]
+}

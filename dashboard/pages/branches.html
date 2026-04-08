@@ -1,0 +1,249 @@
+  <div class="page" id="page-branches" hidden>
+    <div class="page-header">
+      <h2>Autonomous Branches</h2>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <button class="export-btn" onclick="loadBranchesPage()">&#8635; Refresh</button>
+      </div>
+    </div>
+
+    <!-- Summary stats -->
+    <div class="tasks-summary-row">
+      <div class="tasks-summary-card">
+        <div class="tasks-summary-label">Total</div>
+        <div class="tasks-summary-value" id="branches-stat-total">—</div>
+      </div>
+      <div class="tasks-summary-card">
+        <div class="tasks-summary-label">Open PR</div>
+        <div class="tasks-summary-value" id="branches-stat-open" style="color:var(--blue)">—</div>
+      </div>
+      <div class="tasks-summary-card">
+        <div class="tasks-summary-label">Merged</div>
+        <div class="tasks-summary-value" id="branches-stat-merged" style="color:var(--green)">—</div>
+      </div>
+      <div class="tasks-summary-card">
+        <div class="tasks-summary-label">Stale</div>
+        <div class="tasks-summary-value" id="branches-stat-stale" style="color:var(--red)">—</div>
+      </div>
+    </div>
+
+    <!-- Loading / error states -->
+    <div id="branches-loading" class="skeleton-loader" hidden>Loading branches…</div>
+    <div id="branches-error" class="error-state" hidden>
+      <p id="branches-error-msg">Failed to load branches.</p>
+      <button onclick="loadBranchesPage()">Retry</button>
+    </div>
+
+    <!-- Branches table -->
+    <div class="tasks-table-wrap" id="branches-table-wrap">
+      <table class="tasks-table">
+        <thead>
+          <tr>
+            <th>Branch</th>
+            <th>Cycle</th>
+            <th>Age</th>
+            <th>Status</th>
+            <th>PR</th>
+            <th style="text-align:right">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="branches-tbody"></tbody>
+      </table>
+    </div>
+
+    <div id="branches-empty" class="empty-state" hidden>No autonomous/* branches found.</div>
+  </div><!-- /page-branches -->
+
+  <!-- ── Branches page JS ────────────────────────────── -->
+
+<script>
+(function() {
+  'use strict';
+
+  /** Status → { badge class, label } */
+  var STATUS_META = {
+    open_pr: { cls: 'active',   label: 'Open PR' },
+    merged:  { cls: 'complete', label: 'Merged'  },
+    stale:   { cls: 'error',    label: 'Stale'   },
+    active:  { cls: 'pending',  label: 'Active'  },
+  };
+
+  /** Create a text-only element of a given tag with optional class + style. */
+  function el(tag, text, opts) {
+    var node = document.createElement(tag);
+    if (opts && opts.cls) node.className = opts.cls;
+    if (opts && opts.style) node.style.cssText = opts.style;
+    if (opts && opts.title) node.title = opts.title;
+    if (text != null) node.textContent = text;
+    return node;
+  }
+
+  /** Create a <td> wrapping a single child node. */
+  function td(child, style) {
+    var cell = document.createElement('td');
+    if (style) cell.style.cssText = style;
+    if (child != null) cell.appendChild(child);
+    return cell;
+  }
+
+  /** Build the status badge span for a given status key. */
+  function makeStatusBadge(status) {
+    var meta = STATUS_META[status] || { cls: 'idle', label: status };
+    return el('span', meta.label, { cls: 'status-badge ' + meta.cls });
+  }
+
+  /** Build the PR link (or a dash placeholder) for a branch's PR info. */
+  function makePrNode(pr) {
+    if (!pr) {
+      return el('span', '—', { style: 'color:var(--text-muted);font-family:var(--font-mono);font-size:11px' });
+    }
+    var a = document.createElement('a');
+    a.textContent = '#' + pr.number + ' ' + pr.state;
+    a.title = pr.title;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.style.cssText = 'color:var(--blue);font-family:var(--font-mono);font-size:11px;text-decoration:none';
+    // Use a GitHub search URL since we don't have the exact repo slug available client-side
+    a.href = 'https://github.com/pulls?q=is%3Apr+' + encodeURIComponent(pr.title.slice(0, 40));
+    return a;
+  }
+
+  /** Build the delete button for stale/merged branches, or a dash for others. */
+  function makeDeleteBtn(branchName, canDelete) {
+    if (!canDelete) {
+      return el('span', '—', { style: 'color:var(--text-muted);font-family:var(--font-mono);font-size:10px' });
+    }
+    var btn = document.createElement('button');
+    btn.textContent = 'Delete';
+    btn.style.cssText = 'font-family:var(--font-mono);font-size:11px;font-weight:700;padding:4px 10px;' +
+      'border-radius:3px;border:1px solid rgba(248,81,73,0.4);background:var(--red-dim);' +
+      'color:var(--red);cursor:pointer;transition:all 0.15s';
+    btn.addEventListener('click', function() {
+      window._deleteBranch(branchName, btn);
+    });
+    return btn;
+  }
+
+  /** Build a table row for one branch. */
+  function makeRow(b) {
+    var canDelete = (b.status === 'stale' || b.status === 'merged');
+
+    var row = document.createElement('tr');
+    row.dataset.branch = b.name;
+
+    row.appendChild(td(el('span', b.name,  { style: 'font-family:var(--font-mono);font-size:12px' })));
+    row.appendChild(td(el('span', b.cycle, { style: 'font-family:var(--font-mono);font-size:12px;color:var(--purple)' })));
+    row.appendChild(td(el('span', b.age,   {
+      style: 'font-family:var(--font-mono);font-size:12px;color:var(--text-secondary)',
+      title: b.createdAt || '',
+    })));
+    row.appendChild(td(makeStatusBadge(b.status)));
+    row.appendChild(td(makePrNode(b.pr)));
+    row.appendChild(td(makeDeleteBtn(b.name, canDelete), 'text-align:right'));
+
+    return row;
+  }
+
+  function renderBranches(branches) {
+    var tbody  = document.getElementById('branches-tbody');
+    var wrapEl = document.getElementById('branches-table-wrap');
+    var emptyEl = document.getElementById('branches-empty');
+    if (!tbody) return;
+
+    // Clear existing rows safely
+    while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+
+    if (!branches.length) {
+      if (emptyEl) emptyEl.hidden = false;
+      if (wrapEl)  wrapEl.hidden  = true;
+      return;
+    }
+
+    if (emptyEl) emptyEl.hidden = true;
+    if (wrapEl)  wrapEl.hidden  = false;
+
+    var frag = document.createDocumentFragment();
+    branches.forEach(function(b) { frag.appendChild(makeRow(b)); });
+    tbody.appendChild(frag);
+  }
+
+  function updateStats(branches) {
+    var total  = branches.length;
+    var openPr = branches.filter(function(b) { return b.status === 'open_pr'; }).length;
+    var merged = branches.filter(function(b) { return b.status === 'merged';  }).length;
+    var stale  = branches.filter(function(b) { return b.status === 'stale';   }).length;
+
+    var get = function(id) { return document.getElementById(id); };
+    if (get('branches-stat-total'))  get('branches-stat-total').textContent  = total;
+    if (get('branches-stat-open'))   get('branches-stat-open').textContent   = openPr;
+    if (get('branches-stat-merged')) get('branches-stat-merged').textContent = merged;
+    if (get('branches-stat-stale'))  get('branches-stat-stale').textContent  = stale;
+  }
+
+  /** Fetch the list of autonomous branches and render the table. */
+  window.loadBranchesPage = function() {
+    var loadingEl = document.getElementById('branches-loading');
+    var errorEl   = document.getElementById('branches-error');
+    var wrapEl    = document.getElementById('branches-table-wrap');
+    var emptyEl   = document.getElementById('branches-empty');
+
+    if (loadingEl) loadingEl.hidden = false;
+    if (errorEl)   errorEl.hidden   = true;
+    if (wrapEl)    wrapEl.hidden    = true;
+    if (emptyEl)   emptyEl.hidden   = true;
+
+    fetch('/api/v1/branches')
+      .then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function(body) {
+        if (loadingEl) loadingEl.hidden = true;
+        var branches = (body && Array.isArray(body.data)) ? body.data : [];
+        updateStats(branches);
+        renderBranches(branches);
+      })
+      .catch(function(err) {
+        if (loadingEl) loadingEl.hidden = true;
+        var msgEl = document.getElementById('branches-error-msg');
+        if (msgEl) msgEl.textContent = 'Failed to load branches: ' + err.message;
+        if (errorEl) errorEl.hidden = false;
+      });
+  };
+
+  /**
+   * Delete an autonomous/* branch by name.
+   * Only stale and merged branches have a delete button, but the server
+   * enforces the autonomous/* prefix constraint as a second safety layer.
+   */
+  window._deleteBranch = function(branchName, btnEl) {
+    if (!confirm('Delete branch ' + branchName + '?\nThis cannot be undone.')) return;
+
+    if (btnEl) {
+      btnEl.disabled = true;
+      btnEl.textContent = '…';
+    }
+
+    fetch('/api/v1/branches/' + encodeURIComponent(branchName), { method: 'DELETE' })
+      .then(function(r) {
+        return r.json().then(function(body) { return { ok: r.ok, body: body }; });
+      })
+      .then(function(result) {
+        if (!result.ok) {
+          var msg = (result.body && result.body.error) ? result.body.error : 'Delete failed';
+          alert('Error: ' + msg);
+          if (btnEl) { btnEl.disabled = false; btnEl.textContent = 'Delete'; }
+          return;
+        }
+        // Refresh the full table so stats and row count stay consistent
+        window.loadBranchesPage();
+      })
+      .catch(function(err) {
+        alert('Delete failed: ' + err.message);
+        if (btnEl) { btnEl.disabled = false; btnEl.textContent = 'Delete'; }
+      });
+  };
+
+  // Auto-load when page script runs
+  if (typeof window.loadBranchesPage === 'function') window.loadBranchesPage();
+})();
+</script>

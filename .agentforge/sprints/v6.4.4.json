@@ -1,0 +1,54 @@
+{
+  "sprints": [
+    {
+      "version": "6.4.4",
+      "sprintId": "v6-4-4-smoke-test-bug-fixes",
+      "title": "AgentForge v6.4.4 — Smoke-Test Bug Fixes (First Self-Directed Cycle)",
+      "createdAt": "2026-04-07T03:00:00.000Z",
+      "phase": "completed",
+      "startedAt": "2026-04-07T03:00:00.000Z",
+      "completedAt": "2026-04-07T06:00:00.000Z",
+      "items": [
+        {
+          "id": "v644-p0-1",
+          "title": "Fix cycle-runner error field + test pollution filter + branch double-v",
+          "description": "Three bugs surfaced by the first self-directed autonomous cycle: (1) cycle-runner error field serialization was dropping stack info, (2) test pollution filter was incorrectly clearing legit test output, (3) branch name generation was emitting 'vv6.4.4' with a double-v prefix. Commit: d6514d5.",
+          "priority": "P0",
+          "assignee": "CoreAgent",
+          "status": "completed",
+          "tags": ["fix", "cycle-runner", "autonomous-loop", "git"]
+        },
+        {
+          "id": "v644-p0-2",
+          "title": "Fix PROpener self-reviewer + unknown labels",
+          "description": "PROpener was assigning the bot itself as a reviewer (GitHub rejects self-reviews) and was passing label names that did not exist in the repo. Fixed by filtering out the authenticated user from reviewers and stripping unknown labels before the gh pr create call. Commit: aceabd2.",
+          "priority": "P0",
+          "assignee": "CoreAgent",
+          "status": "completed",
+          "tags": ["fix", "pr-opener", "autonomous-loop", "github"]
+        },
+        {
+          "id": "v644-p0-3",
+          "title": "Fix scanner comment-prefix matching (follow-up to v6.4.3)",
+          "description": "Follow-up hardening on the proposal scanner after v6.4.3 — additional edge cases in multi-line comment blocks and block-style TODO markers. Commit: 1ba2e5d.",
+          "priority": "P0",
+          "assignee": "CoreAgent",
+          "status": "completed",
+          "tags": ["fix", "scanner", "proposal-parser"]
+        }
+      ],
+      "budget": 10,
+      "teamSize": 3,
+      "successCriteria": [
+        "Autonomous loop completes a full cycle from plan to merged PR without manual intervention",
+        "PROpener does not self-assign reviewer or pass unknown labels",
+        "Branch names are well-formed (no double-v prefix)",
+        "247 autonomous tests passing"
+      ],
+      "autonomous": true,
+      "testCountBefore": 236,
+      "testCountAfter": 247,
+      "testCountDelta": 11
+    }
+  ]
+}

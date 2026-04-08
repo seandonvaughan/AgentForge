@@ -1,0 +1,42 @@
+{
+  "sprints": [
+    {
+      "version": "6.4.2",
+      "sprintId": "v6-4-2-git-changed-files",
+      "title": "AgentForge v6.4.2 — Git Changed-Files & RuntimeAdapter Wiring",
+      "createdAt": "2026-04-07T01:00:00.000Z",
+      "phase": "completed",
+      "startedAt": "2026-04-07T01:00:00.000Z",
+      "completedAt": "2026-04-07T02:00:00.000Z",
+      "items": [
+        {
+          "id": "v642-p0-1",
+          "title": "collectChangedFiles via git diff instead of in-memory tracking",
+          "description": "Replace the in-memory changed-file accumulator with a git diff --name-only call so the PR body and review step see all files touched during the execute phase — including those modified by subprocesses. Commit: 6adcaa1.",
+          "priority": "P0",
+          "assignee": "CoreAgent",
+          "status": "completed",
+          "tags": ["fix", "git", "autonomous-loop", "pr"]
+        },
+        {
+          "id": "v642-p0-2",
+          "title": "Wire CLI autonomous command through RuntimeAdapter",
+          "description": "Route the CLI autonomous command through RuntimeAdapter so it uses the same AgentRuntime code path as the server, eliminating a duplicate execution branch. Commit: 6adcaa1.",
+          "priority": "P0",
+          "assignee": "CoreAgent",
+          "status": "completed",
+          "tags": ["fix", "cli", "runtime-adapter", "autonomous-loop"]
+        }
+      ],
+      "budget": 5,
+      "teamSize": 1,
+      "successCriteria": [
+        "PR body lists real changed files from git diff",
+        "CLI autonomous command routes through RuntimeAdapter",
+        "All 236 autonomous tests pass"
+      ],
+      "autonomous": true,
+      "testCountAfter": 236
+    }
+  ]
+}

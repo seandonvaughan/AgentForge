@@ -145,7 +145,7 @@
           "description": "Raw JSON blobs in the cycle phases tab make human review tedious and error-prone; formatted markdown dramatically reduces the cognitive load of approving or rejecting a cycle. Adding a small library (marked/markdown-it) is a one-dependency, one-component change with high readability impact.",
           "priority": "P2",
           "assignee": "FrontendAgent",
-          "status": "planned",
+          "status": "completed",
           "estimatedCostUsd": 2,
           "tags": [
             "chore",
@@ -160,7 +160,7 @@
           "description": "The live feed is the real-time heartbeat of the autonomous loop; silent SSE subscription failures leave operators blind to cycle progress. Verification is lower effort than building new features but delivers confidence that the observability layer actually works.",
           "priority": "P2",
           "assignee": "QAAgent",
-          "status": "planned",
+          "status": "completed",
           "estimatedCostUsd": 2,
           "tags": [
             "chore",
@@ -175,7 +175,7 @@
           "description": "Stale autonomous branches accumulate quickly in an active loop and create noise in git history; a dashboard tab that exposes their status and provides cleanup affordances reduces maintenance burden. This is primarily a git-api wiring task with moderate UI complexity.",
           "priority": "P2",
           "assignee": "FrontendAgent",
-          "status": "planned",
+          "status": "completed",
           "estimatedCostUsd": 3,
           "tags": [
             "chore",
@@ -190,7 +190,7 @@
           "description": "A sprint list with non-functional cards is a usability dead-end; the detail route already exists, making this a trivial navigation wire-up with outsized UX improvement. High confidence due to very narrow scope.",
           "priority": "P2",
           "assignee": "FrontendAgent",
-          "status": "planned",
+          "status": "completed",
           "estimatedCostUsd": 1,
           "tags": [
             "chore",
@@ -205,7 +205,7 @@
           "description": "The sprint detail page is described as mostly built — this is a polish and gap-fill pass that ensures the layout matches the data schema. Completing it after the clickable card fix (rank 13) means navigation and rendering are both solid in one cycle pass.",
           "priority": "P2",
           "assignee": "FrontendAgent",
-          "status": "planned",
+          "status": "completed",
           "estimatedCostUsd": 2,
           "tags": [
             "chore",
@@ -220,7 +220,7 @@
           "description": "Historical sprint records are needed by the /sprints route and the flywheel metrics; without them, the dashboard shows an incomplete picture of the project's trajectory. The work is highly repetitive (template-filling) and well-suited to a data-gen agent with no regression risk.",
           "priority": "P2",
           "assignee": "DataAgent",
-          "status": "planned",
+          "status": "completed",
           "estimatedCostUsd": 2.5,
           "tags": [
             "chore",

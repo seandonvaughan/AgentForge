@@ -2608,6 +2608,7 @@ tbody tr:hover { background: var(--bg-card-hover) !important; cursor: pointer; }
       <div class="sidebar-group-label">Execution</div>
       <a class="sidebar-link" data-route="/sprints" href="/sprints"><span class="nav-icon">🏃</span>Sprint Control</a>
       <a class="sidebar-link" data-route="/observe" href="/observe"><span class="nav-icon">📡</span>Observability</a>
+      <a class="sidebar-link" data-route="/branches" href="/branches"><span class="nav-icon">🌿</span>Branches</a>
     </div>
     <div class="sidebar-group">
       <div class="sidebar-group-label">Work</div>
@@ -3953,6 +3954,7 @@ Router.addRoute('/decisions', async () => { await _loadPageRoute('decisions', ()
 Router.addRoute('/approvals', async () => { await _loadPageRoute('approvals', () => { if (typeof window.loadApprovalsPage === 'function') window.loadApprovalsPage(); }); });
 Router.addRoute('/knowledge', async () => { await _loadPageRoute('knowledge', () => loadKnowledgePage()); });
 Router.addRoute('/chat', async () => { await _loadPageRoute('chat'); });
+Router.addRoute('/branches', async () => { await _loadPageRoute('branches', () => loadBranchesPage()); });
 
 // ── Chat Module (P0-4 Chat Page) ────────────────────────────
 (function() {

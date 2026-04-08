@@ -1,0 +1,33 @@
+{
+  "sprints": [
+    {
+      "version": "6.4.1",
+      "sprintId": "v6-4-1-auth-subprocess",
+      "title": "AgentForge v6.4.1 — Claude -p Subprocess Auth",
+      "createdAt": "2026-04-07T00:00:00.000Z",
+      "phase": "completed",
+      "startedAt": "2026-04-07T00:00:00.000Z",
+      "completedAt": "2026-04-07T01:00:00.000Z",
+      "items": [
+        {
+          "id": "v641-p0-1",
+          "title": "Switch AgentRuntime to claude -p subprocess auth",
+          "description": "Replace direct Anthropic API key calls with claude -p subprocess invocations so the autonomous loop authenticates via the logged-in Claude Code Max/Pro session — no ANTHROPIC_API_KEY environment variable required. Commit: 56135da.",
+          "priority": "P0",
+          "assignee": "CoreAgent",
+          "status": "completed",
+          "tags": ["fix", "auth", "autonomous-loop", "agent-runtime"]
+        }
+      ],
+      "budget": 5,
+      "teamSize": 1,
+      "successCriteria": [
+        "AgentRuntime uses claude -p subprocess instead of direct API key",
+        "Autonomous loop runs without ANTHROPIC_API_KEY set",
+        "All existing 236 autonomous tests pass"
+      ],
+      "autonomous": true,
+      "testCountAfter": 236
+    }
+  ]
+}
