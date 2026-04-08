@@ -1,7 +1,7 @@
 {
   "name": "agentforge",
   "description": "Universal Agent Team Builder \u2014 assembles optimized AI agent teams with intelligent model routing, org-graph delegation, persistent memory, session management, self-modification (REFORGE), compounding flywheel, and a closed-loop autonomous development cycle (v6.4) that plans, executes, tests, commits, and opens PRs using your logged-in Claude Code session",
-  "version": "6.7.3",
+  "version": "6.8.0",
   "author": {
     "name": "Sean Vaughan"
   }

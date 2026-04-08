@@ -141,7 +141,12 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
   }
 
   // ── Agent routes (reads .agentforge/agents/*.yaml — no adapter required) ──────
-  await agentRoutes(app, { adapter: options.adapter, projectRoot });
+  // v9.0.0: registerV5Routes already calls agentRoutes in adapter mode, so
+  // only register here when we're in the no-adapter path. Without the guard
+  // agentRoutes is called twice and Fastify throws FST_ERR_DUPLICATED_ROUTE.
+  if (!options.adapter || !options.registry) {
+    await agentRoutes(app, { adapter: options.adapter, projectRoot });
+  }
 
   // ── Org graph (reads delegation.yaml — no adapter required) ──────────────────
   await orgGraphRoutes(app, { projectRoot });
@@ -161,7 +166,11 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
   await dashboardStubRoutes(app, { projectRoot });
 
   // ── Execution API (reads .agentforge/agents/*.yaml — optional adapter for persistence) ──
-  await runRoutes(app, { adapter: options.adapter });
+  // v9.0.0: registerV5Routes also calls runRoutes in adapter mode. Guard to
+  // avoid FST_ERR_DUPLICATED_ROUTE.
+  if (!options.adapter || !options.registry) {
+    await runRoutes(app, { adapter: options.adapter });
+  }
 
   // ── Agent Chat Interface (P0-3) — no adapter required, uses audit.db directly ──
   // v6.7.1 fix: only register here when adapter is NOT present, because
