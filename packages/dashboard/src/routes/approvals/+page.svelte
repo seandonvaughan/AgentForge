@@ -32,7 +32,6 @@
   let stats: ApprovalsStats = { pending: 0, approvedToday: 0, deniedToday: 0 };
   let loading = true;
   let error: string | null = null;
-  let apiUnavailable = false;
 
   let statusFilter = 'pending';
   let actioning: Set<string> = new Set();
@@ -67,22 +66,14 @@
     error = null;
     try {
       const res = await fetch(`/api/v5/approvals?status=${statusFilter}`);
-      if (res.status === 404) {
-        apiUnavailable = true;
-        items = MOCK_ITEMS.filter((i) => statusFilter === '' || i.status === statusFilter);
-        computeStats();
-        return;
-      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       const raw: unknown[] = json.data ?? json.pending ?? json ?? [];
       items = (Array.isArray(raw) ? raw : []).map((r) => normalizeItem(r as Record<string, unknown>));
       computeStats();
-      apiUnavailable = false;
     } catch (e) {
       error = String(e);
-      // Fall through to mock data on error
-      items = MOCK_ITEMS.filter((i) => statusFilter === '' || i.status === statusFilter);
+      items = [];
       computeStats();
     } finally {
       loading = false;
@@ -97,26 +88,21 @@
     stats = { pending, approvedToday, deniedToday };
   }
 
+  async function patchApproval(id: string, action: 'approve' | 'reject') {
+    const res = await fetch(`/api/v5/approvals/${id}/${action}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reviewedBy: 'dashboard-user' }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  }
+
   async function handleApprove(item: ApprovalItem) {
     actioning = new Set([...actioning, item.id]);
     actionError = { ...actionError };
     delete actionError[item.id];
     try {
-      const res = await fetch(`/api/v5/approvals/${item.id}/approve`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reviewedBy: 'dashboard-user' }),
-      });
-      if (!res.ok) {
-        // Try PATCH (legacy)
-        const res2 = await fetch(`/api/v5/approvals/${item.id}/approve`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reviewedBy: 'dashboard-user' }),
-        });
-        if (!res2.ok) throw new Error(`HTTP ${res2.status}`);
-      }
-      // Optimistic update
+      await patchApproval(item.id, 'approve');
       items = items.map((i) => i.id === item.id ? { ...i, status: 'approved' } : i);
       computeStats();
     } catch (e) {
@@ -131,20 +117,7 @@
     actionError = { ...actionError };
     delete actionError[item.id];
     try {
-      const res = await fetch(`/api/v5/approvals/${item.id}/deny`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reviewedBy: 'dashboard-user' }),
-      });
-      if (!res.ok) {
-        // Try /reject (legacy)
-        const res2 = await fetch(`/api/v5/approvals/${item.id}/reject`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reviewedBy: 'dashboard-user' }),
-        });
-        if (!res2.ok) throw new Error(`HTTP ${res2.status}`);
-      }
+      await patchApproval(item.id, 'reject');
       items = items.map((i) => i.id === item.id ? { ...i, status: 'denied' } : i);
       computeStats();
     } catch (e) {
@@ -171,37 +144,6 @@
       return fmtDate(iso);
     } catch { return iso; }
   }
-
-  // Mock data for when API isn't available
-  const MOCK_ITEMS: ApprovalItem[] = [
-    {
-      id: 'mock-1',
-      agentId: 'coder',
-      action: 'Refactor authentication module',
-      description: 'Replace legacy JWT handling with new session-based auth. Affects 12 files.',
-      requestedAt: new Date(Date.now() - 300000).toISOString(),
-      priority: 'high',
-      status: 'pending',
-    },
-    {
-      id: 'mock-2',
-      agentId: 'architect',
-      action: 'Add database migration v47',
-      description: 'Adds new columns to sessions table for cost tracking. Reversible migration.',
-      requestedAt: new Date(Date.now() - 900000).toISOString(),
-      priority: 'medium',
-      status: 'pending',
-    },
-    {
-      id: 'mock-3',
-      agentId: 'cto',
-      action: 'Update deployment config',
-      description: 'Increase worker count from 2 to 4 for improved throughput.',
-      requestedAt: new Date(Date.now() - 7200000).toISOString(),
-      priority: 'low',
-      status: 'approved',
-    },
-  ];
 
   // ────────────────────────────────────────────────────────────────────────
   // Cycle Approvals — v6.7.4+
@@ -353,13 +295,7 @@
   </div>
 </div>
 
-{#if apiUnavailable}
-  <div class="api-banner">
-    <strong>Preview mode</strong> — <code>/api/v5/approvals</code> not available. Showing mock data.
-  </div>
-{/if}
-
-{#if error && !apiUnavailable}
+{#if error}
   <div class="error-banner">{error}</div>
 {/if}
 
@@ -529,23 +465,6 @@
   }
 
   /* Banners */
-  .api-banner {
-    background: rgba(245,166,35,0.08);
-    border: 1px solid rgba(245,166,35,0.25);
-    border-radius: var(--radius-md);
-    color: var(--color-warning);
-    font-size: var(--text-xs);
-    padding: var(--space-2) var(--space-4);
-    margin-bottom: var(--space-3);
-  }
-
-  .api-banner code {
-    font-family: var(--font-mono);
-    background: rgba(245,166,35,0.15);
-    padding: 1px 4px;
-    border-radius: 3px;
-  }
-
   .error-banner {
     background: rgba(224,90,90,0.08);
     border: 1px solid rgba(224,90,90,0.25);

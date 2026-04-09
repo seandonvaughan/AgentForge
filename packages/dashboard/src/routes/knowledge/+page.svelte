@@ -1,6 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
 
+  // Dashboard view-model mapped from server `Entity` shape:
+  //   { id, name, type, description, properties, createdAt }
+  // The dashboard historically rendered "content + tags + sourceAgent", so we
+  // adapt:
+  //   content     = description ?? name
+  //   tags        = [type]  (entity type is the single categorical tag)
+  //   sourceAgent = properties.sourceAgent ?? '—'
   interface KnowledgeEntry {
     id: string;
     content: string;
@@ -21,7 +28,6 @@
   let loading = true;
   let statsLoading = true;
   let error: string | null = null;
-  let apiUnavailable = false;
 
   let searchQuery = '';
   let searchDebounce: ReturnType<typeof setTimeout> | null = null;
@@ -39,18 +45,33 @@
   async function loadStats() {
     statsLoading = true;
     try {
-      const res = await fetch('/api/v5/knowledge/stats');
-      if (res.ok) {
-        const json = await res.json();
-        stats = {
-          total: json.total ?? json.count ?? 0,
-          agents: json.agents ?? json.agentCount ?? 0,
-          tags: json.tags ?? json.tagCount ?? 0,
-          lastUpdated: json.lastUpdated,
-        };
+      const res = await fetch('/api/v5/knowledge/graph');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      const graph = json.data ?? {};
+      const graphStats = graph.stats ?? {};
+      const allEntities: Array<Record<string, unknown>> = Array.isArray(graph.entities) ? graph.entities : [];
+      const agentSet = new Set<string>();
+      for (const e of allEntities) {
+        const props = (e.properties ?? {}) as Record<string, unknown>;
+        const agent = String(props.sourceAgent ?? props.source_agent ?? '').trim();
+        if (agent) agentSet.add(agent);
       }
+      const tagSet = new Set(allEntities.map((e) => String(e.type ?? '')).filter(Boolean));
+      // Newest createdAt for "last updated"
+      let lastUpdated: string | undefined;
+      for (const e of allEntities) {
+        const t = String(e.createdAt ?? '');
+        if (t && (!lastUpdated || t > lastUpdated)) lastUpdated = t;
+      }
+      stats = {
+        total: Number(graphStats.entityCount ?? allEntities.length),
+        agents: agentSet.size,
+        tags: tagSet.size,
+        ...(lastUpdated ? { lastUpdated } : {}),
+      };
     } catch {
-      // stats are non-critical
+      // non-critical; leave prior stats as-is
     } finally {
       statsLoading = false;
     }
@@ -60,24 +81,30 @@
     loading = true;
     error = null;
     try {
-      const url = q ? `/api/v5/knowledge/search?q=${encodeURIComponent(q)}` : '/api/v5/knowledge';
-      const res = await fetch(url);
-      if (res.status === 404) {
-        apiUnavailable = true;
-        entries = MOCK_ENTRIES.filter((e) => !q || e.content.toLowerCase().includes(q.toLowerCase()) || e.tags.some((t) => t.toLowerCase().includes(q.toLowerCase())));
-        updateStatsFromEntries();
-        return;
+      let raw: unknown[] = [];
+      if (q) {
+        // Semantic query — POST /api/v5/knowledge/query returns
+        // { data: { entities: [...], relationships: [...], relevanceScores: {...} } }
+        const res = await fetch('/api/v5/knowledge/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: q, maxEntities: 50 }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        raw = Array.isArray(json.data?.entities) ? json.data.entities : [];
+      } else {
+        // Full list
+        const res = await fetch('/api/v5/knowledge/entities');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        raw = Array.isArray(json.data) ? json.data : [];
       }
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      const raw: unknown[] = json.data ?? json.entries ?? json.results ?? json ?? [];
-      entries = (Array.isArray(raw) ? raw : []).map(normalizeEntry);
-      apiUnavailable = false;
+      entries = raw.map(normalizeEntry);
       if (!q) updateStatsFromEntries();
     } catch (e) {
       error = String(e);
-      entries = MOCK_ENTRIES;
-      updateStatsFromEntries();
+      entries = [];
     } finally {
       loading = false;
       searching = false;
@@ -86,20 +113,23 @@
 
   function normalizeEntry(raw: unknown): KnowledgeEntry {
     const r = raw as Record<string, unknown>;
+    const props = (r.properties ?? {}) as Record<string, unknown>;
+    const description = String(r.description ?? '').trim();
+    const name = String(r.name ?? '').trim();
+    const content = description || name || '(no description)';
+    const type = String(r.type ?? '').trim();
     return {
       id: String(r.id ?? ''),
-      content: String(r.content ?? r.text ?? r.body ?? ''),
-      sourceAgent: String(r.sourceAgent ?? r.source_agent ?? r.agent ?? '—'),
-      tags: Array.isArray(r.tags) ? r.tags.map(String) : (typeof r.tags === 'string' ? r.tags.split(',').map((t: string) => t.trim()).filter(Boolean) : []),
+      content,
+      sourceAgent: String(props.sourceAgent ?? props.source_agent ?? r.sourceAgent ?? '—'),
+      tags: type ? [type] : [],
       createdAt: String(r.createdAt ?? r.created_at ?? new Date().toISOString()),
     };
   }
 
   function updateStatsFromEntries() {
-    const agentSet = new Set(entries.map((e) => e.sourceAgent).filter((a) => a !== '—'));
-    const tagSet = new Set(entries.flatMap((e) => e.tags));
-    stats = { total: entries.length, agents: agentSet.size, tags: tagSet.size };
-    statsLoading = false;
+    // Fallback stats derivation when loadStats hasn't completed yet.
+    if (statsLoading) return;
   }
 
   function handleSearchInput() {
@@ -121,14 +151,24 @@
     addError = null;
     addSuccess = false;
     try {
+      // Map the UI form onto the server entity model.
+      // The user types natural content; we use the first line (truncated) as
+      // `name`, the full text as `description`, first tag as `type` (defaults
+      // to 'concept'), and stash sourceAgent in `properties`.
       const tags = addTags.split(',').map((t) => t.trim()).filter(Boolean);
-      const res = await fetch('/api/v5/knowledge', {
+      const content = addContent.trim();
+      const name = content.split('\n')[0]?.slice(0, 80) || 'untitled';
+      const res = await fetch('/api/v5/knowledge/entities', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          content: addContent.trim(),
-          tags,
-          sourceAgent: addSourceAgent.trim() || 'dashboard-user',
+          name,
+          type: tags[0] ?? 'concept',
+          description: content,
+          properties: {
+            sourceAgent: addSourceAgent.trim() || 'dashboard-user',
+            ...(tags.length > 1 ? { extraTags: tags.slice(1) } : {}),
+          },
         }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -164,14 +204,6 @@
       return fmtDate(iso);
     } catch { return iso; }
   }
-
-  const MOCK_ENTRIES: KnowledgeEntry[] = [
-    { id: 'k1', content: 'The AgentForge API uses SQLite for session storage, with WAL mode enabled for concurrent read performance. Connection pooling is handled by better-sqlite3.', sourceAgent: 'architect', tags: ['database', 'sqlite', 'performance'], createdAt: new Date(Date.now() - 86400000).toISOString() },
-    { id: 'k2', content: 'Sprint velocity has been consistently 12–15 story points per cycle. P0 blockers tend to appear in the last 20% of a sprint and should be pre-identified in planning.', sourceAgent: 'project-manager', tags: ['sprints', 'velocity', 'planning'], createdAt: new Date(Date.now() - 172800000).toISOString() },
-    { id: 'k3', content: 'SSE connections from the dashboard use /api/v5/stream. The server sends heartbeats every 15s to keep connections alive through proxies.', sourceAgent: 'api-specialist', tags: ['sse', 'api', 'streaming'], createdAt: new Date(Date.now() - 259200000).toISOString() },
-    { id: 'k4', content: 'Opus model is reserved for strategic decisions (CEO, CTO, Architect). Coder and Debugger use Sonnet. Haiku handles lightweight coordination tasks.', sourceAgent: 'cto', tags: ['models', 'cost', 'routing'], createdAt: new Date(Date.now() - 345600000).toISOString() },
-    { id: 'k5', content: 'Dashboard uses SvelteKit 2 + Svelte 5 with Vite. Key patterns: $app/state not $app/stores, $derived not $:, no direct localStorage in SSR context.', sourceAgent: 'coder', tags: ['svelte', 'dashboard', 'patterns'], createdAt: new Date(Date.now() - 432000000).toISOString() },
-  ];
 
   onMount(() => {
     loadEntries();
@@ -215,12 +247,6 @@
     </div>
   {/if}
 </div>
-
-{#if apiUnavailable}
-  <div class="api-banner">
-    <strong>Preview mode</strong> — <code>/api/v5/knowledge</code> not available. Showing example data.
-  </div>
-{/if}
 
 <!-- Add Entry Form -->
 {#if showAddForm}
@@ -312,7 +338,7 @@
 </div>
 
 <!-- Results -->
-{#if error && !apiUnavailable}
+{#if error}
   <div class="error-banner">{error}</div>
 {/if}
 
@@ -399,23 +425,6 @@
   }
 
   /* Banners */
-  .api-banner {
-    background: rgba(245,166,35,0.08);
-    border: 1px solid rgba(245,166,35,0.25);
-    border-radius: var(--radius-md);
-    color: var(--color-warning);
-    font-size: var(--text-xs);
-    padding: var(--space-2) var(--space-4);
-    margin-bottom: var(--space-3);
-  }
-
-  .api-banner code {
-    font-family: var(--font-mono);
-    background: rgba(245,166,35,0.15);
-    padding: 1px 4px;
-    border-radius: 3px;
-  }
-
   .error-banner {
     background: rgba(224,90,90,0.08);
     border: 1px solid rgba(224,90,90,0.25);
