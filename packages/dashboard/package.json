@@ -17,7 +17,7 @@
     "svelte": "^5.55.0",
     "svelte-check": "^4.4.5",
     "typescript": "^5.9.3",
-    "vite": "^6.4.1"
+    "vite": "^6.4.2"
   },
   "dependencies": {
     "marked": "^18.0.0"
