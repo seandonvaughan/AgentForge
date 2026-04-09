@@ -100,7 +100,7 @@ function createApprovalsStore() {
             newTotalUsd: Number(data.newTotalUsd ?? 0),
             withinBudgetItems: (data.withinBudget?.items ?? []),
             overflowItems: (data.overflow?.items ?? []),
-            agentSummary: data.agentSummary,
+            ...(data.agentSummary !== undefined ? { agentSummary: data.agentSummary } : {}),
           });
         } catch { /* skip individual fetch errors — cycle may have been decided */ }
       }

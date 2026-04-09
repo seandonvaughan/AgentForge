@@ -89,7 +89,7 @@
     {/each}
   </div>
 {:else}
-  <form on:submit|preventDefault={save}>
+  <form onsubmit={(e) => { e.preventDefault(); save(); }}>
     <!-- Workspace -->
     <div class="card settings-section">
       <div class="card-header">

@@ -194,7 +194,7 @@
 <div
   class="feed-container"
   bind:this={feedEl}
-  on:scroll={handleScroll}
+  onscroll={handleScroll}
 >
   {#if filteredEvents.length === 0}
     <div class="empty-state">
