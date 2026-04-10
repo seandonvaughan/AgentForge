@@ -12,7 +12,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import type { WorkspaceAdapter } from '@agentforge/db';
 import type { WorkspaceRegistry } from '@agentforge/db';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
@@ -480,5 +480,165 @@ export async function registerV6Routes(
     } catch {
       return reply.send({ data: [], meta: { total: 0 } });
     }
+  });
+
+  // ── v1 memory shim ────────────────────────────────────────────────────────
+  // /api/v1/memory was the path the dashboard frontend always used but no
+  // v1 alias was ever registered.  This shim reads the live JSONL memory
+  // files from .agentforge/memory/ (primary) and falls back to the static
+  // seed data in .agentforge/data/memories.json when no JSONL entries exist.
+  //
+  // Query params (all optional):
+  //   type    — exact match on entry.type  (e.g. "cycle-outcome")
+  //   since   — ISO-8601; only entries with createdAt >= since
+  //   agentId — exact match on entry.agentId / source field
+  //
+  // Response: { data, agents, types, meta: { total, limit } }
+
+  interface V1MemoryEntry {
+    id: string;
+    key: string;
+    filename?: string;
+    value: unknown;
+    type: string;
+    category?: string;
+    createdAt: string;
+    updatedAt?: string;
+    agentId?: string;
+    source?: string;
+    summary?: string;
+    tags?: string[];
+  }
+
+  app.get('/api/v1/memory', async (req: FastifyRequest, reply: FastifyReply) => {
+    addDeprecationHeaders(reply, '/memory');
+
+    const q = req.query as { type?: string; since?: string; agentId?: string };
+    const typeFilter = q.type?.trim() ?? '';
+    const agentIdFilter = q.agentId?.trim() ?? '';
+    const sinceMs = q.since ? new Date(q.since).getTime() : NaN;
+    const hasSince = !Number.isNaN(sinceMs);
+    const MEMORY_LIMIT = 200;
+
+    const memoryDir = join(PROJECT_ROOT, '.agentforge/memory');
+    const entries: V1MemoryEntry[] = [];
+
+    if (existsSync(memoryDir)) {
+      const files = readdirSync(memoryDir);
+
+      // ── JSONL files (live memory written by cycle phases) ──────────────────
+      for (const file of files.filter(f => f.endsWith('.jsonl'))) {
+        try {
+          const content = readFileSync(join(memoryDir, file), 'utf-8');
+          for (const line of content.split('\n').filter(l => l.trim().length > 0)) {
+            try {
+              const raw = JSON.parse(line) as {
+                id?: string; type?: string; value?: string;
+                createdAt?: string; source?: string; tags?: string[];
+              };
+              const type = raw.type ?? file.replace(/\.jsonl$/, '');
+              const createdAt = raw.createdAt ?? new Date().toISOString();
+              entries.push({
+                id: raw.id ?? `${file}-${entries.length}`,
+                key: type,
+                value: raw.value ?? '',
+                type,
+                createdAt,
+                updatedAt: createdAt,
+                ...(raw.source !== undefined
+                  ? { agentId: raw.source, source: raw.source }
+                  : {}),
+                ...(typeof raw.value === 'string'
+                  ? { summary: raw.value.slice(0, 160) }
+                  : {}),
+                ...(raw.tags !== undefined ? { tags: raw.tags } : {}),
+              });
+            } catch { /* skip malformed line */ }
+          }
+        } catch { /* skip unreadable file */ }
+      }
+
+      // ── Legacy JSON / Markdown files in the memory dir ────────────────────
+      for (const file of files.filter(f => f.endsWith('.json') || f.endsWith('.md'))) {
+        try {
+          const content = readFileSync(join(memoryDir, file), 'utf-8');
+          const stem = file.replace(/\.[^.]+$/, '');
+          entries.push({
+            id: stem,
+            key: stem,
+            value: file.endsWith('.json') ? JSON.parse(content) : content.slice(0, 500),
+            type: file.endsWith('.json') ? 'json' : 'text',
+            createdAt: new Date().toISOString(),
+          });
+        } catch { /* skip */ }
+      }
+    }
+
+    // ── Seed data fallback (.agentforge/data/memories.json) ───────────────────
+    // When no live JSONL entries exist (no cycles have run yet), serve the
+    // curated seed data so the dashboard shows something meaningful.
+    if (entries.length === 0) {
+      const seedPath = join(PROJECT_ROOT, '.agentforge/data/memories.json');
+      if (existsSync(seedPath)) {
+        try {
+          const parsed = JSON.parse(readFileSync(seedPath, 'utf-8')) as {
+            entries?: V1MemoryEntry[];
+          } | V1MemoryEntry[];
+          const seedEntries: V1MemoryEntry[] = Array.isArray(parsed)
+            ? parsed
+            : (parsed.entries ?? []);
+          for (const e of seedEntries) {
+            entries.push({
+              id: e.id ?? String(entries.length),
+              key: e.filename ?? e.key ?? String(entries.length),
+              value: e.summary ?? e.value ?? '',
+              type: e.category ?? 'project',
+              createdAt: e.createdAt ?? new Date().toISOString(),
+              // Use conditional spread for all optional fields to satisfy
+              // exactOptionalPropertyTypes — never set a field to `undefined`.
+              ...(e.filename !== undefined ? { filename: e.filename } : {}),
+              ...(e.category !== undefined ? { category: e.category } : {}),
+              ...(e.updatedAt !== undefined ? { updatedAt: e.updatedAt } : {}),
+              ...(e.agentId !== undefined ? { agentId: e.agentId } : {}),
+              ...(e.summary !== undefined ? { summary: e.summary } : {}),
+              ...(e.tags !== undefined ? { tags: e.tags } : {}),
+            });
+          }
+        } catch { /* skip corrupt seed file */ }
+      }
+    }
+
+    // Newest first.
+    entries.sort((a, b) => {
+      const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return tb - ta;
+    });
+
+    const recent = entries.slice(0, MEMORY_LIMIT);
+
+    const agents = [
+      ...new Set(recent.map(e => e.agentId).filter((a): a is string => Boolean(a))),
+    ];
+    const types = [
+      ...new Set(recent.map(e => e.type).filter((t): t is string => Boolean(t))),
+    ].sort();
+
+    const filtered = recent.filter(e => {
+      if (typeFilter && e.type !== typeFilter) return false;
+      if (agentIdFilter && e.agentId !== agentIdFilter) return false;
+      if (hasSince) {
+        const entryMs = e.createdAt ? new Date(e.createdAt).getTime() : 0;
+        if (entryMs < sinceMs) return false;
+      }
+      return true;
+    });
+
+    return reply.send({
+      data: filtered,
+      agents,
+      types,
+      meta: { total: filtered.length, limit: MEMORY_LIMIT },
+    });
   });
 }

@@ -71,13 +71,15 @@ function createApprovalsStore() {
 
   // ── data fetching ────────────────────────────────────────────────────────
 
-  async function refresh(): Promise<void> {
+  async function refresh(autoOpen = false): Promise<void> {
     update(s => ({ ...s, loading: true, error: null }));
     try {
-      const res = await fetch('/api/v5/cycles?limit=20');
+      // v6.7.4+: use cycle-sessions which now includes hasApprovalPending,
+      // letting us skip the full cycles list scan.
+      const res = await fetch('/api/v5/cycle-sessions');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json() as { cycles?: Array<{ cycleId: string; hasApprovalPending?: boolean; sprintVersion?: string | null }> };
-      const candidates = (json?.cycles ?? []).filter(c => c.hasApprovalPending === true);
+      const json = await res.json() as { sessions?: Array<{ cycleId: string; hasApprovalPending?: boolean; workspaceRoot?: string; status?: string; sprintVersion?: string | null }> };
+      const candidates = (json?.sessions ?? []).filter(c => c.hasApprovalPending === true);
 
       const fetched: CycleApproval[] = [];
       for (const c of candidates) {
@@ -105,7 +107,17 @@ function createApprovalsStore() {
         } catch { /* skip individual fetch errors — cycle may have been decided */ }
       }
 
-      update(s => ({ ...s, pending: fetched, loading: false }));
+      update(s => {
+        // Auto-open modal when a new approval arrives via SSE push and no
+        // modal is currently open. "New" = cycleId wasn't in the previous list.
+        let active = s.active;
+        if (autoOpen && !active && fetched.length > 0) {
+          const prevIds = new Set(s.pending.map(a => a.cycleId));
+          const newest = fetched.find(a => !prevIds.has(a.cycleId));
+          if (newest) active = newest;
+        }
+        return { ...s, pending: fetched, active, loading: false };
+      });
     } catch (e) {
       update(s => ({ ...s, loading: false, error: String(e) }));
     }
@@ -161,18 +173,27 @@ function createApprovalsStore() {
         };
         // Refresh on any cycle event that might indicate a state change.
         // The cycle events watcher publishes `category` = the event type from
-        // events.jsonl, so 'approval_pending', 'budget_gate', or 'phase_change'
-        // are all signals that the approval list may have changed.
+        // events.jsonl. We handle both underscore and dot variants of the
+        // approval event name since different runtime versions may emit either.
         if (msg?.type === 'cycle_event') {
           const cat = msg.category ?? '';
-          if (
-            cat === 'approval_pending' ||
+          const isApprovalPush = cat === 'approval_pending' || cat === 'approval.pending';
+          if (isApprovalPush) {
+            // autoOpen=true: when a fresh approval arrives via SSE, open the
+            // modal immediately so operators don't miss the gate.
+            refresh(true);
+          } else if (
             cat === 'budget_gate' ||
             cat === 'phase_change' ||
             cat === 'planning_complete'
           ) {
             refresh();
           }
+        }
+        // Top-level approval.pending event (some runtime versions emit this
+        // directly rather than wrapping in cycle_event).
+        if (msg?.type === 'approval.pending' || msg?.type === 'approval_pending') {
+          refresh(true);
         }
         // Dashboard-wide refresh signals (emitted by the Playwright monitor etc.)
         if (msg?.type === 'refresh_signal') {

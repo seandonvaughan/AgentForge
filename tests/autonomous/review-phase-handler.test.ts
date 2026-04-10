@@ -10,7 +10,7 @@ function makeFinding(overrides: Partial<ReviewFinding> = {}): ReviewFinding {
   return {
     severity: "MAJOR",
     file: "src/orchestrator/cost-tracker.ts",
-    message: "Unchecked division by zero when totalTasks is 0",
+    summary: "Unchecked division by zero when totalTasks is 0",
     reviewerAgentId: "code-reviewer",
     ...overrides,
   };
@@ -83,13 +83,31 @@ describe("ReviewPhaseHandler", () => {
         makeFinding({
           severity: "CRITICAL",
           file: "src/api/client.ts",
-          message: "API key leaked in logs",
+          summary: "API key leaked in logs",
         }),
       ]);
       const entries = registry.getByCategory("review-finding");
       expect(entries[0].summary).toContain("CRITICAL");
       expect(entries[0].summary).toContain("src/api/client.ts");
       expect(entries[0].summary).toContain("API key leaked in logs");
+    });
+
+    it("includes line number in summary when provided", () => {
+      handler.handleFindings("sprint-1", "6.8", [
+        makeFinding({ file: "src/api/client.ts", line: 42 }),
+      ]);
+      const entries = registry.getByCategory("review-finding");
+      expect(entries[0].summary).toContain("src/api/client.ts:42");
+    });
+
+    it("omits line from summary when not provided", () => {
+      handler.handleFindings("sprint-1", "6.8", [
+        makeFinding({ file: "src/api/client.ts" }),
+      ]);
+      const entries = registry.getByCategory("review-finding");
+      // Should contain file path but no colon-number suffix
+      expect(entries[0].summary).toContain("src/api/client.ts");
+      expect(entries[0].summary).not.toMatch(/src\/api\/client\.ts:\d+/);
     });
 
     it("tags entry with severity, file, sprint id, and version", () => {
@@ -135,6 +153,68 @@ describe("ReviewPhaseHandler", () => {
       handler.handleFindings("sprint-1", "6.8", [makeFinding()]);
       const entries = registry.getByCategory("review-finding");
       expect(entries[0].expiresAt).toBeNull();
+    });
+
+    it("adds a line:<n> tag when line is provided", () => {
+      handler.handleFindings("sprint-1", "6.8", [
+        makeFinding({ line: 99 }),
+      ]);
+      const entries = registry.getByCategory("review-finding");
+      expect(entries[0].tags).toContain("line:99");
+    });
+
+    it("does not add a line tag when line is absent", () => {
+      handler.handleFindings("sprint-1", "6.8", [makeFinding()]);
+      const entries = registry.getByCategory("review-finding");
+      expect(entries[0].tags.some((t) => t.startsWith("line:"))).toBe(false);
+    });
+  });
+
+  // ── Metadata payload ───────────────────────────────────────────────────────
+
+  describe("metadata payload", () => {
+    it("populates metadata with all structured finding fields", () => {
+      handler.handleFindings("sprint-1", "6.8", [
+        makeFinding({
+          severity: "CRITICAL",
+          file: "src/api/auth.ts",
+          line: 17,
+          summary: "Token never expires",
+          fixSuggestion: "Add expiry check before issuing tokens",
+          reviewerAgentId: "security-auditor",
+        }),
+      ]);
+      const entries = registry.getByCategory("review-finding");
+      const meta = entries[0].metadata as Record<string, unknown>;
+      expect(meta).toBeDefined();
+      expect(meta.file).toBe("src/api/auth.ts");
+      expect(meta.line).toBe(17);
+      expect(meta.severity).toBe("CRITICAL");
+      expect(meta.summary).toBe("Token never expires");
+      expect(meta.fixSuggestion).toBe("Add expiry check before issuing tokens");
+    });
+
+    it("sets metadata.line to null when line is absent", () => {
+      handler.handleFindings("sprint-1", "6.8", [makeFinding()]);
+      const entries = registry.getByCategory("review-finding");
+      const meta = entries[0].metadata as Record<string, unknown>;
+      expect(meta.line).toBeNull();
+    });
+
+    it("sets metadata.fixSuggestion to null when fixSuggestion is absent", () => {
+      handler.handleFindings("sprint-1", "6.8", [makeFinding()]);
+      const entries = registry.getByCategory("review-finding");
+      const meta = entries[0].metadata as Record<string, unknown>;
+      expect(meta.fixSuggestion).toBeNull();
+    });
+
+    it("captures fixSuggestion when provided", () => {
+      handler.handleFindings("sprint-1", "6.8", [
+        makeFinding({ fixSuggestion: "Use Math.max(totalTasks, 1) as divisor" }),
+      ]);
+      const entries = registry.getByCategory("review-finding");
+      const meta = entries[0].metadata as Record<string, unknown>;
+      expect(meta.fixSuggestion).toBe("Use Math.max(totalTasks, 1) as divisor");
     });
   });
 

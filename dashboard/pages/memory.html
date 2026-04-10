@@ -40,6 +40,9 @@
       <button class="mem-filter-btn"        data-cat="config"    onclick="memFilterCat(this,'config')">Config</button>
     </div>
 
+    <!-- Type filter chips (dynamically populated from backend response) -->
+    <div class="memory-filter-row" id="memory-type-row" style="margin-top:4px;"></div>
+
     <!-- Memory entry list -->
     <div class="memory-list" id="memory-list" style="max-height:none;"></div>
 
@@ -53,26 +56,115 @@
   if (typeof memAgentFilter !== 'undefined') memAgentFilter = 'all';
   if (typeof memSearchFilter !== 'undefined') memSearchFilter = '';
 
-  // Patch loadMemoryBrowser's post-render hook to update the count badge.
-  const _origApplyMemFilters = typeof applyMemFilters === 'function' ? applyMemFilters : null;
-  window._memUpdateCountBadge = function () {
-    const badge = document.getElementById('memory-count-badge');
-    if (!badge) return;
-    const total = document.querySelectorAll('.memory-entry').length;
-    const visible = Array.from(document.querySelectorAll('.memory-entry')).filter(
-      e => e.style.display !== 'none',
-    ).length;
-    badge.textContent = visible === total ? `${total} entries` : `${visible} / ${total} entries`;
+  // ── Type chip filter (populated dynamically from backend `types`) ────────
+  // Kept separate from memCatFilter so both filters can coexist.
+  window._memTypeFilter = 'all';
+
+  window._memSetTypeFilter = function (btn, type) {
+    window._memTypeFilter = type || 'all';
+    var btns = document.querySelectorAll('.mem-type-btn');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].classList.toggle('active', btns[i] === btn);
+    }
+    if (typeof window.applyMemFilters === 'function') window.applyMemFilters();
   };
 
-  // Wrap applyMemFilters so the badge stays in sync after every filter change.
+  // ── Build type chip row from types returned by the API ───────────────────
+  window._memBuildTypeChips = function (types) {
+    var row = document.getElementById('memory-type-row');
+    if (!row) return;
+    // Clear existing chips safely.
+    while (row.firstChild) row.removeChild(row.firstChild);
+    if (!types || types.length === 0) return;
+
+    // "All Types" chip is always first.
+    var allBtn = document.createElement('button');
+    allBtn.className = 'mem-filter-btn mem-type-btn active';
+    allBtn.setAttribute('data-type', 'all');
+    allBtn.textContent = 'All Types';
+    allBtn.onclick = function () { window._memSetTypeFilter(allBtn, 'all'); };
+    row.appendChild(allBtn);
+
+    types.forEach(function (type) {
+      var btn = document.createElement('button');
+      btn.className = 'mem-filter-btn mem-type-btn';
+      btn.setAttribute('data-type', type);
+      // "cycle-outcome" -> "Cycle Outcome"
+      btn.textContent = type.replace(/-/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+      btn.onclick = (function (t, b) {
+        return function () { window._memSetTypeFilter(b, t); };
+      }(type, btn));
+      row.appendChild(btn);
+    });
+  };
+
+  // ── Count badge ──────────────────────────────────────────────────────────
+  window._memUpdateCountBadge = function () {
+    var badge = document.getElementById('memory-count-badge');
+    if (!badge) return;
+    var entries = document.querySelectorAll('.memory-entry');
+    var total = entries.length;
+    var visible = 0;
+    for (var i = 0; i < entries.length; i++) {
+      if (entries[i].style.display !== 'none') visible++;
+    }
+    badge.textContent = visible === total
+      ? total + ' entries'
+      : visible + ' / ' + total + ' entries';
+  };
+
+  // Wrap applyMemFilters: apply the type sub-filter on top of the existing
+  // category / agent / search filters, then refresh the count badge.
+  var _origApplyMemFilters = typeof applyMemFilters === 'function' ? applyMemFilters : null;
   window.applyMemFilters = function () {
     if (_origApplyMemFilters) _origApplyMemFilters();
+
+    var activeType = window._memTypeFilter || 'all';
+    if (activeType !== 'all') {
+      var entries = document.querySelectorAll('.memory-entry');
+      for (var i = 0; i < entries.length; i++) {
+        var entryType = entries[i].getAttribute('data-type') || '';
+        if (entryType !== activeType) entries[i].style.display = 'none';
+      }
+    }
+
     window._memUpdateCountBadge();
   };
 
+  // ── Patch loadMemoryBrowser to capture types and wire chips ─────────────
+  // Intercept window.fetch for the single /api/v1/memory call so we can
+  // pull `types` from the JSON response without duplicating the full fetch
+  // logic that already lives in loadMemoryBrowser().
   if (typeof loadMemoryBrowser === 'function') {
-    loadMemoryBrowser().then(() => window._memUpdateCountBadge());
+    var _origLoadMemoryBrowser = loadMemoryBrowser;
+    window.loadMemoryBrowser = function () {
+      var capturedTypes = [];
+      var _origFetch = window.fetch;
+
+      window.fetch = function (url, opts) {
+        var result = _origFetch.apply(this, arguments);
+        if (typeof url === 'string' && url.indexOf('/api/v1/memory') !== -1) {
+          result.then(function (r) {
+            var clone = r.clone();
+            clone.json().then(function (json) {
+              if (json && Array.isArray(json.types)) capturedTypes = json.types;
+            }).catch(function () {});
+          }).catch(function () {});
+        }
+        return result;
+      };
+
+      return Promise.resolve(_origLoadMemoryBrowser()).then(function () {
+        window.fetch = _origFetch;
+        window._memBuildTypeChips(capturedTypes);
+        window._memUpdateCountBadge();
+      }).catch(function (err) {
+        window.fetch = _origFetch;
+        return Promise.reject(err);
+      });
+    };
+
+    loadMemoryBrowser();
   }
 })();
 </script>

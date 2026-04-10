@@ -42,6 +42,7 @@ async function main() {
     adapter,
     registry,
     dataDir: DATA_DIR,
+    projectRoot: PROJECT_ROOT,
   });
 
   // Publish startup event

@@ -368,8 +368,11 @@ export async function runExecutePhase(
       if (dirs.size <= 2) cap = Math.max(2, Math.min(cap, 3));
     }
 
-    // Cap D: fewer items than ceiling means run them all at once
-    if (itemCount <= 3) cap = itemCount;
+    // Cap D: if there are fewer items than the ceiling, no point running at
+    // a lower parallelism than item count — but never exceed the configured
+    // ceiling (ceilingParallelism). Without the ceiling guard, a user-set
+    // maxParallelism: 1 would be silently overridden for ≤3-item sprints.
+    if (itemCount <= 3) cap = Math.min(ceilingParallelism, itemCount);
 
     const rationale = `${itemCount} items, ceiling ${ceilingParallelism}, ${heavyCount} heavy → ${cap} parallel`;
     return { initial: cap, rationale };

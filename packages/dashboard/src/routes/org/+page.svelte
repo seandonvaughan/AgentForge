@@ -7,13 +7,17 @@
   interface TreeNode extends OrgNode {
     children: TreeNode[];
     depth: number;
+    /** IDs of direct delegates that were cut by cycle-prevention (already visited in this path). */
+    cycleRefs?: string[];
   }
 
   let roots: TreeNode[] = $state([]);
+  let orphans: TreeNode[] = $state([]);  // agents not in any delegation edge
   let loading = $state(true);
   let error: string | null = $state(null);
   let totalNodes = $state(0);
   let totalEdges = $state(0);
+  let orphansCollapsed = $state(true);
   let collapsed: Set<string> = $state(new Set());
 
   const MODEL_COLORS: Record<string, string> = {
@@ -23,36 +27,101 @@
     opus: 'rgba(245,200,66,0.08)', sonnet: 'rgba(74,158,255,0.08)', haiku: 'rgba(76,175,130,0.08)',
   };
 
-  function buildTree(nodes: OrgNode[], edges: OrgEdge[]): TreeNode[] {
+  /**
+   * Build a tree from nodes + edges.
+   *
+   * Key design decisions:
+   * - Per-root visited sets: each root subtree is traversed independently, so an
+   *   agent that is a delegate of multiple parents (e.g. "researcher") appears
+   *   under EACH parent's branch rather than vanishing after the first visit.
+   * - Cycle detection: a path-local `ancestorStack` prevents infinite loops when
+   *   delegation cycles exist in the data (A→B→A).
+   * - Orphans returned separately: agents with no delegation edges are included in
+   *   a second list so operators can see the full roster, not just the hierarchy.
+   */
+  function buildTree(
+    nodes: OrgNode[],
+    edges: OrgEdge[],
+  ): { roots: TreeNode[]; orphans: TreeNode[] } {
     const nodeMap = new Map<string, OrgNode>();
     nodes.forEach(n => nodeMap.set(n.id, n));
+
     const childrenOf = new Map<string, string[]>();
     const hasParent = new Set<string>();
+    const inAnyEdge = new Set<string>();
+
     edges.forEach(e => {
       if (!childrenOf.has(e.from)) childrenOf.set(e.from, []);
       childrenOf.get(e.from)!.push(e.to);
       hasParent.add(e.to);
+      inAnyEdge.add(e.from);
+      inAnyEdge.add(e.to);
     });
-    const connected = new Set<string>();
-    edges.forEach(e => { connected.add(e.from); connected.add(e.to); });
-    const rootIds = [...connected].filter(id => !hasParent.has(id));
+
+    // Roots = nodes that appear in edges but have no parent
+    const rootIds = [...inAnyEdge].filter(id => !hasParent.has(id));
     const priority: Record<string, number> = { ceo: 0, genesis: 1 };
     rootIds.sort((a, b) => (priority[a] ?? 99) - (priority[b] ?? 99) || a.localeCompare(b));
 
-    function make(id: string, depth: number, visited: Set<string>): TreeNode | null {
-      if (visited.has(id)) return null;
-      visited.add(id);
+    const tierOrder: Record<string, number> = { opus: 0, sonnet: 1, haiku: 2 };
+
+    /**
+     * Recursively build a TreeNode.
+     * @param ancestorStack - IDs of all ancestors in the current path (cycle guard).
+     *   We do NOT share this across root traversals — each root gets a fresh stack.
+     */
+    function make(id: string, depth: number, ancestorStack: Set<string>): TreeNode | null {
       const node = nodeMap.get(id);
       if (!node) return null;
-      const kids = (childrenOf.get(id) ?? [])
-        .map(cid => make(cid, depth + 1, visited))
-        .filter((t): t is TreeNode => t !== null);
-      const tierOrder: Record<string, number> = { opus: 0, sonnet: 1, haiku: 2 };
-      kids.sort((a, b) => (tierOrder[a.model ?? ''] ?? 3) - (tierOrder[b.model ?? ''] ?? 3) || a.label.localeCompare(b.label));
-      return { ...node, children: kids, depth };
+
+      // Cycle detection: if this id is already an ancestor in the current path, stop.
+      if (ancestorStack.has(id)) return null;
+
+      const nextStack = new Set(ancestorStack);
+      nextStack.add(id);
+
+      const childIds = childrenOf.get(id) ?? [];
+      const children: TreeNode[] = [];
+      const cycleRefs: string[] = [];
+
+      for (const cid of childIds) {
+        if (nextStack.has(cid)) {
+          cycleRefs.push(cid);
+        } else {
+          const child = make(cid, depth + 1, nextStack);
+          if (child) children.push(child);
+        }
+      }
+
+      children.sort(
+        (a, b) =>
+          (tierOrder[a.model ?? ''] ?? 3) - (tierOrder[b.model ?? ''] ?? 3) ||
+          a.label.localeCompare(b.label),
+      );
+
+      return {
+        ...node,
+        children,
+        depth,
+        ...(cycleRefs.length > 0 ? { cycleRefs } : {}),
+      };
     }
-    const visited = new Set<string>();
-    return rootIds.map(r => make(r, 0, visited)).filter((t): t is TreeNode => t !== null);
+
+    const roots = rootIds
+      .map(r => make(r, 0, new Set()))
+      .filter((t): t is TreeNode => t !== null);
+
+    // Orphans: agents that appear in no delegation edge at all
+    const orphans: TreeNode[] = nodes
+      .filter(n => !inAnyEdge.has(n.id))
+      .sort(
+        (a, b) =>
+          (tierOrder[a.model ?? ''] ?? 3) - (tierOrder[b.model ?? ''] ?? 3) ||
+          a.label.localeCompare(b.label),
+      )
+      .map(n => ({ ...n, children: [], depth: 0 }));
+
+    return { roots, orphans };
   }
 
   function countDescendants(node: TreeNode): number {
@@ -91,7 +160,9 @@
       const data = json.data ?? json ?? { nodes: [], edges: [] };
       totalNodes = data.nodes?.length ?? 0;
       totalEdges = data.edges?.length ?? 0;
-      roots = buildTree(data.nodes ?? [], data.edges ?? []);
+      const result = buildTree(data.nodes ?? [], data.edges ?? []);
+      roots = result.roots;
+      orphans = result.orphans;
       autoCollapse(roots, 3);
     } catch (e) { error = String(e); } finally { loading = false; }
   }
@@ -104,7 +175,12 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">Organization Chart</h1>
-    <p class="page-subtitle">{totalNodes} agents · {totalEdges} delegation edges</p>
+    <p class="page-subtitle">
+      {totalNodes} agents · {totalEdges} delegation edges
+      {#if orphans.length > 0}
+        · <span class="orphan-hint">{orphans.length} unlinked</span>
+      {/if}
+    </p>
   </div>
   <div class="header-actions">
     <div class="legend">
@@ -112,8 +188,8 @@
         <span class="legend-item"><span class="legend-dot" style="background:{color}"></span>{tier}</span>
       {/each}
     </div>
-    <button class="btn-ghost" onclick={() => { collapsed = new Set(); }}>Expand All</button>
-    <button class="btn-ghost" onclick={() => autoCollapse(roots, 2)}>Collapse</button>
+    <button class="btn-ghost" onclick={() => { collapsed = new Set(); orphansCollapsed = false; }}>Expand All</button>
+    <button class="btn-ghost" onclick={() => { autoCollapse(roots, 2); orphansCollapsed = true; }}>Collapse</button>
   </div>
 </div>
 
@@ -121,11 +197,47 @@
   <div class="loading-state">Loading organization…</div>
 {:else if error}
   <div class="error-state">Failed to load org graph. <button class="btn-ghost" onclick={load}>Retry</button></div>
+{:else if roots.length === 0 && orphans.length === 0}
+  <div class="empty-state">
+    <p>No agents found. Add agent YAML files to <code>.agentforge/agents/</code> to populate the org chart.</p>
+  </div>
 {:else}
   <div class="tree-container">
-    {#each roots as root (root.id)}
-      {@render treeNode(root)}
-    {/each}
+    <!-- Delegation hierarchy -->
+    {#if roots.length > 0}
+      {#each roots as root (root.id)}
+        {@render treeNode(root)}
+      {/each}
+    {/if}
+
+    <!-- Unlinked agents (not in any delegation edge) -->
+    {#if orphans.length > 0}
+      <div class="section-divider">
+        <button
+          class="section-toggle"
+          onclick={() => (orphansCollapsed = !orphansCollapsed)}
+          aria-expanded={!orphansCollapsed}
+        >
+          <span class="section-expand">{orphansCollapsed ? '▸' : '▾'}</span>
+          <span class="section-label">Unlinked Agents</span>
+          <span class="section-count">{orphans.length}</span>
+        </button>
+      </div>
+
+      {#if !orphansCollapsed}
+        <div class="orphan-grid">
+          {#each orphans as node (node.id)}
+            {@const color = MODEL_COLORS[node.model ?? ''] ?? '#666'}
+            <div class="orphan-card" style="border-left-color:{color};">
+              <span class="node-name">{node.label ?? node.id}</span>
+              <span class="model-pill" style="color:{color}; background:{color}18; border-color:{color}44;">
+                {node.model ?? '—'}
+              </span>
+            </div>
+          {/each}
+        </div>
+      {/if}
+    {/if}
   </div>
 {/if}
 
@@ -151,6 +263,9 @@
       {#if hasKids}
         <span class="child-count">{desc}</span>
       {/if}
+      {#if node.cycleRefs && node.cycleRefs.length > 0}
+        <span class="cycle-badge" title="Cycle detected: {node.cycleRefs.join(', ')}">↺</span>
+      {/if}
     </button>
 
     {#if hasKids && !isClosed}
@@ -170,6 +285,7 @@
   }
   .page-title { font-size: var(--text-xl); font-weight: 600; color: var(--color-text); margin: 0 0 var(--space-1); }
   .page-subtitle { font-size: var(--text-sm); color: var(--color-text-muted); margin: 0; }
+  .orphan-hint { color: var(--color-text-faint); }
   .header-actions { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
   .legend { display: flex; align-items: center; gap: var(--space-3); }
   .legend-item { display: flex; align-items: center; gap: 4px; font-size: var(--text-xs); color: var(--color-text-muted); font-weight: 500; text-transform: capitalize; }
@@ -181,8 +297,12 @@
   }
   .btn-ghost:hover { border-color: var(--color-border-strong); color: var(--color-text); }
 
-  .loading-state, .error-state {
+  .loading-state, .error-state, .empty-state {
     padding: var(--space-8); text-align: center; font-size: var(--text-sm); color: var(--color-text-muted);
+  }
+  .empty-state code {
+    font-family: var(--font-mono); font-size: var(--text-xs);
+    background: var(--color-surface-2); padding: 2px 6px; border-radius: var(--radius-sm);
   }
 
   /* ── Tree layout ─────────────────────────────────────────── */
@@ -253,5 +373,62 @@
     font-size: 10px; color: var(--color-text-faint); font-family: var(--font-mono);
     background: var(--color-surface-2); padding: 0 5px; border-radius: 999px;
     flex-shrink: 0;
+  }
+
+  .cycle-badge {
+    font-size: 10px; color: var(--color-text-faint);
+    opacity: 0.5; flex-shrink: 0; cursor: help;
+  }
+
+  /* ── Section divider (for Unlinked Agents) ──────────────── */
+  .section-divider {
+    margin: var(--space-4) 0 var(--space-2);
+    border-top: 1px solid var(--color-border);
+    padding-top: var(--space-3);
+  }
+
+  .section-toggle {
+    display: flex; align-items: center; gap: var(--space-2);
+    background: none; border: none; cursor: pointer;
+    padding: 0; color: var(--color-text-muted);
+    font-size: var(--text-xs); font-weight: 500;
+    transition: color 0.12s;
+  }
+  .section-toggle:hover { color: var(--color-text); }
+
+  .section-expand {
+    font-size: 11px; width: 12px; text-align: center;
+  }
+
+  .section-label {
+    text-transform: uppercase; letter-spacing: 0.08em; font-size: 10px;
+  }
+
+  .section-count {
+    font-family: var(--font-mono); font-size: 10px;
+    background: var(--color-surface-2); padding: 0 5px; border-radius: 999px;
+    color: var(--color-text-faint);
+  }
+
+  /* ── Orphan grid ─────────────────────────────────────────── */
+  .orphan-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 2px;
+    margin-top: var(--space-2);
+  }
+
+  .orphan-card {
+    display: flex; align-items: center; gap: var(--space-2);
+    padding: 5px var(--space-3);
+    background: var(--color-surface-1);
+    border-left: 3px solid;
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  }
+
+  .orphan-card .node-name {
+    font-size: var(--text-xs); font-weight: 400;
+    flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--color-text-muted);
   }
 </style>

@@ -121,7 +121,9 @@
       try {
         const event = JSON.parse(e.data);
         if (event.type === 'agent_activity' && event.data?.sessionId === sessionId) {
-          const chunk = event.message ?? event.data?.chunk ?? '';
+          // event.message is always a log label ("[agentId] chunk"), not content.
+          // Real chunk text is in event.data.content (ResponseStreamer) or event.data.chunk.
+          const chunk: string = event.data?.content ?? event.data?.chunk ?? '';
           if (chunk) {
             output += chunk;
             requestAnimationFrame(scrollOutput);
@@ -248,8 +250,30 @@
     } catch { return iso; }
   }
 
+  async function loadHistory() {
+    try {
+      const res = await fetch('/api/v5/run/history');
+      if (!res.ok) return;
+      const json = await res.json();
+      const runs: RunHistory[] = (json.data ?? []).map((r: Record<string, unknown>) => ({
+        id: (r.sessionId ?? r.id ?? '') as string,
+        agentId: (r.agentId ?? '') as string,
+        task: (r.task ?? '') as string,
+        status: (r.status ?? 'completed') as RunHistory['status'],
+        costUsd: typeof r.costUsd === 'number' ? r.costUsd : undefined,
+        startedAt: (r.startedAt ?? new Date().toISOString()) as string,
+        output: typeof r.response === 'string' ? r.response : (typeof r.output === 'string' ? r.output : undefined),
+        sessionId: (r.sessionId ?? r.id ?? '') as string,
+      })).filter((r: RunHistory) => r.id && r.agentId);
+      history = runs.slice(0, 5);
+    } catch {
+      // history stays empty — non-fatal
+    }
+  }
+
   onMount(() => {
     loadAgents();
+    loadHistory();
   });
 
   onDestroy(() => {

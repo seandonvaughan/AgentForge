@@ -44,7 +44,7 @@ sourcing:
   todoMarkerPattern: "TODO\\(autonomous\\)|FIXME\\(autonomous\\)"
 
 testing:
-  command: "pnpm test:run"
+  command: "pnpm exec vitest run"
   timeoutMinutes: 20
   reporter: "json"
   saveRawLog: true

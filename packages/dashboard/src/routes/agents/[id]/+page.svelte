@@ -4,11 +4,13 @@
   import { goto } from '$app/navigation';
 
   interface AgentDetail {
-    id: string;
+    agentId: string;
+    id?: string; // legacy compat — server returns agentId, not id
     name: string;
     model: 'opus' | 'sonnet' | 'haiku';
-    role?: string;
-    systemPrompt?: string;
+    description?: string | null;
+    role?: string | null;
+    systemPrompt?: string | null;
     skills?: string[];
     stats?: {
       totalSessions: number;
@@ -58,7 +60,7 @@
     return new Date(iso).toLocaleString();
   }
 
-  function promptPreview(prompt?: string): string {
+  function promptPreview(prompt?: string | null): string {
     if (!prompt) return 'No system prompt defined.';
     return prompt.length > 400 ? prompt.slice(0, 400) + '…' : prompt;
   }
@@ -71,7 +73,7 @@
     <button class="btn btn-ghost btn-sm" onclick={() => goto('/agents')}>← Back</button>
     {#if agent}
       <div>
-        <h1 class="page-title">{agent.name ?? agent.id}</h1>
+        <h1 class="page-title">{agent.name ?? agent.agentId ?? agentId}</h1>
         <p class="page-subtitle">{agent.role ?? 'Agent'}</p>
       </div>
     {:else}

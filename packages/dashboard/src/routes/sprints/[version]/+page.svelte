@@ -230,6 +230,13 @@
         <div class="summary-label">Total Tests</div>
       </div>
     {/if}
+    {#if sprint.testCountBefore != null && sprint.testCountAfter == null}
+      <!-- Only show 'before' as a standalone card when there's no after count -->
+      <div class="summary-card">
+        <div class="summary-value">{sprint.testCountBefore.toLocaleString()}</div>
+        <div class="summary-label">Tests Before</div>
+      </div>
+    {/if}
     {#if sprint.startDate}
       <div class="summary-card">
         <div class="summary-value date-value">{formatDate(sprint.startDate ?? '')}</div>
@@ -409,6 +416,16 @@
       {/if}
       {#if vd.rationale}
         <p class="version-rationale">{vd.rationale}</p>
+      {/if}
+      {#if vd.tagsSeen && vd.tagsSeen.length > 0}
+        <div class="version-tags-seen">
+          <span class="version-tags-label">Tags seen</span>
+          <div class="version-tags-row">
+            {#each vd.tagsSeen as tag}
+              <span class="version-tag-chip">{tag}</span>
+            {/each}
+          </div>
+        </div>
       {/if}
     </div>
   {/if}
@@ -951,5 +968,34 @@
     border-radius: var(--radius-sm);
     border-left: 3px solid var(--color-border-strong);
     line-height: 1.6;
+  }
+
+  .version-tags-seen {
+    margin-top: var(--space-3);
+  }
+
+  .version-tags-label {
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    display: block;
+    margin-bottom: var(--space-2);
+  }
+
+  .version-tags-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .version-tag-chip {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
+    background: rgba(100, 116, 139, 0.1);
+    color: var(--color-text-faint);
+    border: 1px solid rgba(100, 116, 139, 0.2);
+    font-family: var(--font-mono);
   }
 </style>

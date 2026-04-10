@@ -95,14 +95,16 @@ describe('writeMemoryEntry', () => {
     expect(existsSync(join(memDir, 'gate-verdict.jsonl'))).toBe(true);
   });
 
-  it('preserves optional source and tags fields', () => {
+  it('preserves optional key, source, and tags fields', () => {
     const entry = writeMemoryEntry(tmpRoot, {
       type: 'learned-fact',
       value: 'TypeScript generics improve DX',
+      key: 'ts-generics-dx',
       source: 'agent-007',
       tags: ['typescript', 'dx'],
     });
 
+    expect(entry.key).toBe('ts-generics-dx');
     expect(entry.source).toBe('agent-007');
     expect(entry.tags).toEqual(['typescript', 'dx']);
 
@@ -110,19 +112,28 @@ describe('writeMemoryEntry', () => {
     const parsed = JSON.parse(
       readFileSync(filePath, 'utf8').trim(),
     ) as CycleMemoryEntry;
+    expect(parsed.key).toBe('ts-generics-dx');
     expect(parsed.source).toBe('agent-007');
     expect(parsed.tags).toEqual(['typescript', 'dx']);
   });
 
-  it('omits source and tags keys when not provided', () => {
+  it('omits key, source, and tags keys when not provided', () => {
     const entry = writeMemoryEntry(tmpRoot, {
       type: 'cycle-outcome',
       value: 'minimal',
     });
 
     // Keys should not be present (not just undefined) — sparse object
+    expect('key' in entry).toBe(false);
     expect('source' in entry).toBe(false);
     expect('tags' in entry).toBe(false);
+  });
+
+  it('does not leave .lock files after successful write', () => {
+    writeMemoryEntry(tmpRoot, { type: 'cycle-outcome', value: 'lock test' });
+
+    const lockPath = join(tmpRoot, '.agentforge', 'memory', 'cycle-outcome.jsonl.lock');
+    expect(existsSync(lockPath)).toBe(false);
   });
 
   it('is non-fatal when projectRoot is not writable', () => {

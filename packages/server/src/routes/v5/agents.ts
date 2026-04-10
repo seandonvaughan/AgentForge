@@ -55,6 +55,8 @@ export async function agentRoutes(
       if (!raw || typeof raw !== 'object') return reply.status(404).send({ error: 'Agent not found' });
       const modelRaw = typeof raw.model === 'string' ? raw.model : 'sonnet';
       const model = (modelRaw === 'opus' || modelRaw === 'haiku') ? modelRaw : 'sonnet';
+      const skillsRaw = Array.isArray(raw.skills) ? raw.skills : [];
+      const skills = skillsRaw.filter((s): s is string => typeof s === 'string');
       return reply.send({
         data: {
           agentId,
@@ -63,6 +65,7 @@ export async function agentRoutes(
           description: typeof raw.description === 'string' ? raw.description.trim() : null,
           role: typeof raw.role === 'string' ? raw.role : null,
           systemPrompt: typeof raw.system_prompt === 'string' ? raw.system_prompt : null,
+          skills,
         },
       });
     } catch {

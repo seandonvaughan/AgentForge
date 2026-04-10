@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { getWorkspace } from '@agentforge/core';
 
 /**
  * Stub endpoints for dashboard pages that need data but don't have full
@@ -20,17 +21,59 @@ export async function dashboardStubRoutes(
   // busy server that blocks the Fastify event loop for ~50-200ms per request.
   // Fix: cache the result for 30s. The flywheel display doesn't need
   // sub-second freshness; even a 30s TTL eliminates 99% of repeated I/O.
-  let flywheelCache: { at: number; data: ReturnType<typeof computeFlywheelMetrics> } | null = null;
+  //
+  // v9.0.2: per-workspace cache so ?workspaceId= queries don't share state.
+  const flywheelCacheByRoot = new Map<string, { at: number; data: ReturnType<typeof computeFlywheelMetrics> }>();
   const FLYWHEEL_TTL_MS = 30_000;
-  app.get('/api/v5/flywheel', async (_req, reply) => {
-    if (!flywheelCache || Date.now() - flywheelCache.at > FLYWHEEL_TTL_MS) {
-      flywheelCache = { at: Date.now(), data: computeFlywheelMetrics(projectRoot) };
+  app.get('/api/v5/flywheel', async (req, reply) => {
+    // Resolve workspace root from optional ?workspaceId= query param (mirrors
+    // the pattern used by GET /api/v5/cycles so both views stay in sync when
+    // the user has a non-default workspace selected).
+    const q = req.query as { workspaceId?: string };
+    let root = projectRoot;
+    if (q.workspaceId) {
+      const ws = getWorkspace(q.workspaceId);
+      if (ws) root = ws.path;
     }
-    return reply.send({ data: flywheelCache.data, meta: { cachedAtMs: flywheelCache.at } });
+
+    const cached = flywheelCacheByRoot.get(root);
+    if (!cached || Date.now() - cached.at > FLYWHEEL_TTL_MS) {
+      flywheelCacheByRoot.set(root, { at: Date.now(), data: computeFlywheelMetrics(root) });
+    }
+    const entry = flywheelCacheByRoot.get(root)!;
+    return reply.send({ data: entry.data, meta: { cachedAtMs: entry.at } });
   });
 
   // ── Memory store ──────────────────────────────────────────────────────────
-  app.get('/api/v5/memory', async (_req, reply) => {
+  //
+  // GET /api/v5/memory
+  //
+  // Returns up to 200 memory entries (newest first) read from
+  // .agentforge/memory/*.jsonl.  Legacy .json and .md files in the same
+  // directory are still served for backward compatibility.
+  //
+  // Optional query params:
+  //   type    — exact match on the entry's `type` field (e.g. "cycle-outcome")
+  //   since   — ISO-8601 timestamp; only entries with createdAt >= since
+  //   agentId — exact match on the entry's `agentId` / `source` field
+  //
+  // Response shape:
+  //   { data: DashboardMemoryEntry[], agents: string[], types: string[],
+  //     meta: { total: number, limit: number } }
+  const MEMORY_LIMIT = 200;
+
+  app.get('/api/v5/memory', async (req, reply) => {
+    const q = req.query as {
+      type?: string;
+      since?: string;
+      agentId?: string;
+    };
+    const typeFilter = q.type?.trim() ?? '';
+    const agentIdFilter = q.agentId?.trim() ?? '';
+    // Parse `since` once; ignore if not a valid date.
+    const sinceMs = q.since ? new Date(q.since).getTime() : NaN;
+    const hasSince = !Number.isNaN(sinceMs);
+
     const memoryDir = join(projectRoot, '.agentforge/memory');
 
     // Shape the dashboard expects for each row.
@@ -122,21 +165,37 @@ export async function dashboardStubRoutes(
       return tb - ta;
     });
 
+    // Cap to MEMORY_LIMIT newest entries before filtering so that the
+    // agents/types dropdown lists reflect the real recent window — not the
+    // full history, which can be very large.
+    const recent = entries.slice(0, MEMORY_LIMIT);
+
     // Unique agent/source IDs for the dashboard's agent-filter dropdown.
     const agents = [...new Set(
-      entries.map(e => e.agentId).filter((a): a is string => Boolean(a)),
+      recent.map(e => e.agentId).filter((a): a is string => Boolean(a)),
     )];
 
     // Unique entry types for the dashboard's type-chip filter row.
     const types = [...new Set(
-      entries.map(e => e.type).filter((t): t is string => Boolean(t)),
+      recent.map(e => e.type).filter((t): t is string => Boolean(t)),
     )].sort();
 
+    // Apply optional query filters to the capped window.
+    const filtered = recent.filter(e => {
+      if (typeFilter && e.type !== typeFilter) return false;
+      if (agentIdFilter && e.agentId !== agentIdFilter) return false;
+      if (hasSince) {
+        const entryMs = e.createdAt ? new Date(e.createdAt).getTime() : 0;
+        if (entryMs < sinceMs) return false;
+      }
+      return true;
+    });
+
     return reply.send({
-      data: entries,
+      data: filtered,
       agents,
       types,
-      meta: { total: entries.length },
+      meta: { total: filtered.length, limit: MEMORY_LIMIT },
     });
   });
 
@@ -212,6 +271,15 @@ interface SprintRecord {
   phase?: string;
 }
 
+interface SessionRecord {
+  /** Task UUID — present on all real session files. */
+  task_id?: string;
+  /** Whether the agent judged its own task as fully complete. */
+  is_request_satisfied?: boolean;
+  /** 0–1 self-confidence score the agent reported at the end of the session. */
+  confidence?: number;
+}
+
 // ── metric computation ─────────────────────────────────────────────────────
 
 function computeFlywheelMetrics(projectRoot: string) {
@@ -275,12 +343,46 @@ function computeFlywheelMetrics(projectRoot: string) {
     agentCount = readdirSync(agentsDir).filter(f => f.endsWith('.yaml')).length;
   }
 
+  // ── Sessions ──────────────────────────────────────────────────────────────
+  // Agent task execution sessions provide a sub-cycle health signal.
+  // Files are {task_id}-{timestamp}.json; sorting alphabetically gives
+  // chronological order because the numeric timestamp is part of the name.
+  const sessionsDir = join(projectRoot, '.agentforge/sessions');
+  const sessions: SessionRecord[] = [];
+  if (existsSync(sessionsDir)) {
+    for (const file of readdirSync(sessionsDir).filter(f => f.endsWith('.json')).sort()) {
+      try {
+        const raw = JSON.parse(readFileSync(join(sessionsDir, file), 'utf-8')) as SessionRecord;
+        if (raw.task_id) sessions.push(raw);
+      } catch { /* skip malformed */ }
+    }
+  }
+
+  const satisfiedSessions = sessions.filter(s => s.is_request_satisfied === true).length;
+  const sessionSuccessRate = sessions.length > 0 ? satisfiedSessions / sessions.length : null;
+
+  // Session confidence trend: compare early vs. recent confidence scores.
+  // A rising trend means agents are becoming more decisive over time.
+  const confSessions = sessions
+    .map(s => s.confidence ?? null)
+    .filter((c): c is number => c !== null);
+  let sessionConfidenceBonus = 0;
+  if (confSessions.length >= 4) {
+    const half = Math.floor(confSessions.length / 2);
+    const earlyConf = confSessions.slice(0, half).reduce((s, c) => s + c, 0) / half;
+    const lateConf = confSessions.slice(-half).reduce((s, c) => s + c, 0) / half;
+    // Rising confidence → up to +10 pts; falling confidence → down to -10 pts
+    sessionConfidenceBonus = Math.max(-10, Math.min(10, Math.round((lateConf - earlyConf) * 50)));
+  }
+
   // ── 1. Meta-Learning Rate ─────────────────────────────────────────────────
   // Measures how much the system improves between cycles.
   // Components:
   //   (a) Sprint count — more iterations = more learning surface
   //   (b) Pass-rate trend — if recent cycles have higher pass rates than early
   //       ones, the loop is genuinely improving
+  //   (c) Session confidence trend — rising confidence is a sub-cycle signal
+  //       that agents are becoming more decisive and self-directed
   const sprintCount = sprints.length;
   const iterationBase = Math.min(100, Math.round((sprintCount / 32) * 60)); // 32 sprints → 60 pts
 
@@ -296,18 +398,26 @@ function computeFlywheelMetrics(projectRoot: string) {
     // Single data point: reward the act of completing a real cycle
     trendBonus = 10;
   }
-  const metaLearningScore = Math.max(0, Math.min(100, iterationBase + trendBonus));
+  const metaLearningScore = Math.max(0, Math.min(100, iterationBase + trendBonus + sessionConfidenceBonus));
 
   // ── 2. Autonomy Score ─────────────────────────────────────────────────────
   // How well is the loop running without human intervention?
-  // = completed cycles / meaningful cycles (success rate), weighted by
-  //   whether PRs are being opened (full pipeline execution).
+  // Primary signal: completed cycles / meaningful cycles (full pipeline success).
+  // Secondary signal: session success rate (sub-task autonomy).
+  // When both exist we blend 60% cycle + 40% session to keep the harder
+  // pipeline signal dominant. If no cycles exist yet, sessions seed the score
+  // (capped at 40 so it rises meaningfully once full cycles start running).
   let autonomyScore = 0;
   if (meaningfulCycles.length > 0) {
-    const successRate = completedCycles.length / meaningfulCycles.length;
+    const cycleSuccessRate = completedCycles.length / meaningfulCycles.length;
     // Bonus if any completed cycle shipped a real PR
     const prBonus = completedCycles.some(c => c.pr?.number != null) ? 10 : 0;
-    autonomyScore = Math.min(100, Math.round(successRate * 90 + prBonus));
+    const blendedRate = sessionSuccessRate !== null
+      ? cycleSuccessRate * 0.6 + sessionSuccessRate * 0.4
+      : cycleSuccessRate;
+    autonomyScore = Math.min(100, Math.round(blendedRate * 90 + prBonus));
+  } else if (sessionSuccessRate !== null && sessions.length >= 3) {
+    autonomyScore = Math.min(40, Math.round(sessionSuccessRate * 40));
   }
 
   // ── 3. Capability Inheritance ─────────────────────────────────────────────
@@ -323,34 +433,57 @@ function computeFlywheelMetrics(projectRoot: string) {
   const inheritanceScore = Math.min(100, agentBase + cycleFileBonus);
 
   // ── 4. Velocity ───────────────────────────────────────────────────────────
-  // Sprint-item completion rate across all sprints, blended with cycle
-  // throughput (how many meaningful cycles have been run).
+  // Sprint-item completion rate across all sprints, blended with cycle and
+  // session throughput.
+  // Session throughput: every 2 satisfied sessions adds 1 pt, capped at 15.
+  // This rewards rapid sub-task iteration even when sprint items are broad.
   let velocityScore = 0;
   if (totalItems > 0) {
     const itemRate = completedItems / totalItems; // 0-1
-    // Scale: 100% completion = 70 pts; remaining 30 from cycle throughput
     const cycleThroughput = Math.min(30, meaningfulCycles.length * 5);
-    velocityScore = Math.min(100, Math.round(itemRate * 70 + cycleThroughput));
+    const sessionBoost = Math.min(15, Math.floor(satisfiedSessions / 2));
+    velocityScore = Math.min(100, Math.round(itemRate * 70 + cycleThroughput + sessionBoost));
   } else if (meaningfulCycles.length > 0) {
     velocityScore = Math.min(100, meaningfulCycles.length * 10);
+  } else if (sessions.length > 0) {
+    // No sprint data yet — seed velocity from raw session throughput.
+    velocityScore = Math.min(30, satisfiedSessions * 3);
   }
+
+  // ── Memory Stats ─────────────────────────────────────────────────────────
+  // Read all JSONL memory entries to compute:
+  //   totalEntries           — raw count across all entry types
+  //   entriesPerCycleTrend   — per-cycle write counts for the last 12 cycles
+  //   hitRate                — fraction of completed cycles that had prior
+  //                            memory available when they started
+  const memoryStats = computeMemoryStats(projectRoot, cycles, completedCycles);
 
   // ── Assemble ──────────────────────────────────────────────────────────────
   const overallScore = Math.round(
     (metaLearningScore + autonomyScore + inheritanceScore + velocityScore) / 4,
   );
 
+  const avgConf = confSessions.length > 0
+    ? Math.round((confSessions.reduce((s, c) => s + c, 0) / confSessions.length) * 100)
+    : null;
+
   const descriptions = {
     meta_learning: ratedCycles.length > 1
       ? `${sprintCount} sprint iterations; pass-rate trend across ${ratedCycles.length} cycles`
-      : `${sprintCount} sprint iterations`,
+      : avgConf !== null
+        ? `${sprintCount} sprint iterations; session confidence avg ${avgConf}%`
+        : `${sprintCount} sprint iterations`,
     autonomy: meaningfulCycles.length > 0
-      ? `${completedCycles.length}/${meaningfulCycles.length} cycles completed autonomously`
-      : 'No cycle data yet',
+      ? `${completedCycles.length}/${meaningfulCycles.length} cycles; ${satisfiedSessions}/${sessions.length} sessions satisfied`
+      : sessions.length > 0
+        ? `${satisfiedSessions}/${sessions.length} sessions satisfied`
+        : 'No cycle data yet',
     inheritance: `${agentCount} agents; ${meaningfulCycles.length} cycles with file evidence`,
     velocity: totalItems > 0
-      ? `${completedItems}/${totalItems} sprint items completed`
-      : `${meaningfulCycles.length} meaningful cycles`,
+      ? `${completedItems}/${totalItems} sprint items; ${satisfiedSessions} sessions completed`
+      : sessions.length > 0
+        ? `${satisfiedSessions}/${sessions.length} sessions satisfied`
+        : `${meaningfulCycles.length} meaningful cycles`,
   };
 
   return {
@@ -362,7 +495,7 @@ function computeFlywheelMetrics(projectRoot: string) {
     ],
     overallScore,
     updatedAt: new Date().toISOString(),
-    // Raw counts for debugging / future UI panels
+    // Raw counts for the Loop Data panel and debugging
     debug: {
       cycleCount: cycles.length,
       meaningfulCycleCount: meaningfulCycles.length,
@@ -371,8 +504,106 @@ function computeFlywheelMetrics(projectRoot: string) {
       agentCount,
       totalItems,
       completedItems,
+      sessionCount: sessions.length,
+      satisfiedSessionCount: satisfiedSessions,
     },
+    memoryStats,
   };
+}
+
+// ── Memory Stats Computation ───────────────────────────────────────────────
+
+interface MemoryRawEntry {
+  source?: string;
+  createdAt?: string;
+}
+
+interface CycleEntryPoint {
+  cycleId: string;
+  count: number;
+  startedAt: string;
+}
+
+interface MemoryStats {
+  totalEntries: number;
+  entriesPerCycleTrend: CycleEntryPoint[];
+  hitRate: number;
+}
+
+/**
+ * Scan `.agentforge/memory/*.jsonl` and derive three metrics for the flywheel
+ * memory stats card:
+ *
+ *  totalEntries         — total rows across all JSONL files
+ *  entriesPerCycleTrend — per-cycle write count for the most recent 12 cycles
+ *                         (chronological order, using the cycle's startedAt)
+ *  hitRate              — fraction of completed cycles whose startedAt is
+ *                         strictly after the earliest memory entry's createdAt.
+ *                         This is the best proxy we can compute without an
+ *                         explicit "memory consulted" event: if memory existed
+ *                         before the cycle began, the audit phase had context
+ *                         available to influence the plan.
+ */
+function computeMemoryStats(
+  projectRoot: string,
+  cycles: CycleRecord[],
+  completedCycles: CycleRecord[],
+): MemoryStats {
+  const memoryDir = join(projectRoot, '.agentforge/memory');
+
+  let totalEntries = 0;
+  // cycleId → number of memory entries written by that cycle (via `source`)
+  const entriesByCycleId = new Map<string, number>();
+  // Creation timestamps of all entries, sorted ascending, for hit-rate calc
+  const allEntryTimesMs: number[] = [];
+
+  if (existsSync(memoryDir)) {
+    const jsonlFiles = readdirSync(memoryDir).filter(f => f.endsWith('.jsonl'));
+    for (const file of jsonlFiles) {
+      try {
+        const content = readFileSync(join(memoryDir, file), 'utf-8');
+        const lines = content.split('\n').filter(l => l.trim().length > 0);
+        for (const line of lines) {
+          try {
+            const entry = JSON.parse(line) as MemoryRawEntry;
+            totalEntries++;
+            const createdMs = entry.createdAt ? new Date(entry.createdAt).getTime() : 0;
+            allEntryTimesMs.push(createdMs);
+            if (entry.source) {
+              entriesByCycleId.set(entry.source, (entriesByCycleId.get(entry.source) ?? 0) + 1);
+            }
+          } catch { /* skip malformed line */ }
+        }
+      } catch { /* skip unreadable file */ }
+    }
+  }
+
+  allEntryTimesMs.sort((a, b) => a - b);
+
+  // Trend: last 12 cycles (already sorted ascending by startedAt) with their
+  // per-cycle entry counts.  Cycles with 0 entries are included so the chart
+  // accurately shows silent cycles.
+  const TREND_LIMIT = 12;
+  const entriesPerCycleTrend: CycleEntryPoint[] = cycles.slice(-TREND_LIMIT).map(c => ({
+    cycleId: c.cycleId,
+    count: entriesByCycleId.get(c.cycleId) ?? 0,
+    startedAt: c.startedAt ?? new Date().toISOString(),
+  }));
+
+  // Hit rate: a completed cycle "hit" if it started after the earliest memory
+  // entry existed (meaning the audit phase had at least one past entry to
+  // consult before planning its work items).
+  // Use `at(0)` so TypeScript returns `number | undefined` without a
+  // conditional expression — `undefined ?? Infinity` is the correct
+  // "no memory written yet" sentinel (all comparisons become false).
+  const earliestEntryMs = allEntryTimesMs.at(0) ?? Infinity;
+  const hitCount = completedCycles.filter(c => {
+    const startMs = c.startedAt ? new Date(c.startedAt).getTime() : 0;
+    return startMs > earliestEntryMs;
+  }).length;
+  const hitRate = completedCycles.length > 0 ? hitCount / completedCycles.length : 0;
+
+  return { totalEntries, entriesPerCycleTrend, hitRate };
 }
 
 // ── Autonomous Branch Listing ─────────────────────────────────────────────

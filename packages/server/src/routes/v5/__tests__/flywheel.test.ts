@@ -5,7 +5,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { dashboardStubRoutes } from '../dashboard-stubs.js';
@@ -28,6 +28,27 @@ afterEach(async () => {
 
 function mkdirs(...paths: string[]) {
   for (const p of paths) mkdirSync(p, { recursive: true });
+}
+
+function writeMemoryEntry(
+  type: string,
+  source: string,
+  createdAt: string,
+) {
+  const memDir = join(tmpRoot, '.agentforge/memory');
+  mkdirSync(memDir, { recursive: true });
+  const entry = JSON.stringify({
+    id: `${source}-${Math.random().toString(36).slice(2)}`,
+    type,
+    value: 'test memory entry',
+    createdAt,
+    source,
+    tags: [],
+  });
+  const file = join(memDir, `${type}.jsonl`);
+  // Append so multiple calls accumulate entries in the same file.
+  const existing = existsSync(file) ? readFileSync(file, 'utf-8') : '';
+  writeFileSync(file, existing + entry + '\n');
 }
 
 function writeCycle(id: string, overrides: Record<string, unknown> = {}) {
@@ -212,5 +233,98 @@ describe('GET /api/v5/flywheel', () => {
     const body2 = JSON.parse(res2.body) as { meta: { cachedAtMs: number } };
     // Both calls hit the cache — the timestamp must be identical
     expect(body1.meta.cachedAtMs).toBe(body2.meta.cachedAtMs);
+  });
+
+  // ── Memory Stats ────────────────────────────────────────────────────────
+
+  it('memoryStats.totalEntries is 0 when no memory directory exists', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = JSON.parse(res.body) as {
+      data: { memoryStats: { totalEntries: number; hitRate: number; entriesPerCycleTrend: unknown[] } };
+    };
+    expect(data.memoryStats.totalEntries).toBe(0);
+    expect(data.memoryStats.hitRate).toBe(0);
+    expect(data.memoryStats.entriesPerCycleTrend).toEqual([]);
+  });
+
+  it('memoryStats.totalEntries counts all JSONL lines across entry types', async () => {
+    mkdirs(join(tmpRoot, '.agentforge/cycles'));
+    writeCycle('c1', { startedAt: '2026-01-01T10:00:00.000Z' });
+    // Write 3 entries across 2 type files
+    writeMemoryEntry('cycle-outcome', 'c1', '2026-01-01T09:00:00.000Z');
+    writeMemoryEntry('cycle-outcome', 'c1', '2026-01-01T09:05:00.000Z');
+    writeMemoryEntry('review-finding', 'c1', '2026-01-01T09:10:00.000Z');
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = JSON.parse(res.body) as {
+      data: { memoryStats: { totalEntries: number } };
+    };
+    expect(data.memoryStats.totalEntries).toBe(3);
+  });
+
+  it('memoryStats.entriesPerCycleTrend groups entry counts by cycleId', async () => {
+    mkdirs(join(tmpRoot, '.agentforge/cycles'));
+    writeCycle('cyc-a', { startedAt: '2026-01-01T08:00:00.000Z' });
+    writeCycle('cyc-b', { startedAt: '2026-01-02T08:00:00.000Z' });
+    writeMemoryEntry('cycle-outcome', 'cyc-a', '2026-01-01T09:00:00.000Z');
+    writeMemoryEntry('cycle-outcome', 'cyc-a', '2026-01-01T09:05:00.000Z');
+    writeMemoryEntry('cycle-outcome', 'cyc-b', '2026-01-02T09:00:00.000Z');
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = JSON.parse(res.body) as {
+      data: {
+        memoryStats: {
+          entriesPerCycleTrend: Array<{ cycleId: string; count: number; startedAt: string }>;
+        };
+      };
+    };
+    const trend = data.memoryStats.entriesPerCycleTrend;
+    expect(trend).toHaveLength(2);
+    const a = trend.find(t => t.cycleId === 'cyc-a');
+    const b = trend.find(t => t.cycleId === 'cyc-b');
+    expect(a?.count).toBe(2);
+    expect(b?.count).toBe(1);
+  });
+
+  it('memoryStats.hitRate is 0 when no memory entries exist before any completed cycle', async () => {
+    mkdirs(join(tmpRoot, '.agentforge/cycles'));
+    // Cycle started before any memory was written
+    writeCycle('solo', { startedAt: '2026-01-01T08:00:00.000Z' });
+    // Memory entry written AFTER the cycle started — no prior memory
+    writeMemoryEntry('cycle-outcome', 'solo', '2026-01-01T10:00:00.000Z');
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = JSON.parse(res.body) as { data: { memoryStats: { hitRate: number } } };
+    // The only completed cycle started before any memory existed → 0% hit rate
+    expect(data.memoryStats.hitRate).toBe(0);
+  });
+
+  it('memoryStats.hitRate is 1 when all completed cycles had prior memory available', async () => {
+    mkdirs(join(tmpRoot, '.agentforge/cycles'));
+    // First cycle writes memory
+    writeCycle('first', { startedAt: '2026-01-01T08:00:00.000Z' });
+    writeMemoryEntry('cycle-outcome', 'first', '2026-01-01T09:00:00.000Z');
+    // Second cycle starts AFTER memory exists
+    writeCycle('second', { startedAt: '2026-01-02T08:00:00.000Z' });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = JSON.parse(res.body) as { data: { memoryStats: { hitRate: number } } };
+    // 'second' started after the memory entry from 'first' → 1 / 2 completed = 0.5
+    // 'first' started before any entry → no hit
+    expect(data.memoryStats.hitRate).toBe(0.5);
+  });
+
+  it('memoryStats.entriesPerCycleTrend caps at 12 cycles', async () => {
+    mkdirs(join(tmpRoot, '.agentforge/cycles'));
+    // Write 15 cycles
+    for (let i = 0; i < 15; i++) {
+      const isoDate = `2026-01-${String(i + 1).padStart(2, '0')}T08:00:00.000Z`;
+      writeCycle(`cycle-${i}`, { startedAt: isoDate });
+    }
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = JSON.parse(res.body) as {
+      data: { memoryStats: { entriesPerCycleTrend: unknown[] } };
+    };
+    expect(data.memoryStats.entriesPerCycleTrend).toHaveLength(12);
   });
 });

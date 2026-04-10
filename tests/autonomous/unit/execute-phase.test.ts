@@ -415,7 +415,12 @@ describe('runExecutePhase', () => {
     expect(runtime.run).toHaveBeenCalledTimes(3);
   });
 
-  it('items without declared or inferred files serialize against everything', async () => {
+  it('items without declared or inferred files run in parallel (optimistic mode default)', async () => {
+    // v6.7.4: FileLockManager defaults to optimistic=true so items with no
+    // declared or inferred files run unconstrained — they no longer serialize
+    // against each other. The old conservative mode serialized them to 1
+    // concurrent agent, which was the root cause of cycles showing only 1-2
+    // active agents even with maxParallelism: 10.
     writeSprintFile(tmpDir, '9.9.9', [
       { id: 'i1', title: 'just a vague task', assignee: 'coder', description: 'no paths here' },
       { id: 'i2', title: 'another vague task', assignee: 'coder', description: 'still nothing' },
@@ -437,7 +442,9 @@ describe('runExecutePhase', () => {
       makeCtx({ cwd: tmpDir, sprintVersion: '9.9.9', runtime, bus }),
       { maxParallelism: 3, maxItemRetries: 0 },
     );
-    expect(maxInFlight).toBe(1);
+    // In optimistic mode, all 3 no-file items should run in parallel up to the cap.
+    expect(maxInFlight).toBeGreaterThanOrEqual(2);
+    expect(maxInFlight).toBeLessThanOrEqual(3);
   });
 
   it('extractFilesFromItem heuristically finds .ts/.md/.yaml paths in description', () => {

@@ -217,12 +217,25 @@ export async function memoryRoutes(
   //   4. .agentforge/sessions/*.json  (legacy file-listing fallback)
   //
   // Query params:
-  //   search — substring match across key, value, summary, tags
-  //   agent  — exact match on agentId (maps to `source` in JSONL entries)
+  //   search  — substring match across key, value, summary, tags
+  //   agent   — exact match on agentId (legacy alias; maps to `source` in JSONL)
+  //   agentId — exact match on agentId (preferred spelling; same semantics as agent)
+  //   type    — exact match on the entry's `type` field (e.g. "cycle-outcome")
+  //   since   — ISO-8601 timestamp; only entries with createdAt >= since
   app.get('/api/v5/memory', async (req, reply) => {
-    const query = req.query as { search?: string; agent?: string };
+    const query = req.query as {
+      search?: string;
+      agent?: string;
+      agentId?: string;
+      type?: string;
+      since?: string;
+    };
     const searchTerm = (query.search ?? '').toLowerCase().trim();
-    const agentFilter = (query.agent ?? 'all').trim();
+    // Accept both `agent` (legacy) and `agentId` (new canonical param); agentId wins.
+    const agentFilter = (query.agentId ?? query.agent ?? 'all').trim();
+    const typeFilter = (query.type ?? '').trim();
+    const sinceMs = query.since ? new Date(query.since).getTime() : NaN;
+    const hasSince = !Number.isNaN(sinceMs);
 
     const entries: MemoryEntry[] = [];
 
@@ -309,7 +322,20 @@ export async function memoryRoutes(
         ? afterSearch.filter(e => e.agentId === agentFilter)
         : afterSearch;
 
-    return reply.send({ data: afterAgent, agents, types, meta: { total: afterAgent.length } });
+    // Apply type filter
+    const afterType = typeFilter
+      ? afterAgent.filter(e => e.type === typeFilter)
+      : afterAgent;
+
+    // Apply since filter
+    const afterSince = hasSince
+      ? afterType.filter(e => {
+          const entryMs = e.createdAt ? new Date(e.createdAt).getTime() : 0;
+          return entryMs >= sinceMs;
+        })
+      : afterType;
+
+    return reply.send({ data: afterSince, agents, types, meta: { total: afterSince.length } });
   });
 
   // DELETE /api/v5/memory/:id — remove a kv_store entry by key

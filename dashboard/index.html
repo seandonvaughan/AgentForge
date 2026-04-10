@@ -6987,20 +6987,27 @@ async function loadMemoryBrowser() {
       return;
     }
 
-    // Infer category when not explicitly provided by backend
+    // Infer category when not explicitly provided by backend.
+    // For live JSONL entries the `type` field (e.g. "cycle-outcome",
+    // "gate-verdict", "review-finding") drives category inference.
     function inferCat(entry) {
       if (entry.category) return entry.category;
-      const k = (entry.key || '').toLowerCase();
-      if (k.includes('feedback')) return 'feedback';
-      if (k.includes('lesson') || k.includes('concept')) return 'lesson';
-      if (k.includes('config') || k.includes('version')) return 'config';
+      const t = (entry.type || entry.key || '').toLowerCase();
+      if (t.includes('review') || t.includes('finding') || t.includes('feedback')) return 'feedback';
+      if (t.includes('lesson') || t.includes('concept')) return 'lesson';
+      if (t.includes('config') || t.includes('version') || t.includes('setting')) return 'config';
       return 'project';
     }
 
-    // Populate agent filter dropdown from unique agentIds in the response
+    // Populate agent filter dropdown.  Prefer the deduplicated `agents` list
+    // returned by the API (which covers the full 200-entry window, not just the
+    // currently-filtered subset); fall back to deriving it from `data` when the
+    // field is absent (older server versions).
     const agentSel = document.getElementById('memory-agent-filter');
     if (agentSel) {
-      const agents = [...new Set(data.map(function(e) { return e.agentId; }).filter(Boolean))].sort();
+      const agents = (json.agents && json.agents.length > 0)
+        ? json.agents.slice().sort()
+        : [...new Set(data.map(function(e) { return e.agentId; }).filter(Boolean))].sort();
       agentSel.textContent = '';
       const allOpt = document.createElement('option');
       allOpt.value = 'all';
@@ -7030,6 +7037,8 @@ async function loadMemoryBrowser() {
       const div = _memMakeEl('div', 'memory-entry');
       div.setAttribute('data-cat', cat);
       div.setAttribute('data-agent', agentId);
+      // data-type enables the dynamic type chip filter added by memory.html.
+      if (entry.type) div.setAttribute('data-type', entry.type);
 
       const hdr = _memMakeEl('div', 'memory-entry-header');
       hdr.appendChild(_memMakeEl('span', 'memory-entry-title', displayName));

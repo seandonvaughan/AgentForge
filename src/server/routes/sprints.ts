@@ -55,6 +55,14 @@ function normalizeSprint(raw: any): Record<string, unknown> {
     successCriteria: raw.successCriteria ?? [],
     auditFindings: raw.auditFindings ?? [],
     items: (raw.items ?? []).map(normalizeItem),
+    // --- Fields the detail page renders but were previously dropped ---
+    testCountBefore: raw.testCountBefore ?? undefined,
+    testCountAfter: raw.testCountAfter ?? undefined,
+    testCountDelta: raw.testCountDelta ?? undefined,
+    totalCostUsd: raw.totalCostUsd ?? undefined,
+    autonomous: raw.autonomous ?? undefined,
+    theme: raw.theme ?? undefined,
+    versionDecision: raw.versionDecision ?? undefined,
   };
 }
 

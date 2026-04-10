@@ -290,6 +290,21 @@
       }));
   }
 
+  /** Extract well-known structured fields from a phase object for compact stat display. */
+  function phaseMetaStats(data: Record<string, unknown>): Array<{ key: string; value: string }> {
+    const stats: Array<{ key: string; value: string }> = [];
+    if (data['status'] != null) stats.push({ key: 'status', value: String(data['status']) });
+    const costObj = data['cost'] as Record<string, unknown> | null | undefined;
+    const costUsdVal = costObj?.['totalUsd'] ?? costObj?.['usd'] ?? data['costUsd'];
+    if (costUsdVal != null) stats.push({ key: 'cost', value: `$${Number(costUsdVal).toFixed(4)}` });
+    if (data['durationMs'] != null) stats.push({ key: 'duration', value: formatDuration(Number(data['durationMs'])) });
+    if (Array.isArray(data['agentRuns'])) stats.push({ key: 'runs', value: String((data['agentRuns'] as unknown[]).length) });
+    if (data['phase'] != null) stats.push({ key: 'phase', value: String(data['phase']) });
+    if (data['decision'] != null) stats.push({ key: 'decision', value: String(data['decision']) });
+    if (data['approved'] != null) stats.push({ key: 'approved', value: String(data['approved']) });
+    return stats;
+  }
+
   function costFraction(cost?: number | null, budget?: number | null): number {
     if (cost == null || budget == null || budget <= 0) return 0;
     return Math.min(1, cost / budget);
@@ -510,7 +525,12 @@
               {:else if run.response}
                 <details class="run-response">
                   <summary>Response ({run.response.length} chars)</summary>
-                  <pre>{run.response.slice(0, 2000)}{run.response.length > 2000 ? '\n… (truncated)' : ''}</pre>
+                  <div class="run-response-body">
+                    <MarkdownRenderer content={run.response.slice(0, 4000)} />
+                    {#if run.response.length > 4000}
+                      <p class="run-response-truncated">… truncated — {run.response.length} chars total</p>
+                    {/if}
+                  </div>
                 </details>
               {/if}
             </div>
@@ -664,9 +684,27 @@
                     {@const phaseSections = markdownSections(phaseData[phase])}
                   {@const phaseAgentRuns = agentRunSections(phaseData[phase])}
                   {@const metaOnly = stripMarkdownFields(phaseData[phase])}
+                  {@const metaStats = phaseMetaStats(phaseData[phase])}
 
-                  <!-- Structured metadata (status, cost, duration, etc.) -->
-                  <pre class="json">{pretty(metaOnly)}</pre>
+                  <!-- Structured stat chips (status, cost, duration, runs) -->
+                  {#if metaStats.length > 0}
+                    <div class="phase-meta-stats">
+                      {#each metaStats as stat}
+                        <div class="phase-meta-stat">
+                          <span class="phase-meta-key">{stat.key}</span>
+                          <span class="phase-meta-val">{stat.value}</span>
+                        </div>
+                      {/each}
+                    </div>
+                  {/if}
+
+                  <!-- Raw JSON for remaining structured fields (collapsed by default if stats shown) -->
+                  {#if Object.keys(metaOnly).length > 0}
+                    <details class="phase-json-details" open={metaStats.length === 0}>
+                      <summary class="phase-json-summary">Raw metadata ({Object.keys(metaOnly).length} fields)</summary>
+                      <pre class="json">{pretty(metaOnly)}</pre>
+                    </details>
+                  {/if}
 
                   <!-- Markdown prose sections (review, rationale, retrospective) -->
                   {#each phaseSections as section}
@@ -1164,16 +1202,66 @@
     color: var(--color-text-muted);
     padding: var(--space-1) 0;
   }
-  .run-response pre {
+  .run-response-body {
     margin-top: var(--space-2);
-    padding: var(--space-2);
-    background: var(--color-bg-card);
+    padding: var(--space-3);
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
-    font-size: var(--text-xs);
-    max-height: 300px;
+    max-height: 480px;
     overflow: auto;
-    white-space: pre-wrap;
   }
+  .run-response-truncated {
+    margin: var(--space-2) 0 0;
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+    font-family: var(--font-mono);
+  }
+
+  /* Phase metadata stat chips */
+  .phase-meta-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+  .phase-meta-stat {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: var(--space-1) var(--space-2);
+  }
+  .phase-meta-key {
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .phase-meta-val {
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+    font-weight: 700;
+    color: var(--color-text);
+  }
+
+  /* Collapsible raw JSON block within phases */
+  .phase-json-details {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+  .phase-json-summary {
+    cursor: pointer;
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+    color: var(--color-text-muted);
+    user-select: none;
+    padding: var(--space-1) 0;
+  }
+  .phase-json-summary:hover { color: var(--color-text); }
 
   @media (max-width: 700px) {
     .event-row { grid-template-columns: 1fr; }

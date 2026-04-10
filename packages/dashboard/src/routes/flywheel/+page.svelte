@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Gauge from '$lib/components/Gauge.svelte';
+  import { withWorkspace } from '$lib/stores/workspace';
 
   interface FlywheelMetric {
     key: string;
@@ -17,6 +18,8 @@
     agentCount: number;
     totalItems: number;
     completedItems: number;
+    sessionCount?: number;
+    satisfiedSessionCount?: number;
   }
 
   interface CycleEntryPoint {
@@ -61,7 +64,7 @@
     loading = true;
     error = null;
     try {
-      const res = await fetch('/api/v5/flywheel');
+      const res = await fetch(withWorkspace('/api/v5/flywheel'));
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       const raw = json.data ?? json;
@@ -74,6 +77,7 @@
           updatedAt: raw.updatedAt,
           overallScore: raw.overallScore,
           debug: raw.debug,
+          memoryStats: raw.memoryStats,
         };
       }
     } catch (e) {
@@ -96,6 +100,9 @@
     { label: 'Sprint iterations', value: flywheel.debug.sprintCount },
     { label: 'Agents on team', value: flywheel.debug.agentCount },
     { label: 'Sprint items', value: `${flywheel.debug.completedItems} / ${flywheel.debug.totalItems}` },
+    ...(flywheel.debug.sessionCount !== undefined
+      ? [{ label: 'Sessions run', value: `${flywheel.debug.satisfiedSessionCount ?? 0} / ${flywheel.debug.sessionCount}` }]
+      : []),
   ] : [];
 
   // Memory stats card — visible when the server reports at least a memoryStats field

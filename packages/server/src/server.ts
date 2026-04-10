@@ -86,6 +86,7 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
     await registerV5Routes(app, {
       adapter: options.adapter,
       registry: options.registry,
+      projectRoot,
     });
   } else {
     // Minimal stubs so the server is usable without a database adapter

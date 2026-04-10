@@ -400,6 +400,12 @@ export interface MemoryRegistryEntry extends RegistryEntryBase {
   expiresAt: string | null;
   /** Tags for keyword fallback search. */
   tags: string[];
+  /**
+   * Optional structured payload for category-specific data.
+   * For "review-finding" entries this carries {file, line, severity, summary, fixSuggestion}
+   * so the execute-phase injector can read them without parsing the summary string.
+   */
+  metadata?: Record<string, unknown>;
 }
 
 /**

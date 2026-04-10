@@ -5,7 +5,7 @@
 // type never drifts between producers (gate, review, cycle-logger) and
 // consumers (audit phase, flywheel dashboard).
 
-import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
@@ -20,6 +20,9 @@ export type MemoryEntryType =
 /** Canonical shape of a cross-cycle memory entry. */
 export interface CycleMemoryEntry {
   id: string;
+  /** Human-readable lookup key (e.g. "gate-v6.5-result"). Unlike `id`, this
+   *  is chosen by the caller and intended for querying by name. */
+  key?: string;
   type: MemoryEntryType;
   /** Human-readable summary or serialised value. */
   value: string;
@@ -30,10 +33,36 @@ export interface CycleMemoryEntry {
 }
 
 /**
+ * Acquire a simple exclusive lock file.  Returns `true` if the lock was
+ * obtained (and must be released), `false` if locking failed (write should
+ * still proceed best-effort without the lock).
+ */
+function acquireLock(lockPath: string): boolean {
+  try {
+    // O_CREAT | O_EXCL: atomic create-if-absent — fails if lock already held.
+    const fd = openSync(lockPath, 'wx');
+    closeSync(fd);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function releaseLock(lockPath: string): void {
+  try {
+    unlinkSync(lockPath);
+  } catch {
+    // best-effort
+  }
+}
+
+/**
  * Append a memory entry to `.agentforge/memory/<type>.jsonl`.
  *
  * The call is synchronous and non-fatal: if the write fails (e.g. read-only
  * filesystem in CI) the error is swallowed so the phase result is unaffected.
+ * A simple exclusive lock file (`<type>.jsonl.lock`) is held during the write
+ * to prevent interleaved appends from parallel agent processes.
  *
  * Returns the completed entry (with generated id/createdAt) so callers can
  * log or assert on it in tests.
@@ -42,11 +71,13 @@ export function writeMemoryEntry(
   projectRoot: string,
   entry: Omit<CycleMemoryEntry, 'id' | 'createdAt'> & {
     id?: string;
+    key?: string;
     createdAt?: string;
   },
 ): CycleMemoryEntry {
   const full: CycleMemoryEntry = {
     id: entry.id ?? randomUUID(),
+    ...(entry.key !== undefined ? { key: entry.key } : {}),
     type: entry.type,
     value: entry.value,
     createdAt: entry.createdAt ?? new Date().toISOString(),
@@ -57,7 +88,15 @@ export function writeMemoryEntry(
   try {
     const memoryDir = join(projectRoot, '.agentforge', 'memory');
     mkdirSync(memoryDir, { recursive: true });
-    appendFileSync(join(memoryDir, `${full.type}.jsonl`), JSON.stringify(full) + '\n', 'utf8');
+
+    const filePath = join(memoryDir, `${full.type}.jsonl`);
+    const lockPath = filePath + '.lock';
+    const locked = acquireLock(lockPath);
+    try {
+      appendFileSync(filePath, JSON.stringify(full) + '\n', 'utf8');
+    } finally {
+      if (locked) releaseLock(lockPath);
+    }
   } catch {
     // non-fatal — phase result must not be affected by memory write failures
   }

@@ -44,7 +44,7 @@
     branch_event:   'var(--color-haiku)',
     system:         'var(--color-text-muted)',
     refresh_signal: 'var(--color-danger)',
-    cycle_event:    'var(--color-sonnet, var(--color-info))',
+    cycle_event:    'var(--color-sonnet)',
   };
 
   const TYPE_LABELS: Record<string, string> = {
@@ -57,6 +57,48 @@
     refresh_signal: 'Refresh',
     cycle_event:    'Cycle',
   };
+
+  /**
+   * Map dot-notation cycle event category strings (e.g. "phase.start",
+   * "cycle.failed") to human-readable labels shown in the category tag.
+   */
+  const CYCLE_CATEGORY_LABELS: Record<string, string> = {
+    'cycle.started':    'Started',
+    'cycle.complete':   'Complete',
+    'cycle.completed':  'Complete',
+    'cycle.failed':     'Failed',
+    'cycle.error':      'Error',
+    'phase.start':      'Phase →',
+    'phase.complete':   'Phase ✓',
+    'phase.result':     'Result',
+    'phase.skip':       'Skipped',
+    'commit':           'Commit',
+    'pr.opened':        'PR Open',
+    'pr.merged':        'PR Merged',
+    'test.pass':        'Tests ✓',
+    'test.fail':        'Tests ✗',
+    'budget.warn':      'Budget ⚠',
+  };
+
+  /**
+   * For cycle_event rows, derive an accent color from the category string
+   * so that failures flash red, completions glow green, and phases stay neutral.
+   */
+  function cycleAccentColor(category: string): string {
+    const cat = category.toLowerCase();
+    if (cat.includes('fail') || cat.includes('error')) return 'var(--color-danger)';
+    if (cat.includes('complete') || cat.includes('pass') || cat === 'commit') return 'var(--color-success)';
+    if (cat.includes('warn') || cat.includes('budget')) return 'var(--color-warning)';
+    if (cat.includes('start') || cat === 'cycle.started') return 'var(--color-sonnet)';
+    return 'var(--color-sonnet)';
+  }
+
+  function formatCategory(type: string, category: string): string {
+    if (type === 'cycle_event') {
+      return CYCLE_CATEGORY_LABELS[category] ?? category.replace(/\./g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+    }
+    return category;
+  }
 
   function connect() {
     if (eventSource) {
@@ -204,7 +246,13 @@
     </div>
   {:else}
     {#each filteredEvents as event (event.id)}
-      <div class="feed-row">
+      {@const isCycle = event.type === 'cycle_event'}
+      {@const accentColor = isCycle ? cycleAccentColor(event.category) : (TYPE_COLORS[event.type] ?? 'var(--color-text-muted)')}
+      <div
+        class="feed-row"
+        class:feed-row--cycle={isCycle}
+        style={isCycle ? `--cycle-accent: ${accentColor};` : ''}
+      >
         <span class="timestamp">{formatTime(event.timestamp)}</span>
         <span
           class="type-badge"
@@ -213,7 +261,11 @@
           {TYPE_LABELS[event.type] ?? event.type}
         </span>
         {#if event.category && event.category !== event.type && event.category !== 'system'}
-          <span class="category-tag">{event.category}</span>
+          <span
+            class="category-tag"
+            class:category-tag--cycle={isCycle}
+            style={isCycle ? `color: ${accentColor};` : ''}
+          >{formatCategory(event.type, event.category)}</span>
         {/if}
         <span class="event-message">{event.message}</span>
       </div>
@@ -366,6 +418,16 @@
     border-bottom: none;
   }
 
+  /* Cycle events get a left accent border whose color reflects their status */
+  .feed-row--cycle {
+    border-left: 2px solid var(--cycle-accent, var(--color-sonnet));
+    padding-left: calc(var(--space-4) - 2px);
+  }
+
+  .feed-row--cycle:hover {
+    background: color-mix(in srgb, var(--cycle-accent, var(--color-sonnet)) 6%, transparent);
+  }
+
   .timestamp {
     color: var(--color-text-faint);
     font-size: var(--text-xs);
@@ -390,6 +452,13 @@
     font-size: var(--text-xs);
     color: var(--color-text-faint);
     white-space: nowrap;
+  }
+
+  /* Cycle category labels get status-aware color (set inline) and slight weight */
+  .category-tag--cycle {
+    font-weight: 500;
+    font-size: 10px;
+    letter-spacing: 0.02em;
   }
 
   .event-message {

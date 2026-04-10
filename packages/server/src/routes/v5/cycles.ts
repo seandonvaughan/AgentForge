@@ -452,16 +452,34 @@ export async function cyclesRoutes(
   // Lists every cycle the session manager knows about (running + terminal).
   // Path is /cycle-sessions (not /cycles/sessions) so it doesn't collide
   // with the /cycles/:id parameterized route.
+  //
+  // v6.7.4+: each session row now includes `hasApprovalPending` — true when
+  // approval-pending.json exists but approval-decision.json does not. The
+  // dashboard approvals store uses this flag to drive the review modal without
+  // having to scan the full cycles list endpoint.
   app.get('/api/v5/cycle-sessions', async (_req, reply) => {
     cycleSessions.reap();
     const sessions = cycleSessions.list();
+
+    const enriched = sessions.map((s) => {
+      let hasApprovalPending = false;
+      try {
+        const cycleDir = join(cyclesBaseDir(s.workspaceRoot), s.cycleId);
+        const pendingFile = join(cycleDir, 'approval-pending.json');
+        const decisionFile = join(cycleDir, 'approval-decision.json');
+        hasApprovalPending = existsSync(pendingFile) && !existsSync(decisionFile);
+      } catch { /* workspace may not be accessible — treat as no pending */ }
+      return { ...s, hasApprovalPending };
+    });
+
     return reply.send({
-      sessions,
+      sessions: enriched,
       counts: {
-        total: sessions.length,
-        running: sessions.filter((s) => s.status === 'running').length,
-        crashed: sessions.filter((s) => s.status === 'crashed').length,
-        killed: sessions.filter((s) => s.status === 'killed').length,
+        total: enriched.length,
+        running: enriched.filter((s) => s.status === 'running').length,
+        crashed: enriched.filter((s) => s.status === 'crashed').length,
+        killed: enriched.filter((s) => s.status === 'killed').length,
+        approvalPending: enriched.filter((s) => s.hasApprovalPending).length,
       },
     });
   });

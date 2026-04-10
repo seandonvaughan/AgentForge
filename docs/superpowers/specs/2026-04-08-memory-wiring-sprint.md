@@ -25,7 +25,7 @@ TODO(autonomous): Wire the gate phase handler to write a memory entry of type=ga
 
 TODO(autonomous): Wire the review phase handler to write memory entries of type=review-finding for each MAJOR or CRITICAL finding, capturing {file, line, severity, summary, fixSuggestion}. These are the seeds for cross-cycle learning.
 
-TODO(autonomous): Update the audit phase handler to read recent memory entries (last 10 cycles' worth) and inject them into the audit agent's prompt as a "Past mistakes to avoid" section. This is the core cross-cycle learning loop.
+DONE(autonomous): Update the audit phase handler to read recent memory entries (last 10 cycles' worth) and inject them into the audit agent's prompt as a "Past mistakes to avoid" section. This is the core cross-cycle learning loop. — Implemented in packages/core/src/autonomous/phase-handlers/audit-phase.ts: readRecentMemoryEntries() reads .agentforge/memory/*.jsonl, formatMemoryForPrompt() wraps entries in a "## Past mistakes and learnings (cross-cycle memory)" section, and runAuditPhase() injects the block into the researcher agent's prompt. 29 tests pass.
 
 TODO(autonomous): Update the execute phase handler to inject relevant memory entries into each item's agent prompt — filter by tags matching the item's tags. Each agent sees the failures past versions of themselves had on similar work.
 

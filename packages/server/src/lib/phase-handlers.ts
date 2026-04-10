@@ -29,7 +29,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { AgentRuntime, loadAgentConfig } from '@agentforge/core';
+import { AgentRuntime, loadAgentConfig, writeMemoryEntry } from '@agentforge/core';
 import type { RunResult } from '@agentforge/core';
 import { generateId, nowIso } from '@agentforge/shared';
 import { globalStream } from '../routes/v5/stream.js';
@@ -645,8 +645,81 @@ export async function runReviewPhase(ctx: PhaseContext): Promise<PhaseResult> {
   return runLlmPhase(ctx, 'review');
 }
 
+/**
+ * Extract lines mentioning a severity level from review text.
+ * Mirrors extractFindingsByLevel in packages/core (not part of the public API).
+ */
+function extractFindingLines(text: string, level: 'CRITICAL' | 'MAJOR'): string[] {
+  const pattern = new RegExp(level, 'i');
+  return text
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0 && pattern.test(l))
+    .slice(0, 10); // cap so the entry doesn't bloat
+}
+
 export async function runGatePhase(ctx: PhaseContext): Promise<PhaseResult> {
-  return runLlmPhase(ctx, 'gate');
+  // Capture any pre-existing gate verdict before the LLM re-evaluates.
+  // When a prior gate result exists (e.g. seeded from a previous cycle), we
+  // use that as the authoritative verdict for the memory entry so the
+  // cross-cycle audit can see the actual decision that was committed.
+  const sprintBefore = readSprint(ctx.projectRoot, ctx.sprintVersion);
+  const preGateResults = (sprintBefore?.phaseResults ?? []).filter(
+    (r) => r.phase === 'gate',
+  );
+  const existingVerdictResult = preGateResults.at(-1) ?? null;
+
+  // Grab the review-phase text for finding extraction (before the run, while
+  // the sprint file still reflects the pre-gate state).
+  const reviewText =
+    (sprintBefore?.phaseResults ?? [])
+      .filter((r) => r.phase === 'review')
+      .at(-1)?.response ?? '';
+
+  const result = await runLlmPhase(ctx, 'gate');
+
+  // Determine the verdict text: prefer the pre-existing result so that a
+  // re-run of the gate phase doesn't silently overwrite the original decision.
+  // When this is the first gate run (no prior result), fall back to the newly
+  // written sprint entry (last gate result after the LLM call).
+  try {
+    let verdictText: string;
+    if (existingVerdictResult) {
+      verdictText = existingVerdictResult.response;
+    } else {
+      const sprintAfter = readSprint(ctx.projectRoot, ctx.sprintVersion);
+      const allGateResults = (sprintAfter?.phaseResults ?? []).filter(
+        (r) => r.phase === 'gate',
+      );
+      verdictText = allGateResults.at(-1)?.response ?? '';
+    }
+
+    const isApprove = /\bAPPROVE\b/i.test(verdictText);
+    const verdictTag = isApprove ? 'verdict:approve' : 'verdict:reject';
+
+    // Extract structured findings from the review phase output so the next
+    // audit cycle can surface specific issues — not just the plain rationale.
+    const criticalFindings = extractFindingLines(reviewText, 'CRITICAL');
+    const majorFindings = extractFindingLines(reviewText, 'MAJOR');
+
+    writeMemoryEntry(ctx.projectRoot, {
+      type: 'gate-verdict',
+      value: JSON.stringify({
+        cycleId: ctx.cycleId ?? null,
+        sprintVersion: ctx.sprintVersion,
+        verdict: isApprove ? 'approve' : 'reject',
+        rationale: verdictText.slice(0, 500),
+        criticalFindings,
+        majorFindings,
+      }),
+      source: ctx.cycleId,
+      tags: [`sprint:v${ctx.sprintVersion}`, verdictTag],
+    });
+  } catch {
+    // Non-fatal — gate result must not be affected by memory write failures.
+  }
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------

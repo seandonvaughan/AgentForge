@@ -12,7 +12,7 @@ function makeFinding(overrides: Partial<ReviewFinding> = {}): ReviewFinding {
   return {
     severity: "MAJOR",
     file: "src/orchestrator/cost-tracker.ts",
-    message: "Unchecked division by zero when totalTasks is 0",
+    summary: "Unchecked division by zero when totalTasks is 0",
     reviewerAgentId: "code-reviewer",
     ...overrides,
   };
@@ -135,8 +135,8 @@ describe("AuditPhaseHandler", () => {
 
     it("places CRITICAL findings before MAJOR (sorted by descending relevance)", () => {
       reviewHandler.handleFindings("sprint-1", "6.8", [
-        makeFinding({ severity: "MAJOR", file: "src/a.ts", message: "major issue" }),
-        makeFinding({ severity: "CRITICAL", file: "src/b.ts", message: "critical issue" }),
+        makeFinding({ severity: "MAJOR", file: "src/a.ts", summary: "major issue" }),
+        makeFinding({ severity: "CRITICAL", file: "src/b.ts", summary: "critical issue" }),
       ]);
       const handler = new AuditPhaseHandler(reviewHandler, makeGateVerdictReader());
 
@@ -206,7 +206,7 @@ describe("AuditPhaseHandler", () => {
     it("includes the finding message in the injected section", () => {
       const msg = "API key leaked in logs via debug output";
       reviewHandler.handleFindings("sprint-1", "6.8", [
-        makeFinding({ severity: "CRITICAL", message: msg }),
+        makeFinding({ severity: "CRITICAL", summary: msg }),
       ]);
       const handler = new AuditPhaseHandler(reviewHandler, makeGateVerdictReader());
 
