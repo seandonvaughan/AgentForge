@@ -7,6 +7,10 @@
     maxConcurrentAgents?: number;
     sessionTimeoutMinutes?: number;
     theme?: 'dark' | 'light';
+    // Autonomous cycle retry settings
+    maxAutoRetries?: number;
+    requireApprovalAfter?: number;
+    reExecuteOnRetry?: boolean;
   }
 
   let settings: Settings = {
@@ -15,6 +19,9 @@
     maxConcurrentAgents: 10,
     sessionTimeoutMinutes: 60,
     theme: 'dark',
+    maxAutoRetries: 1,
+    requireApprovalAfter: 1,
+    reExecuteOnRetry: true,
   };
 
   let loading = true;
@@ -140,6 +147,60 @@
           bind:value={settings.sessionTimeoutMinutes}
         />
       </div>
+    </div>
+
+    <!-- Autonomous Retry -->
+    <div class="card settings-section">
+      <div class="card-header">
+        <span class="card-title">Autonomous Retry</span>
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="max-retries">Max Auto-Retries</label>
+        <input
+          id="max-retries"
+          class="field-input"
+          type="number"
+          min="0"
+          max="10"
+          bind:value={settings.maxAutoRetries}
+        />
+        <p class="field-hint">When the gate rejects, automatically retry up to this many times before failing.</p>
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="approval-after">Require Approval After</label>
+        <input
+          id="approval-after"
+          class="field-input"
+          type="number"
+          min="0"
+          max="10"
+          bind:value={settings.requireApprovalAfter}
+        />
+        <p class="field-hint">After this many auto-retries, pause and require human approval to continue.</p>
+      </div>
+
+      <fieldset class="field" role="radiogroup">
+        <legend class="field-label">Re-execute on Retry</legend>
+        <div class="theme-toggle">
+          <button
+            type="button"
+            class="theme-btn {settings.reExecuteOnRetry ? 'active' : ''}"
+            onclick={() => settings.reExecuteOnRetry = true}
+          >
+            Full Re-execute
+          </button>
+          <button
+            type="button"
+            class="theme-btn {!settings.reExecuteOnRetry ? 'active' : ''}"
+            onclick={() => settings.reExecuteOnRetry = false}
+          >
+            Test + Review Only
+          </button>
+        </div>
+        <p class="field-hint">Whether to re-run the execute phase (agents fix findings) or only re-test and re-review.</p>
+      </fieldset>
     </div>
 
     <!-- Appearance -->

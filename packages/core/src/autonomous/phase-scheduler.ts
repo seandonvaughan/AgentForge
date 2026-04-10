@@ -6,6 +6,7 @@
 import type { KillSwitch } from './kill-switch.js';
 import type { CycleLogger } from './cycle-logger.js';
 import { CycleKilledError, PhaseFailedError } from './types.js';
+import { GateRejectedError } from './phase-handlers/gate-phase.js';
 
 export type PhaseName =
   | 'audit'
@@ -48,6 +49,10 @@ export interface PhaseContext {
   };
   runtime: any;
   cycleId?: string;
+  /** Gate retry attempt number (0 = first run). */
+  retryAttempt?: number;
+  /** On retry, skip phases before this one (e.g. jump straight to 'execute'). */
+  skipToPhase?: PhaseName;
 }
 
 export interface PhaseResult {
@@ -91,7 +96,8 @@ export class PhaseScheduler {
       this.resolvePromise = resolve;
       this.rejectPromise = reject;
       this.subscribe();
-      void this.triggerPhase('audit');
+      const startPhase = this.ctx.skipToPhase ?? 'audit';
+      void this.triggerPhase(startPhase);
     });
   }
 
@@ -119,7 +125,12 @@ export class PhaseScheduler {
     const onFailed = (event: any) => {
       if (event.sprintId !== this.ctx.sprintId) return;
       this.logger.logPhaseFailure(event.phase, event.error);
-      this.fail(new PhaseFailedError(event.phase, event.error));
+      // Preserve GateRejectedError so the cycle runner's retry loop can catch it
+      if (event.originalError instanceof GateRejectedError) {
+        this.fail(event.originalError);
+      } else {
+        this.fail(new PhaseFailedError(event.phase, event.error));
+      }
     };
 
     this.unsubscribers.push(
@@ -143,6 +154,7 @@ export class PhaseScheduler {
         phase,
         cycleId: this.ctx.cycleId,
         error: err instanceof Error ? err.message : String(err),
+        originalError: err,
         failedAt: new Date().toISOString(),
       });
     }

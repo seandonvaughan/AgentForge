@@ -96,6 +96,14 @@ export interface CycleConfig {
     verifyCleanWorkingTreeBeforeStart: boolean;
     workingTreeWhitelist: string[];
   };
+  retry: {
+    /** Max automatic gate-rejection retries before requiring approval. */
+    maxAutoRetries: number;
+    /** After this many auto-retries, pause and require human approval to continue. */
+    requireApprovalAfter: number;
+    /** Whether to re-run only test→review→gate or the full execute→test→review→gate. */
+    reExecuteOnRetry: boolean;
+  };
 }
 
 export interface FailedTest {

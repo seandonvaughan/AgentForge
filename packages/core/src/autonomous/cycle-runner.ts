@@ -263,30 +263,77 @@ export class CycleRunner {
     this.checkKillSwitch();
 
     // ─────────────────────────────────────────────────────────────────
-    // STAGE 3 — RUN
+    // STAGE 3 — RUN (with auto-retry on gate rejection)
     // Drive the 9-phase sprint sequence (audit → … → learn) via
-    // PhaseScheduler. The kill switch is checked between every phase.
+    // PhaseScheduler. If the gate rejects, extract the findings and
+    // retry from execute→test→review→gate up to maxAutoRetries times.
+    // After requireApprovalAfter retries, block on human approval.
     // ─────────────────────────────────────────────────────────────────
-    const scheduler = new PhaseScheduler(
-      {
-        sprintId: plan.sprintId,
-        sprintVersion: plan.version,
-        projectRoot: this.options.cwd,
-        adapter: this.options.scoringAdapter,
-        bus: this.options.bus,
-        runtime: this.options.runtime,
-        cycleId: this.cycleId,
-      },
-      this.killSwitch,
-      this.logger,
-      this.options.phaseHandlers,
-    );
-    const runSummary: SprintRunSummary = await scheduler.run();
-    this.totalCostUsd = runSummary.totalCostUsd;
-    // Gate phase approval is implied by scheduler.run() completing without
-    // throwing GateRejectedError — record it so cycle-outcome memory entries
-    // capture the verdict for cross-cycle audit context.
-    this.gateVerdict = 'APPROVE';
+    const retryConfig = this.options.config.retry;
+    let retryAttempt = 0;
+    let runSummary!: SprintRunSummary;
+
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const scheduler = new PhaseScheduler(
+        {
+          sprintId: plan.sprintId,
+          sprintVersion: plan.version,
+          projectRoot: this.options.cwd,
+          adapter: this.options.scoringAdapter,
+          bus: this.options.bus,
+          runtime: this.options.runtime,
+          cycleId: this.cycleId,
+          ...(retryAttempt > 0 ? { retryAttempt, skipToPhase: 'execute' as PhaseName } : {}),
+        },
+        this.killSwitch,
+        this.logger,
+        this.options.phaseHandlers,
+      );
+
+      try {
+        runSummary = await scheduler.run();
+        this.totalCostUsd += runSummary.totalCostUsd;
+        // Gate approved — break out of retry loop
+        this.gateVerdict = 'APPROVE';
+        break;
+      } catch (err) {
+        if (!(err instanceof GateRejectedError)) throw err;
+
+        retryAttempt++;
+        this.logger.logPhaseFailure('gate', `retry ${retryAttempt}/${retryConfig.maxAutoRetries}: ${err.rationale.slice(0, 500)}`);
+
+        // Check if we've exhausted auto-retries
+        if (retryAttempt > retryConfig.maxAutoRetries) {
+          throw err; // Propagate to start() → FAILED
+        }
+
+        // Check if we need human approval to continue retrying
+        if (retryAttempt > retryConfig.requireApprovalAfter) {
+          const retryApproval = new BudgetApproval(
+            this.options.cwd,
+            this.cycleId,
+            this.logger,
+          );
+          await retryApproval.collect({
+            withinBudget: [],
+            requiresApproval: [],
+            budgetUsd: this.options.config.budget.perCycleUsd,
+            summary: `Gate retry ${retryAttempt}: ${err.rationale.slice(0, 200)}`,
+          });
+        }
+
+        // Inject gate findings into memory so the next execute pass sees them
+        this.logger.logPhaseFailure('gate', `findings for retry: ${err.rationale.slice(0, 1000)}`);
+
+        // Check budget/duration kill switch before retrying
+        this.checkKillSwitch();
+
+        // eslint-disable-next-line no-console
+        console.log(`[autonomous:cycle] gate rejected (attempt ${retryAttempt}/${retryConfig.maxAutoRetries}) — retrying from execute phase`);
+      }
+    }
+
     this.checkKillSwitch();
 
     // ─────────────────────────────────────────────────────────────────

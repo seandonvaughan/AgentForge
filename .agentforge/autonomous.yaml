@@ -60,6 +60,11 @@ logging:
   logDir: ".agentforge/cycles"
   retainCycles: 50
 
+retry:
+  maxAutoRetries: 1
+  requireApprovalAfter: 1
+  reExecuteOnRetry: true
+
 safety:
   stopFilePath: ".agentforge/cycles/{cycleId}/STOP"
   secretScanEnabled: true

@@ -79,6 +79,11 @@ export const DEFAULT_CYCLE_CONFIG: CycleConfig = Object.freeze({
       '.agentforge/audit.db-*',
     ]) as unknown as string[],
   }),
+  retry: Object.freeze({
+    maxAutoRetries: 1,
+    requireApprovalAfter: 1,
+    reExecuteOnRetry: true,
+  }),
 }) as CycleConfig;
 
 export function loadCycleConfig(cwd: string): CycleConfig {
