@@ -44,12 +44,12 @@ sourcing:
   todoMarkerPattern: "TODO\\(autonomous\\)|FIXME\\(autonomous\\)"
 
 testing:
-  command: "npm run test:run"
+  command: "pnpm test:run"
   timeoutMinutes: 20
   reporter: "json"
   saveRawLog: true
-  buildCommand: "npm run build"
-  typeCheckCommand: "npx tsc --noEmit"
+  buildCommand: "pnpm build"
+  typeCheckCommand: "pnpm exec tsc --noEmit"
 
 scoring:
   agentId: "backlog-scorer"

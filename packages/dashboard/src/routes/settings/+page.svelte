@@ -148,8 +148,8 @@
         <span class="card-title">Appearance</span>
       </div>
 
-      <div class="field">
-        <label class="field-label">Theme</label>
+      <fieldset class="field" role="radiogroup">
+        <legend class="field-label">Theme</legend>
         <div class="theme-toggle">
           <button
             type="button"
@@ -167,7 +167,7 @@
           </button>
         </div>
         <p class="field-hint">Switch between dark and light mode.</p>
-      </div>
+      </fieldset>
     </div>
 
     <!-- Save bar -->
@@ -193,6 +193,7 @@
     gap: var(--space-5);
   }
   .field { display: flex; flex-direction: column; gap: var(--space-1); }
+  fieldset.field { border: none; padding: 0; margin: 0; }
   .field-label {
     font-size: var(--text-sm);
     font-weight: 600;

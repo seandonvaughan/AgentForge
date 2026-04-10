@@ -1,7 +1,8 @@
 name: AgentForge-team
-forged_at: '2026-03-29T17:13:29.025Z'
+forged_at: '2026-04-09T12:00:00.000Z'
 forged_by: agentforge
-project_hash: d17c69157003
+project_hash: b574e85ca227
+
 agents:
   strategic:
     - ceo
@@ -25,6 +26,15 @@ agents:
     - api-gateway-engineer
     - ui-engineer
     - data-analyst
+    # Added by forge scan 2026-04-09 — software + core domains
+    - devops-engineer
+    - frontend-dev
+    - dashboard-architect
+    - performance-engineer
+    - build-release-lead
+    - business-analyst
+    - operations-manager
+    - documentation-writer
   quality:
     - team-reviewer
     - dba
@@ -35,10 +45,17 @@ agents:
     - ml-engineer
     - qa-manager
     - observability-engineer
+    # Added by forge scan 2026-04-09 — software domain
+    - test-runner
+    - code-explorer
+    - code-reviewer
   utility:
     - researcher
     - experiment-runner
     - feedback-analyst
+    # Added by forge scan 2026-04-09 — core domain
+    - file-reader
+
 model_routing:
   opus:
     - ceo
@@ -70,11 +87,25 @@ model_routing:
     - ui-engineer
     - data-analyst
     - observability-engineer
+    # New agents — sonnet tier
+    - devops-engineer
+    - frontend-dev
+    - dashboard-architect
+    - performance-engineer
+    - build-release-lead
+    - business-analyst
+    - operations-manager
+    - test-runner
+    - code-explorer
+    - code-reviewer
   haiku:
     - linter
     - researcher
     - experiment-runner
     - feedback-analyst
+    - file-reader
+    - documentation-writer
+
 delegation_graph:
   ceo:
     - cto
@@ -137,7 +168,6 @@ delegation_graph:
     - engineering-manager-infra
   engineering-manager-frontend:
     - frontend-dev
-    - ui-ux-designer
     - dashboard-architect
     - ui-engineer
   engineering-manager-backend:
@@ -157,6 +187,8 @@ delegation_graph:
     - team-reviewer
     - debugger
     - linter
+    - test-runner
+    - code-reviewer
   api-gateway-engineer:
     - coder
     - api-specialist
@@ -164,3 +196,6 @@ delegation_graph:
     - frontend-dev
   data-analyst:
     - researcher
+  code-reviewer:
+    - code-explorer
+    - file-reader

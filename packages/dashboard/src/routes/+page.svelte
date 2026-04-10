@@ -359,17 +359,6 @@
     font-weight: 500;
   }
 
-  .test-badge {
-    font-size: var(--text-xs);
-    color: rgb(34,197,94);
-    background: rgba(34,197,94,0.1);
-    border: 1px solid rgba(34,197,94,0.25);
-    padding: 2px 8px;
-    border-radius: 999px;
-    font-family: var(--font-mono, monospace);
-    margin-left: auto;
-  }
-
   /* ── Status row ──────────────────────────────────────────────────────────── */
   .status-row {
     display: flex;

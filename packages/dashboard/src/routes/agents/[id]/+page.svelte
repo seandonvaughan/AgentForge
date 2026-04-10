@@ -24,9 +24,9 @@
     }>;
   }
 
-  let agent: AgentDetail | null = null;
-  let loading = true;
-  let error: string | null = null;
+  let agent = $state<AgentDetail | null>(null);
+  let loading = $state(true);
+  let error = $state<string | null>(null);
 
   let agentId = $derived(page.params.id);
 
