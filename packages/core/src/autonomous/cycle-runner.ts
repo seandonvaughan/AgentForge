@@ -296,9 +296,17 @@ export class CycleRunner {
         this.totalCostUsd += runSummary.totalCostUsd;
         // Gate approved — break out of retry loop
         this.gateVerdict = 'APPROVE';
+        // Reconcile sprint file: mark all executed items as completed
+        // based on execute.json (fixes stale in_progress after retries)
+        this.reconcileSprintStatus(plan.version);
         break;
       } catch (err) {
         if (!(err instanceof GateRejectedError)) throw err;
+
+        // Capture the failed attempt's cost before retrying — the scheduler
+        // tracked phase costs even though the gate threw. Sum them from the
+        // phase files on disk since the scheduler's internal state is lost.
+        this.totalCostUsd += this.sumPhaseCostsFromDisk();
 
         retryAttempt++;
         this.logger.logPhaseFailure('gate', `retry ${retryAttempt}/${retryConfig.maxAutoRetries}: ${err.rationale.slice(0, 500)}`);
@@ -514,6 +522,59 @@ export class CycleRunner {
    * those will also be captured. A future improvement is to track per-agent
    * file writes via runtime hooks so we don't depend on the git working tree.
    */
+  /**
+   * Sum phase costs from disk — used when the scheduler throws (gate rejection)
+   * and we need to capture the failed attempt's costs before retrying.
+   */
+  /**
+   * After the retry loop, reconcile the sprint file so all items that the
+   * execute phase completed are marked 'completed' — not left as 'in_progress'
+   * due to stale writes from parallel execution or retry re-reads.
+   */
+  private reconcileSprintStatus(sprintVersion: string): void {
+    const { join } = require('node:path');
+    const { readFileSync, writeFileSync, existsSync } = require('node:fs');
+
+    const execPath = join(this.options.cwd, '.agentforge/cycles', this.cycleId, 'phases/execute.json');
+    const sprintPath = join(this.options.cwd, '.agentforge/sprints', `v${sprintVersion}.json`);
+    if (!existsSync(execPath) || !existsSync(sprintPath)) return;
+
+    try {
+      const execData = JSON.parse(readFileSync(execPath, 'utf8'));
+      const sprintData = JSON.parse(readFileSync(sprintPath, 'utf8'));
+      const runs: Array<{ itemId: string; status: string }> = execData.agentRuns ?? [];
+      const completedIds = new Set(runs.filter(r => r.status === 'completed').map(r => r.itemId));
+
+      // Find items array (sprint file format varies)
+      const sprints = sprintData.sprints ?? [sprintData];
+      for (const s of sprints) {
+        for (const item of s.items ?? []) {
+          if (completedIds.has(item.id) && item.status !== 'completed') {
+            item.status = 'completed';
+          }
+        }
+      }
+      writeFileSync(sprintPath, JSON.stringify(sprintData, null, 2));
+    } catch { /* non-fatal — dashboard will show stale data but cycle continues */ }
+  }
+
+  private sumPhaseCostsFromDisk(): number {
+    const { join } = require('node:path');
+    const { readFileSync, existsSync } = require('node:fs');
+    const phasesDir = join(this.options.cwd, '.agentforge/cycles', this.cycleId, 'phases');
+    let total = 0;
+    for (const name of ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate']) {
+      const f = join(phasesDir, `${name}.json`);
+      if (existsSync(f)) {
+        try {
+          const d = JSON.parse(readFileSync(f, 'utf8'));
+          total += Number(d.costUsd ?? 0);
+        } catch { /* skip corrupt files */ }
+      }
+    }
+    return total;
+  }
+
   private async collectChangedFiles(_runSummary: SprintRunSummary): Promise<string[]> {
     try {
       const { stdout } = await execFileAsync('git', ['status', '--porcelain'], {
