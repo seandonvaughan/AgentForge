@@ -78,13 +78,28 @@ function createApprovalsStore() {
       // letting us skip the full cycles list scan.
       const res = await fetch('/api/v5/cycle-sessions');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json() as { sessions?: Array<{ cycleId: string; hasApprovalPending?: boolean; workspaceRoot?: string; status?: string; sprintVersion?: string | null }> };
+      const json = await res.json() as {
+        sessions?: Array<{
+          cycleId: string;
+          hasApprovalPending?: boolean;
+          workspaceRoot?: string;
+          /** v6.6.0+: registered workspace ID — must be passed to approval endpoint
+           *  so the server resolves the correct workspace root in multi-workspace setups. */
+          workspaceId?: string;
+          status?: string;
+          sprintVersion?: string | null;
+        }>;
+      };
       const candidates = (json?.sessions ?? []).filter(c => c.hasApprovalPending === true);
 
       const fetched: CycleApproval[] = [];
       for (const c of candidates) {
         try {
-          const r = await fetch(`/api/v5/cycles/${c.cycleId}/approval`);
+          // Pass workspaceId so the server resolves the right workspace root.
+          // Without this, multi-workspace deployments silently look in the
+          // server's default workspace and never find the approval file.
+          const qs = c.workspaceId ? `?workspaceId=${encodeURIComponent(c.workspaceId)}` : '';
+          const r = await fetch(`/api/v5/cycles/${c.cycleId}/approval${qs}`);
           if (!r.ok) continue;
           const data = await r.json() as {
             requestedAt?: string;
@@ -93,10 +108,14 @@ function createApprovalsStore() {
             withinBudget?: { items?: CycleApprovalItem[] };
             overflow?: { items?: CycleApprovalItem[] };
             agentSummary?: string;
+            /** Injected by the server from sprint-link.json (v9.4+). */
+            sprintVersion?: string | null;
           };
           fetched.push({
             cycleId: c.cycleId,
-            sprintVersion: c.sprintVersion ?? null,
+            // Prefer version from approval data (server reads sprint-link.json);
+            // fall back to session field for forward compat.
+            sprintVersion: data.sprintVersion ?? c.sprintVersion ?? null,
             requestedAt: data.requestedAt ?? new Date().toISOString(),
             budgetUsd: Number(data.budgetUsd ?? 200),
             newTotalUsd: Number(data.newTotalUsd ?? 0),

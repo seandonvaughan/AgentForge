@@ -126,6 +126,7 @@ export async function dashboardStubRoutes(
   //   type    — exact match on the entry's `type` field (e.g. "cycle-outcome")
   //   since   — ISO-8601 timestamp; only entries with createdAt >= since
   //   agentId — exact match on the entry's `agentId` / `source` field
+  //   search  — case-insensitive substring across key, value, summary, tags
   //
   // Response shape:
   //   { data: DashboardMemoryEntry[], agents: string[], types: string[],
@@ -137,9 +138,12 @@ export async function dashboardStubRoutes(
       type?: string;
       since?: string;
       agentId?: string;
+      search?: string;
     };
     const typeFilter = q.type?.trim() ?? '';
     const agentIdFilter = q.agentId?.trim() ?? '';
+    // Normalised to lowercase so the search is case-insensitive.
+    const searchTerm = (q.search ?? '').toLowerCase().trim();
     // Parse `since` once; ignore if not a valid date.
     const sinceMs = q.since ? new Date(q.since).getTime() : NaN;
     const hasSince = !Number.isNaN(sinceMs);
@@ -271,6 +275,14 @@ export async function dashboardStubRoutes(
       if (hasSince) {
         const entryMs = e.createdAt ? new Date(e.createdAt).getTime() : 0;
         if (entryMs < sinceMs) return false;
+      }
+      // Full-text search across key, value, summary, and tags.
+      if (searchTerm) {
+        const valueStr = typeof e.value === 'string' ? e.value : JSON.stringify(e.value);
+        const haystack = [e.key, valueStr, e.summary ?? '', (e.tags ?? []).join(' ')]
+          .join(' ')
+          .toLowerCase();
+        if (!haystack.includes(searchTerm)) return false;
       }
       return true;
     });
@@ -484,6 +496,16 @@ function computeFlywheelMetrics(projectRoot: string) {
   }
   const metaLearningScore = Math.max(0, Math.min(100, iterationBase + trendBonus + sessionConfidenceBonus));
 
+  // Derive a trend direction label from the component scores.
+  // trendBonus maps to a delta of ±5% pass-rate (equivalent to legacy threshold).
+  // sessionConfidenceBonus provides a secondary signal when no rated cycles exist.
+  const metaTrend: 'improving' | 'stable' | 'declining' =
+    trendBonus >= 20 ? 'improving' :
+    trendBonus <= -20 ? 'declining' :
+    sessionConfidenceBonus > 5 ? 'improving' :
+    sessionConfidenceBonus < -5 ? 'declining' :
+    'stable';
+
   // ── 2. Autonomy Score ─────────────────────────────────────────────────────
   // How well is the loop running without human intervention?
   // Primary signal: completed cycles / meaningful cycles (full pipeline success).
@@ -553,10 +575,10 @@ function computeFlywheelMetrics(projectRoot: string) {
 
   const descriptions = {
     meta_learning: ratedCycles.length > 1
-      ? `${sprintCount} sprint iterations; pass-rate trend across ${ratedCycles.length} cycles`
+      ? `${sprintCount} sprint iterations; pass-rate ${metaTrend} across ${ratedCycles.length} cycles`
       : avgConf !== null
-        ? `${sprintCount} sprint iterations; session confidence avg ${avgConf}%`
-        : `${sprintCount} sprint iterations`,
+        ? `${sprintCount} sprint iterations; session confidence avg ${avgConf}% — ${metaTrend}`
+        : `${sprintCount} sprint iterations — ${metaTrend}`,
     autonomy: meaningfulCycles.length > 0
       ? `${completedCycles.length}/${meaningfulCycles.length} cycles; ${satisfiedSessions}/${sessions.length} sessions satisfied`
       : sessions.length > 0
@@ -572,7 +594,7 @@ function computeFlywheelMetrics(projectRoot: string) {
 
   return {
     metrics: [
-      { key: 'meta_learning', label: 'Meta-Learning', score: metaLearningScore, description: descriptions.meta_learning },
+      { key: 'meta_learning', label: 'Meta-Learning', score: metaLearningScore, description: descriptions.meta_learning, trend: metaTrend },
       { key: 'autonomy', label: 'Autonomy', score: autonomyScore, description: descriptions.autonomy },
       { key: 'inheritance', label: 'Inheritance', score: inheritanceScore, description: descriptions.inheritance },
       { key: 'velocity', label: 'Velocity', score: velocityScore, description: descriptions.velocity },

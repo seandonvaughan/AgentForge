@@ -505,7 +505,16 @@ export async function cyclesRoutes(
     const decisionFile = join(dir, 'approval-decision.json');
     if (existsSync(decisionFile)) return reply.status(409).send({ error: 'Already decided' });
     try {
-      const pending = JSON.parse(readFileSync(pendingFile, 'utf8'));
+      const pending = JSON.parse(readFileSync(pendingFile, 'utf8')) as Record<string, unknown>;
+      // v9.4+: enrich with sprintVersion from sprint-link.json so the dashboard
+      // modal can show which sprint this cycle was assigned to.
+      const sprintLinkFile = join(dir, 'sprint-link.json');
+      if (existsSync(sprintLinkFile)) {
+        try {
+          const link = JSON.parse(readFileSync(sprintLinkFile, 'utf8')) as { sprintVersion?: string };
+          if (link.sprintVersion) pending.sprintVersion = link.sprintVersion;
+        } catch { /* sprint-link.json unreadable — omit sprintVersion */ }
+      }
       return reply.send(pending);
     } catch (err) {
       return reply.status(500).send({ error: `Failed to read approval-pending.json: ${(err as Error).message}` });

@@ -177,6 +177,37 @@ describe('GET /api/v5/memory', () => {
     expect(typeof body.meta.limit).toBe('number');
   });
 
+  // ── ?search filter ───────────────────────────────────────────────────────
+
+  it('?search filters entries by substring match on value', async () => {
+    appendJsonlEntry('cycle-outcome', { id: 'needle-entry', value: 'contains-needle-here', createdAt: '2026-04-08T10:00:00.000Z' });
+    appendJsonlEntry('gate-verdict', { id: 'haystack-entry', value: 'nothing-useful', createdAt: '2026-04-08T10:01:00.000Z' });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory?search=needle' });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body) as { data: Array<{ id: string }>; meta: { total: number } };
+    expect(body.meta.total).toBe(1);
+    expect(body.data[0]!.id).toBe('needle-entry');
+  });
+
+  it('?search is case-insensitive', async () => {
+    appendJsonlEntry('cycle-outcome', { id: 'upper-entry', value: 'UPPERCASE-TERM', createdAt: '2026-04-08T10:00:00.000Z' });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory?search=uppercase-term' });
+    const body = JSON.parse(res.body) as { data: Array<{ id: string }>; meta: { total: number } };
+    expect(body.meta.total).toBe(1);
+    expect(body.data[0]!.id).toBe('upper-entry');
+  });
+
+  it('?search with no matches returns empty data array', async () => {
+    appendJsonlEntry('cycle-outcome', { id: 'co-1', value: 'something', createdAt: '2026-04-08T10:00:00.000Z' });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory?search=zzz-not-found' });
+    const body = JSON.parse(res.body) as { data: unknown[]; meta: { total: number } };
+    expect(body.data).toHaveLength(0);
+    expect(body.meta.total).toBe(0);
+  });
+
   // ── ?type filter ──────────────────────────────────────────────────────────
 
   it('?type filters entries by exact type match', async () => {

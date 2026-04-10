@@ -8,6 +8,10 @@
       </div>
       <div style="display:flex;gap:8px;align-items:center;">
         <span id="memory-count-badge" style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);padding:4px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);"></span>
+        <!-- Live feed badge — shown when SSE connection is active -->
+        <span id="mem-live-badge" class="mem-live-badge" style="display:none;">
+          <span class="mem-live-dot"></span>LIVE
+        </span>
         <button class="export-btn" onclick="loadMemoryBrowser()">&#8635; Refresh</button>
       </div>
     </div>
@@ -168,5 +172,86 @@
 
     loadMemoryBrowser();
   }
+
+  // ── SSE Live-Feed Integration ────────────────────────────────────────────
+  // Wire into the existing global SSE object so new cycle/session events
+  // trigger a debounced refresh of the memory list.  We only fire refreshes
+  // when the memory page is the active route so we don't waste fetches while
+  // the user is elsewhere.
+  (function _initMemoryLiveFeed() {
+    var _liveBadge   = document.getElementById('mem-live-badge');
+    var _refreshTimer = null;
+    var _lastKnownIds = new Set();
+    var _PAGE_ROUTE  = '/memory';
+
+    function _isMemoryPageActive() {
+      return typeof location !== 'undefined' && location.pathname === _PAGE_ROUTE;
+    }
+
+    // Show / hide the LIVE badge based on SSE connection state.
+    function _syncLiveBadge() {
+      if (!_liveBadge) return;
+      var sseConnected = window.SSE && window.SSE.source &&
+                         window.SSE.source.readyState === 1 /* EventSource.OPEN */;
+      _liveBadge.style.display = sseConnected ? '' : 'none';
+    }
+
+    // Debounced reload — coalesces rapid bursts (e.g. a cycle that writes 5
+    // memory entries in quick succession) into a single fetch.
+    function _scheduleRefresh() {
+      if (!_isMemoryPageActive()) return;
+      clearTimeout(_refreshTimer);
+      _refreshTimer = setTimeout(function () {
+        if (!_isMemoryPageActive()) return;
+        if (typeof window.loadMemoryBrowser === 'function') {
+          window.loadMemoryBrowser();
+        }
+      }, 1200 /* ms — enough to let the server finish writing JSONL */);
+    }
+
+    // Attach SSE event listeners once the global SSE object is ready.
+    function _attachSSEListeners() {
+      if (!window.SSE || !window.SSE.source) return;
+
+      // Relevant events that may cause new memory entries to be written.
+      var triggers = ['cycle_event', 'session-completed', 'session-started'];
+      triggers.forEach(function (evtName) {
+        window.SSE.source.addEventListener(evtName, function () {
+          _scheduleRefresh();
+        });
+      });
+
+      // Keep the LIVE badge in sync with connection readyState changes.
+      window.SSE.source.onopen  = (function (orig) {
+        return function (e) { _syncLiveBadge(); if (orig) orig.call(this, e); };
+      }(window.SSE.source.onopen));
+      window.SSE.source.onerror = (function (orig) {
+        return function (e) { _syncLiveBadge(); if (orig) orig.call(this, e); };
+      }(window.SSE.source.onerror));
+
+      _syncLiveBadge();
+    }
+
+    // SSE may connect after this page script runs, so poll briefly.
+    var _sseWaitAttempts = 0;
+    function _waitForSSE() {
+      if (window.SSE && window.SSE.source) {
+        _attachSSEListeners();
+        return;
+      }
+      if (_sseWaitAttempts++ < 20) {
+        setTimeout(_waitForSSE, 300);
+      }
+    }
+    _waitForSSE();
+
+    // Clean up the refresh timer when the user navigates away.
+    window.addEventListener('popstate', function () {
+      if (!_isMemoryPageActive()) {
+        clearTimeout(_refreshTimer);
+        if (_liveBadge) _liveBadge.style.display = 'none';
+      }
+    });
+  })();
 })();
 </script>

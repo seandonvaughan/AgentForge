@@ -5305,7 +5305,7 @@ async function loadSprintFromApi() {
     nodes.forEach(function(n) { _nodeMap[n.id] = n; });
 
     edges.forEach(function(e) {
-      var parent = e.to, child = e.from;
+      var parent = e.from, child = e.to;
       if (!_childrenOf[parent]) _childrenOf[parent] = [];
       if (_childrenOf[parent].indexOf(child) === -1) {
         _childrenOf[parent].push(child);
@@ -5860,14 +5860,14 @@ async function loadDelegationFlow() {
       marker.appendChild(poly); defs.appendChild(marker);
     });
     svg.appendChild(defs);
-    // Find root node(s)
-    const toSet = new Set(edges.map(function(e) { return e.from; }));
+    // Find root node(s): nodes that never appear as a child (e.to) have no parent.
+    const toSet = new Set(edges.map(function(e) { return e.to; }));
     const roots = nodes.filter(function(n) { return !toSet.has(n.id); });
     const root = roots.length ? roots[0] : nodes[0];
     const childrenOf = {};
     edges.forEach(function(e) {
-      if (!childrenOf[e.to]) childrenOf[e.to] = [];
-      childrenOf[e.to].push(e.from);
+      if (!childrenOf[e.from]) childrenOf[e.from] = [];
+      childrenOf[e.from].push(e.to);
     });
     // Chain: root + up to 5 direct reports
     const chain = [root.id].concat((childrenOf[root.id] || []).slice(0, 5));

@@ -261,12 +261,13 @@ test.describe('Live Feed Page (/live)', () => {
 
       await page.waitForTimeout(250);
 
-      // The live page shows event.category in a .category-tag span when
-      // category !== type and category !== 'system'
-      // CYCLE_EVENTS[0].category = 'phase.start', CYCLE_EVENTS[0].type = 'cycle_event'
+      // The live page shows the formatCategory()-transformed label in .category-tag, not
+      // the raw category string. For cycle_event, 'phase.start' maps to 'Phase →'
+      // (see CYCLE_CATEGORY_LABELS in +page.svelte and the matching unit test in
+      // live-feed-rendering.test.ts → formatCategory → 'maps "phase.start" → "Phase →"').
       const categoryTag = page.locator('.feed-row .category-tag').first();
       await expect(categoryTag).toBeVisible();
-      await expect(categoryTag).toHaveText('phase.start');
+      await expect(categoryTag).toHaveText('Phase →');
     });
 
     test('cycle_event row displays the event message', async ({ page }) => {

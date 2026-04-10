@@ -123,7 +123,23 @@ export async function searchRoutes(
               // Extract key fields via regex — avoids adding a YAML parser dep.
               const name = /^name:\s*(.+)$/m.exec(content)?.[1]?.trim() ?? agentId;
               const role = /^role:\s*(.+)$/m.exec(content)?.[1]?.trim();
-              const description = /^description:\s*(.+)$/m.exec(content)?.[1]?.trim();
+
+              // Extract description, handling YAML block scalars (> and |).
+              // When the description value is a bare > or |, read the indented
+              // lines that follow and collapse them into a single-line summary.
+              let description = /^description:\s*(.+)$/m.exec(content)?.[1]?.trim();
+              if (description === '>' || description === '|') {
+                const blockMatch = /^description:\s*[>|][^\n]*\n((?:[ \t]+[^\n]*(?:\n|$))+)/m.exec(content);
+                if (blockMatch?.[1]) {
+                  description = blockMatch[1]
+                    .split('\n')
+                    .map(l => l.trim())
+                    .filter(Boolean)
+                    .join(' ')
+                    .slice(0, 200);
+                }
+              }
+
               const preview = [
                 `Agent: ${name}`,
                 role ? `Role: ${role}` : '',

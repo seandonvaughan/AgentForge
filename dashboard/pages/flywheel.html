@@ -455,15 +455,24 @@
       stageBadge.style.borderColor = stageColor;
     }
 
-    // Test pass rate — read from tests.passRate inside the raw cycle
-    // The cycles list from the API only has summary fields; we may need to
-    // fetch the full cycle if tests are missing. But the API summary includes
-    // what's in cycle.json and cycle.json does have tests.passRate.
-    // Unfortunately the /api/v5/cycles summary shape doesn't include tests —
-    // so we rely on whatever the summary returned.
-    var passRate = typeof c.tests === 'object' && c.tests !== null && typeof c.tests.passRate === 'number'
+    // Test pass rate — handle both the flat CycleListRow shape returned by
+    // /api/v5/cycles (testsPassed / testsTotal) and the nested shape used
+    // internally by computeFlywheelMetrics (tests.passed / tests.passRate).
+    var testsPassed = typeof c.testsPassed === 'number' ? c.testsPassed
+                    : (c.tests && typeof c.tests.passed === 'number') ? c.tests.passed
+                    : null;
+    var testsTotal  = typeof c.testsTotal  === 'number' ? c.testsTotal
+                    : (c.tests && typeof c.tests.total  === 'number') ? c.tests.total
+                    : null;
+    // Prefer an explicit passRate field; otherwise compute it.
+    var passRate = (c.tests && typeof c.tests.passRate === 'number')
                    ? c.tests.passRate
-                   : null;
+                   : (testsPassed !== null && testsTotal !== null && testsTotal > 0)
+                     ? testsPassed / testsTotal
+                     : null;
+    var testsFailed = (testsPassed !== null && testsTotal !== null)
+                      ? testsTotal - testsPassed
+                      : null;
 
     var passRateEl = document.getElementById('fw-cycle-passrate');
     var passRateBar = document.getElementById('fw-cycle-passrate-bar');
@@ -472,8 +481,8 @@
       var prColor = pct >= 98 ? 'var(--green)' : pct >= 90 ? 'var(--gold)' : 'var(--red)';
       if (passRateEl)  { passRateEl.textContent = pct + '%'; passRateEl.style.color = prColor; }
       if (passRateBar) { passRateBar.style.width = pct + '%'; passRateBar.style.background = prColor; }
-      setText('fw-cycle-tests-passed', typeof c.tests.passed === 'number' ? c.tests.passed.toLocaleString() : '—');
-      setText('fw-cycle-tests-failed', typeof c.tests.failed === 'number' ? c.tests.failed.toLocaleString() : '—');
+      setText('fw-cycle-tests-passed', testsPassed !== null ? testsPassed.toLocaleString() : '—');
+      setText('fw-cycle-tests-failed', testsFailed !== null ? testsFailed.toLocaleString() : '—');
     } else {
       if (passRateEl)  passRateEl.textContent = '—';
       setText('fw-cycle-tests-passed', '—');
@@ -482,8 +491,10 @@
 
     setText('fw-cycle-sprint-ver', c.sprintVersion || '—');
 
-    // Cost
-    var costUsd = typeof c.cost === 'object' && c.cost !== null ? c.cost.totalUsd : null;
+    // Cost — flat costUsd (CycleListRow) or nested cost.totalUsd
+    var costUsd = typeof c.costUsd === 'number' ? c.costUsd
+                : (c.cost && typeof c.cost.totalUsd === 'number') ? c.cost.totalUsd
+                : null;
     setText('fw-cycle-cost', costUsd != null ? '$' + costUsd.toFixed(2) : '—');
 
     // Duration
@@ -521,8 +532,9 @@
       return;
     }
 
-    // Find the most recent sprint (last item since sprints are sorted ascending by version)
-    var latest = sprints[sprints.length - 1];
+    // /api/v5/sprints returns newest-first (sorted descending by filename).
+    // The most recent sprint is therefore the first element.
+    var latest = sprints[0];
 
     // Status badge
     var statusBadge = document.getElementById('fw-sprint-status-badge');
@@ -552,11 +564,12 @@
     setText('fw-sprint-version', latest.version ? 'v' + latest.version : (latest.id || '—'));
     setText('fw-sprint-phase',   (latest.phase  || latest.status || '—').toUpperCase());
 
-    // Recent sprints history (last 5, newest first)
+    // Recent sprints history — API returns newest-first; take the top 5 then
+    // reverse so the history list renders as an oldest→newest progression.
     var histEl = document.getElementById('fw-sprint-history');
     if (histEl) {
       while (histEl.firstChild) histEl.removeChild(histEl.firstChild);
-      var recent = sprints.slice(-5).reverse();
+      var recent = sprints.slice(0, 5).reverse();
       recent.forEach(function (s) {
         var sItems  = Array.isArray(s.items) ? s.items : [];
         var sDone   = sItems.filter(function (i) { return i.status === 'completed'; }).length;
@@ -658,9 +671,16 @@
       var trendBadge = document.getElementById('fw-trend-badge');
       if (trendDot && trendText && trendBadge) {
         var mlMetric   = metrics.find(function (m) { return m.key === 'meta_learning'; });
-        var desc       = mlMetric ? mlMetric.description : '';
-        var improving  = desc.indexOf('improving') !== -1;
-        var declining  = desc.indexOf('declining') !== -1;
+        // Prefer the explicit `trend` field added in v9.x; fall back to
+        // parsing the description string for backward compatibility.
+        var desc       = mlMetric ? (mlMetric.description || '') : '';
+        var trendWord  = mlMetric && mlMetric.trend
+                         ? mlMetric.trend
+                         : desc.indexOf('improving') !== -1 ? 'improving'
+                         : desc.indexOf('declining') !== -1 ? 'declining'
+                         : 'stable';
+        var improving  = trendWord === 'improving';
+        var declining  = trendWord === 'declining';
         var trendColor = improving ? 'var(--green)' : declining ? 'var(--red)' : 'var(--gold)';
         trendDot.style.color         = trendColor;
         trendBadge.style.borderColor = trendColor;

@@ -2,7 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { runRoutes, getRunLog } from '../run.js';
 
-// Mock @agentforge/core so no real Anthropic API calls are made
+// Mock @agentforge/core so no real Anthropic API calls are made.
+// runStreaming calls onChunk before resolving so the SSE emission path
+// is exercised the same way it runs in production.
 vi.mock('@agentforge/core', () => {
   const mockRunResult = {
     sessionId: 'mock-session-1',
@@ -18,7 +20,15 @@ vi.mock('@agentforge/core', () => {
 
   return {
     AgentRuntime: vi.fn().mockImplementation(() => ({
-      runStreaming: vi.fn().mockResolvedValue(mockRunResult),
+      runStreaming: vi.fn().mockImplementation(
+        async (opts: { onChunk?: (text: string, index: number) => void; onEvent?: (event: { type: string; data: unknown }) => void }) => {
+          // Simulate onChunk firing once with the full response (degraded streaming)
+          if (opts.onChunk) opts.onChunk(mockRunResult.response, 0);
+          // Simulate onEvent firing with the 'done' signal
+          if (opts.onEvent) opts.onEvent({ type: 'done', data: mockRunResult });
+          return mockRunResult;
+        },
+      ),
     })),
     loadAgentConfig: vi.fn().mockImplementation(async (agentId: string) => {
       if (agentId === 'coder') {
@@ -35,10 +45,14 @@ vi.mock('@agentforge/core', () => {
   };
 });
 
-// Mock the SSE stream so events don't throw
+// vi.mock is hoisted before const declarations, so we use vi.hoisted()
+// to ensure mockEmit is available inside the factory.
+const mockEmit = vi.hoisted(() => vi.fn());
+
+// Mock the SSE stream so we can assert on emitted events
 vi.mock('../stream.js', () => ({
   globalStream: {
-    emit: vi.fn(),
+    emit: mockEmit,
   },
 }));
 
@@ -62,6 +76,7 @@ describe('POST /api/v5/run', () => {
 
   beforeEach(async () => {
     getRunLog().clear();
+    mockEmit.mockClear();
     app = await buildApp();
   });
 
@@ -134,6 +149,49 @@ describe('POST /api/v5/run', () => {
     const body = response.json();
     expect(body).toHaveProperty('error', 'agentId is required');
   });
+
+  it('emits agent_activity SSE events with sessionId and content for streaming output', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v5/run',
+      payload: { agentId: 'coder', task: 'Write a function' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const { sessionId } = response.json().data;
+
+    // The route must emit at least one agent_activity event containing
+    // the sessionId so the dashboard SSE consumer can correlate chunks.
+    const activityCalls = mockEmit.mock.calls.filter(
+      ([evt]) => evt.type === 'agent_activity' && evt.data?.sessionId === sessionId,
+    );
+    expect(activityCalls.length).toBeGreaterThan(0);
+
+    // At least one event must carry content (the onChunk payload).
+    const chunkCalls = activityCalls.filter(([evt]) => typeof evt.data?.content === 'string' && evt.data.content.length > 0);
+    expect(chunkCalls.length).toBeGreaterThan(0);
+  });
+
+  it('emits workflow_event SSE event on run completion', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v5/run',
+      payload: { agentId: 'coder', task: 'Write a function' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const { sessionId } = response.json().data;
+
+    // The route must emit a workflow_event with status 'completed' so the
+    // dashboard can close the SSE connection and update history badges.
+    const completionCalls = mockEmit.mock.calls.filter(
+      ([evt]) =>
+        evt.type === 'workflow_event' &&
+        evt.data?.sessionId === sessionId &&
+        evt.data?.status === 'completed',
+    );
+    expect(completionCalls.length).toBe(1);
+  });
 });
 
 describe('GET /api/v5/run/history', () => {
@@ -141,6 +199,7 @@ describe('GET /api/v5/run/history', () => {
 
   beforeEach(async () => {
     getRunLog().clear();
+    mockEmit.mockClear();
     app = await buildApp();
   });
 
@@ -183,6 +242,7 @@ describe('GET /api/v5/run/:sessionId', () => {
 
   beforeEach(async () => {
     getRunLog().clear();
+    mockEmit.mockClear();
     app = await buildApp();
   });
 

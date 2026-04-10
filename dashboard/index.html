@@ -810,6 +810,36 @@ header {
 .category-badge.lesson   { background: var(--orange-dim); color: var(--orange); }
 .category-badge.config   { background: var(--cyan-dim); color: var(--cyan); }
 .memory-entry-preview { color: var(--text-secondary); line-height: 1.5; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.memory-entry.expanded .memory-entry-preview { -webkit-line-clamp: unset; display: block; }
+/* Type chip: distinct per entry.type */
+.memory-type-chip { font-family: var(--font-mono); font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; padding: 2px 6px; border-radius: 3px; white-space: nowrap; border: 1px solid transparent; }
+.memory-type-chip.cycle-outcome   { background: rgba(63,185,80,0.12);   color: var(--green);  border-color: rgba(63,185,80,0.3);  }
+.memory-type-chip.gate-verdict    { background: rgba(240,180,41,0.12);  color: var(--gold);   border-color: rgba(240,180,41,0.3); }
+.memory-type-chip.review-finding  { background: rgba(88,166,255,0.12);  color: var(--blue);   border-color: rgba(88,166,255,0.3); }
+.memory-type-chip.failure-pattern { background: rgba(248,81,73,0.12);   color: var(--red);    border-color: rgba(248,81,73,0.3);  }
+.memory-type-chip.learned-fact    { background: rgba(188,140,255,0.12); color: var(--purple); border-color: rgba(188,140,255,0.3);}
+.memory-type-chip.default-type    { background: var(--bg-primary); color: var(--text-muted); border-color: var(--border); }
+/* Source link */
+.memory-source-link { font-family: var(--font-mono); font-size: 9px; color: var(--cyan); border: 1px solid rgba(57,210,192,0.3); border-radius: 3px; padding: 1px 5px; text-decoration: none; white-space: nowrap; transition: background 0.12s; }
+.memory-source-link:hover { background: rgba(57,210,192,0.1); }
+/* Expand toggle */
+.memory-expand-toggle { margin-left: auto; background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 11px; padding: 2px 4px; border-radius: 3px; transition: color 0.12s, transform 0.15s; line-height: 1; }
+.memory-expand-toggle:hover { color: var(--text-primary); }
+.memory-entry.expanded .memory-expand-toggle { transform: rotate(180deg); color: var(--blue); }
+/* Raw JSON panel */
+.memory-json-panel { display: none; margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px; }
+.memory-entry.expanded .memory-json-panel { display: block; }
+.memory-json-pre { font-family: var(--font-mono); font-size: 10px; color: var(--text-secondary); background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; overflow-x: auto; white-space: pre; line-height: 1.6; max-height: 280px; overflow-y: auto; }
+.memory-json-pre::-webkit-scrollbar { width: 4px; height: 4px; }
+.memory-json-pre::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+/* Live-feed flash on new entry */
+@keyframes mem-entry-appear { from { opacity: 0; transform: translateY(-6px); border-color: var(--cyan); } to { opacity: 1; transform: translateY(0); border-color: var(--border); } }
+.memory-entry--new { animation: mem-entry-appear 0.5s ease forwards; }
+/* Live badge */
+.mem-live-badge { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: 10px; font-weight: 700; color: var(--green); padding: 3px 8px; border: 1px solid rgba(63,185,80,0.35); border-radius: 4px; background: rgba(63,185,80,0.08); }
+.mem-live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: mem-pulse 1.8s ease-in-out infinite; }
+@keyframes mem-pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.75); } }
+@media (prefers-reduced-motion: reduce) { .memory-entry--new { animation: none; } .mem-live-dot { animation: none; } }
 
 /* ── Reforge Panel ───────────────────────────────────────── */
 .reforge-list { display: flex; flex-direction: column; gap: 10px; }
@@ -2615,7 +2645,7 @@ tbody tr:hover { background: var(--bg-card-hover) !important; cursor: pointer; }
       <a class="sidebar-link" data-route="/flywheel" href="/flywheel"><span class="nav-icon">🌀</span>Flywheel</a>
       <a class="sidebar-link" href="#session-history"><span class="nav-icon">📊</span>Session History</a>
       <a class="sidebar-link" href="#investor-scorecard"><span class="nav-icon">📈</span>Investor Scorecard</a>
-      <a class="sidebar-link" href="#memory-browser"><span class="nav-icon">🧠</span>Memory Browser</a>
+      <a class="sidebar-link" data-route="/memory" href="/memory"><span class="nav-icon">🧠</span>Memory Browser</a>
       <a class="sidebar-link" href="#reforge-panel"><span class="nav-icon">⚙</span>Reforge Panel</a>
     </div>
     <div class="sidebar-group">
@@ -3986,6 +4016,20 @@ Router.addRoute(/^\/agents\/([^/]+)$/, async ({ id }) => { await _loadPageRoute(
 Router.addRoute('/careers', async () => { await _loadPageRoute('careers', () => loadCareerAgentList()); });
 Router.addRoute('/teams', async () => { await _loadPageRoute('teams', () => loadTeamsPage()); });
 Router.addRoute('/sprints', async () => { await _loadPageRoute('sprints', () => { if (typeof window.loadSprintsPage === 'function') window.loadSprintsPage(); }); });
+Router.addRoute(/^\/sprints\/([^/]+)$/, async ({ id }) => {
+  var version = decodeURIComponent(id);
+  if (document.getElementById('sprint-list-items')) {
+    // Sprints page already mounted — select item and load detail without re-fetching
+    document.querySelectorAll('.sprint-list-item').forEach(function(el) { el.classList.remove('selected'); });
+    document.querySelectorAll('.sprint-list-item').forEach(function(el) {
+      var vEl = el.querySelector('.sli-version');
+      if (vEl && vEl.textContent === version) el.classList.add('selected');
+    });
+    if (typeof loadSprintDetail === 'function') loadSprintDetail(version);
+  } else {
+    await _loadPageRoute('sprints', () => { if (typeof window.loadSprintsPage === 'function') window.loadSprintsPage(version); });
+  }
+});
 Router.addRoute('/observe', async () => { await _loadPageRoute('observe', () => { if (typeof window.loadObservePage === 'function') window.loadObservePage(); }); });
 Router.addRoute('/tasks', async () => { await _loadPageRoute('tasks', () => loadTasksPage()); });
 Router.addRoute('/decisions', async () => { await _loadPageRoute('decisions', () => loadDecisionsPage()); });
@@ -3995,6 +4039,7 @@ Router.addRoute('/chat', async () => { await _loadPageRoute('chat'); });
 Router.addRoute('/branches', async () => { await _loadPageRoute('branches', () => loadBranchesPage()); });
 Router.addRoute('/flywheel', async () => { await _loadPageRoute('flywheel', () => { if (typeof window.loadFlywheelPage === 'function') window.loadFlywheelPage(); }); });
 Router.addRoute('/org', async () => { await _loadPageRoute('org', () => { if (typeof window.loadOrgGraph === 'function') window.loadOrgGraph(); }); });
+Router.addRoute('/memory', async () => { await _loadPageRoute('memory'); });
 
 // ── Chat Module (P0-4 Chat Page) ────────────────────────────
 (function() {
@@ -4340,7 +4385,7 @@ var _sprintData = null;
 var _wizardOpen = false;
 var _wizardItemCount = 0;
 
-async function loadSprintsPage() {
+async function loadSprintsPage(preselectVersion) {
   var listEl    = document.getElementById('sprint-list-items');
   var loadingEl = document.getElementById('sprint-list-loading');
   var emptyEl   = document.getElementById('sprint-list-empty');
@@ -4382,16 +4427,20 @@ async function loadSprintsPage() {
         '<span class="sli-title">' + escapeHtml(s.title || s.description || 'Sprint ' + ver) + '</span>' +
         '<span class="sli-meta"><span class="status-badge ' + statusCls + '">' + escapeHtml(s.status || 'planned') + '</span>' +
         '&nbsp;<span>' + pct + '%</span></span>';
-      item.addEventListener('click', function() {
-        document.querySelectorAll('.sprint-list-item').forEach(function(el) { el.classList.remove('selected'); });
-        item.classList.add('selected');
-        loadSprintDetail(ver);
-      });
+      item.addEventListener('click', function() { Router.navigate('/sprints/' + ver); });
       listEl.appendChild(item);
     });
 
     if (sprints.length > 0) {
-      setTimeout(function() { if (listEl.firstChild) listEl.firstChild.click(); }, 0);
+      var preselectVer = preselectVersion || sprints[0].version || sprints[0].id || '—';
+      loadSprintDetail(preselectVer);
+      var preselectedItem = Array.from(listEl.children).find(function(el) {
+        return el.querySelector('.sli-version') && el.querySelector('.sli-version').textContent === preselectVer;
+      });
+      if (preselectedItem) {
+        document.querySelectorAll('.sprint-list-item').forEach(function(el) { el.classList.remove('selected'); });
+        preselectedItem.classList.add('selected');
+      }
     }
   } catch (e) {
     loadingEl.hidden = false;
@@ -5898,7 +5947,7 @@ async function loadSprintFromApi() {
     nodes.forEach(function(n) { _nodeMap[n.id] = n; });
 
     edges.forEach(function(e) {
-      var parent = e.to, child = e.from;
+      var parent = e.from, child = e.to;
       if (!_childrenOf[parent]) _childrenOf[parent] = [];
       if (_childrenOf[parent].indexOf(child) === -1) {
         _childrenOf[parent].push(child);
@@ -6671,14 +6720,14 @@ async function loadDelegationFlow() {
       marker.appendChild(poly); defs.appendChild(marker);
     });
     svg.appendChild(defs);
-    // Find root node(s)
-    const toSet = new Set(edges.map(function(e) { return e.from; }));
+    // Find root node(s): nodes that never appear as a child (e.to) have no parent.
+    const toSet = new Set(edges.map(function(e) { return e.to; }));
     const roots = nodes.filter(function(n) { return !toSet.has(n.id); });
     const root = roots.length ? roots[0] : nodes[0];
     const childrenOf = {};
     edges.forEach(function(e) {
-      if (!childrenOf[e.to]) childrenOf[e.to] = [];
-      childrenOf[e.to].push(e.from);
+      if (!childrenOf[e.from]) childrenOf[e.from] = [];
+      childrenOf[e.from].push(e.to);
     });
     // Chain: root + up to 5 direct reports
     const chain = [root.id].concat((childrenOf[root.id] || []).slice(0, 5));
@@ -7138,6 +7187,21 @@ async function loadMemoryBrowser() {
       agentSel.value = 'all';
     }
 
+    // Helper: detect if a source string looks like a cycleId (UUID-like or
+    // "cycle-..." pattern) vs an agentId (human-readable name).
+    function _memSourceRoute(source) {
+      if (!source) return null;
+      // UUIDs (8-4-4-4-12 hex) and strings starting with "cycle" or "run" -> runs page
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(source)) {
+        return { href: '/runs/' + source, label: source.slice(0, 8) + '\u2026', type: 'run' };
+      }
+      if (/^(cycle|run)/i.test(source)) {
+        return { href: '/runs', label: source, type: 'run' };
+      }
+      // Anything else is treated as an agentId
+      return { href: '/agents/' + encodeURIComponent(source), label: source, type: 'agent' };
+    }
+
     data.forEach(function(entry) {
       const cat = inferCat(entry);
       const catLabel = cat.charAt(0).toUpperCase() + cat.slice(1);
@@ -7148,43 +7212,99 @@ async function loadMemoryBrowser() {
       const tags = Array.isArray(entry.tags) ? entry.tags : [];
       const updatedAt = entry.updatedAt || entry.createdAt || '';
       const dateLabel = updatedAt ? new Date(updatedAt).toLocaleDateString() : '';
+      const entryType = entry.type || '';
+      const sourceRoute = _memSourceRoute(entry.source);
 
       const div = _memMakeEl('div', 'memory-entry');
       div.setAttribute('data-cat', cat);
       div.setAttribute('data-agent', agentId);
       // data-type enables the dynamic type chip filter added by memory.html.
-      if (entry.type) div.setAttribute('data-type', entry.type);
+      if (entryType) div.setAttribute('data-type', entryType);
+      // Store full raw entry JSON for the expandable panel (avoids a second fetch)
+      div.setAttribute('data-raw', JSON.stringify(entry));
 
+      // -- Header row --
       const hdr = _memMakeEl('div', 'memory-entry-header');
       hdr.appendChild(_memMakeEl('span', 'memory-entry-title', displayName));
 
+      // Category badge
       const catBadge = _memMakeEl('span', 'category-badge ' + cat, catLabel);
       hdr.appendChild(catBadge);
 
-      if (agentId) {
-        const chip = _memMakeEl('span', 'chip', agentId);
-        chip.style.cssText = 'color:var(--gold);border-color:var(--gold);font-size:10px;';
-        hdr.appendChild(chip);
+      // Type chip (entry.type -> colored pill distinct from category)
+      if (entryType) {
+        var knownTypes = ['cycle-outcome','gate-verdict','review-finding','failure-pattern','learned-fact'];
+        var typeClass = knownTypes.indexOf(entryType) !== -1 ? entryType : 'default-type';
+        var typeLabel = entryType.replace(/-/g, ' ');
+        var typeChip = _memMakeEl('span', 'memory-type-chip ' + typeClass, typeLabel);
+        hdr.appendChild(typeChip);
       }
+
+      // Source link -> cycle run or agent detail
+      if (sourceRoute) {
+        var srcLink = document.createElement('a');
+        srcLink.className = 'memory-source-link';
+        srcLink.textContent = (sourceRoute.type === 'run' ? '\u2197 run ' : '\u2197 ') + sourceRoute.label;
+        srcLink.title = 'Open ' + (sourceRoute.type === 'run' ? 'run' : 'agent') + ': ' + (entry.source || '');
+        srcLink.href = sourceRoute.href;
+        // SPA navigation - honour the Router if available, otherwise fall back to href
+        srcLink.addEventListener('click', (function(route) {
+          return function(e) {
+            if (window.Router && typeof Router.navigate === 'function') {
+              e.preventDefault();
+              Router.navigate(route.href);
+            }
+          };
+        }(sourceRoute)));
+        hdr.appendChild(srcLink);
+      } else if (agentId) {
+        // Fallback: no dedicated source field, but we have agentId
+        var agentChip = _memMakeEl('span', 'chip', agentId);
+        agentChip.style.cssText = 'color:var(--gold);border-color:var(--gold);font-size:10px;';
+        hdr.appendChild(agentChip);
+      }
+
+      // Expand toggle (chevron)
+      var expandBtn = document.createElement('button');
+      expandBtn.className = 'memory-expand-toggle';
+      expandBtn.title = 'Show raw JSON';
+      expandBtn.setAttribute('aria-label', 'Toggle raw JSON');
+      expandBtn.textContent = '\u25be';
+      expandBtn.addEventListener('click', (function(d, btn) {
+        return function(e) {
+          e.stopPropagation();
+          d.classList.toggle('expanded');
+          btn.title = d.classList.contains('expanded') ? 'Hide raw JSON' : 'Show raw JSON';
+        };
+      }(div, expandBtn)));
+      hdr.appendChild(expandBtn);
 
       div.appendChild(hdr);
       div.appendChild(_memMakeEl('div', 'memory-entry-preview', summary));
 
       if (tags.length || dateLabel) {
-        const footer = document.createElement('div');
+        var footer = document.createElement('div');
         footer.style.cssText = 'margin-top:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;';
         tags.forEach(function(tag) {
-          const t = _memMakeEl('span', null, '#' + tag);
+          var t = _memMakeEl('span', null, '#' + tag);
           t.style.cssText = 'font-family:var(--font-mono);font-size:9px;padding:1px 5px;border-radius:3px;background:var(--bg-primary);color:var(--text-muted);border:1px solid var(--border);';
           footer.appendChild(t);
         });
         if (dateLabel) {
-          const ts = _memMakeEl('span', null, dateLabel);
+          var ts = _memMakeEl('span', null, dateLabel);
           ts.style.cssText = 'font-family:var(--font-mono);font-size:10px;color:var(--text-muted);margin-left:auto;';
           footer.appendChild(ts);
         }
         div.appendChild(footer);
       }
+
+      // -- Expandable raw JSON panel --
+      var jsonPanel = _memMakeEl('div', 'memory-json-panel');
+      jsonPanel.setAttribute('aria-hidden', 'true');
+      var pre = _memMakeEl('pre', 'memory-json-pre');
+      try { pre.textContent = JSON.stringify(entry, null, 2); } catch (_) { pre.textContent = String(entry); }
+      jsonPanel.appendChild(pre);
+      div.appendChild(jsonPanel);
 
       list.appendChild(div);
     });

@@ -23,6 +23,7 @@ function normalizeSprint(raw: Record<string, unknown>, fallbackId: string) {
   const testCountAfter = entry['testCountAfter'] as number | undefined;
   const testCountDelta = entry['testCountDelta'] as number | undefined;
   const totalCostUsd = entry['totalCostUsd'] as number | undefined;
+  const sprintId = entry['sprintId'] as string | undefined;
   const autonomous = entry['autonomous'] as boolean | undefined;
   const theme = entry['theme'] as string | undefined;
   const versionDecision = entry['versionDecision'] as {
@@ -53,6 +54,7 @@ function normalizeSprint(raw: Record<string, unknown>, fallbackId: string) {
   return {
     id: version,
     version,
+    sprintId,
     title,
     phase,
     status: deriveStatus(phase),

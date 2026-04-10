@@ -7,6 +7,7 @@
     loadWorkspaces,
     selectWorkspace,
   } from '$lib/stores/workspace';
+  import { approvalsStore } from '$lib/stores/approvals.js';
 
   let open = $state(false);
 
@@ -26,6 +27,10 @@
     // Reload so cycles fetches re-issue with the new workspaceId
     if (typeof window !== 'undefined') window.location.reload();
   }
+
+  // Pending approval count — drives the badge on the Approvals nav item.
+  // Use $derived (rune mode) since the Sidebar already uses $state.
+  const pendingApprovalCount = $derived($approvalsStore.pending.length);
 
   const nav = [
     { section: 'Overview', items: [
@@ -104,6 +109,9 @@
       {#each group.items as item}
         <a href={item.href} class="nav-item" class:active={page.url.pathname === item.href}>
           {item.label}
+          {#if item.href === '/approvals' && pendingApprovalCount > 0}
+            <span class="nav-badge">{pendingApprovalCount}</span>
+          {/if}
         </a>
       {/each}
     </div>
@@ -189,4 +197,28 @@
     word-break: break-all;
   }
   .ws-manage { font-style: italic; color: var(--color-info, #5ab3ff); }
+
+  /* ── approvals pending badge ─────────────────────────────────────────────── */
+  .nav-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .nav-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 8px;
+    background: var(--color-warning, #f5a623);
+    color: #000;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    font-family: var(--font-mono, monospace);
+    flex-shrink: 0;
+  }
 </style>
