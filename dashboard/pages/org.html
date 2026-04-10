@@ -1,0 +1,56 @@
+  <div class="page" id="page-org">
+    <div class="page-header">
+      <h2>Org Graph</h2>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span id="org-stats" style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);"></span>
+        <button class="export-btn" onclick="loadOrgGraph()">&#8635; Refresh</button>
+        <button class="export-btn" onclick="downloadJSON('org-graph', window._data.orgGraph)">&#8595; JSON</button>
+      </div>
+    </div>
+
+    <div class="org-graph-container">
+      <div class="org-graph-toolbar">
+        <button onclick="orgZoom(1.2)">+ Zoom</button>
+        <button onclick="orgZoom(0.8)">- Zoom</button>
+        <button onclick="orgReset()">Reset</button>
+        <button onclick="orgFitView()">Fit</button>
+        <button onclick="orgExpandAll()">Expand All</button>
+        <button onclick="orgCollapseToDepth(2)">C-Suite View</button>
+        <span style="font-size:11px;color:var(--text-muted);margin-left:8px">Drag to pan · Scroll to zoom · Click +/- to collapse</span>
+        <div class="org-graph-legend">
+          <span><span class="dot" style="background:var(--gold)"></span> Opus</span>
+          <span><span class="dot" style="background:var(--blue)"></span> Sonnet</span>
+          <span><span class="dot" style="background:var(--green)"></span> Haiku</span>
+        </div>
+      </div>
+      <svg id="org-svg" viewBox="0 0 900 600">
+        <defs>
+          <marker id="org-arrow" markerWidth="6" markerHeight="4" refX="6" refY="2" orient="auto">
+            <polygon points="0 0, 6 2, 0 4" fill="var(--border-light)"/>
+          </marker>
+        </defs>
+        <g id="org-canvas">
+          <text x="450" y="300" text-anchor="middle"
+                font-family="var(--font-sans)" font-size="14"
+                fill="var(--text-muted)">Loading organization…</text>
+        </g>
+      </svg>
+    </div>
+  </div><!-- /page-org -->
+
+<script>
+(function() {
+  // Load the real delegation topology from /api/v5/org-graph and update stats badge.
+  // loadOrgGraph() renders into #org-svg / #org-canvas (defined above) and is
+  // declared in index.html so it is available in global scope here.
+  if (typeof loadOrgGraph === 'function') {
+    loadOrgGraph().then(function() {
+      var data = (window._data && window._data.orgGraph) || {};
+      var nodes = (data.nodes || []).length;
+      var edges = (data.edges || []).length;
+      var el = document.getElementById('org-stats');
+      if (el) el.textContent = nodes + ' agent' + (nodes !== 1 ? 's' : '') + ' · ' + edges + ' edge' + (edges !== 1 ? 's' : '');
+    }).catch(function() {});
+  }
+})();
+</script>

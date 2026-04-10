@@ -126,14 +126,20 @@ export async function sprintsRoutes(
     const { version } = req.params as { version: string };
     try {
       const sprintsDir = join(PROJECT_ROOT, '.agentforge/sprints');
-      const filePath = join(sprintsDir, `${version}.json`);
+      // Sprint files may be named 'v6.7.1.json' (with prefix) or '6.7.1.json'
+      const bare = version.startsWith('v') ? version.slice(1) : version;
+      const filePath = join(sprintsDir, `${bare}.json`);
+      const filePathWithV = join(sprintsDir, `v${bare}.json`);
+      const resolvedPath = existsSync(filePath) ? filePath
+        : existsSync(filePathWithV) ? filePathWithV
+        : null;
 
-      if (!existsSync(filePath)) {
+      if (!resolvedPath) {
         return reply.status(404).send({ error: 'Sprint not found', version });
       }
 
-      const content = readFileSync(filePath, 'utf-8');
-      const data = { filename: `${version}.json`, ...JSON.parse(content) };
+      const content = readFileSync(resolvedPath, 'utf-8');
+      const data = { filename: `${bare}.json`, ...JSON.parse(content) };
 
       return reply.send({ data, meta: { total: 1 } });
     } catch {
@@ -172,15 +178,26 @@ export async function sprintsRoutes(
     const { version } = req.params as { version: string };
     try {
       const sprintsDir = join(PROJECT_ROOT, '.agentforge/sprints');
-      const filePath = join(sprintsDir, `${version}.json`);
+      // Sprint files may be named 'v6.7.1.json' (with prefix) or '6.7.1.json'.
+      // Normalise the requested version to its bare form so both URL styles work:
+      //   /api/v5/sprints/6.7.1  AND  /api/v5/sprints/v6.7.1
+      const bare = version.startsWith('v') ? version.slice(1) : version;
+      const filePath = join(sprintsDir, `${bare}.json`);
+      const filePathWithV = join(sprintsDir, `v${bare}.json`);
+      const resolvedPath = existsSync(filePath) ? filePath
+        : existsSync(filePathWithV) ? filePathWithV
+        : null;
 
-      if (!existsSync(filePath)) {
+      if (!resolvedPath) {
         return reply.status(404).send({ error: 'Sprint not found', version });
       }
 
-      const sprints = readAndUnwrapFile(filePath);
-      // Return the sprint matching the requested version, or the last one
-      const data = sprints.find(s => String(s.version) === version) ?? sprints[sprints.length - 1];
+      const sprints = readAndUnwrapFile(resolvedPath);
+      // Match on bare version string (strip leading 'v' from stored value too)
+      const data = sprints.find(s => {
+        const sv = String(s.version).startsWith('v') ? String(s.version).slice(1) : String(s.version);
+        return sv === bare;
+      }) ?? sprints[sprints.length - 1];
 
       if (!data) {
         return reply.status(404).send({ error: 'Sprint not found', version });

@@ -28,7 +28,7 @@ const TYPE_COLORS: Record<string, string> = {
   branch_event:   'var(--color-haiku)',
   system:         'var(--color-text-muted)',
   refresh_signal: 'var(--color-danger)',
-  cycle_event:    'var(--color-sonnet)',
+  cycle_event:    'var(--color-sonnet, var(--color-info))',
 };
 
 const TYPE_LABELS: Record<string, string> = {
@@ -297,8 +297,8 @@ describe('Live feed rendering logic', () => {
   // -------------------------------------------------------------------------
 
   describe('TYPE_COLORS table', () => {
-    it('cycle_event maps to --color-sonnet', () => {
-      expect(TYPE_COLORS['cycle_event']).toBe('var(--color-sonnet)');
+    it('cycle_event maps to --color-sonnet (with --color-info fallback)', () => {
+      expect(TYPE_COLORS['cycle_event']).toBe('var(--color-sonnet, var(--color-info))');
     });
 
     it('all event types are present', () => {

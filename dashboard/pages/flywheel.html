@@ -42,6 +42,91 @@
       <!-- 4 Metric Gauge Cards — populated by JS via safe DOM methods -->
       <div class="flywheel-grid" id="fw-gauge-grid"></div>
 
+      <!-- Cycle + Sprint Live Feed ─────────────────────────────────────────── -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:20px" id="fw-cycle-sprint-row">
+
+        <!-- Latest Cycle Panel -->
+        <div id="fw-cycle-panel" style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:20px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-size:15px">🔄</span>
+              <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted)">Latest Cycle</span>
+            </div>
+            <span id="fw-cycle-stage-badge" style="font-family:var(--font-mono);font-size:10px;font-weight:700;padding:3px 10px;border-radius:99px;background:var(--bg-primary);border:1px solid var(--border);color:var(--text-muted)">—</span>
+          </div>
+          <!-- Primary stat: test pass rate -->
+          <div style="display:flex;align-items:center;gap:20px;margin-bottom:14px">
+            <div style="text-align:center;flex-shrink:0">
+              <div id="fw-cycle-passrate" style="font-family:var(--font-mono);font-size:32px;font-weight:700;color:var(--green);line-height:1">—</div>
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-top:4px">Test Pass Rate</div>
+            </div>
+            <div style="flex:1;min-width:0">
+              <div style="height:6px;border-radius:99px;background:var(--border);overflow:hidden;margin-bottom:8px">
+                <div id="fw-cycle-passrate-bar" style="height:100%;border-radius:99px;background:var(--green);width:0%;transition:width 0.8s ease"></div>
+              </div>
+              <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-secondary)"><span id="fw-cycle-tests-passed">—</span> passed · <span id="fw-cycle-tests-failed">—</span> failed</div>
+            </div>
+          </div>
+          <!-- Secondary stats grid -->
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;border-top:1px solid var(--border);padding-top:12px">
+            <div>
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text-muted);margin-bottom:3px">Sprint</div>
+              <div id="fw-cycle-sprint-ver" style="font-family:var(--font-mono);font-size:12px;color:var(--text-primary);font-weight:600">—</div>
+            </div>
+            <div>
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text-muted);margin-bottom:3px">Cost</div>
+              <div id="fw-cycle-cost" style="font-family:var(--font-mono);font-size:12px;color:var(--text-primary);font-weight:600">—</div>
+            </div>
+            <div>
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text-muted);margin-bottom:3px">Duration</div>
+              <div id="fw-cycle-duration" style="font-family:var(--font-mono);font-size:12px;color:var(--text-primary);font-weight:600">—</div>
+            </div>
+          </div>
+          <!-- Cycle ID + timestamp -->
+          <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-family:var(--font-mono);font-size:10px;color:var(--text-muted)">
+            <span id="fw-cycle-id">—</span>
+            <span style="float:right" id="fw-cycle-started">—</span>
+          </div>
+        </div>
+
+        <!-- Sprint Progress Panel -->
+        <div id="fw-sprint-panel" style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:20px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-size:15px">🏃</span>
+              <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted)">Sprint Progress</span>
+            </div>
+            <span id="fw-sprint-status-badge" style="font-family:var(--font-mono);font-size:10px;font-weight:700;padding:3px 10px;border-radius:99px;background:var(--bg-primary);border:1px solid var(--border);color:var(--text-muted)">—</span>
+          </div>
+          <!-- Big completion number -->
+          <div style="display:flex;align-items:center;gap:20px;margin-bottom:14px">
+            <div style="text-align:center;flex-shrink:0">
+              <div id="fw-sprint-pct" style="font-family:var(--font-mono);font-size:32px;font-weight:700;color:var(--blue);line-height:1">—</div>
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-top:4px">Completion</div>
+            </div>
+            <div style="flex:1;min-width:0">
+              <div style="height:6px;border-radius:99px;background:var(--border);overflow:hidden;margin-bottom:8px">
+                <div id="fw-sprint-pct-bar" style="height:100%;border-radius:99px;background:var(--blue);width:0%;transition:width 0.8s ease"></div>
+              </div>
+              <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-secondary)"><span id="fw-sprint-done">—</span> done · <span id="fw-sprint-total">—</span> total items</div>
+            </div>
+          </div>
+          <!-- Recent sprints mini-table -->
+          <div style="border-top:1px solid var(--border);padding-top:12px">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text-muted);margin-bottom:8px">Recent Sprints</div>
+            <div id="fw-sprint-history" style="display:flex;flex-direction:column;gap:5px">
+              <!-- rows injected by JS -->
+            </div>
+          </div>
+          <!-- Active sprint version + phase -->
+          <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-family:var(--font-mono);font-size:10px;color:var(--text-muted)">
+            <span id="fw-sprint-version">—</span>
+            <span style="float:right" id="fw-sprint-phase">—</span>
+          </div>
+        </div>
+
+      </div><!-- /fw-cycle-sprint-row -->
+
       <!-- Memory Stats Card -->
       <div id="fw-memory-card" style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:24px;margin-top:20px;display:none">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
@@ -337,7 +422,181 @@
     }
   }
 
-  /** Main loader: fetches /api/v5/flywheel and wires all DOM elements. */
+  // ── Cycle panel renderer ──────────────────────────────────────────────────
+  function setText(id, txt) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = txt;
+  }
+
+  function renderCyclePanel(cycles) {
+    if (!Array.isArray(cycles) || cycles.length === 0) {
+      setText('fw-cycle-stage-badge', 'NO DATA');
+      setText('fw-cycle-passrate',    '—');
+      setText('fw-cycle-sprint-ver',  '—');
+      setText('fw-cycle-cost',        '—');
+      setText('fw-cycle-duration',    '—');
+      setText('fw-cycle-id',          'No cycles found');
+      setText('fw-cycle-started',     '—');
+      return;
+    }
+
+    // Most recent cycle is first (sorted newest-first by the API)
+    var c = cycles[0];
+
+    // Stage badge
+    var stageBadge = document.getElementById('fw-cycle-stage-badge');
+    if (stageBadge) {
+      stageBadge.textContent   = (c.stage || 'unknown').toUpperCase();
+      var stageColor = c.stage === 'completed' ? 'var(--green)'
+                     : c.stage === 'running'   ? 'var(--blue)'
+                     : c.stage === 'failed'    ? 'var(--red)'
+                     : 'var(--text-muted)';
+      stageBadge.style.color       = stageColor;
+      stageBadge.style.borderColor = stageColor;
+    }
+
+    // Test pass rate — read from tests.passRate inside the raw cycle
+    // The cycles list from the API only has summary fields; we may need to
+    // fetch the full cycle if tests are missing. But the API summary includes
+    // what's in cycle.json and cycle.json does have tests.passRate.
+    // Unfortunately the /api/v5/cycles summary shape doesn't include tests —
+    // so we rely on whatever the summary returned.
+    var passRate = typeof c.tests === 'object' && c.tests !== null && typeof c.tests.passRate === 'number'
+                   ? c.tests.passRate
+                   : null;
+
+    var passRateEl = document.getElementById('fw-cycle-passrate');
+    var passRateBar = document.getElementById('fw-cycle-passrate-bar');
+    if (passRate !== null) {
+      var pct = Math.round(passRate * 100);
+      var prColor = pct >= 98 ? 'var(--green)' : pct >= 90 ? 'var(--gold)' : 'var(--red)';
+      if (passRateEl)  { passRateEl.textContent = pct + '%'; passRateEl.style.color = prColor; }
+      if (passRateBar) { passRateBar.style.width = pct + '%'; passRateBar.style.background = prColor; }
+      setText('fw-cycle-tests-passed', typeof c.tests.passed === 'number' ? c.tests.passed.toLocaleString() : '—');
+      setText('fw-cycle-tests-failed', typeof c.tests.failed === 'number' ? c.tests.failed.toLocaleString() : '—');
+    } else {
+      if (passRateEl)  passRateEl.textContent = '—';
+      setText('fw-cycle-tests-passed', '—');
+      setText('fw-cycle-tests-failed', '—');
+    }
+
+    setText('fw-cycle-sprint-ver', c.sprintVersion || '—');
+
+    // Cost
+    var costUsd = typeof c.cost === 'object' && c.cost !== null ? c.cost.totalUsd : null;
+    setText('fw-cycle-cost', costUsd != null ? '$' + costUsd.toFixed(2) : '—');
+
+    // Duration
+    var durationMs = typeof c.durationMs === 'number' ? c.durationMs : null;
+    if (durationMs != null) {
+      var mins = Math.floor(durationMs / 60000);
+      var secs = Math.round((durationMs % 60000) / 1000);
+      setText('fw-cycle-duration', mins + 'm ' + secs + 's');
+    } else {
+      setText('fw-cycle-duration', '—');
+    }
+
+    // Cycle ID (truncated) + started timestamp
+    setText('fw-cycle-id', c.cycleId ? c.cycleId.substring(0, 8) + '…' : '—');
+    if (c.startedAt) {
+      try {
+        setText('fw-cycle-started', new Date(c.startedAt).toLocaleString());
+      } catch (_) {
+        setText('fw-cycle-started', c.startedAt);
+      }
+    } else {
+      setText('fw-cycle-started', '—');
+    }
+  }
+
+  // ── Sprint panel renderer ─────────────────────────────────────────────────
+  function renderSprintPanel(sprints) {
+    if (!Array.isArray(sprints) || sprints.length === 0) {
+      setText('fw-sprint-status-badge', 'NO DATA');
+      setText('fw-sprint-pct',          '—');
+      setText('fw-sprint-done',         '—');
+      setText('fw-sprint-total',        '—');
+      setText('fw-sprint-version',      'No sprints found');
+      setText('fw-sprint-phase',        '—');
+      return;
+    }
+
+    // Find the most recent sprint (last item since sprints are sorted ascending by version)
+    var latest = sprints[sprints.length - 1];
+
+    // Status badge
+    var statusBadge = document.getElementById('fw-sprint-status-badge');
+    if (statusBadge) {
+      var st = (latest.status || 'pending').toUpperCase();
+      statusBadge.textContent = st;
+      var stColor = st === 'COMPLETED' ? 'var(--green)'
+                  : st === 'IN_PROGRESS' ? 'var(--blue)'
+                  : 'var(--text-muted)';
+      statusBadge.style.color       = stColor;
+      statusBadge.style.borderColor = stColor;
+    }
+
+    // Completion percentage
+    var items  = Array.isArray(latest.items) ? latest.items : [];
+    var done   = items.filter(function (i) { return i.status === 'completed'; }).length;
+    var total  = items.length;
+    var pct    = total > 0 ? Math.round((done / total) * 100) : 0;
+    var pctColor = pct >= 80 ? 'var(--green)' : pct >= 40 ? 'var(--blue)' : 'var(--text-muted)';
+
+    var pctEl = document.getElementById('fw-sprint-pct');
+    var pctBar = document.getElementById('fw-sprint-pct-bar');
+    if (pctEl)  { pctEl.textContent = pct + '%'; pctEl.style.color = pctColor; }
+    if (pctBar) { pctBar.style.width = pct + '%'; pctBar.style.background = pctColor; }
+    setText('fw-sprint-done',  String(done));
+    setText('fw-sprint-total', String(total));
+    setText('fw-sprint-version', latest.version ? 'v' + latest.version : (latest.id || '—'));
+    setText('fw-sprint-phase',   (latest.phase  || latest.status || '—').toUpperCase());
+
+    // Recent sprints history (last 5, newest first)
+    var histEl = document.getElementById('fw-sprint-history');
+    if (histEl) {
+      while (histEl.firstChild) histEl.removeChild(histEl.firstChild);
+      var recent = sprints.slice(-5).reverse();
+      recent.forEach(function (s) {
+        var sItems  = Array.isArray(s.items) ? s.items : [];
+        var sDone   = sItems.filter(function (i) { return i.status === 'completed'; }).length;
+        var sTotal  = sItems.length;
+        var sPct    = sTotal > 0 ? Math.round((sDone / sTotal) * 100) : 0;
+        var sColor  = sPct >= 80 ? 'var(--green)' : sPct >= 40 ? 'var(--gold)' : 'var(--text-muted)';
+
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:11px';
+
+        var ver = document.createElement('span');
+        ver.style.cssText = 'color:var(--text-secondary);min-width:52px;flex-shrink:0';
+        ver.textContent = s.version ? 'v' + s.version : (s.id || '—');
+
+        var barWrap = document.createElement('div');
+        barWrap.style.cssText = 'flex:1;height:4px;border-radius:99px;background:var(--border);overflow:hidden';
+        var barFill = document.createElement('div');
+        barFill.style.cssText = 'height:100%;border-radius:99px;background:' + sColor + ';width:' + sPct + '%';
+        barWrap.appendChild(barFill);
+
+        var pctSpan = document.createElement('span');
+        pctSpan.style.cssText = 'color:' + sColor + ';font-weight:700;min-width:30px;text-align:right';
+        pctSpan.textContent = sPct + '%';
+
+        row.appendChild(ver);
+        row.appendChild(barWrap);
+        row.appendChild(pctSpan);
+        histEl.appendChild(row);
+      });
+
+      if (recent.length === 0) {
+        var noData = document.createElement('span');
+        noData.style.cssText = 'font-family:var(--font-mono);font-size:11px;color:var(--text-muted)';
+        noData.textContent = 'no sprint history';
+        histEl.appendChild(noData);
+      }
+    }
+  }
+
+  /** Main loader: fetches /api/v5/flywheel, /api/v5/cycles, /api/v5/sprints in parallel. */
   window.loadFlywheelPage = async function () {
     var loading  = document.getElementById('fw-loading');
     var errorEl  = document.getElementById('fw-error');
@@ -349,9 +608,17 @@
     if (content) content.hidden = true;
 
     try {
-      var res = await fetch('/api/v5/flywheel');
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      var json = await res.json();
+      // ── Fetch all three data sources in parallel ──────────────────────────
+      var [fwResult, cyclesResult, sprintsResult] = await Promise.allSettled([
+        fetch('/api/v5/flywheel').then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }),
+        fetch('/api/v5/cycles?limit=1').then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }),
+        fetch('/api/v5/sprints').then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }),
+      ]);
+
+      // ── Require flywheel data; cycles+sprints are optional ────────────────
+      if (fwResult.status !== 'fulfilled') throw new Error(fwResult.reason);
+
+      var json = fwResult.value;
       var data    = json.data || {};
       var metrics = Array.isArray(data.metrics) ? data.metrics : [];
       var overall = typeof data.overallScore === 'number' ? data.overallScore : 0;
@@ -425,6 +692,25 @@
 
       // ── Memory Stats Card ─────────────────────────────────────
       renderMemoryCard(data.memoryStats);
+
+      // ── Cycle panel (best-effort — non-fatal if missing) ──────
+      if (cyclesResult.status === 'fulfilled') {
+        var cyclesJson = cyclesResult.value || {};
+        renderCyclePanel(Array.isArray(cyclesJson.cycles) ? cyclesJson.cycles : []);
+      } else {
+        console.warn('loadFlywheelPage: cycles fetch failed:', cyclesResult.reason);
+        renderCyclePanel([]);
+      }
+
+      // ── Sprint panel (best-effort — non-fatal if missing) ─────
+      if (sprintsResult.status === 'fulfilled') {
+        var sprintsJson = sprintsResult.value || {};
+        var sprintList = Array.isArray(sprintsJson.data) ? sprintsJson.data : [];
+        renderSprintPanel(sprintList);
+      } else {
+        console.warn('loadFlywheelPage: sprints fetch failed:', sprintsResult.reason);
+        renderSprintPanel([]);
+      }
 
       if (loading) loading.hidden = true;
       if (content) content.hidden = false;

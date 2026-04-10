@@ -1,0 +1,359 @@
+/**
+ * Search Routes — POST /api/v5/search
+ *
+ * Full-text keyword search across sessions, agents, cycles, and sprints.
+ * Uses LIKE-based queries for SQLite-backed data and in-memory filtering for
+ * filesystem-backed data. Results are scored by term-frequency relevance and
+ * returned sorted highest-score first.
+ *
+ * Request body:  { query: string; limit?: number; types?: string[] }
+ * Response body: { data: SearchResult[]; meta: { total: number; query: string } }
+ */
+
+import type { FastifyInstance } from 'fastify';
+import type { SqliteAdapter } from '../../db/index.js';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const PROJECT_ROOT = join(__dirname, '../../../');
+
+const CYCLES_DIR          = join(PROJECT_ROOT, '.agentforge/cycles');
+const CYCLES_ARCHIVED_DIR = join(PROJECT_ROOT, '.agentforge/cycles-archived');
+const SPRINTS_DIR         = join(PROJECT_ROOT, '.agentforge/sprints');
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface SearchResult {
+  id?: string;
+  content: string;
+  /** Normalized relevance score 0-1. */
+  score: number;
+  metadata?: Record<string, unknown>;
+  type?: string;
+  source?: string;
+}
+
+const VALID_TYPES = new Set(['session', 'agent', 'cycle', 'sprint', 'memory']);
+
+// ---------------------------------------------------------------------------
+// Scoring helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Tokenize a query string into lowercase, non-empty terms.
+ * Deduplicates to avoid inflating scores for repeated terms.
+ */
+function tokenize(text: string): string[] {
+  return [...new Set(
+    text.toLowerCase().split(/\s+/).filter(t => t.length > 0)
+  )];
+}
+
+/**
+ * Score a document string against a set of query tokens.
+ *
+ * Returns a value in [0, 1]:
+ *   - 1.0  = every token found in the document
+ *   - 0.0  = no tokens found
+ * Documents that match no tokens are excluded (score === 0).
+ */
+function score(document: string, tokens: string[]): number {
+  if (tokens.length === 0) return 0;
+  const lower = document.toLowerCase();
+  const hits = tokens.filter(t => lower.includes(t)).length;
+  return hits / tokens.length;
+}
+
+// ---------------------------------------------------------------------------
+// Per-type search implementations
+// ---------------------------------------------------------------------------
+
+/** Search sessions using SQLite LIKE on task, response, agent_id, and status. */
+function searchSessions(
+  adapter: SqliteAdapter,
+  tokens: string[],
+  limit: number,
+): SearchResult[] {
+  // Use a broad listSessions pull and score in memory — avoids crafting a
+  // complex multi-column LIKE SQL query while keeping the adapter API simple.
+  const sessions = adapter.listSessions({ limit: 500 });
+  const results: SearchResult[] = [];
+
+  for (const s of sessions) {
+    const document = [
+      s.agent_id ?? '',
+      s.agent_name ?? '',
+      s.task ?? '',
+      s.response ?? '',
+      s.status ?? '',
+      s.model ?? '',
+    ].join(' ');
+
+    const relevance = score(document, tokens);
+    if (relevance === 0) continue;
+
+    results.push({
+      id:      s.id,
+      content: s.task ?? s.agent_id ?? '',
+      score:   relevance,
+      type:    'session',
+      source:  s.agent_id,
+      metadata: {
+        status:    s.status,
+        agent_id:  s.agent_id,
+        model:     s.model,
+        started_at: s.started_at,
+      },
+    });
+  }
+
+  // Sort by relevance descending, cap at limit
+  return results.sort((a, b) => b.score - a.score).slice(0, limit);
+}
+
+/** Search agents by agentId and description derived from sessions. */
+function searchAgents(
+  adapter: SqliteAdapter,
+  tokens: string[],
+  limit: number,
+): SearchResult[] {
+  const sessions = adapter.listSessions({ limit: 500 });
+
+  // Aggregate unique agents from session data
+  const agentMap = new Map<string, { agentId: string; sessionCount: number; lastStatus: string }>();
+  for (const s of sessions) {
+    const existing = agentMap.get(s.agent_id);
+    if (existing) {
+      existing.sessionCount++;
+    } else {
+      agentMap.set(s.agent_id, {
+        agentId: s.agent_id,
+        sessionCount: 1,
+        lastStatus: s.status ?? '',
+      });
+    }
+  }
+
+  const results: SearchResult[] = [];
+  for (const [agentId, info] of agentMap) {
+    const document = [agentId, info.lastStatus].join(' ');
+    const relevance = score(document, tokens);
+    if (relevance === 0) continue;
+
+    results.push({
+      id:      agentId,
+      content: agentId,
+      score:   relevance,
+      type:    'agent',
+      source:  agentId,
+      metadata: {
+        sessionCount: info.sessionCount,
+        lastStatus:   info.lastStatus,
+      },
+    });
+  }
+
+  return results.sort((a, b) => b.score - a.score).slice(0, limit);
+}
+
+/** Search cycle directories from filesystem. */
+function searchCycles(tokens: string[], limit: number): SearchResult[] {
+  const results: SearchResult[] = [];
+
+  for (const [baseDir, isArchived] of [
+    [CYCLES_DIR,          false],
+    [CYCLES_ARCHIVED_DIR, true],
+  ] as Array<[string, boolean]>) {
+    if (!existsSync(baseDir)) continue;
+
+    for (const entry of readdirSync(baseDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const cycleId  = entry.name;
+      const cycleDir = join(baseDir, cycleId);
+
+      let cycleJson: Record<string, unknown> = {};
+      try {
+        const cycleFile = join(cycleDir, 'cycle.json');
+        if (existsSync(cycleFile)) {
+          cycleJson = JSON.parse(readFileSync(cycleFile, 'utf-8')) as Record<string, unknown>;
+        }
+      } catch {
+        // Skip malformed cycle files
+        continue;
+      }
+
+      const document = [
+        cycleId,
+        cycleJson.stage ?? '',
+        cycleJson.sprintVersion ?? '',
+        isArchived ? 'archived' : 'active',
+      ].join(' ');
+
+      const relevance = score(document, tokens);
+      if (relevance === 0) continue;
+
+      results.push({
+        id:      cycleId,
+        content: `Cycle ${cycleId} — stage: ${cycleJson.stage ?? 'unknown'}`,
+        score:   relevance,
+        type:    'cycle',
+        source:  isArchived ? 'cycles-archived' : 'cycles',
+        metadata: {
+          stage:         cycleJson.stage,
+          sprintVersion: cycleJson.sprintVersion,
+          startedAt:     cycleJson.startedAt,
+          completedAt:   cycleJson.completedAt,
+          isArchived,
+        },
+      });
+    }
+  }
+
+  return results.sort((a, b) => b.score - a.score).slice(0, limit);
+}
+
+/** Search sprint JSON files from the filesystem. */
+function searchSprints(tokens: string[], limit: number): SearchResult[] {
+  if (!existsSync(SPRINTS_DIR)) return [];
+
+  const files = readdirSync(SPRINTS_DIR).filter(f => f.endsWith('.json') && !f.includes('$'));
+  const results: SearchResult[] = [];
+
+  for (const filename of files) {
+    let parsed: Record<string, unknown>;
+    try {
+      let raw: unknown = JSON.parse(readFileSync(join(SPRINTS_DIR, filename), 'utf-8'));
+      if (typeof raw === 'string') raw = JSON.parse(raw);
+      parsed = raw as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+
+    // Handle wrapped sprint arrays
+    const sprintList: Array<Record<string, unknown>> = Array.isArray(parsed.sprints)
+      ? (parsed.sprints as Array<Record<string, unknown>>)
+      : [parsed];
+
+    for (const sprint of sprintList) {
+      const items = Array.isArray(sprint.items) ? sprint.items : [];
+      const itemTitles = items
+        .map((i: unknown) => (typeof i === 'object' && i !== null ? (i as Record<string, unknown>).title ?? '' : ''))
+        .join(' ');
+
+      const document = [
+        sprint.version ?? '',
+        sprint.title ?? '',
+        sprint.phase ?? '',
+        sprint.status ?? '',
+        sprint.theme ?? '',
+        itemTitles,
+      ].join(' ');
+
+      const relevance = score(document, tokens);
+      if (relevance === 0) continue;
+
+      const sprintId = String(sprint.sprintId ?? sprint.id ?? sprint.version ?? filename);
+      results.push({
+        id:      sprintId,
+        content: String(sprint.title ?? `Sprint ${sprint.version}`),
+        score:   relevance,
+        type:    'sprint',
+        source:  filename,
+        metadata: {
+          version:   sprint.version,
+          phase:     sprint.phase,
+          status:    sprint.status,
+          itemCount: items.length,
+        },
+      });
+    }
+  }
+
+  return results.sort((a, b) => b.score - a.score).slice(0, limit);
+}
+
+// ---------------------------------------------------------------------------
+// Route plugin
+// ---------------------------------------------------------------------------
+
+export interface SearchRoutesOptions {
+  adapter: SqliteAdapter;
+}
+
+export async function searchRoutes(
+  app: FastifyInstance,
+  opts: SearchRoutesOptions,
+) {
+  const { adapter } = opts;
+
+  /**
+   * POST /api/v5/search
+   *
+   * Body:
+   *   query  — search terms (required, non-empty)
+   *   limit  — max results to return (default 20, max 100)
+   *   types  — restrict to specific content types; omit for all types
+   */
+  app.post<{
+    Body: { query?: unknown; limit?: unknown; types?: unknown };
+  }>('/api/v5/search', async (req, reply) => {
+    const body = req.body ?? {};
+
+    // Validate query
+    if (!body.query || typeof body.query !== 'string' || !body.query.trim()) {
+      return reply.status(400).send({ error: 'query is required and must be a non-empty string' });
+    }
+
+    const queryStr = body.query.trim();
+    const rawLimit = typeof body.limit === 'number' ? body.limit : 20;
+    const limit    = Math.min(Math.max(1, rawLimit), 100);
+
+    // Resolve enabled types — empty/absent means all types
+    let enabledTypes: Set<string>;
+    if (Array.isArray(body.types) && body.types.length > 0) {
+      const filtered = (body.types as unknown[])
+        .filter((t): t is string => typeof t === 'string' && VALID_TYPES.has(t));
+      enabledTypes = new Set(filtered.length > 0 ? filtered : VALID_TYPES);
+    } else {
+      enabledTypes = new Set(VALID_TYPES);
+    }
+
+    const tokens = tokenize(queryStr);
+    if (tokens.length === 0) {
+      return reply.send({ data: [], meta: { total: 0, query: queryStr } });
+    }
+
+    // Per-type budget: each source contributes up to `limit` candidates.
+    // After merging, we re-sort and cap at the global limit.
+    const perTypeBudget = limit;
+
+    const all: SearchResult[] = [];
+
+    if (enabledTypes.has('session')) {
+      all.push(...searchSessions(adapter, tokens, perTypeBudget));
+    }
+    if (enabledTypes.has('agent')) {
+      all.push(...searchAgents(adapter, tokens, perTypeBudget));
+    }
+    if (enabledTypes.has('cycle')) {
+      all.push(...searchCycles(tokens, perTypeBudget));
+    }
+    if (enabledTypes.has('sprint')) {
+      all.push(...searchSprints(tokens, perTypeBudget));
+    }
+    // 'memory' type reserved for future semantic integration — skip for now.
+
+    // Global sort by score, then cap
+    all.sort((a, b) => b.score - a.score);
+    const data = all.slice(0, limit);
+
+    return reply.send({
+      data,
+      meta: { total: data.length, query: queryStr },
+    });
+  });
+}

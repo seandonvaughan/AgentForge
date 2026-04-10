@@ -36,6 +36,26 @@ export interface ReviewFindingMetadata {
   fixSuggestion: string | null;
 }
 
+/**
+ * Structured payload for `gate-verdict` entries.
+ *
+ * Written by GatePhaseHandler at the end of each sprint gate phase.
+ * Read by AuditPhaseHandler at the start of the next cycle to detect
+ * recurring failure patterns and avoid repeating prior mistakes.
+ */
+export interface GateVerdictMetadata {
+  /** Cycle identifier — matches the sprintId used by AutonomousSprintFramework. */
+  cycleId: string;
+  /** The gate decision for this cycle. */
+  verdict: 'approved' | 'rejected' | 'pending';
+  /** Human-readable explanation of why the verdict was reached. */
+  rationale: string;
+  /** CRITICAL-severity findings that contributed to the gate decision. */
+  criticalFindings: string[];
+  /** MAJOR-severity findings that contributed to the gate decision. */
+  majorFindings: string[];
+}
+
 /** Canonical shape of a cross-cycle memory entry. */
 export interface CycleMemoryEntry {
   id: string;
@@ -52,9 +72,9 @@ export interface CycleMemoryEntry {
   /**
    * Structured payload for entries that carry machine-readable data.
    * For `review-finding` entries this is a `ReviewFindingMetadata` object.
-   * Other entry types may define their own metadata shapes in the future.
+   * For `gate-verdict` entries this is a `GateVerdictMetadata` object.
    */
-  metadata?: ReviewFindingMetadata | Record<string, unknown>;
+  metadata?: ReviewFindingMetadata | GateVerdictMetadata | Record<string, unknown>;
 }
 
 /**

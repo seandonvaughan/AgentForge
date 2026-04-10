@@ -2593,7 +2593,7 @@ tbody tr:hover { background: var(--bg-card-hover) !important; cursor: pointer; }
     <div class="sidebar-group">
       <div class="sidebar-group-label">Agents</div>
       <a class="sidebar-link" href="#agent-cards"><span class="nav-icon">🤖</span>Agent Cards</a>
-      <a class="sidebar-link" href="#org-graph"><span class="nav-icon">🏢</span>Org Graph</a>
+      <a class="sidebar-link" data-route="/org" href="/org"><span class="nav-icon">🏢</span>Org Graph</a>
       <a class="sidebar-link" href="#autonomy-tiers"><span class="nav-icon">🏆</span>Autonomy Tiers</a>
       <a class="sidebar-link" href="#capability-matrix"><span class="nav-icon">🔥</span>Capability Matrix</a>
     </div>
@@ -3854,7 +3854,7 @@ function navigateToAgent(agentId) {
 }
 
 function navigateToAgents() {
-  Router.navigate('/');
+  Router.navigate('/agents');
 }
 
 async function loadAgentDetailPage(agentId) {
@@ -3981,7 +3981,7 @@ Router.addRoute('/', async () => { await _loadPageRoute('home', () => _loadHomeP
 Router.addRoute('/runs', async () => { await _loadPageRoute('runs', () => loadRunsPage(1)); });
 Router.addRoute(/^\/runs\/([^/]+)$/, async ({ id }) => { await _loadPageRoute('run-detail', () => loadRunDetail(id)); });
 Router.addRoute('/cost', async () => { await _loadPageRoute('cost', () => loadCostPage()); });
-Router.addRoute('/agents', async () => { await _loadPageRoute('home', () => _loadHomePageData()); });
+Router.addRoute('/agents', async () => { await _loadPageRoute('agents'); });
 Router.addRoute(/^\/agents\/([^/]+)$/, async ({ id }) => { await _loadPageRoute('agent-detail', () => loadAgentDetailPage(decodeURIComponent(id))); });
 Router.addRoute('/careers', async () => { await _loadPageRoute('careers', () => loadCareerAgentList()); });
 Router.addRoute('/teams', async () => { await _loadPageRoute('teams', () => loadTeamsPage()); });
@@ -3994,6 +3994,7 @@ Router.addRoute('/knowledge', async () => { await _loadPageRoute('knowledge', ()
 Router.addRoute('/chat', async () => { await _loadPageRoute('chat'); });
 Router.addRoute('/branches', async () => { await _loadPageRoute('branches', () => loadBranchesPage()); });
 Router.addRoute('/flywheel', async () => { await _loadPageRoute('flywheel', () => { if (typeof window.loadFlywheelPage === 'function') window.loadFlywheelPage(); }); });
+Router.addRoute('/org', async () => { await _loadPageRoute('org', () => { if (typeof window.loadOrgGraph === 'function') window.loadOrgGraph(); }); });
 
 // ── Chat Module (P0-4 Chat Page) ────────────────────────────
 (function() {
@@ -5473,10 +5474,23 @@ const SSE = {
           type: 'sprint',
           text: 'Cycle ' + (data.cycleId || '') + ': ' + (data.phase || '') + ' — ' + (data.status || ''),
         });
-        // Trigger approval badge refresh when a budget-gate event arrives
+        // Trigger approval badge refresh when a budget-gate or decision event arrives
         const cat = data.category || data.phase || '';
         if (cat === 'approval_pending' || cat === 'budget_gate' || cat === 'planning_complete') {
           window._refreshApprovalsBadge();
+        }
+        if (cat === 'approval_decided') {
+          // Badge always needs to update after a decision
+          window._refreshApprovalsBadge();
+          // If the user is on the approvals page, reload it live
+          if (location.pathname === '/approvals' && typeof window.loadApprovalsPage === 'function') {
+            window.loadApprovalsPage();
+          }
+          // Surface a notification
+          NotificationManager.add({
+            type: 'sprint',
+            text: 'Cycle ' + (data.cycleId || '') + ': approval ' + (data.decision || 'decided') + ' by ' + (data.decidedBy || 'dashboard'),
+          });
         }
       } catch(ex) {}
     });
@@ -5843,7 +5857,7 @@ async function loadSprintFromApi() {
   }
 }
 
-// ── P4: Org Graph from /api/v1/org-graph ──────────────────
+// ── P4: Org Graph from /api/v5/org-graph ──────────────────
 // Redesigned: top-down tree layout with full labels, elbow connectors,
 // collapsible subtrees, team color coding (opus=gold, sonnet=blue, haiku=green),
 // default zoomed to C-suite + VP layer (depth 2).
@@ -6255,7 +6269,7 @@ async function loadSprintFromApi() {
 
   window.loadOrgGraph = async function() {
     try {
-      var res = await fetch('/api/v1/org-graph');
+      var res = await fetch('/api/v5/org-graph');
       if (!res.ok) throw new Error('HTTP ' + res.status);
       var json = await res.json();
       var data = json.data || {};
@@ -6450,67 +6464,168 @@ function renderCycleEventRow(data) {
 
 // ── P6: Flywheel Metrics — v1 (session stats) + v5 (computed gauges) ────────
 async function loadFlywheel() {
-  const compoundIds = ['cov-compound','skill-compound','cost-compound','auto-compound','mem-compound','reforge-compound'];
-  function setCompound(id, txt) {
-    const el = document.getElementById(id);
+  var CIRCUMFERENCE = 283; // 2π × r=45
+
+  function scoreToOffset(score) {
+    return Math.round(CIRCUMFERENCE - (score / 100) * CIRCUMFERENCE);
+  }
+
+  function scoreColor(score) {
+    if (score >= 70) return 'var(--green)';
+    if (score >= 40) return 'var(--gold)';
+    return 'var(--red)';
+  }
+
+  /** Update a home-page gauge card with a live score (0–100). */
+  function setGauge(arcId, labelId, statusId, score) {
+    var arc    = document.getElementById(arcId);
+    var label  = document.getElementById(labelId);
+    var status = document.getElementById(statusId);
+    var color  = scoreColor(score);
+    if (arc)    { arc.setAttribute('stroke-dashoffset', String(scoreToOffset(score))); arc.setAttribute('stroke', color); }
+    if (label)  { label.textContent = score + '%'; label.style.color = color; }
+    if (status) {
+      status.textContent = score >= 40 ? '● ACTIVE' : '○ WEAK';
+      status.className   = 'flywheel-status ' + (score >= 40 ? 'on' : 'off');
+    }
+  }
+
+  function setText(id, txt) {
+    var el = document.getElementById(id);
     if (el) el.textContent = txt;
   }
-  compoundIds.forEach(function(id) { setCompound(id, '…'); });
+
+  // Set loading state
+  ['cov-compound','skill-compound','cost-compound','auto-compound','mem-compound','reforge-compound'].forEach(function(id) { setText(id, '…'); });
 
   // Fetch v1 (session-level) and v5 (computed gauges) in parallel
-  const [v1Result, v5Result] = await Promise.allSettled([
+  var [v1Result, v5Result] = await Promise.allSettled([
     fetch('/api/v1/flywheel').then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }),
     fetch('/api/v5/flywheel').then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }),
   ]);
 
-  // Apply v1 data (session counts, cost, trend) to the compound text fields
+  // ── v1: session-level stats → Cost Efficiency / Session Success card ─────
   if (v1Result.status === 'fulfilled') {
-    const d = (v1Result.value || {}).data || {};
-    const noData = !d.sessionCount && !d.successRate && !d.totalCostUsd;
+    var d = (v1Result.value || {}).data || {};
+    var noData = !d.sessionCount && !d.successRate && !d.totalCostUsd;
     if (noData) {
-      setCompound('cov-compound', '— no data');
-      setCompound('cost-compound', '— no data');
+      setText('cov-compound',  '— no session data');
+      setText('cost-compound', '— no session data');
+      setGauge('fw-home-cost-arc', 'fw-home-cost-label', 'fw-home-cost-status', 0);
+      setText('fw-home-cost-sub', 'no sessions yet');
+      setText('fw-home-cost-d1', '0 sessions');
+      setText('fw-home-cost-d2', '—');
+      setText('fw-home-cost-d3', '$0.00');
     } else {
-      setCompound('cov-compound', d.sessionCount + ' sessions tracked');
-      setCompound('cost-compound', '$' + (d.totalCostUsd || 0).toFixed(2) + ' total spend');
+      var successPct = Math.round((d.successRate || 0) * 100);
+      setText('cov-compound',  d.sessionCount + ' sessions tracked');
+      setText('cost-compound', '$' + (d.totalCostUsd || 0).toFixed(2) + ' total spend');
+      // Wire the "Session Success" gauge to real success rate
+      setGauge('fw-home-cost-arc', 'fw-home-cost-label', 'fw-home-cost-status', successPct);
+      setText('fw-home-cost-sub', successPct + '% sessions succeeded');
+      setText('fw-home-cost-d1', d.sessionCount + ' total');
+      setText('fw-home-cost-d2', successPct + '%');
+      setText('fw-home-cost-d3', '$' + (d.totalCostUsd || 0).toFixed(2));
     }
   } else {
     console.warn('loadFlywheel v1 failed:', v1Result.reason);
-    setCompound('cov-compound', '— unavailable');
-    setCompound('cost-compound', '— unavailable');
+    setText('cov-compound',  '— unavailable');
+    setText('cost-compound', '— unavailable');
+    setText('fw-home-cost-sub', 'unavailable');
   }
 
-  // Apply v5 data (computed autonomy score, meta-learning rate, velocity, inheritance)
+  // ── v5: computed flywheel gauges ────────────────────────────────────────
   if (v5Result.status === 'fulfilled') {
-    const metrics = ((v5Result.value || {}).data || {}).metrics || [];
-    const byKey = {};
+    var v5data  = (v5Result.value || {}).data || {};
+    var metrics = v5data.metrics || [];
+    var byKey   = {};
     metrics.forEach(function(m) { byKey[m.key] = m; });
 
-    // Autonomy score → auto-compound
-    if (byKey.autonomy) {
-      setCompound('auto-compound', byKey.autonomy.score + '/100 · ' + byKey.autonomy.description);
-    }
-    // Meta-learning rate → skill-compound (reflects learning trajectory)
+    // Meta-Learning → "Meta-Learning" card (green)
     if (byKey.meta_learning) {
-      setCompound('skill-compound', byKey.meta_learning.score + '/100 · ' + byKey.meta_learning.description);
+      var ml = byKey.meta_learning;
+      setGauge('fw-home-cov-arc', 'fw-home-cov-label', 'fw-home-cov-status', ml.score);
+      setText('fw-home-cov-sub', ml.description);
+      setText('fw-home-cov-d3', ml.score + '/100');
+      setText('cov-compound', ml.score + '/100 · ' + ml.description);
+      // Parse "XX% recent success · trend" from description for detail rows
+      var mlDesc = ml.description || '';
+      var mlMatch = mlDesc.match(/(\d+)% recent success/);
+      if (mlMatch) { setText('fw-home-cov-d1', mlMatch[1] + '%'); }
+      var mlTrend = mlDesc.indexOf('improving') !== -1 ? '↑ improving'
+                  : mlDesc.indexOf('declining') !== -1 ? '↓ declining' : '→ stable';
+      setText('fw-home-cov-d2', mlTrend);
     }
-    // Velocity → mem-compound (sprint/cycle velocity reflects throughput)
-    if (byKey.velocity) {
-      setCompound('mem-compound', byKey.velocity.score + '/100 · ' + byKey.velocity.description);
-    }
-    // Capability inheritance → reforge-compound (agent skill accumulation)
+
+    // Inheritance → "Skill Inheritance" card (blue)
     if (byKey.inheritance) {
-      setCompound('reforge-compound', byKey.inheritance.score + '/100 · ' + byKey.inheritance.description);
+      var inh = byKey.inheritance;
+      setGauge('fw-home-skill-arc', 'fw-home-skill-label', 'fw-home-skill-status', inh.score);
+      setText('fw-home-skill-sub', inh.description);
+      setText('fw-home-skill-d3', inh.score + '/100');
+      setText('skill-compound', inh.score + '/100 · ' + inh.description);
+      // Parse "N skills across M agents (avg X.X)" from description
+      var inhDesc = inh.description || '';
+      var agentMatch = inhDesc.match(/(\d+) agents/);
+      var avgMatch   = inhDesc.match(/avg ([\d.]+)/);
+      if (agentMatch) { setText('fw-home-skill-d1', agentMatch[1]); }
+      if (avgMatch)   { setText('fw-home-skill-d2', avgMatch[1]); }
+    }
+
+    // Autonomy → "Autonomy Score" card (purple)
+    if (byKey.autonomy) {
+      var aut = byKey.autonomy;
+      setGauge('fw-home-auto-arc', 'fw-home-auto-label', 'fw-home-auto-status', aut.score);
+      setText('fw-home-auto-sub', aut.description);
+      setText('fw-home-auto-d3', aut.score + '/100');
+      setText('auto-compound', aut.score + '/100 · ' + aut.description);
+      // Parse "Avg tier X.X · ±Y net promotions"
+      var autDesc = aut.description || '';
+      var tierMatch  = autDesc.match(/Avg tier ([\d.]+)/);
+      var promoMatch = autDesc.match(/([+-]?\d+) net promotions/);
+      if (tierMatch)  { setText('fw-home-auto-d1', tierMatch[1]); }
+      if (promoMatch) { setText('fw-home-auto-d2', promoMatch[1]); }
+    }
+
+    // Velocity → "Velocity" card (cyan)
+    if (byKey.velocity) {
+      var vel = byKey.velocity;
+      setGauge('fw-home-mem-arc', 'fw-home-mem-label', 'fw-home-mem-status', vel.score);
+      setText('fw-home-mem-sub', vel.description);
+      setText('fw-home-mem-d3', vel.score + '/100');
+      setText('mem-compound', vel.score + '/100 · ' + vel.description);
+      // Parse "XX% sprint completion · Y.YYx cycle ratio"
+      var velDesc = vel.description || '';
+      var compMatch  = velDesc.match(/(\d+)% sprint completion/);
+      var ratioMatch = velDesc.match(/([\d.]+)x cycle ratio/);
+      if (compMatch)  { setText('fw-home-mem-d1', compMatch[1] + '%'); }
+      if (ratioMatch) { setText('fw-home-mem-d2', ratioMatch[1] + 'x'); }
+    }
+
+    // Memory hit-rate → "REFORGE Rate" card (orange) — uses memoryStats.hitRate
+    var memStats = v5data.memoryStats || {};
+    var hitPct = typeof memStats.hitRate === 'number' ? Math.round(memStats.hitRate * 100) : 0;
+    var totalEntries = memStats.totalEntries || 0;
+    setGauge('fw-home-reforge-arc', 'fw-home-reforge-label', null, hitPct);
+    setText('fw-home-reforge-sub', totalEntries + ' memory entries · ' + hitPct + '% hit rate');
+    setText('reforge-compound', hitPct + '% cross-cycle hit rate');
+
+    // Also update overall metric score if overallScore present
+    if (typeof v5data.overallScore === 'number') {
+      // Nothing extra needed on home page — flywheel.html shows the big overall gauge
     }
   } else {
     console.warn('loadFlywheel v5 failed:', v5Result.reason);
     ['auto-compound','skill-compound','mem-compound','reforge-compound'].forEach(function(id) {
-      setCompound(id, '— unavailable');
+      setText(id, '— unavailable');
+    });
+    ['fw-home-cov-sub','fw-home-skill-sub','fw-home-auto-sub','fw-home-mem-sub','fw-home-reforge-sub'].forEach(function(id) {
+      setText(id, 'unavailable');
     });
   }
 }
 
-// ── P7: Delegation Flow from /api/v1/org-graph ────────────
+// ── P7: Delegation Flow from /api/v5/org-graph ────────────
 async function loadDelegationFlow() {
   const svg = document.getElementById('delegation-svg');
   if (!svg) return;
@@ -6525,7 +6640,7 @@ async function loadDelegationFlow() {
   skelText.textContent = 'Loading delegation flow…';
   svg.appendChild(skelText);
   try {
-    const res = await fetch('/api/v1/org-graph');
+    const res = await fetch('/api/v5/org-graph');
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
     const orgData = json.data || {};

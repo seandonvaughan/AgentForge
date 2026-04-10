@@ -119,19 +119,16 @@
     }
   }
 
-  function connectSSE(sessionId: string) {
-    if (eventSource) {
-      eventSource.close();
-      eventSource = null;
-    }
-    const es = new EventSource('/api/v5/stream');
-    eventSource = es;
-
+  /**
+   * Wire a resolved EventSource (already open) to filter by sessionId.
+   * Called after we learn the sessionId from the POST response so that
+   * completion/failure workflow_events are still captured for long runs.
+   */
+  function wireSSE(es: EventSource, sessionId: string) {
     es.onmessage = (e) => {
       try {
         const event = JSON.parse(e.data);
         if (event.type === 'agent_activity' && event.data?.sessionId === sessionId) {
-          // event.message is always a log label ("[agentId] chunk"), not content.
           // Real chunk text is in event.data.content (ResponseStreamer) or event.data.chunk.
           const chunk: string = event.data?.content ?? event.data?.chunk ?? '';
           if (chunk) {
@@ -139,7 +136,7 @@
             requestAnimationFrame(scrollOutput);
           }
         }
-        // Also pick up completion/failure signals
+        // Pick up completion/failure signals
         if (event.type === 'workflow_event' && event.data?.sessionId === sessionId) {
           if (event.data?.status === 'completed' || event.data?.status === 'failed') {
             running = false;
@@ -183,6 +180,40 @@
     outputTimestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
     selectedHistoryRun = null;
 
+    // ── Open SSE BEFORE the POST ────────────────────────────────────────────
+    // The server holds the POST connection open while the agent runs
+    // (runStreaming is awaited in-handler). SSE chunks emitted during that
+    // window arrive at zero listeners if we only connect after the response.
+    // By opening early and buffering, we capture every chunk regardless of
+    // when the POST returns.
+    if (eventSource) { eventSource.close(); eventSource = null; }
+    const es = new EventSource('/api/v5/stream');
+    eventSource = es;
+
+    // Buffer all agent_activity events until we resolve the sessionId.
+    const earlyBuffer: Array<{ sessionId: string; content: string }> = [];
+    let resolvedSessionId: string | null = null;
+
+    es.onmessage = (e) => {
+      try {
+        const event = JSON.parse(e.data);
+        if (event.type === 'agent_activity') {
+          const content: string = event.data?.content ?? event.data?.chunk ?? '';
+          const sid: string = event.data?.sessionId ?? '';
+          if (!content || !sid) return;
+          if (resolvedSessionId === null) {
+            // Still awaiting POST response — buffer for replay
+            earlyBuffer.push({ sessionId: sid, content });
+          } else if (sid === resolvedSessionId) {
+            output += content;
+            requestAnimationFrame(scrollOutput);
+          }
+        }
+      } catch { /* ignore parse errors */ }
+    };
+    es.onerror = () => { /* SSE errors don't abort the run */ };
+    // ─────────────────────────────────────────────────────────────────────────
+
     try {
       const res = await fetch('/api/v5/run', {
         method: 'POST',
@@ -193,6 +224,8 @@
       if (res.status === 404) {
         apiUnavailable = true;
         running = false;
+        es.close();
+        eventSource = null;
         return;
       }
 
@@ -200,13 +233,15 @@
         const err = await res.text().catch(() => `HTTP ${res.status}`);
         runError = err || `HTTP ${res.status}`;
         running = false;
+        es.close();
+        eventSource = null;
         return;
       }
 
       const envelope = await res.json();
       // Server wraps the result in { data: { ...result, sessionId } }
       const json = envelope.data ?? envelope;
-      const sessionId = json.sessionId ?? json.id ?? `local-${Date.now()}`;
+      const sessionId: string = json.sessionId ?? json.id ?? `local-${Date.now()}`;
       // Prefer the actual model ID returned by the server; convert to a tier
       // label ('Opus' | 'Sonnet' | 'Haiku') so the badge class matches CSS.
       outputModel = json.model
@@ -225,22 +260,33 @@
       };
       history = [historyEntry, ...history].slice(0, 5);
 
-      // Connect SSE to stream output
-      connectSSE(sessionId);
+      // Unlock the SSE handler and replay buffered chunks for this session
+      resolvedSessionId = sessionId;
+      for (const { sessionId: sid, content } of earlyBuffer) {
+        if (sid === sessionId) output += content;
+      }
+      if (output) requestAnimationFrame(scrollOutput);
 
-      // Synchronous response: server returns full output when run completes inline.
+      // Wire the already-open EventSource for completion signals
+      wireSSE(es, sessionId);
+
+      // Synchronous fallback: server includes full response in the HTTP reply
+      // when the run completes inline. Use it as the authoritative output.
       // The field is `response` in RunResult (not `output`).
       const syncOutput = json.response ?? json.output;
       if (syncOutput) {
         output = syncOutput;
         running = false;
         syncHistoryStatus(sessionId, json.status === 'failed' ? 'failed' : 'completed', json.costUsd);
-        if (eventSource) { eventSource.close(); eventSource = null; }
+        es.close();
+        eventSource = null;
       }
 
     } catch (e) {
       runError = String(e);
       running = false;
+      es.close();
+      eventSource = null;
     }
   }
 

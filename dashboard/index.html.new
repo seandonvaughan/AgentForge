@@ -2527,7 +2527,7 @@ tbody tr:hover { background: var(--bg-card-hover) !important; cursor: pointer; }
     <div class="sidebar-group">
       <div class="sidebar-group-label">Agents</div>
       <a class="sidebar-link" href="#agent-cards"><span class="nav-icon">🤖</span>Agent Cards</a>
-      <a class="sidebar-link" href="#org-graph"><span class="nav-icon">🏢</span>Org Graph</a>
+      <a class="sidebar-link" data-route="/org" href="/org"><span class="nav-icon">🏢</span>Org Graph</a>
       <a class="sidebar-link" href="#autonomy-tiers"><span class="nav-icon">🏆</span>Autonomy Tiers</a>
       <a class="sidebar-link" href="#capability-matrix"><span class="nav-icon">🔥</span>Capability Matrix</a>
     </div>
@@ -3838,7 +3838,7 @@ function navigateToAgent(agentId) {
 }
 
 function navigateToAgents() {
-  Router.navigate('/');
+  Router.navigate('/agents');
 }
 
 async function loadAgentDetailPage(agentId) {
@@ -3969,7 +3969,7 @@ Router.addRoute('/', async () => { await _loadPageRoute('home'); });
 Router.addRoute('/runs', async () => { await _loadPageRoute('runs', () => loadRunsPage(1)); });
 Router.addRoute(/^\/runs\/([^/]+)$/, async ({ id }) => { await _loadPageRoute('run-detail', () => loadRunDetail(id)); });
 Router.addRoute('/cost', async () => { await _loadPageRoute('cost', () => loadCostPage()); });
-Router.addRoute('/agents', async () => { await _loadPageRoute('home'); });
+Router.addRoute('/agents', async () => { await _loadPageRoute('agents'); });
 Router.addRoute(/^\/agents\/([^/]+)$/, async ({ id }) => { await _loadPageRoute('agent-detail', () => loadAgentDetailPage(decodeURIComponent(id))); });
 Router.addRoute('/careers', async () => { await _loadPageRoute('careers', () => loadCareerAgentList()); });
 Router.addRoute('/teams', async () => { await _loadPageRoute('teams', () => loadTeamsPage()); });
@@ -3978,6 +3978,7 @@ Router.addRoute('/observe', async () => { await _loadPageRoute('observe', () => 
 Router.addRoute('/tasks', async () => { await _loadPageRoute('tasks', () => loadTasksPage()); });
 Router.addRoute('/decisions', async () => { await _loadPageRoute('decisions', () => loadDecisionsPage()); });
 Router.addRoute('/knowledge', async () => { await _loadPageRoute('knowledge', () => loadKnowledgePage()); });
+Router.addRoute('/org', async () => { await _loadPageRoute('org', () => { if (typeof window.loadOrgGraph === 'function') window.loadOrgGraph(); }); });
 
 // ── P0-4 + P1-2: Sprint Control + Observability Modules ────
 (function() {
@@ -5263,7 +5264,7 @@ async function loadSprintFromApi() {
   }
 }
 
-// ── P4: Org Graph from /api/v1/org-graph ──────────────────
+// ── P4: Org Graph from /api/v5/org-graph ──────────────────
 // Redesigned: top-down tree layout with full labels, elbow connectors,
 // collapsible subtrees, team color coding (opus=gold, sonnet=blue, haiku=green),
 // default zoomed to C-suite + VP layer (depth 2).
@@ -5675,7 +5676,7 @@ async function loadSprintFromApi() {
 
   window.loadOrgGraph = async function() {
     try {
-      var res = await fetch('/api/v1/org-graph');
+      var res = await fetch('/api/v5/org-graph');
       if (!res.ok) throw new Error('HTTP ' + res.status);
       var json = await res.json();
       var data = json.data || {};
@@ -5813,7 +5814,7 @@ async function loadFlywheel() {
   }
 }
 
-// ── P7: Delegation Flow from /api/v1/org-graph ────────────
+// ── P7: Delegation Flow from /api/v5/org-graph ────────────
 async function loadDelegationFlow() {
   const svg = document.getElementById('delegation-svg');
   if (!svg) return;
@@ -5828,7 +5829,7 @@ async function loadDelegationFlow() {
   skelText.textContent = 'Loading delegation flow…';
   svg.appendChild(skelText);
   try {
-    const res = await fetch('/api/v1/org-graph');
+    const res = await fetch('/api/v5/org-graph');
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
     const orgData = json.data || {};

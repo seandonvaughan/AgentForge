@@ -4,6 +4,76 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { getWorkspace } from '@agentforge/core';
 
+// ── Memory display helpers ─────────────────────────────────────────────────
+
+/**
+ * Generate a concise human-readable summary for a memory entry's Value
+ * column preview in the dashboard table. Returns undefined for unrecognised
+ * types so the dashboard falls back to its own formatting logic.
+ */
+function buildMemorySummary(
+  type: string,
+  parsedValue: unknown,
+  rawValue: string | undefined,
+): string | undefined {
+  const obj = parsedValue !== null && typeof parsedValue === 'object'
+    ? parsedValue as Record<string, unknown>
+    : null;
+
+  if (type === 'cycle-outcome' && obj) {
+    const stage = typeof obj.stage === 'string' ? obj.stage : '';
+    const ver   = typeof obj.sprintVersion === 'string' ? `v${obj.sprintVersion}` : '';
+    const tests = obj.testsPassed != null ? `${obj.testsPassed} tests` : '';
+    const cost  = obj.costUsd != null ? `$${Number(obj.costUsd).toFixed(2)}` : '';
+    return [ver, stage, tests, cost].filter(Boolean).join(' · ');
+  }
+
+  if (type === 'gate-verdict' && obj) {
+    const verdict = typeof obj.verdict === 'string' ? obj.verdict : '';
+    const ver     = typeof obj.sprintVersion === 'string' ? `v${obj.sprintVersion}` : '';
+    // Omit criticalFindings from the summary — they can be long nested JSON;
+    // the expanded detail view shows the full rationale instead.
+    return [ver, verdict].filter(Boolean).join(' · ') || undefined;
+  }
+
+  if (type === 'review-finding' && obj) {
+    const rat = typeof obj.rationale === 'string' ? obj.rationale : '';
+    return rat.slice(0, 140) || undefined;
+  }
+
+  if (type === 'failure-pattern' && obj) {
+    const desc = typeof obj.description === 'string' ? obj.description : '';
+    return desc.slice(0, 140) || undefined;
+  }
+
+  if (type === 'learned-fact' && obj) {
+    const fact = typeof obj.fact === 'string' ? obj.fact
+      : typeof obj.value === 'string' ? obj.value : '';
+    return fact.slice(0, 140) || undefined;
+  }
+
+  // Generic fallback: first 120 chars of raw string value.
+  return rawValue ? rawValue.slice(0, 120) : undefined;
+}
+
+/**
+ * Build a human-readable key for the dashboard's "Key" column.
+ * For cycle-outcome and gate-verdict entries, include the sprint version
+ * so rows of the same type are distinguishable at a glance.
+ */
+function buildMemoryKey(type: string, parsedValue: unknown): string {
+  const obj = parsedValue !== null && typeof parsedValue === 'object'
+    ? parsedValue as Record<string, unknown>
+    : null;
+  if (!obj) return type;
+
+  const ver = typeof obj.sprintVersion === 'string' ? obj.sprintVersion : null;
+  if (ver && (type === 'cycle-outcome' || type === 'gate-verdict')) {
+    return `${type} · ${ver}`;
+  }
+  return type;
+}
+
 /**
  * Stub endpoints for dashboard pages that need data but don't have full
  * backend implementations yet. These provide sensible defaults and read
@@ -116,14 +186,30 @@ export async function dashboardStubRoutes(
               const id = entry.id ?? `${file}-${entries.length}`;
               const type = entry.type ?? file.replace(/\.jsonl$/, '');
               const createdAt = entry.createdAt ?? new Date().toISOString();
+
+              // Parse value: JSONL stores it as a JSON-encoded string.
+              // Convert to an object so the dashboard can display it with
+              // proper syntax highlighting instead of a raw string blob.
+              let parsedValue: unknown = entry.value ?? '';
+              if (typeof parsedValue === 'string' && parsedValue.startsWith('{')) {
+                try { parsedValue = JSON.parse(parsedValue); } catch { /* keep as string */ }
+              }
+
+              // Generate a type-specific human-readable summary for the
+              // Value column preview and the expanded detail view.
+              const summary = buildMemorySummary(type, parsedValue, entry.value);
+
+              // Use a version-aware key for cycle-outcome so the "Key" column
+              // shows e.g. "9.2.0 · failed" rather than the same type name for
+              // every row — makes the table scannable at a glance.
+              const key = buildMemoryKey(type, parsedValue);
+
               // With exactOptionalPropertyTypes, omit optional fields rather than
               // setting them to undefined — use conditional spread instead.
               entries.push({
                 id,
-                // Use type as the human-readable key so the dashboard "Key" column
-                // shows e.g. "cycle-outcome" rather than a UUID.
-                key: type,
-                value: entry.value ?? '',
+                key,
+                value: parsedValue,
                 type,
                 createdAt,
                 updatedAt: createdAt,
@@ -131,9 +217,7 @@ export async function dashboardStubRoutes(
                 // Expose both as agentId (existing agent-filter UI) and source
                 // (new source-link UI in the memory dashboard).
                 ...(entry.source !== undefined ? { agentId: entry.source, source: entry.source } : {}),
-                ...(typeof entry.value === 'string'
-                  ? { summary: entry.value.slice(0, 120) }
-                  : {}),
+                ...(summary !== undefined ? { summary } : {}),
                 ...(entry.tags !== undefined ? { tags: entry.tags } : {}),
               });
             } catch { /* skip malformed line */ }

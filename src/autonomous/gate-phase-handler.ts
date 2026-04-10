@@ -9,12 +9,17 @@
  * sprint cycle, closing the feedback loop that lets the team avoid
  * repeating the same mistakes across cycles.
  *
- * Pure side-effecting module — writes one SessionMemoryEntry per call,
- * no I/O beyond the injected memoryWriter.
+ * Writes to two stores on each call:
+ * 1. SessionMemoryManager (via injected memoryWriter) — in-memory + JSON,
+ *    consumed by AuditPhaseHandler.collectGateVerdicts().
+ * 2. JSONL file store (via writeMemoryEntry) — append-only, lock-safe,
+ *    consumed by the /api/v5/memory endpoint and the flywheel dashboard.
+ *    Only active when projectRoot is supplied to the constructor.
  */
 
 import { randomUUID } from "node:crypto";
 import type { SessionMemoryEntry } from "../memory/session-memory-manager.js";
+import { writeMemoryEntry } from "../../packages/core/src/memory/types.js";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -62,7 +67,18 @@ export interface GatePhaseResult {
 // ---------------------------------------------------------------------------
 
 export class GatePhaseHandler {
-  constructor(private readonly memoryWriter: GateVerdictMemoryWriter) {}
+  /**
+   * @param memoryWriter - Injected writer for the SessionMemoryManager store.
+   * @param projectRoot  - Absolute path to the project root. When provided,
+   *   handleVerdict() additionally appends an entry to
+   *   `.agentforge/memory/gate-verdict.jsonl` via writeMemoryEntry so the
+   *   verdict is available to the /api/v5/memory endpoint and flywheel
+   *   dashboard without requiring a running SessionMemoryManager instance.
+   */
+  constructor(
+    private readonly memoryWriter: GateVerdictMemoryWriter,
+    private readonly projectRoot?: string,
+  ) {}
 
   /**
    * Record a gate verdict as a structured memory entry.
@@ -71,8 +87,11 @@ export class GatePhaseHandler {
    * written so downstream consumers (AuditPhaseHandler) can choose the
    * richest available representation.
    *
+   * When projectRoot is set, the verdict is also appended to the canonical
+   * JSONL store at `.agentforge/memory/gate-verdict.jsonl`.
+   *
    * @param input - Full gate verdict including rationale and findings.
-   * @returns The entry ID written to memory.
+   * @returns The entry ID written to memory (same ID used in both stores).
    */
   handleVerdict(input: GateVerdictInput): GatePhaseResult {
     const entryId = randomUUID();
@@ -86,18 +105,37 @@ export class GatePhaseHandler {
       majorFindings: [...input.majorFindings],
     };
 
+    const summary = buildSummary(input);
+
+    // Write to the SessionMemoryManager store (in-memory + session-history.json).
     const entry: SessionMemoryEntry = {
       id: entryId,
       sessionId: input.cycleId,
       category: "gate-verdict",
       agentId: "gate-phase",
-      summary: buildSummary(input),
+      summary,
       success: input.verdict === "approved",
       timestamp: now,
       metadata,
     };
-
     this.memoryWriter.addEntry(entry);
+
+    // Write to the canonical JSONL store (.agentforge/memory/gate-verdict.jsonl)
+    // so the verdict is queryable by the /api/v5/memory endpoint and flywheel
+    // dashboard. The write is non-fatal — a failure here must never surface to
+    // callers (writeMemoryEntry swallows I/O errors internally).
+    if (this.projectRoot !== undefined) {
+      writeMemoryEntry(this.projectRoot, {
+        id: entryId,
+        type: "gate-verdict",
+        value: summary,
+        createdAt: now,
+        source: input.cycleId,
+        tags: ["gate", input.verdict, `cycle:${input.cycleId}`],
+        metadata,
+      });
+    }
+
     return { entryId };
   }
 }

@@ -8,7 +8,7 @@
 // findings so the audit phase can surface recurring anti-patterns in
 // subsequent cycles.
 
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
 import { writeMemoryEntry, type ReviewFindingMetadata } from '../../memory/types.js';
@@ -83,14 +83,21 @@ Do NOT modify any files.`;
   // Persist CRITICAL and MAJOR findings to the cross-cycle memory store so the
   // audit phase can detect recurring anti-patterns across sprints. One entry
   // per finding line — granularity enables per-file pattern counting.
+  //
+  // Domain tags from the sprint items are appended so the execute-phase memory
+  // injector can match findings to future sprint items with overlapping tags.
+  // Without this, findings carry only structural tags (review/finding/critical)
+  // that never overlap with sprint item domain tags (memory/execute/backend),
+  // breaking the cross-cycle feedback loop.
   const criticalLines = extractFindingsByLevel(review, 'CRITICAL');
   const majorLines = extractFindingsByLevel(review, 'MAJOR');
+  const sprintDomainTags = collectSprintItemTags(ctx.projectRoot, ctx.sprintVersion);
   for (const line of criticalLines) {
     writeMemoryEntry(ctx.projectRoot, {
       type: 'review-finding',
       value: line,
       source: ctx.cycleId,
-      tags: ['review', 'finding', 'critical', `sprint:v${ctx.sprintVersion}`],
+      tags: ['review', 'finding', 'critical', `sprint:v${ctx.sprintVersion}`, ...sprintDomainTags],
       metadata: parseReviewFindingMetadata(line, 'CRITICAL'),
     });
   }
@@ -99,7 +106,7 @@ Do NOT modify any files.`;
       type: 'review-finding',
       value: line,
       source: ctx.cycleId,
-      tags: ['review', 'finding', 'major', `sprint:v${ctx.sprintVersion}`],
+      tags: ['review', 'finding', 'major', `sprint:v${ctx.sprintVersion}`, ...sprintDomainTags],
       metadata: parseReviewFindingMetadata(line, 'MAJOR'),
     });
   }
@@ -256,4 +263,39 @@ export function parseReviewFindingMetadata(
   summary = summary.replace(/^[—:\s-]+/, '').replace(/[.\s]+$/, '').trim();
 
   return { file, line: lineNumber, severity, summary, fixSuggestion };
+}
+
+/**
+ * Read the sprint JSON and collect all unique item-level domain tags across all
+ * items in the sprint. Returns an empty array when the sprint file is absent
+ * or unreadable — failure must never block the review phase from completing.
+ *
+ * These domain tags are appended to review-finding memory entries written by
+ * the review phase so that the execute-phase memory injector can find findings
+ * from prior cycles that are relevant to the current item's domain tags.
+ *
+ * Without this, review findings carry only structural tags (review/finding/
+ * critical) which never overlap with sprint item domain tags (memory/execute/
+ * backend/...), silently breaking the cross-cycle feedback loop.
+ */
+export function collectSprintItemTags(projectRoot: string, sprintVersion: string): string[] {
+  try {
+    const sprintPath = join(projectRoot, '.agentforge', 'sprints', `v${sprintVersion}.json`);
+    const raw = readFileSync(sprintPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    const sprintObj: { items?: Array<{ tags?: string[] }> } | null =
+      parsed.items ? parsed : (parsed.sprints?.[0] ?? null);
+    const items = sprintObj?.items ?? [];
+    const tagSet = new Set<string>();
+    for (const item of items) {
+      for (const tag of item.tags ?? []) {
+        tagSet.add(tag.toLowerCase());
+      }
+    }
+    return Array.from(tagSet);
+  } catch {
+    // Sprint file absent or unreadable — return empty so the caller still
+    // writes the structural tags and doesn't lose the finding.
+    return [];
+  }
 }

@@ -465,9 +465,9 @@
               <span class="badge {cfg.badge}">{cfg.label || (entry.type ?? typeof entry.value)}</span>
             </td>
 
-            <!-- Value column — always shows truncated preview; full JSON in detail row below -->
+            <!-- Value column — summary if available, otherwise truncated value preview -->
             <td class="col-value">
-              <span class="value-preview">{formatValue(entry.value)}</span>
+              <span class="value-preview">{entry.summary ?? formatValue(entry.value)}</span>
             </td>
 
             <!-- Source link column — stopPropagation so click doesn't toggle expand -->
@@ -551,6 +551,12 @@
                             <span class="source-prefix">agent</span>{entry.source}
                           </a>
                         {/if}
+                      </span>
+                    {/if}
+                    {#if entry.type}
+                      <span class="detail-meta-item">
+                        <span class="detail-label">File</span>
+                        <code class="detail-code detail-code--file">{entry.type}.jsonl</code>
                       </span>
                     {/if}
                   </div>
@@ -991,6 +997,11 @@
     background: var(--color-surface-2);
     padding: 1px 5px;
     border-radius: var(--radius-sm);
+  }
+  /* Dimmer style for the raw file path — it's reference info, not primary data */
+  .detail-code--file {
+    color: var(--color-text-faint);
+    font-size: 10px;
   }
 
   /* ── Detail value block with copy button ─────────────────────────────────── */

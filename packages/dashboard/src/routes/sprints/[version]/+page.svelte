@@ -378,13 +378,15 @@
     {/if}
   {/each}
 
-  <!-- Success Criteria -->
-  {#if sprint.successCriteria && sprint.successCriteria.length > 0}
-    <div class="section-heading">
-      <span class="section-heading-label">Success Criteria</span>
+  <!-- Success Criteria — always rendered so the section is never silently absent -->
+  <div class="section-heading">
+    <span class="section-heading-label">Success Criteria</span>
+    {#if sprint.successCriteria && sprint.successCriteria.length > 0}
       <span class="section-heading-count">{sprint.successCriteria.length}</span>
-    </div>
-    <div class="card criteria-card" style="margin-bottom:var(--space-4);">
+    {/if}
+  </div>
+  <div class="card criteria-card" style="margin-bottom:var(--space-4);">
+    {#if sprint.successCriteria && sprint.successCriteria.length > 0}
       <ul class="criteria-list">
         {#each sprint.successCriteria as criterion, i}
           <li class="criterion">
@@ -393,16 +395,20 @@
           </li>
         {/each}
       </ul>
-    </div>
-  {/if}
+    {:else}
+      <div class="section-empty">No success criteria defined for this sprint.</div>
+    {/if}
+  </div>
 
-  <!-- Audit Findings -->
-  {#if sprint.auditFindings && sprint.auditFindings.length > 0}
-    <div class="section-heading">
-      <span class="section-heading-label">Audit Findings</span>
+  <!-- Audit Findings — always rendered so the section is never silently absent -->
+  <div class="section-heading">
+    <span class="section-heading-label">Audit Findings</span>
+    {#if sprint.auditFindings && sprint.auditFindings.length > 0}
       <span class="section-heading-count">{sprint.auditFindings.length}</span>
-    </div>
-    <div class="card findings-card" style="margin-bottom:var(--space-4);">
+    {/if}
+  </div>
+  <div class="card findings-card" style="margin-bottom:var(--space-4);">
+    {#if sprint.auditFindings && sprint.auditFindings.length > 0}
       <ul class="criteria-list findings">
         {#each sprint.auditFindings as finding, i}
           <li class="criterion finding">
@@ -411,8 +417,10 @@
           </li>
         {/each}
       </ul>
-    </div>
-  {/if}
+    {:else}
+      <div class="section-empty">No audit findings recorded for this sprint.</div>
+    {/if}
+  </div>
 
   <!-- Version Decision -->
   {#if sprint.versionDecision}
@@ -858,6 +866,13 @@
 
   .findings-card {
     border-left: 3px solid var(--color-warning);
+  }
+
+  .section-empty {
+    font-size: var(--text-sm);
+    color: var(--color-text-faint);
+    font-style: italic;
+    padding: var(--space-2) var(--space-1);
   }
 
   /* Kanban */

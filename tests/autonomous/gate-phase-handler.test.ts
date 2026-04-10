@@ -1,4 +1,7 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, rmSync, readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import {
   GatePhaseHandler,
   type GateVerdictInput,
@@ -6,6 +9,7 @@ import {
   type GateVerdictMetadata,
 } from "../../src/autonomous/gate-phase-handler.js";
 import type { SessionMemoryEntry } from "../../src/memory/session-memory-manager.js";
+import type { CycleMemoryEntry } from "../../packages/core/src/memory/types.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -35,11 +39,17 @@ function makeWriter(): { writer: GateVerdictMemoryWriter; entries: SessionMemory
 describe("GatePhaseHandler", () => {
   let handler: GatePhaseHandler;
   let entries: SessionMemoryEntry[];
+  let tmpRoot: string;
 
   beforeEach(() => {
     const { writer, entries: e } = makeWriter();
     entries = e;
     handler = new GatePhaseHandler(writer);
+    tmpRoot = mkdtempSync(join(tmpdir(), "agentforge-gate-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpRoot, { recursive: true, force: true });
   });
 
   // ── Entry shape ────────────────────────────────────────────────────────────
@@ -193,6 +203,116 @@ describe("GatePhaseHandler", () => {
       const r1 = handler.handleVerdict(makeInput());
       const r2 = handler.handleVerdict(makeInput());
       expect(r1.entryId).not.toBe(r2.entryId);
+    });
+  });
+
+  // ── JSONL write (projectRoot wiring) ───────────────────────────────────────
+
+  describe("handleVerdict — JSONL store write", () => {
+    function makeHandlerWithRoot(): { handler: GatePhaseHandler; entries: SessionMemoryEntry[] } {
+      const { writer, entries: e } = makeWriter();
+      return { handler: new GatePhaseHandler(writer, tmpRoot), entries: e };
+    }
+
+    it("does not write JSONL when projectRoot is not supplied", () => {
+      // handler constructed without projectRoot (default)
+      handler.handleVerdict(makeInput());
+      const jsonlPath = join(tmpRoot, ".agentforge", "memory", "gate-verdict.jsonl");
+      expect(existsSync(jsonlPath)).toBe(false);
+    });
+
+    it("creates gate-verdict.jsonl when projectRoot is supplied", () => {
+      const { handler: h } = makeHandlerWithRoot();
+      h.handleVerdict(makeInput());
+      const jsonlPath = join(tmpRoot, ".agentforge", "memory", "gate-verdict.jsonl");
+      expect(existsSync(jsonlPath)).toBe(true);
+    });
+
+    it("uses the same entryId in both stores", () => {
+      const { handler: h, entries: e } = makeHandlerWithRoot();
+      const result = h.handleVerdict(makeInput());
+
+      const jsonlPath = join(tmpRoot, ".agentforge", "memory", "gate-verdict.jsonl");
+      const written = JSON.parse(readFileSync(jsonlPath, "utf8").trim()) as CycleMemoryEntry;
+
+      // entryId returned == id in SessionMemoryManager == id in JSONL
+      expect(result.entryId).toBe(e[0]!.id);
+      expect(written.id).toBe(result.entryId);
+    });
+
+    it("writes type=gate-verdict to JSONL", () => {
+      const { handler: h } = makeHandlerWithRoot();
+      h.handleVerdict(makeInput());
+
+      const jsonlPath = join(tmpRoot, ".agentforge", "memory", "gate-verdict.jsonl");
+      const written = JSON.parse(readFileSync(jsonlPath, "utf8").trim()) as CycleMemoryEntry;
+      expect(written.type).toBe("gate-verdict");
+    });
+
+    it("sets source to cycleId in JSONL entry", () => {
+      const { handler: h } = makeHandlerWithRoot();
+      h.handleVerdict(makeInput({ cycleId: "cycle-abc" }));
+
+      const jsonlPath = join(tmpRoot, ".agentforge", "memory", "gate-verdict.jsonl");
+      const written = JSON.parse(readFileSync(jsonlPath, "utf8").trim()) as CycleMemoryEntry;
+      expect(written.source).toBe("cycle-abc");
+    });
+
+    it("includes the verdict in the JSONL tags", () => {
+      const { handler: h } = makeHandlerWithRoot();
+      h.handleVerdict(makeInput({ verdict: "approved" }));
+
+      const jsonlPath = join(tmpRoot, ".agentforge", "memory", "gate-verdict.jsonl");
+      const written = JSON.parse(readFileSync(jsonlPath, "utf8").trim()) as CycleMemoryEntry;
+      expect(written.tags).toContain("approved");
+      expect(written.tags).toContain("gate");
+    });
+
+    it("stores structured GateVerdictMetadata in JSONL entry", () => {
+      const { handler: h } = makeHandlerWithRoot();
+      h.handleVerdict(makeInput({
+        cycleId: "cycle-meta",
+        verdict: "rejected",
+        rationale: "Budget overrun",
+        criticalFindings: ["OOM crash"],
+        majorFindings: [],
+      }));
+
+      const jsonlPath = join(tmpRoot, ".agentforge", "memory", "gate-verdict.jsonl");
+      const written = JSON.parse(readFileSync(jsonlPath, "utf8").trim()) as CycleMemoryEntry;
+      const meta = written.metadata as GateVerdictMetadata;
+
+      expect(meta.cycleId).toBe("cycle-meta");
+      expect(meta.verdict).toBe("rejected");
+      expect(meta.rationale).toBe("Budget overrun");
+      expect(meta.criticalFindings).toEqual(["OOM crash"]);
+      expect(meta.majorFindings).toEqual([]);
+    });
+
+    it("appends multiple verdicts to the same JSONL file", () => {
+      const { handler: h } = makeHandlerWithRoot();
+      h.handleVerdict(makeInput({ cycleId: "cycle-1" }));
+      h.handleVerdict(makeInput({ cycleId: "cycle-2" }));
+
+      const jsonlPath = join(tmpRoot, ".agentforge", "memory", "gate-verdict.jsonl");
+      const lines = readFileSync(jsonlPath, "utf8")
+        .split("\n")
+        .filter((l) => l.trim().length > 0);
+      expect(lines).toHaveLength(2);
+
+      const first = JSON.parse(lines[0]!) as CycleMemoryEntry;
+      const second = JSON.parse(lines[1]!) as CycleMemoryEntry;
+      expect(first.source).toBe("cycle-1");
+      expect(second.source).toBe("cycle-2");
+    });
+
+    it("still writes to SessionMemoryManager even when JSONL write is active", () => {
+      const { handler: h, entries: e } = makeHandlerWithRoot();
+      h.handleVerdict(makeInput());
+      // Both stores should have been written
+      expect(e).toHaveLength(1);
+      const jsonlPath = join(tmpRoot, ".agentforge", "memory", "gate-verdict.jsonl");
+      expect(existsSync(jsonlPath)).toBe(true);
     });
   });
 });

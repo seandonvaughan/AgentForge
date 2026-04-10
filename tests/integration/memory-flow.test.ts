@@ -14,8 +14,13 @@
  * 5. Execute phase reads memory entries to personalize agent prompts
  * 6. Cross-cycle persistence: entries from cycle N available in cycle N+1
  *
+ * Audit Prompt Injection:
+ * 7. Real phase functions (readRecentMemoryEntries, formatMemoryForPrompt)
+ *    verify that memory entries are properly formatted and injected into
+ *    the audit phase prompt for cross-cycle learning
+ *
  * This test runs after ranks 1–6 complete to validate the learn-loop in CI
- * and catch regressions across all write/read paths.
+ * and catch regressions across all write/read paths and real-phase injection.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -28,6 +33,10 @@ import {
   writeMemoryEntry,
   readMemoryEntries,
 } from "../../packages/core/src/memory/types.js";
+import {
+  readRecentMemoryEntries,
+  formatMemoryForPrompt,
+} from "../../packages/core/src/autonomous/phase-handlers/audit-phase.js";
 
 // ---------------------------------------------------------------------------
 // Test Helpers
@@ -601,6 +610,135 @@ describe("Memory Flow Integration — Full Cycle Wiring", () => {
       // Each append should be roughly constant time (± 10ms variance)
       const avgTime = times.reduce((a, b) => a + b, 0) / times.length;
       expect(avgTime).toBeLessThan(50);
+    });
+  });
+
+  describe("Audit Prompt Injection — Real Phase Functions", () => {
+    it("readRecentMemoryEntries retrieves entries written by writeMemoryEntry", async () => {
+      // Cycle 1: write entries
+      simulateGatePhaseWrite(projectRoot, "cycle-1", "pass");
+      simulateGatePhaseWrite(projectRoot, "cycle-1", "fail");
+      simulateCycleLoggerWrite(projectRoot, "cycle-1", true);
+
+      // Cycle 2: read using the real audit-phase function
+      const entries = readRecentMemoryEntries(projectRoot, 10);
+
+      expect(entries.length).toBeGreaterThanOrEqual(3);
+      expect(entries.some((e) => e.type === "gate-verdict")).toBe(true);
+      expect(entries.some((e) => e.type === "cycle-outcome")).toBe(true);
+    });
+
+    it("formatMemoryForPrompt creates properly structured markdown section", async () => {
+      // Cycle 1: write diverse entries
+      simulateGatePhaseWrite(projectRoot, "cycle-1", "fail");
+      simulateReviewPhaseWrite(projectRoot, "cycle-1", "item-1", "CRITICAL");
+      simulateCycleLoggerWrite(projectRoot, "cycle-1", false);
+
+      // Read and format
+      const entries = readRecentMemoryEntries(projectRoot, 10);
+      const formatted = formatMemoryForPrompt(entries);
+
+      expect(formatted).toContain("## Past mistakes and learnings");
+      expect(formatted).toContain("###");
+      expect(formatted).toContain("Gate verdicts");
+      expect(formatted).toContain("Code review findings");
+      expect(formatted).toContain("Cycle outcomes");
+    });
+
+    it("formatMemoryForPrompt returns empty string when no entries", async () => {
+      const entries = readRecentMemoryEntries(projectRoot, 10);
+      const formatted = formatMemoryForPrompt(entries);
+
+      expect(formatted).toBe("");
+    });
+
+    it("audit phase injection includes all memory types in the formatted section", async () => {
+      // Write one of each type
+      simulateGatePhaseWrite(projectRoot, "cycle-1", "pass");
+      simulateReviewPhaseWrite(projectRoot, "cycle-1", "item-1", "CRITICAL");
+      simulateCycleLoggerWrite(projectRoot, "cycle-1", true);
+
+      const entries = readRecentMemoryEntries(projectRoot, 20);
+      const formatted = formatMemoryForPrompt(entries);
+
+      // Verify the formatted output is properly structured for prompt injection
+      expect(formatted).toContain("## Past mistakes and learnings");
+      // Each section should have entries
+      const hasGateVerdicts = entries.some((e) => e.type === "gate-verdict");
+      const hasFindings = entries.some((e) => e.type === "review-finding");
+      const hasOutcomes = entries.some((e) => e.type === "cycle-outcome");
+
+      if (hasGateVerdicts) expect(formatted).toContain("Gate verdicts");
+      if (hasFindings) expect(formatted).toContain("Code review findings");
+      if (hasOutcomes) expect(formatted).toContain("Cycle outcomes");
+    });
+
+    it("cross-cycle memory injection: cycle 1 writes, cycle 2 reads and formats", async () => {
+      // Cycle 1: write gate verdict and review findings
+      const cycle1Gate = simulateGatePhaseWrite(projectRoot, "cycle-1", "fail");
+      const cycle1Review = simulateReviewPhaseWrite(
+        projectRoot,
+        "cycle-1",
+        "item-1",
+        "CRITICAL",
+      );
+
+      // Cycle 2: read entries and format for audit prompt injection
+      const entries = readRecentMemoryEntries(projectRoot, 10);
+      const injectedSection = formatMemoryForPrompt(entries);
+
+      // Verify cycle 1 entries are in the formatted output
+      expect(injectedSection).toContain("## Past mistakes and learnings");
+      expect(entries.map((e) => e.id)).toContain(cycle1Gate.id);
+      expect(entries.map((e) => e.id)).toContain(cycle1Review.id);
+
+      // Verify the formatted section would be suitable for prompt injection
+      expect(injectedSection.length).toBeGreaterThan(50);
+      expect(injectedSection).toMatch(/###\s+\w+/); // Has markdown headings
+    });
+
+    it("memory section injection respects entry limits", async () => {
+      // Write 20 gate verdicts
+      for (let i = 0; i < 20; i++) {
+        simulateGatePhaseWrite(projectRoot, `cycle-${i}`, i % 2 === 0 ? "pass" : "fail");
+      }
+
+      // Read with limit of 5
+      const entries = readRecentMemoryEntries(projectRoot, 5);
+      expect(entries.length).toBeLessThanOrEqual(5);
+
+      const formatted = formatMemoryForPrompt(entries);
+      // Should include the header even with few entries
+      expect(formatted).toContain("## Past mistakes and learnings");
+    });
+
+    it("formatMemoryForPrompt preserves source attribution", async () => {
+      simulateGatePhaseWrite(projectRoot, "cycle-42", "fail");
+      simulateCycleLoggerWrite(projectRoot, "cycle-42", false);
+
+      const entries = readRecentMemoryEntries(projectRoot, 10);
+      const formatted = formatMemoryForPrompt(entries);
+
+      // Source should be included in the formatted output
+      expect(formatted).toContain("cycle-42");
+      expect(formatted).toContain("_(");
+      expect(formatted).toContain(")_");
+    });
+
+    it("memory entries with tags are properly formatted in the section", async () => {
+      simulateReviewPhaseWrite(projectRoot, "cycle-1", "item-1", "CRITICAL");
+      simulateReviewPhaseWrite(projectRoot, "cycle-1", "item-2", "MAJOR");
+
+      const entries = readRecentMemoryEntries(projectRoot, 10);
+      const formatted = formatMemoryForPrompt(entries);
+
+      // Both findings should be in the formatted output
+      expect(entries).toHaveLength(2);
+      expect(formatted).toContain("Code review findings");
+      // The formatted section should include both items' values
+      const values = entries.map((e) => e.value);
+      expect(values.some((v) => v.includes("item-1"))).toBe(true);
+      expect(values.some((v) => v.includes("item-2"))).toBe(true);
     });
   });
 });

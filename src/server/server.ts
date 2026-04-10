@@ -23,6 +23,8 @@ import { reforgeRoutes } from './routes/reforge.js';
 import { teamsRoutes } from './routes/teams.js';
 import { careersRoutes } from './routes/careers.js';
 import { branchesRoutes } from './routes/branches.js';
+import { cyclesRoutes } from './routes/cycles.js';
+import { searchRoutes } from './routes/search.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -118,10 +120,14 @@ export async function createServer(options: ServerOptions = {}) {
     await app.register(reforgeRoutes, { adapter: options.adapter });
     await app.register(teamsRoutes, { adapter: options.adapter });
     await app.register(careersRoutes, { adapter: options.adapter });
+    await app.register(searchRoutes, { adapter: options.adapter });
   }
 
   // Branches route — git-backed, no DB adapter required
   await app.register(branchesRoutes, {});
+
+  // Cycles route — filesystem-backed, exposes approval GET/POST + SSE broadcast
+  await app.register(cyclesRoutes, { sseManager: options.sseManager });
 
   // SSE streaming endpoint — only registered when an sseManager is provided
   if (options.sseManager) {

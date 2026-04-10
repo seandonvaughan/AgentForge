@@ -8,6 +8,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
 import { writeMemoryEntry } from '../../memory/types.js';
+import { collectSprintItemTags } from './review-phase.js';
 
 export const GATE_PHASE_DEFAULT_TOOLS = ['Read', 'Bash', 'Glob', 'Grep'];
 
@@ -255,8 +256,14 @@ Respond as JSON: { "verdict": "APPROVE" | "REJECT", "rationale": "..." }`;
   // Write a gate-verdict memory entry for every cycle — both APPROVE and REJECT
   // are high-signal because they record what the CEO agent found acceptable or
   // not. Future audit phases read these entries to surface recurring patterns.
+  //
+  // Sprint item domain tags are appended so the execute-phase injector can match
+  // this verdict to future items whose domain tags overlap with the sprint that
+  // produced it (e.g. a rejection in a sprint with 'memory' items warns the next
+  // cycle's memory-tagged items about what caused the gate to fail).
   const criticalFindings = extractFindingsByLevel(reviewFindings, 'CRITICAL');
   const majorFindings = extractFindingsByLevel(reviewFindings, 'MAJOR');
+  const sprintDomainTags = collectSprintItemTags(ctx.projectRoot, ctx.sprintVersion);
   writeMemoryEntry(ctx.projectRoot, {
     type: 'gate-verdict',
     value: JSON.stringify({
@@ -271,6 +278,7 @@ Respond as JSON: { "verdict": "APPROVE" | "REJECT", "rationale": "..." }`;
     tags: [
       `verdict:${verdict.verdict.toLowerCase()}`,
       `sprint:v${ctx.sprintVersion}`,
+      ...sprintDomainTags,
     ],
   });
 

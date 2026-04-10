@@ -44,7 +44,7 @@
     branch_event:   'var(--color-haiku)',
     system:         'var(--color-text-muted)',
     refresh_signal: 'var(--color-danger)',
-    cycle_event:    'var(--color-sonnet)',
+    cycle_event:    'var(--color-sonnet, var(--color-info))',
   };
 
   const TYPE_LABELS: Record<string, string> = {

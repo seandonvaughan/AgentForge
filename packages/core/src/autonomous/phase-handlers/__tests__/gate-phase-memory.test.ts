@@ -21,6 +21,8 @@ import {
   readRecentMemoryEntries,
   formatMemoryForPrompt,
 } from '../audit-phase.js';
+import { readRelevantMemoryEntries } from '../execute-phase.js';
+import { writeFileSync } from 'node:fs';
 
 // ---------------------------------------------------------------------------
 // Temp dir lifecycle
@@ -303,5 +305,66 @@ describe('gate-verdict round-trip (gate writes → audit reads)', () => {
     expect(parsed).toEqual(original);
     expect(stored!.source).toBe('cycle-roundtrip');
     expect(stored!.tags).toContain('verdict:approve');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Gate-verdict domain tag enrichment → execute-phase injection round-trip
+//
+// Gate verdicts must carry sprint item domain tags so that future execute-phase
+// items with overlapping domain tags can find them and avoid repeating
+// patterns that led to a prior rejection.
+// ---------------------------------------------------------------------------
+
+describe('gate-verdict tag enrichment → execute-phase injection round-trip', () => {
+  it('gate-verdict entries written with sprint domain tags are matched by execute-phase item tags', () => {
+    // Simulate a gate-verdict written with domain tags ['memory', 'execute', 'backend']
+    // collected from the sprint's items (the new behaviour after the fix).
+    writeMemoryEntry(tmpRoot, {
+      type: 'gate-verdict',
+      value: JSON.stringify({
+        verdict: 'REJECT',
+        rationale: 'Test coverage too low on execute-phase memory injection',
+        criticalFindings: ['zero test for readRelevantMemoryEntries edge cases'],
+        majorFindings: [],
+      }),
+      source: 'cycle-rejected',
+      tags: ['verdict:reject', 'sprint:v9.2', 'memory', 'execute', 'backend'],
+    });
+
+    // An execute-phase item tagged ['memory', 'execute'] should find this entry.
+    const entries = readRelevantMemoryEntries(tmpRoot, ['memory', 'execute']);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.type).toBe('gate-verdict');
+
+    const payload = JSON.parse(entries[0]!.value);
+    expect(payload.verdict).toBe('REJECT');
+  });
+
+  it('gate-verdict with only structural tags is NOT matched by domain item tags', () => {
+    // The old broken behavior — only structural tags.
+    writeMemoryEntry(tmpRoot, {
+      type: 'gate-verdict',
+      value: JSON.stringify({ verdict: 'REJECT', rationale: 'tests failing' }),
+      source: 'cycle-old',
+      tags: ['verdict:reject', 'sprint:v9.0'],  // no domain tags
+    });
+
+    // Item tags ['memory', 'execute'] should not match structural-only tags.
+    const entries = readRelevantMemoryEntries(tmpRoot, ['memory', 'execute']);
+    expect(entries).toHaveLength(0);
+  });
+
+  it('gate-verdict written with domain tags appears in audit-phase prompt', () => {
+    writeMemoryEntry(tmpRoot, {
+      type: 'gate-verdict',
+      value: 'Sprint rejected: execute-phase memory injection missing',
+      source: 'cycle-tagged',
+      tags: ['verdict:reject', 'sprint:v9.2', 'memory', 'execute'],
+    });
+
+    const entries = readRecentMemoryEntries(tmpRoot, 10);
+    const section = formatMemoryForPrompt(entries);
+    expect(section).toContain('execute-phase memory injection missing');
   });
 });

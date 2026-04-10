@@ -10,4 +10,6 @@ export {
   readMemoryEntries,
   type CycleMemoryEntry,
   type MemoryEntryType,
+  type ReviewFindingMetadata,
+  type GateVerdictMetadata,
 } from './types.js';

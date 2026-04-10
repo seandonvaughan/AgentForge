@@ -9,6 +9,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { SessionMemoryEntry } from "../memory/session-memory-manager.js";
+import { writeMemoryEntry } from "../../packages/core/src/memory/types.js";
 
 /**
  * Minimal interface for writing gate-verdict memory entries.
@@ -21,6 +22,13 @@ export interface GateVerdictMemoryWriter {
 export interface SprintFrameworkOptions {
   /** When provided, every call to recordResult() writes a gate-verdict memory entry. */
   memoryWriter?: GateVerdictMemoryWriter;
+  /**
+   * Absolute path to the project root. When provided, recordResult() also
+   * appends a gate-verdict entry to `.agentforge/memory/gate-verdict.jsonl`
+   * via writeMemoryEntry so the verdict is visible to the /api/v5/memory
+   * endpoint and flywheel dashboard between sessions.
+   */
+  projectRoot?: string;
 }
 
 export type SprintPhase =
@@ -79,9 +87,11 @@ export class AutonomousSprintFramework {
   private sprints = new Map<string, SprintPlan>();
   private results = new Map<string, SprintResult>();
   private readonly memoryWriter?: GateVerdictMemoryWriter;
+  private readonly projectRoot?: string;
 
   constructor(options?: SprintFrameworkOptions) {
     this.memoryWriter = options?.memoryWriter;
+    this.projectRoot = options?.projectRoot;
   }
 
   // ---------------------------------------------------------------------------
@@ -189,17 +199,33 @@ export class AutonomousSprintFramework {
 
     // Write a gate-verdict memory entry so future audit phases can inspect
     // what caused prior approvals or rejections across cycles.
+    const verdictSummary = `Sprint ${sprint.version} gate ${full.gateVerdict}: ${full.itemsCompleted}/${full.itemsTotal} items completed, ${full.testsPassing}/${full.testsTotal} tests passing`;
+    const verdictEntryId = randomUUID();
+
     if (this.memoryWriter) {
       const entry: SessionMemoryEntry = {
-        id: randomUUID(),
+        id: verdictEntryId,
         sessionId: sprintId,
         category: "gate-verdict",
         agentId: "gate-phase",
-        summary: `Sprint ${sprint.version} gate ${full.gateVerdict}: ${full.itemsCompleted}/${full.itemsTotal} items completed, ${full.testsPassing}/${full.testsTotal} tests passing`,
+        summary: verdictSummary,
         success: full.gateVerdict === "approved",
         timestamp: full.completedAt,
       };
       this.memoryWriter.addEntry(entry);
+    }
+
+    // Append to the canonical JSONL store so the verdict persists across
+    // sessions and is queryable by the /api/v5/memory endpoint.
+    if (this.projectRoot !== undefined) {
+      writeMemoryEntry(this.projectRoot, {
+        id: verdictEntryId,
+        type: "gate-verdict",
+        value: verdictSummary,
+        createdAt: full.completedAt,
+        source: sprintId,
+        tags: ["gate", full.gateVerdict, `sprint:${sprint.version}`],
+      });
     }
 
     return { ...full };

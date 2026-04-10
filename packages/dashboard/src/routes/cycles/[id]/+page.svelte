@@ -250,17 +250,21 @@
     'plan',          // plan phase: CTO technical plan
     'strategy',      // test phase: QA risk assessment report
     'review',        // review phase: code-reviewer markdown report
-    'rationale',     // gate phase: CEO approve/reject reasoning
+    'rationale',     // gate phase: CEO approve/reject reasoning (newer format)
     'retrospective', // learn phase: data-analyst sprint retrospective
     'response',      // fallback: top-level response string on any phase
   ]);
 
-  /** Returns a copy of a phase object with markdown prose fields removed,
+  // Fields to omit from the raw-JSON metadata view because they are rendered
+  // by dedicated UI sections (markdown blocks or agentRun cards).
+  const STRIP_FROM_RAW = new Set([...MARKDOWN_FIELDS, 'agentRuns']);
+
+  /** Returns a copy of a phase object with prose/run fields removed,
    *  leaving only the structured metadata that benefits from JSON display. */
   function stripMarkdownFields(data: Record<string, unknown>): Record<string, unknown> {
     const copy: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(data)) {
-      if (!MARKDOWN_FIELDS.has(k)) copy[k] = v;
+      if (!STRIP_FROM_RAW.has(k)) copy[k] = v;
     }
     return copy;
   }
@@ -277,7 +281,43 @@
     return sections;
   }
 
-  /** Collect markdown prose from each agentRun's response field. */
+  /**
+   * Resolve an agent run's raw `response` string into renderable markdown.
+   *
+   * Older cycles (pre-v6.5) stored the agent's literal output in
+   * `agentRuns[].response`, which for the gate phase is a raw JSON string:
+   *   {"verdict":"APPROVE","rationale":"Sprint v9.0.0 delivers..."}
+   *
+   * Rules:
+   *   1. If the string parses as JSON with a `rationale` field, surface it as
+   *      "**VERDICT**: rationale prose" — human-readable without raw JSON noise.
+   *   2. If it parses as other JSON (no rationale), wrap in a ```json block so
+   *      MarkdownRenderer still renders something clean.
+   *   3. Otherwise return the string unchanged (already markdown or plain text).
+   */
+  function resolveAgentResponseContent(raw: string): string {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const rationale = parsed['rationale'] ?? parsed['reason'] ?? parsed['explanation'];
+        const verdict = parsed['verdict'] ?? parsed['decision'];
+        if (typeof rationale === 'string' && rationale.trim()) {
+          // Gate verdict: render verdict badge + rationale prose
+          const prefix = verdict ? `**${String(verdict).toUpperCase()}**: ` : '';
+          return `${prefix}${rationale}`;
+        }
+        // Unknown JSON object — render as fenced code block for readability
+        return '```json\n' + JSON.stringify(parsed, null, 2) + '\n```';
+      }
+    } catch {
+      // Not JSON — fall through to return raw string
+    }
+    return raw;
+  }
+
+  /** Collect markdown prose from each agentRun's response field.
+   *  JSON-encoded responses (e.g. gate phase verdict objects) are unwrapped
+   *  into readable prose by resolveAgentResponseContent(). */
   function agentRunSections(data: Record<string, unknown>): Array<{ agentId: string; response: string }> {
     const runs = data['agentRuns'];
     if (!Array.isArray(runs)) return [];
@@ -286,7 +326,7 @@
       .filter((r) => typeof r['response'] === 'string' && (r['response'] as string).trim())
       .map((r) => ({
         agentId: String(r['agentId'] ?? 'agent'),
-        response: r['response'] as string,
+        response: resolveAgentResponseContent(r['response'] as string),
       }));
   }
 

@@ -519,110 +519,106 @@
       <div class="flywheel-grid">
         <div class="flywheel-card active" onclick="toggleFlywheelDetail(this)">
           <div class="gauge-container">
-            <svg viewBox="0 0 100 100"><circle class="gauge-bg" cx="50" cy="50" r="45"/><circle class="gauge-fill" cx="50" cy="50" r="45" stroke="var(--green)" stroke-dasharray="283" stroke-dashoffset="10"/></svg>
-            <div class="gauge-label" style="color:var(--green)">96%</div>
+            <svg viewBox="0 0 100 100"><circle class="gauge-bg" cx="50" cy="50" r="45"/><circle id="fw-home-cov-arc" class="gauge-fill" cx="50" cy="50" r="45" stroke="var(--green)" stroke-dasharray="283" stroke-dashoffset="10"/></svg>
+            <div id="fw-home-cov-label" class="gauge-label" style="color:var(--green)">—</div>
           </div>
-          <h3>Test Coverage</h3>
-          <div class="flywheel-sub">745 tests passing</div>
-          <div class="flywheel-compound" id="cov-compound">+1.4% this sprint</div>
+          <h3>Meta-Learning</h3>
+          <div class="flywheel-sub" id="fw-home-cov-sub">loading…</div>
+          <div class="flywheel-compound" id="cov-compound">—</div>
           <svg class="sparkline-trend" width="120" height="32" viewBox="0 0 120 32">
             <polyline points="0,28 20,24 40,22 60,20 80,16 100,12 120,8" fill="none" stroke="var(--green)" stroke-width="1.5" opacity="0.7"/>
             <polyline points="0,28 20,24 40,22 60,20 80,16 100,12 120,8 120,32 0,32" fill="var(--green)" opacity="0.1"/>
           </svg>
-          <div class="flywheel-status on">● ACTIVE</div>
+          <div id="fw-home-cov-status" class="flywheel-status on">● ACTIVE</div>
           <div class="flywheel-detail">
-            <div class="metric-row"><span>Baseline</span><span class="val">82.0%</span></div>
-            <div class="metric-row"><span>Growth rate</span><span class="val">+1.4%/sprint</span></div>
-            <div class="metric-row"><span>Target</span><span class="val">98%</span></div>
-            <div class="metric-row"><span>ETA at rate</span><span class="val">~1.4 sprints</span></div>
+            <div class="metric-row"><span>Recent success</span><span class="val" id="fw-home-cov-d1">—</span></div>
+            <div class="metric-row"><span>Trend</span><span class="val" id="fw-home-cov-d2">—</span></div>
+            <div class="metric-row"><span>Score</span><span class="val" id="fw-home-cov-d3">—/100</span></div>
           </div>
         </div>
         <div class="flywheel-card active" onclick="toggleFlywheelDetail(this)">
           <div class="gauge-container">
-            <svg viewBox="0 0 100 100"><circle class="gauge-bg" cx="50" cy="50" r="45"/><circle class="gauge-fill" cx="50" cy="50" r="45" stroke="var(--blue)" stroke-dasharray="283" stroke-dashoffset="57"/></svg>
-            <div class="gauge-label" style="color:var(--blue)">80%</div>
+            <svg viewBox="0 0 100 100"><circle class="gauge-bg" cx="50" cy="50" r="45"/><circle id="fw-home-skill-arc" class="gauge-fill" cx="50" cy="50" r="45" stroke="var(--blue)" stroke-dasharray="283" stroke-dashoffset="57"/></svg>
+            <div id="fw-home-skill-label" class="gauge-label" style="color:var(--blue)">—</div>
           </div>
-          <h3>Skill Templates</h3>
-          <div class="flywheel-sub">34 / 42 optimized</div>
-          <div class="flywheel-compound" id="skill-compound">+4 this sprint</div>
+          <h3>Skill Inheritance</h3>
+          <div class="flywheel-sub" id="fw-home-skill-sub">loading…</div>
+          <div class="flywheel-compound" id="skill-compound">—</div>
           <svg class="sparkline-trend" width="120" height="32" viewBox="0 0 120 32">
             <polyline points="0,30 20,26 40,24 60,20 80,18 100,14 120,10" fill="none" stroke="var(--blue)" stroke-width="1.5" opacity="0.7"/>
             <polyline points="0,30 20,26 40,24 60,20 80,18 100,14 120,10 120,32 0,32" fill="var(--blue)" opacity="0.1"/>
           </svg>
-          <div class="flywheel-status on">● ACTIVE</div>
+          <div id="fw-home-skill-status" class="flywheel-status on">● ACTIVE</div>
           <div class="flywheel-detail">
-            <div class="metric-row"><span>Baseline</span><span class="val">18 templates</span></div>
-            <div class="metric-row"><span>Growth rate</span><span class="val">+4/sprint</span></div>
-            <div class="metric-row"><span>Target</span><span class="val">42 templates</span></div>
-            <div class="metric-row"><span>ETA at rate</span><span class="val">~2 sprints</span></div>
+            <div class="metric-row"><span>Agents</span><span class="val" id="fw-home-skill-d1">—</span></div>
+            <div class="metric-row"><span>Avg skills</span><span class="val" id="fw-home-skill-d2">—</span></div>
+            <div class="metric-row"><span>Score</span><span class="val" id="fw-home-skill-d3">—/100</span></div>
           </div>
         </div>
         <div class="flywheel-card active" onclick="toggleFlywheelDetail(this)">
           <div class="gauge-container">
-            <svg viewBox="0 0 100 100"><circle class="gauge-bg" cx="50" cy="50" r="45"/><circle class="gauge-fill" cx="50" cy="50" r="45" stroke="var(--gold)" stroke-dasharray="283" stroke-dashoffset="198"/></svg>
-            <div class="gauge-label" style="color:var(--gold)">30%</div>
+            <svg viewBox="0 0 100 100"><circle class="gauge-bg" cx="50" cy="50" r="45"/><circle id="fw-home-cost-arc" class="gauge-fill" cx="50" cy="50" r="45" stroke="var(--gold)" stroke-dasharray="283" stroke-dashoffset="198"/></svg>
+            <div id="fw-home-cost-label" class="gauge-label" style="color:var(--gold)">—</div>
           </div>
-          <h3>Cost Efficiency</h3>
-          <div class="flywheel-sub">$0.31 avg/task</div>
-          <div class="flywheel-compound" id="cost-compound">-8% vs last sprint</div>
+          <h3>Session Success</h3>
+          <div class="flywheel-sub" id="fw-home-cost-sub">loading…</div>
+          <div class="flywheel-compound" id="cost-compound">—</div>
           <svg class="sparkline-trend" width="120" height="32" viewBox="0 0 120 32">
             <polyline points="0,8 20,10 40,12 60,10 80,14 100,18 120,22" fill="none" stroke="var(--gold)" stroke-width="1.5" opacity="0.7"/>
             <polyline points="0,8 20,10 40,12 60,10 80,14 100,18 120,22 120,32 0,32" fill="var(--gold)" opacity="0.1"/>
           </svg>
-          <div class="flywheel-status on">● ACTIVE</div>
+          <div id="fw-home-cost-status" class="flywheel-status on">● ACTIVE</div>
           <div class="flywheel-detail">
-            <div class="metric-row"><span>Baseline cost</span><span class="val">$0.54/task</span></div>
-            <div class="metric-row"><span>Reduction rate</span><span class="val">-8%/sprint</span></div>
-            <div class="metric-row"><span>Target</span><span class="val">$0.15/task</span></div>
-            <div class="metric-row"><span>ETA at rate</span><span class="val">~8 sprints</span></div>
+            <div class="metric-row"><span>Sessions</span><span class="val" id="fw-home-cost-d1">—</span></div>
+            <div class="metric-row"><span>Success rate</span><span class="val" id="fw-home-cost-d2">—</span></div>
+            <div class="metric-row"><span>Total cost</span><span class="val" id="fw-home-cost-d3">—</span></div>
           </div>
         </div>
         <div class="flywheel-card" onclick="toggleFlywheelDetail(this)">
           <div class="gauge-container">
-            <svg viewBox="0 0 100 100"><circle class="gauge-bg" cx="50" cy="50" r="45"/><circle class="gauge-fill" cx="50" cy="50" r="45" stroke="var(--purple)" stroke-dasharray="283" stroke-dashoffset="141"/></svg>
-            <div class="gauge-label" style="color:var(--purple)">50%</div>
+            <svg viewBox="0 0 100 100"><circle class="gauge-bg" cx="50" cy="50" r="45"/><circle id="fw-home-auto-arc" class="gauge-fill" cx="50" cy="50" r="45" stroke="var(--purple)" stroke-dasharray="283" stroke-dashoffset="141"/></svg>
+            <div id="fw-home-auto-label" class="gauge-label" style="color:var(--purple)">—</div>
           </div>
           <h3>Autonomy Score</h3>
-          <div class="flywheel-sub">17 / 34 Tier-2+</div>
-          <div class="flywheel-compound" id="auto-compound">+3 promotions</div>
+          <div class="flywheel-sub" id="fw-home-auto-sub">loading…</div>
+          <div class="flywheel-compound" id="auto-compound">—</div>
           <svg class="sparkline-trend" width="120" height="32" viewBox="0 0 120 32">
             <polyline points="0,28 20,26 40,24 60,22 80,18 100,14 120,10" fill="none" stroke="var(--purple)" stroke-width="1.5" opacity="0.7"/>
             <polyline points="0,28 20,26 40,24 60,22 80,18 100,14 120,10 120,32 0,32" fill="var(--purple)" opacity="0.1"/>
           </svg>
-          <div class="flywheel-status on">● ACTIVE</div>
+          <div id="fw-home-auto-status" class="flywheel-status on">● ACTIVE</div>
           <div class="flywheel-detail">
-            <div class="metric-row"><span>Tier 1</span><span class="val">17 agents</span></div>
-            <div class="metric-row"><span>Tier 2</span><span class="val">12 agents</span></div>
-            <div class="metric-row"><span>Tier 3</span><span class="val">4 agents</span></div>
-            <div class="metric-row"><span>Tier 4</span><span class="val">1 agent</span></div>
+            <div class="metric-row"><span>Avg tier</span><span class="val" id="fw-home-auto-d1">—</span></div>
+            <div class="metric-row"><span>Net promotions</span><span class="val" id="fw-home-auto-d2">—</span></div>
+            <div class="metric-row"><span>Score</span><span class="val" id="fw-home-auto-d3">—/100</span></div>
           </div>
         </div>
         <div class="flywheel-card" onclick="toggleFlywheelDetail(this)">
           <div class="gauge-container">
-            <svg viewBox="0 0 100 100"><circle class="gauge-bg" cx="50" cy="50" r="45"/><circle class="gauge-fill" cx="50" cy="50" r="45" stroke="var(--cyan)" stroke-dasharray="283" stroke-dashoffset="85"/></svg>
-            <div class="gauge-label" style="color:var(--cyan)">70%</div>
+            <svg viewBox="0 0 100 100"><circle class="gauge-bg" cx="50" cy="50" r="45"/><circle id="fw-home-mem-arc" class="gauge-fill" cx="50" cy="50" r="45" stroke="var(--cyan)" stroke-dasharray="283" stroke-dashoffset="85"/></svg>
+            <div id="fw-home-mem-label" class="gauge-label" style="color:var(--cyan)">—</div>
           </div>
-          <h3>Memory Retention</h3>
-          <div class="flywheel-sub">7 active memories</div>
-          <div class="flywheel-compound" id="mem-compound">+2 this sprint</div>
+          <h3>Velocity</h3>
+          <div class="flywheel-sub" id="fw-home-mem-sub">loading…</div>
+          <div class="flywheel-compound" id="mem-compound">—</div>
           <svg class="sparkline-trend" width="120" height="32" viewBox="0 0 120 32">
             <polyline points="0,26 20,22 40,20 60,18 80,14 100,12 120,8" fill="none" stroke="var(--cyan)" stroke-width="1.5" opacity="0.7"/>
           </svg>
-          <div class="flywheel-status on">● ACTIVE</div>
+          <div id="fw-home-mem-status" class="flywheel-status on">● ACTIVE</div>
           <div class="flywheel-detail">
-            <div class="metric-row"><span>Entries</span><span class="val">7 docs</span></div>
-            <div class="metric-row"><span>Reuse rate</span><span class="val">4.2x</span></div>
-            <div class="metric-row"><span>Avg age</span><span class="val">2.1 sprints</span></div>
+            <div class="metric-row"><span>Sprint completion</span><span class="val" id="fw-home-mem-d1">—</span></div>
+            <div class="metric-row"><span>Cycle ratio</span><span class="val" id="fw-home-mem-d2">—</span></div>
+            <div class="metric-row"><span>Score</span><span class="val" id="fw-home-mem-d3">—/100</span></div>
           </div>
         </div>
         <div class="flywheel-card" onclick="toggleFlywheelDetail(this)">
           <div class="gauge-container">
-            <svg viewBox="0 0 100 100"><circle class="gauge-bg" cx="50" cy="50" r="45"/><circle class="gauge-fill" cx="50" cy="50" r="45" stroke="var(--orange)" stroke-dasharray="283" stroke-dashoffset="170"/></svg>
-            <div class="gauge-label" style="color:var(--orange)">40%</div>
+            <svg viewBox="0 0 100 100"><circle class="gauge-bg" cx="50" cy="50" r="45"/><circle id="fw-home-reforge-arc" class="gauge-fill" cx="50" cy="50" r="45" stroke="var(--orange)" stroke-dasharray="283" stroke-dashoffset="170"/></svg>
+            <div id="fw-home-reforge-label" class="gauge-label" style="color:var(--orange)">—</div>
           </div>
           <h3>REFORGE Rate</h3>
-          <div class="flywheel-sub">6 / 15 applied</div>
-          <div class="flywheel-compound" id="reforge-compound">+2 this sprint</div>
+          <div class="flywheel-sub" id="fw-home-reforge-sub">loading…</div>
+          <div class="flywheel-compound" id="reforge-compound">—</div>
           <svg class="sparkline-trend" width="120" height="32" viewBox="0 0 120 32">
             <polyline points="0,30 20,28 40,24 60,22 80,18 100,16 120,12" fill="none" stroke="var(--orange)" stroke-width="1.5" opacity="0.7"/>
           </svg>
