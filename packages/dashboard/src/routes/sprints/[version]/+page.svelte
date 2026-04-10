@@ -114,11 +114,11 @@
     const days = hours / 24;
     return `${Number.isInteger(days) ? days : days.toFixed(1)}d`;
   }
-  let durationStr = $derived(
-    sprint?.startDate && sprint?.endDate
-      ? humanDuration(sprint.startDate, sprint.endDate)
-      : null
-  );
+  let durationStr = $derived.by(() => {
+    const s = sprint;
+    if (!s?.startDate || !s?.endDate) return null;
+    return humanDuration(s.startDate, s.endDate);
+  });
 
   const STATUS_LABEL: Record<string, string> = {
     completed: 'Completed',
