@@ -30,10 +30,66 @@ const MEMORIES_JSON_PATH = join(PROJECT_ROOT, '.agentforge/data/memories.json');
 const MEMORY_JSONL_DIR = join(PROJECT_ROOT, '.agentforge/memory');
 
 /**
+ * Derive a human-readable summary and category from a JSONL entry's type and
+ * value payload so the dashboard can render something meaningful instead of raw JSON.
+ */
+function _deriveJsonlMeta(
+  type: string,
+  rawValue: string,
+): { summary: string; category: string } {
+  // Map entry type to a dashboard category chip
+  const categoryMap: Record<string, string> = {
+    'cycle-outcome':  'project',
+    'gate-verdict':   'feedback',
+    'review-finding': 'feedback',
+    'failure-pattern': 'lesson',
+    'learned-fact':   'lesson',
+  };
+  const category = categoryMap[type] ?? 'project';
+
+  // Attempt to parse the value as JSON and build a human-readable summary.
+  try {
+    const parsed = JSON.parse(rawValue) as Record<string, unknown>;
+
+    if (type === 'cycle-outcome') {
+      const sprint  = parsed.sprintVersion ?? '?';
+      const stage   = parsed.stage ?? '?';
+      const cost    = typeof parsed.costUsd === 'number' ? `$${(parsed.costUsd as number).toFixed(2)}` : '';
+      const tests   = typeof parsed.testsPassed === 'number' ? `${parsed.testsPassed} tests` : '';
+      const pr      = parsed.prUrl ? ' · PR opened' : '';
+      const parts   = [sprint, stage, cost, tests].filter(Boolean).join(' · ');
+      return { summary: parts + pr, category };
+    }
+
+    if (type === 'gate-verdict') {
+      const verdict  = parsed.verdict   ?? '?';
+      const sprint   = parsed.sprintVersion ?? '';
+      const rationale = typeof parsed.rationale === 'string'
+        ? (parsed.rationale as string).slice(0, 160)
+        : '';
+      const prefix = [sprint, verdict].filter(Boolean).join(' · ');
+      return { summary: rationale ? `${prefix} — ${rationale}` : prefix, category };
+    }
+
+    if (type === 'review-finding') {
+      // Prefer a top-level `message` field, then first value that is a string
+      const msg = (parsed.message ?? parsed.text ?? parsed.description) as string | undefined;
+      if (msg) return { summary: String(msg).slice(0, 200), category };
+    }
+
+    // Generic fallback: stringify the parsed object compactly
+    const compact = JSON.stringify(parsed);
+    return { summary: compact.slice(0, 200), category };
+  } catch {
+    // Value is not JSON — return as-is
+    return { summary: rawValue.slice(0, 200), category };
+  }
+}
+
+/**
  * Read all `.agentforge/memory/*.jsonl` files and return entries sorted
- * newest-first (by createdAt). This is the primary data source for the v5
- * memory endpoint — it covers cycle-outcome, gate-verdict, review-finding,
- * failure-pattern, and learned-fact entries emitted by cycle phases.
+ * newest-first (by createdAt). Each entry gets a derived human-readable
+ * `summary` and inferred `category` so dashboard filters work out-of-the-box.
  */
 function readJsonlMemories(): MemoryEntry[] {
   if (!existsSync(MEMORY_JSONL_DIR)) return [];
@@ -56,12 +112,16 @@ function readJsonlMemories(): MemoryEntry[] {
               tags?: string[];
             };
             if (!e.id || !e.type) continue;
+            const rawValue = e.value ?? '';
+            const { summary, category } = _deriveJsonlMeta(e.type, rawValue);
             entries.push({
               id: e.id,
               // key follows the convention <type>/<source> so the dashboard
               // can display a meaningful identifier without a dedicated field.
               key: e.source ? `${e.type}/${e.source}` : e.type,
-              value: (e.value ?? '').slice(0, 500),
+              value: rawValue.slice(0, 500),
+              summary,
+              category,
               type: e.type,
               // Map source → agentId for the existing agent-filter UI, and
               // also surface it as `source` so the dashboard can build links.
@@ -210,11 +270,14 @@ export async function memoryRoutes(
 
   // GET /api/v5/memory — serves the latest 200 cross-cycle memory entries.
   //
-  // Data source priority:
-  //   1. .agentforge/memory/*.jsonl  (new primary — cycle-outcome, gate-verdict, etc.)
+  // Data sources (all merged — NOT a waterfall):
+  //   1. .agentforge/memory/*.jsonl  (cycle-outcome, gate-verdict, review-finding, etc.)
   //   2. KV store (SQLite kv_store table — real-time agent writes)
   //   3. .agentforge/data/memories.json (operator-curated + autonomous-loop entries)
-  //   4. .agentforge/sessions/*.json  (legacy file-listing fallback)
+  //   4. .agentforge/sessions/*.json  (legacy file-listing fallback; only if 1-3 empty)
+  //
+  // Sources 1-3 are always merged so operator-curated knowledge surfaces alongside
+  // live cycle data. Deduplication is by entry id so no row appears twice.
   //
   // Query params:
   //   search  — substring match across key, value, summary, tags
@@ -237,13 +300,21 @@ export async function memoryRoutes(
     const sinceMs = query.since ? new Date(query.since).getTime() : NaN;
     const hasSince = !Number.isNaN(sinceMs);
 
+    // Collect all entries; track seen IDs to deduplicate across sources.
+    const seenIds = new Set<string>();
     const entries: MemoryEntry[] = [];
 
-    // Primary: JSONL files — the authoritative cross-cycle memory store
-    const jsonlEntries = readJsonlMemories();
-    entries.push(...jsonlEntries);
+    function addEntry(e: MemoryEntry): void {
+      const id = e.id ?? e.key;
+      if (id && seenIds.has(id)) return;
+      if (id) seenIds.add(id);
+      entries.push(e);
+    }
 
-    // Secondary: KV store (real-time agent-written memory; merged on top of JSONL)
+    // Source 1: JSONL files — authoritative cross-cycle memory store
+    for (const e of readJsonlMemories()) addEntry(e);
+
+    // Source 2: KV store (real-time agent-written memory)
     try {
       const db = adapter.getAgentDatabase().getDb();
       const rows = db
@@ -253,7 +324,7 @@ export async function memoryRoutes(
         .all();
 
       for (const row of rows) {
-        entries.push({
+        addEntry({
           id: row.key,
           key: row.key,
           value: row.value.slice(0, 500),
@@ -264,12 +335,10 @@ export async function memoryRoutes(
       // kv_store may not exist or be empty — fall through
     }
 
-    // Tertiary: memories.json (operator-curated entries; only if nothing found yet)
-    if (entries.length === 0) {
-      const fileEntries = readMemoriesJson();
-      for (const e of fileEntries) {
-        entries.push({ ...e, id: e.id ?? e.key });
-      }
+    // Source 3: memories.json — always merged (not a fallback) so operator-curated
+    // knowledge surfaces alongside live cycle data regardless of JSONL volume.
+    for (const e of readMemoriesJson()) {
+      addEntry({ ...e, id: e.id ?? e.key });
     }
 
     // Quaternary: raw session file listing (legacy fallback)

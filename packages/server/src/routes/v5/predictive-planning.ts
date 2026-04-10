@@ -20,7 +20,11 @@ export async function predictivePlanningRoutes(app: FastifyInstance): Promise<vo
       return reply.status(400).send({ error: 'backlogItems array is required', code: 'MISSING_FIELD' });
     }
 
-    const prediction = predictor.predict(body.backlogItems, sprintHistory, body.budgetUsd);
+    const prediction = predictor.predict(
+      body.backlogItems as unknown as Parameters<typeof predictor.predict>[0],
+      sprintHistory,
+      body.budgetUsd,
+    );
 
     return reply.send({
       data: prediction,

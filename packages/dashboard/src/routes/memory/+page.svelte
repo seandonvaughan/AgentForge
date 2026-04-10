@@ -246,6 +246,120 @@
   }
 
   /**
+   * Extract a human-readable sprint version label from an entry's tags array.
+   * Looks for a tag matching "sprint:vX.Y.Z" and returns the version string.
+   */
+  function sprintTagFromEntry(entry: MemoryEntry): string | null {
+    const sprintTag = (entry.tags ?? []).find(t => t.startsWith('sprint:'));
+    return sprintTag ? sprintTag.replace('sprint:', '') : null;
+  }
+
+  /**
+   * Build a human-readable label for a source UUID by scanning the loaded
+   * entries for a sprint version tag associated with the same source.
+   */
+  function sourceLabel(sourceId: string): string {
+    if (!UUID_RE.test(sourceId)) return sourceId;
+    // Look up an entry that has this as its source and has a sprint tag
+    const match = entries.find(e => (e.source === sourceId || e.agentId === sourceId) && sprintTagFromEntry(e));
+    const version = match ? sprintTagFromEntry(match) : null;
+    return version ? `cycle · ${version}` : `cycle · ${sourceId.slice(0, 8)}`;
+  }
+
+  /**
+   * Strip markdown bold/italic markers and backtick code spans from a string
+   * so it can be rendered as plain text in a table cell preview.
+   */
+  function stripMarkdown(text: string): string {
+    return text
+      .replace(/\*\*\[([A-Z]+)\]\*\*/g, '[$1]')   // **[MAJOR]** → [MAJOR]
+      .replace(/\*\*([^*]+)\*\*/g, '$1')            // **bold** → bold
+      .replace(/`([^`]+)`/g, '$1')                   // `code` → code
+      .replace(/\*([^*]+)\*/g, '$1');                // *italic* → italic
+  }
+
+  /**
+   * For gate-verdict entries, extract the structured verdict information
+   * so it can be rendered as a proper UI panel rather than raw JSON.
+   */
+  interface VerdictInfo {
+    verdict: string;
+    sprintVersion: string;
+    rationale: string;
+    criticalFindings: string[];
+    majorFindings: string[];
+    cycleId?: string;
+  }
+
+  /**
+   * Parse a raw finding string, which may be:
+   *  (a) A short finding title: "Custom YAML parsers drop dash-list arrays"
+   *  (b) A full LLM response blob: '"response": "Now I have...\n**[CRITICAL] ...**\n..."'
+   * For case (b), extract all heading titles matching the severity level.
+   */
+  function parseFindingString(raw: unknown, severity: 'CRITICAL' | 'MAJOR' | 'MINOR'): string[] {
+    const s = typeof raw === 'string' ? raw : JSON.stringify(raw);
+
+    // Detect full LLM response blob — starts with an optional leading quote + "response":
+    const isBlob = /^"?response"?\s*:/.test(s.trim());
+    if (!isBlob) {
+      const clean = s.replace(/^"/, '').replace(/"$/, '');
+      return [clean.length > 240 ? clean.slice(0, 237) + '…' : clean];
+    }
+
+    // Unwrap the outer "response": "..." envelope — value may have escaped newlines
+    const inner = s
+      .replace(/^"?response"?\s*:\s*"/, '')
+      .replace(/"\s*$/, '')
+      .replace(/\\n/g, '\n')
+      .replace(/\\"/g, '"');
+
+    // Pull **[SEVERITY] Title text** heading lines from the markdown.
+    // Character class [^*\n] — allow backticks since finding titles can contain `code`.
+    const severityPattern = severity === 'CRITICAL' ? 'CRITICAL' : severity === 'MAJOR' ? 'MAJOR' : 'MINOR';
+    const headingRe = new RegExp(`\\*\\*\\[${severityPattern}\\]\\s*([^*\\n]+?)\\*\\*`, 'g');
+    const matches: string[] = [];
+    let m: RegExpExecArray | null;
+    // eslint-disable-next-line no-cond-assign
+    while ((m = headingRe.exec(inner)) !== null) {
+      const title = m[1].trim();
+      if (title) matches.push(title);
+    }
+    if (matches.length > 0) return matches;
+
+    // Fallback: first 240 chars of inner content
+    const preview = inner.replace(/^[^a-zA-Z]*/, '').trim();
+    return [preview.length > 240 ? preview.slice(0, 237) + '…' : preview];
+  }
+
+  function extractVerdictInfo(entry: MemoryEntry): VerdictInfo | null {
+    if (entry.type !== 'gate-verdict') return null;
+    if (!entry.value || typeof entry.value !== 'object') return null;
+    const v = entry.value as Record<string, unknown>;
+    if (!v.verdict) return null;
+    return {
+      verdict: String(v.verdict ?? ''),
+      sprintVersion: String(v.sprintVersion ?? ''),
+      rationale: String(v.rationale ?? ''),
+      criticalFindings: Array.isArray(v.criticalFindings)
+        ? (v.criticalFindings as unknown[]).flatMap(f => parseFindingString(f, 'CRITICAL'))
+        : [],
+      majorFindings: Array.isArray(v.majorFindings)
+        ? (v.majorFindings as unknown[]).flatMap(f => parseFindingString(f, 'MAJOR'))
+        : [],
+      cycleId: typeof v.cycleId === 'string' ? v.cycleId : undefined,
+    };
+  }
+
+  /** Color class for gate verdict chips. */
+  function verdictColorClass(verdict: string): string {
+    const v = verdict.toUpperCase();
+    if (v === 'PASS' || v === 'APPROVE') return 'verdict--pass';
+    if (v === 'REJECT') return 'verdict--reject';
+    return 'verdict--neutral';
+  }
+
+  /**
    * Badge class and left-border color for a memory entry type.
    * Maps the five canonical types to project colour variables.
    */
@@ -357,9 +471,9 @@
   </div>
   {#if agents.length > 0}
     <select class="agent-select" bind:value={agentFilter} aria-label="Filter by source">
-      <option value="all">All sources</option>
+      <option value="all">All sources ({entries.length})</option>
       {#each agents as agent (agent)}
-        <option value={agent}>{shortSource(agent)}</option>
+        <option value={agent}>{sourceLabel(agent)}</option>
       {/each}
     </select>
   {/if}
@@ -467,7 +581,21 @@
 
             <!-- Value column — summary if available, otherwise truncated value preview -->
             <td class="col-value">
-              <span class="value-preview">{entry.summary ?? formatValue(entry.value)}</span>
+              {#if entry.type === 'gate-verdict' && entry.value && typeof entry.value === 'object'}
+                {@const vi = extractVerdictInfo(entry)}
+                {#if vi}
+                  <span class="value-preview value-preview--verdict">
+                    <span class="verdict-inline {verdictColorClass(vi.verdict)}">{vi.verdict}</span>
+                    {#if vi.sprintVersion}<span class="verdict-version">{vi.sprintVersion}</span>{/if}
+                  </span>
+                {:else}
+                  <span class="value-preview">{entry.summary ?? formatValue(entry.value)}</span>
+                {/if}
+              {:else}
+                <span class="value-preview">
+                  {entry.summary ? stripMarkdown(entry.summary) : formatValue(entry.value)}
+                </span>
+              {/if}
             </td>
 
             <!-- Source link column — stopPropagation so click doesn't toggle expand -->
@@ -562,20 +690,92 @@
                   </div>
 
                   <!-- Summary line (when present) -->
-                  {#if entry.summary}
-                    <p class="detail-summary">{entry.summary}</p>
+                  {#if entry.summary && entry.type !== 'gate-verdict'}
+                    <p class="detail-summary">{stripMarkdown(entry.summary)}</p>
+                  {/if}
+
+                  <!-- Gate-verdict structured view ──────────────────────────── -->
+                  {#if entry.type === 'gate-verdict'}
+                    {@const vi = extractVerdictInfo(entry)}
+                    {#if vi}
+                      <div class="verdict-panel">
+                        <!-- Verdict hero row -->
+                        <div class="verdict-hero">
+                          <span class="verdict-badge {verdictColorClass(vi.verdict)}">{vi.verdict}</span>
+                          {#if vi.sprintVersion}
+                            <span class="verdict-sprint">Sprint {vi.sprintVersion}</span>
+                          {/if}
+                          {#if vi.cycleId}
+                            <a class="source-link source-link--cycle verdict-cycle-link"
+                               href="/cycles/{vi.cycleId}"
+                               title="View cycle {vi.cycleId}"
+                               onclick={(e) => e.stopPropagation()}>
+                              <span class="source-prefix">cycle</span>{vi.cycleId.slice(0, 8)}
+                            </a>
+                          {/if}
+                        </div>
+
+                        <!-- Rationale -->
+                        {#if vi.rationale}
+                          <div class="verdict-rationale">
+                            <span class="verdict-section-label">Rationale</span>
+                            <p class="verdict-rationale-text">{vi.rationale}</p>
+                          </div>
+                        {/if}
+
+                        <!-- Critical findings -->
+                        {#if vi.criticalFindings.length > 0}
+                          <div class="verdict-findings verdict-findings--critical">
+                            <span class="verdict-section-label">Critical findings ({vi.criticalFindings.length})</span>
+                            <ul class="findings-list">
+                              {#each vi.criticalFindings as f, i (i)}
+                                <li class="findings-item">{f}</li>
+                              {/each}
+                            </ul>
+                          </div>
+                        {/if}
+
+                        <!-- Major findings -->
+                        {#if vi.majorFindings.length > 0}
+                          <div class="verdict-findings verdict-findings--major">
+                            <span class="verdict-section-label">Major findings ({vi.majorFindings.length})</span>
+                            <ul class="findings-list">
+                              {#each vi.majorFindings as f, i (i)}
+                                <li class="findings-item">{f}</li>
+                              {/each}
+                            </ul>
+                          </div>
+                        {/if}
+                      </div>
+                    {/if}
                   {/if}
 
                   <!-- Full value JSON with syntax highlighting + copy button -->
-                  <div class="detail-value-wrap">
-                    <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-                    <pre class="value-expanded"><code>{@html highlightJSON(entry.value)}</code></pre>
-                    <button
-                      class="copy-btn"
-                      onclick={(e) => copyValue(entry, e)}
-                      aria-label="Copy JSON value for {entry.key}"
-                    >{copiedId === entry.id ? '✓ Copied' : 'Copy'}</button>
-                  </div>
+                  <!-- For gate-verdict, collapse into a disclosure to reduce noise -->
+                  {#if entry.type === 'gate-verdict'}
+                    <details class="raw-json-details">
+                      <summary class="raw-json-summary">Raw JSON</summary>
+                      <div class="detail-value-wrap">
+                        <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+                        <pre class="value-expanded"><code>{@html highlightJSON(entry.value)}</code></pre>
+                        <button
+                          class="copy-btn"
+                          onclick={(e) => copyValue(entry, e)}
+                          aria-label="Copy JSON value for {entry.key}"
+                        >{copiedId === entry.id ? '✓ Copied' : 'Copy'}</button>
+                      </div>
+                    </details>
+                  {:else}
+                    <div class="detail-value-wrap">
+                      <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+                      <pre class="value-expanded"><code>{@html highlightJSON(entry.value)}</code></pre>
+                      <button
+                        class="copy-btn"
+                        onclick={(e) => copyValue(entry, e)}
+                        aria-label="Copy JSON value for {entry.key}"
+                      >{copiedId === entry.id ? '✓ Copied' : 'Copy'}</button>
+                    </div>
+                  {/if}
 
                 </div>
               </td>
@@ -1058,6 +1258,142 @@
     border-left: 2px solid var(--color-border-strong);
     border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
     font-style: italic;
+  }
+
+  /* ── Inline verdict chip (in table value cell) ────────────────────────── */
+  .value-preview--verdict {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .verdict-inline {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    text-transform: uppercase;
+  }
+  .verdict-inline.verdict--pass   { background: rgba(76,175,130,0.15); color: var(--color-haiku); }
+  .verdict-inline.verdict--reject { background: rgba(224,90,90,0.12); color: var(--color-danger); }
+  .verdict-inline.verdict--neutral{ background: var(--color-surface-2); color: var(--color-text-muted); }
+  .verdict-version {
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+    font-family: var(--font-mono);
+  }
+
+  /* ── Gate-verdict structured panel ──────────────────────────────────────── */
+  .verdict-panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    background: var(--color-surface-2);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border);
+  }
+
+  .verdict-hero {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+  }
+
+  .verdict-badge {
+    font-size: var(--text-sm);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    padding: 4px 12px;
+    border-radius: var(--radius-md);
+    text-transform: uppercase;
+  }
+  .verdict-badge.verdict--pass   { background: rgba(76,175,130,0.18); color: var(--color-haiku);  border: 1px solid rgba(76,175,130,0.35); }
+  .verdict-badge.verdict--reject { background: rgba(224,90,90,0.15);  color: var(--color-danger); border: 1px solid rgba(224,90,90,0.35); }
+  .verdict-badge.verdict--neutral{ background: var(--color-surface-1); color: var(--color-text-muted); border: 1px solid var(--color-border); }
+
+  .verdict-sprint {
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+    color: var(--color-text-muted);
+    background: var(--color-surface-1);
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
+    border: 1px solid var(--color-border);
+  }
+  .verdict-cycle-link {
+    margin-left: auto;
+  }
+
+  .verdict-section-label {
+    display: block;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--color-text-faint);
+    margin-bottom: var(--space-1);
+  }
+
+  .verdict-rationale { display: flex; flex-direction: column; }
+  .verdict-rationale-text {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+    line-height: 1.6;
+  }
+
+  .verdict-findings { display: flex; flex-direction: column; }
+
+  .findings-list {
+    margin: 0;
+    padding-left: var(--space-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .findings-item {
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    line-height: 1.55;
+  }
+  .verdict-findings--critical .findings-item { color: var(--color-danger); }
+  .verdict-findings--major .findings-item    { color: var(--color-warning, #e0a050); }
+
+  /* ── Raw JSON disclosure (gate-verdict) ──────────────────────────────────── */
+  .raw-json-details {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+  }
+  .raw-json-summary {
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+    padding: var(--space-2) var(--space-3);
+    cursor: pointer;
+    user-select: none;
+    background: var(--color-surface-1);
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .raw-json-summary::before {
+    content: '▸';
+    font-size: 9px;
+    transition: transform 0.15s;
+  }
+  .raw-json-details[open] .raw-json-summary::before {
+    transform: rotate(90deg);
+  }
+  .raw-json-details .detail-value-wrap {
+    border-radius: 0;
+  }
+  .raw-json-details .value-expanded {
+    border-radius: 0;
+    border: none;
+    border-top: 1px solid var(--color-border);
+    max-width: 100%;
   }
 
   /* ── Stats-bar "All" chip variant ────────────────────────────────────────── */

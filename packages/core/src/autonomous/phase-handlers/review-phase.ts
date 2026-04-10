@@ -8,11 +8,12 @@
 // findings so the audit phase can surface recurring anti-patterns in
 // subsequent cycles.
 
-import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
 import { writeMemoryEntry, type ReviewFindingMetadata } from '../../memory/types.js';
 import { extractFindingsByLevel } from './gate-phase.js';
+import { collectSprintItemTags } from './sprint-utils.js';
 
 export const REVIEW_PHASE_DEFAULT_TOOLS = ['Read', 'Bash', 'Glob', 'Grep'];
 export const REVIEW_PHASE_AGENT = 'code-reviewer';
@@ -265,37 +266,8 @@ export function parseReviewFindingMetadata(
   return { file, line: lineNumber, severity, summary, fixSuggestion };
 }
 
-/**
- * Read the sprint JSON and collect all unique item-level domain tags across all
- * items in the sprint. Returns an empty array when the sprint file is absent
- * or unreadable — failure must never block the review phase from completing.
- *
- * These domain tags are appended to review-finding memory entries written by
- * the review phase so that the execute-phase memory injector can find findings
- * from prior cycles that are relevant to the current item's domain tags.
- *
- * Without this, review findings carry only structural tags (review/finding/
- * critical) which never overlap with sprint item domain tags (memory/execute/
- * backend/...), silently breaking the cross-cycle feedback loop.
- */
-export function collectSprintItemTags(projectRoot: string, sprintVersion: string): string[] {
-  try {
-    const sprintPath = join(projectRoot, '.agentforge', 'sprints', `v${sprintVersion}.json`);
-    const raw = readFileSync(sprintPath, 'utf8');
-    const parsed = JSON.parse(raw);
-    const sprintObj: { items?: Array<{ tags?: string[] }> } | null =
-      parsed.items ? parsed : (parsed.sprints?.[0] ?? null);
-    const items = sprintObj?.items ?? [];
-    const tagSet = new Set<string>();
-    for (const item of items) {
-      for (const tag of item.tags ?? []) {
-        tagSet.add(tag.toLowerCase());
-      }
-    }
-    return Array.from(tagSet);
-  } catch {
-    // Sprint file absent or unreadable — return empty so the caller still
-    // writes the structural tags and doesn't lose the finding.
-    return [];
-  }
-}
+// collectSprintItemTags lives in sprint-utils.ts — re-exported from there to
+// avoid a circular import between review-phase (→ gate-phase) and gate-phase
+// (→ review-phase). Any code that previously imported collectSprintItemTags
+// from this module can continue doing so via the re-export below.
+export { collectSprintItemTags } from './sprint-utils.js';

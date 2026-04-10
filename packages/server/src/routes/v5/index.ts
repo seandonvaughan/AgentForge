@@ -83,10 +83,13 @@ export async function registerV5Routes(
     const data = adapter.listSessions({
       limit,
       offset,
-      agentId: q.agentId,
-      status: q.status,
+      ...(q.agentId !== undefined ? { agentId: q.agentId } : {}),
+      ...(q.status !== undefined ? { status: q.status } : {}),
     });
-    const total = adapter.countSessions({ agentId: q.agentId, status: q.status });
+    const total = adapter.countSessions({
+      ...(q.agentId !== undefined ? { agentId: q.agentId } : {}),
+      ...(q.status !== undefined ? { status: q.status } : {}),
+    });
 
     return reply.send({
       data,

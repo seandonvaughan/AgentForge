@@ -17,7 +17,7 @@ export async function agentStreamingRoutes(app: FastifyInstance): Promise<void> 
     '/api/v5/stream/response/:taskId',
     async (req, reply) => {
       const { taskId } = req.params;
-      const content = SIMULATED_RESPONSES[taskId] ?? SIMULATED_RESPONSES.default;
+      const content: string = SIMULATED_RESPONSES[taskId] ?? SIMULATED_RESPONSES['default'] ?? '';
       const chunkSize = parseInt((req.query as { chunkSize?: string }).chunkSize ?? '20', 10);
 
       const handle: StreamHandle = {
@@ -55,7 +55,7 @@ export async function agentStreamingRoutes(app: FastifyInstance): Promise<void> 
     '/api/v5/stream/response/:taskId/info',
     async (req, reply) => {
       const { taskId } = req.params;
-      const content = SIMULATED_RESPONSES[taskId] ?? SIMULATED_RESPONSES.default;
+      const content: string = SIMULATED_RESPONSES[taskId] ?? SIMULATED_RESPONSES['default'] ?? '';
 
       return reply.send({
         data: {

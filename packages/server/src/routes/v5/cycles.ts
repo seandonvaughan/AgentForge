@@ -896,9 +896,9 @@ export async function cyclesRoutes(
           const content = readFileSync(yamlPath, 'utf-8');
           const out: { model?: string; effort?: string } = {};
           const m = content.match(/^model:\s*(\S+)/m);
-          if (m) out.model = m[1];
+          if (m) out.model = m[1]!;
           const e = content.match(/^effort:\s*(\S+)/m);
-          if (e) out.effort = e[1];
+          if (e) out.effort = e[1]!;
           return out;
         } catch { return null; }
       };
@@ -979,10 +979,8 @@ export async function cyclesRoutes(
               // so use the estimated cost as a placeholder for UI display.
               costUsd: typeof it.estimatedCostUsd === 'number' ? it.estimatedCostUsd : 0,
               durationMs: 0,
-              response: undefined,
-              error: undefined,
-              attempts: undefined,
-              model: defaults.model,
+              // response, error, attempts intentionally omitted (optional)
+              ...(defaults.model !== undefined ? { model: defaults.model } : {}),
               effort: defaults.effort ?? 'high',
             };
             runs.push(synthesized);

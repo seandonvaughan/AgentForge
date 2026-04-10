@@ -11,8 +11,8 @@ export async function observabilityRoutes(app: FastifyInstance): Promise<void> {
     const entries = executionLog.query({
       level: q.level as any,
       category: q.category as any,
-      sprintVersion: q.sprintVersion,
-      agentId: q.agentId,
+      ...(q.sprintVersion !== undefined ? { sprintVersion: q.sprintVersion } : {}),
+      ...(q.agentId !== undefined ? { agentId: q.agentId } : {}),
       limit: q.limit ? parseInt(q.limit) : 100,
     });
     return reply.send({ data: entries, meta: { total: executionLog.count() } });

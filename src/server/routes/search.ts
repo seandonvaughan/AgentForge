@@ -22,6 +22,8 @@ const PROJECT_ROOT = join(__dirname, '../../../');
 const CYCLES_DIR          = join(PROJECT_ROOT, '.agentforge/cycles');
 const CYCLES_ARCHIVED_DIR = join(PROJECT_ROOT, '.agentforge/cycles-archived');
 const SPRINTS_DIR         = join(PROJECT_ROOT, '.agentforge/sprints');
+const MEMORY_JSONL_DIR    = join(PROJECT_ROOT, '.agentforge/memory');
+const MEMORIES_JSON_PATH  = join(PROJECT_ROOT, '.agentforge/data/memories.json');
 
 // ---------------------------------------------------------------------------
 // Types
@@ -276,6 +278,150 @@ function searchSprints(tokens: string[], limit: number): SearchResult[] {
   return results.sort((a, b) => b.score - a.score).slice(0, limit);
 }
 
+/** Search memory entries from JSONL files and the SQLite KV store. */
+function searchMemory(
+  adapter: SqliteAdapter,
+  tokens: string[],
+  limit: number,
+): SearchResult[] {
+  const results: SearchResult[] = [];
+
+  // --- JSONL files (primary: cycle-outcome, gate-verdict, review-finding, etc.) ---
+  if (existsSync(MEMORY_JSONL_DIR)) {
+    try {
+      const files = readdirSync(MEMORY_JSONL_DIR).filter(f => f.endsWith('.jsonl'));
+      for (const filename of files) {
+        try {
+          const raw = readFileSync(join(MEMORY_JSONL_DIR, filename), 'utf-8');
+          for (const line of raw.split('\n')) {
+            if (!line.trim()) continue;
+            try {
+              const e = JSON.parse(line) as {
+                id?: string;
+                type?: string;
+                value?: string;
+                source?: string;
+                tags?: string[];
+                createdAt?: string;
+              };
+              if (!e.id) continue;
+
+              const document = [
+                e.id,
+                e.type ?? '',
+                e.value ?? '',
+                e.source ?? '',
+                (e.tags ?? []).join(' '),
+              ].join(' ');
+
+              const relevance = score(document, tokens);
+              if (relevance === 0) continue;
+
+              results.push({
+                id:      e.id,
+                content: (e.value ?? e.type ?? e.id).slice(0, 280),
+                score:   relevance,
+                type:    'memory',
+                source:  e.source ?? filename,
+                metadata: {
+                  memoryType: e.type,
+                  source:     e.source,
+                  tags:       (e.tags ?? []).join(', '),
+                  createdAt:  e.createdAt,
+                },
+              });
+            } catch {
+              // skip malformed lines
+            }
+          }
+        } catch {
+          // skip unreadable files
+        }
+      }
+    } catch {
+      // MEMORY_JSONL_DIR unreadable — fall through
+    }
+  }
+
+  // --- Structured memories.json (operator-curated / autonomous-loop learned) ---
+  if (existsSync(MEMORIES_JSON_PATH)) {
+    try {
+      const raw = JSON.parse(readFileSync(MEMORIES_JSON_PATH, 'utf-8')) as {
+        entries?: Array<{
+          id?: string;
+          filename?: string;
+          category?: string;
+          agentId?: string;
+          summary?: string;
+          tags?: string[];
+          updatedAt?: string;
+        }>;
+      };
+      for (const e of raw.entries ?? []) {
+        const document = [
+          e.filename ?? '',
+          e.category ?? '',
+          e.agentId ?? '',
+          e.summary ?? '',
+          (e.tags ?? []).join(' '),
+        ].join(' ');
+
+        const relevance = score(document, tokens);
+        if (relevance === 0) continue;
+
+        const id = e.id ?? e.filename ?? '';
+        results.push({
+          id,
+          content: (e.summary ?? e.filename ?? id).slice(0, 280),
+          score:   relevance,
+          type:    'memory',
+          source:  e.agentId ?? 'memories.json',
+          metadata: {
+            memoryType: 'structured',
+            category:   e.category,
+            agentId:    e.agentId,
+            tags:       (e.tags ?? []).join(', '),
+            updatedAt:  e.updatedAt,
+          },
+        });
+      }
+    } catch {
+      // skip malformed memories.json
+    }
+  }
+
+  // --- SQLite KV store (real-time agent-written memory) ---
+  try {
+    const db = adapter.getAgentDatabase().getDb();
+    const rows = db
+      .prepare<[], { key: string; value: string; updated_at: string }>(
+        'SELECT key, value, updated_at FROM kv_store ORDER BY updated_at DESC'
+      )
+      .all();
+    for (const row of rows) {
+      const document = [row.key, row.value].join(' ');
+      const relevance = score(document, tokens);
+      if (relevance === 0) continue;
+
+      results.push({
+        id:      row.key,
+        content: (row.value).slice(0, 280),
+        score:   relevance,
+        type:    'memory',
+        source:  'kv-store',
+        metadata: {
+          memoryType: 'kv',
+          updatedAt:  row.updated_at,
+        },
+      });
+    }
+  } catch {
+    // kv_store table may not exist — skip silently
+  }
+
+  return results.sort((a, b) => b.score - a.score).slice(0, limit);
+}
+
 // ---------------------------------------------------------------------------
 // Route plugin
 // ---------------------------------------------------------------------------
@@ -345,7 +491,9 @@ export async function searchRoutes(
     if (enabledTypes.has('sprint')) {
       all.push(...searchSprints(tokens, perTypeBudget));
     }
-    // 'memory' type reserved for future semantic integration — skip for now.
+    if (enabledTypes.has('memory')) {
+      all.push(...searchMemory(adapter, tokens, perTypeBudget));
+    }
 
     // Global sort by score, then cap
     all.sort((a, b) => b.score - a.score);

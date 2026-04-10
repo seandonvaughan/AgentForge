@@ -186,11 +186,15 @@ function computeInheritance(): FlywheelMetric {
 /**
  * Memory stats: total entries, entries-per-cycle trend, and hit rate.
  *
- * Hit rate = fraction of cycles that started after at least one memory entry
- * already existed. Cycles with no prior entries (i.e., the very first ones
- * before any memory was written) cannot have "hit" the memory, so they count
- * as misses. Cycles that ran before any memory existed are included in the
- * denominator so the metric reflects the overall wiring health truthfully.
+ * Hit rate = fraction of **completed** cycles that actually had memory available
+ * when they ran. Computed in two tiers:
+ *   1. Precise signal: if the cycle's audit.json contains `memoriesInjected`,
+ *      use that count directly (> 0 = hit).  This field is written by the audit
+ *      phase handler since v9.0.x.
+ *   2. Timestamp proxy fallback: for cycles that pre-date the `memoriesInjected`
+ *      field, a cycle "hit" if it started strictly after the earliest memory
+ *      entry already existed on disk.
+ * Only completed cycles count so failed/running cycles don't skew the metric.
  */
 function computeMemoryStats(): MemoryStats {
   const EMPTY: MemoryStats = { totalEntries: 0, entriesPerCycleTrend: [], hitRate: 0 };
@@ -250,28 +254,50 @@ function computeMemoryStats(): MemoryStats {
   const entriesPerCycleTrend = cyclePoints.slice(-10);
 
   // ── 3. Compute hit rate ────────────────────────────────────────────────────
-  // Sort all entries by createdAt ascending so we can compute the "earliest entry" timestamp
-  const sortedEntries = [...allEntries]
-    .filter(e => e.createdAt)
-    .sort((a, b) => (a.createdAt!).localeCompare(b.createdAt!));
-
-  const firstEntryAt = sortedEntries.length > 0 ? sortedEntries[0].createdAt! : '';
+  // The timestamp proxy needs the earliest entry createdAt for comparison.
+  const earliestEntryMs = allEntries
+    .map(e => e.createdAt ? new Date(e.createdAt).getTime() : 0)
+    .filter(t => t > 0)
+    .reduce((min, t) => Math.min(min, t), Infinity);
 
   let hits = 0;
   let evaluated = 0;
 
-  if (existsSync(CYCLES_DIR) && firstEntryAt) {
+  if (existsSync(CYCLES_DIR)) {
     try {
       for (const dir of readdirSync(CYCLES_DIR)) {
         try {
           const cycleFile = join(CYCLES_DIR, dir, 'cycle.json');
           if (!existsSync(cycleFile)) continue;
-          const c = JSON.parse(readFileSync(cycleFile, 'utf8')) as { startedAt?: string };
+          const c = JSON.parse(readFileSync(cycleFile, 'utf8')) as {
+            startedAt?: string;
+            stage?: string;
+          };
+          // Only completed cycles count in the denominator — failed/running
+          // cycles haven't gone through the full audit phase and cannot have
+          // consumed memory in a meaningful sense.
+          if (c.stage !== 'completed') continue;
           if (!c.startedAt) continue;
 
           evaluated++;
-          // A "hit" means at least one entry existed before this cycle started
-          if (firstEntryAt < c.startedAt) hits++;
+
+          // Tier 1: explicit memoriesInjected field from audit.json (v9.0.x+)
+          const auditPath = join(CYCLES_DIR, dir, 'phases', 'audit.json');
+          if (existsSync(auditPath)) {
+            try {
+              const audit = JSON.parse(readFileSync(auditPath, 'utf8')) as {
+                memoriesInjected?: number;
+              };
+              if (typeof audit.memoriesInjected === 'number') {
+                if (audit.memoriesInjected > 0) hits++;
+                continue; // explicit signal consumed — skip timestamp proxy
+              }
+            } catch { /* fall through to proxy */ }
+          }
+
+          // Tier 2: timestamp proxy — hit if cycle started after earliest entry
+          const startMs = new Date(c.startedAt).getTime();
+          if (startMs > earliestEntryMs) hits++;
         } catch { /* skip unreadable cycles */ }
       }
     } catch { /* cycles dir unreadable */ }

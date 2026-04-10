@@ -255,20 +255,23 @@
     'response',      // fallback: top-level response string on any phase
   ]);
 
-  // Fields to omit from the raw-JSON metadata view because they are rendered
-  // by dedicated UI sections (markdown blocks or agentRun cards).
-  // 'itemResults' is included because execute-phase.ts writes the same array to
-  // both agentRuns and itemResults — the agentRunSections() renderer already
-  // surfaces every response as markdown, so itemResults in metaOnly would just
-  // be 20 raw JSON objects duplicating what's shown above.
-  const STRIP_FROM_RAW = new Set([...MARKDOWN_FIELDS, 'agentRuns', 'itemResults']);
-
   /** Returns a copy of a phase object with prose/run fields removed,
-   *  leaving only the structured metadata that benefits from JSON display. */
+   *  leaving only the structured metadata that benefits from JSON display.
+   *
+   *  IMPORTANT: Only strip a MARKDOWN_FIELD when it is a non-empty string
+   *  that markdownSections() will actually render. If a markdown-named field
+   *  holds a non-string value (e.g. an object), we keep it in the raw JSON
+   *  view rather than silently dropping it from the UI entirely.
+   *  Fields in the always-strip set (agentRuns, itemResults) are stripped
+   *  unconditionally because they have their own dedicated rendering. */
+  const ALWAYS_STRIP = new Set(['agentRuns', 'itemResults']);
   function stripMarkdownFields(data: Record<string, unknown>): Record<string, unknown> {
     const copy: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(data)) {
-      if (!STRIP_FROM_RAW.has(k)) copy[k] = v;
+      if (ALWAYS_STRIP.has(k)) continue;
+      // Only strip a markdown field when markdownSections() will actually use it.
+      if (MARKDOWN_FIELDS.has(k) && typeof v === 'string' && v.trim()) continue;
+      copy[k] = v;
     }
     return copy;
   }
@@ -1048,6 +1051,13 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
+  }
+  /* When markdown prose is the only content (no stat chips or raw JSON above),
+     the first section is the first child of .phase-body — remove the redundant
+     border-top since .phase-body already provides its own top separator. */
+  .phase-md-section:first-child {
+    border-top: none;
+    padding-top: 0;
   }
   .phase-md-label {
     font-size: var(--text-xs);

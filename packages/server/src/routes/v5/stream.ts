@@ -100,7 +100,7 @@ export async function streamRoutes(app: FastifyInstance): Promise<void> {
       type: type ?? 'system',
       category: category ?? 'system',
       message,
-      data,
+      ...(data !== undefined ? { data } : {}),
     });
     return reply.status(201).send({ ok: true });
   });

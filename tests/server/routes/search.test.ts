@@ -240,4 +240,73 @@ describe('POST /api/v5/search', () => {
     const body = res.json();
     expect(body.meta.query).toBe('echo me back');
   });
+
+  // ── Memory search (KV store) ─────────────────────────────────────────────────
+
+  it('finds a memory entry by KV store key', async () => {
+    // Write a known KV entry directly into the in-memory SQLite database.
+    adapter.getAgentDatabase().getDb().prepare(
+      'INSERT OR REPLACE INTO kv_store (key, value, updated_at) VALUES (?, ?, ?)'
+    ).run('deployment/auth-service', 'Auth service deployment notes and runbook', new Date().toISOString());
+
+    const res = await app.inject({
+      method:  'POST',
+      url:     '/api/v5/search',
+      payload: { query: 'auth service' },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    const memResults = body.data.filter((r: { type: string }) => r.type === 'memory');
+    expect(memResults.length).toBeGreaterThan(0);
+    expect(memResults[0].metadata.memoryType).toBe('kv');
+  });
+
+  it('memory type filter returns only memory results', async () => {
+    // Seed both a session and a KV memory that both match the query.
+    adapter.insertSession(makeSessionRecord({ task: 'gateway routing configuration', agent_id: 'infra-agent' }));
+
+    adapter.getAgentDatabase().getDb().prepare(
+      'INSERT OR REPLACE INTO kv_store (key, value, updated_at) VALUES (?, ?, ?)'
+    ).run('notes/gateway', 'gateway routing notes', new Date().toISOString());
+
+    const res = await app.inject({
+      method:  'POST',
+      url:     '/api/v5/search',
+      payload: { query: 'gateway', types: ['memory'] },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    const types = body.data.map((r: { type: string }) => r.type);
+    expect(types.every((t: string) => t === 'memory')).toBe(true);
+  });
+
+  it('memory KV entries that do not match are excluded', async () => {
+    adapter.getAgentDatabase().getDb().prepare(
+      'INSERT OR REPLACE INTO kv_store (key, value, updated_at) VALUES (?, ?, ?)'
+    ).run('notes/database', 'xyzzy_unique_schema migration notes', new Date().toISOString());
+
+    // Use a query that can only match the specific KV value above — not any real JSONL files.
+    // Searching for something that is definitely not in xyzzy_unique_schema migration notes:
+    const res = await app.inject({
+      method:  'POST',
+      url:     '/api/v5/search',
+      payload: { query: 'xyzzy_unique_schema', types: ['memory'] },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    // The specific entry we inserted should appear (it contains our token)
+    const kvResult = body.data.find((r: { source: string }) => r.source === 'kv-store');
+    expect(kvResult).toBeDefined();
+
+    // Now confirm a completely unrelated query finds nothing in KV
+    const res2 = await app.inject({
+      method:  'POST',
+      url:     '/api/v5/search',
+      payload: { query: 'zqxjkv_impossible_term_9847', types: ['memory'] },
+    });
+    expect(res2.statusCode).toBe(200);
+    const body2 = res2.json();
+    const kvResults = body2.data.filter((r: { source: string }) => r.source === 'kv-store');
+    expect(kvResults).toHaveLength(0);
+  });
 });

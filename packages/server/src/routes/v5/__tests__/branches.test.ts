@@ -101,7 +101,7 @@ describe('GET /api/v5/autonomous-branches', () => {
     expect(body.data).toHaveLength(1);
     expect(body.meta.total).toBe(1);
 
-    const branch = body.data[0];
+    const branch = body.data[0]!;
     expect(branch.name).toBe('autonomous/v6.8.0-sprint-001');
     expect(branch.cycle).toBe('v6.8.0-sprint-001');
     expect(typeof branch.lastCommitAt).toBe('string');
@@ -142,7 +142,7 @@ describe('GET /api/v5/autonomous-branches', () => {
 
     expect(res.statusCode).toBe(200);
     expect(body.meta.total).toBe(1);
-    expect(body.data[0].name).toBe('autonomous/v6.8.0');
+    expect(body.data[0]!.name).toBe('autonomous/v6.8.0');
   });
 
   it('includes an updatedAt timestamp in meta', async () => {
@@ -159,7 +159,7 @@ describe('GET /api/v5/autonomous-branches', () => {
     const res = await app.inject({ method: 'GET', url: '/api/v5/autonomous-branches' });
     const body = JSON.parse(res.body) as { data: Array<{ cycle: string }> };
 
-    expect(body.data[0].cycle).toBe('sprint-42a67677');
+    expect(body.data[0]!.cycle).toBe('sprint-42a67677');
   });
 });
 
@@ -235,6 +235,6 @@ describe('DELETE /api/v5/autonomous-branches/*', () => {
     const listRes = await app.inject({ method: 'GET', url: '/api/v5/autonomous-branches' });
     const body = JSON.parse(listRes.body) as { data: Array<{ name: string }> };
     expect(body.data).toHaveLength(1);
-    expect(body.data[0].name).toBe('autonomous/v6.8.1');
+    expect(body.data[0]!.name).toBe('autonomous/v6.8.1');
   });
 });

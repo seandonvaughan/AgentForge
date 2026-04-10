@@ -127,7 +127,7 @@ export async function registerWebSocketRoutes(
 
     // ── Incoming message handler ────────────────────────────────────────────────
 
-    socket.on('message', (rawData) => {
+    socket.on('message', (rawData: Buffer | ArrayBuffer | Buffer[]) => {
       try {
         const msg = JSON.parse(rawData.toString()) as {
           type: string;

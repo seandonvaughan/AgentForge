@@ -8,7 +8,7 @@ function normalizeSprint(raw: Record<string, unknown>, fallbackId: string) {
   // Some files use { sprints: [{ ... }] } wrapper (v4.x, v6.0 format)
   let entry = raw;
   if (Array.isArray(raw['sprints']) && (raw['sprints'] as unknown[]).length > 0) {
-    entry = (raw['sprints'] as Record<string, unknown>[])[0];
+    entry = (raw['sprints'] as Record<string, unknown>[])[0] ?? raw;
   }
 
   const version = (entry['version'] ?? fallbackId) as string;
@@ -36,8 +36,8 @@ function normalizeSprint(raw: Record<string, unknown>, fallbackId: string) {
 
   // Derive a canonical status from the phase/status field
   function deriveStatus(p: string | undefined): 'completed' | 'in_progress' | 'pending' {
-    if (p === 'completed' || p === 'done') return 'completed';
-    if (p === 'in_progress' || p === 'active' || p === 'executing') return 'in_progress';
+    if (p === 'completed' || p === 'done' || p === 'release' || p === 'released' || p === 'shipped' || p === 'closed' || p === 'merged') return 'completed';
+    if (p === 'in_progress' || p === 'active' || p === 'executing' || p === 'review') return 'in_progress';
     return 'pending';
   }
 

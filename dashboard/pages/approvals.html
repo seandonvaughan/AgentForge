@@ -619,8 +619,25 @@
       });
     }
 
-    // Auto-load when page script is injected
+    // Auto-load when page script is injected, then poll every 30 s so newly
+    // created approval-pending.json files surface without requiring SSE.
     (function () {
       if (typeof loadApprovalsPage === 'function') loadApprovalsPage();
+
+      // Expose on window so the global SSE handler and approval store can trigger
+      // a live reload when they detect approval.pending or approval_decided events.
+      window.loadApprovalsPage = loadApprovalsPage;
+
+      // 30-second poll: keeps the queue fresh while the human is reviewing.
+      // Intentionally longer than the global 15-second approval-store poll so
+      // the two don't fire simultaneously.
+      var _approvalsPollHandle = setInterval(function () {
+        // Guard: only keep polling while this page's DOM elements are still live.
+        if (!document.getElementById('approvals-pending-list')) {
+          clearInterval(_approvalsPollHandle);
+          return;
+        }
+        loadApprovalsPage();
+      }, 30000);
     })();
   </script>

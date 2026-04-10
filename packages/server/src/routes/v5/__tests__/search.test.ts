@@ -119,9 +119,9 @@ describe('POST /api/v5/search', () => {
     const body = res.json<SearchResponse>();
     // Only the architect YAML contains "monorepo"
     expect(body.data).toHaveLength(1);
-    expect(body.data[0].type).toBe('agent');
-    expect(body.data[0].id).toBe('agent:architect');
-    expect(body.data[0].score).toBeGreaterThan(0);
+    expect(body.data[0]!.type).toBe('agent');
+    expect(body.data[0]!.id).toBe('agent:architect');
+    expect(body.data[0]!.score).toBeGreaterThan(0);
   });
 
   it('extracts description text from YAML block scalars (> notation)', async () => {
@@ -150,10 +150,10 @@ describe('POST /api/v5/search', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json<SearchResponse>();
     expect(body.data).toHaveLength(1);
-    expect(body.data[0].type).toBe('agent');
+    expect(body.data[0]!.type).toBe('agent');
     // Content preview must NOT show the bare ">" — it should contain the actual description text
-    expect(body.data[0].content).not.toContain('Description: >');
-    expect(body.data[0].content).toContain('Pipeline');
+    expect(body.data[0]!.content).not.toContain('Description: >');
+    expect(body.data[0]!.content).toContain('Pipeline');
   });
 
   it('finds sprint items by title and description', async () => {
@@ -199,7 +199,7 @@ describe('POST /api/v5/search', () => {
     const sprintResults = body.data.filter(r => r.type === 'sprint');
     expect(sprintResults.length).toBeGreaterThanOrEqual(1);
     // The "Dashboard Search Fix" item should rank first among sprint results
-    expect(sprintResults[0].content).toContain('Dashboard Search Fix');
+    expect(sprintResults[0]!.content).toContain('Dashboard Search Fix');
   });
 
   it('finds in-progress cycles via sprint-link.json fallback', async () => {
@@ -230,8 +230,8 @@ describe('POST /api/v5/search', () => {
     const body = res.json<SearchResponse>();
     const cycleResults = body.data.filter(r => r.type === 'cycle');
     expect(cycleResults.length).toBeGreaterThanOrEqual(1);
-    expect(cycleResults[0].id).toBe(`cycle:${cycleId}`);
-    expect(cycleResults[0].metadata?.stage).toBe('in-progress');
+    expect(cycleResults[0]!.id).toBe(`cycle:${cycleId}`);
+    expect(cycleResults[0]!.metadata?.stage).toBe('in-progress');
   });
 
   it('finds completed cycles via cycle.json', async () => {
@@ -260,8 +260,8 @@ describe('POST /api/v5/search', () => {
     const body = res.json<SearchResponse>();
     const cycleResults = body.data.filter(r => r.type === 'cycle');
     expect(cycleResults.length).toBeGreaterThanOrEqual(1);
-    expect(cycleResults[0].id).toBe(`cycle:${cycleId}`);
-    expect(cycleResults[0].metadata?.prNumber).toBe(42);
+    expect(cycleResults[0]!.id).toBe(`cycle:${cycleId}`);
+    expect(cycleResults[0]!.metadata?.prNumber).toBe(42);
   });
 
   it('finds memory entries in .jsonl files', async () => {
@@ -346,8 +346,8 @@ describe('POST /api/v5/search', () => {
     const body = res.json<SearchResponse>();
     expect(body.data.length).toBe(2);
     // Higher score first
-    expect(body.data[0].score).toBeGreaterThanOrEqual(body.data[1].score);
-    expect(body.data[0].id).toBe('agent:search-specialist');
+    expect(body.data[0]!.score).toBeGreaterThanOrEqual(body.data[1]!.score);
+    expect(body.data[0]!.id).toBe('agent:search-specialist');
   });
 
   it('respects the limit parameter', async () => {

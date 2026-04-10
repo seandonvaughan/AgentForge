@@ -162,6 +162,20 @@
         </div>
       </div>
 
+      <!-- Loop Data Panel — raw counts from debug object ──────────────────── -->
+      <div id="fw-loop-data-card" style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-top:20px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:15px">📊</span>
+            <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted)">Loop Data</span>
+          </div>
+          <span style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted)">raw signal behind scores</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px" id="fw-loop-stats-grid">
+          <!-- stat tiles injected by JS -->
+        </div>
+      </div>
+
       <!-- Metric Detail Table -->
       <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-top:20px">
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:14px">Metric Breakdown</div>
@@ -609,6 +623,102 @@
     }
   }
 
+  /**
+   * Renders the Loop Data panel from the `debug` object in the flywheel response.
+   * Shows raw counts so operators can understand WHY scores are what they are.
+   * Each stat tile shows a label, value, and an optional sub-label for context.
+   */
+  function renderLoopDataPanel(debug) {
+    var grid = document.getElementById('fw-loop-stats-grid');
+    if (!grid) return;
+    while (grid.firstChild) grid.removeChild(grid.firstChild);
+
+    if (!debug || typeof debug !== 'object') {
+      var none = document.createElement('div');
+      none.style.cssText = 'grid-column:1/-1;font-family:var(--font-mono);font-size:11px;color:var(--text-muted)';
+      none.textContent = 'no loop data yet';
+      grid.appendChild(none);
+      return;
+    }
+
+    // Cycle stats
+    var cycleCount     = typeof debug.cycleCount     === 'number' ? debug.cycleCount     : 0;
+    var completedCycle = typeof debug.completedCycleCount === 'number' ? debug.completedCycleCount : 0;
+    var meaningfulCycle = typeof debug.meaningfulCycleCount === 'number' ? debug.meaningfulCycleCount : 0;
+    var cycleSuccessPct = meaningfulCycle > 0 ? Math.round((completedCycle / meaningfulCycle) * 100) : 0;
+    var cycleColor = cycleSuccessPct >= 80 ? 'var(--green)' : cycleSuccessPct >= 50 ? 'var(--gold)' : cycleCount === 0 ? 'var(--text-muted)' : 'var(--red)';
+
+    // Sprint stats
+    var sprintCount    = typeof debug.sprintCount    === 'number' ? debug.sprintCount    : 0;
+    var totalItems     = typeof debug.totalItems     === 'number' ? debug.totalItems     : 0;
+    var completedItems = typeof debug.completedItems === 'number' ? debug.completedItems : 0;
+    var itemPct        = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
+    var sprintColor    = itemPct >= 80 ? 'var(--green)' : itemPct >= 40 ? 'var(--gold)' : sprintCount === 0 ? 'var(--text-muted)' : 'var(--red)';
+
+    // Agent stats
+    var agentCount     = typeof debug.agentCount     === 'number' ? debug.agentCount     : 0;
+    var agentColor     = agentCount >= 10 ? 'var(--green)' : agentCount > 0 ? 'var(--gold)' : 'var(--text-muted)';
+
+    // Session stats
+    var sessionCount   = typeof debug.sessionCount   === 'number' ? debug.sessionCount   : 0;
+    var satisfiedCount = typeof debug.satisfiedSessionCount === 'number' ? debug.satisfiedSessionCount : 0;
+    var sessionPct     = sessionCount > 0 ? Math.round((satisfiedCount / sessionCount) * 100) : 0;
+    var sessionColor   = sessionPct >= 80 ? 'var(--green)' : sessionPct >= 50 ? 'var(--gold)' : sessionCount === 0 ? 'var(--text-muted)' : 'var(--red)';
+
+    var tiles = [
+      {
+        icon: '🔄',
+        label: 'Cycles',
+        value: completedCycle + '/' + cycleCount,
+        sub: meaningfulCycle > 0 ? cycleSuccessPct + '% success' : 'no data yet',
+        color: cycleColor,
+      },
+      {
+        icon: '🏃',
+        label: 'Sprint Items',
+        value: completedItems + '/' + totalItems,
+        sub: sprintCount > 0 ? sprintCount + ' sprint' + (sprintCount === 1 ? '' : 's') + ' · ' + itemPct + '%' : 'no sprints yet',
+        color: sprintColor,
+      },
+      {
+        icon: '🧬',
+        label: 'Agents',
+        value: String(agentCount),
+        sub: agentCount === 0 ? 'no agents yet' : agentCount >= 10 ? 'full team' : 'growing',
+        color: agentColor,
+      },
+      {
+        icon: '⚡',
+        label: 'Sessions',
+        value: satisfiedCount + '/' + sessionCount,
+        sub: sessionCount > 0 ? sessionPct + '% satisfied' : 'no session data',
+        color: sessionColor,
+      },
+    ];
+
+    tiles.forEach(function (t) {
+      var tile = document.createElement('div');
+      tile.style.cssText = 'background:var(--bg-primary);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 16px;display:flex;flex-direction:column;gap:4px';
+
+      var hdr = document.createElement('div');
+      hdr.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text-muted)';
+      hdr.textContent = t.icon + ' ' + t.label;
+
+      var val = document.createElement('div');
+      val.style.cssText = 'font-family:var(--font-mono);font-size:22px;font-weight:700;line-height:1.1;color:' + t.color;
+      val.textContent = t.value;
+
+      var sub = document.createElement('div');
+      sub.style.cssText = 'font-family:var(--font-mono);font-size:10px;color:var(--text-secondary)';
+      sub.textContent = t.sub;
+
+      tile.appendChild(hdr);
+      tile.appendChild(val);
+      tile.appendChild(sub);
+      grid.appendChild(tile);
+    });
+  }
+
   /** Main loader: fetches /api/v5/flywheel, /api/v5/cycles, /api/v5/sprints in parallel. */
   window.loadFlywheelPage = async function () {
     var loading  = document.getElementById('fw-loading');
@@ -712,6 +822,9 @@
 
       // ── Memory Stats Card ─────────────────────────────────────
       renderMemoryCard(data.memoryStats);
+
+      // ── Loop Data panel (raw debug counts) ────────────────────
+      renderLoopDataPanel(data.debug);
 
       // ── Cycle panel (best-effort — non-fatal if missing) ──────
       if (cyclesResult.status === 'fulfilled') {

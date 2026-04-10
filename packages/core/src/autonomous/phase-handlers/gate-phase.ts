@@ -7,8 +7,8 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
-import { writeMemoryEntry } from '../../memory/types.js';
-import { collectSprintItemTags } from './review-phase.js';
+import { writeMemoryEntry, type GateVerdictMetadata } from '../../memory/types.js';
+import { collectSprintItemTags } from './sprint-utils.js';
 
 export const GATE_PHASE_DEFAULT_TOOLS = ['Read', 'Bash', 'Glob', 'Grep'];
 
@@ -264,19 +264,36 @@ Respond as JSON: { "verdict": "APPROVE" | "REJECT", "rationale": "..." }`;
   const criticalFindings = extractFindingsByLevel(reviewFindings, 'CRITICAL');
   const majorFindings = extractFindingsByLevel(reviewFindings, 'MAJOR');
   const sprintDomainTags = collectSprintItemTags(ctx.projectRoot, ctx.sprintVersion);
+
+  // Normalize verdict to lowercase to match the GateVerdictMetadata contract.
+  const verdictNorm: 'approved' | 'rejected' =
+    verdict.verdict === 'APPROVE' ? 'approved' : 'rejected';
+
+  const gateMetadata: GateVerdictMetadata = {
+    cycleId: ctx.cycleId ?? '',
+    verdict: verdictNorm,
+    rationale: verdict.rationale,
+    criticalFindings,
+    majorFindings,
+  };
+
+  // Build a human-readable summary for the `value` field so the audit-phase
+  // prompt injection renders clean bullets instead of a raw JSON blob.
+  const summaryParts: string[] = [`Gate ${verdictNorm}: ${verdict.rationale}`];
+  if (criticalFindings.length > 0) {
+    summaryParts.push(`Critical: ${criticalFindings.join('; ')}`);
+  }
+  if (majorFindings.length > 0) {
+    summaryParts.push(`Major: ${majorFindings.join('; ')}`);
+  }
+
   writeMemoryEntry(ctx.projectRoot, {
     type: 'gate-verdict',
-    value: JSON.stringify({
-      cycleId: ctx.cycleId ?? null,
-      sprintVersion: ctx.sprintVersion,
-      verdict: verdict.verdict,
-      rationale: verdict.rationale,
-      criticalFindings,
-      majorFindings,
-    }),
+    value: summaryParts.join('. '),
+    metadata: gateMetadata,
     source: ctx.cycleId,
     tags: [
-      `verdict:${verdict.verdict.toLowerCase()}`,
+      `verdict:${verdictNorm}`,
       `sprint:v${ctx.sprintVersion}`,
       ...sprintDomainTags,
     ],

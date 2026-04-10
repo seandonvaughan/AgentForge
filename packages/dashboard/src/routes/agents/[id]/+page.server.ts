@@ -66,9 +66,24 @@ function parseAgentYaml(content: string): ParsedAgent {
       const rest = topMatch[2].trim();
 
       if (rest === '') {
-        // Possibly a section header — peek at next line for indentation
+        // Possibly a section header or dash-list array — peek at next line.
         const nextLine = lines[i + 1] ?? '';
         if (/^[ \t]/.test(nextLine)) {
+          if (/^[ \t]+-/.test(nextLine)) {
+            // Dash-list array: collect all consecutive "  - item" lines.
+            // This is the dominant format in agent YAML files (e.g. skills:).
+            const items: string[] = [];
+            i++;
+            while (i < lines.length && /^[ \t]+-/.test(lines[i])) {
+              const dashMatch = lines[i].match(/^[ \t]+-\s*(.*)/);
+              if (dashMatch) items.push(dashMatch[1].trim().replace(/^["']|["']$/g, ''));
+              i++;
+            }
+            result.arrays[key] = items;
+            section = null;
+            continue;
+          }
+          // Indented sub-keys → section header.
           section = key;
           result.sections[key] = { strings: {}, arrays: {} };
           i++;
@@ -109,17 +124,37 @@ function parseAgentYaml(content: string): ParsedAgent {
     }
 
     // Detect an indented key under the current section
-    const indentMatch = line.match(/^[ \t]+([A-Za-z_][A-Za-z0-9_]*):\s*(.*)/);
+    const indentMatch = line.match(/^([ \t]+)([A-Za-z_][A-Za-z0-9_]*):\s*(.*)/);
     if (indentMatch && section && result.sections[section]) {
-      const subKey = indentMatch[1];
-      const subRest = indentMatch[2].trim();
+      const indent = indentMatch[1];
+      const subKey = indentMatch[2];
+      const subRest = indentMatch[3].trim();
       if (subRest.startsWith('[')) {
         result.sections[section].arrays[subKey] = parseInlineArray(subRest);
+        i++;
+        continue;
       } else if (subRest !== '') {
         result.sections[section].strings[subKey] = subRest.replace(/^["']|["']$/g, '');
+        i++;
+        continue;
+      } else {
+        // Empty sub-key — check for deeper-indented dash-list (e.g. can_delegate_to:)
+        const nextLine2 = lines[i + 1] ?? '';
+        const deeperDash = new RegExp(`^${indent}[ \t]+-`);
+        if (deeperDash.test(nextLine2)) {
+          const items: string[] = [];
+          i++;
+          while (i < lines.length && deeperDash.test(lines[i])) {
+            const dashMatch = lines[i].match(/^[ \t]+-\s*(.*)/);
+            if (dashMatch) items.push(dashMatch[1].trim().replace(/^["']|["']$/g, ''));
+            i++;
+          }
+          result.sections[section].arrays[subKey] = items;
+          continue;
+        }
+        i++;
+        continue;
       }
-      i++;
-      continue;
     }
 
     // Blank line or comment — preserve section context

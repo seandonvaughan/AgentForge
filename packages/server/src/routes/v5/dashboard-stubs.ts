@@ -246,6 +246,51 @@ export async function dashboardStubRoutes(
       }
     }
 
+    // ── Seed fallback (.agentforge/data/memories.json) ───────────────────
+    // When no live JSONL or legacy entries have been collected yet (e.g. a
+    // fresh deployment or a CI environment with no cycle runs), serve the
+    // seed data so the memory browser is never blank.  The seed is skipped
+    // as soon as any live entry exists to avoid mixing real data with placeholders.
+    if (entries.length === 0) {
+      const seedPath = join(projectRoot, '.agentforge/data/memories.json');
+      if (existsSync(seedPath)) {
+        try {
+          const raw = readFileSync(seedPath, 'utf-8');
+          const seed = JSON.parse(raw) as {
+            entries?: Array<{
+              id?: string;
+              filename?: string;
+              category?: string;
+              agentId?: string;
+              summary?: string;
+              tags?: string[];
+              createdAt?: string;
+              updatedAt?: string;
+            }>;
+          };
+          const seedEntries = Array.isArray(seed.entries) ? seed.entries : [];
+          for (const e of seedEntries) {
+            const id = e.id ?? `seed-${entries.length}`;
+            // Strip common extensions for a clean display key.
+            const key = (e.filename ?? id).replace(/\.(md|json)$/, '');
+            entries.push({
+              id,
+              key,
+              // Use summary as the preview value — it's the most human-readable field.
+              value: e.summary ?? '',
+              // Category maps 1-to-1 to the frontend's type-chip filter.
+              type: e.category ?? 'memory',
+              createdAt: e.createdAt ?? new Date().toISOString(),
+              ...(e.updatedAt  ? { updatedAt: e.updatedAt }  : {}),
+              ...(e.agentId    ? { agentId:   e.agentId }    : {}),
+              ...(e.summary    ? { summary:   e.summary }    : {}),
+              ...(e.tags       ? { tags:      e.tags }       : {}),
+            });
+          }
+        } catch { /* skip malformed seed file */ }
+      }
+    }
+
     // Newest entries first so the dashboard shows recent learning at the top.
     entries.sort((a, b) => {
       const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;

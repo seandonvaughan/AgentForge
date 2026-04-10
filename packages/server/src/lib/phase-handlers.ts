@@ -712,7 +712,7 @@ export async function runGatePhase(ctx: PhaseContext): Promise<PhaseResult> {
         criticalFindings,
         majorFindings,
       }),
-      source: ctx.cycleId,
+      ...(ctx.cycleId !== undefined ? { source: ctx.cycleId } : {}),
       tags: [`sprint:v${ctx.sprintVersion}`, verdictTag],
     });
   } catch {

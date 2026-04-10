@@ -2908,7 +2908,12 @@ let memAgentFilter = 'all';
 let memSearchFilter = '';
 
 function memFilterCat(btn, cat) {
-  document.querySelectorAll('.mem-filter-btn').forEach(b => b.classList.remove('active'));
+  // Scope active-state reset to category buttons only — type-chip buttons
+  // share the .mem-filter-btn class but track their own active state via
+  // _memSetTypeFilter and must not be cleared when a category is toggled.
+  // Exclude both type-chip buttons (.mem-type-btn) and time-range buttons
+  // (.mem-time-btn) — each group manages its own active state independently.
+  document.querySelectorAll('.mem-filter-btn:not(.mem-type-btn):not(.mem-time-btn)').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   memCatFilter = cat;
   applyMemFilters();
@@ -4025,7 +4030,7 @@ Router.addRoute(/^\/sprints\/([^/]+)$/, async ({ id }) => {
       var vEl = el.querySelector('.sli-version');
       if (vEl && vEl.textContent === version) el.classList.add('selected');
     });
-    if (typeof loadSprintDetail === 'function') loadSprintDetail(version);
+    if (typeof window.loadSprintDetail === 'function') window.loadSprintDetail(version);
   } else {
     await _loadPageRoute('sprints', () => { if (typeof window.loadSprintsPage === 'function') window.loadSprintsPage(version); });
   }
@@ -5523,12 +5528,25 @@ const SSE = {
           type: 'sprint',
           text: 'Cycle ' + (data.cycleId || '') + ': ' + (data.phase || '') + ' — ' + (data.status || ''),
         });
-        // Trigger approval badge refresh when a budget-gate or decision event arrives
+        // Trigger approval badge refresh when a budget-gate or decision event arrives.
+        // The cycle-logger writes approval.pending (dot) while legacy code uses approval_pending (underscore).
         const cat = data.category || data.phase || '';
-        if (cat === 'approval_pending' || cat === 'budget_gate' || cat === 'planning_complete') {
+        const cycleIdFromEvent = (data.data && data.data.cycleId) || data.cycleId || '';
+        if (cat === 'approval.pending' || cat === 'approval_pending' || cat === 'budget_gate' || cat === 'planning_complete') {
           window._refreshApprovalsBadge();
+          // Auto-open the global ApprovalModal when a budget approval is needed.
+          // The cycle-logger emits approval.pending; the watcher fans it out as category.
+          if ((cat === 'approval.pending' || cat === 'approval_pending') && cycleIdFromEvent) {
+            if (typeof window._autoOpenApprovalModal === 'function') {
+              window._autoOpenApprovalModal(cycleIdFromEvent);
+            }
+          }
+          // If the approvals page is open, reload it so the new card appears immediately.
+          if (location.pathname === '/approvals' && typeof window.loadApprovalsPage === 'function') {
+            window.loadApprovalsPage();
+          }
         }
-        if (cat === 'approval_decided') {
+        if (cat === 'approval_decided' || cat === 'approval.decision') {
           // Badge always needs to update after a decision
           window._refreshApprovalsBadge();
           // If the user is on the approvals page, reload it live
@@ -5557,6 +5575,9 @@ const SSE = {
   var _pendingApprovals = [];
   var _pollTimer = null;
   var _destroyed = false;
+  // Tracks cycleIds for which the modal has already been shown this session,
+  // so a repeated poll doesn't flash the modal again while the human is deciding.
+  var _modalShownFor = new Set();
 
   function _updateBadge() {
     var badge = document.getElementById('sidebar-approvals-badge');
@@ -5582,19 +5603,79 @@ const SSE = {
           } catch (ex) { return null; }
         })
       );
+      var prev = _pendingApprovals;
       _pendingApprovals = fetched.filter(Boolean);
       _updateBadge();
+
+      // Auto-open modal for newly detected pending approvals (polling fallback when
+      // SSE approval.pending event may have been missed, e.g. during reconnect).
+      var prevIds = new Set(prev.map(function(p) { return p.cycleId; }));
+      for (var i = 0; i < _pendingApprovals.length; i++) {
+        var entry = _pendingApprovals[i];
+        if (!prevIds.has(entry.cycleId) && !_modalShownFor.has(entry.cycleId)) {
+          _autoOpenApprovalModal(entry.cycleId, entry);
+          break; // show one modal at a time; the user can navigate to /approvals for the rest
+        }
+      }
+
+      // Clean up modal-shown tracking for cycles that are no longer pending
+      var currentIds = new Set(_pendingApprovals.map(function(p) { return p.cycleId; }));
+      _modalShownFor.forEach(function(id) {
+        if (!currentIds.has(id)) _modalShownFor.delete(id);
+      });
     } catch (ex) { /* silent */ }
+  }
+
+  /**
+   * Fetch approval data for cycleId and open the global ApprovalModal.
+   * If prefetched is provided (from the poll loop), skips the extra fetch.
+   * SSE approval.pending events call this directly after fetching the payload.
+   */
+  async function _autoOpenApprovalModal(cycleId, prefetched) {
+    if (_modalShownFor.has(cycleId)) return;
+    // Don't interrupt if a modal is already visible (user is deciding)
+    var overlay = document.getElementById('approval-modal-overlay');
+    if (overlay && overlay.classList.contains('visible')) return;
+    var entry = prefetched;
+    if (!entry) {
+      try {
+        var r = await fetch('/api/v5/cycles/' + encodeURIComponent(cycleId) + '/approval');
+        if (!r.ok) return;
+        var data = await r.json();
+        entry = { cycleId: cycleId, sprintVersion: null, data: data };
+      } catch (ex) { return; }
+    }
+    _modalShownFor.add(cycleId);
+    NotificationManager.add({
+      type: 'sprint',
+      text: 'Budget approval required for cycle ' + cycleId.slice(0, 8),
+    });
+    if (typeof window.openApprovalModal === 'function') {
+      window.openApprovalModal({
+        cycleId: entry.cycleId,
+        sprintVersion: entry.sprintVersion || null,
+        data: entry.data,
+        onDecide: function() {
+          _refresh();
+          if (location.pathname === '/approvals' && typeof window.loadApprovalsPage === 'function') {
+            window.loadApprovalsPage();
+          }
+        },
+      });
+    }
   }
 
   function _startPoll() {
     if (_pollTimer) return;
+    // Poll every 15 s. The SSE watcher is the primary delivery path for approval.pending
+    // events; polling is the fallback that catches anything missed during reconnects.
     _pollTimer = setInterval(function() {
       if (!_destroyed) _refresh();
     }, 15000);
   }
 
   window._refreshApprovalsBadge = function() { _refresh(); };
+  window._autoOpenApprovalModal = function(cycleId, prefetched) { _autoOpenApprovalModal(cycleId, prefetched); };
 
   window.openApprovalModal = function(opts) {
     var overlay = document.getElementById('approval-modal-overlay');
@@ -5934,7 +6015,7 @@ async function loadSprintFromApi() {
 
   // Measure node width based on label length (7.5px per char + padding)
   function nodeWidth(id) {
-    var label = (_nodeMap[id] && (_nodeMap[id].name || _nodeMap[id].id)) || id;
+    var label = (_nodeMap[id] && (_nodeMap[id].label || _nodeMap[id].id)) || id;
     return Math.max(90, label.length * 7.5 + 32);
   }
 
@@ -6181,7 +6262,7 @@ async function loadSprintFromApi() {
       g.appendChild(rect);
 
       // Full name label — NO truncation
-      var label = node.name || id;
+      var label = node.label || id;
       var txt = document.createElementNS(ns, 'text');
       txt.setAttribute('x', String(pos.x));
       txt.setAttribute('y', String(ry + NODE_H / 2 + 4));
@@ -7140,7 +7221,11 @@ async function loadMemoryBrowser() {
   list.appendChild(_memMakeEl('div', 'skeleton-loader', 'Loading memory entries\u2026'));
 
   try {
-    const res = await fetch('/api/v5/memory');
+    // _memFetchExtra is set by the dedicated memory.html page script to append
+    // optional query params (e.g. ?since=... for the time-range filter).
+    // Falls back to no extra params on the home-page panel.
+    const _extra = (typeof window._memFetchExtra === 'string' && window._memFetchExtra) ? window._memFetchExtra : '';
+    const res = await fetch('/api/v5/memory' + _extra);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
     const data = json.data || [];

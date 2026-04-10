@@ -98,6 +98,25 @@
   function toggleExpand(id: string) {
     expandedItemId = expandedItemId === id ? null : id;
   }
+
+  // Priority list descriptions — collapsed by default to keep the page scannable
+  let expandedPriorityIds = $state<Set<string>>(new Set());
+  function togglePriorityExpand(id: string) {
+    const next = new Set(expandedPriorityIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    expandedPriorityIds = next;
+  }
+  let allPriorityExpanded = $derived(
+    allItems.length > 0 && allItems.every((i: SprintItem) => expandedPriorityIds.has(i.id))
+  );
+  function toggleAllPriority() {
+    if (allPriorityExpanded) {
+      expandedPriorityIds = new Set();
+    } else {
+      expandedPriorityIds = new Set(allItems.map((i: SprintItem) => i.id));
+    }
+  }
   function truncate(s: string, n = 60): string {
     return s.length > n ? s.slice(0, n - 1) + '\u2026' : s;
   }
@@ -199,10 +218,30 @@
 </div>
 
 {#if loading}
-  <div class="card">
-    <div class="skeleton" style="height:20px; width:50%; margin-bottom:var(--space-4);"></div>
-    <div class="skeleton" style="height:14px; width:100%; margin-bottom:var(--space-2);"></div>
-    <div class="skeleton" style="height:14px; width:80%;"></div>
+  <!-- Summary row skeleton -->
+  <div class="summary-row" style="margin-bottom:var(--space-5);">
+    {#each Array(5) as _}
+      <div class="summary-card">
+        <div class="skeleton" style="height:28px; width:60px; margin-bottom:var(--space-2); border-radius:var(--radius-sm);"></div>
+        <div class="skeleton" style="height:10px; width:50px; border-radius:var(--radius-sm);"></div>
+      </div>
+    {/each}
+  </div>
+  <!-- Progress bar skeleton -->
+  <div class="card" style="margin-bottom:var(--space-5);">
+    <div class="skeleton" style="height:8px; width:100%; border-radius:var(--radius-full);"></div>
+  </div>
+  <!-- Kanban skeleton -->
+  <div class="skeleton" style="height:12px; width:120px; margin-bottom:var(--space-3); border-radius:var(--radius-sm);"></div>
+  <div class="kanban-board" style="margin-bottom:var(--space-5);">
+    {#each Array(4) as _}
+      <div class="kanban-column">
+        <div class="skeleton" style="height:12px; width:70%; margin-bottom:var(--space-3); border-radius:var(--radius-sm);"></div>
+        {#each Array(3) as _}
+          <div class="skeleton" style="height:64px; border-radius:var(--radius-sm); margin-bottom:var(--space-2);"></div>
+        {/each}
+      </div>
+    {/each}
   </div>
 {:else if error}
   <div class="empty-state">
@@ -220,6 +259,10 @@
         label="Complete"
         color={sprint.status === 'completed' ? 'var(--color-success)' : 'var(--color-brand)'}
       />
+    </div>
+    <div class="summary-card {pct === 100 ? 'highlight-success' : pct > 0 ? 'highlight' : ''}">
+      <div class="summary-value pct-value" style={pct === 100 ? 'color:var(--color-success)' : pct > 0 ? 'color:var(--color-brand)' : ''}>{pct}%</div>
+      <div class="summary-label">Complete</div>
     </div>
     <div class="summary-card">
       <div class="summary-value">{completedCount}/{totalCount}</div>
@@ -360,6 +403,12 @@
   {#if p0Items.length > 0 || p1Items.length > 0 || p2Items.length > 0}
     <div class="section-heading">
       <span class="section-heading-label">Items by Priority</span>
+      <span class="section-heading-count">{completedCount}/{totalCount}</span>
+      {#if allItems.some((i: SprintItem) => i.description)}
+        <button class="expand-all-btn" onclick={toggleAllPriority}>
+          {allPriorityExpanded ? 'Collapse all' : 'Expand all'}
+        </button>
+      {/if}
     </div>
   {/if}
   {#each [
@@ -368,20 +417,37 @@
     { label: 'P2 — Nice-to-Have', items: p2Items, cls: 'muted' },
   ] as group}
     {#if group.items.length > 0}
+      {@const groupDone = group.items.filter((i: SprintItem) => i.status === 'completed').length}
+      {@const groupPct = Math.round((groupDone / group.items.length) * 100)}
       <div class="card item-group" style="margin-bottom:var(--space-4);">
         <div class="group-header">
           <span class="priority-badge {group.cls}">{group.label}</span>
-          <span class="group-count">
-            {group.items.filter((i: SprintItem) => i.status === 'completed').length}/{group.items.length} done
-          </span>
+          <div class="group-header-right">
+            <div class="group-mini-bar">
+              <div class="group-mini-bar-fill" style="width:{groupPct}%; background:{group.cls === 'danger' ? 'var(--color-danger)' : group.cls === 'warning' ? 'var(--color-warning)' : 'var(--color-text-faint)'}"></div>
+            </div>
+            <span class="group-count">
+              {groupDone}/{group.items.length} done
+            </span>
+          </div>
         </div>
         <div class="item-list">
           {#each group.items as item (item.id)}
             <div class="sprint-item {item.status}">
               <div class="item-dot" style="background: {ITEM_STATUS_COLOR[item.status] ?? '#64748b'}"></div>
               <div class="item-body">
-                <div class="item-title">{item.title}</div>
-                {#if item.description}
+                <button
+                  type="button"
+                  class="item-title-btn"
+                  onclick={() => togglePriorityExpand(item.id)}
+                  title={item.description ? (expandedPriorityIds.has(item.id) ? 'Collapse' : 'Expand description') : undefined}
+                >
+                  <span class="item-title">{item.title}</span>
+                  {#if item.description}
+                    <span class="item-expand-icon">{expandedPriorityIds.has(item.id) ? '▲' : '▼'}</span>
+                  {/if}
+                </button>
+                {#if item.description && expandedPriorityIds.has(item.id)}
                   <div class="item-desc">{item.description}</div>
                 {/if}
                 <div class="item-meta">
@@ -619,6 +685,28 @@
     color: var(--color-text-faint);
   }
 
+  .expand-all-btn {
+    margin-left: auto;
+    background: none;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: 2px 8px;
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    cursor: pointer;
+    transition: border-color var(--duration-fast), color var(--duration-fast);
+  }
+
+  .expand-all-btn:hover {
+    border-color: var(--color-brand);
+    color: var(--color-brand);
+  }
+
+  .pct-value {
+    font-size: var(--text-xl);
+    font-weight: 700;
+  }
+
   /* Prev / next sprint navigation */
   .sprint-nav {
     display: flex;
@@ -706,7 +794,34 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: var(--space-3);
     margin-bottom: var(--space-3);
+  }
+
+  .group-header-right {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .group-mini-bar {
+    width: 60px;
+    height: 4px;
+    background: var(--color-border);
+    border-radius: var(--radius-full);
+    overflow: hidden;
+  }
+
+  .group-mini-bar-fill {
+    height: 100%;
+    border-radius: var(--radius-full);
+    transition: width 0.4s ease;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .group-mini-bar-fill {
+      transition: none;
+    }
   }
 
   .priority-badge {
@@ -782,11 +897,43 @@
     min-width: 0;
   }
 
+  .item-title-btn {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    width: 100%;
+    margin-bottom: var(--space-1);
+  }
+
+  .item-title-btn:focus-visible {
+    outline: 2px solid var(--color-brand);
+    border-radius: 2px;
+  }
+
+  .item-expand-icon {
+    font-size: 8px;
+    color: var(--color-text-faint);
+    flex-shrink: 0;
+    margin-top: 4px;
+    opacity: 0.7;
+  }
+
   .item-title {
     font-size: var(--text-sm);
     font-weight: 600;
     color: var(--color-text);
-    margin-bottom: var(--space-1);
+  }
+
+  .sprint-item.completed .item-title-btn .item-title {
+    text-decoration: line-through;
+    color: var(--color-text-muted);
   }
 
   .sprint-item.completed .item-title {

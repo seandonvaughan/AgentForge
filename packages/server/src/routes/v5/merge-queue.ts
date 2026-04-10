@@ -10,7 +10,7 @@ export async function mergeQueueRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/v5/branches', async (req, reply) => {
     const q = req.query as { status?: string };
     const branches = branchManager.listBranches(q.status as any);
-    return reply.send({ data: branches, meta: { total: branches.length, ...branchManager.report() } });
+    return reply.send({ data: branches, meta: { ...branchManager.report(), total: branches.length } });
   });
 
   // POST /api/v5/branches — create a new agent branch

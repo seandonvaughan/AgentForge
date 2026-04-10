@@ -60,8 +60,8 @@ export async function marketplaceRoutes(app: FastifyInstance): Promise<void> {
       id: body.id,
       name: body.name,
       description: body.description ?? '',
-      agentType: body.agentType,
-      yamlContent: body.yamlContent,
+      ...(body.agentType !== undefined ? { agentType: body.agentType } : {}),
+      ...(body.yamlContent !== undefined ? { yamlContent: body.yamlContent } : {}),
     });
 
     return reply.status(201).send({

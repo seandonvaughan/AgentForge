@@ -100,7 +100,7 @@ export async function intelligenceRoutes(app: FastifyInstance): Promise<void> {
       costUsd?: number;
       durationMs?: number;
     };
-    evaluation.record({ agentId, status, costUsd: costUsd ?? 0, durationMs });
+    evaluation.record({ agentId, status, costUsd: costUsd ?? 0, ...(durationMs !== undefined ? { durationMs } : {}) });
     return reply.send({ ok: true });
   });
 

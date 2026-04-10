@@ -73,7 +73,7 @@ export async function embeddingRoutes(
     const { id, content, metadata, workspaceId } = req.body as {
       id: string; content: string; metadata?: Record<string, unknown>; workspaceId?: string;
     };
-    const vec = await s.index({ id, content, metadata, workspaceId });
+    const vec = await s.index({ id, content, ...(metadata !== undefined ? { metadata } : {}), ...(workspaceId !== undefined ? { workspaceId } : {}) });
     return reply.status(201).send({ data: { id, dims: vec.length } });
   });
 
@@ -101,7 +101,7 @@ export async function embeddingRoutes(
     }
 
     const k = topK ?? limit ?? 10;
-    const results = await s.search(query, { topK: k, minScore, workspaceId });
+    const results = await s.search(query, { topK: k, ...(minScore !== undefined ? { minScore } : {}), ...(workspaceId !== undefined ? { workspaceId } : {}) });
     return reply.send({ data: results, meta: { total: results.length } });
   });
 
@@ -123,7 +123,7 @@ export async function embeddingRoutes(
       costUsd?: number;
       workspaceId?: string;
     };
-    await s.indexSession({ sessionId, agentId, task, response, model, costUsd, workspaceId });
+    await s.indexSession({ sessionId, agentId, task, response, model, ...(costUsd !== undefined ? { costUsd } : {}), ...(workspaceId !== undefined ? { workspaceId } : {}) });
     return reply.status(201).send({ data: { sessionId } });
   });
 

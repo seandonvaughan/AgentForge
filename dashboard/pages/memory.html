@@ -12,6 +12,7 @@
         <span id="mem-live-badge" class="mem-live-badge" style="display:none;">
           <span class="mem-live-dot"></span>LIVE
         </span>
+        <button class="export-btn" id="mem-clear-btn" onclick="_memClearFilters()" style="display:none;">&#x2715; Clear</button>
         <button class="export-btn" onclick="loadMemoryBrowser()">&#8635; Refresh</button>
       </div>
     </div>
@@ -22,8 +23,9 @@
         class="memory-search-input"
         type="search"
         id="memory-search"
-        placeholder="Search memories by keyword, tag, or filename…"
-        oninput="filterMemory(this.value)"
+        placeholder="Search memories — press Enter to search server-side…"
+        oninput="_memOnSearchInput(this.value)"
+        onkeydown="_memOnSearchKeydown(event)"
         autocomplete="off"
       />
       <select
@@ -33,6 +35,13 @@
       >
         <option value="all">All Agents</option>
       </select>
+    </div>
+
+    <!-- Time-range filter row -->
+    <div class="memory-filter-row" id="memory-time-row" style="margin-bottom:2px;">
+      <button class="mem-filter-btn mem-time-btn active" data-range="all"  onclick="_memSetTimeRange(this,'all')">All Time</button>
+      <button class="mem-filter-btn mem-time-btn"        data-range="30d"  onclick="_memSetTimeRange(this,'30d')">Last 30 days</button>
+      <button class="mem-filter-btn mem-time-btn"        data-range="7d"   onclick="_memSetTimeRange(this,'7d')">Last 7 days</button>
     </div>
 
     <!-- Category filter chips -->
@@ -54,14 +63,117 @@
 
 <script>
 (function () {
-  // Reset filter state when the page loads fresh so stale state from the
-  // home-page memory section doesn't bleed into this dedicated view.
-  if (typeof memCatFilter !== 'undefined') memCatFilter = 'all';
-  if (typeof memAgentFilter !== 'undefined') memAgentFilter = 'all';
+  // ── Reset filter state on fresh page load ──────────────────────────────
+  // Prevents stale state from the home-page memory panel bleeding into this view.
+  if (typeof memCatFilter    !== 'undefined') memCatFilter    = 'all';
+  if (typeof memAgentFilter  !== 'undefined') memAgentFilter  = 'all';
   if (typeof memSearchFilter !== 'undefined') memSearchFilter = '';
 
+  // ── Time-range filter state ──────────────────────────────────────────────
+  // Drives ?since= query param passed to the API via window._memFetchExtra.
+  window._memTimeRange  = 'all';
+  window._memFetchExtra = '';       // starts empty → fetch all entries
+
+  function _computeSinceParam(range) {
+    if (range === '7d')  return '?since=' + encodeURIComponent(new Date(Date.now() - 7  * 24 * 3600 * 1000).toISOString());
+    if (range === '30d') return '?since=' + encodeURIComponent(new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString());
+    return '';
+  }
+
+  window._memSetTimeRange = function (btn, range) {
+    window._memTimeRange = range;
+    var btns = document.querySelectorAll('.mem-time-btn');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].classList.toggle('active', btns[i] === btn);
+    }
+    // Rebuild the fetch extra, preserving any pending server-side search.
+    _memRebuildFetchExtra();
+    if (typeof window.loadMemoryBrowser === 'function') window.loadMemoryBrowser();
+  };
+
+  // ── Server-side search state ─────────────────────────────────────────────
+  // When the user presses Enter in the search box, the query is sent to the
+  // server so it can be applied before the 200-entry cap.  Live client-side
+  // filtering (oninput) continues to work on the already-loaded entries.
+  var _pendingServerSearch = '';
+
+  window._memOnSearchInput = function (val) {
+    // Client-side filter runs immediately on every keystroke.
+    if (typeof filterMemory === 'function') filterMemory(val);
+    _updateClearBtn();
+  };
+
+  window._memOnSearchKeydown = function (e) {
+    if (e.key === 'Enter') {
+      var q = (e.target ? e.target.value : '').trim();
+      if (q !== _pendingServerSearch) {
+        _pendingServerSearch = q;
+        _memRebuildFetchExtra();
+        if (typeof window.loadMemoryBrowser === 'function') window.loadMemoryBrowser();
+      }
+    }
+  };
+
+  // Combine time-range and server-side search into a single query string.
+  function _memRebuildFetchExtra() {
+    var parts = [];
+    var since = _computeSinceParam(window._memTimeRange);
+    if (since) parts.push(since.slice(1)); // strip leading '?'
+    if (_pendingServerSearch) parts.push('search=' + encodeURIComponent(_pendingServerSearch));
+    window._memFetchExtra = parts.length ? ('?' + parts.join('&')) : '';
+  }
+
+  // ── Clear all filters ────────────────────────────────────────────────────
+  window._memClearFilters = function () {
+    // Reset time range.
+    window._memTimeRange = 'all';
+    document.querySelectorAll('.mem-time-btn').forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-range') === 'all');
+    });
+
+    // Reset category.
+    if (typeof memCatFilter !== 'undefined') memCatFilter = 'all';
+    document.querySelectorAll('.mem-filter-btn:not(.mem-type-btn):not(.mem-time-btn)').forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-cat') === 'all');
+    });
+
+    // Reset type.
+    window._memTypeFilter = 'all';
+    document.querySelectorAll('.mem-type-btn').forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-type') === 'all');
+    });
+
+    // Reset agent.
+    if (typeof memAgentFilter !== 'undefined') memAgentFilter = 'all';
+    var agentSel = document.getElementById('memory-agent-filter');
+    if (agentSel) agentSel.value = 'all';
+
+    // Reset search.
+    var searchInput = document.getElementById('memory-search');
+    if (searchInput) searchInput.value = '';
+    if (typeof memSearchFilter !== 'undefined') memSearchFilter = '';
+    _pendingServerSearch = '';
+
+    // Rebuild fetch extra and reload.
+    _memRebuildFetchExtra();
+    _updateClearBtn();
+    if (typeof window.loadMemoryBrowser === 'function') window.loadMemoryBrowser();
+  };
+
+  // Show/hide the Clear button whenever any filter is non-default.
+  function _updateClearBtn() {
+    var btn = document.getElementById('mem-clear-btn');
+    if (!btn) return;
+    var hasFilter = window._memTimeRange !== 'all'
+      || (typeof memCatFilter   !== 'undefined' && memCatFilter   !== 'all')
+      || (typeof memAgentFilter !== 'undefined' && memAgentFilter !== 'all')
+      || (window._memTypeFilter && window._memTypeFilter !== 'all')
+      || _pendingServerSearch !== ''
+      || (typeof memSearchFilter !== 'undefined' && memSearchFilter !== '');
+    btn.style.display = hasFilter ? '' : 'none';
+  }
+
   // ── Type chip filter (populated dynamically from backend `types`) ────────
-  // Kept separate from memCatFilter so both filters can coexist.
   window._memTypeFilter = 'all';
 
   window._memSetTypeFilter = function (btn, type) {
@@ -71,17 +183,16 @@
       btns[i].classList.toggle('active', btns[i] === btn);
     }
     if (typeof window.applyMemFilters === 'function') window.applyMemFilters();
+    _updateClearBtn();
   };
 
   // ── Build type chip row from types returned by the API ───────────────────
   window._memBuildTypeChips = function (types) {
     var row = document.getElementById('memory-type-row');
     if (!row) return;
-    // Clear existing chips safely.
     while (row.firstChild) row.removeChild(row.firstChild);
     if (!types || types.length === 0) return;
 
-    // "All Types" chip is always first.
     var allBtn = document.createElement('button');
     allBtn.className = 'mem-filter-btn mem-type-btn active';
     allBtn.setAttribute('data-type', 'all');
@@ -93,7 +204,6 @@
       var btn = document.createElement('button');
       btn.className = 'mem-filter-btn mem-type-btn';
       btn.setAttribute('data-type', type);
-      // "cycle-outcome" -> "Cycle Outcome"
       btn.textContent = type.replace(/-/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
       btn.onclick = (function (t, b) {
         return function () { window._memSetTypeFilter(b, t); };
@@ -107,7 +217,7 @@
     var badge = document.getElementById('memory-count-badge');
     if (!badge) return;
     var entries = document.querySelectorAll('.memory-entry');
-    var total = entries.length;
+    var total   = entries.length;
     var visible = 0;
     for (var i = 0; i < entries.length; i++) {
       if (entries[i].style.display !== 'none') visible++;
@@ -117,8 +227,7 @@
       : visible + ' / ' + total + ' entries';
   };
 
-  // Wrap applyMemFilters: apply the type sub-filter on top of the existing
-  // category / agent / search filters, then refresh the count badge.
+  // ── Wrap applyMemFilters: layer type filter on top, refresh badge ────────
   var _origApplyMemFilters = typeof applyMemFilters === 'function' ? applyMemFilters : null;
   window.applyMemFilters = function () {
     if (_origApplyMemFilters) _origApplyMemFilters();
@@ -133,14 +242,12 @@
     }
 
     window._memUpdateCountBadge();
+    _updateClearBtn();
   };
 
   // ── Patch loadMemoryBrowser to capture types and wire chips ─────────────
-  // Intercept window.fetch for the single /api/v5/memory call so we can
-  // pull `types` from the JSON response without duplicating the full fetch
-  // logic that already lives in loadMemoryBrowser().
-  // Note: loadMemoryBrowser() now also calls _memBuildTypeChips() directly,
-  // so this interceptor is a belt-and-suspenders fallback.
+  // loadMemoryBrowser() in index.html also calls _memBuildTypeChips() directly
+  // after data loads, so this fetch-intercept is a belt-and-suspenders fallback.
   if (typeof loadMemoryBrowser === 'function') {
     var _origLoadMemoryBrowser = loadMemoryBrowser;
     window.loadMemoryBrowser = function () {
@@ -164,6 +271,7 @@
         window.fetch = _origFetch;
         window._memBuildTypeChips(capturedTypes);
         window._memUpdateCountBadge();
+        _updateClearBtn();
       }).catch(function (err) {
         window.fetch = _origFetch;
         return Promise.reject(err);
@@ -174,21 +282,15 @@
   }
 
   // ── SSE Live-Feed Integration ────────────────────────────────────────────
-  // Wire into the existing global SSE object so new cycle/session events
-  // trigger a debounced refresh of the memory list.  We only fire refreshes
-  // when the memory page is the active route so we don't waste fetches while
-  // the user is elsewhere.
   (function _initMemoryLiveFeed() {
-    var _liveBadge   = document.getElementById('mem-live-badge');
+    var _liveBadge    = document.getElementById('mem-live-badge');
     var _refreshTimer = null;
-    var _lastKnownIds = new Set();
-    var _PAGE_ROUTE  = '/memory';
+    var _PAGE_ROUTE   = '/memory';
 
     function _isMemoryPageActive() {
       return typeof location !== 'undefined' && location.pathname === _PAGE_ROUTE;
     }
 
-    // Show / hide the LIVE badge based on SSE connection state.
     function _syncLiveBadge() {
       if (!_liveBadge) return;
       var sseConnected = window.SSE && window.SSE.source &&
@@ -196,56 +298,37 @@
       _liveBadge.style.display = sseConnected ? '' : 'none';
     }
 
-    // Debounced reload — coalesces rapid bursts (e.g. a cycle that writes 5
-    // memory entries in quick succession) into a single fetch.
     function _scheduleRefresh() {
       if (!_isMemoryPageActive()) return;
       clearTimeout(_refreshTimer);
       _refreshTimer = setTimeout(function () {
         if (!_isMemoryPageActive()) return;
-        if (typeof window.loadMemoryBrowser === 'function') {
-          window.loadMemoryBrowser();
-        }
-      }, 1200 /* ms — enough to let the server finish writing JSONL */);
+        if (typeof window.loadMemoryBrowser === 'function') window.loadMemoryBrowser();
+      }, 1200);
     }
 
-    // Attach SSE event listeners once the global SSE object is ready.
     function _attachSSEListeners() {
       if (!window.SSE || !window.SSE.source) return;
-
-      // Relevant events that may cause new memory entries to be written.
       var triggers = ['cycle_event', 'session-completed', 'session-started'];
       triggers.forEach(function (evtName) {
-        window.SSE.source.addEventListener(evtName, function () {
-          _scheduleRefresh();
-        });
+        window.SSE.source.addEventListener(evtName, function () { _scheduleRefresh(); });
       });
-
-      // Keep the LIVE badge in sync with connection readyState changes.
       window.SSE.source.onopen  = (function (orig) {
         return function (e) { _syncLiveBadge(); if (orig) orig.call(this, e); };
       }(window.SSE.source.onopen));
       window.SSE.source.onerror = (function (orig) {
         return function (e) { _syncLiveBadge(); if (orig) orig.call(this, e); };
       }(window.SSE.source.onerror));
-
       _syncLiveBadge();
     }
 
-    // SSE may connect after this page script runs, so poll briefly.
     var _sseWaitAttempts = 0;
     function _waitForSSE() {
-      if (window.SSE && window.SSE.source) {
-        _attachSSEListeners();
-        return;
-      }
-      if (_sseWaitAttempts++ < 20) {
-        setTimeout(_waitForSSE, 300);
-      }
+      if (window.SSE && window.SSE.source) { _attachSSEListeners(); return; }
+      if (_sseWaitAttempts++ < 20) setTimeout(_waitForSSE, 300);
     }
     _waitForSSE();
 
-    // Clean up the refresh timer when the user navigates away.
     window.addEventListener('popstate', function () {
       if (!_isMemoryPageActive()) {
         clearTimeout(_refreshTimer);

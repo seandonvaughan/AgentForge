@@ -8,4 +8,5 @@ export * from './learn-phase.js';
 export * from './plan-phase.js';
 export * from './release-phase.js';
 export * from './review-phase.js';
+export * from './sprint-utils.js';
 export * from './test-phase.js';

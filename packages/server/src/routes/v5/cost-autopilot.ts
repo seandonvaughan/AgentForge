@@ -40,9 +40,9 @@ export async function costAutopilotRoutes(app: FastifyInstance): Promise<void> {
     const result = await autopilot.process(
       {
         task: body.task,
-        complexity: body.complexity,
-        maxCostUsd: body.maxCostUsd,
-        allowBatching: body.allowBatching,
+        ...(body.complexity !== undefined ? { complexity: body.complexity } : {}),
+        ...(body.maxCostUsd !== undefined ? { maxCostUsd: body.maxCostUsd } : {}),
+        ...(body.allowBatching !== undefined ? { allowBatching: body.allowBatching } : {}),
       },
       executor as Parameters<typeof autopilot.process>[1],
     );

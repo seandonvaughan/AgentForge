@@ -105,7 +105,7 @@ describe('GET /api/v5/agents', () => {
     expect(res.statusCode).toBe(200);
 
     const body = res.json<{ data: Array<{ model: string }> }>();
-    expect(body.data[0].model).toBe('sonnet');
+    expect(body.data[0]!.model).toBe('sonnet');
   });
 
   it('skips malformed YAML files without crashing', async () => {
@@ -125,7 +125,7 @@ describe('GET /api/v5/agents', () => {
     const body = res.json<{ data: Array<{ agentId: string }>; meta: { total: number } }>();
     // Only the good file should appear
     expect(body.meta.total).toBe(1);
-    expect(body.data[0].agentId).toBe('good');
+    expect(body.data[0]!.agentId).toBe('good');
   });
 
   it('uses the projectRoot from createServerV5, not process.cwd()', async () => {

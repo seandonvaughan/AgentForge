@@ -8,9 +8,9 @@ export async function tracingRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/v5/traces', async (req, reply) => {
     const q = req.query as { serviceName?: string; status?: string; since?: string; limit?: string };
     const traces = collector.listTraces({
-      serviceName: q.serviceName,
+      ...(q.serviceName !== undefined ? { serviceName: q.serviceName } : {}),
       status: q.status as any,
-      since: q.since,
+      ...(q.since !== undefined ? { since: q.since } : {}),
       limit: q.limit ? parseInt(q.limit) : 100,
     });
     return reply.send({

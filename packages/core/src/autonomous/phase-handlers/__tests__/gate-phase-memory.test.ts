@@ -16,7 +16,7 @@ import {
   extractFindingsByLevel,
   parseGateVerdict,
 } from '../gate-phase.js';
-import { writeMemoryEntry, readMemoryEntries } from '../../../memory/types.js';
+import { writeMemoryEntry, readMemoryEntries, type GateVerdictMetadata } from '../../../memory/types.js';
 import {
   readRecentMemoryEntries,
   formatMemoryForPrompt,
@@ -366,5 +366,145 @@ describe('gate-verdict tag enrichment → execute-phase injection round-trip', (
     const entries = readRecentMemoryEntries(tmpRoot, 10);
     const section = formatMemoryForPrompt(entries);
     expect(section).toContain('execute-phase memory injection missing');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GateVerdictMetadata round-trip
+//
+// runGatePhase writes entries with:
+//   value   = human-readable summary string (not a JSON blob)
+//   metadata = GateVerdictMetadata object for structured machine access
+//
+// These tests verify that the metadata shape survives the JSONL round-trip
+// and that machine consumers can access verdict/rationale/findings without
+// JSON.parse on the value field.
+// ---------------------------------------------------------------------------
+
+describe('gate-verdict metadata round-trip', () => {
+  it('metadata field is written and survives the JSONL round-trip', () => {
+    const meta: GateVerdictMetadata = {
+      cycleId: 'cycle-meta-001',
+      verdict: 'rejected',
+      rationale: 'Too many CRITICAL findings',
+      criticalFindings: ['Auth bypass in middleware'],
+      majorFindings: ['Missing retry logic'],
+    };
+
+    writeMemoryEntry(tmpRoot, {
+      type: 'gate-verdict',
+      value: 'Gate rejected: Too many CRITICAL findings. Critical: Auth bypass in middleware. Major: Missing retry logic',
+      metadata: meta,
+      source: 'cycle-meta-001',
+      tags: ['verdict:rejected', 'sprint:v9.5'],
+    });
+
+    const entries = readMemoryEntries(tmpRoot, 'gate-verdict', 10);
+    expect(entries).toHaveLength(1);
+
+    // metadata is preserved as a structured object (no JSON.parse needed)
+    const stored = entries[0]!.metadata as GateVerdictMetadata;
+    expect(stored.cycleId).toBe('cycle-meta-001');
+    expect(stored.verdict).toBe('rejected');
+    expect(stored.rationale).toBe('Too many CRITICAL findings');
+    expect(stored.criticalFindings).toEqual(['Auth bypass in middleware']);
+    expect(stored.majorFindings).toEqual(['Missing retry logic']);
+  });
+
+  it('metadata.verdict is lowercase ("approved" | "rejected") not uppercase', () => {
+    const meta: GateVerdictMetadata = {
+      cycleId: 'cycle-approve-001',
+      verdict: 'approved',
+      rationale: 'All tests pass, budget within limits',
+      criticalFindings: [],
+      majorFindings: [],
+    };
+
+    writeMemoryEntry(tmpRoot, {
+      type: 'gate-verdict',
+      value: 'Gate approved: All tests pass, budget within limits',
+      metadata: meta,
+      source: 'cycle-approve-001',
+      tags: ['verdict:approved', 'sprint:v9.5'],
+    });
+
+    const entries = readMemoryEntries(tmpRoot, 'gate-verdict', 10);
+    const stored = entries[0]!.metadata as GateVerdictMetadata;
+    expect(stored.verdict).toBe('approved');
+    // Ensure the verdict tag also uses lowercase for consistency
+    expect(entries[0]!.tags).toContain('verdict:approved');
+  });
+
+  it('value field is a human-readable summary, not a JSON blob', () => {
+    const rationale = 'Sprint v9.5 passed all gates';
+    writeMemoryEntry(tmpRoot, {
+      type: 'gate-verdict',
+      value: `Gate approved: ${rationale}`,
+      metadata: {
+        cycleId: 'cycle-readable-001',
+        verdict: 'approved',
+        rationale,
+        criticalFindings: [],
+        majorFindings: [],
+      },
+      source: 'cycle-readable-001',
+      tags: ['verdict:approved'],
+    });
+
+    const entries = readMemoryEntries(tmpRoot, 'gate-verdict', 10);
+    const storedValue = entries[0]!.value;
+
+    // value must not be parseable as JSON (it's a human string, not a JSON blob)
+    expect(() => JSON.parse(storedValue)).toThrow();
+    // The rationale appears verbatim in the human-readable value
+    expect(storedValue).toContain(rationale);
+  });
+
+  it('audit-phase formatMemoryForPrompt renders metadata-bearing entry as a readable bullet', () => {
+    writeMemoryEntry(tmpRoot, {
+      type: 'gate-verdict',
+      value: 'Gate rejected: Stray temp file committed. Critical: index.html.new must be removed',
+      metadata: {
+        cycleId: 'cycle-prompt-001',
+        verdict: 'rejected',
+        rationale: 'Stray temp file committed',
+        criticalFindings: ['index.html.new must be removed'],
+        majorFindings: [],
+      },
+      source: 'cycle-prompt-001',
+      tags: ['verdict:rejected', 'sprint:v9.4'],
+    });
+
+    const entries = readRecentMemoryEntries(tmpRoot, 10);
+    const section = formatMemoryForPrompt(entries);
+
+    // The human-readable value (not a JSON blob) should appear in the prompt.
+    expect(section).toContain('Gate rejected: Stray temp file committed');
+    expect(section).toContain('index.html.new must be removed');
+  });
+
+  it('cycleId is captured in metadata.cycleId for empty-string fallback when ctx.cycleId is null', () => {
+    // When cycleId is unknown (null/undefined from PhaseContext), metadata.cycleId
+    // should be an empty string (not null/undefined) to match the GateVerdictMetadata type.
+    const meta: GateVerdictMetadata = {
+      cycleId: '',  // empty string fallback
+      verdict: 'rejected',
+      rationale: 'Agent error: timeout',
+      criticalFindings: [],
+      majorFindings: [],
+    };
+
+    writeMemoryEntry(tmpRoot, {
+      type: 'gate-verdict',
+      value: 'Gate rejected: Agent error: timeout',
+      metadata: meta,
+      source: undefined,
+      tags: ['verdict:rejected'],
+    });
+
+    const entries = readMemoryEntries(tmpRoot, 'gate-verdict', 10);
+    const stored = entries[0]!.metadata as GateVerdictMetadata;
+    expect(stored.cycleId).toBe('');
+    expect(typeof stored.cycleId).toBe('string');
   });
 });

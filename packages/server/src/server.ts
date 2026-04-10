@@ -146,7 +146,7 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
   // only register here when we're in the no-adapter path. Without the guard
   // agentRoutes is called twice and Fastify throws FST_ERR_DUPLICATED_ROUTE.
   if (!options.adapter || !options.registry) {
-    await agentRoutes(app, { adapter: options.adapter, projectRoot });
+    await agentRoutes(app, { ...(options.adapter !== undefined ? { adapter: options.adapter } : {}), projectRoot });
   }
 
   // ── Org graph (reads delegation.yaml — no adapter required) ──────────────────
@@ -161,7 +161,7 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
 
   // ── Unified keyword search (sessions, agents, sprints, cycles, memory) ────────
   // No adapter required — falls back gracefully; adapter enables session search.
-  await searchRoutes(app, { projectRoot, adapter: options.adapter });
+  await searchRoutes(app, { projectRoot, ...(options.adapter !== undefined ? { adapter: options.adapter } : {}) });
 
   // ── Dashboard stubs (flywheel, memory, settings — file-based, no adapter) ──
   await dashboardStubRoutes(app, { projectRoot });
@@ -170,7 +170,7 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
   // v9.0.0: registerV5Routes also calls runRoutes in adapter mode. Guard to
   // avoid FST_ERR_DUPLICATED_ROUTE.
   if (!options.adapter || !options.registry) {
-    await runRoutes(app, { adapter: options.adapter });
+    await runRoutes(app, { ...(options.adapter !== undefined ? { adapter: options.adapter } : {}) });
   }
 
   // ── Agent Chat Interface (P0-3) — no adapter required, uses audit.db directly ──
@@ -200,7 +200,7 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
 
   // ── Embedding routes ──────────────────────────────────────────────────────────
   // Pass adapter so the store can be seeded from sessions on first search.
-  await embeddingRoutes(app, { dataDir, adapter: options.adapter });
+  await embeddingRoutes(app, { dataDir, ...(options.adapter !== undefined ? { adapter: options.adapter } : {}) });
 
   // ── v6 Unified API routes + OpenAPI spec ────────────────────────────────────
   if (options.adapter && options.registry) {
