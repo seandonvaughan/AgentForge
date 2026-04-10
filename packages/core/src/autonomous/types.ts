@@ -176,6 +176,7 @@ export interface CycleResult {
   killSwitch?: KillSwitchTrip;
   scoringFallback?: 'static';
   error?: string;
+  gateVerdict?: 'APPROVE' | 'REJECT';
 }
 
 export class CycleKilledError extends Error {

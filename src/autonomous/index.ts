@@ -21,3 +21,11 @@ export {
   type PastMistake,
   type AuditPromptInjection,
 } from "./audit-phase-handler.js";
+
+export {
+  GatePhaseHandler,
+  type GateVerdictInput,
+  type GateVerdictMetadata,
+  type GateVerdictMemoryWriter as GatePhaseMemoryWriter,
+  type GatePhaseResult,
+} from "./gate-phase-handler.js";

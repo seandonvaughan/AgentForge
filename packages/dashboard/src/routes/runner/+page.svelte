@@ -197,7 +197,11 @@
       // Server wraps the result in { data: { ...result, sessionId } }
       const json = envelope.data ?? envelope;
       const sessionId = json.sessionId ?? json.id ?? `local-${Date.now()}`;
-      outputModel = json.model ?? MODEL_TIER_META[getAgentModel(selectedAgent)]?.label ?? 'Sonnet';
+      // Prefer the actual model ID returned by the server; convert to a tier
+      // label ('Opus' | 'Sonnet' | 'Haiku') so the badge class matches CSS.
+      outputModel = json.model
+        ? modelIdToTierLabel(json.model as string)
+        : (MODEL_TIER_META[getAgentModel(selectedAgent)]?.label ?? 'Sonnet');
       currentSessionId = sessionId;
 
       // Add to history immediately as "running"
@@ -237,6 +241,14 @@
     outputTimestamp = new Date(run.startedAt).toLocaleTimeString('en-US', { hour12: false });
     outputModel = MODEL_TIER_META[getAgentModel(run.agentId)]?.label ?? '—';
     currentSessionId = run.sessionId ?? null;
+  }
+
+  /** Map a raw Claude model ID (e.g. "claude-sonnet-4-5") to a tier label for display. */
+  function modelIdToTierLabel(modelId: string): string {
+    const lower = modelId.toLowerCase();
+    if (lower.includes('opus'))  return 'Opus';
+    if (lower.includes('haiku')) return 'Haiku';
+    return 'Sonnet';
   }
 
   function formatCost(cost?: number): string {

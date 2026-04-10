@@ -11,13 +11,22 @@
   const ALL_TYPES = ['session', 'agent', 'cycle', 'sprint', 'memory'] as const;
   type ContentType = typeof ALL_TYPES[number];
 
-  let query = '';
-  let results: SearchResult[] = [];
-  let searching = false;
-  let error: string | null = null;
-  let searched = false;
+  // Map content types to their dashboard navigation paths.
+  const TYPE_ROUTES: Record<string, string> = {
+    session: '/sessions',
+    agent:   '/agents',
+    cycle:   '/cycles',
+    sprint:  '/sprints',
+    memory:  '/memory',
+  };
+
+  let query = $state('');
+  let results = $state<SearchResult[]>([]);
+  let searching = $state(false);
+  let error = $state<string | null>(null);
+  let searched = $state(false);
   // Empty array = all types (no filter). Populated = include only selected types.
-  let selectedTypes: ContentType[] = [];
+  let selectedTypes = $state<ContentType[]>([]);
 
   async function search() {
     if (!query.trim()) return;
@@ -68,6 +77,12 @@
   function contentPreview(text: string): string {
     return text.length > 280 ? text.slice(0, 278) + '…' : text;
   }
+
+  /** Return the dashboard route for a result, or null if none exists. */
+  function resultHref(result: SearchResult): string | null {
+    if (!result.type) return null;
+    return TYPE_ROUTES[result.type] ?? null;
+  }
 </script>
 
 <svelte:head><title>Search — AgentForge</title></svelte:head>
@@ -88,6 +103,7 @@
     onkeydown={handleKeydown}
     aria-label="Search query"
     disabled={searching}
+    autofocus
   />
   <button
     class="btn btn-primary"
@@ -142,11 +158,16 @@
   </div>
   <div class="results-list">
     {#each results as result, i (result.id ?? i)}
-      <div class="card result-card">
+      {@const href = resultHref(result)}
+      <div class="card result-card" class:result-card-link={!!href}>
         <div class="result-header">
           <div class="result-meta">
             {#if result.type}
-              <span class="badge muted">{result.type}</span>
+              {#if href}
+                <a class="badge muted result-type-link" {href}>{result.type}</a>
+              {:else}
+                <span class="badge muted">{result.type}</span>
+              {/if}
             {/if}
             {#if result.source}
               <span class="result-source">{result.source}</span>
@@ -172,7 +193,13 @@
   </div>
 {:else}
   <div class="empty-state search-hint">
-    Enter a search query to find content across agents, sessions, cycles, and sprints.
+    <p>Enter a search query to find content across agents, sessions, cycles, and sprints.</p>
+    <div class="hint-examples">
+      <span class="hint-label">Try:</span>
+      {#each ['sprint', 'agent', 'cycle', 'memory', 'completed'] as ex}
+        <button class="type-chip" onclick={() => { query = ex; search(); }}>{ex}</button>
+      {/each}
+    </div>
   </div>
 {/if}
 
@@ -241,6 +268,13 @@
   }
   .results-list { display: flex; flex-direction: column; gap: var(--space-3); }
   .result-card { cursor: default; }
+  /* Cards with navigable type badges get a subtle hover highlight */
+  .result-card-link:hover { border-color: var(--color-brand); }
+  .result-type-link {
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .result-type-link:hover { opacity: 0.8; text-decoration: underline; }
   .result-card-skeleton { padding: var(--space-4); }
   .result-header {
     display: flex;
@@ -288,4 +322,18 @@
   .meta-pair { font-size: var(--text-xs); color: var(--color-text-muted); }
   .meta-key { color: var(--color-text-faint); }
   .search-hint { font-style: italic; }
+  .search-hint p { margin: 0 0 var(--space-3); }
+  .hint-examples {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    font-style: normal;
+  }
+  .hint-label {
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
 </style>

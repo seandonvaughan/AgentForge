@@ -1,0 +1,362 @@
+{
+  "sprints": [
+    {
+      "version": "9.1.0",
+      "sprintId": "v9-1-0-autonomous",
+      "title": "AgentForge v9.1.0 — Autonomous Cycle",
+      "createdAt": "2026-04-10T04:44:07.078Z",
+      "phase": "release",
+      "items": [
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-08-memory-wiring-sprint-md-19",
+          "title": "Define a memory entry schema in packages/core/src/memory/types.ts. Each entry should have id, key, value, type (cycle-outcome | gate-verdict | review-finding | failure-pattern | learned-fact), createdAt, source (cycleId or agentId), tags. Export a writeMemoryEntry helper that appends to .agentforge/memory/<type>.jsonl with file lock.",
+          "description": "This is the foundational schema that directly unblocks five dependent memory-wiring items. Without a stable type definition and writeMemoryEntry helper, cross-cycle learning cannot function. Ranked first because it has no prerequisites and is a pure unblocking dependency.",
+          "priority": "P0",
+          "assignee": "architect",
+          "status": "completed",
+          "estimatedCostUsd": 8,
+          "tags": [
+            "memory",
+            "schema",
+            "core",
+            "foundation"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-08-memory-wiring-sprint-md-21",
+          "title": "Wire CycleLogger.logCycleComplete() to also call writeMemoryEntry with type=cycle-outcome containing {cycleId, sprintVersion, stage, costUsd, testsPassed, gateVerdict, prUrl}. Cycle 88026e07 is a good test target — it has known failure context.",
+          "description": "First data producer in the memory pipeline. Wiring cycle outcomes establishes the primary feedback signal for cross-cycle learning and immediately generates concrete test data for downstream integration tests.",
+          "priority": "P0",
+          "assignee": "coder",
+          "status": "completed",
+          "estimatedCostUsd": 5,
+          "tags": [
+            "memory",
+            "cycle-logger",
+            "chore"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-08-memory-wiring-sprint-md-23",
+          "title": "Wire the gate phase handler to write a memory entry of type=gate-verdict for every cycle, capturing {cycleId, verdict, rationale, criticalFindings[], majorFindings[]}. The next cycle's audit phase should read these.",
+          "description": "Gate verdicts are the richest feedback signal: they capture exactly why a cycle passed or failed. Storing these as memory entries seeds the audit phase with prior verdicts so future cycles avoid repeating the same mistakes.",
+          "priority": "P0",
+          "assignee": "coder",
+          "status": "completed",
+          "estimatedCostUsd": 5,
+          "tags": [
+            "memory",
+            "gate-phase",
+            "chore"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-08-memory-wiring-sprint-md-25",
+          "title": "Wire the review phase handler to write memory entries of type=review-finding for each MAJOR or CRITICAL finding, capturing {file, line, severity, summary, fixSuggestion}. These are the seeds for cross-cycle learning.",
+          "description": "MAJOR/CRITICAL review findings represent recurring failure patterns that agents must learn to avoid. Persisting these entries is the mechanism that prevents the same code-quality regressions from re-appearing in subsequent sprints.",
+          "priority": "P1",
+          "assignee": "coder",
+          "status": "completed",
+          "estimatedCostUsd": 5,
+          "tags": [
+            "memory",
+            "review-phase",
+            "chore"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-08-memory-wiring-sprint-md-29",
+          "title": "Update the execute phase handler to inject relevant memory entries into each item's agent prompt — filter by tags matching the item's tags. Each agent sees the failures past versions of themselves had on similar work.",
+          "description": "This closes the memory feedback loop: agents executing items receive context about prior failures on similarly-tagged work. Must come after ranks 2-4 so that meaningful entries exist to inject; without prior data producers this is a no-op.",
+          "priority": "P1",
+          "assignee": "coder",
+          "status": "completed",
+          "estimatedCostUsd": 8,
+          "tags": [
+            "memory",
+            "execute-phase",
+            "prompt-injection",
+            "chore"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-08-memory-wiring-sprint-md-31",
+          "title": "Fix the /api/v5/memory backend to read the new .agentforge/memory/*.jsonl files instead of *.json|md. Stream the latest 200 entries with optional filter by type, since, agentId. Sort by createdAt descending.",
+          "description": "Unblocks the memory dashboard UI and the updated /memory page. The backend must be updated to read from .jsonl (established by rank 1) rather than the old format; without this fix the dashboard surfaces empty or stale data regardless of how many entries are written.",
+          "priority": "P1",
+          "assignee": "api-specialist",
+          "status": "completed",
+          "estimatedCostUsd": 7,
+          "tags": [
+            "memory",
+            "api",
+            "backend",
+            "feature"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-26",
+          "title": "Wire the /approvals dashboard page to the new server endpoints GET /api/v5/cycles/:id/approval and POST /api/v5/cycles/:id/approve. The endpoints already exist in packages/server/src/routes/v5/cycles.ts (v6.7.4). The dashboard needs to: (1) poll /api/v5/cycle-sessions for cycles with hasApprovalPending, (2) for each pending one fetch /api/v5/cycles/:id/approval and render the within-budget items as a checkbox list with cost totals, (3) POST to /api/v5/cycles/:id/approve with either {approveAll: true} or {approvedItemIds: [...], rejectedItemIds: [...]} when the user clicks Approve. Should also be triggered automatically as a global modal when an approval.pending event arrives via SSE. Update packages/dashboard/src/routes/approvals/+page.svelte and add a global ApprovalModal component to the layout.",
+          "description": "The approvals page is the primary human-in-the-loop safety mechanism for the autonomous loop. Without it, budget-overflow items cannot receive human sign-off and the loop stalls. The backend endpoints already exist in v6.7.4; this is a frontend wiring task with known contracts.",
+          "priority": "P1",
+          "assignee": "dashboard-architect",
+          "status": "completed",
+          "estimatedCostUsd": 12,
+          "tags": [
+            "approvals",
+            "dashboard",
+            "autonomous-loop",
+            "feature",
+            "sse"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-10",
+          "title": "Fix the /org dashboard route — verify the org graph endpoint returns real delegation data and the page renders nodes/edges correctly. Currently shows empty or broken state. Check packages/dashboard/src/routes/org/+page.svelte and the matching server route in packages/server/src/routes/v5/org-graph.ts.",
+          "description": "Active P1 regression: the org graph is a core operator-facing visibility surface for understanding agent team structure and delegation authority. A broken /org route undermines trust in the autonomous loop and requires both frontend and server-route verification.",
+          "priority": "P1",
+          "assignee": "frontend-dev",
+          "status": "completed",
+          "estimatedCostUsd": 7,
+          "tags": [
+            "dashboard",
+            "org-graph",
+            "fix"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-12",
+          "title": "Fix the /agents dashboard route — verify the agent listing shows real agents from .agentforge/agents/*.yaml with name, model tier, description, and clickable detail pages. Currently broken. Check packages/dashboard/src/routes/agents/+page.svelte.",
+          "description": "Active P1 regression: operators cannot inspect the forged agent roster. Reading from .agentforge/agents/*.yaml is a well-defined contract, making this lower-risk than the org graph fix. Clickable detail pages require navigation wiring alongside the listing fix.",
+          "priority": "P2",
+          "assignee": "frontend-dev",
+          "status": "completed",
+          "estimatedCostUsd": 6,
+          "tags": [
+            "dashboard",
+            "agents",
+            "fix"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-42",
+          "title": "Complete the /runner dashboard route — fix the MODEL_TIERS undefined errors flagged by svelte-check, wire up the agent dispatch form to actually run agents, show output streaming back in real time. Check packages/dashboard/src/routes/runner/+page.svelte.",
+          "description": "Compile-time MODEL_TIERS undefined errors mean the runner is broken at the TypeScript level before even reaching runtime. Fixing this restores manual agent dispatch and real-time streaming output — both essential for debugging autonomous cycles.",
+          "priority": "P2",
+          "assignee": "ui-engineer",
+          "status": "completed",
+          "estimatedCostUsd": 8,
+          "tags": [
+            "dashboard",
+            "runner",
+            "fix",
+            "streaming"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-08-memory-wiring-sprint-md-33",
+          "title": "Update packages/dashboard/src/routes/memory/+page.svelte to render the live memory feed with type chips, source links (clickable to cycle/agent), search, and filter by type. Each entry expandable to show full value JSON.",
+          "description": "Once the memory backend is updated to .jsonl format (rank 6), this dashboard page becomes the primary operator surface for inspecting cross-cycle learning. Type chips and clickable source links make memory entries actionable rather than just informational.",
+          "priority": "P2",
+          "assignee": "ui-engineer",
+          "status": "completed",
+          "estimatedCostUsd": 6,
+          "tags": [
+            "memory",
+            "dashboard",
+            "ui",
+            "chore"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-18",
+          "title": "Wire up the /flywheel dashboard page to real data — currently shows static gauges. Compute real metrics from cycles + sprints + sessions: meta-learning rate, autonomy score, capability inheritance, velocity. Update packages/dashboard/src/routes/flywheel/+page.svelte.",
+          "description": "Static gauges provide false confidence in loop health. Real metrics computed from cycles+sprints+sessions give operators an honest autonomy signal and unblock the memory stats card (rank 16) which composes on top of this page.",
+          "priority": "P2",
+          "assignee": "frontend-dev",
+          "status": "completed",
+          "estimatedCostUsd": 8,
+          "tags": [
+            "dashboard",
+            "flywheel",
+            "metrics",
+            "chore"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-22",
+          "title": "Fix the /search dashboard route — currently returns no results regardless of query. Check what backend endpoint it hits and either implement the search backend or wire it to an existing one (sessions, cycles, agents, sprints, memories). Update packages/dashboard/src/routes/search/+page.svelte.",
+          "description": "A search that always returns nothing is a silently broken feature. Ranked below the targeted route fixes because search is a cross-cutting concern that may require new backend work depending on which data stores are exposed. Investigation needed before implementation.",
+          "priority": "P2",
+          "assignee": "api-specialist",
+          "status": "completed",
+          "estimatedCostUsd": 8,
+          "tags": [
+            "dashboard",
+            "search",
+            "feature"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-6",
+          "title": "Render markdown content in cycle phases tab — use a markdown-to-HTML library so reviewer responses, gate rationales, and learn outputs display formatted text instead of raw JSON. Pick a small library like marked or markdown-it. Update packages/dashboard/src/routes/cycles/[id]/+page.svelte phases tab to render parsed JSON fields beautifully (cost, duration, agent runs, response markdown).",
+          "description": "Rendering reviewer and gate responses as formatted markdown rather than raw JSON significantly improves human review of cycle output. Low-risk, well-scoped frontend change using a proven library with no backend dependency.",
+          "priority": "P2",
+          "assignee": "ui-engineer",
+          "status": "completed",
+          "estimatedCostUsd": 5,
+          "tags": [
+            "dashboard",
+            "markdown",
+            "ux",
+            "chore"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-30",
+          "title": "Complete the /branches dashboard tab — show all autonomous/* branches with their cycle, age, status (open PR / merged / stale), and a button to delete stale branches. Update packages/dashboard/src/routes/branches/+page.svelte.",
+          "description": "Branch hygiene is an operational concern: stale autonomous/* branches accumulate and confuse operators. Adding status badges and delete capability makes branch management actionable from the dashboard without requiring git CLI access.",
+          "priority": "P2",
+          "assignee": "frontend-dev",
+          "status": "completed",
+          "estimatedCostUsd": 6,
+          "tags": [
+            "dashboard",
+            "branches",
+            "git-ops",
+            "chore"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-08-memory-wiring-sprint-md-35",
+          "title": "Add a memory stats card to the /flywheel page showing total entries, entries-per-cycle trend, and \"memory hit rate\" (% of cycles whose audit phase actually used a past memory entry to influence its plan).",
+          "description": "Memory hit rate is the proof metric that cross-cycle learning is actually working. Adding this card to /flywheel closes the observability loop on the entire memory investment. Depends on both the flywheel real-data wiring (rank 12) and the full memory pipeline (ranks 1-5).",
+          "priority": "P2",
+          "assignee": "frontend-dev",
+          "status": "completed",
+          "estimatedCostUsd": 5,
+          "tags": [
+            "memory",
+            "flywheel",
+            "metrics",
+            "feature"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-44",
+          "title": "Verify the /live activity feed renders cycle_event messages from the SSE stream — confirm the page subscribes correctly and renders events with proper colors, types, and timestamps.",
+          "description": "The live activity feed is the primary real-time window into cycle execution. Verification that SSE subscription and rendering work is a low-cost, high-confidence check that prevents silent observability failures during autonomous operation.",
+          "priority": "P2",
+          "assignee": "frontend-dev",
+          "status": "completed",
+          "estimatedCostUsd": 4,
+          "tags": [
+            "dashboard",
+            "live",
+            "sse",
+            "chore"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-36",
+          "title": "Make sprint cards on /sprints page clickable — clicking should navigate to /sprints/{version} which already exists. Currently nothing happens. Wire up the onclick handler. Check packages/dashboard/src/routes/sprints/+page.svelte.",
+          "description": "Highest-confidence fix in the sprint: the destination route already exists and this is a one-line onclick/href wire-up. Low cost, high certainty, immediate UX impact enabling operators to drill into sprint details.",
+          "priority": "P2",
+          "assignee": "ui-engineer",
+          "status": "completed",
+          "estimatedCostUsd": 3,
+          "tags": [
+            "dashboard",
+            "sprints",
+            "ux",
+            "chore"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-38",
+          "title": "Ensure /sprints/[version] detail page renders all fields beautifully: title, status, items kanban, success criteria, audit findings, completion percentage, dates. Already mostly built — verify and fill any gaps.",
+          "description": "Polishing the sprint detail page complements the clickable cards fix (rank 18). Since it is already mostly built, this is a targeted verification and gap-fill task with modest scope and meaningful payoff in operator experience for sprint history review.",
+          "priority": "P2",
+          "assignee": "frontend-dev",
+          "status": "completed",
+          "estimatedCostUsd": 5,
+          "tags": [
+            "dashboard",
+            "sprints",
+            "ux",
+            "chore"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-08-memory-wiring-sprint-md-37",
+          "title": "Add tests/integration/memory-flow.test.ts that runs a complete cycle, asserts memory entries were written for cycle-outcome + gate-verdict, then runs a second cycle and asserts the audit prompt included the prior cycle's memory.",
+          "description": "End-to-end validation of the memory pipeline is the final guard rail for this sprint's core learning loop. Ranked 20th — the maxItems boundary — to ensure the full memory stack (ranks 1-5) is implemented before writing integration tests that validate it.",
+          "priority": "P2",
+          "assignee": "test-runner",
+          "status": "completed",
+          "estimatedCostUsd": 8,
+          "tags": [
+            "memory",
+            "integration-test",
+            "feature"
+          ]
+        }
+      ],
+      "budget": 200,
+      "teamSize": 7,
+      "successCriteria": [
+        "All sprint items completed",
+        "Test pass rate >= 95%",
+        "Total cost <= $200"
+      ],
+      "versionDecision": {
+        "previousVersion": "9.0.2",
+        "nextVersion": "9.1.0",
+        "tier": "minor",
+        "tagsSeen": [
+          "memory",
+          "schema",
+          "core",
+          "foundation",
+          "cycle-logger",
+          "chore",
+          "gate-phase",
+          "review-phase",
+          "execute-phase",
+          "prompt-injection",
+          "api",
+          "backend",
+          "feature",
+          "approvals",
+          "dashboard",
+          "autonomous-loop",
+          "sse",
+          "org-graph",
+          "fix",
+          "agents",
+          "runner",
+          "streaming",
+          "ui",
+          "flywheel",
+          "metrics",
+          "search",
+          "markdown",
+          "ux",
+          "branches",
+          "git-ops",
+          "live",
+          "sprints",
+          "integration-test",
+          "needs-clarification",
+          "data",
+          "backfill",
+          "e2e",
+          "playwright",
+          "testing",
+          "todo-marker"
+        ],
+        "rationale": "9.0.2 → 9.1.0 (minor bump — feature/capability tags found (feature))"
+      }
+    }
+  ]
+}

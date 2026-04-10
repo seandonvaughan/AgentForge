@@ -120,6 +120,7 @@ export class CycleLogger {
         stage: result.stage,
         costUsd: result.cost.totalUsd,
         testsPassed: result.tests.passed,
+        gateVerdict: result.gateVerdict ?? null,
         prUrl: result.pr.url,
       }),
       source: result.cycleId,

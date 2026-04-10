@@ -34,6 +34,12 @@ export interface SessionMemoryEntry {
   success: boolean;
   /** ISO-8601 timestamp. */
   timestamp: string;
+  /**
+   * Optional structured payload for category-specific data.
+   * For "gate-verdict" entries written by GatePhaseHandler this carries
+   * { cycleId, verdict, rationale, criticalFindings, majorFindings }.
+   */
+  metadata?: Record<string, unknown>;
 }
 
 /** A session summary for the rolling history. */

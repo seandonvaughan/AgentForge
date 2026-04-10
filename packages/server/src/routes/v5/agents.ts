@@ -57,6 +57,16 @@ export async function agentRoutes(
       const model = (modelRaw === 'opus' || modelRaw === 'haiku') ? modelRaw : 'sonnet';
       const skillsRaw = Array.isArray(raw.skills) ? raw.skills : [];
       const skills = skillsRaw.filter((s): s is string => typeof s === 'string');
+
+      // Extract collaboration fields from YAML collaboration block
+      const collabRaw = raw.collaboration && typeof raw.collaboration === 'object'
+        ? raw.collaboration as Record<string, unknown>
+        : {};
+      const reportsTo = typeof collabRaw.reports_to === 'string' ? collabRaw.reports_to : null;
+      const canDelegateTo = Array.isArray(collabRaw.can_delegate_to)
+        ? collabRaw.can_delegate_to.filter((s): s is string => typeof s === 'string')
+        : [];
+
       return reply.send({
         data: {
           agentId,
@@ -66,6 +76,11 @@ export async function agentRoutes(
           role: typeof raw.role === 'string' ? raw.role : null,
           systemPrompt: typeof raw.system_prompt === 'string' ? raw.system_prompt : null,
           skills,
+          version: typeof raw.version === 'string' ? raw.version : null,
+          seniority: typeof raw.seniority === 'string' ? raw.seniority : null,
+          layer: typeof raw.layer === 'string' ? raw.layer : null,
+          reportsTo,
+          canDelegateTo,
         },
       });
     } catch {

@@ -27,7 +27,6 @@ import { agentCrudRoutes } from './agent-crud.js';
 import { agentRoutes } from './agents.js';
 import { chatRoutes } from './chat.js';
 import { runRoutes } from './run.js';
-import { searchRoutes } from './search.js';
 
 export interface V5RouteOptions {
   adapter: WorkspaceAdapter;
@@ -240,7 +239,7 @@ export async function registerV5Routes(
 
   // ── Agent Runner (manual dispatch from dashboard) ─────────────────────────
   await runRoutes(app, { adapter });
-
-  // ── Unified Search (keyword search across sessions, agents, sprints, cycles, memory) ──
-  await searchRoutes(app, { projectRoot: opts.projectRoot ?? process.cwd(), adapter });
+  // Note: searchRoutes is registered by createServerV5 (server.ts) unconditionally
+  // for both adapter and no-adapter paths. Do NOT register it here to avoid
+  // FST_ERR_DUPLICATED_ROUTE when adapter+registry are provided.
 }

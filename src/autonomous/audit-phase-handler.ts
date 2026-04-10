@@ -16,6 +16,7 @@
 import type { MemoryRegistryEntry } from "../types/v4-api.js";
 import type { SessionMemoryEntry } from "../memory/session-memory-manager.js";
 import type { ReviewPhaseHandler } from "./review-phase-handler.js";
+import type { GateVerdictMetadata } from "./gate-phase-handler.js";
 
 // ---------------------------------------------------------------------------
 // Dependencies (read-only interfaces to avoid tight coupling)
@@ -167,6 +168,11 @@ export class AuditPhaseHandler {
   /**
    * Read up to `limit` gate-verdict entries, ordered newest-first.
    * Only rejected verdicts are surfaced — approved gates don't represent mistakes.
+   *
+   * When an entry was written by GatePhaseHandler it carries structured
+   * metadata (rationale, criticalFindings, majorFindings). That richer
+   * content is used as the description; older entries without metadata fall
+   * back to the plain summary string.
    */
   private collectGateVerdicts(limit: number): PastMistake[] {
     const entries: SessionMemoryEntry[] = this.memoryManager
@@ -179,10 +185,42 @@ export class AuditPhaseHandler {
     return entries.map(
       (e): PastMistake => ({
         source: "gate-verdict",
-        description: e.summary,
+        description: buildGateVerdictDescription(e),
         wasFailure: true,
         timestamp: e.timestamp,
       }),
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// Module-level helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a description string for a gate-verdict memory entry.
+ *
+ * Prefers the structured metadata written by GatePhaseHandler so that the
+ * audit prompt receives rationale + granular findings rather than just a
+ * terse summary line. Falls back to entry.summary for entries written by
+ * the older AutonomousSprintFramework.recordResult() path.
+ */
+function buildGateVerdictDescription(entry: SessionMemoryEntry): string {
+  const meta = entry.metadata as GateVerdictMetadata | undefined;
+
+  if (!meta?.rationale) {
+    // Legacy entry — use the plain summary string
+    return entry.summary;
+  }
+
+  const parts: string[] = [meta.rationale];
+
+  if (meta.criticalFindings.length > 0) {
+    parts.push(`Critical findings: ${meta.criticalFindings.join("; ")}`);
+  }
+  if (meta.majorFindings.length > 0) {
+    parts.push(`Major findings: ${meta.majorFindings.join("; ")}`);
+  }
+
+  return parts.join(". ");
 }

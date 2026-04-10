@@ -2,6 +2,7 @@
   import { page } from '$app/state';
   import { onMount } from 'svelte';
   import ProgressBar from '$lib/components/ProgressBar.svelte';
+  import Gauge from '$lib/components/Gauge.svelte';
 
   interface SprintItem {
     id: string;
@@ -189,12 +190,17 @@
     Failed to load sprint.
     <button class="btn btn-ghost btn-sm" style="margin-top: var(--space-3)" onclick={() => load(version)}>Retry</button>
   </div>
-{:else if sprint}
+{:else if !sprint}
+  <div class="empty-state">Sprint <code>{version}</code> not found.</div>
+{:else}
   <!-- Summary Row -->
   <div class="summary-row">
-    <div class="summary-card highlight">
-      <div class="summary-value">{pct}%</div>
-      <div class="summary-label">Complete</div>
+    <div class="summary-card highlight gauge-card">
+      <Gauge
+        value={pct}
+        label="Complete"
+        color={sprint.status === 'completed' ? 'var(--color-success)' : 'var(--color-brand)'}
+      />
     </div>
     <div class="summary-card">
       <div class="summary-value">{completedCount}/{totalCount}</div>
@@ -261,6 +267,10 @@
   </div>
 
   <!-- Kanban Board -->
+  <div class="section-heading">
+    <span class="section-heading-label">Sprint Board</span>
+    <span class="section-heading-count">{allItems.length} items</span>
+  </div>
   <div class="kanban-board" class:has-failed={failedItems.length > 0}>
     {#each [
       { key: 'planned', label: 'Planned', items: plannedItems },
@@ -314,6 +324,11 @@
   </div>
 
   <!-- Items by Priority -->
+  {#if p0Items.length > 0 || p1Items.length > 0 || p2Items.length > 0}
+    <div class="section-heading">
+      <span class="section-heading-label">Items by Priority</span>
+    </div>
+  {/if}
   {#each [
     { label: 'P0 — Critical', items: p0Items, cls: 'danger' },
     { label: 'P1 — Important', items: p1Items, cls: 'warning' },
@@ -365,6 +380,10 @@
 
   <!-- Success Criteria -->
   {#if sprint.successCriteria && sprint.successCriteria.length > 0}
+    <div class="section-heading">
+      <span class="section-heading-label">Success Criteria</span>
+      <span class="section-heading-count">{sprint.successCriteria.length}</span>
+    </div>
     <div class="card" style="margin-bottom:var(--space-4);">
       <div class="card-header">
         <span class="card-title">✓ Success Criteria</span>
@@ -380,6 +399,10 @@
 
   <!-- Audit Findings -->
   {#if sprint.auditFindings && sprint.auditFindings.length > 0}
+    <div class="section-heading">
+      <span class="section-heading-label">Audit Findings</span>
+      <span class="section-heading-count">{sprint.auditFindings.length}</span>
+    </div>
     <div class="card" style="margin-bottom:var(--space-4);">
       <div class="card-header">
         <span class="card-title">⚠ Audit Findings</span>
@@ -395,6 +418,9 @@
 
   <!-- Version Decision -->
   {#if sprint.versionDecision}
+    <div class="section-heading">
+      <span class="section-heading-label">Version Decision</span>
+    </div>
     {@const vd = sprint.versionDecision}
     <div class="card version-decision-card" style="margin-bottom:var(--space-4);">
       <div class="card-header">
@@ -426,6 +452,24 @@
             {/each}
           </div>
         </div>
+      {/if}
+    </div>
+  {/if}
+
+  <!-- Sprint Navigation -->
+  {#if sprint.versionDecision?.previousVersion || sprint.versionDecision?.nextVersion}
+    <div class="sprint-nav">
+      {#if sprint.versionDecision?.previousVersion}
+        <a href="/sprints/{sprint.versionDecision.previousVersion}" class="sprint-nav-link">
+          &larr; v{sprint.versionDecision.previousVersion}
+        </a>
+      {:else}
+        <div></div>
+      {/if}
+      {#if sprint.versionDecision?.nextVersion}
+        <a href="/sprints/{sprint.versionDecision.nextVersion}" class="sprint-nav-link sprint-nav-next">
+          v{sprint.versionDecision.nextVersion} &rarr;
+        </a>
       {/if}
     </div>
   {/if}
@@ -492,6 +536,71 @@
     border: 1px solid rgba(91, 138, 245, 0.35);
     font-size: var(--text-xs);
     font-weight: 700;
+  }
+
+  /* Gauge card variant */
+  .gauge-card {
+    padding: var(--space-2) var(--space-3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 120px;
+  }
+
+  /* Section headings */
+  .section-heading {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3);
+    margin: var(--space-6) 0 var(--space-3) 0;
+    padding-bottom: var(--space-2);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .section-heading-label {
+    font-size: var(--text-xs);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--color-text-faint);
+  }
+
+  .section-heading-count {
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+    color: var(--color-text-faint);
+  }
+
+  /* Prev / next sprint navigation */
+  .sprint-nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: var(--space-8);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--color-border);
+  }
+
+  .sprint-nav-link {
+    font-size: var(--text-sm);
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-decoration: none;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    transition: border-color var(--duration-fast), color var(--duration-fast), background var(--duration-fast);
+  }
+
+  .sprint-nav-link:hover {
+    border-color: var(--color-brand);
+    color: var(--color-brand);
+    background: rgba(91, 138, 245, 0.06);
+  }
+
+  .sprint-nav-next {
+    margin-left: auto;
   }
 
   /* Summary row */

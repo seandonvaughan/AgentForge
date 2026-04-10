@@ -42,6 +42,41 @@
       <!-- 4 Metric Gauge Cards — populated by JS via safe DOM methods -->
       <div class="flywheel-grid" id="fw-gauge-grid"></div>
 
+      <!-- Memory Stats Card -->
+      <div id="fw-memory-card" style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:24px;margin-top:20px;display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:16px">🧠</span>
+            <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted)">Memory Loop Health</span>
+          </div>
+          <span id="fw-mem-badge" style="font-family:var(--font-mono);font-size:10px;font-weight:700;padding:3px 10px;border-radius:99px;background:var(--bg-primary);border:1px solid var(--border);color:var(--text-muted)">—</span>
+        </div>
+        <div style="display:grid;grid-template-columns:auto 1fr auto;gap:24px;align-items:center">
+
+          <!-- Left: Total Entries -->
+          <div style="text-align:center;min-width:100px">
+            <div id="fw-mem-total" style="font-family:var(--font-mono);font-size:36px;font-weight:700;color:var(--cyan);line-height:1;margin-bottom:4px">—</div>
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted)">Total Entries</div>
+          </div>
+
+          <!-- Center: Sparkline -->
+          <div>
+            <div style="font-size:11px;color:var(--text-secondary);margin-bottom:10px;font-family:var(--font-mono)">Entries per Cycle <span id="fw-mem-cycle-count" style="color:var(--text-muted)"></span></div>
+            <div id="fw-mem-sparkline" style="display:flex;align-items:flex-end;gap:3px;height:40px;padding:0 2px">
+              <!-- bars injected by JS -->
+            </div>
+          </div>
+
+          <!-- Right: Hit Rate -->
+          <div style="text-align:center;min-width:110px;padding-left:16px;border-left:1px solid var(--border)">
+            <div id="fw-mem-hitrate" style="font-family:var(--font-mono);font-size:36px;font-weight:700;line-height:1;margin-bottom:4px">—</div>
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted)">Memory Hit Rate</div>
+            <div id="fw-mem-hitrate-sub" style="font-size:10px;color:var(--text-secondary);margin-top:4px;font-family:var(--font-mono)"></div>
+          </div>
+
+        </div>
+      </div>
+
       <!-- Metric Detail Table -->
       <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-top:20px">
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:14px">Metric Breakdown</div>
@@ -209,6 +244,99 @@
     return tr;
   }
 
+  /**
+   * Renders the Memory Stats card using data from `memoryStats` in the v5
+   * flywheel response. Shows total entries, a per-cycle sparkline, and the
+   * memory hit rate — the proof metric that cross-cycle learning is working.
+   */
+  function renderMemoryCard(memoryStats) {
+    var card = document.getElementById('fw-memory-card');
+    if (!card) return;
+
+    // If there's no data at all, hide the card gracefully
+    if (!memoryStats || typeof memoryStats.totalEntries !== 'number') {
+      card.style.display = 'none';
+      return;
+    }
+
+    card.style.display = 'block';
+
+    var total    = memoryStats.totalEntries;
+    var trend    = Array.isArray(memoryStats.entriesPerCycleTrend) ? memoryStats.entriesPerCycleTrend : [];
+    var hitRate  = typeof memoryStats.hitRate === 'number' ? memoryStats.hitRate : 0;
+
+    // ── Total entries ─────────────────────────────────────────
+    var totalEl = document.getElementById('fw-mem-total');
+    if (totalEl) totalEl.textContent = String(total);
+
+    // ── Hit rate ──────────────────────────────────────────────
+    var hitPct = Math.round(hitRate * 100);
+    var hitColor = hitPct >= 70 ? 'var(--green)' : hitPct >= 40 ? 'var(--gold)' : hitPct > 0 ? 'var(--red)' : 'var(--text-muted)';
+
+    var hitrateEl = document.getElementById('fw-mem-hitrate');
+    if (hitrateEl) {
+      hitrateEl.textContent = hitPct + '%';
+      hitrateEl.style.color = hitColor;
+    }
+
+    var hitSubEl = document.getElementById('fw-mem-hitrate-sub');
+    if (hitSubEl) {
+      hitSubEl.textContent = hitPct >= 70 ? '✓ learning is compounding'
+                           : hitPct >= 40 ? '~ partial coverage'
+                           : hitPct >  0  ? '⚠ low coverage'
+                           : 'no data yet';
+    }
+
+    // ── Badge ─────────────────────────────────────────────────
+    var badgeEl = document.getElementById('fw-mem-badge');
+    if (badgeEl) {
+      var label = hitPct >= 70 ? 'ACTIVE' : hitPct >= 40 ? 'PARTIAL' : 'WEAK';
+      badgeEl.textContent = label;
+      badgeEl.style.color        = hitColor;
+      badgeEl.style.borderColor  = hitColor;
+      badgeEl.style.background   = 'transparent';
+    }
+
+    // ── Sparkline (mini bar chart) ────────────────────────────
+    var sparkEl = document.getElementById('fw-mem-sparkline');
+    var countEl = document.getElementById('fw-mem-cycle-count');
+    if (sparkEl) {
+      while (sparkEl.firstChild) sparkEl.removeChild(sparkEl.firstChild);
+
+      if (trend.length === 0) {
+        var noData = document.createElement('span');
+        noData.style.cssText = 'font-family:var(--font-mono);font-size:11px;color:var(--text-muted);align-self:center';
+        noData.textContent = 'no cycle data yet';
+        sparkEl.appendChild(noData);
+      } else {
+        var maxCount = Math.max.apply(null, trend.map(function (p) { return p.count; }));
+        if (maxCount === 0) maxCount = 1; // guard against division by zero
+
+        trend.forEach(function (point, idx) {
+          var heightPct = Math.max(6, Math.round((point.count / maxCount) * 100));
+          var bar = document.createElement('div');
+          bar.style.cssText = [
+            'flex:1',
+            'min-width:4px',
+            'max-width:24px',
+            'height:' + heightPct + '%',
+            'background:var(--cyan)',
+            'border-radius:2px 2px 0 0',
+            'opacity:' + (0.35 + 0.65 * (idx + 1) / trend.length),
+            'transition:opacity 0.2s',
+            'cursor:default',
+          ].join(';');
+          bar.title = 'Cycle ' + (point.cycleId || (idx + 1)) + ': ' + point.count + ' entries';
+          sparkEl.appendChild(bar);
+        });
+
+        if (countEl) {
+          countEl.textContent = '(' + trend.length + ' cycle' + (trend.length === 1 ? '' : 's') + ')';
+        }
+      }
+    }
+  }
+
   /** Main loader: fetches /api/v5/flywheel and wires all DOM elements. */
   window.loadFlywheelPage = async function () {
     var loading  = document.getElementById('fw-loading');
@@ -294,6 +422,9 @@
         while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
         metrics.forEach(function (m) { tbody.appendChild(buildBreakdownRow(m)); });
       }
+
+      // ── Memory Stats Card ─────────────────────────────────────
+      renderMemoryCard(data.memoryStats);
 
       if (loading) loading.hidden = true;
       if (content) content.hidden = false;

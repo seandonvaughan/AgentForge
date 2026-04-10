@@ -11,15 +11,21 @@
   let submitSuccess = $state(false);
 
   // Subscribe to the global store's active approval.
-  const unsub = approvalsStore.subscribe(s => {
-    if (s.active?.cycleId !== approval?.cycleId) {
-      // New approval opened — reset selection to within-budget defaults.
-      approval = s.active;
-      selected = new Set((s.active?.withinBudgetItems ?? []).map(i => i.itemId));
-      submitting = false;
-      submitError = null;
-      submitSuccess = false;
-    }
+  // Use $effect so the subscription is tied to the component's lifetime (not the
+  // dialog element's lifetime). The <dialog> lives inside {#if approval}, so if
+  // we called unsub() in the action's destroy() it would silence the store after
+  // the first modal close — meaning no future approvals would ever open the modal.
+  $effect(() => {
+    return approvalsStore.subscribe(s => {
+      if (s.active?.cycleId !== approval?.cycleId) {
+        // New approval opened — reset selection to within-budget defaults.
+        approval = s.active;
+        selected = new Set((s.active?.withinBudgetItems ?? []).map(i => i.itemId));
+        submitting = false;
+        submitError = null;
+        submitSuccess = false;
+      }
+    });
   });
 
   // Svelte action: show/close native <dialog>, wire Escape key.
@@ -33,7 +39,8 @@
     return {
       destroy() {
         document.removeEventListener('keydown', onKeydown);
-        unsub();
+        // Note: store subscription cleanup is handled by the $effect above —
+        // do NOT call unsub here or the modal will stop responding after first close.
       },
     };
   }

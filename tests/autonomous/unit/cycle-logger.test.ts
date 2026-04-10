@@ -95,6 +95,7 @@ describe('CycleLogger', () => {
       tests: { passed: 100, failed: 0, skipped: 0, total: 100, passRate: 1.0, newFailures: [] },
       git: { branch: 'autonomous/v6.4.0', commitSha: 'abc123', filesChanged: [] },
       pr: { url: 'https://github.com/x/y/pull/1', number: 1, draft: false },
+      gateVerdict: 'APPROVE',
     });
 
     const memoryPath = join(tmpDir, '.agentforge/memory/cycle-outcome.jsonl');
@@ -111,7 +112,52 @@ describe('CycleLogger', () => {
     expect(value.stage).toBe('completed');
     expect(value.costUsd).toBe(42.50);
     expect(value.testsPassed).toBe(100);
+    expect(value.gateVerdict).toBe('APPROVE');
     expect(value.prUrl).toBe('https://github.com/x/y/pull/1');
+  });
+
+  it('logCycleResult includes gateVerdict=REJECT for gate-rejected cycles', () => {
+    logger.logCycleResult({
+      cycleId,
+      sprintVersion: '6.4.0',
+      stage: CycleStage.FAILED,
+      startedAt: '2026-04-06T15:00:00Z',
+      completedAt: '2026-04-06T15:10:00Z',
+      durationMs: 600000,
+      cost: { totalUsd: 12.00, budgetUsd: 50, byAgent: {}, byPhase: {} },
+      tests: { passed: 80, failed: 5, skipped: 0, total: 85, passRate: 80 / 85, newFailures: [] },
+      git: { branch: 'autonomous/v6.4.0', commitSha: null, filesChanged: [] },
+      pr: { url: null, number: null, draft: false },
+      gateVerdict: 'REJECT',
+      error: 'gate: Code quality insufficient — 3 CRITICAL findings',
+    });
+
+    const memoryPath = join(tmpDir, '.agentforge/memory/cycle-outcome.jsonl');
+    const entries = readFileSync(memoryPath, 'utf8').trim().split('\n').map(l => JSON.parse(l));
+    const value = JSON.parse(entries[0].value);
+    expect(value.gateVerdict).toBe('REJECT');
+    expect(value.stage).toBe('failed');
+  });
+
+  it('logCycleResult includes gateVerdict=null when verdict not yet determined', () => {
+    logger.logCycleResult({
+      cycleId,
+      sprintVersion: '6.4.0',
+      stage: CycleStage.KILLED,
+      startedAt: '2026-04-06T15:00:00Z',
+      completedAt: '2026-04-06T15:05:00Z',
+      durationMs: 300000,
+      cost: { totalUsd: 5.00, budgetUsd: 50, byAgent: {}, byPhase: {} },
+      tests: { passed: 0, failed: 0, skipped: 0, total: 0, passRate: 0, newFailures: [] },
+      git: { branch: '', commitSha: null, filesChanged: [] },
+      pr: { url: null, number: null, draft: false },
+    });
+
+    const memoryPath = join(tmpDir, '.agentforge/memory/cycle-outcome.jsonl');
+    const entries = readFileSync(memoryPath, 'utf8').trim().split('\n').map(l => JSON.parse(l));
+    const value = JSON.parse(entries[0].value);
+    // gateVerdict is absent from CycleResult → serialised as null in the value payload
+    expect(value.gateVerdict).toBeNull();
   });
 
   it('logCycleResult writes cycle.json with terminal state', () => {

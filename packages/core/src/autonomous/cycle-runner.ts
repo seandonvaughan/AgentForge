@@ -32,6 +32,7 @@ import {
   CycleKilledError,
   PhaseFailedError,
 } from './types.js';
+import { GateRejectedError } from './phase-handlers/gate-phase.js';
 import type { CycleConfig, CycleResult, KillSwitchTrip } from './types.js';
 import {
   ProposalToBacklog,
@@ -132,6 +133,7 @@ export class CycleRunner {
     newFailures: [],
   };
   private scoringFallback: 'static' | undefined;
+  private gateVerdict: 'APPROVE' | 'REJECT' | undefined = undefined;
 
   constructor(private readonly options: CycleRunnerOptions) {
     // Honor AUTONOMOUS_CYCLE_ID when set (server's POST /api/v5/cycles route
@@ -164,6 +166,14 @@ export class CycleRunner {
       if (err instanceof CycleKilledError) {
         this.logger.logKillSwitch(err.trip);
         final = this.buildResult(CycleStage.KILLED, { killSwitch: err.trip });
+      } else if (err instanceof GateRejectedError) {
+        // Gate phase explicitly rejected the sprint — record the verdict so
+        // the cycle-outcome memory entry surfaces it for the next audit phase.
+        this.gateVerdict = 'REJECT';
+        final = this.buildResult(CycleStage.FAILED, {
+          error: `gate: ${err.rationale}`,
+          gateVerdict: 'REJECT',
+        });
       } else if (err instanceof PhaseFailedError) {
         // PhaseFailedError from the PhaseScheduler is a hard failure but is
         // distinct from a kill-switch trip. We surface it as FAILED so the
@@ -273,6 +283,10 @@ export class CycleRunner {
     );
     const runSummary: SprintRunSummary = await scheduler.run();
     this.totalCostUsd = runSummary.totalCostUsd;
+    // Gate phase approval is implied by scheduler.run() completing without
+    // throwing GateRejectedError — record it so cycle-outcome memory entries
+    // capture the verdict for cross-cycle audit context.
+    this.gateVerdict = 'APPROVE';
     this.checkKillSwitch();
 
     // ─────────────────────────────────────────────────────────────────
@@ -527,6 +541,9 @@ Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
     if (this.scoringFallback) {
       base.scoringFallback = this.scoringFallback;
     }
+    if (this.gateVerdict !== undefined) {
+      base.gateVerdict = this.gateVerdict;
+    }
     const merged: CycleResult = { ...base, ...overrides };
     // v6.4.4 bug #2: propagate `error` field so FAILED cycles surface the
     // reason in cycle.json rather than forcing consumers to reconstruct it
@@ -534,6 +551,9 @@ Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
     // `undefined`, so only attach when present.
     if (overrides.error !== undefined) {
       merged.error = overrides.error;
+    }
+    if (overrides.gateVerdict !== undefined) {
+      merged.gateVerdict = overrides.gateVerdict;
     }
     return merged;
   }

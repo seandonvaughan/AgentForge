@@ -3,6 +3,7 @@ import { AuditPhaseHandler, type GateVerdictReader } from "../../src/autonomous/
 import { ReviewPhaseHandler, type ReviewFinding } from "../../src/autonomous/review-phase-handler.js";
 import { MemoryRegistry } from "../../src/registry/memory-registry.js";
 import type { SessionMemoryEntry } from "../../src/memory/session-memory-manager.js";
+import type { GateVerdictMetadata } from "../../src/autonomous/gate-phase-handler.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -35,6 +36,23 @@ function makeGateVerdictReader(entries: Partial<SessionMemoryEntry>[] = []): Gat
         id: `entry-${i}`,
         ...e,
       })) as SessionMemoryEntry[],
+  };
+}
+
+/** Build a gate-verdict entry that carries the rich GateVerdictMetadata. */
+function makeRichGateEntry(overrides: Partial<SessionMemoryEntry> = {}): Partial<SessionMemoryEntry> {
+  const meta: GateVerdictMetadata = {
+    cycleId: "sprint-rich-1",
+    verdict: "rejected",
+    rationale: "Critical auth bypass blocked release",
+    criticalFindings: ["Auth bypass in middleware"],
+    majorFindings: ["Slow query in registry"],
+  };
+  return {
+    success: false,
+    summary: "Gate rejected: Critical auth bypass blocked release. Critical: Auth bypass in middleware",
+    metadata: meta,
+    ...overrides,
   };
 }
 
@@ -220,6 +238,86 @@ describe("AuditPhaseHandler", () => {
 
       const result = handler.buildPastMistakesSection();
       expect(result.section.endsWith("\n")).toBe(true);
+    });
+  });
+
+  // ── Gate verdict metadata extraction ──────────────────────────────────────
+
+  describe("gate verdict metadata — rich descriptions from GatePhaseHandler entries", () => {
+    it("uses rationale from metadata as the primary description", () => {
+      const handler = new AuditPhaseHandler(
+        reviewHandler,
+        makeGateVerdictReader([makeRichGateEntry()]),
+      );
+
+      const mistakes = handler.getPastMistakes();
+      expect(mistakes[0].description).toContain("Critical auth bypass blocked release");
+    });
+
+    it("appends critical findings from metadata to the description", () => {
+      const handler = new AuditPhaseHandler(
+        reviewHandler,
+        makeGateVerdictReader([makeRichGateEntry()]),
+      );
+
+      const mistakes = handler.getPastMistakes();
+      expect(mistakes[0].description).toContain("Auth bypass in middleware");
+    });
+
+    it("appends major findings from metadata to the description", () => {
+      const handler = new AuditPhaseHandler(
+        reviewHandler,
+        makeGateVerdictReader([makeRichGateEntry()]),
+      );
+
+      const mistakes = handler.getPastMistakes();
+      expect(mistakes[0].description).toContain("Slow query in registry");
+    });
+
+    it("falls back to entry.summary for legacy entries without metadata", () => {
+      const legacySummary = "Sprint 6.5 gate rejected: 5/10 items, budget overrun";
+      const handler = new AuditPhaseHandler(
+        reviewHandler,
+        makeGateVerdictReader([{ success: false, summary: legacySummary }]),
+      );
+
+      const mistakes = handler.getPastMistakes();
+      expect(mistakes[0].description).toBe(legacySummary);
+    });
+
+    it("falls back to entry.summary when metadata has no rationale", () => {
+      const legacySummary = "Sprint 6.6 gate rejected: tests failing";
+      const handler = new AuditPhaseHandler(
+        reviewHandler,
+        makeGateVerdictReader([
+          { success: false, summary: legacySummary, metadata: { someOtherField: true } },
+        ]),
+      );
+
+      const mistakes = handler.getPastMistakes();
+      expect(mistakes[0].description).toBe(legacySummary);
+    });
+
+    it("description excludes findings sections when findings arrays are empty", () => {
+      const handler = new AuditPhaseHandler(
+        reviewHandler,
+        makeGateVerdictReader([
+          makeRichGateEntry({
+            metadata: {
+              cycleId: "sprint-x",
+              verdict: "rejected",
+              rationale: "Budget exceeded",
+              criticalFindings: [],
+              majorFindings: [],
+            },
+          }),
+        ]),
+      );
+
+      const mistakes = handler.getPastMistakes();
+      expect(mistakes[0].description).toBe("Budget exceeded");
+      expect(mistakes[0].description).not.toContain("Critical findings");
+      expect(mistakes[0].description).not.toContain("Major findings");
     });
   });
 });

@@ -90,7 +90,19 @@ export async function runRoutes(
     try {
       const result = await runtime.runStreaming({
         task,
+        // Wire onChunk so SSE clients see content arrive before the HTTP response.
+        // The dashboard SSE handler reads event.data.content, so emit exactly that.
+        onChunk: (text: string, index: number) => {
+          globalStream.emit({
+            type: 'agent_activity',
+            category: 'run',
+            message: `[${agentId}] chunk`,
+            data: { content: text, index, sessionId },
+          });
+        },
         onEvent: (event) => {
+          // The 'done' event signals completion — content already delivered via onChunk.
+          // Do not add content here to avoid double-appending on the client side.
           globalStream.emit({
             type: 'agent_activity',
             category: 'run',

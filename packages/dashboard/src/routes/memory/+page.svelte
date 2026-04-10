@@ -27,6 +27,8 @@
   /** IDs of entries that arrived in the most-recent load (highlighted briefly). */
   let newIds: Set<string> = new Set();
   let newCount = 0; // count of new entries from last SSE-triggered refresh
+  /** ID of the entry whose JSON was most recently copied to clipboard (cleared after 2s). */
+  let copiedId: string | null = null;
 
   // Search and filter state
   let searchQuery = '';
@@ -170,6 +172,16 @@
     } else {
       expanded = new Set([...expanded, id]);
     }
+  }
+
+  /** Copy the full formatted value to the clipboard and show brief feedback. */
+  async function copyValue(entry: MemoryEntry, e: MouseEvent) {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(formatValueFull(entry.value));
+      copiedId = entry.id;
+      setTimeout(() => { copiedId = null; }, 2000);
+    } catch { /* clipboard API unavailable in this context */ }
   }
 
   function formatValue(v: unknown): string {
@@ -412,10 +424,13 @@
             onkeydown={(e) => e.key === 'Enter' && toggleExpand(entry.id)}
             aria-expanded={isExpanded}
           >
-            <!-- Key column -->
+            <!-- Key column — expand chevron gives visual affordance for the clickable row -->
             <td class="col-key">
               <div class="key-wrap">
-                <code class="key-cell">{entry.key}</code>
+                <div class="key-header">
+                  <code class="key-cell">{entry.key}</code>
+                  <span class="expand-icon" aria-hidden="true">{isExpanded ? '▾' : '▸'}</span>
+                </div>
                 {#if entry.tags && entry.tags.length > 0}
                   <div class="tag-row">
                     {#each entry.tags as tag (tag)}
@@ -431,13 +446,9 @@
               <span class="badge {cfg.badge}">{cfg.label || (entry.type ?? typeof entry.value)}</span>
             </td>
 
-            <!-- Value column -->
+            <!-- Value column — always shows truncated preview; full JSON in detail row below -->
             <td class="col-value">
-              {#if isExpanded}
-                <pre class="value-expanded">{formatValueFull(entry.value)}</pre>
-              {:else}
-                <span class="value-preview">{formatValue(entry.value)}</span>
-              {/if}
+              <span class="value-preview">{formatValue(entry.value)}</span>
             </td>
 
             <!-- Source link column — stopPropagation so click doesn't toggle expand -->
@@ -484,6 +495,61 @@
               </button>
             </td>
           </tr>
+
+          <!-- Full-width detail row — visible only when expanded ──────────── -->
+          {#if isExpanded}
+            <tr class="mem-detail-row" style="--row-accent: {cfg.color};">
+              <td colspan="6" class="mem-detail-cell">
+                <div class="mem-detail">
+
+                  <!-- Metadata strip: id, dates, tags -->
+                  <div class="detail-meta">
+                    <span class="detail-meta-item">
+                      <span class="detail-label">ID</span>
+                      <code class="detail-code">{entry.id}</code>
+                    </span>
+                    {#if entry.createdAt}
+                      <span class="detail-meta-item">
+                        <span class="detail-label">Created</span>
+                        <time datetime={entry.createdAt}>{formatDate(entry.createdAt)}</time>
+                      </span>
+                    {/if}
+                    {#if entry.updatedAt && entry.updatedAt !== entry.createdAt}
+                      <span class="detail-meta-item">
+                        <span class="detail-label">Updated</span>
+                        <time datetime={entry.updatedAt}>{formatDate(entry.updatedAt)}</time>
+                      </span>
+                    {/if}
+                    {#if entry.source}
+                      <span class="detail-meta-item">
+                        <span class="detail-label">Source</span>
+                        {#if isCycleId(entry.source)}
+                          <a class="source-link source-link--cycle" href="/cycles?highlight={entry.source}" title="View cycle {entry.source}">
+                            <span class="source-prefix">cycle</span>{shortSource(entry.source)}
+                          </a>
+                        {:else}
+                          <a class="source-link source-link--agent" href="/agents/{encodeURIComponent(entry.source)}" title="View agent {entry.source}">
+                            <span class="source-prefix">agent</span>{entry.source}
+                          </a>
+                        {/if}
+                      </span>
+                    {/if}
+                  </div>
+
+                  <!-- Full value JSON with copy button -->
+                  <div class="detail-value-wrap">
+                    <pre class="value-expanded">{formatValueFull(entry.value)}</pre>
+                    <button
+                      class="copy-btn"
+                      onclick={(e) => copyValue(entry, e)}
+                      aria-label="Copy JSON value for {entry.key}"
+                    >{copiedId === entry.id ? '✓ Copied' : 'Copy'}</button>
+                  </div>
+
+                </div>
+              </td>
+            </tr>
+          {/if}
         {/each}
       </tbody>
     </table>
@@ -868,6 +934,104 @@
   }
   .delete-btn:disabled { opacity: 0.4; cursor: default; }
 
+  /* ── Expand chevron in key column ───────────────────────────────────────── */
+  .key-header {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+  }
+  .expand-icon {
+    font-size: 10px;
+    color: var(--color-text-faint);
+    flex-shrink: 0;
+    transition: color 0.12s;
+  }
+  .mem-row:hover .expand-icon,
+  .mem-row--expanded .expand-icon {
+    color: var(--color-text-muted);
+  }
+
+  /* ── Detail row (full-width expanded content) ────────────────────────────── */
+  .mem-detail-row {
+    background: var(--color-surface-1);
+    border-left: 3px solid var(--row-accent);
+    /* Override global tbody tr:hover cursor — detail rows are not clickable */
+    cursor: default !important;
+  }
+  .mem-detail-row:hover {
+    background: var(--color-surface-1) !important;
+  }
+  .mem-detail-cell {
+    padding: 0 !important;
+  }
+  .mem-detail {
+    padding: var(--space-3) var(--space-4) var(--space-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    border-top: 1px solid var(--color-border);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  /* ── Detail metadata strip ───────────────────────────────────────────────── */
+  .detail-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-5);
+    align-items: center;
+  }
+  .detail-meta-item {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+  }
+  .detail-label {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-faint);
+    flex-shrink: 0;
+  }
+  .detail-code {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    background: var(--color-surface-2);
+    padding: 1px 5px;
+    border-radius: var(--radius-sm);
+  }
+
+  /* ── Detail value block with copy button ─────────────────────────────────── */
+  .detail-value-wrap {
+    position: relative;
+  }
+  .detail-value-wrap .value-expanded {
+    max-width: 100%;
+    margin: 0;
+    padding-right: var(--space-12, 3rem); /* room for copy button */
+  }
+  .copy-btn {
+    position: absolute;
+    top: var(--space-2);
+    right: var(--space-2);
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-muted);
+    font-size: var(--text-xs);
+    padding: 2px var(--space-2);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+    white-space: nowrap;
+  }
+  .copy-btn:hover {
+    background: var(--color-surface-1);
+    border-color: var(--color-brand);
+    color: var(--color-brand);
+  }
+
   /* ── Reduced motion ──────────────────────────────────────────────────────── */
   @media (prefers-reduced-motion: reduce) {
     .sse-dot.live { animation: none; }
@@ -881,7 +1045,10 @@
     .col-source { display: none; }
     .col-age    { display: none; }
     .value-preview { max-width: 200px; }
-    .value-expanded { max-width: 260px; }
+    .value-expanded { max-width: 100%; }
     .stats-bar  { display: none; }
+    .detail-meta { flex-direction: column; gap: var(--space-1); }
+    .copy-btn { position: static; margin-top: var(--space-2); }
+    .detail-value-wrap .value-expanded { padding-right: var(--space-3); }
   }
 </style>
