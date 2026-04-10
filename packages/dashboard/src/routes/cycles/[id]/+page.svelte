@@ -257,7 +257,11 @@
 
   // Fields to omit from the raw-JSON metadata view because they are rendered
   // by dedicated UI sections (markdown blocks or agentRun cards).
-  const STRIP_FROM_RAW = new Set([...MARKDOWN_FIELDS, 'agentRuns']);
+  // 'itemResults' is included because execute-phase.ts writes the same array to
+  // both agentRuns and itemResults — the agentRunSections() renderer already
+  // surfaces every response as markdown, so itemResults in metaOnly would just
+  // be 20 raw JSON objects duplicating what's shown above.
+  const STRIP_FROM_RAW = new Set([...MARKDOWN_FIELDS, 'agentRuns', 'itemResults']);
 
   /** Returns a copy of a phase object with prose/run fields removed,
    *  leaving only the structured metadata that benefits from JSON display. */

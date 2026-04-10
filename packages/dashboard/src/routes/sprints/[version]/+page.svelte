@@ -27,6 +27,7 @@
   interface SprintDetail {
     id: string;
     version: string;
+    sprintId?: string;
     title?: string;
     phase?: string;
     status: 'completed' | 'in_progress' | 'pending';
@@ -103,6 +104,21 @@
   function formatDate(iso: string): string {
     return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
   }
+  function humanDuration(startIso: string, endIso: string): string {
+    const ms = new Date(endIso).getTime() - new Date(startIso).getTime();
+    if (ms <= 0) return '';
+    const totalMins = Math.round(ms / 60000);
+    if (totalMins < 60) return `${totalMins}m`;
+    const hours = ms / (1000 * 60 * 60);
+    if (hours < 24) return `${Number.isInteger(hours) ? hours : hours.toFixed(1)}h`;
+    const days = hours / 24;
+    return `${Number.isInteger(days) ? days : days.toFixed(1)}d`;
+  }
+  let durationStr = $derived(
+    sprint?.startDate && sprint?.endDate
+      ? humanDuration(sprint.startDate, sprint.endDate)
+      : null
+  );
 
   const STATUS_LABEL: Record<string, string> = {
     completed: 'Completed',
@@ -148,7 +164,7 @@
 </script>
 
 <svelte:head>
-  <title>Sprint v{version} — AgentForge</title>
+  <title>{sprint?.title ?? `Sprint v${version}`} — AgentForge</title>
 </svelte:head>
 
 <div class="page-header">
@@ -161,6 +177,9 @@
       {/if}
       {#if sprint.theme}
         <p class="page-theme">✦ {sprint.theme}</p>
+      {/if}
+      {#if sprint.sprintId}
+        <p class="page-sprintid">{sprint.sprintId}</p>
       {/if}
     {:else}
       <h1 class="page-title">Sprint {version}</h1>
@@ -230,17 +249,31 @@
         <div class="summary-label">Tests Added</div>
       </div>
     {/if}
-    {#if sprint.testCountAfter != null}
+    {#if sprint.testCountBefore != null && sprint.testCountAfter != null}
+      <!-- Both counts: show progression pair for retrospective clarity -->
+      <div class="summary-card">
+        <div class="summary-value">{sprint.testCountBefore.toLocaleString()}</div>
+        <div class="summary-label">Tests Before</div>
+      </div>
+      <div class="summary-card highlight-success">
+        <div class="summary-value">{sprint.testCountAfter.toLocaleString()}</div>
+        <div class="summary-label">Tests After</div>
+      </div>
+    {:else if sprint.testCountAfter != null}
       <div class="summary-card">
         <div class="summary-value">{sprint.testCountAfter.toLocaleString()}</div>
         <div class="summary-label">Total Tests</div>
       </div>
-    {/if}
-    {#if sprint.testCountBefore != null && sprint.testCountAfter == null}
-      <!-- Only show 'before' as a standalone card when there's no after count -->
+    {:else if sprint.testCountBefore != null}
       <div class="summary-card">
         <div class="summary-value">{sprint.testCountBefore.toLocaleString()}</div>
         <div class="summary-label">Tests Before</div>
+      </div>
+    {/if}
+    {#if durationStr}
+      <div class="summary-card">
+        <div class="summary-value duration-value">{durationStr}</div>
+        <div class="summary-label">Duration</div>
       </div>
     {/if}
     {#if sprint.startDate}
@@ -518,6 +551,18 @@
     font-style: italic;
     margin: var(--space-1) 0 0 0;
     opacity: 0.85;
+  }
+
+  .page-sprintid {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--color-text-faint);
+    margin: var(--space-1) 0 0 0;
+    letter-spacing: 0.03em;
+  }
+
+  .duration-value {
+    font-size: var(--text-base);
   }
 
   .header-badges {

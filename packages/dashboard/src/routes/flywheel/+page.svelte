@@ -204,6 +204,18 @@
   $: memTrendMax = memStats
     ? Math.max(1, ...memStats.entriesPerCycleTrend.map(p => p.count))
     : 1;
+  // Health classification for color coding and the status badge
+  $: memHealthLevel = memHitPct >= 70 ? 'active' : memHitPct >= 40 ? 'partial' : memHitPct > 0 ? 'weak' : 'none';
+  $: memBadgeLabel  = memHealthLevel === 'active' ? 'ACTIVE' : memHealthLevel === 'partial' ? 'PARTIAL' : memHealthLevel === 'weak' ? 'WEAK' : 'NO DATA';
+  $: memHitSubtext  = memHitPct >= 70  ? '✓ learning is compounding'
+                    : memHitPct >= 40  ? '~ partial coverage'
+                    : memHitPct >  0   ? '⚠ low coverage'
+                    : (memStats?.totalEntries ?? 0) === 0 ? 'no memory written yet'
+                    : 'no cycles run after first entry';
+  /** Bar opacity: newest bars are fully opaque; oldest fade to 0.3. */
+  function barOpacity(idx: number, total: number): number {
+    return total <= 1 ? 0.75 : 0.3 + 0.7 * ((idx + 1) / total);
+  }
 
   // Data source context line shown beneath the header
   $: contextLine = (() => {
@@ -328,35 +340,45 @@
   <!-- ── Memory stats card ──────────────────────────────────────────────── -->
   {#if memStats}
     <div class="card memory-card" data-testid="memory-stats-card">
-      <h2 class="stats-title">Memory</h2>
-      <dl class="stats-grid">
+      <div class="memory-card-header">
+        <h2 class="stats-title" style="margin:0">🧠 Memory Loop Health</h2>
+        <span class="mem-badge mem-badge--{memHealthLevel}" data-testid="memory-health-badge">
+          {memBadgeLabel}
+        </span>
+      </div>
+      <dl class="stats-grid memory-stats-grid">
+        <!-- Total entries -->
         <div class="stat-row">
           <dt class="stat-label">Total entries</dt>
-          <dd class="stat-value">{memStats.totalEntries}</dd>
+          <dd class="stat-value mem-total">{memStats.totalEntries}</dd>
+          <dd class="stat-sub">across all cycles</dd>
         </div>
+
+        <!-- Hit rate -->
         <div class="stat-row">
-          <dt class="stat-label">Hit rate</dt>
-          <dd class="stat-value hit-rate" class:hit-rate--active={memHitPct > 0}>
+          <dt class="stat-label">Memory hit rate</dt>
+          <dd class="stat-value mem-hitrate mem-hitrate--{memHealthLevel}">
             {memHitPct}%
           </dd>
-          {#if memHitPct > 0}
-            <dd class="stat-sub">cycles with prior context</dd>
-          {:else if memStats.totalEntries === 0}
-            <dd class="stat-sub">no memory written yet</dd>
-          {:else}
-            <dd class="stat-sub">no cycles started after first entry</dd>
-          {/if}
+          <dd class="stat-sub">{memHitSubtext}</dd>
         </div>
+
+        <!-- Entries-per-cycle sparkline -->
         <div class="stat-row trend-row">
-          <dt class="stat-label">Entries per cycle</dt>
+          <dt class="stat-label">
+            Entries per cycle
+            {#if memStats.entriesPerCycleTrend.length > 0}
+              <span class="trend-cycle-count">({memStats.entriesPerCycleTrend.length})</span>
+            {/if}
+          </dt>
           <dd class="trend-bars" aria-label="Entries per cycle trend">
             {#if memStats.entriesPerCycleTrend.length === 0}
-              <span class="trend-empty">—</span>
+              <span class="trend-empty">no cycle data yet</span>
             {:else}
-              {#each memStats.entriesPerCycleTrend as point (point.cycleId)}
+              {#each memStats.entriesPerCycleTrend as point, idx (point.cycleId)}
                 <span
                   class="trend-bar"
-                  style="height: {Math.round((point.count / memTrendMax) * 40) + 4}px"
+                  style="height: {Math.max(4, Math.round((point.count / memTrendMax) * 40))}px; opacity: {barOpacity(idx, memStats.entriesPerCycleTrend.length)}"
                   title="{point.cycleId.slice(0, 8)}: {point.count} {point.count === 1 ? 'entry' : 'entries'}"
                 ></span>
               {/each}
@@ -364,6 +386,11 @@
           </dd>
         </div>
       </dl>
+
+      <!-- Link to full memory browser -->
+      <div class="memory-card-footer">
+        <a href="/memory" class="mem-link">View all memory entries →</a>
+      </div>
     </div>
   {/if}
 
@@ -578,11 +605,51 @@
     margin-bottom: var(--space-4);
     padding: var(--space-5) var(--space-6);
   }
-  .hit-rate--active {
-    color: var(--color-success, #4caf82);
+  .memory-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--space-4);
   }
+  .memory-stats-grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
+
+  /* ── Health badge ─────────────────────────────────────────────────────────── */
+  .mem-badge {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    padding: 3px 10px;
+    border-radius: 99px;
+    border: 1px solid currentColor;
+    text-transform: uppercase;
+  }
+  .mem-badge--active  { color: #4caf82; }
+  .mem-badge--partial { color: #f5c842; }
+  .mem-badge--weak    { color: #f5a623; }
+  .mem-badge--none    { color: var(--color-text-faint); }
+
+  /* ── Total entries ────────────────────────────────────────────────────────── */
+  .mem-total {
+    color: var(--color-brand, #4a9eff);
+  }
+
+  /* ── Hit rate color tiers ─────────────────────────────────────────────────── */
+  .mem-hitrate--active  { color: #4caf82; }
+  .mem-hitrate--partial { color: #f5c842; }
+  .mem-hitrate--weak    { color: #f5a623; }
+  .mem-hitrate--none    { color: var(--color-text-muted); }
+
+  /* ── Sparkline ────────────────────────────────────────────────────────────── */
   .trend-row {
     grid-column: 1 / -1;
+  }
+  .trend-cycle-count {
+    font-weight: 400;
+    color: var(--color-text-faint);
+    font-size: var(--text-xs);
   }
   .trend-bars {
     display: flex;
@@ -597,15 +664,32 @@
     min-height: 4px;
     background: var(--color-brand, #4a9eff);
     border-radius: 2px 2px 0 0;
-    opacity: 0.75;
     transition: opacity 0.15s;
   }
   .trend-bar:hover {
-    opacity: 1;
+    opacity: 1 !important;
   }
   .trend-empty {
     font-size: var(--text-sm);
     color: var(--color-text-faint);
     line-height: 48px;
+  }
+
+  /* ── Memory card footer ───────────────────────────────────────────────────── */
+  .memory-card-footer {
+    margin-top: var(--space-4);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--color-border);
+  }
+  .mem-link {
+    font-size: var(--text-xs);
+    color: var(--color-brand, #4a9eff);
+    text-decoration: none;
+    opacity: 0.8;
+    transition: opacity 0.15s;
+  }
+  .mem-link:hover {
+    opacity: 1;
+    text-decoration: underline;
   }
 </style>

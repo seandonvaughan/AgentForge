@@ -124,6 +124,38 @@ describe('POST /api/v5/search', () => {
     expect(body.data[0].score).toBeGreaterThan(0);
   });
 
+  it('extracts description text from YAML block scalars (> notation)', async () => {
+    const projectRoot = makeTmpRoot();
+    const agentsDir = join(projectRoot, '.agentforge', 'agents');
+    mkdirSync(agentsDir, { recursive: true });
+
+    // YAML with block scalar description (the common real-world format)
+    writeFileSync(join(agentsDir, 'pipeline-runner.yaml'), [
+      'name: Pipeline Runner',
+      'role: executor',
+      'description: >',
+      '  Orchestrates the CI pipeline execution workflow.',
+      '  Handles job scheduling and artifact collection.',
+      'model: sonnet',
+    ].join('\n'));
+
+    const { app } = await createServerV5({ listen: false, projectRoot });
+    createdApps.push(app);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v5/search',
+      payload: { query: 'pipeline', limit: 20 },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<SearchResponse>();
+    expect(body.data).toHaveLength(1);
+    expect(body.data[0].type).toBe('agent');
+    // Content preview must NOT show the bare ">" — it should contain the actual description text
+    expect(body.data[0].content).not.toContain('Description: >');
+    expect(body.data[0].content).toContain('Pipeline');
+  });
+
   it('finds sprint items by title and description', async () => {
     const projectRoot = makeTmpRoot();
     const sprintsDir = join(projectRoot, '.agentforge', 'sprints');

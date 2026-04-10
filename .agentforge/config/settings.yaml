@@ -25,3 +25,11 @@ notifications:
   hiringRecommendation: true
   approvalNeeded: true
   sprintPhaseAdvanced: true
+workspaceName: AgentForge
+defaultModel: opus
+maxConcurrentAgents: 25
+sessionTimeoutMinutes: 60
+theme: dark
+maxAutoRetries: 1
+requireApprovalAfter: 1
+reExecuteOnRetry: true

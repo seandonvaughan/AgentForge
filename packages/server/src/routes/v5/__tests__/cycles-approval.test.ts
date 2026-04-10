@@ -207,6 +207,30 @@ describe('GET /api/v5/cycles/:id/approval', () => {
       withinBudget: true,
     });
   });
+
+  it('includes sprintVersion from sprint-link.json when present', async () => {
+    const dir = writePending(CYCLE_ID);
+    writeFileSync(
+      join(dir, 'sprint-link.json'),
+      JSON.stringify({ sprintVersion: '9.4.0', assignedAt: new Date().toISOString() }),
+    );
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/v5/cycles/${CYCLE_ID}/approval`,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().sprintVersion).toBe('9.4.0');
+  });
+
+  it('omits sprintVersion when sprint-link.json is absent', async () => {
+    writePending(CYCLE_ID);
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/v5/cycles/${CYCLE_ID}/approval`,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().sprintVersion).toBeUndefined();
+  });
 });
 
 // ── POST /api/v5/cycles/:id/approve ──────────────────────────────────────────
