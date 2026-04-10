@@ -34,12 +34,22 @@
     loading = true;
     error = null;
     try {
-      const res = await fetch('/api/v5/settings');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      settings = { ...settings, ...(json.data ?? json) };
+      const [wsRes, autoRes] = await Promise.all([
+        fetch('/api/v5/settings'),
+        fetch('/api/v5/settings/autonomous'),
+      ]);
+      if (wsRes.ok) {
+        const json = await wsRes.json();
+        settings = { ...settings, ...(json.data ?? json) };
+      }
+      if (autoRes.ok) {
+        const json = await autoRes.json();
+        const retry = json.data?.retry ?? {};
+        settings.maxAutoRetries = retry.maxAutoRetries ?? settings.maxAutoRetries;
+        settings.requireApprovalAfter = retry.requireApprovalAfter ?? settings.requireApprovalAfter;
+        settings.reExecuteOnRetry = retry.reExecuteOnRetry ?? settings.reExecuteOnRetry;
+      }
     } catch (e) {
-      // Settings endpoint may not exist yet; use defaults
       error = null;
     } finally {
       loading = false;
@@ -51,12 +61,26 @@
     saveError = null;
     saveSuccess = false;
     try {
-      const res = await fetch('/api/v5/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const [wsRes, autoRes] = await Promise.all([
+        fetch('/api/v5/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(settings),
+        }),
+        fetch('/api/v5/settings/autonomous', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            retry: {
+              maxAutoRetries: settings.maxAutoRetries,
+              requireApprovalAfter: settings.requireApprovalAfter,
+              reExecuteOnRetry: settings.reExecuteOnRetry,
+            },
+          }),
+        }),
+      ]);
+      if (!wsRes.ok) throw new Error(`Workspace settings: HTTP ${wsRes.status}`);
+      if (!autoRes.ok) throw new Error(`Autonomous settings: HTTP ${autoRes.status}`);
       saveSuccess = true;
       setTimeout(() => { saveSuccess = false; }, 3000);
     } catch (e) {

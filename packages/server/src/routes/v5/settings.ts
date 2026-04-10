@@ -121,6 +121,37 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ data: merged });
   });
 
+  // GET /api/v5/settings/autonomous — read autonomous.yaml retry config
+  app.get('/api/v5/settings/autonomous', async (_req, reply) => {
+    const autoPath = join(PROJECT_ROOT, '.agentforge/autonomous.yaml');
+    try {
+      const raw = readFileSync(autoPath, 'utf-8');
+      const parsed = yaml.load(raw) as Record<string, unknown>;
+      const retry = (parsed?.retry ?? {}) as Record<string, unknown>;
+      return reply.send({ data: { retry } });
+    } catch {
+      return reply.send({ data: { retry: { maxAutoRetries: 1, requireApprovalAfter: 1, reExecuteOnRetry: true } } });
+    }
+  });
+
+  // PUT /api/v5/settings/autonomous — update autonomous.yaml retry config
+  app.put('/api/v5/settings/autonomous', async (req, reply) => {
+    const body = req.body as { retry?: Record<string, unknown> } | undefined;
+    if (!body?.retry) {
+      return reply.status(400).send({ error: 'Request body must include { retry: { ... } }' });
+    }
+    const autoPath = join(PROJECT_ROOT, '.agentforge/autonomous.yaml');
+    try {
+      const raw = readFileSync(autoPath, 'utf-8');
+      const parsed = yaml.load(raw) as Record<string, unknown>;
+      (parsed as any).retry = { ...((parsed as any).retry ?? {}), ...body.retry };
+      writeFileSync(autoPath, yaml.dump(parsed, { indent: 2 }), 'utf-8');
+      return reply.send({ data: { retry: (parsed as any).retry } });
+    } catch (e) {
+      return reply.status(500).send({ error: String(e) });
+    }
+  });
+
   // POST /api/v5/settings/export — return settings as a downloadable JSON file
   app.post('/api/v5/settings/export', async (_req, reply) => {
     const settings = loadSettings();
