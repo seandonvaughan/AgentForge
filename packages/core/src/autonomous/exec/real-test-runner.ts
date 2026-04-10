@@ -61,12 +61,14 @@ export class RealTestRunner {
 
     const cmdParts = this.config.command.split(' ');
     const cmd = cmdParts[0]!;
-    // Pass reporter flags through to the underlying vitest invocation. The
-    // leading `--` separates npm-script args from the inner command's args
-    // (so `npm run test:run -- --reporter=json` reaches vitest cleanly).
+    // When the command invokes vitest directly (e.g. `pnpm exec vitest run`),
+    // skip the `--` separator — vitest treats `--` as a test file filter and
+    // ignores subsequent flags. Only use `--` for npm/pnpm script wrappers
+    // where it separates script args from the inner command's flags.
+    const isDirectVitest = cmdParts.some(p => p === 'vitest');
     const args = [
       ...cmdParts.slice(1),
-      '--',
+      ...(isDirectVitest ? [] : ['--']),
       '--reporter=json',
       '--outputFile',
       outputFile,
