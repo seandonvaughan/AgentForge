@@ -1,0 +1,128 @@
+{
+  "sprints": [
+    {
+      "version": "10.0.0",
+      "sprintId": "sprint-v10.0.0",
+      "title": "AgentForge v10.0.0 — Dashboard Overhaul + Sprint/Cycle Consolidation",
+      "phase": "planned",
+      "budget": 200,
+      "teamSize": 12,
+      "successCriteria": [
+        "All dashboard pages show real data from server endpoints",
+        "Search results are clickable and link to detail pages",
+        "Search filters work (agent, type, date)",
+        "Markdown rendered with a viewer component everywhere",
+        "Agents page shows full agent detail: system prompt, memories, sessions",
+        "Cost page updates with real cycle cost data",
+        "Sessions page updates with real session data",
+        "Cycles and Sprints consolidated into unified Sprints page",
+        "Sprint detail page uses sprint IDs not version numbers",
+        "Sprint list shows expanded cards with more data per row",
+        "0 svelte-check errors",
+        "Test pass rate >= 95%"
+      ],
+      "items": [
+        {
+          "id": "v10-p0-search-clickable",
+          "title": "Make search results clickable — link to agent/cycle/sprint/knowledge detail pages",
+          "description": "Search results currently show text but clicking does nothing. Each result type should navigate: agent→/agents/{id}, cycle→/cycles/{id}, sprint→/sprints/{id}, knowledge→/knowledge?q={term}. Add an onclick handler per result row with proper routing.",
+          "priority": "P0",
+          "assignee": "frontend-dev",
+          "status": "planned",
+          "estimatedCostUsd": 3,
+          "tags": ["dashboard", "search", "navigation"]
+        },
+        {
+          "id": "v10-p0-search-filters",
+          "title": "Wire search page filters (type, agent, date range) to query params",
+          "description": "The search page has filter dropdowns but they don't affect results. Wire them to the POST /api/v5/search body as filter params. Server already supports type and agent filters.",
+          "priority": "P0",
+          "assignee": "frontend-dev",
+          "status": "planned",
+          "estimatedCostUsd": 3,
+          "tags": ["dashboard", "search", "filters"]
+        },
+        {
+          "id": "v10-p0-markdown-viewer",
+          "title": "Create reusable MarkdownViewer.svelte component and use it everywhere",
+          "description": "Build a Svelte component that renders markdown to HTML using a lightweight parser (marked or snarkdown). Use it in: agent system prompts, cycle gate verdicts, sprint rationales, knowledge entries, memory values, review findings. Style with the existing CSS variables.",
+          "priority": "P0",
+          "assignee": "ui-engineer",
+          "status": "planned",
+          "estimatedCostUsd": 5,
+          "tags": ["dashboard", "component", "markdown"]
+        },
+        {
+          "id": "v10-p0-agents-real-data",
+          "title": "Agents page: show real agent data — system prompt, skills, model, delegation, memories",
+          "description": "The /agents list page and /agents/[id] detail page need to show real data from GET /api/v5/agents and /api/v5/agents/:id. Detail view should show: full system prompt (in markdown viewer), skills list, model tier badge, delegation graph (who they report to / delegate to), recent sessions with cost, and any agent-specific memories from the memory store.",
+          "priority": "P0",
+          "assignee": "dashboard-architect",
+          "status": "planned",
+          "estimatedCostUsd": 8,
+          "tags": ["dashboard", "agents", "detail"]
+        },
+        {
+          "id": "v10-p0-cost-page-real",
+          "title": "Cost page: wire to real cycle cost data from /api/v5/cycles",
+          "description": "The cost analytics page should aggregate real cost data from completed cycles. Show: total spend across all cycles, spend per agent, spend per phase, cost trend over time. Use the cycle.json cost.byAgent and cost.byPhase fields. Add a server endpoint if needed to aggregate across cycles.",
+          "priority": "P0",
+          "assignee": "frontend-dev",
+          "status": "planned",
+          "estimatedCostUsd": 5,
+          "tags": ["dashboard", "cost", "analytics"]
+        },
+        {
+          "id": "v10-p0-sessions-page-real",
+          "title": "Sessions page: wire to real session data from /api/v5/sessions",
+          "description": "The sessions page should show real agent invocation sessions. Each session: agent ID, model used, cost, duration, input/output token counts, timestamp. Wire to GET /api/v5/sessions endpoint. If endpoint doesn't exist, create it from the workspace adapter's session storage.",
+          "priority": "P0",
+          "assignee": "api-specialist",
+          "status": "planned",
+          "estimatedCostUsd": 5,
+          "tags": ["dashboard", "sessions", "api"]
+        },
+        {
+          "id": "v10-p0-consolidate-cycles-sprints",
+          "title": "Consolidate Cycles and Sprints into unified Sprints page with expanded cards",
+          "description": "Merge the /cycles and /sprints pages into a single /sprints page. Keep the cycles page table layout but expand each row to show: sprint title, item count, completion %, cost, test results, PR link, agent breakdown. Use sprint IDs (not version numbers) as the primary identifier. The detail page at /sprints/[id] keeps the existing tabbed layout from /sprints/[version] but adds cycle data tabs (events, phases, gate verdict). Remove the old /cycles route and redirect to /sprints.",
+          "priority": "P0",
+          "assignee": "dashboard-architect",
+          "status": "planned",
+          "estimatedCostUsd": 12,
+          "tags": ["dashboard", "sprints", "consolidation", "major"]
+        },
+        {
+          "id": "v10-p1-sprint-ids",
+          "title": "Decouple sprint IDs from version numbers — use UUID or sprintId as primary key",
+          "description": "Currently sprints are keyed by version (v9.4.0). Switch to using the sprintId field as the URL param and primary key. Update the server's sprint endpoints to support lookup by ID. Update all dashboard links. Keep version as display metadata, not a key.",
+          "priority": "P1",
+          "assignee": "api-specialist",
+          "status": "planned",
+          "estimatedCostUsd": 5,
+          "tags": ["api", "sprints", "refactor"]
+        },
+        {
+          "id": "v10-p1-knowledge-page",
+          "title": "Knowledge page: verify entity display, fix any broken interactions",
+          "description": "Audit the knowledge page for broken UI. Ensure entities load, search works, new entity creation works, and entity detail is viewable. Use the markdown viewer for entity descriptions.",
+          "priority": "P1",
+          "assignee": "frontend-dev",
+          "status": "planned",
+          "estimatedCostUsd": 3,
+          "tags": ["dashboard", "knowledge"]
+        },
+        {
+          "id": "v10-p1-all-ui-functional",
+          "title": "Audit all remaining dashboard pages for broken interactions and fix them",
+          "description": "Go through every dashboard page (health, plugins, runner, org, flywheel, branches, memory, live) and verify all interactive elements work: buttons, links, modals, filters, toggles. Fix any that are broken. Ensure no page has dead click handlers or non-functional UI elements.",
+          "priority": "P1",
+          "assignee": "ui-engineer",
+          "status": "planned",
+          "estimatedCostUsd": 8,
+          "tags": ["dashboard", "audit", "polish"]
+        }
+      ]
+    }
+  ]
+}

@@ -8,7 +8,7 @@ limits:
   maxDurationMinutes: 180
   maxConsecutiveFailures: 5
   maxExecutePhaseFailureRate: 0.5
-  maxExecutePhaseParallelism: 5
+  maxExecutePhaseParallelism: 25
 quality:
   testPassRateFloor: 0.95
   allowRegression: false
