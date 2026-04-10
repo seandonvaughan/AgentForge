@@ -20,6 +20,8 @@
 import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 const execFileAsync = promisify(execFile);
 
@@ -532,9 +534,6 @@ export class CycleRunner {
    * due to stale writes from parallel execution or retry re-reads.
    */
   private reconcileSprintStatus(sprintVersion: string): void {
-    const { join } = require('node:path');
-    const { readFileSync, writeFileSync, existsSync } = require('node:fs');
-
     const execPath = join(this.options.cwd, '.agentforge/cycles', this.cycleId, 'phases/execute.json');
     const sprintPath = join(this.options.cwd, '.agentforge/sprints', `v${sprintVersion}.json`);
     if (!existsSync(execPath) || !existsSync(sprintPath)) return;
@@ -559,8 +558,6 @@ export class CycleRunner {
   }
 
   private sumPhaseCostsFromDisk(): number {
-    const { join } = require('node:path');
-    const { readFileSync, existsSync } = require('node:fs');
     const phasesDir = join(this.options.cwd, '.agentforge/cycles', this.cycleId, 'phases');
     let total = 0;
     for (const name of ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate']) {
