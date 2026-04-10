@@ -2,6 +2,9 @@
   import { onMount, onDestroy } from 'svelte';
   import Gauge from '$lib/components/Gauge.svelte';
   import { withWorkspace } from '$lib/stores/workspace';
+  import type { PageData } from './$types';
+
+  export let data: PageData;
 
   interface FlywheelMetric {
     key: string;
@@ -57,8 +60,18 @@
   };
 
   // ── State ──────────────────────────────────────────────────────────────────
-  let flywheel: FlywheelData = { metrics: DEFAULT_METRICS };
-  let loading = true;
+  // Initialise from the server-side load (eliminates skeleton flash on first
+  // paint). The client-side polling below then takes over for live refresh.
+  let flywheel: FlywheelData = data.flywheel
+    ? {
+        metrics: data.flywheel.metrics,
+        updatedAt: data.flywheel.updatedAt,
+        overallScore: data.flywheel.overallScore,
+        debug: data.flywheel.debug,
+        memoryStats: data.flywheel.memoryStats,
+      }
+    : { metrics: DEFAULT_METRICS };
+  let loading = !data.flywheel; // skip skeleton when server data is available
   let error: string | null = null;
 
   // Auto-refresh: backend caches for 30s so we match that cadence.
@@ -69,9 +82,12 @@
 
   // Trend tracking: compare previous load's scores to detect movement.
   let prevScores: Record<string, number> = {};
-  let currScores: Record<string, number> = {};
-  // Flag: has at least one refresh happened after the initial load?
-  let hasPrevData = false;
+  // Seed currScores from SSR data so the first client refresh can detect trends.
+  let currScores: Record<string, number> = data.flywheel
+    ? Object.fromEntries(data.flywheel.metrics.map(m => [m.key, m.score]))
+    : {};
+  // hasPrevData becomes true once we have SSR data OR after the first API poll.
+  let hasPrevData = Boolean(data.flywheel);
 
   // ── Data loading ───────────────────────────────────────────────────────────
   async function load() {

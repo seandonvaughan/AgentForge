@@ -196,6 +196,29 @@
     try { return JSON.stringify(v, null, 2); } catch { return String(v); }
   }
 
+  /**
+   * Returns an HTML string with JSON tokens wrapped in span elements for
+   * syntax highlighting. No external dependencies — pure regex substitution.
+   */
+  function highlightJSON(v: unknown): string {
+    const raw = formatValueFull(v);
+    // Escape HTML entities first so we can safely inject spans
+    const escaped = raw
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    return escaped.replace(
+      /("(?:\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+      (match) => {
+        if (/^"/.test(match)) {
+          return `<span class="${/:$/.test(match) ? 'json-key' : 'json-string'}">${match}</span>`;
+        }
+        if (/^(true|false|null)$/.test(match)) return `<span class="json-keyword">${match}</span>`;
+        return `<span class="json-number">${match}</span>`;
+      }
+    );
+  }
+
   function formatDate(iso?: string): string {
     if (!iso) return '—';
     return new Date(iso).toLocaleString();
@@ -285,9 +308,21 @@
   </div>
 {/if}
 
-<!-- ── Stats bar ──────────────────────────────────────────────────────── -->
+<!-- ── Stats bar (unified type filter + counts) ────────────────────────── -->
 {#if !loading && entries.length > 0}
-  <div class="stats-bar">
+  <div class="stats-bar" role="group" aria-label="Filter by memory type">
+    <!-- "All" chip — always the first pill -->
+    <button
+      class="stats-chip stats-chip--all"
+      class:stats-chip--active={typeFilter === 'all'}
+      style="--chip-color: var(--color-text-muted);"
+      onclick={() => typeFilter = 'all'}
+      title="Show all types"
+      aria-pressed={typeFilter === 'all'}
+    >
+      <span class="stats-chip__count">{entries.length}</span>
+      <span class="stats-chip__label">All</span>
+    </button>
     {#each Object.entries(typeCounts) as [type, count] (type)}
       {@const cfg = TYPE_CONFIG[type] ?? FALLBACK_CONFIG}
       <button
@@ -296,27 +331,11 @@
         style="--chip-color: {cfg.color};"
         onclick={() => typeFilter = typeFilter === type ? 'all' : type}
         title="Filter by {type}"
+        aria-pressed={typeFilter === type}
       >
         <span class="stats-chip__count">{count}</span>
         <span class="stats-chip__label">{cfg.label || type}</span>
       </button>
-    {/each}
-  </div>
-{/if}
-
-<!-- ── Type filter chips ────────────────────────────────────────────────── -->
-{#if types.length > 0}
-  <div class="type-chips">
-    <button
-      class="chip {typeFilter === 'all' ? 'active' : ''}"
-      onclick={() => typeFilter = 'all'}
-    >All</button>
-    {#each types as t (t)}
-      {@const cfg = TYPE_CONFIG[t] ?? FALLBACK_CONFIG}
-      <button
-        class="chip {typeFilter === t ? 'active' : ''} chip-{cfg.badge}"
-        onclick={() => typeFilter = typeFilter === t ? 'all' : t}
-      >{cfg.label || t}</button>
     {/each}
   </div>
 {/if}
@@ -536,9 +555,15 @@
                     {/if}
                   </div>
 
-                  <!-- Full value JSON with copy button -->
+                  <!-- Summary line (when present) -->
+                  {#if entry.summary}
+                    <p class="detail-summary">{entry.summary}</p>
+                  {/if}
+
+                  <!-- Full value JSON with syntax highlighting + copy button -->
                   <div class="detail-value-wrap">
-                    <pre class="value-expanded">{formatValueFull(entry.value)}</pre>
+                    <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+                    <pre class="value-expanded"><code>{@html highlightJSON(entry.value)}</code></pre>
                     <button
                       class="copy-btn"
                       onclick={(e) => copyValue(entry, e)}
@@ -666,41 +691,6 @@
     color: var(--color-text-muted);
     white-space: nowrap;
   }
-
-  /* ── Type filter chips ────────────────────────────────────────────────────── */
-  .type-chips {
-    display: flex;
-    gap: var(--space-2);
-    flex-wrap: wrap;
-    margin-bottom: var(--space-3);
-  }
-  .chip {
-    padding: var(--space-1) var(--space-3);
-    border-radius: 999px;
-    border: 1px solid var(--color-border);
-    background: transparent;
-    color: var(--color-text-muted);
-    font-size: var(--text-xs);
-    cursor: pointer;
-    transition: background 0.15s, color 0.15s, border-color 0.15s;
-    white-space: nowrap;
-  }
-  .chip:hover { background: var(--color-surface-2); }
-  .chip.active {
-    background: var(--color-brand);
-    border-color: var(--color-brand);
-    color: #fff;
-  }
-  .chip-sonnet  { border-color: rgba(74,158,255,0.35);  color: var(--color-sonnet);  }
-  .chip-warning { border-color: rgba(245,166,35,0.35);  color: var(--color-warning); }
-  .chip-danger  { border-color: rgba(224,90,90,0.35);   color: var(--color-danger);  }
-  .chip-opus    { border-color: rgba(245,200,66,0.35);  color: var(--color-opus);    }
-  .chip-haiku   { border-color: rgba(76,175,130,0.35);  color: var(--color-haiku);   }
-  .chip-sonnet.active  { background: var(--color-sonnet);  border-color: var(--color-sonnet);  color: #fff; }
-  .chip-warning.active { background: var(--color-warning); border-color: var(--color-warning); color: #fff; }
-  .chip-danger.active  { background: var(--color-danger);  border-color: var(--color-danger);  color: #fff; }
-  .chip-opus.active    { background: var(--color-opus);    border-color: var(--color-opus);    color: #000; }
-  .chip-haiku.active   { background: var(--color-haiku);   border-color: var(--color-haiku);   color: #fff; }
 
   /* ── Filter bar ───────────────────────────────────────────────────────────── */
   .filter-bar {
@@ -1030,6 +1020,43 @@
     background: var(--color-surface-1);
     border-color: var(--color-brand);
     color: var(--color-brand);
+  }
+
+  /* ── JSON syntax highlighting ────────────────────────────────────────────── */
+  .value-expanded code {
+    /* Inherit font/size from the enclosing pre; reset defaults */
+    font: inherit;
+    background: none;
+    padding: 0;
+    border: none;
+    display: block;
+  }
+  .value-expanded :global(.json-key)     { color: var(--color-brand); }
+  .value-expanded :global(.json-string)  { color: var(--color-haiku); }
+  .value-expanded :global(.json-number)  { color: var(--color-opus); }
+  .value-expanded :global(.json-keyword) { color: var(--color-warning); }
+
+  /* ── Summary line in expanded detail ────────────────────────────────────── */
+  .detail-summary {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+    line-height: 1.55;
+    padding: var(--space-2) var(--space-3);
+    background: var(--color-surface-2);
+    border-left: 2px solid var(--color-border-strong);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    font-style: italic;
+  }
+
+  /* ── Stats-bar "All" chip variant ────────────────────────────────────────── */
+  .stats-chip--all {
+    border-style: dashed;
+  }
+  .stats-chip--all.stats-chip--active {
+    border-style: solid;
+    border-color: var(--color-text-muted);
+    background: color-mix(in srgb, var(--color-text-muted) 10%, transparent);
   }
 
   /* ── Reduced motion ──────────────────────────────────────────────────────── */

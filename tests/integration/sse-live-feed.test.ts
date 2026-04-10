@@ -10,7 +10,7 @@
  * broadcast and can be consumed by a live feed subscriber.
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { vi } from 'vitest';
 import type { SseManager } from '../../src/server/sse/sse-manager.js';
 import { SseManager as SseManagerImpl } from '../../src/server/sse/sse-manager.js';

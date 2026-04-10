@@ -6961,7 +6961,7 @@ async function loadInvestorScorecard() {
   }
 }
 
-// ── P14: Memory Browser from /api/v1/memory ───────────────
+// ── P14: Memory Browser from /api/v5/memory ───────────────
 function _memMakeEl(tag, cls, text) {
   const el = document.createElement(tag);
   if (cls) el.className = cls;
@@ -6976,7 +6976,7 @@ async function loadMemoryBrowser() {
   list.appendChild(_memMakeEl('div', 'skeleton-loader', 'Loading memory entries\u2026'));
 
   try {
-    const res = await fetch('/api/v1/memory');
+    const res = await fetch('/api/v5/memory');
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
     const data = json.data || [];
@@ -7073,6 +7073,13 @@ async function loadMemoryBrowser() {
 
       list.appendChild(div);
     });
+
+    // Populate the type chip row (memory.html page overlay) when available.
+    // Calling this directly avoids relying on the fetch-intercept approach which
+    // has a microtask race condition between clone.json() and applyMemFilters().
+    if (typeof window._memBuildTypeChips === 'function') {
+      window._memBuildTypeChips(json.types || []);
+    }
 
     applyMemFilters();
   } catch (e) {

@@ -19,7 +19,7 @@ cross-cycle memory.
 
 TODO(autonomous): Define a memory entry schema in packages/core/src/memory/types.ts. Each entry should have id, key, value, type (cycle-outcome | gate-verdict | review-finding | failure-pattern | learned-fact), createdAt, source (cycleId or agentId), tags. Export a writeMemoryEntry helper that appends to .agentforge/memory/<type>.jsonl with file lock.
 
-TODO(autonomous): Wire CycleLogger.logCycleComplete() to also call writeMemoryEntry with type=cycle-outcome containing {cycleId, sprintVersion, stage, costUsd, testsPassed, gateVerdict, prUrl}. Cycle 88026e07 is a good test target — it has known failure context.
+DONE(autonomous): Wire CycleLogger.logCycleComplete() to also call writeMemoryEntry with type=cycle-outcome containing {cycleId, sprintVersion, stage, costUsd, testsPassed, gateVerdict, prUrl}. Cycle 88026e07 is a good test target — it has known failure context. — Implemented in packages/core/src/autonomous/cycle-logger.ts: logCycleResult() calls writeMemoryEntry() with type=cycle-outcome, serialising {cycleId, sprintVersion, stage, costUsd, testsPassed, gateVerdict, prUrl} into the value field. Tags include the cycle stage. All 10 unit tests in tests/autonomous/unit/cycle-logger.test.ts pass, including explicit tests for APPROVE/REJECT verdicts and null gateVerdict (killed cycles). Production entries visible in .agentforge/memory/cycle-outcome.jsonl.
 
 TODO(autonomous): Wire the gate phase handler to write a memory entry of type=gate-verdict for every cycle, capturing {cycleId, verdict, rationale, criticalFindings[], majorFindings[]}. The next cycle's audit phase should read these.
 

@@ -13,19 +13,35 @@
     prUrl: string | null;
   }
 
+  /** Must match STALE_DAYS × 24h in dashboard-stubs.ts */
+  const STALE_THRESHOLD_MS = 3 * 24 * 60 * 60 * 1000;
+  const POLL_INTERVAL_S    = 30;
+
   let branches: AutonomousBranch[] = $state([]);
-  let loading = $state(true);
+  let loading   = $state(true);
   let error: string | null = $state(null);
-  let deletingBranch: string | null = $state(null);
-  let deleteError: string | null = $state(null);
+
+  let deletingBranch: string | null  = $state(null);
+  /** Branch name awaiting inline second-click confirm */
+  let confirmingDelete: string | null = $state(null);
+  let deleteError: string | null      = $state(null);
+  let bulkConfirm  = $state(false);   // two-step for bulk delete
   let bulkDeleting = $state(false);
+
   let activeFilter: BranchStatus | 'all' = $state('all');
-  let pollTimer: ReturnType<typeof setInterval> | null = null;
+  let pollTimer:    ReturnType<typeof setInterval> | null = null;
+  let tickTimer:    ReturnType<typeof setInterval> | null = null;
+  let nextRefreshIn = $state(POLL_INTERVAL_S);
+
+  /** Copy text to clipboard; ignore silently if not available */
+  function copyBranchName(name: string) {
+    navigator.clipboard?.writeText(name).catch(() => {});
+  }
 
   // ── Sort state ─────────────────────────────────────────────────────────────
   type SortKey = 'name' | 'age' | 'status';
   let sortKey: SortKey = $state('age');
-  let sortAsc = $state(false); // newest first by default
+  let sortAsc = $state(false); // newest-first default
 
   async function fetchBranches(silent = false) {
     if (!silent) loading = true;
@@ -35,6 +51,7 @@
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       branches = (json.data ?? []) as AutonomousBranch[];
+      nextRefreshIn = POLL_INTERVAL_S;
     } catch (e) {
       error = String(e);
     } finally {
@@ -43,18 +60,18 @@
   }
 
   async function deleteBranch(branch: AutonomousBranch) {
-    if (!confirm(`Delete branch "${branch.name}"? This cannot be undone.`)) return;
-    deletingBranch = branch.name;
-    deleteError = null;
+    confirmingDelete = null;
+    deletingBranch   = branch.name;
+    deleteError      = null;
     try {
-      const res = await fetch(`/api/v5/autonomous-branches/${encodeURIComponent(branch.name)}`, {
-        method: 'DELETE',
-      });
+      const res = await fetch(
+        `/api/v5/autonomous-branches/${encodeURIComponent(branch.name)}`,
+        { method: 'DELETE' },
+      );
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `HTTP ${res.status}`);
       }
-      // Optimistic removal
       branches = branches.filter((b) => b.name !== branch.name);
     } catch (e) {
       deleteError = String(e);
@@ -64,22 +81,21 @@
   }
 
   async function deleteAllStale() {
-    const staleBranches = branches.filter((b) => b.status === 'stale');
-    if (staleBranches.length === 0) return;
-    if (!confirm(`Delete all ${staleBranches.length} stale branch${staleBranches.length === 1 ? '' : 'es'}? This cannot be undone.`)) return;
+    bulkConfirm  = false;
     bulkDeleting = true;
-    deleteError = null;
+    deleteError  = null;
+    const staleBranches = branches.filter((b) => b.status === 'stale');
     const errors: string[] = [];
     for (const branch of staleBranches) {
       try {
-        const res = await fetch(`/api/v5/autonomous-branches/${encodeURIComponent(branch.name)}`, {
-          method: 'DELETE',
-        });
+        const res = await fetch(
+          `/api/v5/autonomous-branches/${encodeURIComponent(branch.name)}`,
+          { method: 'DELETE' },
+        );
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           errors.push(`${branch.name}: ${body.error ?? `HTTP ${res.status}`}`);
         } else {
-          // Optimistic removal after each success
           branches = branches.filter((b) => b.name !== branch.name);
         }
       } catch (e) {
@@ -90,19 +106,24 @@
       deleteError = `${errors.length} deletion(s) failed:\n${errors.join('\n')}`;
     }
     bulkDeleting = false;
+    // If the stale filter is active and we just cleared all stale branches,
+    // revert to "all" so the user doesn't land on an empty filtered view.
+    if (activeFilter === 'stale' && branches.filter((b) => b.status === 'stale').length === 0) {
+      activeFilter = 'all';
+    }
   }
 
   function formatAge(ageMs: number): string {
-    const totalSecs = Math.floor(ageMs / 1000);
+    const totalSecs  = Math.floor(ageMs / 1000);
     if (totalSecs < 60) return `${totalSecs}s`;
-    const totalMins = Math.floor(totalSecs / 60);
-    if (totalMins < 60) return `${totalMins}m`;
-    const totalHours = Math.floor(totalMins / 60);
+    const totalMins  = Math.floor(totalSecs / 60);
+    if (totalMins  < 60) return `${totalMins}m`;
+    const totalHours = Math.floor(totalMins  / 60);
     if (totalHours < 24) {
       const remMins = totalMins % 60;
       return remMins > 0 ? `${totalHours}h ${remMins}m` : `${totalHours}h`;
     }
-    const days = Math.floor(totalHours / 24);
+    const days     = Math.floor(totalHours / 24);
     const remHours = totalHours % 24;
     return remHours > 0 ? `${days}d ${remHours}h` : `${days}d`;
   }
@@ -110,15 +131,18 @@
   function formatDate(iso: string): string {
     try {
       return new Date(iso).toLocaleString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false,
+        month: 'short', day: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: false,
       });
-    } catch {
-      return iso;
-    }
+    } catch { return iso; }
+  }
+
+  /**
+   * Returns a 0–1 fraction representing how far this branch is toward the
+   * stale threshold.  Capped at 1 (already stale).
+   */
+  function ageRatio(ageMs: number): number {
+    return Math.min(1, ageMs / STALE_THRESHOLD_MS);
   }
 
   const STATUS_COLOR: Record<BranchStatus, string> = {
@@ -137,11 +161,15 @@
 
   onMount(() => {
     fetchBranches();
-    pollTimer = setInterval(() => fetchBranches(true), 30000);
+    pollTimer = setInterval(() => fetchBranches(true), POLL_INTERVAL_S * 1000);
+    tickTimer = setInterval(() => {
+      nextRefreshIn = Math.max(0, nextRefreshIn - 1);
+    }, 1000);
   });
 
   onDestroy(() => {
     if (pollTimer) clearInterval(pollTimer);
+    if (tickTimer)  clearInterval(tickTimer);
   });
 
   // ── Derived counts ─────────────────────────────────────────────────────────
@@ -178,33 +206,54 @@
     if (sortKey !== key) return '↕';
     return sortAsc ? '↑' : '↓';
   }
+
+  function cancelConfirm(e: MouseEvent) {
+    // Clicking anywhere outside the inline confirm dismisses it
+    const target = e.target as HTMLElement;
+    if (!target.closest('.confirm-group')) confirmingDelete = null;
+  }
 </script>
 
 <svelte:head><title>Branches — AgentForge</title></svelte:head>
-
+<svelte:window onclick={cancelConfirm} />
 <div class="page-header">
   <div>
-    <h1 class="page-title">Autonomous Branches</h1>
-    <p class="page-subtitle">Git branch hygiene for <code>autonomous/*</code> cycles</p>
+    <h1 class="page-title">⎇ Autonomous Branches</h1>
+    <p class="page-subtitle">
+      Git hygiene for <code>autonomous/*</code> cycles ·
+      branches with no open PR become <strong>stale</strong> after 3 days
+    </p>
   </div>
   <div class="header-actions">
-    {#if staleCount > 0}
+    {#if staleCount > 0 && !bulkConfirm}
       <button
         class="btn btn-danger-ghost"
-        onclick={deleteAllStale}
+        onclick={() => (bulkConfirm = true)}
         disabled={bulkDeleting || loading}
         title="Delete all stale branches at once"
       >
-        {bulkDeleting ? 'Deleting…' : `Delete All Stale (${staleCount})`}
+        Delete All Stale ({staleCount})
       </button>
     {/if}
-    <button class="btn btn-ghost" onclick={() => fetchBranches()} disabled={loading}>
+    {#if bulkConfirm}
+      <span class="bulk-confirm-prompt">Delete {staleCount} stale branch{staleCount === 1 ? '' : 'es'}?</span>
+      <button class="btn btn-danger-solid btn-sm" onclick={deleteAllStale} disabled={bulkDeleting}>
+        {bulkDeleting ? 'Deleting…' : 'Yes, delete all'}
+      </button>
+      <button class="btn btn-ghost btn-sm" onclick={() => (bulkConfirm = false)}>Cancel</button>
+    {/if}
+    <button
+      class="btn btn-ghost"
+      onclick={() => fetchBranches()}
+      disabled={loading}
+      title="Refresh branch list"
+    >
       {loading ? 'Refreshing…' : 'Refresh'}
     </button>
   </div>
 </div>
 
-<!-- Summary pills + filter tabs -->
+<!-- Summary pills / filter tabs -->
 <div class="summary-bar">
   <button
     class="pill all"
@@ -246,7 +295,10 @@
     <span class="pill-count">{staleCount}</span>
     <span class="pill-label">Stale</span>
   </button>
-  <span class="auto-refresh-note">Auto-refresh every 30s</span>
+
+  <span class="refresh-countdown" title="Next auto-refresh">
+    ↻ {nextRefreshIn}s
+  </span>
 </div>
 
 {#if deleteError}
@@ -264,22 +316,33 @@
 {/if}
 
 {#if loading && branches.length === 0}
-  <div class="card">
-    {#each Array(3) as _}
-      <div class="skeleton" style="height:52px;margin-bottom:var(--space-2);border-radius:var(--radius-md);"></div>
+  <!-- Skeleton rows that match actual row heights -->
+  <div class="card" style="padding:0;overflow:hidden;">
+    {#each Array(4) as _}
+      <div class="skeleton-row">
+        <div class="skeleton" style="width:220px;height:14px;border-radius:3px;"></div>
+        <div class="skeleton" style="width:90px;height:14px;border-radius:3px;"></div>
+        <div class="skeleton" style="width:70px;height:14px;border-radius:3px;"></div>
+        <div class="skeleton" style="width:100px;height:14px;border-radius:3px;"></div>
+        <div class="skeleton" style="width:60px;height:18px;border-radius:9px;"></div>
+      </div>
     {/each}
   </div>
 {:else if branches.length === 0 && !error}
   <div class="empty-state">
     <span class="empty-icon">⎇</span>
     <p>No <code>autonomous/*</code> branches found.</p>
-    <p class="empty-hint">Run an autonomous cycle to create one.</p>
+    <p class="empty-hint">Start an autonomous cycle to create one.</p>
   </div>
 {:else if filteredBranches.length === 0 && activeFilter !== 'all'}
   <div class="empty-state">
     <span class="empty-icon">⎇</span>
     <p>No <strong>{STATUS_LABEL[activeFilter as BranchStatus]}</strong> branches.</p>
-    <button class="btn btn-ghost btn-sm" onclick={() => (activeFilter = 'all')} style="margin-top:var(--space-3);">
+    <button
+      class="btn btn-ghost btn-sm"
+      onclick={() => (activeFilter = 'all')}
+      style="margin-top:var(--space-3);"
+    >
       Show all branches
     </button>
   </div>
@@ -316,20 +379,54 @@
             class:merged-row={branch.status === 'merged'}
             class:deleting-row={deletingBranch === branch.name}
           >
+            <!-- Branch name with copy-on-click -->
             <td>
-              <span class="branch-name" title={branch.name}>{branch.name}</span>
+              <button
+                class="branch-name-btn"
+                onclick={() => copyBranchName(branch.name)}
+                title="Click to copy: {branch.name}"
+                aria-label="Copy branch name {branch.name}"
+              >
+                <span class="branch-name">{branch.name}</span>
+                <span class="copy-hint" aria-hidden="true">⊕</span>
+              </button>
             </td>
+
+            <!-- Cycle shortlink -->
             <td>
-              <a class="cycle-badge" href="/cycles?q={encodeURIComponent(branch.cycle)}" title="Filter cycles by this branch">
+              <a
+                class="cycle-badge"
+                href="/cycles?q={encodeURIComponent(branch.cycle)}"
+                title="Filter cycles by this branch"
+              >
                 {branch.cycle}
               </a>
             </td>
-            <td>
-              <span class="mono" class:age-stale={branch.status === 'stale'}>{formatAge(branch.ageMs)}</span>
+
+            <!-- Age + visual staleness bar -->
+            <td class="age-cell">
+              <span class="mono" class:age-stale={branch.status === 'stale'}>
+                {formatAge(branch.ageMs)}
+              </span>
+              <div
+                class="age-bar-track"
+                title="{Math.round(ageRatio(branch.ageMs) * 100)}% toward stale threshold"
+              >
+                <div
+                  class="age-bar-fill"
+                  class:age-bar-warning={ageRatio(branch.ageMs) >= 0.7}
+                  class:age-bar-danger={ageRatio(branch.ageMs) >= 1}
+                  style="width:{ageRatio(branch.ageMs) * 100}%"
+                ></div>
+              </div>
             </td>
+
+            <!-- Last commit timestamp -->
             <td>
               <span class="mono muted">{formatDate(branch.lastCommitAt)}</span>
             </td>
+
+            <!-- Status badge -->
             <td>
               <span
                 class="status-badge"
@@ -338,6 +435,8 @@
                 {STATUS_LABEL[branch.status]}
               </span>
             </td>
+
+            <!-- PR link -->
             <td>
               {#if branch.prUrl}
                 <a class="pr-link" href={branch.prUrl} target="_blank" rel="noopener">
@@ -347,32 +446,49 @@
                 <span class="muted">—</span>
               {/if}
             </td>
+
+            <!-- Delete action — inline two-step confirm -->
             <td class="action-cell">
               {#if branch.status === 'stale' || branch.status === 'merged'}
-                <button
-                  class="btn-delete"
-                  disabled={deletingBranch === branch.name || bulkDeleting}
-                  onclick={() => deleteBranch(branch)}
-                  title={branch.status === 'merged' ? 'Delete merged branch' : 'Delete stale branch'}
-                >
-                  {deletingBranch === branch.name ? '…' : 'Delete'}
-                </button>
+                {#if confirmingDelete === branch.name}
+                  <span class="confirm-group">
+                    <span class="confirm-label">Sure?</span>
+                    <button
+                      class="btn-delete btn-delete-confirm"
+                      onclick={() => deleteBranch(branch)}
+                      disabled={deletingBranch !== null || bulkDeleting}
+                    >Yes</button>
+                    <button
+                      class="btn-cancel-confirm"
+                      onclick={() => (confirmingDelete = null)}
+                    >No</button>
+                  </span>
+                {:else}
+                  <button
+                    class="btn-delete"
+                    disabled={deletingBranch === branch.name || bulkDeleting}
+                    onclick={() => (confirmingDelete = branch.name)}
+                    title={branch.status === 'merged' ? 'Delete merged branch' : 'Delete stale branch'}
+                  >
+                    {deletingBranch === branch.name ? '…' : 'Delete'}
+                  </button>
+                {/if}
               {/if}
             </td>
           </tr>
         {/each}
       </tbody>
     </table>
-    {#if filteredBranches.length > 0}
-      <div class="table-footer">
-        Showing {filteredBranches.length} of {branches.length} branch{branches.length === 1 ? '' : 'es'}
-        {#if activeFilter !== 'all'} · filtered by <strong>{STATUS_LABEL[activeFilter as BranchStatus]}</strong>{/if}
-      </div>
-    {/if}
+
+    <div class="table-footer">
+      Showing {filteredBranches.length} of {branches.length} branch{branches.length === 1 ? '' : 'es'}
+      {#if activeFilter !== 'all'} · filtered by <strong>{STATUS_LABEL[activeFilter as BranchStatus]}</strong>{/if}
+    </div>
   </div>
 {/if}
 
 <style>
+  /* ── Page header ─────────────────────────────────────────────────────────── */
   .page-header {
     display: flex;
     justify-content: space-between;
@@ -401,6 +517,11 @@
     border-radius: 3px;
   }
 
+  .page-subtitle strong {
+    color: var(--color-warning);
+    font-weight: 600;
+  }
+
   .header-actions {
     display: flex;
     align-items: center;
@@ -408,7 +529,15 @@
     flex-shrink: 0;
   }
 
-  /* Danger ghost button variant — used for bulk delete */
+  /* Bulk confirm prompt */
+  .bulk-confirm-prompt {
+    font-size: var(--text-sm);
+    color: var(--color-warning);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  /* Danger ghost variant */
   .btn-danger-ghost {
     background: color-mix(in srgb, var(--color-danger) 8%, transparent);
     border: 1px solid color-mix(in srgb, var(--color-danger) 30%, transparent);
@@ -423,6 +552,7 @@
     cursor: pointer;
     transition: background var(--duration-fast), border-color var(--duration-fast);
     white-space: nowrap;
+    font-family: inherit;
   }
 
   .btn-danger-ghost:hover:not(:disabled) {
@@ -430,12 +560,25 @@
     border-color: color-mix(in srgb, var(--color-danger) 50%, transparent);
   }
 
-  .btn-danger-ghost:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
+  .btn-danger-ghost:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Solid danger variant — used for second-click confirmation */
+  .btn-danger-solid {
+    background: var(--color-danger);
+    border: 1px solid var(--color-danger);
+    color: #fff;
+    font-family: inherit;
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity var(--duration-fast);
   }
 
-  /* ── Summary bar / filter tabs ────────────────────────────────────────────── */
+  .btn-danger-solid:hover:not(:disabled) { opacity: 0.88; }
+  .btn-danger-solid:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ── Summary bar ─────────────────────────────────────────────────────────── */
   .summary-bar {
     display: flex;
     align-items: center;
@@ -444,7 +587,6 @@
     flex-wrap: wrap;
   }
 
-  /* Pill buttons — double as filter tabs */
   .pill {
     display: flex;
     align-items: center;
@@ -459,11 +601,8 @@
     font-size: inherit;
   }
 
-  .pill:hover {
-    background: var(--color-surface-2);
-  }
+  .pill:hover { background: var(--color-surface-2); }
 
-  /* Active filter state — highlight with a subtle ring */
   .pill.active {
     background: var(--color-surface-2);
     box-shadow: 0 0 0 2px currentColor;
@@ -471,9 +610,8 @@
 
   .pill.all            { color: var(--color-text-muted); }
   .pill.all.active     { color: var(--color-text); box-shadow: 0 0 0 2px var(--color-border-strong); }
-
-  .pill.open-pr        { border-color: color-mix(in srgb, var(--color-info) 26%, transparent); }
-  .pill.active-pill    { border-color: color-mix(in srgb, var(--color-brand) 26%, transparent); }
+  .pill.open-pr        { border-color: color-mix(in srgb, var(--color-info)    26%, transparent); }
+  .pill.active-pill    { border-color: color-mix(in srgb, var(--color-brand)   26%, transparent); }
   .pill.merged         { border-color: color-mix(in srgb, var(--color-success) 26%, transparent); }
   .pill.stale          { border-color: color-mix(in srgb, var(--color-warning) 26%, transparent); }
 
@@ -484,23 +622,27 @@
     line-height: 1;
   }
 
-  .pill.open-pr  .pill-count { color: var(--color-info); }
+  .pill.open-pr   .pill-count { color: var(--color-info); }
   .pill.active-pill .pill-count { color: var(--color-brand); }
-  .pill.merged   .pill-count { color: var(--color-success); }
-  .pill.stale    .pill-count { color: var(--color-warning); }
+  .pill.merged    .pill-count { color: var(--color-success); }
+  .pill.stale     .pill-count { color: var(--color-warning); }
 
   .pill-label {
     font-size: var(--text-sm);
     color: var(--color-text-muted);
   }
 
-  .auto-refresh-note {
+  /* Live countdown to next auto-refresh */
+  .refresh-countdown {
     margin-left: auto;
     font-size: var(--text-xs);
     color: var(--color-text-faint);
+    font-family: var(--font-mono);
+    letter-spacing: 0.02em;
+    user-select: none;
   }
 
-  /* ── Sort buttons in column headers ──────────────────────────────────────── */
+  /* ── Sort buttons ────────────────────────────────────────────────────────── */
   .sort-btn {
     background: none;
     border: none;
@@ -525,19 +667,22 @@
     font-size: 10px;
   }
 
+  /* ── Skeleton rows ───────────────────────────────────────────────────────── */
+  .skeleton-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .skeleton-row:last-child { border-bottom: none; }
+
   /* ── Table overrides ─────────────────────────────────────────────────────── */
-  /* Branch rows are not clickable; override the global pointer cursor that
-     data-table tbody tr:hover sets in app.css. */
-  .branches-table tbody tr {
-    cursor: default;
-  }
+  .branches-table tbody tr { cursor: default; }
+  .branches-table tbody tr:hover { cursor: default; }
 
-  .branches-table tbody tr:hover {
-    cursor: default;
-  }
-
-  /* Stale/merged accent stripe: use inset box-shadow on first cell because
-     border-left on <tr> is ignored by browsers with border-collapse:collapse. */
+  /* Left accent stripe via inset box-shadow (border-left ignored under border-collapse) */
   .stale-row > td:first-child {
     box-shadow: inset 3px 0 0 var(--color-warning);
   }
@@ -546,26 +691,72 @@
     box-shadow: inset 3px 0 0 color-mix(in srgb, var(--color-success) 60%, transparent);
   }
 
-  /* Dim row while a delete is in flight */
+  /* Dim row while delete is in-flight */
   .deleting-row {
-    opacity: 0.45;
+    opacity: 0.4;
     pointer-events: none;
     transition: opacity var(--duration-normal);
   }
 
-  /* ── Cell contents ───────────────────────────────────────────────────────── */
+  /* ── Branch name cell — acts as a copy button ────────────────────────────── */
+  .branch-name-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: copy;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-family: inherit;
+    max-width: 260px;
+  }
+
   .branch-name {
     font-family: var(--font-mono);
     font-size: var(--text-xs);
     color: var(--color-brand);
-    max-width: 260px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    display: inline-block;
-    vertical-align: middle;
   }
 
+  .copy-hint {
+    font-size: 10px;
+    color: var(--color-text-faint);
+    opacity: 0;
+    transition: opacity var(--duration-fast);
+    flex-shrink: 0;
+  }
+
+  .branch-name-btn:hover .copy-hint { opacity: 1; }
+  .branch-name-btn:hover .branch-name { color: var(--color-brand-hover); }
+
+  /* ── Age cell ─────────────────────────────────────────────────────────────── */
+  .age-cell {
+    min-width: 90px;
+  }
+
+  /* Micro progress bar showing time-to-stale progress */
+  .age-bar-track {
+    margin-top: 4px;
+    height: 3px;
+    background: var(--color-surface-3);
+    border-radius: 2px;
+    overflow: hidden;
+    width: 64px;
+  }
+
+  .age-bar-fill {
+    height: 100%;
+    background: var(--color-brand);
+    border-radius: 2px;
+    transition: width var(--duration-normal);
+  }
+
+  .age-bar-fill.age-bar-warning { background: var(--color-warning); }
+  .age-bar-fill.age-bar-danger  { background: var(--color-danger); }
+
+  /* ── Cell helpers ────────────────────────────────────────────────────────── */
   .cycle-badge {
     font-family: var(--font-mono);
     font-size: var(--text-xs);
@@ -584,10 +775,9 @@
     color: var(--color-brand);
   }
 
-  .mono { font-family: var(--font-mono); font-size: var(--text-xs); }
+  .mono  { font-family: var(--font-mono); font-size: var(--text-xs); }
   .muted { color: var(--color-text-muted); }
 
-  /* Age value shown in warning color when the branch is stale */
   .age-stale { color: var(--color-warning); }
 
   .status-badge {
@@ -613,9 +803,10 @@
 
   .action-cell {
     text-align: right;
-    min-width: 80px;
+    min-width: 120px;
   }
 
+  /* ── Delete button ───────────────────────────────────────────────────────── */
   .btn-delete {
     background: color-mix(in srgb, var(--color-danger) 10%, transparent);
     border: 1px solid color-mix(in srgb, var(--color-danger) 35%, transparent);
@@ -627,6 +818,7 @@
     cursor: pointer;
     transition: background var(--duration-fast), border-color var(--duration-fast);
     white-space: nowrap;
+    font-family: inherit;
   }
 
   .btn-delete:hover:not(:disabled) {
@@ -634,10 +826,52 @@
     border-color: color-mix(in srgb, var(--color-danger) 55%, transparent);
   }
 
-  .btn-delete:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
+  .btn-delete:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ── Inline confirm group (shown instead of native confirm()) ────────────── */
+  .confirm-group {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    animation: fade-in var(--duration-fast) ease;
   }
+
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateX(4px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+
+  .confirm-label {
+    font-size: var(--text-xs);
+    color: var(--color-warning);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .btn-delete-confirm {
+    /* inherits .btn-delete — already a filled danger look on second click */
+    background: var(--color-danger);
+    border-color: var(--color-danger);
+    color: #fff;
+  }
+
+  .btn-delete-confirm:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--color-danger) 85%, #fff);
+  }
+
+  .btn-cancel-confirm {
+    background: none;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-muted);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-md);
+    font-size: var(--text-xs);
+    cursor: pointer;
+    transition: background var(--duration-fast);
+    font-family: inherit;
+  }
+
+  .btn-cancel-confirm:hover { background: var(--color-surface-2); }
 
   /* ── Error banner ────────────────────────────────────────────────────────── */
   .error-banner {
@@ -708,8 +942,9 @@
 
   /* ── Responsive ──────────────────────────────────────────────────────────── */
   @media (max-width: 700px) {
-    .summary-bar { gap: var(--space-2); }
-    .auto-refresh-note { display: none; }
+    .summary-bar      { gap: var(--space-2); }
+    .refresh-countdown { display: none; }
+    .age-bar-track    { display: none; }
     :global(.branches-table) { font-size: var(--text-xs); }
   }
 </style>

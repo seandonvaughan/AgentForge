@@ -48,6 +48,14 @@ export interface MemoryEntry {
   createdAt?: string;
   tags?: string[];
   source?: string;
+  /**
+   * Optional structured payload written by the write-path handlers.
+   * For `review-finding` entries this is a `ReviewFindingMetadata` object
+   * (see memory/types.ts). Preserved on parse but not used by
+   * formatMemorySection — agents read the raw `value` field which already
+   * contains the full finding text including file, line, and fix suggestion.
+   */
+  metadata?: unknown;
 }
 
 /** Types we prioritise when selecting entries to inject into a prompt.

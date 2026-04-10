@@ -152,31 +152,35 @@ export async function searchRoutes(
             const raw = JSON.parse(readFileSync(join(sprintsDir, file), 'utf-8')) as {
               version?: string;
               sprints?: Array<{ version?: string; items?: unknown[] }>;
-              items?: Array<{ id?: string; description?: string; status?: string; tags?: string[] }>;
+              items?: Array<{ id?: string; title?: string; description?: string; status?: string; tags?: string[]; assignee?: string }>;
             };
             // Sprint files may contain either { sprints: [...] } or a single sprint object.
             const sprintList = Array.isArray(raw.sprints) ? raw.sprints : [raw];
             for (const sprint of sprintList) {
               const version = sprint.version ?? file.replace('.json', '');
               const items = (sprint.items ?? []) as Array<{
-                id?: string; description?: string; status?: string; tags?: string[];
+                id?: string; title?: string; description?: string; status?: string; tags?: string[]; assignee?: string;
               }>;
               for (const item of items) {
+                // Include title + assignee so operators can find items by those fields too.
                 const searchText = [
+                  item.title ?? '',
                   item.description ?? '',
                   ...(item.tags ?? []),
                   item.status ?? '',
+                  item.assignee ?? '',
                   version,
                 ].join(' ');
                 const score = scoreText(q, searchText);
                 if (score > 0) {
+                  const displayContent = [item.title, item.description].filter(Boolean).join('\n') || searchText;
                   results.push({
                     id: `sprint:${version}:${item.id ?? item.description?.slice(0, 20) ?? '?'}`,
-                    content: item.description ?? searchText,
+                    content: displayContent,
                     score,
                     type: 'sprint',
                     source: `Sprint ${version}`,
-                    metadata: { version, status: item.status, tags: item.tags },
+                    metadata: { version, status: item.status, tags: item.tags, assignee: item.assignee },
                   });
                 }
               }
@@ -186,48 +190,84 @@ export async function searchRoutes(
       }
     }
 
-    // ── Cycles (from .agentforge/cycles/*/cycle.json) ─────────────────────────
+    // ── Cycles (from .agentforge/cycles/*/cycle.json or sprint-link.json) ───────
+    // Completed cycles have a cycle.json with full metadata. In-progress cycles
+    // only have sprint-link.json + events.jsonl — we fall back to those so that
+    // active cycles are also discoverable via search.
     if (includeAll || types.includes('cycle')) {
       const cyclesDir = join(projectRoot, '.agentforge/cycles');
       if (existsSync(cyclesDir)) {
         for (const entry of readdirSync(cyclesDir, { withFileTypes: true })) {
           if (!entry.isDirectory()) continue;
-          const cycleFile = join(cyclesDir, entry.name, 'cycle.json');
-          if (!existsSync(cycleFile)) continue;
-          try {
-            const raw = JSON.parse(readFileSync(cycleFile, 'utf-8')) as {
-              cycleId?: string;
-              stage?: string;
-              sprintVersion?: string;
-              startedAt?: string;
-              pr?: { url?: string | null; number?: number | null };
-            };
-            // Search the full serialised JSON so branch names, PR titles, and
-            // item descriptions are all findable by query.
-            const searchText = readFileSync(cycleFile, 'utf-8');
-            const score = scoreText(q, searchText);
-            if (score > 0) {
-              const cycleId = raw.cycleId ?? entry.name;
-              results.push({
-                id: `cycle:${cycleId}`,
-                content: [
-                  `Cycle: ${cycleId}`,
-                  `Stage: ${raw.stage ?? 'unknown'}`,
-                  raw.sprintVersion ? `Sprint: ${raw.sprintVersion}` : '',
-                ].filter(Boolean).join('\n'),
-                score,
-                type: 'cycle',
-                source: raw.sprintVersion ?? entry.name,
-                metadata: {
-                  stage: raw.stage,
-                  sprintVersion: raw.sprintVersion,
-                  startedAt: raw.startedAt,
-                  prUrl: raw.pr?.url ?? null,
-                  prNumber: raw.pr?.number ?? null,
-                },
-              });
-            }
-          } catch { /* skip malformed files */ }
+          const cycleDir = join(cyclesDir, entry.name);
+          const cycleFile = join(cycleDir, 'cycle.json');
+
+          type CycleMeta = {
+            cycleId?: string;
+            stage?: string;
+            sprintVersion?: string;
+            startedAt?: string;
+            pr?: { url?: string | null; number?: number | null };
+          };
+
+          let meta: CycleMeta | null = null;
+          let searchText = '';
+
+          if (existsSync(cycleFile)) {
+            try {
+              searchText = readFileSync(cycleFile, 'utf-8');
+              meta = JSON.parse(searchText) as CycleMeta;
+            } catch { continue; }
+          } else {
+            // Fallback: in-progress cycle — read sprint-link.json + events.jsonl
+            const sprintLinkFile = join(cycleDir, 'sprint-link.json');
+            if (!existsSync(sprintLinkFile)) continue;
+            try {
+              const sprintLink = JSON.parse(readFileSync(sprintLinkFile, 'utf-8')) as {
+                sprintVersion?: string;
+                assignedAt?: string;
+              };
+              // Spread conditionally to avoid assigning `undefined` to optional
+              // properties, which is disallowed by exactOptionalPropertyTypes.
+              meta = {
+                cycleId: entry.name,
+                stage: 'in-progress',
+                ...(sprintLink.sprintVersion !== undefined ? { sprintVersion: sprintLink.sprintVersion } : {}),
+                ...(sprintLink.assignedAt !== undefined ? { startedAt: sprintLink.assignedAt } : {}),
+              };
+              const eventsFile = join(cycleDir, 'events.jsonl');
+              const eventsText = existsSync(eventsFile)
+                ? readFileSync(eventsFile, 'utf-8')
+                : '';
+              searchText = JSON.stringify(meta) + '\n' + eventsText;
+            } catch { continue; }
+          }
+
+          if (!meta) continue;
+          // Search the full serialised text so branch names, PR titles, sprint
+          // versions, and event types are all findable.
+          const score = scoreText(q, searchText);
+          if (score > 0) {
+            const cycleId = meta.cycleId ?? entry.name;
+            results.push({
+              id: `cycle:${cycleId}`,
+              content: [
+                `Cycle: ${cycleId}`,
+                `Stage: ${meta.stage ?? 'unknown'}`,
+                meta.sprintVersion ? `Sprint: ${meta.sprintVersion}` : '',
+              ].filter(Boolean).join('\n'),
+              score,
+              type: 'cycle',
+              source: meta.sprintVersion ?? entry.name,
+              metadata: {
+                stage: meta.stage,
+                sprintVersion: meta.sprintVersion,
+                startedAt: meta.startedAt,
+                prUrl: meta.pr?.url ?? null,
+                prNumber: meta.pr?.number ?? null,
+              },
+            });
+          }
         }
       }
     }

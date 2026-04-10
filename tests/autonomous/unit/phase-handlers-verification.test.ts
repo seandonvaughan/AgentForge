@@ -21,6 +21,7 @@ import {
 import {
   runReviewPhase,
   parseVerdict,
+  parseReviewFindingMetadata,
 } from '../../../packages/core/src/autonomous/phase-handlers/review-phase.js';
 import { runReleasePhase } from '../../../packages/core/src/autonomous/phase-handlers/release-phase.js';
 import type { PhaseContext } from '../../../packages/core/src/autonomous/phase-scheduler.js';
@@ -299,6 +300,132 @@ describe('verification phase handlers', () => {
 
     const memFile = join(tmpDir, '.agentforge', 'memory', 'review-finding.jsonl');
     expect(existsSync(memFile)).toBe(false);
+  });
+
+  // ----- review-finding metadata -----
+
+  it('memory entries include structured metadata with severity and summary', async () => {
+    const cycleId = 'meta-basic';
+    const runtime = {
+      run: vi.fn().mockResolvedValue({
+        output: '## Review\n- CRITICAL: missing auth check on write endpoint\nVerdict: 1/5',
+        costUsd: 0.04,
+      }),
+    };
+    const { bus } = makeMockBus();
+    await runReviewPhase(
+      makeCtx({ cwd: tmpDir, sprintVersion: '6.8', cycleId, runtime, bus }),
+    );
+
+    const entries = readFileSync(
+      join(tmpDir, '.agentforge', 'memory', 'review-finding.jsonl'),
+      'utf8',
+    )
+      .split('\n')
+      .filter((l) => l.trim().length > 0)
+      .map((l) => JSON.parse(l));
+
+    expect(entries[0].metadata).toBeDefined();
+    expect(entries[0].metadata.severity).toBe('CRITICAL');
+    expect(typeof entries[0].metadata.summary).toBe('string');
+    expect(entries[0].metadata.summary.length).toBeGreaterThan(0);
+    // No file path in the raw line — should be null
+    expect(entries[0].metadata.file).toBeNull();
+    expect(entries[0].metadata.line).toBeNull();
+  });
+
+  it('metadata captures file and line when present in finding text', async () => {
+    const cycleId = 'meta-file-line';
+    const runtime = {
+      run: vi.fn().mockResolvedValue({
+        output: '## Review\n- MAJOR: src/auth/handler.ts:42 — unguarded write path\nVerdict: 2/5',
+        costUsd: 0.04,
+      }),
+    };
+    const { bus } = makeMockBus();
+    await runReviewPhase(
+      makeCtx({ cwd: tmpDir, sprintVersion: '6.8', cycleId, runtime, bus }),
+    );
+
+    const entries = readFileSync(
+      join(tmpDir, '.agentforge', 'memory', 'review-finding.jsonl'),
+      'utf8',
+    )
+      .split('\n')
+      .filter((l) => l.trim().length > 0)
+      .map((l) => JSON.parse(l));
+
+    expect(entries[0].metadata.file).toBe('src/auth/handler.ts');
+    expect(entries[0].metadata.line).toBe(42);
+    expect(entries[0].metadata.severity).toBe('MAJOR');
+  });
+
+  it('metadata captures fixSuggestion when present in finding text', async () => {
+    const cycleId = 'meta-fix';
+    const runtime = {
+      run: vi.fn().mockResolvedValue({
+        output: '## Review\n- CRITICAL: no rate limiting on /api/submit. Fix: add express-rate-limit middleware\nVerdict: 1/5',
+        costUsd: 0.04,
+      }),
+    };
+    const { bus } = makeMockBus();
+    await runReviewPhase(
+      makeCtx({ cwd: tmpDir, sprintVersion: '6.8', cycleId, runtime, bus }),
+    );
+
+    const entries = readFileSync(
+      join(tmpDir, '.agentforge', 'memory', 'review-finding.jsonl'),
+      'utf8',
+    )
+      .split('\n')
+      .filter((l) => l.trim().length > 0)
+      .map((l) => JSON.parse(l));
+
+    expect(entries[0].metadata.fixSuggestion).toBeTruthy();
+    expect(entries[0].metadata.fixSuggestion).toContain('express-rate-limit');
+  });
+
+  // ----- parseReviewFindingMetadata unit tests -----
+
+  it('parseReviewFindingMetadata returns null file/line for plain text finding', () => {
+    const meta = parseReviewFindingMetadata(
+      '- CRITICAL: missing auth check on write endpoint',
+      'CRITICAL',
+    );
+    expect(meta.severity).toBe('CRITICAL');
+    expect(meta.file).toBeNull();
+    expect(meta.line).toBeNull();
+    expect(meta.fixSuggestion).toBeNull();
+    expect(meta.summary).toBeTruthy();
+  });
+
+  it('parseReviewFindingMetadata extracts file and line from structured finding', () => {
+    const meta = parseReviewFindingMetadata(
+      '- MAJOR: src/utils/parser.ts:17 — unchecked cast to any swallows errors',
+      'MAJOR',
+    );
+    expect(meta.file).toBe('src/utils/parser.ts');
+    expect(meta.line).toBe(17);
+    expect(meta.severity).toBe('MAJOR');
+    expect(meta.summary).not.toContain('src/utils/parser.ts');
+  });
+
+  it('parseReviewFindingMetadata extracts fixSuggestion after Fix: prefix', () => {
+    const meta = parseReviewFindingMetadata(
+      'CRITICAL: zero coverage on POST /approve. Fix: add integration test for happy path',
+      'CRITICAL',
+    );
+    expect(meta.fixSuggestion).toContain('integration test');
+    expect(meta.summary).not.toContain('Fix:');
+  });
+
+  it('parseReviewFindingMetadata handles MAJOR finding with file but no line', () => {
+    const meta = parseReviewFindingMetadata(
+      '- MAJOR: src/server/routes.ts missing input validation',
+      'MAJOR',
+    );
+    expect(meta.file).toBe('src/server/routes.ts');
+    expect(meta.line).toBeNull();
   });
 
   // ----- RELEASE phase -----

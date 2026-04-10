@@ -710,7 +710,9 @@
                   {#each phaseSections as section}
                     <div class="phase-md-section">
                       <div class="phase-md-label">{section.label}</div>
-                      <MarkdownRenderer content={section.content} />
+                      <div class="phase-md-body">
+                        <MarkdownRenderer content={section.content} />
+                      </div>
                     </div>
                   {/each}
 
@@ -718,7 +720,9 @@
                   {#each phaseAgentRuns as run, i}
                     <div class="phase-md-section">
                       <div class="phase-md-label">agentRun[{i}] response — {run.agentId}</div>
-                      <MarkdownRenderer content={run.response} />
+                      <div class="phase-md-body">
+                        <MarkdownRenderer content={run.response} />
+                      </div>
                     </div>
                   {/each}
                 {/if}
@@ -1008,6 +1012,14 @@
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--color-text-muted);
+  }
+  /* Rendered markdown prose gets a subtle left accent strip so it reads
+     clearly apart from the raw JSON block above it */
+  .phase-md-body {
+    background: var(--color-bg-elevated);
+    border-left: 3px solid var(--color-brand);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    padding: var(--space-3) var(--space-4);
   }
 
   .file-tabs {

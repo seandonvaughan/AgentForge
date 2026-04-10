@@ -148,7 +148,7 @@
 </script>
 
 <svelte:head>
-  <title>Sprint {version} — AgentForge</title>
+  <title>Sprint v{version} — AgentForge</title>
 </svelte:head>
 
 <div class="page-header">
@@ -384,14 +384,13 @@
       <span class="section-heading-label">Success Criteria</span>
       <span class="section-heading-count">{sprint.successCriteria.length}</span>
     </div>
-    <div class="card" style="margin-bottom:var(--space-4);">
-      <div class="card-header">
-        <span class="card-title">✓ Success Criteria</span>
-        <span class="card-count">{sprint.successCriteria.length}</span>
-      </div>
+    <div class="card criteria-card" style="margin-bottom:var(--space-4);">
       <ul class="criteria-list">
-        {#each sprint.successCriteria as criterion}
-          <li class="criterion">{criterion}</li>
+        {#each sprint.successCriteria as criterion, i}
+          <li class="criterion">
+            <span class="criterion-index">{String(i + 1).padStart(2, '0')}</span>
+            <span class="criterion-text">{criterion}</span>
+          </li>
         {/each}
       </ul>
     </div>
@@ -403,14 +402,13 @@
       <span class="section-heading-label">Audit Findings</span>
       <span class="section-heading-count">{sprint.auditFindings.length}</span>
     </div>
-    <div class="card" style="margin-bottom:var(--space-4);">
-      <div class="card-header">
-        <span class="card-title">⚠ Audit Findings</span>
-        <span class="card-count">{sprint.auditFindings.length}</span>
-      </div>
+    <div class="card findings-card" style="margin-bottom:var(--space-4);">
       <ul class="criteria-list findings">
-        {#each sprint.auditFindings as finding}
-          <li class="criterion finding">{finding}</li>
+        {#each sprint.auditFindings as finding, i}
+          <li class="criterion finding">
+            <span class="criterion-index">{String(i + 1).padStart(2, '0')}</span>
+            <span class="criterion-text">{finding}</span>
+          </li>
         {/each}
       </ul>
     </div>
@@ -418,17 +416,14 @@
 
   <!-- Version Decision -->
   {#if sprint.versionDecision}
+    {@const vd = sprint.versionDecision}
     <div class="section-heading">
       <span class="section-heading-label">Version Decision</span>
+      {#if vd.tier}
+        <span class="badge version-tier-badge version-tier-{vd.tier}">{vd.tier}</span>
+      {/if}
     </div>
-    {@const vd = sprint.versionDecision}
     <div class="card version-decision-card" style="margin-bottom:var(--space-4);">
-      <div class="card-header">
-        <span class="card-title">⬆ Version Decision</span>
-        {#if vd.tier}
-          <span class="badge version-tier-badge version-tier-{vd.tier}">{vd.tier}</span>
-        {/if}
-      </div>
       {#if vd.previousVersion || vd.nextVersion}
         <div class="version-bump-row">
           {#if vd.previousVersion}
@@ -653,30 +648,6 @@
     margin-top: var(--space-1);
   }
 
-  /* Card headers for criteria / findings sections */
-  .card-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: var(--space-3);
-  }
-
-  .card-title {
-    font-size: var(--text-sm);
-    font-weight: 700;
-    color: var(--color-text);
-  }
-
-  .card-count {
-    font-size: var(--text-xs);
-    font-family: var(--font-mono);
-    color: var(--color-text-faint);
-    background: var(--color-surface-1);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-full);
-    padding: 1px 8px;
-  }
-
   /* Item groups */
   .group-header {
     display: flex;
@@ -847,6 +818,9 @@
   }
 
   .criterion {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3);
     font-size: var(--text-sm);
     color: var(--color-text);
     padding: var(--space-2) var(--space-3);
@@ -858,6 +832,32 @@
 
   .criterion.finding {
     border-left-color: var(--color-warning);
+  }
+
+  .criterion-index {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-success);
+    opacity: 0.7;
+    flex-shrink: 0;
+    min-width: 20px;
+  }
+
+  .criterion.finding .criterion-index {
+    color: var(--color-warning);
+    opacity: 0.8;
+  }
+
+  .criterion-text {
+    flex: 1;
+  }
+
+  .criteria-card {
+    border-left: 3px solid var(--color-success);
+  }
+
+  .findings-card {
+    border-left: 3px solid var(--color-warning);
   }
 
   /* Kanban */
@@ -1007,6 +1007,18 @@
   @media (max-width: 1100px) {
     .kanban-board.has-failed {
       grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  @media (max-width: 900px) {
+    .kanban-board.has-failed {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (max-width: 580px) {
+    .kanban-board.has-failed {
+      grid-template-columns: 1fr;
     }
   }
 

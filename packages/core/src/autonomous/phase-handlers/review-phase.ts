@@ -11,7 +11,7 @@
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
-import { writeMemoryEntry } from '../../memory/types.js';
+import { writeMemoryEntry, type ReviewFindingMetadata } from '../../memory/types.js';
 import { extractFindingsByLevel } from './gate-phase.js';
 
 export const REVIEW_PHASE_DEFAULT_TOOLS = ['Read', 'Bash', 'Glob', 'Grep'];
@@ -91,6 +91,7 @@ Do NOT modify any files.`;
       value: line,
       source: ctx.cycleId,
       tags: ['review', 'finding', 'critical', `sprint:v${ctx.sprintVersion}`],
+      metadata: parseReviewFindingMetadata(line, 'CRITICAL'),
     });
   }
   for (const line of majorLines) {
@@ -99,6 +100,7 @@ Do NOT modify any files.`;
       value: line,
       source: ctx.cycleId,
       tags: ['review', 'finding', 'major', `sprint:v${ctx.sprintVersion}`],
+      metadata: parseReviewFindingMetadata(line, 'MAJOR'),
     });
   }
 
@@ -188,4 +190,70 @@ function parseConcerns(markdown: string): string[] {
     }
   }
   return concerns.slice(0, 20);
+}
+
+// Matches relative file paths like src/foo.ts, packages/core/src/bar.js, lib/baz.tsx
+const FILE_PATH_RE = /\b((?:src|lib|packages|tests?|apps?|server|client|dist)[/\\][\w./\\-]+\.\w+)\b/;
+// Matches ":42" immediately after a file path (e.g. "src/foo.ts:42")
+const LINE_NUMBER_RE = /:(\d+)/;
+// Matches a suggested fix at the end of a finding line
+const FIX_SUGGESTION_RE = /(?:Fix|Suggestion|Suggested fix|To fix)[:\s]+(.+?)(?:\.\s*$|$)/i;
+// Matches severity prefix and bullet decoration at the start of a finding line
+const SEVERITY_PREFIX_RE = /^[-*\s]*(?:CRITICAL|MAJOR)[:\s-]*/i;
+
+/**
+ * Parse a raw finding line into a structured `ReviewFindingMetadata` object.
+ *
+ * All fields except `severity` and `summary` are extracted on a best-effort
+ * basis — if the reviewer did not include file/line/fix information the
+ * corresponding field is null. The caller must still store `value` (the raw
+ * line) so nothing is lost even when parsing yields sparse results.
+ */
+export function parseReviewFindingMetadata(
+  line: string,
+  severity: 'CRITICAL' | 'MAJOR',
+): ReviewFindingMetadata {
+  // Extract file path if present
+  const fileMatch = line.match(FILE_PATH_RE);
+  const file = fileMatch ? fileMatch[1] : null;
+
+  // Extract line number — only meaningful when a file was also detected
+  let lineNumber: number | null = null;
+  if (file && fileMatch && fileMatch.index !== undefined) {
+    const afterFile = line.slice(fileMatch.index + fileMatch[1].length);
+    const lineMatch = afterFile.match(LINE_NUMBER_RE);
+    if (lineMatch) {
+      const parsed = parseInt(lineMatch[1], 10);
+      lineNumber = isNaN(parsed) ? null : parsed;
+    }
+  }
+
+  // Extract fix suggestion before stripping the line for the summary
+  const fixMatch = line.match(FIX_SUGGESTION_RE);
+  const fixSuggestion = fixMatch ? fixMatch[1].trim() || null : null;
+
+  // Build summary: strip bullet/severity prefix and fix clause
+  let summary = line
+    .replace(SEVERITY_PREFIX_RE, '')
+    .replace(FIX_SUGGESTION_RE, '')
+    .trim();
+
+  // Remove the file:line reference from the summary text if present (literal search)
+  if (file) {
+    const fileIdx = summary.indexOf(file);
+    if (fileIdx !== -1) {
+      // Remove "file:line — " or "file — " etc. after the file token
+      const afterFileInSummary = summary.slice(fileIdx + file.length);
+      const colonLineMatch = afterFileInSummary.match(/^:\d+/);
+      const removeLen = file.length + (colonLineMatch ? colonLineMatch[0].length : 0);
+      summary = (summary.slice(0, fileIdx) + summary.slice(fileIdx + removeLen))
+        .replace(/^\s*[—:\s-]+/, '')
+        .trim();
+    }
+  }
+
+  // Normalise leading/trailing punctuation artifacts
+  summary = summary.replace(/^[—:\s-]+/, '').replace(/[.\s]+$/, '').trim();
+
+  return { file, line: lineNumber, severity, summary, fixSuggestion };
 }

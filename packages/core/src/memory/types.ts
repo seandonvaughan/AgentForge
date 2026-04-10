@@ -17,6 +17,25 @@ export type MemoryEntryType =
   | 'failure-pattern'
   | 'learned-fact';
 
+/**
+ * Structured payload for `review-finding` entries.
+ * Populated on a best-effort basis from the reviewer agent's markdown output.
+ * All fields except `severity` and `summary` may be null when the reviewer
+ * did not include explicit file/line/fix information.
+ */
+export interface ReviewFindingMetadata {
+  /** Relative file path that the finding relates to, or null if not parseable. */
+  file: string | null;
+  /** Line number within `file`, or null if not specified. */
+  line: number | null;
+  /** Severity level that triggered the memory write. */
+  severity: 'CRITICAL' | 'MAJOR';
+  /** The finding description, with severity prefix and file/line info stripped. */
+  summary: string;
+  /** Suggested remediation extracted from the finding text, or null if absent. */
+  fixSuggestion: string | null;
+}
+
 /** Canonical shape of a cross-cycle memory entry. */
 export interface CycleMemoryEntry {
   id: string;
@@ -30,6 +49,12 @@ export interface CycleMemoryEntry {
   /** cycleId or agentId that produced this entry. */
   source?: string;
   tags?: string[];
+  /**
+   * Structured payload for entries that carry machine-readable data.
+   * For `review-finding` entries this is a `ReviewFindingMetadata` object.
+   * Other entry types may define their own metadata shapes in the future.
+   */
+  metadata?: ReviewFindingMetadata | Record<string, unknown>;
 }
 
 /**
@@ -83,6 +108,7 @@ export function writeMemoryEntry(
     createdAt: entry.createdAt ?? new Date().toISOString(),
     ...(entry.source !== undefined ? { source: entry.source } : {}),
     ...(entry.tags !== undefined ? { tags: entry.tags } : {}),
+    ...(entry.metadata !== undefined ? { metadata: entry.metadata } : {}),
   };
 
   try {

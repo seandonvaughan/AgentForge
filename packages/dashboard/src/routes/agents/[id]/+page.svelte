@@ -1,69 +1,14 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { page } from '$app/state';
   import { goto } from '$app/navigation';
+  import type { PageData } from './$types';
+  import type { AgentDetail } from './+page.server';
 
-  interface AgentDetail {
-    agentId: string;
-    id?: string; // legacy compat — server returns agentId, not id
-    name: string;
-    model: 'opus' | 'sonnet' | 'haiku';
-    description?: string | null;
-    role?: string | null;
-    systemPrompt?: string | null;
-    skills?: string[];
-    version?: string | null;
-    seniority?: string | null;
-    layer?: string | null;
-    reportsTo?: string | null;
-    canDelegateTo?: string[];
-    stats?: {
-      totalSessions: number;
-      successRate: number;
-      avgCostUsd: number;
-    };
-    recentSessions?: Array<{
-      id: string;
-      startedAt: string;
-      status: string;
-      costUsd?: number;
-      durationMs?: number;
-    }>;
-  }
+  let { data }: { data: PageData } = $props();
 
-  let agent = $state<AgentDetail | null>(null);
-  let loading = $state(true);
-  let error = $state<string | null>(null);
-
-  let agentId = $derived(page.params.id);
-
-  async function load() {
-    loading = true;
-    error = null;
-    try {
-      const res = await fetch(`/api/v5/agents/${agentId}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      agent = json.data ?? json;
-    } catch (e) {
-      error = String(e);
-    } finally {
-      loading = false;
-    }
-  }
-
-  onMount(load);
-
-  function formatDuration(ms?: number): string {
-    if (!ms) return '—';
-    if (ms < 1000) return `${ms}ms`;
-    return `${(ms / 1000).toFixed(1)}s`;
-  }
-
-  function formatDate(iso?: string): string {
-    if (!iso) return '—';
-    return new Date(iso).toLocaleString();
-  }
+  // Agent data is pre-loaded server-side via +page.server.ts — always available.
+  // Using $derived keeps it in sync when SvelteKit updates data on navigation.
+  let agent = $derived(data.agent);
+  let agentId = $derived(agent.agentId);
 
   function promptPreview(prompt?: string | null): string {
     if (!prompt) return 'No system prompt defined.';
@@ -79,42 +24,25 @@
   const SENIORITY_ORDER = ['junior', 'mid', 'senior', 'lead', 'principal'];
 </script>
 
-<svelte:head><title>{agent?.name ?? agentId} — AgentForge</title></svelte:head>
+<svelte:head><title>{agent.name} — AgentForge</title></svelte:head>
 
 <div class="page-header">
   <div style="display:flex; align-items:center; gap: var(--space-4);">
     <button class="btn btn-ghost btn-sm" onclick={() => goto('/agents')}>← Back</button>
-    {#if agent}
-      <div>
-        <h1 class="page-title">{agent.name ?? agent.agentId ?? agentId}</h1>
-        <p class="page-subtitle">{agent.role ?? agent.seniority ?? 'Agent'}</p>
-      </div>
-    {:else}
-      <h1 class="page-title">{agentId}</h1>
-    {/if}
-  </div>
-  {#if agent}
-    <div style="display:flex; align-items:center; gap: var(--space-3);">
-      {#if agent.version}
-        <span class="badge muted">v{agent.version}</span>
-      {/if}
-      <span class="badge {agent.model}">{agent.model}</span>
+    <div>
+      <h1 class="page-title">{agent.name}</h1>
+      <p class="page-subtitle">{agent.role ?? agent.seniority ?? 'Agent'}</p>
     </div>
-  {/if}
+  </div>
+  <div style="display:flex; align-items:center; gap: var(--space-3);">
+    {#if agent.version}
+      <span class="badge muted">v{agent.version}</span>
+    {/if}
+    <span class="badge {agent.model}">{agent.model}</span>
+  </div>
 </div>
 
-{#if loading}
-  <div>
-    <div class="skeleton" style="height: 80px; width: 100%; margin-bottom: var(--space-4);"></div>
-    <div class="skeleton" style="height: 160px; width: 100%; margin-bottom: var(--space-4);"></div>
-    <div class="skeleton" style="height: 200px; width: 100%;"></div>
-  </div>
-{:else if error}
-  <div class="empty-state">
-    Failed to load agent.
-    <button class="btn btn-ghost btn-sm" style="margin-top: var(--space-3)" onclick={load}>Retry</button>
-  </div>
-{:else if agent}
+{#if agent}
   <!-- Metadata row -->
   <div class="meta-grid" style="margin-bottom: var(--space-6);">
     <!-- Description -->
@@ -226,46 +154,6 @@
     </div>
   {/if}
 
-  <!-- Recent Sessions (only shown when data is available) -->
-  {#if agent.recentSessions && agent.recentSessions.length > 0}
-    <div class="card" style="padding: 0; overflow: hidden;">
-      <div class="card-header" style="padding: var(--space-4) var(--space-5);">
-        <span class="card-title">Recent Sessions</span>
-      </div>
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Session ID</th>
-            <th>Started</th>
-            <th>Duration</th>
-            <th>Status</th>
-            <th>Cost</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each agent.recentSessions as s (s.id)}
-            <tr>
-              <td style="font-family: var(--font-mono); font-size: var(--text-xs);">{s.id}</td>
-              <td style="color: var(--color-text-muted);">{formatDate(s.startedAt)}</td>
-              <td style="font-family: var(--font-mono);">{formatDuration(s.durationMs)}</td>
-              <td>
-                {#if s.status === 'completed'}
-                  <span class="badge success">completed</span>
-                {:else if s.status === 'failed'}
-                  <span class="badge danger">failed</span>
-                {:else if s.status === 'running'}
-                  <span class="badge" style="color:var(--color-info); border-color:rgba(74,158,255,0.3); background:rgba(74,158,255,0.08);">running</span>
-                {:else}
-                  <span class="badge muted">{s.status ?? '—'}</span>
-                {/if}
-              </td>
-              <td style="font-family: var(--font-mono);">${(s.costUsd ?? 0).toFixed(4)}</td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    </div>
-  {/if}
 {/if}
 
 <style>

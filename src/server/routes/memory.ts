@@ -335,7 +335,7 @@ export async function memoryRoutes(
         })
       : afterType;
 
-    return reply.send({ data: afterSince, agents, types, meta: { total: afterSince.length } });
+    return reply.send({ data: afterSince, agents, types, meta: { total: afterSince.length, limit: V5_MEMORY_LIMIT } });
   });
 
   // DELETE /api/v5/memory/:id — remove a kv_store entry by key

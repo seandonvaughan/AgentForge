@@ -314,6 +314,71 @@ describe('GET /api/v5/flywheel', () => {
     expect(data.memoryStats.hitRate).toBe(0.5);
   });
 
+  // ── memoriesInjected signal (precise hit rate) ──────────────────────────
+
+  it('hitRate uses memoriesInjected=0 from audit.json → no hit even when memory exists', async () => {
+    mkdirs(
+      join(tmpRoot, '.agentforge/cycles'),
+      join(tmpRoot, '.agentforge/memory'),
+    );
+    // Write a cycle that completed and has an audit.json saying 0 memories injected
+    writeCycle('no-inject', { startedAt: '2026-01-01T08:00:00.000Z' });
+    writeMemoryEntry('cycle-outcome', 'no-inject', '2026-01-01T07:00:00.000Z'); // memory existed before cycle
+    // Manually write an audit.json with memoriesInjected: 0
+    const auditDir = join(tmpRoot, '.agentforge/cycles/no-inject/phases');
+    mkdirSync(auditDir, { recursive: true });
+    writeFileSync(join(auditDir, 'audit.json'), JSON.stringify({
+      phase: 'audit',
+      cycleId: 'no-inject',
+      memoriesInjected: 0, // explicitly 0 — overrides timestamp proxy
+    }));
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = JSON.parse(res.body) as { data: { memoryStats: { hitRate: number } } };
+    // audit.json says 0 injected → hit rate 0 despite timestamp proxy saying 1
+    expect(data.memoryStats.hitRate).toBe(0);
+  });
+
+  it('hitRate uses memoriesInjected>0 from audit.json → hit counted', async () => {
+    mkdirs(join(tmpRoot, '.agentforge/cycles'));
+    writeCycle('with-inject', { startedAt: '2026-01-02T08:00:00.000Z' });
+    // audit.json explicitly records 3 memories were injected
+    const auditDir = join(tmpRoot, '.agentforge/cycles/with-inject/phases');
+    mkdirSync(auditDir, { recursive: true });
+    writeFileSync(join(auditDir, 'audit.json'), JSON.stringify({
+      phase: 'audit',
+      cycleId: 'with-inject',
+      memoriesInjected: 3,
+    }));
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = JSON.parse(res.body) as { data: { memoryStats: { hitRate: number } } };
+    // 1 completed cycle, 1 hit → 100%
+    expect(data.memoryStats.hitRate).toBe(1);
+  });
+
+  it('hitRate falls back to timestamp proxy when audit.json lacks memoriesInjected', async () => {
+    mkdirs(join(tmpRoot, '.agentforge/cycles'));
+    // Two completed cycles; first writes memory, second starts after it
+    writeCycle('alpha', { startedAt: '2026-01-01T08:00:00.000Z' });
+    writeCycle('beta',  { startedAt: '2026-01-02T08:00:00.000Z' });
+    writeMemoryEntry('cycle-outcome', 'alpha', '2026-01-01T09:00:00.000Z');
+    // audit.json exists but has no memoriesInjected field (legacy format)
+    const auditDir = join(tmpRoot, '.agentforge/cycles/beta/phases');
+    mkdirSync(auditDir, { recursive: true });
+    writeFileSync(join(auditDir, 'audit.json'), JSON.stringify({
+      phase: 'audit',
+      cycleId: 'beta',
+      findings: 'some findings',
+      // no memoriesInjected field
+    }));
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = JSON.parse(res.body) as { data: { memoryStats: { hitRate: number } } };
+    // 'alpha' started before memory → 0; 'beta' started after → 1 hit / 2 cycles = 0.5
+    expect(data.memoryStats.hitRate).toBe(0.5);
+  });
+
   it('memoryStats.entriesPerCycleTrend caps at 12 cycles', async () => {
     mkdirs(join(tmpRoot, '.agentforge/cycles'));
     // Write 15 cycles

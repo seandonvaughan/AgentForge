@@ -1,6 +1,13 @@
-<script lang="ts">
-  import { marked } from 'marked';
+<script module lang="ts">
+  // Create a single shared Marked instance — avoids mutating the global
+  // marked singleton on each component mount, which is the correct pattern
+  // for marked v7+. async: false ensures parse() always returns string
+  // synchronously (no Promise wrapping, safe for Svelte $derived).
+  import { Marked } from 'marked';
+  const _renderer = new Marked({ gfm: true, breaks: false, async: false });
+</script>
 
+<script lang="ts">
   interface Props {
     content: string | null | undefined;
     /** Optional CSS class forwarded to the wrapper element */
@@ -8,14 +15,9 @@
   }
   let { content, class: className = '' }: Props = $props();
 
-  // Configure marked once: no async extensions, GFM on, breaks off so
-  // single newlines don't become <br> (matches GitHub rendering behaviour).
-  marked.setOptions({ gfm: true, breaks: false });
-
   // Derive rendered HTML reactively — if content changes, re-render.
-  let html = $derived(
-    content ? (marked.parse(content) as string) : ''
-  );
+  // _renderer.parse() returns string (not Promise) because async: false.
+  let html = $derived(content ? (_renderer.parse(content) as string) : '');
 </script>
 
 {#if html}

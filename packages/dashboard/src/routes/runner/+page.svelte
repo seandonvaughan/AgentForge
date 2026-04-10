@@ -21,6 +21,13 @@
     model: 'opus' | 'sonnet' | 'haiku';
   }
 
+  /** Fallback AgentEntry list when the server is unreachable or returns nothing. */
+  const FALLBACK_ENTRIES: AgentEntry[] = FALLBACK_AGENTS.map(id => ({
+    agentId: id,
+    name: id,
+    model: 'sonnet' as const,
+  }));
+
   interface RunHistory {
     id: string;
     agentId: string;
@@ -33,7 +40,6 @@
   }
 
   let agentEntries: AgentEntry[] = $state([]);
-  let agents: string[] = $state([]);
   let agentsLoading = $state(true);
   let selectedAgent = $state('coder');
   let agentSearch = $state('');
@@ -91,19 +97,23 @@
         const json = await res.json();
         const list = (json.data ?? json.agents ?? json ?? []);
         // Build rich agent entries
-        agentEntries = list.map((a: Record<string, unknown>) => ({
-          agentId: (a.agentId ?? a.id ?? '') as string,
-          name: (a.name ?? a.agentId ?? a.id ?? '') as string,
-          model: (a.model ?? 'sonnet') as 'opus' | 'sonnet' | 'haiku',
-        })).filter((a: AgentEntry) => a.agentId);
+        const loaded: AgentEntry[] = (list as Record<string, unknown>[])
+          .map((a) => ({
+            agentId: (a.agentId ?? a.id ?? '') as string,
+            name: (a.name ?? a.agentId ?? a.id ?? '') as string,
+            model: (a.model ?? 'sonnet') as 'opus' | 'sonnet' | 'haiku',
+          }))
+          .filter((a) => a.agentId);
 
-        agents = agentEntries.map(a => a.agentId);
-        if (agents.length === 0) agents = FALLBACK_AGENTS;
+        // Fall back to static list if server returned nothing
+        agentEntries = loaded.length > 0 ? loaded : FALLBACK_ENTRIES;
       } else {
-        agents = FALLBACK_AGENTS;
+        // Non-2xx: server up but no data — use static fallback
+        agentEntries = FALLBACK_ENTRIES;
       }
     } catch {
-      agents = FALLBACK_AGENTS;
+      // Network error or JSON parse failure
+      agentEntries = FALLBACK_ENTRIES;
     } finally {
       agentsLoading = false;
     }
@@ -317,7 +327,7 @@
       </div>
 
       <div class="form-group">
-        <label class="form-label" for="agent-select">Agent ({agents.length} available)</label>
+        <label class="form-label" for="agent-select">Agent ({agentEntries.length} available)</label>
         {#if agentsLoading}
           <div class="skeleton" style="height:32px;border-radius:var(--radius-sm);"></div>
         {:else}

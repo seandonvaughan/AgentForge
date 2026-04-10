@@ -132,9 +132,11 @@
   };
 
   // ── Patch loadMemoryBrowser to capture types and wire chips ─────────────
-  // Intercept window.fetch for the single /api/v1/memory call so we can
+  // Intercept window.fetch for the single /api/v5/memory call so we can
   // pull `types` from the JSON response without duplicating the full fetch
   // logic that already lives in loadMemoryBrowser().
+  // Note: loadMemoryBrowser() now also calls _memBuildTypeChips() directly,
+  // so this interceptor is a belt-and-suspenders fallback.
   if (typeof loadMemoryBrowser === 'function') {
     var _origLoadMemoryBrowser = loadMemoryBrowser;
     window.loadMemoryBrowser = function () {
@@ -143,7 +145,7 @@
 
       window.fetch = function (url, opts) {
         var result = _origFetch.apply(this, arguments);
-        if (typeof url === 'string' && url.indexOf('/api/v1/memory') !== -1) {
+        if (typeof url === 'string' && url.indexOf('/api/v5/memory') !== -1) {
           result.then(function (r) {
             var clone = r.clone();
             clone.json().then(function (json) {

@@ -199,6 +199,11 @@ Produce a 1-paragraph executive summary + a bulleted list of 5-10 concrete findi
             durationMs,
             startedAt: new Date(startedAt).toISOString(),
             completedAt: new Date().toISOString(),
+            // Number of cross-cycle memory entries actually injected into this
+            // audit prompt.  Used by computeMemoryStats() (dashboard flywheel) to
+            // compute a precise "memory hit rate" — cycles where this is > 0 are
+            // ones where past learnings genuinely influenced the plan.
+            memoriesInjected: memoryEntries.length,
           },
           null,
           2,

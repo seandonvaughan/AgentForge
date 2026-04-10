@@ -590,17 +590,37 @@ function computeMemoryStats(
     startedAt: c.startedAt ?? new Date().toISOString(),
   }));
 
-  // Hit rate: a completed cycle "hit" if it started after the earliest memory
-  // entry existed (meaning the audit phase had at least one past entry to
-  // consult before planning its work items).
-  // Use `at(0)` so TypeScript returns `number | undefined` without a
-  // conditional expression — `undefined ?? Infinity` is the correct
-  // "no memory written yet" sentinel (all comparisons become false).
+  // Hit rate: prefer the precise `memoriesInjected` count written to each
+  // cycle's audit.json by the audit phase handler (added in v9.0.x).
+  // For cycles that pre-date this field (no audit.json or memoriesInjected
+  // absent), fall back to the timestamp proxy: a cycle "hit" if it started
+  // after the earliest memory entry existed.
   const earliestEntryMs = allEntryTimesMs.at(0) ?? Infinity;
+
   const hitCount = completedCycles.filter(c => {
+    const auditJsonPath = join(
+      projectRoot,
+      '.agentforge',
+      'cycles',
+      c.cycleId,
+      'phases',
+      'audit.json',
+    );
+    if (existsSync(auditJsonPath)) {
+      try {
+        const auditData = JSON.parse(readFileSync(auditJsonPath, 'utf-8')) as {
+          memoriesInjected?: number;
+        };
+        if (typeof auditData.memoriesInjected === 'number') {
+          return auditData.memoriesInjected > 0;
+        }
+      } catch { /* fall through to proxy */ }
+    }
+    // Timestamp proxy fallback for older cycles lacking audit.json
     const startMs = c.startedAt ? new Date(c.startedAt).getTime() : 0;
     return startMs > earliestEntryMs;
   }).length;
+
   const hitRate = completedCycles.length > 0 ? hitCount / completedCycles.length : 0;
 
   return { totalEntries, entriesPerCycleTrend, hitRate };
