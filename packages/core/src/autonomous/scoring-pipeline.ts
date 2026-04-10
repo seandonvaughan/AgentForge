@@ -186,6 +186,13 @@ ${JSON.stringify(grounding, null, 2)}
 - Hard cap per cycle: $${this.config.budget.perCycleUsd}
 - Max items: ${this.config.limits.maxItemsPerSprint}
 
+## Available agents (use ONLY these exact IDs for suggestedAssignee)
+coder, architect, frontend-dev, dashboard-architect, ui-engineer, api-specialist,
+api-gateway-engineer, db-specialist, dba, devops-engineer, debugger, backend-qa,
+test-runner, code-reviewer, code-explorer, documentation-writer, researcher,
+ml-engineer, security-auditor, performance-engineer, observability-engineer,
+build-release-lead, linter
+
 ## Task
 Rank the candidate items, estimate cost, and split into:
 - withinBudget: items that fit in $${this.config.budget.perCycleUsd}
@@ -204,7 +211,7 @@ Return ONLY valid JSON matching this schema:
       "estimatedDurationMinutes": number,
       "rationale": string,
       "dependencies": string[],
-      "suggestedAssignee": string,
+      "suggestedAssignee": string (MUST be one of the agent IDs listed above),
       "suggestedTags": string[],
       "withinBudget": boolean
     }

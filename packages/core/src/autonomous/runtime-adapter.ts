@@ -127,13 +127,64 @@ export class RuntimeAdapter implements RuntimeForScoring {
     // an empty diff because no agent ever ran.
     if (!config) {
       const lower = agentId.toLowerCase();
-      const fallbackId = /doc|writer|tech-writer/.test(lower)
-        ? 'documentation-writer'
-        : /test|qa/.test(lower)
-        ? 'backend-qa'
-        : /review/.test(lower)
-        ? 'code-reviewer'
-        : 'coder';
+
+      // Alias map: common LLM-invented names → actual agent YAML IDs.
+      // The scoring prompt constrains names, but LLMs sometimes improvise.
+      const aliasMap: Record<string, string> = {
+        frontendendgineer: 'frontend-dev',
+        frontendengineer: 'frontend-dev',
+        frontenddev: 'frontend-dev',
+        frontenddeveloper: 'frontend-dev',
+        uiengineer: 'ui-engineer',
+        uideveloper: 'ui-engineer',
+        backendarchitect: 'architect',
+        backendengineer: 'coder',
+        backenddeveloper: 'coder',
+        softwareengineer: 'coder',
+        fullstackengineer: 'coder',
+        fullstackdeveloper: 'coder',
+        qaengineer: 'backend-qa',
+        qatester: 'backend-qa',
+        testingengineer: 'test-runner',
+        testengineer: 'test-runner',
+        securityengineer: 'security-auditor',
+        devopsengineer: 'devops-engineer',
+        infraengineer: 'devops-engineer',
+        databaseengineer: 'dba',
+        apiengineer: 'api-specialist',
+        docswriter: 'documentation-writer',
+        technicalwriter: 'documentation-writer',
+      };
+
+      // Try alias (strip hyphens/underscores/spaces for fuzzy match)
+      const normalized = lower.replace(/[-_\s]/g, '');
+      let fallbackId = aliasMap[normalized];
+
+      // Keyword classification as final fallback
+      if (!fallbackId) {
+        fallbackId = /doc|writer|tech-writer/.test(lower)
+          ? 'documentation-writer'
+          : /test|qa/.test(lower)
+          ? 'backend-qa'
+          : /review/.test(lower)
+          ? 'code-reviewer'
+          : /frontend|ui|svelte|css/.test(lower)
+          ? 'frontend-dev'
+          : /architect|design/.test(lower)
+          ? 'architect'
+          : /debug|fix/.test(lower)
+          ? 'debugger'
+          : /api|endpoint|route/.test(lower)
+          ? 'api-specialist'
+          : /database|db|sql/.test(lower)
+          ? 'dba'
+          : /devops|infra|ci|deploy/.test(lower)
+          ? 'devops-engineer'
+          : /security|vuln/.test(lower)
+          ? 'security-auditor'
+          : 'coder';
+      }
+
       const fallback = await loadAgentConfig(fallbackId, this.agentforgeDir);
       if (fallback) {
         // eslint-disable-next-line no-console
