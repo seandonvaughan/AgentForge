@@ -577,9 +577,18 @@ function computeFlywheelMetrics(projectRoot: string) {
   }
   const metaLearningScore = Math.max(0, Math.min(100, iterationBase + trendBonus + sessionConfidenceBonus));
 
-  // Derive a trend direction label from the component scores.
-  // trendBonus maps to a delta of ±5% pass-rate (equivalent to legacy threshold).
-  // sessionConfidenceBonus provides a secondary signal when no rated cycles exist.
+  // Derive a trend direction label from the two component scores.
+  //
+  // Primary signal — pass-rate trend across cycles (trendBonus):
+  //   trendBonus = Math.round((lateAvg - earlyAvg) * 400)
+  //   A delta of +5% → trendBonus = +20 → "improving" (lower boundary)
+  //   A delta of -5% → trendBonus = -20 → "declining" (upper boundary)
+  //   Values in (-20, +20) are ambiguous — defer to the secondary signal.
+  //
+  // Secondary signal — session confidence trend (sessionConfidenceBonus):
+  //   sessionConfidenceBonus = Math.round((lateConf - earlyConf) * 50)
+  //   Capped at [-10, +10]; threshold ±5 chosen as half the cap range.
+  //   Only applied when the pass-rate signal is inconclusive (|trendBonus| < 20).
   const metaTrend: 'improving' | 'stable' | 'declining' =
     trendBonus >= 20 ? 'improving' :
     trendBonus <= -20 ? 'declining' :

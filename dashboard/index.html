@@ -6001,6 +6001,17 @@ const SSE = {
           if (location.pathname === '/approvals' && typeof window.loadApprovalsPage === 'function') {
             window.loadApprovalsPage();
           }
+          // If the modal is open for the cycle that was just decided by another
+          // client or agent, close it so the operator isn't left with a stale modal.
+          if (cycleIdFromEvent) {
+            var overlay = document.getElementById('approval-modal-overlay');
+            if (overlay && overlay.classList.contains('visible')) {
+              var currentCycleId = overlay.dataset && overlay.dataset.cycleId;
+              if (!currentCycleId || currentCycleId === cycleIdFromEvent) {
+                if (typeof window.closeApprovalModal === 'function') window.closeApprovalModal();
+              }
+            }
+          }
         }
       } catch (ex) { /* ignore malformed messages */ }
     };
@@ -6035,6 +6046,10 @@ const SSE = {
     var overflowItems = (data.overflow && data.overflow.items) ? data.overflow.items : [];
     var withinCost    = withinItems.reduce(function(s, i) { return s + (Number(i.estimatedCostUsd) || 0); }, 0);
     var budgetUsd     = Number(data.budgetUsd || 200);
+
+    // Tag the overlay with the cycleId so the SSE approval.decision handler
+    // can close the modal if this cycle is decided by another client.
+    overlay.dataset.cycleId = cycleId || '';
 
     while (body.firstChild) body.removeChild(body.firstChild);
     while (actions.firstChild) actions.removeChild(actions.firstChild);
@@ -6146,7 +6161,10 @@ const SSE = {
 
   window.closeApprovalModal = function() {
     var overlay = document.getElementById('approval-modal-overlay');
-    if (overlay) overlay.classList.remove('visible');
+    if (overlay) {
+      overlay.classList.remove('visible');
+      if (overlay.dataset) overlay.dataset.cycleId = '';
+    }
   };
 
   // Close on backdrop click

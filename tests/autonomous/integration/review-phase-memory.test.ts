@@ -496,4 +496,23 @@ describe('server runReviewPhase — review-finding memory write', () => {
     const uniqueIds = new Set(ids);
     expect(uniqueIds.size).toBe(ids.length);
   });
+
+  it('does NOT treat narrative prose containing "major" or "critical" mid-sentence as findings', async () => {
+    // Reviewer output that mentions severity words in passing prose — should
+    // NOT produce memory entries. Only structurally-prefixed lines like
+    // "CRITICAL: …" or "- MAJOR: …" count as findings (anchored regex).
+    const narrativeProse =
+      'Overall this is not a critical path change and no major concerns were raised.\n' +
+      'The code looks reasonable. The only critical thing to note is that tests pass.\n' +
+      '\nOverall verdict: 4/5 — ship it';
+
+    mockResponse = narrativeProse;
+    seedSprint(cwd, '6.8.rev-mem-16', narrativeProse);
+    const ctx = makeCtx(cwd, '6.8.rev-mem-16', 'cycle-no-false-positives');
+
+    await runReviewPhase(ctx);
+
+    // No structural findings → no JSONL file created
+    expect(existsSync(JSONL_PATH(cwd))).toBe(false);
+  });
 });

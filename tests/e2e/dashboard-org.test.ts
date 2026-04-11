@@ -15,7 +15,7 @@ test.describe('Org Graph Page', () => {
   test('displays org graph heading', async ({ page }) => {
     await page.goto('/org');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
 
     // Look for heading or title
     const heading = page.locator('h1, h2').filter({ hasText: /Org|Organization|Team/i }).first();
@@ -28,7 +28,7 @@ test.describe('Org Graph Page', () => {
   test('displays org graph visualization', async ({ page }) => {
     await page.goto('/org');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
 
     // Look for SVG graph, canvas, or div-based visualization
     const svgGraph = page.locator('svg').first();
@@ -47,7 +47,7 @@ test.describe('Org Graph Page', () => {
   test('renders agent nodes in org graph', async ({ page }) => {
     await page.goto('/org');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
 
     // Look for agent names or node labels
     const agentNodes = page.locator('text=/Agent|agent|role|coordinator/i');
@@ -69,7 +69,7 @@ test.describe('Org Graph Page', () => {
   test('org graph handles empty state gracefully', async ({ page }) => {
     await page.goto('/org');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
 
     // Either show graph or empty state
     const emptyState = page.locator('text=/No agents|No data|empty|loading/i').first();
@@ -84,7 +84,7 @@ test.describe('Org Graph Page', () => {
   test('org graph is responsive', async ({ page }) => {
     await page.goto('/org');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
 
     // Verify page is still accessible after resize
     await page.setViewportSize({ width: 768, height: 1024 });

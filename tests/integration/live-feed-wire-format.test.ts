@@ -91,8 +91,11 @@ function simulateOnMessage(wireBytes: string): FeedEvent | null {
     return null; // bad parse — onmessage silently ignores
   }
 
-  // Skip heartbeats (mirrored from /live page onmessage guard)
-  if (parsed.type === 'system' && parsed.message === 'heartbeat') return null;
+  // Skip silent system messages — mirrors isSilentSystemMessage() from live-feed.ts:
+  //   type === 'system' AND (message === 'heartbeat' OR message === 'connected')
+  // Both are internal SSE protocol noise (heartbeat keeps the connection alive;
+  // connected is the one-time handshake ack). Neither adds operator value.
+  if (parsed.type === 'system' && (parsed.message === 'heartbeat' || parsed.message === 'connected')) return null;
 
   // Normalize id like the page does: parsed.id ?? `${Date.now()}`
   const id = parsed.id ?? String(Date.now());
@@ -270,8 +273,10 @@ describe('Live feed SSE wire-format compatibility', () => {
       expect(result).toBeNull();
     });
 
-    it('connected system event is NOT filtered (only heartbeat is)', () => {
-      // The "connected" event should pass through the filter
+    it('connected system event IS filtered (protocol handshake noise, not operator-relevant)', () => {
+      // The one-time "connected" ack is sent by the v5 stream route on first connect.
+      // isSilentSystemMessage() drops both 'heartbeat' and 'connected' system messages,
+      // so the live feed never shows either — matching the simulateOnMessage mirror here.
       const connectedBytes = `data: ${JSON.stringify({
         type: 'system',
         message: 'connected',
@@ -280,10 +285,8 @@ describe('Live feed SSE wire-format compatibility', () => {
       })}\n\n`;
 
       const result = simulateOnMessage(connectedBytes);
-      // connected events pass through (they are not type=system+message=heartbeat)
-      expect(result).not.toBeNull();
-      expect(result!.type).toBe('system');
-      expect(result!.message).toBe('connected');
+      // connected messages are silent protocol noise — filtered alongside heartbeats
+      expect(result).toBeNull();
     });
   });
 

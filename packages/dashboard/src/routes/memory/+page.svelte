@@ -1,5 +1,11 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import type { PageData } from './$types';
+
+  // SSR-loaded initial data from +page.server.ts.
+  // Initializes the view immediately on first paint — no loading skeleton needed
+  // until the client-side refresh runs and replaces the data with the API result.
+  export let data: PageData;
 
   interface MemoryEntry {
     id: string;
@@ -22,10 +28,13 @@
     metadata?: Record<string, unknown>;
   }
 
-  let entries: MemoryEntry[] = [];
-  let agents: string[] = [];
-  let types: string[] = [];
-  let loading = true;
+  // Initialise from SSR data so entries are visible immediately on first paint.
+  // The client-side load() in onMount will refresh from the API and replace these.
+  let entries: MemoryEntry[] = (data.entries ?? []) as MemoryEntry[];
+  let agents: string[] = data.agents ?? [];
+  let types: string[] = data.types ?? [];
+  // If SSR returned real entries, skip the loading skeleton on first paint.
+  let loading = entries.length === 0;
   let error: string | null = null;
   let deleting: Set<string> = new Set();
   let deleteError: string | null = null;
@@ -36,6 +45,25 @@
   let newCount = 0; // count of new entries from last SSE-triggered refresh
   /** ID of the entry whose JSON was most recently copied to clipboard (cleared after 2s). */
   let copiedId: string | null = null;
+
+  // Live feed state — tracks recent SSE events for the bottom feed panel
+  interface LiveEvent {
+    type: string;
+    category?: string;
+    message?: string;
+    data?: Record<string, unknown>;
+    ts: string;
+  }
+  let liveEvents: LiveEvent[] = [];
+  let feedOpen = false; // live feed panel collapsed by default
+  /** Count of new events that arrived while the feed panel was closed. */
+  let newFeedCount = 0;
+  const MAX_FEED_EVENTS = 30;
+
+  // SSE reconnect backoff constants
+  const SSE_BASE_BACKOFF_MS = 2_000;
+  const SSE_MAX_BACKOFF_MS  = 60_000;
+  let sseBackoffMs = SSE_BASE_BACKOFF_MS;
 
   // Search and filter state
   let searchQuery = '';
@@ -116,49 +144,82 @@
     if (eventSource) { eventSource.close(); eventSource = null; }
     sseReconnecting = false;
 
-    const es = new EventSource('/api/v5/stream');
+    // NOTE: All server events are *named* SSE events (event: <type>\ndata: ...).
+    // es.onmessage only fires for *unnamed* events — we must use addEventListener
+    // per event type to actually receive them.
+    const es = new EventSource('/api/v1/stream');
     eventSource = es;
 
     es.onopen = () => {
       sseConnected = true;
       sseReconnecting = false;
+      sseBackoffMs = SSE_BASE_BACKOFF_MS; // reset on successful connect
     };
 
-    es.onmessage = (e) => {
+    /** Prepend an SSE event payload into the live feed array (capped). */
+    function pushFeedEvent(rawData: string, overrideType?: string) {
       try {
-        const event = JSON.parse(e.data as string) as {
-          type: string;
-          category?: string;
-          message?: string;
-        };
+        const parsed = JSON.parse(rawData) as Record<string, unknown>;
+        liveEvents = [{
+          type: overrideType ?? (typeof parsed.type === 'string' ? parsed.type : 'unknown'),
+          category: typeof parsed.category === 'string' ? parsed.category : undefined,
+          message: typeof parsed.message === 'string' ? parsed.message : undefined,
+          data: parsed,
+          ts: new Date().toISOString(),
+        }, ...liveEvents].slice(0, MAX_FEED_EVENTS);
+        // Badge counter: increment when panel is collapsed so users see missed events
+        if (!feedOpen) newFeedCount += 1;
+      } catch { /* ignore malformed */ }
+    }
 
-        // Skip heartbeats
-        if (event.type === 'system' && event.message === 'heartbeat') return;
-
-        // Reload memory when a cycle completes (that's when memory is written)
-        // or when the server emits a refresh signal
-        const shouldRefresh =
-          event.type === 'refresh_signal' ||
-          (event.type === 'cycle_event' && (
-            event.category === 'cycle.complete' ||
-            event.category === 'cycle.completed' ||
-            event.category === 'cycle.failed'
-          ));
-
-        if (shouldRefresh) {
-          // Silent refresh — don't show the skeleton, just diff new entries
-          load(true);
+    // cycle_event — emitted on cycle phase transitions and completions
+    es.addEventListener('cycle_event', (e: MessageEvent) => {
+      pushFeedEvent(e.data as string, 'cycle_event');
+      try {
+        const parsed = JSON.parse(e.data as string) as { category?: string };
+        const cat = parsed.category ?? '';
+        if (cat === 'cycle.complete' || cat === 'cycle.completed' || cat === 'cycle.failed') {
+          load(true); // silent refresh — memory is written at cycle completion
         }
-      } catch { /* ignore malformed events */ }
-    };
+      } catch { /* ignore */ }
+    });
+
+    // session events — agent session lifecycle
+    es.addEventListener('session.started',   (e: MessageEvent) => pushFeedEvent(e.data as string, 'session.started'));
+    es.addEventListener('session.completed', (e: MessageEvent) => pushFeedEvent(e.data as string, 'session.completed'));
+    es.addEventListener('session.failed',    (e: MessageEvent) => pushFeedEvent(e.data as string, 'session.failed'));
+
+    // workflow_event — multi-agent workflow coordination
+    es.addEventListener('workflow_event', (e: MessageEvent) => {
+      pushFeedEvent(e.data as string, 'workflow_event');
+      try {
+        const parsed = JSON.parse(e.data as string) as { category?: string };
+        if (parsed.category === 'workflow.complete') load(true);
+      } catch { /* ignore */ }
+    });
+
+    // refresh_signal — explicit server-side push to reload
+    es.addEventListener('refresh_signal', (e: MessageEvent) => {
+      pushFeedEvent(e.data as string, 'refresh_signal');
+      load(true);
+    });
+
+    // memory_written — emitted by the core when a new memory entry is persisted
+    es.addEventListener('memory_written', (e: MessageEvent) => {
+      pushFeedEvent(e.data as string, 'memory_written');
+      load(true); // silently refresh entry list so new memory appears immediately
+    });
 
     es.onerror = () => {
       sseConnected = false;
       sseReconnecting = true;
       es.close();
       eventSource = null;
-      // Exponential-ish backoff: reconnect after 5s
-      sseReconnectTimer = setTimeout(() => connectSSE(), 5000);
+      // Exponential backoff: double each attempt, cap at SSE_MAX_BACKOFF_MS
+      sseReconnectTimer = setTimeout(() => {
+        sseBackoffMs = Math.min(sseBackoffMs * 2, SSE_MAX_BACKOFF_MS);
+        connectSSE();
+      }, sseBackoffMs);
     };
   }
 
@@ -415,6 +476,62 @@
     };
   }
 
+  // ── Per-type structured info extractors ─────────────────────────────────
+
+  interface CycleOutcomeInfo {
+    cycleId?: string;
+    sprintVersion: string;
+    stage: string;
+    costUsd?: number;
+    testsPassed?: number;
+    prUrl?: string;
+  }
+
+  /** Parse a cycle-outcome entry's JSON value into structured fields. */
+  function extractCycleOutcomeInfo(entry: MemoryEntry): CycleOutcomeInfo | null {
+    if (entry.type !== 'cycle-outcome') return null;
+    let v: Record<string, unknown> | null = null;
+    if (typeof entry.value === 'string' && entry.value.trim().startsWith('{')) {
+      try { v = JSON.parse(entry.value) as Record<string, unknown>; } catch { return null; }
+    } else if (entry.value && typeof entry.value === 'object') {
+      v = entry.value as Record<string, unknown>;
+    }
+    if (!v) return null;
+    return {
+      cycleId:      typeof v.cycleId === 'string'       ? v.cycleId     : undefined,
+      sprintVersion: String(v.sprintVersion ?? ''),
+      stage:        String(v.stage ?? 'unknown'),
+      costUsd:      typeof v.costUsd === 'number'       ? v.costUsd     : undefined,
+      testsPassed:  typeof v.testsPassed === 'number'   ? v.testsPassed : undefined,
+      prUrl:        typeof v.prUrl === 'string'         ? v.prUrl       : undefined,
+    };
+  }
+
+  type FindingSeverity = 'critical' | 'major' | 'minor';
+  interface ReviewFindingInfo {
+    severity: FindingSeverity | null;
+    text: string;
+    sprintVersion: string | null;
+    cycleId?: string;
+  }
+
+  /** Resolve severity from tags array or the raw value text. */
+  function extractReviewFindingInfo(entry: MemoryEntry): ReviewFindingInfo | null {
+    if (entry.type !== 'review-finding') return null;
+    const raw = typeof entry.value === 'string' ? entry.value : JSON.stringify(entry.value);
+    const tags = entry.tags ?? [];
+    let severity: FindingSeverity | null = null;
+    if (tags.includes('critical') || /\[CRITICAL\]/i.test(raw)) severity = 'critical';
+    else if (tags.includes('major') || /\[MAJOR\]/i.test(raw)) severity = 'major';
+    else if (tags.includes('minor') || /\[MINOR\]/i.test(raw)) severity = 'minor';
+    return {
+      severity,
+      text: raw,
+      sprintVersion: sprintTagFromEntry(entry),
+      cycleId: entry.source && isCycleId(entry.source) ? entry.source : undefined,
+    };
+  }
+
   /** Color class for gate verdict chips. */
   function verdictColorClass(verdict: string): string {
     const v = verdict.toUpperCase();
@@ -648,7 +765,7 @@
               <span class="badge {cfg.badge}">{cfg.label || (entry.type ?? typeof entry.value)}</span>
             </td>
 
-            <!-- Value column — summary if available, otherwise truncated value preview -->
+            <!-- Value column — semantic preview per entry type -->
             <td class="col-value">
               {#if entry.type === 'gate-verdict'}
                 {@const vi = extractVerdictInfo(entry)}
@@ -656,6 +773,29 @@
                   <span class="value-preview value-preview--verdict">
                     <span class="verdict-inline {verdictColorClass(vi.verdict)}">{vi.verdict}</span>
                     {#if vi.sprintVersion}<span class="verdict-version">{vi.sprintVersion}</span>{/if}
+                  </span>
+                {:else}
+                  <span class="value-preview">{entry.summary ?? formatValue(entry.value)}</span>
+                {/if}
+              {:else if entry.type === 'review-finding'}
+                {@const rfi = extractReviewFindingInfo(entry)}
+                <span class="value-preview value-preview--finding">
+                  {#if rfi?.severity}
+                    <span class="finding-sev finding-sev--{rfi.severity}">{rfi.severity}</span>
+                  {/if}
+                  <span class="finding-preview-text">{entry.summary ? stripMarkdown(entry.summary) : formatValue(entry.value)}</span>
+                </span>
+              {:else if entry.type === 'cycle-outcome'}
+                {@const coi = extractCycleOutcomeInfo(entry)}
+                {#if coi}
+                  <span class="value-preview value-preview--outcome">
+                    <span class="outcome-stage-chip outcome-stage-chip--{coi.stage}">{coi.stage}</span>
+                    {#if coi.testsPassed !== undefined}
+                      <span class="outcome-tests">{coi.testsPassed.toLocaleString()} tests</span>
+                    {/if}
+                    {#if coi.costUsd !== undefined}
+                      <span class="outcome-cost-chip">${coi.costUsd.toFixed(2)}</span>
+                    {/if}
                   </span>
                 {:else}
                   <span class="value-preview">{entry.summary ?? formatValue(entry.value)}</span>
@@ -787,9 +927,83 @@
                     {/if}
                   </div>
 
-                  <!-- Summary line (when present) -->
-                  {#if entry.summary && entry.type !== 'gate-verdict'}
+                  <!-- Summary line (only for types without a dedicated panel) -->
+                  {#if entry.summary && entry.type !== 'gate-verdict' && entry.type !== 'review-finding' && entry.type !== 'cycle-outcome'}
                     <p class="detail-summary">{stripMarkdown(entry.summary)}</p>
+                  {/if}
+
+                  <!-- Cycle-outcome structured panel ────────────────────────── -->
+                  {#if entry.type === 'cycle-outcome'}
+                    {@const coi = extractCycleOutcomeInfo(entry)}
+                    {#if coi}
+                      <div class="outcome-panel">
+                        <div class="outcome-hero">
+                          <span class="outcome-badge outcome-badge--{coi.stage}">{coi.stage}</span>
+                          {#if coi.sprintVersion}
+                            <span class="verdict-sprint">Sprint {coi.sprintVersion}</span>
+                          {/if}
+                          {#if coi.cycleId}
+                            <a class="source-link source-link--cycle outcome-cycle-link"
+                               href="/cycles/{coi.cycleId}"
+                               title="View cycle {coi.cycleId}"
+                               onclick={(e) => e.stopPropagation()}>
+                              <span class="source-prefix">cycle</span>{coi.cycleId.slice(0, 8)}
+                            </a>
+                          {/if}
+                          {#if coi.prUrl}
+                            <a class="outcome-pr-link"
+                               href={coi.prUrl}
+                               target="_blank"
+                               rel="noopener noreferrer"
+                               onclick={(e) => e.stopPropagation()}>
+                              Open PR ↗
+                            </a>
+                          {/if}
+                        </div>
+                        {#if coi.testsPassed !== undefined || coi.costUsd !== undefined}
+                          <div class="outcome-stats">
+                            {#if coi.testsPassed !== undefined}
+                              <div class="outcome-stat-item">
+                                <span class="verdict-section-label">Tests passed</span>
+                                <span class="outcome-stat-value">{coi.testsPassed.toLocaleString()}</span>
+                              </div>
+                            {/if}
+                            {#if coi.costUsd !== undefined}
+                              <div class="outcome-stat-item">
+                                <span class="verdict-section-label">Cost</span>
+                                <span class="outcome-stat-value">${coi.costUsd.toFixed(2)}</span>
+                              </div>
+                            {/if}
+                          </div>
+                        {/if}
+                      </div>
+                    {/if}
+                  {/if}
+
+                  <!-- Review-finding structured panel ───────────────────────── -->
+                  {#if entry.type === 'review-finding'}
+                    {@const rfi = extractReviewFindingInfo(entry)}
+                    {#if rfi}
+                      <div class="finding-panel finding-panel--{rfi.severity ?? 'minor'}">
+                        <div class="finding-hero">
+                          {#if rfi.severity}
+                            <span class="finding-badge finding-badge--{rfi.severity}">{rfi.severity.toUpperCase()}</span>
+                          {/if}
+                          {#if rfi.sprintVersion}
+                            <span class="verdict-sprint">Sprint {rfi.sprintVersion}</span>
+                          {/if}
+                          {#if rfi.cycleId}
+                            <a class="source-link source-link--cycle"
+                               href="/cycles/{rfi.cycleId}"
+                               title="View cycle {rfi.cycleId}"
+                               onclick={(e) => e.stopPropagation()}>
+                              <span class="source-prefix">cycle</span>{rfi.cycleId.slice(0, 8)}
+                            </a>
+                          {/if}
+                        </div>
+                        <p class="finding-text-full">{stripMarkdown(rfi.text)}</p>
+                      </div>
+                    {/if}
                   {/if}
 
                   <!-- Gate-verdict structured view ──────────────────────────── -->
@@ -884,6 +1098,70 @@
     </table>
   </div>
 {/if}
+
+<!-- ── Live event feed ─────────────────────────────────────────────────── -->
+<!-- Collapsed by default — click the header to expand. Shows the last     -->
+<!-- MAX_FEED_EVENTS SSE events received from /api/v1/stream.              -->
+<div class="live-feed" class:live-feed--open={feedOpen}>
+  <button
+    class="live-feed__header"
+    onclick={() => { feedOpen = !feedOpen; if (feedOpen) newFeedCount = 0; }}
+    aria-expanded={feedOpen}
+    aria-controls="live-feed-body"
+  >
+    <span class="live-feed__title">
+      <span class="sse-dot-sm {sseConnected ? 'live' : sseReconnecting ? 'reconnecting' : 'offline'}"
+            aria-hidden="true"></span>
+      Live event feed
+    </span>
+    <span class="live-feed__meta">
+      {#if !feedOpen && newFeedCount > 0}
+        <span class="live-feed__badge" aria-label="{newFeedCount} new events">{newFeedCount} new</span>
+      {:else if liveEvents.length > 0}
+        <span class="live-feed__count">{liveEvents.length} event{liveEvents.length === 1 ? '' : 's'}</span>
+      {/if}
+      <span class="live-feed__chevron" aria-hidden="true">{feedOpen ? '▾' : '▸'}</span>
+    </span>
+  </button>
+
+  {#if feedOpen}
+    <div id="live-feed-body" class="live-feed__body" role="log" aria-live="polite" aria-label="Live SSE event feed">
+      {#if liveEvents.length === 0}
+        <div class="live-feed__empty">
+          <span>No events yet — events appear here as cycles run.</span>
+        </div>
+      {:else}
+        <ol class="live-feed__list" reversed>
+          {#each liveEvents as ev, i (i)}
+            {@const evLabel = ev.category ?? ev.type}
+            {@const isCycleComplete =
+              ev.type === 'cycle_event' && (
+                ev.category === 'cycle.complete' ||
+                ev.category === 'cycle.completed'
+              )}
+            {@const isFailed =
+              (ev.type === 'cycle_event' && ev.category === 'cycle.failed') ||
+              ev.type === 'session.failed'}
+            {@const isSessionStart = ev.type === 'session.started'}
+            <li class="feed-event"
+                class:feed-event--complete={isCycleComplete}
+                class:feed-event--failed={isFailed}
+                class:feed-event--session={isSessionStart}>
+              <time class="feed-event__ts" datetime={ev.ts}>{formatRelative(ev.ts)}</time>
+              <span class="feed-event__chip feed-event__chip--{ev.type.replace(/[^a-z0-9]/gi, '-')}"
+                    title={ev.type}>
+                {evLabel}
+              </span>
+              {#if ev.message}
+                <span class="feed-event__msg">{ev.message}</span>
+              {/if}
+            </li>
+          {/each}
+        </ol>
+      {/if}
+    </div>
+  {/if}
+</div>
 
 <style>
   /* ── Header ──────────────────────────────────────────────────────────────── */
@@ -1275,17 +1553,20 @@
   }
 
   /* ── Detail row (full-width expanded content) ────────────────────────────── */
-  .mem-detail-row {
+  /*
+   * Scope to .mem-table to win specificity over the global
+   * `.data-table tbody tr:hover { cursor: pointer }` without !important.
+   */
+  .mem-table .mem-detail-row {
     background: var(--color-surface-1);
     border-left: 3px solid var(--row-accent);
-    /* Override global tbody tr:hover cursor — detail rows are not clickable */
-    cursor: default !important;
+    cursor: default;
   }
-  .mem-detail-row:hover {
-    background: var(--color-surface-1) !important;
+  .mem-table .mem-detail-row:hover {
+    background: var(--color-surface-1);
   }
-  .mem-detail-cell {
-    padding: 0 !important;
+  .mem-table .mem-detail-cell {
+    padding: 0;
   }
   .mem-detail {
     padding: var(--space-3) var(--space-4) var(--space-4);
@@ -1533,10 +1814,412 @@
     background: color-mix(in srgb, var(--color-text-muted) 10%, transparent);
   }
 
+  /* ── Live event feed ─────────────────────────────────────────────────────── */
+  .live-feed {
+    margin-top: var(--space-5);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+
+  .live-feed__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: var(--space-2) var(--space-4);
+    background: var(--color-surface-1);
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.12s;
+    gap: var(--space-3);
+  }
+  .live-feed__header:hover {
+    background: var(--color-bg-card-hover);
+  }
+
+  .live-feed__title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    font-weight: 500;
+  }
+
+  .live-feed__meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .live-feed__count {
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+    color: var(--color-text-faint);
+    background: var(--color-surface-2);
+    padding: 1px 6px;
+    border-radius: var(--radius-full);
+  }
+  .live-feed__chevron {
+    font-size: 10px;
+    color: var(--color-text-faint);
+    transition: color 0.12s;
+  }
+  .live-feed__header:hover .live-feed__chevron {
+    color: var(--color-text-muted);
+  }
+
+  /* Small SSE dot variant for use in the feed header */
+  .sse-dot-sm {
+    width: 6px;
+    height: 6px;
+    border-radius: var(--radius-full);
+    flex-shrink: 0;
+  }
+  .sse-dot-sm.live {
+    background: var(--color-success);
+    animation: mem-pulse 2s ease-in-out infinite;
+  }
+  .sse-dot-sm.reconnecting {
+    background: var(--color-warning);
+    animation: mem-blink 1s step-end infinite;
+  }
+  .sse-dot-sm.offline { background: var(--color-danger); }
+
+  .live-feed__body {
+    background: var(--color-bg);
+    border-top: 1px solid var(--color-border);
+    max-height: 280px;
+    overflow-y: auto;
+    padding: var(--space-2) 0;
+  }
+
+  .live-feed__empty {
+    padding: var(--space-3) var(--space-4);
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+    font-style: italic;
+  }
+
+  /* Event list — newest first (list is reversed in HTML) */
+  .live-feed__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .feed-event {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-4);
+    font-size: var(--text-xs);
+    border-left: 2px solid transparent;
+    transition: background 0.1s;
+  }
+  .feed-event:hover {
+    background: var(--color-surface-1);
+  }
+  .feed-event--complete {
+    border-left-color: var(--color-success);
+  }
+  .feed-event--failed {
+    border-left-color: var(--color-danger);
+  }
+  .feed-event--session {
+    border-left-color: var(--color-sonnet);
+  }
+
+  .feed-event__ts {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--color-text-faint);
+    white-space: nowrap;
+    flex-shrink: 0;
+    width: 52px; /* fixed width keeps columns aligned */
+  }
+
+  .feed-event__chip {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 600;
+    padding: 1px 5px;
+    border-radius: var(--radius-full);
+    white-space: nowrap;
+    flex-shrink: 0;
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-faint);
+    letter-spacing: 0.03em;
+  }
+  /* Semantic colour overrides for known event types */
+  .feed-event__chip--cycle_event           { color: var(--color-sonnet);  border-color: rgba(74,158,255,0.25); background: rgba(74,158,255,0.07); }
+  .feed-event__chip--session-started       { color: var(--color-haiku);   border-color: rgba(76,175,130,0.25); background: rgba(76,175,130,0.07); }
+  .feed-event__chip--session-completed     { color: var(--color-haiku);   border-color: rgba(76,175,130,0.3);  background: rgba(76,175,130,0.1); }
+  .feed-event__chip--session-failed        { color: var(--color-danger);  border-color: rgba(224,90,90,0.25);  background: rgba(224,90,90,0.07); }
+  .feed-event__chip--workflow_event        { color: var(--color-opus);    border-color: rgba(245,200,66,0.25); background: rgba(245,200,66,0.07); }
+  .feed-event__chip--refresh_signal        { color: var(--color-brand);   border-color: rgba(91,138,245,0.25); background: rgba(91,138,245,0.07); }
+
+  .feed-event__msg {
+    color: var(--color-text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* ── Review-finding severity badge (inline in value column) ─────────────── */
+  .value-preview--finding {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    overflow: hidden;
+  }
+  .finding-sev {
+    flex-shrink: 0;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    padding: 1px 5px;
+    border-radius: var(--radius-sm);
+    white-space: nowrap;
+  }
+  .finding-sev--critical {
+    background: rgba(224,90,90,0.15);
+    color: var(--color-danger);
+    border: 1px solid rgba(224,90,90,0.35);
+  }
+  .finding-sev--major {
+    background: rgba(224,160,80,0.13);
+    color: var(--color-warning, #e0a050);
+    border: 1px solid rgba(224,160,80,0.35);
+  }
+  .finding-sev--minor {
+    background: var(--color-surface-2);
+    color: var(--color-text-faint);
+    border: 1px solid var(--color-border);
+  }
+  .finding-preview-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    min-width: 0;
+  }
+
+  /* ── Cycle-outcome inline chips (in value column) ────────────────────────── */
+  .value-preview--outcome {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .outcome-stage-chip {
+    flex-shrink: 0;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 1px 5px;
+    border-radius: var(--radius-sm);
+    white-space: nowrap;
+  }
+  .outcome-stage-chip--completed {
+    background: rgba(76,175,130,0.12);
+    color: var(--color-haiku);
+    border: 1px solid rgba(76,175,130,0.3);
+  }
+  .outcome-stage-chip--failed {
+    background: rgba(224,90,90,0.1);
+    color: var(--color-danger);
+    border: 1px solid rgba(224,90,90,0.3);
+  }
+  .outcome-stage-chip--running,
+  .outcome-stage-chip--in_progress {
+    background: rgba(74,158,255,0.1);
+    color: var(--color-sonnet);
+    border: 1px solid rgba(74,158,255,0.3);
+  }
+  /* Default / unknown stage */
+  .outcome-stage-chip:not([class*="--completed"]):not([class*="--failed"]):not([class*="--running"]):not([class*="--in_progress"]) {
+    background: var(--color-surface-2);
+    color: var(--color-text-faint);
+    border: 1px solid var(--color-border);
+  }
+  .outcome-tests,
+  .outcome-cost-chip {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+    white-space: nowrap;
+  }
+
+  /* ── Cycle-outcome detail panel ──────────────────────────────────────────── */
+  .outcome-panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    background: var(--color-surface-2);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border);
+  }
+  .outcome-hero {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+  }
+  .outcome-badge {
+    font-size: var(--text-sm);
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 4px 12px;
+    border-radius: var(--radius-md);
+    text-transform: uppercase;
+  }
+  .outcome-badge--completed {
+    background: rgba(76,175,130,0.18);
+    color: var(--color-haiku);
+    border: 1px solid rgba(76,175,130,0.35);
+  }
+  .outcome-badge--failed {
+    background: rgba(224,90,90,0.15);
+    color: var(--color-danger);
+    border: 1px solid rgba(224,90,90,0.35);
+  }
+  .outcome-badge--running,
+  .outcome-badge--in_progress {
+    background: rgba(74,158,255,0.12);
+    color: var(--color-sonnet);
+    border: 1px solid rgba(74,158,255,0.3);
+  }
+  /* Fallback for unknown stage — uses muted neutral */
+  .outcome-badge:not([class*="--completed"]):not([class*="--failed"]):not([class*="--running"]):not([class*="--in_progress"]) {
+    background: var(--color-surface-1);
+    color: var(--color-text-muted);
+    border: 1px solid var(--color-border);
+  }
+  .outcome-cycle-link { margin-left: auto; }
+  .outcome-pr-link {
+    font-size: var(--text-xs);
+    color: var(--color-brand);
+    text-decoration: none;
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(91,138,245,0.25);
+    background: rgba(91,138,245,0.07);
+    transition: background 0.12s, border-color 0.12s;
+  }
+  .outcome-pr-link:hover {
+    background: rgba(91,138,245,0.14);
+    border-color: rgba(91,138,245,0.45);
+  }
+  .outcome-stats {
+    display: flex;
+    gap: var(--space-6);
+    flex-wrap: wrap;
+  }
+  .outcome-stat-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .outcome-stat-value {
+    font-family: var(--font-mono);
+    font-size: var(--text-base);
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  /* ── Review-finding detail panel ─────────────────────────────────────────── */
+  .finding-panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    background: var(--color-surface-2);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border);
+  }
+  .finding-panel--critical { border-left: 3px solid var(--color-danger); }
+  .finding-panel--major    { border-left: 3px solid var(--color-warning, #e0a050); }
+  .finding-panel--minor    { border-left: 3px solid var(--color-border-strong); }
+  .finding-hero {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+  }
+  .finding-badge {
+    font-size: var(--text-sm);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    padding: 4px 12px;
+    border-radius: var(--radius-md);
+    text-transform: uppercase;
+  }
+  .finding-badge--critical {
+    background: rgba(224,90,90,0.15);
+    color: var(--color-danger);
+    border: 1px solid rgba(224,90,90,0.35);
+  }
+  .finding-badge--major {
+    background: rgba(224,160,80,0.13);
+    color: var(--color-warning, #e0a050);
+    border: 1px solid rgba(224,160,80,0.35);
+  }
+  .finding-badge--minor {
+    background: var(--color-surface-1);
+    color: var(--color-text-muted);
+    border: 1px solid var(--color-border);
+  }
+  .finding-text-full {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+    line-height: 1.6;
+    word-break: break-word;
+  }
+
+  /* ── Live feed new-event badge ────────────────────────────────────────────── */
+  .live-feed__badge {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 1px 7px;
+    border-radius: var(--radius-full);
+    background: rgba(91,138,245,0.18);
+    border: 1px solid rgba(91,138,245,0.4);
+    color: var(--color-brand);
+    white-space: nowrap;
+    animation: fadeIn 0.2s ease;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: scale(0.9); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+
+  /* ── feed-event chip: memory_written ─────────────────────────────────────── */
+  .feed-event__chip--memory_written {
+    color: var(--color-haiku);
+    border-color: rgba(76,175,130,0.25);
+    background: rgba(76,175,130,0.07);
+  }
+
   /* ── Reduced motion ──────────────────────────────────────────────────────── */
   @media (prefers-reduced-motion: reduce) {
     .sse-dot.live { animation: none; }
     .sse-dot.reconnecting { animation: none; }
+    .sse-dot-sm.live { animation: none; }
+    .sse-dot-sm.reconnecting { animation: none; }
     .mem-row--new { animation: none; }
     .new-banner { animation: none; }
   }
@@ -1551,5 +2234,7 @@
     .detail-meta { flex-direction: column; gap: var(--space-1); }
     .copy-btn { position: static; margin-top: var(--space-2); }
     .detail-value-wrap .value-expanded { padding-right: var(--space-3); }
+    .feed-event__ts { display: none; }
+    .live-feed__body { max-height: 180px; }
   }
 </style>

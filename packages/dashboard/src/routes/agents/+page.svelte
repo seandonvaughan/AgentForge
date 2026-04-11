@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import { onMount } from 'svelte';
   import type { PageData } from './$types';
   import type { AgentListItem } from './+page.server';
 
@@ -8,14 +9,20 @@
   let search = $state('');
   let filterModel: '' | 'opus' | 'sonnet' | 'haiku' = $state('');
 
-  // refreshedAgents is null until the user clicks Refresh; then it holds the
-  // live API result. liveAgents always prefers the API result when available,
-  // falling back to the SSR-loaded data from +page.server.ts.
+  // refreshedAgents is null until the first API fetch completes.
+  // liveAgents always prefers the API result when available, falling back to
+  // the SSR-loaded data from +page.server.ts (populated when SvelteKit SSR is
+  // running, e.g. in `vite dev`; empty when serving built assets as a SPA).
   let refreshedAgents = $state<AgentListItem[] | null>(null);
   let refreshing = $state(false);
   let refreshError = $state<string | null>(null);
 
   let liveAgents = $derived(refreshedAgents ?? data.agents ?? []);
+
+  // Auto-fetch on mount so the list is populated even when SSR is not running
+  // (e.g. when the SvelteKit build is served as static files via Fastify).
+  // This mirrors the pattern used by /org and /sessions.
+  onMount(refresh);
 
   async function refresh() {
     refreshing = true;

@@ -1,15 +1,15 @@
 /**
  * tests/server/routes/org-graph.test.ts — Integration tests for GET /api/v1/org-graph
+ *
+ * The org-graph route is filesystem-backed (reads delegation.yaml + agent YAMLs)
+ * and requires NO database adapter. Tests run with createServer({}) so they
+ * do not depend on the native better-sqlite3 addon or any DB layer.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createServer } from '../../../src/server/server.js';
-import { AgentDatabase } from '../../../src/db/database.js';
-import { SqliteAdapter } from '../../../src/db/sqlite-adapter.js';
 
 process.env.NODE_ENV = 'test';
-
-const VALID_MODELS = ['opus', 'sonnet', 'haiku', 'unknown'];
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -35,20 +35,17 @@ interface OrgEdge {
 
 describe('GET /api/v1/org-graph', () => {
   let app: FastifyInstance;
-  let adapter: SqliteAdapter;
-  let db: AgentDatabase;
 
   beforeEach(async () => {
-    db = new AgentDatabase({ path: ':memory:' });
-    adapter = new SqliteAdapter({ db });
-    const result = await createServer({ adapter });
+    // No adapter needed — org-graph route is registered unconditionally and
+    // reads only YAML files from .agentforge/. Avoids native SQLite dependency.
+    const result = await createServer({});
     app = result.app;
     await app.ready();
   });
 
   afterEach(async () => {
     await app.close();
-    db.close();
   });
 
   it('returns 200 status code', async () => {

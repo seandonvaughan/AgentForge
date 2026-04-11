@@ -384,6 +384,139 @@ describe('GET /api/v5/sprints (normalized)', () => {
     expect(resVPrefix.statusCode).toBe(200);
     expect(resBare.json().data.version).toBe(resVPrefix.json().data.version);
   });
+
+  // ---------------------------------------------------------------------------
+  // Legacy field-mapping coverage (normalizeSprint gap-fills)
+  // ---------------------------------------------------------------------------
+
+  it('maps legacy testsPrior / testsAdded / testsTotal to canonical testCount fields', async () => {
+    const legacyFlat = {
+      version: '99.10.0',
+      phase: 'release',
+      testsPrior: 3105,
+      testsAdded: 101,
+      testsTotal: 3206,
+      items: [],
+    };
+    writeFileSync(
+      join(tmpV5Dir, '.agentforge', 'sprints', 'v99.10.0.json'),
+      JSON.stringify(legacyFlat)
+    );
+    const res = await app.inject({ method: 'GET', url: '/api/v5/sprints/99.10.0' });
+    expect(res.statusCode).toBe(200);
+    const { data } = res.json();
+    expect(data.testCountBefore).toBe(3105);
+    expect(data.testCountAfter).toBe(3206);
+    expect(data.testCountDelta).toBe(101);
+  });
+
+  it('extracts test counts from nested results object (v5.4 era)', async () => {
+    const withResults = {
+      version: '99.11.0',
+      name: 'Sprint With Results',
+      phase: 'release',
+      results: {
+        testsPassingBefore: 2708,
+        testsPassingAfter: 2914,
+        newTests: 206,
+      },
+      items: [],
+    };
+    writeFileSync(
+      join(tmpV5Dir, '.agentforge', 'sprints', 'v99.11.0.json'),
+      JSON.stringify(withResults)
+    );
+    const res = await app.inject({ method: 'GET', url: '/api/v5/sprints/99.11.0' });
+    expect(res.statusCode).toBe(200);
+    const { data } = res.json();
+    expect(data.testCountBefore).toBe(2708);
+    expect(data.testCountAfter).toBe(2914);
+    expect(data.testCountDelta).toBe(206);
+  });
+
+  it('uses name field as title fallback when title is absent (v5.4 era)', async () => {
+    const withName = {
+      version: '99.12.0',
+      name: 'Sprint Named Not Titled',
+      phase: 'release',
+      items: [],
+    };
+    writeFileSync(
+      join(tmpV5Dir, '.agentforge', 'sprints', 'v99.12.0.json'),
+      JSON.stringify(withName)
+    );
+    const res = await app.inject({ method: 'GET', url: '/api/v5/sprints/99.12.0' });
+    expect(res.statusCode).toBe(200);
+    const { data } = res.json();
+    expect(data.title).toBe('Sprint Named Not Titled');
+  });
+
+  it('surfaces risks array as auditFindings when auditFindings is absent (v4.7 era)', async () => {
+    const withRisks = {
+      version: '99.13.0',
+      phase: 'release',
+      risks: [
+        { risk: 'DB contention', mitigation: 'WAL mode', owner: 'dba' },
+        'Plain string risk',
+      ],
+      items: [],
+    };
+    writeFileSync(
+      join(tmpV5Dir, '.agentforge', 'sprints', 'v99.13.0.json'),
+      JSON.stringify(withRisks)
+    );
+    const res = await app.inject({ method: 'GET', url: '/api/v5/sprints/99.13.0' });
+    expect(res.statusCode).toBe(200);
+    const { data } = res.json();
+    expect(Array.isArray(data.auditFindings)).toBe(true);
+    expect(data.auditFindings).toHaveLength(2);
+    expect(data.auditFindings[0]).toContain('DB contention');
+    expect(data.auditFindings[0]).toContain('WAL mode');
+    expect(data.auditFindings[1]).toBe('Plain string risk');
+  });
+
+  it('canonical testCount fields take precedence over legacy equivalents', async () => {
+    // If both canonical and legacy fields exist, canonical wins
+    const mixed = {
+      version: '99.14.0',
+      phase: 'release',
+      testCountBefore: 100,
+      testCountAfter: 200,
+      testCountDelta: 100,
+      testsPrior: 9999,
+      testsTotal: 9999,
+      testsAdded: 9999,
+      items: [],
+    };
+    writeFileSync(
+      join(tmpV5Dir, '.agentforge', 'sprints', 'v99.14.0.json'),
+      JSON.stringify(mixed)
+    );
+    const res = await app.inject({ method: 'GET', url: '/api/v5/sprints/99.14.0' });
+    expect(res.statusCode).toBe(200);
+    const { data } = res.json();
+    expect(data.testCountBefore).toBe(100);
+    expect(data.testCountAfter).toBe(200);
+    expect(data.testCountDelta).toBe(100);
+  });
+
+  it('auditFindings takes precedence over risks when both are present', async () => {
+    const both = {
+      version: '99.15.0',
+      phase: 'release',
+      auditFindings: ['Real finding'],
+      risks: [{ risk: 'Should be ignored', mitigation: 'N/A', owner: 'none' }],
+      items: [],
+    };
+    writeFileSync(
+      join(tmpV5Dir, '.agentforge', 'sprints', 'v99.15.0.json'),
+      JSON.stringify(both)
+    );
+    const res = await app.inject({ method: 'GET', url: '/api/v5/sprints/99.15.0' });
+    expect(res.statusCode).toBe(200);
+    const { data } = res.json();
+    expect(data.auditFindings).toEqual(['Real finding']);
+  });
 });
 
 describe('GET /api/v1/sprints/:version with real file data', () => {

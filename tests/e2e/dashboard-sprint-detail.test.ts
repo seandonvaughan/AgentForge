@@ -1,103 +1,124 @@
 import { test, expect } from '@playwright/test';
 
+/**
+ * Sprint Detail Page — E2E coverage for /sprints/[version]
+ *
+ * Key sections that MUST render:
+ *   1. Kanban board  (Sprint Board section)
+ *   2. Success Criteria section (even when empty — shows empty-state copy)
+ *   3. Audit Findings section   (even when empty — shows empty-state copy)
+ *
+ * Tests navigate directly to a known sprint URL so that the assertions are
+ * not silently skipped when the sprint list is empty or navigation fails.
+ * Using v6.7.1 because it is a completed sprint with successCriteria and no
+ * auditFindings — it exercises both the populated and empty-state branches.
+ */
 test.describe('Sprint Detail Page', () => {
-  test('loads sprint detail page with valid sprint version', async ({ page }) => {
-    // Navigate to sprints list first
-    await page.goto('/sprints');
+  // v6.7.1 is a stable, completed sprint that exists in .agentforge/sprints/
+  const SPRINT_URL = '/sprints/6.7.1';
+
+  test('loads the sprint detail page at a direct URL', async ({ page }) => {
+    await page.goto(SPRINT_URL);
     await page.waitForLoadState('networkidle');
 
-    // Find and click on first sprint card
-    const sprintCard = page.locator('button, a, [role="button"]').filter({ hasText: /v\d+\.\d+/i }).first();
+    // Page title must include a version number (h1 element)
+    const heading = page.locator('h1');
+    await expect(heading).toBeVisible();
+    await expect(heading).toContainText(/v[\d.]+/i);
+  });
 
-    if (await sprintCard.isVisible()) {
-      // Get the href or click to navigate
-      const href = await sprintCard.getAttribute('href');
+  test('renders the Kanban Sprint Board section', async ({ page }) => {
+    await page.goto(SPRINT_URL);
+    await page.waitForLoadState('networkidle');
 
-      if (href) {
-        await page.goto(href);
-      } else {
-        await sprintCard.click();
-      }
+    // The kanban section heading must be present
+    const boardHeading = page.getByText('Sprint Board', { exact: false });
+    await expect(boardHeading).toBeVisible();
 
-      // Verify sprint detail page loaded
-      await page.waitForLoadState('networkidle');
-      const heading = page.locator('h1, h2').first();
-      await expect(heading).toBeVisible();
+    // At least one column header must be rendered — even empty sprints show columns
+    const kanbanColumn = page.locator('.kanban-column').first();
+    await expect(kanbanColumn).toBeVisible();
+  });
+
+  test('renders the Success Criteria section (populated or empty state)', async ({ page }) => {
+    await page.goto(SPRINT_URL);
+    await page.waitForLoadState('networkidle');
+
+    // Section heading is always rendered (never hidden)
+    const criteriaHeading = page.getByText('Success Criteria', { exact: false });
+    await expect(criteriaHeading).toBeVisible();
+
+    // Either a populated list or the empty-state message must be present
+    const criteriaList = page.locator('.criteria-list').first();
+    const criteriaEmpty = page.locator('.criteria-card .section-empty').first();
+    const hasList = await criteriaList.isVisible();
+    const hasEmpty = await criteriaEmpty.isVisible();
+    expect(hasList || hasEmpty).toBeTruthy();
+  });
+
+  test('renders the Audit Findings section (populated or empty state)', async ({ page }) => {
+    await page.goto(SPRINT_URL);
+    await page.waitForLoadState('networkidle');
+
+    // Section heading is always rendered (never hidden)
+    const findingsHeading = page.getByText('Audit Findings', { exact: false });
+    await expect(findingsHeading).toBeVisible();
+
+    // Either a populated list or the empty-state message must be present
+    const findingsCard = page.locator('.findings-card').first();
+    await expect(findingsCard).toBeVisible();
+    const findingsList = findingsCard.locator('.criteria-list');
+    const findingsEmpty = findingsCard.locator('.section-empty');
+    const hasList = await findingsList.isVisible();
+    const hasEmpty = await findingsEmpty.isVisible();
+    expect(hasList || hasEmpty).toBeTruthy();
+  });
+
+  test('displays progress summary cards', async ({ page }) => {
+    await page.goto(SPRINT_URL);
+    await page.waitForLoadState('networkidle');
+
+    // Summary row with completion stats
+    const summaryRow = page.locator('.summary-row').first();
+    await expect(summaryRow).toBeVisible();
+
+    // At least one summary card (e.g. the % complete card)
+    const summaryCards = summaryRow.locator('.summary-card');
+    const cardCount = await summaryCards.count();
+    expect(cardCount).toBeGreaterThan(0);
+  });
+
+  test('displays priority badge labels (P0 / P1 / P2) in items list', async ({ page }) => {
+    await page.goto(SPRINT_URL);
+    await page.waitForLoadState('networkidle');
+
+    // Priority badges are present when the sprint has items
+    const priorityBadges = page.locator('.priority-badge');
+    const badgeCount = await priorityBadges.count();
+    if (badgeCount > 0) {
+      // Verify at least one badge is one of the expected values
+      const firstText = await priorityBadges.first().textContent();
+      expect(['P0', 'P1', 'P2'].some(p => firstText?.includes(p))).toBeTruthy();
     }
   });
 
-  test('displays sprint version on detail page', async ({ page }) => {
-    await page.goto('/sprints');
+  test('navigates back to sprints list via back link', async ({ page }) => {
+    await page.goto(SPRINT_URL);
     await page.waitForLoadState('networkidle');
 
-    const sprintCard = page.locator('button, a, [role="button"]').filter({ hasText: /v\d+\.\d+/i }).first();
-
-    if (await sprintCard.isVisible()) {
-      const href = await sprintCard.getAttribute('href');
-
-      if (href) {
-        await page.goto(href);
-        await page.waitForLoadState('networkidle');
-
-        // Verify version is displayed in the page
-        const versionText = page.locator('text=/v\d+\.\d+/i').first();
-        await expect(versionText).toBeVisible();
-      }
-    }
+    const backLink = page.locator('.back-link');
+    await expect(backLink).toBeVisible();
+    await backLink.click();
+    await page.waitForURL('**/sprints');
+    await expect(page).toHaveURL(/\/sprints\s*$/);
   });
 
-  test('displays sprint items with priorities and status', async ({ page }) => {
-    await page.goto('/sprints');
+  test('shows 404-style empty state for a non-existent sprint version', async ({ page }) => {
+    await page.goto('/sprints/99.99.99-nonexistent');
     await page.waitForLoadState('networkidle');
 
-    const sprintCard = page.locator('button, a, [role="button"]').filter({ hasText: /v\d+\.\d+/i }).first();
-
-    if (await sprintCard.isVisible()) {
-      const href = await sprintCard.getAttribute('href');
-
-      if (href) {
-        await page.goto(href);
-        await page.waitForLoadState('networkidle');
-
-        // Look for priority labels or item status indicators
-        const priorities = page.locator('text=/P0|P1|P2/i');
-        const priorityCount = await priorities.count();
-
-        if (priorityCount > 0) {
-          await expect(priorities.first()).toBeVisible();
-        }
-
-        // Look for status indicators
-        const statusIndicators = page.locator('text=/✓|◐|○/i, text=/completed|in progress|pending/i');
-        const statusCount = await statusIndicators.count();
-
-        if (statusCount > 0) {
-          await expect(statusIndicators.first()).toBeVisible();
-        }
-      }
-    }
-  });
-
-  test('displays progress bar on sprint detail', async ({ page }) => {
-    await page.goto('/sprints');
-    await page.waitForLoadState('networkidle');
-
-    const sprintCard = page.locator('button, a, [role="button"]').filter({ hasText: /v\d+\.\d+/i }).first();
-
-    if (await sprintCard.isVisible()) {
-      const href = await sprintCard.getAttribute('href');
-
-      if (href) {
-        await page.goto(href);
-        await page.waitForLoadState('networkidle');
-
-        // Look for progress bar
-        const progressBar = page.locator('[role="progressbar"], [class*="progress"]').first();
-
-        if (await progressBar.isVisible()) {
-          await expect(progressBar).toBeVisible();
-        }
-      }
-    }
+    // Must show the "not found" empty state, not a blank page
+    const emptyState = page.locator('.empty-state');
+    await expect(emptyState).toBeVisible();
   });
 });

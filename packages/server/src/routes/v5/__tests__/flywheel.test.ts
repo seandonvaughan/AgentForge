@@ -84,6 +84,21 @@ function writeAgent(name: string) {
   writeFileSync(join(tmpRoot, '.agentforge/agents', `${name}.yaml`), 'id: ' + name);
 }
 
+/**
+ * Writes a session file to .agentforge/sessions/.
+ * Files are sorted alphabetically when read, so `filename` controls
+ * the chronological order of sessions (older filenames sort first).
+ */
+function writeSession(filename: string, data: {
+  task_id: string;
+  is_request_satisfied?: boolean;
+  confidence?: number;
+}) {
+  const sessionsDir = join(tmpRoot, '.agentforge/sessions');
+  mkdirSync(sessionsDir, { recursive: true });
+  writeFileSync(join(sessionsDir, filename), JSON.stringify(data));
+}
+
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 describe('GET /api/v5/flywheel', () => {
@@ -496,5 +511,108 @@ describe('GET /api/v5/flywheel', () => {
     };
     expect(data.cycleHistory[0].testPassRate).toBeNull();
     expect(data.cycleHistory[0].testsTotal).toBeNull();
+  });
+
+  // ── metaTrend boundary conditions ────────────────────────────────────────
+  // The meta_learning metric exposes a `trend` field derived from two sources:
+  //
+  //   (a) Pass-rate trend across cycles:
+  //       trendBonus = Math.round((lateAvg - earlyAvg) * 400)
+  //       trendBonus >= 20  → improving  (≥5% pass-rate gain)
+  //       trendBonus <= -20 → declining  (≥5% pass-rate loss)
+  //
+  //   (b) Session confidence trend (secondary signal, used when |trendBonus| < 20):
+  //       sessionConfidenceBonus = Math.round((lateConf - earlyConf) * 50)
+  //       sessionConfidenceBonus > 5  → improving
+  //       sessionConfidenceBonus < -5 → declining
+  //
+  // These tests pin the exact boundary values so threshold drift is caught
+  // immediately. See computeFlywheelMetrics() in dashboard-stubs.ts.
+
+  describe('meta_learning trend field', () => {
+    type MetricShape = { key: string; trend?: string };
+
+    function getMetaTrend(body: string): string | undefined {
+      const parsed = JSON.parse(body) as { data: { metrics: MetricShape[] } };
+      return parsed.data.metrics.find(m => m.key === 'meta_learning')?.trend;
+    }
+
+    it('trend is "stable" when no data exists', async () => {
+      const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+      expect(getMetaTrend(res.body)).toBe('stable');
+    });
+
+    it('trend is "improving" when later cycle pass rates exceed earlier by exactly 5%', async () => {
+      // trendBonus = Math.round((0.95 - 0.90) * 400) = 20 → hits the >= 20 boundary
+      mkdirs(join(tmpRoot, '.agentforge/cycles'));
+      writeCycle('e1', { startedAt: '2026-01-01T00:00:00Z', tests: { passed: 90, failed: 10, total: 100, passRate: 0.90 } });
+      writeCycle('e2', { startedAt: '2026-01-02T00:00:00Z', tests: { passed: 90, failed: 10, total: 100, passRate: 0.90 } });
+      writeCycle('l1', { startedAt: '2026-01-03T00:00:00Z', tests: { passed: 95, failed: 5,  total: 100, passRate: 0.95 } });
+      writeCycle('l2', { startedAt: '2026-01-04T00:00:00Z', tests: { passed: 95, failed: 5,  total: 100, passRate: 0.95 } });
+
+      const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+      expect(getMetaTrend(res.body)).toBe('improving');
+    });
+
+    it('trend is "declining" when later cycle pass rates fall behind earlier by exactly 5%', async () => {
+      // trendBonus = Math.round((0.90 - 0.95) * 400) = -20 → hits the <= -20 boundary
+      mkdirs(join(tmpRoot, '.agentforge/cycles'));
+      writeCycle('e1', { startedAt: '2026-01-01T00:00:00Z', tests: { passed: 95, failed: 5,  total: 100, passRate: 0.95 } });
+      writeCycle('e2', { startedAt: '2026-01-02T00:00:00Z', tests: { passed: 95, failed: 5,  total: 100, passRate: 0.95 } });
+      writeCycle('l1', { startedAt: '2026-01-03T00:00:00Z', tests: { passed: 90, failed: 10, total: 100, passRate: 0.90 } });
+      writeCycle('l2', { startedAt: '2026-01-04T00:00:00Z', tests: { passed: 90, failed: 10, total: 100, passRate: 0.90 } });
+
+      const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+      expect(getMetaTrend(res.body)).toBe('declining');
+    });
+
+    it('trend is "stable" when pass-rate delta is within ±4% (below threshold)', async () => {
+      // trendBonus = Math.round((0.94 - 0.90) * 400) = 16 — below the 20-point threshold
+      // No sessions → sessionConfidenceBonus = 0 → stays stable
+      mkdirs(join(tmpRoot, '.agentforge/cycles'));
+      writeCycle('e1', { startedAt: '2026-01-01T00:00:00Z', tests: { passed: 90, failed: 10, total: 100, passRate: 0.90 } });
+      writeCycle('e2', { startedAt: '2026-01-02T00:00:00Z', tests: { passed: 90, failed: 10, total: 100, passRate: 0.90 } });
+      writeCycle('l1', { startedAt: '2026-01-03T00:00:00Z', tests: { passed: 94, failed: 6,  total: 100, passRate: 0.94 } });
+      writeCycle('l2', { startedAt: '2026-01-04T00:00:00Z', tests: { passed: 94, failed: 6,  total: 100, passRate: 0.94 } });
+
+      const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+      expect(getMetaTrend(res.body)).toBe('stable');
+    });
+
+    it('trend is "improving" via session confidence when trendBonus is in safe range', async () => {
+      // trendBonus = 0 (single cycle, no pair to compare with)
+      // earlyConf = 0.4, lateConf = 0.7 → bonus = Math.round(0.3 * 50) = 15, capped to 10 > 5
+      mkdirs(join(tmpRoot, '.agentforge/cycles'));
+      writeCycle('only', { startedAt: '2026-01-01T00:00:00Z', tests: { passed: 90, failed: 10, total: 100, passRate: 0.90 } });
+      // 4 sessions required; sorted alphabetically = chronological order
+      writeSession('s1-early.json', { task_id: 's1', is_request_satisfied: true, confidence: 0.4 });
+      writeSession('s2-early.json', { task_id: 's2', is_request_satisfied: true, confidence: 0.4 });
+      writeSession('s3-late.json',  { task_id: 's3', is_request_satisfied: true, confidence: 0.7 });
+      writeSession('s4-late.json',  { task_id: 's4', is_request_satisfied: true, confidence: 0.7 });
+
+      const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+      expect(getMetaTrend(res.body)).toBe('improving');
+    });
+
+    it('trend is "declining" via session confidence when trendBonus is in safe range', async () => {
+      // earlyConf = 0.7, lateConf = 0.4 → bonus = Math.round(-0.3 * 50) = -15, capped to -10 < -5
+      mkdirs(join(tmpRoot, '.agentforge/cycles'));
+      writeCycle('only', { startedAt: '2026-01-01T00:00:00Z', tests: { passed: 90, failed: 10, total: 100, passRate: 0.90 } });
+      writeSession('s1-early.json', { task_id: 's1', is_request_satisfied: true, confidence: 0.7 });
+      writeSession('s2-early.json', { task_id: 's2', is_request_satisfied: true, confidence: 0.7 });
+      writeSession('s3-late.json',  { task_id: 's3', is_request_satisfied: true, confidence: 0.4 });
+      writeSession('s4-late.json',  { task_id: 's4', is_request_satisfied: true, confidence: 0.4 });
+
+      const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+      expect(getMetaTrend(res.body)).toBe('declining');
+    });
+
+    it('meta_learning trend is present on the returned metric object', async () => {
+      const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+      const parsed = JSON.parse(res.body) as { data: { metrics: MetricShape[] } };
+      const ml = parsed.data.metrics.find(m => m.key === 'meta_learning');
+      expect(ml).toBeDefined();
+      expect(['improving', 'stable', 'declining']).toContain(ml?.trend);
+    });
   });
 });

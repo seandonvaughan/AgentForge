@@ -113,6 +113,10 @@ interface CycleListRow {
   testsTotal: number;
   prUrl: string | null;
   hasApprovalPending: boolean;
+  /** True when approval-pending.json AND approval-decision.json both exist. */
+  hasApprovalDecision: boolean;
+  /** 'approved' | 'rejected' when hasApprovalDecision is true, else null. */
+  approvalDecision: string | null;
 }
 
 function summarizeCycle(cycleDir: string, cycleId: string): CycleListRow | null {
@@ -123,8 +127,18 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleListRow | null 
     | null;
 
   const approvalPending = existsSync(join(cycleDir, 'approval-pending.json'));
-  const approvalDecided = existsSync(join(cycleDir, 'approval-decision.json'));
+  const approvalDecisionFile = join(cycleDir, 'approval-decision.json');
+  const approvalDecided = existsSync(approvalDecisionFile);
   const hasApprovalPending = approvalPending && !approvalDecided;
+  const hasApprovalDecision = approvalPending && approvalDecided;
+  // Read the decision field (approved/rejected) without failing loudly.
+  let approvalDecision: string | null = null;
+  if (hasApprovalDecision) {
+    try {
+      const dec = JSON.parse(readFileSync(approvalDecisionFile, 'utf-8')) as Record<string, unknown>;
+      approvalDecision = (dec['decision'] as string) ?? null;
+    } catch { /* non-fatal — leave null */ }
+  }
 
   if (cycleJson) {
     const cost = (cycleJson['cost'] ?? {}) as Record<string, unknown>;
@@ -167,6 +181,8 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleListRow | null 
       testsTotal,
       prUrl: (pr['url'] as string) ?? null,
       hasApprovalPending,
+      hasApprovalDecision,
+      approvalDecision,
     };
   }
 
@@ -281,6 +297,8 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleListRow | null 
     testsTotal,
     prUrl: null,
     hasApprovalPending,
+    hasApprovalDecision,
+    approvalDecision,
   };
 }
 
@@ -575,6 +593,20 @@ export async function cyclesRoutes(
     };
     try {
       writeFileSync(decisionFile, JSON.stringify(decision, null, 2));
+      // Broadcast an SSE event immediately so all connected dashboards update
+      // without waiting for the 15-second approval-store poll.
+      globalStream.emit({
+        type: 'cycle_event',
+        category: 'approval.decision',
+        message: `${id.slice(0, 8)} · approval.decision · ${decision.decision}`,
+        data: {
+          cycleId: id,
+          type: 'approval.decision',
+          decision: decision.decision,
+          decidedBy: decision.decidedBy,
+          at: decision.decidedAt,
+        } as unknown as Record<string, unknown>,
+      });
       return reply.send({ ok: true, decision });
     } catch (err) {
       return reply.status(500).send({ error: `Failed to write decision: ${(err as Error).message}` });

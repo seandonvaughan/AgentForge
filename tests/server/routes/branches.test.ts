@@ -1,12 +1,15 @@
 /**
  * tests/server/routes/branches.test.ts
  * Integration tests for GET /api/v1/branches and DELETE /api/v1/branches/:name
+ *
+ * NOTE: branchesRoutes is git-backed and requires NO database adapter.
+ * The server registers it outside the `if (options.adapter)` block, so we
+ * create the server without an adapter here to avoid pulling in better-sqlite3
+ * (which can have native-addon ABI mismatches in CI environments).
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createServer } from '../../../src/server/server.js';
-import { AgentDatabase } from '../../../src/db/database.js';
-import { SqliteAdapter } from '../../../src/db/sqlite-adapter.js';
 
 process.env.NODE_ENV = 'test';
 
@@ -15,13 +18,12 @@ process.env.NODE_ENV = 'test';
 // ---------------------------------------------------------------------------
 
 async function buildApp(): Promise<{ app: FastifyInstance; close: () => Promise<void> }> {
-  const db = new AgentDatabase({ path: ':memory:' });
-  const adapter = new SqliteAdapter({ db });
-  const { app } = await createServer({ adapter });
+  // No DB adapter needed — branchesRoutes is purely git-backed
+  const { app } = await createServer({});
   await app.ready();
   return {
     app,
-    close: async () => { await app.close(); db.close(); },
+    close: async () => { await app.close(); },
   };
 }
 

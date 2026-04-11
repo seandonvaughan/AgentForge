@@ -102,6 +102,37 @@ describe('extractFindingsByLevel', () => {
     const findings = extractFindingsByLevel(text, 'CRITICAL');
     expect(findings).toHaveLength(2);
   });
+
+  it('does NOT match a severity keyword that appears mid-sentence', () => {
+    // Narrative prose that happens to contain the keyword should not be treated
+    // as a structured finding — only lines where the keyword leads the line count.
+    const text = [
+      'This is not a critical path change.',
+      'No major concerns about this refactor.',
+      'The implementation avoids the major footgun mentioned in the RFC.',
+    ].join('\n');
+
+    expect(extractFindingsByLevel(text, 'CRITICAL')).toHaveLength(0);
+    expect(extractFindingsByLevel(text, 'MAJOR')).toHaveLength(0);
+  });
+
+  it('matches bracket-notation findings like "- [CRITICAL] …"', () => {
+    const text = [
+      '- [CRITICAL] src/auth.ts — token validation is absent',
+      '- [MAJOR] src/registry/index.ts:12 — duplicate route handler',
+      'Some prose that mentions a [minor] concern.',
+    ].join('\n');
+
+    expect(extractFindingsByLevel(text, 'CRITICAL')).toHaveLength(1);
+    expect(extractFindingsByLevel(text, 'MAJOR')).toHaveLength(1);
+  });
+
+  it('matches bullet-prefixed severity lines like "* CRITICAL: …"', () => {
+    const text = '* CRITICAL: Missing null check\n* MAJOR: Unchecked cast';
+
+    expect(extractFindingsByLevel(text, 'CRITICAL')).toHaveLength(1);
+    expect(extractFindingsByLevel(text, 'MAJOR')).toHaveLength(1);
+  });
 });
 
 // ---------------------------------------------------------------------------

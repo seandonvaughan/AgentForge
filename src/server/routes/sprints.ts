@@ -45,11 +45,48 @@ function normalizeItem(item: any): Record<string, unknown> {
 /** Normalize a raw sprint object from disk into the dashboard schema. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function normalizeSprint(raw: any): Record<string, unknown> {
+  // ---------------------------------------------------------------------------
+  // Legacy test-count field mappings.
+  //
+  // Sprints have used three different naming conventions over time:
+  //   v5.7 era:  testsPrior / testsAdded / testsTotal  (flat fields)
+  //   v5.4–5.8:  results.testsPassingBefore / testsPassingAfter / newTests
+  //              (nested results object)
+  //   v5.9+:     testCountBefore / testCountAfter / testCountDelta (canonical)
+  // ---------------------------------------------------------------------------
+  const results = raw.results && typeof raw.results === 'object' ? raw.results : {};
+  const testCountBefore =
+    raw.testCountBefore ??
+    raw.testsPrior ??
+    results.testsPassingBefore ??
+    undefined;
+  const testCountAfter =
+    raw.testCountAfter ??
+    raw.testsTotal ??
+    results.testsPassingAfter ??
+    undefined;
+  const testCountDelta =
+    raw.testCountDelta ??
+    raw.testsAdded ??
+    results.newTests ??
+    undefined;
+
+  // risks (v4.7 era) surface as auditFindings when no dedicated field exists.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const auditFindings: string[] = raw.auditFindings?.length
+    ? raw.auditFindings
+    : Array.isArray(raw.risks)
+      ? raw.risks.map((r: any) =>
+          typeof r === 'string' ? r : [r.risk, r.mitigation].filter(Boolean).join(' — ')
+        )
+      : [];
+
   return {
     id: raw.sprintId ?? raw.id ?? raw.version,
     version: raw.version,
     sprintId: raw.sprintId ?? undefined,
-    title: raw.title,
+    // 'name' was used as the title field in early v5.x sprints.
+    title: raw.title ?? raw.name ?? undefined,
     phase: raw.phase,
     status: phaseToStatus(raw.phase ?? '', raw.status),
     startDate: raw.startDate ?? raw.startedAt ?? raw.createdAt,
@@ -57,12 +94,12 @@ function normalizeSprint(raw: any): Record<string, unknown> {
     budget: raw.budget,
     teamSize: raw.teamSize,
     successCriteria: raw.successCriteria ?? [],
-    auditFindings: raw.auditFindings ?? [],
+    auditFindings,
     items: (raw.items ?? []).map(normalizeItem),
-    // --- Fields the detail page renders but were previously dropped ---
-    testCountBefore: raw.testCountBefore ?? undefined,
-    testCountAfter: raw.testCountAfter ?? undefined,
-    testCountDelta: raw.testCountDelta ?? undefined,
+    // --- Fields the detail page renders ---
+    testCountBefore,
+    testCountAfter,
+    testCountDelta,
     totalCostUsd: raw.totalCostUsd ?? undefined,
     autonomous: raw.autonomous ?? undefined,
     theme: raw.theme ?? undefined,

@@ -124,42 +124,44 @@
    * Called after we learn the sessionId from the POST response so that
    * completion/failure workflow_events are still captured for long runs.
    *
-   * NOTE: The server sends named SSE events (`event: agent_activity`), which
-   * do NOT trigger the generic `onmessage` handler. Named events must be
-   * registered with addEventListener('agent_activity', ...). The data payload
-   * is a flat object { sessionId, agentId, content, timestamp } — not the
-   * { type, data } envelope that onmessage-style listeners would expect.
+   * The server sends plain unnamed SSE events (`data: {...}\n\n`) — no
+   * `event:` directive — so only `onmessage` fires. The envelope has shape:
+   *   { id, type, category, message, data: { sessionId, content, ... }, timestamp }
+   * We discriminate on `envelope.type` and read payload fields from `envelope.data`.
    */
   function wireSSE(es: EventSource, sessionId: string) {
-    es.addEventListener('agent_activity', (e) => {
+    es.onmessage = (e) => {
       try {
-        const data = JSON.parse(e.data) as Record<string, unknown>;
-        if (data['sessionId'] !== sessionId) return;
-        const chunk: string = (data['content'] as string | undefined) ?? (data['chunk'] as string | undefined) ?? '';
-        if (chunk) {
-          output += chunk;
-          requestAnimationFrame(scrollOutput);
-        }
-      } catch {
-        // ignore parse errors
-      }
-    });
+        const envelope = JSON.parse(e.data) as Record<string, unknown>;
+        const payload = (envelope['data'] as Record<string, unknown> | undefined) ?? {};
 
-    es.addEventListener('workflow_event', (e) => {
-      try {
-        const data = JSON.parse(e.data) as Record<string, unknown>;
-        if (data['sessionId'] !== sessionId) return;
-        const status = data['status'] as string | undefined;
-        if (status === 'completed' || status === 'failed') {
-          running = false;
-          syncHistoryStatus(sessionId, status as 'completed' | 'failed', data['costUsd'] as number | undefined);
-          es.close();
-          eventSource = null;
+        if (envelope['type'] === 'agent_activity') {
+          if (payload['sessionId'] !== sessionId) return;
+          const chunk: string =
+            (payload['content'] as string | undefined) ??
+            (payload['chunk'] as string | undefined) ?? '';
+          if (chunk) {
+            output += chunk;
+            requestAnimationFrame(scrollOutput);
+          }
+        } else if (envelope['type'] === 'workflow_event') {
+          if (payload['sessionId'] !== sessionId) return;
+          const status = payload['status'] as string | undefined;
+          if (status === 'completed' || status === 'failed') {
+            running = false;
+            syncHistoryStatus(
+              sessionId,
+              status as 'completed' | 'failed',
+              payload['costUsd'] as number | undefined,
+            );
+            es.close();
+            eventSource = null;
+          }
         }
       } catch {
         // ignore parse errors
       }
-    });
+    };
 
     es.onerror = () => {
       // Don't set running = false on SSE error — the run may still be going
@@ -198,20 +200,25 @@
     // By opening early and buffering, we capture every chunk regardless of
     // when the POST returns.
     if (eventSource) { eventSource.close(); eventSource = null; }
-    const es = new EventSource('/api/v1/stream');
+    // SSE endpoint is /api/v5/stream — the server sends plain unnamed events
+    // (`data: {...}\n\n`) so only `onmessage` fires, not named addEventListener.
+    const es = new EventSource('/api/v5/stream');
     eventSource = es;
 
-    // Buffer all agent_activity events until we resolve the sessionId.
-    // Named SSE events (event: agent_activity) require addEventListener, not onmessage.
-    // The server sends a flat payload { sessionId, agentId, content, timestamp }.
+    // Buffer agent_activity chunks arriving before the POST returns the sessionId.
+    // Envelope shape: { type, data: { sessionId, content, ... }, ... }
     const earlyBuffer: Array<{ sessionId: string; content: string }> = [];
     let resolvedSessionId: string | null = null;
 
-    es.addEventListener('agent_activity', (e) => {
+    es.onmessage = (e) => {
       try {
-        const data = JSON.parse(e.data) as Record<string, unknown>;
-        const content: string = (data['content'] as string | undefined) ?? (data['chunk'] as string | undefined) ?? '';
-        const sid: string = (data['sessionId'] as string | undefined) ?? '';
+        const envelope = JSON.parse(e.data) as Record<string, unknown>;
+        if (envelope['type'] !== 'agent_activity') return;
+        const payload = (envelope['data'] as Record<string, unknown> | undefined) ?? {};
+        const content: string =
+          (payload['content'] as string | undefined) ??
+          (payload['chunk'] as string | undefined) ?? '';
+        const sid: string = (payload['sessionId'] as string | undefined) ?? '';
         if (!content || !sid) return;
         if (resolvedSessionId === null) {
           // Still awaiting POST response — buffer for replay
@@ -221,7 +228,7 @@
           requestAnimationFrame(scrollOutput);
         }
       } catch { /* ignore parse errors */ }
-    });
+    };
     es.onerror = () => { /* SSE errors don't abort the run */ };
     // ─────────────────────────────────────────────────────────────────────────
 

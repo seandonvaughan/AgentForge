@@ -558,7 +558,9 @@
         {#if scoringResult.summary}
           <div class="card">
             <div class="card-header"><span class="card-title">Summary</span></div>
-            <p class="summary">{scoringResult.summary}</p>
+            <div class="summary">
+              <MarkdownRenderer content={scoringResult.summary} />
+            </div>
           </div>
         {/if}
         {#if scoringResult.warnings && scoringResult.warnings.length > 0}
@@ -586,7 +588,11 @@
                   {/if}
                 </div>
               </div>
-              {#if item.rationale}<p class="rank-rationale">{item.rationale}</p>{/if}
+              {#if item.rationale}
+                <div class="rank-rationale">
+                  <MarkdownRenderer content={item.rationale} />
+                </div>
+              {/if}
               {#if item.dependencies && item.dependencies.length > 0}
                 <div class="rank-meta">
                   <strong>deps:</strong> {item.dependencies.join(', ')}

@@ -47,6 +47,8 @@ export interface FlywheelMetric {
   label: string;
   score: number;
   description?: string;
+  /** Trend direction for meta_learning: derived from test pass-rate history. */
+  trend?: 'improving' | 'stable' | 'declining';
 }
 
 export interface FlywheelDebug {
@@ -201,6 +203,17 @@ function computeMetrics(projectRoot: string): FlywheelPayload {
   }
   const metaLearningScore = Math.max(0, Math.min(100, iterationBase + trendBonus + sessionConfidenceBonus));
 
+  // Derive a human-readable trend label — thresholds mirror dashboard-stubs.ts exactly.
+  // trendBonus >= +20 → ≥5% pass-rate gain (improving boundary)
+  // trendBonus <= -20 → ≥5% pass-rate loss (declining boundary)
+  // |trendBonus| < 20 → use sessionConfidenceBonus (±5 threshold = half its ±10 cap)
+  const metaTrend: 'improving' | 'stable' | 'declining' =
+    trendBonus >= 20 ? 'improving' :
+    trendBonus <= -20 ? 'declining' :
+    sessionConfidenceBonus > 5 ? 'improving' :
+    sessionConfidenceBonus < -5 ? 'declining' :
+    'stable';
+
   // ── 2. Autonomy Score ────────────────────────────────────────────────────────
   let autonomyScore = 0;
   if (meaningfulCycles.length > 0) {
@@ -244,10 +257,10 @@ function computeMetrics(projectRoot: string): FlywheelPayload {
     : null;
   const descriptions = {
     meta_learning: ratedCycles.length > 1
-      ? `${sprintCount} sprint iterations; pass-rate trend across ${ratedCycles.length} cycles`
+      ? `${sprintCount} sprint iterations; pass-rate ${metaTrend} across ${ratedCycles.length} cycles`
       : avgConf !== null
-        ? `${sprintCount} sprint iterations; session confidence avg ${avgConf}%`
-        : `${sprintCount} sprint iterations`,
+        ? `${sprintCount} sprint iterations; session confidence avg ${avgConf}% — ${metaTrend}`
+        : `${sprintCount} sprint iterations — ${metaTrend}`,
     autonomy: meaningfulCycles.length > 0
       ? `${completedCycles.length}/${meaningfulCycles.length} cycles; ${satisfiedSessions}/${sessions.length} sessions satisfied`
       : sessions.length > 0 ? `${satisfiedSessions}/${sessions.length} sessions satisfied` : 'No cycle data yet',
@@ -283,7 +296,7 @@ function computeMetrics(projectRoot: string): FlywheelPayload {
 
   return {
     metrics: [
-      { key: 'meta_learning', label: 'Meta-Learning', score: metaLearningScore, description: descriptions.meta_learning },
+      { key: 'meta_learning', label: 'Meta-Learning', score: metaLearningScore, description: descriptions.meta_learning, trend: metaTrend },
       { key: 'autonomy',      label: 'Autonomy',      score: autonomyScore,      description: descriptions.autonomy },
       { key: 'inheritance',   label: 'Inheritance',   score: inheritanceScore,   description: descriptions.inheritance },
       { key: 'velocity',      label: 'Velocity',      score: velocityScore,      description: descriptions.velocity },

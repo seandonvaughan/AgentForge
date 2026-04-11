@@ -210,21 +210,30 @@ export async function searchRoutes(
     // Completed cycles have a cycle.json with full metadata. In-progress cycles
     // only have sprint-link.json + events.jsonl — we fall back to those so that
     // active cycles are also discoverable via search.
+    //
+    // Both `cycles/` (active) and `cycles-archived/` (completed archive) are
+    // searched so that historical cycles remain findable after archival.
     if (includeAll || types.includes('cycle')) {
-      const cyclesDir = join(projectRoot, '.agentforge/cycles');
-      if (existsSync(cyclesDir)) {
-        for (const entry of readdirSync(cyclesDir, { withFileTypes: true })) {
-          if (!entry.isDirectory()) continue;
-          const cycleDir = join(cyclesDir, entry.name);
-          const cycleFile = join(cycleDir, 'cycle.json');
+      type CycleMeta = {
+        cycleId?: string;
+        stage?: string;
+        sprintVersion?: string;
+        startedAt?: string;
+        pr?: { url?: string | null; number?: number | null };
+      };
 
-          type CycleMeta = {
-            cycleId?: string;
-            stage?: string;
-            sprintVersion?: string;
-            startedAt?: string;
-            pr?: { url?: string | null; number?: number | null };
-          };
+      const cycleDirs: Array<[string, boolean]> = [
+        [join(projectRoot, '.agentforge/cycles'), false],
+        [join(projectRoot, '.agentforge/cycles-archived'), true],
+      ];
+
+      for (const [baseDir, isArchived] of cycleDirs) {
+        if (!existsSync(baseDir)) continue;
+
+        for (const entry of readdirSync(baseDir, { withFileTypes: true })) {
+          if (!entry.isDirectory()) continue;
+          const cycleDir = join(baseDir, entry.name);
+          const cycleFile = join(cycleDir, 'cycle.json');
 
           let meta: CycleMeta | null = null;
           let searchText = '';
@@ -271,6 +280,7 @@ export async function searchRoutes(
                 `Cycle: ${cycleId}`,
                 `Stage: ${meta.stage ?? 'unknown'}`,
                 meta.sprintVersion ? `Sprint: ${meta.sprintVersion}` : '',
+                isArchived ? '(archived)' : '',
               ].filter(Boolean).join('\n'),
               score,
               type: 'cycle',
@@ -281,6 +291,7 @@ export async function searchRoutes(
                 startedAt: meta.startedAt,
                 prUrl: meta.pr?.url ?? null,
                 prNumber: meta.pr?.number ?? null,
+                isArchived,
               },
             });
           }

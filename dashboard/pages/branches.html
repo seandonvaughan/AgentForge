@@ -98,14 +98,14 @@
    * canonical shape expected by the render functions.
    *
    * API shape (branches.ts):
-   *   { name, cycle, sha, createdAt, age, ageMs, status, pr: { number, title, state } | null }
+   *   { name, cycle, sha, createdAt, age, ageMs, status, pr: { number, title, state, url } | null }
    *
    * Canonical shape used by the UI:
    *   { name, cycle, sha, createdAt, age, ageMs, status (hyphen-form), pr }
    *
    * Key transformations:
    *   - status:  'open_pr' → 'open-pr'   (server uses underscore, UI uses hyphen)
-   *   - pr:      kept as-is nested object { number, title, state }
+   *   - pr:      kept as-is nested object { number, title, state, url }
    */
   function normaliseBranch(b) {
     return {
@@ -163,11 +163,11 @@
    * Build the PR link (or a dash placeholder) for a branch.
    *
    * The /api/v1/branches response provides a nested pr object:
-   *   { number: number, title: string, state: 'OPEN' | 'CLOSED' | 'MERGED' }
+   *   { number: number, title: string, state: 'OPEN' | 'CLOSED' | 'MERGED', url: string | null }
    *
-   * We construct the GitHub URL from the PR number since the API does not
-   * return a direct URL. The repo slug is inferred from the git remote when
-   * available; otherwise we link to a GitHub PR search.
+   * When the API returns a direct GitHub URL (pr.url) we use it as-is.
+   * If url is absent we fall back to a GitHub PR number search so that
+   * the link remains functional even when the gh CLI could not resolve a URL.
    */
   function makePrNode(b) {
     var pr = b.pr;
@@ -187,11 +187,14 @@
     a.style.cssText = 'color:' + stateColor + ';font-family:var(--font-mono);font-size:11px;' +
                       'text-decoration:none;font-weight:600';
 
-    // Build a GitHub PR search URL using the PR number. A direct /pull/<n> link
-    // would require knowing the repo owner/name which is not in the API response.
-    // A search for the exact PR number is reliable and does not require configuration.
-    a.href = 'https://github.com/pulls?q=is%3Apr+' + encodeURIComponent(b.cycle) +
-             '+%23' + pr.number;
+    // Prefer the direct URL returned by the API (pr.url) — it points straight to
+    // the correct pull request page.  Fall back to a GitHub search query when the
+    // URL is absent (e.g. gh CLI not authenticated or older response shape).
+    if (pr.url) {
+      a.href = pr.url;
+    } else {
+      a.href = 'https://github.com/pulls?q=is%3Apr+%23' + pr.number;
+    }
     return a;
   }
 

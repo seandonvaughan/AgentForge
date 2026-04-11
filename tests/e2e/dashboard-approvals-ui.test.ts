@@ -22,7 +22,7 @@ test.describe('Approvals Dashboard Page', () => {
 
   test('renders header with title and filter', async ({ page }) => {
     await page.goto('/approvals');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
 
     // Verify page title exists
     const heading = page.locator('h1, h2').filter({ hasText: /Approvals/i });
@@ -36,7 +36,7 @@ test.describe('Approvals Dashboard Page', () => {
 
   test('renders stats bar with pending/approved/denied pills', async ({ page }) => {
     await page.goto('/approvals');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
 
     // Verify stats bar exists with all three sections
     const pendingPill = page.locator('.stat-pill.pending');
@@ -54,7 +54,7 @@ test.describe('Approvals Dashboard Page', () => {
 
   test('displays mock approvals when API is unavailable', async ({ page }) => {
     await page.goto('/approvals');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
 
     // Either shows approval list or empty state
     const approvalList = page.locator('.approval-list');
@@ -71,7 +71,7 @@ test.describe('Approvals Dashboard Page', () => {
 
   test('approval cards display required fields', async ({ page }) => {
     await page.goto('/approvals');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
 
     const firstCard = page.locator('.approval-card').first();
     const isCardVisible = await firstCard.isVisible().catch(() => false);
@@ -86,7 +86,7 @@ test.describe('Approvals Dashboard Page', () => {
 
   test('status filter changes view', async ({ page }) => {
     await page.goto('/approvals');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
 
     const filterSelect = page.locator('select.filter-select');
 
@@ -111,7 +111,7 @@ test.describe('Approvals Dashboard Page', () => {
 
   test('refresh button exists and responds', async ({ page }) => {
     await page.goto('/approvals');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
 
     // Find refresh button
     const refreshBtn = page.locator('button').filter({ hasText: /Refresh|Loading/i }).first();
@@ -131,7 +131,7 @@ test.describe('Approvals Dashboard Page', () => {
 
   test('approval card buttons are present for pending items', async ({ page }) => {
     await page.goto('/approvals');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
 
     // Look for any Approve or Deny buttons
     const approveBtns = page.locator('button.btn-approve');
@@ -150,7 +150,7 @@ test.describe('Approvals Dashboard Page', () => {
     // Test mobile view
     await page.setViewportSize({ width: 375, height: 667 });
     await page.goto('/approvals');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
 
     let content = page.locator('body');
     expect(await content.isVisible()).toBe(true);
@@ -165,7 +165,7 @@ test.describe('Approvals Dashboard Page', () => {
 
   test('auto-refresh indicator is visible', async ({ page }) => {
     await page.goto('/approvals');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
 
     // Look for auto-refresh label or dot
     const refreshLabel = page.locator('text=Auto-refresh');

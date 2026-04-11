@@ -350,6 +350,86 @@ describe('POST /api/v5/search', () => {
     expect(body.data[0]!.id).toBe('agent:search-specialist');
   });
 
+  it('finds cycles in cycles-archived directory', async () => {
+    const projectRoot = makeTmpRoot();
+    const cycleId = 'archived-cycle-abc888';
+    const cycleDir = join(projectRoot, '.agentforge', 'cycles-archived', cycleId);
+    mkdirSync(cycleDir, { recursive: true });
+
+    writeFileSync(join(cycleDir, 'cycle.json'), JSON.stringify({
+      cycleId,
+      stage: 'completed',
+      sprintVersion: '7.2.0',
+      startedAt: '2026-03-01T00:00:00Z',
+      pr: { url: 'https://github.com/org/repo/pull/99', number: 99 },
+    }));
+
+    const { app } = await createServerV5({ listen: false, projectRoot });
+    createdApps.push(app);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v5/search',
+      payload: { query: 'archived', limit: 20 },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<SearchResponse>();
+    const cycleResults = body.data.filter(r => r.type === 'cycle');
+    expect(cycleResults.length).toBeGreaterThanOrEqual(1);
+    // The archived cycle should be found and flagged
+    const found = cycleResults.find(r => r.id === `cycle:${cycleId}`);
+    expect(found).toBeDefined();
+    expect(found?.metadata?.isArchived).toBe(true);
+    expect(found?.metadata?.prNumber).toBe(99);
+  });
+
+  it('finds cycles across both active and archived directories', async () => {
+    const projectRoot = makeTmpRoot();
+
+    // Active cycle — uses a distinctive sprint name so the query is unambiguous
+    const activeCycleId = 'active-cycle-111';
+    const activeDir = join(projectRoot, '.agentforge', 'cycles', activeCycleId);
+    mkdirSync(activeDir, { recursive: true });
+    writeFileSync(join(activeDir, 'cycle.json'), JSON.stringify({
+      cycleId: activeCycleId,
+      stage: 'completed',
+      sprintVersion: 'fluxcapacitor',
+    }));
+
+    // Archived cycle — same distinctive sprint name so both match the query
+    const archivedCycleId = 'archived-cycle-222';
+    const archivedDir = join(projectRoot, '.agentforge', 'cycles-archived', archivedCycleId);
+    mkdirSync(archivedDir, { recursive: true });
+    writeFileSync(join(archivedDir, 'cycle.json'), JSON.stringify({
+      cycleId: archivedCycleId,
+      stage: 'completed',
+      sprintVersion: 'fluxcapacitor',
+    }));
+
+    const { app } = await createServerV5({ listen: false, projectRoot });
+    createdApps.push(app);
+
+    // Both cycles share sprintVersion "fluxcapacitor" — both should appear
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v5/search',
+      payload: { query: 'fluxcapacitor', limit: 20 },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<SearchResponse>();
+    const cycleResults = body.data.filter(r => r.type === 'cycle');
+    expect(cycleResults.length).toBe(2);
+    const ids = cycleResults.map(r => r.id);
+    expect(ids).toContain(`cycle:${activeCycleId}`);
+    expect(ids).toContain(`cycle:${archivedCycleId}`);
+    // Active cycle should not have isArchived flag
+    const active = cycleResults.find(r => r.id === `cycle:${activeCycleId}`);
+    expect(active?.metadata?.isArchived).toBe(false);
+    // Archived cycle should be flagged
+    const archived = cycleResults.find(r => r.id === `cycle:${archivedCycleId}`);
+    expect(archived?.metadata?.isArchived).toBe(true);
+  });
+
   it('respects the limit parameter', async () => {
     const projectRoot = makeTmpRoot();
     const agentsDir = join(projectRoot, '.agentforge', 'agents');

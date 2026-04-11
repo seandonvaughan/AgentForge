@@ -65,7 +65,7 @@ test.describe('Approvals Dashboard UI E2E', () => {
     // Set up the test environment
     // Clear any existing state or set up test fixtures if needed
     await page.goto('/approvals');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
   });
 
   /**
@@ -127,7 +127,7 @@ test.describe('Approvals Dashboard UI E2E', () => {
 
     // Click refresh
     await refreshButton.click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
 
     // Should still be on the page
     await expect(refreshButton).toBeVisible();
@@ -155,7 +155,7 @@ test.describe('Approvals Dashboard UI E2E', () => {
 
     // Reload page or wait for auto-refresh
     await page.reload();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
 
     // Wait a moment for the approval to appear (5s poll interval)
     await page.waitForTimeout(500);
@@ -201,7 +201,7 @@ test.describe('Approvals Dashboard UI E2E', () => {
     });
 
     await page.reload();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
     await page.waitForTimeout(500);
 
     const approvalCard = page.locator(`.approval-card`).filter({
@@ -247,7 +247,7 @@ test.describe('Approvals Dashboard UI E2E', () => {
 
     // Navigate to approvals and wait for page load
     await page.goto('/approvals');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
 
     // Wait for auto-refresh to catch the new approval
     await page.waitForTimeout(1000);
@@ -263,7 +263,7 @@ test.describe('Approvals Dashboard UI E2E', () => {
     await approveButton.click();
 
     // Wait for the request to complete
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
     await page.waitForTimeout(500);
 
     // After approval, button should be disabled and status badge should appear
@@ -304,7 +304,7 @@ test.describe('Approvals Dashboard UI E2E', () => {
     });
 
     await page.goto('/approvals');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
     await page.waitForTimeout(1000);
 
     const approvalCard = page.locator(`.approval-card`).filter({
@@ -317,7 +317,7 @@ test.describe('Approvals Dashboard UI E2E', () => {
     await denyButton.click();
 
     // Wait for request to complete
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
     await page.waitForTimeout(500);
 
     // Verify status badge shows 'denied'
@@ -351,7 +351,7 @@ test.describe('Approvals Dashboard UI E2E', () => {
     });
 
     await page.goto('/approvals');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
     await page.waitForTimeout(500);
 
     const approvalCard = page.locator(`.approval-card`).filter({
@@ -361,7 +361,7 @@ test.describe('Approvals Dashboard UI E2E', () => {
     // Approve it
     const approveButton = approvalCard.locator('button:has-text("Approve")');
     await approveButton.click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
     await page.waitForTimeout(500);
 
     // Verify it shows as approved
@@ -370,7 +370,7 @@ test.describe('Approvals Dashboard UI E2E', () => {
 
     // Reload the page
     await page.reload();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
 
     // Find the card again
     const reloadedCard = page.locator(`.approval-card`).filter({
@@ -400,7 +400,7 @@ test.describe('Approvals Dashboard UI E2E', () => {
     });
 
     await page.goto('/approvals');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
     await page.waitForTimeout(500);
 
     const approvalCard = page.locator(`.approval-card`).filter({
@@ -410,7 +410,7 @@ test.describe('Approvals Dashboard UI E2E', () => {
     // Approve once
     const approveButton = approvalCard.locator('button:has-text("Approve")');
     await approveButton.click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
     await page.waitForTimeout(500);
 
     // Try to approve again via API (since UI hides buttons after approval)
@@ -447,7 +447,7 @@ test.describe('Approvals Dashboard UI E2E', () => {
     });
 
     await page.goto('/approvals');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
     await page.waitForTimeout(1000);
 
     // Find both cards
@@ -460,12 +460,12 @@ test.describe('Approvals Dashboard UI E2E', () => {
 
     // Approve item 1
     await card1.locator('button:has-text("Approve")').click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
     await page.waitForTimeout(500);
 
     // Deny item 2
     await card2.locator('button:has-text("Deny")').click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
     await page.waitForTimeout(500);
 
     // Verify item 1 shows approved
@@ -490,7 +490,7 @@ test.describe('Approvals Dashboard UI E2E', () => {
     });
 
     await page.goto('/approvals');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
 
     // Verify initial approval is visible
     const card1 = page.locator(`.approval-card`).filter({
@@ -515,7 +515,7 @@ test.describe('Approvals Dashboard UI E2E', () => {
     // Manually trigger refresh to ensure it appears
     const refreshButton = page.locator('button:has-text("Refresh")');
     await refreshButton.click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
 
     await expect(card2).toBeVisible();
   });
@@ -542,7 +542,7 @@ test.describe('Approvals Dashboard UI E2E', () => {
 
     // Approve via UI
     await page.goto('/approvals');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
     await page.waitForTimeout(500);
 
     const approvalCard = page.locator(`.approval-card`).filter({
@@ -550,7 +550,7 @@ test.describe('Approvals Dashboard UI E2E', () => {
     });
 
     await approvalCard.locator('button:has-text("Approve")').click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
     await page.waitForTimeout(500);
 
     // Verify the decision was recorded in the API (which would also write to disk)

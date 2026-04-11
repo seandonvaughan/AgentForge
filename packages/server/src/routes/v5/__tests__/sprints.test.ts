@@ -165,6 +165,26 @@ describe('GET /api/v5/sprints', () => {
     expect(item.description).toBe('Fix schema parsing');
     expect(item.assignee).toBe('api-specialist');
   });
+
+  it('preserves auditFindings and successCriteria fields in list response', async () => {
+    const root = setup();
+    writeFileSync(join(root, '.agentforge/sprints/v6.3.json'), JSON.stringify({
+      version: '6.3',
+      name: 'v6.3',
+      phase: 'completed',
+      items: [],
+      successCriteria: ['All tests pass'],
+      auditFindings: ['One stale route removed'],
+    }));
+    app = await buildApp(root);
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/sprints' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    const sprint = body.data[0];
+    expect(sprint.successCriteria).toEqual(['All tests pass']);
+    expect(sprint.auditFindings).toEqual(['One stale route removed']);
+  });
 });
 
 describe('GET /api/v5/sprints/:version', () => {
@@ -234,6 +254,56 @@ describe('GET /api/v5/sprints/:version', () => {
     expect(body.data.version).toBe('6.0');
     expect(body.data.successCriteria).toEqual(['API works']);
     expect(body.data.auditFindings).toEqual(['No live execution path']);
+  });
+
+  it('preserves explicitly empty auditFindings array without fallback', async () => {
+    // Regression guard for the auditFindings falsy-override bug (MAJOR in v10.4.0 review):
+    // When auditFindings is explicitly [] the .length === 0 is falsy — any conditional that
+    // checks `raw.auditFindings?.length ? ... : fallback` would silently swap it for a
+    // fallback value. The current code uses direct assignment, but this test pins that
+    // behaviour so it cannot silently regress.
+    const root = setup();
+    writeFileSync(join(root, '.agentforge/sprints/v6.1.json'), JSON.stringify({
+      sprints: [{
+        version: '6.1',
+        title: 'v6.1 - Empty Findings',
+        phase: 'completed',
+        items: [],
+        successCriteria: ['Criteria A'],
+        auditFindings: [],          // explicitly empty — must survive normalisation
+      }],
+    }));
+    app = await buildApp(root);
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/sprints/6.1' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    // Must return an empty array, not undefined and not a fallback value
+    expect(Array.isArray(body.data.auditFindings)).toBe(true);
+    expect(body.data.auditFindings).toHaveLength(0);
+    // successCriteria should be unaffected
+    expect(body.data.successCriteria).toEqual(['Criteria A']);
+  });
+
+  it('returns undefined auditFindings when field is absent from sprint', async () => {
+    const root = setup();
+    writeFileSync(join(root, '.agentforge/sprints/v6.2.json'), JSON.stringify({
+      sprints: [{
+        version: '6.2',
+        title: 'v6.2 - No Findings Field',
+        phase: 'completed',
+        items: [],
+        successCriteria: ['Criteria A'],
+        // auditFindings intentionally absent
+      }],
+    }));
+    app = await buildApp(root);
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/sprints/6.2' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    // Field absent in source → undefined in response (not an empty array, not a string)
+    expect(body.data.auditFindings).toBeUndefined();
   });
 
   it('normalizes dates from startedAt/completedAt fields', async () => {

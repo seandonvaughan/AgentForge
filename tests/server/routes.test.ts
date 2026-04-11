@@ -3,7 +3,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createServer } from '../../src/server/server.js';
@@ -293,6 +293,116 @@ describe('REST API Routes', () => {
       expect(body.data.agentId).toBe('target-bot');
       expect(body.data.sessionCount).toBe(2);
       expect(body.data.recentSessions.length).toBe(2);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /api/v1/agents — YAML-backed agent listing
+  // Verifies that agents defined in .agentforge/agents/*.yaml appear in the
+  // listing even when they have zero sessions.
+  // -------------------------------------------------------------------------
+
+  describe('GET /api/v1/agents — YAML-backed listing', () => {
+    function writeAgentYaml(agentId: string, content: string) {
+      writeFileSync(join(tmpRoot, '.agentforge', 'agents', `${agentId}.yaml`), content, 'utf-8');
+    }
+
+    it('returns YAML-defined agents with zero sessions', async () => {
+      writeAgentYaml('lead-architect', [
+        'name: Lead Architect',
+        'model: opus',
+        'description: >',
+        '  Cross-team technical design authority.',
+      ].join('\n'));
+
+      const res = await app.inject({ method: 'GET', url: '/api/v1/agents' });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+
+      const agent = body.data.find((a: { agentId: string }) => a.agentId === 'lead-architect');
+      expect(agent).toBeDefined();
+      expect(agent.name).toBe('Lead Architect');
+      expect(agent.model).toBe('opus');
+      expect(agent.sessionCount).toBe(0);
+    });
+
+    it('returns multiple YAML-defined agents sorted alphabetically', async () => {
+      writeAgentYaml('sprint-planner', 'name: Sprint Planner\nmodel: sonnet\n');
+      writeAgentYaml('cto-assistant', 'name: CTO Assistant\nmodel: haiku\n');
+
+      const res = await app.inject({ method: 'GET', url: '/api/v1/agents' });
+      const body = res.json();
+      const ids = body.data.map((a: { agentId: string }) => a.agentId);
+      expect(ids).toContain('sprint-planner');
+      expect(ids).toContain('cto-assistant');
+      // Alphabetical order: cto-assistant before sprint-planner
+      expect(ids.indexOf('cto-assistant')).toBeLessThan(ids.indexOf('sprint-planner'));
+    });
+
+    it('merges session stats into YAML-defined agents', async () => {
+      writeAgentYaml('qa-agent', 'name: QA Agent\nmodel: sonnet\n');
+      adapter.insertSession(makeSession({ agent_id: 'qa-agent', status: 'completed' }));
+      adapter.insertSession(makeSession({ agent_id: 'qa-agent', status: 'failed' }));
+
+      const res = await app.inject({ method: 'GET', url: '/api/v1/agents' });
+      const body = res.json();
+      const agent = body.data.find((a: { agentId: string }) => a.agentId === 'qa-agent');
+      expect(agent).toBeDefined();
+      expect(agent.name).toBe('QA Agent');
+      expect(agent.sessionCount).toBe(2);
+      expect(agent.successCount).toBe(1);
+      expect(agent.failureCount).toBe(1);
+    });
+
+    it('normalises unknown model strings to sonnet', async () => {
+      writeAgentYaml('weird-agent', 'name: Weird Agent\nmodel: gpt-4\n');
+
+      const res = await app.inject({ method: 'GET', url: '/api/v1/agents' });
+      const body = res.json();
+      const agent = body.data.find((a: { agentId: string }) => a.agentId === 'weird-agent');
+      expect(agent).toBeDefined();
+      expect(agent.model).toBe('sonnet');
+    });
+
+    it('skips malformed YAML files silently', async () => {
+      writeAgentYaml('good-agent', 'name: Good Agent\nmodel: haiku\n');
+      writeAgentYaml('broken-agent', 'BROKEN: [unclosed');
+
+      const res = await app.inject({ method: 'GET', url: '/api/v1/agents' });
+      const body = res.json();
+      const ids = body.data.map((a: { agentId: string }) => a.agentId);
+      expect(ids).toContain('good-agent');
+      expect(ids).not.toContain('broken-agent');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /api/v5/agents — v5 alias mirrors v1 listing
+  // -------------------------------------------------------------------------
+
+  describe('GET /api/v5/agents', () => {
+    it('returns same shape as /api/v1/agents', async () => {
+      writeFileSync(
+        join(tmpRoot, '.agentforge', 'agents', 'ceo.yaml'),
+        'name: CEO\nmodel: opus\ndescription: Chief Executive Officer\n',
+        'utf-8',
+      );
+
+      const [v1Res, v5Res] = await Promise.all([
+        app.inject({ method: 'GET', url: '/api/v1/agents' }),
+        app.inject({ method: 'GET', url: '/api/v5/agents' }),
+      ]);
+
+      expect(v5Res.statusCode).toBe(200);
+      const v1Body = v1Res.json();
+      const v5Body = v5Res.json();
+      expect(v5Body.data.length).toBe(v1Body.data.length);
+      expect(v5Body.meta.total).toBe(v1Body.meta.total);
+
+      const v5Agent = v5Body.data.find((a: { agentId: string }) => a.agentId === 'ceo');
+      expect(v5Agent).toBeDefined();
+      expect(v5Agent.name).toBe('CEO');
+      expect(v5Agent.model).toBe('opus');
     });
   });
 

@@ -45,12 +45,26 @@ interface GateVerdict {
  * Extract finding lines from the code-review markdown output.
  * Lines that contain a severity keyword (CRITICAL / MAJOR) are collected and
  * returned so the gate-verdict memory entry can surface them to future audits.
+ *
+ * The pattern is intentionally anchored to the start of the line (after
+ * optional bullet decoration) to prevent false positives from narrative prose
+ * that happens to contain the severity word mid-sentence (e.g. "this is not a
+ * critical path change" or "No major concerns here"). Only structured finding
+ * lines like "- CRITICAL: …", "MAJOR: …", or "- [CRITICAL] …" are matched.
  */
 export function extractFindingsByLevel(
   reviewText: string,
   level: 'CRITICAL' | 'MAJOR',
 ): string[] {
-  const pattern = new RegExp(level, 'i');
+  // Match lines where the severity keyword:
+  //   a) appears at the start (with optional leading bullet/whitespace), or
+  //   b) appears in bracket notation [CRITICAL] / [MAJOR] anywhere on the line.
+  // This avoids matching mid-sentence occurrences such as "no major concerns"
+  // or "this is not a critical path change".
+  const pattern = new RegExp(
+    `^[-*\\s]*${level}[\\s:\\[\\]]|\\[${level}\\]`,
+    'i',
+  );
   return reviewText
     .split('\n')
     .map((l) => l.trim())

@@ -95,16 +95,20 @@ test.describe('Audit Log (Runs) Page', () => {
   test('displays run pagination or load more', async ({ page }) => {
     await page.goto('/runs');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load').catch(() => {});
 
     // Look for pagination controls
-    const pagination = page.locator('[class*="pagina"], [aria-label*="page" i], button:has-text(/next|prev|load more/i)').first();
+    const paginationClass = page.locator('[class*="pagina"]').first();
+    const paginationAriaLabel = page.locator('[aria-label*="page" i]').first();
+    const paginationButton = page.locator('button').filter({ hasText: /next|prev|load more/i }).first();
     const pageInfo = page.locator('text=/page|of|showing|results/i').first();
 
-    const hasPagination = await pagination.isVisible().catch(() => false);
+    const hasPaginationClass = await paginationClass.isVisible().catch(() => false);
+    const hasPaginationAriaLabel = await paginationAriaLabel.isVisible().catch(() => false);
+    const hasPaginationButton = await paginationButton.isVisible().catch(() => false);
     const hasPageInfo = await pageInfo.isVisible().catch(() => false);
 
-    expect(hasPagination || hasPageInfo).toBeTruthy();
+    expect(hasPaginationClass || hasPaginationAriaLabel || hasPaginationButton || hasPageInfo).toBeTruthy();
   });
 
   test('audit log page handles loading and empty states', async ({ page }) => {

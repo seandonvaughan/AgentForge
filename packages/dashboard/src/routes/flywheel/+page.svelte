@@ -3,52 +3,19 @@
   import Gauge from '$lib/components/Gauge.svelte';
   import { withWorkspace } from '$lib/stores/workspace';
   import type { PageData } from './$types';
+  // Import shared types from the server load so they stay in sync automatically.
+  // Using `import type` ensures these are erased at runtime (no server-module leakage).
+  import type {
+    FlywheelMetric,
+    FlywheelDebug,
+    CycleEntryPoint,
+    MemoryStats,
+    CycleHistoryPoint,
+  } from './+page.server';
 
   export let data: PageData;
 
-  interface FlywheelMetric {
-    key: string;
-    label: string;
-    score: number; // 0-100
-    description?: string;
-  }
-
-  interface FlywheelDebug {
-    cycleCount: number;
-    meaningfulCycleCount: number;
-    completedCycleCount: number;
-    sprintCount: number;
-    agentCount: number;
-    totalItems: number;
-    completedItems: number;
-    sessionCount?: number;
-    satisfiedSessionCount?: number;
-  }
-
-  interface CycleEntryPoint {
-    cycleId: string;
-    count: number;
-    startedAt: string;
-  }
-
-  interface MemoryStats {
-    totalEntries: number;
-    entriesPerCycleTrend: CycleEntryPoint[];
-    hitRate: number;
-  }
-
-  interface CycleHistoryPoint {
-    cycleId: string;
-    sprintVersion: string | null;
-    startedAt: string;
-    stage: string;
-    testPassRate: number | null;
-    testsTotal: number | null;
-    costUsd: number | null;
-    durationMs: number | null;
-    hasPr: boolean;
-  }
-
+  /** Component-local composed state shape (not exported from the server load). */
   interface FlywheelData {
     metrics: FlywheelMetric[];
     updatedAt?: string;
@@ -65,11 +32,14 @@
     { key: 'velocity', label: 'Velocity', score: 0 },
   ];
 
+  // Colors map to CSS custom properties so they respect the active theme.
+  // Using getComputedStyle at render time lets SVG gauges pick up the
+  // resolved value while the string 'var(--…)' is safe for inline styles.
   const METRIC_COLORS: Record<string, string> = {
-    meta_learning: '#f5c842',
-    autonomy: '#4a9eff',
-    inheritance: '#4caf82',
-    velocity: '#f5a623',
+    meta_learning: 'var(--color-opus)',
+    autonomy: 'var(--color-info)',
+    inheritance: 'var(--color-success)',
+    velocity: 'var(--color-warning)',
   };
 
   // ── State ──────────────────────────────────────────────────────────────────
@@ -256,12 +226,12 @@
     const secs = Math.round((ms % 60000) / 1000);
     return `${mins}m ${secs}s`;
   }
-  // Map stage to a colour class
+  // Map stage to a CSS variable so trajectory bars respect theme overrides.
   function stageColor(stage: string): string {
-    if (stage === 'completed') return '#4caf82';
-    if (stage === 'running')   return '#4a9eff';
-    if (stage === 'failed')    return '#f06060';
-    return '#6b7280';
+    if (stage === 'completed') return 'var(--color-success)';
+    if (stage === 'running')   return 'var(--color-info)';
+    if (stage === 'failed')    return 'var(--color-danger)';
+    return 'var(--color-text-muted)';
   }
 </script>
 
@@ -317,12 +287,26 @@
       </div>
     {/each}
   </div>
-{:else if error}
+{:else if error && !hasPrevData}
+  <!-- Full-page error only when we have no SSR or previous API data at all.
+       When hasPrevData is true the SSR-rendered content stays visible and the
+       refresh failure is shown as a non-blocking banner inside the {:else} block. -->
   <div class="empty-state">
     <p>Failed to load flywheel data: <code>{error}</code></p>
     <button class="btn btn-ghost btn-sm" style="margin-top: var(--space-3)" onclick={manualRefresh}>Retry</button>
   </div>
 {:else}
+  <!-- ── Non-blocking refresh error banner ──────────────────────────────────
+       Shows when a background API poll fails but SSR data is still valid.
+       The memory card and all other content remain visible underneath. -->
+  {#if error && hasPrevData}
+    <div class="refresh-error-banner" role="alert">
+      <span class="refresh-error-icon">⚠</span>
+      <span class="refresh-error-msg">Live refresh failed — showing last known data.</span>
+      <button class="btn btn-ghost btn-sm refresh-error-retry" onclick={manualRefresh}>Retry</button>
+    </div>
+  {/if}
+
   <!-- ── Metric Gauges ──────────────────────────────────────────────────────── -->
   <div class="gauges-grid">
     {#each displayMetrics as metric (metric.key)}
@@ -337,6 +321,15 @@
         {#if hasPrevData && trend !== 'flat'}
           <div class="trend-badge" class:trend-up={trend === 'up'} class:trend-down={trend === 'down'}>
             {trend === 'up' ? '▲' : '▼'} {Math.abs(delta)}pt
+          </div>
+        {/if}
+        {#if metric.trend}
+          <!-- Persistent trend direction derived from multi-cycle pass-rate history,
+               distinct from the score-delta badge which only tracks cross-refresh changes. -->
+          <div class="meta-trend-pill meta-trend-pill--{metric.trend}"
+               title="Based on test pass-rate history across cycles">
+            {metric.trend === 'improving' ? '↑' : metric.trend === 'declining' ? '↓' : '→'}
+            {metric.trend}
           </div>
         {/if}
         {#if metric.description}
@@ -385,14 +378,14 @@
         <!-- Total entries -->
         <div class="stat-row">
           <dt class="stat-label">Total entries</dt>
-          <dd class="stat-value mem-total">{memStats.totalEntries}</dd>
+          <dd class="stat-value mem-total" data-testid="mem-total">{memStats.totalEntries}</dd>
           <dd class="stat-sub">across all cycles</dd>
         </div>
 
         <!-- Hit rate -->
         <div class="stat-row">
           <dt class="stat-label">Memory hit rate</dt>
-          <dd class="stat-value mem-hitrate mem-hitrate--{memHealthLevel}">
+          <dd class="stat-value mem-hitrate mem-hitrate--{memHealthLevel}" data-testid="mem-hitrate">
             {memHitPct}%
           </dd>
           <dd class="stat-sub">{memHitSubtext}</dd>
@@ -576,7 +569,7 @@
     line-height: 1.5;
   }
 
-  /* ── Trend badge ──────────────────────────────────────────────────────────── */
+  /* ── Score-delta trend badge (▲/▼ Npt — shows cross-refresh change) ─────── */
   .trend-badge {
     font-size: 10px;
     font-family: var(--font-mono);
@@ -586,12 +579,38 @@
     letter-spacing: 0.04em;
   }
   .trend-up {
-    background: color-mix(in srgb, #4caf82 15%, transparent);
-    color: #4caf82;
+    background: color-mix(in srgb, var(--color-success) 15%, transparent);
+    color: var(--color-success);
   }
   .trend-down {
-    background: color-mix(in srgb, #f5a623 15%, transparent);
-    color: #f5a623;
+    background: color-mix(in srgb, var(--color-warning) 15%, transparent);
+    color: var(--color-warning);
+  }
+
+  /* ── Meta-trend pill (↑/→/↓ improving/stable/declining — multi-cycle signal) */
+  /* Visually distinct from score-delta badge: lowercase text, lighter weight,
+     softer colors so operators don't confuse "meta_learning is improving" with
+     "score went up since last page refresh". */
+  .meta-trend-pill {
+    font-size: 10px;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 99px;
+    letter-spacing: 0.03em;
+    border: 1px solid currentColor;
+    opacity: 0.75;
+  }
+  .meta-trend-pill--improving {
+    color: var(--color-success);
+    background: color-mix(in srgb, var(--color-success) 10%, transparent);
+  }
+  .meta-trend-pill--stable {
+    color: var(--color-text-muted);
+    background: color-mix(in srgb, var(--color-text-muted) 10%, transparent);
+  }
+  .meta-trend-pill--declining {
+    color: var(--color-danger);
+    background: color-mix(in srgb, var(--color-danger) 10%, transparent);
   }
 
   /* ── Overall score badge ─────────────────────────────────────────────────── */
@@ -672,6 +691,34 @@
     color: var(--color-brand);
   }
 
+  /* ── Non-blocking refresh error banner ──────────────────────────────────── */
+  /* Shown when a background API poll fails but SSR data is still visible.
+     Deliberately subtle — a stale-data warning, not a page-level failure. */
+  .refresh-error-banner {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    background: color-mix(in srgb, var(--color-warning) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-warning) 35%, transparent);
+    border-radius: var(--radius-md);
+    padding: var(--space-2) var(--space-4);
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    margin-bottom: var(--space-4);
+  }
+  .refresh-error-icon {
+    flex-shrink: 0;
+    color: var(--color-warning);
+  }
+  .refresh-error-msg {
+    flex: 1;
+  }
+  .refresh-error-retry {
+    flex-shrink: 0;
+    font-size: var(--text-xs);
+    padding: 2px 8px;
+  }
+
   /* ── Updated-at footer ───────────────────────────────────────────────────── */
   .updated-at {
     font-size: var(--text-xs);
@@ -746,20 +793,20 @@
     border: 1px solid currentColor;
     text-transform: uppercase;
   }
-  .mem-badge--active  { color: #4caf82; }
-  .mem-badge--partial { color: #f5c842; }
-  .mem-badge--weak    { color: #f5a623; }
+  .mem-badge--active  { color: var(--color-success); }
+  .mem-badge--partial { color: var(--color-opus); }
+  .mem-badge--weak    { color: var(--color-warning); }
   .mem-badge--none    { color: var(--color-text-faint); }
 
   /* ── Total entries ────────────────────────────────────────────────────────── */
   .mem-total {
-    color: var(--color-brand, #4a9eff);
+    color: var(--color-brand);
   }
 
   /* ── Hit rate color tiers ─────────────────────────────────────────────────── */
-  .mem-hitrate--active  { color: #4caf82; }
-  .mem-hitrate--partial { color: #f5c842; }
-  .mem-hitrate--weak    { color: #f5a623; }
+  .mem-hitrate--active  { color: var(--color-success); }
+  .mem-hitrate--partial { color: var(--color-opus); }
+  .mem-hitrate--weak    { color: var(--color-warning); }
   .mem-hitrate--none    { color: var(--color-text-muted); }
 
   /* ── Sparkline ────────────────────────────────────────────────────────────── */

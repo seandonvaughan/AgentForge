@@ -1,5 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import type { PageData } from './$types';
+  import type { OrgNodeData, OrgEdgeData } from './+page.server';
+
+  let { data }: { data: PageData } = $props();
 
   interface OrgNode { id: string; label: string; model?: 'opus' | 'sonnet' | 'haiku'; }
   interface OrgEdge { from: string; to: string; }
@@ -11,14 +15,37 @@
     cycleRefs?: string[];
   }
 
-  let roots: TreeNode[] = $state([]);
-  let orphans: TreeNode[] = $state([]);  // agents not in any delegation edge
-  let loading = $state(true);
+  // Server-provided initial data (populated by +page.server.ts from the filesystem).
+  // Falls back to empty arrays when the server file is not active (pure SPA mode).
+  const serverNodes: OrgNode[] = (data.nodes as OrgNodeData[] as OrgNode[]) ?? [];
+  const serverEdges: OrgEdge[] = (data.edges as OrgEdgeData[] as OrgEdge[]) ?? [];
+
+  // Compute the initial tree from server data at module-init time so the page
+  // renders with the full hierarchy on first paint — no loading flash.
+  // buildTree is a function declaration (hoisted) so this call is valid here.
+  const _initResult = serverNodes.length > 0
+    ? buildTree(serverNodes, serverEdges)
+    : { roots: [] as TreeNode[], orphans: [] as TreeNode[] };
+
+  // Compute the initial collapsed set inline (depth >= 3 nodes auto-collapsed).
+  // We cannot call autoCollapse here because collapsed $state is not yet defined.
+  const _initCollapsed = new Set<string>();
+  (function _walkCollapse(nodes: TreeNode[]) {
+    for (const n of nodes) {
+      if (n.depth >= 3 && n.children.length > 0) _initCollapsed.add(n.id);
+      _walkCollapse(n.children);
+    }
+  })(_initResult.roots);
+
+  let roots: TreeNode[] = $state(_initResult.roots);
+  let orphans: TreeNode[] = $state(_initResult.orphans);  // agents not in any delegation edge
+  // Show loading only when there is no server data — e.g. pure SPA / no backend.
+  let loading = $state(serverNodes.length === 0);
   let error: string | null = $state(null);
-  let totalNodes = $state(0);
-  let totalEdges = $state(0);
+  let totalNodes = $state(serverNodes.length);
+  let totalEdges = $state(serverEdges.length);
   let orphansCollapsed = $state(true);
-  let collapsed: Set<string> = $state(new Set());
+  let collapsed: Set<string> = $state(_initCollapsed);
 
   const MODEL_COLORS: Record<string, string> = {
     opus: '#f5c842', sonnet: '#4a9eff', haiku: '#4caf82',
@@ -157,17 +184,22 @@
       const res = await fetch('/api/v5/org-graph');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
-      const data = json.data ?? json ?? { nodes: [], edges: [] };
-      totalNodes = data.nodes?.length ?? 0;
-      totalEdges = data.edges?.length ?? 0;
-      const result = buildTree(data.nodes ?? [], data.edges ?? []);
+      const apiData = json.data ?? json ?? { nodes: [], edges: [] };
+      totalNodes = apiData.nodes?.length ?? 0;
+      totalEdges = apiData.edges?.length ?? 0;
+      const result = buildTree(apiData.nodes ?? [], apiData.edges ?? []);
       roots = result.roots;
       orphans = result.orphans;
       autoCollapse(roots, 3);
     } catch (e) { error = String(e); } finally { loading = false; }
   }
 
-  onMount(load);
+  onMount(() => {
+    // Server data is already populated at init time — no network round-trip needed.
+    // Only fall back to the API fetch when no server data is available (pure SPA
+    // deployment mode where +page.server.ts does not run).
+    if (serverNodes.length === 0) load();
+  });
 </script>
 
 <svelte:head><title>Org Chart — AgentForge</title></svelte:head>

@@ -29,7 +29,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { AgentRuntime, loadAgentConfig, writeMemoryEntry, collectSprintItemTags, parseReviewFindingMetadata } from '@agentforge/core';
+import { AgentRuntime, loadAgentConfig, writeMemoryEntry, collectSprintItemTags, parseReviewFindingMetadata, extractFindingsByLevel } from '@agentforge/core';
 import type { RunResult, GateVerdictMetadata, ReviewFindingMetadata } from '@agentforge/core';
 import { generateId, nowIso } from '@agentforge/shared';
 import { globalStream } from '../routes/v5/stream.js';
@@ -662,8 +662,8 @@ export async function runReviewPhase(ctx: PhaseContext): Promise<PhaseResult> {
         .at(-1)?.response ?? '';
 
     if (reviewText) {
-      const criticalFindings = extractFindingLines(reviewText, 'CRITICAL');
-      const majorFindings = extractFindingLines(reviewText, 'MAJOR');
+      const criticalFindings = extractFindingsByLevel(reviewText, 'CRITICAL');
+      const majorFindings = extractFindingsByLevel(reviewText, 'MAJOR');
       const sprintDomainTags = collectSprintItemTags(ctx.projectRoot, ctx.sprintVersion);
 
       for (const line of criticalFindings) {
@@ -694,18 +694,9 @@ export async function runReviewPhase(ctx: PhaseContext): Promise<PhaseResult> {
   return result;
 }
 
-/**
- * Extract lines mentioning a severity level from review text.
- * Mirrors extractFindingsByLevel in packages/core (not part of the public API).
- */
-function extractFindingLines(text: string, level: 'CRITICAL' | 'MAJOR'): string[] {
-  const pattern = new RegExp(level, 'i');
-  return text
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0 && pattern.test(l))
-    .slice(0, 10); // cap so the entry doesn't bloat
-}
+// Note: finding extraction now delegates to extractFindingsByLevel from
+// @agentforge/core, which uses an anchored regex to prevent false positives
+// from narrative prose ("no major concerns", "not a critical path change").
 
 export async function runGatePhase(ctx: PhaseContext): Promise<PhaseResult> {
   // Capture any pre-existing gate verdict before the LLM re-evaluates.
@@ -750,8 +741,8 @@ export async function runGatePhase(ctx: PhaseContext): Promise<PhaseResult> {
 
     // Extract structured findings from the review phase output so the next
     // audit cycle can surface specific issues — not just the plain rationale.
-    const criticalFindings = extractFindingLines(reviewText, 'CRITICAL');
-    const majorFindings = extractFindingLines(reviewText, 'MAJOR');
+    const criticalFindings = extractFindingsByLevel(reviewText, 'CRITICAL');
+    const majorFindings = extractFindingsByLevel(reviewText, 'MAJOR');
 
     // Build the canonical GateVerdictMetadata — consumed by audit-phase prompt
     // injection and flywheel stats. The metadata field carries structured data;
