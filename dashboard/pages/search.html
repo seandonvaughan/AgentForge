@@ -1,0 +1,199 @@
+  <div class="page" id="page-search">
+    <div class="page-header">
+      <div>
+        <h2>Search</h2>
+        <p style="color:var(--text-secondary);font-size:13px;margin-top:4px;">
+          Full-text search across sessions, agents, cycles, sprints, and memories.
+        </p>
+      </div>
+      <span id="search-count-badge" style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);padding:4px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);"></span>
+    </div>
+
+    <!-- Query bar -->
+    <form id="search-form" onsubmit="return false;" style="display:flex;gap:8px;margin-bottom:14px;">
+      <input
+        class="memory-search-input"
+        type="search"
+        id="search-query-input"
+        placeholder="Search sessions, agents, cycles, sprints, memories…"
+        autocomplete="off"
+        autofocus
+        style="flex:1;"
+      />
+      <button
+        type="submit"
+        class="export-btn"
+        id="search-submit-btn"
+        onclick="_searchSubmit()"
+        style="padding:8px 18px;background:var(--blue);color:#fff;border:none;border-radius:var(--radius-sm);font-family:var(--font-mono);font-size:12px;cursor:pointer;transition:opacity .15s;"
+      >Search</button>
+    </form>
+
+    <!-- Type filter chips -->
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;" id="search-type-filters">
+      <button class="mem-filter-btn active" data-stype="all"     onclick="_searchSetType(this,'all')">All</button>
+      <button class="mem-filter-btn"        data-stype="session" onclick="_searchSetType(this,'session')">Sessions</button>
+      <button class="mem-filter-btn"        data-stype="agent"   onclick="_searchSetType(this,'agent')">Agents</button>
+      <button class="mem-filter-btn"        data-stype="cycle"   onclick="_searchSetType(this,'cycle')">Cycles</button>
+      <button class="mem-filter-btn"        data-stype="sprint"  onclick="_searchSetType(this,'sprint')">Sprints</button>
+      <button class="mem-filter-btn"        data-stype="memory"  onclick="_searchSetType(this,'memory')">Memories</button>
+    </div>
+
+    <!-- Results list -->
+    <div id="search-results-list"></div>
+  </div><!-- /page-search -->
+
+<script>
+(function () {
+  // Local state scoped to this page load
+  var _searchActiveType  = 'all';
+  var _searchLastQuery   = '';
+  var _searchLastResults = [];
+
+  // \u2500\u2500 Type chip toggle \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  window._searchSetType = function (btn, type) {
+    _searchActiveType = type || 'all';
+    document.querySelectorAll('#search-type-filters .mem-filter-btn').forEach(function (b) {
+      b.classList.toggle('active', b === btn);
+    });
+    // Re-render cached results with new filter — no extra network call needed.
+    _renderSearchResults(_searchLastResults, _searchLastQuery);
+  };
+
+  // \u2500\u2500 Submit (Enter key or button click) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  window._searchSubmit = function () {
+    var input = document.getElementById('search-query-input');
+    if (!input) return;
+    var q = input.value.trim();
+    if (!q) return;
+    if (typeof loadSearchPage === 'function') loadSearchPage(q);
+  };
+
+  var input = document.getElementById('search-query-input');
+  if (input) {
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') window._searchSubmit();
+    });
+    // Restore last query when navigating back to the page.
+    if (_searchLastQuery) {
+      input.value = _searchLastQuery;
+      _renderSearchResults(_searchLastResults, _searchLastQuery);
+    }
+  }
+
+  // \u2500\u2500 Render helpers \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  var TYPE_ICONS  = { session: '\ud83d\udccb', agent: '\ud83e\udd16', cycle: '\ud83d\udd04', sprint: '\ud83c\udfc3', memory: '\ud83e\udde0' };
+  var TYPE_COLORS = { session: 'var(--blue)', agent: 'var(--green)', cycle: '#a78bfa', sprint: '#f59e0b', memory: '#ec4899' };
+
+  function _buildResultCard(r) {
+    var icon  = TYPE_ICONS[r.type]  || '\ud83d\udd0d';
+    var color = TYPE_COLORS[r.type] || 'var(--text-muted)';
+    var pct   = Math.round((r.score || 0) * 100);
+
+    // Collect metadata pills — all values escaped before insertion.
+    var metaParts = [];
+    if (r.metadata) {
+      var m = r.metadata;
+      if (m.status)     metaParts.push('status: ' + escapeHtml(String(m.status)));
+      if (m.stage)      metaParts.push('stage: '  + escapeHtml(String(m.stage)));
+      if (m.version)    metaParts.push('v'         + escapeHtml(String(m.version)));
+      if (m.agent_id)   metaParts.push(escapeHtml(String(m.agent_id)));
+      if (m.memoryType) metaParts.push(escapeHtml(String(m.memoryType)));
+    }
+
+    var card = document.createElement('div');
+    card.className = 'card';
+    card.style.cssText = 'padding:12px 16px;margin-bottom:8px;display:flex;gap:14px;align-items:flex-start;';
+
+    // Icon column
+    var iconEl = document.createElement('span');
+    iconEl.style.cssText = 'font-size:18px;line-height:1;margin-top:2px;flex-shrink:0;';
+    iconEl.textContent = icon;
+    card.appendChild(iconEl);
+
+    // Body column
+    var body = document.createElement('div');
+    body.style.cssText = 'flex:1;min-width:0;';
+
+    // Header row: type chip + source + score
+    var header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:4px;';
+
+    var typeChip = document.createElement('span');
+    typeChip.style.cssText = 'font-family:var(--font-mono);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:' + color;
+    typeChip.textContent = r.type || '?';
+    header.appendChild(typeChip);
+
+    if (r.source) {
+      var sourceEl = document.createElement('span');
+      sourceEl.style.cssText = 'font-family:var(--font-mono);font-size:10px;color:var(--text-muted);';
+      sourceEl.textContent = String(r.source);
+      header.appendChild(sourceEl);
+    }
+
+    var scoreEl = document.createElement('span');
+    scoreEl.style.cssText = 'font-family:var(--font-mono);font-size:10px;color:var(--text-muted);margin-left:auto;';
+    scoreEl.textContent = pct + '% match';
+    header.appendChild(scoreEl);
+    body.appendChild(header);
+
+    // Content
+    var contentEl = document.createElement('div');
+    contentEl.style.cssText = 'font-size:13px;color:var(--text-primary);word-break:break-word;';
+    contentEl.textContent = r.content || r.id || '';
+    body.appendChild(contentEl);
+
+    // Metadata row
+    if (metaParts.length) {
+      var metaEl = document.createElement('div');
+      metaEl.style.cssText = 'font-family:var(--font-mono);font-size:11px;color:var(--text-muted);margin-top:4px;';
+      metaEl.textContent = metaParts.join(' \u00b7 ');
+      body.appendChild(metaEl);
+    }
+
+    card.appendChild(body);
+    return card;
+  }
+
+  function _renderSearchResults(results, query) {
+    _searchLastResults = results;
+    _searchLastQuery   = query;
+
+    var list  = document.getElementById('search-results-list');
+    var badge = document.getElementById('search-count-badge');
+    if (!list) return;
+
+    var filtered = _searchActiveType === 'all'
+      ? results
+      : results.filter(function (r) { return r.type === _searchActiveType; });
+
+    if (badge) badge.textContent = filtered.length + ' result' + (filtered.length !== 1 ? 's' : '');
+
+    while (list.firstChild) list.removeChild(list.firstChild);
+
+    if (!filtered.length) {
+      var empty = document.createElement('div');
+      empty.className = 'empty-state';
+      empty.style.cssText = 'padding:2rem;text-align:center;color:var(--text-muted);';
+      empty.textContent = query ? 'No results for \u201c' + query + '\u201d.' : 'Enter a query above to search.';
+      list.appendChild(empty);
+      return;
+    }
+
+    filtered.forEach(function (r) {
+      list.appendChild(_buildResultCard(r));
+    });
+  }
+
+  // Expose render so loadSearchPage() in index.html can push results into this page.
+  window._searchPageRender = _renderSearchResults;
+
+  // If loadSearchPage was called before the partial loaded, run it now.
+  if (window._searchInitialQuery) {
+    var q = window._searchInitialQuery;
+    window._searchInitialQuery = null;
+    if (input) input.value = q;
+    if (typeof loadSearchPage === 'function') loadSearchPage(q);
+  }
+})();
+<\/script>

@@ -45,6 +45,7 @@ function normalizeSprint(raw: any): Record<string, unknown> {
   return {
     id: raw.sprintId ?? raw.id ?? raw.version,
     version: raw.version,
+    sprintId: raw.sprintId ?? undefined,
     title: raw.title,
     phase: raw.phase,
     status: phaseToStatus(raw.phase ?? '', raw.status),
@@ -88,12 +89,14 @@ function readAndUnwrapFile(filePath: string): Array<Record<string, unknown>> {
 
 export async function sprintsRoutes(
   app: FastifyInstance,
-  _opts: { adapter?: SqliteAdapter }
+  opts: { adapter?: SqliteAdapter; projectRoot?: string }
 ) {
+  const root = opts.projectRoot ?? PROJECT_ROOT;
+
   // GET /api/v1/sprints — list all sprint JSON files (raw, legacy)
   app.get('/api/v1/sprints', async (_req, reply) => {
     try {
-      const sprintsDir = join(PROJECT_ROOT, '.agentforge/sprints');
+      const sprintsDir = join(root, '.agentforge/sprints');
       if (!existsSync(sprintsDir)) {
         return reply.send({ data: [], meta: { total: 0 } });
       }
@@ -125,7 +128,7 @@ export async function sprintsRoutes(
   app.get('/api/v1/sprints/:version', async (req, reply) => {
     const { version } = req.params as { version: string };
     try {
-      const sprintsDir = join(PROJECT_ROOT, '.agentforge/sprints');
+      const sprintsDir = join(root, '.agentforge/sprints');
       // Sprint files may be named 'v6.7.1.json' (with prefix) or '6.7.1.json'
       const bare = version.startsWith('v') ? version.slice(1) : version;
       const filePath = join(sprintsDir, `${bare}.json`);
@@ -150,7 +153,7 @@ export async function sprintsRoutes(
   // GET /api/v5/sprints — normalized list for the dashboard
   app.get('/api/v5/sprints', async (_req, reply) => {
     try {
-      const sprintsDir = join(PROJECT_ROOT, '.agentforge/sprints');
+      const sprintsDir = join(root, '.agentforge/sprints');
       if (!existsSync(sprintsDir)) {
         return reply.send({ data: [], meta: { total: 0 } });
       }
@@ -177,7 +180,7 @@ export async function sprintsRoutes(
   app.get('/api/v5/sprints/:version', async (req, reply) => {
     const { version } = req.params as { version: string };
     try {
-      const sprintsDir = join(PROJECT_ROOT, '.agentforge/sprints');
+      const sprintsDir = join(root, '.agentforge/sprints');
       // Sprint files may be named 'v6.7.1.json' (with prefix) or '6.7.1.json'.
       // Normalise the requested version to its bare form so both URL styles work:
       //   /api/v5/sprints/6.7.1  AND  /api/v5/sprints/v6.7.1

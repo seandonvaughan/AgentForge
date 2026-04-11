@@ -756,7 +756,11 @@ export async function cyclesRoutes(
       }
     }
     const passRate = testsTotal > 0 ? testsPassed / testsTotal : 0;
-    return reply.send({
+    // cycle.json absent means cycle is still in progress. Return 404 with
+    // cycleInProgress: true so callers can distinguish "not found" from
+    // "running but not yet terminal". The 404 status prevents stale cache
+    // hits while the partial payload lets the dashboard render a live feed.
+    return reply.status(404).send({
       cycleId: id,
       sprintVersion,
       stage: lastStage,

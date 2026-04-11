@@ -316,4 +316,84 @@ describe('GET /api/v5/memory', () => {
     expect(body.meta.total).toBe(1);
     expect(body.data[0]!.id).toBe('co-alpha');
   });
+
+  // ── ?agent legacy alias ───────────────────────────────────────────────────
+
+  it('?agent (legacy alias) filters the same as ?agentId', async () => {
+    appendJsonlEntry('cycle-outcome', { id: 'e1', value: 'a', source: 'agent-legacy', createdAt: '2026-04-08T10:00:00.000Z' });
+    appendJsonlEntry('cycle-outcome', { id: 'e2', value: 'b', source: 'agent-other',  createdAt: '2026-04-08T10:01:00.000Z' });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory?agent=agent-legacy' });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body) as { data: Array<{ id: string }>; meta: { total: number } };
+    expect(body.meta.total).toBe(1);
+    expect(body.data[0]!.id).toBe('e1');
+  });
+
+  // ── memories.json always-merge behaviour ────────────────────────────────
+  // Previously memories.json was a "fallback when empty" — curated entries
+  // disappeared as soon as any JSONL entry existed (the root cause of the
+  // "static content" bug).  The fixed behaviour merges both sources always.
+
+  it('memories.json entries are merged alongside JSONL entries (not just when JSONL is empty)', async () => {
+    // Write a real JSONL entry so entries is non-empty before the merge step.
+    appendJsonlEntry('cycle-outcome', { id: 'jsonl-1', value: 'live cycle', createdAt: '2026-04-08T10:00:00.000Z' });
+
+    // Write a memories.json with a curated entry that has a different id.
+    mkdirSync(join(tmpRoot, '.agentforge', 'data'), { recursive: true });
+    writeFileSync(
+      join(tmpRoot, '.agentforge', 'data', 'memories.json'),
+      JSON.stringify({
+        entries: [
+          {
+            id: 'curated-1',
+            filename: 'lesson-one.md',
+            category: 'lesson',
+            summary: 'Always use deduplication.',
+            createdAt: '2026-04-01T00:00:00.000Z',
+          },
+        ],
+      }),
+      'utf-8',
+    );
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory' });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body) as { data: Array<{ id: string }>; meta: { total: number } };
+
+    // Both the JSONL entry and the curated memory must be present.
+    expect(body.meta.total).toBe(2);
+    const ids = body.data.map(e => e.id);
+    expect(ids).toContain('jsonl-1');
+    expect(ids).toContain('curated-1');
+  });
+
+  it('memories.json entries are deduplicated when id matches a JSONL entry', async () => {
+    // Same id in both JSONL and memories.json — should appear once.
+    appendJsonlEntry('cycle-outcome', { id: 'shared-id', value: 'from jsonl', createdAt: '2026-04-08T10:00:00.000Z' });
+
+    mkdirSync(join(tmpRoot, '.agentforge', 'data'), { recursive: true });
+    writeFileSync(
+      join(tmpRoot, '.agentforge', 'data', 'memories.json'),
+      JSON.stringify({
+        entries: [
+          {
+            id: 'shared-id',    // same id as the JSONL entry above
+            filename: 'dup.md',
+            summary: 'This should be deduped away.',
+            createdAt: '2026-04-01T00:00:00.000Z',
+          },
+        ],
+      }),
+      'utf-8',
+    );
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory' });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body) as { data: Array<{ id: string }>; meta: { total: number } };
+
+    // Only one entry — the JSONL entry wins; memories.json duplicate is skipped.
+    expect(body.meta.total).toBe(1);
+    expect(body.data[0]!.id).toBe('shared-id');
+  });
 });

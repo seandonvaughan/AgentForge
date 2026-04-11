@@ -138,10 +138,14 @@ export async function dashboardStubRoutes(
       type?: string;
       since?: string;
       agentId?: string;
+      /** Legacy alias for agentId — accepted for backward compatibility. */
+      agent?: string;
       search?: string;
     };
     const typeFilter = q.type?.trim() ?? '';
-    const agentIdFilter = q.agentId?.trim() ?? '';
+    // Accept both `agentId` (canonical) and `agent` (legacy alias from the
+    // memory.html page overlay and the v1 API callers).
+    const agentIdFilter = (q.agentId ?? q.agent ?? '').trim();
     // Normalised to lowercase so the search is case-insensitive.
     const searchTerm = (q.search ?? '').toLowerCase().trim();
     // Parse `since` once; ignore if not a valid date.
@@ -246,49 +250,59 @@ export async function dashboardStubRoutes(
       }
     }
 
-    // ── Seed fallback (.agentforge/data/memories.json) ───────────────────
-    // When no live JSONL or legacy entries have been collected yet (e.g. a
-    // fresh deployment or a CI environment with no cycle runs), serve the
-    // seed data so the memory browser is never blank.  The seed is skipped
-    // as soon as any live entry exists to avoid mixing real data with placeholders.
-    if (entries.length === 0) {
-      const seedPath = join(projectRoot, '.agentforge/data/memories.json');
-      if (existsSync(seedPath)) {
-        try {
-          const raw = readFileSync(seedPath, 'utf-8');
-          const seed = JSON.parse(raw) as {
-            entries?: Array<{
-              id?: string;
-              filename?: string;
-              category?: string;
-              agentId?: string;
-              summary?: string;
-              tags?: string[];
-              createdAt?: string;
-              updatedAt?: string;
-            }>;
-          };
-          const seedEntries = Array.isArray(seed.entries) ? seed.entries : [];
-          for (const e of seedEntries) {
-            const id = e.id ?? `seed-${entries.length}`;
-            // Strip common extensions for a clean display key.
-            const key = (e.filename ?? id).replace(/\.(md|json)$/, '');
-            entries.push({
-              id,
-              key,
-              // Use summary as the preview value — it's the most human-readable field.
-              value: e.summary ?? '',
-              // Category maps 1-to-1 to the frontend's type-chip filter.
-              type: e.category ?? 'memory',
-              createdAt: e.createdAt ?? new Date().toISOString(),
-              ...(e.updatedAt  ? { updatedAt: e.updatedAt }  : {}),
-              ...(e.agentId    ? { agentId:   e.agentId }    : {}),
-              ...(e.summary    ? { summary:   e.summary }    : {}),
-              ...(e.tags       ? { tags:      e.tags }       : {}),
-            });
-          }
-        } catch { /* skip malformed seed file */ }
-      }
+    // ── Operator-curated memories (.agentforge/data/memories.json) ──────────
+    //
+    // Always merged alongside live JSONL entries so that cross-cycle learned
+    // knowledge (feedback, lessons, project notes) surfaces in the dashboard
+    // even after the system starts accumulating real cycle data.
+    //
+    // Previously this was a conditional fallback (only read when entries was
+    // empty) which caused the curated knowledge base to disappear entirely once
+    // any JSONL file was written — the root cause of the "static content" bug.
+    //
+    // Deduplication by `id` prevents double-entries when a memory is promoted
+    // from the curated JSON into a JSONL file with the same stable identifier.
+    const seenIds = new Set<string>(entries.map(e => e.id).filter(Boolean) as string[]);
+
+    const memoriesJsonPath = join(projectRoot, '.agentforge/data/memories.json');
+    if (existsSync(memoriesJsonPath)) {
+      try {
+        const raw = readFileSync(memoriesJsonPath, 'utf-8');
+        const curated = JSON.parse(raw) as {
+          entries?: Array<{
+            id?: string;
+            filename?: string;
+            category?: string;
+            agentId?: string;
+            summary?: string;
+            tags?: string[];
+            createdAt?: string;
+            updatedAt?: string;
+          }>;
+        };
+        const curatedEntries = Array.isArray(curated.entries) ? curated.entries : [];
+        for (const e of curatedEntries) {
+          const id = e.id ?? `curated-${entries.length}`;
+          // Skip if this id was already contributed by a JSONL or legacy file.
+          if (seenIds.has(id)) continue;
+          seenIds.add(id);
+          // Strip common extensions for a clean display key.
+          const key = (e.filename ?? id).replace(/\.(md|json)$/, '');
+          entries.push({
+            id,
+            key,
+            // Use summary as the preview value — it's the most human-readable field.
+            value: e.summary ?? '',
+            // Category maps 1-to-1 to the frontend's type-chip filter row.
+            type: e.category ?? 'memory',
+            createdAt: e.createdAt ?? new Date().toISOString(),
+            ...(e.updatedAt ? { updatedAt: e.updatedAt } : {}),
+            ...(e.agentId   ? { agentId:   e.agentId }   : {}),
+            ...(e.summary   ? { summary:   e.summary }   : {}),
+            ...(e.tags      ? { tags:      e.tags }      : {}),
+          });
+        }
+      } catch { /* skip malformed memories.json */ }
     }
 
     // Newest entries first so the dashboard shows recent learning at the top.

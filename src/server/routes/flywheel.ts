@@ -4,18 +4,11 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
-
-const MEMORY_JSONL_DIR = join(
-  dirname(fileURLToPath(import.meta.url)),
-  '../../../.agentforge/memory'
-);
-const CYCLES_DIR = join(
-  dirname(fileURLToPath(import.meta.url)),
-  '../../../.agentforge/cycles'
-);
+import { computeMemoryStats, type MemoryStats } from '../../flywheel/memory-stats.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, '../../../');
+const CYCLES_DIR = join(PROJECT_ROOT, '.agentforge/cycles');
 
 // ---------------------------------------------------------------------------
 // v1 shape — legacy session-level metrics
@@ -41,25 +34,19 @@ interface FlywheelMetric {
   description: string;
 }
 
-/** Per-cycle entry count for the trend sparkline (last ≤10 cycles). */
-interface CycleEntryPoint {
-  cycleId: string;
-  count: number;
-  startedAt: string;
-}
-
-/** Memory loop health stats shown in the dedicated flywheel card. */
-interface MemoryStats {
-  /** Total entries across all JSONL files. */
-  totalEntries: number;
-  /** Entry counts per cycle, oldest→newest, last ≤10 cycles that have entries. */
-  entriesPerCycleTrend: CycleEntryPoint[];
-  /**
-   * Fraction [0–1] of cycles whose audit phase had at least one prior memory
-   * entry available to consume. Computed as: for each cycle after the first
-   * ever memory write, did that cycle start after ≥1 entry already existed?
-   */
-  hitRate: number;
+/** Raw aggregate counts surfaced in the dashboard "Loop Data" panel. */
+interface FlywheelDebugStats {
+  cycleCount: number;
+  completedCycleCount: number;
+  /** Cycles that started and have a stage field (excludes bare/empty dirs). */
+  meaningfulCycleCount: number;
+  sprintCount: number;
+  totalItems: number;
+  completedItems: number;
+  agentCount: number;
+  sessionCount: number;
+  /** Sessions with status 'completed' or 'success'. */
+  satisfiedSessionCount: number;
 }
 
 interface FlywheelV5Response {
@@ -67,6 +54,7 @@ interface FlywheelV5Response {
   overallScore: number;
   updatedAt: string;
   memoryStats: MemoryStats;
+  debug: FlywheelDebugStats;
 }
 
 // ---------------------------------------------------------------------------
@@ -183,131 +171,6 @@ function computeInheritance(): FlywheelMetric {
   };
 }
 
-/**
- * Memory stats: total entries, entries-per-cycle trend, and hit rate.
- *
- * Hit rate = fraction of **completed** cycles that actually had memory available
- * when they ran. Computed in two tiers:
- *   1. Precise signal: if the cycle's audit.json contains `memoriesInjected`,
- *      use that count directly (> 0 = hit).  This field is written by the audit
- *      phase handler since v9.0.x.
- *   2. Timestamp proxy fallback: for cycles that pre-date the `memoriesInjected`
- *      field, a cycle "hit" if it started strictly after the earliest memory
- *      entry already existed on disk.
- * Only completed cycles count so failed/running cycles don't skew the metric.
- */
-function computeMemoryStats(): MemoryStats {
-  const EMPTY: MemoryStats = { totalEntries: 0, entriesPerCycleTrend: [], hitRate: 0 };
-
-  // ── 1. Read all JSONL memory entries ─────────────────────────────────────
-  if (!existsSync(MEMORY_JSONL_DIR)) return EMPTY;
-
-  interface RawEntry { id?: string; type?: string; createdAt?: string; source?: string }
-  const allEntries: RawEntry[] = [];
-
-  try {
-    const files = readdirSync(MEMORY_JSONL_DIR).filter(f => f.endsWith('.jsonl'));
-    for (const filename of files) {
-      try {
-        const raw = readFileSync(join(MEMORY_JSONL_DIR, filename), 'utf8');
-        for (const line of raw.split('\n').filter(l => l.trim())) {
-          try {
-            const e = JSON.parse(line) as RawEntry;
-            if (e.id && e.type) allEntries.push(e);
-          } catch { /* skip malformed line */ }
-        }
-      } catch { /* skip unreadable file */ }
-    }
-  } catch {
-    return EMPTY;
-  }
-
-  const totalEntries = allEntries.length;
-  if (totalEntries === 0) return EMPTY;
-
-  // ── 2. Build entries-per-cycle trend (last 10 cycles with entries) ────────
-  // Group by source (cycleId); entries without a source get bucketed as 'unknown'.
-  const countByCycle = new Map<string, number>();
-  for (const e of allEntries) {
-    const key = e.source ?? 'unknown';
-    countByCycle.set(key, (countByCycle.get(key) ?? 0) + 1);
-  }
-
-  // Cross-reference with cycle.json to get startedAt timestamps
-  const cyclePoints: CycleEntryPoint[] = [];
-  for (const [cycleId, count] of countByCycle) {
-    let startedAt = '';
-    if (existsSync(CYCLES_DIR)) {
-      try {
-        const cycleFile = join(CYCLES_DIR, cycleId, 'cycle.json');
-        if (existsSync(cycleFile)) {
-          const c = JSON.parse(readFileSync(cycleFile, 'utf8')) as { startedAt?: string };
-          startedAt = c.startedAt ?? '';
-        }
-      } catch { /* cycle file unreadable — leave startedAt empty */ }
-    }
-    cyclePoints.push({ cycleId, count, startedAt });
-  }
-
-  // Sort oldest → newest; cycles without timestamps sort to the front
-  cyclePoints.sort((a, b) => (a.startedAt ?? '').localeCompare(b.startedAt ?? ''));
-  const entriesPerCycleTrend = cyclePoints.slice(-10);
-
-  // ── 3. Compute hit rate ────────────────────────────────────────────────────
-  // The timestamp proxy needs the earliest entry createdAt for comparison.
-  const earliestEntryMs = allEntries
-    .map(e => e.createdAt ? new Date(e.createdAt).getTime() : 0)
-    .filter(t => t > 0)
-    .reduce((min, t) => Math.min(min, t), Infinity);
-
-  let hits = 0;
-  let evaluated = 0;
-
-  if (existsSync(CYCLES_DIR)) {
-    try {
-      for (const dir of readdirSync(CYCLES_DIR)) {
-        try {
-          const cycleFile = join(CYCLES_DIR, dir, 'cycle.json');
-          if (!existsSync(cycleFile)) continue;
-          const c = JSON.parse(readFileSync(cycleFile, 'utf8')) as {
-            startedAt?: string;
-            stage?: string;
-          };
-          // Only completed cycles count in the denominator — failed/running
-          // cycles haven't gone through the full audit phase and cannot have
-          // consumed memory in a meaningful sense.
-          if (c.stage !== 'completed') continue;
-          if (!c.startedAt) continue;
-
-          evaluated++;
-
-          // Tier 1: explicit memoriesInjected field from audit.json (v9.0.x+)
-          const auditPath = join(CYCLES_DIR, dir, 'phases', 'audit.json');
-          if (existsSync(auditPath)) {
-            try {
-              const audit = JSON.parse(readFileSync(auditPath, 'utf8')) as {
-                memoriesInjected?: number;
-              };
-              if (typeof audit.memoriesInjected === 'number') {
-                if (audit.memoriesInjected > 0) hits++;
-                continue; // explicit signal consumed — skip timestamp proxy
-              }
-            } catch { /* fall through to proxy */ }
-          }
-
-          // Tier 2: timestamp proxy — hit if cycle started after earliest entry
-          const startMs = new Date(c.startedAt).getTime();
-          if (startMs > earliestEntryMs) hits++;
-        } catch { /* skip unreadable cycles */ }
-      }
-    } catch { /* cycles dir unreadable */ }
-  }
-
-  const hitRate = evaluated > 0 ? hits / evaluated : 0;
-
-  return { totalEntries, entriesPerCycleTrend, hitRate };
-}
-
 interface CycleRecord {
   rate: number;
   startedAt: string;
@@ -392,6 +255,86 @@ function computeVelocity(): FlywheelMetric {
     score,
     description: `${(avgCompletion * 100).toFixed(0)}% sprint completion · ${velocityRatio.toFixed(2)}x cycle ratio`,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Debug stats computation
+// ---------------------------------------------------------------------------
+
+/**
+ * Aggregates raw loop counts into the FlywheelDebugStats shape consumed by
+ * the dashboard "Loop Data" panel.  All reads are best-effort; failures for
+ * any individual source are swallowed and that counter defaults to 0.
+ */
+function computeDebugStats(adapter: SqliteAdapter): FlywheelDebugStats {
+  const stats: FlywheelDebugStats = {
+    cycleCount: 0,
+    completedCycleCount: 0,
+    meaningfulCycleCount: 0,
+    sprintCount: 0,
+    totalItems: 0,
+    completedItems: 0,
+    agentCount: 0,
+    sessionCount: 0,
+    satisfiedSessionCount: 0,
+  };
+
+  // ── Cycles ────────────────────────────────────────────────────────────────
+  if (existsSync(CYCLES_DIR)) {
+    try {
+      for (const dir of readdirSync(CYCLES_DIR)) {
+        try {
+          const cycleFile = join(CYCLES_DIR, dir, 'cycle.json');
+          if (!existsSync(cycleFile)) continue;
+          const c = JSON.parse(readFileSync(cycleFile, 'utf-8')) as { stage?: string };
+          stats.cycleCount++;
+          if (c.stage) stats.meaningfulCycleCount++;
+          if (c.stage === 'completed') stats.completedCycleCount++;
+        } catch { /* skip unreadable cycle */ }
+      }
+    } catch { /* cycles dir unreadable */ }
+  }
+
+  // ── Sprints ───────────────────────────────────────────────────────────────
+  const sprintsDir = join(PROJECT_ROOT, '.agentforge/sprints');
+  if (existsSync(sprintsDir)) {
+    try {
+      const files = readdirSync(sprintsDir).filter(f => f.endsWith('.json') && !f.includes('$'));
+      stats.sprintCount = files.length;
+      for (const f of files) {
+        try {
+          let raw = JSON.parse(readFileSync(join(sprintsDir, f), 'utf-8'));
+          if (typeof raw === 'string') raw = JSON.parse(raw);
+          const items: { status: string }[] =
+            (raw as { sprints?: [{ items?: { status: string }[] }]; items?: { status: string }[] })
+              .sprints?.[0]?.items ??
+            (raw as { items?: { status: string }[] }).items ??
+            [];
+          stats.totalItems += items.length;
+          stats.completedItems += items.filter(i => i.status === 'completed').length;
+        } catch { /* skip unparseable sprint */ }
+      }
+    } catch { /* sprints dir unreadable */ }
+  }
+
+  // ── Agents ────────────────────────────────────────────────────────────────
+  const agentsDir = join(PROJECT_ROOT, '.agentforge/agents');
+  if (existsSync(agentsDir)) {
+    try {
+      stats.agentCount = readdirSync(agentsDir).filter(f => f.endsWith('.yaml')).length;
+    } catch { /* agents dir unreadable */ }
+  }
+
+  // ── Sessions ──────────────────────────────────────────────────────────────
+  try {
+    const sessions = adapter.listSessions();
+    stats.sessionCount = sessions.length;
+    stats.satisfiedSessionCount = sessions.filter(
+      s => s.status === 'completed' || s.status === 'success'
+    ).length;
+  } catch { /* adapter unavailable */ }
+
+  return stats;
 }
 
 // ---------------------------------------------------------------------------
@@ -500,7 +443,8 @@ export async function flywheelRoutes(
         metrics,
         overallScore,
         updatedAt: new Date().toISOString(),
-        memoryStats: computeMemoryStats(),
+        memoryStats: computeMemoryStats(PROJECT_ROOT),
+        debug: computeDebugStats(adapter),
       };
 
       return reply.send({
@@ -518,6 +462,17 @@ export async function flywheelRoutes(
         overallScore: 0,
         updatedAt: new Date().toISOString(),
         memoryStats: { totalEntries: 0, entriesPerCycleTrend: [], hitRate: 0 },
+        debug: {
+          cycleCount: 0,
+          completedCycleCount: 0,
+          meaningfulCycleCount: 0,
+          sprintCount: 0,
+          totalItems: 0,
+          completedItems: 0,
+          agentCount: 0,
+          sessionCount: 0,
+          satisfiedSessionCount: 0,
+        },
       };
       return reply.send({
         data: fallback,

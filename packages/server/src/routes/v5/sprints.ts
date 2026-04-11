@@ -34,10 +34,17 @@ function normalizeSprint(raw: Record<string, unknown>, fallbackId: string) {
     tagsSeen?: string[];
   } | undefined;
 
-  // Derive a canonical status from the phase/status field
+  // Derive a canonical status from the phase/status field.
+  // Covers historical phase names found across all sprint files (v4.x–v10.x):
+  //   completed/done/release/released/shipped/closed/merged/learn/complete → completed
+  //   in_progress/active/executing/execute/review → in_progress
+  //   planned/plan/pending/draft/… → pending
   function deriveStatus(p: string | undefined): 'completed' | 'in_progress' | 'pending' {
-    if (p === 'completed' || p === 'done' || p === 'release' || p === 'released' || p === 'shipped' || p === 'closed' || p === 'merged') return 'completed';
-    if (p === 'in_progress' || p === 'active' || p === 'executing' || p === 'review') return 'in_progress';
+    if (p === 'completed' || p === 'done' || p === 'release' || p === 'released' ||
+        p === 'shipped'   || p === 'closed' || p === 'merged' ||
+        p === 'learn'     || p === 'complete') return 'completed';
+    if (p === 'in_progress' || p === 'active' || p === 'executing' ||
+        p === 'execute'     || p === 'review') return 'in_progress';
     return 'pending';
   }
 

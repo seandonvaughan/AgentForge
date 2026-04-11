@@ -193,7 +193,7 @@ describe('server runGatePhase — gate-verdict memory write', () => {
     expect(entry.tags).toContain('sprint:v6.8.gate-mem-1');
   });
 
-  it('tags the entry with verdict:approve when CEO responds APPROVE', async () => {
+  it('tags the entry with verdict:approved when CEO responds APPROVE', async () => {
     // Seed sprint with a pre-existing gate phase result so readSprint finds it.
     seedSprint(cwd, '6.8.gate-mem-2', 'APPROVE: quality bar met');
     const ctx = makeCtx(cwd, '6.8.gate-mem-2', 'cycle-gm2');
@@ -208,13 +208,19 @@ describe('server runGatePhase — gate-verdict memory write', () => {
       .split('\n')
       .filter((l) => l.trim().length > 0);
     const lastEntry = JSON.parse(lines[lines.length - 1]!);
-    expect(lastEntry.tags).toContain('verdict:approve');
-    const value = JSON.parse(lastEntry.value);
-    expect(value.sprintVersion).toBe('6.8.gate-mem-2');
-    expect(value.cycleId).toBe('cycle-gm2');
+    // Tag uses canonical 'approved' (with 'd') per GateVerdictMetadata.
+    expect(lastEntry.tags).toContain('verdict:approved');
+    // Structured fields live in metadata, not in a JSON-parsed value.
+    const meta = lastEntry.metadata;
+    expect(meta.sprintVersion).toBeUndefined(); // sprintVersion lives on the sprint file, not metadata
+    expect(meta.cycleId).toBe('cycle-gm2');
+    expect(meta.verdict).toBe('approved');
+    // value is a human-readable summary, not a JSON blob.
+    expect(() => JSON.parse(lastEntry.value)).toThrow();
+    expect(lastEntry.value).toContain('approved');
   });
 
-  it('tags the entry with verdict:reject when CEO responds REJECT', async () => {
+  it('tags the entry with verdict:rejected when CEO responds REJECT', async () => {
     seedSprint(cwd, '6.8.gate-mem-3', 'REJECT: test coverage too low');
     const ctx = makeCtx(cwd, '6.8.gate-mem-3', 'cycle-gm3');
 
@@ -227,7 +233,9 @@ describe('server runGatePhase — gate-verdict memory write', () => {
       .split('\n')
       .filter((l) => l.trim().length > 0);
     const lastEntry = JSON.parse(lines[lines.length - 1]!);
-    expect(lastEntry.tags).toContain('verdict:reject');
+    // Tag uses canonical 'rejected' (with 'd') per GateVerdictMetadata.
+    expect(lastEntry.tags).toContain('verdict:rejected');
+    expect(lastEntry.metadata.verdict).toBe('rejected');
   });
 
   it('writes the entry even when cycleId is not provided', async () => {
@@ -242,8 +250,11 @@ describe('server runGatePhase — gate-verdict memory write', () => {
 
     const entry = JSON.parse(readFileSync(memFile, 'utf8').trim());
     expect(entry.type).toBe('gate-verdict');
-    const value = JSON.parse(entry.value);
-    expect(value.cycleId).toBeNull();
+    // When cycleId is absent, metadata.cycleId falls back to empty string (per GateVerdictMetadata).
+    expect(entry.metadata.cycleId).toBe('');
+    // value is human-readable, not a JSON blob.
+    expect(typeof entry.value).toBe('string');
+    expect(() => JSON.parse(entry.value)).toThrow();
   });
 
   it('appends a new entry per cycle without overwriting previous ones', async () => {
@@ -273,5 +284,33 @@ describe('server runGatePhase — gate-verdict memory write', () => {
     const result = await runGatePhase(ctx);
     expect(result.status).toBe('completed');
     expect(result.phase).toBe('gate');
+  });
+
+  it('writes GateVerdictMetadata with cycleId, verdict, rationale, and findings in the metadata field', async () => {
+    seedSprint(cwd, '6.8.gate-mem-7', 'APPROVE: all criteria met');
+    const ctx = makeCtx(cwd, '6.8.gate-mem-7', 'cycle-metadata-test');
+
+    await runGatePhase(ctx);
+
+    const memFile = join(cwd, '.agentforge', 'memory', 'gate-verdict.jsonl');
+    const lines = readFileSync(memFile, 'utf8')
+      .split('\n')
+      .filter((l) => l.trim().length > 0);
+    const lastEntry = JSON.parse(lines[lines.length - 1]!);
+
+    // Verify the canonical GateVerdictMetadata fields are present in metadata
+    // (not buried inside a JSON-blob value field).
+    const meta = lastEntry.metadata;
+    expect(typeof meta).toBe('object');
+    expect(meta.cycleId).toBe('cycle-metadata-test');
+    expect(meta.verdict === 'approved' || meta.verdict === 'rejected').toBe(true);
+    expect(typeof meta.rationale).toBe('string');
+    expect(meta.rationale.length).toBeGreaterThan(0);
+    expect(Array.isArray(meta.criticalFindings)).toBe(true);
+    expect(Array.isArray(meta.majorFindings)).toBe(true);
+
+    // value is a human-readable summary, not a JSON blob.
+    expect(typeof lastEntry.value).toBe('string');
+    expect(() => JSON.parse(lastEntry.value)).toThrow();
   });
 });

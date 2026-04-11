@@ -11,6 +11,8 @@ import type { SessionRow } from '../../db/index.js';
 
 export interface AgentSummary {
   agentId: string;
+  /** Human-readable name from YAML (e.g. "CEO"), falls back to agentId. */
+  name: string;
   /** Model tier sourced from YAML definition, or 'sonnet' if unknown. */
   model: 'opus' | 'sonnet' | 'haiku';
   /** Human-readable description from YAML, empty string when not defined. */
@@ -86,6 +88,7 @@ function normalizeModel(raw: string | undefined): 'opus' | 'sonnet' | 'haiku' {
 
 function buildAgentSummaryFromSessions(
   agentId: string,
+  name: string,
   model: 'opus' | 'sonnet' | 'haiku',
   description: string,
   sessions: SessionRow[],
@@ -109,6 +112,7 @@ function buildAgentSummaryFromSessions(
 
   return {
     agentId,
+    name,
     model,
     description,
     sessionCount,
@@ -155,7 +159,7 @@ export async function agentsRoutes(app: FastifyInstance, opts: AgentsRouteOption
     for (const [agentId, def] of defs) {
       const sessions = sessionsByAgent.get(agentId) ?? [];
       const model = normalizeModel(def.model);
-      const summary = buildAgentSummaryFromSessions(agentId, model, def.description ?? '', sessions);
+      const summary = buildAgentSummaryFromSessions(agentId, def.name, model, def.description ?? '', sessions);
       const costs = adapter.getAgentCosts(agentId);
       summary.totalCostUsd = costs.reduce((sum, c) => sum + c.cost_usd, 0);
       summaries.push(summary);
@@ -165,7 +169,7 @@ export async function agentsRoutes(app: FastifyInstance, opts: AgentsRouteOption
     // but keeps backward compatibility if agents are invoked before their YAML is checked in)
     for (const [agentId, sessions] of sessionsByAgent) {
       if (!defs.has(agentId)) {
-        const summary = buildAgentSummaryFromSessions(agentId, 'sonnet', '', sessions);
+        const summary = buildAgentSummaryFromSessions(agentId, agentId, 'sonnet', '', sessions);
         const costs = adapter.getAgentCosts(agentId);
         summary.totalCostUsd = costs.reduce((sum, c) => sum + c.cost_usd, 0);
         summaries.push(summary);
@@ -196,9 +200,10 @@ export async function agentsRoutes(app: FastifyInstance, opts: AgentsRouteOption
       return reply.status(404).send({ error: 'Agent not found', id });
     }
 
+    const name = def?.name ?? id;
     const model = normalizeModel(def?.model);
     const description = def?.description ?? '';
-    const summary = buildAgentSummaryFromSessions(id, model, description, agentSessions);
+    const summary = buildAgentSummaryFromSessions(id, name, model, description, agentSessions);
     const costs = adapter.getAgentCosts(id);
     summary.totalCostUsd = costs.reduce((sum, c) => sum + c.cost_usd, 0);
 
@@ -229,7 +234,7 @@ export async function agentsRoutes(app: FastifyInstance, opts: AgentsRouteOption
     for (const [agentId, def] of defs) {
       const sessions = sessionsByAgent.get(agentId) ?? [];
       const model = normalizeModel(def.model);
-      const summary = buildAgentSummaryFromSessions(agentId, model, def.description ?? '', sessions);
+      const summary = buildAgentSummaryFromSessions(agentId, def.name, model, def.description ?? '', sessions);
       const costs = adapter.getAgentCosts(agentId);
       summary.totalCostUsd = costs.reduce((sum, c) => sum + c.cost_usd, 0);
       summaries.push(summary);
@@ -237,7 +242,7 @@ export async function agentsRoutes(app: FastifyInstance, opts: AgentsRouteOption
 
     for (const [agentId, sessions] of sessionsByAgent) {
       if (!defs.has(agentId)) {
-        const summary = buildAgentSummaryFromSessions(agentId, 'sonnet', '', sessions);
+        const summary = buildAgentSummaryFromSessions(agentId, agentId, 'sonnet', '', sessions);
         const costs = adapter.getAgentCosts(agentId);
         summary.totalCostUsd = costs.reduce((sum, c) => sum + c.cost_usd, 0);
         summaries.push(summary);
@@ -263,9 +268,10 @@ export async function agentsRoutes(app: FastifyInstance, opts: AgentsRouteOption
       return reply.status(404).send({ error: 'Agent not found', id });
     }
 
+    const name = def?.name ?? id;
     const model = normalizeModel(def?.model);
     const description = def?.description ?? '';
-    const summary = buildAgentSummaryFromSessions(id, model, description, agentSessions);
+    const summary = buildAgentSummaryFromSessions(id, name, model, description, agentSessions);
     const costs = adapter.getAgentCosts(id);
     summary.totalCostUsd = costs.reduce((sum, c) => sum + c.cost_usd, 0);
 

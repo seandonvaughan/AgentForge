@@ -1,11 +1,14 @@
 /**
  * Coverage for the GET /api/v5/cycles/:id in-progress synthesis branch.
  *
- * Before this branch existed, the route returned 404 while a cycle was still
- * running because cycle.json is only written at terminal stage. The dashboard
- * detail page treated every 404 as a fatal "Failed to load cycle: HTTP 404".
- * The fix synthesizes a partial payload from events.jsonl. These tests pin
- * that behavior so it doesn't silently regress to 404.
+ * v6.7.4+ API contract: when cycle.json is absent (cycle still running),
+ * the endpoint returns HTTP 404 with a partial payload and cycleInProgress: true.
+ * The 404 status distinguishes "running" from "terminal" so clients can handle
+ * caching correctly. The body still carries live phase/event data so the
+ * dashboard can render a live feed. Callers must parse JSON even on 404.
+ *
+ * Prior to this change, the route returned 200 to avoid the dashboard treating
+ * 404 as a fatal error. The dashboard now reads JSON on both 200 and 404.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
@@ -61,7 +64,7 @@ describe('GET /api/v5/cycles/:id', () => {
     expect(body.cycleInProgress).toBeUndefined();
   });
 
-  it('synthesizes a 200 response from events.jsonl when cycle.json is missing (in-progress)', async () => {
+  it('synthesizes a 404+cycleInProgress response from events.jsonl when cycle.json is missing (in-progress)', async () => {
     const id = '22222222-2222-2222-2222-222222222222';
     const dir = makeCycleDir(id);
     // Three events: scoring start, audit phase, plan phase. Last phase wins
@@ -77,7 +80,8 @@ describe('GET /api/v5/cycles/:id', () => {
     );
 
     const res = await app.inject({ method: 'GET', url: `/api/v5/cycles/${id}` });
-    expect(res.statusCode).toBe(200);
+    // 404 with cycleInProgress: true — cycle is running but cycle.json not yet written
+    expect(res.statusCode).toBe(404);
     const body = res.json();
     expect(body.cycleId).toBe(id);
     expect(body.stage).toBe('plan');
@@ -87,12 +91,13 @@ describe('GET /api/v5/cycles/:id', () => {
     expect(body.completedAt).toBeNull();
   });
 
-  it('synthesizes a default in-progress payload when the dir exists but events.jsonl is missing', async () => {
+  it('synthesizes a default 404+cycleInProgress payload when dir exists but events.jsonl is missing', async () => {
     const id = '33333333-3333-3333-3333-333333333333';
     makeCycleDir(id);
 
     const res = await app.inject({ method: 'GET', url: `/api/v5/cycles/${id}` });
-    expect(res.statusCode).toBe(200);
+    // 404 with cycleInProgress: true — dir exists but no events yet
+    expect(res.statusCode).toBe(404);
     const body = res.json();
     expect(body.cycleInProgress).toBe(true);
     expect(body.stage).toBe('plan');
@@ -111,7 +116,8 @@ describe('GET /api/v5/cycles/:id', () => {
     );
 
     const res = await app.inject({ method: 'GET', url: `/api/v5/cycles/${id}` });
-    expect(res.statusCode).toBe(200);
+    // 404 + body even for malformed lines — must not crash
+    expect(res.statusCode).toBe(404);
     expect(res.json().stage).toBe('test');
   });
 });
