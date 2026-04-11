@@ -116,12 +116,11 @@ export async function createServer(options: ServerOptions = {}) {
       agentsDir: options.projectRoot ? join(options.projectRoot, '.agentforge', 'agents') : undefined,
     });
     await app.register(costsRoutes, { adapter: options.adapter });
-    await app.register(sprintsRoutes, { adapter: options.adapter, projectRoot: options.projectRoot });
     await app.register(flywheelRoutes, { adapter: options.adapter });
     await app.register(autonomyRoutes, { adapter: options.adapter });
     await app.register(capabilitiesRoutes, { adapter: options.adapter });
     await app.register(reviewsRoutes, { adapter: options.adapter });
-    await app.register(memoryRoutes, { adapter: options.adapter });
+    await app.register(memoryRoutes, { adapter: options.adapter, projectRoot: options.projectRoot });
     await app.register(reforgeRoutes, { adapter: options.adapter });
     await app.register(teamsRoutes, { adapter: options.adapter });
     await app.register(careersRoutes, { adapter: options.adapter });
@@ -134,6 +133,10 @@ export async function createServer(options: ServerOptions = {}) {
 
   // Org-graph route — filesystem-backed (reads delegation.yaml + agent YAMLs), no DB adapter required
   await app.register(orgGraphRoutes, {});
+
+  // Sprints route — filesystem-backed (reads .agentforge/sprints/*.json), no DB adapter required.
+  // Registered unconditionally so the dashboard's /sprints pages work without a DB.
+  await app.register(sprintsRoutes, { projectRoot: options.projectRoot });
 
   // Cycles route — filesystem-backed, exposes approval GET/POST + SSE broadcast
   await app.register(cyclesRoutes, { sseManager: options.sseManager });

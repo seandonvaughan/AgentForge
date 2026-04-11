@@ -466,8 +466,14 @@
     });
   };
 
-  // Auto-load when the page HTML is injected into the DOM
-  window.loadBranchesPage();
+})();
 
+// Auto-load when the page HTML is injected into the DOM.
+// Kept in a separate IIFE so it runs AFTER window.loadBranchesPage is
+// defined above — matching the init pattern used by all other page modules
+// (observe, tasks, flywheel, etc.) and preventing a second redundant fetch
+// from the router's afterLoad callback.
+(function() {
+  if (typeof window.loadBranchesPage === 'function') window.loadBranchesPage();
 })();
 </script>

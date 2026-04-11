@@ -4249,7 +4249,7 @@ Router.addRoute('/decisions', async () => { await _loadPageRoute('decisions', ()
 Router.addRoute('/approvals', async () => { await _loadPageRoute('approvals', () => { if (typeof window.loadApprovalsPage === 'function') window.loadApprovalsPage(); }); });
 Router.addRoute('/knowledge', async () => { await _loadPageRoute('knowledge', () => loadKnowledgePage()); });
 Router.addRoute('/chat', async () => { await _loadPageRoute('chat'); });
-Router.addRoute('/branches', async () => { await _loadPageRoute('branches', () => loadBranchesPage()); });
+Router.addRoute('/branches', async () => { await _loadPageRoute('branches', () => { if (typeof window.loadBranchesPage === 'function') window.loadBranchesPage(); }); });
 Router.addRoute('/flywheel', async () => { await _loadPageRoute('flywheel', () => { if (typeof window.loadFlywheelPage === 'function') window.loadFlywheelPage(); }); });
 Router.addRoute('/org', async () => { await _loadPageRoute('org', () => { if (typeof window.loadOrgGraph === 'function') window.loadOrgGraph(); }); });
 Router.addRoute('/memory', async () => {

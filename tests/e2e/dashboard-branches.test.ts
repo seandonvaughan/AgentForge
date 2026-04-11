@@ -1,120 +1,150 @@
 import { test, expect } from '@playwright/test';
 
+/**
+ * E2E tests for the /branches dashboard tab.
+ *
+ * This page is served via the SPA router: navigating to /branches fetches
+ * dashboard/pages/branches.html, injects it into #main-content, then calls
+ * window.loadBranchesPage() which hits GET /api/v1/branches.
+ *
+ * Assertions here are scoped to branches-page-specific DOM ids and text so
+ * that a regression in page injection or API wiring produces an honest failure
+ * rather than a tautologically-passing check on a generic heading.
+ */
+
 test.describe('Branches Page', () => {
-  test('loads branches page successfully', async ({ page }) => {
+
+  test('loads and renders the Autonomous Branches heading', async ({ page }) => {
     await page.goto('/branches');
-
-    // Verify page title
-    await expect(page).toHaveTitle(/Branch|AgentForge/i);
-
-    // Verify page loaded
-    const pageContent = page.locator('body');
-    await expect(pageContent).toBeVisible();
-  });
-
-  test('displays branches heading', async ({ page }) => {
-    await page.goto('/branches');
-
     await page.waitForLoadState('networkidle');
 
-    // Look for heading
-    const heading = page.locator('h1, h2').filter({ hasText: /Branch/i }).first();
+    // The page-specific h2 must be present — not just any heading on the layout
+    const heading = page.locator('h2').filter({ hasText: /Autonomous Branches/i });
+    await expect(heading).toBeVisible();
+  });
 
-    if (await heading.isVisible().catch(() => false)) {
-      await expect(heading).toBeVisible();
+  test('displays the four summary stat chips with numeric values', async ({ page }) => {
+    await page.goto('/branches');
+    await page.waitForLoadState('networkidle');
+
+    // All four stat ids are rendered by updateStats() once the API responds.
+    // The values should be digits (0 is fine — no autonomous/* branches in test env).
+    for (const id of ['branches-stat-total', 'branches-stat-open', 'branches-stat-merged', 'branches-stat-stale']) {
+      const chip = page.locator(`#${id}`);
+      await expect(chip).toBeVisible();
+      // Value must be a whole number (0 or greater) — not the placeholder dash
+      await expect(chip).toHaveText(/^\d+$/);
     }
   });
 
-  test('displays branches list or grid', async ({ page }) => {
+  test('filter bar: search input and status dropdown are present', async ({ page }) => {
     await page.goto('/branches');
-
     await page.waitForLoadState('networkidle');
 
-    // Look for branches table, grid, or list
-    const branchesList = page.locator('[role="grid"], [role="table"], [class*="list"], [class*="branches"], [data-testid*="branch"]').first();
-    const branchCard = page.locator('[class*="branch"], [class*="card"], [role="button"]').first();
-    const emptyState = page.locator('text=/No branch|No data|empty/i').first();
+    await expect(page.locator('#branches-search')).toBeVisible();
+    await expect(page.locator('#branches-filter-status')).toBeVisible();
 
-    const hasBranchesList = await branchesList.isVisible().catch(() => false);
-    const hasBranchCard = await branchCard.isVisible().catch(() => false);
-    const hasEmptyState = await emptyState.isVisible().catch(() => false);
-
-    // v6.7.4: replaced fake disjunction with real load assertion
-    const _heading = page.locator("h1, h2").first();
-    await expect(_heading).toBeVisible();
+    // Status dropdown must have at least the four expected options
+    const select = page.locator('#branches-filter-status');
+    await expect(select.locator('option[value="open-pr"]')).toHaveCount(1);
+    await expect(select.locator('option[value="stale"]')).toHaveCount(1);
+    await expect(select.locator('option[value="merged"]')).toHaveCount(1);
+    await expect(select.locator('option[value="active"]')).toHaveCount(1);
   });
 
-  test('displays branch information (name, status, metadata)', async ({ page }) => {
+  test('shows either the branches table with correct headers or the empty state', async ({ page }) => {
     await page.goto('/branches');
-
     await page.waitForLoadState('networkidle');
 
-    // Look for branch names or identifiers
-    const branchNames = page.locator('text=/main|develop|feature|bugfix|release/i');
-    const branchNameCount = await branchNames.count();
+    const tableWrap = page.locator('#branches-table-wrap');
+    const emptyState = page.locator('#branches-empty');
 
-    if (branchNameCount > 0) {
-      await expect(branchNames.first()).toBeVisible();
-    }
+    const tableVisible = await tableWrap.isVisible().catch(() => false);
+    const emptyVisible = await emptyState.isVisible().catch(() => false);
 
-    // Look for status indicators
-    const statusElements = page.locator('[class*="badge"], [class*="status"], text=/active|merged|deleted/i');
-    const statusCount = await statusElements.count();
+    // Exactly one of these two states must be visible after load
+    expect(tableVisible || emptyVisible).toBe(true);
 
-    if (statusCount > 0) {
-      await expect(statusElements.first()).toBeVisible();
-    }
-  });
-
-  test('branch items are interactive', async ({ page }) => {
-    await page.goto('/branches');
-
-    await page.waitForLoadState('networkidle');
-
-    // Find first branch item (link or button)
-    const branchLink = page.locator('a, button, [role="button"]').filter({ hasText: /main|develop|feature|branch/i }).first();
-
-    if (await branchLink.isVisible()) {
-      await expect(branchLink).toBeEnabled();
+    if (tableVisible) {
+      // Table must have the six expected column headers
+      const thead = tableWrap.locator('thead tr');
+      await expect(thead.locator('th', { hasText: 'Branch' })).toHaveCount(1);
+      await expect(thead.locator('th', { hasText: 'Cycle' })).toHaveCount(1);
+      await expect(thead.locator('th', { hasText: 'Age' })).toHaveCount(1);
+      await expect(thead.locator('th', { hasText: 'Status' })).toHaveCount(1);
+      await expect(thead.locator('th', { hasText: 'PR' })).toHaveCount(1);
+      await expect(thead.locator('th', { hasText: 'Actions' })).toHaveCount(1);
     }
   });
 
-  test('branches page handles loading and empty states', async ({ page }) => {
+  test('loading state is hidden and error state is absent after successful load', async ({ page }) => {
     await page.goto('/branches');
-
     await page.waitForLoadState('networkidle');
 
-    // Check for either content or empty state
-    const loading = page.locator('text=/loading|Loading/i').first();
-    const emptyState = page.locator('text=/No branch|No data|empty/i').first();
-    const branchContent = page.locator('[class*="branch"], [role="grid"], [role="table"]').first();
-
-    const isLoading = await loading.isVisible().catch(() => false);
-    const isEmpty = await emptyState.isVisible().catch(() => false);
-    const hasContent = await branchContent.isVisible().catch(() => false);
-
-    // v6.7.4: replaced fake disjunction with real load assertion
-    const _heading = page.locator("h1, h2").first();
-    await expect(_heading).toBeVisible();
+    // Loading indicator must be gone — it's shown then hidden by loadBranchesPage()
+    await expect(page.locator('#branches-loading')).toBeHidden();
+    // Error state must not be visible on a healthy server
+    await expect(page.locator('#branches-error')).toBeHidden();
   });
 
-  test('branches page is responsive', async ({ page }) => {
+  test('refresh button re-fetches branches without breaking the page', async ({ page }) => {
     await page.goto('/branches');
-
     await page.waitForLoadState('networkidle');
 
-    // Test mobile view
+    // Capture the total count before refresh
+    const totalBefore = await page.locator('#branches-stat-total').textContent();
+
+    // Click Refresh
+    await page.locator('button', { hasText: /Refresh/i }).click();
+    // Wait for the loading state to appear then disappear
+    await page.waitForFunction(() => {
+      const el = document.getElementById('branches-loading');
+      return el && el.hidden;
+    }, { timeout: 8000 });
+
+    // Page must not be broken — heading still visible
+    await expect(page.locator('h2').filter({ hasText: /Autonomous Branches/i })).toBeVisible();
+
+    // Total count must still be a valid number
+    await expect(page.locator('#branches-stat-total')).toHaveText(/^\d+$/);
+  });
+
+  test('search filter narrows visible rows without showing the error state', async ({ page }) => {
+    await page.goto('/branches');
+    await page.waitForLoadState('networkidle');
+
+    const tableVisible = await page.locator('#branches-table-wrap').isVisible().catch(() => false);
+    if (!tableVisible) {
+      // No branches — nothing to filter, skip the interaction portion
+      await expect(page.locator('#branches-empty')).toBeVisible();
+      return;
+    }
+
+    // Type a nonsense query that will match nothing
+    await page.locator('#branches-search').fill('zzz-no-match-xyz-999');
+    // Filter empty state must appear
+    await expect(page.locator('#branches-filter-empty')).toBeVisible();
+    // Error state must NOT appear — filtering is client-side, no new fetch
+    await expect(page.locator('#branches-error')).toBeHidden();
+
+    // Clear the query — original results must return
+    await page.locator('#branches-search').fill('');
+    await expect(page.locator('#branches-table-wrap')).toBeVisible();
+    await expect(page.locator('#branches-filter-empty')).toBeHidden();
+  });
+
+  test('branches page is responsive at mobile and desktop widths', async ({ page }) => {
+    await page.goto('/branches');
+    await page.waitForLoadState('networkidle');
+
+    // Mobile
     await page.setViewportSize({ width: 375, height: 667 });
+    await page.waitForTimeout(300);
+    await expect(page.locator('h2').filter({ hasText: /Autonomous Branches/i })).toBeVisible();
 
-    await page.waitForTimeout(500);
-
-    const pageContent = page.locator('body');
-    await expect(pageContent).toBeVisible();
-
-    // Test desktop view
+    // Desktop
     await page.setViewportSize({ width: 1280, height: 720 });
-
-    await page.waitForTimeout(500);
-    await expect(pageContent).toBeVisible();
+    await page.waitForTimeout(300);
+    await expect(page.locator('h2').filter({ hasText: /Autonomous Branches/i })).toBeVisible();
   });
 });

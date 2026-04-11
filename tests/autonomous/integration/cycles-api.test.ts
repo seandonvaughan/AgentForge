@@ -382,4 +382,87 @@ describe('startCycleEventsWatcher (v6.5.3-B)', () => {
       watcher.stop();
     }
   });
+
+  // ── approval.pending SSE propagation ────────────────────────────────────────
+  //
+  // When the BudgetApproval.collect() step writes
+  //   {"type":"approval.pending","at":"..."}
+  // to events.jsonl (via CycleLogger.logApprovalPending), the watcher must
+  // forward it as a cycle_event with category='approval.pending' so the
+  // dashboard approvalsStore triggers refresh(true) and auto-opens the modal.
+
+  it('emits approval.pending when that event is appended to events.jsonl', async () => {
+    // Pre-seed the cycle dir WITHOUT an approval.pending event so the watcher
+    // anchors at the current file size and does NOT replay history.
+    seedCycle('approval-cycle', makeCycleJson({ cycleId: 'approval-cycle' }), {
+      events: [{ type: 'phase.start', phase: 'gate', at: '2026-04-10T09:00:00.000Z' }],
+    });
+
+    const seen: Array<Record<string, unknown>> = [];
+    const watcher = startCycleEventsWatcher(
+      tmpRoot,
+      { emit: (msg) => { seen.push(msg as unknown as Record<string, unknown>); } },
+      10_000,
+    );
+
+    try {
+      // First tick anchors the offset — must NOT emit history
+      await watcher.tick();
+      expect(seen).toHaveLength(0);
+
+      // Simulate CycleLogger.logApprovalPending() writing to events.jsonl
+      const eventsFile = join(tmpRoot, '.agentforge', 'cycles', 'approval-cycle', 'events.jsonl');
+      appendFileSync(
+        eventsFile,
+        JSON.stringify({ type: 'approval.pending', at: '2026-04-10T09:05:00.000Z' }) + '\n',
+      );
+
+      await watcher.tick();
+
+      expect(seen).toHaveLength(1);
+      // The watcher must emit with type='approval.pending' so the dashboard
+      // approvalsStore handler matches: cat === 'approval.pending'
+      expect(seen[0]).toMatchObject({
+        cycleId: 'approval-cycle',
+        type: 'approval.pending',
+      });
+      expect(typeof (seen[0] as { at: string }).at).toBe('string');
+    } finally {
+      watcher.stop();
+    }
+  });
+
+  it('emits approval.decision when that event is appended to events.jsonl', async () => {
+    seedCycle('decision-cycle', makeCycleJson({ cycleId: 'decision-cycle' }), {
+      events: [{ type: 'approval.pending', at: '2026-04-10T09:00:00.000Z' }],
+    });
+
+    const seen: Array<Record<string, unknown>> = [];
+    const watcher = startCycleEventsWatcher(
+      tmpRoot,
+      { emit: (msg) => { seen.push(msg as unknown as Record<string, unknown>); } },
+      10_000,
+    );
+
+    try {
+      await watcher.tick(); // anchor at current size
+
+      // Simulate BudgetApproval writing approval decision to events.jsonl
+      const eventsFile = join(tmpRoot, '.agentforge', 'cycles', 'decision-cycle', 'events.jsonl');
+      appendFileSync(
+        eventsFile,
+        JSON.stringify({ type: 'approval.decision', decision: 'approved', at: '2026-04-10T09:10:00.000Z' }) + '\n',
+      );
+
+      await watcher.tick();
+
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toMatchObject({
+        cycleId: 'decision-cycle',
+        type: 'approval.decision',
+      });
+    } finally {
+      watcher.stop();
+    }
+  });
 });

@@ -2,103 +2,29 @@
  * Live Feed Rendering Logic Tests
  *
  * Verifies that the /live page's rendering helper functions produce the
- * expected output for cycle_event messages. All functions are mirrored from
- * `packages/dashboard/src/routes/live/+page.svelte` — intentionally, so that
- * any change to the Svelte source requires a corresponding update here.
+ * expected output for cycle_event messages. All functions and constants are
+ * imported directly from `packages/dashboard/src/lib/util/live-feed.ts`
+ * so that any regression in the production module is caught immediately.
  *
  * Coverage:
  *   - cycleAccentColor(category)  → CSS variable string per event status
  *   - formatCategory(type, cat)   → Human-readable label for the category tag
  *   - formatTime(timestamp)       → HH:MM:SS display string
  *   - TYPE_COLORS / TYPE_LABELS   → cycle_event entries are correctly mapped
+ *   - CYCLE_CATEGORY_LABELS       → all known server-emitted categories present
+ *   - isSilentSystemMessage       → heartbeat / connected filter
  */
 
 import { describe, it, expect } from 'vitest';
-
-// ---------------------------------------------------------------------------
-// Mirrors of pure rendering helpers from +page.svelte
-// If the page's logic changes, update these mirrors and the tests below.
-// ---------------------------------------------------------------------------
-
-const TYPE_COLORS: Record<string, string> = {
-  agent_activity: 'var(--color-brand)',
-  sprint_event:   'var(--color-opus)',
-  cost_event:     'var(--color-warning)',
-  workflow_event: 'var(--color-info)',
-  branch_event:   'var(--color-haiku)',
-  system:         'var(--color-text-muted)',
-  refresh_signal: 'var(--color-danger)',
-  cycle_event:    'var(--color-sonnet, var(--color-info))',
-};
-
-const TYPE_LABELS: Record<string, string> = {
-  agent_activity: 'Agent',
-  sprint_event:   'Sprint',
-  cost_event:     'Cost',
-  workflow_event: 'Workflow',
-  branch_event:   'Branch',
-  system:         'System',
-  refresh_signal: 'Refresh',
-  cycle_event:    'Cycle',
-};
-
-const CYCLE_CATEGORY_LABELS: Record<string, string> = {
-  // Lifecycle
-  'cycle.started':    'Started',
-  'cycle.complete':   'Complete',
-  'cycle.completed':  'Complete',
-  'cycle.failed':     'Failed',
-  'cycle.error':      'Error',
-  // Phases
-  'phase.start':      'Phase →',
-  'phase.complete':   'Phase ✓',
-  'phase.result':     'Result',
-  'phase.failure':    'Phase ✗',
-  'phase.skip':       'Skipped',
-  // Source control
-  'commit':           'Commit',
-  'pr.opened':        'PR Open',
-  'pr.merged':        'PR Merged',
-  'opened':           'PR Open',
-  // Tests
-  'test.pass':        'Tests ✓',
-  'test.fail':        'Tests ✗',
-  'tests.complete':   'Tests ✓',
-  // Budget
-  'budget.warn':      'Budget ⚠',
-  // Scoring
-  'scoring.complete': 'Scored',
-  'scoring.fallback': 'Score ≈',
-  // Sprint assignment
-  'sprint.assigned':  'Sprint →',
-  // Approvals
-  'approval.pending': 'Approval?',
-  'approval.decision':'Decision',
-};
-
-function cycleAccentColor(category: string): string {
-  const cat = category.toLowerCase();
-  if (cat.includes('fail') || cat.includes('error')) return 'var(--color-danger)';
-  if (cat.includes('complete') || cat.includes('pass') || cat === 'commit') return 'var(--color-success)';
-  if (cat.includes('warn') || cat.includes('budget') || cat.includes('pending')) return 'var(--color-warning)';
-  if (cat.includes('start') || cat === 'cycle.started') return 'var(--color-sonnet)';
-  return 'var(--color-sonnet)';
-}
-
-function formatCategory(type: string, category: string): string {
-  if (type === 'cycle_event') {
-    return CYCLE_CATEGORY_LABELS[category] ?? category.replace(/\./g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-  }
-  return category;
-}
-
-function formatTime(ts: string): string {
-  try {
-    return new Date(ts).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  } catch {
-    return ts;
-  }
-}
+import {
+  TYPE_COLORS,
+  TYPE_LABELS,
+  CYCLE_CATEGORY_LABELS,
+  cycleAccentColor,
+  formatCategory,
+  formatTime,
+  isSilentSystemMessage,
+} from '../../packages/dashboard/src/lib/util/live-feed.js';
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -459,6 +385,36 @@ describe('Live feed rendering logic', () => {
       for (const [cat, label] of Object.entries(CYCLE_CATEGORY_LABELS)) {
         expect(label.length, `CYCLE_CATEGORY_LABELS["${cat}"] is empty`).toBeGreaterThan(0);
       }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // isSilentSystemMessage — heartbeat / connection-ack filter
+  // -------------------------------------------------------------------------
+
+  describe('isSilentSystemMessage', () => {
+    it('returns true for type=system message=heartbeat', () => {
+      expect(isSilentSystemMessage('system', 'heartbeat')).toBe(true);
+    });
+
+    it('returns true for type=system message=connected', () => {
+      expect(isSilentSystemMessage('system', 'connected')).toBe(true);
+    });
+
+    it('returns false for non-system type even with heartbeat message', () => {
+      expect(isSilentSystemMessage('cycle_event', 'heartbeat')).toBe(false);
+    });
+
+    it('returns false for type=system with a non-silent message', () => {
+      expect(isSilentSystemMessage('system', 'error: unexpected disconnect')).toBe(false);
+    });
+
+    it('returns false for cycle_event with any message', () => {
+      expect(isSilentSystemMessage('cycle_event', 'phase.start')).toBe(false);
+    });
+
+    it('returns false for agent_activity type', () => {
+      expect(isSilentSystemMessage('agent_activity', 'task.started')).toBe(false);
     });
   });
 });

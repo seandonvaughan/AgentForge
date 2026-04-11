@@ -101,36 +101,37 @@ test.describe('Flywheel Page', () => {
     await expect(_heading).toBeVisible();
   });
 
-  test('memory stats card renders total entries, sparkline, and hit rate when visible', async ({ page }) => {
+  test('memory stats card renders total entries, sparkline, and hit rate', async ({ page }) => {
     await page.goto('/flywheel');
 
     await page.waitForLoadState('networkidle');
 
-    // The SvelteKit +page.server.ts always computes memoryStats (even with zero
-    // values) via the inline computeMemoryStats() helper, so the card should be
-    // visible whenever SSR succeeds.  The client-side API poll may fail in CI
-    // (no Fastify server), but the fix in v10.4.1 demotes that to a non-blocking
-    // banner so SSR-rendered content remains visible.
+    // +page.server.ts always computes memoryStats via computeMemoryStats() —
+    // even for an empty project the function returns { totalEntries: 0,
+    // entriesPerCycleTrend: [], hitRate: 0 }, which is truthy enough to render
+    // the card.  The non-blocking refresh-error banner (visible when a background
+    // API poll fails) keeps SSR-rendered content intact, so the card must always
+    // be visible after SSR succeeds.
     const card = page.locator('[data-testid="memory-stats-card"]');
+    await expect(card).toBeVisible();
 
-    if (await card.isVisible().catch(() => false)) {
-      // Card is visible — assert the three required sub-metrics using
-      // explicit data-testid attributes (most reliable) with class fallbacks
-      // for the plain-HTML dashboard which shares the same test.
-      await expect(
-        card.locator('[data-testid="mem-total"], #fw-mem-total, .mem-total').first()
-      ).toBeVisible();
-      await expect(
-        card.locator('[data-testid="mem-hitrate"], #fw-mem-hitrate, .mem-hitrate').first()
-      ).toBeVisible();
-      // Sparkline container (trend bars or "no cycle data yet" placeholder).
-      const sparkline = card.locator(
-        '[aria-label*="Entries per cycle" i], #fw-mem-sparkline, .trend-bars'
-      ).first();
-      await expect(sparkline).toBeVisible();
-    }
-    // If the card is not visible (SSR failed AND API unavailable) the test still
-    // passes — this avoids false failures in minimal CI environments.
+    // Total entries counter (data-testid preferred; id/class fallbacks for the
+    // plain-HTML dashboard that shares the same selectors).
+    await expect(
+      card.locator('[data-testid="mem-total"], #fw-mem-total, .mem-total').first()
+    ).toBeVisible();
+
+    // Memory hit-rate percentage.
+    await expect(
+      card.locator('[data-testid="mem-hitrate"], #fw-mem-hitrate, .mem-hitrate').first()
+    ).toBeVisible();
+
+    // Entries-per-cycle sparkline (either the trend bars or the
+    // "no cycle data yet" empty-state placeholder inside the container).
+    const sparkline = card.locator(
+      '[aria-label*="Entries per cycle" i], #fw-mem-sparkline, .trend-bars'
+    ).first();
+    await expect(sparkline).toBeVisible();
   });
 
   test('flywheel page is responsive', async ({ page }) => {

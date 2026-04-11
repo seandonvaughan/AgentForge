@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync, readdirSync } from 'node:fs';
+import { createInterface } from 'node:readline';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { getWorkspace } from '@agentforge/core';
@@ -356,6 +357,140 @@ export async function dashboardStubRoutes(
 
   app.delete('/api/v5/memory/:id', async (req, reply) => {
     return reply.send({ ok: true });
+  });
+
+  // GET /api/v5/memory/stream — NDJSON streaming endpoint.
+  //
+  // Streams .agentforge/memory/*.jsonl entries as newline-delimited JSON
+  // (application/x-ndjson) without buffering the full corpus.  The dashboard
+  // uses this for progressive rendering: entries appear as they are read from
+  // disk rather than all at once after a batch load completes.
+  //
+  // Optional query params (same surface as GET /api/v5/memory):
+  //   search  — case-insensitive substring across key/value/summary/tags
+  //   type    — exact match on the entry's `type` field
+  //   agentId / agent — exact match on source/agentId
+  //   since   — ISO-8601; only entries with createdAt >= since
+  //
+  // Response: Content-Type: application/x-ndjson; one JSON object per line.
+  //           HTTP 200 with an empty body when no entries match.
+  app.get('/api/v5/memory/stream', async (req, reply) => {
+    const q = req.query as {
+      search?:  string;
+      type?:    string;
+      agentId?: string;
+      agent?:   string;
+      since?:   string;
+    };
+    const searchTerm  = (q.search ?? '').toLowerCase().trim() || undefined;
+    const typeFilter  = (q.type ?? '').trim() || undefined;
+    const agentFilter = (q.agentId ?? q.agent ?? '').trim() || undefined;
+    const sinceMs     = q.since ? new Date(q.since).getTime() : undefined;
+    const hasSince    = typeof sinceMs === 'number' && !Number.isNaN(sinceMs);
+
+    const memDir = join(projectRoot, '.agentforge', 'memory');
+
+    reply.raw.setHeader('Content-Type', 'application/x-ndjson');
+    reply.raw.setHeader('Cache-Control', 'no-cache');
+    reply.raw.setHeader('Transfer-Encoding', 'chunked');
+    // Allow cross-origin reads from Vite dev server (port 4751 → port 4750)
+    reply.raw.setHeader('Access-Control-Allow-Origin', '*');
+
+    if (!existsSync(memDir)) {
+      reply.raw.end();
+      return reply;
+    }
+
+    let files: string[] = [];
+    try {
+      files = readdirSync(memDir).filter(f => f.endsWith('.jsonl')).sort();
+    } catch {
+      reply.raw.end();
+      return reply;
+    }
+
+    try {
+      for (const filename of files) {
+        const filePath = join(memDir, filename);
+        let rl: ReturnType<typeof createInterface> | undefined;
+        try {
+          const fileStream = createReadStream(filePath, { encoding: 'utf8' });
+          rl = createInterface({ input: fileStream, crlfDelay: Infinity });
+
+          for await (const line of rl) {
+            if (!line.trim()) continue;
+            let e: {
+              id?: string;
+              type?: string;
+              value?: string;
+              createdAt?: string;
+              source?: string;
+              tags?: string[];
+            };
+            try {
+              e = JSON.parse(line) as typeof e;
+            } catch {
+              continue;
+            }
+            if (!e.id || !e.type) continue;
+
+            // Apply inline filters — skip rather than collect, so we never
+            // buffer the full corpus in memory.
+            if (typeFilter && e.type !== typeFilter) continue;
+            if (agentFilter && e.source !== agentFilter) continue;
+            if (hasSince) {
+              const entryMs = e.createdAt ? new Date(e.createdAt).getTime() : 0;
+              if (entryMs < sinceMs!) continue;
+            }
+
+            const rawValue = e.value ?? '';
+
+            // Derive human-readable summary and category using the same helpers
+            // as the batch endpoint (buildMemorySummary / buildMemoryKey).
+            let parsedValue: unknown = rawValue;
+            if (typeof rawValue === 'string' && rawValue.trim().startsWith('{')) {
+              try { parsedValue = JSON.parse(rawValue); } catch { /* keep string */ }
+            }
+            const summary = buildMemorySummary(e.type, parsedValue, rawValue);
+            const key = buildMemoryKey(e.type, parsedValue);
+
+            if (searchTerm) {
+              const valueStr = typeof parsedValue === 'string'
+                ? parsedValue
+                : JSON.stringify(parsedValue);
+              const haystack = [key, valueStr, summary ?? '', (e.tags ?? []).join(' ')]
+                .join(' ')
+                .toLowerCase();
+              if (!haystack.includes(searchTerm)) continue;
+            }
+
+            const row: Record<string, unknown> = {
+              id: e.id,
+              key,
+              value: parsedValue,
+              type: e.type,
+              createdAt: e.createdAt ?? new Date().toISOString(),
+              updatedAt: e.createdAt ?? new Date().toISOString(),
+            };
+            if (e.source !== undefined)  { row['source']  = e.source;  row['agentId'] = e.source; }
+            if (summary !== undefined)   { row['summary'] = summary; }
+            if (e.tags !== undefined)    { row['tags']    = e.tags;    }
+
+            reply.raw.write(JSON.stringify(row) + '\n');
+          }
+        } catch {
+          // Skip unreadable file; partial data already sent is fine
+        } finally {
+          rl?.close();
+        }
+      }
+    } catch {
+      // Swallow mid-stream errors; partial data already flushed
+    } finally {
+      reply.raw.end();
+    }
+
+    return reply;
   });
 
   // ── Autonomous Git Branches ───────────────────────────────────────────────

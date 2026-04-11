@@ -72,8 +72,13 @@ function normalizeSprint(raw: any): Record<string, unknown> {
     undefined;
 
   // risks (v4.7 era) surface as auditFindings when no dedicated field exists.
+  //
+  // IMPORTANT: use `!= null` not `?.length` here. An explicitly set
+  // `auditFindings: []` has `.length === 0` which is falsy, causing the risks
+  // array to silently override a sprint that genuinely has zero audit findings.
+  // Distinguishing "not present" from "present but empty" requires a null check.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const auditFindings: string[] = raw.auditFindings?.length
+  const auditFindings: string[] = raw.auditFindings != null
     ? raw.auditFindings
     : Array.isArray(raw.risks)
       ? raw.risks.map((r: any) =>

@@ -103,12 +103,110 @@
     return acc;
   }, {});
 
+  /** True while the NDJSON stream is still being read from the server. */
+  let streaming = false;
+
+  /**
+   * Load memory entries by consuming the NDJSON streaming endpoint
+   * (/api/v5/memory/stream).  Entries are appended to the reactive list as
+   * each line arrives, giving a "live feed" feel without waiting for the full
+   * corpus to buffer.
+   *
+   * Falls back to the batch JSON endpoint on any stream error so the page
+   * never shows an empty state due to a streaming issue.
+   */
   async function load(silent = false) {
     if (!silent) loading = true;
+    streaming = false;
     error = null;
 
-    // Snapshot existing IDs so we can detect new arrivals
+    // Snapshot existing IDs so we can detect genuinely new arrivals after refresh
     const prevIds = new Set(entries.map(e => e.id));
+
+    try {
+      const res = await fetch('/api/v5/memory/stream');
+      if (!res.ok || !res.body) {
+        // Stream unavailable — fall back to batch endpoint
+        return loadBatch(silent, prevIds);
+      }
+
+      // Progressive NDJSON parse: accumulate raw chunks, split on newlines,
+      // parse each complete line as a MemoryEntry, and carry incomplete
+      // trailing fragments to the next chunk.
+      const reader  = res.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let   buffer  = '';
+      const fresh: MemoryEntry[] = [];
+
+      streaming = true;
+      loading   = false;  // hide skeleton as soon as first byte arrives
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // Split on newlines: all but the last segment are complete JSON lines.
+        const lines = buffer.split('\n');
+        // Keep the trailing incomplete fragment for the next chunk.
+        buffer = lines.pop() ?? '';
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const entry = JSON.parse(line) as MemoryEntry;
+            fresh.push(entry);
+            // Append incrementally so the table updates as each batch arrives
+            entries = [...fresh];
+          } catch { /* skip malformed NDJSON lines */ }
+        }
+      }
+
+      // Flush any remaining buffer content (last line with no trailing newline)
+      if (buffer.trim()) {
+        try {
+          const entry = JSON.parse(buffer) as MemoryEntry;
+          fresh.push(entry);
+        } catch { /* ignore */ }
+      }
+
+      entries = fresh;
+      // Re-derive agent and type lists from the streamed entries
+      agents = [...new Set(fresh.map(e => e.agentId).filter((a): a is string => Boolean(a)))];
+      types  = [...new Set(fresh.map(e => e.type).filter((t): t is string => Boolean(t)))].sort();
+      lastRefreshedAt = new Date();
+
+      // Highlight entries that are genuinely new since the previous load
+      const arrivals = fresh.filter(e => !prevIds.has(e.id));
+      if (arrivals.length > 0 && prevIds.size > 0) {
+        newCount = arrivals.length;
+        newIds   = new Set(arrivals.map(e => e.id));
+        setTimeout(() => { newIds = new Set(); newCount = 0; }, 3500);
+      }
+    } catch (e) {
+      // Stream failed mid-flight — fall back to batch
+      try {
+        await loadBatch(true, prevIds);
+      } catch {
+        error = String(e);
+      }
+    } finally {
+      streaming = false;
+      loading   = false;
+    }
+  }
+
+  /**
+   * Batch fallback: fetch all entries from the paginated JSON endpoint and
+   * replace the entry list atomically.  Used when the NDJSON stream is
+   * unavailable (e.g., older server build) and for silent SSE-triggered
+   * refreshes where progressive rendering would cause visible flicker.
+   */
+  async function loadBatch(silent = false, prevIds?: Set<string>) {
+    if (!silent) loading = true;
+    error = null;
+    const snapshot = prevIds ?? new Set(entries.map(e => e.id));
 
     try {
       const res = await fetch('/api/v5/memory');
@@ -124,12 +222,10 @@
       types   = json.types ?? [];
       lastRefreshedAt = new Date();
 
-      // Compute which entries are genuinely new since the last load
-      const arrivals = fresh.filter(e => !prevIds.has(e.id));
-      if (arrivals.length > 0 && prevIds.size > 0) {
+      const arrivals = fresh.filter(e => !snapshot.has(e.id));
+      if (arrivals.length > 0 && snapshot.size > 0) {
         newCount = arrivals.length;
-        newIds = new Set(arrivals.map(e => e.id));
-        // Clear the highlight after the animation completes
+        newIds   = new Set(arrivals.map(e => e.id));
         setTimeout(() => { newIds = new Set(); newCount = 0; }, 3500);
       }
     } catch (e) {
@@ -179,7 +275,9 @@
         const parsed = JSON.parse(e.data as string) as { category?: string };
         const cat = parsed.category ?? '';
         if (cat === 'cycle.complete' || cat === 'cycle.completed' || cat === 'cycle.failed') {
-          load(true); // silent refresh — memory is written at cycle completion
+          // Use batch refresh for SSE-triggered reloads — avoids streaming flicker
+          // when memory is written atomically at cycle completion.
+          loadBatch(true);
         }
       } catch { /* ignore */ }
     });
@@ -194,20 +292,22 @@
       pushFeedEvent(e.data as string, 'workflow_event');
       try {
         const parsed = JSON.parse(e.data as string) as { category?: string };
-        if (parsed.category === 'workflow.complete') load(true);
+        if (parsed.category === 'workflow.complete') loadBatch(true);
       } catch { /* ignore */ }
     });
 
     // refresh_signal — explicit server-side push to reload
     es.addEventListener('refresh_signal', (e: MessageEvent) => {
       pushFeedEvent(e.data as string, 'refresh_signal');
-      load(true);
+      loadBatch(true);
     });
 
     // memory_written — emitted by the core when a new memory entry is persisted
     es.addEventListener('memory_written', (e: MessageEvent) => {
       pushFeedEvent(e.data as string, 'memory_written');
-      load(true); // silently refresh entry list so new memory appears immediately
+      // Batch refresh: the entry is fully written when this event fires,
+      // so a streaming read would just re-read everything unnecessarily.
+      loadBatch(true);
     });
 
     es.onerror = () => {
@@ -578,7 +678,9 @@
     <h1 class="page-title">Memory</h1>
     <p class="page-subtitle">
       {filteredEntries.length}{filteredEntries.length !== entries.length ? ` of ${entries.length}` : ''} entr{filteredEntries.length === 1 ? 'y' : 'ies'}
-      {#if lastRefreshedAt}
+      {#if streaming}
+        <span class="streaming-indicator" aria-live="polite">· streaming…</span>
+      {:else if lastRefreshedAt}
         · updated {formatRelative(lastRefreshedAt.toISOString())}
       {/if}
     </p>
@@ -589,8 +691,8 @@
       <span class="sse-dot {sseConnected ? 'live' : sseReconnecting ? 'reconnecting' : 'offline'}"></span>
       <span class="sse-label">{sseConnected ? 'Live' : sseReconnecting ? 'Reconnecting' : 'Offline'}</span>
     </span>
-    <button class="btn btn-ghost btn-sm" onclick={() => load()} disabled={loading}>
-      {loading ? 'Loading…' : 'Refresh'}
+    <button class="btn btn-ghost btn-sm" onclick={() => load()} disabled={loading || streaming}>
+      {loading ? 'Loading…' : streaming ? 'Streaming…' : 'Refresh'}
     </button>
   </div>
 </div>
@@ -1198,6 +1300,13 @@
   .sse-label {
     font-size: var(--text-xs);
     color: var(--color-text-faint);
+  }
+
+  /* Streaming state indicator shown in the page subtitle */
+  .streaming-indicator {
+    font-size: var(--text-xs);
+    color: var(--color-sonnet);
+    animation: mem-blink 1.2s step-end infinite;
   }
 
   @keyframes mem-pulse {
@@ -2222,6 +2331,7 @@
     .sse-dot-sm.reconnecting { animation: none; }
     .mem-row--new { animation: none; }
     .new-banner { animation: none; }
+    .streaming-indicator { animation: none; }
   }
 
   /* ── Mobile ──────────────────────────────────────────────────────────────── */

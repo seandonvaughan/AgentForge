@@ -635,10 +635,41 @@
     {#if activeTab === 'phases'}
       <div class="phase-list">
         {#each PHASES as phase}
+          {@const pData = phaseData[phase]}
+          {@const pStatus = (pData as any)?.status ?? null}
+          {@const pCost = (pData as any)?.costUsd ?? (pData as any)?.cost?.totalUsd ?? null}
+          {@const pDuration = (pData as any)?.durationMs ?? null}
+          {@const statusVariant =
+            pStatus === 'completed' ? 'success' :
+            pStatus === 'failed'    ? 'danger'  :
+            pStatus === 'running'   ? 'info'    :
+            pData !== undefined     ? 'muted'   : null}
           <div class="phase-item">
-            <button class="phase-toggle" onclick={() => togglePhase(phase)}>
+            <button
+              class="phase-toggle"
+              class:phase-toggle--has-status={statusVariant !== null}
+              class:phase-toggle--open={openPhases[phase]}
+              onclick={() => togglePhase(phase)}
+            >
               <span class="phase-arrow">{openPhases[phase] ? '▼' : '▶'}</span>
+              {#if statusVariant !== null}
+                <span class="phase-status-dot phase-status-dot--{statusVariant}"></span>
+              {/if}
               <span class="phase-name">{phase}</span>
+              {#if phaseLoading[phase]}
+                <span class="phase-loading-hint muted">loading…</span>
+              {:else if pData === null}
+                <span class="phase-absent-hint muted">not present</span>
+              {:else if pData !== undefined}
+                <span class="phase-toggle-meta">
+                  {#if pCost != null}
+                    <span class="phase-cost-chip">${Number(pCost).toFixed(3)}</span>
+                  {/if}
+                  {#if pDuration != null}
+                    <span class="phase-dur-chip">{formatDuration(pDuration)}</span>
+                  {/if}
+                </span>
+              {/if}
             </button>
             {#if openPhases[phase]}
               <div class="phase-body">
@@ -646,13 +677,13 @@
                   <div class="skeleton" style="height:60px;"></div>
                 {:else if phaseError[phase]}
                   <div class="error-msg">{phaseError[phase]}</div>
-                {:else if phaseData[phase] == null}
-                  <div class="muted">Not present.</div>
+                {:else if pData == null}
+                  <div class="phase-absent-body muted">No data found for this phase in the current cycle.</div>
                 {:else}
-                    {@const phaseSections = markdownSections(phaseData[phase])}
-                  {@const phaseAgentRuns = agentRunSections(phaseData[phase])}
-                  {@const metaOnly = stripMarkdownFields(phaseData[phase])}
-                  {@const metaStats = phaseMetaStats(phaseData[phase])}
+                  {@const phaseSections = markdownSections(pData)}
+                  {@const phaseAgentRuns = agentRunSections(pData)}
+                  {@const metaOnly = stripMarkdownFields(pData)}
+                  {@const metaStats = phaseMetaStats(pData)}
 
                   <!-- Structured stat chips (status, cost, duration, runs) -->
                   {#if metaStats.length > 0}
@@ -660,7 +691,11 @@
                       {#each metaStats as stat}
                         <div class="phase-meta-stat">
                           <span class="phase-meta-key">{stat.key}</span>
-                          <span class="phase-meta-val">{stat.value}</span>
+                          <span
+                            class="phase-meta-val"
+                            class:phase-meta-val--success={stat.key === 'status' && stat.value === 'completed'}
+                            class:phase-meta-val--danger={stat.key === 'status' && stat.value === 'failed'}
+                          >{stat.value}</span>
                         </div>
                       {/each}
                     </div>
@@ -674,9 +709,9 @@
                     </details>
                   {/if}
 
-                  <!-- Markdown prose sections (review, rationale, retrospective) -->
+                  <!-- Markdown prose sections (error, review, rationale, retrospective, etc.) -->
                   {#each phaseSections as section}
-                    <div class="phase-md-section">
+                    <div class="phase-md-section" class:phase-md-section--error={section.label === 'error'}>
                       <div class="phase-md-label">{section.label}</div>
                       <div class="phase-md-body">
                         <MarkdownRenderer content={section.content} />
@@ -687,12 +722,16 @@
                   <!-- Per-agent run responses rendered as markdown -->
                   {#each phaseAgentRuns as run, i}
                     <div class="phase-md-section">
-                      <div class="phase-md-label">agentRun[{i}] response — {run.agentId}</div>
+                      <div class="phase-md-label">agentRun[{i}] — {run.agentId}</div>
                       <div class="phase-md-body">
                         <MarkdownRenderer content={run.response} />
                       </div>
                     </div>
                   {/each}
+
+                  {#if phaseSections.length === 0 && phaseAgentRuns.length === 0 && metaStats.length === 0}
+                    <div class="muted">No content available for this phase.</div>
+                  {/if}
                 {/if}
               </div>
             {/if}
@@ -949,6 +988,7 @@
     font-size: var(--text-sm);
   }
   .phase-toggle:hover { background: var(--color-bg-card-hover); }
+  .phase-toggle--open { background: var(--color-bg-card-hover); }
   .phase-arrow { color: var(--color-text-muted); font-size: var(--text-xs); }
   .phase-name {
     font-family: var(--font-mono);
@@ -956,7 +996,57 @@
     letter-spacing: 0.06em;
     font-size: var(--text-xs);
     font-weight: 600;
+    flex: 1;
   }
+
+  /* Status dot in the phase toggle header */
+  .phase-status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: var(--radius-full);
+    flex-shrink: 0;
+  }
+  .phase-status-dot--success { background: var(--color-success); }
+  .phase-status-dot--danger  { background: var(--color-danger); }
+  .phase-status-dot--info    { background: var(--color-info); animation: pulse-slow 1.4s ease-in-out infinite; }
+  .phase-status-dot--muted   { background: var(--color-border); }
+  @keyframes pulse-slow {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.3; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .phase-status-dot--info { animation: none; }
+  }
+
+  /* Cost / duration chips in the toggle header */
+  .phase-toggle-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+  .phase-cost-chip {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-warning);
+    background: rgba(245,166,35,0.08);
+    border: 1px solid rgba(245,166,35,0.2);
+    border-radius: var(--radius-sm);
+    padding: 1px var(--space-2);
+  }
+  .phase-dur-chip {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+  }
+  .phase-loading-hint,
+  .phase-absent-hint {
+    font-size: var(--text-xs);
+    margin-left: auto;
+    font-family: var(--font-mono);
+  }
+
   .phase-body {
     padding: var(--space-3);
     border-top: 1px solid var(--color-border);
@@ -964,7 +1054,16 @@
     flex-direction: column;
     gap: var(--space-2);
   }
+  .phase-absent-body {
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+    padding: var(--space-2) 0;
+  }
   .phase-runs { font-size: var(--text-xs); color: var(--color-text-muted); }
+
+  /* Status-colored value in stat chips */
+  .phase-meta-val--success { color: var(--color-success); }
+  .phase-meta-val--danger  { color: var(--color-danger); }
 
   .phase-md-section {
     border-top: 1px solid var(--color-border);
@@ -979,6 +1078,14 @@
   .phase-md-section:first-child {
     border-top: none;
     padding-top: 0;
+  }
+  /* Error sections get a danger accent instead of the brand blue */
+  .phase-md-section--error .phase-md-body {
+    border-left-color: var(--color-danger);
+    background: rgba(224,90,90,0.04);
+  }
+  .phase-md-section--error .phase-md-label {
+    color: var(--color-danger);
   }
   .phase-md-label {
     font-size: var(--text-xs);

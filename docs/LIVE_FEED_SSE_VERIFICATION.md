@@ -75,13 +75,18 @@ interface StreamEvent {
 
 | File | Tests | Description |
 |------|-------|-------------|
-| `tests/integration/live-feed-rendering.test.ts` | 57 | Pure rendering helpers: `cycleAccentColor`, `formatCategory`, `formatTime`, `TYPE_COLORS`, `TYPE_LABELS`, `CYCLE_CATEGORY_LABELS` |
-| `tests/integration/v5-cycle-events-live-feed.test.ts` | 10 | v5 `EventStream` → FeedEvent shape, color/label mapping, subscription lifecycle, phase ordering |
+| `tests/integration/live-feed-rendering.test.ts` | 67 | Pure rendering helpers **imported directly from `live-feed.ts`**: `cycleAccentColor`, `formatCategory`, `formatTime`, `TYPE_COLORS`, `TYPE_LABELS`, `CYCLE_CATEGORY_LABELS`, `isSilentSystemMessage` |
+| `tests/integration/v5-cycle-events-live-feed.test.ts` | 11 | v5 `EventStream` → FeedEvent shape, color/label mapping, subscription lifecycle, phase ordering |
 | `tests/integration/live-feed-wire-format.test.ts` | 14 | Wire-format round-trip; unnamed-vs-named guard; heartbeat filtering; malformed-JSON resilience |
 | `tests/integration/sse-live-feed.test.ts` | 7 | Multi-client delivery, field completeness, timestamp validity, phase lifecycle, client resilience |
 | `tests/e2e/dashboard-live.test.ts` | 17 | Playwright E2E: page title, connection dot, cycle row rendering, type badge, category tag, timestamp, filter, clear |
 
-**Total: 105 tests covering the full SSE → render pipeline.**
+**Total: 116 unit/integration tests + 17 E2E tests covering the full SSE → render pipeline.**
+
+> **Note**: `live-feed-rendering.test.ts` was upgraded from inline mirrors to real imports
+> (`import { TYPE_COLORS, TYPE_LABELS, … } from 'live-feed.ts'`). The test now directly
+> exercises the production module so any regression in `live-feed.ts` is immediately
+> caught rather than silently passing against a stale mirror.
 
 Run all integration tests:
 

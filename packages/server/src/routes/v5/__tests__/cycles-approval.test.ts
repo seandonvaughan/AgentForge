@@ -22,6 +22,7 @@ import {
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { cyclesRoutes } from '../cycles.js';
+import { globalStream, type StreamEvent } from '../stream.js';
 
 // ── fixtures ──────────────────────────────────────────────────────────────────
 
@@ -399,5 +400,114 @@ describe('GET /api/v5/cycle-sessions — hasApprovalPending', () => {
     expect(body.counts).toHaveProperty('approvalPending');
     // No real sessions in test environment → approvalPending = 0
     expect(body.counts.approvalPending).toBe(0);
+  });
+});
+
+// ── SSE broadcast from POST /api/v5/cycles/:id/approve ───────────────────────
+//
+// After the dashboard modal POSTs an approval decision, the server must emit
+// an SSE cycle_event with category='approval.decision' so that all connected
+// dashboard clients immediately dismiss the approval card without waiting for
+// the next 10-second poll.
+
+describe('POST /api/v5/cycles/:id/approve — SSE broadcast', () => {
+  it('emits a cycle_event SSE message with category approval.decision on approve', async () => {
+    writePending(CYCLE_ID);
+
+    const received: StreamEvent[] = [];
+    const unsub = globalStream.subscribe('test-sse-client', (e) => received.push(e));
+
+    try {
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/v5/cycles/${CYCLE_ID}/approve`,
+        payload: { approveAll: true },
+      });
+      expect(res.statusCode).toBe(200);
+
+      // The handler calls globalStream.emit() synchronously before returning
+      expect(received).toHaveLength(1);
+      const evt = received[0];
+      expect(evt.type).toBe('cycle_event');
+      expect(evt.category).toBe('approval.decision');
+      expect(evt.message).toContain('approval.decision');
+    } finally {
+      unsub();
+    }
+  });
+
+  it('SSE event includes cycleId and decision fields in data payload', async () => {
+    writePending(CYCLE_ID);
+
+    const received: StreamEvent[] = [];
+    const unsub = globalStream.subscribe('test-sse-payload', (e) => received.push(e));
+
+    try {
+      await app.inject({
+        method: 'POST',
+        url: `/api/v5/cycles/${CYCLE_ID}/approve`,
+        payload: {
+          approvedItemIds: ['item-1'],
+          rejectedItemIds: ['item-2', 'item-3'],
+          decidedBy: 'test-operator',
+        },
+      });
+
+      expect(received).toHaveLength(1);
+      const data = received[0].data as Record<string, unknown>;
+      expect(data.cycleId).toBe(CYCLE_ID);
+      expect(data.type).toBe('approval.decision');
+      expect(data.decision).toBe('approved');
+      expect(data.decidedBy).toBe('test-operator');
+      expect(typeof data.at).toBe('string');
+    } finally {
+      unsub();
+    }
+  });
+
+  it('SSE decision field is "rejected" when approvedItemIds is empty', async () => {
+    writePending(CYCLE_ID);
+
+    const received: StreamEvent[] = [];
+    const unsub = globalStream.subscribe('test-sse-reject', (e) => received.push(e));
+
+    try {
+      await app.inject({
+        method: 'POST',
+        url: `/api/v5/cycles/${CYCLE_ID}/approve`,
+        payload: {
+          approvedItemIds: [],
+          rejectedItemIds: ['item-1', 'item-2', 'item-3'],
+          decidedBy: 'dashboard',
+        },
+      });
+
+      expect(received).toHaveLength(1);
+      const data = received[0].data as Record<string, unknown>;
+      expect(data.decision).toBe('rejected');
+    } finally {
+      unsub();
+    }
+  });
+
+  it('does NOT emit SSE when approval-decision.json already exists (409 guard)', async () => {
+    const dir = writePending(CYCLE_ID);
+    writeDecision(dir); // pre-existing decision → endpoint returns 409
+
+    const received: StreamEvent[] = [];
+    const unsub = globalStream.subscribe('test-sse-409', (e) => received.push(e));
+
+    try {
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/v5/cycles/${CYCLE_ID}/approve`,
+        payload: { approveAll: true },
+      });
+      expect(res.statusCode).toBe(409);
+      // Handler must NOT emit SSE when it returns 409
+      expect(received).toHaveLength(0);
+    } finally {
+      unsub();
+    }
   });
 });
