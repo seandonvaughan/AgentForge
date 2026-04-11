@@ -1,0 +1,19 @@
+{
+  "type": "scope-clarification",
+  "agent": "Architect",
+  "description": "Ruled sprint item 'The autonomous loop automatically plans, executes, tests, and commits code improvements based on backlog proposals and failure detection' as NOT-ACTIONABLE as written. The title restates already-shipped behavior delivered in v6.4.4 (see docs/guides/autonomous-loop.md). No implementation work is authorized for this item. Decomposed into four concrete follow-on candidates that a future sprint may pick up individually; see artifacts.",
+  "alternatives": [
+    "Delegate to coder as-is (REJECTED — would repeat the partial-refactor failure class recorded in memory 721bd958; ambiguous scope produces compile-blocking half-work)",
+    "Mark as blocked and defer (REJECTED — leaves the backlog item silently pending with no rationale trail)",
+    "Delete from backlog (REJECTED — loses the decomposition work and the signal that a TODO(autonomous) marker was mis-phrased)"
+  ],
+  "rationale": "The item's tags include 'needs-clarification' and the item description explicitly defers scope to the architect. The capability it names is already implemented end-to-end: planning (backlog scanner + phase-handlers), execution (parallel agent dispatch), testing (post-exec vitest gate), commit (Git stage at end of cycle), and failure detection (auto-recovery-agent). Writing any code against this item would either duplicate existing functionality or drift into speculative territory. The correct architect response is to narrow scope to zero, record the decomposition, and let a future cycle pick up concrete sub-items individually with clear acceptance criteria.",
+  "artifacts": [
+    "docs/v4/autonomous-loop-scope-clarification.md",
+    "docs/guides/autonomous-loop.md"
+  ],
+  "confidence": 0.95,
+  "sessionId": "architect-clarification-2026-04-11",
+  "id": "scope-autoloop-2026-04-11",
+  "timestamp": "2026-04-11T00:00:00.000Z"
+}

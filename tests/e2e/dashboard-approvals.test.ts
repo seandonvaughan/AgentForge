@@ -325,11 +325,13 @@ test.describe('Approvals Dashboard UI E2E', () => {
     await expect(statusBadge).toBeVisible({ timeout: 5000 });
     await expect(statusBadge).toContainText(/denied/i);
 
-    // Verify via API that the rejection was recorded
+    // Verify via API that the rejection was recorded.
+    // The backend stores the canonical status 'rejected'; the UI normalises
+    // it to 'denied' for display but the raw API always returns 'rejected'.
     const getResponse = await page.request.get(`/api/v5/approvals/${approval.id}`);
     expect(getResponse.status()).toBe(200);
     const getBody = await getResponse.json();
-    expect(getBody.data.status).toBe('denied');
+    expect(getBody.data.status).toBe('rejected');
     expect(getBody.data.reviewedBy).toBe('dashboard-user');
     expect(getBody.data.reviewedAt).toBeTruthy();
   });

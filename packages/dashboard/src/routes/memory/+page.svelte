@@ -56,6 +56,10 @@
       typeof e.value === 'string' ? e.value : JSON.stringify(e.value),
       e.summary ?? '',
       (e.tags ?? []).join(' '),
+      // Also search resolved sprint version so operators can type "v9.0.1"
+      resolveSprintVersion(e) ?? '',
+      // Search inside promoted metadata fields (rationale, verdict, etc.)
+      e.metadata ? JSON.stringify(e.metadata) : '',
     ].join(' ').toLowerCase().includes(searchQuery.trim().toLowerCase());
 
     const matchesAgent = agentFilter === 'all' || e.agentId === agentFilter;
@@ -246,6 +250,41 @@
     return formatDate(iso);
   }
 
+  /**
+   * Resolve a human-readable sprint version for ANY entry type.
+   * Strategy (first match wins):
+   *   1. Tags array — looks for a "sprint:vX.Y.Z" tag (review-finding entries).
+   *   2. JSON value — parses `value` and reads `sprintVersion` (gate-verdict,
+   *      cycle-outcome, and any future type that embeds the field).
+   *   3. Metadata object — reads `sprintVersion` from the promoted metadata map.
+   * Returns null when no sprint version can be determined.
+   */
+  function resolveSprintVersion(entry: MemoryEntry): string | null {
+    // 1. Tags (review-finding entries carry sprint:vX.Y.Z)
+    const fromTag = sprintTagFromEntry(entry);
+    if (fromTag) return fromTag;
+
+    // 2. Promoted metadata object (rank-1 schema)
+    if (entry.metadata && typeof entry.metadata.sprintVersion === 'string' && entry.metadata.sprintVersion) {
+      return entry.metadata.sprintVersion;
+    }
+
+    // 3. Inline JSON value (gate-verdict, cycle-outcome)
+    if (typeof entry.value === 'string' && entry.value.trim().startsWith('{')) {
+      try {
+        const parsed = JSON.parse(entry.value) as Record<string, unknown>;
+        if (typeof parsed.sprintVersion === 'string' && parsed.sprintVersion) {
+          return parsed.sprintVersion;
+        }
+      } catch { /* not JSON */ }
+    } else if (entry.value && typeof entry.value === 'object') {
+      const v = entry.value as Record<string, unknown>;
+      if (typeof v.sprintVersion === 'string' && v.sprintVersion) return v.sprintVersion;
+    }
+
+    return null;
+  }
+
   /** Determines whether a source string looks like a UUID cycle ID. */
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   function isCycleId(s?: string): boolean {
@@ -269,13 +308,15 @@
 
   /**
    * Build a human-readable label for a source UUID by scanning the loaded
-   * entries for a sprint version tag associated with the same source.
+   * entries for a sprint version associated with the same source.
+   * Uses resolveSprintVersion so it works for all entry types (not just
+   * those that carry a "sprint:vX.Y.Z" tag).
    */
   function sourceLabel(sourceId: string): string {
     if (!UUID_RE.test(sourceId)) return sourceId;
-    // Look up an entry that has this as its source and has a sprint tag
-    const match = entries.find(e => (e.source === sourceId || e.agentId === sourceId) && sprintTagFromEntry(e));
-    const version = match ? sprintTagFromEntry(match) : null;
+    // Look up any entry sharing this source and resolve its sprint version.
+    const match = entries.find(e => e.source === sourceId || e.agentId === sourceId);
+    const version = match ? resolveSprintVersion(match) : null;
     return version ? `cycle · ${version}` : `cycle · ${sourceId.slice(0, 8)}`;
   }
 
@@ -487,7 +528,7 @@
     <input
       class="search-input"
       type="search"
-      placeholder="Search keys, values, tags…"
+      placeholder="Search keys, values, tags, sprint version…"
       bind:value={searchQuery}
       aria-label="Search memory entries"
     />
@@ -568,6 +609,7 @@
           {@const cfg = getTypeConfig(entry)}
           {@const isNew = newIds.has(entry.id)}
           {@const isExpanded = expanded.has(entry.id)}
+          {@const sprintVerForKey = resolveSprintVersion(entry)}
           <tr
             class="mem-row"
             class:mem-row--deleting={deleting.has(entry.id)}
@@ -587,10 +629,14 @@
                   <code class="key-cell">{entry.key}</code>
                   <span class="expand-icon" aria-hidden="true">{isExpanded ? '▾' : '▸'}</span>
                 </div>
-                {#if entry.tags && entry.tags.length > 0}
+                {#if entry.tags && entry.tags.length > 0 || sprintVerForKey}
                   <div class="tag-row">
-                    {#each entry.tags as tag (tag)}
-                      <span class="tag-chip">{tag}</span>
+                    {#if sprintVerForKey && !sprintTagFromEntry(entry)}
+                      <!-- Sprint version chip for entries whose sprint is in JSON value, not tags -->
+                      <span class="tag-chip tag-chip--sprint">{sprintVerForKey}</span>
+                    {/if}
+                    {#each (entry.tags ?? []) as tag (tag)}
+                      <span class="tag-chip" class:tag-chip--sprint-tag={tag.startsWith('sprint:')}>{tag}</span>
                     {/each}
                   </div>
                 {/if}
@@ -625,14 +671,27 @@
             <td class="col-source" onclick={(e) => e.stopPropagation()}>
               {#if entry.source}
                 {#if isCycleId(entry.source)}
-                  <a
-                    class="source-link source-link--cycle"
-                    href="/cycles/{entry.source}"
-                    title="View cycle {entry.source}"
-                  >
-                    <span class="source-prefix">cycle</span>
-                    {shortSource(entry.source)}
-                  </a>
+                  {@const sprintVer = resolveSprintVersion(entry)}
+                  <div class="source-stack">
+                    <a
+                      class="source-link source-link--cycle"
+                      href="/cycles/{entry.source}"
+                      title="View cycle {entry.source}"
+                    >
+                      <span class="source-prefix">cycle</span>
+                      {shortSource(entry.source)}
+                    </a>
+                    {#if sprintVer}
+                      <a
+                        class="source-link source-link--sprint"
+                        href="/sprints/{encodeURIComponent(sprintVer)}"
+                        title="View sprint {sprintVer}"
+                      >
+                        <span class="source-prefix">sprint</span>
+                        {sprintVer}
+                      </a>
+                    {/if}
+                  </div>
                 {:else}
                   <a
                     class="source-link source-link--agent"
@@ -694,9 +753,11 @@
                       <span class="detail-meta-item">
                         <span class="detail-label">Source</span>
                         {#if isCycleId(entry.source)}
-                          <a class="source-link source-link--cycle" href="/cycles/{entry.source}" title="View cycle {entry.source}">
-                            <span class="source-prefix">cycle</span>{shortSource(entry.source)}
-                          </a>
+                          <div class="source-stack">
+                            <a class="source-link source-link--cycle" href="/cycles/{entry.source}" title="View cycle {entry.source}">
+                              <span class="source-prefix">cycle</span>{shortSource(entry.source)}
+                            </a>
+                          </div>
                         {:else}
                           <a class="source-link source-link--agent" href="/agents/{encodeURIComponent(entry.source)}" title="View agent {entry.source}">
                             <span class="source-prefix">agent</span>{entry.source}
@@ -708,6 +769,20 @@
                       <span class="detail-meta-item">
                         <span class="detail-label">File</span>
                         <code class="detail-code detail-code--file">{entry.type}.jsonl</code>
+                      </span>
+                    {/if}
+                    {#if resolveSprintVersion(entry)}
+                      {@const sv = resolveSprintVersion(entry)}
+                      <span class="detail-meta-item">
+                        <span class="detail-label">Sprint</span>
+                        <a
+                          class="source-link source-link--sprint detail-sprint-link"
+                          href="/sprints/{encodeURIComponent(sv ?? '')}"
+                          title="View sprint {sv}"
+                          onclick={(e) => e.stopPropagation()}
+                        >
+                          {sv}
+                        </a>
                       </span>
                     {/if}
                   </div>
@@ -1036,7 +1111,7 @@
   .col-key   { width: 18%; vertical-align: top; padding-top: var(--space-3); }
   .col-type  { width: 14%; white-space: nowrap; vertical-align: top; padding-top: var(--space-3); }
   .col-value { width: 40%; vertical-align: top; padding-top: var(--space-3); }
-  .col-source{ width: 14%; white-space: nowrap; vertical-align: top; padding-top: var(--space-3); }
+  .col-source{ width: 16%; vertical-align: top; padding-top: var(--space-2); }
   .col-age   {
     width: 10%;
     white-space: nowrap;
@@ -1066,6 +1141,14 @@
     color: var(--color-text-faint);
     white-space: nowrap;
     letter-spacing: 0.02em;
+  }
+  /* Sprint version chip: amber accent to match --color-opus */
+  .tag-chip--sprint,
+  .tag-chip--sprint-tag {
+    background: color-mix(in srgb, var(--color-opus) 8%, transparent);
+    border-color: color-mix(in srgb, var(--color-opus) 25%, transparent);
+    color: var(--color-opus);
+    font-weight: 600;
   }
 
   /* ── Value cell ──────────────────────────────────────────────────────────── */
@@ -1132,6 +1215,27 @@
   .source-link--agent:hover {
     border-color: rgba(76,175,130,0.4);
     background: rgba(76,175,130,0.12);
+  }
+  .source-link--sprint {
+    color: var(--color-opus);
+    border-color: rgba(245,200,66,0.2);
+    background: rgba(245,200,66,0.05);
+  }
+  .source-link--sprint:hover {
+    border-color: rgba(245,200,66,0.4);
+    background: rgba(245,200,66,0.1);
+  }
+  /* Stacks cycle + sprint links vertically in the source column */
+  .source-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    align-items: flex-start;
+  }
+  /* Sprint link in the detail metadata strip — no outer border box */
+  .detail-sprint-link {
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
   }
   .source-none { color: var(--color-text-faint); }
 

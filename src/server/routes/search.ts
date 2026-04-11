@@ -442,6 +442,8 @@ function searchMemory(
 
 export interface SearchRoutesOptions {
   adapter: SqliteAdapter;
+  /** Override the project root directory. Defaults to the compiled module root. */
+  projectRoot?: string;
 }
 
 export async function searchRoutes(
@@ -492,7 +494,8 @@ export async function searchRoutes(
     const perTypeBudget = limit;
 
     // Derive filesystem paths once; reused by all filesystem-backed searchers.
-    const paths = makePaths(DEFAULT_PROJECT_ROOT);
+    // Use the injected projectRoot (e.g. from workspace config) when available.
+    const paths = makePaths(opts.projectRoot ?? DEFAULT_PROJECT_ROOT);
 
     const all: SearchResult[] = [];
 

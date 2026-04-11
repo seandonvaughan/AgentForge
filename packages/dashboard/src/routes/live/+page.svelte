@@ -1,18 +1,16 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { writable } from 'svelte/store';
+  import {
+    type EventType,
+    TYPE_COLORS,
+    TYPE_LABELS,
+    cycleAccentColor,
+    formatCategory,
+    formatTime,
+    isSilentSystemMessage,
+  } from '$lib/util/live-feed.js';
 
   const SSE_URL = '/api/v5/stream';
-
-  type EventType =
-    | 'agent_activity'
-    | 'sprint_event'
-    | 'cost_event'
-    | 'workflow_event'
-    | 'branch_event'
-    | 'system'
-    | 'refresh_signal'
-    | 'cycle_event';
 
   interface FeedEvent {
     id: string;
@@ -25,97 +23,25 @@
 
   type FilterType = 'all' | EventType;
 
-  const events = writable<FeedEvent[]>([]);
-  const connected = writable(false);
-  const reconnecting = writable(false);
-  const showRefreshBanner = writable(false);
-  const filterType = writable<FilterType>('all');
+  // Svelte 5 rune-based reactive state (replaces writable stores)
+  let connected = $state(false);
+  let reconnecting = $state(false);
+  let showRefreshBanner = $state(false);
+  let events: FeedEvent[] = $state([]);
+  let userScrolled = $state(false);
+  let filterType: FilterType = $state('all');
+  let feedEl: HTMLDivElement | null = $state(null);
 
+  // Non-reactive refs — don't need to be $state
   let eventSource: EventSource | null = null;
-  let feedEl: HTMLDivElement | null = null;
-  let userScrolled = false;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const TYPE_COLORS: Record<string, string> = {
-    agent_activity: 'var(--color-brand)',
-    sprint_event:   'var(--color-opus)',
-    cost_event:     'var(--color-warning)',
-    workflow_event: 'var(--color-info)',
-    branch_event:   'var(--color-haiku)',
-    system:         'var(--color-text-muted)',
-    refresh_signal: 'var(--color-danger)',
-    cycle_event:    'var(--color-sonnet, var(--color-info))',
-  };
-
-  const TYPE_LABELS: Record<string, string> = {
-    agent_activity: 'Agent',
-    sprint_event:   'Sprint',
-    cost_event:     'Cost',
-    workflow_event: 'Workflow',
-    branch_event:   'Branch',
-    system:         'System',
-    refresh_signal: 'Refresh',
-    cycle_event:    'Cycle',
-  };
-
-  /**
-   * Map dot-notation cycle event category strings (e.g. "phase.start",
-   * "cycle.failed") to human-readable labels shown in the category tag.
-   */
-  const CYCLE_CATEGORY_LABELS: Record<string, string> = {
-    // Lifecycle
-    'cycle.started':    'Started',
-    'cycle.complete':   'Complete',
-    'cycle.completed':  'Complete',
-    'cycle.failed':     'Failed',
-    'cycle.error':      'Error',
-    // Phases
-    'phase.start':      'Phase →',
-    'phase.complete':   'Phase ✓',
-    'phase.result':     'Result',
-    'phase.failure':    'Phase ✗',
-    'phase.skip':       'Skipped',
-    // Source control
-    'commit':           'Commit',
-    'pr.opened':        'PR Open',
-    'pr.merged':        'PR Merged',
-    'opened':           'PR Open',
-    // Tests
-    'test.pass':        'Tests ✓',
-    'test.fail':        'Tests ✗',
-    'tests.complete':   'Tests ✓',
-    // Budget
-    'budget.warn':      'Budget ⚠',
-    // Scoring
-    'scoring.complete': 'Scored',
-    'scoring.fallback': 'Score ≈',
-    // Sprint assignment
-    'sprint.assigned':  'Sprint →',
-    // Approvals (require human attention — rendered in warning accent)
-    'approval.pending': 'Approval?',
-    'approval.decision':'Decision',
-  };
-
-  /**
-   * For cycle_event rows, derive an accent color from the category string
-   * so that failures flash red, completions glow green, and phases stay neutral.
-   * `pending` events get warning (yellow) to draw operator attention.
-   */
-  function cycleAccentColor(category: string): string {
-    const cat = category.toLowerCase();
-    if (cat.includes('fail') || cat.includes('error')) return 'var(--color-danger)';
-    if (cat.includes('complete') || cat.includes('pass') || cat === 'commit') return 'var(--color-success)';
-    if (cat.includes('warn') || cat.includes('budget') || cat.includes('pending')) return 'var(--color-warning)';
-    if (cat.includes('start') || cat === 'cycle.started') return 'var(--color-sonnet)';
-    return 'var(--color-sonnet)';
-  }
-
-  function formatCategory(type: string, category: string): string {
-    if (type === 'cycle_event') {
-      return CYCLE_CATEGORY_LABELS[category] ?? category.replace(/\./g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-    }
-    return category;
-  }
+  // Replaces `$: filteredEvents = ...` reactive declaration
+  let filteredEvents = $derived(
+    filterType === 'all'
+      ? events
+      : events.filter((e) => e.type === filterType)
+  );
 
   function connect() {
     if (eventSource) {
@@ -123,31 +49,30 @@
       eventSource = null;
     }
 
-    reconnecting.set(false);
+    reconnecting = false;
     const es = new EventSource(SSE_URL);
     eventSource = es;
 
     es.onopen = () => {
-      connected.set(true);
-      reconnecting.set(false);
+      connected = true;
+      reconnecting = false;
     };
 
     es.onmessage = (e) => {
       try {
         const parsed = JSON.parse(e.data) as FeedEvent & { clientId?: string };
 
-        // Skip internal heartbeats from cluttering the feed
-        if (parsed.type === 'system' && parsed.message === 'heartbeat') return;
+        // Skip heartbeat and connection-ack system messages — they are internal
+        // protocol noise that adds no value to the operator's activity feed.
+        if (isSilentSystemMessage(parsed.type, parsed.message)) return;
 
         if (parsed.type === 'refresh_signal') {
-          showRefreshBanner.set(true);
+          showRefreshBanner = true;
         }
 
-        events.update((list) => {
-          const next = [...list, { ...parsed, id: parsed.id ?? `${Date.now()}` }];
-          // Keep at most 500 events
-          return next.length > 500 ? next.slice(next.length - 500) : next;
-        });
+        const next = [...events, { ...parsed, id: parsed.id ?? `${Date.now()}` }];
+        // Keep at most 500 events
+        events = next.length > 500 ? next.slice(next.length - 500) : next;
 
         if (!userScrolled) {
           requestAnimationFrame(scrollToBottom);
@@ -158,8 +83,8 @@
     };
 
     es.onerror = () => {
-      connected.set(false);
-      reconnecting.set(true);
+      connected = false;
+      reconnecting = true;
       es.close();
       eventSource = null;
       // Reconnect after 3s
@@ -180,13 +105,13 @@
   }
 
   function handleRefreshClick() {
-    showRefreshBanner.set(false);
+    showRefreshBanner = false;
     userScrolled = false;
     scrollToBottom();
   }
 
   function clearFeed() {
-    events.set([]);
+    events = [];
   }
 
   onMount(() => {
@@ -197,18 +122,6 @@
     if (reconnectTimer) clearTimeout(reconnectTimer);
     if (eventSource) eventSource.close();
   });
-
-  $: filteredEvents = $filterType === 'all'
-    ? $events
-    : $events.filter((e) => e.type === $filterType);
-
-  function formatTime(ts: string): string {
-    try {
-      return new Date(ts).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    } catch {
-      return ts;
-    }
-  }
 </script>
 
 <svelte:head><title>Live Feed — AgentForge</title></svelte:head>
@@ -219,15 +132,15 @@
     <p class="page-subtitle">Real-time event stream from the AgentForge autonomous team</p>
   </div>
   <div style="display:flex; align-items:center; gap: var(--space-3);">
-    <span class="status-dot {$connected ? 'live' : $reconnecting ? 'reconnecting' : 'offline'}"></span>
+    <span class="status-dot {connected ? 'live' : reconnecting ? 'reconnecting' : 'offline'}"></span>
     <span class="status-label">
-      {#if $connected}Live{:else if $reconnecting}Reconnecting…{:else}Offline{/if}
+      {#if connected}Live{:else if reconnecting}Reconnecting…{:else}Offline{/if}
     </span>
     <button class="btn-ghost" onclick={clearFeed}>Clear</button>
   </div>
 </div>
 
-{#if $showRefreshBanner}
+{#if showRefreshBanner}
   <div class="refresh-banner">
     <span>New updates available — data may be stale</span>
     <button class="btn-ghost small" onclick={handleRefreshClick}>Dismiss</button>
@@ -236,7 +149,7 @@
 
 <div class="toolbar">
   <label class="filter-label" for="type-filter">Filter by type:</label>
-  <select id="type-filter" class="filter-select" bind:value={$filterType}>
+  <select id="type-filter" class="filter-select" bind:value={filterType}>
     <option value="all">All events</option>
     <option value="agent_activity">Agent Activity</option>
     <option value="sprint_event">Sprint Events</option>

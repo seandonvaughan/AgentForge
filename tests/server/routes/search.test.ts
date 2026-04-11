@@ -10,6 +10,9 @@ import { createServer } from '../../../src/server/server.js';
 import { AgentDatabase } from '../../../src/db/database.js';
 import { SqliteAdapter } from '../../../src/db/sqlite-adapter.js';
 import { randomUUID } from 'node:crypto';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 process.env.NODE_ENV = 'test';
 
@@ -308,5 +311,75 @@ describe('POST /api/v5/search', () => {
     const body2 = res2.json();
     const kvResults = body2.data.filter((r: { source: string }) => r.source === 'kv-store');
     expect(kvResults).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// projectRoot injection — ensures filesystem-backed search uses the correct
+// root directory when ServerOptions.projectRoot is set (e.g. workspace mode).
+// ---------------------------------------------------------------------------
+
+describe('POST /api/v5/search — projectRoot injection', () => {
+  let app: FastifyInstance;
+  let adapter: SqliteAdapter;
+  let db: AgentDatabase;
+  let tmpRoot: string;
+
+  beforeEach(async () => {
+    // Create a temporary project root with a cycle directory so searchCycles
+    // can return a real result when pointed at it.
+    tmpRoot = mkdtempSync(join(tmpdir(), 'agentforge-search-test-'));
+    const cycleDir = join(tmpRoot, '.agentforge/cycles/test-cycle-abc');
+    mkdirSync(cycleDir, { recursive: true });
+    writeFileSync(join(cycleDir, 'cycle.json'), JSON.stringify({
+      stage:         'completed',
+      sprintVersion: 'v99.0.0',
+      startedAt:     new Date().toISOString(),
+      completedAt:   new Date().toISOString(),
+    }));
+
+    db      = new AgentDatabase({ path: ':memory:' });
+    adapter = new SqliteAdapter({ db });
+    const result = await createServer({ adapter, projectRoot: tmpRoot });
+    app = result.app;
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+    db.close();
+    rmSync(tmpRoot, { recursive: true, force: true });
+  });
+
+  it('finds a cycle when projectRoot is pointed at a temp directory', async () => {
+    const res = await app.inject({
+      method:  'POST',
+      url:     '/api/v5/search',
+      payload: { query: 'test-cycle-abc', types: ['cycle'] },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    // The cycle seeded in the temp root should be found
+    const cycleResults = body.data.filter((r: { type: string }) => r.type === 'cycle');
+    expect(cycleResults.length).toBeGreaterThan(0);
+    expect(cycleResults[0].id).toBe('test-cycle-abc');
+  });
+
+  it('does not find cycles from the default project root when projectRoot override is set', async () => {
+    // Query something highly specific to the temp cycle; it should not bleed
+    // into the real project root's cycle list.
+    const res = await app.inject({
+      method:  'POST',
+      url:     '/api/v5/search',
+      payload: { query: 'v99.0.0', types: ['cycle'] },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    // Only the temp cycle should match; real cycles don't have v99.0.0
+    const cycleResults = body.data.filter((r: { type: string }) => r.type === 'cycle');
+    expect(cycleResults.length).toBeGreaterThan(0);
+    expect(cycleResults.every((r: { metadata: { sprintVersion: string } }) =>
+      r.metadata.sprintVersion === 'v99.0.0'
+    )).toBe(true);
   });
 });

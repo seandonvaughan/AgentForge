@@ -14,6 +14,8 @@ interface PrInfo {
   number: number;
   title: string;
   state: 'OPEN' | 'CLOSED' | 'MERGED';
+  /** Full GitHub PR URL, e.g. "https://github.com/owner/repo/pull/42" */
+  url: string | null;
 }
 
 interface BranchRecord {
@@ -113,19 +115,21 @@ export async function branchesRoutes(
         'pr', 'list',
         '--search', 'head:autonomous/',
         '--state', 'all',
-        '--json', 'number,title,state,headRefName',
+        '--json', 'number,title,state,headRefName,url',
         '--limit', '100',
       ]) ?? [];
 
       // Build a lookup map: branchName → PrInfo
       const prMap = new Map<string, PrInfo>();
       for (const pr of prs) {
-        const branchName = (pr as unknown as { headRefName: string }).headRefName;
+        const raw = pr as unknown as { headRefName: string; url?: string };
+        const branchName = raw.headRefName;
         if (branchName) {
           prMap.set(branchName, {
             number: pr.number,
             title: pr.title,
             state: pr.state,
+            url: raw.url ?? null,
           });
         }
       }

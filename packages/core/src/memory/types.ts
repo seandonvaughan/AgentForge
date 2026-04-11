@@ -56,7 +56,14 @@ export interface GateVerdictMetadata {
   majorFindings: string[];
 }
 
-/** Canonical shape of a cross-cycle memory entry. */
+/** Canonical shape of a cross-cycle memory entry.
+ *
+ *  This is the **write-side** contract: any entry produced via
+ *  `writeMemoryEntry` is guaranteed to satisfy this shape, including a
+ *  non-empty `id` and `createdAt`. Consumers that parse JSONL files from
+ *  disk should use `ParsedMemoryEntry` instead, which is permissive about
+ *  legacy entries that may predate the canonical invariants.
+ */
 export interface CycleMemoryEntry {
   id: string;
   /** Human-readable lookup key (e.g. "gate-v6.5-result"). Unlike `id`, this
@@ -75,6 +82,41 @@ export interface CycleMemoryEntry {
    * For `gate-verdict` entries this is a `GateVerdictMetadata` object.
    */
   metadata?: ReviewFindingMetadata | GateVerdictMetadata | Record<string, unknown>;
+}
+
+/**
+ * Permissive **read-side** shape for entries parsed from JSONL files.
+ *
+ * Unlike `CycleMemoryEntry`, this type does not require `id` or
+ * `createdAt` and widens `type` to `string`. This exists because:
+ *
+ *  1. Legacy memory files written before the `id: string` invariant was
+ *     enforced may have entries that only carry a human-readable `key`.
+ *  2. Test fixtures and backlog generators sometimes produce entries with
+ *     a short slug (`key`) instead of a UUID.
+ *  3. Forward-compatibility: a newer cycle may write a `type` the current
+ *     reader has not been updated for — we want to parse and surface it
+ *     rather than drop the line.
+ *
+ * **Producers should always use `CycleMemoryEntry`** via `writeMemoryEntry`
+ * to guarantee `id` is present. Readers that need to render or filter
+ * historical data should prefer `ParsedMemoryEntry` so they can tolerate
+ * legacy shapes without weakening the write-side contract.
+ */
+export interface ParsedMemoryEntry {
+  /** UUID produced by writeMemoryEntry (canonical). May be absent on legacy entries. */
+  id?: string;
+  /** Short slug used by backlog generators and test fixtures. */
+  key?: string;
+  /** Widened to `string` for forward-compat with new types added in later cycles. */
+  type: string;
+  value: string;
+  createdAt?: string;
+  source?: string;
+  tags?: string[];
+  /** Preserved on parse but typed as `unknown` because legacy entries may
+   *  carry arbitrary payload shapes. Narrow at the use site with a guard. */
+  metadata?: unknown;
 }
 
 /**
@@ -102,6 +144,39 @@ function releaseLock(lockPath: string): void {
 }
 
 /**
+ * Input shape for `writeMemoryEntry`.
+ *
+ * Intentionally widens every optional field to `T | undefined` so that
+ * callers under `exactOptionalPropertyTypes: true` can pass values derived
+ * from expressions like `rootCause ?? undefined` without hitting TS2379.
+ * The helper normalises these to a sparse `CycleMemoryEntry` output where
+ * absent fields are omitted entirely (not set to `undefined`).
+ *
+ * Keeping the input type here — rather than inline on the function
+ * signature — ensures call sites can import it and annotate their own
+ * builders in a forward-compatible way.
+ */
+export interface WriteMemoryEntryInput {
+  /** Caller-supplied UUID; defaults to `randomUUID()` when omitted. */
+  id?: string | undefined;
+  /** Human-readable lookup key (e.g. "gate-v6.5-result"). */
+  key?: string | undefined;
+  type: MemoryEntryType;
+  value: string;
+  /** ISO-8601 timestamp; defaults to `new Date().toISOString()` when omitted. */
+  createdAt?: string | undefined;
+  /** cycleId or agentId that produced this entry. */
+  source?: string | undefined;
+  tags?: string[] | undefined;
+  /** Structured payload — see ReviewFindingMetadata / GateVerdictMetadata. */
+  metadata?:
+    | ReviewFindingMetadata
+    | GateVerdictMetadata
+    | Record<string, unknown>
+    | undefined;
+}
+
+/**
  * Append a memory entry to `.agentforge/memory/<type>.jsonl`.
  *
  * The call is synchronous and non-fatal: if the write fails (e.g. read-only
@@ -114,11 +189,7 @@ function releaseLock(lockPath: string): void {
  */
 export function writeMemoryEntry(
   projectRoot: string,
-  entry: Omit<CycleMemoryEntry, 'id' | 'createdAt'> & {
-    id?: string;
-    key?: string;
-    createdAt?: string;
-  },
+  entry: WriteMemoryEntryInput,
 ): CycleMemoryEntry {
   const full: CycleMemoryEntry = {
     id: entry.id ?? randomUUID(),

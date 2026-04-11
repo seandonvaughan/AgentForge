@@ -125,7 +125,7 @@ export async function createServer(options: ServerOptions = {}) {
     await app.register(reforgeRoutes, { adapter: options.adapter });
     await app.register(teamsRoutes, { adapter: options.adapter });
     await app.register(careersRoutes, { adapter: options.adapter });
-    await app.register(searchRoutes, { adapter: options.adapter });
+    await app.register(searchRoutes, { adapter: options.adapter, projectRoot: options.projectRoot });
     await app.register(runRoutes, { adapter: options.adapter, sseManager: options.sseManager });
   }
 
