@@ -157,19 +157,28 @@
 
   const PHASE_LABEL: Record<string, string> = {
     planned: 'Planned',
+    plan: 'Planning',
     active: 'Active',
     executing: 'Executing',
+    execute: 'Executing',
+    in_progress: 'In Progress',
+    learn: 'Completed',
+    release: 'Released',
+    released: 'Released',
+    shipped: 'Shipped',
+    review: 'In Review',
     completed: 'Completed',
+    complete: 'Completed',
     done: 'Done',
     draft: 'Draft',
   };
 
   const ITEM_STATUS_COLOR: Record<string, string> = {
-    completed: '#22c55e',
-    in_progress: '#5b8af5',
-    pending: '#64748b',
-    blocked: '#e05a5a',
-    failed: '#e05a5a',
+    completed: 'var(--color-success)',
+    in_progress: 'var(--color-brand)',
+    pending: 'var(--color-text-faint)',
+    blocked: 'var(--color-danger)',
+    failed: 'var(--color-danger)',
   };
 
   // Column accent colors for the kanban headers
@@ -434,7 +443,7 @@
         <div class="item-list">
           {#each group.items as item (item.id)}
             <div class="sprint-item {item.status}">
-              <div class="item-dot" style="background: {ITEM_STATUS_COLOR[item.status] ?? '#64748b'}"></div>
+              <div class="item-dot" style="background: {ITEM_STATUS_COLOR[item.status] ?? 'var(--color-text-faint)'}"></div>
               <div class="item-body">
                 <button
                   type="button"

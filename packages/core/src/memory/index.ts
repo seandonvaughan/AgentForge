@@ -9,6 +9,8 @@ export {
   writeMemoryEntry,
   readMemoryEntries,
   type CycleMemoryEntry,
+  type ParsedMemoryEntry,
+  type WriteMemoryEntryInput,
   type MemoryEntryType,
   type ReviewFindingMetadata,
   type GateVerdictMetadata,

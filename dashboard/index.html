@@ -5960,6 +5960,63 @@ const SSE = {
     }, 15000);
   }
 
+  // ── /api/v5/stream SSE listener ──────────────────────────────────────────
+  // The new autonomous-cycle server emits cycle_event messages on /api/v5/stream
+  // (not /api/v1/stream). We subscribe here so the ApprovalModal opens the instant
+  // approval.pending fires — without waiting for the 15-second fallback poll.
+  var _v5SseSource = null;
+  var _v5SseBackoff = 1000;
+
+  function _startV5SSE() {
+    if (_destroyed || _v5SseSource) return;
+    try {
+      _v5SseSource = new EventSource('/api/v5/stream');
+    } catch (ex) {
+      return;
+    }
+
+    _v5SseSource.onopen = function() {
+      _v5SseBackoff = 1000; // reset backoff on successful connection
+    };
+
+    _v5SseSource.onmessage = function(e) {
+      try {
+        var ev = JSON.parse(e.data);
+        // cycle_event wraps autonomous-loop events; category is the event type.
+        if (ev.type !== 'cycle_event') return;
+        var cat = ev.category || ev.phase || '';
+        var cycleIdFromEvent = (ev.data && ev.data.cycleId) || ev.cycleId || '';
+
+        if (cat === 'approval.pending' || cat === 'approval_pending' || cat === 'budget_gate' || cat === 'planning_complete') {
+          _refresh();
+          if ((cat === 'approval.pending' || cat === 'approval_pending') && cycleIdFromEvent) {
+            _autoOpenApprovalModal(cycleIdFromEvent);
+          }
+          if (location.pathname === '/approvals' && typeof window.loadApprovalsPage === 'function') {
+            window.loadApprovalsPage();
+          }
+        }
+        if (cat === 'approval_decided' || cat === 'approval.decision') {
+          _refresh();
+          if (location.pathname === '/approvals' && typeof window.loadApprovalsPage === 'function') {
+            window.loadApprovalsPage();
+          }
+        }
+      } catch (ex) { /* ignore malformed messages */ }
+    };
+
+    _v5SseSource.onerror = function() {
+      _v5SseSource.close();
+      _v5SseSource = null;
+      if (!_destroyed) {
+        setTimeout(function() {
+          _v5SseBackoff = Math.min(_v5SseBackoff * 2, 30000);
+          _startV5SSE();
+        }, _v5SseBackoff);
+      }
+    };
+  }
+
   window._refreshApprovalsBadge = function() { _refresh(); };
   window._autoOpenApprovalModal = function(cycleId, prefetched) { _autoOpenApprovalModal(cycleId, prefetched); };
 
@@ -6102,9 +6159,10 @@ const SSE = {
     }
   })();
 
-  // Initial fetch after a short delay, then start polling
+  // Initial fetch after a short delay, then start polling + SSE (v5 stream).
   setTimeout(_refresh, 2000);
   _startPoll();
+  _startV5SSE();
 
 })();
 

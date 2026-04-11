@@ -17,6 +17,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
+import type { ParsedMemoryEntry } from '../../memory/types.js';
 
 // ---- Memory injection ----
 // Reads tag-filtered past failure entries from .agentforge/memory/*.jsonl so
@@ -25,38 +26,20 @@ import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
 /**
  * Memory entry shape used by the execute phase for prompt injection.
  *
- * Intentionally broader than `CycleMemoryEntry` from memory/types.ts:
- *  - `id`  — canonical UUID written by writeMemoryEntry / cycle-logger
- *  - `key` — short human-readable slug used in backlog JSONL files and
- *             legacy test data (e.g. 'guard-sprint-items')
+ * This is an alias for the canonical `ParsedMemoryEntry` defined in
+ * `memory/types.ts`. Historically this module declared its own permissive
+ * shape to tolerate legacy JSONL entries that only carry a `key` slug
+ * instead of the canonical UUID `id`. That shape now lives on
+ * `ParsedMemoryEntry` alongside the strict write-side `CycleMemoryEntry`
+ * so both read and write paths share a single source of truth.
  *
- * Both fields are optional so that entries written with either convention
- * parse cleanly. `formatMemorySection` uses `key ?? id ?? type` as the
- * label, ensuring whichever identifier is present appears in the prompt.
- *
- * We keep this type local (rather than re-exporting CycleMemoryEntry)
- * because CycleMemoryEntry has `id: string` as a required field, which
- * would make test entries that only supply `key` fail strict type checks.
+ * The `MemoryEntry` alias is preserved for backward compatibility with
+ * existing tests and call sites (including `execute-phase-memory.test.ts`
+ * and downstream imports from `autonomous/phase-handlers/index.ts`).
+ * New code should prefer importing `ParsedMemoryEntry` directly from
+ * `@agentforge/core`.
  */
-export interface MemoryEntry {
-  /** UUID produced by writeMemoryEntry (canonical). */
-  id?: string;
-  /** Short slug used by backlog generators and test fixtures. */
-  key?: string;
-  type: string;
-  value: string;
-  createdAt?: string;
-  tags?: string[];
-  source?: string;
-  /**
-   * Optional structured payload written by the write-path handlers.
-   * For `review-finding` entries this is a `ReviewFindingMetadata` object
-   * (see memory/types.ts). Preserved on parse but not used by
-   * formatMemorySection — agents read the raw `value` field which already
-   * contains the full finding text including file, line, and fix suggestion.
-   */
-  metadata?: unknown;
-}
+export type MemoryEntry = ParsedMemoryEntry;
 
 /** Types we prioritise when selecting entries to inject into a prompt.
  *  cycle-outcome is skipped — it's high-level and less actionable. */

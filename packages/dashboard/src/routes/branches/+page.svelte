@@ -1,20 +1,29 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
 
-  type BranchStatus = 'open-pr' | 'merged' | 'active' | 'stale';
+  type BranchStatus = 'open_pr' | 'merged' | 'active' | 'stale';
+
+  interface PrInfo {
+    number: number;
+    title: string;
+    state: string;
+    url: string | null;
+  }
 
   interface AutonomousBranch {
     name: string;
     cycle: string;
-    lastCommitAt: string;
+    /** ISO 8601 timestamp of the branch tip commit */
+    createdAt: string;
+    sha: string;
+    age: string;
     ageMs: number;
     status: BranchStatus;
-    prNumber: number | null;
-    prUrl: string | null;
+    pr: PrInfo | null;
   }
 
-  /** Must match STALE_DAYS × 24h in dashboard-stubs.ts */
-  const STALE_THRESHOLD_MS = 3 * 24 * 60 * 60 * 1000;
+  /** Must match STALE_DAYS × 24h in src/server/routes/branches.ts (currently 30 days) */
+  const STALE_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000;
   const POLL_INTERVAL_S    = 30;
 
   let branches: AutonomousBranch[] = $state([]);
@@ -47,7 +56,7 @@
     if (!silent) loading = true;
     error = null;
     try {
-      const res = await fetch('/api/v5/autonomous-branches');
+      const res = await fetch('/api/v1/branches');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       branches = (json.data ?? []) as AutonomousBranch[];
@@ -65,7 +74,7 @@
     deleteError      = null;
     try {
       const res = await fetch(
-        `/api/v5/autonomous-branches/${encodeURIComponent(branch.name)}`,
+        `/api/v1/branches/${encodeURIComponent(branch.name)}`,
         { method: 'DELETE' },
       );
       if (!res.ok) {
@@ -89,7 +98,7 @@
     for (const branch of staleBranches) {
       try {
         const res = await fetch(
-          `/api/v5/autonomous-branches/${encodeURIComponent(branch.name)}`,
+          `/api/v1/branches/${encodeURIComponent(branch.name)}`,
           { method: 'DELETE' },
         );
         if (!res.ok) {
@@ -146,14 +155,14 @@
   }
 
   const STATUS_COLOR: Record<BranchStatus, string> = {
-    'open-pr': 'var(--color-info)',
+    'open_pr': 'var(--color-info)',
     'merged':  'var(--color-success)',
     'active':  'var(--color-brand)',
     'stale':   'var(--color-warning)',
   };
 
   const STATUS_LABEL: Record<BranchStatus, string> = {
-    'open-pr': 'Open PR',
+    'open_pr': 'Open PR',
     'merged':  'Merged',
     'active':  'Active',
     'stale':   'Stale',
@@ -173,7 +182,7 @@
   });
 
   // ── Derived counts ─────────────────────────────────────────────────────────
-  let openCount   = $derived(branches.filter((b) => b.status === 'open-pr').length);
+  let openCount   = $derived(branches.filter((b) => b.status === 'open_pr').length);
   let activeCount = $derived(branches.filter((b) => b.status === 'active').length);
   let mergedCount = $derived(branches.filter((b) => b.status === 'merged').length);
   let staleCount  = $derived(branches.filter((b) => b.status === 'stale').length);
@@ -221,7 +230,7 @@
     <h1 class="page-title">⎇ Autonomous Branches</h1>
     <p class="page-subtitle">
       Git hygiene for <code>autonomous/*</code> cycles ·
-      branches with no open PR become <strong>stale</strong> after 3 days
+      branches with no open PR become <strong>stale</strong> after 30 days
     </p>
   </div>
   <div class="header-actions">
@@ -265,8 +274,8 @@
   </button>
   <button
     class="pill open-pr"
-    class:active={activeFilter === 'open-pr'}
-    onclick={() => (activeFilter = 'open-pr')}
+    class:active={activeFilter === 'open_pr'}
+    onclick={() => (activeFilter = 'open_pr')}
   >
     <span class="pill-count">{openCount}</span>
     <span class="pill-label">Open PR</span>
@@ -423,7 +432,7 @@
 
             <!-- Last commit timestamp -->
             <td>
-              <span class="mono muted">{formatDate(branch.lastCommitAt)}</span>
+              <span class="mono muted">{formatDate(branch.createdAt)}</span>
             </td>
 
             <!-- Status badge -->
@@ -438,10 +447,12 @@
 
             <!-- PR link -->
             <td>
-              {#if branch.prUrl}
-                <a class="pr-link" href={branch.prUrl} target="_blank" rel="noopener">
-                  #{branch.prNumber} ↗
+              {#if branch.pr?.url}
+                <a class="pr-link" href={branch.pr.url} target="_blank" rel="noopener">
+                  #{branch.pr.number} ↗
                 </a>
+              {:else if branch.pr}
+                <span class="mono muted">#{branch.pr.number}</span>
               {:else}
                 <span class="muted">—</span>
               {/if}

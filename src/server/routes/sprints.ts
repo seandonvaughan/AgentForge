@@ -23,9 +23,12 @@ function phaseToStatus(phase: string, existing?: string): string {
   if (existing && ['completed', 'in_progress', 'pending'].includes(existing)) {
     return existing;
   }
-  if (phase === 'active' || phase === 'executing') return 'in_progress';
-  if (phase === 'completed' || phase === 'done') return 'completed';
-  return 'pending'; // planned, draft, etc.
+  // Canonical completed phases (kept consistent with packages/server deriveStatus)
+  if (['completed', 'complete', 'done', 'release', 'released', 'shipped', 'closed', 'merged', 'learn'].includes(phase)) return 'completed';
+  // Canonical in-progress phases
+  if (['active', 'executing', 'execute', 'in_progress', 'review'].includes(phase)) return 'in_progress';
+  // planned, plan, draft, and anything unrecognised → pending
+  return 'pending';
 }
 
 /** Normalize a single sprint item — aligns field names with the UI contract. */

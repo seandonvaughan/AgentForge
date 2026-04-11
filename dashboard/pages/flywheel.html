@@ -915,20 +915,53 @@
   }
 
   /**
-   * Maps a CycleSummary (from /api/v5/cycles) to the trajectory point shape
-   * expected by renderTrajectoryPanel.
+   * Maps a cycle record to the trajectory point shape expected by
+   * renderTrajectoryPanel. Handles both:
+   *   - CycleListRow (flat): testsPassed/testsTotal/costUsd from /api/v5/cycles
+   *   - CycleHistoryPoint (computed): testPassRate/costUsd from /api/v5/flywheel
+   *   - Nested CycleRecord: c.tests.passRate / c.cost.totalUsd (legacy internal shape)
    */
   function cycleToTrajectoryPoint(c) {
+    // Derive testPassRate from whichever shape is present.
+    // Priority: explicit passRate field → nested tests.passRate → compute from flat fields
+    var testPassRate =
+      typeof c.testPassRate === 'number' ? c.testPassRate
+      : (c.tests && typeof c.tests.passRate === 'number') ? c.tests.passRate
+      : null;
+
+    // Derive test total count
+    var testsTotal =
+      typeof c.testsTotal === 'number' ? c.testsTotal
+      : (c.tests && typeof c.tests.total === 'number') ? c.tests.total
+      : null;
+
+    // If passRate is still missing but we have flat passed/total counts, compute it
+    if (testPassRate === null && testsTotal !== null && testsTotal > 0) {
+      var testsPassed =
+        typeof c.testsPassed === 'number' ? c.testsPassed
+        : (c.tests && typeof c.tests.passed === 'number') ? c.tests.passed
+        : null;
+      if (testsPassed !== null) {
+        testPassRate = testsPassed / testsTotal;
+      }
+    }
+
+    // Derive cost from flat costUsd (CycleListRow) or nested cost.totalUsd
+    var costUsd =
+      typeof c.costUsd === 'number' ? c.costUsd
+      : (c.cost && typeof c.cost.totalUsd === 'number') ? c.cost.totalUsd
+      : null;
+
     return {
       cycleId:      c.cycleId,
       sprintVersion: c.sprintVersion || null,
       stage:        c.stage || 'unknown',
-      testPassRate: (c.tests && typeof c.tests.passRate === 'number') ? c.tests.passRate : null,
-      testsTotal:   (c.tests && typeof c.tests.total   === 'number') ? c.tests.total    : null,
-      costUsd:      (c.cost  && typeof c.cost.totalUsd  === 'number') ? c.cost.totalUsd  : null,
+      testPassRate: testPassRate,
+      testsTotal:   testsTotal,
+      costUsd:      costUsd,
       durationMs:   typeof c.durationMs === 'number' ? c.durationMs : null,
       // hasPr: cycles with approval-pending behave like PR-gated cycles
-      hasPr:        !!c.hasApprovalPending,
+      hasPr:        !!(c.hasPr || c.hasApprovalPending),
     };
   }
 
@@ -1041,24 +1074,34 @@
       renderLoopDataPanel(data.debug);
 
       // ── Cycle Score Trajectory + Latest Cycle panel ───────────────────────
-      // Both panels source from the same /api/v5/cycles fetch (up to 50 cycles).
-      // The API returns newest-first; we reverse for the trajectory chart so
-      // bars read chronologically left→right.
+      // Latest Cycle panel sources from /api/v5/cycles (real-time).
+      // Trajectory panel prefers `data.cycleHistory` from /api/v5/flywheel
+      // because computeFlywheelMetrics() already derives testPassRate from the
+      // raw cycle.json files — no shape-mapping ambiguity. Falls back to the
+      // /api/v5/cycles list when cycleHistory is absent (older server builds).
       if (cyclesResult.status === 'fulfilled') {
         var cyclesJson = cyclesResult.value || {};
         var cycleList  = Array.isArray(cyclesJson.cycles) ? cyclesJson.cycles : [];
 
         // Latest cycle panel — first element is newest
         renderCyclePanel(cycleList);
-
-        // Trajectory panel — map to trajectory shape, sort oldest→newest
-        var trajectoryPoints = cycleList
-          .map(cycleToTrajectoryPoint)
-          .reverse(); // cycleList is newest-first; reverse for chronological order
-        renderTrajectoryPanel(trajectoryPoints);
       } else {
         console.warn('loadFlywheelPage: cycles fetch failed:', cyclesResult.reason);
         renderCyclePanel([]);
+      }
+
+      // Trajectory panel: prefer cycleHistory baked into the flywheel response
+      // (already has testPassRate computed); fall back to cycles list.
+      var cycleHistory = Array.isArray(data.cycleHistory) ? data.cycleHistory : null;
+      if (cycleHistory && cycleHistory.length > 0) {
+        // cycleHistory is oldest-first (sorted by startedAt in computeFlywheelMetrics)
+        renderTrajectoryPanel(cycleHistory.map(cycleToTrajectoryPoint));
+      } else if (cyclesResult.status === 'fulfilled') {
+        var cyclesJson2 = cyclesResult.value || {};
+        var cycleList2  = Array.isArray(cyclesJson2.cycles) ? cyclesJson2.cycles : [];
+        // cycleList is newest-first; reverse for chronological order
+        renderTrajectoryPanel(cycleList2.map(cycleToTrajectoryPoint).reverse());
+      } else {
         renderTrajectoryPanel([]);
       }
 
