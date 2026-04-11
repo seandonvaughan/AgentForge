@@ -34,8 +34,6 @@ TODO(autonomous): Complete the /branches dashboard tab — show all autonomous/*
 
 TODO(autonomous): Create a sprint JSON file for every existing version v4.3 through v6.7 in .agentforge/sprints/ that doesn't already have one. Use the existing v6.5.0.json shape as a template.
 
-TODO(autonomous): Make sprint cards on /sprints page clickable — clicking should navigate to /sprints/{version} which already exists. Currently nothing happens. Wire up the onclick handler. Check packages/dashboard/src/routes/sprints/+page.svelte.
-
 TODO(autonomous): Ensure /sprints/[version] detail page renders all fields beautifully: title, status, items kanban, success criteria, audit findings, completion percentage, dates. Already mostly built — verify and fill any gaps.
 
 ## Agent Runner + Activity Feed

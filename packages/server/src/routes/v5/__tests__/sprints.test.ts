@@ -235,4 +235,191 @@ describe('GET /api/v5/sprints/:version', () => {
     expect(body.data.successCriteria).toEqual(['API works']);
     expect(body.data.auditFindings).toEqual(['No live execution path']);
   });
+
+  it('normalizes dates from startedAt/completedAt fields', async () => {
+    const root = setup();
+    writeFileSync(join(root, '.agentforge/sprints/v7.0.json'), JSON.stringify({
+      version: '7.0',
+      name: 'v7.0',
+      phase: 'completed',
+      startedAt: '2026-04-01T10:00:00.000Z',
+      completedAt: '2026-04-01T14:30:00.000Z',
+      items: [],
+    }));
+    app = await buildApp(root);
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/sprints/7.0' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.data.startDate).toBe('2026-04-01T10:00:00.000Z');
+    expect(body.data.endDate).toBe('2026-04-01T14:30:00.000Z');
+  });
+
+  it('falls back to createdAt for startDate when startedAt is absent', async () => {
+    const root = setup();
+    writeFileSync(join(root, '.agentforge/sprints/v7.1.json'), JSON.stringify({
+      version: '7.1',
+      name: 'v7.1',
+      phase: 'completed',
+      createdAt: '2026-04-02T09:00:00.000Z',
+      items: [],
+    }));
+    app = await buildApp(root);
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/sprints/7.1' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.data.startDate).toBe('2026-04-02T09:00:00.000Z');
+    expect(body.data.endDate).toBeUndefined();
+  });
+
+  it('returns versionDecision with all sub-fields', async () => {
+    const root = setup();
+    writeFileSync(join(root, '.agentforge/sprints/v8.0.json'), JSON.stringify({
+      version: '8.0',
+      name: 'v8.0',
+      phase: 'completed',
+      items: [],
+      versionDecision: {
+        previousVersion: '7.1',
+        nextVersion: '8.1',
+        tier: 'minor',
+        rationale: 'Added new feature set',
+        tagsSeen: ['feature', 'dashboard'],
+      },
+    }));
+    app = await buildApp(root);
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/sprints/8.0' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.data.versionDecision).toEqual({
+      previousVersion: '7.1',
+      nextVersion: '8.1',
+      tier: 'minor',
+      rationale: 'Added new feature set',
+      tagsSeen: ['feature', 'dashboard'],
+    });
+  });
+
+  it('returns item tags, estimatedCost (from estimatedCostUsd), and source fields', async () => {
+    const root = setup();
+    writeFileSync(join(root, '.agentforge/sprints/v8.1.json'), JSON.stringify({
+      version: '8.1',
+      name: 'v8.1',
+      phase: 'in_progress',
+      items: [{
+        id: 'p0-1',
+        title: 'Tagged item',
+        priority: 'P0',
+        status: 'completed',
+        estimatedCostUsd: 12.5,
+        tags: ['dashboard', 'ux'],
+        source: 'todo-backlog',
+      }],
+    }));
+    app = await buildApp(root);
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/sprints/8.1' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    const item = body.data.items[0];
+    expect(item.estimatedCost).toBe(12.5);
+    expect(item.tags).toEqual(['dashboard', 'ux']);
+    expect(item.source).toBe('todo-backlog');
+  });
+
+  it('returns testCount fields and totalCostUsd when present', async () => {
+    const root = setup();
+    writeFileSync(join(root, '.agentforge/sprints/v9.0.json'), JSON.stringify({
+      version: '9.0',
+      name: 'v9.0',
+      phase: 'completed',
+      testCountBefore: 1000,
+      testCountAfter: 1250,
+      testCountDelta: 250,
+      totalCostUsd: 34.72,
+      autonomous: true,
+      theme: 'Resilience',
+      items: [],
+    }));
+    app = await buildApp(root);
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/sprints/9.0' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.data.testCountBefore).toBe(1000);
+    expect(body.data.testCountAfter).toBe(1250);
+    expect(body.data.testCountDelta).toBe(250);
+    expect(body.data.totalCostUsd).toBe(34.72);
+    expect(body.data.autonomous).toBe(true);
+    expect(body.data.theme).toBe('Resilience');
+  });
+});
+
+describe('deriveStatus phase normalization', () => {
+  let app: ReturnType<typeof Fastify>;
+
+  afterEach(async () => {
+    await app.close();
+    cleanup();
+  });
+
+  const COMPLETED_PHASES = ['completed', 'done', 'release', 'released', 'shipped', 'closed', 'merged', 'learn', 'complete'];
+  const IN_PROGRESS_PHASES = ['in_progress', 'active', 'executing', 'execute', 'review'];
+  const PENDING_PHASES = ['planned', 'plan', 'pending', 'draft'];
+
+  for (const phase of COMPLETED_PHASES) {
+    it(`maps phase "${phase}" to status "completed"`, async () => {
+      const root = setup();
+      writeFileSync(join(root, `.agentforge/sprints/vphase-${phase.replace('_', '-')}.json`), JSON.stringify({
+        version: `phase-${phase.replace('_', '-')}`,
+        name: `phase test ${phase}`,
+        phase,
+        items: [],
+      }));
+      app = await buildApp(root);
+
+      const res = await app.inject({ method: 'GET', url: `/api/v5/sprints/phase-${phase.replace('_', '-')}` });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.data.status).toBe('completed');
+    });
+  }
+
+  for (const phase of IN_PROGRESS_PHASES) {
+    it(`maps phase "${phase}" to status "in_progress"`, async () => {
+      const root = setup();
+      writeFileSync(join(root, `.agentforge/sprints/vphase-${phase.replace('_', '-')}.json`), JSON.stringify({
+        version: `phase-${phase.replace('_', '-')}`,
+        name: `phase test ${phase}`,
+        phase,
+        items: [],
+      }));
+      app = await buildApp(root);
+
+      const res = await app.inject({ method: 'GET', url: `/api/v5/sprints/phase-${phase.replace('_', '-')}` });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.data.status).toBe('in_progress');
+    });
+  }
+
+  for (const phase of PENDING_PHASES) {
+    it(`maps phase "${phase}" to status "pending"`, async () => {
+      const root = setup();
+      writeFileSync(join(root, `.agentforge/sprints/vphase-${phase.replace('_', '-')}.json`), JSON.stringify({
+        version: `phase-${phase.replace('_', '-')}`,
+        name: `phase test ${phase}`,
+        phase,
+        items: [],
+      }));
+      app = await buildApp(root);
+
+      const res = await app.inject({ method: 'GET', url: `/api/v5/sprints/phase-${phase.replace('_', '-')}` });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.data.status).toBe('pending');
+    });
+  }
 });

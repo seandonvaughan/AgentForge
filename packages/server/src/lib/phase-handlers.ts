@@ -30,7 +30,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { AgentRuntime, loadAgentConfig, writeMemoryEntry } from '@agentforge/core';
-import type { RunResult } from '@agentforge/core';
+import type { RunResult, GateVerdictMetadata } from '@agentforge/core';
 import { generateId, nowIso } from '@agentforge/shared';
 import { globalStream } from '../routes/v5/stream.js';
 import { careerHook } from './career-hook.js';
@@ -695,23 +695,39 @@ export async function runGatePhase(ctx: PhaseContext): Promise<PhaseResult> {
     }
 
     const isApprove = /\bAPPROVE\b/i.test(verdictText);
-    const verdictTag = isApprove ? 'verdict:approve' : 'verdict:reject';
+    // Use the canonical GateVerdictMetadata verdict shape ('approved'/'rejected').
+    const verdictNorm: 'approved' | 'rejected' = isApprove ? 'approved' : 'rejected';
+    const verdictTag = `verdict:${verdictNorm}`;
 
     // Extract structured findings from the review phase output so the next
     // audit cycle can surface specific issues — not just the plain rationale.
     const criticalFindings = extractFindingLines(reviewText, 'CRITICAL');
     const majorFindings = extractFindingLines(reviewText, 'MAJOR');
 
+    // Build the canonical GateVerdictMetadata — consumed by audit-phase prompt
+    // injection and flywheel stats. The metadata field carries structured data;
+    // the value field is a human-readable summary for direct prompt rendering.
+    const rationale = verdictText.slice(0, 500);
+    const gateMetadata: GateVerdictMetadata = {
+      cycleId: ctx.cycleId ?? '',
+      verdict: verdictNorm,
+      rationale,
+      criticalFindings,
+      majorFindings,
+    };
+
+    const summaryParts: string[] = [`Gate ${verdictNorm}: ${rationale}`];
+    if (criticalFindings.length > 0) {
+      summaryParts.push(`Critical: ${criticalFindings.join('; ')}`);
+    }
+    if (majorFindings.length > 0) {
+      summaryParts.push(`Major: ${majorFindings.join('; ')}`);
+    }
+
     writeMemoryEntry(ctx.projectRoot, {
       type: 'gate-verdict',
-      value: JSON.stringify({
-        cycleId: ctx.cycleId ?? null,
-        sprintVersion: ctx.sprintVersion,
-        verdict: isApprove ? 'approve' : 'reject',
-        rationale: verdictText.slice(0, 500),
-        criticalFindings,
-        majorFindings,
-      }),
+      value: summaryParts.join('. '),
+      metadata: gateMetadata,
       ...(ctx.cycleId !== undefined ? { source: ctx.cycleId } : {}),
       tags: [`sprint:v${ctx.sprintVersion}`, verdictTag],
     });

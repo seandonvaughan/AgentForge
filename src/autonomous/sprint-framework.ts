@@ -50,6 +50,12 @@ export interface SprintItem {
   assignee: string;
   status: "planned" | "in_progress" | "completed" | "blocked" | "deferred";
   completedAt?: string;
+  /**
+   * Domain tags for memory lookup — used by ExecutePhaseHandler to surface
+   * relevant past failures before dispatching this item to its agent.
+   * Example: ["memory", "execute", "prompt-injection"]
+   */
+  tags?: string[];
 }
 
 export interface SprintPlan {
@@ -299,7 +305,10 @@ export class AutonomousSprintFramework {
   private cloneSprint(sprint: SprintPlan): SprintPlan {
     return {
       ...sprint,
-      items: sprint.items.map((i) => ({ ...i })),
+      items: sprint.items.map((i) => ({
+        ...i,
+        tags: i.tags ? [...i.tags] : undefined,
+      })),
       successCriteria: [...sprint.successCriteria],
       auditFindings: [...sprint.auditFindings],
     };

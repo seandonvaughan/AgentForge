@@ -21,6 +21,8 @@ interface MemoryEntry {
   tags?: string[];
   updatedAt?: string;
   createdAt?: string;
+  /** Structured payload from the canonical CycleMemoryEntry schema (rank-1). */
+  metadata?: Record<string, unknown>;
 }
 
 /** Maximum entries returned by the v5 memory endpoint. */
@@ -110,6 +112,7 @@ function readJsonlMemories(): MemoryEntry[] {
               createdAt?: string;
               source?: string;
               tags?: string[];
+              metadata?: Record<string, unknown>;
             };
             if (!e.id || !e.type) continue;
             const rawValue = e.value ?? '';
@@ -130,6 +133,9 @@ function readJsonlMemories(): MemoryEntry[] {
               tags: e.tags ?? [],
               createdAt: e.createdAt,
               updatedAt: e.createdAt,
+              // Pass through structured metadata from the rank-1 schema so
+              // flywheel and dashboard consumers can read typed payloads.
+              ...(e.metadata !== undefined ? { metadata: e.metadata } : {}),
             });
           } catch {
             // skip malformed lines without failing the whole file
@@ -305,9 +311,13 @@ export async function memoryRoutes(
     const entries: MemoryEntry[] = [];
 
     function addEntry(e: MemoryEntry): void {
+      // Build a dedup key from id or key; fall back to type+createdAt to ensure
+      // entries with neither field set still participate in deduplication rather
+      // than bypassing the guard entirely (MAJOR finding from v10.1.0 review).
       const id = e.id ?? e.key;
-      if (id && seenIds.has(id)) return;
-      if (id) seenIds.add(id);
+      const dedupeKey = id || (e.type && e.createdAt ? `${e.type}:${e.createdAt}` : undefined);
+      if (dedupeKey && seenIds.has(dedupeKey)) return;
+      if (dedupeKey) seenIds.add(dedupeKey);
       entries.push(e);
     }
 
@@ -367,23 +377,24 @@ export async function memoryRoutes(
       }
     }
 
-    // Cap to latest V5_MEMORY_LIMIT entries before building the agents/types
-    // lists so filters and dropdowns reflect only what the client will see.
-    const capped = entries.slice(0, V5_MEMORY_LIMIT);
+    // Collect unique agents and types from ALL entries (not just the capped
+    // window) so dropdown options in the UI reflect the full data set.
+    const agents = [...new Set(entries.map(e => e.agentId).filter(Boolean) as string[])].sort();
+    const types = [...new Set(entries.map(e => e.type).filter(Boolean) as string[])].sort();
 
-    // Collect unique agents and types before filtering (for client dropdowns)
-    const agents = [...new Set(capped.map(e => e.agentId).filter(Boolean) as string[])].sort();
-    const types = [...new Set(capped.map(e => e.type).filter(Boolean) as string[])].sort();
+    // Apply all filters to the full entry list BEFORE capping.  This ensures
+    // meta.total reflects true match counts (not cap-window counts), fixing the
+    // "meta.total reports paginated count" MAJOR finding from v10.1.0 review.
 
     // Apply search filter
     const afterSearch = searchTerm
-      ? capped.filter(e => {
+      ? entries.filter(e => {
           const haystack = [e.key, e.value, e.summary ?? '', (e.tags ?? []).join(' ')]
             .join(' ')
             .toLowerCase();
           return haystack.includes(searchTerm);
         })
-      : capped;
+      : entries;
 
     // Apply agent filter
     const afterAgent =
@@ -404,7 +415,12 @@ export async function memoryRoutes(
         })
       : afterType;
 
-    return reply.send({ data: afterSince, agents, types, meta: { total: afterSince.length, limit: V5_MEMORY_LIMIT } });
+    // Cap to V5_MEMORY_LIMIT after filtering so callers get the most recent
+    // matching entries and meta.total accurately shows how many matched.
+    const totalFiltered = afterSince.length;
+    const data = afterSince.slice(0, V5_MEMORY_LIMIT);
+
+    return reply.send({ data, agents, types, meta: { total: totalFiltered, limit: V5_MEMORY_LIMIT, returned: data.length } });
   });
 
   // DELETE /api/v5/memory/:id — remove a kv_store entry by key

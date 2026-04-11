@@ -29,3 +29,8 @@ export {
   type GateVerdictMemoryWriter as GatePhaseMemoryWriter,
   type GatePhaseResult,
 } from "./gate-phase-handler.js";
+
+export {
+  ExecutePhaseHandler,
+  type ExecutePhaseMemorySection,
+} from "./execute-phase-handler.js";

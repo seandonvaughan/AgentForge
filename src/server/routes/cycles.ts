@@ -155,6 +155,58 @@ function resolveCycleDir(cycleId: string): string | null {
 }
 
 // ---------------------------------------------------------------------------
+// Phase helpers
+// ---------------------------------------------------------------------------
+
+/** Known phase filenames to load. */
+const PHASE_FILES = ['plan', 'assign', 'execute', 'audit', 'review', 'gate', 'learn'] as const;
+
+interface PhaseRun {
+  agentId?: string;
+  costUsd?: number;
+  durationMs?: number;
+  response?: string;
+  itemId?: string;
+  status?: string;
+  attempts?: number;
+  model?: string;
+  [key: string]: unknown;
+}
+
+interface PhaseData {
+  phase: string;
+  status?: string;
+  durationMs?: number;
+  costUsd?: number;
+  agentRuns?: PhaseRun[];
+  [key: string]: unknown;
+}
+
+/**
+ * Read all phase JSON files for a given cycle directory.
+ * Only returns phases that have files on disk.
+ */
+function readCyclePhases(cycleDir: string): PhaseData[] {
+  const phasesDir = join(cycleDir, 'phases');
+  if (!existsSync(phasesDir)) return [];
+
+  const results: PhaseData[] = [];
+  for (const name of PHASE_FILES) {
+    const filePath = join(phasesDir, `${name}.json`);
+    if (!existsSync(filePath)) continue;
+    try {
+      const data = JSON.parse(readFileSync(filePath, 'utf-8')) as PhaseData;
+      // Ensure phase name is set even if missing from the file
+      if (!data.phase) data.phase = name;
+      results.push(data);
+    } catch {
+      // Skip unreadable / malformed phase files
+    }
+  }
+  return results;
+}
+
+// ---------------------------------------------------------------------------
 // Route plugin
 // ---------------------------------------------------------------------------
 
@@ -173,6 +225,64 @@ export async function cyclesRoutes(
     const limit = Math.min(Math.max(1, Number(req.query.limit) || 50), 200);
     const cycles = listCycles(limit);
     return reply.send({ cycles, meta: { total: cycles.length } });
+  });
+
+  // ── GET /api/v5/cycles/:id ────────────────────────────────────────────────
+  app.get<{ Params: { id: string } }>('/api/v5/cycles/:id', async (req, reply) => {
+    const { id } = req.params;
+    const cycleDir = resolveCycleDir(id);
+
+    if (!cycleDir) {
+      return reply.status(404).send({ error: 'Cycle not found', cycleId: id });
+    }
+
+    // Build a summary from cycle.json (same logic as list endpoint)
+    let cycleJson: Record<string, unknown> = {};
+    const cycleFile = join(cycleDir, 'cycle.json');
+    if (existsSync(cycleFile)) {
+      try { cycleJson = JSON.parse(readFileSync(cycleFile, 'utf-8')) as Record<string, unknown>; } catch { /* ok */ }
+    }
+
+    const hasPending  = existsSync(join(cycleDir, 'approval-pending.json'));
+    const hasDecision = existsSync(join(cycleDir, 'approval-decision.json'));
+
+    // Also load scoring / sprint-link for extra metadata
+    let scoringJson: Record<string, unknown> = {};
+    const scoringFile = join(cycleDir, 'scoring.json');
+    if (existsSync(scoringFile)) {
+      try { scoringJson = JSON.parse(readFileSync(scoringFile, 'utf-8')) as Record<string, unknown>; } catch { /* ok */ }
+    }
+
+    let sprintLink: Record<string, unknown> = {};
+    const sprintLinkFile = join(cycleDir, 'sprint-link.json');
+    if (existsSync(sprintLinkFile)) {
+      try { sprintLink = JSON.parse(readFileSync(sprintLinkFile, 'utf-8')) as Record<string, unknown>; } catch { /* ok */ }
+    }
+
+    return reply.send({
+      cycleId: id,
+      sprintVersion: (cycleJson.sprintVersion ?? sprintLink.sprintVersion) as string | null ?? null,
+      stage: (cycleJson.stage as string) ?? 'unknown',
+      startedAt: (cycleJson.startedAt as string | null) ?? null,
+      completedAt: (cycleJson.completedAt as string | null) ?? null,
+      durationMs: typeof cycleJson.durationMs === 'number' ? cycleJson.durationMs : null,
+      hasApprovalPending: hasPending && !hasDecision,
+      scoring: scoringJson,
+      meta: cycleJson,
+    });
+  });
+
+  // ── GET /api/v5/cycles/:id/phases ─────────────────────────────────────────
+  app.get<{ Params: { id: string } }>('/api/v5/cycles/:id/phases', async (req, reply) => {
+    const { id } = req.params;
+    const cycleDir = resolveCycleDir(id);
+
+    if (!cycleDir) {
+      return reply.status(404).send({ error: 'Cycle not found', cycleId: id });
+    }
+
+    const phases = readCyclePhases(cycleDir);
+    return reply.send({ cycleId: id, phases });
   });
 
   // ── GET /api/v5/cycles/:id/approval ───────────────────────────────────────

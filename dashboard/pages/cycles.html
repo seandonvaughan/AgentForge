@@ -1,0 +1,694 @@
+  <div class="page" id="page-cycles">
+    <div class="page-header">
+      <h2>Cycle Phases</h2>
+      <button class="export-btn" onclick="loadCyclesPage()">&#8635; Refresh</button>
+    </div>
+
+    <div class="cycles-layout">
+      <!-- Left: cycle list -->
+      <div class="cycles-sidebar">
+        <div class="cycles-sidebar-header">
+          <span class="cycles-sidebar-title">Cycles</span>
+          <span id="cycles-count-badge" class="cycles-count-badge">&#8212;</span>
+        </div>
+        <div id="cycles-list-panel">
+          <div class="cycles-skeleton">
+            <div class="skeleton-row"></div>
+            <div class="skeleton-row"></div>
+            <div class="skeleton-row"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: phase detail -->
+      <div class="cycles-detail" id="cycles-detail-panel">
+        <!-- Empty state -->
+        <div class="cycles-detail-empty" id="cycles-detail-empty">
+          <div class="cycles-empty-icon">&#128260;</div>
+          <div class="cycles-empty-label">Select a cycle to view its phases</div>
+        </div>
+
+        <!-- Loading -->
+        <div class="cycles-phases-loading" id="cycles-phases-loading" style="display:none">
+          <div class="skeleton-row" style="height:80px;margin-bottom:12px"></div>
+          <div class="skeleton-row" style="height:80px;margin-bottom:12px"></div>
+          <div class="skeleton-row" style="height:80px"></div>
+        </div>
+
+        <!-- Phase cards container -->
+        <div id="cycles-phases-container" style="display:none">
+          <div class="cycle-summary-bar" id="cycle-summary-bar"></div>
+          <div id="cycles-phases-list"></div>
+        </div>
+
+        <!-- Error -->
+        <div class="cycles-phases-error" id="cycles-phases-error" style="display:none">
+          <span id="cycles-phases-error-msg">Failed to load phases.</span>
+          <button onclick="window._reloadCyclePhases()">Retry</button>
+        </div>
+      </div>
+    </div>
+  </div><!-- /page-cycles -->
+
+  <style>
+    .cycles-layout {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      gap: 20px;
+      align-items: flex-start;
+      min-height: 400px;
+    }
+
+    @media (max-width: 900px) {
+      .cycles-layout { grid-template-columns: 1fr; }
+    }
+
+    .cycles-sidebar {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      position: sticky;
+      top: 72px;
+      max-height: calc(100vh - 100px);
+      overflow-y: auto;
+    }
+
+    .cycles-sidebar-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(13,17,23,0.5);
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+
+    .cycles-sidebar-title {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-muted);
+    }
+
+    .cycles-count-badge {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+
+    .cycles-skeleton { padding: 10px; }
+
+    .cycle-list-row {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .cycle-list-row:last-child { border-bottom: none; }
+    .cycle-list-row:hover { background: var(--bg-card-hover); }
+    .cycle-list-row.selected {
+      background: var(--blue-dim);
+      border-left: 3px solid var(--blue);
+    }
+
+    .cycle-list-id {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-primary);
+      font-weight: 600;
+      margin-bottom: 3px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .cycle-list-meta {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .cycle-list-empty {
+      padding: 24px 14px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-muted);
+      text-align: center;
+    }
+
+    .cycles-detail { min-height: 300px; }
+
+    .cycles-detail-empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 280px;
+      gap: 12px;
+      color: var(--text-muted);
+    }
+
+    .cycles-empty-icon { font-size: 32px; opacity: 0.4; }
+
+    .cycles-empty-label {
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+
+    .cycles-phases-loading { padding: 4px; }
+
+    .cycles-phases-error {
+      padding: 24px;
+      color: var(--red);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      text-align: center;
+    }
+
+    /* Cycle summary bar */
+    .cycle-summary-bar {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 16px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+
+    .cycle-summary-bar:empty { display: none; }
+    .csb-id { font-size: 12px; font-weight: 700; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+    .csb-sep { color: var(--border-light); }
+    .csb-field { color: var(--text-muted); }
+    .csb-value { color: var(--text-secondary); }
+
+    /* Phase-specific accents */
+    .cycle-phase-card[data-phase="review"] .cycle-phase-name { color: var(--blue); }
+    .cycle-phase-card[data-phase="gate"]   .cycle-phase-name { color: var(--gold); }
+    .cycle-phase-card[data-phase="learn"]  .cycle-phase-name { color: var(--green); }
+    .cycle-phase-card[data-phase="audit"]  .cycle-phase-name { color: var(--orange); }
+
+    /* Toggle chevron */
+    .cycle-phase-chevron {
+      font-size: 10px;
+      color: var(--text-muted);
+      transition: transform 0.2s;
+      margin-left: 4px;
+    }
+
+    /* Phase status dot */
+    .phase-status-dot {
+      width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+    }
+    .phase-status-dot.completed { background: var(--green); }
+    .phase-status-dot.failed    { background: var(--red); }
+    .phase-status-dot.running   { background: var(--blue); }
+    .phase-status-dot.pending   { background: var(--border-light); }
+
+    /* Cost chip */
+    .phase-cost-chip {
+      padding: 1px 5px;
+      border-radius: 3px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--gold);
+    }
+
+    /* Gate verdict badge */
+    .gate-verdict-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 9px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 12px;
+    }
+    .gate-verdict-badge.approve { background: rgba(63,185,80,0.15);  color: var(--green);  border: 1px solid rgba(63,185,80,0.3);  }
+    .gate-verdict-badge.reject  { background: rgba(248,81,73,0.15);  color: var(--red);    border: 1px solid rgba(248,81,73,0.3);  }
+    .gate-verdict-badge.request { background: rgba(210,153,34,0.15); color: var(--orange); border: 1px solid rgba(210,153,34,0.3); }
+
+    /* md-body inside cycle agent runs */
+    .cycle-phase-agent-body .md-body {
+      font-size: 12px;
+      line-height: 1.65;
+      color: var(--text-secondary);
+    }
+
+    .cycle-phase-agent-body .md-body .md-h1,
+    .cycle-phase-agent-body .md-body .md-h2 {
+      margin: 14px 0 6px;
+      color: var(--text-primary);
+    }
+
+    .cycle-phase-agent-body .md-body .md-h3 {
+      margin: 10px 0 4px;
+      color: var(--text-primary);
+    }
+
+    .cycle-phase-agent-body .md-body .md-code-block {
+      font-size: 11px;
+    }
+
+    .agent-run-label {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+  </style>
+
+  <script>
+  (function() {
+    'use strict';
+
+    /*
+     * Security note: all HTML rendered via setMarkdown() is produced by
+     * renderMarkdown(), which calls escapeHtml() on every text fragment
+     * before applying regex transformations. No raw user-supplied or
+     * API-supplied text reaches the DOM as HTML — only the escapeHtml()-
+     * sanitized output of renderMarkdown(). This is the same pattern used
+     * in index.html (run-detail response, gate-result-detail, etc.).
+     */
+
+    /** Render markdown text into an element. Safe: escapeHtml applied first. */
+    function setMarkdown(el, text) {
+      var md = typeof renderMarkdown === 'function' ? renderMarkdown(text) : escapeHtml(text);
+      el.innerHTML = md; // renderMarkdown output is XSS-safe (escapeHtml-sanitized)
+    }
+
+    var _activeCycleId = null;
+
+    function _fmtDur(ms) {
+      if (!ms) return '&#8212;';
+      if (ms < 1000)   return ms + 'ms';
+      if (ms < 60000)  return (ms / 1000).toFixed(1) + 's';
+      var m = Math.floor(ms / 60000);
+      var s = Math.round((ms % 60000) / 1000);
+      return m + 'm ' + s + 's';
+    }
+
+    function _fmtDate(iso) {
+      if (!iso) return '&#8212;';
+      try {
+        return new Date(iso).toLocaleString('en-US', {
+          month: 'short', day: 'numeric',
+          hour: '2-digit', minute: '2-digit',
+        });
+      } catch (e) { return String(iso); }
+    }
+
+    /** Try to parse the gate response JSON (verdict + rationale). */
+    function _parseGateResponse(raw) {
+      if (!raw || typeof raw !== 'string') return null;
+      var s = raw.trim();
+      if (s.charAt(0) === '`') {
+        var nl = s.indexOf('\n');
+        var end = s.lastIndexOf('`\n');
+        if (nl > -1 && end > nl) s = s.slice(nl + 1, end).trim();
+      }
+      try { return JSON.parse(s); } catch (e) { return null; }
+    }
+
+    /** Render gate phase body: verdict badge + markdown rationale. */
+    function _renderGateBody(container, run) {
+      var parsed = _parseGateResponse(run.response);
+
+      if (parsed && (parsed.verdict || parsed.rationale)) {
+        if (parsed.verdict) {
+          var badge = document.createElement('div');
+          var vLower = String(parsed.verdict).toLowerCase();
+          var vClass = vLower.indexOf('approve') > -1 ? 'approve'
+                     : vLower.indexOf('reject')  > -1 ? 'reject'
+                     : 'request';
+          badge.className = 'gate-verdict-badge ' + vClass;
+          var icon = vClass === 'approve' ? '\u2713' : vClass === 'reject' ? '\u2717' : '\u25CB';
+          badge.textContent = icon + ' ' + parsed.verdict;
+          container.appendChild(badge);
+        }
+
+        if (parsed.rationale) {
+          var label = document.createElement('div');
+          label.className = 'agent-run-label';
+          label.textContent = 'Rationale';
+          container.appendChild(label);
+
+          var body = document.createElement('div');
+          body.className = 'md-body';
+          setMarkdown(body, parsed.rationale);
+          container.appendChild(body);
+        }
+      } else if (run.response) {
+        var fallback = document.createElement('div');
+        fallback.className = 'md-body';
+        setMarkdown(fallback, run.response);
+        container.appendChild(fallback);
+      } else {
+        _appendEmpty(container);
+      }
+    }
+
+    /** Render standard phase body: markdown response. */
+    function _renderStandardBody(container, run) {
+      if (run.response) {
+        var body = document.createElement('div');
+        body.className = 'md-body';
+        setMarkdown(body, run.response);
+        container.appendChild(body);
+      } else {
+        _appendEmpty(container);
+      }
+    }
+
+    function _appendEmpty(container) {
+      var el = document.createElement('div');
+      el.style.cssText = 'color:var(--text-muted);font-family:var(--font-mono);font-size:11px;';
+      el.textContent = '(no response recorded)';
+      container.appendChild(el);
+    }
+
+    /** Build a collapsible phase card. */
+    function _buildPhaseCard(phase, defaultOpen) {
+      var phaseName = phase.phase || 'unknown';
+      var status    = phase.status || 'unknown';
+      var agentRuns = Array.isArray(phase.agentRuns) ? phase.agentRuns : [];
+
+      var card = document.createElement('div');
+      card.className = 'cycle-phase-card';
+      card.dataset.phase = phaseName;
+
+      // Header
+      var header = document.createElement('div');
+      header.className = 'cycle-phase-header';
+
+      var nameGroup = document.createElement('div');
+      nameGroup.style.cssText = 'display:flex;align-items:center;gap:8px';
+
+      var dot = document.createElement('span');
+      dot.className = 'phase-status-dot ' + (['completed','failed','running'].indexOf(status) > -1 ? status : 'pending');
+
+      var nameEl = document.createElement('span');
+      nameEl.className = 'cycle-phase-name';
+      nameEl.textContent = phaseName.toUpperCase();
+
+      nameGroup.appendChild(dot);
+      nameGroup.appendChild(nameEl);
+
+      var metaGroup = document.createElement('div');
+      metaGroup.className = 'cycle-phase-meta';
+
+      if (typeof phase.costUsd === 'number') {
+        var costChip = document.createElement('span');
+        costChip.className = 'phase-cost-chip';
+        costChip.textContent = '$' + phase.costUsd.toFixed(4);
+        metaGroup.appendChild(costChip);
+      }
+
+      if (typeof phase.durationMs === 'number') {
+        var durSpan = document.createElement('span');
+        durSpan.textContent = _fmtDur(phase.durationMs);
+        metaGroup.appendChild(durSpan);
+      }
+
+      var chevron = document.createElement('span');
+      chevron.className = 'cycle-phase-chevron';
+      chevron.textContent = '\u25B6';
+      if (defaultOpen) chevron.style.transform = 'rotate(90deg)';
+      metaGroup.appendChild(chevron);
+
+      header.appendChild(nameGroup);
+      header.appendChild(metaGroup);
+
+      // Body
+      var body = document.createElement('div');
+      body.className = 'cycle-phase-body' + (defaultOpen ? ' open' : '');
+
+      header.addEventListener('click', function() {
+        var open = body.classList.toggle('open');
+        chevron.style.transform = open ? 'rotate(90deg)' : '';
+      });
+
+      // Agent run cards
+      if (agentRuns.length === 0) {
+        var noRuns = document.createElement('div');
+        noRuns.style.cssText = 'color:var(--text-muted);font-family:var(--font-mono);font-size:11px;';
+        noRuns.textContent = 'No agent run data for this phase.';
+        body.appendChild(noRuns);
+      } else {
+        agentRuns.forEach(function(run) {
+          var runCard = document.createElement('div');
+          runCard.className = 'cycle-phase-agent-run';
+
+          var runHeader = document.createElement('div');
+          runHeader.className = 'cycle-phase-agent-header';
+
+          var agentNameEl = document.createElement('span');
+          agentNameEl.className = 'cycle-phase-agent-name';
+          agentNameEl.textContent = run.agentId || 'agent';
+          runHeader.appendChild(agentNameEl);
+
+          if (typeof run.costUsd === 'number') {
+            var rc = document.createElement('span');
+            rc.style.cssText = 'color:var(--gold);font-size:10px;margin-left:auto;';
+            rc.textContent = '$' + run.costUsd.toFixed(4);
+            runHeader.appendChild(rc);
+          }
+
+          if (typeof run.durationMs === 'number') {
+            var rd = document.createElement('span');
+            rd.style.cssText = 'color:var(--text-muted);font-size:10px;margin-left:8px;';
+            rd.textContent = _fmtDur(run.durationMs);
+            runHeader.appendChild(rd);
+          }
+
+          var runBody = document.createElement('div');
+          runBody.className = 'cycle-phase-agent-body';
+
+          if (phaseName === 'gate') {
+            _renderGateBody(runBody, run);
+          } else {
+            _renderStandardBody(runBody, run);
+          }
+
+          runCard.appendChild(runHeader);
+          runCard.appendChild(runBody);
+          body.appendChild(runCard);
+        });
+      }
+
+      card.appendChild(header);
+      card.appendChild(body);
+      return card;
+    }
+
+    /** Load phase detail for a cycle. */
+    async function _loadCyclePhases(cycleId) {
+      _activeCycleId = cycleId;
+
+      document.getElementById('cycles-detail-empty').style.display     = 'none';
+      document.getElementById('cycles-phases-loading').style.display   = 'block';
+      document.getElementById('cycles-phases-container').style.display = 'none';
+      document.getElementById('cycles-phases-error').style.display     = 'none';
+
+      try {
+        var p1 = fetch('/api/v5/cycles/' + encodeURIComponent(cycleId));
+        var p2 = fetch('/api/v5/cycles/' + encodeURIComponent(cycleId) + '/phases');
+        var cycleRes  = await p1;
+        var phasesRes = await p2;
+        // Parse JSON even on 404: a 404 with cycleInProgress:true means the
+        // cycle is still running (cycle.json not yet written). We still want
+        // to render stage, sprint version, and live phase data from events.jsonl.
+        var cycleData  = (cycleRes.ok || cycleRes.status === 404)
+          ? await cycleRes.json().catch(function() { return {}; })
+          : {};
+        var phasesData = phasesRes.ok ? await phasesRes.json() : {};
+        var phases = Array.isArray(phasesData.phases) ? phasesData.phases : [];
+
+        // Summary bar
+        var bar = document.getElementById('cycle-summary-bar');
+        while (bar.firstChild) bar.removeChild(bar.firstChild);
+
+        var idEl = document.createElement('span');
+        idEl.className = 'csb-id';
+        idEl.title = cycleId;
+        idEl.textContent = cycleId.length > 22 ? cycleId.slice(0, 22) + '\u2026' : cycleId;
+        bar.appendChild(idEl);
+
+        [
+          ['sprint', cycleData.sprintVersion],
+          ['stage',  cycleData.stage],
+          ['started', _fmtDate(cycleData.startedAt)],
+        ].forEach(function(pair) {
+          if (!pair[1]) return;
+          var sep = document.createElement('span');  sep.className = 'csb-sep'; sep.textContent = '\u00b7';
+          var lbl = document.createElement('span');  lbl.className = 'csb-field'; lbl.textContent = pair[0] + '\u00a0';
+          var val = document.createElement('span');  val.className = 'csb-value'; val.textContent = pair[1];
+          bar.appendChild(sep); bar.appendChild(lbl); bar.appendChild(val);
+        });
+
+        // Phase cards
+        var listEl = document.getElementById('cycles-phases-list');
+        while (listEl.firstChild) listEl.removeChild(listEl.firstChild);
+
+        if (phases.length === 0) {
+          var noPhases = document.createElement('div');
+          noPhases.style.cssText = 'padding:32px;text-align:center;color:var(--text-muted);font-family:var(--font-mono);font-size:12px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius)';
+          noPhases.textContent = 'No phase data available for this cycle.';
+          listEl.appendChild(noPhases);
+        } else {
+          var autoOpen = { review: true, gate: true, learn: true };
+          phases.forEach(function(phase) {
+            listEl.appendChild(_buildPhaseCard(phase, !!autoOpen[phase.phase]));
+          });
+        }
+
+        document.getElementById('cycles-phases-loading').style.display   = 'none';
+        document.getElementById('cycles-phases-container').style.display = 'block';
+
+      } catch (e) {
+        console.error('_loadCyclePhases:', e);
+        document.getElementById('cycles-phases-loading').style.display = 'none';
+        document.getElementById('cycles-phases-error').style.display   = 'block';
+        var errMsg = document.getElementById('cycles-phases-error-msg');
+        if (errMsg) errMsg.textContent = 'Failed to load phases: ' + (e.message || String(e));
+      }
+    }
+
+    window._reloadCyclePhases = function() {
+      if (_activeCycleId) _loadCyclePhases(_activeCycleId);
+    };
+
+    /** Build a sidebar cycle row. */
+    function _buildCycleRow(cycle) {
+      var row = document.createElement('div');
+      row.className = 'cycle-list-row';
+      row.dataset.cycleId = cycle.cycleId;
+
+      var idEl = document.createElement('div');
+      idEl.className = 'cycle-list-id';
+      idEl.title = cycle.cycleId;
+      idEl.textContent = cycle.cycleId.length > 28
+        ? cycle.cycleId.slice(0, 28) + '\u2026'
+        : cycle.cycleId;
+
+      var meta = document.createElement('div');
+      meta.className = 'cycle-list-meta';
+
+      if (cycle.sprintVersion) {
+        var ver = document.createElement('span');
+        ver.style.color = 'var(--blue)';
+        ver.textContent = cycle.sprintVersion;
+        meta.appendChild(ver);
+      }
+
+      var stageEl = document.createElement('span');
+      var stageColor = cycle.stage === 'completed' ? 'var(--green)'
+                     : cycle.stage === 'failed'    ? 'var(--red)'
+                     : cycle.stage === 'running'   ? 'var(--blue)'
+                     : 'var(--text-muted)';
+      stageEl.style.color = stageColor;
+      stageEl.textContent = cycle.stage || 'unknown';
+      meta.appendChild(stageEl);
+
+      if (cycle.hasApprovalPending) {
+        var pend = document.createElement('span');
+        pend.style.cssText = 'color:var(--orange);font-weight:700;';
+        pend.textContent = '\u2691 approval';
+        meta.appendChild(pend);
+      }
+
+      row.appendChild(idEl);
+      row.appendChild(meta);
+
+      row.addEventListener('click', function() {
+        document.querySelectorAll('.cycle-list-row').forEach(function(r) {
+          r.classList.remove('selected');
+        });
+        row.classList.add('selected');
+        _loadCyclePhases(cycle.cycleId);
+      });
+
+      return row;
+    }
+
+    /** Main page loader — also called from router with optional preSelectId. */
+    window.loadCyclesPage = async function(preSelectId) {
+      var listPanel  = document.getElementById('cycles-list-panel');
+      var countBadge = document.getElementById('cycles-count-badge');
+      if (!listPanel) return;
+
+      listPanel.innerHTML = '';
+      var sk = document.createElement('div');
+      sk.className = 'cycles-skeleton';
+      for (var i = 0; i < 4; i++) {
+        var sr = document.createElement('div');
+        sr.className = 'skeleton-row';
+        sk.appendChild(sr);
+      }
+      listPanel.appendChild(sk);
+
+      try {
+        var res = await fetch('/api/v5/cycles?limit=100');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        var json = await res.json();
+        var cycles = json.cycles || [];
+
+        if (countBadge) countBadge.textContent = String(cycles.length);
+
+        while (listPanel.firstChild) listPanel.removeChild(listPanel.firstChild);
+
+        if (cycles.length === 0) {
+          var empty = document.createElement('div');
+          empty.className = 'cycle-list-empty';
+          empty.textContent = 'No cycles found.';
+          listPanel.appendChild(empty);
+          return;
+        }
+
+        cycles.forEach(function(c) { listPanel.appendChild(_buildCycleRow(c)); });
+
+        var targetId  = preSelectId || cycles[0].cycleId;
+        var targetRow = listPanel.querySelector('[data-cycle-id="' + targetId + '"]');
+        if (targetRow) {
+          targetRow.classList.add('selected');
+          _loadCyclePhases(targetId);
+        }
+
+      } catch (e) {
+        console.error('loadCyclesPage:', e);
+        while (listPanel.firstChild) listPanel.removeChild(listPanel.firstChild);
+        var errEl = document.createElement('div');
+        errEl.className = 'cycle-list-empty';
+        errEl.style.color = 'var(--red)';
+        errEl.textContent = 'Failed: ' + (e.message || '');
+        listPanel.appendChild(errEl);
+      }
+    };
+
+    // Boot
+    loadCyclesPage();
+  })();
+  </script>

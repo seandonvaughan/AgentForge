@@ -114,14 +114,28 @@
     }
   };
 
-  // Combine time-range and server-side search into a single query string.
+  // Combine time-range, server-side search, and agent filter into a query string.
+  // All three are sent to the server so the 200-entry cap is applied to the
+  // already-filtered set — not to an unfiltered snapshot that may not contain
+  // the agent the user selected.
   function _memRebuildFetchExtra() {
     var parts = [];
     var since = _computeSinceParam(window._memTimeRange);
     if (since) parts.push(since.slice(1)); // strip leading '?'
     if (_pendingServerSearch) parts.push('search=' + encodeURIComponent(_pendingServerSearch));
+    // Include agent filter as a server-side param so time-range re-fetches
+    // honour the selected agent without requiring an additional client filter pass.
+    var currentAgent = (typeof memAgentFilter !== 'undefined') ? memAgentFilter : 'all';
+    if (currentAgent && currentAgent !== 'all') {
+      parts.push('agentId=' + encodeURIComponent(currentAgent));
+    }
     window._memFetchExtra = parts.length ? ('?' + parts.join('&')) : '';
   }
+  // Expose so index.html's memFilterAgent() can trigger a server-side param
+  // rebuild immediately when the agent dropdown changes — without this, the
+  // Refresh button would re-fetch without the selected agent filter until a
+  // time-range button was also clicked.
+  window._memRebuildFetchExtra = _memRebuildFetchExtra;
 
   // ── Clear all filters ────────────────────────────────────────────────────
   window._memClearFilters = function () {
@@ -191,6 +205,10 @@
     var row = document.getElementById('memory-type-row');
     if (!row) return;
     while (row.firstChild) row.removeChild(row.firstChild);
+    // Reset type filter state so it stays consistent with the rebuilt chip UI.
+    // Without this reset, a previously-selected type filter would remain active
+    // (hiding entries) while the "All Types" button visually appears selected.
+    window._memTypeFilter = 'all';
     if (!types || types.length === 0) return;
 
     var allBtn = document.createElement('button');

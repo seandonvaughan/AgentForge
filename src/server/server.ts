@@ -38,6 +38,8 @@ export interface ServerOptions {
   sseManager?: SseManager; // optional SSE manager — registers GET /api/v1/stream when provided
   /** OAuth2 authentication configuration. Defaults to disabled (no auth). */
   auth?: OAuth2Config;
+  /** Override the project root directory (used in tests to point at a temp directory). */
+  projectRoot?: string;
 }
 
 export async function createServer(options: ServerOptions = {}) {
@@ -110,8 +112,7 @@ export async function createServer(options: ServerOptions = {}) {
     await app.register(sessionsRoutes, { adapter: options.adapter });
     await app.register(agentsRoutes, { adapter: options.adapter });
     await app.register(costsRoutes, { adapter: options.adapter });
-    await app.register(sprintsRoutes, { adapter: options.adapter });
-    await app.register(orgGraphRoutes, { adapter: options.adapter });
+    await app.register(sprintsRoutes, { adapter: options.adapter, projectRoot: options.projectRoot });
     await app.register(flywheelRoutes, { adapter: options.adapter });
     await app.register(autonomyRoutes, { adapter: options.adapter });
     await app.register(capabilitiesRoutes, { adapter: options.adapter });
@@ -125,6 +126,9 @@ export async function createServer(options: ServerOptions = {}) {
 
   // Branches route — git-backed, no DB adapter required
   await app.register(branchesRoutes, {});
+
+  // Org-graph route — filesystem-backed (reads delegation.yaml + agent YAMLs), no DB adapter required
+  await app.register(orgGraphRoutes, {});
 
   // Cycles route — filesystem-backed, exposes approval GET/POST + SSE broadcast
   await app.register(cyclesRoutes, { sseManager: options.sseManager });

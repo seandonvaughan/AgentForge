@@ -525,7 +525,9 @@ header {
 .agent-card.sonnet { border-left: 3px solid var(--blue); }
 .agent-card.haiku  { border-left: 3px solid var(--green); }
 
-.agent-name { font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; }
+.agent-name { font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 2px; }
+.agent-id-sub { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); margin-bottom: 6px; letter-spacing: 0.3px; }
+.agent-desc { font-size: 11px; color: var(--text-secondary); line-height: 1.4; margin-bottom: 8px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .agent-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
 
 .status-dot { width: 8px; height: 8px; border-radius: 50%; margin-left: auto; flex-shrink: 0; }
@@ -829,9 +831,19 @@ header {
 /* Raw JSON panel */
 .memory-json-panel { display: none; margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px; }
 .memory-entry.expanded .memory-json-panel { display: block; }
+.memory-json-panel-header { display: flex; align-items: center; margin-bottom: 6px; gap: 6px; }
+.memory-json-panel-label { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); flex: 1; }
+.memory-json-copy { font-family: var(--font-mono); font-size: 9px; padding: 2px 8px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-secondary); cursor: pointer; transition: all 0.12s; }
+.memory-json-copy:hover { background: var(--bg-card); color: var(--text-primary); border-color: var(--border-light); }
 .memory-json-pre { font-family: var(--font-mono); font-size: 10px; color: var(--text-secondary); background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; overflow-x: auto; white-space: pre; line-height: 1.6; max-height: 280px; overflow-y: auto; }
 .memory-json-pre::-webkit-scrollbar { width: 4px; height: 4px; }
 .memory-json-pre::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+/* JSON syntax token colors */
+.memory-json-pre .j-key  { color: var(--blue); }
+.memory-json-pre .j-str  { color: var(--green); }
+.memory-json-pre .j-num  { color: var(--gold); }
+.memory-json-pre .j-bool { color: var(--purple); }
+.memory-json-pre .j-null { color: var(--text-muted); font-style: italic; }
 /* Live-feed flash on new entry */
 @keyframes mem-entry-appear { from { opacity: 0; transform: translateY(-6px); border-color: var(--cyan); } to { opacity: 1; transform: translateY(0); border-color: var(--border); } }
 .memory-entry--new { animation: mem-entry-appear 0.5s ease forwards; }
@@ -2113,6 +2125,42 @@ tbody tr:hover { background: var(--bg-card-hover) !important; cursor: pointer; }
 .gate-result-detail { font-size: 11px; color: var(--text-secondary); font-family: var(--font-mono); }
 .gate-actions { padding: 14px 18px; border-top: 1px solid var(--border); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .gate-reviewer-note { font-size: 12px; color: var(--text-muted); font-family: var(--font-mono); }
+
+/* ── Markdown Rendered Output ────────────────────────────── */
+.md-body { font-size: 13px; line-height: 1.7; color: var(--text-primary); }
+.md-body .md-h1 { font-size: 18px; font-weight: 700; color: var(--text-primary); margin: 16px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+.md-body .md-h2 { font-size: 15px; font-weight: 700; color: var(--text-primary); margin: 14px 0 6px; padding-bottom: 3px; border-bottom: 1px solid rgba(48,54,61,0.5); }
+.md-body .md-h3 { font-size: 13px; font-weight: 700; color: var(--blue); margin: 12px 0 4px; }
+.md-body .md-h4, .md-body .md-h5, .md-body .md-h6 { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin: 10px 0 4px; }
+.md-body .md-p { margin: 4px 0; color: var(--text-primary); }
+.md-body .md-spacer { height: 8px; }
+.md-body .md-ul, .md-body .md-ol { margin: 4px 0 4px 18px; padding: 0; }
+.md-body .md-li { margin: 2px 0; color: var(--text-primary); }
+.md-body .md-li::marker { color: var(--blue); }
+.md-body .md-hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+.md-body .md-code-block { background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; overflow-x: auto; font-family: var(--font-mono); font-size: 11px; line-height: 1.5; color: var(--text-primary); margin: 6px 0; position: relative; }
+.md-body .md-code-lang { position: absolute; top: 4px; right: 8px; font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-family: var(--font-mono); }
+.md-body .md-inline-code { background: rgba(88,166,255,0.1); border: 1px solid rgba(88,166,255,0.2); border-radius: 3px; padding: 1px 5px; font-family: var(--font-mono); font-size: 11px; color: var(--blue); }
+.md-body .md-blockquote { border-left: 3px solid var(--border-light); margin: 6px 0; padding: 4px 12px; color: var(--text-secondary); background: rgba(255,255,255,0.02); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+.md-body .md-link { color: var(--blue); text-decoration: underline; text-underline-offset: 2px; }
+.md-body .md-link:hover { opacity: 0.8; }
+.md-body .md-table { width: 100%; border-collapse: collapse; font-size: 11px; margin: 6px 0; }
+.md-body .md-th { background: var(--bg-card); padding: 6px 10px; text-align: left; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px; border-bottom: 2px solid var(--border); }
+.md-body .md-td { padding: 5px 10px; border-bottom: 1px solid rgba(48,54,61,0.4); color: var(--text-primary); }
+.md-body .md-table tbody tr:hover { background: var(--bg-card); }
+
+/* Phase detail card */
+.cycle-phase-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 16px; overflow: hidden; }
+.cycle-phase-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: rgba(13,17,23,0.5); border-bottom: 1px solid var(--border); cursor: pointer; user-select: none; }
+.cycle-phase-name { font-family: var(--font-mono); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-primary); }
+.cycle-phase-meta { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); }
+.cycle-phase-body { padding: 16px; display: none; }
+.cycle-phase-body.open { display: block; }
+.cycle-phase-agent-run { background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 10px; overflow: hidden; }
+.cycle-phase-agent-header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); font-family: var(--font-mono); font-size: 11px; }
+.cycle-phase-agent-name { color: var(--blue); font-weight: 600; }
+.cycle-phase-agent-body { padding: 12px 16px; }
+
 .sprint-list-item { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 18px; margin-bottom: 8px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 14px; }
 .sprint-list-item:hover { background: var(--bg-card-hover); border-color: var(--border-light); }
 .sprint-list-item.selected { border-color: var(--blue); background: var(--blue-dim); }
@@ -2665,6 +2713,7 @@ tbody tr:hover { background: var(--bg-card-hover) !important; cursor: pointer; }
       <a class="sidebar-link" data-route="/decisions" href="/decisions"><span class="nav-icon">⚖️</span>Decisions</a>
       <a class="sidebar-link" data-route="/knowledge" href="/knowledge"><span class="nav-icon">📖</span>Knowledge</a>
       <a class="sidebar-link" data-route="/chat" href="/chat"><span class="nav-icon">💬</span>Chat</a>
+      <a class="sidebar-link" data-route="/search" href="/search"><span class="nav-icon">🔍</span>Search</a>
     </div>
     <div class="sidebar-group">
       <div class="sidebar-group-label">Autonomous</div>
@@ -2672,6 +2721,7 @@ tbody tr:hover { background: var(--bg-card-hover) !important; cursor: pointer; }
         <span class="nav-icon">✅</span>Approvals
         <span id="sidebar-approvals-badge" class="approval-nav-badge hidden">0</span>
       </a>
+      <a class="sidebar-link" data-route="/cycles" href="/cycles"><span class="nav-icon">🔄</span>Cycle Phases</a>
     </div>
   </nav>
 
@@ -2743,6 +2793,138 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+// ── Markdown Renderer ─────────────────────────────────────
+// Lightweight vanilla-JS markdown→HTML. No external deps.
+// All text passes through escapeHtml first — XSS-safe by design.
+// Supports: headings, bold, italic, inline code, fenced code, lists,
+// tables, blockquotes, horizontal rules, strikethrough, links.
+function renderMarkdown(raw) {
+  if (raw == null) return '';
+  var src = String(raw);
+
+  function inlineFmt(s) {
+    s = escapeHtml(s);
+    // Inline code first (avoid bold/italic inside code spans)
+    s = s.replace(/`([^`]+?)`/g, '<code class="md-inline-code">$1</code>');
+    // Bold + italic ***text***
+    s = s.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+    // Bold **text**
+    s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    // Italic *text* (single asterisk, not adjacent to another *)
+    s = s.replace(/\*(?!\*)(.+?)(?<!\*)\*/g, '<em>$1</em>');
+    // Strikethrough ~~text~~
+    s = s.replace(/~~(.+?)~~/g, '<del>$1</del>');
+    // Hyperlinks [text](url)
+    s = s.replace(/\[([^\]]+?)\]\(([^)]+?)\)/g, '<a href="$2" target="_blank" rel="noopener" class="md-link">$1</a>');
+    return s;
+  }
+
+  var lines = src.split('\n');
+  var out = '';
+  var i = 0;
+  var n = lines.length;
+
+  while (i < n) {
+    var line = lines[i];
+
+    // ── Fenced code block ```lang ... ```
+    if (/^```/.test(line)) {
+      var fenceLang = line.slice(3).trim();
+      var codeBody = '';
+      i++;
+      while (i < n && !/^```/.test(lines[i])) {
+        codeBody += escapeHtml(lines[i]) + '\n';
+        i++;
+      }
+      i++; // skip closing ```
+      out += '<pre class="md-code-block">' +
+        (fenceLang ? '<span class="md-code-lang">' + escapeHtml(fenceLang) + '</span>' : '') +
+        '<code>' + codeBody + '</code></pre>';
+      continue;
+    }
+
+    // ── Horizontal rule --- / *** / ___
+    if (/^(\*{3,}|-{3,}|_{3,})\s*$/.test(line)) {
+      out += '<hr class="md-hr">';
+      i++;
+      continue;
+    }
+
+    // ── ATX Heading # through ######
+    var hm = line.match(/^(#{1,6})\s+(.+)/);
+    if (hm) {
+      var hlevel = hm[1].length;
+      out += '<h' + hlevel + ' class="md-h' + hlevel + '">' + inlineFmt(hm[2]) + '</h' + hlevel + '>';
+      i++;
+      continue;
+    }
+
+    // ── Blockquote >
+    if (/^>\s*/.test(line)) {
+      var bqLines = [];
+      while (i < n && /^>\s*/.test(lines[i])) {
+        bqLines.push(lines[i].replace(/^>\s?/, ''));
+        i++;
+      }
+      out += '<blockquote class="md-blockquote">' + renderMarkdown(bqLines.join('\n')) + '</blockquote>';
+      continue;
+    }
+
+    // ── Unordered list - / * / +
+    if (/^[\-\*\+]\s+/.test(line)) {
+      out += '<ul class="md-ul">';
+      while (i < n && /^[\-\*\+]\s+/.test(lines[i])) {
+        out += '<li class="md-li">' + inlineFmt(lines[i].replace(/^[\-\*\+]\s+/, '')) + '</li>';
+        i++;
+      }
+      out += '</ul>';
+      continue;
+    }
+
+    // ── Ordered list 1. 2. etc.
+    if (/^\d+\.\s+/.test(line)) {
+      out += '<ol class="md-ol">';
+      while (i < n && /^\d+\.\s+/.test(lines[i])) {
+        out += '<li class="md-li">' + inlineFmt(lines[i].replace(/^\d+\.\s+/, '')) + '</li>';
+        i++;
+      }
+      out += '</ol>';
+      continue;
+    }
+
+    // ── Table: pipe-separated header row followed by separator row
+    if (/^\|/.test(line) && i + 1 < n && /^\|[-\s:|]+\|/.test(lines[i + 1])) {
+      var thdrs = line.split('|').filter(function(c, ci, a) { return ci > 0 && ci < a.length - 1; });
+      i += 2; // skip header row + separator row
+      out += '<table class="md-table"><thead><tr>';
+      thdrs.forEach(function(h) { out += '<th class="md-th">' + inlineFmt(h.trim()) + '</th>'; });
+      out += '</tr></thead><tbody>';
+      while (i < n && /^\|/.test(lines[i])) {
+        var tcells = lines[i].split('|').filter(function(c, ci, a) { return ci > 0 && ci < a.length - 1; });
+        out += '<tr>';
+        tcells.forEach(function(c) { out += '<td class="md-td">' + inlineFmt(c.trim()) + '</td>'; });
+        out += '</tr>';
+        i++;
+      }
+      out += '</tbody></table>';
+      continue;
+    }
+
+    // ── Blank line (paragraph separator)
+    if (/^\s*$/.test(line)) {
+      out += '<div class="md-spacer"></div>';
+      i++;
+      continue;
+    }
+
+    // ── Default: paragraph
+    out += '<p class="md-p">' + inlineFmt(line) + '</p>';
+    i++;
+  }
+
+  return out;
 }
 
 // ── Data Store ────────────────────────────────────────────
@@ -2921,6 +3103,10 @@ function memFilterCat(btn, cat) {
 
 function memFilterAgent(val) {
   memAgentFilter = val || 'all';
+  // Rebuild the server-side fetch params so that subsequent time-range changes
+  // (which trigger a full reload) include the selected agent filter, ensuring
+  // the 200-entry cap is applied to the already-filtered set.
+  if (typeof window._memRebuildFetchExtra === 'function') window._memRebuildFetchExtra();
   applyMemFilters();
 }
 
@@ -3681,7 +3867,13 @@ function loadRunDetail(id) {
       document.getElementById('run-detail-status').textContent   = statusVal;
       document.getElementById('run-detail-status').className     = 'status-badge ' + statusClass;
       document.getElementById('run-detail-task').textContent     = s.task || s.input || s.prompt || '(no input recorded)';
-      document.getElementById('run-detail-response').textContent = s.response || s.output || '(no output recorded)';
+      var responseEl = document.getElementById('run-detail-response');
+      var responseText = s.response || s.output || '';
+      if (responseText && typeof renderMarkdown === 'function') {
+        responseEl.innerHTML = '<div class=\"md-body\">' + renderMarkdown(responseText) + '</div>';
+      } else {
+        responseEl.textContent = responseText || '(no output recorded)';
+      }
       document.getElementById('run-detail-model').textContent    = s.model || '—';
       document.getElementById('run-detail-started').textContent  = s.startedAt ? new Date(s.startedAt).toLocaleString() : '—';
 
@@ -3912,9 +4104,17 @@ async function loadAgentDetailPage(agentId) {
     }
     const { data } = await res.json();
 
-    // Header: name + model badge
+    // Header: human-readable name from YAML, fall back to agentId
     const nameEl = document.getElementById('agent-detail-name');
-    nameEl.textContent = data.agentId || agentId;
+    nameEl.textContent = data.name || data.agentId || agentId;
+
+    // Show agentId (file stem) as subtitle when name is distinct
+    var idSubEl = document.getElementById('agent-detail-id');
+    if (idSubEl) {
+      var displayedName = data.name || data.agentId || agentId;
+      var stemId = data.agentId || agentId;
+      idSubEl.textContent = displayedName !== stemId ? stemId : '';
+    }
 
     const modelEl = document.getElementById('agent-detail-model');
     // Use model tier directly from API (sourced from YAML definition)
@@ -4016,7 +4216,7 @@ Router.addRoute('/', async () => { await _loadPageRoute('home', () => _loadHomeP
 Router.addRoute('/runs', async () => { await _loadPageRoute('runs', () => loadRunsPage(1)); });
 Router.addRoute(/^\/runs\/([^/]+)$/, async ({ id }) => { await _loadPageRoute('run-detail', () => loadRunDetail(id)); });
 Router.addRoute('/cost', async () => { await _loadPageRoute('cost', () => loadCostPage()); });
-Router.addRoute('/agents', async () => { await _loadPageRoute('agents'); });
+Router.addRoute('/agents', async () => { await _loadPageRoute('agents', () => { if (typeof loadAgentCards === 'function') loadAgentCards(); }); });
 Router.addRoute(/^\/agents\/([^/]+)$/, async ({ id }) => { await _loadPageRoute('agent-detail', () => loadAgentDetailPage(decodeURIComponent(id))); });
 Router.addRoute('/careers', async () => { await _loadPageRoute('careers', () => loadCareerAgentList()); });
 Router.addRoute('/teams', async () => { await _loadPageRoute('teams', () => loadTeamsPage()); });
@@ -4044,7 +4244,17 @@ Router.addRoute('/chat', async () => { await _loadPageRoute('chat'); });
 Router.addRoute('/branches', async () => { await _loadPageRoute('branches', () => loadBranchesPage()); });
 Router.addRoute('/flywheel', async () => { await _loadPageRoute('flywheel', () => { if (typeof window.loadFlywheelPage === 'function') window.loadFlywheelPage(); }); });
 Router.addRoute('/org', async () => { await _loadPageRoute('org', () => { if (typeof window.loadOrgGraph === 'function') window.loadOrgGraph(); }); });
-Router.addRoute('/memory', async () => { await _loadPageRoute('memory'); });
+Router.addRoute('/memory', async () => {
+  await _loadPageRoute('memory');
+  // Belt-and-suspenders: call loadMemoryBrowser() as a route callback so the
+  // list is populated even if memory.html's own script injection has a timing
+  // edge case. By this point the page script has already patched
+  // window.loadMemoryBrowser, so the patched (type-chip-aware) version runs.
+  if (typeof window.loadMemoryBrowser === 'function') window.loadMemoryBrowser();
+});
+Router.addRoute('/search', async () => { await _loadPageRoute('search', () => { if (typeof window.loadSearchPage === 'function') window.loadSearchPage(); }); });
+Router.addRoute('/cycles', async () => { await _loadPageRoute('cycles', () => { if (typeof window.loadCyclesPage === 'function') window.loadCyclesPage(); }); });
+Router.addRoute(/^\/cycles\/([^/]+)$/, async ({ id }) => { await _loadPageRoute('cycles', () => { if (typeof window.loadCyclesPage === 'function') window.loadCyclesPage(id); }); });
 
 // ── Chat Module (P0-4 Chat Page) ────────────────────────────
 (function() {
@@ -4576,7 +4786,7 @@ function renderSprintDetail(sprint) {
       var color = pass ? 'var(--green)' : (g.status === 'fail' ? 'var(--red)' : 'var(--text-muted)');
       return '<div class="gate-result-row"><div class="gate-icon" style="color:' + color + '">' + icon + '</div>' +
         '<div class="gate-result-body"><div class="gate-result-name">' + escapeHtml(g.name || g.criterion || g.id || '—') + '</div>' +
-        '<div class="gate-result-detail">' + escapeHtml(g.detail || g.description || '') + '</div></div></div>';
+        '<div class="gate-result-detail md-body">' + renderMarkdown(g.detail || g.description || '') + '</div></div></div>';
     }).join('');
   } else {
     criteriaHtml = '<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:12px;font-family:var(--font-mono)">No gate criteria defined</div>';
@@ -5910,9 +6120,13 @@ async function loadAgentCards() {
       card.style.animationDelay = (i * 0.03).toFixed(2) + 's';
       const agentIdSafe = a.agentId;
       card.addEventListener('click', function() { navigateToAgent(agentIdSafe); });
+      // Human-readable name from YAML (e.g. "CEO"); agentId as subtitle
       const nameDiv = document.createElement('div');
       nameDiv.className = 'agent-name';
-      nameDiv.textContent = a.agentId;
+      nameDiv.textContent = a.name || a.agentId;
+      const idSubDiv = document.createElement('div');
+      idSubDiv.className = 'agent-id-sub';
+      idSubDiv.textContent = a.agentId;
       const metaDiv = document.createElement('div');
       metaDiv.className = 'agent-meta';
       const modelBadge = document.createElement('span');
@@ -5929,6 +6143,12 @@ async function loadAgentCards() {
         metaDiv.appendChild(catBadge);
       }
       metaDiv.appendChild(statusDot);
+      // Description from YAML — truncated for card display
+      const descDiv = document.createElement('div');
+      descDiv.className = 'agent-desc';
+      var descText = a.description || '';
+      descDiv.textContent = descText.length > 120 ? descText.slice(0, 120) + '\u2026' : descText;
+      descDiv.title = descText;
       const statsDiv = document.createElement('div');
       statsDiv.className = 'agent-stats';
       [[a.sessionCount || 0, 'Sessions'],[cost, 'Cost'],[errRate + '%', 'Err%']].forEach(function(pair) {
@@ -5960,7 +6180,9 @@ async function loadAgentCards() {
       pl.setAttribute('opacity', '0.8');
       ns.appendChild(pl);
       card.appendChild(nameDiv);
+      card.appendChild(idSubDiv);
       card.appendChild(metaDiv);
+      card.appendChild(descDiv);
       card.appendChild(statsDiv);
       card.appendChild(ns);
       grid.appendChild(card);
@@ -7207,6 +7429,35 @@ async function loadInvestorScorecard() {
 }
 
 // ── P14: Memory Browser from /api/v5/memory ───────────────
+
+/**
+ * Lightweight JSON syntax highlighter — no external libraries.
+ * Escapes HTML entities first, then wraps tokens in <span class="j-*"> elements.
+ * CSS in the Memory Browser section provides the token colours.
+ */
+function _memHighlightJson(jsonStr) {
+  // Escape HTML entities before inserting any markup
+  const escaped = jsonStr
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  // Single-pass regex: matches keys (strings before ":"), string values,
+  // numbers, booleans and null in that priority order.
+  return escaped.replace(
+    /("(?:\\u[0-9a-fA-F]{4}|\\[^u]|[^\\"])*"(\s*:)?|true|false|null|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+    function (match) {
+      if (/^"/.test(match)) {
+        return /:$/.test(match)
+          ? '<span class="j-key">' + match + '</span>'
+          : '<span class="j-str">' + match + '</span>';
+      }
+      if (match === 'true' || match === 'false') return '<span class="j-bool">' + match + '</span>';
+      if (match === 'null') return '<span class="j-null">' + match + '</span>';
+      return '<span class="j-num">' + match + '</span>';
+    }
+  );
+}
+
 function _memMakeEl(tag, cls, text) {
   const el = document.createElement(tag);
   if (cls) el.className = cls;
@@ -7349,19 +7600,61 @@ async function loadMemoryBrowser() {
         hdr.appendChild(agentChip);
       }
 
-      // Expand toggle (chevron)
+      // -- Expandable raw JSON panel (built early so the toggle handler can reference it) --
+      var jsonPanel = _memMakeEl('div', 'memory-json-panel');
+      jsonPanel.setAttribute('aria-hidden', 'true');
+      // Panel header: label + copy-to-clipboard button
+      var panelHdr = _memMakeEl('div', 'memory-json-panel-header');
+      panelHdr.appendChild(_memMakeEl('span', 'memory-json-panel-label', 'Raw JSON'));
+      var copyBtn = document.createElement('button');
+      copyBtn.className = 'memory-json-copy';
+      copyBtn.textContent = 'Copy';
+      copyBtn.title = 'Copy raw JSON to clipboard';
+      copyBtn.setAttribute('aria-label', 'Copy raw JSON to clipboard');
+      copyBtn.addEventListener('click', (function(entryRef) {
+        return function(ev) {
+          ev.stopPropagation();
+          var jsonText = '';
+          try { jsonText = JSON.stringify(entryRef, null, 2); } catch (_) { jsonText = String(entryRef); }
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(jsonText).then(function() {
+              copyBtn.textContent = 'Copied!';
+              setTimeout(function() { copyBtn.textContent = 'Copy'; }, 1500);
+            }).catch(function() {
+              copyBtn.textContent = 'Failed';
+              setTimeout(function() { copyBtn.textContent = 'Copy'; }, 1500);
+            });
+          }
+        };
+      }(entry)));
+      panelHdr.appendChild(copyBtn);
+      jsonPanel.appendChild(panelHdr);
+      // Syntax-highlighted pre — uses _memHighlightJson (no external libs)
+      var pre = document.createElement('pre');
+      pre.className = 'memory-json-pre';
+      try {
+        pre.innerHTML = _memHighlightJson(JSON.stringify(entry, null, 2));
+      } catch (_) {
+        pre.textContent = String(entry);
+      }
+      jsonPanel.appendChild(pre);
+
+      // Expand toggle (chevron) — toggles entry class, aria-expanded, and panel aria-hidden
       var expandBtn = document.createElement('button');
       expandBtn.className = 'memory-expand-toggle';
       expandBtn.title = 'Show raw JSON';
       expandBtn.setAttribute('aria-label', 'Toggle raw JSON');
+      expandBtn.setAttribute('aria-expanded', 'false');
       expandBtn.textContent = '\u25be';
-      expandBtn.addEventListener('click', (function(d, btn) {
+      expandBtn.addEventListener('click', (function(d, btn, panel) {
         return function(e) {
           e.stopPropagation();
-          d.classList.toggle('expanded');
-          btn.title = d.classList.contains('expanded') ? 'Hide raw JSON' : 'Show raw JSON';
+          var expanded = d.classList.toggle('expanded');
+          btn.title = expanded ? 'Hide raw JSON' : 'Show raw JSON';
+          btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+          panel.setAttribute('aria-hidden', expanded ? 'false' : 'true');
         };
-      }(div, expandBtn)));
+      }(div, expandBtn, jsonPanel)));
       hdr.appendChild(expandBtn);
 
       div.appendChild(hdr);
@@ -7383,12 +7676,6 @@ async function loadMemoryBrowser() {
         div.appendChild(footer);
       }
 
-      // -- Expandable raw JSON panel --
-      var jsonPanel = _memMakeEl('div', 'memory-json-panel');
-      jsonPanel.setAttribute('aria-hidden', 'true');
-      var pre = _memMakeEl('pre', 'memory-json-pre');
-      try { pre.textContent = JSON.stringify(entry, null, 2); } catch (_) { pre.textContent = String(entry); }
-      jsonPanel.appendChild(pre);
       div.appendChild(jsonPanel);
 
       list.appendChild(div);
@@ -8726,6 +9013,73 @@ function _syntheticKnowledge() {
     { id: 'k7', title: 'Sprint version format: vMAJOR.MINOR', category: 'convention', team: 'engineering', confidence: 0.97, tags: ['versioning'], content: 'Sprints use semantic versioning with v prefix. Package.json version must match: v4.3 → 0.4.3. Plugin.json must also match.' },
     { id: 'k8', title: 'Haiku for event classification causes accuracy drop', category: 'domain_fact', team: 'leadership', confidence: 0.82, decayRate: 0.03, tags: ['models','classification'], content: 'Haiku was evaluated for agent event classification but produced too many misclassifications on edge cases. Sonnet is required for this task.' },
   ];
+}
+
+// ── Search Page ─────────────────────────────────────────────────────────────────
+/**
+ * loadSearchPage([query])
+ *
+ * Called by the Router when navigating to /search, and by the page partial's
+ * submit handler.  Calls POST /api/v5/search and dispatches results to the
+ * page partial's _searchPageRender() function.
+ *
+ * When invoked by the Router without a query (first page load), renders an
+ * empty prompt state — the user types a query and hits Enter or Search.
+ */
+async function loadSearchPage(query) {
+  var list  = document.getElementById('search-results-list');
+  var badge = document.getElementById('search-count-badge');
+
+  // No query — page just loaded via nav link; show empty prompt.
+  if (!query) {
+    if (typeof window._searchPageRender === 'function') {
+      window._searchPageRender([], '');
+    }
+    return;
+  }
+
+  // Show loading state
+  if (list) {
+    list.textContent = '';
+    var loader = document.createElement('div');
+    loader.className = 'skeleton-loader';
+    loader.textContent = 'Searching…';
+    list.appendChild(loader);
+  }
+  if (badge) badge.textContent = '';
+
+  try {
+    var res = await fetch('/api/v5/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: query, limit: 50 }),
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    var json = await res.json();
+    var results = Array.isArray(json.data) ? json.data : [];
+
+    // Delegate rendering to the page partial (which owns the filter chips and
+    // result state).  If the partial hasn't loaded yet, store the initial
+    // query and results so the partial can pick them up on mount.
+    if (typeof window._searchPageRender === 'function') {
+      window._searchPageRender(results, query);
+    } else {
+      window._searchInitialQuery = query;
+    }
+  } catch (e) {
+    console.warn('loadSearchPage failed:', e);
+    if (list) {
+      list.textContent = '';
+      var errDiv = document.createElement('div');
+      errDiv.className = 'load-error';
+      errDiv.textContent = 'Search failed. ';
+      var retryBtn = document.createElement('button');
+      retryBtn.textContent = 'Retry';
+      retryBtn.onclick = function () { loadSearchPage(query); };
+      errDiv.appendChild(retryBtn);
+      list.appendChild(errDiv);
+    }
+  }
 }
 
 Router.init();

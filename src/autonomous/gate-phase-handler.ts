@@ -116,7 +116,7 @@ export class GatePhaseHandler {
       summary,
       success: input.verdict === "approved",
       timestamp: now,
-      metadata,
+      metadata: metadata as unknown as Record<string, unknown>,
     };
     this.memoryWriter.addEntry(entry);
 

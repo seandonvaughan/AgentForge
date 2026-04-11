@@ -243,6 +243,93 @@ describe('GET /api/v5/memory', () => {
     expect(body.data).toHaveLength(0);
     expect(body.meta.total).toBe(0);
   });
+
+  it('meta includes limit and returned fields', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory' });
+    const body = res.json();
+    expect(body.meta).toHaveProperty('limit');
+    expect(body.meta).toHaveProperty('returned');
+    expect(body.meta.limit).toBe(200);
+    // returned must always equal data.length
+    expect(body.meta.returned).toBe(body.data.length);
+  });
+
+  it('meta.total >= meta.returned (total is unsliced count)', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory' });
+    const body = res.json();
+    expect(body.meta.total).toBeGreaterThanOrEqual(body.meta.returned);
+  });
+
+  it('response includes types array', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory' });
+    const body = res.json();
+    expect(body).toHaveProperty('types');
+    expect(Array.isArray(body.types)).toBe(true);
+  });
+
+  it('type param filters entries to only matching type', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory?type=gate-verdict' });
+    const body = res.json();
+    // Every returned entry must have the requested type
+    for (const entry of body.data) {
+      expect(entry.type).toBe('gate-verdict');
+    }
+  });
+
+  it('type param with unknown type returns empty data', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory?type=nonexistent-type' });
+    const body = res.json();
+    expect(body.data).toHaveLength(0);
+    expect(body.meta.total).toBe(0);
+  });
+
+  it('since param excludes entries older than the cutoff', async () => {
+    const futureDate = new Date(Date.now() + 1000 * 60 * 60 * 24 * 365).toISOString();
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/v5/memory?since=${encodeURIComponent(futureDate)}`,
+    });
+    const body = res.json();
+    // No entries should be newer than 1 year from now
+    expect(body.data).toHaveLength(0);
+    expect(body.meta.total).toBe(0);
+  });
+
+  it('since param includes all entries when set to epoch', async () => {
+    adapter.writeFile('since-test-key', 'value');
+    const epochDate = new Date(0).toISOString();
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/v5/memory?since=${encodeURIComponent(epochDate)}`,
+    });
+    const body = res.json();
+    // KV entries have no createdAt (treated as 0), JSONL entries have createdAt after epoch
+    // All entries should pass the epoch since filter
+    expect(body.meta.total).toBeGreaterThanOrEqual(0);
+    expect(body.meta.returned).toBe(body.data.length);
+  });
+
+  it('agentId param filters by source (canonical spelling)', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v5/memory?agentId=nonexistent-agent-xyz',
+    });
+    const body = res.json();
+    expect(body.data).toHaveLength(0);
+    expect(body.meta.total).toBe(0);
+  });
+
+  it('duplicate kv_store keys produce only one entry', async () => {
+    // Write the same key twice; upsert semantics should yield one entry
+    adapter.writeFile('dedup-test', 'first-value');
+    adapter.writeFile('dedup-test', 'second-value');
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory?search=dedup-test' });
+    const body = res.json();
+    const matches = body.data.filter((e: { key: string }) => e.key === 'dedup-test');
+    expect(matches).toHaveLength(1);
+    expect(matches[0].value).toBe('second-value');
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -100,10 +100,10 @@
   <div class="sprint-grid">
     {#each sprints as sprint (sprint.id)}
       {@const pct = completionPct(sprint)}
-      <button class="card sprint-card clickable" onclick={() => goto(`/sprints/${sprint.version}`)}>
+      <button class="card sprint-card clickable" onclick={() => goto(`/sprints/${sprint.version || sprint.id}`)}>
         <div class="sprint-header">
           <div>
-            <div class="sprint-version">{sprint.version}</div>
+            <div class="sprint-version">{sprint.version || sprint.id}</div>
             {#if sprint.title}
               <div class="sprint-title">{sprint.title}</div>
             {/if}

@@ -80,34 +80,54 @@
   /**
    * Status → { badge CSS class, label }
    *
-   * Uses the shared .status-badge variants defined in index.html:
-   *   .active      = green   (branch is active / recently pushed)
-   *   .in-progress = blue    (has an open PR)
-   *   .complete    = green   (merged)
-   *   .error       = red     (stale — no PR and >3 days old)
-   *   .idle        = muted   (unknown)
-   *
-   * Note: the v5 API uses hyphen notation ('open-pr') not underscore.
-   * Both are mapped here for robustness.
+   * All statuses are normalised to hyphen form on load (open_pr → open-pr)
+   * so that filter values, STATUS_META keys, and data all share one canonical form.
    */
   var STATUS_META = {
     'open-pr': { cls: 'in-progress', label: 'Open PR'  },
-    open_pr:   { cls: 'in-progress', label: 'Open PR'  },
-    merged:    { cls: 'complete',    label: 'Merged'   },
-    stale:     { cls: 'error',       label: 'Stale'    },
-    active:    { cls: 'active',      label: 'Active'   },
+    'merged':  { cls: 'complete',    label: 'Merged'   },
+    'stale':   { cls: 'error',       label: 'Stale'    },
+    'active':  { cls: 'active',      label: 'Active'   },
   };
 
   /** All branches fetched from the API — kept so filters can re-render without a new fetch. */
   var _allBranches = [];
 
+  /**
+   * Normalise a raw branch record from the /api/v1/branches response into a
+   * canonical shape expected by the render functions.
+   *
+   * API shape (branches.ts):
+   *   { name, cycle, sha, createdAt, age, ageMs, status, pr: { number, title, state } | null }
+   *
+   * Canonical shape used by the UI:
+   *   { name, cycle, sha, createdAt, age, ageMs, status (hyphen-form), pr }
+   *
+   * Key transformations:
+   *   - status:  'open_pr' → 'open-pr'   (server uses underscore, UI uses hyphen)
+   *   - pr:      kept as-is nested object { number, title, state }
+   */
+  function normaliseBranch(b) {
+    return {
+      name:      b.name      || '',
+      cycle:     b.cycle     || '',
+      sha:       b.sha       || '',
+      createdAt: b.createdAt || '',
+      age:       b.age       || '',
+      ageMs:     typeof b.ageMs === 'number' ? b.ageMs : 0,
+      // Normalise underscore → hyphen so filter comparisons work correctly
+      status:    (b.status || 'active').replace('_', '-'),
+      pr:        b.pr || null,
+    };
+  }
+
   /** Create a plain text element of a given tag with optional opts. */
   function el(tag, text, opts) {
     var node = document.createElement(tag);
-    if (opts && opts.cls)   node.className   = opts.cls;
+    if (opts && opts.cls)   node.className    = opts.cls;
     if (opts && opts.style) node.style.cssText = opts.style;
-    if (opts && opts.title) node.title       = opts.title;
-    if (text != null)       node.textContent = text;
+    if (opts && opts.title) node.title        = opts.title;
+    if (text != null)       node.textContent  = text;
     return node;
   }
 
@@ -119,71 +139,59 @@
     return cell;
   }
 
-  /** Build the status badge <span> for a given status key. */
+  /** Build the status badge <span> for a given (hyphen-form) status key. */
   function makeStatusBadge(status) {
     var meta = STATUS_META[status] || { cls: 'idle', label: status };
     return el('span', meta.label, { cls: 'status-badge ' + meta.cls });
   }
 
   /**
-   * Convert milliseconds into a compact human-readable age string.
-   * Examples: "2h", "4d", "3w", "2mo"
-   */
-  function formatAge(ageMs) {
-    var secs  = Math.floor(ageMs / 1000);
-    var mins  = Math.floor(secs  / 60);
-    var hours = Math.floor(mins  / 60);
-    var days  = Math.floor(hours / 24);
-    var weeks = Math.floor(days  / 7);
-    var months = Math.floor(days / 30);
-    if (months >= 2)  return months + 'mo';
-    if (weeks  >= 2)  return weeks  + 'w';
-    if (days   >= 1)  return days   + 'd';
-    if (hours  >= 1)  return hours  + 'h';
-    return mins + 'm';
-  }
-
-  /**
    * Derive an age-based color token so stale/old branches are visually distinct.
-   * Threshold aligns with the server's STALE_DAYS = 3:
-   *   < 3 days  → text-secondary (neutral / fresh)
-   *   3–14 days → orange        (getting stale)
-   *   > 14 days → red           (definitely stale)
+   * Thresholds mirror the server-side STALE_DAYS constant (30 days):
+   *   <  7 days  → text-secondary (fresh / recently active)
+   *   7–30 days  → orange        (getting old)
+   *   > 30 days  → red           (definitively stale)
    */
   function ageColor(ageMs) {
     var days = ageMs / (1000 * 60 * 60 * 24);
-    if (days > 14) return 'var(--red)';
-    if (days > 3)  return 'var(--orange)';
+    if (days > 30) return 'var(--red)';
+    if (days >  7) return 'var(--orange)';
     return 'var(--text-secondary)';
   }
 
   /**
    * Build the PR link (or a dash placeholder) for a branch.
    *
-   * The v5 API returns flat fields on the branch object:
-   *   prNumber : number | null
-   *   prUrl    : string | null  (direct GitHub PR URL)
-   *   status   : 'open-pr' | 'merged' | 'active' | 'stale'
+   * The /api/v1/branches response provides a nested pr object:
+   *   { number: number, title: string, state: 'OPEN' | 'CLOSED' | 'MERGED' }
    *
-   * There is no nested `pr` object in the v5 shape.
+   * We construct the GitHub URL from the PR number since the API does not
+   * return a direct URL. The repo slug is inferred from the git remote when
+   * available; otherwise we link to a GitHub PR search.
    */
   function makePrNode(b) {
-    if (!b.prNumber) {
+    var pr = b.pr;
+    if (!pr || !pr.number) {
       return el('span', '—', { style: 'color:var(--text-muted);font-family:var(--font-mono);font-size:11px' });
     }
-    var stateColor = b.status === 'open-pr' || b.status === 'open_pr' ? 'var(--blue)'
-                   : b.status === 'merged'                            ? 'var(--green)'
+
+    var stateColor = (b.status === 'open-pr')  ? 'var(--blue)'
+                   : (b.status === 'merged')    ? 'var(--green)'
                    : 'var(--text-muted)';
+
     var a = document.createElement('a');
-    a.textContent = '#' + b.prNumber;
-    a.title       = 'PR #' + b.prNumber + ' (' + b.status + ')';
-    a.target      = '_blank';
-    a.rel         = 'noopener';
+    a.textContent   = '#' + pr.number;
+    a.title         = 'PR #' + pr.number + (pr.title ? ' — ' + pr.title : '') + ' (' + (pr.state || b.status) + ')';
+    a.target        = '_blank';
+    a.rel           = 'noopener';
     a.style.cssText = 'color:' + stateColor + ';font-family:var(--font-mono);font-size:11px;' +
                       'text-decoration:none;font-weight:600';
-    // Use the direct URL from gh CLI when available; fall back to a GitHub search.
-    a.href = b.prUrl ||
-             ('https://github.com/pulls?q=is%3Apr+' + encodeURIComponent(b.cycle));
+
+    // Build a GitHub PR search URL using the PR number. A direct /pull/<n> link
+    // would require knowing the repo owner/name which is not in the API response.
+    // A search for the exact PR number is reliable and does not require configuration.
+    a.href = 'https://github.com/pulls?q=is%3Apr+' + encodeURIComponent(b.cycle) +
+             '+%23' + pr.number;
     return a;
   }
 
@@ -207,6 +215,7 @@
 
   /** Build one <tr> for a single branch record. */
   function makeRow(b) {
+    // Stale and merged branches can be deleted; active/open-pr branches cannot
     var canDelete = (b.status === 'stale' || b.status === 'merged');
 
     var row = document.createElement('tr');
@@ -225,32 +234,51 @@
       style: 'font-family:var(--font-mono);font-size:12px;color:var(--purple);font-weight:600',
     });
 
-    // Age — computed from ageMs; falls back to lastCommitAt ISO string for tooltip.
-    // The v5 API returns ageMs (number) and lastCommitAt (ISO string) — no pre-formatted
-    // age string is provided, so we compute it locally with formatAge().
-    var ageLabel = b.ageMs != null ? formatAge(b.ageMs) : (b.age || '—');
-    var ageSpan = el('span', ageLabel, {
-      style: 'font-family:var(--font-mono);font-size:12px;color:' + ageColor(b.ageMs || 0),
-      title: b.lastCommitAt || b.createdAt || '',
+    // Age — use the pre-formatted age string from the API; fall back to local
+    // computation from ageMs when the server string is absent.
+    var ageLabel = b.age || _formatAgeFallback(b.ageMs);
+    var ageSpan  = el('span', ageLabel, {
+      // createdAt is the tip-commit date (ISO 8601), used as the tooltip
+      style: 'font-family:var(--font-mono);font-size:12px;color:' + ageColor(b.ageMs),
+      title: b.createdAt || '',
     });
 
     row.appendChild(td(nameSpan));
     row.appendChild(td(cycleSpan));
     row.appendChild(td(ageSpan));
     row.appendChild(td(makeStatusBadge(b.status)));
-    // Pass the whole branch object so makePrNode can use prNumber/prUrl (v5 shape)
     row.appendChild(td(makePrNode(b)));
     row.appendChild(td(makeDeleteBtn(b.name, canDelete), 'text-align:right'));
 
     return row;
   }
 
+  /**
+   * Local age formatter used as a fallback when the server-provided age string
+   * is absent. Returns strings like "2h", "4d", "3w", "2mo".
+   */
+  function _formatAgeFallback(ageMs) {
+    var secs   = Math.floor(ageMs / 1000);
+    var mins   = Math.floor(secs  / 60);
+    var hours  = Math.floor(mins  / 60);
+    var days   = Math.floor(hours / 24);
+    var weeks  = Math.floor(days  / 7);
+    var months = Math.floor(days  / 30);
+    if (months >= 2) return months + 'mo';
+    if (weeks  >= 2) return weeks  + 'w';
+    if (days   >= 1) return days   + 'd';
+    if (hours  >= 1) return hours  + 'h';
+    return mins + 'm';
+  }
+
   /** Apply current filter/search values and re-render visible rows. */
   window._filterBranchesTable = function() {
-    var q      = (document.getElementById('branches-search')       || {}).value || '';
-    var status = (document.getElementById('branches-filter-status')|| {}).value || '';
+    var q      = (document.getElementById('branches-search')        || {}).value || '';
+    var status = (document.getElementById('branches-filter-status') || {}).value || '';
     var qLow   = q.toLowerCase();
 
+    // status from the filter dropdown is already in hyphen form ('open-pr'),
+    // which matches the normalised _allBranches entries.
     var filtered = _allBranches.filter(function(b) {
       var matchQ = !qLow || b.name.toLowerCase().includes(qLow) || b.cycle.toLowerCase().includes(qLow);
       var matchS = !status || b.status === status;
@@ -291,8 +319,7 @@
   /** Update the four summary stat chips. */
   function updateStats(branches) {
     var total  = branches.length;
-    // v5 API uses 'open-pr' (hyphen); accept both for robustness.
-    var openPr = branches.filter(function(b) { return b.status === 'open-pr' || b.status === 'open_pr'; }).length;
+    var openPr = branches.filter(function(b) { return b.status === 'open-pr'; }).length;
     var merged = branches.filter(function(b) { return b.status === 'merged';  }).length;
     var stale  = branches.filter(function(b) { return b.status === 'stale';   }).length;
 
@@ -302,12 +329,20 @@
     if (g('branches-stat-merged')) g('branches-stat-merged').textContent = merged;
     if (g('branches-stat-stale'))  g('branches-stat-stale').textContent  = stale;
 
-    // Show/hide bulk-delete button when there are stale branches
+    // Show/hide bulk-delete button only when stale branches exist
     var bulkBtn = document.getElementById('branches-bulk-delete-btn');
     if (bulkBtn) bulkBtn.style.display = stale > 0 ? '' : 'none';
   }
 
-  /** Fetch autonomous/* branches from the API and render the table. */
+  /**
+   * Fetch autonomous/* branches from the API and render the table.
+   *
+   * Calls GET /api/v1/branches which returns:
+   *   { data: BranchRecord[], meta: { total: number } }
+   *
+   * Each BranchRecord is normalised before storage so all downstream
+   * code works with the canonical hyphen-form status.
+   */
   window.loadBranchesPage = function() {
     var loadingEl = document.getElementById('branches-loading');
     var errorEl   = document.getElementById('branches-error');
@@ -321,14 +356,17 @@
     if (emptyEl)   emptyEl.hidden   = true;
     if (fEmptyEl)  fEmptyEl.hidden  = true;
 
-    fetch('/api/v5/autonomous-branches')
+    fetch('/api/v1/branches')
       .then(function(r) {
         if (!r.ok) throw new Error('HTTP ' + r.status);
         return r.json();
       })
       .then(function(body) {
         if (loadingEl) loadingEl.hidden = true;
-        _allBranches = (body && Array.isArray(body.data)) ? body.data : [];
+        var raw = (body && Array.isArray(body.data)) ? body.data : [];
+        // Normalise every record before storing so all render/filter code
+        // operates on a consistent shape (hyphen-form status, no undefined fields).
+        _allBranches = raw.map(normaliseBranch);
         updateStats(_allBranches);
         window._filterBranchesTable();
       })
@@ -341,16 +379,17 @@
   };
 
   /**
-   * Delete a single autonomous/* branch.
-   * Only stale and merged branches surface a delete button; the server
-   * also enforces the autonomous/* prefix as a safety constraint.
+   * Delete a single autonomous/* branch via DELETE /api/v1/branches/:name.
+   *
+   * The server enforces that only autonomous/* branches can be deleted and
+   * will return 409 if the branch is currently checked out.
    */
   window._deleteBranch = function(branchName, btnEl) {
     if (!confirm('Delete branch ' + branchName + '?\nThis cannot be undone.')) return;
 
     if (btnEl) { btnEl.disabled = true; btnEl.textContent = '…'; }
 
-    fetch('/api/v5/autonomous-branches/' + encodeURIComponent(branchName), { method: 'DELETE' })
+    fetch('/api/v1/branches/' + encodeURIComponent(branchName), { method: 'DELETE' })
       .then(function(r) {
         return r.json().then(function(body) { return { ok: r.ok, body: body }; });
       })
@@ -372,8 +411,8 @@
 
   /**
    * Bulk-delete all stale branches in sequence.
-   * Confirms once for the full batch; iterates and deletes each branch
-   * serially to avoid hammering git with concurrent deletes.
+   * Confirms once for the full batch then iterates serially to avoid
+   * concurrent git branch -D calls which can race on the index lock.
    */
   window._bulkDeleteStale = function() {
     var staleBranches = _allBranches.filter(function(b) { return b.status === 'stale'; });
@@ -391,17 +430,17 @@
     var chain = Promise.resolve();
     names.forEach(function(name) {
       chain = chain.then(function() {
-        return fetch('/api/v5/autonomous-branches/' + encodeURIComponent(name), { method: 'DELETE' })
+        return fetch('/api/v1/branches/' + encodeURIComponent(name), { method: 'DELETE' })
           .then(function(r) { return r.json(); })
           .catch(function(err) {
-            // Log individual failures but don't abort the batch — a full refresh follows.
+            // Log individual failures but continue — a full refresh follows the batch
             console.warn('[branches] bulk-delete failed for branch "' + name + '":', err);
           });
       });
     });
 
     chain.then(function() {
-      // Re-enable button regardless — loadBranchesPage will hide it if no stale remain
+      // Re-enable button regardless; loadBranchesPage will hide it if no stale remain
       if (bulkBtn) { bulkBtn.disabled = false; bulkBtn.textContent = '🗑 Delete All Stale'; }
       window.loadBranchesPage();
     });

@@ -383,4 +383,89 @@ describe('GET /api/v5/flywheel', () => {
     expect(data.memoryStats.hitRate).toBeGreaterThanOrEqual(0);
     expect(data.memoryStats.hitRate).toBeLessThanOrEqual(1);
   });
+
+  // ---- Debug stats (Loop Data panel) ----
+
+  it('data includes a debug object', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = res.json();
+    expect(data).toHaveProperty('debug');
+    expect(typeof data.debug).toBe('object');
+  });
+
+  it('debug has all required count fields', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = res.json();
+    const { debug } = data;
+    const requiredFields = [
+      'cycleCount',
+      'completedCycleCount',
+      'meaningfulCycleCount',
+      'sprintCount',
+      'totalItems',
+      'completedItems',
+      'agentCount',
+      'sessionCount',
+      'satisfiedSessionCount',
+    ];
+    for (const field of requiredFields) {
+      expect(debug).toHaveProperty(field);
+      expect(typeof debug[field]).toBe('number');
+    }
+  });
+
+  it('debug fields are non-negative integers', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = res.json();
+    const { debug } = data;
+    for (const [key, value] of Object.entries(debug)) {
+      expect(typeof value).toBe('number');
+      expect(value as number).toBeGreaterThanOrEqual(0);
+      expect(Number.isInteger(value)).toBe(true, `${key} should be an integer`);
+    }
+  });
+
+  it('debug.sessionCount matches sessions in the adapter', async () => {
+    // Insert 3 sessions, one of which is not-completed
+    adapter.insertSession(makeSession({ id: 'dbg-s1', status: 'completed' }));
+    adapter.insertSession(makeSession({ id: 'dbg-s2', status: 'completed' }));
+    adapter.insertSession(makeSession({ id: 'dbg-s3', status: 'failed' }));
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = res.json();
+    const { debug } = data;
+
+    expect(debug.sessionCount).toBe(3);
+    expect(debug.satisfiedSessionCount).toBe(2);
+  });
+
+  it('debug.satisfiedSessionCount counts both completed and success statuses', async () => {
+    adapter.insertSession(makeSession({ id: 'dbg-c1', status: 'completed' }));
+    adapter.insertSession(makeSession({ id: 'dbg-c2', status: 'success' }));
+    adapter.insertSession(makeSession({ id: 'dbg-c3', status: 'running' }));
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = res.json();
+    const { debug } = data;
+
+    // satisfied = completed + success = 2; running is not counted
+    expect(debug.satisfiedSessionCount).toBe(2);
+  });
+
+  it('debug.completedCycleCount <= debug.meaningfulCycleCount <= debug.cycleCount', async () => {
+    // These three counts form an ordering invariant:
+    // completed ⊆ meaningful ⊆ all cycles.
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = res.json();
+    const { debug } = data;
+    expect(debug.completedCycleCount).toBeLessThanOrEqual(debug.meaningfulCycleCount);
+    expect(debug.meaningfulCycleCount).toBeLessThanOrEqual(debug.cycleCount);
+  });
+
+  it('debug.completedItems <= debug.totalItems', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = res.json();
+    const { debug } = data;
+    expect(debug.completedItems).toBeLessThanOrEqual(debug.totalItems);
+  });
 });

@@ -1,4 +1,7 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, readFileSync, existsSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { ReviewPhaseHandler, type ReviewFinding } from "../../src/autonomous/review-phase-handler.js";
 import { MemoryRegistry } from "../../src/registry/memory-registry.js";
 
@@ -274,5 +277,222 @@ describe("ReviewPhaseHandler", () => {
       const hits = registry.searchByTags([repeatedFile]);
       expect(hits).toHaveLength(2);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// JSONL persistence — verifies the file-system write path when projectRoot is
+// supplied. Each test uses a fresh temp directory so tests are isolated.
+// ---------------------------------------------------------------------------
+
+describe("ReviewPhaseHandler — JSONL persistence", () => {
+  let projectRoot: string;
+  let cleanup: () => void;
+  let registry: MemoryRegistry;
+
+  beforeEach(() => {
+    projectRoot = mkdtempSync(join(tmpdir(), "agentforge-review-"));
+    cleanup = () => {
+      try {
+        rmSync(projectRoot, { recursive: true, force: true });
+      } catch {}
+    };
+    registry = new MemoryRegistry();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  const JSONL_PATH = (root: string) =>
+    join(root, ".agentforge", "memory", "review-finding.jsonl");
+
+  it("creates review-finding.jsonl when a MAJOR finding is processed", () => {
+    const handler = new ReviewPhaseHandler(registry, projectRoot);
+    handler.handleFindings("sprint-1", "9.4", [makeFinding({ severity: "MAJOR" })]);
+
+    expect(existsSync(JSONL_PATH(projectRoot))).toBe(true);
+  });
+
+  it("creates review-finding.jsonl when a CRITICAL finding is processed", () => {
+    const handler = new ReviewPhaseHandler(registry, projectRoot);
+    handler.handleFindings("sprint-1", "9.4", [makeFinding({ severity: "CRITICAL" })]);
+
+    expect(existsSync(JSONL_PATH(projectRoot))).toBe(true);
+  });
+
+  it("does not create the JSONL file for MINOR-only findings", () => {
+    const handler = new ReviewPhaseHandler(registry, projectRoot);
+    handler.handleFindings("sprint-1", "9.4", [makeFinding({ severity: "MINOR" })]);
+
+    expect(existsSync(JSONL_PATH(projectRoot))).toBe(false);
+  });
+
+  it("does not create the JSONL file when projectRoot is not provided", () => {
+    const handler = new ReviewPhaseHandler(registry); // no projectRoot
+    handler.handleFindings("sprint-1", "9.4", [makeFinding({ severity: "MAJOR" })]);
+
+    // The in-memory registry should have the entry
+    expect(registry.count()).toBe(1);
+    // But no JSONL file should exist in the temp dir (nothing was written there)
+    expect(existsSync(JSONL_PATH(projectRoot))).toBe(false);
+  });
+
+  it("writes a well-formed JSONL entry with correct type and source", () => {
+    const handler = new ReviewPhaseHandler(registry, projectRoot);
+    handler.handleFindings("sprint-abc", "9.4", [makeFinding({ severity: "MAJOR" })]);
+
+    const line = readFileSync(JSONL_PATH(projectRoot), "utf8").trim();
+    const entry = JSON.parse(line) as Record<string, unknown>;
+
+    expect(entry.type).toBe("review-finding");
+    expect(entry.source).toBe("sprint-abc");
+    expect(typeof entry.id).toBe("string");
+    expect(typeof entry.createdAt).toBe("string");
+  });
+
+  it("entry id in JSONL matches the id returned in memoryEntryIds", () => {
+    const handler = new ReviewPhaseHandler(registry, projectRoot);
+    const result = handler.handleFindings("sprint-1", "9.4", [makeFinding()]);
+
+    const line = readFileSync(JSONL_PATH(projectRoot), "utf8").trim();
+    const entry = JSON.parse(line) as { id: string };
+
+    expect(entry.id).toBe(result.memoryEntryIds[0]);
+  });
+
+  it("JSONL entry value includes severity, file, and summary", () => {
+    const handler = new ReviewPhaseHandler(registry, projectRoot);
+    handler.handleFindings("sprint-1", "9.4", [
+      makeFinding({
+        severity: "CRITICAL",
+        file: "src/api/client.ts",
+        summary: "API key leaked in logs",
+      }),
+    ]);
+
+    const line = readFileSync(JSONL_PATH(projectRoot), "utf8").trim();
+    const entry = JSON.parse(line) as { value: string };
+
+    expect(entry.value).toContain("CRITICAL");
+    expect(entry.value).toContain("src/api/client.ts");
+    expect(entry.value).toContain("API key leaked in logs");
+  });
+
+  it("JSONL entry value includes line number when provided", () => {
+    const handler = new ReviewPhaseHandler(registry, projectRoot);
+    handler.handleFindings("sprint-1", "9.4", [
+      makeFinding({ file: "src/api/client.ts", line: 42, severity: "MAJOR" }),
+    ]);
+
+    const line = readFileSync(JSONL_PATH(projectRoot), "utf8").trim();
+    const entry = JSON.parse(line) as { value: string };
+
+    expect(entry.value).toContain("src/api/client.ts:42");
+  });
+
+  it("JSONL entry carries structured ReviewFindingMetadata", () => {
+    const handler = new ReviewPhaseHandler(registry, projectRoot);
+    handler.handleFindings("sprint-1", "9.4", [
+      makeFinding({
+        severity: "CRITICAL",
+        file: "src/api/auth.ts",
+        line: 17,
+        summary: "Token never expires",
+        fixSuggestion: "Add expiry check before issuing tokens",
+      }),
+    ]);
+
+    const line = readFileSync(JSONL_PATH(projectRoot), "utf8").trim();
+    const entry = JSON.parse(line) as { metadata: Record<string, unknown> };
+
+    expect(entry.metadata).toBeDefined();
+    expect(entry.metadata.severity).toBe("CRITICAL");
+    expect(entry.metadata.file).toBe("src/api/auth.ts");
+    expect(entry.metadata.line).toBe(17);
+    expect(entry.metadata.summary).toBe("Token never expires");
+    expect(entry.metadata.fixSuggestion).toBe("Add expiry check before issuing tokens");
+  });
+
+  it("JSONL metadata sets fixSuggestion to null when absent", () => {
+    const handler = new ReviewPhaseHandler(registry, projectRoot);
+    handler.handleFindings("sprint-1", "9.4", [makeFinding({ severity: "MAJOR" })]);
+
+    const line = readFileSync(JSONL_PATH(projectRoot), "utf8").trim();
+    const entry = JSON.parse(line) as { metadata: Record<string, unknown> };
+    expect(entry.metadata.fixSuggestion).toBeNull();
+  });
+
+  it("JSONL metadata sets line to null when absent", () => {
+    const handler = new ReviewPhaseHandler(registry, projectRoot);
+    handler.handleFindings("sprint-1", "9.4", [makeFinding({ severity: "MAJOR" })]);
+
+    const line = readFileSync(JSONL_PATH(projectRoot), "utf8").trim();
+    const entry = JSON.parse(line) as { metadata: Record<string, unknown> };
+    expect(entry.metadata.line).toBeNull();
+  });
+
+  it("JSONL entry tags match the registry entry tags", () => {
+    const handler = new ReviewPhaseHandler(registry, projectRoot);
+    handler.handleFindings("sprint-xyz", "9.4", [
+      makeFinding({ file: "src/orchestrator/task-router.ts", severity: "MAJOR" }),
+    ]);
+
+    const line = readFileSync(JSONL_PATH(projectRoot), "utf8").trim();
+    const entry = JSON.parse(line) as { tags: string[] };
+    const registryEntry = registry.getByCategory("review-finding")[0]!;
+
+    expect(entry.tags).toEqual(registryEntry.tags);
+    expect(entry.tags).toContain("review-finding");
+    expect(entry.tags).toContain("major");
+    expect(entry.tags).toContain("sprint:sprint-xyz");
+  });
+
+  it("appends one JSONL line per qualifying finding", () => {
+    const handler = new ReviewPhaseHandler(registry, projectRoot);
+    handler.handleFindings("sprint-1", "9.4", [
+      makeFinding({ file: "src/a.ts", severity: "MAJOR" }),
+      makeFinding({ file: "src/b.ts", severity: "CRITICAL" }),
+      makeFinding({ file: "src/c.ts", severity: "MINOR" }), // should not be written
+    ]);
+
+    const lines = readFileSync(JSONL_PATH(projectRoot), "utf8")
+      .split("\n")
+      .filter((l) => l.trim().length > 0);
+
+    expect(lines).toHaveLength(2);
+  });
+
+  it("appends across multiple handleFindings calls without overwriting", () => {
+    const handler = new ReviewPhaseHandler(registry, projectRoot);
+    handler.handleFindings("sprint-1", "9.3", [makeFinding({ severity: "MAJOR" })]);
+    handler.handleFindings("sprint-2", "9.4", [makeFinding({ severity: "CRITICAL" })]);
+
+    const lines = readFileSync(JSONL_PATH(projectRoot), "utf8")
+      .split("\n")
+      .filter((l) => l.trim().length > 0);
+
+    expect(lines).toHaveLength(2);
+    const sources = lines.map((l) => (JSON.parse(l) as { source: string }).source);
+    expect(sources).toContain("sprint-1");
+    expect(sources).toContain("sprint-2");
+  });
+
+  it("handler result is correct even when JSONL write fails non-fatally", () => {
+    // Use a projectRoot that points to a non-directory path to trigger I/O error.
+    // writeMemoryEntry swallows I/O errors, so handleFindings must still return.
+    const badRoot = join(projectRoot, "this-is-a-file-not-a-dir.txt");
+
+    const handler = new ReviewPhaseHandler(registry, badRoot);
+    const result = handler.handleFindings("sprint-1", "9.4", [
+      makeFinding({ severity: "MAJOR" }),
+    ]);
+
+    // Result must be correct — the JSONL write failure is non-fatal.
+    expect(result.totalFindings).toBe(1);
+    expect(result.persistedCount).toBe(1);
+    expect(result.memoryEntryIds).toHaveLength(1);
+    // Registry entry must still exist.
+    expect(registry.count()).toBe(1);
   });
 });

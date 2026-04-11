@@ -9,11 +9,20 @@
  * persistent anti-patterns when the audit phase reads these entries
  * in the next sprint.
  *
- * Pure side-effecting module — no I/O beyond MemoryRegistry calls.
+ * Writes to two stores on each qualifying finding:
+ * 1. MemoryRegistry (in-memory) — consumed by AuditPhaseHandler within
+ *    the same session via getPersistedFindings().
+ * 2. JSONL file store (via writeMemoryEntry) — append-only, lock-safe,
+ *    consumed by the /api/v5/memory endpoint and the flywheel dashboard.
+ *    Only active when projectRoot is supplied to the constructor.
  */
 
 import type { MemoryRegistry } from "../registry/memory-registry.js";
 import type { MemoryRegistryEntry } from "../types/v4-api.js";
+import {
+  writeMemoryEntry,
+  type ReviewFindingMetadata,
+} from "../../packages/core/src/memory/types.js";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -53,7 +62,17 @@ export interface ReviewPhaseResult {
 // ---------------------------------------------------------------------------
 
 export class ReviewPhaseHandler {
-  constructor(private readonly registry: MemoryRegistry) {}
+  /**
+   * @param registry    - In-memory registry for within-session lookups.
+   * @param projectRoot - Absolute path to the project root. When provided,
+   *   handleFindings() additionally appends each qualifying finding to
+   *   `.agentforge/memory/review-finding.jsonl` via writeMemoryEntry so
+   *   findings persist across sessions and are queryable by /api/v5/memory.
+   */
+  constructor(
+    private readonly registry: MemoryRegistry,
+    private readonly projectRoot?: string,
+  ) {}
 
   /**
    * Process a batch of review findings from one sprint review phase.
@@ -61,6 +80,10 @@ export class ReviewPhaseHandler {
    * Only MAJOR and CRITICAL findings are written to memory. MINOR findings
    * are acknowledged but not persisted — they are too numerous to be
    * signal-worthy for cross-cycle pattern detection.
+   *
+   * When projectRoot is set, each qualifying finding is also appended to the
+   * canonical JSONL store at `.agentforge/memory/review-finding.jsonl`. The
+   * same entry ID is used for both stores so callers can correlate them.
    *
    * @param sprintId  - Sprint identifier (used for tags and content path).
    * @param version   - Sprint version string, e.g. "6.8" (used for content path).
@@ -76,8 +99,39 @@ export class ReviewPhaseHandler {
     const memoryEntryIds: string[] = [];
 
     for (const finding of qualifying) {
-      const entry = this.registry.store(buildMemoryInput(sprintId, version, finding));
+      const now = new Date().toISOString();
+
+      // Write to the in-memory registry. The registry generates the entry ID.
+      const entry = this.registry.store(buildMemoryInput(sprintId, version, finding, now));
       memoryEntryIds.push(entry.id);
+
+      // Persist to the JSONL store so findings survive process restarts and
+      // are visible to the /api/v5/memory endpoint and the flywheel dashboard.
+      // Uses the same entry.id so both stores are correlatable by ID.
+      // The write is non-fatal — writeMemoryEntry swallows I/O errors.
+      if (this.projectRoot !== undefined) {
+        const metadata: ReviewFindingMetadata = {
+          file: finding.file,
+          line: finding.line ?? null,
+          severity: finding.severity as "CRITICAL" | "MAJOR",
+          summary: finding.summary,
+          fixSuggestion: finding.fixSuggestion ?? null,
+        };
+
+        const locationPart = finding.line != null
+          ? `${finding.file}:${finding.line}`
+          : finding.file;
+
+        writeMemoryEntry(this.projectRoot, {
+          id: entry.id,
+          type: "review-finding",
+          value: `[${finding.severity}] ${locationPart}: ${finding.summary}`,
+          createdAt: now,
+          source: sprintId,
+          tags: buildTags(sprintId, version, finding),
+          metadata,
+        });
+      }
     }
 
     return {
@@ -106,29 +160,10 @@ function isMajorOrCritical(finding: ReviewFinding): boolean {
 }
 
 /**
- * Build a MemoryRegistry store input from a qualifying finding.
- *
- * Content path convention: .agentforge/memory/review/{sprintId}/{reviewerAgentId}/{timestamp}.md
- * This ensures findings are grouped by sprint for easy bulk retrieval.
- *
- * The `metadata` field carries the full structured payload so the execute-phase
- * injector (rank 6) can surface {file, line, severity, summary, fixSuggestion}
- * without parsing the summary string.
+ * Build the shared tag array for both the registry entry and the JSONL row.
+ * Extracted so both stores use an identical tag set for consistent filtering.
  */
-function buildMemoryInput(
-  sprintId: string,
-  version: string,
-  finding: ReviewFinding,
-) {
-  const timestamp = Date.now();
-  // Higher relevance for CRITICAL than MAJOR — decay is intentionally slow
-  // (0.005/day) so cross-cycle pattern detection spans multiple sprints.
-  const relevanceScore = finding.severity === "CRITICAL" ? 0.95 : 0.85;
-
-  // Build a human-readable summary that includes line when present.
-  const locationPart = finding.line != null ? `${finding.file}:${finding.line}` : finding.file;
-  const summaryText = `[${finding.severity}] ${locationPart}: ${finding.summary}`;
-
+function buildTags(sprintId: string, version: string, finding: ReviewFinding): string[] {
   const tags = [
     "review-finding",
     finding.severity.toLowerCase(),
@@ -140,6 +175,34 @@ function buildMemoryInput(
   if (finding.line != null) {
     tags.push(`line:${finding.line}`);
   }
+  return tags;
+}
+
+/**
+ * Build a MemoryRegistry store input from a qualifying finding.
+ *
+ * Content path convention: .agentforge/memory/review/{sprintId}/{reviewerAgentId}/{now}.md
+ * This ensures findings are grouped by sprint for easy bulk retrieval.
+ *
+ * The `metadata` field carries the full structured payload so the execute-phase
+ * injector (rank 6) can surface {file, line, severity, summary, fixSuggestion}
+ * without parsing the summary string.
+ *
+ * @param now - ISO-8601 timestamp used for contentPath and lastAccessedAt.
+ */
+function buildMemoryInput(
+  sprintId: string,
+  version: string,
+  finding: ReviewFinding,
+  now: string,
+) {
+  // Higher relevance for CRITICAL than MAJOR — decay is intentionally slow
+  // (0.005/day) so cross-cycle pattern detection spans multiple sprints.
+  const relevanceScore = finding.severity === "CRITICAL" ? 0.95 : 0.85;
+
+  // Build a human-readable summary that includes line when present.
+  const locationPart = finding.line != null ? `${finding.file}:${finding.line}` : finding.file;
+  const summaryText = `[${finding.severity}] ${locationPart}: ${finding.summary}`;
 
   return {
     type: "memory" as const,
@@ -148,12 +211,12 @@ function buildMemoryInput(
     active: true,
     category: "review-finding" as const,
     summary: summaryText,
-    contentPath: `.agentforge/memory/review/${sprintId}/${finding.reviewerAgentId}/${timestamp}.md`,
+    contentPath: `.agentforge/memory/review/${sprintId}/${finding.reviewerAgentId}/${now}.md`,
     relevanceScore,
     decayRatePerDay: 0.005, // slow decay — review findings persist across several cycles
-    lastAccessedAt: new Date().toISOString(),
+    lastAccessedAt: now,
     expiresAt: null,
-    tags,
+    tags: buildTags(sprintId, version, finding),
     // Structured payload for downstream consumers (execute-phase injector, audit phase).
     metadata: {
       file: finding.file,
