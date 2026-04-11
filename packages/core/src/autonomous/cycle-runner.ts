@@ -406,7 +406,7 @@ export class CycleRunner {
     const intermediate = this.buildResult(CycleStage.REVIEW, {
       sprintVersion: plan.version,
       cost: {
-        totalUsd: runSummary.totalCostUsd,
+        totalUsd: this.totalCostUsd,
         budgetUsd: this.options.config.budget.perCycleUsd,
         byAgent: {},
         byPhase: {},
@@ -476,7 +476,7 @@ export class CycleRunner {
     const completedOverrides: Partial<CycleResult> = {
       sprintVersion: plan.version,
       cost: {
-        totalUsd: runSummary.totalCostUsd,
+        totalUsd: this.totalCostUsd,
         budgetUsd: this.options.config.budget.perCycleUsd,
         byAgent: {},
         byPhase: {},
