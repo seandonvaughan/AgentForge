@@ -17,13 +17,18 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = join(__dirname, '../../../');
+const DEFAULT_PROJECT_ROOT = join(__dirname, '../../../');
 
-const CYCLES_DIR          = join(PROJECT_ROOT, '.agentforge/cycles');
-const CYCLES_ARCHIVED_DIR = join(PROJECT_ROOT, '.agentforge/cycles-archived');
-const SPRINTS_DIR         = join(PROJECT_ROOT, '.agentforge/sprints');
-const MEMORY_JSONL_DIR    = join(PROJECT_ROOT, '.agentforge/memory');
-const MEMORIES_JSON_PATH  = join(PROJECT_ROOT, '.agentforge/data/memories.json');
+/** Derive the filesystem paths for a given project root. */
+function makePaths(projectRoot: string) {
+  return {
+    CYCLES_DIR:          join(projectRoot, '.agentforge/cycles'),
+    CYCLES_ARCHIVED_DIR: join(projectRoot, '.agentforge/cycles-archived'),
+    SPRINTS_DIR:         join(projectRoot, '.agentforge/sprints'),
+    MEMORY_JSONL_DIR:    join(projectRoot, '.agentforge/memory'),
+    MEMORIES_JSON_PATH:  join(projectRoot, '.agentforge/data/memories.json'),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -163,12 +168,16 @@ function searchAgents(
 }
 
 /** Search cycle directories from filesystem. */
-function searchCycles(tokens: string[], limit: number): SearchResult[] {
+function searchCycles(
+  tokens: string[],
+  limit: number,
+  paths: ReturnType<typeof makePaths>,
+): SearchResult[] {
   const results: SearchResult[] = [];
 
   for (const [baseDir, isArchived] of [
-    [CYCLES_DIR,          false],
-    [CYCLES_ARCHIVED_DIR, true],
+    [paths.CYCLES_DIR,          false],
+    [paths.CYCLES_ARCHIVED_DIR, true],
   ] as Array<[string, boolean]>) {
     if (!existsSync(baseDir)) continue;
 
@@ -219,16 +228,20 @@ function searchCycles(tokens: string[], limit: number): SearchResult[] {
 }
 
 /** Search sprint JSON files from the filesystem. */
-function searchSprints(tokens: string[], limit: number): SearchResult[] {
-  if (!existsSync(SPRINTS_DIR)) return [];
+function searchSprints(
+  tokens: string[],
+  limit: number,
+  paths: ReturnType<typeof makePaths>,
+): SearchResult[] {
+  if (!existsSync(paths.SPRINTS_DIR)) return [];
 
-  const files = readdirSync(SPRINTS_DIR).filter(f => f.endsWith('.json') && !f.includes('$'));
+  const files = readdirSync(paths.SPRINTS_DIR).filter(f => f.endsWith('.json') && !f.includes('$'));
   const results: SearchResult[] = [];
 
   for (const filename of files) {
     let parsed: Record<string, unknown>;
     try {
-      let raw: unknown = JSON.parse(readFileSync(join(SPRINTS_DIR, filename), 'utf-8'));
+      let raw: unknown = JSON.parse(readFileSync(join(paths.SPRINTS_DIR, filename), 'utf-8'));
       if (typeof raw === 'string') raw = JSON.parse(raw);
       parsed = raw as Record<string, unknown>;
     } catch {
@@ -283,16 +296,17 @@ function searchMemory(
   adapter: SqliteAdapter,
   tokens: string[],
   limit: number,
+  paths: ReturnType<typeof makePaths>,
 ): SearchResult[] {
   const results: SearchResult[] = [];
 
   // --- JSONL files (primary: cycle-outcome, gate-verdict, review-finding, etc.) ---
-  if (existsSync(MEMORY_JSONL_DIR)) {
+  if (existsSync(paths.MEMORY_JSONL_DIR)) {
     try {
-      const files = readdirSync(MEMORY_JSONL_DIR).filter(f => f.endsWith('.jsonl'));
+      const files = readdirSync(paths.MEMORY_JSONL_DIR).filter(f => f.endsWith('.jsonl'));
       for (const filename of files) {
         try {
-          const raw = readFileSync(join(MEMORY_JSONL_DIR, filename), 'utf-8');
+          const raw = readFileSync(join(paths.MEMORY_JSONL_DIR, filename), 'utf-8');
           for (const line of raw.split('\n')) {
             if (!line.trim()) continue;
             try {
@@ -344,9 +358,9 @@ function searchMemory(
   }
 
   // --- Structured memories.json (operator-curated / autonomous-loop learned) ---
-  if (existsSync(MEMORIES_JSON_PATH)) {
+  if (existsSync(paths.MEMORIES_JSON_PATH)) {
     try {
-      const raw = JSON.parse(readFileSync(MEMORIES_JSON_PATH, 'utf-8')) as {
+      const raw = JSON.parse(readFileSync(paths.MEMORIES_JSON_PATH, 'utf-8')) as {
         entries?: Array<{
           id?: string;
           filename?: string;
@@ -477,6 +491,9 @@ export async function searchRoutes(
     // After merging, we re-sort and cap at the global limit.
     const perTypeBudget = limit;
 
+    // Derive filesystem paths once; reused by all filesystem-backed searchers.
+    const paths = makePaths(DEFAULT_PROJECT_ROOT);
+
     const all: SearchResult[] = [];
 
     if (enabledTypes.has('session')) {
@@ -486,13 +503,13 @@ export async function searchRoutes(
       all.push(...searchAgents(adapter, tokens, perTypeBudget));
     }
     if (enabledTypes.has('cycle')) {
-      all.push(...searchCycles(tokens, perTypeBudget));
+      all.push(...searchCycles(tokens, perTypeBudget, paths));
     }
     if (enabledTypes.has('sprint')) {
-      all.push(...searchSprints(tokens, perTypeBudget));
+      all.push(...searchSprints(tokens, perTypeBudget, paths));
     }
     if (enabledTypes.has('memory')) {
-      all.push(...searchMemory(adapter, tokens, perTypeBudget));
+      all.push(...searchMemory(adapter, tokens, perTypeBudget, paths));
     }
 
     // Global sort by score, then cap

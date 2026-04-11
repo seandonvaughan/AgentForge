@@ -1,82 +1,86 @@
 {
-  "sprint": "v5.8",
-  "title": "Scale & Reach",
-  "phase": "completed",
-  "completedAt": "2026-03-27T00:00:00.000Z",
-  "version": "5.8.0",
-  "previousVersion": "5.7.0",
-  "items": [
+  "sprints": [
     {
-      "id": "bl-010",
-      "priority": "P0",
-      "title": "AgentRuntime Streaming Responses",
-      "status": "completed",
-      "modules": [
-        "packages/core/src/streaming/types.ts",
-        "packages/core/src/streaming/response-streamer.ts",
-        "packages/core/src/streaming/streaming-executor.ts",
-        "packages/core/src/streaming/index.ts",
-        "packages/server/src/routes/v5/streaming.ts"
+      "sprint": "v5.8",
+      "title": "Scale & Reach",
+      "phase": "completed",
+      "completedAt": "2026-03-27T00:00:00.000Z",
+      "version": "5.8.0",
+      "previousVersion": "5.7.0",
+      "items": [
+        {
+          "id": "bl-010",
+          "priority": "P0",
+          "title": "AgentRuntime Streaming Responses",
+          "status": "completed",
+          "modules": [
+            "packages/core/src/streaming/types.ts",
+            "packages/core/src/streaming/response-streamer.ts",
+            "packages/core/src/streaming/streaming-executor.ts",
+            "packages/core/src/streaming/index.ts",
+            "packages/server/src/routes/v5/streaming.ts"
+          ],
+          "testFile": "tests/v5/streaming.test.ts",
+          "testCount": 17
+        },
+        {
+          "id": "bl-011",
+          "priority": "P1",
+          "title": "Multi-Workspace Dashboard View",
+          "status": "completed",
+          "modules": [
+            "packages/core/src/multi-workspace/types.ts",
+            "packages/core/src/multi-workspace/workspace-aggregator.ts",
+            "packages/core/src/multi-workspace/index.ts",
+            "packages/server/src/routes/v5/multi-workspace.ts"
+          ],
+          "testFile": "tests/v5/multi-workspace.test.ts",
+          "testCount": 16
+        },
+        {
+          "id": "bl-012",
+          "priority": "P1",
+          "title": "Agent Version Pinning",
+          "status": "completed",
+          "modules": [
+            "packages/core/src/agent-versioning/types.ts",
+            "packages/core/src/agent-versioning/agent-version-manager.ts",
+            "packages/core/src/agent-versioning/index.ts",
+            "packages/server/src/routes/v5/agent-versioning.ts"
+          ],
+          "testFile": "tests/v5/agent-versioning.test.ts",
+          "testCount": 18
+        },
+        {
+          "id": "bl-008",
+          "priority": "P1",
+          "title": "Cross-Instance Federation",
+          "status": "completed",
+          "modules": [
+            "packages/core/src/federation/types.ts",
+            "packages/core/src/federation/federation-manager.ts",
+            "packages/core/src/federation/index.ts",
+            "packages/server/src/routes/v5/federation.ts"
+          ],
+          "testFile": "tests/v5/federation.test.ts",
+          "testCount": 20
+        }
       ],
-      "testFile": "tests/v5/streaming.test.ts",
-      "testCount": 17
-    },
-    {
-      "id": "bl-011",
-      "priority": "P1",
-      "title": "Multi-Workspace Dashboard View",
-      "status": "completed",
-      "modules": [
-        "packages/core/src/multi-workspace/types.ts",
-        "packages/core/src/multi-workspace/workspace-aggregator.ts",
-        "packages/core/src/multi-workspace/index.ts",
-        "packages/server/src/routes/v5/multi-workspace.ts"
-      ],
-      "testFile": "tests/v5/multi-workspace.test.ts",
-      "testCount": 16
-    },
-    {
-      "id": "bl-012",
-      "priority": "P1",
-      "title": "Agent Version Pinning",
-      "status": "completed",
-      "modules": [
-        "packages/core/src/agent-versioning/types.ts",
-        "packages/core/src/agent-versioning/agent-version-manager.ts",
-        "packages/core/src/agent-versioning/index.ts",
-        "packages/server/src/routes/v5/agent-versioning.ts"
-      ],
-      "testFile": "tests/v5/agent-versioning.test.ts",
-      "testCount": 18
-    },
-    {
-      "id": "bl-008",
-      "priority": "P1",
-      "title": "Cross-Instance Federation",
-      "status": "completed",
-      "modules": [
-        "packages/core/src/federation/types.ts",
-        "packages/core/src/federation/federation-manager.ts",
-        "packages/core/src/federation/index.ts",
-        "packages/server/src/routes/v5/federation.ts"
-      ],
-      "testFile": "tests/v5/federation.test.ts",
-      "testCount": 20
+      "results": {
+        "testFilesPrevious": 167,
+        "testFilesNew": 171,
+        "testsPrevious": 3206,
+        "testsNew": 3283,
+        "newTests": 77,
+        "regressions": 0,
+        "skipped": 1
+      },
+      "wiring": {
+        "coreIndex": "packages/core/src/index.ts \u2014 4 new module exports added",
+        "serverRoutes": "packages/server/src/routes/v5/index.ts \u2014 4 new route groups registered",
+        "serverMain": "packages/server/src/server.ts \u2014 4 new route registrations added",
+        "versionBump": "package.json, .claude-plugin/plugin.json, server.ts, routes/v5/index.ts \u2192 5.8.0"
+      }
     }
-  ],
-  "results": {
-    "testFilesPrevious": 167,
-    "testFilesNew": 171,
-    "testsPrevious": 3206,
-    "testsNew": 3283,
-    "newTests": 77,
-    "regressions": 0,
-    "skipped": 1
-  },
-  "wiring": {
-    "coreIndex": "packages/core/src/index.ts — 4 new module exports added",
-    "serverRoutes": "packages/server/src/routes/v5/index.ts — 4 new route groups registered",
-    "serverMain": "packages/server/src/server.ts — 4 new route registrations added",
-    "versionBump": "package.json, .claude-plugin/plugin.json, server.ts, routes/v5/index.ts → 5.8.0"
-  }
+  ]
 }

@@ -32,7 +32,7 @@ TODO(autonomous): Complete the /branches dashboard tab — show all autonomous/*
 
 ## Sprints
 
-TODO(autonomous): Create a sprint JSON file for every existing version v4.3 through v6.7 in .agentforge/sprints/ that doesn't already have one. Use the existing v6.5.0.json shape as a template.
+✅ DONE: All sprint JSON files v4.3 through v6.7 exist and conform to the v6.5.0.json template structure (10 files converted from legacy format to proper "sprints" wrapper, 22 already correct).
 
 TODO(autonomous): Ensure /sprints/[version] detail page renders all fields beautifully: title, status, items kanban, success criteria, audit findings, completion percentage, dates. Already mostly built — verify and fill any gaps.
 

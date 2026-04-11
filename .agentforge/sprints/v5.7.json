@@ -1,87 +1,91 @@
 {
-  "version": "5.7.0",
-  "sprint": "v5.7",
-  "phase": "completed",
-  "startedAt": "2026-03-27T00:00:00.000Z",
-  "completedAt": "2026-03-27T19:39:00.000Z",
-  "theme": "Platform Intelligence",
-  "testsPrior": 3105,
-  "testsAdded": 101,
-  "testsTotal": 3206,
-  "testFiles": 167,
-  "items": [
+  "sprints": [
     {
-      "id": "P0-1",
-      "backlogRef": "bl-003",
-      "title": "Cost Optimization Autopilot",
-      "status": "completed",
-      "modules": [
-        "packages/core/src/cost-autopilot/types.ts",
-        "packages/core/src/cost-autopilot/response-cache.ts",
-        "packages/core/src/cost-autopilot/batch-aggregator.ts",
-        "packages/core/src/cost-autopilot/cost-autopilot.ts",
-        "packages/core/src/cost-autopilot/index.ts",
-        "packages/server/src/routes/v5/cost-autopilot.ts"
+      "version": "5.7.0",
+      "sprint": "v5.7",
+      "phase": "completed",
+      "startedAt": "2026-03-27T00:00:00.000Z",
+      "completedAt": "2026-03-27T19:39:00.000Z",
+      "theme": "Platform Intelligence",
+      "testsPrior": 3105,
+      "testsAdded": 101,
+      "testsTotal": 3206,
+      "testFiles": 167,
+      "items": [
+        {
+          "id": "P0-1",
+          "backlogRef": "bl-003",
+          "title": "Cost Optimization Autopilot",
+          "status": "completed",
+          "modules": [
+            "packages/core/src/cost-autopilot/types.ts",
+            "packages/core/src/cost-autopilot/response-cache.ts",
+            "packages/core/src/cost-autopilot/batch-aggregator.ts",
+            "packages/core/src/cost-autopilot/cost-autopilot.ts",
+            "packages/core/src/cost-autopilot/index.ts",
+            "packages/server/src/routes/v5/cost-autopilot.ts"
+          ],
+          "testsFile": "tests/v5/cost-autopilot.test.ts",
+          "testsAdded": 27
+        },
+        {
+          "id": "P1-1",
+          "backlogRef": "bl-009",
+          "title": "Predictive Sprint Planning",
+          "status": "completed",
+          "modules": [
+            "packages/core/src/predictive-planning/types.ts",
+            "packages/core/src/predictive-planning/history-analyzer.ts",
+            "packages/core/src/predictive-planning/effort-estimator.ts",
+            "packages/core/src/predictive-planning/risk-scorer.ts",
+            "packages/core/src/predictive-planning/sprint-predictor.ts",
+            "packages/core/src/predictive-planning/index.ts",
+            "packages/server/src/routes/v5/predictive-planning.ts"
+          ],
+          "testsFile": "tests/v5/predictive-planning.test.ts",
+          "testsAdded": 28
+        },
+        {
+          "id": "P1-2",
+          "backlogRef": "bl-004",
+          "title": "Agent Marketplace & Plugin Registry",
+          "status": "completed",
+          "modules": [
+            "packages/core/src/marketplace/types.ts",
+            "packages/core/src/marketplace/marketplace-registry.ts",
+            "packages/core/src/marketplace/index.ts",
+            "packages/server/src/routes/v5/marketplace.ts"
+          ],
+          "testsFile": "tests/v5/marketplace.test.ts",
+          "testsAdded": 16
+        },
+        {
+          "id": "P1-3",
+          "backlogRef": "bl-005",
+          "title": "Natural Language Command Interface",
+          "status": "completed",
+          "modules": [
+            "packages/core/src/nl-interface/types.ts",
+            "packages/core/src/nl-interface/intent-classifier.ts",
+            "packages/core/src/nl-interface/entity-extractor.ts",
+            "packages/core/src/nl-interface/nl-commander.ts",
+            "packages/core/src/nl-interface/index.ts",
+            "packages/server/src/routes/v5/nl-interface.ts"
+          ],
+          "testsFile": "tests/v5/nl-interface.test.ts",
+          "testsAdded": 35
+        }
       ],
-      "testsFile": "tests/v5/cost-autopilot.test.ts",
-      "testsAdded": 27
-    },
-    {
-      "id": "P1-1",
-      "backlogRef": "bl-009",
-      "title": "Predictive Sprint Planning",
-      "status": "completed",
-      "modules": [
-        "packages/core/src/predictive-planning/types.ts",
-        "packages/core/src/predictive-planning/history-analyzer.ts",
-        "packages/core/src/predictive-planning/effort-estimator.ts",
-        "packages/core/src/predictive-planning/risk-scorer.ts",
-        "packages/core/src/predictive-planning/sprint-predictor.ts",
-        "packages/core/src/predictive-planning/index.ts",
-        "packages/server/src/routes/v5/predictive-planning.ts"
-      ],
-      "testsFile": "tests/v5/predictive-planning.test.ts",
-      "testsAdded": 28
-    },
-    {
-      "id": "P1-2",
-      "backlogRef": "bl-004",
-      "title": "Agent Marketplace & Plugin Registry",
-      "status": "completed",
-      "modules": [
-        "packages/core/src/marketplace/types.ts",
-        "packages/core/src/marketplace/marketplace-registry.ts",
-        "packages/core/src/marketplace/index.ts",
-        "packages/server/src/routes/v5/marketplace.ts"
-      ],
-      "testsFile": "tests/v5/marketplace.test.ts",
-      "testsAdded": 16
-    },
-    {
-      "id": "P1-3",
-      "backlogRef": "bl-005",
-      "title": "Natural Language Command Interface",
-      "status": "completed",
-      "modules": [
-        "packages/core/src/nl-interface/types.ts",
-        "packages/core/src/nl-interface/intent-classifier.ts",
-        "packages/core/src/nl-interface/entity-extractor.ts",
-        "packages/core/src/nl-interface/nl-commander.ts",
-        "packages/core/src/nl-interface/index.ts",
-        "packages/server/src/routes/v5/nl-interface.ts"
-      ],
-      "testsFile": "tests/v5/nl-interface.test.ts",
-      "testsAdded": 35
+      "wiring": {
+        "coreIndex": "packages/core/src/index.ts",
+        "routesIndex": "packages/server/src/routes/v5/index.ts",
+        "server": "packages/server/src/server.ts"
+      },
+      "versionBumps": {
+        "packageJson": "5.7.0",
+        "pluginJson": "5.7.0",
+        "healthEndpoint": "5.7.0"
+      }
     }
-  ],
-  "wiring": {
-    "coreIndex": "packages/core/src/index.ts",
-    "routesIndex": "packages/server/src/routes/v5/index.ts",
-    "server": "packages/server/src/server.ts"
-  },
-  "versionBumps": {
-    "packageJson": "5.7.0",
-    "pluginJson": "5.7.0",
-    "healthEndpoint": "5.7.0"
-  }
+  ]
 }

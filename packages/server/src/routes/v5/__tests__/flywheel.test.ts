@@ -392,4 +392,109 @@ describe('GET /api/v5/flywheel', () => {
     };
     expect(data.memoryStats.entriesPerCycleTrend).toHaveLength(12);
   });
+
+  // ── Cycle History ────────────────────────────────────────────────────────
+
+  it('cycleHistory is present and empty when no cycles exist', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = JSON.parse(res.body) as { data: { cycleHistory: unknown[] } };
+    expect(Array.isArray(data.cycleHistory)).toBe(true);
+    expect(data.cycleHistory).toHaveLength(0);
+  });
+
+  it('cycleHistory contains one point per cycle with correct fields', async () => {
+    mkdirs(join(tmpRoot, '.agentforge/cycles'));
+    const startedAt = '2026-03-01T10:00:00.000Z';
+    writeCycle('hist-cycle-1', {
+      sprintVersion: '7.1.0',
+      stage: 'completed',
+      startedAt,
+      durationMs: 3_600_000, // 60 min
+      cost: { totalUsd: 12.50 },
+      tests: { passed: 490, failed: 10, total: 500, passRate: 0.98 },
+      pr: { number: 55, url: 'https://github.com/org/repo/pull/55' },
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = JSON.parse(res.body) as {
+      data: {
+        cycleHistory: Array<{
+          cycleId: string;
+          sprintVersion: string | null;
+          startedAt: string;
+          stage: string;
+          testPassRate: number | null;
+          testsTotal: number | null;
+          costUsd: number | null;
+          durationMs: number | null;
+          hasPr: boolean;
+        }>;
+      };
+    };
+
+    expect(data.cycleHistory).toHaveLength(1);
+    const pt = data.cycleHistory[0];
+    expect(pt.cycleId).toBe('hist-cycle-1');
+    expect(pt.sprintVersion).toBe('7.1.0');
+    expect(pt.stage).toBe('completed');
+    expect(pt.startedAt).toBe(startedAt);
+    expect(pt.testPassRate).toBeCloseTo(0.98, 5);
+    expect(pt.testsTotal).toBe(500);
+    expect(pt.costUsd).toBe(12.50);
+    expect(pt.durationMs).toBe(3_600_000);
+    expect(pt.hasPr).toBe(true);
+  });
+
+  it('cycleHistory returns hasPr=false when cycle has no PR', async () => {
+    mkdirs(join(tmpRoot, '.agentforge/cycles'));
+    writeCycle('no-pr-cycle', { pr: null });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = JSON.parse(res.body) as {
+      data: { cycleHistory: Array<{ hasPr: boolean }> };
+    };
+    expect(data.cycleHistory[0].hasPr).toBe(false);
+  });
+
+  it('cycleHistory is ordered chronologically (oldest first)', async () => {
+    mkdirs(join(tmpRoot, '.agentforge/cycles'));
+    writeCycle('early', { startedAt: '2026-01-01T00:00:00.000Z', sprintVersion: '1.0' });
+    writeCycle('later', { startedAt: '2026-06-01T00:00:00.000Z', sprintVersion: '6.0' });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = JSON.parse(res.body) as {
+      data: { cycleHistory: Array<{ startedAt: string }> };
+    };
+    expect(new Date(data.cycleHistory[0].startedAt).getTime())
+      .toBeLessThan(new Date(data.cycleHistory[1].startedAt).getTime());
+  });
+
+  it('cycleHistory caps at 20 cycles when more exist', async () => {
+    mkdirs(join(tmpRoot, '.agentforge/cycles'));
+    for (let i = 0; i < 25; i++) {
+      const isoDate = `2026-01-${String(i + 1).padStart(2, '0')}T08:00:00.000Z`;
+      writeCycle(`cap-cycle-${i}`, { startedAt: isoDate });
+    }
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = JSON.parse(res.body) as { data: { cycleHistory: unknown[] } };
+    expect(data.cycleHistory).toHaveLength(20);
+  });
+
+  it('cycleHistory testPassRate is null when cycle has no test data', async () => {
+    mkdirs(join(tmpRoot, '.agentforge/cycles'));
+    const dir = join(tmpRoot, '.agentforge/cycles/no-tests');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'cycle.json'), JSON.stringify({
+      cycleId: 'no-tests',
+      stage: 'completed',
+      startedAt: new Date().toISOString(),
+    }));
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = JSON.parse(res.body) as {
+      data: { cycleHistory: Array<{ testPassRate: unknown; testsTotal: unknown }> };
+    };
+    expect(data.cycleHistory[0].testPassRate).toBeNull();
+    expect(data.cycleHistory[0].testsTotal).toBeNull();
+  });
 });

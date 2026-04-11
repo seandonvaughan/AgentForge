@@ -22,6 +22,7 @@ import { join } from 'node:path';
 
 interface CycleRecord {
   cycleId: string;
+  sprintVersion?: string;
   stage?: string;
   startedAt?: string;
   completedAt?: string;
@@ -72,12 +73,26 @@ export interface MemoryStats {
   hitRate: number;
 }
 
+export interface CycleHistoryPoint {
+  cycleId: string;
+  sprintVersion: string | null;
+  startedAt: string;
+  stage: string;
+  testPassRate: number | null;
+  testsTotal: number | null;
+  costUsd: number | null;
+  durationMs: number | null;
+  hasPr: boolean;
+}
+
 export interface FlywheelPayload {
   metrics: FlywheelMetric[];
   overallScore: number;
   updatedAt: string;
   debug: FlywheelDebug;
   memoryStats: MemoryStats;
+  /** Per-cycle raw signals for the score trajectory sparklines. */
+  cycleHistory: CycleHistoryPoint[];
 }
 
 // ── Project root resolution ───────────────────────────────────────────────────
@@ -249,6 +264,23 @@ function computeMetrics(projectRoot: string): FlywheelPayload {
     (metaLearningScore + autonomyScore + inheritanceScore + velocityScore) / 4,
   );
 
+  // Per-cycle history: expose the raw signals that drive autonomy + velocity
+  // so the dashboard can render trajectory sparklines (not just static scores).
+  const HISTORY_LIMIT = 20;
+  const cycleHistory: CycleHistoryPoint[] = cycles.slice(-HISTORY_LIMIT).map(c => ({
+    cycleId: c.cycleId,
+    sprintVersion: c.sprintVersion ?? null,
+    startedAt: c.startedAt ?? new Date().toISOString(),
+    stage: c.stage ?? 'unknown',
+    testPassRate: c.tests?.passRate ?? null,
+    testsTotal: (c.tests?.passed != null && c.tests?.failed != null)
+      ? (c.tests.passed + c.tests.failed)
+      : (c.tests?.total ?? null),
+    costUsd: c.cost?.totalUsd ?? null,
+    durationMs: c.durationMs ?? null,
+    hasPr: c.pr?.number != null,
+  }));
+
   return {
     metrics: [
       { key: 'meta_learning', label: 'Meta-Learning', score: metaLearningScore, description: descriptions.meta_learning },
@@ -258,6 +290,7 @@ function computeMetrics(projectRoot: string): FlywheelPayload {
     ],
     overallScore,
     updatedAt: new Date().toISOString(),
+    cycleHistory,
     debug: {
       cycleCount: cycles.length,
       meaningfulCycleCount: meaningfulCycles.length,

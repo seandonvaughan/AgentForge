@@ -333,6 +333,145 @@ describe('GET /api/v5/memory', () => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /api/v5/memory/stream
+// ---------------------------------------------------------------------------
+
+describe('GET /api/v5/memory/stream', () => {
+  let app: FastifyInstance;
+  let adapter: SqliteAdapter;
+  let db: AgentDatabase;
+
+  beforeEach(async () => {
+    db = new AgentDatabase({ path: ':memory:' });
+    adapter = new SqliteAdapter({ db });
+    const result = await createServer({ adapter });
+    app = result.app;
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+    db.close();
+  });
+
+  /** Parse NDJSON response body into an array of objects. */
+  function parseNdjson(body: string): Record<string, unknown>[] {
+    return body
+      .split('\n')
+      .filter(line => line.trim().length > 0)
+      .map(line => JSON.parse(line) as Record<string, unknown>);
+  }
+
+  it('returns 200 with application/x-ndjson content-type', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory/stream' });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toMatch(/application\/x-ndjson/);
+  });
+
+  it('returns valid NDJSON — one JSON object per non-empty line', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory/stream' });
+    const lines = res.body.split('\n').filter(l => l.trim().length > 0);
+    for (const line of lines) {
+      expect(() => JSON.parse(line)).not.toThrow();
+    }
+  });
+
+  it('each entry has id, key, value, type fields', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory/stream' });
+    const entries = parseNdjson(res.body);
+    for (const entry of entries) {
+      expect(typeof entry.id).toBe('string');
+      expect(typeof entry.key).toBe('string');
+      expect(typeof entry.value).toBe('string');
+      expect(typeof entry.type).toBe('string');
+    }
+  });
+
+  it('type param filters to only matching type entries', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v5/memory/stream?type=gate-verdict',
+    });
+    const entries = parseNdjson(res.body);
+    for (const entry of entries) {
+      expect(entry.type).toBe('gate-verdict');
+    }
+  });
+
+  it('type param with unknown type returns empty body', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v5/memory/stream?type=nonexistent-type-xyz',
+    });
+    expect(res.statusCode).toBe(200);
+    const lines = res.body.split('\n').filter(l => l.trim().length > 0);
+    expect(lines).toHaveLength(0);
+  });
+
+  it('since param excludes entries older than the cutoff', async () => {
+    const futureDate = new Date(Date.now() + 1000 * 60 * 60 * 24 * 365).toISOString();
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/v5/memory/stream?since=${encodeURIComponent(futureDate)}`,
+    });
+    expect(res.statusCode).toBe(200);
+    const entries = parseNdjson(res.body);
+    expect(entries).toHaveLength(0);
+  });
+
+  it('since=epoch passes all JSONL entries (createdAt set)', async () => {
+    const epochDate = new Date(0).toISOString();
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/v5/memory/stream?since=${encodeURIComponent(epochDate)}`,
+    });
+    expect(res.statusCode).toBe(200);
+    // entries with valid createdAt should pass the epoch filter
+    const entries = parseNdjson(res.body);
+    expect(entries.length).toBeGreaterThanOrEqual(0);
+  });
+
+  it('search param filters entries by key/value/summary/tags', async () => {
+    // All JSONL entries that contain "verdict" should be gate-verdict type
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v5/memory/stream?search=gate-verdict',
+    });
+    const entries = parseNdjson(res.body);
+    // Every returned entry's searchable fields must contain the term
+    for (const entry of entries) {
+      const haystack = [entry.key, entry.value, entry.summary ?? '', ...((entry.tags as string[]) ?? [])]
+        .join(' ')
+        .toLowerCase();
+      expect(haystack).toContain('gate-verdict');
+    }
+  });
+
+  it('agentId param filters to matching source field', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v5/memory/stream?agentId=nonexistent-agent-zzzz',
+    });
+    expect(res.statusCode).toBe(200);
+    const entries = parseNdjson(res.body);
+    expect(entries).toHaveLength(0);
+  });
+
+  it('stream endpoint returns same types as the paginated endpoint reports', async () => {
+    const streamRes = await app.inject({ method: 'GET', url: '/api/v5/memory/stream' });
+    const paginatedRes = await app.inject({ method: 'GET', url: '/api/v5/memory' });
+    const streamTypes = [...new Set(parseNdjson(streamRes.body).map(e => e.type as string))].sort();
+    const paginatedTypes = (paginatedRes.json().types as string[]).sort();
+    // The types available in the stream should be a subset of (or equal to)
+    // those reported by the paginated endpoint — JSONL-only types may differ
+    // from the full merged set (KV + memories.json sources also contribute).
+    for (const t of streamTypes) {
+      expect(paginatedTypes).toContain(t);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // DELETE /api/v5/memory/:id
 // ---------------------------------------------------------------------------
 

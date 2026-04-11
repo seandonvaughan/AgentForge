@@ -3,6 +3,9 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { FastifyInstance } from 'fastify';
+import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { createServer } from '../../src/server/server.js';
 import { AgentDatabase } from '../../src/db/database.js';
 import { SqliteAdapter } from '../../src/db/sqlite-adapter.js';
@@ -62,12 +65,17 @@ describe('REST API Routes', () => {
   let app: FastifyInstance;
   let adapter: SqliteAdapter;
   let db: AgentDatabase;
+  let tmpRoot: string;
 
   beforeEach(async () => {
     _sessionSeq = 0;
+    // Isolated temp project root — no .agentforge/agents YAML files, so the
+    // agentsRoutes handler returns only session-derived agents in these tests.
+    tmpRoot = mkdtempSync(join(tmpdir(), 'agentforge-routes-test-'));
+    mkdirSync(join(tmpRoot, '.agentforge', 'agents'), { recursive: true });
     db = new AgentDatabase({ path: ':memory:' });
     adapter = new SqliteAdapter({ db });
-    const result = await createServer({ adapter });
+    const result = await createServer({ adapter, projectRoot: tmpRoot });
     app = result.app;
     await app.ready();
   });
@@ -75,6 +83,7 @@ describe('REST API Routes', () => {
   afterEach(async () => {
     await app.close();
     db.close();
+    rmSync(tmpRoot, { recursive: true, force: true });
   });
 
   // -------------------------------------------------------------------------

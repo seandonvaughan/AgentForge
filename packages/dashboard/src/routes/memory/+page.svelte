@@ -6,6 +6,7 @@
     key: string;
     value: unknown;
     type?: string;
+    category?: string;
     createdAt?: string;
     updatedAt?: string;
     agentId?: string;
@@ -13,6 +14,12 @@
     source?: string;
     summary?: string;
     tags?: string[];
+    /**
+     * Structured metadata from the canonical CycleMemoryEntry schema (v10.2+).
+     * For gate-verdict entries this replaces the JSON-encoded `value` string
+     * and carries typed fields: verdict, sprintVersion, rationale, findings, etc.
+     */
+    metadata?: Record<string, unknown>;
   }
 
   let entries: MemoryEntry[] = [];
@@ -192,7 +199,13 @@
 
   function formatValueFull(v: unknown): string {
     if (v === null || v === undefined) return '—';
-    if (typeof v === 'string') return v;
+    if (typeof v === 'string') {
+      // Try to pretty-print compact JSON strings (common for JSONL entries)
+      if (v.trim().startsWith('{') || v.trim().startsWith('[')) {
+        try { return JSON.stringify(JSON.parse(v), null, 2); } catch { /* not JSON */ }
+      }
+      return v;
+    }
     try { return JSON.stringify(v, null, 2); } catch { return String(v); }
   }
 
@@ -334,9 +347,19 @@
 
   function extractVerdictInfo(entry: MemoryEntry): VerdictInfo | null {
     if (entry.type !== 'gate-verdict') return null;
-    if (!entry.value || typeof entry.value !== 'object') return null;
-    const v = entry.value as Record<string, unknown>;
-    if (!v.verdict) return null;
+
+    // Resolve the verdict payload: prefer typed metadata (v10.2+ schema promotion),
+    // then try parsing value as JSON, then treat value as an object directly.
+    let v: Record<string, unknown> | null = null;
+    if (entry.metadata && typeof entry.metadata === 'object' && entry.metadata.verdict) {
+      v = entry.metadata as Record<string, unknown>;
+    } else if (typeof entry.value === 'string' && entry.value.trim().startsWith('{')) {
+      try { v = JSON.parse(entry.value) as Record<string, unknown>; } catch { /* ignore */ }
+    } else if (entry.value && typeof entry.value === 'object') {
+      v = entry.value as Record<string, unknown>;
+    }
+
+    if (!v || !v.verdict) return null;
     return {
       verdict: String(v.verdict ?? ''),
       sprintVersion: String(v.sprintVersion ?? ''),
@@ -581,7 +604,7 @@
 
             <!-- Value column — summary if available, otherwise truncated value preview -->
             <td class="col-value">
-              {#if entry.type === 'gate-verdict' && entry.value && typeof entry.value === 'object'}
+              {#if entry.type === 'gate-verdict'}
                 {@const vi = extractVerdictInfo(entry)}
                 {#if vi}
                   <span class="value-preview value-preview--verdict">
@@ -604,7 +627,7 @@
                 {#if isCycleId(entry.source)}
                   <a
                     class="source-link source-link--cycle"
-                    href="/cycles?highlight={entry.source}"
+                    href="/cycles/{entry.source}"
                     title="View cycle {entry.source}"
                   >
                     <span class="source-prefix">cycle</span>
@@ -671,7 +694,7 @@
                       <span class="detail-meta-item">
                         <span class="detail-label">Source</span>
                         {#if isCycleId(entry.source)}
-                          <a class="source-link source-link--cycle" href="/cycles?highlight={entry.source}" title="View cycle {entry.source}">
+                          <a class="source-link source-link--cycle" href="/cycles/{entry.source}" title="View cycle {entry.source}">
                             <span class="source-prefix">cycle</span>{shortSource(entry.source)}
                           </a>
                         {:else}

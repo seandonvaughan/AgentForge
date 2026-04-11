@@ -16,4 +16,7 @@ const plugin: AgentForgePlugin = {
 
 console.log("AgentForge loaded");
 
+// Export utilities
+export * from './utils/index.js';
+
 export default plugin;

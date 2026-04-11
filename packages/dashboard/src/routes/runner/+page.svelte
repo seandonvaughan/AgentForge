@@ -187,7 +187,7 @@
     // By opening early and buffering, we capture every chunk regardless of
     // when the POST returns.
     if (eventSource) { eventSource.close(); eventSource = null; }
-    const es = new EventSource('/api/v5/stream');
+    const es = new EventSource('/api/v1/stream');
     eventSource = es;
 
     // Buffer all agent_activity events until we resolve the sessionId.

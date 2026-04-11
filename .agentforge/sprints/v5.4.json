@@ -1,79 +1,83 @@
 {
-  "version": "5.4",
-  "name": "v5.4 — Forge Autonomy",
-  "phase": "completed",
-  "startedAt": "2026-03-27T18:35:00.000Z",
-  "completedAt": "2026-03-27T19:00:00.000Z",
-  "ceo_brief": "Last human-directed sprint. 100x spend. After this ships, Claude executes autonomously to v6.0. Five gates must pass.",
-  "items": [
+  "sprints": [
     {
-      "id": "v54-p0-1",
-      "priority": "P0",
-      "title": "Multi-Agent Orchestration Engine",
-      "status": "completed",
-      "description": "WorkflowRunner with YAML DSL: parallel fan-out, sequential pipelines, conditional branching. Cost-budgeted per workflow. POST /api/v5/workflows/run. Gate: 10-agent parallel workflow completes without deadlock."
-    },
-    {
-      "id": "v54-p0-2",
-      "priority": "P0",
-      "title": "Autonomous Sprint Loop",
-      "status": "completed",
-      "description": "SprintPlanner (reads backlog+metrics→generates sprint JSON), SprintRunner (executes items via ProposalExecutor), SprintEvaluator (runs tests, compares metrics), SprintPromoter (bumps version, writes records, queues next). Auto-approval mode. Gate: full dry-run completes autonomously."
-    },
-    {
-      "id": "v54-p0-3",
-      "priority": "P0",
-      "title": "Cost Governance at 100x",
-      "status": "completed",
-      "description": "BudgetEnforcer with hard ceilings (per-sprint, per-day, per-agent). ModelSelector auto-selects tier by task complexity. KillSwitch halts all execution on ceiling breach. GET /api/v5/budget, POST /api/v5/budget/config. Gate: runaway simulation halts in <30s."
-    },
-    {
-      "id": "v54-p0-4",
-      "priority": "P0",
-      "title": "Self-Correction Engine",
-      "status": "completed",
-      "description": "GitCheckpoint creates branch per sprint. RegressionDetector compares pre/post test counts. DeadEndTracker deprioritizes after 3 failures. Guardrails block destructive ops (delete packages, remove tests) without elevated approval. Gate: deliberate regression auto-reverts."
-    },
-    {
-      "id": "v54-p0-5",
-      "priority": "P0",
-      "title": "Sprint Observability",
-      "status": "completed",
-      "description": "ExecutionLog records every agent call, proposal, approval, test result. SprintReporter generates structured summaries (planned/executed/passed/failed/cost). GET /api/v5/execution-log, /api/v5/sprint-reports. Dashboard sprint page with full v5.5→v6.0 audit trail."
-    },
-    {
-      "id": "v54-p1-1",
-      "priority": "P1",
-      "title": "Strategic Backlog Seeding",
-      "status": "completed",
-      "description": "Seed .agentforge/backlog/ with remaining v5.3 P1/P2 items as structured backlog entries + v6-north-star.md. System knows what to work toward autonomously."
-    },
-    {
-      "id": "v54-p1-2",
-      "priority": "P1",
-      "title": "Autonomous Sprint Dry Run",
-      "status": "completed",
-      "description": "Execute a full sprint cycle in dry-run mode: SprintPlanner generates sprint, SprintRunner executes (dryRun:true), SprintEvaluator passes, SprintPromoter would bump version. Full cycle <10 min. COMPLETED: 32ms."
-    },
-    {
-      "id": "v54-p2-1",
-      "priority": "P2",
-      "title": "v5.4 Release",
-      "status": "completed",
-      "description": "Bumped to 5.4.0, marked sprint complete. 2914 tests passing (206 new autonomy tests). All 5 autonomy gates passed."
+      "version": "5.4",
+      "name": "v5.4 \u2014 Forge Autonomy",
+      "phase": "completed",
+      "startedAt": "2026-03-27T18:35:00.000Z",
+      "completedAt": "2026-03-27T19:00:00.000Z",
+      "ceo_brief": "Last human-directed sprint. 100x spend. After this ships, Claude executes autonomously to v6.0. Five gates must pass.",
+      "items": [
+        {
+          "id": "v54-p0-1",
+          "priority": "P0",
+          "title": "Multi-Agent Orchestration Engine",
+          "status": "completed",
+          "description": "WorkflowRunner with YAML DSL: parallel fan-out, sequential pipelines, conditional branching. Cost-budgeted per workflow. POST /api/v5/workflows/run. Gate: 10-agent parallel workflow completes without deadlock."
+        },
+        {
+          "id": "v54-p0-2",
+          "priority": "P0",
+          "title": "Autonomous Sprint Loop",
+          "status": "completed",
+          "description": "SprintPlanner (reads backlog+metrics\u2192generates sprint JSON), SprintRunner (executes items via ProposalExecutor), SprintEvaluator (runs tests, compares metrics), SprintPromoter (bumps version, writes records, queues next). Auto-approval mode. Gate: full dry-run completes autonomously."
+        },
+        {
+          "id": "v54-p0-3",
+          "priority": "P0",
+          "title": "Cost Governance at 100x",
+          "status": "completed",
+          "description": "BudgetEnforcer with hard ceilings (per-sprint, per-day, per-agent). ModelSelector auto-selects tier by task complexity. KillSwitch halts all execution on ceiling breach. GET /api/v5/budget, POST /api/v5/budget/config. Gate: runaway simulation halts in <30s."
+        },
+        {
+          "id": "v54-p0-4",
+          "priority": "P0",
+          "title": "Self-Correction Engine",
+          "status": "completed",
+          "description": "GitCheckpoint creates branch per sprint. RegressionDetector compares pre/post test counts. DeadEndTracker deprioritizes after 3 failures. Guardrails block destructive ops (delete packages, remove tests) without elevated approval. Gate: deliberate regression auto-reverts."
+        },
+        {
+          "id": "v54-p0-5",
+          "priority": "P0",
+          "title": "Sprint Observability",
+          "status": "completed",
+          "description": "ExecutionLog records every agent call, proposal, approval, test result. SprintReporter generates structured summaries (planned/executed/passed/failed/cost). GET /api/v5/execution-log, /api/v5/sprint-reports. Dashboard sprint page with full v5.5\u2192v6.0 audit trail."
+        },
+        {
+          "id": "v54-p1-1",
+          "priority": "P1",
+          "title": "Strategic Backlog Seeding",
+          "status": "completed",
+          "description": "Seed .agentforge/backlog/ with remaining v5.3 P1/P2 items as structured backlog entries + v6-north-star.md. System knows what to work toward autonomously."
+        },
+        {
+          "id": "v54-p1-2",
+          "priority": "P1",
+          "title": "Autonomous Sprint Dry Run",
+          "status": "completed",
+          "description": "Execute a full sprint cycle in dry-run mode: SprintPlanner generates sprint, SprintRunner executes (dryRun:true), SprintEvaluator passes, SprintPromoter would bump version. Full cycle <10 min. COMPLETED: 32ms."
+        },
+        {
+          "id": "v54-p2-1",
+          "priority": "P2",
+          "title": "v5.4 Release",
+          "status": "completed",
+          "description": "Bumped to 5.4.0, marked sprint complete. 2914 tests passing (206 new autonomy tests). All 5 autonomy gates passed."
+        }
+      ],
+      "results": {
+        "testsPassingBefore": 2708,
+        "testsPassingAfter": 2914,
+        "newTests": 206,
+        "testFiles": 157,
+        "autonomyGates": {
+          "orchestration": "PASSED \u2014 10-agent parallel in 37ms, no deadlock",
+          "sprintLoop": "PASSED \u2014 full cycle dry-run in 32ms",
+          "costGovernance": "PASSED \u2014 KillSwitchError fires on daily limit breach",
+          "selfCorrection": "PASSED \u2014 RegressionDetector + Guardrails + DeadEndTracker",
+          "observability": "PASSED \u2014 ExecutionLog + SprintReporter + REST endpoints"
+        }
+      }
     }
-  ],
-  "results": {
-    "testsPassingBefore": 2708,
-    "testsPassingAfter": 2914,
-    "newTests": 206,
-    "testFiles": 157,
-    "autonomyGates": {
-      "orchestration": "PASSED — 10-agent parallel in 37ms, no deadlock",
-      "sprintLoop": "PASSED — full cycle dry-run in 32ms",
-      "costGovernance": "PASSED — KillSwitchError fires on daily limit breach",
-      "selfCorrection": "PASSED — RegressionDetector + Guardrails + DeadEndTracker",
-      "observability": "PASSED — ExecutionLog + SprintReporter + REST endpoints"
-    }
-  }
+  ]
 }

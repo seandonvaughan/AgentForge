@@ -110,6 +110,7 @@ function seedSprint(
   cwd: string,
   version: string,
   gateResponse?: string,
+  itemTags?: string[],
 ): void {
   const sprint: SprintFile = {
     sprintId: `sprint-${version}`,
@@ -117,7 +118,7 @@ function seedSprint(
     title: `v${version} sprint`,
     createdAt: '2026-04-09T00:00:00.000Z',
     phase: 'gate',
-    items: [{ id: 'i1', title: 'Item 1', description: '', priority: 'P1', assignee: 'coder', status: 'completed' }],
+    items: [{ id: 'i1', title: 'Item 1', description: '', priority: 'P1', assignee: 'coder', status: 'completed', ...(itemTags ? { tags: itemTags } : {}) }],
     budget: 50,
     teamSize: 1,
     successCriteria: [],
@@ -312,5 +313,32 @@ describe('server runGatePhase — gate-verdict memory write', () => {
     // value is a human-readable summary, not a JSON blob.
     expect(typeof lastEntry.value).toBe('string');
     expect(() => JSON.parse(lastEntry.value)).toThrow();
+  });
+
+  it('appends sprint item domain tags to the gate-verdict entry for execute-phase matching', async () => {
+    // Seed a sprint whose items carry domain tags. These must be collected by
+    // collectSprintItemTags and appended to the gate-verdict memory entry so
+    // the execute-phase injector can find the verdict when future items share
+    // the same domain tags (cross-cycle learning).
+    seedSprint(cwd, '6.8.gate-mem-8', 'APPROVE: domain tag test', ['memory', 'execute', 'backend']);
+    const ctx = makeCtx(cwd, '6.8.gate-mem-8', 'cycle-domain-tags');
+
+    await runGatePhase(ctx);
+
+    const memFile = join(cwd, '.agentforge', 'memory', 'gate-verdict.jsonl');
+    const lines = readFileSync(memFile, 'utf8')
+      .split('\n')
+      .filter((l) => l.trim().length > 0);
+    const lastEntry = JSON.parse(lines[lines.length - 1]!);
+
+    // Structural tags must always be present.
+    expect(lastEntry.tags).toContain('sprint:v6.8.gate-mem-8');
+    expect(lastEntry.tags).toContain('verdict:approved');
+
+    // Domain tags collected from sprint items must also appear so the
+    // execute-phase injector can match this verdict to future items.
+    expect(lastEntry.tags).toContain('memory');
+    expect(lastEntry.tags).toContain('execute');
+    expect(lastEntry.tags).toContain('backend');
   });
 });

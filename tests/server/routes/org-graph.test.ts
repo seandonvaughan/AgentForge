@@ -237,4 +237,41 @@ describe('GET /api/v1/org-graph', () => {
     // so nodes should be non-empty
     expect(body.data.nodes.length).toBeGreaterThan(0);
   });
+
+  it('edge count exceeds delegation.yaml-only edges (collaboration.reports_to augmentation)', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v1/org-graph' });
+    const body = res.json();
+    // delegation.yaml defines ~36 explicit edges. The collaboration.reports_to fields
+    // in agent YAMLs should significantly augment this — expect well above 36.
+    expect(body.data.edges.length).toBeGreaterThan(36);
+  });
+
+  it('no duplicate edges (same from+to pair appears only once)', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v1/org-graph' });
+    const body = res.json();
+    const edgeKeys = body.data.edges.map((e: OrgEdge) => `${e.from}:${e.to}`);
+    const uniqueKeys = new Set(edgeKeys);
+    expect(uniqueKeys.size).toBe(edgeKeys.length);
+  });
+
+  it('ceo node exists and has no incoming edges (single root)', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v1/org-graph' });
+    const body = res.json();
+    const nodeIds = new Set(body.data.nodes.map((n: OrgNode) => n.id));
+    // ceo is in the dataset
+    expect(nodeIds.has('ceo')).toBe(true);
+    // ceo should not appear as the `to` end of any edge
+    const edgesToCeo = body.data.edges.filter((e: OrgEdge) => e.to === 'ceo');
+    expect(edgesToCeo.length).toBe(0);
+  });
+
+  it('each edge endpoint references a known node id', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v1/org-graph' });
+    const body = res.json();
+    const nodeIds = new Set(body.data.nodes.map((n: OrgNode) => n.id));
+    for (const edge of body.data.edges) {
+      expect(nodeIds.has(edge.from)).toBe(true);
+      expect(nodeIds.has(edge.to)).toBe(true);
+    }
+  });
 });

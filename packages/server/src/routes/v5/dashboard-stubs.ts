@@ -415,6 +415,28 @@ interface CycleRecord {
   pr?: { url?: string | null; number?: number | null };
 }
 
+/**
+ * One data point in the cycle-by-cycle history sent to the flywheel dashboard.
+ * Exposes the raw signals that drive the autonomy and velocity scores so the UI
+ * can render sparklines proving the flywheel is self-improving over time.
+ */
+export interface CycleHistoryPoint {
+  cycleId: string;
+  sprintVersion: string | null;
+  startedAt: string;
+  stage: string;
+  /** Test pass rate in this cycle (0–1), null when no test results exist. */
+  testPassRate: number | null;
+  /** Total tests run (passed + failed). */
+  testsTotal: number | null;
+  /** USD cost of this cycle, null when not recorded. */
+  costUsd: number | null;
+  /** Wall-clock duration of this cycle in milliseconds, null if incomplete. */
+  durationMs: number | null;
+  /** True when this cycle produced a merged/approved PR. */
+  hasPr: boolean;
+}
+
 interface SprintItem {
   id?: string;
   status?: string;
@@ -651,6 +673,25 @@ function computeFlywheelMetrics(projectRoot: string) {
         : `${meaningfulCycles.length} meaningful cycles`,
   };
 
+  // ── Cycle history — per-cycle raw signals for dashboard sparklines ─────────
+  // Exposes the inputs that drive autonomy + velocity so the UI can show a
+  // trajectory proving self-improvement, not just a static score.
+  // Capped at the last 20 cycles so the response stays lean.
+  const HISTORY_LIMIT = 20;
+  const cycleHistory: CycleHistoryPoint[] = cycles.slice(-HISTORY_LIMIT).map(c => ({
+    cycleId: c.cycleId,
+    sprintVersion: c.sprintVersion ?? null,
+    startedAt: c.startedAt ?? new Date().toISOString(),
+    stage: c.stage ?? 'unknown',
+    testPassRate: c.tests?.passRate ?? null,
+    testsTotal: (c.tests?.passed != null && c.tests?.failed != null)
+      ? (c.tests.passed + c.tests.failed)
+      : (c.tests?.total ?? null),
+    costUsd: c.cost?.totalUsd ?? null,
+    durationMs: c.durationMs ?? null,
+    hasPr: c.pr?.number != null,
+  }));
+
   return {
     metrics: [
       { key: 'meta_learning', label: 'Meta-Learning', score: metaLearningScore, description: descriptions.meta_learning, trend: metaTrend },
@@ -660,6 +701,8 @@ function computeFlywheelMetrics(projectRoot: string) {
     ],
     overallScore,
     updatedAt: new Date().toISOString(),
+    // Per-cycle history enabling trend sparklines in the flywheel dashboard
+    cycleHistory,
     // Raw counts for the Loop Data panel and debugging
     debug: {
       cycleCount: cycles.length,

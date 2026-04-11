@@ -1,71 +1,75 @@
 {
-  "version": "5.9",
-  "name": "v5.9 — Hardening & Convergence",
-  "phase": "completed",
-  "startedAt": "2026-03-27T19:48:00.000Z",
-  "completedAt": "2026-03-27T19:58:00.000Z",
-  "items": [
+  "sprints": [
     {
-      "id": "p0-1",
-      "title": "Integration Health Check & Repair",
-      "priority": "P0",
-      "status": "completed",
-      "description": "Audited all v5.x modules; all 26 exports confirmed in core/index.ts; all route registrations confirmed in v5/index.ts; resilience module added and exported."
-    },
-    {
-      "id": "p0-2",
-      "title": "Cross-Module Integration Tests",
-      "priority": "P0",
-      "status": "completed",
-      "description": "Created tests/v5/integration-cross-module.test.ts with 38 tests covering BudgetEnforcer+ModelSelector, SprintPlanner→Runner→Evaluator, WorkflowRunner concurrency, GitBranchManager+MergeQueue, ExecutionLog, KnowledgeGraph, CanaryManager, FederationManager."
-    },
-    {
-      "id": "p1-1",
-      "title": "Resilience: Circuit Breakers on External Calls",
-      "priority": "P1",
-      "status": "completed",
-      "description": "Created packages/core/src/resilience/ with RetryPolicy (exponential backoff + jitter), TimeoutWrapper (AbortController + Promise.race), HealthMonitor (rolling window failure rate + auto circuit open). Added GET /api/v5/health/services route. Exported from core/index.ts."
-    },
-    {
-      "id": "p1-2",
-      "title": "Dashboard: System Health Page",
-      "priority": "P1",
-      "status": "completed",
-      "description": "Created packages/dashboard/src/routes/health/+page.svelte with overall status banner, per-service health cards with success rate bars, auto-refresh every 10s. Added Health link to sidebar nav."
-    },
-    {
-      "id": "p2-1",
-      "title": "Version Banner in Dashboard",
-      "priority": "P2",
-      "status": "completed",
-      "description": "Updated packages/dashboard/src/routes/+page.svelte homepage with version badge (agentforge v5.9.0), sprint progress tracker, and test count badge."
-    },
-    {
-      "id": "p2-2",
-      "title": "v5.9 Sprint Record + Bump to 5.9.0",
-      "priority": "P2",
-      "status": "completed",
-      "description": "Bumped versions in package.json, plugin.json, server routes (5.8.0→5.9.0). Written sprint JSON. Final test count: 3309 passing."
+      "version": "5.9",
+      "name": "v5.9 \u2014 Hardening & Convergence",
+      "phase": "completed",
+      "startedAt": "2026-03-27T19:48:00.000Z",
+      "completedAt": "2026-03-27T19:58:00.000Z",
+      "items": [
+        {
+          "id": "p0-1",
+          "title": "Integration Health Check & Repair",
+          "priority": "P0",
+          "status": "completed",
+          "description": "Audited all v5.x modules; all 26 exports confirmed in core/index.ts; all route registrations confirmed in v5/index.ts; resilience module added and exported."
+        },
+        {
+          "id": "p0-2",
+          "title": "Cross-Module Integration Tests",
+          "priority": "P0",
+          "status": "completed",
+          "description": "Created tests/v5/integration-cross-module.test.ts with 38 tests covering BudgetEnforcer+ModelSelector, SprintPlanner\u2192Runner\u2192Evaluator, WorkflowRunner concurrency, GitBranchManager+MergeQueue, ExecutionLog, KnowledgeGraph, CanaryManager, FederationManager."
+        },
+        {
+          "id": "p1-1",
+          "title": "Resilience: Circuit Breakers on External Calls",
+          "priority": "P1",
+          "status": "completed",
+          "description": "Created packages/core/src/resilience/ with RetryPolicy (exponential backoff + jitter), TimeoutWrapper (AbortController + Promise.race), HealthMonitor (rolling window failure rate + auto circuit open). Added GET /api/v5/health/services route. Exported from core/index.ts."
+        },
+        {
+          "id": "p1-2",
+          "title": "Dashboard: System Health Page",
+          "priority": "P1",
+          "status": "completed",
+          "description": "Created packages/dashboard/src/routes/health/+page.svelte with overall status banner, per-service health cards with success rate bars, auto-refresh every 10s. Added Health link to sidebar nav."
+        },
+        {
+          "id": "p2-1",
+          "title": "Version Banner in Dashboard",
+          "priority": "P2",
+          "status": "completed",
+          "description": "Updated packages/dashboard/src/routes/+page.svelte homepage with version badge (agentforge v5.9.0), sprint progress tracker, and test count badge."
+        },
+        {
+          "id": "p2-2",
+          "title": "v5.9 Sprint Record + Bump to 5.9.0",
+          "priority": "P2",
+          "status": "completed",
+          "description": "Bumped versions in package.json, plugin.json, server routes (5.8.0\u21925.9.0). Written sprint JSON. Final test count: 3309 passing."
+        }
+      ],
+      "testCountBefore": 3283,
+      "testCountAfter": 3309,
+      "testCountDelta": 26,
+      "newTestFiles": [
+        "tests/v5/integration-cross-module.test.ts",
+        "tests/v5/resilience-v59.test.ts"
+      ],
+      "newFiles": [
+        "packages/core/src/resilience/index.ts",
+        "packages/core/src/resilience/types.ts",
+        "packages/core/src/resilience/retry-policy.ts",
+        "packages/core/src/resilience/timeout-wrapper.ts",
+        "packages/core/src/resilience/health-monitor.ts",
+        "packages/server/src/routes/v5/health-services.ts",
+        "packages/dashboard/src/routes/health/+page.svelte",
+        "tests/v5/integration-cross-module.test.ts",
+        "tests/v5/resilience-v59.test.ts"
+      ],
+      "totalCostUsd": 0,
+      "autonomous": true
     }
-  ],
-  "testCountBefore": 3283,
-  "testCountAfter": 3309,
-  "testCountDelta": 26,
-  "newTestFiles": [
-    "tests/v5/integration-cross-module.test.ts",
-    "tests/v5/resilience-v59.test.ts"
-  ],
-  "newFiles": [
-    "packages/core/src/resilience/index.ts",
-    "packages/core/src/resilience/types.ts",
-    "packages/core/src/resilience/retry-policy.ts",
-    "packages/core/src/resilience/timeout-wrapper.ts",
-    "packages/core/src/resilience/health-monitor.ts",
-    "packages/server/src/routes/v5/health-services.ts",
-    "packages/dashboard/src/routes/health/+page.svelte",
-    "tests/v5/integration-cross-module.test.ts",
-    "tests/v5/resilience-v59.test.ts"
-  ],
-  "totalCostUsd": 0,
-  "autonomous": true
+  ]
 }

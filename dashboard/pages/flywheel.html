@@ -128,7 +128,7 @@
       </div><!-- /fw-cycle-sprint-row -->
 
       <!-- Memory Stats Card -->
-      <div id="fw-memory-card" style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:24px;margin-top:20px;display:none">
+      <div id="fw-memory-card" data-testid="memory-stats-card" style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:24px;margin-top:20px;display:none">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
           <div style="display:flex;align-items:center;gap:10px">
             <span style="font-size:16px">🧠</span>
@@ -173,6 +173,38 @@
         </div>
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px" id="fw-loop-stats-grid">
           <!-- stat tiles injected by JS -->
+        </div>
+      </div>
+
+      <!-- Cycle Score Trajectory ─────────────────────────────────────────────── -->
+      <div id="fw-trajectory-card" style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-top:20px;display:none">
+        <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:15px">📈</span>
+            <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted)">Score Trajectory</span>
+          </div>
+          <span id="fw-trajectory-subtitle" style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted)">test pass rate &amp; completion per cycle · autonomy + velocity inputs</span>
+        </div>
+        <!-- Bar chart: one column per cycle, height proportional to test pass rate -->
+        <div id="fw-trajectory-chart" style="display:flex;align-items:flex-end;gap:6px;height:80px;overflow-x:auto;padding-bottom:2px;margin-bottom:14px">
+          <!-- columns injected by JS -->
+        </div>
+        <!-- Compact cycle history table -->
+        <div style="overflow-x:auto;border-top:1px solid var(--border);padding-top:12px">
+          <table class="data-table" id="fw-trajectory-table" style="border:none;font-size:11px">
+            <thead>
+              <tr>
+                <th>Sprint</th>
+                <th>Stage</th>
+                <th style="text-align:right">Pass Rate</th>
+                <th style="text-align:right">Tests</th>
+                <th style="text-align:right">Cost</th>
+                <th style="text-align:right">Duration</th>
+                <th>PR</th>
+              </tr>
+            </thead>
+            <tbody id="fw-trajectory-tbody"></tbody>
+          </table>
         </div>
       </div>
 
@@ -719,6 +751,187 @@
     });
   }
 
+  /**
+   * Renders the Cycle Score Trajectory panel.
+   * Visualises each cycle as a bar (height = test pass rate) and adds a compact
+   * history table so operators can see the raw inputs behind autonomy + velocity.
+   */
+  function renderTrajectoryPanel(history) {
+    var card = document.getElementById('fw-trajectory-card');
+    if (!card) return;
+
+    if (!history || history.length === 0) {
+      card.style.display = 'none';
+      return;
+    }
+    card.style.display = 'block';
+
+    var STAGE_COLOR = {
+      completed: 'var(--green)',
+      running:   'var(--blue)',
+      failed:    'var(--red)',
+    };
+    function stageColor(stage) {
+      return STAGE_COLOR[stage] || 'var(--text-muted)';
+    }
+    function fmtDuration(ms) {
+      if (ms == null) return '—';
+      var mins = Math.floor(ms / 60000);
+      var secs = Math.round((ms % 60000) / 1000);
+      return mins + 'm ' + secs + 's';
+    }
+    function fmtPassRate(pr) {
+      return pr != null ? Math.round(pr * 100) + '%' : '—';
+    }
+
+    // ── Bar chart ──────────────────────────────────────────────────────────
+    var chart = document.getElementById('fw-trajectory-chart');
+    if (chart) {
+      while (chart.firstChild) chart.removeChild(chart.firstChild);
+
+      var maxRate = 0;
+      for (var i = 0; i < history.length; i++) {
+        if (history[i].testPassRate != null && history[i].testPassRate > maxRate) {
+          maxRate = history[i].testPassRate;
+        }
+      }
+      if (maxRate === 0) maxRate = 1;
+
+      history.forEach(function (point, idx) {
+        var heightPct = point.testPassRate != null
+          ? Math.max(5, Math.round((point.testPassRate / maxRate) * 100))
+          : 5;
+        var color     = stageColor(point.stage);
+        var label     = point.sprintVersion ? 'v' + point.sprintVersion : point.cycleId.substring(0, 6);
+        var opacity   = 0.35 + 0.65 * ((idx + 1) / history.length);
+        var prLabel   = fmtPassRate(point.testPassRate);
+        var tipText   = label + ' · ' + point.stage +
+                        ' · pass rate ' + prLabel +
+                        (point.costUsd != null ? ' · $' + point.costUsd.toFixed(2) : '') +
+                        ' · ' + fmtDuration(point.durationMs);
+
+        var col = document.createElement('div');
+        col.style.cssText = [
+          'display:flex',
+          'flex-direction:column',
+          'align-items:center',
+          'gap:2px',
+          'min-width:36px',
+          'flex:1 0 36px',
+          'max-width:64px',
+        ].join(';');
+        col.title = tipText;
+
+        // Pass-rate label above bar
+        var pLabel = document.createElement('div');
+        pLabel.style.cssText = 'font-family:var(--font-mono);font-size:9px;font-weight:700;color:' + color + ';line-height:1;white-space:nowrap';
+        pLabel.textContent = prLabel;
+
+        // Bar container (fixed height) + bar itself
+        var barWrap = document.createElement('div');
+        barWrap.style.cssText = 'width:100%;height:48px;display:flex;align-items:flex-end';
+        var bar = document.createElement('div');
+        bar.style.cssText = [
+          'width:100%',
+          'min-height:4px',
+          'border-radius:3px 3px 0 0',
+          'background:' + color,
+          'opacity:' + opacity,
+          'height:' + heightPct + '%',
+          'transition:opacity 0.15s',
+        ].join(';');
+        if (point.hasPr) {
+          bar.style.boxShadow = '0 0 4px rgba(245,200,66,0.5)';
+        }
+        barWrap.appendChild(bar);
+
+        // Version label below bar
+        var verLabel = document.createElement('div');
+        verLabel.style.cssText = 'font-family:var(--font-mono);font-size:8px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;text-align:center';
+        verLabel.textContent = label;
+
+        col.appendChild(pLabel);
+        col.appendChild(barWrap);
+        col.appendChild(verLabel);
+        chart.appendChild(col);
+      });
+    }
+
+    // ── History table ──────────────────────────────────────────────────────
+    var tbody = document.getElementById('fw-trajectory-tbody');
+    if (tbody) {
+      while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+
+      // Newest cycle first
+      var reversed = history.slice().reverse();
+      reversed.forEach(function (point) {
+        var color = stageColor(point.stage);
+        var tr = document.createElement('tr');
+
+        function td(text, mono, extra) {
+          var cell = document.createElement('td');
+          if (mono) { cell.style.fontFamily = 'var(--font-mono)'; }
+          if (extra) { cell.style.cssText += ';' + extra; }
+          cell.textContent = text;
+          return cell;
+        }
+
+        var sprintLabel = point.sprintVersion ? 'v' + point.sprintVersion : point.cycleId.substring(0, 8) + '\u2026';
+
+        tr.appendChild(td(sprintLabel, true, 'font-weight:600;white-space:nowrap;color:var(--text-primary)'));
+
+        // Stage cell — coloured
+        var stageCell = document.createElement('td');
+        var stageSpan = document.createElement('span');
+        stageSpan.style.cssText = 'font-family:var(--font-mono);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:' + color;
+        stageSpan.textContent = point.stage;
+        stageCell.appendChild(stageSpan);
+        tr.appendChild(stageCell);
+
+        // Pass rate
+        var prCell = document.createElement('td');
+        prCell.style.cssText = 'font-family:var(--font-mono);text-align:right;color:' + (point.testPassRate != null && point.testPassRate >= 0.98 ? 'var(--green)' : point.testPassRate != null && point.testPassRate >= 0.9 ? 'var(--gold)' : point.testPassRate != null ? 'var(--red)' : 'var(--text-muted)');
+        prCell.textContent = fmtPassRate(point.testPassRate);
+        tr.appendChild(prCell);
+
+        // Tests total
+        tr.appendChild(td(point.testsTotal != null ? point.testsTotal.toLocaleString() : '—', true, 'text-align:right;color:var(--text-secondary)'));
+
+        // Cost
+        tr.appendChild(td(point.costUsd != null ? '$' + point.costUsd.toFixed(2) : '—', true, 'text-align:right;color:var(--text-secondary)'));
+
+        // Duration
+        tr.appendChild(td(fmtDuration(point.durationMs), true, 'text-align:right;color:var(--text-secondary)'));
+
+        // PR badge
+        var prBadge = document.createElement('td');
+        prBadge.style.cssText = 'font-family:var(--font-mono);color:' + (point.hasPr ? 'var(--green)' : 'var(--text-muted)');
+        prBadge.textContent = point.hasPr ? '✓' : '—';
+        tr.appendChild(prBadge);
+
+        tbody.appendChild(tr);
+      });
+    }
+  }
+
+  /**
+   * Maps a CycleSummary (from /api/v5/cycles) to the trajectory point shape
+   * expected by renderTrajectoryPanel.
+   */
+  function cycleToTrajectoryPoint(c) {
+    return {
+      cycleId:      c.cycleId,
+      sprintVersion: c.sprintVersion || null,
+      stage:        c.stage || 'unknown',
+      testPassRate: (c.tests && typeof c.tests.passRate === 'number') ? c.tests.passRate : null,
+      testsTotal:   (c.tests && typeof c.tests.total   === 'number') ? c.tests.total    : null,
+      costUsd:      (c.cost  && typeof c.cost.totalUsd  === 'number') ? c.cost.totalUsd  : null,
+      durationMs:   typeof c.durationMs === 'number' ? c.durationMs : null,
+      // hasPr: cycles with approval-pending behave like PR-gated cycles
+      hasPr:        !!c.hasApprovalPending,
+    };
+  }
+
   /** Main loader: fetches /api/v5/flywheel, /api/v5/cycles, /api/v5/sprints in parallel. */
   window.loadFlywheelPage = async function () {
     var loading  = document.getElementById('fw-loading');
@@ -732,9 +945,10 @@
 
     try {
       // ── Fetch all three data sources in parallel ──────────────────────────
+      // Fetch up to 50 cycles so the trajectory chart has full history.
       var [fwResult, cyclesResult, sprintsResult] = await Promise.allSettled([
         fetch('/api/v5/flywheel').then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }),
-        fetch('/api/v5/cycles?limit=1').then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }),
+        fetch('/api/v5/cycles?limit=50').then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }),
         fetch('/api/v5/sprints').then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }),
       ]);
 
@@ -826,13 +1040,26 @@
       // ── Loop Data panel (raw debug counts) ────────────────────
       renderLoopDataPanel(data.debug);
 
-      // ── Cycle panel (best-effort — non-fatal if missing) ──────
+      // ── Cycle Score Trajectory + Latest Cycle panel ───────────────────────
+      // Both panels source from the same /api/v5/cycles fetch (up to 50 cycles).
+      // The API returns newest-first; we reverse for the trajectory chart so
+      // bars read chronologically left→right.
       if (cyclesResult.status === 'fulfilled') {
         var cyclesJson = cyclesResult.value || {};
-        renderCyclePanel(Array.isArray(cyclesJson.cycles) ? cyclesJson.cycles : []);
+        var cycleList  = Array.isArray(cyclesJson.cycles) ? cyclesJson.cycles : [];
+
+        // Latest cycle panel — first element is newest
+        renderCyclePanel(cycleList);
+
+        // Trajectory panel — map to trajectory shape, sort oldest→newest
+        var trajectoryPoints = cycleList
+          .map(cycleToTrajectoryPoint)
+          .reverse(); // cycleList is newest-first; reverse for chronological order
+        renderTrajectoryPanel(trajectoryPoints);
       } else {
         console.warn('loadFlywheelPage: cycles fetch failed:', cyclesResult.reason);
         renderCyclePanel([]);
+        renderTrajectoryPanel([]);
       }
 
       // ── Sprint panel (best-effort — non-fatal if missing) ─────

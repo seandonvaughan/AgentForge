@@ -107,10 +107,12 @@ async function handleOrgGraph(_req: FastifyRequest, reply: FastifyReply): Promis
       }
     }
 
-    // Build nodes
+    // Build nodes — cache YAML data for the second-pass edge augmentation below.
+    const yamlCache = new Map<string, AgentYaml | null>();
     for (const agentId of allAgentIds) {
       if (nodeMap.has(agentId)) continue;
       const agentYaml = readAgentYaml(agentId);
+      yamlCache.set(agentId, agentYaml);
       const model = agentYaml?.model ?? inferModel(agentId);
       const displayName = agentYaml?.name ?? agentId;
       nodeMap.set(agentId, {
@@ -123,12 +125,33 @@ async function handleOrgGraph(_req: FastifyRequest, reply: FastifyReply): Promis
       });
     }
 
-    // Build edges: manager → [reports].
+    // Build edges from delegation.yaml (parent → [children]).
     // Edge direction is parent → child so the frontend buildTree() treats e.from as parent.
+    const edgeSet = new Set<string>(); // deduplicate by "from:to"
     for (const [manager, reports] of Object.entries(delegation)) {
       if (!Array.isArray(reports)) continue;
       for (const report of reports) {
-        edges.push({ from: manager, to: report, type: 'reports_to' });
+        const key = `${manager}:${report}`;
+        if (!edgeSet.has(key)) {
+          edgeSet.add(key);
+          edges.push({ from: manager, to: report, type: 'reports_to' });
+        }
+      }
+    }
+
+    // Augment edges from each agent's collaboration.reports_to field.
+    // These capture relationships not explicitly listed in delegation.yaml
+    // (e.g. specialist agents that report to a manager via their own YAML).
+    // Uses the cached YAML data to avoid double file reads.
+    for (const agentId of allAgentIds) {
+      const agentYaml = yamlCache.get(agentId);
+      const reportsTo = agentYaml?.collaboration?.reports_to;
+      if (reportsTo && typeof reportsTo === 'string' && nodeMap.has(reportsTo)) {
+        const key = `${reportsTo}:${agentId}`;
+        if (!edgeSet.has(key)) {
+          edgeSet.add(key);
+          edges.push({ from: reportsTo, to: agentId, type: 'reports_to' });
+        }
       }
     }
 

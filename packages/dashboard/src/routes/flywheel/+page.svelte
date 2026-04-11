@@ -37,12 +37,25 @@
     hitRate: number;
   }
 
+  interface CycleHistoryPoint {
+    cycleId: string;
+    sprintVersion: string | null;
+    startedAt: string;
+    stage: string;
+    testPassRate: number | null;
+    testsTotal: number | null;
+    costUsd: number | null;
+    durationMs: number | null;
+    hasPr: boolean;
+  }
+
   interface FlywheelData {
     metrics: FlywheelMetric[];
     updatedAt?: string;
     overallScore?: number;
     debug?: FlywheelDebug;
     memoryStats?: MemoryStats;
+    cycleHistory?: CycleHistoryPoint[];
   }
 
   const DEFAULT_METRICS: FlywheelMetric[] = [
@@ -69,6 +82,7 @@
         overallScore: data.flywheel.overallScore,
         debug: data.flywheel.debug,
         memoryStats: data.flywheel.memoryStats,
+        cycleHistory: data.flywheel.cycleHistory,
       }
     : { metrics: DEFAULT_METRICS };
   let loading = !data.flywheel; // skip skeleton when server data is available
@@ -112,6 +126,7 @@
           overallScore: raw.overallScore,
           debug: raw.debug,
           memoryStats: raw.memoryStats,
+          cycleHistory: raw.cycleHistory,
         };
       }
 
@@ -228,6 +243,26 @@
     if (d.agentCount > 0) parts.push(`${d.agentCount} agent${d.agentCount === 1 ? '' : 's'}`);
     return parts.length > 0 ? `Computed from ${parts.join(', ')}` : 'No data sources detected yet';
   })();
+
+  // ── Cycle history derived state ─────────────────────────────────────────────
+  $: cycleHistory = flywheel.cycleHistory ?? [];
+  $: passRateMax = cycleHistory.length > 0
+    ? Math.max(...cycleHistory.map(c => c.testPassRate ?? 0), 0.01)
+    : 1;
+  // Format duration into human-readable string
+  function fmtDuration(ms: number | null): string {
+    if (ms == null) return '—';
+    const mins = Math.floor(ms / 60000);
+    const secs = Math.round((ms % 60000) / 1000);
+    return `${mins}m ${secs}s`;
+  }
+  // Map stage to a colour class
+  function stageColor(stage: string): string {
+    if (stage === 'completed') return '#4caf82';
+    if (stage === 'running')   return '#4a9eff';
+    if (stage === 'failed')    return '#f06060';
+    return '#6b7280';
+  }
 </script>
 
 <svelte:head><title>Flywheel — AgentForge</title></svelte:head>
@@ -390,6 +425,91 @@
       <!-- Link to full memory browser -->
       <div class="memory-card-footer">
         <a href="/memory" class="mem-link">View all memory entries →</a>
+      </div>
+    </div>
+  {/if}
+
+  <!-- ── Cycle Score Trajectory ────────────────────────────────────────────── -->
+  {#if cycleHistory.length > 0}
+    <div class="card trajectory-card" data-testid="cycle-history-panel">
+      <div class="trajectory-header">
+        <h2 class="stats-title" style="margin:0">📈 Score Trajectory</h2>
+        <span class="trajectory-subtitle">
+          Test pass rate &amp; completion status per cycle · autonomy + velocity inputs
+        </span>
+      </div>
+
+      <!-- Sparkline bar chart — one bar per cycle, height = test pass rate -->
+      <div class="trajectory-chart" aria-label="Cycle test pass rate history">
+        {#each cycleHistory as point, idx (point.cycleId)}
+          {@const heightPct = point.testPassRate != null
+            ? Math.max(4, Math.round((point.testPassRate / passRateMax) * 100))
+            : 4}
+          {@const passLabel = point.testPassRate != null
+            ? `${Math.round(point.testPassRate * 100)}%`
+            : 'no tests'}
+          {@const color = stageColor(point.stage)}
+          {@const opacity = 0.35 + 0.65 * ((idx + 1) / cycleHistory.length)}
+          <div
+            class="trajectory-col"
+            title="{point.sprintVersion ? 'v' + point.sprintVersion : point.cycleId.slice(0, 8)} · {point.stage} · pass rate {passLabel} · cost {point.costUsd != null ? '$' + point.costUsd.toFixed(2) : '—'} · {fmtDuration(point.durationMs)}"
+          >
+            <div class="trajectory-passrate-label" style="color: {color}">
+              {passLabel}
+            </div>
+            <div class="trajectory-bar-wrap">
+              <div
+                class="trajectory-bar"
+                style="height: {heightPct}%; background: {color}; opacity: {opacity}"
+                class:trajectory-bar--pr={point.hasPr}
+              ></div>
+            </div>
+            <div class="trajectory-ver">
+              {point.sprintVersion ? 'v' + point.sprintVersion : point.cycleId.slice(0, 6)}
+            </div>
+          </div>
+        {/each}
+      </div>
+
+      <!-- Compact table view of cycle history -->
+      <div class="trajectory-table-wrap">
+        <table class="trajectory-table">
+          <thead>
+            <tr>
+              <th>Sprint</th>
+              <th>Stage</th>
+              <th>Pass Rate</th>
+              <th>Cost</th>
+              <th>Duration</th>
+              <th>PR</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each [...cycleHistory].reverse() as point (point.cycleId)}
+              <tr>
+                <td class="cy-sprint">
+                  {point.sprintVersion ? 'v' + point.sprintVersion : point.cycleId.slice(0, 8) + '…'}
+                </td>
+                <td>
+                  <span class="cy-stage" style="color: {stageColor(point.stage)}">
+                    {point.stage}
+                  </span>
+                </td>
+                <td class="cy-mono">
+                  {point.testPassRate != null ? Math.round(point.testPassRate * 100) + '%' : '—'}
+                  {#if point.testsTotal != null}
+                    <span class="cy-sub">({point.testsTotal} tests)</span>
+                  {/if}
+                </td>
+                <td class="cy-mono">
+                  {point.costUsd != null ? '$' + point.costUsd.toFixed(2) : '—'}
+                </td>
+                <td class="cy-mono">{fmtDuration(point.durationMs)}</td>
+                <td class="cy-mono">{point.hasPr ? '✓' : '—'}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
       </div>
     </div>
   {/if}
@@ -691,5 +811,129 @@
   .mem-link:hover {
     opacity: 1;
     text-decoration: underline;
+  }
+
+  /* ── Cycle Score Trajectory card ─────────────────────────────────────────── */
+  .trajectory-card {
+    margin-bottom: var(--space-4);
+    padding: var(--space-5) var(--space-6);
+  }
+  .trajectory-header {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3);
+    margin-bottom: var(--space-5);
+    flex-wrap: wrap;
+  }
+  .trajectory-subtitle {
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+  }
+
+  /* Bar chart */
+  .trajectory-chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+    height: 80px;
+    padding-bottom: var(--space-1);
+    margin-bottom: var(--space-4);
+    overflow-x: auto;
+  }
+  .trajectory-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    min-width: 36px;
+    flex: 1 0 36px;
+    max-width: 64px;
+  }
+  .trajectory-passrate-label {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .trajectory-bar-wrap {
+    width: 100%;
+    height: 48px;
+    display: flex;
+    align-items: flex-end;
+  }
+  .trajectory-bar {
+    width: 100%;
+    min-height: 4px;
+    border-radius: 3px 3px 0 0;
+    transition: opacity 0.15s;
+  }
+  .trajectory-bar--pr {
+    /* Gold shimmer on bars where a PR was shipped */
+    box-shadow: 0 0 4px rgba(245, 200, 66, 0.5);
+  }
+  .trajectory-bar:hover {
+    opacity: 1 !important;
+    filter: brightness(1.2);
+  }
+  .trajectory-ver {
+    font-family: var(--font-mono);
+    font-size: 8px;
+    color: var(--color-text-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    text-align: center;
+  }
+
+  /* Compact history table */
+  .trajectory-table-wrap {
+    overflow-x: auto;
+    border-top: 1px solid var(--color-border);
+    padding-top: var(--space-3);
+    margin-top: var(--space-1);
+  }
+  .trajectory-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-xs);
+  }
+  .trajectory-table th {
+    text-align: left;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: var(--space-1) var(--space-2);
+    border-bottom: 1px solid var(--color-border);
+    white-space: nowrap;
+  }
+  .trajectory-table td {
+    padding: var(--space-1) var(--space-2);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
+    vertical-align: middle;
+  }
+  .cy-sprint {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: var(--color-text);
+    white-space: nowrap;
+  }
+  .cy-stage {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .cy-mono {
+    font-family: var(--font-mono);
+    color: var(--color-text-muted);
+    white-space: nowrap;
+  }
+  .cy-sub {
+    opacity: 0.55;
+    margin-left: 3px;
   }
 </style>
