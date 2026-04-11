@@ -6,7 +6,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = join(__dirname, '../../../');
+const DEFAULT_PROJECT_ROOT = join(__dirname, '../../../');
 
 interface MemoryEntry {
   id?: string;
@@ -28,9 +28,6 @@ interface MemoryEntry {
 
 /** Maximum entries returned by the v5 memory endpoint. */
 const V5_MEMORY_LIMIT = 200;
-
-const MEMORIES_JSON_PATH = join(PROJECT_ROOT, '.agentforge/data/memories.json');
-const MEMORY_JSONL_DIR = join(PROJECT_ROOT, '.agentforge/memory');
 
 /**
  * Derive a human-readable summary and category from a JSONL entry's type and
@@ -94,15 +91,15 @@ function _deriveJsonlMeta(
  * newest-first (by createdAt). Each entry gets a derived human-readable
  * `summary` and inferred `category` so dashboard filters work out-of-the-box.
  */
-function readJsonlMemories(): MemoryEntry[] {
-  if (!existsSync(MEMORY_JSONL_DIR)) return [];
+function readJsonlMemories(memoryDir: string): MemoryEntry[] {
+  if (!existsSync(memoryDir)) return [];
 
   const entries: MemoryEntry[] = [];
   try {
-    const files = readdirSync(MEMORY_JSONL_DIR).filter(f => f.endsWith('.jsonl'));
+    const files = readdirSync(memoryDir).filter(f => f.endsWith('.jsonl'));
     for (const filename of files) {
       try {
-        const raw = readFileSync(join(MEMORY_JSONL_DIR, filename), 'utf8');
+        const raw = readFileSync(join(memoryDir, filename), 'utf8');
         const lines = raw.split('\n').filter(l => l.trim().length > 0);
         for (const line of lines) {
           try {
@@ -165,17 +162,20 @@ function readJsonlMemories(): MemoryEntry[] {
  *   searchTerm — lowercase substring match across key/value/summary/tags
  *   agentFilter — exact match on `source` / `agentId`
  */
-async function* streamJsonlMemories(opts: {
-  typeFilter?: string;
-  sinceMs?: number;
-  searchTerm?: string;
-  agentFilter?: string;
-} = {}): AsyncGenerator<MemoryEntry> {
-  if (!existsSync(MEMORY_JSONL_DIR)) return;
+async function* streamJsonlMemories(
+  memoryDir: string,
+  opts: {
+    typeFilter?: string;
+    sinceMs?: number;
+    searchTerm?: string;
+    agentFilter?: string;
+  } = {},
+): AsyncGenerator<MemoryEntry> {
+  if (!existsSync(memoryDir)) return;
 
   let files: string[];
   try {
-    files = readdirSync(MEMORY_JSONL_DIR).filter(f => f.endsWith('.jsonl')).sort();
+    files = readdirSync(memoryDir).filter(f => f.endsWith('.jsonl')).sort();
   } catch {
     return;
   }
@@ -184,7 +184,7 @@ async function* streamJsonlMemories(opts: {
   const hasSince = typeof sinceMs === 'number' && !Number.isNaN(sinceMs);
 
   for (const filename of files) {
-    const filePath = join(MEMORY_JSONL_DIR, filename);
+    const filePath = join(memoryDir, filename);
     let rl: ReturnType<typeof createInterface> | undefined;
     try {
       const fileStream = createReadStream(filePath, { encoding: 'utf8' });
@@ -253,10 +253,10 @@ async function* streamJsonlMemories(opts: {
 }
 
 /** Read structured memory entries from the canonical data file. */
-function readMemoriesJson(): MemoryEntry[] {
-  if (!existsSync(MEMORIES_JSON_PATH)) return [];
+function readMemoriesJson(memoriesJsonPath: string): MemoryEntry[] {
+  if (!existsSync(memoriesJsonPath)) return [];
   try {
-    const raw = JSON.parse(readFileSync(MEMORIES_JSON_PATH, 'utf8')) as {
+    const raw = JSON.parse(readFileSync(memoriesJsonPath, 'utf8')) as {
       entries?: Array<{
         id?: string;
         filename?: string;
@@ -288,9 +288,12 @@ function readMemoriesJson(): MemoryEntry[] {
 
 export async function memoryRoutes(
   app: FastifyInstance,
-  opts: { adapter: SqliteAdapter }
+  opts: { adapter: SqliteAdapter; projectRoot?: string }
 ) {
   const { adapter } = opts;
+  const root = opts.projectRoot ?? DEFAULT_PROJECT_ROOT;
+  const MEMORIES_JSON_PATH = join(root, '.agentforge/data/memories.json');
+  const MEMORY_JSONL_DIR = join(root, '.agentforge/memory');
 
   app.get('/api/v1/memory', async (req, reply) => {
     const query = req.query as { search?: string; agent?: string };
@@ -321,14 +324,14 @@ export async function memoryRoutes(
 
     // Secondary: structured memories.json (operator-curated + autonomous-loop learned)
     if (entries.length === 0) {
-      const fileEntries = readMemoriesJson();
+      const fileEntries = readMemoriesJson(MEMORIES_JSON_PATH);
       entries.push(...fileEntries);
     }
 
     // Tertiary: raw session file listing (legacy fallback)
     if (entries.length === 0) {
       try {
-        const sessionsDir = join(PROJECT_ROOT, '.agentforge/sessions');
+        const sessionsDir = join(root, '.agentforge/sessions');
         if (existsSync(sessionsDir)) {
           const files = readdirSync(sessionsDir).filter(f => f.endsWith('.json'));
           for (const filename of files) {
@@ -421,7 +424,7 @@ export async function memoryRoutes(
     }
 
     // Source 1: JSONL files — authoritative cross-cycle memory store
-    for (const e of readJsonlMemories()) addEntry(e);
+    for (const e of readJsonlMemories(MEMORY_JSONL_DIR)) addEntry(e);
 
     // Source 2: KV store (real-time agent-written memory)
     try {
@@ -446,14 +449,14 @@ export async function memoryRoutes(
 
     // Source 3: memories.json — always merged (not a fallback) so operator-curated
     // knowledge surfaces alongside live cycle data regardless of JSONL volume.
-    for (const e of readMemoriesJson()) {
+    for (const e of readMemoriesJson(MEMORIES_JSON_PATH)) {
       addEntry({ ...e, id: e.id ?? e.key });
     }
 
     // Quaternary: raw session file listing (legacy fallback)
     if (entries.length === 0) {
       try {
-        const sessionsDir = join(PROJECT_ROOT, '.agentforge/sessions');
+        const sessionsDir = join(root, '.agentforge/sessions');
         if (existsSync(sessionsDir)) {
           const files = readdirSync(sessionsDir).filter(f => f.endsWith('.json'));
           for (const filename of files) {
@@ -559,7 +562,7 @@ export async function memoryRoutes(
     reply.raw.setHeader('Transfer-Encoding', 'chunked');
 
     try {
-      for await (const entry of streamJsonlMemories({ typeFilter, sinceMs, searchTerm, agentFilter })) {
+      for await (const entry of streamJsonlMemories(MEMORY_JSONL_DIR, { typeFilter, sinceMs, searchTerm, agentFilter })) {
         reply.raw.write(JSON.stringify(entry) + '\n');
       }
     } catch {

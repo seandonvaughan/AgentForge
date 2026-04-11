@@ -204,13 +204,15 @@ describe('stripMarkdownFields', () => {
 
 describe('MARKDOWN_FIELDS', () => {
   it('includes all expected phase fields', () => {
-    expect(MARKDOWN_FIELDS.has('findings')).toBe(true);     // audit
-    expect(MARKDOWN_FIELDS.has('plan')).toBe(true);         // plan
-    expect(MARKDOWN_FIELDS.has('strategy')).toBe(true);     // test
-    expect(MARKDOWN_FIELDS.has('review')).toBe(true);       // review
-    expect(MARKDOWN_FIELDS.has('rationale')).toBe(true);    // gate
+    expect(MARKDOWN_FIELDS.has('findings')).toBe(true);      // audit
+    expect(MARKDOWN_FIELDS.has('plan')).toBe(true);          // plan
+    expect(MARKDOWN_FIELDS.has('strategy')).toBe(true);      // test
+    expect(MARKDOWN_FIELDS.has('review')).toBe(true);        // review
+    expect(MARKDOWN_FIELDS.has('rationale')).toBe(true);     // gate
     expect(MARKDOWN_FIELDS.has('retrospective')).toBe(true); // learn
-    expect(MARKDOWN_FIELDS.has('response')).toBe(true);     // fallback
+    expect(MARKDOWN_FIELDS.has('response')).toBe(true);      // fallback
+    expect(MARKDOWN_FIELDS.has('error')).toBe(true);         // failed gate/phase retry message
+    expect(MARKDOWN_FIELDS.has('summary')).toBe(true);       // top-level summary string
   });
 });
 
@@ -218,5 +220,48 @@ describe('ALWAYS_STRIP', () => {
   it('includes agentRuns and itemResults', () => {
     expect(ALWAYS_STRIP.has('agentRuns')).toBe(true);
     expect(ALWAYS_STRIP.has('itemResults')).toBe(true);
+  });
+});
+
+// ─── error / summary field handling ───────────────────────────────��──────────
+
+describe('error field in markdownSections', () => {
+  it('renders failed gate error as a prose section', () => {
+    const data = {
+      phase: 'gate',
+      status: 'failed',
+      error: 'findings for retry: The code reviewer identified a compile-blocking bug.',
+    };
+    const result = markdownSections(data);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.label).toBe('error');
+    expect(result[0]!.content).toContain('findings for retry');
+  });
+
+  it('skips empty error string', () => {
+    const data = { phase: 'gate', status: 'failed', error: '' };
+    expect(markdownSections(data)).toHaveLength(0);
+  });
+
+  it('renders summary field as a prose section', () => {
+    const data = { phase: 'execute', summary: '## Summary\n\nAll items completed.' };
+    const result = markdownSections(data);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.label).toBe('summary');
+  });
+});
+
+describe('error field in stripMarkdownFields', () => {
+  it('strips a non-empty error string from the raw JSON view', () => {
+    const data = { phase: 'gate', status: 'failed', error: 'findings for retry: ...' };
+    const result = stripMarkdownFields(data);
+    expect(result).not.toHaveProperty('error');
+    expect(result).toHaveProperty('status', 'failed');
+  });
+
+  it('keeps error field when value is empty (will not be rendered)', () => {
+    const data = { phase: 'gate', error: '' };
+    const result = stripMarkdownFields(data);
+    expect(result).toHaveProperty('error', '');
   });
 });

@@ -189,10 +189,16 @@ function parseDelegationYaml(content: string): Record<string, string[]> {
   return result;
 }
 
-export const load: PageServerLoad = () => {
-  const root = findProjectRoot();
-  const agentsDir = join(root, '.agentforge', 'agents');
-  const delegationPath = join(root, '.agentforge', 'config', 'delegation.yaml');
+/**
+ * Build the org graph (nodes + edges) from agent YAMLs and delegation.yaml.
+ *
+ * Extracted from `load` so tests can pass an explicit `projectRoot` without
+ * having to change `process.cwd()`. The `load` function below calls this with
+ * the auto-detected root.
+ */
+export function buildOrgGraph(projectRoot: string): { nodes: OrgNodeData[]; edges: OrgEdgeData[] } {
+  const agentsDir = join(projectRoot, '.agentforge', 'agents');
+  const delegationPath = join(projectRoot, '.agentforge', 'config', 'delegation.yaml');
 
   const nodes: OrgNodeData[] = [];
   // Cache raw YAML per agent for the two collaboration parsing passes below
@@ -253,4 +259,6 @@ export const load: PageServerLoad = () => {
   }
 
   return { nodes, edges };
-};
+}
+
+export const load: PageServerLoad = () => buildOrgGraph(findProjectRoot());

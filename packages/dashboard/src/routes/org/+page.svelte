@@ -15,37 +15,45 @@
     cycleRefs?: string[];
   }
 
-  // Server-provided initial data (populated by +page.server.ts from the filesystem).
-  // Falls back to empty arrays when the server file is not active (pure SPA mode).
-  const serverNodes: OrgNode[] = (data.nodes as OrgNodeData[] as OrgNode[]) ?? [];
-  const serverEdges: OrgEdge[] = (data.edges as OrgEdgeData[] as OrgEdge[]) ?? [];
-
-  // Compute the initial tree from server data at module-init time so the page
-  // renders with the full hierarchy on first paint — no loading flash.
-  // buildTree is a function declaration (hoisted) so this call is valid here.
-  const _initResult = serverNodes.length > 0
-    ? buildTree(serverNodes, serverEdges)
-    : { roots: [] as TreeNode[], orphans: [] as TreeNode[] };
-
-  // Compute the initial collapsed set inline (depth >= 3 nodes auto-collapsed).
-  // We cannot call autoCollapse here because collapsed $state is not yet defined.
-  const _initCollapsed = new Set<string>();
-  (function _walkCollapse(nodes: TreeNode[]) {
-    for (const n of nodes) {
-      if (n.depth >= 3 && n.children.length > 0) _initCollapsed.add(n.id);
-      _walkCollapse(n.children);
-    }
-  })(_initResult.roots);
-
-  let roots: TreeNode[] = $state(_initResult.roots);
-  let orphans: TreeNode[] = $state(_initResult.orphans);  // agents not in any delegation edge
-  // Show loading only when there is no server data — e.g. pure SPA / no backend.
-  let loading = $state(serverNodes.length === 0);
+  // ── Reactive state — populated from server data by $effect.pre below ────────
+  let roots: TreeNode[] = $state([]);
+  let orphans: TreeNode[] = $state([]); // agents not in any delegation edge
+  // loading=true until $effect.pre syncs server data (or onMount falls back to API)
+  let loading = $state(true);
   let error: string | null = $state(null);
-  let totalNodes = $state(serverNodes.length);
-  let totalEdges = $state(serverEdges.length);
+  let totalNodes = $state(0);
+  let totalEdges = $state(0);
   let orphansCollapsed = $state(true);
-  let collapsed: Set<string> = $state(_initCollapsed);
+  let collapsed: Set<string> = $state(new Set());
+
+  // ── Sync server data into state before first render ────────────────────────
+  // $effect.pre runs synchronously before each DOM update so SSR-provided data
+  // is in place before the first paint (no loading flash). It also re-fires when
+  // SvelteKit re-runs the server load (e.g. after invalidate()), keeping the tree
+  // in sync. buildTree is a hoisted function declaration — available here.
+  $effect.pre(() => {
+    const nodes: OrgNode[] = (data.nodes as OrgNodeData[] as OrgNode[]) ?? [];
+    const edges: OrgEdge[] = (data.edges as OrgEdgeData[] as OrgEdge[]) ?? [];
+
+    if (nodes.length === 0) return; // no server data — onMount falls back to API
+
+    const result = buildTree(nodes, edges);
+    roots = result.roots;
+    orphans = result.orphans;
+    totalNodes = nodes.length;
+    totalEdges = edges.length;
+
+    // Auto-collapse branches at depth ≥ 3
+    const set = new Set<string>();
+    (function walk(ns: TreeNode[]) {
+      for (const n of ns) {
+        if (n.depth >= 3 && n.children.length > 0) set.add(n.id);
+        walk(n.children);
+      }
+    })(result.roots);
+    collapsed = set;
+    loading = false;
+  });
 
   const MODEL_COLORS: Record<string, string> = {
     opus: '#f5c842', sonnet: '#4a9eff', haiku: '#4caf82',
@@ -195,10 +203,10 @@
   }
 
   onMount(() => {
-    // Server data is already populated at init time — no network round-trip needed.
-    // Only fall back to the API fetch when no server data is available (pure SPA
-    // deployment mode where +page.server.ts does not run).
-    if (serverNodes.length === 0) load();
+    // $effect.pre already synced server data before this runs (loading=false).
+    // Only fall back to the API fetch when no server data was available — i.e.
+    // pure SPA deployment mode where +page.server.ts does not run.
+    if (loading) load();
   });
 </script>
 

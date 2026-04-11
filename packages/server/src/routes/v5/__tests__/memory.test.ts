@@ -397,3 +397,131 @@ describe('GET /api/v5/memory', () => {
     expect(body.data[0]!.id).toBe('shared-id');
   });
 });
+
+// ── GET /api/v5/memory/stream ─────────────────────────────────────────────────
+//
+// Streaming NDJSON endpoint — returns one JSON object per line without
+// buffering the full corpus.  Filters are applied inline during the read.
+
+describe('GET /api/v5/memory/stream', () => {
+  /** Parse an NDJSON response body into an array of parsed objects. */
+  function parseNdjson(body: string): Array<Record<string, unknown>> {
+    return body
+      .split('\n')
+      .filter(l => l.trim().length > 0)
+      .map(l => JSON.parse(l) as Record<string, unknown>);
+  }
+
+  it('returns 200 with empty body when memory directory does not exist', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory/stream' });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toContain('application/x-ndjson');
+    expect(res.body.trim()).toBe('');
+  });
+
+  it('streams entries from .jsonl files as NDJSON', async () => {
+    appendJsonlEntry('cycle-outcome', {
+      id: 'stream-001',
+      value: JSON.stringify({ sprintVersion: '10.0.0', stage: 'completed' }),
+      source: 'cycle-abc',
+      tags: ['cycle'],
+      createdAt: '2026-04-08T10:00:00.000Z',
+    });
+    appendJsonlEntry('gate-verdict', {
+      id: 'stream-002',
+      value: 'APPROVE',
+      source: 'cycle-abc',
+      createdAt: '2026-04-08T10:01:00.000Z',
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory/stream' });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toContain('application/x-ndjson');
+
+    const entries = parseNdjson(res.body);
+    expect(entries.length).toBe(2);
+
+    const ids = entries.map(e => e['id']);
+    expect(ids).toContain('stream-001');
+    expect(ids).toContain('stream-002');
+  });
+
+  it('?type filter narrows the stream to matching entries only', async () => {
+    appendJsonlEntry('cycle-outcome',  { id: 'co-1', value: 'x', createdAt: '2026-04-08T10:00:00.000Z' });
+    appendJsonlEntry('gate-verdict',   { id: 'gv-1', value: 'y', createdAt: '2026-04-08T10:01:00.000Z' });
+    appendJsonlEntry('review-finding', { id: 'rf-1', value: 'z', createdAt: '2026-04-08T10:02:00.000Z' });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory/stream?type=gate-verdict' });
+    const entries = parseNdjson(res.body);
+    expect(entries.length).toBe(1);
+    expect(entries[0]!['id']).toBe('gv-1');
+  });
+
+  it('?search filter applies case-insensitive substring match', async () => {
+    appendJsonlEntry('cycle-outcome', { id: 'needle-match', value: 'contains-NEEDLE-word', createdAt: '2026-04-08T10:00:00.000Z' });
+    appendJsonlEntry('cycle-outcome', { id: 'no-match',     value: 'unrelated-content',   createdAt: '2026-04-08T10:01:00.000Z' });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory/stream?search=needle' });
+    const entries = parseNdjson(res.body);
+    expect(entries.length).toBe(1);
+    expect(entries[0]!['id']).toBe('needle-match');
+  });
+
+  it('?agentId filters by source field', async () => {
+    appendJsonlEntry('cycle-outcome', { id: 'agent-a', value: 'x', source: 'agent-alpha', createdAt: '2026-04-08T10:00:00.000Z' });
+    appendJsonlEntry('cycle-outcome', { id: 'agent-b', value: 'y', source: 'agent-beta',  createdAt: '2026-04-08T10:01:00.000Z' });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory/stream?agentId=agent-alpha' });
+    const entries = parseNdjson(res.body);
+    expect(entries.length).toBe(1);
+    expect(entries[0]!['id']).toBe('agent-a');
+  });
+
+  it('?agent (legacy alias) filters the same as ?agentId', async () => {
+    appendJsonlEntry('cycle-outcome', { id: 'legacy-match', value: 'x', source: 'agent-legacy', createdAt: '2026-04-08T10:00:00.000Z' });
+    appendJsonlEntry('cycle-outcome', { id: 'other',        value: 'y', source: 'other',         createdAt: '2026-04-08T10:01:00.000Z' });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory/stream?agent=agent-legacy' });
+    const entries = parseNdjson(res.body);
+    expect(entries.length).toBe(1);
+    expect(entries[0]!['id']).toBe('legacy-match');
+  });
+
+  it('?since filters entries by createdAt timestamp', async () => {
+    appendJsonlEntry('cycle-outcome', { id: 'old', value: 'x', createdAt: '2026-04-01T00:00:00.000Z' });
+    appendJsonlEntry('cycle-outcome', { id: 'new', value: 'y', createdAt: '2026-04-10T00:00:00.000Z' });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v5/memory/stream?since=2026-04-05T00:00:00.000Z',
+    });
+    const entries = parseNdjson(res.body);
+    expect(entries.length).toBe(1);
+    expect(entries[0]!['id']).toBe('new');
+  });
+
+  it('each streamed line is a valid JSON object with required fields', async () => {
+    appendJsonlEntry('learned-fact', {
+      id: 'lf-001',
+      value: 'Test values always cover edge cases.',
+      source: 'agent-reviewer',
+      tags: ['lesson', 'testing'],
+      createdAt: '2026-04-08T12:00:00.000Z',
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory/stream' });
+    const entries = parseNdjson(res.body);
+    expect(entries.length).toBe(1);
+
+    const entry = entries[0]!;
+    expect(typeof entry['id']).toBe('string');
+    expect(typeof entry['key']).toBe('string');
+    expect(typeof entry['type']).toBe('string');
+    expect(typeof entry['createdAt']).toBe('string');
+    // source and agentId must both be set when source is present
+    expect(entry['source']).toBe('agent-reviewer');
+    expect(entry['agentId']).toBe('agent-reviewer');
+    // tags must be forwarded
+    expect(entry['tags']).toEqual(['lesson', 'testing']);
+  });
+});

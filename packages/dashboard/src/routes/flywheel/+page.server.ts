@@ -113,7 +113,8 @@ function findProjectRoot(): string {
 
 // ── Metric computation ────────────────────────────────────────────────────────
 
-function computeMetrics(projectRoot: string): FlywheelPayload {
+/** @internal Exported for unit testing only — do not call from client code. */
+export function computeMetrics(projectRoot: string): FlywheelPayload {
   // ── Cycles ──────────────────────────────────────────────────────────────────
   const cyclesDir = join(projectRoot, '.agentforge/cycles');
   const cycles: CycleRecord[] = [];

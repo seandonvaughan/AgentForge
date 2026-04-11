@@ -10,14 +10,23 @@
   let filterModel: '' | 'opus' | 'sonnet' | 'haiku' = $state('');
 
   // refreshedAgents is null until the first API fetch completes.
-  // liveAgents always prefers the API result when available, falling back to
-  // the SSR-loaded data from +page.server.ts (populated when SvelteKit SSR is
-  // running, e.g. in `vite dev`; empty when serving built assets as a SPA).
+  // null   → API has not responded yet (show SSR data)
+  // []     → API returned empty (preserved as empty — real empty state)
+  // [...]  → API returned agents (prefer over SSR data)
   let refreshedAgents = $state<AgentListItem[] | null>(null);
   let refreshing = $state(false);
   let refreshError = $state<string | null>(null);
 
-  let liveAgents = $derived(refreshedAgents ?? data.agents ?? []);
+  // Prefer API data when it is non-empty; otherwise use SSR data from
+  // +page.server.ts. This avoids the silent-override bug where an empty API
+  // response (e.g., backend unreachable → 502 caught, or wrong projectRoot →
+  // 200 { data: [] }) clobbers valid SSR-loaded agents. The ?? operator is
+  // insufficient because [] is not nullish — length-check is required.
+  let liveAgents = $derived(
+    refreshedAgents !== null && refreshedAgents.length > 0
+      ? refreshedAgents
+      : (data.agents ?? [])
+  );
 
   // Auto-fetch on mount so the list is populated even when SSR is not running
   // (e.g. when the SvelteKit build is served as static files via Fastify).
@@ -34,6 +43,7 @@
       refreshedAgents = json.data ?? [];
     } catch (e) {
       refreshError = e instanceof Error ? e.message : 'Refresh failed';
+      // Leave refreshedAgents as null so SSR data stays visible
     } finally {
       refreshing = false;
     }

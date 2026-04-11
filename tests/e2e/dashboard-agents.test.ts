@@ -17,12 +17,26 @@ test.describe('Agents List Page', () => {
 
     await page.waitForLoadState('load').catch(() => {});
 
-    // Look for heading
-    const heading = page.locator('h1, h2').filter({ hasText: /Agent/i }).first();
+    // Heading must be present — confirms the /agents route rendered
+    const heading = page.locator('h1').filter({ hasText: /Agents/i }).first();
+    await expect(heading).toBeVisible();
+  });
 
-    if (await heading.isVisible().catch(() => false)) {
-      await expect(heading).toBeVisible();
-    }
+  test('displays real agents from .agentforge/agents/*.yaml — not empty', async ({ page }) => {
+    await page.goto('/agents');
+
+    // Allow SSR + any client-side refresh to settle
+    await page.waitForLoadState('networkidle').catch(() => {});
+
+    // The agents table must be present with at least one data row.
+    // .agentforge/agents/ contains 100+ YAML definitions, so any non-zero
+    // count confirms real files are being read and rendered.
+    const table = page.locator('table.data-table');
+    await expect(table).toBeVisible();
+
+    const rows = table.locator('tbody tr');
+    const rowCount = await rows.count();
+    expect(rowCount, 'Expected at least one agent row from .agentforge/agents/*.yaml').toBeGreaterThan(0);
   });
 
   test('displays agents list or grid', async ({ page }) => {
@@ -30,100 +44,78 @@ test.describe('Agents List Page', () => {
 
     await page.waitForLoadState('load').catch(() => {});
 
-    // Look for agents table, grid, or list
-    const agentsList = page.locator('[role="grid"], [role="table"], [class*="list"], [class*="agents"], [data-testid*="agent"]').first();
-    const agentCard = page.locator('[class*="agent"], [class*="card"], [role="button"]').first();
-    const emptyState = page.locator('text=/No agent|No data|empty/i').first();
-
-    const hasAgentsList = await agentsList.isVisible().catch(() => false);
-    const hasAgentCard = await agentCard.isVisible().catch(() => false);
-    const hasEmptyState = await emptyState.isVisible().catch(() => false);
-
-    // v6.7.4: replaced fake disjunction with real load assertion
-    const _heading = page.locator("h1, h2").first();
-    await expect(_heading).toBeVisible();
+    // Agents table must be visible
+    const table = page.locator('table.data-table');
+    await expect(table).toBeVisible();
   });
 
-  test('displays agent names and roles', async ({ page }) => {
+  test('displays agent names from YAML — real text not placeholders', async ({ page }) => {
     await page.goto('/agents');
 
-    await page.waitForLoadState('load').catch(() => {});
+    await page.waitForLoadState('networkidle').catch(() => {});
 
-    // Look for agent names (e.g., "CTO Agent", "Backend Agent")
-    const agentNames = page.locator('text=/Agent|CTO|Backend|Frontend|QA|Platform/i');
-    const agentNameCount = await agentNames.count();
+    // The table rows must include agent names from YAML files.
+    // .agentforge/agents/ contains definitions for "Frontend Developer",
+    // "Lead Architect", "VP Engineering", etc. At least one row must be visible.
+    const table = page.locator('table.data-table');
+    await expect(table).toBeVisible();
 
-    if (agentNameCount > 0) {
-      await expect(agentNames.first()).toBeVisible();
-    }
+    const firstRow = table.locator('tbody tr').first();
+    await expect(firstRow).toBeVisible();
 
-    // Look for roles or capabilities
-    const roleElements = page.locator('text=/role|capability|responsible|manages/i');
-    const roleCount = await roleElements.count();
-
-    if (roleCount > 0) {
-      await expect(roleElements.first()).toBeVisible();
-    }
+    // First cell in a row is the Name column (font-weight: 600)
+    const nameCell = firstRow.locator('td').first();
+    const name = await nameCell.textContent();
+    expect(name?.trim(), 'Name cell must not be empty — real agent name expected').toBeTruthy();
   });
 
-  test('agent list items are clickable', async ({ page }) => {
+  test('agent rows are clickable and navigate to detail page', async ({ page }) => {
     await page.goto('/agents');
 
+    await page.waitForLoadState('networkidle').catch(() => {});
+
+    const table = page.locator('table.data-table');
+    await expect(table).toBeVisible();
+
+    const firstRow = table.locator('tbody tr').first();
+    await expect(firstRow).toBeVisible();
+
+    // Rows are keyboard-accessible with role="button" and tabindex="0"
+    await expect(firstRow).toHaveAttribute('tabindex', '0');
+
+    // Click navigates to /agents/:id
+    await firstRow.click();
     await page.waitForLoadState('load').catch(() => {});
-
-    // Find first agent item (link or button)
-    const agentLink = page.locator('a, button, [role="button"]').filter({ hasText: /Agent|CTO|Backend|Frontend/i }).first();
-
-    if (await agentLink.isVisible()) {
-      await expect(agentLink).toBeEnabled();
-
-      // Try clicking to verify navigation
-      const href = await agentLink.getAttribute('href');
-      if (href) {
-        await expect(agentLink).toHaveAttribute('href');
-      }
-    }
+    expect(page.url()).toMatch(/\/agents\//);
   });
 
-  test('displays agent status or activity indicators', async ({ page }) => {
+  test('model tier badges are present on agent rows', async ({ page }) => {
     await page.goto('/agents');
 
-    await page.waitForLoadState('load').catch(() => {});
+    await page.waitForLoadState('networkidle').catch(() => {});
 
-    // Look for status badges or activity indicators
-    const statusBadges = page.locator('[class*="badge"], [class*="status"]');
-    const statusText = page.locator('text=/active|idle|busy|available/i');
-    const activityIndicators = page.locator('[class*="indicator"], [class*="active"], [data-testid*="status"]');
-    const heading = page.locator('h1, h2').first();
+    const table = page.locator('table.data-table');
+    await expect(table).toBeVisible();
 
-    const badgeCount = await statusBadges.count();
-    const statusCount = await statusText.count();
-    const indicatorCount = await activityIndicators.count();
-    const hasHeading = await heading.isVisible().catch(() => false);
-
-    // Should have at least a heading
-    expect(badgeCount > 0 || statusCount > 0 || indicatorCount > 0 || hasHeading).toBeTruthy();
+    // Model badges (opus / sonnet / haiku) must appear on rows
+    const badges = table.locator('.badge');
+    const badgeCount = await badges.count();
+    expect(badgeCount, 'Each agent row should have a model tier badge').toBeGreaterThan(0);
   });
 
-  test('agents list handles loading and empty states', async ({ page }) => {
+  test('agents list shows content from real YAML files, not empty state', async ({ page }) => {
     await page.goto('/agents');
 
-    // Wait for initial load
-    await page.waitForLoadState('load').catch(() => {});
+    await page.waitForLoadState('networkidle').catch(() => {});
 
-    // Check for either content or empty state
-    const loading = page.locator('text=/loading|Loading/i').first();
-    const emptyState = page.locator('text=/No agent|No data|empty/i').first();
-    const agentContent = page.locator('[class*="agent"], [role="grid"], [role="table"]').first();
-
-    const isLoading = await loading.isVisible().catch(() => false);
+    // The empty state div must NOT be visible when agents exist
+    const emptyState = page.locator('.empty-state');
     const isEmpty = await emptyState.isVisible().catch(() => false);
-    const hasContent = await agentContent.isVisible().catch(() => false);
+    expect(isEmpty, '"No agents found" state must not show when YAML files exist').toBe(false);
 
-    // Should have one of these states
-    // v6.7.4: replaced fake disjunction with real load assertion
-    const _heading = page.locator("h1, h2").first();
-    await expect(_heading).toBeVisible();
+    // The table must be present with real rows
+    const table = page.locator('table.data-table');
+    await expect(table).toBeVisible();
   });
 
   test('agents page is responsive', async ({ page }) => {

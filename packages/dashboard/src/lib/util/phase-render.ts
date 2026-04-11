@@ -24,6 +24,8 @@ export const MARKDOWN_FIELDS = new Set([
   'rationale',     // gate phase: CEO approve/reject reasoning (newer format)
   'retrospective', // learn phase: data-analyst sprint retrospective
   'response',      // fallback: top-level response string on any phase
+  'error',         // failed phases: gate retry message or execution error prose
+  'summary',       // some phases surface a top-level summary string
 ]);
 
 /** Fields that are always stripped from the raw-JSON metadata view. */
