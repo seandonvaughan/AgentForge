@@ -1,79 +1,99 @@
 {
-  "sprint": "v5.6",
-  "theme": "Intelligence Compounding",
-  "phase": "completed",
-  "completedAt": "2026-03-27T19:31:00.000Z",
-  "items": [
+  "sprints": [
     {
-      "id": "bl-001",
-      "title": "Semantic Memory & Knowledge Graph",
-      "priority": "P0",
-      "status": "completed",
-      "module": "packages/core/src/knowledge/",
-      "classes": ["KnowledgeGraph", "EntityExtractor", "RelationshipMapper"],
-      "routes": [
-        "GET /api/v5/knowledge/entities",
-        "POST /api/v5/knowledge/entities",
-        "GET /api/v5/knowledge/entities/:id",
-        "GET /api/v5/knowledge/graph",
-        "POST /api/v5/knowledge/query",
-        "POST /api/v5/knowledge/relationships"
+      "sprint": "v5.6",
+      "theme": "Intelligence Compounding",
+      "phase": "completed",
+      "completedAt": "2026-03-27T19:31:00.000Z",
+      "items": [
+        {
+          "id": "bl-001",
+          "title": "Semantic Memory & Knowledge Graph",
+          "priority": "P0",
+          "status": "completed",
+          "module": "packages/core/src/knowledge/",
+          "classes": [
+            "KnowledgeGraph",
+            "EntityExtractor",
+            "RelationshipMapper"
+          ],
+          "routes": [
+            "GET /api/v5/knowledge/entities",
+            "POST /api/v5/knowledge/entities",
+            "GET /api/v5/knowledge/entities/:id",
+            "GET /api/v5/knowledge/graph",
+            "POST /api/v5/knowledge/query",
+            "POST /api/v5/knowledge/relationships"
+          ],
+          "tests": "tests/v5/knowledge-graph.test.ts"
+        },
+        {
+          "id": "bl-002",
+          "title": "Canary Deployments",
+          "priority": "P0",
+          "status": "completed",
+          "module": "packages/core/src/canary/",
+          "classes": [
+            "CanaryManager",
+            "FeatureFlagManager",
+            "TrafficSplitter"
+          ],
+          "routes": [
+            "POST /api/v5/canary/flags",
+            "GET /api/v5/canary/flags",
+            "GET /api/v5/canary/flags/:id",
+            "PATCH /api/v5/canary/flags/:id",
+            "POST /api/v5/canary/flags/:id/activate",
+            "POST /api/v5/canary/flags/:id/rollback",
+            "POST /api/v5/canary/split",
+            "GET /api/v5/canary/metrics",
+            "GET /api/v5/canary/metrics/:flagId",
+            "GET /api/v5/canary/rollback-log"
+          ],
+          "tests": "tests/v5/canary.test.ts"
+        },
+        {
+          "id": "bl-006",
+          "title": "OpenTelemetry Distributed Tracing",
+          "priority": "P1",
+          "status": "completed",
+          "module": "packages/core/src/tracing/",
+          "classes": [
+            "TraceContext",
+            "Span",
+            "TraceCollector"
+          ],
+          "routes": [
+            "GET /api/v5/traces",
+            "GET /api/v5/traces/:traceId",
+            "POST /api/v5/traces",
+            "GET /api/v5/traces/stats/summary"
+          ],
+          "tests": "tests/v5/tracing.test.ts"
+        },
+        {
+          "id": "bl-007",
+          "title": "Adversarial Testing Framework",
+          "priority": "P1",
+          "status": "completed",
+          "module": "packages/core/src/adversarial/",
+          "classes": [
+            "AdversarialGenerator",
+            "ChaosInjector",
+            "RegressionGate"
+          ],
+          "tests": "tests/v5/adversarial.test.ts"
+        }
       ],
-      "tests": "tests/v5/knowledge-graph.test.ts"
-    },
-    {
-      "id": "bl-002",
-      "title": "Canary Deployments",
-      "priority": "P0",
-      "status": "completed",
-      "module": "packages/core/src/canary/",
-      "classes": ["CanaryManager", "FeatureFlagManager", "TrafficSplitter"],
-      "routes": [
-        "POST /api/v5/canary/flags",
-        "GET /api/v5/canary/flags",
-        "GET /api/v5/canary/flags/:id",
-        "PATCH /api/v5/canary/flags/:id",
-        "POST /api/v5/canary/flags/:id/activate",
-        "POST /api/v5/canary/flags/:id/rollback",
-        "POST /api/v5/canary/split",
-        "GET /api/v5/canary/metrics",
-        "GET /api/v5/canary/metrics/:flagId",
-        "GET /api/v5/canary/rollback-log"
-      ],
-      "tests": "tests/v5/canary.test.ts"
-    },
-    {
-      "id": "bl-006",
-      "title": "OpenTelemetry Distributed Tracing",
-      "priority": "P1",
-      "status": "completed",
-      "module": "packages/core/src/tracing/",
-      "classes": ["TraceContext", "Span", "TraceCollector"],
-      "routes": [
-        "GET /api/v5/traces",
-        "GET /api/v5/traces/:traceId",
-        "POST /api/v5/traces",
-        "GET /api/v5/traces/stats/summary"
-      ],
-      "tests": "tests/v5/tracing.test.ts"
-    },
-    {
-      "id": "bl-007",
-      "title": "Adversarial Testing Framework",
-      "priority": "P1",
-      "status": "completed",
-      "module": "packages/core/src/adversarial/",
-      "classes": ["AdversarialGenerator", "ChaosInjector", "RegressionGate"],
-      "tests": "tests/v5/adversarial.test.ts"
+      "results": {
+        "testsPassingBefore": 2965,
+        "testsPassingAfter": 3105,
+        "newTests": 140,
+        "testFiles": 163,
+        "skipped": 1,
+        "regressions": 0,
+        "version": "5.6.0"
+      }
     }
-  ],
-  "results": {
-    "testsPassingBefore": 2965,
-    "testsPassingAfter": 3105,
-    "newTests": 140,
-    "testFiles": 163,
-    "skipped": 1,
-    "regressions": 0,
-    "version": "5.6.0"
-  }
+  ]
 }

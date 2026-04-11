@@ -3107,7 +3107,15 @@ function memFilterAgent(val) {
   // (which trigger a full reload) include the selected agent filter, ensuring
   // the 200-entry cap is applied to the already-filtered set.
   if (typeof window._memRebuildFetchExtra === 'function') window._memRebuildFetchExtra();
-  applyMemFilters();
+  // On the dedicated /memory page, trigger a full server-side refetch so the
+  // agentId filter is applied BEFORE the 200-entry cap rather than after it —
+  // otherwise client-side filtering is blind to entries beyond the cap window.
+  // On the home-page memory panel, client-side filtering is sufficient.
+  if (location.pathname === '/memory' && typeof window.loadMemoryBrowser === 'function') {
+    window.loadMemoryBrowser();
+  } else {
+    applyMemFilters();
+  }
 }
 
 function filterMemory(val) {
@@ -4634,9 +4642,9 @@ async function loadSprintsPage(preselectVersion) {
       item.className = 'sprint-list-item';
       var ver = s.version || s.id || '—';
       if (ver === _currentSprintVersion) item.classList.add('selected');
-      var statusCls = s.status === 'complete' ? 'complete' : s.status === 'active' ? 'active' : 'planned';
+      var statusCls = (s.status === 'complete' || s.status === 'completed') ? 'complete' : (s.status === 'active' || s.status === 'in_progress') ? 'active' : 'planned';
       var items = s.items || [];
-      var completedCount = items.filter(function(i) { return i.status === 'complete'; }).length;
+      var completedCount = items.filter(function(i) { return i.status === 'complete' || i.status === 'completed'; }).length;
       var pct = items.length ? Math.round((completedCount / items.length) * 100) : (s.progress != null ? Math.round(s.progress) : 0);
       item.innerHTML = '<span class="sli-version">' + escapeHtml(ver) + '</span>' +
         '<span class="sli-title">' + escapeHtml(s.title || s.description || 'Sprint ' + ver) + '</span>' +
@@ -4676,7 +4684,9 @@ async function loadSprintDetail(version) {
   try {
     var res = await fetch('/api/v5/sprints/' + encodeURIComponent(version));
     if (!res.ok) throw new Error('HTTP ' + res.status);
-    var sprint = await res.json();
+    var raw = await res.json();
+    // API returns { data: {...}, meta: {...} } — unwrap to the sprint object
+    var sprint = (raw && raw.data && typeof raw.data === 'object' && !Array.isArray(raw.data)) ? raw.data : raw;
     _sprintData = sprint;
     renderSprintDetail(sprint);
   } catch (e) {
@@ -4697,7 +4707,8 @@ function renderSprintDetail(sprint) {
   var items   = sprint.items || [];
   var budget  = Number(sprint.budget || sprint.budgetUsd || 0);
   var spent   = Number(sprint.spent || sprint.costUsd || sprint.totalCost || 0);
-  var complete = items.filter(function(i) { return (i.status || '') === 'complete'; }).length;
+  // Count both 'complete' (UI legacy) and 'completed' (API canonical) statuses
+  var complete = items.filter(function(i) { var s = i.status || ''; return s === 'complete' || s === 'completed'; }).length;
   var pct = items.length ? Math.round((complete / items.length) * 100) : 0;
 
   var phases = ['planning','development','testing','review','release'];
@@ -4717,7 +4728,7 @@ function renderSprintDetail(sprint) {
     '<div class="sprint-stat-sub">$' + spent.toFixed(2) + ' spent</div></div>' +
     '<div class="sprint-stat-card card-red"><div class="sprint-stat-label">Phase</div>' +
     '<div class="sprint-stat-value" style="font-size:16px;text-transform:capitalize">' + escapeHtml(phase) + '</div>' +
-    '<div class="sprint-stat-sub"><span class="status-badge ' + (status === 'complete' ? 'complete' : status === 'active' ? 'active' : 'planned') + '">' + escapeHtml(status) + '</span></div></div>' +
+    '<div class="sprint-stat-sub"><span class="status-badge ' + (status === 'complete' || status === 'completed' ? 'complete' : status === 'active' || status === 'in_progress' || status === 'in-progress' ? 'active' : 'planned') + '">' + escapeHtml(status) + '</span></div></div>' +
     '</div>';
 
   // Phase timeline
@@ -4742,45 +4753,79 @@ function renderSprintDetail(sprint) {
   html += '<div class="burndown-card"><div class="burndown-title">Budget Burn-Down — $' + budget + ' budget</div>' +
     '<svg id="burndown-svg" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:180px"></svg></div>';
 
-  // Item cards
-  html += '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:12px">Sprint Items (' + items.length + ')</div>';
+  // ── Kanban board: group items by status into columns ──────────────────────
+  // Canonical columns — 'completed' (API) and 'complete' (legacy UI) both map to the same column
+  var colDefs = [
+    { keys: ['pending'],                label: 'Pending',     color: 'var(--text-muted)',   borderColor: 'var(--border)' },
+    { keys: ['in-progress','in_progress'], label: 'In Progress', color: 'var(--blue)',      borderColor: 'rgba(88,166,255,0.4)' },
+    { keys: ['blocked'],                label: 'Blocked',     color: '#d29922',             borderColor: 'rgba(210,153,34,0.4)' },
+    { keys: ['completed','complete'],   label: 'Completed',   color: 'var(--green)',        borderColor: 'rgba(63,185,80,0.4)' },
+    { keys: ['failed'],                 label: 'Failed',      color: 'var(--red)',          borderColor: 'rgba(248,81,73,0.4)' },
+  ];
+  // Bucket items per column
+  var bucketed = colDefs.map(function(col) {
+    return { col: col, items: items.filter(function(item) { return col.keys.indexOf(item.status || 'pending') >= 0; }) };
+  });
+  // Only show columns that have items OR are mandatory (pending + completed always shown)
+  var visibleCols = bucketed.filter(function(b) { return b.items.length > 0 || b.col.keys.indexOf('pending') >= 0 || b.col.keys.indexOf('completed') >= 0 || b.col.keys.indexOf('complete') >= 0; });
+  var colWidth = 'minmax(160px, 1fr)';
+  var colCount = visibleCols.length;
+
+  html += '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:12px">Sprint Board (' + items.length + ' items &bull; ' + pct + '% complete)</div>';
+
   if (items.length === 0) {
     html += '<div class="empty-state">No items in this sprint yet</div>';
   } else {
-    html += '<div class="sprint-items-grid">';
-    items.forEach(function(item) {
-      var ist = item.status || 'pending';
-      var istClass = ist === 'complete' ? 'item-complete' : ist === 'in-progress' ? 'item-active' : ist === 'failed' ? 'item-failed' : 'item-pending';
-      var prio = item.priority || 'normal';
-      var assignee = item.assignee || item.agent || '';
-      var aModel = ['ceo','cto','genesis','architect','meta-architect'].indexOf(assignee) >= 0 ? 'opus' : ['linter','researcher','file-reader'].indexOf(assignee) >= 0 ? 'haiku' : 'sonnet';
-      var initials = assignee ? assignee.slice(0,3).toUpperCase() : '';
-      var ipct = item.progress != null ? item.progress : (ist === 'complete' ? 100 : ist === 'in-progress' ? 50 : 0);
-      var barColor = ist === 'complete' ? 'var(--green)' : ist === 'in-progress' ? 'var(--blue)' : ist === 'failed' ? 'var(--red)' : 'var(--border-light)';
-      var icost = item.cost != null ? '$' + Number(item.cost).toFixed(3) : '—';
-      var itemTitle = escapeHtml(item.title || item.name || item.id || '—');
-      var stBadgeCls = ist === 'complete' ? 'complete' : ist === 'in-progress' ? 'in-progress' : ist === 'failed' ? 'failed' : 'planned';
-      var avatarHtml = assignee ? '<div class="agent-avatar avatar-' + aModel + '" title="' + escapeHtml(assignee) + '">' + escapeHtml(initials) + '</div>' +
-        '<span style="font-family:var(--font-mono);font-size:10px;color:var(--text-secondary)">' + escapeHtml(assignee) + '</span>' : '';
-      html += '<div class="sprint-item-card ' + istClass + '">' +
-        '<div class="sic-header"><div class="sic-title">' + itemTitle + '</div>' +
-        '<span class="priority-badge ' + prio + '">' + escapeHtml(prio) + '</span></div>' +
-        '<div class="sic-meta">' + avatarHtml +
-        '<span class="status-badge ' + stBadgeCls + '">' + escapeHtml(ist) + '</span></div>' +
-        '<div class="sic-progress-track"><div class="sic-progress-fill" style="width:' + ipct + '%;background:' + barColor + '"></div></div>' +
-        '<div class="sic-footer"><span>' + ipct + '% complete</span><span class="sic-cost">' + icost + '</span></div></div>';
+    // Build kanban board using existing .kanban-board / .kanban-col CSS
+    html += '<div class="kanban-board" style="grid-template-columns:repeat(' + colCount + ',' + colWidth + ');margin-bottom:24px">';
+    visibleCols.forEach(function(b) {
+      var col = b.col;
+      var colItems = b.items;
+      html += '<div class="kanban-col" style="border-top:2px solid ' + col.borderColor + '">' +
+        '<div class="kanban-col-header" style="color:' + col.color + '">' +
+        escapeHtml(col.label) +
+        '<span class="kanban-count">' + colItems.length + '</span></div>' +
+        '<div class="kanban-cards">';
+      if (colItems.length === 0) {
+        html += '<div style="color:var(--text-muted);font-size:11px;font-family:var(--font-mono);padding:8px 0;text-align:center;opacity:0.5">—</div>';
+      }
+      colItems.forEach(function(item) {
+        var ist = item.status || 'pending';
+        var prio = item.priority || 'normal';
+        var assignee = item.assignee || item.agent || '';
+        var aModel = ['ceo','cto','genesis','architect','meta-architect'].indexOf(assignee) >= 0 ? 'opus' : ['linter','researcher','file-reader'].indexOf(assignee) >= 0 ? 'haiku' : 'sonnet';
+        var initials = assignee ? assignee.slice(0,3).toUpperCase() : '';
+        var ipct = item.progress != null ? item.progress : (['complete','completed'].indexOf(ist) >= 0 ? 100 : ist === 'in-progress' || ist === 'in_progress' ? 50 : 0);
+        var barColor = ['complete','completed'].indexOf(ist) >= 0 ? 'var(--green)' : (ist === 'in-progress' || ist === 'in_progress') ? 'var(--blue)' : ist === 'failed' ? 'var(--red)' : 'var(--border-light)';
+        var itemTitle = escapeHtml(item.title || item.name || item.id || '—');
+        var prioColor = prio === 'P0' || prio === 'critical' ? 'var(--red)' : prio === 'P1' || prio === 'high' ? '#d29922' : 'var(--text-muted)';
+        html += '<div class="review-card" style="cursor:default">' +
+          '<div class="review-card-title">' + itemTitle + '</div>' +
+          '<div class="review-card-meta">' +
+          '<span style="font-family:var(--font-mono);font-size:10px;color:' + prioColor + ';font-weight:700">' + escapeHtml(prio) + '</span>' +
+          (assignee ? ' <span class="agent-avatar avatar-' + aModel + '" style="font-size:9px;padding:1px 5px;border-radius:8px" title="' + escapeHtml(assignee) + '">' + escapeHtml(initials) + '</span>' : '') +
+          '</div>' +
+          '<div class="sic-progress-track" style="margin-top:6px"><div class="sic-progress-fill" style="width:' + ipct + '%;background:' + barColor + '"></div></div>' +
+          '</div>';
+      });
+      html += '</div></div>'; // /kanban-cards /kanban-col
     });
-    html += '</div>';
+    html += '</div>'; // /kanban-board
   }
 
-  // Gate approval
-  var gateBadgeCls = status === 'complete' ? 'complete' : 'pending';
-  var gateBadgeTxt = status === 'complete' ? 'approved' : 'pending';
-  var gateDisabled = status === 'complete' ? ' disabled' : '';
+  // ── Gate / Success Criteria ────────────────────────────────────────────────
+  var gateBadgeCls = status === 'complete' || status === 'completed' ? 'complete' : 'pending';
+  var gateBadgeTxt = status === 'complete' || status === 'completed' ? 'approved' : 'pending';
+  var gateDisabled = (status === 'complete' || status === 'completed') ? ' disabled' : '';
   var criteriaHtml = '';
   var criteria = sprint.successCriteria || sprint.gates || [];
   if (criteria.length > 0) {
     criteriaHtml = criteria.map(function(g) {
+      // Handle both string format (v10+) and object format (older sprints)
+      if (typeof g === 'string') {
+        return '<div class="gate-result-row"><div class="gate-icon" style="color:var(--text-muted)">&#9679;</div>' +
+          '<div class="gate-result-body"><div class="gate-result-name">' + escapeHtml(g) + '</div></div></div>';
+      }
       var pass = g.passed || g.status === 'pass';
       var icon = pass ? '&#10003;' : (g.status === 'fail' ? '&#10007;' : '&#9679;');
       var color = pass ? 'var(--green)' : (g.status === 'fail' ? 'var(--red)' : 'var(--text-muted)');
@@ -4800,6 +4845,37 @@ function renderSprintDetail(sprint) {
     '<button class="btn-danger" onclick="window._gateReject()"' + gateDisabled + '>Reject</button>' +
     '<span class="gate-reviewer-note">Reviewer: CEO (claude-opus) &bull; Sprint ' + escapeHtml(version) + '</span>' +
     '</div></div>';
+
+  // ── Audit Findings ─────────────────────────────────────────────────────────
+  var auditFindings = sprint.auditFindings || [];
+  if (auditFindings.length > 0) {
+    html += '<div class="gate-approval-card" style="margin-top:16px;border-top:2px solid rgba(210,153,34,0.6)">' +
+      '<div class="gate-approval-header">' +
+      '<span class="gate-approval-title"><span>&#128270;</span> Audit Findings</span>' +
+      '<span class="status-badge" style="background:rgba(210,153,34,0.15);color:#d29922;border-color:rgba(210,153,34,0.3)">' + auditFindings.length + ' finding' + (auditFindings.length !== 1 ? 's' : '') + '</span>' +
+      '</div>' +
+      '<div class="gate-results-list">';
+    auditFindings.forEach(function(finding) {
+      // Handle both string and object formats
+      if (typeof finding === 'string') {
+        html += '<div class="gate-result-row">' +
+          '<div class="gate-icon" style="color:#d29922">&#9651;</div>' +
+          '<div class="gate-result-body"><div class="gate-result-name">' + escapeHtml(finding) + '</div></div>' +
+          '</div>';
+      } else {
+        var sev = finding.severity || finding.level || 'info';
+        var sevColor = sev === 'critical' || sev === 'high' ? 'var(--red)' : sev === 'medium' || sev === 'warning' ? '#d29922' : 'var(--text-muted)';
+        var sevIcon = sev === 'critical' || sev === 'high' ? '&#10007;' : sev === 'medium' || sev === 'warning' ? '&#9651;' : '&#9675;';
+        html += '<div class="gate-result-row">' +
+          '<div class="gate-icon" style="color:' + sevColor + '">' + sevIcon + '</div>' +
+          '<div class="gate-result-body">' +
+          '<div class="gate-result-name">' + escapeHtml(finding.title || finding.name || finding.message || '—') + '</div>' +
+          '<div class="gate-result-detail md-body">' + renderMarkdown(finding.detail || finding.description || '') + '</div>' +
+          '</div></div>';
+      }
+    });
+    html += '</div></div>';
+  }
 
   contentEl.innerHTML = html;
   contentEl.hidden = false;
@@ -7480,6 +7556,9 @@ async function loadMemoryBrowser() {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
     const data = json.data || [];
+    // Expose server-side total so the count badge can show "N of M entries"
+    // when the 200-entry cap is active, giving users visibility into capped results.
+    window._memServerTotal = (json.meta && typeof json.meta.total === 'number') ? json.meta.total : data.length;
     list.textContent = '';
 
     if (!data.length) {

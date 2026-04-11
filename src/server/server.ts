@@ -25,6 +25,7 @@ import { careersRoutes } from './routes/careers.js';
 import { branchesRoutes } from './routes/branches.js';
 import { cyclesRoutes } from './routes/cycles.js';
 import { searchRoutes } from './routes/search.js';
+import { runRoutes } from './routes/run.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -110,7 +111,10 @@ export async function createServer(options: ServerOptions = {}) {
   // REST API routes — only registered when an adapter is provided
   if (options.adapter) {
     await app.register(sessionsRoutes, { adapter: options.adapter });
-    await app.register(agentsRoutes, { adapter: options.adapter });
+    await app.register(agentsRoutes, {
+      adapter: options.adapter,
+      agentsDir: options.projectRoot ? join(options.projectRoot, '.agentforge', 'agents') : undefined,
+    });
     await app.register(costsRoutes, { adapter: options.adapter });
     await app.register(sprintsRoutes, { adapter: options.adapter, projectRoot: options.projectRoot });
     await app.register(flywheelRoutes, { adapter: options.adapter });
@@ -122,6 +126,7 @@ export async function createServer(options: ServerOptions = {}) {
     await app.register(teamsRoutes, { adapter: options.adapter });
     await app.register(careersRoutes, { adapter: options.adapter });
     await app.register(searchRoutes, { adapter: options.adapter });
+    await app.register(runRoutes, { adapter: options.adapter, sseManager: options.sseManager });
   }
 
   // Branches route — git-backed, no DB adapter required

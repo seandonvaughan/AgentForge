@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { SqliteAdapter } from '../../db/index.js';
-import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
+import { readFileSync, createReadStream, readdirSync, existsSync, statSync } from 'node:fs';
+import { createInterface } from 'node:readline';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -151,6 +152,104 @@ function readJsonlMemories(): MemoryEntry[] {
 
   // Newest entries first — ISO-8601 strings sort lexicographically
   return entries.sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
+}
+
+/**
+ * Async generator that streams entries from all `.agentforge/memory/*.jsonl`
+ * files one line at a time, applying optional filters during the read so the
+ * caller never needs to buffer the entire corpus.
+ *
+ * Filters applied inline (before yielding):
+ *   typeFilter — exact match on the entry's `type` field
+ *   sinceMs    — only entries whose `createdAt` timestamp >= sinceMs
+ *   searchTerm — lowercase substring match across key/value/summary/tags
+ *   agentFilter — exact match on `source` / `agentId`
+ */
+async function* streamJsonlMemories(opts: {
+  typeFilter?: string;
+  sinceMs?: number;
+  searchTerm?: string;
+  agentFilter?: string;
+} = {}): AsyncGenerator<MemoryEntry> {
+  if (!existsSync(MEMORY_JSONL_DIR)) return;
+
+  let files: string[];
+  try {
+    files = readdirSync(MEMORY_JSONL_DIR).filter(f => f.endsWith('.jsonl')).sort();
+  } catch {
+    return;
+  }
+
+  const { typeFilter, sinceMs, searchTerm, agentFilter } = opts;
+  const hasSince = typeof sinceMs === 'number' && !Number.isNaN(sinceMs);
+
+  for (const filename of files) {
+    const filePath = join(MEMORY_JSONL_DIR, filename);
+    let rl: ReturnType<typeof createInterface> | undefined;
+    try {
+      const fileStream = createReadStream(filePath, { encoding: 'utf8' });
+      rl = createInterface({ input: fileStream, crlfDelay: Infinity });
+
+      for await (const line of rl) {
+        if (!line.trim()) continue;
+        let e: {
+          id?: string;
+          type?: string;
+          value?: string;
+          createdAt?: string;
+          source?: string;
+          tags?: string[];
+          metadata?: Record<string, unknown>;
+        };
+        try {
+          e = JSON.parse(line) as typeof e;
+        } catch {
+          continue; // skip malformed lines
+        }
+        if (!e.id || !e.type) continue;
+
+        // ── inline filters ────────────────────────────────────────────────
+        if (typeFilter && e.type !== typeFilter) continue;
+
+        if (hasSince) {
+          const entryMs = e.createdAt ? new Date(e.createdAt).getTime() : 0;
+          if (entryMs < sinceMs!) continue;
+        }
+
+        const rawValue = e.value ?? '';
+        const { summary, category } = _deriveJsonlMeta(e.type, rawValue);
+        const entry: MemoryEntry = {
+          id: e.id,
+          key: e.source ? `${e.type}/${e.source}` : e.type,
+          value: rawValue.slice(0, 500),
+          summary,
+          category,
+          type: e.type,
+          agentId: e.source,
+          source: e.source,
+          tags: e.tags ?? [],
+          createdAt: e.createdAt,
+          updatedAt: e.createdAt,
+          ...(e.metadata !== undefined ? { metadata: e.metadata } : {}),
+        };
+
+        if (agentFilter && agentFilter !== 'all' && entry.agentId !== agentFilter) continue;
+
+        if (searchTerm) {
+          const haystack = [entry.key, entry.value, entry.summary ?? '', (entry.tags ?? []).join(' ')]
+            .join(' ')
+            .toLowerCase();
+          if (!haystack.includes(searchTerm)) continue;
+        }
+
+        yield entry;
+      }
+    } catch {
+      // skip unreadable files
+    } finally {
+      rl?.close();
+    }
+  }
 }
 
 /** Read structured memory entries from the canonical data file. */
@@ -421,6 +520,53 @@ export async function memoryRoutes(
     const data = afterSince.slice(0, V5_MEMORY_LIMIT);
 
     return reply.send({ data, agents, types, meta: { total: totalFiltered, limit: V5_MEMORY_LIMIT, returned: data.length } });
+  });
+
+  // GET /api/v5/memory/stream — NDJSON streaming endpoint.
+  //
+  // Identical filter surface to GET /api/v5/memory but returns entries as
+  // Newline-Delimited JSON (one JSON object per line) streamed from disk
+  // without buffering the full corpus.  Only reads .agentforge/memory/*.jsonl;
+  // KV-store and memories.json sources are NOT included (they are small and
+  // already covered by the paginated endpoint).
+  //
+  // Use this endpoint when:
+  //   • The caller needs to process entries incrementally (e.g., dashboard
+  //     virtual scroll with lazy loading).
+  //   • The JSONL corpus is large enough that buffering 200 entries is
+  //     insufficient and a complete filtered dump is required.
+  //
+  // Query params: same as GET /api/v5/memory
+  //   search, agentId, agent, type, since
+  //
+  // Response: application/x-ndjson; one MemoryEntry JSON object per line.
+  //   An empty result is a 200 with an empty body.
+  app.get('/api/v5/memory/stream', async (req, reply) => {
+    const query = req.query as {
+      search?: string;
+      agent?: string;
+      agentId?: string;
+      type?: string;
+      since?: string;
+    };
+    const searchTerm  = (query.search ?? '').toLowerCase().trim() || undefined;
+    const agentFilter = (query.agentId ?? query.agent ?? '').trim() || undefined;
+    const typeFilter  = (query.type ?? '').trim() || undefined;
+    const sinceMs     = query.since ? new Date(query.since).getTime() : undefined;
+
+    reply.raw.setHeader('Content-Type', 'application/x-ndjson');
+    reply.raw.setHeader('Cache-Control', 'no-cache');
+    reply.raw.setHeader('Transfer-Encoding', 'chunked');
+
+    try {
+      for await (const entry of streamJsonlMemories({ typeFilter, sinceMs, searchTerm, agentFilter })) {
+        reply.raw.write(JSON.stringify(entry) + '\n');
+      }
+    } catch {
+      // swallow mid-stream errors; partial data already sent
+    } finally {
+      reply.raw.end();
+    }
   });
 
   // DELETE /api/v5/memory/:id — remove a kv_store entry by key

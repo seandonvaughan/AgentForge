@@ -1,98 +1,102 @@
 {
-  "version": "5.1",
-  "name": "v5.1 \u2014 Live System",
-  "phase": "in_progress",
-  "startedAt": "2026-03-27T23:59:00.000Z",
-  "items": [
+  "sprints": [
     {
-      "id": "v51-p0-1",
-      "priority": "P0",
-      "title": "Agent Execution Runtime",
-      "status": "completed",
-      "description": "Implement AgentRuntime in packages/core \u2014 actual Claude API invocation, token tracking, session persistence via WorkspaceAdapter",
-      "completedAt": "2026-03-28T00:30:00.000Z"
-    },
-    {
-      "id": "v51-p0-2",
-      "priority": "P0",
-      "title": "v5 Server Bootstrap",
-      "status": "completed",
-      "description": "Wire WorkspaceManager + MessageBusV2 + AuditTrail + createServerV5 into bootable entry point at packages/server/src/main.ts",
-      "completedAt": "2026-03-28T00:30:00.000Z"
-    },
-    {
-      "id": "v51-p0-3",
-      "priority": "P0",
-      "title": "Monorepo Build System",
-      "status": "completed",
-      "description": "Fix tsconfig project references across all 8 packages so turbo build runs clean",
-      "completedAt": "2026-03-28T00:30:00.000Z"
-    },
-    {
-      "id": "v51-p0-4",
-      "priority": "P0",
-      "title": "SvelteKit Dashboard Live Data",
-      "status": "completed",
-      "description": "Wire all 9 SvelteKit pages to real v5 API endpoints, WebSocket live updates",
-      "completedAt": "2026-03-28T00:30:00.000Z"
-    },
-    {
-      "id": "v51-p1-1",
-      "priority": "P1",
-      "title": "Plugin Hot-Reload",
-      "status": "completed",
-      "description": "Load plugins from .agentforge/plugins/ at server start, watch for changes",
-      "completedAt": "2026-03-28T00:30:00.000Z"
-    },
-    {
-      "id": "v51-p1-2",
-      "priority": "P1",
-      "title": "Cross-Workspace Learning",
-      "status": "pending",
-      "description": "EmbeddingStore auto-indexes session outcomes; AdaptiveRouter learns across workspaces via master registry"
-    },
-    {
-      "id": "v51-p1-3",
-      "priority": "P1",
-      "title": "Session Cost Telemetry",
-      "status": "pending",
-      "description": "AgentRuntime records input/output tokens and cost per session in WorkspaceAdapter"
-    },
-    {
-      "id": "v51-p1-4",
-      "priority": "P1",
-      "title": "Dev Experience",
-      "status": "completed",
-      "description": "npm run v5:dev starts server (4750) + dashboard (4751) concurrently via concurrently package",
-      "completedAt": "2026-03-28T00:30:00.000Z"
-    },
-    {
-      "id": "v51-p2-1",
-      "priority": "P2",
-      "title": "Agent Self-Improvement Loop",
-      "status": "pending",
-      "description": "SelfProposalEngine reads session outcomes and auto-proposes sprint items"
-    },
-    {
-      "id": "v51-p2-2",
-      "priority": "P2",
-      "title": "v5 Org Graph",
-      "status": "pending",
-      "description": "Live org graph from delegation.yaml in SvelteKit with real agent data"
-    },
-    {
-      "id": "v51-p2-3",
-      "priority": "P2",
-      "title": "Integration Test Suite",
-      "status": "pending",
-      "description": "Full server integration tests: boot v5 server, hit all /api/v5/* endpoints, verify responses"
-    },
-    {
-      "id": "v51-p2-4",
-      "priority": "P2",
-      "title": "v5.1 Release",
-      "status": "pending",
-      "description": "Bump to v5.1.0, update sprints, write retro"
+      "version": "5.1",
+      "name": "v5.1 \u2014 Live System",
+      "phase": "in_progress",
+      "startedAt": "2026-03-27T23:59:00.000Z",
+      "items": [
+        {
+          "id": "v51-p0-1",
+          "priority": "P0",
+          "title": "Agent Execution Runtime",
+          "status": "completed",
+          "description": "Implement AgentRuntime in packages/core \u2014 actual Claude API invocation, token tracking, session persistence via WorkspaceAdapter",
+          "completedAt": "2026-03-28T00:30:00.000Z"
+        },
+        {
+          "id": "v51-p0-2",
+          "priority": "P0",
+          "title": "v5 Server Bootstrap",
+          "status": "completed",
+          "description": "Wire WorkspaceManager + MessageBusV2 + AuditTrail + createServerV5 into bootable entry point at packages/server/src/main.ts",
+          "completedAt": "2026-03-28T00:30:00.000Z"
+        },
+        {
+          "id": "v51-p0-3",
+          "priority": "P0",
+          "title": "Monorepo Build System",
+          "status": "completed",
+          "description": "Fix tsconfig project references across all 8 packages so turbo build runs clean",
+          "completedAt": "2026-03-28T00:30:00.000Z"
+        },
+        {
+          "id": "v51-p0-4",
+          "priority": "P0",
+          "title": "SvelteKit Dashboard Live Data",
+          "status": "completed",
+          "description": "Wire all 9 SvelteKit pages to real v5 API endpoints, WebSocket live updates",
+          "completedAt": "2026-03-28T00:30:00.000Z"
+        },
+        {
+          "id": "v51-p1-1",
+          "priority": "P1",
+          "title": "Plugin Hot-Reload",
+          "status": "completed",
+          "description": "Load plugins from .agentforge/plugins/ at server start, watch for changes",
+          "completedAt": "2026-03-28T00:30:00.000Z"
+        },
+        {
+          "id": "v51-p1-2",
+          "priority": "P1",
+          "title": "Cross-Workspace Learning",
+          "status": "pending",
+          "description": "EmbeddingStore auto-indexes session outcomes; AdaptiveRouter learns across workspaces via master registry"
+        },
+        {
+          "id": "v51-p1-3",
+          "priority": "P1",
+          "title": "Session Cost Telemetry",
+          "status": "pending",
+          "description": "AgentRuntime records input/output tokens and cost per session in WorkspaceAdapter"
+        },
+        {
+          "id": "v51-p1-4",
+          "priority": "P1",
+          "title": "Dev Experience",
+          "status": "completed",
+          "description": "npm run v5:dev starts server (4750) + dashboard (4751) concurrently via concurrently package",
+          "completedAt": "2026-03-28T00:30:00.000Z"
+        },
+        {
+          "id": "v51-p2-1",
+          "priority": "P2",
+          "title": "Agent Self-Improvement Loop",
+          "status": "pending",
+          "description": "SelfProposalEngine reads session outcomes and auto-proposes sprint items"
+        },
+        {
+          "id": "v51-p2-2",
+          "priority": "P2",
+          "title": "v5 Org Graph",
+          "status": "pending",
+          "description": "Live org graph from delegation.yaml in SvelteKit with real agent data"
+        },
+        {
+          "id": "v51-p2-3",
+          "priority": "P2",
+          "title": "Integration Test Suite",
+          "status": "pending",
+          "description": "Full server integration tests: boot v5 server, hit all /api/v5/* endpoints, verify responses"
+        },
+        {
+          "id": "v51-p2-4",
+          "priority": "P2",
+          "title": "v5.1 Release",
+          "status": "pending",
+          "description": "Bump to v5.1.0, update sprints, write retro"
+        }
+      ]
     }
   ]
 }

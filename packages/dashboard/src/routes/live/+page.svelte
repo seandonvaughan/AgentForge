@@ -63,32 +63,49 @@
    * "cycle.failed") to human-readable labels shown in the category tag.
    */
   const CYCLE_CATEGORY_LABELS: Record<string, string> = {
+    // Lifecycle
     'cycle.started':    'Started',
     'cycle.complete':   'Complete',
     'cycle.completed':  'Complete',
     'cycle.failed':     'Failed',
     'cycle.error':      'Error',
+    // Phases
     'phase.start':      'Phase →',
     'phase.complete':   'Phase ✓',
     'phase.result':     'Result',
+    'phase.failure':    'Phase ✗',
     'phase.skip':       'Skipped',
+    // Source control
     'commit':           'Commit',
     'pr.opened':        'PR Open',
     'pr.merged':        'PR Merged',
+    'opened':           'PR Open',
+    // Tests
     'test.pass':        'Tests ✓',
     'test.fail':        'Tests ✗',
+    'tests.complete':   'Tests ✓',
+    // Budget
     'budget.warn':      'Budget ⚠',
+    // Scoring
+    'scoring.complete': 'Scored',
+    'scoring.fallback': 'Score ≈',
+    // Sprint assignment
+    'sprint.assigned':  'Sprint →',
+    // Approvals (require human attention — rendered in warning accent)
+    'approval.pending': 'Approval?',
+    'approval.decision':'Decision',
   };
 
   /**
    * For cycle_event rows, derive an accent color from the category string
    * so that failures flash red, completions glow green, and phases stay neutral.
+   * `pending` events get warning (yellow) to draw operator attention.
    */
   function cycleAccentColor(category: string): string {
     const cat = category.toLowerCase();
     if (cat.includes('fail') || cat.includes('error')) return 'var(--color-danger)';
     if (cat.includes('complete') || cat.includes('pass') || cat === 'commit') return 'var(--color-success)';
-    if (cat.includes('warn') || cat.includes('budget')) return 'var(--color-warning)';
+    if (cat.includes('warn') || cat.includes('budget') || cat.includes('pending')) return 'var(--color-warning)';
     if (cat.includes('start') || cat === 'cycle.started') return 'var(--color-sonnet)';
     return 'var(--color-sonnet)';
   }

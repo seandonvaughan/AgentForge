@@ -52,6 +52,8 @@ interface ApprovalsState {
   active: CycleApproval | null;
   loading: boolean;
   error: string | null;
+  /** True while the SSE stream has an open connection to /api/v5/stream. */
+  sseConnected: boolean;
 }
 
 // ── store factory ──────────────────────────────────────────────────────────
@@ -62,12 +64,19 @@ function createApprovalsStore() {
     active: null,
     loading: false,
     error: null,
+    sseConnected: false,
   });
 
   let sseSource: EventSource | null = null;
   let sseReconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let destroyed = false;
+
+  // Exponential backoff state for SSE reconnect.
+  // Resets to SSE_BACKOFF_INIT on every successful onopen event.
+  let sseBackoffMs = 1_000;
+  const SSE_BACKOFF_INIT = 1_000;
+  const SSE_BACKOFF_MAX  = 30_000;
 
   // ── data fetching ────────────────────────────────────────────────────────
 
@@ -165,6 +174,7 @@ function createApprovalsStore() {
 
   function connectSSE(): void {
     if (destroyed) destroyed = false;
+    sseBackoffMs = SSE_BACKOFF_INIT; // reset backoff on explicit (re)connect
     refresh();
     startSSE();
     // 10-second fallback poll — SSE covers the hot path, polling covers gaps.
@@ -174,6 +184,7 @@ function createApprovalsStore() {
   function disconnectSSE(): void {
     destroyed = true;
     stopSSE();
+    update(s => ({ ...s, sseConnected: false }));
     if (pollTimer !== null) {
       clearInterval(pollTimer);
       pollTimer = null;
@@ -183,6 +194,12 @@ function createApprovalsStore() {
   function startSSE(): void {
     if (sseSource) return;
     sseSource = new EventSource('/api/v5/stream');
+
+    // Mark connected and reset backoff as soon as the stream opens.
+    sseSource.onopen = () => {
+      sseBackoffMs = SSE_BACKOFF_INIT;
+      update(s => ({ ...s, sseConnected: true }));
+    };
 
     sseSource.onmessage = (e: MessageEvent) => {
       try {
@@ -224,8 +241,13 @@ function createApprovalsStore() {
     sseSource.onerror = () => {
       sseSource?.close();
       sseSource = null;
+      update(s => ({ ...s, sseConnected: false }));
       if (!destroyed) {
-        sseReconnectTimer = setTimeout(startSSE, 5_000);
+        // Exponential backoff: 1s → 2s → 4s → … capped at 30s.
+        sseReconnectTimer = setTimeout(() => {
+          sseBackoffMs = Math.min(sseBackoffMs * 2, SSE_BACKOFF_MAX);
+          startSSE();
+        }, sseBackoffMs);
       }
     };
   }

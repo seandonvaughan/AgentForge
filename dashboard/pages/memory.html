@@ -235,14 +235,23 @@
     var badge = document.getElementById('memory-count-badge');
     if (!badge) return;
     var entries = document.querySelectorAll('.memory-entry');
-    var total   = entries.length;
-    var visible = 0;
+    var rendered = entries.length;
+    var visible  = 0;
     for (var i = 0; i < entries.length; i++) {
       if (entries[i].style.display !== 'none') visible++;
     }
-    badge.textContent = visible === total
-      ? total + ' entries'
-      : visible + ' / ' + total + ' entries';
+    // _memServerTotal is set by loadMemoryBrowser() after each fetch.
+    // When it exceeds the rendered count (200-entry cap), show "N of M entries"
+    // so users know filters may miss entries beyond the cap window.
+    var serverTotal = (typeof window._memServerTotal === 'number' && window._memServerTotal > rendered)
+      ? window._memServerTotal : rendered;
+    if (visible === rendered && rendered === serverTotal) {
+      badge.textContent = rendered + ' entries';
+    } else if (visible === rendered) {
+      badge.textContent = rendered + ' of ' + serverTotal + ' entries';
+    } else {
+      badge.textContent = visible + ' / ' + serverTotal + ' entries';
+    }
   };
 
   // ── Wrap applyMemFilters: layer type filter on top, refresh badge ────────

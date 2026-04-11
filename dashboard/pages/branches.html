@@ -1,4 +1,4 @@
-  <div class="page" id="page-branches" hidden>
+  <div class="page" id="page-branches">
     <div class="page-header">
       <h2>Autonomous Branches</h2>
       <div style="display:flex;align-items:center;gap:10px;">
@@ -115,8 +115,8 @@
       createdAt: b.createdAt || '',
       age:       b.age       || '',
       ageMs:     typeof b.ageMs === 'number' ? b.ageMs : 0,
-      // Normalise underscore → hyphen so filter comparisons work correctly
-      status:    (b.status || 'active').replace('_', '-'),
+      // Use regex to normalise ALL underscores → hyphens (e.g. open_pr → open-pr)
+      status:    (b.status || 'active').replace(/_/g, '-'),
       pr:        b.pr || null,
     };
   }
@@ -195,6 +195,27 @@
     return a;
   }
 
+  /**
+   * Build a cycle link that navigates to the cycle detail page (/cycles/{version}).
+   * Uses data-route so the SPA Router intercepts the click for client-side navigation.
+   */
+  function makeCycleLink(cycle) {
+    if (!cycle) {
+      return el('span', '—', { style: 'color:var(--text-muted);font-family:var(--font-mono);font-size:12px' });
+    }
+    var a = document.createElement('a');
+    a.textContent   = cycle;
+    a.dataset.route = '/cycles/' + cycle;
+    a.href          = '/cycles/' + cycle;
+    a.title         = 'View cycle ' + cycle + ' phases';
+    a.style.cssText =
+      'font-family:var(--font-mono);font-size:12px;color:var(--purple);font-weight:600;' +
+      'text-decoration:none;cursor:pointer;transition:opacity 0.15s;';
+    a.addEventListener('mouseenter', function() { a.style.opacity = '0.75'; });
+    a.addEventListener('mouseleave', function() { a.style.opacity = '1'; });
+    return a;
+  }
+
   /** Build the delete button for stale/merged branches, or a dash for others. */
   function makeDeleteBtn(branchName, canDelete) {
     if (!canDelete) {
@@ -229,11 +250,6 @@
       title: b.name,
     });
 
-    // Cycle — mono, purple accent
-    var cycleSpan = el('span', b.cycle, {
-      style: 'font-family:var(--font-mono);font-size:12px;color:var(--purple);font-weight:600',
-    });
-
     // Age — use the pre-formatted age string from the API; fall back to local
     // computation from ageMs when the server string is absent.
     var ageLabel = b.age || _formatAgeFallback(b.ageMs);
@@ -244,7 +260,8 @@
     });
 
     row.appendChild(td(nameSpan));
-    row.appendChild(td(cycleSpan));
+    // Cycle column: clickable SPA link to /cycles/{version}
+    row.appendChild(td(makeCycleLink(b.cycle)));
     row.appendChild(td(ageSpan));
     row.appendChild(td(makeStatusBadge(b.status)));
     row.appendChild(td(makePrNode(b)));
@@ -445,6 +462,9 @@
       window.loadBranchesPage();
     });
   };
+
+  // Auto-load when the page HTML is injected into the DOM
+  window.loadBranchesPage();
 
 })();
 </script>

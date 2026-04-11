@@ -5,6 +5,14 @@
   import { relativeTime, formatDuration } from '$lib/util/relative-time';
   import { withWorkspace } from '$lib/stores/workspace';
   import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
+  import {
+    MARKDOWN_FIELDS,
+    ALWAYS_STRIP,
+    stripMarkdownFields,
+    markdownSections,
+    resolveAgentResponseContent,
+    agentRunSections,
+  } from '$lib/util/phase-render';
 
   const TERMINAL = new Set(['completed', 'failed', 'killed']);
   const PHASES = ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate', 'release', 'learn'] as const;
@@ -240,102 +248,9 @@
     }
   }
 
-  // Fields that contain markdown prose — rendered by MarkdownRenderer rather
-  // than dumped raw into the JSON pre-block.
-  // Covers all core phase handlers:
-  //   audit → findings, plan → plan, test → strategy,
-  //   review → review, gate → rationale, learn → retrospective
-  const MARKDOWN_FIELDS = new Set([
-    'findings',      // audit phase: researcher executive summary
-    'plan',          // plan phase: CTO technical plan
-    'strategy',      // test phase: QA risk assessment report
-    'review',        // review phase: code-reviewer markdown report
-    'rationale',     // gate phase: CEO approve/reject reasoning (newer format)
-    'retrospective', // learn phase: data-analyst sprint retrospective
-    'response',      // fallback: top-level response string on any phase
-  ]);
-
-  /** Returns a copy of a phase object with prose/run fields removed,
-   *  leaving only the structured metadata that benefits from JSON display.
-   *
-   *  IMPORTANT: Only strip a MARKDOWN_FIELD when it is a non-empty string
-   *  that markdownSections() will actually render. If a markdown-named field
-   *  holds a non-string value (e.g. an object), we keep it in the raw JSON
-   *  view rather than silently dropping it from the UI entirely.
-   *  Fields in the always-strip set (agentRuns, itemResults) are stripped
-   *  unconditionally because they have their own dedicated rendering. */
-  const ALWAYS_STRIP = new Set(['agentRuns', 'itemResults']);
-  function stripMarkdownFields(data: Record<string, unknown>): Record<string, unknown> {
-    const copy: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(data)) {
-      if (ALWAYS_STRIP.has(k)) continue;
-      // Only strip a markdown field when markdownSections() will actually use it.
-      if (MARKDOWN_FIELDS.has(k) && typeof v === 'string' && v.trim()) continue;
-      copy[k] = v;
-    }
-    return copy;
-  }
-
-  /** Collect all markdown prose sections present in a phase object. */
-  function markdownSections(data: Record<string, unknown>): Array<{ label: string; content: string }> {
-    const sections: Array<{ label: string; content: string }> = [];
-    for (const field of MARKDOWN_FIELDS) {
-      const val = data[field];
-      if (typeof val === 'string' && val.trim()) {
-        sections.push({ label: field, content: val });
-      }
-    }
-    return sections;
-  }
-
-  /**
-   * Resolve an agent run's raw `response` string into renderable markdown.
-   *
-   * Older cycles (pre-v6.5) stored the agent's literal output in
-   * `agentRuns[].response`, which for the gate phase is a raw JSON string:
-   *   {"verdict":"APPROVE","rationale":"Sprint v9.0.0 delivers..."}
-   *
-   * Rules:
-   *   1. If the string parses as JSON with a `rationale` field, surface it as
-   *      "**VERDICT**: rationale prose" — human-readable without raw JSON noise.
-   *   2. If it parses as other JSON (no rationale), wrap in a ```json block so
-   *      MarkdownRenderer still renders something clean.
-   *   3. Otherwise return the string unchanged (already markdown or plain text).
-   */
-  function resolveAgentResponseContent(raw: string): string {
-    try {
-      const parsed = JSON.parse(raw);
-      if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        const rationale = parsed['rationale'] ?? parsed['reason'] ?? parsed['explanation'];
-        const verdict = parsed['verdict'] ?? parsed['decision'];
-        if (typeof rationale === 'string' && rationale.trim()) {
-          // Gate verdict: render verdict badge + rationale prose
-          const prefix = verdict ? `**${String(verdict).toUpperCase()}**: ` : '';
-          return `${prefix}${rationale}`;
-        }
-        // Unknown JSON object — render as fenced code block for readability
-        return '```json\n' + JSON.stringify(parsed, null, 2) + '\n```';
-      }
-    } catch {
-      // Not JSON — fall through to return raw string
-    }
-    return raw;
-  }
-
-  /** Collect markdown prose from each agentRun's response field.
-   *  JSON-encoded responses (e.g. gate phase verdict objects) are unwrapped
-   *  into readable prose by resolveAgentResponseContent(). */
-  function agentRunSections(data: Record<string, unknown>): Array<{ agentId: string; response: string }> {
-    const runs = data['agentRuns'];
-    if (!Array.isArray(runs)) return [];
-    return runs
-      .filter((r): r is Record<string, unknown> => r != null && typeof r === 'object')
-      .filter((r) => typeof r['response'] === 'string' && (r['response'] as string).trim())
-      .map((r) => ({
-        agentId: String(r['agentId'] ?? 'agent'),
-        response: resolveAgentResponseContent(r['response'] as string),
-      }));
-  }
+  // MARKDOWN_FIELDS, ALWAYS_STRIP, stripMarkdownFields, markdownSections,
+  // resolveAgentResponseContent, and agentRunSections are imported from
+  // $lib/util/phase-render — see that module for documentation.
 
   /** Extract well-known structured fields from a phase object for compact stat display. */
   function phaseMetaStats(data: Record<string, unknown>): Array<{ key: string; value: string }> {

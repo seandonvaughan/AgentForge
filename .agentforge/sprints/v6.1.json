@@ -1,71 +1,75 @@
 {
-  "version": "6.1",
-  "name": "v6.1 — Sprint Intelligence, Agent Roster & Session Persistence",
-  "phase": "completed",
-  "startedAt": "2026-03-27T13:00:00.000Z",
-  "completedAt": "2026-03-27T13:30:00.000Z",
-  "items": [
+  "sprints": [
     {
-      "id": "p0-1-sprint-normalization",
-      "title": "Sprint API Schema Normalization",
-      "description": "Fixed the /api/v5/sprints endpoint to handle both flat format (v5.x: {version, items}) and nested format (v4.x/v6.0: {sprints:[{version, items}]}). All 18 sprint files now parse correctly. Added normalizeSprint() function that extracts budget, teamSize, successCriteria, auditFindings, item descriptions, and assignees. The detail endpoint /api/v5/sprints/:version also returns normalized data.",
-      "priority": "P0",
-      "assignee": "api-specialist",
-      "status": "completed"
-    },
-    {
-      "id": "p0-2-agent-roster",
-      "title": "Agent Runner Full Roster with Search and Model Grouping",
-      "description": "Rewrote the /runner page agent selector to load all 134+ agents from the API with their model tier metadata. Added a search/filter input for finding agents by name or ID. Agents are sorted by model tier (Opus first, then Sonnet, then Haiku). Added tier count badges showing the breakdown. The model cost callout now dynamically reads from the agent's actual model tier instead of a hardcoded lookup table.",
-      "priority": "P0",
-      "assignee": "coder",
-      "status": "completed"
-    },
-    {
-      "id": "p0-3-session-persistence",
-      "title": "Run Endpoint Session Persistence and History API",
-      "description": "Rewrote POST /api/v5/run to generate a unique sessionId per run, track it in an in-memory run log, and emit structured SSE events with sessionId attached (start, chunk, completion, cost, failure). Added GET /api/v5/run/history endpoint returning the last 100 runs. Added GET /api/v5/run/:sessionId for retrieving specific run details. The run endpoint now accepts an optional WorkspaceAdapter for database persistence. Emits cost_event for the cost analytics page.",
-      "priority": "P0",
-      "assignee": "api-specialist",
-      "status": "completed"
-    },
-    {
-      "id": "p1-1-sprint-detail-page",
-      "title": "Sprint Detail Page (/sprints/[version])",
-      "description": "New SvelteKit dynamic route at /sprints/[version] showing full sprint detail: summary stats (items done, completion %, team size, budget, dates), progress bar, items grouped by priority (P0/P1/P2) with description and assignee, success criteria list, and audit findings list. Sprint cards on the /sprints list page are now clickable links to the detail view.",
-      "priority": "P1",
-      "assignee": "coder",
-      "status": "completed"
-    },
-    {
-      "id": "p1-2-version-bump",
-      "title": "Version Bump to v6.1 Across API and Dashboard",
-      "description": "Updated /api/v5/health, /api/v5/settings, and the standalone health endpoint in server.ts to return version 6.1.0. Updated the dashboard home page version banner, title, and subtitle. Fixed the server integration test that asserted version 6.0.0.",
-      "priority": "P1",
-      "assignee": "debugger",
-      "status": "completed"
+      "version": "6.1",
+      "name": "v6.1 \u2014 Sprint Intelligence, Agent Roster & Session Persistence",
+      "phase": "completed",
+      "startedAt": "2026-03-27T13:00:00.000Z",
+      "completedAt": "2026-03-27T13:30:00.000Z",
+      "items": [
+        {
+          "id": "p0-1-sprint-normalization",
+          "title": "Sprint API Schema Normalization",
+          "description": "Fixed the /api/v5/sprints endpoint to handle both flat format (v5.x: {version, items}) and nested format (v4.x/v6.0: {sprints:[{version, items}]}). All 18 sprint files now parse correctly. Added normalizeSprint() function that extracts budget, teamSize, successCriteria, auditFindings, item descriptions, and assignees. The detail endpoint /api/v5/sprints/:version also returns normalized data.",
+          "priority": "P0",
+          "assignee": "api-specialist",
+          "status": "completed"
+        },
+        {
+          "id": "p0-2-agent-roster",
+          "title": "Agent Runner Full Roster with Search and Model Grouping",
+          "description": "Rewrote the /runner page agent selector to load all 134+ agents from the API with their model tier metadata. Added a search/filter input for finding agents by name or ID. Agents are sorted by model tier (Opus first, then Sonnet, then Haiku). Added tier count badges showing the breakdown. The model cost callout now dynamically reads from the agent's actual model tier instead of a hardcoded lookup table.",
+          "priority": "P0",
+          "assignee": "coder",
+          "status": "completed"
+        },
+        {
+          "id": "p0-3-session-persistence",
+          "title": "Run Endpoint Session Persistence and History API",
+          "description": "Rewrote POST /api/v5/run to generate a unique sessionId per run, track it in an in-memory run log, and emit structured SSE events with sessionId attached (start, chunk, completion, cost, failure). Added GET /api/v5/run/history endpoint returning the last 100 runs. Added GET /api/v5/run/:sessionId for retrieving specific run details. The run endpoint now accepts an optional WorkspaceAdapter for database persistence. Emits cost_event for the cost analytics page.",
+          "priority": "P0",
+          "assignee": "api-specialist",
+          "status": "completed"
+        },
+        {
+          "id": "p1-1-sprint-detail-page",
+          "title": "Sprint Detail Page (/sprints/[version])",
+          "description": "New SvelteKit dynamic route at /sprints/[version] showing full sprint detail: summary stats (items done, completion %, team size, budget, dates), progress bar, items grouped by priority (P0/P1/P2) with description and assignee, success criteria list, and audit findings list. Sprint cards on the /sprints list page are now clickable links to the detail view.",
+          "priority": "P1",
+          "assignee": "coder",
+          "status": "completed"
+        },
+        {
+          "id": "p1-2-version-bump",
+          "title": "Version Bump to v6.1 Across API and Dashboard",
+          "description": "Updated /api/v5/health, /api/v5/settings, and the standalone health endpoint in server.ts to return version 6.1.0. Updated the dashboard home page version banner, title, and subtitle. Fixed the server integration test that asserted version 6.0.0.",
+          "priority": "P1",
+          "assignee": "debugger",
+          "status": "completed"
+        }
+      ],
+      "budget": 200,
+      "teamSize": 4,
+      "successCriteria": [
+        "Sprint API normalizes both flat and nested JSON formats \u2014 all 18 sprints render on /sprints page",
+        "Sprint detail page at /sprints/[version] shows items, budget, success criteria, audit findings",
+        "Agent Runner shows all 134+ agents with search filter and model tier grouping",
+        "POST /api/v5/run generates sessionId and persists to in-memory run log",
+        "GET /api/v5/run/history returns completed runs with cost, tokens, and status",
+        "GET /api/v5/run/:sessionId retrieves individual run details",
+        "SSE events from run endpoint include sessionId for client-side matching",
+        "Cost events emitted for live cost tracking in the feed",
+        "All health endpoints return version 6.1.0",
+        "All existing tests pass (3350+) plus 13 new tests = 3363+ total",
+        "Dashboard titles updated from v5 to v6"
+      ],
+      "auditFindings": [
+        "Sprint API only parsed flat format \u2014 v4.x and v6.0 nested-in-sprints-array data was silently dropping items, budget, and success criteria",
+        "Agent Runner used a hardcoded 8-agent fallback list and a static model tier lookup table \u2014 126 agents were invisible",
+        "POST /api/v5/run returned empty sessionId and did not persist results \u2014 run history was lost on page reload",
+        "No sprint detail page \u2014 users could see sprint cards but not drill into items, criteria, or audit findings",
+        "Health API still reported version 6.0.0 after v6.0 shipped"
+      ]
     }
-  ],
-  "budget": 200,
-  "teamSize": 4,
-  "successCriteria": [
-    "Sprint API normalizes both flat and nested JSON formats — all 18 sprints render on /sprints page",
-    "Sprint detail page at /sprints/[version] shows items, budget, success criteria, audit findings",
-    "Agent Runner shows all 134+ agents with search filter and model tier grouping",
-    "POST /api/v5/run generates sessionId and persists to in-memory run log",
-    "GET /api/v5/run/history returns completed runs with cost, tokens, and status",
-    "GET /api/v5/run/:sessionId retrieves individual run details",
-    "SSE events from run endpoint include sessionId for client-side matching",
-    "Cost events emitted for live cost tracking in the feed",
-    "All health endpoints return version 6.1.0",
-    "All existing tests pass (3350+) plus 13 new tests = 3363+ total",
-    "Dashboard titles updated from v5 to v6"
-  ],
-  "auditFindings": [
-    "Sprint API only parsed flat format — v4.x and v6.0 nested-in-sprints-array data was silently dropping items, budget, and success criteria",
-    "Agent Runner used a hardcoded 8-agent fallback list and a static model tier lookup table — 126 agents were invisible",
-    "POST /api/v5/run returned empty sessionId and did not persist results — run history was lost on page reload",
-    "No sprint detail page — users could see sprint cards but not drill into items, criteria, or audit findings",
-    "Health API still reported version 6.0.0 after v6.0 shipped"
   ]
 }

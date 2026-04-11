@@ -29,8 +29,8 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { AgentRuntime, loadAgentConfig, writeMemoryEntry } from '@agentforge/core';
-import type { RunResult, GateVerdictMetadata } from '@agentforge/core';
+import { AgentRuntime, loadAgentConfig, writeMemoryEntry, collectSprintItemTags, parseReviewFindingMetadata } from '@agentforge/core';
+import type { RunResult, GateVerdictMetadata, ReviewFindingMetadata } from '@agentforge/core';
 import { generateId, nowIso } from '@agentforge/shared';
 import { globalStream } from '../routes/v5/stream.js';
 import { careerHook } from './career-hook.js';
@@ -642,7 +642,56 @@ export async function runTestPhase(ctx: PhaseContext): Promise<PhaseResult> {
 }
 
 export async function runReviewPhase(ctx: PhaseContext): Promise<PhaseResult> {
-  return runLlmPhase(ctx, 'review');
+  const result = await runLlmPhase(ctx, 'review');
+
+  // Write review-finding memory entries for CRITICAL and MAJOR findings so the
+  // next cycle's audit phase can surface recurring anti-patterns. The sprint
+  // file is re-read after the LLM phase because runLlmPhase persists the
+  // agent response there (same pattern as runGatePhase for gate-verdict).
+  //
+  // One entry per finding line so the execute-phase memory injector can match
+  // individual findings to future sprint items via overlapping domain tags.
+  // Domain tags from the sprint items are appended so cross-cycle matching
+  // works — without them, review findings carry only structural tags that
+  // never overlap with sprint item domain tags (memory, execute, backend, ...).
+  try {
+    const sprint = readSprint(ctx.projectRoot, ctx.sprintVersion);
+    const reviewText =
+      (sprint?.phaseResults ?? [])
+        .filter((r) => r.phase === 'review')
+        .at(-1)?.response ?? '';
+
+    if (reviewText) {
+      const criticalFindings = extractFindingLines(reviewText, 'CRITICAL');
+      const majorFindings = extractFindingLines(reviewText, 'MAJOR');
+      const sprintDomainTags = collectSprintItemTags(ctx.projectRoot, ctx.sprintVersion);
+
+      for (const line of criticalFindings) {
+        const metadata: ReviewFindingMetadata = parseReviewFindingMetadata(line, 'CRITICAL');
+        writeMemoryEntry(ctx.projectRoot, {
+          type: 'review-finding',
+          value: line,
+          metadata,
+          ...(ctx.cycleId !== undefined ? { source: ctx.cycleId } : {}),
+          tags: ['review', 'finding', 'critical', `sprint:v${ctx.sprintVersion}`, ...sprintDomainTags],
+        });
+      }
+      for (const line of majorFindings) {
+        const metadata: ReviewFindingMetadata = parseReviewFindingMetadata(line, 'MAJOR');
+        writeMemoryEntry(ctx.projectRoot, {
+          type: 'review-finding',
+          value: line,
+          metadata,
+          ...(ctx.cycleId !== undefined ? { source: ctx.cycleId } : {}),
+          tags: ['review', 'finding', 'major', `sprint:v${ctx.sprintVersion}`, ...sprintDomainTags],
+        });
+      }
+    }
+  } catch {
+    // Non-fatal — phase result must not be affected by memory write failures.
+  }
+
+  return result;
 }
 
 /**
@@ -724,12 +773,19 @@ export async function runGatePhase(ctx: PhaseContext): Promise<PhaseResult> {
       summaryParts.push(`Major: ${majorFindings.join('; ')}`);
     }
 
+    // Collect sprint item domain tags so the execute-phase memory injector can
+    // match this gate verdict to future items whose domain tags overlap with the
+    // sprint that produced it. Without domain tags, the verdict carries only
+    // structural tags (sprint:v*, verdict:*) that never overlap with item domain
+    // tags (memory, execute, backend, ...), silently breaking cross-cycle learning.
+    const sprintDomainTags = collectSprintItemTags(ctx.projectRoot, ctx.sprintVersion);
+
     writeMemoryEntry(ctx.projectRoot, {
       type: 'gate-verdict',
       value: summaryParts.join('. '),
       metadata: gateMetadata,
       ...(ctx.cycleId !== undefined ? { source: ctx.cycleId } : {}),
-      tags: [`sprint:v${ctx.sprintVersion}`, verdictTag],
+      tags: [`sprint:v${ctx.sprintVersion}`, verdictTag, ...sprintDomainTags],
     });
   } catch {
     // Non-fatal — gate result must not be affected by memory write failures.

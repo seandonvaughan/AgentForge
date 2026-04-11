@@ -43,28 +43,44 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 const CYCLE_CATEGORY_LABELS: Record<string, string> = {
-  'cycle.started':   'Started',
-  'cycle.complete':  'Complete',
-  'cycle.completed': 'Complete',
-  'cycle.failed':    'Failed',
-  'cycle.error':     'Error',
-  'phase.start':     'Phase →',
-  'phase.complete':  'Phase ✓',
-  'phase.result':    'Result',
-  'phase.skip':      'Skipped',
-  'commit':          'Commit',
-  'pr.opened':       'PR Open',
-  'pr.merged':       'PR Merged',
-  'test.pass':       'Tests ✓',
-  'test.fail':       'Tests ✗',
-  'budget.warn':     'Budget ⚠',
+  // Lifecycle
+  'cycle.started':    'Started',
+  'cycle.complete':   'Complete',
+  'cycle.completed':  'Complete',
+  'cycle.failed':     'Failed',
+  'cycle.error':      'Error',
+  // Phases
+  'phase.start':      'Phase →',
+  'phase.complete':   'Phase ✓',
+  'phase.result':     'Result',
+  'phase.failure':    'Phase ✗',
+  'phase.skip':       'Skipped',
+  // Source control
+  'commit':           'Commit',
+  'pr.opened':        'PR Open',
+  'pr.merged':        'PR Merged',
+  'opened':           'PR Open',
+  // Tests
+  'test.pass':        'Tests ✓',
+  'test.fail':        'Tests ✗',
+  'tests.complete':   'Tests ✓',
+  // Budget
+  'budget.warn':      'Budget ⚠',
+  // Scoring
+  'scoring.complete': 'Scored',
+  'scoring.fallback': 'Score ≈',
+  // Sprint assignment
+  'sprint.assigned':  'Sprint →',
+  // Approvals
+  'approval.pending': 'Approval?',
+  'approval.decision':'Decision',
 };
 
 function cycleAccentColor(category: string): string {
   const cat = category.toLowerCase();
   if (cat.includes('fail') || cat.includes('error')) return 'var(--color-danger)';
   if (cat.includes('complete') || cat.includes('pass') || cat === 'commit') return 'var(--color-success)';
-  if (cat.includes('warn') || cat.includes('budget')) return 'var(--color-warning)';
+  if (cat.includes('warn') || cat.includes('budget') || cat.includes('pending')) return 'var(--color-warning)';
   if (cat.includes('start') || cat === 'cycle.started') return 'var(--color-sonnet)';
   return 'var(--color-sonnet)';
 }
@@ -129,6 +145,22 @@ describe('Live feed rendering logic', () => {
 
     it('maps "budget.warn" to warning (yellow)', () => {
       expect(cycleAccentColor('budget.warn')).toBe('var(--color-warning)');
+    });
+
+    it('maps "approval.pending" to warning (yellow — needs operator attention)', () => {
+      expect(cycleAccentColor('approval.pending')).toBe('var(--color-warning)');
+    });
+
+    it('maps "phase.failure" to danger (contains "fail")', () => {
+      expect(cycleAccentColor('phase.failure')).toBe('var(--color-danger)');
+    });
+
+    it('maps "scoring.complete" to success (contains "complete")', () => {
+      expect(cycleAccentColor('scoring.complete')).toBe('var(--color-success)');
+    });
+
+    it('maps "tests.complete" to success (contains "complete")', () => {
+      expect(cycleAccentColor('tests.complete')).toBe('var(--color-success)');
     });
 
     it('maps "cycle.started" to sonnet blue (contains "start")', () => {
@@ -227,6 +259,39 @@ describe('Live feed rendering logic', () => {
 
     it('maps "budget.warn" → "Budget ⚠"', () => {
       expect(formatCategory('cycle_event', 'budget.warn')).toBe('Budget ⚠');
+    });
+
+    // Real-world categories observed in production events.jsonl files:
+    it('maps "phase.failure" → "Phase ✗"', () => {
+      expect(formatCategory('cycle_event', 'phase.failure')).toBe('Phase ✗');
+    });
+
+    it('maps "tests.complete" → "Tests ✓"', () => {
+      expect(formatCategory('cycle_event', 'tests.complete')).toBe('Tests ✓');
+    });
+
+    it('maps "scoring.complete" → "Scored"', () => {
+      expect(formatCategory('cycle_event', 'scoring.complete')).toBe('Scored');
+    });
+
+    it('maps "scoring.fallback" → "Score ≈"', () => {
+      expect(formatCategory('cycle_event', 'scoring.fallback')).toBe('Score ≈');
+    });
+
+    it('maps "sprint.assigned" → "Sprint →"', () => {
+      expect(formatCategory('cycle_event', 'sprint.assigned')).toBe('Sprint →');
+    });
+
+    it('maps "approval.pending" → "Approval?"', () => {
+      expect(formatCategory('cycle_event', 'approval.pending')).toBe('Approval?');
+    });
+
+    it('maps "approval.decision" → "Decision"', () => {
+      expect(formatCategory('cycle_event', 'approval.decision')).toBe('Decision');
+    });
+
+    it('maps "opened" → "PR Open" (GitHub PR webhook alias for pr.opened)', () => {
+      expect(formatCategory('cycle_event', 'opened')).toBe('PR Open');
     });
 
     it('unknown category falls back to title-cased dot-replaced string', () => {
@@ -346,23 +411,39 @@ describe('Live feed rendering logic', () => {
 
   describe('CYCLE_CATEGORY_LABELS completeness', () => {
     // These are the categories the server-side CycleEventsWatcher actually emits
-    // based on msg.type fields found in events.jsonl files.
+    // based on msg.type fields observed in real .agentforge/cycles/*/events.jsonl files.
     const knownServerCategories = [
+      // spec-defined lifecycle events
       'cycle.started',
       'cycle.complete',
       'cycle.completed',
       'cycle.failed',
       'cycle.error',
+      // phase events (observed in production events.jsonl)
       'phase.start',
       'phase.complete',
       'phase.result',
+      'phase.failure',
       'phase.skip',
+      // source control
       'commit',
       'pr.opened',
       'pr.merged',
+      'opened',
+      // tests
       'test.pass',
       'test.fail',
+      'tests.complete',
+      // budget
       'budget.warn',
+      // scoring (observed in production events.jsonl)
+      'scoring.complete',
+      'scoring.fallback',
+      // sprint
+      'sprint.assigned',
+      // approvals (observed in production events.jsonl)
+      'approval.pending',
+      'approval.decision',
     ];
 
     it('every known server-emitted category has a CYCLE_CATEGORY_LABELS entry', () => {
