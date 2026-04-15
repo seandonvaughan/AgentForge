@@ -1,3 +1,10 @@
 export * from './team-services.js';
 export * from './show-team.js';
 export * from './team-sessions.js';
+export * from './engine/builder/index.js';
+export { composeTeamUnits } from './engine/builder/team-composer.js';
+export { mergeManifests } from './engine/builder/team-writer.js';
+export * from './engine/builder/agent-validator.js';
+export * from './engine/scanner/index.js';
+export * from './engine/genesis/index.js';
+export * from './engine/reforge/index.js';
