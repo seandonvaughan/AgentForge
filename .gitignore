@@ -27,6 +27,7 @@ coverage/
 # Logs
 *.log
 npm-debug.log*
+packages/**/package-lock.json
 
 # TypeScript
 *.tsbuildinfo

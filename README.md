@@ -16,24 +16,24 @@ The package CLI is the canonical surface, but not every command is equally conve
 - Package-native today:
   - `run invoke`, `run delegate`, `run history`, `run show`
   - `costs report`
-  - `cycle run`
+  - `cycle run`, `cycle preview`, `cycle list`, `cycle show`, `cycle approve`
+  - `team`
+  - `team-sessions list`, `team-sessions delete`
   - `workspaces *`
   - `migrate`
   - `info`
+  - `start`
 - Package CLI compatibility bridge today:
-  - `team`
   - `team forge`
   - `team genesis`
   - `team rebuild`
   - `team reforge *`
-  - `team-sessions *`
   - top-level aliases such as `forge`, `genesis`, `rebuild`, `reforge`, and `sessions`
 - Transitional behavior to be aware of:
-  - `agentforge start` currently prints the canonical package-server launch target; it does not spawn and supervise the server itself.
+  - `agentforge start` launches the canonical package server in-process.
   - `run delegate` is recommendation-first and only executes with `--run`.
   - top-level `delegate` is a compatibility alias and preserves the older auto-run default.
-  - `cycle` currently exposes `run`; preview/list/show/approve are not part of the shipped package CLI yet.
-  - team and team-session flows in the package CLI currently route through the legacy root CLI bridge in `@agentforge/core`.
+  - `team forge`, `team genesis`, `team rebuild`, and `team reforge *` still route through legacy root engines in `@agentforge/core`.
 
 ## Canonical CLI Surface
 
@@ -50,6 +50,10 @@ agentforge run show <sessionId>
 agentforge costs report
 
 agentforge cycle run [--dry-run] [--workspace <id>] [--project-root <path>]
+agentforge cycle preview [--workspace <id>] [--project-root <path>]
+agentforge cycle list [--workspace <id>] [--project-root <path>]
+agentforge cycle show <cycleId> [--workspace <id>] [--project-root <path>]
+agentforge cycle approve <cycleId> [--all|--approved <ids...> --rejected <ids...>]
 agentforge autonomous:cycle    # compatibility alias for cycle run
 
 agentforge team [--verbose]
@@ -91,7 +95,7 @@ Useful commands:
 node packages/cli/dist/bin.js --help
 
 # Canonical package server
-node packages/server/dist/main.js
+node packages/cli/dist/bin.js start
 
 # Dashboard dev server
 cd packages/dashboard
