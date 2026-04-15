@@ -1,4 +1,5 @@
 import type { ModelTier } from '@agentforge/shared';
+import type { ExecutionProviderKind, RuntimeMode } from '../runtime/types.js';
 
 export interface AgentRuntimeConfig {
   agentId: string;
@@ -8,6 +9,7 @@ export interface AgentRuntimeConfig {
   workspaceId: string;
   maxTokens?: number;       // default 8096
   temperature?: number;     // default 1.0 (Claude default)
+  runtimeMode?: RuntimeMode;
 }
 
 export interface RunOptions {
@@ -15,6 +17,7 @@ export interface RunOptions {
   parentSessionId?: string;
   context?: string;          // additional context injected before user message
   budgetUsd?: number;        // hard stop if cost would exceed this
+  runtimeMode?: RuntimeMode;
   /**
    * Optional list of Claude Code tool names to enable on this run
    * (e.g. ['Read','Write','Edit','Bash','Glob','Grep']). When set, the
@@ -35,6 +38,8 @@ export interface RunResult {
   startedAt: string;
   completedAt: string;
   status: 'completed' | 'failed';
+  providerKind?: ExecutionProviderKind;
+  runtimeModeResolved?: RuntimeMode;
   error?: string;
 }
 

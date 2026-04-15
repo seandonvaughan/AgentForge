@@ -49,6 +49,47 @@ export interface PromotionRow {
   created_at: string;
 }
 
+export interface DecisionEventRow {
+  id: string;
+  session_id: string | null;
+  agent_id: string;
+  decision_type: string;
+  summary: string;
+  rationale: string | null;
+  payload_json: string;
+  created_at: string;
+}
+
+export interface TaskOutcomeRow {
+  id: string;
+  session_id: string | null;
+  agent_id: string;
+  task: string;
+  outcome: string;
+  success: number;
+  quality_score: number | null;
+  model: string | null;
+  duration_ms: number | null;
+  summary: string | null;
+  payload_json: string;
+  created_at: string;
+}
+
+export interface TestObservationRow {
+  id: string;
+  session_id: string | null;
+  agent_id: string | null;
+  run_id: string | null;
+  suite: string | null;
+  test_name: string | null;
+  file_path: string | null;
+  status: string;
+  message: string | null;
+  payload_json: string;
+  observed_at: string;
+  created_at: string;
+}
+
 export interface ScorecardRow {
   id: string;
   agent_id: string;
@@ -74,6 +115,38 @@ export interface AgentScore {
 export interface SessionFilters {
   agentId?: string;
   status?: string;
+  since?: string;
+  until?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface DecisionEventFilters {
+  sessionId?: string;
+  agentId?: string;
+  decisionType?: string;
+  since?: string;
+  until?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface TaskOutcomeFilters {
+  sessionId?: string;
+  agentId?: string;
+  outcome?: string;
+  since?: string;
+  until?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface TestObservationFilters {
+  sessionId?: string;
+  agentId?: string;
+  runId?: string;
+  status?: string;
+  suite?: string;
   since?: string;
   until?: string;
   limit?: number;
@@ -183,6 +256,187 @@ export class WorkspaceAdapter {
   getTotalCost(): number {
     const row = this.db.prepare('SELECT SUM(cost_usd) as total FROM costs').get() as { total: number | null };
     return row.total ?? 0;
+  }
+
+  // --- Runtime persistence ---
+
+  recordDecisionEvent(data: {
+    sessionId?: string;
+    agentId: string;
+    decisionType: string;
+    summary: string;
+    rationale?: string;
+    payload?: unknown;
+    createdAt?: string;
+  }): DecisionEventRow {
+    const id = generateId();
+    const createdAt = data.createdAt ?? nowIso();
+    this.db.prepare(`
+      INSERT INTO decision_events (id, session_id, agent_id, decision_type, summary, rationale, payload_json, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      data.sessionId ?? null,
+      data.agentId,
+      data.decisionType,
+      data.summary,
+      data.rationale ?? null,
+      serializePayload(data.payload),
+      createdAt,
+    );
+    return this.getDecisionEvent(id)!;
+  }
+
+  getDecisionEvent(id: string): DecisionEventRow | undefined {
+    return this.db.prepare('SELECT * FROM decision_events WHERE id = ?').get(id) as DecisionEventRow | undefined;
+  }
+
+  listDecisionEvents(filters: DecisionEventFilters = {}): DecisionEventRow[] {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (filters.sessionId) { conditions.push('session_id = ?'); params.push(filters.sessionId); }
+    if (filters.agentId) { conditions.push('agent_id = ?'); params.push(filters.agentId); }
+    if (filters.decisionType) { conditions.push('decision_type = ?'); params.push(filters.decisionType); }
+    if (filters.since) { conditions.push('created_at >= ?'); params.push(filters.since); }
+    if (filters.until) { conditions.push('created_at <= ?'); params.push(filters.until); }
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const limit = Math.min(filters.limit ?? 100, 500);
+    const offset = filters.offset ?? 0;
+
+    return this.db.prepare(`
+      SELECT * FROM decision_events ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?
+    `).all(...params, limit, offset) as DecisionEventRow[];
+  }
+
+  recordTaskOutcome(data: {
+    sessionId?: string;
+    agentId: string;
+    task: string;
+    outcome?: 'success' | 'partial' | 'failure';
+    success?: boolean;
+    qualityScore?: number;
+    model?: string;
+    durationMs?: number;
+    summary?: string;
+    payload?: unknown;
+    createdAt?: string;
+  }): TaskOutcomeRow {
+    const id = generateId();
+    const createdAt = data.createdAt ?? nowIso();
+    const normalizedOutcome = data.outcome ?? (data.success === false ? 'failure' : 'success');
+    const success = normalizedOutcome === 'success' ? 1 : 0;
+
+    this.db.prepare(`
+      INSERT INTO task_outcomes (
+        id, session_id, agent_id, task, outcome, success, quality_score,
+        model, duration_ms, summary, payload_json, created_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      data.sessionId ?? null,
+      data.agentId,
+      data.task,
+      normalizedOutcome,
+      success,
+      data.qualityScore ?? null,
+      data.model ?? null,
+      data.durationMs ?? null,
+      data.summary ?? null,
+      serializePayload(data.payload),
+      createdAt,
+    );
+    return this.getTaskOutcome(id)!;
+  }
+
+  getTaskOutcome(id: string): TaskOutcomeRow | undefined {
+    return this.db.prepare('SELECT * FROM task_outcomes WHERE id = ?').get(id) as TaskOutcomeRow | undefined;
+  }
+
+  listTaskOutcomes(filters: TaskOutcomeFilters = {}): TaskOutcomeRow[] {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (filters.sessionId) { conditions.push('session_id = ?'); params.push(filters.sessionId); }
+    if (filters.agentId) { conditions.push('agent_id = ?'); params.push(filters.agentId); }
+    if (filters.outcome) { conditions.push('outcome = ?'); params.push(filters.outcome); }
+    if (filters.since) { conditions.push('created_at >= ?'); params.push(filters.since); }
+    if (filters.until) { conditions.push('created_at <= ?'); params.push(filters.until); }
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const limit = Math.min(filters.limit ?? 100, 500);
+    const offset = filters.offset ?? 0;
+
+    return this.db.prepare(`
+      SELECT * FROM task_outcomes ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?
+    `).all(...params, limit, offset) as TaskOutcomeRow[];
+  }
+
+  recordTestObservation(data: {
+    sessionId?: string;
+    agentId?: string;
+    runId?: string;
+    suite?: string;
+    testName?: string;
+    filePath?: string;
+    status: 'passed' | 'failed' | 'skipped' | 'flaky' | 'error' | string;
+    message?: string;
+    payload?: unknown;
+    observedAt?: string;
+    createdAt?: string;
+  }): TestObservationRow {
+    const id = generateId();
+    const observedAt = data.observedAt ?? nowIso();
+    const createdAt = data.createdAt ?? observedAt;
+
+    this.db.prepare(`
+      INSERT INTO test_observations (
+        id, session_id, agent_id, run_id, suite, test_name, file_path,
+        status, message, payload_json, observed_at, created_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      data.sessionId ?? null,
+      data.agentId ?? null,
+      data.runId ?? null,
+      data.suite ?? null,
+      data.testName ?? null,
+      data.filePath ?? null,
+      data.status,
+      data.message ?? null,
+      serializePayload(data.payload),
+      observedAt,
+      createdAt,
+    );
+    return this.getTestObservation(id)!;
+  }
+
+  getTestObservation(id: string): TestObservationRow | undefined {
+    return this.db.prepare('SELECT * FROM test_observations WHERE id = ?').get(id) as TestObservationRow | undefined;
+  }
+
+  listTestObservations(filters: TestObservationFilters = {}): TestObservationRow[] {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (filters.sessionId) { conditions.push('session_id = ?'); params.push(filters.sessionId); }
+    if (filters.agentId) { conditions.push('agent_id = ?'); params.push(filters.agentId); }
+    if (filters.runId) { conditions.push('run_id = ?'); params.push(filters.runId); }
+    if (filters.status) { conditions.push('status = ?'); params.push(filters.status); }
+    if (filters.suite) { conditions.push('suite = ?'); params.push(filters.suite); }
+    if (filters.since) { conditions.push('observed_at >= ?'); params.push(filters.since); }
+    if (filters.until) { conditions.push('observed_at <= ?'); params.push(filters.until); }
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const limit = Math.min(filters.limit ?? 100, 500);
+    const offset = filters.offset ?? 0;
+
+    return this.db.prepare(`
+      SELECT * FROM test_observations ${where} ORDER BY observed_at DESC, created_at DESC LIMIT ? OFFSET ?
+    `).all(...params, limit, offset) as TestObservationRow[];
   }
 
   // --- Promotions / Autonomy ---
@@ -343,4 +597,10 @@ export class WorkspaceAdapter {
   close(): void {
     this.db.close();
   }
+}
+
+function serializePayload(payload: unknown): string {
+  if (payload === undefined) return '{}';
+  if (typeof payload === 'string') return payload;
+  return JSON.stringify(payload) ?? '{}';
 }
