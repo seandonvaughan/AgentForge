@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * File Scanner module for AgentForge (Haiku-tier).
  *
@@ -329,38 +328,55 @@ function extractImports(content: string, language: string): string[] {
     const esImportRe = /import\s+.*?\s+from\s+['"]([^'"]+)['"]/g;
     let m: RegExpExecArray | null;
     while ((m = esImportRe.exec(content)) !== null) {
-      imports.push(m[1]);
+      const importPath = m[1];
+      if (importPath) {
+        imports.push(importPath);
+      }
     }
 
     // Side-effect imports: import "module"
     const sideEffectRe = /import\s+['"]([^'"]+)['"]/g;
     while ((m = sideEffectRe.exec(content)) !== null) {
-      imports.push(m[1]);
+      const importPath = m[1];
+      if (importPath) {
+        imports.push(importPath);
+      }
     }
 
     // require() calls
     const requireRe = /require\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
     while ((m = requireRe.exec(content)) !== null) {
-      imports.push(m[1]);
+      const importPath = m[1];
+      if (importPath) {
+        imports.push(importPath);
+      }
     }
   } else if (language === "Python") {
     // import module / from module import ...
     const pyImportRe = /^\s*(?:from\s+([\w.]+)\s+import|import\s+([\w., ]+))/gm;
     let m: RegExpExecArray | null;
     while ((m = pyImportRe.exec(content)) !== null) {
-      imports.push(m[1] ?? m[2]);
+      const importPath = m[1] ?? m[2];
+      if (importPath) {
+        imports.push(importPath);
+      }
     }
   } else if (language === "Go") {
     const goImportRe = /import\s+(?:\(\s*([\s\S]*?)\s*\)|"([^"]+)")/g;
     let m: RegExpExecArray | null;
     while ((m = goImportRe.exec(content)) !== null) {
-      if (m[2]) {
-        imports.push(m[2]);
-      } else if (m[1]) {
+      const singleImport = m[2];
+      const importBlock = m[1];
+      if (singleImport) {
+        imports.push(singleImport);
+      } else if (importBlock) {
         const lineRe = /"([^"]+)"/g;
         let lm: RegExpExecArray | null;
-        while ((lm = lineRe.exec(m[1])) !== null) {
-          imports.push(lm[1]);
+        while ((lm = lineRe.exec(importBlock)) !== null) {
+          const importPath = lm[1];
+          if (importPath) {
+            imports.push(importPath);
+          }
         }
       }
     }
@@ -368,25 +384,37 @@ function extractImports(content: string, language: string): string[] {
     const rustUseRe = /^\s*use\s+([\w:]+)/gm;
     let m: RegExpExecArray | null;
     while ((m = rustUseRe.exec(content)) !== null) {
-      imports.push(m[1]);
+      const importPath = m[1];
+      if (importPath) {
+        imports.push(importPath);
+      }
     }
   } else if (language === "Java" || language === "Kotlin") {
     const javaImportRe = /^\s*import\s+([\w.]+)/gm;
     let m: RegExpExecArray | null;
     while ((m = javaImportRe.exec(content)) !== null) {
-      imports.push(m[1]);
+      const importPath = m[1];
+      if (importPath) {
+        imports.push(importPath);
+      }
     }
   } else if (language === "Ruby") {
     const rubyReqRe = /^\s*require\s+['"]([^'"]+)['"]/gm;
     let m: RegExpExecArray | null;
     while ((m = rubyReqRe.exec(content)) !== null) {
-      imports.push(m[1]);
+      const importPath = m[1];
+      if (importPath) {
+        imports.push(importPath);
+      }
     }
   } else if (language === "PHP") {
     const phpUseRe = /^\s*use\s+([\w\\]+)/gm;
     let m: RegExpExecArray | null;
     while ((m = phpUseRe.exec(content)) !== null) {
-      imports.push(m[1]);
+      const importPath = m[1];
+      if (importPath) {
+        imports.push(importPath);
+      }
     }
   }
 
@@ -408,7 +436,10 @@ function extractExports(content: string, language: string): string[] {
       /export\s+(?:default\s+)?(?:const|let|var|function\*?|class|interface|type|enum|abstract\s+class)\s+(\w+)/g;
     let m: RegExpExecArray | null;
     while ((m = namedExportRe.exec(content)) !== null) {
-      exports.push(m[1]);
+      const exportName = m[1];
+      if (exportName) {
+        exports.push(exportName);
+      }
     }
 
     // export default (without a named declaration following it)
@@ -419,8 +450,9 @@ function extractExports(content: string, language: string): string[] {
     // __all__ list
     const allRe = /__all__\s*=\s*\[([^\]]+)\]/;
     const allMatch = allRe.exec(content);
-    if (allMatch) {
-      const items = allMatch[1].match(/['"](\w+)['"]/g);
+    const allBody = allMatch?.[1];
+    if (allBody) {
+      const items = allBody.match(/['"](\w+)['"]/g);
       if (items) {
         for (const item of items) {
           exports.push(item.replace(/['"]/g, ""));
@@ -432,8 +464,9 @@ function extractExports(content: string, language: string): string[] {
     const defRe = /^(?:def|class)\s+(\w+)/gm;
     let m: RegExpExecArray | null;
     while ((m = defRe.exec(content)) !== null) {
-      if (!m[1].startsWith("_")) {
-        exports.push(m[1]);
+      const exportName = m[1];
+      if (exportName && !exportName.startsWith("_")) {
+        exports.push(exportName);
       }
     }
   } else if (language === "Go") {
@@ -441,13 +474,19 @@ function extractExports(content: string, language: string): string[] {
     const goExportRe = /^(?:func|type|var|const)\s+([A-Z]\w*)/gm;
     let m: RegExpExecArray | null;
     while ((m = goExportRe.exec(content)) !== null) {
-      exports.push(m[1]);
+      const exportName = m[1];
+      if (exportName) {
+        exports.push(exportName);
+      }
     }
   } else if (language === "Rust") {
     const rustPubRe = /^\s*pub\s+(?:fn|struct|enum|trait|type|const|static|mod)\s+(\w+)/gm;
     let m: RegExpExecArray | null;
     while ((m = rustPubRe.exec(content)) !== null) {
-      exports.push(m[1]);
+      const exportName = m[1];
+      if (exportName) {
+        exports.push(exportName);
+      }
     }
   }
 

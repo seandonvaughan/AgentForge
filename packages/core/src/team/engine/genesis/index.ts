@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Genesis barrel export and workflow orchestrators for AgentForge.
  *
@@ -122,10 +121,11 @@ export async function genesis(
       : inferDomainsFromSignals(discoveryResult.signals);
 
   // Phase 4: Project Brief
-  const brief = buildBrief({
-    scan: scan ?? undefined,
-    answers: Object.keys(answers).length > 0 ? answers : undefined,
-  });
+  const briefParams = {
+    ...(scan ? { scan } : {}),
+    ...(Object.keys(answers).length > 0 ? { answers } : {}),
+  };
+  const brief = buildBrief(briefParams);
 
   // Phase 5: Team Design
   let templates = new Map<
@@ -225,14 +225,17 @@ export async function runGenesis(options: GenesisOptions = {}): Promise<GenesisR
     domains = [...domainSet].sort();
   } else {
     // Auto-detect from brief builder (same heuristics as inferDomains)
-    const tempBrief = buildBrief({ scan, answers: options.answers });
+    const tempBrief = buildBrief({
+      ...(scan ? { scan } : {}),
+      ...(options.answers ? { answers: options.answers } : {}),
+    });
     domains = tempBrief.domains;
   }
 
   // 4. Build the project brief
   const brief = buildBrief({
-    scan,
-    answers: options.answers,
+    ...(scan ? { scan } : {}),
+    ...(options.answers ? { answers: options.answers } : {}),
   });
 
   // Override domains in brief when manually specified

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Project Brief Builder for the AgentForge Genesis workflow.
  *
@@ -61,6 +60,22 @@ export function buildBrief(params: BuildBriefParams): ProjectBrief {
     projectType = "research";
   }
 
+  const context: ProjectBrief["context"] = {};
+  if (codebase) {
+    context.codebase = codebase;
+  }
+  if (scan?.documents) {
+    context.documents = scan.documents;
+  }
+  const resolvedIntegrations = scan?.integrations ?? integrations;
+  if (resolvedIntegrations) {
+    context.integrations = resolvedIntegrations;
+  }
+  const resolvedResearch = research ?? scan?.research;
+  if (resolvedResearch) {
+    context.research = resolvedResearch;
+  }
+
   return {
     project: {
       name,
@@ -73,12 +88,7 @@ export function buildBrief(params: BuildBriefParams): ProjectBrief {
     },
     domains,
     constraints,
-    context: {
-      codebase,
-      documents: scan?.documents,
-      integrations: scan?.integrations || integrations,
-      research: research || scan?.research,
-    },
+    context,
   };
 }
 

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Dependency Mapper — Haiku-tier scanner module for AgentForge.
  *
@@ -349,9 +348,10 @@ async function parseRequirementsTxt(root: string): Promise<DependencyInfo[]> {
     const match = trimmed.match(
       /^([A-Za-z0-9_][A-Za-z0-9._-]*(?:\[[^\]]*\])?)(?:\s*([><=!~]+)\s*(.+))?$/,
     );
-    if (match) {
-      const name = match[1].replace(/\[.*\]/, ""); // strip extras
-      const version = match[3] ?? "*";
+    const rawName = match?.[1];
+    if (rawName) {
+      const name = rawName.replace(/\[.*\]/, ""); // strip extras
+      const version = match?.[3] ?? "*";
       results.push(makeDep(name, version, "production"));
     }
   }
@@ -371,8 +371,9 @@ async function parsePyprojectToml(root: string): Promise<DependencyInfo[]> {
   const depsMatch = raw.match(
     /\[project\]\s[\s\S]*?dependencies\s*=\s*\[([\s\S]*?)\]/,
   );
-  if (depsMatch) {
-    for (const entry of extractTomlStrings(depsMatch[1])) {
+  const depsBody = depsMatch?.[1];
+  if (depsBody) {
+    for (const entry of extractTomlStrings(depsBody)) {
       const { name, version } = parsePepDep(entry);
       results.push(makeDep(name, version, "production"));
     }
@@ -385,10 +386,17 @@ async function parsePyprojectToml(root: string): Promise<DependencyInfo[]> {
   while ((optMatch = optionalPattern.exec(raw)) !== null) {
     // Lines may be key = [...] style
     const block = optMatch[1];
+    if (!block) {
+      continue;
+    }
     const arrayPattern = /\w+\s*=\s*\[([\s\S]*?)\]/g;
     let arrMatch: RegExpExecArray | null;
     while ((arrMatch = arrayPattern.exec(block)) !== null) {
-      for (const entry of extractTomlStrings(arrMatch[1])) {
+      const arrayBody = arrMatch[1];
+      if (!arrayBody) {
+        continue;
+      }
+      for (const entry of extractTomlStrings(arrayBody)) {
         const { name, version } = parsePepDep(entry);
         results.push(makeDep(name, version, "optional"));
       }
@@ -404,7 +412,10 @@ function extractTomlStrings(body: string): string[] {
   const re = /["']([^"']+)["']/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(body)) !== null) {
-    strings.push(m[1]);
+    const value = m[1];
+    if (value) {
+      strings.push(value);
+    }
   }
   return strings;
 }
@@ -415,8 +426,9 @@ function parsePepDep(raw: string): { name: string; version: string } {
   const match = cleaned.match(
     /^([A-Za-z0-9_][A-Za-z0-9._-]*)(?:\s*([><=!~]+)\s*(.+))?$/,
   );
-  if (match) {
-    return { name: match[1], version: match[3] ?? "*" };
+  const depName = match?.[1];
+  if (depName) {
+    return { name: depName, version: match?.[3] ?? "*" };
   }
   return { name: cleaned, version: "*" };
 }
@@ -438,23 +450,28 @@ async function parseCargoToml(root: string): Promise<DependencyInfo[]> {
       `\\[${sectionName}\\]\\s*\\n([\\s\\S]*?)(?=\\n\\[|$)`,
     );
     const m = raw.match(re);
-    if (!m) return;
+    const body = m?.[1];
+    if (!body) return;
 
-    for (const line of m[1].split("\n")) {
+    for (const line of body.split("\n")) {
       const trimmed = line.trim();
       if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("[")) continue;
 
       // name = "version"  or  name = { version = "x", ... }
       const simple = trimmed.match(/^([A-Za-z0-9_-]+)\s*=\s*"([^"]+)"/);
-      if (simple) {
-        results.push(makeDep(simple[1], simple[2], depType));
+      const simpleName = simple?.[1];
+      const simpleVersion = simple?.[2];
+      if (simpleName && simpleVersion) {
+        results.push(makeDep(simpleName, simpleVersion, depType));
         continue;
       }
       const table = trimmed.match(
         /^([A-Za-z0-9_-]+)\s*=\s*\{.*?version\s*=\s*"([^"]+)"/,
       );
-      if (table) {
-        results.push(makeDep(table[1], table[2], depType));
+      const tableName = table?.[1];
+      const tableVersion = table?.[2];
+      if (tableName && tableVersion) {
+        results.push(makeDep(tableName, tableVersion, depType));
       }
     }
   };
@@ -477,13 +494,19 @@ async function parseGoMod(root: string): Promise<DependencyInfo[]> {
   const blockPattern = /require\s*\(\s*([\s\S]*?)\)/g;
   let blockMatch: RegExpExecArray | null;
   while ((blockMatch = blockPattern.exec(raw)) !== null) {
-    for (const line of blockMatch[1].split("\n")) {
+    const block = blockMatch[1];
+    if (!block) {
+      continue;
+    }
+    for (const line of block.split("\n")) {
       const trimmed = line.trim();
       if (!trimmed || trimmed.startsWith("//")) continue;
       const parts = trimmed.split(/\s+/);
-      if (parts.length >= 2) {
+      const moduleName = parts[0];
+      const moduleVersion = parts[1];
+      if (moduleName && moduleVersion) {
         const indirect = trimmed.includes("// indirect");
-        results.push(makeDep(parts[0], parts[1], indirect ? "optional" : "production"));
+        results.push(makeDep(moduleName, moduleVersion, indirect ? "optional" : "production"));
       }
     }
   }
@@ -492,7 +515,11 @@ async function parseGoMod(root: string): Promise<DependencyInfo[]> {
   const singlePattern = /^require\s+(\S+)\s+(\S+)/gm;
   let singleMatch: RegExpExecArray | null;
   while ((singleMatch = singlePattern.exec(raw)) !== null) {
-    results.push(makeDep(singleMatch[1], singleMatch[2], "production"));
+    const moduleName = singleMatch[1];
+    const moduleVersion = singleMatch[2];
+    if (moduleName && moduleVersion) {
+      results.push(makeDep(moduleName, moduleVersion, "production"));
+    }
   }
 
   return results;
@@ -550,8 +577,9 @@ async function parseGemfile(root: string): Promise<DependencyInfo[]> {
     const match = trimmed.match(
       /gem\s+["']([^"']+)["'](?:\s*,\s*["']([^"']+)["'])?/,
     );
-    if (match) {
-      results.push(makeDep(match[1], match[2] ?? "*", "production"));
+    const gemName = match?.[1];
+    if (gemName) {
+      results.push(makeDep(gemName, match?.[2] ?? "*", "production"));
     }
   }
 

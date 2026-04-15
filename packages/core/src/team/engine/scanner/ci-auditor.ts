@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * CI/CD Configuration Auditor — Sonnet-tier scanner module.
  *
@@ -421,26 +420,36 @@ function parseJenkinsfile(content: string): CIPipeline {
   const stageRegex = /stage\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
   let match: RegExpExecArray | null;
   while ((match = stageRegex.exec(content)) !== null) {
-    steps.push(`stage: ${match[1]}`);
+    const stageName = match[1];
+    if (stageName) {
+      steps.push(`stage: ${stageName}`);
+    }
   }
 
   // Extract sh/bat commands
   const shRegex = /(?:sh|bat)\s+['"]([^'"]+)['"]/g;
   while ((match = shRegex.exec(content)) !== null) {
-    steps.push(match[1]);
+    const command = match[1];
+    if (command) {
+      steps.push(command);
+    }
   }
 
   // Multi-line sh blocks
   const shBlockRegex = /sh\s+'''([\s\S]*?)'''/g;
   while ((match = shBlockRegex.exec(content)) !== null) {
-    steps.push(match[1].trim());
+    const commandBlock = match[1];
+    if (commandBlock) {
+      steps.push(commandBlock.trim());
+    }
   }
 
   // Triggers
   const triggerRegex = /triggers\s*\{([\s\S]*?)\}/;
   const triggerMatch = triggerRegex.exec(content);
-  if (triggerMatch) {
-    triggers.push(...flattenToStrings(triggerMatch[1].trim()));
+  const triggerBody = triggerMatch?.[1];
+  if (triggerBody) {
+    triggers.push(...flattenToStrings(triggerBody.trim()));
   }
 
   return { name: "Jenkinsfile", triggers, steps };

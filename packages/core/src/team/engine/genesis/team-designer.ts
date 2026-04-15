@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Team Designer for the AgentForge Genesis workflow.
  *
@@ -152,8 +151,10 @@ function collectAgentsFromDomains(
           names.forEach((n) => utility.add(n));
           break;
         default:
-          if (!extra[category]) extra[category] = new Set();
-          names.forEach((n) => extra[category].add(n));
+          {
+            const bucket = extra[category] ?? (extra[category] = new Set<string>());
+            names.forEach((n) => bucket.add(n));
+          }
       }
     }
   }

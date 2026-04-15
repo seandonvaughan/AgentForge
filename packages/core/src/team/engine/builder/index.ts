@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Builder barrel export for AgentForge — Phase 3: Team Builder Engine.
  *
@@ -230,7 +229,8 @@ export async function forgeTeam(projectRoot: string): Promise<TeamManifest> {
 
   for (const [name, template] of customizedAgents) {
     const category = categorizeAgent(name, template);
-    teamAgents[category].push(name);
+    const bucket = teamAgents[category] ?? (teamAgents[category] = []);
+    bucket.push(name);
   }
 
   const projectHash = computeProjectHash(scan);

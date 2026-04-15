@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Interactive Terminal Interview Runner for AgentForge Genesis.
  *
@@ -82,8 +81,11 @@ export async function runInteractiveInterview(
               choiceIndex >= 0 &&
               choiceIndex < choices.length
             ) {
-              answer = choices[choiceIndex];
-              validChoice = true;
+              const selectedChoice = choices[choiceIndex];
+              if (selectedChoice !== undefined) {
+                answer = selectedChoice;
+                validChoice = true;
+              }
             } else {
               console.log(
                 `    Invalid choice. Please enter a number between 1 and ${choices.length}.`,

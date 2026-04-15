@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Bridge Builder -- creates cross-domain connections between agent teams.
  *
@@ -41,28 +40,39 @@ export function buildBridges(
   domainTeams: Record<string, DomainTeam>,
   delegationGraph: DelegationGraph,
 ): Bridge[] {
-  const domainNames = Object.keys(domainTeams);
+  const domainEntries = Object.entries(domainTeams).map(([domainName, team]) => ({
+    domainName,
+    team,
+  }));
 
   // Single domain -- no bridges needed
-  if (domainNames.length < 2) {
+  if (domainEntries.length < 2) {
     return [];
   }
 
   const bridges: Bridge[] = [];
   const seen = new Set<string>();
 
-  const leads = domainNames.map((d) => domainTeams[d].lead);
+  const leads = domainEntries.map(({ domainName, team }) => ({
+    domainName,
+    lead: team.lead,
+  }));
 
   // 1. Lead-to-lead bridges
   for (let i = 0; i < leads.length; i++) {
+    const left = leads[i];
+    if (!left) continue;
     for (let j = i + 1; j < leads.length; j++) {
-      const key = `${leads[i]}->${leads[j]}`;
+      const right = leads[j];
+      if (!right) continue;
+
+      const key = `${left.lead}->${right.lead}`;
       if (!seen.has(key)) {
         seen.add(key);
         bridges.push({
-          from: leads[i],
-          to: leads[j],
-          reason: `Cross-domain coordination between ${domainNames[i]} and ${domainNames[j]} leads`,
+          from: left.lead,
+          to: right.lead,
+          reason: `Cross-domain coordination between ${left.domainName} and ${right.domainName} leads`,
         });
       }
     }
@@ -70,7 +80,7 @@ export function buildBridges(
 
   // 2. Coordinator bridges -- agents in the delegation graph that
   //    delegate to leads across multiple domains.
-  const leadsSet = new Set(leads);
+  const leadsSet = new Set<string>(leads.map(({ lead }) => lead));
 
   for (const [agent, delegatesTo] of Object.entries(delegationGraph)) {
     // Skip agents that are already domain leads
@@ -78,12 +88,13 @@ export function buildBridges(
 
     const targetLeads = delegatesTo.filter((t) => leadsSet.has(t));
     if (targetLeads.length >= 2) {
-      const key = `${agent}->[${targetLeads.sort().join(",")}]`;
+      const sortedTargets = [...targetLeads].sort();
+      const key = `${agent}->[${sortedTargets.join(",")}]`;
       if (!seen.has(key)) {
         seen.add(key);
         bridges.push({
           from: agent,
-          to: targetLeads,
+          to: sortedTargets,
           reason: "Coordinator needs visibility into all domains",
         });
       }

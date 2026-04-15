@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Code Comment Miner for AgentForge (Haiku-tier).
  *
@@ -185,12 +184,16 @@ function extractComments(lines: string[], relativePath: string): CommentNote[] {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    if (line === undefined) {
+      continue;
+    }
 
     for (const rule of COMMENT_RULES) {
       const match = rule.pattern.exec(line);
-      if (match) {
+      const text = match?.[1];
+      if (text) {
         found.push({
-          text: match[1].trim(),
+          text: text.trim(),
           file: relativePath,
           line: i + 1,
           type: rule.type,

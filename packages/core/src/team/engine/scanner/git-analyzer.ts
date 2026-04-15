@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Git history analyzer for AgentForge (Haiku-tier scanner).
  *
@@ -93,10 +92,16 @@ function getContributors(cwd: string): GitContributor[] {
   return lines(out).map((line) => {
     const match = line.match(/^\s*(\d+)\t(.+?)\s+<(.+?)>\s*$/);
     if (!match) return null;
+    const commitCount = match[1];
+    const contributorName = match[2];
+    const contributorEmail = match[3];
+    if (!commitCount || !contributorName || !contributorEmail) {
+      return null;
+    }
     return {
-      commits: parseInt(match[1], 10),
-      name: match[2],
-      email: match[3],
+      commits: parseInt(commitCount, 10),
+      name: contributorName,
+      email: contributorEmail,
     };
   }).filter((c): c is GitContributor => c !== null);
 }
@@ -178,9 +183,14 @@ function getChurnRate(cwd: string): ChurnEntry[] {
   for (const line of lines(out)) {
     const match = line.match(/^(\d+|-)\t(\d+|-)\t(.+)$/);
     if (!match) continue;
-    const additions = match[1] === "-" ? 0 : parseInt(match[1], 10);
-    const deletions = match[2] === "-" ? 0 : parseInt(match[2], 10);
+    const rawAdditions = match[1];
+    const rawDeletions = match[2];
     const path = match[3];
+    if (!rawAdditions || !rawDeletions || !path) {
+      continue;
+    }
+    const additions = rawAdditions === "-" ? 0 : parseInt(rawAdditions, 10);
+    const deletions = rawDeletions === "-" ? 0 : parseInt(rawDeletions, 10);
     const existing = churn.get(path) ?? { additions: 0, deletions: 0 };
     existing.additions += additions;
     existing.deletions += deletions;

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Team Composer — decides which agents to include based on scan results.
  *
@@ -482,9 +481,17 @@ export function composeTeamUnits(
     if (agents.length === 0) continue;
     agents.sort((a, b) => seniorityOrder.indexOf(a.seniority) - seniorityOrder.indexOf(b.seniority));
 
-    const manager = agents.find((a) => a.seniority === "principal" || a.seniority === "lead")?.name ?? agents[0].name;
+    const firstAgent = agents[0];
+    if (!firstAgent) {
+      continue;
+    }
+
+    const manager =
+      agents.find((a) => a.seniority === "principal" || a.seniority === "lead")?.name ??
+      firstAgent.name;
+    const secondAgent = agents[1];
     const techLead = agents.find((a) => a.name !== manager && (a.seniority === "lead" || a.seniority === "senior"))?.name
-      ?? (agents.length > 1 ? agents[1].name : manager);
+      ?? (secondAgent ? secondAgent.name : manager);
     const specialists = agents.filter((a) => a.name !== manager && a.name !== techLead).map((a) => a.name);
     const defaultCapacity = layer === "executive" ? 6 : 10;
 
