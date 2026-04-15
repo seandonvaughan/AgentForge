@@ -21,7 +21,7 @@ export class WorkspaceAggregator {
       costUsd: ws.totalCostUsd,
     }));
 
-    const highestCostWorkspaceId = sorted.length > 0 ? sorted[0].workspaceId : null;
+    const highestCostWorkspaceId = sorted[0]?.workspaceId ?? null;
 
     return {
       workspaces: summaries,

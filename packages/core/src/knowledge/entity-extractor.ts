@@ -79,7 +79,7 @@ export class EntityExtractor {
       id: generateId(),
       name: req.name,
       type,
-      description: req.description,
+      ...(req.description ? { description: req.description } : {}),
       properties: req.properties ?? {},
       createdAt: nowIso(),
       updatedAt: nowIso(),

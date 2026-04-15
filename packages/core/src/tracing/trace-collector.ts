@@ -1,7 +1,6 @@
-import { generateId, nowIso } from '@agentforge/shared';
 import { TraceContext } from './trace-context.js';
 import { Span } from './span.js';
-import type { TraceRecord, StartSpanOptions, TraceQueryFilters, SpanStatus } from './types.js';
+import type { TraceRecord, StartSpanOptions, TraceQueryFilters } from './types.js';
 
 /**
  * TraceCollector — creates spans, assembles complete traces, and stores them.
@@ -92,10 +91,10 @@ export class TraceCollector {
         serviceName: (span.attributes['service.name'] as string) ?? this.defaultServiceName,
         spans: [span.toData()],
         startTime: span.startTime,
-        endTime: span.endTime,
-        totalDurationMs: span.durationMs,
         status: span.status,
         spanCount: 1,
+        ...(span.endTime ? { endTime: span.endTime } : {}),
+        ...(span.durationMs !== undefined ? { totalDurationMs: span.durationMs } : {}),
       };
       this.traces.set(traceId, record);
 

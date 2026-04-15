@@ -28,8 +28,8 @@ export class AgentVersionManager {
       agentId,
       version: `1.${versionNumber}.0`,
       config: { ...config },
-      notes,
       recordedAt: new Date().toISOString(),
+      ...(notes ? { notes } : {}),
     };
 
     this.history.set(agentId, [record, ...existing]);

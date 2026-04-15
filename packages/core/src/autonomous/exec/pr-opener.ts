@@ -150,7 +150,7 @@ export class PROpener {
     const args = this.renderArgs({
       ...req,
       labels: filteredLabels,
-      reviewers: filteredReviewers,
+      ...(filteredReviewers ? { reviewers: filteredReviewers } : {}),
     });
 
     try {

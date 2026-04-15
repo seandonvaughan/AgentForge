@@ -66,7 +66,7 @@ export class HealthMonitor {
       // If circuit was open and we see success, try half-open recovery
       if (state.circuitOpen) {
         state.circuitOpen = false;
-        state.circuitOpenedAt = undefined;
+        delete state.circuitOpenedAt;
       }
     } else {
       state.failureCount++;
@@ -132,7 +132,7 @@ export class HealthMonitor {
     const state = this.services.get(service);
     if (state) {
       state.circuitOpen = false;
-      state.circuitOpenedAt = undefined;
+      delete state.circuitOpenedAt;
       state.calls = [];
     }
   }

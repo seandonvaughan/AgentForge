@@ -7,9 +7,11 @@ function parseYamlSimple(content: string): Record<string, unknown> {
   const lines = content.split('\n');
   for (const line of lines) {
     const m = line.match(/^(\w[\w-]*):\s*(.+)$/);
-    if (m) {
-      const val = m[2].trim().replace(/^['"]|['"]$/g, '');
-      result[m[1]] = val;
+    const key = m?.[1];
+    const rawValue = m?.[2];
+    if (key && rawValue) {
+      const val = rawValue.trim().replace(/^['"]|['"]$/g, '');
+      result[key] = val;
     }
   }
   return result;

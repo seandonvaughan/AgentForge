@@ -64,14 +64,16 @@ export class BatchAggregator {
     try {
       const results = await this.executor(batch.map(item => item.request));
       for (let i = 0; i < batch.length; i++) {
+        const pendingItem = batch[i];
+        if (!pendingItem) continue;
         const result = results[i] ?? {
-          requestId: batch[i].request.id,
+          requestId: pendingItem.request.id,
           response: null,
           costUsd: 0,
           fromCache: false,
           batchId,
         };
-        batch[i].resolve({ ...result, batchId });
+        pendingItem.resolve({ ...result, batchId });
       }
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));

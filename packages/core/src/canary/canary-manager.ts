@@ -95,7 +95,9 @@ export class CanaryManager {
         flagId,
         `Auto-rollback: error rate ${(updated.errorRate * 100).toFixed(1)}% exceeds threshold ${(updated.rollbackThreshold * 100).toFixed(1)}%`,
       );
-      return { flag: this.flagManager.get(flagId)!, rollback: rollback ?? undefined };
+      const currentFlag = this.flagManager.get(flagId);
+      if (!currentFlag) return undefined;
+      return rollback ? { flag: currentFlag, rollback } : { flag: currentFlag };
     }
 
     return { flag: updated };

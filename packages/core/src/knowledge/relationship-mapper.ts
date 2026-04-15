@@ -54,22 +54,28 @@ export class RelationshipMapper {
     for (const group of entityGroups) {
       for (let i = 0; i < group.length; i++) {
         for (let j = i + 1; j < group.length; j++) {
-          const key = [group[i].id, group[j].id].sort().join('::');
+          const source = group[i];
+          const target = group[j];
+          if (!source || !target) continue;
+          const key = [source.id, target.id].sort().join('::');
           pairCount.set(key, (pairCount.get(key) ?? 0) + 1);
         }
       }
     }
 
     const maxCount = Math.max(1, ...pairCount.values());
-    return [...pairCount.entries()].map(([key, count]) => {
+    return [...pairCount.entries()].flatMap(([key, count]) => {
       const [sourceId, targetId] = key.split('::');
-      return {
+      if (!sourceId || !targetId) {
+        return [];
+      }
+      return [{
         sourceId,
         targetId,
         type: 'related_to' as RelationshipType,
         weight: count / maxCount,
         properties: { coOccurrenceCount: count },
-      };
+      }];
     });
   }
 

@@ -28,7 +28,7 @@ export class RegressionDetector {
       failuresBefore: before.failureCount,
       failuresAfter: after.failureCount,
       delta: testDelta,
-      reason,
+      ...(reason ? { reason } : {}),
     };
   }
 }

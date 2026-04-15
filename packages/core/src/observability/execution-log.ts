@@ -21,11 +21,15 @@ export class ExecutionLog {
       level,
       category,
       message,
-      data,
-      sprintVersion: data?.['sprintVersion'] as string | undefined,
-      agentId: data?.['agentId'] as string | undefined,
-      costUsd: data?.['costUsd'] as number | undefined,
-      durationMs: data?.['durationMs'] as number | undefined,
+      ...(data ? { data } : {}),
+      ...(typeof data?.['sprintVersion'] === 'string'
+        ? { sprintVersion: data['sprintVersion'] }
+        : {}),
+      ...(typeof data?.['agentId'] === 'string' ? { agentId: data['agentId'] } : {}),
+      ...(typeof data?.['costUsd'] === 'number' ? { costUsd: data['costUsd'] } : {}),
+      ...(typeof data?.['durationMs'] === 'number'
+        ? { durationMs: data['durationMs'] }
+        : {}),
     };
 
     this.entries.push(entry);

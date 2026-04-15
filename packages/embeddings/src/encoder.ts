@@ -1,12 +1,32 @@
 // Encoder wraps @xenova/transformers pipeline
 // We use dynamic import to allow the package to be optional at build time
 
-let pipeline: ((text: string | string[]) => Promise<{ data: Float32Array }[]>) | null = null;
+type EmbeddingData = Float32Array | ArrayLike<number>;
+type EmbeddingOutput = { data: EmbeddingData };
+type EmbeddingPipeline = (text: string | string[]) => Promise<EmbeddingOutput[]>;
+
+let pipeline: EmbeddingPipeline | undefined;
 
 const MODEL_ID = 'Xenova/all-MiniLM-L6-v2';
 
-async function getPipeline() {
-  if (!pipeline) {
+function isEmbeddingOutput(value: unknown): value is EmbeddingOutput {
+  return typeof value === 'object' && value !== null && 'data' in value;
+}
+
+function normalizeOutputs(output: unknown): EmbeddingOutput[] {
+  if (Array.isArray(output)) {
+    return output.filter(isEmbeddingOutput);
+  }
+
+  if (isEmbeddingOutput(output)) {
+    return [output];
+  }
+
+  return [];
+}
+
+async function getPipeline(): Promise<EmbeddingPipeline> {
+  if (pipeline === undefined) {
     try {
       const { pipeline: createPipeline } = await import('@xenova/transformers');
       const p = await createPipeline('feature-extraction', MODEL_ID, {
@@ -14,11 +34,7 @@ async function getPipeline() {
       });
       pipeline = async (text: string | string[]) => {
         const output = await p(text, { pooling: 'mean', normalize: true });
-        // Handle both single and batch
-        if (Array.isArray(text)) {
-          return output;
-        }
-        return [output];
+        return normalizeOutputs(output);
       };
     } catch {
       // Fallback: deterministic hash-based pseudo-embeddings for environments without transformers
@@ -36,19 +52,27 @@ function hashEmbed(text: string, dims: number): Float32Array {
   const vec = new Float32Array(dims);
   for (let i = 0; i < text.length; i++) {
     const idx = (text.charCodeAt(i) * 2654435761) % dims;
-    vec[idx] += Math.sin(i * 0.1);
+    vec[idx] = (vec[idx] ?? 0) + Math.sin(i * 0.1);
   }
   // Normalize
   let norm = 0;
-  for (let i = 0; i < dims; i++) norm += vec[i] * vec[i];
+  for (let i = 0; i < dims; i++) {
+    const value = vec[i] ?? 0;
+    norm += value * value;
+  }
   norm = Math.sqrt(norm) || 1;
-  for (let i = 0; i < dims; i++) vec[i] /= norm;
+  for (let i = 0; i < dims; i++) {
+    vec[i] = (vec[i] ?? 0) / norm;
+  }
   return vec;
 }
 
 export async function encode(text: string): Promise<Float32Array> {
   const p = await getPipeline();
   const [output] = await p(text);
+  if (!output) {
+    throw new Error('Embedding pipeline returned no output');
+  }
   return output.data instanceof Float32Array ? output.data : new Float32Array(output.data);
 }
 

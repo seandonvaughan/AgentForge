@@ -32,11 +32,11 @@ export class ExecutionService {
     const modelId = MODEL_IDS[config.model];
     const request = this.buildRequest(config, opts, modelId, apiKey);
     const session = new RuntimeSession({
-      adapter,
       agentId: config.agentId,
       task: opts.task,
       model: modelId,
       startedAt,
+      ...(adapter ? { adapter } : {}),
       ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
       ...(opts.parentSessionId ? { parentSessionId: opts.parentSessionId } : {}),
     });

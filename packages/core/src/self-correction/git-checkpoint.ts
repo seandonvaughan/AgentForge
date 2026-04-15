@@ -26,7 +26,7 @@ export class GitCheckpoint {
       testCount,
       failureCount,
       createdAt: nowIso(),
-      metadata,
+      ...(metadata ? { metadata } : {}),
     };
 
     this.checkpoints.set(id, checkpoint);

@@ -40,7 +40,9 @@ export class PluginHost extends EventEmitter {
     });
 
     instance.process = child;
-    instance.pid = child.pid;
+    if (child.pid !== undefined) {
+      instance.pid = child.pid;
+    }
     this.pendingCalls.set(pluginId, new Map());
 
     child.stdout!.setEncoding('utf-8');

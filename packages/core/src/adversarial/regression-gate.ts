@@ -26,7 +26,7 @@ export class RegressionGate {
       totalTests,
       failingTests,
       timestamp: nowIso(),
-      label,
+      ...(label ? { label } : {}),
     };
     this.snapshots.push(snapshot);
     return snapshot;
@@ -80,8 +80,8 @@ export class RegressionGate {
       failuresBefore: before.failingTests,
       failuresAfter: after.failingTests,
       failureDelta,
-      reason,
-      blockedAt: passed ? undefined : nowIso(),
+      ...(reason ? { reason } : {}),
+      ...(!passed ? { blockedAt: nowIso() } : {}),
     };
 
     this.gateHistory.push(result);
@@ -95,6 +95,7 @@ export class RegressionGate {
     if (this.snapshots.length < 2) return null;
     const before = this.snapshots[this.snapshots.length - 2];
     const after = this.snapshots[this.snapshots.length - 1];
+    if (!before || !after) return null;
     return this.evaluate(before, after);
   }
 

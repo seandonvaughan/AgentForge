@@ -1,4 +1,4 @@
-import type { AgentId, SessionId, ModelTier, WorkspaceId } from '@agentforge/shared';
+import type { AgentId, SessionId, WorkspaceId } from '@agentforge/shared';
 
 // ── Message envelope ─────────────────────────────────────────────────────────
 
@@ -291,6 +291,3 @@ export type AgentLifecycleEnvelope = MessageEnvelopeV2<AgentLifecyclePayload>;
 export type CostRecordedEnvelope = MessageEnvelopeV2<CostRecordedPayload>;
 export type SystemHealthEnvelope = MessageEnvelopeV2<SystemHealthPayload>;
 export type PluginEventEnvelope = MessageEnvelopeV2<PluginEventPayload>;
-
-// Suppress unused import warning — ModelTier is re-exported for consumer convenience
-export type { ModelTier };

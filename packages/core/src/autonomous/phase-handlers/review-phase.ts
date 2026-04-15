@@ -223,22 +223,23 @@ export function parseReviewFindingMetadata(
 ): ReviewFindingMetadata {
   // Extract file path if present
   const fileMatch = line.match(FILE_PATH_RE);
-  const file = fileMatch ? fileMatch[1] : null;
+  const file = fileMatch?.[1] ?? null;
 
   // Extract line number — only meaningful when a file was also detected
   let lineNumber: number | null = null;
   if (file && fileMatch && fileMatch.index !== undefined) {
-    const afterFile = line.slice(fileMatch.index + fileMatch[1].length);
+    const afterFile = line.slice(fileMatch.index + file.length);
     const lineMatch = afterFile.match(LINE_NUMBER_RE);
-    if (lineMatch) {
-      const parsed = parseInt(lineMatch[1], 10);
+    const lineValue = lineMatch?.[1];
+    if (lineValue) {
+      const parsed = parseInt(lineValue, 10);
       lineNumber = isNaN(parsed) ? null : parsed;
     }
   }
 
   // Extract fix suggestion before stripping the line for the summary
   const fixMatch = line.match(FIX_SUGGESTION_RE);
-  const fixSuggestion = fixMatch ? fixMatch[1].trim() || null : null;
+  const fixSuggestion = fixMatch?.[1]?.trim() || null;
 
   // Build summary: strip bullet/severity prefix and fix clause
   let summary = line
@@ -263,7 +264,13 @@ export function parseReviewFindingMetadata(
   // Normalise leading/trailing punctuation artifacts
   summary = summary.replace(/^[—:\s-]+/, '').replace(/[.\s]+$/, '').trim();
 
-  return { file, line: lineNumber, severity, summary, fixSuggestion };
+  return {
+    file,
+    line: lineNumber,
+    severity,
+    summary,
+    fixSuggestion,
+  };
 }
 
 // collectSprintItemTags lives in sprint-utils.ts — re-exported from there to

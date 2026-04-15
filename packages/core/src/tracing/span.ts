@@ -9,14 +9,14 @@ import type { Span as SpanData, SpanKind, SpanStatus, SpanEvent, SpanLink, SpanC
 export class Span {
   readonly traceId: string;
   readonly spanId: string;
-  readonly parentSpanId?: string;
+  readonly parentSpanId: string | undefined;
   readonly name: string;
   readonly kind: SpanKind;
   private _status: SpanStatus = 'unset';
-  private _statusMessage?: string;
+  private _statusMessage: string | undefined;
   readonly startTime: string;
-  private _endTime?: string;
-  private _durationMs?: number;
+  private _endTime: string | undefined;
+  private _durationMs: number | undefined;
   private _attributes: Record<string, unknown>;
   private _events: SpanEvent[] = [];
   private _links: SpanLink[] = [];
@@ -54,14 +54,21 @@ export class Span {
 
   addEvent(name: string, attributes?: Record<string, unknown>): this {
     if (!this._ended) {
-      this._events.push({ name, timestamp: nowIso(), attributes });
+      this._events.push({
+        name,
+        timestamp: nowIso(),
+        ...(attributes ? { attributes } : {}),
+      });
     }
     return this;
   }
 
   addLink(context: SpanContext, attributes?: Record<string, unknown>): this {
     if (!this._ended) {
-      this._links.push({ context, attributes });
+      this._links.push({
+        context,
+        ...(attributes ? { attributes } : {}),
+      });
     }
     return this;
   }
@@ -119,14 +126,14 @@ export class Span {
     return {
       traceId: this.traceId,
       spanId: this.spanId,
-      parentSpanId: this.parentSpanId,
+      ...(this.parentSpanId ? { parentSpanId: this.parentSpanId } : {}),
       name: this.name,
       kind: this.kind,
       status: this._status,
-      statusMessage: this._statusMessage,
       startTime: this.startTime,
-      endTime: this._endTime,
-      durationMs: this._durationMs,
+      ...(this._statusMessage ? { statusMessage: this._statusMessage } : {}),
+      ...(this._endTime ? { endTime: this._endTime } : {}),
+      ...(this._durationMs !== undefined ? { durationMs: this._durationMs } : {}),
       attributes: { ...this._attributes },
       events: [...this._events],
       links: [...this._links],

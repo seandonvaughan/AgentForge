@@ -26,10 +26,10 @@ export class ChaosInjector {
       type: opts.type,
       targetComponent: opts.targetComponent,
       probability: opts.probability ?? 1.0,
-      delayMs: opts.delayMs,
-      errorMessage: opts.errorMessage,
       active: true,
       createdAt: nowIso(),
+      ...(opts.delayMs !== undefined ? { delayMs: opts.delayMs } : {}),
+      ...(opts.errorMessage ? { errorMessage: opts.errorMessage } : {}),
     };
     this.scenarios.set(scenario.id, scenario);
     return scenario;

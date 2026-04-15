@@ -7,8 +7,14 @@ export * from './config-loader.js';
 export * from './cycle-logger.js';
 export * from './pr-body-renderer.js';
 export * from './kill-switch.js';
-export * from './proposal-to-backlog.js';
-export * from './sprint-generator.js';
+export { ProposalToBacklog } from './proposal-to-backlog.js';
+export type { ProposalAdapter } from './proposal-to-backlog.js';
+export type { BacklogItem as AutonomousBacklogItem } from './proposal-to-backlog.js';
+export { SprintGenerator } from './sprint-generator.js';
+export type {
+  SprintPlan as AutonomousSprintPlan,
+  SprintPlanItem as AutonomousSprintPlanItem,
+} from './sprint-generator.js';
 export * from './budget-approval.js';
 export * from './scoring-pipeline.js';
 export * from './phase-scheduler.js';

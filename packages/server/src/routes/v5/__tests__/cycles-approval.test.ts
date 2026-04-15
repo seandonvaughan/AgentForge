@@ -125,6 +125,15 @@ function writeDecision(dir: string): void {
   );
 }
 
+function firstOrThrow<T>(items: readonly T[], message: string): T {
+  const item = items[0];
+  if (item === undefined) {
+    throw new Error(message);
+  }
+
+  return item;
+}
+
 // ── GET /api/v5/cycles/:id/approval ──────────────────────────────────────────
 
 describe('GET /api/v5/cycles/:id/approval', () => {
@@ -194,7 +203,10 @@ describe('GET /api/v5/cycles/:id/approval', () => {
       method: 'GET',
       url: `/api/v5/cycles/${CYCLE_ID}/approval`,
     });
-    const item = res.json().withinBudget.items[0];
+    const item = firstOrThrow(
+      res.json().withinBudget.items,
+      'Expected a within-budget approval item',
+    );
     expect(item).toMatchObject({
       itemId: 'item-1',
       title: 'Fix auth bug',
@@ -427,7 +439,7 @@ describe('POST /api/v5/cycles/:id/approve — SSE broadcast', () => {
 
       // The handler calls globalStream.emit() synchronously before returning
       expect(received).toHaveLength(1);
-      const evt = received[0];
+      const evt = firstOrThrow(received, 'Expected an SSE event after approval');
       expect(evt.type).toBe('cycle_event');
       expect(evt.category).toBe('approval.decision');
       expect(evt.message).toContain('approval.decision');
@@ -454,7 +466,10 @@ describe('POST /api/v5/cycles/:id/approve — SSE broadcast', () => {
       });
 
       expect(received).toHaveLength(1);
-      const data = received[0].data as Record<string, unknown>;
+      const data = firstOrThrow(
+        received,
+        'Expected an SSE payload after approval',
+      ).data as Record<string, unknown>;
       expect(data.cycleId).toBe(CYCLE_ID);
       expect(data.type).toBe('approval.decision');
       expect(data.decision).toBe('approved');
@@ -483,7 +498,10 @@ describe('POST /api/v5/cycles/:id/approve — SSE broadcast', () => {
       });
 
       expect(received).toHaveLength(1);
-      const data = received[0].data as Record<string, unknown>;
+      const data = firstOrThrow(
+        received,
+        'Expected an SSE payload after rejection',
+      ).data as Record<string, unknown>;
       expect(data.decision).toBe('rejected');
     } finally {
       unsub();

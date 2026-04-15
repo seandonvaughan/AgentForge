@@ -11,7 +11,6 @@ export class FeatureFlagManager {
     const flag: FeatureFlag = {
       id: generateId(),
       name: req.name,
-      description: req.description,
       status: 'inactive',
       trafficPercent: req.trafficPercent ?? 0,
       strategy: req.strategy ?? 'percentage',
@@ -21,6 +20,7 @@ export class FeatureFlagManager {
       canaryErrors: 0,
       createdAt: nowIso(),
       updatedAt: nowIso(),
+      ...(req.description ? { description: req.description } : {}),
     };
     this.flags.set(flag.id, flag);
     return flag;

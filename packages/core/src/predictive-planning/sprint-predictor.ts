@@ -32,6 +32,7 @@ export class SprintPredictor {
     for (let i = 0; i < sorted.length; i++) {
       const item = sorted[i];
       const estimate = effortEstimates[i];
+      if (!item || !estimate) continue;
 
       if (cumulativeCost + estimate.estimatedCostUsd <= effectiveBudget) {
         recommendedItems.push(item);

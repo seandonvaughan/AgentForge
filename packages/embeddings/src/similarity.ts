@@ -2,7 +2,9 @@
 export function cosine(a: Float32Array, b: Float32Array): number {
   if (a.length !== b.length) return 0;
   let dot = 0;
-  for (let i = 0; i < a.length; i++) dot += a[i] * b[i];
+  for (let i = 0; i < a.length; i++) {
+    dot += (a[i] ?? 0) * (b[i] ?? 0);
+  }
   // Vectors are pre-normalized, so dot product = cosine similarity
   return Math.max(0, Math.min(1, dot));
 }
@@ -15,7 +17,12 @@ export function topK(
   minScore: number,
 ): Array<{ id: string; score: number; content: string; metadata?: Record<string, unknown> }> {
   const scores = pool
-    .map(doc => ({ id: doc.id, score: cosine(query, doc.vec), content: doc.content, metadata: doc.metadata }))
+    .map(doc => ({
+      id: doc.id,
+      score: cosine(query, doc.vec),
+      content: doc.content,
+      ...(doc.metadata !== undefined ? { metadata: doc.metadata } : {}),
+    }))
     .filter(r => r.score >= minScore)
     .sort((a, b) => b.score - a.score);
   return scores.slice(0, k);

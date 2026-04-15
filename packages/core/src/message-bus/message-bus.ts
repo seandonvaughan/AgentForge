@@ -56,9 +56,9 @@ export class MessageBusV2 {
       category: params.category,
       priority: params.priority ?? 'normal',
       payload: params.payload,
-      correlationId: params.correlationId,
-      sessionId: params.sessionId,
-      ttlMs: params.ttlMs,
+      ...(params.correlationId ? { correlationId: params.correlationId } : {}),
+      ...(params.sessionId ? { sessionId: params.sessionId } : {}),
+      ...(params.ttlMs !== undefined ? { ttlMs: params.ttlMs } : {}),
     };
 
     // Store in history with ring-buffer semantics

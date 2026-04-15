@@ -17,9 +17,30 @@ CREATE TABLE IF NOT EXISTS embeddings (
 CREATE INDEX IF NOT EXISTS idx_embeddings_workspace ON embeddings(workspace_id);
 `;
 
+type CacheEntry = {
+  id: string;
+  vec: Float32Array;
+  content: string;
+  metadata?: Record<string, unknown>;
+};
+
+function withOptionalMetadata<T extends { metadata?: Record<string, unknown> }>(
+  value: Omit<T, 'metadata'>,
+  metadata: Record<string, unknown> | undefined,
+): T {
+  return {
+    ...value,
+    ...(metadata !== undefined ? { metadata } : {}),
+  } as T;
+}
+
+function isMetadataRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 export class EmbeddingStore {
   private db: Database.Database;
-  private cache: Map<string, { id: string; vec: Float32Array; content: string; metadata?: Record<string, unknown> }> = new Map();
+  private cache: Map<string, CacheEntry> = new Map();
   private cacheLoaded = false;
 
   constructor(dbPath: string) {
@@ -37,7 +58,13 @@ export class EmbeddingStore {
       VALUES (?, ?, ?, ?, ?)
     `).run(doc.id, doc.content, doc.workspaceId ?? null, JSON.stringify(doc.metadata ?? {}), blob);
 
-    this.cache.set(doc.id, { id: doc.id, vec, content: doc.content, metadata: doc.metadata });
+    this.cache.set(
+      doc.id,
+      withOptionalMetadata<CacheEntry>(
+        { id: doc.id, vec, content: doc.content },
+        doc.metadata,
+      ),
+    );
     return vec;
   }
 
@@ -51,20 +78,27 @@ export class EmbeddingStore {
     `);
     const run = this.db.transaction(() => {
       for (let i = 0; i < docs.length; i++) {
-        const blob = Buffer.from(vecs[i].buffer);
+        const doc = docs[i];
+        const vec = vecs[i];
+        if (!doc || !vec) {
+          throw new Error('Embedding batch length mismatch');
+        }
+
+        const blob = Buffer.from(vec.buffer);
         insert.run(
-          docs[i].id,
-          docs[i].content,
-          docs[i].workspaceId ?? null,
-          JSON.stringify(docs[i].metadata ?? {}),
+          doc.id,
+          doc.content,
+          doc.workspaceId ?? null,
+          JSON.stringify(doc.metadata ?? {}),
           blob,
         );
-        this.cache.set(docs[i].id, {
-          id: docs[i].id,
-          vec: vecs[i],
-          content: docs[i].content,
-          metadata: docs[i].metadata,
-        });
+        this.cache.set(
+          doc.id,
+          withOptionalMetadata<CacheEntry>(
+            { id: doc.id, vec, content: doc.content },
+            doc.metadata,
+          ),
+        );
       }
     });
     run();
@@ -139,9 +173,22 @@ export class EmbeddingStore {
       .all() as Array<{ id: string; content: string; metadata: string; vector: Buffer }>;
     for (const row of rows) {
       const vec = new Float32Array(row.vector.buffer, row.vector.byteOffset, row.vector.byteLength / 4);
-      let metadata: Record<string, unknown> = {};
-      try { metadata = JSON.parse(row.metadata); } catch { /* skip malformed metadata */ }
-      this.cache.set(row.id, { id: row.id, vec, content: row.content, metadata });
+      let metadata: Record<string, unknown> | undefined;
+      try {
+        const parsed: unknown = JSON.parse(row.metadata);
+        if (isMetadataRecord(parsed)) {
+          metadata = parsed;
+        }
+      } catch {
+        // Skip malformed metadata and keep the cached entry usable.
+      }
+      this.cache.set(
+        row.id,
+        withOptionalMetadata<CacheEntry>(
+          { id: row.id, vec, content: row.content },
+          metadata,
+        ),
+      );
     }
     this.cacheLoaded = true;
   }

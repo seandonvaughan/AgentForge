@@ -99,6 +99,32 @@ function writeSession(filename: string, data: {
   writeFileSync(join(sessionsDir, filename), JSON.stringify(data));
 }
 
+function itemAtOrThrow<T>(
+  items: readonly T[],
+  index: number,
+  message: string,
+): T {
+  const item = items[index];
+  if (item === undefined) {
+    throw new Error(message);
+  }
+
+  return item;
+}
+
+function findOrThrow<T>(
+  items: readonly T[],
+  predicate: (item: T) => boolean,
+  message: string,
+): T {
+  const item = items.find(predicate);
+  if (item === undefined) {
+    throw new Error(message);
+  }
+
+  return item;
+}
+
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 describe('GET /api/v5/flywheel', () => {
@@ -161,8 +187,12 @@ describe('GET /api/v5/flywheel', () => {
   it('autonomy score is 0 when no cycles exist', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
     const { data } = JSON.parse(res.body) as { data: { metrics: Array<{ key: string; score: number }> } };
-    const autonomy = data.metrics.find((m) => m.key === 'autonomy');
-    expect(autonomy?.score).toBe(0);
+    const autonomy = findOrThrow(
+      data.metrics,
+      (metric) => metric.key === 'autonomy',
+      'Expected autonomy metric in flywheel response',
+    );
+    expect(autonomy.score).toBe(0);
   });
 
   it('autonomy score is non-zero when completed cycles exist', async () => {
@@ -172,8 +202,12 @@ describe('GET /api/v5/flywheel', () => {
 
     const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
     const { data } = JSON.parse(res.body) as { data: { metrics: Array<{ key: string; score: number }> } };
-    const autonomy = data.metrics.find((m) => m.key === 'autonomy');
-    expect(autonomy?.score).toBeGreaterThan(0);
+    const autonomy = findOrThrow(
+      data.metrics,
+      (metric) => metric.key === 'autonomy',
+      'Expected autonomy metric in flywheel response',
+    );
+    expect(autonomy.score).toBeGreaterThan(0);
   });
 
   it('velocity score reflects sprint item completion rate', async () => {
@@ -185,9 +219,13 @@ describe('GET /api/v5/flywheel', () => {
 
     const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
     const { data } = JSON.parse(res.body) as { data: { metrics: Array<{ key: string; score: number }> } };
-    const velocity = data.metrics.find((m) => m.key === 'velocity');
+    const velocity = findOrThrow(
+      data.metrics,
+      (metric) => metric.key === 'velocity',
+      'Expected velocity metric in flywheel response',
+    );
     // 8/10 * 70 = 56, no cycle throughput → 56
-    expect(velocity?.score).toBe(56);
+    expect(velocity.score).toBe(56);
   });
 
   it('inheritance score grows with agent count', async () => {
@@ -197,8 +235,12 @@ describe('GET /api/v5/flywheel', () => {
 
     const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
     const { data } = JSON.parse(res.body) as { data: { metrics: Array<{ key: string; score: number }> } };
-    const inheritance = data.metrics.find((m) => m.key === 'inheritance');
-    expect(inheritance?.score).toBe(40);
+    const inheritance = findOrThrow(
+      data.metrics,
+      (metric) => metric.key === 'inheritance',
+      'Expected inheritance metric in flywheel response',
+    );
+    expect(inheritance.score).toBe(40);
   });
 
   it('handles nested { sprints: [...] } sprint file format', async () => {
@@ -236,8 +278,12 @@ describe('GET /api/v5/flywheel', () => {
     const { data } = JSON.parse(res.body) as {
       data: { metrics: Array<{ key: string; description?: string }> };
     };
-    const ml = data.metrics.find((m) => m.key === 'meta_learning');
-    expect(ml?.description).toContain('sprint');
+    const ml = findOrThrow(
+      data.metrics,
+      (metric) => metric.key === 'meta_learning',
+      'Expected meta_learning metric in flywheel response',
+    );
+    expect(ml.description).toContain('sprint');
   });
 
   it('response is cached: repeated calls return same cachedAtMs within TTL', async () => {
@@ -295,10 +341,10 @@ describe('GET /api/v5/flywheel', () => {
     };
     const trend = data.memoryStats.entriesPerCycleTrend;
     expect(trend).toHaveLength(2);
-    const a = trend.find(t => t.cycleId === 'cyc-a');
-    const b = trend.find(t => t.cycleId === 'cyc-b');
-    expect(a?.count).toBe(2);
-    expect(b?.count).toBe(1);
+    const a = findOrThrow(trend, (entry) => entry.cycleId === 'cyc-a', 'Expected cyc-a trend entry');
+    const b = findOrThrow(trend, (entry) => entry.cycleId === 'cyc-b', 'Expected cyc-b trend entry');
+    expect(a.count).toBe(2);
+    expect(b.count).toBe(1);
   });
 
   it('memoryStats.hitRate is 0 when no memory entries exist before any completed cycle', async () => {
@@ -448,7 +494,7 @@ describe('GET /api/v5/flywheel', () => {
     };
 
     expect(data.cycleHistory).toHaveLength(1);
-    const pt = data.cycleHistory[0];
+    const pt = itemAtOrThrow(data.cycleHistory, 0, 'Expected one cycle history point');
     expect(pt.cycleId).toBe('hist-cycle-1');
     expect(pt.sprintVersion).toBe('7.1.0');
     expect(pt.stage).toBe('completed');
@@ -468,7 +514,9 @@ describe('GET /api/v5/flywheel', () => {
     const { data } = JSON.parse(res.body) as {
       data: { cycleHistory: Array<{ hasPr: boolean }> };
     };
-    expect(data.cycleHistory[0].hasPr).toBe(false);
+    expect(
+      itemAtOrThrow(data.cycleHistory, 0, 'Expected a cycle history point').hasPr,
+    ).toBe(false);
   });
 
   it('cycleHistory is ordered chronologically (oldest first)', async () => {
@@ -480,8 +528,18 @@ describe('GET /api/v5/flywheel', () => {
     const { data } = JSON.parse(res.body) as {
       data: { cycleHistory: Array<{ startedAt: string }> };
     };
-    expect(new Date(data.cycleHistory[0].startedAt).getTime())
-      .toBeLessThan(new Date(data.cycleHistory[1].startedAt).getTime());
+    const firstCycle = itemAtOrThrow(
+      data.cycleHistory,
+      0,
+      'Expected first cycle history point',
+    );
+    const secondCycle = itemAtOrThrow(
+      data.cycleHistory,
+      1,
+      'Expected second cycle history point',
+    );
+    expect(new Date(firstCycle.startedAt).getTime())
+      .toBeLessThan(new Date(secondCycle.startedAt).getTime());
   });
 
   it('cycleHistory caps at 20 cycles when more exist', async () => {
@@ -509,8 +567,13 @@ describe('GET /api/v5/flywheel', () => {
     const { data } = JSON.parse(res.body) as {
       data: { cycleHistory: Array<{ testPassRate: unknown; testsTotal: unknown }> };
     };
-    expect(data.cycleHistory[0].testPassRate).toBeNull();
-    expect(data.cycleHistory[0].testsTotal).toBeNull();
+    const cycle = itemAtOrThrow(
+      data.cycleHistory,
+      0,
+      'Expected one cycle history point',
+    );
+    expect(cycle.testPassRate).toBeNull();
+    expect(cycle.testsTotal).toBeNull();
   });
 
   // ── metaTrend boundary conditions ────────────────────────────────────────
@@ -610,9 +673,13 @@ describe('GET /api/v5/flywheel', () => {
     it('meta_learning trend is present on the returned metric object', async () => {
       const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
       const parsed = JSON.parse(res.body) as { data: { metrics: MetricShape[] } };
-      const ml = parsed.data.metrics.find(m => m.key === 'meta_learning');
+      const ml = findOrThrow(
+        parsed.data.metrics,
+        (metric) => metric.key === 'meta_learning',
+        'Expected meta_learning metric in flywheel response',
+      );
       expect(ml).toBeDefined();
-      expect(['improving', 'stable', 'declining']).toContain(ml?.trend);
+      expect(['improving', 'stable', 'declining']).toContain(ml.trend);
     });
   });
 });
