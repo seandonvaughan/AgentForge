@@ -10,9 +10,11 @@
     "plugins/*"
   ],
   "scripts": {
-    "build": "tsc",
-    "start": "npm run build && node dist/server/main.js",
-    "dev": "tsc --watch & node --watch dist/server/main.js",
+    "build": "tsc -b",
+    "start": "npm run build && node packages/server/dist/main.js",
+    "start:legacy": "npm run build && node dist/server/main.js",
+    "dev": "npm run build && concurrently --names \"build,server,dash\" --prefix-colors \"yellow,blue,green\" \"tsc -b --watch\" \"node --watch packages/server/dist/main.js\" \"cd packages/dashboard && npx vite dev --port 4751\"",
+    "dev:legacy": "tsc --watch & node --watch dist/server/main.js",
     "test": "vitest",
     "test:run": "vitest run",
     "test:e2e": "playwright test",

@@ -37,6 +37,8 @@
     startedAt: string;
     output?: string;
     sessionId?: string;
+    providerKind?: string;
+    runtimeModeResolved?: string;
   }
 
   let agentEntries: AgentEntry[] = $state([]);
@@ -51,6 +53,8 @@
   let output = $state('');
   let outputAgentName = $state('');
   let outputModel = $state('');
+  let outputProviderKind = $state('');
+  let outputRuntimeMode = $state('');
   let outputTimestamp = $state('');
   let currentSessionId: string | null = $state(null);
 
@@ -153,6 +157,8 @@
               sessionId,
               status as 'completed' | 'failed',
               payload['costUsd'] as number | undefined,
+              payload['providerKind'] as string | undefined,
+              payload['runtimeModeResolved'] as string | undefined,
             );
             es.close();
             eventSource = null;
@@ -174,10 +180,23 @@
     }
   }
 
-  function syncHistoryStatus(sessionId: string, status: 'completed' | 'failed', cost?: number) {
+  function syncHistoryStatus(
+    sessionId: string,
+    status: 'completed' | 'failed',
+    cost?: number,
+    providerKind?: string,
+    runtimeModeResolved?: string,
+  ) {
     history = history.map((r) => {
       if (r.sessionId === sessionId) {
-        return { ...r, status, ...(cost !== undefined ? { costUsd: cost } : {}), output };
+        return {
+          ...r,
+          status,
+          ...(cost !== undefined ? { costUsd: cost } : {}),
+          ...(providerKind ? { providerKind } : {}),
+          ...(runtimeModeResolved ? { runtimeModeResolved } : {}),
+          output,
+        };
       }
       return r;
     });
@@ -190,6 +209,8 @@
     running = true;
     output = '';
     outputAgentName = selectedAgent;
+    outputProviderKind = '';
+    outputRuntimeMode = '';
     outputTimestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
     selectedHistoryRun = null;
 
@@ -265,6 +286,8 @@
       outputModel = json.model
         ? modelIdToTierLabel(json.model as string)
         : (MODEL_TIER_META[getAgentModel(selectedAgent)]?.label ?? 'Sonnet');
+      outputProviderKind = formatProviderKind(json.providerKind as string | undefined);
+      outputRuntimeMode = formatRuntimeMode(json.runtimeModeResolved as string | undefined);
       currentSessionId = sessionId;
 
       // Add to history immediately as "running"
@@ -275,6 +298,8 @@
         status: 'running',
         startedAt: new Date().toISOString(),
         sessionId,
+        ...(typeof json.providerKind === 'string' ? { providerKind: json.providerKind } : {}),
+        ...(typeof json.runtimeModeResolved === 'string' ? { runtimeModeResolved: json.runtimeModeResolved } : {}),
       };
       history = [historyEntry, ...history].slice(0, 5);
 
@@ -295,7 +320,13 @@
       if (syncOutput) {
         output = syncOutput;
         running = false;
-        syncHistoryStatus(sessionId, json.status === 'failed' ? 'failed' : 'completed', json.costUsd);
+        syncHistoryStatus(
+          sessionId,
+          json.status === 'failed' ? 'failed' : 'completed',
+          json.costUsd,
+          json.providerKind as string | undefined,
+          json.runtimeModeResolved as string | undefined,
+        );
         es.close();
         eventSource = null;
       }
@@ -314,6 +345,8 @@
     outputAgentName = run.agentId;
     outputTimestamp = new Date(run.startedAt).toLocaleTimeString('en-US', { hour12: false });
     outputModel = MODEL_TIER_META[getAgentModel(run.agentId)]?.label ?? '—';
+    outputProviderKind = formatProviderKind(run.providerKind);
+    outputRuntimeMode = formatRuntimeMode(run.runtimeModeResolved);
     currentSessionId = run.sessionId ?? null;
   }
 
@@ -328,6 +361,19 @@
   function formatCost(cost?: number): string {
     if (cost == null) return '—';
     return `$${cost.toFixed(4)}`;
+  }
+
+  function formatProviderKind(providerKind?: string): string {
+    if (!providerKind) return '';
+    if (providerKind === 'anthropic-sdk') return 'Anthropic SDK';
+    if (providerKind === 'claude-code-compat') return 'Claude Code';
+    return providerKind;
+  }
+
+  function formatRuntimeMode(runtimeMode?: string): string {
+    if (!runtimeMode) return '';
+    if (runtimeMode === 'claude-code-compat') return 'Claude Compat';
+    return runtimeMode.toUpperCase();
   }
 
   function formatTime(iso: string): string {
@@ -350,6 +396,8 @@
         startedAt: (r.startedAt ?? new Date().toISOString()) as string,
         output: typeof r.response === 'string' ? r.response : (typeof r.output === 'string' ? r.output : undefined),
         sessionId: (r.sessionId ?? r.id ?? '') as string,
+        providerKind: typeof r.providerKind === 'string' ? r.providerKind : undefined,
+        runtimeModeResolved: typeof r.runtimeModeResolved === 'string' ? r.runtimeModeResolved : undefined,
       })).filter((r: RunHistory) => r.id && r.agentId);
       history = runs.slice(0, 5);
     } catch {
@@ -504,6 +552,12 @@
             <span class="output-agent">{outputAgentName}</span>
             {#if outputModel}
               <span class="badge {outputModel.toLowerCase()}">{outputModel}</span>
+            {/if}
+            {#if outputProviderKind}
+              <span class="badge">{outputProviderKind}</span>
+            {/if}
+            {#if outputRuntimeMode}
+              <span class="badge">{outputRuntimeMode}</span>
             {/if}
             {#if outputTimestamp}
               <span class="output-ts">{outputTimestamp}</span>

@@ -3,6 +3,8 @@
  *
  * Main entry point for the Claude Code plugin.
  */
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 export interface AgentForgePlugin {
   name: string;
@@ -11,7 +13,7 @@ export interface AgentForgePlugin {
 
 const plugin: AgentForgePlugin = {
   name: "agentforge",
-  version: "0.1.0",
+  version: readPackageVersion(),
 };
 
 console.log("AgentForge loaded");
@@ -20,3 +22,13 @@ console.log("AgentForge loaded");
 export * from './utils/index.js';
 
 export default plugin;
+
+function readPackageVersion(): string {
+  try {
+    const packageJsonPath = fileURLToPath(new URL('../package.json', import.meta.url));
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as { version?: string };
+    return packageJson.version ?? 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}

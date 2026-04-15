@@ -97,6 +97,47 @@ export const WORKSPACE_DDL = `
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
+  CREATE TABLE IF NOT EXISTS decision_events (
+    id TEXT PRIMARY KEY,
+    session_id TEXT REFERENCES sessions(id),
+    agent_id TEXT NOT NULL,
+    decision_type TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    rationale TEXT,
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS task_outcomes (
+    id TEXT PRIMARY KEY,
+    session_id TEXT REFERENCES sessions(id),
+    agent_id TEXT NOT NULL,
+    task TEXT NOT NULL,
+    outcome TEXT NOT NULL DEFAULT 'success',
+    success INTEGER NOT NULL DEFAULT 1,
+    quality_score REAL,
+    model TEXT,
+    duration_ms INTEGER,
+    summary TEXT,
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS test_observations (
+    id TEXT PRIMARY KEY,
+    session_id TEXT REFERENCES sessions(id),
+    agent_id TEXT,
+    run_id TEXT,
+    suite TEXT,
+    test_name TEXT,
+    file_path TEXT,
+    status TEXT NOT NULL,
+    message TEXT,
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    observed_at TEXT NOT NULL DEFAULT (datetime('now')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   CREATE TABLE IF NOT EXISTS promotions (
     id TEXT PRIMARY KEY,
     agent_id TEXT NOT NULL,
@@ -154,5 +195,18 @@ export const WORKSPACE_DDL = `
   CREATE INDEX IF NOT EXISTS idx_costs_agent ON costs(agent_id);
   CREATE INDEX IF NOT EXISTS idx_costs_created ON costs(created_at);
   CREATE INDEX IF NOT EXISTS idx_feedback_agent ON feedback(agent_id);
+  CREATE INDEX IF NOT EXISTS idx_decision_events_session ON decision_events(session_id);
+  CREATE INDEX IF NOT EXISTS idx_decision_events_agent ON decision_events(agent_id);
+  CREATE INDEX IF NOT EXISTS idx_decision_events_type ON decision_events(decision_type);
+  CREATE INDEX IF NOT EXISTS idx_decision_events_created ON decision_events(created_at);
+  CREATE INDEX IF NOT EXISTS idx_task_outcomes_session ON task_outcomes(session_id);
+  CREATE INDEX IF NOT EXISTS idx_task_outcomes_agent ON task_outcomes(agent_id);
+  CREATE INDEX IF NOT EXISTS idx_task_outcomes_outcome ON task_outcomes(outcome);
+  CREATE INDEX IF NOT EXISTS idx_task_outcomes_created ON task_outcomes(created_at);
+  CREATE INDEX IF NOT EXISTS idx_test_observations_session ON test_observations(session_id);
+  CREATE INDEX IF NOT EXISTS idx_test_observations_agent ON test_observations(agent_id);
+  CREATE INDEX IF NOT EXISTS idx_test_observations_run ON test_observations(run_id);
+  CREATE INDEX IF NOT EXISTS idx_test_observations_status ON test_observations(status);
+  CREATE INDEX IF NOT EXISTS idx_test_observations_observed ON test_observations(observed_at);
   CREATE INDEX IF NOT EXISTS idx_embeddings_source ON embeddings(source_type, source_id);
 `;

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 export async function printBuildInfo(projectRoot: string): Promise<void> {
   const pkgs = ['shared', 'core', 'db', 'server', 'dashboard', 'embeddings', 'plugins-sdk', 'cli'];
-  console.log('\nAgentForge v5 Build Info');
+  console.log('\nAgentForge Build Info');
   console.log('═'.repeat(40));
   for (const pkg of pkgs) {
     try {

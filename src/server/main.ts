@@ -11,6 +11,8 @@ const DB_PATH = process.env.AGENTFORGE_DB ?? join(process.cwd(), '.agentforge', 
 const PORT = parseInt(process.env.PORT ?? '4700', 10);
 
 async function main() {
+  console.warn("[compat] Root server bootstrap is legacy compatibility mode. Prefer `npm run start` or `node packages/server/dist/main.js` for the package-canonical server.");
+
   // Initialize DB
   const db = new AgentDatabase({ path: DB_PATH });
   const adapter = new SqliteAdapter({ db });
