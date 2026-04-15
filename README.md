@@ -23,7 +23,7 @@ The package CLI is the canonical surface, but not every command is equally conve
   - `migrate`
   - `info`
   - `start`
-- Package CLI compatibility bridge today:
+- Package team service bridge today:
   - `team forge`
   - `team genesis`
   - `team rebuild`
@@ -33,7 +33,7 @@ The package CLI is the canonical surface, but not every command is equally conve
   - `agentforge start` launches the canonical package server in-process.
   - `run delegate` is recommendation-first and only executes with `--run`.
   - top-level `delegate` is a compatibility alias and preserves the older auto-run default.
-  - `team forge`, `team genesis`, `team rebuild`, and `team reforge *` still route through legacy root engines in `@agentforge/core`.
+- `team forge`, `team genesis`, `team rebuild`, and `team reforge *` currently route through package team services in `@agentforge/core`.
 
 ## Canonical CLI Surface
 

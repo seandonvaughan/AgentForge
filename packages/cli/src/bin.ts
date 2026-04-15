@@ -15,7 +15,7 @@ const CLI_VERSION = readPackageVersion();
 const program = new Command();
 program
   .name('agentforge')
-  .description('AgentForge package-canonical CLI (run/cost/cycle/workspaces are package-native; team generation/reforge still bridge legacy engines)')
+  .description('AgentForge package-canonical CLI (run/cost/cycle/workspaces are package-native; team generation/reforge run through package team services)')
   .version(CLI_VERSION);
 
 program

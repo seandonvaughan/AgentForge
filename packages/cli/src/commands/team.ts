@@ -232,8 +232,8 @@ async function teamShowAction(options: TeamShowOptions, command: Command): Promi
 
 async function teamForgeAction(options: TeamForgeOptions, command: Command): Promise<void> {
   try {
-    const { forgeTeamWithLegacyEngine } = await import('@agentforge/core');
-    const exitCode = await forgeTeamWithLegacyEngine(
+    const { forgeTeamService } = await import('@agentforge/core');
+    const exitCode = await forgeTeamService(
       resolveProjectRoot(options.projectRoot, command),
       {
         ...(options.dryRun ? { dryRun: true } : {}),
@@ -257,8 +257,8 @@ async function teamGenesisAction(
   command: Command,
 ): Promise<void> {
   try {
-    const { genesisTeamWithLegacyEngine } = await import('@agentforge/core');
-    const exitCode = await genesisTeamWithLegacyEngine(
+    const { genesisTeamService } = await import('@agentforge/core');
+    const exitCode = await genesisTeamService(
       resolveProjectRoot(options.projectRoot, command),
       {
         ...(options.interview ? { interview: true } : {}),
@@ -282,8 +282,8 @@ async function teamRebuildAction(
   command: Command,
 ): Promise<void> {
   try {
-    const { rebuildTeamWithLegacyEngine } = await import('@agentforge/core');
-    const exitCode = await rebuildTeamWithLegacyEngine(
+    const { rebuildTeamService } = await import('@agentforge/core');
+    const exitCode = await rebuildTeamService(
       resolveProjectRoot(options.projectRoot, command),
       {
         ...(options.autoApply ? { autoApply: true } : {}),
@@ -305,8 +305,8 @@ async function teamReforgeApplyAction(
   command: Command,
 ): Promise<void> {
   try {
-    const { applyLegacyReforgeProposal } = await import('@agentforge/core');
-    const exitCode = await applyLegacyReforgeProposal(
+    const { applyReforgeProposalService } = await import('@agentforge/core');
+    const exitCode = await applyReforgeProposalService(
       resolveProjectRoot(options.projectRoot, command),
       proposalId,
       options.yes ? { yes: true } : {},
@@ -325,8 +325,8 @@ async function teamReforgeListAction(
   command: Command,
 ): Promise<void> {
   try {
-    const { listLegacyReforgeState } = await import('@agentforge/core');
-    const exitCode = await listLegacyReforgeState(resolveProjectRoot(options.projectRoot, command));
+    const { listReforgeStateService } = await import('@agentforge/core');
+    const exitCode = await listReforgeStateService(resolveProjectRoot(options.projectRoot, command));
     if (exitCode !== 0) {
       process.exitCode = exitCode;
     }
@@ -342,8 +342,8 @@ async function teamReforgeRollbackAction(
   command: Command,
 ): Promise<void> {
   try {
-    const { rollbackLegacyReforgeOverride } = await import('@agentforge/core');
-    const exitCode = await rollbackLegacyReforgeOverride(
+    const { rollbackReforgeOverrideService } = await import('@agentforge/core');
+    const exitCode = await rollbackReforgeOverrideService(
       resolveProjectRoot(options.projectRoot, command),
       agent,
     );
@@ -361,8 +361,8 @@ async function teamReforgeStatusAction(
   command: Command,
 ): Promise<void> {
   try {
-    const { showLegacyReforgeStatus } = await import('@agentforge/core');
-    const exitCode = await showLegacyReforgeStatus(resolveProjectRoot(options.projectRoot, command));
+    const { showReforgeStatusService } = await import('@agentforge/core');
+    const exitCode = await showReforgeStatusService(resolveProjectRoot(options.projectRoot, command));
     if (exitCode !== 0) {
       process.exitCode = exitCode;
     }

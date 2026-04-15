@@ -49,8 +49,8 @@ export async function forgeTeamCompatibility(
   options: PackageForgeOptions = {},
 ): Promise<void> {
   await runCompatibilityAction(async () => {
-    const { forgeTeamWithLegacyEngine } = await import('@agentforge/core');
-    return forgeTeamWithLegacyEngine(process.cwd(), options);
+    const { forgeTeamService } = await import('@agentforge/core');
+    return forgeTeamService(process.cwd(), options);
   });
 }
 
@@ -58,8 +58,8 @@ export async function genesisTeamCompatibility(
   options: PackageGenesisOptions = {},
 ): Promise<void> {
   await runCompatibilityAction(async () => {
-    const { genesisTeamWithLegacyEngine } = await import('@agentforge/core');
-    return genesisTeamWithLegacyEngine(process.cwd(), options);
+    const { genesisTeamService } = await import('@agentforge/core');
+    return genesisTeamService(process.cwd(), options);
   });
 }
 
@@ -67,8 +67,8 @@ export async function rebuildTeamCompatibility(
   options: PackageRebuildOptions = {},
 ): Promise<void> {
   await runCompatibilityAction(async () => {
-    const { rebuildTeamWithLegacyEngine } = await import('@agentforge/core');
-    return rebuildTeamWithLegacyEngine(process.cwd(), options);
+    const { rebuildTeamService } = await import('@agentforge/core');
+    return rebuildTeamService(process.cwd(), options);
   });
 }
 
@@ -77,29 +77,29 @@ export async function applyReforgeCompatibility(
   options: PackageReforgeApplyOptions = {},
 ): Promise<void> {
   await runCompatibilityAction(async () => {
-    const { applyLegacyReforgeProposal } = await import('@agentforge/core');
-    return applyLegacyReforgeProposal(process.cwd(), proposalId, options);
+    const { applyReforgeProposalService } = await import('@agentforge/core');
+    return applyReforgeProposalService(process.cwd(), proposalId, options);
   });
 }
 
 export async function listReforgeCompatibility(): Promise<void> {
   await runCompatibilityAction(async () => {
-    const { listLegacyReforgeState } = await import('@agentforge/core');
-    return listLegacyReforgeState(process.cwd());
+    const { listReforgeStateService } = await import('@agentforge/core');
+    return listReforgeStateService(process.cwd());
   });
 }
 
 export async function rollbackReforgeCompatibility(agentName: string): Promise<void> {
   await runCompatibilityAction(async () => {
-    const { rollbackLegacyReforgeOverride } = await import('@agentforge/core');
-    return rollbackLegacyReforgeOverride(process.cwd(), agentName);
+    const { rollbackReforgeOverrideService } = await import('@agentforge/core');
+    return rollbackReforgeOverrideService(process.cwd(), agentName);
   });
 }
 
 export async function statusReforgeCompatibility(): Promise<void> {
   await runCompatibilityAction(async () => {
-    const { showLegacyReforgeStatus } = await import('@agentforge/core');
-    return showLegacyReforgeStatus(process.cwd());
+    const { showReforgeStatusService } = await import('@agentforge/core');
+    return showReforgeStatusService(process.cwd());
   });
 }
 

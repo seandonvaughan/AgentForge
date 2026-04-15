@@ -139,7 +139,7 @@ function buildCustomAgentTemplate(
  * 1. Scan the project (files, git, dependencies, CI).
  * 2. Load domain packs and determine which domains are active.
  * 3. Load agent templates (domain-organized when packs exist, flat otherwise).
- * 4. Compose the optimal team via domain-aware or legacy composition.
+ * 4. Compose the optimal team via domain-aware or flat-template fallback composition.
  * 5. Customize each template with project-specific context.
  * 6. Build a {@link TeamManifest}.
  * 7. Write everything to `.agentforge/` inside the project.
@@ -156,7 +156,7 @@ export async function forgeTeam(projectRoot: string): Promise<TeamManifest> {
   const domainsDir = getDefaultDomainsDir();
   const domainPacks = await loadAllDomains(domainsDir);
 
-  // 3. Load templates and compose team (domain-aware or legacy)
+  // 3. Load templates and compose team (domain-aware or flat-template fallback)
   let composition: TeamComposition;
   let templates: Map<string, AgentTemplate>;
 
@@ -184,7 +184,7 @@ export async function forgeTeam(projectRoot: string): Promise<TeamManifest> {
 
     composition = composeTeamFromDomains(scan, activeDomainIds, domainPacks);
   } else {
-    // Legacy pipeline: flat template loading + original composition
+    // Fallback pipeline: flat template loading + original composition
     const templatesDir = getDefaultTemplatesDir();
     templates = await loadAllTemplates(templatesDir);
     composition = composeTeam(scan);

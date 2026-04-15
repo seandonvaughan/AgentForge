@@ -64,24 +64,24 @@ interface ParsedOptions {
   values: Map<string, string>;
 }
 
-export interface LegacyForgeOptions {
+export interface TeamForgeServiceOptions {
   dryRun?: boolean;
   verbose?: boolean;
   domains?: string;
 }
 
-export interface LegacyGenesisOptions {
+export interface TeamGenesisServiceOptions {
   interview?: boolean;
   domains?: string;
   yes?: boolean;
 }
 
-export interface LegacyRebuildOptions {
+export interface TeamRebuildServiceOptions {
   autoApply?: boolean;
   upgrade?: boolean;
 }
 
-export interface LegacyReforgeApplyOptions {
+export interface TeamReforgeApplyServiceOptions {
   yes?: boolean;
 }
 
@@ -742,9 +742,9 @@ async function showReforgeStatus(projectRoot: string): Promise<number> {
   }
 }
 
-export async function forgeTeamWithLegacyEngine(
+export async function forgeTeamService(
   projectRoot: string,
-  options: LegacyForgeOptions = {},
+  options: TeamForgeServiceOptions = {},
 ): Promise<number> {
   return forgeTeamCommand(
     projectRoot,
@@ -760,9 +760,9 @@ export async function forgeTeamWithLegacyEngine(
   );
 }
 
-export async function genesisTeamWithLegacyEngine(
+export async function genesisTeamService(
   projectRoot: string,
-  options: LegacyGenesisOptions = {},
+  options: TeamGenesisServiceOptions = {},
 ): Promise<number> {
   return genesisTeamCommand(
     projectRoot,
@@ -778,9 +778,9 @@ export async function genesisTeamWithLegacyEngine(
   );
 }
 
-export async function rebuildTeamWithLegacyEngine(
+export async function rebuildTeamService(
   projectRoot: string,
-  options: LegacyRebuildOptions = {},
+  options: TeamRebuildServiceOptions = {},
 ): Promise<number> {
   return rebuildTeamCommand(
     projectRoot,
@@ -793,10 +793,10 @@ export async function rebuildTeamWithLegacyEngine(
   );
 }
 
-export async function applyLegacyReforgeProposal(
+export async function applyReforgeProposalService(
   projectRoot: string,
   proposalId: string,
-  options: LegacyReforgeApplyOptions = {},
+  options: TeamReforgeApplyServiceOptions = {},
 ): Promise<number> {
   return applyReforgeProposal(
     projectRoot,
@@ -807,17 +807,17 @@ export async function applyLegacyReforgeProposal(
   );
 }
 
-export async function listLegacyReforgeState(projectRoot: string): Promise<number> {
+export async function listReforgeStateService(projectRoot: string): Promise<number> {
   return listReforgeState(projectRoot);
 }
 
-export async function rollbackLegacyReforgeOverride(
+export async function rollbackReforgeOverrideService(
   projectRoot: string,
   agentName: string,
 ): Promise<number> {
   return rollbackReforgeOverride(projectRoot, agentName);
 }
 
-export async function showLegacyReforgeStatus(projectRoot: string): Promise<number> {
+export async function showReforgeStatusService(projectRoot: string): Promise<number> {
   return showReforgeStatus(projectRoot);
 }

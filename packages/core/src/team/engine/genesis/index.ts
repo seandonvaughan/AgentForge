@@ -144,7 +144,7 @@ export async function genesis(
 }
 
 // ---------------------------------------------------------------------------
-// Public types (runGenesis legacy API)
+// Public types (runGenesis compatibility API)
 // ---------------------------------------------------------------------------
 
 /** Options accepted by {@link runGenesis}. */
