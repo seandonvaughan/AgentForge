@@ -1,107 +1,118 @@
 # AgentForge
 
-**Universal Agent Team Builder**
+AgentForge is a TypeScript monorepo for building agent teams, running agent tasks, and operating autonomous development cycles. As of version `10.5.0`, the canonical product stack is under `packages/*`:
 
-AgentForge assembles optimized AI agent teams for any project type — software, business, marketing, research, and beyond. Sprint 1+2 are complete with 770+ tests. The system includes intelligent model routing that cuts costs by ~80% vs. running everything through Opus, a Genesis workflow for building teams from scratch, and runtime orchestration that keeps multi-agent workflows on track.
+- `packages/cli` - canonical CLI surface
+- `packages/core` - runtime, team, and cycle services
+- `packages/server` - canonical API server
+- `packages/dashboard` - canonical operator UI
 
-## What Works Today (Sprint 1+2 Complete)
+The root `src/` tree still exists, but it is a compatibility layer during the convergence to the package stack.
 
-### Commands
+## Current State
 
-- **`genesis`** — Adaptive team-building workflow
-  - Auto-interview for empty projects (or use `--interview` on existing projects)
-  - Discovery phase detects project state
-  - Approval gate before writing `.agentforge/` (use `--yes` to skip)
-  - Supports domain selection: `--domains software,business`
+The package CLI is the canonical surface, but not every command is equally converged yet.
 
-- **`forge`** — Analyze a codebase and generate an agent team
-  - Scans project structure, dependencies, and conventions
-  - Generates customized agents with appropriate model assignments
-  - Produces `.agentforge/team.yaml` with team manifest
+- Package-native today:
+  - `run invoke`, `run delegate`, `run history`, `run show`
+  - `costs report`
+  - `cycle run`
+  - `workspaces *`
+  - `migrate`
+  - `info`
+- Package CLI compatibility bridge today:
+  - `team`
+  - `team forge`
+  - `team genesis`
+  - `team rebuild`
+  - `team reforge *`
+  - `team-sessions *`
+  - top-level aliases such as `forge`, `genesis`, `rebuild`, `reforge`, and `sessions`
+- Transitional behavior to be aware of:
+  - `agentforge start` currently prints the canonical package-server launch target; it does not spawn and supervise the server itself.
+  - `run delegate` is recommendation-first and only executes with `--run`.
+  - top-level `delegate` is a compatibility alias and preserves the older auto-run default.
+  - `cycle` currently exposes `run`; preview/list/show/approve are not part of the shipped package CLI yet.
+  - team and team-session flows in the package CLI currently route through the legacy root CLI bridge in `@agentforge/core`.
 
-- **`invoke --agent AGENT_NAME --task "TASK_DESCRIPTION"`** — Dispatch work to a specific agent
-  - Loads agent from `.agentforge/agents/{agent}.yaml`
-  - Wires to AgentForgeSession for multi-agent coordination
-  - Control loop available via `--loop` flag (Sprint 2 feature)
-  - Set `ANTHROPIC_API_KEY` to run against live Claude API
+## Canonical CLI Surface
 
-- **`rebuild --auto-apply --upgrade`** — Re-analyze project for changes
-  - `--auto-apply` applies suggested team updates automatically
-  - `--upgrade` migrates v1 team.yaml to v2 format
+```text
+agentforge info
+agentforge migrate
+agentforge start
 
-- **`reforge` subcommands** — Team tuning and proposal management
-  - `reforge apply <proposal-id>` — Apply a structural reforge proposal
-  - `reforge list` — Show pending proposals
-  - `reforge rollback` — Revert to previous team version
-  - `reforge status` — View reforge history
+agentforge run invoke --agent <agent> --task <task> [--runtime auto|sdk|claude-code-compat]
+agentforge run delegate <task...> [--run]
+agentforge run history
+agentforge run show <sessionId>
 
-- **`cost-report`** — Analyze token spend
-  - Scans `.agentforge/cost-entry-*.json` files
-  - Summarizes model usage and costs per agent
+agentforge costs report
 
-### Features
+agentforge cycle run [--dry-run] [--workspace <id>] [--project-root <path>]
+agentforge autonomous:cycle    # compatibility alias for cycle run
 
-- **Intelligent Model Routing** — Assigns Opus for strategy, Sonnet for implementation, Haiku for utility tasks. Saves ~80% vs. running all work through Opus.
+agentforge team [--verbose]
+agentforge team forge
+agentforge team genesis
+agentforge team rebuild
+agentforge team reforge apply|list|rollback|status
 
-- **Filesystem Integration** — Real dispatch for `filesystem:write_file` and `filesystem:read_file` actions. Agents can read/modify project files directly.
+agentforge team-sessions list
+agentforge team-sessions delete <sessionId>
 
-- **Control Loop** — Multi-turn agent coordination available via `invoke --loop` (in Sprint 2).
-
-- **AgentForgeSession** — Structured communication layer for multi-agent workflows with cost tracking and progress ledger.
-
-## Coming in v3.1+
-
-- **Hard Activation Command** — Explicit `--reforge-requested` flow to trigger team re-evaluation
-- **Peer-to-Peer Agent Communication** — Direct agent-to-agent messaging without escalation
-- **$EDITOR Flow** — Interactive editing of proposals and team configs
-- **Full MCP Integration** — Extended integration with Memory, Web, Shell, and Filesystem MCPs
-- **Domain Packs** — 9 modular packs (Software, Business, Marketing, Product, Research, Sales, Legal, HR, IT) with 56+ agent templates
-- **Collaboration Templates** — Topology patterns (hierarchy, flat, matrix, hub-and-spoke) and cross-domain bridges
-
-## Project Structure
-
+agentforge workspaces list|add|remove|default
 ```
-your-project/
-  .agentforge/
-    team.yaml              # Active team manifest
-    forge.log              # Optimization history
-    analysis/
-      project-scan.json    # Latest scan results
-    agents/
-      architect.yaml       # Agent definition
-      coder.yaml           # Agent definition
-      ...
-    reforge-proposals/     # Pending team updates
-    cost-entry-*.json      # Token spend tracking
-```
+
+## Runtime Modes
+
+Package runtime commands currently support:
+
+- `auto`
+- `sdk`
+- `claude-code-compat`
+
+`auto` prefers the canonical package runtime path and can fall back to Claude Code compatibility transport when needed.
 
 ## Development
 
 ```bash
-# Clone the repository
 git clone https://github.com/seandonvaughan/AgentForge.git
 cd AgentForge
-
-# Install dependencies
-npm install
-
-# Build
-npm run build
-
-# Run tests (770+ tests, Sprint 1+2 complete)
-npm test
-
-# Development mode
-npm run dev
+corepack pnpm install
+corepack pnpm build
+corepack pnpm test:run
 ```
 
-## Tech Stack
+Useful commands:
 
-- **Runtime**: TypeScript / Node.js 18+
-- **Agent Configs**: YAML (human-readable, git-friendly)
-- **CLI**: Commander.js
-- **API**: Anthropic SDK (multi-model dispatch: Opus, Sonnet, Haiku)
-- **Testing**: Vitest
+```bash
+# Package CLI
+node packages/cli/dist/bin.js --help
+
+# Canonical package server
+node packages/server/dist/main.js
+
+# Dashboard dev server
+cd packages/dashboard
+npx vite --port 4751
+```
+
+## Repository Layout
+
+```text
+packages/
+  cli/          Canonical CLI
+  core/         Runtime, team, and autonomous services
+  server/       Canonical API server
+  dashboard/    Canonical UI
+  db/           Workspace/session persistence
+  embeddings/   Embedding and similarity services
+
+src/
+  cli/          Root compatibility CLI
+  server/       Root compatibility server bootstrap
+```
 
 ## License
 

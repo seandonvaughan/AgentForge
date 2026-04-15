@@ -41,7 +41,7 @@ export function registerRunCommand(program: Command): void {
   );
 
   registerDelegateCommand(
-    run.command('delegate').description('Recommend the best generated agent for a task'),
+    run.command('delegate').description('Recommend the best generated agent for a task; add --run to execute it'),
     { compatibilityAlias: false, defaultRun: false },
   );
 
@@ -64,7 +64,7 @@ export function registerRunCommand(program: Command): void {
   );
 
   registerDelegateCommand(
-    program.command('delegate').description('Compatibility alias for run delegate'),
+    program.command('delegate').description('Compatibility alias for run delegate that preserves legacy auto-run behavior'),
     { compatibilityAlias: true, defaultRun: true },
   );
 }

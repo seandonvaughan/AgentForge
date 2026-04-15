@@ -2,6 +2,56 @@
 
 All notable changes to AgentForge are documented in this file.
 
+## [Unreleased]
+
+### Docs and help truth cleanup
+
+- Rewrote `README.md` around the actual `10.5.0` convergence state instead of the older v6/v3.1 narrative.
+- Documented the real package-canonical CLI surface:
+  - package-native `run`, `costs`, `cycle run`, `workspaces`, `migrate`, `info`
+  - package CLI compatibility-bridged `team`, `team-sessions`, and legacy top-level aliases
+- Corrected visible help text in the package CLI so `start` no longer implies it launches the server directly, and alias/bridge commands are labeled more explicitly.
+
+## [10.5.0] - 2026-04-11
+
+### Package-canonical convergence line
+
+`10.5.0` is the first release line where the package stack is the documented center of gravity:
+
+- `packages/core` owns the new execution service, provider resolver, runtime session boundary, Anthropic SDK transport, and Claude Code compatibility transport.
+- `packages/server` aligns `/api/v5/run` with canonical runtime session ids and persists package-runtime metadata used by run history and cost reporting.
+- `packages/dashboard` shows resolved runtime/provider information for agent runs.
+- `packages/cli` exposes canonical `run`, `costs`, and `cycle` surfaces and now also carries the package-side `team` and `team-sessions` command groups, while still bridging team/manual workflows through legacy root logic where migration is not finished.
+
+### Visible version alignment
+
+- Workspace package versions were aligned to `10.5.0`.
+- CLI and plugin-visible version surfaces were updated to read package metadata instead of stale hardcoded values.
+- Root launch surfaces were kept for compatibility, but now clearly indicate that the package stack is canonical.
+
+### Convergence status at release
+
+- Package-native and converged:
+  - `run invoke`
+  - `run delegate`
+  - `run history`
+  - `run show`
+  - `costs report`
+  - `cycle run`
+  - `workspaces *`
+- Still compatibility-bridged at `10.5.0`:
+  - `team`
+  - `team forge`
+  - `team genesis`
+  - `team rebuild`
+  - `team reforge *`
+  - `team-sessions *`
+
+### Validation completed around the convergence merge
+
+- Focused runtime and server route tests passed on the merged `main` branch.
+- Full monorepo build was later brought back to green after a strict TypeScript backlog pass across `packages/core`, `packages/embeddings`, `packages/plugins-sdk`, and strict server test files.
+
 ## [6.7.0] — 2026-04-07
 
 ### Slash command points to the canonical dashboard
