@@ -37,7 +37,7 @@ interface TeamSessionsOptions {
 export function registerTeamCommand(program: Command): void {
   const team = program
     .command('team')
-    .description('Inspect and update AgentForge teams (generation/reforge use package-core wrappers over legacy engines)')
+    .description('Inspect and update AgentForge teams through package-core services')
     .option('--project-root <path>', 'Project root', process.cwd())
     .option('--verbose', 'Show detailed agent info')
     .action(teamShowAction);
@@ -70,7 +70,7 @@ export function registerTeamCommand(program: Command): void {
 
   const reforge = team
     .command('reforge')
-    .description('Manage team reforge proposals and runtime overrides through the compatibility bridge');
+    .description('Manage team reforge proposals and runtime overrides');
 
   reforge
     .command('apply <proposalId>')

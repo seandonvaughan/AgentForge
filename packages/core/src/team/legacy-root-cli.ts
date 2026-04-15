@@ -1,229 +1,45 @@
 import { constants } from 'node:fs';
 import { access, mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 
 import yaml from 'js-yaml';
-
-interface RootBuilderModule {
-  forgeTeam(projectRoot: string): Promise<TeamManifest>;
-}
-
-interface RootScannerModule {
-  runFullScan(projectRoot: string): Promise<FullScanResult>;
-}
-
-interface RootTeamComposerModule {
-  composeTeam(scan: FullScanResult): TeamComposition;
-}
-
-interface RootGenesisModule {
-  discover(projectRoot: string): Promise<DiscoveryResult>;
-  getInterviewQuestions(
-    state: DiscoveryState,
-    answers?: Record<string, string>,
-  ): InterviewQuestion[];
-  buildBrief(params: {
-    scan?: FullScanResult;
-    answers?: Record<string, string>;
-  }): ProjectBrief;
-  designTeam(
-    brief: ProjectBrief,
-    activeDomains: string[],
-    domainPacks: Map<string, DomainPack>,
-    templates: Map<string, Map<string, AgentTemplate>>,
-  ): TeamManifest;
-}
-
-interface RootDomainsModule {
-  getDefaultDomainsDir(): string;
-  loadAllDomains(domainsDir: string): Promise<Map<string, DomainPack>>;
-  activateDomains(
-    scan: FullScanResult,
-    domainPacks: Map<string, DomainPack>,
-  ): string[];
-}
-
-interface RootBuilderUtilityModule {
-  loadDomainTemplates(
-    domainsDir: string,
-  ): Promise<Map<string, Map<string, AgentTemplate>>>;
-  customizeTemplate(
-    template: AgentTemplate,
-    scan: FullScanResult,
-    projectName: string,
-  ): AgentTemplate;
-  writeTeam(
-    projectRoot: string,
-    manifest: TeamManifest,
-    agents: Map<string, AgentTemplate>,
-    scanResult: FullScanResult,
-  ): Promise<void>;
-}
-
-interface RootInterviewRunnerModule {
-  runInteractiveInterview(
-    questions: InterviewQuestion[],
-  ): Promise<Record<string, string>>;
-}
-
-interface RootReforgeModule {
-  reforgeTeam(projectRoot: string): Promise<TeamDiff>;
-  applyDiff(projectRoot: string, diff: TeamDiff): Promise<void>;
-  logReforge(projectRoot: string, diff: TeamDiff): Promise<void>;
-  migrateV1ToV2(projectRoot: string): Promise<void>;
-}
-
-interface DiscoveryResult {
-  state: DiscoveryState;
-  signals: string[];
-}
-
-type DiscoveryState = 'empty' | 'codebase' | 'documents' | 'full';
-
-interface InterviewQuestion {
-  id: string;
-  question: string;
-  type: 'text' | 'choice' | 'confirm';
-  choices?: string[];
-  condition?: (answers: Record<string, string>) => boolean;
-}
-
-interface TeamAgents {
-  strategic: string[];
-  implementation: string[];
-  quality: string[];
-  utility: string[];
-  [category: string]: string[];
-}
-
-interface TeamManifest {
-  name: string;
-  forged_at: string;
-  forged_by?: string;
-  project_hash: string;
-  agents: TeamAgents;
-  model_routing: {
-    opus: string[];
-    sonnet: string[];
-    haiku: string[];
-  };
-  delegation_graph: Record<string, string[]>;
-}
-
-interface DomainPack {
-  name: string;
-  version: string;
-  description: string;
-  agents: Record<string, string[]>;
-}
-
-interface ProjectBrief {
-  project: {
-    name: string;
-    type: string;
-    stage: 'early' | 'growth' | 'mature' | 'pivot';
-  };
-  goals: {
-    primary: string;
-    secondary: string[];
-  };
-  domains: string[];
-  constraints: Record<string, string>;
-  context: {
-    codebase?: unknown;
-    documents?: unknown[];
-    research?: Record<string, unknown>;
-    integrations?: Array<{ type: string; ref: string }>;
-  };
-}
-
-interface AgentTemplate {
-  name: string;
-  model: 'opus' | 'sonnet' | 'haiku';
-  version: string;
-  description?: string;
-  skills: string[];
-  collaboration: {
-    can_delegate_to: string[];
-    reports_to: string | null;
-  };
-}
-
-interface TeamComposition {
-  agents: string[];
-  custom_agents: Array<{ name: string }>;
-  model_assignments: Record<string, string>;
-}
-
-interface FullScanResult {
-  files: {
-    files: Array<{
-      file_path: string;
-      patterns: string[];
-    }>;
-    total_files: number;
-    total_loc: number;
-    languages: Record<string, number>;
-    frameworks_detected: string[];
-    directory_structure: string[];
-  };
-  ci: {
-    ci_provider: string;
-    config_files: string[];
-    pipelines: unknown[];
-    test_commands: string[];
-    build_commands: string[];
-    deploy_targets: string[];
-    has_linting: boolean;
-    has_type_checking: boolean;
-    has_security_scanning: boolean;
-    has_docker: boolean;
-    dockerfile_count: number;
-  };
-  dependencies: {
-    package_manager: string;
-    dependencies: unknown[];
-    total_production: number;
-    total_development: number;
-    framework_dependencies: string[];
-    test_frameworks: string[];
-    build_tools: string[];
-    linters: string[];
-  };
-  git: {
-    total_commits: number;
-    contributors: string[];
-    active_files: unknown[];
-    branch_count: number;
-    branch_strategy: string;
-    churn_rate: unknown[];
-    commit_frequency: unknown[];
-    age_days: number;
-  };
-}
-
-interface TeamDiff {
-  agents_added: string[];
-  agents_removed: string[];
-  agents_modified: Array<{
-    name: string;
-    changes: string[];
-  }>;
-  model_changes: Array<{
-    agent: string;
-    from: string;
-    to: string;
-  }>;
-  skill_updates: Array<{
-    agent: string;
-    added: string[];
-    removed: string[];
-  }>;
-  summary: string;
-}
+import {
+  forgeTeam,
+  loadDomainTemplates,
+  customizeTemplate,
+  writeTeam,
+  composeTeam,
+  type TeamComposition,
+} from './engine/builder/index.js';
+import { runFullScan, type FullScanResult } from './engine/scanner/index.js';
+import {
+  discover,
+  getInterviewQuestions,
+  buildBrief,
+  designTeam,
+  runInteractiveInterview,
+  type DiscoveryResult,
+  type DiscoveryState,
+  type InterviewQuestion,
+} from './engine/genesis/index.js';
+import {
+  getDefaultDomainsDir,
+  loadAllDomains,
+  activateDomains,
+} from './engine/domains/index.js';
+import {
+  reforgeTeam,
+  applyDiff,
+  logReforge,
+  migrateV1ToV2,
+  type TeamDiff,
+} from './engine/reforge/index.js';
+import type { TeamManifest } from './engine/types/team.js';
+import type { DomainPack } from './engine/types/domain.js';
+import type { ProjectBrief } from './engine/types/analysis.js';
+import type { AgentTemplate } from './engine/types/agent.js';
 
 interface AgentMutation {
   type: string;
@@ -267,28 +83,6 @@ export interface LegacyRebuildOptions {
 
 export interface LegacyReforgeApplyOptions {
   yes?: boolean;
-}
-
-function getRepositoryRoot(): string {
-  return fileURLToPath(new URL('../../../../', import.meta.url));
-}
-
-function getRootDistPath(...segments: string[]): string {
-  return join(getRepositoryRoot(), 'dist', ...segments);
-}
-
-async function importRootModule<T>(...segments: string[]): Promise<T> {
-  const modulePath = getRootDistPath(...segments);
-
-  try {
-    await access(modulePath, constants.F_OK);
-  } catch {
-    throw new Error(
-      `Required root module is not built at ${modulePath}. Run \`corepack pnpm build\` first.`,
-    );
-  }
-
-  return import(pathToFileURL(modulePath).href) as Promise<T>;
 }
 
 function createParsedOptions(config: {
@@ -346,11 +140,6 @@ async function forgeTeamCommand(
   console.log('Forging agent team...');
 
   try {
-    const [{ forgeTeam }, { runFullScan }] = await Promise.all([
-      importRootModule<RootBuilderModule>('builder', 'index.js'),
-      importRootModule<RootScannerModule>('scanner', 'index.js'),
-    ]);
-
     if (hasFlag(options, '--verbose')) {
       console.log('\nRunning project scan...');
       const scan = await runFullScan(projectRoot);
@@ -376,11 +165,8 @@ async function forgeTeamCommand(
 
     if (hasFlag(options, '--dry-run')) {
       console.log('\n[dry-run] Scanning project without writing files...');
-      const [scan, composer] = await Promise.all([
-        runFullScan(projectRoot),
-        importRootModule<RootTeamComposerModule>('builder', 'team-composer.js'),
-      ]);
-      const composition = composer.composeTeam(scan);
+      const scan = await runFullScan(projectRoot);
+      const composition = composeTeam(scan);
       console.log('\n[dry-run] Would generate team with:');
       console.log(`  Agents: ${composition.agents.join(', ')}`);
       if (composition.custom_agents.length > 0) {
@@ -543,20 +329,6 @@ async function genesisTeamCommand(
   console.log('Starting Genesis workflow...\n');
 
   try {
-    const [
-      { discover, getInterviewQuestions, buildBrief, designTeam },
-      interviewRunner,
-      { runFullScan },
-      { getDefaultDomainsDir, loadAllDomains, activateDomains },
-      { loadDomainTemplates, customizeTemplate, writeTeam },
-    ] = await Promise.all([
-      importRootModule<RootGenesisModule>('genesis', 'index.js'),
-      importRootModule<RootInterviewRunnerModule>('genesis', 'interview-runner.js'),
-      importRootModule<RootScannerModule>('scanner', 'index.js'),
-      importRootModule<RootDomainsModule>('domains', 'index.js'),
-      importRootModule<RootBuilderUtilityModule>('builder', 'index.js'),
-    ]);
-
     const discoveryResult = await discover(projectRoot);
     const forceInterview = hasFlag(options, '--interview');
     const shouldInterview = forceInterview || discoveryResult.state === 'empty';
@@ -566,7 +338,7 @@ async function genesisTeamCommand(
     if (shouldInterview) {
       console.log('Running project interview...\n');
       const questions = getInterviewQuestions(discoveryResult.state);
-      interviewAnswers = await interviewRunner.runInteractiveInterview(questions);
+      interviewAnswers = await runInteractiveInterview(questions);
       console.log('\n');
     }
 
@@ -655,9 +427,6 @@ async function rebuildTeamCommand(
   projectRoot: string,
   options: ParsedOptions,
 ): Promise<number> {
-  const { reforgeTeam, applyDiff, logReforge, migrateV1ToV2 } =
-    await importRootModule<RootReforgeModule>('reforge', 'index.js');
-
   if (hasFlag(options, '--upgrade')) {
     console.log('Upgrading team to v2 format...');
     try {
