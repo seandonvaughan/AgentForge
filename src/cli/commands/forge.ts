@@ -1,99 +1,56 @@
 import type { Command } from "commander";
-import { forgeTeam } from "../../builder/index.js";
-import { runFullScan } from "../../scanner/index.js";
+import { existsSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
-async function forgeAction(options: {
+function forgeAction(options: {
   dryRun?: boolean;
   verbose?: boolean;
   domains?: string;
-}): Promise<void> {
-  console.log("Forging agent team...");
-
-  try {
-    if (options.verbose) {
-      console.log("\nRunning project scan...");
-      const scan = await runFullScan(process.cwd());
-      console.log("\n--- Scan Results ---");
-      console.log(`  Files scanned: ${scan.files.total_files}`);
-      console.log(`  Lines of code: ${scan.files.total_loc}`);
-      console.log(`  Languages: ${Object.keys(scan.files.languages).join(", ") || "none detected"}`);
-      console.log(`  Frameworks: ${scan.files.frameworks_detected.join(", ") || "none detected"}`);
-      console.log(`  CI provider: ${scan.ci.ci_provider}`);
-      console.log(`  Package manager: ${scan.dependencies.package_manager}`);
-      console.log(`  Production deps: ${scan.dependencies.total_production}`);
-      console.log(`  Dev deps: ${scan.dependencies.total_development}`);
-      console.log(`  Test frameworks: ${scan.dependencies.test_frameworks.join(", ") || "none"}`);
-      console.log(`  Git commits: ${scan.git.total_commits}`);
-      console.log(`  Contributors: ${scan.git.contributors.length}`);
-    }
-
-    if (options.dryRun) {
-      console.log("\n[dry-run] Scanning project without writing files...");
-      const scan = await runFullScan(process.cwd());
-      const { composeTeam } = await import("../../builder/team-composer.js");
-      const composition = composeTeam(scan);
-      console.log("\n[dry-run] Would generate team with:");
-      console.log(`  Agents: ${composition.agents.join(", ")}`);
-      if (composition.custom_agents.length > 0) {
-        console.log(`  Custom agents: ${composition.custom_agents.map((a) => a.name).join(", ")}`);
-      }
-      console.log(`\n  Model assignments:`);
-      for (const [agent, model] of Object.entries(composition.model_assignments)) {
-        console.log(`    ${agent}: ${model}`);
-      }
-      return;
-    }
-
-    const manifest = await forgeTeam(process.cwd());
-
-    console.log("\nAgent team forged successfully.");
-
-    // Count total agents across all categories
-    const allAgents = [
-      ...manifest.agents.strategic,
-      ...manifest.agents.implementation,
-      ...manifest.agents.quality,
-      ...manifest.agents.utility,
-    ];
-
-    console.log(`\n--- Team Manifest ---`);
-    console.log(`  Name: ${manifest.name}`);
-    console.log(`  Project hash: ${manifest.project_hash}`);
-    console.log(`  Total agents: ${allAgents.length}`);
-
-    // Show agents by category
-    const categories = ["strategic", "implementation", "quality", "utility"] as const;
-    for (const cat of categories) {
-      const catAgents = manifest.agents[cat];
-      if (catAgents.length > 0) {
-        console.log(`  ${cat}: ${catAgents.join(", ")}`);
-      }
-    }
-
-    // Show model assignments
-    console.log("\n--- Model Assignments ---");
-    if (manifest.model_routing.opus.length > 0) {
-      console.log(`  Opus:   ${manifest.model_routing.opus.join(", ")}`);
-    }
-    if (manifest.model_routing.sonnet.length > 0) {
-      console.log(`  Sonnet: ${manifest.model_routing.sonnet.join(", ")}`);
-    }
-    if (manifest.model_routing.haiku.length > 0) {
-      console.log(`  Haiku:  ${manifest.model_routing.haiku.join(", ")}`);
-    }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(`Error forging team: ${message}`);
-    process.exitCode = 1;
-  }
+}): void {
+  console.warn("[compat] `forge` is a root compatibility wrapper. Prefer `agentforge team forge` from the package CLI.");
+  forwardToPackageCli("team forge", [
+    "team",
+    "forge",
+    ...(options.dryRun ? ["--dry-run"] : []),
+    ...(options.verbose ? ["--verbose"] : []),
+    ...(options.domains ? ["--domains", options.domains] : []),
+  ]);
 }
 
 export default function registerForgeCommand(program: Command): void {
   program
     .command("forge")
-    .description("Analyze project and generate optimized agent team")
+    .description("Compatibility wrapper for package-canonical `team forge`")
     .option("--dry-run", "Show what would be generated without writing files")
     .option("--verbose", "Show detailed analysis output")
     .option("--domains <domains>", "Comma-separated list of domains to activate (e.g. software,business)")
     .action(forgeAction);
+}
+
+function forwardToPackageCli(preferredCommand: string, args: string[]): void {
+  const packageCliPath = fileURLToPath(new URL("../../../packages/cli/dist/bin.js", import.meta.url));
+  if (!existsSync(packageCliPath)) {
+    console.error(`Package CLI build not found at ${packageCliPath}. Build packages/cli first, then run \`${preferredCommand}\`.`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const result = spawnSync(process.execPath, [packageCliPath, ...args], {
+    cwd: process.cwd(),
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      AGENTFORGE_ROOT_COMPAT: "1",
+    },
+  });
+
+  if (typeof result.status === "number") {
+    process.exitCode = result.status;
+    return;
+  }
+
+  const message = result.error instanceof Error ? result.error.message : `Failed to run ${preferredCommand}`;
+  console.error(message);
+  process.exitCode = 1;
 }

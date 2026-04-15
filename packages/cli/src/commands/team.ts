@@ -48,7 +48,7 @@ interface TeamCommandOptionBag {
 export function registerTeamCommand(program: Command): void {
   const team = program
     .command('team')
-    .description('Generate, inspect, and update AgentForge teams')
+    .description('Generate, inspect, and update AgentForge teams through the legacy compatibility bridge')
     .option('--project-root <path>', 'Project root', process.cwd())
     .option('--verbose', 'Show detailed agent info')
     .action(teamShowAction);
@@ -81,7 +81,7 @@ export function registerTeamCommand(program: Command): void {
 
   const reforge = team
     .command('reforge')
-    .description('Manage team reforge proposals and runtime overrides');
+    .description('Manage team reforge proposals and runtime overrides through the compatibility bridge');
 
   reforge
     .command('apply <proposalId>')
@@ -163,7 +163,7 @@ export function registerTeamCommand(program: Command): void {
 export function registerTeamSessionsCommand(program: Command): void {
   const teamSessions = program
     .command('team-sessions')
-    .description('Manage hibernated team sessions');
+    .description('Manage hibernated team sessions through the legacy compatibility bridge');
 
   teamSessions
     .command('list')
@@ -199,56 +199,101 @@ export function registerTeamSessionsCommand(program: Command): void {
   );
 }
 
-async function teamShowAction(options: TeamShowOptions): Promise<void> {
-  await runCompatibilityCommand(['team', ...buildTeamShowArgs(options)], options.projectRoot);
+async function teamShowAction(options: TeamShowOptions, command: Command): Promise<void> {
+  await runCompatibilityCommand(
+    ['team', ...buildTeamShowArgs(options)],
+    resolveProjectRoot(options.projectRoot, command),
+  );
 }
 
-async function teamForgeAction(options: TeamForgeOptions): Promise<void> {
-  await runCompatibilityCommand(['forge', ...buildTeamForgeArgs(options)], options.projectRoot);
+async function teamForgeAction(options: TeamForgeOptions, command: Command): Promise<void> {
+  await runCompatibilityCommand(
+    ['forge', ...buildTeamForgeArgs(options)],
+    resolveProjectRoot(options.projectRoot, command),
+  );
 }
 
-async function teamGenesisAction(options: TeamGenesisOptions): Promise<void> {
-  await runCompatibilityCommand(['genesis', ...buildTeamGenesisArgs(options)], options.projectRoot);
+async function teamGenesisAction(
+  options: TeamGenesisOptions,
+  command: Command,
+): Promise<void> {
+  await runCompatibilityCommand(
+    ['genesis', ...buildTeamGenesisArgs(options)],
+    resolveProjectRoot(options.projectRoot, command),
+  );
 }
 
-async function teamRebuildAction(options: TeamRebuildOptions): Promise<void> {
-  await runCompatibilityCommand(['rebuild', ...buildTeamRebuildArgs(options)], options.projectRoot);
+async function teamRebuildAction(
+  options: TeamRebuildOptions,
+  command: Command,
+): Promise<void> {
+  await runCompatibilityCommand(
+    ['rebuild', ...buildTeamRebuildArgs(options)],
+    resolveProjectRoot(options.projectRoot, command),
+  );
 }
 
 async function teamReforgeApplyAction(
   proposalId: string,
   options: ReforgeApplyOptions,
+  command: Command,
 ): Promise<void> {
   await runCompatibilityCommand(
     ['reforge', 'apply', proposalId, ...buildTeamReforgeApplyArgs(options)],
-    options.projectRoot,
+    resolveProjectRoot(options.projectRoot, command),
   );
 }
 
-async function teamReforgeListAction(options: TeamSessionsOptions): Promise<void> {
-  await runCompatibilityCommand(['reforge', 'list'], options.projectRoot);
+async function teamReforgeListAction(
+  options: TeamSessionsOptions,
+  command: Command,
+): Promise<void> {
+  await runCompatibilityCommand(
+    ['reforge', 'list'],
+    resolveProjectRoot(options.projectRoot, command),
+  );
 }
 
 async function teamReforgeRollbackAction(
   agent: string,
   options: TeamSessionsOptions,
+  command: Command,
 ): Promise<void> {
-  await runCompatibilityCommand(['reforge', 'rollback', agent], options.projectRoot);
+  await runCompatibilityCommand(
+    ['reforge', 'rollback', agent],
+    resolveProjectRoot(options.projectRoot, command),
+  );
 }
 
-async function teamReforgeStatusAction(options: TeamSessionsOptions): Promise<void> {
-  await runCompatibilityCommand(['reforge', 'status'], options.projectRoot);
+async function teamReforgeStatusAction(
+  options: TeamSessionsOptions,
+  command: Command,
+): Promise<void> {
+  await runCompatibilityCommand(
+    ['reforge', 'status'],
+    resolveProjectRoot(options.projectRoot, command),
+  );
 }
 
-async function teamSessionsListAction(options: TeamSessionsOptions): Promise<void> {
-  await runCompatibilityCommand(['sessions', 'list'], options.projectRoot);
+async function teamSessionsListAction(
+  options: TeamSessionsOptions,
+  command: Command,
+): Promise<void> {
+  await runCompatibilityCommand(
+    ['sessions', 'list'],
+    resolveProjectRoot(options.projectRoot, command),
+  );
 }
 
 async function teamSessionsDeleteAction(
   sessionId: string,
   options: TeamSessionsOptions,
+  command: Command,
 ): Promise<void> {
-  await runCompatibilityCommand(['sessions', 'delete', sessionId], options.projectRoot);
+  await runCompatibilityCommand(
+    ['sessions', 'delete', sessionId],
+    resolveProjectRoot(options.projectRoot, command),
+  );
 }
 
 function registerCompatibilityAlias(
@@ -272,9 +317,11 @@ function registerCompatibilityAlias(
     .option('--upgrade', 'Migrate a team without a full rebuild')
     .action(async (...actionArgs: unknown[]) => {
       const commandOptions = actionArgs[actionArgs.length - 1] as Record<string, unknown>;
-      const projectRoot = typeof commandOptions.projectRoot === 'string'
-        ? commandOptions.projectRoot
-        : process.cwd();
+      const command = actionArgs[actionArgs.length - 1] as Command;
+      const projectRoot = resolveProjectRoot(
+        typeof commandOptions.projectRoot === 'string' ? commandOptions.projectRoot : undefined,
+        command,
+      );
       const positionals = (options.positionalArgs ?? [])
         .map((name, index) => actionArgs[index])
         .filter((value): value is string => typeof value === 'string');
@@ -321,6 +368,46 @@ function buildTeamReforgeApplyArgs(options: TeamCommandOptionBag): string[] {
 
 function buildProjectRootArgs(_options: TeamCommandOptionBag): string[] {
   return [];
+}
+
+function resolveProjectRoot(fallback: string | undefined, command?: Command): string {
+  const explicitFromArgv = readProjectRootFromArgv();
+  if (explicitFromArgv) {
+    return explicitFromArgv;
+  }
+
+  const localOptions = command?.optsWithGlobals?.() as { projectRoot?: unknown } | undefined;
+  if (typeof localOptions?.projectRoot === 'string' && localOptions.projectRoot.length > 0) {
+    return localOptions.projectRoot;
+  }
+
+  const parentOptions = command?.parent?.opts?.() as { projectRoot?: unknown } | undefined;
+  if (typeof parentOptions?.projectRoot === 'string' && parentOptions.projectRoot.length > 0) {
+    return parentOptions.projectRoot;
+  }
+
+  if (typeof fallback === 'string' && fallback.length > 0) {
+    return fallback;
+  }
+
+  return process.cwd();
+}
+
+function readProjectRootFromArgv(): string | undefined {
+  for (let index = process.argv.length - 1; index >= 0; index -= 1) {
+    const current = process.argv[index];
+    if (current === '--project-root') {
+      const next = process.argv[index + 1];
+      return typeof next === 'string' && next.length > 0 ? next : undefined;
+    }
+
+    if (current?.startsWith('--project-root=')) {
+      const [, value] = current.split('=', 2);
+      return value && value.length > 0 ? value : undefined;
+    }
+  }
+
+  return undefined;
 }
 
 async function runCompatibilityCommand(args: string[], projectRoot: string): Promise<void> {

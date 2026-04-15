@@ -1,53 +1,22 @@
 import type { Command } from "commander";
-import { SessionSerializer } from "../../orchestrator/session-serializer.js";
-import { StalenessDetector } from "../../orchestrator/staleness-detector.js";
+import { existsSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
-async function sessionsListAction(): Promise<void> {
-  const projectRoot = process.cwd();
-  const serializer = new SessionSerializer(projectRoot);
-  const detector = new StalenessDetector(projectRoot);
-
-  const sessions = await serializer.list();
-
-  if (sessions.length === 0) {
-    console.log("\n  No hibernated sessions found.\n");
-    return;
-  }
-
-  const current = await detector.getCurrentCommit();
-
-  console.log(`\n  Hibernated Sessions`);
-  console.log(`  -------------------`);
-
-  for (const session of sessions) {
-    const stale = await detector.isStale(session.gitCommitAtHibernation);
-    const staleMarker = stale ? " [STALE]" : "";
-    const budgetRemaining = (session.sessionBudgetUsd - session.spentUsd).toFixed(2);
-
-    console.log(`\n  ${session.sessionId.slice(0, 8)}${staleMarker}`);
-    console.log(`    Autonomy:  ${session.autonomyLevel}`);
-    console.log(`    Team:      ${session.teamManifest.name}`);
-    console.log(`    Spent:     $${session.spentUsd.toFixed(2)} / $${session.sessionBudgetUsd.toFixed(2)} ($${budgetRemaining} remaining)`);
-    console.log(`    Feed:      ${session.feedEntries.length} entries`);
-    console.log(`    Saved:     ${session.hibernatedAt}`);
-    if (stale) {
-      console.log(`    Warning:   Codebase changed since hibernation (was ${session.gitCommitAtHibernation}, now ${current})`);
-    }
-  }
-
-  console.log();
+function sessionsListAction(): void {
+  console.warn("[compat] `sessions` is a root compatibility wrapper. Prefer `agentforge team-sessions` from the package CLI.");
+  forwardToPackageCli("team-sessions list", ["team-sessions", "list"]);
 }
 
-async function sessionsDeleteAction(sessionId: string): Promise<void> {
-  const serializer = new SessionSerializer(process.cwd());
-  await serializer.deleteById(sessionId);
-  console.log(`  Session ${sessionId} deleted.`);
+function sessionsDeleteAction(sessionId: string): void {
+  console.warn("[compat] `sessions` is a root compatibility wrapper. Prefer `agentforge team-sessions` from the package CLI.");
+  forwardToPackageCli("team-sessions delete", ["team-sessions", "delete", sessionId]);
 }
 
 export default function registerSessionsCommand(program: Command): void {
   const sessions = program
     .command("sessions")
-    .description("Manage hibernated team mode sessions");
+    .description("Compatibility wrapper for package-canonical `team-sessions`");
 
   sessions
     .command("list")
@@ -58,4 +27,31 @@ export default function registerSessionsCommand(program: Command): void {
     .command("delete <sessionId>")
     .description("Delete a hibernated session by ID")
     .action(sessionsDeleteAction);
+}
+
+function forwardToPackageCli(preferredCommand: string, args: string[]): void {
+  const packageCliPath = fileURLToPath(new URL("../../../packages/cli/dist/bin.js", import.meta.url));
+  if (!existsSync(packageCliPath)) {
+    console.error(`Package CLI build not found at ${packageCliPath}. Build packages/cli first, then run \`${preferredCommand}\`.`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const result = spawnSync(process.execPath, [packageCliPath, ...args], {
+    cwd: process.cwd(),
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      AGENTFORGE_ROOT_COMPAT: "1",
+    },
+  });
+
+  if (typeof result.status === "number") {
+    process.exitCode = result.status;
+    return;
+  }
+
+  const message = result.error instanceof Error ? result.error.message : `Failed to run ${preferredCommand}`;
+  console.error(message);
+  process.exitCode = 1;
 }

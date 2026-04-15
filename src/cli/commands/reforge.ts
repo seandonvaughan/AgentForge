@@ -1,209 +1,41 @@
-import { promises as fs } from "node:fs";
-import path from "node:path";
 import type { Command } from "commander";
-import { ReforgeEngine } from "../../reforge/reforge-engine.js";
+import { existsSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
-// ---------------------------------------------------------------------------
-// reforge apply <proposal-id> (Phase 3f)
-// ---------------------------------------------------------------------------
-
-async function applyProposalAction(
+function applyProposalAction(
   proposalId: string,
   options: { yes?: boolean },
-): Promise<void> {
-  const proposalsDir = path.join(process.cwd(), ".agentforge", "reforge-proposals");
-
-  try {
-    const files = await fs.readdir(proposalsDir);
-    const match = files.find((f) => f.includes(proposalId));
-
-    if (!match) {
-      console.error(`No proposal found matching ID "${proposalId}".`);
-      console.log(`\nAvailable proposals in ${proposalsDir}:`);
-      for (const f of files.filter((f) => f.endsWith(".md"))) {
-        console.log(`  ${f}`);
-      }
-      process.exitCode = 1;
-      return;
-    }
-
-    const content = await fs.readFile(path.join(proposalsDir, match), "utf-8");
-    console.log("=== Structural Reforge Proposal ===\n");
-    console.log(content);
-
-    if (!options.yes) {
-      console.log("\nTo apply this proposal, re-run with --yes flag:");
-      console.log(`  agentforge reforge apply ${proposalId} --yes`);
-      return;
-    }
-
-    // Mark proposal as applied by renaming
-    const appliedName = match.replace(".md", ".applied.md");
-    await fs.rename(
-      path.join(proposalsDir, match),
-      path.join(proposalsDir, appliedName),
-    );
-    console.log(`\nProposal applied and archived as: ${appliedName}`);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (message.includes("ENOENT")) {
-      console.log("No reforge proposals found. Directory does not exist yet.");
-    } else {
-      console.error(`Error: ${message}`);
-      process.exitCode = 1;
-    }
-  }
+): void {
+  console.warn("[compat] `reforge` is a root compatibility wrapper. Prefer `agentforge team reforge` from the package CLI.");
+  forwardToPackageCli("team reforge apply", [
+    "team",
+    "reforge",
+    "apply",
+    proposalId,
+    ...(options.yes ? ["--yes"] : []),
+  ]);
 }
 
-// ---------------------------------------------------------------------------
-// reforge list (Phase 3f)
-// ---------------------------------------------------------------------------
-
-async function listAction(): Promise<void> {
-  const cwd = process.cwd();
-  const proposalsDir = path.join(cwd, ".agentforge", "reforge-proposals");
-  const overridesDir = path.join(cwd, ".agentforge", "agent-overrides");
-
-  // List structural proposals
-  console.log("=== Structural Proposals ===\n");
-  try {
-    const proposals = await fs.readdir(proposalsDir);
-    const pending = proposals.filter((f) => f.endsWith(".md") && !f.includes(".applied"));
-    const applied = proposals.filter((f) => f.includes(".applied"));
-
-    if (pending.length === 0 && applied.length === 0) {
-      console.log("  (none)\n");
-    } else {
-      for (const f of pending) {
-        console.log(`  [PENDING] ${f}`);
-      }
-      for (const f of applied) {
-        console.log(`  [APPLIED] ${f}`);
-      }
-      console.log();
-    }
-  } catch {
-    console.log("  (no proposals directory)\n");
-  }
-
-  // List active overrides
-  console.log("=== Active Agent Overrides ===\n");
-  try {
-    const overrides = await fs.readdir(overridesDir);
-    const jsonFiles = overrides.filter((f) => f.endsWith(".json"));
-
-    if (jsonFiles.length === 0) {
-      console.log("  (none)\n");
-    } else {
-      const engine = new ReforgeEngine(cwd);
-      for (const f of jsonFiles) {
-        const agentName = f.replace(".json", "");
-        const override = await engine.loadOverride(agentName);
-        if (override) {
-          const mutTypes = override.mutations.map((m) => m.type).join(", ");
-          console.log(`  ${agentName} v${override.version} — ${mutTypes} (${override.appliedAt})`);
-        }
-      }
-      console.log();
-    }
-  } catch {
-    console.log("  (no overrides directory)\n");
-  }
+function listAction(): void {
+  console.warn("[compat] `reforge` is a root compatibility wrapper. Prefer `agentforge team reforge` from the package CLI.");
+  forwardToPackageCli("team reforge list", ["team", "reforge", "list"]);
 }
 
-// ---------------------------------------------------------------------------
-// reforge rollback <agent> (Phase 3f)
-// ---------------------------------------------------------------------------
-
-async function rollbackAction(agentName: string): Promise<void> {
-  const engine = new ReforgeEngine(process.cwd());
-
-  try {
-    const current = await engine.loadOverride(agentName);
-    if (!current) {
-      console.error(`No override found for agent "${agentName}".`);
-      process.exitCode = 1;
-      return;
-    }
-
-    console.log(`Current override for ${agentName}: v${current.version}`);
-    await engine.rollback(agentName);
-
-    const after = await engine.loadOverride(agentName);
-    console.log(`Rolled back to: v${after?.version ?? 0}`);
-    console.log("Rollback complete.");
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(`Rollback failed: ${message}`);
-    process.exitCode = 1;
-  }
+function rollbackAction(agentName: string): void {
+  console.warn("[compat] `reforge` is a root compatibility wrapper. Prefer `agentforge team reforge` from the package CLI.");
+  forwardToPackageCli("team reforge rollback", ["team", "reforge", "rollback", agentName]);
 }
 
-// ---------------------------------------------------------------------------
-// reforge status (Phase 3f)
-// ---------------------------------------------------------------------------
-
-async function statusAction(): Promise<void> {
-  const cwd = process.cwd();
-  const overridesDir = path.join(cwd, ".agentforge", "agent-overrides");
-
-  console.log("=== Reforge Status ===\n");
-
-  try {
-    const files = await fs.readdir(overridesDir);
-    const jsonFiles = files.filter((f) => f.endsWith(".json"));
-
-    if (jsonFiles.length === 0) {
-      console.log("No agent overrides active. System is running base templates.");
-      return;
-    }
-
-    const engine = new ReforgeEngine(cwd);
-    let totalMutations = 0;
-
-    for (const f of jsonFiles) {
-      const agentName = f.replace(".json", "");
-      const override = await engine.loadOverride(agentName);
-      if (!override) continue;
-
-      totalMutations += override.mutations.length;
-
-      console.log(`${agentName}:`);
-      console.log(`  Version:    ${override.version}/5`);
-      console.log(`  Applied:    ${override.appliedAt}`);
-      console.log(`  Session:    ${override.sessionId}`);
-      console.log(`  Rollback:   ${override.previousVersion ? "available" : "none"}`);
-      console.log(`  Mutations:`);
-      for (const m of override.mutations) {
-        console.log(`    - [${m.type}] ${m.field}: ${JSON.stringify(m.oldValue)} → ${JSON.stringify(m.newValue)}`);
-      }
-      if (override.systemPromptPreamble) {
-        const preview = override.systemPromptPreamble.slice(0, 80);
-        console.log(`  Preamble:   "${preview}${override.systemPromptPreamble.length > 80 ? "..." : ""}"`);
-      }
-      if (override.modelTierOverride) {
-        console.log(`  Model:      → ${override.modelTierOverride}`);
-      }
-      if (override.effortOverride) {
-        console.log(`  Effort:     → ${override.effortOverride}`);
-      }
-      console.log();
-    }
-
-    console.log(`Total: ${jsonFiles.length} agent(s) with ${totalMutations} mutation(s) active.`);
-  } catch {
-    console.log("No agent overrides directory found. System is running base templates.");
-  }
+function statusAction(): void {
+  console.warn("[compat] `reforge` is a root compatibility wrapper. Prefer `agentforge team reforge` from the package CLI.");
+  forwardToPackageCli("team reforge status", ["team", "reforge", "status"]);
 }
-
-// ---------------------------------------------------------------------------
-// Command Registration
-// ---------------------------------------------------------------------------
 
 export default function registerReforgeCommand(program: Command): void {
   const reforgeCmd = program
     .command("reforge")
-    .description("Manage agent runtime overrides and tuning mutations");
+    .description("Compatibility wrapper for package-canonical `team reforge`");
 
   // Phase 3f: apply structural proposal
   reforgeCmd
@@ -229,4 +61,31 @@ export default function registerReforgeCommand(program: Command): void {
     .command("status")
     .description("Show reforge override status for all agents")
     .action(statusAction);
+}
+
+function forwardToPackageCli(preferredCommand: string, args: string[]): void {
+  const packageCliPath = fileURLToPath(new URL("../../../packages/cli/dist/bin.js", import.meta.url));
+  if (!existsSync(packageCliPath)) {
+    console.error(`Package CLI build not found at ${packageCliPath}. Build packages/cli first, then run \`${preferredCommand}\`.`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const result = spawnSync(process.execPath, [packageCliPath, ...args], {
+    cwd: process.cwd(),
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      AGENTFORGE_ROOT_COMPAT: "1",
+    },
+  });
+
+  if (typeof result.status === "number") {
+    process.exitCode = result.status;
+    return;
+  }
+
+  const message = result.error instanceof Error ? result.error.message : `Failed to run ${preferredCommand}`;
+  console.error(message);
+  process.exitCode = 1;
 }
