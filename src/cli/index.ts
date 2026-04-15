@@ -22,7 +22,9 @@ const program = new Command();
 program
   .name("agentforge")
   .version(CLI_VERSION)
-  .description("Adaptive Agent Team Builder for Claude Code");
+  .description("Adaptive Agent Team Builder for Claude Code (root compatibility CLI; package CLI is canonical)");
+
+emitCompatibilityNotice();
 
 registerForgeCommand(program);
 registerGenesisCommand(program);
@@ -47,4 +49,8 @@ function readPackageVersion(): string {
   } catch {
     return "unknown";
   }
+}
+
+function emitCompatibilityNotice(): void {
+  console.warn("[compat] Root CLI surface is compatibility mode. Prefer the package CLI commands (`packages/cli`) for canonical run/cost workflows.");
 }
