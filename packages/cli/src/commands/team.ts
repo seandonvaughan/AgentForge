@@ -48,7 +48,7 @@ interface TeamCommandOptionBag {
 export function registerTeamCommand(program: Command): void {
   const team = program
     .command('team')
-    .description('Generate, inspect, and update AgentForge teams through the legacy compatibility bridge')
+    .description('Inspect and update AgentForge teams (generation/reforge still bridge legacy engines)')
     .option('--project-root <path>', 'Project root', process.cwd())
     .option('--verbose', 'Show detailed agent info')
     .action(teamShowAction);
@@ -163,7 +163,7 @@ export function registerTeamCommand(program: Command): void {
 export function registerTeamSessionsCommand(program: Command): void {
   const teamSessions = program
     .command('team-sessions')
-    .description('Manage hibernated team sessions through the legacy compatibility bridge');
+    .description('Manage hibernated team sessions');
 
   teamSessions
     .command('list')
@@ -181,29 +181,39 @@ export function registerTeamSessionsCommand(program: Command): void {
     .command('sessions')
     .description('Compatibility alias for team-sessions');
 
-  registerCompatibilityAlias(
-    sessionsAlias.command('list').description('Compatibility alias for team-sessions list'),
-    ['sessions', 'list'],
-    { compatibilityAlias: true, optionBuilder: buildProjectRootArgs, preferredCommand: 'team-sessions list' },
-  );
+  sessionsAlias
+    .command('list')
+    .description('Compatibility alias for team-sessions list')
+    .option('--project-root <path>', 'Project root', process.cwd())
+    .action(async (options: TeamSessionsOptions, command: Command) => {
+      console.warn('[compat] `sessions list` is a compatibility alias. Prefer `team-sessions list`.');
+      await teamSessionsListAction(options, command);
+    });
 
-  registerCompatibilityAlias(
-    sessionsAlias.command('delete <sessionId>').description('Compatibility alias for team-sessions delete'),
-    ['sessions', 'delete'],
-    {
-      compatibilityAlias: true,
-      optionBuilder: buildProjectRootArgs,
-      positionalArgs: ['sessionId'],
-      preferredCommand: 'team-sessions delete',
-    },
-  );
+  sessionsAlias
+    .command('delete <sessionId>')
+    .description('Compatibility alias for team-sessions delete')
+    .option('--project-root <path>', 'Project root', process.cwd())
+    .action(async (sessionId: string, options: TeamSessionsOptions, command: Command) => {
+      console.warn('[compat] `sessions delete` is a compatibility alias. Prefer `team-sessions delete`.');
+      await teamSessionsDeleteAction(sessionId, options, command);
+    });
 }
 
 async function teamShowAction(options: TeamShowOptions, command: Command): Promise<void> {
-  await runCompatibilityCommand(
-    ['team', ...buildTeamShowArgs(options)],
-    resolveProjectRoot(options.projectRoot, command),
-  );
+  try {
+    const { showGeneratedTeam } = await import('@agentforge/core');
+    const exitCode = await showGeneratedTeam(
+      resolveProjectRoot(options.projectRoot, command),
+      typeof options.verbose === 'boolean' ? { verbose: options.verbose } : {},
+    );
+    if (exitCode !== 0) {
+      process.exitCode = exitCode;
+    }
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
 }
 
 async function teamForgeAction(options: TeamForgeOptions, command: Command): Promise<void> {
@@ -279,10 +289,16 @@ async function teamSessionsListAction(
   options: TeamSessionsOptions,
   command: Command,
 ): Promise<void> {
-  await runCompatibilityCommand(
-    ['sessions', 'list'],
-    resolveProjectRoot(options.projectRoot, command),
-  );
+  try {
+    const { listTeamSessions } = await import('@agentforge/core');
+    const exitCode = await listTeamSessions(resolveProjectRoot(options.projectRoot, command));
+    if (exitCode !== 0) {
+      process.exitCode = exitCode;
+    }
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
 }
 
 async function teamSessionsDeleteAction(
@@ -290,10 +306,19 @@ async function teamSessionsDeleteAction(
   options: TeamSessionsOptions,
   command: Command,
 ): Promise<void> {
-  await runCompatibilityCommand(
-    ['sessions', 'delete', sessionId],
-    resolveProjectRoot(options.projectRoot, command),
-  );
+  try {
+    const { deleteTeamSession } = await import('@agentforge/core');
+    const exitCode = await deleteTeamSession(
+      resolveProjectRoot(options.projectRoot, command),
+      sessionId,
+    );
+    if (exitCode !== 0) {
+      process.exitCode = exitCode;
+    }
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
 }
 
 function registerCompatibilityAlias(
@@ -316,8 +341,11 @@ function registerCompatibilityAlias(
     .option('--auto-apply', 'Apply changes without review')
     .option('--upgrade', 'Migrate a team without a full rebuild')
     .action(async (...actionArgs: unknown[]) => {
-      const commandOptions = actionArgs[actionArgs.length - 1] as Record<string, unknown>;
       const command = actionArgs[actionArgs.length - 1] as Command;
+      const commandOptions =
+        actionArgs.length >= 2 && typeof actionArgs[actionArgs.length - 2] === 'object'
+          ? (actionArgs[actionArgs.length - 2] as Record<string, unknown>)
+          : {};
       const projectRoot = resolveProjectRoot(
         typeof commandOptions.projectRoot === 'string' ? commandOptions.projectRoot : undefined,
         command,
@@ -333,10 +361,6 @@ function registerCompatibilityAlias(
       const args = [...baseArgs, ...positionals, ...options.optionBuilder(commandOptions)];
       await runCompatibilityCommand(args, projectRoot);
     });
-}
-
-function buildTeamShowArgs(options: TeamCommandOptionBag): string[] {
-  return typeof options.verbose === 'boolean' && options.verbose ? ['--verbose'] : [];
 }
 
 function buildTeamForgeArgs(options: TeamCommandOptionBag): string[] {
