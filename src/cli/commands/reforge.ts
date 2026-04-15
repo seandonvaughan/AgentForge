@@ -1,35 +1,35 @@
 import type { Command } from "commander";
-import { existsSync } from "node:fs";
-import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import {
+  applyReforgeCompatibility,
+  listReforgeCompatibility,
+  rollbackReforgeCompatibility,
+  statusReforgeCompatibility,
+} from "../compat/package-team-services.js";
 
-function applyProposalAction(
+async function applyProposalAction(
   proposalId: string,
   options: { yes?: boolean },
-): void {
+): Promise<void> {
   console.warn("[compat] `reforge` is a root compatibility wrapper. Prefer `agentforge team reforge` from the package CLI.");
-  forwardToPackageCli("team reforge apply", [
-    "team",
-    "reforge",
-    "apply",
+  await applyReforgeCompatibility(
     proposalId,
-    ...(options.yes ? ["--yes"] : []),
-  ]);
+    options.yes ? { yes: true } : {},
+  );
 }
 
-function listAction(): void {
+async function listAction(): Promise<void> {
   console.warn("[compat] `reforge` is a root compatibility wrapper. Prefer `agentforge team reforge` from the package CLI.");
-  forwardToPackageCli("team reforge list", ["team", "reforge", "list"]);
+  await listReforgeCompatibility();
 }
 
-function rollbackAction(agentName: string): void {
+async function rollbackAction(agentName: string): Promise<void> {
   console.warn("[compat] `reforge` is a root compatibility wrapper. Prefer `agentforge team reforge` from the package CLI.");
-  forwardToPackageCli("team reforge rollback", ["team", "reforge", "rollback", agentName]);
+  await rollbackReforgeCompatibility(agentName);
 }
 
-function statusAction(): void {
+async function statusAction(): Promise<void> {
   console.warn("[compat] `reforge` is a root compatibility wrapper. Prefer `agentforge team reforge` from the package CLI.");
-  forwardToPackageCli("team reforge status", ["team", "reforge", "status"]);
+  await statusReforgeCompatibility();
 }
 
 export default function registerReforgeCommand(program: Command): void {
@@ -61,31 +61,4 @@ export default function registerReforgeCommand(program: Command): void {
     .command("status")
     .description("Show reforge override status for all agents")
     .action(statusAction);
-}
-
-function forwardToPackageCli(preferredCommand: string, args: string[]): void {
-  const packageCliPath = fileURLToPath(new URL("../../../packages/cli/dist/bin.js", import.meta.url));
-  if (!existsSync(packageCliPath)) {
-    console.error(`Package CLI build not found at ${packageCliPath}. Build packages/cli first, then run \`${preferredCommand}\`.`);
-    process.exitCode = 1;
-    return;
-  }
-
-  const result = spawnSync(process.execPath, [packageCliPath, ...args], {
-    cwd: process.cwd(),
-    stdio: "inherit",
-    env: {
-      ...process.env,
-      AGENTFORGE_ROOT_COMPAT: "1",
-    },
-  });
-
-  if (typeof result.status === "number") {
-    process.exitCode = result.status;
-    return;
-  }
-
-  const message = result.error instanceof Error ? result.error.message : `Failed to run ${preferredCommand}`;
-  console.error(message);
-  process.exitCode = 1;
 }

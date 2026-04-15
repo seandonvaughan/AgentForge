@@ -7,9 +7,13 @@ import type { RuntimeMode, ExecutionProviderKind } from '../runtime/types.js';
 interface LegacyCostEntry {
   sessionId: string;
   startedAt: string;
-  endedAt: string;
+  endedAt?: string;
+  completedAt?: string;
+  status?: string;
   totalSpentUsd: number;
   totalAgentRuns: number;
+  agentId?: string;
+  model?: string;
   agentBreakdown?: Record<string, number>;
 }
 
@@ -131,9 +135,11 @@ export async function generateCostReport(projectRoot: string): Promise<CostRepor
           lastSession: {
             sessionId: lastEntry.sessionId,
             startedAt: lastEntry.startedAt,
-            completedAt: lastEntry.endedAt,
             costUsd: lastEntry.totalSpentUsd,
-            status: 'completed',
+            status: lastEntry.status ?? 'completed',
+            ...(lastEntry.endedAt ?? lastEntry.completedAt
+              ? { completedAt: (lastEntry.endedAt ?? lastEntry.completedAt) as string }
+              : {}),
           },
         }
       : {}),
@@ -155,13 +161,66 @@ async function loadLegacyEntries(projectRoot: string): Promise<LegacyCostEntry[]
   for (const file of files.filter((entry) => entry.startsWith('cost-entry-') && entry.endsWith('.json')).sort()) {
     try {
       const raw = await readFile(join(sessionsDir, file), 'utf8');
-      entries.push(JSON.parse(raw) as LegacyCostEntry);
+      const normalized = normalizeLegacyEntry(JSON.parse(raw) as Record<string, unknown>);
+      if (normalized) {
+        entries.push(normalized);
+      }
     } catch {
       // Ignore malformed legacy files.
     }
   }
 
   return entries;
+}
+
+function normalizeLegacyEntry(value: Record<string, unknown>): LegacyCostEntry | null {
+  if (typeof value.sessionId !== 'string' || value.sessionId.length === 0) {
+    return null;
+  }
+
+  const startedAt =
+    typeof value.startedAt === 'string'
+      ? value.startedAt
+      : typeof value.completedAt === 'string'
+        ? value.completedAt
+        : new Date(0).toISOString();
+  const endedAt =
+    typeof value.endedAt === 'string'
+      ? value.endedAt
+      : typeof value.completedAt === 'string'
+        ? value.completedAt
+        : undefined;
+  const totalSpentUsd = coerceFiniteNumber(value.totalSpentUsd, 0);
+  const totalAgentRuns = coerceFiniteNumber(
+    value.totalAgentRuns,
+    typeof value.agentId === 'string' && value.agentId.length > 0 ? 1 : 0,
+  );
+
+  const normalizedBreakdown: Record<string, number> | undefined =
+    value.agentBreakdown && typeof value.agentBreakdown === 'object'
+      ? Object.fromEntries(
+          Object.entries(value.agentBreakdown as Record<string, unknown>).filter(
+            ([, amount]) => typeof amount === 'number' && Number.isFinite(amount),
+          ),
+        ) as Record<string, number>
+      : undefined;
+
+  return {
+    sessionId: value.sessionId,
+    startedAt,
+    ...(endedAt ? { endedAt } : {}),
+    ...(typeof value.completedAt === 'string' ? { completedAt: value.completedAt } : {}),
+    ...(typeof value.status === 'string' ? { status: value.status } : {}),
+    totalSpentUsd,
+    totalAgentRuns,
+    ...(typeof value.agentId === 'string' ? { agentId: value.agentId } : {}),
+    ...(typeof value.model === 'string' ? { model: value.model } : {}),
+    ...(normalizedBreakdown ? { agentBreakdown: normalizedBreakdown } : {}),
+  };
+}
+
+function coerceFiniteNumber(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
 function mergeCost(

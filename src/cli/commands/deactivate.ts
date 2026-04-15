@@ -3,6 +3,8 @@ import { getActiveSession } from "./activate.js";
 
 async function deactivateAction(): Promise<void> {
   try {
+    console.warn("[legacy] `deactivate` still uses the root-only team mode runtime. No package-canonical equivalent exists yet.");
+
     const session = getActiveSession();
 
     if (!session || session.getState() !== "active") {
@@ -31,6 +33,6 @@ async function deactivateAction(): Promise<void> {
 export default function registerDeactivateCommand(program: Command): void {
   program
     .command("deactivate")
-    .description("Exit team mode — end the active session")
+    .description("Legacy root-only team mode deactivation")
     .action(deactivateAction);
 }

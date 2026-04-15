@@ -55,5 +55,5 @@ function emitCompatibilityNotice(): void {
   if (process.env.AGENTFORGE_BRIDGED === "1") {
     return;
   }
-  console.warn("[compat] Root CLI surface is compatibility mode. Team-generation and team-session commands now forward to the package CLI (`packages/cli`); package surfaces remain canonical.");
+  console.warn("[compat] Root CLI surface is compatibility mode. Canonical commands now route through package-core/package-server services; only `activate` and `deactivate` remain legacy root-managed.");
 }

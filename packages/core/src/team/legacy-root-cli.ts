@@ -1,15 +1,11 @@
 import { constants } from 'node:fs';
-import { access, readFile, readdir, rename } from 'node:fs/promises';
+import { access, mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 
 import yaml from 'js-yaml';
-
-export interface LegacyRootCliOptions {
-  cwd?: string;
-}
 
 interface RootBuilderModule {
   forgeTeam(projectRoot: string): Promise<TeamManifest>;
@@ -78,27 +74,6 @@ interface RootReforgeModule {
   applyDiff(projectRoot: string, diff: TeamDiff): Promise<void>;
   logReforge(projectRoot: string, diff: TeamDiff): Promise<void>;
   migrateV1ToV2(projectRoot: string): Promise<void>;
-}
-
-interface RootReforgeEngineModule {
-  ReforgeEngine: new (projectRoot: string) => {
-    loadOverride(agentName: string): Promise<AgentOverride | null>;
-    rollback(agentName: string): Promise<void>;
-  };
-}
-
-interface RootSessionSerializerModule {
-  SessionSerializer: new (projectRoot: string) => {
-    list(): Promise<HibernatedSession[]>;
-    deleteById(sessionId: string): Promise<void>;
-  };
-}
-
-interface RootStalenessDetectorModule {
-  StalenessDetector: new (projectRoot: string) => {
-    getCurrentCommit(): Promise<string>;
-    isStale(savedCommit: string): Promise<boolean>;
-  };
 }
 
 interface DiscoveryResult {
@@ -268,23 +243,9 @@ interface AgentOverride {
   effortOverride?: string;
 }
 
-interface HibernatedSession {
-  sessionId: string;
-  autonomyLevel: string;
-  hibernatedAt: string;
-  gitCommitAtHibernation: string;
-  teamManifest: {
-    name: string;
-  };
-  feedEntries: unknown[];
-  sessionBudgetUsd: number;
-  spentUsd: number;
-}
-
 interface ParsedOptions {
   flags: Set<string>;
   values: Map<string, string>;
-  positionals: string[];
 }
 
 export interface LegacyForgeOptions {
@@ -330,46 +291,9 @@ async function importRootModule<T>(...segments: string[]): Promise<T> {
   return import(pathToFileURL(modulePath).href) as Promise<T>;
 }
 
-function parseOptions(args: string[]): ParsedOptions {
-  const flags = new Set<string>();
-  const values = new Map<string, string>();
-  const positionals: string[] = [];
-
-  for (let index = 0; index < args.length; index += 1) {
-    const current = args[index];
-    if (current === undefined) {
-      break;
-    }
-
-    if (!current.startsWith('--')) {
-      positionals.push(current);
-      continue;
-    }
-
-    const [flagCandidate, inlineValue] = current.split('=', 2);
-    const flag = flagCandidate ?? current;
-    if (inlineValue !== undefined) {
-      values.set(flag, inlineValue);
-      continue;
-    }
-
-    const next = args[index + 1];
-    if (next && !next.startsWith('--')) {
-      values.set(flag, next);
-      index += 1;
-      continue;
-    }
-
-    flags.add(flag);
-  }
-
-  return { flags, values, positionals };
-}
-
 function createParsedOptions(config: {
   flags?: string[];
   values?: Record<string, string | undefined>;
-  positionals?: string[];
 } = {}): ParsedOptions {
   const flags = new Set<string>((config.flags ?? []).filter(Boolean));
   const values = new Map<string, string>();
@@ -382,7 +306,6 @@ function createParsedOptions(config: {
   return {
     flags,
     values,
-    positionals: [...(config.positionals ?? [])],
   };
 }
 
@@ -407,10 +330,6 @@ function parseDomains(raw: string | undefined): string[] | undefined {
   return values.length > 0 ? values : undefined;
 }
 
-function resolveProjectRoot(options: LegacyRootCliOptions): string {
-  return options.cwd ?? process.cwd();
-}
-
 function allAgents(manifest: TeamManifest): string[] {
   return [
     ...(manifest.agents.strategic ?? []),
@@ -418,102 +337,6 @@ function allAgents(manifest: TeamManifest): string[] {
     ...(manifest.agents.quality ?? []),
     ...(manifest.agents.utility ?? []),
   ];
-}
-
-function modelForAgent(manifest: TeamManifest, agentName: string): string {
-  if (manifest.model_routing.opus.includes(agentName)) {
-    return 'opus';
-  }
-  if (manifest.model_routing.sonnet.includes(agentName)) {
-    return 'sonnet';
-  }
-  if (manifest.model_routing.haiku.includes(agentName)) {
-    return 'haiku';
-  }
-  return 'unknown';
-}
-
-async function loadTeamManifest(projectRoot: string): Promise<TeamManifest | null> {
-  const teamPath = join(projectRoot, '.agentforge', 'team.yaml');
-  try {
-    const raw = await readFile(teamPath, 'utf-8');
-    return yaml.load(raw) as TeamManifest;
-  } catch {
-    return null;
-  }
-}
-
-async function showTeam(
-  projectRoot: string,
-  options: { verbose: boolean },
-): Promise<number> {
-  const manifest = await loadTeamManifest(projectRoot);
-  if (!manifest) {
-    console.log('No agents configured yet. Run `agentforge forge` first.');
-    return 0;
-  }
-
-  console.log('Current Team Composition');
-  console.log('='.repeat(40));
-  console.log(`  Team: ${manifest.name}`);
-  console.log(`  Forged: ${manifest.forged_at}`);
-  console.log(`  Hash: ${manifest.project_hash}`);
-
-  const categories = ['strategic', 'implementation', 'quality', 'utility'];
-  for (const category of categories) {
-    const agents = manifest.agents[category] ?? [];
-    if (agents.length === 0) {
-      continue;
-    }
-
-    console.log(`\n  ${category.charAt(0).toUpperCase() + category.slice(1)}:`);
-    for (const agent of agents) {
-      console.log(`    - ${agent} (${modelForAgent(manifest, agent)})`);
-    }
-  }
-
-  if (!options.verbose) {
-    return 0;
-  }
-
-  const agentsDir = join(projectRoot, '.agentforge', 'agents');
-  console.log('\n--- Detailed Agent Info ---');
-
-  for (const agentName of allAgents(manifest)) {
-    const filename = `${agentName.toLowerCase().replace(/\s+/g, '-')}.yaml`;
-    const agentPath = join(agentsDir, filename);
-
-    try {
-      const raw = await readFile(agentPath, 'utf-8');
-      const agent = yaml.load(raw) as AgentTemplate;
-
-      console.log(`\n  ${agent.name} (v${agent.version})`);
-      console.log(`    Model: ${agent.model}`);
-      console.log(`    Description: ${agent.description ?? '(none)'}`);
-      if (agent.skills.length > 0) {
-        console.log(`    Skills: ${agent.skills.join(', ')}`);
-      }
-      if (agent.collaboration.can_delegate_to.length > 0) {
-        console.log(
-          `    Delegates to: ${agent.collaboration.can_delegate_to.join(', ')}`,
-        );
-      }
-      if (agent.collaboration.reports_to) {
-        console.log(`    Reports to: ${agent.collaboration.reports_to}`);
-      }
-    } catch {
-      console.log(`\n  ${agentName}: (config not found)`);
-    }
-  }
-
-  console.log('\n--- Delegation Graph ---');
-  for (const [from, targets] of Object.entries(manifest.delegation_graph)) {
-    if (targets.length > 0) {
-      console.log(`  ${from} -> ${targets.join(', ')}`);
-    }
-  }
-
-  return 0;
 }
 
 async function forgeTeamCommand(
@@ -971,13 +794,44 @@ async function applyReforgeProposal(
   }
 }
 
+async function loadStoredOverride(
+  projectRoot: string,
+  agentName: string,
+): Promise<AgentOverride | null> {
+  const overridePath = join(
+    projectRoot,
+    '.agentforge',
+    'agent-overrides',
+    `${agentName}.json`,
+  );
+
+  try {
+    const raw = await readFile(overridePath, 'utf-8');
+    return JSON.parse(raw) as AgentOverride;
+  } catch {
+    return null;
+  }
+}
+
+async function writeStoredOverride(
+  projectRoot: string,
+  agentName: string,
+  override: AgentOverride,
+): Promise<void> {
+  const overridesDir = join(projectRoot, '.agentforge', 'agent-overrides');
+  await access(overridesDir, constants.F_OK).catch(async () => {
+    await mkdir(overridesDir, { recursive: true });
+  });
+  await writeFile(
+    join(overridesDir, `${agentName}.json`),
+    JSON.stringify(override, null, 2),
+    'utf-8',
+  );
+}
+
 async function listReforgeState(projectRoot: string): Promise<number> {
   const proposalsDir = join(projectRoot, '.agentforge', 'reforge-proposals');
   const overridesDir = join(projectRoot, '.agentforge', 'agent-overrides');
-  const { ReforgeEngine } = await importRootModule<RootReforgeEngineModule>(
-    'reforge',
-    'reforge-engine.js',
-  );
 
   console.log('=== Structural Proposals ===\n');
   try {
@@ -1010,10 +864,9 @@ async function listReforgeState(projectRoot: string): Promise<number> {
       return 0;
     }
 
-    const engine = new ReforgeEngine(projectRoot);
     for (const file of jsonFiles) {
       const agentName = file.replace('.json', '');
-      const override = await engine.loadOverride(agentName);
+      const override = await loadStoredOverride(projectRoot, agentName);
       if (!override) {
         continue;
       }
@@ -1035,22 +888,22 @@ async function rollbackReforgeOverride(
   projectRoot: string,
   agentName: string,
 ): Promise<number> {
-  const { ReforgeEngine } = await importRootModule<RootReforgeEngineModule>(
-    'reforge',
-    'reforge-engine.js',
-  );
-  const engine = new ReforgeEngine(projectRoot);
-
   try {
-    const current = await engine.loadOverride(agentName);
+    const current = await loadStoredOverride(projectRoot, agentName);
     if (!current) {
       console.error(`No override found for agent "${agentName}".`);
       return 1;
     }
+    if (!current.previousVersion) {
+      console.error(
+        `Rollback failed: Agent "${agentName}" is at version 1 with no previous version to roll back to.`,
+      );
+      return 1;
+    }
 
     console.log(`Current override for ${agentName}: v${current.version}`);
-    await engine.rollback(agentName);
-    const after = await engine.loadOverride(agentName);
+    await writeStoredOverride(projectRoot, agentName, current.previousVersion);
+    const after = await loadStoredOverride(projectRoot, agentName);
     console.log(`Rolled back to: v${after?.version ?? 0}`);
     console.log('Rollback complete.');
     return 0;
@@ -1063,10 +916,6 @@ async function rollbackReforgeOverride(
 
 async function showReforgeStatus(projectRoot: string): Promise<number> {
   const overridesDir = join(projectRoot, '.agentforge', 'agent-overrides');
-  const { ReforgeEngine } = await importRootModule<RootReforgeEngineModule>(
-    'reforge',
-    'reforge-engine.js',
-  );
 
   console.log('=== Reforge Status ===\n');
 
@@ -1078,12 +927,11 @@ async function showReforgeStatus(projectRoot: string): Promise<number> {
       return 0;
     }
 
-    const engine = new ReforgeEngine(projectRoot);
     let totalMutations = 0;
 
     for (const file of jsonFiles) {
       const agentName = file.replace('.json', '');
-      const override = await engine.loadOverride(agentName);
+      const override = await loadStoredOverride(projectRoot, agentName);
       if (!override) {
         continue;
       }
@@ -1123,134 +971,6 @@ async function showReforgeStatus(projectRoot: string): Promise<number> {
     console.log('No agent overrides directory found. System is running base templates.');
     return 0;
   }
-}
-
-async function listTeamSessions(projectRoot: string): Promise<number> {
-  const [{ SessionSerializer }, { StalenessDetector }] = await Promise.all([
-    importRootModule<RootSessionSerializerModule>('orchestrator', 'session-serializer.js'),
-    importRootModule<RootStalenessDetectorModule>('orchestrator', 'staleness-detector.js'),
-  ]);
-
-  const serializer = new SessionSerializer(projectRoot);
-  const detector = new StalenessDetector(projectRoot);
-  const sessions = await serializer.list();
-
-  if (sessions.length === 0) {
-    console.log('\n  No hibernated sessions found.\n');
-    return 0;
-  }
-
-  const currentCommit = await detector.getCurrentCommit();
-  console.log('\n  Hibernated Sessions');
-  console.log('  -------------------');
-
-  for (const session of sessions) {
-    const stale = await detector.isStale(session.gitCommitAtHibernation);
-    const staleMarker = stale ? ' [STALE]' : '';
-    const budgetRemaining = (session.sessionBudgetUsd - session.spentUsd).toFixed(2);
-
-    console.log(`\n  ${session.sessionId.slice(0, 8)}${staleMarker}`);
-    console.log(`    Autonomy:  ${session.autonomyLevel}`);
-    console.log(`    Team:      ${session.teamManifest.name}`);
-    console.log(
-      `    Spent:     $${session.spentUsd.toFixed(2)} / $${session.sessionBudgetUsd.toFixed(2)} ($${budgetRemaining} remaining)`,
-    );
-    console.log(`    Feed:      ${session.feedEntries.length} entries`);
-    console.log(`    Saved:     ${session.hibernatedAt}`);
-    if (stale) {
-      console.log(
-        `    Warning:   Codebase changed since hibernation (was ${session.gitCommitAtHibernation}, now ${currentCommit})`,
-      );
-    }
-  }
-
-  console.log();
-  return 0;
-}
-
-async function deleteTeamSession(
-  projectRoot: string,
-  sessionId: string,
-): Promise<number> {
-  const { SessionSerializer } = await importRootModule<RootSessionSerializerModule>(
-    'orchestrator',
-    'session-serializer.js',
-  );
-
-  const serializer = new SessionSerializer(projectRoot);
-  await serializer.deleteById(sessionId);
-  console.log(`  Session ${sessionId} deleted.`);
-  return 0;
-}
-
-export async function runTeamCommand(
-  args: string[],
-  options: LegacyRootCliOptions = {},
-): Promise<number> {
-  const projectRoot = resolveProjectRoot(options);
-  const [command, ...rest] = args;
-  const parsed = parseOptions(rest);
-
-  switch (command) {
-    case 'team':
-      return showTeam(projectRoot, { verbose: hasFlag(parsed, '--verbose') });
-    case 'forge':
-      return forgeTeamCommand(projectRoot, parsed);
-    case 'genesis':
-      return genesisTeamCommand(projectRoot, parsed);
-    case 'rebuild':
-      return rebuildTeamCommand(projectRoot, parsed);
-    case 'reforge': {
-      const [subcommand, ...subArgs] = rest;
-      const subOptions = parseOptions(subArgs);
-      if (subcommand === 'apply') {
-        const proposalId = subOptions.positionals[0];
-        if (!proposalId) {
-          throw new Error('Missing proposal id for `reforge apply`.');
-        }
-        return applyReforgeProposal(projectRoot, proposalId, subOptions);
-      }
-      if (subcommand === 'list') {
-        return listReforgeState(projectRoot);
-      }
-      if (subcommand === 'rollback') {
-        const agentName = subOptions.positionals[0];
-        if (!agentName) {
-          throw new Error('Missing agent name for `reforge rollback`.');
-        }
-        return rollbackReforgeOverride(projectRoot, agentName);
-      }
-      if (subcommand === 'status') {
-        return showReforgeStatus(projectRoot);
-      }
-      throw new Error(`Unsupported reforge subcommand: ${subcommand ?? '(missing)'}`);
-    }
-    case 'sessions':
-    case 'team-sessions': {
-      const [subcommand, ...subArgs] = rest;
-      const subOptions = parseOptions(subArgs);
-      if (subcommand === 'list') {
-        return listTeamSessions(projectRoot);
-      }
-      if (subcommand === 'delete') {
-        const sessionId = subOptions.positionals[0];
-        if (!sessionId) {
-          throw new Error('Missing session id for `sessions delete`.');
-        }
-        return deleteTeamSession(projectRoot, sessionId);
-      }
-      throw new Error(`Unsupported sessions subcommand: ${subcommand ?? '(missing)'}`);
-    }
-    default:
-      throw new Error(`Unsupported compatibility command: ${command ?? '(missing)'}`);
-  }
-}
-
-export async function runLegacyRootCli(
-  args: string[],
-  options: LegacyRootCliOptions = {},
-): Promise<number> {
-  return runTeamCommand(args, options);
 }
 
 export async function forgeTeamWithLegacyEngine(

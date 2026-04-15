@@ -18,6 +18,8 @@ async function activateAction(options: {
   budget?: string;
 }): Promise<void> {
   try {
+    console.warn("[legacy] `activate` still uses the root-only team mode runtime. No package-canonical equivalent exists yet.");
+
     if (activeSession?.getState() === "active") {
       console.error("Team mode is already active. Run `deactivate` first.");
       process.exitCode = 1;
@@ -92,7 +94,7 @@ async function activateAction(options: {
 export default function registerActivateCommand(program: Command): void {
   program
     .command("activate")
-    .description("Enter team mode — persistent multi-agent session")
+    .description("Legacy root-only team mode activation")
     .option("--mode <level>", "Autonomy level: full, supervised, or guided")
     .option("--budget <usd>", "Session budget in USD (default: 5.00)")
     .action(activateAction);

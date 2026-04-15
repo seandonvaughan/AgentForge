@@ -12,6 +12,12 @@ importers:
 
   .:
     dependencies:
+      '@agentforge/core':
+        specifier: workspace:*
+        version: link:packages/core
+      '@agentforge/server':
+        specifier: workspace:*
+        version: link:packages/server
       '@anthropic-ai/sdk':
         specifier: ^0.89.0
         version: 0.89.0
