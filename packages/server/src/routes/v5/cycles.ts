@@ -5,7 +5,7 @@
 // Exposes read-only views over `.agentforge/cycles/{cycleId}/*` artifacts
 // (cycle.json, scoring.json, events.jsonl, phases/*.json, tests.json,
 // git.json, pr.json, approval-*.json) plus a POST to spawn a new
-// `autonomous:cycle` subprocess in the background.
+// `cycle run` subprocess in the background.
 //
 // Path safety: cycleId and phase names are validated against a restrictive
 // character set. Every file path is resolved with path.resolve and required
@@ -1165,7 +1165,7 @@ export async function cyclesRoutes(
     try {
       // detached: true makes the child a process group leader (pgid === pid),
       // which lets the stop endpoint kill the entire group via -pgid.
-      const child = spawn(nodeBin, [cliEntry, 'autonomous:cycle'], {
+      const child = spawn(nodeBin, [cliEntry, 'cycle', 'run'], {
         cwd: reqProjectRoot,
         detached: true,
         stdio: ['ignore', logFd, logFd],

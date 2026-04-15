@@ -24,24 +24,11 @@ interface CyclesPreviewOpts {
 }
 
 interface AutonomousModuleLike {
-  loadCycleConfig: (cwd: string) => any;
-  createAutonomousTelemetryAdapters: (projectRoot: string) => {
-    proposalAdapter: any;
-    scoringAdapter: any;
-    close(): void;
-  };
-  ProposalToBacklog: new (adapter: any, cwd: string, config: any) => {
-    build(): Promise<any[]>;
-  };
-  ScoringPipeline: new (
-    runtime: any,
-    adapter: any,
-    config: any,
-    logger: any,
-  ) => {
-    scoreWithFallback(backlog: any[]): Promise<any>;
-  };
-  RuntimeAdapter: new (opts: { cwd: string }) => any;
+  previewCycle: (options: {
+    projectRoot: string;
+    budgetUsd?: number;
+    maxItems?: number;
+  }) => Promise<unknown>;
 }
 
 interface PreviewBody {
@@ -66,31 +53,6 @@ function isValidBody(v: unknown): v is PreviewBody {
   if ('comment' in obj && obj.comment !== undefined && typeof obj.comment !== 'string') return false;
   if ('dryRun' in obj && obj.dryRun !== undefined && typeof obj.dryRun !== 'boolean') return false;
   return true;
-}
-
-function applyOverrides(config: any, body: PreviewBody): any {
-  const next = JSON.parse(JSON.stringify(config));
-  if (typeof body.budgetUsd === 'number') {
-    next.budget = next.budget ?? {};
-    next.budget.perCycleUsd = body.budgetUsd;
-  }
-  if (typeof body.maxItems === 'number') {
-    next.limits = next.limits ?? {};
-    next.limits.maxItemsPerSprint = body.maxItems;
-  }
-  return next;
-}
-
-function noopLogger(): any {
-  return {
-    logScoring: (_r: unknown, _g: unknown) => {},
-    logScoringFallback: (_strike: number, _reason: string) => {},
-    logKillSwitch: (_t: unknown) => {},
-    logCycleResult: (_r: unknown) => {},
-    logGitEvent: (_e: unknown) => {},
-    logTestRun: (_r: unknown) => {},
-    logPREvent: (_e: unknown) => {},
-  };
 }
 
 export async function cyclesPreviewRoutes(
@@ -134,73 +96,15 @@ export async function cyclesPreviewRoutes(
     let result;
     try {
       const mod = await loadAutonomous();
-
-      const baseConfig = mod.loadCycleConfig(projectRoot);
-      const config = applyOverrides(baseConfig, body as PreviewBody);
-      const telemetry = mod.createAutonomousTelemetryAdapters(projectRoot);
-
-      try {
-        const bridge = new mod.ProposalToBacklog(
-          telemetry.proposalAdapter,
-          projectRoot,
-          config,
-        );
-        const backlog = await bridge.build();
-        const candidateCount = backlog.length;
-
-        // No backlog → return an explicit empty preview rather than crashing.
-        if (candidateCount === 0) {
-          return reply.send({
-            candidateCount: 0,
-            rankedItems: [],
-            totalEstimatedCostUsd: 0,
-            budgetOverflowUsd: 0,
-            withinBudget: 0,
-            requiresApproval: 0,
-            summary: 'No backlog items found — nothing to score.',
-            warnings: ['Empty backlog: no proposals or TODO(autonomous) markers detected.'],
-            durationMs: Date.now() - startedAt,
-            scoringCostUsd: 0,
-            fallback: null,
-          });
-        }
-
-        const runtime = new mod.RuntimeAdapter({ cwd: projectRoot });
-        const pipeline = new mod.ScoringPipeline(
-          runtime,
-          telemetry.scoringAdapter,
-          config,
-          noopLogger(),
-        );
-
-        const scoringStartedAt = Date.now();
-        const scored = await pipeline.scoreWithFallback(backlog);
-        const scoringDurationMs = Date.now() - scoringStartedAt;
-        void scoringDurationMs;
-
-        const rankedItems = [
-          ...(scored.withinBudget ?? []),
-          ...(scored.requiresApproval ?? []),
-        ];
-
-        const scoringCostUsd = typeof scored.scoringCostUsd === 'number' ? scored.scoringCostUsd : 0;
-
-        result = {
-          candidateCount,
-          rankedItems,
-          totalEstimatedCostUsd: Number(scored.totalEstimatedCostUsd ?? 0),
-          budgetOverflowUsd: Number(scored.budgetOverflowUsd ?? 0),
-          withinBudget: (scored.withinBudget ?? []).length,
-          requiresApproval: (scored.requiresApproval ?? []).length,
-          summary: String(scored.summary ?? ''),
-          warnings: Array.isArray(scored.warnings) ? scored.warnings : [],
-          durationMs: Date.now() - startedAt,
-          scoringCostUsd,
-          fallback: scored.fallback ?? null,
-        };
-      } finally {
-        telemetry.close();
-      }
+      result = await mod.previewCycle({
+        projectRoot,
+        ...(typeof (body as PreviewBody).budgetUsd === 'number'
+          ? { budgetUsd: (body as PreviewBody).budgetUsd }
+          : {}),
+        ...(typeof (body as PreviewBody).maxItems === 'number'
+          ? { maxItems: (body as PreviewBody).maxItems }
+          : {}),
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return reply.status(500).send({ error: `Preview failed: ${msg}` });

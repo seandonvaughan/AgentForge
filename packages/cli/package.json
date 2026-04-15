@@ -10,6 +10,7 @@
   "dependencies": {
     "@agentforge/shared": "workspace:*",
     "@agentforge/core": "workspace:*",
+    "@agentforge/server": "workspace:*",
     "better-sqlite3": "^12.8.0",
     "commander": "^13.1.0"
   },

@@ -15,7 +15,7 @@ const CLI_VERSION = readPackageVersion();
 const program = new Command();
 program
   .name('agentforge')
-  .description('AgentForge package-canonical CLI (run/cost/cycle/workspaces are package-native; team flows still bridge legacy logic)')
+  .description('AgentForge package-canonical CLI (run/cost/cycle/workspaces are package-native; team generation/reforge still bridge legacy engines)')
   .version(CLI_VERSION);
 
 program
@@ -27,13 +27,36 @@ program
 
 program
   .command('start')
-  .description('Print the canonical package-server start target')
+  .description('Start the canonical package server')
   .option('-p, --port <port>', 'Port to listen on', '4750')
   .option('--host <host>', 'Host to bind to', '127.0.0.1')
-  .action((opts: { port: string; host: string }) => {
-    console.log(`Canonical package server target: ${opts.host}:${opts.port}`);
-    console.log('This command does not spawn the server yet.');
-    console.log('Run: node packages/server/dist/main.js');
+  .option('--project-root <path>', 'Project root', process.cwd())
+  .option('--data-dir <path>', 'Workspace data directory')
+  .action(async (opts: {
+    port: string;
+    host: string;
+    projectRoot: string;
+    dataDir?: string;
+  }) => {
+    const port = Number.parseInt(opts.port, 10);
+    if (!Number.isFinite(port) || port <= 0) {
+      console.error(`Invalid port: ${opts.port}`);
+      process.exitCode = 1;
+      return;
+    }
+
+    try {
+      const { startPackageServer } = await import('@agentforge/server');
+      await startPackageServer({
+        port,
+        host: opts.host,
+        projectRoot: opts.projectRoot,
+        ...(opts.dataDir ? { dataDir: opts.dataDir } : {}),
+      });
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exitCode = 1;
+    }
   });
 
 program

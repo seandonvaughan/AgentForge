@@ -70,6 +70,9 @@ importers:
       '@agentforge/core':
         specifier: workspace:*
         version: link:../core
+      '@agentforge/server':
+        specifier: workspace:*
+        version: link:../server
       '@agentforge/shared':
         specifier: workspace:*
         version: link:../shared

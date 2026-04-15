@@ -7,6 +7,7 @@ export * from './config-loader.js';
 export * from './cycle-logger.js';
 export * from './pr-body-renderer.js';
 export * from './kill-switch.js';
+export * from './preview-cycle.js';
 export { ProposalToBacklog } from './proposal-to-backlog.js';
 export type { ProposalAdapter } from './proposal-to-backlog.js';
 export type { BacklogItem as AutonomousBacklogItem } from './proposal-to-backlog.js';
