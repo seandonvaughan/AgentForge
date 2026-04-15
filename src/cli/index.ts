@@ -52,5 +52,8 @@ function readPackageVersion(): string {
 }
 
 function emitCompatibilityNotice(): void {
+  if (process.env.AGENTFORGE_BRIDGED === "1") {
+    return;
+  }
   console.warn("[compat] Root CLI surface is compatibility mode. Prefer the package CLI commands (`packages/cli`) for canonical run/cost workflows.");
 }

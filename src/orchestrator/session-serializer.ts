@@ -2,6 +2,25 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { HibernatedSession } from "../types/team-mode.js";
 
+function isHibernatedSession(value: unknown): value is HibernatedSession {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Partial<HibernatedSession>;
+  return (
+    typeof candidate.sessionId === "string" &&
+    typeof candidate.hibernatedAt === "string" &&
+    typeof candidate.projectRoot === "string" &&
+    typeof candidate.gitCommitAtHibernation === "string" &&
+    typeof candidate.sessionBudgetUsd === "number" &&
+    typeof candidate.spentUsd === "number" &&
+    Array.isArray(candidate.feedEntries) &&
+    !!candidate.teamManifest &&
+    typeof candidate.teamManifest === "object"
+  );
+}
+
 export class SessionSerializer {
   private sessionsDir: string;
 
@@ -41,7 +60,10 @@ export class SessionSerializer {
     for (const file of sessionFiles) {
       try {
         const content = await fs.readFile(path.join(this.sessionsDir, file), "utf-8");
-        sessions.push(JSON.parse(content) as HibernatedSession);
+        const parsed = JSON.parse(content) as unknown;
+        if (isHibernatedSession(parsed)) {
+          sessions.push(parsed);
+        }
       } catch {
         // Skip malformed files
       }

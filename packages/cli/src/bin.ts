@@ -8,6 +8,7 @@ import { printBuildInfo } from './commands/build-info.js';
 import { registerAutonomousCommand } from './commands/autonomous.js';
 import { registerCostsCommand } from './commands/costs.js';
 import { registerRunCommand } from './commands/run.js';
+import { registerTeamCommand, registerTeamSessionsCommand } from './commands/team.js';
 import { registerWorkspacesCommand } from './commands/workspaces.js';
 
 const CLI_VERSION = readPackageVersion();
@@ -71,6 +72,8 @@ program
 registerAutonomousCommand(program);
 registerRunCommand(program);
 registerCostsCommand(program);
+registerTeamCommand(program);
+registerTeamSessionsCommand(program);
 registerWorkspacesCommand(program);
 
 program.parse();
