@@ -1,7 +1,7 @@
 {
   "name": "@agentforge/core",
-  "version": "6.0.0",
-  "description": "AgentForge v5 core runtime — agent execution, message bus, protocol",
+  "version": "10.5.0",
+  "description": "AgentForge package-canonical runtime, orchestration, and team services",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

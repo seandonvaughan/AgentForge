@@ -1,7 +1,7 @@
 {
   "name": "@agentforge/embeddings",
-  "version": "6.0.0",
-  "description": "AgentForge v5 embedding search — @xenova/transformers, all-MiniLM-L6-v2, SQLite BLOB storage",
+  "version": "10.5.0",
+  "description": "AgentForge embeddings and semantic search services",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

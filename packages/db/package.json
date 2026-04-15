@@ -1,7 +1,7 @@
 {
   "name": "@agentforge/db",
-  "version": "6.0.0",
-  "description": "AgentForge v5 database adapters — multi-workspace SQLite and PostgreSQL",
+  "version": "10.5.0",
+  "description": "AgentForge workspace persistence adapters",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

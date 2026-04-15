@@ -1,22 +1,25 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { migrateV4ToV5 } from './commands/migrate.js';
 import { printBuildInfo } from './commands/build-info.js';
 import { registerAutonomousCommand } from './commands/autonomous.js';
 import { registerWorkspacesCommand } from './commands/workspaces.js';
 
+const CLI_VERSION = readPackageVersion();
 const program = new Command();
 program
   .name('agentforge')
-  .description('AgentForge v5 — Autonomous Agent Platform')
-  .version('5.0.0');
+  .description('AgentForge package-canonical CLI')
+  .version(CLI_VERSION);
 
 program
   .command('init')
   .description('Initialize a new AgentForge workspace')
   .action(() => {
-    console.log('AgentForge v5 init — workspace creation coming in v5.0 P0-3');
+    console.log('AgentForge init — workspace creation remains in active development.');
   });
 
 program
@@ -25,7 +28,7 @@ program
   .option('-p, --port <port>', 'Port to listen on', '4750')
   .option('--host <host>', 'Host to bind to', '127.0.0.1')
   .action((opts: { port: string; host: string }) => {
-    console.log(`Starting AgentForge v5 server on ${opts.host}:${opts.port}...`);
+    console.log(`Starting AgentForge server on ${opts.host}:${opts.port}...`);
     console.log('Run: node packages/server/dist/index.js');
   });
 
@@ -57,7 +60,7 @@ program
 
 program
   .command('info')
-  .description('Show v5 monorepo build info')
+  .description('Show package build info')
   .option('--project-root <path>', 'Project root', process.cwd())
   .action(async (opts: { projectRoot: string }) => {
     await printBuildInfo(opts.projectRoot);
@@ -67,3 +70,13 @@ registerAutonomousCommand(program);
 registerWorkspacesCommand(program);
 
 program.parse();
+
+function readPackageVersion(): string {
+  try {
+    const packageJsonPath = fileURLToPath(new URL('../package.json', import.meta.url));
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as { version?: string };
+    return packageJson.version ?? 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
