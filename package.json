@@ -42,7 +42,7 @@
     "autonomous:cycle": "node packages/cli/dist/bin.js autonomous:cycle"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
+    "@anthropic-ai/sdk": "^0.89.0",
     "@fastify/cors": "^11.2.0",
     "@fastify/static": "^9.0.0",
     "better-sqlite3": "^12.8.0",
