@@ -287,6 +287,27 @@ interface ParsedOptions {
   positionals: string[];
 }
 
+export interface LegacyForgeOptions {
+  dryRun?: boolean;
+  verbose?: boolean;
+  domains?: string;
+}
+
+export interface LegacyGenesisOptions {
+  interview?: boolean;
+  domains?: string;
+  yes?: boolean;
+}
+
+export interface LegacyRebuildOptions {
+  autoApply?: boolean;
+  upgrade?: boolean;
+}
+
+export interface LegacyReforgeApplyOptions {
+  yes?: boolean;
+}
+
 function getRepositoryRoot(): string {
   return fileURLToPath(new URL('../../../../', import.meta.url));
 }
@@ -343,6 +364,26 @@ function parseOptions(args: string[]): ParsedOptions {
   }
 
   return { flags, values, positionals };
+}
+
+function createParsedOptions(config: {
+  flags?: string[];
+  values?: Record<string, string | undefined>;
+  positionals?: string[];
+} = {}): ParsedOptions {
+  const flags = new Set<string>((config.flags ?? []).filter(Boolean));
+  const values = new Map<string, string>();
+  for (const [key, value] of Object.entries(config.values ?? {})) {
+    if (typeof value === 'string' && value.length > 0) {
+      values.set(key, value);
+    }
+  }
+
+  return {
+    flags,
+    values,
+    positionals: [...(config.positionals ?? [])],
+  };
 }
 
 function hasFlag(options: ParsedOptions, name: string): boolean {
@@ -1210,4 +1251,84 @@ export async function runLegacyRootCli(
   options: LegacyRootCliOptions = {},
 ): Promise<number> {
   return runTeamCommand(args, options);
+}
+
+export async function forgeTeamWithLegacyEngine(
+  projectRoot: string,
+  options: LegacyForgeOptions = {},
+): Promise<number> {
+  return forgeTeamCommand(
+    projectRoot,
+    createParsedOptions({
+      flags: [
+        ...(options.dryRun ? ['--dry-run'] : []),
+        ...(options.verbose ? ['--verbose'] : []),
+      ],
+      values: {
+        '--domains': options.domains,
+      },
+    }),
+  );
+}
+
+export async function genesisTeamWithLegacyEngine(
+  projectRoot: string,
+  options: LegacyGenesisOptions = {},
+): Promise<number> {
+  return genesisTeamCommand(
+    projectRoot,
+    createParsedOptions({
+      flags: [
+        ...(options.interview ? ['--interview'] : []),
+        ...(options.yes ? ['--yes'] : []),
+      ],
+      values: {
+        '--domains': options.domains,
+      },
+    }),
+  );
+}
+
+export async function rebuildTeamWithLegacyEngine(
+  projectRoot: string,
+  options: LegacyRebuildOptions = {},
+): Promise<number> {
+  return rebuildTeamCommand(
+    projectRoot,
+    createParsedOptions({
+      flags: [
+        ...(options.autoApply ? ['--auto-apply'] : []),
+        ...(options.upgrade ? ['--upgrade'] : []),
+      ],
+    }),
+  );
+}
+
+export async function applyLegacyReforgeProposal(
+  projectRoot: string,
+  proposalId: string,
+  options: LegacyReforgeApplyOptions = {},
+): Promise<number> {
+  return applyReforgeProposal(
+    projectRoot,
+    proposalId,
+    createParsedOptions({
+      flags: [...(options.yes ? ['--yes'] : [])],
+    }),
+  );
+}
+
+export async function listLegacyReforgeState(projectRoot: string): Promise<number> {
+  return listReforgeState(projectRoot);
+}
+
+export async function rollbackLegacyReforgeOverride(
+  projectRoot: string,
+  agentName: string,
+): Promise<number> {
+  return rollbackReforgeOverride(projectRoot, agentName);
+}
+
+export async function showLegacyReforgeStatus(projectRoot: string): Promise<number> {
+  return showReforgeStatus(projectRoot);
 }

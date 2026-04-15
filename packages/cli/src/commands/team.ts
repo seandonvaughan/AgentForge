@@ -48,7 +48,7 @@ interface TeamCommandOptionBag {
 export function registerTeamCommand(program: Command): void {
   const team = program
     .command('team')
-    .description('Inspect and update AgentForge teams (generation/reforge still bridge legacy engines)')
+    .description('Inspect and update AgentForge teams (generation/reforge use package-core wrappers over legacy engines)')
     .option('--project-root <path>', 'Project root', process.cwd())
     .option('--verbose', 'Show detailed agent info')
     .action(teamShowAction);
@@ -217,30 +217,72 @@ async function teamShowAction(options: TeamShowOptions, command: Command): Promi
 }
 
 async function teamForgeAction(options: TeamForgeOptions, command: Command): Promise<void> {
-  await runCompatibilityCommand(
-    ['forge', ...buildTeamForgeArgs(options)],
-    resolveProjectRoot(options.projectRoot, command),
-  );
+  try {
+    const { forgeTeamWithLegacyEngine } = await import('@agentforge/core');
+    const exitCode = await forgeTeamWithLegacyEngine(
+      resolveProjectRoot(options.projectRoot, command),
+      {
+        ...(options.dryRun ? { dryRun: true } : {}),
+        ...(options.verbose ? { verbose: true } : {}),
+        ...(typeof options.domains === 'string' && options.domains.length > 0
+          ? { domains: options.domains }
+          : {}),
+      },
+    );
+    if (exitCode !== 0) {
+      process.exitCode = exitCode;
+    }
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
 }
 
 async function teamGenesisAction(
   options: TeamGenesisOptions,
   command: Command,
 ): Promise<void> {
-  await runCompatibilityCommand(
-    ['genesis', ...buildTeamGenesisArgs(options)],
-    resolveProjectRoot(options.projectRoot, command),
-  );
+  try {
+    const { genesisTeamWithLegacyEngine } = await import('@agentforge/core');
+    const exitCode = await genesisTeamWithLegacyEngine(
+      resolveProjectRoot(options.projectRoot, command),
+      {
+        ...(options.interview ? { interview: true } : {}),
+        ...(options.yes ? { yes: true } : {}),
+        ...(typeof options.domains === 'string' && options.domains.length > 0
+          ? { domains: options.domains }
+          : {}),
+      },
+    );
+    if (exitCode !== 0) {
+      process.exitCode = exitCode;
+    }
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
 }
 
 async function teamRebuildAction(
   options: TeamRebuildOptions,
   command: Command,
 ): Promise<void> {
-  await runCompatibilityCommand(
-    ['rebuild', ...buildTeamRebuildArgs(options)],
-    resolveProjectRoot(options.projectRoot, command),
-  );
+  try {
+    const { rebuildTeamWithLegacyEngine } = await import('@agentforge/core');
+    const exitCode = await rebuildTeamWithLegacyEngine(
+      resolveProjectRoot(options.projectRoot, command),
+      {
+        ...(options.autoApply ? { autoApply: true } : {}),
+        ...(options.upgrade ? { upgrade: true } : {}),
+      },
+    );
+    if (exitCode !== 0) {
+      process.exitCode = exitCode;
+    }
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
 }
 
 async function teamReforgeApplyAction(
@@ -248,20 +290,36 @@ async function teamReforgeApplyAction(
   options: ReforgeApplyOptions,
   command: Command,
 ): Promise<void> {
-  await runCompatibilityCommand(
-    ['reforge', 'apply', proposalId, ...buildTeamReforgeApplyArgs(options)],
-    resolveProjectRoot(options.projectRoot, command),
-  );
+  try {
+    const { applyLegacyReforgeProposal } = await import('@agentforge/core');
+    const exitCode = await applyLegacyReforgeProposal(
+      resolveProjectRoot(options.projectRoot, command),
+      proposalId,
+      options.yes ? { yes: true } : {},
+    );
+    if (exitCode !== 0) {
+      process.exitCode = exitCode;
+    }
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
 }
 
 async function teamReforgeListAction(
   options: TeamSessionsOptions,
   command: Command,
 ): Promise<void> {
-  await runCompatibilityCommand(
-    ['reforge', 'list'],
-    resolveProjectRoot(options.projectRoot, command),
-  );
+  try {
+    const { listLegacyReforgeState } = await import('@agentforge/core');
+    const exitCode = await listLegacyReforgeState(resolveProjectRoot(options.projectRoot, command));
+    if (exitCode !== 0) {
+      process.exitCode = exitCode;
+    }
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
 }
 
 async function teamReforgeRollbackAction(
@@ -269,20 +327,35 @@ async function teamReforgeRollbackAction(
   options: TeamSessionsOptions,
   command: Command,
 ): Promise<void> {
-  await runCompatibilityCommand(
-    ['reforge', 'rollback', agent],
-    resolveProjectRoot(options.projectRoot, command),
-  );
+  try {
+    const { rollbackLegacyReforgeOverride } = await import('@agentforge/core');
+    const exitCode = await rollbackLegacyReforgeOverride(
+      resolveProjectRoot(options.projectRoot, command),
+      agent,
+    );
+    if (exitCode !== 0) {
+      process.exitCode = exitCode;
+    }
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
 }
 
 async function teamReforgeStatusAction(
   options: TeamSessionsOptions,
   command: Command,
 ): Promise<void> {
-  await runCompatibilityCommand(
-    ['reforge', 'status'],
-    resolveProjectRoot(options.projectRoot, command),
-  );
+  try {
+    const { showLegacyReforgeStatus } = await import('@agentforge/core');
+    const exitCode = await showLegacyReforgeStatus(resolveProjectRoot(options.projectRoot, command));
+    if (exitCode !== 0) {
+      process.exitCode = exitCode;
+    }
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
 }
 
 async function teamSessionsListAction(
