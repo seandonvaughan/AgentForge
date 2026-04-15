@@ -1,6 +1,6 @@
-/**
- * Root compatibility shim for the package-canonical v4 runtime reforge engine.
- */
+export * from './types/feedback.js';
+export * from './types/reforge.js';
+export * from './reforge-engine.js';
 export {
   REFORGE_TIMEOUT_MS,
   RealGitAdapter,
@@ -9,7 +9,7 @@ export {
   InMemoryFileAdapter,
   InMemoryTestRunner,
   V4ReforgeEngine,
-} from '@agentforge/core';
+} from './v4-reforge-engine.js';
 export type {
   GitAdapter,
   FileAdapter,
@@ -18,6 +18,6 @@ export type {
   ReforgeProposal,
   GuardrailResult,
   ReforgeGuardrail,
+  ReforgeEngineOptions as V4ReforgeEngineOptions,
   V4MessageBusLike,
-  V4ReforgeEngineOptions as ReforgeEngineOptions,
-} from '@agentforge/core';
+} from './v4-reforge-engine.js';
