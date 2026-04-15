@@ -12,7 +12,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { buildOrgGraph } from '../routes/org/+page.server.js';
+import { _buildOrgGraph as buildOrgGraph } from '../routes/org/+page.server.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 

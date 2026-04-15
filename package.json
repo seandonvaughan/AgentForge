@@ -5,6 +5,12 @@
   "type": "module",
   "main": "dist/index.js",
   "packageManager": "pnpm@9.15.0",
+  "pnpm": {
+    "overrides": {
+      "@sveltejs/kit>cookie": "^0.7.0",
+      "vite": "^6.4.2"
+    }
+  },
   "workspaces": [
     "packages/*",
     "plugins/*"

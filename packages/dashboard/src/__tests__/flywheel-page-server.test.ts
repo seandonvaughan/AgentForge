@@ -14,7 +14,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { computeMetrics } from '../routes/flywheel/+page.server.js';
+import { _computeMetrics as computeMetrics } from '../routes/flywheel/+page.server.js';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 

@@ -196,7 +196,7 @@ function parseDelegationYaml(content: string): Record<string, string[]> {
  * having to change `process.cwd()`. The `load` function below calls this with
  * the auto-detected root.
  */
-export function buildOrgGraph(projectRoot: string): { nodes: OrgNodeData[]; edges: OrgEdgeData[] } {
+export function _buildOrgGraph(projectRoot: string): { nodes: OrgNodeData[]; edges: OrgEdgeData[] } {
   const agentsDir = join(projectRoot, '.agentforge', 'agents');
   const delegationPath = join(projectRoot, '.agentforge', 'config', 'delegation.yaml');
 
@@ -261,4 +261,4 @@ export function buildOrgGraph(projectRoot: string): { nodes: OrgNodeData[]; edge
   return { nodes, edges };
 }
 
-export const load: PageServerLoad = () => buildOrgGraph(findProjectRoot());
+export const load: PageServerLoad = () => _buildOrgGraph(findProjectRoot());

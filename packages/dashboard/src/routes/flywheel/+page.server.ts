@@ -114,7 +114,7 @@ function findProjectRoot(): string {
 // ── Metric computation ────────────────────────────────────────────────────────
 
 /** @internal Exported for unit testing only — do not call from client code. */
-export function computeMetrics(projectRoot: string): FlywheelPayload {
+export function _computeMetrics(projectRoot: string): FlywheelPayload {
   // ── Cycles ──────────────────────────────────────────────────────────────────
   const cyclesDir = join(projectRoot, '.agentforge/cycles');
   const cycles: CycleRecord[] = [];
@@ -400,7 +400,7 @@ function computeMemoryStats(
 export const load: PageServerLoad = () => {
   try {
     const root = findProjectRoot();
-    const flywheel = computeMetrics(root);
+    const flywheel = _computeMetrics(root);
     return { flywheel };
   } catch {
     // Non-fatal: client-side polling will still load data after mount.
