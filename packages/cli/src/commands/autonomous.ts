@@ -1,7 +1,7 @@
 // packages/cli/src/commands/autonomous.ts
 //
-// `agentforge autonomous:cycle` — wires the CycleRunner to real adapters
-// and runs a full autonomous development cycle.
+// `agentforge autonomous:cycle` / `agentforge cycle run` — runs a full
+// autonomous development cycle backed by canonical workspace telemetry.
 //
 // Exit codes:
 //   0 — cycle reached COMPLETED (PR opened)
@@ -14,16 +14,6 @@
 // ANTHROPIC_API_KEY or downstream modules are unavailable. This keeps
 // `agentforge --help` cheap and safe in all environments.
 //
-// NOTE on adapter stubs: Task 23 (this file) ships with minimal stubs
-// that return empty arrays/objects. Full integration with WorkspaceAdapter
-// and the AgentRuntime is landing in Task 24. The empty backlog will
-// cause ProposalToBacklog.build() to return [] and CycleRunner to throw
-// "No backlog items to work on" — that surfaces as exit 1 and is exactly
-// the behavior we want for the smoke test.
-//
-// See docs/superpowers/plans/2026-04-06-autonomous-loop-part2.md Task 23
-// and packages/core/src/autonomous/cycle-runner.ts.
-
 import type { Command } from 'commander';
 
 interface CycleRunOptions {
@@ -94,6 +84,7 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
       loadCycleConfig,
       CycleRunner,
       CycleStage,
+      createAutonomousTelemetryAdapters,
       RealTestRunner,
       GitOps,
       PROpener,
@@ -111,24 +102,7 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
 
     const config = loadCycleConfig(cwd);
 
-    // ---- Proposal adapter (Task 24 will wire to WorkspaceAdapter) ----
-    // Minimal stub: returns empty arrays so the backlog is empty. The
-    // CycleRunner will throw "No backlog items" and we'll exit 1 — that
-    // is the expected smoke-test behavior until Task 24 lands the real
-    // signal sources.
-    const proposalAdapter = {
-      getRecentFailedSessions: async (_days: number) => [],
-      getCostAnomalies: async (_days: number) => [],
-      getFailedTaskOutcomes: async (_days: number) => [],
-      getFlakingTests: async (_days: number) => [],
-    };
-
-    // ---- Scoring adapter (Task 24 will wire to WorkspaceAdapter) ----
-    const scoringAdapter = {
-      getSprintHistory: async (_limit: number) => [],
-      getCostMedians: async () => ({}),
-      getTeamState: async () => ({ utilization: {} }),
-    };
+    const telemetry = createAutonomousTelemetryAdapters(cwd);
 
     // ---- Real scoring runtime via RuntimeAdapter (v6.4.1) ----
     // RuntimeAdapter bridges the AgentRuntime class-per-agent interface
@@ -209,64 +183,68 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
     })();
 
     // ---- Construct and run ----
-    const runner = new CycleRunner({
-      cwd,
-      config,
-      runtime,
-      proposalAdapter: proposalAdapter as unknown as import('@agentforge/core').ProposalAdapter,
-      scoringAdapter: scoringAdapter as unknown as import('@agentforge/core').AdapterForScoring,
-      phaseHandlers: phaseHandlers as unknown as Record<
-        import('@agentforge/core').PhaseName,
-        import('@agentforge/core').PhaseHandler
-      >,
-      testRunner,
-      gitOps,
-      prOpener,
-      bus,
-      ...(opts.dryRun ? { dryRun: { prOpener: true } } : {}),
-    });
+    try {
+      const runner = new CycleRunner({
+        cwd,
+        config,
+        runtime,
+        proposalAdapter: telemetry.proposalAdapter,
+        scoringAdapter: telemetry.scoringAdapter,
+        phaseHandlers: phaseHandlers as unknown as Record<
+          import('@agentforge/core').PhaseName,
+          import('@agentforge/core').PhaseHandler
+        >,
+        testRunner,
+        gitOps,
+        prOpener,
+        bus,
+        ...(opts.dryRun ? { dryRun: { prOpener: true } } : {}),
+      });
 
-    const cycleId = runner.getCycleId();
-    const logDir = `.agentforge/cycles/${cycleId}`;
-    console.log(`[autonomous:cycle] cycleId=${cycleId}`);
-    console.log(`[autonomous:cycle] logDir=${logDir}`);
-    if (opts.dryRun) console.log('[autonomous:cycle] dry-run mode: PR will not be opened');
+      const cycleId = runner.getCycleId();
+      const logDir = `.agentforge/cycles/${cycleId}`;
+      console.log(`[autonomous:cycle] cycleId=${cycleId}`);
+      console.log(`[autonomous:cycle] logDir=${logDir}`);
+      if (opts.dryRun) console.log('[autonomous:cycle] dry-run mode: PR will not be opened');
 
-    const result = await runner.start();
+      const result = await runner.start();
 
-    switch (result.stage) {
-      case CycleStage.COMPLETED: {
-        console.log('');
-        console.log('[autonomous:cycle] COMPLETED');
-        console.log(`  sprint:       v${result.sprintVersion}`);
-        console.log(`  pr:           ${result.pr.url ?? '(none)'}`);
-        console.log(
-          `  cost:         $${result.cost.totalUsd.toFixed(4)} / $${result.cost.budgetUsd}`,
-        );
-        console.log(
-          `  tests:        ${result.tests.passed}/${result.tests.total} passed (${(result.tests.passRate * 100).toFixed(1)}%)`,
-        );
-        console.log(`  logDir:       ${logDir}`);
-        process.exit(0);
-        break;
+      switch (result.stage) {
+        case CycleStage.COMPLETED: {
+          console.log('');
+          console.log('[autonomous:cycle] COMPLETED');
+          console.log(`  sprint:       v${result.sprintVersion}`);
+          console.log(`  pr:           ${result.pr.url ?? '(none)'}`);
+          console.log(
+            `  cost:         $${result.cost.totalUsd.toFixed(4)} / $${result.cost.budgetUsd}`,
+          );
+          console.log(
+            `  tests:        ${result.tests.passed}/${result.tests.total} passed (${(result.tests.passRate * 100).toFixed(1)}%)`,
+          );
+          console.log(`  logDir:       ${logDir}`);
+          process.exit(0);
+          break;
+        }
+        case CycleStage.KILLED: {
+          const trip = result.killSwitch;
+          console.error('');
+          console.error('[autonomous:cycle] KILLED');
+          console.error(`  reason:       ${trip?.reason ?? 'unknown'}`);
+          console.error(`  detail:       ${trip?.detail ?? '(no detail)'}`);
+          console.error(`  stageAtTrip:  ${trip?.stageAtTrip ?? 'unknown'}`);
+          console.error(`  logDir:       ${logDir}`);
+          process.exit(2);
+          break;
+        }
+        default: {
+          console.error('');
+          console.error(`[autonomous:cycle] terminal stage: ${result.stage}`);
+          console.error(`  logDir:       ${logDir}`);
+          process.exit(1);
+        }
       }
-      case CycleStage.KILLED: {
-        const trip = result.killSwitch;
-        console.error('');
-        console.error('[autonomous:cycle] KILLED');
-        console.error(`  reason:       ${trip?.reason ?? 'unknown'}`);
-        console.error(`  detail:       ${trip?.detail ?? '(no detail)'}`);
-        console.error(`  stageAtTrip:  ${trip?.stageAtTrip ?? 'unknown'}`);
-        console.error(`  logDir:       ${logDir}`);
-        process.exit(2);
-        break;
-      }
-      default: {
-        console.error('');
-        console.error(`[autonomous:cycle] terminal stage: ${result.stage}`);
-        console.error(`  logDir:       ${logDir}`);
-        process.exit(1);
-      }
+    } finally {
+      telemetry.close();
     }
   } catch (err) {
     const e = err as Error;

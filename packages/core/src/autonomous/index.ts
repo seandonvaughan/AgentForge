@@ -20,6 +20,7 @@ export * from './scoring-pipeline.js';
 export * from './phase-scheduler.js';
 export * from './cycle-runner.js';
 export * from './runtime-adapter.js';
+export * from './workspace-telemetry-adapters.js';
 export * from './workspace-registry.js';
 export * from './phase-handlers/index.js';
 export * from './exec/pr-opener.js';

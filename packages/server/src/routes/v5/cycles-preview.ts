@@ -4,8 +4,8 @@
 //
 // POST /api/v5/cycles/preview runs ONLY the PLAN stage (proposal scan +
 // scoring agent + backlog build) and returns the projected cost + ranked
-// items WITHOUT spawning a full cycle. This lets dashboard users see what
-// a cycle will cost before committing plan quota to running it.
+// items WITHOUT spawning a full cycle. The preview now uses the same
+// WorkspaceAdapter-backed telemetry adapters as the canonical CLI path.
 //
 // Lives in a separate file from cycles.ts to avoid merge conflicts with
 // the parallel v6.5.3-B SSE work on cycles.ts.
@@ -25,6 +25,11 @@ interface CyclesPreviewOpts {
 
 interface AutonomousModuleLike {
   loadCycleConfig: (cwd: string) => any;
+  createAutonomousTelemetryAdapters: (projectRoot: string) => {
+    proposalAdapter: any;
+    scoringAdapter: any;
+    close(): void;
+  };
   ProposalToBacklog: new (adapter: any, cwd: string, config: any) => {
     build(): Promise<any[]>;
   };
@@ -88,23 +93,6 @@ function noopLogger(): any {
   };
 }
 
-function noopProposalAdapter(): any {
-  return {
-    getRecentFailedSessions: async (_d: number) => [],
-    getCostAnomalies: async (_d: number) => [],
-    getFailedTaskOutcomes: async (_d: number) => [],
-    getFlakingTests: async (_d: number) => [],
-  };
-}
-
-function noopScoringAdapter(): any {
-  return {
-    getSprintHistory: async (_l: number) => [],
-    getCostMedians: async () => ({}),
-    getTeamState: async () => ({ utilization: {} }),
-  };
-}
-
 export async function cyclesPreviewRoutes(
   app: FastifyInstance,
   opts: CyclesPreviewOpts,
@@ -149,70 +137,70 @@ export async function cyclesPreviewRoutes(
 
       const baseConfig = mod.loadCycleConfig(projectRoot);
       const config = applyOverrides(baseConfig, body as PreviewBody);
+      const telemetry = mod.createAutonomousTelemetryAdapters(projectRoot);
 
-      const bridge = new mod.ProposalToBacklog(
-        noopProposalAdapter(),
-        projectRoot,
-        config,
-      );
-      const backlog = await bridge.build();
-      const candidateCount = backlog.length;
+      try {
+        const bridge = new mod.ProposalToBacklog(
+          telemetry.proposalAdapter,
+          projectRoot,
+          config,
+        );
+        const backlog = await bridge.build();
+        const candidateCount = backlog.length;
 
-      // No backlog → return an explicit empty preview rather than crashing.
-      if (candidateCount === 0) {
-        return reply.send({
-          candidateCount: 0,
-          rankedItems: [],
-          totalEstimatedCostUsd: 0,
-          budgetOverflowUsd: 0,
-          withinBudget: 0,
-          requiresApproval: 0,
-          summary: 'No backlog items found — nothing to score.',
-          warnings: ['Empty backlog: no proposals or TODO(autonomous) markers detected.'],
+        // No backlog → return an explicit empty preview rather than crashing.
+        if (candidateCount === 0) {
+          return reply.send({
+            candidateCount: 0,
+            rankedItems: [],
+            totalEstimatedCostUsd: 0,
+            budgetOverflowUsd: 0,
+            withinBudget: 0,
+            requiresApproval: 0,
+            summary: 'No backlog items found — nothing to score.',
+            warnings: ['Empty backlog: no proposals or TODO(autonomous) markers detected.'],
+            durationMs: Date.now() - startedAt,
+            scoringCostUsd: 0,
+            fallback: null,
+          });
+        }
+
+        const runtime = new mod.RuntimeAdapter({ cwd: projectRoot });
+        const pipeline = new mod.ScoringPipeline(
+          runtime,
+          telemetry.scoringAdapter,
+          config,
+          noopLogger(),
+        );
+
+        const scoringStartedAt = Date.now();
+        const scored = await pipeline.scoreWithFallback(backlog);
+        const scoringDurationMs = Date.now() - scoringStartedAt;
+        void scoringDurationMs;
+
+        const rankedItems = [
+          ...(scored.withinBudget ?? []),
+          ...(scored.requiresApproval ?? []),
+        ];
+
+        const scoringCostUsd = typeof scored.scoringCostUsd === 'number' ? scored.scoringCostUsd : 0;
+
+        result = {
+          candidateCount,
+          rankedItems,
+          totalEstimatedCostUsd: Number(scored.totalEstimatedCostUsd ?? 0),
+          budgetOverflowUsd: Number(scored.budgetOverflowUsd ?? 0),
+          withinBudget: (scored.withinBudget ?? []).length,
+          requiresApproval: (scored.requiresApproval ?? []).length,
+          summary: String(scored.summary ?? ''),
+          warnings: Array.isArray(scored.warnings) ? scored.warnings : [],
           durationMs: Date.now() - startedAt,
-          scoringCostUsd: 0,
-          fallback: null,
-        });
+          scoringCostUsd,
+          fallback: scored.fallback ?? null,
+        };
+      } finally {
+        telemetry.close();
       }
-
-      const runtime = new mod.RuntimeAdapter({ cwd: projectRoot });
-      const pipeline = new mod.ScoringPipeline(
-        runtime,
-        noopScoringAdapter(),
-        config,
-        noopLogger(),
-      );
-
-      const scoringStartedAt = Date.now();
-      const scored = await pipeline.scoreWithFallback(backlog);
-      const scoringDurationMs = Date.now() - scoringStartedAt;
-      void scoringDurationMs;
-
-      const rankedItems = [
-        ...(scored.withinBudget ?? []),
-        ...(scored.requiresApproval ?? []),
-      ];
-
-      // Best-effort cost-of-scoring extraction. The current ScoringPipeline
-      // doesn't surface its own runtime cost in the result; we approximate
-      // by reading totalEstimatedCostUsd separately and exposing 0 for the
-      // scoring call cost (the adapter would need to track it). Future
-      // work: thread the actual claude -p cost through.
-      const scoringCostUsd = typeof scored.scoringCostUsd === 'number' ? scored.scoringCostUsd : 0;
-
-      result = {
-        candidateCount,
-        rankedItems,
-        totalEstimatedCostUsd: Number(scored.totalEstimatedCostUsd ?? 0),
-        budgetOverflowUsd: Number(scored.budgetOverflowUsd ?? 0),
-        withinBudget: (scored.withinBudget ?? []).length,
-        requiresApproval: (scored.requiresApproval ?? []).length,
-        summary: String(scored.summary ?? ''),
-        warnings: Array.isArray(scored.warnings) ? scored.warnings : [],
-        durationMs: Date.now() - startedAt,
-        scoringCostUsd,
-        fallback: scored.fallback ?? null,
-      };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return reply.status(500).send({ error: `Preview failed: ${msg}` });
