@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { migrateV4ToV5 } from './commands/migrate.js';
 import { printBuildInfo } from './commands/build-info.js';
-import { registerAutonomousCommand } from './commands/autonomous.js';
+import { registerAutonomousCommand, registerCycleCommand } from './commands/autonomous.js';
 import { registerCostsCommand } from './commands/costs.js';
 import { registerRunCommand } from './commands/run.js';
 import { registerTeamCommand, registerTeamSessionsCommand } from './commands/team.js';
@@ -15,24 +15,25 @@ const CLI_VERSION = readPackageVersion();
 const program = new Command();
 program
   .name('agentforge')
-  .description('AgentForge package-canonical CLI')
+  .description('AgentForge package-canonical CLI (run/cost/cycle/workspaces are package-native; team flows still bridge legacy logic)')
   .version(CLI_VERSION);
 
 program
   .command('init')
-  .description('Initialize a new AgentForge workspace')
+  .description('Initialize a new AgentForge workspace (placeholder)')
   .action(() => {
     console.log('AgentForge init — workspace creation remains in active development.');
   });
 
 program
   .command('start')
-  .description('Start the AgentForge server')
+  .description('Print the canonical package-server start target')
   .option('-p, --port <port>', 'Port to listen on', '4750')
   .option('--host <host>', 'Host to bind to', '127.0.0.1')
   .action((opts: { port: string; host: string }) => {
-    console.log(`Starting AgentForge server on ${opts.host}:${opts.port}...`);
-    console.log('Run: node packages/server/dist/index.js');
+    console.log(`Canonical package server target: ${opts.host}:${opts.port}`);
+    console.log('This command does not spawn the server yet.');
+    console.log('Run: node packages/server/dist/main.js');
   });
 
 program
@@ -70,6 +71,7 @@ program
   });
 
 registerAutonomousCommand(program);
+registerCycleCommand(program);
 registerRunCommand(program);
 registerCostsCommand(program);
 registerTeamCommand(program);
