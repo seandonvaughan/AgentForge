@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { migrateV4ToV5 } from './commands/migrate.js';
 import { printBuildInfo } from './commands/build-info.js';
 import { registerAutonomousCommand } from './commands/autonomous.js';
+import { registerCostsCommand } from './commands/costs.js';
+import { registerRunCommand } from './commands/run.js';
 import { registerWorkspacesCommand } from './commands/workspaces.js';
 
 const CLI_VERSION = readPackageVersion();
@@ -67,6 +69,8 @@ program
   });
 
 registerAutonomousCommand(program);
+registerRunCommand(program);
+registerCostsCommand(program);
 registerWorkspacesCommand(program);
 
 program.parse();
