@@ -69,7 +69,7 @@ export async function generateCostReport(projectRoot: string): Promise<CostRepor
       return {
         source: 'workspace-db',
         sessionsRecorded: sessions.length,
-        totalSpentUsd: costs.reduce((sum, row) => sum + row.cost_usd, 0),
+        totalSpentUsd: costs.reduce((sum: number, row) => sum + row.cost_usd, 0),
         totalAgentRuns: costs.length,
         perAgent: sortBreakdowns(perAgent),
         perModel: sortBreakdowns(perModel),

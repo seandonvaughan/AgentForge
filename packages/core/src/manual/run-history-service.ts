@@ -2,6 +2,40 @@ import { join } from 'node:path';
 import { WorkspaceManager } from '../workspace/index.js';
 import type { RuntimeMode, ExecutionProviderKind } from '../runtime/types.js';
 
+interface SessionSnapshot {
+  id: string;
+  agent_id: string;
+  task: string;
+  status: string;
+  model: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+  started_at: string;
+  completed_at: string | null;
+}
+
+interface DecisionEventSnapshot {
+  decision_type: string;
+  summary: string;
+  rationale: string | null;
+  created_at: string;
+  payload_json: string;
+}
+
+interface TestObservationSnapshot {
+  status: string;
+  suite: string | null;
+  test_name: string | null;
+  file_path: string | null;
+  message: string | null;
+  observed_at: string;
+}
+
+interface TaskOutcomeSnapshot {
+  summary: string | null;
+}
+
 export interface RunHistoryEntry {
   sessionId: string;
   agentId: string;
@@ -45,7 +79,8 @@ export async function listRunHistory(
 
   try {
     const { adapter } = await manager.getOrCreateDefaultWorkspace();
-    return adapter.listSessions({ limit }).map((session) => hydrateRunHistoryEntry(adapter, session.id, {
+    const sessions = adapter.listSessions({ limit }) as SessionSnapshot[];
+    return sessions.map((session) => hydrateRunHistoryEntry(adapter, session.id, {
       sessionId: session.id,
       agentId: session.agent_id,
       task: session.task,
@@ -72,7 +107,7 @@ export async function getRunSessionDetails(
 
   try {
     const { adapter } = await manager.getOrCreateDefaultWorkspace();
-    const session = adapter.getSession(sessionId);
+    const session = adapter.getSession(sessionId) as SessionSnapshot | undefined;
     if (!session) return null;
 
     const base = hydrateRunHistoryEntry(adapter, session.id, {
@@ -88,14 +123,14 @@ export async function getRunSessionDetails(
       completedAt: session.completed_at,
     });
 
-    const decisionEvents = adapter.listDecisionEvents({ sessionId, limit: 10 }).map((event) => ({
+    const decisionEvents = (adapter.listDecisionEvents({ sessionId, limit: 10 }) as DecisionEventSnapshot[]).map((event) => ({
       type: event.decision_type,
       summary: event.summary,
       rationale: event.rationale,
       createdAt: event.created_at,
     }));
 
-    const recentTests = adapter.listTestObservations({ sessionId, limit: 10 }).map((test) => ({
+    const recentTests = (adapter.listTestObservations({ sessionId, limit: 10 }) as TestObservationSnapshot[]).map((test) => ({
       status: test.status,
       suite: test.suite,
       testName: test.test_name,
@@ -119,12 +154,12 @@ function hydrateRunHistoryEntry(
   sessionId: string,
   base: RunHistoryEntry,
 ): RunHistoryEntry {
-  const runtimeTransportEvent = adapter.listDecisionEvents({
+  const runtimeTransportEvent = (adapter.listDecisionEvents({
     sessionId,
     decisionType: 'runtime_transport',
     limit: 1,
-  })[0];
-  const taskOutcome = adapter.listTaskOutcomes({ sessionId, limit: 1 })[0];
+  }) as DecisionEventSnapshot[])[0];
+  const taskOutcome = (adapter.listTaskOutcomes({ sessionId, limit: 1 }) as TaskOutcomeSnapshot[])[0];
   const runtimeMetadata = parseRuntimeMetadata(runtimeTransportEvent?.payload_json);
 
   return {

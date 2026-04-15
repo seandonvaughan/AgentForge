@@ -93,7 +93,7 @@ function registerInvokeCommand(
       }
 
       try {
-        const { AgentLookupError, invokeAgentRun } = await import('@agentforge/core');
+        const { invokeAgentRun } = await import('@agentforge/core');
         const response = await invokeAgentRun({
           projectRoot: invokeOptions.projectRoot,
           agent: invokeOptions.agent,
@@ -122,11 +122,10 @@ function registerInvokeCommand(
           process.exitCode = 1;
         }
       } catch (error) {
-        if (error instanceof Error && error.name === 'AgentLookupError') {
-          const lookup = error as InstanceType<typeof AgentLookupError>;
+        if (isAgentLookupError(error)) {
           console.error(error.message);
-          if (lookup.availableAgents.length > 0) {
-            console.error(`Available:    ${lookup.availableAgents.map((agent) => agent.agentId).join(', ')}`);
+          if (error.availableAgents.length > 0) {
+            console.error(`Available:    ${error.availableAgents.map((agent: { agentId: string }) => agent.agentId).join(', ')}`);
           }
           process.exitCode = 1;
           return;
@@ -361,4 +360,15 @@ function formatUsd(value: number): string {
 
 function truncate(value: string, limit: number): string {
   return value.length > limit ? `${value.slice(0, limit - 1)}…` : value;
+}
+
+function isAgentLookupError(
+  error: unknown,
+): error is Error & { availableAgents: Array<{ agentId: string }> } {
+  return (
+    error instanceof Error &&
+    error.name === 'AgentLookupError' &&
+    'availableAgents' in error &&
+    Array.isArray((error as { availableAgents?: unknown }).availableAgents)
+  );
 }

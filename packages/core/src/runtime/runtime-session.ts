@@ -19,7 +19,7 @@ interface RuntimeSessionOptions {
 
 export class RuntimeSession {
   readonly startedAt: string;
-  private sessionId?: string;
+  private sessionId: string | undefined;
 
   constructor(private readonly options: RuntimeSessionOptions) {
     this.startedAt = options.startedAt;
@@ -172,8 +172,8 @@ export class RuntimeSession {
       completedAt,
       status: 'failed',
       error: errorMessage,
-      providerKind,
       runtimeModeResolved,
+      ...(providerKind ? { providerKind } : {}),
     };
   }
 
