@@ -12,6 +12,7 @@ interface RuntimeSessionOptions {
   agentId: string;
   task: string;
   model: string;
+  sessionId?: string;
   parentSessionId?: string;
   startedAt: string;
 }
@@ -22,12 +23,14 @@ export class RuntimeSession {
 
   constructor(private readonly options: RuntimeSessionOptions) {
     this.startedAt = options.startedAt;
+    this.sessionId = options.sessionId;
   }
 
   start(): string | undefined {
-    if (!this.options.adapter) return undefined;
+    if (!this.options.adapter) return this.sessionId;
 
     const sessionRow = this.options.adapter.createSession({
+      ...(this.sessionId ? { id: this.sessionId } : {}),
       agentId: this.options.agentId,
       task: this.options.task,
       model: this.options.model,
@@ -48,7 +51,11 @@ export class RuntimeSession {
     const sessionId = this.sessionId ?? execution.remoteSessionId ?? '';
 
     if (this.options.adapter && sessionId) {
-      this.options.adapter.completeSession(sessionId, 'completed', execution.costUsd);
+      this.options.adapter.completeSession(sessionId, 'completed', execution.costUsd, {
+        model: execution.model,
+        inputTokens,
+        outputTokens,
+      });
       this.options.adapter.recordCost({
         sessionId,
         agentId: this.options.agentId,

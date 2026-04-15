@@ -37,6 +37,7 @@ export class ExecutionService {
       task: opts.task,
       model: modelId,
       startedAt,
+      ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
       ...(opts.parentSessionId ? { parentSessionId: opts.parentSessionId } : {}),
     });
 

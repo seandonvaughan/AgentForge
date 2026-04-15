@@ -14,6 +14,7 @@ export interface AgentRuntimeConfig {
 
 export interface RunOptions {
   task: string;
+  sessionId?: string;
   parentSessionId?: string;
   context?: string;          // additional context injected before user message
   budgetUsd?: number;        // hard stop if cost would exceed this

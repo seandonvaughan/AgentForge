@@ -1,6 +1,11 @@
 import type { FastifyInstance } from 'fastify';
-import type { WorkspaceAdapter } from '@agentforge/db';
-import { AgentRuntime, loadAgentConfig } from '@agentforge/core';
+import type { SessionRow, WorkspaceAdapter } from '@agentforge/db';
+import {
+  AgentRuntime,
+  loadAgentConfig,
+  type ExecutionProviderKind,
+  type RuntimeMode,
+} from '@agentforge/core';
 import { generateId, nowIso } from '@agentforge/shared';
 import { globalStream } from './stream.js';
 import { join } from 'node:path';
@@ -17,12 +22,13 @@ interface RunRequestBody {
   agentId: string;
   task: string;
   projectRoot?: string;
+  runtimeMode?: RuntimeMode;
+  allowedTools?: string[];
 }
 
 // careerHook singleton is imported from lib/career-hook.ts
 
-/** In-memory run log — stores completed/failed runs for session replay. */
-const runLog = new Map<string, {
+interface RunLogEntry {
   sessionId: string;
   agentId: string;
   task: string;
@@ -34,11 +40,78 @@ const runLog = new Map<string, {
   outputTokens: number;
   startedAt: string;
   completedAt?: string;
+  providerKind?: ExecutionProviderKind;
+  runtimeModeResolved?: RuntimeMode;
   error?: string;
-}>();
+}
+
+/** In-memory run log — stores completed/failed runs for session replay. */
+const runLog = new Map<string, RunLogEntry>();
 
 export function getRunLog() {
   return runLog;
+}
+
+function parseRuntimeMetadata(
+  adapter: WorkspaceAdapter,
+  sessionId: string,
+): Pick<RunLogEntry, 'providerKind' | 'runtimeModeResolved'> {
+  const event = adapter.listDecisionEvents({
+    sessionId,
+    decisionType: 'runtime_transport',
+    limit: 1,
+  })[0];
+
+  if (!event?.payload_json) return {};
+
+  try {
+    const payload = JSON.parse(event.payload_json) as Record<string, unknown>;
+    return {
+      ...(typeof payload.providerKind === 'string'
+        ? { providerKind: payload.providerKind as ExecutionProviderKind }
+        : {}),
+      ...(typeof payload.runtimeModeResolved === 'string'
+        ? { runtimeModeResolved: payload.runtimeModeResolved as RuntimeMode }
+        : {}),
+    };
+  } catch {
+    return {};
+  }
+}
+
+function hydrateRunEntry(
+  session: SessionRow,
+  adapter?: WorkspaceAdapter,
+  existing?: RunLogEntry,
+): RunLogEntry {
+  const runtimeMetadata = adapter ? parseRuntimeMetadata(adapter, session.id) : {};
+  const completedAt = existing?.completedAt ?? session.completed_at ?? undefined;
+
+  return {
+    sessionId: session.id,
+    agentId: session.agent_id,
+    task: session.task,
+    model: existing?.model ?? session.model ?? 'unknown',
+    status: normalizeRunStatus(existing?.status ?? session.status),
+    response: existing?.response ?? '',
+    costUsd: existing?.costUsd ?? session.cost_usd ?? 0,
+    inputTokens: existing?.inputTokens ?? session.input_tokens ?? 0,
+    outputTokens: existing?.outputTokens ?? session.output_tokens ?? 0,
+    startedAt: existing?.startedAt ?? session.started_at,
+    ...(completedAt ? { completedAt } : {}),
+    ...(existing?.providerKind ?? runtimeMetadata.providerKind
+      ? { providerKind: existing?.providerKind ?? runtimeMetadata.providerKind }
+      : {}),
+    ...(existing?.runtimeModeResolved ?? runtimeMetadata.runtimeModeResolved
+      ? { runtimeModeResolved: existing?.runtimeModeResolved ?? runtimeMetadata.runtimeModeResolved }
+      : {}),
+    ...(existing?.error ? { error: existing.error } : {}),
+  };
+}
+
+function normalizeRunStatus(status: string): RunLogEntry['status'] {
+  if (status === 'running' || status === 'failed') return status;
+  return 'completed';
 }
 
 export async function runRoutes(
@@ -49,7 +122,7 @@ export async function runRoutes(
 
   // POST /api/v5/run — execute an agent with streaming SSE events
   app.post<{ Body: RunRequestBody }>('/api/v5/run', async (req, reply) => {
-    const { agentId, task, projectRoot } = req.body ?? {};
+    const { agentId, task, projectRoot, runtimeMode, allowedTools } = req.body ?? {};
 
     if (!agentId) return reply.status(400).send({ error: 'agentId is required' });
     if (!task) return reply.status(400).send({ error: 'task is required' });
@@ -90,6 +163,9 @@ export async function runRoutes(
     try {
       const result = await runtime.runStreaming({
         task,
+        sessionId,
+        ...(runtimeMode ? { runtimeMode } : {}),
+        ...(allowedTools?.length ? { allowedTools } : {}),
         // Wire onChunk so SSE clients see content arrive before the HTTP response.
         // The dashboard SSE handler reads event.data.content, so emit exactly that.
         onChunk: (text: string, index: number) => {
@@ -118,8 +194,12 @@ export async function runRoutes(
       });
 
       // Persist to in-memory run log
-      runLog.set(sessionId, {
-        sessionId,
+      const completedSessionId = result.sessionId || sessionId;
+      if (completedSessionId !== sessionId) {
+        runLog.delete(sessionId);
+      }
+      runLog.set(completedSessionId, {
+        sessionId: completedSessionId,
         agentId,
         task,
         model: result.model,
@@ -130,6 +210,8 @@ export async function runRoutes(
         outputTokens: result.outputTokens,
         startedAt,
         ...(result.completedAt !== undefined ? { completedAt: result.completedAt } : {}),
+        ...(result.providerKind ? { providerKind: result.providerKind } : {}),
+        ...(result.runtimeModeResolved ? { runtimeModeResolved: result.runtimeModeResolved } : {}),
         ...(result.error !== undefined ? { error: result.error } : {}),
       });
 
@@ -157,7 +239,7 @@ export async function runRoutes(
             type: 'agent_activity',
             category: 'skill_levelup',
             message: `[${agentId}] skill "${levelUp.skill}" leveled up to ${levelUp.newLevel}`,
-            data: { agentId, skill: levelUp.skill, newLevel: levelUp.newLevel, sessionId },
+            data: { agentId, skill: levelUp.skill, newLevel: levelUp.newLevel, sessionId: completedSessionId },
           });
         }
       } catch {
@@ -170,11 +252,13 @@ export async function runRoutes(
         category: 'run',
         message: `[${agentId}] run ${result.status}`,
         data: {
-          sessionId,
+          sessionId: completedSessionId,
           status: result.status,
           costUsd: result.costUsd,
           inputTokens: result.inputTokens,
           outputTokens: result.outputTokens,
+          ...(result.providerKind ? { providerKind: result.providerKind } : {}),
+          ...(result.runtimeModeResolved ? { runtimeModeResolved: result.runtimeModeResolved } : {}),
         },
       });
 
@@ -185,18 +269,20 @@ export async function runRoutes(
           category: 'run',
           message: `[${agentId}] $${result.costUsd.toFixed(4)} (${result.model})`,
           data: {
-            sessionId,
+            sessionId: completedSessionId,
             agentId,
             model: result.model,
             costUsd: result.costUsd,
             inputTokens: result.inputTokens,
             outputTokens: result.outputTokens,
+            ...(result.providerKind ? { providerKind: result.providerKind } : {}),
+            ...(result.runtimeModeResolved ? { runtimeModeResolved: result.runtimeModeResolved } : {}),
           },
         });
       }
 
       return reply.status(200).send({
-        data: { ...result, sessionId },
+        data: { ...result, sessionId: completedSessionId },
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -224,12 +310,25 @@ export async function runRoutes(
 
   // GET /api/v5/run/history — list all runs from in-memory log
   app.get('/api/v5/run/history', async (_req, reply) => {
-    const runs = [...runLog.values()]
+    const runsBySessionId = new Map<string, RunLogEntry>();
+
+    for (const [sessionId, entry] of runLog.entries()) {
+      runsBySessionId.set(sessionId, entry);
+    }
+
+    if (adapter) {
+      for (const session of adapter.listSessions({ limit: 100 })) {
+        const existing = runsBySessionId.get(session.id);
+        runsBySessionId.set(session.id, hydrateRunEntry(session, adapter, existing));
+      }
+    }
+
+    const runs = [...runsBySessionId.values()]
       .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
       .slice(0, 100);
     return reply.send({
       data: runs,
-      meta: { total: runLog.size, timestamp: nowIso() },
+      meta: { total: runsBySessionId.size, timestamp: nowIso() },
     });
   });
 
@@ -247,7 +346,9 @@ export async function runRoutes(
     if (adapter) {
       const session = adapter.getSession(sessionId);
       if (session) {
-        return reply.send({ data: session });
+        return reply.send({
+          data: hydrateRunEntry(session, adapter, run),
+        });
       }
     }
 

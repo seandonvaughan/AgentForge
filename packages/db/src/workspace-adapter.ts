@@ -172,13 +172,14 @@ export class WorkspaceAdapter {
   // --- Sessions ---
 
   createSession(data: {
+    id?: string;
     agentId: string;
     task: string;
     model?: string;
     parentSessionId?: string;
     autonomyTier?: number;
   }): SessionRow {
-    const id = generateId();
+    const id = data.id ?? generateId();
     const now = nowIso();
     this.db.prepare(`
       INSERT INTO sessions (id, agent_id, parent_session_id, task, status, model, autonomy_tier, started_at, created_at)
@@ -191,11 +192,36 @@ export class WorkspaceAdapter {
     return this.db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) as SessionRow | undefined;
   }
 
-  completeSession(id: string, status: 'completed' | 'failed', costUsd?: number): void {
+  completeSession(
+    id: string,
+    status: 'completed' | 'failed',
+    costUsd?: number,
+    metrics?: {
+      model?: string;
+      inputTokens?: number;
+      outputTokens?: number;
+    },
+  ): void {
     const now = nowIso();
     this.db.prepare(`
-      UPDATE sessions SET status = ?, completed_at = ?, cost_usd = COALESCE(?, cost_usd) WHERE id = ?
-    `).run(status, now, costUsd ?? null, id);
+      UPDATE sessions
+      SET
+        status = ?,
+        completed_at = ?,
+        cost_usd = COALESCE(?, cost_usd),
+        model = COALESCE(?, model),
+        input_tokens = COALESCE(?, input_tokens),
+        output_tokens = COALESCE(?, output_tokens)
+      WHERE id = ?
+    `).run(
+      status,
+      now,
+      costUsd ?? null,
+      metrics?.model ?? null,
+      metrics?.inputTokens ?? null,
+      metrics?.outputTokens ?? null,
+      id,
+    );
   }
 
   listSessions(filters: SessionFilters = {}): SessionRow[] {

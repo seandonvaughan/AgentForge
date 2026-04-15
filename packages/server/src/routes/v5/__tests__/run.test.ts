@@ -7,7 +7,6 @@ import { runRoutes, getRunLog } from '../run.js';
 // is exercised the same way it runs in production.
 vi.mock('@agentforge/core', () => {
   const mockRunResult = {
-    sessionId: 'mock-session-1',
     response: 'Hello from mock agent',
     model: 'claude-sonnet-4-6',
     inputTokens: 10,
@@ -16,17 +15,27 @@ vi.mock('@agentforge/core', () => {
     startedAt: '2026-01-01T00:00:00.000Z',
     completedAt: '2026-01-01T00:00:01.000Z',
     status: 'completed',
+    providerKind: 'anthropic-sdk',
+    runtimeModeResolved: 'sdk',
   };
 
   return {
     AgentRuntime: vi.fn().mockImplementation(() => ({
       runStreaming: vi.fn().mockImplementation(
-        async (opts: { onChunk?: (text: string, index: number) => void; onEvent?: (event: { type: string; data: unknown }) => void }) => {
+        async (opts: {
+          sessionId?: string;
+          onChunk?: (text: string, index: number) => void;
+          onEvent?: (event: { type: string; data: unknown }) => void;
+        }) => {
           // Simulate onChunk firing once with the full response (degraded streaming)
           if (opts.onChunk) opts.onChunk(mockRunResult.response, 0);
           // Simulate onEvent firing with the 'done' signal
-          if (opts.onEvent) opts.onEvent({ type: 'done', data: mockRunResult });
-          return mockRunResult;
+          const result = {
+            ...mockRunResult,
+            sessionId: opts.sessionId ?? 'mock-session-1',
+          };
+          if (opts.onEvent) opts.onEvent({ type: 'done', data: result });
+          return result;
         },
       ),
     })),
@@ -94,6 +103,8 @@ describe('POST /api/v5/run', () => {
     expect(body.data.sessionId).toMatch(/^run-/);
     expect(body.data).toHaveProperty('status', 'completed');
     expect(body.data).toHaveProperty('response', 'Hello from mock agent');
+    expect(body.data).toHaveProperty('providerKind', 'anthropic-sdk');
+    expect(body.data).toHaveProperty('runtimeModeResolved', 'sdk');
   });
 
   it('persists completed run to in-memory run log', async () => {
@@ -112,6 +123,8 @@ describe('POST /api/v5/run', () => {
     expect(entry!.status).toBe('completed');
     expect(entry!.agentId).toBe('coder');
     expect(entry!.task).toBe('Test persistence');
+    expect(entry!.providerKind).toBe('anthropic-sdk');
+    expect(entry!.runtimeModeResolved).toBe('sdk');
   });
 
   it('returns 404 when agentId does not match any agent YAML', async () => {
@@ -233,6 +246,8 @@ describe('GET /api/v5/run/history', () => {
     expect(body.data.length).toBe(1);
     expect(body.data[0]).toHaveProperty('agentId', 'coder');
     expect(body.data[0]).toHaveProperty('status', 'completed');
+    expect(body.data[0]).toHaveProperty('providerKind', 'anthropic-sdk');
+    expect(body.data[0]).toHaveProperty('runtimeModeResolved', 'sdk');
     expect(body.meta.total).toBe(1);
   });
 });
@@ -278,5 +293,7 @@ describe('GET /api/v5/run/:sessionId', () => {
     expect(body.data).toHaveProperty('sessionId', sessionId);
     expect(body.data).toHaveProperty('agentId', 'coder');
     expect(body.data).toHaveProperty('status', 'completed');
+    expect(body.data).toHaveProperty('providerKind', 'anthropic-sdk');
+    expect(body.data).toHaveProperty('runtimeModeResolved', 'sdk');
   });
 });
