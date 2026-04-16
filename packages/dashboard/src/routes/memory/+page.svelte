@@ -613,30 +613,57 @@
     text: string;
     sprintVersion: string | null;
     cycleId?: string;
+    /** From ReviewFindingMetadata when available (v10.2+ schema) */
+    file?: string | null;
+    line?: number | null;
+    fixSuggestion?: string | null;
   }
 
-  /** Resolve severity from tags array or the raw value text. */
+  /**
+   * Resolve severity and structured fields from a review-finding entry.
+   * Prefers typed metadata (ReviewFindingMetadata, v10.2+ schema) over regex
+   * parsing of the raw value string so the display matches the write-side contract.
+   */
   function extractReviewFindingInfo(entry: MemoryEntry): ReviewFindingInfo | null {
     if (entry.type !== 'review-finding') return null;
     const raw = typeof entry.value === 'string' ? entry.value : JSON.stringify(entry.value);
     const tags = entry.tags ?? [];
+
+    // Prefer structured metadata when present (v10.2+).
+    // ReviewFindingMetadata: { file, line, severity: 'CRITICAL'|'MAJOR', summary, fixSuggestion }
+    const meta = entry.metadata && typeof entry.metadata === 'object'
+      ? entry.metadata as Record<string, unknown>
+      : null;
+
     let severity: FindingSeverity | null = null;
-    if (tags.includes('critical') || /\[CRITICAL\]/i.test(raw)) severity = 'critical';
-    else if (tags.includes('major') || /\[MAJOR\]/i.test(raw)) severity = 'major';
-    else if (tags.includes('minor') || /\[MINOR\]/i.test(raw)) severity = 'minor';
+    if (meta?.severity === 'CRITICAL') severity = 'critical';
+    else if (meta?.severity === 'MAJOR') severity = 'major';
+    // Fall back to tag-based / regex detection for legacy entries
+    else if (tags.includes('critical') || /\[CRITICAL\]/i.test(raw)) severity = 'critical';
+    else if (tags.includes('major')    || /\[MAJOR\]/i.test(raw))    severity = 'major';
+    else if (tags.includes('minor')    || /\[MINOR\]/i.test(raw))    severity = 'minor';
+
+    // Prefer structured summary over raw value text
+    const text = meta?.summary && typeof meta.summary === 'string' ? meta.summary : raw;
+
     return {
       severity,
-      text: raw,
+      text,
       sprintVersion: sprintTagFromEntry(entry),
       cycleId: entry.source && isCycleId(entry.source) ? entry.source : undefined,
+      file:          meta?.file          as string | null | undefined,
+      line:          meta?.line          as number | null | undefined,
+      fixSuggestion: meta?.fixSuggestion as string | null | undefined,
     };
   }
 
-  /** Color class for gate verdict chips. */
+  /** Color class for gate verdict chips.
+   *  Handles both legacy uppercase (PASS/REJECT) and canonical lowercase
+   *  (approved/rejected/pending) verdict values from GateVerdictMetadata. */
   function verdictColorClass(verdict: string): string {
     const v = verdict.toUpperCase();
-    if (v === 'PASS' || v === 'APPROVE') return 'verdict--pass';
-    if (v === 'REJECT') return 'verdict--reject';
+    if (v === 'PASS' || v === 'APPROVE' || v === 'APPROVED') return 'verdict--pass';
+    if (v === 'REJECT' || v === 'REJECTED') return 'verdict--reject';
     return 'verdict--neutral';
   }
 
@@ -1103,7 +1130,21 @@
                             </a>
                           {/if}
                         </div>
+                        <!-- File location from ReviewFindingMetadata (v10.2+) -->
+                        {#if rfi.file}
+                          <div class="finding-location">
+                            <span class="verdict-section-label">Location</span>
+                            <code class="finding-file">{rfi.file}{#if rfi.line !== null && rfi.line !== undefined}:{rfi.line}{/if}</code>
+                          </div>
+                        {/if}
                         <p class="finding-text-full">{stripMarkdown(rfi.text)}</p>
+                        <!-- Fix suggestion from ReviewFindingMetadata (v10.2+) -->
+                        {#if rfi.fixSuggestion}
+                          <div class="finding-fix">
+                            <span class="verdict-section-label">Fix suggestion</span>
+                            <p class="finding-fix-text">{rfi.fixSuggestion}</p>
+                          </div>
+                        {/if}
                       </div>
                     {/if}
                   {/if}
@@ -1162,6 +1203,19 @@
                         {/if}
                       </div>
                     {/if}
+                  {/if}
+
+                  <!-- Structured metadata disclosure for entries not handled above -->
+                  <!-- failure-pattern, learned-fact, and any future types may carry -->
+                  <!-- typed metadata that isn't rendered by a dedicated panel.       -->
+                  {#if entry.metadata && entry.type !== 'gate-verdict' && entry.type !== 'review-finding' && entry.type !== 'cycle-outcome'}
+                    <details class="raw-json-details">
+                      <summary class="raw-json-summary">Structured metadata</summary>
+                      <div class="detail-value-wrap">
+                        <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+                        <pre class="value-expanded"><code>{@html highlightJSON(entry.metadata)}</code></pre>
+                      </div>
+                    </details>
                   {/if}
 
                   <!-- Full value JSON with syntax highlighting + copy button -->
@@ -2296,6 +2350,40 @@
     color: var(--color-text-muted);
     line-height: 1.6;
     word-break: break-word;
+  }
+
+  /* ── Review-finding: file location + fix suggestion (v10.2+ metadata) ─────── */
+  .finding-location {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .finding-file {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-brand);
+    background: color-mix(in srgb, var(--color-brand) 7%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-brand) 20%, transparent);
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+    display: inline-block;
+    word-break: break-all;
+  }
+  .finding-fix {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: var(--space-2) var(--space-3);
+    background: color-mix(in srgb, var(--color-haiku) 5%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-haiku) 18%, transparent);
+    border-radius: var(--radius-sm);
+  }
+  .finding-fix-text {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    line-height: 1.55;
+    font-style: italic;
   }
 
   /* ── Live feed new-event badge ────────────────────────────────────────────── */

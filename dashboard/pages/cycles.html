@@ -279,6 +279,24 @@
       color: var(--text-muted);
       margin-bottom: 8px;
     }
+
+    /* Top-level markdown prose sections (error, summary, rationale, etc.)
+       rendered above agentRuns in phase cards. */
+    .phase-prose-section {
+      margin-bottom: 14px;
+      padding: 10px 12px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--blue);
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    }
+    .phase-prose-section--error {
+      border-left-color: var(--red);
+      background: rgba(248, 81, 73, 0.04);
+    }
+    .phase-prose-section--error .agent-run-label {
+      color: var(--red);
+    }
   </style>
 
   <script>
@@ -289,15 +307,65 @@
      * Security note: all HTML rendered via setMarkdown() is produced by
      * renderMarkdown(), which calls escapeHtml() on every text fragment
      * before applying regex transformations. No raw user-supplied or
-     * API-supplied text reaches the DOM as HTML — only the escapeHtml()-
-     * sanitized output of renderMarkdown(). This is the same pattern used
-     * in index.html (run-detail response, gate-result-detail, etc.).
+     * API-supplied text reaches the DOM as HTML — only the
+     * escapeHtml()-sanitized output of renderMarkdown(). This is the same
+     * pattern used in index.html (run-detail response, gate-result-detail).
      */
 
     /** Render markdown text into an element. Safe: escapeHtml applied first. */
     function setMarkdown(el, text) {
       var md = typeof renderMarkdown === 'function' ? renderMarkdown(text) : escapeHtml(text);
-      el.innerHTML = md; // renderMarkdown output is XSS-safe (escapeHtml-sanitized)
+      el.innerHTML = md; // safe: renderMarkdown escapes all text fragments via escapeHtml()
+    }
+
+    /**
+     * Top-level phase fields that contain markdown prose — rendered as
+     * labeled sections above the agentRuns list. Mirrors MARKDOWN_FIELDS in
+     * packages/dashboard/src/lib/util/phase-render.ts. The primary real-world
+     * case is `error` on a failed gate phase, which stores the gate retry
+     * message without any agentRuns entry at all.
+     */
+    var PHASE_MARKDOWN_FIELDS = [
+      'error',         // failed gate: retry message / execution error prose
+      'findings',      // audit phase: researcher executive summary
+      'plan',          // plan phase: CTO technical plan
+      'strategy',      // test phase: QA risk assessment
+      'review',        // review phase: code-reviewer markdown report
+      'rationale',     // gate phase: CEO approve/reject reasoning (newer format)
+      'retrospective', // learn phase: data-analyst sprint retrospective
+      'response',      // fallback: top-level response string
+      'summary',       // some phases surface a top-level summary string
+    ];
+
+    /**
+     * Render any top-level markdown prose fields from a phase object into
+     * container as labeled sections. Returns true if at least one section
+     * was rendered (so the caller knows whether to show the "no data" msg).
+     */
+    function _renderTopLevelMarkdown(container, phase) {
+      var rendered = false;
+      PHASE_MARKDOWN_FIELDS.forEach(function(field) {
+        var val = phase[field];
+        if (typeof val !== 'string' || !val.trim()) return;
+        rendered = true;
+
+        var section = document.createElement('div');
+        section.className = 'phase-prose-section'
+          + (field === 'error' ? ' phase-prose-section--error' : '');
+
+        var label = document.createElement('div');
+        label.className = 'agent-run-label';
+        label.textContent = field.toUpperCase();
+        section.appendChild(label);
+
+        var body = document.createElement('div');
+        body.className = 'md-body';
+        setMarkdown(body, val); // safe: setMarkdown runs text through renderMarkdown/escapeHtml
+        section.appendChild(body);
+
+        container.appendChild(section);
+      });
+      return rendered;
     }
 
     var _activeCycleId = null;
@@ -451,12 +519,20 @@
         chevron.style.transform = open ? 'rotate(90deg)' : '';
       });
 
+      // Top-level markdown prose fields (e.g. `error` on a failed gate phase
+      // that has no agentRuns, or `summary`/`rationale` from newer formats).
+      _renderTopLevelMarkdown(body, phase);
+
       // Agent run cards
       if (agentRuns.length === 0) {
-        var noRuns = document.createElement('div');
-        noRuns.style.cssText = 'color:var(--text-muted);font-family:var(--font-mono);font-size:11px;';
-        noRuns.textContent = 'No agent run data for this phase.';
-        body.appendChild(noRuns);
+        // Only show the "no data" placeholder when there are also no top-level
+        // prose fields — otherwise the user already has meaningful content above.
+        if (!body.hasChildNodes()) {
+          var noRuns = document.createElement('div');
+          noRuns.style.cssText = 'color:var(--text-muted);font-family:var(--font-mono);font-size:11px;';
+          noRuns.textContent = 'No agent run data for this phase.';
+          body.appendChild(noRuns);
+        }
       } else {
         agentRuns.forEach(function(run) {
           var runCard = document.createElement('div');

@@ -32,6 +32,8 @@ interface FlywheelMetric {
   label: string;
   score: number; // 0–100
   description: string;
+  /** Trend direction for meta_learning, derived from test pass-rate history. */
+  trend?: 'improving' | 'stable' | 'declining';
 }
 
 /** Raw aggregate counts surfaced in the dashboard "Loop Data" panel. */
@@ -49,12 +51,127 @@ interface FlywheelDebugStats {
   satisfiedSessionCount: number;
 }
 
+/**
+ * One data point in the per-cycle trajectory sent to the flywheel dashboard.
+ * Exposes the raw signals that drive autonomy and velocity scores so the UI
+ * can render sparklines proving the flywheel is self-improving over time.
+ */
+interface CycleHistoryPoint {
+  cycleId: string;
+  sprintVersion: string | null;
+  startedAt: string;
+  stage: string;
+  testPassRate: number | null;
+  testsTotal: number | null;
+  costUsd: number | null;
+  durationMs: number | null;
+  hasPr: boolean;
+}
+
 interface FlywheelV5Response {
   metrics: FlywheelMetric[];
   overallScore: number;
   updatedAt: string;
   memoryStats: MemoryStats;
   debug: FlywheelDebugStats;
+  /** Per-cycle raw signals for the score trajectory sparklines. */
+  cycleHistory: CycleHistoryPoint[];
+}
+
+// ---------------------------------------------------------------------------
+// Full cycle record shape (filesystem)
+// ---------------------------------------------------------------------------
+
+interface FullCycleRecord {
+  cycleId: string;
+  sprintVersion?: string;
+  stage?: string;
+  startedAt?: string;
+  completedAt?: string;
+  durationMs?: number;
+  tests?: { passed?: number; failed?: number; total?: number; passRate?: number };
+  cost?: { totalUsd?: number };
+  git?: { filesChanged?: string[] };
+  pr?: { number?: number | null; url?: string | null };
+}
+
+// ---------------------------------------------------------------------------
+// Filesystem session record (supplements DB adapter data)
+// ---------------------------------------------------------------------------
+
+interface FsSessionRecord {
+  task_id?: string;
+  is_request_satisfied?: boolean;
+  confidence?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Cycle history computation
+// ---------------------------------------------------------------------------
+
+/**
+ * Reads .agentforge/cycles/ to build a chronological list of cycle
+ * data-points for the trajectory sparkline panel in the dashboard.
+ * This is filesystem-only so it works regardless of DB adapter state.
+ */
+function computeCycleHistory(cyclesDir: string, limit = 20): {
+  cycles: FullCycleRecord[];
+  history: CycleHistoryPoint[];
+} {
+  const cycles: FullCycleRecord[] = [];
+  if (existsSync(cyclesDir)) {
+    for (const entry of readdirSync(cyclesDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const cycleFile = join(cyclesDir, entry.name, 'cycle.json');
+      if (!existsSync(cycleFile)) continue;
+      try {
+        cycles.push(JSON.parse(readFileSync(cycleFile, 'utf-8')) as FullCycleRecord);
+      } catch { /* skip malformed */ }
+    }
+  }
+
+  // Sort chronologically (oldest → newest) for trend math
+  cycles.sort((a, b) => {
+    const ta = a.startedAt ? new Date(a.startedAt).getTime() : 0;
+    const tb = b.startedAt ? new Date(b.startedAt).getTime() : 0;
+    return ta - tb;
+  });
+
+  const history: CycleHistoryPoint[] = cycles.slice(-limit).map(c => ({
+    cycleId: c.cycleId,
+    sprintVersion: c.sprintVersion ?? null,
+    startedAt: c.startedAt ?? new Date().toISOString(),
+    stage: c.stage ?? 'unknown',
+    testPassRate: c.tests?.passRate ?? null,
+    testsTotal: (c.tests?.passed != null && c.tests?.failed != null)
+      ? (c.tests.passed + c.tests.failed)
+      : (c.tests?.total ?? null),
+    costUsd: c.cost?.totalUsd ?? null,
+    durationMs: c.durationMs ?? null,
+    hasPr: c.pr?.number != null,
+  }));
+
+  return { cycles, history };
+}
+
+// ---------------------------------------------------------------------------
+// Filesystem session reader (supplements DB adapter data)
+// ---------------------------------------------------------------------------
+
+/**
+ * Reads .agentforge/sessions/*.json to provide a session-level success signal
+ * when the DB adapter has limited data or hasn't been populated yet.
+ */
+function readFsSessions(sessionsDir: string): FsSessionRecord[] {
+  const sessions: FsSessionRecord[] = [];
+  if (!existsSync(sessionsDir)) return sessions;
+  for (const file of readdirSync(sessionsDir).filter(f => f.endsWith('.json')).sort()) {
+    try {
+      const raw = JSON.parse(readFileSync(join(sessionsDir, file), 'utf-8')) as FsSessionRecord;
+      if (raw.task_id) sessions.push(raw);
+    } catch { /* skip malformed */ }
+  }
+  return sessions;
 }
 
 // ---------------------------------------------------------------------------
@@ -63,75 +180,175 @@ interface FlywheelV5Response {
 
 /**
  * Meta-learning rate: how much is success improving over time?
- * Uses task outcomes (preferred) or session success rates as fallback.
- * Score = recent success rate * 70 + improvement delta * 100, capped 0–100.
+ *
+ * Primary signal (when available): test pass-rate trend across cycles read
+ * from the filesystem — the same algorithm used in dashboard-stubs.ts so
+ * both API endpoints give consistent numbers.
+ *
+ * Secondary signal: DB task outcomes (if ≥4 exist).
+ * Fallback: overall session success rate from DB or filesystem.
  */
-function computeMetaLearning(adapter: SqliteAdapter): FlywheelMetric {
-  const outcomes = adapter.listTaskOutcomes({ limit: 200 });
+function computeMetaLearning(adapter: SqliteAdapter, projectRoot: string): FlywheelMetric {
+  // ── Primary: cycle pass-rate trend (filesystem) ──────────────────────────
+  const { cycles: fsCycles } = computeCycleHistory(join(projectRoot, '.agentforge/cycles'), 100);
+  const ratedCycles = fsCycles.filter(c => (c.tests?.passRate ?? 0) > 0);
 
-  if (outcomes.length >= 4) {
-    // listTaskOutcomes returns DESC (newest first); split evenly
-    const mid = Math.floor(outcomes.length / 2);
-    const recent = outcomes.slice(0, mid);
-    const older = outcomes.slice(mid);
-    const recentRate = recent.filter(o => o.success === 1).length / recent.length;
-    const olderRate = older.filter(o => o.success === 1).length / older.length;
-    const delta = recentRate - olderRate;
-    const score = Math.round(Math.min(100, Math.max(0, recentRate * 70 + Math.max(0, delta) * 100)));
-    const trend = delta > 0.05 ? 'improving' : delta < -0.05 ? 'declining' : 'stable';
+  if (ratedCycles.length >= 2) {
+    const half = Math.floor(ratedCycles.length / 2);
+    const earlyAvg =
+      ratedCycles.slice(0, half).reduce((s, c) => s + (c.tests?.passRate ?? 0), 0) / half;
+    const lateAvg =
+      ratedCycles.slice(-half).reduce((s, c) => s + (c.tests?.passRate ?? 0), 0) / half;
+    const trendBonus = Math.max(-20, Math.min(40, Math.round((lateAvg - earlyAvg) * 400)));
+    const sprintCount = (() => {
+      const dir = join(projectRoot, '.agentforge/sprints');
+      return existsSync(dir) ? readdirSync(dir).filter(f => f.endsWith('.json')).length : 0;
+    })();
+    const iterationBase = Math.min(100, Math.round((sprintCount / 32) * 60));
+    const score = Math.max(0, Math.min(100, iterationBase + trendBonus));
+    const trend: 'improving' | 'stable' | 'declining' =
+      trendBonus >= 20 ? 'improving' : trendBonus <= -20 ? 'declining' : 'stable';
     return {
       key: 'meta_learning',
       label: 'Meta-Learning',
       score,
-      description: `${(recentRate * 100).toFixed(0)}% recent success · ${trend}`,
+      trend,
+      description: `${sprintCount} sprint iterations; pass-rate ${trend} across ${ratedCycles.length} cycles`,
     };
   }
 
-  // Fallback: overall session success rate
-  const sessions = adapter.listSessions();
-  if (sessions.length === 0) {
-    return { key: 'meta_learning', label: 'Meta-Learning', score: 0, description: 'No data yet' };
+  // ── Secondary: DB task outcomes ──────────────────────────────────────────
+  try {
+    const outcomes = adapter.listTaskOutcomes({ limit: 200 });
+    if (outcomes.length >= 4) {
+      const mid = Math.floor(outcomes.length / 2);
+      const recent = outcomes.slice(0, mid);
+      const older = outcomes.slice(mid);
+      const recentRate = recent.filter(o => o.success === 1).length / recent.length;
+      const olderRate = older.filter(o => o.success === 1).length / older.length;
+      const delta = recentRate - olderRate;
+      const score = Math.round(Math.min(100, Math.max(0, recentRate * 70 + Math.max(0, delta) * 100)));
+      const trend: 'improving' | 'stable' | 'declining' =
+        delta > 0.05 ? 'improving' : delta < -0.05 ? 'declining' : 'stable';
+      return {
+        key: 'meta_learning',
+        label: 'Meta-Learning',
+        score,
+        trend,
+        description: `${(recentRate * 100).toFixed(0)}% recent success · ${trend}`,
+      };
+    }
+  } catch { /* adapter unavailable — fall through */ }
+
+  // ── Fallback: session success rate (DB then filesystem) ──────────────────
+  let fsSuccessRate: number | null = null;
+  const fsSessions = readFsSessions(join(projectRoot, '.agentforge/sessions'));
+  if (fsSessions.length > 0) {
+    fsSuccessRate = fsSessions.filter(s => s.is_request_satisfied === true).length / fsSessions.length;
   }
-  const successRate =
-    sessions.filter(s => s.status === 'completed' || s.status === 'success').length /
-    sessions.length;
-  return {
-    key: 'meta_learning',
-    label: 'Meta-Learning',
-    score: Math.round(successRate * 65),
-    description: `${(successRate * 100).toFixed(0)}% session success rate`,
-  };
+
+  try {
+    const sessions = adapter.listSessions();
+    if (sessions.length > 0) {
+      const successRate =
+        sessions.filter(s => s.status === 'completed' || s.status === 'success').length /
+        sessions.length;
+      // Blend DB rate with filesystem rate when both are available
+      const blended = fsSuccessRate !== null ? (successRate + fsSuccessRate) / 2 : successRate;
+      return {
+        key: 'meta_learning',
+        label: 'Meta-Learning',
+        score: Math.round(blended * 65),
+        description: `${(blended * 100).toFixed(0)}% session success rate`,
+      };
+    }
+  } catch { /* adapter unavailable */ }
+
+  if (fsSuccessRate !== null) {
+    return {
+      key: 'meta_learning',
+      label: 'Meta-Learning',
+      score: Math.round(fsSuccessRate * 65),
+      description: `${(fsSuccessRate * 100).toFixed(0)}% session success rate (fs)`,
+    };
+  }
+
+  return { key: 'meta_learning', label: 'Meta-Learning', score: 0, description: 'No data yet' };
 }
 
 /**
- * Autonomy score: how autonomous are agents becoming?
- * 60 pts from avg autonomy tier of recent sessions (tier 1–4 → 0–60).
- * 40 pts from net promotions (each net promotion = 8 pts, max 40).
+ * Autonomy score: how autonomous is the loop becoming?
+ *
+ * Primary signal (filesystem): completed cycles / meaningful cycles — the
+ * same algorithm as dashboard-stubs.ts so both endpoints are consistent.
+ *
+ * Secondary signal (DB): autonomy tier and promotion history from the adapter.
+ * Blended 60/40 (cycle signal dominant) when both are available.
  */
-function computeAutonomy(adapter: SqliteAdapter): FlywheelMetric {
-  const promotions = adapter.listPromotions();
-  const sessions = adapter.listSessions({ limit: 100 });
+function computeAutonomy(adapter: SqliteAdapter, projectRoot: string): FlywheelMetric {
+  // ── Primary: cycle completion rate (filesystem) ──────────────────────────
+  const { cycles: fsCycles } = computeCycleHistory(join(projectRoot, '.agentforge/cycles'), 100);
+  const meaningfulCycles = fsCycles.filter(
+    c => c.stage === 'completed' || (c.tests?.passRate ?? 0) > 0,
+  );
+  const completedCycles = fsCycles.filter(c => c.stage === 'completed');
 
-  const netPromotions =
-    promotions.filter(p => p.promoted === 1).length -
-    promotions.filter(p => p.demoted === 1).length;
+  // Check filesystem sessions for a sub-cycle autonomy signal
+  const fsSessions = readFsSessions(join(projectRoot, '.agentforge/sessions'));
+  const fsSatisfied = fsSessions.filter(s => s.is_request_satisfied === true).length;
+  const fsSessionRate = fsSessions.length > 0 ? fsSatisfied / fsSessions.length : null;
 
-  const tieredSessions = sessions.filter(s => (s.autonomy_tier ?? 0) > 0);
-  const avgTier =
-    tieredSessions.length > 0
-      ? tieredSessions.reduce((sum, s) => sum + (s.autonomy_tier ?? 1), 0) / tieredSessions.length
-      : 1;
+  if (meaningfulCycles.length > 0) {
+    const cycleSuccessRate = completedCycles.length / meaningfulCycles.length;
+    const prBonus = completedCycles.some(c => c.pr?.number != null) ? 10 : 0;
+    const blendedRate = fsSessionRate !== null
+      ? cycleSuccessRate * 0.6 + fsSessionRate * 0.4
+      : cycleSuccessRate;
+    const score = Math.min(100, Math.round(blendedRate * 90 + prBonus));
+    return {
+      key: 'autonomy',
+      label: 'Autonomy',
+      score,
+      description: `${completedCycles.length}/${meaningfulCycles.length} cycles; ${fsSatisfied}/${fsSessions.length} sessions satisfied`,
+    };
+  }
 
-  const tierScore = Math.min(60, ((avgTier - 1) / 3) * 60);
-  const promotionScore = Math.min(40, Math.max(0, netPromotions * 8));
-  const score = Math.round(tierScore + promotionScore);
+  // ── Secondary: DB promotions + session tiers ─────────────────────────────
+  try {
+    const promotions = adapter.listPromotions();
+    const sessions = adapter.listSessions({ limit: 100 });
+    const netPromotions =
+      promotions.filter(p => p.promoted === 1).length -
+      promotions.filter(p => p.demoted === 1).length;
+    const tieredSessions = sessions.filter(s => (s.autonomy_tier ?? 0) > 0);
+    const avgTier =
+      tieredSessions.length > 0
+        ? tieredSessions.reduce((sum, s) => sum + (s.autonomy_tier ?? 1), 0) / tieredSessions.length
+        : 1;
+    const tierScore = Math.min(60, ((avgTier - 1) / 3) * 60);
+    const promotionScore = Math.min(40, Math.max(0, netPromotions * 8));
+    const score = Math.round(tierScore + promotionScore);
+    if (score > 0) {
+      return {
+        key: 'autonomy',
+        label: 'Autonomy',
+        score,
+        description: `Avg tier ${avgTier.toFixed(1)} · ${netPromotions >= 0 ? '+' : ''}${netPromotions} net promotions`,
+      };
+    }
+  } catch { /* adapter unavailable */ }
 
-  return {
-    key: 'autonomy',
-    label: 'Autonomy',
-    score,
-    description: `Avg tier ${avgTier.toFixed(1)} · ${netPromotions >= 0 ? '+' : ''}${netPromotions} net promotions`,
-  };
+  // ── Fallback: filesystem sessions only ───────────────────────────────────
+  if (fsSessionRate !== null && fsSessions.length >= 3) {
+    return {
+      key: 'autonomy',
+      label: 'Autonomy',
+      score: Math.min(40, Math.round(fsSessionRate * 40)),
+      description: `${fsSatisfied}/${fsSessions.length} sessions satisfied`,
+    };
+  }
+
+  return { key: 'autonomy', label: 'Autonomy', score: 0, description: 'No cycle data yet' };
 }
 
 /**
@@ -265,8 +482,11 @@ function computeVelocity(): FlywheelMetric {
  * Aggregates raw loop counts into the FlywheelDebugStats shape consumed by
  * the dashboard "Loop Data" panel.  All reads are best-effort; failures for
  * any individual source are swallowed and that counter defaults to 0.
+ *
+ * Accepts projectRoot so it respects workspace routing.
  */
-function computeDebugStats(adapter: SqliteAdapter): FlywheelDebugStats {
+function computeDebugStats(adapter: SqliteAdapter, projectRoot = PROJECT_ROOT): FlywheelDebugStats {
+  const cyclesDir = join(projectRoot, '.agentforge/cycles');
   const stats: FlywheelDebugStats = {
     cycleCount: 0,
     completedCycleCount: 0,
@@ -280,11 +500,11 @@ function computeDebugStats(adapter: SqliteAdapter): FlywheelDebugStats {
   };
 
   // ── Cycles ────────────────────────────────────────────────────────────────
-  if (existsSync(CYCLES_DIR)) {
+  if (existsSync(cyclesDir)) {
     try {
-      for (const dir of readdirSync(CYCLES_DIR)) {
+      for (const dir of readdirSync(cyclesDir)) {
         try {
-          const cycleFile = join(CYCLES_DIR, dir, 'cycle.json');
+          const cycleFile = join(cyclesDir, dir, 'cycle.json');
           if (!existsSync(cycleFile)) continue;
           const c = JSON.parse(readFileSync(cycleFile, 'utf-8')) as { stage?: string };
           stats.cycleCount++;
@@ -296,7 +516,7 @@ function computeDebugStats(adapter: SqliteAdapter): FlywheelDebugStats {
   }
 
   // ── Sprints ───────────────────────────────────────────────────────────────
-  const sprintsDir = join(PROJECT_ROOT, '.agentforge/sprints');
+  const sprintsDir = join(projectRoot, '.agentforge/sprints');
   if (existsSync(sprintsDir)) {
     try {
       const files = readdirSync(sprintsDir).filter(f => f.endsWith('.json') && !f.includes('$'));
@@ -318,21 +538,27 @@ function computeDebugStats(adapter: SqliteAdapter): FlywheelDebugStats {
   }
 
   // ── Agents ────────────────────────────────────────────────────────────────
-  const agentsDir = join(PROJECT_ROOT, '.agentforge/agents');
+  const agentsDir = join(projectRoot, '.agentforge/agents');
   if (existsSync(agentsDir)) {
     try {
       stats.agentCount = readdirSync(agentsDir).filter(f => f.endsWith('.yaml')).length;
     } catch { /* agents dir unreadable */ }
   }
 
-  // ── Sessions ──────────────────────────────────────────────────────────────
-  try {
-    const sessions = adapter.listSessions();
-    stats.sessionCount = sessions.length;
-    stats.satisfiedSessionCount = sessions.filter(
-      s => s.status === 'completed' || s.status === 'success'
-    ).length;
-  } catch { /* adapter unavailable */ }
+  // ── Sessions — prefer filesystem data; supplement with DB ────────────────
+  const fsSessions = readFsSessions(join(projectRoot, '.agentforge/sessions'));
+  if (fsSessions.length > 0) {
+    stats.sessionCount = fsSessions.length;
+    stats.satisfiedSessionCount = fsSessions.filter(s => s.is_request_satisfied === true).length;
+  } else {
+    try {
+      const dbSessions = adapter.listSessions();
+      stats.sessionCount = dbSessions.length;
+      stats.satisfiedSessionCount = dbSessions.filter(
+        s => s.status === 'completed' || s.status === 'success'
+      ).length;
+    } catch { /* adapter unavailable */ }
+  }
 
   return stats;
 }
@@ -343,7 +569,7 @@ function computeDebugStats(adapter: SqliteAdapter): FlywheelDebugStats {
 
 export async function flywheelRoutes(
   app: FastifyInstance,
-  opts: { adapter: SqliteAdapter }
+  opts: { adapter: SqliteAdapter; projectRoot?: string }
 ) {
   const { adapter } = opts;
 
@@ -425,12 +651,20 @@ export async function flywheelRoutes(
     }
   });
 
+  // Resolve the project root for a request — honours ?workspaceId= param so
+  // operators can query a non-default workspace from the dashboard dropdown.
+  const projectRoot = opts.projectRoot ?? PROJECT_ROOT;
+
   // v5: rich flywheel gauge metrics for the dashboard
   app.get('/api/v5/flywheel', async (_req, reply) => {
+    const root = projectRoot;
+
     try {
+      const { history: cycleHistory } = computeCycleHistory(join(root, '.agentforge/cycles'));
+
       const metrics: FlywheelMetric[] = [
-        computeMetaLearning(adapter),
-        computeAutonomy(adapter),
+        computeMetaLearning(adapter, root),
+        computeAutonomy(adapter, root),
         computeInheritance(),
         computeVelocity(),
       ];
@@ -443,8 +677,9 @@ export async function flywheelRoutes(
         metrics,
         overallScore,
         updatedAt: new Date().toISOString(),
-        memoryStats: computeMemoryStats(PROJECT_ROOT),
-        debug: computeDebugStats(adapter),
+        memoryStats: computeMemoryStats(root),
+        debug: computeDebugStats(adapter, root),
+        cycleHistory,
       };
 
       return reply.send({
@@ -473,6 +708,7 @@ export async function flywheelRoutes(
           sessionCount: 0,
           satisfiedSessionCount: 0,
         },
+        cycleHistory: [],
       };
       return reply.send({
         data: fallback,

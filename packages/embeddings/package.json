@@ -1,6 +1,6 @@
 {
   "name": "@agentforge/embeddings",
-  "version": "10.5.0",
+  "version": "10.5.1",
   "description": "AgentForge embeddings and semantic search services",
   "type": "module",
   "main": "./dist/index.js",
