@@ -61,9 +61,16 @@
       sprintLoading = false;
     }
     // Also refresh the cycle summary (cost/tests/stage) and agents on each tick.
+    // The server emits 404 + body with cycleInProgress:true for cycles that
+    // exist but haven't written cycle.json yet — treat those as live data.
     try {
       const res = await fetch(`/api/v5/cycles/${id}`);
-      if (res.ok) cycle = await res.json();
+      if (res.ok) {
+        cycle = await res.json();
+      } else if (res.status === 404) {
+        const body = await res.json().catch(() => null);
+        if (body?.cycleInProgress) cycle = body;
+      }
     } catch {}
     loadAgents();
   }
@@ -121,8 +128,21 @@
         fetch(withWorkspace(`/api/v5/cycles/${id}`)),
         fetch(withWorkspace(`/api/v5/cycles/${id}/scoring`)),
       ]);
-      if (!cRes.ok) throw new Error(`cycle: HTTP ${cRes.status}`);
-      cycle = await cRes.json();
+      if (cRes.ok) {
+        cycle = await cRes.json();
+      } else if (cRes.status === 404) {
+        // Server returns 404 + cycleInProgress:true for cycles that exist
+        // but haven't written cycle.json yet. Honour that contract so the
+        // detail page can render the live feed while the cycle is running.
+        const body = await cRes.json().catch(() => null);
+        if (body?.cycleInProgress) {
+          cycle = body;
+        } else {
+          throw new Error(`cycle: HTTP ${cRes.status}`);
+        }
+      } else {
+        throw new Error(`cycle: HTTP ${cRes.status}`);
+      }
       if (sRes.ok) {
         scoring = await sRes.json();
       } else if (sRes.status !== 404) {
