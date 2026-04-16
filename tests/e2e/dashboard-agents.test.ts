@@ -25,8 +25,11 @@ test.describe('Agents List Page', () => {
   test('displays real agents from .agentforge/agents/*.yaml — not empty', async ({ page }) => {
     await page.goto('/agents');
 
-    // Allow SSR + any client-side refresh to settle
-    await page.waitForLoadState('networkidle').catch(() => {});
+    // Allow SSR + any client-side refresh to settle.
+    // Use a short explicit timeout — the layout's persistent SSE and WebSocket
+    // connections mean networkidle never fires, so the default 30s timeout would
+    // consume the entire test budget. 3s is enough for SSR + initial render.
+    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
 
     // The agents table must be present with at least one data row.
     // .agentforge/agents/ contains 100+ YAML definitions, so any non-zero
@@ -52,7 +55,7 @@ test.describe('Agents List Page', () => {
   test('displays agent names from YAML — real text not placeholders', async ({ page }) => {
     await page.goto('/agents');
 
-    await page.waitForLoadState('networkidle').catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
 
     // The table rows must include agent names from YAML files.
     // .agentforge/agents/ contains definitions for "Frontend Developer",
@@ -72,7 +75,8 @@ test.describe('Agents List Page', () => {
   test('agent rows are clickable and navigate to detail page', async ({ page }) => {
     await page.goto('/agents');
 
-    await page.waitForLoadState('networkidle').catch(() => {});
+    // Short timeout: SSE/WS connections prevent networkidle from ever firing.
+    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
 
     const table = page.locator('table.data-table');
     await expect(table).toBeVisible();
@@ -83,16 +87,19 @@ test.describe('Agents List Page', () => {
     // Rows are keyboard-accessible with role="button" and tabindex="0"
     await expect(firstRow).toHaveAttribute('tabindex', '0');
 
-    // Click navigates to /agents/:id
+    // Click triggers SvelteKit client-side navigation to /agents/:id.
+    // waitForLoadState('load') is a no-op after client-side routing (the page
+    // is already in 'load' state), so we wait for the URL to change instead.
     await firstRow.click();
-    await page.waitForLoadState('load').catch(() => {});
+    await page.waitForURL(/\/agents\/.+/, { timeout: 5000 }).catch(() => {});
     expect(page.url()).toMatch(/\/agents\//);
   });
 
   test('model tier badges are present on agent rows', async ({ page }) => {
     await page.goto('/agents');
 
-    await page.waitForLoadState('networkidle').catch(() => {});
+    // Short timeout: SSE/WS connections prevent networkidle from ever firing.
+    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
 
     const table = page.locator('table.data-table');
     await expect(table).toBeVisible();
@@ -106,7 +113,8 @@ test.describe('Agents List Page', () => {
   test('agents list shows content from real YAML files, not empty state', async ({ page }) => {
     await page.goto('/agents');
 
-    await page.waitForLoadState('networkidle').catch(() => {});
+    // Short timeout: SSE/WS connections prevent networkidle from ever firing.
+    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
 
     // The empty state div must NOT be visible when agents exist
     const emptyState = page.locator('.empty-state');

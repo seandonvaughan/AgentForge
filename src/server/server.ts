@@ -116,7 +116,7 @@ export async function createServer(options: ServerOptions = {}) {
       agentsDir: options.projectRoot ? join(options.projectRoot, '.agentforge', 'agents') : undefined,
     });
     await app.register(costsRoutes, { adapter: options.adapter });
-    await app.register(flywheelRoutes, { adapter: options.adapter });
+    await app.register(flywheelRoutes, { adapter: options.adapter, projectRoot: options.projectRoot });
     await app.register(autonomyRoutes, { adapter: options.adapter });
     await app.register(capabilitiesRoutes, { adapter: options.adapter });
     await app.register(reviewsRoutes, { adapter: options.adapter });

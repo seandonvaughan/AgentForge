@@ -419,6 +419,36 @@ describe('GET /api/v5/memory/stream', () => {
     expect(res.body.trim()).toBe('');
   });
 
+  it('does NOT set a wildcard Access-Control-Allow-Origin header (security: scoped to localhost)', async () => {
+    // A wildcard CORS header on this endpoint would expose raw agent memory to
+    // any origin.  The fix scopes the header to a specific localhost origin.
+    // This test guards against regression to '*'.
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v5/memory/stream',
+      headers: { origin: 'http://localhost:4751' },
+    });
+    expect(res.statusCode).toBe(200);
+    const corsHeader = res.headers['access-control-allow-origin'];
+    expect(corsHeader).toBeDefined();
+    expect(corsHeader).not.toBe('*');
+    // Must be scoped to a specific localhost origin
+    expect(typeof corsHeader).toBe('string');
+    expect((corsHeader as string)).toMatch(/^https?:\/\/localhost(:\d+)?$/);
+  });
+
+  it('reflects the request localhost origin in Access-Control-Allow-Origin', async () => {
+    // When the request comes from a localhost origin (e.g. Vite dev server on
+    // port 4751), the response should reflect that exact origin back so the
+    // browser treats it as a valid CORS response.
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v5/memory/stream',
+      headers: { origin: 'http://localhost:4751' },
+    });
+    expect(res.headers['access-control-allow-origin']).toBe('http://localhost:4751');
+  });
+
   it('streams entries from .jsonl files as NDJSON', async () => {
     appendJsonlEntry('cycle-outcome', {
       id: 'stream-001',

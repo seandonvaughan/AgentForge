@@ -287,6 +287,34 @@
       </div>
     {/each}
   </div>
+
+  <!-- Memory stats skeleton — preserves layout so page doesn't reflow when data arrives -->
+  <div class="card memory-card" aria-busy="true" aria-label="Loading memory stats">
+    <div class="memory-card-header">
+      <div class="skeleton" style="height: 16px; width: 180px;"></div>
+      <div class="skeleton" style="height: 20px; width: 60px; border-radius: 99px;"></div>
+    </div>
+    <dl class="stats-grid memory-stats-grid">
+      <div class="stat-row">
+        <div class="skeleton" style="height: 11px; width: 80px; margin-bottom: var(--space-1);"></div>
+        <div class="skeleton" style="height: 28px; width: 60px;"></div>
+        <div class="skeleton" style="height: 10px; width: 100px; margin-top: 2px;"></div>
+      </div>
+      <div class="stat-row">
+        <div class="skeleton" style="height: 11px; width: 110px; margin-bottom: var(--space-1);"></div>
+        <div class="skeleton" style="height: 28px; width: 52px;"></div>
+        <div class="skeleton" style="height: 10px; width: 130px; margin-top: 2px;"></div>
+      </div>
+      <div class="stat-row trend-row">
+        <div class="skeleton" style="height: 11px; width: 130px; margin-bottom: var(--space-2);"></div>
+        <div class="skeleton-sparkline">
+          {#each Array(8) as _, i}
+            <div class="skeleton-spark-bar" style="height: {12 + (i % 3) * 10}px;"></div>
+          {/each}
+        </div>
+      </div>
+    </dl>
+  </div>
 {:else if error && !hasPrevData}
   <!-- Full-page error only when we have no SSR or previous API data at all.
        When hasPrevData is true the SSR-rendered content stays visible and the
@@ -367,7 +395,7 @@
 
   <!-- ── Memory stats card ──────────────────────────────────────────────── -->
   {#if memStats}
-    <div class="card memory-card" data-testid="memory-stats-card">
+    <div class="card memory-card" data-testid="memory-stats-card" aria-label="Memory loop health">
       <div class="memory-card-header">
         <h2 class="stats-title" style="margin:0">🧠 Memory Loop Health</h2>
         <span class="mem-badge mem-badge--{memHealthLevel}" data-testid="memory-health-badge">
@@ -418,6 +446,23 @@
       <!-- Link to full memory browser -->
       <div class="memory-card-footer">
         <a href="/memory" class="mem-link">View all memory entries →</a>
+      </div>
+    </div>
+  {:else}
+    <!-- Empty state: memoryStats absent from API response or SSR load failed.
+         Shown instead of silently hiding the section so operators understand
+         why memory metrics aren't appearing. -->
+    <div class="card memory-card memory-card--empty" data-testid="memory-stats-card-empty">
+      <div class="memory-card-header">
+        <h2 class="stats-title" style="margin:0">🧠 Memory Loop Health</h2>
+        <span class="mem-badge mem-badge--none">NO DATA</span>
+      </div>
+      <p class="memory-empty-msg">
+        Memory stats unavailable — the memory API may not be reachable, or no
+        <code>.agentforge/memory/*.jsonl</code> files exist yet.
+      </p>
+      <div class="memory-card-footer">
+        <a href="/memory" class="mem-link">Open memory browser →</a>
       </div>
     </div>
   {/if}
@@ -780,6 +825,50 @@
   }
   .memory-stats-grid {
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
+
+  /* Empty state variant */
+  .memory-card--empty {
+    opacity: 0.75;
+  }
+  .memory-empty-msg {
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+    margin: 0 0 var(--space-3);
+    line-height: 1.55;
+  }
+  .memory-empty-msg code {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    background: var(--color-surface-2);
+    border-radius: var(--radius-sm);
+    padding: 1px 4px;
+  }
+
+  /* ── Skeleton sparkline (used in memory card loading state) ──────────────── */
+  .skeleton-sparkline {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 48px;
+    padding-top: var(--space-1);
+    margin: 0;
+  }
+  .skeleton-spark-bar {
+    width: 10px;
+    border-radius: 2px 2px 0 0;
+    background: var(--color-skeleton, color-mix(in srgb, var(--color-border) 60%, transparent));
+    animation: skeleton-pulse 1.4s ease-in-out infinite;
+  }
+  .skeleton-spark-bar:nth-child(2n) {
+    animation-delay: 0.2s;
+  }
+  .skeleton-spark-bar:nth-child(3n) {
+    animation-delay: 0.4s;
+  }
+  @keyframes skeleton-pulse {
+    0%, 100% { opacity: 0.45; }
+    50% { opacity: 0.9; }
   }
 
   /* ── Health badge ─────────────────────────────────────────────────────────── */

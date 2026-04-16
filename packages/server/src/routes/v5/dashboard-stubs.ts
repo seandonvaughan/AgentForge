@@ -393,8 +393,21 @@ export async function dashboardStubRoutes(
     reply.raw.setHeader('Content-Type', 'application/x-ndjson');
     reply.raw.setHeader('Cache-Control', 'no-cache');
     reply.raw.setHeader('Transfer-Encoding', 'chunked');
-    // Allow cross-origin reads from Vite dev server (port 4751 → port 4750)
-    reply.raw.setHeader('Access-Control-Allow-Origin', '*');
+    // Scope CORS to localhost only — a wildcard '*' is a data-exfiltration risk
+    // if the dev server is ever reachable beyond localhost (security finding from
+    // v10.5.0 review).  Reflect the exact request origin when it is a localhost
+    // URL (handles any port, e.g. Vite on 4751 → API on 4750); fall back to the
+    // canonical dev-server origin so browsers still get a valid CORS response
+    // when no Origin header is present.
+    {
+      const reqOrigin = req.headers['origin'];
+      const isLocalhost = typeof reqOrigin === 'string' &&
+        /^https?:\/\/localhost(:\d+)?$/.test(reqOrigin);
+      reply.raw.setHeader(
+        'Access-Control-Allow-Origin',
+        isLocalhost ? reqOrigin : 'http://localhost:4751',
+      );
+    }
 
     if (!existsSync(memDir)) {
       reply.raw.end();

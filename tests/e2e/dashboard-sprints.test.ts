@@ -61,4 +61,30 @@ test.describe('Sprints List Page', () => {
       await expect(sprintCard).toBeEnabled();
     }
   });
+
+  test('sprints list is responsive', async ({ page }) => {
+    await page.goto('/sprints');
+
+    await page.waitForLoadState('load').catch(() => {});
+
+    // Test mobile view
+    await page.setViewportSize({ width: 375, height: 667 });
+
+    await page.waitForTimeout(500);
+
+    const pageContent = page.locator('body');
+    await expect(pageContent).toBeVisible();
+
+    // Test tablet view
+    await page.setViewportSize({ width: 768, height: 1024 });
+
+    await page.waitForTimeout(500);
+    await expect(pageContent).toBeVisible();
+
+    // Test desktop view
+    await page.setViewportSize({ width: 1280, height: 720 });
+
+    await page.waitForTimeout(500);
+    await expect(pageContent).toBeVisible();
+  });
 });

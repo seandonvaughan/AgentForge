@@ -10,8 +10,10 @@
     description?: string;
     priority: 'P0' | 'P1' | 'P2';
     assignee?: string;
+    coAssignee?: string;
     status: 'completed' | 'in_progress' | 'pending' | 'blocked' | 'failed';
     estimatedCost?: number;
+    completedAt?: string;
     tags?: string[];
     source?: string;
   }
@@ -388,7 +390,12 @@
                 </div>
                 <div class="kanban-card-title">{truncate(item.title)}</div>
                 {#if item.assignee}
-                  <div class="kanban-card-assignee">@{item.assignee}</div>
+                  <div class="kanban-card-assignee">
+                    @{item.assignee}{#if item.coAssignee}&thinsp;+&thinsp;@{item.coAssignee}{/if}
+                  </div>
+                {/if}
+                {#if item.completedAt}
+                  <div class="kanban-card-completed">✓ {formatDate(item.completedAt)}</div>
                 {/if}
                 {#if item.tags && item.tags.length > 0}
                   <div class="kanban-tags">
@@ -461,9 +468,12 @@
                 {/if}
                 <div class="item-meta">
                   {#if item.assignee}
-                    <span class="item-assignee">@{item.assignee}</span>
+                    <span class="item-assignee">@{item.assignee}{#if item.coAssignee}&thinsp;+&thinsp;@{item.coAssignee}{/if}</span>
                   {/if}
                   <span class="item-status-label status-{item.status}">{STATUS_LABEL[item.status] ?? item.status}</span>
+                  {#if item.completedAt}
+                    <span class="item-completed-at">✓ {formatDate(item.completedAt)}</span>
+                  {/if}
                   {#if item.estimatedCost != null}
                     <span class="item-cost">${item.estimatedCost.toFixed(2)}</span>
                   {/if}
@@ -985,6 +995,12 @@
     opacity: 0.8;
   }
 
+  .item-completed-at {
+    font-family: var(--font-mono);
+    color: var(--color-success);
+    opacity: 0.75;
+  }
+
   .item-cost {
     font-family: var(--font-mono);
     color: var(--color-text-faint);
@@ -1203,6 +1219,13 @@
     background: rgba(91, 138, 245, 0.1);
     color: var(--color-brand);
     border: 1px solid rgba(91, 138, 245, 0.3);
+  }
+
+  .kanban-card-completed {
+    font-size: 10px;
+    font-family: var(--font-mono);
+    color: var(--color-success);
+    opacity: 0.75;
   }
 
   .kanban-card-desc {

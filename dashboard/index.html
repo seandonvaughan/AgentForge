@@ -7663,6 +7663,13 @@ async function loadMemoryBrowser() {
       const agents = (json.agents && json.agents.length > 0)
         ? json.agents.slice().sort()
         : [...new Set(data.map(function(e) { return e.agentId; }).filter(Boolean))].sort();
+      // Preserve the active agent filter across reloads so that time-range
+      // re-fetches (which call loadMemoryBrowser()) don't silently reset the
+      // agent dropdown back to "All Agents" while _memFetchExtra still carries
+      // the ?agentId= param.  Without this, _memRebuildFetchExtra() would read
+      // memAgentFilter === 'all' on the next time-range click and strip the
+      // agent filter from the query, causing a silent data mismatch.
+      const prevAgent = memAgentFilter;
       agentSel.textContent = '';
       const allOpt = document.createElement('option');
       allOpt.value = 'all';
@@ -7674,8 +7681,15 @@ async function loadMemoryBrowser() {
         opt.textContent = id;
         agentSel.appendChild(opt);
       });
-      memAgentFilter = 'all';
-      agentSel.value = 'all';
+      // Restore previously selected agent if it still exists in the new list,
+      // otherwise fall back to 'all' so the UI stays consistent with the data.
+      if (prevAgent && prevAgent !== 'all' && agents.indexOf(prevAgent) !== -1) {
+        memAgentFilter = prevAgent;
+        agentSel.value = prevAgent;
+      } else {
+        memAgentFilter = 'all';
+        agentSel.value = 'all';
+      }
     }
 
     // Helper: detect if a source string looks like a cycleId (UUID-like or

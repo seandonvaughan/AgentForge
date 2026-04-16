@@ -38,6 +38,7 @@
   let bulkDeleting = $state(false);
 
   let activeFilter: BranchStatus | 'all' = $state('all');
+  let searchQuery   = $state('');
   let pollTimer:    ReturnType<typeof setInterval> | null = null;
   let tickTimer:    ReturnType<typeof setInterval> | null = null;
   let nextRefreshIn = $state(POLL_INTERVAL_S);
@@ -189,9 +190,13 @@
 
   // ── Filtered + sorted view ─────────────────────────────────────────────────
   let filteredBranches = $derived.by(() => {
-    const base = activeFilter === 'all'
-      ? branches
-      : branches.filter((b) => b.status === activeFilter);
+    const q = searchQuery.trim().toLowerCase();
+
+    const base = branches.filter((b) => {
+      const matchStatus = activeFilter === 'all' || b.status === activeFilter;
+      const matchSearch = !q || b.name.toLowerCase().includes(q) || b.cycle.toLowerCase().includes(q);
+      return matchStatus && matchSearch;
+    });
 
     return [...base].sort((a, b) => {
       let cmp = 0;
@@ -310,6 +315,23 @@
   </span>
 </div>
 
+<!-- Search bar — filters by branch name or cycle identifier -->
+<div class="search-bar">
+  <span class="search-icon" aria-hidden="true">⌕</span>
+  <input
+    class="search-input"
+    type="search"
+    bind:value={searchQuery}
+    placeholder="Search branch or cycle…"
+    aria-label="Search branches"
+    spellcheck="false"
+    autocomplete="off"
+  />
+  {#if searchQuery}
+    <button class="search-clear" onclick={() => (searchQuery = '')} aria-label="Clear search">✕</button>
+  {/if}
+</div>
+
 {#if deleteError}
   <div class="error-banner">
     <span style="white-space:pre-wrap;">Delete failed: {deleteError}</span>
@@ -343,16 +365,22 @@
     <p>No <code>autonomous/*</code> branches found.</p>
     <p class="empty-hint">Start an autonomous cycle to create one.</p>
   </div>
-{:else if filteredBranches.length === 0 && activeFilter !== 'all'}
+{:else if filteredBranches.length === 0 && (activeFilter !== 'all' || searchQuery)}
   <div class="empty-state">
     <span class="empty-icon">⎇</span>
-    <p>No <strong>{STATUS_LABEL[activeFilter as BranchStatus]}</strong> branches.</p>
+    {#if searchQuery && activeFilter !== 'all'}
+      <p>No <strong>{STATUS_LABEL[activeFilter as BranchStatus]}</strong> branches matching <code>{searchQuery}</code>.</p>
+    {:else if searchQuery}
+      <p>No branches matching <code>{searchQuery}</code>.</p>
+    {:else}
+      <p>No <strong>{STATUS_LABEL[activeFilter as BranchStatus]}</strong> branches.</p>
+    {/if}
     <button
       class="btn btn-ghost btn-sm"
-      onclick={() => (activeFilter = 'all')}
+      onclick={() => { activeFilter = 'all'; searchQuery = ''; }}
       style="margin-top:var(--space-3);"
     >
-      Show all branches
+      Clear filters
     </button>
   </div>
 {:else if filteredBranches.length > 0}
@@ -401,12 +429,12 @@
               </button>
             </td>
 
-            <!-- Cycle shortlink -->
+            <!-- Cycle shortlink — navigates to the cycle detail page -->
             <td>
               <a
                 class="cycle-badge"
-                href="/cycles?q={encodeURIComponent(branch.cycle)}"
-                title="Filter cycles by this branch"
+                href="/cycles/{encodeURIComponent(branch.cycle)}"
+                title="View cycle {branch.cycle}"
               >
                 {branch.cycle}
               </a>
@@ -494,6 +522,7 @@
     <div class="table-footer">
       Showing {filteredBranches.length} of {branches.length} branch{branches.length === 1 ? '' : 'es'}
       {#if activeFilter !== 'all'} · filtered by <strong>{STATUS_LABEL[activeFilter as BranchStatus]}</strong>{/if}
+      {#if searchQuery} · search: <code class="footer-code">{searchQuery}</code>{/if}
     </div>
   </div>
 {/if}
@@ -942,6 +971,64 @@
     border-radius: 3px;
   }
 
+  /* ── Search bar ─────────────────────────────────────────────────────────── */
+  .search-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    transition: border-color var(--duration-fast);
+  }
+
+  .search-bar:focus-within {
+    border-color: var(--color-brand);
+  }
+
+  .search-icon {
+    color: var(--color-text-faint);
+    font-size: var(--text-md);
+    flex-shrink: 0;
+    user-select: none;
+    line-height: 1;
+  }
+
+  .search-input {
+    flex: 1;
+    background: none;
+    border: none;
+    outline: none;
+    font-size: var(--text-sm);
+    font-family: var(--font-mono);
+    color: var(--color-text);
+    min-width: 0;
+  }
+
+  .search-input::placeholder {
+    color: var(--color-text-faint);
+    font-family: inherit;
+  }
+
+  /* Remove browser default search decoration */
+  .search-input::-webkit-search-cancel-button { display: none; }
+
+  .search-clear {
+    background: none;
+    border: none;
+    padding: 0 var(--space-1);
+    color: var(--color-text-faint);
+    cursor: pointer;
+    font-size: var(--text-xs);
+    flex-shrink: 0;
+    line-height: 1;
+    transition: color var(--duration-fast);
+  }
+
+  .search-clear:hover { color: var(--color-text); }
+
   /* ── Table footer ────────────────────────────────────────────────────────── */
   .table-footer {
     padding: var(--space-2) var(--space-4);
@@ -949,6 +1036,15 @@
     font-size: var(--text-xs);
     color: var(--color-text-faint);
     text-align: right;
+  }
+
+  .footer-code {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    background: var(--color-surface-2);
+    padding: 1px 4px;
+    border-radius: 3px;
+    color: var(--color-text-muted);
   }
 
   /* ── Responsive ──────────────────────────────────────────────────────────── */
