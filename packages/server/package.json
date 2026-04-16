@@ -1,6 +1,6 @@
 {
   "name": "@agentforge/server",
-  "version": "10.5.0",
+  "version": "10.5.1",
   "description": "AgentForge package-canonical REST and WebSocket API server",
   "type": "module",
   "main": "./dist/index.js",
