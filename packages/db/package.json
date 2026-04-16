@@ -1,6 +1,6 @@
 {
   "name": "@agentforge/db",
-  "version": "10.5.0",
+  "version": "10.5.1",
   "description": "AgentForge workspace persistence adapters",
   "type": "module",
   "main": "./dist/index.js",

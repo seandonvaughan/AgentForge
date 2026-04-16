@@ -4,9 +4,32 @@ All notable changes to AgentForge are documented in this file.
 
 ## [Unreleased]
 
+## [10.5.1] - 2026-04-16
+
+### Convergence finishing pass
+
+- Migrated reforge engines into `packages/core/src/reforge/` (engine, v4 engine, types). Root `src/reforge/*` collapsed to compatibility shims.
+- Migrated team engine (builder, scanner, genesis, domains, collaboration, types) into `packages/core/src/team/engine/`. Root `src/scanner`, `src/builder`, `src/genesis` collapsed to shims.
+- Made team inspection and session maintenance package-native (`packages/core/src/team/team-services.ts`, `team-sessions.ts`, `show-team.ts`).
+- Added canonical `cycle preview` and `cycle start` surfaces; replaced autonomous telemetry stubs with real workspace adapters (`packages/core/src/autonomous/workspace-telemetry-adapters.ts`).
+- Added `packages/core/src/manual/` services (`agent-catalog`, `cost-report-service`, `delegate-service`, `invoke-service`, `run-history-service`) and CLI compat bridges (`src/cli/compat/package-run-services.ts`, `package-team-services.ts`).
+- Cleared the strict typecheck backlog across `packages/core`, `packages/embeddings`, `packages/plugins-sdk`, and strict server test files.
+
+### Security
+
+- Upgraded `@anthropic-ai/sdk` to `^0.89.0` (patched release line).
+- Upgraded `fastify` to `5.8.5`.
+- Lifted manifest ranges for `js-yaml` and `vitest` to patched versions.
+- Patched dashboard / vite advisory chain.
+
+### CI hygiene
+
+- Pinned `.github/workflows/ci.yml` and `release.yml` actions to current release tags.
+
 ### Docs and help truth cleanup
 
-- Rewrote `README.md` around the actual `10.5.0` convergence state instead of the older v6/v3.1 narrative.
+- Rewrote `README.md` around the actual `10.5.x` convergence state instead of the older v6/v3.1 narrative.
+- Added two architecture spec docs: `docs/superpowers/specs/2026-04-15-current-architecture-truth.md` and `docs/superpowers/plans/2026-04-15-root-vs-packages-runtime-gap-matrix.md`.
 - Documented the real package-canonical CLI surface:
   - package-native `run`, `costs`, `cycle run`, `workspaces`, `migrate`, `info`
   - package CLI compatibility-bridged `team`, `team-sessions`, and legacy top-level aliases
