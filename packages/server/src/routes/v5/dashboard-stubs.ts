@@ -573,15 +573,15 @@ export async function dashboardStubRoutes(
 
 interface CycleRecord {
   cycleId: string;
-  sprintVersion?: string;
-  stage?: string;
-  startedAt?: string;
-  completedAt?: string;
-  durationMs?: number;
-  cost?: { totalUsd?: number; budgetUsd?: number };
-  tests?: { passed?: number; failed?: number; total?: number; passRate?: number };
-  git?: { branch?: string; commitSha?: string; filesChanged?: string[] };
-  pr?: { url?: string | null; number?: number | null };
+  sprintVersion?: string | undefined;
+  stage?: string | undefined;
+  startedAt?: string | undefined;
+  completedAt?: string | undefined;
+  durationMs?: number | undefined;
+  cost?: { totalUsd?: number; budgetUsd?: number } | undefined;
+  tests?: { passed?: number; failed?: number; total?: number; passRate?: number } | undefined;
+  git?: { branch?: string; commitSha?: string; filesChanged?: string[] } | undefined;
+  pr?: { url?: string | null; number?: number | null } | undefined;
 }
 
 /**
@@ -702,8 +702,12 @@ function readCycleRecord(cycleDir: string, cycleId: string): CycleRecord | null 
     startedAt,
     completedAt,
     durationMs,
-    cost: scoring ? { totalUsd: scoring.totalCostUsd as number | undefined } : undefined,
-    tests: total != null ? { passed, failed, total, passRate } : undefined,
+    cost: scoring && typeof scoring.totalCostUsd === 'number'
+      ? { totalUsd: scoring.totalCostUsd as number }
+      : undefined,
+    tests: total != null && typeof passed === 'number' && typeof failed === 'number'
+      ? { passed, failed, total, passRate: typeof passRate === 'number' ? passRate : 0 }
+      : undefined,
     pr: prEvt ? { url: prEvt.url as string | null, number: prEvt.number as number | null } : undefined,
   };
 }

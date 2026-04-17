@@ -220,21 +220,30 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleListRow | null 
     } catch { /* ignore */ }
   }
 
-  // v6.7.4 stale-cycle detection: if the last event is older than 5 minutes
-  // AND the session manager has no live record of this cycle, the parent
-  // process must be dead. Mark it crashed instead of showing it as running
-  // forever. This catches cycles spawned before the session manager existed
-  // and parent processes that died without writing cycle.json.
-  if (lastEventAt > 0 && Date.now() - lastEventAt > 5 * 60_000) {
-    try {
-      const cycleSessions = require('../../lib/cycle-sessions.js') as typeof import('../../lib/cycle-sessions.js');
-      const session = cycleSessions.get(cycleId);
-      const isLive = session && session.status === 'running' && cycleSessions.isPidAlive(session.pid);
-      if (!isLive) {
-        stage = 'crashed';
-      }
-    } catch { /* if session manager unavailable, fall through */ }
-  }
+  // v10.7.0: consult the session registry as the authoritative source of truth
+  // for terminal state. A cycle that was stopped via POST /cycles/:id/stop has
+  // session.status === 'killed' — use that exact word so the list matches the
+  // detail page. A session with status === 'crashed' / 'failed' / 'completed'
+  // propagates the same way. This replaces the old 5-minute staleness +
+  // stage='crashed' heuristic, which produced list/detail disagreement because
+  // the detail endpoint now consults the session registry directly.
+  //
+  // Fallback: if no session record exists (cycles predating the registry) OR
+  // the session still shows running but last event is >5min old, stamp the row
+  // as 'crashed' so the UI doesn't show an obviously-dead cycle as in-progress.
+  const TERMINAL_STATUSES = new Set(['killed', 'crashed', 'failed', 'completed']);
+  try {
+    const session = cycleSessions.get(cycleId);
+    if (session && TERMINAL_STATUSES.has(session.status)) {
+      stage = session.status;
+    } else if (
+      lastEventAt > 0 &&
+      Date.now() - lastEventAt > 5 * 60_000 &&
+      (!session || !cycleSessions.isPidAlive(session.pid))
+    ) {
+      stage = 'crashed';
+    }
+  } catch { /* session manager unavailable — leave stage as derived from events */ }
 
   // Aggregate live cost + test totals from phases/<name>.json so the list
   // row matches what the detail page shows. Without this, running cycles
@@ -803,10 +812,43 @@ export async function cyclesRoutes(
       }
     }
     const passRate = testsTotal > 0 ? testsPassed / testsTotal : 0;
-    // cycle.json absent means cycle is still in progress. Return 404 with
-    // cycleInProgress: true so callers can distinguish "not found" from
-    // "running but not yet terminal". The 404 status prevents stale cache
-    // hits while the partial payload lets the dashboard render a live feed.
+
+    // Cross-check the session registry before deciding "in progress". A killed
+    // or crashed cycle never writes cycle.json, so filesystem-only inference
+    // is ambiguous: we cannot tell "running, about to write cycle.json" apart
+    // from "dead, never will". cycle-sessions knows the truth because it
+    // tracked the process lifecycle. If the session shows a terminal status,
+    // emit a 200 with the partial data plus status/exitNote so the dashboard
+    // renders a final state instead of polling forever.
+    const session = cycleSessions.get(id);
+    const TERMINAL: cycleSessions.CycleSessionStatus[] = ['killed', 'crashed', 'failed', 'completed'];
+    if (session && TERMINAL.includes(session.status)) {
+      const completedAt = session.lastSeenAt ?? new Date().toISOString();
+      const startIso = startedAt ?? session.startedAt ?? completedAt;
+      return reply.status(200).send({
+        cycleId: id,
+        sprintVersion,
+        stage: session.status === 'killed' ? 'killed' : lastStage,
+        status: session.status,
+        exitNote: session.exitNote ?? null,
+        startedAt: startIso,
+        completedAt,
+        durationMs: Date.now() - new Date(startIso).getTime(),
+        cost: { totalUsd: totalCostUsd, budgetUsd: 200, byAgent: costByAgent, byPhase: costByPhase },
+        tests: { passed: testsPassed, failed: testsFailed, skipped: 0, total: testsTotal, passRate, newFailures: [] },
+        git: { branch: '', commitSha: null, filesChanged: [] },
+        pr: { url: null, number: null, draft: false },
+        agentRunCount,
+        cycleInProgress: false,
+        partialTerminal: true,
+      });
+    }
+
+    // cycle.json absent and session is still running (or unknown) — classic
+    // in-progress case. Return 404 + cycleInProgress: true so callers can
+    // distinguish "not found" from "running but not yet terminal". The 404
+    // status prevents stale cache hits while the partial payload lets the
+    // dashboard render a live feed.
     return reply.status(404).send({
       cycleId: id,
       sprintVersion,
