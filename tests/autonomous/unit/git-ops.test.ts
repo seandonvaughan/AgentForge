@@ -234,4 +234,45 @@ describe('GitOps safety guards', () => {
     expect(staged.trim()).toBe('a.ts');
     expect(staged).not.toContain('b.ts');
   });
+
+  it('stage filters unreachable pathspecs so one stale entry does not abort the whole stage', async () => {
+    // Reproduces cycle e1ed9c0e: execute phase produced a file list that
+    // included a path which neither exists on disk NOR is tracked in the
+    // index (e.g. a partial rename left over between agent runs). Without
+    // the filter, `git add -- real stale` aborts atomically with
+    // "pathspec did not match" and rolls back the real file too.
+    const ops = makeOps();
+    await ops.createBranch('6.4.0');
+    writeFileSync(join(tmpRepo, 'real-file.ts'), 'export const x = 1;\n');
+
+    // "ghost-file.ts" does not exist on disk and was never committed
+    await ops.stage(['real-file.ts', 'ghost-file.ts']);
+
+    const staged = (await execFileAsync('git', ['diff', '--cached', '--name-only'], { cwd: tmpRepo })).stdout;
+    expect(staged.trim()).toBe('real-file.ts');
+  });
+
+  it('stage still stages tracked-but-deleted files (legit deletion)', async () => {
+    // The filter must keep tracked-then-deleted paths — a path that's gone
+    // from disk but still in the index is a legitimate staged deletion.
+    const ops = makeOps();
+    writeFileSync(join(tmpRepo, 'to-delete.ts'), 'const x = 1;\n');
+    await execFileAsync('git', ['add', 'to-delete.ts'], { cwd: tmpRepo });
+    await execFileAsync('git', ['commit', '-m', 'add file'], { cwd: tmpRepo });
+
+    await ops.createBranch('6.4.0');
+    rmSync(join(tmpRepo, 'to-delete.ts'));
+
+    await ops.stage(['to-delete.ts']);
+
+    const staged = (await execFileAsync('git', ['status', '--porcelain'], { cwd: tmpRepo })).stdout;
+    expect(staged).toContain('D  to-delete.ts');
+  });
+
+  it('stage throws when every supplied path is unreachable', async () => {
+    const ops = makeOps();
+    await ops.createBranch('6.4.0');
+    await expect(ops.stage(['does-not-exist-1.ts', 'does-not-exist-2.ts']))
+      .rejects.toThrow(/No addable files/i);
+  });
 });
