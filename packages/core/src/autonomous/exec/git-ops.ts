@@ -226,7 +226,16 @@ export class GitOps {
       // Expected: git rev-parse fails if branch does not exist
     }
 
-    await this.git(['checkout', '-b', branch, this.config.baseBranch]);
+    // Branch from current HEAD, not from baseBranch. Prior behavior passed
+    // `baseBranch` as the checkout start-point, which forces git to reset
+    // the working tree to that branch's contents. That fails with
+    //   "Your local changes to the following files would be overwritten by checkout"
+    // whenever execute phase left uncommitted work in the tree (cycle
+    // 378652a2). Branching from HEAD carries the execute-phase work onto
+    // the new branch so commit/push operates on real cycle output. The
+    // PR opener later targets baseBranch for the merge, so the "PR against
+    // main" contract is preserved downstream.
+    await this.git(['checkout', '-b', branch]);
     this.logger.logGitEvent({ type: 'branch-created', branch });
     return branch;
   }
