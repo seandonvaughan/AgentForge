@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   ExecutePhaseHandler,
   type ExecutePhaseMemorySection,
-} from "../../src/autonomous/execute-phase-handler.js";
-import { ReviewPhaseHandler, type ReviewFinding } from "../../src/autonomous/review-phase-handler.js";
+} from "../../packages/core/src/autonomous/execute-phase-handler.js";
+import { ReviewPhaseHandler, type ReviewFinding } from "../../packages/core/src/autonomous/review-phase-handler.js";
 import { MemoryRegistry } from "../../src/registry/memory-registry.js";
 
 // ---------------------------------------------------------------------------

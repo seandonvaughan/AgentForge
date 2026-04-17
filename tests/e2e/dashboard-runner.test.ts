@@ -111,18 +111,12 @@ test.describe('Runner Page', () => {
 
     await page.waitForLoadState('networkidle');
 
-    // Test mobile view
+    // Test mobile view — wait for real heading content, not an arbitrary sleep
     await page.setViewportSize({ width: 375, height: 667 });
+    await expect(page.locator('h1')).toBeVisible();
 
-    await page.waitForTimeout(500);
-
-    const pageContent = page.locator('body');
-    await expect(pageContent).toBeVisible();
-
-    // Test desktop view
+    // Test desktop view — same condition-based wait
     await page.setViewportSize({ width: 1280, height: 720 });
-
-    await page.waitForTimeout(500);
-    await expect(pageContent).toBeVisible();
+    await expect(page.locator('h1')).toBeVisible();
   });
 });

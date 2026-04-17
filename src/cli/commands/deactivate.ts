@@ -1,7 +1,8 @@
 import type { Command } from "commander";
+import { warnDeprecation } from "../utils/run-helpers.js";
 
 async function deactivateAction(): Promise<void> {
-  console.warn("[compat] `deactivate` has been retired from the canonical surface.");
+  warnDeprecation("[compat] `deactivate` has been retired from the canonical surface.");
   console.error(
     "There is no root-owned active team mode to stop anymore. Use the package runtime/session surfaces instead.",
   );

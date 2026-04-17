@@ -1,29 +1,22 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
 
-  type BranchStatus = 'open_pr' | 'merged' | 'active' | 'stale';
-
-  interface PrInfo {
-    number: number;
-    title: string;
-    state: string;
-    url: string | null;
-  }
+  // Status values match the server's /api/v5/autonomous-branches response (kebab-case).
+  type BranchStatus = 'open-pr' | 'merged' | 'active' | 'stale';
 
   interface AutonomousBranch {
     name: string;
     cycle: string;
     /** ISO 8601 timestamp of the branch tip commit */
-    createdAt: string;
-    sha: string;
-    age: string;
+    lastCommitAt: string;
     ageMs: number;
     status: BranchStatus;
-    pr: PrInfo | null;
+    prNumber: number | null;
+    prUrl: string | null;
   }
 
-  /** Must match STALE_DAYS × 24h in src/server/routes/branches.ts (currently 30 days) */
-  const STALE_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000;
+  /** Must match STALE_DAYS × 24h in listAutonomousBranches (packages/server — currently 3 days) */
+  const STALE_THRESHOLD_MS = 3 * 24 * 60 * 60 * 1000;
   const POLL_INTERVAL_S    = 30;
 
   let branches: AutonomousBranch[] = $state([]);
@@ -57,7 +50,7 @@
     if (!silent) loading = true;
     error = null;
     try {
-      const res = await fetch('/api/v1/branches');
+      const res = await fetch('/api/v5/autonomous-branches');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       branches = (json.data ?? []) as AutonomousBranch[];
@@ -74,8 +67,10 @@
     deletingBranch   = branch.name;
     deleteError      = null;
     try {
+      // The v5 wildcard route captures the full path after the prefix,
+      // so we pass the branch name as URL path segments (no encodeURIComponent).
       const res = await fetch(
-        `/api/v1/branches/${encodeURIComponent(branch.name)}`,
+        `/api/v5/autonomous-branches/${branch.name}`,
         { method: 'DELETE' },
       );
       if (!res.ok) {
@@ -99,7 +94,7 @@
     for (const branch of staleBranches) {
       try {
         const res = await fetch(
-          `/api/v1/branches/${encodeURIComponent(branch.name)}`,
+          `/api/v5/autonomous-branches/${branch.name}`,
           { method: 'DELETE' },
         );
         if (!res.ok) {
@@ -156,14 +151,14 @@
   }
 
   const STATUS_COLOR: Record<BranchStatus, string> = {
-    'open_pr': 'var(--color-info)',
+    'open-pr': 'var(--color-info)',
     'merged':  'var(--color-success)',
     'active':  'var(--color-brand)',
     'stale':   'var(--color-warning)',
   };
 
   const STATUS_LABEL: Record<BranchStatus, string> = {
-    'open_pr': 'Open PR',
+    'open-pr': 'Open PR',
     'merged':  'Merged',
     'active':  'Active',
     'stale':   'Stale',
@@ -183,7 +178,7 @@
   });
 
   // ── Derived counts ─────────────────────────────────────────────────────────
-  let openCount   = $derived(branches.filter((b) => b.status === 'open_pr').length);
+  let openCount   = $derived(branches.filter((b) => b.status === 'open-pr').length);
   let activeCount = $derived(branches.filter((b) => b.status === 'active').length);
   let mergedCount = $derived(branches.filter((b) => b.status === 'merged').length);
   let staleCount  = $derived(branches.filter((b) => b.status === 'stale').length);
@@ -232,7 +227,7 @@
 <svelte:window onclick={cancelConfirm} />
 <div class="page-header">
   <div>
-    <h1 class="page-title">⎇ Autonomous Branches</h1>
+    <h2 class="page-title">⎇ Autonomous Branches</h2>
     <p class="page-subtitle">
       Git hygiene for <code>autonomous/*</code> cycles ·
       branches with no open PR become <strong>stale</strong> after 30 days
@@ -274,15 +269,15 @@
     class:active={activeFilter === 'all'}
     onclick={() => (activeFilter = 'all')}
   >
-    <span class="pill-count">{branches.length}</span>
+    <span class="pill-count" id="branches-stat-total">{branches.length}</span>
     <span class="pill-label">All</span>
   </button>
   <button
     class="pill open-pr"
-    class:active={activeFilter === 'open_pr'}
-    onclick={() => (activeFilter = 'open_pr')}
+    class:active={activeFilter === 'open-pr'}
+    onclick={() => (activeFilter = 'open-pr')}
   >
-    <span class="pill-count">{openCount}</span>
+    <span class="pill-count" id="branches-stat-open">{openCount}</span>
     <span class="pill-label">Open PR</span>
   </button>
   <button
@@ -298,7 +293,7 @@
     class:active={activeFilter === 'merged'}
     onclick={() => (activeFilter = 'merged')}
   >
-    <span class="pill-count">{mergedCount}</span>
+    <span class="pill-count" id="branches-stat-merged">{mergedCount}</span>
     <span class="pill-label">Merged</span>
   </button>
   <button
@@ -306,7 +301,7 @@
     class:active={activeFilter === 'stale'}
     onclick={() => (activeFilter = 'stale')}
   >
-    <span class="pill-count">{staleCount}</span>
+    <span class="pill-count" id="branches-stat-stale">{staleCount}</span>
     <span class="pill-label">Stale</span>
   </button>
 
@@ -319,6 +314,7 @@
 <div class="search-bar">
   <span class="search-icon" aria-hidden="true">⌕</span>
   <input
+    id="branches-search"
     class="search-input"
     type="search"
     bind:value={searchQuery}
@@ -332,6 +328,19 @@
   {/if}
 </div>
 
+<!--
+  Loading sentinel: always present in the DOM so E2E tests can poll
+  `document.getElementById('branches-loading').hidden` to detect when the
+  initial fetch (or a manual refresh) completes.  The element is visually
+  invisible; the skeleton cards below are the actual user-facing indicator.
+-->
+<span
+  id="branches-loading"
+  hidden={!loading}
+  aria-hidden="true"
+  style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;"
+></span>
+
 {#if deleteError}
   <div class="error-banner">
     <span style="white-space:pre-wrap;">Delete failed: {deleteError}</span>
@@ -340,7 +349,7 @@
 {/if}
 
 {#if error}
-  <div class="error-banner">
+  <div id="branches-error" class="error-banner">
     <span>{error}</span>
     <button class="close-btn" onclick={() => fetchBranches()} aria-label="Retry">Retry</button>
   </div>
@@ -360,13 +369,13 @@
     {/each}
   </div>
 {:else if branches.length === 0 && !error}
-  <div class="empty-state">
+  <div id="branches-empty" class="empty-state">
     <span class="empty-icon">⎇</span>
     <p>No <code>autonomous/*</code> branches found.</p>
     <p class="empty-hint">Start an autonomous cycle to create one.</p>
   </div>
 {:else if filteredBranches.length === 0 && (activeFilter !== 'all' || searchQuery)}
-  <div class="empty-state">
+  <div id="branches-filter-empty" class="empty-state">
     <span class="empty-icon">⎇</span>
     {#if searchQuery && activeFilter !== 'all'}
       <p>No <strong>{STATUS_LABEL[activeFilter as BranchStatus]}</strong> branches matching <code>{searchQuery}</code>.</p>
@@ -384,7 +393,7 @@
     </button>
   </div>
 {:else if filteredBranches.length > 0}
-  <div class="card" style="padding:0;overflow:hidden;">
+  <div id="branches-table-wrap" class="card" style="padding:0;overflow:hidden;">
     <table class="data-table branches-table">
       <thead>
         <tr>
@@ -406,10 +415,10 @@
             </button>
           </th>
           <th>PR</th>
-          <th></th>
+          <th>Actions</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody id="branches-tbody">
         {#each filteredBranches as branch (branch.name)}
           <tr
             class:stale-row={branch.status === 'stale'}
@@ -460,7 +469,7 @@
 
             <!-- Last commit timestamp -->
             <td>
-              <span class="mono muted">{formatDate(branch.createdAt)}</span>
+              <span class="mono muted">{formatDate(branch.lastCommitAt)}</span>
             </td>
 
             <!-- Status badge -->
@@ -475,12 +484,12 @@
 
             <!-- PR link -->
             <td>
-              {#if branch.pr?.url}
-                <a class="pr-link" href={branch.pr.url} target="_blank" rel="noopener">
-                  #{branch.pr.number} ↗
+              {#if branch.prUrl}
+                <a class="pr-link" href={branch.prUrl} target="_blank" rel="noopener">
+                  #{branch.prNumber} ↗
                 </a>
-              {:else if branch.pr}
-                <span class="mono muted">#{branch.pr.number}</span>
+              {:else if branch.prNumber != null}
+                <span class="mono muted">#{branch.prNumber}</span>
               {:else}
                 <span class="muted">—</span>
               {/if}

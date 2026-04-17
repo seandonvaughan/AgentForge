@@ -9,7 +9,7 @@ import {
   generateRetrospective,
   type SprintData,
   type SprintDataItem,
-} from "../../src/autonomous/sprint-retrospective.js";
+} from "../../packages/core/src/autonomous/sprint-retrospective.js";
 import type { TaskMemory } from "../../src/types/lifecycle.js";
 
 // ---------------------------------------------------------------------------

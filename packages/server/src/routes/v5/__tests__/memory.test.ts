@@ -330,6 +330,46 @@ describe('GET /api/v5/memory', () => {
     expect(body.data[0]!.id).toBe('e1');
   });
 
+  // ── meta.returned field ──────────────────────────────────────────────────
+
+  it('meta.returned equals data.length', async () => {
+    appendJsonlEntry('cycle-outcome', { id: 'e1', value: 'x', createdAt: '2026-04-08T10:00:00.000Z' });
+    appendJsonlEntry('gate-verdict',  { id: 'e2', value: 'y', createdAt: '2026-04-08T10:01:00.000Z' });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory' });
+    const body = JSON.parse(res.body) as { data: unknown[]; meta: { returned: number } };
+    expect(body.meta.returned).toBe(body.data.length);
+  });
+
+  // ── filter applies to full corpus, not capped window ─────────────────────
+  // Regression guard: agents/types are computed from ALL entries; type filter
+  // must see every entry, not just the first MEMORY_LIMIT rows.
+
+  it('types array includes types from all entries, not only the first 200', async () => {
+    // Write 5 gate-verdict entries with early timestamps so they sort to the
+    // end of the full corpus (beyond a hypothetical 200-entry cap window).
+    for (let i = 0; i < 5; i++) {
+      appendJsonlEntry('gate-verdict', {
+        id: `gv-old-${i}`,
+        value: `old verdict ${i}`,
+        createdAt: `2020-01-0${i + 1}T00:00:00.000Z`,
+      });
+    }
+    // Write 2 recent cycle-outcome entries that would be within any cap window.
+    appendJsonlEntry('cycle-outcome', { id: 'co-new-1', value: 'new', createdAt: '2026-04-08T10:00:00.000Z' });
+    appendJsonlEntry('cycle-outcome', { id: 'co-new-2', value: 'new', createdAt: '2026-04-08T10:01:00.000Z' });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory?type=cycle-outcome' });
+    const body = JSON.parse(res.body) as { data: Array<{ id: string }>; types: string[]; meta: { total: number } };
+
+    // types array must include gate-verdict even though ?type=cycle-outcome is active
+    expect(body.types).toContain('cycle-outcome');
+    expect(body.types).toContain('gate-verdict');
+    // Only cycle-outcome entries in data
+    expect(body.meta.total).toBe(2);
+    expect(body.data.every(e => (e as { type?: string }).type === 'cycle-outcome')).toBe(true);
+  });
+
   // ── memories.json always-merge behaviour ────────────────────────────────
   // Previously memories.json was a "fallback when empty" — curated entries
   // disappeared as soon as any JSONL entry existed (the root cause of the

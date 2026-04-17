@@ -113,7 +113,7 @@
         };
       }
 
-      const res = await fetch(`/api/v5/cycles/${approval.cycleId}/approve`, {
+      const res = await fetch(`/api/v5/cycles/${approval.cycleId}/approval`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),

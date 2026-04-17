@@ -544,13 +544,18 @@ export async function cyclesRoutes(
     }
   });
 
-  // POST /api/v5/cycles/:id/approve ──────────────────────────────────────────
+  // POST /api/v5/cycles/:id/approval (canonical) ──────────────────────────────
+  // POST /api/v5/cycles/:id/approve  (legacy alias — kept for backward compat)
+  //
   // Writes the approval-decision.json that BudgetApproval.pollDecisionFile
   // is waiting for. Body shape: { approvedItemIds: string[], rejectedItemIds?: string[] }
   // If body.approveAll === true, every within-budget item is approved and
   // every overflow item rejected (the common "yes, ship the within-budget
-  // batch" path). Drives the dashboard approval modal.
-  app.post('/api/v5/cycles/:id/approve', async (req, reply) => {
+  // batch" path). Drives the dashboard ApprovalModal (via approvalsStore SSE).
+  //
+  // Both /approval (GET+POST) and /approve (POST alias) share the same handler
+  // so the REST resource is uniform: GET /approval reads, POST /approval writes.
+  async function handleApprovalDecision(req: import('fastify').FastifyRequest, reply: import('fastify').FastifyReply) {
     const { id } = req.params as { id: string };
     if (!SAFE_ID.test(id)) return reply.status(400).send({ error: 'Invalid cycle id' });
     const br = baseForRequest(req);
@@ -616,7 +621,12 @@ export async function cyclesRoutes(
     } catch (err) {
       return reply.status(500).send({ error: `Failed to write decision: ${(err as Error).message}` });
     }
-  });
+  }
+
+  // Canonical endpoint: GET+POST share the same /approval resource URL.
+  app.post('/api/v5/cycles/:id/approval', handleApprovalDecision);
+  // Legacy alias — kept so existing CLI/curl scripts still work.
+  app.post('/api/v5/cycles/:id/approve', handleApprovalDecision);
 
   // POST /api/v5/cycles/:id/stop ────────────────────────────────────────────
   // Graceful stop: SIGTERM to the process group, wait 10s, then SIGKILL.

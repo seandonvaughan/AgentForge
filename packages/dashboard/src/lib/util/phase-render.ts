@@ -130,19 +130,35 @@ export function resolveAgentResponseContent(raw: string): string {
   return raw;
 }
 
+export interface AgentRunSection {
+  agentId: string;
+  response: string;
+  /** Cost in USD for this individual run, if available in the phase file. */
+  costUsd?: number;
+  /** Wall-clock duration in milliseconds for this run, if available. */
+  durationMs?: number;
+}
+
 /** Collect markdown prose from each agentRun's response field.
  *  JSON-encoded responses (e.g. gate phase verdict objects) are unwrapped
- *  into readable prose by resolveAgentResponseContent(). */
+ *  into readable prose by resolveAgentResponseContent().
+ *  Cost and duration metadata are forwarded so callers can render per-run
+ *  context chips without switching to the Agents tab. */
 export function agentRunSections(
   data: Record<string, unknown>,
-): Array<{ agentId: string; response: string }> {
+): AgentRunSection[] {
   const runs = data['agentRuns'];
   if (!Array.isArray(runs)) return [];
   return (runs as unknown[])
     .filter((r): r is Record<string, unknown> => r != null && typeof r === 'object')
     .filter((r) => typeof r['response'] === 'string' && (r['response'] as string).trim())
-    .map((r) => ({
-      agentId: String(r['agentId'] ?? 'agent'),
-      response: resolveAgentResponseContent(r['response'] as string),
-    }));
+    .map((r) => {
+      const section: AgentRunSection = {
+        agentId: String(r['agentId'] ?? 'agent'),
+        response: resolveAgentResponseContent(r['response'] as string),
+      };
+      if (typeof r['costUsd'] === 'number') section.costUsd = r['costUsd'];
+      if (typeof r['durationMs'] === 'number') section.durationMs = r['durationMs'];
+      return section;
+    });
 }

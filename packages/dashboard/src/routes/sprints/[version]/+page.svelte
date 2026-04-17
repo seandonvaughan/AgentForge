@@ -47,6 +47,11 @@
     theme?: string;
     versionDecision?: VersionDecision;
     items: SprintItem[];
+    // Extended metadata
+    ceoBrief?: string;
+    autonomyGates?: Record<string, string>;
+    newFiles?: string[];
+    newTestFiles?: string[];
   }
 
   let sprint: SprintDetail | null = $state(null);
@@ -353,6 +358,14 @@
     />
   </div>
 
+  <!-- CEO Brief (v5.4-era strategic note) -->
+  {#if sprint.ceoBrief}
+    <div class="ceo-brief-block" style="margin-bottom:var(--space-5);">
+      <span class="ceo-brief-label">Strategic Note</span>
+      <p class="ceo-brief-text">{sprint.ceoBrief}</p>
+    </div>
+  {/if}
+
   <!-- Kanban Board -->
   <div class="section-heading">
     <span class="section-heading-label">Sprint Board</span>
@@ -403,6 +416,9 @@
                       <span class="kanban-tag">{tag}</span>
                     {/each}
                   </div>
+                {/if}
+                {#if item.source}
+                  <div class="kanban-card-source">{item.source}</div>
                 {/if}
                 {#if expandedItemId === item.id && item.description}
                   <div class="kanban-card-desc">{item.description}</div>
@@ -535,6 +551,8 @@
           </li>
         {/each}
       </ul>
+    {:else if sprint.status === 'in_progress' || sprint.status === 'pending'}
+      <div class="section-empty">Findings will be populated after sprint review.</div>
     {:else}
       <div class="section-empty">No audit findings recorded for this sprint.</div>
     {/if}
@@ -573,6 +591,55 @@
             {/each}
           </div>
         </div>
+      {/if}
+    </div>
+  {/if}
+
+  <!-- Autonomy Gates (v5.4-era gate verdicts) -->
+  {#if sprint.autonomyGates && Object.keys(sprint.autonomyGates).length > 0}
+    {@const gates = Object.entries(sprint.autonomyGates)}
+    <div class="section-heading">
+      <span class="section-heading-label">Autonomy Gates</span>
+      <span class="section-heading-count">{gates.length}</span>
+    </div>
+    <div class="card" style="margin-bottom:var(--space-4);">
+      <ul class="gate-list">
+        {#each gates as [name, verdict]}
+          {@const passed = verdict.toUpperCase().startsWith('PASSED')}
+          <li class="gate-row">
+            <span class="gate-status-dot" class:passed class:failed={!passed}></span>
+            <span class="gate-name">{name}</span>
+            <span class="gate-verdict {passed ? 'gate-passed' : 'gate-failed'}">{verdict}</span>
+          </li>
+        {/each}
+      </ul>
+    </div>
+  {/if}
+
+  <!-- New / Changed Files (v5.9+ era) -->
+  {#if (sprint.newTestFiles && sprint.newTestFiles.length > 0) || (sprint.newFiles && sprint.newFiles.length > 0)}
+    <div class="section-heading">
+      <span class="section-heading-label">Changed Files</span>
+      {#if sprint.newFiles}
+        <span class="section-heading-count">{(sprint.newFiles?.length ?? 0) + (sprint.newTestFiles?.length ?? 0)} files</span>
+      {/if}
+    </div>
+    <div class="card" style="margin-bottom:var(--space-4); padding-bottom: var(--space-3);">
+      {#if sprint.newTestFiles && sprint.newTestFiles.length > 0}
+        <div class="file-group-label">Test Files</div>
+        <ul class="file-list">
+          {#each sprint.newTestFiles as f}
+            <li class="file-item file-item-test">{f}</li>
+          {/each}
+        </ul>
+      {/if}
+      {#if sprint.newFiles && sprint.newFiles.length > 0}
+        <div class="file-group-label" style={sprint.newTestFiles?.length ? 'margin-top:var(--space-3);' : ''}>Source Files</div>
+        <ul class="file-list">
+          {#each sprint.newFiles as f}
+            <li class="file-item">{f}</li>
+          {/each}
+        </ul>
       {/if}
     </div>
   {/if}
@@ -1357,5 +1424,147 @@
     color: var(--color-text-faint);
     border: 1px solid rgba(100, 116, 139, 0.2);
     font-family: var(--font-mono);
+  }
+
+  /* Kanban card source chip */
+  .kanban-card-source {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: var(--radius-full);
+    background: rgba(100, 116, 139, 0.08);
+    color: var(--color-text-faint);
+    border: 1px solid rgba(100, 116, 139, 0.18);
+    font-family: var(--font-mono);
+    align-self: flex-start;
+    margin-top: var(--space-1);
+  }
+
+  /* CEO Brief block */
+  .ceo-brief-block {
+    border: 1px solid var(--color-border);
+    border-left: 3px solid var(--color-brand);
+    border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-4);
+    background: rgba(91, 138, 245, 0.04);
+  }
+
+  .ceo-brief-label {
+    display: block;
+    font-size: var(--text-xs);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-brand);
+    opacity: 0.75;
+    margin-bottom: var(--space-1);
+  }
+
+  .ceo-brief-text {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+    font-style: italic;
+    line-height: 1.6;
+  }
+
+  /* Autonomy gates */
+  .gate-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .gate-row {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3);
+    font-size: var(--text-sm);
+    padding: var(--space-2) var(--space-2);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-1);
+  }
+
+  .gate-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 4px;
+    background: var(--color-text-faint);
+  }
+
+  .gate-status-dot.passed {
+    background: var(--color-success);
+    box-shadow: 0 0 4px rgba(34, 197, 94, 0.4);
+  }
+
+  .gate-status-dot.failed {
+    background: var(--color-danger);
+    box-shadow: 0 0 4px rgba(224, 90, 90, 0.4);
+  }
+
+  .gate-name {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--color-text);
+    min-width: 130px;
+    flex-shrink: 0;
+  }
+
+  .gate-verdict {
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    flex: 1;
+  }
+
+  .gate-passed {
+    color: var(--color-success);
+    opacity: 0.85;
+  }
+
+  .gate-failed {
+    color: var(--color-danger);
+    opacity: 0.85;
+  }
+
+  /* File change lists */
+  .file-group-label {
+    font-size: var(--text-xs);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-faint);
+    margin-bottom: var(--space-2);
+  }
+
+  .file-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .file-item {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    padding: 2px var(--space-2);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-1);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .file-item-test {
+    color: var(--color-success);
+    opacity: 0.8;
+    background: rgba(34, 197, 94, 0.04);
   }
 </style>

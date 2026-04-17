@@ -132,6 +132,29 @@ describe('agentRunSections', () => {
     const result = agentRunSections(data);
     expect(result[0]!.agentId).toBe('agent');
   });
+
+  it('forwards costUsd and durationMs when present', () => {
+    const data = {
+      agentRuns: [{ agentId: 'ceo', response: 'Approved.', costUsd: 0.1224, durationMs: 13018 }],
+    };
+    const result = agentRunSections(data);
+    expect(result[0]!.costUsd).toBeCloseTo(0.1224);
+    expect(result[0]!.durationMs).toBe(13018);
+  });
+
+  it('omits costUsd and durationMs when not present in run object', () => {
+    const data = { agentRuns: [{ agentId: 'reviewer', response: '## Review\nOK.' }] };
+    const result = agentRunSections(data);
+    expect(result[0]!.costUsd).toBeUndefined();
+    expect(result[0]!.durationMs).toBeUndefined();
+  });
+
+  it('omits costUsd when value is not a number (e.g. string)', () => {
+    const data = { agentRuns: [{ agentId: 'a', response: 'OK', costUsd: '0.12', durationMs: null }] };
+    const result = agentRunSections(data);
+    expect(result[0]!.costUsd).toBeUndefined();
+    expect(result[0]!.durationMs).toBeUndefined();
+  });
 });
 
 // ─── markdownSections ────────────────────────────────────────────────────────

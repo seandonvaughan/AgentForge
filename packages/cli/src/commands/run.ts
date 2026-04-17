@@ -1,5 +1,11 @@
 import { Command } from 'commander';
 import type { RuntimeMode } from '@agentforge/core';
+import {
+  invokeAgentRun,
+  delegateTask,
+  listRunHistory,
+  getRunSessionDetails,
+} from '@agentforge/core';
 
 const VALID_RUNTIME_MODES: RuntimeMode[] = ['auto', 'sdk', 'claude-code-compat'];
 
@@ -93,7 +99,6 @@ function registerInvokeCommand(
       }
 
       try {
-        const { invokeAgentRun } = await import('@agentforge/core');
         const response = await invokeAgentRun({
           projectRoot: invokeOptions.projectRoot,
           agent: invokeOptions.agent,
@@ -172,7 +177,6 @@ function registerDelegateCommand(
       }
 
       try {
-        const { delegateTask } = await import('@agentforge/core');
         const delegated = await delegateTask({
           projectRoot: delegateOptions.projectRoot,
           task,
@@ -234,7 +238,6 @@ async function runHistoryAction(options: HistoryOptions): Promise<void> {
   }
 
   try {
-    const { listRunHistory } = await import('@agentforge/core');
     const runs = await listRunHistory(options.projectRoot, limit);
 
     if (runs.length === 0) {
@@ -260,7 +263,6 @@ async function runHistoryAction(options: HistoryOptions): Promise<void> {
 
 async function runShowAction(sessionId: string, options: ShowOptions): Promise<void> {
   try {
-    const { getRunSessionDetails } = await import('@agentforge/core');
     const details = await getRunSessionDetails(options.projectRoot, sessionId);
 
     if (!details) {

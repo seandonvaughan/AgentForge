@@ -1,7 +1,8 @@
 import type { Command } from "commander";
+import { warnDeprecation } from "../utils/run-helpers.js";
 
 async function activateAction(): Promise<void> {
-  console.warn("[compat] `activate` has been retired from the canonical surface.");
+  warnDeprecation("[compat] `activate` has been retired from the canonical surface.");
   console.error(
     "Root-only live team mode is no longer supported. Use `agentforge run invoke`, `agentforge run delegate --run`, `agentforge cycle run`, or the package dashboard/server flows instead.",
   );

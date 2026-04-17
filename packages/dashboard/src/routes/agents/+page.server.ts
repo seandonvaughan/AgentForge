@@ -18,6 +18,10 @@ export interface AgentListItem {
   model: 'opus' | 'sonnet' | 'haiku';
   description: string | null;
   role: string | null;
+  /** Organisational team grouping (e.g. "strategic", "runtime", "quality"). */
+  team: string | null;
+  /** Invocation effort tier from YAML ("max" | "high" | "medium" | "low"). */
+  effort: string | null;
 }
 
 /**
@@ -89,24 +93,34 @@ function findProjectRoot(): string {
   return process.cwd();
 }
 
-export const load: PageServerLoad = () => {
-  const root = findProjectRoot();
+/**
+ * Core data-loading logic extracted so it can be unit-tested independently.
+ *
+ * Reads every *.yaml file under `<root>/.agentforge/agents/`, extracts the
+ * top-level fields used by the dashboard list view, and returns a sorted array
+ * of AgentListItem.  Malformed or unreadable files are silently skipped.
+ *
+ * Follows the same `_helperName(projectRoot)` export convention used by
+ * org/+page.server.ts (_buildOrgGraph) and flywheel/+page.server.ts
+ * (_computeMetrics) so hermetic unit tests can exercise the SSR path.
+ */
+export function _loadAgents(root: string): AgentListItem[] {
   const agentsDir = join(root, '.agentforge', 'agents');
 
-  if (!existsSync(agentsDir)) return { agents: [] as AgentListItem[] };
+  if (!existsSync(agentsDir)) return [];
 
   let files: string[] = [];
   try {
     files = readdirSync(agentsDir).filter(f => f.endsWith('.yaml'));
   } catch {
-    return { agents: [] as AgentListItem[] };
+    return [];
   }
 
   const agents: AgentListItem[] = files.flatMap(f => {
     const agentId = f.replace(/\.ya?ml$/, '');
     try {
       const content = readFileSync(join(agentsDir, f), 'utf-8');
-      const raw = extractYamlFields(content, ['name', 'model', 'description', 'role']);
+      const raw = extractYamlFields(content, ['name', 'model', 'description', 'role', 'team', 'effort']);
       const modelRaw = raw.model ?? 'sonnet';
       const model: 'opus' | 'sonnet' | 'haiku' =
         modelRaw === 'opus' || modelRaw === 'haiku' ? modelRaw : 'sonnet';
@@ -116,6 +130,8 @@ export const load: PageServerLoad = () => {
         model,
         description: raw.description?.trim() ?? null,
         role: raw.role ?? null,
+        team: raw.team ?? null,
+        effort: raw.effort ?? null,
       }];
     } catch {
       return [];
@@ -123,5 +139,10 @@ export const load: PageServerLoad = () => {
   });
 
   agents.sort((a, b) => a.agentId.localeCompare(b.agentId));
+  return agents;
+}
+
+export const load: PageServerLoad = () => {
+  const agents = _loadAgents(findProjectRoot());
   return { agents };
 };

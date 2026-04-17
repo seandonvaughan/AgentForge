@@ -1,15 +1,22 @@
 import type { Command } from "commander";
-import { rebuildTeamCompatibility } from "../compat/package-team-services.js";
+import { rebuildTeamService } from "@agentforge/core";
+import { warnDeprecation } from "../utils/run-helpers.js";
 
 async function rebuildAction(options: {
   autoApply?: boolean;
   upgrade?: boolean;
 }): Promise<void> {
-  console.warn("[compat] `rebuild` is a root compatibility wrapper. Prefer `agentforge team rebuild` from the package CLI.");
-  await rebuildTeamCompatibility({
-    ...(options.autoApply ? { autoApply: true } : {}),
-    ...(options.upgrade ? { upgrade: true } : {}),
-  });
+  warnDeprecation("[compat] `rebuild` is a root compatibility wrapper. Prefer `agentforge team rebuild` from the package CLI.");
+  try {
+    const exitCode = await rebuildTeamService(process.cwd(), {
+      ...(options.autoApply ? { autoApply: true } : {}),
+      ...(options.upgrade ? { upgrade: true } : {}),
+    });
+    if (exitCode !== 0) process.exitCode = exitCode;
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
 }
 
 export default function registerRebuildCommand(program: Command): void {

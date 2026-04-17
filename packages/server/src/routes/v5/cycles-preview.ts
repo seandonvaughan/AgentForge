@@ -23,12 +23,50 @@ interface CyclesPreviewOpts {
   loadAutonomous?: () => Promise<AutonomousModuleLike>;
 }
 
+interface CycleConfig {
+  budget: { perCycleUsd: number; perItemUsd?: number };
+  limits: { maxItemsPerSprint: number };
+  sourcing?: {
+    lookbackDays?: number;
+    minProposalConfidence?: number;
+    includeTodoMarkers?: boolean;
+    todoMarkerPattern?: string;
+  };
+  scoring?: {
+    agentId?: string;
+    maxRetries?: number;
+    fallbackToStatic?: boolean;
+  };
+}
+
+interface ScoringResult {
+  withinBudget: unknown[];
+  requiresApproval: unknown[];
+  totalEstimatedCostUsd?: number;
+  budgetOverflowUsd?: number;
+  summary?: string;
+  warnings?: string[];
+  fallback?: 'static' | null;
+}
+
 interface AutonomousModuleLike {
-  previewCycle: (options: {
-    projectRoot: string;
-    budgetUsd?: number;
-    maxItems?: number;
-  }) => Promise<unknown>;
+  loadCycleConfig: (projectRoot: string) => CycleConfig;
+  // Use `any` on all constructor parameters AND instance method signatures so
+  // concrete types from @agentforge/core satisfy this duck-type interface.
+  // TypeScript's contravariance rules block narrower types at both the
+  // constructor-param level (e.g. ProposalAdapter vs unknown) and the
+  // method-param level (e.g. BacklogItem[] vs unknown[]). Using `any` makes
+  // assignment bi-directional at all type positions.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ProposalToBacklog: new (...args: any[]) => { build: () => Promise<any[]> };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ScoringPipeline: new (...args: any[]) => { scoreWithFallback: (backlog: any[]) => Promise<ScoringResult> };
+  RuntimeAdapter: new (opts: { cwd: string }) => unknown;
+  createAutonomousTelemetryAdapters?: (projectRoot: string) => {
+    proposalAdapter: unknown;
+    scoringAdapter: unknown;
+    close: () => void;
+  };
 }
 
 interface PreviewBody {
@@ -96,15 +134,90 @@ export async function cyclesPreviewRoutes(
     let result;
     try {
       const mod = await loadAutonomous();
-      result = await mod.previewCycle({
-        projectRoot,
-        ...(typeof (body as PreviewBody).budgetUsd === 'number'
-          ? { budgetUsd: (body as PreviewBody).budgetUsd }
-          : {}),
-        ...(typeof (body as PreviewBody).maxItems === 'number'
-          ? { maxItems: (body as PreviewBody).maxItems }
-          : {}),
-      });
+
+      // Apply any per-request budget / item-count overrides onto the loaded config.
+      const config = mod.loadCycleConfig(projectRoot);
+      if (typeof (body as PreviewBody).budgetUsd === 'number') {
+        config.budget.perCycleUsd = (body as PreviewBody).budgetUsd!;
+      }
+      if (typeof (body as PreviewBody).maxItems === 'number') {
+        config.limits.maxItemsPerSprint = (body as PreviewBody).maxItems!;
+      }
+
+      // Telemetry adapters — use module-supplied factory when available so tests
+      // can inject lightweight stubs; fall back to no-op adapters otherwise.
+      const telemetry = mod.createAutonomousTelemetryAdapters
+        ? mod.createAutonomousTelemetryAdapters(projectRoot)
+        : { proposalAdapter: {}, scoringAdapter: {}, close: () => {} };
+
+      try {
+        const backlog = await new mod.ProposalToBacklog(
+          telemetry.proposalAdapter,
+          projectRoot,
+          config,
+        ).build();
+
+        if (backlog.length === 0) {
+          result = {
+            candidateCount: 0,
+            rankedItems: [],
+            totalEstimatedCostUsd: 0,
+            budgetOverflowUsd: 0,
+            withinBudget: 0,
+            requiresApproval: 0,
+            summary: 'No backlog items found — nothing to score.',
+            warnings: ['Empty backlog: no proposals or TODO(autonomous) markers detected.'],
+            durationMs: Date.now() - startedAt,
+            scoringCostUsd: 0,
+            fallback: null,
+          };
+        } else {
+          // Full no-op stub matching the CycleLogger interface. All methods
+          // must be present: ScoringPipeline receives this as its logger and
+          // TypeScript strict builds will surface missing fields as errors.
+          const noopLogger = {
+            logPhaseStart: () => {},
+            logSprintAssigned: () => {},
+            logPhaseResult: () => {},
+            logPhaseFailure: () => {},
+            logScoring: () => {},
+            logScoringFallback: () => {},
+            logApprovalPending: () => {},
+            logApprovalDecision: () => {},
+            logKillSwitch: () => {},
+            logCycleResult: () => {},
+            logGitEvent: () => {},
+            logTestRun: () => {},
+            logPREvent: () => {},
+          };
+
+          const pipeline = new mod.ScoringPipeline(
+            new mod.RuntimeAdapter({ cwd: projectRoot }),
+            telemetry.scoringAdapter,
+            config,
+            noopLogger,
+          );
+
+          const scored = await pipeline.scoreWithFallback(backlog);
+          const rankedItems = [...(scored.withinBudget ?? []), ...(scored.requiresApproval ?? [])];
+
+          result = {
+            candidateCount: backlog.length,
+            rankedItems,
+            totalEstimatedCostUsd: Number(scored.totalEstimatedCostUsd ?? 0),
+            budgetOverflowUsd: Number(scored.budgetOverflowUsd ?? 0),
+            withinBudget: (scored.withinBudget ?? []).length,
+            requiresApproval: (scored.requiresApproval ?? []).length,
+            summary: String(scored.summary ?? ''),
+            warnings: Array.isArray(scored.warnings) ? scored.warnings : [],
+            durationMs: Date.now() - startedAt,
+            scoringCostUsd: 0,
+            fallback: scored.fallback ?? null,
+          };
+        }
+      } finally {
+        telemetry.close();
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return reply.status(500).send({ error: `Preview failed: ${msg}` });

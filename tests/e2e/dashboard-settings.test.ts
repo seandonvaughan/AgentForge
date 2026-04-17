@@ -105,4 +105,29 @@ test.describe('Settings Page', () => {
       await expect(darkButton).toHaveClass(/active/);
     }
   });
+
+  test('settings page is responsive', async ({ page }) => {
+    await page.goto('/settings');
+
+    await page.waitForLoadState('load').catch(() => {});
+
+    // Test mobile view
+    await page.setViewportSize({ width: 375, height: 667 });
+
+    // Wait for heading to render at mobile viewport
+    const heading = page.locator('h1, h2').filter({ hasText: /Settings/i }).first();
+    await expect(heading).toBeVisible({ timeout: 5000 });
+
+    // Test tablet view
+    await page.setViewportSize({ width: 768, height: 1024 });
+
+    // Wait for heading to render at tablet viewport
+    await expect(heading).toBeVisible({ timeout: 5000 });
+
+    // Test desktop view
+    await page.setViewportSize({ width: 1280, height: 720 });
+
+    // Wait for heading to render at desktop viewport
+    await expect(heading).toBeVisible({ timeout: 5000 });
+  });
 });

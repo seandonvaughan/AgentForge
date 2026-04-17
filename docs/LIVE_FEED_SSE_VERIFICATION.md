@@ -79,9 +79,11 @@ interface StreamEvent {
 | `tests/integration/v5-cycle-events-live-feed.test.ts` | 11 | v5 `EventStream` → FeedEvent shape, color/label mapping, subscription lifecycle, phase ordering |
 | `tests/integration/live-feed-wire-format.test.ts` | 14 | Wire-format round-trip; unnamed-vs-named guard; heartbeat filtering; malformed-JSON resilience |
 | `tests/integration/sse-live-feed.test.ts` | 7 | Multi-client delivery, field completeness, timestamp validity, phase lifecycle, client resilience |
-| `tests/e2e/dashboard-live.test.ts` | 17 | Playwright E2E: page title, connection dot, cycle row rendering, type badge, category tag, timestamp, filter, clear |
+| `tests/server/sse-cycle-events.test.ts` | 7 | Server-side SSE cycle event emission, write errors, client cleanup |
+| `packages/dashboard/src/__tests__/live-feed.test.ts` | 32 | Dashboard unit tests for live-feed utility functions |
+| `tests/e2e/dashboard-live.test.ts` | 19 | Playwright E2E: page title, connection dot, cycle row rendering, type badge, category tag, timestamp, filter, heartbeat filtering, clear |
 
-**Total: 116 unit/integration tests + 17 E2E tests covering the full SSE → render pipeline.**
+**Total: 138 unit/integration tests + 19 E2E tests covering the full SSE → render pipeline.**
 
 > **Note**: `live-feed-rendering.test.ts` was upgraded from inline mirrors to real imports
 > (`import { TYPE_COLORS, TYPE_LABELS, … } from 'live-feed.ts'`). The test now directly

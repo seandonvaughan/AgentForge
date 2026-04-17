@@ -100,7 +100,6 @@ Example:
 
 - `--budget <usd>` — Optional spend cap (not enforced in v4.4, recorded only)
 - `--parallel <agent1,agent2,...>` — Fan-out to multiple agents (P1-3, not yet implemented)
-- `--loop` — Iterative control loop (experimental, reserved for future use)
 
 ## Model Routing
 

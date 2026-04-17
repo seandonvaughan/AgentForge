@@ -12,6 +12,7 @@
     markdownSections,
     resolveAgentResponseContent,
     agentRunSections,
+    type AgentRunSection,
   } from '$lib/util/phase-render';
 
   const TERMINAL = new Set(['completed', 'failed', 'killed']);
@@ -742,7 +743,15 @@
                   <!-- Per-agent run responses rendered as markdown -->
                   {#each phaseAgentRuns as run, i}
                     <div class="phase-md-section">
-                      <div class="phase-md-label">agentRun[{i}] — {run.agentId}</div>
+                      <div class="phase-md-run-header">
+                        <span class="phase-md-label">{run.agentId}</span>
+                        {#if run.costUsd != null}
+                          <span class="phase-run-cost">${run.costUsd.toFixed(4)}</span>
+                        {/if}
+                        {#if run.durationMs != null}
+                          <span class="phase-run-dur">{formatDuration(run.durationMs)}</span>
+                        {/if}
+                      </div>
                       <div class="phase-md-body">
                         <MarkdownRenderer content={run.response} />
                       </div>
@@ -1107,12 +1116,35 @@
   .phase-md-section--error .phase-md-label {
     color: var(--color-danger);
   }
+  /* Run header: agent id label + cost/duration chips side by side */
+  .phase-md-run-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+  }
   .phase-md-label {
     font-size: var(--text-xs);
     font-family: var(--font-mono);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.06em;
+    color: var(--color-text-muted);
+  }
+  /* Cost chip next to the agent id in the run header */
+  .phase-run-cost {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-warning);
+    background: rgba(245,166,35,0.08);
+    border: 1px solid rgba(245,166,35,0.2);
+    border-radius: var(--radius-sm);
+    padding: 1px var(--space-2);
+  }
+  /* Duration chip next to the agent id in the run header */
+  .phase-run-dur {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
     color: var(--color-text-muted);
   }
   /* Rendered markdown prose gets a subtle left accent strip so it reads

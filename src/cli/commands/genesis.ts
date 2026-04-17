@@ -1,17 +1,24 @@
 import type { Command } from "commander";
-import { genesisTeamCompatibility } from "../compat/package-team-services.js";
+import { genesisTeamService } from "@agentforge/core";
+import { warnDeprecation } from "../utils/run-helpers.js";
 
 async function genesisAction(options: {
   interview?: boolean;
   domains?: string;
   yes?: boolean;
 }): Promise<void> {
-  console.warn("[compat] `genesis` is a root compatibility wrapper. Prefer `agentforge team genesis` from the package CLI.");
-  await genesisTeamCompatibility({
-    ...(options.interview ? { interview: true } : {}),
-    ...(options.domains ? { domains: options.domains } : {}),
-    ...(options.yes ? { yes: true } : {}),
-  });
+  warnDeprecation("[compat] `genesis` is a root compatibility wrapper. Prefer `agentforge team genesis` from the package CLI.");
+  try {
+    const exitCode = await genesisTeamService(process.cwd(), {
+      ...(options.interview ? { interview: true } : {}),
+      ...(options.domains ? { domains: options.domains } : {}),
+      ...(options.yes ? { yes: true } : {}),
+    });
+    if (exitCode !== 0) process.exitCode = exitCode;
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
 }
 
 export default function registerGenesisCommand(program: Command): void {

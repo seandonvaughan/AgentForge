@@ -8,6 +8,7 @@
     selectWorkspace,
   } from '$lib/stores/workspace';
   import { approvalsStore } from '$lib/stores/approvals.js';
+  import VersionBanner from '$lib/components/VersionBanner.svelte';
 
   let open = $state(false);
 
@@ -103,25 +104,37 @@
     {/if}
   </div>
 
-  {#each nav as group}
-    <div class="nav-section">
-      <div class="nav-label">{group.section}</div>
-      {#each group.items as item}
-        <a href={item.href} class="nav-item" class:active={page.url.pathname === item.href}>
-          {item.label}
-          {#if item.href === '/approvals' && pendingApprovalCount > 0}
-            <span class="nav-badge">{pendingApprovalCount}</span>
-          {/if}
-        </a>
-      {/each}
-    </div>
-  {/each}
+  <div class="nav-scroll">
+    {#each nav as group}
+      <div class="nav-section">
+        <div class="nav-label">{group.section}</div>
+        {#each group.items as item}
+          <a href={item.href} class="nav-item" class:active={page.url.pathname === item.href}>
+            {item.label}
+            {#if item.href === '/approvals' && pendingApprovalCount > 0}
+              <span class="nav-badge">{pendingApprovalCount}</span>
+            {/if}
+          </a>
+        {/each}
+      </div>
+    {/each}
+  </div>
+
+  <VersionBanner />
 </nav>
 
 <style>
   .sidebar {
-    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     max-height: 100vh;
+  }
+
+  .nav-scroll {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
   }
   .ws-switcher {
     position: relative;

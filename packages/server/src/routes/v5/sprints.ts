@@ -34,6 +34,12 @@ function normalizeSprint(raw: Record<string, unknown>, fallbackId: string) {
     tagsSeen?: string[];
   } | undefined;
 
+  // ceoBrief: some files use 'ceoBrief', earlier files use 'ceo_brief'
+  const ceoBrief = (entry['ceoBrief'] ?? entry['ceo_brief']) as string | undefined;
+  const autonomyGates = entry['autonomyGates'] as Record<string, string> | undefined;
+  const newFiles = entry['newFiles'] as string[] | undefined;
+  const newTestFiles = entry['newTestFiles'] as string[] | undefined;
+
   // Derive a canonical status from the phase/status field.
   // Covers historical phase names found across all sprint files (v4.x–v10.x):
   //   completed/done/release/released/shipped/closed/merged/learn/complete → completed
@@ -78,14 +84,20 @@ function normalizeSprint(raw: Record<string, unknown>, fallbackId: string) {
     autonomous,
     theme,
     versionDecision,
+    ceoBrief,
+    autonomyGates,
+    newFiles,
+    newTestFiles,
     items: items.map((item) => ({
       id: (item['id'] ?? '') as string,
       title: (item['title'] ?? '') as string,
       description: (item['description'] ?? '') as string,
       priority: (item['priority'] ?? 'P2') as string,
       assignee: (item['assignee'] ?? '') as string,
+      coAssignee: item['coAssignee'] as string | undefined,
       status: normalizeItemStatus(item['status']),
       estimatedCost: (item['estimatedCostUsd'] ?? item['estimatedCost']) as number | undefined,
+      completedAt: item['completedAt'] as string | undefined,
       tags: (item['tags'] ?? []) as string[],
       source: item['source'] as string | undefined,
     })),

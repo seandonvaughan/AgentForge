@@ -107,10 +107,51 @@
   let streaming = false;
 
   /**
+   * Build query-string params for the batch JSON endpoint (/api/v5/memory).
+   *
+   * Safe to pass type + search + agent here because the batch API computes
+   * `agents` and `types` from the FULL corpus before applying filters — so
+   * dropdown options and type chips remain complete even when a filter is
+   * active.  Including `agent` enables server-side filtering for datasets
+   * larger than the V5_MEMORY_LIMIT (200) window.
+   */
+  function buildBatchParams(): string {
+    const params = new URLSearchParams();
+    if (typeFilter && typeFilter !== 'all') params.set('type', typeFilter);
+    if (searchQuery.trim()) params.set('search', searchQuery.trim());
+    if (agentFilter && agentFilter !== 'all') params.set('agent', agentFilter);
+    return params.toString() ? `?${params.toString()}` : '';
+  }
+
+  /** Debounce timer for search-input triggered reloads. */
+  let searchReloadTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * Called from the search input's oninput event.
+   * Debounces API calls so we don't hammer the server on every keystroke.
+   * Client-side reactive filtering still runs instantly via $: filteredEntries.
+   */
+  function onSearchInput() {
+    if (searchReloadTimer) clearTimeout(searchReloadTimer);
+    searchReloadTimer = setTimeout(() => loadBatch(true), 400);
+  }
+
+  /**
+   * Called when the agent-filter select changes.
+   * Fires a server-side re-fetch immediately so results reflect entries
+   * beyond the initial 200-entry load window (server applies the filter
+   * before the cap, so this is necessary for correctness on large datasets).
+   */
+  function onAgentFilterChange() {
+    loadBatch(true);
+  }
+
+  /**
    * Load memory entries by consuming the NDJSON streaming endpoint
-   * (/api/v5/memory/stream).  Entries are appended to the reactive list as
-   * each line arrives, giving a "live feed" feel without waiting for the full
-   * corpus to buffer.
+   * (/api/v5/memory/stream).  The stream endpoint is used unfiltered so that
+   * the re-derived `agents` and `types` arrays always reflect the full corpus
+   * (the stream has no separate metadata payload — unlike the batch endpoint).
+   * Client-side reactive filtering handles the actual narrowing after load.
    *
    * Falls back to the batch JSON endpoint on any stream error so the page
    * never shows an empty state due to a streaming issue.
@@ -199,9 +240,10 @@
 
   /**
    * Batch fallback: fetch all entries from the paginated JSON endpoint and
-   * replace the entry list atomically.  Used when the NDJSON stream is
-   * unavailable (e.g., older server build) and for silent SSE-triggered
-   * refreshes where progressive rendering would cause visible flicker.
+   * replace the entry list atomically.  Active type + search filters are
+   * forwarded to the server — the batch API returns `agents` and `types` from
+   * the FULL corpus regardless of active filters, so UI metadata stays correct.
+   * This is the primary path for SSE-triggered silent refreshes.
    */
   async function loadBatch(silent = false, prevIds?: Set<string>) {
     if (!silent) loading = true;
@@ -209,7 +251,7 @@
     const snapshot = prevIds ?? new Set(entries.map(e => e.id));
 
     try {
-      const res = await fetch('/api/v5/memory');
+      const res = await fetch(`/api/v5/memory${buildBatchParams()}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json() as {
         data?: MemoryEntry[];
@@ -686,14 +728,32 @@
     return TYPE_CONFIG[entry.type ?? ''] ?? FALLBACK_CONFIG;
   }
 
+  /** Reference to the search input for the "/" keyboard shortcut. */
+  let searchInputEl: HTMLInputElement | undefined;
+
+  /**
+   * "/" keyboard shortcut to focus the search field from anywhere on the page.
+   * Mirrors the GitHub / GitLab convention so operators can type naturally.
+   */
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key === '/' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+      e.preventDefault();
+      searchInputEl?.focus();
+      searchInputEl?.select();
+    }
+  }
+
   onMount(() => {
     load();
     connectSSE();
+    document.addEventListener('keydown', handleKeydown);
   });
 
   onDestroy(() => {
     if (sseReconnectTimer) clearTimeout(sseReconnectTimer);
+    if (searchReloadTimer) clearTimeout(searchReloadTimer);
     if (eventSource) { eventSource.close(); }
+    document.removeEventListener('keydown', handleKeydown);
   });
 </script>
 
@@ -773,14 +833,27 @@
     </svg>
     <input
       class="search-input"
+      class:search-input--has-value={searchQuery.length > 0}
       type="search"
       placeholder="Search keys, values, tags, sprint version…"
       bind:value={searchQuery}
+      bind:this={searchInputEl}
+      oninput={onSearchInput}
       aria-label="Search memory entries"
     />
+    {#if searchQuery.length === 0}
+      <span class="search-shortcut" aria-hidden="true">/</span>
+    {:else}
+      <button
+        class="search-clear"
+        onclick={() => { searchQuery = ''; searchInputEl?.focus(); loadBatch(true); }}
+        aria-label="Clear search"
+        tabindex="-1"
+      >×</button>
+    {/if}
   </div>
   {#if agents.length > 0}
-    <select class="agent-select" bind:value={agentFilter} aria-label="Filter by source">
+    <select class="agent-select" bind:value={agentFilter} onchange={onAgentFilterChange} aria-label="Filter by source">
       <option value="all">All sources ({entries.length})</option>
       {#each agents as agent (agent)}
         <option value={agent}>{sourceLabel(agent)}</option>
@@ -833,7 +906,7 @@
     <span class="empty-icon">∅</span>
     <p>No entries match your search.</p>
     <button class="btn btn-ghost btn-sm" style="margin-top: var(--space-3)"
-      onclick={() => { searchQuery = ''; agentFilter = 'all'; typeFilter = 'all'; }}>
+      onclick={() => { searchQuery = ''; agentFilter = 'all'; typeFilter = 'all'; loadBatch(true); }}>
       Clear filters
     </button>
   </div>
@@ -856,6 +929,9 @@
           {@const isNew = newIds.has(entry.id)}
           {@const isExpanded = expanded.has(entry.id)}
           {@const sprintVerForKey = resolveSprintVersion(entry)}
+          <!-- displaySource: explicit source field takes priority; agentId is the
+               fallback for curated memories.json entries where only agentId is set -->
+          {@const displaySource = entry.source ?? entry.agentId}
           <tr
             class="mem-row"
             class:mem-row--deleting={deleting.has(entry.id)}
@@ -889,9 +965,18 @@
               </div>
             </td>
 
-            <!-- Type chip column -->
-            <td class="col-type">
-              <span class="badge {cfg.badge}">{cfg.label || (entry.type ?? typeof entry.value)}</span>
+            <!-- Type chip column — click cell to toggle type filter without expanding the row -->
+            <td
+              class="col-type col-type--clickable"
+              onclick={(e) => { e.stopPropagation(); if (entry.type) typeFilter = typeFilter === entry.type ? 'all' : entry.type; }}
+              title={entry.type ? `Filter by ${cfg.label || entry.type}` : undefined}
+              role="button"
+              tabindex="-1"
+            >
+              <span
+                class="badge {cfg.badge} type-chip-btn"
+                class:type-chip-btn--active={typeFilter === entry.type}
+              >{cfg.label || (entry.type ?? typeof entry.value)}</span>
             </td>
 
             <!-- Value column — semantic preview per entry type -->
@@ -936,19 +1021,22 @@
               {/if}
             </td>
 
-            <!-- Source link column — stopPropagation so click doesn't toggle expand -->
+            <!-- Source link column — stopPropagation so click doesn't toggle expand.
+                 Uses displaySource (= entry.source ?? entry.agentId) so curated
+                 memories.json entries that only have agentId still get a link. -->
             <td class="col-source" onclick={(e) => e.stopPropagation()}>
-              {#if entry.source}
-                {#if isCycleId(entry.source)}
+              {#if displaySource}
+                {#if isCycleId(displaySource)}
                   {@const sprintVer = resolveSprintVersion(entry)}
+                  {@const prLink = entry.type === 'cycle-outcome' ? extractCycleOutcomeInfo(entry)?.prUrl : undefined}
                   <div class="source-stack">
                     <a
                       class="source-link source-link--cycle"
-                      href="/cycles/{entry.source}"
-                      title="View cycle {entry.source}"
+                      href="/cycles/{displaySource}"
+                      title="View cycle {displaySource}"
                     >
                       <span class="source-prefix">cycle</span>
-                      {shortSource(entry.source)}
+                      {shortSource(displaySource)}
                     </a>
                     {#if sprintVer}
                       <a
@@ -960,15 +1048,26 @@
                         {sprintVer}
                       </a>
                     {/if}
+                    {#if prLink}
+                      <a
+                        class="source-link source-link--pr"
+                        href={prLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Open pull request"
+                      >
+                        <span class="source-prefix">pr</span>↗
+                      </a>
+                    {/if}
                   </div>
                 {:else}
                   <a
                     class="source-link source-link--agent"
-                    href="/agents/{encodeURIComponent(entry.source)}"
-                    title="View agent {entry.source}"
+                    href="/agents/{encodeURIComponent(displaySource)}"
+                    title="View agent {displaySource}"
                   >
                     <span class="source-prefix">agent</span>
-                    {entry.source}
+                    {displaySource}
                   </a>
                 {/if}
               {:else}
@@ -1018,18 +1117,18 @@
                         <time datetime={entry.updatedAt}>{formatDate(entry.updatedAt)}</time>
                       </span>
                     {/if}
-                    {#if entry.source}
+                    {#if displaySource}
                       <span class="detail-meta-item">
                         <span class="detail-label">Source</span>
-                        {#if isCycleId(entry.source)}
+                        {#if isCycleId(displaySource)}
                           <div class="source-stack">
-                            <a class="source-link source-link--cycle" href="/cycles/{entry.source}" title="View cycle {entry.source}">
-                              <span class="source-prefix">cycle</span>{shortSource(entry.source)}
+                            <a class="source-link source-link--cycle" href="/cycles/{displaySource}" title="View cycle {displaySource}">
+                              <span class="source-prefix">cycle</span>{shortSource(displaySource)}
                             </a>
                           </div>
                         {:else}
-                          <a class="source-link source-link--agent" href="/agents/{encodeURIComponent(entry.source)}" title="View agent {entry.source}">
-                            <span class="source-prefix">agent</span>{entry.source}
+                          <a class="source-link source-link--agent" href="/agents/{encodeURIComponent(displaySource)}" title="View agent {displaySource}">
+                            <span class="source-prefix">agent</span>{displaySource}
                           </a>
                         {/if}
                       </span>
@@ -1057,7 +1156,7 @@
                   </div>
 
                   <!-- Summary line (only for types without a dedicated panel) -->
-                  {#if entry.summary && entry.type !== 'gate-verdict' && entry.type !== 'review-finding' && entry.type !== 'cycle-outcome'}
+                  {#if entry.summary && entry.type !== 'gate-verdict' && entry.type !== 'review-finding' && entry.type !== 'cycle-outcome' && entry.type !== 'failure-pattern' && entry.type !== 'learned-fact'}
                     <p class="detail-summary">{stripMarkdown(entry.summary)}</p>
                   {/if}
 
@@ -1205,10 +1304,70 @@
                     {/if}
                   {/if}
 
-                  <!-- Structured metadata disclosure for entries not handled above -->
-                  <!-- failure-pattern, learned-fact, and any future types may carry -->
-                  <!-- typed metadata that isn't rendered by a dedicated panel.       -->
-                  {#if entry.metadata && entry.type !== 'gate-verdict' && entry.type !== 'review-finding' && entry.type !== 'cycle-outcome'}
+                  <!-- Failure-pattern structured panel ───────────────────────── -->
+                  {#if entry.type === 'failure-pattern'}
+                    {@const fpSprintVer = resolveSprintVersion(entry)}
+                    {@const fpNonSprintTags = (entry.tags ?? []).filter(t => !t.startsWith('sprint:'))}
+                    <div class="failure-panel">
+                      <div class="failure-hero">
+                        <span class="failure-badge">Failure Pattern</span>
+                        {#if fpSprintVer}
+                          <span class="verdict-sprint">Sprint {fpSprintVer}</span>
+                        {/if}
+                        {#if displaySource && isCycleId(displaySource)}
+                          <a class="source-link source-link--cycle failure-cycle-link"
+                             href="/cycles/{displaySource}"
+                             title="View cycle {displaySource}"
+                             onclick={(e) => e.stopPropagation()}>
+                            <span class="source-prefix">cycle</span>{shortSource(displaySource)}
+                          </a>
+                        {/if}
+                      </div>
+                      <p class="failure-text">{stripMarkdown(entry.summary ?? formatValue(entry.value))}</p>
+                      {#if fpNonSprintTags.length > 0}
+                        <div class="failure-tags tag-row">
+                          {#each fpNonSprintTags as tag (tag)}
+                            <span class="tag-chip tag-chip--pattern">{tag}</span>
+                          {/each}
+                        </div>
+                      {/if}
+                    </div>
+                  {/if}
+
+                  <!-- Learned-fact structured panel ─────────────────────────── -->
+                  {#if entry.type === 'learned-fact'}
+                    {@const lfSprintVer = resolveSprintVersion(entry)}
+                    {@const lfNonSprintTags = (entry.tags ?? []).filter(t => !t.startsWith('sprint:'))}
+                    <div class="fact-panel">
+                      <div class="fact-hero">
+                        <span class="fact-badge">Learned Fact</span>
+                        {#if lfSprintVer}
+                          <span class="verdict-sprint">Sprint {lfSprintVer}</span>
+                        {/if}
+                        {#if displaySource && isCycleId(displaySource)}
+                          <a class="source-link source-link--cycle fact-cycle-link"
+                             href="/cycles/{displaySource}"
+                             title="View cycle {displaySource}"
+                             onclick={(e) => e.stopPropagation()}>
+                            <span class="source-prefix">cycle</span>{shortSource(displaySource)}
+                          </a>
+                        {/if}
+                      </div>
+                      <p class="fact-text">{stripMarkdown(entry.summary ?? formatValue(entry.value))}</p>
+                      {#if lfNonSprintTags.length > 0}
+                        <div class="fact-tags tag-row">
+                          {#each lfNonSprintTags as tag (tag)}
+                            <span class="tag-chip tag-chip--fact">{tag}</span>
+                          {/each}
+                        </div>
+                      {/if}
+                    </div>
+                  {/if}
+
+                  <!-- Structured metadata disclosure for entries not handled above.
+                       All 5 canonical types now have dedicated panels so this
+                       only fires for legacy/unknown types with metadata. -->
+                  {#if entry.metadata && !['gate-verdict', 'review-finding', 'cycle-outcome', 'failure-pattern', 'learned-fact'].includes(entry.type ?? '')}
                     <details class="raw-json-details">
                       <summary class="raw-json-summary">Structured metadata</summary>
                       <div class="detail-value-wrap">
@@ -1218,9 +1377,11 @@
                     </details>
                   {/if}
 
-                  <!-- Full value JSON with syntax highlighting + copy button -->
-                  <!-- For gate-verdict, collapse into a disclosure to reduce noise -->
-                  {#if entry.type === 'gate-verdict'}
+                  <!-- Full value JSON with syntax highlighting + copy button.
+                       Structured-panel types (gate-verdict, failure-pattern,
+                       learned-fact) collapse this into a disclosure to reduce noise;
+                       raw types (review-finding, cycle-outcome, untyped) show it inline. -->
+                  {#if entry.type === 'gate-verdict' || entry.type === 'failure-pattern' || entry.type === 'learned-fact'}
                     <details class="raw-json-details">
                       <summary class="raw-json-summary">Raw JSON</summary>
                       <div class="detail-value-wrap">
@@ -1475,6 +1636,47 @@
     border-color: var(--color-brand);
     box-shadow: 0 0 0 2px rgba(91,138,245,0.12);
   }
+  /* When has value, pad right for the × clear button */
+  .search-input--has-value {
+    padding-right: calc(var(--space-3) + 20px);
+  }
+  /* Keyboard shortcut hint — "/" shown when input is empty */
+  .search-shortcut {
+    position: absolute;
+    right: var(--space-3);
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 10px;
+    font-family: var(--font-mono);
+    color: var(--color-text-faint);
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    border-radius: 3px;
+    padding: 1px 4px;
+    pointer-events: none;
+    line-height: 1.4;
+    opacity: 0.7;
+  }
+  /* × clear button — shown when search has content */
+  .search-clear {
+    position: absolute;
+    right: var(--space-2);
+    top: 50%;
+    transform: translateY(-50%);
+    background: transparent;
+    border: none;
+    color: var(--color-text-faint);
+    font-size: var(--text-base);
+    cursor: pointer;
+    padding: 2px 4px;
+    line-height: 1;
+    border-radius: var(--radius-sm);
+    transition: color 0.12s, background 0.12s;
+  }
+  .search-clear:hover {
+    color: var(--color-text-muted);
+    background: var(--color-surface-2);
+  }
   .agent-select {
     padding: var(--space-2) var(--space-3);
     background: var(--color-surface-1);
@@ -1617,7 +1819,8 @@
     border-radius: var(--radius-sm);
     padding: var(--space-3) var(--space-4);
     overflow: auto;
-    max-height: 240px;
+    /* Increased from 240px — gate-verdict rationale fields exceed the old limit */
+    max-height: 380px;
   }
 
   /* ── Source link ─────────────────────────────────────────────────────────── */
@@ -2386,6 +2589,98 @@
     font-style: italic;
   }
 
+  /* ── Failure-pattern detail panel ───────────────────────────────────────── */
+  .failure-panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    background: var(--color-surface-2);
+    border-radius: var(--radius-md);
+    /* Left border uses --color-opus (same as the type badge) */
+    border: 1px solid var(--color-border);
+    border-left: 3px solid var(--color-opus);
+  }
+  .failure-hero {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+  }
+  .failure-badge {
+    font-size: var(--text-sm);
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 4px 12px;
+    border-radius: var(--radius-md);
+    text-transform: uppercase;
+    background: rgba(245,200,66,0.12);
+    color: var(--color-opus);
+    border: 1px solid rgba(245,200,66,0.35);
+  }
+  .failure-cycle-link { margin-left: auto; }
+  .failure-text {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+    line-height: 1.65;
+    word-break: break-word;
+  }
+  .failure-tags { flex-wrap: wrap; }
+  /* Pattern tags use a warm amber tint matching the type color */
+  .tag-chip--pattern {
+    background: rgba(245,200,66,0.08);
+    border-color: rgba(245,200,66,0.22);
+    color: var(--color-opus);
+    font-weight: 600;
+  }
+
+  /* ── Learned-fact detail panel ───────────────────────────────────────────── */
+  .fact-panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    background: var(--color-surface-2);
+    border-radius: var(--radius-md);
+    /* Left border uses --color-haiku (same as the type badge) */
+    border: 1px solid var(--color-border);
+    border-left: 3px solid var(--color-haiku);
+  }
+  .fact-hero {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+  }
+  .fact-badge {
+    font-size: var(--text-sm);
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 4px 12px;
+    border-radius: var(--radius-md);
+    text-transform: uppercase;
+    background: rgba(76,175,130,0.12);
+    color: var(--color-haiku);
+    border: 1px solid rgba(76,175,130,0.3);
+  }
+  .fact-cycle-link { margin-left: auto; }
+  .fact-text {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+    line-height: 1.65;
+    word-break: break-word;
+  }
+  .fact-tags { flex-wrap: wrap; }
+  /* Fact tags use a green tint matching the type color */
+  .tag-chip--fact {
+    background: rgba(76,175,130,0.08);
+    border-color: rgba(76,175,130,0.22);
+    color: var(--color-haiku);
+    font-weight: 600;
+  }
+
   /* ── Live feed new-event badge ────────────────────────────────────────────── */
   .live-feed__badge {
     font-size: 9px;
@@ -2411,6 +2706,57 @@
     background: rgba(76,175,130,0.07);
   }
 
+  /* ── Type chip: clickable badge in col-type ─────────────────────────────── */
+  /*
+   * The col-type cell acts as a button to toggle the type filter.
+   * We change cursor and add a hover highlight on the cell itself so the
+   * entire badge area is clearly interactive — not just the text inside.
+   */
+  .col-type--clickable {
+    cursor: pointer;
+  }
+  .col-type--clickable:hover .badge {
+    filter: brightness(1.1);
+  }
+  /*
+   * .type-chip-btn wraps the existing .badge classes to add interactive states.
+   * Uses outline so the badge shape is preserved without changing layout.
+   */
+  .type-chip-btn {
+    cursor: pointer;
+    transition: filter 0.12s, outline-color 0.12s;
+    outline: 1.5px solid transparent;
+    outline-offset: 1px;
+  }
+  /* Active state: the current typeFilter matches this entry's type */
+  .type-chip-btn--active {
+    outline-color: currentColor;
+  }
+
+  /* ── PR source link ──────────────────────────────────────────────────────── */
+  .source-link--pr {
+    color: var(--color-brand);
+    border-color: rgba(91,138,245,0.22);
+    background: rgba(91,138,245,0.06);
+  }
+  .source-link--pr:hover {
+    border-color: rgba(91,138,245,0.45);
+    background: rgba(91,138,245,0.13);
+  }
+
+  /* ── Expandable detail row: slide-in animation ───────────────────────────── */
+  /*
+   * Fires every time Svelte inserts the row via {#if isExpanded}.
+   * CSS-only: no JS animation loop; suppressed in the reduced-motion block.
+   */
+  .mem-detail-row {
+    animation: detailSlideIn 0.18s ease-out;
+  }
+  @keyframes detailSlideIn {
+    from { opacity: 0; transform: translateY(-3px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
   /* ── Reduced motion ──────────────────────────────────────────────────────── */
   @media (prefers-reduced-motion: reduce) {
     .sse-dot.live { animation: none; }
@@ -2420,6 +2766,7 @@
     .mem-row--new { animation: none; }
     .new-banner { animation: none; }
     .streaming-indicator { animation: none; }
+    .mem-detail-row { animation: none; }
   }
 
   /* ── Mobile ──────────────────────────────────────────────────────────────── */
@@ -2428,7 +2775,19 @@
     .col-age    { display: none; }
     .value-preview { max-width: 200px; }
     .value-expanded { max-width: 100%; }
-    .stats-bar  { display: none; }
+    /* Make stats bar horizontally scrollable on mobile instead of hiding it —
+     * operators need type chip filtering on mobile too. */
+    .stats-bar {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      /* Hide scrollbar but keep scroll functionality */
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+      padding-bottom: var(--space-1);
+    }
+    .stats-bar::-webkit-scrollbar { display: none; }
+    .stats-chip { flex-shrink: 0; }
     .detail-meta { flex-direction: column; gap: var(--space-1); }
     .copy-btn { position: static; margin-top: var(--space-2); }
     .detail-value-wrap .value-expanded { padding-right: var(--space-3); }

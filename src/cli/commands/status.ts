@@ -1,9 +1,16 @@
 import type { Command } from "commander";
-import { showTeamCompatibility } from "../compat/package-team-services.js";
+import { showGeneratedTeam } from "@agentforge/core";
+import { warnDeprecation } from "../utils/run-helpers.js";
 
 async function statusAction(): Promise<void> {
-  console.warn("[compat] `status` is a root compatibility wrapper. Prefer `agentforge team` from the package CLI.");
-  await showTeamCompatibility();
+  warnDeprecation("[compat] `status` is a root compatibility wrapper. Prefer `agentforge team` from the package CLI.");
+  try {
+    const exitCode = await showGeneratedTeam(process.cwd(), {});
+    if (exitCode !== 0) process.exitCode = exitCode;
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
 }
 
 export default function registerStatusCommand(program: Command): void {

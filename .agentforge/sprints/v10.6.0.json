@@ -28,7 +28,7 @@
           "description": "The approval workflow is the highest-impact user-facing gap — it is the human gate that controls whether the autonomous loop can ship. The server endpoints already exist (v6.7.4), making this a frontend wiring task with high return on investment. The SSE-triggered global modal requirement adds complexity but the spec is explicit.",
           "priority": "P0",
           "assignee": "dashboard-architect",
-          "status": "in_progress",
+          "status": "completed",
           "estimatedCostUsd": 14,
           "tags": [
             "approvals",
@@ -44,7 +44,7 @@
           "description": "A broken /org route obscures team topology and makes the delegation model invisible to operators. Fixing broken routes before adding new features prevents confusion during the autonomous loop review cycle. The bug surface is contained to one Svelte page and one server route.",
           "priority": "P0",
           "assignee": "debugger",
-          "status": "in_progress",
+          "status": "completed",
           "estimatedCostUsd": 8,
           "tags": [
             "fix",
@@ -59,7 +59,7 @@
           "description": "Broken agent listing means operators cannot inspect which agents are active, their model tiers, or navigate to detail pages — essential observability for the autonomous loop. Scope is narrow (one page, one data source) and very likely a straightforward data-loading fix.",
           "priority": "P1",
           "assignee": "debugger",
-          "status": "in_progress",
+          "status": "completed",
           "estimatedCostUsd": 7,
           "tags": [
             "fix",
@@ -73,7 +73,7 @@
           "description": "svelte-check errors (MODEL_TIERS undefined) indicate this route fails to compile cleanly, blocking any manual agent dispatch from the dashboard. Real-time output streaming is needed for the loop to be observable. Fix-type items with compiler errors have highest regression risk if left unaddressed.",
           "priority": "P1",
           "assignee": "debugger",
-          "status": "in_progress",
+          "status": "completed",
           "estimatedCostUsd": 9,
           "tags": [
             "fix",
@@ -89,7 +89,7 @@
           "description": "Search returning zero results for any query renders the entire corpus of cycle history inaccessible via the UI. Cost estimate is slightly higher than peer fixes because a backend search endpoint likely needs implementation or wiring across multiple entity types. Worth doing before adding more content.",
           "priority": "P1",
           "assignee": "api-specialist",
-          "status": "in_progress",
+          "status": "completed",
           "estimatedCostUsd": 10,
           "tags": [
             "fix",
@@ -104,7 +104,7 @@
           "description": "This item seeds the cross-cycle learning capability — without it the memory store stays empty and the flywheel cannot close. Depends on the schema from rank 1. Scoped to a single phase handler integration, making it low-risk and high-value for the autonomous loop's learning trajectory.",
           "priority": "P1",
           "assignee": "coder",
-          "status": "in_progress",
+          "status": "completed",
           "estimatedCostUsd": 6,
           "tags": [
             "memory",
@@ -119,7 +119,7 @@
           "description": "The API backend must switch to the new .jsonl format before the dashboard memory pages can show real data. This is a prerequisite for both the memory dashboard (md-16, md-33) and the flywheel stats card (md-35). Well-scoped server-side change with low regression risk.",
           "priority": "P1",
           "assignee": "api-specialist",
-          "status": "in_progress",
+          "status": "completed",
           "estimatedCostUsd": 7,
           "tags": [
             "memory",
@@ -134,7 +134,7 @@
           "description": "This is the richer, spec-aligned version of the memory page (type chips, source links to cycle/agent, expandable JSON). It supersedes the simpler md-16 wiring and should be treated as the canonical implementation. Depends on the API backend fix (rank 8). Placing it before the simpler md-16 to avoid throwaway work.",
           "priority": "P2",
           "assignee": "frontend-dev",
-          "status": "in_progress",
+          "status": "completed",
           "estimatedCostUsd": 8,
           "tags": [
             "memory",
@@ -149,7 +149,7 @@
           "description": "This item overlaps significantly with md-33 (rank 9) which is the more detailed spec for the same page. If md-33 is completed first, this item reduces to validation and any remaining gaps (e.g., filter-by-agent if not covered). Kept in sprint at lower cost estimate assuming md-33 handles the bulk of the work.",
           "priority": "P2",
           "assignee": "frontend-dev",
-          "status": "in_progress",
+          "status": "completed",
           "estimatedCostUsd": 5,
           "tags": [
             "memory",
@@ -163,7 +163,7 @@
           "description": "Static gauges on the flywheel page prevent operators from assessing loop health meaningfully. Computing real metrics (meta-learning rate, autonomy score, velocity) requires aggregating across multiple data stores, making this moderately complex. Placed after broken route fixes since static gauges are non-blocking.",
           "priority": "P2",
           "assignee": "frontend-dev",
-          "status": "in_progress",
+          "status": "completed",
           "estimatedCostUsd": 9,
           "tags": [
             "flywheel",

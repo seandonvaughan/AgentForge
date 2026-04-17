@@ -66,7 +66,7 @@ import {
   AutonomousSprintFramework,
   type SprintItem,
   type SprintPhase,
-} from "../../src/autonomous/sprint-framework.js";
+} from "../../packages/core/src/autonomous/sprint-framework.js";
 import { AutoDelegationPipeline } from "../../src/orchestrator/auto-delegation.js";
 import { CareerStore } from "../../src/lifecycle/career-store.js";
 import { ConcurrencyManager } from "../../src/lifecycle/concurrency-manager.js";

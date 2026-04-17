@@ -313,23 +313,22 @@ export async function dashboardStubRoutes(
       return tb - ta;
     });
 
-    // Cap to MEMORY_LIMIT newest entries before filtering so that the
-    // agents/types dropdown lists reflect the real recent window — not the
-    // full history, which can be very large.
-    const recent = entries.slice(0, MEMORY_LIMIT);
-
-    // Unique agent/source IDs for the dashboard's agent-filter dropdown.
+    // Compute agents and types from ALL entries so that the dashboard's
+    // agent-filter dropdown and type-chip row always reflect the full corpus —
+    // not just the first MEMORY_LIMIT rows.  The dashboard's +page.svelte
+    // comment confirms it expects: "batch API computes agents/types from the
+    // FULL corpus before applying filters."
     const agents = [...new Set(
-      recent.map(e => e.agentId).filter((a): a is string => Boolean(a)),
+      entries.map(e => e.agentId).filter((a): a is string => Boolean(a)),
     )];
-
-    // Unique entry types for the dashboard's type-chip filter row.
     const types = [...new Set(
-      recent.map(e => e.type).filter((t): t is string => Boolean(t)),
+      entries.map(e => e.type).filter((t): t is string => Boolean(t)),
     )].sort();
 
-    // Apply optional query filters to the capped window.
-    const filtered = recent.filter(e => {
+    // Apply optional query filters to ALL entries before capping.  This
+    // ensures meta.total reflects the true number of matching entries and
+    // that large datasets aren't silently truncated before filtering.
+    const filtered = entries.filter(e => {
       if (typeFilter && e.type !== typeFilter) return false;
       if (agentIdFilter && e.agentId !== agentIdFilter) return false;
       if (hasSince) {
@@ -347,11 +346,15 @@ export async function dashboardStubRoutes(
       return true;
     });
 
+    // Cap the filtered results to MEMORY_LIMIT newest entries for the response.
+    const totalFiltered = filtered.length;
+    const data = filtered.slice(0, MEMORY_LIMIT);
+
     return reply.send({
-      data: filtered,
+      data,
       agents,
       types,
-      meta: { total: filtered.length, limit: MEMORY_LIMIT },
+      meta: { total: totalFiltered, limit: MEMORY_LIMIT, returned: data.length },
     });
   });
 
@@ -838,7 +841,11 @@ function computeFlywheelMetrics(projectRoot: string) {
   const cycleHistory: CycleHistoryPoint[] = cycles.slice(-HISTORY_LIMIT).map(c => ({
     cycleId: c.cycleId,
     sprintVersion: c.sprintVersion ?? null,
-    startedAt: c.startedAt ?? new Date().toISOString(),
+    // Use epoch as the fallback so cycles without a timestamp sort to the
+    // beginning (oldest), not the end. Using new Date() here would silently
+    // inflate the "recent" half of the trend split in computeMetaLearning,
+    // producing misleadingly optimistic meta-learning scores.
+    startedAt: c.startedAt ?? '1970-01-01T00:00:00.000Z',
     stage: c.stage ?? 'unknown',
     testPassRate: c.tests?.passRate ?? null,
     testsTotal: (c.tests?.passed != null && c.tests?.failed != null)
@@ -952,7 +959,12 @@ function computeMemoryStats(
   const entriesPerCycleTrend: CycleEntryPoint[] = cycles.slice(-TREND_LIMIT).map(c => ({
     cycleId: c.cycleId,
     count: entriesByCycleId.get(c.cycleId) ?? 0,
-    startedAt: c.startedAt ?? new Date().toISOString(),
+    // Use epoch as the fallback so cycles without a timestamp sort to the
+    // beginning (oldest), not the end. Using new Date() here would place
+    // timestamp-less cycles at the newest position in the sparkline,
+    // distorting the per-cycle trend display. Mirrors the SSR copy in
+    // +page.server.ts for consistency.
+    startedAt: c.startedAt ?? '1970-01-01T00:00:00.000Z',
   }));
 
   // Hit rate: prefer the precise `memoriesInjected` count written to each

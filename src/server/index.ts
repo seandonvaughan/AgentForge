@@ -1,7 +1,5 @@
 import { startPackageServer } from '@agentforge/server';
 
-export { createServer, startServer } from './server.js';
-export type { ServerOptions } from './server.js';
 export { setupGracefulShutdown } from './graceful-shutdown.js';
 
 export const ROOT_SERVER_DEPRECATION_MESSAGE =

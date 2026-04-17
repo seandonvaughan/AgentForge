@@ -15,10 +15,23 @@
     cycleRefs?: string[];
   }
 
-  // ── Reactive state — populated from server data by $effect.pre below ────────
+  /** Compute the set of node IDs that should be auto-collapsed (depth ≥ 3). */
+  function computeAutoCollapsed(treeRoots: TreeNode[]): Set<string> {
+    const set = new Set<string>();
+    (function walk(ns: TreeNode[]) {
+      for (const n of ns) {
+        if (n.depth >= 3 && n.children.length > 0) set.add(n.id);
+        walk(n.children);
+      }
+    })(treeRoots);
+    return set;
+  }
+
+  // ── Reactive state ────────────────────────────────────────────────────────
   let roots: TreeNode[] = $state([]);
-  let orphans: TreeNode[] = $state([]); // agents not in any delegation edge
-  // loading=true until $effect.pre syncs server data (or onMount falls back to API)
+  let orphans: TreeNode[] = $state([]);
+  // loading=false when SSR data is present; true only in pure SPA mode until
+  // the API fallback in onMount resolves.
   let loading = $state(true);
   let error: string | null = $state(null);
   let totalNodes = $state(0);
@@ -26,32 +39,26 @@
   let orphansCollapsed = $state(true);
   let collapsed: Set<string> = $state(new Set());
 
-  // ── Sync server data into state before first render ────────────────────────
-  // $effect.pre runs synchronously before each DOM update so SSR-provided data
-  // is in place before the first paint (no loading flash). It also re-fires when
-  // SvelteKit re-runs the server load (e.g. after invalidate()), keeping the tree
-  // in sync. buildTree is a hoisted function declaration — available here.
+  // ── Reactivity on data changes ───────────────────────────────────────────────
+  // $effect.pre runs on server (SSR) and when SvelteKit re-runs the server load.
+  // This ensures we compute the tree immediately for SSR, avoiding blank states
+  // on initial page load. For pure SPA mode, onMount will fall back to the API.
   $effect.pre(() => {
     const nodes: OrgNode[] = (data.nodes as OrgNodeData[] as OrgNode[]) ?? [];
     const edges: OrgEdge[] = (data.edges as OrgEdgeData[] as OrgEdge[]) ?? [];
 
-    if (nodes.length === 0) return; // no server data — onMount falls back to API
+    if (nodes.length === 0) {
+      // No server data — pure SPA or loading — onMount will fall back to API.
+      loading = true;
+      return;
+    }
 
     const result = buildTree(nodes, edges);
     roots = result.roots;
     orphans = result.orphans;
     totalNodes = nodes.length;
     totalEdges = edges.length;
-
-    // Auto-collapse branches at depth ≥ 3
-    const set = new Set<string>();
-    (function walk(ns: TreeNode[]) {
-      for (const n of ns) {
-        if (n.depth >= 3 && n.children.length > 0) set.add(n.id);
-        walk(n.children);
-      }
-    })(result.roots);
-    collapsed = set;
+    collapsed = computeAutoCollapsed(result.roots);
     loading = false;
   });
 
@@ -242,12 +249,14 @@
     <p>No agents found. Add agent YAML files to <code>.agentforge/agents/</code> to populate the org chart.</p>
   </div>
 {:else}
-  <div class="tree-container">
+  <div class="tree-container" data-testid="org-tree">
     <!-- Delegation hierarchy -->
     {#if roots.length > 0}
-      {#each roots as root (root.id)}
-        {@render treeNode(root)}
-      {/each}
+      <div data-testid="org-hierarchy">
+        {#each roots as root (root.id)}
+          {@render treeNode(root)}
+        {/each}
+      </div>
     {/if}
 
     <!-- Unlinked agents (not in any delegation edge) -->
@@ -296,6 +305,8 @@
       class:is-exec={node.depth <= 1}
       style="border-left-color:{color}; background:{node.depth <= 1 ? bg : 'var(--color-surface-1)'};"
       onclick={() => hasKids && toggle(node.id)}
+      data-testid="org-node"
+      data-agent-id={node.id}
     >
       <span class="node-expand">{#if hasKids}{isClosed ? '▸' : '▾'}{:else}<span class="node-leaf">·</span>{/if}</span>
       <span class="node-name">{node.label ?? node.id}</span>

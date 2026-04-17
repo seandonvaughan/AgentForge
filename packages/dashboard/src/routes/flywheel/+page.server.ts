@@ -284,7 +284,11 @@ export function _computeMetrics(projectRoot: string): FlywheelPayload {
   const cycleHistory: CycleHistoryPoint[] = cycles.slice(-HISTORY_LIMIT).map(c => ({
     cycleId: c.cycleId,
     sprintVersion: c.sprintVersion ?? null,
-    startedAt: c.startedAt ?? new Date().toISOString(),
+    // Use epoch as the fallback so cycles without a timestamp sort to the
+    // beginning (oldest), not the end. Using new Date() here would silently
+    // inflate the "recent" half of the trend split in the meta-learning
+    // computation, producing misleadingly optimistic scores.
+    startedAt: c.startedAt ?? '1970-01-01T00:00:00.000Z',
     stage: c.stage ?? 'unknown',
     testPassRate: c.tests?.passRate ?? null,
     testsTotal: (c.tests?.passed != null && c.tests?.failed != null)
@@ -358,7 +362,10 @@ function computeMemoryStats(
   const entriesPerCycleTrend: CycleEntryPoint[] = cycles.slice(-TREND_LIMIT).map(c => ({
     cycleId: c.cycleId,
     count: entriesByCycleId.get(c.cycleId) ?? 0,
-    startedAt: c.startedAt ?? new Date().toISOString(),
+    // Epoch fallback: same reasoning as cycleHistory — using new Date() would
+    // place timestamp-less cycles at the newest position in the sparkline,
+    // distorting the per-cycle trend display.
+    startedAt: c.startedAt ?? '1970-01-01T00:00:00.000Z',
   }));
 
   // Hit rate: prefer the precise `memoriesInjected` count written to each

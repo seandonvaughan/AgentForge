@@ -7,7 +7,7 @@ import {
   type GateVerdictInput,
   type GateVerdictMemoryWriter,
   type GateVerdictMetadata,
-} from "../../src/autonomous/gate-phase-handler.js";
+} from "../../packages/core/src/autonomous/gate-phase-handler.js";
 import type { SessionMemoryEntry } from "../../src/memory/session-memory-manager.js";
 import type { CycleMemoryEntry } from "../../packages/core/src/memory/types.js";
 

@@ -88,6 +88,42 @@ describe('GET /api/v5/agents', () => {
     });
   });
 
+  it('returns team and effort fields from YAML for dashboard team composition', async () => {
+    // Regression guard: /api/v5/agents must return `team` and `effort` so the
+    // dashboard can render team chips and effort badges after the client-side
+    // refresh (which overwrites SSR data). Without these fields the team filter
+    // bar silently disappears for all operators.
+    const projectRoot = makeTmpRoot();
+    const agentsDir = join(projectRoot, '.agentforge', 'agents');
+    mkdirSync(agentsDir, { recursive: true });
+
+    writeFileSync(join(agentsDir, 'planner.yaml'), [
+      'name: Planner',
+      'model: opus',
+      'team: strategic',
+      'effort: max',
+    ].join('\n'));
+
+    writeFileSync(join(agentsDir, 'coder.yaml'), [
+      'name: Coder',
+      'model: sonnet',
+      // no team or effort → should return null
+    ].join('\n'));
+
+    const { app } = await createServerV5({ listen: false, projectRoot });
+    createdApps.push(app);
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/agents' });
+    expect(res.statusCode).toBe(200);
+
+    const body = res.json<{ data: Array<{ agentId: string; team: string | null; effort: string | null }> }>();
+    const planner = body.data.find(a => a.agentId === 'planner');
+    const coder = body.data.find(a => a.agentId === 'coder');
+
+    expect(planner).toMatchObject({ team: 'strategic', effort: 'max' });
+    expect(coder).toMatchObject({ team: null, effort: null });
+  });
+
   it('defaults unknown model values to "sonnet"', async () => {
     const projectRoot = makeTmpRoot();
     const agentsDir = join(projectRoot, '.agentforge', 'agents');

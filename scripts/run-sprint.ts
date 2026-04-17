@@ -8,7 +8,7 @@
  *   npx tsx scripts/run-sprint.ts 4.3   # runs v4.3
  */
 
-import { AutonomousSprintFramework } from "../src/autonomous/sprint-framework.js";
+import { AutonomousSprintFramework } from "../packages/core/src/autonomous/sprint-framework.js";
 
 const SPRINT_VERSION = process.argv[2] ?? "4.4";
 const fw = new AutonomousSprintFramework();

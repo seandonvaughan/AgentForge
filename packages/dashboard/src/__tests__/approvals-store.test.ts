@@ -309,3 +309,193 @@ describe('approvalsStore — SSE approval.decision handling', () => {
     expect(get(store).active?.cycleId).toBe(CYCLE_A);
   });
 });
+
+// ── refresh() data path ───────────────────────────────────────────────────────
+//
+// The approval store's primary data path is a two-request cascade:
+//   1. GET /api/v5/cycle-sessions — find sessions with hasApprovalPending: true
+//   2. GET /api/v5/cycles/:id/approval — fetch the full CycleApproval payload
+//
+// The SSE tests above stub fetch to return 503, so they never exercise this
+// path. These tests provide full coverage of the GET wiring so the sprint
+// item "Wire /approvals dashboard page to GET/POST /api/v5/cycles/:id/approval"
+// has verified integration coverage.
+
+/** Minimal approval-pending.json shape as returned by GET /api/v5/cycles/:id/approval */
+const APPROVAL_API_RESPONSE = {
+  cycleId: CYCLE_A,
+  requestedAt: '2026-04-16T10:00:00.000Z',
+  budgetUsd: 200,
+  newTotalUsd: 150,
+  withinBudget: {
+    items: [
+      {
+        itemId: 'item-1',
+        title: 'Fix auth bug',
+        rank: 1,
+        score: 0.9,
+        estimatedCostUsd: 50,
+        estimatedDurationMinutes: 30,
+        rationale: 'High impact',
+        suggestedAssignee: 'frontend-dev',
+        suggestedTags: ['bug'],
+        withinBudget: true,
+      },
+    ],
+  },
+  overflow: { items: [] },
+  agentSummary: 'One item within budget.',
+  sprintVersion: '10.6.0',
+};
+
+/** Build a fetch mock that routes by URL prefix. */
+function makeFetchRouter(routes: Record<string, unknown>) {
+  return vi.fn().mockImplementation((url: string) => {
+    for (const [prefix, body] of Object.entries(routes)) {
+      if (url.includes(prefix)) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
+      }
+    }
+    return Promise.resolve({ ok: false, status: 503 });
+  });
+}
+
+describe('approvalsStore — refresh() data path (GET /api/v5/cycles/:id/approval)', () => {
+  // Each test overrides the global fetch stub set in the outer beforeEach.
+
+  it('populates pending[] from cycle-sessions + cycles/:id/approval', async () => {
+    vi.stubGlobal('fetch', makeFetchRouter({
+      '/api/v5/cycle-sessions': {
+        sessions: [{ cycleId: CYCLE_A, hasApprovalPending: true, workspaceId: 'default', sprintVersion: null }],
+      },
+      [`/api/v5/cycles/${CYCLE_A}/approval`]: APPROVAL_API_RESPONSE,
+    }));
+
+    const store = createApprovalsStore();
+    await store.refresh();
+
+    const state = get(store);
+    expect(state.loading).toBe(false);
+    expect(state.error).toBeNull();
+    expect(state.pending).toHaveLength(1);
+
+    const approval = state.pending[0]!;
+    expect(approval.cycleId).toBe(CYCLE_A);
+    expect(approval.budgetUsd).toBe(200);
+    expect(approval.newTotalUsd).toBe(150);
+    expect(approval.withinBudgetItems).toHaveLength(1);
+    expect(approval.withinBudgetItems[0]!.itemId).toBe('item-1');
+    expect(approval.overflowItems).toHaveLength(0);
+    expect(approval.agentSummary).toBe('One item within budget.');
+    // sprintVersion from approval payload takes precedence over session field
+    expect(approval.sprintVersion).toBe('10.6.0');
+  });
+
+  it('auto-opens modal (active = newest) when autoOpen=true and a new cycle arrives', async () => {
+    // First refresh: no pending approvals
+    vi.stubGlobal('fetch', makeFetchRouter({
+      '/api/v5/cycle-sessions': { sessions: [] },
+    }));
+    const store = createApprovalsStore();
+    await store.refresh(false);
+    expect(get(store).pending).toHaveLength(0);
+    expect(get(store).active).toBeNull();
+
+    // Second refresh: new cycle with pending approval, autoOpen requested
+    vi.stubGlobal('fetch', makeFetchRouter({
+      '/api/v5/cycle-sessions': {
+        sessions: [{ cycleId: CYCLE_A, hasApprovalPending: true, workspaceId: 'default' }],
+      },
+      [`/api/v5/cycles/${CYCLE_A}/approval`]: APPROVAL_API_RESPONSE,
+    }));
+    await store.refresh(true);
+
+    const state = get(store);
+    expect(state.pending).toHaveLength(1);
+    // autoOpen=true + new cycle → active should be set to open the modal
+    expect(state.active?.cycleId).toBe(CYCLE_A);
+  });
+
+  it('passes workspaceId as a query param when present in the session record', async () => {
+    const fetchMock = makeFetchRouter({
+      '/api/v5/cycle-sessions': {
+        sessions: [{ cycleId: CYCLE_A, hasApprovalPending: true, workspaceId: 'my-workspace' }],
+      },
+      [`/api/v5/cycles/${CYCLE_A}/approval`]: APPROVAL_API_RESPONSE,
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const store = createApprovalsStore();
+    await store.refresh();
+
+    // Find the call to the cycles/:id/approval endpoint
+    const calls = (fetchMock.mock.calls as [string, unknown?][]);
+    const approvalCall = calls.find(([url]) => typeof url === 'string' && url.includes('/approval'));
+    expect(approvalCall).toBeDefined();
+    expect(approvalCall![0]).toContain('workspaceId=my-workspace');
+  });
+
+  it('skips cycles where GET /cycles/:id/approval returns non-OK (already decided)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/v5/cycle-sessions')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            sessions: [
+              { cycleId: CYCLE_A, hasApprovalPending: true, workspaceId: 'default' },
+              { cycleId: CYCLE_B, hasApprovalPending: true, workspaceId: 'default' },
+            ],
+          }),
+        });
+      }
+      // CYCLE_A has a valid pending approval
+      if (url.includes(CYCLE_A) && url.includes('/approval')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(APPROVAL_API_RESPONSE) });
+      }
+      // CYCLE_B was already decided — server returns 409
+      if (url.includes(CYCLE_B) && url.includes('/approval')) {
+        return Promise.resolve({ ok: false, status: 409 });
+      }
+      return Promise.resolve({ ok: false, status: 503 });
+    }));
+
+    const store = createApprovalsStore();
+    await store.refresh();
+
+    const state = get(store);
+    expect(state.pending).toHaveLength(1);
+    expect(state.pending[0]!.cycleId).toBe(CYCLE_A);
+  });
+
+  it('excludes sessions where hasApprovalPending is false', async () => {
+    vi.stubGlobal('fetch', makeFetchRouter({
+      '/api/v5/cycle-sessions': {
+        sessions: [
+          { cycleId: CYCLE_A, hasApprovalPending: false, workspaceId: 'default' },
+          { cycleId: CYCLE_B, hasApprovalPending: true, workspaceId: 'default' },
+        ],
+      },
+      [`/api/v5/cycles/${CYCLE_B}/approval`]: { ...APPROVAL_API_RESPONSE, cycleId: CYCLE_B },
+    }));
+
+    const store = createApprovalsStore();
+    await store.refresh();
+
+    const state = get(store);
+    // Only CYCLE_B has hasApprovalPending: true — CYCLE_A is skipped
+    expect(state.pending).toHaveLength(1);
+    expect(state.pending[0]!.cycleId).toBe(CYCLE_B);
+  });
+
+  it('sets error state when cycle-sessions endpoint fails', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 }));
+
+    const store = createApprovalsStore();
+    await store.refresh();
+
+    const state = get(store);
+    expect(state.loading).toBe(false);
+    expect(state.error).toMatch(/HTTP 500/);
+    expect(state.pending).toHaveLength(0);
+  });
+});

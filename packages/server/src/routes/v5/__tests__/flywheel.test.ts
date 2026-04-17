@@ -228,6 +228,97 @@ describe('GET /api/v5/flywheel', () => {
     expect(velocity.score).toBe(56);
   });
 
+  it('velocity score includes cycleThroughput from meaningful cycles', async () => {
+    // cycleThroughput = min(30, meaningfulCycles.length * 5)
+    // 4 meaningful cycles → cycleThroughput = 20
+    // Sprint items exist with 0% completion (all 'planned') so itemRate * 70 = 0
+    // No sessions → sessionBoost = 0
+    // total: 0 + 20 + 0 = 20
+    mkdirs(
+      join(tmpRoot, '.agentforge/cycles'),
+      join(tmpRoot, '.agentforge/sprints'),
+    );
+    for (let i = 0; i < 4; i++) {
+      writeCycle(`tp-cycle-${i}`, {
+        startedAt: `2026-01-0${i + 1}T00:00:00.000Z`,
+        stage: 'completed',
+        tests: { passed: 5, failed: 0, total: 5, passRate: 1.0 },
+      });
+    }
+    // Provide sprint items so the first branch (totalItems > 0) is taken
+    writeSprintFlat('v1.0.json', [{ status: 'planned' }, { status: 'planned' }]);
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = JSON.parse(res.body) as { data: { metrics: Array<{ key: string; score: number }> } };
+    const velocity = findOrThrow(
+      data.metrics,
+      m => m.key === 'velocity',
+      'Expected velocity metric',
+    );
+    // itemRate = 0/2 = 0 → 0 * 70 = 0
+    // cycleThroughput = min(30, 4 * 5) = 20
+    // sessionBoost = 0
+    expect(velocity.score).toBe(20);
+  });
+
+  it('velocity score includes sessionBoost from satisfied sessions', async () => {
+    // sessionBoost = min(15, floor(satisfiedSessions / 2))
+    // 6 satisfied sessions → sessionBoost = min(15, 3) = 3
+    // Sprint items with 0% completion → itemRate * 70 = 0
+    // No meaningful cycles → cycleThroughput = 0
+    // total: 0 + 0 + 3 = 3
+    mkdirs(join(tmpRoot, '.agentforge/sprints'));
+    writeSprintFlat('v1.0.json', [{ status: 'planned' }]);
+    for (let i = 0; i < 6; i++) {
+      writeSession(`sess-${i}.json`, { task_id: `t${i}`, is_request_satisfied: true });
+    }
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = JSON.parse(res.body) as { data: { metrics: Array<{ key: string; score: number }> } };
+    const velocity = findOrThrow(
+      data.metrics,
+      m => m.key === 'velocity',
+      'Expected velocity metric',
+    );
+    // itemRate = 0/1 = 0 → 0
+    // cycleThroughput = 0 (no meaningful cycles)
+    // sessionBoost = min(15, floor(6/2)) = 3
+    expect(velocity.score).toBe(3);
+  });
+
+  it('velocity score combines all three components: itemRate + cycleThroughput + sessionBoost', async () => {
+    // 8 of 10 items completed: itemRate * 70 = 56
+    // 4 meaningful cycles:     cycleThroughput = 20
+    // 6 satisfied sessions:    sessionBoost = 3
+    // total: 56 + 20 + 3 = 79
+    mkdirs(
+      join(tmpRoot, '.agentforge/cycles'),
+      join(tmpRoot, '.agentforge/sprints'),
+    );
+    writeSprintFlat('v1.0.json', Array.from({ length: 10 }, (_, i) => ({
+      status: i < 8 ? 'completed' : 'planned',
+    })));
+    for (let i = 0; i < 4; i++) {
+      writeCycle(`combo-cycle-${i}`, {
+        startedAt: `2026-01-0${i + 1}T00:00:00.000Z`,
+        stage: 'completed',
+        tests: { passed: 5, failed: 0, total: 5, passRate: 1.0 },
+      });
+    }
+    for (let i = 0; i < 6; i++) {
+      writeSession(`combo-sess-${i}.json`, { task_id: `ct${i}`, is_request_satisfied: true });
+    }
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = JSON.parse(res.body) as { data: { metrics: Array<{ key: string; score: number }> } };
+    const velocity = findOrThrow(
+      data.metrics,
+      m => m.key === 'velocity',
+      'Expected velocity metric',
+    );
+    expect(velocity.score).toBe(79);
+  });
+
   it('inheritance score grows with agent count', async () => {
     mkdirs(join(tmpRoot, '.agentforge/agents'));
     // Write 75 agents → 75/150 * 80 = 40 pts
@@ -454,6 +545,26 @@ describe('GET /api/v5/flywheel', () => {
     expect(data.memoryStats.entriesPerCycleTrend).toHaveLength(12);
   });
 
+  it('memoryStats.entriesPerCycleTrend uses epoch fallback for cycles missing startedAt', async () => {
+    // A cycle without startedAt must get '1970-01-01T00:00:00.000Z', not
+    // new Date() — so it sorts to the beginning (oldest) of the sparkline.
+    // Using new Date() would place the no-timestamp cycle at the newest
+    // position, distorting the per-cycle trend display.
+    // This test pins the fix from the v10.6.0 review (MAJOR finding).
+    mkdirs(join(tmpRoot, '.agentforge/cycles'));
+    writeCycle('no-ts', { startedAt: undefined });
+    writeCycle('has-ts', { startedAt: '2026-01-01T00:00:00.000Z' });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = JSON.parse(res.body) as {
+      data: { memoryStats: { entriesPerCycleTrend: Array<{ cycleId: string; startedAt: string }> } };
+    };
+    const noTs = data.memoryStats.entriesPerCycleTrend.find(p => p.cycleId === 'no-ts');
+    expect(noTs).toBeDefined();
+    // Must carry the epoch fallback, not the current wall-clock time
+    expect(noTs?.startedAt).toBe('1970-01-01T00:00:00.000Z');
+  });
+
   // ── Cycle History ────────────────────────────────────────────────────────
 
   it('cycleHistory is present and empty when no cycles exist', async () => {
@@ -574,6 +685,46 @@ describe('GET /api/v5/flywheel', () => {
     );
     expect(cycle.testPassRate).toBeNull();
     expect(cycle.testsTotal).toBeNull();
+  });
+
+  it('cycleHistory startedAt uses epoch fallback for cycles missing startedAt', async () => {
+    // Regression guard for the MAJOR finding in the v10.6.0 code review:
+    // "startedAt fallback in computeCycleHistory uses new Date() — poisons
+    //  trend math by sorting the no-timestamp cycle to the newest position."
+    //
+    // A cycle without startedAt must receive '1970-01-01T00:00:00.000Z' in
+    // cycleHistory so it sorts to the beginning (oldest), not the end.
+    // Using new Date() would silently inflate the "recent" half of the
+    // meta-learning trend split, producing misleadingly optimistic scores.
+    //
+    // This test pins that fix for the API endpoint (the parallel fix in the
+    // SSR copy, +page.server.ts, is covered by flywheel-page-server.test.ts).
+    mkdirs(join(tmpRoot, '.agentforge/cycles'));
+    // Cycle with no startedAt — will be sorted with timestamp=0 (oldest)
+    const noTsDir = join(tmpRoot, '.agentforge/cycles/no-ts');
+    mkdirSync(noTsDir, { recursive: true });
+    writeFileSync(join(noTsDir, 'cycle.json'), JSON.stringify({
+      cycleId: 'no-ts',
+      stage: 'completed',
+      // startedAt intentionally omitted
+    }));
+    // Cycle with a real timestamp — must sort after the epoch cycle
+    writeCycle('has-ts', { startedAt: '2026-01-01T00:00:00.000Z' });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+    const { data } = JSON.parse(res.body) as {
+      data: { cycleHistory: Array<{ cycleId: string; startedAt: string }> };
+    };
+
+    const noTs = data.cycleHistory.find(p => p.cycleId === 'no-ts');
+    expect(noTs).toBeDefined();
+    // Must carry the epoch fallback — not wall-clock time
+    expect(noTs?.startedAt).toBe('1970-01-01T00:00:00.000Z');
+
+    // Epoch cycle must sort before the 2026 cycle
+    const noTsIdx = data.cycleHistory.findIndex(p => p.cycleId === 'no-ts');
+    const hasTsIdx = data.cycleHistory.findIndex(p => p.cycleId === 'has-ts');
+    expect(noTsIdx).toBeLessThan(hasTsIdx);
   });
 
   // ── metaTrend boundary conditions ────────────────────────────────────────

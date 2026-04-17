@@ -86,6 +86,13 @@ function normalizeSprint(raw: any): Record<string, unknown> {
         )
       : [];
 
+  // autonomyGates (v5.4 era) — a dict of gate name → pass/fail status string.
+  // Stored under results.autonomyGates in the raw sprint file.
+  const autonomyGates =
+    results.autonomyGates && typeof results.autonomyGates === 'object'
+      ? (results.autonomyGates as Record<string, string>)
+      : undefined;
+
   return {
     id: raw.sprintId ?? raw.id ?? raw.version,
     version: raw.version,
@@ -109,6 +116,14 @@ function normalizeSprint(raw: any): Record<string, unknown> {
     autonomous: raw.autonomous ?? undefined,
     theme: raw.theme ?? undefined,
     versionDecision: raw.versionDecision ?? undefined,
+    // --- Extended metadata fields ---
+    // CEO brief (v5.4 era narrative note about the sprint's strategic significance).
+    ceoBrief: raw.ceo_brief ?? undefined,
+    // Autonomy gate results — only present in sprints that ran gate checks.
+    autonomyGates,
+    // File-level change lists (v5.9+ sprints).
+    newFiles: Array.isArray(raw.newFiles) ? raw.newFiles : undefined,
+    newTestFiles: Array.isArray(raw.newTestFiles) ? raw.newTestFiles : undefined,
   };
 }
 

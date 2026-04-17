@@ -104,6 +104,7 @@ export async function searchRoutes(
               model: s.model,
               costUsd: s.cost_usd,
               startedAt: s.started_at,
+              agent_id: s.agent_id,
             },
           });
         }

@@ -15,90 +15,127 @@ test.describe('Org Graph Page', () => {
   test('displays org graph heading', async ({ page }) => {
     await page.goto('/org');
 
-    await page.waitForLoadState('load').catch(() => {});
+    await page.waitForLoadState('networkidle').catch(() => {});
 
-    // Look for heading or title
-    const heading = page.locator('h1, h2').filter({ hasText: /Org|Organization|Team/i }).first();
+    // h1 with "Organization" must be visible
+    const heading = page.locator('h1').first();
+    await expect(heading).toBeVisible({ timeout: 8000 });
+    await expect(heading).toContainText(/Org|Organization/i);
+  });
 
-    if (await heading.isVisible().catch(() => false)) {
-      await expect(heading).toBeVisible();
-    }
+  test('renders real agent tree with delegation hierarchy', async ({ page }) => {
+    await page.goto('/org');
+
+    await page.waitForLoadState('networkidle').catch(() => {});
+
+    // The org tree container must be present and visible
+    const orgTree = page.locator('[data-testid="org-tree"]');
+    await expect(orgTree).toBeVisible({ timeout: 8000 });
+
+    // The hierarchy section (agents with delegation edges) must render
+    const orgHierarchy = page.locator('[data-testid="org-hierarchy"]');
+    await expect(orgHierarchy).toBeVisible({ timeout: 5000 });
+
+    // At least one agent node must be rendered
+    const nodes = page.locator('[data-testid="org-node"]');
+    const nodeCount = await nodes.count();
+    expect(nodeCount).toBeGreaterThan(0);
+  });
+
+  test('displays CEO as the root node', async ({ page }) => {
+    await page.goto('/org');
+
+    await page.waitForLoadState('networkidle').catch(() => {});
+
+    // Wait for the tree to populate
+    await expect(page.locator('[data-testid="org-tree"]')).toBeVisible({ timeout: 8000 });
+
+    // CEO must be visible as the root agent (label "CEO" rendered inside an org-node)
+    const ceoNode = page.locator('[data-testid="org-node"]').filter({ hasText: /^CEO$/i }).first();
+    await expect(ceoNode).toBeVisible({ timeout: 5000 });
+  });
+
+  test('page subtitle reports non-zero agent and edge counts', async ({ page }) => {
+    await page.goto('/org');
+
+    await page.waitForLoadState('networkidle').catch(() => {});
+
+    // Wait for the tree to be present (SSR or client fetch resolved)
+    await expect(page.locator('[data-testid="org-tree"]')).toBeVisible({ timeout: 8000 });
+
+    // The subtitle "N agents · M delegation edges" must reflect real data
+    const subtitle = page.locator('.page-subtitle');
+    await expect(subtitle).toBeVisible();
+
+    const text = await subtitle.textContent();
+    // Extract the agent count from "N agents"
+    const agentMatch = text?.match(/(\d+)\s+agents?/i);
+    expect(agentMatch).not.toBeNull();
+    expect(parseInt(agentMatch![1]!, 10)).toBeGreaterThan(0);
+
+    // Extract the edge count from "M delegation edges"
+    const edgeMatch = text?.match(/(\d+)\s+delegation\s+edges?/i);
+    expect(edgeMatch).not.toBeNull();
+    expect(parseInt(edgeMatch![1]!, 10)).toBeGreaterThan(0);
   });
 
   test('displays org graph visualization', async ({ page }) => {
     await page.goto('/org');
 
-    await page.waitForLoadState('load').catch(() => {});
+    await page.waitForLoadState('networkidle').catch(() => {});
 
-    // Look for SVG graph, canvas, or div-based visualization
-    const svgGraph = page.locator('svg').first();
-    const canvasGraph = page.locator('canvas').first();
-    const graphContainer = page.locator('[class*="graph"], [class*="org"], [id*="graph"], [data-testid*="org"]').first();
-
-    const hasSvg = await svgGraph.isVisible().catch(() => false);
-    const hasCanvas = await canvasGraph.isVisible().catch(() => false);
-    const hasContainer = await graphContainer.isVisible().catch(() => false);
-
-    // v6.7.4: replaced fake disjunction with real load assertion
-    const _heading = page.locator("h1, h2").first();
-    await expect(_heading).toBeVisible();
+    // The org tree with testid attribute must be visible
+    const orgTree = page.locator('[data-testid="org-tree"]');
+    await expect(orgTree).toBeVisible({ timeout: 8000 });
   });
 
   test('renders agent nodes in org graph', async ({ page }) => {
     await page.goto('/org');
 
-    await page.waitForLoadState('load').catch(() => {});
+    await page.waitForLoadState('networkidle').catch(() => {});
 
-    // Look for agent names or node labels
-    const agentNodes = page.locator('text=/Agent|agent|role|coordinator/i');
-    const nodeCount = await agentNodes.count();
+    await expect(page.locator('[data-testid="org-tree"]')).toBeVisible({ timeout: 8000 });
 
-    if (nodeCount > 0) {
-      await expect(agentNodes.first()).toBeVisible();
+    // Look for known C-suite role labels in rendered nodes
+    const ctoNode = page.locator('[data-testid="org-node"]').filter({ hasText: /^CTO$/i });
+    if (await ctoNode.count() > 0) {
+      await expect(ctoNode.first()).toBeVisible();
     }
 
-    // Look for role or team information
-    const roleElements = page.locator('text=/CTO|Backend|Frontend|QA|Manager/i');
-    const roleCount = await roleElements.count();
-
-    if (roleCount > 0) {
-      await expect(roleElements.first()).toBeVisible();
-    }
+    // Look for role or team information (at least one node label must be non-empty)
+    const allNodes = page.locator('[data-testid="org-node"]');
+    const count = await allNodes.count();
+    expect(count).toBeGreaterThan(0);
   });
 
   test('org graph handles empty state gracefully', async ({ page }) => {
     await page.goto('/org');
 
-    await page.waitForLoadState('load').catch(() => {});
+    await page.waitForLoadState('networkidle').catch(() => {});
 
-    // Either show graph or empty state
-    const emptyState = page.locator('text=/No agents|No data|empty|loading/i').first();
-    const graphContent = page.locator('svg, canvas, [class*="graph"], [class*="node"]').first();
+    // Either show graph or empty state — never a blank/broken page
+    const emptyState = page.locator('.empty-state').first();
+    const orgTree = page.locator('[data-testid="org-tree"]').first();
 
     const hasEmptyState = await emptyState.isVisible().catch(() => false);
-    const hasGraph = await graphContent.isVisible().catch(() => false);
+    const hasTree = await orgTree.isVisible().catch(() => false);
 
-    expect(hasEmptyState || hasGraph).toBeTruthy();
+    // One of the two states must be present
+    expect(hasEmptyState || hasTree).toBeTruthy();
   });
 
   test('org graph is responsive', async ({ page }) => {
     await page.goto('/org');
 
-    await page.waitForLoadState('load').catch(() => {});
+    await page.waitForLoadState('networkidle').catch(() => {});
 
-    // Verify page is still accessible after resize
+    // Tablet viewport
     await page.setViewportSize({ width: 768, height: 1024 });
+    const heading = page.locator('h1').first();
+    await expect(heading).toBeVisible({ timeout: 5000 });
 
-    await page.waitForTimeout(500);
-
-    // Check if content is still visible
-    const pageContent = page.locator('body');
-    await expect(pageContent).toBeVisible();
-
-    // Resize back to desktop
+    // Desktop viewport
     await page.setViewportSize({ width: 1280, height: 720 });
-
-    await page.waitForTimeout(500);
-    await expect(pageContent).toBeVisible();
+    await expect(heading).toBeVisible({ timeout: 5000 });
   });
 });

@@ -1,35 +1,48 @@
 import type { Command } from "commander";
 import {
-  applyReforgeCompatibility,
-  listReforgeCompatibility,
-  rollbackReforgeCompatibility,
-  statusReforgeCompatibility,
-} from "../compat/package-team-services.js";
+  applyReforgeProposalService,
+  listReforgeStateService,
+  rollbackReforgeOverrideService,
+  showReforgeStatusService,
+} from "@agentforge/core";
+import { warnDeprecation } from "../utils/run-helpers.js";
+
+const REFORGE_DEPRECATION =
+  "[compat] `reforge` is a root compatibility wrapper. Prefer `agentforge team reforge` from the package CLI.";
+
+async function runReforgeAction(action: () => Promise<number>): Promise<void> {
+  try {
+    const exitCode = await action();
+    if (exitCode !== 0) process.exitCode = exitCode;
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
+}
 
 async function applyProposalAction(
   proposalId: string,
   options: { yes?: boolean },
 ): Promise<void> {
-  console.warn("[compat] `reforge` is a root compatibility wrapper. Prefer `agentforge team reforge` from the package CLI.");
-  await applyReforgeCompatibility(
-    proposalId,
-    options.yes ? { yes: true } : {},
+  warnDeprecation(REFORGE_DEPRECATION);
+  await runReforgeAction(() =>
+    applyReforgeProposalService(process.cwd(), proposalId, options.yes ? { yes: true } : {}),
   );
 }
 
 async function listAction(): Promise<void> {
-  console.warn("[compat] `reforge` is a root compatibility wrapper. Prefer `agentforge team reforge` from the package CLI.");
-  await listReforgeCompatibility();
+  warnDeprecation(REFORGE_DEPRECATION);
+  await runReforgeAction(() => listReforgeStateService(process.cwd()));
 }
 
 async function rollbackAction(agentName: string): Promise<void> {
-  console.warn("[compat] `reforge` is a root compatibility wrapper. Prefer `agentforge team reforge` from the package CLI.");
-  await rollbackReforgeCompatibility(agentName);
+  warnDeprecation(REFORGE_DEPRECATION);
+  await runReforgeAction(() => rollbackReforgeOverrideService(process.cwd(), agentName));
 }
 
 async function statusAction(): Promise<void> {
-  console.warn("[compat] `reforge` is a root compatibility wrapper. Prefer `agentforge team reforge` from the package CLI.");
-  await statusReforgeCompatibility();
+  warnDeprecation(REFORGE_DEPRECATION);
+  await runReforgeAction(() => showReforgeStatusService(process.cwd()));
 }
 
 export default function registerReforgeCommand(program: Command): void {

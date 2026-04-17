@@ -192,9 +192,17 @@
   // Health classification for color coding and the status badge
   $: memHealthLevel = memHitPct >= 70 ? 'active' : memHitPct >= 40 ? 'partial' : memHitPct > 0 ? 'weak' : 'none';
   $: memBadgeLabel  = memHealthLevel === 'active' ? 'ACTIVE' : memHealthLevel === 'partial' ? 'PARTIAL' : memHealthLevel === 'weak' ? 'WEAK' : 'NO DATA';
-  $: memHitSubtext  = memHitPct >= 70  ? '✓ learning is compounding'
-                    : memHitPct >= 40  ? '~ partial coverage'
-                    : memHitPct >  0   ? '⚠ low coverage'
+  // Derive cycle fraction for hit rate context (e.g. "8 / 11 cycles").
+  // Uses debug.completedCycleCount — the same denominator computeMemoryStats uses
+  // internally — so the fraction is always consistent with the displayed hitRate.
+  $: memCompletedCycles = flywheel.debug?.completedCycleCount ?? 0;
+  $: memHitCount = memStats ? Math.round(memStats.hitRate * memCompletedCycles) : 0;
+  $: memCycleFraction = memCompletedCycles > 0
+    ? `${memHitCount} / ${memCompletedCycles} cycle${memCompletedCycles === 1 ? '' : 's'}`
+    : null;
+  $: memHitSubtext  = memHitPct >= 70  ? `✓ learning is compounding${memCycleFraction ? ` · ${memCycleFraction}` : ''}`
+                    : memHitPct >= 40  ? `~ partial coverage${memCycleFraction ? ` · ${memCycleFraction}` : ''}`
+                    : memHitPct >  0   ? `⚠ low coverage${memCycleFraction ? ` · ${memCycleFraction}` : ''}`
                     : (memStats?.totalEntries ?? 0) === 0 ? 'no memory written yet'
                     : 'no cycles run after first entry';
   /** Bar opacity: newest bars are fully opaque; oldest fade to 0.3. */

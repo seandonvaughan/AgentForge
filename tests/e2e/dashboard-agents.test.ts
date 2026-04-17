@@ -134,22 +134,20 @@ test.describe('Agents List Page', () => {
     // Resize to mobile
     await page.setViewportSize({ width: 375, height: 667 });
 
-    await page.waitForTimeout(500);
-
-    // Verify content is still accessible
-    const pageContent = page.locator('body');
-    await expect(pageContent).toBeVisible();
+    // Wait for heading to render at mobile viewport
+    const heading = page.locator('h1').filter({ hasText: /Agents/i }).first();
+    await expect(heading).toBeVisible({ timeout: 5000 });
 
     // Resize to tablet
     await page.setViewportSize({ width: 768, height: 1024 });
 
-    await page.waitForTimeout(500);
-    await expect(pageContent).toBeVisible();
+    // Wait for heading to render at tablet viewport
+    await expect(heading).toBeVisible({ timeout: 5000 });
 
     // Resize to desktop
     await page.setViewportSize({ width: 1280, height: 720 });
 
-    await page.waitForTimeout(500);
-    await expect(pageContent).toBeVisible();
+    // Wait for heading to render at desktop viewport
+    await expect(heading).toBeVisible({ timeout: 5000 });
   });
 });
