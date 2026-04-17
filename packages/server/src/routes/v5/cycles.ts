@@ -54,7 +54,12 @@ function resolveProjectRoot(
       : typeof headerVal === 'string' && headerVal.length > 0
         ? headerVal
         : null);
-  if (!workspaceId) return { projectRoot: fallbackRoot };
+  // No workspaceId, or the literal sentinel "default" — use server root.
+  // cycleSessions persists workspaceId="default" for cycles launched without
+  // an explicit workspace selection; without this fallthrough every such
+  // cycle's detail + approval endpoint 404s once the dashboard passes the
+  // sentinel back as a query param.
+  if (!workspaceId || workspaceId === 'default') return { projectRoot: fallbackRoot };
   const ws = getWorkspace(workspaceId);
   if (!ws) {
     return { error: { status: 404, body: { error: 'workspace not found', workspaceId } } };
