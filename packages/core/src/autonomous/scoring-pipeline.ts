@@ -226,23 +226,13 @@ Do not include any text outside the JSON object.`;
   }
 
   parseAndValidate(output: string): ScoringResult {
-    // Strip markdown code fences if present
-    let cleaned = output.trim();
-    if (cleaned.startsWith('```json')) {
-      cleaned = cleaned.slice(7).trim();
-    } else if (cleaned.startsWith('```')) {
-      cleaned = cleaned.slice(3).trim();
-    }
-    if (cleaned.endsWith('```')) {
-      cleaned = cleaned.slice(0, -3).trim();
-    }
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(cleaned);
-    } catch (err) {
+    // Try, in order: strict parse → fenced-block parse → extract first {...} →
+    // control-char sanitisation. Each step is cheap and targets a specific
+    // failure mode seen in the wild (cycle 75bfaf96 strikes 2+3).
+    const parsed = extractScoringJson(output);
+    if (parsed === null) {
       throw new ScoringPipelineError(
-        `Scoring output is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
+        'Scoring output is not valid JSON (tried strict parse, fence stripping, brace extraction, and control-char sanitisation)',
       );
     }
 
@@ -270,4 +260,86 @@ Do not include any text outside the JSON object.`;
     }
     return true;
   }
+}
+
+/**
+ * Robust JSON extraction for scorer output. Returns parsed object or null.
+ *
+ * Strategy (each step cheap, bails early on success):
+ *   1. Trim + strip markdown fences and try strict JSON.parse.
+ *   2. Walk the string to find the first top-level `{...}` block (handles
+ *      leading prose like "Here is the ranking: {...}").
+ *   3. Sanitise unescaped control characters inside string literals —
+ *      literal \n/\t/\r inside a quoted value break JSON.parse but are
+ *      semantically obvious once escaped.
+ *
+ * This is called from parseAndValidate after an earlier retry already failed,
+ * so the cost is negligible even when all four attempts run.
+ */
+function extractScoringJson(output: string): unknown | null {
+  // 1. Strip fences + strict parse
+  let cleaned = output.trim();
+  if (cleaned.startsWith('```json')) cleaned = cleaned.slice(7).trim();
+  else if (cleaned.startsWith('```')) cleaned = cleaned.slice(3).trim();
+  if (cleaned.endsWith('```')) cleaned = cleaned.slice(0, -3).trim();
+
+  const attempts: string[] = [cleaned];
+
+  // 2. Find first balanced {...} block (naive but effective — bails on the
+  //    first syntactic JSON candidate even when prefixed with prose).
+  const brace = findFirstBalancedBraces(cleaned);
+  if (brace !== null && brace !== cleaned) attempts.push(brace);
+
+  // 3. Sanitise unescaped control chars inside string literals
+  for (const candidate of [...attempts]) {
+    attempts.push(sanitiseControlCharsInStrings(candidate));
+  }
+
+  for (const candidate of attempts) {
+    try {
+      return JSON.parse(candidate);
+    } catch { /* try next */ }
+  }
+  return null;
+}
+
+function findFirstBalancedBraces(s: string): string | null {
+  const start = s.indexOf('{');
+  if (start < 0) return null;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < s.length; i++) {
+    const ch = s.charAt(i);
+    if (escape) { escape = false; continue; }
+    if (ch === '\\') { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return s.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
+function sanitiseControlCharsInStrings(s: string): string {
+  // Walk the string, tracking whether we're inside a JSON string literal.
+  // Replace raw \n, \t, \r inside strings with their escaped forms. Outside
+  // strings, leave them intact.
+  const out: string[] = [];
+  let inString = false;
+  let escape = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s.charAt(i);
+    if (escape) { out.push(ch); escape = false; continue; }
+    if (ch === '\\') { out.push(ch); escape = true; continue; }
+    if (ch === '"') { out.push(ch); inString = !inString; continue; }
+    if (inString && ch === '\n') out.push('\\n');
+    else if (inString && ch === '\r') out.push('\\r');
+    else if (inString && ch === '\t') out.push('\\t');
+    else out.push(ch);
+  }
+  return out.join('');
 }
