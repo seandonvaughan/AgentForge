@@ -191,3 +191,212 @@ describe('isSilentSystemMessage', () => {
     expect(isSilentSystemMessage('cycle_event', 'abc12345 · phase.start · plan')).toBe(false);
   });
 });
+
+// ─── cycleAccentColor — full CYCLE_CATEGORY_LABELS coverage ──────────────────
+//
+// Each key in CYCLE_CATEGORY_LABELS maps to a category that could arrive on the
+// SSE stream. These tests verify the accent color the /live feed row would
+// receive for every recognised category.
+
+describe('cycleAccentColor — every CYCLE_CATEGORY_LABELS key', () => {
+  // Danger group (failure / error keywords)
+  it('test.fail → danger', () => {
+    expect(cycleAccentColor('test.fail')).toBe('var(--color-danger)');
+  });
+
+  // Success group (complete / pass / merged keywords)
+  it('tests.complete → success', () => {
+    expect(cycleAccentColor('tests.complete')).toBe('var(--color-success)');
+  });
+
+  it('scoring.complete → success', () => {
+    expect(cycleAccentColor('scoring.complete')).toBe('var(--color-success)');
+  });
+
+  it('phase.complete → success', () => {
+    expect(cycleAccentColor('phase.complete')).toBe('var(--color-success)');
+  });
+
+  // Warning group (warn / budget / pending keywords)
+  it('budget.warn → warning', () => {
+    // already tested in main suite; re-assert for completeness
+    expect(cycleAccentColor('budget.warn')).toBe('var(--color-warning)');
+  });
+
+  // Sonnet (default) group — no danger/success/warning keyword
+  it('pr.opened → sonnet (default)', () => {
+    expect(cycleAccentColor('pr.opened')).toBe('var(--color-sonnet)');
+  });
+
+  it('pr.merged → sonnet (default)', () => {
+    expect(cycleAccentColor('pr.merged')).toBe('var(--color-sonnet)');
+  });
+
+  it('opened → sonnet (default)', () => {
+    expect(cycleAccentColor('opened')).toBe('var(--color-sonnet)');
+  });
+
+  it('scoring.fallback → sonnet (default)', () => {
+    expect(cycleAccentColor('scoring.fallback')).toBe('var(--color-sonnet)');
+  });
+
+  it('sprint.assigned → sonnet (default)', () => {
+    expect(cycleAccentColor('sprint.assigned')).toBe('var(--color-sonnet)');
+  });
+
+  it('phase.result → sonnet (default)', () => {
+    expect(cycleAccentColor('phase.result')).toBe('var(--color-sonnet)');
+  });
+
+  it('phase.skip → sonnet (default)', () => {
+    expect(cycleAccentColor('phase.skip')).toBe('var(--color-sonnet)');
+  });
+
+  it('approval.decision → sonnet (default)', () => {
+    expect(cycleAccentColor('approval.decision')).toBe('var(--color-sonnet)');
+  });
+});
+
+// ─── formatCategory — remaining CYCLE_CATEGORY_LABELS entries ────────────────
+
+describe('formatCategory — remaining cycle categories', () => {
+  it('cycle.started → "Started"', () => {
+    expect(formatCategory('cycle_event', 'cycle.started')).toBe('Started');
+  });
+
+  it('cycle.error → "Error"', () => {
+    expect(formatCategory('cycle_event', 'cycle.error')).toBe('Error');
+  });
+
+  it('phase.complete → "Phase ✓"', () => {
+    expect(formatCategory('cycle_event', 'phase.complete')).toBe('Phase ✓');
+  });
+
+  it('phase.result → "Result"', () => {
+    expect(formatCategory('cycle_event', 'phase.result')).toBe('Result');
+  });
+
+  it('phase.skip → "Skipped"', () => {
+    expect(formatCategory('cycle_event', 'phase.skip')).toBe('Skipped');
+  });
+
+  it('commit → "Commit"', () => {
+    expect(formatCategory('cycle_event', 'commit')).toBe('Commit');
+  });
+
+  it('pr.opened → "PR Open"', () => {
+    expect(formatCategory('cycle_event', 'pr.opened')).toBe('PR Open');
+  });
+
+  it('pr.merged → "PR Merged"', () => {
+    expect(formatCategory('cycle_event', 'pr.merged')).toBe('PR Merged');
+  });
+
+  it('opened → "PR Open"', () => {
+    expect(formatCategory('cycle_event', 'opened')).toBe('PR Open');
+  });
+
+  it('test.fail → "Tests ✗"', () => {
+    expect(formatCategory('cycle_event', 'test.fail')).toBe('Tests ✗');
+  });
+
+  it('tests.complete → "Tests ✓"', () => {
+    expect(formatCategory('cycle_event', 'tests.complete')).toBe('Tests ✓');
+  });
+
+  it('budget.warn → "Budget ⚠"', () => {
+    expect(formatCategory('cycle_event', 'budget.warn')).toBe('Budget ⚠');
+  });
+
+  it('scoring.complete → "Scored"', () => {
+    expect(formatCategory('cycle_event', 'scoring.complete')).toBe('Scored');
+  });
+
+  it('scoring.fallback → "Score ≈"', () => {
+    expect(formatCategory('cycle_event', 'scoring.fallback')).toBe('Score ≈');
+  });
+
+  it('sprint.assigned → "Sprint →"', () => {
+    expect(formatCategory('cycle_event', 'sprint.assigned')).toBe('Sprint →');
+  });
+
+  it('approval.decision → "Decision"', () => {
+    expect(formatCategory('cycle_event', 'approval.decision')).toBe('Decision');
+  });
+});
+
+// ─── cycle_event rendering pipeline ─────────────────────────────────────────
+//
+// These tests simulate the full /live page rendering path for a cycle_event
+// SSE message: the shape of the payload emitted by stream.ts, processed through
+// isSilentSystemMessage → cycleAccentColor + formatCategory + formatTime.
+// They verify that an operator looking at the feed sees the right colors and
+// human-readable timestamps for each significant lifecycle event.
+
+describe('cycle_event rendering pipeline', () => {
+  // Helpers that mirror the logic in +page.svelte's {#each} block
+  function renderRow(event: { type: string; category: string; timestamp: string }) {
+    const isCycle = event.type === 'cycle_event';
+    const accentColor = isCycle
+      ? cycleAccentColor(event.category)
+      : (TYPE_COLORS[event.type] ?? 'var(--color-text-muted)');
+    const categoryLabel = formatCategory(event.type, event.category);
+    const timeLabel     = formatTime(event.timestamp);
+    const typeBadgeColor = TYPE_COLORS[event.type] ?? 'var(--color-text-muted)';
+    return { isCycle, accentColor, categoryLabel, timeLabel, typeBadgeColor };
+  }
+
+  it('cycle.failed event → danger accent, "Failed" label, HH:MM:SS time', () => {
+    const r = renderRow({ type: 'cycle_event', category: 'cycle.failed', timestamp: '2026-04-17T10:05:30.000Z' });
+    expect(r.isCycle).toBe(true);
+    expect(r.accentColor).toBe('var(--color-danger)');
+    expect(r.categoryLabel).toBe('Failed');
+    expect(r.timeLabel).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+  });
+
+  it('cycle.completed event → success accent, "Complete" label', () => {
+    const r = renderRow({ type: 'cycle_event', category: 'cycle.completed', timestamp: '2026-04-17T10:10:00.000Z' });
+    expect(r.accentColor).toBe('var(--color-success)');
+    expect(r.categoryLabel).toBe('Complete');
+  });
+
+  it('approval.pending event → warning accent, "Approval?" label', () => {
+    const r = renderRow({ type: 'cycle_event', category: 'approval.pending', timestamp: '2026-04-17T10:12:00.000Z' });
+    expect(r.accentColor).toBe('var(--color-warning)');
+    expect(r.categoryLabel).toBe('Approval?');
+  });
+
+  it('phase.start event → sonnet accent, "Phase →" label', () => {
+    const r = renderRow({ type: 'cycle_event', category: 'phase.start', timestamp: '2026-04-17T10:01:00.000Z' });
+    expect(r.accentColor).toBe('var(--color-sonnet)');
+    expect(r.categoryLabel).toBe('Phase →');
+  });
+
+  it('cycle_event type badge uses --color-sonnet color', () => {
+    const r = renderRow({ type: 'cycle_event', category: 'cycle.started', timestamp: '2026-04-17T09:59:00.000Z' });
+    expect(r.typeBadgeColor).toContain('--color-sonnet');
+  });
+
+  it('non-cycle event is not treated as cycle row', () => {
+    const r = renderRow({ type: 'sprint_event', category: 'sprint.started', timestamp: '2026-04-17T09:00:00.000Z' });
+    expect(r.isCycle).toBe(false);
+    // accent color comes from TYPE_COLORS, not cycleAccentColor
+    expect(r.accentColor).toBe(TYPE_COLORS['sprint_event']);
+  });
+
+  it('cycle_event with invalid timestamp falls back to raw string', () => {
+    const r = renderRow({ type: 'cycle_event', category: 'phase.start', timestamp: 'bad-ts' });
+    expect(r.timeLabel).toBe('bad-ts');
+  });
+
+  it('cycle_event with unknown category title-cases the label', () => {
+    const r = renderRow({ type: 'cycle_event', category: 'custom.new.phase', timestamp: '2026-04-17T10:00:00.000Z' });
+    expect(r.categoryLabel).toBe('Custom New Phase');
+    expect(r.accentColor).toBe('var(--color-sonnet)');
+  });
+
+  it('heartbeat system event is filtered before rendering', () => {
+    expect(isSilentSystemMessage('system', 'heartbeat')).toBe(true);
+    expect(isSilentSystemMessage('cycle_event', 'heartbeat')).toBe(false);
+  });
+});

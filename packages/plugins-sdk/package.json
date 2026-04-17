@@ -10,6 +10,6 @@
   "dependencies": { "@agentforge/shared": "workspace:*" },
   "devDependencies": { "typescript": "^5.7.0" },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.9.0"
   }
 }

@@ -713,6 +713,14 @@ describe("Memory Flow Integration — Full Cycle Wiring", () => {
       // Verify the formatted section would be suitable for prompt injection
       expect(injectedSection.length).toBeGreaterThan(50);
       expect(injectedSection).toMatch(/###\s+\w+/); // Has markdown headings
+
+      // CRITICAL: Verify that the actual entry VALUES are in the formatted prompt.
+      // This is the key audit-prompt inclusion assertion: entries must be visible
+      // in the injection, not just present in the entries array.
+      const gateValue = JSON.parse(cycle1Gate.value);
+      const reviewValue = JSON.parse(cycle1Review.value);
+      expect(injectedSection).toContain("fail"); // gate verdict verdict is in the JSON value
+      expect(injectedSection).toContain("CRITICAL"); // review finding severity is in the JSON value
     });
 
     it("memory section injection respects entry limits", async () => {
@@ -757,6 +765,64 @@ describe("Memory Flow Integration — Full Cycle Wiring", () => {
       const values = entries.map((e) => e.value);
       expect(values.some((v) => v.includes("item-1"))).toBe(true);
       expect(values.some((v) => v.includes("item-2"))).toBe(true);
+    });
+
+    it("filter-before-cap correctness: entries from all types included when limited", async () => {
+      // Write 15 gate verdicts and 5 review findings (total 20 entries)
+      for (let i = 0; i < 15; i++) {
+        simulateGatePhaseWrite(projectRoot, `cycle-gate-${i}`, i % 3 === 0 ? "pass" : "fail");
+      }
+      for (let i = 0; i < 5; i++) {
+        simulateReviewPhaseWrite(projectRoot, `cycle-rev-${i}`, `item-${i}`, i % 2 === 0 ? "CRITICAL" : "MAJOR");
+      }
+
+      // Read with a limit of 10 total entries
+      // The implementation caps per TYPE, not globally, so we should get up to 10
+      // gate-verdicts (newest) + up to 10 review-findings (newest) = up to 20 total
+      const entries = readRecentMemoryEntries(projectRoot, 10);
+
+      // Critical assertion: we must have entries from BOTH types, not just gate-verdicts
+      // (which would happen if we capped globally BEFORE filtering)
+      const hasGateVerdicts = entries.some((e) => e.type === "gate-verdict");
+      const hasReviewFindings = entries.some((e) => e.type === "review-finding");
+      expect(hasGateVerdicts).toBe(true);
+      expect(hasReviewFindings).toBe(true);
+
+      // Verify that all review findings are included (we only wrote 5, should all be present)
+      const reviewEntries = entries.filter((e) => e.type === "review-finding");
+      expect(reviewEntries.length).toBeGreaterThanOrEqual(5);
+
+      // Format and verify both types appear in the output
+      const formatted = formatMemoryForPrompt(entries);
+      expect(formatted).toContain("Gate verdicts");
+      expect(formatted).toContain("Code review findings");
+    });
+
+    it("cross-cycle audit prompt includes all entry types when present", async () => {
+      // Write one of each type in cycle 1
+      const gateEntry = simulateGatePhaseWrite(projectRoot, "cycle-1", "pass");
+      const reviewEntry = simulateReviewPhaseWrite(projectRoot, "cycle-1", "item-1", "MAJOR");
+      const outcomeEntry = simulateCycleLoggerWrite(projectRoot, "cycle-1", true);
+
+      // Cycle 2: read and format for audit prompt injection
+      const entries = readRecentMemoryEntries(projectRoot, 20);
+      const formatted = formatMemoryForPrompt(entries);
+
+      // All three types should be represented in the formatted output
+      expect(formatted).toContain("### Gate verdicts");
+      expect(formatted).toContain("### Code review findings");
+      expect(formatted).toContain("### Cycle outcomes");
+
+      // Each type's content (not just headers) should be in the formatted section
+      const gateValueContent = JSON.parse(gateEntry.value);
+      const reviewValueContent = JSON.parse(reviewEntry.value);
+      const outcomeValueContent = JSON.parse(outcomeEntry.value);
+
+      // Verify actual entry values are injected (not just type headers)
+      // The formatted output includes the entire JSON string as the value
+      expect(formatted).toContain(`"verdict":"${gateValueContent.verdict}"`);
+      expect(formatted).toContain(`"severity":"${reviewValueContent.severity}"`);
+      expect(formatted).toContain(`"success":${outcomeValueContent.success}`);
     });
   });
 });

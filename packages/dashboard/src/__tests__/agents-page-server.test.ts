@@ -14,6 +14,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { _loadAgents } from '../routes/agents/+page.server.js';
+import { matchesAgentFilter } from '../routes/agents/agents-utils.js';
+import type { AgentListItem } from '../routes/agents/agents-utils.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -277,6 +279,123 @@ describe('_loadAgents — block scalar with trailing content', () => {
 
     const result = _loadAgents(tmpRoot);
     expect(result[0]!.description).toBe('First line of description. Second line of description.');
+  });
+});
+
+// ── matchesAgentFilter — team filter predicate ────────────────────────────────
+//
+// The __unassigned__ team filter has been a repeat regression: the predicate
+// used to compare `agent.team === '__unassigned__'` which never matched because
+// unassigned agents have team=null, not team='__unassigned__'. These tests are
+// the regression guard.
+
+const AGENT_BASE: AgentListItem = {
+  agentId: 'test-agent',
+  name: 'Test Agent',
+  model: 'sonnet',
+  description: null,
+  role: null,
+  team: null,
+  effort: null,
+};
+
+describe('matchesAgentFilter — team filter', () => {
+  it('filterTeam="" matches agents with any team (no filter)', () => {
+    const withTeam = { ...AGENT_BASE, team: 'runtime' };
+    const noTeam   = { ...AGENT_BASE, team: null };
+    expect(matchesAgentFilter(withTeam, '', '', '')).toBe(true);
+    expect(matchesAgentFilter(noTeam,   '', '', '')).toBe(true);
+  });
+
+  it('filterTeam="__unassigned__" matches agents with null team', () => {
+    const noTeam = { ...AGENT_BASE, team: null };
+    expect(matchesAgentFilter(noTeam, '', '', '__unassigned__')).toBe(true);
+  });
+
+  it('filterTeam="__unassigned__" does NOT match agents with a named team', () => {
+    // Regression: the old predicate tested `a.team === "__unassigned__"` which
+    // never matched named-team agents AND never matched null-team agents either.
+    const withTeam = { ...AGENT_BASE, team: 'strategic' };
+    expect(matchesAgentFilter(withTeam, '', '', '__unassigned__')).toBe(false);
+  });
+
+  it('filterTeam="strategic" matches agents whose team is "strategic"', () => {
+    const strategic = { ...AGENT_BASE, team: 'strategic' };
+    expect(matchesAgentFilter(strategic, '', '', 'strategic')).toBe(true);
+  });
+
+  it('filterTeam="strategic" does NOT match agents with a different team', () => {
+    const runtime = { ...AGENT_BASE, team: 'runtime' };
+    expect(matchesAgentFilter(runtime, '', '', 'strategic')).toBe(false);
+  });
+
+  it('filterTeam="strategic" does NOT match unassigned agents', () => {
+    const noTeam = { ...AGENT_BASE, team: null };
+    expect(matchesAgentFilter(noTeam, '', '', 'strategic')).toBe(false);
+  });
+});
+
+describe('matchesAgentFilter — model filter', () => {
+  it('filterModel="" matches any model', () => {
+    const opus   = { ...AGENT_BASE, model: 'opus' as const };
+    const sonnet = { ...AGENT_BASE, model: 'sonnet' as const };
+    const haiku  = { ...AGENT_BASE, model: 'haiku' as const };
+    expect(matchesAgentFilter(opus,   '', '', '')).toBe(true);
+    expect(matchesAgentFilter(sonnet, '', '', '')).toBe(true);
+    expect(matchesAgentFilter(haiku,  '', '', '')).toBe(true);
+  });
+
+  it('filterModel="opus" only matches opus agents', () => {
+    const opus   = { ...AGENT_BASE, model: 'opus' as const };
+    const sonnet = { ...AGENT_BASE, model: 'sonnet' as const };
+    expect(matchesAgentFilter(opus,   '', 'opus', '')).toBe(true);
+    expect(matchesAgentFilter(sonnet, '', 'opus', '')).toBe(false);
+  });
+});
+
+describe('matchesAgentFilter — search filter', () => {
+  it('empty search matches everything', () => {
+    const agent = { ...AGENT_BASE, name: 'Architect', description: 'Designs things' };
+    expect(matchesAgentFilter(agent, '', '', '')).toBe(true);
+  });
+
+  it('search matches on name (case-insensitive)', () => {
+    const agent = { ...AGENT_BASE, name: 'Lead Architect' };
+    expect(matchesAgentFilter(agent, 'architect', '', '')).toBe(true);
+    expect(matchesAgentFilter(agent, 'ARCHITECT', '', '')).toBe(true);
+    expect(matchesAgentFilter(agent, 'coder',     '', '')).toBe(false);
+  });
+
+  it('search matches on description', () => {
+    const agent = { ...AGENT_BASE, description: 'Owns integration patterns.' };
+    expect(matchesAgentFilter(agent, 'integration', '', '')).toBe(true);
+  });
+
+  it('search matches on team name', () => {
+    const agent = { ...AGENT_BASE, team: 'runtime' };
+    expect(matchesAgentFilter(agent, 'runtime', '', '')).toBe(true);
+  });
+});
+
+describe('matchesAgentFilter — combined filters', () => {
+  it('all three filters must pass simultaneously', () => {
+    const agent: AgentListItem = {
+      agentId: 'planner',
+      name: 'Sprint Planner',
+      model: 'opus',
+      description: 'Plans sprints.',
+      role: 'planner',
+      team: 'strategic',
+      effort: 'high',
+    };
+    // All filters pass
+    expect(matchesAgentFilter(agent, 'planner', 'opus', 'strategic')).toBe(true);
+    // Wrong model
+    expect(matchesAgentFilter(agent, 'planner', 'haiku', 'strategic')).toBe(false);
+    // Wrong team
+    expect(matchesAgentFilter(agent, 'planner', 'opus', 'runtime')).toBe(false);
+    // Search miss
+    expect(matchesAgentFilter(agent, 'architect', 'opus', 'strategic')).toBe(false);
   });
 });
 

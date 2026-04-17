@@ -230,7 +230,7 @@
     <h2 class="page-title">⎇ Autonomous Branches</h2>
     <p class="page-subtitle">
       Git hygiene for <code>autonomous/*</code> cycles ·
-      branches with no open PR become <strong>stale</strong> after 30 days
+      branches with no open PR become <strong>stale</strong> after 3 days
     </p>
   </div>
   <div class="header-actions">

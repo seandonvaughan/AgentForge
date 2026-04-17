@@ -147,6 +147,22 @@
   }
 
   /**
+   * Set the type filter and immediately trigger a server-side reload.
+   * Using an explicit setter (rather than a reactive $: watcher) avoids
+   * double-loading on initial mount — the reactive block fires once with
+   * the initial 'all' value before onMount runs, which wastes a round-trip.
+   *
+   * Passing type to the batch API enables server-side filtering so results
+   * are correct even for datasets larger than the 200-entry V5_MEMORY_LIMIT
+   * window — entries beyond the cap that match the type filter would otherwise
+   * be silently excluded from client-side filtering.
+   */
+  function setTypeFilter(t: string) {
+    typeFilter = t;
+    loadBatch(true);
+  }
+
+  /**
    * Load memory entries by consuming the NDJSON streaming endpoint
    * (/api/v5/memory/stream).  The stream endpoint is used unfiltered so that
    * the re-derived `agents` and `types` arrays always reflect the full corpus
@@ -649,6 +665,39 @@
     };
   }
 
+  /**
+   * Extract a PR URL from any memory entry type that carries one.
+   * Strategy (checked in order):
+   *   1. cycle-outcome — uses the typed extractCycleOutcomeInfo helper.
+   *   2. gate-verdict  — checks promoted metadata first, then falls back to
+   *      parsing the inline JSON value.
+   *   3. All other types — checks metadata.prUrl as a catch-all.
+   * Returns undefined when no PR URL can be resolved.
+   */
+  function extractPrUrlFromEntry(entry: MemoryEntry): string | undefined {
+    if (entry.type === 'cycle-outcome') {
+      return extractCycleOutcomeInfo(entry)?.prUrl;
+    }
+
+    // Promoted metadata (gate-verdict v10.2+ schema and future types)
+    if (entry.metadata && typeof entry.metadata.prUrl === 'string' && entry.metadata.prUrl) {
+      return entry.metadata.prUrl;
+    }
+
+    // Inline JSON value (gate-verdict, any type that embeds prUrl in value)
+    if (typeof entry.value === 'string' && entry.value.trim().startsWith('{')) {
+      try {
+        const v = JSON.parse(entry.value) as Record<string, unknown>;
+        if (typeof v.prUrl === 'string' && v.prUrl) return v.prUrl;
+      } catch { /* not parseable JSON */ }
+    } else if (entry.value && typeof entry.value === 'object') {
+      const v = entry.value as Record<string, unknown>;
+      if (typeof v.prUrl === 'string' && v.prUrl) return v.prUrl;
+    }
+
+    return undefined;
+  }
+
   type FindingSeverity = 'critical' | 'major' | 'minor';
   interface ReviewFindingInfo {
     severity: FindingSeverity | null;
@@ -800,7 +849,7 @@
       class="stats-chip stats-chip--all"
       class:stats-chip--active={typeFilter === 'all'}
       style="--chip-color: var(--color-text-muted);"
-      onclick={() => typeFilter = 'all'}
+      onclick={() => setTypeFilter('all')}
       title="Show all types"
       aria-pressed={typeFilter === 'all'}
     >
@@ -813,9 +862,10 @@
         class="stats-chip"
         class:stats-chip--active={typeFilter === type}
         style="--chip-color: {cfg.color};"
-        onclick={() => typeFilter = typeFilter === type ? 'all' : type}
-        title="Filter by {type}"
+        onclick={() => setTypeFilter(typeFilter === type ? 'all' : type)}
+        title="Filter by {type} ({count} entries)"
         aria-pressed={typeFilter === type}
+        aria-label="{cfg.label || type}: {count} entr{count === 1 ? 'y' : 'ies'}"
       >
         <span class="stats-chip__count">{count}</span>
         <span class="stats-chip__label">{cfg.label || type}</span>
@@ -906,7 +956,7 @@
     <span class="empty-icon">∅</span>
     <p>No entries match your search.</p>
     <button class="btn btn-ghost btn-sm" style="margin-top: var(--space-3)"
-      onclick={() => { searchQuery = ''; agentFilter = 'all'; typeFilter = 'all'; loadBatch(true); }}>
+      onclick={() => { searchQuery = ''; agentFilter = 'all'; setTypeFilter('all'); }}>
       Clear filters
     </button>
   </div>
@@ -968,7 +1018,7 @@
             <!-- Type chip column — click cell to toggle type filter without expanding the row -->
             <td
               class="col-type col-type--clickable"
-              onclick={(e) => { e.stopPropagation(); if (entry.type) typeFilter = typeFilter === entry.type ? 'all' : entry.type; }}
+              onclick={(e) => { e.stopPropagation(); if (entry.type) setTypeFilter(typeFilter === entry.type ? 'all' : entry.type); }}
               title={entry.type ? `Filter by ${cfg.label || entry.type}` : undefined}
               role="button"
               tabindex="-1"
@@ -1028,7 +1078,7 @@
               {#if displaySource}
                 {#if isCycleId(displaySource)}
                   {@const sprintVer = resolveSprintVersion(entry)}
-                  {@const prLink = entry.type === 'cycle-outcome' ? extractCycleOutcomeInfo(entry)?.prUrl : undefined}
+                  {@const prLink = extractPrUrlFromEntry(entry)}
                   <div class="source-stack">
                     <a
                       class="source-link source-link--cycle"
@@ -1136,7 +1186,15 @@
                     {#if entry.type}
                       <span class="detail-meta-item">
                         <span class="detail-label">File</span>
-                        <code class="detail-code detail-code--file">{entry.type}.jsonl</code>
+                        <!-- Clicking the file chip sets the type filter to narrow the table
+                             to entries from this same JSONL file. Mirrors the stats-bar chips. -->
+                        <button
+                          class="detail-file-link"
+                          class:detail-file-link--active={typeFilter === entry.type}
+                          onclick={(e) => { e.stopPropagation(); setTypeFilter(typeFilter === entry.type ? 'all' : entry.type); }}
+                          title="{typeFilter === entry.type ? 'Clear' : 'Filter by'} {entry.type}"
+                          aria-pressed={typeFilter === entry.type}
+                        >{entry.type}.jsonl</button>
                       </span>
                     {/if}
                     {#if resolveSprintVersion(entry)}
@@ -1976,6 +2034,39 @@
   .detail-code--file {
     color: var(--color-text-faint);
     font-size: 10px;
+  }
+
+  /*
+   * File chip in the expanded detail meta strip.
+   * Clicking filters the table by that entry type — mirrors the stats-bar chips.
+   * Uses the same mono font + code styling as .detail-code--file but adds
+   * interactive states so it's clearly clickable.
+   */
+  .detail-file-link {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--color-text-faint);
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: 1px 5px;
+    cursor: pointer;
+    transition: color 0.12s, border-color 0.12s, background 0.12s;
+    white-space: nowrap;
+    line-height: 1.5;
+  }
+  .detail-file-link:hover {
+    color: var(--color-brand);
+    border-color: color-mix(in srgb, var(--color-brand) 35%, transparent);
+    background: color-mix(in srgb, var(--color-brand) 7%, transparent);
+  }
+  /* Active: type filter is currently set to this entry's type */
+  .detail-file-link--active {
+    color: var(--color-brand);
+    border-color: color-mix(in srgb, var(--color-brand) 50%, transparent);
+    background: color-mix(in srgb, var(--color-brand) 10%, transparent);
+    outline: 1.5px solid color-mix(in srgb, var(--color-brand) 40%, transparent);
+    outline-offset: 1px;
   }
 
   /* ── Detail value block with copy button ─────────────────────────────────── */

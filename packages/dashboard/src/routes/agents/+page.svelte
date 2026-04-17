@@ -2,7 +2,8 @@
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   import type { PageData } from './$types';
-  import type { AgentListItem } from './+page.server';
+  import type { AgentListItem } from './agents-utils';
+  import { matchesAgentFilter } from './agents-utils';
 
   let { data }: { data: PageData } = $props();
 
@@ -55,16 +56,9 @@
     }
   }
 
-  let filtered = $derived(liveAgents.filter(a => {
-    const q = search.toLowerCase();
-    const label = (a.name ?? a.agentId ?? '').toLowerCase();
-    const desc = (a.description ?? '').toLowerCase();
-    const teamStr = (a.team ?? '').toLowerCase();
-    const nameMatch = !q || label.includes(q) || desc.includes(q) || teamStr.includes(q);
-    const modelMatch = filterModel === '' || a.model === filterModel;
-    const teamMatch = filterTeam === '' || (filterTeam === '__unassigned__' ? !a.team : a.team === filterTeam);
-    return nameMatch && modelMatch && teamMatch;
-  }));
+  let filtered = $derived(
+    liveAgents.filter(a => matchesAgentFilter(a, search, filterModel, filterTeam))
+  );
 
   /** Group agents by team for the stats bar */
   let teamStats = $derived(

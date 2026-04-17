@@ -1180,11 +1180,10 @@ export async function cyclesRoutes(
       return reply.status(500).send({ error: `Failed to open log file: ${(err as Error).message}` });
     }
 
-    // TODO(v6.5.0): the CLI currently generates its own cycleId. We pass
-    // AUTONOMOUS_CYCLE_ID via env so the CLI can pick it up once wired.
-    // Until then the subprocess-written cycle dir may differ from the API
-    // response's cycleId. Clients should treat the API cycleId as the
-    // canonical pointer and fall back to scanning recent dirs if needed.
+    // Pass AUTONOMOUS_CYCLE_ID so the CLI uses the same pre-allocated id.
+    // CycleRunner and CycleLogger both honour options.cycleId (injected by the
+    // CLI) which takes priority over the env var, which in turn takes priority
+    // over a fresh UUID — so the cycle dir always matches this API response.
     const nodeBin = process.execPath;
     // CLI binary always lives in the server's project root (it's the
     // AgentForge monorepo), NOT in the target workspace.

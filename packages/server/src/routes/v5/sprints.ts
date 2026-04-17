@@ -19,9 +19,29 @@ function normalizeSprint(raw: Record<string, unknown>, fallbackId: string) {
   const teamSize = entry['teamSize'] as number | undefined;
   const successCriteria = entry['successCriteria'] as string[] | undefined;
   const auditFindings = entry['auditFindings'] as string[] | undefined;
-  const testCountBefore = entry['testCountBefore'] as number | undefined;
-  const testCountAfter = entry['testCountAfter'] as number | undefined;
-  const testCountDelta = entry['testCountDelta'] as number | undefined;
+
+  // results: v5.4–v5.8 era nested object that holds test metrics, gates, and file lists
+  const results = (typeof entry['results'] === 'object' && entry['results'] !== null && !Array.isArray(entry['results'])
+    ? entry['results']
+    : {}) as Record<string, unknown>;
+
+  // testCount fields: support top-level (v6.x+), results.* (v5.4–v5.8), and
+  // flat aliases (v5.7: testsAdded/testsPrior/testsTotal)
+  const testCountBefore = (
+    entry['testCountBefore'] ??
+    results['testsPassingBefore'] ??
+    entry['testsPrior']
+  ) as number | undefined;
+  const testCountAfter = (
+    entry['testCountAfter'] ??
+    results['testsPassingAfter'] ??
+    entry['testsTotal']
+  ) as number | undefined;
+  const testCountDelta = (
+    entry['testCountDelta'] ??
+    (results['newTests'] !== undefined ? results['newTests'] : undefined) ??
+    entry['testsAdded']
+  ) as number | undefined;
   const totalCostUsd = entry['totalCostUsd'] as number | undefined;
   const sprintId = entry['sprintId'] as string | undefined;
   const autonomous = entry['autonomous'] as boolean | undefined;
@@ -36,9 +56,23 @@ function normalizeSprint(raw: Record<string, unknown>, fallbackId: string) {
 
   // ceoBrief: some files use 'ceoBrief', earlier files use 'ceo_brief'
   const ceoBrief = (entry['ceoBrief'] ?? entry['ceo_brief']) as string | undefined;
-  const autonomyGates = entry['autonomyGates'] as Record<string, string> | undefined;
-  const newFiles = entry['newFiles'] as string[] | undefined;
+  // ctoBrief: parallel to ceoBrief, only present in a handful of v5.x files
+  const ctoBrief = (entry['ctoBrief'] ?? entry['cto_brief']) as string | undefined;
+
+  const autonomyGates = (
+    entry['autonomyGates'] ??
+    (results['autonomyGates'] as Record<string, string> | undefined)
+  ) as Record<string, string> | undefined;
+
+  const newFiles = (entry['newFiles'] ??
+    (results['newFiles'] as string[] | undefined)
+  ) as string[] | undefined;
   const newTestFiles = entry['newTestFiles'] as string[] | undefined;
+
+  // risks: v4.7 era structured risk register
+  const risks = entry['risks'] as Array<{ risk: string; mitigation?: string; owner?: string }> | undefined;
+  // newHires: v4.7 era planned agent additions
+  const newHires = entry['newHires'] as Array<{ agent: string; model?: string; reportsTo?: string; rationale?: string }> | undefined;
 
   // Derive a canonical status from the phase/status field.
   // Covers historical phase names found across all sprint files (v4.x–v10.x):
@@ -85,9 +119,12 @@ function normalizeSprint(raw: Record<string, unknown>, fallbackId: string) {
     theme,
     versionDecision,
     ceoBrief,
+    ctoBrief,
     autonomyGates,
     newFiles,
     newTestFiles,
+    risks,
+    newHires,
     items: items.map((item) => ({
       id: (item['id'] ?? '') as string,
       title: (item['title'] ?? '') as string,

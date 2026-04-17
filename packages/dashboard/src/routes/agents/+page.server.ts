@@ -11,18 +11,8 @@
 import type { PageServerLoad } from './$types';
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-
-export interface AgentListItem {
-  agentId: string;
-  name: string;
-  model: 'opus' | 'sonnet' | 'haiku';
-  description: string | null;
-  role: string | null;
-  /** Organisational team grouping (e.g. "strategic", "runtime", "quality"). */
-  team: string | null;
-  /** Invocation effort tier from YAML ("max" | "high" | "medium" | "low"). */
-  effort: string | null;
-}
+import type { AgentListItem } from './agents-utils.js';
+export type { AgentListItem } from './agents-utils.js';
 
 /**
  * Minimal YAML top-level field extractor.
@@ -141,6 +131,7 @@ export function _loadAgents(root: string): AgentListItem[] {
   agents.sort((a, b) => a.agentId.localeCompare(b.agentId));
   return agents;
 }
+
 
 export const load: PageServerLoad = () => {
   const agents = _loadAgents(findProjectRoot());

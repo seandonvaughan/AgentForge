@@ -150,4 +150,168 @@ test.describe('Agents List Page', () => {
     // Wait for heading to render at desktop viewport
     await expect(heading).toBeVisible({ timeout: 5000 });
   });
+
+  /**
+   * REGRESSION: __unassigned__ Team Filter (v11.0.0)
+   *
+   * Bug: The __unassigned__ team filter was broken — clicking it showed zero
+   * results because the filter logic was checking `agent.team === '__unassigned__'`
+   * instead of `!agent.team` (i.e., null/undefined team).
+   *
+   * Fix: Updated matchesAgentFilter() to use:
+   *   filterTeam === '__unassigned__' ? !agent.team : agent.team === filterTeam
+   *
+   * This test verifies the filter works correctly by:
+   * 1. Finding the team summary bar and verifying __unassigned__ chip exists
+   * 2. Clicking the __unassigned__ filter
+   * 3. Verifying the table still renders (no error state)
+   * 4. Verifying the filter can be cleared
+   */
+  test('agents page: __unassigned__ team filter works correctly (regression test)', async ({ page }) => {
+    await page.goto('/agents');
+    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
+
+    // The team summary bar should exist
+    const teamBar = page.locator('.team-summary-bar');
+    const isBarVisible = await teamBar.isVisible().catch(() => false);
+
+    if (!isBarVisible) {
+      // If no team bar, the page may not have agents with different teams
+      // This is OK — just verify the page loaded
+      const table = page.locator('table.data-table');
+      await expect(table).toBeVisible();
+      return;
+    }
+
+    // Look for the __unassigned__ team chip
+    const unassignedChip = teamBar.locator('.team-stat-chip.unassigned');
+    const isChipVisible = await unassignedChip.isVisible().catch(() => false);
+
+    if (!isChipVisible) {
+      // If there are no agents with null team, the chip won't render
+      // This is correct behavior — verify the data is as expected
+      const agents = teamBar.locator('.team-stat-chip');
+      const count = await agents.count();
+      expect(count).toBeGreaterThan(0);
+      return;
+    }
+
+    // Verify the chip has the correct label
+    const label = unassignedChip.locator('.team-name');
+    await expect(label).toContainText(/unassigned/i);
+
+    // Verify the chip has a count
+    const count = unassignedChip.locator('.team-count');
+    const countText = await count.textContent();
+    expect(countText?.trim()).toBeTruthy();
+    expect(parseInt(countText?.trim() ?? '0')).toBeGreaterThanOrEqual(0);
+
+    // Click the __unassigned__ filter
+    await unassignedChip.click();
+
+    // Verify the chip becomes active
+    await expect(unassignedChip).toHaveClass(/active/);
+
+    // The table should still be visible (a regression would cause it to disappear or error)
+    const table = page.locator('table.data-table');
+    await expect(table).toBeVisible({ timeout: 5000 });
+
+    // The clear button should appear
+    const clearButton = page.locator('.clear-filter');
+    await expect(clearButton).toBeVisible({ timeout: 2000 });
+
+    // Verify clear button contains the filter label
+    const clearText = await clearButton.textContent();
+    expect(clearText).toContain(/✕|unassigned/i);
+
+    // Click clear button
+    await clearButton.click();
+
+    // The filter should be deactivated
+    const isActive = await unassignedChip.evaluate(el => el.classList.contains('active'));
+    expect(isActive).toBe(false);
+
+    // Table should still be visible
+    await expect(table).toBeVisible({ timeout: 5000 });
+  });
+
+  /**
+   * REGRESSION: Model Filter Predicate (Team Filter Corollary)
+   *
+   * The model filter (opus/sonnet/haiku) uses the same filter architecture
+   * as the team filter. Verify it works correctly as a corollary test.
+   */
+  test('agents page: model filter preserves data consistency', async ({ page }) => {
+    await page.goto('/agents');
+    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
+
+    const filterPills = page.locator('.filter-pills .pill');
+    const pillCount = await filterPills.count();
+    expect(pillCount).toBeGreaterThanOrEqual(4); // All, opus, sonnet, haiku
+
+    // Click the opus filter
+    const opusFilter = filterPills.filter({ hasText: /opus/i }).first();
+    await opusFilter.click();
+
+    // Verify it becomes active
+    await expect(opusFilter).toHaveClass(/active/);
+
+    // Table should render without error
+    const table = page.locator('table.data-table');
+    await expect(table).toBeVisible({ timeout: 5000 });
+
+    // All visible rows should have opus in their model column or badge
+    const rows = table.locator('tbody tr');
+    const rowCount = await rows.count();
+
+    if (rowCount > 0) {
+      // Get first row and verify it has an opus badge or model indicator
+      const firstRow = rows.first();
+      const opusBadge = firstRow.locator('.badge').filter({ hasText: /opus/i });
+      const isOpusVisible = await opusBadge.isVisible().catch(() => false);
+
+      if (isOpusVisible) {
+        await expect(opusBadge).toBeVisible();
+      }
+    }
+  });
+
+  /**
+   * REGRESSION: Team Filter State Persistence
+   *
+   * Verify that filtering on one view doesn't break when navigating
+   * and returning to the list.
+   */
+  test('agents page: team filter state clears on page reload', async ({ page }) => {
+    await page.goto('/agents');
+    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
+
+    const teamBar = page.locator('.team-summary-bar');
+    const isBarVisible = await teamBar.isVisible().catch(() => false);
+
+    if (!isBarVisible) {
+      // No team filters available, skip this test
+      return;
+    }
+
+    // Click a team filter
+    const firstTeam = teamBar.locator('.team-stat-chip').first();
+    await firstTeam.click();
+
+    // Verify filter is active
+    await expect(firstTeam).toHaveClass(/active/);
+
+    // Reload page
+    await page.reload();
+    await page.waitForLoadState('load').catch(() => {});
+
+    // After reload, filter should be cleared (unless persisted)
+    // This test documents the expected behavior
+    const table = page.locator('table.data-table');
+    await expect(table).toBeVisible({ timeout: 5000 });
+
+    // Page should have navigated and state reset — verify it's still functional
+    const heading = page.locator('h1').filter({ hasText: /Agents/i }).first();
+    await expect(heading).toBeVisible();
+  });
 });

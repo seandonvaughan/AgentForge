@@ -50,9 +50,9 @@ The repository currently shows a hybrid architecture in code, not just in docs:
 - Root server API assembly is in [src/server/server.ts](../../../src/server/server.ts), with `/api/v1/*` style routes and a local dashboard path.
 - Package server API assembly is in [packages/server/src/server.ts](../../../packages/server/src/server.ts), with `/api/v5/*`, `/api/v6/*`, WebSocket bridges, workspace routing, cycles, search, execution, and plugin routes.
 - The autonomous cycle is currently led from the package stack: [packages/server/src/routes/v5/cycles.ts](../../../packages/server/src/routes/v5/cycles.ts) spawns `packages/cli/dist/bin.js autonomous:cycle`, and [packages/core/src/autonomous/cycle-runner.ts](../../../packages/core/src/autonomous/cycle-runner.ts) owns the cycle engine.
-- Root `invoke` now uses `AgentForgeSession` in [src/cli/commands/invoke.ts](../../../src/cli/commands/invoke.ts), but `--loop` still prints a placeholder message instead of entering a control loop.
+- Root `invoke` is now a compatibility wrapper delegating to `@agentforge/core`'s `invokeAgentRun`. The `--loop` placeholder has been removed; loop execution is canonicalized in the package CLI's `autonomous:cycle` command.
 - Root `genesis` is more complete than before, but it still sits inside the legacy root CLI surface in [src/cli/commands/genesis.ts](../../../src/cli/commands/genesis.ts).
-- The docs trail the code. [README.md](../../../README.md) still claims `invoke --loop` is available and uses release-era language that does not match the current package split, while [CHANGELOG.md](../../../CHANGELOG.md) still tops out at `6.7.0`.
+- The docs trail the code. [README.md](../../../README.md) uses release-era language that does not match the current package split, while [CHANGELOG.md](../../../CHANGELOG.md) still tops out at `6.7.0`. (`invoke --loop` references have been cleaned up.)
 
 This is enough evidence to treat the repo as split-brain today, with a convergence path still in progress.
 
@@ -190,7 +190,7 @@ Server/platform owner plus dashboard owner. The server decision has to be made t
 - Root `invoke` uses `AgentForgeSession` in [src/cli/commands/invoke.ts](../../../src/cli/commands/invoke.ts) and is centered on session logging and cost tracking.
 - Package autonomous execution uses `CycleRunner` in [packages/core/src/autonomous/cycle-runner.ts](../../../packages/core/src/autonomous/cycle-runner.ts).
 - Package server’s `/api/v5/cycles` route in [packages/server/src/routes/v5/cycles.ts](../../../packages/server/src/routes/v5/cycles.ts) is already the operational launcher for the autonomous cycle.
-- Root `invoke --loop` still returns a placeholder notice instead of entering the bounded control loop.
+- Root `invoke --loop` has been removed. Loop execution is now exclusively in the package CLI's `autonomous:cycle` command.
 
 **Why this matters**
 
@@ -235,7 +235,7 @@ Runtime/orchestration owner with support from the package core team and the root
 - Root package version is `10.5.0` in [package.json](../../../package.json).
 - Package manifests still report `6.0.0` in [packages/core/package.json](../../../packages/core/package.json) and [packages/server/package.json](../../../packages/server/package.json).
 - The root plugin export in [src/index.ts](../../../src/index.ts) still reports `0.1.0`.
-- [README.md](../../../README.md) still advertises `invoke --loop` as shipped.
+- [README.md](../../../README.md) no longer advertises `invoke --loop` (cleaned up in v12.0.0).
 - [CHANGELOG.md](../../../CHANGELOG.md) still tops out at `6.7.0` and is no longer aligned with the repo tip.
 
 **Why this matters**

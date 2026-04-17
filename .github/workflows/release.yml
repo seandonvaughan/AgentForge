@@ -40,9 +40,33 @@ jobs:
       - name: Type check
         run: pnpm exec tsc --noEmit
 
+  convergence-gate:
+    name: Convergence Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Fail if root src/server/ still exists
+        run: |
+          if [ -d "src/server" ]; then
+            echo "FAILED: root src/server/ must be removed before release."
+            echo "All server code must live in packages/server -- delete or move src/server/ and merge those changes first."
+            exit 1
+          fi
+          echo "OK: src/server/ not present"
+
+      - name: Fail if root src/cli/compat/ still exists
+        run: |
+          if [ -d "src/cli/compat" ]; then
+            echo "FAILED: root src/cli/compat/ must be removed before release."
+            echo "Compat shims must live in packages/cli -- delete or move src/cli/compat/ and merge those changes first."
+            exit 1
+          fi
+          echo "OK: src/cli/compat/ not present"
+
   build-and-release:
     name: Build & Release
-    needs: test
+    needs: [test, convergence-gate]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6.0.2

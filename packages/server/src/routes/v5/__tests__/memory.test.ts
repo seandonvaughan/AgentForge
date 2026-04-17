@@ -436,6 +436,69 @@ describe('GET /api/v5/memory', () => {
     expect(body.meta.total).toBe(1);
     expect(body.data[0]!.id).toBe('shared-id');
   });
+
+  // ── metadata passthrough ─────────────────────────────────────────────────
+  // Promoted structured metadata (v10.2+ schema) must be passed through to the
+  // dashboard so structured panels (review-finding file/line/fix-suggestion,
+  // gate-verdict rationale) work without re-parsing the raw value string.
+
+  it('passes through metadata from JSONL entries to the API response', async () => {
+    ensureMemoryDir();
+    const reviewFindingEntry = {
+      id: 'rf-with-meta',
+      type: 'review-finding',
+      value: '[MAJOR] Missing null check in auth middleware',
+      createdAt: '2026-04-08T10:00:00.000Z',
+      source: 'cycle-xyz',
+      tags: ['major', 'sprint:v10.0.0'],
+      metadata: {
+        file: 'packages/server/src/routes/auth.ts',
+        line: 42,
+        severity: 'MAJOR',
+        summary: 'Missing null check for req.user before accessing .id',
+        fixSuggestion: 'Add `if (!req.user) return reply.code(401).send()` before the destructure.',
+      },
+    };
+    writeFileSync(
+      join(memoryDir(), 'review-finding.jsonl'),
+      JSON.stringify(reviewFindingEntry) + '\n',
+      'utf-8',
+    );
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory' });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body) as {
+      data: Array<{ id: string; metadata?: Record<string, unknown> }>;
+      meta: { total: number };
+    };
+
+    expect(body.meta.total).toBe(1);
+    const entry = body.data[0]!;
+    expect(entry.id).toBe('rf-with-meta');
+    // metadata must be present and contain the promoted fields
+    expect(entry.metadata).toBeDefined();
+    expect(entry.metadata!.file).toBe('packages/server/src/routes/auth.ts');
+    expect(entry.metadata!.line).toBe(42);
+    expect(entry.metadata!.severity).toBe('MAJOR');
+    expect(entry.metadata!.summary).toBe('Missing null check for req.user before accessing .id');
+    expect(entry.metadata!.fixSuggestion).toContain('reply.code(401)');
+  });
+
+  it('entries without metadata field do not get an empty metadata object', async () => {
+    // Entries written before v10.2 have no metadata field. The response must
+    // omit the field rather than setting it to undefined/null.
+    appendJsonlEntry('cycle-outcome', {
+      id: 'no-meta',
+      value: JSON.stringify({ sprintVersion: '10.0.0', stage: 'completed' }),
+      createdAt: '2026-04-08T10:00:00.000Z',
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory' });
+    const body = JSON.parse(res.body) as { data: Array<Record<string, unknown>> };
+    const entry = body.data[0]!;
+    // metadata should be absent (not set to undefined / null / {})
+    expect(Object.prototype.hasOwnProperty.call(entry, 'metadata')).toBe(false);
+  });
 });
 
 // ── GET /api/v5/memory/stream ─────────────────────────────────────────────────

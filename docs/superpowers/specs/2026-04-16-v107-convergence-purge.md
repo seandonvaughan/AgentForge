@@ -18,11 +18,11 @@ TODO(autonomous): Audit src/cli/commands/* against packages/cli/src/commands/*. 
 
 TODO(autonomous): Remove src/cli/compat/* bridges that are no longer referenced. Specifically src/cli/compat/package-run-services.ts and src/cli/compat/package-team-services.ts — check every caller, inline the direct package-core import, and delete the bridge module.
 
-TODO(autonomous): Consolidate the root `invoke --loop` placeholder in src/cli/commands/invoke.ts. Either wire it through AgentForgeSession end-to-end or delete the flag and surface the package CLI's cycle command as the canonical loop entrypoint. Update --help text accordingly.
+DONE(v12.0.0): Consolidated `invoke --loop` — flag removed from root CLI (src/cli/commands/invoke.ts deleted, dist/ compat wrapper has no --loop). Loop execution canonicalized in package CLI's `autonomous:cycle` command. Docs updated.
 
 ## Version and docs sync (G5)
 
-TODO(autonomous): Update README.md to reflect the v10.7.0 state. Remove any references to `invoke --loop` being available (unless fixed above), delete v6-era command tables, and add a "Deprecated surfaces" section listing the root CLI and root server with the target removal version.
+TODO(autonomous): Update README.md to reflect the v10.7.0 state. Delete v6-era command tables, and add a "Deprecated surfaces" section listing the root CLI and root server with the target removal version. (Note: `invoke --loop` references already removed from README.)
 
 TODO(autonomous): Audit CHANGELOG.md for gaps. Ensure every minor release from 10.5.0 through 10.6.0 has an entry with Convergence / Security / CI / Docs subsections matching the house style established in 10.5.1. Fill missing entries by inspecting git log.
 

@@ -168,6 +168,13 @@ export async function dashboardStubRoutes(
       source?: string;
       summary?: string;
       tags?: string[];
+      /**
+       * Promoted structured metadata for v10.2+ entries.
+       * For review-finding: ReviewFindingMetadata { file, line, severity, summary, fixSuggestion }
+       * For gate-verdict:   GateVerdictMetadata   { verdict, sprintVersion, rationale, ... }
+       * The dashboard's structured panels prefer this over parsing the raw value string.
+       */
+      metadata?: Record<string, unknown>;
     }
 
     const entries: DashboardMemoryEntry[] = [];
@@ -191,6 +198,8 @@ export async function dashboardStubRoutes(
                 createdAt?: string;
                 source?: string;
                 tags?: string[];
+                /** Promoted structured metadata (v10.2+ schema). */
+                metadata?: Record<string, unknown>;
               };
               const id = entry.id ?? `${file}-${entries.length}`;
               const type = entry.type ?? file.replace(/\.jsonl$/, '');
@@ -225,9 +234,13 @@ export async function dashboardStubRoutes(
                 // source is cycleId or agentId produced by phase handlers.
                 // Expose both as agentId (existing agent-filter UI) and source
                 // (new source-link UI in the memory dashboard).
-                ...(entry.source !== undefined ? { agentId: entry.source, source: entry.source } : {}),
-                ...(summary !== undefined ? { summary } : {}),
-                ...(entry.tags !== undefined ? { tags: entry.tags } : {}),
+                ...(entry.source   !== undefined ? { agentId: entry.source, source: entry.source } : {}),
+                ...(summary        !== undefined ? { summary }        : {}),
+                ...(entry.tags     !== undefined ? { tags: entry.tags }     : {}),
+                // Pass through promoted structured metadata so the dashboard's
+                // structured panels (review-finding location, fix suggestion;
+                // gate-verdict rationale, findings) work without re-parsing value.
+                ...(entry.metadata !== undefined ? { metadata: entry.metadata } : {}),
               });
             } catch { /* skip malformed line */ }
           }
@@ -442,6 +455,8 @@ export async function dashboardStubRoutes(
               createdAt?: string;
               source?: string;
               tags?: string[];
+              /** Promoted structured metadata (v10.2+ schema). */
+              metadata?: Record<string, unknown>;
             };
             try {
               e = JSON.parse(line) as typeof e;
@@ -488,9 +503,12 @@ export async function dashboardStubRoutes(
               createdAt: e.createdAt ?? new Date().toISOString(),
               updatedAt: e.createdAt ?? new Date().toISOString(),
             };
-            if (e.source !== undefined)  { row['source']  = e.source;  row['agentId'] = e.source; }
-            if (summary !== undefined)   { row['summary'] = summary; }
-            if (e.tags !== undefined)    { row['tags']    = e.tags;    }
+            if (e.source   !== undefined) { row['source']   = e.source;   row['agentId'] = e.source; }
+            if (summary    !== undefined) { row['summary']  = summary; }
+            if (e.tags     !== undefined) { row['tags']     = e.tags; }
+            // Pass through promoted structured metadata so the dashboard's
+            // structured panels work without re-parsing the raw value string.
+            if (e.metadata !== undefined) { row['metadata'] = e.metadata; }
 
             reply.raw.write(JSON.stringify(row) + '\n');
           }
@@ -610,19 +628,101 @@ interface SessionRecord {
 
 // ── metric computation ─────────────────────────────────────────────────────
 
+/**
+ * Read a CycleRecord from a cycle directory.
+ *
+ * Supports two on-disk formats:
+ *  - Legacy (cycles-archived/): has `cycle.json` with the full record shape.
+ *  - Current (cycles/): no `cycle.json`; data is spread across `events.jsonl`
+ *    and `sprint-link.json`. We reconstruct the CycleRecord from the event
+ *    stream so metric computation works correctly for all recent cycles.
+ */
+function readCycleRecord(cycleDir: string, cycleId: string): CycleRecord | null {
+  // ── Legacy format: cycle.json present ──────────────────────────────────
+  const cycleFile = join(cycleDir, 'cycle.json');
+  if (existsSync(cycleFile)) {
+    try {
+      return JSON.parse(readFileSync(cycleFile, 'utf-8')) as CycleRecord;
+    } catch { /* fall through to event-stream reader */ }
+  }
+
+  // ── Current format: reconstruct from events.jsonl ──────────────────────
+  const eventsFile = join(cycleDir, 'events.jsonl');
+  if (!existsSync(eventsFile)) return null;
+
+  interface CycleEvent { type: string; at?: string; [key: string]: unknown }
+  let events: CycleEvent[];
+  try {
+    events = readFileSync(eventsFile, 'utf-8')
+      .split('\n')
+      .filter(l => l.trim().length > 0)
+      .map(l => JSON.parse(l) as CycleEvent);
+  } catch { return null; }
+
+  const find = (type: string | string[]) => {
+    const types = Array.isArray(type) ? type : [type];
+    return events.find(e => types.includes(e.type));
+  };
+
+  const sprintAssigned = find('sprint.assigned');
+  const scoring        = find('scoring.complete');
+  const testsEvt       = find('tests.complete');
+  const prEvt          = find(['pr.opened', 'opened']);
+  const complete       = find('cycle.complete');
+  const firstPhase     = find('phase.start');
+
+  // sprintVersion: prefer events, fall back to sprint-link.json
+  let sprintVersion: string | undefined =
+    (sprintAssigned?.sprintVersion as string | undefined);
+  if (!sprintVersion) {
+    const linkFile = join(cycleDir, 'sprint-link.json');
+    if (existsSync(linkFile)) {
+      try {
+        const link = JSON.parse(readFileSync(linkFile, 'utf-8')) as { sprintVersion?: string };
+        sprintVersion = link.sprintVersion;
+      } catch { /* ignore */ }
+    }
+  }
+
+  const startedAt = (firstPhase?.at ?? sprintAssigned?.at) as string | undefined;
+  const completedAt = (complete?.at) as string | undefined;
+  const durationMs = startedAt && completedAt
+    ? new Date(completedAt).getTime() - new Date(startedAt).getTime()
+    : undefined;
+
+  const passed = testsEvt?.passed as number | undefined;
+  const failed = testsEvt?.failed as number | undefined;
+  const total  = passed != null && failed != null ? passed + failed : undefined;
+  const passRate = total != null && total > 0 ? passed! / total : undefined;
+
+  return {
+    cycleId,
+    sprintVersion,
+    stage: (complete?.stage as string | undefined) ?? (complete ? 'completed' : undefined),
+    startedAt,
+    completedAt,
+    durationMs,
+    cost: scoring ? { totalUsd: scoring.totalCostUsd as number | undefined } : undefined,
+    tests: total != null ? { passed, failed, total, passRate } : undefined,
+    pr: prEvt ? { url: prEvt.url as string | null, number: prEvt.number as number | null } : undefined,
+  };
+}
+
 function computeFlywheelMetrics(projectRoot: string) {
   // ── Cycles ────────────────────────────────────────────────────────────────
-  const cyclesDir = join(projectRoot, '.agentforge/cycles');
+  // Read from both the active cycles/ directory and cycles-archived/ so that
+  // historical completed cycles contribute to trend math even after archiving.
+  const cycleDirs = [
+    join(projectRoot, '.agentforge/cycles'),
+    join(projectRoot, '.agentforge/cycles-archived'),
+  ];
   const cycles: CycleRecord[] = [];
-  if (existsSync(cyclesDir)) {
+  for (const cyclesDir of cycleDirs) {
+    if (!existsSync(cyclesDir)) continue;
     for (const entry of readdirSync(cyclesDir, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
-      const cycleFile = join(cyclesDir, entry.name, 'cycle.json');
-      if (!existsSync(cycleFile)) continue;
-      try {
-        const raw = JSON.parse(readFileSync(cycleFile, 'utf-8')) as CycleRecord;
-        cycles.push(raw);
-      } catch { /* skip malformed */ }
+      const record = readCycleRecord(join(cyclesDir, entry.name), entry.name);
+      if (record) cycles.push(record);
     }
   }
 

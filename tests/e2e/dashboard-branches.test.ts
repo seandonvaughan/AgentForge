@@ -26,7 +26,7 @@ test.describe('Branches Page', () => {
     await page.goto('/branches');
     await page.waitForLoadState('networkidle');
 
-    // All four stat ids are rendered by updateStats() once the API responds.
+    // All four stat ids are rendered via Svelte $derived state once the API responds.
     // The values should be digits (0 is fine — no autonomous/* branches in test env).
     for (const id of ['branches-stat-total', 'branches-stat-open', 'branches-stat-merged', 'branches-stat-stale']) {
       const chip = page.locator(`#${id}`);
@@ -84,7 +84,7 @@ test.describe('Branches Page', () => {
     await page.goto('/branches');
     await page.waitForLoadState('networkidle');
 
-    // Loading indicator must be gone — it's shown then hidden by loadBranchesPage()
+    // Loading indicator must be gone — controlled by Svelte $state(loading) with hidden={!loading}
     await expect(page.locator('#branches-loading')).toBeHidden();
     // Error state must not be visible on a healthy server
     await expect(page.locator('#branches-error')).toBeHidden();

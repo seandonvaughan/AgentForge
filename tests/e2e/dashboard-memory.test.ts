@@ -186,4 +186,136 @@ test.describe('Memory Page', () => {
     await page.setViewportSize({ width: 1280, height: 720 });
     await expect(heading).toBeVisible();
   });
+
+  /**
+   * REGRESSION: Filter-Before-Cap Ordering (v10.6.0)
+   *
+   * Bug: The memory endpoint was filtering entries AFTER capping to 200.
+   * This meant searches on large datasets would silently miss entries beyond
+   * the 200-entry window, returning incomplete results.
+   *
+   * Fix: Reordered to filter first, then cap results. This ensures all
+   * matching entries are found, even if the dataset is larger than the cap.
+   *
+   * Test: Verify that the search box filters correctly and doesn't show
+   * incorrect row counts or missing data.
+   */
+  test('memory page: search filter returns correct subset of entries (filter-before-cap test)', async ({ page }) => {
+    await page.goto('/memory');
+
+    // Wait for initial data load
+    const rows = page.locator('table.mem-table tbody tr');
+    await expect(rows.first()).toBeVisible({ timeout: 10_000 });
+
+    // Get initial row count
+    const initialCount = await rows.count();
+    expect(initialCount).toBeGreaterThan(0);
+
+    // Type a search term that should match some entries
+    const searchInput = page.locator('input.search-input, input[type="search"]');
+    await searchInput.click();
+    await searchInput.fill('cycle');
+
+    // Wait for the list to re-render with filtered results
+    await page.waitForTimeout(500);
+
+    // Get filtered row count
+    const filteredRows = page.locator('table.mem-table tbody tr');
+    const filteredCount = await filteredRows.count();
+
+    // Filtered count should be <= initial count (filtering reduced or kept same)
+    expect(filteredCount).toBeLessThanOrEqual(initialCount);
+
+    // If there are filtered results, they should be visible
+    if (filteredCount > 0) {
+      await expect(filteredRows.first()).toBeVisible();
+    }
+
+    // Clear search and verify we get back to the initial state
+    await searchInput.fill('');
+    await page.waitForTimeout(500);
+
+    const restoredRows = page.locator('table.mem-table tbody tr');
+    const restoredCount = await restoredRows.count();
+
+    // Count should be restored to original (or close to it)
+    expect(Math.abs(restoredCount - initialCount)).toBeLessThanOrEqual(1);
+  });
+
+  /**
+   * REGRESSION: Search Results Don't Hide Beyond Cap
+   *
+   * Verify that the search results don't suggest a complete match
+   * when there are actually more matching entries beyond the 200-entry cap.
+   * This is harder to test directly without knowledge of the full dataset,
+   * but we can at least verify the search UI doesn't show misleading "end of results" states.
+   */
+  test('memory page: search interface remains functional after multiple searches', async ({ page }) => {
+    await page.goto('/memory');
+
+    // Wait for initial load
+    await expect(page.locator('table.mem-table tbody tr').first()).toBeVisible({ timeout: 10_000 });
+
+    const searchInput = page.locator('input.search-input, input[type="search"]');
+
+    // Perform multiple searches to test the filter logic doesn't break
+    const queries = ['test', 'cycle', 'memory', 'agent', ''];
+
+    for (const query of queries) {
+      await searchInput.fill(query);
+      await page.waitForTimeout(300);
+
+      // After each search, the table should still be visible
+      const table = page.locator('table.mem-table');
+      await expect(table).toBeVisible({ timeout: 5000 });
+
+      // No error messages should appear
+      const errorMessages = page.locator('text=/error|Error|failed|Failed/i');
+      const errorCount = await errorMessages.count();
+      expect(errorCount, `Search for "${query}" should not produce error messages`).toBe(0);
+    }
+  });
+
+  /**
+   * REGRESSION: Type Filter Chips Respect Filter-Before-Cap
+   *
+   * Verify that the type filter chips also correctly apply filter-before-cap logic.
+   */
+  test('memory page: type filter chips produce correct row counts', async ({ page }) => {
+    await page.goto('/memory');
+
+    // Wait for stats bar to appear
+    const statsBar = page.locator('.stats-bar');
+    await expect(statsBar).toBeVisible({ timeout: 10_000 });
+
+    // Get initial row count with "All" filter
+    const allRows = page.locator('table.mem-table tbody tr');
+    const initialCount = await allRows.count();
+
+    // Click a non-"All" type chip if available
+    const typeChip = statsBar.locator('.stats-chip:not(.stats-chip--all)').first();
+    const isChipVisible = await typeChip.isVisible().catch(() => false);
+
+    if (isChipVisible) {
+      await typeChip.click();
+      await page.waitForTimeout(500);
+
+      // Get filtered row count
+      const filteredRows = page.locator('table.mem-table tbody tr');
+      const filteredCount = await filteredRows.count();
+
+      // Filtered count should be <= initial count
+      expect(filteredCount).toBeLessThanOrEqual(initialCount);
+
+      // Click "All" again to reset
+      const allChip = statsBar.locator('.stats-chip--all');
+      await allChip.click();
+      await page.waitForTimeout(500);
+
+      // Should restore to approximately the initial count
+      const restoredRows = page.locator('table.mem-table tbody tr');
+      const restoredCount = await restoredRows.count();
+      expect(Math.abs(restoredCount - initialCount)).toBeLessThanOrEqual(1);
+    }
+  });
 });

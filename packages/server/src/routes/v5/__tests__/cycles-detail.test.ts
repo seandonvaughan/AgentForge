@@ -103,6 +103,53 @@ describe('GET /api/v5/cycles/:id', () => {
     expect(body.stage).toBe('plan');
   });
 
+  it('returns 200 with cycle.json for a killed cycle (kill-switch trip writes cycle.json)', async () => {
+    const id = '55555555-5555-5555-5555-555555555555';
+    const dir = makeCycleDir(id);
+    // kill-switch trips write cycle.json with stage:'killed' + killSwitch metadata
+    writeFileSync(
+      join(dir, 'cycle.json'),
+      JSON.stringify({
+        cycleId: id,
+        stage: 'killed',
+        sprintVersion: '11.1.0',
+        killSwitch: { reason: 'testFloor', detail: 'test pass rate 40% < floor 60%' },
+      }),
+    );
+
+    const res = await app.inject({ method: 'GET', url: `/api/v5/cycles/${id}` });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.stage).toBe('killed');
+    expect(body.killSwitch?.reason).toBe('testFloor');
+    // killed cycles are terminal — should NOT have cycleInProgress
+    expect(body.cycleInProgress).toBeUndefined();
+  });
+
+  it('synthesizes partial payload for a hard-killed cycle without cycle.json, last stage from events', async () => {
+    const id = '66666666-6666-6666-6666-666666666666';
+    const dir = makeCycleDir(id);
+    // OS-level kill: no cycle.json, but events.jsonl shows the kill signal was recorded
+    const events = [
+      { type: 'phase.start', phase: 'audit', at: '2026-04-10T09:00:00.000Z', sprintVersion: '11.1.0' },
+      { type: 'phase.start', phase: 'execute', at: '2026-04-10T09:05:00.000Z' },
+      { stage: 'killed', at: '2026-04-10T09:12:00.000Z', type: 'cycle.killed' },
+    ];
+    writeFileSync(
+      join(dir, 'events.jsonl'),
+      events.map((e) => JSON.stringify(e)).join('\n') + '\n',
+    );
+
+    const res = await app.inject({ method: 'GET', url: `/api/v5/cycles/${id}` });
+    // cycle.json absent → synthesized 404 payload
+    expect(res.statusCode).toBe(404);
+    const body = res.json();
+    // last stage event records 'killed', so the dashboard knows it's terminal
+    expect(body.stage).toBe('killed');
+    expect(body.sprintVersion).toBe('11.1.0');
+    expect(body.cycleInProgress).toBe(true);
+  });
+
   it('skips malformed events.jsonl lines without crashing', async () => {
     const id = '44444444-4444-4444-4444-444444444444';
     const dir = makeCycleDir(id);

@@ -36,7 +36,7 @@ import {
   getWorkspace,
   getDefaultWorkspace,
 } from '@agentforge/core';
-import type { MessageTopic, CycleResult, PhaseName, PhaseHandler } from '@agentforge/core';
+import type { MessageTopic, MessageEnvelopeV2, CycleResult, PhaseName, PhaseHandler, PhaseContext } from '@agentforge/core';
 
 interface WorkspaceAwareOptions {
   projectRoot: string;
@@ -192,17 +192,17 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
     try {
       const runtime = new RuntimeAdapter({ cwd });
       const phaseHandlers = {
-        audit: (ctx: any) => runAuditPhase(ctx),
-        plan: (ctx: any) => runPlanPhase(ctx),
-        assign: (ctx: any) => runAssignPhase(ctx),
-        execute: (ctx: any) => runExecutePhase(ctx, {
+        audit: (ctx: PhaseContext) => runAuditPhase(ctx),
+        plan: (ctx: PhaseContext) => runPlanPhase(ctx),
+        assign: (ctx: PhaseContext) => runAssignPhase(ctx),
+        execute: (ctx: PhaseContext) => runExecutePhase(ctx, {
           maxParallelism: config.limits.maxExecutePhaseParallelism,
         }),
-        test: (ctx: any) => runTestPhase(ctx),
-        review: (ctx: any) => runReviewPhase(ctx),
-        gate: (ctx: any) => runGatePhase(ctx),
-        release: (ctx: any) => runReleasePhase(ctx),
-        learn: (ctx: any) => runLearnPhase(ctx),
+        test: (ctx: PhaseContext) => runTestPhase(ctx),
+        review: (ctx: PhaseContext) => runReviewPhase(ctx),
+        gate: (ctx: PhaseContext) => runGatePhase(ctx),
+        release: (ctx: PhaseContext) => runReleasePhase(ctx),
+        learn: (ctx: PhaseContext) => runLearnPhase(ctx),
       };
 
       // Create a real cycle logger using the cycleId resolution logic from CycleRunner.
@@ -234,7 +234,7 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
           });
         },
         subscribe: (topic: string, cb: (event: unknown) => void) => {
-          return messageBusV2.subscribe(topic as MessageTopic, (envelope: any) => {
+          return messageBusV2.subscribe(topic as MessageTopic, (envelope: MessageEnvelopeV2) => {
             cb(envelope.payload);
           });
         },
@@ -243,6 +243,7 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
       const runner = new CycleRunner({
         cwd,
         config,
+        cycleId,
         runtime,
         proposalAdapter: telemetry.proposalAdapter,
         scoringAdapter: telemetry.scoringAdapter,
@@ -254,10 +255,8 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
         ...(opts.dryRun ? { dryRun: { prOpener: true } } : {}),
       });
 
-      // Verify the runner uses the same cycleId as the logger we created above
-      const runnerId = runner.getCycleId();
-      const logDir = `.agentforge/cycles/${runnerId}`;
-      console.log(`[cycle] cycleId=${runnerId}`);
+      const logDir = `.agentforge/cycles/${cycleId}`;
+      console.log(`[cycle] cycleId=${cycleId}`);
       console.log(`[cycle] logDir=${logDir}`);
       if (opts.dryRun) console.log('[cycle] dry-run mode: PR will not be opened');
 

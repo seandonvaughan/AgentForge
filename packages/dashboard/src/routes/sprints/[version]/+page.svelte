@@ -26,6 +26,19 @@
     tagsSeen?: string[];
   }
 
+  interface RiskEntry {
+    risk: string;
+    mitigation?: string;
+    owner?: string;
+  }
+
+  interface NewHireEntry {
+    agent: string;
+    model?: string;
+    reportsTo?: string;
+    rationale?: string;
+  }
+
   interface SprintDetail {
     id: string;
     version: string;
@@ -49,9 +62,12 @@
     items: SprintItem[];
     // Extended metadata
     ceoBrief?: string;
+    ctoBrief?: string;
     autonomyGates?: Record<string, string>;
     newFiles?: string[];
     newTestFiles?: string[];
+    risks?: RiskEntry[];
+    newHires?: NewHireEntry[];
   }
 
   let sprint: SprintDetail | null = $state(null);
@@ -366,6 +382,14 @@
     </div>
   {/if}
 
+  <!-- CTO Brief (v5.3-era technical note) -->
+  {#if sprint.ctoBrief}
+    <div class="ceo-brief-block cto-brief-block" style="margin-bottom:var(--space-5);">
+      <span class="ceo-brief-label cto-brief-label">Technical Note</span>
+      <p class="ceo-brief-text">{sprint.ctoBrief}</p>
+    </div>
+  {/if}
+
   <!-- Kanban Board -->
   <div class="section-heading">
     <span class="section-heading-label">Sprint Board</span>
@@ -641,6 +665,60 @@
           {/each}
         </ul>
       {/if}
+    </div>
+  {/if}
+
+  <!-- Risk Register (v4.7-era planning artifacts) -->
+  {#if sprint.risks && sprint.risks.length > 0}
+    <div class="section-heading">
+      <span class="section-heading-label">Risk Register</span>
+      <span class="section-heading-count">{sprint.risks.length}</span>
+    </div>
+    <div class="card" style="margin-bottom:var(--space-4);">
+      <ul class="risk-list">
+        {#each sprint.risks as entry, i}
+          <li class="risk-row">
+            <div class="risk-row-top">
+              <span class="risk-index">{String(i + 1).padStart(2, '0')}</span>
+              <span class="risk-text">{entry.risk}</span>
+              {#if entry.owner}
+                <span class="risk-owner">@{entry.owner}</span>
+              {/if}
+            </div>
+            {#if entry.mitigation}
+              <div class="risk-mitigation">{entry.mitigation}</div>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    </div>
+  {/if}
+
+  <!-- New Hires / Team Additions (v4.7-era planned agents) -->
+  {#if sprint.newHires && sprint.newHires.length > 0}
+    <div class="section-heading">
+      <span class="section-heading-label">Team Additions</span>
+      <span class="section-heading-count">{sprint.newHires.length}</span>
+    </div>
+    <div class="card" style="margin-bottom:var(--space-4);">
+      <ul class="hire-list">
+        {#each sprint.newHires as hire}
+          <li class="hire-row">
+            <div class="hire-row-top">
+              <span class="hire-agent">@{hire.agent}</span>
+              {#if hire.model}
+                <span class="hire-model">{hire.model}</span>
+              {/if}
+              {#if hire.reportsTo}
+                <span class="hire-reports">→ @{hire.reportsTo}</span>
+              {/if}
+            </div>
+            {#if hire.rationale}
+              <div class="hire-rationale">{hire.rationale}</div>
+            {/if}
+          </li>
+        {/each}
+      </ul>
     </div>
   {/if}
 
@@ -1566,5 +1644,126 @@
     color: var(--color-success);
     opacity: 0.8;
     background: rgba(34, 197, 94, 0.04);
+  }
+
+  /* CTO Brief — amber accent, parallel to CEO Brief's brand-blue */
+  .cto-brief-block {
+    border-left-color: var(--color-warning);
+    background: rgba(245, 166, 35, 0.04);
+  }
+
+  .cto-brief-label {
+    color: var(--color-warning);
+  }
+
+  /* Risk register */
+  .risk-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .risk-row {
+    padding: var(--space-3);
+    background: var(--color-surface-1);
+    border-radius: var(--radius-sm);
+    border-left: 3px solid var(--color-danger);
+  }
+
+  .risk-row-top {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+    margin-bottom: var(--space-1);
+  }
+
+  .risk-index {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-danger);
+    opacity: 0.7;
+    flex-shrink: 0;
+    min-width: 20px;
+  }
+
+  .risk-text {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-text);
+    flex: 1;
+  }
+
+  .risk-owner {
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+    color: var(--color-text-faint);
+    flex-shrink: 0;
+  }
+
+  .risk-mitigation {
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    line-height: 1.5;
+    margin-top: var(--space-1);
+    padding-left: calc(20px + var(--space-3));
+  }
+
+  /* New hires / team additions */
+  .hire-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .hire-row {
+    padding: var(--space-3);
+    background: var(--color-surface-1);
+    border-radius: var(--radius-sm);
+    border-left: 3px solid var(--color-brand);
+  }
+
+  .hire-row-top {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+    margin-bottom: var(--space-1);
+  }
+
+  .hire-agent {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    font-weight: 700;
+    color: var(--color-brand);
+  }
+
+  .hire-model {
+    font-size: var(--text-xs);
+    padding: 1px 8px;
+    border-radius: var(--radius-full);
+    background: rgba(91, 138, 245, 0.1);
+    color: var(--color-brand);
+    border: 1px solid rgba(91, 138, 245, 0.3);
+    font-family: var(--font-mono);
+  }
+
+  .hire-reports {
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+    color: var(--color-text-faint);
+  }
+
+  .hire-rationale {
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    line-height: 1.5;
+    margin-top: var(--space-1);
   }
 </style>

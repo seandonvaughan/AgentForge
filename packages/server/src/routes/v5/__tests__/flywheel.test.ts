@@ -833,4 +833,173 @@ describe('GET /api/v5/flywheel', () => {
       expect(['improving', 'stable', 'declining']).toContain(ml.trend);
     });
   });
+
+  // ── events.jsonl reader (current on-disk format) ─────────────────────────
+  // Cycles written after the legacy cycle.json format was dropped store their
+  // metadata in events.jsonl + sprint-link.json.  These tests verify that the
+  // reader reconstructs a valid CycleRecord from the event stream so that
+  // real-world cycles contribute to metric computation.
+
+  describe('events.jsonl cycle format', () => {
+    function writeCycleFromEvents(
+      id: string,
+      opts: {
+        sprintVersion?: string;
+        stage?: string;
+        startedAt?: string;
+        completedAt?: string;
+        passed?: number;
+        failed?: number;
+        prNumber?: number;
+        totalCostUsd?: number;
+      } = {},
+    ) {
+      const dir = join(tmpRoot, '.agentforge/cycles', id);
+      mkdirSync(dir, { recursive: true });
+
+      const {
+        sprintVersion = '1.0.0',
+        stage = 'completed',
+        startedAt = '2026-01-01T00:00:00.000Z',
+        completedAt = '2026-01-01T01:00:00.000Z',
+        passed = 100,
+        failed = 0,
+        prNumber = 1,
+        totalCostUsd = 50,
+      } = opts;
+
+      const events = [
+        { type: 'scoring.complete', totalCostUsd, at: startedAt },
+        { type: 'sprint.assigned', sprintVersion, at: startedAt },
+        { type: 'phase.start', phase: 'audit', at: startedAt },
+        { type: 'tests.complete', passed, failed, at: completedAt },
+        ...(prNumber != null ? [{ type: 'pr.opened', url: `https://github.com/org/repo/pull/${prNumber}`, number: prNumber, at: completedAt }] : []),
+        { type: 'cycle.complete', stage, at: completedAt },
+      ];
+      writeFileSync(join(dir, 'events.jsonl'), events.map(e => JSON.stringify(e)).join('\n') + '\n');
+    }
+
+    it('autonomy score is non-zero when completed cycle written via events.jsonl', async () => {
+      mkdirSync(join(tmpRoot, '.agentforge/cycles'), { recursive: true });
+      writeCycleFromEvents('ev-cycle-1', { stage: 'completed', passed: 50, failed: 0 });
+
+      const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+      const { data } = JSON.parse(res.body) as { data: { metrics: Array<{ key: string; score: number }> } };
+      const autonomy = findOrThrow(data.metrics, m => m.key === 'autonomy', 'Expected autonomy metric');
+      expect(autonomy.score).toBeGreaterThan(0);
+    });
+
+    it('velocity score reflects test data from events.jsonl cycle', async () => {
+      mkdirSync(join(tmpRoot, '.agentforge/cycles'), { recursive: true });
+      mkdirSync(join(tmpRoot, '.agentforge/sprints'), { recursive: true });
+      writeCycleFromEvents('ev-vel-1', { stage: 'completed', passed: 80, failed: 0 });
+      writeSprintFlat('v1.0.json', [
+        { status: 'completed' }, { status: 'completed' }, { status: 'planned' },
+      ]);
+
+      const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+      const { data } = JSON.parse(res.body) as { data: { metrics: Array<{ key: string; score: number }> } };
+      const velocity = findOrThrow(data.metrics, m => m.key === 'velocity', 'Expected velocity metric');
+      expect(velocity.score).toBeGreaterThan(0);
+    });
+
+    it('cycleHistory contains correct fields when cycle uses events.jsonl format', async () => {
+      mkdirSync(join(tmpRoot, '.agentforge/cycles'), { recursive: true });
+      writeCycleFromEvents('ev-hist-1', {
+        sprintVersion: '5.0.0',
+        stage: 'completed',
+        startedAt: '2026-03-01T10:00:00.000Z',
+        completedAt: '2026-03-01T11:00:00.000Z',
+        passed: 400,
+        failed: 10,
+        prNumber: 7,
+        totalCostUsd: 25,
+      });
+
+      const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+      const { data } = JSON.parse(res.body) as {
+        data: { cycleHistory: Array<{ cycleId: string; sprintVersion: string | null; stage: string; testPassRate: number | null; hasPr: boolean; costUsd: number | null; durationMs: number | null }> }
+      };
+      expect(data.cycleHistory).toHaveLength(1);
+      const pt = itemAtOrThrow(data.cycleHistory, 0, 'Expected a history point');
+      expect(pt.cycleId).toBe('ev-hist-1');
+      expect(pt.sprintVersion).toBe('5.0.0');
+      expect(pt.stage).toBe('completed');
+      expect(pt.testPassRate).toBeCloseTo(400 / 410, 5);
+      expect(pt.hasPr).toBe(true);
+      expect(pt.costUsd).toBe(25);
+      expect(pt.durationMs).toBe(60 * 60 * 1000); // 1 hour
+    });
+
+    it('debug.cycleCount includes cycles from both formats', async () => {
+      mkdirSync(join(tmpRoot, '.agentforge/cycles'), { recursive: true });
+      writeCycle('legacy-1'); // creates cycle.json
+      writeCycleFromEvents('ev-1', { stage: 'completed' }); // creates events.jsonl
+
+      const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+      const { data } = JSON.parse(res.body) as { data: { debug: { cycleCount: number } } };
+      expect(data.debug.cycleCount).toBe(2);
+    });
+  });
+
+  // ── cycles-archived/ reading ──────────────────────────────────────────────
+  // Historical completed cycles are archived to cycles-archived/ after a
+  // certain age.  The flywheel must include them so trend math has enough
+  // signal points.
+
+  describe('cycles-archived/ reading', () => {
+    function writeArchivedCycle(id: string, overrides: Record<string, unknown> = {}) {
+      const dir = join(tmpRoot, '.agentforge/cycles-archived', id);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'cycle.json'), JSON.stringify({
+        cycleId: id,
+        stage: 'completed',
+        startedAt: '2026-01-01T00:00:00.000Z',
+        completedAt: '2026-01-01T01:00:00.000Z',
+        durationMs: 3_600_000,
+        tests: { passed: 100, failed: 0, total: 100, passRate: 1.0 },
+        pr: { number: 1, url: 'https://github.com/org/repo/pull/1' },
+        cost: { totalUsd: 50 },
+        ...overrides,
+      }, null, 2));
+    }
+
+    it('autonomy score is non-zero when only archived cycles exist', async () => {
+      mkdirSync(join(tmpRoot, '.agentforge/cycles-archived'), { recursive: true });
+      writeArchivedCycle('arch-1');
+
+      const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+      const { data } = JSON.parse(res.body) as { data: { metrics: Array<{ key: string; score: number }> } };
+      const autonomy = findOrThrow(data.metrics, m => m.key === 'autonomy', 'Expected autonomy metric');
+      expect(autonomy.score).toBeGreaterThan(0);
+    });
+
+    it('debug.cycleCount includes archived cycles', async () => {
+      mkdirSync(join(tmpRoot, '.agentforge/cycles'), { recursive: true });
+      mkdirSync(join(tmpRoot, '.agentforge/cycles-archived'), { recursive: true });
+      writeCycle('active-1');
+      writeArchivedCycle('arch-1');
+      writeArchivedCycle('arch-2');
+
+      const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+      const { data } = JSON.parse(res.body) as { data: { debug: { cycleCount: number; completedCycleCount: number } } };
+      expect(data.debug.cycleCount).toBe(3);
+      expect(data.debug.completedCycleCount).toBe(3);
+    });
+
+    it('cycleHistory is ordered chronologically across both sources', async () => {
+      mkdirSync(join(tmpRoot, '.agentforge/cycles'), { recursive: true });
+      mkdirSync(join(tmpRoot, '.agentforge/cycles-archived'), { recursive: true });
+      writeArchivedCycle('old-1', { startedAt: '2025-12-01T00:00:00.000Z', sprintVersion: '1.0' });
+      writeCycle('new-1', { startedAt: '2026-06-01T00:00:00.000Z', sprintVersion: '20.0' });
+
+      const res = await app.inject({ method: 'GET', url: '/api/v5/flywheel' });
+      const { data } = JSON.parse(res.body) as {
+        data: { cycleHistory: Array<{ cycleId: string; startedAt: string }> }
+      };
+      expect(data.cycleHistory).toHaveLength(2);
+      expect(new Date(itemAtOrThrow(data.cycleHistory, 0, 'idx 0').startedAt).getTime())
+        .toBeLessThan(new Date(itemAtOrThrow(data.cycleHistory, 1, 'idx 1').startedAt).getTime());
+    });
+  });
 });

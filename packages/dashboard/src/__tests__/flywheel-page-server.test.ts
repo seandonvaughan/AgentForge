@@ -451,6 +451,123 @@ describe('computeMetrics — cycleHistory', () => {
   });
 });
 
+// ── events.jsonl cycle format (SSR copy) ─────────────────────────────────────
+//
+// Mirrors the events.jsonl tests from the API suite so drift between the SSR
+// and API implementations is caught immediately.
+
+describe('computeMetrics — events.jsonl cycle format', () => {
+  function writeCycleFromEvents(
+    id: string,
+    opts: {
+      sprintVersion?: string;
+      stage?: string;
+      startedAt?: string;
+      completedAt?: string;
+      passed?: number;
+      failed?: number;
+      prNumber?: number;
+      totalCostUsd?: number;
+    } = {},
+  ) {
+    const {
+      sprintVersion = '1.0.0',
+      stage = 'completed',
+      startedAt = '2026-01-01T00:00:00.000Z',
+      completedAt = '2026-01-01T01:00:00.000Z',
+      passed = 100,
+      failed = 0,
+      prNumber = 1,
+      totalCostUsd = 50,
+    } = opts;
+
+    const dir = join(tmpRoot, '.agentforge/cycles', id);
+    mkdirSync(dir, { recursive: true });
+    const events = [
+      { type: 'scoring.complete', totalCostUsd, at: startedAt },
+      { type: 'sprint.assigned', sprintVersion, at: startedAt },
+      { type: 'phase.start', phase: 'audit', at: startedAt },
+      { type: 'tests.complete', passed, failed, at: completedAt },
+      ...(prNumber != null ? [{ type: 'pr.opened', url: `https://github.com/org/repo/pull/${prNumber}`, number: prNumber, at: completedAt }] : []),
+      { type: 'cycle.complete', stage, at: completedAt },
+    ];
+    writeFileSync(join(dir, 'events.jsonl'), events.map(e => JSON.stringify(e)).join('\n') + '\n');
+  }
+
+  it('autonomy score is non-zero when completed cycle written via events.jsonl', () => {
+    mkdirs(join(tmpRoot, '.agentforge/cycles'));
+    writeCycleFromEvents('ev-1', { stage: 'completed', passed: 50 });
+    const m = computeMetrics(tmpRoot).metrics.find(m => m.key === 'autonomy')!;
+    expect(m.score).toBeGreaterThan(0);
+  });
+
+  it('cycleHistory contains correct fields from events.jsonl cycle', () => {
+    mkdirs(join(tmpRoot, '.agentforge/cycles'));
+    writeCycleFromEvents('ev-hist', {
+      sprintVersion: '5.0.0',
+      startedAt: '2026-03-01T10:00:00.000Z',
+      completedAt: '2026-03-01T11:00:00.000Z',
+      passed: 400,
+      failed: 10,
+      prNumber: 7,
+      totalCostUsd: 25,
+    });
+    const history = computeMetrics(tmpRoot).cycleHistory;
+    expect(history).toHaveLength(1);
+    const pt = history[0]!;
+    expect(pt.cycleId).toBe('ev-hist');
+    expect(pt.sprintVersion).toBe('5.0.0');
+    expect(pt.stage).toBe('completed');
+    expect(pt.testPassRate).toBeCloseTo(400 / 410, 5);
+    expect(pt.hasPr).toBe(true);
+    expect(pt.costUsd).toBe(25);
+    expect(pt.durationMs).toBe(60 * 60 * 1000);
+  });
+
+  it('debug.cycleCount includes cycles from both formats', () => {
+    mkdirs(join(tmpRoot, '.agentforge/cycles'));
+    writeCycle('legacy-1');
+    writeCycleFromEvents('ev-1', { stage: 'completed' });
+    expect(computeMetrics(tmpRoot).debug.cycleCount).toBe(2);
+  });
+});
+
+// ── cycles-archived/ reading (SSR copy) ───────────────────────────────────────
+
+describe('computeMetrics — cycles-archived/ reading', () => {
+  function writeArchivedCycle(id: string, overrides: Record<string, unknown> = {}) {
+    const dir = join(tmpRoot, '.agentforge/cycles-archived', id);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'cycle.json'), JSON.stringify({
+      cycleId: id,
+      stage: 'completed',
+      startedAt: '2026-01-01T00:00:00.000Z',
+      completedAt: '2026-01-01T01:00:00.000Z',
+      tests: { passed: 100, failed: 0, total: 100, passRate: 1.0 },
+      pr: { number: 1 },
+      cost: { totalUsd: 50 },
+      ...overrides,
+    }, null, 2));
+  }
+
+  it('autonomy score is non-zero when only archived cycles exist', () => {
+    mkdirs(join(tmpRoot, '.agentforge/cycles-archived'));
+    writeArchivedCycle('arch-1');
+    const m = computeMetrics(tmpRoot).metrics.find(m => m.key === 'autonomy')!;
+    expect(m.score).toBeGreaterThan(0);
+  });
+
+  it('debug.cycleCount includes archived cycles', () => {
+    mkdirs(join(tmpRoot, '.agentforge/cycles'), join(tmpRoot, '.agentforge/cycles-archived'));
+    writeCycle('active-1');
+    writeArchivedCycle('arch-1');
+    writeArchivedCycle('arch-2');
+    const { debug } = computeMetrics(tmpRoot);
+    expect(debug.cycleCount).toBe(3);
+    expect(debug.completedCycleCount).toBe(3);
+  });
+});
+
 // ── Descriptions ─────────────────────────────────────────────────────────────
 
 describe('computeMetrics — metric descriptions', () => {
