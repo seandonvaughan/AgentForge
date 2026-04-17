@@ -1135,6 +1135,21 @@ export async function cyclesRoutes(
     if ('error' in r) return reply.status(r.error.status).send(r.error.body);
     const reqProjectRoot = r.projectRoot;
     const base = cyclesBaseDir(reqProjectRoot);
+
+    // Honour launch-time budget / item-cap overrides from the request body.
+    // These are handed to the subprocess via env vars; the CLI's runCycleAction
+    // mirrors the previewCycle pattern and mutates config before constructing
+    // CycleRunner. Without this thread-through the cycle-runner always uses
+    // loadCycleConfig() defaults, so dashboard-supplied budgets are silently
+    // ignored — which is how cycle 75bfaf96 ran at $200 despite a $500 launch.
+    const body = (req.body ?? {}) as { budgetUsd?: number; maxItems?: number };
+    const budgetEnv = typeof body.budgetUsd === 'number' && body.budgetUsd > 0
+      ? { AUTONOMOUS_BUDGET_USD: String(body.budgetUsd) }
+      : {};
+    const maxItemsEnv = typeof body.maxItems === 'number' && body.maxItems > 0
+      ? { AUTONOMOUS_MAX_ITEMS: String(body.maxItems) }
+      : {};
+
     const cycleId = randomUUID();
     const startedAt = new Date().toISOString();
     const cycleDir = safeJoin(base, cycleId);
@@ -1174,7 +1189,7 @@ export async function cyclesRoutes(
         cwd: reqProjectRoot,
         detached: true,
         stdio: ['ignore', logFd, logFd],
-        env: { ...process.env, AUTONOMOUS_CYCLE_ID: cycleId },
+        env: { ...process.env, AUTONOMOUS_CYCLE_ID: cycleId, ...budgetEnv, ...maxItemsEnv },
       });
       child.unref();
       pid = child.pid ?? -1;

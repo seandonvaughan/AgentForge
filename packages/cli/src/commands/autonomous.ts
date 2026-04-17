@@ -165,6 +165,22 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
     } = await import('@agentforge/core');
 
     const config = loadCycleConfig(cwd);
+
+    // Launch-time overrides threaded through env by the server's POST handler
+    // (and by anyone driving the CLI directly). Mirrors the previewCycle
+    // pattern in packages/core/src/autonomous/preview-cycle.ts so the preview
+    // and run paths honour the same knobs.
+    const budgetOverride = parseEnvPositiveNumber(process.env['AUTONOMOUS_BUDGET_USD']);
+    if (budgetOverride !== null) {
+      config.budget.perCycleUsd = budgetOverride;
+      console.log(`[cycle] budget override: $${budgetOverride}`);
+    }
+    const maxItemsOverride = parseEnvPositiveInteger(process.env['AUTONOMOUS_MAX_ITEMS']);
+    if (maxItemsOverride !== null) {
+      config.limits.maxItemsPerSprint = maxItemsOverride;
+      console.log(`[cycle] maxItems override: ${maxItemsOverride}`);
+    }
+
     const telemetry = createAutonomousTelemetryAdapters(cwd);
 
     try {
@@ -634,6 +650,18 @@ function parseOptionalInteger(raw: string | undefined, label: string): number | 
     return null;
   }
   return parsed;
+}
+
+function parseEnvPositiveNumber(raw: string | undefined): number | null {
+  if (!raw) return null;
+  const parsed = Number.parseFloat(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function parseEnvPositiveInteger(raw: string | undefined): number | null {
+  if (!raw) return null;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
 function parseLimit(raw: string, fallback: number): number | null {
