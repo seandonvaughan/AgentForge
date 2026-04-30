@@ -4,27 +4,80 @@
  *
  * Uses a real git repo initialised in a temporary directory so that the
  * `git for-each-ref` and `git branch -D` calls in dashboard-stubs exercise
- * actual git plumbing — no spawnSync mocking needed.
+ * actual git plumbing without command mocking.
  *
  * The `gh pr list` call inside listAutonomousBranches is best-effort and will
  * gracefully fail in this environment (no GH auth), giving null PR fields.
  * That fallback path is verified implicitly by every GET test.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { spawnSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { dashboardStubRoutes } from '../dashboard-stubs.js';
 
 // ── Git helpers ────────────────────────────────────────────────────────────
+
+const GIT_TIMEOUT_MS = 30_000;
+const HOOK_TIMEOUT_MS = 30_000;
+const TEST_TIMEOUT_MS = 30_000;
+const CLEANUP_RETRIES = 5;
+const CLEANUP_RETRY_DELAY_MS = 150;
+const execFileAsync = promisify(execFile);
+
+vi.setConfig({ hookTimeout: HOOK_TIMEOUT_MS, testTimeout: TEST_TIMEOUT_MS });
+
+const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function removeTempDir(dir?: string): Promise<void> {
+  if (!dir) return;
+
+  for (let attempt = 0; attempt <= CLEANUP_RETRIES; attempt += 1) {
+    try {
+      rmSync(dir, {
+        recursive: true,
+        force: true,
+        maxRetries: 3,
+        retryDelay: CLEANUP_RETRY_DELAY_MS,
+      });
+      return;
+    } catch (err) {
+      if (attempt === CLEANUP_RETRIES) {
+        console.warn(`Failed to remove temp repo ${dir}:`, err);
+        return;
+      }
+      await delay(CLEANUP_RETRY_DELAY_MS * (attempt + 1));
+    }
+  }
+}
+
+async function checkedGit(
+  args: string[],
+  options: { cwd?: string; env?: NodeJS.ProcessEnv } = {},
+): Promise<void> {
+  try {
+    await execFileAsync('git', args, {
+      cwd: options.cwd,
+      env: options.env,
+      encoding: 'utf-8',
+      timeout: GIT_TIMEOUT_MS,
+      windowsHide: true,
+      maxBuffer: 10 * 1024 * 1024,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`git ${args.join(' ')} failed: ${message}`);
+  }
+}
 
 /**
  * Initialise a bare-minimum git repo in `dir` with a single empty commit on
  * the default branch so that additional branches can be created from it.
  */
-function initGitRepo(dir: string): void {
+async function initGitRepo(dir: string): Promise<void> {
   // Suppress global/system git config noise in CI by scoping identity locally
   const gitEnv = {
     ...process.env,
@@ -34,19 +87,17 @@ function initGitRepo(dir: string): void {
     GIT_COMMITTER_EMAIL: 'test@agentforge.test',
   };
 
-  spawnSync('git', ['init', '-b', 'main', dir], { encoding: 'utf-8', env: gitEnv });
-  spawnSync('git', ['-C', dir, 'config', 'user.email', 'test@agentforge.test'], { encoding: 'utf-8' });
-  spawnSync('git', ['-C', dir, 'config', 'user.name', 'Test'], { encoding: 'utf-8' });
+  await checkedGit(['init', '-b', 'main', dir], { env: gitEnv });
+  await checkedGit(['config', 'user.email', 'test@agentforge.test'], { cwd: dir });
+  await checkedGit(['config', 'user.name', 'Test'], { cwd: dir });
+  await checkedGit(['config', 'commit.gpgsign', 'false'], { cwd: dir });
   // An initial commit is required before `git branch` can create new refs
-  spawnSync('git', ['-C', dir, 'commit', '--allow-empty', '-m', 'chore: init'], {
-    encoding: 'utf-8',
-    env: gitEnv,
-  });
+  await checkedGit(['commit', '--allow-empty', '-m', 'chore: init'], { cwd: dir, env: gitEnv });
 }
 
 /** Create a local branch from HEAD (no checkout). */
-function createBranch(dir: string, name: string): void {
-  spawnSync('git', ['-C', dir, 'branch', name], { encoding: 'utf-8' });
+async function createBranch(dir: string, name: string): Promise<void> {
+  await checkedGit(['branch', name], { cwd: dir });
 }
 
 // ── Test fixtures ──────────────────────────────────────────────────────────
@@ -56,16 +107,26 @@ let app: FastifyInstance;
 
 beforeEach(async () => {
   tmpRoot = mkdtempSync(join(tmpdir(), 'agentforge-branches-'));
-  initGitRepo(tmpRoot);
+  await initGitRepo(tmpRoot);
   app = Fastify({ logger: false });
   await dashboardStubRoutes(app, { projectRoot: tmpRoot });
   await app.ready();
-});
+}, HOOK_TIMEOUT_MS);
 
 afterEach(async () => {
-  await app.close();
-  rmSync(tmpRoot, { recursive: true, force: true });
-});
+  let closeError: unknown;
+  try {
+    if (app) await app.close();
+  } catch (err) {
+    closeError = err;
+  }
+
+  await removeTempDir(tmpRoot);
+
+  if (closeError) {
+    throw closeError;
+  }
+}, HOOK_TIMEOUT_MS);
 
 // ── GET /api/v5/autonomous-branches ───────────────────────────────────────
 
@@ -80,7 +141,7 @@ describe('GET /api/v5/autonomous-branches', () => {
   });
 
   it('returns the expected branch shape for a single autonomous/* branch', async () => {
-    createBranch(tmpRoot, 'autonomous/v6.8.0-sprint-001');
+    await createBranch(tmpRoot, 'autonomous/v6.8.0-sprint-001');
 
     const res = await app.inject({ method: 'GET', url: '/api/v5/autonomous-branches' });
 
@@ -115,9 +176,9 @@ describe('GET /api/v5/autonomous-branches', () => {
   });
 
   it('lists multiple autonomous/* branches', async () => {
-    createBranch(tmpRoot, 'autonomous/v6.8.0');
-    createBranch(tmpRoot, 'autonomous/v6.8.1');
-    createBranch(tmpRoot, 'autonomous/v6.9.0-alpha');
+    await createBranch(tmpRoot, 'autonomous/v6.8.0');
+    await createBranch(tmpRoot, 'autonomous/v6.8.1');
+    await createBranch(tmpRoot, 'autonomous/v6.9.0-alpha');
 
     const res = await app.inject({ method: 'GET', url: '/api/v5/autonomous-branches' });
     const body = JSON.parse(res.body) as { data: Array<{ name: string }>; meta: { total: number } };
@@ -133,9 +194,9 @@ describe('GET /api/v5/autonomous-branches', () => {
   });
 
   it('excludes non-autonomous branches from the result', async () => {
-    createBranch(tmpRoot, 'feature/my-feature');
-    createBranch(tmpRoot, 'fix/bug-123');
-    createBranch(tmpRoot, 'autonomous/v6.8.0');
+    await createBranch(tmpRoot, 'feature/my-feature');
+    await createBranch(tmpRoot, 'fix/bug-123');
+    await createBranch(tmpRoot, 'autonomous/v6.8.0');
 
     const res = await app.inject({ method: 'GET', url: '/api/v5/autonomous-branches' });
     const body = JSON.parse(res.body) as { data: Array<{ name: string }>; meta: { total: number } };
@@ -154,7 +215,7 @@ describe('GET /api/v5/autonomous-branches', () => {
   });
 
   it('derives cycle name by stripping the autonomous/ prefix', async () => {
-    createBranch(tmpRoot, 'autonomous/sprint-42a67677');
+    await createBranch(tmpRoot, 'autonomous/sprint-42a67677');
 
     const res = await app.inject({ method: 'GET', url: '/api/v5/autonomous-branches' });
     const body = JSON.parse(res.body) as { data: Array<{ cycle: string }> };
@@ -190,7 +251,7 @@ describe('DELETE /api/v5/autonomous-branches/*', () => {
   });
 
   it('successfully deletes an existing autonomous branch and removes it from the list', async () => {
-    createBranch(tmpRoot, 'autonomous/v6.8.0');
+    await createBranch(tmpRoot, 'autonomous/v6.8.0');
 
     // Confirm it appears in the listing before deletion
     const beforeRes = await app.inject({ method: 'GET', url: '/api/v5/autonomous-branches' });
@@ -223,8 +284,8 @@ describe('DELETE /api/v5/autonomous-branches/*', () => {
   });
 
   it('only deletes the targeted branch, leaving others intact', async () => {
-    createBranch(tmpRoot, 'autonomous/v6.8.0');
-    createBranch(tmpRoot, 'autonomous/v6.8.1');
+    await createBranch(tmpRoot, 'autonomous/v6.8.0');
+    await createBranch(tmpRoot, 'autonomous/v6.8.1');
 
     const delRes = await app.inject({
       method: 'DELETE',
