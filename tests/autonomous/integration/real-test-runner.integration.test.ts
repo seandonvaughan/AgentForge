@@ -37,11 +37,19 @@ test('fails deliberately', () => expect(1).toBe(2));
 `,
     );
 
-    await execFileAsync('npm', ['install'], { cwd: tmpProject });
+    const install = buildExecInvocation('npm', ['install']);
+    await execFileAsync(install.file, install.args, { cwd: tmpProject });
   }, 120_000);
 
-  afterAll(() => {
-    if (tmpProject) rmSync(tmpProject, { recursive: true, force: true });
+  afterAll(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    if (tmpProject) {
+      try {
+        rmSync(tmpProject, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+      } catch {
+        // Windows can briefly retain npm/vitest file handles after process exit.
+      }
+    }
   });
 
   it('runs real vitest and parses 2 passed / 1 failed', async () => {
@@ -70,3 +78,19 @@ test('fails deliberately', () => expect(1).toBe(2));
     await expect(runner.run('test-cycle')).rejects.toBeInstanceOf(TestRunTimeoutError);
   }, 120_000);
 });
+
+function buildExecInvocation(command: string, args: string[]): { file: string; args: string[] } {
+  if (process.platform !== 'win32') {
+    return { file: command, args };
+  }
+
+  return {
+    file: 'cmd.exe',
+    args: ['/d', '/s', '/c', [command, ...args].map(quoteCmdArg).join(' ')],
+  };
+}
+
+function quoteCmdArg(arg: string): string {
+  if (/^[A-Za-z0-9_./:=,+@%\\-]+$/.test(arg)) return arg;
+  return `"${arg.replace(/"/g, '\\"')}"`;
+}

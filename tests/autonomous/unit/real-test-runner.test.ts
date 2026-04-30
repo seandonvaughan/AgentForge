@@ -15,12 +15,20 @@ const FIXTURE_PATH = resolve(
 
 vi.mock('node:child_process', async () => {
   const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process');
+  const findOutputFile = (args: string[]): string | null => {
+    const directIdx = args.findIndex((a) => a === '--outputFile');
+    if (directIdx >= 0) return args[directIdx + 1] ?? null;
+
+    const commandLine = args[args.findIndex((a) => a.toLowerCase() === '/c') + 1];
+    const match = commandLine?.match(/(?:^|\s)--outputFile\s+(?:"((?:\\"|[^"])*)"|(\S+))/);
+    return match ? (match[1]?.replace(/\\"/g, '"') ?? match[2] ?? null) : null;
+  };
+
   return {
     ...actual,
     execFile: vi.fn((_cmd: string, args: string[], _opts: unknown, cb: (err: unknown, result: { stdout: string; stderr: string }) => void) => {
       // Simulate vitest producing an output file
-      const outputFileIdx = args.findIndex((a) => a === '--outputFile');
-      const outputFile = outputFileIdx >= 0 ? args[outputFileIdx + 1] : null;
+      const outputFile = findOutputFile(args);
       if (outputFile) {
         const fixture = readFileSync(FIXTURE_PATH, 'utf8');
         writeFileSync(outputFile, fixture);
