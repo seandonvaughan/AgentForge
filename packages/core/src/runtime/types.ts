@@ -43,13 +43,32 @@ export interface ExecutionResult {
   raw?: unknown;
 }
 
-export interface ExecutionEvent {
-  type: 'chunk' | 'done' | 'error';
+export interface ExecutionStreamEvent {
+  type:
+    | 'start'
+    | 'metadata'
+    | 'text_delta'
+    | 'usage_delta'
+    | 'done'
+    | 'error'
+    | (string & {});
   data: unknown;
 }
+
+export interface ExecutionStreamOptions {
+  onChunk?: (text: string, index: number) => void;
+  onEvent?: (event: ExecutionStreamEvent) => void;
+  signal?: AbortSignal;
+}
+
+export type ExecutionEvent = ExecutionStreamEvent;
 
 export interface ExecutionTransport {
   readonly kind: ExecutionProviderKind;
   isAvailable(request: ExecutionRequest): Promise<boolean> | boolean;
   execute(request: ExecutionRequest): Promise<ExecutionResult>;
+  executeStreaming?(
+    request: ExecutionRequest,
+    options?: ExecutionStreamOptions,
+  ): Promise<ExecutionResult>;
 }
