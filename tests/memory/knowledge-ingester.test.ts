@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { KnowledgeIngester, type CodeSymbol, type KnowledgeIndex } from "../../src/memory/knowledge-ingester.js";
 
@@ -16,8 +16,7 @@ async function makeTempProject(): Promise<string> {
 
 async function writeTs(root: string, relPath: string, content: string): Promise<void> {
   const fullPath = join(root, relPath);
-  const dir = fullPath.substring(0, fullPath.lastIndexOf("/"));
-  await mkdir(dir, { recursive: true });
+  await mkdir(dirname(fullPath), { recursive: true });
   await writeFile(fullPath, content, "utf-8");
 }
 
@@ -258,7 +257,7 @@ export class Thing {}
 
   describe("real codebase smoke test", () => {
     it("ingests AgentForge src/ and finds known exports", async () => {
-      const realIngester = new KnowledgeIngester("/Users/seandonvaughan/Projects/AgentForge");
+      const realIngester = new KnowledgeIngester(process.cwd());
       const index = await realIngester.ingest();
       expect(index.symbols.length).toBeGreaterThan(10);
       const names = index.symbols.map((s) => s.name);
