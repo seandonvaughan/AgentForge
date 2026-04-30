@@ -1,6 +1,5 @@
 import Fastify from 'fastify';
 import FastifyCors from '@fastify/cors';
-import FastifyStatic from '@fastify/static';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { MessageBusV2 } from '@agentforge/core';
@@ -32,6 +31,7 @@ import { federationRoutes } from './routes/v5/federation.js';
 import { chatRoutes } from './routes/v5/chat.js';
 import { settingsRoutes } from './routes/v5/settings.js';
 import { searchRoutes } from './routes/v5/search.js';
+import { sendContainedStaticFile } from './lib/static-files.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -224,18 +224,16 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
     });
   }
 
-  // ── Static dashboard (optional) ───────────────────────────────────────────────
-  if (options.dashboardPath) {
-    await app.register(FastifyStatic, {
-      root: options.dashboardPath,
-      prefix: '/',
-      decorateReply: false,
-    });
-  }
-
   app.setNotFoundHandler(async (req, reply) => {
     if (req.url.startsWith('/api/')) {
       return reply.status(404).send({ error: 'Not found', path: req.url });
+    }
+    if (options.dashboardPath) {
+      const served = await sendContainedStaticFile(req, reply, {
+        root: options.dashboardPath,
+        fallbackFile: 'index.html',
+      });
+      if (served) return reply;
     }
     return reply.status(404).send({ error: 'Not found' });
   });

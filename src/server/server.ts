@@ -1,5 +1,4 @@
 import Fastify from 'fastify';
-import FastifyStatic from '@fastify/static';
 import FastifyCors from '@fastify/cors';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,6 +25,7 @@ import { branchesRoutes } from './routes/branches.js';
 import { cyclesRoutes } from './routes/cycles.js';
 import { searchRoutes } from './routes/search.js';
 import { runRoutes } from './routes/run.js';
+import { sendContainedStaticFile } from './static-files.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -72,12 +72,7 @@ export async function createServer(options: ServerOptions = {}) {
   const authConfig: OAuth2Config = options.auth ?? { mode: 'disabled' };
   registerOAuth2Hook(app, authConfig);
 
-  // Serve dashboard static files
   const staticPath = options.dashboardPath ?? join(__dirname, '../../dashboard');
-  await app.register(FastifyStatic, {
-    root: staticPath,
-    prefix: '/app',
-  });
 
   // Health check — liveness + basic readiness signals
   app.get('/api/v1/health', async (_req, reply) => {
@@ -151,8 +146,13 @@ export async function createServer(options: ServerOptions = {}) {
     if (req.url.startsWith('/api/')) {
       return reply.status(404).send({ error: 'Not found', path: req.url });
     }
-    // Serve SPA
-    return reply.sendFile('index.html', staticPath);
+    const served = await sendContainedStaticFile(req, reply, {
+      root: staticPath,
+      prefix: '/app',
+      fallbackFile: 'index.html',
+    });
+    if (served) return reply;
+    return reply.status(404).send({ error: 'Not found' });
   });
 
   return { app, port, host };
