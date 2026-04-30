@@ -13,7 +13,7 @@
  * delivers synthetic events without requiring a live SSE server.
  */
 
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page, type Route } from '@playwright/test';
 
 // ---------------------------------------------------------------------------
 // Shared MockEventSource injection
@@ -27,7 +27,7 @@ import { test, expect } from '@playwright/test';
  * component's `new EventSource(SSE_URL)` picks it up automatically.
  */
 async function injectMockEventSource(
-  page: Parameters<typeof test>[1] extends undefined ? never : Parameters<Parameters<typeof test>[1]>[0],
+  page: Page,
   events: Array<{
     id: string;
     type: string;
@@ -36,9 +36,16 @@ async function injectMockEventSource(
     timestamp: string;
     data?: Record<string, unknown>;
   }>,
+  options: { errorAfterMs?: number } = {},
 ) {
   await page.addInitScript(
-    ({ mockEvents }: { mockEvents: typeof events }) => {
+    ({ mockEvents, mockOptions }: { mockEvents: typeof events; mockOptions: typeof options }) => {
+      const sources: Array<{
+        onopen: ((e: Event) => void) | null;
+        onmessage: ((e: MessageEvent) => void) | null;
+        onerror: ((e: Event) => void) | null;
+      }> = [];
+
       class MockEventSource {
         onopen: ((e: Event) => void) | null = null;
         onmessage: ((e: MessageEvent) => void) | null = null;
@@ -46,11 +53,7 @@ async function injectMockEventSource(
         readyState = 1; // OPEN
 
         constructor(_url: string) {
-          // Fire onopen after a short delay to simulate async connection
-          setTimeout(() => {
-            if (this.onopen) this.onopen(new Event('open'));
-          }, 20);
-
+          sources.push(this);
           // Deliver each event at 50ms intervals after open
           mockEvents.forEach((event, i) => {
             setTimeout(() => {
@@ -61,6 +64,12 @@ async function injectMockEventSource(
               }
             }, 80 + i * 40);
           });
+
+          if (mockOptions.errorAfterMs !== undefined) {
+            setTimeout(() => {
+              if (this.onerror) this.onerror(new Event('error'));
+            }, mockOptions.errorAfterMs);
+          }
         }
 
         close() {
@@ -69,10 +78,42 @@ async function injectMockEventSource(
       }
 
       // Override window.EventSource with our mock before Svelte mounts
-      (window as unknown as Record<string, unknown>).EventSource = MockEventSource;
+      Object.assign(window, {
+        EventSource: MockEventSource,
+        __agentForgeSseSourceCount() {
+          return sources.length;
+        },
+        __openAgentForgeSse() {
+          for (const source of sources) {
+            source.onopen?.(new Event('open'));
+          }
+        },
+        __errorAgentForgeSse() {
+          for (const source of sources) {
+            source.onerror?.(new Event('error'));
+          }
+        },
+      });
     },
-    { mockEvents: events },
+    { mockEvents: events, mockOptions: options },
   );
+}
+
+async function openMockSse(page: Page) {
+  await page.waitForFunction(() => {
+    const count = (window as unknown as { __agentForgeSseSourceCount?: () => number })
+      .__agentForgeSseSourceCount?.() ?? 0;
+    return count > 0;
+  });
+  await page.evaluate(() => {
+    (window as unknown as { __openAgentForgeSse: () => void }).__openAgentForgeSse();
+  });
+}
+
+async function errorMockSse(page: Page) {
+  await page.evaluate(() => {
+    (window as unknown as { __errorAgentForgeSse: () => void }).__errorAgentForgeSse();
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -126,11 +167,28 @@ const MIXED_EVENTS = [
   },
 ];
 
+async function fulfillJson(route: Route, body: unknown) {
+  await route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify(body),
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 test.describe('Live Feed Page (/live)', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.route('/api/v5/workspaces', route => fulfillJson(route, { data: [] }));
+    await page.route('/api/v5/agents', route => fulfillJson(route, { data: [] }));
+    await page.route('**/api/v5/sessions**', route => fulfillJson(route, { data: [] }));
+    await page.route('/api/v5/costs', route => fulfillJson(route, { data: [] }));
+    await page.route('/api/v5/health', route => fulfillJson(route, { data: { status: 'ok' } }));
+    await page.route('/api/v5/cycle-sessions', route => fulfillJson(route, { data: [] }));
+  });
+
   // -------------------------------------------------------------------------
   // Page structure
   // -------------------------------------------------------------------------
@@ -201,15 +259,23 @@ test.describe('Live Feed Page (/live)', () => {
     test('shows live status dot when connected', async ({ page }) => {
       await injectMockEventSource(page, []);
       await page.goto('/live');
-
-      // Wait for mock EventSource to fire onopen → connected.set(true)
-      await page.waitForTimeout(200);
+      await openMockSse(page);
 
       const liveDot = page.locator('.status-dot.live');
       await expect(liveDot).toBeVisible();
 
       const statusLabel = page.locator('.status-label');
       await expect(statusLabel).toHaveText('Live');
+    });
+
+    test('shows reconnect warning when the SSE connection drops', async ({ page }) => {
+      await injectMockEventSource(page, []);
+      await page.goto('/live');
+      await openMockSse(page);
+      await errorMockSse(page);
+
+      await expect(page.locator('.status-label')).toHaveText('Reconnecting…');
+      await expect(page.locator('.reconnect-banner')).toContainText('reconnecting automatically');
     });
   });
 
@@ -299,7 +365,7 @@ test.describe('Live Feed Page (/live)', () => {
       await injectMockEventSource(page, CYCLE_EVENTS);
       await page.goto('/live');
 
-      await page.waitForTimeout(400);
+      await expect(page.locator('.feed-row')).toHaveCount(3);
 
       const messages = page.locator('.feed-row .event-message');
       const texts = await messages.allTextContents();
@@ -320,7 +386,7 @@ test.describe('Live Feed Page (/live)', () => {
       await page.goto('/live');
 
       // Wait for all 5 events to land
-      await page.waitForTimeout(500);
+      await expect(page.locator('.feed-row')).toHaveCount(5);
 
       // All 5 events should be visible initially
       let rows = page.locator('.feed-row');

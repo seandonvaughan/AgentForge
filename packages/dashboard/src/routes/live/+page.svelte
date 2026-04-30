@@ -147,6 +147,12 @@
   </div>
 {/if}
 
+{#if reconnecting}
+  <div class="reconnect-banner">
+    Live stream disconnected — reconnecting automatically. New events may be delayed.
+  </div>
+{/if}
+
 <div class="toolbar">
   <label class="filter-label" for="type-filter">Filter by type:</label>
   <select id="type-filter" class="filter-select" bind:value={filterType}>
@@ -283,6 +289,16 @@
     margin-bottom: var(--space-3);
     font-size: var(--text-sm);
     color: var(--color-danger);
+  }
+
+  .reconnect-banner {
+    padding: var(--space-2) var(--space-4);
+    background: rgba(245,166,35,0.1);
+    border: 1px solid rgba(245,166,35,0.3);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-3);
+    font-size: var(--text-sm);
+    color: var(--color-warning);
   }
 
   .toolbar {
