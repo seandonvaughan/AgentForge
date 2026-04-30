@@ -148,7 +148,6 @@ export async function createServer(options: ServerOptions = {}) {
     }
     const served = await sendContainedStaticFile(req, reply, {
       root: staticPath,
-      prefix: '/app',
       fallbackFile: 'index.html',
     });
     if (served) return reply;
