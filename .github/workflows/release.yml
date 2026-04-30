@@ -31,8 +31,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run lint
-        run: pnpm lint
+      - name: Run release gates
+        run: pnpm verify:gates
 
       - name: Run tests
         run: pnpm exec vitest run
