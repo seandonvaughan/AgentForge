@@ -2,6 +2,7 @@ import type { ModelTier } from '@agentforge/shared';
 
 export type RuntimeMode = 'auto' | 'sdk' | 'claude-code-compat';
 export type ExecutionProviderKind = 'anthropic-sdk' | 'claude-code-compat';
+export type RuntimeJobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 export interface ExecutionAgentConfig {
   agentId: string;
@@ -62,6 +63,19 @@ export interface ExecutionStreamOptions {
 }
 
 export type ExecutionEvent = ExecutionStreamEvent;
+
+export interface RuntimeEventEnvelope {
+  id: string;
+  jobId: string;
+  sessionId: string;
+  agentId: string;
+  type: string;
+  category: string;
+  message: string;
+  data?: Record<string, unknown>;
+  timestamp: string;
+  sequence?: number;
+}
 
 export interface ExecutionTransport {
   readonly kind: ExecutionProviderKind;

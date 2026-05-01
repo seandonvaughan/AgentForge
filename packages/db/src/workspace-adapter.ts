@@ -101,6 +101,42 @@ export interface ScorecardRow {
   last_updated: string;
 }
 
+export type RuntimeJobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+export interface RuntimeJobRow {
+  id: string;
+  session_id: string;
+  agent_id: string;
+  task: string;
+  status: RuntimeJobStatus;
+  model: string | null;
+  runtime_mode: string | null;
+  provider_kind: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+  error: string | null;
+  result_json: string;
+  cancel_requested: number;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RuntimeEventRow {
+  sequence: number;
+  id: string;
+  job_id: string;
+  session_id: string;
+  agent_id: string;
+  type: string;
+  category: string;
+  message: string;
+  data_json: string;
+  created_at: string;
+}
+
 export interface AgentScore {
   agentId: string;
   completionRate: number;   // 0–1
@@ -147,6 +183,26 @@ export interface TestObservationFilters {
   runId?: string;
   status?: string;
   suite?: string;
+  since?: string;
+  until?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface RuntimeJobFilters {
+  agentId?: string;
+  status?: RuntimeJobStatus | string;
+  since?: string;
+  until?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface RuntimeEventFilters {
+  jobId?: string;
+  sessionId?: string;
+  type?: string;
+  afterSequence?: number;
   since?: string;
   until?: string;
   limit?: number;
@@ -463,6 +519,210 @@ export class WorkspaceAdapter {
     return this.db.prepare(`
       SELECT * FROM test_observations ${where} ORDER BY observed_at DESC, created_at DESC LIMIT ? OFFSET ?
     `).all(...params, limit, offset) as TestObservationRow[];
+  }
+
+  // --- Runtime Jobs / Events ---
+
+  createRuntimeJob(data: {
+    id?: string;
+    sessionId: string;
+    agentId: string;
+    task: string;
+    model?: string;
+    runtimeMode?: string;
+    status?: RuntimeJobStatus;
+    createdAt?: string;
+  }): RuntimeJobRow {
+    const id = data.id ?? generateId();
+    const now = data.createdAt ?? nowIso();
+    this.db.prepare(`
+      INSERT INTO runtime_jobs (
+        id, session_id, agent_id, task, status, model, runtime_mode, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      data.sessionId,
+      data.agentId,
+      data.task,
+      data.status ?? 'queued',
+      data.model ?? null,
+      data.runtimeMode ?? null,
+      now,
+      now,
+    );
+    return this.getRuntimeJob(id)!;
+  }
+
+  getRuntimeJob(id: string): RuntimeJobRow | undefined {
+    return this.db.prepare('SELECT * FROM runtime_jobs WHERE id = ?').get(id) as RuntimeJobRow | undefined;
+  }
+
+  getRuntimeJobBySessionId(sessionId: string): RuntimeJobRow | undefined {
+    return this.db.prepare('SELECT * FROM runtime_jobs WHERE session_id = ?').get(sessionId) as RuntimeJobRow | undefined;
+  }
+
+  startRuntimeJob(id: string, startedAt = nowIso()): RuntimeJobRow | undefined {
+    this.db.prepare(`
+      UPDATE runtime_jobs
+      SET status = 'running', started_at = COALESCE(started_at, ?), updated_at = ?
+      WHERE id = ? AND status IN ('queued', 'running')
+    `).run(startedAt, startedAt, id);
+    return this.getRuntimeJob(id);
+  }
+
+  completeRuntimeJob(id: string, data: {
+    status: Extract<RuntimeJobStatus, 'completed' | 'failed'>;
+    model?: string;
+    providerKind?: string;
+    inputTokens?: number;
+    outputTokens?: number;
+    costUsd?: number;
+    error?: string;
+    result?: unknown;
+    completedAt?: string;
+  }): RuntimeJobRow | undefined {
+    const completedAt = data.completedAt ?? nowIso();
+    this.db.prepare(`
+      UPDATE runtime_jobs
+      SET
+        status = ?,
+        completed_at = ?,
+        updated_at = ?,
+        model = COALESCE(?, model),
+        provider_kind = COALESCE(?, provider_kind),
+        input_tokens = COALESCE(?, input_tokens),
+        output_tokens = COALESCE(?, output_tokens),
+        cost_usd = COALESCE(?, cost_usd),
+        error = ?,
+        result_json = ?
+      WHERE id = ?
+    `).run(
+      data.status,
+      completedAt,
+      completedAt,
+      data.model ?? null,
+      data.providerKind ?? null,
+      data.inputTokens ?? null,
+      data.outputTokens ?? null,
+      data.costUsd ?? null,
+      data.error ?? null,
+      serializePayload(data.result),
+      id,
+    );
+    return this.getRuntimeJob(id);
+  }
+
+  cancelRuntimeJob(id: string, completedAt = nowIso(), error?: string): RuntimeJobRow | undefined {
+    this.db.prepare(`
+      UPDATE runtime_jobs
+      SET
+        status = 'cancelled',
+        cancel_requested = 1,
+        completed_at = COALESCE(completed_at, ?),
+        updated_at = ?,
+        error = COALESCE(?, error)
+      WHERE id = ? AND status IN ('queued', 'running')
+    `).run(completedAt, completedAt, error ?? null, id);
+    return this.getRuntimeJob(id);
+  }
+
+  requestRuntimeJobCancel(id: string): RuntimeJobRow | undefined {
+    const now = nowIso();
+    this.db.prepare(`
+      UPDATE runtime_jobs
+      SET cancel_requested = 1, updated_at = ?
+      WHERE id = ? AND status IN ('queued', 'running')
+    `).run(now, id);
+    return this.getRuntimeJob(id);
+  }
+
+  listRuntimeJobs(filters: RuntimeJobFilters = {}): RuntimeJobRow[] {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (filters.agentId) { conditions.push('agent_id = ?'); params.push(filters.agentId); }
+    if (filters.status) { conditions.push('status = ?'); params.push(filters.status); }
+    if (filters.since) { conditions.push('created_at >= ?'); params.push(filters.since); }
+    if (filters.until) { conditions.push('created_at <= ?'); params.push(filters.until); }
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const limit = Math.min(filters.limit ?? 50, 500);
+    const offset = filters.offset ?? 0;
+
+    return this.db.prepare(`
+      SELECT * FROM runtime_jobs ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?
+    `).all(...params, limit, offset) as RuntimeJobRow[];
+  }
+
+  countRuntimeJobs(filters: Omit<RuntimeJobFilters, 'limit' | 'offset'> = {}): number {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (filters.agentId) { conditions.push('agent_id = ?'); params.push(filters.agentId); }
+    if (filters.status) { conditions.push('status = ?'); params.push(filters.status); }
+    if (filters.since) { conditions.push('created_at >= ?'); params.push(filters.since); }
+    if (filters.until) { conditions.push('created_at <= ?'); params.push(filters.until); }
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const row = this.db.prepare(`SELECT COUNT(*) as n FROM runtime_jobs ${where}`).get(...params) as { n: number };
+    return row.n;
+  }
+
+  recordRuntimeEvent(data: {
+    id?: string;
+    jobId: string;
+    sessionId: string;
+    agentId: string;
+    type: string;
+    category?: string;
+    message: string;
+    data?: unknown;
+    createdAt?: string;
+  }): RuntimeEventRow {
+    const id = data.id ?? generateId();
+    const createdAt = data.createdAt ?? nowIso();
+    this.db.prepare(`
+      INSERT INTO runtime_events (
+        id, job_id, session_id, agent_id, type, category, message, data_json, created_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      data.jobId,
+      data.sessionId,
+      data.agentId,
+      data.type,
+      data.category ?? 'run',
+      data.message,
+      serializePayload(data.data),
+      createdAt,
+    );
+    return this.getRuntimeEvent(id)!;
+  }
+
+  getRuntimeEvent(id: string): RuntimeEventRow | undefined {
+    return this.db.prepare('SELECT * FROM runtime_events WHERE id = ?').get(id) as RuntimeEventRow | undefined;
+  }
+
+  listRuntimeEvents(filters: RuntimeEventFilters = {}): RuntimeEventRow[] {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (filters.jobId) { conditions.push('job_id = ?'); params.push(filters.jobId); }
+    if (filters.sessionId) { conditions.push('session_id = ?'); params.push(filters.sessionId); }
+    if (filters.type) { conditions.push('type = ?'); params.push(filters.type); }
+    if (filters.afterSequence !== undefined) { conditions.push('sequence > ?'); params.push(filters.afterSequence); }
+    if (filters.since) { conditions.push('created_at >= ?'); params.push(filters.since); }
+    if (filters.until) { conditions.push('created_at <= ?'); params.push(filters.until); }
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const limit = Math.min(filters.limit ?? 100, 500);
+    const offset = filters.offset ?? 0;
+
+    return this.db.prepare(`
+      SELECT * FROM runtime_events ${where} ORDER BY sequence ASC LIMIT ? OFFSET ?
+    `).all(...params, limit, offset) as RuntimeEventRow[];
   }
 
   // --- Promotions / Autonomy ---

@@ -17,8 +17,8 @@
   "exclude": ["node_modules", "dist"],
   "references": [
     { "path": "packages/shared" },
-    { "path": "packages/core" },
     { "path": "packages/db" },
+    { "path": "packages/core" },
     { "path": "packages/server" },
     { "path": "packages/embeddings" },
     { "path": "packages/plugins-sdk" },

@@ -2,8 +2,10 @@ import type { FastifyInstance } from 'fastify';
 import type { SessionRow, WorkspaceAdapter } from '@agentforge/db';
 import {
   AgentRuntime,
+  RuntimeJobSupervisor,
   loadAgentConfig,
   type ExecutionProviderKind,
+  type RuntimeEventInput,
   type RunResult,
   type RuntimeMode,
 } from '@agentforge/core';
@@ -140,9 +142,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export async function runRoutes(
   app: FastifyInstance,
-  opts?: { adapter?: WorkspaceAdapter },
+  opts?: { adapter?: WorkspaceAdapter; supervisor?: RuntimeJobSupervisor },
 ): Promise<void> {
   const adapter = opts?.adapter;
+  const supervisor = opts?.supervisor ?? (adapter ? new RuntimeJobSupervisor({ adapter }) : undefined);
 
   // POST /api/v5/run — start an agent run and stream progress over SSE.
   app.post<{ Body: RunRequestBody; Querystring: RunQuerystring }>('/api/v5/run', async (req, reply) => {
@@ -159,6 +162,141 @@ export async function runRoutes(
 
     config.workspaceId = 'default';
     const runtime = new AgentRuntime(config, adapter);
+
+    if (supervisor) {
+      const job = supervisor.createJob({
+        agentId,
+        task,
+        model: config.model,
+        ...(runtimeMode ? { runtimeMode } : {}),
+      });
+      const sessionId = job.session_id;
+      const startedAt = job.created_at;
+
+      runLog.set(sessionId, {
+        sessionId,
+        agentId,
+        task,
+        model: config.model,
+        status: 'running',
+        response: '',
+        costUsd: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        startedAt,
+      });
+
+      const executeJob = async (): Promise<RunCompletion> => {
+        const result = await supervisor.startJob(job.id, async ({ signal, emit }) => {
+          const emitRuntime = (event: RuntimeEventInput) => emit(event);
+          const runResult = await runtime.runStreaming({
+            task,
+            sessionId,
+            ...(runtimeMode ? { runtimeMode } : {}),
+            ...(allowedTools?.length ? { allowedTools } : {}),
+            signal,
+            onChunk: (text: string, index: number) => {
+              emitRuntime({
+                type: 'chunk',
+                message: `[${agentId}] chunk`,
+                data: { content: text, text, index },
+              });
+            },
+            onEvent: (event) => {
+              if (event.type === 'chunk' || event.type === 'text_delta') return;
+              emitRuntime({
+                type: event.type,
+                message: `[${agentId}] ${event.type}`,
+                data: eventDataWithSession(event.data, sessionId),
+              });
+            },
+          });
+
+          const completedSessionId = runResult.sessionId || sessionId;
+          if (completedSessionId !== sessionId) {
+            runLog.delete(sessionId);
+          }
+          runLog.set(completedSessionId, {
+            sessionId: completedSessionId,
+            agentId,
+            task,
+            model: runResult.model,
+            status: runResult.status,
+            response: runResult.response,
+            costUsd: runResult.costUsd,
+            inputTokens: runResult.inputTokens,
+            outputTokens: runResult.outputTokens,
+            startedAt,
+            ...(runResult.completedAt !== undefined ? { completedAt: runResult.completedAt } : {}),
+            ...(runResult.providerKind ? { providerKind: runResult.providerKind } : {}),
+            ...(runResult.runtimeModeResolved ? { runtimeModeResolved: runResult.runtimeModeResolved } : {}),
+            ...(runResult.error !== undefined ? { error: runResult.error } : {}),
+          });
+
+          try {
+            const agentSkills: string[] = agentId.toLowerCase().split(/[-_]/);
+            const durationMs = runResult.completedAt
+              ? new Date(runResult.completedAt).getTime() - new Date(startedAt).getTime()
+              : undefined;
+            const { skillLevelUps } = careerHook.postTaskHook(agentId, {
+              taskId: sessionId,
+              success: runResult.status === 'completed',
+              summary: task.slice(0, 200),
+              tokensUsed: (runResult.inputTokens ?? 0) + (runResult.outputTokens ?? 0),
+              ...(durationMs !== undefined ? { durationMs } : {}),
+              skills: agentSkills,
+            });
+
+            for (const levelUp of skillLevelUps) {
+              globalStream.emit({
+                type: 'agent_activity',
+                category: 'skill_levelup',
+                message: `[${agentId}] skill "${levelUp.skill}" leveled up to ${levelUp.newLevel}`,
+                data: { agentId, skill: levelUp.skill, newLevel: levelUp.newLevel, sessionId: completedSessionId },
+              });
+            }
+          } catch {
+            // Career hook failures must never break the run response
+          }
+
+          return runResult;
+        });
+
+        if (!result) {
+          const latest = supervisor.getJob(job.id);
+          const message = latest?.error ?? 'Run did not complete';
+          return { ok: false, error: message, sessionId };
+        }
+
+        return { ok: true, result, completedSessionId: result.sessionId || sessionId };
+      };
+
+      if (shouldWaitForCompletion(req.query?.wait)) {
+        const completion = await executeJob();
+        if (!completion.ok) {
+          return reply.status(500).send({ error: completion.error, sessionId: completion.sessionId, jobId: job.id });
+        }
+
+        return reply.status(200).send({
+          data: { ...completion.result, sessionId: completion.completedSessionId, jobId: job.id },
+        });
+      }
+
+      void executeJob();
+
+      return reply.status(202).send({
+        data: {
+          jobId: job.id,
+          sessionId,
+          status: 'running',
+          agentId,
+          task,
+          model: config.model,
+          startedAt,
+        },
+      });
+    }
+
     const sessionId = `run-${generateId()}`;
     const startedAt = nowIso();
 
