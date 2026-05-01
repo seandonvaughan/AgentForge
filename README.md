@@ -92,6 +92,21 @@ The package dashboard in `packages/dashboard` is the canonical operator UI. In d
 - Runner completion/failure is driven by `workflow_event` events with `data.sessionId` and `data.status`.
 - `/live` is the raw operator activity feed for the same SSE stream and warns operators when the stream is reconnecting.
 
+## Release and Security Gates
+
+AgentForge requires Node.js `>=20.19.0`. CI and release gates run on Node `20.19.x` and `22.13.x`; Node 18 is no longer a supported compatibility target.
+
+- `corepack pnpm verify:gates` runs lint, version sync, TypeScript build, dashboard check/build, help/changelog truth checks, and the dependency audit.
+- `corepack pnpm test:run` runs the Vitest suite.
+- `corepack pnpm test:e2e:dashboard` runs the dashboard Playwright product gate.
+- Security posture is split across dependency audit, CodeQL, OSV Scanner, Gitleaks, and CycloneDX SBOM generation.
+
+See [docs/release-and-security-gates.md](docs/release-and-security-gates.md) for the full policy and release checklist.
+
+## Durable Jobs and Realtime Direction
+
+The current operator contract is package-first: durable cycle/session artifacts live under `.agentforge/*`, the package server owns `/api/v5/*`, and realtime dashboard updates flow through `/api/v5/stream`. New job orchestration should preserve that contract: make job state restart-safe before adding new dashboard affordances, and publish incremental status through the shared SSE stream rather than route-local polling.
+
 ## Development
 
 ```bash

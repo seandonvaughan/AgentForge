@@ -49,11 +49,19 @@ export default defineConfig({
     // },
   ],
 
-  /* Run your local dev server before starting the tests */
-  webServer: {
-    command: 'cd packages/dashboard && npm run dev',
-    url: 'http://localhost:4751',
-    reuseExistingServer: !process.env.CI,
-    timeout: 120 * 1000,
-  },
+  /* Run local product services before starting the tests. */
+  webServer: [
+    {
+      command: 'corepack pnpm start',
+      url: 'http://localhost:4750/api/v5/health',
+      reuseExistingServer: !process.env.CI,
+      timeout: 120 * 1000,
+    },
+    {
+      command: 'corepack pnpm --dir packages/dashboard dev',
+      url: 'http://localhost:4751',
+      reuseExistingServer: !process.env.CI,
+      timeout: 120 * 1000,
+    },
+  ],
 });
