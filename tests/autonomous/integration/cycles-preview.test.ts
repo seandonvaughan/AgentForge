@@ -66,6 +66,48 @@ function makeFakeAutonomous(opts: FakeOpts = {}) {
     constructor(_o: any) {}
   };
 
+  const previewCycle = async (previewOpts: { budgetUsd?: number; maxItems?: number }) => {
+    const builder = new ProposalToBacklog(null, null, null);
+    const candidates = await builder.build();
+    const limitedCandidates = typeof previewOpts.maxItems === 'number'
+      ? candidates.slice(0, previewOpts.maxItems)
+      : candidates;
+
+    if (limitedCandidates.length === 0) {
+      return {
+        candidateCount: 0,
+        rankedItems: [],
+        totalEstimatedCostUsd: 0,
+        budgetOverflowUsd: 0,
+        withinBudget: 0,
+        requiresApproval: 0,
+        summary: 'No candidate backlog items found',
+        warnings: ['No candidate backlog items found'],
+        durationMs: 0,
+        scoringCostUsd: 0,
+        fallback: null,
+      };
+    }
+
+    const scorer = new ScoringPipeline(null, null, null, null);
+    const scored = await scorer.scoreWithFallback(limitedCandidates);
+    const rankedItems = [...(scored.withinBudget ?? []), ...(scored.requiresApproval ?? [])];
+
+    return {
+      candidateCount: candidates.length,
+      rankedItems,
+      totalEstimatedCostUsd: scored.totalEstimatedCostUsd ?? 0,
+      budgetOverflowUsd: scored.budgetOverflowUsd ?? 0,
+      withinBudget: scored.withinBudget?.length ?? 0,
+      requiresApproval: scored.requiresApproval?.length ?? 0,
+      summary: scored.summary ?? '',
+      warnings: scored.warnings ?? [],
+      durationMs: 0,
+      scoringCostUsd: 0,
+      fallback: scored.fallback ?? null,
+    };
+  };
+
   const loadCycleConfig = (_cwd: string) => ({
     budget: { perCycleUsd: 25, perItemUsd: 5 },
     limits: { maxItemsPerSprint: 3 },
@@ -78,6 +120,7 @@ function makeFakeAutonomous(opts: FakeOpts = {}) {
     ProposalToBacklog,
     ScoringPipeline,
     RuntimeAdapter,
+    previewCycle,
   };
 
   return async () => {

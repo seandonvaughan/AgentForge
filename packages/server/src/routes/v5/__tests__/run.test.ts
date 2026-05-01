@@ -2,10 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { runRoutes, getRunLog } from '../run.js';
 
-// Mock @agentforge/core so no real Anthropic API calls are made.
-// runStreaming calls onChunk before resolving so the SSE emission path
-// is exercised the same way it runs in production.
-vi.mock('@agentforge/core', () => {
+const coreMocks = vi.hoisted(() => {
   const mockRunResult = {
     response: 'Hello from mock agent',
     model: 'claude-sonnet-4-6',
@@ -20,37 +17,21 @@ vi.mock('@agentforge/core', () => {
   };
 
   return {
+    loadAgentConfig: vi.fn(),
+    mockRunResult,
+    runStreaming: vi.fn(),
+  };
+});
+
+// Mock @agentforge/core so no real Anthropic API calls are made.
+// runStreaming calls onChunk before resolving so the SSE emission path
+// is exercised the same way it runs in production.
+vi.mock('@agentforge/core', () => {
+  return {
     AgentRuntime: vi.fn().mockImplementation(() => ({
-      runStreaming: vi.fn().mockImplementation(
-        async (opts: {
-          sessionId?: string;
-          onChunk?: (text: string, index: number) => void;
-          onEvent?: (event: { type: string; data: unknown }) => void;
-        }) => {
-          // Simulate onChunk firing once with the full response (degraded streaming)
-          if (opts.onChunk) opts.onChunk(mockRunResult.response, 0);
-          // Simulate onEvent firing with the 'done' signal
-          const result = {
-            ...mockRunResult,
-            sessionId: opts.sessionId ?? 'mock-session-1',
-          };
-          if (opts.onEvent) opts.onEvent({ type: 'done', data: result });
-          return result;
-        },
-      ),
+      runStreaming: coreMocks.runStreaming,
     })),
-    loadAgentConfig: vi.fn().mockImplementation(async (agentId: string) => {
-      if (agentId === 'coder') {
-        return {
-          agentId: 'coder',
-          name: 'Coder',
-          model: 'sonnet' as const,
-          systemPrompt: 'You are a coder agent.',
-          workspaceId: 'default',
-        };
-      }
-      return null;
-    }),
+    loadAgentConfig: coreMocks.loadAgentConfig,
   };
 });
 
@@ -80,19 +61,95 @@ async function buildApp() {
   return app;
 }
 
+function installDefaultCoreMocks() {
+  coreMocks.loadAgentConfig.mockImplementation(async (agentId: string) => {
+    if (agentId === 'coder') {
+      return {
+        agentId: 'coder',
+        name: 'Coder',
+        model: 'sonnet' as const,
+        systemPrompt: 'You are a coder agent.',
+        workspaceId: 'default',
+      };
+    }
+    return null;
+  });
+
+  coreMocks.runStreaming.mockImplementation(
+    async (opts: {
+      sessionId?: string;
+      onChunk?: (text: string, index: number) => void;
+      onEvent?: (event: { type: string; data: unknown }) => void;
+    }) => {
+      if (opts.onChunk) opts.onChunk(coreMocks.mockRunResult.response, 0);
+      const result = {
+        ...coreMocks.mockRunResult,
+        sessionId: opts.sessionId ?? 'mock-session-1',
+      };
+      if (opts.onEvent) opts.onEvent({ type: 'done', data: result });
+      return result;
+    },
+  );
+}
+
+function flushPromises(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
 describe('POST /api/v5/run', () => {
   let app: ReturnType<typeof Fastify>;
 
   beforeEach(async () => {
     getRunLog().clear();
     mockEmit.mockClear();
+    coreMocks.loadAgentConfig.mockReset();
+    coreMocks.runStreaming.mockReset();
+    installDefaultCoreMocks();
     app = await buildApp();
   });
 
-  it('returns 200 with RunResult when given a valid agentId and task', async () => {
+  it('returns 202 with a running run entry by default', async () => {
+    let resolveRun: ((value: unknown) => void) | undefined;
+    coreMocks.runStreaming.mockImplementationOnce(
+      (opts: {
+        sessionId?: string;
+        onChunk?: (text: string, index: number) => void;
+        onEvent?: (event: { type: string; data: unknown }) => void;
+      }) => new Promise((resolve) => {
+        resolveRun = () => {
+          opts.onChunk?.(coreMocks.mockRunResult.response, 0);
+          const result = {
+            ...coreMocks.mockRunResult,
+            sessionId: opts.sessionId ?? 'mock-session-1',
+          };
+          opts.onEvent?.({ type: 'done', data: result });
+          resolve(result);
+        };
+      }),
+    );
+
     const response = await app.inject({
       method: 'POST',
       url: '/api/v5/run',
+      payload: { agentId: 'coder', task: 'Write a hello world function' },
+    });
+
+    expect(response.statusCode).toBe(202);
+    const body = response.json();
+    expect(body.data).toHaveProperty('sessionId');
+    expect(body.data).toHaveProperty('status', 'running');
+    expect(body.data.sessionId).toMatch(/^run-/);
+    expect(getRunLog().get(body.data.sessionId)?.status).toBe('running');
+
+    resolveRun?.(undefined);
+    await flushPromises();
+    expect(getRunLog().get(body.data.sessionId)?.status).toBe('completed');
+  });
+
+  it('returns 200 with RunResult when wait=true is requested', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v5/run?wait=true',
       payload: { agentId: 'coder', task: 'Write a hello world function' },
     });
 
@@ -110,7 +167,7 @@ describe('POST /api/v5/run', () => {
   it('persists completed run to in-memory run log', async () => {
     const response = await app.inject({
       method: 'POST',
-      url: '/api/v5/run',
+      url: '/api/v5/run?wait=true',
       payload: { agentId: 'coder', task: 'Test persistence' },
     });
 
@@ -166,7 +223,7 @@ describe('POST /api/v5/run', () => {
   it('emits agent_activity SSE events with sessionId and content for streaming output', async () => {
     const response = await app.inject({
       method: 'POST',
-      url: '/api/v5/run',
+      url: '/api/v5/run?wait=true',
       payload: { agentId: 'coder', task: 'Write a function' },
     });
 
@@ -188,7 +245,7 @@ describe('POST /api/v5/run', () => {
   it('emits workflow_event SSE event on run completion', async () => {
     const response = await app.inject({
       method: 'POST',
-      url: '/api/v5/run',
+      url: '/api/v5/run?wait=true',
       payload: { agentId: 'coder', task: 'Write a function' },
     });
 
@@ -213,6 +270,9 @@ describe('GET /api/v5/run/history', () => {
   beforeEach(async () => {
     getRunLog().clear();
     mockEmit.mockClear();
+    coreMocks.loadAgentConfig.mockReset();
+    coreMocks.runStreaming.mockReset();
+    installDefaultCoreMocks();
     app = await buildApp();
   });
 
@@ -232,7 +292,7 @@ describe('GET /api/v5/run/history', () => {
     // Create a run first
     await app.inject({
       method: 'POST',
-      url: '/api/v5/run',
+      url: '/api/v5/run?wait=true',
       payload: { agentId: 'coder', task: 'Build a widget' },
     });
 
@@ -258,6 +318,9 @@ describe('GET /api/v5/run/:sessionId', () => {
   beforeEach(async () => {
     getRunLog().clear();
     mockEmit.mockClear();
+    coreMocks.loadAgentConfig.mockReset();
+    coreMocks.runStreaming.mockReset();
+    installDefaultCoreMocks();
     app = await buildApp();
   });
 
@@ -277,7 +340,7 @@ describe('GET /api/v5/run/:sessionId', () => {
     // Create a run first
     const runResponse = await app.inject({
       method: 'POST',
-      url: '/api/v5/run',
+      url: '/api/v5/run?wait=true',
       payload: { agentId: 'coder', task: 'Test retrieval' },
     });
 

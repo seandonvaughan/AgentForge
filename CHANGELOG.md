@@ -4,6 +4,35 @@ All notable changes to AgentForge are documented in this file.
 
 ## [Unreleased]
 
+### Security and release gates
+
+- Cleared current dependency audit findings while preserving Node 18 support.
+- Replaced Fastify static serving with containment-checked static file helpers.
+- Added ESLint 9 flat config coverage for root, package, test, script, and config sources.
+- Added release truth gates for version sync, CLI help output, changelog alignment, and dependency audit checks.
+
+### Runtime streaming and async run execution
+
+- Added normalized package runtime streaming support with `start`, `text_delta`, `usage_delta`, `done`, and `error` events.
+- Implemented streaming paths for the Anthropic SDK transport and Claude Code compatibility transport.
+- Updated `POST /api/v5/run` to return `202 Accepted` by default with a running `sessionId`, execute in the background, and stream output through `/api/v5/stream`.
+- Preserved synchronous run behavior behind `?wait=true` for compatibility.
+
+### Product structural closure
+
+- Replaced the package CLI `init` placeholder with an idempotent workspace initialization service.
+- Wired sprint execution to an injected executor when `dryRun:false` while keeping dry run as the default.
+- Added proposal execution runtime hooks and a `ProposalSprintExecutor` adapter for sprint items.
+- Added production git checkpoints with clean-worktree guards and explicit forced rollback support.
+
+### Dashboard runner/live QA
+
+- Updated the package dashboard runner to tolerate async `202 Accepted` run starts while continuing to support synchronous `200` completion responses.
+- Buffered and replayed early `/api/v5/stream` run chunks by `sessionId`, then completed visible runs from `workflow_event` SSE status updates.
+- Added runner operator polish: provider/runtime badges while running, first-token latency, copy/clear output controls, reconnect warnings, and paused autoscroll recovery.
+- Added an explicit `/live` reconnect banner for dropped SSE connections.
+- Reworked focused Playwright coverage for runner async starts, chunk replay, copy/clear controls, reconnect warning behavior, and live reconnect display.
+
 ### Docs and help truth cleanup
 
 - Rewrote `README.md` around the actual `10.5.0` convergence state instead of the older v6/v3.1 narrative.

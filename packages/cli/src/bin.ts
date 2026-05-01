@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { migrateV4ToV5 } from './commands/migrate.js';
 import { printBuildInfo } from './commands/build-info.js';
@@ -11,7 +11,23 @@ import { registerRunCommand } from './commands/run.js';
 import { registerTeamCommand, registerTeamSessionsCommand } from './commands/team.js';
 import { registerWorkspacesCommand } from './commands/workspaces.js';
 
+interface InitializeWorkspaceImport {
+  initializeWorkspace(options: {
+    projectRoot?: string;
+    dataDir?: string;
+    workspaceName?: string;
+    ownerId?: string;
+  }): {
+    projectRoot: string;
+    dataDir: string;
+    workspaceDbPath: string;
+    workspace: { name: string; id: string };
+    createdWorkspace: boolean;
+  };
+}
+
 const CLI_VERSION = readPackageVersion();
+export function createCliProgram(): Command {
 const program = new Command();
 program
   .name('agentforge')
@@ -20,9 +36,36 @@ program
 
 program
   .command('init')
-  .description('Initialize a new AgentForge workspace (placeholder)')
-  .action(() => {
-    console.log('AgentForge init — workspace creation remains in active development.');
+  .description('Initialize an AgentForge workspace')
+  .option('--project-root <path>', 'Project root', process.cwd())
+  .option('--data-dir <path>', 'Workspace data directory')
+  .option('--workspace-name <name>', 'Workspace name', 'default')
+  .option('--owner <id>', 'Workspace owner id', 'system')
+  .action(async (opts: {
+    projectRoot: string;
+    dataDir?: string;
+    workspaceName: string;
+    owner: string;
+  }) => {
+    try {
+      const { initializeWorkspace } = await import('@agentforge/core') as unknown as InitializeWorkspaceImport;
+      const result = initializeWorkspace({
+        projectRoot: resolve(opts.projectRoot),
+        ...(opts.dataDir ? { dataDir: opts.dataDir } : {}),
+        workspaceName: opts.workspaceName,
+        ownerId: opts.owner,
+      });
+
+      console.log('AgentForge workspace initialized');
+      console.log(`  Project:      ${result.projectRoot}`);
+      console.log(`  Data dir:     ${result.dataDir}`);
+      console.log(`  Workspace:    ${result.workspace.name} (${result.workspace.id})`);
+      console.log(`  Workspace DB: ${result.workspaceDbPath}`);
+      console.log(`  Created:      ${result.createdWorkspace ? 'yes' : 'no'}`);
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exitCode = 1;
+    }
   });
 
 program
@@ -101,7 +144,20 @@ registerTeamCommand(program);
 registerTeamSessionsCommand(program);
 registerWorkspacesCommand(program);
 
-program.parse();
+return program;
+}
+
+export async function runCli(argv: string[] = process.argv): Promise<void> {
+  const program = createCliProgram();
+  await program.parseAsync(argv);
+}
+
+if (isDirectCliEntry(import.meta.url, process.argv[1])) {
+  void runCli().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  });
+}
 
 function readPackageVersion(): string {
   try {
@@ -111,4 +167,9 @@ function readPackageVersion(): string {
   } catch {
     return 'unknown';
   }
+}
+
+function isDirectCliEntry(metaUrl: string, argvEntry: string | undefined): boolean {
+  if (!argvEntry) return false;
+  return fileURLToPath(metaUrl) === resolve(argvEntry);
 }

@@ -1,8 +1,17 @@
 import { nowIso } from '@agentforge/shared';
-import type { SprintPlan, SprintRunResult, SprintLoopOptions } from './types.js';
+import type { SprintPlan, SprintRunResult, SprintLoopOptions, SprintItemExecutor } from './types.js';
+
+interface NormalizedSprintRunnerOptions {
+  dryRun: boolean;
+  sprintBudgetUsd: number;
+  autoApprove: boolean;
+  autoApproveThreshold: number;
+  testPassRateFloor: number;
+  executor?: SprintItemExecutor;
+}
 
 export class SprintRunner {
-  private readonly opts: Required<SprintLoopOptions>;
+  private readonly opts: NormalizedSprintRunnerOptions;
 
   constructor(opts: SprintLoopOptions = {}) {
     this.opts = {
@@ -11,6 +20,7 @@ export class SprintRunner {
       autoApprove: opts.autoApprove ?? false,
       autoApproveThreshold: opts.autoApproveThreshold ?? 0.7,
       testPassRateFloor: opts.testPassRateFloor ?? 1.0,
+      ...(opts.executor ? { executor: opts.executor } : {}),
     };
   }
 
@@ -36,8 +46,22 @@ export class SprintRunner {
           item.status = 'completed';
           completed++;
         } else {
-          // Production: ProposalExecutor integration point
-          throw new Error('Production execution not yet wired — use dryRun: true');
+          if (!this.opts.executor) {
+            throw new Error('SprintRunner dryRun:false requires an injected executor');
+          }
+
+          const result = await this.opts.executor.executeSprintItem({
+            plan,
+            item,
+            budgetRemainingUsd: Math.max(this.opts.sprintBudgetUsd - totalCostUsd, 0),
+          });
+          totalCostUsd += result.costUsd;
+          item.status = result.success ? 'completed' : 'failed';
+          if (result.success) {
+            completed++;
+          } else {
+            failed++;
+          }
         }
       } catch (err) {
         item.status = 'failed';

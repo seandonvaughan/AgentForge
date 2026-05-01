@@ -41,12 +41,21 @@
     runtimeModeResolved?: string;
   }
 
+  interface StreamEnvelope {
+    type?: string;
+    category?: string;
+    message?: string;
+    data?: Record<string, unknown>;
+    timestamp?: string;
+  }
+
   let agentEntries: AgentEntry[] = $state([]);
   let agentsLoading = $state(true);
   let selectedAgent = $state('coder');
   let agentSearch = $state('');
   let taskInput = $state('');
   let running = $state(false);
+  let runAccepted = $state(false);
   let runError: string | null = $state(null);
   let apiUnavailable = $state(false);
 
@@ -56,6 +65,11 @@
   let outputProviderKind = $state('');
   let outputRuntimeMode = $state('');
   let outputTimestamp = $state('');
+  let firstTokenLatencyMs: number | null = $state(null);
+  let streamConnected = $state(false);
+  let streamWarning: string | null = $state(null);
+  let outputAutoscrollPaused = $state(false);
+  let copyStatus: string | null = $state(null);
   let currentSessionId: string | null = $state(null);
 
   let history: RunHistory[] = $state([]);
@@ -63,6 +77,9 @@
 
   let eventSource: EventSource | null = null;
   let outputEl: HTMLPreElement | null = $state(null);
+  let runStartedAtMs: number | null = null;
+  let currentRunOutput = '';
+  let copyStatusTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Derived: look up model tier from the full agent roster
   function getAgentModel(id: string): 'opus' | 'sonnet' | 'haiku' {
@@ -85,6 +102,15 @@
     return [...filtered].sort((a, b) =>
       (tierOrder[a.model] ?? 1) - (tierOrder[b.model] ?? 1) || a.agentId.localeCompare(b.agentId)
     );
+  });
+
+  let runStatusLabel = $derived.by(() => {
+    if (!running) return '';
+    if (streamWarning) return 'Stream reconnecting';
+    if (!streamConnected) return 'Opening stream';
+    if (runAccepted && firstTokenLatencyMs === null) return 'Run accepted';
+    if (firstTokenLatencyMs !== null) return 'Streaming output';
+    return 'Starting run';
   });
 
   let agentCountByTier = $derived({
@@ -134,50 +160,113 @@
    * We discriminate on `envelope.type` and read payload fields from `envelope.data`.
    */
   function wireSSE(es: EventSource, sessionId: string) {
-    es.onmessage = (e) => {
-      try {
-        const envelope = JSON.parse(e.data) as Record<string, unknown>;
-        const payload = (envelope['data'] as Record<string, unknown> | undefined) ?? {};
+    es.onopen = () => {
+      streamConnected = true;
+      streamWarning = null;
+    };
 
-        if (envelope['type'] === 'agent_activity') {
-          if (payload['sessionId'] !== sessionId) return;
-          const chunk: string =
-            (payload['content'] as string | undefined) ??
-            (payload['chunk'] as string | undefined) ?? '';
-          if (chunk) {
-            output += chunk;
-            requestAnimationFrame(scrollOutput);
-          }
-        } else if (envelope['type'] === 'workflow_event') {
-          if (payload['sessionId'] !== sessionId) return;
-          const status = payload['status'] as string | undefined;
-          if (status === 'completed' || status === 'failed') {
-            running = false;
-            syncHistoryStatus(
-              sessionId,
-              status as 'completed' | 'failed',
-              payload['costUsd'] as number | undefined,
-              payload['providerKind'] as string | undefined,
-              payload['runtimeModeResolved'] as string | undefined,
-            );
-            es.close();
-            eventSource = null;
-          }
-        }
-      } catch {
-        // ignore parse errors
-      }
+    es.onmessage = (e) => {
+      const envelope = parseStreamMessage(e.data);
+      if (envelope) processStreamEnvelope(envelope, sessionId, es);
     };
 
     es.onerror = () => {
-      // Don't set running = false on SSE error — the run may still be going
+      streamConnected = false;
+      streamWarning = running
+        ? 'Live stream interrupted; reconnecting automatically. Run may still be active.'
+        : 'Live stream interrupted.';
+      // Don't set running = false on SSE error. EventSource will reconnect.
     };
+  }
+
+  function parseStreamMessage(raw: string): StreamEnvelope | null {
+    try {
+      return JSON.parse(raw) as StreamEnvelope;
+    } catch {
+      return null;
+    }
+  }
+
+  function processStreamEnvelope(envelope: StreamEnvelope, sessionId: string, es?: EventSource) {
+    const payload = envelope.data ?? {};
+    if (payload['sessionId'] !== sessionId) return;
+
+    updateRunMetadata(payload);
+
+    if (envelope.type === 'agent_activity') {
+      const chunk: string =
+        (payload['content'] as string | undefined) ??
+        (payload['chunk'] as string | undefined) ??
+        '';
+      appendOutputChunk(chunk);
+      return;
+    }
+
+    if (envelope.type !== 'workflow_event') return;
+
+    const status = payload['status'] as string | undefined;
+    if (status !== 'completed' && status !== 'failed') return;
+
+    running = false;
+    runAccepted = false;
+    streamWarning = null;
+    syncHistoryStatus(
+      sessionId,
+      status,
+      payload['costUsd'] as number | undefined,
+      payload['providerKind'] as string | undefined,
+      payload['runtimeModeResolved'] as string | undefined,
+    );
+
+    if (status === 'failed' && typeof payload['error'] === 'string') {
+      runError = payload['error'];
+    }
+
+    es?.close();
+    if (eventSource === es) eventSource = null;
+    streamConnected = false;
+  }
+
+  function updateRunMetadata(payload: Record<string, unknown>) {
+    if (typeof payload['model'] === 'string') {
+      outputModel = modelIdToTierLabel(payload['model']);
+    }
+    if (typeof payload['providerKind'] === 'string') {
+      outputProviderKind = formatProviderKind(payload['providerKind']);
+    }
+    if (typeof payload['runtimeModeResolved'] === 'string') {
+      outputRuntimeMode = formatRuntimeMode(payload['runtimeModeResolved']);
+    }
+  }
+
+  function appendOutputChunk(chunk: string) {
+    if (!chunk) return;
+    if (firstTokenLatencyMs === null && runStartedAtMs !== null) {
+      firstTokenLatencyMs = Math.max(0, Date.now() - runStartedAtMs);
+    }
+    currentRunOutput += chunk;
+    if (selectedHistoryRun) return;
+    output += chunk;
+    if (!outputAutoscrollPaused) {
+      requestAnimationFrame(scrollOutput);
+    }
   }
 
   function scrollOutput() {
     if (outputEl) {
       outputEl.scrollTop = outputEl.scrollHeight;
     }
+  }
+
+  function handleOutputScroll() {
+    if (!outputEl) return;
+    const atBottom = outputEl.scrollHeight - outputEl.scrollTop - outputEl.clientHeight < 48;
+    outputAutoscrollPaused = !atBottom;
+  }
+
+  function resumeOutputAutoscroll() {
+    outputAutoscrollPaused = false;
+    requestAnimationFrame(scrollOutput);
   }
 
   function syncHistoryStatus(
@@ -195,7 +284,7 @@
           ...(cost !== undefined ? { costUsd: cost } : {}),
           ...(providerKind ? { providerKind } : {}),
           ...(runtimeModeResolved ? { runtimeModeResolved } : {}),
-          output,
+          output: currentRunOutput || output,
         };
       }
       return r;
@@ -207,11 +296,19 @@
     runError = null;
     apiUnavailable = false;
     running = true;
+    runAccepted = false;
     output = '';
+    currentRunOutput = '';
     outputAgentName = selectedAgent;
     outputProviderKind = '';
     outputRuntimeMode = '';
     outputTimestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
+    firstTokenLatencyMs = null;
+    streamConnected = false;
+    streamWarning = null;
+    outputAutoscrollPaused = false;
+    copyStatus = null;
+    runStartedAtMs = Date.now();
     selectedHistoryRun = null;
 
     // ── Open SSE BEFORE the POST ────────────────────────────────────────────
@@ -228,29 +325,28 @@
 
     // Buffer agent_activity chunks arriving before the POST returns the sessionId.
     // Envelope shape: { type, data: { sessionId, content, ... }, ... }
-    const earlyBuffer: Array<{ sessionId: string; content: string }> = [];
+    const earlyBuffer: StreamEnvelope[] = [];
     let resolvedSessionId: string | null = null;
 
-    es.onmessage = (e) => {
-      try {
-        const envelope = JSON.parse(e.data) as Record<string, unknown>;
-        if (envelope['type'] !== 'agent_activity') return;
-        const payload = (envelope['data'] as Record<string, unknown> | undefined) ?? {};
-        const content: string =
-          (payload['content'] as string | undefined) ??
-          (payload['chunk'] as string | undefined) ?? '';
-        const sid: string = (payload['sessionId'] as string | undefined) ?? '';
-        if (!content || !sid) return;
-        if (resolvedSessionId === null) {
-          // Still awaiting POST response — buffer for replay
-          earlyBuffer.push({ sessionId: sid, content });
-        } else if (sid === resolvedSessionId) {
-          output += content;
-          requestAnimationFrame(scrollOutput);
-        }
-      } catch { /* ignore parse errors */ }
+    es.onopen = () => {
+      streamConnected = true;
+      streamWarning = null;
     };
-    es.onerror = () => { /* SSE errors don't abort the run */ };
+
+    es.onmessage = (e) => {
+      const envelope = parseStreamMessage(e.data);
+      if (!envelope) return;
+      if (resolvedSessionId === null) {
+        // Still awaiting POST response — buffer for replay once the session id is known.
+        earlyBuffer.push(envelope);
+        return;
+      }
+      processStreamEnvelope(envelope, resolvedSessionId, es);
+    };
+    es.onerror = () => {
+      streamConnected = false;
+      streamWarning = 'Live stream interrupted; reconnecting automatically. Run may still be active.';
+    };
     // ─────────────────────────────────────────────────────────────────────────
 
     try {
@@ -281,6 +377,7 @@
       // Server wraps the result in { data: { ...result, sessionId } }
       const json = envelope.data ?? envelope;
       const sessionId: string = json.sessionId ?? json.id ?? `local-${Date.now()}`;
+      runAccepted = res.status === 202 || json.status === 'accepted' || json.status === 'running';
       // Prefer the actual model ID returned by the server; convert to a tier
       // label ('Opus' | 'Sonnet' | 'Haiku') so the badge class matches CSS.
       outputModel = json.model
@@ -305,8 +402,8 @@
 
       // Unlock the SSE handler and replay buffered chunks for this session
       resolvedSessionId = sessionId;
-      for (const { sessionId: sid, content } of earlyBuffer) {
-        if (sid === sessionId) output += content;
+      for (const buffered of earlyBuffer) {
+        processStreamEnvelope(buffered, sessionId, es);
       }
       if (output) requestAnimationFrame(scrollOutput);
 
@@ -319,7 +416,12 @@
       const syncOutput = json.response ?? json.output;
       if (syncOutput) {
         output = syncOutput;
+        currentRunOutput = syncOutput;
+        if (firstTokenLatencyMs === null && runStartedAtMs !== null) {
+          firstTokenLatencyMs = Math.max(0, Date.now() - runStartedAtMs);
+        }
         running = false;
+        runAccepted = false;
         syncHistoryStatus(
           sessionId,
           json.status === 'failed' ? 'failed' : 'completed',
@@ -329,18 +431,22 @@
         );
         es.close();
         eventSource = null;
+        streamConnected = false;
       }
 
     } catch (e) {
       runError = String(e);
       running = false;
+      runAccepted = false;
       es.close();
       eventSource = null;
+      streamConnected = false;
     }
   }
 
   function showHistoryRun(run: RunHistory) {
     selectedHistoryRun = run;
+    currentRunOutput = '';
     output = run.output ?? '(No output captured)';
     outputAgentName = run.agentId;
     outputTimestamp = new Date(run.startedAt).toLocaleTimeString('en-US', { hour12: false });
@@ -382,6 +488,46 @@
     } catch { return iso; }
   }
 
+  function formatLatency(ms: number): string {
+    if (ms < 1000) return `${ms} ms`;
+    return `${(ms / 1000).toFixed(1)} s`;
+  }
+
+  async function copyOutput() {
+    if (!output) return;
+    try {
+      await navigator.clipboard.writeText(output);
+      copyStatus = 'Copied';
+    } catch {
+      copyStatus = 'Copy failed';
+    }
+
+    if (copyStatusTimer) clearTimeout(copyStatusTimer);
+    copyStatusTimer = setTimeout(() => {
+      copyStatus = null;
+      copyStatusTimer = null;
+    }, 1600);
+  }
+
+  function clearOutput() {
+    output = '';
+    selectedHistoryRun = null;
+    outputAutoscrollPaused = false;
+    copyStatus = null;
+    if (!running) {
+      currentRunOutput = '';
+      outputAgentName = '';
+      outputModel = '';
+      outputProviderKind = '';
+      outputRuntimeMode = '';
+      outputTimestamp = '';
+      currentSessionId = null;
+      firstTokenLatencyMs = null;
+      runAccepted = false;
+      streamWarning = null;
+    }
+  }
+
   async function loadHistory() {
     try {
       const res = await fetch('/api/v5/run/history');
@@ -412,6 +558,7 @@
 
   onDestroy(() => {
     if (eventSource) eventSource.close();
+    if (copyStatusTimer) clearTimeout(copyStatusTimer);
   });
 </script>
 
@@ -425,7 +572,7 @@
   {#if running}
     <div class="running-indicator">
       <span class="spinner"></span>
-      <span class="running-label">Running {outputAgentName}…</span>
+      <span class="running-label">Running {outputAgentName} · {runStatusLabel}</span>
     </div>
   {/if}
 </div>
@@ -546,34 +693,76 @@
   <div class="right-panel">
     <div class="output-card card">
       <div class="output-header">
-        <span class="card-title">Live Output</span>
-        {#if outputAgentName}
-          <div class="output-meta">
-            <span class="output-agent">{outputAgentName}</span>
-            {#if outputModel}
-              <span class="badge {outputModel.toLowerCase()}">{outputModel}</span>
-            {/if}
-            {#if outputProviderKind}
-              <span class="badge">{outputProviderKind}</span>
-            {/if}
-            {#if outputRuntimeMode}
-              <span class="badge">{outputRuntimeMode}</span>
-            {/if}
-            {#if outputTimestamp}
-              <span class="output-ts">{outputTimestamp}</span>
+        <div class="output-heading">
+          <div class="output-title-row">
+            <span class="card-title">Live Output</span>
+            {#if runAccepted}
+              <span class="badge warning">Accepted</span>
             {/if}
           </div>
-        {/if}
+          {#if outputAgentName}
+            <div class="output-meta">
+              <span class="output-agent">{outputAgentName}</span>
+              {#if outputModel}
+                <span class="badge {outputModel.toLowerCase()}">{outputModel}</span>
+              {/if}
+              {#if outputProviderKind}
+                <span class="badge">{outputProviderKind}</span>
+              {:else if running}
+                <span class="badge muted">Provider pending</span>
+              {/if}
+              {#if outputRuntimeMode}
+                <span class="badge">{outputRuntimeMode}</span>
+              {:else if running}
+                <span class="badge muted">Runtime pending</span>
+              {/if}
+              {#if outputTimestamp}
+                <span class="output-ts">{outputTimestamp}</span>
+              {/if}
+            </div>
+          {/if}
+        </div>
+        <div class="output-actions">
+          {#if firstTokenLatencyMs !== null}
+            <span class="latency-pill">First token {formatLatency(firstTokenLatencyMs)}</span>
+          {:else if running}
+            <span class="latency-pill pending">Waiting for first token</span>
+          {/if}
+          <button class="btn-ghost output-action" disabled={!output} onclick={copyOutput}>
+            {copyStatus ?? 'Copy'}
+          </button>
+          <button class="btn-ghost output-action" disabled={!output && !runError} onclick={clearOutput}>
+            Clear
+          </button>
+        </div>
       </div>
 
-      {#if !output && !running}
+      {#if streamWarning}
+        <div class="stream-warning">
+          <span>{streamWarning}</span>
+        </div>
+      {/if}
+
+      {#if outputAutoscrollPaused && running}
+        <button class="resume-output-scroll" onclick={resumeOutputAutoscroll}>
+          Autoscroll paused · Jump to latest
+        </button>
+      {/if}
+
+      {#if !output && running}
+        <div class="output-empty">
+          <span class="empty-icon">…</span>
+          <p>{runAccepted ? 'Run accepted by server.' : 'Starting run.'}</p>
+          <p class="muted">Waiting for the first streamed token via SSE.</p>
+        </div>
+      {:else if !output && !running}
         <div class="output-empty">
           <span class="empty-icon">▶</span>
           <p>Configure an agent and task, then click <strong>Run Agent</strong>.</p>
           <p class="muted">Output will stream here in real time via SSE.</p>
         </div>
       {:else}
-        <pre class="output-pre" bind:this={outputEl}>{output}{#if running}<span class="cursor">▊</span>{/if}</pre>
+        <pre class="output-pre" bind:this={outputEl} onscroll={handleOutputScroll}>{output}{#if running}<span class="cursor">▊</span>{/if}</pre>
       {/if}
     </div>
   </div>
@@ -911,6 +1100,7 @@
     display: flex;
     flex-direction: column;
     min-height: calc(100vh - 180px);
+    position: relative;
   }
 
   .output-header {
@@ -920,12 +1110,25 @@
     border-bottom: 1px solid var(--color-border);
     padding-bottom: var(--space-3);
     margin-bottom: var(--space-4);
+    gap: var(--space-3);
+  }
+
+  .output-heading {
+    min-width: 0;
+  }
+
+  .output-title-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
   }
 
   .output-meta {
     display: flex;
     align-items: center;
     gap: var(--space-2);
+    flex-wrap: wrap;
   }
 
   .output-agent {
@@ -938,6 +1141,76 @@
     font-size: var(--text-xs);
     color: var(--color-text-faint);
     font-family: var(--font-mono);
+  }
+
+  .output-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-left: auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .output-action {
+    font-size: var(--text-xs);
+    padding: 3px var(--space-2);
+  }
+
+  .output-action:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .latency-pill {
+    font-size: var(--text-xs);
+    color: var(--color-success);
+    border: 1px solid rgba(76,175,130,0.3);
+    background: rgba(76,175,130,0.08);
+    border-radius: var(--radius-full);
+    padding: 2px var(--space-2);
+    font-family: var(--font-mono);
+    white-space: nowrap;
+  }
+
+  .latency-pill.pending {
+    color: var(--color-text-muted);
+    border-color: var(--color-border);
+    background: var(--color-surface-1);
+  }
+
+  .stream-warning {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    background: rgba(245,166,35,0.1);
+    border: 1px solid rgba(245,166,35,0.3);
+    border-radius: var(--radius-md);
+    color: var(--color-warning);
+    font-size: var(--text-xs);
+    padding: var(--space-2) var(--space-3);
+    margin-bottom: var(--space-3);
+  }
+
+  .resume-output-scroll {
+    position: absolute;
+    right: var(--space-6);
+    bottom: var(--space-6);
+    z-index: 2;
+    background: var(--color-brand);
+    color: white;
+    border: none;
+    border-radius: var(--radius-full);
+    padding: var(--space-2) var(--space-4);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: var(--shadow-md);
+  }
+
+  .resume-output-scroll:hover {
+    background: var(--color-brand-hover);
   }
 
   .output-empty {
@@ -999,6 +1272,16 @@
 
     .output-card {
       min-height: 400px;
+    }
+
+    .output-header {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    .output-actions {
+      margin-left: 0;
+      justify-content: flex-start;
     }
   }
 </style>

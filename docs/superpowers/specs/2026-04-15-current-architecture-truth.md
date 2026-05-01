@@ -1,21 +1,22 @@
 # Current Architecture Truth
 
 **Prepared:** April 15, 2026  
+**Last reviewed:** April 30, 2026  
 **Audience:** AgentForge development team  
-**Purpose:** Record the current code-grounded architecture after the latest pull so v3.1 work can target the repo as it exists now rather than older roadmap language.
+**Purpose:** Record the current code-grounded architecture after the latest pull so package-canonical work can target the repo as it exists now rather than older roadmap language.
 
-This document reflects the codebase as pulled on 2026-04-15. It is intentionally grounded in the repo as it exists now, not in prior roadmap language or README claims.
+This document was first grounded in the codebase as pulled on 2026-04-15 and was refreshed on 2026-04-30 for the `10.5.0` package-canonical convergence state.
 
 ## Executive Summary
 
-AgentForge is currently a hybrid monorepo with two live runtime tracks:
+AgentForge is currently a package-canonical monorepo with a retained root compatibility layer:
 
-- A root `src/` track that still powers the legacy CLI, root server, and session-based manual invocation flow.
-- A `packages/*` track that now holds the strongest product surface: autonomous cycles, workspace-aware server APIs, and the dashboard.
+- The `packages/*` track is the canonical product stack: CLI, core runtime, package server, workspace/session persistence, and dashboard.
+- The root `src/` track still exists for compatibility, plugin exports, and legacy/manual workflow bridging, but new operator/runtime work should land in `packages/*`.
 
-The repo is not in a clean “old app replaced by new app” state. Both stacks are active, both compile, and both expose overlapping concepts. The current development reality is split-brain, not single-source.
+The repo is not fully deleted back to one tree, but it is no longer accurate to describe root and packages as equally authoritative. The practical rule is package-first, root-as-compatibility.
 
-The most authoritative current runtime for autonomous development is `packages/core` + `packages/server` + `packages/dashboard`. The root `src/` tree is still authoritative for `genesis`, `forge`, and `invoke` in the legacy/manual workflow, but it is no longer the only or primary product center.
+The authoritative current runtime for autonomous and operator work is `packages/cli` + `packages/core` + `packages/server` + `packages/dashboard`. Team-building/manual commands that still need legacy behavior are bridged through package team services rather than treated as a second product center.
 
 ## Repository Snapshot
 
@@ -36,7 +37,7 @@ The most authoritative current runtime for autonomous development is `packages/c
 - Workspace CLI commands still exist in [packages/cli/src/bin.ts](C:/Users/SeanVaughan/Projects/AgentForge/packages/cli/src/bin.ts)
 - Root server still exists in [src/server/main.ts](C:/Users/SeanVaughan/Projects/AgentForge/src/server/main.ts) and [src/server/server.ts](C:/Users/SeanVaughan/Projects/AgentForge/src/server/server.ts)
 - Workspace server still exists in [packages/server/src/main.ts](C:/Users/SeanVaughan/Projects/AgentForge/packages/server/src/main.ts) and [packages/server/src/server.ts](C:/Users/SeanVaughan/Projects/AgentForge/packages/server/src/server.ts)
-- Root plugin export still exists in [src/index.ts](C:/Users/SeanVaughan/Projects/AgentForge/src/index.ts) and still reports version `0.1.0`, which is another sign of version drift across active surfaces
+- Root plugin export still exists in [src/index.ts](C:/Users/SeanVaughan/Projects/AgentForge/src/index.ts), but now reads the root package version instead of a stale hardcoded value
 
 ## Architecture Layers
 
@@ -52,14 +53,15 @@ The key behaviors today are:
 
 ### 2. Root Runtime / Server Layer
 
-The root server stack is still live and not deprecated. It starts from [src/server/main.ts](C:/Users/SeanVaughan/Projects/AgentForge/src/server/main.ts) and wires routes in [src/server/server.ts](C:/Users/SeanVaughan/Projects/AgentForge/src/server/server.ts).
+The root server bootstrap remains present for compatibility, but it now forwards to the package-canonical server. [src/server/main.ts](C:/Users/SeanVaughan/Projects/AgentForge/src/server/main.ts) calls [src/server/index.ts](C:/Users/SeanVaughan/Projects/AgentForge/src/server/index.ts), which warns that the root bootstrap is deprecated and launches `@agentforge/server`.
 
-This stack uses:
+Legacy root server implementation files still exist, but they should not be the target for new dashboard/runtime API work. New server behavior should land under [packages/server](C:/Users/SeanVaughan/Projects/AgentForge/packages/server).
 
-- Fastify + CORS + static dashboard hosting
-- SQLite-backed data access via the root DB layer
-- `/api/v1/*` health and API conventions
-- filesystem-backed routes for sessions, agents, sprints, cycles, org graph, memory, reforge, and run operations
+Important compatibility details:
+
+- `AGENTFORGE_DB` is treated as a legacy root-server setting.
+- The package server uses `DATA_DIR` and defaults to `.agentforge/v5`.
+- The dashboard expects the package server on port `4750` and Vite on port `4751` during development.
 
 ### 3. Workspace CLI Layer
 
@@ -86,11 +88,21 @@ The cycle route in [packages/server/src/routes/v5/cycles.ts](C:/Users/SeanVaugha
 - It binds the subprocess to a preallocated cycle id
 - It exposes cycle artifacts back over HTTP
 
+The run route in [packages/server/src/routes/v5/run.ts](C:/Users/SeanVaughan/Projects/AgentForge/packages/server/src/routes/v5/run.ts) is the operator-facing agent invocation API. Dashboard clients should use the default async `202 Accepted` start shape and keep compatibility support for `?wait=true` synchronous `200` completion responses. In both modes, live output is keyed by `sessionId` over `/api/v5/stream`.
+
 ### 6. Workspace Dashboard Layer
 
 `packages/dashboard` is the operator UI. It reads the cycle API, streams SSE updates, and renders cycle state, approvals, sessions, and live progress.
 
 The dashboard home page in [packages/dashboard/src/routes/+page.svelte](C:/Users/SeanVaughan/Projects/AgentForge/packages/dashboard/src/routes/+page.svelte) is the operational command center. Cycle detail pages in [packages/dashboard/src/routes/cycles/[id]/+page.svelte](C:/Users/SeanVaughan/Projects/AgentForge/packages/dashboard/src/routes/cycles/[id]/+page.svelte) poll live sprint and agent state and subscribe to SSE.
+
+Runner-specific operator behavior:
+
+- [packages/dashboard/src/routes/runner/+page.svelte](C:/Users/SeanVaughan/Projects/AgentForge/packages/dashboard/src/routes/runner/+page.svelte) opens `/api/v5/stream` before `POST /api/v5/run` so chunks emitted before the HTTP response are buffered and replayed after the session id is known.
+- `agent_activity` events append `data.content` or `data.chunk`.
+- `workflow_event` events complete or fail the visible run via `data.status`.
+- The runner displays resolved provider/runtime metadata, first-token latency, copy/clear controls, and stream reconnect warnings.
+- [packages/dashboard/src/routes/live/+page.svelte](C:/Users/SeanVaughan/Projects/AgentForge/packages/dashboard/src/routes/live/+page.svelte) remains the raw activity feed and warns operators while SSE reconnects.
 
 ## Authoritative Entrypoints
 
@@ -105,30 +117,30 @@ The dashboard home page in [packages/dashboard/src/routes/+page.svelte](C:/Users
 
 ## How Root `src/` and `packages/*` Coexist
 
-The repo is in a transitional coexistence state, not a clean migration.
+The repo is in a package-canonical coexistence state, not a fully deleted legacy-root state.
 
 `src/` still matters because it powers:
 
-- the root CLI
-- the root server
-- `genesis`, `forge`, `invoke`, and the session wrapper path
+- compatibility exports and root launch shims
+- legacy/manual workflow code that package team services still bridge through where migration is not finished
 
 `packages/*` matters because it powers:
 
+- the canonical CLI
 - the autonomous cycle launcher
 - the workspace server and dashboard
 - the modular `@agentforge/*` libraries
 
-The root `tsconfig.json` still includes `src/**/*` and also references the workspace packages, which means both layers are part of the build graph rather than one being fully superseded.
+The root `tsconfig.json` still includes `src/**/*` and also references the workspace packages, so both layers remain part of the build graph. That is a compatibility/build reality, not a reason to add new runtime behavior to root by default.
 
-Versioning also shows the overlap clearly:
+Versioning is now materially less drifted than it was on 2026-04-15:
 
 - root release line: `10.5.0`
-- workspace package manifests: still `6.0.0`
-- root server identifies as `v6.2`
-- workspace server identifies as `v6.0`
+- workspace package manifests checked for `@agentforge/cli`, `@agentforge/core`, `@agentforge/server`, and `@agentforge/dashboard`: `10.5.0`
+- root plugin export reads the root package version
+- package server startup prints the root package version
 
-That is a strong signal that the repo still contains parallel tracks, not a single canonical runtime.
+Remaining overlap is now mostly about compatibility policy and deletion sequencing rather than visible version skew.
 
 ## Current Command Surfaces
 
@@ -243,18 +255,18 @@ The repo also has Playwright support from root scripts, but the authoritative au
 ## Current Source-of-Truth Conclusions
 
 - `packages/core` is the source of truth for the autonomous cycle engine.
-- `packages/server` is the source of truth for cycle HTTP and SSE orchestration.
-- `packages/dashboard` is the source of truth for operator-facing cycle inspection.
-- Root `src/` is still the source of truth for the legacy/manual CLI flow and the root server stack.
-- `genesis` and `invoke` are real, but they live in the root CLI track, not the workspace cycle engine.
-- The repo should be treated as a hybrid monorepo until the overlap is explicitly removed.
+- `packages/server` is the source of truth for package HTTP, run, cycle, workspace, and SSE orchestration.
+- `packages/dashboard` is the source of truth for operator-facing cycle inspection, run output, and live activity.
+- `packages/cli` is the source of truth for the public package-canonical CLI surface.
+- Root `src/` is compatibility and bridging code unless a task explicitly targets legacy behavior.
+- The repo should be treated as package-canonical with retained compatibility layers until the overlap is explicitly removed.
 
 ## Transitional Overlap Notes
 
-- Do not assume a single canonical server. Both root and workspace servers are live.
-- Do not assume a single canonical CLI. Both root and workspace CLIs are live.
-- Do not assume versions are aligned across packages. They are not.
-- Do not treat README language as authoritative where it conflicts with code. `invoke --loop` is the clearest example.
-- Do not collapse the two runtime tracks into one mental model when debugging. The root session-based runtime and the workspace autonomous cycle runtime solve different problems.
+- Do not add new runtime/server behavior to root `src/` unless the task is explicitly compatibility-scoped.
+- Do not treat root launch shims as proof that the root server is canonical; they now forward to the package server.
+- Do keep dashboard/API work aligned to `/api/v5/*` package routes and `/api/v5/stream`.
+- Do keep README/changelog language aligned with package help text and package manifests.
+- Do preserve root compatibility behavior until a deletion or deprecation task explicitly removes it.
 
-The practical operating rule for v3.1 work is simple: use the package-based stack as the canonical autonomous-cycle path, and use the root stack as the canonical manual/team-building path until the overlap is resolved.
+The practical operating rule is simple: use the package-based stack as canonical, and use root code only for compatibility/bridge behavior until the overlap is resolved.

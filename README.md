@@ -79,6 +79,19 @@ Package runtime commands currently support:
 
 `auto` prefers the canonical package runtime path and can fall back to Claude Code compatibility transport when needed.
 
+Streaming runtime transports normalize provider output into `start`, `text_delta`, `usage_delta`, `done`, and `error` events. Non-streaming transports remain supported through a full-response fallback.
+
+## Dashboard Operator Notes
+
+The package dashboard in `packages/dashboard` is the canonical operator UI. In development it runs on port `4751` and proxies API/SSE traffic to the package server on port `4750`.
+
+- `/runner` starts agent work through `POST /api/v5/run` and supports both response modes:
+  - default asynchronous `202 Accepted` responses that return a `sessionId` while output continues over SSE
+  - compatibility `200` responses with `?wait=true` that include the completed run result
+- Runner output streams from `/api/v5/stream` using `agent_activity` events with `data.sessionId` plus `data.content` or `data.chunk`.
+- Runner completion/failure is driven by `workflow_event` events with `data.sessionId` and `data.status`.
+- `/live` is the raw operator activity feed for the same SSE stream and warns operators when the stream is reconnecting.
+
 ## Development
 
 ```bash

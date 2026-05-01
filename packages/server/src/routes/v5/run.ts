@@ -4,6 +4,7 @@ import {
   AgentRuntime,
   loadAgentConfig,
   type ExecutionProviderKind,
+  type RunResult,
   type RuntimeMode,
 } from '@agentforge/core';
 import { generateId, nowIso } from '@agentforge/shared';
@@ -24,6 +25,10 @@ interface RunRequestBody {
   projectRoot?: string;
   runtimeMode?: RuntimeMode;
   allowedTools?: string[];
+}
+
+interface RunQuerystring {
+  wait?: string | boolean;
 }
 
 // careerHook singleton is imported from lib/career-hook.ts
@@ -47,6 +52,10 @@ interface RunLogEntry {
 
 /** In-memory run log — stores completed/failed runs for session replay. */
 const runLog = new Map<string, RunLogEntry>();
+
+type RunCompletion =
+  | { ok: true; result: RunResult; completedSessionId: string }
+  | { ok: false; error: string; sessionId: string };
 
 export function getRunLog() {
   return runLog;
@@ -114,14 +123,29 @@ function normalizeRunStatus(status: string): RunLogEntry['status'] {
   return 'completed';
 }
 
+function shouldWaitForCompletion(wait: string | boolean | undefined): boolean {
+  return wait === true || wait === 'true' || wait === '1';
+}
+
+function eventDataWithSession(data: unknown, sessionId: string): Record<string, unknown> {
+  return {
+    ...(isRecord(data) ? data : { value: data }),
+    sessionId,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
 export async function runRoutes(
   app: FastifyInstance,
   opts?: { adapter?: WorkspaceAdapter },
 ): Promise<void> {
   const adapter = opts?.adapter;
 
-  // POST /api/v5/run — execute an agent with streaming SSE events
-  app.post<{ Body: RunRequestBody }>('/api/v5/run', async (req, reply) => {
+  // POST /api/v5/run — start an agent run and stream progress over SSE.
+  app.post<{ Body: RunRequestBody; Querystring: RunQuerystring }>('/api/v5/run', async (req, reply) => {
     const { agentId, task, projectRoot, runtimeMode, allowedTools } = req.body ?? {};
 
     if (!agentId) return reply.status(400).send({ error: 'agentId is required' });
@@ -160,118 +184,95 @@ export async function runRoutes(
       data: { sessionId, agentId, task: task.slice(0, 100), model: config.model },
     });
 
-    try {
-      const result = await runtime.runStreaming({
-        task,
-        sessionId,
-        ...(runtimeMode ? { runtimeMode } : {}),
-        ...(allowedTools?.length ? { allowedTools } : {}),
-        // Wire onChunk so SSE clients see content arrive before the HTTP response.
-        // The dashboard SSE handler reads event.data.content, so emit exactly that.
-        onChunk: (text: string, index: number) => {
-          globalStream.emit({
-            type: 'agent_activity',
-            category: 'run',
-            message: `[${agentId}] chunk`,
-            data: { content: text, index, sessionId },
-          });
-        },
-        onEvent: (event) => {
-          // The 'done' event signals completion — content already delivered via onChunk.
-          // Do not add content here to avoid double-appending on the client side.
-          globalStream.emit({
-            type: 'agent_activity',
-            category: 'run',
-            message: event.type === 'chunk'
-              ? `[${agentId}] chunk`
-              : `[${agentId}] ${event.type}`,
-            data: {
-              ...(event.data as Record<string, unknown>),
-              sessionId,
-            },
-          });
-        },
-      });
-
-      // Persist to in-memory run log
-      const completedSessionId = result.sessionId || sessionId;
-      if (completedSessionId !== sessionId) {
-        runLog.delete(sessionId);
-      }
-      runLog.set(completedSessionId, {
-        sessionId: completedSessionId,
-        agentId,
-        task,
-        model: result.model,
-        status: result.status,
-        response: result.response,
-        costUsd: result.costUsd,
-        inputTokens: result.inputTokens,
-        outputTokens: result.outputTokens,
-        startedAt,
-        ...(result.completedAt !== undefined ? { completedAt: result.completedAt } : {}),
-        ...(result.providerKind ? { providerKind: result.providerKind } : {}),
-        ...(result.runtimeModeResolved ? { runtimeModeResolved: result.runtimeModeResolved } : {}),
-        ...(result.error !== undefined ? { error: result.error } : {}),
-      });
-
-      // Post-task lifecycle hook: record task memory, update skills, check level-ups
+    const executeRun = async (): Promise<RunCompletion> => {
       try {
-        // AgentRuntimeConfig has no skills field; derive from agentId for now
-        const agentSkills: string[] = agentId.toLowerCase().split(/[-_]/);
-
-        const durationMs = result.completedAt
-          ? new Date(result.completedAt).getTime() - new Date(startedAt).getTime()
-          : undefined;
-
-        const { skillLevelUps } = careerHook.postTaskHook(agentId, {
-          taskId: sessionId,
-          success: result.status === 'completed',
-          summary: task.slice(0, 200),
-          tokensUsed: (result.inputTokens ?? 0) + (result.outputTokens ?? 0),
-          ...(durationMs !== undefined ? { durationMs } : {}),
-          skills: agentSkills,
+        const result = await runtime.runStreaming({
+          task,
+          sessionId,
+          ...(runtimeMode ? { runtimeMode } : {}),
+          ...(allowedTools?.length ? { allowedTools } : {}),
+          // The dashboard SSE handler reads event.data.content, so emit exactly that.
+          onChunk: (text: string, index: number) => {
+            globalStream.emit({
+              type: 'agent_activity',
+              category: 'run',
+              message: `[${agentId}] chunk`,
+              data: { content: text, index, sessionId },
+            });
+          },
+          onEvent: (event) => {
+            if (event.type === 'chunk' || event.type === 'text_delta') return;
+            // Content chunks are delivered by onChunk to avoid double-appending.
+            globalStream.emit({
+              type: 'agent_activity',
+              category: 'run',
+              message: `[${agentId}] ${event.type}`,
+              data: eventDataWithSession(event.data, sessionId),
+            });
+          },
         });
 
-        // Emit SSE events for any skill level-ups
-        for (const levelUp of skillLevelUps) {
-          globalStream.emit({
-            type: 'agent_activity',
-            category: 'skill_levelup',
-            message: `[${agentId}] skill "${levelUp.skill}" leveled up to ${levelUp.newLevel}`,
-            data: { agentId, skill: levelUp.skill, newLevel: levelUp.newLevel, sessionId: completedSessionId },
-          });
+        // Persist to in-memory run log
+        const completedSessionId = result.sessionId || sessionId;
+        if (completedSessionId !== sessionId) {
+          runLog.delete(sessionId);
         }
-      } catch {
-        // Career hook failures must never break the run response
-      }
-
-      // Emit completion event
-      globalStream.emit({
-        type: 'workflow_event',
-        category: 'run',
-        message: `[${agentId}] run ${result.status}`,
-        data: {
+        runLog.set(completedSessionId, {
           sessionId: completedSessionId,
+          agentId,
+          task,
+          model: result.model,
           status: result.status,
+          response: result.response,
           costUsd: result.costUsd,
           inputTokens: result.inputTokens,
           outputTokens: result.outputTokens,
+          startedAt,
+          ...(result.completedAt !== undefined ? { completedAt: result.completedAt } : {}),
           ...(result.providerKind ? { providerKind: result.providerKind } : {}),
           ...(result.runtimeModeResolved ? { runtimeModeResolved: result.runtimeModeResolved } : {}),
-        },
-      });
+          ...(result.error !== undefined ? { error: result.error } : {}),
+        });
 
-      // Emit cost event for the cost analytics page
-      if (result.costUsd > 0) {
+        // Post-task lifecycle hook: record task memory, update skills, check level-ups
+        try {
+          // AgentRuntimeConfig has no skills field; derive from agentId for now
+          const agentSkills: string[] = agentId.toLowerCase().split(/[-_]/);
+
+          const durationMs = result.completedAt
+            ? new Date(result.completedAt).getTime() - new Date(startedAt).getTime()
+            : undefined;
+
+          const { skillLevelUps } = careerHook.postTaskHook(agentId, {
+            taskId: sessionId,
+            success: result.status === 'completed',
+            summary: task.slice(0, 200),
+            tokensUsed: (result.inputTokens ?? 0) + (result.outputTokens ?? 0),
+            ...(durationMs !== undefined ? { durationMs } : {}),
+            skills: agentSkills,
+          });
+
+          // Emit SSE events for any skill level-ups
+          for (const levelUp of skillLevelUps) {
+            globalStream.emit({
+              type: 'agent_activity',
+              category: 'skill_levelup',
+              message: `[${agentId}] skill "${levelUp.skill}" leveled up to ${levelUp.newLevel}`,
+              data: { agentId, skill: levelUp.skill, newLevel: levelUp.newLevel, sessionId: completedSessionId },
+            });
+          }
+        } catch {
+          // Career hook failures must never break the run response
+        }
+
+        // Emit completion event
         globalStream.emit({
-          type: 'cost_event',
+          type: 'workflow_event',
           category: 'run',
-          message: `[${agentId}] $${result.costUsd.toFixed(4)} (${result.model})`,
+          message: `[${agentId}] run ${result.status}`,
           data: {
             sessionId: completedSessionId,
-            agentId,
-            model: result.model,
+            status: result.status,
             costUsd: result.costUsd,
             inputTokens: result.inputTokens,
             outputTokens: result.outputTokens,
@@ -279,33 +280,67 @@ export async function runRoutes(
             ...(result.runtimeModeResolved ? { runtimeModeResolved: result.runtimeModeResolved } : {}),
           },
         });
+
+        // Emit cost event for the cost analytics page
+        if (result.costUsd > 0) {
+          globalStream.emit({
+            type: 'cost_event',
+            category: 'run',
+            message: `[${agentId}] $${result.costUsd.toFixed(4)} (${result.model})`,
+            data: {
+              sessionId: completedSessionId,
+              agentId,
+              model: result.model,
+              costUsd: result.costUsd,
+              inputTokens: result.inputTokens,
+              outputTokens: result.outputTokens,
+              ...(result.providerKind ? { providerKind: result.providerKind } : {}),
+              ...(result.runtimeModeResolved ? { runtimeModeResolved: result.runtimeModeResolved } : {}),
+            },
+          });
+        }
+
+        return { ok: true, result, completedSessionId };
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        const completedAt = nowIso();
+
+        // Persist failure to run log
+        const existing = runLog.get(sessionId);
+        if (existing) {
+          existing.status = 'failed';
+          existing.error = message;
+          existing.completedAt = completedAt;
+        }
+
+        // Emit failure event
+        globalStream.emit({
+          type: 'workflow_event',
+          category: 'run',
+          message: `[${agentId}] run failed: ${message.slice(0, 200)}`,
+          data: { sessionId, status: 'failed', error: message },
+        });
+
+        return { ok: false, error: message, sessionId };
+      }
+    };
+
+    if (shouldWaitForCompletion(req.query?.wait)) {
+      const completion = await executeRun();
+      if (!completion.ok) {
+        return reply.status(500).send({ error: completion.error, sessionId: completion.sessionId });
       }
 
       return reply.status(200).send({
-        data: { ...result, sessionId: completedSessionId },
+        data: { ...completion.result, sessionId: completion.completedSessionId },
       });
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      const completedAt = nowIso();
-
-      // Persist failure to run log
-      const existing = runLog.get(sessionId);
-      if (existing) {
-        existing.status = 'failed';
-        existing.error = message;
-        existing.completedAt = completedAt;
-      }
-
-      // Emit failure event
-      globalStream.emit({
-        type: 'workflow_event',
-        category: 'run',
-        message: `[${agentId}] run failed: ${message.slice(0, 200)}`,
-        data: { sessionId, status: 'failed', error: message },
-      });
-
-      return reply.status(500).send({ error: message, sessionId });
     }
+
+    void executeRun();
+
+    return reply.status(202).send({
+      data: runLog.get(sessionId),
+    });
   });
 
   // GET /api/v5/run/history — list all runs from in-memory log

@@ -2,6 +2,7 @@ import type { AgentRuntimeConfig, RunOptions, RunResult } from './types.js';
 import { MODEL_PRICING } from './types.js';
 import type { WorkspaceAdapter } from '@agentforge/db';
 import { ExecutionService } from '../runtime/execution-service.js';
+import type { ExecutionStreamOptions } from '../runtime/types.js';
 
 export class AgentRuntime {
   private readonly executionService: ExecutionService;
@@ -19,14 +20,7 @@ export class AgentRuntime {
     return this.executionService.run(this.config, opts, this.adapter, this.apiKey);
   }
 
-  /**
-   * Streaming is still compatibility-first. The execution service now owns the
-   * provider boundary, but incremental stream parsing remains a future slice.
-   */
-  async runStreaming(opts: RunOptions & {
-    onChunk?: (text: string, index: number) => void;
-    onEvent?: (event: { type: string; data: unknown }) => void;
-  }): Promise<RunResult> {
+  async runStreaming(opts: RunOptions & ExecutionStreamOptions): Promise<RunResult> {
     return this.executionService.runStreaming(this.config, opts, this.adapter, this.apiKey);
   }
 

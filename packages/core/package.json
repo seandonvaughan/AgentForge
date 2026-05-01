@@ -10,7 +10,7 @@
   "dependencies": {
     "@agentforge/shared": "workspace:*",
     "@agentforge/db": "workspace:*",
-    "@anthropic-ai/sdk": "^0.89.0",
+    "@anthropic-ai/sdk": "^0.91.1",
     "js-yaml": "^4.1.1"
   },
   "devDependencies": {

@@ -1,26 +1,37 @@
 # AgentForge Root-vs-Packages Runtime Gap Matrix
 
 **Prepared:** April 15, 2026  
+**Last reviewed:** April 30, 2026  
 **Audience:** AgentForge development team  
 **Purpose:** Document the current split between the legacy root `src/` runtime and the newer `packages/*` runtime stack, then map the convergence work needed for v3.1 and beyond.
 
+## April 30, 2026 Status Update
+
+This matrix was written before the `10.5.0` convergence cleanup. The repo is still not deleted back to a single source tree, but the current state is now package-canonical rather than equally split:
+
+- `packages/cli`, `packages/core`, `packages/server`, and `packages/dashboard` are aligned to `10.5.0`.
+- Root plugin version export now reads root package metadata instead of a stale hardcoded version.
+- Root server bootstrap now warns and forwards to the package-canonical server.
+- `README.md` and `CHANGELOG.md` now describe the package-canonical command and dashboard surfaces.
+- Remaining work is primarily compatibility deletion, policy enforcement, and keeping async run execution covered as the default operator path.
+
 ## Executive Summary
 
-AgentForge is no longer a single-tree CLI project. It is now a hybrid monorepo with two active runtime surfaces:
+AgentForge is no longer a single-tree CLI project. It is now a package-canonical monorepo with a retained compatibility surface:
 
-- the root `src/` tree, which still owns the legacy CLI, root Fastify server, and session-based runtime path
-- the `packages/*` workspace stack, which owns the modular CLI, core autonomous cycle engine, package server, and dashboard
+- the `packages/*` workspace stack owns the modular CLI, core runtime, package server, and dashboard
+- the root `src/` tree remains for compatibility exports, root launch shims, and legacy/manual workflow bridge code
 
-The important takeaway is not that one side is "right" and the other side is "wrong". The repo is operating as a split system. That split is visible in entrypoints, version numbers, command names, API prefixes, docs, and runtime behavior.
+The important takeaway is that the canonical direction has been chosen: package-first, root-as-compatibility. The remaining split is still visible in entrypoints and old implementation files, but version/docs drift is no longer the primary signal of the split.
 
 The current risk is architectural drift:
 
-- users see overlapping commands and servers that do similar work
-- contributors have to reason about two parallel mental models
-- docs and version metadata are behind the real product state
-- runtime behavior diverges depending on whether a user enters through root CLI, package CLI, root server, or package server
+- users can still discover old root implementation files
+- contributors can still accidentally patch root code for package-runtime behavior
+- compatibility policy and deletion sequencing remain implicit in some areas
+- runtime behavior can still diverge where package commands bridge to legacy/manual workflow code
 
-v3.1 should not add another layer on top of this split. It should reduce it. The highest-value work is to pick canonical surfaces, turn the non-canonical ones into thin compatibility layers, and make docs/version metadata match the shipped runtime.
+Future convergence work should reduce the retained compatibility surface rather than polishing both branches. The highest-value work now is to keep canonical package surfaces enforced, remove or mark old root implementation paths, and keep async run/SSE behavior documented as it lands.
 
 ---
 
@@ -41,20 +52,20 @@ This document does not attempt a full product roadmap. It is focused on runtime 
 
 The repository currently shows a hybrid architecture in code, not just in docs:
 
-- Root release line is `10.5.0` in [package.json](../../../package.json), while workspace packages still declare `6.0.0` in [packages/core/package.json](../../../packages/core/package.json) and [packages/server/package.json](../../../packages/server/package.json).
-- The root plugin export in [src/index.ts](../../../src/index.ts) still reports version `0.1.0`, adding a third active version line on top of the root package and workspace package manifests.
+- Root release line is `10.5.0` in [package.json](../../../package.json), and the checked package manifests for [packages/cli/package.json](../../../packages/cli/package.json), [packages/core/package.json](../../../packages/core/package.json), [packages/server/package.json](../../../packages/server/package.json), and [packages/dashboard/package.json](../../../packages/dashboard/package.json) also declare `10.5.0`.
+- The root plugin export in [src/index.ts](../../../src/index.ts) now reads the root package version rather than reporting a stale hardcoded value.
 - The root build graph still compiles `src/**/*` as the primary root source tree, while also referencing workspace packages in [tsconfig.json](../../../tsconfig.json).
 - Root CLI commands are registered in [src/cli/index.ts](../../../src/cli/index.ts) and include `forge`, `genesis`, `rebuild`, `reforge`, `invoke`, `delegate`, `cost-report`, `activate`, `deactivate`, and `sessions`.
-- Package CLI entrypoints are registered in [packages/cli/src/bin.ts](../../../packages/cli/src/bin.ts) and expose a different surface: `init`, `start`, `migrate`, `info`, `autonomous:cycle`, and workspace commands.
-- Root server bootstrap lives in [src/server/main.ts](../../../src/server/main.ts) and reports `AgentForge v6.2`, while package server bootstrap lives in [packages/server/src/main.ts](../../../packages/server/src/main.ts) and reports `AgentForge v6.0`.
+- Package CLI entrypoints are registered in [packages/cli/src/bin.ts](../../../packages/cli/src/bin.ts) and expose the package-canonical `run`, `costs`, `cycle`, `team`, `team-sessions`, `workspaces`, `migrate`, `info`, and `start` surfaces.
+- Root server bootstrap lives in [src/server/main.ts](../../../src/server/main.ts), but now forwards through [src/server/index.ts](../../../src/server/index.ts) to `@agentforge/server` with a compatibility warning. Package server bootstrap lives in [packages/server/src/main.ts](../../../packages/server/src/main.ts) and prints the root package version.
 - Root server API assembly is in [src/server/server.ts](../../../src/server/server.ts), with `/api/v1/*` style routes and a local dashboard path.
 - Package server API assembly is in [packages/server/src/server.ts](../../../packages/server/src/server.ts), with `/api/v5/*`, `/api/v6/*`, WebSocket bridges, workspace routing, cycles, search, execution, and plugin routes.
 - The autonomous cycle is currently led from the package stack: [packages/server/src/routes/v5/cycles.ts](../../../packages/server/src/routes/v5/cycles.ts) spawns `packages/cli/dist/bin.js autonomous:cycle`, and [packages/core/src/autonomous/cycle-runner.ts](../../../packages/core/src/autonomous/cycle-runner.ts) owns the cycle engine.
 - Root `invoke` now uses `AgentForgeSession` in [src/cli/commands/invoke.ts](../../../src/cli/commands/invoke.ts), but `--loop` still prints a placeholder message instead of entering a control loop.
 - Root `genesis` is more complete than before, but it still sits inside the legacy root CLI surface in [src/cli/commands/genesis.ts](../../../src/cli/commands/genesis.ts).
-- The docs trail the code. [README.md](../../../README.md) still claims `invoke --loop` is available and uses release-era language that does not match the current package split, while [CHANGELOG.md](../../../CHANGELOG.md) still tops out at `6.7.0`.
+- Dashboard runner behavior now defaults to async run starts: clients should tolerate default `202 Accepted` start responses and compatibility `?wait=true` synchronous `200` completion responses, then consume `/api/v5/stream` `agent_activity` chunks and `workflow_event` completion by `sessionId`.
 
-This is enough evidence to treat the repo as split-brain today, with a convergence path still in progress.
+This is enough evidence to treat the repo as package-canonical with retained compatibility paths. The convergence path is still in progress, but the canonical side is no longer ambiguous.
 
 ---
 
@@ -62,13 +73,13 @@ This is enough evidence to treat the repo as split-brain today, with a convergen
 
 | ID | Gap | Current Code Reality | Risk | Recommendation | Priority |
 |----|-----|----------------------|------|----------------|----------|
-| G1 | Hybrid architecture is not yet converged | Root `src/` and `packages/*` both compile, both boot runtimes, and both own live product paths | Contributors will keep building against two different mental models | Declare one canonical runtime stack and convert the other into compatibility wrappers | P0 |
-| G2 | CLI surface is duplicated | Root CLI and package CLI expose different commands and different product stories | Command discovery, docs, and automation drift from each other | Collapse to one user-facing CLI surface, or namespace the second surface explicitly | P0 |
-| G3 | Server/runtime surface is duplicated | Root Fastify server and package Fastify server both expose overlapping API families | Route drift and duplicated bug-fixing effort | Choose one canonical server runtime and freeze the other as a thin adapter | P0 |
+| G1 | Hybrid architecture is not fully deleted | Root `src/` and `packages/*` both compile, but `packages/*` is now canonical | Contributors can still patch the wrong layer | Keep package-first ownership explicit and continue converting root to compatibility wrappers | P0 |
+| G2 | CLI surface still has bridge behavior | Package CLI is public-canonical, while root/legacy command paths still exist under the hood | Command behavior can diverge if bridges are not kept thin | Keep one package CLI vocabulary and label/delete root compatibility surfaces over time | P0 |
+| G3 | Server/runtime surface retains legacy files | Root server bootstrap forwards to package server, but old root server implementation files remain | Route fixes can accidentally land in a non-canonical server | Keep package server canonical and mark or remove legacy root server implementation paths | P0 |
 | G4 | Runtime behavior diverges by entrypoint | Root `invoke` uses `AgentForgeSession`; package `autonomous:cycle` uses `CycleRunner`; root and package servers route users differently | The same user intent can produce different behavior depending on entrypoint | Route all runtime entrypoints through a single orchestration boundary | P0 |
-| G5 | Version and docs are out of sync | Root is `10.5.0`, packages still say `6.0.0`, README and CHANGELOG lag the shipped behavior | Trust erosion for users and contributors | Make version/docs generated from a single source of truth | P0 |
+| G5 | Version/docs drift can regress | Version metadata and top-level docs are currently aligned to `10.5.0` package-canonical behavior | Future releases can reintroduce drift without a release discipline | Keep version/docs tied to package metadata and command help | P1 |
 | G6 | Package autonomous launcher is architected but still partially stubbed | `packages/cli/src/commands/autonomous.ts` wires `CycleRunner`, but proposal/scoring adapters are still stubbed | The canonical new runtime is not fully end-to-end without more signal wiring | Finish real adapter wiring and remove smoke-test scaffolding | P1 |
-| G7 | Dashboard and operator surfaces reflect the split | Root server serves the legacy dashboard path; package dashboard is the canonical operational UI | Operators can land in different UI stacks with different expectations | Make the package dashboard the canonical UI and deprecate the root path with a migration notice | P1 |
+| G7 | Dashboard operator contract is moving to async runs | Package dashboard is canonical and `/runner` must support `202 Accepted` plus SSE chunks | Operators can lose output or completion state if the UI assumes a synchronous POST | Keep runner/live tests focused on async run start, chunk replay, metadata, reconnect, and clear/copy behavior | P1 |
 | G8 | Compatibility policy is implicit, not explicit | Root and packages both remain active with no documented deprecation boundary | Future changes can silently reintroduce overlap | Define compatibility windows and deprecation rules for root entrypoints | P1 |
 
 ---
@@ -145,29 +156,30 @@ CLI owner plus docs/release owner. This needs an owner who can enforce command n
 
 ---
 
-### G3. Server Surfaces Are Duplicated
+### G3. Server Surfaces Retain Legacy Files
 
 **Current code reality**
 
-- Root server bootstrap is in [src/server/main.ts](../../../src/server/main.ts) and [src/server/server.ts](../../../src/server/server.ts).
+- Root server compatibility bootstrap is in [src/server/main.ts](../../../src/server/main.ts) and forwards through [src/server/index.ts](../../../src/server/index.ts) to `@agentforge/server`.
+- Legacy root server implementation files such as [src/server/server.ts](../../../src/server/server.ts) still exist and remain part of the build graph.
 - Package server bootstrap is in [packages/server/src/main.ts](../../../packages/server/src/main.ts) and [packages/server/src/server.ts](../../../packages/server/src/server.ts).
-- The two server stacks expose overlapping domains: health, cycles, search, runs, org graph, teams, memory, reviews, autonomy, and workspace behavior.
-- Root server is `v6.2` while package server is `v6.0`, which is a strong signal that the two are parallel tracks, not one runtime with a tidy boundary.
+- The package server is canonical for health, cycles, search, runs, org graph, teams, memory, reviews, autonomy, and workspace behavior.
+- The package server startup now prints the root package version, currently `10.5.0`.
 
 **Why this matters**
 
-Two active servers almost always drift on route shape, auth behavior, startup assumptions, and artifact locations. That drift becomes expensive as soon as dashboards or automation depend on one path and then unexpectedly hit the other.
+Legacy server implementation files can still attract accidental fixes. That drift becomes expensive if dashboards or automation depend on a root file that is no longer the canonical launch path.
 
 **Recommendation**
 
-Choose one canonical API server and make the other side a compatibility layer or a migration bridge.
+Keep the package server canonical and make root server code visibly compatibility-only.
 
 The simplest convergence move is:
 
-- package server becomes canonical for operator/runtime flows
-- root server becomes a thin bootstrap wrapper or legacy compatibility path
+- package server remains canonical for operator/runtime flows
+- root server remains a thin bootstrap wrapper or legacy compatibility path
 
-If that is not the intended direction, the reverse decision still needs to be explicit and documented.
+Do not add new `/api/v5/*` runtime behavior to root server files.
 
 **Risk**
 
@@ -228,23 +240,23 @@ Runtime/orchestration owner with support from the package core team and the root
 
 ---
 
-### G5. Version and Documentation Drift Are Material
+### G5. Version and Documentation Drift Can Regress
 
 **Current code reality**
 
 - Root package version is `10.5.0` in [package.json](../../../package.json).
-- Package manifests still report `6.0.0` in [packages/core/package.json](../../../packages/core/package.json) and [packages/server/package.json](../../../packages/server/package.json).
-- The root plugin export in [src/index.ts](../../../src/index.ts) still reports `0.1.0`.
-- [README.md](../../../README.md) still advertises `invoke --loop` as shipped.
-- [CHANGELOG.md](../../../CHANGELOG.md) still tops out at `6.7.0` and is no longer aligned with the repo tip.
+- Package manifests checked for [packages/cli/package.json](../../../packages/cli/package.json), [packages/core/package.json](../../../packages/core/package.json), [packages/server/package.json](../../../packages/server/package.json), and [packages/dashboard/package.json](../../../packages/dashboard/package.json) report `10.5.0`.
+- The root plugin export in [src/index.ts](../../../src/index.ts) reads package metadata instead of reporting a stale hardcoded version.
+- [README.md](../../../README.md) documents the package-canonical CLI and dashboard runner SSE contract.
+- [CHANGELOG.md](../../../CHANGELOG.md) includes the `10.5.0` convergence line and current Unreleased notes.
 
 **Why this matters**
 
-Version drift is not cosmetic. It causes support confusion, release confusion, and false confidence in what is actually shipped. Docs drift makes the repo look more finished than it is.
+Version drift is not cosmetic when it regresses. It causes support confusion, release confusion, and false confidence in what is actually shipped. Docs should stay tied to executable command help, package metadata, and API contracts.
 
 **Recommendation**
 
-Move to one source of truth for versions and release claims.
+Keep one source of truth for versions and release claims.
 
 - root and package versioning should be explicitly related, not independently implied
 - README claims should be generated from actual command help or release metadata

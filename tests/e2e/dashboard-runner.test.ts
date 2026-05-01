@@ -1,128 +1,236 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page, type Route } from '@playwright/test';
+
+type StreamEvent = {
+  type: string;
+  category?: string;
+  message?: string;
+  data?: Record<string, unknown>;
+  timestamp?: string;
+};
+
+type RunResponseOptions = {
+  sessionId?: string;
+  status?: number;
+  responseDelayMs?: number;
+};
+
+async function injectMockEventSource(page: Page) {
+  await page.addInitScript(() => {
+    const sources: Array<{
+      onopen: ((event: Event) => void) | null;
+      onmessage: ((event: MessageEvent) => void) | null;
+      onerror: ((event: Event) => void) | null;
+      close: () => void;
+    }> = [];
+
+    class MockEventSource {
+      onopen: ((event: Event) => void) | null = null;
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+      readyState = 0;
+
+      constructor(public url: string) {
+        sources.push(this);
+        setTimeout(() => {
+          this.readyState = 1;
+          this.onopen?.(new Event('open'));
+        }, 10);
+      }
+
+      close() {
+        this.readyState = 2;
+      }
+    }
+
+    Object.assign(window, {
+      EventSource: MockEventSource,
+      __emitAgentForgeSse(event: StreamEvent) {
+        for (const source of sources) {
+          if (source.onmessage) {
+            source.onmessage(new MessageEvent('message', { data: JSON.stringify(event) }));
+          }
+        }
+      },
+      __errorAgentForgeSse() {
+        for (const source of sources) {
+          source.onerror?.(new Event('error'));
+        }
+      },
+    });
+  });
+}
+
+async function mockRunnerApis(page: Page, options: RunResponseOptions = {}) {
+  const sessionId = options.sessionId ?? 'run-test-1';
+  const status = options.status ?? 202;
+
+  await page.route('/api/v5/agents', async (route: Route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: [
+          { agentId: 'coder', name: 'Coder', model: 'sonnet' },
+          { agentId: 'architect', name: 'Architect', model: 'opus' },
+        ],
+      }),
+    });
+  });
+
+  await page.route('/api/v5/run/history', async (route: Route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: [] }),
+    });
+  });
+
+  await page.route('/api/v5/run', async (route: Route) => {
+    if (options.responseDelayMs) {
+      await new Promise((resolve) => setTimeout(resolve, options.responseDelayMs));
+    }
+
+    await route.fulfill({
+      status,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: {
+          sessionId,
+          agentId: 'coder',
+          model: 'claude-sonnet-4-5',
+          status: status === 202 ? 'running' : 'completed',
+          providerKind: 'anthropic-sdk',
+          runtimeModeResolved: 'sdk',
+        },
+      }),
+    });
+  });
+}
+
+async function emitSse(page: Page, event: StreamEvent) {
+  await page.evaluate((payload) => {
+    (window as unknown as { __emitAgentForgeSse: (event: StreamEvent) => void })
+      .__emitAgentForgeSse(payload);
+  }, event);
+}
+
+async function errorSse(page: Page) {
+  await page.evaluate(() => {
+    (window as unknown as { __errorAgentForgeSse: () => void }).__errorAgentForgeSse();
+  });
+}
+
+async function openRunner(page: Page, options?: RunResponseOptions) {
+  await injectMockEventSource(page);
+  await mockRunnerApis(page, options);
+  await page.goto('/runner');
+  await expect(page.locator('h1')).toHaveText('Agent Runner');
+  await expect(page.locator('#task-input')).toBeVisible();
+}
 
 test.describe('Runner Page', () => {
-  test('loads runner page successfully', async ({ page }) => {
-    await page.goto('/runner');
+  test('accepts async 202 run starts and renders streamed chunks with operator metadata', async ({ page }) => {
+    await openRunner(page);
 
-    // Verify page title
-    await expect(page).toHaveTitle(/Runner|Executor|Workflow|AgentForge/i);
+    await page.fill('#task-input', 'Summarize the queue');
+    await page.click('button:has-text("Run Agent")');
 
-    // Verify page loaded
-    const pageContent = page.locator('body');
-    await expect(pageContent).toBeVisible();
+    await expect(page.locator('.output-header')).toContainText('Accepted');
+    await expect(page.locator('.output-meta')).toContainText('Anthropic SDK');
+    await expect(page.locator('.output-meta')).toContainText('SDK');
+    await expect(page.locator('.latency-pill')).toContainText('Waiting for first token');
+
+    await emitSse(page, {
+      type: 'agent_activity',
+      category: 'run',
+      message: '[coder] chunk',
+      data: { sessionId: 'run-test-1', content: 'Hello ', providerKind: 'anthropic-sdk', runtimeModeResolved: 'sdk' },
+    });
+    await emitSse(page, {
+      type: 'agent_activity',
+      category: 'run',
+      message: '[coder] chunk',
+      data: { sessionId: 'run-test-1', content: 'world' },
+    });
+
+    await expect(page.locator('.output-pre')).toContainText('Hello world');
+    await expect(page.locator('.latency-pill')).toHaveText(/First token \d+ ms|First token \d+\.\d s/);
+
+    await emitSse(page, {
+      type: 'workflow_event',
+      category: 'run',
+      message: '[coder] run completed',
+      data: { sessionId: 'run-test-1', status: 'completed', costUsd: 0.0123, providerKind: 'anthropic-sdk', runtimeModeResolved: 'sdk' },
+    });
+
+    await expect(page.locator('.running-indicator')).toHaveCount(0);
+    await expect(page.locator('.history-item').first()).toContainText('completed');
   });
 
-  test('displays runner heading', async ({ page }) => {
-    await page.goto('/runner');
+  test('replays chunks that arrive before the 202 response returns', async ({ page }) => {
+    await openRunner(page, { sessionId: 'run-buffered-1', responseDelayMs: 150 });
 
-    await page.waitForLoadState('networkidle');
+    await page.fill('#task-input', 'Stream early');
+    await page.click('button:has-text("Run Agent")');
 
-    // Look for heading
-    const heading = page.locator('h1, h2').filter({ hasText: /Runner|Executor|Workflow|Execute/i }).first();
+    await emitSse(page, {
+      type: 'agent_activity',
+      category: 'run',
+      message: '[coder] chunk',
+      data: { sessionId: 'run-buffered-1', content: 'Buffered token' },
+    });
 
-    if (await heading.isVisible().catch(() => false)) {
-      await expect(heading).toBeVisible();
-    }
+    await expect(page.locator('.output-pre')).toContainText('Buffered token');
   });
 
-  test('displays execution interface or controls', async ({ page }) => {
-    await page.goto('/runner');
+  test('copies and clears streamed output', async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
+      origin: 'http://localhost:4751',
+    });
+    await openRunner(page);
 
-    await page.waitForLoadState('networkidle');
+    await page.fill('#task-input', 'Copy output');
+    await page.click('button:has-text("Run Agent")');
+    await emitSse(page, {
+      type: 'agent_activity',
+      category: 'run',
+      message: '[coder] chunk',
+      data: { sessionId: 'run-test-1', content: 'copy me' },
+    });
+    await emitSse(page, {
+      type: 'workflow_event',
+      category: 'run',
+      message: '[coder] run completed',
+      data: { sessionId: 'run-test-1', status: 'completed' },
+    });
 
-    // Look for execution controls (buttons, forms, inputs)
-    const controls = page.locator('button, [role="button"], input, form').first();
-    const executor = page.locator('[class*="executor"], [class*="runner"], [class*="control"]').first();
+    await page.click('.output-actions button:has-text("Copy")');
+    await expect(page.locator('.output-actions')).toContainText('Copied');
+    await expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('copy me');
 
-    const hasControls = await controls.isVisible().catch(() => false);
-    const hasExecutor = await executor.isVisible().catch(() => false);
-
-    expect(hasControls || hasExecutor).toBeTruthy();
+    await page.click('.output-actions button:has-text("Clear")');
+    await expect(page.locator('.output-empty')).toContainText('Configure an agent and task');
+    await expect(page.locator('.output-pre')).toHaveCount(0);
   });
 
-  test('displays execution status or results', async ({ page }) => {
-    await page.goto('/runner');
+  test('shows reconnect warning without ending the active run', async ({ page }) => {
+    await openRunner(page);
 
-    await page.waitForLoadState('networkidle');
+    await page.fill('#task-input', 'Reconnect test');
+    await page.click('button:has-text("Run Agent")');
+    await errorSse(page);
 
-    // Look for status or results display
-    const status = page.locator('[class*="status"], [class*="result"], text=/success|failed|running|completed|pending/i');
-    const statusCount = await status.count();
-
-    if (statusCount > 0) {
-      await expect(status.first()).toBeVisible();
-    }
+    await expect(page.locator('.stream-warning')).toContainText('reconnecting automatically');
+    await expect(page.locator('.running-indicator')).toContainText('Stream reconnecting');
   });
 
-  test('displays execution logs or output', async ({ page }) => {
-    await page.goto('/runner');
+  test('runner page remains usable on mobile and desktop viewports', async ({ page }) => {
+    await openRunner(page);
 
-    await page.waitForLoadState('networkidle');
-
-    // Look for logs or console output
-    const logs = page.locator('[class*="log"], [class*="console"], [class*="output"], textarea').first();
-    const logText = page.locator('text=/log|output|error|warning|info/i');
-
-    const hasLogs = await logs.isVisible().catch(() => false);
-    const hasLogText = await logText.count().then(c => c > 0).catch(() => false);
-
-    expect(hasLogs || hasLogText).toBeTruthy();
-  });
-
-  test('runner interface allows task selection or configuration', async ({ page }) => {
-    await page.goto('/runner');
-
-    await page.waitForLoadState('networkidle');
-
-    // Look for task or workflow selection
-    const selectors = page.locator('select, [role="combobox"], [class*="dropdown"], [class*="select"]');
-    const selectorCount = await selectors.count();
-
-    if (selectorCount > 0) {
-      await expect(selectors.first()).toBeVisible();
-    }
-
-    // Look for configuration options
-    const configOptions = page.locator('input, button, [role="button"]').filter({ hasText: /configure|select|choose|option/i });
-    const optionCount = await configOptions.count();
-
-    if (optionCount > 0) {
-      await expect(configOptions.first()).toBeEnabled();
-    }
-  });
-
-  test('runner page handles loading and empty states', async ({ page }) => {
-    await page.goto('/runner');
-
-    await page.waitForLoadState('networkidle');
-
-    // Check for either content or loading
-    const loading = page.locator('text=/loading|Loading/i').first();
-    const runnerContent = page.locator('[class*="runner"], [class*="executor"], button, input').first();
-
-    const isLoading = await loading.isVisible().catch(() => false);
-    const hasContent = await runnerContent.isVisible().catch(() => false);
-
-    expect(isLoading || hasContent).toBeTruthy();
-  });
-
-  test('runner page is responsive', async ({ page }) => {
-    await page.goto('/runner');
-
-    await page.waitForLoadState('networkidle');
-
-    // Test mobile view
     await page.setViewportSize({ width: 375, height: 667 });
+    await expect(page.locator('.runner-layout')).toBeVisible();
 
-    await page.waitForTimeout(500);
-
-    const pageContent = page.locator('body');
-    await expect(pageContent).toBeVisible();
-
-    // Test desktop view
     await page.setViewportSize({ width: 1280, height: 720 });
-
-    await page.waitForTimeout(500);
-    await expect(pageContent).toBeVisible();
+    await expect(page.locator('.runner-layout')).toBeVisible();
   });
 });
