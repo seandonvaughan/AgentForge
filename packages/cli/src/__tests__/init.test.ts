@@ -60,6 +60,6 @@ describe('agentforge init', () => {
   }
 
   function output(): string {
-    return consoleLog.mock.calls.map(([value]) => String(value)).join('\n');
+    return consoleLog.mock.calls.map((call: unknown[]) => String(call[0])).join('\n');
   }
 });
