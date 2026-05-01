@@ -106,6 +106,7 @@ export type RuntimeJobStatus = 'queued' | 'running' | 'completed' | 'failed' | '
 export interface RuntimeJobRow {
   id: string;
   session_id: string;
+  trace_id: string;
   agent_id: string;
   task: string;
   status: RuntimeJobStatus;
@@ -129,6 +130,7 @@ export interface RuntimeEventRow {
   id: string;
   job_id: string;
   session_id: string;
+  trace_id: string;
   agent_id: string;
   type: string;
   category: string;
@@ -223,6 +225,23 @@ export class WorkspaceAdapter {
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');
     this.db.exec(WORKSPACE_DDL);
+    this.ensureRuntimeTraceColumns();
+  }
+
+  private ensureRuntimeTraceColumns(): void {
+    this.ensureColumn('runtime_jobs', 'trace_id', 'TEXT');
+    this.ensureColumn('runtime_events', 'trace_id', 'TEXT');
+    this.db.prepare("UPDATE runtime_jobs SET trace_id = 'trace-' || session_id WHERE trace_id IS NULL OR trace_id = ''").run();
+    this.db.prepare("UPDATE runtime_events SET trace_id = 'trace-' || session_id WHERE trace_id IS NULL OR trace_id = ''").run();
+    this.db.prepare('CREATE INDEX IF NOT EXISTS idx_runtime_jobs_trace ON runtime_jobs(trace_id)').run();
+    this.db.prepare('CREATE INDEX IF NOT EXISTS idx_runtime_events_trace ON runtime_events(trace_id, sequence)').run();
+  }
+
+  private ensureColumn(table: string, column: string, definition: string): void {
+    const columns = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+    if (!columns.some((entry) => entry.name === column)) {
+      this.db.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`).run();
+    }
   }
 
   // --- Sessions ---
@@ -526,6 +545,7 @@ export class WorkspaceAdapter {
   createRuntimeJob(data: {
     id?: string;
     sessionId: string;
+    traceId?: string;
     agentId: string;
     task: string;
     model?: string;
@@ -534,15 +554,17 @@ export class WorkspaceAdapter {
     createdAt?: string;
   }): RuntimeJobRow {
     const id = data.id ?? generateId();
+    const traceId = data.traceId ?? `trace-${data.sessionId}`;
     const now = data.createdAt ?? nowIso();
     this.db.prepare(`
       INSERT INTO runtime_jobs (
-        id, session_id, agent_id, task, status, model, runtime_mode, created_at, updated_at
+        id, session_id, trace_id, agent_id, task, status, model, runtime_mode, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       data.sessionId,
+      traceId,
       data.agentId,
       data.task,
       data.status ?? 'queued',
@@ -673,6 +695,7 @@ export class WorkspaceAdapter {
     id?: string;
     jobId: string;
     sessionId: string;
+    traceId?: string;
     agentId: string;
     type: string;
     category?: string;
@@ -682,15 +705,17 @@ export class WorkspaceAdapter {
   }): RuntimeEventRow {
     const id = data.id ?? generateId();
     const createdAt = data.createdAt ?? nowIso();
+    const traceId = data.traceId ?? `trace-${data.sessionId}`;
     this.db.prepare(`
       INSERT INTO runtime_events (
-        id, job_id, session_id, agent_id, type, category, message, data_json, created_at
+        id, job_id, session_id, trace_id, agent_id, type, category, message, data_json, created_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       data.jobId,
       data.sessionId,
+      traceId,
       data.agentId,
       data.type,
       data.category ?? 'run',

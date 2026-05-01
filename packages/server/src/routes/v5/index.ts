@@ -259,7 +259,9 @@ export async function registerV5Routes(
 
 function bridgeRuntimeEventToGlobalStream(event: RuntimeEventEnvelope): void {
   const data: Record<string, unknown> = {
-    ...(event.data ?? {}),
+    ...event.payload,
+    workspaceId: event.workspaceId,
+    traceId: event.traceId,
     jobId: event.jobId,
     sessionId: event.sessionId,
     agentId: event.agentId,
@@ -275,18 +277,26 @@ function bridgeRuntimeEventToGlobalStream(event: RuntimeEventEnvelope): void {
 
     globalStream.emit({
       type: 'workflow_event',
+      workspaceId: event.workspaceId,
+      sessionId: event.sessionId,
+      jobId: event.jobId,
+      traceId: event.traceId,
       category: event.category,
       message: event.message,
-      data: { ...data, status },
+      payload: { ...data, status },
     });
 
     const costUsd = typeof data.costUsd === 'number' ? data.costUsd : 0;
     if (event.type === 'job_completed' && costUsd > 0) {
       globalStream.emit({
         type: 'cost_event',
+        workspaceId: event.workspaceId,
+        sessionId: event.sessionId,
+        jobId: event.jobId,
+        traceId: event.traceId,
         category: event.category,
         message: `[${event.agentId}] $${costUsd.toFixed(4)} (${String(data.model ?? 'unknown')})`,
-        data,
+        payload: data,
       });
     }
     return;
@@ -294,8 +304,12 @@ function bridgeRuntimeEventToGlobalStream(event: RuntimeEventEnvelope): void {
 
   globalStream.emit({
     type: 'agent_activity',
+    workspaceId: event.workspaceId,
+    sessionId: event.sessionId,
+    jobId: event.jobId,
+    traceId: event.traceId,
     category: event.category,
     message: event.message,
-    data,
+    payload: data,
   });
 }

@@ -25,6 +25,7 @@ export interface CreateRuntimeJobInput {
   agentId: string;
   task: string;
   sessionId?: string;
+  traceId?: string;
   model?: string;
   runtimeMode?: RuntimeMode;
 }
@@ -38,9 +39,11 @@ export class RuntimeJobSupervisor {
 
   createJob(input: CreateRuntimeJobInput): RuntimeJobRow {
     const sessionId = input.sessionId ?? `run-${generateId()}`;
+    const traceId = input.traceId ?? `trace-${sessionId}`;
     const job = this.options.adapter.createRuntimeJob({
       id: `job-${generateId()}`,
       sessionId,
+      traceId,
       agentId: input.agentId,
       task: input.task,
       ...(input.model ? { model: input.model } : {}),
@@ -210,11 +213,14 @@ export class RuntimeJobSupervisor {
       id: generateId(),
       jobId: job.id,
       sessionId: job.session_id,
+      traceId: job.trace_id,
       agentId: job.agent_id,
       type: input.type,
       category: input.category ?? 'run',
       message: input.message,
       data: {
+        workspaceId: this.options.adapter.workspaceId,
+        traceId: job.trace_id,
         jobId: job.id,
         sessionId: job.session_id,
         agentId: job.agent_id,
@@ -223,16 +229,20 @@ export class RuntimeJobSupervisor {
       createdAt: timestamp,
     });
 
+    const payload = parseEventData(row.data_json);
     const envelope: RuntimeEventEnvelope = {
       id: row.id,
       sequence: row.sequence,
+      workspaceId: this.options.adapter.workspaceId,
       jobId: row.job_id,
       sessionId: row.session_id,
+      traceId: row.trace_id,
       agentId: row.agent_id,
       type: row.type,
       category: row.category,
       message: row.message,
-      data: parseEventData(row.data_json),
+      payload,
+      data: payload,
       timestamp: row.created_at,
     };
 

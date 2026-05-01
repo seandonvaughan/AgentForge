@@ -4,8 +4,14 @@ import { generateId, nowIso } from '@agentforge/shared';
 export interface StreamEvent {
   id: string;
   type: 'agent_activity' | 'sprint_event' | 'cost_event' | 'workflow_event' | 'branch_event' | 'system' | 'refresh_signal' | 'cycle_event';
+  workspaceId?: string;
+  sessionId?: string;
+  jobId?: string;
+  traceId?: string;
   category: string;
   message: string;
+  payload?: Record<string, unknown>;
+  /** @deprecated Use payload. Kept for dashboard/SSE compatibility through 10.5.x. */
   data?: Record<string, unknown>;
   timestamp: string;
 }
@@ -20,10 +26,12 @@ export class EventStream {
   }
 
   emit(event: Omit<StreamEvent, 'id' | 'timestamp'>): void {
+    const payload = event.payload ?? event.data;
     const full: StreamEvent = {
       id: generateId(),
       timestamp: nowIso(),
       ...event,
+      ...(payload ? { payload, data: payload } : {}),
     };
     for (const handler of this.clients.values()) {
       try { handler(full); } catch { /* client gone */ }

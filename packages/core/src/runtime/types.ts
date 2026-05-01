@@ -66,12 +66,16 @@ export type ExecutionEvent = ExecutionStreamEvent;
 
 export interface RuntimeEventEnvelope {
   id: string;
+  workspaceId: string;
   jobId: string;
   sessionId: string;
+  traceId: string;
   agentId: string;
   type: string;
   category: string;
   message: string;
+  payload: Record<string, unknown>;
+  /** @deprecated Use payload. Kept for dashboard/SSE compatibility through 10.5.x. */
   data?: Record<string, unknown>;
   timestamp: string;
   sequence?: number;

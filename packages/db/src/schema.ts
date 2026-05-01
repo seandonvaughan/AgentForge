@@ -191,6 +191,7 @@ export const WORKSPACE_DDL = `
   CREATE TABLE IF NOT EXISTS runtime_jobs (
     id TEXT PRIMARY KEY,
     session_id TEXT UNIQUE NOT NULL,
+    trace_id TEXT UNIQUE NOT NULL,
     agent_id TEXT NOT NULL,
     task TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'queued',
@@ -214,6 +215,7 @@ export const WORKSPACE_DDL = `
     id TEXT UNIQUE NOT NULL,
     job_id TEXT NOT NULL REFERENCES runtime_jobs(id),
     session_id TEXT NOT NULL,
+    trace_id TEXT NOT NULL,
     agent_id TEXT NOT NULL,
     type TEXT NOT NULL,
     category TEXT NOT NULL DEFAULT 'run',
@@ -224,11 +226,13 @@ export const WORKSPACE_DDL = `
 
   CREATE INDEX IF NOT EXISTS idx_scorecards_agent ON agent_scorecards(agent_id);
   CREATE INDEX IF NOT EXISTS idx_runtime_jobs_session ON runtime_jobs(session_id);
+  CREATE INDEX IF NOT EXISTS idx_runtime_jobs_trace ON runtime_jobs(trace_id);
   CREATE INDEX IF NOT EXISTS idx_runtime_jobs_agent ON runtime_jobs(agent_id);
   CREATE INDEX IF NOT EXISTS idx_runtime_jobs_status ON runtime_jobs(status);
   CREATE INDEX IF NOT EXISTS idx_runtime_jobs_created ON runtime_jobs(created_at);
   CREATE INDEX IF NOT EXISTS idx_runtime_events_job ON runtime_events(job_id, sequence);
   CREATE INDEX IF NOT EXISTS idx_runtime_events_session ON runtime_events(session_id, sequence);
+  CREATE INDEX IF NOT EXISTS idx_runtime_events_trace ON runtime_events(trace_id, sequence);
   CREATE INDEX IF NOT EXISTS idx_runtime_events_type ON runtime_events(type);
 
   CREATE INDEX IF NOT EXISTS idx_sessions_agent ON sessions(agent_id);

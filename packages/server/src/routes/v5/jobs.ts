@@ -92,6 +92,7 @@ export function serializeJob(job: RuntimeJobRow): Record<string, unknown> {
   return {
     jobId: job.id,
     sessionId: job.session_id,
+    traceId: job.trace_id,
     agentId: job.agent_id,
     task: job.task,
     status: job.status,
@@ -112,16 +113,19 @@ export function serializeJob(job: RuntimeJobRow): Record<string, unknown> {
 }
 
 export function serializeEvent(event: RuntimeEventRow): Record<string, unknown> {
+  const payload = parseJson(event.data_json);
   return {
     id: event.id,
     sequence: event.sequence,
     jobId: event.job_id,
     sessionId: event.session_id,
+    traceId: event.trace_id,
     agentId: event.agent_id,
     type: event.type,
     category: event.category,
     message: event.message,
-    data: parseJson(event.data_json),
+    payload,
+    data: payload,
     timestamp: event.created_at,
   };
 }

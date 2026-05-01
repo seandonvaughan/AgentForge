@@ -37,6 +37,8 @@ interface RunQuerystring {
 
 interface RunLogEntry {
   sessionId: string;
+  jobId?: string;
+  traceId?: string;
   agentId: string;
   task: string;
   model: string;
@@ -175,6 +177,8 @@ export async function runRoutes(
 
       runLog.set(sessionId, {
         sessionId,
+        jobId: job.id,
+        traceId: job.trace_id,
         agentId,
         task,
         model: config.model,
@@ -218,6 +222,8 @@ export async function runRoutes(
           }
           runLog.set(completedSessionId, {
             sessionId: completedSessionId,
+            jobId: job.id,
+            traceId: job.trace_id,
             agentId,
             task,
             model: runResult.model,
@@ -274,11 +280,11 @@ export async function runRoutes(
       if (shouldWaitForCompletion(req.query?.wait)) {
         const completion = await executeJob();
         if (!completion.ok) {
-          return reply.status(500).send({ error: completion.error, sessionId: completion.sessionId, jobId: job.id });
+          return reply.status(500).send({ error: completion.error, sessionId: completion.sessionId, jobId: job.id, traceId: job.trace_id });
         }
 
         return reply.status(200).send({
-          data: { ...completion.result, sessionId: completion.completedSessionId, jobId: job.id },
+          data: { ...completion.result, sessionId: completion.completedSessionId, jobId: job.id, traceId: job.trace_id },
         });
       }
 
@@ -288,6 +294,7 @@ export async function runRoutes(
         data: {
           jobId: job.id,
           sessionId,
+          traceId: job.trace_id,
           status: 'running',
           agentId,
           task,
