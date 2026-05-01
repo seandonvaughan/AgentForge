@@ -66,10 +66,12 @@ vi.mock('@agentforge/core', () => {
   };
 
   return {
-    AgentRuntime: vi.fn().mockImplementation(() => ({
-      runStreaming: vi.fn().mockResolvedValue(mockRunResult),
-      run: vi.fn().mockResolvedValue(mockRunResult),
-    })),
+    AgentRuntime: vi.fn(function () {
+      return {
+        runStreaming: vi.fn().mockResolvedValue(mockRunResult),
+        run: vi.fn().mockResolvedValue(mockRunResult),
+      };
+    }),
     loadAgentConfig: vi.fn().mockImplementation(async (agentId: string) => {
       if (!agentId) return null;
       return {

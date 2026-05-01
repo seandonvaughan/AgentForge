@@ -16,40 +16,46 @@ vi.mock("../../src/api/agent-runner.js", () => ({
 }));
 
 vi.mock("../../src/reforge/reforge-engine.js", () => ({
-  ReforgeEngine: vi.fn().mockImplementation(() => ({
-    applyOverride: vi.fn(async (t) => t),
-    buildPlan: vi.fn(async () => ({
-      id: "plan-1",
-      timestamp: new Date().toISOString(),
-      reforgeClass: "local",
-      triggeredBy: "test-theme",
-      mutations: [],
-      rationale: "test",
-      estimatedImpact: "none",
-    })),
-    executePlan: vi.fn(async (plan) => ({
-      plan,
-      applied: true,
-      appliedMutations: [],
-      skippedMutations: [],
-      version: 1,
-      rollbackAvailable: false,
-    })),
-  })),
+  ReforgeEngine: vi.fn(function () {
+    return {
+      applyOverride: vi.fn(async (t) => t),
+      buildPlan: vi.fn(async () => ({
+        id: "plan-1",
+        timestamp: new Date().toISOString(),
+        reforgeClass: "local",
+        triggeredBy: "test-theme",
+        mutations: [],
+        rationale: "test",
+        estimatedImpact: "none",
+      })),
+      executePlan: vi.fn(async (plan) => ({
+        plan,
+        applied: true,
+        appliedMutations: [],
+        skippedMutations: [],
+        version: 1,
+        rollbackAvailable: false,
+      })),
+    };
+  }),
 }));
 
 vi.mock("../../src/orchestrator/session-store.js", () => ({
-  SessionStore: vi.fn().mockImplementation(() => ({
-    saveSnapshot: vi.fn(async () => {}),
-    loadLatest: vi.fn(async () => null),
-    loadAllSnapshots: vi.fn(async () => []),
-  })),
+  SessionStore: vi.fn(function () {
+    return {
+      saveSnapshot: vi.fn(async () => {}),
+      loadLatest: vi.fn(async () => null),
+      loadAllSnapshots: vi.fn(async () => []),
+    };
+  }),
 }));
 
 vi.mock("../../src/feedback/feedback-collector.js", () => ({
-  FeedbackCollector: vi.fn().mockImplementation(() => ({
-    loadAllFeedback: vi.fn(async () => []),
-  })),
+  FeedbackCollector: vi.fn(function () {
+    return {
+      loadAllFeedback: vi.fn(async () => []),
+    };
+  }),
 }));
 
 // ── Imports (after mocks) ─────────────────────────────────────────────────────
