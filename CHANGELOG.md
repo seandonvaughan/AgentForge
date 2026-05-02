@@ -10,7 +10,7 @@ All notable changes to AgentForge are documented in this file.
 - Replaced Fastify static serving with containment-checked static file helpers.
 - Added ESLint 9 flat config coverage for root, package, test, script, and config sources.
 - Added release truth gates for version sync, CLI help output, changelog alignment, and dependency audit checks.
-- Added dashboard check/build and dashboard Playwright gates to the Node `20.19.x` and `22.13.x` CI/release matrices.
+- Added dashboard check/build and focused dashboard Playwright gates to the Node `20.19.x` and `22.13.x` CI/release matrices.
 - Documented the Node 20+ major-upgrade policy, SBOM, CodeQL, OSV, Gitleaks, and durable realtime job direction.
 
 ### Runtime streaming and async run execution

@@ -98,7 +98,7 @@ AgentForge requires Node.js `>=20.19.0`. CI and release gates run on Node `20.19
 
 - `corepack pnpm verify:gates` runs lint, version sync, TypeScript build, dashboard check/build, help/changelog truth checks, and the dependency audit.
 - `corepack pnpm test:run` runs the Vitest suite.
-- `corepack pnpm test:e2e:dashboard` runs the dashboard Playwright product gate.
+- `corepack pnpm test:e2e:dashboard` runs the dashboard Playwright product gate for runner streaming, live events, and health status.
 - Security posture is split across dependency audit, CodeQL, OSV Scanner, Gitleaks, and CycloneDX SBOM generation.
 
 See [docs/release-and-security-gates.md](docs/release-and-security-gates.md) for the full policy and release checklist.

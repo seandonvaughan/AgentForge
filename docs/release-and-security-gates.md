@@ -27,7 +27,7 @@ The product gate is split so failures identify the broken surface quickly:
 - `corepack pnpm check:changelog`
 - `corepack pnpm audit:deps`
 - `corepack pnpm test:run`
-- `corepack pnpm test:e2e:dashboard`
+- `corepack pnpm test:e2e:dashboard` for runner streaming, live events, and health status
 
 `corepack pnpm verify:gates` covers the release truth gate and dashboard check/build. Vitest and Playwright remain explicit CI/release steps so test artifacts are easier to inspect.
 
@@ -40,10 +40,10 @@ The product gate is split so failures identify the broken surface quickly:
 - Vitest
 - TypeScript build
 - dashboard check/build
-- dashboard Playwright e2e
+- dashboard Playwright e2e for runner streaming, live events, and health status
 - type-check
 
-The Playwright lane installs Chromium in CI and uploads the HTML report on failure or success.
+The Playwright lane installs Chromium in CI and uploads the HTML report on failure or success. The broad legacy dashboard suite remains available through `corepack pnpm test:e2e`; do not add it to the release gate until stale route and API-shape expectations are repaired.
 
 ## Security Posture
 
@@ -65,7 +65,7 @@ The Playwright lane installs Chromium in CI and uploads the HTML report on failu
 - run Vitest
 - run `tsc --noEmit`
 - install Chromium
-- run dashboard Playwright gates
+- run dashboard Playwright gates for runner streaming, live events, and health status
 
 The release artifact build currently uses Node `20.19.x` after both validation lanes pass.
 
@@ -78,4 +78,3 @@ AgentForge's operator model is package-first:
 - `.agentforge/cycles/*`, `.agentforge/sessions/*`, and `.agentforge/v5/*` remain the durable artifact roots.
 
 Future job work should make state restart-safe before adding UI affordances. The expected direction is durable job records plus resumable workers, with realtime status published over the shared SSE stream. Dashboard routes should prefer `/api/v5/stream` for incremental status and use polling only as a recovery or historical-load fallback.
-

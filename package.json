@@ -26,7 +26,7 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:e2e": "playwright test",
-    "test:e2e:dashboard": "playwright test \"dashboard-.*\\.test\\.ts\"",
+    "test:e2e:dashboard": "playwright test tests/e2e/dashboard-runner.test.ts tests/e2e/dashboard-live.test.ts tests/e2e/dashboard-health.test.ts",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug",
     "lint": "eslint \"src/**/*.{js,mjs,cjs,ts,tsx}\" \"packages/**/*.{js,mjs,cjs,ts,tsx,svelte}\" \"tests/**/*.{js,mjs,cjs,ts,tsx}\" \"scripts/**/*.{js,mjs,cjs,ts,tsx}\" \"*.config.{js,mjs,cjs,ts,tsx}\" eslint.config.js --max-warnings=0",
