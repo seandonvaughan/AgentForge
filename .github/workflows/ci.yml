@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [18, 20]
+        node-version: ['20.19.x', '22.13.x']
     steps:
       - uses: actions/checkout@v6.0.2
 
@@ -43,7 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [18, 20]
+        node-version: ['20.19.x', '22.13.x']
     steps:
       - uses: actions/checkout@v6.0.2
 
@@ -68,7 +68,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [18, 20]
+        node-version: ['20.19.x', '22.13.x']
     steps:
       - uses: actions/checkout@v6.0.2
 
@@ -101,7 +101,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [18, 20]
+        node-version: ['20.19.x', '22.13.x']
     steps:
       - uses: actions/checkout@v6.0.2
 
@@ -121,12 +121,76 @@ jobs:
       - name: Build
         run: pnpm build
 
+  dashboard:
+    name: Dashboard Gates
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ['20.19.x', '22.13.x']
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: pnpm/action-setup@v4.2.0
+        with:
+          version: 9
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v6.3.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check dashboard
+        run: pnpm dashboard:check
+
+      - name: Build dashboard
+        run: pnpm dashboard:build
+
+  product-e2e:
+    name: Product E2E
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ['20.19.x', '22.13.x']
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: pnpm/action-setup@v4.2.0
+        with:
+          version: 9
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v6.3.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run dashboard Playwright gates
+        run: pnpm test:e2e:dashboard
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: playwright-report-node-${{ matrix.node-version }}
+          path: playwright-report/
+          retention-days: 30
+
   type-check:
     name: Type Check
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [18, 20]
+        node-version: ['20.19.x', '22.13.x']
     steps:
       - uses: actions/checkout@v6.0.2
 

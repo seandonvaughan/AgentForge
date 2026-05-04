@@ -6,7 +6,7 @@
 
 **Architecture:** Single-process CLI (`npm run autonomous:cycle`) drives a `CycleRunner` through 6 stages (PLAN → STAGE → RUN → VERIFY → COMMIT → REVIEW). Phase advancement uses the existing EventBus for in-process event wiring. All external effects (vitest, git, gh CLI) are real subprocesses with safety guards.
 
-**Tech Stack:** TypeScript, Node.js 18+, Fastify (existing), SQLite (existing via better-sqlite3), Anthropic SDK, js-yaml, vitest, real git, gh CLI.
+**Tech Stack:** TypeScript, Node.js `>=20.19.0`, Fastify (existing), SQLite (existing via better-sqlite3), Anthropic SDK, js-yaml, vitest, real git, gh CLI.
 
 **Spec reference:** `docs/superpowers/specs/2026-04-06-autonomous-loop-design.md`
 

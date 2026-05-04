@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { WorkspaceAdapter } from '@agentforge/db';
 import type { WorkspaceRegistry } from '@agentforge/db';
+import { RuntimeJobSupervisor, type RuntimeEventEnvelope } from '@agentforge/core';
 import { rbacRoutes } from './rbac.js';
 import { costsRoutes } from './costs.js';
 import { approvalsRoutes } from './approvals.js';
@@ -27,6 +28,8 @@ import { agentCrudRoutes } from './agent-crud.js';
 import { agentRoutes } from './agents.js';
 import { chatRoutes } from './chat.js';
 import { runRoutes } from './run.js';
+import { jobsRoutes } from './jobs.js';
+import { globalStream } from './stream.js';
 
 export interface V5RouteOptions {
   adapter: WorkspaceAdapter;
@@ -46,6 +49,10 @@ export async function registerV5Routes(
   opts: V5RouteOptions,
 ): Promise<void> {
   const { adapter, registry } = opts;
+  const runtimeJobSupervisor = new RuntimeJobSupervisor({
+    adapter,
+    onEvent: bridgeRuntimeEventToGlobalStream,
+  });
 
   // ── Approvals Gateway ─────────────────────────────────────────────────────────
   await approvalsRoutes(app);
@@ -241,8 +248,68 @@ export async function registerV5Routes(
   await chatRoutes(app);
 
   // ── Agent Runner (manual dispatch from dashboard) ─────────────────────────
-  await runRoutes(app, { adapter });
+  await runRoutes(app, { adapter, supervisor: runtimeJobSupervisor });
+
+  // ── Runtime Jobs ──────────────────────────────────────────────────────────
+  await jobsRoutes(app, { adapter, supervisor: runtimeJobSupervisor });
   // Note: searchRoutes is registered by createServerV5 (server.ts) unconditionally
   // for both adapter and no-adapter paths. Do NOT register it here to avoid
   // FST_ERR_DUPLICATED_ROUTE when adapter+registry are provided.
+}
+
+function bridgeRuntimeEventToGlobalStream(event: RuntimeEventEnvelope): void {
+  const data: Record<string, unknown> = {
+    ...event.payload,
+    workspaceId: event.workspaceId,
+    traceId: event.traceId,
+    jobId: event.jobId,
+    sessionId: event.sessionId,
+    agentId: event.agentId,
+    sequence: event.sequence,
+  };
+
+  if (event.type === 'job_completed' || event.type === 'job_failed' || event.type === 'job_cancelled') {
+    const status = event.type === 'job_completed'
+      ? 'completed'
+      : event.type === 'job_cancelled'
+        ? 'cancelled'
+        : 'failed';
+
+    globalStream.emit({
+      type: 'workflow_event',
+      workspaceId: event.workspaceId,
+      sessionId: event.sessionId,
+      jobId: event.jobId,
+      traceId: event.traceId,
+      category: event.category,
+      message: event.message,
+      payload: { ...data, status },
+    });
+
+    const costUsd = typeof data.costUsd === 'number' ? data.costUsd : 0;
+    if (event.type === 'job_completed' && costUsd > 0) {
+      globalStream.emit({
+        type: 'cost_event',
+        workspaceId: event.workspaceId,
+        sessionId: event.sessionId,
+        jobId: event.jobId,
+        traceId: event.traceId,
+        category: event.category,
+        message: `[${event.agentId}] $${costUsd.toFixed(4)} (${String(data.model ?? 'unknown')})`,
+        payload: data,
+      });
+    }
+    return;
+  }
+
+  globalStream.emit({
+    type: 'agent_activity',
+    workspaceId: event.workspaceId,
+    sessionId: event.sessionId,
+    jobId: event.jobId,
+    traceId: event.traceId,
+    category: event.category,
+    message: event.message,
+    payload: data,
+  });
 }

@@ -57,7 +57,9 @@ export default [
       "no-empty": "off",
       "no-regex-spaces": "off",
       "no-useless-escape": "off",
+      "no-useless-assignment": "off",
       "no-unused-vars": "off",
+      "preserve-caught-error": "off",
     },
   },
   {

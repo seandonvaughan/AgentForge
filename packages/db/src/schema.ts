@@ -187,7 +187,53 @@ export const WORKSPACE_DDL = `
     total_latency_ms INTEGER NOT NULL DEFAULT 0,
     last_updated TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS runtime_jobs (
+    id TEXT PRIMARY KEY,
+    session_id TEXT UNIQUE NOT NULL,
+    trace_id TEXT UNIQUE NOT NULL,
+    agent_id TEXT NOT NULL,
+    task TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'queued',
+    model TEXT,
+    runtime_mode TEXT,
+    provider_kind TEXT,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cost_usd REAL NOT NULL DEFAULT 0,
+    error TEXT,
+    result_json TEXT NOT NULL DEFAULT '{}',
+    cancel_requested INTEGER NOT NULL DEFAULT 0,
+    started_at TEXT,
+    completed_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS runtime_events (
+    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT UNIQUE NOT NULL,
+    job_id TEXT NOT NULL REFERENCES runtime_jobs(id),
+    session_id TEXT NOT NULL,
+    trace_id TEXT NOT NULL,
+    agent_id TEXT NOT NULL,
+    type TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'run',
+    message TEXT NOT NULL,
+    data_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   CREATE INDEX IF NOT EXISTS idx_scorecards_agent ON agent_scorecards(agent_id);
+  CREATE INDEX IF NOT EXISTS idx_runtime_jobs_session ON runtime_jobs(session_id);
+  CREATE INDEX IF NOT EXISTS idx_runtime_jobs_trace ON runtime_jobs(trace_id);
+  CREATE INDEX IF NOT EXISTS idx_runtime_jobs_agent ON runtime_jobs(agent_id);
+  CREATE INDEX IF NOT EXISTS idx_runtime_jobs_status ON runtime_jobs(status);
+  CREATE INDEX IF NOT EXISTS idx_runtime_jobs_created ON runtime_jobs(created_at);
+  CREATE INDEX IF NOT EXISTS idx_runtime_events_job ON runtime_events(job_id, sequence);
+  CREATE INDEX IF NOT EXISTS idx_runtime_events_session ON runtime_events(session_id, sequence);
+  CREATE INDEX IF NOT EXISTS idx_runtime_events_trace ON runtime_events(trace_id, sequence);
+  CREATE INDEX IF NOT EXISTS idx_runtime_events_type ON runtime_events(type);
 
   CREATE INDEX IF NOT EXISTS idx_sessions_agent ON sessions(agent_id);
   CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
