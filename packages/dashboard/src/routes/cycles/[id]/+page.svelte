@@ -12,6 +12,8 @@
     markdownSections,
     resolveAgentResponseContent,
     agentRunSections,
+    phaseMetaStats,
+    type AgentRunSection,
   } from '$lib/util/phase-render';
 
   const TERMINAL = new Set(['completed', 'failed', 'killed']);
@@ -61,9 +63,16 @@
       sprintLoading = false;
     }
     // Also refresh the cycle summary (cost/tests/stage) and agents on each tick.
+    // The server emits 404 + body with cycleInProgress:true for cycles that
+    // exist but haven't written cycle.json yet — treat those as live data.
     try {
       const res = await fetch(`/api/v5/cycles/${id}`);
-      if (res.ok) cycle = await res.json();
+      if (res.ok) {
+        cycle = await res.json();
+      } else if (res.status === 404) {
+        const body = await res.json().catch(() => null);
+        if (body?.cycleInProgress) cycle = body;
+      }
     } catch {}
     loadAgents();
   }
@@ -121,8 +130,21 @@
         fetch(withWorkspace(`/api/v5/cycles/${id}`)),
         fetch(withWorkspace(`/api/v5/cycles/${id}/scoring`)),
       ]);
-      if (!cRes.ok) throw new Error(`cycle: HTTP ${cRes.status}`);
-      cycle = await cRes.json();
+      if (cRes.ok) {
+        cycle = await cRes.json();
+      } else if (cRes.status === 404) {
+        // Server returns 404 + cycleInProgress:true for cycles that exist
+        // but haven't written cycle.json yet. Honour that contract so the
+        // detail page can render the live feed while the cycle is running.
+        const body = await cRes.json().catch(() => null);
+        if (body?.cycleInProgress) {
+          cycle = body;
+        } else {
+          throw new Error(`cycle: HTTP ${cRes.status}`);
+        }
+      } else {
+        throw new Error(`cycle: HTTP ${cRes.status}`);
+      }
       if (sRes.ok) {
         scoring = await sRes.json();
       } else if (sRes.status !== 404) {
@@ -249,23 +271,8 @@
   }
 
   // MARKDOWN_FIELDS, ALWAYS_STRIP, stripMarkdownFields, markdownSections,
-  // resolveAgentResponseContent, and agentRunSections are imported from
-  // $lib/util/phase-render — see that module for documentation.
-
-  /** Extract well-known structured fields from a phase object for compact stat display. */
-  function phaseMetaStats(data: Record<string, unknown>): Array<{ key: string; value: string }> {
-    const stats: Array<{ key: string; value: string }> = [];
-    if (data['status'] != null) stats.push({ key: 'status', value: String(data['status']) });
-    const costObj = data['cost'] as Record<string, unknown> | null | undefined;
-    const costUsdVal = costObj?.['totalUsd'] ?? costObj?.['usd'] ?? data['costUsd'];
-    if (costUsdVal != null) stats.push({ key: 'cost', value: `$${Number(costUsdVal).toFixed(4)}` });
-    if (data['durationMs'] != null) stats.push({ key: 'duration', value: formatDuration(Number(data['durationMs'])) });
-    if (Array.isArray(data['agentRuns'])) stats.push({ key: 'runs', value: String((data['agentRuns'] as unknown[]).length) });
-    if (data['phase'] != null) stats.push({ key: 'phase', value: String(data['phase']) });
-    if (data['decision'] != null) stats.push({ key: 'decision', value: String(data['decision']) });
-    if (data['approved'] != null) stats.push({ key: 'approved', value: String(data['approved']) });
-    return stats;
-  }
+  // resolveAgentResponseContent, agentRunSections, and phaseMetaStats are
+  // all imported from $lib/util/phase-render — see that module for documentation.
 
   function costFraction(cost?: number | null, budget?: number | null): number {
     if (cost == null || budget == null || budget <= 0) return 0;
@@ -367,7 +374,11 @@
       {:else if sprintError && !sprint}
         <div class="empty-state">
           <p>{sprintError}</p>
-          <p class="muted" style="font-size: var(--text-xs); margin-top: var(--space-2);">The sprint file is created during the plan phase. Poll refreshes every 3s.</p>
+          {#if !isTerminal}
+            <p class="muted" style="font-size: var(--text-xs); margin-top: var(--space-2);">The sprint file is created during the plan phase. Poll refreshes every 3s.</p>
+          {:else if stage === 'killed'}
+            <p class="muted" style="font-size: var(--text-xs); margin-top: var(--space-2);">This cycle was killed before a sprint was assigned.</p>
+          {/if}
         </div>
       {:else if sprint?.items}
         {@const items = sprint.items}
@@ -375,6 +386,7 @@
         {@const inProgress = items.filter((i: any) => i.status === 'in_progress')}
         {@const planned = items.filter((i: any) => i.status === 'planned' || i.status === 'pending')}
         {@const failed = items.filter((i: any) => i.status === 'failed')}
+        {@const killed = items.filter((i: any) => i.status === 'killed')}
         {@const pct = items.length > 0 ? Math.round((completed.length / items.length) * 100) : 0}
 
         <div class="card" style="margin-bottom: var(--space-5);">
@@ -420,6 +432,14 @@
               <div class="kanban-header">Failed <span class="kanban-count">{failed.length}</span></div>
               {#each failed as item (item.id)}
                 <div class="kanban-item failed"><div class="item-title">{item.title}</div>{#if item.error}<div class="item-meta">{item.error}</div>{/if}</div>
+              {/each}
+            </div>
+          {/if}
+          {#if killed.length > 0}
+            <div class="kanban-col kanban-col--killed">
+              <div class="kanban-header">Killed <span class="kanban-count">{killed.length}</span></div>
+              {#each killed as item (item.id)}
+                <div class="kanban-item killed"><div class="item-title">{item.title}</div>{#if item.assignee}<div class="item-meta">{item.assignee}</div>{/if}</div>
               {/each}
             </div>
           {/if}
@@ -640,10 +660,11 @@
           {@const pCost = (pData as any)?.costUsd ?? (pData as any)?.cost?.totalUsd ?? null}
           {@const pDuration = (pData as any)?.durationMs ?? null}
           {@const statusVariant =
-            pStatus === 'completed' ? 'success' :
-            pStatus === 'failed'    ? 'danger'  :
-            pStatus === 'running'   ? 'info'    :
-            pData !== undefined     ? 'muted'   : null}
+            pStatus === 'completed' ? 'success'  :
+            pStatus === 'failed'    ? 'danger'   :
+            pStatus === 'killed'    ? 'warning'  :
+            pStatus === 'running'   ? 'info'     :
+            pData !== undefined     ? 'muted'    : null}
           <div class="phase-item">
             <button
               class="phase-toggle"
@@ -695,6 +716,7 @@
                             class="phase-meta-val"
                             class:phase-meta-val--success={stat.key === 'status' && stat.value === 'completed'}
                             class:phase-meta-val--danger={stat.key === 'status' && stat.value === 'failed'}
+                            class:phase-meta-val--warning={stat.key === 'status' && stat.value === 'killed'}
                           >{stat.value}</span>
                         </div>
                       {/each}
@@ -722,7 +744,15 @@
                   <!-- Per-agent run responses rendered as markdown -->
                   {#each phaseAgentRuns as run, i}
                     <div class="phase-md-section">
-                      <div class="phase-md-label">agentRun[{i}] — {run.agentId}</div>
+                      <div class="phase-md-run-header">
+                        <span class="phase-md-label">{run.agentId}</span>
+                        {#if run.costUsd != null}
+                          <span class="phase-run-cost">${run.costUsd.toFixed(4)}</span>
+                        {/if}
+                        {#if run.durationMs != null}
+                          <span class="phase-run-dur">{formatDuration(run.durationMs)}</span>
+                        {/if}
+                      </div>
                       <div class="phase-md-body">
                         <MarkdownRenderer content={run.response} />
                       </div>
@@ -1006,10 +1036,11 @@
     border-radius: var(--radius-full);
     flex-shrink: 0;
   }
-  .phase-status-dot--success { background: var(--color-success); }
-  .phase-status-dot--danger  { background: var(--color-danger); }
-  .phase-status-dot--info    { background: var(--color-info); animation: pulse-slow 1.4s ease-in-out infinite; }
-  .phase-status-dot--muted   { background: var(--color-border); }
+  .phase-status-dot--success  { background: var(--color-success); }
+  .phase-status-dot--danger   { background: var(--color-danger); }
+  .phase-status-dot--warning  { background: var(--color-warning); }
+  .phase-status-dot--info     { background: var(--color-info); animation: pulse-slow 1.4s ease-in-out infinite; }
+  .phase-status-dot--muted    { background: var(--color-border); }
   @keyframes pulse-slow {
     0%, 100% { opacity: 1; }
     50%       { opacity: 0.3; }
@@ -1062,8 +1093,9 @@
   .phase-runs { font-size: var(--text-xs); color: var(--color-text-muted); }
 
   /* Status-colored value in stat chips */
-  .phase-meta-val--success { color: var(--color-success); }
-  .phase-meta-val--danger  { color: var(--color-danger); }
+  .phase-meta-val--success  { color: var(--color-success); }
+  .phase-meta-val--danger   { color: var(--color-danger); }
+  .phase-meta-val--warning  { color: var(--color-warning); }
 
   .phase-md-section {
     border-top: 1px solid var(--color-border);
@@ -1087,12 +1119,35 @@
   .phase-md-section--error .phase-md-label {
     color: var(--color-danger);
   }
+  /* Run header: agent id label + cost/duration chips side by side */
+  .phase-md-run-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+  }
   .phase-md-label {
     font-size: var(--text-xs);
     font-family: var(--font-mono);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.06em;
+    color: var(--color-text-muted);
+  }
+  /* Cost chip next to the agent id in the run header */
+  .phase-run-cost {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-warning);
+    background: rgba(245,166,35,0.08);
+    border: 1px solid rgba(245,166,35,0.2);
+    border-radius: var(--radius-sm);
+    padding: 1px var(--space-2);
+  }
+  /* Duration chip next to the agent id in the run header */
+  .phase-run-dur {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
     color: var(--color-text-muted);
   }
   /* Rendered markdown prose gets a subtle left accent strip so it reads
@@ -1183,6 +1238,7 @@
   .kanban-item.in-progress { border-left: 3px solid var(--color-brand); }
   .kanban-item.completed { border-left: 3px solid var(--color-success); opacity: 0.85; }
   .kanban-item.failed { border-left: 3px solid var(--color-danger); }
+  .kanban-item.killed { border-left: 3px solid var(--color-warning); opacity: 0.75; }
   .kanban-item .item-title {
     font-size: var(--text-sm);
     color: var(--color-text);

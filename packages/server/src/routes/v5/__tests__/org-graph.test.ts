@@ -380,5 +380,26 @@ describe('GET /api/v5/org-graph — real project data', () => {
 
     // Delegation hierarchy should exist (ceo → cto, cto → architect, etc.)
     expect(body.data.edges.length).toBeGreaterThan(0);
+
+    // ceo delegates to cto — edge comes from ceo.yaml collaboration.can_delegate_to
+    const ceoToCto = body.data.edges.filter(e => e.from === 'ceo' && e.to === 'cto');
+    expect(ceoToCto).toHaveLength(1); // exactly one edge, no duplicates
+
+    // ceo also delegates to coo and cfo (C-suite)
+    expect(body.data.edges.some(e => e.from === 'ceo' && e.to === 'coo')).toBe(true);
+    expect(body.data.edges.some(e => e.from === 'ceo' && e.to === 'cfo')).toBe(true);
+
+    // cto delegates to architect (full chain: ceo → cto → architect)
+    expect(body.data.edges.some(e => e.from === 'cto' && e.to === 'architect')).toBe(true);
+
+    // ceo is the organisation root — no agent delegates TO ceo
+    const edgesToCeo = body.data.edges.filter(e => e.to === 'ceo');
+    expect(edgesToCeo).toHaveLength(0);
+
+    // Full C-suite must be present as nodes
+    expect(ids.has('cto')).toBe(true);
+    expect(ids.has('coo')).toBe(true);
+    expect(ids.has('cfo')).toBe(true);
+    expect(ids.has('architect')).toBe(true);
   });
 });

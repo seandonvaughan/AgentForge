@@ -8,7 +8,7 @@
  *   npx tsx scripts/run-sprint.ts 4.3   # runs v4.3
  */
 
-import { AutonomousSprintFramework } from "../src/autonomous/sprint-framework.js";
+import { AutonomousSprintFramework } from "@agentforge/core";
 
 const SPRINT_VERSION = process.argv[2] ?? "4.4";
 const fw = new AutonomousSprintFramework();
@@ -207,7 +207,7 @@ const item23 = fw.addItem(sprint.sprintId, {
 });
 
 fw.setSuccessCriteria(sprint.sprintId, [
-  "All 23 directive items implemented in dashboard/index.html",
+  "All 23 directive items implemented in the SvelteKit dashboard (packages/dashboard/)",
   "Dark/light theme toggle works and persists preference",
   "All sections have live simulated data with 5-second refresh",
   "Keyboard navigation: Escape closes modals, / focuses search",

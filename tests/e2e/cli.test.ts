@@ -30,6 +30,9 @@ function runCLI(
       cwd,
       stdio: ["pipe", "pipe", "pipe"],
       timeout,
+      // Suppress deprecation warnings emitted by root CLI compat wrappers so
+      // test stderr assertions aren't polluted by expected [compat] notices.
+      env: { ...process.env, AGENTFORGE_SUPPRESS_DEPRECATION: "1" },
     });
 
     let stdout = "";

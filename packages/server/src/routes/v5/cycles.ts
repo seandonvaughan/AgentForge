@@ -54,7 +54,12 @@ function resolveProjectRoot(
       : typeof headerVal === 'string' && headerVal.length > 0
         ? headerVal
         : null);
-  if (!workspaceId) return { projectRoot: fallbackRoot };
+  // No workspaceId, or the literal sentinel "default" — use server root.
+  // cycleSessions persists workspaceId="default" for cycles launched without
+  // an explicit workspace selection; without this fallthrough every such
+  // cycle's detail + approval endpoint 404s once the dashboard passes the
+  // sentinel back as a query param.
+  if (!workspaceId || workspaceId === 'default') return { projectRoot: fallbackRoot };
   const ws = getWorkspace(workspaceId);
   if (!ws) {
     return { error: { status: 404, body: { error: 'workspace not found', workspaceId } } };
@@ -215,21 +220,30 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleListRow | null 
     } catch { /* ignore */ }
   }
 
-  // v6.7.4 stale-cycle detection: if the last event is older than 5 minutes
-  // AND the session manager has no live record of this cycle, the parent
-  // process must be dead. Mark it crashed instead of showing it as running
-  // forever. This catches cycles spawned before the session manager existed
-  // and parent processes that died without writing cycle.json.
-  if (lastEventAt > 0 && Date.now() - lastEventAt > 5 * 60_000) {
-    try {
-      const cycleSessions = require('../../lib/cycle-sessions.js') as typeof import('../../lib/cycle-sessions.js');
-      const session = cycleSessions.get(cycleId);
-      const isLive = session && session.status === 'running' && cycleSessions.isPidAlive(session.pid);
-      if (!isLive) {
-        stage = 'crashed';
-      }
-    } catch { /* if session manager unavailable, fall through */ }
-  }
+  // v10.7.0: consult the session registry as the authoritative source of truth
+  // for terminal state. A cycle that was stopped via POST /cycles/:id/stop has
+  // session.status === 'killed' — use that exact word so the list matches the
+  // detail page. A session with status === 'crashed' / 'failed' / 'completed'
+  // propagates the same way. This replaces the old 5-minute staleness +
+  // stage='crashed' heuristic, which produced list/detail disagreement because
+  // the detail endpoint now consults the session registry directly.
+  //
+  // Fallback: if no session record exists (cycles predating the registry) OR
+  // the session still shows running but last event is >5min old, stamp the row
+  // as 'crashed' so the UI doesn't show an obviously-dead cycle as in-progress.
+  const TERMINAL_STATUSES = new Set(['killed', 'crashed', 'failed', 'completed']);
+  try {
+    const session = cycleSessions.get(cycleId);
+    if (session && TERMINAL_STATUSES.has(session.status)) {
+      stage = session.status;
+    } else if (
+      lastEventAt > 0 &&
+      Date.now() - lastEventAt > 5 * 60_000 &&
+      (!session || !cycleSessions.isPidAlive(session.pid))
+    ) {
+      stage = 'crashed';
+    }
+  } catch { /* session manager unavailable — leave stage as derived from events */ }
 
   // Aggregate live cost + test totals from phases/<name>.json so the list
   // row matches what the detail page shows. Without this, running cycles
@@ -539,13 +553,18 @@ export async function cyclesRoutes(
     }
   });
 
-  // POST /api/v5/cycles/:id/approve ──────────────────────────────────────────
+  // POST /api/v5/cycles/:id/approval (canonical) ──────────────────────────────
+  // POST /api/v5/cycles/:id/approve  (legacy alias — kept for backward compat)
+  //
   // Writes the approval-decision.json that BudgetApproval.pollDecisionFile
   // is waiting for. Body shape: { approvedItemIds: string[], rejectedItemIds?: string[] }
   // If body.approveAll === true, every within-budget item is approved and
   // every overflow item rejected (the common "yes, ship the within-budget
-  // batch" path). Drives the dashboard approval modal.
-  app.post('/api/v5/cycles/:id/approve', async (req, reply) => {
+  // batch" path). Drives the dashboard ApprovalModal (via approvalsStore SSE).
+  //
+  // Both /approval (GET+POST) and /approve (POST alias) share the same handler
+  // so the REST resource is uniform: GET /approval reads, POST /approval writes.
+  async function handleApprovalDecision(req: import('fastify').FastifyRequest, reply: import('fastify').FastifyReply) {
     const { id } = req.params as { id: string };
     if (!SAFE_ID.test(id)) return reply.status(400).send({ error: 'Invalid cycle id' });
     const br = baseForRequest(req);
@@ -611,7 +630,12 @@ export async function cyclesRoutes(
     } catch (err) {
       return reply.status(500).send({ error: `Failed to write decision: ${(err as Error).message}` });
     }
-  });
+  }
+
+  // Canonical endpoint: GET+POST share the same /approval resource URL.
+  app.post('/api/v5/cycles/:id/approval', handleApprovalDecision);
+  // Legacy alias — kept so existing CLI/curl scripts still work.
+  app.post('/api/v5/cycles/:id/approve', handleApprovalDecision);
 
   // POST /api/v5/cycles/:id/stop ────────────────────────────────────────────
   // Graceful stop: SIGTERM to the process group, wait 10s, then SIGKILL.
@@ -788,10 +812,43 @@ export async function cyclesRoutes(
       }
     }
     const passRate = testsTotal > 0 ? testsPassed / testsTotal : 0;
-    // cycle.json absent means cycle is still in progress. Return 404 with
-    // cycleInProgress: true so callers can distinguish "not found" from
-    // "running but not yet terminal". The 404 status prevents stale cache
-    // hits while the partial payload lets the dashboard render a live feed.
+
+    // Cross-check the session registry before deciding "in progress". A killed
+    // or crashed cycle never writes cycle.json, so filesystem-only inference
+    // is ambiguous: we cannot tell "running, about to write cycle.json" apart
+    // from "dead, never will". cycle-sessions knows the truth because it
+    // tracked the process lifecycle. If the session shows a terminal status,
+    // emit a 200 with the partial data plus status/exitNote so the dashboard
+    // renders a final state instead of polling forever.
+    const session = cycleSessions.get(id);
+    const TERMINAL: cycleSessions.CycleSessionStatus[] = ['killed', 'crashed', 'failed', 'completed'];
+    if (session && TERMINAL.includes(session.status)) {
+      const completedAt = session.lastSeenAt ?? new Date().toISOString();
+      const startIso = startedAt ?? session.startedAt ?? completedAt;
+      return reply.status(200).send({
+        cycleId: id,
+        sprintVersion,
+        stage: session.status === 'killed' ? 'killed' : lastStage,
+        status: session.status,
+        exitNote: session.exitNote ?? null,
+        startedAt: startIso,
+        completedAt,
+        durationMs: Date.now() - new Date(startIso).getTime(),
+        cost: { totalUsd: totalCostUsd, budgetUsd: 200, byAgent: costByAgent, byPhase: costByPhase },
+        tests: { passed: testsPassed, failed: testsFailed, skipped: 0, total: testsTotal, passRate, newFailures: [] },
+        git: { branch: '', commitSha: null, filesChanged: [] },
+        pr: { url: null, number: null, draft: false },
+        agentRunCount,
+        cycleInProgress: false,
+        partialTerminal: true,
+      });
+    }
+
+    // cycle.json absent and session is still running (or unknown) — classic
+    // in-progress case. Return 404 + cycleInProgress: true so callers can
+    // distinguish "not found" from "running but not yet terminal". The 404
+    // status prevents stale cache hits while the partial payload lets the
+    // dashboard render a live feed.
     return reply.status(404).send({
       cycleId: id,
       sprintVersion,
@@ -1130,6 +1187,21 @@ export async function cyclesRoutes(
     if ('error' in r) return reply.status(r.error.status).send(r.error.body);
     const reqProjectRoot = r.projectRoot;
     const base = cyclesBaseDir(reqProjectRoot);
+
+    // Honour launch-time budget / item-cap overrides from the request body.
+    // These are handed to the subprocess via env vars; the CLI's runCycleAction
+    // mirrors the previewCycle pattern and mutates config before constructing
+    // CycleRunner. Without this thread-through the cycle-runner always uses
+    // loadCycleConfig() defaults, so dashboard-supplied budgets are silently
+    // ignored — which is how cycle 75bfaf96 ran at $200 despite a $500 launch.
+    const body = (req.body ?? {}) as { budgetUsd?: number; maxItems?: number };
+    const budgetEnv = typeof body.budgetUsd === 'number' && body.budgetUsd > 0
+      ? { AUTONOMOUS_BUDGET_USD: String(body.budgetUsd) }
+      : {};
+    const maxItemsEnv = typeof body.maxItems === 'number' && body.maxItems > 0
+      ? { AUTONOMOUS_MAX_ITEMS: String(body.maxItems) }
+      : {};
+
     const cycleId = randomUUID();
     const startedAt = new Date().toISOString();
     const cycleDir = safeJoin(base, cycleId);
@@ -1150,11 +1222,10 @@ export async function cyclesRoutes(
       return reply.status(500).send({ error: `Failed to open log file: ${(err as Error).message}` });
     }
 
-    // TODO(v6.5.0): the CLI currently generates its own cycleId. We pass
-    // AUTONOMOUS_CYCLE_ID via env so the CLI can pick it up once wired.
-    // Until then the subprocess-written cycle dir may differ from the API
-    // response's cycleId. Clients should treat the API cycleId as the
-    // canonical pointer and fall back to scanning recent dirs if needed.
+    // Pass AUTONOMOUS_CYCLE_ID so the CLI uses the same pre-allocated id.
+    // CycleRunner and CycleLogger both honour options.cycleId (injected by the
+    // CLI) which takes priority over the env var, which in turn takes priority
+    // over a fresh UUID — so the cycle dir always matches this API response.
     const nodeBin = process.execPath;
     // CLI binary always lives in the server's project root (it's the
     // AgentForge monorepo), NOT in the target workspace.
@@ -1169,7 +1240,7 @@ export async function cyclesRoutes(
         cwd: reqProjectRoot,
         detached: true,
         stdio: ['ignore', logFd, logFd],
-        env: { ...process.env, AUTONOMOUS_CYCLE_ID: cycleId },
+        env: { ...process.env, AUTONOMOUS_CYCLE_ID: cycleId, ...budgetEnv, ...maxItemsEnv },
       });
       child.unref();
       pid = child.pid ?? -1;

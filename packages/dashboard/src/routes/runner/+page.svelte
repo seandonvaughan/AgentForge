@@ -39,6 +39,8 @@
     sessionId?: string;
     providerKind?: string;
     runtimeModeResolved?: string;
+    /** Raw model ID from the run (e.g. "claude-sonnet-4-5") — used for accurate badge display on replay. */
+    model?: string;
   }
 
   interface StreamEnvelope {
@@ -395,6 +397,7 @@
         status: 'running',
         startedAt: new Date().toISOString(),
         sessionId,
+        ...(typeof json.model === 'string' ? { model: json.model } : {}),
         ...(typeof json.providerKind === 'string' ? { providerKind: json.providerKind } : {}),
         ...(typeof json.runtimeModeResolved === 'string' ? { runtimeModeResolved: json.runtimeModeResolved } : {}),
       };
@@ -450,7 +453,10 @@
     output = run.output ?? '(No output captured)';
     outputAgentName = run.agentId;
     outputTimestamp = new Date(run.startedAt).toLocaleTimeString('en-US', { hour12: false });
-    outputModel = MODEL_TIER_META[getAgentModel(run.agentId)]?.label ?? '—';
+    // Prefer the stored raw model ID (accurate); fall back to the agent's current configured tier.
+    outputModel = run.model
+      ? modelIdToTierLabel(run.model)
+      : (MODEL_TIER_META[getAgentModel(run.agentId)]?.label ?? '—');
     outputProviderKind = formatProviderKind(run.providerKind);
     outputRuntimeMode = formatRuntimeMode(run.runtimeModeResolved);
     currentSessionId = run.sessionId ?? null;
@@ -542,6 +548,7 @@
         startedAt: (r.startedAt ?? new Date().toISOString()) as string,
         output: typeof r.response === 'string' ? r.response : (typeof r.output === 'string' ? r.output : undefined),
         sessionId: (r.sessionId ?? r.id ?? '') as string,
+        model: typeof r.model === 'string' ? r.model : undefined,
         providerKind: typeof r.providerKind === 'string' ? r.providerKind : undefined,
         runtimeModeResolved: typeof r.runtimeModeResolved === 'string' ? r.runtimeModeResolved : undefined,
       })).filter((r: RunHistory) => r.id && r.agentId);
@@ -597,7 +604,7 @@
             bind:value={agentSearch}
             disabled={running}
           />
-          <select id="agent-select" class="form-select" bind:value={selectedAgent} disabled={running} size={Math.min(filteredAgents.length, 8)}>
+          <select id="agent-select" class="form-select" bind:value={selectedAgent} disabled={running} size={Math.min(Math.max(filteredAgents.length, 1), 8)}>
             {#each filteredAgents as agent (agent.agentId)}
               <option value={agent.agentId}>
                 [{agent.model.charAt(0).toUpperCase()}] {agent.agentId}
@@ -623,9 +630,15 @@
           id="task-input"
           class="form-textarea"
           rows={4}
-          placeholder="Describe what you want the agent to do…"
+          placeholder="Describe what you want the agent to do… (Ctrl+Enter to run)"
           bind:value={taskInput}
           disabled={running}
+          onkeydown={(e) => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+              e.preventDefault();
+              handleRun();
+            }
+          }}
         ></textarea>
       </div>
 
@@ -1129,6 +1142,29 @@
     align-items: center;
     gap: var(--space-2);
     flex-wrap: wrap;
+  }
+
+  /* Copy button — compact text button, not a primary CTA */
+  .btn-copy {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-text-faint);
+    background: transparent;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: 2px 8px;
+    cursor: pointer;
+    transition: color var(--duration-fast), border-color var(--duration-fast), background var(--duration-fast);
+    white-space: nowrap;
+    font-family: var(--font-sans);
+  }
+
+  .btn-copy:hover {
+    color: var(--color-text);
+    border-color: var(--color-border-strong);
+    background: var(--color-surface-2);
   }
 
   .output-agent {

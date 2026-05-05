@@ -425,6 +425,167 @@ describe('GET /api/v5/sprints/:version', () => {
     expect(body.data.autonomous).toBe(true);
     expect(body.data.theme).toBe('Resilience');
   });
+
+  it('extracts testCount fields from nested results object (v5.4-era format)', async () => {
+    // v5.4–v5.8 stored test metrics inside a results sub-object rather than at
+    // the top level. The normalizer must surface them as first-class fields.
+    const root = setup();
+    writeFileSync(join(root, '.agentforge/sprints/v5.4.json'), JSON.stringify({
+      version: '5.4',
+      name: 'v5.4',
+      phase: 'completed',
+      items: [],
+      results: {
+        testsPassingBefore: 2708,
+        testsPassingAfter: 2914,
+        newTests: 206,
+        autonomyGates: {
+          orchestration: 'PASSED — parallel agents OK',
+          sprintLoop: 'PASSED — dry-run clean',
+        },
+        newFiles: ['packages/core/src/workflow-runner.ts'],
+      },
+    }));
+    app = await buildApp(root);
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/sprints/5.4' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.data.testCountBefore).toBe(2708);
+    expect(body.data.testCountAfter).toBe(2914);
+    expect(body.data.testCountDelta).toBe(206);
+    expect(body.data.autonomyGates).toEqual({
+      orchestration: 'PASSED — parallel agents OK',
+      sprintLoop: 'PASSED — dry-run clean',
+    });
+    expect(body.data.newFiles).toEqual(['packages/core/src/workflow-runner.ts']);
+  });
+
+  it('extracts testCount from flat testsAdded/testsPrior/testsTotal aliases (v5.7-era format)', async () => {
+    const root = setup();
+    writeFileSync(join(root, '.agentforge/sprints/v5.7.json'), JSON.stringify({
+      version: '5.7',
+      name: 'v5.7',
+      phase: 'completed',
+      items: [],
+      testsAdded: 101,
+      testsPrior: 3105,
+      testsTotal: 3206,
+    }));
+    app = await buildApp(root);
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/sprints/5.7' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.data.testCountBefore).toBe(3105);
+    expect(body.data.testCountAfter).toBe(3206);
+    expect(body.data.testCountDelta).toBe(101);
+  });
+
+  it('extracts cto_brief alias into ctoBrief field (v5.3-era format)', async () => {
+    const root = setup();
+    writeFileSync(join(root, '.agentforge/sprints/v5.3.json'), JSON.stringify({
+      version: '5.3',
+      name: 'v5.3',
+      phase: 'completed',
+      items: [],
+      cto_brief: 'v5.3 crosses the autonomy threshold.',
+    }));
+    app = await buildApp(root);
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/sprints/5.3' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.data.ctoBrief).toBe('v5.3 crosses the autonomy threshold.');
+  });
+
+  it('extracts risks array from sprint (v4.7-era format)', async () => {
+    const root = setup();
+    writeFileSync(join(root, '.agentforge/sprints/v4.7.json'), JSON.stringify({
+      version: '4.7',
+      name: 'v4.7',
+      phase: 'completed',
+      items: [],
+      risks: [
+        { risk: 'SQLite contention', mitigation: 'WAL mode + pooling', owner: 'dba' },
+        { risk: 'SSE backpressure', mitigation: 'Buffer cap at 100 events' },
+      ],
+    }));
+    app = await buildApp(root);
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/sprints/4.7' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(Array.isArray(body.data.risks)).toBe(true);
+    expect(body.data.risks).toHaveLength(2);
+    expect(body.data.risks[0].risk).toBe('SQLite contention');
+    expect(body.data.risks[0].mitigation).toBe('WAL mode + pooling');
+    expect(body.data.risks[0].owner).toBe('dba');
+    expect(body.data.risks[1].owner).toBeUndefined();
+  });
+
+  it('extracts newHires array from sprint (v4.7-era format)', async () => {
+    const root = setup();
+    writeFileSync(join(root, '.agentforge/sprints/v4.7b.json'), JSON.stringify({
+      version: '4.7b',
+      name: 'v4.7b',
+      phase: 'completed',
+      items: [],
+      newHires: [
+        {
+          agent: 'data-analyst',
+          model: 'sonnet',
+          reportsTo: 'cfo',
+          rationale: 'Ad-hoc query capability against audit database.',
+        },
+        {
+          agent: 'api-gateway-engineer',
+          model: 'sonnet',
+          reportsTo: 'engineering-manager-backend',
+        },
+      ],
+    }));
+    app = await buildApp(root);
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/sprints/4.7b' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(Array.isArray(body.data.newHires)).toBe(true);
+    expect(body.data.newHires).toHaveLength(2);
+    expect(body.data.newHires[0].agent).toBe('data-analyst');
+    expect(body.data.newHires[0].model).toBe('sonnet');
+    expect(body.data.newHires[0].reportsTo).toBe('cfo');
+    expect(body.data.newHires[0].rationale).toBe('Ad-hoc query capability against audit database.');
+    expect(body.data.newHires[1].rationale).toBeUndefined();
+  });
+
+  it('top-level testCount fields take precedence over results.* fallback', async () => {
+    // Regression guard: if both top-level and results.* are present, the top-level
+    // explicit values must win. This matches the ?? operator chain order.
+    const root = setup();
+    writeFileSync(join(root, '.agentforge/sprints/v9.5.json'), JSON.stringify({
+      version: '9.5',
+      name: 'v9.5',
+      phase: 'completed',
+      items: [],
+      testCountBefore: 100,
+      testCountAfter: 150,
+      testCountDelta: 50,
+      results: {
+        testsPassingBefore: 999,  // must be ignored
+        testsPassingAfter: 999,
+        newTests: 999,
+      },
+    }));
+    app = await buildApp(root);
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/sprints/9.5' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.data.testCountBefore).toBe(100);
+    expect(body.data.testCountAfter).toBe(150);
+    expect(body.data.testCountDelta).toBe(50);
+  });
 });
 
 describe('deriveStatus phase normalization', () => {

@@ -7,14 +7,35 @@
  * caching correctly. The body still carries live phase/event data so the
  * dashboard can render a live feed. Callers must parse JSON even on 404.
  *
+ * v10.7.0 addition: when cycle.json is absent AND cycle-sessions shows the
+ * cycle is terminal (killed/crashed/failed/completed), the endpoint returns
+ * HTTP 200 with partialTerminal:true and cycleInProgress:false. This closes
+ * the "cycle says it is still running and it isn't" gap that previously kept
+ * dashboards polling dead cycles forever.
+ *
  * Prior to this change, the route returned 200 to avoid the dashboard treating
  * 404 as a fatal error. The dashboard now reads JSON on both 200 and 404.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+
+// Stub cycle-sessions so tests don't read/write the user's ~/.agentforge/
+// sessions.json. Each test sets sessionFixture to control get() output.
+let sessionFixture: Record<string, unknown> | null = null;
+vi.mock('../../../lib/cycle-sessions.js', () => ({
+  get: (id: string) => (sessionFixture && (sessionFixture as any).cycleId === id ? sessionFixture : null),
+  list: () => (sessionFixture ? [sessionFixture] : []),
+  reap: () => ({ reaped: 0, stillRunning: 0 }),
+  startReaper: () => ({ stop: () => {} }),
+  register: () => {},
+  markTerminal: () => {},
+  stop: async () => ({ ok: true, status: 'killed', message: 'mocked' }),
+  isPidAlive: () => false,
+}));
+
 import { cyclesRoutes } from '../cycles.js';
 
 let tmpRoot: string;
@@ -25,11 +46,13 @@ beforeEach(async () => {
   mkdirSync(join(tmpRoot, '.agentforge/cycles'), { recursive: true });
   app = Fastify({ logger: false });
   await cyclesRoutes(app, { projectRoot: tmpRoot });
+  sessionFixture = null;
 });
 
 afterEach(async () => {
   await app.close();
   rmSync(tmpRoot, { recursive: true, force: true });
+  sessionFixture = null;
 });
 
 function makeCycleDir(id: string): string {
@@ -101,6 +124,134 @@ describe('GET /api/v5/cycles/:id', () => {
     const body = res.json();
     expect(body.cycleInProgress).toBe(true);
     expect(body.stage).toBe('plan');
+  });
+
+  it('returns 200 with cycle.json for a killed cycle (kill-switch trip writes cycle.json)', async () => {
+    const id = '55555555-5555-5555-5555-555555555555';
+    const dir = makeCycleDir(id);
+    // kill-switch trips write cycle.json with stage:'killed' + killSwitch metadata
+    writeFileSync(
+      join(dir, 'cycle.json'),
+      JSON.stringify({
+        cycleId: id,
+        stage: 'killed',
+        sprintVersion: '11.1.0',
+        killSwitch: { reason: 'testFloor', detail: 'test pass rate 40% < floor 60%' },
+      }),
+    );
+
+    const res = await app.inject({ method: 'GET', url: `/api/v5/cycles/${id}` });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.stage).toBe('killed');
+    expect(body.killSwitch?.reason).toBe('testFloor');
+    // killed cycles are terminal — should NOT have cycleInProgress
+    expect(body.cycleInProgress).toBeUndefined();
+  });
+
+  it('synthesizes partial payload for a hard-killed cycle without cycle.json, last stage from events', async () => {
+    const id = '66666666-6666-6666-6666-666666666666';
+    const dir = makeCycleDir(id);
+    // OS-level kill: no cycle.json, but events.jsonl shows the kill signal was recorded
+    const events = [
+      { type: 'phase.start', phase: 'audit', at: '2026-04-10T09:00:00.000Z', sprintVersion: '11.1.0' },
+      { type: 'phase.start', phase: 'execute', at: '2026-04-10T09:05:00.000Z' },
+      { stage: 'killed', at: '2026-04-10T09:12:00.000Z', type: 'cycle.killed' },
+    ];
+    writeFileSync(
+      join(dir, 'events.jsonl'),
+      events.map((e) => JSON.stringify(e)).join('\n') + '\n',
+    );
+
+    const res = await app.inject({ method: 'GET', url: `/api/v5/cycles/${id}` });
+    // cycle.json absent → synthesized 404 payload
+    expect(res.statusCode).toBe(404);
+    const body = res.json();
+    // last stage event records 'killed', so the dashboard knows it's terminal
+    expect(body.stage).toBe('killed');
+    expect(body.sprintVersion).toBe('11.1.0');
+    expect(body.cycleInProgress).toBe(true);
+  });
+
+  it('returns 200 + partialTerminal when cycle-sessions reports killed but cycle.json is missing', async () => {
+    // Reproduces the e148f3eb bug: dashboard polls a dead cycle forever because
+    // the detail endpoint infers "in progress" from the filesystem alone. The
+    // fix is to cross-check cycle-sessions — a terminal session wins over the
+    // missing-cycle.json heuristic.
+    const id = '77777777-7777-7777-7777-777777777777';
+    const dir = makeCycleDir(id);
+    writeFileSync(
+      join(dir, 'events.jsonl'),
+      JSON.stringify({ type: 'phase.start', phase: 'plan', at: '2026-04-17T21:56:40.000Z', sprintVersion: '10.7.0' }) + '\n',
+    );
+    sessionFixture = {
+      cycleId: id,
+      pid: 30543,
+      pgid: 30543,
+      workspaceId: 'default',
+      workspaceRoot: tmpRoot,
+      startedAt: '2026-04-17T21:56:39.812Z',
+      lastSeenAt: '2026-04-17T22:01:02.474Z',
+      status: 'killed',
+      exitNote: 'SIGKILL after grace period expired',
+    };
+
+    const res = await app.inject({ method: 'GET', url: `/api/v5/cycles/${id}` });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.cycleInProgress).toBe(false);
+    expect(body.partialTerminal).toBe(true);
+    expect(body.status).toBe('killed');
+    expect(body.stage).toBe('killed');
+    expect(body.exitNote).toBe('SIGKILL after grace period expired');
+    expect(body.completedAt).toBe('2026-04-17T22:01:02.474Z');
+  });
+
+  it('returns 200 + partialTerminal for a crashed session (PID disappeared)', async () => {
+    const id = '88888888-8888-8888-8888-888888888888';
+    makeCycleDir(id);
+    sessionFixture = {
+      cycleId: id,
+      pid: 9999,
+      pgid: 9999,
+      workspaceId: 'default',
+      workspaceRoot: tmpRoot,
+      startedAt: '2026-04-17T10:00:00.000Z',
+      lastSeenAt: '2026-04-17T10:01:00.000Z',
+      status: 'crashed',
+      exitNote: 'PID disappeared (reaper sweep)',
+    };
+
+    const res = await app.inject({ method: 'GET', url: `/api/v5/cycles/${id}` });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.status).toBe('crashed');
+    expect(body.cycleInProgress).toBe(false);
+    expect(body.partialTerminal).toBe(true);
+  });
+
+  it('still returns 404 + cycleInProgress for a running session (no terminal handoff)', async () => {
+    const id = '99999999-9999-9999-9999-999999999999';
+    const dir = makeCycleDir(id);
+    writeFileSync(
+      join(dir, 'events.jsonl'),
+      JSON.stringify({ type: 'phase.start', phase: 'execute', at: '2026-04-17T12:00:00.000Z' }) + '\n',
+    );
+    sessionFixture = {
+      cycleId: id,
+      pid: 12345,
+      pgid: 12345,
+      workspaceId: 'default',
+      workspaceRoot: tmpRoot,
+      startedAt: '2026-04-17T12:00:00.000Z',
+      lastSeenAt: '2026-04-17T12:00:10.000Z',
+      status: 'running',
+    };
+
+    const res = await app.inject({ method: 'GET', url: `/api/v5/cycles/${id}` });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().cycleInProgress).toBe(true);
+    expect(res.json().partialTerminal).toBeUndefined();
   });
 
   it('skips malformed events.jsonl lines without crashing', async () => {

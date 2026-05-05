@@ -1,0 +1,616 @@
+{
+  "sprints": [
+    {
+      "version": "12.0.0",
+      "sprintId": "v12-0-0-autonomous",
+      "title": "AgentForge v12.0.0 — Autonomous Cycle",
+      "createdAt": "2026-04-17T14:43:47.171Z",
+      "phase": "release",
+      "items": [
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-16-v107-convergence-purge-md-32",
+          "title": "Investigate and fix 8 failing tests from cycle 4424e214",
+          "description": "Active regression from the most recent cycle blocks CI confidence and risks masking new breakage. Fixing or retiring outdated tests is a prerequisite before any other code ships.",
+          "priority": "P0",
+          "assignee": "debugger",
+          "status": "completed",
+          "estimatedCostUsd": 7,
+          "tags": [
+            "fix",
+            "regression",
+            "ci",
+            "tests"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-16-v107-convergence-purge-md-34",
+          "title": "Run svelte-check on packages/dashboard and fix every type error",
+          "description": "Known MODEL_TIERS undefined errors produce silent runtime failures; resolving them unblocks safe iteration on all Svelte routes and is the fastest path to a green type-check baseline.",
+          "priority": "P0",
+          "assignee": "linter",
+          "status": "completed",
+          "estimatedCostUsd": 4,
+          "tags": [
+            "fix",
+            "types",
+            "svelte",
+            "dashboard"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-08-memory-wiring-sprint-md-19",
+          "title": "Define memory entry schema in packages/core/src/memory/types.ts with writeMemoryEntry helper",
+          "description": "Foundation type for the entire memory subsystem; five downstream items cannot proceed until the schema and file-lock helper exist. Highest unblocking leverage of any single item.",
+          "priority": "P0",
+          "assignee": "architect",
+          "status": "completed",
+          "estimatedCostUsd": 5,
+          "tags": [
+            "chore",
+            "memory",
+            "types",
+            "foundation"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-16-v107-convergence-purge-md-8",
+          "title": "Delete legacy root Fastify server at src/server/main.ts and src/server/server.ts",
+          "description": "Highest-leverage convergence action; prerequisite for route-file removals, legacy dashboard deletion, and the CI gate. Risk is moderate but scope is well-defined by the route migration checklist.",
+          "priority": "P1",
+          "assignee": "backend-qa",
+          "status": "completed",
+          "estimatedCostUsd": 9,
+          "tags": [
+            "chore",
+            "convergence",
+            "server",
+            "breaking"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-40",
+          "title": "Fix /runner dashboard — MODEL_TIERS undefined, wire dispatch form, stream output",
+          "description": "The runner is a fully broken operator tool. Root cause is the same MODEL_TIERS type resolved by rank 2, so this can complete immediately after svelte-check clears.",
+          "priority": "P1",
+          "assignee": "ui-engineer",
+          "status": "completed",
+          "estimatedCostUsd": 5,
+          "tags": [
+            "fix",
+            "dashboard",
+            "runner",
+            "streaming"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-12",
+          "title": "Fix /agents dashboard route — list real agents from .agentforge/agents/*.yaml",
+          "description": "A broken agent listing prevents operators from inspecting the available team. Straightforward file-read wiring with clearly bounded scope in one Svelte route.",
+          "priority": "P1",
+          "assignee": "frontend-dev",
+          "status": "completed",
+          "estimatedCostUsd": 4,
+          "tags": [
+            "fix",
+            "dashboard",
+            "agents"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-10",
+          "title": "Fix /org dashboard route — org graph endpoint returns real delegation data",
+          "description": "Empty org graph prevents topology verification, a key trust surface. Bounded to two files: the server endpoint and the Svelte page.",
+          "priority": "P1",
+          "assignee": "frontend-dev",
+          "status": "completed",
+          "estimatedCostUsd": 4,
+          "tags": [
+            "fix",
+            "dashboard",
+            "org",
+            "graph"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-16-v107-convergence-purge-md-68",
+          "title": "Fix cycle-detail page to gracefully handle killed cycles with partial phase data",
+          "description": "Killed cycles fall outside the two-case logic, causing UI crashes that obscure failure analysis. Gap is precisely described and bounded to the cycle-detail component.",
+          "priority": "P1",
+          "assignee": "debugger",
+          "status": "completed",
+          "estimatedCostUsd": 4,
+          "tags": [
+            "fix",
+            "dashboard",
+            "cycles",
+            "resilience"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-26",
+          "title": "Wire /approvals dashboard to GET/POST /api/v5/cycles/:id/approval with global ApprovalModal via SSE",
+          "description": "Server endpoints already exist in v6.7.4; wiring the dashboard closes the human-in-the-loop governance gap central to the autonomous loop. The SSE-triggered global modal delivers real-time approval prompts.",
+          "priority": "P2",
+          "assignee": "dashboard-architect",
+          "status": "completed",
+          "estimatedCostUsd": 9,
+          "tags": [
+            "feature",
+            "dashboard",
+            "approvals",
+            "governance"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-08-memory-wiring-sprint-md-25",
+          "title": "Wire review phase handler to write memory entries for MAJOR/CRITICAL findings",
+          "description": "Review-finding entries are the primary input data for cross-cycle learning. Without this wiring the memory subsystem has no seeds. Depends on schema (rank 3) and unblocks integration tests at ranks 31-32.",
+          "priority": "P2",
+          "assignee": "api-specialist",
+          "status": "completed",
+          "estimatedCostUsd": 6,
+          "tags": [
+            "chore",
+            "memory",
+            "review",
+            "learning"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-08-memory-wiring-sprint-md-31",
+          "title": "Fix /api/v5/memory backend to read .agentforge/memory/*.jsonl with filter and sort",
+          "description": "The memory API reads the wrong file format, rendering all downstream dashboard memory views inoperable. Fixing it unblocks three dashboard items and the flywheel stats card.",
+          "priority": "P2",
+          "assignee": "api-specialist",
+          "status": "completed",
+          "estimatedCostUsd": 5,
+          "tags": [
+            "feature",
+            "memory",
+            "api",
+            "backend"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-16-v107-convergence-purge-md-52",
+          "title": "Migrate remaining root src/autonomous/ into packages/core/src/autonomous/ — delete root directory",
+          "description": "Breaking migration that consolidates the execution path; prerequisite for the CI gate and stub audit. Higher cost reflects import-path updates across test fixtures.",
+          "priority": "P2",
+          "assignee": "architect",
+          "status": "completed",
+          "estimatedCostUsd": 10,
+          "tags": [
+            "breaking",
+            "convergence",
+            "autonomous",
+            "migration"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-16-v107-convergence-purge-md-16",
+          "title": "Audit src/cli/commands/* vs packages/cli/src/commands/* — delete duplicates or shim each root command",
+          "description": "CLI audit is a prerequisite for safely removing compat bridges at rank 14; without knowing each command's disposition, deleting bridges risks breaking callers.",
+          "priority": "P2",
+          "assignee": "code-explorer",
+          "status": "completed",
+          "estimatedCostUsd": 5,
+          "tags": [
+            "chore",
+            "convergence",
+            "cli",
+            "audit"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-16-v107-convergence-purge-md-18",
+          "title": "Remove src/cli/compat/* bridges — inline direct package-core imports",
+          "description": "Compat bridges add indirection that complicates debugging. Safe to remove once the CLI audit (rank 13) confirms all callers are accounted for.",
+          "priority": "P2",
+          "assignee": "coder",
+          "status": "completed",
+          "estimatedCostUsd": 4,
+          "tags": [
+            "chore",
+            "convergence",
+            "cli",
+            "compat"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-16-v107-convergence-purge-md-50",
+          "title": "Audit packages/cli/src/commands/autonomous.ts — replace all stubbed adapters with real implementations",
+          "description": "Stubbed adapters create a behavioral fork between the package CLI and the server cycle spawner. Depends on autonomous migration (rank 12) completing first.",
+          "priority": "P2",
+          "assignee": "code-reviewer",
+          "status": "completed",
+          "estimatedCostUsd": 8,
+          "tags": [
+            "chore",
+            "convergence",
+            "autonomous",
+            "stubs"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-22",
+          "title": "Fix /search dashboard route — returns no results regardless of query",
+          "description": "Search is completely broken across all data categories; fixing it provides immediate high-frequency operator value with existing infrastructure to wire to.",
+          "priority": "P2",
+          "assignee": "api-gateway-engineer",
+          "status": "completed",
+          "estimatedCostUsd": 4,
+          "tags": [
+            "feature",
+            "dashboard",
+            "search",
+            "backend"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-30",
+          "title": "Complete /branches dashboard tab — autonomous/* branches with status, age, and stale-delete button",
+          "description": "Stale autonomous branches accumulate across cycles; the delete button prevents repo clutter and the status view provides operational clarity on in-flight work.",
+          "priority": "P2",
+          "assignee": "frontend-dev",
+          "status": "completed",
+          "estimatedCostUsd": 4,
+          "tags": [
+            "chore",
+            "dashboard",
+            "branches",
+            "git"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-16",
+          "title": "Wire /memory dashboard page to real backend with search box and agent filter",
+          "description": "Wiring the memory page to the fixed API (rank 11) makes cross-cycle learning visible to operators. Straightforward UI work once the backend is live.",
+          "priority": "P2",
+          "assignee": "frontend-dev",
+          "status": "completed",
+          "estimatedCostUsd": 4,
+          "tags": [
+            "feature",
+            "dashboard",
+            "memory",
+            "ui"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-08-memory-wiring-sprint-md-33",
+          "title": "Update memory/+page.svelte — type chips, clickable source links, search, expandable entries",
+          "description": "Adds richer UI detail (type chips, source links, expand-to-JSON) to the same page as rank 18. Execute after or combine with rank 18 to avoid double-touching the file; both depend on the API fix at rank 11.",
+          "priority": "P2",
+          "assignee": "ui-engineer",
+          "status": "completed",
+          "estimatedCostUsd": 4,
+          "tags": [
+            "chore",
+            "dashboard",
+            "memory",
+            "ui"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-18",
+          "title": "Wire /flywheel dashboard to real metrics — meta-learning rate, autonomy score, velocity",
+          "description": "Static flywheel gauges undermine trust in self-improvement claims; real computed metrics from cycles/sprints/sessions make the page a genuine signal source.",
+          "priority": "P2",
+          "assignee": "frontend-dev",
+          "status": "completed",
+          "estimatedCostUsd": 4,
+          "tags": [
+            "chore",
+            "dashboard",
+            "flywheel",
+            "metrics"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-16-v107-convergence-purge-md-20",
+          "title": "Consolidate root invoke --loop placeholder — wire through AgentForgeSession or delete and surface package CLI",
+          "description": "A dead placeholder flag creates user confusion and sets a false expectation. Either end-to-end wiring or clean removal with updated --help eliminates the dead UX surface.",
+          "priority": "P2",
+          "assignee": "architect",
+          "status": "completed",
+          "estimatedCostUsd": 5,
+          "tags": [
+            "chore",
+            "convergence",
+            "cli",
+            "invoke"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-16-v107-convergence-purge-md-10",
+          "title": "Remove root src/server/routes/flywheel.ts and src/server/routes/search.ts",
+          "description": "Canonical versions live in packages/server; duplicate root files create divergence risk. Fast deletion once root Fastify (rank 4) is confirmed removed with no remaining callers.",
+          "priority": "P2",
+          "assignee": "build-release-lead",
+          "status": "completed",
+          "estimatedCostUsd": 3,
+          "tags": [
+            "chore",
+            "convergence",
+            "server",
+            "cleanup"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-16-v107-convergence-purge-md-44",
+          "title": "Verify no production path serves legacy dashboard/index.html before deletion",
+          "description": "Verification is the prerequisite for safe deletion at rank 24. Confirming no live path serves the legacy HTML prevents a surprise 404 in production. Fast, high-confidence task.",
+          "priority": "P2",
+          "assignee": "code-reviewer",
+          "status": "completed",
+          "estimatedCostUsd": 2,
+          "tags": [
+            "chore",
+            "convergence",
+            "dashboard",
+            "legacy"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-16-v107-convergence-purge-md-12",
+          "title": "Delete deprecated root dashboard/index.html and dashboard/pages/ — scrub all references",
+          "description": "After verification at rank 23, deletion removes a confusing parallel UI surface and all root script references pointing to it.",
+          "priority": "P2",
+          "assignee": "coder",
+          "status": "completed",
+          "estimatedCostUsd": 3,
+          "tags": [
+            "chore",
+            "convergence",
+            "dashboard",
+            "delete"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-16-v107-convergence-purge-md-28",
+          "title": "Fix src/index.ts plugin export version string — still reports 0.1.0 in the 10.x line",
+          "description": "A stale version string is a trust signal failure that is trivially cheap to fix. Either read from package.json or delete the unused export entirely.",
+          "priority": "P2",
+          "assignee": "build-release-lead",
+          "status": "completed",
+          "estimatedCostUsd": 1,
+          "tags": [
+            "chore",
+            "version",
+            "plugin"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-6",
+          "title": "Render markdown in cycle phases tab using marked or markdown-it",
+          "description": "Raw JSON in the phases tab degrades reviewer experience on the most-visited cycle detail surface. Adding a small markdown library transforms reviewer responses and gate rationales from noise to readable signal.",
+          "priority": "P2",
+          "assignee": "ui-engineer",
+          "status": "completed",
+          "estimatedCostUsd": 3,
+          "tags": [
+            "chore",
+            "dashboard",
+            "markdown",
+            "ux"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-36",
+          "title": "Verify /sprints/[version] detail page renders all fields — fill any remaining gaps",
+          "description": "Described as mostly built; a focused verification pass and gap-fill completes the sprint detail surface before Playwright e2e tests are written at rank 30.",
+          "priority": "P2",
+          "assignee": "frontend-dev",
+          "status": "completed",
+          "estimatedCostUsd": 3,
+          "tags": [
+            "chore",
+            "dashboard",
+            "sprints"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-42",
+          "title": "Verify /live activity feed renders cycle_event SSE messages with correct colors and timestamps",
+          "description": "Quick verification task confirming SSE subscription and event rendering for operator situational awareness. Low cost and tightly bounded scope.",
+          "priority": "P2",
+          "assignee": "frontend-dev",
+          "status": "completed",
+          "estimatedCostUsd": 2,
+          "tags": [
+            "chore",
+            "dashboard",
+            "live",
+            "sse"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-08-memory-wiring-sprint-md-35",
+          "title": "Add memory stats card to /flywheel — total entries, entries-per-cycle trend, memory hit rate",
+          "description": "Memory hit rate surfaces whether cross-cycle learning is actually influencing audit behavior — the core flywheel metric. Small self-contained UI addition that depends on memory API (rank 11).",
+          "priority": "P2",
+          "assignee": "ui-engineer",
+          "status": "completed",
+          "estimatedCostUsd": 3,
+          "tags": [
+            "feature",
+            "dashboard",
+            "flywheel",
+            "memory"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-07-dashboard-completion-backlog-md-46",
+          "title": "Add Playwright e2e tests under tests/e2e/ covering all major dashboard routes",
+          "description": "E2e tests provide regression coverage for all dashboard fixes delivered in this sprint. Higher cost reflects multi-route coverage; payoff is CI-level confidence for future autonomous cycles.",
+          "priority": "P2",
+          "assignee": "test-runner",
+          "status": "completed",
+          "estimatedCostUsd": 12,
+          "tags": [
+            "feature",
+            "testing",
+            "e2e",
+            "playwright",
+            "dashboard"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-16-v107-convergence-purge-md-62",
+          "title": "Complete tests/integration/memory-flow.test.ts — cross-cycle write and audit-prompt inclusion assertions",
+          "description": "Validates the core cross-cycle learning loop; noted as potentially slipped from v10.6.0. Completing it provides end-to-end proof that review wiring (rank 10) and API fix (rank 11) function correctly together.",
+          "priority": "P2",
+          "assignee": "test-runner",
+          "status": "completed",
+          "estimatedCostUsd": 8,
+          "tags": [
+            "chore",
+            "memory",
+            "integration-test",
+            "learning"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-08-memory-wiring-sprint-md-37",
+          "title": "Add tests/integration/memory-flow.test.ts — full cycle run asserting memory writes and audit inclusion",
+          "description": "Describes the same test file as rank 31 from a different spec. Executor should consolidate into rank 31 or retire this item before starting to avoid duplicate effort and diverging test implementations.",
+          "priority": "P2",
+          "assignee": "test-runner",
+          "status": "completed",
+          "estimatedCostUsd": 6,
+          "tags": [
+            "feature",
+            "memory",
+            "integration-test",
+            "duplicate-risk"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-16-v107-convergence-purge-md-56",
+          "title": "Add release gate to .github/workflows/release.yml — fail build if root src/server/ or src/cli/compat/ still exists",
+          "description": "CI enforcement gate is the durable guarantee that convergence work cannot silently regress. Execute after purge items are merged. Low-complexity CI YAML addition with high long-term value.",
+          "priority": "P2",
+          "assignee": "devops-engineer",
+          "status": "completed",
+          "estimatedCostUsd": 5,
+          "tags": [
+            "feature",
+            "ci",
+            "convergence",
+            "gate"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-16-v107-convergence-purge-md-58",
+          "title": "Pin Node version in .nvmrc and align engines.node across all packages",
+          "description": "Version drift is a known G5 risk surface. Aligning Node engines takes minutes and prevents subtle cross-package compatibility bugs from being masked by local environment differences.",
+          "priority": "P2",
+          "assignee": "devops-engineer",
+          "status": "completed",
+          "estimatedCostUsd": 1,
+          "tags": [
+            "chore",
+            "node",
+            "infrastructure",
+            "versions"
+          ]
+        },
+        {
+          "id": "todo-docs-superpowers-specs-2026-04-16-v107-convergence-purge-md-38",
+          "title": "Create docs/CONVERGENCE.md mapping deprecated surfaces to canonical replacements and removal milestones",
+          "description": "CONVERGENCE.md is the single-source-of-truth for operators navigating the deprecation landscape and serves as a forcing function to enumerate what remains in the purge. Best authored after the bulk of purge items land.",
+          "priority": "P2",
+          "assignee": "documentation-writer",
+          "status": "completed",
+          "estimatedCostUsd": 3,
+          "tags": [
+            "chore",
+            "docs",
+            "convergence",
+            "deprecation"
+          ]
+        }
+      ],
+      "budget": 500,
+      "teamSize": 16,
+      "successCriteria": [
+        "All sprint items completed",
+        "Test pass rate >= 95%",
+        "Total cost <= $500"
+      ],
+      "versionDecision": {
+        "previousVersion": "11.0.0",
+        "nextVersion": "12.0.0",
+        "tier": "major",
+        "tagsSeen": [
+          "fix",
+          "regression",
+          "ci",
+          "tests",
+          "types",
+          "svelte",
+          "dashboard",
+          "chore",
+          "memory",
+          "foundation",
+          "convergence",
+          "server",
+          "breaking",
+          "runner",
+          "streaming",
+          "agents",
+          "org",
+          "graph",
+          "cycles",
+          "resilience",
+          "feature",
+          "approvals",
+          "governance",
+          "review",
+          "learning",
+          "api",
+          "backend",
+          "autonomous",
+          "migration",
+          "cli",
+          "audit",
+          "compat",
+          "stubs",
+          "search",
+          "branches",
+          "git",
+          "ui",
+          "flywheel",
+          "metrics",
+          "invoke",
+          "cleanup",
+          "legacy",
+          "delete",
+          "version",
+          "plugin",
+          "markdown",
+          "ux",
+          "sprints",
+          "live",
+          "sse",
+          "testing",
+          "e2e",
+          "playwright",
+          "integration-test",
+          "duplicate-risk",
+          "gate",
+          "node",
+          "infrastructure",
+          "versions",
+          "docs",
+          "deprecation",
+          "readme",
+          "changelog",
+          "verification",
+          "post-purge"
+        ],
+        "rationale": "11.0.0 → 12.0.0 (major bump — breaking/architecture/platform tags found (breaking))"
+      }
+    }
+  ]
+}

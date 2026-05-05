@@ -50,8 +50,7 @@ Launch the **v6.5+ Autonomous Command Center** — the SvelteKit dashboard with 
 
 ## Notes
 
-- The legacy v4-era HTML dashboard at `dashboard/index.html` is **deprecated** and shows stale v6.2 version info. Do not open it.
-- The SvelteKit dashboard is the canonical UI from v6.5 onward.
+- The SvelteKit dashboard is the canonical UI from v6.5 onward. The legacy v4-era static HTML dashboard has been removed.
 - If port 4750 or 4751 is taken by something else, this command will fail. Use `lsof -i :PORT` to diagnose.
 - The Fastify server reads `.agentforge/cycles/` from its launch directory — make sure it's started from the project root.
 - The Vite dev server proxies `/api/*` to the Fastify server via the config in `packages/dashboard/vite.config.ts`.

@@ -51,11 +51,20 @@ export async function streamRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/v5/stream', async (req, reply) => {
     const clientId = `client-${generateId()}`;
 
+    // Scope CORS to localhost origins (any port) rather than using a wildcard.
+    // Mirrors the fix applied to /api/v5/memory/stream in dashboard-stubs.ts so
+    // that raw agent-activity events aren't readable from arbitrary origins when
+    // the dev server is reachable beyond localhost (e.g. CI runners, tunnels).
+    const reqOrigin = req.headers['origin'];
+    const isLocalhost = typeof reqOrigin === 'string' &&
+      /^https?:\/\/localhost(:\d+)?$/.test(reqOrigin);
+    const corsOrigin = isLocalhost ? reqOrigin : 'http://localhost:4751';
+
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': corsOrigin,
       'X-Accel-Buffering': 'no',
     });
 

@@ -10,7 +10,33 @@
 // `autonomous:cycle` remains as a compatibility alias for `cycle run`.
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import type { Command } from 'commander';
+import {
+  loadCycleConfig,
+  CycleRunner,
+  CycleStage,
+  createAutonomousTelemetryAdapters,
+  RealTestRunner,
+  GitOps,
+  PROpener,
+  RuntimeAdapter,
+  CycleLogger,
+  MessageBusV2,
+  runExecutePhase,
+  runAuditPhase,
+  runPlanPhase,
+  runAssignPhase,
+  runGatePhase,
+  runLearnPhase,
+  runTestPhase,
+  runReviewPhase,
+  runReleasePhase,
+  previewCycle,
+  getWorkspace,
+  getDefaultWorkspace,
+} from '@agentforge/core';
+import type { MessageTopic, MessageEnvelopeV2, CycleResult, PhaseName, PhaseHandler, PhaseContext } from '@agentforge/core';
 
 interface WorkspaceAwareOptions {
   projectRoot: string;
@@ -144,61 +170,84 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
   const cwd = await resolveWorkspaceProjectRoot(opts);
 
   try {
-    const {
-      loadCycleConfig,
-      CycleRunner,
-      CycleStage,
-      createAutonomousTelemetryAdapters,
-      RealTestRunner,
-      GitOps,
-      PROpener,
-      RuntimeAdapter,
-      runExecutePhase,
-      runAuditPhase,
-      runPlanPhase,
-      runAssignPhase,
-      runGatePhase,
-      runLearnPhase,
-      runTestPhase,
-      runReviewPhase,
-      runReleasePhase,
-    } = await import('@agentforge/core');
-
     const config = loadCycleConfig(cwd);
+
+    // Launch-time overrides threaded through env by the server's POST handler
+    // (and by anyone driving the CLI directly). Mirrors the previewCycle
+    // pattern in packages/core/src/autonomous/preview-cycle.ts so the preview
+    // and run paths honour the same knobs.
+    const budgetOverride = parseEnvPositiveNumber(process.env['AUTONOMOUS_BUDGET_USD']);
+    if (budgetOverride !== null) {
+      config.budget.perCycleUsd = budgetOverride;
+      console.log(`[cycle] budget override: $${budgetOverride}`);
+    }
+    const maxItemsOverride = parseEnvPositiveInteger(process.env['AUTONOMOUS_MAX_ITEMS']);
+    if (maxItemsOverride !== null) {
+      config.limits.maxItemsPerSprint = maxItemsOverride;
+      console.log(`[cycle] maxItems override: ${maxItemsOverride}`);
+    }
+
     const telemetry = createAutonomousTelemetryAdapters(cwd);
 
     try {
       const runtime = new RuntimeAdapter({ cwd });
       const phaseHandlers = {
-        audit: (ctx: any) => runAuditPhase(ctx),
-        plan: (ctx: any) => runPlanPhase(ctx),
-        assign: (ctx: any) => runAssignPhase(ctx),
-        execute: (ctx: any) => runExecutePhase(ctx, {
+        audit: (ctx: PhaseContext) => runAuditPhase(ctx),
+        plan: (ctx: PhaseContext) => runPlanPhase(ctx),
+        assign: (ctx: PhaseContext) => runAssignPhase(ctx),
+        execute: (ctx: PhaseContext) => runExecutePhase(ctx, {
           maxParallelism: config.limits.maxExecutePhaseParallelism,
         }),
-        test: (ctx: any) => runTestPhase(ctx),
-        review: (ctx: any) => runReviewPhase(ctx),
-        gate: (ctx: any) => runGatePhase(ctx),
-        release: (ctx: any) => runReleasePhase(ctx),
-        learn: (ctx: any) => runLearnPhase(ctx),
+        test: (ctx: PhaseContext) => runTestPhase(ctx),
+        review: (ctx: PhaseContext) => runReviewPhase(ctx),
+        gate: (ctx: PhaseContext) => runGatePhase(ctx),
+        release: (ctx: PhaseContext) => runReleasePhase(ctx),
+        learn: (ctx: PhaseContext) => runLearnPhase(ctx),
       };
 
-      const nullLogger = createNoopCycleLogger();
+      // Create a real cycle logger using the cycleId resolution logic from CycleRunner.
+      // The server may pass AUTONOMOUS_CYCLE_ID via env; if present, use it.
+      // Otherwise generate a fresh UUID so the CLI-created logger and CycleRunner's
+      // internal logger write to the same directory with consistent cycleId.
+      const envId = process.env['AUTONOMOUS_CYCLE_ID'];
+      const cycleId = envId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(envId)
+        ? envId
+        : randomUUID();
+      const logger = new CycleLogger(cwd, cycleId);
+
       const testRunner = new RealTestRunner(cwd, config.testing, null);
-      const gitOps = new GitOps(cwd, config.git, nullLogger);
+      const gitOps = new GitOps(cwd, config.git, logger);
       const prOpener = new PROpener(cwd);
-      const bus = createInProcessBus();
+
+      // Create a real event bus using MessageBusV2 from packages/core,
+      // adapting its envelope-based interface to the simple (topic, payload) interface.
+      // Cast internal cycle topics to MessageTopic to satisfy the stricter type.
+      const messageBusV2 = new MessageBusV2();
+      const bus = {
+        publish: (topic: string, payload: unknown) => {
+          messageBusV2.publish({
+            from: 'system',
+            to: 'broadcast',
+            topic: topic as MessageTopic,
+            category: 'system',
+            payload,
+          });
+        },
+        subscribe: (topic: string, cb: (event: unknown) => void) => {
+          return messageBusV2.subscribe(topic as MessageTopic, (envelope: MessageEnvelopeV2) => {
+            cb(envelope.payload);
+          });
+        },
+      };
 
       const runner = new CycleRunner({
         cwd,
         config,
+        cycleId,
         runtime,
         proposalAdapter: telemetry.proposalAdapter,
         scoringAdapter: telemetry.scoringAdapter,
-        phaseHandlers: phaseHandlers as unknown as Record<
-          import('@agentforge/core').PhaseName,
-          import('@agentforge/core').PhaseHandler
-        >,
+        phaseHandlers: phaseHandlers as unknown as Record<PhaseName, PhaseHandler>,
         testRunner,
         gitOps,
         prOpener,
@@ -206,7 +255,6 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
         ...(opts.dryRun ? { dryRun: { prOpener: true } } : {}),
       });
 
-      const cycleId = runner.getCycleId();
       const logDir = `.agentforge/cycles/${cycleId}`;
       console.log(`[cycle] cycleId=${cycleId}`);
       console.log(`[cycle] logDir=${logDir}`);
@@ -235,7 +283,6 @@ async function runCyclePreviewAction(opts: CyclePreviewOptions): Promise<void> {
   }
 
   try {
-    const { previewCycle } = await import('@agentforge/core');
     const preview = await previewCycle({
       projectRoot,
       ...(budgetUsd !== undefined ? { budgetUsd } : {}),
@@ -452,7 +499,6 @@ async function runCycleApproveAction(cycleId: string, opts: CycleApproveOptions)
 async function resolveWorkspaceProjectRoot(options: WorkspaceAwareOptions): Promise<string> {
   let cwd = options.projectRoot;
   try {
-    const { getWorkspace, getDefaultWorkspace } = await import('@agentforge/core');
     if (options.workspace) {
       const ws = getWorkspace(options.workspace);
       if (!ws) {
@@ -478,9 +524,9 @@ async function resolveWorkspaceProjectRoot(options: WorkspaceAwareOptions): Prom
 }
 
 function printCycleRunResult(
-  result: import('@agentforge/core').CycleResult,
+  result: CycleResult,
   logDir: string,
-  cycleStage: typeof import('@agentforge/core').CycleStage,
+  cycleStage: typeof CycleStage,
 ): void {
   switch (result.stage) {
     case cycleStage.COMPLETED: {
@@ -636,6 +682,18 @@ function parseOptionalInteger(raw: string | undefined, label: string): number | 
   return parsed;
 }
 
+function parseEnvPositiveNumber(raw: string | undefined): number | null {
+  if (!raw) return null;
+  const parsed = Number.parseFloat(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function parseEnvPositiveInteger(raw: string | undefined): number | null {
+  if (!raw) return null;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 function parseLimit(raw: string, fallback: number): number | null {
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -645,31 +703,4 @@ function parseLimit(raw: string, fallback: number): number | null {
   return parsed ?? fallback;
 }
 
-function createNoopCycleLogger(): import('@agentforge/core').CycleLogger {
-  return {
-    logGitEvent: (_event: unknown) => {},
-    logTestRun: (_result: unknown) => {},
-    logPREvent: (_event: unknown) => {},
-    logScoring: (_result: unknown, _grounding: unknown) => {},
-    logScoringFallback: (_strike: number, _reason: string) => {},
-    logKillSwitch: (_trip: unknown) => {},
-    logCycleResult: (_result: unknown) => {},
-  } as import('@agentforge/core').CycleLogger;
-}
 
-function createInProcessBus() {
-  const subs: Record<string, Array<(event: unknown) => void>> = {};
-  return {
-    publish: (topic: string, payload: unknown) => {
-      const list = subs[topic] ?? [];
-      for (const cb of list) cb(payload);
-    },
-    subscribe: (topic: string, cb: (event: unknown) => void) => {
-      if (!subs[topic]) subs[topic] = [];
-      subs[topic]!.push(cb);
-      return () => {
-        subs[topic] = (subs[topic] ?? []).filter((current) => current !== cb);
-      };
-    },
-  };
-}

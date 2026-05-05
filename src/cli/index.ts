@@ -3,18 +3,6 @@
 import { Command } from "commander";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import registerForgeCommand from "./commands/forge.js";
-import registerGenesisCommand from "./commands/genesis.js";
-import registerRebuildCommand from "./commands/rebuild.js";
-import registerReforgeCommand from "./commands/reforge.js";
-import registerTeamCommand from "./commands/team.js";
-import registerStatusCommand from "./commands/status.js";
-import registerInvokeCommand from "./commands/invoke.js";
-import registerDelegateCommand from "./commands/delegate.js";
-import registerCostReportCommand from "./commands/cost-report.js";
-import registerActivateCommand from "./commands/activate.js";
-import registerDeactivateCommand from "./commands/deactivate.js";
-import registerSessionsCommand from "./commands/sessions.js";
 
 const CLI_VERSION = readPackageVersion();
 const program = new Command();
@@ -22,22 +10,15 @@ const program = new Command();
 program
   .name("agentforge")
   .version(CLI_VERSION)
-  .description("Adaptive Agent Team Builder for Claude Code (root compatibility CLI; package CLI is canonical)");
+  .description("Adaptive Agent Team Builder for Claude Code (root compatibility CLI — deprecated; use packages/cli instead)");
 
 emitCompatibilityNotice();
 
-registerForgeCommand(program);
-registerGenesisCommand(program);
-registerRebuildCommand(program);
-registerReforgeCommand(program);
-registerTeamCommand(program);
-registerStatusCommand(program);
-registerInvokeCommand(program);
-registerDelegateCommand(program);
-registerCostReportCommand(program);
-registerActivateCommand(program);
-registerDeactivateCommand(program);
-registerSessionsCommand(program);
+// All commands have been consolidated into packages/cli. Root CLI is now a
+// deprecation stub that points users to the canonical package CLI.
+// Previously supported commands (forge, genesis, rebuild, reforge, team, status,
+// sessions, invoke, delegate, cost-report, activate, deactivate) now route
+// through: `packages/cli/src/bin.ts`
 
 program.parse();
 
@@ -52,8 +33,16 @@ function readPackageVersion(): string {
 }
 
 function emitCompatibilityNotice(): void {
-  if (process.env.AGENTFORGE_BRIDGED === "1") {
+  if (
+    process.env.AGENTFORGE_BRIDGED === "1" ||
+    process.env.AGENTFORGE_SUPPRESS_DEPRECATION === "1"
+  ) {
     return;
   }
-  console.warn("[compat] Root CLI surface is compatibility mode. Canonical commands now route through package-core/package-server services; deprecated commands remain as shims only.");
+  console.warn(
+    "[compat] Root CLI is deprecated and has no commands.\n" +
+    "[compat] All AgentForge commands now live in the package CLI.\n" +
+    "[compat] Usage: npm exec agentforge -- <command> (or use packages/cli directly)\n" +
+    "[compat] To suppress: set AGENTFORGE_SUPPRESS_DEPRECATION=1"
+  );
 }

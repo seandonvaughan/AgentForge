@@ -48,8 +48,7 @@ The root CLI is still a real user-facing surface. It registers `forge`, `genesis
 The key behaviors today are:
 
 - `genesis` performs discovery, optional interview, team proposal, and approval gating in [src/cli/commands/genesis.ts](C:/Users/SeanVaughan/Projects/AgentForge/src/cli/commands/genesis.ts)
-- `invoke` creates an `AgentForgeSession` and routes a single agent task through `OrchestratorV3` in [src/cli/commands/invoke.ts](C:/Users/SeanVaughan/Projects/AgentForge/src/cli/commands/invoke.ts)
-- `invoke --loop` is still a placeholder notice, not a shipped control loop
+- `invoke` is a compatibility wrapper that delegates to `@agentforge/core`'s `invokeAgentRun`. The `--loop` flag has been removed; use the package CLI's `autonomous:cycle` command for loop execution.
 
 ### 2. Root Runtime / Server Layer
 
@@ -164,8 +163,7 @@ Implemented commands in [src/cli/index.ts](C:/Users/SeanVaughan/Projects/AgentFo
 Important current details:
 
 - `genesis` now does real discovery, interview collection, team display, and approval gating
-- `invoke` uses `AgentForgeSession`
-- `invoke --loop` is still a placeholder and should not be described as shipped control-loop functionality
+- `invoke` is a compatibility wrapper delegating to `@agentforge/core` (no `--loop` flag; loop execution lives in the package CLI's `autonomous:cycle` command)
 
 ### Workspace CLI
 

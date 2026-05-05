@@ -75,15 +75,14 @@ test.describe('Cycles Page', () => {
     // Test mobile view
     await page.setViewportSize({ width: 375, height: 667 });
 
-    await page.waitForTimeout(500);
-
-    const pageContent = page.locator('body');
-    await expect(pageContent).toBeVisible();
+    // Wait for heading to render at mobile viewport
+    const heading = page.locator('h1, h2').filter({ hasText: /Cycles/i }).first();
+    await expect(heading).toBeVisible({ timeout: 5000 });
 
     // Test desktop view
     await page.setViewportSize({ width: 1280, height: 720 });
 
-    await page.waitForTimeout(500);
-    await expect(pageContent).toBeVisible();
+    // Wait for heading to render at desktop viewport
+    await expect(heading).toBeVisible({ timeout: 5000 });
   });
 });

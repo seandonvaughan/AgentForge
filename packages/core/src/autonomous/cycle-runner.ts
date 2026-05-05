@@ -102,6 +102,13 @@ export interface CycleRunnerOptions {
     subscribe: (topic: string, cb: (event: any) => void) => () => void;
   };
   dryRun?: { prOpener?: boolean };
+  /**
+   * Pre-allocated cycle ID. When provided, the runner uses this value instead
+   * of reading AUTONOMOUS_CYCLE_ID from env or generating a fresh UUID. Use
+   * this when the caller has already created a CycleLogger (e.g. to pass to
+   * GitOps) so both share the same directory.
+   */
+  cycleId?: string;
 }
 
 /**
@@ -138,14 +145,17 @@ export class CycleRunner {
   private gateVerdict: 'APPROVE' | 'REJECT' | undefined = undefined;
 
   constructor(private readonly options: CycleRunnerOptions) {
-    // Honor AUTONOMOUS_CYCLE_ID when set (server's POST /api/v5/cycles route
-     // pre-allocates the id and pre-creates the dir, then spawns the CLI with
-     // this env var set so the CLI writes to the same dir the API client
-     // already has a pointer to). Falls back to a fresh UUID for direct CLI use.
+    // Resolve cycleId in priority order:
+    //   1. options.cycleId — caller pre-allocated (CLI creates logger+gitOps first)
+    //   2. AUTONOMOUS_CYCLE_ID env — server's POST /api/v5/cycles pre-allocates
+    //      the id and pre-creates the dir, then spawns the CLI with this env var
+    //      so the CLI writes to the same dir the API client already has a pointer to
+    //   3. fresh UUID — direct CLI use with no coordination
     const envId = process.env['AUTONOMOUS_CYCLE_ID'];
-    this.cycleId = envId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(envId)
-      ? envId
-      : randomUUID();
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+    this.cycleId = (options.cycleId && UUID_RE.test(options.cycleId))
+      ? options.cycleId
+      : (envId && UUID_RE.test(envId) ? envId : randomUUID());
     this.startedAt = Date.now();
     this.logger = new CycleLogger(options.cwd, this.cycleId);
     this.killSwitch = new KillSwitch(

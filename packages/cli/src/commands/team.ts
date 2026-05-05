@@ -1,4 +1,16 @@
 import type { Command } from 'commander';
+import {
+  showGeneratedTeam,
+  forgeTeamService,
+  genesisTeamService,
+  rebuildTeamService,
+  applyReforgeProposalService,
+  listReforgeStateService,
+  rollbackReforgeOverrideService,
+  showReforgeStatusService,
+  listTeamSessions,
+  deleteTeamSession,
+} from '@agentforge/core';
 
 interface TeamShowOptions {
   projectRoot: string;
@@ -216,7 +228,6 @@ export function registerTeamSessionsCommand(program: Command): void {
 
 async function teamShowAction(options: TeamShowOptions, command: Command): Promise<void> {
   try {
-    const { showGeneratedTeam } = await import('@agentforge/core');
     const exitCode = await showGeneratedTeam(
       resolveProjectRoot(options.projectRoot, command),
       typeof options.verbose === 'boolean' ? { verbose: options.verbose } : {},
@@ -232,7 +243,6 @@ async function teamShowAction(options: TeamShowOptions, command: Command): Promi
 
 async function teamForgeAction(options: TeamForgeOptions, command: Command): Promise<void> {
   try {
-    const { forgeTeamService } = await import('@agentforge/core');
     const exitCode = await forgeTeamService(
       resolveProjectRoot(options.projectRoot, command),
       {
@@ -257,7 +267,6 @@ async function teamGenesisAction(
   command: Command,
 ): Promise<void> {
   try {
-    const { genesisTeamService } = await import('@agentforge/core');
     const exitCode = await genesisTeamService(
       resolveProjectRoot(options.projectRoot, command),
       {
@@ -282,7 +291,6 @@ async function teamRebuildAction(
   command: Command,
 ): Promise<void> {
   try {
-    const { rebuildTeamService } = await import('@agentforge/core');
     const exitCode = await rebuildTeamService(
       resolveProjectRoot(options.projectRoot, command),
       {
@@ -305,7 +313,6 @@ async function teamReforgeApplyAction(
   command: Command,
 ): Promise<void> {
   try {
-    const { applyReforgeProposalService } = await import('@agentforge/core');
     const exitCode = await applyReforgeProposalService(
       resolveProjectRoot(options.projectRoot, command),
       proposalId,
@@ -325,7 +332,6 @@ async function teamReforgeListAction(
   command: Command,
 ): Promise<void> {
   try {
-    const { listReforgeStateService } = await import('@agentforge/core');
     const exitCode = await listReforgeStateService(resolveProjectRoot(options.projectRoot, command));
     if (exitCode !== 0) {
       process.exitCode = exitCode;
@@ -342,7 +348,6 @@ async function teamReforgeRollbackAction(
   command: Command,
 ): Promise<void> {
   try {
-    const { rollbackReforgeOverrideService } = await import('@agentforge/core');
     const exitCode = await rollbackReforgeOverrideService(
       resolveProjectRoot(options.projectRoot, command),
       agent,
@@ -361,7 +366,6 @@ async function teamReforgeStatusAction(
   command: Command,
 ): Promise<void> {
   try {
-    const { showReforgeStatusService } = await import('@agentforge/core');
     const exitCode = await showReforgeStatusService(resolveProjectRoot(options.projectRoot, command));
     if (exitCode !== 0) {
       process.exitCode = exitCode;
@@ -377,7 +381,6 @@ async function teamSessionsListAction(
   command: Command,
 ): Promise<void> {
   try {
-    const { listTeamSessions } = await import('@agentforge/core');
     const exitCode = await listTeamSessions(resolveProjectRoot(options.projectRoot, command));
     if (exitCode !== 0) {
       process.exitCode = exitCode;
@@ -394,7 +397,6 @@ async function teamSessionsDeleteAction(
   command: Command,
 ): Promise<void> {
   try {
-    const { deleteTeamSession } = await import('@agentforge/core');
     const exitCode = await deleteTeamSession(
       resolveProjectRoot(options.projectRoot, command),
       sessionId,

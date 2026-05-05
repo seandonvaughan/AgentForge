@@ -81,16 +81,14 @@ test.describe('Dashboard Home', () => {
     // Test mobile view
     await page.setViewportSize({ width: 375, height: 667 });
 
-    await page.waitForTimeout(500);
-
-    let pageContent = page.locator('body');
-    await expect(pageContent).toBeVisible();
+    // Wait for content to render at mobile viewport
+    const heading = page.locator('h1, h2').first();
+    await expect(heading).toBeVisible({ timeout: 5000 });
 
     // Test desktop view
     await page.setViewportSize({ width: 1280, height: 720 });
 
-    await page.waitForTimeout(500);
-    pageContent = page.locator('body');
-    await expect(pageContent).toBeVisible();
+    // Wait for content to render at desktop viewport
+    await expect(heading).toBeVisible({ timeout: 5000 });
   });
 });

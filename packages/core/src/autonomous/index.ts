@@ -27,3 +27,36 @@ export * from './phase-handlers/index.js';
 export * from './exec/pr-opener.js';
 export * from './exec/real-test-runner.js';
 export * from './exec/git-ops.js';
+
+// Migrated from root src/autonomous/ — selective exports to avoid
+// name collisions with newer core modules (SprintPlan, GateVerdictMetadata, etc.).
+export {
+  AutonomousSprintFramework,
+  type SprintPhase,
+  type SprintItem,
+  type SprintResult,
+  type SprintFrameworkOptions,
+  type GateVerdictMemoryWriter,
+} from './sprint-framework.js';
+export {
+  ReviewPhaseHandler,
+  type FindingSeverity,
+  type ReviewFinding,
+  type ReviewPhaseResult,
+} from './review-phase-handler.js';
+export {
+  AuditPhaseHandler,
+  type GateVerdictReader,
+  type PastMistake,
+  type AuditPromptInjection,
+} from './audit-phase-handler.js';
+export {
+  GatePhaseHandler,
+  type GateVerdictInput,
+  type GatePhaseResult,
+} from './gate-phase-handler.js';
+export {
+  ExecutePhaseHandler,
+  type ExecutePhaseMemorySection,
+} from './execute-phase-handler.js';
+export * from './sprint-retrospective.js';

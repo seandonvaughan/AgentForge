@@ -12,7 +12,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { RuntimeAdapter } from '../../../packages/core/src/autonomous/runtime-adapter.js';
+import { RuntimeAdapter } from '@agentforge/core';
 
 let tmpDir: string;
 let agentsDir: string;

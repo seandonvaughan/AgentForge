@@ -149,8 +149,12 @@ describe('GET /api/v5/cycles', () => {
   });
 
   it('synthesizes a row for in-progress cycles with no cycle.json', async () => {
+    // Use a dynamic timestamp (30 s ago) so the production staleness heuristic
+    // (last event > 5 min old + no session entry → 'crashed') does not fire.
+    // A hardcoded past date triggered the heuristic once real time overtook it.
+    const recentAt = new Date(Date.now() - 30_000).toISOString();
     seedCycle('running', null, {
-      events: [{ type: 'phase.start', stage: 'run', at: '2026-04-06T12:00:00.000Z' }],
+      events: [{ type: 'phase.start', stage: 'run', at: recentAt }],
     });
     const body = (await app.inject({ method: 'GET', url: '/api/v5/cycles' })).json();
     expect(body.cycles).toHaveLength(1);

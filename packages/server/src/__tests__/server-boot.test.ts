@@ -79,4 +79,31 @@ describe('createServerV5 boot', () => {
 
     await expect(app.ready()).resolves.not.toThrow();
   });
+
+  it('does not serve static HTML — no static path registered without dashboardPath', async () => {
+    // Regression guard: createServerV5 should NOT serve any static HTML when
+    // dashboardPath is omitted (the production default). The legacy root-level
+    // dist/server/server.js had an unconditional FastifyStatic registration that
+    // defaulted to ../../dashboard even without an explicit option. That code
+    // has been deleted (v10.7.0 convergence purge); this test ensures the
+    // canonical packages/server code path never silently starts serving static
+    // files again.
+    const projectRoot = makeTmpRoot();
+    const { app } = await createServerV5({ listen: false, projectRoot });
+    createdApps.push(app);
+    await app.ready();
+
+    // Root path — should 404, not serve an HTML file
+    const rootRes = await app.inject({ method: 'GET', url: '/' });
+    expect(rootRes.statusCode).toBe(404);
+    expect(rootRes.headers['content-type']).not.toMatch(/text\/html/);
+
+    // /index.html — should 404
+    const indexRes = await app.inject({ method: 'GET', url: '/index.html' });
+    expect(indexRes.statusCode).toBe(404);
+
+    // /app — prefix used by the legacy root-level server.js to serve dashboard/
+    const appRes = await app.inject({ method: 'GET', url: '/app' });
+    expect(appRes.statusCode).toBe(404);
+  });
 });

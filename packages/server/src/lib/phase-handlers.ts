@@ -119,6 +119,8 @@ export interface SprintItem {
   assignee: string;
   status: 'planned' | 'in_progress' | 'completed' | 'blocked' | 'deferred';
   completedAt?: string;
+  /** Domain tags used by collectSprintItemTags to enrich review/gate memory entries. */
+  tags?: string[];
 }
 
 export interface PhaseAgentResult {

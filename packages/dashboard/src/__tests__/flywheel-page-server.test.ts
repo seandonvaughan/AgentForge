@@ -189,6 +189,62 @@ describe('computeMetrics — memoryStats (memory loop health card)', () => {
     writeFileSync(join(auditDir, 'audit.json'), JSON.stringify({ memoriesInjected: 5 }));
     expect(computeMetrics(tmpRoot).memoryStats.hitRate).toBe(1);
   });
+
+  it('hitRate uses memoriesInjected=0 from audit.json → no hit even when prior memory exists', () => {
+    // Even when the timestamp proxy would say "hit" (memory existed before cycle),
+    // an explicit memoriesInjected=0 in audit.json means no memory was actually used.
+    // This pins the audit.json-overrides-proxy precedence rule.
+    mkdirs(join(tmpRoot, '.agentforge/cycles'));
+    writeCycle('no-inject', { startedAt: '2026-01-01T08:00:00Z' });
+    // Memory written BEFORE the cycle started → timestamp proxy would say hit
+    writeMemoryEntry('cycle-outcome', 'no-inject', '2026-01-01T07:00:00Z');
+    const auditDir = join(tmpRoot, '.agentforge/cycles/no-inject/phases');
+    mkdirSync(auditDir, { recursive: true });
+    writeFileSync(join(auditDir, 'audit.json'), JSON.stringify({
+      phase: 'audit',
+      cycleId: 'no-inject',
+      memoriesInjected: 0, // explicit 0 overrides timestamp proxy
+    }));
+    // 1 completed cycle, audit says 0 injected → 0 hits
+    expect(computeMetrics(tmpRoot).memoryStats.hitRate).toBe(0);
+  });
+
+  it('hitRate falls back to timestamp proxy when audit.json lacks memoriesInjected field', () => {
+    // Older cycles that pre-date the memoriesInjected field should still get a
+    // hit counted when the timestamp proxy qualifies them (started after earliest entry).
+    mkdirs(join(tmpRoot, '.agentforge/cycles'));
+    // First cycle writes memory; second cycle starts after that memory exists.
+    writeCycle('alpha', { startedAt: '2026-01-01T08:00:00Z' });
+    writeCycle('beta',  { startedAt: '2026-01-02T08:00:00Z' });
+    writeMemoryEntry('cycle-outcome', 'alpha', '2026-01-01T09:00:00Z');
+    // audit.json exists for beta but has no memoriesInjected field (legacy format)
+    const auditDir = join(tmpRoot, '.agentforge/cycles/beta/phases');
+    mkdirSync(auditDir, { recursive: true });
+    writeFileSync(join(auditDir, 'audit.json'), JSON.stringify({
+      phase: 'audit',
+      cycleId: 'beta',
+      findings: 'some findings',
+      // no memoriesInjected field — must fall back to timestamp proxy
+    }));
+    // alpha started before memory → 0 hit; beta started after → 1 hit; 1/2 = 0.5
+    expect(computeMetrics(tmpRoot).memoryStats.hitRate).toBe(0.5);
+  });
+
+  it('entriesPerCycleTrend uses epoch fallback for cycles missing startedAt', () => {
+    // A cycle without startedAt must carry '1970-01-01T00:00:00.000Z', not
+    // new Date() — so it sorts to the beginning (oldest) of the sparkline.
+    // Using new Date() would place the no-timestamp cycle at the newest
+    // position, distorting the per-cycle trend display.
+    // Mirrors the identical API-level test in packages/server/src/routes/v5/__tests__/flywheel.test.ts.
+    mkdirs(join(tmpRoot, '.agentforge/cycles'));
+    writeCycle('no-ts', { startedAt: undefined });
+    writeCycle('has-ts', { startedAt: '2026-01-01T00:00:00.000Z' });
+    const { entriesPerCycleTrend } = computeMetrics(tmpRoot).memoryStats;
+    const noTs = entriesPerCycleTrend.find(p => p.cycleId === 'no-ts');
+    expect(noTs).toBeDefined();
+    // Must carry the epoch fallback, not the current wall-clock time
+    expect(noTs?.startedAt).toBe('1970-01-01T00:00:00.000Z');
+  });
 });
 
 // ── Scores ────────────────────────────────────────────────────────────────────
@@ -373,6 +429,142 @@ describe('computeMetrics — cycleHistory', () => {
     const history = computeMetrics(tmpRoot).cycleHistory;
     expect(new Date(history[0].startedAt).getTime())
       .toBeLessThan(new Date(history[1].startedAt).getTime());
+  });
+
+  it('uses epoch fallback for cycles missing startedAt so they sort oldest (not newest)', () => {
+    // A cycle without startedAt must get '1970-01-01T00:00:00.000Z' — not
+    // new Date() — so it sorts to the beginning (oldest) of cycleHistory.
+    // If new Date() were used instead, the missing-timestamp cycle would sort
+    // to the end (newest) and silently inflate the "recent" half of the
+    // meta-learning trend calculation, producing a misleadingly optimistic score.
+    mkdirs(join(tmpRoot, '.agentforge/cycles'));
+    writeCycle('no-ts', { startedAt: undefined });
+    writeCycle('has-ts', { startedAt: '2026-01-01T00:00:00Z' });
+    const history = computeMetrics(tmpRoot).cycleHistory;
+    expect(history).toHaveLength(2);
+    // The cycle with no timestamp must carry the epoch fallback value
+    const noTs = history.find(h => h.cycleId === 'no-ts');
+    expect(noTs?.startedAt).toBe('1970-01-01T00:00:00.000Z');
+    // The epoch cycle must sort before 2026 — confirmed by position in history
+    expect(history[0].cycleId).toBe('no-ts');
+    expect(history[1].cycleId).toBe('has-ts');
+  });
+});
+
+// ── events.jsonl cycle format (SSR copy) ─────────────────────────────────────
+//
+// Mirrors the events.jsonl tests from the API suite so drift between the SSR
+// and API implementations is caught immediately.
+
+describe('computeMetrics — events.jsonl cycle format', () => {
+  function writeCycleFromEvents(
+    id: string,
+    opts: {
+      sprintVersion?: string;
+      stage?: string;
+      startedAt?: string;
+      completedAt?: string;
+      passed?: number;
+      failed?: number;
+      prNumber?: number;
+      totalCostUsd?: number;
+    } = {},
+  ) {
+    const {
+      sprintVersion = '1.0.0',
+      stage = 'completed',
+      startedAt = '2026-01-01T00:00:00.000Z',
+      completedAt = '2026-01-01T01:00:00.000Z',
+      passed = 100,
+      failed = 0,
+      prNumber = 1,
+      totalCostUsd = 50,
+    } = opts;
+
+    const dir = join(tmpRoot, '.agentforge/cycles', id);
+    mkdirSync(dir, { recursive: true });
+    const events = [
+      { type: 'scoring.complete', totalCostUsd, at: startedAt },
+      { type: 'sprint.assigned', sprintVersion, at: startedAt },
+      { type: 'phase.start', phase: 'audit', at: startedAt },
+      { type: 'tests.complete', passed, failed, at: completedAt },
+      ...(prNumber != null ? [{ type: 'pr.opened', url: `https://github.com/org/repo/pull/${prNumber}`, number: prNumber, at: completedAt }] : []),
+      { type: 'cycle.complete', stage, at: completedAt },
+    ];
+    writeFileSync(join(dir, 'events.jsonl'), events.map(e => JSON.stringify(e)).join('\n') + '\n');
+  }
+
+  it('autonomy score is non-zero when completed cycle written via events.jsonl', () => {
+    mkdirs(join(tmpRoot, '.agentforge/cycles'));
+    writeCycleFromEvents('ev-1', { stage: 'completed', passed: 50 });
+    const m = computeMetrics(tmpRoot).metrics.find(m => m.key === 'autonomy')!;
+    expect(m.score).toBeGreaterThan(0);
+  });
+
+  it('cycleHistory contains correct fields from events.jsonl cycle', () => {
+    mkdirs(join(tmpRoot, '.agentforge/cycles'));
+    writeCycleFromEvents('ev-hist', {
+      sprintVersion: '5.0.0',
+      startedAt: '2026-03-01T10:00:00.000Z',
+      completedAt: '2026-03-01T11:00:00.000Z',
+      passed: 400,
+      failed: 10,
+      prNumber: 7,
+      totalCostUsd: 25,
+    });
+    const history = computeMetrics(tmpRoot).cycleHistory;
+    expect(history).toHaveLength(1);
+    const pt = history[0]!;
+    expect(pt.cycleId).toBe('ev-hist');
+    expect(pt.sprintVersion).toBe('5.0.0');
+    expect(pt.stage).toBe('completed');
+    expect(pt.testPassRate).toBeCloseTo(400 / 410, 5);
+    expect(pt.hasPr).toBe(true);
+    expect(pt.costUsd).toBe(25);
+    expect(pt.durationMs).toBe(60 * 60 * 1000);
+  });
+
+  it('debug.cycleCount includes cycles from both formats', () => {
+    mkdirs(join(tmpRoot, '.agentforge/cycles'));
+    writeCycle('legacy-1');
+    writeCycleFromEvents('ev-1', { stage: 'completed' });
+    expect(computeMetrics(tmpRoot).debug.cycleCount).toBe(2);
+  });
+});
+
+// ── cycles-archived/ reading (SSR copy) ───────────────────────────────────────
+
+describe('computeMetrics — cycles-archived/ reading', () => {
+  function writeArchivedCycle(id: string, overrides: Record<string, unknown> = {}) {
+    const dir = join(tmpRoot, '.agentforge/cycles-archived', id);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'cycle.json'), JSON.stringify({
+      cycleId: id,
+      stage: 'completed',
+      startedAt: '2026-01-01T00:00:00.000Z',
+      completedAt: '2026-01-01T01:00:00.000Z',
+      tests: { passed: 100, failed: 0, total: 100, passRate: 1.0 },
+      pr: { number: 1 },
+      cost: { totalUsd: 50 },
+      ...overrides,
+    }, null, 2));
+  }
+
+  it('autonomy score is non-zero when only archived cycles exist', () => {
+    mkdirs(join(tmpRoot, '.agentforge/cycles-archived'));
+    writeArchivedCycle('arch-1');
+    const m = computeMetrics(tmpRoot).metrics.find(m => m.key === 'autonomy')!;
+    expect(m.score).toBeGreaterThan(0);
+  });
+
+  it('debug.cycleCount includes archived cycles', () => {
+    mkdirs(join(tmpRoot, '.agentforge/cycles'), join(tmpRoot, '.agentforge/cycles-archived'));
+    writeCycle('active-1');
+    writeArchivedCycle('arch-1');
+    writeArchivedCycle('arch-2');
+    const { debug } = computeMetrics(tmpRoot);
+    expect(debug.cycleCount).toBe(3);
+    expect(debug.completedCycleCount).toBe(3);
   });
 });
 

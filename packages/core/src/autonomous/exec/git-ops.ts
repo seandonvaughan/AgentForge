@@ -5,7 +5,7 @@
 // a safety guard that has a corresponding negative test in
 // tests/autonomous/unit/git-ops.test.ts.
 //
-// Ten safety guarantees encoded in `GitOps`:
+// Eleven safety guarantees encoded in `GitOps`:
 // 1. Never runs in a non-git directory.
 // 2. Never commits if there are no changes.
 // 3. Never commits directly to `main` (or configured `baseBranch`).
@@ -17,12 +17,15 @@
 //    git hooks moving HEAD).
 // 9. Uses `git commit -F -` (stdin) for commit messages — no shell interpolation.
 // 10. All subprocess calls use `execFile`, never `exec` — no shell parsing.
+// 11. Filters unreachable pathspecs before `git add` so a single stale file
+//     in the execute-phase output does not roll back the entire stage.
 //
 // See docs/superpowers/specs/2026-04-06-autonomous-loop-design.md §8.2
 // and docs/superpowers/plans/2026-04-06-autonomous-loop.md Task 11.
 
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
+import { existsSync } from 'node:fs';
 import { resolve, relative } from 'node:path';
 import type { CycleConfig } from '../types.js';
 import type { CycleLogger } from '../cycle-logger.js';
@@ -162,13 +165,51 @@ export class GitOps {
       }
     }
 
+    // Filter out paths that git cannot index: a path must either exist on
+    // disk (for add/modify) OR be tracked in the index (for stage-deletion).
+    // Without this, a stale entry from execute-phase output would cause
+    // `git add -- a b c` to abort atomically with "pathspec did not match",
+    // rolling back the stage of every preceding path and losing the cycle's
+    // work at the last mile (v13.0.0 cycle e1ed9c0e).
+    const tracked = await this.trackedFileSet();
+    const addable: string[] = [];
+    const unreachable: string[] = [];
+    for (const file of files) {
+      const onDisk = existsSync(resolve(this.cwd, file));
+      const inIndex = tracked.has(file);
+      if (onDisk || inIndex) addable.push(file);
+      else unreachable.push(file);
+    }
+    if (unreachable.length > 0) {
+      this.logger.logGitEvent({ type: 'unreachable-skipped', files: unreachable });
+    }
+    if (addable.length === 0) {
+      throw new GitSafetyError(
+        `No addable files after filtering ${files.length} entries (all paths missing from disk and index)`,
+      );
+    }
+
     // Explicit `--` separator, never `-A` or `.`
-    await this.git(['add', '--', ...files]);
+    await this.git(['add', '--', ...addable]);
 
     const staged = (await this.git(['diff', '--cached', '--name-only'])).stdout
       .split('\n')
       .filter(Boolean);
     this.logger.logGitEvent({ type: 'staged', files: staged });
+  }
+
+  /**
+   * Return the full set of paths git currently tracks in the index. Used by
+   * stage() to distinguish "deleted but still tracked" paths (addable as
+   * deletion) from "never existed" pathspecs (would cause `git add` to abort).
+   */
+  private async trackedFileSet(): Promise<Set<string>> {
+    const { stdout } = await this.git(['ls-files']);
+    const files = stdout
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    return new Set(files);
   }
 
   async scanStagedForSecrets(): Promise<void> {
@@ -226,7 +267,16 @@ export class GitOps {
       // Expected: git rev-parse fails if branch does not exist
     }
 
-    await this.git(['checkout', '-b', branch, this.config.baseBranch]);
+    // Branch from current HEAD, not from baseBranch. Prior behavior passed
+    // `baseBranch` as the checkout start-point, which forces git to reset
+    // the working tree to that branch's contents. That fails with
+    //   "Your local changes to the following files would be overwritten by checkout"
+    // whenever execute phase left uncommitted work in the tree (cycle
+    // 378652a2). Branching from HEAD carries the execute-phase work onto
+    // the new branch so commit/push operates on real cycle output. The
+    // PR opener later targets baseBranch for the merge, so the "PR against
+    // main" contract is preserved downstream.
+    await this.git(['checkout', '-b', branch]);
     this.logger.logGitEvent({ type: 'branch-created', branch });
     return branch;
   }

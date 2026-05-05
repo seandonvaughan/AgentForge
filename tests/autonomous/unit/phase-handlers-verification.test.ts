@@ -17,14 +17,12 @@ import { join } from 'node:path';
 import {
   runTestPhase,
   parseConfidence,
-} from '../../../packages/core/src/autonomous/phase-handlers/test-phase.js';
-import {
   runReviewPhase,
   parseVerdict,
   parseReviewFindingMetadata,
-} from '../../../packages/core/src/autonomous/phase-handlers/review-phase.js';
-import { runReleasePhase } from '../../../packages/core/src/autonomous/phase-handlers/release-phase.js';
-import type { PhaseContext } from '../../../packages/core/src/autonomous/phase-scheduler.js';
+  runReleasePhase,
+  type PhaseContext,
+} from '@agentforge/core';
 
 function makeMockBus() {
   const published: Array<{ topic: string; payload: any }> = [];

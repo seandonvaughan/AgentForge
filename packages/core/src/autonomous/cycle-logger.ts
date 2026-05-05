@@ -5,7 +5,7 @@ import type { CycleResult, TestResult, ScoringResult, KillSwitchTrip } from './t
 import { writeMemoryEntry } from '../memory/types.js';
 
 export interface GitEvent {
-  type: 'branch-created' | 'staged' | 'committed' | 'pushed' | 'rolled-back';
+  type: 'branch-created' | 'staged' | 'committed' | 'pushed' | 'rolled-back' | 'unreachable-skipped';
   branch?: string;
   sha?: string;
   fromSha?: string;

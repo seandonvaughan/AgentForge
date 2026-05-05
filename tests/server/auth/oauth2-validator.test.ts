@@ -15,7 +15,7 @@ import {
   extractBearerToken,
   validateJwt,
   validateToken,
-} from "../../../src/server/auth/oauth2-validator.js";
+} from "../../../packages/server/src/lib/auth/oauth2-validator.js";
 
 // ---------------------------------------------------------------------------
 // Helpers — minimal JWT builder for tests (HS256 only)

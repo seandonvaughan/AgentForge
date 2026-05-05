@@ -130,19 +130,122 @@ export function resolveAgentResponseContent(raw: string): string {
   return raw;
 }
 
+export interface AgentRunSection {
+  agentId: string;
+  response: string;
+  /** Cost in USD for this individual run, if available in the phase file. */
+  costUsd?: number;
+  /** Wall-clock duration in milliseconds for this run, if available. */
+  durationMs?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Phase metadata stat chip helpers
+// ---------------------------------------------------------------------------
+
+export interface PhaseMetaStat {
+  key: string;
+  value: string;
+}
+
+/**
+ * Extract well-known structured fields from a phase object for compact stat
+ * chip display. Covers: status, cost, duration, run count, phase name,
+ * gate decision fields, and execute-phase progress counters.
+ *
+ * The returned array is ordered: status first, then cost/duration,
+ * then phase-specific fields.
+ */
+export function phaseMetaStats(data: Record<string, unknown>): PhaseMetaStat[] {
+  const stats: PhaseMetaStat[] = [];
+
+  if (data['status'] != null) {
+    stats.push({ key: 'status', value: String(data['status']) });
+  }
+
+  const costObj = data['cost'] as Record<string, unknown> | null | undefined;
+  const costUsdVal = costObj?.['totalUsd'] ?? costObj?.['usd'] ?? data['costUsd'];
+  if (costUsdVal != null) {
+    stats.push({ key: 'cost', value: `$${Number(costUsdVal).toFixed(4)}` });
+  }
+
+  if (data['durationMs'] != null) {
+    stats.push({ key: 'duration', value: formatDurationMs(Number(data['durationMs'])) });
+  }
+
+  if (Array.isArray(data['agentRuns'])) {
+    stats.push({ key: 'runs', value: String((data['agentRuns'] as unknown[]).length) });
+  }
+
+  if (data['phase'] != null) {
+    stats.push({ key: 'phase', value: String(data['phase']) });
+  }
+
+  // Gate / approval phase fields
+  if (data['decision'] != null) {
+    stats.push({ key: 'decision', value: String(data['decision']) });
+  }
+  if (data['approved'] != null) {
+    stats.push({ key: 'approved', value: String(data['approved']) });
+  }
+
+  // Execute phase progress counters
+  if (data['totalItems'] != null) {
+    stats.push({ key: 'items', value: String(data['totalItems']) });
+  }
+  if (data['completedItems'] != null) {
+    stats.push({ key: 'completed', value: String(data['completedItems']) });
+  }
+  if (data['failedItems'] != null && Number(data['failedItems']) > 0) {
+    stats.push({ key: 'failed', value: String(data['failedItems']) });
+  }
+
+  // Sprint version surfaced on execute phase
+  if (data['sprintVersion'] != null) {
+    stats.push({ key: 'sprint', value: String(data['sprintVersion']) });
+  }
+
+  return stats;
+}
+
+/**
+ * Format a millisecond duration into a human-readable string.
+ * Duplicated here so phase-render.ts has no runtime dependency on any
+ * Svelte or dashboard import — this module stays a pure utility.
+ */
+function formatDurationMs(ms: number): string {
+  if (!isFinite(ms) || ms < 0) return '—';
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  if (m < 60) return rem > 0 ? `${m}m ${rem}s` : `${m}m`;
+  const h = Math.floor(m / 60);
+  const remM = m % 60;
+  return remM > 0 ? `${h}h ${remM}m` : `${h}h`;
+}
+
 /** Collect markdown prose from each agentRun's response field.
  *  JSON-encoded responses (e.g. gate phase verdict objects) are unwrapped
- *  into readable prose by resolveAgentResponseContent(). */
+ *  into readable prose by resolveAgentResponseContent().
+ *  Cost and duration metadata are forwarded so callers can render per-run
+ *  context chips without switching to the Agents tab. */
 export function agentRunSections(
   data: Record<string, unknown>,
-): Array<{ agentId: string; response: string }> {
+): AgentRunSection[] {
   const runs = data['agentRuns'];
   if (!Array.isArray(runs)) return [];
   return (runs as unknown[])
     .filter((r): r is Record<string, unknown> => r != null && typeof r === 'object')
     .filter((r) => typeof r['response'] === 'string' && (r['response'] as string).trim())
-    .map((r) => ({
-      agentId: String(r['agentId'] ?? 'agent'),
-      response: resolveAgentResponseContent(r['response'] as string),
-    }));
+    .map((r) => {
+      const section: AgentRunSection = {
+        agentId: String(r['agentId'] ?? 'agent'),
+        response: resolveAgentResponseContent(r['response'] as string),
+      };
+      if (typeof r['costUsd'] === 'number') section.costUsd = r['costUsd'];
+      if (typeof r['durationMs'] === 'number') section.durationMs = r['durationMs'];
+      return section;
+    });
 }

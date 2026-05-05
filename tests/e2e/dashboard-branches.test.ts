@@ -3,9 +3,8 @@ import { test, expect } from '@playwright/test';
 /**
  * E2E tests for the /branches dashboard tab.
  *
- * This page is served via the SPA router: navigating to /branches fetches
- * dashboard/pages/branches.html, injects it into #main-content, then calls
- * window.loadBranchesPage() which hits GET /api/v1/branches.
+ * This page is served by the SvelteKit dashboard at /branches, which calls
+ * GET /api/v5/autonomous-branches to populate the view.
  *
  * Assertions here are scoped to branches-page-specific DOM ids and text so
  * that a regression in page injection or API wiring produces an honest failure
@@ -27,7 +26,7 @@ test.describe('Branches Page', () => {
     await page.goto('/branches');
     await page.waitForLoadState('networkidle');
 
-    // All four stat ids are rendered by updateStats() once the API responds.
+    // All four stat ids are rendered via Svelte $derived state once the API responds.
     // The values should be digits (0 is fine — no autonomous/* branches in test env).
     for (const id of ['branches-stat-total', 'branches-stat-open', 'branches-stat-merged', 'branches-stat-stale']) {
       const chip = page.locator(`#${id}`);
@@ -37,19 +36,23 @@ test.describe('Branches Page', () => {
     }
   });
 
-  test('filter bar: search input and status dropdown are present', async ({ page }) => {
+  test('filter bar: search input and all four status filter pills are present', async ({ page }) => {
     await page.goto('/branches');
     await page.waitForLoadState('networkidle');
 
+    // Search input must be visible
     await expect(page.locator('#branches-search')).toBeVisible();
-    await expect(page.locator('#branches-filter-status')).toBeVisible();
 
-    // Status dropdown must have at least the four expected options
-    const select = page.locator('#branches-filter-status');
-    await expect(select.locator('option[value="open-pr"]')).toHaveCount(1);
-    await expect(select.locator('option[value="stale"]')).toHaveCount(1);
-    await expect(select.locator('option[value="merged"]')).toHaveCount(1);
-    await expect(select.locator('option[value="active"]')).toHaveCount(1);
+    // The branches page uses pill buttons (not a <select>) for status filtering.
+    // Each pill button contains a label with the status name.
+    const summaryBar = page.locator('.summary-bar');
+    await expect(summaryBar).toBeVisible();
+
+    // All four status pills must be present
+    await expect(summaryBar.locator('button.pill.open-pr')).toHaveCount(1);
+    await expect(summaryBar.locator('button.pill.stale')).toHaveCount(1);
+    await expect(summaryBar.locator('button.pill.merged')).toHaveCount(1);
+    await expect(summaryBar.locator('button.pill.active-pill')).toHaveCount(1);
   });
 
   test('shows either the branches table with correct headers or the empty state', async ({ page }) => {
@@ -81,7 +84,7 @@ test.describe('Branches Page', () => {
     await page.goto('/branches');
     await page.waitForLoadState('networkidle');
 
-    // Loading indicator must be gone — it's shown then hidden by loadBranchesPage()
+    // Loading indicator must be gone — controlled by Svelte $state(loading) with hidden={!loading}
     await expect(page.locator('#branches-loading')).toBeHidden();
     // Error state must not be visible on a healthy server
     await expect(page.locator('#branches-error')).toBeHidden();
@@ -133,18 +136,40 @@ test.describe('Branches Page', () => {
     await expect(page.locator('#branches-filter-empty')).toBeHidden();
   });
 
+  test('age heat bar is rendered for each branch row', async ({ page }) => {
+    await page.goto('/branches');
+    await page.waitForLoadState('networkidle');
+
+    const tableVisible = await page.locator('#branches-table-wrap').isVisible().catch(() => false);
+    if (!tableVisible) {
+      // No branches in the test environment — nothing to check
+      await expect(page.locator('#branches-empty')).toBeVisible();
+      return;
+    }
+
+    // Each data row must contain a heat bar div (the staleness indicator).
+    // The bar is a child div inside the age cell with width% style set by makeAgeBar().
+    const rows = page.locator('#branches-tbody tr');
+    const count = await rows.count();
+    if (count > 0) {
+      // The age column (3rd td) must contain the bar wrapper div.
+      // The cell uses a two-div structure: .age-bar-track (wrapper) and
+      // .age-bar-fill (progress fill) — test for the outer wrapper specifically.
+      const ageTd = rows.nth(0).locator('td').nth(2);
+      await expect(ageTd.locator('div.age-bar-track')).toHaveCount(1);
+    }
+  });
+
   test('branches page is responsive at mobile and desktop widths', async ({ page }) => {
     await page.goto('/branches');
     await page.waitForLoadState('networkidle');
 
-    // Mobile
+    // Mobile — Playwright's expect() auto-retries, no arbitrary sleep needed
     await page.setViewportSize({ width: 375, height: 667 });
-    await page.waitForTimeout(300);
     await expect(page.locator('h2').filter({ hasText: /Autonomous Branches/i })).toBeVisible();
 
     // Desktop
     await page.setViewportSize({ width: 1280, height: 720 });
-    await page.waitForTimeout(300);
     await expect(page.locator('h2').filter({ hasText: /Autonomous Branches/i })).toBeVisible();
   });
 });

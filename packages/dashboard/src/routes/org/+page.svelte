@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import type { PageData } from './$types';
   import type { OrgNodeData, OrgEdgeData } from './+page.server';
 
@@ -15,43 +15,59 @@
     cycleRefs?: string[];
   }
 
-  // ── Reactive state — populated from server data by $effect.pre below ────────
-  let roots: TreeNode[] = $state([]);
-  let orphans: TreeNode[] = $state([]); // agents not in any delegation edge
-  // loading=true until $effect.pre syncs server data (or onMount falls back to API)
-  let loading = $state(true);
-  let error: string | null = $state(null);
-  let totalNodes = $state(0);
-  let totalEdges = $state(0);
-  let orphansCollapsed = $state(true);
-  let collapsed: Set<string> = $state(new Set());
-
-  // ── Sync server data into state before first render ────────────────────────
-  // $effect.pre runs synchronously before each DOM update so SSR-provided data
-  // is in place before the first paint (no loading flash). It also re-fires when
-  // SvelteKit re-runs the server load (e.g. after invalidate()), keeping the tree
-  // in sync. buildTree is a hoisted function declaration — available here.
-  $effect.pre(() => {
-    const nodes: OrgNode[] = (data.nodes as OrgNodeData[] as OrgNode[]) ?? [];
-    const edges: OrgEdge[] = (data.edges as OrgEdgeData[] as OrgEdge[]) ?? [];
-
-    if (nodes.length === 0) return; // no server data — onMount falls back to API
-
-    const result = buildTree(nodes, edges);
-    roots = result.roots;
-    orphans = result.orphans;
-    totalNodes = nodes.length;
-    totalEdges = edges.length;
-
-    // Auto-collapse branches at depth ≥ 3
+  /** Compute the set of node IDs that should be auto-collapsed (depth ≥ 3). */
+  function computeAutoCollapsed(treeRoots: TreeNode[]): Set<string> {
     const set = new Set<string>();
     (function walk(ns: TreeNode[]) {
       for (const n of ns) {
         if (n.depth >= 3 && n.children.length > 0) set.add(n.id);
         walk(n.children);
       }
-    })(result.roots);
-    collapsed = set;
+    })(treeRoots);
+    return set;
+  }
+
+  // ── Module-level initialization from SSR data ──────────────────────────────
+  // Computed at module-init time so the tree is ready on the first server render.
+  // buildTree and computeAutoCollapsed are function declarations (hoisted), so
+  // calling them here — before their textual definition — is valid JavaScript.
+  // This is the pattern that works in both SSR and CSR without effects.
+  // untrack() signals an intentional non-reactive read of the $props() `data`
+  // — re-syncing is handled by the $effect below when data changes.
+  const _serverNodes: OrgNode[] = untrack(() => (data.nodes as OrgNodeData[] as OrgNode[]) ?? []);
+  const _serverEdges: OrgEdge[] = untrack(() => (data.edges as OrgEdgeData[] as OrgEdge[]) ?? []);
+  const _initResult = _serverNodes.length > 0
+    ? buildTree(_serverNodes, _serverEdges)
+    : { roots: [] as TreeNode[], orphans: [] as TreeNode[] };
+
+  // ── Reactive state ────────────────────────────────────────────────────────
+  let roots: TreeNode[] = $state(_initResult.roots);
+  let orphans: TreeNode[] = $state(_initResult.orphans);
+  // loading=false when SSR data is present; true only in pure SPA mode until
+  // the API fallback in onMount resolves.
+  let loading = $state(_serverNodes.length === 0);
+  let error: string | null = $state(null);
+  let totalNodes = $state(_serverNodes.length);
+  let totalEdges = $state(_serverEdges.length);
+  let orphansCollapsed = $state(true);
+  let collapsed: Set<string> = $state(computeAutoCollapsed(_initResult.roots));
+
+  // ── Re-sync when SvelteKit re-runs the server load (e.g. after invalidate()) ──
+  // Module-level code runs once at init; this effect keeps state in sync if
+  // data is refreshed during the session (e.g. navigation back to the route).
+  // Note: only reads `data` (the prop) — writing to other $state vars is safe
+  // because they are outputs, not read back as effect dependencies here.
+  $effect(() => {
+    const nodes: OrgNode[] = (data.nodes as OrgNodeData[] as OrgNode[]) ?? [];
+    const edges: OrgEdge[] = (data.edges as OrgEdgeData[] as OrgEdge[]) ?? [];
+    if (nodes.length === 0) return; // no server data — preserve existing state
+
+    const result = buildTree(nodes, edges);
+    roots = result.roots;
+    orphans = result.orphans;
+    totalNodes = nodes.length;
+    totalEdges = edges.length;
+    collapsed = computeAutoCollapsed(result.roots);
     loading = false;
   });
 
@@ -203,9 +219,10 @@
   }
 
   onMount(() => {
-    // $effect.pre already synced server data before this runs (loading=false).
+    // Module-level init already populated state from server data (loading=false).
     // Only fall back to the API fetch when no server data was available — i.e.
-    // pure SPA deployment mode where +page.server.ts does not run.
+    // when +page.server.ts returned empty nodes (edge case: wrong projectRoot or
+    // agents dir doesn't exist yet). This covers pure SPA / no-SSR deployments too.
     if (loading) load();
   });
 </script>
@@ -242,12 +259,14 @@
     <p>No agents found. Add agent YAML files to <code>.agentforge/agents/</code> to populate the org chart.</p>
   </div>
 {:else}
-  <div class="tree-container">
+  <div class="tree-container" data-testid="org-tree">
     <!-- Delegation hierarchy -->
     {#if roots.length > 0}
-      {#each roots as root (root.id)}
-        {@render treeNode(root)}
-      {/each}
+      <div data-testid="org-hierarchy">
+        {#each roots as root (root.id)}
+          {@render treeNode(root)}
+        {/each}
+      </div>
     {/if}
 
     <!-- Unlinked agents (not in any delegation edge) -->
@@ -296,6 +315,8 @@
       class:is-exec={node.depth <= 1}
       style="border-left-color:{color}; background:{node.depth <= 1 ? bg : 'var(--color-surface-1)'};"
       onclick={() => hasKids && toggle(node.id)}
+      data-testid="org-node"
+      data-agent-id={node.id}
     >
       <span class="node-expand">{#if hasKids}{isClosed ? '▸' : '▾'}{:else}<span class="node-leaf">·</span>{/if}</span>
       <span class="node-name">{node.label ?? node.id}</span>

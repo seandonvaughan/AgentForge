@@ -1,4 +1,5 @@
 import type { Command } from 'commander';
+import { generateCostReport } from '@agentforge/core';
 
 export function registerCostsCommand(program: Command): void {
   const costs = program
@@ -28,7 +29,6 @@ function registerCostReportCommand(
       }
 
       try {
-        const { generateCostReport } = await import('@agentforge/core');
         const report = await generateCostReport(commandOptions.projectRoot);
 
         if (report.source === 'empty') {

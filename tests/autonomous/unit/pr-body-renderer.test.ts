@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { renderPrBody } from '../../../packages/core/src/autonomous/pr-body-renderer.js';
-import { CycleStage } from '../../../packages/core/src/autonomous/types.js';
+import { renderPrBody, CycleStage } from '@agentforge/core';
 
 describe('renderPrBody', () => {
   const baseInput = {

@@ -200,7 +200,19 @@ ${reviewFindings}
 ## Cost so far
 $${costSoFar.toFixed(4)}
 
-Decide: APPROVE or REJECT this sprint for release. Provide a 1-paragraph rationale.
+## Verification protocol — READ CAREFULLY
+The code review above may have been produced against an intermediate execute-phase state. Before REJECTing on any CRITICAL or MAJOR finding, VERIFY it against the current working tree:
+
+1. For each CRITICAL or MAJOR finding that cites a specific file/line, use Read to look at the current contents of that file.
+2. Use Grep to search for the problematic pattern described in the finding.
+3. If the bug no longer reproduces (the line has been amended, the pattern is absent, or the finding's premise is otherwise false in the current code), treat that finding as RESOLVED. Do NOT let a resolved finding drive REJECT.
+4. Only unresolved CRITICAL or verified-still-present MAJOR findings are grounds for REJECT.
+
+If all CRITICAL and MAJOR findings either do not reproduce or were already addressed, and tests pass, APPROVE.
+
+In your rationale, explicitly state which findings you verified and whether each still reproduces — so downstream callers can audit the decision.
+
+Decide: APPROVE or REJECT this sprint for release.
 
 Respond as JSON: { "verdict": "APPROVE" | "REJECT", "rationale": "..." }`;
 

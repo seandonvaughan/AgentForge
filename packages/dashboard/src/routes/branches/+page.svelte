@@ -1,29 +1,22 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
 
-  type BranchStatus = 'open_pr' | 'merged' | 'active' | 'stale';
-
-  interface PrInfo {
-    number: number;
-    title: string;
-    state: string;
-    url: string | null;
-  }
+  // Status values match the server's /api/v5/autonomous-branches response (kebab-case).
+  type BranchStatus = 'open-pr' | 'merged' | 'active' | 'stale';
 
   interface AutonomousBranch {
     name: string;
     cycle: string;
     /** ISO 8601 timestamp of the branch tip commit */
-    createdAt: string;
-    sha: string;
-    age: string;
+    lastCommitAt: string;
     ageMs: number;
     status: BranchStatus;
-    pr: PrInfo | null;
+    prNumber: number | null;
+    prUrl: string | null;
   }
 
-  /** Must match STALE_DAYS × 24h in src/server/routes/branches.ts (currently 30 days) */
-  const STALE_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000;
+  /** Must match STALE_DAYS × 24h in listAutonomousBranches (packages/server — currently 3 days) */
+  const STALE_THRESHOLD_MS = 3 * 24 * 60 * 60 * 1000;
   const POLL_INTERVAL_S    = 30;
 
   let branches: AutonomousBranch[] = $state([]);
@@ -38,6 +31,7 @@
   let bulkDeleting = $state(false);
 
   let activeFilter: BranchStatus | 'all' = $state('all');
+  let searchQuery   = $state('');
   let pollTimer:    ReturnType<typeof setInterval> | null = null;
   let tickTimer:    ReturnType<typeof setInterval> | null = null;
   let nextRefreshIn = $state(POLL_INTERVAL_S);
@@ -56,7 +50,7 @@
     if (!silent) loading = true;
     error = null;
     try {
-      const res = await fetch('/api/v1/branches');
+      const res = await fetch('/api/v5/autonomous-branches');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       branches = (json.data ?? []) as AutonomousBranch[];
@@ -73,8 +67,10 @@
     deletingBranch   = branch.name;
     deleteError      = null;
     try {
+      // The v5 wildcard route captures the full path after the prefix,
+      // so we pass the branch name as URL path segments (no encodeURIComponent).
       const res = await fetch(
-        `/api/v1/branches/${encodeURIComponent(branch.name)}`,
+        `/api/v5/autonomous-branches/${branch.name}`,
         { method: 'DELETE' },
       );
       if (!res.ok) {
@@ -98,7 +94,7 @@
     for (const branch of staleBranches) {
       try {
         const res = await fetch(
-          `/api/v1/branches/${encodeURIComponent(branch.name)}`,
+          `/api/v5/autonomous-branches/${branch.name}`,
           { method: 'DELETE' },
         );
         if (!res.ok) {
@@ -155,14 +151,14 @@
   }
 
   const STATUS_COLOR: Record<BranchStatus, string> = {
-    'open_pr': 'var(--color-info)',
+    'open-pr': 'var(--color-info)',
     'merged':  'var(--color-success)',
     'active':  'var(--color-brand)',
     'stale':   'var(--color-warning)',
   };
 
   const STATUS_LABEL: Record<BranchStatus, string> = {
-    'open_pr': 'Open PR',
+    'open-pr': 'Open PR',
     'merged':  'Merged',
     'active':  'Active',
     'stale':   'Stale',
@@ -182,16 +178,20 @@
   });
 
   // ── Derived counts ─────────────────────────────────────────────────────────
-  let openCount   = $derived(branches.filter((b) => b.status === 'open_pr').length);
+  let openCount   = $derived(branches.filter((b) => b.status === 'open-pr').length);
   let activeCount = $derived(branches.filter((b) => b.status === 'active').length);
   let mergedCount = $derived(branches.filter((b) => b.status === 'merged').length);
   let staleCount  = $derived(branches.filter((b) => b.status === 'stale').length);
 
   // ── Filtered + sorted view ─────────────────────────────────────────────────
   let filteredBranches = $derived.by(() => {
-    const base = activeFilter === 'all'
-      ? branches
-      : branches.filter((b) => b.status === activeFilter);
+    const q = searchQuery.trim().toLowerCase();
+
+    const base = branches.filter((b) => {
+      const matchStatus = activeFilter === 'all' || b.status === activeFilter;
+      const matchSearch = !q || b.name.toLowerCase().includes(q) || b.cycle.toLowerCase().includes(q);
+      return matchStatus && matchSearch;
+    });
 
     return [...base].sort((a, b) => {
       let cmp = 0;
@@ -227,10 +227,10 @@
 <svelte:window onclick={cancelConfirm} />
 <div class="page-header">
   <div>
-    <h1 class="page-title">⎇ Autonomous Branches</h1>
+    <h2 class="page-title">⎇ Autonomous Branches</h2>
     <p class="page-subtitle">
       Git hygiene for <code>autonomous/*</code> cycles ·
-      branches with no open PR become <strong>stale</strong> after 30 days
+      branches with no open PR become <strong>stale</strong> after 3 days
     </p>
   </div>
   <div class="header-actions">
@@ -269,15 +269,15 @@
     class:active={activeFilter === 'all'}
     onclick={() => (activeFilter = 'all')}
   >
-    <span class="pill-count">{branches.length}</span>
+    <span class="pill-count" id="branches-stat-total">{branches.length}</span>
     <span class="pill-label">All</span>
   </button>
   <button
     class="pill open-pr"
-    class:active={activeFilter === 'open_pr'}
-    onclick={() => (activeFilter = 'open_pr')}
+    class:active={activeFilter === 'open-pr'}
+    onclick={() => (activeFilter = 'open-pr')}
   >
-    <span class="pill-count">{openCount}</span>
+    <span class="pill-count" id="branches-stat-open">{openCount}</span>
     <span class="pill-label">Open PR</span>
   </button>
   <button
@@ -293,7 +293,7 @@
     class:active={activeFilter === 'merged'}
     onclick={() => (activeFilter = 'merged')}
   >
-    <span class="pill-count">{mergedCount}</span>
+    <span class="pill-count" id="branches-stat-merged">{mergedCount}</span>
     <span class="pill-label">Merged</span>
   </button>
   <button
@@ -301,7 +301,7 @@
     class:active={activeFilter === 'stale'}
     onclick={() => (activeFilter = 'stale')}
   >
-    <span class="pill-count">{staleCount}</span>
+    <span class="pill-count" id="branches-stat-stale">{staleCount}</span>
     <span class="pill-label">Stale</span>
   </button>
 
@@ -309,6 +309,37 @@
     ↻ {nextRefreshIn}s
   </span>
 </div>
+
+<!-- Search bar — filters by branch name or cycle identifier -->
+<div class="search-bar">
+  <span class="search-icon" aria-hidden="true">⌕</span>
+  <input
+    id="branches-search"
+    class="search-input"
+    type="search"
+    bind:value={searchQuery}
+    placeholder="Search branch or cycle…"
+    aria-label="Search branches"
+    spellcheck="false"
+    autocomplete="off"
+  />
+  {#if searchQuery}
+    <button class="search-clear" onclick={() => (searchQuery = '')} aria-label="Clear search">✕</button>
+  {/if}
+</div>
+
+<!--
+  Loading sentinel: always present in the DOM so E2E tests can poll
+  `document.getElementById('branches-loading').hidden` to detect when the
+  initial fetch (or a manual refresh) completes.  The element is visually
+  invisible; the skeleton cards below are the actual user-facing indicator.
+-->
+<span
+  id="branches-loading"
+  hidden={!loading}
+  aria-hidden="true"
+  style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;"
+></span>
 
 {#if deleteError}
   <div class="error-banner">
@@ -318,7 +349,7 @@
 {/if}
 
 {#if error}
-  <div class="error-banner">
+  <div id="branches-error" class="error-banner">
     <span>{error}</span>
     <button class="close-btn" onclick={() => fetchBranches()} aria-label="Retry">Retry</button>
   </div>
@@ -338,25 +369,31 @@
     {/each}
   </div>
 {:else if branches.length === 0 && !error}
-  <div class="empty-state">
+  <div id="branches-empty" class="empty-state">
     <span class="empty-icon">⎇</span>
     <p>No <code>autonomous/*</code> branches found.</p>
     <p class="empty-hint">Start an autonomous cycle to create one.</p>
   </div>
-{:else if filteredBranches.length === 0 && activeFilter !== 'all'}
-  <div class="empty-state">
+{:else if filteredBranches.length === 0 && (activeFilter !== 'all' || searchQuery)}
+  <div id="branches-filter-empty" class="empty-state">
     <span class="empty-icon">⎇</span>
-    <p>No <strong>{STATUS_LABEL[activeFilter as BranchStatus]}</strong> branches.</p>
+    {#if searchQuery && activeFilter !== 'all'}
+      <p>No <strong>{STATUS_LABEL[activeFilter as BranchStatus]}</strong> branches matching <code>{searchQuery}</code>.</p>
+    {:else if searchQuery}
+      <p>No branches matching <code>{searchQuery}</code>.</p>
+    {:else}
+      <p>No <strong>{STATUS_LABEL[activeFilter as BranchStatus]}</strong> branches.</p>
+    {/if}
     <button
       class="btn btn-ghost btn-sm"
-      onclick={() => (activeFilter = 'all')}
+      onclick={() => { activeFilter = 'all'; searchQuery = ''; }}
       style="margin-top:var(--space-3);"
     >
-      Show all branches
+      Clear filters
     </button>
   </div>
 {:else if filteredBranches.length > 0}
-  <div class="card" style="padding:0;overflow:hidden;">
+  <div id="branches-table-wrap" class="card" style="padding:0;overflow:hidden;">
     <table class="data-table branches-table">
       <thead>
         <tr>
@@ -378,10 +415,10 @@
             </button>
           </th>
           <th>PR</th>
-          <th></th>
+          <th>Actions</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody id="branches-tbody">
         {#each filteredBranches as branch (branch.name)}
           <tr
             class:stale-row={branch.status === 'stale'}
@@ -401,12 +438,12 @@
               </button>
             </td>
 
-            <!-- Cycle shortlink -->
+            <!-- Cycle shortlink — navigates to the cycle detail page -->
             <td>
               <a
                 class="cycle-badge"
-                href="/cycles?q={encodeURIComponent(branch.cycle)}"
-                title="Filter cycles by this branch"
+                href="/cycles/{encodeURIComponent(branch.cycle)}"
+                title="View cycle {branch.cycle}"
               >
                 {branch.cycle}
               </a>
@@ -432,7 +469,7 @@
 
             <!-- Last commit timestamp -->
             <td>
-              <span class="mono muted">{formatDate(branch.createdAt)}</span>
+              <span class="mono muted">{formatDate(branch.lastCommitAt)}</span>
             </td>
 
             <!-- Status badge -->
@@ -447,12 +484,12 @@
 
             <!-- PR link -->
             <td>
-              {#if branch.pr?.url}
-                <a class="pr-link" href={branch.pr.url} target="_blank" rel="noopener">
-                  #{branch.pr.number} ↗
+              {#if branch.prUrl}
+                <a class="pr-link" href={branch.prUrl} target="_blank" rel="noopener">
+                  #{branch.prNumber} ↗
                 </a>
-              {:else if branch.pr}
-                <span class="mono muted">#{branch.pr.number}</span>
+              {:else if branch.prNumber != null}
+                <span class="mono muted">#{branch.prNumber}</span>
               {:else}
                 <span class="muted">—</span>
               {/if}
@@ -494,6 +531,7 @@
     <div class="table-footer">
       Showing {filteredBranches.length} of {branches.length} branch{branches.length === 1 ? '' : 'es'}
       {#if activeFilter !== 'all'} · filtered by <strong>{STATUS_LABEL[activeFilter as BranchStatus]}</strong>{/if}
+      {#if searchQuery} · search: <code class="footer-code">{searchQuery}</code>{/if}
     </div>
   </div>
 {/if}
@@ -942,6 +980,64 @@
     border-radius: 3px;
   }
 
+  /* ── Search bar ─────────────────────────────────────────────────────────── */
+  .search-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    transition: border-color var(--duration-fast);
+  }
+
+  .search-bar:focus-within {
+    border-color: var(--color-brand);
+  }
+
+  .search-icon {
+    color: var(--color-text-faint);
+    font-size: var(--text-md);
+    flex-shrink: 0;
+    user-select: none;
+    line-height: 1;
+  }
+
+  .search-input {
+    flex: 1;
+    background: none;
+    border: none;
+    outline: none;
+    font-size: var(--text-sm);
+    font-family: var(--font-mono);
+    color: var(--color-text);
+    min-width: 0;
+  }
+
+  .search-input::placeholder {
+    color: var(--color-text-faint);
+    font-family: inherit;
+  }
+
+  /* Remove browser default search decoration */
+  .search-input::-webkit-search-cancel-button { display: none; }
+
+  .search-clear {
+    background: none;
+    border: none;
+    padding: 0 var(--space-1);
+    color: var(--color-text-faint);
+    cursor: pointer;
+    font-size: var(--text-xs);
+    flex-shrink: 0;
+    line-height: 1;
+    transition: color var(--duration-fast);
+  }
+
+  .search-clear:hover { color: var(--color-text); }
+
   /* ── Table footer ────────────────────────────────────────────────────────── */
   .table-footer {
     padding: var(--space-2) var(--space-4);
@@ -949,6 +1045,15 @@
     font-size: var(--text-xs);
     color: var(--color-text-faint);
     text-align: right;
+  }
+
+  .footer-code {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    background: var(--color-surface-2);
+    padding: 1px 4px;
+    border-radius: 3px;
+    color: var(--color-text-muted);
   }
 
   /* ── Responsive ──────────────────────────────────────────────────────────── */

@@ -21,7 +21,7 @@ import {
   removeWorkspace,
   saveWorkspaceRegistry,
   setDefaultWorkspace,
-} from '../../../packages/core/src/autonomous/workspace-registry.js';
+} from '@agentforge/core';
 
 let tmpHome: string;
 let prevHome: string | undefined;

@@ -1,8 +1,9 @@
 /**
- * Tests for the v6.7.4 cycle approval endpoints:
- *   GET  /api/v5/cycles/:id/approval
- *   POST /api/v5/cycles/:id/approve
- *   GET  /api/v5/cycle-sessions  (hasApprovalPending flag)
+ * Tests for the cycle approval endpoints:
+ *   GET  /api/v5/cycles/:id/approval          — reads pending approval data
+ *   POST /api/v5/cycles/:id/approval          — writes decision (canonical)
+ *   POST /api/v5/cycles/:id/approve           — legacy alias (backward compat)
+ *   GET  /api/v5/cycle-sessions               — hasApprovalPending flag
  *
  * These are the human-in-the-loop safety gates for the autonomous cycle.
  * The backend reads/writes approval-pending.json and approval-decision.json
@@ -412,6 +413,106 @@ describe('GET /api/v5/cycle-sessions — hasApprovalPending', () => {
     expect(body.counts).toHaveProperty('approvalPending');
     // No real sessions in test environment → approvalPending = 0
     expect(body.counts.approvalPending).toBe(0);
+  });
+});
+
+// ── POST /api/v5/cycles/:id/approval (canonical endpoint) ────────────────────
+//
+// v11.1+: GET and POST now share the same /approval resource URL.
+// These smoke tests confirm the canonical POST route behaves identically to
+// the legacy /approve alias — they share the handleApprovalDecision handler.
+
+describe('POST /api/v5/cycles/:id/approval — canonical endpoint', () => {
+  it('returns 200 and writes decision file with approveAll: true', async () => {
+    const dir = writePending(CYCLE_ID);
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/v5/cycles/${CYCLE_ID}/approval`,
+      payload: { approveAll: true },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.ok).toBe(true);
+    expect(body.decision.approvedItemIds).toEqual(['item-1', 'item-2']);
+    expect(body.decision.rejectedItemIds).toEqual(['item-3']);
+
+    // decision file must be written so the runtime loop unblocks
+    const decisionPath = join(dir, 'approval-decision.json');
+    expect(existsSync(decisionPath)).toBe(true);
+  });
+
+  it('supports partial approval (approvedItemIds + rejectedItemIds)', async () => {
+    writePending(CYCLE_ID);
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/v5/cycles/${CYCLE_ID}/approval`,
+      payload: {
+        approvedItemIds: ['item-1'],
+        rejectedItemIds: ['item-2', 'item-3'],
+        decidedBy: 'test-operator',
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().decision.approvedItemIds).toEqual(['item-1']);
+    expect(res.json().decision.decidedBy).toBe('test-operator');
+  });
+
+  it('returns 400 for an invalid cycle id (SAFE_ID rejection)', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v5/cycles/bad.id/approval',
+      payload: { approveAll: true },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('returns 409 when already decided', async () => {
+    const dir = writePending(CYCLE_ID);
+    writeDecision(dir);
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/v5/cycles/${CYCLE_ID}/approval`,
+      payload: { approveAll: true },
+    });
+    expect(res.statusCode).toBe(409);
+  });
+
+  it('emits approval.decision SSE event (same as /approve)', async () => {
+    writePending(CYCLE_ID);
+    const received: StreamEvent[] = [];
+    const unsub = globalStream.subscribe('test-canonical-sse', (e) => received.push(e));
+    try {
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/v5/cycles/${CYCLE_ID}/approval`,
+        payload: { approveAll: true },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(received).toHaveLength(1);
+      expect(received[0]!.type).toBe('cycle_event');
+      expect(received[0]!.category).toBe('approval.decision');
+      expect((received[0]!.data as Record<string, unknown>).cycleId).toBe(CYCLE_ID);
+    } finally {
+      unsub();
+    }
+  });
+
+  it('/approval and /approve are idempotent-sequential: second request is 409 (shared decision file)', async () => {
+    writePending(CYCLE_ID);
+    // Approve via canonical endpoint
+    const first = await app.inject({
+      method: 'POST',
+      url: `/api/v5/cycles/${CYCLE_ID}/approval`,
+      payload: { approveAll: true },
+    });
+    expect(first.statusCode).toBe(200);
+    // Legacy endpoint now returns 409 (decision already written)
+    const second = await app.inject({
+      method: 'POST',
+      url: `/api/v5/cycles/${CYCLE_ID}/approve`,
+      payload: { approveAll: true },
+    });
+    expect(second.statusCode).toBe(409);
   });
 });
 

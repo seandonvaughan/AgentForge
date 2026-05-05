@@ -7,7 +7,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { FastifyReply } from 'fastify';
-import { SseManager } from '../../src/server/sse/sse-manager.js';
+import { SseManager } from '../../packages/server/src/lib/sse/sse-manager.js';
 
 // ---------------------------------------------------------------------------
 // Helper: create a mock FastifyReply with spy-able raw methods

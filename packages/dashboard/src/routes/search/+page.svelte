@@ -78,10 +78,44 @@
     return text.length > 280 ? text.slice(0, 278) + '…' : text;
   }
 
-  /** Return the dashboard route for a result, or null if none exists. */
+  /**
+   * Return the deepest navigable route for a result.
+   *
+   * For types with detail pages (agent, cycle, sprint) we parse the composite
+   * `id` field ("type:entityId" or "sprint:version:itemId") and link directly
+   * to the entity. For types without detail pages (session, memory) we fall
+   * back to the list page so the user at least lands somewhere useful.
+   */
   function resultHref(result: SearchResult): string | null {
     if (!result.type) return null;
-    return TYPE_ROUTES[result.type] ?? null;
+    const listPage = TYPE_ROUTES[result.type] ?? null;
+    if (!listPage || !result.id) return listPage;
+
+    // Composite id format: "type:entityId" (agent, cycle, memory, session)
+    // or "sprint:version:itemId". Extract the entity-specific part.
+    const parts = result.id.split(':');
+    if (parts.length < 2) return listPage;
+
+    switch (result.type) {
+      case 'agent': {
+        // "agent:architect" → /agents/architect
+        const agentId = parts.slice(1).join(':');
+        return agentId ? `/agents/${encodeURIComponent(agentId)}` : listPage;
+      }
+      case 'cycle': {
+        // "cycle:abc123def456" → /cycles/abc123def456
+        const cycleId = parts.slice(1).join(':');
+        return cycleId ? `/cycles/${encodeURIComponent(cycleId)}` : listPage;
+      }
+      case 'sprint': {
+        // "sprint:10.1.0:item-id" → /sprints/10.1.0 (sprint detail page)
+        const version = parts[1];
+        return version ? `/sprints/${encodeURIComponent(version)}` : listPage;
+      }
+      default:
+        // session and memory fall back to their list pages
+        return listPage;
+    }
   }
 </script>
 
@@ -103,7 +137,6 @@
     onkeydown={handleKeydown}
     aria-label="Search query"
     disabled={searching}
-    autofocus
   />
   <button
     class="btn btn-primary"

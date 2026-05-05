@@ -58,7 +58,7 @@ interface ApprovalsState {
 
 // ── store factory ──────────────────────────────────────────────────────────
 
-function createApprovalsStore() {
+export function createApprovalsStore() {
   const { subscribe, update } = writable<ApprovalsState>({
     pending: [],
     active: null,
@@ -206,6 +206,8 @@ function createApprovalsStore() {
         const msg = JSON.parse(e.data as string) as {
           type?: string;
           category?: string;
+          /** Present on cycle_event messages — carries cycleId for direct dismiss. */
+          data?: Record<string, unknown>;
         };
         // Refresh on any cycle event that might indicate a state change.
         // The cycle events watcher publishes `category` = the event type from
@@ -218,6 +220,17 @@ function createApprovalsStore() {
             // autoOpen=true: when a fresh approval arrives via SSE, open the
             // modal immediately so operators don't miss the gate.
             refresh(true);
+          } else if (cat === 'approval.decision' || cat === 'approval_decision') {
+            // A decision was recorded by any dashboard client — immediately dismiss
+            // the cycle from the pending list so other connected tabs update without
+            // waiting for the next 10-second poll. Use the cycleId from the SSE
+            // payload for a targeted dismiss; fall back to a full refresh if absent.
+            const cycleId = typeof msg.data?.cycleId === 'string' ? msg.data.cycleId : null;
+            if (cycleId) {
+              dismiss(cycleId);
+            } else {
+              refresh();
+            }
           } else if (
             cat === 'budget_gate' ||
             cat === 'phase_change' ||
@@ -230,6 +243,16 @@ function createApprovalsStore() {
         // directly rather than wrapping in cycle_event).
         if (msg?.type === 'approval.pending' || msg?.type === 'approval_pending') {
           refresh(true);
+        }
+        // Top-level approval.decision event — mirrors the cycle_event branch above
+        // for runtime versions that emit the decision at the top level.
+        if (msg?.type === 'approval.decision' || msg?.type === 'approval_decision') {
+          const cycleId = typeof msg.data?.cycleId === 'string' ? msg.data.cycleId : null;
+          if (cycleId) {
+            dismiss(cycleId);
+          } else {
+            refresh();
+          }
         }
         // Dashboard-wide refresh signals (emitted by the Playwright monitor etc.)
         if (msg?.type === 'refresh_signal') {

@@ -10,7 +10,7 @@ TODO(autonomous): Render markdown content in cycle phases tab — use a markdown
 
 TODO(autonomous): Fix the /org dashboard route — verify the org graph endpoint returns real delegation data and the page renders nodes/edges correctly. Currently shows empty or broken state. Check packages/dashboard/src/routes/org/+page.svelte and the matching server route in packages/server/src/routes/v5/org-graph.ts.
 
-TODO(autonomous): Fix the /agents dashboard route — verify the agent listing shows real agents from .agentforge/agents/*.yaml with name, model tier, description, and clickable detail pages. Currently broken. Check packages/dashboard/src/routes/agents/+page.svelte.
+✅ DONE: /agents dashboard route lists real agents from .agentforge/agents/*.yaml — renders name, model tier (badge), team, effort, description columns in a sortable table with clickable detail pages (/agents/[id]). Server-side load via +page.server.ts reads YAML directly (no backend dependency); client-side refresh via GET /api/v5/agents updates on mount. Team filter chips, search, and __unassigned__ filter all working. 25 unit tests + 6 API route tests passing, 0 svelte-check errors.
 
 ## Memory and Flywheel pages
 
@@ -20,7 +20,7 @@ TODO(autonomous): Wire up the /flywheel dashboard page to real data — currentl
 
 ## Search
 
-TODO(autonomous): Fix the /search dashboard route — currently returns no results regardless of query. Check what backend endpoint it hits and either implement the search backend or wire it to an existing one (sessions, cycles, agents, sprints, memories). Update packages/dashboard/src/routes/search/+page.svelte.
+✅ DONE: /search dashboard route is fully implemented. POST /api/v5/search endpoint in packages/server/src/routes/v5/search.ts searches across sessions (via adapter), agents (.agentforge/agents/*.yaml), sprints (.agentforge/sprints/*.json), cycles (.agentforge/cycles/ and cycles-archived/), and memory (.agentforge/memory/*.json|.md|.jsonl). Frontend at packages/dashboard/src/routes/search/+page.svelte calls the endpoint with type-filter chips and renders results with score bars, clickable type badges, and deep-link navigation (agent→/agents/[id], cycle→/cycles/[id], sprint→/sprints/[version]). 18 unit tests passing.
 
 ## Approvals
 

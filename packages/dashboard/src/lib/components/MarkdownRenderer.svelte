@@ -96,8 +96,6 @@
   }
   let { content, class: className = '' }: Props = $props();
 
-  // Derive rendered HTML reactively - if content changes, re-render.
-  // _renderer.parse() returns string (not Promise) because async: false.
   let html = $derived(renderMarkdown(content));
 </script>
 

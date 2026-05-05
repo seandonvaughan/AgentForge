@@ -13,7 +13,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { createServerV5 } from '../../packages/server/src/server.js';
 import { MessageBusV2 } from '../../packages/core/src/message-bus/message-bus.js';
-import { CycleLogger } from '../../packages/core/src/autonomous/cycle-logger.js';
+import { CycleLogger } from '@agentforge/core';
 import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

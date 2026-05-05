@@ -4,8 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { RealTestRunner, TestRunTimeoutError } from '../../../packages/core/src/autonomous/exec/real-test-runner.js';
-import { DEFAULT_CYCLE_CONFIG } from '../../../packages/core/src/autonomous/config-loader.js';
+import { RealTestRunner, TestRunTimeoutError, DEFAULT_CYCLE_CONFIG } from '@agentforge/core';
 
 const execFileAsync = promisify(execFile);
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { bumpVersion } from '../../../packages/core/src/autonomous/version-bumper.js';
+import { bumpVersion } from '@agentforge/core';
 
 describe('bumpVersion', () => {
   it.each([

@@ -10,6 +10,7 @@ import {
   agentRunSections,
   markdownSections,
   stripMarkdownFields,
+  phaseMetaStats,
   MARKDOWN_FIELDS,
   ALWAYS_STRIP,
 } from '../lib/util/phase-render.js';
@@ -131,6 +132,29 @@ describe('agentRunSections', () => {
     const data = { agentRuns: [{ response: 'hello' }] };
     const result = agentRunSections(data);
     expect(result[0]!.agentId).toBe('agent');
+  });
+
+  it('forwards costUsd and durationMs when present', () => {
+    const data = {
+      agentRuns: [{ agentId: 'ceo', response: 'Approved.', costUsd: 0.1224, durationMs: 13018 }],
+    };
+    const result = agentRunSections(data);
+    expect(result[0]!.costUsd).toBeCloseTo(0.1224);
+    expect(result[0]!.durationMs).toBe(13018);
+  });
+
+  it('omits costUsd and durationMs when not present in run object', () => {
+    const data = { agentRuns: [{ agentId: 'reviewer', response: '## Review\nOK.' }] };
+    const result = agentRunSections(data);
+    expect(result[0]!.costUsd).toBeUndefined();
+    expect(result[0]!.durationMs).toBeUndefined();
+  });
+
+  it('omits costUsd when value is not a number (e.g. string)', () => {
+    const data = { agentRuns: [{ agentId: 'a', response: 'OK', costUsd: '0.12', durationMs: null }] };
+    const result = agentRunSections(data);
+    expect(result[0]!.costUsd).toBeUndefined();
+    expect(result[0]!.durationMs).toBeUndefined();
   });
 });
 
@@ -263,5 +287,109 @@ describe('error field in stripMarkdownFields', () => {
     const data = { phase: 'gate', error: '' };
     const result = stripMarkdownFields(data);
     expect(result).toHaveProperty('error', '');
+  });
+});
+
+// ─── phaseMetaStats ──────────────────────────────────────────────────────────
+
+describe('phaseMetaStats', () => {
+  it('returns empty array for empty data', () => {
+    expect(phaseMetaStats({})).toEqual([]);
+  });
+
+  it('extracts status chip', () => {
+    const result = phaseMetaStats({ status: 'completed' });
+    expect(result).toContainEqual({ key: 'status', value: 'completed' });
+  });
+
+  it('extracts cost from flat costUsd field', () => {
+    const result = phaseMetaStats({ costUsd: 0.1194 });
+    const cost = result.find((s) => s.key === 'cost');
+    expect(cost).toBeDefined();
+    expect(cost!.value).toMatch(/^\$/);
+    expect(cost!.value).toContain('0.1194');
+  });
+
+  it('extracts cost from nested cost.totalUsd field', () => {
+    const result = phaseMetaStats({ cost: { totalUsd: 0.055 } });
+    const cost = result.find((s) => s.key === 'cost');
+    expect(cost).toBeDefined();
+    expect(cost!.value).toContain('0.0550');
+  });
+
+  it('extracts duration and formats it as human-readable', () => {
+    const result = phaseMetaStats({ durationMs: 75000 });
+    const dur = result.find((s) => s.key === 'duration');
+    expect(dur).toBeDefined();
+    expect(dur!.value).toBe('1m 15s');
+  });
+
+  it('extracts agentRuns count as "runs" chip', () => {
+    const result = phaseMetaStats({ agentRuns: [{ agentId: 'a' }, { agentId: 'b' }] });
+    expect(result).toContainEqual({ key: 'runs', value: '2' });
+  });
+
+  it('extracts execute-phase progress counters', () => {
+    const data = {
+      phase: 'execute',
+      status: 'completed',
+      totalItems: 19,
+      completedItems: 16,
+      failedItems: 3,
+      sprintVersion: 'v12.0.0',
+    };
+    const result = phaseMetaStats(data);
+    expect(result).toContainEqual({ key: 'items', value: '19' });
+    expect(result).toContainEqual({ key: 'completed', value: '16' });
+    expect(result).toContainEqual({ key: 'failed', value: '3' });
+    expect(result).toContainEqual({ key: 'sprint', value: 'v12.0.0' });
+  });
+
+  it('omits "failed" chip when failedItems is 0', () => {
+    const result = phaseMetaStats({ totalItems: 10, completedItems: 10, failedItems: 0 });
+    expect(result.find((s) => s.key === 'failed')).toBeUndefined();
+  });
+
+  it('extracts gate decision and approved fields', () => {
+    const result = phaseMetaStats({ decision: 'APPROVE', approved: true });
+    expect(result).toContainEqual({ key: 'decision', value: 'APPROVE' });
+    expect(result).toContainEqual({ key: 'approved', value: 'true' });
+  });
+
+  it('orders status first in the chip row', () => {
+    const result = phaseMetaStats({ costUsd: 0.1, status: 'completed', durationMs: 5000 });
+    expect(result[0]!.key).toBe('status');
+  });
+
+  it('handles gate phase with all typical fields', () => {
+    const data = {
+      phase: 'gate',
+      status: 'completed',
+      durationMs: 14857,
+      costUsd: 0.11946,
+      agentRuns: [{ agentId: 'ceo', response: '...' }],
+    };
+    const result = phaseMetaStats(data);
+    const keys = result.map((s) => s.key);
+    expect(keys).toContain('status');
+    expect(keys).toContain('cost');
+    expect(keys).toContain('duration');
+    expect(keys).toContain('runs');
+    expect(keys).toContain('phase');
+  });
+
+  it('duration formatting: milliseconds', () => {
+    const result = phaseMetaStats({ durationMs: 450 });
+    expect(result.find((s) => s.key === 'duration')!.value).toBe('450ms');
+  });
+
+  it('duration formatting: seconds only', () => {
+    const result = phaseMetaStats({ durationMs: 45000 });
+    expect(result.find((s) => s.key === 'duration')!.value).toBe('45s');
+  });
+
+  it('duration formatting: hours and minutes', () => {
+    const result = phaseMetaStats({ durationMs: 5400000 });
+    expect(result.find((s) => s.key === 'duration')!.value).toBe('1h 30m');
   });
 });

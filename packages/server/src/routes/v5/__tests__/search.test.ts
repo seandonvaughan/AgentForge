@@ -3,12 +3,17 @@
  *
  * Uses a temporary project root per test so results are fully hermetic —
  * real .agentforge data never leaks into assertions.
+ *
+ * Two test groups:
+ *   1. No-adapter tests — cover agents, sprints, cycles, and memory.
+ *   2. With-adapter tests — cover sessions (which require a WorkspaceAdapter).
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServerV5 } from '../../../server.js';
+import { WorkspaceManager } from '@agentforge/core';
 
 let createdApps: Array<{ close: () => Promise<void> }> = [];
 let tmpDirs: string[] = [];
@@ -452,5 +457,175 @@ describe('POST /api/v5/search', () => {
     const body = res.json<SearchResponse>();
     expect(body.data).toHaveLength(3);
     expect(body.meta.total).toBe(3);
+  });
+});
+
+// ── Sessions search (requires WorkspaceAdapter) ───────────────────────────────
+// Sessions are the only content type that requires a live SQLite adapter;
+// all other types are filesystem-backed. These tests verify the adapter-enabled
+// path works correctly end-to-end.
+
+describe('POST /api/v5/search — sessions (with adapter)', () => {
+  let managers: WorkspaceManager[] = [];
+
+  afterEach(async () => {
+    for (const app of createdApps) {
+      try { await app.close(); } catch { /* ignore */ }
+    }
+    createdApps = [];
+    for (const m of managers) {
+      try { m.close(); } catch { /* ignore */ }
+    }
+    managers = [];
+    for (const dir of tmpDirs) {
+      try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
+    }
+    tmpDirs = [];
+  });
+
+  it('finds sessions by agentId when adapter is present', async () => {
+    const projectRoot = makeTmpRoot();
+    const dataDir = join(projectRoot, '.agentforge', 'v5');
+    mkdirSync(dataDir, { recursive: true });
+
+    const manager = new WorkspaceManager({ dataDir });
+    managers.push(manager);
+    const { adapter } = await manager.getOrCreateDefaultWorkspace();
+
+    // Seed a distinctive session
+    const session = adapter.createSession({
+      agentId: 'search-integration-tester',
+      task: 'Validate the keyword search integration for the dashboard',
+      model: 'claude-sonnet-4-6',
+    });
+    adapter.completeSession(session.id, 'completed', 0.005);
+
+    const { app } = await createServerV5({ listen: false, projectRoot, adapter });
+    createdApps.push(app);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v5/search',
+      payload: { query: 'integration-tester', limit: 10 },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<SearchResponse>();
+    const sessionResults = body.data.filter(r => r.type === 'session');
+    expect(sessionResults.length).toBeGreaterThanOrEqual(1);
+    expect(sessionResults[0]!.source).toBe('search-integration-tester');
+    expect(sessionResults[0]!.metadata?.status).toBe('completed');
+  });
+
+  it('finds sessions by task text', async () => {
+    const projectRoot = makeTmpRoot();
+    const dataDir = join(projectRoot, '.agentforge', 'v5');
+    mkdirSync(dataDir, { recursive: true });
+
+    const manager = new WorkspaceManager({ dataDir });
+    managers.push(manager);
+    const { adapter } = await manager.getOrCreateDefaultWorkspace();
+
+    adapter.createSession({
+      agentId: 'coder',
+      task: 'Refactor the authentication middleware to support OAuth2 flows',
+      model: 'claude-sonnet-4-6',
+    });
+    adapter.createSession({
+      agentId: 'researcher',
+      task: 'Survey vector database options for semantic search',
+      model: 'claude-sonnet-4-6',
+    });
+
+    const { app } = await createServerV5({ listen: false, projectRoot, adapter });
+    createdApps.push(app);
+
+    // Only the "authentication middleware" session should match
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v5/search',
+      payload: { query: 'authentication middleware', limit: 10 },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<SearchResponse>();
+    const sessionResults = body.data.filter(r => r.type === 'session');
+    expect(sessionResults.length).toBeGreaterThanOrEqual(1);
+    const matched = sessionResults.find(r =>
+      typeof r.content === 'string' && r.content.toLowerCase().includes('authentication'),
+    );
+    expect(matched).toBeDefined();
+  });
+
+  it('session results include required metadata fields', async () => {
+    const projectRoot = makeTmpRoot();
+    const dataDir = join(projectRoot, '.agentforge', 'v5');
+    mkdirSync(dataDir, { recursive: true });
+
+    const manager = new WorkspaceManager({ dataDir });
+    managers.push(manager);
+    const { adapter } = await manager.getOrCreateDefaultWorkspace();
+
+    const sess = adapter.createSession({
+      agentId: 'metadata-check-agent',
+      task: 'Check that metadata fields are present in search results',
+      model: 'claude-opus-4-5',
+    });
+    adapter.completeSession(sess.id, 'completed', 0.01);
+
+    const { app } = await createServerV5({ listen: false, projectRoot, adapter });
+    createdApps.push(app);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v5/search',
+      payload: { query: 'metadata-check-agent', limit: 5 },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<SearchResponse>();
+    const r = body.data.find(d => d.type === 'session');
+    expect(r).toBeDefined();
+    expect(r?.metadata).toMatchObject({
+      status: expect.any(String),
+      agent_id: 'metadata-check-agent',
+    });
+    expect(r?.score).toBeGreaterThan(0);
+    expect(r?.score).toBeLessThanOrEqual(1);
+  });
+
+  it('session type filter restricts results to sessions only', async () => {
+    const projectRoot = makeTmpRoot();
+    const dataDir = join(projectRoot, '.agentforge', 'v5');
+    mkdirSync(dataDir, { recursive: true });
+
+    const manager = new WorkspaceManager({ dataDir });
+    managers.push(manager);
+    const { adapter } = await manager.getOrCreateDefaultWorkspace();
+
+    adapter.createSession({
+      agentId: 'filter-test-agent',
+      task: 'Run filter tests for the search subsystem',
+      model: 'claude-sonnet-4-6',
+    });
+
+    // Also create an agent YAML that matches the same query
+    const agentsDir = join(projectRoot, '.agentforge', 'agents');
+    mkdirSync(agentsDir, { recursive: true });
+    writeFileSync(join(agentsDir, 'filter-test-agent.yaml'), [
+      'name: Filter Test Agent',
+      'description: Agent used for filter test scenarios in search subsystem',
+    ].join('\n'));
+
+    const { app } = await createServerV5({ listen: false, projectRoot, adapter });
+    createdApps.push(app);
+
+    // With types:['session'], only session results should come back
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v5/search',
+      payload: { query: 'filter test', types: ['session'] },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<SearchResponse>();
+    expect(body.data.length).toBeGreaterThanOrEqual(1);
+    expect(body.data.every(r => r.type === 'session')).toBe(true);
   });
 });

@@ -32,6 +32,8 @@ export async function agentRoutes(
             model,
             description: typeof raw.description === 'string' ? raw.description.trim() : null,
             role: typeof raw.role === 'string' ? raw.role : null,
+            team: typeof raw.team === 'string' ? raw.team : null,
+            effort: typeof raw.effort === 'string' ? raw.effort : null,
           }];
         } catch {
           return [];

@@ -15,8 +15,8 @@ import {
   readRelevantMemoryEntries,
   formatMemorySection,
   type MemoryEntry,
-} from '../../../packages/core/src/autonomous/phase-handlers/execute-phase.js';
-import type { PhaseContext } from '../../../packages/core/src/autonomous/phase-scheduler.js';
+  type PhaseContext,
+} from '@agentforge/core';
 
 function makeMockBus() {
   const subscribers: Record<string, Array<(event: any) => void>> = {};

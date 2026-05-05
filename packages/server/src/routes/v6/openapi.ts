@@ -704,7 +704,6 @@ function buildOpenApiDoc() {
     },
     servers: [
       { url: 'http://127.0.0.1:4750', description: 'Local dev server (packages/server)' },
-      { url: 'http://127.0.0.1:4700', description: 'Legacy v1 server (src/server)' },
     ],
     tags,
     paths,

@@ -12,7 +12,6 @@ Requires a team manifest to be present (generated via `genesis` or `forge`). Als
 
 - `--agent <agent>` (required) — Name of the agent to invoke (case-insensitive, hyphen-aware matching)
 - `--task <task>` (required) — Task description or prompt to send to the agent
-- `--loop` — Enable control-loop mode (Sprint 2 feature; currently a placeholder)
 - `--budget <usd>` — Maximum USD spend for this session (default: 1.00)
 
 ## Examples
@@ -25,11 +24,6 @@ agentforge invoke --agent "architect" --task "Design the database schema for a b
 ### Invoke with custom budget
 ```bash
 agentforge invoke --agent "code-writer" --task "Implement the authentication module" --budget 5.00
-```
-
-### Invoke with control-loop placeholder
-```bash
-agentforge invoke --agent "analyst" --task "Analyze the market trends" --loop
 ```
 
 ## Behavior
@@ -60,8 +54,8 @@ Each invocation is logged to `.agentforge/sessions/{session-id}.json` with:
 
 ## Notes
 
-- **--loop flag**: Scheduled for Sprint 2. Currently a placeholder that exits without running the agent.
 - **Session routing**: All invocations route through AgentForgeSession, enabling cost tracking, review enforcement (if enabled), and potential escalations.
+- **Iterative / loop mode**: Use `agentforge cycle run` for autonomous multi-sprint loops. The root `invoke` command is a single-shot compatibility shim only.
 
 ## Exit Codes
 

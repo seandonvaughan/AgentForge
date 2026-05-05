@@ -5,7 +5,11 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   WorkspaceManager,
-  previewCycle,
+  ProposalToBacklog,
+  ScoringPipeline,
+  RuntimeAdapter,
+  loadCycleConfig,
+  createAutonomousTelemetryAdapters,
 } from '@agentforge/core';
 import { cyclesPreviewRoutes } from '../cycles-preview.js';
 
@@ -47,7 +51,13 @@ describe('POST /api/v5/cycles/preview', () => {
 
     await cyclesPreviewRoutes(app, {
       projectRoot,
-      loadAutonomous: async () => ({ previewCycle }),
+      loadAutonomous: async () => ({
+        loadCycleConfig,
+        ProposalToBacklog,
+        ScoringPipeline,
+        RuntimeAdapter,
+        createAutonomousTelemetryAdapters,
+      }),
     });
   });
 

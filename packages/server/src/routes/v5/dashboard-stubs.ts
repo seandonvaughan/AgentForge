@@ -168,6 +168,13 @@ export async function dashboardStubRoutes(
       source?: string;
       summary?: string;
       tags?: string[];
+      /**
+       * Promoted structured metadata for v10.2+ entries.
+       * For review-finding: ReviewFindingMetadata { file, line, severity, summary, fixSuggestion }
+       * For gate-verdict:   GateVerdictMetadata   { verdict, sprintVersion, rationale, ... }
+       * The dashboard's structured panels prefer this over parsing the raw value string.
+       */
+      metadata?: Record<string, unknown>;
     }
 
     const entries: DashboardMemoryEntry[] = [];
@@ -191,6 +198,8 @@ export async function dashboardStubRoutes(
                 createdAt?: string;
                 source?: string;
                 tags?: string[];
+                /** Promoted structured metadata (v10.2+ schema). */
+                metadata?: Record<string, unknown>;
               };
               const id = entry.id ?? `${file}-${entries.length}`;
               const type = entry.type ?? file.replace(/\.jsonl$/, '');
@@ -225,9 +234,13 @@ export async function dashboardStubRoutes(
                 // source is cycleId or agentId produced by phase handlers.
                 // Expose both as agentId (existing agent-filter UI) and source
                 // (new source-link UI in the memory dashboard).
-                ...(entry.source !== undefined ? { agentId: entry.source, source: entry.source } : {}),
-                ...(summary !== undefined ? { summary } : {}),
-                ...(entry.tags !== undefined ? { tags: entry.tags } : {}),
+                ...(entry.source   !== undefined ? { agentId: entry.source, source: entry.source } : {}),
+                ...(summary        !== undefined ? { summary }        : {}),
+                ...(entry.tags     !== undefined ? { tags: entry.tags }     : {}),
+                // Pass through promoted structured metadata so the dashboard's
+                // structured panels (review-finding location, fix suggestion;
+                // gate-verdict rationale, findings) work without re-parsing value.
+                ...(entry.metadata !== undefined ? { metadata: entry.metadata } : {}),
               });
             } catch { /* skip malformed line */ }
           }
@@ -313,23 +326,22 @@ export async function dashboardStubRoutes(
       return tb - ta;
     });
 
-    // Cap to MEMORY_LIMIT newest entries before filtering so that the
-    // agents/types dropdown lists reflect the real recent window — not the
-    // full history, which can be very large.
-    const recent = entries.slice(0, MEMORY_LIMIT);
-
-    // Unique agent/source IDs for the dashboard's agent-filter dropdown.
+    // Compute agents and types from ALL entries so that the dashboard's
+    // agent-filter dropdown and type-chip row always reflect the full corpus —
+    // not just the first MEMORY_LIMIT rows.  The dashboard's +page.svelte
+    // comment confirms it expects: "batch API computes agents/types from the
+    // FULL corpus before applying filters."
     const agents = [...new Set(
-      recent.map(e => e.agentId).filter((a): a is string => Boolean(a)),
+      entries.map(e => e.agentId).filter((a): a is string => Boolean(a)),
     )];
-
-    // Unique entry types for the dashboard's type-chip filter row.
     const types = [...new Set(
-      recent.map(e => e.type).filter((t): t is string => Boolean(t)),
+      entries.map(e => e.type).filter((t): t is string => Boolean(t)),
     )].sort();
 
-    // Apply optional query filters to the capped window.
-    const filtered = recent.filter(e => {
+    // Apply optional query filters to ALL entries before capping.  This
+    // ensures meta.total reflects the true number of matching entries and
+    // that large datasets aren't silently truncated before filtering.
+    const filtered = entries.filter(e => {
       if (typeFilter && e.type !== typeFilter) return false;
       if (agentIdFilter && e.agentId !== agentIdFilter) return false;
       if (hasSince) {
@@ -347,11 +359,15 @@ export async function dashboardStubRoutes(
       return true;
     });
 
+    // Cap the filtered results to MEMORY_LIMIT newest entries for the response.
+    const totalFiltered = filtered.length;
+    const data = filtered.slice(0, MEMORY_LIMIT);
+
     return reply.send({
-      data: filtered,
+      data,
       agents,
       types,
-      meta: { total: filtered.length, limit: MEMORY_LIMIT },
+      meta: { total: totalFiltered, limit: MEMORY_LIMIT, returned: data.length },
     });
   });
 
@@ -393,8 +409,21 @@ export async function dashboardStubRoutes(
     reply.raw.setHeader('Content-Type', 'application/x-ndjson');
     reply.raw.setHeader('Cache-Control', 'no-cache');
     reply.raw.setHeader('Transfer-Encoding', 'chunked');
-    // Allow cross-origin reads from Vite dev server (port 4751 → port 4750)
-    reply.raw.setHeader('Access-Control-Allow-Origin', '*');
+    // Scope CORS to localhost only — a wildcard '*' is a data-exfiltration risk
+    // if the dev server is ever reachable beyond localhost (security finding from
+    // v10.5.0 review).  Reflect the exact request origin when it is a localhost
+    // URL (handles any port, e.g. Vite on 4751 → API on 4750); fall back to the
+    // canonical dev-server origin so browsers still get a valid CORS response
+    // when no Origin header is present.
+    {
+      const reqOrigin = req.headers['origin'];
+      const isLocalhost = typeof reqOrigin === 'string' &&
+        /^https?:\/\/localhost(:\d+)?$/.test(reqOrigin);
+      reply.raw.setHeader(
+        'Access-Control-Allow-Origin',
+        isLocalhost ? reqOrigin : 'http://localhost:4751',
+      );
+    }
 
     if (!existsSync(memDir)) {
       reply.raw.end();
@@ -426,6 +455,8 @@ export async function dashboardStubRoutes(
               createdAt?: string;
               source?: string;
               tags?: string[];
+              /** Promoted structured metadata (v10.2+ schema). */
+              metadata?: Record<string, unknown>;
             };
             try {
               e = JSON.parse(line) as typeof e;
@@ -472,9 +503,12 @@ export async function dashboardStubRoutes(
               createdAt: e.createdAt ?? new Date().toISOString(),
               updatedAt: e.createdAt ?? new Date().toISOString(),
             };
-            if (e.source !== undefined)  { row['source']  = e.source;  row['agentId'] = e.source; }
-            if (summary !== undefined)   { row['summary'] = summary; }
-            if (e.tags !== undefined)    { row['tags']    = e.tags;    }
+            if (e.source   !== undefined) { row['source']   = e.source;   row['agentId'] = e.source; }
+            if (summary    !== undefined) { row['summary']  = summary; }
+            if (e.tags     !== undefined) { row['tags']     = e.tags; }
+            // Pass through promoted structured metadata so the dashboard's
+            // structured panels work without re-parsing the raw value string.
+            if (e.metadata !== undefined) { row['metadata'] = e.metadata; }
 
             reply.raw.write(JSON.stringify(row) + '\n');
           }
@@ -539,15 +573,15 @@ export async function dashboardStubRoutes(
 
 interface CycleRecord {
   cycleId: string;
-  sprintVersion?: string;
-  stage?: string;
-  startedAt?: string;
-  completedAt?: string;
-  durationMs?: number;
-  cost?: { totalUsd?: number; budgetUsd?: number };
-  tests?: { passed?: number; failed?: number; total?: number; passRate?: number };
-  git?: { branch?: string; commitSha?: string; filesChanged?: string[] };
-  pr?: { url?: string | null; number?: number | null };
+  sprintVersion?: string | undefined;
+  stage?: string | undefined;
+  startedAt?: string | undefined;
+  completedAt?: string | undefined;
+  durationMs?: number | undefined;
+  cost?: { totalUsd?: number; budgetUsd?: number } | undefined;
+  tests?: { passed?: number; failed?: number; total?: number; passRate?: number } | undefined;
+  git?: { branch?: string; commitSha?: string; filesChanged?: string[] } | undefined;
+  pr?: { url?: string | null; number?: number | null } | undefined;
 }
 
 /**
@@ -594,19 +628,105 @@ interface SessionRecord {
 
 // ── metric computation ─────────────────────────────────────────────────────
 
+/**
+ * Read a CycleRecord from a cycle directory.
+ *
+ * Supports two on-disk formats:
+ *  - Legacy (cycles-archived/): has `cycle.json` with the full record shape.
+ *  - Current (cycles/): no `cycle.json`; data is spread across `events.jsonl`
+ *    and `sprint-link.json`. We reconstruct the CycleRecord from the event
+ *    stream so metric computation works correctly for all recent cycles.
+ */
+function readCycleRecord(cycleDir: string, cycleId: string): CycleRecord | null {
+  // ── Legacy format: cycle.json present ──────────────────────────────────
+  const cycleFile = join(cycleDir, 'cycle.json');
+  if (existsSync(cycleFile)) {
+    try {
+      return JSON.parse(readFileSync(cycleFile, 'utf-8')) as CycleRecord;
+    } catch { /* fall through to event-stream reader */ }
+  }
+
+  // ── Current format: reconstruct from events.jsonl ──────────────────────
+  const eventsFile = join(cycleDir, 'events.jsonl');
+  if (!existsSync(eventsFile)) return null;
+
+  interface CycleEvent { type: string; at?: string; [key: string]: unknown }
+  let events: CycleEvent[];
+  try {
+    events = readFileSync(eventsFile, 'utf-8')
+      .split('\n')
+      .filter(l => l.trim().length > 0)
+      .map(l => JSON.parse(l) as CycleEvent);
+  } catch { return null; }
+
+  const find = (type: string | string[]) => {
+    const types = Array.isArray(type) ? type : [type];
+    return events.find(e => types.includes(e.type));
+  };
+
+  const sprintAssigned = find('sprint.assigned');
+  const scoring        = find('scoring.complete');
+  const testsEvt       = find('tests.complete');
+  const prEvt          = find(['pr.opened', 'opened']);
+  const complete       = find('cycle.complete');
+  const firstPhase     = find('phase.start');
+
+  // sprintVersion: prefer events, fall back to sprint-link.json
+  let sprintVersion: string | undefined =
+    (sprintAssigned?.sprintVersion as string | undefined);
+  if (!sprintVersion) {
+    const linkFile = join(cycleDir, 'sprint-link.json');
+    if (existsSync(linkFile)) {
+      try {
+        const link = JSON.parse(readFileSync(linkFile, 'utf-8')) as { sprintVersion?: string };
+        sprintVersion = link.sprintVersion;
+      } catch { /* ignore */ }
+    }
+  }
+
+  const startedAt = (firstPhase?.at ?? sprintAssigned?.at) as string | undefined;
+  const completedAt = (complete?.at) as string | undefined;
+  const durationMs = startedAt && completedAt
+    ? new Date(completedAt).getTime() - new Date(startedAt).getTime()
+    : undefined;
+
+  const passed = testsEvt?.passed as number | undefined;
+  const failed = testsEvt?.failed as number | undefined;
+  const total  = passed != null && failed != null ? passed + failed : undefined;
+  const passRate = total != null && total > 0 ? passed! / total : undefined;
+
+  return {
+    cycleId,
+    sprintVersion,
+    stage: (complete?.stage as string | undefined) ?? (complete ? 'completed' : undefined),
+    startedAt,
+    completedAt,
+    durationMs,
+    cost: scoring && typeof scoring.totalCostUsd === 'number'
+      ? { totalUsd: scoring.totalCostUsd as number }
+      : undefined,
+    tests: total != null && typeof passed === 'number' && typeof failed === 'number'
+      ? { passed, failed, total, passRate: typeof passRate === 'number' ? passRate : 0 }
+      : undefined,
+    pr: prEvt ? { url: prEvt.url as string | null, number: prEvt.number as number | null } : undefined,
+  };
+}
+
 function computeFlywheelMetrics(projectRoot: string) {
   // ── Cycles ────────────────────────────────────────────────────────────────
-  const cyclesDir = join(projectRoot, '.agentforge/cycles');
+  // Read from both the active cycles/ directory and cycles-archived/ so that
+  // historical completed cycles contribute to trend math even after archiving.
+  const cycleDirs = [
+    join(projectRoot, '.agentforge/cycles'),
+    join(projectRoot, '.agentforge/cycles-archived'),
+  ];
   const cycles: CycleRecord[] = [];
-  if (existsSync(cyclesDir)) {
+  for (const cyclesDir of cycleDirs) {
+    if (!existsSync(cyclesDir)) continue;
     for (const entry of readdirSync(cyclesDir, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
-      const cycleFile = join(cyclesDir, entry.name, 'cycle.json');
-      if (!existsSync(cycleFile)) continue;
-      try {
-        const raw = JSON.parse(readFileSync(cycleFile, 'utf-8')) as CycleRecord;
-        cycles.push(raw);
-      } catch { /* skip malformed */ }
+      const record = readCycleRecord(join(cyclesDir, entry.name), entry.name);
+      if (record) cycles.push(record);
     }
   }
 
@@ -825,7 +945,11 @@ function computeFlywheelMetrics(projectRoot: string) {
   const cycleHistory: CycleHistoryPoint[] = cycles.slice(-HISTORY_LIMIT).map(c => ({
     cycleId: c.cycleId,
     sprintVersion: c.sprintVersion ?? null,
-    startedAt: c.startedAt ?? new Date().toISOString(),
+    // Use epoch as the fallback so cycles without a timestamp sort to the
+    // beginning (oldest), not the end. Using new Date() here would silently
+    // inflate the "recent" half of the trend split in computeMetaLearning,
+    // producing misleadingly optimistic meta-learning scores.
+    startedAt: c.startedAt ?? '1970-01-01T00:00:00.000Z',
     stage: c.stage ?? 'unknown',
     testPassRate: c.tests?.passRate ?? null,
     testsTotal: (c.tests?.passed != null && c.tests?.failed != null)
@@ -939,7 +1063,12 @@ function computeMemoryStats(
   const entriesPerCycleTrend: CycleEntryPoint[] = cycles.slice(-TREND_LIMIT).map(c => ({
     cycleId: c.cycleId,
     count: entriesByCycleId.get(c.cycleId) ?? 0,
-    startedAt: c.startedAt ?? new Date().toISOString(),
+    // Use epoch as the fallback so cycles without a timestamp sort to the
+    // beginning (oldest), not the end. Using new Date() here would place
+    // timestamp-less cycles at the newest position in the sparkline,
+    // distorting the per-cycle trend display. Mirrors the SSR copy in
+    // +page.server.ts for consistency.
+    startedAt: c.startedAt ?? '1970-01-01T00:00:00.000Z',
   }));
 
   // Hit rate: prefer the precise `memoriesInjected` count written to each

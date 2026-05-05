@@ -61,8 +61,9 @@ The repository currently shows a hybrid architecture in code, not just in docs:
 - Root server API assembly is in [src/server/server.ts](../../../src/server/server.ts), with `/api/v1/*` style routes and a local dashboard path.
 - Package server API assembly is in [packages/server/src/server.ts](../../../packages/server/src/server.ts), with `/api/v5/*`, `/api/v6/*`, WebSocket bridges, workspace routing, cycles, search, execution, and plugin routes.
 - The autonomous cycle is currently led from the package stack: [packages/server/src/routes/v5/cycles.ts](../../../packages/server/src/routes/v5/cycles.ts) spawns `packages/cli/dist/bin.js autonomous:cycle`, and [packages/core/src/autonomous/cycle-runner.ts](../../../packages/core/src/autonomous/cycle-runner.ts) owns the cycle engine.
-- Root `invoke` now uses `AgentForgeSession` in [src/cli/commands/invoke.ts](../../../src/cli/commands/invoke.ts), but `--loop` still prints a placeholder message instead of entering a control loop.
+- Root `invoke` is now a compatibility wrapper delegating to `@agentforge/core`'s `invokeAgentRun`. The `--loop` placeholder has been removed; loop execution is canonicalized in the package CLI's `autonomous:cycle` command.
 - Root `genesis` is more complete than before, but it still sits inside the legacy root CLI surface in [src/cli/commands/genesis.ts](../../../src/cli/commands/genesis.ts).
+- The docs trail the code. [README.md](../../../README.md) uses release-era language that does not match the current package split, while [CHANGELOG.md](../../../CHANGELOG.md) still tops out at `6.7.0`. (`invoke --loop` references have been cleaned up.)
 - Dashboard runner behavior now defaults to async run starts: clients should tolerate default `202 Accepted` start responses and compatibility `?wait=true` synchronous `200` completion responses, then consume `/api/v5/stream` `agent_activity` chunks and `workflow_event` completion by `sessionId`.
 
 This is enough evidence to treat the repo as package-canonical with retained compatibility paths. The convergence path is still in progress, but the canonical side is no longer ambiguous.
@@ -202,7 +203,7 @@ Server/platform owner plus dashboard owner. The server decision has to be made t
 - Root `invoke` uses `AgentForgeSession` in [src/cli/commands/invoke.ts](../../../src/cli/commands/invoke.ts) and is centered on session logging and cost tracking.
 - Package autonomous execution uses `CycleRunner` in [packages/core/src/autonomous/cycle-runner.ts](../../../packages/core/src/autonomous/cycle-runner.ts).
 - Package server’s `/api/v5/cycles` route in [packages/server/src/routes/v5/cycles.ts](../../../packages/server/src/routes/v5/cycles.ts) is already the operational launcher for the autonomous cycle.
-- Root `invoke --loop` still returns a placeholder notice instead of entering the bounded control loop.
+- Root `invoke --loop` has been removed. Loop execution is now exclusively in the package CLI's `autonomous:cycle` command.
 
 **Why this matters**
 

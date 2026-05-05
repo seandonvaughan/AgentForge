@@ -250,5 +250,26 @@ describe('buildOrgGraph — real project data', () => {
     // No duplicate edges
     const edgeKeys = result.edges.map(e => `${e.from}\0${e.to}`);
     expect(new Set(edgeKeys).size).toBe(edgeKeys.length);
+
+    // ceo delegates to cto — edge comes from ceo.yaml collaboration.can_delegate_to
+    const ceoToCto = result.edges.filter(e => e.from === 'ceo' && e.to === 'cto');
+    expect(ceoToCto).toHaveLength(1); // exactly one edge, no duplicates
+
+    // ceo also delegates to coo and cfo (full C-suite)
+    expect(result.edges.some(e => e.from === 'ceo' && e.to === 'coo')).toBe(true);
+    expect(result.edges.some(e => e.from === 'ceo' && e.to === 'cfo')).toBe(true);
+
+    // cto delegates to architect (full chain: ceo → cto → architect)
+    expect(result.edges.some(e => e.from === 'cto' && e.to === 'architect')).toBe(true);
+
+    // ceo is the organisation root — no agent delegates TO ceo
+    const edgesToCeo = result.edges.filter(e => e.to === 'ceo');
+    expect(edgesToCeo).toHaveLength(0);
+
+    // Full C-suite must appear as nodes
+    expect(ids.has('cto')).toBe(true);
+    expect(ids.has('coo')).toBe(true);
+    expect(ids.has('cfo')).toBe(true);
+    expect(ids.has('architect')).toBe(true);
   });
 });
