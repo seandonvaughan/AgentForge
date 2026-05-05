@@ -21,10 +21,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
 
-      - uses: pnpm/action-setup@v4.2.0
+      - uses: pnpm/action-setup@v6.0.5
 
       - name: Setup Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v6.3.0
+        uses: actions/setup-node@v6.4.0
         with:
           node-version: ${{ matrix.node-version }}
           cache: pnpm
@@ -56,10 +56,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: pnpm/action-setup@v4.2.0
+      - uses: pnpm/action-setup@v6.0.5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6.3.0
+        uses: actions/setup-node@v6.4.0
         with:
           node-version: '20.19.x'
           cache: pnpm
@@ -80,7 +80,7 @@ jobs:
           echo "" >> changelog.md
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2.6.2
+        uses: softprops/action-gh-release@v3.0.0
         with:
           body_path: changelog.md
           generate_release_notes: false
