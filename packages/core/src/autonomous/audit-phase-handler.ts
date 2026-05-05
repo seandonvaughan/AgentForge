@@ -16,7 +16,7 @@
 import type { MemoryRegistryEntry } from "../team/engine/types/v4-api.js";
 import type { SessionMemoryEntry } from "../memory/session-memory-manager.js";
 import type { ReviewPhaseHandler } from "./review-phase-handler.js";
-import type { GateVerdictMetadata } from "./gate-phase-handler.js";
+import type { GateVerdictMetadata } from "../memory/types.js";
 
 // ---------------------------------------------------------------------------
 // Dependencies (read-only interfaces to avoid tight coupling)

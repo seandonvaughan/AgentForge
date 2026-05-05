@@ -12,7 +12,7 @@
 import { randomUUID } from 'node:crypto';
 import type { V4MessageBus, EnvelopeHandler } from '../communication/v4-message-bus.js';
 import type { SqliteAdapter } from '../db/sqlite-adapter.js';
-import type { SseManager } from '../server/sse/sse-manager.js';
+interface SseManager { broadcast(event: string, data: unknown): void; }
 
 // ---------------------------------------------------------------------------
 // Options
