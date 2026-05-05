@@ -58,7 +58,7 @@
   "dependencies": {
     "@agentforge/core": "workspace:*",
     "@agentforge/server": "workspace:*",
-    "@anthropic-ai/sdk": "^0.92.0",
+    "@anthropic-ai/sdk": "^0.94.0",
     "@fastify/cors": "^11.2.0",
     "better-sqlite3": "^12.9.0",
     "commander": "^14.0.3",
