@@ -1,5 +1,7 @@
+import { randomUUID } from 'node:crypto';
+
 export function generateId(): string {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  return `${Date.now().toString(36)}-${randomUUID().replace(/-/g, '').slice(0, 6)}`;
 }
 
 export function nowIso(): string {
