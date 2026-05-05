@@ -67,3 +67,21 @@ TODO(autonomous): Complete tests/integration/memory-flow.test.ts if it was not f
 TODO(autonomous): Verify every dashboard route still renders after the root-server purge. Walk through /, /cycles, /cycles/[id], /sprints, /sprints/[version], /workspaces, /agents, /approvals, /branches, /cost, /flywheel, /health, /knowledge, /live, /memory, /org, /plugins, /runner, /search, /sessions, /settings. Any regressions land before the cycle completes.
 
 TODO(autonomous): Fix the cycle-detail page to gracefully handle cycles whose cycle.json is never written (killed cycles). Current code assumes either terminal cycle.json or in-progress 404+cycleInProgress — there's a gap for killed cycles with partial phase data.
+
+## Residual root src/ references blocking CI typecheck (carry-over from v10.6.0 merge, 2026-05-05)
+
+After merging PR #16 (v10.6.0 convergence purge), CI on main still fails Type Check (20.19.x) and Build because remaining root `src/` files import `@agentforge/core` symbols that aren't built before typecheck runs. Specific failing files observed in CI annotations:
+
+TODO(autonomous): Migrate or delete `src/cli/compat/package-run-services.ts` — typecheck reports `Cannot find module '@agentforge/core'`. Either inline the package-core import directly into callers and delete the bridge, or ensure the typecheck target builds packages/core first.
+
+TODO(autonomous): Migrate or delete the entire `src/builder/` tree (template-loader, template-customizer, team-writer, team-composer, agent-validator, index). All files import from `@agentforge/core` and fail typecheck. Per the v10.5.x convergence direction, builder logic should live at `packages/core/src/team/engine/` or similar. Audit which files in this tree are still referenced and either migrate or delete.
+
+TODO(autonomous): Fix the typecheck job ordering in `.github/workflows/ci.yml` so `pnpm build` (or at minimum `pnpm --filter @agentforge/core build`) runs before `tsc --noEmit`. Many root files reference `packages/core/dist/memory/types.d.ts` which doesn't exist until core builds. Without this fix, even after migrating root src files away, transient typecheck failures will recur whenever a fresh checkout types-checks before a build.
+
+TODO(autonomous): After all root src/ migrations land, run the convergence-gate that release.yml already enforces (fails if `src/server/` or `src/cli/compat/` exist) and extend it to also fail if `src/builder/` or `src/autonomous/` exist as root directories. The gate should encode the final state.
+
+## CI green re-baseline (carry-over from v10.6.0 merge, 2026-05-05)
+
+After landing the convergence purge plus PR #19 (security hardening) plus the dependabot bumps, CI has not yet been observed green on main. Both the v10.6.0 merge and the security PR were admin-merged because their failures were pre-existing main breakage, not regressions.
+
+TODO(autonomous): Run the full `pnpm verify:gates` locally on main and document every failing test/typecheck. For each, classify as (a) stale test referencing a deleted root path → delete or update the test, or (b) genuine regression → fix. The goal is one clean CI run on main before v10.7.0 ships.
