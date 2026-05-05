@@ -7,7 +7,7 @@
  */
 
 import { readdir, readFile, writeFile, mkdir } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 
 export interface CodeSymbol {
   name: string;
@@ -64,11 +64,7 @@ export class KnowledgeIngester {
    * Write a KnowledgeIndex to the given outputPath as JSON.
    */
   async save(index: KnowledgeIndex, outputPath: string): Promise<void> {
-    const lastSlash = outputPath.lastIndexOf("/");
-    const dir = lastSlash > 0 ? outputPath.substring(0, lastSlash) : undefined;
-    if (dir) {
-      await mkdir(dir, { recursive: true });
-    }
+    await mkdir(dirname(outputPath), { recursive: true });
     await writeFile(outputPath, JSON.stringify(index, null, 2), "utf-8");
   }
 

@@ -1,6 +1,5 @@
-import Fastify from 'fastify';
+import Fastify, { type FastifyInstance } from 'fastify';
 import FastifyCors from '@fastify/cors';
-import FastifyStatic from '@fastify/static';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { MessageBusV2 } from '@agentforge/core';
@@ -32,8 +31,38 @@ import { federationRoutes } from './routes/v5/federation.js';
 import { chatRoutes } from './routes/v5/chat.js';
 import { settingsRoutes } from './routes/v5/settings.js';
 import { searchRoutes } from './routes/v5/search.js';
+import { sendContainedStaticFile } from './lib/static-files.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+const securityHeaders: Record<string, string> = {
+  'Content-Security-Policy': [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    "frame-ancestors 'self'",
+    "form-action 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "font-src 'self' data:",
+    "connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
+  ].join('; '),
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'SAMEORIGIN',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), bluetooth=()',
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Resource-Policy': 'same-origin',
+};
+
+function registerSecurityHeaders(app: FastifyInstance): void {
+  app.addHook('onRequest', async (_req, reply) => {
+    for (const [name, value] of Object.entries(securityHeaders)) {
+      reply.raw.setHeader(name, value);
+    }
+  });
+}
 
 export interface ServerOptionsV5 {
   port?: number;
@@ -64,6 +93,8 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
   const app = Fastify({
     logger: { transport: { target: 'pino-pretty', options: { colorize: true } } },
   });
+
+  registerSecurityHeaders(app);
 
   // Register @fastify/websocket exactly once for the entire app. Both
   // registerWsHandler (/ws) and registerWebSocketRoutes (/api/v5/ws) depend on
@@ -224,18 +255,16 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
     });
   }
 
-  // ── Static dashboard (optional) ───────────────────────────────────────────────
-  if (options.dashboardPath) {
-    await app.register(FastifyStatic, {
-      root: options.dashboardPath,
-      prefix: '/',
-      decorateReply: false,
-    });
-  }
-
   app.setNotFoundHandler(async (req, reply) => {
     if (req.url.startsWith('/api/')) {
       return reply.status(404).send({ error: 'Not found', path: req.url });
+    }
+    if (options.dashboardPath) {
+      const served = await sendContainedStaticFile(req, reply, {
+        root: options.dashboardPath,
+        fallbackFile: 'index.html',
+      });
+      if (served) return reply;
     }
     return reply.status(404).send({ error: 'Not found' });
   });

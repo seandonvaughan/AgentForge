@@ -150,6 +150,13 @@
       accent: 'var(--color-warning)',
     },
     {
+      href: '/jobs',
+      label: 'Runtime Jobs',
+      description: 'Durable queue, job events, live output summaries, and safe cancel actions',
+      icon: '▤',
+      accent: 'var(--color-sonnet)',
+    },
+    {
       href: '/sessions',
       label: 'Sessions',
       description: 'All agent execution sessions with cost, status, and output',

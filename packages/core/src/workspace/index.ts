@@ -1,6 +1,8 @@
 import { WorkspaceRegistry, WorkspaceAdapter } from '@agentforge/db';
 import type { WorkspaceRow } from '@agentforge/db';
 
+export * from './init-service.js';
+
 export interface WorkspaceManagerOptions {
   dataDir: string;
 }

@@ -29,9 +29,35 @@ export interface ExecutionResult {
   status: 'pending' | 'running' | 'passed' | 'failed' | 'rejected';
   diff?: string;
   testSummary?: { passed: number; failed: number; total: number };
+  totalCostUsd?: number;
   totalDurationMs: number;
   startedAt: string;
   completedAt?: string;
+}
+
+export interface StageExecutionRequest {
+  executionId: string;
+  proposal: AgentProposal;
+  plan: ExecutionPlan;
+  stage: ExecutionStage;
+  agentId: string;
+  stageIndex: number;
+  timeoutMs: number;
+  budgetRemainingUsd: number;
+}
+
+export interface StageExecutionResponse {
+  output: string;
+  success: boolean;
+  durationMs?: number;
+  error?: string;
+  diff?: string;
+  testSummary?: { passed: number; failed: number; total: number };
+  costUsd?: number;
+}
+
+export interface ProposalRuntimeExecutor {
+  executeStage(request: StageExecutionRequest): Promise<StageExecutionResponse>;
 }
 
 export interface ExecutorOptions {
@@ -41,4 +67,6 @@ export interface ExecutorOptions {
   stageTimeoutMs?: number;
   /** Budget cap in USD across the entire execution. Default: 1.00 */
   budgetUsd?: number;
+  /** Required when dryRun is false. */
+  runtime?: ProposalRuntimeExecutor;
 }

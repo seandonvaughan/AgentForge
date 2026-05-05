@@ -3,6 +3,7 @@ import type { WebSocket } from '@fastify/websocket';
 import type { MessageBusV2 } from '@agentforge/core';
 import type { WorkspaceAdapter } from '@agentforge/db';
 import { WEBSOCKET_EVENTS, generateId } from '@agentforge/shared';
+import { globalStream, type StreamEvent } from '../routes/v5/stream.js';
 
 export interface WebSocketServerOptions {
   bus: MessageBusV2;
@@ -19,6 +20,7 @@ interface WsClient {
 
 /** Active WebSocket clients keyed by client ID. */
 const clients = new Map<string, WsClient>();
+let runtimeStreamBridgeRegistered = false;
 
 /**
  * Send a structured event to a single client.
@@ -64,6 +66,13 @@ export async function registerWebSocketRoutes(
   // any WebSocket routes are wired. Do not register it here.
 
   // ── Bus → WebSocket bridge ───────────────────────────────────────────────────
+
+  if (!runtimeStreamBridgeRegistered) {
+    runtimeStreamBridgeRegistered = true;
+    globalStream.subscribe('websocket-runtime-bridge', (event: StreamEvent) => {
+      broadcast(WEBSOCKET_EVENTS.BUS_EVENT, event, event.workspaceId);
+    });
+  }
 
   // Task events (agent.task.*)
   opts.bus.subscribe('agent.task.*', (envelope) => {

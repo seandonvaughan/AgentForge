@@ -70,9 +70,11 @@ vi.mock('@agentforge/core', () => {
   };
 
   return {
-    AgentRuntime: vi.fn().mockImplementation(() => ({
-      runStreaming: vi.fn().mockResolvedValue(mockRunResult),
-    })),
+    AgentRuntime: vi.fn(function () {
+      return {
+        runStreaming: vi.fn().mockResolvedValue(mockRunResult),
+      };
+    }),
     loadAgentConfig: vi.fn().mockImplementation(async (agentId: string) => {
       // Return a minimal valid config for any non-empty id so the
       // background phase agent path doesn't throw.

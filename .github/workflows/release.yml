@@ -15,24 +15,25 @@ jobs:
   test:
     name: Test Suite
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ['20.19.x', '22.13.x']
     steps:
       - uses: actions/checkout@v6.0.2
 
       - uses: pnpm/action-setup@v4.2.0
-        with:
-          version: 9
 
-      - name: Setup Node.js
+      - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v6.3.0
         with:
-          node-version-file: .nvmrc
+          node-version: ${{ matrix.node-version }}
           cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run lint
-        run: pnpm lint
+      - name: Run release gates
+        run: pnpm verify:gates
 
       - name: Run tests
         run: pnpm exec vitest run
@@ -40,33 +41,15 @@ jobs:
       - name: Type check
         run: pnpm exec tsc --noEmit
 
-  convergence-gate:
-    name: Convergence Gate
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6.0.2
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
 
-      - name: Fail if root src/server/ still exists
-        run: |
-          if [ -d "src/server" ]; then
-            echo "FAILED: root src/server/ must be removed before release."
-            echo "All server code must live in packages/server -- delete or move src/server/ and merge those changes first."
-            exit 1
-          fi
-          echo "OK: src/server/ not present"
-
-      - name: Fail if root src/cli/compat/ still exists
-        run: |
-          if [ -d "src/cli/compat" ]; then
-            echo "FAILED: root src/cli/compat/ must be removed before release."
-            echo "Compat shims must live in packages/cli -- delete or move src/cli/compat/ and merge those changes first."
-            exit 1
-          fi
-          echo "OK: src/cli/compat/ not present"
+      - name: Run dashboard Playwright gates
+        run: pnpm test:e2e:dashboard
 
   build-and-release:
     name: Build & Release
-    needs: [test, convergence-gate]
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6.0.2
@@ -74,13 +57,11 @@ jobs:
           fetch-depth: 0
 
       - uses: pnpm/action-setup@v4.2.0
-        with:
-          version: 9
 
       - name: Setup Node.js
         uses: actions/setup-node@v6.3.0
         with:
-          node-version-file: .nvmrc
+          node-version: '20.19.x'
           cache: pnpm
 
       - name: Install dependencies

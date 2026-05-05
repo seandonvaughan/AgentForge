@@ -5,7 +5,13 @@ import { ProviderResolver } from './provider-resolver.js';
 import { RuntimeSession } from './runtime-session.js';
 import { AnthropicSdkTransport } from './transports/anthropic-sdk-transport.js';
 import { ClaudeCodeCompatTransport } from './transports/claude-code-compat-transport.js';
-import type { ExecutionRequest, ExecutionTransport } from './types.js';
+import type {
+  ExecutionRequest,
+  ExecutionResult,
+  ExecutionStreamEvent,
+  ExecutionStreamOptions,
+  ExecutionTransport,
+} from './types.js';
 
 export interface ExecutionServiceOptions {
   transports?: ExecutionTransport[];
@@ -59,23 +65,105 @@ export class ExecutionService {
 
   async runStreaming(
     config: AgentRuntimeConfig,
-    opts: RunOptions & {
-      onChunk?: (text: string, index: number) => void;
-      onEvent?: (event: { type: string; data: unknown }) => void;
-    },
+    opts: RunOptions & ExecutionStreamOptions,
     adapter?: WorkspaceAdapter,
     apiKey?: string,
   ): Promise<RunResult> {
-    const result = await this.run(config, opts, adapter, apiKey);
+    const startedAt = new Date().toISOString();
+    const modelId = MODEL_IDS[config.model];
+    const request = this.buildRequest(config, opts, modelId, apiKey);
+    const session = new RuntimeSession({
+      agentId: config.agentId,
+      task: opts.task,
+      model: modelId,
+      startedAt,
+      ...(adapter ? { adapter } : {}),
+      ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
+      ...(opts.parentSessionId ? { parentSessionId: opts.parentSessionId } : {}),
+    });
 
-    if (result.status === 'completed' && opts.onChunk && result.response) {
-      opts.onChunk(result.response, 0);
+    session.start();
+    const requestedMode = opts.runtimeMode ?? config.runtimeMode ?? 'auto';
+
+    try {
+      const { transport, runtimeModeResolved } = await this.resolver.resolve(requestedMode, request);
+      try {
+        const execution = await this.executeWithStreamingFallback(transport, request, opts);
+        const result = session.completeSuccess(execution, runtimeModeResolved);
+        this.emitEvent(opts, { type: 'done', data: result });
+        return result;
+      } catch (error) {
+        this.emitError(opts, error, transport.kind);
+        const result = session.completeFailure(modelId, runtimeModeResolved, error, transport.kind);
+        this.emitEvent(opts, { type: 'done', data: result });
+        return result;
+      }
+    } catch (error) {
+      this.emitError(opts, error);
+      const result = session.completeFailure(modelId, requestedMode, error);
+      this.emitEvent(opts, { type: 'done', data: result });
+      return result;
     }
-    if (opts.onEvent) {
-      opts.onEvent({ type: 'done', data: result });
+  }
+
+  private async executeWithStreamingFallback(
+    transport: ExecutionTransport,
+    request: ExecutionRequest,
+    opts: ExecutionStreamOptions,
+  ): Promise<ExecutionResult> {
+    if (!transport.executeStreaming) {
+      const execution = await transport.execute(request);
+      if (execution.response) {
+        this.emitChunk(opts, execution.response, 0);
+      }
+      return execution;
     }
 
-    return result;
+    let emittedChunks = 0;
+    const streamOptions: ExecutionStreamOptions = {
+      ...opts,
+      onChunk: (text, index) => {
+        emittedChunks += 1;
+        opts.onChunk?.(text, index);
+      },
+      onEvent: (event) => {
+        if (event.type === 'text_delta' || event.type === 'chunk') emittedChunks += 1;
+        opts.onEvent?.(event);
+      },
+    };
+
+    const execution = await transport.executeStreaming(request, streamOptions);
+    if (emittedChunks === 0 && execution.response) {
+      this.emitChunk(opts, execution.response, 0);
+    }
+    return execution;
+  }
+
+  private emitChunk(opts: ExecutionStreamOptions, text: string, index: number): void {
+    opts.onChunk?.(text, index);
+    this.emitEvent(opts, {
+      type: 'text_delta',
+      data: { text, content: text, index },
+    });
+  }
+
+  private emitError(
+    opts: ExecutionStreamOptions,
+    error: unknown,
+    providerKind?: ExecutionTransport['kind'],
+  ): void {
+    const message = error instanceof Error ? error.message : String(error);
+    this.emitEvent(opts, {
+      type: 'error',
+      data: {
+        error: message,
+        ...(providerKind ? { providerKind } : {}),
+      },
+    });
+  }
+
+  private emitEvent(opts: ExecutionStreamOptions, event: ExecutionStreamEvent): void {
+    opts.onEvent?.(event);
   }
 
   private buildRequest(

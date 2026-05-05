@@ -74,6 +74,7 @@ export class RealTestRunner {
       outputFile,
     ];
     const timeoutMs = this.config.timeoutMinutes * 60_000;
+    const invocation = buildExecInvocation(cmd, args);
 
     let stdout = '';
     let stderr = '';
@@ -81,7 +82,7 @@ export class RealTestRunner {
     const startedAt = Date.now();
 
     try {
-      const result = await execFileAsync(cmd, args, {
+      const result = await execFileAsync(invocation.file, invocation.args, {
         cwd: this.cwd,
         timeout: timeoutMs,
         maxBuffer: 50 * 1024 * 1024,
@@ -196,4 +197,20 @@ export class RealTestRunner {
       exitCode,
     };
   }
+}
+
+function buildExecInvocation(command: string, args: string[]): { file: string; args: string[] } {
+  if (process.platform !== 'win32') {
+    return { file: command, args };
+  }
+
+  return {
+    file: 'cmd.exe',
+    args: ['/d', '/s', '/c', [command, ...args].map(quoteCmdArg).join(' ')],
+  };
+}
+
+function quoteCmdArg(arg: string): string {
+  if (/^[A-Za-z0-9_./:=,+@%\\-]+$/.test(arg)) return arg;
+  return `"${arg.replace(/"/g, '\\"')}"`;
 }
