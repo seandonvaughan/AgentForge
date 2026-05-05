@@ -35,6 +35,7 @@
   const nav = [
     { section: 'Overview', items: [
       { href: '/', label: 'Command Center' },
+      { href: '/jobs', label: 'Runtime Jobs' },
       { href: '/sessions', label: 'Sessions' },
       { href: '/cost', label: 'Cost Analytics' },
     ]},

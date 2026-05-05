@@ -8,5 +8,8 @@
   "exports": { ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" } },
   "scripts": { "build": "tsc", "dev": "tsc --watch", "clean": "rm -rf dist" },
   "dependencies": { "@agentforge/shared": "workspace:*" },
-  "devDependencies": { "typescript": "^5.7.0" }
+  "devDependencies": {
+    "@types/node": "^22.19.15",
+    "typescript": "^6.0.3"
+  }
 }

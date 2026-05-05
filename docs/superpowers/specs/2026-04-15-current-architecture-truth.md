@@ -241,16 +241,19 @@ Session/cost artifacts currently include:
 
 ## Testing / CI Snapshot
 
-The repository still has a conventional CI gate in [/.github/workflows/ci.yml](C:/Users/SeanVaughan/Projects/AgentForge/.github/workflows/ci.yml):
+The repository has a conventional CI gate in [/.github/workflows/ci.yml](C:/Users/SeanVaughan/Projects/AgentForge/.github/workflows/ci.yml), standardized on Node `20.19.x` and `22.13.x`:
 
-- lint on Node 18 and 20
-- test on Node 18 and 20
-- build on Node 18 and 20
-- type-check on Node 18 and 20
+- lint
+- release truth gates
+- Vitest tests
+- build
+- dashboard check/build
+- dashboard Playwright e2e
+- type-check
 - `pnpm install --frozen-lockfile`
 - Vitest output captured in JUnit format
 
-The repo also has Playwright support from root scripts, but the authoritative automated gate today is still CI, not a single local command.
+Security and release posture is documented in [docs/release-and-security-gates.md](C:/Users/SeanVaughan/Projects/AgentForge/docs/release-and-security-gates.md). The root `verify:gates` command covers lint, version sync, build, dashboard check/build, help/changelog truth, and dependency audit; Vitest and Playwright are explicit CI/release lanes so their artifacts remain separate.
 
 ## Current Source-of-Truth Conclusions
 

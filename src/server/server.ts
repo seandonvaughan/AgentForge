@@ -1,4 +1,4 @@
-import Fastify from 'fastify';
+import Fastify, { type FastifyInstance } from 'fastify';
 import FastifyCors from '@fastify/cors';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,6 +31,35 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 const { version } = require('../../package.json') as { version: string };
 
+const securityHeaders: Record<string, string> = {
+  'Content-Security-Policy': [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    "frame-ancestors 'self'",
+    "form-action 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "font-src 'self' data:",
+    "connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
+  ].join('; '),
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'SAMEORIGIN',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), bluetooth=()',
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Resource-Policy': 'same-origin',
+};
+
+function registerSecurityHeaders(app: FastifyInstance): void {
+  app.addHook('onRequest', async (_req, reply) => {
+    for (const [name, value] of Object.entries(securityHeaders)) {
+      reply.raw.setHeader(name, value);
+    }
+  });
+}
+
 export interface ServerOptions {
   port?: number;        // default 4700
   host?: string;        // default '127.0.0.1'
@@ -59,6 +88,8 @@ export async function createServer(options: ServerOptions = {}) {
           },
         },
   });
+
+  registerSecurityHeaders(app);
 
   // CORS — allow localhost in dev
   await app.register(FastifyCors, {

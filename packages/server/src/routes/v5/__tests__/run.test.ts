@@ -28,9 +28,12 @@ const coreMocks = vi.hoisted(() => {
 // is exercised the same way it runs in production.
 vi.mock('@agentforge/core', () => {
   return {
-    AgentRuntime: vi.fn().mockImplementation(() => ({
-      runStreaming: coreMocks.runStreaming,
-    })),
+    AgentRuntime: vi.fn(function () {
+      return { runStreaming: coreMocks.runStreaming };
+    }),
+    RuntimeJobSupervisor: vi.fn(function () {
+      return {};
+    }),
     loadAgentConfig: coreMocks.loadAgentConfig,
   };
 });

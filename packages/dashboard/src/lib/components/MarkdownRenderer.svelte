@@ -1,10 +1,91 @@
 <script module lang="ts">
-  // Create a single shared Marked instance — avoids mutating the global
+  // Create a single shared Marked instance - avoids mutating the global
   // marked singleton on each component mount, which is the correct pattern
   // for marked v7+. async: false ensures parse() always returns string
   // synchronously (no Promise wrapping, safe for Svelte $derived).
-  import { Marked } from 'marked';
-  const _renderer = new Marked({ gfm: true, breaks: false, async: false });
+  import { Marked, type RendererThis, type Tokens } from 'marked';
+
+  const LINK_PROTOCOLS = new Set(['http', 'https', 'mailto', 'tel']);
+  const IMAGE_PROTOCOLS = new Set(['http', 'https']);
+  const HTML_ESCAPES: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  };
+
+  function escapeHtml(value: string | null | undefined): string {
+    return String(value ?? '').replace(/[&<>"']/g, (char) => HTML_ESCAPES[char] ?? char);
+  }
+
+  function entityCodePointToString(point: number): string {
+    return Number.isInteger(point) && point >= 0 && point <= 0x10ffff
+      ? String.fromCodePoint(point)
+      : '';
+  }
+
+  function decodeHtmlEntities(value: string): string {
+    return value
+      .replace(/&#(\d+);?/g, (_, code: string) => {
+        const point = Number(code);
+        return entityCodePointToString(point);
+      })
+      .replace(/&#x([0-9a-f]+);?/gi, (_, code: string) => {
+        const point = Number.parseInt(code, 16);
+        return entityCodePointToString(point);
+      })
+      .replace(/&(colon|tab|newline);?/gi, (_, entity: string) => {
+        const normalized = entity.toLowerCase();
+        if (normalized === 'colon') return ':';
+        if (normalized === 'tab') return '\t';
+        if (normalized === 'newline') return '\n';
+        return '';
+      });
+  }
+
+  function protocolFor(url: string): string | null {
+    const normalized = decodeHtmlEntities(url).trim().replace(/[\u0000-\u001F\u007F\s]+/g, '');
+    const match = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(normalized);
+    return match ? match[1]!.toLowerCase() : null;
+  }
+
+  function safeUrl(url: string, allowedProtocols: Set<string>): string | null {
+    const trimmed = url.trim();
+    const protocol = protocolFor(trimmed);
+    return protocol === null || allowedProtocols.has(protocol) ? trimmed : null;
+  }
+
+  const _renderer = new Marked({
+    gfm: true,
+    breaks: false,
+    async: false,
+    renderer: {
+      html({ text }: Tokens.HTML | Tokens.Tag): string {
+        return escapeHtml(text);
+      },
+      link(this: RendererThis, { href, title, tokens }: Tokens.Link): string {
+        const text = this.parser.parseInline(tokens);
+        const url = safeUrl(href, LINK_PROTOCOLS);
+        if (url === null) return text;
+
+        const titleAttr = title ? ` title="${escapeHtml(title)}"` : '';
+        return `<a href="${escapeHtml(url)}"${titleAttr}>${text}</a>`;
+      },
+      image(this: RendererThis, { href, title, text, tokens }: Tokens.Image): string {
+        const alt = tokens ? this.parser.parseInline(tokens, this.parser.textRenderer) : text;
+        const url = safeUrl(href, IMAGE_PROTOCOLS);
+        if (url === null) return escapeHtml(alt);
+
+        const titleAttr = title ? ` title="${escapeHtml(title)}"` : '';
+        return `<img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}"${titleAttr}>`;
+      },
+    },
+  });
+
+  export function renderMarkdown(content: string | null | undefined): string {
+    return content ? (_renderer.parse(content) as string) : '';
+  }
 </script>
 
 <script lang="ts">
@@ -15,9 +96,9 @@
   }
   let { content, class: className = '' }: Props = $props();
 
-  // Derive rendered HTML reactively — if content changes, re-render.
+  // Derive rendered HTML reactively - if content changes, re-render.
   // _renderer.parse() returns string (not Promise) because async: false.
-  let html = $derived(content ? (_renderer.parse(content) as string) : '');
+  let html = $derived(renderMarkdown(content));
 </script>
 
 {#if html}

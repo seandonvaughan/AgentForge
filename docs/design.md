@@ -372,7 +372,7 @@ Agents communicate through structured message-passing managed by the orchestrato
 
 - Claude Code plugin API (slash command registration and context access)
 - Anthropic API (multi-model dispatch: Opus, Sonnet, Haiku)
-- Node.js 18+ (runtime)
+- Node.js `>=20.19.0` (runtime; CI validates Node `20.19.x` and `22.13.x`)
 - git CLI (repository analysis)
 - Project package manager CLIs (npm, pip, cargo, etc.)
 

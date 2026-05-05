@@ -54,34 +54,36 @@ vi.mock('@agentforge/core', async () => {
 
   return {
     ...real,
-    AgentRuntime: vi.fn().mockImplementation(() => ({
-      runStreaming: vi.fn().mockImplementation(() =>
-        Promise.resolve({
-          sessionId: 'mock-review-session',
-          response: mockResponse,
-          model: 'claude-sonnet-4-6',
-          inputTokens: 80,
-          outputTokens: 200,
-          costUsd: 0.004,
-          startedAt: '2026-04-09T00:00:00.000Z',
-          completedAt: '2026-04-09T00:00:01.000Z',
-          status: 'completed' as const,
-        }),
-      ),
-      run: vi.fn().mockImplementation(() =>
-        Promise.resolve({
-          sessionId: 'mock-review-session',
-          response: mockResponse,
-          model: 'claude-sonnet-4-6',
-          inputTokens: 80,
-          outputTokens: 200,
-          costUsd: 0.004,
-          startedAt: '2026-04-09T00:00:00.000Z',
-          completedAt: '2026-04-09T00:00:01.000Z',
-          status: 'completed' as const,
-        }),
-      ),
-    })),
+    AgentRuntime: vi.fn(function () {
+      return {
+        runStreaming: vi.fn().mockImplementation(() =>
+          Promise.resolve({
+            sessionId: 'mock-review-session',
+            response: mockResponse,
+            model: 'claude-sonnet-4-6',
+            inputTokens: 80,
+            outputTokens: 200,
+            costUsd: 0.004,
+            startedAt: '2026-04-09T00:00:00.000Z',
+            completedAt: '2026-04-09T00:00:01.000Z',
+            status: 'completed' as const,
+          }),
+        ),
+        run: vi.fn().mockImplementation(() =>
+          Promise.resolve({
+            sessionId: 'mock-review-session',
+            response: mockResponse,
+            model: 'claude-sonnet-4-6',
+            inputTokens: 80,
+            outputTokens: 200,
+            costUsd: 0.004,
+            startedAt: '2026-04-09T00:00:00.000Z',
+            completedAt: '2026-04-09T00:00:01.000Z',
+            status: 'completed' as const,
+          }),
+        ),
+      };
+    }),
     loadAgentConfig: vi.fn().mockImplementation(async (agentId: string) => {
       if (!agentId) return null;
       return {

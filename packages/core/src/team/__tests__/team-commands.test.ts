@@ -59,7 +59,7 @@ describe('package-native team helpers', () => {
     const exitCode = await showGeneratedTeam(projectRoot, { verbose: true });
 
     expect(exitCode).toBe(0);
-    const output = consoleLog.mock.calls.map(([value]) => String(value)).join('\n');
+    const output = consoleLog.mock.calls.map((call: unknown[]) => String(call[0])).join('\n');
     expect(output).toContain('Current Team Composition');
     expect(output).toContain('Demo Team');
     expect(output).toContain('Backend (sonnet)');
@@ -107,7 +107,7 @@ describe('package-native team helpers', () => {
     const listExitCode = await listTeamSessions(projectRoot);
 
     expect(listExitCode).toBe(0);
-    let output = consoleLog.mock.calls.map(([value]) => String(value)).join('\n');
+    let output = consoleLog.mock.calls.map((call: unknown[]) => String(call[0])).join('\n');
     expect(output).toContain('Hibernated Sessions');
     expect(output).toContain('Alpha Team');
     expect(output).toContain('Beta Team');
@@ -117,7 +117,7 @@ describe('package-native team helpers', () => {
     const deleteExitCode = await deleteTeamSession(projectRoot, 'alpha');
 
     expect(deleteExitCode).toBe(0);
-    output = consoleLog.mock.calls.map(([value]) => String(value)).join('\n');
+    output = consoleLog.mock.calls.map((call: unknown[]) => String(call[0])).join('\n');
     expect(output).toContain('Session alpha deleted');
     expect(
       existsSync(join(projectRoot, '.agentforge', 'sessions', 'session-alpha-1.json')),
