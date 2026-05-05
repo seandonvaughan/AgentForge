@@ -47,7 +47,7 @@ AgentForge transitioned from a monolithic root `src/` tree to a modular `package
 |---|---|---|---|
 | Root Fastify server (`src/server/main.ts`) | Package server (`packages/server/src/main.ts`) | 🟡 Still boots; deprecated path | v10.7.0 |
 | `/api/v1/*` endpoints (root) | `/api/v5/*` endpoints (package) | 🟡 Root routes frozen; package routes are canonical | v11.0.0 |
-| Root dashboard HTML (`dashboard/index.html`) | SvelteKit dashboard (`packages/dashboard/`) | 🔴 Deprecated; delete v10.7.0 | v10.7.0 |
+| Root dashboard HTML (`dashboard/index.html`) | SvelteKit dashboard (`packages/dashboard/`) | ✅ Deleted v11.0.0 | N/A |
 | Root server startup script | `agentforge start` (package CLI) | 🟡 Frozen shim | v11.0.0 |
 
 ### Session and Runtime Flows
@@ -65,7 +65,7 @@ AgentForge transitioned from a monolithic root `src/` tree to a modular `package
 | `src/server/` (full tree) | `packages/server/src/` | 🔴 Delete v10.7.0 | Root server purge |
 | `src/cli/compat/` bridges | Direct imports from `packages/core` | 🔴 Delete v10.7.0 | Remove compat shims |
 | `src/autonomous/*` | `packages/core/src/autonomous/*` | 🔴 Migrate & delete v10.7.0 | Runtime consolidation |
-| `dashboard/` HTML/pages | `packages/dashboard/` | 🔴 Delete v10.7.0 | Dashboard consolidation |
+| `dashboard/` HTML/pages | `packages/dashboard/` | ✅ Deleted v11.0.0 | Complete |
 | `src/index.ts` plugin export (v0.1.0) | Package manifests (10.5.0+) | 🟡 Version mismatch | Audit & fix v10.7.0 |
 
 ---
@@ -87,13 +87,13 @@ AgentForge transitioned from a monolithic root `src/` tree to a modular `package
 
 ---
 
-### v10.7.0 (Planned)
+### v10.7.0–v13.0.0 (Completed)
 
 **Removals:**
-- ❌ `src/server/` fully deleted; all server traffic routes through `packages/server`
-- ❌ `dashboard/` legacy HTML deleted; all UI traffic routes to SvelteKit at `packages/dashboard`
-- ❌ `src/autonomous/*` migrated to `packages/core/src/autonomous/`; root directory removed
-- ❌ `src/cli/compat/*` bridges deleted; direct package imports inlined
+- ✅ `src/server/` fully deleted; all server traffic routes through `packages/server`
+- ✅ `dashboard/` legacy HTML deleted (v11.0.0); all UI traffic routes to SvelteKit at `packages/dashboard`
+- ✅ `src/autonomous/*` migrated to `packages/core/src/autonomous/`; root directory removed
+- ✅ `src/cli/compat/*` bridges deleted; direct package imports inlined
 
 **Freeze points:**
 - 🟡 Root CLI commands frozen as thin delegation shims
@@ -175,19 +175,13 @@ Root server no longer available; only package server.
 
 ### Users on Legacy Dashboard
 
-**Current (v10.5.1):**
-```
-http://localhost:4750/dashboard/  # legacy root HTML dashboard
-```
+> **v11.0.0+:** The legacy root HTML dashboard (`dashboard/index.html` and `dashboard/pages/`) has been deleted. Only the SvelteKit dashboard remains.
 
-**Use instead (canonical):**
+**Canonical dashboard (v11.0.0+):**
 ```
 http://localhost:4751/            # SvelteKit dashboard (dev)
                                    # Requires Vite + package server running
 ```
-
-**After v10.7.0:**
-Legacy HTML dashboard deleted; package dashboard is only option.
 
 ---
 

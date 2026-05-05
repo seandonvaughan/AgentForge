@@ -2,8 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ProposalToBacklog } from '../../../packages/core/src/autonomous/proposal-to-backlog.js';
-import { DEFAULT_CYCLE_CONFIG } from '../../../packages/core/src/autonomous/config-loader.js';
+import { ProposalToBacklog, DEFAULT_CYCLE_CONFIG } from '@agentforge/core';
 
 describe('ProposalToBacklog', () => {
   let tmpDir: string;

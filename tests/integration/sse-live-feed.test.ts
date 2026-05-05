@@ -2,18 +2,20 @@
  * SSE Live Activity Feed Integration Tests — P0-7
  *
  * Verifies that:
- * 1. The /live page subscribes to the SSE stream at /api/v1/stream
+ * 1. The /live page subscribes to the SSE stream at /api/v5/stream
  * 2. cycle_event messages are received and rendered
  * 3. Events are displayed with proper colors, types, and timestamps
  *
- * NOTE: These tests verify that cycle_event messages are properly
- * broadcast and can be consumed by a live feed subscriber.
+ * NOTE: This suite exercises the SseManager class (legacy v1 broadcaster).
+ * The /live page's actual SSE path uses the v5 EventStream (unnamed events,
+ * `data: {...}\n\n`) tested in live-feed-wire-format.test.ts. Both test suites
+ * together give full subscriber coverage of the live feed pipeline.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { vi } from 'vitest';
-import type { SseManager } from '../../src/server/sse/sse-manager.js';
-import { SseManager as SseManagerImpl } from '../../src/server/sse/sse-manager.js';
+import type { SseManager } from '../../packages/server/src/lib/sse/sse-manager.js';
+import { SseManager as SseManagerImpl } from '../../packages/server/src/lib/sse/sse-manager.js';
 import type { FastifyReply } from 'fastify';
 
 // ---------------------------------------------------------------------------

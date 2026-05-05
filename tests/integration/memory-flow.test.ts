@@ -36,7 +36,7 @@ import {
 import {
   readRecentMemoryEntries,
   formatMemoryForPrompt,
-} from "../../packages/core/src/autonomous/phase-handlers/audit-phase.js";
+} from "@agentforge/core";
 
 // ---------------------------------------------------------------------------
 // Test Helpers

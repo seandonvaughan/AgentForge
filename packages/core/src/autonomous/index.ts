@@ -36,6 +36,7 @@ export {
   type SprintItem,
   type SprintResult,
   type SprintFrameworkOptions,
+  type GateVerdictMemoryWriter,
 } from './sprint-framework.js';
 export {
   ReviewPhaseHandler,

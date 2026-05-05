@@ -2,10 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PhaseScheduler } from '../../../packages/core/src/autonomous/phase-scheduler.js';
-import { KillSwitch } from '../../../packages/core/src/autonomous/kill-switch.js';
-import { CycleLogger } from '../../../packages/core/src/autonomous/cycle-logger.js';
-import { DEFAULT_CYCLE_CONFIG } from '../../../packages/core/src/autonomous/config-loader.js';
+import { PhaseScheduler, KillSwitch, CycleLogger, DEFAULT_CYCLE_CONFIG } from '@agentforge/core';
 
 function makeMockBus() {
   const subscribers: Record<string, Array<(event: any) => void>> = {};

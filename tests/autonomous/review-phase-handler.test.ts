@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, readFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ReviewPhaseHandler, type ReviewFinding } from "../../packages/core/src/autonomous/review-phase-handler.js";
+import { ReviewPhaseHandler, type ReviewFinding } from "@agentforge/core";
 import { MemoryRegistry } from "../../src/registry/memory-registry.js";
 
 // ---------------------------------------------------------------------------

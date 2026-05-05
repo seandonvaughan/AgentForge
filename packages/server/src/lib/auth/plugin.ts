@@ -116,9 +116,9 @@ export async function oauth2Plugin(
 /** Auth context attached to authenticated requests. */
 export interface AuthContext {
   /** The authenticated subject (sub claim or equivalent). */
-  subject?: string;
+  subject?: string | undefined;
   /** Space-separated OAuth2 scope string. */
-  scope?: string;
+  scope?: string | undefined;
 }
 
 declare module "fastify" {

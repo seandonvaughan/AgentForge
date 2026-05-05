@@ -26,9 +26,7 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 
-import { CycleRunner } from '../../../packages/core/src/autonomous/cycle-runner.js';
-import { DEFAULT_CYCLE_CONFIG } from '../../../packages/core/src/autonomous/config-loader.js';
-import { CycleStage } from '../../../packages/core/src/autonomous/types.js';
+import { CycleRunner, DEFAULT_CYCLE_CONFIG, CycleStage } from '@agentforge/core';
 
 /**
  * Build the full set of mocked dependencies the CycleRunner needs.

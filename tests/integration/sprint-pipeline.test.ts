@@ -25,40 +25,44 @@ import { randomUUID } from "node:crypto";
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
 
-vi.mock("@agentforge/core", () => ({
-  AgentRuntime: vi.fn().mockImplementation(() => ({
-    run: vi.fn().mockResolvedValue({
-      sessionId: `session-${randomUUID()}`,
-      status: "completed",
-      response: "Task completed successfully",
+vi.mock("@agentforge/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@agentforge/core")>();
+  return {
+    ...actual,
+    AgentRuntime: vi.fn().mockImplementation(() => ({
+      run: vi.fn().mockResolvedValue({
+        sessionId: `session-${randomUUID()}`,
+        status: "completed",
+        response: "Task completed successfully",
+        model: "sonnet",
+        costUsd: 0.05,
+        inputTokens: 500,
+        outputTokens: 200,
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+      }),
+      runStreaming: vi.fn().mockResolvedValue({
+        sessionId: `session-${randomUUID()}`,
+        status: "completed",
+        response: "Task completed successfully",
+        model: "sonnet",
+        costUsd: 0.05,
+        inputTokens: 500,
+        outputTokens: 200,
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+      }),
+      estimateCost: vi.fn().mockReturnValue(0.01),
+    })),
+    loadAgentConfig: vi.fn().mockResolvedValue({
+      agentId: "test-agent",
+      name: "Test Agent",
       model: "sonnet",
-      costUsd: 0.05,
-      inputTokens: 500,
-      outputTokens: 200,
-      startedAt: new Date().toISOString(),
-      completedAt: new Date().toISOString(),
+      systemPrompt: "You are a test agent",
+      workspaceId: "default",
     }),
-    runStreaming: vi.fn().mockResolvedValue({
-      sessionId: `session-${randomUUID()}`,
-      status: "completed",
-      response: "Task completed successfully",
-      model: "sonnet",
-      costUsd: 0.05,
-      inputTokens: 500,
-      outputTokens: 200,
-      startedAt: new Date().toISOString(),
-      completedAt: new Date().toISOString(),
-    }),
-    estimateCost: vi.fn().mockReturnValue(0.01),
-  })),
-  loadAgentConfig: vi.fn().mockResolvedValue({
-    agentId: "test-agent",
-    name: "Test Agent",
-    model: "sonnet",
-    systemPrompt: "You are a test agent",
-    workspaceId: "default",
-  }),
-}));
+  };
+});
 
 // ── Real imports (after mocks) ────────────────────────────────────────────────
 
@@ -66,7 +70,7 @@ import {
   AutonomousSprintFramework,
   type SprintItem,
   type SprintPhase,
-} from "../../packages/core/src/autonomous/sprint-framework.js";
+} from "@agentforge/core";
 import { AutoDelegationPipeline } from "../../src/orchestrator/auto-delegation.js";
 import { CareerStore } from "../../src/lifecycle/career-store.js";
 import { ConcurrencyManager } from "../../src/lifecycle/concurrency-manager.js";

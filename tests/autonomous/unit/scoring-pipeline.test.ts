@@ -1,9 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { ScoringPipeline } from '../../../packages/core/src/autonomous/scoring-pipeline.js';
-import { DEFAULT_CYCLE_CONFIG } from '../../../packages/core/src/autonomous/config-loader.js';
-import type { BacklogItem } from '../../../packages/core/src/autonomous/proposal-to-backlog.js';
+import { ScoringPipeline, DEFAULT_CYCLE_CONFIG, type AutonomousBacklogItem } from '@agentforge/core';
 
-const fakeBacklog: BacklogItem[] = [
+const fakeBacklog: AutonomousBacklogItem[] = [
   { id: 'i1', title: 'Fix crash', description: 'crash in parser', priority: 'P0', tags: ['fix'], source: 'failed-session', confidence: 0.9 },
   { id: 'i2', title: 'Add feature X', description: 'new X', priority: 'P1', tags: ['feature'], source: 'todo-marker', confidence: 1.0 },
   { id: 'i3', title: 'Cleanup Y', description: 'cleanup', priority: 'P2', tags: ['chore'], source: 'todo-marker', confidence: 1.0 },

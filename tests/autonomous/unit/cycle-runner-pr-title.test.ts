@@ -7,7 +7,7 @@
  * which (a) had unquoted parens, (b) was truncated mid-word at "budg".
  */
 import { describe, it, expect } from 'vitest';
-import { sanitizePrTitle } from '../../../packages/core/src/autonomous/cycle-runner.js';
+import { sanitizePrTitle } from '@agentforge/core';
 
 describe('sanitizePrTitle', () => {
   it('passes a short summary through with the autonomous prefix', () => {

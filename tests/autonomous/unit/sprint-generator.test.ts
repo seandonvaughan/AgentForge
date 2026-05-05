@@ -2,9 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { SprintGenerator } from '../../../packages/core/src/autonomous/sprint-generator.js';
-import { DEFAULT_CYCLE_CONFIG } from '../../../packages/core/src/autonomous/config-loader.js';
-import type { RankedItem } from '../../../packages/core/src/autonomous/types.js';
+import { SprintGenerator, DEFAULT_CYCLE_CONFIG, type RankedItem } from '@agentforge/core';
 
 describe('SprintGenerator', () => {
   let tmpDir: string;

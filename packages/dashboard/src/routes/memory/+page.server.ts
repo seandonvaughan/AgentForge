@@ -5,8 +5,8 @@
  * page renders with real memory entries on the first request — no dependency
  * on the Fastify backend at port 4750.
  *
- * Mirrors the logic in src/server/routes/memory.ts (_deriveJsonlMeta,
- * readJsonlMemories) but runs inside SvelteKit's SSR layer.  After hydration,
+ * Mirrors the logic in packages/server/src/routes/v5/dashboard-stubs.ts
+ * (memory endpoint) but runs inside SvelteKit's SSR layer.  After hydration,
  * the client-side load() in +page.svelte refreshes via the API and takes over.
  *
  * Accepts optional URL search params:

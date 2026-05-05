@@ -1,9 +1,13 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { AuditPhaseHandler, type GateVerdictReader } from "../../packages/core/src/autonomous/audit-phase-handler.js";
-import { ReviewPhaseHandler, type ReviewFinding } from "../../packages/core/src/autonomous/review-phase-handler.js";
+import {
+  AuditPhaseHandler,
+  type GateVerdictReader,
+  ReviewPhaseHandler,
+  type ReviewFinding,
+  type GateVerdictMetadata,
+} from "@agentforge/core";
 import { MemoryRegistry } from "../../src/registry/memory-registry.js";
 import type { SessionMemoryEntry } from "../../src/memory/session-memory-manager.js";
-import type { GateVerdictMetadata } from "../../packages/core/src/autonomous/gate-phase-handler.js";
 
 // ---------------------------------------------------------------------------
 // Helpers

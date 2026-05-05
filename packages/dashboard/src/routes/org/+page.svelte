@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import type { PageData } from './$types';
   import type { OrgNodeData, OrgEdgeData } from './+page.server';
 
@@ -27,31 +27,40 @@
     return set;
   }
 
+  // ── Module-level initialization from SSR data ──────────────────────────────
+  // Computed at module-init time so the tree is ready on the first server render.
+  // buildTree and computeAutoCollapsed are function declarations (hoisted), so
+  // calling them here — before their textual definition — is valid JavaScript.
+  // This is the pattern that works in both SSR and CSR without effects.
+  // untrack() signals an intentional non-reactive read of the $props() `data`
+  // — re-syncing is handled by the $effect below when data changes.
+  const _serverNodes: OrgNode[] = untrack(() => (data.nodes as OrgNodeData[] as OrgNode[]) ?? []);
+  const _serverEdges: OrgEdge[] = untrack(() => (data.edges as OrgEdgeData[] as OrgEdge[]) ?? []);
+  const _initResult = _serverNodes.length > 0
+    ? buildTree(_serverNodes, _serverEdges)
+    : { roots: [] as TreeNode[], orphans: [] as TreeNode[] };
+
   // ── Reactive state ────────────────────────────────────────────────────────
-  let roots: TreeNode[] = $state([]);
-  let orphans: TreeNode[] = $state([]);
+  let roots: TreeNode[] = $state(_initResult.roots);
+  let orphans: TreeNode[] = $state(_initResult.orphans);
   // loading=false when SSR data is present; true only in pure SPA mode until
   // the API fallback in onMount resolves.
-  let loading = $state(true);
+  let loading = $state(_serverNodes.length === 0);
   let error: string | null = $state(null);
-  let totalNodes = $state(0);
-  let totalEdges = $state(0);
+  let totalNodes = $state(_serverNodes.length);
+  let totalEdges = $state(_serverEdges.length);
   let orphansCollapsed = $state(true);
-  let collapsed: Set<string> = $state(new Set());
+  let collapsed: Set<string> = $state(computeAutoCollapsed(_initResult.roots));
 
-  // ── Reactivity on data changes ───────────────────────────────────────────────
-  // $effect.pre runs on server (SSR) and when SvelteKit re-runs the server load.
-  // This ensures we compute the tree immediately for SSR, avoiding blank states
-  // on initial page load. For pure SPA mode, onMount will fall back to the API.
-  $effect.pre(() => {
+  // ── Re-sync when SvelteKit re-runs the server load (e.g. after invalidate()) ──
+  // Module-level code runs once at init; this effect keeps state in sync if
+  // data is refreshed during the session (e.g. navigation back to the route).
+  // Note: only reads `data` (the prop) — writing to other $state vars is safe
+  // because they are outputs, not read back as effect dependencies here.
+  $effect(() => {
     const nodes: OrgNode[] = (data.nodes as OrgNodeData[] as OrgNode[]) ?? [];
     const edges: OrgEdge[] = (data.edges as OrgEdgeData[] as OrgEdge[]) ?? [];
-
-    if (nodes.length === 0) {
-      // No server data — pure SPA or loading — onMount will fall back to API.
-      loading = true;
-      return;
-    }
+    if (nodes.length === 0) return; // no server data — preserve existing state
 
     const result = buildTree(nodes, edges);
     roots = result.roots;
@@ -210,9 +219,10 @@
   }
 
   onMount(() => {
-    // $effect.pre already synced server data before this runs (loading=false).
+    // Module-level init already populated state from server data (loading=false).
     // Only fall back to the API fetch when no server data was available — i.e.
-    // pure SPA deployment mode where +page.server.ts does not run.
+    // when +page.server.ts returned empty nodes (edge case: wrong projectRoot or
+    // agents dir doesn't exist yet). This covers pure SPA / no-SSR deployments too.
     if (loading) load();
   });
 </script>

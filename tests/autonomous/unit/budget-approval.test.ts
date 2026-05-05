@@ -2,9 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { BudgetApproval } from '../../../packages/core/src/autonomous/budget-approval.js';
-import { CycleLogger } from '../../../packages/core/src/autonomous/cycle-logger.js';
-import type { RankedItem } from '../../../packages/core/src/autonomous/types.js';
+import { BudgetApproval, CycleLogger, type RankedItem } from '@agentforge/core';
 
 describe('BudgetApproval', () => {
   let tmpDir: string;

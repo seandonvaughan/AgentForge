@@ -19,7 +19,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { SessionMemoryEntry } from "../memory/session-memory-manager.js";
-import { writeMemoryEntry } from "../memory/types.js";
+import { writeMemoryEntry, type GateVerdictMetadata } from "../memory/types.js";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -39,17 +39,6 @@ export interface GateVerdictInput {
   majorFindings: string[];
 }
 
-/**
- * Structured payload stored in SessionMemoryEntry.metadata for gate verdicts.
- * AuditPhaseHandler reads this shape to build richer prompt injections.
- */
-export interface GateVerdictMetadata {
-  cycleId: string;
-  verdict: "approved" | "rejected" | "pending";
-  rationale: string;
-  criticalFindings: string[];
-  majorFindings: string[];
-}
 
 /** Minimal write interface — structurally satisfied by SessionMemoryManager. */
 export interface GateVerdictMemoryWriter {

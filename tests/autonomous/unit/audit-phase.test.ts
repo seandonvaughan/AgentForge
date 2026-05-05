@@ -21,9 +21,9 @@ import {
   runAuditPhase,
   AUDIT_PHASE_DEFAULT_TOOLS,
   type AuditPhaseOptions,
-} from '../../../packages/core/src/autonomous/phase-handlers/audit-phase.js';
+  type PhaseContext,
+} from '@agentforge/core';
 import type { CycleMemoryEntry } from '../../../packages/core/src/memory/types.js';
-import type { PhaseContext } from '../../../packages/core/src/autonomous/phase-scheduler.js';
 
 // ---------------------------------------------------------------------------
 // Test infrastructure

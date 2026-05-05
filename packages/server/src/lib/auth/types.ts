@@ -126,9 +126,9 @@ export interface AuthResult {
   /** Whether the token is valid and the request should proceed. */
   valid: boolean;
   /** The authenticated subject, if available. */
-  subject?: string;
+  subject?: string | undefined;
   /** Space-separated scope string, if provided in the token. */
-  scope?: string;
+  scope?: string | undefined;
   /** Human-readable error description when `valid` is false. */
-  error?: string;
+  error?: string | undefined;
 }

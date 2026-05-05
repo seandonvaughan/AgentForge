@@ -2,8 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { CycleLogger } from '../../../packages/core/src/autonomous/cycle-logger.js';
-import { CycleStage } from '../../../packages/core/src/autonomous/types.js';
+import { CycleLogger, CycleStage } from '@agentforge/core';
 
 describe('CycleLogger', () => {
   let tmpDir: string;

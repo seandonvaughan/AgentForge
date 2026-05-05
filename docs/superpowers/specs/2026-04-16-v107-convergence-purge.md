@@ -10,7 +10,7 @@ TODO(autonomous): Delete the legacy root Fastify server at src/server/main.ts an
 
 TODO(autonomous): Remove src/server/routes/flywheel.ts and src/server/routes/search.ts. The canonical versions live at packages/server/src/routes/v5/dashboard-stubs.ts and packages/server/src/routes/v5/search.ts. Delete the root versions and any test files that only cover them.
 
-TODO(autonomous): Delete the deprecated root dashboard at dashboard/index.html and dashboard/pages/. The SvelteKit dashboard under packages/dashboard is the canonical UI. Scrub any references from root scripts, docs, or README.
+DONE(v13.0.0): Deleted the deprecated root dashboard at dashboard/index.html and dashboard/pages/. The SvelteKit dashboard under packages/dashboard is the canonical UI. Scrubbed references from docs/CONVERGENCE.md (status rows updated to ✅ Deleted v11.0.0). No references found in root scripts, commands, or README. The directory itself was already removed in v11.0.0.
 
 ## Root CLI surface collapse (G2)
 
@@ -42,7 +42,7 @@ TODO(autonomous): Add a one-time startup warning to any remaining root CLI comma
 
 ## Dashboard operator UX (G7)
 
-TODO(autonomous): The legacy root dashboard HTML (dashboard/index.html) is listed as deprecated in the /agentforge:dashboard slash command but still exists on disk. Verify no production code path serves it, then delete it alongside the root server purge.
+DONE(v13.0.0): Verified no production code path serves dashboard/index.html. The directory was already removed in v11.0.0 (no disk presence confirmed). CONVERGENCE.md updated to reflect completion.
 
 TODO(autonomous): Add a top-level banner to the SvelteKit dashboard showing the current package version and a link to the CHANGELOG section for that version. This is the single-source-of-truth fix for G5 from the operator's side.
 

@@ -4,9 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { GitOps, GitSafetyError } from '../../../packages/core/src/autonomous/exec/git-ops.js';
-import { DEFAULT_CYCLE_CONFIG } from '../../../packages/core/src/autonomous/config-loader.js';
-import { CycleLogger } from '../../../packages/core/src/autonomous/cycle-logger.js';
+import { GitOps, GitSafetyError, DEFAULT_CYCLE_CONFIG, CycleLogger } from '@agentforge/core';
 
 const execFileAsync = promisify(execFile);
 

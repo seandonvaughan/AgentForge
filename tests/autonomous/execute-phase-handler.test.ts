@@ -2,8 +2,9 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   ExecutePhaseHandler,
   type ExecutePhaseMemorySection,
-} from "../../packages/core/src/autonomous/execute-phase-handler.js";
-import { ReviewPhaseHandler, type ReviewFinding } from "../../packages/core/src/autonomous/review-phase-handler.js";
+  ReviewPhaseHandler,
+  type ReviewFinding,
+} from "@agentforge/core";
 import { MemoryRegistry } from "../../src/registry/memory-registry.js";
 
 // ---------------------------------------------------------------------------

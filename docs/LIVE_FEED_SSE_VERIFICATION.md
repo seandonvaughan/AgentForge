@@ -78,12 +78,13 @@ interface StreamEvent {
 | `tests/integration/live-feed-rendering.test.ts` | 67 | Pure rendering helpers **imported directly from `live-feed.ts`**: `cycleAccentColor`, `formatCategory`, `formatTime`, `TYPE_COLORS`, `TYPE_LABELS`, `CYCLE_CATEGORY_LABELS`, `isSilentSystemMessage` |
 | `tests/integration/v5-cycle-events-live-feed.test.ts` | 11 | v5 `EventStream` → FeedEvent shape, color/label mapping, subscription lifecycle, phase ordering |
 | `tests/integration/live-feed-wire-format.test.ts` | 14 | Wire-format round-trip; unnamed-vs-named guard; heartbeat filtering; malformed-JSON resilience |
-| `tests/integration/sse-live-feed.test.ts` | 7 | Multi-client delivery, field completeness, timestamp validity, phase lifecycle, client resilience |
+| `tests/integration/sse-live-feed.test.ts` | 7 | Multi-client delivery, field completeness, timestamp validity, phase lifecycle, client resilience (exercises SseManager v1 broadcaster) |
 | `tests/server/sse-cycle-events.test.ts` | 7 | Server-side SSE cycle event emission, write errors, client cleanup |
-| `packages/dashboard/src/__tests__/live-feed.test.ts` | 32 | Dashboard unit tests for live-feed utility functions |
+| `tests/server/sse.test.ts` | 18 | SseManager capacity, eviction, client registry |
+| `packages/dashboard/src/__tests__/live-feed.test.ts` | 70 | Dashboard unit tests for live-feed utility functions, full CYCLE_CATEGORY_LABELS coverage, rendering pipeline simulation |
 | `tests/e2e/dashboard-live.test.ts` | 19 | Playwright E2E: page title, connection dot, cycle row rendering, type badge, category tag, timestamp, filter, heartbeat filtering, clear |
 
-**Total: 138 unit/integration tests + 19 E2E tests covering the full SSE → render pipeline.**
+**Total: 194 unit/integration tests + 19 E2E tests covering the full SSE → render pipeline.**
 
 > **Note**: `live-feed-rendering.test.ts` was upgraded from inline mirrors to real imports
 > (`import { TYPE_COLORS, TYPE_LABELS, … } from 'live-feed.ts'`). The test now directly

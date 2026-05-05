@@ -3,7 +3,7 @@ import {
   AutonomousSprintFramework,
   type SprintPhase,
   type GateVerdictMemoryWriter,
-} from "../../packages/core/src/autonomous/sprint-framework.js";
+} from "@agentforge/core";
 import type { SessionMemoryEntry } from "../../src/memory/session-memory-manager.js";
 
 describe("AutonomousSprintFramework", () => {

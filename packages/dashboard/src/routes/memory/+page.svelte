@@ -770,6 +770,11 @@
     'learned-fact':    { badge: 'haiku',   color: 'var(--color-haiku)',   label: 'Learned Fact'    },
     'json':            { badge: 'muted',   color: 'var(--color-text-faint)', label: 'JSON'         },
     'text':            { badge: 'muted',   color: 'var(--color-text-faint)', label: 'Text'         },
+    // Curated memories.json entry types — sourced from e.category ?? 'memory'
+    'memory':          { badge: 'badge-curated', color: 'var(--color-brand)',   label: 'Memory'   },
+    'project':         { badge: 'sonnet',        color: 'var(--color-sonnet)',  label: 'Project'  },
+    'feedback':        { badge: 'warning',        color: 'var(--color-warning)', label: 'Feedback' },
+    'lesson':          { badge: 'haiku',          color: 'var(--color-haiku)',   label: 'Lesson'   },
   };
   const FALLBACK_CONFIG = { badge: 'muted', color: 'var(--color-text-faint)', label: '' };
 
@@ -1191,7 +1196,7 @@
                         <button
                           class="detail-file-link"
                           class:detail-file-link--active={typeFilter === entry.type}
-                          onclick={(e) => { e.stopPropagation(); setTypeFilter(typeFilter === entry.type ? 'all' : entry.type); }}
+                          onclick={(e) => { e.stopPropagation(); setTypeFilter(typeFilter === entry.type ? 'all' : entry.type!); }}
                           title="{typeFilter === entry.type ? 'Clear' : 'Filter by'} {entry.type}"
                           aria-pressed={typeFilter === entry.type}
                         >{entry.type}.jsonl</button>
@@ -1214,7 +1219,7 @@
                   </div>
 
                   <!-- Summary line (only for types without a dedicated panel) -->
-                  {#if entry.summary && entry.type !== 'gate-verdict' && entry.type !== 'review-finding' && entry.type !== 'cycle-outcome' && entry.type !== 'failure-pattern' && entry.type !== 'learned-fact'}
+                  {#if entry.summary && entry.type !== 'gate-verdict' && entry.type !== 'review-finding' && entry.type !== 'cycle-outcome' && entry.type !== 'failure-pattern' && entry.type !== 'learned-fact' && entry.type !== 'memory' && entry.type !== 'project' && entry.type !== 'feedback' && entry.type !== 'lesson'}
                     <p class="detail-summary">{stripMarkdown(entry.summary)}</p>
                   {/if}
 
@@ -1422,10 +1427,42 @@
                     </div>
                   {/if}
 
+                  <!-- Curated-memory panel (memories.json entries, type='memory' or category-based types) -->
+                  {#if entry.type === 'memory' || entry.type === 'project' || entry.type === 'feedback' || entry.type === 'lesson'}
+                    {@const curatedNonSprintTags = (entry.tags ?? []).filter(t => !t.startsWith('sprint:'))}
+                    {@const curatedSprintVer = resolveSprintVersion(entry)}
+                    <div class="curated-panel">
+                      <div class="curated-hero">
+                        <span class="curated-badge">{TYPE_CONFIG[entry.type ?? '']?.label || entry.type}</span>
+                        {#if curatedSprintVer}
+                          <span class="verdict-sprint">Sprint {curatedSprintVer}</span>
+                        {/if}
+                        {#if displaySource && !isCycleId(displaySource)}
+                          <a
+                            class="source-link source-link--agent"
+                            href="/agents/{encodeURIComponent(displaySource)}"
+                            title="View agent {displaySource}"
+                            onclick={(e) => e.stopPropagation()}
+                          >
+                            <span class="source-prefix">agent</span>{displaySource}
+                          </a>
+                        {/if}
+                      </div>
+                      <p class="curated-text">{stripMarkdown(entry.summary ?? formatValue(entry.value))}</p>
+                      {#if curatedNonSprintTags.length > 0}
+                        <div class="curated-tags tag-row">
+                          {#each curatedNonSprintTags as tag (tag)}
+                            <span class="tag-chip tag-chip--curated">{tag}</span>
+                          {/each}
+                        </div>
+                      {/if}
+                    </div>
+                  {/if}
+
                   <!-- Structured metadata disclosure for entries not handled above.
-                       All 5 canonical types now have dedicated panels so this
+                       All canonical types now have dedicated panels so this
                        only fires for legacy/unknown types with metadata. -->
-                  {#if entry.metadata && !['gate-verdict', 'review-finding', 'cycle-outcome', 'failure-pattern', 'learned-fact'].includes(entry.type ?? '')}
+                  {#if entry.metadata && !['gate-verdict', 'review-finding', 'cycle-outcome', 'failure-pattern', 'learned-fact', 'memory', 'project', 'feedback', 'lesson'].includes(entry.type ?? '')}
                     <details class="raw-json-details">
                       <summary class="raw-json-summary">Structured metadata</summary>
                       <div class="detail-value-wrap">
@@ -1437,9 +1474,10 @@
 
                   <!-- Full value JSON with syntax highlighting + copy button.
                        Structured-panel types (gate-verdict, failure-pattern,
-                       learned-fact) collapse this into a disclosure to reduce noise;
-                       raw types (review-finding, cycle-outcome, untyped) show it inline. -->
-                  {#if entry.type === 'gate-verdict' || entry.type === 'failure-pattern' || entry.type === 'learned-fact'}
+                       learned-fact, memory, project, feedback, lesson) collapse this
+                       into a disclosure to reduce noise; raw types (review-finding,
+                       cycle-outcome, untyped) show it inline. -->
+                  {#if entry.type === 'gate-verdict' || entry.type === 'failure-pattern' || entry.type === 'learned-fact' || entry.type === 'memory' || entry.type === 'project' || entry.type === 'feedback' || entry.type === 'lesson'}
                     <details class="raw-json-details">
                       <summary class="raw-json-summary">Raw JSON</summary>
                       <div class="detail-value-wrap">
@@ -2846,6 +2884,61 @@
   @keyframes detailSlideIn {
     from { opacity: 0; transform: translateY(-3px); }
     to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── Curated memory badge (not in global .badge set) ────────────────────── */
+  /*
+   * Curated entries from memories.json carry type='memory' (default when no
+   * category is set).  The global badge variants cover all semantic types but
+   * not the generic 'memory' bucket, so we scope it here.
+   */
+  :global(.badge.badge-curated) {
+    color: var(--color-brand);
+    border-color: rgba(91, 138, 245, 0.3);
+    background: rgba(91, 138, 245, 0.08);
+  }
+
+  /* ── Curated-memory detail panel ─────────────────────────────────────────── */
+  .curated-panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    background: var(--color-surface-2);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border);
+    border-left: 3px solid var(--color-brand);
+  }
+  .curated-hero {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+  }
+  .curated-badge {
+    font-size: var(--text-sm);
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 4px 12px;
+    border-radius: var(--radius-md);
+    text-transform: uppercase;
+    background: rgba(91, 138, 245, 0.12);
+    color: var(--color-brand);
+    border: 1px solid rgba(91, 138, 245, 0.3);
+  }
+  .curated-text {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+    line-height: 1.65;
+    word-break: break-word;
+  }
+  .curated-tags { flex-wrap: wrap; }
+  .tag-chip--curated {
+    background: rgba(91, 138, 245, 0.08);
+    border-color: rgba(91, 138, 245, 0.22);
+    color: var(--color-brand);
+    font-weight: 600;
   }
 
   /* ── Reduced motion ──────────────────────────────────────────────────────── */

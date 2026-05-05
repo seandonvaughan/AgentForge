@@ -3,8 +3,7 @@ import { mkdtempSync, rmSync, mkdirSync, readFileSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { RealTestRunner, TestRunnerError } from '../../../packages/core/src/autonomous/exec/real-test-runner.js';
-import { DEFAULT_CYCLE_CONFIG } from '../../../packages/core/src/autonomous/config-loader.js';
+import { RealTestRunner, TestRunnerError, DEFAULT_CYCLE_CONFIG } from '@agentforge/core';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);

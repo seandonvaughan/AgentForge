@@ -65,8 +65,9 @@ import {
   CycleRunner,
   loadCycleConfig,
   CycleStage,
-} from '../../../packages/core/src/autonomous/index.js';
-import type { PhaseHandler, PhaseContext } from '../../../packages/core/src/autonomous/phase-scheduler.js';
+  type PhaseHandler,
+  type PhaseContext,
+} from '@agentforge/core';
 
 const execFileAsync = promisify(execFile);
 
@@ -268,7 +269,7 @@ describe('Full autonomous cycle end-to-end', () => {
     // including title/body/labels/reviewers rendering.
     // -----------------------------------------------------------------------
     const { PROpener } = await import(
-      '../../../packages/core/src/autonomous/exec/pr-opener.js'
+      '@agentforge/core'
     );
     const prOpener = new PROpener(tmpWorkspace);
 
