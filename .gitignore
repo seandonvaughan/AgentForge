@@ -55,3 +55,8 @@ packages/**/package-lock.json
 .agentforge/cycles-archived/
 .agentforge/reports/
 *.png
+
+# UI export packages (kept on local disk, not in repo)
+dashboard-v*-export/
+dashboard-v*-export.zip
+.playwright-mcp/
