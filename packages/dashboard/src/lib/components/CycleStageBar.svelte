@@ -39,15 +39,32 @@
   type Stage = (typeof STAGES)[number];
   type StageState = 'pending' | 'active' | 'complete' | 'failed';
 
-  // Map cycle.stage (lowercase enum) to the STAGES array index
+  // Map cycle.stage (lowercase) to the STAGES macro index.
+  // Accepts both the macro names (plan/stage/run/verify/commit/review) AND
+  // the internal phase names (audit/assign/execute/test/gate/release/learn),
+  // because cycle.stage reports the internal phase, not the macro.
   const STAGE_MAP: Record<string, number> = {
+    // PLAN macro
     plan:      0,
+    audit:     0,
+    // STAGE macro
     stage:     1,
+    assign:    1,
+    // RUN macro
     run:       2,
+    execute:   2,
+    // VERIFY macro
     verify:    3,
+    test:      3,
+    // COMMIT macro
     commit:    4,
-    review:    5,
+    review:    4,
+    gate:      4,
+    // REVIEW macro
+    release:   5,
+    learn:     5,
     completed: 5,
+    // dead
     failed:    -1,
     killed:    -1,
     crashed:   -1,
