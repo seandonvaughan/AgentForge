@@ -944,23 +944,27 @@ export async function cyclesRoutes(
     if (cycleStartedAt === null) return reply.status(404).send({ error: 'Cannot determine cycle start time' });
 
     const sprintsDir = join(opts.projectRoot, '.agentforge/sprints');
-    if (!existsSync(sprintsDir)) return reply.status(404).send({ error: 'No sprints directory' });
+    const archiveDir = join(sprintsDir, 'archive');
+    const dirs = [sprintsDir, archiveDir].filter(d => existsSync(d));
+    if (dirs.length === 0) return reply.status(404).send({ error: 'No sprints directory' });
 
     let bestMatch: { file: string; sprint: any; delta: number } | null = null;
-    for (const name of readdirSync(sprintsDir)) {
-      if (!name.endsWith('.json')) continue;
-      try {
-        const raw = JSON.parse(readFileSync(join(sprintsDir, name), 'utf8'));
-        const sprint = Array.isArray(raw.sprints) ? raw.sprints[0] : raw;
-        if (!sprint?.createdAt) continue;
-        const createdAt = new Date(sprint.createdAt).getTime();
-        // Match if sprint createdAt is within 2 minutes of cycle start (either direction)
-        const delta = Math.abs(createdAt - cycleStartedAt);
-        if (delta > 120_000) continue;
-        if (bestMatch === null || delta < bestMatch.delta) {
-          bestMatch = { file: name, sprint, delta };
-        }
-      } catch { /* skip */ }
+    for (const dir of dirs) {
+      for (const name of readdirSync(dir)) {
+        if (!name.endsWith('.json')) continue;
+        try {
+          const raw = JSON.parse(readFileSync(join(dir, name), 'utf8'));
+          const sprint = Array.isArray(raw.sprints) ? raw.sprints[0] : raw;
+          if (!sprint?.createdAt) continue;
+          const createdAt = new Date(sprint.createdAt).getTime();
+          // Match if sprint createdAt is within 2 minutes of cycle start (either direction)
+          const delta = Math.abs(createdAt - cycleStartedAt);
+          if (delta > 120_000) continue;
+          if (bestMatch === null || delta < bestMatch.delta) {
+            bestMatch = { file: name, sprint, delta };
+          }
+        } catch { /* skip */ }
+      }
     }
     if (!bestMatch) return reply.status(404).send({ error: 'No matching sprint file found for this cycle' });
     return reply.send({ file: bestMatch.file, sprint: bestMatch.sprint });

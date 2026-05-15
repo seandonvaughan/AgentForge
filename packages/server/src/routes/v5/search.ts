@@ -160,13 +160,18 @@ export async function searchRoutes(
       }
     }
 
-    // ── Sprint items (from .agentforge/sprints/*.json) ────────────────────────
+    // ── Sprint items (from .agentforge/sprints/*.json + archive/) ────────────
+    // v14.2.0: pre-cycle-era sprints moved to sprints/archive/; matched
+    // sprints migrated to cycles/{id}/plan.json. Search reads from both
+    // sprint locations to preserve historical search across the legacy archive.
     if (includeAll || types.includes('sprint')) {
       const sprintsDir = join(projectRoot, '.agentforge/sprints');
-      if (existsSync(sprintsDir)) {
-        for (const file of readdirSync(sprintsDir).filter(f => f.endsWith('.json'))) {
+      const archiveDir = join(sprintsDir, 'archive');
+      const searchDirs = [sprintsDir, archiveDir].filter(d => existsSync(d));
+      for (const dir of searchDirs) {
+        for (const file of readdirSync(dir).filter(f => f.endsWith('.json'))) {
           try {
-            const raw = JSON.parse(readFileSync(join(sprintsDir, file), 'utf-8')) as {
+            const raw = JSON.parse(readFileSync(join(dir, file), 'utf-8')) as {
               version?: string;
               sprints?: Array<{ version?: string; items?: unknown[] }>;
               items?: Array<{ id?: string; title?: string; description?: string; status?: string; tags?: string[]; assignee?: string }>;
@@ -206,6 +211,7 @@ export async function searchRoutes(
         }
       }
     }
+
 
     // ── Cycles (from .agentforge/cycles/*/cycle.json or sprint-link.json) ───────
     // Completed cycles have a cycle.json with full metadata. In-progress cycles

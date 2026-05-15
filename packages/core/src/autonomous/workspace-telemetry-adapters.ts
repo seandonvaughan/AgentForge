@@ -281,14 +281,25 @@ function readSprintHistory(
   limit: number,
 ): SprintHistoryEntry[] {
   const sprintsDir = join(projectRoot, '.agentforge', 'sprints');
-  if (!existsSync(sprintsDir)) {
+  const archiveDir = join(sprintsDir, 'archive');
+  if (!existsSync(sprintsDir) && !existsSync(archiveDir)) {
     return [];
   }
 
-  return readdirSync(sprintsDir)
-    .filter((entry) => entry.endsWith('.json'))
-    .map((entry) => {
-      const path = join(sprintsDir, entry);
+  // v14.2.0: pre-cycle-era sprint files were moved to sprints/archive/.
+  // Read from both the top-level dir AND the archive so historical
+  // sprint signal still feeds the scorer's grounding data.
+  const entries: Array<{ dir: string; name: string }> = [];
+  for (const dir of [sprintsDir, archiveDir]) {
+    if (!existsSync(dir)) continue;
+    for (const name of readdirSync(dir)) {
+      if (name.endsWith('.json')) entries.push({ dir, name });
+    }
+  }
+
+  return entries
+    .map(({ dir, name }) => {
+      const path = join(dir, name);
       let sprint: Record<string, unknown> | undefined;
       try {
         const raw = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
@@ -312,11 +323,11 @@ function readSprintHistory(
           version:
             typeof sprint?.version === 'string'
               ? sprint.version
-              : entry.replace(/\.json$/u, ''),
+              : name.replace(/\.json$/u, ''),
           title:
             typeof sprint?.title === 'string'
               ? sprint.title
-              : `Sprint ${entry.replace(/\.json$/u, '')}`,
+              : `Sprint ${name.replace(/\.json$/u, '')}`,
           phase: typeof sprint?.phase === 'string' ? sprint.phase : 'unknown',
           itemCount: items.length,
           completedCount,

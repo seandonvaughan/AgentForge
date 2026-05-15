@@ -134,14 +134,29 @@ export class SprintGenerator {
   private findLatestSprintVersion(): string {
     const candidates: string[] = [];
 
-    // Candidate 1: the max version found in .agentforge/sprints/
+    // Candidate 1: the max version found in .agentforge/sprints/ (legacy
+    // top-level files OR migrated archive). Also check cycle plan.json files.
     const sprintsDir = join(this.cwd, '.agentforge/sprints');
-    if (existsSync(sprintsDir)) {
-      const files = readdirSync(sprintsDir)
+    const archiveDir = join(sprintsDir, 'archive');
+    for (const dir of [sprintsDir, archiveDir]) {
+      if (!existsSync(dir)) continue;
+      const files = readdirSync(dir)
         .filter(f => f.startsWith('v') && f.endsWith('.json'));
       for (const f of files) {
         const v = f.slice(1, -5);
         if (/^\d+(\.\d+)*$/.test(v)) candidates.push(v);
+      }
+    }
+    // Plan.json files inside cycle dirs (new format)
+    const cyclesDir = join(this.cwd, '.agentforge/cycles');
+    if (existsSync(cyclesDir)) {
+      for (const cycleDir of readdirSync(cyclesDir)) {
+        const planPath = join(cyclesDir, cycleDir, 'plan.json');
+        if (!existsSync(planPath)) continue;
+        try {
+          const plan = JSON.parse(readFileSync(planPath, 'utf8')) as { version?: string };
+          if (plan.version && /^\d+(\.\d+)*$/.test(plan.version)) candidates.push(plan.version);
+        } catch { /* skip */ }
       }
     }
 

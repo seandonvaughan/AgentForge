@@ -744,18 +744,34 @@ function computeFlywheelMetrics(projectRoot: string) {
   const completedCycles = cycles.filter(c => c.stage === 'completed');
 
   // ── Sprints ───────────────────────────────────────────────────────────────
+  // v14.2.0: legacy pre-cycle-era sprint files are now in sprints/archive/.
+  // Recent sprints are inside their cycle dir as plan.json. We read all three
+  // sources for full flywheel history.
   const sprintsDir = join(projectRoot, '.agentforge/sprints');
+  const archiveDir = join(sprintsDir, 'archive');
   const sprints: SprintRecord[] = [];
-  if (existsSync(sprintsDir)) {
-    for (const file of readdirSync(sprintsDir).filter(f => f.endsWith('.json'))) {
+  for (const dir of [sprintsDir, archiveDir]) {
+    if (!existsSync(dir)) continue;
+    for (const file of readdirSync(dir).filter(f => f.endsWith('.json'))) {
       try {
-        const raw = JSON.parse(readFileSync(join(sprintsDir, file), 'utf-8'));
-        // Sprint file may be { sprints: [...] } or the sprint object directly
+        const raw = JSON.parse(readFileSync(join(dir, file), 'utf-8'));
         if (Array.isArray(raw.sprints)) {
           sprints.push(...(raw.sprints as SprintRecord[]));
         } else if (raw.items) {
           sprints.push(raw as SprintRecord);
         }
+      } catch { /* skip */ }
+    }
+  }
+  // Also include plan.json from each cycle dir (new format).
+  const cyclesDir = join(projectRoot, '.agentforge/cycles');
+  if (existsSync(cyclesDir)) {
+    for (const cycleDir of readdirSync(cyclesDir)) {
+      const planPath = join(cyclesDir, cycleDir, 'plan.json');
+      if (!existsSync(planPath)) continue;
+      try {
+        const plan = JSON.parse(readFileSync(planPath, 'utf-8')) as SprintRecord;
+        if (plan && plan.items) sprints.push(plan);
       } catch { /* skip */ }
     }
   }
