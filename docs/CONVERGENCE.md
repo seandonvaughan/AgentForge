@@ -65,8 +65,17 @@ The root Fastify server (`src/server/main.ts`) and all associated routes have be
 
 The root team-building and genesis engine (`src/genesis/*`, `src/scanner/*`, `src/reforge/*`) are deprecated stubs that re-export from the package-canonical implementations in `packages/core/src/team/engine/`. All builder logic now lives in the `@agentforge/core` package.
 
+The core builder tree (`src/builder/`) was deleted entirely in v15.0.0 — those six files were compatibility shims that failed typecheck; the canonical implementations at `packages/core/src/team/engine/builder/` are unaffected.
+
 | Deprecated Root Module | Canonical Package Module | Current Status | Removal Milestone |
 |---|---|---|---|
+| `src/builder/` (full tree) | `packages/core/src/team/engine/builder/` | ✅ Deleted v15.0.0 | N/A |
+| `src/builder/agent-validator.ts` | `packages/core/src/team/engine/builder/agent-validator.ts` | ✅ Deleted v15.0.0 | N/A |
+| `src/builder/template-loader.ts` | `packages/core/src/team/engine/builder/template-loader.ts` | ✅ Deleted v15.0.0 | N/A |
+| `src/builder/template-customizer.ts` | `packages/core/src/team/engine/builder/template-customizer.ts` | ✅ Deleted v15.0.0 | N/A |
+| `src/builder/team-composer.ts` | `packages/core/src/team/engine/builder/team-composer.ts` | ✅ Deleted v15.0.0 | N/A |
+| `src/builder/team-writer.ts` | `packages/core/src/team/engine/builder/team-writer.ts` | ✅ Deleted v15.0.0 | N/A |
+| `src/builder/index.ts` | `packages/core/src/team/engine/builder/index.ts` | ✅ Deleted v15.0.0 | N/A |
 | `src/genesis/` (full tree) | `packages/core/src/team/engine/genesis/` | 🟡 Stubs re-export from package | v11.0.0 |
 | `src/genesis/brief-builder.ts` | `packages/core/src/team/engine/genesis/brief-builder.ts` | 🟡 Compatibility shim | v11.0.0 |
 | `src/genesis/discovery.ts` | `packages/core/src/team/engine/genesis/index.ts` | 🟡 Compatibility shim | v11.0.0 |
@@ -76,7 +85,7 @@ The root team-building and genesis engine (`src/genesis/*`, `src/scanner/*`, `sr
 | Root `forge` command entrypoint | `packages/cli/src/commands/team.ts:team forge` | 🟡 Delegates via CLI | v12.0.0 |
 | Root `genesis` command entrypoint | `packages/cli/src/commands/team.ts:team genesis` | 🟡 Delegates via CLI | v12.0.0 |
 
-**Key:** All root builder files contain this header:
+**Key:** Remaining root builder files (`src/genesis/`, `src/scanner/`, `src/reforge/`) contain this header:
 ```typescript
 /**
  * Root compatibility shim for the package-canonical team genesis/scanner/reforge engine.

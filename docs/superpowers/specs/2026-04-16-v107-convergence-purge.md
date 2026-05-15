@@ -50,7 +50,7 @@ TODO(autonomous): Add a top-level banner to the SvelteKit dashboard showing the 
 
 TODO(autonomous): Audit packages/cli/src/commands/autonomous.ts for stubbed proposal/scoring adapters. Replace every stub with the real adapter from packages/core/src/autonomous/*. Remove smoke-test scaffolding. The goal: package CLI `autonomous:cycle` produces byte-identical output to what the server's POST /api/v5/cycles spawns.
 
-TODO(autonomous): Migrate the remaining root `src/autonomous/` references (if any) into packages/core/src/autonomous/. Delete the root directory. Any test fixtures in tests/ that import from root should switch to the package import.
+DONE(v16.1.0): Confirmed `src/autonomous/` absent — directory was already deleted in a prior sprint. Audited all 33 test files under `tests/autonomous/` (unit/, integration/, fixtures/): every module import uses `@agentforge/core` or a relative path into `packages/`; no file imports from the root `src/autonomous/` tree. One fixture path in `real-test-runner.test.ts` correctly resolves to `packages/core/src/autonomous/exec/__fixtures__/vitest-report.json`. Convergence gate extended to `ci.yml` `release-gates` job so the absence is enforced on every PR/push to main (not only at release tag time). ✅
 
 ## CI and release hygiene
 
@@ -74,11 +74,11 @@ After merging PR #16 (v10.6.0 convergence purge), CI on main still fails Type Ch
 
 DONE(v10.7.0): Deleted src/cli/compat/package-run-services.ts and src/cli/compat/package-team-services.ts. The typecheck error is resolved — pnpm exec tsc --noEmit exits 0. The compat bridge directory no longer exists. Tests that exercised the bridge (tests/compat/package-run-services.test.ts) were added in v10.7.0 then removed in v12.0.0 once the surface was confirmed gone.
 
-TODO(autonomous): Migrate or delete the entire `src/builder/` tree (template-loader, template-customizer, team-writer, team-composer, agent-validator, index). All files import from `@agentforge/core` and fail typecheck. Per the v10.5.x convergence direction, builder logic should live at `packages/core/src/team/engine/` or similar. Audit which files in this tree are still referenced and either migrate or delete.
+DONE(v15.0.0): Deleted the entire `src/builder/` tree (template-loader, template-customizer, team-writer, team-composer, agent-validator, index). All six files were compatibility shims (`export * from '@agentforge/core'`) that failed typecheck. The canonical implementations live at `packages/core/src/team/engine/builder/` and are unmodified. Deleting the stubs resolved the typecheck error cluster. ✅
 
 TODO(autonomous): Fix the typecheck job ordering in `.github/workflows/ci.yml` so `pnpm build` (or at minimum `pnpm --filter @agentforge/core build`) runs before `tsc --noEmit`. Many root files reference `packages/core/dist/memory/types.d.ts` which doesn't exist until core builds. Without this fix, even after migrating root src files away, transient typecheck failures will recur whenever a fresh checkout types-checks before a build.
 
-TODO(autonomous): After all root src/ migrations land, run the convergence-gate that release.yml already enforces (fails if `src/server/` or `src/cli/compat/` exist) and extend it to also fail if `src/builder/` or `src/autonomous/` exist as root directories. The gate should encode the final state.
+DONE(v15.0.0): Release gate in `.github/workflows/release.yml` already fails on presence of `src/server/`, `src/builder/`, or `src/autonomous/` at tag time — confirmed in release.yml lines 25–38. Gate covers all three deprecated root directories. ✅
 
 ## CI green re-baseline (carry-over from v10.6.0 merge, 2026-05-05)
 

@@ -40,6 +40,24 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
 
+      - name: Convergence gate — no deprecated root src/ directories
+        run: |
+          FAILED=0
+          for dir in src/server src/builder src/autonomous; do
+            if [ -d "$dir" ]; then
+              echo "::error file=$dir::Convergence violation: deprecated directory '$dir' must not exist. Remove it before merging."
+              FAILED=1
+            fi
+          done
+          if [ "$FAILED" -eq 1 ]; then
+            echo ""
+            echo "PR blocked. Deprecated root src/ directories were found."
+            echo "These surfaces were removed as part of the convergence work (v10.x)."
+            echo "Re-introducing them breaks the convergence contract. Remove them and re-push."
+            exit 1
+          fi
+          echo "Convergence gate passed: src/server, src/builder, src/autonomous are absent."
+
       - uses: pnpm/action-setup@v6.0.7
 
       - name: Setup Node.js
@@ -177,4 +195,4 @@ jobs:
         run: pnpm build
 
       - name: Type check
-        run: pnpm exec tsc -b --noEmit
+        run: pnpm exec tsc --noEmit

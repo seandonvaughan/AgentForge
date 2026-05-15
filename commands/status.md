@@ -43,7 +43,7 @@ Print a concise live summary of the current AgentForge workspace by reading real
 AgentForge v<version>  │  <teamSize> agents  │  Autonomous
 Sprint <version>: <completed>/<total> items <APPROVED|phase>  │  Budget: $<spent>/$<budget>
 Sessions: <N> total  │  Last: <agentId> (<time ago>)
-Bus: <N> events  │  Dashboard: npm run dashboard
+Bus: <N> events  │  Dashboard: npm run dev
 ```
 
 ## Graceful Degradation
@@ -61,5 +61,5 @@ Bus: <N> events  │  Dashboard: npm run dashboard
 AgentForge v4.4  │  37 agents  │  Autonomous
 Sprint 4.4: 13/13 items APPROVED  │  Budget: $320/$450
 Sessions: 12 total  │  Last: cto (4m ago)
-Bus: 847 events  │  Dashboard: npm run dashboard
+Bus: 847 events  │  Dashboard: npm run dev
 ```
