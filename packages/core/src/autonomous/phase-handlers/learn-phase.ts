@@ -82,6 +82,8 @@ Format as markdown with section headers.`;
 
   let retrospective = '';
   let costUsd = 0;
+  let model: string | undefined;
+  let effort: string | undefined;
   let status: PhaseResult['status'] = 'completed';
   let error: string | undefined;
 
@@ -89,6 +91,8 @@ Format as markdown with section headers.`;
     const result = await ctx.runtime.run(agentId, task, { allowedTools });
     retrospective = typeof result?.output === 'string' ? result.output : '';
     costUsd = typeof result?.costUsd === 'number' ? result.costUsd : 0;
+    if (typeof (result as any)?.model === 'string') model = (result as any).model;
+    if (typeof (result as any)?.effort === 'string') effort = (result as any).effort;
   } catch (err) {
     status = 'failed';
     error = err instanceof Error ? err.message : String(err);
@@ -100,7 +104,7 @@ Format as markdown with section headers.`;
     status,
     durationMs,
     costUsd,
-    agentRuns: [{ agentId, costUsd, durationMs, response: retrospective, ...(error ? { error } : {}) }],
+    agentRuns: [{ agentId, costUsd, durationMs, response: retrospective, ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(error ? { error } : {}) }],
     ...(error ? { error } : {}),
   };
 

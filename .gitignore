@@ -54,3 +54,4 @@ packages/**/package-lock.json
 .agentforge/cycles/
 .agentforge/cycles-archived/
 .agentforge/reports/
+*.png

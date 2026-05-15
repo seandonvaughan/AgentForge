@@ -163,6 +163,8 @@ Produce a 1-paragraph executive summary + a bulleted list of 5-10 concrete findi
 
   let findings = '';
   let costUsd = 0;
+  let model: string | undefined;
+  let effort: string | undefined;
   let status: PhaseResult['status'] = 'completed';
   let error: string | undefined;
 
@@ -170,6 +172,8 @@ Produce a 1-paragraph executive summary + a bulleted list of 5-10 concrete findi
     const result = await ctx.runtime.run(agentId, task, { allowedTools });
     findings = typeof result?.output === 'string' ? result.output : '';
     costUsd = typeof result?.costUsd === 'number' ? result.costUsd : 0;
+    if (typeof (result as any)?.model === 'string') model = (result as any).model;
+    if (typeof (result as any)?.effort === 'string') effort = (result as any).effort;
   } catch (err) {
     status = 'failed';
     error = err instanceof Error ? err.message : String(err);
@@ -181,7 +185,7 @@ Produce a 1-paragraph executive summary + a bulleted list of 5-10 concrete findi
     status,
     durationMs,
     costUsd,
-    agentRuns: [{ agentId, costUsd, durationMs, response: findings, ...(error ? { error } : {}) }],
+    agentRuns: [{ agentId, costUsd, durationMs, response: findings, ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(error ? { error } : {}) }],
     ...(error ? { error } : {}),
   };
 

@@ -106,6 +106,8 @@ Do not write code. Plan only.`;
 
   let plan = '';
   let costUsd = 0;
+  let model: string | undefined;
+  let effort: string | undefined;
   let status: PhaseResult['status'] = 'completed';
   let error: string | undefined;
 
@@ -113,6 +115,8 @@ Do not write code. Plan only.`;
     const result = await ctx.runtime.run(agentId, task, { allowedTools });
     plan = typeof result?.output === 'string' ? result.output : '';
     costUsd = typeof result?.costUsd === 'number' ? result.costUsd : 0;
+    if (typeof (result as any)?.model === 'string') model = (result as any).model;
+    if (typeof (result as any)?.effort === 'string') effort = (result as any).effort;
   } catch (err) {
     status = 'failed';
     error = err instanceof Error ? err.message : String(err);
@@ -124,7 +128,7 @@ Do not write code. Plan only.`;
     status,
     durationMs,
     costUsd,
-    agentRuns: [{ agentId, costUsd, durationMs, response: plan, ...(error ? { error } : {}) }],
+    agentRuns: [{ agentId, costUsd, durationMs, response: plan, ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(error ? { error } : {}) }],
     ...(error ? { error } : {}),
   };
 

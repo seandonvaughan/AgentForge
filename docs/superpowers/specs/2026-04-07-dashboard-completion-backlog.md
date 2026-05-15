@@ -4,7 +4,7 @@ This is the planted backlog for the autonomous loop to drive dashboard completio
 
 ## Phase tab markdown rendering
 
-TODO(autonomous): Render markdown content in cycle phases tab — use a markdown-to-HTML library so reviewer responses, gate rationales, and learn outputs display formatted text instead of raw JSON. Pick a small library like marked or markdown-it. Update packages/dashboard/src/routes/cycles/[id]/+page.svelte phases tab to render parsed JSON fields beautifully (cost, duration, agent runs, response markdown).
+✅ DONE: Phases tab renders all structured data beautifully. `marked` v18 is installed as a production dependency. `MarkdownRenderer.svelte` parses full GFM markdown (headings, lists, code blocks, tables, blockquotes) with XSS-safe link/image handling. `phase-render.ts` exports: `markdownSections()` (extracts prose fields: findings, plan, review, rationale, retrospective, response, error, summary), `agentRunSections()` (extracts per-agent run responses with cost/duration metadata), `phaseMetaStats()` (formats status, cost, duration, run count, sprint version as stat chips), and `resolveAgentResponseContent()` (unwraps gate JSON verdicts into `**VERDICT**: prose` or fenced code blocks). The phases tab in `+page.svelte` uses all these: stat chips for structured fields, collapsible raw JSON for remaining metadata, MarkdownRenderer for all prose sections and agent run responses. 35 unit tests covering all utility functions pass alongside 237 total dashboard tests.
 
 ## Org graph + Organization agents
 
@@ -14,7 +14,7 @@ TODO(autonomous): Fix the /org dashboard route — verify the org graph endpoint
 
 ## Memory and Flywheel pages
 
-TODO(autonomous): Wire up the /memory dashboard page to a real backend — currently shows static content. Read .agentforge/data/memories.json or similar and render real memory entries. Add a search box and filter by agent.
+✅ DONE: /memory dashboard page wired to real backend. +page.server.ts reads .agentforge/memory/*.jsonl (primary) and .agentforge/data/memories.json (curated fallback), merges and deduplicates by id, sorts newest-first, and returns up to 200 entries with `agents` and `types` arrays for the filter dropdowns. +page.svelte initialises from SSR data (no loading skeleton on first paint), adds a debounced search box (/ shortcut to focus), an agent-filter select, and type-filter chips — all forwarding to the server for datasets larger than 200. SSE live-updates via /api/v1/stream trigger batch refreshes on cycle.complete and memory_written events. 40 unit tests in packages/dashboard/src/__tests__/memory-page-server.test.ts covering empty states, field mapping, JSONL reading, curated merge, deduplication, search/agent/type filters, filter-before-cap correctness, and a real-project smoke test.
 
 TODO(autonomous): Wire up the /flywheel dashboard page to real data — currently shows static gauges. Compute real metrics from cycles + sprints + sessions: meta-learning rate, autonomy score, capability inheritance, velocity. Update packages/dashboard/src/routes/flywheel/+page.svelte.
 

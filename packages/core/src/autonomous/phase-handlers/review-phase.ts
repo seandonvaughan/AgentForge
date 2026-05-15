@@ -65,6 +65,8 @@ Do NOT modify any files.`;
 
   let review = '';
   let costUsd = 0;
+  let model: string | undefined;
+  let effort: string | undefined;
   let status: PhaseResult['status'] = 'completed';
   let errorMsg: string | undefined;
 
@@ -72,6 +74,8 @@ Do NOT modify any files.`;
     const result = await ctx.runtime.run(agentId, task, { allowedTools });
     review = typeof result?.output === 'string' ? result.output : '';
     costUsd = typeof result?.costUsd === 'number' ? result.costUsd : 0;
+    if (typeof (result as any)?.model === 'string') model = (result as any).model;
+    if (typeof (result as any)?.effort === 'string') effort = (result as any).effort;
   } catch (err) {
     status = 'failed';
     errorMsg = err instanceof Error ? err.message : String(err);
@@ -117,7 +121,7 @@ Do NOT modify any files.`;
     status,
     durationMs,
     costUsd,
-    agentRuns: [{ agentId, costUsd, durationMs, response: review }],
+    agentRuns: [{ agentId, costUsd, durationMs, response: review, ...(model ? { model } : {}), ...(effort ? { effort } : {}) }],
     ...(errorMsg ? { error: errorMsg } : {}),
   };
 

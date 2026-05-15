@@ -179,13 +179,28 @@ function readMemoriesJson(root: string): MemoryEntrySSR[] {
  * Merges in the operator-curated memories.json (deduplicated by id so JSONL
  * always wins when the same id appears in both sources).
  * Applies optional filters so the server returns the right initial page.
+ *
+ * Exported as `_readMemoryEntries` for unit testing (follows the `_helper`
+ * convention used by agents and flywheel page servers).
  */
-function readMemoryEntries(opts: {
+export function _readMemoryEntries(root: string, opts: {
   searchTerm?: string;
   agentFilter?: string;
   typeFilter?: string;
 }): { entries: MemoryEntrySSR[]; agents: string[]; types: string[] } {
-  const root = findProjectRoot();
+  return readMemoryEntries(root, opts);
+}
+
+/** Exported for unit tests — reads the curated memories.json file. */
+export function _readMemoriesJson(root: string): MemoryEntrySSR[] {
+  return readMemoriesJson(root);
+}
+
+function readMemoryEntries(root: string, opts: {
+  searchTerm?: string;
+  agentFilter?: string;
+  typeFilter?: string;
+}): { entries: MemoryEntrySSR[]; agents: string[]; types: string[] } {
   const memDir = join(root, '.agentforge', 'memory');
 
   const allEntries: MemoryEntrySSR[] = [];
@@ -298,6 +313,7 @@ export const load: PageServerLoad = ({ url }) => {
   const searchTerm  = (url.searchParams.get('search') ?? '').toLowerCase().trim() || undefined;
   const agentFilter = url.searchParams.get('agent') ?? undefined;
   const typeFilter  = url.searchParams.get('type') ?? undefined;
+  const root = findProjectRoot();
 
-  return readMemoryEntries({ searchTerm, agentFilter, typeFilter });
+  return readMemoryEntries(root, { searchTerm, agentFilter, typeFilter });
 };

@@ -235,6 +235,50 @@
   let stage = $derived(cycle?.stage ?? cycle?.result?.stage ?? cycle?.currentStage ?? 'unknown');
   let isTerminal = $derived(TERMINAL.has(String(stage).toLowerCase()));
 
+  /** Phase ordering for sub-phase indicator. */
+  const PHASE_ORDER = ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate', 'release', 'learn'];
+
+  /** Internal phases that have at least one recorded agent run (i.e. they ran). */
+  let completedPhases = $derived.by(() => {
+    if (!agentsData?.runs) return [];
+    const seen = new Set<string>();
+    for (const r of agentsData.runs) {
+      if (r?.phase) seen.add(String(r.phase));
+    }
+    return PHASE_ORDER.filter((p) => seen.has(p));
+  });
+
+  /**
+   * The currently-active internal phase. Best signal we have without modifying
+   * the runner: if the cycle is non-terminal and the most-recently-seen phase
+   * in agentRuns is X, the next phase in PHASE_ORDER is likely active.
+   * Falls back to mapping cycle.stage → first sub-phase of that macro stage.
+   */
+  let activePhase = $derived.by(() => {
+    if (isTerminal) return null;
+    const done = completedPhases;
+    if (done.length === 0) {
+      // No agent runs yet — derive from cycle.stage
+      const s = String(stage).toLowerCase();
+      if (s === 'plan' || s === 'unknown') return 'audit';
+      if (s === 'stage') return 'assign';
+      if (s === 'run') return 'execute';
+      if (s === 'verify') return 'test';
+      if (s === 'commit') return 'review';
+      if (s === 'review') return 'release';
+      return null;
+    }
+    const lastIdx = PHASE_ORDER.indexOf(done[done.length - 1]!);
+    return PHASE_ORDER[Math.min(lastIdx + 1, PHASE_ORDER.length - 1)] ?? null;
+  });
+
+  /** Now-playing strip: latest in-flight agent (or most recent if terminal). */
+  let currentAgent = $derived.by(() => {
+    if (!agentsData?.runs?.length) return null;
+    const runs = agentsData.runs as any[];
+    return runs[runs.length - 1];
+  });
+
   async function loadInitial() {
     loading = true;
     error = null;
@@ -529,7 +573,31 @@
       budgetUsd={budgetUsd}
       startedAt={cycle?.startedAt ?? null}
       isTerminal={isTerminal}
+      activePhase={activePhase}
+      completedPhases={completedPhases}
     />
+    {#if !isTerminal && currentAgent}
+      <div class="now-playing" title="Most recent agent run">
+        <span class="np-dot"></span>
+        <span class="np-phase">{currentAgent.phase}</span>
+        <span class="np-sep">·</span>
+        <span class="np-agent">{currentAgent.agentId}</span>
+        {#if currentAgent.model}
+          <span class="np-badge np-model np-{currentAgent.model}">{currentAgent.model}</span>
+        {/if}
+        {#if currentAgent.effort}
+          <span class="np-badge np-effort">{currentAgent.effort}</span>
+        {/if}
+        {#if currentAgent.costUsd != null}
+          <span class="np-sep">·</span>
+          <span class="np-cost">${Number(currentAgent.costUsd).toFixed(4)}</span>
+        {/if}
+        {#if currentAgent.durationMs != null}
+          <span class="np-sep">·</span>
+          <span class="np-duration">{(currentAgent.durationMs / 1000).toFixed(1)}s</span>
+        {/if}
+      </div>
+    {/if}
   </div>
 
   <nav class="tabs">
@@ -1126,6 +1194,59 @@
     background: var(--color-surface, var(--color-bg-card));
     margin-bottom: var(--space-4);
   }
+
+  .now-playing {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-5);
+    background: var(--color-surface-1);
+    border-top: 1px solid var(--color-border);
+    border-bottom: 1px solid var(--color-border);
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+    color: var(--color-text-muted);
+  }
+  .np-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-info);
+    animation: np-pulse 1.4s ease-in-out infinite;
+    flex-shrink: 0;
+  }
+  @keyframes np-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+  }
+  .np-phase {
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+    color: var(--color-info);
+  }
+  .np-agent {
+    color: var(--color-text);
+    font-weight: 600;
+  }
+  .np-sep { color: var(--color-text-muted); opacity: 0.5; }
+  .np-badge {
+    padding: 1px 6px;
+    border-radius: var(--radius-sm);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+  }
+  .np-opus { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
+  .np-sonnet { background: rgba(74, 158, 255, 0.15); color: var(--color-info); border: 1px solid rgba(74, 158, 255, 0.3); }
+  .np-haiku { background: rgba(76, 175, 130, 0.15); color: var(--color-success); border: 1px solid rgba(76, 175, 130, 0.3); }
+  .np-effort {
+    background: var(--color-surface-2);
+    color: var(--color-text-muted);
+    border: 1px solid var(--color-border);
+  }
+  .np-cost, .np-duration { color: var(--color-text); }
 
   .breadcrumb { margin-bottom: var(--space-2); }
   .breadcrumb a {
