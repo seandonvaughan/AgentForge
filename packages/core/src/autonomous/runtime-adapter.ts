@@ -30,6 +30,16 @@ function capModelTier(requested: ModelTier, cap: ModelTier): { model: ModelTier;
     : { model: requested };
 }
 
+/**
+ * xhigh effort is only supported on Opus. For Sonnet/Haiku, max is the
+ * highest available level — coerce xhigh down to max for non-Opus tiers.
+ */
+function resolveEffort(requestedEffort: string | undefined, model: ModelTier): string | undefined {
+  if (!requestedEffort) return undefined;
+  if (requestedEffort === 'xhigh' && model !== 'opus') return 'max';
+  return requestedEffort;
+}
+
 export class RuntimeAdapterError extends Error {
   constructor(msg: string) {
     super(msg);
@@ -54,6 +64,11 @@ export interface RuntimeAdapterOptions {
    * and cost-reduced runs without touching individual agent YAML files.
    */
   modelCap?: ModelTier;
+  /**
+   * When set, every agent in the cycle runs at this effort level regardless
+   * of its YAML configuration. Overrides any per-agent effort setting.
+   */
+  effortCap?: string;
 }
 
 /**
@@ -111,11 +126,31 @@ export class RuntimeAdapter implements RuntimeForScoring {
    */
   registerInlineAgent(agentId: string, config: AgentRuntimeConfig): void {
     if (this.runtimes.has(agentId)) return;
-    const effectiveConfig = this.options.modelCap
-      ? { ...config, ...capModelTier(config.model, this.options.modelCap) }
-      : config;
+    const effectiveConfig = this.applyCaps(config);
     const runtime = new AgentRuntime(effectiveConfig, this.options.workspaceAdapter);
     this.runtimes.set(agentId, runtime);
+  }
+
+  /**
+   * Apply modelCap and effortCap to an agent config. modelCap-driven
+   * downgrades force effort:'max'; effortCap (if set) overrides any explicit
+   * effort. xhigh is coerced to max for non-Opus models because the CLI
+   * only supports xhigh on Opus.
+   */
+  private applyCaps(config: AgentRuntimeConfig): AgentRuntimeConfig {
+    let merged: AgentRuntimeConfig = config;
+    if (this.options.modelCap) {
+      merged = { ...merged, ...capModelTier(merged.model, this.options.modelCap) };
+    }
+    if (this.options.effortCap) {
+      const effort = resolveEffort(this.options.effortCap, merged.model);
+      if (effort) merged = { ...merged, effort };
+    } else if (merged.effort) {
+      // Honour per-agent effort but enforce the xhigh-Opus-only rule.
+      const effort = resolveEffort(merged.effort, merged.model);
+      if (effort && effort !== merged.effort) merged = { ...merged, effort };
+    }
+    return merged;
   }
 
   /** Clear the runtime cache. Useful between cycles if agent configs changed. */
@@ -218,9 +253,7 @@ export class RuntimeAdapter implements RuntimeForScoring {
       );
     }
 
-    const effectiveConfig = this.options.modelCap
-      ? { ...config, ...capModelTier(config.model, this.options.modelCap) }
-      : config;
+    const effectiveConfig = this.applyCaps(config);
     const runtime = new AgentRuntime(effectiveConfig, this.options.workspaceAdapter);
     this.runtimes.set(agentId, runtime);
     return runtime;

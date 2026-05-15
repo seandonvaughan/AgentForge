@@ -16,7 +16,7 @@ DONE(v13.0.0): Deleted the deprecated root dashboard at dashboard/index.html and
 
 TODO(autonomous): Audit src/cli/commands/* against packages/cli/src/commands/*. For each root command, either (a) delete it if duplicated, or (b) convert it to a thin shim that delegates to the package CLI via a spawn or direct import. Report the disposition in the commit message.
 
-TODO(autonomous): Remove src/cli/compat/* bridges that are no longer referenced. Specifically src/cli/compat/package-run-services.ts and src/cli/compat/package-team-services.ts — check every caller, inline the direct package-core import, and delete the bridge module.
+DONE(v10.7.0): Removed src/cli/compat/* bridges. Both src/cli/compat/package-run-services.ts and src/cli/compat/package-team-services.ts were deleted — callers were either removed or migrated to import directly from @agentforge/core. Bridge module is gone; no references remain in root src/.
 
 DONE(v12.0.0): Consolidated `invoke --loop` — flag removed from root CLI (src/cli/commands/invoke.ts deleted, dist/ compat wrapper has no --loop). Loop execution canonicalized in package CLI's `autonomous:cycle` command. Docs updated.
 
@@ -72,7 +72,7 @@ TODO(autonomous): Fix the cycle-detail page to gracefully handle cycles whose cy
 
 After merging PR #16 (v10.6.0 convergence purge), CI on main still fails Type Check (20.19.x) and Build because remaining root `src/` files import `@agentforge/core` symbols that aren't built before typecheck runs. Specific failing files observed in CI annotations:
 
-TODO(autonomous): Migrate or delete `src/cli/compat/package-run-services.ts` — typecheck reports `Cannot find module '@agentforge/core'`. Either inline the package-core import directly into callers and delete the bridge, or ensure the typecheck target builds packages/core first.
+DONE(v10.7.0): Deleted src/cli/compat/package-run-services.ts and src/cli/compat/package-team-services.ts. The typecheck error is resolved — pnpm exec tsc --noEmit exits 0. The compat bridge directory no longer exists. Tests that exercised the bridge (tests/compat/package-run-services.test.ts) were added in v10.7.0 then removed in v12.0.0 once the surface was confirmed gone.
 
 TODO(autonomous): Migrate or delete the entire `src/builder/` tree (template-loader, template-customizer, team-writer, team-composer, agent-validator, index). All files import from `@agentforge/core` and fail typecheck. Per the v10.5.x convergence direction, builder logic should live at `packages/core/src/team/engine/` or similar. Audit which files in this tree are still referenced and either migrate or delete.
 

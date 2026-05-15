@@ -114,6 +114,13 @@ export interface CycleConfig {
    * Agents already at or below the cap are unaffected (no upward coercion).
    */
   modelCap?: ModelTier;
+  /**
+   * When set, every agent in the cycle runs at this effort level regardless of
+   * its YAML configuration. Useful for high-stakes runs where you want maximum
+   * reasoning depth on every step, or low-cost exploration runs.
+   * Passed as --effort to the claude subprocess.
+   */
+  effortCap?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 }
 
 export interface FailedTest {

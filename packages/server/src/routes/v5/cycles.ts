@@ -1194,7 +1194,7 @@ export async function cyclesRoutes(
     // CycleRunner. Without this thread-through the cycle-runner always uses
     // loadCycleConfig() defaults, so dashboard-supplied budgets are silently
     // ignored — which is how cycle 75bfaf96 ran at $200 despite a $500 launch.
-    const body = (req.body ?? {}) as { budgetUsd?: number; maxItems?: number; modelCap?: string };
+    const body = (req.body ?? {}) as { budgetUsd?: number; maxItems?: number; modelCap?: string; effortCap?: string };
     const budgetEnv = typeof body.budgetUsd === 'number' && body.budgetUsd > 0
       ? { AUTONOMOUS_BUDGET_USD: String(body.budgetUsd) }
       : {};
@@ -1203,6 +1203,9 @@ export async function cyclesRoutes(
       : {};
     const modelCapEnv = (body.modelCap === 'opus' || body.modelCap === 'sonnet' || body.modelCap === 'haiku')
       ? { AUTONOMOUS_MODEL_CAP: body.modelCap }
+      : {};
+    const effortCapEnv = (body.effortCap === 'low' || body.effortCap === 'medium' || body.effortCap === 'high' || body.effortCap === 'xhigh' || body.effortCap === 'max')
+      ? { AUTONOMOUS_EFFORT_CAP: body.effortCap }
       : {};
 
     const cycleId = randomUUID();
@@ -1243,7 +1246,7 @@ export async function cyclesRoutes(
         cwd: reqProjectRoot,
         detached: true,
         stdio: ['ignore', logFd, logFd],
-        env: { ...process.env, AUTONOMOUS_CYCLE_ID: cycleId, ...budgetEnv, ...maxItemsEnv, ...modelCapEnv },
+        env: { ...process.env, AUTONOMOUS_CYCLE_ID: cycleId, ...budgetEnv, ...maxItemsEnv, ...modelCapEnv, ...effortCapEnv },
       });
       child.unref();
       pid = child.pid ?? -1;

@@ -194,11 +194,23 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
       config.modelCap = modelCap;
       console.log(`[cycle] modelCap override: ${modelCap}`);
     }
+    const effortCapRaw = process.env['AUTONOMOUS_EFFORT_CAP'];
+    const effortCap = (effortCapRaw === 'low' || effortCapRaw === 'medium' || effortCapRaw === 'high' || effortCapRaw === 'xhigh' || effortCapRaw === 'max')
+      ? effortCapRaw
+      : undefined;
+    if (effortCap) {
+      config.effortCap = effortCap;
+      console.log(`[cycle] effortCap override: ${effortCap}`);
+    }
 
     const telemetry = createAutonomousTelemetryAdapters(cwd);
 
     try {
-      const runtime = new RuntimeAdapter({ cwd, ...(config.modelCap ? { modelCap: config.modelCap } : {}) });
+      const runtime = new RuntimeAdapter({
+        cwd,
+        ...(config.modelCap ? { modelCap: config.modelCap } : {}),
+        ...(config.effortCap ? { effortCap: config.effortCap } : {}),
+      });
       const phaseHandlers = {
         audit: (ctx: PhaseContext) => runAuditPhase(ctx),
         plan: (ctx: PhaseContext) => runPlanPhase(ctx),

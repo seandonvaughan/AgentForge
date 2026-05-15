@@ -11,6 +11,12 @@
   let comment = $state('');
   /** Cap all agents at this tier. 'default' means no cap (use agent YAML setting). */
   let modelCap = $state<'default' | 'sonnet' | 'haiku'>('default');
+  /**
+   * Override the effort level for every agent in the cycle.
+   * 'default' means use each agent's YAML effort setting.
+   * xhigh is only honoured for Opus agents — non-Opus tiers are coerced to max.
+   */
+  let effortCap = $state<'default' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'>('default');
 
   // ── Launch state ──────────────────────────────────────────────────────────
   let launching = $state(false);
@@ -52,7 +58,7 @@
       const res = await fetch(withWorkspace('/api/v5/cycles/preview'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ budgetUsd, maxItems, dryRun, branchPrefix, comment, modelCap: modelCap !== 'default' ? modelCap : undefined }),
+        body: JSON.stringify({ budgetUsd, maxItems, dryRun, branchPrefix, comment, modelCap: modelCap !== 'default' ? modelCap : undefined, effortCap: effortCap !== 'default' ? effortCap : undefined }),
       });
       if (!res.ok) {
         const text = await res.text().catch(() => `HTTP ${res.status}`);
@@ -208,6 +214,7 @@
           branchPrefix,
           comment,
           modelCap: modelCap !== 'default' ? modelCap : undefined,
+          effortCap: effortCap !== 'default' ? effortCap : undefined,
         }),
       });
 
@@ -296,6 +303,18 @@
           <option value="default">Default (per agent)</option>
           <option value="sonnet">Sonnet — outage / cost reduction</option>
           <option value="haiku">Haiku — maximum savings</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="effortCap">Effort cap</label>
+        <select id="effortCap" class="form-input" bind:value={effortCap} disabled={launching}>
+          <option value="default">Default (per agent)</option>
+          <option value="low">Low — fast, mechanical work</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+          <option value="xhigh">xHigh — Opus only (auto-downgrades to max on Sonnet/Haiku)</option>
+          <option value="max">Max — deepest reasoning</option>
         </select>
       </div>
 

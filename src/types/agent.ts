@@ -17,7 +17,7 @@ export type ModelTier = "opus" | "sonnet" | "haiku";
  * Higher effort = deeper reasoning but more tokens/cost.
  * Lower effort = faster, cheaper responses for mechanical tasks.
  */
-export type EffortLevel = "low" | "medium" | "high" | "max";
+export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
 
 /** Broad functional category that an agent belongs to. */
 export type AgentCategory = "strategic" | "implementation" | "quality" | "utility";

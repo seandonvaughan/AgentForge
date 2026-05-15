@@ -123,6 +123,10 @@ function mergeConfig(defaults: CycleConfig, overrides: Partial<CycleConfig>): Cy
       if (override === 'opus' || override === 'sonnet' || override === 'haiku') {
         merged.modelCap = override;
       }
+    } else if (key === 'effortCap') {
+      if (override === 'low' || override === 'medium' || override === 'high' || override === 'xhigh' || override === 'max') {
+        merged.effortCap = override;
+      }
     } else {
       merged[key] = { ...merged[key], ...(override as object) } as never;
     }
