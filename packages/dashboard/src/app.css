@@ -214,36 +214,7 @@ body {
 ::-webkit-scrollbar-thumb:hover { background: var(--color-border-strong); }
 
 /* ── Layout ──────────────────────────────────────────────────────────────── */
-.app-layout {
-  display: grid;
-  grid-template-columns: var(--sidebar-width) 1fr;
-  grid-template-rows: var(--topbar-height) 1fr;
-  height: 100vh;
-  overflow: hidden;
-}
-
-.topbar {
-  grid-column: 1 / -1;
-  background: var(--color-bg-elevated);
-  border-bottom: 1px solid var(--color-border);
-  display: flex;
-  align-items: center;
-  padding: 0 var(--space-6);
-  gap: var(--space-4);
-  z-index: 10;
-}
-
-.sidebar {
-  background: var(--color-bg-elevated);
-  border-right: 1px solid var(--color-border);
-  overflow-y: auto;
-  padding: var(--space-4) 0;
-}
-
-.main-content {
-  overflow-y: auto;
-  padding: var(--space-6);
-}
+/* V1 .app-layout grid removed — V2 Layout shell owns the grid (v2/layout/Layout.svelte) */
 
 /* ── Sidebar navigation ───────────────────────────────────────────────── */
 .nav-section { padding: var(--space-2) 0; }
