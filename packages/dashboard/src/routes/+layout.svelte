@@ -1,7 +1,6 @@
 <script lang="ts">
   import '../app.css';
-  import Sidebar from '$lib/components/Sidebar.svelte';
-  import Topbar from '$lib/components/Topbar.svelte';
+  import Layout from '$lib/components/v2/layout/Layout.svelte';
   import ApprovalModal from '$lib/components/ApprovalModal.svelte';
   import { wsStore } from '$lib/stores/ws.js';
   import { approvalsStore } from '$lib/stores/approvals.js';
@@ -10,6 +9,13 @@
   import { loadCosts } from '$lib/stores/costs.js';
   import { loadVersion } from '$lib/stores/version.js';
   import { onMount, onDestroy } from 'svelte';
+  import type { Snippet } from 'svelte';
+
+  interface Props {
+    children: Snippet;
+  }
+
+  let { children }: Props = $props();
 
   onMount(() => {
     // Kick off all data loads in parallel
@@ -28,13 +34,9 @@
   });
 </script>
 
-<div class="app-layout">
-  <Topbar />
-  <Sidebar />
-  <main class="main-content">
-    <slot />
-  </main>
-</div>
+<Layout>
+  {@render children()}
+</Layout>
 
 <!-- Global approval modal — rendered above all pages, opened via approvalsStore.open() -->
 <ApprovalModal />
