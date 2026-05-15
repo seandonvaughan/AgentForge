@@ -238,38 +238,41 @@
   /** Phase ordering for sub-phase indicator. */
   const PHASE_ORDER = ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate', 'release', 'learn'];
 
-  /** Internal phases that have at least one recorded agent run (i.e. they ran). */
-  let completedPhases = $derived.by(() => {
-    if (!agentsData?.runs) return [];
-    const seen = new Set<string>();
-    for (const r of agentsData.runs) {
-      if (r?.phase) seen.add(String(r.phase));
-    }
-    return PHASE_ORDER.filter((p) => seen.has(p));
-  });
-
   /**
-   * The currently-active internal phase. Best signal we have without modifying
-   * the runner: if the cycle is non-terminal and the most-recently-seen phase
-   * in agentRuns is X, the next phase in PHASE_ORDER is likely active.
-   * Falls back to mapping cycle.stage → first sub-phase of that macro stage.
+   * The currently-active internal phase. cycle.stage reports the internal
+   * phase directly (e.g. "execute", "audit") rather than a macro stage,
+   * so this is just a normalized read with fallbacks for terminal states.
    */
   let activePhase = $derived.by(() => {
     if (isTerminal) return null;
-    const done = completedPhases;
-    if (done.length === 0) {
-      // No agent runs yet — derive from cycle.stage
-      const s = String(stage).toLowerCase();
-      if (s === 'plan' || s === 'unknown') return 'audit';
-      if (s === 'stage') return 'assign';
-      if (s === 'run') return 'execute';
-      if (s === 'verify') return 'test';
-      if (s === 'commit') return 'review';
-      if (s === 'review') return 'release';
-      return null;
+    const s = String(stage).toLowerCase();
+    if (PHASE_ORDER.includes(s)) return s;
+    // Fallback: macro-stage → first internal phase of that macro
+    if (s === 'plan') return 'audit';
+    if (s === 'stage') return 'assign';
+    if (s === 'run') return 'execute';
+    if (s === 'verify') return 'test';
+    if (s === 'commit') return 'review';
+    return null;
+  });
+
+  /**
+   * Phases that have finished. Includes every phase preceding activePhase in
+   * PHASE_ORDER (so they're guaranteed done) PLUS any phase that has agent
+   * runs and is NOT the active phase.
+   */
+  let completedPhases = $derived.by(() => {
+    const active = activePhase;
+    if (!active) {
+      // Terminal — every phase that has runs is complete
+      if (!agentsData?.runs) return [];
+      const seen = new Set<string>();
+      for (const r of agentsData.runs) if (r?.phase) seen.add(String(r.phase));
+      return PHASE_ORDER.filter((p) => seen.has(p));
     }
-    const lastIdx = PHASE_ORDER.indexOf(done[done.length - 1]!);
-    return PHASE_ORDER[Math.min(lastIdx + 1, PHASE_ORDER.length - 1)] ?? null;
+    const activeIdx = PHASE_ORDER.indexOf(active);
+    if (activeIdx < 0) return [];
+    return PHASE_ORDER.slice(0, activeIdx);
   });
 
   /** Now-playing strip: latest in-flight agent (or most recent if terminal). */
