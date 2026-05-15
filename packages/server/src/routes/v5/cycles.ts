@@ -23,6 +23,7 @@ import {
   open as fsOpen,
   read as fsRead,
   close as fsClose,
+  watch as fsWatch,
 } from 'node:fs';
 import { join, resolve, sep, basename, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -77,6 +78,10 @@ const SAFE_PHASE = new Set([
 const SAFE_FILE_NAMES = new Set([
   'tests', 'git', 'pr', 'approval-pending', 'approval-decision',
 ]);
+/** Allowlist for raw .log file access via GET /api/v5/cycles/:id/logs/:name */
+const SAFE_LOG_NAMES = new Set(['cli-stdout', 'tests-raw']);
+/** 2 MB cap for log reads unless ?full=1 is passed. */
+const LOG_READ_CAP_BYTES = 2 * 1024 * 1024;
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -1204,6 +1209,175 @@ export async function cyclesRoutes(
     const parsed = readJsonIfExists(file);
     if (parsed === null) return reply.status(500).send({ error: 'Failed to parse file' });
     return reply.send(parsed);
+  });
+
+  // GET /api/v5/cycles/:id/logs/:name ──────────────────────────────────────
+  // Returns a raw log file as plain text. `name` must be in SAFE_LOG_NAMES.
+  // Caps response at 2 MB unless ?full=1 is supplied.
+  app.get('/api/v5/cycles/:id/logs/:name', async (req, reply) => {
+    const { id, name } = req.params as { id: string; name: string };
+    if (!SAFE_ID.test(id)) return reply.status(400).send({ error: 'Invalid cycle id' });
+    if (!SAFE_LOG_NAMES.has(name)) return reply.status(400).send({ error: 'Invalid log name' });
+    const br = baseForRequest(req);
+    if ('error' in br) return reply.status(br.error.status).send(br.error.body);
+    const base = br.base;
+    const dir = safeJoin(base, id);
+    if (!dir || !existsSync(dir)) return reply.status(404).send({ error: 'Cycle not found' });
+    const file = safeJoin(dir, `${name}.log`);
+    if (!file || !existsSync(file)) return reply.status(404).send({ error: `${name}.log not found` });
+
+    const q = req.query as { full?: string } | undefined;
+    const full = q?.full === '1';
+
+    let text: string;
+    try {
+      const stat = statSync(file);
+      if (!full && stat.size > LOG_READ_CAP_BYTES) {
+        // Read last LOG_READ_CAP_BYTES so the most recent output is always visible
+        const buf = Buffer.alloc(LOG_READ_CAP_BYTES);
+        const offset = stat.size - LOG_READ_CAP_BYTES;
+        await new Promise<void>((res, rej) => {
+          fsOpen(file, 'r', (err, fd) => {
+            if (err) return rej(err);
+            fsRead(fd, buf, 0, LOG_READ_CAP_BYTES, offset, (rerr) => {
+              fsClose(fd, () => { if (rerr) rej(rerr); else res(); });
+            });
+          });
+        });
+        text = `[... truncated — showing last 2 MB of ${Math.round(stat.size / 1024)} KB ...]\n` + buf.toString('utf-8');
+      } else {
+        text = readFileSync(file, 'utf-8');
+      }
+    } catch (err) {
+      return reply.status(500).send({ error: `Failed to read ${name}.log: ${(err as Error).message}` });
+    }
+
+    reply.header('Content-Type', 'text/plain; charset=utf-8');
+    return reply.send(text);
+  });
+
+  // GET /api/v5/cycles/:id/logs/:name/stream ─────────────────────────────────
+  // SSE endpoint that tails the log file and emits new lines as data events.
+  // Closes automatically when the cycle reaches terminal state or the client
+  // disconnects. For active cycles subscribe here; for terminal cycles use the
+  // plain GET above (one-shot fetch).
+  app.get('/api/v5/cycles/:id/logs/:name/stream', async (req, reply) => {
+    const { id, name } = req.params as { id: string; name: string };
+    if (!SAFE_ID.test(id)) return reply.status(400).send({ error: 'Invalid cycle id' });
+    if (!SAFE_LOG_NAMES.has(name)) return reply.status(400).send({ error: 'Invalid log name' });
+    const br = baseForRequest(req);
+    if ('error' in br) return reply.status(br.error.status).send(br.error.body);
+    const base = br.base;
+    const dir = safeJoin(base, id);
+    if (!dir || !existsSync(dir)) return reply.status(404).send({ error: 'Cycle not found' });
+    const fileOrNull = safeJoin(dir, `${name}.log`);
+    if (!fileOrNull) return reply.status(404).send({ error: `${name}.log not found` });
+    const file: string = fileOrNull;
+
+    const reqOrigin = req.headers['origin'];
+    const isLocalhost = typeof reqOrigin === 'string' &&
+      /^https?:\/\/localhost(:\d+)?$/.test(reqOrigin);
+    const corsOrigin = isLocalhost ? reqOrigin : 'http://localhost:4751';
+
+    reply.raw.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': corsOrigin,
+      'X-Accel-Buffering': 'no',
+    });
+
+    let offset = 0;
+    // Seed offset to end of existing file so we don't re-emit history.
+    // The client must fetch full log separately for history.
+    try {
+      if (existsSync(file)) {
+        offset = statSync(file).size;
+      }
+    } catch { /* file may not exist yet — start from 0 */ }
+
+    let closed = false;
+    let watcher: ReturnType<typeof fsWatch> | null = null;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+    function sendLine(line: string) {
+      try {
+        reply.raw.write(`data: ${JSON.stringify({ line })}\n\n`);
+      } catch { closed = true; }
+    }
+
+    async function checkNewBytes(): Promise<void> {
+      if (closed) return;
+      if (!existsSync(file)) return;
+      let size: number;
+      try { size = statSync(file).size; } catch { return; }
+      if (size <= offset) return;
+      const len = size - offset;
+      const buf = Buffer.alloc(len);
+      try {
+        await new Promise<void>((res, rej) => {
+          fsOpen(file, 'r', (err, fd) => {
+            if (err) return rej(err);
+            fsRead(fd, buf, 0, len, offset, (rerr) => {
+              fsClose(fd, () => { if (rerr) rej(rerr); else res(); });
+            });
+          });
+        });
+      } catch { return; }
+      offset = size;
+      const lines = buf.toString('utf-8').split('\n');
+      // Last element may be a partial line — don't emit it yet; wait for newline.
+      for (let i = 0; i < lines.length - 1; i++) {
+        const l = lines[i]!;
+        if (l.length > 0) sendLine(l);
+      }
+    }
+
+    function cleanup() {
+      closed = true;
+      try { watcher?.close(); } catch { /* ignore */ }
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    }
+
+    // Use fs.watch for low-latency change events, fall back to polling.
+    try {
+      watcher = fsWatch(file, () => { void checkNewBytes(); });
+    } catch {
+      // File may not exist yet; poll will pick it up
+    }
+    // Polling fallback at 500ms handles the race where file is created after watch setup
+    pollTimer = setInterval(() => { void checkNewBytes(); }, 500);
+
+    // Check if cycle is already terminal; if so, close after draining
+    function checkTerminal() {
+      try {
+        const session = cycleSessions.get(id);
+        const TERMINAL_S = new Set(['killed', 'crashed', 'failed', 'completed']);
+        if (session && TERMINAL_S.has(session.status)) {
+          // Drain once more then close
+          void checkNewBytes().then(() => {
+            try { reply.raw.write('data: {"done":true}\n\n'); } catch { /* ignore */ }
+            cleanup();
+            try { reply.raw.end(); } catch { /* ignore */ }
+          });
+          return true;
+        }
+      } catch { /* session manager unavailable */ }
+      return false;
+    }
+
+    // Poll for terminal state every 5s
+    const terminalTimer = setInterval(() => {
+      if (checkTerminal()) clearInterval(terminalTimer);
+    }, 5000);
+
+    req.raw.on('close', () => {
+      cleanup();
+      clearInterval(terminalTimer);
+    });
+
+    // Keep the connection alive until client disconnects
+    await new Promise<void>((resolve) => { req.raw.on('close', resolve); });
   });
 
   // POST /api/v5/cycles ─────────────────────────────────────────────────────
