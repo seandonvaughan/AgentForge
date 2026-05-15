@@ -127,6 +127,8 @@ function mergeConfig(defaults: CycleConfig, overrides: Partial<CycleConfig>): Cy
       if (override === 'low' || override === 'medium' || override === 'high' || override === 'xhigh' || override === 'max') {
         merged.effortCap = override;
       }
+    } else if (key === 'fallbackEnabled') {
+      merged.fallbackEnabled = override as boolean;
     } else {
       merged[key] = { ...merged[key], ...(override as object) } as never;
     }

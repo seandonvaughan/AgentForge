@@ -121,6 +121,12 @@ export interface CycleConfig {
    * Passed as --effort to the claude subprocess.
    */
   effortCap?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  /**
+   * When true (default), the claude CLI --fallback-model flag is appended to
+   * every agent invocation. Ladder: opus → sonnet, sonnet → haiku.
+   * Set to false to pin agents strictly to their assigned model tier.
+   */
+  fallbackEnabled?: boolean;
 }
 
 export interface FailedTest {

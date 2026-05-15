@@ -54,7 +54,7 @@ export const MODEL_PRICING: Record<ModelTier, { input: number; output: number }>
 };
 
 export const MODEL_IDS: Record<ModelTier, string> = {
-  opus:   'claude-opus-4-6',
+  opus:   'claude-opus-4-7',
   sonnet: 'claude-sonnet-4-6',
   haiku:  'claude-haiku-4-5-20251001',
 };

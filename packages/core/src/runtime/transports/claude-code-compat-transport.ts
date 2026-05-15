@@ -76,10 +76,24 @@ export class ClaudeCodeCompatTransport implements ExecutionTransport {
     const inputTokens = this.sumInputTokens(cliResult);
     const outputTokens = cliResult.usage?.output_tokens ?? 0;
 
+    // Detect fallback: if the CLI used a different model than requested,
+    // surface the actual model from modelUsage and log it for cost accounting.
+    let resolvedModel = request.modelId;
+    if (cliResult.modelUsage && typeof cliResult.modelUsage === 'object') {
+      const usedModels = Object.keys(cliResult.modelUsage);
+      if (usedModels.length > 0 && usedModels[0] !== request.modelId) {
+        resolvedModel = usedModels[0]!;
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[claude-code-compat] model fallback detected: requested=${request.modelId} actual=${resolvedModel}`,
+        );
+      }
+    }
+
     return {
       providerKind: this.kind,
       response: cliResult.result ?? '',
-      model: request.modelId,
+      model: resolvedModel,
       usage: {
         inputTokens,
         outputTokens,
@@ -357,6 +371,7 @@ export class ClaudeCodeCompatTransport implements ExecutionTransport {
 
     if (outputFormat === 'stream-json') {
       args.push('--verbose', '--include-partial-messages');
+      args.push('--exclude-dynamic-system-prompt-sections');
     }
 
     if (request.allowedTools && request.allowedTools.length > 0) {
@@ -365,6 +380,22 @@ export class ClaudeCodeCompatTransport implements ExecutionTransport {
 
     if (request.effort) {
       args.push('--effort', request.effort);
+    }
+
+    if (request.budgetUsd !== undefined) {
+      args.push('--max-budget-usd', String(request.budgetUsd));
+    }
+
+    // --fallback-model: enabled by default (undefined treated as true).
+    // Ladder: opus → sonnet, sonnet → haiku.
+    const fallbackEnabled = request.enableFallback !== false;
+    if (fallbackEnabled) {
+      const model = request.agent.model;
+      if (model === 'opus') {
+        args.push('--fallback-model', 'claude-sonnet-4-6');
+      } else if (model === 'sonnet') {
+        args.push('--fallback-model', 'claude-haiku-4-5-20251001');
+      }
     }
 
     return args;

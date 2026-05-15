@@ -865,13 +865,31 @@ export async function cyclesRoutes(
     });
   });
 
+  // GET /api/v5/cycles/:id/plan ─────────────────────────────────────────────
+  // Returns plan.json from the cycle directory — canonical source of truth for
+  // new cycles (Track D). Returns 404 for legacy cycles that pre-date plan.json.
+  app.get('/api/v5/cycles/:id/plan', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!SAFE_ID.test(id)) return reply.status(400).send({ error: 'Invalid cycle id' });
+    const br = baseForRequest(req);
+    if ('error' in br) return reply.status(br.error.status).send(br.error.body);
+    const base = br.base;
+    const dir = safeJoin(base, id);
+    if (!dir || !existsSync(dir)) return reply.status(404).send({ error: 'Cycle not found' });
+    const planFile = join(dir, 'plan.json');
+    if (!existsSync(planFile)) {
+      return reply.status(404).send({ error: 'plan.json not found — cycle may predate this feature' });
+    }
+    const parsed = readJsonIfExists(planFile);
+    if (parsed === null) return reply.status(500).send({ error: 'Failed to parse plan.json' });
+    return reply.send(parsed);
+  });
+
   // GET /api/v5/cycles/:id/sprint ────────────────────────────────────────────
-  // Returns the live sprint file for this cycle so the UI can render the
-  // same beautiful kanban view used on /sprints/[version] inside the cycle
-  // detail page. Execute phase writes this file incrementally on every
-  // item completion, so polling this endpoint shows real-time progress
-  // (completed/planned/in_progress item counts) while execute is running —
-  // the missing live feedback that made the cost look "stuck".
+  // Returns the live sprint/plan for this cycle. Priority: (1) plan.json in cycle
+  // dir (new cycles), (2) sprint-link.json → legacy sprints/ file, (3) timestamp
+  // proximity fallback. Execute phase updates plan.json incrementally so polling
+  // this shows real-time item progress while execute is running.
   app.get('/api/v5/cycles/:id/sprint', async (req, reply) => {
     const { id } = req.params as { id: string };
     if (!SAFE_ID.test(id)) return reply.status(400).send({ error: 'Invalid cycle id' });
@@ -881,9 +899,16 @@ export async function cyclesRoutes(
     const dir = safeJoin(base, id);
     if (!dir || !existsSync(dir)) return reply.status(404).send({ error: 'Cycle not found' });
 
-    // Fast path: cycle writes sprint-link.json right after plan phase,
-    // containing the authoritative sprintVersion for this cycle. Check
-    // that first — no timestamp matching needed.
+    // Fast path 1: plan.json in cycle dir (new cycles — Track D migration).
+    const planFile = join(dir, 'plan.json');
+    if (existsSync(planFile)) {
+      try {
+        const sprint = JSON.parse(readFileSync(planFile, 'utf8'));
+        return reply.send({ file: 'plan.json', sprint });
+      } catch { /* fall through */ }
+    }
+
+    // Fast path 2: sprint-link.json → legacy sprints/ directory.
     const linkFile = join(dir, 'sprint-link.json');
     if (existsSync(linkFile)) {
       try {

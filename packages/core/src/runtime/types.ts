@@ -32,6 +32,12 @@ export interface ExecutionRequest {
   apiKey?: string;
   /** Reasoning effort level passed as --effort to the claude subprocess. */
   effort?: string;
+  /**
+   * When true, pass --fallback-model to the claude CLI subprocess.
+   * Ladder: opus → claude-sonnet-4-6, sonnet → claude-haiku-4-5-20251001.
+   * Defaults to true when not explicitly set to false.
+   */
+  enableFallback?: boolean;
 }
 
 export interface ExecutionResult {

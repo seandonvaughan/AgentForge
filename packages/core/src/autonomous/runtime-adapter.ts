@@ -69,6 +69,12 @@ export interface RuntimeAdapterOptions {
    * of its YAML configuration. Overrides any per-agent effort setting.
    */
   effortCap?: string;
+  /**
+   * When true (default), pass --fallback-model to the claude CLI subprocess.
+   * Ladder: opus → sonnet, sonnet → haiku.
+   * Propagated to RunOptions so each agent invocation emits the flag.
+   */
+  enableFallback?: boolean;
 }
 
 /**
@@ -97,8 +103,12 @@ export class RuntimeAdapter implements RuntimeForScoring {
   }> {
     const runtime = await this.getOrCreateRuntime(agentId);
     const startedAt = Date.now();
-    const runOpts: { task: string; allowedTools?: string[] } = { task };
+    const runOpts: { task: string; allowedTools?: string[]; enableFallback?: boolean } = { task };
     if (options?.allowedTools) runOpts.allowedTools = options.allowedTools;
+    // Thread enableFallback from adapter options into each run call.
+    if (this.options.enableFallback !== undefined) {
+      runOpts.enableFallback = this.options.enableFallback;
+    }
     const result: RunResult = await runtime.run(runOpts);
     const durationMs = Date.now() - startedAt;
 

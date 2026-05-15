@@ -12,6 +12,12 @@
   /** Cap all agents at this tier. 'default' means no cap (use agent YAML setting). */
   let modelCap = $state<'default' | 'sonnet' | 'haiku'>('default');
   /**
+   * When true (default), pass --fallback-model to the claude CLI so it can
+   * automatically fall back to a cheaper tier on overload.
+   * Ladder: opus → sonnet, sonnet → haiku.
+   */
+  let fallbackEnabled = $state(true);
+  /**
    * Override the effort level for every agent in the cycle.
    * 'default' means use each agent's YAML effort setting.
    * xhigh is only honoured for Opus agents — non-Opus tiers are coerced to max.
@@ -215,6 +221,7 @@
           comment,
           modelCap: modelCap !== 'default' ? modelCap : undefined,
           effortCap: effortCap !== 'default' ? effortCap : undefined,
+          fallbackEnabled,
         }),
       });
 
@@ -323,6 +330,14 @@
           <input type="checkbox" bind:checked={dryRun} disabled={launching} />
           <span>Dry run</span>
           <span class="hint">(skip PR creation)</span>
+        </label>
+      </div>
+
+      <div class="form-group toggle-group">
+        <label class="checkbox-label" title="Enable --fallback-model: opus→sonnet, sonnet→haiku on overload">
+          <input type="checkbox" bind:checked={fallbackEnabled} disabled={launching} />
+          <span>Enable model fallback on overload</span>
+          <span class="hint">(opus→sonnet, sonnet→haiku)</span>
         </label>
       </div>
     </div>

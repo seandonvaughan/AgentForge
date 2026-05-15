@@ -162,7 +162,15 @@ export class AnthropicSdkTransport implements ExecutionTransport {
   private buildMessageParams(request: ExecutionRequest): Record<string, unknown> {
     return {
       model: request.modelId,
-      system: request.agent.systemPrompt,
+      // Use a content-block array with cache_control so the system prompt is
+      // cached across repeated runs (ephemeral prompt caching).
+      system: [
+        {
+          type: 'text',
+          text: request.agent.systemPrompt,
+          cache_control: { type: 'ephemeral' },
+        },
+      ],
       max_tokens: request.maxTokens ?? 8096,
       messages: [
         {

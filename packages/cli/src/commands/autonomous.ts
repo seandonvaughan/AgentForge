@@ -202,6 +202,13 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
       config.effortCap = effortCap;
       console.log(`[cycle] effortCap override: ${effortCap}`);
     }
+    // fallbackEnabled: default true; only disabled when env var is explicitly 'false'
+    const fallbackEnabledRaw = process.env['AUTONOMOUS_FALLBACK_ENABLED'];
+    const enableFallback = fallbackEnabledRaw === 'false' ? false : true;
+    if (!enableFallback) {
+      config.fallbackEnabled = false;
+      console.log('[cycle] fallback disabled');
+    }
 
     const telemetry = createAutonomousTelemetryAdapters(cwd);
 
@@ -210,6 +217,7 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
         cwd,
         ...(config.modelCap ? { modelCap: config.modelCap } : {}),
         ...(config.effortCap ? { effortCap: config.effortCap } : {}),
+        enableFallback,
       });
       const phaseHandlers = {
         audit: (ctx: PhaseContext) => runAuditPhase(ctx),
