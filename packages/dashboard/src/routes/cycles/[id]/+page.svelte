@@ -217,6 +217,9 @@
     if (t === 'events' && events.length === 0) {
       loadEvents();
     }
+    if (t === 'overview') {
+      loadPlan();
+    }
   }
 
   async function togglePhase(phase: Phase) {
@@ -303,6 +306,33 @@
     void stage;
     if (isTerminal) stopSprintPoll();
   });
+
+  // Sprint Plan (from /api/v5/cycles/:id/plan) — loaded lazily when Overview tab is active
+  let planData: any = $state(null);
+  let planLoading = $state(false);
+  let planError: string | null = $state(null);
+  let planExpanded = $state(false);
+
+  async function loadPlan() {
+    if (!id || planData !== null) return;
+    planLoading = true;
+    try {
+      const res = await fetch(`/api/v5/cycles/${id}/plan`);
+      if (res.ok) {
+        planData = await res.json();
+        planError = null;
+      } else if (res.status === 404) {
+        planData = null;
+        planError = null; // pre-migration cycle, not an error
+      } else {
+        planError = `HTTP ${res.status}`;
+      }
+    } catch (e) {
+      planError = String(e);
+    } finally {
+      planLoading = false;
+    }
+  }
 
   // Overview helpers
   let costUsd = $derived(cycle?.cost?.totalUsd ?? cycle?.costUsd ?? cycle?.cost?.usd ?? cycle?.budget?.spentUsd ?? null);
@@ -567,6 +597,61 @@
         <div class="card kill-card">
           <div class="card-header"><span class="card-title">Kill Switch Tripped</span></div>
           <pre class="json">{pretty(killSwitch)}</pre>
+        </div>
+      {/if}
+
+      <!-- Sprint Plan collapsible section — from cycles/:id/plan (Track D) -->
+      {#if planData || planLoading}
+        <div class="card plan-section" style="margin-top: var(--space-4);">
+          <button
+            class="plan-toggle"
+            onclick={() => { planExpanded = !planExpanded; loadPlan(); }}
+          >
+            <span class="plan-toggle-arrow">{planExpanded ? '▼' : '▶'}</span>
+            <span class="plan-toggle-title">Sprint Plan</span>
+            {#if planData?.version}<span class="plan-version mono">v{planData.version}</span>{/if}
+            {#if planLoading}<span class="muted" style="font-size:var(--text-xs);">loading…</span>{/if}
+          </button>
+          {#if planExpanded && planData}
+            <div class="plan-body">
+              {#if planData.successCriteria && planData.successCriteria.length > 0}
+                <div class="plan-field">
+                  <div class="plan-label">Success Criteria</div>
+                  <ul class="plan-list">
+                    {#each planData.successCriteria as c}<li>{c}</li>{/each}
+                  </ul>
+                </div>
+              {/if}
+              {#if planData.versionDecision?.rationale}
+                <div class="plan-field">
+                  <div class="plan-label">Version Decision</div>
+                  <div class="plan-text mono">{planData.versionDecision.rationale}</div>
+                </div>
+              {/if}
+              {#if planData.ceoBrief}
+                <div class="plan-field">
+                  <div class="plan-label">Strategic Note</div>
+                  <div class="plan-text">{planData.ceoBrief}</div>
+                </div>
+              {/if}
+              {#if planData.risks && planData.risks.length > 0}
+                <div class="plan-field">
+                  <div class="plan-label">Risks ({planData.risks.length})</div>
+                  <ul class="plan-list">
+                    {#each planData.risks as r}<li>{r.risk}{#if r.mitigation} — <em>{r.mitigation}</em>{/if}</li>{/each}
+                  </ul>
+                </div>
+              {/if}
+              {#if planData.newHires && planData.newHires.length > 0}
+                <div class="plan-field">
+                  <div class="plan-label">Team Additions</div>
+                  <ul class="plan-list">
+                    {#each planData.newHires as h}<li>@{h.agent}{#if h.model} ({h.model}){/if}{#if h.rationale} — {h.rationale}{/if}</li>{/each}
+                  </ul>
+                </div>
+              {/if}
+            </div>
+          {/if}
         </div>
       {/if}
     {/if}

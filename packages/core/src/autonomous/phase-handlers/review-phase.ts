@@ -92,7 +92,7 @@ Do NOT modify any files.`;
   // breaking the cross-cycle feedback loop.
   const criticalLines = extractFindingsByLevel(review, 'CRITICAL');
   const majorLines = extractFindingsByLevel(review, 'MAJOR');
-  const sprintDomainTags = collectSprintItemTags(ctx.projectRoot, ctx.sprintVersion);
+  const sprintDomainTags = collectSprintItemTags(ctx.projectRoot, ctx.sprintVersion, ctx.cycleId);
   for (const line of criticalLines) {
     writeMemoryEntry(ctx.projectRoot, {
       type: 'review-finding',

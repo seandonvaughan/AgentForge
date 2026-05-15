@@ -9,24 +9,48 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * Read the sprint JSON and collect all unique item-level domain tags across all
- * items in the sprint. Returns an empty array when the sprint file is absent
- * or unreadable — failure must never block any phase handler from completing.
+ * Resolve the path to the sprint/plan file for the current phase context.
+ *
+ * New cycles (with a cycleId) write plan.json directly into the cycle
+ * directory — cycles/{cycleId}/plan.json. Legacy cycles (no cycleId, or
+ * running against a pre-migration archive) fall back to the historical
+ * .agentforge/sprints/v{N}.json location.
+ */
+export function sprintPlanPath(
+  projectRoot: string,
+  sprintVersion: string,
+  cycleId?: string,
+): string {
+  if (cycleId) {
+    return join(projectRoot, '.agentforge', 'cycles', cycleId, 'plan.json');
+  }
+  return join(projectRoot, '.agentforge', 'sprints', `v${sprintVersion}.json`);
+}
+
+/**
+ * Read the sprint/plan JSON and collect all unique item-level domain tags
+ * across all items. Returns an empty array when the file is absent or
+ * unreadable — failure must never block any phase handler from completing.
+ *
+ * Checks cycles/{cycleId}/plan.json first (new path), then falls back to
+ * .agentforge/sprints/v{N}.json (legacy archive). The legacy file uses a
+ * { sprints: [{ items: [] }] } wrapper; plan.json is a flat SprintPlan.
  *
  * These domain tags are appended to memory entries written by the review and
  * gate phase handlers so that the execute-phase memory injector can find
  * findings from prior cycles that are relevant to the current item's domain
  * tags.
- *
- * Without this, review/gate findings carry only structural tags
- * (review/finding/critical) that never overlap with sprint item domain tags
- * (memory/execute/backend/...), silently breaking the cross-cycle feedback loop.
  */
-export function collectSprintItemTags(projectRoot: string, sprintVersion: string): string[] {
+export function collectSprintItemTags(
+  projectRoot: string,
+  sprintVersion: string,
+  cycleId?: string,
+): string[] {
   try {
-    const sprintPath = join(projectRoot, '.agentforge', 'sprints', `v${sprintVersion}.json`);
-    const raw = readFileSync(sprintPath, 'utf8');
+    const planPath = sprintPlanPath(projectRoot, sprintVersion, cycleId);
+    const raw = readFileSync(planPath, 'utf8');
     const parsed = JSON.parse(raw);
+    // plan.json is flat; legacy sprints file may have a { sprints: [] } wrapper
     const sprintObj: { items?: Array<{ tags?: string[] }> } | null =
       parsed.items ? parsed : (parsed.sprints?.[0] ?? null);
     const items = sprintObj?.items ?? [];
@@ -38,7 +62,7 @@ export function collectSprintItemTags(projectRoot: string, sprintVersion: string
     }
     return Array.from(tagSet);
   } catch {
-    // Sprint file absent or unreadable — return empty so the caller still
+    // File absent or unreadable — return empty so the caller still
     // writes the structural tags and doesn't lose the finding.
     return [];
   }

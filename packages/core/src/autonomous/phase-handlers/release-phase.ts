@@ -33,14 +33,12 @@ export async function runReleasePhase(
     startedAt: new Date(startedAt).toISOString(),
   });
 
-  // Update sprint JSON phase field if the file exists.
+  // Update plan/sprint JSON phase field if the file exists.
   let itemCount = 0;
-  const sprintPath = join(
-    ctx.projectRoot,
-    '.agentforge',
-    'sprints',
-    `v${ctx.sprintVersion}.json`,
-  );
+  // New cycles: plan.json in cycle dir. Legacy: .agentforge/sprints/v{N}.json.
+  const sprintPath = ctx.cycleId
+    ? join(ctx.projectRoot, '.agentforge', 'cycles', ctx.cycleId, 'plan.json')
+    : join(ctx.projectRoot, '.agentforge', 'sprints', `v${ctx.sprintVersion}.json`);
   try {
     const raw = readFileSync(sprintPath, 'utf8');
     const parsed = JSON.parse(raw);
@@ -55,7 +53,7 @@ export async function runReleasePhase(
     }
     writeFileSync(sprintPath, JSON.stringify(parsed, null, 2));
   } catch {
-    // non-fatal — sprint JSON may not exist in some test contexts
+    // non-fatal — plan.json may not exist in some test contexts
   }
 
   const releasedAt = new Date().toISOString();

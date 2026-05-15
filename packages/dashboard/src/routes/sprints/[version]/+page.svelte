@@ -91,8 +91,21 @@
     }
   }
 
-  onMount(() => {
-    if (version) load(version);
+  onMount(async () => {
+    // Hard redirect: /sprints/[version] → /cycles (look up by sprintVersion if possible)
+    try {
+      const res = await fetch(`/api/v5/cycles?limit=200`);
+      if (res.ok) {
+        const json = await res.json();
+        const cycles: Array<{ cycleId: string; sprintVersion: string | null }> = json.cycles ?? [];
+        const match = cycles.find(c => c.sprintVersion === version);
+        if (match) {
+          goto(`/cycles/${match.cycleId}`);
+          return;
+        }
+      }
+    } catch { /* fall through */ }
+    goto('/cycles');
   });
 
   // Svelte 5's $derived has a type inference limitation: state variables

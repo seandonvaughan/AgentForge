@@ -139,12 +139,10 @@ export async function runGatePhase(
   let costSoFar = 0;
 
   try {
-    const sprintPath = join(
-      ctx.projectRoot,
-      '.agentforge',
-      'sprints',
-      `v${ctx.sprintVersion}.json`,
-    );
+    // New cycles: plan.json in cycle dir. Legacy: .agentforge/sprints/v{N}.json.
+    const sprintPath = ctx.cycleId
+      ? join(ctx.projectRoot, '.agentforge', 'cycles', ctx.cycleId, 'plan.json')
+      : join(ctx.projectRoot, '.agentforge', 'sprints', `v${ctx.sprintVersion}.json`);
     const raw = readFileSync(sprintPath, 'utf8');
     const parsed = JSON.parse(raw);
     const sprintObj = parsed.items ? parsed : parsed.sprints?.[0] ?? null;
@@ -215,6 +213,19 @@ In your rationale, explicitly state which findings you verified and whether each
 Decide: APPROVE or REJECT this sprint for release.
 
 Respond as JSON: { "verdict": "APPROVE" | "REJECT", "rationale": "..." }`;
+
+  // Emit verification progress event before invoking the CEO agent so the UI
+  // shows the findings that will be reviewed — eliminates the "stuck on gate" UX.
+  const preRunCritical = extractFindingsByLevel(reviewFindings, 'CRITICAL');
+  const preRunMajor = extractFindingsByLevel(reviewFindings, 'MAJOR');
+  ctx.bus.publish('gate.verification.progress', {
+    sprintId: ctx.sprintId,
+    phase,
+    cycleId: ctx.cycleId,
+    findingsCount: preRunCritical.length + preRunMajor.length,
+    critical: preRunCritical.length,
+    major: preRunMajor.length,
+  });
 
   let response = '';
   let runCost = 0;
@@ -289,7 +300,7 @@ Respond as JSON: { "verdict": "APPROVE" | "REJECT", "rationale": "..." }`;
   // cycle's memory-tagged items about what caused the gate to fail).
   const criticalFindings = extractFindingsByLevel(reviewFindings, 'CRITICAL');
   const majorFindings = extractFindingsByLevel(reviewFindings, 'MAJOR');
-  const sprintDomainTags = collectSprintItemTags(ctx.projectRoot, ctx.sprintVersion);
+  const sprintDomainTags = collectSprintItemTags(ctx.projectRoot, ctx.sprintVersion, ctx.cycleId);
 
   // Normalize verdict to lowercase to match the GateVerdictMetadata contract.
   const verdictNorm: 'approved' | 'rejected' =

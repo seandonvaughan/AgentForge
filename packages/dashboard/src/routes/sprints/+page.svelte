@@ -2,6 +2,9 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import ProgressBar from '$lib/components/ProgressBar.svelte';
+  // Sprint data now lives in cycle plan.json. This page hard-redirects to /cycles.
+  // Historical .agentforge/sprints/ files remain readable via GET /api/v5/sprints
+  // for archival reference.
 
   interface SprintItem {
     id: string;
@@ -67,7 +70,10 @@
     pending: '○',
   };
 
-  onMount(load);
+  onMount(() => {
+    // Hard redirect: /sprints → /cycles
+    goto('/cycles');
+  });
 </script>
 
 <svelte:head><title>Sprints — AgentForge</title></svelte:head>

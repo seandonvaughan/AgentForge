@@ -66,7 +66,7 @@ export class SprintGenerator {
     private readonly config: CycleConfig,
   ) {}
 
-  async generate(approvedItems: RankedItem[]): Promise<SprintPlan> {
+  async generate(approvedItems: RankedItem[], cycleId?: string): Promise<SprintPlan> {
     const currentVersion = this.findLatestSprintVersion();
     const allTags = approvedItems.flatMap(i => i.suggestedTags);
     const tier = determineVersionTier(allTags);
@@ -98,9 +98,16 @@ export class SprintGenerator {
       },
     };
 
-    const wrapper = { sprints: [plan] };
-    const sprintPath = join(this.cwd, '.agentforge/sprints', `v${nextVersion}.json`);
-    writeFileSync(sprintPath, JSON.stringify(wrapper, null, 2));
+    if (cycleId) {
+      // New path: write plan.json into the cycle directory — single source of truth.
+      const planPath = join(this.cwd, '.agentforge/cycles', cycleId, 'plan.json');
+      writeFileSync(planPath, JSON.stringify(plan, null, 2));
+    } else {
+      // Legacy fallback (no cycleId): write to .agentforge/sprints/
+      const wrapper = { sprints: [plan] };
+      const sprintPath = join(this.cwd, '.agentforge/sprints', `v${nextVersion}.json`);
+      writeFileSync(sprintPath, JSON.stringify(wrapper, null, 2));
+    }
 
     return plan;
   }

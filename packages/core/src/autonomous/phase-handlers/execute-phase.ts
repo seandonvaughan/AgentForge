@@ -277,13 +277,11 @@ export async function runExecutePhase(
     startedAt: new Date(startedAt).toISOString(),
   });
 
-  // ---- Read sprint JSON ----
-  const sprintPath = join(
-    ctx.projectRoot,
-    '.agentforge',
-    'sprints',
-    `v${ctx.sprintVersion}.json`,
-  );
+  // ---- Read sprint/plan JSON ----
+  // New cycles: plan.json in cycle dir. Legacy: .agentforge/sprints/v{N}.json.
+  const sprintPath = ctx.cycleId
+    ? join(ctx.projectRoot, '.agentforge', 'cycles', ctx.cycleId, 'plan.json')
+    : join(ctx.projectRoot, '.agentforge', 'sprints', `v${ctx.sprintVersion}.json`);
 
   let raw: string;
   try {
@@ -371,8 +369,19 @@ export async function runExecutePhase(
 
   const loadAssessment = assessLoad();
   let maxParallelism = loadAssessment.initial;
-  // eslint-disable-next-line no-console
-  console.log(`[execute] load assessment: ${loadAssessment.rationale}`);
+
+  ctx.bus.publish('execute.parallelism.assessed', {
+    sprintId: ctx.sprintId,
+    phase: 'execute',
+    cycleId: ctx.cycleId,
+    itemCount: items.length,
+    parallelism: loadAssessment.initial,
+    ceiling: ceilingParallelism,
+    heavyCount: items.filter((i: any) =>
+      Array.isArray(i.tags) && i.tags.some((t: string) => new Set(['heavy', 'compute', 'long-running', 'architecture']).has(t))
+    ).length,
+    rationale: loadAssessment.rationale,
+  });
 
   // Circuit breaker: track consecutive rate-limit-style failures.
   // If we see N in a row, halve parallelism (down to floor of 1).
@@ -392,8 +401,17 @@ export async function runExecutePhase(
       consecutiveRateLimitFails++;
       if (consecutiveRateLimitFails >= RATE_LIMIT_TRIP_THRESHOLD && maxParallelism > 1) {
         const newCap = Math.max(1, Math.floor(maxParallelism / 2));
-        // eslint-disable-next-line no-console
-        console.warn(`[execute] circuit breaker tripped: ${consecutiveRateLimitFails} rate-limit failures in a row, halving parallelism ${maxParallelism} → ${newCap}`);
+        const failedItemIds = Array.from(liveResults.entries())
+          .filter(([, r]) => r.status === 'failed')
+          .map(([id]) => id);
+        ctx.bus.publish('execute.circuit-breaker.tripped', {
+          sprintId: ctx.sprintId,
+          phase: 'execute',
+          cycleId: ctx.cycleId,
+          reason: `${consecutiveRateLimitFails} consecutive rate-limit failures`,
+          failedItems: failedItemIds,
+          parallelism: newCap,
+        });
         maxParallelism = newCap;
         consecutiveRateLimitFails = 0;
       }
@@ -478,6 +496,16 @@ export async function runExecutePhase(
       for (let attempt = 0; attempt <= maxItemRetries; attempt++) {
         attempts = attempt + 1;
         const task = buildItemPrompt(item, ctx.projectRoot, attempt, lastError, memoryEntries);
+        ctx.bus.publish('sprint.phase.item.started', {
+          sprintId: ctx.sprintId,
+          phase,
+          cycleId: ctx.cycleId,
+          itemId: item.id,
+          agentId: item.assignee,
+          title: item.title,
+          attempt: attempts,
+          filesHinted: item.files ?? [],
+        });
         try {
           const result = await ctx.runtime.run(item.assignee, task, {
             allowedTools,
@@ -553,6 +581,17 @@ export async function runExecutePhase(
       // Update the live execute.json snapshot so the dashboard sees
       // real-time cost + per-agent activity as items complete.
       snapshotExecuteProgress();
+      const currentRuns = Array.from(liveResults.values());
+      ctx.bus.publish('execute.snapshot', {
+        sprintId: ctx.sprintId,
+        phase: 'execute',
+        cycleId: ctx.cycleId,
+        completedItems: currentRuns.filter((r) => r.status === 'completed').length,
+        failedItems: currentRuns.filter((r) => r.status === 'failed').length,
+        inFlightCount: inFlight.size,
+        totalItems: items.length,
+        costUsd: totalCost,
+      });
       // v6.7.4: feed result into the circuit breaker so a streak of
       // rate-limit failures dynamically halves parallelism.
       const liveResult = liveResults.get(item.id);

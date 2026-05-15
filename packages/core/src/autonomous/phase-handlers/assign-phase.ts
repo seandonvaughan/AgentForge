@@ -56,12 +56,10 @@ export async function runAssignPhase(ctx: PhaseContext): Promise<PhaseResult> {
     startedAt: new Date(startedAt).toISOString(),
   });
 
-  const sprintPath = join(
-    ctx.projectRoot,
-    '.agentforge',
-    'sprints',
-    `v${ctx.sprintVersion}.json`,
-  );
+  // New cycles: plan.json in cycle dir. Legacy: .agentforge/sprints/v{N}.json.
+  const sprintPath = ctx.cycleId
+    ? join(ctx.projectRoot, '.agentforge', 'cycles', ctx.cycleId, 'plan.json')
+    : join(ctx.projectRoot, '.agentforge', 'sprints', `v${ctx.sprintVersion}.json`);
 
   let assignmentCount = 0;
   const byAgent: Record<string, number> = {};

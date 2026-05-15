@@ -263,14 +263,13 @@ export class CycleRunner {
     // ─────────────────────────────────────────────────────────────────
     // STAGE 2 — STAGE
     // Convert the approved ranked items into a SprintPlan and write
-    // .agentforge/sprints/v{N}.json. Version is bumped from the latest
-    // existing sprint based on item tags.
+    // cycles/{cycleId}/plan.json — single source of truth (Track D migration).
     // ─────────────────────────────────────────────────────────────────
     const generator = new SprintGenerator(this.options.cwd, this.options.config);
-    const plan: SprintPlan = await generator.generate(approved.approvedItems);
+    const plan: SprintPlan = await generator.generate(approved.approvedItems, this.cycleId);
     this.sprintVersion = plan.version;
-    // Persist the cycle→sprint link immediately so the dashboard can resolve
-    // the Items tab without needing to match sprint files by timestamp.
+    // Log sprint assignment in events.jsonl so the dashboard can resolve the
+    // sprint version without timestamp matching.
     this.logger.logSprintAssigned(plan.version);
     this.checkKillSwitch();
 
@@ -543,27 +542,26 @@ export class CycleRunner {
    * execute phase completed are marked 'completed' — not left as 'in_progress'
    * due to stale writes from parallel execution or retry re-reads.
    */
-  private reconcileSprintStatus(sprintVersion: string): void {
-    const execPath = join(this.options.cwd, '.agentforge/cycles', this.cycleId, 'phases/execute.json');
-    const sprintPath = join(this.options.cwd, '.agentforge/sprints', `v${sprintVersion}.json`);
-    if (!existsSync(execPath) || !existsSync(sprintPath)) return;
+  private reconcileSprintStatus(_sprintVersion: string): void {
+    // plan.json lives inside the cycle directory — reconcile directly there.
+    const cycleDir = join(this.options.cwd, '.agentforge/cycles', this.cycleId);
+    const execPath = join(cycleDir, 'phases/execute.json');
+    const planPath = join(cycleDir, 'plan.json');
+    if (!existsSync(execPath) || !existsSync(planPath)) return;
 
     try {
       const execData = JSON.parse(readFileSync(execPath, 'utf8'));
-      const sprintData = JSON.parse(readFileSync(sprintPath, 'utf8'));
+      const planData = JSON.parse(readFileSync(planPath, 'utf8'));
       const runs: Array<{ itemId: string; status: string }> = execData.agentRuns ?? [];
       const completedIds = new Set(runs.filter(r => r.status === 'completed').map(r => r.itemId));
 
-      // Find items array (sprint file format varies)
-      const sprints = sprintData.sprints ?? [sprintData];
-      for (const s of sprints) {
-        for (const item of s.items ?? []) {
-          if (completedIds.has(item.id) && item.status !== 'completed') {
-            item.status = 'completed';
-          }
+      // plan.json is a flat SprintPlan (no sprints[] wrapper)
+      for (const item of planData.items ?? []) {
+        if (completedIds.has(item.id) && item.status !== 'completed') {
+          item.status = 'completed';
         }
       }
-      writeFileSync(sprintPath, JSON.stringify(sprintData, null, 2));
+      writeFileSync(planPath, JSON.stringify(planData, null, 2));
     } catch { /* non-fatal — dashboard will show stale data but cycle continues */ }
   }
 

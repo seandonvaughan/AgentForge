@@ -22,7 +22,8 @@ import { multiWorkspaceRoutes } from './multi-workspace.js';
 import { agentVersioningRoutes } from './agent-versioning.js';
 import { federationRoutes } from './federation.js';
 import { registerHealthServicesRoutes } from './health-services.js';
-import { sprintOrchestrationRoutes } from './sprint-orchestration.js';
+// sprintOrchestrationRoutes removed — mutation routes for the old manual
+// workflow were deleted as part of the sprint→cycle plan.json migration.
 import { settingsRoutes } from './settings.js';
 import { agentCrudRoutes } from './agent-crud.js';
 import { agentRoutes } from './agents.js';
@@ -232,8 +233,7 @@ export async function registerV5Routes(
   // ── Service-level health (per-service circuit breaker status) ─────────────
   registerHealthServicesRoutes(app);
 
-  // ── Sprint Orchestration (create, advance, item updates, execute) ──────────
-  await sprintOrchestrationRoutes(app, opts.projectRoot ? { projectRoot: opts.projectRoot } : undefined);
+  // Sprint Orchestration routes removed — see above comment.
 
   // ── Settings persistence ───────────────────────────────────────────────────
   await settingsRoutes(app);
