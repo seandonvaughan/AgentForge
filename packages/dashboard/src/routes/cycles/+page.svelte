@@ -19,7 +19,7 @@
     hasApprovalPending?: boolean;
   }
 
-  const TERMINAL = new Set(['completed', 'failed', 'killed']);
+  const TERMINAL = new Set(['completed', 'failed', 'killed', 'crashed']);
 
   let cycles: CycleSummary[] = $state([]);
   let loading = $state(true);

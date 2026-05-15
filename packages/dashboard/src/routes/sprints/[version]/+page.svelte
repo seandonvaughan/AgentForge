@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from '$app/state';
+  import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   import ProgressBar from '$lib/components/ProgressBar.svelte';
   import Gauge from '$lib/components/Gauge.svelte';

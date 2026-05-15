@@ -7,7 +7,7 @@
 // downstream observers see a clear "release happened" signal. No agent
 // is dispatched.
 
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
 
@@ -34,13 +34,23 @@ export async function runReleasePhase(
   });
 
   // Update plan/sprint JSON phase field if the file exists.
+  // Prefer plan.json in the cycle dir; fall back to the legacy sprint JSON.
+  // Always update the legacy sprint JSON too (dashboard reads from there).
   let itemCount = 0;
-  // New cycles: plan.json in cycle dir. Legacy: .agentforge/sprints/v{N}.json.
-  const sprintPath = ctx.cycleId
+  const planPath = ctx.cycleId
     ? join(ctx.projectRoot, '.agentforge', 'cycles', ctx.cycleId, 'plan.json')
-    : join(ctx.projectRoot, '.agentforge', 'sprints', `v${ctx.sprintVersion}.json`);
+    : null;
+  const legacySprintPath = join(
+    ctx.projectRoot,
+    '.agentforge',
+    'sprints',
+    `v${ctx.sprintVersion}.json`,
+  );
+  const activePath =
+    planPath && existsSync(planPath) ? planPath : legacySprintPath;
+
   try {
-    const raw = readFileSync(sprintPath, 'utf8');
+    const raw = readFileSync(activePath, 'utf8');
     const parsed = JSON.parse(raw);
     const sprintObj = parsed.items
       ? parsed
@@ -51,9 +61,27 @@ export async function runReleasePhase(
       sprintObj.phase = 'release';
       itemCount = Array.isArray(sprintObj.items) ? sprintObj.items.length : 0;
     }
-    writeFileSync(sprintPath, JSON.stringify(parsed, null, 2));
+    writeFileSync(activePath, JSON.stringify(parsed, null, 2));
   } catch {
-    // non-fatal — plan.json may not exist in some test contexts
+    // non-fatal — file may not exist in some test contexts
+  }
+
+  // If we updated plan.json, also mirror the phase change to the legacy sprint
+  // JSON so the dashboard (which reads from .agentforge/sprints/) stays in sync.
+  if (activePath !== legacySprintPath) {
+    try {
+      const raw = readFileSync(legacySprintPath, 'utf8');
+      const parsed = JSON.parse(raw);
+      const sprintObj = parsed.items
+        ? parsed
+        : parsed.sprints && parsed.sprints.length > 0
+          ? parsed.sprints[0]
+          : null;
+      if (sprintObj) sprintObj.phase = 'release';
+      writeFileSync(legacySprintPath, JSON.stringify(parsed, null, 2));
+    } catch {
+      // non-fatal — legacy sprint JSON may not exist
+    }
   }
 
   const releasedAt = new Date().toISOString();

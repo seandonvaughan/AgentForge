@@ -122,6 +122,12 @@ function findProjectRoot(): string {
  *    `sprint-link.json`. We reconstruct the record from the event stream so
  *    metric computation works for all current cycles.
  *
+ * CANONICAL SOURCE: packages/server/src/lib/cycle-record.ts
+ * This copy exists so the SvelteKit SSR layer can parse cycle data without a
+ * runtime dependency on the server package.  Keep this implementation in sync
+ * with the canonical source.  When @agentforge/dashboard gains a dependency on
+ * @agentforge/shared, consolidate both into that package.
+ *
  * @internal Exported for unit testing only.
  */
 export function _readCycleRecord(cycleDir: string, cycleId: string): CycleRecord | null {
@@ -167,15 +173,15 @@ export function _readCycleRecord(cycleDir: string, cycleId: string): CycleRecord
     }
   }
 
-  const startedAt = (firstPhase?.at ?? sprintAssigned?.at) as string | undefined;
+  const startedAt   = (firstPhase?.at ?? sprintAssigned?.at) as string | undefined;
   const completedAt = complete?.at as string | undefined;
-  const durationMs = startedAt && completedAt
+  const durationMs  = startedAt && completedAt
     ? new Date(completedAt).getTime() - new Date(startedAt).getTime()
     : undefined;
 
-  const passed = testsEvt?.passed as number | undefined;
-  const failed = testsEvt?.failed as number | undefined;
-  const total  = passed != null && failed != null ? passed + failed : undefined;
+  const passed   = testsEvt?.passed as number | undefined;
+  const failed   = testsEvt?.failed as number | undefined;
+  const total    = passed != null && failed != null ? passed + failed : undefined;
   const passRate = total != null && total > 0 ? passed! / total : undefined;
 
   return {
@@ -185,8 +191,14 @@ export function _readCycleRecord(cycleDir: string, cycleId: string): CycleRecord
     startedAt,
     completedAt,
     durationMs,
-    cost: scoring ? { totalUsd: scoring.totalCostUsd as number | undefined } : undefined,
-    tests: total != null ? { passed, failed, total, passRate } : undefined,
+    // Guard totalCostUsd type before use — matches canonical source behaviour.
+    cost: scoring && typeof scoring.totalCostUsd === 'number'
+      ? { totalUsd: scoring.totalCostUsd as number }
+      : undefined,
+    // Guard passed/failed types before use — matches canonical source behaviour.
+    tests: total != null && typeof passed === 'number' && typeof failed === 'number'
+      ? { passed, failed, total, passRate: typeof passRate === 'number' ? passRate : 0 }
+      : undefined,
     pr: prEvt ? { url: prEvt.url as string | null, number: prEvt.number as number | null } : undefined,
   };
 }

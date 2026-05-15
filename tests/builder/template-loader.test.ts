@@ -6,7 +6,7 @@ import {
   loadTemplate,
   loadAllTemplates,
   loadDomainTemplates,
-} from "../../src/builder/template-loader.js";
+} from "../../packages/core/src/team/engine/builder/template-loader.js";
 
 describe("template-loader", () => {
   let tempDir: string;

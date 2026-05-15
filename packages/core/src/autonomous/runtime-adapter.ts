@@ -20,6 +20,7 @@ import type { AgentRuntimeConfig, RunResult } from '../agent-runtime/types.js';
 import type { WorkspaceAdapter } from '@agentforge/db';
 import type { RuntimeForScoring } from './scoring-pipeline.js';
 import type { ModelTier } from '@agentforge/shared';
+import type { RuntimeJobSupervisor } from '../runtime/runtime-job-supervisor.js';
 
 const TIER_RANK: Record<ModelTier, number> = { opus: 2, sonnet: 1, haiku: 0 };
 
@@ -52,6 +53,16 @@ export interface RuntimeAdapterOptions {
   cwd: string;
   /** Optional workspace adapter for session/cost persistence. */
   workspaceAdapter?: WorkspaceAdapter;
+  /**
+   * Optional supervisor for durable job tracking.
+   *
+   * When provided, every `run()` call creates a `runtime_jobs` row and emits
+   * `runtime_events` so the /jobs dashboard page shows live data that persists
+   * across server restarts. Without this the autonomous cycle leaves
+   * runtime_jobs and runtime_events empty (the observability gap described in
+   * the v15.0.0 sprint item).
+   */
+  supervisor?: RuntimeJobSupervisor;
   /**
    * Inline agent configs keyed by agentId. If provided, these take precedence
    * over loading from disk. Useful for tests and for injecting synthesized
@@ -101,6 +112,14 @@ export class RuntimeAdapter implements RuntimeForScoring {
     durationMs: number;
     model: string;
   }> {
+    // When a supervisor is wired, every agent run creates a durable runtime_job
+    // row + runtime_events so the /jobs page has persistent history across
+    // server restarts. This closes the observability gap where the execute phase
+    // left runtime_jobs / runtime_events empty (0 rows).
+    if (this.options.supervisor) {
+      return this._runWithSupervisor(agentId, task, options);
+    }
+
     const runtime = await this.getOrCreateRuntime(agentId);
     const startedAt = Date.now();
     const runOpts: { task: string; allowedTools?: string[]; enableFallback?: boolean } = { task };
@@ -127,6 +146,62 @@ export class RuntimeAdapter implements RuntimeForScoring {
       costUsd: result.costUsd,
       durationMs,
       model: result.model,
+    };
+  }
+
+  /**
+   * Supervisor-wrapped run path. Creates a runtime_job row before starting,
+   * then delegates to AgentRuntime.run() inside the supervisor's executor so
+   * the job's status, tokens, cost, and events are all persisted to SQLite.
+   */
+  private async _runWithSupervisor(
+    agentId: string,
+    task: string,
+    options?: { responseFormat?: string; allowedTools?: string[] },
+  ): Promise<{
+    output: string;
+    usage: { input_tokens: number; output_tokens: number };
+    costUsd: number;
+    durationMs: number;
+    model: string;
+  }> {
+    const supervisor = this.options.supervisor!;
+    const runtime = await this.getOrCreateRuntime(agentId);
+    const jobStartedAt = Date.now();
+
+    const job = supervisor.createJob({ agentId, task });
+
+    const runResult = await supervisor.startJob(job.id, () => {
+      const runOpts: { task: string; allowedTools?: string[]; enableFallback?: boolean } = { task };
+      if (options?.allowedTools) runOpts.allowedTools = options.allowedTools;
+      if (this.options.enableFallback !== undefined) {
+        runOpts.enableFallback = this.options.enableFallback;
+      }
+      return runtime.run(runOpts);
+    });
+
+    if (!runResult) {
+      const latestJob = supervisor.getJob(job.id);
+      throw new RuntimeAdapterError(
+        latestJob?.error ?? `Agent ${agentId} run did not complete`,
+      );
+    }
+    if (runResult.status === 'failed') {
+      throw new RuntimeAdapterError(
+        runResult.error ?? `Agent ${agentId} run failed: unknown error`,
+      );
+    }
+
+    const durationMs = Date.now() - jobStartedAt;
+    return {
+      output: runResult.response,
+      usage: {
+        input_tokens: runResult.inputTokens,
+        output_tokens: runResult.outputTokens,
+      },
+      costUsd: runResult.costUsd,
+      durationMs,
+      model: runResult.model,
     };
   }
 

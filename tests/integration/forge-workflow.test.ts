@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import yaml from "js-yaml";
 
-import { forgeTeam } from "../../src/builder/index.js";
+import { forgeTeam } from "../../packages/core/src/team/engine/builder/index.js";
 import { discover } from "../../src/genesis/discovery.js";
 import { loadAllDomains } from "../../src/domains/domain-loader.js";
 import { activateDomains } from "../../src/domains/domain-activator.js";

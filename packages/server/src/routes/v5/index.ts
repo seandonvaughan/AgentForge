@@ -56,7 +56,7 @@ export async function registerV5Routes(
   });
 
   // ── Approvals Gateway ─────────────────────────────────────────────────────────
-  await approvalsRoutes(app);
+  await approvalsRoutes(app, { projectRoot: opts.projectRoot });
 
   // ── RBAC & Audit ─────────────────────────────────────────────────────────────
   await rbacRoutes(app);
@@ -171,7 +171,7 @@ export async function registerV5Routes(
 
   // ── SSE stream + Git branch manager ───────────────────────────────────────────
   await streamRoutes(app);
-  await mergeQueueRoutes(app);
+  await mergeQueueRoutes(app, { adapter });
 
   // ── Knowledge Graph ───────────────────────────────────────────────────────────
   await knowledgeRoutes(app);

@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import yaml from "js-yaml";
 
-import { AgentValidator } from "../../src/builder/agent-validator.js";
+import { AgentValidator } from "../../packages/core/src/team/engine/builder/agent-validator.js";
 
 // ---------------------------------------------------------------------------
 // Helpers

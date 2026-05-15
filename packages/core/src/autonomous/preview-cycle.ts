@@ -36,7 +36,7 @@ export interface PreviewCycleResult {
   warnings: string[];
   durationMs: number;
   scoringCostUsd: number;
-  fallback: 'static' | null;
+  fallback: 'static' | 'effort-estimator' | null;
 }
 
 export async function previewCycle(

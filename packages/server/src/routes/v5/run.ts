@@ -24,7 +24,9 @@ const DEFAULT_PROJECT_ROOT = join(__dirname, '../../../../../');
 interface RunRequestBody {
   agentId: string;
   task: string;
-  projectRoot?: string;
+  // NOTE: projectRoot was removed from the request body — it was a path traversal
+  // vector (callers could supply arbitrary FS roots). The server-configured
+  // DEFAULT_PROJECT_ROOT is always used instead.
   runtimeMode?: RuntimeMode;
   allowedTools?: string[];
 }
@@ -151,13 +153,12 @@ export async function runRoutes(
 
   // POST /api/v5/run — start an agent run and stream progress over SSE.
   app.post<{ Body: RunRequestBody; Querystring: RunQuerystring }>('/api/v5/run', async (req, reply) => {
-    const { agentId, task, projectRoot, runtimeMode, allowedTools } = req.body ?? {};
+    const { agentId, task, runtimeMode, allowedTools } = req.body ?? {};
 
     if (!agentId) return reply.status(400).send({ error: 'agentId is required' });
     if (!task) return reply.status(400).send({ error: 'task is required' });
 
-    const root = projectRoot ?? DEFAULT_PROJECT_ROOT;
-    const agentforgeDir = join(root, '.agentforge');
+    const agentforgeDir = join(DEFAULT_PROJECT_ROOT, '.agentforge');
 
     const config = await loadAgentConfig(agentId, agentforgeDir);
     if (!config) return reply.status(404).send({ error: 'Agent not found' });

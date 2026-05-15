@@ -19,10 +19,11 @@ function makeMockRuntime(response: string) {
   };
 }
 
-function makeMockAdapter() {
+function makeMockAdapter(p50CostByTag: Record<string, number> = {}) {
   return {
     getSprintHistory: async (_limit: number) => [],
     getCostMedians: async () => ({}),
+    getP50CostByTag: async () => p50CostByTag,
     getTeamState: async () => ({ utilization: {} }),
   };
 }
@@ -116,6 +117,52 @@ describe('ScoringPipeline', () => {
     const result = await pipeline.score(fakeBacklog);
     expect(result.withinBudget).toHaveLength(1);
   });
+
+  it('replaces invented PascalCase assignees with "coder" and adds a warning', async () => {
+    const runtime = makeMockRuntime(JSON.stringify({
+      rankings: [
+        { itemId: 'i1', title: 'Fix crash', rank: 1, score: 0.95, confidence: 0.9,
+          estimatedCostUsd: 10, estimatedDurationMinutes: 20,
+          rationale: 'r', dependencies: [], suggestedAssignee: 'BackendEngineer',
+          suggestedTags: ['fix'], withinBudget: true },
+        { itemId: 'i2', title: 'Add feature X', rank: 2, score: 0.8, confidence: 0.85,
+          estimatedCostUsd: 15, estimatedDurationMinutes: 30,
+          rationale: 'r', dependencies: [], suggestedAssignee: 'coder',
+          suggestedTags: ['feature'], withinBudget: true },
+      ],
+      totalEstimatedCostUsd: 25, budgetOverflowUsd: 0, summary: 's', warnings: [],
+    }));
+
+    const { logger } = makeMockLogger();
+    const pipeline = new ScoringPipeline(runtime as any, makeMockAdapter() as any, DEFAULT_CYCLE_CONFIG, logger);
+    const result = await pipeline.score(fakeBacklog);
+
+    expect(result.withinBudget[0]!.suggestedAssignee).toBe('coder');
+    expect(result.withinBudget[1]!.suggestedAssignee).toBe('coder');
+    expect(result.warnings.some(w => w.includes('BackendEngineer'))).toBe(true);
+    expect(result.warnings.some(w => w.includes('replaced with "coder"'))).toBe(true);
+    // Only one replacement warning — the valid 'coder' should not be touched
+    expect(result.warnings.filter(w => w.includes('replaced with "coder"'))).toHaveLength(1);
+  });
+
+  it('sanitizes invented assignees in requiresApproval items too', async () => {
+    const runtime = makeMockRuntime(JSON.stringify({
+      rankings: [
+        { itemId: 'i1', title: 'Fix', rank: 1, score: 0.9, confidence: 0.9,
+          estimatedCostUsd: 5, estimatedDurationMinutes: 20,
+          rationale: 'r', dependencies: [], suggestedAssignee: 'FrontendEngineer',
+          suggestedTags: ['fix'], withinBudget: false },
+      ],
+      totalEstimatedCostUsd: 5, budgetOverflowUsd: 0, summary: 's', warnings: [],
+    }));
+
+    const { logger } = makeMockLogger();
+    const pipeline = new ScoringPipeline(runtime as any, makeMockAdapter() as any, DEFAULT_CYCLE_CONFIG, logger);
+    const result = await pipeline.score(fakeBacklog);
+
+    expect(result.requiresApproval[0]!.suggestedAssignee).toBe('coder');
+    expect(result.warnings.some(w => w.includes('FrontendEngineer'))).toBe(true);
+  });
 });
 
 describe('ScoringPipeline fallback ladder', () => {
@@ -132,10 +179,11 @@ describe('ScoringPipeline fallback ladder', () => {
     };
   }
 
-  function makeAdapter() {
+  function makeAdapter(p50CostByTag: Record<string, number> = {}) {
     return {
       getSprintHistory: async () => [],
       getCostMedians: async () => ({}),
+      getP50CostByTag: async () => p50CostByTag,
       getTeamState: async () => ({ utilization: {} }),
     };
   }
@@ -177,7 +225,7 @@ describe('ScoringPipeline fallback ladder', () => {
     expect(logs.some(l => l.type === 'fallback' && l.strike === 1)).toBe(true);
   });
 
-  it('strike 3: falls back to static priority ranking when all retries fail', async () => {
+  it('all LLM retries fail → effort-estimator fires as third-strike fallback', async () => {
     const runtime = makeAlternatingRuntime([
       'garbage', 'more garbage', 'still garbage', // all 3 strikes fail
     ]);
@@ -189,13 +237,14 @@ describe('ScoringPipeline fallback ladder', () => {
       logger,
     );
     const result = await pipeline.scoreWithFallback(fakeBacklog);
-    expect(result.fallback).toBe('static');
+    // Effort-estimator fires BEFORE static since v15.x — static is now last resort
+    expect(result.fallback).toBe('effort-estimator');
     expect(result.withinBudget.length).toBeGreaterThan(0);
-    // P0 should rank higher than P1 in static fallback
+    // P0 should still rank higher than P1 (both fallbacks sort by priority)
     expect(result.withinBudget[0]!.itemId).toBe('i1');
   });
 
-  it('static fallback respects budget', async () => {
+  it('effort-estimator fallback respects per-cycle budget cap', async () => {
     const runtime = makeAlternatingRuntime(['garbage', 'garbage', 'garbage']);
     const { logger } = makeLogger();
     const bigBacklog = Array.from({ length: 20 }, (_, i) => ({
@@ -223,9 +272,70 @@ describe('ScoringPipeline fallback ladder', () => {
       logger,
     );
     const result = await pipeline.scoreWithFallback(bigBacklog);
-    expect(result.fallback).toBe('static');
-    // Should prefer P0 items and fit within budget
+    // Effort-estimator now fires before static (v15.x ladder change)
+    expect(result.fallback).toBe('effort-estimator');
+    // Budget cap is respected regardless of which fallback fires
     const totalCost = result.withinBudget.reduce((sum, i) => sum + i.estimatedCostUsd, 0);
     expect(totalCost).toBeLessThanOrEqual(25);
+  });
+
+  it('effort-estimator fallback: costs are complexity-based, not p50CostByTag', async () => {
+    // Effort-estimator fires BEFORE static (v15.x), so p50CostByTag (used by
+    // staticFallback) is never consulted. All items get complexityScore*0.5 = $2.50.
+    const runtime = makeAlternatingRuntime(['garbage', 'garbage', 'garbage']);
+    const { logger } = makeLogger();
+    const backlog = [
+      { id: 'f1', title: 'Fix crash', description: 'x', priority: 'P0' as const, tags: ['fix'], source: 'failed-session' as const, confidence: 0.9 },
+      { id: 'ft1', title: 'New feature', description: 'x', priority: 'P1' as const, tags: ['feature'], source: 'todo-marker' as const, confidence: 0.8 },
+      { id: 'u1', title: 'Unknown tag', description: 'x', priority: 'P2' as const, tags: ['unknown-tag'], source: 'todo-marker' as const, confidence: 0.7 },
+    ];
+    const p50 = { fix: 1.10, feature: 1.65 };
+    const pipeline = new ScoringPipeline(
+      runtime as any,
+      makeAdapter(p50) as any,
+      DEFAULT_CYCLE_CONFIG,
+      logger,
+    );
+
+    const result = await pipeline.scoreWithFallback(backlog);
+    expect(result.fallback).toBe('effort-estimator');
+
+    // All items cost complexityScore(5) * 0.5 = $2.50 — not the tag medians
+    for (const item of [...result.withinBudget, ...result.requiresApproval]) {
+      expect(item.estimatedCostUsd).toBeCloseTo(2.50);
+    }
+    // Priority ordering is still respected (P0 → P1 → P2)
+    const sorted = [...result.withinBudget, ...result.requiresApproval].sort((a, b) => a.rank - b.rank);
+    expect(sorted.at(0)?.itemId).toBe('f1');
+    expect(sorted.at(1)?.itemId).toBe('ft1');
+    expect(sorted.at(2)?.itemId).toBe('u1');
+  });
+
+  it('effort-estimator fires first even when getP50CostByTag throws', async () => {
+    // getP50CostByTag is only used by staticFallback. Effort-estimator catches
+    // its own adapter errors (getSprintHistory) internally; a throwing
+    // getP50CostByTag has no effect on the effort-estimator tier.
+    const runtime = makeAlternatingRuntime(['garbage', 'garbage', 'garbage']);
+    const { logger } = makeLogger();
+    const throwingP50Adapter = {
+      getSprintHistory: async () => [],           // returns empty — effort-estimator uses zero history
+      getCostMedians: async () => ({}),
+      getP50CostByTag: async () => { throw new Error('adapter unavailable'); },
+      getTeamState: async () => ({ utilization: {} }),
+    };
+    const pipeline = new ScoringPipeline(
+      runtime as any,
+      throwingP50Adapter as any,
+      DEFAULT_CYCLE_CONFIG,
+      logger,
+    );
+
+    const result = await pipeline.scoreWithFallback(fakeBacklog);
+    // Effort-estimator fires (not static), even though getP50CostByTag throws
+    expect(result.fallback).toBe('effort-estimator');
+    // Costs = complexityScore(5) * 0.5 = $2.50 (zero-history analysis)
+    for (const item of [...result.withinBudget, ...result.requiresApproval]) {
+      expect(item.estimatedCostUsd).toBeCloseTo(2.50);
+    }
   });
 });

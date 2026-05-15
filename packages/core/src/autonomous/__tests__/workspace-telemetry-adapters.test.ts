@@ -155,4 +155,83 @@ describe('createAutonomousTelemetryAdapters', () => {
       telemetry.close();
     }
   });
+
+  it('computes p50 cost per tag from cycle directories', async () => {
+    // Create 3 cycle directories with known costs and tagged plan items.
+    //
+    // Cycle A: totalUsd=$10, 2 items → avgCost=$5/item
+    //   item tags: ['fix'], ['feature']
+    //   contributes: fix→5, feature→5
+    //
+    // Cycle B: totalUsd=$4,  2 items → avgCost=$2/item
+    //   item tags: ['fix'], ['ci']
+    //   contributes: fix→2, ci→2
+    //
+    // Cycle C: totalUsd=$9,  3 items → avgCost=$3/item
+    //   item tags: ['fix'], ['fix'], ['fix']
+    //   contributes: fix→3, fix→3, fix→3
+    //
+    // Expected p50 per tag:
+    //   fix:     observations=[5,2,3,3,3] sorted=[2,3,3,3,5] → median=3 (middle of 5)
+    //   feature: observations=[5] → median=5
+    //   ci:      observations=[2] → median=2
+    //
+    // Each item contributes one observation at its cycle's avgCost; cycleC has
+    // 3 fix-tagged items, each adding avgCost=$3.
+
+    const cyclesDir = join(projectRoot, '.agentforge', 'cycles');
+    mkdirSync(cyclesDir, { recursive: true });
+
+    const makeCycle = (
+      id: string,
+      totalUsd: number,
+      items: Array<{ tags: string[] }>,
+    ) => {
+      const dir = join(cyclesDir, id);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(
+        join(dir, 'cycle.json'),
+        JSON.stringify({ cycleId: id, cost: { totalUsd } }),
+      );
+      writeFileSync(
+        join(dir, 'plan.json'),
+        JSON.stringify({
+          items: items.map((item, i) => ({
+            id: `${id}-item-${i}`,
+            title: `Item ${i}`,
+            tags: item.tags,
+          })),
+        }),
+      );
+    };
+
+    makeCycle('cycle-a', 10, [{ tags: ['fix'] }, { tags: ['feature'] }]);
+    makeCycle('cycle-b', 4, [{ tags: ['fix'] }, { tags: ['ci'] }]);
+    makeCycle('cycle-c', 9, [{ tags: ['fix'] }, { tags: ['fix'] }, { tags: ['fix'] }]);
+
+    const telemetry = createAutonomousTelemetryAdapters(projectRoot);
+    try {
+      const p50 = await telemetry.scoringAdapter.getP50CostByTag();
+
+      // fix: [5,2,3,3,3] sorted=[2,3,3,3,5] → median=3 (middle of 5 values)
+      expect(p50['fix']).toBe(3);
+      // feature: only one cycle → median=5
+      expect(p50['feature']).toBe(5);
+      // ci: only one cycle → median=2
+      expect(p50['ci']).toBe(2);
+    } finally {
+      telemetry.close();
+    }
+  });
+
+  it('returns empty object when no cycle directories exist', async () => {
+    const telemetry = createAutonomousTelemetryAdapters(projectRoot);
+    try {
+      const p50 = await telemetry.scoringAdapter.getP50CostByTag();
+      // No cycles dir → no data → empty object
+      expect(p50).toEqual({});
+    } finally {
+      telemetry.close();
+    }
+  });
 });

@@ -17,7 +17,7 @@
     type AgentRunSection,
   } from '$lib/util/phase-render';
 
-  const TERMINAL = new Set(['completed', 'failed', 'killed']);
+  const TERMINAL = new Set(['completed', 'failed', 'killed', 'crashed']);
   const PHASES = ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate', 'release', 'learn'] as const;
   const FILES = ['tests', 'git', 'pr', 'approval-pending', 'approval-decision'] as const;
   type Phase = (typeof PHASES)[number];
@@ -66,8 +66,13 @@
       sprintLoading = false;
     }
     // Also refresh the cycle summary (cost/tests/stage) and agents on each tick.
-    // The server emits 404 + body with cycleInProgress:true for cycles that
-    // exist but haven't written cycle.json yet — treat those as live data.
+    // Three server response shapes:
+    //   200 OK           — cycle.json exists (completed/killed/failed with clean shutdown)
+    //   200 partialTerminal — cycle.json absent but session registry shows terminal
+    //   404 cycleInProgress — cycle.json absent and session still running (or unknown)
+    // Note: if the server returns 404+cycleInProgress but body.stage is already in
+    // TERMINAL (e.g. events.jsonl recorded a kill), isTerminal will become true and
+    // the $effect will stop this poll on the next tick.
     try {
       const res = await fetch(`/api/v5/cycles/${id}`);
       if (res.ok) {
@@ -295,7 +300,10 @@
       } else if (cRes.status === 404) {
         // Server returns 404 + cycleInProgress:true for cycles that exist
         // but haven't written cycle.json yet. Honour that contract so the
-        // detail page can render the live feed while the cycle is running.
+        // detail page can render a live feed while the cycle is running.
+        // Gap case: if body.stage is already terminal (e.g. events.jsonl
+        // recorded a kill but session registry was lost on server restart),
+        // cycle will be treated as terminal because isTerminal checks stage.
         const body = await cRes.json().catch(() => null);
         if (body?.cycleInProgress) {
           cycle = body;
@@ -536,6 +544,10 @@
   let commitSha = $derived(cycle?.commitSha ?? cycle?.git?.commitSha ?? cycle?.git?.sha ?? null);
   let durationMs = $derived(cycle?.durationMs ?? null);
   let killSwitch = $derived(cycle?.killSwitch ?? cycle?.kill ?? null);
+  /** exitNote is set by cycle-sessions for killed/crashed cycles (e.g. "SIGKILL after grace period"). */
+  let exitNote = $derived(cycle?.exitNote ?? null);
+  /** partialTerminal=true when the cycle terminated without writing cycle.json — phase data may be incomplete. */
+  let partialTerminal = $derived(cycle?.partialTerminal === true);
   let scoringResult = $derived(scoring?.result ?? scoring ?? null);
 </script>
 
@@ -602,6 +614,16 @@
       </div>
     {/if}
   </div>
+
+  {#if partialTerminal}
+    <div class="partial-terminal-banner">
+      <span class="ptb-icon">⚠</span>
+      <span class="ptb-text">
+        Cycle terminated without writing <code>cycle.json</code> — phase data may be incomplete.
+        {#if exitNote}<strong>{exitNote}</strong>{/if}
+      </span>
+    </div>
+  {/if}
 
   <nav class="tabs">
     <button class="tab" class:active={activeTab === 'items'} onclick={() => setTab('items')}>
@@ -834,6 +856,13 @@
         <div class="card kill-card">
           <div class="card-header"><span class="card-title">Kill Switch Tripped</span></div>
           <pre class="json">{pretty(killSwitch)}</pre>
+        </div>
+      {/if}
+
+      {#if exitNote && !killSwitch}
+        <div class="card exit-note-card">
+          <div class="card-header"><span class="card-title">Termination Reason</span></div>
+          <p class="exit-note-text">{exitNote}</p>
         </div>
       {/if}
 
@@ -1641,6 +1670,36 @@
   }
 
   .kill-card { border-color: rgba(224,90,90,0.4); }
+
+  .exit-note-card { border-color: rgba(245,166,35,0.4); }
+  .exit-note-text {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    color: var(--color-warning);
+    margin: 0;
+    padding: var(--space-2) 0;
+  }
+
+  /* Partial-terminal banner — shown when cycle.json was never written */
+  .partial-terminal-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
+    background: rgba(245,166,35,0.07);
+    border-top: 1px solid rgba(245,166,35,0.25);
+    border-bottom: 1px solid rgba(245,166,35,0.25);
+    font-size: var(--text-xs);
+    color: var(--color-warning);
+    margin-bottom: var(--space-3);
+  }
+  .ptb-icon { flex-shrink: 0; font-size: var(--text-sm); }
+  .ptb-text code {
+    font-family: var(--font-mono);
+    background: rgba(245,166,35,0.12);
+    padding: 1px 4px;
+    border-radius: 3px;
+  }
 
   .tab-count {
     display: inline-block;

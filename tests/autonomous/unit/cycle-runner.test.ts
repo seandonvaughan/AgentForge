@@ -81,6 +81,7 @@ function makeMockDeps() {
       getSprintHistory: async () => [],
       getCostMedians: async () => ({}),
       getTeamState: async () => ({ utilization: {} }),
+      getP50CostByTag: async () => ({}),
     },
     mockPhaseHandlers: {
       audit: async (ctx: any) => {
@@ -250,6 +251,9 @@ function makeMockDeps() {
         draft: false,
       }),
     },
+    // Default pre-verify typecheck: always passes. Prevents real build commands
+    // from running in the tmpdir workspace where no package.json exists.
+    preVerifyTypeCheck: async () => ({ buildOk: true, typeCheckOk: true }),
     bus: (() => {
       const subs: Record<string, Array<(e: any) => void>> = {};
       return {
@@ -297,6 +301,7 @@ describe('CycleRunner', () => {
       gitOps: deps.gitOps as any,
       prOpener: deps.prOpener as any,
       bus: deps.bus as any,
+      preVerifyTypeCheck: deps.preVerifyTypeCheck,
       dryRun: { prOpener: true },
     });
 
@@ -323,6 +328,7 @@ describe('CycleRunner', () => {
       gitOps: deps.gitOps as any,
       prOpener: deps.prOpener as any,
       bus: deps.bus as any,
+      preVerifyTypeCheck: deps.preVerifyTypeCheck,
       dryRun: { prOpener: true },
     });
     const result = await runner.start();
@@ -366,6 +372,7 @@ describe('CycleRunner', () => {
       gitOps: deps.gitOps as any,
       prOpener: deps.prOpener as any,
       bus: deps.bus as any,
+      preVerifyTypeCheck: deps.preVerifyTypeCheck,
       dryRun: { prOpener: true },
     });
 
@@ -402,6 +409,7 @@ describe('CycleRunner', () => {
       gitOps: deps.gitOps as any,
       prOpener: deps.prOpener as any,
       bus: deps.bus as any,
+      preVerifyTypeCheck: deps.preVerifyTypeCheck,
       dryRun: { prOpener: true },
     });
 
@@ -436,6 +444,7 @@ describe('CycleRunner', () => {
       gitOps: deps.gitOps as any,
       prOpener: deps.prOpener as any,
       bus: deps.bus as any,
+      preVerifyTypeCheck: deps.preVerifyTypeCheck,
       dryRun: { prOpener: true },
     });
 
@@ -470,6 +479,7 @@ describe('CycleRunner', () => {
       gitOps: deps.gitOps as any,
       prOpener: deps.prOpener as any,
       bus: deps.bus as any,
+      preVerifyTypeCheck: deps.preVerifyTypeCheck,
       dryRun: { prOpener: true },
     });
 
@@ -490,4 +500,70 @@ describe('CycleRunner', () => {
   // v6.5.1: the v6.4.4 TEST_POLLUTION_PATTERNS workaround was removed because
   // tests no longer mutate the real repo's .agentforge/. The filter that this
   // test used to assert is gone — see tests/e2e/cli.test.ts for the cleanup.
+
+  // ── STAGE 3.5 — TYPECHECK ──────────────────────────────────────────────────
+
+  it('kills cycle on build failure when requireBuildSuccess is true', async () => {
+    const deps = makeMockDeps();
+    deps.preVerifyTypeCheck = async () => ({
+      buildOk: false,
+      buildError: 'error TS2345: Argument of type string is not assignable',
+      typeCheckOk: true,
+    });
+
+    const runner = new CycleRunner({
+      cwd: tmpDir,
+      config: {
+        ...DEFAULT_CYCLE_CONFIG,
+        quality: { ...DEFAULT_CYCLE_CONFIG.quality, requireBuildSuccess: true },
+      },
+      runtime: deps.runtime as any,
+      proposalAdapter: deps.proposalAdapter as any,
+      scoringAdapter: deps.scoringAdapter as any,
+      phaseHandlers: deps.mockPhaseHandlers as any,
+      testRunner: deps.testRunner as any,
+      gitOps: deps.gitOps as any,
+      prOpener: deps.prOpener as any,
+      bus: deps.bus as any,
+      preVerifyTypeCheck: deps.preVerifyTypeCheck,
+      dryRun: { prOpener: true },
+    });
+
+    const result = await runner.start();
+    expect(result.stage).toBe(CycleStage.KILLED);
+    expect(result.killSwitch?.reason).toBe('buildFailure');
+    expect(result.pr.url).toBeNull();
+  });
+
+  it('kills cycle on typecheck failure when requireTypeCheckSuccess is true', async () => {
+    const deps = makeMockDeps();
+    deps.preVerifyTypeCheck = async () => ({
+      buildOk: true,
+      typeCheckOk: false,
+      typeCheckError: 'error TS2305: Module has no exported member X',
+    });
+
+    const runner = new CycleRunner({
+      cwd: tmpDir,
+      config: {
+        ...DEFAULT_CYCLE_CONFIG,
+        quality: { ...DEFAULT_CYCLE_CONFIG.quality, requireTypeCheckSuccess: true },
+      },
+      runtime: deps.runtime as any,
+      proposalAdapter: deps.proposalAdapter as any,
+      scoringAdapter: deps.scoringAdapter as any,
+      phaseHandlers: deps.mockPhaseHandlers as any,
+      testRunner: deps.testRunner as any,
+      gitOps: deps.gitOps as any,
+      prOpener: deps.prOpener as any,
+      bus: deps.bus as any,
+      preVerifyTypeCheck: deps.preVerifyTypeCheck,
+      dryRun: { prOpener: true },
+    });
+
+    const result = await runner.start();
+    expect(result.stage).toBe(CycleStage.KILLED);
+    expect(result.killSwitch?.reason).toBe('typeCheckFailure');
+    expect(result.pr.url).toBeNull();
+  });
 });
