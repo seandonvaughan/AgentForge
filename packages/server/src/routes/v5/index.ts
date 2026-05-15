@@ -56,7 +56,7 @@ export async function registerV5Routes(
   });
 
   // ── Approvals Gateway ─────────────────────────────────────────────────────────
-  await approvalsRoutes(app, { projectRoot: opts.projectRoot });
+  await approvalsRoutes(app, opts.projectRoot ? { projectRoot: opts.projectRoot } : {});
 
   // ── RBAC & Audit ─────────────────────────────────────────────────────────────
   await rbacRoutes(app);

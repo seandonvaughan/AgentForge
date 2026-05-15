@@ -150,8 +150,10 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
     // RBAC routes use in-memory state only — always available
     await rbacRoutes(app);
 
-    // Approvals gateway — in-memory, no adapter required.
-    await approvalsRoutes(app);
+    // Approvals gateway — SQLite-backed (.agentforge/audit.db). projectRoot
+    // pinning prevents the no-adapter boot path from writing to the monorepo's
+    // shared audit.db when running outside a project.
+    await approvalsRoutes(app, { projectRoot });
 
     // SSE stream + dashboard refresh signal — in-memory, no adapter required
     await streamRoutes(app);

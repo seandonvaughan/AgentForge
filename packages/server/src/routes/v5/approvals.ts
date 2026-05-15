@@ -100,7 +100,7 @@ function rowToItem(row: ApprovalRow): ApprovalItem {
   };
   if (row.diff !== null) item.diff = row.diff;
   if (row.test_summary_json !== null) {
-    try { item.testSummary = JSON.parse(row.test_summary_json) as ApprovalItem['testSummary']; } catch { /* malformed JSON — omit field */ }
+    try { item.testSummary = JSON.parse(row.test_summary_json) as NonNullable<ApprovalItem['testSummary']>; } catch { /* malformed JSON — omit field */ }
   }
   if (row.reviewed_at !== null) item.reviewedAt = row.reviewed_at;
   if (row.reviewed_by !== null) item.reviewedBy = row.reviewed_by;
