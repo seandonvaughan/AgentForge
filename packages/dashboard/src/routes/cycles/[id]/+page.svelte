@@ -21,7 +21,9 @@
   const FILES = ['tests', 'git', 'pr', 'approval-pending', 'approval-decision'] as const;
   type Phase = (typeof PHASES)[number];
   type FileName = (typeof FILES)[number];
-  type Tab = 'overview' | 'items' | 'agents' | 'scoring' | 'events' | 'phases' | 'files';
+  type Tab = 'overview' | 'items' | 'agents' | 'scoring' | 'events' | 'phases' | 'files' | 'logs';
+  type LogName = 'cli-stdout' | 'tests-raw';
+  type LogViewMode = 'structured' | 'raw';
 
   let id = $derived($page.params.id);
 
@@ -119,6 +121,116 @@
   let fileLoading: Record<string, boolean> = $state({});
   let fileError: Record<string, string | null> = $state({});
 
+  // ── Logs tab ──────────────────────────────────────────────────────────────
+  let activeLog: LogName = $state('cli-stdout');
+  let logViewMode: LogViewMode = $state('raw');
+  let logText: Record<LogName, string | null> = $state({ 'cli-stdout': null, 'tests-raw': null });
+  let logLoading: Record<LogName, boolean> = $state({ 'cli-stdout': false, 'tests-raw': false });
+  let logError: Record<LogName, string | null> = $state({ 'cli-stdout': null, 'tests-raw': null });
+  let logAutoScroll = $state(true);
+  let logStreamSource: EventSource | null = null;
+  let logStreamLines: string[] = $state([]);
+  let logStreamConnected = $state(false);
+
+  const LOG_LEVEL_RE = /\b(WARN|ERROR|FATAL|FAILED|ERR)\b/i;
+  const REPEAT_LINE_RE = /^\[(\d+)\/(\d+)\]/;
+
+  interface StructuredLine {
+    raw: string;
+    level: 'error' | 'warn' | 'info';
+    collapsed: boolean;
+  }
+
+  function parseLogLines(text: string): StructuredLine[] {
+    const lines = text.split('\n').filter(l => l.length > 0);
+    const result: StructuredLine[] = [];
+    let repeatBuf: string[] = [];
+
+    function flushRepeat() {
+      if (repeatBuf.length === 0) return;
+      if (repeatBuf.length === 1) {
+        result.push({ raw: repeatBuf[0]!, level: 'info', collapsed: false });
+      } else {
+        result.push({ raw: `[${repeatBuf.length} similar lines] ${repeatBuf[repeatBuf.length - 1]}`, level: 'info', collapsed: true });
+      }
+      repeatBuf = [];
+    }
+
+    for (const line of lines) {
+      if (REPEAT_LINE_RE.test(line)) {
+        repeatBuf.push(line);
+        continue;
+      }
+      flushRepeat();
+      const m = LOG_LEVEL_RE.exec(line);
+      const level: StructuredLine['level'] = m
+        ? (/error|fatal|failed|err/i.test(m[0]) ? 'error' : 'warn')
+        : 'info';
+      result.push({ raw: line, level, collapsed: false });
+    }
+    flushRepeat();
+    return result;
+  }
+
+  async function loadLog(name: LogName) {
+    activeLog = name;
+    teardownLogStream();
+    logStreamLines = [];
+    logText[name] = null;
+    logLoading[name] = true;
+    logError[name] = null;
+    try {
+      const res = await fetch(withWorkspace(`/api/v5/cycles/${id}/logs/${name}`));
+      if (res.ok) {
+        logText[name] = await res.text();
+      } else if (res.status === 404) {
+        logText[name] = null;
+      } else {
+        logError[name] = `HTTP ${res.status}`;
+      }
+    } catch (e) {
+      logError[name] = String(e);
+    } finally {
+      logLoading[name] = false;
+    }
+    if (!isTerminal) startLogStream(name);
+  }
+
+  function startLogStream(name: LogName) {
+    teardownLogStream();
+    try {
+      const es = new EventSource(`/api/v5/cycles/${id}/logs/${name}/stream`);
+      logStreamSource = es;
+      es.onopen = () => { logStreamConnected = true; };
+      es.onmessage = (e: MessageEvent) => {
+        try {
+          const parsed = JSON.parse(e.data as string) as { line?: string; done?: boolean };
+          if (parsed.done) { teardownLogStream(); return; }
+          if (typeof parsed.line === 'string') {
+            logStreamLines = [...logStreamLines, parsed.line];
+            if (logAutoScroll) {
+              requestAnimationFrame(() => {
+                const el = document.getElementById('log-raw-pre');
+                if (el) el.scrollTop = el.scrollHeight;
+              });
+            }
+          }
+        } catch { /* ignore parse errors */ }
+      };
+      es.onerror = () => {
+        logStreamConnected = false;
+        es.close();
+        logStreamSource = null;
+      };
+    } catch { /* EventSource unavailable */ }
+  }
+
+  function teardownLogStream() {
+    if (logStreamSource) { logStreamSource.close(); logStreamSource = null; }
+    logStreamConnected = false;
+  }
+
+  // ── end Logs tab ──────────────────────────────────────────────────────────
   let stage = $derived(cycle?.stage ?? cycle?.result?.stage ?? cycle?.currentStage ?? 'unknown');
   let isTerminal = $derived(TERMINAL.has(String(stage).toLowerCase()));
 
@@ -217,6 +329,9 @@
     if (t === 'events' && events.length === 0) {
       loadEvents();
     }
+    if (t === 'logs' && logText[activeLog] === null && !logLoading[activeLog]) {
+      loadLog(activeLog);
+    }
   }
 
   async function togglePhase(phase: Phase) {
@@ -296,12 +411,13 @@
   onDestroy(() => {
     teardownSse();
     stopSprintPoll();
+    teardownLogStream();
   });
 
-  // Auto-stop the sprint poll once the cycle hits a terminal stage.
+  // Auto-stop the sprint poll and log stream once the cycle hits a terminal stage.
   $effect(() => {
     void stage;
-    if (isTerminal) stopSprintPoll();
+    if (isTerminal) { stopSprintPoll(); teardownLogStream(); }
   });
 
   // Overview helpers
@@ -365,6 +481,12 @@
     <button class="tab" class:active={activeTab === 'events'} onclick={() => setTab('events')}>Events</button>
     <button class="tab" class:active={activeTab === 'phases'} onclick={() => setTab('phases')}>Phases</button>
     <button class="tab" class:active={activeTab === 'files'} onclick={() => setTab('files')}>Files</button>
+    <button class="tab" class:active={activeTab === 'logs'} onclick={() => setTab('logs')}>
+      Logs
+      {#if !isTerminal && activeTab === 'logs' && logStreamConnected}
+        <span class="tab-live-dot"></span>
+      {/if}
+    </button>
   </nav>
 
   <section class="tab-panel">
@@ -787,6 +909,82 @@
           <pre class="json">{pretty(fileData[activeFile])}</pre>
         {/if}
       </div>
+    {/if}
+
+    {#if activeTab === 'logs'}
+      <div class="logs-toolbar">
+        <nav class="logs-selector">
+          {#each (['cli-stdout', 'tests-raw'] as const) as logName}
+            <button
+              class="file-tab"
+              class:active={activeLog === logName}
+              onclick={() => loadLog(logName)}
+            >{logName}.log</button>
+          {/each}
+        </nav>
+        <div class="logs-controls">
+          <button
+            class="btn btn-ghost btn-sm"
+            class:active={logViewMode === 'structured'}
+            onclick={() => logViewMode = 'structured'}
+          >Structured</button>
+          <button
+            class="btn btn-ghost btn-sm"
+            class:active={logViewMode === 'raw'}
+            onclick={() => logViewMode = 'raw'}
+          >Raw</button>
+          {#if !isTerminal}
+            <span class="muted" style="font-size:var(--text-xs);">
+              {logStreamConnected ? '● live' : '○ connecting…'}
+            </span>
+          {/if}
+        </div>
+      </div>
+
+      {#if logLoading[activeLog]}
+        <div class="card"><div class="skeleton" style="height:200px;"></div></div>
+      {:else if logError[activeLog]}
+        <div class="error-msg">{logError[activeLog]}</div>
+      {:else}
+        {@const fullText = (logText[activeLog] ?? '') + (logStreamLines.length > 0 ? '\n' + logStreamLines.join('\n') : '')}
+        {#if fullText.trim().length === 0}
+          <div class="card"><div class="muted">{activeLog}.log not present yet.</div></div>
+        {:else if logViewMode === 'structured'}
+          {@const parsed = parseLogLines(fullText)}
+          <div class="log-structured">
+            {#each parsed as ln, i (i)}
+              <div class="log-line log-line--{ln.level}" class:log-line--collapsed={ln.collapsed}>
+                <span class="log-line-text">{ln.raw}</span>
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <!-- Raw mode: pre block, auto-scroll on stream -->
+          <div class="log-raw-wrap" role="log" aria-live="off">
+            <pre
+              id="log-raw-pre"
+              class="log-raw"
+              onscroll={(e) => {
+                const el = e.currentTarget as HTMLPreElement;
+                const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+                logAutoScroll = atBottom;
+              }}
+            >{fullText}</pre>
+          </div>
+          {#if !logAutoScroll}
+            <button
+              class="btn btn-ghost btn-sm log-scroll-btn"
+              onclick={() => {
+                logAutoScroll = true;
+                requestAnimationFrame(() => {
+                  const el = document.getElementById('log-raw-pre');
+                  if (el) el.scrollTop = el.scrollHeight;
+                });
+              }}
+            >Resume auto-scroll</button>
+          {/if}
+        {/if}
+      {/if}
     {/if}
   </section>
 {/if}
@@ -1415,5 +1613,89 @@
 
   @media (max-width: 700px) {
     .event-row { grid-template-columns: 1fr; }
+  }
+
+  /* Logs tab */
+  .logs-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+    margin-bottom: var(--space-3);
+  }
+  .logs-selector {
+    display: flex;
+    gap: var(--space-1);
+    border-bottom: 1px solid var(--color-border);
+  }
+  .logs-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .btn.active {
+    color: var(--color-brand);
+    background: rgba(var(--color-brand-rgb, 99,102,241), 0.08);
+  }
+
+  .log-structured {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    background: var(--color-surface-2);
+    border-radius: var(--radius-md);
+    overflow: auto;
+    max-height: 600px;
+    padding: var(--space-2);
+  }
+  .log-line {
+    padding: 1px var(--space-2);
+    border-radius: 2px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .log-line--info { color: var(--color-text-muted); }
+  .log-line--warn { color: var(--color-warning); background: rgba(245,166,35,0.06); }
+  .log-line--error { color: var(--color-danger); background: rgba(224,90,90,0.08); font-weight: 600; }
+  .log-line--collapsed { color: var(--color-text-faint); font-style: italic; }
+  .log-line-text { white-space: pre-wrap; word-break: break-all; }
+
+  .log-raw-wrap {
+    position: relative;
+    background: var(--color-surface-2);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+  .log-raw {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    padding: var(--space-3);
+    overflow: auto;
+    max-height: 600px;
+    margin: 0;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .log-scroll-btn {
+    margin-top: var(--space-2);
+    display: block;
+    margin-left: auto;
+  }
+
+  .tab-live-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--color-success);
+    margin-left: var(--space-1);
+    animation: pulse-slow 1.4s ease-in-out infinite;
+    vertical-align: middle;
   }
 </style>
