@@ -39,7 +39,7 @@ import { multiWorkspaceRoutes } from '../v5/multi-workspace.js';
 import { agentVersioningRoutes } from '../v5/agent-versioning.js';
 import { federationRoutes } from '../v5/federation.js';
 import { registerHealthServicesRoutes } from '../v5/health-services.js';
-import { sprintOrchestrationRoutes } from '../v5/sprint-orchestration.js';
+// sprintOrchestrationRoutes removed — sprint mutation routes deleted in Track D migration
 import { settingsRoutes } from '../v5/settings.js';
 import { agentCrudRoutes } from '../v5/agent-crud.js';
 import { chatRoutes } from '../v5/chat.js';
@@ -290,7 +290,7 @@ export async function registerV6Routes(
     await agentVersioningRoutes(sub);
     await federationRoutes(sub);
     registerHealthServicesRoutes(sub);
-    await sprintOrchestrationRoutes(sub, projectRoot ? { projectRoot } : undefined);
+    // Sprint orchestration routes removed — see import comment above
     await settingsRoutes(sub);
     await agentCrudRoutes(sub, projectRoot ? { projectRoot } : {});
     await chatRoutes(sub);
