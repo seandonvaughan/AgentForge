@@ -280,8 +280,6 @@ export async function registerV5Routes(
   // ── Counters (StatusLine widget) ──────────────────────────────────────────
   await countersRoutes(app, { adapter: opts.adapter });
 
-  // ── Autonomous Branch Management (promoted from dashboard-stubs.ts) ───────
-  await autonomousBranchesRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
 }
 
 function bridgeRuntimeEventToGlobalStream(event: RuntimeEventEnvelope): void {

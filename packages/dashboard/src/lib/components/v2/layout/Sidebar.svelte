@@ -33,7 +33,6 @@
   interface NavItem {
     label: string;
     href: string;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     icon: any; // Lucide icon component — cannot narrow further without a union
     badgeCount?: number;
   }

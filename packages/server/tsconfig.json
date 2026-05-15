@@ -5,6 +5,12 @@
     "rootDir": "./src",
     "declarationDir": "./dist"
   },
-  "references": [{ "path": "../shared" }, { "path": "../core" }, { "path": "../db" }],
+  "references": [
+    { "path": "../shared" },
+    { "path": "../core" },
+    { "path": "../db" },
+    { "path": "../embeddings" },
+    { "path": "../plugins-sdk" }
+  ],
   "include": ["src/**/*"]
 }
