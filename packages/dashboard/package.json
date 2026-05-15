@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@agentforge/shared": "workspace:*",
+    "lucide-svelte": "^1.0.1",
     "marked": "^18.0.3"
   },
   "engines": {

@@ -1,3 +1,36 @@
+/* ── V2 Design Tokens (af-* namespace) ──────────────────────────────────── */
+:root {
+  /* Palette — mirrors prototype/shared.jsx T object */
+  --af-bg:       #0a0a0c;
+  --af-surface:  #0e0e10;
+  --af-surface2: #131316;
+  --af-border:   #18181b;
+  --af-border2:  #1f1f23;
+  --af-border3:  #27272a;
+  --af-text:     #fafafa;
+  --af-muted:    #a1a1aa;
+  --af-dim:      #71717a;
+  --af-faint:    #52525b;
+  --af-accent:   #6366f1;
+  --af-accent2:  #818cf8;
+  --af-purple:   #a78bfa;
+  --af-success:  #5bd394;
+  --af-warning:  #f5a623;
+  --af-danger:   #ef4444;
+  --af-opus:     #f5a623;
+  --af-sonnet:   #7aa0f7;
+  --af-haiku:    #5bd394;
+
+  /* Gradient shorthands */
+  --af-grad:   linear-gradient(135deg, #6366f1, #a855f7);
+  --af-grad-h: linear-gradient(90deg, #6366f1, #a78bfa);
+  --af-grad-v: linear-gradient(180deg, #6366f1, #a78bfa);
+
+  /* Typography */
+  --af-font-sans: 'Inter', system-ui, sans-serif;
+  --af-font-mono: 'JetBrains Mono', monospace;
+}
+
 /* ── Design Tokens ──────────────────────────────────────────────────────── */
 :root {
   /* Color: Dark theme (default) */
