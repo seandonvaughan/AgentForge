@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { page } from '$app/stores';
   import StageBadge from '$lib/components/StageBadge.svelte';
+  import CycleStageBar from '$lib/components/CycleStageBar.svelte';
   import { relativeTime, formatDuration } from '$lib/util/relative-time';
   import { withWorkspace } from '$lib/stores/workspace';
   import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
@@ -214,6 +215,8 @@
 
   function setTab(t: Tab) {
     activeTab = t;
+    // Events are bootstrapped on mount; allow a manual refresh if tab is
+    // clicked and list is still empty (e.g. mount fetch raced with cycle start).
     if (t === 'events' && events.length === 0) {
       loadEvents();
     }
@@ -288,9 +291,35 @@
     if (isTerminal) teardownSse();
   });
 
+  // Auto-expand the phase panel that matches the current cycle stage.
+  // Mapping: plan/stage → audit+plan, run → execute, verify → test,
+  // review → review, commit → gate, completed → release+learn
+  const STAGE_TO_PHASES: Record<string, Phase[]> = {
+    plan:      ['audit', 'plan'],
+    stage:     ['audit', 'plan'],
+    run:       ['execute'],
+    verify:    ['test'],
+    review:    ['review'],
+    commit:    ['gate'],
+    completed: ['release', 'learn'],
+  };
+
+  $effect(() => {
+    const key = String(stage).toLowerCase();
+    const phases = STAGE_TO_PHASES[key];
+    if (phases) {
+      for (const p of phases) {
+        if (!openPhases[p]) openPhases[p] = true;
+      }
+    }
+  });
+
   onMount(() => {
     loadInitial();
     loadFile('tests');
+    // Bootstrap event history immediately so the Events tab has data before it
+    // is clicked, and the count badge shows a meaningful number on mount.
+    loadEvents();
     // Start the live sprint poll immediately — this drives the Items tab
     // which is the default on load. Auto-stops when the cycle is terminal.
     startSprintPoll();
@@ -377,6 +406,16 @@
     <button class="btn btn-ghost btn-sm" onclick={loadInitial}>Retry</button>
   </div>
 {:else if cycle}
+  <div class="stage-bar-sticky">
+    <CycleStageBar
+      stage={stage}
+      costUsd={costUsd}
+      budgetUsd={budgetUsd}
+      startedAt={cycle?.startedAt ?? null}
+      isTerminal={isTerminal}
+    />
+  </div>
+
   <nav class="tabs">
     <button class="tab" class:active={activeTab === 'items'} onclick={() => setTab('items')}>
       Items
@@ -392,7 +431,12 @@
     </button>
     <button class="tab" class:active={activeTab === 'overview'} onclick={() => setTab('overview')}>Overview</button>
     <button class="tab" class:active={activeTab === 'scoring'} onclick={() => setTab('scoring')}>Scoring</button>
-    <button class="tab" class:active={activeTab === 'events'} onclick={() => setTab('events')}>Events</button>
+    <button class="tab" class:active={activeTab === 'events'} onclick={() => setTab('events')}>
+      Events
+      {#if events.length > 0}
+        <span class="tab-count">{events.length}</span>
+      {/if}
+    </button>
     <button class="tab" class:active={activeTab === 'phases'} onclick={() => setTab('phases')}>Phases</button>
     <button class="tab" class:active={activeTab === 'files'} onclick={() => setTab('files')}>Files</button>
   </nav>
@@ -877,6 +921,14 @@
 {/if}
 
 <style>
+  .stage-bar-sticky {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--color-surface, var(--color-bg-card));
+    margin-bottom: var(--space-4);
+  }
+
   .breadcrumb { margin-bottom: var(--space-2); }
   .breadcrumb a {
     font-size: var(--text-xs);
