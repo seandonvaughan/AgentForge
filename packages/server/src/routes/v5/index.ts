@@ -31,6 +31,13 @@ import { chatRoutes } from './chat.js';
 import { runRoutes } from './run.js';
 import { jobsRoutes } from './jobs.js';
 import { globalStream } from './stream.js';
+import { insightsRoutes } from './insights.js';
+import { auditRoutes } from './audit.js';
+import { schedulesRoutes } from './schedules.js';
+import { webhooksRoutes } from './webhooks.js';
+import { notificationsRoutes } from './notifications.js';
+import { apiKeysRoutes } from './api-keys.js';
+import { membersRoutes } from './members.js';
 
 export interface V5RouteOptions {
   adapter: WorkspaceAdapter;
@@ -258,6 +265,15 @@ export async function registerV5Routes(
   // Note: searchRoutes is registered by createServerV5 (server.ts) unconditionally
   // for both adapter and no-adapter paths. Do NOT register it here to avoid
   // FST_ERR_DUPLICATED_ROUTE when adapter+registry are provided.
+
+  // ── V2 Dashboard Endpoints ────────────────────────────────────────────────
+  await insightsRoutes(app, { adapter: opts.adapter });
+  await auditRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
+  await schedulesRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
+  await webhooksRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
+  await notificationsRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
+  await apiKeysRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
+  await membersRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
 }
 
 function bridgeRuntimeEventToGlobalStream(event: RuntimeEventEnvelope): void {
