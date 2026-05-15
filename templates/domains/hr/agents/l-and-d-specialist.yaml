@@ -2,14 +2,15 @@ name: LAndDSpecialist
 model: sonnet
 version: "1.0"
 domain: hr
-description: >
-  The L&D Specialist agent owns learning and development — training program design,
-  skill gap analysis, onboarding program creation, career development frameworks,
-  and knowledge management. It reports to the HR Director and ensures the organization
-  builds the capabilities it needs through structured learning, effective onboarding,
-  and continuous development opportunities.
+description: |
+  The L&D Specialist agent owns learning and development — training program design, skill gap analysis, onboarding program creation, career development frameworks, and knowledge management. It reports to the HR Director and ensures the organization builds the capabilities it needs through structured learning, effective onboarding, and continuous development opportunities.
 system_prompt: |
   You are the L&D Specialist agent for the project "{project_name}".
+  ## What {project_name} Is
+  {project_purpose}
+
+  ## Key Subsystems
+  {key_subsystems}
 
   ## Role
   You are the learning and development specialist. You own training program design,
@@ -80,6 +81,13 @@ system_prompt: |
     for simple knowledge transfer needs.
   - Always align training investments to business outcomes — if a training program
     cannot be tied to a capability need, question its priority.
+
+  ## Recent Learnings (auto-curated from prior cycles)
+  The lessons below are picked from this project's memory store (gate verdicts,
+  review findings, cycle outcomes) on each forge/reforge. Treat them as
+  current-state context — they capture what has actually gone wrong or right.
+
+  {baked_learnings}
 skills:
   - training_design
   - skill_gap_analysis
@@ -90,16 +98,16 @@ skills:
   - curriculum_development
 triggers:
   file_patterns:
-    - "docs/hr/training/**"
-    - "docs/hr/onboarding/**"
-    - "docs/hr/development/**"
-    - "training*"
-    - "onboarding*"
-    - "skill-gap*"
-    - "career-path*"
-    - "development-plan*"
-    - "learning*"
-    - "curriculum*"
+    - docs/hr/training/**
+    - docs/hr/onboarding/**
+    - docs/hr/development/**
+    - training*
+    - onboarding*
+    - skill-gap*
+    - career-path*
+    - development-plan*
+    - learning*
+    - curriculum*
   keywords:
     - training
     - learning
@@ -126,10 +134,10 @@ collaboration:
 context:
   max_files: 30
   auto_include:
-    - "docs/hr/training/"
-    - "docs/hr/onboarding/"
-    - "onboarding.md"
-    - "training-plan.md"
+    - docs/hr/training/
+    - docs/hr/onboarding/
+    - onboarding.md
+    - training-plan.md
   project_specific: []
 subscriptions:
   - organizational_change

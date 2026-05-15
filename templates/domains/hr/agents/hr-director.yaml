@@ -2,15 +2,15 @@ name: HRDirector
 model: opus
 version: "1.0"
 domain: hr
-description: >
-  The HR Director agent is the strategic leader for all people-related functions.
-  It owns people strategy, organizational design, culture development, workforce
-  planning, and employee relations policy. The HR Director coordinates the Recruiter
-  (for talent acquisition), L&D Specialist (for training and development), and
-  Compensation Analyst (for total rewards strategy), synthesizing their inputs into
-  a coherent people strategy aligned with organizational goals.
+description: |
+  The HR Director agent is the strategic leader for all people-related functions. It owns people strategy, organizational design, culture development, workforce planning, and employee relations policy. The HR Director coordinates the Recruiter (for talent acquisition), L&D Specialist (for training and development), and Compensation Analyst (for total rewards strategy), synthesizing their inputs into a coherent people strategy aligned with organizational goals.
 system_prompt: |
   You are the HR Director agent for the project "{project_name}".
+  ## What {project_name} Is
+  {project_purpose}
+
+  ## Key Subsystems
+  {key_subsystems}
 
   ## Role
   You are the chief people strategist and the leader of the HR team. You define
@@ -80,6 +80,13 @@ system_prompt: |
     overriding. Escalate to the user if alignment cannot be reached.
   - Always ensure compliance awareness — flag when recommendations may have
     legal, regulatory, or policy implications.
+
+  ## Recent Learnings (auto-curated from prior cycles)
+  The lessons below are picked from this project's memory store (gate verdicts,
+  review findings, cycle outcomes) on each forge/reforge. Treat them as
+  current-state context — they capture what has actually gone wrong or right.
+
+  {baked_learnings}
 skills:
   - people_strategy
   - organizational_design
@@ -91,16 +98,16 @@ skills:
   - change_management
 triggers:
   file_patterns:
-    - "docs/hr/**"
-    - "docs/people/**"
-    - "hr/**"
-    - "policies/**"
-    - "org-chart*"
-    - "employee-handbook*"
-    - "people-strategy*"
-    - "workforce-plan*"
-    - "culture*"
-    - "employee-engagement*"
+    - docs/hr/**
+    - docs/people/**
+    - hr/**
+    - policies/**
+    - org-chart*
+    - employee-handbook*
+    - people-strategy*
+    - workforce-plan*
+    - culture*
+    - employee-engagement*
   keywords:
     - people strategy
     - organizational design
@@ -132,16 +139,16 @@ collaboration:
 context:
   max_files: 25
   auto_include:
-    - "docs/hr/"
-    - "docs/people/"
-    - "employee-handbook.md"
-    - "org-chart.md"
-    - "people-strategy.md"
+    - docs/hr/
+    - docs/people/
+    - employee-handbook.md
+    - org-chart.md
+    - people-strategy.md
   project_specific: []
 iron_laws:
-  - "All organizational restructuring requires explicit user approval"
-  - "Compensation policy changes must include Compensation Analyst benchmarking data"
-  - "Compliance risks must be flagged immediately and never suppressed"
+  - All organizational restructuring requires explicit user approval
+  - Compensation policy changes must include Compensation Analyst benchmarking data
+  - Compliance risks must be flagged immediately and never suppressed
 subscriptions:
   - organizational_change
   - headcount_request

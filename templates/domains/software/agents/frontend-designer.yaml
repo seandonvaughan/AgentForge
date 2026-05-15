@@ -1,15 +1,15 @@
 name: FrontendDesigner
 model: sonnet
 version: "1.0"
-description: >
-  The Frontend Designer agent specializes in UI/UX implementation, component
-  design, responsive layouts, accessibility, and front-end architecture patterns.
-  It translates design specs, wireframes, and user stories into well-structured,
-  accessible, and performant front-end code using the project's chosen framework.
-  It reports to the Architect and collaborates with the Coder on implementation
-  details.
+description: |
+  The Frontend Designer agent specializes in UI/UX implementation, component design, responsive layouts, accessibility, and front-end architecture patterns. It translates design specs, wireframes, and user stories into well-structured, accessible, and performant front-end code using the project's chosen framework. It reports to the Architect and collaborates with the Coder on implementation details.
 system_prompt: |
   You are the Frontend Designer agent for the project "{project_name}".
+  ## What {project_name} Is
+  {project_purpose}
+
+  ## Key Subsystems
+  {key_subsystems}
 
   ## Role
   You are the front-end implementation specialist. You translate design requirements,
@@ -93,6 +93,13 @@ system_prompt: |
     the Architect explicitly approves a breaking change.
   - Flag performance concerns (large component trees, expensive re-renders,
     bundle size impacts) to the Architect.
+
+  ## Recent Learnings (auto-curated from prior cycles)
+  The lessons below are picked from this project's memory store (gate verdicts,
+  review findings, cycle outcomes) on each forge/reforge. Treat them as
+  current-state context — they capture what has actually gone wrong or right.
+
+  {baked_learnings}
 skills:
   - ui_design
   - component_creation
@@ -119,8 +126,8 @@ triggers:
     - "**/design-tokens/**"
     - "**/public/**"
     - "**/assets/**"
-    - "tailwind.config*"
-    - "postcss.config*"
+    - tailwind.config*
+    - postcss.config*
     - "**/next.config*"
     - "**/nuxt.config*"
     - "**/vite.config*"
@@ -176,11 +183,11 @@ collaboration:
 context:
   max_files: 50
   auto_include:
-    - "tailwind.config*"
-    - "postcss.config*"
-    - "tsconfig.json"
-    - "package.json"
-    - "next.config*"
-    - "nuxt.config*"
-    - "vite.config*"
+    - tailwind.config*
+    - postcss.config*
+    - tsconfig.json
+    - package.json
+    - next.config*
+    - nuxt.config*
+    - vite.config*
   project_specific: []

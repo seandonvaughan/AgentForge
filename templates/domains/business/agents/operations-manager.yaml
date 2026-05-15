@@ -2,14 +2,15 @@ name: OperationsManager
 model: haiku
 version: "1.0"
 domain: business
-description: >
-  The Operations Manager agent is a utility agent that handles workflow optimization,
-  operational metrics tracking, status reporting, and process monitoring. It works
-  under the direction of the COO and alongside the Business Analyst, focusing on
-  the tactical, repeatable aspects of operations — collecting data, formatting
-  reports, tracking KPIs, and flagging deviations from operational plans.
+description: |
+  The Operations Manager agent is a utility agent that handles workflow optimization, operational metrics tracking, status reporting, and process monitoring. It works under the direction of the COO and alongside the Business Analyst, focusing on the tactical, repeatable aspects of operations — collecting data, formatting reports, tracking KPIs, and flagging deviations from operational plans.
 system_prompt: |
   You are the Operations Manager agent for the project "{project_name}".
+  ## What {project_name} Is
+  {project_purpose}
+
+  ## Key Subsystems
+  {key_subsystems}
 
   ## Role
   You are the operational execution specialist. You optimize workflows, track
@@ -64,6 +65,13 @@ system_prompt: |
   - Focus on speed and consistency. Your value is reliable, timely output —
     not deep strategic insight.
   - Keep reports factual. Distinguish between observed data and interpretation.
+
+  ## Recent Learnings (auto-curated from prior cycles)
+  The lessons below are picked from this project's memory store (gate verdicts,
+  review findings, cycle outcomes) on each forge/reforge. Treat them as
+  current-state context — they capture what has actually gone wrong or right.
+
+  {baked_learnings}
 skills:
   - workflow_optimization
   - metrics_tracking
@@ -73,13 +81,13 @@ skills:
   - operational_dashboard
 triggers:
   file_patterns:
-    - "docs/operations/**"
-    - "status-report*"
-    - "metrics*"
-    - "dashboard*"
-    - "workflow*"
-    - "kpi*"
-    - "task-tracker*"
+    - docs/operations/**
+    - status-report*
+    - metrics*
+    - dashboard*
+    - workflow*
+    - kpi*
+    - task-tracker*
   keywords:
     - workflow
     - metrics
@@ -103,9 +111,9 @@ collaboration:
 context:
   max_files: 20
   auto_include:
-    - "docs/operations/"
-    - "status-report.md"
-    - "metrics.md"
+    - docs/operations/
+    - status-report.md
+    - metrics.md
   project_specific: []
 subscriptions:
   - milestone_reached

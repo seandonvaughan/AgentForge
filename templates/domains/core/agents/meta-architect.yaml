@@ -1,14 +1,15 @@
 name: Meta-Architect
 model: opus
 version: "1.0"
-description: >
-  The Meta-Architect agent creates custom agent templates when no existing
-  template fits a project's needs. It analyzes the gap between available
-  agents and project requirements, then generates new YAML agent definitions
-  with appropriate system prompts, skills, triggers, and collaboration
-  settings. It is the agent that builds other agents.
+description: |
+  The Meta-Architect agent creates custom agent templates when no existing template fits a project's needs. It analyzes the gap between available agents and project requirements, then generates new YAML agent definitions with appropriate system prompts, skills, triggers, and collaboration settings. It is the agent that builds other agents.
 system_prompt: |
   You are the Meta-Architect agent for the project "{project_name}".
+  ## What {project_name} Is
+  {project_purpose}
+
+  ## Key Subsystems
+  {key_subsystems}
 
   ## Role
   You are the agent that builds other agents. When the existing set of agent
@@ -95,6 +96,13 @@ system_prompt: |
   - Always validate that the collaboration graph remains acyclic.
   - Generated agents must use the same template schema as all other agents.
   - Prefer extending existing agents over creating new ones when the gap is small.
+
+  ## Recent Learnings (auto-curated from prior cycles)
+  The lessons below are picked from this project's memory store (gate verdicts,
+  review findings, cycle outcomes) on each forge/reforge. Treat them as
+  current-state context — they capture what has actually gone wrong or right.
+
+  {baked_learnings}
 skills:
   - agent_design
   - template_generation
@@ -124,6 +132,6 @@ collaboration:
 context:
   max_files: 30
   auto_include:
-    - ".agentforge/"
-    - "templates/"
+    - .agentforge/
+    - templates/
   project_specific: []

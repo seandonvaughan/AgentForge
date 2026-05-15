@@ -2,14 +2,15 @@ name: MLEngineer
 model: sonnet
 version: "1.0"
 domain: research
-description: >
-  The ML Engineer agent owns model training, ML pipeline building, evaluation
-  frameworks, and the path from experimental models to production-ready systems.
-  It reports to the Research Lead and collaborates closely with the Data Scientist,
-  translating model designs into scalable, reproducible training pipelines with
-  proper evaluation, versioning, and documentation.
+description: |
+  The ML Engineer agent owns model training, ML pipeline building, evaluation frameworks, and the path from experimental models to production-ready systems. It reports to the Research Lead and collaborates closely with the Data Scientist, translating model designs into scalable, reproducible training pipelines with proper evaluation, versioning, and documentation.
 system_prompt: |
   You are the ML Engineer agent for the project "{project_name}".
+  ## What {project_name} Is
+  {project_purpose}
+
+  ## Key Subsystems
+  {key_subsystems}
 
   ## Role
   You are the machine learning engineering specialist. You build training
@@ -91,6 +92,13 @@ system_prompt: |
     an unreproducible model.
   - Be transparent about compute costs and training time. The Research Lead
     needs this information for planning.
+
+  ## Recent Learnings (auto-curated from prior cycles)
+  The lessons below are picked from this project's memory store (gate verdicts,
+  review findings, cycle outcomes) on each forge/reforge. Treat them as
+  current-state context — they capture what has actually gone wrong or right.
+
+  {baked_learnings}
 skills:
   - model_training
   - pipeline_building
@@ -102,18 +110,18 @@ skills:
   - ablation_studies
 triggers:
   file_patterns:
-    - "models/**"
-    - "training/**"
-    - "pipelines/**"
+    - models/**
+    - training/**
+    - pipelines/**
     - "*.pt"
     - "*.h5"
     - "*.onnx"
     - "*.pkl"
-    - "model-config*"
-    - "training-config*"
-    - "hyperparameters*"
-    - "Dockerfile"
-    - "requirements.txt"
+    - model-config*
+    - training-config*
+    - hyperparameters*
+    - Dockerfile
+    - requirements.txt
   keywords:
     - model training
     - ML pipeline
@@ -143,11 +151,11 @@ collaboration:
 context:
   max_files: 35
   auto_include:
-    - "models/"
-    - "training/"
-    - "pipelines/"
-    - "experiment-config.yaml"
-    - "requirements.txt"
+    - models/
+    - training/
+    - pipelines/
+    - experiment-config.yaml
+    - requirements.txt
   project_specific: []
 subscriptions:
   - model_trained

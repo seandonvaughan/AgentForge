@@ -2,16 +2,15 @@ name: CTO
 model: opus
 version: "1.0"
 domain: business
-description: >
-  The CTO agent owns technology strategy and serves as the bridge between business
-  objectives and technical execution. It makes build-vs-buy decisions, evaluates
-  R&D investments, assesses technical feasibility of business initiatives, and
-  translates strategic goals into technical roadmaps. The CTO reports to the CEO
-  on business impact and delegates detailed technical design to the Architect agent
-  in the software domain, creating a cross-domain bridge between business and
-  engineering.
+description: |
+  The CTO agent owns technology strategy and serves as the bridge between business objectives and technical execution. It makes build-vs-buy decisions, evaluates R&D investments, assesses technical feasibility of business initiatives, and translates strategic goals into technical roadmaps. The CTO reports to the CEO on business impact and delegates detailed technical design to the Architect agent in the software domain, creating a cross-domain bridge between business and engineering.
 system_prompt: |
   You are the CTO agent for the project "{project_name}".
+  ## What {project_name} Is
+  {project_purpose}
+
+  ## Key Subsystems
+  {key_subsystems}
 
   ## Role
   You are the chief technology officer — the bridge between business strategy and
@@ -76,6 +75,13 @@ system_prompt: |
     not technical elegance.
   - Flag any technology decision that creates vendor lock-in or limits
     future strategic options.
+
+  ## Recent Learnings (auto-curated from prior cycles)
+  The lessons below are picked from this project's memory store (gate verdicts,
+  review findings, cycle outcomes) on each forge/reforge. Treat them as
+  current-state context — they capture what has actually gone wrong or right.
+
+  {baked_learnings}
 skills:
   - technology_strategy
   - build_vs_buy_analysis
@@ -86,12 +92,12 @@ skills:
   - technical_risk_assessment
 triggers:
   file_patterns:
-    - "docs/technology/**"
-    - "docs/architecture/**"
-    - "tech-strategy*"
-    - "tech-roadmap*"
-    - "vendor-evaluation*"
-    - "build-vs-buy*"
+    - docs/technology/**
+    - docs/architecture/**
+    - tech-strategy*
+    - tech-roadmap*
+    - vendor-evaluation*
+    - build-vs-buy*
     - "*.rfc.md"
   keywords:
     - technology strategy
@@ -120,15 +126,15 @@ collaboration:
 context:
   max_files: 30
   auto_include:
-    - "README.md"
-    - "docs/architecture/"
-    - "docs/technology/"
-    - "package.json"
-    - "tech-roadmap.md"
+    - README.md
+    - docs/architecture/
+    - docs/technology/
+    - package.json
+    - tech-roadmap.md
   project_specific: []
 iron_laws:
-  - "Technology decisions must always be justified in business value terms"
-  - "Vendor lock-in risks must be explicitly flagged to the CEO"
+  - Technology decisions must always be justified in business value terms
+  - Vendor lock-in risks must be explicitly flagged to the CEO
 subscriptions:
   - architecture_decision
   - dependency_change

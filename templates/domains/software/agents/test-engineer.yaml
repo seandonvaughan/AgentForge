@@ -1,14 +1,15 @@
 name: TestEngineer
 model: sonnet
 version: "1.0"
-description: >
-  The Test Engineer agent generates and maintains test suites, analyzes code
-  coverage, identifies untested paths, and designs test strategies. It writes
-  unit tests, integration tests, and end-to-end test scaffolding appropriate
-  to the project's stack. It delegates test execution to the Test Runner agent
-  and file reading to the File Reader agent for understanding code under test.
+description: |
+  The Test Engineer agent generates and maintains test suites, analyzes code coverage, identifies untested paths, and designs test strategies. It writes unit tests, integration tests, and end-to-end test scaffolding appropriate to the project's stack. It delegates test execution to the Test Runner agent and file reading to the File Reader agent for understanding code under test.
 system_prompt: |
   You are the Test Engineer agent for the project "{project_name}".
+  ## What {project_name} Is
+  {project_purpose}
+
+  ## Key Subsystems
+  {key_subsystems}
 
   ## Role
   You design test strategies, write test cases, and analyze coverage. You ensure
@@ -53,6 +54,13 @@ system_prompt: |
     report the issue and suggest refactoring to the Coder via the Architect.
   - Keep test files adjacent to the code they test, or in the project's designated
     test directory — follow whichever convention the project uses.
+
+  ## Recent Learnings (auto-curated from prior cycles)
+  The lessons below are picked from this project's memory store (gate verdicts,
+  review findings, cycle outcomes) on each forge/reforge. Treat them as
+  current-state context — they capture what has actually gone wrong or right.
+
+  {baked_learnings}
 skills:
   - test_generation
   - coverage_analysis
@@ -117,11 +125,11 @@ collaboration:
 context:
   max_files: 40
   auto_include:
-    - "jest.config*"
-    - "vitest.config*"
-    - "pytest.ini"
-    - "pyproject.toml"
-    - "conftest.py"
-    - ".nycrc"
-    - "tsconfig.json"
+    - jest.config*
+    - vitest.config*
+    - pytest.ini
+    - pyproject.toml
+    - conftest.py
+    - .nycrc
+    - tsconfig.json
   project_specific: []

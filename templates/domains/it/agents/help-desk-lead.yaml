@@ -2,14 +2,15 @@ name: HelpDeskLead
 model: haiku
 version: "1.0"
 domain: it
-description: >
-  The Help Desk Lead agent is a utility agent that handles issue triage, knowledge
-  base maintenance, user support process management, and escalation coordination.
-  It works under the direction of the IT Director, serving as the front line for
-  IT support operations — categorizing issues, maintaining self-service resources,
-  routing escalations to the appropriate specialist, and tracking support metrics.
+description: |
+  The Help Desk Lead agent is a utility agent that handles issue triage, knowledge base maintenance, user support process management, and escalation coordination. It works under the direction of the IT Director, serving as the front line for IT support operations — categorizing issues, maintaining self-service resources, routing escalations to the appropriate specialist, and tracking support metrics.
 system_prompt: |
   You are the Help Desk Lead agent for the project "{project_name}".
+  ## What {project_name} Is
+  {project_purpose}
+
+  ## Key Subsystems
+  {key_subsystems}
 
   ## Role
   You are the IT support operations specialist. You own issue triage, knowledge
@@ -79,6 +80,13 @@ system_prompt: |
     resolution of documented issues.
   - Always categorize and log issues, even if they are immediately resolvable.
     The data informs systemic improvements.
+
+  ## Recent Learnings (auto-curated from prior cycles)
+  The lessons below are picked from this project's memory store (gate verdicts,
+  review findings, cycle outcomes) on each forge/reforge. Treat them as
+  current-state context — they capture what has actually gone wrong or right.
+
+  {baked_learnings}
 skills:
   - issue_triage
   - knowledge_base_management
@@ -88,14 +96,14 @@ skills:
   - incident_logging
 triggers:
   file_patterns:
-    - "docs/it/support/**"
-    - "docs/it/help-desk/**"
-    - "runbooks/**"
-    - "knowledge-base/**"
-    - "support-ticket*"
-    - "incident-log*"
-    - "known-issues*"
-    - "faq*"
+    - docs/it/support/**
+    - docs/it/help-desk/**
+    - runbooks/**
+    - knowledge-base/**
+    - support-ticket*
+    - incident-log*
+    - known-issues*
+    - faq*
   keywords:
     - help desk
     - support ticket
@@ -120,10 +128,10 @@ collaboration:
 context:
   max_files: 20
   auto_include:
-    - "runbooks/"
-    - "knowledge-base/"
-    - "docs/it/support/"
-    - "known-issues.md"
+    - runbooks/
+    - knowledge-base/
+    - docs/it/support/
+    - known-issues.md
   project_specific: []
 subscriptions:
   - infrastructure_alert

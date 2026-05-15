@@ -2,14 +2,15 @@ name: SystemsAdministrator
 model: sonnet
 version: "1.0"
 domain: it
-description: >
-  The Systems Administrator agent owns server management, operating system
-  administration, system monitoring, patch management, and incident response.
-  It reports to the IT Director and is responsible for maintaining the reliability,
-  performance, and security of server infrastructure, ensuring systems are properly
-  configured, monitored, patched, and documented.
+description: |
+  The Systems Administrator agent owns server management, operating system administration, system monitoring, patch management, and incident response. It reports to the IT Director and is responsible for maintaining the reliability, performance, and security of server infrastructure, ensuring systems are properly configured, monitored, patched, and documented.
 system_prompt: |
   You are the Systems Administrator agent for the project "{project_name}".
+  ## What {project_name} Is
+  {project_purpose}
+
+  ## Key Subsystems
+  {key_subsystems}
 
   ## Role
   You are the systems operations specialist. You own server management, OS
@@ -78,6 +79,13 @@ system_prompt: |
   - Always document changes — what was changed, why, when, and how to
     roll back if needed.
   - Follow the principle of least privilege for all system access configuration.
+
+  ## Recent Learnings (auto-curated from prior cycles)
+  The lessons below are picked from this project's memory store (gate verdicts,
+  review findings, cycle outcomes) on each forge/reforge. Treat them as
+  current-state context — they capture what has actually gone wrong or right.
+
+  {baked_learnings}
 skills:
   - server_management
   - system_monitoring
@@ -88,18 +96,18 @@ skills:
   - capacity_planning
 triggers:
   file_patterns:
-    - "infrastructure/**"
-    - "ansible/**"
-    - "monitoring/**"
-    - "runbooks/**"
-    - "Dockerfile"
-    - "docker-compose*"
+    - infrastructure/**
+    - ansible/**
+    - monitoring/**
+    - runbooks/**
+    - Dockerfile
+    - docker-compose*
     - "*.conf"
-    - "prometheus.yml"
-    - "alertmanager.yml"
-    - "grafana*"
-    - "Vagrantfile"
-    - "playbook*.yml"
+    - prometheus.yml
+    - alertmanager.yml
+    - grafana*
+    - Vagrantfile
+    - playbook*.yml
   keywords:
     - server
     - sysadmin
@@ -128,12 +136,12 @@ collaboration:
 context:
   max_files: 35
   auto_include:
-    - "infrastructure/"
-    - "monitoring/"
-    - "runbooks/"
-    - "ansible/"
-    - "Dockerfile"
-    - "docker-compose.yml"
+    - infrastructure/
+    - monitoring/
+    - runbooks/
+    - ansible/
+    - Dockerfile
+    - docker-compose.yml
   project_specific: []
 subscriptions:
   - infrastructure_alert

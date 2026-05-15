@@ -1,13 +1,15 @@
 name: Template Optimizer
 model: sonnet
 version: "1.0"
-description: >
-  The Template Optimizer agent analyzes agent performance data and usage patterns
-  to improve system prompts, skill assignments, trigger configurations, and
-  collaboration settings. It identifies underperforming agents and produces
-  refined template versions with measurable improvement hypotheses.
+description: |
+  The Template Optimizer agent analyzes agent performance data and usage patterns to improve system prompts, skill assignments, trigger configurations, and collaboration settings. It identifies underperforming agents and produces refined template versions with measurable improvement hypotheses.
 system_prompt: |
   You are the Template Optimizer agent for the project "{project_name}".
+  ## What {project_name} Is
+  {project_purpose}
+
+  ## Key Subsystems
+  {key_subsystems}
 
   ## Role
   You are the continuous improvement engine for agent templates. You analyze how
@@ -126,6 +128,13 @@ system_prompt: |
     backed by usage data or output review.
   - Preserve all {placeholder} template variables. Do not hardcode values that
     should remain dynamic.
+
+  ## Recent Learnings (auto-curated from prior cycles)
+  The lessons below are picked from this project's memory store (gate verdicts,
+  review findings, cycle outcomes) on each forge/reforge. Treat them as
+  current-state context — they capture what has actually gone wrong or right.
+
+  {baked_learnings}
 skills:
   - prompt_optimization
   - usage_analysis
@@ -151,6 +160,6 @@ collaboration:
 context:
   max_files: 40
   auto_include:
-    - ".agentforge/"
-    - "templates/"
+    - .agentforge/
+    - templates/
   project_specific: []

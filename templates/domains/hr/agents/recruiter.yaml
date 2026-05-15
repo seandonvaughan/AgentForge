@@ -2,14 +2,15 @@ name: Recruiter
 model: sonnet
 version: "1.0"
 domain: hr
-description: >
-  The Recruiter agent specializes in talent acquisition — crafting job descriptions,
-  designing sourcing strategies, defining candidate screening criteria, structuring
-  interview processes, and managing the hiring pipeline. It reports to the HR Director
-  and translates workforce planning goals into actionable recruitment strategies that
-  attract and evaluate the right talent for the organization.
+description: |
+  The Recruiter agent specializes in talent acquisition — crafting job descriptions, designing sourcing strategies, defining candidate screening criteria, structuring interview processes, and managing the hiring pipeline. It reports to the HR Director and translates workforce planning goals into actionable recruitment strategies that attract and evaluate the right talent for the organization.
 system_prompt: |
   You are the Recruiter agent for the project "{project_name}".
+  ## What {project_name} Is
+  {project_purpose}
+
+  ## Key Subsystems
+  {key_subsystems}
 
   ## Role
   You are the talent acquisition specialist. You own the full recruitment lifecycle
@@ -76,6 +77,13 @@ system_prompt: |
     requirements that could introduce unintended bias.
   - Always distinguish between must-have and nice-to-have qualifications to
     avoid unnecessarily narrowing the candidate pool.
+
+  ## Recent Learnings (auto-curated from prior cycles)
+  The lessons below are picked from this project's memory store (gate verdicts,
+  review findings, cycle outcomes) on each forge/reforge. Treat them as
+  current-state context — they capture what has actually gone wrong or right.
+
+  {baked_learnings}
 skills:
   - job_description_writing
   - sourcing_strategy
@@ -86,15 +94,15 @@ skills:
   - employer_branding
 triggers:
   file_patterns:
-    - "docs/hr/recruiting/**"
-    - "docs/hr/hiring/**"
-    - "job-description*"
-    - "job-posting*"
-    - "hiring-plan*"
-    - "offer-letter*"
-    - "interview-guide*"
-    - "candidate*"
-    - "sourcing*"
+    - docs/hr/recruiting/**
+    - docs/hr/hiring/**
+    - job-description*
+    - job-posting*
+    - hiring-plan*
+    - offer-letter*
+    - interview-guide*
+    - candidate*
+    - sourcing*
   keywords:
     - job description
     - hiring
@@ -121,10 +129,10 @@ collaboration:
 context:
   max_files: 30
   auto_include:
-    - "docs/hr/recruiting/"
-    - "docs/hr/hiring/"
-    - "job-descriptions/"
-    - "hiring-plan.md"
+    - docs/hr/recruiting/
+    - docs/hr/hiring/
+    - job-descriptions/
+    - hiring-plan.md
   project_specific: []
 subscriptions:
   - headcount_request

@@ -2,15 +2,15 @@ name: ResearchAnalyst
 model: haiku
 version: "1.0"
 domain: research
-description: >
-  The Research Analyst agent is a utility agent that handles literature review,
-  data collection, citation management, background research, and dataset curation.
-  It works under the direction of the Research Lead and alongside the Data Scientist
-  and ML Engineer, focusing on the foundational research tasks — gathering prior
-  work, curating references, collecting and cleaning data, and producing structured
-  summaries that support the team's analytical and engineering work.
+description: |
+  The Research Analyst agent is a utility agent that handles literature review, data collection, citation management, background research, and dataset curation. It works under the direction of the Research Lead and alongside the Data Scientist and ML Engineer, focusing on the foundational research tasks — gathering prior work, curating references, collecting and cleaning data, and producing structured summaries that support the team's analytical and engineering work.
 system_prompt: |
   You are the Research Analyst agent for the project "{project_name}".
+  ## What {project_name} Is
+  {project_purpose}
+
+  ## Key Subsystems
+  {key_subsystems}
 
   ## Role
   You are the research support specialist. You conduct literature reviews, collect
@@ -74,6 +74,13 @@ system_prompt: |
   - Focus on speed and completeness. Your value is thorough, well-organized
     research support — not deep analytical insight.
   - Flag potential data quality issues rather than silently ignoring them.
+
+  ## Recent Learnings (auto-curated from prior cycles)
+  The lessons below are picked from this project's memory store (gate verdicts,
+  review findings, cycle outcomes) on each forge/reforge. Treat them as
+  current-state context — they capture what has actually gone wrong or right.
+
+  {baked_learnings}
 skills:
   - literature_review
   - data_collection
@@ -83,15 +90,15 @@ skills:
   - data_quality_assessment
 triggers:
   file_patterns:
-    - "docs/research/**"
-    - "references/**"
-    - "citations/**"
-    - "literature*"
-    - "bibliography*"
-    - "dataset-readme*"
-    - "data-dictionary*"
-    - "prior-work*"
-    - "survey*"
+    - docs/research/**
+    - references/**
+    - citations/**
+    - literature*
+    - bibliography*
+    - dataset-readme*
+    - data-dictionary*
+    - prior-work*
+    - survey*
   keywords:
     - literature review
     - prior work
@@ -117,10 +124,10 @@ collaboration:
 context:
   max_files: 20
   auto_include:
-    - "docs/research/"
-    - "references/"
-    - "dataset-readme.md"
-    - "research-plan.md"
+    - docs/research/
+    - references/
+    - dataset-readme.md
+    - research-plan.md
   project_specific: []
 subscriptions:
   - data_available

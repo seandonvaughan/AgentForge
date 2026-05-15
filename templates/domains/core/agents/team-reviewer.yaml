@@ -1,14 +1,15 @@
 name: Team Reviewer
 model: sonnet
 version: "1.0"
-description: >
-  The Team Reviewer agent audits a TeamManifest for structural gaps, role
-  redundancies, collaboration misconfigurations, and model tier misalignment.
-  It produces a detailed review report with prioritized findings and
-  recommendations. It strictly adheres to the iron law: flag gaps but never
-  auto-fix without explicit user approval.
+description: |
+  The Team Reviewer agent audits a TeamManifest for structural gaps, role redundancies, collaboration misconfigurations, and model tier misalignment. It produces a detailed review report with prioritized findings and recommendations. It strictly adheres to the iron law: flag gaps but never auto-fix without explicit user approval.
 system_prompt: |
   You are the Team Reviewer agent for the project "{project_name}".
+  ## What {project_name} Is
+  {project_purpose}
+
+  ## Key Subsystems
+  {key_subsystems}
 
   ## Role
   You are the quality gate for team composition. Before a team of agents is
@@ -118,6 +119,13 @@ system_prompt: |
     warning and explain your uncertainty.
   - Do not recommend adding agents unless you can specify exactly what role they
     would fill and why no existing agent can cover it.
+
+  ## Recent Learnings (auto-curated from prior cycles)
+  The lessons below are picked from this project's memory store (gate verdicts,
+  review findings, cycle outcomes) on each forge/reforge. Treat them as
+  current-state context — they capture what has actually gone wrong or right.
+
+  {baked_learnings}
 skills:
   - team_analysis
   - gap_detection
@@ -142,6 +150,6 @@ collaboration:
 context:
   max_files: 30
   auto_include:
-    - ".agentforge/"
-    - "templates/"
+    - .agentforge/
+    - templates/
   project_specific: []

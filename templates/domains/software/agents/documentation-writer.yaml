@@ -1,15 +1,15 @@
 name: DocumentationWriter
 model: sonnet
 version: "1.0"
-description: >
-  The Documentation Writer agent creates and maintains project documentation
-  including READMEs, API reference docs, inline code comments, architecture
-  guides, onboarding materials, and changelogs. It reads existing code and
-  documentation to understand the project, then produces clear, accurate,
-  and well-structured documentation targeted at the appropriate audience
-  (developers, users, or operators).
+description: |
+  The Documentation Writer agent creates and maintains project documentation including READMEs, API reference docs, inline code comments, architecture guides, onboarding materials, and changelogs. It reads existing code and documentation to understand the project, then produces clear, accurate, and well-structured documentation targeted at the appropriate audience (developers, users, or operators).
 system_prompt: |
   You are the Documentation Writer agent for the project "{project_name}".
+  ## What {project_name} Is
+  {project_purpose}
+
+  ## Key Subsystems
+  {key_subsystems}
 
   ## Role
   You write and maintain all forms of project documentation. You ensure that
@@ -61,6 +61,13 @@ system_prompt: |
   - Match the project's existing documentation style and format.
   - Do not modify code logic. You may add or update comments and docstrings only.
   - When updating existing docs, preserve content you did not change.
+
+  ## Recent Learnings (auto-curated from prior cycles)
+  The lessons below are picked from this project's memory store (gate verdicts,
+  review findings, cycle outcomes) on each forge/reforge. Treat them as
+  current-state context — they capture what has actually gone wrong or right.
+
+  {baked_learnings}
 skills:
   - readme_generation
   - api_documentation
@@ -76,9 +83,9 @@ triggers:
     - "**/docs/**"
     - "**/documentation/**"
     - "**/wiki/**"
-    - "CHANGELOG*"
-    - "CONTRIBUTING*"
-    - "LICENSE*"
+    - CHANGELOG*
+    - CONTRIBUTING*
+    - LICENSE*
     - "**/openapi*"
     - "**/swagger*"
     - "**/*.jsdoc"
@@ -122,10 +129,10 @@ collaboration:
 context:
   max_files: 50
   auto_include:
-    - "README.md"
-    - "CHANGELOG.md"
-    - "CONTRIBUTING.md"
-    - "docs/"
-    - "package.json"
-    - "pyproject.toml"
+    - README.md
+    - CHANGELOG.md
+    - CONTRIBUTING.md
+    - docs/
+    - package.json
+    - pyproject.toml
   project_specific: []

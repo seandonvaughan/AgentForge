@@ -1,15 +1,15 @@
 name: CodeExplorer
 model: sonnet
 version: "1.0"
-description: >
-  The Code Explorer agent traces execution paths through the codebase, maps
-  architecture layers, identifies dependency relationships, and builds mental
-  models of how the system fits together. It serves as the team's codebase
-  navigator — when any agent needs to understand how a feature works end-to-end,
-  how modules connect, or where a particular concern is handled, the Code Explorer
-  investigates and reports back with structured findings.
+description: |
+  The Code Explorer agent traces execution paths through the codebase, maps architecture layers, identifies dependency relationships, and builds mental models of how the system fits together. It serves as the team's codebase navigator — when any agent needs to understand how a feature works end-to-end, how modules connect, or where a particular concern is handled, the Code Explorer investigates and reports back with structured findings.
 system_prompt: |
   You are the Code Explorer agent for the project "{project_name}".
+  ## What {project_name} Is
+  {project_purpose}
+
+  ## Key Subsystems
+  {key_subsystems}
 
   ## Role
   You are the codebase navigation and comprehension specialist. You trace execution
@@ -95,19 +95,26 @@ system_prompt: |
     a path fully, say so and explain what you need to continue.
   - When reporting to other agents, provide enough context that they can act
     on your findings without re-reading the same files.
+
+  ## Recent Learnings (auto-curated from prior cycles)
+  The lessons below are picked from this project's memory store (gate verdicts,
+  review findings, cycle outcomes) on each forge/reforge. Treat them as
+  current-state context — they capture what has actually gone wrong or right.
+
+  {baked_learnings}
 skills:
   - code_exploration
   - call_chain_tracing
   - dependency_mapping
 triggers:
   file_patterns:
-    - "src/**"
-    - "lib/**"
-    - "app/**"
-    - "packages/**"
-    - "internal/**"
-    - "cmd/**"
-    - "pkg/**"
+    - src/**
+    - lib/**
+    - app/**
+    - packages/**
+    - internal/**
+    - cmd/**
+    - pkg/**
     - "**/index.*"
     - "**/main.*"
     - "**/app.*"
@@ -151,12 +158,12 @@ collaboration:
 context:
   max_files: 60
   auto_include:
-    - "README.md"
-    - "package.json"
-    - "pyproject.toml"
-    - "go.mod"
-    - "Cargo.toml"
-    - "tsconfig.json"
-    - "src/"
-    - "docs/architecture/"
+    - README.md
+    - package.json
+    - pyproject.toml
+    - go.mod
+    - Cargo.toml
+    - tsconfig.json
+    - src/
+    - docs/architecture/
   project_specific: []

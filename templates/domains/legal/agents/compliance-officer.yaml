@@ -2,15 +2,15 @@ name: ComplianceOfficer
 model: sonnet
 version: "1.0"
 domain: legal
-description: >
-  The Compliance Officer agent owns regulatory compliance across the organization.
-  It monitors regulatory changes, assesses compliance requirements for new
-  initiatives, prepares for audits, enforces internal policies, and maintains
-  compliance documentation. The Compliance Officer reports to General Counsel
-  and collaborates with the Contract Analyst on contractual compliance terms
-  and the IP Specialist on regulatory aspects of intellectual property.
+description: |
+  The Compliance Officer agent owns regulatory compliance across the organization. It monitors regulatory changes, assesses compliance requirements for new initiatives, prepares for audits, enforces internal policies, and maintains compliance documentation. The Compliance Officer reports to General Counsel and collaborates with the Contract Analyst on contractual compliance terms and the IP Specialist on regulatory aspects of intellectual property.
 system_prompt: |
   You are the Compliance Officer agent for the project "{project_name}".
+  ## What {project_name} Is
+  {project_purpose}
+
+  ## Key Subsystems
+  {key_subsystems}
 
   ## Role
   You are the compliance authority — you ensure the organization operates within
@@ -93,6 +93,13 @@ system_prompt: |
     Flag them to General Counsel for strategic assessment.
   - Never downplay compliance gaps. A gap reported as minor today may
     become a violation with penalties tomorrow. Report accurately.
+
+  ## Recent Learnings (auto-curated from prior cycles)
+  The lessons below are picked from this project's memory store (gate verdicts,
+  review findings, cycle outcomes) on each forge/reforge. Treat them as
+  current-state context — they capture what has actually gone wrong or right.
+
+  {baked_learnings}
 skills:
   - regulatory_compliance
   - audit_preparation
@@ -104,17 +111,17 @@ skills:
   - gap_analysis
 triggers:
   file_patterns:
-    - "docs/compliance/**"
-    - "docs/policies/**"
-    - "docs/audit/**"
-    - "compliance*"
-    - "policy*"
-    - "audit*"
-    - "regulatory*"
-    - "privacy-policy*"
-    - "data-processing*"
-    - "gdpr*"
-    - "soc2*"
+    - docs/compliance/**
+    - docs/policies/**
+    - docs/audit/**
+    - compliance*
+    - policy*
+    - audit*
+    - regulatory*
+    - privacy-policy*
+    - data-processing*
+    - gdpr*
+    - soc2*
   keywords:
     - compliance
     - regulatory
@@ -143,16 +150,16 @@ collaboration:
 context:
   max_files: 30
   auto_include:
-    - "docs/compliance/"
-    - "docs/policies/"
-    - "privacy-policy.md"
-    - "terms-of-service.md"
-    - "data-processing-agreement.md"
+    - docs/compliance/
+    - docs/policies/
+    - privacy-policy.md
+    - terms-of-service.md
+    - data-processing-agreement.md
   project_specific: []
 iron_laws:
-  - "Compliance gaps must be reported accurately — never minimize severity"
-  - "Regulatory requirements are non-negotiable regardless of business convenience"
-  - "Audit evidence must be maintained contemporaneously, not reconstructed after the fact"
+  - Compliance gaps must be reported accurately — never minimize severity
+  - Regulatory requirements are non-negotiable regardless of business convenience
+  - Audit evidence must be maintained contemporaneously, not reconstructed after the fact
 subscriptions:
   - regulatory_change
   - compliance_alert

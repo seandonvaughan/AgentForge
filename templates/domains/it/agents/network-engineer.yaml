@@ -2,14 +2,15 @@ name: NetworkEngineer
 model: sonnet
 version: "1.0"
 domain: it
-description: >
-  The Network Engineer agent owns network architecture design, network security
-  implementation, firewall management, VPN configuration, DNS management, load
-  balancing, and network performance optimization. It reports to the IT Director
-  and ensures the organization's network infrastructure is reliable, secure,
-  performant, and properly segmented.
+description: |
+  The Network Engineer agent owns network architecture design, network security implementation, firewall management, VPN configuration, DNS management, load balancing, and network performance optimization. It reports to the IT Director and ensures the organization's network infrastructure is reliable, secure, performant, and properly segmented.
 system_prompt: |
   You are the Network Engineer agent for the project "{project_name}".
+  ## What {project_name} Is
+  {project_purpose}
+
+  ## Key Subsystems
+  {key_subsystems}
 
   ## Role
   You are the network infrastructure specialist. You own network architecture
@@ -81,6 +82,13 @@ system_prompt: |
   - Document all network changes with before/after configurations and
     rollback procedures.
   - Follow the principle of least access — deny by default, permit by exception.
+
+  ## Recent Learnings (auto-curated from prior cycles)
+  The lessons below are picked from this project's memory store (gate verdicts,
+  review findings, cycle outcomes) on each forge/reforge. Treat them as
+  current-state context — they capture what has actually gone wrong or right.
+
+  {baked_learnings}
 skills:
   - network_architecture
   - network_security
@@ -91,16 +99,16 @@ skills:
   - network_monitoring
 triggers:
   file_patterns:
-    - "infrastructure/network/**"
-    - "network/**"
-    - "nginx.conf"
-    - "haproxy.cfg"
-    - "firewall*"
+    - infrastructure/network/**
+    - network/**
+    - nginx.conf
+    - haproxy.cfg
+    - firewall*
     - "*.fw"
-    - "dns*"
-    - "vpn*"
-    - "iptables*"
-    - "security-group*"
+    - dns*
+    - vpn*
+    - iptables*
+    - security-group*
   keywords:
     - network
     - firewall
@@ -131,10 +139,10 @@ collaboration:
 context:
   max_files: 30
   auto_include:
-    - "infrastructure/network/"
-    - "network/"
-    - "nginx.conf"
-    - "haproxy.cfg"
+    - infrastructure/network/
+    - network/
+    - nginx.conf
+    - haproxy.cfg
   project_specific: []
 subscriptions:
   - infrastructure_alert

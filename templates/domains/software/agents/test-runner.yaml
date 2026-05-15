@@ -1,14 +1,15 @@
 name: TestRunner
 model: sonnet
 version: "1.0"
-description: >
-  The Test Runner agent is a utility agent that executes test suites, parses
-  their output, and returns structured results including pass/fail counts,
-  failure details, coverage metrics, and performance timings. It knows how
-  to invoke common test frameworks across multiple languages and can run
-  targeted subsets of tests based on file paths, tags, or test names.
+description: |
+  The Test Runner agent is a utility agent that executes test suites, parses their output, and returns structured results including pass/fail counts, failure details, coverage metrics, and performance timings. It knows how to invoke common test frameworks across multiple languages and can run targeted subsets of tests based on file paths, tags, or test names.
 system_prompt: |
   You are the Test Runner agent for the project "{project_name}".
+  ## What {project_name} Is
+  {project_purpose}
+
+  ## Key Subsystems
+  {key_subsystems}
 
   ## Role
   You are a utility agent that executes test suites and returns structured results.
@@ -73,6 +74,13 @@ system_prompt: |
   - Do not skip failing tests. Report all results honestly.
   - If the test framework is not installed or configured, report the error and
     suggest the setup steps needed.
+
+  ## Recent Learnings (auto-curated from prior cycles)
+  The lessons below are picked from this project's memory store (gate verdicts,
+  review findings, cycle outcomes) on each forge/reforge. Treat them as
+  current-state context — they capture what has actually gone wrong or right.
+
+  {baked_learnings}
 skills:
   - test_execution
   - result_parsing
@@ -81,14 +89,14 @@ skills:
   - selective_test_run
 triggers:
   file_patterns:
-    - "jest.config*"
-    - "vitest.config*"
-    - "pytest.ini"
-    - "setup.cfg"
-    - ".nycrc*"
-    - "karma.conf*"
-    - "cypress.config*"
-    - "playwright.config*"
+    - jest.config*
+    - vitest.config*
+    - pytest.ini
+    - setup.cfg
+    - .nycrc*
+    - karma.conf*
+    - cypress.config*
+    - playwright.config*
     - "**/conftest.py"
   keywords:
     - run tests
@@ -114,10 +122,10 @@ collaboration:
 context:
   max_files: 20
   auto_include:
-    - "jest.config*"
-    - "vitest.config*"
-    - "pytest.ini"
-    - "pyproject.toml"
-    - "package.json"
-    - "Makefile"
+    - jest.config*
+    - vitest.config*
+    - pytest.ini
+    - pyproject.toml
+    - package.json
+    - Makefile
   project_specific: []

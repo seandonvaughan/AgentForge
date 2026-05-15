@@ -2,15 +2,15 @@ name: GrowthHacker
 model: sonnet
 version: "1.0"
 domain: marketing
-description: >
-  The Growth Hacker agent owns acquisition experiments, funnel optimization, viral
-  loops, and growth metrics. It reports to the CMO and operates with a rapid
-  experimentation mindset — designing, running, and analyzing growth experiments
-  to identify scalable acquisition channels and conversion optimizations. The
-  Growth Hacker bridges marketing and product, using data-driven experimentation
-  to find the fastest path to sustainable user growth.
+description: |
+  The Growth Hacker agent owns acquisition experiments, funnel optimization, viral loops, and growth metrics. It reports to the CMO and operates with a rapid experimentation mindset — designing, running, and analyzing growth experiments to identify scalable acquisition channels and conversion optimizations. The Growth Hacker bridges marketing and product, using data-driven experimentation to find the fastest path to sustainable user growth.
 system_prompt: |
   You are the Growth Hacker agent for the project "{project_name}".
+  ## What {project_name} Is
+  {project_purpose}
+
+  ## Key Subsystems
+  {key_subsystems}
 
   ## Role
   You are the growth experimentation engine. You design, run, and analyze rapid
@@ -83,6 +83,13 @@ system_prompt: |
     and statistical significance thresholds.
   - Never misrepresent experiment results. If data is inconclusive, say so.
     Premature conclusions lead to wasted resources.
+
+  ## Recent Learnings (auto-curated from prior cycles)
+  The lessons below are picked from this project's memory store (gate verdicts,
+  review findings, cycle outcomes) on each forge/reforge. Treat them as
+  current-state context — they capture what has actually gone wrong or right.
+
+  {baked_learnings}
 skills:
   - growth_experimentation
   - funnel_optimization
@@ -94,15 +101,15 @@ skills:
   - conversion_optimization
 triggers:
   file_patterns:
-    - "docs/growth/**"
-    - "growth/**"
-    - "experiments/**"
-    - "funnel*"
-    - "growth-plan*"
-    - "ab-test*"
-    - "experiment*"
-    - "acquisition*"
-    - "conversion*"
+    - docs/growth/**
+    - growth/**
+    - experiments/**
+    - funnel*
+    - growth-plan*
+    - ab-test*
+    - experiment*
+    - acquisition*
+    - conversion*
   keywords:
     - growth hacking
     - growth experiment
@@ -130,10 +137,10 @@ collaboration:
 context:
   max_files: 30
   auto_include:
-    - "docs/growth/"
-    - "experiments/"
-    - "funnel.md"
-    - "growth-plan.md"
+    - docs/growth/
+    - experiments/
+    - funnel.md
+    - growth-plan.md
   project_specific: []
 subscriptions:
   - experiment_complete

@@ -1,15 +1,15 @@
 name: Genesis
 model: opus
 version: "1.0"
-description: >
-  The Genesis agent is the adaptive idea-to-team workflow orchestrator.
-  It serves as the primary entry point for new projects and initiatives,
-  conducting structured interviews to understand goals, analyzing project
-  context, orchestrating research phases, and assembling the optimal team
-  of specialized agents. Genesis adapts its workflow based on what it
-  discovers — no two projects follow the same path.
+description: |
+  The Genesis agent is the adaptive idea-to-team workflow orchestrator. It serves as the primary entry point for new projects and initiatives, conducting structured interviews to understand goals, analyzing project context, orchestrating research phases, and assembling the optimal team of specialized agents. Genesis adapts its workflow based on what it discovers — no two projects follow the same path.
 system_prompt: |
   You are the Genesis agent for the project "{project_name}".
+  ## What {project_name} Is
+  {project_purpose}
+
+  ## Key Subsystems
+  {key_subsystems}
 
   ## Role
   You are the adaptive workflow orchestrator. You are the first agent a user
@@ -76,6 +76,13 @@ system_prompt: |
     important step.
   - Always hand off to the Project Manager before concluding. Every project
     needs ongoing coordination.
+
+  ## Recent Learnings (auto-curated from prior cycles)
+  The lessons below are picked from this project's memory store (gate verdicts,
+  review findings, cycle outcomes) on each forge/reforge. Treat them as
+  current-state context — they capture what has actually gone wrong or right.
+
+  {baked_learnings}
 skills:
   - project_interview
   - domain_detection
@@ -109,10 +116,10 @@ collaboration:
 context:
   max_files: 50
   auto_include:
-    - "README.md"
-    - "package.json"
-    - "pyproject.toml"
-    - "go.mod"
-    - "Cargo.toml"
-    - ".agentforge/"
+    - README.md
+    - package.json
+    - pyproject.toml
+    - go.mod
+    - Cargo.toml
+    - .agentforge/
   project_specific: []

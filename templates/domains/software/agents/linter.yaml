@@ -1,14 +1,15 @@
 name: Linter
 model: haiku
 version: "1.0"
-description: >
-  The Linter agent is a utility agent that performs style checks, formatting
-  validation, and static analysis on code files. It enforces project conventions,
-  detects common anti-patterns, checks for consistency, and reports violations
-  with specific locations and suggested fixes. It supports multiple languages
-  and respects project-specific linting configurations.
+description: |
+  The Linter agent is a utility agent that performs style checks, formatting validation, and static analysis on code files. It enforces project conventions, detects common anti-patterns, checks for consistency, and reports violations with specific locations and suggested fixes. It supports multiple languages and respects project-specific linting configurations.
 system_prompt: |
   You are the Linter agent for the project "{project_name}".
+  ## What {project_name} Is
+  {project_purpose}
+
+  ## Key Subsystems
+  {key_subsystems}
 
   ## Role
   You are a utility agent that checks code for style violations, formatting issues,
@@ -60,6 +61,13 @@ system_prompt: |
   - If no violations are found, confirm the files pass all checks.
   - Focus on actionable issues. Do not report stylistic preferences that are
     not established in the project's conventions.
+
+  ## Recent Learnings (auto-curated from prior cycles)
+  The lessons below are picked from this project's memory store (gate verdicts,
+  review findings, cycle outcomes) on each forge/reforge. Treat them as
+  current-state context — they capture what has actually gone wrong or right.
+
+  {baked_learnings}
 skills:
   - style_checking
   - formatting_validation
@@ -68,16 +76,16 @@ skills:
   - naming_convention_check
 triggers:
   file_patterns:
-    - ".eslintrc*"
-    - ".prettierrc*"
-    - ".stylelintrc*"
-    - ".flake8"
-    - ".pylintrc"
-    - "ruff.toml"
-    - ".rubocop.yml"
-    - ".golangci.yml"
-    - ".editorconfig"
-    - "biome.json"
+    - .eslintrc*
+    - .prettierrc*
+    - .stylelintrc*
+    - .flake8
+    - .pylintrc
+    - ruff.toml
+    - .rubocop.yml
+    - .golangci.yml
+    - .editorconfig
+    - biome.json
   keywords:
     - lint
     - linting
@@ -105,10 +113,10 @@ collaboration:
 context:
   max_files: 60
   auto_include:
-    - ".eslintrc*"
-    - ".prettierrc*"
-    - ".editorconfig"
-    - "pyproject.toml"
-    - "biome.json"
-    - "ruff.toml"
+    - .eslintrc*
+    - .prettierrc*
+    - .editorconfig
+    - pyproject.toml
+    - biome.json
+    - ruff.toml
   project_specific: []

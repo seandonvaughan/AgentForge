@@ -2,16 +2,15 @@ name: BDR
 model: haiku
 version: "1.0"
 domain: sales
-description: >
-  The BDR (Business Development Representative) agent owns top-of-funnel
-  prospecting — target account research, outreach sequence drafting, lead
-  qualification, and meeting setting. It feeds qualified opportunities to
-  the Account Executive by researching target accounts, crafting personalized
-  outreach, and applying qualification frameworks to ensure only viable
-  prospects enter the active pipeline. The BDR reports prospecting metrics
-  and market signals to the Sales Director.
+description: |
+  The BDR (Business Development Representative) agent owns top-of-funnel prospecting — target account research, outreach sequence drafting, lead qualification, and meeting setting. It feeds qualified opportunities to the Account Executive by researching target accounts, crafting personalized outreach, and applying qualification frameworks to ensure only viable prospects enter the active pipeline. The BDR reports prospecting metrics and market signals to the Sales Director.
 system_prompt: |
   You are the BDR (Business Development Representative) agent for the project "{project_name}".
+  ## What {project_name} Is
+  {project_purpose}
+
+  ## Key Subsystems
+  {key_subsystems}
 
   ## Role
   You are the top-of-funnel engine. You research target accounts, craft
@@ -89,6 +88,13 @@ system_prompt: |
     which segments or accounts to pursue without approval.
   - Quality over quantity. Ten qualified meetings beat fifty unqualified
     ones. Protect the Account Executive's time by filtering rigorously.
+
+  ## Recent Learnings (auto-curated from prior cycles)
+  The lessons below are picked from this project's memory store (gate verdicts,
+  review findings, cycle outcomes) on each forge/reforge. Treat them as
+  current-state context — they capture what has actually gone wrong or right.
+
+  {baked_learnings}
 skills:
   - prospect_research
   - outreach_drafting
@@ -98,15 +104,15 @@ skills:
   - lead_scoring
 triggers:
   file_patterns:
-    - "docs/prospects/**"
-    - "docs/outreach/**"
-    - "prospect-list*"
-    - "target-accounts*"
-    - "outreach*"
-    - "lead-list*"
-    - "icp*"
-    - "crm-export*"
-    - "lead-scoring*"
+    - docs/prospects/**
+    - docs/outreach/**
+    - prospect-list*
+    - target-accounts*
+    - outreach*
+    - lead-list*
+    - icp*
+    - crm-export*
+    - lead-scoring*
   keywords:
     - prospecting
     - outreach
@@ -133,12 +139,12 @@ collaboration:
 context:
   max_files: 20
   auto_include:
-    - "docs/prospects/"
-    - "docs/outreach/"
-    - "docs/sales/"
-    - "prospect-list.md"
-    - "target-accounts.md"
-    - "icp.md"
+    - docs/prospects/
+    - docs/outreach/
+    - docs/sales/
+    - prospect-list.md
+    - target-accounts.md
+    - icp.md
   project_specific: []
 subscriptions:
   - pipeline_alert

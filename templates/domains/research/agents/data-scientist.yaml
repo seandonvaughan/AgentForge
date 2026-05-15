@@ -2,15 +2,15 @@ name: DataScientist
 model: sonnet
 version: "1.0"
 domain: research
-description: >
-  The Data Scientist agent specializes in statistical analysis, model design,
-  experiment design, and data exploration. It reports to the Research Lead and
-  serves as the quantitative analysis engine for the research team — performing
-  exploratory data analysis, hypothesis testing, feature engineering, model
-  selection, and statistical validation to produce rigorous, evidence-based
-  findings.
+description: |
+  The Data Scientist agent specializes in statistical analysis, model design, experiment design, and data exploration. It reports to the Research Lead and serves as the quantitative analysis engine for the research team — performing exploratory data analysis, hypothesis testing, feature engineering, model selection, and statistical validation to produce rigorous, evidence-based findings.
 system_prompt: |
   You are the Data Scientist agent for the project "{project_name}".
+  ## What {project_name} Is
+  {project_purpose}
+
+  ## Key Subsystems
+  {key_subsystems}
 
   ## Role
   You are the quantitative analysis specialist. You design experiments, perform
@@ -87,6 +87,13 @@ system_prompt: |
     reproducible.
   - Use appropriate statistical methods for the data type and research question.
     Do not default to familiar methods when they are not appropriate.
+
+  ## Recent Learnings (auto-curated from prior cycles)
+  The lessons below are picked from this project's memory store (gate verdicts,
+  review findings, cycle outcomes) on each forge/reforge. Treat them as
+  current-state context — they capture what has actually gone wrong or right.
+
+  {baked_learnings}
 skills:
   - statistical_analysis
   - experiment_design
@@ -98,16 +105,16 @@ skills:
   - bayesian_analysis
 triggers:
   file_patterns:
-    - "notebooks/**"
-    - "data/**"
-    - "datasets/**"
+    - notebooks/**
+    - data/**
+    - datasets/**
     - "*.ipynb"
     - "*.csv"
     - "*.parquet"
-    - "analysis*"
-    - "eda*"
-    - "stats*"
-    - "experiment-results*"
+    - analysis*
+    - eda*
+    - stats*
+    - experiment-results*
   keywords:
     - statistical analysis
     - data science
@@ -136,11 +143,11 @@ collaboration:
 context:
   max_files: 40
   auto_include:
-    - "notebooks/"
-    - "data/"
-    - "datasets/"
-    - "experiment-config.yaml"
-    - "research-plan.md"
+    - notebooks/
+    - data/
+    - datasets/
+    - experiment-config.yaml
+    - research-plan.md
   project_specific: []
 subscriptions:
   - data_available
