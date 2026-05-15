@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import StageBadge from '$lib/components/StageBadge.svelte';
+  import CycleStageBar from '$lib/components/CycleStageBar.svelte';
   import { relativeTime, formatDuration } from '$lib/util/relative-time';
   import { withWorkspace } from '$lib/stores/workspace';
 
@@ -149,7 +149,16 @@
       <tbody>
         {#each cycles as c (c.cycleId)}
           <tr onclick={() => (window.location.href = `/cycles/${c.cycleId}`)}>
-            <td><StageBadge stage={c.stage} /></td>
+            <td>
+              <CycleStageBar
+                stage={c.stage}
+                costUsd={c.costUsd}
+                budgetUsd={c.budgetUsd}
+                startedAt={c.startedAt}
+                isTerminal={TERMINAL.has((c.stage ?? '').toLowerCase())}
+                compact={true}
+              />
+            </td>
             <td>
               <a class="cycle-id" href="/cycles/{c.cycleId}" onclick={(e) => e.stopPropagation()}>
                 {shortId(c.cycleId)}

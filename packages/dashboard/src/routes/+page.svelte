@@ -1,5 +1,6 @@
 <script lang="ts">
   import StatGrid from '$lib/components/StatGrid.svelte';
+  import CycleStageBar from '$lib/components/CycleStageBar.svelte';
   import AgentTable from '$lib/components/AgentTable.svelte';
   import RecentSessions from '$lib/components/RecentSessions.svelte';
   import { agents, agentsLoading } from '$lib/stores/agents.js';
@@ -250,9 +251,11 @@
         {#each recentCycles as c (c.cycleId)}
           <li class="recent-item">
             <span class="recent-id">{shortCycleId(c.cycleId)}</span>
-            <span class="badge {isRunning(c) ? 'sonnet' : (c.status === 'failed' || c.status === 'error' ? 'danger' : 'success')}">
-              {c.stage ?? c.status ?? '—'}
-            </span>
+            <CycleStageBar
+              stage={c.stage ?? c.status ?? null}
+              isTerminal={!isRunning(c)}
+              compact={true}
+            />
             <span class="recent-version">{c.sprintVersion ?? '—'}</span>
             <span class="recent-cost">${getCost(c).toFixed(2)}</span>
             <a href="/cycles/{c.cycleId}" class="recent-view">view</a>
