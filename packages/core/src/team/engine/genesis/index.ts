@@ -268,7 +268,7 @@ export async function runGenesis(options: GenesisOptions = {}): Promise<GenesisR
       if (template) {
         customizedAgents.set(
           agentName,
-          customizeTemplate(template, scan, brief.project.name),
+          customizeTemplate(template, scan, brief.project.name, { projectRoot }),
         );
       }
     }

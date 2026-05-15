@@ -408,7 +408,7 @@ async function genesisTeamCommand(
       }
       customizedAgents.set(
         agentName,
-        customizeTemplate(template, effectiveScan, brief.project.name),
+        customizeTemplate(template, effectiveScan, brief.project.name, { projectRoot }),
       );
     }
 

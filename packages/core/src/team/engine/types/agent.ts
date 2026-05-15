@@ -90,6 +90,14 @@ export interface AgentTemplate {
   category?: AgentCategory;
   /** Non-negotiable rules this agent must always follow. */
   iron_laws?: string[];
+  /**
+   * Curated lessons baked in at forge/reforge time. Auto-populated from the
+   * project's memory store (gate-verdicts, review-findings, cycle-outcomes)
+   * by the template customizer, filtered to entries relevant to this agent's
+   * domain/role. Surfaced into the system prompt under "Recent Learnings" and
+   * persisted into the agent YAML so the chosen lessons are auditable.
+   */
+  learnings?: string[];
   /** Pre- and post-execution gate checks for this agent. */
   gates?: { pre: string[]; post: string[] };
   /** Event types this agent subscribes to for broadcast notifications. */

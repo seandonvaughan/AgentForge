@@ -6,8 +6,15 @@
  * and context paths populated based on what actually exists in the project.
  */
 
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
 import type { AgentTemplate } from "../types/agent.js";
 import type { FullScanResult } from "../scanner/index.js";
+import {
+  loadMemoryEntries,
+  curateLearnings,
+  formatLearningsBlock,
+} from "./memory-curator.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -216,9 +223,120 @@ function filterAutoInclude(
   });
 }
 
+/**
+ * Derive a 1-3 sentence project purpose statement from README + package.json.
+ *
+ * Strategy: prefer the README's first non-heading paragraph (skipping badges),
+ * fall back to package.json's `description` field, fall back to a generic line.
+ * The result is condensed onto a single line so it splices cleanly into a
+ * `{project_purpose}` placeholder.
+ */
+function buildProjectPurpose(projectRoot: string): string {
+  // README first
+  const readmePath = join(projectRoot, "README.md");
+  if (existsSync(readmePath)) {
+    try {
+      const raw = readFileSync(readmePath, "utf8");
+      const paragraphs = raw.split(/\n\s*\n/);
+      for (const p of paragraphs) {
+        const cleaned = p
+          .replace(/^#+\s.*$/gm, "")          // headings
+          .replace(/!\[[^\]]*\]\([^)]*\)/g, "") // image badges
+          .replace(/\[[^\]]*\]\([^)]*\)/g, "")  // link text
+          .replace(/^>.*$/gm, "")                // blockquotes
+          .replace(/<[^>]+>/g, "")               // raw HTML
+          .replace(/`[^`]*`/g, "")               // inline code
+          .replace(/\s+/g, " ")
+          .trim();
+        if (cleaned.length >= 60) {
+          return cleaned.length > 400 ? cleaned.slice(0, 397) + "..." : cleaned;
+        }
+      }
+    } catch {
+      // fall through to package.json
+    }
+  }
+
+  // package.json description
+  const pkgPath = join(projectRoot, "package.json");
+  if (existsSync(pkgPath)) {
+    try {
+      const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as { description?: string };
+      if (pkg.description && pkg.description.length > 10) return pkg.description;
+    } catch {
+      // fall through
+    }
+  }
+
+  return "This project's purpose has not been documented yet — read CLAUDE.md, README.md, and recent commits for context before acting.";
+}
+
+/**
+ * Build a "## Key Subsystems" bullet list from monorepo `packages/*` (or
+ * `apps/*`) directories. Each entry is the package name + the first non-empty
+ * description from its `package.json` if present.
+ *
+ * Returns an empty string when no subsystems are detected (single-package
+ * project) so the template's `{key_subsystems}` placeholder degrades cleanly.
+ */
+function buildKeySubsystems(scan: FullScanResult, projectRoot: string): string {
+  const candidates = [join(projectRoot, "packages"), join(projectRoot, "apps")];
+  const bullets: string[] = [];
+  for (const dir of candidates) {
+    if (!existsSync(dir)) continue;
+    let entries: string[];
+    try {
+      const { readdirSync, statSync } = require("node:fs") as typeof import("node:fs");
+      entries = readdirSync(dir).filter((e) => {
+        try {
+          return statSync(join(dir, e)).isDirectory();
+        } catch {
+          return false;
+        }
+      });
+    } catch {
+      continue;
+    }
+    for (const name of entries.sort()) {
+      const pkgFile = join(dir, name, "package.json");
+      let desc = "";
+      if (existsSync(pkgFile)) {
+        try {
+          const pkg = JSON.parse(readFileSync(pkgFile, "utf8")) as {
+            description?: string;
+          };
+          desc = pkg.description ?? "";
+        } catch {
+          desc = "";
+        }
+      }
+      bullets.push(desc ? `- **${name}** — ${desc}` : `- **${name}**`);
+    }
+  }
+  // Mark scan parameter as intentionally unused for now — kept in signature
+  // so future improvements can leverage scan.files.directories without a churn.
+  void scan;
+  return bullets.length === 0 ? "" : bullets.join("\n");
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
+
+/** Options accepted by {@link customizeTemplate} for project-context injection. */
+export interface CustomizeOptions {
+  /**
+   * Absolute path to the project root. Required for memory-derived learnings
+   * curation and for reading README / packages.
+   */
+  projectRoot?: string;
+  /**
+   * Override the curated lessons selection (e.g. for tests). When omitted,
+   * the customizer reads `.agentforge/memory/*.jsonl` from `projectRoot` and
+   * calls {@link curateLearnings}.
+   */
+  learnings?: string[];
+}
 
 /**
  * Customize an agent template with project-specific context derived from
@@ -226,23 +344,55 @@ function filterAutoInclude(
  *
  * Returns a **new** template object — the original is not mutated.
  *
+ * Placeholders supported in the template's `system_prompt`:
+ * - `{project_name}`             — project's human name
+ * - `{detected_stack}`           — languages / frameworks / package manager / CI
+ * - `{detected_conventions}`     — linters, test frameworks, build tools, common patterns
+ * - `{project_purpose}`          — 1-3 sentence purpose from README or package.json
+ * - `{key_subsystems}`           — markdown bullet list of packages/apps
+ * - `{baked_learnings}`          — markdown bullet list of curated lessons from memory
+ *
  * @param template    - The base agent template.
  * @param scan        - Full scan results from the project.
  * @param projectName - Human-readable project name.
+ * @param options     - Optional project root + learnings override (used by tests).
  */
 export function customizeTemplate(
   template: AgentTemplate,
   scan: FullScanResult,
   projectName: string,
+  options: CustomizeOptions = {},
 ): AgentTemplate {
   const detectedStack = buildStackDescription(scan);
   const detectedConventions = buildConventionsDescription(scan);
+
+  // Project purpose + subsystems (require a projectRoot; degrade cleanly when absent)
+  const projectRoot = options.projectRoot;
+  const projectPurpose = projectRoot
+    ? buildProjectPurpose(projectRoot)
+    : "Project purpose not derivable without a projectRoot.";
+  const keySubsystems = projectRoot ? buildKeySubsystems(scan, projectRoot) : "";
+
+  // Curate learnings from memory unless caller overrides
+  let learnings: string[];
+  if (options.learnings) {
+    learnings = options.learnings;
+  } else if (projectRoot) {
+    const memEntries = loadMemoryEntries(projectRoot);
+    learnings = curateLearnings(template, memEntries);
+  } else {
+    learnings = [];
+  }
+  const bakedLearnings = formatLearningsBlock(learnings);
 
   // Replace placeholders in the system prompt
   const system_prompt = template.system_prompt
     .replace(/\{project_name\}/g, projectName)
     .replace(/\{detected_stack\}/g, detectedStack)
-    .replace(/\{detected_conventions\}/g, detectedConventions);
+    .replace(/\{detected_conventions\}/g, detectedConventions)
+    .replace(/\{project_purpose\}/g, projectPurpose)
+    .replace(/\{key_subsystems\}/g, keySubsystems)
+    .replace(/\{baked_learnings\}/g, bakedLearnings);
 
   // Update file patterns based on actual languages found
   const scanPatterns = buildFilePatterns(scan);
@@ -260,6 +410,7 @@ export function customizeTemplate(
   return {
     ...template,
     system_prompt,
+    learnings,
     triggers: {
       ...template.triggers,
       file_patterns,

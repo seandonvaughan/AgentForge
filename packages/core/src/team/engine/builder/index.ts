@@ -199,7 +199,7 @@ export async function forgeTeam(projectRoot: string): Promise<TeamManifest> {
     if (template) {
       customizedAgents.set(
         agentName,
-        customizeTemplate(template, scan, projectName),
+        customizeTemplate(template, scan, projectName, { projectRoot }),
       );
     }
   }
@@ -215,7 +215,7 @@ export async function forgeTeam(projectRoot: string): Promise<TeamManifest> {
     );
     customizedAgents.set(
       custom.name,
-      customizeTemplate(customTemplate, scan, projectName),
+      customizeTemplate(customTemplate, scan, projectName, { projectRoot }),
     );
   }
 
