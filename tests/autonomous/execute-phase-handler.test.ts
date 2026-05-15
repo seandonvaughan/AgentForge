@@ -4,8 +4,8 @@ import {
   type ExecutePhaseMemorySection,
   ReviewPhaseHandler,
   type ReviewFinding,
+  MemoryRegistry,
 } from "@agentforge/core";
-import { MemoryRegistry } from "../../src/registry/memory-registry.js";
 
 // ---------------------------------------------------------------------------
 // Helpers

@@ -634,6 +634,99 @@ describe('computeMetrics — cycles-archived/ reading', () => {
   });
 });
 
+// ── sprints/archive/ and plan.json reading (v14.2.0 sync) ───────────────────
+//
+// In v14.2.0 the API server (dashboard-stubs.ts) gained two additional sprint
+// reading paths: sprints/archive/*.json and cycles/{id}/plan.json.  These tests
+// pin the same behaviour in the SSR copy so that the two implementations stay
+// in sync and the page-load gauges match the 30s-polled API values.
+
+describe('computeMetrics — sprints/archive/ reading', () => {
+  function writeArchiveSprint(filename: string, items: Array<{ status: string }>) {
+    const dir = join(tmpRoot, '.agentforge/sprints/archive');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, filename),
+      JSON.stringify({ version: filename.replace('.json', ''), items }),
+    );
+  }
+
+  it('reads sprint items from sprints/archive/ subdirectory', () => {
+    writeArchiveSprint('v10.0.0.json', [
+      { status: 'completed' },
+      { status: 'completed' },
+      { status: 'planned' },
+    ]);
+    const { debug } = computeMetrics(tmpRoot);
+    expect(debug.totalItems).toBe(3);
+    expect(debug.completedItems).toBe(2);
+  });
+
+  it('merges archive sprints with root sprints', () => {
+    writeSprintFlat('v15.0.0.json', [{ status: 'completed' }]);
+    writeArchiveSprint('v10.0.0.json', [{ status: 'completed' }, { status: 'planned' }]);
+    const { debug } = computeMetrics(tmpRoot);
+    expect(debug.totalItems).toBe(3);
+    expect(debug.completedItems).toBe(2);
+    // sprintCount includes both files
+    expect(debug.sprintCount).toBe(2);
+  });
+
+  it('velocity score reflects items from archive sprints', () => {
+    // 8 of 10 items completed in archive: itemRate * 70 = 56
+    writeArchiveSprint('v10.0.0.json', Array.from({ length: 10 }, (_, i) => ({
+      status: i < 8 ? 'completed' : 'planned',
+    })));
+    const m = computeMetrics(tmpRoot).metrics.find(m => m.key === 'velocity')!;
+    expect(m.score).toBe(56);
+  });
+});
+
+describe('computeMetrics — plan.json in cycle directories', () => {
+  function writePlanJson(cycleId: string, items: Array<{ status: string }>) {
+    const dir = join(tmpRoot, '.agentforge/cycles', cycleId);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'plan.json'), JSON.stringify({ items }));
+  }
+
+  it('reads sprint items from plan.json inside cycle directories', () => {
+    mkdirs(join(tmpRoot, '.agentforge/cycles'));
+    writePlanJson('cycle-abc', [{ status: 'completed' }, { status: 'planned' }]);
+    const { debug } = computeMetrics(tmpRoot);
+    expect(debug.totalItems).toBe(2);
+    expect(debug.completedItems).toBe(1);
+  });
+
+  it('merges plan.json items with archive and root sprints', () => {
+    writeSprintFlat('v15.0.0.json', [{ status: 'completed' }]);
+    mkdirs(join(tmpRoot, '.agentforge/cycles'));
+    writePlanJson('cycle-xyz', [{ status: 'completed' }, { status: 'planned' }]);
+    const { debug } = computeMetrics(tmpRoot);
+    expect(debug.totalItems).toBe(3);
+    expect(debug.completedItems).toBe(2);
+  });
+
+  it('velocity score reflects items from plan.json cycles', () => {
+    // 6 of 8 items completed from plan.json: itemRate * 70 = 52 (rounded from 52.5)
+    mkdirs(join(tmpRoot, '.agentforge/cycles'));
+    writePlanJson('cycle-v1', Array.from({ length: 8 }, (_, i) => ({
+      status: i < 6 ? 'completed' : 'planned',
+    })));
+    const m = computeMetrics(tmpRoot).metrics.find(m => m.key === 'velocity')!;
+    // 6/8 * 70 = 52.5 → Math.round = 53
+    expect(m.score).toBe(53);
+  });
+
+  it('ignores plan.json files that have no items array', () => {
+    mkdirs(join(tmpRoot, '.agentforge/cycles'));
+    const dir = join(tmpRoot, '.agentforge/cycles/empty-plan');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'plan.json'), JSON.stringify({ version: '1.0' })); // no items
+    const { debug } = computeMetrics(tmpRoot);
+    expect(debug.totalItems).toBe(0);
+  });
+});
+
 // ── Descriptions ─────────────────────────────────────────────────────────────
 
 describe('computeMetrics — metric descriptions', () => {

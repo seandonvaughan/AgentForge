@@ -70,16 +70,24 @@
     //   200 OK           — cycle.json exists (completed/killed/failed with clean shutdown)
     //   200 partialTerminal — cycle.json absent but session registry shows terminal
     //   404 cycleInProgress — cycle.json absent and session still running (or unknown)
-    // Note: if the server returns 404+cycleInProgress but body.stage is already in
-    // TERMINAL (e.g. events.jsonl recorded a kill), isTerminal will become true and
-    // the $effect will stop this poll on the next tick.
+    //
+    // v15.1.0 gap fix: if the server returns 404+cycleInProgress but body.stage
+    // is already in TERMINAL, synthesize partialTerminal so the $effect stops
+    // this poll immediately and the warning banner is shown.
     try {
       const res = await fetch(`/api/v5/cycles/${id}`);
       if (res.ok) {
         cycle = await res.json();
       } else if (res.status === 404) {
         const body = await res.json().catch(() => null);
-        if (body?.cycleInProgress) cycle = body;
+        if (body?.cycleInProgress) {
+          const bodyStage = String(body?.stage ?? '').toLowerCase();
+          if (TERMINAL.has(bodyStage)) {
+            cycle = { ...body, partialTerminal: true, cycleInProgress: false };
+          } else {
+            cycle = body;
+          }
+        }
       }
     } catch {}
     loadAgents();
@@ -301,12 +309,21 @@
         // Server returns 404 + cycleInProgress:true for cycles that exist
         // but haven't written cycle.json yet. Honour that contract so the
         // detail page can render a live feed while the cycle is running.
-        // Gap case: if body.stage is already terminal (e.g. events.jsonl
-        // recorded a kill but session registry was lost on server restart),
-        // cycle will be treated as terminal because isTerminal checks stage.
+        //
+        // v15.1.0 gap fix: if body.stage is already in TERMINAL (e.g.
+        // events.jsonl recorded a kill but the session registry was lost on
+        // server restart), synthesize partialTerminal:true so the warning
+        // banner is shown and polling stops immediately.  Without this the
+        // banner never fires and the in-progress poll keeps retrying forever.
         const body = await cRes.json().catch(() => null);
         if (body?.cycleInProgress) {
-          cycle = body;
+          const bodyStage = String(body.stage ?? '').toLowerCase();
+          if (TERMINAL.has(bodyStage)) {
+            // Killed cycle whose session record was lost — treat as partial terminal.
+            cycle = { ...body, partialTerminal: true, cycleInProgress: false };
+          } else {
+            cycle = body;
+          }
         } else {
           throw new Error(`cycle: HTTP ${cRes.status}`);
         }

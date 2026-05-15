@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PhaseScheduler, KillSwitch, CycleLogger, DEFAULT_CYCLE_CONFIG } from '@agentforge/core';
@@ -412,5 +412,77 @@ describe('PhaseScheduler', () => {
     const summary = await scheduler.run();
     expect(auditCalls).toBe(1);
     expect(summary.completedPhases).toHaveLength(9);
+  });
+
+  it('writes cycle.json with accumulated cost via flushCycleCost (incremental roll-up)', async () => {
+    // Note on mock-bus timing: the mock bus fires subscriber callbacks
+    // synchronously.  This means all 9 phases complete within the call stack
+    // of the very first triggerPhase() before run() resolves — we cannot
+    // capture per-phase snapshots inside handler bodies.  Instead we verify:
+    //   (a) cycle.json was written at all (proving flushCycleCost was called),
+    //   (b) its final cost matches the summary totalCostUsd,
+    //   (c) stage stays 'run' (PhaseScheduler never writes a terminal stage).
+    // Incremental per-call behaviour is covered by cycle-logger.test.ts.
+    const { bus, logger, killSwitch } = makeDeps();
+    const cyclePath = join(tmpDir, '.agentforge/cycles', cycleId, 'cycle.json');
+
+    // Use distinct per-phase costs so we can verify the cumulative total.
+    const phasesCosts: Record<string, number> = {
+      audit: 1.00, plan: 2.00, assign: 3.00, execute: 0.50,
+      test: 0.10, review: 0.10, gate: 0.10, release: 0.10, learn: 0.10,
+    };
+    const expectedTotal = Object.values(phasesCosts).reduce((a, b) => a + b, 0);
+
+    const makeHandler = (phase: string) =>
+      async (ctx: any) => {
+        ctx.bus.publish('sprint.phase.completed', {
+          sprintId,
+          phase,
+          cycleId,
+          result: {
+            phase,
+            status: 'completed',
+            durationMs: 100,
+            costUsd: phasesCosts[phase]!,
+            agentRuns: [],
+            ...(phase === 'execute' ? { itemResults: [] } : {}),
+          },
+          completedAt: new Date().toISOString(),
+        });
+      };
+
+    const handlers = Object.fromEntries(
+      Object.keys(phasesCosts).map((p) => [p, makeHandler(p)]),
+    );
+
+    const summary = await new PhaseScheduler(
+      { sprintId, sprintVersion: '16.0.0', projectRoot: tmpDir, adapter: {} as any, bus, runtime: {} as any, cycleId },
+      killSwitch, logger, handlers as any,
+    ).run();
+
+    // cycle.json must exist — it was written by flushCycleCost, not logCycleResult
+    // (CycleRunner calls logCycleResult; PhaseScheduler never does).
+    expect(existsSync(cyclePath)).toBe(true);
+
+    const data = JSON.parse(readFileSync(cyclePath, 'utf8'));
+    expect(data.cycleId).toBe(cycleId);
+    expect(data.cost.totalUsd).toBeCloseTo(expectedTotal, 5);
+    expect(data.cost.totalUsd).toBeCloseTo(summary.totalCostUsd, 5);
+  });
+
+  it('cycle.json stage is preserved as "run" during incremental flush (not overwritten to terminal)', async () => {
+    const { bus, logger, killSwitch } = makeDeps();
+    const cyclePath = join(tmpDir, '.agentforge/cycles', cycleId, 'cycle.json');
+    const handlers = makeAllPhasesCompleteHandlers();
+
+    await new PhaseScheduler(
+      { sprintId, sprintVersion: '16.0.0', projectRoot: tmpDir, adapter: {} as any, bus, runtime: {} as any, cycleId },
+      killSwitch, logger, handlers as any,
+    ).run();
+
+    const data = JSON.parse(readFileSync(cyclePath, 'utf8'));
+    // The PhaseScheduler's flush should never overwrite a stage with a
+    // terminal value — cycle.json written mid-run must stay at 'run'.
+    expect(data.stage).toBe('run');
   });
 });

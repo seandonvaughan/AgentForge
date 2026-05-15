@@ -9,8 +9,8 @@ import {
   generateRetrospective,
   type SprintData,
   type SprintDataItem,
+  type TaskMemory,
 } from "@agentforge/core";
-import type { TaskMemory } from "../../src/types/lifecycle.js";
 
 // ---------------------------------------------------------------------------
 // Helpers

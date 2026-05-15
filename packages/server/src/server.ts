@@ -31,6 +31,7 @@ import { federationRoutes } from './routes/v5/federation.js';
 import { chatRoutes } from './routes/v5/chat.js';
 import { settingsRoutes } from './routes/v5/settings.js';
 import { searchRoutes } from './routes/v5/search.js';
+import { knowledgeRoutes } from './routes/v5/knowledge.js';
 import { sendContainedStaticFile } from './lib/static-files.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -160,6 +161,10 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
 
     // Git branch manager / merge queue — in-memory, no adapter required
     await mergeQueueRoutes(app);
+
+    // Knowledge graph — reads .agentforge/knowledge/entities.jsonl so the
+    // /knowledge page is populated from cycle-accumulated entity data.
+    await knowledgeRoutes(app, { projectRoot });
 
     // Agent runtime streaming — in-memory, no adapter required
     await agentStreamingRoutes(app);

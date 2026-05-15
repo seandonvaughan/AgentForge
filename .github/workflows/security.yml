@@ -1,3 +1,4 @@
+# Node version is read from .nvmrc — update that file to change the version everywhere.
 name: Security Gates
 
 on:
@@ -18,9 +19,6 @@ jobs:
   npm-audit:
     name: pnpm audit
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: ['22.13.x']
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6.0.2
@@ -28,10 +26,10 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v6.0.7
 
-      - name: Setup Node.js ${{ matrix.node-version }}
+      - name: Setup Node.js
         uses: actions/setup-node@v6.4.0
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version-file: '.nvmrc'
           cache: pnpm
 
       - name: Install dependencies
@@ -82,7 +80,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6.4.0
         with:
-          node-version: '22.13.x'
+          node-version-file: '.nvmrc'
           cache: pnpm
 
       - name: Install dependencies

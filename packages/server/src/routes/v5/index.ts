@@ -56,7 +56,10 @@ export async function registerV5Routes(
   });
 
   // ── Approvals Gateway ─────────────────────────────────────────────────────────
-  await approvalsRoutes(app, opts.projectRoot ? { projectRoot: opts.projectRoot } : {});
+  // When a WorkspaceAdapter is available, approvals are persisted in the workspace
+  // DB (WORKSPACE_DDL schema). This collocates all workspace data and ensures the
+  // approvals table is visible to future schema migration tooling.
+  await approvalsRoutes(app, { adapter: opts.adapter });
 
   // ── RBAC & Audit ─────────────────────────────────────────────────────────────
   await rbacRoutes(app);
@@ -174,7 +177,7 @@ export async function registerV5Routes(
   await mergeQueueRoutes(app, { adapter });
 
   // ── Knowledge Graph ───────────────────────────────────────────────────────────
-  await knowledgeRoutes(app);
+  await knowledgeRoutes(app, { adapter, projectRoot: opts.projectRoot });
 
   // ── Canary Deployments ────────────────────────────────────────────────────────
   await canaryRoutes(app);

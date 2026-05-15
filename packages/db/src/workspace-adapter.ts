@@ -238,6 +238,60 @@ export interface RuntimeEventFilters {
   offset?: number;
 }
 
+export interface ApprovalRow {
+  id: string;
+  proposal_id: string;
+  proposal_title: string;
+  execution_id: string;
+  status: string;
+  diff: string | null;
+  test_summary_json: string | null;
+  impact_summary: string;
+  submitted_at: string;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  notes: string | null;
+}
+
+export interface ApprovalFilters {
+  status?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface KnowledgeEntityRow {
+  id: string;
+  type: string;
+  name: string;
+  description: string | null;
+  source_cycle_id: string | null;
+  embedding: Buffer | null;
+  created_at: string;
+}
+
+export interface KnowledgeRelationshipRow {
+  id: string;
+  from_entity_id: string;
+  to_entity_id: string;
+  type: string;
+  confidence: number;
+  created_at: string;
+}
+
+export interface KnowledgeEntityFilters {
+  type?: string;
+  sourceCycleId?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface KnowledgeRelationshipFilters {
+  entityId?: string;
+  type?: string;
+  limit?: number;
+  offset?: number;
+}
+
 export class WorkspaceAdapter {
   private readonly db: Database.Database;
   readonly workspaceId: string;
@@ -1061,6 +1115,198 @@ export class WorkspaceAdapter {
       content: row.content,
       vector: new Float32Array(row.vector.buffer),
     }));
+  }
+
+  // --- Approvals ---
+
+  createApproval(data: {
+    id?: string;
+    proposalId: string;
+    proposalTitle?: string;
+    executionId: string;
+    diff?: string | null;
+    testSummaryJson?: string | null;
+    impactSummary?: string;
+    submittedAt?: string;
+  }): ApprovalRow {
+    const id = data.id ?? generateId();
+    const submittedAt = data.submittedAt ?? nowIso();
+    this.db.prepare(`
+      INSERT INTO approvals
+        (id, proposal_id, proposal_title, execution_id, diff, test_summary_json, impact_summary, submitted_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      data.proposalId,
+      data.proposalTitle ?? 'Untitled',
+      data.executionId,
+      data.diff ?? null,
+      data.testSummaryJson ?? null,
+      data.impactSummary ?? 'No impact summary provided.',
+      submittedAt,
+    );
+    return this.getApproval(id)!;
+  }
+
+  getApproval(id: string): ApprovalRow | undefined {
+    return this.db.prepare('SELECT * FROM approvals WHERE id = ?').get(id) as ApprovalRow | undefined;
+  }
+
+  listApprovals(filters: ApprovalFilters = {}): ApprovalRow[] {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    if (filters.status) { conditions.push('status = ?'); params.push(filters.status); }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const limit = Math.min(filters.limit ?? 500, 2000);
+    const offset = filters.offset ?? 0;
+    return this.db.prepare(`
+      SELECT * FROM approvals ${where} ORDER BY submitted_at DESC LIMIT ? OFFSET ?
+    `).all(...params, limit, offset) as ApprovalRow[];
+  }
+
+  updateApprovalStatus(
+    id: string,
+    status: 'approved' | 'rejected' | 'rolled_back',
+    updates: { reviewedBy?: string; reviewedAt?: string; notes?: string } = {},
+  ): void {
+    const reviewedAt = updates.reviewedAt ?? nowIso();
+    this.db.prepare(`
+      UPDATE approvals
+      SET status = ?, reviewed_at = ?, reviewed_by = COALESCE(?, reviewed_by), notes = COALESCE(?, notes)
+      WHERE id = ?
+    `).run(status, reviewedAt, updates.reviewedBy ?? null, updates.notes ?? null, id);
+  }
+
+  // --- Knowledge Graph ---
+
+  upsertKnowledgeEntity(data: {
+    id?: string;
+    type: string;
+    name: string;
+    description?: string | null;
+    sourceCycleId?: string | null;
+    embedding?: Float32Array | null;
+    createdAt?: string;
+  }): KnowledgeEntityRow {
+    const id = data.id ?? generateId();
+    const createdAt = data.createdAt ?? nowIso();
+    const embeddingBlob = data.embedding ? Buffer.from(data.embedding.buffer) : null;
+    this.db.prepare(`
+      INSERT INTO knowledge_entities (id, type, name, description, source_cycle_id, embedding, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        type = excluded.type,
+        name = excluded.name,
+        description = excluded.description,
+        source_cycle_id = excluded.source_cycle_id,
+        embedding = COALESCE(excluded.embedding, embedding)
+    `).run(
+      id,
+      data.type,
+      data.name,
+      data.description ?? null,
+      data.sourceCycleId ?? null,
+      embeddingBlob,
+      createdAt,
+    );
+    return this.getKnowledgeEntity(id)!;
+  }
+
+  getKnowledgeEntity(id: string): KnowledgeEntityRow | undefined {
+    return this.db.prepare('SELECT * FROM knowledge_entities WHERE id = ?').get(id) as KnowledgeEntityRow | undefined;
+  }
+
+  listKnowledgeEntities(filters: KnowledgeEntityFilters = {}): KnowledgeEntityRow[] {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (filters.type) { conditions.push('type = ?'); params.push(filters.type); }
+    if (filters.sourceCycleId) { conditions.push('source_cycle_id = ?'); params.push(filters.sourceCycleId); }
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const limit = Math.min(filters.limit ?? 200, 2000);
+    const offset = filters.offset ?? 0;
+
+    return this.db.prepare(`
+      SELECT * FROM knowledge_entities ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?
+    `).all(...params, limit, offset) as KnowledgeEntityRow[];
+  }
+
+  countKnowledgeEntities(type?: string): number {
+    const row = type
+      ? this.db.prepare('SELECT COUNT(*) as n FROM knowledge_entities WHERE type = ?').get(type) as { n: number }
+      : this.db.prepare('SELECT COUNT(*) as n FROM knowledge_entities').get() as { n: number };
+    return row.n;
+  }
+
+  deleteKnowledgeEntity(id: string): boolean {
+    // ON DELETE CASCADE removes associated relationships automatically.
+    const result = this.db.prepare('DELETE FROM knowledge_entities WHERE id = ?').run(id);
+    return result.changes > 0;
+  }
+
+  insertKnowledgeRelationship(data: {
+    id?: string;
+    fromEntityId: string;
+    toEntityId: string;
+    type: string;
+    confidence?: number;
+    createdAt?: string;
+  }): KnowledgeRelationshipRow {
+    const id = data.id ?? generateId();
+    const createdAt = data.createdAt ?? nowIso();
+    this.db.prepare(`
+      INSERT INTO knowledge_relationships (id, from_entity_id, to_entity_id, type, confidence, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      data.fromEntityId,
+      data.toEntityId,
+      data.type,
+      data.confidence ?? 0.5,
+      createdAt,
+    );
+    return this.getKnowledgeRelationship(id)!;
+  }
+
+  getKnowledgeRelationship(id: string): KnowledgeRelationshipRow | undefined {
+    return this.db.prepare('SELECT * FROM knowledge_relationships WHERE id = ?').get(id) as KnowledgeRelationshipRow | undefined;
+  }
+
+  listKnowledgeRelationships(filters: KnowledgeRelationshipFilters = {}): KnowledgeRelationshipRow[] {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (filters.type) { conditions.push('type = ?'); params.push(filters.type); }
+    if (filters.entityId) {
+      conditions.push('(from_entity_id = ? OR to_entity_id = ?)');
+      params.push(filters.entityId, filters.entityId);
+    }
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const limit = Math.min(filters.limit ?? 500, 5000);
+    const offset = filters.offset ?? 0;
+
+    return this.db.prepare(`
+      SELECT * FROM knowledge_relationships ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?
+    `).all(...params, limit, offset) as KnowledgeRelationshipRow[];
+  }
+
+  countKnowledgeRelationships(): number {
+    const row = this.db.prepare('SELECT COUNT(*) as n FROM knowledge_relationships').get() as { n: number };
+    return row.n;
+  }
+
+  deleteKnowledgeRelationship(id: string): boolean {
+    const result = this.db.prepare('DELETE FROM knowledge_relationships WHERE id = ?').run(id);
+    return result.changes > 0;
+  }
+
+  deleteKnowledgeRelationshipsByEntity(entityId: string): number {
+    const result = this.db.prepare(
+      'DELETE FROM knowledge_relationships WHERE from_entity_id = ? OR to_entity_id = ?',
+    ).run(entityId, entityId);
+    return result.changes;
   }
 
   // --- Lifecycle ---

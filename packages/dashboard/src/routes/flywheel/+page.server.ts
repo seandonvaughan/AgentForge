@@ -17,21 +17,8 @@
 import type { PageServerLoad } from './$types';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-
-// ── Shared interfaces (mirror dashboard-stubs.ts) ────────────────────────────
-
-interface CycleRecord {
-  cycleId: string;
-  sprintVersion?: string;
-  stage?: string;
-  startedAt?: string;
-  completedAt?: string;
-  durationMs?: number;
-  cost?: { totalUsd?: number; budgetUsd?: number };
-  tests?: { passed?: number; failed?: number; total?: number; passRate?: number };
-  git?: { branch?: string; commitSha?: string; filesChanged?: string[] };
-  pr?: { url?: string | null; number?: number | null };
-}
+import { readCycleRecord } from '@agentforge/shared';
+import type { CycleRecord } from '@agentforge/shared';
 
 interface SprintItem { id?: string; status?: string; }
 interface SprintRecord { version?: string; items?: SprintItem[]; phase?: string; }
@@ -113,102 +100,12 @@ function findProjectRoot(): string {
 
 // ── Metric computation ────────────────────────────────────────────────────────
 
-/**
- * Read a CycleRecord from a cycle directory.
- *
- * Supports two on-disk formats:
- *  - Legacy (cycles-archived/): has `cycle.json` with the full record shape.
- *  - Current (cycles/): no `cycle.json`; data lives in `events.jsonl` and
- *    `sprint-link.json`. We reconstruct the record from the event stream so
- *    metric computation works for all current cycles.
- *
- * CANONICAL SOURCE: packages/server/src/lib/cycle-record.ts
- * This copy exists so the SvelteKit SSR layer can parse cycle data without a
- * runtime dependency on the server package.  Keep this implementation in sync
- * with the canonical source.  When @agentforge/dashboard gains a dependency on
- * @agentforge/shared, consolidate both into that package.
- *
- * @internal Exported for unit testing only.
- */
-export function _readCycleRecord(cycleDir: string, cycleId: string): CycleRecord | null {
-  // Legacy format: cycle.json present
-  const cycleFile = join(cycleDir, 'cycle.json');
-  if (existsSync(cycleFile)) {
-    try { return JSON.parse(readFileSync(cycleFile, 'utf-8')) as CycleRecord; } catch { /* fall through */ }
-  }
-
-  // Current format: reconstruct from events.jsonl
-  const eventsFile = join(cycleDir, 'events.jsonl');
-  if (!existsSync(eventsFile)) return null;
-
-  interface CycleEvent { type: string; at?: string; [key: string]: unknown }
-  let events: CycleEvent[];
-  try {
-    events = readFileSync(eventsFile, 'utf-8')
-      .split('\n')
-      .filter(l => l.trim().length > 0)
-      .map(l => JSON.parse(l) as CycleEvent);
-  } catch { return null; }
-
-  const find = (type: string | string[]) => {
-    const types = Array.isArray(type) ? type : [type];
-    return events.find(e => types.includes(e.type));
-  };
-
-  const sprintAssigned = find('sprint.assigned');
-  const scoring        = find('scoring.complete');
-  const testsEvt       = find('tests.complete');
-  const prEvt          = find(['pr.opened', 'opened']);
-  const complete       = find('cycle.complete');
-  const firstPhase     = find('phase.start');
-
-  let sprintVersion: string | undefined = sprintAssigned?.sprintVersion as string | undefined;
-  if (!sprintVersion) {
-    const linkFile = join(cycleDir, 'sprint-link.json');
-    if (existsSync(linkFile)) {
-      try {
-        const link = JSON.parse(readFileSync(linkFile, 'utf-8')) as { sprintVersion?: string };
-        sprintVersion = link.sprintVersion;
-      } catch { /* ignore */ }
-    }
-  }
-
-  const startedAt   = (firstPhase?.at ?? sprintAssigned?.at) as string | undefined;
-  const completedAt = complete?.at as string | undefined;
-  const durationMs  = startedAt && completedAt
-    ? new Date(completedAt).getTime() - new Date(startedAt).getTime()
-    : undefined;
-
-  const passed   = testsEvt?.passed as number | undefined;
-  const failed   = testsEvt?.failed as number | undefined;
-  const total    = passed != null && failed != null ? passed + failed : undefined;
-  const passRate = total != null && total > 0 ? passed! / total : undefined;
-
-  return {
-    cycleId,
-    sprintVersion,
-    stage: (complete?.stage as string | undefined) ?? (complete ? 'completed' : undefined),
-    startedAt,
-    completedAt,
-    durationMs,
-    // Guard totalCostUsd type before use — matches canonical source behaviour.
-    cost: scoring && typeof scoring.totalCostUsd === 'number'
-      ? { totalUsd: scoring.totalCostUsd as number }
-      : undefined,
-    // Guard passed/failed types before use — matches canonical source behaviour.
-    tests: total != null && typeof passed === 'number' && typeof failed === 'number'
-      ? { passed, failed, total, passRate: typeof passRate === 'number' ? passRate : 0 }
-      : undefined,
-    pr: prEvt ? { url: prEvt.url as string | null, number: prEvt.number as number | null } : undefined,
-  };
-}
-
 /** @internal Exported for unit testing only — do not call from client code. */
 export function _computeMetrics(projectRoot: string): FlywheelPayload {
   // ── Cycles ──────────────────────────────────────────────────────────────────
   // Read from both cycles/ and cycles-archived/ so historical data contributes
   // to trend math even after archiving. Each directory may use either on-disk
-  // format; _readCycleRecord() handles both transparently.
+  // format; readCycleRecord() handles both transparently.
   const cycleDirs = [
     join(projectRoot, '.agentforge/cycles'),
     join(projectRoot, '.agentforge/cycles-archived'),
@@ -218,7 +115,7 @@ export function _computeMetrics(projectRoot: string): FlywheelPayload {
     if (!existsSync(cyclesDir)) continue;
     for (const entry of readdirSync(cyclesDir, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
-      const record = _readCycleRecord(join(cyclesDir, entry.name), entry.name);
+      const record = readCycleRecord(join(cyclesDir, entry.name), entry.name);
       if (record) cycles.push(record);
     }
   }
@@ -233,14 +130,31 @@ export function _computeMetrics(projectRoot: string): FlywheelPayload {
   const completedCycles = cycles.filter(c => c.stage === 'completed');
 
   // ── Sprints ──────────────────────────────────────────────────────────────────
+  // v14.2.0: legacy pre-cycle-era sprint files were moved to sprints/archive/.
+  // Recent sprints live inside their cycle dir as plan.json. Read all three
+  // sources for full flywheel history — mirrors dashboard-stubs.ts exactly.
   const sprintsDir = join(projectRoot, '.agentforge/sprints');
+  const archiveDir = join(sprintsDir, 'archive');
   const sprints: SprintRecord[] = [];
-  if (existsSync(sprintsDir)) {
-    for (const file of readdirSync(sprintsDir).filter(f => f.endsWith('.json'))) {
+  for (const dir of [sprintsDir, archiveDir]) {
+    if (!existsSync(dir)) continue;
+    for (const file of readdirSync(dir).filter(f => f.endsWith('.json'))) {
       try {
-        const raw = JSON.parse(readFileSync(join(sprintsDir, file), 'utf-8'));
+        const raw = JSON.parse(readFileSync(join(dir, file), 'utf-8'));
         if (Array.isArray(raw.sprints)) sprints.push(...(raw.sprints as SprintRecord[]));
         else if (raw.items) sprints.push(raw as SprintRecord);
+      } catch { /* skip */ }
+    }
+  }
+  // Also include plan.json from each cycle dir (current format since v14.2.0).
+  const activeCyclesDir = join(projectRoot, '.agentforge/cycles');
+  if (existsSync(activeCyclesDir)) {
+    for (const cycleEntry of readdirSync(activeCyclesDir)) {
+      const planPath = join(activeCyclesDir, cycleEntry, 'plan.json');
+      if (!existsSync(planPath)) continue;
+      try {
+        const plan = JSON.parse(readFileSync(planPath, 'utf-8')) as SprintRecord;
+        if (plan?.items) sprints.push(plan);
       } catch { /* skip */ }
     }
   }

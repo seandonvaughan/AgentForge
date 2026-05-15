@@ -15,3 +15,5 @@ export {
   type ReviewFindingMetadata,
   type GateVerdictMetadata,
 } from './types.js';
+
+export type { SessionMemoryEntry } from './session-memory-manager.js';

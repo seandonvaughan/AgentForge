@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { WorkspaceAdapter } from '@agentforge/db';
 import { GitBranchManager } from '@agentforge/core';
+import type { MergeQueueItem } from '@agentforge/core';
 
 // Module-level singleton. When mergeQueueRoutes is called with an adapter the
 // singleton is replaced with an adapter-backed instance so branch state persists
@@ -45,7 +46,8 @@ export async function mergeQueueRoutes(
 
   // POST /api/v5/branches/:id/submit — submit for review
   app.post<{ Params: { id: string } }>('/api/v5/branches/:id/submit', async (req, reply) => {
-    const { priority } = req.body as any;
+    // Guard against absent body (e.g. no Content-Type / no payload) — priority is optional.
+    const priority = (req.body as any)?.priority as MergeQueueItem['priority'] | undefined;
     try {
       const item = branchManager.submitForReview(req.params.id, priority ?? 'P1');
       return reply.status(201).send({ data: item });

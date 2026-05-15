@@ -110,11 +110,11 @@ export class ClaudeCodeCompatTransport implements ExecutionTransport {
 
   private async invokeClaudeCli(request: ExecutionRequest): Promise<ClaudeCliResult> {
     const args = this.buildClaudeArgs(request, 'json');
-    // 20-min timeout — Sonnet+max and Opus+xhigh with extended thinking
+    // 20-min default — Sonnet+max and Opus+xhigh with extended thinking
     // routinely exceed 10 min on complex reasoning tasks (e.g. backlog scoring
-    // over 40 items, or large architecture decisions). Override per-request
-    // via ExecutionRequest.timeoutMs in future if we need per-agent tuning.
-    const timeoutMs = (request as any).timeoutMs ?? 20 * 60 * 1000;
+    // over 40 items, or large architecture decisions). Callers can extend via
+    // ExecutionRequest.timeoutMs for tasks known to be heavier than normal.
+    const timeoutMs = request.timeoutMs ?? 20 * 60 * 1000;
 
     return new Promise<ClaudeCliResult>((resolve, reject) => {
       const proc = spawn('claude', args, {
@@ -202,11 +202,9 @@ export class ClaudeCodeCompatTransport implements ExecutionTransport {
     options: ExecutionStreamOptions,
   ): Promise<ClaudeStreamInvocationResult> {
     const args = this.buildClaudeArgs(request, 'stream-json');
-    // 20-min timeout — Sonnet+max and Opus+xhigh with extended thinking
-    // routinely exceed 10 min on complex reasoning tasks (e.g. backlog scoring
-    // over 40 items, or large architecture decisions). Override per-request
-    // via ExecutionRequest.timeoutMs in future if we need per-agent tuning.
-    const timeoutMs = (request as any).timeoutMs ?? 20 * 60 * 1000;
+    // 20-min default — see invokeClaudeCli for rationale.
+    // Callers can extend via ExecutionRequest.timeoutMs.
+    const timeoutMs = request.timeoutMs ?? 20 * 60 * 1000;
 
     return new Promise<ClaudeStreamInvocationResult>((resolve, reject) => {
       const proc = spawn('claude', args, {

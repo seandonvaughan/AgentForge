@@ -38,6 +38,13 @@ export interface ExecutionRequest {
    * Defaults to true when not explicitly set to false.
    */
   enableFallback?: boolean;
+  /**
+   * Per-request CLI subprocess timeout in milliseconds.
+   * Overrides the transport default of 20 minutes (1_200_000 ms).
+   * Use for heavy reasoning tasks (e.g. scoring large backlogs, deep
+   * architectural decisions) that are known to exceed the default ceiling.
+   */
+  timeoutMs?: number;
 }
 
 export interface ExecutionResult {

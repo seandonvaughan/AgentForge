@@ -1559,8 +1559,10 @@
          active chip (or "All") resets to show everything.
          Uses stopPropagation so clicks don't bubble up to the header toggle. -->
     {#if feedEventTypes.length > 1}
-      <div class="feed-type-bar" role="group" aria-label="Filter live events by type"
-           onclick={(e) => e.stopPropagation()}>
+      <div class="feed-type-bar" role="toolbar" aria-label="Filter live events by type"
+           tabindex="-1"
+           onclick={(e) => e.stopPropagation()}
+           onkeydown={(e) => e.stopPropagation()}>
         <button
           class="feed-type-chip"
           class:feed-type-chip--active={feedFilter === 'all'}

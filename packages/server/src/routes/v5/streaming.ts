@@ -27,11 +27,20 @@ export async function agentStreamingRoutes(app: FastifyInstance): Promise<void> 
         startedAt: new Date().toISOString(),
       };
 
+      // Scope CORS to localhost origins rather than using a wildcard.
+      // reply.raw.writeHead() bypasses the Fastify CORS plugin, so we must
+      // set the header explicitly. Mirrors the fix applied to /api/v5/stream
+      // and /api/v5/memory/stream to prevent cross-origin reads of stream data.
+      const reqOrigin = req.headers['origin'];
+      const isLocalhost = typeof reqOrigin === 'string' &&
+        /^https?:\/\/localhost(:\d+)?$/.test(reqOrigin);
+      const corsOrigin = isLocalhost ? reqOrigin : 'http://localhost:4751';
+
       reply.raw.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive',
-        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Origin': corsOrigin,
         'X-Accel-Buffering': 'no',
       });
 

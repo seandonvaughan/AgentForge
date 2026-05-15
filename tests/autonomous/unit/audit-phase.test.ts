@@ -22,8 +22,8 @@ import {
   AUDIT_PHASE_DEFAULT_TOOLS,
   type AuditPhaseOptions,
   type PhaseContext,
+  type CycleMemoryEntry,
 } from '@agentforge/core';
-import type { CycleMemoryEntry } from '../../../packages/core/src/memory/types.js';
 
 // ---------------------------------------------------------------------------
 // Test infrastructure

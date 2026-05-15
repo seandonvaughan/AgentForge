@@ -277,7 +277,7 @@ export async function registerV6Routes(
     await budgetRoutes(sub);
     await observabilityRoutes(sub);
     await streamRoutes(sub);
-    await mergeQueueRoutes(sub);
+    await mergeQueueRoutes(sub, { adapter });
     await knowledgeRoutes(sub);
     await canaryRoutes(sub);
     await tracingRoutes(sub);
