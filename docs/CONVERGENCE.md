@@ -10,59 +10,102 @@
 
 AgentForge transitioned from a monolithic root `src/` tree to a modular `packages/*` workspace architecture during v6.0–v10.5. The convergence consolidates this split into one canonical surface.
 
-**Current state (v10.5.1+):**
+**Current state (v10.7.0+):**
 - ✅ **Canonical:** Package stack (`packages/cli`, `packages/server`, `packages/core`, `packages/dashboard`)
-- 🔴 **Deprecated:** Root stack (`src/cli`, `src/server`, legacy dashboard)
-- 🟡 **Frozen shims:** Compatibility bridges for users on old entry points
+- ✅ **Deleted:** Root server (`src/server/`), legacy dashboard (`dashboard/`), CLI compat bridges (`src/cli/compat/`)
+- 🟡 **Frozen shims:** Root CLI commands still delegate to package CLI (removal target: v11.0.0)
 
 **Timeline:**
 - **v10.5.1:** Convergence documented; package stack is canonical.
-- **v10.7.0:** Root server purge; legacy dashboard deletion; CLI compatibility shims added.
-- **v11.0.0:** Root CLI deprecated with startup warnings; package CLI is primary.
-- **v12.0.0:** Root CLI, root server, and legacy shims removed; package stack only.
+- **v10.7.0:** ✅ Root server purge complete; legacy dashboard deleted; CLI compat bridges removed.
+- **v11.0.0:** Root CLI commands removed entirely; package CLI is the only entry point.
+- **v12.0.0:** Full root `src/` tree removed from build graph; package stack only.
 
 ---
 
 ## Surface Mapping: Deprecated → Canonical
 
-### CLI Command Routing
+### Root CLI
 
-| Deprecated Surface | Canonical Replacement | Current Status | Removal Milestone |
+All root CLI commands are deprecated and delegate to their package-canonical equivalents in `@agentforge/cli`. Removal target: v11.0.0 (commands removed entirely); v12.0.0 (root CLI entry point removed).
+
+| Deprecated Root CLI | Canonical Package CLI | Current Status | Removal Milestone |
 |---|---|---|---|
-| `agentforge forge` (root) | `agentforge team forge` (package) | 🟡 Frozen shim with deprecation warning | v12.0.0 |
-| `agentforge genesis` (root) | `agentforge team genesis` (package) | 🟡 Frozen shim with deprecation warning | v12.0.0 |
-| `agentforge rebuild` (root) | `agentforge team rebuild` (package) | 🟡 Frozen shim with deprecation warning | v12.0.0 |
-| `agentforge reforge *` (root) | `agentforge team reforge *` (package) | 🟡 Frozen shim with deprecation warning | v12.0.0 |
-| `agentforge invoke` (root) | `agentforge run invoke` (package) | 🟡 Frozen shim with deprecation warning | v12.0.0 |
-| `agentforge invoke --loop` (root) | `agentforge cycle run` or `autonomous:cycle` (package) | ❌ Removed v10.7.0 | N/A |
-| `agentforge delegate` (root) | `agentforge run delegate` (package) | 🟡 Frozen shim with deprecation warning | v12.0.0 |
-| `agentforge cost-report` (root) | `agentforge costs report` (package) | 🟡 Frozen shim with deprecation warning | v12.0.0 |
-| `agentforge sessions *` (root) | `agentforge team-sessions *` (package) | 🟡 Frozen shim with deprecation warning | v12.0.0 |
-| `agentforge status` (root) | `agentforge info` (package) | 🟡 Frozen shim with deprecation warning | v12.0.0 |
-| `agentforge activate/deactivate` (root) | No replacement; functionality absorbed into team management | ❌ Removed v10.7.0 | N/A |
+| `agentforge forge` | `agentforge team forge` | 🟡 Frozen shim with deprecation warning | v12.0.0 |
+| `agentforge genesis` | `agentforge team genesis` | 🟡 Frozen shim with deprecation warning | v12.0.0 |
+| `agentforge rebuild` | `agentforge team rebuild` | 🟡 Frozen shim with deprecation warning | v12.0.0 |
+| `agentforge reforge *` | `agentforge team reforge *` | 🟡 Frozen shim with deprecation warning | v12.0.0 |
+| `agentforge invoke` | `agentforge run invoke` | 🟡 Frozen shim with deprecation warning | v12.0.0 |
+| `agentforge invoke --loop` | `agentforge cycle run` or `autonomous:cycle` | ❌ Removed v10.7.0 | N/A |
+| `agentforge delegate` | `agentforge run delegate` | 🟡 Frozen shim with deprecation warning | v12.0.0 |
+| `agentforge cost-report` | `agentforge costs report` | 🟡 Frozen shim with deprecation warning | v12.0.0 |
+| `agentforge sessions *` | `agentforge team-sessions *` | 🟡 Frozen shim with deprecation warning | v12.0.0 |
+| `agentforge status` | `agentforge info` | 🟡 Frozen shim with deprecation warning | v12.0.0 |
+| `agentforge activate/deactivate` | No replacement; functionality absorbed into team management | ❌ Removed v10.7.0 | N/A |
 
-### Server and API Routes
+**Key:** Each root command in `src/cli/commands/` (e.g., `forge.ts`, `genesis.ts`) is a thin wrapper that imports and re-exports from `packages/cli/src/commands/`. See [CLI_AUDIT.md](../CLI_AUDIT.md) for detailed disposition.
 
-| Deprecated Surface | Canonical Replacement | Current Status | Removal Milestone |
+### Root Server
+
+The root Fastify server (`src/server/main.ts`) and all associated routes have been deleted as of v10.7.0. The package server (`packages/server/src/main.ts`) is the canonical runtime.
+
+| Deprecated Root Surface | Canonical Package Surface | Current Status | Removal Milestone |
 |---|---|---|---|
-| Root Fastify server (`src/server/main.ts`) | Package server (`packages/server/src/main.ts`) | 🟡 Still boots; deprecated path | v10.7.0 |
+| Root Fastify server (`src/server/main.ts`) | Package server (`packages/server/src/main.ts`) | ✅ Deleted v10.7.0 | N/A |
+| Root server auth (`src/server/auth/*`) | Package auth (`packages/server/src/lib/auth/`) | ✅ Migrated v10.7.0 | N/A |
+| Root server SSE (`src/server/sse/*`) | Package SSE (`packages/server/src/lib/sse/`) | ✅ Migrated v10.7.0 | N/A |
+| Root API routes (`src/server/routes/*`) | Package API v5 routes (`packages/server/src/routes/v5/*`) | ✅ Migrated v10.7.0 | N/A |
 | `/api/v1/*` endpoints (root) | `/api/v5/*` endpoints (package) | 🟡 Root routes frozen; package routes are canonical | v11.0.0 |
 | Root dashboard HTML (`dashboard/index.html`) | SvelteKit dashboard (`packages/dashboard/`) | ✅ Deleted v11.0.0 | N/A |
-| Root server startup script | `agentforge start` (package CLI) | 🟡 Frozen shim | v11.0.0 |
+| Root server startup script | `agentforge start` (package CLI) | ✅ Deleted v10.7.0 | N/A |
 
-### Session and Runtime Flows
+**Key:** See [Deprecation Enforcement in CI](#deprecation-enforcement-in-ci) for automated checks preventing regression.
 
-| Deprecated Surface | Canonical Replacement | Current Status | Removal Milestone |
+### Root Builder
+
+The root team-building and genesis engine (`src/genesis/*`, `src/scanner/*`, `src/reforge/*`) are deprecated stubs that re-export from the package-canonical implementations in `packages/core/src/team/engine/`. All builder logic now lives in the `@agentforge/core` package.
+
+| Deprecated Root Module | Canonical Package Module | Current Status | Removal Milestone |
 |---|---|---|---|
-| Root `AgentForgeSession` path (`src/orchestrator/session.ts`) | Package `CycleRunner` (`packages/core/src/autonomous/cycle-runner.ts`) | 🟡 Still functional; routed through package bridges | v11.0.0 |
-| Root `invoke` single-shot execution | `agentforge run invoke` (single-shot) or `agentforge cycle run` (looped) | 🟡 Frozen shim | v12.0.0 |
-| Root autonomous stubs (`src/autonomous/*`) | Package autonomous adapters (`packages/core/src/autonomous/*`) | 🔴 Deprecated; consolidate v10.7.0 | v10.7.0 |
+| `src/genesis/` (full tree) | `packages/core/src/team/engine/genesis/` | 🟡 Stubs re-export from package | v11.0.0 |
+| `src/genesis/brief-builder.ts` | `packages/core/src/team/engine/genesis/brief-builder.ts` | 🟡 Compatibility shim | v11.0.0 |
+| `src/genesis/discovery.ts` | `packages/core/src/team/engine/genesis/index.ts` | 🟡 Compatibility shim | v11.0.0 |
+| `src/genesis/team-designer.ts` | `packages/core/src/team/engine/genesis/team-designer.ts` | 🟡 Compatibility shim | v11.0.0 |
+| `src/scanner/` (full tree) | `packages/core/src/team/engine/scanner/` | 🟡 Stubs re-export from package | v11.0.0 |
+| `src/reforge/` (full tree) | `packages/core/src/team/engine/reforge/` | 🟡 Stubs re-export from package | v11.0.0 |
+| Root `forge` command entrypoint | `packages/cli/src/commands/team.ts:team forge` | 🟡 Delegates via CLI | v12.0.0 |
+| Root `genesis` command entrypoint | `packages/cli/src/commands/team.ts:team genesis` | 🟡 Delegates via CLI | v12.0.0 |
 
-### File Structure & Artifacts
+**Key:** All root builder files contain this header:
+```typescript
+/**
+ * Root compatibility shim for the package-canonical team genesis/scanner/reforge engine.
+ */
+export * from '@agentforge/core';
+```
+
+### Root Autonomous
+
+The root autonomous runtime (`src/orchestrator/session.ts`, `src/autonomous/*` stubs) are deprecated in favor of the package-canonical cycle runner and phase handlers in `packages/core/src/autonomous/`. All agent execution now routes through `CycleRunner` and the autonomous phase pipeline.
+
+| Deprecated Root Module | Canonical Package Module | Current Status | Removal Milestone |
+|---|---|---|---|
+| Root `AgentForgeSession` (`src/orchestrator/session.ts`) | Package `CycleRunner` (`packages/core/src/autonomous/cycle-runner.ts`) | 🟡 Still functional; routed through package bridges | v11.0.0 |
+| Root `invoke` single-shot execution (`src/orchestrator/invoke.ts`) | `agentforge run invoke` (CLI) or `ExecutionService` (package) | 🟡 Frozen shim | v12.0.0 |
+| Root `invoke --loop` looped execution | `agentforge cycle run` or `autonomous:cycle` (package) | ❌ Removed v10.7.0 | N/A |
+| Root autonomous stubs (`src/autonomous/*`) | Package autonomous adapters (`packages/core/src/autonomous/*`) | 🔴 Deprecated; consolidate v10.7.0 | v10.7.0 |
+| Root cycle phases (`src/lifecycle/phase-*.ts`) | Package phase handlers (`packages/core/src/autonomous/phase-handlers/`) | 🟡 Routed through package bridges | v11.0.0 |
+| Root budget enforcement (`src/budget/`) | Package cost control (`packages/core/src/runtime/cost-control.ts`) | 🟡 Routed through package bridges | v11.0.0 |
+
+**Key:** Runtime execution flows through the unified `CycleRunner`, which orchestrates all autonomy phases (audit, execute, review, gate). Direct use of root `AgentForgeSession` is unsupported after v11.0.0.
+
+---
+
+## File Structure & Artifacts
 
 | Deprecated Surface | Canonical Location | Status | Action |
 |---|---|---|---|
-| `src/server/` (full tree) | `packages/server/src/` | 🔴 Delete v10.7.0 | Root server purge |
+| `src/server/` (full tree) | `packages/server/src/` | ✅ Deleted v10.7.0 | Complete |
 | `src/cli/compat/` bridges | Direct imports from `packages/core` | 🔴 Delete v10.7.0 | Remove compat shims |
 | `src/autonomous/*` | `packages/core/src/autonomous/*` | 🔴 Migrate & delete v10.7.0 | Runtime consolidation |
 | `dashboard/` HTML/pages | `packages/dashboard/` | ✅ Deleted v11.0.0 | Complete |
@@ -110,7 +153,7 @@ AgentForge transitioned from a monolithic root `src/` tree to a modular `package
 
 **Removals:**
 - ❌ Root CLI commands removed entirely (no delegation possible)
-- ❌ Root server removed from package.json bin/scripts
+- ✅ Root server removed from package.json bin/scripts (completed v10.7.0)
 - ❌ `/api/v1/*` routes removed; only `/api/v5/` supported
 
 **Behavior changes:**
@@ -126,7 +169,7 @@ AgentForge transitioned from a monolithic root `src/` tree to a modular `package
 - ❌ All compatibility shims deleted
 - ❌ `tsconfig.json` no longer includes root paths; only `packages/*`
 - ❌ Root CLI index (`src/cli/index.ts`) removed
-- ❌ Root server bootstrap (`src/server/main.ts`) removed
+- ✅ Root server bootstrap (`src/server/main.ts`) removed (completed v10.7.0)
 
 **Final state:**
 - Package stack is the only runtime
@@ -159,19 +202,19 @@ Root commands will fail entirely; package commands required.
 
 ### Users on Root Server
 
-**Current (v10.5.1+):**
-```bash
-# Deprecated (still boots, but v10.7.0 will remove)
-npm run start:root  # or custom root server script
+> **v10.7.0+:** The root server (`src/server/main.ts`) has been deleted. Only the package server remains.
 
-# Use instead (canonical)
+**Canonical server (v10.7.0+):**
+```bash
+# Start via package CLI
 npm exec agentforge -- start
-# OR
+
+# Or directly via package script
+node packages/server/dist/main.js
+
+# Or via npm workspace
 npm --workspace @agentforge/server start
 ```
-
-**After v10.7.0:**
-Root server no longer available; only package server.
 
 ### Users on Legacy Dashboard
 
@@ -224,7 +267,7 @@ git diff --cached --name-only | grep -E '^src/(server|cli/compat)/' && \
 | `packages/dashboard/package.json` | `6.0.0` | 🔴 Drift | `10.7.0` |
 | `packages/cli/package.json` | `6.0.0` | 🔴 Drift | `10.7.0` |
 | `src/index.ts` plugin export | `0.1.0` | 🔴 Stale | Delete or sync |
-| Root server identifies as | `v6.2` | 🔴 Incorrect | `v10.7.0` |
+| Root server identifies as | N/A | ✅ Deleted v10.7.0 | N/A |
 | Package server identifies as | `v6.0` | 🔴 Incorrect | `v10.7.0` |
 
 **Action:** v10.7.0 sprint aligns all workspace manifests and runtime version strings to a single release line.
@@ -236,8 +279,8 @@ git diff --cached --name-only | grep -E '^src/(server|cli/compat)/' && \
 - **Owners:** Platform/Runtime lead, CLI lead, Docs lead
 - **Reviewers:** All contributors
 - **Update frequency:** Per minor release (v10.x → v11.x, etc.)
-- **Last updated:** v10.5.1
-- **Next review:** v10.7.0 convergence merge
+- **Last updated:** v10.7.0 (root server purge sprint)
+- **Next review:** v11.0.0 convergence merge
 
 ### Change Protocol
 
@@ -259,7 +302,7 @@ A: Yes, until v11.0.0. It will print warnings. After v11.0.0, you must use the p
 A: Before v11.0.0, add `AGENTFORGE_SUPPRESS_DEPRECATION=1` to suppress warnings. After v11.0.0, migrate scripts to use `agentforge <cmd>` from `packages/cli`. See _Migration Paths by Entrypoint_ above.
 
 **Q: Is the root server still functional?**  
-A: Yes, until v10.7.0. After v10.7.0, only the package server exists. Update your startup scripts to use `agentforge start` instead of root server bootstrap.
+A: No. The root server (`src/server/main.ts`) was deleted in v10.7.0. Only the package server exists. Use `agentforge start` (package CLI) or `node packages/server/dist/main.js` directly.
 
 **Q: What about existing sessions or cycles from the old server?**  
 A: The package server reads `.agentforge/` artifacts written by both root and package paths. Existing data is compatible. The server bootstrap is the only thing changing, not the artifact format.

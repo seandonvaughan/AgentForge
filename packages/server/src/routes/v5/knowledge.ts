@@ -1,9 +1,53 @@
 import type { FastifyInstance } from 'fastify';
-import { KnowledgeGraph } from '@agentforge/core';
+import type { WorkspaceAdapter } from '@agentforge/db';
+import { KnowledgeGraph, loadKnowledgeEntities } from '@agentforge/core';
 
-const graph = new KnowledgeGraph();
+export interface KnowledgeRoutesOptions {
+  /**
+   * WorkspaceAdapter for SQLite-backed KV persistence. When provided,
+   * entities and relationships survive server restarts (stored under
+   * `knowledge:graph:entities` / `knowledge:graph:relationships`).
+   * When omitted the graph operates purely in-memory.
+   */
+  adapter?: WorkspaceAdapter | undefined;
+  /**
+   * Absolute path to the project root — used to locate
+   * `.agentforge/knowledge/entities.jsonl` so the in-memory graph is
+   * hydrated from entities written by past audit and review phases.
+   *
+   * When omitted the graph starts empty (backward-compat with tests that
+   * do not need disk-backed state).
+   *
+   * Typed as `string | undefined` (rather than optional `?`) so callers
+   * can safely pass `opts.projectRoot` (which is `string | undefined`)
+   * without triggering exactOptionalPropertyTypes TS2379.
+   */
+  projectRoot?: string | undefined;
+}
 
-export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
+export async function knowledgeRoutes(
+  app: FastifyInstance,
+  opts: KnowledgeRoutesOptions = {},
+): Promise<void> {
+  // Adapter-backed construction hydrates from the KV store automatically,
+  // ensuring entities and relationships survive server restarts.
+  const graph = new KnowledgeGraph(opts.adapter);
+
+  // Also hydrate from entities.jsonl written by audit/review phases so the
+  // /knowledge page is populated from cycle-accumulated entity data even when
+  // the adapter KV store is empty (e.g. first run after a data directory move).
+  if (opts.projectRoot) {
+    const persisted = loadKnowledgeEntities(opts.projectRoot);
+    for (const entity of persisted) {
+      graph.addEntity({
+        name: entity.name,
+        type: entity.type,
+        ...(entity.description !== undefined ? { description: entity.description } : {}),
+        properties: entity.properties,
+      });
+    }
+  }
+
   // GET /api/v5/knowledge/entities — list all entities, optional ?type= filter
   app.get('/api/v5/knowledge/entities', async (req, reply) => {
     const q = req.query as { type?: string };

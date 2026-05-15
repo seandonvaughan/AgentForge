@@ -7,9 +7,9 @@ import {
   type GateVerdictInput,
   type GateVerdictMemoryWriter,
   type GateVerdictMetadata,
+  type SessionMemoryEntry,
+  type CycleMemoryEntry,
 } from "@agentforge/core";
-import type { SessionMemoryEntry } from "../../src/memory/session-memory-manager.js";
-import type { CycleMemoryEntry } from "../../packages/core/src/memory/types.js";
 
 // ---------------------------------------------------------------------------
 // Helpers

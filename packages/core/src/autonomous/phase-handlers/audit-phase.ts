@@ -12,6 +12,7 @@ import { writeFileSync, mkdirSync, readFileSync, readdirSync, existsSync } from 
 import { join, dirname } from 'node:path';
 import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
 import type { CycleMemoryEntry } from '../../memory/types.js';
+import { writeKnowledgeEntry } from '../../knowledge/persistence.js';
 
 export const AUDIT_PHASE_DEFAULT_TOOLS = ['Read', 'Bash', 'Glob', 'Grep'];
 
@@ -177,6 +178,19 @@ Produce a 1-paragraph executive summary + a bulleted list of 5-10 concrete findi
   } catch (err) {
     status = 'failed';
     error = err instanceof Error ? err.message : String(err);
+  }
+
+  // Persist entity-like terms extracted from the audit findings to the
+  // knowledge graph store (.agentforge/knowledge/entities.jsonl).
+  // This is the write hook that populates the /knowledge page — without it
+  // the in-memory KnowledgeGraph the server exposes is always empty.
+  if (findings) {
+    writeKnowledgeEntry(ctx.projectRoot, {
+      text: findings,
+      source: 'audit',
+      tags: [`sprint:v${ctx.sprintVersion}`, 'audit-findings'],
+      cycleId: ctx.cycleId,
+    });
   }
 
   const durationMs = Date.now() - startedAt;

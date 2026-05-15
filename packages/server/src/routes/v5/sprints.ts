@@ -1,6 +1,35 @@
 import type { FastifyInstance } from 'fastify';
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve, sep } from 'node:path';
+
+/**
+ * Sprint version/id string validator.
+ *
+ * Accepts:
+ *   - Numeric semver  ("15.0.0", "107.3.12")
+ *   - Suffixed versions ("4.7b", "9.5-rc1")
+ *   - Hyphenated names ("phase-active", "sprint-alpha")
+ *
+ * Rejects anything that could cause path traversal:
+ *   - Must start with alphanumeric (rules out ".." which starts with ".")
+ *   - No "/" (path separators are never valid in a sprint id)
+ *   - No "%" (URL-encoding attempts)
+ *   - No whitespace or shell-special characters
+ *
+ * safeJoin() provides a second containment layer after this check.
+ */
+const SAFE_VERSION = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
+
+/**
+ * Resolve `child` relative to `base` and ensure the result stays inside `base`.
+ * Returns null if the resolved path would escape `base` (e.g. via `../`).
+ */
+function safeJoin(base: string, child: string): string | null {
+  const resolved = resolve(join(base, child));
+  const baseWithSep = base.endsWith(sep) ? base : base + sep;
+  if (resolved !== base && !resolved.startsWith(baseWithSep)) return null;
+  return resolved;
+}
 
 /** Normalize a raw sprint JSON (flat or nested-in-sprints-array) into a
  *  consistent shape the dashboard can render. */
@@ -169,7 +198,18 @@ export async function sprintsRoutes(app: FastifyInstance, opts: { projectRoot: s
 
   app.get('/api/v5/sprints/:version', async (req, reply) => {
     const { version } = req.params as { version: string };
-    const file = join(sprintsDir, `v${version}.json`);
+
+    // Validate before constructing the file path. SAFE_VERSION rejects any
+    // path-traversal sequences (e.g. "../", "%2F") before they can escape
+    // the sprints directory. safeJoin() provides a second layer of containment.
+    if (!SAFE_VERSION.test(version)) {
+      return reply.status(400).send({ error: 'Invalid sprint version', code: 'INVALID_VERSION' });
+    }
+
+    const file = safeJoin(sprintsDir, `v${version}.json`);
+    if (!file) {
+      return reply.status(400).send({ error: 'Invalid sprint version', code: 'INVALID_VERSION' });
+    }
 
     if (!existsSync(file)) {
       return reply.status(404).send({ error: 'Sprint not found', code: 'SPRINT_NOT_FOUND' });

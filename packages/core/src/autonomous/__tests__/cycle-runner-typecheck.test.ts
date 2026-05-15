@@ -1,0 +1,157 @@
+// packages/core/src/autonomous/__tests__/cycle-runner-typecheck.test.ts
+//
+// Unit tests for STAGE 3.5 — pre-verify typecheck.
+//
+// Coverage:
+//   - KillSwitch.checkBuildResult   (success / failure / soft-mode / sticky)
+//   - KillSwitch.checkTypeCheckResult (success / failure / soft-mode)
+//   - DEFAULT_CYCLE_CONFIG commands  (buildCommand / typeCheckCommand match spec)
+//
+// The CycleRunner wires these together in runPreVerifyTypeCheck(); the kill-switch
+// methods are the authoritative decision points, so testing them directly gives
+// tight coverage without spinning up a full cycle mock.
+
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { KillSwitch } from '../kill-switch.js';
+import { CycleStage } from '../types.js';
+import type { CycleConfig } from '../types.js';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function makeConfig(qualityOverrides: Partial<CycleConfig['quality']> = {}): CycleConfig {
+  return {
+    budget: { perCycleUsd: 200, perItemUsd: 1.5, perAgentUsd: 60, allowOverageApproval: true },
+    limits: {
+      maxItemsPerSprint: 20,
+      maxDurationMinutes: 180,
+      maxConsecutiveFailures: 5,
+      maxExecutePhaseFailureRate: 0.5,
+      maxExecutePhaseParallelism: 10,
+      maxItemRetries: 1,
+    },
+    quality: {
+      testPassRateFloor: 0.95,
+      allowRegression: false,
+      requireBuildSuccess: true,
+      requireTypeCheckSuccess: true,
+      ...qualityOverrides,
+    },
+    git: {
+      branchPrefix: 'autonomous/',
+      baseBranch: 'main',
+      refuseCommitToBaseBranch: true,
+      includeDiagnosticBranchOnFailure: false,
+      maxFilesPerCommit: 100,
+    },
+    pr: { draft: false, assignReviewer: null, labelPrefix: 'autonomous', labels: [], titleTemplate: '' },
+    sourcing: { lookbackDays: 7, minProposalConfidence: 0.6, includeTodoMarkers: true, todoMarkerPattern: '' },
+    testing: {
+      command: 'pnpm exec vitest run',
+      timeoutMinutes: 20,
+      reporter: 'json',
+      saveRawLog: false,
+      buildCommand: 'pnpm --filter @agentforge/core build',
+      typeCheckCommand: 'pnpm exec tsc --noEmit --pretty false',
+    },
+    scoring: { agentId: 'backlog-scorer', maxRetries: 3, fallbackToStatic: true },
+    logging: { logDir: '/tmp/cycles', retainCycles: 5 },
+    safety: {
+      stopFilePath: '/tmp/STOP',
+      secretScanEnabled: false,
+      verifyCleanWorkingTreeBeforeStart: false,
+      workingTreeWhitelist: [],
+    },
+    retry: { maxAutoRetries: 1, requireApprovalAfter: 1, reExecuteOnRetry: false },
+  } as unknown as CycleConfig;
+}
+
+/** Stub signal handlers so multiple KillSwitch instances don't stack listeners. */
+beforeEach(() => {
+  vi.spyOn(KillSwitch.prototype, 'installSignalHandlers').mockReturnValue(undefined);
+});
+
+function makeKillSwitch(qualityOverrides?: Partial<CycleConfig['quality']>): KillSwitch {
+  return new KillSwitch(makeConfig(qualityOverrides), 'test-cycle-id', Date.now(), '/tmp');
+}
+
+// ---------------------------------------------------------------------------
+// KillSwitch.checkBuildResult
+// ---------------------------------------------------------------------------
+
+describe('KillSwitch.checkBuildResult', () => {
+  it('returns null when the build succeeds', () => {
+    const ks = makeKillSwitch();
+    expect(ks.checkBuildResult({ success: true })).toBeNull();
+  });
+
+  it('trips with buildFailure when build fails and requireBuildSuccess is true', () => {
+    const ks = makeKillSwitch({ requireBuildSuccess: true });
+    const trip = ks.checkBuildResult({ success: false, error: 'TS2304: cannot find name X' });
+    expect(trip).not.toBeNull();
+    expect(trip!.reason).toBe('buildFailure');
+    expect(trip!.detail).toBe('TS2304: cannot find name X');
+    expect(trip!.stageAtTrip).toBe(CycleStage.VERIFY);
+  });
+
+  it('returns null when build fails but requireBuildSuccess is false (soft mode)', () => {
+    const ks = makeKillSwitch({ requireBuildSuccess: false });
+    // Soft mode: build error is logged but does not kill the cycle.
+    expect(ks.checkBuildResult({ success: false, error: 'build error' })).toBeNull();
+  });
+
+  it('uses a fallback detail message when no error text is supplied', () => {
+    const ks = makeKillSwitch({ requireBuildSuccess: true });
+    const trip = ks.checkBuildResult({ success: false });
+    expect(trip!.detail).toBe('build failed');
+  });
+
+  it('is sticky — returns the original trip on all subsequent calls', () => {
+    const ks = makeKillSwitch({ requireBuildSuccess: true });
+    const first = ks.checkBuildResult({ success: false, error: 'first error' });
+    // A later "success" call still returns the same tripped state.
+    const second = ks.checkBuildResult({ success: true });
+    expect(second).toBe(first);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// KillSwitch.checkTypeCheckResult
+// ---------------------------------------------------------------------------
+
+describe('KillSwitch.checkTypeCheckResult', () => {
+  it('returns null when typecheck succeeds', () => {
+    const ks = makeKillSwitch();
+    expect(ks.checkTypeCheckResult({ success: true })).toBeNull();
+  });
+
+  it('trips with typeCheckFailure when typecheck fails and requireTypeCheckSuccess is true', () => {
+    const ks = makeKillSwitch({ requireTypeCheckSuccess: true });
+    const trip = ks.checkTypeCheckResult({ success: false, error: 'Type error: Property x does not exist on type Y' });
+    expect(trip).not.toBeNull();
+    expect(trip!.reason).toBe('typeCheckFailure');
+    expect(trip!.stageAtTrip).toBe(CycleStage.VERIFY);
+  });
+
+  it('returns null when typecheck fails but requireTypeCheckSuccess is false', () => {
+    const ks = makeKillSwitch({ requireTypeCheckSuccess: false });
+    expect(ks.checkTypeCheckResult({ success: false, error: 'type error' })).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DEFAULT_CYCLE_CONFIG — commands must match the sprint spec exactly
+// ---------------------------------------------------------------------------
+
+describe('DEFAULT_CYCLE_CONFIG typecheck commands', () => {
+  it('buildCommand targets @agentforge/core with pnpm --filter', async () => {
+    const { DEFAULT_CYCLE_CONFIG } = await import('../config-loader.js');
+    expect(DEFAULT_CYCLE_CONFIG.testing.buildCommand).toBe('pnpm --filter @agentforge/core build');
+  });
+
+  it('typeCheckCommand disables ANSI output via --pretty false', async () => {
+    const { DEFAULT_CYCLE_CONFIG } = await import('../config-loader.js');
+    expect(DEFAULT_CYCLE_CONFIG.testing.typeCheckCommand).toBe('pnpm exec tsc --noEmit --pretty false');
+  });
+});

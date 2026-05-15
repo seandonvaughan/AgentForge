@@ -764,6 +764,10 @@ export async function cyclesRoutes(
     let lastStage = 'plan';
     let startedAt: string | null = null;
     let sprintVersion: string | null = null;
+    // lastEventAt tracks the epoch ms of the most-recent event — used by the
+    // v15.1.0 staleness heuristic to infer crashed cycles whose session record
+    // was lost on server restart.
+    let lastEventAt = 0;
     if (existsSync(eventsFile)) {
       try {
         const text = readFileSync(eventsFile, 'utf8');
@@ -775,6 +779,10 @@ export async function cyclesRoutes(
             if (ev.sprintVersion && !sprintVersion) sprintVersion = ev.sprintVersion;
             if (ev.stage) lastStage = ev.stage;
             else if (ev.type === 'phase.start' && ev.phase) lastStage = ev.phase;
+            if (ev.at) {
+              const t = new Date(ev.at).getTime();
+              if (t > lastEventAt) lastEventAt = t;
+            }
           } catch { /* skip malformed lines */ }
         }
       } catch { /* fall through to defaults */ }
@@ -839,6 +847,45 @@ export async function cyclesRoutes(
         startedAt: startIso,
         completedAt,
         durationMs: Date.now() - new Date(startIso).getTime(),
+        cost: { totalUsd: totalCostUsd, budgetUsd: 200, byAgent: costByAgent, byPhase: costByPhase },
+        tests: { passed: testsPassed, failed: testsFailed, skipped: 0, total: testsTotal, passRate, newFailures: [] },
+        git: { branch: '', commitSha: null, filesChanged: [] },
+        pr: { url: null, number: null, draft: false },
+        agentRunCount,
+        cycleInProgress: false,
+        partialTerminal: true,
+      });
+    }
+
+    // v15.1.0: Gap fix — killed cycles with no session registry entry.
+    //
+    // When budget enforcement kills a cycle between server restarts the session
+    // record is gone.  Without this check the endpoint returns 404+cycleInProgress
+    // forever because the filesystem alone cannot confirm the cycle is dead.
+    // The staleness heuristic closes that gap: if there is NO session record at
+    // all AND every event is more than 5 minutes old, the cycle is almost
+    // certainly dead.  We promote it to 200+partialTerminal so the dashboard
+    // stops polling and shows a useful final state.
+    //
+    // We only apply this when !session (not when session.status === 'running')
+    // to avoid false-positives during a slow phase where an alive process has
+    // not emitted events recently.
+    if (!session && lastEventAt > 0 && Date.now() - lastEventAt > 5 * 60_000) {
+      const completedAt = new Date(lastEventAt).toISOString();
+      const startIso = startedAt ?? completedAt;
+      const inferredStage =
+        lastStage === 'killed' || lastStage === 'crashed' || lastStage === 'failed'
+          ? lastStage
+          : 'crashed';
+      return reply.status(200).send({
+        cycleId: id,
+        sprintVersion,
+        stage: inferredStage,
+        status: inferredStage,
+        exitNote: `Session record unavailable — inferred as ${inferredStage} from event staleness (last event ${completedAt})`,
+        startedAt: startIso,
+        completedAt,
+        durationMs: lastEventAt - new Date(startIso).getTime(),
         cost: { totalUsd: totalCostUsd, budgetUsd: 200, byAgent: costByAgent, byPhase: costByPhase },
         tests: { passed: testsPassed, failed: testsFailed, skipped: 0, total: testsTotal, passRate, newFailures: [] },
         git: { branch: '', commitSha: null, filesChanged: [] },

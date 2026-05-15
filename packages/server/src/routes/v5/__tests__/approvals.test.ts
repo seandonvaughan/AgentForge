@@ -3,21 +3,39 @@
  *
  * Critical production scenario covered: approvals must survive server restarts.
  * The old in-memory Map was silently lost on every restart — these tests verify
- * that the SQLite-backed implementation persists across separate app instances
- * sharing the same project root (audit.db file).
+ * that the WorkspaceAdapter-backed implementation persists across separate app
+ * instances sharing the same SQLite database file.
+ *
+ * Two test modes:
+ *  - Primary (WorkspaceAdapter): exercises the production code path where an
+ *    adapter is injected via `opts.adapter`.
+ *  - Fallback (standalone audit.db): exercises the no-adapter boot path via
+ *    `opts.projectRoot` — kept to ensure the fallback stays green.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { WorkspaceAdapter } from '@agentforge/db';
 import { approvalsRoutes } from '../approvals.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-async function buildApp(projectRoot: string): Promise<FastifyInstance> {
+function makeAdapter(dbPath: string): WorkspaceAdapter {
+  return new WorkspaceAdapter({ dbPath, workspaceId: 'test-ws' });
+}
+
+async function buildAppWithAdapter(adapter: WorkspaceAdapter): Promise<FastifyInstance> {
+  const app = Fastify({ logger: false });
+  await approvalsRoutes(app, { adapter });
+  await app.ready();
+  return app;
+}
+
+async function buildAppWithProjectRoot(projectRoot: string): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
   await approvalsRoutes(app, { projectRoot });
   await app.ready();
@@ -35,19 +53,25 @@ function makeBody(overrides: Record<string, unknown> = {}): Record<string, unkno
 }
 
 // ---------------------------------------------------------------------------
-// Setup / teardown
+// Setup / teardown — adapter path (primary production path)
 // ---------------------------------------------------------------------------
 
 let tmpRoot: string;
+let adapter: WorkspaceAdapter;
 let app: FastifyInstance;
 
 beforeEach(async () => {
   tmpRoot = mkdtempSync(join(tmpdir(), 'agentforge-approvals-'));
-  app = await buildApp(tmpRoot);
+  const dbDir = join(tmpRoot, '.agentforge');
+  mkdirSync(dbDir, { recursive: true });
+  adapter = makeAdapter(join(dbDir, 'workspace.db'));
+  app = await buildAppWithAdapter(adapter);
 });
 
 afterEach(async () => {
   await app.close();
+  // Route does NOT own the adapter — caller is responsible for closing it.
+  adapter.close();
   rmSync(tmpRoot, { recursive: true, force: true });
 });
 
@@ -293,11 +317,13 @@ describe('PATCH /api/v5/approvals/:id/rollback', () => {
 });
 
 // ---------------------------------------------------------------------------
-// PERSISTENCE TEST — the critical regression guard
+// PERSISTENCE TEST — the critical regression guard (adapter path)
 // ---------------------------------------------------------------------------
 
-describe('Persistence across server restarts', () => {
-  it('retains approvals after the Fastify app is closed and reopened with the same projectRoot', async () => {
+describe('Persistence across server restarts (WorkspaceAdapter)', () => {
+  it('retains approvals after the adapter is closed and a new one opens the same DB file', async () => {
+    const dbPath = join(tmpRoot, '.agentforge', 'workspace.db');
+
     // Submit an approval in the first app instance
     const createRes = await app.inject({
       method: 'POST',
@@ -307,11 +333,13 @@ describe('Persistence across server restarts', () => {
     expect(createRes.statusCode).toBe(201);
     const originalId = (createRes.json() as { data: { id: string } }).data.id;
 
-    // Shut down the first app (closes DB connection)
+    // Shut down the first app; caller closes the adapter
     await app.close();
+    adapter.close();
 
-    // Spin up a fresh app pointing at the SAME project root
-    const app2 = await buildApp(tmpRoot);
+    // Spin up a fresh adapter + app pointing at the SAME DB file
+    const adapter2 = makeAdapter(dbPath);
+    const app2 = await buildAppWithAdapter(adapter2);
     try {
       const listRes = await app2.inject({ method: 'GET', url: '/api/v5/approvals' });
       expect(listRes.statusCode).toBe(200);
@@ -324,10 +352,13 @@ describe('Persistence across server restarts', () => {
       expect(getRes.statusCode).toBe(200);
     } finally {
       await app2.close();
+      adapter2.close();
     }
   });
 
   it('retains approved status across restart (state mutations persist too)', async () => {
+    const dbPath = join(tmpRoot, '.agentforge', 'workspace.db');
+
     const id = (
       (await app.inject({ method: 'POST', url: '/api/v5/approvals', payload: makeBody() })).json() as {
         data: { id: string };
@@ -339,8 +370,10 @@ describe('Persistence across server restarts', () => {
       payload: { reviewedBy: 'alice', notes: 'Ship it' },
     });
     await app.close();
+    adapter.close();
 
-    const app2 = await buildApp(tmpRoot);
+    const adapter2 = makeAdapter(dbPath);
+    const app2 = await buildAppWithAdapter(adapter2);
     try {
       const res = await app2.inject({ method: 'GET', url: `/api/v5/approvals/${id}` });
       const { data } = res.json() as {
@@ -351,6 +384,44 @@ describe('Persistence across server restarts', () => {
       expect(data.notes).toBe('Ship it');
     } finally {
       await app2.close();
+      adapter2.close();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// FALLBACK PERSISTENCE TEST — standalone audit.db path
+// ---------------------------------------------------------------------------
+
+describe('Persistence across server restarts (standalone audit.db fallback)', () => {
+  it('retains approvals after the Fastify app is closed and reopened with the same projectRoot', async () => {
+    const standaloneRoot = mkdtempSync(join(tmpdir(), 'agentforge-standalone-'));
+    const standaloneApp = await buildAppWithProjectRoot(standaloneRoot);
+
+    let originalId: string;
+    try {
+      const createRes = await standaloneApp.inject({
+        method: 'POST',
+        url: '/api/v5/approvals',
+        payload: makeBody({ proposalId: 'standalone-persist', executionId: 'exec-standalone' }),
+      });
+      expect(createRes.statusCode).toBe(201);
+      originalId = (createRes.json() as { data: { id: string } }).data.id;
+    } finally {
+      await standaloneApp.close();
+    }
+
+    const standaloneApp2 = await buildAppWithProjectRoot(standaloneRoot);
+    try {
+      const listRes = await standaloneApp2.inject({ method: 'GET', url: '/api/v5/approvals' });
+      expect(listRes.statusCode).toBe(200);
+      const { data } = listRes.json() as { data: Array<{ id: string; proposalId: string }> };
+      expect(data).toHaveLength(1);
+      expect(data[0]!.id).toBe(originalId!);
+      expect(data[0]!.proposalId).toBe('standalone-persist');
+    } finally {
+      await standaloneApp2.close();
+      rmSync(standaloneRoot, { recursive: true, force: true });
     }
   });
 });

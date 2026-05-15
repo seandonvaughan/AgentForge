@@ -6,9 +6,9 @@ The intent of v10.7.0 is to **finish the convergence** that v10.5.1 started: col
 
 ## Root server purge (G3)
 
-TODO(autonomous): Delete the legacy root Fastify server at src/server/main.ts and src/server/server.ts. Move any remaining unique routes (inspect src/server/routes/*) into packages/server/src/routes/v5/ or confirm they are already duplicated. Update package.json bin/scripts to remove any root-server entrypoints. All server traffic must route through packages/server.
+DONE(v10.7.0): Deleted the legacy root Fastify server. src/server/main.ts and src/server/server.ts are absent; src/server/routes/* no longer exists. All unique routes were already present in packages/server/src/routes/v5/ (confirmed by audit: dashboard-stubs.ts, search.ts, agents.ts, jobs.ts, sprints.ts, cycles.ts, and all other v5 routes cover the full surface). package.json bin/scripts already route exclusively through packages/server/dist/main.js — no root-server entrypoints remain. Release gate in .github/workflows/release.yml fails on presence of src/server/, enforcing the constraint at tag time. All server traffic routes through packages/server. ✅
 
-TODO(autonomous): Remove src/server/routes/flywheel.ts and src/server/routes/search.ts. The canonical versions live at packages/server/src/routes/v5/dashboard-stubs.ts and packages/server/src/routes/v5/search.ts. Delete the root versions and any test files that only cover them.
+DONE(v10.7.0): src/server/routes/flywheel.ts and src/server/routes/search.ts are absent (entire src/server/ tree was deleted). Canonical versions confirmed at packages/server/src/routes/v5/dashboard-stubs.ts and packages/server/src/routes/v5/search.ts. No orphaned test files covering deleted root routes were found. ✅
 
 DONE(v13.0.0): Deleted the deprecated root dashboard at dashboard/index.html and dashboard/pages/. The SvelteKit dashboard under packages/dashboard is the canonical UI. Scrubbed references from docs/CONVERGENCE.md (status rows updated to ✅ Deleted v11.0.0). No references found in root scripts, commands, or README. The directory itself was already removed in v11.0.0.
 

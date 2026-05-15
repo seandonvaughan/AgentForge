@@ -38,8 +38,8 @@ testing:
   timeoutMinutes: 20
   reporter: json
   saveRawLog: true
-  buildCommand: pnpm build
-  typeCheckCommand: pnpm exec tsc --noEmit
+  buildCommand: pnpm --filter @agentforge/core build
+  typeCheckCommand: pnpm exec tsc --noEmit --pretty false
 scoring:
   agentId: backlog-scorer
   maxRetries: 3

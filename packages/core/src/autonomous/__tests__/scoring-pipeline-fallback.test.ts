@@ -7,10 +7,16 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { ScoringPipeline } from '../scoring-pipeline.js';
-import type { AdapterForScoring, RuntimeForScoring } from '../scoring-pipeline.js';
+import type { AdapterForScoring, RuntimeForScoring, ScoringPipelineResult } from '../scoring-pipeline.js';
 import type { BacklogItem } from '../proposal-to-backlog.js';
 import type { CycleConfig } from '../types.js';
 import type { CycleLogger } from '../cycle-logger.js';
+
+// Helper: access private staticFallback via type assertion (testing internal
+// logic in isolation without needing to force effortEstimatorFallback to throw).
+type PipelineWithPrivates = {
+  staticFallback: (backlog: BacklogItem[]) => Promise<ScoringPipelineResult>;
+};
 
 // ---------------------------------------------------------------------------
 // Fixture helpers
@@ -328,5 +334,89 @@ describe('ScoringPipeline — effort-estimator rationale format', () => {
 
     const item = [...result.withinBudget, ...result.requiresApproval].at(0);
     expect(item?.rationale).toContain('P0');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: staticFallback uses p50CostByTag instead of flat perItemUsd
+// Verifies the one-liner: estimatedCostUsd = p50CostByTag[item.tags[0]] ?? defaultCost
+// ---------------------------------------------------------------------------
+
+describe('ScoringPipeline — staticFallback: p50CostByTag lookup', () => {
+  // Shortcut to call the private staticFallback method directly without needing
+  // to force effortEstimatorFallback to throw through the full ladder.
+  function callStaticFallback(
+    pipeline: ScoringPipeline,
+    backlog: BacklogItem[],
+  ): Promise<ScoringPipelineResult> {
+    return (pipeline as unknown as PipelineWithPrivates).staticFallback(backlog);
+  }
+
+  it('uses tag-specific p50 cost for known tags', async () => {
+    const p50CostByTag = { fix: 1.10, feature: 1.65, doc: 0.55 };
+    const adapter: AdapterForScoring = {
+      getSprintHistory: vi.fn().mockResolvedValue([]),
+      getCostMedians: vi.fn().mockResolvedValue({}),
+      getP50CostByTag: vi.fn().mockResolvedValue(p50CostByTag),
+      getTeamState: vi.fn().mockResolvedValue({ utilization: {} }),
+    };
+    const backlog: BacklogItem[] = [
+      { id: 'a', title: 'Fix bug', description: '', priority: 'P1', tags: ['fix'],     source: 'todo-marker', confidence: 0.8 },
+      { id: 'b', title: 'Feature',  description: '', priority: 'P1', tags: ['feature'], source: 'todo-marker', confidence: 0.8 },
+      { id: 'c', title: 'Doc',      description: '', priority: 'P2', tags: ['doc'],     source: 'todo-marker', confidence: 0.7 },
+    ];
+
+    const pipeline = new ScoringPipeline(makeFailingRuntime(), adapter, makeConfig(), makeLogger());
+    const result = await callStaticFallback(pipeline, backlog);
+
+    const all = [...result.withinBudget, ...result.requiresApproval];
+    expect(all.find(r => r.itemId === 'a')?.estimatedCostUsd).toBeCloseTo(1.10);
+    expect(all.find(r => r.itemId === 'b')?.estimatedCostUsd).toBeCloseTo(1.65);
+    expect(all.find(r => r.itemId === 'c')?.estimatedCostUsd).toBeCloseTo(0.55);
+  });
+
+  it('falls back to perItemUsd (defaultCost) for unrecognised tags', async () => {
+    const adapter: AdapterForScoring = {
+      getSprintHistory: vi.fn().mockResolvedValue([]),
+      getCostMedians: vi.fn().mockResolvedValue({}),
+      // p50 map has no entry for "unknown-tag"
+      getP50CostByTag: vi.fn().mockResolvedValue({ fix: 1.10 }),
+      getTeamState: vi.fn().mockResolvedValue({ utilization: {} }),
+    };
+    const backlog: BacklogItem[] = [
+      { id: 'x', title: 'Mystery task', description: '', priority: 'P1', tags: ['unknown-tag'], source: 'todo-marker', confidence: 0.7 },
+    ];
+
+    const pipeline = new ScoringPipeline(makeFailingRuntime(), adapter, makeConfig(), makeLogger());
+    const result = await callStaticFallback(pipeline, backlog);
+
+    const item = [...result.withinBudget, ...result.requiresApproval].at(0);
+    // defaultCost = config.budget.perItemUsd = 1.5 (from makeConfig)
+    expect(item?.estimatedCostUsd).toBeCloseTo(1.5);
+  });
+
+  it('falls back to perItemUsd when getP50CostByTag adapter throws', async () => {
+    const adapter: AdapterForScoring = {
+      getSprintHistory: vi.fn().mockResolvedValue([]),
+      getCostMedians: vi.fn().mockResolvedValue({}),
+      getP50CostByTag: vi.fn().mockRejectedValue(new Error('DB unavailable')),
+      getTeamState: vi.fn().mockResolvedValue({ utilization: {} }),
+    };
+    const backlog: BacklogItem[] = [
+      { id: 'y', title: 'Task', description: '', priority: 'P1', tags: ['fix'], source: 'todo-marker', confidence: 0.8 },
+    ];
+
+    const pipeline = new ScoringPipeline(makeFailingRuntime(), adapter, makeConfig(), makeLogger());
+    const result = await callStaticFallback(pipeline, backlog);
+
+    const item = [...result.withinBudget, ...result.requiresApproval].at(0);
+    // Adapter threw → p50CostByTag is {} → lookup misses → defaultCost applies
+    expect(item?.estimatedCostUsd).toBeCloseTo(1.5);
+  });
+
+  it('result has fallback="static" discriminant', async () => {
+    const pipeline = new ScoringPipeline(makeFailingRuntime(), makeAdapter(), makeConfig(), makeLogger());
+    const result = await callStaticFallback(pipeline, makeBacklogItems(2));
+    expect(result.fallback).toBe('static');
   });
 });

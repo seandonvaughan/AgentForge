@@ -392,13 +392,18 @@ ${JSON.stringify(grounding, null, 2)}
 ## Roster constraint — CRITICAL
 The \`suggestedAssignee\` field MUST be one of the exact kebab-case IDs listed
 below. Do NOT invent generic role names such as "BackendEngineer", "FrontendEngineer",
-"QAEngineer", "InfraEngineer", "CoreAutonomyAgent", "DocsAgent", or any
-PascalCase/camelCase name. Invented names are not routable — the cycle runner
-cannot dispatch an agent that does not exist in the registry. Use "coder" as
-the safe default when no specialist clearly fits.
+"QAEngineer", "InfraEngineer", "SeniorDeveloper", "CoreAutonomyAgent", "DocsAgent",
+or any PascalCase/camelCase/space-separated name. Invented names are automatically
+downgraded to "coder" at runtime, discarding all specialist routing and wasting
+the cycle's specialist-selection work.
 
-Valid agent IDs (copy one verbatim, no modifications):
+Valid agent IDs — copy one verbatim, no modifications:
 ${this.getAgentRoster().join(', ')}
+
+⚠️  If you find yourself wanting to use a name NOT in the agent roster above,
+RE-READ the roster — there is almost certainly a better match like \`coder\`,
+\`frontend-dev\`, or \`backend-qa\`. Inventing agent names degrades cycle quality
+and will be automatically replaced with "coder", losing all specialist routing.
 
 ## Cost calibration (use as baseline, not training priors)
 Recent actual cost per item from grounding.history:

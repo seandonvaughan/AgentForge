@@ -17,6 +17,8 @@ import {
   parseGateVerdict,
   loadPriorGateKnownDebt,
   buildKnownDebtSection,
+  buildKnownDebtSectionFromList,
+  resolveKnownDebt,
   type PriorGateContext,
 } from '../gate-phase.js';
 import { writeMemoryEntry, readMemoryEntries, type GateVerdictMetadata } from '../../../memory/types.js';
@@ -767,5 +769,169 @@ describe('buildKnownDebtSection', () => {
     };
     const section = buildKnownDebtSection(prior);
     expect(section).toContain('Known pre-existing debt');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildKnownDebtSectionFromList
+//
+// Pure helper that formats a plain string[] into a known-debt prompt section.
+// Used when the caller injects the debt list directly via GatePhaseOptions
+// rather than having it derived from the JSONL store.
+// ---------------------------------------------------------------------------
+
+describe('buildKnownDebtSectionFromList', () => {
+  it('returns an empty string for an empty list', () => {
+    expect(buildKnownDebtSectionFromList([])).toBe('');
+  });
+
+  it('includes the section heading "Known pre-existing debt"', () => {
+    const section = buildKnownDebtSectionFromList(['Some debt item']);
+    expect(section).toContain('Known pre-existing debt');
+  });
+
+  it('formats each item as a bullet', () => {
+    const section = buildKnownDebtSectionFromList([
+      'readCycleRecord duplication',
+      'no-op ternary in sprints.ts',
+    ]);
+    expect(section).toContain('- readCycleRecord duplication');
+    expect(section).toContain('- no-op ternary in sprints.ts');
+  });
+
+  it('includes guidance telling the agent not to reject for these items', () => {
+    const section = buildKnownDebtSectionFromList(['Known issue A']);
+    expect(section).toContain('Do NOT let them drive a REJECT');
+  });
+
+  it('labels the section as "injected" to distinguish it from the JSONL-derived section', () => {
+    const section = buildKnownDebtSectionFromList(['Known issue A']);
+    expect(section).toContain('injected');
+  });
+
+  it('returns a non-empty string for a single-item list', () => {
+    expect(buildKnownDebtSectionFromList(['Single issue'])).not.toBe('');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveKnownDebt
+//
+// Derives the knownDebt string[] from either the caller override or the JSONL
+// store. Exported so callers and tests can verify the resolved list without
+// running the full runGatePhase path.
+// ---------------------------------------------------------------------------
+
+describe('resolveKnownDebt', () => {
+  it('returns the override list when explicitly provided', () => {
+    // File does not exist in tmpRoot — if the override is respected, no error
+    const override = ['Item A', 'Item B'];
+    const result = resolveKnownDebt(tmpRoot, override);
+    expect(result).toEqual(['Item A', 'Item B']);
+  });
+
+  it('returns an empty array when override is an empty array', () => {
+    const result = resolveKnownDebt(tmpRoot, []);
+    expect(result).toEqual([]);
+  });
+
+  it('returns an empty array when no gate-verdict file exists and no override is given', () => {
+    const result = resolveKnownDebt(tmpRoot);
+    expect(result).toEqual([]);
+  });
+
+  it('derives findings from the last gate-verdict when no override is given', () => {
+    writeMemoryEntry(tmpRoot, {
+      type: 'gate-verdict',
+      value: 'Gate approved: Known debt test',
+      metadata: {
+        cycleId: 'cycle-kd-001',
+        verdict: 'approved',
+        rationale: 'Known debt test',
+        criticalFindings: ['Critical debt item'],
+        majorFindings: ['Major debt item A', 'Major debt item B'],
+      } satisfies GateVerdictMetadata,
+      source: 'cycle-kd-001',
+      tags: ['verdict:approved'],
+    });
+
+    const result = resolveKnownDebt(tmpRoot);
+    // Critical findings come first, then major.
+    expect(result).toEqual(['Critical debt item', 'Major debt item A', 'Major debt item B']);
+  });
+
+  it('returns an empty array when the last gate-verdict has no findings', () => {
+    writeMemoryEntry(tmpRoot, {
+      type: 'gate-verdict',
+      value: 'Gate approved: Clean slate',
+      metadata: {
+        cycleId: 'cycle-kd-002',
+        verdict: 'approved',
+        rationale: 'Clean slate',
+        criticalFindings: [],
+        majorFindings: [],
+      } satisfies GateVerdictMetadata,
+      source: 'cycle-kd-002',
+      tags: ['verdict:approved'],
+    });
+
+    const result = resolveKnownDebt(tmpRoot);
+    expect(result).toEqual([]);
+  });
+
+  it('skips the JSONL file read entirely when an override is provided (even empty)', () => {
+    // Write a verdict with findings — if the override path doesn't short-circuit,
+    // the resolved list would include these findings.
+    writeMemoryEntry(tmpRoot, {
+      type: 'gate-verdict',
+      value: 'Gate approved: Should not appear',
+      metadata: {
+        cycleId: 'cycle-kd-skip',
+        verdict: 'approved',
+        rationale: 'Should not appear',
+        criticalFindings: ['Should be skipped'],
+        majorFindings: [],
+      } satisfies GateVerdictMetadata,
+      source: 'cycle-kd-skip',
+      tags: ['verdict:approved'],
+    });
+
+    // Providing an empty array override skips the file read.
+    const result = resolveKnownDebt(tmpRoot, []);
+    expect(result).toEqual([]);
+  });
+
+  it('uses the MOST RECENT gate-verdict when multiple entries exist', () => {
+    // Write an older entry with findings.
+    writeMemoryEntry(tmpRoot, {
+      type: 'gate-verdict',
+      value: 'Gate approved: older',
+      metadata: {
+        cycleId: 'cycle-old',
+        verdict: 'approved',
+        rationale: 'older',
+        criticalFindings: [],
+        majorFindings: ['Old debt'],
+      } satisfies GateVerdictMetadata,
+      source: 'cycle-old',
+    });
+
+    // Write a newer entry — this should win.
+    writeMemoryEntry(tmpRoot, {
+      type: 'gate-verdict',
+      value: 'Gate rejected: newer',
+      metadata: {
+        cycleId: 'cycle-new',
+        verdict: 'rejected',
+        rationale: 'newer issue',
+        criticalFindings: ['Newest critical'],
+        majorFindings: [],
+      } satisfies GateVerdictMetadata,
+      source: 'cycle-new',
+    });
+
+    const result = resolveKnownDebt(tmpRoot);
+    expect(result).toEqual(['Newest critical']);
+    expect(result).not.toContain('Old debt');
   });
 });

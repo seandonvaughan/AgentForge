@@ -29,16 +29,22 @@
   });
 
   // Svelte action: show/close native <dialog>, wire Escape key.
+  // We listen to the `cancel` event (fired by the browser on Escape inside a
+  // modal dialog) rather than a global keydown listener.  Calling preventDefault()
+  // stops the browser's built-in dialog.close() so our store-driven close is the
+  // single code path — this avoids a race between native close and Svelte's
+  // reactive DOM removal.
   function dialogAction(node: HTMLDialogElement) {
-    if (approval) node.showModal();
+    node.showModal();
 
-    function onKeydown(e: KeyboardEvent) {
-      if (e.key === 'Escape') close();
+    function onCancel(e: Event) {
+      e.preventDefault(); // prevent browser's own dialog.close() call
+      close();
     }
-    document.addEventListener('keydown', onKeydown);
+    node.addEventListener('cancel', onCancel);
     return {
       destroy() {
-        document.removeEventListener('keydown', onKeydown);
+        node.removeEventListener('cancel', onCancel);
         // Note: store subscription cleanup is handled by the $effect above —
         // do NOT call unsub here or the modal will stop responding after first close.
       },

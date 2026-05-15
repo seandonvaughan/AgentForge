@@ -14,6 +14,7 @@ import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
 import { writeMemoryEntry, type ReviewFindingMetadata } from '../../memory/types.js';
 import { extractFindingsByLevel } from './gate-phase.js';
 import { collectSprintItemTags } from './sprint-utils.js';
+import { writeKnowledgeEntry } from '../../knowledge/persistence.js';
 
 export const REVIEW_PHASE_DEFAULT_TOOLS = ['Read', 'Bash', 'Glob', 'Grep'];
 export const REVIEW_PHASE_AGENT = 'code-reviewer';
@@ -113,6 +114,18 @@ Do NOT modify any files.`;
       source: ctx.cycleId,
       tags: ['review', 'finding', 'major', `sprint:v${ctx.sprintVersion}`, ...sprintDomainTags],
       metadata: parseReviewFindingMetadata(line, 'MAJOR'),
+    });
+  }
+
+  // Persist entity-like terms extracted from the review output to the knowledge
+  // graph store (.agentforge/knowledge/entities.jsonl).
+  // This completes the write path: cycle output → entity extraction → on-disk KG.
+  if (review) {
+    writeKnowledgeEntry(ctx.projectRoot, {
+      text: review,
+      source: 'review',
+      tags: [`sprint:v${ctx.sprintVersion}`, 'code-review', ...sprintDomainTags],
+      cycleId: ctx.cycleId,
     });
   }
 

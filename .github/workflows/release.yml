@@ -1,5 +1,6 @@
 # Release Pipeline for AgentForge
 # Triggers on version tag pushes (e.g., v0.4.0)
+# Node version is read from .nvmrc — update that file to change the version everywhere.
 
 name: Release
 
@@ -15,18 +16,33 @@ jobs:
   test:
     name: Test Suite
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: ['22.13.x']
     steps:
       - uses: actions/checkout@v6.0.2
 
+      - name: Convergence gate — no deprecated root src/ directories
+        run: |
+          FAILED=0
+          for dir in src/server src/builder src/autonomous; do
+            if [ -d "$dir" ]; then
+              echo "::error file=$dir::Convergence violation: deprecated directory '$dir' must not exist at tag time. Remove it before releasing."
+              FAILED=1
+            fi
+          done
+          if [ "$FAILED" -eq 1 ]; then
+            echo ""
+            echo "Release blocked. Deprecated root src/ directories were found."
+            echo "These surfaces were removed as part of the convergence work (v10.x)."
+            echo "Re-introducing them breaks the convergence contract. Remove them and re-tag."
+            exit 1
+          fi
+          echo "Convergence gate passed: src/server, src/builder, src/autonomous are absent."
+
       - uses: pnpm/action-setup@v6.0.7
 
-      - name: Setup Node.js ${{ matrix.node-version }}
+      - name: Setup Node.js
         uses: actions/setup-node@v6.4.0
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version-file: '.nvmrc'
           cache: pnpm
 
       - name: Install dependencies
@@ -61,7 +77,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6.4.0
         with:
-          node-version: '22.13.x'
+          node-version-file: '.nvmrc'
           cache: pnpm
 
       - name: Install dependencies

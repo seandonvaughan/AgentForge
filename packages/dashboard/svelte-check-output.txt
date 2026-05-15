@@ -1,0 +1,34 @@
+svelte-check baseline — @agentforge/dashboard@10.5.1
+Run date: 2026-05-15
+Command: pnpm --filter @agentforge/dashboard check
+
+OUTPUT
+------
+> @agentforge/dashboard@10.5.1 check /Users/seandonvaughan/Projects/AgentForge/packages/dashboard
+> svelte-check --tsconfig ./tsconfig.json
+
+START "/Users/seandonvaughan/Projects/AgentForge/packages/dashboard"
+COMPLETED 429 FILES  0 ERRORS  0 WARNINGS  0 FILES_WITH_PROBLEMS
+
+FINDINGS
+--------
+No type errors found.
+
+MODEL_TIERS verification
+------------------------
+The MODEL_TIERS undefined errors flagged in prior specs are resolved.
+The /runner route (src/routes/runner/+page.svelte) uses MODEL_TIER_META
+(a fully-typed Record<string, {...}>) with an explicit SONNET_TIER fallback
+constant to prevent any undefined lookup at runtime:
+
+  const MODEL_TIER_META: Record<string, { label: string; range: string; color: string }> = { ... };
+  const SONNET_TIER = { label: 'Sonnet', ... };
+  let modelTier = $derived(MODEL_TIER_META[getAgentModel(selectedAgent)] ?? SONNET_TIER);
+
+Fix applied this sprint
+------------------------
+src/routes/memory/+page.svelte — feed-type-bar container (line 1562):
+  - Changed role="group" → role="toolbar" (semantically correct for filter chips)
+  - Added tabindex="-1" (required by a11y_interactive_supports_focus for toolbar role)
+  - Added onkeydown handler alongside onclick (required by a11y_click_events_have_key_events)
+  These 3 changes cleared the 2 a11y warnings that were present before this sprint.

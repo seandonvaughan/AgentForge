@@ -22,6 +22,16 @@ export class GateRejectedError extends Error {
 export interface GatePhaseOptions {
   allowedTools?: string[];
   agentId?: string;
+  /**
+   * Explicit list of pre-existing known-debt findings to inject into the gate
+   * prompt. When provided, the JSONL file read is skipped entirely and these
+   * items are used as-is. Callers can pass an empty array to suppress all
+   * known-debt injection for a cycle (e.g. after a full debt-payoff sprint).
+   *
+   * When omitted (undefined), the known-debt list is derived automatically from
+   * the most recent gate-verdict entry in `.agentforge/memory/gate-verdict.jsonl`.
+   */
+  knownDebt?: string[];
 }
 
 export function makeGatePhaseHandler(options: GatePhaseOptions = {}) {
@@ -185,6 +195,47 @@ export function buildKnownDebtSection(prior: PriorGateContext | null): string {
   return `\n## Known pre-existing debt (prior gate verdict — ${label})\n${bullets}\n\n${guidance}\n`;
 }
 
+/**
+ * Build a known-debt prompt section from a plain `string[]`. Used when the
+ * caller injects the list directly via `GatePhaseOptions.knownDebt` rather
+ * than having it derived from the JSONL store.
+ *
+ * The guidance text is intentionally the same as the "approved" path in
+ * `buildKnownDebtSection` — items on this list are treated as accepted debt
+ * that the CEO agent must not use to drive a REJECT unless they have clearly
+ * worsened since the list was compiled.
+ */
+export function buildKnownDebtSectionFromList(debt: string[]): string {
+  if (debt.length === 0) return '';
+  const bullets = debt.map((f) => `- ${f}`).join('\n');
+  return (
+    `\n## Known pre-existing debt (injected)\n${bullets}\n\n` +
+    `These items are pre-existing known debt accepted by a prior gate. ` +
+    `Do NOT let them drive a REJECT in this cycle unless they have clearly worsened or new occurrences have been added. ` +
+    `If the code review flags the same items, verify they have not regressed before treating them as grounds for rejection.\n`
+  );
+}
+
+/**
+ * Resolve the `knownDebt: string[]` to inject into the gate prompt.
+ *
+ * Priority:
+ *   1. `override` — when the caller explicitly provides a list (even empty),
+ *      it is returned as-is and no file I/O is performed.
+ *   2. Last gate-verdict from JSONL — critical + major findings from the most
+ *      recent entry in `.agentforge/memory/gate-verdict.jsonl`.
+ *   3. `[]` — when no prior verdict exists or the file is unreadable.
+ *
+ * Exported so call sites and tests can verify the resolved list independently
+ * of the full `runGatePhase` path.
+ */
+export function resolveKnownDebt(projectRoot: string, override?: string[]): string[] {
+  if (override !== undefined) return override;
+  const prior = loadPriorGateKnownDebt(projectRoot);
+  if (!prior) return [];
+  return [...prior.criticalFindings, ...prior.majorFindings];
+}
+
 export async function runGatePhase(
   ctx: PhaseContext,
   options: GatePhaseOptions = {},
@@ -257,12 +308,33 @@ export async function runGatePhase(
     }
   }
 
-  // Seed the prompt with findings from the prior gate verdict so the CEO agent
-  // can distinguish new regressions from pre-existing accepted debt. This
-  // reduces false-positive REJECTs caused by known debt the agent has no
-  // context about.
-  const priorGateContext = loadPriorGateKnownDebt(ctx.projectRoot);
-  const knownDebtSection = buildKnownDebtSection(priorGateContext);
+  // Resolve the known-debt list and build the corresponding prompt section.
+  //
+  // When the caller explicitly provides `options.knownDebt`, that list is used
+  // verbatim and no JSONL file read is performed (deterministic, test-friendly).
+  // When omitted, the most recent gate-verdict entry is read and its critical +
+  // major findings are extracted as the pre-existing debt list.
+  //
+  // This explicit `knownDebt: string[]` variable is the canonical data source
+  // for debt injection — `buildKnownDebtSection` / `buildKnownDebtSectionFromList`
+  // then format it into the right markdown section for the CEO agent.
+  const priorGateContext =
+    options.knownDebt === undefined ? loadPriorGateKnownDebt(ctx.projectRoot) : null;
+
+  const knownDebt: string[] =
+    options.knownDebt !== undefined
+      ? options.knownDebt
+      : priorGateContext
+        ? [...priorGateContext.criticalFindings, ...priorGateContext.majorFindings]
+        : [];
+
+  // Use the richer section (with prior verdict label + tailored guidance) when
+  // we have the full PriorGateContext; fall back to the plain-list section when
+  // the caller injected the debt directly.
+  const knownDebtSection =
+    priorGateContext !== null
+      ? buildKnownDebtSection(priorGateContext)
+      : buildKnownDebtSectionFromList(knownDebt);
 
   const task = `You are the CEO of AgentForge. Sprint v${ctx.sprintVersion} has completed execution. Here is the full state:
 

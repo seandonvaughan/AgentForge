@@ -251,11 +251,28 @@ export const WORKSPACE_DDL = `
     block_reason TEXT
   );
 
+  CREATE TABLE IF NOT EXISTS approvals (
+    id TEXT PRIMARY KEY,
+    proposal_id TEXT NOT NULL,
+    proposal_title TEXT NOT NULL,
+    execution_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    diff TEXT,
+    test_summary_json TEXT,
+    impact_summary TEXT NOT NULL,
+    submitted_at TEXT NOT NULL,
+    reviewed_at TEXT,
+    reviewed_by TEXT,
+    notes TEXT
+  );
+
   CREATE INDEX IF NOT EXISTS idx_git_branches_status ON git_branches(status);
   CREATE INDEX IF NOT EXISTS idx_git_branches_agent ON git_branches(agent_id);
   CREATE INDEX IF NOT EXISTS idx_git_branches_name ON git_branches(name);
   CREATE INDEX IF NOT EXISTS idx_git_merge_queue_branch ON git_merge_queue(branch_id);
   CREATE INDEX IF NOT EXISTS idx_git_merge_queue_status ON git_merge_queue(status);
+  CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status);
+  CREATE INDEX IF NOT EXISTS idx_approvals_submitted ON approvals(submitted_at);
 
   CREATE INDEX IF NOT EXISTS idx_scorecards_agent ON agent_scorecards(agent_id);
   CREATE INDEX IF NOT EXISTS idx_runtime_jobs_session ON runtime_jobs(session_id);
@@ -288,4 +305,29 @@ export const WORKSPACE_DDL = `
   CREATE INDEX IF NOT EXISTS idx_test_observations_status ON test_observations(status);
   CREATE INDEX IF NOT EXISTS idx_test_observations_observed ON test_observations(observed_at);
   CREATE INDEX IF NOT EXISTS idx_embeddings_source ON embeddings(source_type, source_id);
+
+  CREATE TABLE IF NOT EXISTS knowledge_entities (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    source_cycle_id TEXT,
+    embedding BLOB,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS knowledge_relationships (
+    id TEXT PRIMARY KEY,
+    from_entity_id TEXT NOT NULL REFERENCES knowledge_entities(id) ON DELETE CASCADE,
+    to_entity_id TEXT NOT NULL REFERENCES knowledge_entities(id) ON DELETE CASCADE,
+    type TEXT NOT NULL,
+    confidence REAL NOT NULL DEFAULT 0.5,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_knowledge_entities_type ON knowledge_entities(type);
+  CREATE INDEX IF NOT EXISTS idx_knowledge_entities_name ON knowledge_entities(name);
+  CREATE INDEX IF NOT EXISTS idx_knowledge_relationships_from ON knowledge_relationships(from_entity_id);
+  CREATE INDEX IF NOT EXISTS idx_knowledge_relationships_to ON knowledge_relationships(to_entity_id);
+  CREATE INDEX IF NOT EXISTS idx_knowledge_relationships_type ON knowledge_relationships(type);
 `;

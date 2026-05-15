@@ -5,9 +5,9 @@ import {
   ReviewPhaseHandler,
   type ReviewFinding,
   type GateVerdictMetadata,
+  MemoryRegistry,
+  type SessionMemoryEntry,
 } from "@agentforge/core";
-import { MemoryRegistry } from "../../src/registry/memory-registry.js";
-import type { SessionMemoryEntry } from "../../src/memory/session-memory-manager.js";
 
 // ---------------------------------------------------------------------------
 // Helpers

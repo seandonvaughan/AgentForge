@@ -137,6 +137,9 @@ importers:
 
   packages/dashboard:
     dependencies:
+      '@agentforge/shared':
+        specifier: workspace:*
+        version: link:../shared
       marked:
         specifier: ^18.0.3
         version: 18.0.3
@@ -260,6 +263,9 @@ importers:
 
   packages/shared:
     devDependencies:
+      '@types/node':
+        specifier: ^25.7.0
+        version: 25.7.0
       typescript:
         specifier: ^6.0.3
         version: 6.0.3

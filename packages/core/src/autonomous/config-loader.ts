@@ -65,8 +65,8 @@ export const DEFAULT_CYCLE_CONFIG: CycleConfig = Object.freeze({
     timeoutMinutes: 20,
     reporter: 'json',
     saveRawLog: true,
-    buildCommand: 'npm run build',
-    typeCheckCommand: 'npx tsc --noEmit',
+    buildCommand: 'pnpm --filter @agentforge/core build',
+    typeCheckCommand: 'pnpm exec tsc --noEmit --pretty false',
   }),
   scoring: Object.freeze({
     agentId: 'backlog-scorer',

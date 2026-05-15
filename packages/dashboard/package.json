@@ -20,6 +20,7 @@
     "vite": "^8.0.13"
   },
   "dependencies": {
+    "@agentforge/shared": "workspace:*",
     "marked": "^18.0.3"
   },
   "engines": {

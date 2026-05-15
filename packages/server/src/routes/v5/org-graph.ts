@@ -3,6 +3,39 @@ import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import yaml from 'js-yaml';
 
+/**
+ * Data contract for GET /api/v5/org-graph
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │  Response shape (HTTP 200)                                           │
+ * │                                                                      │
+ * │  {                                                                   │
+ * │    data: {                                                           │
+ * │      nodes: Array<{ id: string; label: string; model?: string }>    │
+ * │      edges: Array<{ from: string; to: string }>                      │
+ * │    },                                                                │
+ * │    meta: {                                                           │
+ * │      total: number        // nodes.length                            │
+ * │      edgeCount: number    // edges.length                            │
+ * │      timestamp: string    // ISO 8601 (new Date().toISOString())     │
+ * │    }                                                                 │
+ * │  }                                                                   │
+ * │                                                                      │
+ * │  Node fields:                                                        │
+ * │    id     — agent filename without extension (e.g. "ceo")            │
+ * │    label  — YAML `name` field, falls back to `id` when absent       │
+ * │    model  — YAML `model` field (opus | sonnet | haiku), optional    │
+ * │                                                                      │
+ * │  Edge fields:                                                        │
+ * │    from   — delegating agent id (parent)                            │
+ * │    to     — delegate agent id (child)                               │
+ * │                                                                      │
+ * │  NOTE: The SvelteKit SSR load in packages/dashboard/src/routes/     │
+ * │  org/+page.server.ts returns the SAME nodes/edges but WITHOUT the   │
+ * │  `data` or `meta` wrapper — shape is { nodes, edges } directly.     │
+ * │  The page's API fetch fallback unwraps via: json.data ?? json        │
+ * └──────────────────────────────────────────────────────────────────────┘
+ */
 interface OrgNode {
   id: string;
   label: string;

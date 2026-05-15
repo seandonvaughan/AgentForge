@@ -1,4 +1,5 @@
 import { generateId, nowIso } from '@agentforge/shared';
+import type { WorkspaceAdapter } from '@agentforge/db';
 import { EntityExtractor } from './entity-extractor.js';
 import { RelationshipMapper } from './relationship-mapper.js';
 import type {
@@ -12,21 +13,75 @@ import type {
   CreateRelationshipRequest,
 } from './types.js';
 
+const KV_ENTITIES = 'knowledge:graph:entities';
+const KV_RELATIONSHIPS = 'knowledge:graph:relationships';
+
 /**
- * KnowledgeGraph — semantic memory graph built on in-memory storage.
- * Provides entity/relationship CRUD and relevance-scored querying.
+ * KnowledgeGraph — semantic memory graph with optional WorkspaceAdapter persistence.
+ *
+ * When constructed with an adapter, entities and relationships are persisted to
+ * the workspace KV store across server restarts. Without an adapter, the graph
+ * operates purely in-memory (useful for tests).
+ *
+ * Read operations always use the in-memory cache for speed. Every mutating
+ * operation (add, update, delete) serializes the full collection back to the
+ * adapter so the KV store is always the authoritative source of truth.
  */
 export class KnowledgeGraph {
   private entities = new Map<string, Entity>();
   private relationships: Relationship[] = [];
   private readonly extractor = new EntityExtractor();
   private readonly mapper = new RelationshipMapper();
+  // Intentionally typed as `WorkspaceAdapter | undefined` (not `?`) so that
+  // the constructor assignment `this.adapter = adapter` satisfies
+  // exactOptionalPropertyTypes: the parameter is WorkspaceAdapter | undefined
+  // and cannot be assigned to a `?` field without an explicit undefined check.
+  private readonly adapter: WorkspaceAdapter | undefined;
+
+  constructor(adapter?: WorkspaceAdapter) {
+    this.adapter = adapter;
+    if (adapter) {
+      this.hydrateFromAdapter(adapter);
+    }
+  }
+
+  /** Load persisted entities and relationships from the KV store on startup. */
+  private hydrateFromAdapter(adapter: WorkspaceAdapter): void {
+    try {
+      const rawEntities = adapter.kvGet(KV_ENTITIES);
+      if (rawEntities) {
+        const parsed = JSON.parse(rawEntities) as Entity[];
+        for (const entity of parsed) {
+          this.entities.set(entity.id, entity);
+        }
+      }
+    } catch {
+      // Non-fatal: malformed KV data is treated as empty graph
+    }
+
+    try {
+      const rawRelationships = adapter.kvGet(KV_RELATIONSHIPS);
+      if (rawRelationships) {
+        this.relationships = JSON.parse(rawRelationships) as Relationship[];
+      }
+    } catch {
+      // Non-fatal: start with empty relationship list
+    }
+  }
+
+  /** Serialize both collections back to the adapter. Called after every mutation. */
+  private persist(): void {
+    if (!this.adapter) return;
+    this.adapter.kvSet(KV_ENTITIES, JSON.stringify([...this.entities.values()]));
+    this.adapter.kvSet(KV_RELATIONSHIPS, JSON.stringify(this.relationships));
+  }
 
   // ── Entity operations ────────────────────────────────────────────────────────
 
   addEntity(req: CreateEntityRequest): Entity {
     const entity = this.extractor.create(req);
     this.entities.set(entity.id, entity);
+    this.persist();
     return entity;
   }
 
@@ -39,6 +94,7 @@ export class KnowledgeGraph {
     if (!existing) return undefined;
     const updated = this.extractor.touch(existing, updates);
     this.entities.set(id, updated);
+    this.persist();
     return updated;
   }
 
@@ -49,6 +105,7 @@ export class KnowledgeGraph {
     this.relationships = this.relationships.filter(
       r => r.sourceId !== id && r.targetId !== id,
     );
+    this.persist();
     return true;
   }
 
@@ -70,6 +127,7 @@ export class KnowledgeGraph {
 
     const rel = this.mapper.create(req);
     this.relationships.push(rel);
+    this.persist();
     return rel;
   }
 
@@ -80,7 +138,9 @@ export class KnowledgeGraph {
   deleteRelationship(id: string): boolean {
     const before = this.relationships.length;
     this.relationships = this.relationships.filter(r => r.id !== id);
-    return this.relationships.length < before;
+    const deleted = this.relationships.length < before;
+    if (deleted) this.persist();
+    return deleted;
   }
 
   listRelationships(filter?: { type?: RelationshipType; entityId?: string }): Relationship[] {

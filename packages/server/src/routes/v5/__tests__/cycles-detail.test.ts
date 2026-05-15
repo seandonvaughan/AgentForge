@@ -101,6 +101,19 @@ describe('GET /api/v5/cycles/:id', () => {
       join(dir, 'events.jsonl'),
       events.map((e) => JSON.stringify(e)).join('\n') + '\n',
     );
+    // A running session is required to prevent the v15.1.0 staleness heuristic
+    // from promoting this to partialTerminal. Real in-progress cycles always have
+    // a session entry (created by POST /api/v5/cycles at spawn time).
+    sessionFixture = {
+      cycleId: id,
+      pid: 11111,
+      pgid: 11111,
+      workspaceId: 'default',
+      workspaceRoot: tmpRoot,
+      startedAt: '2026-04-07T10:00:00.000Z',
+      lastSeenAt: '2026-04-07T10:01:00.000Z',
+      status: 'running',
+    };
 
     const res = await app.inject({ method: 'GET', url: `/api/v5/cycles/${id}` });
     // 404 with cycleInProgress: true — cycle is running but cycle.json not yet written
@@ -149,10 +162,13 @@ describe('GET /api/v5/cycles/:id', () => {
     expect(body.cycleInProgress).toBeUndefined();
   });
 
-  it('synthesizes partial payload for a hard-killed cycle without cycle.json, last stage from events', async () => {
+  it('returns 200 + partialTerminal for a hard-killed cycle whose session was lost (stale events, kill recorded)', async () => {
+    // v15.1.0 gap fix: OS-level kill between server restarts — no cycle.json,
+    // no session record, but events.jsonl recorded a kill event.
+    // Previously returned 404+cycleInProgress, causing the dashboard to poll forever.
+    // After fix: staleness heuristic fires → 200+partialTerminal so polling stops.
     const id = '66666666-6666-6666-6666-666666666666';
     const dir = makeCycleDir(id);
-    // OS-level kill: no cycle.json, but events.jsonl shows the kill signal was recorded
     const events = [
       { type: 'phase.start', phase: 'audit', at: '2026-04-10T09:00:00.000Z', sprintVersion: '11.1.0' },
       { type: 'phase.start', phase: 'execute', at: '2026-04-10T09:05:00.000Z' },
@@ -162,15 +178,18 @@ describe('GET /api/v5/cycles/:id', () => {
       join(dir, 'events.jsonl'),
       events.map((e) => JSON.stringify(e)).join('\n') + '\n',
     );
+    // No sessionFixture — simulates server restart that cleared the registry.
 
     const res = await app.inject({ method: 'GET', url: `/api/v5/cycles/${id}` });
-    // cycle.json absent → synthesized 404 payload
-    expect(res.statusCode).toBe(404);
+    // With the staleness fix: no session + events are months old → 200+partialTerminal.
+    expect(res.statusCode).toBe(200);
     const body = res.json();
-    // last stage event records 'killed', so the dashboard knows it's terminal
+    // stage preserved from events ('killed' is in the inferred-terminal allowlist)
     expect(body.stage).toBe('killed');
     expect(body.sprintVersion).toBe('11.1.0');
-    expect(body.cycleInProgress).toBe(true);
+    expect(body.partialTerminal).toBe(true);
+    expect(body.cycleInProgress).toBe(false);
+    expect(typeof body.exitNote).toBe('string');
   });
 
   it('returns 200 + partialTerminal when cycle-sessions reports killed but cycle.json is missing', async () => {
@@ -265,10 +284,55 @@ describe('GET /api/v5/cycles/:id', () => {
         '{"type":"phase.start","phase":"test","at":"2026-04-07T10:01:00.000Z"}',
       ].join('\n') + '\n',
     );
+    // Running session prevents the v15.1.0 staleness path so we exercise the
+    // malformed-line skipping rather than the inferred-terminal branch.
+    sessionFixture = {
+      cycleId: id,
+      pid: 44444,
+      pgid: 44444,
+      workspaceId: 'default',
+      workspaceRoot: tmpRoot,
+      startedAt: '2026-04-07T10:00:00.000Z',
+      lastSeenAt: '2026-04-07T10:01:00.000Z',
+      status: 'running',
+    };
 
     const res = await app.inject({ method: 'GET', url: `/api/v5/cycles/${id}` });
     // 404 + body even for malformed lines — must not crash
     expect(res.statusCode).toBe(404);
     expect(res.json().stage).toBe('test');
+  });
+
+  it('returns 200 + partialTerminal for a killed-mid-execute cycle with no session and no kill event (v15.1.0 gap)', async () => {
+    // The primary gap case: budget enforcer kills the cycle mid-execute.
+    // The OS-level kill doesn't allow a graceful shutdown so:
+    //   - cycle.json is never written
+    //   - no 'killed' event is appended to events.jsonl
+    //   - session record was lost on server restart
+    // Before v15.1.0: endpoint returned 404+cycleInProgress indefinitely.
+    // After v15.1.0: staleness heuristic promotes to 200+partialTerminal+stage:'crashed'.
+    const id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+    const dir = makeCycleDir(id);
+    const events = [
+      { type: 'phase.start', phase: 'audit', at: '2026-04-10T09:00:00.000Z', sprintVersion: '15.1.0' },
+      { type: 'phase.start', phase: 'execute', at: '2026-04-10T09:05:00.000Z' },
+      // No kill event — abrupt OS kill, no graceful shutdown
+    ];
+    writeFileSync(
+      join(dir, 'events.jsonl'),
+      events.map((e) => JSON.stringify(e)).join('\n') + '\n',
+    );
+    // No sessionFixture — server was restarted after the kill, registry is gone.
+
+    const res = await app.inject({ method: 'GET', url: `/api/v5/cycles/${id}` });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    // 'execute' is not in killed/crashed/failed so inferred stage is 'crashed'
+    expect(body.stage).toBe('crashed');
+    expect(body.sprintVersion).toBe('15.1.0');
+    expect(body.partialTerminal).toBe(true);
+    expect(body.cycleInProgress).toBe(false);
+    expect(body.status).toBe('crashed');
+    expect(body.exitNote).toContain('event staleness');
   });
 });

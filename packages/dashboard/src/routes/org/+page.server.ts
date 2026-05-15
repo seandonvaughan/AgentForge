@@ -10,6 +10,21 @@
  *   1. collaboration.can_delegate_to — parent's explicit outgoing delegation grants
  *   2. collaboration.reports_to     — child's declared parent (fills gaps)
  *   3. delegation.yaml              — supplementary legacy config
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │  SSR load return shape (consumed as `data` prop in +page.svelte)    │
+ * │                                                                      │
+ * │  {                                                                   │
+ * │    nodes: Array<{ id: string; label: string; model?: string }>      │
+ * │    edges: Array<{ from: string; to: string }>                        │
+ * │  }                                                                   │
+ * │                                                                      │
+ * │  ⚠ This is a FLAT shape — no `data` wrapper, no `meta` object.     │
+ * │  The HTTP API at /api/v5/org-graph wraps this in:                   │
+ * │    { data: { nodes, edges }, meta: { total, edgeCount, timestamp } } │
+ * │  See packages/server/src/routes/v5/org-graph.ts for the full        │
+ * │  API contract. The page's fetch() fallback unwraps via json.data.   │
+ * └──────────────────────────────────────────────────────────────────────┘
  */
 import type { PageServerLoad } from './$types';
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
