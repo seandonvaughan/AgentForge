@@ -133,9 +133,31 @@ export class PhaseScheduler {
       }
     };
 
+    const onItemStarted = (event: any) => {
+      if (event.sprintId !== this.ctx.sprintId) return;
+      this.logger.appendEvent({
+        type: 'cycle_event',
+        category: 'item.started',
+        payload: event,
+        at: new Date().toISOString(),
+      });
+    };
+
+    const onItemCompleted = (event: any) => {
+      if (event.sprintId !== this.ctx.sprintId) return;
+      this.logger.appendEvent({
+        type: 'cycle_event',
+        category: 'item.completed',
+        payload: event,
+        at: new Date().toISOString(),
+      });
+    };
+
     this.unsubscribers.push(
       this.ctx.bus.subscribe('sprint.phase.completed', onCompleted),
       this.ctx.bus.subscribe('sprint.phase.failed', onFailed),
+      this.ctx.bus.subscribe('sprint.phase.item.started', onItemStarted),
+      this.ctx.bus.subscribe('sprint.phase.item.completed', onItemCompleted),
     );
   }
 

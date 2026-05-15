@@ -7,13 +7,17 @@
 //
 // See docs/superpowers/specs/2026-04-06-autonomous-loop-design.md §8.1.
 
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { CycleConfig, TestResult, FailedTest } from '../types.js';
 
 const execFileAsync = promisify(execFile);
+
+export interface TestProgressBus {
+  publish: (topic: string, payload: unknown) => void;
+}
 
 /**
  * Base error type for the test runner. Distinct from CycleKilledError so the
@@ -53,6 +57,7 @@ export class RealTestRunner {
     private readonly cwd: string,
     private readonly config: CycleConfig['testing'],
     private readonly priorSnapshot: TestResult | null,
+    private readonly bus?: TestProgressBus,
   ) {}
 
   async run(cycleId: string): Promise<TestResult> {
@@ -80,6 +85,13 @@ export class RealTestRunner {
     let stderr = '';
     let exitCode = 0;
     const startedAt = Date.now();
+
+    // If a bus is provided, also run a streaming spawn to emit line-buffered
+    // progress events. The execFileAsync below still owns the authoritative
+    // JSON output; the spawn is fire-and-forget for UX only.
+    if (this.bus) {
+      this._streamProgressLines(invocation.file, invocation.args, timeoutMs);
+    }
 
     try {
       const result = await execFileAsync(invocation.file, invocation.args, {
@@ -123,6 +135,77 @@ export class RealTestRunner {
 
     const raw = JSON.parse(readFileSync(outputFile, 'utf8'));
     return this.parseVitestJson(raw, rawLogPath, startedAt, exitCode);
+  }
+
+  /**
+   * Spawn a parallel process to emit line-buffered test.progress events on
+   * the bus. This is fire-and-forget — errors are silently swallowed because
+   * the authoritative run comes from execFileAsync above.
+   *
+   * Emits one `test.progress` bus event per 10 lines (or on file-level events)
+   * with best-effort parsing of vitest tap/verbose output for passed/failed counts.
+   */
+  private _streamProgressLines(file: string, args: string[], timeoutMs: number): void {
+    if (!this.bus) return;
+    const bus = this.bus;
+    let lineCount = 0;
+    let passed = 0;
+    let failed = 0;
+    let lastFile = '';
+
+    try {
+      const child = spawn(file, args, {
+        cwd: this.cwd,
+        env: { ...process.env, CI: '1', NO_COLOR: '1' },
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: timeoutMs,
+      });
+
+      const handleLine = (line: string): void => {
+        lineCount++;
+        // Best-effort parse for vitest verbose / tap output
+        const passMatch = line.match(/(\d+)\s+passed/i);
+        const failMatch = line.match(/(\d+)\s+failed/i);
+        const fileMatch = line.match(/^\s*(PASS|FAIL)\s+(.+\.test\.[tj]sx?)/i);
+        if (passMatch) passed = parseInt(passMatch[1]!, 10);
+        if (failMatch) failed = parseInt(failMatch[1]!, 10);
+        if (fileMatch) lastFile = fileMatch[2]!;
+
+        // Emit every 10 lines or on file match to avoid flooding the bus
+        if (lineCount % 10 === 0 || fileMatch) {
+          bus.publish('test.progress', {
+            line,
+            lineCount,
+            parsed: { passed, failed, file: lastFile },
+          });
+        }
+      };
+
+      const processChunk = (chunk: Buffer | string, bufRef: { buf: string }) => {
+        bufRef.buf += chunk.toString();
+        const lines = bufRef.buf.split('\n');
+        bufRef.buf = lines.pop() ?? '';
+        for (const line of lines) {
+          if (line.trim()) handleLine(line);
+        }
+      };
+
+      const stdoutBuf = { buf: '' };
+      const stderrBuf = { buf: '' };
+
+      child.stdout?.on('data', (chunk) => processChunk(chunk, stdoutBuf));
+      child.stderr?.on('data', (chunk) => processChunk(chunk, stderrBuf));
+
+      child.on('close', () => {
+        // Flush remaining buffer
+        if (stdoutBuf.buf.trim()) handleLine(stdoutBuf.buf);
+        if (stderrBuf.buf.trim()) handleLine(stderrBuf.buf);
+      });
+
+      child.on('error', () => { /* non-fatal */ });
+    } catch {
+      // spawn errors are non-fatal — the execFileAsync run is the source of truth
+    }
   }
 
   /**

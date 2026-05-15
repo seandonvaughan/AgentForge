@@ -135,6 +135,17 @@ export async function runAuditPhase(
 
   // Inject cross-cycle memory so the agent doesn't repeat past mistakes.
   const memoryEntries = readRecentMemoryEntries(ctx.projectRoot, memoryLimit);
+
+  // Emit memory injection event so the UI can surface cross-cycle context.
+  const uniqueTypes = Array.from(new Set(memoryEntries.map((e) => e.type)));
+  ctx.bus.publish('audit.memory.injected', {
+    sprintId: ctx.sprintId,
+    phase,
+    cycleId: ctx.cycleId,
+    count: memoryEntries.length,
+    types: uniqueTypes,
+  });
+
   const memorySection = formatMemoryForPrompt(memoryEntries);
   const memoryBlock = memorySection
     ? `\n\n${memorySection}\n\nUse the above learnings to highlight recurring issues and avoid patterns that caused previous cycles to fail or be costly.\n`

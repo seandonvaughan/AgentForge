@@ -391,7 +391,18 @@ export class CycleRunner {
     // stage the changed files, commit (with secret scan), and push.
     // ─────────────────────────────────────────────────────────────────
     await this.options.gitOps.verifyPreconditions();
+    this.options.bus.publish('sprint.phase.commit.step', {
+      cycleId: this.cycleId,
+      step: 'preconditions',
+      detail: 'git/gh preconditions verified',
+    });
+
     this.branch = await this.options.gitOps.createBranch(plan.version);
+    this.options.bus.publish('sprint.phase.commit.step', {
+      cycleId: this.cycleId,
+      step: 'branch-created',
+      detail: this.branch,
+    });
 
     const filesToCommit = await this.collectChangedFiles(runSummary);
     this.filesChanged = filesToCommit;
@@ -401,10 +412,26 @@ export class CycleRunner {
     // smoke test (Task 25) is responsible for end-to-end file detection.
     if (filesToCommit.length > 0) {
       await this.options.gitOps.stage(filesToCommit);
+      this.options.bus.publish('sprint.phase.commit.step', {
+        cycleId: this.cycleId,
+        step: 'staged',
+        detail: `${filesToCommit.length} file(s) staged`,
+      });
     }
     const message = this.buildCommitMessage(plan.version, scored.summary);
     this.commitSha = await this.options.gitOps.commit(message);
+    this.options.bus.publish('sprint.phase.commit.step', {
+      cycleId: this.cycleId,
+      step: 'committed',
+      detail: this.commitSha ?? '',
+    });
+
     await this.options.gitOps.push(this.branch);
+    this.options.bus.publish('sprint.phase.commit.step', {
+      cycleId: this.cycleId,
+      step: 'pushed',
+      detail: this.branch,
+    });
 
     // ─────────────────────────────────────────────────────────────────
     // STAGE 6 — REVIEW

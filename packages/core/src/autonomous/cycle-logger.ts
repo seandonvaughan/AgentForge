@@ -132,7 +132,7 @@ export class CycleLogger {
     writeFileSync(path, JSON.stringify(data, null, 2));
   }
 
-  private appendEvent(event: Record<string, unknown>): void {
+  appendEvent(event: Record<string, unknown>): void {
     appendFileSync(this.eventsPath, JSON.stringify(event) + '\n');
   }
 }

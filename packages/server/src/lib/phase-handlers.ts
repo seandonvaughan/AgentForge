@@ -200,7 +200,14 @@ export type PhaseTopic =
   | 'sprint.phase.completed'
   | 'sprint.phase.failed'
   | 'sprint.phase.item.started'
-  | 'sprint.phase.item.completed';
+  | 'sprint.phase.item.completed'
+  | 'sprint.phase.commit.step'
+  | 'execute.parallelism.assessed'
+  | 'execute.snapshot'
+  | 'execute.circuit-breaker.tripped'
+  | 'audit.memory.injected'
+  | 'gate.verification.progress'
+  | 'test.progress';
 
 export interface PhaseStartedEvent {
   sprintId: string;
