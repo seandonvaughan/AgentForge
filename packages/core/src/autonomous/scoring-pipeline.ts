@@ -9,6 +9,8 @@
 // schema → static priority-based ranking).
 //
 // See docs/superpowers/specs/2026-04-06-autonomous-loop-design.md §6.4
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { CycleConfig, ScoringResult, RankedItem } from './types.js';
 import type { BacklogItem } from './proposal-to-backlog.js';
 import type { CycleLogger } from './cycle-logger.js';
@@ -46,13 +48,74 @@ export class ScoringPipelineError extends Error {
   }
 }
 
+/** Hardcoded fallback agent list used when team.yaml cannot be read. */
+const FALLBACK_AGENT_IDS = [
+  'coder', 'architect', 'frontend-dev', 'dashboard-architect', 'ui-engineer',
+  'api-specialist', 'api-gateway-engineer', 'db-specialist', 'dba',
+  'devops-engineer', 'debugger', 'backend-qa', 'test-runner', 'code-reviewer',
+  'code-explorer', 'documentation-writer', 'researcher', 'ml-engineer',
+  'security-auditor', 'performance-engineer', 'observability-engineer',
+  'build-release-lead', 'linter',
+];
+
 export class ScoringPipeline {
+  /** Cached agent roster derived from .agentforge/team.yaml on first access. */
+  private _agentRosterCache: string[] | null = null;
+
   constructor(
     private readonly runtime: RuntimeForScoring,
     private readonly adapter: AdapterForScoring,
     private readonly config: CycleConfig,
     private readonly logger: CycleLogger,
+    /**
+     * Project root for reading team.yaml. When omitted, falls back to the
+     * hardcoded 23-agent list. Pass `cwd` from the CycleRunner so the scorer
+     * sees every agent in the registry (44+ agents currently — vs. the
+     * legacy hardcoded 23 that excluded qa-manager, project-manager,
+     * business-analyst, team-reviewer, performance-engineer, etc.).
+     */
+    private readonly cwd?: string,
   ) {}
+
+  /**
+   * Read agent IDs from .agentforge/team.yaml. Falls back to a hardcoded
+   * list when team.yaml is missing or unparseable. Cached per-instance.
+   */
+  private getAgentRoster(): string[] {
+    if (this._agentRosterCache) return this._agentRosterCache;
+    if (!this.cwd) {
+      this._agentRosterCache = FALLBACK_AGENT_IDS;
+      return this._agentRosterCache;
+    }
+    try {
+      const teamPath = join(this.cwd, '.agentforge', 'team.yaml');
+      if (!existsSync(teamPath)) {
+        this._agentRosterCache = FALLBACK_AGENT_IDS;
+        return this._agentRosterCache;
+      }
+      // Minimal YAML walk — we only need the leaf agent names under `agents:`.
+      // Avoids pulling in a YAML dep when one isn't already imported here.
+      const raw = readFileSync(teamPath, 'utf8');
+      const ids: string[] = [];
+      let inAgents = false;
+      for (const line of raw.split('\n')) {
+        if (/^agents:\s*$/.test(line)) { inAgents = true; continue; }
+        if (inAgents && /^\S/.test(line) && !line.startsWith('agents:')) {
+          // Hit a new top-level key — done with agents block
+          break;
+        }
+        if (inAgents) {
+          const m = line.match(/^\s*-\s+([a-zA-Z0-9_-]+)\s*$/);
+          if (m && m[1]) ids.push(m[1]);
+        }
+      }
+      this._agentRosterCache = ids.length > 0 ? Array.from(new Set(ids)) : FALLBACK_AGENT_IDS;
+      return this._agentRosterCache;
+    } catch {
+      this._agentRosterCache = FALLBACK_AGENT_IDS;
+      return this._agentRosterCache;
+    }
+  }
 
   async score(backlog: BacklogItem[]): Promise<ScoringPipelineResult> {
     const grounding = await this.gatherGrounding();
@@ -187,11 +250,31 @@ ${JSON.stringify(grounding, null, 2)}
 - Max items: ${this.config.limits.maxItemsPerSprint}
 
 ## Available agents (use ONLY these exact IDs for suggestedAssignee)
-coder, architect, frontend-dev, dashboard-architect, ui-engineer, api-specialist,
-api-gateway-engineer, db-specialist, dba, devops-engineer, debugger, backend-qa,
-test-runner, code-reviewer, code-explorer, documentation-writer, researcher,
-ml-engineer, security-auditor, performance-engineer, observability-engineer,
-build-release-lead, linter
+${this.getAgentRoster().join(', ')}
+
+## Cost calibration (use as baseline, not training priors)
+Recent actual cost per item from grounding.history:
+${(() => {
+  const hist = ((grounding as Record<string, unknown>).history ?? []) as Array<{ avgItemCostUsd?: number; version?: string }>;
+  if (hist.length === 0) return '- (no history yet — use $0.50-$2.00 typical range)';
+  const withCost = hist.filter(h => typeof h.avgItemCostUsd === 'number');
+  if (withCost.length === 0) return '- (history present but no avgItemCostUsd recorded — use $0.50-$2.00 typical range)';
+  return withCost.map(h => `- v${h.version ?? '?'}: $${h.avgItemCostUsd!.toFixed(2)}/item`).join('\n');
+})()}
+
+Item type → median actual (from prior cycles, use these as priors):
+- ci/typecheck/release-gate: ~$0.75
+- fix (specific file/function target): ~$1.10
+- chore (verify/document/move): ~$0.55
+- feature (wire up dashboard route, end-to-end UI+API): ~$1.65
+- migration/refactor (move + test update): ~$2.00
+- test (add unit/integration coverage): ~$0.90
+- doc (README/CHANGELOG/spec write): ~$0.55
+- e2e (Playwright): ~$2.50
+- security (audit + fix): ~$1.00
+
+DO NOT estimate above $5/item unless the item explicitly spans multiple
+subsystems with new architecture. Trust the median, not your training priors.
 
 ## Task
 Rank the candidate items, estimate cost, and split into:

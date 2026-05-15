@@ -24,6 +24,8 @@ interface SprintHistoryEntry {
   itemCount: number;
   completedCount: number;
   createdAt: string | null;
+  /** v15.0.0: actual cost / item from the matching cycle. Drives scorer calibration. */
+  avgItemCostUsd?: number;
 }
 
 const FAILED_TEST_STATUSES = new Set(['failed', 'flaky', 'error']);
@@ -316,14 +318,39 @@ function readSprintHistory(
         return (item as { status?: string }).status === 'completed';
       }).length;
 
+      // v15.0.0: derive avgItemCostUsd from the matching cycle's
+      // cost.totalUsd / itemCount. This is the missing calibration data
+      // the scorer needs to estimate item costs accurately. Cycles are
+      // matched by sprintVersion field on cycle.json.
+      const version = typeof sprint?.version === 'string'
+        ? sprint.version
+        : name.replace(/\.json$/u, '');
+      let avgItemCostUsd: number | undefined;
+      try {
+        const cyclesDir = join(projectRoot, '.agentforge', 'cycles');
+        if (existsSync(cyclesDir) && items.length > 0) {
+          for (const cycleDir of readdirSync(cyclesDir)) {
+            const cyclePath = join(cyclesDir, cycleDir, 'cycle.json');
+            if (!existsSync(cyclePath)) continue;
+            try {
+              const cycle = JSON.parse(readFileSync(cyclePath, 'utf8')) as {
+                sprintVersion?: string;
+                cost?: { totalUsd?: number };
+              };
+              if (cycle.sprintVersion === version && cycle.cost?.totalUsd) {
+                avgItemCostUsd = cycle.cost.totalUsd / items.length;
+                break;
+              }
+            } catch { /* skip */ }
+          }
+        }
+      } catch { /* skip */ }
+
       return {
         path,
         mtimeMs: safeMtime(path),
         entry: {
-          version:
-            typeof sprint?.version === 'string'
-              ? sprint.version
-              : name.replace(/\.json$/u, ''),
+          version,
           title:
             typeof sprint?.title === 'string'
               ? sprint.title
@@ -332,6 +359,7 @@ function readSprintHistory(
           itemCount: items.length,
           completedCount,
           createdAt: typeof sprint?.createdAt === 'string' ? sprint.createdAt : null,
+          ...(avgItemCostUsd !== undefined ? { avgItemCostUsd } : {}),
         } satisfies SprintHistoryEntry,
       };
     })

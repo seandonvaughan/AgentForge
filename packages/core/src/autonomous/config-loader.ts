@@ -12,7 +12,14 @@ export const DEFAULT_CYCLE_CONFIG: CycleConfig = Object.freeze({
     // this ceiling. The number is still used by the approval gate and
     // the dashboard cost bars as a reference line.
     perCycleUsd: 200,
-    perItemUsd: 40,
+    // v15.0.0: dropped from 40 → 1.50. The flat $40 was used as both the
+    // budget guardrail per-item AND the static-fallback cost estimate.
+    // Historical actuals (last 7 cycles) show items completing for
+    // $0.55-$2.20 median, never near $40. Using $40 as the static estimate
+    // produced 34× overestimates that triggered budget-overflow approvals
+    // for trivial work. The kill-switch uses perCycleUsd anyway, so this
+    // per-item value is purely an estimation calibration point.
+    perItemUsd: 1.5,
     perAgentUsd: 60,
     allowOverageApproval: true,
   }),

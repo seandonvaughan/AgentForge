@@ -32,7 +32,12 @@ export async function runPlanPhase(
   const phase = 'plan' as const;
   const startedAt = Date.now();
   const allowedTools = options.allowedTools ?? PLAN_PHASE_DEFAULT_TOOLS;
-  const agentId = options.agentId ?? 'cto';
+  // v15.0.0: Planning belongs to the architect, not the CTO. The CTO YAML
+  // explicitly states "you do NOT design systems at the implementation level
+  // — delegate to the architect." Architect owns system_design + api_design
+  // + task_decomposition + dependency_analysis — exactly what plan-phase
+  // produces. Override via options.agentId if you want sprint-planner instead.
+  const agentId = options.agentId ?? 'architect';
 
   ctx.bus.publish('sprint.phase.started', {
     sprintId: ctx.sprintId,

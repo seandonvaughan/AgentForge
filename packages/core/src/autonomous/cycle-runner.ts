@@ -238,6 +238,7 @@ export class CycleRunner {
       this.options.scoringAdapter,
       this.options.config,
       this.logger,
+      this.options.cwd,
     );
     const scored: ScoringPipelineResult = await scoring.scoreWithFallback(
       backlog,
@@ -417,21 +418,33 @@ export class CycleRunner {
         step: 'staged',
         detail: `${filesToCommit.length} file(s) staged`,
       });
-    }
-    const message = this.buildCommitMessage(plan.version, scored.summary);
-    this.commitSha = await this.options.gitOps.commit(message);
-    this.options.bus.publish('sprint.phase.commit.step', {
-      cycleId: this.cycleId,
-      step: 'committed',
-      detail: this.commitSha ?? '',
-    });
 
-    await this.options.gitOps.push(this.branch);
-    this.options.bus.publish('sprint.phase.commit.step', {
-      cycleId: this.cycleId,
-      step: 'pushed',
-      detail: this.branch,
-    });
+      // v15.0.0: guard commit + push behind filesToCommit.length > 0. Cycle
+      // b555cca4 crashed at this exact point: all 5 items produced text-only
+      // analysis (no file edits), git commit -F - exited code 1 because
+      // nothing was staged. Now we treat "no work product" as a clean
+      // no-op rather than a fatal error.
+      const message = this.buildCommitMessage(plan.version, scored.summary);
+      this.commitSha = await this.options.gitOps.commit(message);
+      this.options.bus.publish('sprint.phase.commit.step', {
+        cycleId: this.cycleId,
+        step: 'committed',
+        detail: this.commitSha ?? '',
+      });
+
+      await this.options.gitOps.push(this.branch);
+      this.options.bus.publish('sprint.phase.commit.step', {
+        cycleId: this.cycleId,
+        step: 'pushed',
+        detail: this.branch,
+      });
+    } else {
+      this.options.bus.publish('sprint.phase.commit.step', {
+        cycleId: this.cycleId,
+        step: 'skipped',
+        detail: 'no file changes produced by execute phase — skipping commit + push',
+      });
+    }
 
     // ─────────────────────────────────────────────────────────────────
     // STAGE 6 — REVIEW

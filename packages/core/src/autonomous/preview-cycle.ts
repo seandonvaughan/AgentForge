@@ -77,6 +77,7 @@ export async function previewCycle(
       telemetry.scoringAdapter,
       config,
       createNoopCycleLogger(),
+      options.projectRoot,
     );
 
     const scored = await pipeline.scoreWithFallback(backlog);
