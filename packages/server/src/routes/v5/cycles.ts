@@ -854,13 +854,19 @@ export async function cyclesRoutes(
     // distinguish "not found" from "running but not yet terminal". The 404
     // status prevents stale cache hits while the partial payload lets the
     // dashboard render a live feed.
+    //
+    // v15.0.0: startedAt fallback now uses session.startedAt before falling
+    // through to Date.now(). The old fallback emitted a fresh "now" on every
+    // poll, which made the dashboard's elapsed timer snap to 00:00 every
+    // poll cycle. The session registry tracks the real spawn time.
+    const inProgressStartedAt = startedAt ?? session?.startedAt ?? new Date().toISOString();
     return reply.status(404).send({
       cycleId: id,
       sprintVersion,
       stage: lastStage,
-      startedAt: startedAt ?? new Date().toISOString(),
+      startedAt: inProgressStartedAt,
       completedAt: null,
-      durationMs: startedAt ? Date.now() - new Date(startedAt).getTime() : null,
+      durationMs: Date.now() - new Date(inProgressStartedAt).getTime(),
       cost: { totalUsd: totalCostUsd, budgetUsd: 200, byAgent: costByAgent, byPhase: costByPhase },
       tests: { passed: testsPassed, failed: testsFailed, skipped: 0, total: testsTotal, passRate, newFailures: [] },
       git: { branch: '', commitSha: null, filesChanged: [] },
