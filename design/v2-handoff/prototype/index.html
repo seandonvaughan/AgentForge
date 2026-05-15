@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AgentForge V2 — Command Center</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: #0a0a0c;
+    color: #fafafa;
+    font-size: 13px;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: 'ss01' 1, 'cv11' 1;
+    position: relative;
+  }
+  /* ── Ambient backgrounds (Tweak: data-af-bg) ───────────────────────── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    transition: opacity 400ms ease;
+  }
+  body[data-af-bg="solid"]::before { opacity: 0; }
+  body[data-af-bg="grid"]::before {
+    background-image:
+      linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px);
+    background-size: 32px 32px;
+    opacity: 1;
+  }
+  body[data-af-bg="aurora"]::before {
+    background:
+      radial-gradient(900px 500px at 8% -10%, rgba(99,102,241,0.10), transparent 60%),
+      radial-gradient(700px 400px at 92% 0%, rgba(168,85,247,0.08), transparent 65%),
+      radial-gradient(500px 300px at 50% 100%, rgba(99,102,241,0.04), transparent 60%);
+    opacity: 1;
+  }
+  /* Aurora variants per accent */
+  body[data-af-bg="aurora"][data-af-accent="emerald"]::before {
+    background:
+      radial-gradient(900px 500px at 8% -10%, rgba(16,185,129,0.10), transparent 60%),
+      radial-gradient(700px 400px at 92% 0%, rgba(6,182,212,0.10), transparent 65%);
+  }
+  body[data-af-bg="aurora"][data-af-accent="amber"]::before {
+    background:
+      radial-gradient(900px 500px at 8% -10%, rgba(245,158,11,0.10), transparent 60%),
+      radial-gradient(700px 400px at 92% 0%, rgba(239,68,68,0.08), transparent 65%);
+  }
+  body[data-af-bg="aurora"][data-af-accent="rose"]::before {
+    background:
+      radial-gradient(900px 500px at 8% -10%, rgba(236,72,153,0.10), transparent 60%),
+      radial-gradient(700px 400px at 92% 0%, rgba(168,85,247,0.10), transparent 65%);
+  }
+  #root { position: relative; z-index: 1; }
+
+  /* ── Accent overrides (Tweak: data-af-accent) ──────────────────────── */
+  body { --af-grad: linear-gradient(135deg, #6366f1, #a855f7); --af-grad-h: linear-gradient(90deg, #6366f1, #a855f7); --af-grad-v: linear-gradient(180deg, #6366f1, #a855f7); --af-accent: #6366f1; --af-purple: #a78bfa; --af-glow: rgba(168,139,250,0.45); }
+  body[data-af-accent="emerald"] { --af-grad: linear-gradient(135deg, #10b981, #06b6d4); --af-grad-h: linear-gradient(90deg, #10b981, #06b6d4); --af-grad-v: linear-gradient(180deg, #10b981, #06b6d4); --af-accent: #10b981; --af-purple: #34d399; --af-glow: rgba(52,211,153,0.45); }
+  body[data-af-accent="amber"]   { --af-grad: linear-gradient(135deg, #f59e0b, #ef4444); --af-grad-h: linear-gradient(90deg, #f59e0b, #ef4444); --af-grad-v: linear-gradient(180deg, #f59e0b, #ef4444); --af-accent: #f59e0b; --af-purple: #fb923c; --af-glow: rgba(251,146,60,0.45); }
+  body[data-af-accent="rose"]    { --af-grad: linear-gradient(135deg, #ec4899, #a855f7); --af-grad-h: linear-gradient(90deg, #ec4899, #a855f7); --af-grad-v: linear-gradient(180deg, #ec4899, #a855f7); --af-accent: #ec4899; --af-purple: #f472b6; --af-glow: rgba(244,114,182,0.45); }
+  /* Accent applies to: logo gradient, running-cycle widget pulse, stage rail flow, KPI gradient bars, sidebar active rail */
+  body[data-af-accent="emerald"] .af2-flow,
+  body[data-af-accent="amber"]   .af2-flow,
+  body[data-af-accent="rose"]    .af2-flow { background: var(--af-grad-h); background-size: 200% 100%; }
+
+  /* ── Surface style (Tweak: data-af-surface) ────────────────────────── */
+  body[data-af-surface="soft"]  .af2-hover-card,
+  body[data-af-surface="soft"]  [class*="Card"] { box-shadow: 0 1px 0 rgba(255,255,255,0.025) inset, 0 6px 20px rgba(0,0,0,0.25); }
+  body[data-af-surface="glass"] .af2-hover-card,
+  body[data-af-surface="glass"] [class*="Card"] {
+    background: rgba(20,20,24,0.55) !important;
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    border-color: rgba(255,255,255,0.07) !important;
+  }
+
+  /* ── Density (Tweak: data-af-density) ──────────────────────────────── */
+  body[data-af-density="cozy"]    main { padding: 22px 26px 26px !important; }
+  body[data-af-density="compact"] main { padding: 8px 12px 12px !important; }
+  body[data-af-density="compact"] [class*="Card"] { padding: 10px 12px !important; }
+
+  /* ── Motion intensity (Tweak: data-af-motion) ──────────────────────── */
+  body[data-af-motion="quiet"] * { animation-duration: 0s !important; transition-duration: 80ms !important; }
+  body[data-af-motion="quiet"] main > * { animation: none !important; }
+  body[data-af-motion="expressive"] main > * { animation: af2fade 260ms cubic-bezier(.2,.7,.2,1); }
+
+  /* ── Active-stage motion (Tweak: data-af-stage) ─────────────────────── */
+  body[data-af-stage="static"] .af2-flow { animation: none !important; background: var(--af-grad-h) !important; background-size: 100% 100% !important; }
+  body[data-af-stage="scan"]   .af2-flow {
+    background: linear-gradient(90deg, transparent 0%, var(--af-accent) 45%, var(--af-purple) 55%, transparent 100%);
+    background-size: 50% 100%;
+    animation: af2flow 1.8s linear infinite;
+  }
+
+  /* ── Hero numbers scale ───────────────────────────────────────────── */
+  :root { --af-hero-scale: 1; }
+
+  /* ── Subtle glow on active stage node ─────────────────────────────── */
+  @keyframes afHalo {
+    0%, 100% { box-shadow: 0 0 0 0 var(--af-glow); }
+    50%      { box-shadow: 0 0 0 6px transparent; }
+  }
+  #root { height: 100vh; overflow: hidden; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+  * { scrollbar-width: thin; scrollbar-color: #27272a transparent; }
+  ::view-transition-old(root), ::view-transition-new(root) {
+    animation-duration: 220ms;
+    animation-timing-function: cubic-bezier(.2,.7,.2,1);
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script src="data.js"></script>
+<script type="text/babel" src="shared.jsx"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="page-cmd-cycles.jsx"></script>
+<script type="text/babel" src="page-cycle.jsx"></script>
+<script type="text/babel" src="page-agents.jsx"></script>
+<script type="text/babel" src="page-rest.jsx"></script>
+<script type="text/babel" src="tweaks.jsx"></script>
+<script type="text/babel" src="app.jsx"></script>
+</body>
+</html>
