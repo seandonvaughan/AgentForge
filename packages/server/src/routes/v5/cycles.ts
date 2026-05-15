@@ -1194,12 +1194,15 @@ export async function cyclesRoutes(
     // CycleRunner. Without this thread-through the cycle-runner always uses
     // loadCycleConfig() defaults, so dashboard-supplied budgets are silently
     // ignored — which is how cycle 75bfaf96 ran at $200 despite a $500 launch.
-    const body = (req.body ?? {}) as { budgetUsd?: number; maxItems?: number };
+    const body = (req.body ?? {}) as { budgetUsd?: number; maxItems?: number; modelCap?: string };
     const budgetEnv = typeof body.budgetUsd === 'number' && body.budgetUsd > 0
       ? { AUTONOMOUS_BUDGET_USD: String(body.budgetUsd) }
       : {};
     const maxItemsEnv = typeof body.maxItems === 'number' && body.maxItems > 0
       ? { AUTONOMOUS_MAX_ITEMS: String(body.maxItems) }
+      : {};
+    const modelCapEnv = (body.modelCap === 'opus' || body.modelCap === 'sonnet' || body.modelCap === 'haiku')
+      ? { AUTONOMOUS_MODEL_CAP: body.modelCap }
       : {};
 
     const cycleId = randomUUID();
@@ -1240,7 +1243,7 @@ export async function cyclesRoutes(
         cwd: reqProjectRoot,
         detached: true,
         stdio: ['ignore', logFd, logFd],
-        env: { ...process.env, AUTONOMOUS_CYCLE_ID: cycleId, ...budgetEnv, ...maxItemsEnv },
+        env: { ...process.env, AUTONOMOUS_CYCLE_ID: cycleId, ...budgetEnv, ...maxItemsEnv, ...modelCapEnv },
       });
       child.unref();
       pid = child.pid ?? -1;

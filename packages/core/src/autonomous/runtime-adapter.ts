@@ -19,6 +19,13 @@ import { AgentRuntime, loadAgentConfig } from '../agent-runtime/index.js';
 import type { AgentRuntimeConfig, RunResult } from '../agent-runtime/types.js';
 import type { WorkspaceAdapter } from '@agentforge/db';
 import type { RuntimeForScoring } from './scoring-pipeline.js';
+import type { ModelTier } from '@agentforge/shared';
+
+const TIER_RANK: Record<ModelTier, number> = { opus: 2, sonnet: 1, haiku: 0 };
+
+function capModelTier(requested: ModelTier, cap: ModelTier): ModelTier {
+  return TIER_RANK[requested] > TIER_RANK[cap] ? cap : requested;
+}
 
 export class RuntimeAdapterError extends Error {
   constructor(msg: string) {
@@ -38,6 +45,12 @@ export interface RuntimeAdapterOptions {
    * agent configs that don't have a .yaml file yet.
    */
   inlineAgents?: Record<string, AgentRuntimeConfig>;
+  /**
+   * When set, any agent assigned a tier above this value is downgraded to it.
+   * Agents at or below the cap are unaffected. Enables Opus-outage fallback
+   * and cost-reduced runs without touching individual agent YAML files.
+   */
+  modelCap?: ModelTier;
 }
 
 /**
@@ -95,7 +108,10 @@ export class RuntimeAdapter implements RuntimeForScoring {
    */
   registerInlineAgent(agentId: string, config: AgentRuntimeConfig): void {
     if (this.runtimes.has(agentId)) return;
-    const runtime = new AgentRuntime(config, this.options.workspaceAdapter);
+    const effectiveConfig = this.options.modelCap
+      ? { ...config, model: capModelTier(config.model, this.options.modelCap) }
+      : config;
+    const runtime = new AgentRuntime(effectiveConfig, this.options.workspaceAdapter);
     this.runtimes.set(agentId, runtime);
   }
 
@@ -199,7 +215,10 @@ export class RuntimeAdapter implements RuntimeForScoring {
       );
     }
 
-    const runtime = new AgentRuntime(config, this.options.workspaceAdapter);
+    const effectiveConfig = this.options.modelCap
+      ? { ...config, model: capModelTier(config.model, this.options.modelCap) }
+      : config;
+    const runtime = new AgentRuntime(effectiveConfig, this.options.workspaceAdapter);
     this.runtimes.set(agentId, runtime);
     return runtime;
   }

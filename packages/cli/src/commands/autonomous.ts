@@ -186,11 +186,19 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
       config.limits.maxItemsPerSprint = maxItemsOverride;
       console.log(`[cycle] maxItems override: ${maxItemsOverride}`);
     }
+    const modelCapRaw = process.env['AUTONOMOUS_MODEL_CAP'];
+    const modelCap = (modelCapRaw === 'opus' || modelCapRaw === 'sonnet' || modelCapRaw === 'haiku')
+      ? modelCapRaw
+      : undefined;
+    if (modelCap) {
+      config.modelCap = modelCap;
+      console.log(`[cycle] modelCap override: ${modelCap}`);
+    }
 
     const telemetry = createAutonomousTelemetryAdapters(cwd);
 
     try {
-      const runtime = new RuntimeAdapter({ cwd });
+      const runtime = new RuntimeAdapter({ cwd, ...(config.modelCap ? { modelCap: config.modelCap } : {}) });
       const phaseHandlers = {
         audit: (ctx: PhaseContext) => runAuditPhase(ctx),
         plan: (ctx: PhaseContext) => runPlanPhase(ctx),

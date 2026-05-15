@@ -9,6 +9,8 @@
   let dryRun = $state(false);
   let branchPrefix = $state('autonomous/');
   let comment = $state('');
+  /** Cap all agents at this tier. 'default' means no cap (use agent YAML setting). */
+  let modelCap = $state<'default' | 'sonnet' | 'haiku'>('default');
 
   // ── Launch state ──────────────────────────────────────────────────────────
   let launching = $state(false);
@@ -50,7 +52,7 @@
       const res = await fetch(withWorkspace('/api/v5/cycles/preview'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ budgetUsd, maxItems, dryRun, branchPrefix, comment }),
+        body: JSON.stringify({ budgetUsd, maxItems, dryRun, branchPrefix, comment, modelCap: modelCap !== 'default' ? modelCap : undefined }),
       });
       if (!res.ok) {
         const text = await res.text().catch(() => `HTTP ${res.status}`);
@@ -205,6 +207,7 @@
           dryRun,
           branchPrefix,
           comment,
+          modelCap: modelCap !== 'default' ? modelCap : undefined,
         }),
       });
 
@@ -285,6 +288,15 @@
       <div class="form-group">
         <label class="form-label" for="branchPrefix">Branch prefix</label>
         <input id="branchPrefix" type="text" class="form-input" bind:value={branchPrefix} disabled={launching} />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="modelCap">Model cap</label>
+        <select id="modelCap" class="form-input" bind:value={modelCap} disabled={launching}>
+          <option value="default">Default (per agent)</option>
+          <option value="sonnet">Sonnet — outage / cost reduction</option>
+          <option value="haiku">Haiku — maximum savings</option>
+        </select>
       </div>
 
       <div class="form-group toggle-group">

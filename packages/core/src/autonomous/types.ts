@@ -2,6 +2,8 @@
 // Type definitions for the autonomous development cycle.
 // See docs/superpowers/specs/2026-04-06-autonomous-loop-design.md
 
+import type { ModelTier } from '@agentforge/shared';
+
 export enum CycleStage {
   PLAN = 'plan',
   STAGE = 'stage',
@@ -104,6 +106,14 @@ export interface CycleConfig {
     /** Whether to re-run only test→review→gate or the full execute→test→review→gate. */
     reExecuteOnRetry: boolean;
   };
+  /**
+   * When set, agents whose assigned tier exceeds this value are downgraded to
+   * this tier. Useful for two cases:
+   *   - Opus service degradation: set "sonnet" to keep cycles running.
+   *   - Cost-reduced runs: set "sonnet" or "haiku" to cut spend on exploratory work.
+   * Agents already at or below the cap are unaffected (no upward coercion).
+   */
+  modelCap?: ModelTier;
 }
 
 export interface FailedTest {

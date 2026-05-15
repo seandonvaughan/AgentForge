@@ -117,7 +117,13 @@ function mergeConfig(defaults: CycleConfig, overrides: Partial<CycleConfig>): Cy
 
   for (const key of Object.keys(overrides) as (keyof CycleConfig)[]) {
     const override = overrides[key];
-    if (override !== undefined && override !== null) {
+    if (override === undefined || override === null) continue;
+    // modelCap is a primitive string, not a nested object — assign directly.
+    if (key === 'modelCap') {
+      if (override === 'opus' || override === 'sonnet' || override === 'haiku') {
+        merged.modelCap = override;
+      }
+    } else {
       merged[key] = { ...merged[key], ...(override as object) } as never;
     }
   }
