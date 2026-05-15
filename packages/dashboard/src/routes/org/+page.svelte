@@ -204,10 +204,16 @@
 
   async function load() {
     loading = true; error = null;
+    // AbortController gives the fetch a hard 10-second deadline.
+    // Without this, a hung or slow Fastify backend would leave loading=true
+    // forever — the root cause of the "page timed out" failures in prior cycles.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10_000);
     try {
-      const res = await fetch('/api/v5/org-graph');
+      const res = await fetch('/api/v5/org-graph', { signal: controller.signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
+      // API shape: { data: { nodes, edges }, meta }  (documented in org-graph.ts)
       const apiData = json.data ?? json ?? { nodes: [], edges: [] };
       totalNodes = apiData.nodes?.length ?? 0;
       totalEdges = apiData.edges?.length ?? 0;
@@ -215,7 +221,14 @@
       roots = result.roots;
       orphans = result.orphans;
       autoCollapse(roots, 3);
-    } catch (e) { error = String(e); } finally { loading = false; }
+    } catch (e) {
+      error = e instanceof DOMException && e.name === 'AbortError'
+        ? 'Request timed out (10 s). Is the backend running?'
+        : String(e);
+    } finally {
+      clearTimeout(timeoutId);
+      loading = false;
+    }
   }
 
   onMount(() => {
@@ -253,7 +266,7 @@
 {#if loading}
   <div class="loading-state">Loading organization…</div>
 {:else if error}
-  <div class="error-state">Failed to load org graph. <button class="btn-ghost" onclick={load}>Retry</button></div>
+  <div class="error-state" data-testid="org-error">{error} <button class="btn-ghost" onclick={load} data-testid="org-retry">Retry</button></div>
 {:else if roots.length === 0 && orphans.length === 0}
   <div class="empty-state">
     <p>No agents found. Add agent YAML files to <code>.agentforge/agents/</code> to populate the org chart.</p>

@@ -35,6 +35,44 @@ All notable changes to AgentForge are documented in this file.
 - Added an explicit `/live` reconnect banner for dropped SSE connections.
 - Reworked focused Playwright coverage for runner async starts, chunk replay, copy/clear controls, reconnect warning behavior, and live reconnect display.
 
+## [10.6.0] - 2026-05-05
+
+### Convergence purge — root server and dashboard consolidation
+
+v10.6.0 executes the planned structural purge of legacy root `src/server/*` code, completing the package-canonical consolidation begun in v10.5.0. All remaining monolith auth, SSE, and route logic migrates into `packages/server/src/lib/`, and the root `dashboard/pages/*.html` legacy static pages (unused since v6.5.0 SvelteKit launch) are deleted. Test imports across 25+ files are updated to reference the new package locations.
+
+**Root src/server purge**:
+- Deleted `src/server/auth.ts`, `sse-streams.ts`, and legacy route modules (`./routes/*`)
+- Relocated `auth` and `sse-streams` to `packages/server/src/lib/auth.ts` and `sse-streams.ts`
+- Remaining root server code (compatibility shims for legacy CLI surfaces) moved to `packages/server/src/lib/`
+- Updated 25+ test files to import from new locations
+
+**Dashboard static pages deletion**:
+- Deleted `dashboard/index.html`, `dashboard/pages/*.html` (agents, approvals, branches, careers, chat, cost, cycles, decisions, flywheel, home, knowledge, memory, observe, org, run-detail, runs, search, sprints, tasks, teams)
+- These pages were deprecated in v6.5.0 when SvelteKit `packages/dashboard/` became the canonical UI
+- Slash command and all documentation already point to SvelteKit; static pages were dead code
+- Reduces repository clutter and prevents users from accidentally navigating to outdated interfaces
+
+**Dashboard hardening**:
+- Fixed `/agents` route: restored page-server data loading and Svelte UI after routing regression in v10.5.1
+- Fixed `/org` route: page-server reconstruction from flywheel memory reader + team state
+- Fixed `/approvals` route: restored approval modal state machine and decision-gate wiring
+- Polished `/flywheel` and `/memory` routes: rewired real-data sources from memory registry and gate verdicts
+- Added `VersionBanner.svelte` component showing current cycle release and proposal sprint version
+- Dashboard unit test suite expanded: new `agents-page-server.test.ts`, `approvals-store.test.ts`, `phase-render.test.ts`, `live-feed.test.ts`
+
+**Gate-phase handler polish**:
+- Updated gate-phase prompt and `GateRejectedError` handling to include structured rationale and finding verification protocol
+- Gate verdicts now persisted to memory registry for cross-cycle learning
+
+**Documentation**:
+- New `docs/CONVERGENCE.md` spec (281 lines): documents the root-vs-packages runtime contract, clarifies which surfaces are canonical, and locks in the purge strategy for v10.7.0
+- New `docs/superpowers/specs/2026-04-16-v107-convergence-purge.md` (69 lines): v10.7.0 planning doc for complete root src/ deletion (remaining .ts files after this purge)
+
+**Breaking changes**: None. All public surfaces remain at `packages/*/` or through CLI/plugin compatibility bridges.
+
+---
+
 ## [10.5.1] - 2026-04-16
 
 ### Convergence finishing pass

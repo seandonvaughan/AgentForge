@@ -60,6 +60,22 @@
   let newFeedCount = 0;
   const MAX_FEED_EVENTS = 30;
 
+  /**
+   * Active event-type filter for the live feed.
+   * 'all' shows every event; any other value shows only events of that type.
+   * Resets to 'all' when the feed is collapsed so it doesn't hide events on
+   * re-open in a potentially confusing way.
+   */
+  let feedFilter = 'all';
+
+  /** Unique event types present in the current liveEvents buffer. */
+  $: feedEventTypes = [...new Set(liveEvents.map(e => e.type))].sort();
+
+  /** Events visible in the feed after the active type filter is applied. */
+  $: filteredFeedEvents = feedFilter === 'all'
+    ? liveEvents
+    : liveEvents.filter(e => e.type === feedFilter);
+
   // SSE reconnect backoff constants
   const SSE_BASE_BACKOFF_MS = 2_000;
   const SSE_MAX_BACKOFF_MS  = 60_000;
@@ -1518,7 +1534,7 @@
 <div class="live-feed" class:live-feed--open={feedOpen}>
   <button
     class="live-feed__header"
-    onclick={() => { feedOpen = !feedOpen; if (feedOpen) newFeedCount = 0; }}
+    onclick={() => { feedOpen = !feedOpen; if (feedOpen) { newFeedCount = 0; } else { feedFilter = 'all'; } }}
     aria-expanded={feedOpen}
     aria-controls="live-feed-body"
   >
@@ -1538,14 +1554,45 @@
   </button>
 
   {#if feedOpen}
+    <!-- Event type filter chips — appear only when ≥2 distinct event types are present.
+         Clicking a chip narrows the feed to only events of that type; clicking the
+         active chip (or "All") resets to show everything.
+         Uses stopPropagation so clicks don't bubble up to the header toggle. -->
+    {#if feedEventTypes.length > 1}
+      <div class="feed-type-bar" role="group" aria-label="Filter live events by type"
+           onclick={(e) => e.stopPropagation()}>
+        <button
+          class="feed-type-chip"
+          class:feed-type-chip--active={feedFilter === 'all'}
+          onclick={() => { feedFilter = 'all'; }}
+          aria-pressed={feedFilter === 'all'}
+        >All <span class="feed-type-chip__count">{liveEvents.length}</span></button>
+        {#each feedEventTypes as evType (evType)}
+          {@const typeCount = liveEvents.filter(e => e.type === evType).length}
+          <button
+            class="feed-type-chip feed-type-chip--{evType.replace(/[^a-z0-9]/gi, '-')}"
+            class:feed-type-chip--active={feedFilter === evType}
+            onclick={() => { feedFilter = feedFilter === evType ? 'all' : evType; }}
+            title="Show only {evType} events"
+            aria-pressed={feedFilter === evType}
+          >{evType} <span class="feed-type-chip__count">{typeCount}</span></button>
+        {/each}
+      </div>
+    {/if}
+
     <div id="live-feed-body" class="live-feed__body" role="log" aria-live="polite" aria-label="Live SSE event feed">
       {#if liveEvents.length === 0}
         <div class="live-feed__empty">
           <span>No events yet — events appear here as cycles run.</span>
         </div>
+      {:else if filteredFeedEvents.length === 0}
+        <div class="live-feed__empty">
+          <span>No <strong>{feedFilter}</strong> events yet.</span>
+          <button class="feed-clear-filter" onclick={() => { feedFilter = 'all'; }}>Show all</button>
+        </div>
       {:else}
         <ol class="live-feed__list" reversed>
-          {#each liveEvents as ev, i (i)}
+          {#each filteredFeedEvents as ev, i (i)}
             {@const evLabel = ev.category ?? ev.type}
             {@const isCycleComplete =
               ev.type === 'cycle_event' && (
@@ -2390,7 +2437,76 @@
     padding: var(--space-2) 0;
   }
 
+  /* ── Live feed event-type filter chips ───────────────────────────────────── */
+  /*
+   * Shown below the feed header when ≥2 distinct event types exist.
+   * Clicking a chip narrows the feed list to that event type.
+   * Clicking the active chip (or "All") resets the filter.
+   */
+  .feed-type-bar {
+    display: flex;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-4) var(--space-2);
+    flex-wrap: wrap;
+    background: var(--color-surface-1);
+    border-top: 1px solid var(--color-border);
+  }
+
+  .feed-type-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 9px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: var(--radius-full);
+    border: 1px solid var(--color-border);
+    background: var(--color-surface-2);
+    color: var(--color-text-faint);
+    cursor: pointer;
+    letter-spacing: 0.03em;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+    white-space: nowrap;
+  }
+  .feed-type-chip:hover {
+    background: var(--color-bg-card-hover);
+    border-color: var(--color-border-strong);
+    color: var(--color-text-muted);
+  }
+  .feed-type-chip--active {
+    background: color-mix(in srgb, var(--color-brand) 10%, transparent);
+    border-color: rgba(91,138,245,0.4);
+    color: var(--color-brand);
+  }
+  /* Event-type specific active colors mirror the feed-event__chip colors */
+  .feed-type-chip--cycle_event.feed-type-chip--active           { background: rgba(74,158,255,0.1);  border-color: rgba(74,158,255,0.4);  color: var(--color-sonnet); }
+  .feed-type-chip--session-started.feed-type-chip--active,
+  .feed-type-chip--session-completed.feed-type-chip--active     { background: rgba(76,175,130,0.1);  border-color: rgba(76,175,130,0.4);  color: var(--color-haiku); }
+  .feed-type-chip--session-failed.feed-type-chip--active        { background: rgba(224,90,90,0.09);  border-color: rgba(224,90,90,0.4);   color: var(--color-danger); }
+  .feed-type-chip--workflow_event.feed-type-chip--active        { background: rgba(245,200,66,0.09); border-color: rgba(245,200,66,0.4);  color: var(--color-opus); }
+  .feed-type-chip--memory_written.feed-type-chip--active        { background: rgba(76,175,130,0.1);  border-color: rgba(76,175,130,0.4);  color: var(--color-haiku); }
+
+  .feed-type-chip__count {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    opacity: 0.75;
+  }
+
+  .feed-clear-filter {
+    background: transparent;
+    border: none;
+    color: var(--color-brand);
+    font-size: var(--text-xs);
+    cursor: pointer;
+    padding: 0 var(--space-1);
+    text-decoration: underline;
+    margin-left: var(--space-2);
+  }
+
   .live-feed__empty {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
     padding: var(--space-3) var(--space-4);
     font-size: var(--text-xs);
     color: var(--color-text-faint);
@@ -2977,5 +3093,15 @@
     .detail-value-wrap .value-expanded { padding-right: var(--space-3); }
     .feed-event__ts { display: none; }
     .live-feed__body { max-height: 180px; }
+    /* Make feed type bar horizontally scrollable on mobile */
+    .feed-type-bar {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+      -webkit-overflow-scrolling: touch;
+    }
+    .feed-type-bar::-webkit-scrollbar { display: none; }
+    .feed-type-chip { flex-shrink: 0; }
   }
 </style>

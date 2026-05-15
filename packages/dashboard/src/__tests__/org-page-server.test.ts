@@ -273,3 +273,38 @@ describe('buildOrgGraph — real project data', () => {
     expect(ids.has('architect')).toBe(true);
   });
 });
+
+// ── Timeout / abort error message contract ────────────────────────────────────
+//
+// The /org page load() function uses AbortController to cap the /api/v5/org-graph
+// fetch at 10 seconds. Verifies the DOMException detection logic used to build
+// the user-facing "Request timed out" message is correct.
+//
+// This logic lives in +page.svelte but the pattern mirrors what we can test
+// without spinning up a DOM: that a DOMException with name 'AbortError' is
+// recognized, and any other error falls back to String(e).
+
+describe('org page — fetch timeout error message contract', () => {
+  it('classifies DOMException AbortError as a timeout message', () => {
+    const abortError = new DOMException('The operation was aborted.', 'AbortError');
+    const message = abortError instanceof DOMException && abortError.name === 'AbortError'
+      ? 'Request timed out (10 s). Is the backend running?'
+      : String(abortError);
+    expect(message).toBe('Request timed out (10 s). Is the backend running?');
+  });
+
+  it('falls back to String(e) for non-abort errors', () => {
+    const networkError = new TypeError('Failed to fetch');
+    const message = networkError instanceof DOMException && networkError.name === 'AbortError'
+      ? 'Request timed out (10 s). Is the backend running?'
+      : String(networkError);
+    expect(message).toBe('TypeError: Failed to fetch');
+  });
+
+  it('AbortController.abort() causes fetch signal to be aborted', () => {
+    const controller = new AbortController();
+    expect(controller.signal.aborted).toBe(false);
+    controller.abort();
+    expect(controller.signal.aborted).toBe(true);
+  });
+});

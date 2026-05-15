@@ -14,8 +14,8 @@ import {
   composeTeam,
   composeTeamUnits,
   type TeamComposition,
-} from '../../src/builder/team-composer.js';
-import type { FullScanResult } from '../../src/scanner/index.js';
+} from '../../packages/core/src/team/engine/builder/team-composer.js';
+import type { FullScanResult } from '../../packages/core/src/team/engine/scanner/index.js';
 
 // ---------------------------------------------------------------------------
 // Scan result factory — same pattern as team-composer.test.ts

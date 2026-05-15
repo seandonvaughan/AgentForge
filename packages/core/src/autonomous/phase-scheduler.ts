@@ -107,6 +107,9 @@ export class PhaseScheduler {
       if (event.phase && event.result) {
         this.phaseResults.set(event.phase, event.result);
         this.logger.logPhaseResult(event.phase, event.result);
+        // Flush accumulated cost to cycle.json after each phase so operators
+        // have live spend visibility without waiting for terminal state.
+        this.logger.flushCycleCost(this.sumCost());
       }
 
       const trip = this.killSwitch.checkBetweenPhases({

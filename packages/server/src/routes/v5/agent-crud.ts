@@ -11,6 +11,10 @@ import {
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 import { globalStream } from './stream.js';
+import { safeJoin } from '../../lib/safe-join.js';
+
+/** Agent IDs must be kebab-case slugs — mirrors the POST-create validation. */
+const SAFE_AGENT_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 // ---------------------------------------------------------------------------
 // ESM-safe __dirname
@@ -234,15 +238,18 @@ export async function agentCrudRoutes(
   // Ensure agents directory exists
   if (!existsSync(agentsDir)) mkdirSync(agentsDir, { recursive: true });
 
-  /** Full path to an agent YAML file. */
-  function agentFilePath(id: string): string {
-    return join(agentsDir, `${id}.yaml`);
+  /**
+   * Full path to an agent YAML file, or null if `id` would escape agentsDir.
+   * This is the single path-construction point for all agent CRUD operations.
+   */
+  function agentFilePath(id: string): string | null {
+    return safeJoin(agentsDir, `${id}.yaml`);
   }
 
-  /** Read agent YAML; returns null if the file does not exist. */
+  /** Read agent YAML; returns null if the file does not exist or id is unsafe. */
   function readAgent(id: string): AgentYaml | null {
     const p = agentFilePath(id);
-    if (!existsSync(p)) return null;
+    if (!p || !existsSync(p)) return null;
     return readYaml<AgentYaml>(p);
   }
 
@@ -271,8 +278,12 @@ export async function agentCrudRoutes(
       return reply.status(400).send({ error: 'model must be one of: opus, sonnet, haiku' });
     }
 
+    // Resolve and contain the file path (id already validated as kebab-case above)
+    const newFilePath = agentFilePath(id);
+    if (!newFilePath) return reply.status(400).send({ error: 'Invalid agent id' });
+
     // Prevent overwriting an existing agent
-    if (existsSync(agentFilePath(id))) {
+    if (existsSync(newFilePath)) {
       return reply.status(409).send({ error: `Agent "${id}" already exists` });
     }
 
@@ -292,7 +303,7 @@ export async function agentCrudRoutes(
       },
     };
 
-    writeYaml(agentFilePath(id), agentYaml);
+    writeYaml(newFilePath, agentYaml);
 
     // Wire into delegation hierarchy
     if (reports_to) addToDelegation(delPath, reports_to, id);
@@ -316,6 +327,8 @@ export async function agentCrudRoutes(
     '/api/v5/agents/:id',
     async (req, reply) => {
       const { id } = req.params;
+      if (!SAFE_AGENT_ID.test(id)) return reply.status(400).send({ error: 'Invalid agent id' });
+
       const existing = readAgent(id);
       if (!existing) return reply.status(404).send({ error: `Agent "${id}" not found` });
 
@@ -340,7 +353,11 @@ export async function agentCrudRoutes(
         },
       };
 
-      writeYaml(agentFilePath(id), updated);
+      // agentFilePath returns null only if id escapes agentsDir; SAFE_AGENT_ID
+      // check above ensures this cannot happen, but we guard for type safety.
+      const patchPath = agentFilePath(id);
+      if (!patchPath) return reply.status(400).send({ error: 'Invalid agent id' });
+      writeYaml(patchPath, updated);
 
       // Delegation update: if reports_to changed, rewire
       if (reports_to !== undefined) {
@@ -369,7 +386,10 @@ export async function agentCrudRoutes(
 
   app.delete<{ Params: { id: string } }>('/api/v5/agents/:id', async (req, reply) => {
     const { id } = req.params;
-    if (!existsSync(agentFilePath(id))) {
+    if (!SAFE_AGENT_ID.test(id)) return reply.status(400).send({ error: 'Invalid agent id' });
+
+    const deletePath = agentFilePath(id);
+    if (!deletePath || !existsSync(deletePath)) {
       return reply.status(404).send({ error: `Agent "${id}" not found` });
     }
 
@@ -382,7 +402,7 @@ export async function agentCrudRoutes(
       });
     }
 
-    unlinkSync(agentFilePath(id));
+    unlinkSync(deletePath);
     removeFromDelegation(delPath, id);
     removeFromModels(mdlPath, id);
 
@@ -402,6 +422,8 @@ export async function agentCrudRoutes(
     '/api/v5/agents/:id/fork',
     async (req, reply) => {
       const { id } = req.params;
+      if (!SAFE_AGENT_ID.test(id)) return reply.status(400).send({ error: 'Invalid agent id' });
+
       const source = readAgent(id);
       if (!source) return reply.status(404).send({ error: `Agent "${id}" not found` });
 
@@ -409,11 +431,14 @@ export async function agentCrudRoutes(
 
       if (!newId) return reply.status(400).send({ error: 'newId is required' });
 
-      if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(newId)) {
+      if (!SAFE_AGENT_ID.test(newId)) {
         return reply.status(400).send({ error: 'newId must be kebab-case' });
       }
 
-      if (existsSync(agentFilePath(newId))) {
+      const forkPath = agentFilePath(newId);
+      if (!forkPath) return reply.status(400).send({ error: 'Invalid newId' });
+
+      if (existsSync(forkPath)) {
         return reply.status(409).send({ error: `Agent "${newId}" already exists` });
       }
 
@@ -429,7 +454,7 @@ export async function agentCrudRoutes(
         version: '1.0',
       };
 
-      writeYaml(agentFilePath(newId), forked);
+      writeYaml(forkPath, forked);
 
       // Register forked agent in model routing
       setModelRouting(mdlPath, newId, forked.model);
@@ -456,6 +481,8 @@ export async function agentCrudRoutes(
     '/api/v5/agents/:id/promote',
     async (req, reply) => {
       const { id } = req.params;
+      if (!SAFE_AGENT_ID.test(id)) return reply.status(400).send({ error: 'Invalid agent id' });
+
       const existing = readAgent(id);
       if (!existing) return reply.status(404).send({ error: `Agent "${id}" not found` });
 
@@ -480,7 +507,11 @@ export async function agentCrudRoutes(
         model: newModel,
       };
 
-      writeYaml(agentFilePath(id), updated);
+      // agentFilePath returns null only if id escapes agentsDir; SAFE_AGENT_ID
+      // check above ensures this cannot happen, but we guard for type safety.
+      const promotePath = agentFilePath(id);
+      if (!promotePath) return reply.status(400).send({ error: 'Invalid agent id' });
+      writeYaml(promotePath, updated);
 
       // Sync model routing
       setModelRouting(mdlPath, id, newModel);

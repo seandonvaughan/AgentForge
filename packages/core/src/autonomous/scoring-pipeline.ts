@@ -14,10 +14,20 @@ import { join } from 'node:path';
 import type { CycleConfig, ScoringResult, RankedItem } from './types.js';
 import type { BacklogItem } from './proposal-to-backlog.js';
 import type { CycleLogger } from './cycle-logger.js';
+import { EffortEstimator } from '../predictive-planning/effort-estimator.js';
+import { HistoryAnalyzer } from '../predictive-planning/history-analyzer.js';
+import type { HistoryAnalysis } from '../predictive-planning/history-analyzer.js';
+import type { SprintHistoryRecord, PriorityTier } from '../predictive-planning/types.js';
 
 export interface AdapterForScoring {
   getSprintHistory(limit: number): Promise<unknown[]>;
   getCostMedians(): Promise<Record<string, number>>;
+  /**
+   * Returns the p50 (median) actual cost per sprint-item tag, derived from the
+   * last 20 cycles. Used by staticFallback() to replace the flat $1.50 default
+   * with tag-specific estimates (fix ~$1.10, feature ~$1.65, etc.).
+   */
+  getP50CostByTag(): Promise<Record<string, number>>;
   getTeamState(): Promise<{ utilization: Record<string, number> }>;
 }
 
@@ -38,7 +48,7 @@ export interface ScoringPipelineResult {
   budgetOverflowUsd: number;
   summary: string;
   warnings: string[];
-  fallback?: 'static';
+  fallback?: 'static' | 'effort-estimator';
 }
 
 export class ScoringPipelineError extends Error {
@@ -126,7 +136,7 @@ export class ScoringPipeline {
       const runResult = await this.runtime.run(this.config.scoring.agentId, task, {
         responseFormat: 'json',
       });
-      scoringResult = this.parseAndValidate(runResult.output);
+      scoringResult = this.sanitizeAssignees(this.parseAndValidate(runResult.output));
     } catch (err) {
       throw new ScoringPipelineError(
         `Scoring agent failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -150,9 +160,9 @@ export class ScoringPipeline {
 
   /**
    * Three-strike scoring with fallback ladder.
-   * Strike 1: retry with clarified prompt
-   * Strike 2: retry with simpler schema (drop dependencies/suggestedAssignee)
-   * Strike 3: fall back to static priority ranking
+   * Strike 1..N: retry LLM scorer up to maxRetries times
+   * Strike N+1:  effort-estimator fallback (complexity + history-calibrated costs)
+   * Strike N+2:  static priority ranking (flat perItemUsd / p50 by tag, last resort)
    */
   async scoreWithFallback(backlog: BacklogItem[]): Promise<ScoringPipelineResult> {
     const strikes = this.config.scoring.maxRetries;
@@ -171,11 +181,131 @@ export class ScoringPipeline {
       throw lastError ?? new ScoringPipelineError('Scoring failed after all retries');
     }
 
-    this.logger.logScoringFallback(strikes + 1, 'Falling back to static priority ranking');
-    return this.staticFallback(backlog);
+    // Effort-estimator fallback: uses historical avgCostUsd + complexity scores
+    // to produce per-item estimates; better than the flat-cost static fallback.
+    this.logger.logScoringFallback(strikes + 1, 'LLM scoring failed — falling back to effort-estimator');
+    try {
+      return await this.effortEstimatorFallback(backlog);
+    } catch (effortErr) {
+      const msg = effortErr instanceof Error ? effortErr.message : String(effortErr);
+      this.logger.logScoringFallback(
+        strikes + 2,
+        `Effort-estimator failed (${msg}); falling back to static priority ranking`,
+      );
+    }
+
+    return await this.staticFallback(backlog);
   }
 
-  private staticFallback(backlog: BacklogItem[]): ScoringPipelineResult {
+  /**
+   * Effort-estimator fallback: produces per-item cost and confidence estimates
+   * using the EffortEstimator seeded with historical sprint data. Falls back to
+   * zero-data analysis (confidence 0.3, cost = complexityScore * 0.5) when
+   * history is unavailable. Always resolves; never throws.
+   */
+  private async effortEstimatorFallback(backlog: BacklogItem[]): Promise<ScoringPipelineResult> {
+    const estimator = new EffortEstimator();
+    const analyzer = new HistoryAnalyzer();
+
+    // Build HistoryAnalysis from adapter sprint history. The history entries
+    // carry avgItemCostUsd and completedCount but lack per-priority breakdowns,
+    // so avgCostPerPriorityTier stays zero. avgCostUsd and totalSprints still
+    // drive meaningful confidence calibration.
+    let analysis: HistoryAnalysis;
+    try {
+      const raw = await this.adapter.getSprintHistory(10);
+      const records = adaptRawToHistoryRecords(raw);
+      analysis = analyzer.analyze(records);
+    } catch {
+      analysis = analyzer.analyze([]); // zero-data: confidence 0.3, no historical cost
+    }
+
+    // Adapt autonomous BacklogItem → predictive-planning BacklogItem.
+    // complexityScore defaults to 5 (neutral midpoint of 1–10 scale) since
+    // autonomous items don't carry a complexity field yet.
+    const estimateMap = new Map(
+      backlog.map(item => [
+        item.id,
+        estimator.estimate(
+          {
+            id: item.id,
+            title: item.title,
+            priority: item.priority as PriorityTier,
+            complexityScore: 5,
+            // exactOptionalPropertyTypes: only spread when defined to avoid
+            // assigning `undefined` to a field typed as `number` (not `number | undefined`)
+            ...(item.estimatedCostUsd !== undefined
+              ? { estimatedCostUsd: item.estimatedCostUsd }
+              : {}),
+          },
+          analysis,
+        ),
+      ]),
+    );
+
+    const priorityOrder: Record<string, number> = { P0: 0, P1: 1, P2: 2, P3: 3 };
+    const sorted = [...backlog].sort((a, b) => {
+      const pa = priorityOrder[a.priority] ?? 9;
+      const pb = priorityOrder[b.priority] ?? 9;
+      return pa !== pb ? pa - pb : b.confidence - a.confidence;
+    });
+
+    const rankings: RankedItem[] = sorted.map((item, idx) => {
+      const est = estimateMap.get(item.id);
+      const costUsd = est?.estimatedCostUsd ?? this.config.budget.perItemUsd;
+      const confidence = est?.confidence ?? item.confidence;
+      return {
+        itemId: item.id,
+        title: item.title,
+        rank: idx + 1,
+        score: confidence,
+        confidence,
+        estimatedCostUsd: costUsd,
+        estimatedDurationMinutes: Math.round((est?.estimatedHours ?? 0.5) * 60),
+        rationale: `Effort-estimator fallback (${item.priority}, est $${costUsd.toFixed(2)}, confidence ${confidence.toFixed(2)})`,
+        dependencies: [],
+        suggestedAssignee: 'coder',
+        suggestedTags: item.tags,
+        withinBudget: true,
+      };
+    });
+
+    // Enforce per-cycle budget cap
+    let cumulative = 0;
+    for (const r of rankings) {
+      cumulative += r.estimatedCostUsd;
+      if (cumulative > this.config.budget.perCycleUsd) {
+        r.withinBudget = false;
+      }
+    }
+
+    const withinBudget = rankings
+      .filter(r => r.withinBudget)
+      .slice(0, this.config.limits.maxItemsPerSprint);
+
+    const totalCost = withinBudget.reduce((sum, r) => sum + r.estimatedCostUsd, 0);
+
+    return {
+      withinBudget,
+      requiresApproval: rankings.filter(r => !r.withinBudget),
+      totalEstimatedCostUsd: totalCost,
+      budgetOverflowUsd: 0,
+      summary: `Effort-estimator fallback: ${withinBudget.length} items within $${this.config.budget.perCycleUsd} budget`,
+      warnings: ['Scoring agent failed; used effort-estimator fallback'],
+      fallback: 'effort-estimator',
+    };
+  }
+
+  private async staticFallback(backlog: BacklogItem[]): Promise<ScoringPipelineResult> {
+    // Fetch tag-specific medians; fall back to flat perItemUsd if the adapter throws.
+    let p50CostByTag: Record<string, number> = {};
+    try {
+      p50CostByTag = await this.adapter.getP50CostByTag();
+    } catch {
+      // Adapter unavailable — perItemUsd flat fallback applies below.
+    }
+
+    const defaultCost = this.config.budget.perItemUsd;
     const priorityOrder: Record<'P0' | 'P1' | 'P2', number> = { P0: 0, P1: 1, P2: 2 };
     const sorted = [...backlog].sort((a, b) => {
       const pa = priorityOrder[a.priority];
@@ -184,14 +314,15 @@ export class ScoringPipeline {
       return b.confidence - a.confidence;
     });
 
-    const defaultCost = this.config.budget.perItemUsd;
     const rankings: RankedItem[] = sorted.map((item, idx) => ({
       itemId: item.id,
       title: item.title,
       rank: idx + 1,
       score: item.confidence,
       confidence: item.confidence,
-      estimatedCostUsd: defaultCost,
+      // Tag-specific median cost takes precedence over the flat per-item default.
+      // item.tags[0] is the primary tag (e.g. "fix", "feature", "chore").
+      estimatedCostUsd: p50CostByTag[item.tags[0] ?? ''] ?? defaultCost,
       estimatedDurationMinutes: 15,
       rationale: `Static fallback ranking (${item.priority}, confidence ${item.confidence.toFixed(2)})`,
       dependencies: [],
@@ -233,7 +364,16 @@ export class ScoringPipeline {
       this.adapter.getCostMedians(),
       this.adapter.getTeamState(),
     ]);
-    return { history, costMedians, teamState };
+    // p50CostByTag is fetched separately so a missing or slow adapter doesn't
+    // block the rest of grounding. Graceful degradation: empty object means the
+    // scoring agent falls back to its built-in hardcoded priors.
+    let p50CostByTag: Record<string, number> = {};
+    try {
+      p50CostByTag = await this.adapter.getP50CostByTag();
+    } catch {
+      // Adapter unavailable — grounding proceeds without tag-calibrated medians.
+    }
+    return { history, costMedians, teamState, p50CostByTag };
   }
 
   private buildScoringPrompt(backlog: BacklogItem[], grounding: object): string {
@@ -249,7 +389,15 @@ ${JSON.stringify(grounding, null, 2)}
 - Hard cap per cycle: $${this.config.budget.perCycleUsd}
 - Max items: ${this.config.limits.maxItemsPerSprint}
 
-## Available agents (use ONLY these exact IDs for suggestedAssignee)
+## Roster constraint — CRITICAL
+The \`suggestedAssignee\` field MUST be one of the exact kebab-case IDs listed
+below. Do NOT invent generic role names such as "BackendEngineer", "FrontendEngineer",
+"QAEngineer", "InfraEngineer", "CoreAutonomyAgent", "DocsAgent", or any
+PascalCase/camelCase name. Invented names are not routable — the cycle runner
+cannot dispatch an agent that does not exist in the registry. Use "coder" as
+the safe default when no specialist clearly fits.
+
+Valid agent IDs (copy one verbatim, no modifications):
 ${this.getAgentRoster().join(', ')}
 
 ## Cost calibration (use as baseline, not training priors)
@@ -294,7 +442,7 @@ Return ONLY valid JSON matching this schema:
       "estimatedDurationMinutes": number,
       "rationale": string,
       "dependencies": string[],
-      "suggestedAssignee": string (MUST be one of the agent IDs listed above),
+      "suggestedAssignee": string (MUST be one of the agent IDs from the Roster constraint above — use "coder" if unsure),
       "suggestedTags": string[],
       "withinBudget": boolean
     }
@@ -306,6 +454,34 @@ Return ONLY valid JSON matching this schema:
 }
 
 Do not include any text outside the JSON object.`;
+  }
+
+  /**
+   * Post-processing guard: replace any suggestedAssignee that isn't in the
+   * team roster with 'coder', and append a warning for each replacement.
+   * This is defense-in-depth — the prompt already forbids invented names, but
+   * LLMs can still drift toward generic PascalCase roles like "BackendEngineer"
+   * or "FrontendEngineer" that cannot be dispatched by the cycle runner.
+   */
+  private sanitizeAssignees(result: ScoringResult): ScoringResult {
+    const roster = new Set(this.getAgentRoster());
+    const sanitizationWarnings: string[] = [];
+
+    const sanitizedRankings = result.rankings.map(r => {
+      if (!roster.has(r.suggestedAssignee)) {
+        sanitizationWarnings.push(
+          `suggestedAssignee "${r.suggestedAssignee}" (item ${r.itemId}) is not in roster — replaced with "coder"`,
+        );
+        return { ...r, suggestedAssignee: 'coder' };
+      }
+      return r;
+    });
+
+    return {
+      ...result,
+      rankings: sanitizedRankings,
+      warnings: [...result.warnings, ...sanitizationWarnings],
+    };
   }
 
   parseAndValidate(output: string): ScoringResult {
@@ -343,6 +519,45 @@ Do not include any text outside the JSON object.`;
     }
     return true;
   }
+}
+
+/**
+ * Adapt raw history entries from AdapterForScoring.getSprintHistory() into
+ * the SprintHistoryRecord shape expected by HistoryAnalyzer.
+ *
+ * The adapter returns SprintHistoryEntry objects (version, itemCount,
+ * completedCount, avgItemCostUsd) rather than SprintHistoryRecord.
+ * Per-priority breakdowns are unavailable, so completedByPriority is zeroed —
+ * but avgCostUsd and totalSprints are correctly derived, which drives the
+ * confidence calibration in EffortEstimator.estimate().
+ */
+function adaptRawToHistoryRecords(raw: unknown[]): SprintHistoryRecord[] {
+  const zeroPriority: Record<PriorityTier, number> = { P0: 0, P1: 0, P2: 0, P3: 0 };
+  const records: SprintHistoryRecord[] = [];
+
+  for (const item of raw) {
+    if (typeof item !== 'object' || item === null) continue;
+    const r = item as Record<string, unknown>;
+    const completedItems = typeof r.completedCount === 'number' ? r.completedCount : 0;
+    const avgItemCostUsd = typeof r.avgItemCostUsd === 'number' ? r.avgItemCostUsd : 0;
+    const totalCostUsd = avgItemCostUsd * Math.max(1, completedItems);
+    // Skip completely empty records — they add noise without signal
+    if (totalCostUsd === 0 && completedItems === 0) continue;
+
+    records.push({
+      sprintId: typeof r.version === 'string' ? r.version : 'unknown',
+      plannedItems: typeof r.itemCount === 'number' ? r.itemCount : completedItems,
+      completedItems,
+      totalCostUsd,
+      durationDays: 1, // not available in SprintHistoryEntry; 1 is a neutral sentinel
+      failedItems: [],
+      itemsByPriority: { ...zeroPriority },
+      completedByPriority: { ...zeroPriority },
+      completedAt: typeof r.createdAt === 'string' ? r.createdAt : new Date().toISOString(),
+    });
+  }
+
+  return records;
 }
 
 /**

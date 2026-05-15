@@ -15,6 +15,9 @@ import { tmpdir } from 'node:os';
 import {
   extractFindingsByLevel,
   parseGateVerdict,
+  loadPriorGateKnownDebt,
+  buildKnownDebtSection,
+  type PriorGateContext,
 } from '../gate-phase.js';
 import { writeMemoryEntry, readMemoryEntries, type GateVerdictMetadata } from '../../../memory/types.js';
 import {
@@ -537,5 +540,232 @@ describe('gate-verdict metadata round-trip', () => {
     const stored = entries[0]!.metadata as GateVerdictMetadata;
     expect(stored.cycleId).toBe('');
     expect(typeof stored.cycleId).toBe('string');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// loadPriorGateKnownDebt
+//
+// Reads the most recent gate-verdict.jsonl entry and returns structured
+// PriorGateContext from its metadata field. Must be null-safe: callers get
+// null when no prior verdict exists or the metadata is unreadable.
+// ---------------------------------------------------------------------------
+
+describe('loadPriorGateKnownDebt', () => {
+  it('returns null when no prior gate-verdict entry exists', () => {
+    const result = loadPriorGateKnownDebt(tmpRoot);
+    expect(result).toBeNull();
+  });
+
+  it('returns null when the entry has no metadata field', () => {
+    // Write an entry without metadata (e.g. legacy format).
+    writeMemoryEntry(tmpRoot, {
+      type: 'gate-verdict',
+      value: 'Gate approved: legacy entry',
+      source: 'cycle-legacy',
+      tags: ['verdict:approved'],
+      // No metadata field
+    });
+
+    const result = loadPriorGateKnownDebt(tmpRoot);
+    expect(result).toBeNull();
+  });
+
+  it('returns PriorGateContext from the most recent approved entry', () => {
+    const meta: GateVerdictMetadata = {
+      cycleId: 'cycle-prior-001',
+      verdict: 'approved',
+      rationale: 'Shipped with known debt',
+      criticalFindings: [],
+      majorFindings: ['readCycleRecord duplicated across two packages'],
+    };
+
+    writeMemoryEntry(tmpRoot, {
+      type: 'gate-verdict',
+      value: 'Gate approved: Shipped with known debt. Major: readCycleRecord duplicated across two packages',
+      metadata: meta,
+      source: 'cycle-prior-001',
+      tags: ['verdict:approved', 'sprint:v14.0.0'],
+    });
+
+    const result = loadPriorGateKnownDebt(tmpRoot);
+    expect(result).not.toBeNull();
+    expect(result!.cycleId).toBe('cycle-prior-001');
+    expect(result!.verdict).toBe('approved');
+    expect(result!.majorFindings).toEqual(['readCycleRecord duplicated across two packages']);
+    expect(result!.criticalFindings).toEqual([]);
+  });
+
+  it('returns PriorGateContext from a rejected entry', () => {
+    const meta: GateVerdictMetadata = {
+      cycleId: 'cycle-prior-rej',
+      verdict: 'rejected',
+      rationale: 'capModelTier has no tests',
+      criticalFindings: [],
+      majorFindings: ['No tests for capModelTier', 'effort typed as string'],
+    };
+
+    writeMemoryEntry(tmpRoot, {
+      type: 'gate-verdict',
+      value: 'Gate rejected: capModelTier has no tests',
+      metadata: meta,
+      source: 'cycle-prior-rej',
+      tags: ['verdict:rejected', 'sprint:v14.0.0'],
+    });
+
+    const result = loadPriorGateKnownDebt(tmpRoot);
+    expect(result).not.toBeNull();
+    expect(result!.verdict).toBe('rejected');
+    expect(result!.majorFindings).toHaveLength(2);
+    expect(result!.majorFindings[0]).toContain('capModelTier');
+  });
+
+  it('returns context from the MOST RECENT entry when multiple verdicts exist', () => {
+    // Write an older approved entry first.
+    writeMemoryEntry(tmpRoot, {
+      type: 'gate-verdict',
+      value: 'Gate approved: older cycle',
+      metadata: {
+        cycleId: 'cycle-old',
+        verdict: 'approved',
+        rationale: 'older',
+        criticalFindings: [],
+        majorFindings: ['old debt'],
+      } satisfies GateVerdictMetadata,
+      source: 'cycle-old',
+    });
+
+    // Write a newer rejected entry.
+    writeMemoryEntry(tmpRoot, {
+      type: 'gate-verdict',
+      value: 'Gate rejected: newer cycle',
+      metadata: {
+        cycleId: 'cycle-new',
+        verdict: 'rejected',
+        rationale: 'newer issue',
+        criticalFindings: ['Auth bypass'],
+        majorFindings: [],
+      } satisfies GateVerdictMetadata,
+      source: 'cycle-new',
+    });
+
+    const result = loadPriorGateKnownDebt(tmpRoot);
+    // Must reflect the most recently written entry.
+    expect(result!.cycleId).toBe('cycle-new');
+    expect(result!.verdict).toBe('rejected');
+    expect(result!.criticalFindings).toEqual(['Auth bypass']);
+  });
+
+  it('returns null when metadata.verdict is not a valid GateVerdictMetadata verdict', () => {
+    writeMemoryEntry(tmpRoot, {
+      type: 'gate-verdict',
+      value: 'Gate unknown verdict',
+      // Non-GateVerdictMetadata shape — uses a Record instead
+      metadata: { verdict: 'UNKNOWN', cycleId: 'cycle-bad' } as Record<string, unknown>,
+      source: 'cycle-bad',
+    });
+
+    const result = loadPriorGateKnownDebt(tmpRoot);
+    expect(result).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildKnownDebtSection
+//
+// Pure function that formats a PriorGateContext into a markdown prompt
+// section. Tests cover the four cases: null input, empty findings, approved
+// verdict with findings, and rejected verdict with findings.
+// ---------------------------------------------------------------------------
+
+describe('buildKnownDebtSection', () => {
+  it('returns an empty string when prior is null', () => {
+    expect(buildKnownDebtSection(null)).toBe('');
+  });
+
+  it('returns an empty string when prior has no findings', () => {
+    const prior: PriorGateContext = {
+      cycleId: 'cycle-empty',
+      verdict: 'approved',
+      majorFindings: [],
+      criticalFindings: [],
+    };
+    expect(buildKnownDebtSection(prior)).toBe('');
+  });
+
+  it('includes the prior verdict label in the section header', () => {
+    const prior: PriorGateContext = {
+      cycleId: 'cycle-abc',
+      verdict: 'approved',
+      majorFindings: ['Some known debt'],
+      criticalFindings: [],
+    };
+    const section = buildKnownDebtSection(prior);
+    expect(section).toContain('APPROVED');
+    expect(section).toContain('cycle-abc');
+  });
+
+  it('formats each major finding as a bullet in the section', () => {
+    const prior: PriorGateContext = {
+      cycleId: 'cycle-fmt',
+      verdict: 'approved',
+      majorFindings: ['readCycleRecord duplication', 'no-op ternary in sprints.ts'],
+      criticalFindings: [],
+    };
+    const section = buildKnownDebtSection(prior);
+    expect(section).toContain('- readCycleRecord duplication');
+    expect(section).toContain('- no-op ternary in sprints.ts');
+  });
+
+  it('includes critical findings before major findings in the section', () => {
+    const prior: PriorGateContext = {
+      cycleId: 'cycle-order',
+      verdict: 'rejected',
+      majorFindings: ['Major issue'],
+      criticalFindings: ['Critical issue'],
+    };
+    const section = buildKnownDebtSection(prior);
+    const critPos = section.indexOf('Critical issue');
+    const majPos = section.indexOf('Major issue');
+    expect(critPos).toBeGreaterThanOrEqual(0);
+    expect(majPos).toBeGreaterThanOrEqual(0);
+    expect(critPos).toBeLessThan(majPos);
+  });
+
+  it('includes "APPROVED" guidance telling the agent not to reject for known debt', () => {
+    const prior: PriorGateContext = {
+      cycleId: 'cycle-approved',
+      verdict: 'approved',
+      majorFindings: ['Debt item A'],
+      criticalFindings: [],
+    };
+    const section = buildKnownDebtSection(prior);
+    // The guidance must clearly direct the agent not to reject for these items.
+    expect(section).toContain('known pre-existing debt');
+    expect(section).toContain('Do NOT let them drive a REJECT');
+  });
+
+  it('includes "REJECTED" guidance directing the agent to verify if fixed', () => {
+    const prior: PriorGateContext = {
+      cycleId: 'cycle-rejected',
+      verdict: 'rejected',
+      majorFindings: ['capModelTier has no tests'],
+      criticalFindings: [],
+    };
+    const section = buildKnownDebtSection(prior);
+    // The guidance must tell the agent to check whether items were fixed.
+    expect(section).toContain('REJECTED');
+    expect(section).toContain('Verify whether each has been addressed');
+  });
+
+  it('includes the section heading "Known pre-existing debt"', () => {
+    const prior: PriorGateContext = {
+      cycleId: 'cycle-heading',
+      verdict: 'approved',
+      majorFindings: ['Heading test'],
+      criticalFindings: [],
+    };
+    const section = buildKnownDebtSection(prior);
+    expect(section).toContain('Known pre-existing debt');
   });
 });

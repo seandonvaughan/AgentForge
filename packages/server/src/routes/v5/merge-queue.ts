@@ -1,11 +1,26 @@
 import type { FastifyInstance } from 'fastify';
+import type { WorkspaceAdapter } from '@agentforge/db';
 import { GitBranchManager } from '@agentforge/core';
 
-const branchManager = new GitBranchManager(true); // dry-run singleton
+// Module-level singleton. When mergeQueueRoutes is called with an adapter the
+// singleton is replaced with an adapter-backed instance so branch state persists
+// across server restarts. Exported for other routes that emit branch events.
+export let branchManager = new GitBranchManager(true);
 
-export { branchManager }; // exported so other routes can emit branch events
+export interface MergeQueueRouteOptions {
+  adapter?: WorkspaceAdapter;
+}
 
-export async function mergeQueueRoutes(app: FastifyInstance): Promise<void> {
+export async function mergeQueueRoutes(
+  app: FastifyInstance,
+  opts?: MergeQueueRouteOptions,
+): Promise<void> {
+  // Replace the in-memory singleton with an SQLite-backed instance when an
+  // adapter is available so branch history survives server restarts.
+  if (opts?.adapter) {
+    branchManager = new GitBranchManager(true, opts.adapter);
+  }
+
   // GET /api/v5/branches — list all agent branches
   app.get('/api/v5/branches', async (req, reply) => {
     const q = req.query as { status?: string };

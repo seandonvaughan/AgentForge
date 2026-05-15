@@ -3,8 +3,8 @@ import {
   composeTeamUnits,
   composeTeam,
   type TeamComposition,
-} from "../../src/builder/team-composer.js";
-import type { FullScanResult } from "../../src/scanner/index.js";
+} from "../../packages/core/src/team/engine/builder/team-composer.js";
+import type { FullScanResult } from "../../packages/core/src/team/engine/scanner/index.js";
 
 // ---------------------------------------------------------------------------
 // Helpers — reusing the same factory pattern as team-composer.test.ts

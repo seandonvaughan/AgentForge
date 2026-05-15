@@ -4,13 +4,13 @@
   }
   let { stage }: Props = $props();
 
-  const TERMINAL = new Set(['completed', 'failed', 'killed']);
+  const TERMINAL = new Set(['completed', 'failed', 'killed', 'crashed']);
 
   function variant(s: string | null | undefined): 'success' | 'danger' | 'warning' | 'info' | 'muted' {
     if (!s) return 'muted';
     const v = s.toLowerCase();
     if (v === 'completed') return 'success';
-    if (v === 'failed') return 'danger';
+    if (v === 'failed' || v === 'crashed') return 'danger';
     if (v === 'killed') return 'warning';
     if (TERMINAL.has(v)) return 'muted';
     return 'info';

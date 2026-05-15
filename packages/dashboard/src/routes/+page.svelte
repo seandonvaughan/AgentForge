@@ -252,7 +252,7 @@
           <li class="recent-item">
             <span class="recent-id">{shortCycleId(c.cycleId)}</span>
             <CycleStageBar
-              stage={c.stage ?? c.status ?? null}
+              stage={c.stage ?? c.status ?? ''}
               isTerminal={!isRunning(c)}
               compact={true}
             />

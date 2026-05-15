@@ -224,6 +224,39 @@ export const WORKSPACE_DDL = `
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
+  CREATE TABLE IF NOT EXISTS git_branches (
+    id TEXT PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL,
+    agent_id TEXT NOT NULL,
+    task_id TEXT NOT NULL,
+    target_branch TEXT NOT NULL DEFAULT 'main',
+    status TEXT NOT NULL DEFAULT 'active',
+    review_status TEXT,
+    reviewed_by TEXT,
+    merged_at TEXT,
+    conflict_info TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS git_merge_queue (
+    id TEXT PRIMARY KEY,
+    branch_id TEXT NOT NULL REFERENCES git_branches(id) ON DELETE CASCADE,
+    branch_name TEXT NOT NULL,
+    agent_id TEXT NOT NULL,
+    priority TEXT NOT NULL DEFAULT 'P1',
+    status TEXT NOT NULL DEFAULT 'pending',
+    queued_at TEXT NOT NULL DEFAULT (datetime('now')),
+    merged_at TEXT,
+    block_reason TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_git_branches_status ON git_branches(status);
+  CREATE INDEX IF NOT EXISTS idx_git_branches_agent ON git_branches(agent_id);
+  CREATE INDEX IF NOT EXISTS idx_git_branches_name ON git_branches(name);
+  CREATE INDEX IF NOT EXISTS idx_git_merge_queue_branch ON git_merge_queue(branch_id);
+  CREATE INDEX IF NOT EXISTS idx_git_merge_queue_status ON git_merge_queue(status);
+
   CREATE INDEX IF NOT EXISTS idx_scorecards_agent ON agent_scorecards(agent_id);
   CREATE INDEX IF NOT EXISTS idx_runtime_jobs_session ON runtime_jobs(session_id);
   CREATE INDEX IF NOT EXISTS idx_runtime_jobs_trace ON runtime_jobs(trace_id);

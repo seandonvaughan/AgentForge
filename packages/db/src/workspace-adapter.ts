@@ -200,6 +200,33 @@ export interface RuntimeJobFilters {
   offset?: number;
 }
 
+export interface GitBranchRow {
+  id: string;
+  name: string;
+  agent_id: string;
+  task_id: string;
+  target_branch: string;
+  status: string;
+  review_status: string | null;
+  reviewed_by: string | null;
+  merged_at: string | null;
+  conflict_info: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GitMergeQueueRow {
+  id: string;
+  branch_id: string;
+  branch_name: string;
+  agent_id: string;
+  priority: string;
+  status: string;
+  queued_at: string;
+  merged_at: string | null;
+  block_reason: string | null;
+}
+
 export interface RuntimeEventFilters {
   jobId?: string;
   sessionId?: string;
@@ -853,6 +880,143 @@ export class WorkspaceAdapter {
       score,
       lastUpdated: row.last_updated,
     };
+  }
+
+  // --- Git Branches ---
+
+  insertGitBranch(data: {
+    id: string;
+    name: string;
+    agentId: string;
+    taskId: string;
+    targetBranch: string;
+    status: string;
+    createdAt: string;
+    updatedAt: string;
+    mergedAt?: string;
+    conflictInfo?: string;
+    reviewStatus?: string;
+    reviewedBy?: string;
+  }): GitBranchRow {
+    this.db.prepare(`
+      INSERT INTO git_branches (id, name, agent_id, task_id, target_branch, status, review_status, reviewed_by, merged_at, conflict_info, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      data.id,
+      data.name,
+      data.agentId,
+      data.taskId,
+      data.targetBranch,
+      data.status,
+      data.reviewStatus ?? null,
+      data.reviewedBy ?? null,
+      data.mergedAt ?? null,
+      data.conflictInfo ?? null,
+      data.createdAt,
+      data.updatedAt,
+    );
+    return this.getGitBranch(data.id)!;
+  }
+
+  updateGitBranch(id: string, updates: {
+    status?: string;
+    review_status?: string | null;
+    reviewed_by?: string | null;
+    merged_at?: string | null;
+    conflict_info?: string | null;
+  }): void {
+    const now = nowIso();
+    const setClauses: string[] = ['updated_at = ?'];
+    const params: unknown[] = [now];
+
+    if (updates.status !== undefined) { setClauses.push('status = ?'); params.push(updates.status); }
+    if ('review_status' in updates) { setClauses.push('review_status = ?'); params.push(updates.review_status ?? null); }
+    if ('reviewed_by' in updates) { setClauses.push('reviewed_by = ?'); params.push(updates.reviewed_by ?? null); }
+    if ('merged_at' in updates) { setClauses.push('merged_at = ?'); params.push(updates.merged_at ?? null); }
+    if ('conflict_info' in updates) { setClauses.push('conflict_info = ?'); params.push(updates.conflict_info ?? null); }
+
+    params.push(id);
+    this.db.prepare(`UPDATE git_branches SET ${setClauses.join(', ')} WHERE id = ?`).run(...params);
+  }
+
+  getGitBranch(id: string): GitBranchRow | undefined {
+    return this.db.prepare('SELECT * FROM git_branches WHERE id = ?').get(id) as GitBranchRow | undefined;
+  }
+
+  getGitBranchByName(name: string): GitBranchRow | undefined {
+    return this.db.prepare('SELECT * FROM git_branches WHERE name = ?').get(name) as GitBranchRow | undefined;
+  }
+
+  listGitBranches(status?: string): GitBranchRow[] {
+    if (status) {
+      return this.db.prepare('SELECT * FROM git_branches WHERE status = ? ORDER BY created_at DESC').all(status) as GitBranchRow[];
+    }
+    return this.db.prepare('SELECT * FROM git_branches ORDER BY created_at DESC').all() as GitBranchRow[];
+  }
+
+  deleteGitBranch(id: string): void {
+    // ON DELETE CASCADE handles git_merge_queue cleanup automatically.
+    this.db.prepare('DELETE FROM git_branches WHERE id = ?').run(id);
+  }
+
+  // --- Git Merge Queue ---
+
+  insertGitMergeQueueItem(data: {
+    id: string;
+    branchId: string;
+    branchName: string;
+    agentId: string;
+    priority: string;
+    status: string;
+    queuedAt: string;
+    mergedAt?: string;
+    blockReason?: string;
+  }): GitMergeQueueRow {
+    this.db.prepare(`
+      INSERT INTO git_merge_queue (id, branch_id, branch_name, agent_id, priority, status, queued_at, merged_at, block_reason)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      data.id,
+      data.branchId,
+      data.branchName,
+      data.agentId,
+      data.priority,
+      data.status,
+      data.queuedAt,
+      data.mergedAt ?? null,
+      data.blockReason ?? null,
+    );
+    return this.db.prepare('SELECT * FROM git_merge_queue WHERE id = ?').get(data.id) as GitMergeQueueRow;
+  }
+
+  updateGitMergeQueueItem(id: string, updates: {
+    status?: string;
+    mergedAt?: string | null;
+    blockReason?: string | null;
+  }): void {
+    const setClauses: string[] = [];
+    const params: unknown[] = [];
+
+    if (updates.status !== undefined) { setClauses.push('status = ?'); params.push(updates.status); }
+    if ('mergedAt' in updates) { setClauses.push('merged_at = ?'); params.push(updates.mergedAt ?? null); }
+    if ('blockReason' in updates) { setClauses.push('block_reason = ?'); params.push(updates.blockReason ?? null); }
+
+    if (setClauses.length === 0) return;
+    params.push(id);
+    this.db.prepare(`UPDATE git_merge_queue SET ${setClauses.join(', ')} WHERE id = ?`).run(...params);
+  }
+
+  getGitMergeQueueItemByBranchId(branchId: string): GitMergeQueueRow | undefined {
+    return this.db
+      .prepare('SELECT * FROM git_merge_queue WHERE branch_id = ? ORDER BY queued_at DESC LIMIT 1')
+      .get(branchId) as GitMergeQueueRow | undefined;
+  }
+
+  listGitMergeQueue(status?: string): GitMergeQueueRow[] {
+    if (status) {
+      return this.db.prepare('SELECT * FROM git_merge_queue WHERE status = ? ORDER BY queued_at ASC').all(status) as GitMergeQueueRow[];
+    }
+    return this.db.prepare('SELECT * FROM git_merge_queue ORDER BY queued_at ASC').all() as GitMergeQueueRow[];
   }
 
   // --- KV Store ---

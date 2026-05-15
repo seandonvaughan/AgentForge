@@ -109,6 +109,37 @@ export class CycleLogger {
     this.appendEvent({ type: 'kill-switch.trip', ...trip, at: new Date().toISOString() });
   }
 
+  /**
+   * Write an intermediate cost snapshot to cycle.json so operators have
+   * live cost visibility during the RUN stage instead of waiting for the
+   * terminal cycle.json written by logCycleResult().
+   *
+   * Called after each phase result is written by the PhaseScheduler. Any I/O
+   * error is silently swallowed — this is purely observability data and must
+   * never stop the cycle.
+   */
+  flushCycleCost(totalUsd: number): void {
+    const cyclePath = join(this.cycleDir, 'cycle.json');
+    try {
+      let base: Record<string, unknown> = {};
+      if (existsSync(cyclePath)) {
+        try {
+          base = JSON.parse(readFileSync(cyclePath, 'utf8')) as Record<string, unknown>;
+        } catch { /* keep empty base on parse error */ }
+      }
+      // Preserve any terminal stage already written by logCycleResult().
+      // Only default to 'run' when no stage has been set yet.
+      const stage = base['stage'] ?? 'run';
+      const existingCost = (base['cost'] ?? {}) as Record<string, unknown>;
+      this.writeJson(cyclePath, {
+        ...base,
+        cycleId: this.cycleId,
+        stage,
+        cost: { ...existingCost, totalUsd },
+      });
+    } catch { /* non-fatal: observability write failure must not stop the cycle */ }
+  }
+
   logCycleResult(result: CycleResult): void {
     this.writeJson(join(this.cycleDir, 'cycle.json'), result);
     this.appendEvent({ type: 'cycle.complete', stage: result.stage, at: new Date().toISOString() });

@@ -4,6 +4,10 @@ import type { WorkspaceAdapter } from '@agentforge/db';
 import { join } from 'node:path';
 import { readdirSync, existsSync, readFileSync } from 'node:fs';
 import yaml from 'js-yaml';
+import { safeJoin } from '../../lib/safe-join.js';
+
+/** Agent IDs must be kebab-case slugs — no path separators, no traversal. */
+const SAFE_AGENT_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 export async function agentRoutes(
   app: FastifyInstance,
@@ -50,8 +54,9 @@ export async function agentRoutes(
   // GET /api/v5/agents/:id
   app.get<{ Params: { id: string } }>('/api/v5/agents/:id', async (req, reply) => {
     const agentId = req.params.id;
-    const filePath = join(agentforgeDir, 'agents', `${agentId}.yaml`);
-    if (!existsSync(filePath)) return reply.status(404).send({ error: 'Agent not found' });
+    if (!SAFE_AGENT_ID.test(agentId)) return reply.status(400).send({ error: 'Invalid agent id' });
+    const filePath = safeJoin(join(agentforgeDir, 'agents'), `${agentId}.yaml`);
+    if (!filePath || !existsSync(filePath)) return reply.status(404).send({ error: 'Agent not found' });
     try {
       const raw = yaml.load(readFileSync(filePath, 'utf-8')) as Record<string, unknown> | null;
       if (!raw || typeof raw !== 'object') return reply.status(404).send({ error: 'Agent not found' });
@@ -92,6 +97,9 @@ export async function agentRoutes(
 
   // POST /api/v5/agents/:id/run — invoke an agent
   app.post<{ Params: { id: string } }>('/api/v5/agents/:id/run', async (req, reply) => {
+    const agentIdParam = req.params.id;
+    if (!SAFE_AGENT_ID.test(agentIdParam)) return reply.status(400).send({ error: 'Invalid agent id' });
+
     const { task, context, parentSessionId, budgetUsd } = req.body as {
       task: string;
       context?: string;
@@ -101,7 +109,7 @@ export async function agentRoutes(
 
     if (!task) return reply.status(400).send({ error: 'task is required' });
 
-    const config = await loadAgentConfig(req.params.id, agentforgeDir);
+    const config = await loadAgentConfig(agentIdParam, agentforgeDir);
     if (!config) return reply.status(404).send({ error: 'Agent not found' });
 
     config.workspaceId = 'default';
@@ -119,6 +127,7 @@ export async function agentRoutes(
 
   // GET /api/v5/agents/:id/scorecard — performance score (requires adapter)
   app.get<{ Params: { id: string } }>('/api/v5/agents/:id/scorecard', async (req, reply) => {
+    if (!SAFE_AGENT_ID.test(req.params.id)) return reply.status(400).send({ error: 'Invalid agent id' });
     if (!opts.adapter) return reply.status(503).send({ error: 'No adapter configured' });
     const score = opts.adapter.getAgentScore(req.params.id);
     if (!score) return reply.status(404).send({ error: 'No scorecard data for this agent' });

@@ -46,7 +46,7 @@ interface ScoringResult {
   budgetOverflowUsd?: number;
   summary?: string;
   warnings?: string[];
-  fallback?: 'static' | null;
+  fallback?: 'static' | 'effort-estimator' | null;
 }
 
 interface AutonomousModuleLike {

@@ -21,6 +21,8 @@ import {
   GitOps,
   PROpener,
   RuntimeAdapter,
+  RuntimeJobSupervisor,
+  WorkspaceManager,
   CycleLogger,
   MessageBusV2,
   runExecutePhase,
@@ -212,12 +214,30 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
 
     const telemetry = createAutonomousTelemetryAdapters(cwd);
 
+    // Build a RuntimeJobSupervisor backed by the real workspace DB so every
+    // agent run during the execute phase creates a durable runtime_job row
+    // and runtime_events. Without this the tables stay empty across restarts.
+    // Non-fatal: if the workspace DB can't be opened the cycle continues
+    // without persistence (identical to previous behaviour).
+    let workspaceManager: WorkspaceManager | null = null;
+    let supervisor: RuntimeJobSupervisor | undefined;
+    try {
+      workspaceManager = new WorkspaceManager({ dataDir: join(cwd, '.agentforge', 'v5') });
+      const { adapter: workspaceAdapter } = await workspaceManager.getOrCreateDefaultWorkspace();
+      supervisor = new RuntimeJobSupervisor({ adapter: workspaceAdapter });
+    } catch {
+      // Best-effort — if the workspace DB is unavailable, skip persistence.
+      workspaceManager?.close();
+      workspaceManager = null;
+    }
+
     try {
       const runtime = new RuntimeAdapter({
         cwd,
         ...(config.modelCap ? { modelCap: config.modelCap } : {}),
         ...(config.effortCap ? { effortCap: config.effortCap } : {}),
         enableFallback,
+        ...(supervisor ? { supervisor } : {}),
       });
       const phaseHandlers = {
         audit: (ctx: PhaseContext) => runAuditPhase(ctx),
@@ -291,6 +311,7 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
       const result = await runner.start();
       printCycleRunResult(result, logDir, CycleStage);
     } finally {
+      workspaceManager?.close();
       telemetry.close();
     }
   } catch (err) {

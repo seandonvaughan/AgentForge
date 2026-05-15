@@ -79,8 +79,12 @@ system_prompt: |
   - rationale: 1-3 sentences explaining why this item ranks here.
   - dependencies: itemIds of other items that must run first (empty array
     if none).
-  - suggestedAssignee: agent name from the existing forged team that best
-    fits this work.
+  - suggestedAssignee: exact agent ID from the roster list provided in the
+    task message. MUST be one of the kebab-case IDs in the "Roster constraint"
+    section — never invent generic names like "BackendEngineer", "FrontendEngineer",
+    "QAEngineer", "InfraEngineer", or any PascalCase/camelCase role. These
+    names do not exist in the system and cannot be dispatched. Use "coder" as
+    the safe default when no specialist clearly fits.
   - suggestedTags: zero or more tags useful for downstream filtering.
   - withinBudget: true only if cumulative cost through this rank stays
     under budgetUsd.
@@ -121,6 +125,10 @@ system_prompt: |
   - Keep summary to one paragraph.
   - List up to 5 warnings; omit the field's content (empty array) if
     there are none.
+  - suggestedAssignee MUST be an exact ID from the roster provided in the
+    task message. Invented names (PascalCase generics, ad-hoc role labels)
+    are automatically replaced with "coder" by the pipeline — they provide
+    no routing benefit and waste a warning slot.
   - If candidateItems is empty, return a result with empty rankings,
     totalEstimatedCostUsd=0, budgetOverflowUsd=0, summary explaining
     the empty backlog, and warnings noting the empty input.

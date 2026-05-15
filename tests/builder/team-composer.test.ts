@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { composeTeam, composeTeamFromDomains } from "../../src/builder/team-composer.js";
-import type { FullScanResult } from "../../src/scanner/index.js";
-import type { DomainPack, DomainId } from "../../src/types/domain.js";
+import { composeTeam, composeTeamFromDomains } from "../../packages/core/src/team/engine/builder/team-composer.js";
+import type { FullScanResult } from "../../packages/core/src/team/engine/scanner/index.js";
+import type { DomainPack, DomainId } from "../../packages/core/src/team/engine/types/domain.js";
 
 /**
  * Creates a minimal FullScanResult for testing, with overrides applied.

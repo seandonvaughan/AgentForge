@@ -7,7 +7,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
-import { writeMemoryEntry, type GateVerdictMetadata } from '../../memory/types.js';
+import { writeMemoryEntry, readMemoryEntries, type GateVerdictMetadata } from '../../memory/types.js';
 import { collectSprintItemTags } from './sprint-utils.js';
 
 export const GATE_PHASE_DEFAULT_TOOLS = ['Read', 'Bash', 'Glob', 'Grep'];
@@ -112,6 +112,79 @@ export function parseGateVerdict(text: string): GateVerdict {
   return { verdict: 'REJECT', rationale: text || 'Malformed gate response' };
 }
 
+/**
+ * Structured context extracted from the most recent gate-verdict memory entry.
+ * Carries only what the gate prompt needs — verdict outcome and the finding
+ * lists that the prior gate agent acted on.
+ */
+export interface PriorGateContext {
+  cycleId: string;
+  verdict: 'approved' | 'rejected' | 'pending';
+  majorFindings: string[];
+  criticalFindings: string[];
+}
+
+/**
+ * Read the most recent gate-verdict from `.agentforge/memory/gate-verdict.jsonl`
+ * and return its structured context. Returns null when no prior verdict exists
+ * or the entry's metadata cannot be parsed — callers must always handle null.
+ *
+ * Only the metadata field is consulted (not the human-readable `value` string)
+ * so this is robust to future changes in the value format.
+ */
+export function loadPriorGateKnownDebt(projectRoot: string): PriorGateContext | null {
+  const entries = readMemoryEntries(projectRoot, 'gate-verdict', 1);
+  if (entries.length === 0) return null;
+
+  const last = entries[0]!;
+  const meta = last.metadata as GateVerdictMetadata | undefined;
+  if (!meta || typeof meta !== 'object') return null;
+
+  const verdict = meta.verdict;
+  if (verdict !== 'approved' && verdict !== 'rejected' && verdict !== 'pending') return null;
+
+  return {
+    cycleId: typeof meta.cycleId === 'string' ? meta.cycleId : '',
+    verdict,
+    majorFindings: Array.isArray(meta.majorFindings) ? meta.majorFindings : [],
+    criticalFindings: Array.isArray(meta.criticalFindings) ? meta.criticalFindings : [],
+  };
+}
+
+/**
+ * Format a `PriorGateContext` as a markdown prompt section for injection into
+ * the gate prompt. Returns an empty string when `prior` is null or carries no
+ * findings — the gate prompt is unchanged in that case.
+ *
+ * The section is intentionally directive: it tells the CEO agent how to weight
+ * each prior finding (known-accepted-debt vs. unresolved-rejection-reason) so
+ * the agent can distinguish pre-existing issues from genuine new regressions.
+ */
+export function buildKnownDebtSection(prior: PriorGateContext | null): string {
+  if (prior === null) return '';
+
+  const allFindings = [...prior.criticalFindings, ...prior.majorFindings];
+  if (allFindings.length === 0) return '';
+
+  const label =
+    prior.verdict === 'approved'
+      ? `APPROVED (cycle ${prior.cycleId})`
+      : `REJECTED (cycle ${prior.cycleId})`;
+
+  const bullets = allFindings.map((f) => `- ${f}`).join('\n');
+
+  const guidance =
+    prior.verdict === 'approved'
+      ? 'The prior gate APPROVED despite these findings — they are known pre-existing debt. ' +
+        'Do NOT let them drive a REJECT in this cycle unless they have clearly worsened or new occurrences have been added. ' +
+        'If the code review flags the same items, verify they have not regressed before treating them as grounds for rejection.'
+      : 'The prior gate REJECTED partly due to these findings. ' +
+        'Verify whether each has been addressed — if fixed, treat as RESOLVED and do not penalise for it; ' +
+        'if still present and unaddressed, they remain valid REJECT grounds.';
+
+  return `\n## Known pre-existing debt (prior gate verdict — ${label})\n${bullets}\n\n${guidance}\n`;
+}
+
 export async function runGatePhase(
   ctx: PhaseContext,
   options: GatePhaseOptions = {},
@@ -184,6 +257,13 @@ export async function runGatePhase(
     }
   }
 
+  // Seed the prompt with findings from the prior gate verdict so the CEO agent
+  // can distinguish new regressions from pre-existing accepted debt. This
+  // reduces false-positive REJECTs caused by known debt the agent has no
+  // context about.
+  const priorGateContext = loadPriorGateKnownDebt(ctx.projectRoot);
+  const knownDebtSection = buildKnownDebtSection(priorGateContext);
+
   const task = `You are the CEO of AgentForge. Sprint v${ctx.sprintVersion} has completed execution. Here is the full state:
 
 ## Sprint items
@@ -197,8 +277,7 @@ ${reviewFindings}
 
 ## Cost so far
 $${costSoFar.toFixed(4)}
-
-## Verification protocol — READ CAREFULLY
+${knownDebtSection}## Verification protocol — READ CAREFULLY
 The code review above may have been produced against an intermediate execute-phase state. Before REJECTing on any CRITICAL or MAJOR finding, VERIFY it against the current working tree:
 
 1. For each CRITICAL or MAJOR finding that cites a specific file/line, use Read to look at the current contents of that file.

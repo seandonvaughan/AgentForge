@@ -205,7 +205,7 @@ export interface CycleResult {
     draft: boolean;
   };
   killSwitch?: KillSwitchTrip;
-  scoringFallback?: 'static';
+  scoringFallback?: 'static' | 'effort-estimator';
   error?: string;
   gateVerdict?: 'APPROVE' | 'REJECT';
 }

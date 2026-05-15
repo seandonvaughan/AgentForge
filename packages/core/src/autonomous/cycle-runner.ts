@@ -6,6 +6,7 @@
 //   STAGE 1 — PLAN    : ProposalToBacklog → ScoringPipeline → BudgetApproval
 //   STAGE 2 — STAGE   : SprintGenerator
 //   STAGE 3 — RUN     : PhaseScheduler (audit→plan→assign→execute→test→review→gate→release→learn)
+//   STAGE 3.5 — TYPECHECK : pnpm build + tsc --noEmit (fail-fast before VERIFY)
 //   STAGE 4 — VERIFY  : RealTestRunner + KillSwitch.checkPostVerify
 //   STAGE 5 — COMMIT  : GitOps.verifyPreconditions/createBranch/stage/commit/push
 //   STAGE 6 — REVIEW  : renderPrBody → PROpener.open
@@ -87,6 +88,14 @@ export function sanitizePrTitle(version: string, summary: string): string {
   return prefix + (lastSpace > 20 ? cut.slice(0, lastSpace) : cut) + '…';
 }
 
+/** Result returned by the pre-verify typecheck step. */
+export interface PreVerifyTypeCheckResult {
+  buildOk: boolean;
+  buildError?: string;
+  typeCheckOk: boolean;
+  typeCheckError?: string;
+}
+
 export interface CycleRunnerOptions {
   cwd: string;
   config: CycleConfig;
@@ -109,6 +118,18 @@ export interface CycleRunnerOptions {
    * GitOps) so both share the same directory.
    */
   cycleId?: string;
+  /**
+   * Optional pre-verify type-checker injected between STAGE 3 (RUN) and
+   * STAGE 4 (VERIFY). When omitted, a built-in implementation runs
+   * `config.testing.buildCommand` then `config.testing.typeCheckCommand`
+   * via execFileAsync. Inject a controlled mock in unit tests to avoid
+   * executing real build commands in tmpdir environments.
+   *
+   * The runner respects `config.quality.requireBuildSuccess` and
+   * `config.quality.requireTypeCheckSuccess` — a failure only trips the
+   * kill switch when the corresponding flag is true.
+   */
+  preVerifyTypeCheck?: (cwd: string, testing: CycleConfig['testing']) => Promise<PreVerifyTypeCheckResult>;
 }
 
 /**
@@ -141,7 +162,7 @@ export class CycleRunner {
     passRate: 0,
     newFailures: [],
   };
-  private scoringFallback: 'static' | undefined;
+  private scoringFallback: 'static' | 'effort-estimator' | undefined;
   private gateVerdict: 'APPROVE' | 'REJECT' | undefined = undefined;
 
   constructor(private readonly options: CycleRunnerOptions) {
@@ -357,6 +378,17 @@ export class CycleRunner {
     this.checkKillSwitch();
 
     // ─────────────────────────────────────────────────────────────────
+    // STAGE 3.5 — TYPECHECK (fail-fast pre-verify)
+    // Run pnpm build + tsc --noEmit before the full test suite. TypeScript
+    // compilation errors introduced during execute are caught here rather
+    // than surviving to the gate phase, where each rejection costs $15-30
+    // in agent spend. The step no-ops when the corresponding command string
+    // is empty or the quality flag is false.
+    // ─────────────────────────────────────────────────────────────────
+    await this.runPreVerifyTypeCheck();
+    this.checkKillSwitch();
+
+    // ─────────────────────────────────────────────────────────────────
     // STAGE 4 — VERIFY
     // Run the project's real test command, derive a TestResult, then check
     // the kill switch's post-verify gate (test floor + regression policy).
@@ -559,6 +591,101 @@ export class CycleRunner {
       consecutiveFailures: 0,
     });
     if (trip) throw new CycleKilledError(trip);
+  }
+
+  /**
+   * Dispatch the pre-verify typecheck step (STAGE 3.5). Uses the injected
+   * `preVerifyTypeCheck` when provided; falls back to running the real build
+   * and typecheck commands via execFileAsync. Trips the kill switch and throws
+   * CycleKilledError on failure (subject to the quality flags).
+   */
+  private async runPreVerifyTypeCheck(): Promise<void> {
+    // eslint-disable-next-line no-console
+    console.log('[autonomous:cycle] stage 3.5: running pre-verify typecheck');
+    const result = this.options.preVerifyTypeCheck
+      ? await this.options.preVerifyTypeCheck(this.options.cwd, this.options.config.testing)
+      : await this.defaultTypeCheck(this.options.cwd, this.options.config.testing);
+
+    if (!result.buildOk) {
+      // eslint-disable-next-line no-console
+      console.error(`[autonomous:cycle] build failed: ${(result.buildError ?? '').slice(0, 200)}`);
+      this.logger.logPhaseFailure('typecheck', `build failed: ${result.buildError ?? 'unknown'}`);
+    }
+    const buildTrip = this.killSwitch.checkBuildResult({
+      success: result.buildOk,
+      ...(result.buildError !== undefined ? { error: result.buildError } : {}),
+    });
+    if (buildTrip) throw new CycleKilledError(buildTrip);
+
+    if (!result.typeCheckOk) {
+      // eslint-disable-next-line no-console
+      console.error(`[autonomous:cycle] typecheck failed: ${(result.typeCheckError ?? '').slice(0, 200)}`);
+      this.logger.logPhaseFailure('typecheck', `tsc failed: ${result.typeCheckError ?? 'unknown'}`);
+    }
+    const typeCheckTrip = this.killSwitch.checkTypeCheckResult({
+      success: result.typeCheckOk,
+      ...(result.typeCheckError !== undefined ? { error: result.typeCheckError } : {}),
+    });
+    if (typeCheckTrip) throw new CycleKilledError(typeCheckTrip);
+  }
+
+  /**
+   * Built-in implementation of the pre-verify typecheck step. Runs
+   * `config.testing.buildCommand` then `config.testing.typeCheckCommand` via
+   * execFileAsync. Empty command strings are silently skipped (no-op). Does
+   * NOT throw — failures are surfaced in the returned result and the caller
+   * decides whether to trip the kill switch based on quality flags.
+   */
+  private async defaultTypeCheck(
+    cwd: string,
+    testing: CycleConfig['testing'],
+  ): Promise<PreVerifyTypeCheckResult> {
+    let buildOk = true;
+    let buildError: string | undefined;
+
+    if (testing.buildCommand) {
+      const parts = testing.buildCommand.split(' ');
+      try {
+        await execFileAsync(parts[0]!, parts.slice(1), {
+          cwd,
+          timeout: 5 * 60_000,
+          maxBuffer: 50 * 1024 * 1024,
+          env: { ...process.env, CI: '1', NO_COLOR: '1' },
+        });
+      } catch (err: unknown) {
+        buildOk = false;
+        const e = err as { stderr?: Buffer | string; stdout?: Buffer | string; message?: string };
+        const text = e.stderr?.toString() ?? e.stdout?.toString() ?? e.message ?? String(err);
+        buildError = text.slice(0, 2000);
+      }
+    }
+
+    let typeCheckOk = true;
+    let typeCheckError: string | undefined;
+
+    if (testing.typeCheckCommand) {
+      const parts = testing.typeCheckCommand.split(' ');
+      try {
+        await execFileAsync(parts[0]!, parts.slice(1), {
+          cwd,
+          timeout: 3 * 60_000,
+          maxBuffer: 50 * 1024 * 1024,
+          env: { ...process.env, CI: '1', NO_COLOR: '1' },
+        });
+      } catch (err: unknown) {
+        typeCheckOk = false;
+        const e = err as { stderr?: Buffer | string; stdout?: Buffer | string; message?: string };
+        const text = e.stderr?.toString() ?? e.stdout?.toString() ?? e.message ?? String(err);
+        typeCheckError = text.slice(0, 2000);
+      }
+    }
+
+    return {
+      buildOk,
+      ...(buildError !== undefined ? { buildError } : {}),
+      typeCheckOk,
+      ...(typeCheckError !== undefined ? { typeCheckError } : {}),
+    };
   }
 
   /**

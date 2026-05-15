@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CycleLogger, CycleStage } from '@agentforge/core';
@@ -177,6 +177,61 @@ describe('CycleLogger', () => {
     const data = JSON.parse(readFileSync(cyclePath, 'utf8'));
     expect(data.stage).toBe('completed');
     expect(data.cost.totalUsd).toBe(42.50);
+  });
+
+  it('flushCycleCost writes cycle.json with incremental cost', () => {
+    logger.flushCycleCost(12.34);
+
+    const cyclePath = join(tmpDir, '.agentforge/cycles', cycleId, 'cycle.json');
+    expect(existsSync(cyclePath)).toBe(true);
+    const data = JSON.parse(readFileSync(cyclePath, 'utf8'));
+    expect(data.cycleId).toBe(cycleId);
+    expect(data.stage).toBe('run');
+    expect(data.cost.totalUsd).toBe(12.34);
+  });
+
+  it('flushCycleCost updates cost on repeated calls', () => {
+    logger.flushCycleCost(5.00);
+    logger.flushCycleCost(10.00);
+    logger.flushCycleCost(17.50);
+
+    const cyclePath = join(tmpDir, '.agentforge/cycles', cycleId, 'cycle.json');
+    const data = JSON.parse(readFileSync(cyclePath, 'utf8'));
+    expect(data.cost.totalUsd).toBe(17.50);
+  });
+
+  it('flushCycleCost preserves existing cycle.json fields (no clobber)', () => {
+    // Simulate a partial cycle.json already written (e.g. by a prior flush)
+    const cyclePath = join(tmpDir, '.agentforge/cycles', cycleId, 'cycle.json');
+    writeFileSync(cyclePath, JSON.stringify({
+      cycleId,
+      sprintVersion: '15.0.0',
+      stage: 'run',
+      cost: { totalUsd: 3.00, budgetUsd: 50 },
+    }, null, 2));
+
+    logger.flushCycleCost(8.00);
+
+    const data = JSON.parse(readFileSync(cyclePath, 'utf8'));
+    expect(data.sprintVersion).toBe('15.0.0');
+    expect(data.cost.totalUsd).toBe(8.00);
+    // budgetUsd that was already in cost should be preserved
+    expect(data.cost.budgetUsd).toBe(50);
+  });
+
+  it('flushCycleCost does not overwrite a terminal stage', () => {
+    const cyclePath = join(tmpDir, '.agentforge/cycles', cycleId, 'cycle.json');
+    writeFileSync(cyclePath, JSON.stringify({
+      cycleId,
+      stage: 'completed',
+      cost: { totalUsd: 42.50, budgetUsd: 50 },
+    }, null, 2));
+
+    // Calling flushCycleCost after logCycleResult should not downgrade the stage
+    logger.flushCycleCost(42.50);
+
+    const data = JSON.parse(readFileSync(cyclePath, 'utf8'));
+    expect(data.stage).toBe('completed');
   });
 
   it('events.jsonl is append-only (each line is one JSON object)', () => {

@@ -13,10 +13,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import yaml from "js-yaml";
 
-import { mergeManifests, writeTeam } from "../../src/builder/team-writer.js";
-import type { TeamManifest } from "../../src/types/team.js";
-import type { AgentTemplate } from "../../src/types/agent.js";
-import type { FullScanResult } from "../../src/scanner/index.js";
+import { mergeManifests, writeTeam } from "../../packages/core/src/team/engine/builder/team-writer.js";
+import type { TeamManifest } from "../../packages/core/src/team/engine/types/team.js";
+import type { AgentTemplate } from "../../packages/core/src/team/engine/types/agent.js";
+import type { FullScanResult } from "../../packages/core/src/team/engine/scanner/index.js";
 
 // ---------------------------------------------------------------------------
 // Fixtures

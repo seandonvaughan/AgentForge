@@ -67,6 +67,7 @@ import {
   CycleStage,
   type PhaseHandler,
   type PhaseContext,
+  type PreVerifyTypeCheckResult,
 } from '@agentforge/core';
 
 const execFileAsync = promisify(execFile);
@@ -288,11 +289,21 @@ describe('Full autonomous cycle end-to-end', () => {
       getSprintHistory: async (_limit: number) => [],
       getCostMedians: async () => ({}),
       getTeamState: async () => ({ utilization: {} }),
+      getP50CostByTag: async () => ({}),
     };
 
     // -----------------------------------------------------------------------
     // Instantiate + run the cycle.
     // -----------------------------------------------------------------------
+    // Pre-verify typecheck mock — the tmp workspace has no `build` script so
+    // the built-in defaultTypeCheck would fail and trip the kill switch. The
+    // unit-test escape hatch (preVerifyTypeCheck injection) was added precisely
+    // for this scenario. We assert that the cycle completes, not that TS builds.
+    const preVerifyTypeCheck = async (): Promise<PreVerifyTypeCheckResult> => ({
+      buildOk: true,
+      typeCheckOk: true,
+    });
+
     const runner = new CycleRunner({
       cwd: tmpWorkspace,
       config,
@@ -305,6 +316,7 @@ describe('Full autonomous cycle end-to-end', () => {
       prOpener,
       bus: bus as never,
       dryRun: { prOpener: true },
+      preVerifyTypeCheck,
     });
 
     const result = await runner.start();
@@ -322,12 +334,13 @@ describe('Full autonomous cycle end-to-end', () => {
     // 3. Sprint version bumped from the seed 6.3.5 via the `chore` tag.
     expect(result.sprintVersion).toBe('6.3.6');
 
-    // 4. SprintGenerator wrote the sprint file to disk.
-    const sprintPath = join(tmpWorkspace, '.agentforge/sprints/v6.3.6.json');
-    expect(existsSync(sprintPath)).toBe(true);
+    // 4. SprintGenerator wrote plan.json into the cycle dir (Track D migration —
+    //    new cycles use .agentforge/cycles/{cycleId}/plan.json, not sprints/).
+    const cycleDir = join(tmpWorkspace, '.agentforge/cycles', result.cycleId);
+    const planPath = join(cycleDir, 'plan.json');
+    expect(existsSync(planPath)).toBe(true);
 
     // 5. CycleLogger populated the cycle log directory.
-    const cycleDir = join(tmpWorkspace, '.agentforge/cycles', result.cycleId);
     expect(existsSync(cycleDir)).toBe(true);
     expect(existsSync(join(cycleDir, 'cycle.json'))).toBe(true);
     expect(existsSync(join(cycleDir, 'events.jsonl'))).toBe(true);
@@ -343,6 +356,9 @@ describe('Full autonomous cycle end-to-end', () => {
 
     // 9. Wrapped gitOps actually moved the branch (sanity check).
     expect(branchCreated).toBe('autonomous/v6.3.6');
-    expect(result.git.commitSha).toBeTruthy();
+    // Mocked phase handlers produce no source file changes, so collectChangedFiles
+    // returns [] and the commit/push block is deliberately skipped (v15.0.0
+    // guard: "treat no work product as a clean no-op"). commitSha is null.
+    expect(result.git.commitSha).toBeNull();
   }, 120_000);
 });

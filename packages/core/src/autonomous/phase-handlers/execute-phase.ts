@@ -278,10 +278,15 @@ export async function runExecutePhase(
   });
 
   // ---- Read sprint/plan JSON ----
-  // New cycles: plan.json in cycle dir. Legacy: .agentforge/sprints/v{N}.json.
-  const sprintPath = ctx.cycleId
+  // Prefer plan.json in the cycle dir (new format); fall back to the legacy
+  // .agentforge/sprints/v{N}.json when plan.json is absent (e.g. in tests
+  // that pre-date the plan.json migration or in legacy headless runs).
+  const planPath = ctx.cycleId
     ? join(ctx.projectRoot, '.agentforge', 'cycles', ctx.cycleId, 'plan.json')
-    : join(ctx.projectRoot, '.agentforge', 'sprints', `v${ctx.sprintVersion}.json`);
+    : null;
+  const legacySprintPath = join(ctx.projectRoot, '.agentforge', 'sprints', `v${ctx.sprintVersion}.json`);
+  const sprintPath =
+    planPath && existsSync(planPath) ? planPath : legacySprintPath;
 
   let raw: string;
   try {
