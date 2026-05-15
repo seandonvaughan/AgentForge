@@ -76,6 +76,28 @@
   /* Layout */
   --sidebar-width: 220px;
   --topbar-height: 48px;
+
+  /* ── V2 Design Tokens (default indigo accent) ────────────────────────── */
+  --af-bg: #0a0a0c;
+  --af-surface: #0e0e10;
+  --af-surface2: #131316;
+  --af-border: #18181b;
+  --af-border2: #1f1f23;
+  --af-border3: #27272a;
+  --af-text: #fafafa;
+  --af-muted: #a1a1aa;
+  --af-dim: #71717a;
+  --af-faint: #52525b;
+  --af-accent: #6366f1;
+  --af-accent2: #818cf8;
+  --af-purple: #a78bfa;
+  --af-grad: linear-gradient(135deg, #6366f1, #a855f7);
+  --af-success: #5bd394;
+  --af-warning: #f5a623;
+  --af-danger: #ef4444;
+  --af-opus: #f5a623;
+  --af-sonnet: #7aa0f7;
+  --af-haiku: #5bd394;
 }
 
 [data-theme="light"] {
@@ -93,16 +115,63 @@
   --color-text-faint: #a0a0b0;
 }
 
+/* ── V2 Accent Variants ──────────────────────────────────────────────────── */
+body[data-af-accent="indigo"] {
+  --af-accent: #6366f1;
+  --af-accent2: #818cf8;
+  --af-purple: #a78bfa;
+  --af-grad: linear-gradient(135deg, #6366f1, #a855f7);
+}
+
+body[data-af-accent="emerald"] {
+  --af-accent: #10b981;
+  --af-accent2: #34d399;
+  --af-purple: #06b6d4;
+  --af-grad: linear-gradient(135deg, #10b981, #06b6d4);
+}
+
+body[data-af-accent="amber"] {
+  --af-accent: #f59e0b;
+  --af-accent2: #fbbf24;
+  --af-purple: #ef4444;
+  --af-grad: linear-gradient(135deg, #f59e0b, #ef4444);
+}
+
+body[data-af-accent="rose"] {
+  --af-accent: #ec4899;
+  --af-accent2: #f472b6;
+  --af-purple: #a855f7;
+  --af-grad: linear-gradient(135deg, #ec4899, #a855f7);
+}
+
 /* ── Reset ──────────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; height: 100%; }
 body {
-  font-family: var(--font-sans);
+  font-family: 'Inter', system-ui, sans-serif;
   font-size: var(--text-base);
-  color: var(--color-text);
-  background: var(--color-bg);
+  color: var(--af-text);
+  background: var(--af-bg);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+}
+
+/* ── Typography utilities ───────────────────────────────────────────────── */
+.font-mono {
+  font-family: 'JetBrains Mono', monospace;
+  font-feature-settings: 'tnum' 1, 'ss01' 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Reduced motion ─────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* ── Scrollbar ───────────────────────────────────────────────────────────── */
