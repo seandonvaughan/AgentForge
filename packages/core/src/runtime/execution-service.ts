@@ -193,6 +193,7 @@ export class ExecutionService {
       ...(config.temperature !== undefined ? { temperature: config.temperature } : {}),
       ...(opts.budgetUsd !== undefined ? { budgetUsd: opts.budgetUsd } : {}),
       ...(apiKey ? { apiKey } : {}),
+      ...(config.effort ? { effort: config.effort } : {}),
     };
   }
 }

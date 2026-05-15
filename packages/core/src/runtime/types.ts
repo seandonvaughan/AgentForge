@@ -30,6 +30,8 @@ export interface ExecutionRequest {
   temperature?: number;
   budgetUsd?: number;
   apiKey?: string;
+  /** Reasoning effort level passed as --effort to the claude subprocess. */
+  effort?: string;
 }
 
 export interface ExecutionResult {

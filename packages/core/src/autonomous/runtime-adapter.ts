@@ -23,8 +23,11 @@ import type { ModelTier } from '@agentforge/shared';
 
 const TIER_RANK: Record<ModelTier, number> = { opus: 2, sonnet: 1, haiku: 0 };
 
-function capModelTier(requested: ModelTier, cap: ModelTier): ModelTier {
-  return TIER_RANK[requested] > TIER_RANK[cap] ? cap : requested;
+function capModelTier(requested: ModelTier, cap: ModelTier): { model: ModelTier; effort?: string } {
+  const downgraded = TIER_RANK[requested] > TIER_RANK[cap];
+  return downgraded
+    ? { model: cap, effort: 'max' }
+    : { model: requested };
 }
 
 export class RuntimeAdapterError extends Error {
@@ -109,7 +112,7 @@ export class RuntimeAdapter implements RuntimeForScoring {
   registerInlineAgent(agentId: string, config: AgentRuntimeConfig): void {
     if (this.runtimes.has(agentId)) return;
     const effectiveConfig = this.options.modelCap
-      ? { ...config, model: capModelTier(config.model, this.options.modelCap) }
+      ? { ...config, ...capModelTier(config.model, this.options.modelCap) }
       : config;
     const runtime = new AgentRuntime(effectiveConfig, this.options.workspaceAdapter);
     this.runtimes.set(agentId, runtime);
@@ -216,7 +219,7 @@ export class RuntimeAdapter implements RuntimeForScoring {
     }
 
     const effectiveConfig = this.options.modelCap
-      ? { ...config, model: capModelTier(config.model, this.options.modelCap) }
+      ? { ...config, ...capModelTier(config.model, this.options.modelCap) }
       : config;
     const runtime = new AgentRuntime(effectiveConfig, this.options.workspaceAdapter);
     this.runtimes.set(agentId, runtime);

@@ -10,6 +10,8 @@ export interface AgentRuntimeConfig {
   maxTokens?: number;       // default 8096
   temperature?: number;     // default 1.0 (Claude default)
   runtimeMode?: RuntimeMode;
+  /** Reasoning effort level — passed as --effort to the claude subprocess. */
+  effort?: string;
 }
 
 export interface RunOptions {

@@ -363,6 +363,10 @@ export class ClaudeCodeCompatTransport implements ExecutionTransport {
       args.push('--allowed-tools', request.allowedTools.join(','));
     }
 
+    if (request.effort) {
+      args.push('--effort', request.effort);
+    }
+
     return args;
   }
 
