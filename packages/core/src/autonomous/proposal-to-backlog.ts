@@ -54,6 +54,12 @@ const SKIP_DIRS = new Set([
   // escaped TODO(autonomous) marker strings that are test data, not real
   // TODO markers. Scanning them fills the backlog with fixture noise.
   'tests', '__tests__', '__fixtures__', 'fixtures',
+  // v14.2.0: Claude Code worktrees + .playwright-mcp/ contain duplicates of
+  // the project tree. Scanning them produces TODO itemIds prefixed with
+  // `todo--claude-worktrees-...` that confuse the scorer and re-pick items
+  // already shipped. Observed in cycle b555cca4 (all 5 items had this
+  // prefix and were duplicates of the polish wave's work).
+  '.claude', '.playwright-mcp', 'playwright-report', 'test-results',
 ]);
 
 // v6.4.2: additional per-file exclusions for test files that may live
