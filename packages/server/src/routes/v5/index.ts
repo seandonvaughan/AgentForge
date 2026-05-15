@@ -38,6 +38,8 @@ import { webhooksRoutes } from './webhooks.js';
 import { notificationsRoutes } from './notifications.js';
 import { apiKeysRoutes } from './api-keys.js';
 import { membersRoutes } from './members.js';
+import { countersRoutes } from './counters.js';
+import { autonomousBranchesRoutes } from './autonomous-branches.js';
 
 export interface V5RouteOptions {
   adapter: WorkspaceAdapter;
@@ -274,6 +276,12 @@ export async function registerV5Routes(
   await notificationsRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
   await apiKeysRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
   await membersRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
+
+  // ── Counters (StatusLine widget) ──────────────────────────────────────────
+  await countersRoutes(app, { adapter: opts.adapter });
+
+  // ── Autonomous Branch Management (promoted from dashboard-stubs.ts) ───────
+  await autonomousBranchesRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
 }
 
 function bridgeRuntimeEventToGlobalStream(event: RuntimeEventEnvelope): void {
