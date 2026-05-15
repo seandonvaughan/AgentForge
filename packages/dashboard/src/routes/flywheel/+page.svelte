@@ -158,7 +158,16 @@
 
   // Summary stat rows derived from debug payload
   $: statRows = flywheel.debug ? [
-    { label: 'Cycles run', value: flywheel.debug.cycleCount, sub: `${flywheel.debug.completedCycleCount} completed` },
+    {
+      label: 'Cycles run',
+      value: flywheel.debug.cycleCount,
+      // Show "N completed" normally; append "· M meaningful" when meaningful
+      // count differs from completed count so operators understand that cycles
+      // with test data (but not fully completed) still contribute to metrics.
+      sub: flywheel.debug.meaningfulCycleCount !== flywheel.debug.completedCycleCount
+        ? `${flywheel.debug.completedCycleCount} completed · ${flywheel.debug.meaningfulCycleCount} meaningful`
+        : `${flywheel.debug.completedCycleCount} completed`,
+    },
     { label: 'Sprint iterations', value: flywheel.debug.sprintCount, sub: null },
     { label: 'Agents on team', value: flywheel.debug.agentCount, sub: null },
     { label: 'Sprint items', value: `${flywheel.debug.completedItems} / ${flywheel.debug.totalItems}`, sub: flywheel.debug.totalItems > 0 ? `${Math.round(flywheel.debug.completedItems / flywheel.debug.totalItems * 100)}% done` : null },

@@ -271,6 +271,57 @@ describe('computeMetrics — velocity score', () => {
     const m = computeMetrics(tmpRoot).metrics.find(m => m.key === 'velocity')!;
     expect(m.score).toBe(56);
   });
+
+  it('includes cycleThroughput from meaningful cycles (4 cycles → +20)', () => {
+    // cycleThroughput = min(30, meaningfulCycles.length * 5) = min(30, 4 * 5) = 20
+    // Sprint items exist with 0% completion so itemRate * 70 = 0.
+    // No sessions → sessionBoost = 0. Total: 0 + 20 + 0 = 20.
+    mkdirs(join(tmpRoot, '.agentforge/cycles'));
+    for (let i = 0; i < 4; i++) {
+      writeCycle(`tp-${i}`, {
+        startedAt: `2026-01-0${i + 1}T00:00:00.000Z`,
+        stage: 'completed',
+        tests: { passed: 5, failed: 0, total: 5, passRate: 1.0 },
+      });
+    }
+    writeSprintFlat('v1.json', [{ status: 'planned' }, { status: 'planned' }]);
+    const m = computeMetrics(tmpRoot).metrics.find(m => m.key === 'velocity')!;
+    expect(m.score).toBe(20);
+  });
+
+  it('includes sessionBoost from satisfied sessions (6 sessions → +3)', () => {
+    // sessionBoost = min(15, floor(satisfiedSessions / 2)) = min(15, 3) = 3
+    // Sprint items all planned → itemRate * 70 = 0. No meaningful cycles → 0.
+    writeSprintFlat('v1.json', [{ status: 'planned' }]);
+    for (let i = 0; i < 6; i++) {
+      writeSession(`sess-${i}.json`, { task_id: `t${i}`, is_request_satisfied: true });
+    }
+    const m = computeMetrics(tmpRoot).metrics.find(m => m.key === 'velocity')!;
+    expect(m.score).toBe(3);
+  });
+
+  it('combines all three components: itemRate + cycleThroughput + sessionBoost', () => {
+    // 8 of 10 items completed: itemRate * 70 = 56
+    // 4 meaningful cycles:     cycleThroughput = 20
+    // 6 satisfied sessions:    sessionBoost = 3
+    // Total: 56 + 20 + 3 = 79
+    mkdirs(join(tmpRoot, '.agentforge/cycles'));
+    writeSprintFlat('v1.json', Array.from({ length: 10 }, (_, i) => ({
+      status: i < 8 ? 'completed' : 'planned',
+    })));
+    for (let i = 0; i < 4; i++) {
+      writeCycle(`combo-${i}`, {
+        startedAt: `2026-01-0${i + 1}T00:00:00.000Z`,
+        stage: 'completed',
+        tests: { passed: 5, failed: 0, total: 5, passRate: 1.0 },
+      });
+    }
+    for (let i = 0; i < 6; i++) {
+      writeSession(`cs-${i}.json`, { task_id: `ct${i}`, is_request_satisfied: true });
+    }
+    const m = computeMetrics(tmpRoot).metrics.find(m => m.key === 'velocity')!;
+    expect(m.score).toBe(79);
+  });
 });
 
 describe('computeMetrics — inheritance score', () => {
@@ -565,6 +616,21 @@ describe('computeMetrics — cycles-archived/ reading', () => {
     const { debug } = computeMetrics(tmpRoot);
     expect(debug.cycleCount).toBe(3);
     expect(debug.completedCycleCount).toBe(3);
+  });
+
+  it('cycleHistory is ordered chronologically across cycles/ and cycles-archived/', () => {
+    // Archived cycle predates the active cycle — the two sources must be merged
+    // and sorted together so the chart renders the correct temporal order.
+    mkdirs(join(tmpRoot, '.agentforge/cycles'), join(tmpRoot, '.agentforge/cycles-archived'));
+    writeArchivedCycle('old-arch', { startedAt: '2025-12-01T00:00:00.000Z', sprintVersion: '1.0' });
+    writeCycle('new-active', { startedAt: '2026-06-01T00:00:00.000Z', sprintVersion: '20.0' });
+    const { cycleHistory } = computeMetrics(tmpRoot);
+    expect(cycleHistory).toHaveLength(2);
+    expect(new Date(cycleHistory[0].startedAt).getTime())
+      .toBeLessThan(new Date(cycleHistory[1].startedAt).getTime());
+    // Archived cycle (older) must sort first
+    expect(cycleHistory[0].cycleId).toBe('old-arch');
+    expect(cycleHistory[1].cycleId).toBe('new-active');
   });
 });
 
