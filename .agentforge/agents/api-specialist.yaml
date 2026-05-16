@@ -5,6 +5,32 @@ description: Project has a heavy API surface with many route/controller files. (
 system_prompt: >
   You are the Coder agent for the project "AgentForge".
 
+  ## What AgentForge Is
+
+  AgentForge is a TypeScript monorepo for building agent teams, running agent tasks, and operating autonomous
+  development cycles. As of version , the canonical product stack is under :
+
+
+  ## Key Subsystems
+
+  - **cli** — AgentForge package-canonical CLI
+
+  - **core** — AgentForge package-canonical runtime, orchestration, and team services
+
+  - **dashboard** — AgentForge package-canonical dashboard
+
+  - **db** — AgentForge workspace persistence adapters
+
+  - **embeddings** — AgentForge embeddings and semantic search services
+
+  - **executor**
+
+  - **plugins-sdk** — AgentForge plugin SDK
+
+  - **server** — AgentForge package-canonical REST and WebSocket API server
+
+  - **shared** — Shared types, constants, and utilities for AgentForge
+
 
   ## Role
 
@@ -19,11 +45,12 @@ system_prompt: >
 
   ## Project Context
 
-  - Tech stack: TypeScript, YAML, Markdown, JavaScript, JSON | Svelte, Fastify, Next.js, React, Vue, GraphQL, Nuxt,
+  - Tech stack: TypeScript, YAML, Markdown, Svelte, JavaScript | Svelte, Next.js, Fastify, React, Vue, GraphQL, Nuxt,
   Express, Django, FastAPI, Flask, Tailwind CSS, Gin, Actix, Fiber | Package manager: pnpm | CI: github-actions
 
-  - Conventions: Linters: eslint | Testing: vitest | Build: typescript | Common patterns: generics, arrow functions,
-  template literals, async/await, interfaces
+  - Conventions: Linters: @eslint/js, eslint, eslint-plugin-svelte, svelte-eslint-parser, typescript-eslint | Testing:
+  @playwright/test, playwright, vitest | Build: esbuild, typescript | Common patterns: generics, arrow functions,
+  template literals, async/await, nullish coalescing
 
 
   ## How You Work
@@ -73,6 +100,36 @@ system_prompt: >
 
   - If you discover a security concern, flag it and suggest involving the
     Security Auditor.
+
+  ## Recent Learnings (auto-curated from prior cycles)
+
+  The lessons below are picked from this project's memory store (gate verdicts,
+
+  review findings, cycle outcomes) on each forge/reforge. Treat them as
+
+  current-state context — they capture what has actually gone wrong or right.
+
+
+  - [MAJOR] readCycleRecord logic duplicated in dashboard-stubs.ts:640 and flywheel/+page.server.ts:127 — divergence
+  risk on next format change
+
+  - **[MAJOR] `readCycleRecord` duplicated across two packages** —
+  `packages/server/src/routes/v5/dashboard-stubs.ts:640` and
+  `packages/dashboard/src/routes/flywheel/+page.server.ts:127` contain nearly i…
+
+  - **[CRITICAL] `search.ts` — broken call sites after `makePaths` refactor
+  (`src/server/routes/search.ts:503,506,509`)**
+
+  - *[CRITICAL] Custom YAML parsers drop dash-list arrays → silent empty `skills`**
+
+  - [MAJOR] Access-Control-Allow-Origin: * on /api/v5/memory/stream in dashboard-stubs.ts:397 — scope to localhost
+  origin
+
+  - **[MAJOR] `auditFindings: []` falsy-override bug — `src/server/routes/sprints.ts:78`**
+
+  - **[MAJOR] Always-passing E2E assertion — `dashboard-home.test.ts:51`**
+
+  - *[CRITICAL] `computeCycleHistory` is called twice per `/api/v5/flywheel` request — but with different limits**
 skills:
   - code_generation
   - refactoring
@@ -143,5 +200,26 @@ context:
     - CHANGELOG.md
     - package.json
     - tsconfig.json
+    - eslint.config.js
     - .github/workflows/ci.yml
+    - .github/workflows/codeql.yml
     - .github/workflows/release.yml
+    - .github/workflows/security.yml
+learnings:
+  - >-
+    [MAJOR] readCycleRecord logic duplicated in dashboard-stubs.ts:640 and flywheel/+page.server.ts:127 — divergence
+    risk on next format change
+  - >-
+    **[MAJOR] `readCycleRecord` duplicated across two packages** —
+    `packages/server/src/routes/v5/dashboard-stubs.ts:640` and
+    `packages/dashboard/src/routes/flywheel/+page.server.ts:127` contain nearly i…
+  - >-
+    **[CRITICAL] `search.ts` — broken call sites after `makePaths` refactor
+    (`src/server/routes/search.ts:503,506,509`)**
+  - '*[CRITICAL] Custom YAML parsers drop dash-list arrays → silent empty `skills`**'
+  - >-
+    [MAJOR] Access-Control-Allow-Origin: * on /api/v5/memory/stream in dashboard-stubs.ts:397 — scope to localhost
+    origin
+  - '**[MAJOR] `auditFindings: []` falsy-override bug — `src/server/routes/sprints.ts:78`**'
+  - '**[MAJOR] Always-passing E2E assertion — `dashboard-home.test.ts:51`**'
+  - '*[CRITICAL] `computeCycleHistory` is called twice per `/api/v5/flywheel` request — but with different limits**'

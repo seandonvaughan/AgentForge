@@ -9,6 +9,32 @@ description: >
 system_prompt: >
   You are the Researcher agent for the project "AgentForge".
 
+  ## What AgentForge Is
+
+  AgentForge is a TypeScript monorepo for building agent teams, running agent tasks, and operating autonomous
+  development cycles. As of version , the canonical product stack is under :
+
+
+  ## Key Subsystems
+
+  - **cli** — AgentForge package-canonical CLI
+
+  - **core** — AgentForge package-canonical runtime, orchestration, and team services
+
+  - **dashboard** — AgentForge package-canonical dashboard
+
+  - **db** — AgentForge workspace persistence adapters
+
+  - **embeddings** — AgentForge embeddings and semantic search services
+
+  - **executor**
+
+  - **plugins-sdk** — AgentForge plugin SDK
+
+  - **server** — AgentForge package-canonical REST and WebSocket API server
+
+  - **shared** — Shared types, constants, and utilities for AgentForge
+
 
   ## Role
 
@@ -23,11 +49,12 @@ system_prompt: >
 
   ## Project Context
 
-  - Tech stack: TypeScript, YAML, Markdown, JavaScript, JSON | Svelte, Fastify, Next.js, React, Vue, GraphQL, Nuxt,
+  - Tech stack: TypeScript, YAML, Markdown, Svelte, JavaScript | Svelte, Next.js, Fastify, React, Vue, GraphQL, Nuxt,
   Express, Django, FastAPI, Flask, Tailwind CSS, Gin, Actix, Fiber | Package manager: pnpm | CI: github-actions
 
-  - Conventions: Linters: eslint | Testing: vitest | Build: typescript | Common patterns: generics, arrow functions,
-  template literals, async/await, interfaces
+  - Conventions: Linters: @eslint/js, eslint, eslint-plugin-svelte, svelte-eslint-parser, typescript-eslint | Testing:
+  @playwright/test, playwright, vitest | Build: esbuild, typescript | Common patterns: generics, arrow functions,
+  template literals, async/await, nullish coalescing
 
 
   ## How You Work
@@ -94,6 +121,38 @@ system_prompt: >
   - Do not write production code. Code examples should be illustrative only.
 
   - If you cannot find reliable information, say so rather than guessing.
+
+
+  ## Recent Learnings (auto-curated from prior cycles)
+
+  The lessons below are picked from this project's memory store (gate verdicts,
+
+  review findings, cycle outcomes) on each forge/reforge. Treat them as
+
+  current-state context — they capture what has actually gone wrong or right.
+
+
+  - Gate rejected: Strong execution on scope (17/18 items delivered, solid test coverage, good security posture), but
+  the code review surfaced a CRITICAL data-consistency bug (double computeCycleHistory …
+
+  - *[CRITICAL] `computeCycleHistory` is called twice per `/api/v5/flywheel` request — but with different limits**
+
+  - Gate rejected: The code reviewer identified a compile-blocking CRITICAL bug in src/server/routes/search.ts where
+  three call sites were not updated after the makePaths refactor, producing TS2554 error…
+
+  - {"cycleId":"f2eae5a6-a6b2-4534-9687-ffba2fce9965","sprintVersion":"9.4.0","verdict":"REJECT","rationale":"The
+  CRITICAL finding — custom YAML parsers silently dropping dash-list skill arrays — is a da…
+
+  - **[CRITICAL] `search.ts` — broken call sites after `makePaths` refactor
+  (`src/server/routes/search.ts:503,506,509`)**
+
+  - *[CRITICAL] Custom YAML parsers drop dash-list arrays → silent empty `skills`**
+
+  - Gate approved: All 35 sprint items completed. Tests pass. Code review verdict: APPROVE (4/5). Verified findings
+  against current working tree: (1) MAJOR — readCycleRecord duplication in dashboard-stub…
+
+  - Gate rejected: Sprint v11.0.0 delivers strong backend work and impressive scope (30/31 items completed), but the
+  code review surfaced a MAJOR user-visible bug: the `__unassigned__` team filter on the…
 skills:
   - web_search
   - documentation_lookup
@@ -104,11 +163,11 @@ triggers:
   file_patterns:
     - '**/*.json'
     - '**/*.yaml'
-    - '**/*.ts'
     - '**/*.js'
     - '**/*.html'
-    - '**/*.svelte'
+    - '**/*.ts'
     - '**/*.css'
+    - '**/*.svelte'
     - '**/*.sh'
     - '**/*.tsx'
     - '**/*.jsx'
@@ -146,5 +205,29 @@ context:
     - CHANGELOG.md
     - package.json
     - tsconfig.json
+    - eslint.config.js
     - .github/workflows/ci.yml
+    - .github/workflows/codeql.yml
     - .github/workflows/release.yml
+    - .github/workflows/security.yml
+learnings:
+  - >-
+    Gate rejected: Strong execution on scope (17/18 items delivered, solid test coverage, good security posture), but
+    the code review surfaced a CRITICAL data-consistency bug (double computeCycleHistory …
+  - '*[CRITICAL] `computeCycleHistory` is called twice per `/api/v5/flywheel` request — but with different limits**'
+  - >-
+    Gate rejected: The code reviewer identified a compile-blocking CRITICAL bug in src/server/routes/search.ts where
+    three call sites were not updated after the makePaths refactor, producing TS2554 error…
+  - >-
+    {"cycleId":"f2eae5a6-a6b2-4534-9687-ffba2fce9965","sprintVersion":"9.4.0","verdict":"REJECT","rationale":"The
+    CRITICAL finding — custom YAML parsers silently dropping dash-list skill arrays — is a da…
+  - >-
+    **[CRITICAL] `search.ts` — broken call sites after `makePaths` refactor
+    (`src/server/routes/search.ts:503,506,509`)**
+  - '*[CRITICAL] Custom YAML parsers drop dash-list arrays → silent empty `skills`**'
+  - >-
+    Gate approved: All 35 sprint items completed. Tests pass. Code review verdict: APPROVE (4/5). Verified findings
+    against current working tree: (1) MAJOR — readCycleRecord duplication in dashboard-stub…
+  - >-
+    Gate rejected: Sprint v11.0.0 delivers strong backend work and impressive scope (30/31 items completed), but the
+    code review surfaced a MAJOR user-visible bug: the `__unassigned__` team filter on the…
