@@ -346,6 +346,50 @@ export interface InboxListFilters {
   offset?: number;
 }
 
+// --- Knowledge Bases (Subsystem C v1) ---
+
+export type KbVisibility = 'private' | 'workspace' | 'public';
+
+export interface KbRow {
+  id: string;
+  slug: string;
+  title: string;
+  description: string | null;
+  owner: string;
+  visibility: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KbDocRow {
+  id: string;
+  kb_id: string;
+  slug: string;
+  title: string;
+  current_version_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KbDocVersionRow {
+  id: string;
+  doc_id: string;
+  version: number;
+  body_md: string;
+  authored_by: string;
+  authored_at: string;
+  commit_message: string | null;
+}
+
+export interface KbListFilters {
+  /** Filter by visibility tier; omit for all. */
+  visibility?: KbVisibility | KbVisibility[];
+  /** Filter by owner. */
+  owner?: string;
+  limit?: number;
+  offset?: number;
+}
+
 export class WorkspaceAdapter {
   private readonly db: Database.Database;
   readonly workspaceId: string;
@@ -1530,6 +1574,226 @@ export class WorkspaceAdapter {
     return this.db
       .prepare('SELECT * FROM inbox_recipients WHERE message_id = ? AND recipient = ?')
       .get(messageId, recipient) as InboxRecipientRow | undefined;
+  }
+
+  // --- Knowledge Bases (Subsystem C v1) ---
+
+  /**
+   * Insert a KB row. Returns the persisted row. Slug uniqueness is enforced
+   * by the DB; callers should treat constraint failures as bad-request.
+   */
+  createKb(data: {
+    id?: string;
+    slug: string;
+    title: string;
+    description?: string | null;
+    owner: string;
+    visibility?: KbVisibility;
+    createdAt?: string;
+  }): KbRow {
+    const id = data.id ?? generateId();
+    const now = data.createdAt ?? nowIso();
+    this.db
+      .prepare(
+        `INSERT INTO kbs (id, slug, title, description, owner, visibility, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        data.slug,
+        data.title,
+        data.description ?? null,
+        data.owner,
+        data.visibility ?? 'workspace',
+        now,
+        now,
+      );
+    return this.getKb(id)!;
+  }
+
+  getKb(id: string): KbRow | undefined {
+    return this.db.prepare('SELECT * FROM kbs WHERE id = ?').get(id) as KbRow | undefined;
+  }
+
+  getKbBySlug(slug: string): KbRow | undefined {
+    return this.db.prepare('SELECT * FROM kbs WHERE slug = ?').get(slug) as KbRow | undefined;
+  }
+
+  listKbs(filters: KbListFilters = {}): KbRow[] {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    if (filters.visibility) {
+      const list = Array.isArray(filters.visibility) ? filters.visibility : [filters.visibility];
+      if (list.length > 0) {
+        const placeholders = list.map(() => '?').join(', ');
+        conditions.push(`visibility IN (${placeholders})`);
+        params.push(...list);
+      }
+    }
+    if (filters.owner) {
+      conditions.push('owner = ?');
+      params.push(filters.owner);
+    }
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const limit = Math.min(filters.limit ?? 200, 500);
+    const offset = filters.offset ?? 0;
+    return this.db
+      .prepare(`SELECT * FROM kbs ${where} ORDER BY updated_at DESC LIMIT ? OFFSET ?`)
+      .all(...params, limit, offset) as KbRow[];
+  }
+
+  updateKb(
+    id: string,
+    patch: { title?: string; description?: string | null; visibility?: KbVisibility },
+  ): KbRow | undefined {
+    const existing = this.getKb(id);
+    if (!existing) return undefined;
+    const next = {
+      title: patch.title ?? existing.title,
+      description: patch.description !== undefined ? patch.description : existing.description,
+      visibility: patch.visibility ?? (existing.visibility as KbVisibility),
+      updated_at: nowIso(),
+    };
+    this.db
+      .prepare(
+        `UPDATE kbs SET title = ?, description = ?, visibility = ?, updated_at = ? WHERE id = ?`,
+      )
+      .run(next.title, next.description, next.visibility, next.updated_at, id);
+    return this.getKb(id);
+  }
+
+  deleteKb(id: string): boolean {
+    const res = this.db.prepare('DELETE FROM kbs WHERE id = ?').run(id);
+    return res.changes > 0;
+  }
+
+  /**
+   * Create a KB document at version 1. Atomically writes both `kb_docs` and
+   * an initial `kb_doc_versions` row, linking via `current_version_id`.
+   */
+  createKbDoc(data: {
+    id?: string;
+    kbId: string;
+    slug: string;
+    title: string;
+    bodyMd: string;
+    authoredBy: string;
+    commitMessage?: string | null;
+    createdAt?: string;
+  }): { doc: KbDocRow; version: KbDocVersionRow } {
+    const docId = data.id ?? generateId();
+    const versionId = generateId();
+    const now = data.createdAt ?? nowIso();
+    const commitMessage = data.commitMessage ?? null;
+
+    const tx = this.db.transaction(() => {
+      this.db
+        .prepare(
+          `INSERT INTO kb_docs (id, kb_id, slug, title, current_version_id, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(docId, data.kbId, data.slug, data.title, versionId, now, now);
+      this.db
+        .prepare(
+          `INSERT INTO kb_doc_versions
+             (id, doc_id, version, body_md, authored_by, authored_at, commit_message)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(versionId, docId, 1, data.bodyMd, data.authoredBy, now, commitMessage);
+      this.db.prepare('UPDATE kbs SET updated_at = ? WHERE id = ?').run(now, data.kbId);
+    });
+    tx();
+
+    return {
+      doc: this.getKbDocById(docId)!,
+      version: this.getKbDocVersionById(versionId)!,
+    };
+  }
+
+  getKbDocById(id: string): KbDocRow | undefined {
+    return this.db.prepare('SELECT * FROM kb_docs WHERE id = ?').get(id) as KbDocRow | undefined;
+  }
+
+  getKbDocBySlug(kbId: string, slug: string): KbDocRow | undefined {
+    return this.db
+      .prepare('SELECT * FROM kb_docs WHERE kb_id = ? AND slug = ?')
+      .get(kbId, slug) as KbDocRow | undefined;
+  }
+
+  listKbDocs(kbId: string): KbDocRow[] {
+    return this.db
+      .prepare('SELECT * FROM kb_docs WHERE kb_id = ? ORDER BY updated_at DESC')
+      .all(kbId) as KbDocRow[];
+  }
+
+  countKbDocs(kbId: string): number {
+    const row = this.db
+      .prepare('SELECT COUNT(*) AS n FROM kb_docs WHERE kb_id = ?')
+      .get(kbId) as { n: number };
+    return row.n;
+  }
+
+  /**
+   * Append a new version to an existing document. Bumps `current_version_id`.
+   * NEVER mutates an existing version row. Returns the new version.
+   */
+  appendKbDocVersion(data: {
+    docId: string;
+    bodyMd: string;
+    authoredBy: string;
+    title?: string;
+    commitMessage?: string | null;
+    authoredAt?: string;
+  }): { doc: KbDocRow; version: KbDocVersionRow } | undefined {
+    const doc = this.getKbDocById(data.docId);
+    if (!doc) return undefined;
+    const versionId = generateId();
+    const now = data.authoredAt ?? nowIso();
+    const commitMessage = data.commitMessage ?? null;
+
+    const tx = this.db.transaction(() => {
+      const maxRow = this.db
+        .prepare('SELECT COALESCE(MAX(version), 0) AS m FROM kb_doc_versions WHERE doc_id = ?')
+        .get(data.docId) as { m: number };
+      const nextVersion = maxRow.m + 1;
+      this.db
+        .prepare(
+          `INSERT INTO kb_doc_versions
+             (id, doc_id, version, body_md, authored_by, authored_at, commit_message)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(versionId, data.docId, nextVersion, data.bodyMd, data.authoredBy, now, commitMessage);
+      this.db
+        .prepare(
+          `UPDATE kb_docs SET current_version_id = ?, title = ?, updated_at = ? WHERE id = ?`,
+        )
+        .run(versionId, data.title ?? doc.title, now, data.docId);
+      this.db.prepare('UPDATE kbs SET updated_at = ? WHERE id = ?').run(now, doc.kb_id);
+    });
+    tx();
+
+    return {
+      doc: this.getKbDocById(data.docId)!,
+      version: this.getKbDocVersionById(versionId)!,
+    };
+  }
+
+  getKbDocVersionById(id: string): KbDocVersionRow | undefined {
+    return this.db
+      .prepare('SELECT * FROM kb_doc_versions WHERE id = ?')
+      .get(id) as KbDocVersionRow | undefined;
+  }
+
+  getKbDocVersion(docId: string, version: number): KbDocVersionRow | undefined {
+    return this.db
+      .prepare('SELECT * FROM kb_doc_versions WHERE doc_id = ? AND version = ?')
+      .get(docId, version) as KbDocVersionRow | undefined;
+  }
+
+  listKbDocVersions(docId: string): KbDocVersionRow[] {
+    return this.db
+      .prepare('SELECT * FROM kb_doc_versions WHERE doc_id = ? ORDER BY version DESC')
+      .all(docId) as KbDocVersionRow[];
   }
 
   // --- Lifecycle ---
