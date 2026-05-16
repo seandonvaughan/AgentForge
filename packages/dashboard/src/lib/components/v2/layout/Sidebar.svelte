@@ -27,6 +27,7 @@
     ChevronRight,
     Shield,
     GitMerge,
+    BookOpen,
   } from 'lucide-svelte';
 
   // ── Nav structure ──────────────────────────────────────────────────────
@@ -66,6 +67,7 @@
         { label: 'Flywheel',  href: '/flywheel', icon: Sparkles },
         { label: 'Insights',  href: '/insights', icon: TrendingUp },
         { label: 'Memory',    href: '/memory',   icon: Brain },
+        { label: 'KBs',       href: '/knowledge/kbs', icon: BookOpen },
         { label: 'Health',    href: '/health',   icon: Activity },
       ],
     },

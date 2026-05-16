@@ -372,4 +372,47 @@ export const WORKSPACE_DDL = `
   CREATE INDEX IF NOT EXISTS idx_inbox_messages_created   ON inbox_messages(created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_inbox_messages_source    ON inbox_messages(source_type, source_id);
   CREATE INDEX IF NOT EXISTS idx_inbox_recipients_lookup  ON inbox_recipients(recipient, status, message_id);
+
+  -- Knowledge Bases (Subsystem C v1) — see spec section 5.
+  -- v1 is intentionally narrower than the spec's section 5.2 schema: no tags,
+  -- no pinned flag, no cross-links table, no FTS5 index. Versioning is the
+  -- core feature: every update is a new row in kb_doc_versions, never an
+  -- in-place mutation of the body. ACL enforcement (read_scope / write_scope)
+  -- is deferred to Phase 2; v1 honours visibility only as advisory metadata.
+  CREATE TABLE IF NOT EXISTS kbs (
+    id          TEXT PRIMARY KEY,
+    slug        TEXT UNIQUE NOT NULL,
+    title       TEXT NOT NULL,
+    description TEXT,
+    owner       TEXT NOT NULL,
+    visibility  TEXT NOT NULL DEFAULT 'workspace',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS kb_docs (
+    id                   TEXT PRIMARY KEY,
+    kb_id                TEXT NOT NULL REFERENCES kbs(id) ON DELETE CASCADE,
+    slug                 TEXT NOT NULL,
+    title                TEXT NOT NULL,
+    current_version_id   TEXT,
+    created_at           TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at           TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (kb_id, slug)
+  );
+
+  CREATE TABLE IF NOT EXISTS kb_doc_versions (
+    id              TEXT PRIMARY KEY,
+    doc_id          TEXT NOT NULL REFERENCES kb_docs(id) ON DELETE CASCADE,
+    version         INTEGER NOT NULL,
+    body_md         TEXT NOT NULL,
+    authored_by     TEXT NOT NULL,
+    authored_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    commit_message  TEXT,
+    UNIQUE (doc_id, version)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_kbs_slug             ON kbs(slug);
+  CREATE INDEX IF NOT EXISTS idx_kb_docs_kb_id        ON kb_docs(kb_id);
+  CREATE INDEX IF NOT EXISTS idx_kb_versions_doc_id   ON kb_doc_versions(doc_id, version DESC);
 `;

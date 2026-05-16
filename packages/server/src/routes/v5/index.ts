@@ -46,6 +46,7 @@ import { autonomousBranchesRoutes } from './autonomous-branches.js';
 import { dmsRoutes } from './dms.js';
 import { inboxRoutes } from './inbox.js';
 import { billingRoutes } from './billing.js';
+import { kbsRoutes } from './kbs.js';
 
 export interface V5RouteOptions {
   adapter: WorkspaceAdapter;
@@ -432,6 +433,12 @@ export async function registerV5Routes(
 
   // ── Billing scaffolding (plan + invoice stubs; Stripe integration Phase 2) ─
   await billingRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
+
+  // ── Knowledge Bases (Subsystem C v1) ──────────────────────────────────────
+  await kbsRoutes(app, {
+    adapter: opts.adapter,
+    ...(opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {}),
+  });
 }
 
 function bridgeRuntimeEventToGlobalStream(event: RuntimeEventEnvelope): void {
