@@ -457,6 +457,9 @@ export async function registerV5Routes(
       bridgeInboxToGlobalStream(envelope);
     });
   }
+
+  // ── Billing scaffolding (plan + invoice stubs; Stripe integration Phase 2) ─
+  await billingRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
 }
 
 /** Exported for unit-test access. Forwards a bus DM envelope as an SSE event. */
@@ -497,9 +500,6 @@ export function bridgeInboxToGlobalStream(envelope: MessageEnvelopeV2<InboxMessa
       recipients: p.recipients,
     },
   });
-
-  // ── Billing scaffolding (plan + invoice stubs; Stripe integration Phase 2) ─
-  await billingRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
 }
 
 function bridgeRuntimeEventToGlobalStream(event: RuntimeEventEnvelope): void {
