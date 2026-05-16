@@ -1,6 +1,39 @@
 import type { FastifyInstance } from 'fastify';
 import type { WorkspaceAdapter } from '@agentforge/db';
 
+// ---------------------------------------------------------------------------
+// Daily rollup types (exported for tests)
+// ---------------------------------------------------------------------------
+
+export interface DailyRollupByModel {
+  opus: number;
+  sonnet: number;
+  haiku: number;
+}
+
+export interface DailyRollupItem {
+  date: string;
+  totalUsd: number;
+  byModel: DailyRollupByModel;
+  byTag?: Record<string, number>;
+}
+
+export interface DailyRollupsResponse {
+  data: DailyRollupItem[];
+  meta: { days: number; timestamp: string };
+}
+
+// ---------------------------------------------------------------------------
+// Model tier classifier — maps model string → opus | sonnet | haiku
+// ---------------------------------------------------------------------------
+
+function classifyModel(model: string): keyof DailyRollupByModel {
+  const lower = model.toLowerCase();
+  if (lower.includes('opus')) return 'opus';
+  if (lower.includes('haiku')) return 'haiku';
+  return 'sonnet'; // default — covers sonnet, claude-3, unknown, etc.
+}
+
 export async function costsRoutes(
   app: FastifyInstance,
   opts: { adapter: WorkspaceAdapter },
@@ -69,5 +102,88 @@ export async function costsRoutes(
         timestamp: new Date().toISOString(),
       },
     });
+  });
+
+  /**
+   * GET /api/v5/costs/daily-rollups
+   *
+   * Returns daily aggregated cost totals for the last N days (default 30, max 365).
+   * Used by the /cost dashboard page for its 30-day sparkline.
+   *
+   * Query params:
+   *   ?days=N   Number of days to look back (default 30, max 365)
+   *
+   * Response shape:
+   *   {
+   *     data: Array<{
+   *       date: string (YYYY-MM-DD),
+   *       totalUsd: number,
+   *       byModel: { opus: number, sonnet: number, haiku: number },
+   *     }>,
+   *     meta: { days: number, timestamp: string }
+   *   }
+   */
+  app.get('/api/v5/costs/daily-rollups', async (req, reply) => {
+    const q = req.query as { days?: string };
+
+    // Validate days parameter
+    let days = 30;
+    if (q.days !== undefined && q.days.length > 0) {
+      const parsed = parseInt(q.days, 10);
+      if (isNaN(parsed) || parsed <= 0) {
+        return reply.status(400).send({ error: 'Invalid days parameter: must be a positive integer' });
+      }
+      if (parsed > 365) {
+        return reply.status(400).send({ error: 'Invalid days parameter: maximum is 365' });
+      }
+      days = parsed;
+    }
+
+    // Compute the cutoff date (N days ago at midnight UTC)
+    const cutoff = new Date();
+    cutoff.setUTCDate(cutoff.getUTCDate() - days);
+    cutoff.setUTCHours(0, 0, 0, 0);
+    const cutoffIso = cutoff.toISOString();
+
+    const allCosts = opts.adapter.getAllCosts();
+
+    // Filter to the requested window
+    const costs = allCosts.filter((c) => (c.created_at ?? '') >= cutoffIso);
+
+    // Group by date (YYYY-MM-DD prefix of created_at)
+    const byDay = new Map<string, DailyRollupItem>();
+
+    for (const c of costs) {
+      const date = (c.created_at ?? '').slice(0, 10);
+      if (!date || date === '') continue;
+
+      if (!byDay.has(date)) {
+        byDay.set(date, {
+          date,
+          totalUsd: 0,
+          byModel: { opus: 0, sonnet: 0, haiku: 0 },
+        });
+      }
+
+      const entry = byDay.get(date)!;
+      const costUsd = c.cost_usd ?? 0;
+      entry.totalUsd += costUsd;
+
+      const tier = classifyModel(c.model ?? '');
+      entry.byModel[tier] += costUsd;
+    }
+
+    // Sort by date ascending and return
+    const data = Array.from(byDay.values()).sort((a, b) => a.date.localeCompare(b.date));
+
+    const response: DailyRollupsResponse = {
+      data,
+      meta: {
+        days,
+        timestamp: new Date().toISOString(),
+      },
+    };
+
+    return reply.send(response);
   });
 }
