@@ -10,6 +10,7 @@ import { registerV5Routes } from './routes/v5/index.js';
 import { registerV6Routes } from './routes/v6/index.js';
 import { openApiRoutes } from './routes/v6/openapi.js';
 import { agentRoutes } from './routes/v5/agents.js';
+import { agentCrudRoutes } from './routes/v5/agent-crud.js';
 import { orgGraphRoutes } from './routes/v5/org-graph.js';
 import { pluginRoutes } from './routes/v5/plugins.js';
 import { rbacRoutes } from './routes/v5/rbac.js';
@@ -32,6 +33,7 @@ import { chatRoutes } from './routes/v5/chat.js';
 import { settingsRoutes } from './routes/v5/settings.js';
 import { searchRoutes } from './routes/v5/search.js';
 import { knowledgeRoutes } from './routes/v5/knowledge.js';
+import { auditRoutes } from './routes/v5/audit.js';
 import { sendContainedStaticFile } from './lib/static-files.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -185,6 +187,12 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
   // agentRoutes is called twice and Fastify throws FST_ERR_DUPLICATED_ROUTE.
   if (!options.adapter || !options.registry) {
     await agentRoutes(app, { ...(options.adapter !== undefined ? { adapter: options.adapter } : {}), projectRoot });
+    // Agent CRUD (create, patch, delete, fork, promote, raw YAML) — no adapter required.
+    // Same guard: registerV5Routes already calls agentCrudRoutes in adapter mode.
+    await agentCrudRoutes(app, { projectRoot });
+    // Audit log — file-backed SQLite, no adapter required.
+    // Guard: registerV5Routes already calls auditRoutes in adapter mode.
+    await auditRoutes(app, { projectRoot });
   }
 
   // ── Org graph (reads delegation.yaml — no adapter required) ──────────────────
