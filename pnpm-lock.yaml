@@ -50,6 +50,9 @@ importers:
       '@playwright/test':
         specifier: ^1.60.0
         version: 1.60.0
+      '@rolldown/binding-darwin-arm64':
+        specifier: ^1.0.1
+        version: 1.0.1
       '@types/better-sqlite3':
         specifier: ^7.6.13
         version: 7.6.13
@@ -2717,8 +2720,7 @@ snapshots:
   '@rolldown/binding-android-arm64@1.0.1':
     optional: true
 
-  '@rolldown/binding-darwin-arm64@1.0.1':
-    optional: true
+  '@rolldown/binding-darwin-arm64@1.0.1': {}
 
   '@rolldown/binding-darwin-x64@1.0.1':
     optional: true
