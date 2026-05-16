@@ -10,6 +10,7 @@ interface AgentYaml {
   model?: string;
   system_prompt?: string;
   role?: string;
+  effort?: string;
 }
 
 export interface LoadAgentConfigOptions {
@@ -63,6 +64,7 @@ export async function loadAgentConfig(
       model: modelMap[parsed.model ?? 'sonnet'] ?? 'sonnet',
       systemPrompt,
       workspaceId: 'default',
+      ...(parsed.effort && { effort: parsed.effort }),
     };
   } catch {
     return null;

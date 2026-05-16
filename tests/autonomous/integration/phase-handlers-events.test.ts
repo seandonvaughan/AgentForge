@@ -52,7 +52,13 @@ import { join } from 'node:path';
 // Mirrors the pattern used by phase-handlers-http.test.ts.
 // ---------------------------------------------------------------------------
 
-vi.mock('@agentforge/core', () => {
+vi.mock('@agentforge/core', async () => {
+  // Spread the real module so that utility functions (writeMemoryEntry,
+  // collectSprintItemTags, loadPriorGateKnownDebt, buildKnownDebtSection, etc.)
+  // work as-is. Only AgentRuntime and loadAgentConfig need to be replaced with
+  // mocks that prevent real Claude API calls during tests.
+  const real = await vi.importActual<typeof import('@agentforge/core')>('@agentforge/core');
+
   const mockRunResult = {
     sessionId: 'mock-phase-session',
     response: 'Mock phase agent response',
@@ -66,6 +72,7 @@ vi.mock('@agentforge/core', () => {
   };
 
   return {
+    ...real,
     AgentRuntime: vi.fn(function () {
       return {
         runStreaming: vi.fn().mockResolvedValue(mockRunResult),

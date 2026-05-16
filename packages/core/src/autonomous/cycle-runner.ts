@@ -96,6 +96,60 @@ export interface PreVerifyTypeCheckResult {
   typeCheckError?: string;
 }
 
+/**
+ * Tokenise a shell command string into argv suitable for `execFile`.
+ *
+ * Handles single-quoted and double-quoted tokens so command strings like
+ *   `pnpm --filter "@agentforge/core" build`
+ * are split into:
+ *   `['pnpm', '--filter', '@agentforge/core', 'build']`
+ *
+ * Replaces the previous naive `cmd.split(' ')` which corrupted commands
+ * containing quoted arguments with interior spaces. This function is the
+ * correct counterpart to using `execFile` (which bypasses the shell and
+ * requires the caller to pre-tokenize argv).
+ *
+ * Constraints:
+ * - No backslash escape handling outside of double quotes (not needed for
+ *   the pnpm/tsc invocations stored in CycleConfig.testing).
+ * - No subshells, pipes, or other shell meta-characters.
+ *
+ * Exported so unit tests can verify tokenisation independently of CycleRunner.
+ */
+export function parseCommandArgs(cmd: string): string[] {
+  const tokens: string[] = [];
+  let current = '';
+  let i = 0;
+
+  while (i < cmd.length) {
+    const ch = cmd[i]!;
+
+    if (ch === '"' || ch === "'") {
+      // Collect all characters until the matching closing quote.
+      const quote = ch;
+      i++;
+      while (i < cmd.length && cmd[i] !== quote) {
+        current += cmd[i];
+        i++;
+      }
+      i++; // consume closing quote
+    } else if (ch === ' ' || ch === '\t') {
+      // Whitespace ends the current token (consecutive whitespace is collapsed).
+      if (current.length > 0) {
+        tokens.push(current);
+        current = '';
+      }
+      i++;
+    } else {
+      current += ch;
+      i++;
+    }
+  }
+
+  if (current.length > 0) tokens.push(current);
+  return tokens;
+}
+
 export interface CycleRunnerOptions {
   cwd: string;
   config: CycleConfig;
@@ -340,6 +394,9 @@ export class CycleRunner {
         // tracked phase costs even though the gate threw. Sum them from the
         // phase files on disk since the scheduler's internal state is lost.
         this.totalCostUsd += this.sumPhaseCostsFromDisk();
+        // Flush accumulated cost so operators see live spend even when the
+        // gate rejects and we loop back for another attempt.
+        this.logger.flushCycleCost(this.totalCostUsd);
 
         retryAttempt++;
         this.logger.logPhaseFailure('gate', `retry ${retryAttempt}/${retryConfig.maxAutoRetries}: ${err.rationale.slice(0, 500)}`);
@@ -644,7 +701,7 @@ export class CycleRunner {
     let buildError: string | undefined;
 
     if (testing.buildCommand) {
-      const parts = testing.buildCommand.split(' ');
+      const parts = parseCommandArgs(testing.buildCommand);
       try {
         await execFileAsync(parts[0]!, parts.slice(1), {
           cwd,
@@ -664,7 +721,7 @@ export class CycleRunner {
     let typeCheckError: string | undefined;
 
     if (testing.typeCheckCommand) {
-      const parts = testing.typeCheckCommand.split(' ');
+      const parts = parseCommandArgs(testing.typeCheckCommand);
       try {
         await execFileAsync(parts[0]!, parts.slice(1), {
           cwd,

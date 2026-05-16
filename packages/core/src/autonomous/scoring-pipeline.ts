@@ -4,9 +4,11 @@
 // ScoringResult schema, and returns rankings split between within-budget and
 // requires-approval items.
 //
-// This module covers the happy path + schema validation. Task 18 will layer
-// the 3-strike fallback ladder on top of `score()` (clarified prompt → simpler
-// schema → static priority-based ranking).
+// Three-strike fallback ladder (fully implemented as of v15.0.0):
+//   1. LLM scorer (up to config.scoring.maxRetries attempts)
+//   2. Effort-estimator fallback — complexity + history-calibrated costs via
+//      EffortEstimator + HistoryAnalyzer (wired in effortEstimatorFallback())
+//   3. Static priority ranking — flat perItemUsd / p50 by tag, last resort
 //
 // See docs/superpowers/specs/2026-04-06-autonomous-loop-design.md §6.4
 import { existsSync, readFileSync } from 'node:fs';
@@ -389,21 +391,30 @@ ${JSON.stringify(grounding, null, 2)}
 - Hard cap per cycle: $${this.config.budget.perCycleUsd}
 - Max items: ${this.config.limits.maxItemsPerSprint}
 
-## Roster constraint — CRITICAL
+## Roster constraint — CRITICAL (scoring penalty applies)
 The \`suggestedAssignee\` field MUST be one of the exact kebab-case IDs listed
-below. Do NOT invent generic role names such as "BackendEngineer", "FrontendEngineer",
-"QAEngineer", "InfraEngineer", "SeniorDeveloper", "CoreAutonomyAgent", "DocsAgent",
-or any PascalCase/camelCase/space-separated name. Invented names are automatically
-downgraded to "coder" at runtime, discarding all specialist routing and wasting
-the cycle's specialist-selection work.
+below. Invented names like "BackendEngineer", "FrontendEngineer", "QAEngineer",
+"InfraEngineer", "SeniorDeveloper", "CoreAutonomyAgent", "DocsAgent", or any
+PascalCase / camelCase / space-separated variant MUST NOT appear.
 
-Valid agent IDs — copy one verbatim, no modifications:
+**Scoring penalty**: Items with an off-roster \`suggestedAssignee\` are automatically
+reassigned to "coder" at runtime AND flagged in gate review as UNVERIFIED ROUTING.
+These flags are a historical cause of sprint gate rejections. To avoid the penalty:
+  1. Identify the task type (backend fix, UI change, test coverage, security audit…)
+  2. Scan the roster below for the closest specialist match
+  3. Use \`coder\` only when genuinely no specialist matches — it is always valid
+
+Valid agent IDs — use one verbatim, no modifications:
 ${this.getAgentRoster().join(', ')}
 
-⚠️  If you find yourself wanting to use a name NOT in the agent roster above,
-RE-READ the roster — there is almost certainly a better match like \`coder\`,
-\`frontend-dev\`, or \`backend-qa\`. Inventing agent names degrades cycle quality
-and will be automatically replaced with "coder", losing all specialist routing.
+⚠️  If you find yourself writing a name that is NOT in the list above, stop and
+re-read the roster. There is almost certainly a better match. Common substitutions:
+  - "BackendEngineer" → \`coder\` or \`api-specialist\`
+  - "FrontendEngineer" → \`frontend-dev\` or \`ui-engineer\`
+  - "QAEngineer" → \`backend-qa\` or \`test-runner\`
+  - "InfraEngineer" → \`devops-engineer\`
+  - "SeniorDeveloper" → \`coder\`
+  - Any invented name → re-read the roster and pick the closest real ID
 
 ## Cost calibration (use as baseline, not training priors)
 Recent actual cost per item from grounding.history:
@@ -447,7 +458,7 @@ Return ONLY valid JSON matching this schema:
       "estimatedDurationMinutes": number,
       "rationale": string,
       "dependencies": string[],
-      "suggestedAssignee": string (MUST be one of the agent IDs from the Roster constraint above — use "coder" if unsure),
+      "suggestedAssignee": string (MUST be an exact ID from the Roster — off-roster names trigger gate-rejection flag; use "coder" if unsure),
       "suggestedTags": string[],
       "withinBudget": boolean
     }
@@ -457,6 +468,11 @@ Return ONLY valid JSON matching this schema:
   "summary": string,
   "warnings": string[]
 }
+
+Before returning JSON, complete this pre-flight checklist (mentally):
+  [ ] Every \`suggestedAssignee\` value is an exact ID copied from the Roster list above
+  [ ] Zero PascalCase names (BackendEngineer, FrontendEngineer, QAEngineer, etc.) appear
+  [ ] If you used "coder", you confirmed no specialist in the roster is a better fit
 
 Do not include any text outside the JSON object.`;
   }

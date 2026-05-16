@@ -32,6 +32,7 @@ import { globalStream } from './stream.js';
 import { getWorkspace } from '@agentforge/core';
 import * as cycleSessions from '../../lib/cycle-sessions.js';
 import { openAuditDb, appendAuditEntry } from './audit.js';
+import { safeJoin } from '../../lib/safe-join.js';
 
 /**
  * v6.6.0 — resolve which project root a request targets.
@@ -94,13 +95,6 @@ function cyclesBaseDir(projectRoot: string): string {
   return resolve(join(projectRoot, '.agentforge', 'cycles'));
 }
 
-/** Resolve a child path and ensure it stays inside base. Returns null on escape. */
-function safeJoin(base: string, ...parts: string[]): string | null {
-  const resolved = resolve(join(base, ...parts));
-  const baseWithSep = base.endsWith(sep) ? base : base + sep;
-  if (resolved !== base && !resolved.startsWith(baseWithSep)) return null;
-  return resolved;
-}
 
 function readJsonIfExists(file: string): unknown | null {
   if (!existsSync(file)) return null;

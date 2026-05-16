@@ -313,6 +313,8 @@ export const WORKSPACE_DDL = `
     description TEXT,
     source_cycle_id TEXT,
     embedding BLOB,
+    properties_json TEXT NOT NULL DEFAULT '{}',
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -322,6 +324,7 @@ export const WORKSPACE_DDL = `
     to_entity_id TEXT NOT NULL REFERENCES knowledge_entities(id) ON DELETE CASCADE,
     type TEXT NOT NULL,
     confidence REAL NOT NULL DEFAULT 0.5,
+    properties_json TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 

@@ -25,7 +25,7 @@ export interface OAuth2PluginOptions {
 }
 
 /** Default paths that bypass authentication. */
-const DEFAULT_EXCLUDE_PATHS = ["/api/v1/health"];
+const DEFAULT_EXCLUDE_PATHS = ["/api/v5/health"];
 
 /**
  * Returns true if the given URL path should bypass authentication.
