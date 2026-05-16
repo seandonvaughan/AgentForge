@@ -109,7 +109,13 @@ export async function agentRoutes(
 
     if (!task) return reply.status(400).send({ error: 'task is required' });
 
-    const config = await loadAgentConfig(agentIdParam, agentforgeDir);
+    // Thread the workspace adapter into config-loading so any DMs queued for
+    // this agent are picked up + marked delivered before the run starts.
+    const config = await loadAgentConfig(
+      agentIdParam,
+      agentforgeDir,
+      opts.adapter ? { adapter: opts.adapter } : {},
+    );
     if (!config) return reply.status(404).send({ error: 'Agent not found' });
 
     config.workspaceId = 'default';

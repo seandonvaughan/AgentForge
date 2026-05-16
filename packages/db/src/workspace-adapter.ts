@@ -1525,6 +1525,24 @@ export class WorkspaceAdapter {
     return this.db.prepare('SELECT * FROM inbox_messages WHERE id = ?').get(id) as InboxMessageRow | undefined;
   }
 
+  /**
+   * Find an existing inbox message by its `(source_type, source_id)` pair.
+   * Used by `InboxBridge` to dedupe gate/finding mirrors on bus replay so
+   * the same memory entry never produces two inbox rows.
+   *
+   * Indexed via `idx_inbox_messages_source` — O(1).
+   */
+  findInboxMessageBySource(
+    sourceType: string,
+    sourceId: string,
+  ): InboxMessageRow | undefined {
+    return this.db
+      .prepare(
+        'SELECT * FROM inbox_messages WHERE source_type = ? AND source_id = ? LIMIT 1',
+      )
+      .get(sourceType, sourceId) as InboxMessageRow | undefined;
+  }
+
   listInboxRecipients(messageId: string): InboxRecipientRow[] {
     return this.db.prepare('SELECT * FROM inbox_recipients WHERE message_id = ? ORDER BY recipient').all(messageId) as InboxRecipientRow[];
   }

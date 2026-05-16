@@ -122,6 +122,7 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
       adapter: options.adapter,
       registry: options.registry,
       projectRoot,
+      ...(options.bus ? { bus: options.bus } : {}),
     });
   } else {
     // Minimal stubs so the server is usable without a database adapter

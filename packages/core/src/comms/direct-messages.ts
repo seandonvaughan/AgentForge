@@ -4,9 +4,15 @@
  * and bridges import these instead of touching the adapter directly so that
  * the v1 invariants ("body is required", "replyToId must point at an existing
  * DM") live in one place.
+ *
+ * Phase 2: when a `MessageBusV2` is passed, `sendDirectMessage` publishes an
+ * `agent.dm.sent` envelope after the row commits so SSE consumers (the
+ * dashboard /inbox page) can react live without polling.
  */
 
 import type { WorkspaceAdapter, DirectMessageRow } from '@agentforge/db';
+import type { MessageBusV2 } from '../message-bus/message-bus.js';
+import type { AgentDmSentPayload } from '../message-bus/types.js';
 import type { DirectMessage, SendDirectMessageInput } from './types.js';
 
 function rowToDirectMessage(row: DirectMessageRow): DirectMessage {
@@ -26,10 +32,15 @@ export { rowToDirectMessage };
 /**
  * Persist a DM. Throws on missing fields and on a `replyToId` that does not
  * resolve to an existing row — callers should treat both as bad-request.
+ *
+ * When `bus` is provided, also publishes an `agent.dm.sent` envelope so SSE
+ * consumers can refresh live. Bus errors are swallowed — a publish failure
+ * must not undo the persisted DM (the row is the source of truth).
  */
 export function sendDirectMessage(
   adapter: WorkspaceAdapter,
   input: SendDirectMessageInput,
+  bus?: MessageBusV2,
 ): DirectMessage {
   const from = input.from?.trim();
   const to = input.to?.trim();
@@ -52,7 +63,30 @@ export function sendDirectMessage(
     body,
     ...(input.replyToId ? { replyToId: input.replyToId } : {}),
   });
-  return rowToDirectMessage(row);
+  const dm = rowToDirectMessage(row);
+
+  if (bus) {
+    try {
+      bus.publish<AgentDmSentPayload>({
+        from,
+        to,
+        topic: 'agent.dm.sent',
+        category: 'comms',
+        payload: {
+          id: dm.id,
+          fromAgent: dm.fromAgent,
+          toAgent: dm.toAgent,
+          body: dm.body,
+          replyToId: dm.replyToId,
+          sentAt: dm.sentAt,
+        },
+      });
+    } catch {
+      // Bus errors must not affect the persisted DM.
+    }
+  }
+
+  return dm;
 }
 
 /** List DMs for a single agent — sent or received. Oldest first. */

@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { AgentRuntimeConfig } from './types.js';
 import type { ModelTier } from '@agentforge/shared';
+import type { WorkspaceAdapter } from '@agentforge/db';
 import { injectFreshContext } from './fresh-context.js';
 
 interface AgentYaml {
@@ -18,6 +19,14 @@ export interface LoadAgentConfigOptions {
    * Set to false in tests or when bypass is desired.
    */
   injectFreshContext?: boolean;
+  /**
+   * Optional workspace adapter. When provided, undelivered DMs for `agentId`
+   * are pulled and appended to the system prompt as a `## Direct Messages`
+   * section (ADR 0001). Without an adapter the helpers exist but no
+   * production code path actually delivers DMs to running agents — this hook
+   * is what closes the loop for Phase 2 of the comms spec.
+   */
+  adapter?: WorkspaceAdapter;
 }
 
 export async function loadAgentConfig(
@@ -40,7 +49,12 @@ export async function loadAgentConfig(
 
     const shouldInject = options.injectFreshContext !== false;
     const systemPrompt = shouldInject
-      ? injectFreshContext(baseSystemPrompt, agentId, agentforgeDir)
+      ? injectFreshContext(
+          baseSystemPrompt,
+          agentId,
+          agentforgeDir,
+          options.adapter ? { adapter: options.adapter } : undefined,
+        )
       : baseSystemPrompt;
 
     return {

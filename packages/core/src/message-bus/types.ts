@@ -30,6 +30,8 @@ export type MessageCategory =
   | 'feedback'      // quality/performance feedback
   | 'cost'          // cost events and alerts
   | 'system'        // system health, bus events
+  | 'comms'         // DMs and inbox messages (v2 agent-comm)
+  | 'quality'       // gate verdicts + review findings
   | 'plugin';       // plugin-emitted events
 
 // ── Topic taxonomy ────────────────────────────────────────────────────────────
@@ -77,6 +79,12 @@ export type MessageTopic =
   | 'system.health.check'
   | 'system.health.status'
   | 'bus.event.replay.requested'
+  // Communication (v2 agent-comm spec — Phase 2)
+  | 'agent.dm.sent'
+  | 'inbox.message.created'
+  // Quality + gate (mirrored to @user inbox by InboxBridge — ADR 0004)
+  | 'gate.verdict.created'
+  | 'review.finding.created'
   // Plugin
   | 'plugin.event';
 
@@ -244,6 +252,63 @@ export interface PluginEventPayload {
   source: string;
 }
 
+// ── Comms payloads (Phase 2 — v2 agent-comm spec) ─────────────────────────────
+
+/** Payload for `agent.dm.sent` — peer-to-peer DM published on the bus. */
+export interface AgentDmSentPayload {
+  id: string;
+  fromAgent: string;
+  toAgent: string;
+  body: string;
+  replyToId: string | null;
+  sentAt: string;
+}
+
+/** Payload for `inbox.message.created` — inbox row + recipient list. */
+export interface InboxMessageCreatedPayload {
+  id: string;
+  body: string;
+  kind: 'info' | 'warning' | 'action_required';
+  sourceId: string | null;
+  sourceType: string | null;
+  threadId: string | null;
+  createdAt: string;
+  recipients: string[];
+}
+
+/**
+ * Payload for `gate.verdict.created` — emitted by GatePhaseHandler when a
+ * verdict is written. Mirrored to the `@user` inbox by `InboxBridge` per
+ * ADR 0004 (the JSONL memory store stays canonical; the inbox row is the
+ * surfacing layer).
+ */
+export interface GateVerdictCreatedPayload {
+  /** Memory-entry id (`writeMemoryEntry({type: 'gate-verdict'}).id`). */
+  entryId: string;
+  cycleId: string;
+  verdict: 'approved' | 'rejected' | 'pending';
+  rationale: string;
+  criticalFindings: string[];
+  majorFindings: string[];
+  createdAt: string;
+}
+
+/**
+ * Payload for `review.finding.created` — emitted by the review phase when
+ * a CRITICAL or MAJOR finding is captured. Mirrored to `@user` inbox by
+ * `InboxBridge` per ADR 0004.
+ */
+export interface ReviewFindingCreatedPayload {
+  entryId: string;
+  cycleId: string;
+  severity: 'CRITICAL' | 'MAJOR';
+  summary: string;
+  file: string | null;
+  line: number | null;
+  fixSuggestion: string | null;
+  createdAt: string;
+}
+
 // ── Type guards ───────────────────────────────────────────────────────────────
 
 export function isTaskTopic(topic: MessageTopic): boolean {
@@ -291,3 +356,15 @@ export type AgentLifecycleEnvelope = MessageEnvelopeV2<AgentLifecyclePayload>;
 export type CostRecordedEnvelope = MessageEnvelopeV2<CostRecordedPayload>;
 export type SystemHealthEnvelope = MessageEnvelopeV2<SystemHealthPayload>;
 export type PluginEventEnvelope = MessageEnvelopeV2<PluginEventPayload>;
+export type AgentDmSentEnvelope = MessageEnvelopeV2<AgentDmSentPayload>;
+export type InboxMessageCreatedEnvelope = MessageEnvelopeV2<InboxMessageCreatedPayload>;
+export type GateVerdictCreatedEnvelope = MessageEnvelopeV2<GateVerdictCreatedPayload>;
+export type ReviewFindingCreatedEnvelope = MessageEnvelopeV2<ReviewFindingCreatedPayload>;
+
+export function isCommsTopic(topic: MessageTopic): boolean {
+  return topic === 'agent.dm.sent' || topic === 'inbox.message.created';
+}
+
+export function isQualityTopic(topic: MessageTopic): boolean {
+  return topic === 'gate.verdict.created' || topic === 'review.finding.created';
+}

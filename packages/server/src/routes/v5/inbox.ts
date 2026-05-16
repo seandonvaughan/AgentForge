@@ -19,9 +19,11 @@ import {
   getInboxMessage,
   markInboxRead,
   countUnread,
+  resolveTeamRecipients,
   UnsupportedRecipientError,
   type InboxKind,
   type InboxStatus,
+  type MessageBusV2,
 } from '@agentforge/core';
 import type { WorkspaceAdapter } from '@agentforge/db';
 import { openAuditDb, appendAuditEntry } from './audit.js';
@@ -33,6 +35,11 @@ const DEFAULT_PROJECT_ROOT = join(__dirname, '../../../../../');
 export interface InboxRouteOptions {
   adapter: WorkspaceAdapter;
   projectRoot?: string;
+  /**
+   * Optional bus. When provided, inbox writes publish
+   * `inbox.message.created` so SSE consumers refresh live (Phase 2).
+   */
+  bus?: MessageBusV2;
 }
 
 interface PostInboxBody {
@@ -79,15 +86,29 @@ export async function inboxRoutes(app: FastifyInstance, opts: InboxRouteOptions)
       return reply.status(400).send({ error: 'recipients must be a non-empty array' });
     }
 
+    const agentforgeDir = join(projectRoot, '.agentforge');
     try {
-      const result = sendInboxMessage(adapter, {
-        body: body.body,
-        kind: body.kind as InboxKind,
-        ...(body.sourceId !== undefined ? { sourceId: body.sourceId } : {}),
-        ...(body.sourceType !== undefined ? { sourceType: body.sourceType } : {}),
-        ...(body.threadId !== undefined ? { threadId: body.threadId } : {}),
-        recipients: body.recipients,
-      });
+      const result = sendInboxMessage(
+        adapter,
+        {
+          body: body.body,
+          kind: body.kind as InboxKind,
+          ...(body.sourceId !== undefined ? { sourceId: body.sourceId } : {}),
+          ...(body.sourceType !== undefined ? { sourceType: body.sourceType } : {}),
+          ...(body.threadId !== undefined ? { threadId: body.threadId } : {}),
+          recipients: body.recipients,
+        },
+        {
+          ...(opts.bus ? { bus: opts.bus } : {}),
+          // Phase 2: expand `@team-*` aliases against
+          // `.agentforge/agents/*.yaml` + `team.yaml`. The helper returns
+          // `null` for non-team-alias inputs (preserving the v1 `@user`
+          // invariant in the core layer) and an empty array for unknown
+          // aliases (treated as bad-request by `sendInboxMessage`).
+          expandRecipients: (recipient: string) =>
+            resolveTeamRecipients(agentforgeDir, recipient),
+        },
+      );
       appendAuditEntry(auditDb, {
         actor: body.sourceType ?? 'system',
         action: 'inbox.send',

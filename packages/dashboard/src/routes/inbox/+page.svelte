@@ -36,6 +36,8 @@
   let selected: InboxRowSSR | null = $state(null);
   let filter: 'all' | 'unread' = $state('all');
   let pollHandle: ReturnType<typeof setInterval> | null = null;
+  let sseSource: EventSource | null = null;
+  let sseConnected = $state(false);
 
   function buildUrl(): string {
     const params = new URLSearchParams({ recipient: '@user', limit: '100' });
@@ -131,16 +133,67 @@
     messages.filter((m) => m.kind === 'action_required' && m.status === 'unread').length,
   );
 
+  interface CommsSseEvent {
+    type: string;
+    payload?: { kind?: string };
+  }
+
+  function startSse(): void {
+    if (!browser) return;
+    try {
+      const src = new EventSource('/api/v5/stream');
+      sseSource = src;
+      src.addEventListener('open', () => {
+        sseConnected = true;
+        // SSE is live — drop the polling fallback to avoid duplicate fetches.
+        if (pollHandle) {
+          clearInterval(pollHandle);
+          pollHandle = null;
+        }
+      });
+      src.addEventListener('error', () => {
+        sseConnected = false;
+        // Re-arm polling if SSE drops and we're not in a backoff sleep.
+        if (!pollHandle && browser && document.visibilityState !== 'hidden') {
+          pollHandle = setInterval(() => { void fetchInbox(); }, 20_000);
+        }
+      });
+      src.addEventListener('message', (msg: MessageEvent<string>) => {
+        let parsed: CommsSseEvent | null = null;
+        try {
+          parsed = JSON.parse(msg.data) as CommsSseEvent;
+        } catch {
+          return;
+        }
+        if (!parsed) return;
+        if (parsed.type === 'comms_event' && parsed.payload?.kind === 'inbox') {
+          // A new inbox row was created — refresh the list (and the unread
+          // count). We refetch rather than splice locally so status + read_at
+          // stay in sync with whatever else mutated the recipient row.
+          void fetchInbox();
+        }
+      });
+    } catch {
+      // EventSource unsupported (older browsers / SSR) — fall back to polling.
+    }
+  }
+
   onMount(() => {
     if (messages.length === 0) void fetchInbox();
+    // Start with polling as a safety net; SSE will cancel it once connected.
     pollHandle = setInterval(() => {
       void fetchInbox();
     }, 20_000);
     if (browser) document.addEventListener('visibilitychange', fetchInbox);
+    startSse();
   });
 
   onDestroy(() => {
     if (pollHandle) clearInterval(pollHandle);
+    if (sseSource) {
+      sseSource.close();
+      sseSource = null;
+    }
     if (browser) document.removeEventListener('visibilitychange', fetchInbox);
   });
 
@@ -293,13 +346,14 @@
               </span>
             </div>
           {/if}
-          {#if selected.status === 'unread'}
-            <div
-              style="margin-top:16px;padding-top:14px;border-top:1px solid var(--af-border)"
-            >
+          <div
+            style="margin-top:16px;padding-top:14px;border-top:1px solid var(--af-border);display:flex;gap:8px;flex-wrap:wrap;align-items:center"
+          >
+            <a class="thread-link" href="/inbox/{selected.id}">Open thread &rarr;</a>
+            {#if selected.status === 'unread'}
               <Btn size="sm" onclick={() => markRead(selected!.id)}>Mark as read</Btn>
-            </div>
-          {/if}
+            {/if}
+          </div>
         </Card>
       {:else}
         <Card>
@@ -516,6 +570,15 @@
     font-size: 11px;
     color: var(--af-dim);
     word-break: break-all;
+  }
+  .thread-link {
+    font-size: 11px;
+    color: var(--af-purple);
+    text-decoration: none;
+    font-weight: 500;
+  }
+  .thread-link:hover {
+    text-decoration: underline;
   }
   .state-center {
     display: flex;

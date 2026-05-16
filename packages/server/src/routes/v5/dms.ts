@@ -17,6 +17,7 @@ import {
   sendDirectMessage,
   listDirectMessagesForAgent,
   groupDirectMessagesIntoThreads,
+  type MessageBusV2,
 } from '@agentforge/core';
 import type { WorkspaceAdapter } from '@agentforge/db';
 import { openAuditDb, appendAuditEntry } from './audit.js';
@@ -29,6 +30,12 @@ export interface DmsRouteOptions {
   adapter: WorkspaceAdapter;
   /** Project root for audit log resolution. Falls back to monorepo root. */
   projectRoot?: string;
+  /**
+   * Optional bus. When provided, `POST /api/v5/dms` also publishes an
+   * `agent.dm.sent` envelope so SSE consumers can refresh live without
+   * polling (Phase 2 of the v2 agent-comm spec).
+   */
+  bus?: MessageBusV2;
 }
 
 interface PostDmBody {
@@ -63,12 +70,16 @@ export async function dmsRoutes(app: FastifyInstance, opts: DmsRouteOptions): Pr
     }
 
     try {
-      const dm = sendDirectMessage(adapter, {
-        from: body.fromAgent,
-        to: body.toAgent,
-        body: body.body,
-        ...(body.replyToId ? { replyToId: body.replyToId } : {}),
-      });
+      const dm = sendDirectMessage(
+        adapter,
+        {
+          from: body.fromAgent,
+          to: body.toAgent,
+          body: body.body,
+          ...(body.replyToId ? { replyToId: body.replyToId } : {}),
+        },
+        opts.bus,
+      );
       appendAuditEntry(auditDb, {
         actor: body.fromAgent,
         action: 'dm.send',

@@ -59,3 +59,7 @@ export {
   type CreateKbDocInput,
   type UpdateKbDocInput,
 } from './kbs.js';
+export {
+  resolveTeamRecipients,
+  clearTeamRecipientsCache,
+} from './team-recipients.js';

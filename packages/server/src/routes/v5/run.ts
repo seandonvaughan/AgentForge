@@ -160,7 +160,13 @@ export async function runRoutes(
 
     const agentforgeDir = join(DEFAULT_PROJECT_ROOT, '.agentforge');
 
-    const config = await loadAgentConfig(agentId, agentforgeDir);
+    // Pass the workspace adapter (when available) so the agent's pending DMs
+    // are spliced into the system prompt before the runtime starts the run.
+    const config = await loadAgentConfig(
+      agentId,
+      agentforgeDir,
+      adapter ? { adapter } : {},
+    );
     if (!config) return reply.status(404).send({ error: 'Agent not found' });
 
     config.workspaceId = 'default';

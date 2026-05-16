@@ -255,8 +255,12 @@ export class RuntimeAdapter implements RuntimeForScoring {
       return runtime;
     }
 
-    // Load from .agentforge/agents/{agentId}.yaml
-    let config = await loadAgentConfig(agentId, this.agentforgeDir);
+    // Load from .agentforge/agents/{agentId}.yaml. Pass the workspace adapter
+    // so `injectFreshContext` can splice any pending DMs into the prompt —
+    // see ADR 0001 + Phase 2 of the agent-comm spec.
+    let config = await loadAgentConfig(agentId, this.agentforgeDir, {
+      ...(this.options.workspaceAdapter ? { adapter: this.options.workspaceAdapter } : {}),
+    });
 
     // Fallback resolution: the scoring agent invents agent names per cycle
     // ("CodeAgent", "feature-dev-agent", "DocsAgent", "general-purpose"...).
@@ -324,7 +328,9 @@ export class RuntimeAdapter implements RuntimeForScoring {
           : 'coder';
       }
 
-      const fallback = await loadAgentConfig(fallbackId, this.agentforgeDir);
+      const fallback = await loadAgentConfig(fallbackId, this.agentforgeDir, {
+        ...(this.options.workspaceAdapter ? { adapter: this.options.workspaceAdapter } : {}),
+      });
       if (fallback) {
         // eslint-disable-next-line no-console
         console.warn(`[runtime-adapter] unknown agent "${agentId}" → falling back to "${fallbackId}"`);
