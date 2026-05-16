@@ -35,7 +35,7 @@
     "dashboard:build": "pnpm --filter @agentforge/dashboard build",
     "audit:prod": "pnpm audit --prod --audit-level low",
     "audit:all": "pnpm audit --audit-level low",
-    "audit:deps": "pnpm audit --audit-level low",
+    "audit:deps": "pnpm audit --audit-level high",
     "sbom": "node scripts/generate-sbom.mjs",
     "sbom:ci": "node scripts/generate-sbom.mjs artifacts/sbom/cyclonedx.json",
     "verify:dashboard": "pnpm dashboard:check && pnpm dashboard:build",
