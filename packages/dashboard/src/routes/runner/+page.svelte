@@ -1,11 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
 
-  const FALLBACK_AGENTS = [
-    'ceo', 'cto', 'architect', 'coder', 'debugger',
-    'api-specialist', 'researcher', 'project-manager',
-  ];
-
   const MODEL_TIER_META: Record<string, { label: string; range: string; color: string }> = {
     opus:   { label: 'Opus',   range: '$0.015-$0.075',  color: 'var(--color-opus)' },
     sonnet: { label: 'Sonnet', range: '$0.003-$0.015',  color: 'var(--color-sonnet)' },
@@ -20,91 +15,6 @@
     name: string;
     model: 'opus' | 'sonnet' | 'haiku';
   }
-
-  /** Fallback AgentEntry list when the server is unreachable or returns nothing. */
-  const FALLBACK_ENTRIES: AgentEntry[] = FALLBACK_AGENTS.map(id => ({
-    agentId: id,
-    name: id,
-    model: 'sonnet' as const,
-  }));
-
-  interface RunHistory {
-    id: string;
-    agentId: string;
-    task: string;
-    status: 'completed' | 'failed' | 'running';
-    costUsd?: number;
-    startedAt: string;
-    output?: string;
-    sessionId?: string;
-    providerKind?: string;
-    runtimeModeResolved?: string;
-    /** Raw model ID from the run (e.g. "claude-sonnet-4-5") — used for accurate badge display on replay. */
-    model?: string;
-  }
-
-  interface StreamEnvelope {
-    type?: string;
-    category?: string;
-    message?: string;
-    data?: Record<string, unknown>;
-    timestamp?: string;
-  }
-
-  let agentEntries: AgentEntry[] = $state([]);
-  let agentsLoading = $state(true);
-  let selectedAgent = $state('coder');
-  let agentSearch = $state('');
-  let taskInput = $state('');
-  let running = $state(false);
-  let runAccepted = $state(false);
-  let runError: string | null = $state(null);
-  let apiUnavailable = $state(false);
-
-  let output = $state('');
-  let outputAgentName = $state('');
-  let outputModel = $state('');
-  let outputProviderKind = $state('');
-  let outputRuntimeMode = $state('');
-  let outputTimestamp = $state('');
-  let firstTokenLatencyMs: number | null = $state(null);
-  let streamConnected = $state(false);
-  let streamWarning: string | null = $state(null);
-  let outputAutoscrollPaused = $state(false);
-  let copyStatus: string | null = $state(null);
-  let currentSessionId: string | null = $state(null);
-
-  let history: RunHistory[] = $state([]);
-  let selectedHistoryRun: RunHistory | null = $state(null);
-
-  let eventSource: EventSource | null = null;
-  let outputEl: HTMLPreElement | null = $state(null);
-  let runStartedAtMs: number | null = null;
-  let currentRunOutput = '';
-  let copyStatusTimer: ReturnType<typeof setTimeout> | null = null;
-
-  // Derived: look up model tier from the full agent roster
-  function getAgentModel(id: string): 'opus' | 'sonnet' | 'haiku' {
-    const entry = agentEntries.find(a => a.agentId === id);
-    return entry?.model ?? 'sonnet';
-  }
-
-  // Use a concrete fallback so TypeScript knows modelTier is always defined
-  let modelTier = $derived(MODEL_TIER_META[getAgentModel(selectedAgent)] ?? SONNET_TIER);
-
-  // Derived: agents filtered by search, grouped by model tier
-  let filteredAgents = $derived.by(() => {
-    const q = agentSearch.toLowerCase().trim();
-    const filtered = q
-      ? agentEntries.filter(a => a.agentId.toLowerCase().includes(q) || a.name.toLowerCase().includes(q))
-      : agentEntries;
-
-    // Group by model tier: opus first, then sonnet, then haiku
-    const tierOrder: Record<string, number> = { opus: 0, sonnet: 1, haiku: 2 };
-    return [...filtered].sort((a, b) =>
-      (tierOrder[a.model] ?? 1) - (tierOrder[b.model] ?? 1) || a.agentId.localeCompare(b.agentId)
-    );
-  });
 
   let runStatusLabel = $derived.by(() => {
     if (!running) return '';
@@ -123,29 +33,32 @@
 
   async function loadAgents() {
     agentsLoading = true;
+    agentsLoadError = null;
     try {
       const res = await fetch('/api/v5/agents');
-      if (res.ok) {
-        const json = await res.json();
-        const list = (json.data ?? json.agents ?? json ?? []);
-        // Build rich agent entries
-        const loaded: AgentEntry[] = (list as Record<string, unknown>[])
-          .map((a) => ({
-            agentId: (a.agentId ?? a.id ?? '') as string,
-            name: (a.name ?? a.agentId ?? a.id ?? '') as string,
-            model: (a.model ?? 'sonnet') as 'opus' | 'sonnet' | 'haiku',
-          }))
-          .filter((a) => a.agentId);
-
-        // Fall back to static list if server returned nothing
-        agentEntries = loaded.length > 0 ? loaded : FALLBACK_ENTRIES;
+      if (!res.ok) {
+        agentsLoadError = `Unable to load agents — server returned ${res.status}`;
+        agentEntries = [];
+        return;
+      }
+      const json = await res.json();
+      const list = (json.data ?? json.agents ?? json ?? []);
+      const loaded: AgentEntry[] = (list as Record<string, unknown>[])
+        .map((a) => ({
+          agentId: (a.agentId ?? a.id ?? '') as string,
+          name: (a.name ?? a.agentId ?? a.id ?? '') as string,
+          model: (a.model ?? 'sonnet') as 'opus' | 'sonnet' | 'haiku',
+        }))
+        .filter((a) => a.agentId);
+      if (loaded.length === 0) {
+        agentsLoadError = 'No agents found — check that .agentforge/agents/ contains YAML files';
+        agentEntries = [];
       } else {
-        // Non-2xx: server up but no data — use static fallback
-        agentEntries = FALLBACK_ENTRIES;
+        agentEntries = loaded;
       }
     } catch {
-      // Network error or JSON parse failure
-      agentEntries = FALLBACK_ENTRIES;
+      agentsLoadError = 'Unable to load agents — retry';
+      agentEntries = [];
     } finally {
       agentsLoading = false;
     }
@@ -596,6 +509,13 @@
         <label class="form-label" for="agent-select">Agent ({agentEntries.length} available)</label>
         {#if agentsLoading}
           <div class="skeleton" style="height:32px;border-radius:var(--radius-sm);"></div>
+        {:else if agentsLoadError}
+          <div class="agents-error" role="alert">
+            <span class="agents-error-msg">{agentsLoadError}</span>
+            <button class="btn btn-sm btn-secondary" onclick={loadAgents} disabled={running}>
+              Retry
+            </button>
+          </div>
         {:else}
           <input
             type="search"
@@ -655,7 +575,7 @@
 
       <button
         class="btn btn-primary run-btn"
-        disabled={running || !taskInput.trim()}
+        disabled={running || !taskInput.trim() || !!agentsLoadError || agentEntries.length === 0}
         onclick={handleRun}
       >
         {#if running}
@@ -798,6 +718,16 @@
   .right-panel {
     min-height: 0;
   }
+
+  /* Agent load error state */
+  .agents-error {
+    display: flex; align-items: center; gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    background: color-mix(in srgb, var(--color-danger, #e05252) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-danger, #e05252) 30%, transparent);
+    border-radius: var(--radius-md); font-size: var(--text-sm); margin-bottom: var(--space-2);
+  }
+  .agents-error-msg { flex: 1; color: var(--color-danger, #e05252); }
 
   /* Form elements */
   .form-group {
