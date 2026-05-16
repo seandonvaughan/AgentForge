@@ -70,9 +70,9 @@
 
   // ── State ────────────────────────────────────────────────────────────────────
 
-  let records: CostRecord[] = $state([]);
-  let summary: CostSummary | null = $state(null);
-  let cycles: CycleRow[] = $state([]);
+  let records = $state<CostRecord[]>([]);
+  let summary = $state<CostSummary | null>(null);
+  let cycles = $state<CycleRow[]>([]);
   let loading = $state(true);
   let error: string | null = $state(null);
   let range: '24h' | '7d' | '30d' | '90d' = $state('7d');

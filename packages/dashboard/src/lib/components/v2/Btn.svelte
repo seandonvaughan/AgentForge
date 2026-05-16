@@ -15,6 +15,8 @@
     trailing?: Snippet;
     type?: 'button' | 'submit' | 'reset';
     class?: string;
+    /** Extra inline CSS appended after the variant styles (caller overrides). */
+    style?: string;
   }
 
   let {
@@ -28,6 +30,7 @@
     trailing,
     type = 'button',
     class: className = '',
+    style: extraStyle = '',
   }: Props = $props();
 
   const fontSize = $derived(size === 'sm' ? '11px' : size === 'lg' ? '13px' : '12px');
@@ -54,7 +57,8 @@
     `padding:${padding}`,
     `height:${height}`,
     variantStyles[variant],
-  ].join(';'));
+    extraStyle,
+  ].filter(Boolean).join(';'));
 </script>
 
 {#if href}

@@ -54,8 +54,8 @@
 
   // ── State ────────────────────────────────────────────────────────────────────
 
-  let healthData: HealthData | null = $state(null);
-  let servicesData: ServicesData | null = $state(null);
+  let healthData = $state<HealthData | null>(null);
+  let servicesData = $state<ServicesData | null>(null);
   let loading = $state(true);
   let error: string | null = $state(null);
   let lastRefreshedAt: Date | null = $state(null);
