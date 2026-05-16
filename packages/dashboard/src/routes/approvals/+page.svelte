@@ -1,790 +1,894 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { approvalsStore, type CycleApproval } from '$lib/stores/approvals.js';
+  import { relativeTime } from '$lib/util/relative-time';
+  import {
+    Card, Badge, Btn, KpiTile, ModelChip, PulseDot,
+  } from '$lib/components/v2';
 
-  interface ApprovalItem {
-    id: string;
-    agentId: string;
-    action: string;
-    description: string;
-    requestedAt: string;
-    priority: 'critical' | 'high' | 'medium' | 'low';
-    status: 'pending' | 'approved' | 'denied';
-    // legacy fields from existing endpoint shape
-    proposalId?: string;
-    proposalTitle?: string;
-    executionId?: string;
+  // ── API types ──────────────────────────────────────────────────────────
+  type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'rolled_back';
+
+  interface TestSummary {
+    passed: number;
+    failed: number;
+    total:  number;
+  }
+
+  interface Approval {
+    id:             string;
+    proposalTitle:  string;
+    executionId:    string;
+    agentId:        string;
+    submittedAt:    string;
+    reviewedAt?:    string;
+    reviewedBy?:    string;
+    status:         ApprovalStatus;
+    testSummary?:   TestSummary;
+    diff?:          string;
     impactSummary?: string;
-    submittedAt?: string;
-    reviewedAt?: string;
-    reviewedBy?: string;
-    diff?: string;
-    testSummary?: { passed: number; failed: number; total: number };
+    notes?:         string;
+    model?:         string;
   }
 
-  interface ApprovalsStats {
-    pending: number;
-    approvedToday: number;
-    deniedToday: number;
-  }
+  type FilterId = 'pending' | 'approved' | 'rejected' | 'rolled_back' | 'all';
 
-  let items: ApprovalItem[] = [];
-  let stats: ApprovalsStats = { pending: 0, approvedToday: 0, deniedToday: 0 };
-  let loading = true;
-  let error: string | null = null;
+  // ── state ──────────────────────────────────────────────────────────────
+  let items        = $state<Approval[]>([]);
+  let loading      = $state(true);
+  let error        = $state<string | null>(null);
+  let filter       = $state<FilterId>('pending');
 
-  let statusFilter = 'pending';
-  let actioning: Set<string> = new Set();
-  let actionError: Record<string, string> = {};
+  let selected     = $state<Approval | null>(null);   // detail pane
+  let actioning    = $state<Set<string>>(new Set());
+  let actionErrors = $state<Record<string, string>>({});
+  let reviewedBy   = $state('dashboard-user');
+  let reviewNotes  = $state('');
 
   let pollTimer: ReturnType<typeof setInterval> | null = null;
+  const POLL_MS = 5_000;
 
-  // Normalize items from either endpoint shape
-  function normalizeItem(raw: Record<string, unknown>): ApprovalItem {
-    return {
-      id: String(raw.id ?? ''),
-      agentId: String(raw.agentId ?? raw.agent_id ?? raw.executionId ?? '—'),
-      action: String(raw.action ?? raw.proposalTitle ?? 'Review required'),
-      description: String(raw.description ?? raw.impactSummary ?? ''),
-      requestedAt: String(raw.requestedAt ?? raw.submittedAt ?? new Date().toISOString()),
-      priority: (['critical','high','medium','low'].includes(String(raw.priority)) ? raw.priority : 'medium') as ApprovalItem['priority'],
-      status: (['pending','approved','denied','rejected'].includes(String(raw.status)) ? (raw.status === 'rejected' ? 'denied' : raw.status) : 'pending') as ApprovalItem['status'],
-      ...(raw.proposalId !== undefined ? { proposalId: String(raw.proposalId) } : {}),
-      ...(raw.proposalTitle !== undefined ? { proposalTitle: String(raw.proposalTitle) } : {}),
-      ...(raw.executionId !== undefined ? { executionId: String(raw.executionId) } : {}),
-      ...(raw.impactSummary !== undefined ? { impactSummary: String(raw.impactSummary) } : {}),
-      ...(raw.submittedAt !== undefined ? { submittedAt: String(raw.submittedAt) } : {}),
-      ...(raw.reviewedAt !== undefined ? { reviewedAt: String(raw.reviewedAt) } : {}),
-      ...(raw.reviewedBy !== undefined ? { reviewedBy: String(raw.reviewedBy) } : {}),
-      ...(raw.diff !== undefined ? { diff: String(raw.diff) } : {}),
-      ...(raw.testSummary !== undefined ? { testSummary: raw.testSummary as { passed: number; failed: number; total: number } } : {}),
-    };
-  }
+  // Cycle approval store (budget-gate)
+  let cycleApprovals   = $derived($approvalsStore.pending);
+  let cycleLoading     = $derived($approvalsStore.loading);
+  let cycleError       = $derived($approvalsStore.error);
 
+  // ── computed ───────────────────────────────────────────────────────────
+  let counts = $derived({
+    pending:     items.filter(i => i.status === 'pending').length,
+    approved:    items.filter(i => i.status === 'approved').length,
+    rejected:    items.filter(i => i.status === 'rejected').length,
+    rolled_back: items.filter(i => i.status === 'rolled_back').length,
+  });
+
+  let displayed = $derived(
+    filter === 'all' ? items : items.filter(i => i.status === filter)
+  );
+
+  // ── data ───────────────────────────────────────────────────────────────
   async function load(silent = false) {
+    if (document.visibilityState === 'hidden') return;
     if (!silent) loading = true;
     error = null;
     try {
-      const res = await fetch(`/api/v5/approvals?status=${statusFilter}`);
+      const qs = filter !== 'all' ? `?status=${filter}` : '';
+      const res = await fetch(`/api/v5/approvals${qs}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      const raw: unknown[] = json.data ?? json.pending ?? json ?? [];
-      items = (Array.isArray(raw) ? raw : []).map((r) => normalizeItem(r as Record<string, unknown>));
-      computeStats();
+      const json = await res.json() as { data?: unknown[] };
+      items = (json.data ?? []).map(normalise);
     } catch (e) {
       error = String(e);
-      items = [];
-      computeStats();
     } finally {
       loading = false;
     }
   }
 
-  function computeStats() {
-    const today = new Date().toDateString();
-    const pending = items.filter((i) => i.status === 'pending').length;
-    const approvedToday = items.filter((i) => i.status === 'approved' && new Date(i.requestedAt).toDateString() === today).length;
-    const deniedToday = items.filter((i) => i.status === 'denied' && new Date(i.requestedAt).toDateString() === today).length;
-    stats = { pending, approvedToday, deniedToday };
+  function normalise(raw: unknown): Approval {
+    const r = raw as Record<string, unknown>;
+    const status = (['pending','approved','rejected','rolled_back'].includes(String(r.status)))
+      ? r.status as ApprovalStatus
+      : 'pending';
+    return {
+      id:             String(r.id ?? ''),
+      proposalTitle:  String(r.proposalTitle ?? r.action ?? r.description ?? 'Review required'),
+      executionId:    String(r.executionId ?? r.agentId ?? r.agent_id ?? '—'),
+      agentId:        String(r.agentId ?? r.agent_id ?? '—'),
+      submittedAt:    String(r.submittedAt ?? r.requestedAt ?? new Date().toISOString()),
+      status,
+      ...(r.reviewedAt    !== undefined ? { reviewedAt:    String(r.reviewedAt) }    : {}),
+      ...(r.reviewedBy    !== undefined ? { reviewedBy:    String(r.reviewedBy) }    : {}),
+      ...(r.impactSummary !== undefined ? { impactSummary: String(r.impactSummary) } : {}),
+      ...(r.notes         !== undefined ? { notes:         String(r.notes) }         : {}),
+      ...(r.diff          !== undefined ? { diff:          String(r.diff) }          : {}),
+      ...(r.model         !== undefined ? { model:         String(r.model) }         : {}),
+      ...(r.testSummary   !== undefined ? { testSummary:   r.testSummary as TestSummary } : {}),
+    };
   }
 
-  async function patchApproval(id: string, action: 'approve' | 'reject') {
-    const res = await fetch(`/api/v5/approvals/${id}/${action}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reviewedBy: 'dashboard-user' }),
+  async function patch(id: string, action: 'approve' | 'reject') {
+    actioning = new Set([...actioning, id]);
+    const prev = { ...actionErrors };
+    delete prev[id];
+    actionErrors = prev;
+    try {
+      const res = await fetch(`/api/v5/approvals/${id}/${action}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reviewedBy, notes: reviewNotes || undefined }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const next = action === 'approve' ? 'approved' : 'rejected';
+      items = items.map(i => i.id === id ? { ...i, status: next as ApprovalStatus, reviewedBy } : i);
+      if (selected?.id === id) selected = { ...selected, status: next as ApprovalStatus };
+      reviewNotes = '';
+    } catch (e) {
+      actionErrors = { ...actionErrors, [id]: String(e) };
+    } finally {
+      actioning = new Set([...actioning].filter(x => x !== id));
+    }
+  }
+
+  // ── diff rendering ─────────────────────────────────────────────────────
+  function renderDiff(diff: string): { type: 'add' | 'remove' | 'hunk' | 'plain'; text: string }[] {
+    return diff.split('\n').map(line => {
+      if (line.startsWith('+') && !line.startsWith('+++')) return { type: 'add',    text: line };
+      if (line.startsWith('-') && !line.startsWith('---')) return { type: 'remove', text: line };
+      if (line.startsWith('@@'))                            return { type: 'hunk',   text: line };
+      return { type: 'plain', text: line };
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
   }
 
-  async function handleApprove(item: ApprovalItem) {
-    actioning = new Set([...actioning, item.id]);
-    actionError = { ...actionError };
-    delete actionError[item.id];
-    try {
-      await patchApproval(item.id, 'approve');
-      items = items.map((i) => i.id === item.id ? { ...i, status: 'approved' } : i);
-      computeStats();
-    } catch (e) {
-      actionError = { ...actionError, [item.id]: String(e) };
-    } finally {
-      actioning = new Set([...actioning].filter((id) => id !== item.id));
-    }
+  // ── badge helpers ──────────────────────────────────────────────────────
+  function statusVariant(s: ApprovalStatus): 'warning' | 'success' | 'danger' | 'muted' {
+    if (s === 'pending')     return 'warning';
+    if (s === 'approved')    return 'success';
+    if (s === 'rejected')    return 'danger';
+    if (s === 'rolled_back') return 'muted';
+    return 'muted';
   }
 
-  async function handleDeny(item: ApprovalItem) {
-    actioning = new Set([...actioning, item.id]);
-    actionError = { ...actionError };
-    delete actionError[item.id];
-    try {
-      await patchApproval(item.id, 'reject');
-      items = items.map((i) => i.id === item.id ? { ...i, status: 'denied' } : i);
-      computeStats();
-    } catch (e) {
-      actionError = { ...actionError, [item.id]: String(e) };
-    } finally {
-      actioning = new Set([...actioning].filter((id) => id !== item.id));
-    }
+  function testChipVariant(t: TestSummary): 'success' | 'danger' | 'muted' {
+    if (t.failed > 0)   return 'danger';
+    if (t.passed > 0)   return 'success';
+    return 'muted';
   }
 
-  function priorityColor(p: ApprovalItem['priority']): string {
-    return { critical: 'var(--color-danger)', high: 'var(--color-warning)', medium: 'var(--color-info)', low: 'var(--color-text-muted)' }[p] ?? 'var(--color-text-muted)';
-  }
-
-  function fmtDate(iso: string) {
-    try { return new Date(iso).toLocaleString(); } catch { return iso; }
-  }
-
-  function fmtRelative(iso: string): string {
-    try {
-      const diff = Date.now() - new Date(iso).getTime();
-      if (diff < 60000) return 'just now';
-      if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-      if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-      return fmtDate(iso);
-    } catch { return iso; }
-  }
-
-  // ────────────────────────────────────────────────────────────────────────
-  // Cycle Approvals — v6.7.4+
-  //
-  // Driven by the global approvalsStore (src/lib/stores/approvals.ts).
-  // The store maintains the pending list via SSE + 10-second fallback poll,
-  // so this page just subscribes and delegates. Opening a cycle card opens
-  // the global ApprovalModal (mounted in +layout.svelte).
-  // ────────────────────────────────────────────────────────────────────────
-
-  // Derived from the store — no local fetch needed.
-  $: cycleApprovals = $approvalsStore.pending;
-  $: cycleApprovalsLoading = $approvalsStore.loading;
-  $: cycleApprovalsError = $approvalsStore.error;
-
-  function fmtCost(n: number): string {
-    return `$${n.toFixed(2)}`;
-  }
-
-  function openApprovalModal(approval: CycleApproval) {
-    approvalsStore.open(approval);
-  }
+  function fmtCost(n: number): string { return `$${n.toFixed(2)}`; }
 
   onMount(() => {
     load();
-    // Legacy approvals still poll every 5s; cycle approvals are handled by the store.
-    pollTimer = setInterval(() => load(true), 5000);
+    pollTimer = setInterval(() => load(true), POLL_MS);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') load(true);
+    });
+    approvalsStore.connectSSE?.();
   });
 
   onDestroy(() => {
     if (pollTimer) clearInterval(pollTimer);
+    approvalsStore.disconnectSSE?.();
   });
 </script>
 
 <svelte:head><title>Approvals — AgentForge</title></svelte:head>
 
-<div class="page-header">
+<!-- ── Page header ─────────────────────────────────────────────────────── -->
+<div class="ph">
   <div>
-    <h1 class="page-title">Approvals Queue</h1>
-    <p class="page-subtitle">Human-in-the-loop review for autonomous agent actions</p>
+    <h1 class="ph-title">Approvals Queue</h1>
+    <p class="ph-sub">
+      <span class="font-mono">{counts.pending}</span> pending ·
+      human-in-the-loop review for autonomous actions
+    </p>
   </div>
-  <div class="header-actions">
-    <select class="filter-select" bind:value={statusFilter} onchange={() => load()}>
-      <option value="">All</option>
-      <option value="pending">Pending</option>
-      <option value="approved">Approved</option>
-      <option value="denied">Denied</option>
-    </select>
-    <button class="btn btn-ghost btn-sm" onclick={() => load()} disabled={loading}>
+  <div class="ph-actions">
+    <PulseDot color="var(--af-success)" size={5} />
+    <span class="auto-label">auto-refresh {POLL_MS / 1000}s</span>
+    <Btn variant="ghost" size="sm" onclick={() => load()} disabled={loading}>
       {loading ? 'Loading…' : 'Refresh'}
-    </button>
+    </Btn>
   </div>
 </div>
 
-<!-- ───────────────────────────────────────────────────────────────────────
-     Cycle Approvals — autonomous loop budget gates that need a human decision
-     Driven by approvalsStore; clicking "Review" opens the global ApprovalModal.
-     ─────────────────────────────────────────────────────────────────────── -->
-{#if cycleApprovals.length > 0 || cycleApprovalsLoading}
-  <div class="cycle-approvals-section">
-    <div class="section-header">
-      <h2>Cycle Budget Approvals</h2>
-      <span class="muted">
-        {cycleApprovals.length} pending
-        {#if cycleApprovalsLoading}<span class="ca-refreshing">· refreshing…</span>{/if}
-      </span>
+<!-- ── KPI strip ───────────────────────────────────────────────────────── -->
+<div class="kpi-strip">
+  <KpiTile label="Pending"     value={counts.pending}     color="var(--af-warning)"  live={counts.pending > 0} />
+  <KpiTile label="Approved"    value={counts.approved}    color="var(--af-success)" />
+  <KpiTile label="Rejected"    value={counts.rejected}    color="var(--af-danger)" />
+  <KpiTile label="Rolled back" value={counts.rolled_back} color="var(--af-muted)" />
+</div>
+
+<!-- ── Cycle budget-gate approvals ────────────────────────────────────── -->
+{#if cycleApprovals.length > 0 || cycleLoading}
+  <div class="section-block">
+    <div class="section-row">
+      <h2 class="section-title">Cycle Budget Gates</h2>
+      <span class="dim">{cycleApprovals.length} pending{cycleLoading ? ' · refreshing…' : ''}</span>
     </div>
-    {#if cycleApprovalsError}
-      <div class="error-banner">{cycleApprovalsError}</div>
+    {#if cycleError}
+      <div class="err-banner">{cycleError}</div>
     {/if}
-
-    {#each cycleApprovals as approval (approval.cycleId)}
-      {@const totalItems = approval.withinBudgetItems.length + approval.overflowItems.length}
-      {@const withinCost = approval.withinBudgetItems.reduce((s, i) => s + i.estimatedCostUsd, 0)}
-
-      <div class="cycle-approval-card">
+    {#each cycleApprovals as ca (ca.cycleId)}
+      {@const totalItems = ca.withinBudgetItems.length + ca.overflowItems.length}
+      {@const withinCost = ca.withinBudgetItems.reduce((s, i) => s + i.estimatedCostUsd, 0)}
+      <Card style="border-left: 3px solid var(--af-warning); margin-bottom: 10px;">
         <div class="ca-header">
-          <div class="ca-id-row">
-            <a class="ca-cycleid mono" href={`/cycles/${approval.cycleId}`}>{approval.cycleId.slice(0, 8)}</a>
-            {#if approval.sprintVersion}<span class="ca-version mono">v{approval.sprintVersion}</span>{/if}
-            <span class="muted ca-relative">{fmtRelative(approval.requestedAt)}</span>
-          </div>
-          <div class="ca-totals">
-            <div class="ca-cost ok">
-              <span class="ca-cost-num">{fmtCost(withinCost)}</span>
-              <span class="ca-cost-budget">/ {fmtCost(approval.budgetUsd)}</span>
+          <div class="ca-left">
+            <div class="ca-id-row">
+              <a class="cycle-link font-mono" href="/cycles/{ca.cycleId}">{ca.cycleId.slice(0, 8)}</a>
+              {#if ca.sprintVersion}
+                <span class="version-chip font-mono">v{ca.sprintVersion}</span>
+              {/if}
+              <span class="dim">{relativeTime(ca.requestedAt)}</span>
             </div>
-            <div class="muted ca-cost-label">
-              {approval.withinBudgetItems.length} within budget
-              {#if approval.overflowItems.length > 0}
-                · {approval.overflowItems.length} overflow
+            {#if ca.agentSummary}
+              <p class="ca-summary">{ca.agentSummary}</p>
+            {/if}
+            <div class="ca-items">
+              {#each [...ca.withinBudgetItems, ...ca.overflowItems].slice(0, 3) as item}
+                <span class="ca-item"><span class="font-mono dim">#{item.rank}</span> {item.title}</span>
+              {/each}
+              {#if totalItems > 3}
+                <span class="dim ca-more">+{totalItems - 3} more</span>
               {/if}
             </div>
           </div>
-        </div>
-
-        {#if approval.agentSummary}
-          <p class="ca-summary muted">{approval.agentSummary}</p>
-        {/if}
-
-        <!-- Item preview — first 3 titles so the operator can orient before opening modal -->
-        {#if totalItems > 0}
-          <div class="ca-preview">
-            {#each [...approval.withinBudgetItems, ...approval.overflowItems].slice(0, 3) as item}
-              <span class="ca-preview-item">
-                <span class="mono muted">#{item.rank}</span>
-                {item.title}
-              </span>
-            {/each}
-            {#if totalItems > 3}
-              <span class="ca-preview-more muted">+{totalItems - 3} more</span>
-            {/if}
+          <div class="ca-right">
+            <div class="ca-cost font-mono">{fmtCost(withinCost)}<span class="ca-budget">/ {fmtCost(ca.budgetUsd)}</span></div>
+            <div class="dim" style="font-size:11px">{ca.withinBudgetItems.length} within budget{ca.overflowItems.length > 0 ? ` · ${ca.overflowItems.length} overflow` : ''}</div>
+            <Btn variant="purple" size="sm" onclick={() => approvalsStore.open(ca)}>
+              Review {totalItems} items
+            </Btn>
           </div>
-        {/if}
-
-        <div class="ca-footer">
-          <button
-            class="btn btn-primary btn-sm"
-            onclick={() => openApprovalModal(approval)}
-          >
-            Review {totalItems} items
-          </button>
-          <span class="ca-hint muted">Opens approval modal with item selection</span>
         </div>
-      </div>
+      </Card>
     {/each}
   </div>
 {/if}
 
-<!-- Stats bar -->
-<div class="stats-bar">
-  <div class="stat-pill pending">
-    <span class="stat-pill-value">{stats.pending}</span>
-    <span class="stat-pill-label">Pending</span>
-  </div>
-  <div class="stat-divider"></div>
-  <div class="stat-pill approved">
-    <span class="stat-pill-value">{stats.approvedToday}</span>
-    <span class="stat-pill-label">Approved today</span>
-  </div>
-  <div class="stat-divider"></div>
-  <div class="stat-pill denied">
-    <span class="stat-pill-value">{stats.deniedToday}</span>
-    <span class="stat-pill-label">Denied today</span>
-  </div>
-  <div class="stat-refresh">
-    <span class="auto-refresh-label">Auto-refresh every 5s</span>
-    <span class="refresh-dot" class:active={!loading}></span>
-  </div>
+<!-- ── Filter chips ─────────────────────────────────────────────────────── -->
+<div class="filter-row">
+  {#each [
+    { id: 'pending',     label: 'Pending',     count: counts.pending,     color: 'var(--af-warning)' },
+    { id: 'approved',    label: 'Approved',    count: counts.approved,    color: 'var(--af-success)' },
+    { id: 'rejected',    label: 'Rejected',    count: counts.rejected,    color: 'var(--af-danger)'  },
+    { id: 'rolled_back', label: 'Rolled back', count: counts.rolled_back, color: 'var(--af-muted)'   },
+    { id: 'all',         label: 'All',         count: items.length,       color: 'var(--af-dim)'     },
+  ] as f}
+    <button
+      class="chip"
+      class:chip-active={filter === f.id}
+      onclick={() => { filter = f.id as FilterId; load(); }}
+    >
+      <span class="font-mono chip-count" style="color:{f.color}">{f.count}</span>
+      {f.label}
+    </button>
+  {/each}
 </div>
 
+<!-- ── Error ───────────────────────────────────────────────────────────── -->
 {#if error}
-  <div class="error-banner">{error}</div>
+  <div class="err-banner">{error} <button class="err-close" onclick={() => load()}>Retry</button></div>
 {/if}
 
-{#if loading && items.length === 0}
-  <div class="card">
-    {#each Array(3) as _}
-      <div class="skeleton" style="height:90px;margin-bottom:var(--space-3);border-radius:var(--radius-md);"></div>
-    {/each}
-  </div>
-{:else if items.length === 0}
-  <div class="empty-state">
-    <span style="font-size:32px;opacity:0.2;">✓</span>
-    <p>{statusFilter === 'pending' ? 'No pending approvals — all clear.' : 'No items match this filter.'}</p>
-    <p style="font-size:var(--text-xs);color:var(--color-text-faint);">The autonomous team is operating within approved boundaries.</p>
-  </div>
-{:else}
-  <div class="approval-list">
-    {#each items as item (item.id)}
-      <div class="approval-card card">
-        <div class="approval-top">
-          <div class="approval-left">
-            <div class="approval-action-row">
-              <span
-                class="priority-badge"
-                style="color: {priorityColor(item.priority)}; border-color: {priorityColor(item.priority)}44; background: {priorityColor(item.priority)}11;"
-              >
-                {item.priority}
-              </span>
-              <span class="approval-action">{item.action}</span>
-            </div>
-            <div class="approval-meta">
-              <span class="agent-chip">{item.agentId}</span>
-              <span class="meta-sep">·</span>
-              <span class="meta-time" title={fmtDate(item.requestedAt)}>{fmtRelative(item.requestedAt)}</span>
-              {#if item.testSummary}
-                <span class="meta-sep">·</span>
-                <span class="test-result">✓ {item.testSummary.passed}/{item.testSummary.total} tests</span>
-              {/if}
-            </div>
-            {#if item.description}
-              <p class="approval-desc">{item.description}</p>
+<!-- ── Two-pane layout ─────────────────────────────────────────────────── -->
+<div class="two-pane">
+  <!-- Left: list -->
+  <div class="pane-list">
+    {#if loading && items.length === 0}
+      {#each Array(3) as _}
+        <div class="skel-card"></div>
+      {/each}
+    {:else if displayed.length === 0}
+      <div class="empty">
+        <span class="empty-icon">✓</span>
+        <p>{filter === 'pending' ? 'No pending approvals — all clear.' : 'No items match this filter.'}</p>
+        <p class="empty-hint">The autonomous team is operating within approved boundaries.</p>
+      </div>
+    {:else}
+      {#each displayed as item (item.id)}
+        <button
+          class="list-row"
+          class:list-row-selected={selected?.id === item.id}
+          onclick={() => (selected = item)}
+        >
+          <div class="list-top">
+            <Badge variant={statusVariant(item.status)}>{item.status}</Badge>
+            <span class="list-title">{item.proposalTitle}</span>
+          </div>
+          <div class="list-meta">
+            <span class="agent-chip font-mono">{item.agentId}</span>
+            {#if item.model}
+              <ModelChip model={item.model.includes('opus') ? 'opus' : item.model.includes('sonnet') ? 'sonnet' : 'haiku'} />
             {/if}
-            {#if item.diff}
-              <details class="diff-details">
-                <summary class="diff-summary">View diff</summary>
-                <pre class="diff-viewer">{item.diff}</pre>
-              </details>
-            {/if}
-            {#if actionError[item.id]}
-              <div class="action-error">{actionError[item.id]}</div>
+            <span class="dim">{relativeTime(item.submittedAt)}</span>
+            {#if item.testSummary}
+              <Badge variant={testChipVariant(item.testSummary)}>
+                {item.testSummary.passed}/{item.testSummary.total} tests
+              </Badge>
             {/if}
           </div>
+        </button>
+      {/each}
+    {/if}
+  </div>
 
-          <div class="approval-right">
-            {#if item.status === 'pending'}
-              <div class="action-buttons">
-                <button
-                  class="btn btn-approve"
-                  disabled={actioning.has(item.id)}
-                  onclick={() => handleApprove(item)}
-                >
-                  {actioning.has(item.id) ? '…' : 'Approve'}
-                </button>
-                <button
-                  class="btn btn-deny"
-                  disabled={actioning.has(item.id)}
-                  onclick={() => handleDeny(item)}
-                >
-                  {actioning.has(item.id) ? '…' : 'Deny'}
-                </button>
-              </div>
-            {:else}
-              <span class="status-badge status-{item.status}">{item.status}</span>
-              {#if item.reviewedAt}
-                <span class="reviewed-by">by {item.reviewedBy ?? 'dashboard-user'}</span>
-              {/if}
+  <!-- Right: detail -->
+  <div class="pane-detail">
+    {#if !selected}
+      <div class="detail-empty">
+        <span class="empty-icon">←</span>
+        <p class="dim">Select an approval to view details</p>
+      </div>
+    {:else}
+      <div class="detail-scroll">
+        <!-- Header -->
+        <div class="detail-header">
+          <div class="detail-title-row">
+            <Badge variant={statusVariant(selected.status)}>{selected.status}</Badge>
+            <h2 class="detail-title">{selected.proposalTitle}</h2>
+          </div>
+          <div class="detail-meta">
+            <span class="agent-chip font-mono">{selected.agentId}</span>
+            {#if selected.model}
+              <ModelChip model={selected.model.includes('opus') ? 'opus' : selected.model.includes('sonnet') ? 'sonnet' : 'haiku'} />
             {/if}
+            <span class="dim">{relativeTime(selected.submittedAt)}</span>
           </div>
         </div>
+
+        <!-- Test summary -->
+        {#if selected.testSummary}
+          <Card style="margin-bottom:10px">
+            <p class="section-label">TEST SUMMARY</p>
+            <div class="test-chips">
+              <span class="test-chip pass font-mono">{selected.testSummary.passed} passed</span>
+              {#if selected.testSummary.failed > 0}
+                <span class="test-chip fail font-mono">{selected.testSummary.failed} failed</span>
+              {/if}
+              <span class="test-chip muted font-mono">{selected.testSummary.total} total</span>
+            </div>
+          </Card>
+        {/if}
+
+        <!-- Impact summary -->
+        {#if selected.impactSummary}
+          <Card style="margin-bottom:10px">
+            <p class="section-label">IMPACT</p>
+            <p class="detail-body">{selected.impactSummary}</p>
+          </Card>
+        {/if}
+
+        <!-- Notes -->
+        {#if selected.notes}
+          <Card style="margin-bottom:10px">
+            <p class="section-label">NOTES</p>
+            <p class="detail-body">{selected.notes}</p>
+          </Card>
+        {/if}
+
+        <!-- Diff -->
+        {#if selected.diff}
+          <Card noPad style="margin-bottom:10px; overflow:hidden;">
+            <div class="diff-header">
+              <span class="section-label">DIFF</span>
+            </div>
+            <pre class="diff-pre font-mono">{#each renderDiff(selected.diff) as line}<span class="diff-line diff-{line.type}">{line.text}
+</span>{/each}</pre>
+          </Card>
+        {/if}
+
+        <!-- Approve / Reject -->
+        {#if selected.status === 'pending'}
+          <Card style="margin-bottom:10px">
+            <p class="section-label">DECISION</p>
+            <div class="review-fields">
+              <label class="field-label">
+                Reviewed by
+                <input class="review-input" bind:value={reviewedBy} placeholder="your name" />
+              </label>
+              <label class="field-label">
+                Notes (optional)
+                <textarea class="review-input review-textarea" bind:value={reviewNotes} placeholder="Leave a note…" rows="2"></textarea>
+              </label>
+            </div>
+            {#if actionErrors[selected.id]}
+              <div class="action-err">{actionErrors[selected.id]}</div>
+            {/if}
+            <div class="decision-btns">
+              <Btn
+                variant="danger"
+                size="md"
+                disabled={actioning.has(selected.id)}
+                onclick={() => patch(selected!.id, 'reject')}
+              >
+                {actioning.has(selected.id) ? '…' : 'Reject'}
+              </Btn>
+              <Btn
+                variant="purple"
+                size="md"
+                disabled={actioning.has(selected.id)}
+                onclick={() => patch(selected!.id, 'approve')}
+              >
+                {actioning.has(selected.id) ? '…' : 'Approve'}
+              </Btn>
+            </div>
+          </Card>
+        {:else}
+          <div class="reviewed-by">
+            Reviewed by <span class="font-mono">{selected.reviewedBy ?? '—'}</span>
+            {#if selected.reviewedAt}· {relativeTime(selected.reviewedAt)}{/if}
+          </div>
+        {/if}
       </div>
-    {/each}
+    {/if}
   </div>
-{/if}
+</div>
 
 <style>
-  .header-actions {
+  /* ── Page header ─────────────────────────────────────────────────────── */
+  .ph {
     display: flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
-
-  .filter-select {
-    background: var(--color-surface-2);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    padding: var(--space-1) var(--space-2);
-    font-size: var(--text-xs);
-    color: var(--color-text);
-    cursor: pointer;
-  }
-
-  /* Stats bar */
-  .stats-bar {
-    display: flex;
-    align-items: center;
-    gap: var(--space-4);
-    background: var(--color-bg-card);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    padding: var(--space-3) var(--space-5);
-    margin-bottom: var(--space-4);
-  }
-
-  .stat-pill {
-    display: flex;
-    align-items: baseline;
-    gap: var(--space-2);
-  }
-
-  .stat-pill-value {
-    font-family: var(--font-mono);
-    font-size: var(--text-xl);
-    font-weight: 700;
-    line-height: 1;
-  }
-
-  .stat-pill.pending .stat-pill-value { color: var(--color-warning); }
-  .stat-pill.approved .stat-pill-value { color: var(--color-success); }
-  .stat-pill.denied .stat-pill-value { color: var(--color-danger); }
-
-  .stat-pill-label {
-    font-size: var(--text-xs);
-    color: var(--color-text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    white-space: nowrap;
-  }
-
-  .stat-divider {
-    width: 1px;
-    height: 28px;
-    background: var(--color-border);
-  }
-
-  .stat-refresh {
-    margin-left: auto;
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
-
-  .auto-refresh-label {
-    font-size: var(--text-xs);
-    color: var(--color-text-faint);
-  }
-
-  .refresh-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--color-border);
-    transition: background 0.3s;
-  }
-
-  .refresh-dot.active {
-    background: var(--color-success);
-  }
-
-  /* Banners */
-  .error-banner {
-    background: rgba(224,90,90,0.08);
-    border: 1px solid rgba(224,90,90,0.25);
-    border-radius: var(--radius-md);
-    color: var(--color-danger);
-    font-size: var(--text-xs);
-    padding: var(--space-2) var(--space-4);
-    margin-bottom: var(--space-3);
-  }
-
-  /* Approval list */
-  .approval-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-  }
-
-  .approval-card {
-    padding: var(--space-4) var(--space-5);
-    transition: border-color var(--duration-fast);
-  }
-
-  .approval-card:hover {
-    transform: none;
-    box-shadow: none;
-    border-color: var(--color-border-strong);
-  }
-
-  .approval-top {
-    display: flex;
+    justify-content: space-between;
     align-items: flex-start;
-    justify-content: space-between;
-    gap: var(--space-6);
+    margin-bottom: 16px;
+    gap: 16px;
   }
 
-  .approval-left {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .approval-action-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    margin-bottom: var(--space-2);
-  }
-
-  .priority-badge {
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    padding: 2px 7px;
-    border-radius: var(--radius-full);
-    border: 1px solid transparent;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-
-  .approval-action {
-    font-size: var(--text-sm);
+  .ph-title {
+    font-size: 20px;
     font-weight: 600;
-    color: var(--color-text);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    color: var(--af-text);
+    margin: 0 0 4px;
   }
 
-  .approval-meta {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    font-size: var(--text-xs);
-    color: var(--color-text-muted);
-    margin-bottom: var(--space-2);
-    flex-wrap: wrap;
-  }
-
-  .agent-chip {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    background: var(--color-surface-2);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    padding: 1px 6px;
-    color: var(--color-text);
-  }
-
-  .meta-sep { color: var(--color-text-faint); }
-  .meta-time { color: var(--color-text-faint); }
-  .test-result { color: var(--color-success); font-size: var(--text-xs); }
-
-  .approval-desc {
-    font-size: var(--text-xs);
-    color: var(--color-text-muted);
-    margin: 0 0 var(--space-2) 0;
-    line-height: 1.5;
-  }
-
-  .diff-details {
-    margin-top: var(--space-2);
-  }
-
-  .diff-summary {
-    font-size: var(--text-xs);
-    color: var(--color-brand);
-    cursor: pointer;
-    user-select: none;
-    margin-bottom: var(--space-2);
-  }
-
-  .diff-viewer {
-    background: var(--color-bg-elevated);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    padding: var(--space-3);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    overflow-x: auto;
-    white-space: pre;
-    max-height: 280px;
-    overflow-y: auto;
+  .ph-sub {
+    font-size: 12px;
+    color: var(--af-dim);
     margin: 0;
   }
 
-  .action-error {
-    font-size: var(--text-xs);
-    color: var(--color-danger);
-    margin-top: var(--space-1);
-  }
-
-  /* Action buttons */
-  .approval-right {
+  .ph-actions {
     display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: var(--space-2);
+    align-items: center;
+    gap: 8px;
     flex-shrink: 0;
   }
 
-  .action-buttons {
+  .auto-label { font-size: 11px; color: var(--af-dim); }
+
+  /* ── KPI strip ───────────────────────────────────────────────────────── */
+  .kpi-strip {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+
+  /* ── Cycle budget gates ──────────────────────────────────────────────── */
+  .section-block { margin-bottom: 16px; }
+
+  .section-row {
     display: flex;
-    gap: var(--space-2);
-  }
-
-  .btn-approve {
-    background: rgba(76,175,130,0.15);
-    border: 1px solid rgba(76,175,130,0.4);
-    color: var(--color-success);
-    padding: var(--space-2) var(--space-4);
-    border-radius: var(--radius-md);
-    font-size: var(--text-sm);
-    font-weight: 600;
-    cursor: pointer;
-    transition: background var(--duration-fast), border-color var(--duration-fast);
-    white-space: nowrap;
-  }
-
-  .btn-approve:hover:not(:disabled) {
-    background: rgba(76,175,130,0.25);
-    border-color: rgba(76,175,130,0.6);
-  }
-
-  .btn-approve:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-
-  .btn-deny {
-    background: rgba(224,90,90,0.1);
-    border: 1px solid rgba(224,90,90,0.35);
-    color: var(--color-danger);
-    padding: var(--space-2) var(--space-4);
-    border-radius: var(--radius-md);
-    font-size: var(--text-sm);
-    font-weight: 600;
-    cursor: pointer;
-    transition: background var(--duration-fast), border-color var(--duration-fast);
-    white-space: nowrap;
-  }
-
-  .btn-deny:hover:not(:disabled) {
-    background: rgba(224,90,90,0.2);
-    border-color: rgba(224,90,90,0.55);
-  }
-
-  .btn-deny:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-
-  .status-badge {
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    padding: 3px 10px;
-    border-radius: var(--radius-full);
-  }
-
-  .status-approved {
-    background: rgba(76,175,130,0.15);
-    color: var(--color-success);
-  }
-
-  .status-denied {
-    background: rgba(224,90,90,0.12);
-    color: var(--color-danger);
-  }
-
-  .reviewed-by {
-    font-size: var(--text-xs);
-    color: var(--color-text-faint);
-    font-family: var(--font-mono);
-  }
-  /* ── Cycle approvals (v6.7.4+) ───────────────────────────────────── */
-  .cycle-approvals-section {
-    margin-bottom: var(--space-6);
-  }
-  .section-header {
-    display: flex;
-    justify-content: space-between;
     align-items: baseline;
-    margin-bottom: var(--space-4);
+    justify-content: space-between;
+    margin-bottom: 10px;
   }
-  .section-header h2 {
-    font-size: var(--text-lg);
+
+  .section-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--af-text);
     margin: 0;
   }
-  .ca-refreshing {
-    font-style: italic;
-    opacity: 0.7;
-  }
-  .cycle-approval-card {
-    background: var(--color-bg-elevated);
-    border: 1px solid var(--color-border);
-    border-left: 3px solid var(--color-warning);
-    border-radius: var(--radius-md);
-    padding: var(--space-4);
-    margin-bottom: var(--space-3);
-  }
+
   .ca-header {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    margin-bottom: var(--space-2);
+    gap: 16px;
   }
+
+  .ca-left  { flex: 1; min-width: 0; }
+  .ca-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
+
   .ca-id-row {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
+    gap: 8px;
     flex-wrap: wrap;
+    margin-bottom: 8px;
   }
-  .ca-cycleid {
-    color: var(--color-brand);
+
+  .cycle-link {
+    font-size: 13px;
     font-weight: 700;
+    color: var(--af-accent2);
     text-decoration: none;
-    font-size: var(--text-sm);
   }
-  .ca-cycleid:hover { text-decoration: underline; }
-  .ca-version {
-    padding: 1px var(--space-2);
-    background: var(--color-bg-card);
-    border: 1px solid var(--color-border);
+
+  .cycle-link:hover { text-decoration: underline; }
+
+  .version-chip {
+    font-size: 10px;
+    padding: 1px 7px;
+    background: var(--af-surface2);
+    border: 1px solid var(--af-border2);
     border-radius: 9999px;
-    font-size: var(--text-xs);
-    color: var(--color-text-muted);
+    color: var(--af-dim);
   }
-  .ca-relative { font-size: var(--text-xs); }
-  .ca-totals { text-align: right; flex-shrink: 0; }
-  .ca-cost {
-    font-size: var(--text-lg);
-    font-weight: 700;
-    font-family: var(--font-mono);
-    white-space: nowrap;
-  }
-  .ca-cost.ok { color: var(--color-success); }
-  .ca-cost-budget {
-    font-size: var(--text-xs);
-    color: var(--color-text-muted);
-    margin-left: var(--space-1);
-  }
-  .ca-cost-label {
-    font-size: var(--text-xs);
-    margin-top: 2px;
-  }
+
   .ca-summary {
-    font-size: var(--text-xs);
+    font-size: 11px;
+    color: var(--af-muted);
+    margin: 0 0 8px;
     line-height: 1.5;
-    margin: var(--space-1) 0 var(--space-2);
-    padding: var(--space-2) var(--space-3);
-    background: var(--color-bg-card);
-    border-radius: var(--radius-sm);
-    border-left: 2px solid var(--color-border);
   }
-  /* Compact item preview (first 3 titles) */
-  .ca-preview {
+
+  .ca-items {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--space-1) var(--space-3);
-    margin-bottom: var(--space-3);
-    font-size: var(--text-xs);
-    color: var(--color-text-muted);
+    gap: 4px 12px;
+    font-size: 11px;
+    color: var(--af-dim);
   }
-  .ca-preview-item {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 260px;
+
+  .ca-item { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+  .ca-more { font-style: italic; }
+
+  .ca-cost {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--af-success);
   }
-  .ca-preview-more {
-    font-style: italic;
+
+  .ca-budget {
+    font-size: 11px;
+    color: var(--af-dim);
+    margin-left: 4px;
+    font-weight: 400;
   }
-  .ca-footer {
+
+  /* ── Filter chips ────────────────────────────────────────────────────── */
+  .filter-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 9999px;
+    border: 1px solid var(--af-border2);
+    background: transparent;
+    color: var(--af-dim);
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 120ms, border-color 120ms, color 120ms;
+    font-family: inherit;
+  }
+
+  .chip:hover { background: var(--af-surface2); color: var(--af-text); }
+
+  .chip-active {
+    background: var(--af-surface2);
+    border-color: var(--af-border3);
+    color: var(--af-text);
+  }
+
+  .chip-count { font-size: 10px; font-weight: 700; }
+
+  /* ── Error banner ────────────────────────────────────────────────────── */
+  .err-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    background: color-mix(in srgb, var(--af-danger) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--af-danger) 25%, transparent);
+    border-radius: 6px;
+    color: var(--af-danger);
+    font-size: 12px;
+    margin-bottom: 12px;
+  }
+
+  .err-close {
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    opacity: 0.6;
+    font-size: 12px;
+    padding: 0;
+  }
+
+  .err-close:hover { opacity: 1; }
+
+  /* ── Skeleton ────────────────────────────────────────────────────────── */
+  .skel-card {
+    height: 80px;
+    background: var(--af-surface);
+    border: 1px solid var(--af-border);
+    border-radius: 6px;
+    margin-bottom: 8px;
+    animation: shimmer 1.5s ease-in-out infinite;
+  }
+
+  @keyframes shimmer {
+    0%, 100% { opacity: 0.4; }
+    50%       { opacity: 0.7; }
+  }
+
+  /* ── Two-pane layout ─────────────────────────────────────────────────── */
+  .two-pane {
+    display: grid;
+    grid-template-columns: 380px 1fr;
+    gap: 14px;
+    min-height: 500px;
+  }
+
+  /* ── List pane ───────────────────────────────────────────────────────── */
+  .pane-list {
+    overflow-y: auto;
+    max-height: 75vh;
+  }
+
+  .list-row {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: var(--af-surface);
+    border: 1px solid var(--af-border);
+    border-radius: 6px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: border-color 120ms, background 120ms;
+    font-family: inherit;
+  }
+
+  .list-row:hover { border-color: var(--af-border3); background: var(--af-surface2); }
+
+  .list-row-selected {
+    border-color: var(--af-accent);
+    background: color-mix(in srgb, var(--af-accent) 6%, transparent);
+  }
+
+  .list-top {
     display: flex;
     align-items: center;
-    gap: var(--space-3);
+    gap: 8px;
+    margin-bottom: 6px;
   }
-  .ca-hint {
-    font-size: var(--text-xs);
-    font-style: italic;
+
+  .list-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--af-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+  }
+
+  .list-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  /* ── Detail pane ─────────────────────────────────────────────────────── */
+  .pane-detail {
+    background: var(--af-surface);
+    border: 1px solid var(--af-border);
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .detail-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 12px;
+    color: var(--af-dim);
+    font-size: 12px;
+  }
+
+  .detail-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+  }
+
+  .detail-header {
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--af-border);
+  }
+
+  .detail-title-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+
+  .detail-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--af-text);
+    margin: 0;
+    line-height: 1.4;
+  }
+
+  .detail-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  /* ── Agent chip ──────────────────────────────────────────────────────── */
+  .agent-chip {
+    font-size: 11px;
+    background: var(--af-surface2);
+    border: 1px solid var(--af-border2);
+    padding: 2px 7px;
+    border-radius: 4px;
+    color: var(--af-text);
+  }
+
+  /* ── Section labels ──────────────────────────────────────────────────── */
+  .section-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--af-dim);
+    margin: 0 0 8px;
+  }
+
+  /* ── Test chips ──────────────────────────────────────────────────────── */
+  .test-chips {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .test-chip {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+
+  .test-chip.pass  { color: var(--af-success); background: color-mix(in srgb, var(--af-success) 12%, transparent); }
+  .test-chip.fail  { color: var(--af-danger);  background: color-mix(in srgb, var(--af-danger) 12%, transparent);  }
+  .test-chip.muted { color: var(--af-dim);     background: var(--af-surface2); }
+
+  /* ── Detail body text ────────────────────────────────────────────────── */
+  .detail-body {
+    font-size: 12px;
+    color: var(--af-muted);
+    line-height: 1.6;
+    margin: 0;
+  }
+
+  /* ── Diff viewer ─────────────────────────────────────────────────────── */
+  .diff-header {
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--af-border);
+  }
+
+  .diff-pre {
+    margin: 0;
+    padding: 0;
+    font-size: 11px;
+    line-height: 1.7;
+    overflow-x: auto;
+    max-height: 360px;
+    overflow-y: auto;
+    background: var(--af-surface);
+  }
+
+  .diff-line {
+    display: block;
+    padding: 0 14px;
+    white-space: pre;
+  }
+
+  .diff-add    { background: color-mix(in srgb, var(--af-success) 10%, transparent); color: var(--af-success); }
+  .diff-remove { background: color-mix(in srgb, var(--af-danger)  10%, transparent); color: var(--af-danger); }
+  .diff-hunk   { color: var(--af-accent2); background: color-mix(in srgb, var(--af-accent) 6%, transparent); }
+  .diff-plain  { color: var(--af-muted); }
+
+  /* ── Review fields ───────────────────────────────────────────────────── */
+  .review-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .field-label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--af-dim);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .review-input {
+    background: var(--af-surface2);
+    border: 1px solid var(--af-border2);
+    border-radius: 5px;
+    padding: 6px 10px;
+    font-size: 12px;
+    font-family: inherit;
+    color: var(--af-text);
+    outline: none;
+    transition: border-color 120ms;
+  }
+
+  .review-input:focus { border-color: var(--af-accent); }
+
+  .review-textarea { resize: vertical; min-height: 52px; }
+
+  /* ── Decision buttons ────────────────────────────────────────────────── */
+  .decision-btns {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+
+  .action-err {
+    font-size: 11px;
+    color: var(--af-danger);
+    margin-bottom: 8px;
+  }
+
+  .reviewed-by {
+    font-size: 11px;
+    color: var(--af-dim);
+    padding: 10px 0;
+  }
+
+  /* ── Empty states ────────────────────────────────────────────────────── */
+  .empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--af-dim);
+    font-size: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .empty-icon { font-size: 28px; opacity: 0.2; }
+  .empty-hint { font-size: 10px; color: var(--af-faint); }
+
+  /* ── Utility ─────────────────────────────────────────────────────────── */
+  .font-mono { font-family: var(--af-font-mono); }
+  .dim       { color: var(--af-dim); font-size: 11px; }
+
+  /* ── Responsive ──────────────────────────────────────────────────────── */
+  @media (max-width: 900px) {
+    .two-pane { grid-template-columns: 1fr; }
+    .kpi-strip { grid-template-columns: repeat(2, 1fr); }
+    .pane-detail { min-height: 400px; }
   }
 </style>
