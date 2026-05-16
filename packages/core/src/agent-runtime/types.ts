@@ -29,6 +29,13 @@ export interface RunOptions {
    * (no tools enabled for non-interactive `claude -p`).
    */
   allowedTools?: string[];
+  /**
+   * Per-request CLI subprocess timeout in milliseconds.
+   * Overrides the transport default of 20 minutes (1_200_000 ms).
+   * Use for heavy reasoning tasks such as scoring large backlogs or deep
+   * architectural decisions that are known to exceed the default ceiling.
+   */
+  timeoutMs?: number;
 }
 
 export interface RunResult {

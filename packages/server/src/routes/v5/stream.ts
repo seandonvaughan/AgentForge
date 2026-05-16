@@ -65,8 +65,12 @@ export async function streamRoutes(app: FastifyInstance): Promise<void> {
     // that raw agent-activity events aren't readable from arbitrary origins when
     // the dev server is reachable beyond localhost (e.g. CI runners, tunnels).
     const reqOrigin = req.headers['origin'];
+    // Allow both localhost and 127.0.0.1 to match the main CORS plugin allowlist.
+    // The main plugin covers http://127.0.0.1:4751/4752 but writeHead() bypasses
+    // it, so we mirror that list here. https:// is intentionally excluded: this
+    // server runs HTTP-only.
     const isLocalhost = typeof reqOrigin === 'string' &&
-      /^https?:\/\/localhost(:\d+)?$/.test(reqOrigin);
+      /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(reqOrigin);
     const corsOrigin = isLocalhost ? reqOrigin : 'http://localhost:4751';
 
     reply.raw.writeHead(200, {

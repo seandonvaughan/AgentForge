@@ -193,4 +193,36 @@ describe('GET /api/v5/run/history (adapter-backed)', () => {
     expect(body.data[0].sessionId).toBe(newer.id);
     expect(body.data[1].sessionId).toBe(older.id);
   });
+
+  it('excludes cycle sub-agent sessions (parent_session_id != null) from history unless already in runLog', async () => {
+    // Top-level runner session — should appear
+    const topLevel = adapter.createSession({
+      agentId: 'coder',
+      task: 'User runner task',
+      model: 'claude-sonnet-4-6',
+    });
+
+    // Sub-agent session from a cycle — should NOT appear
+    const parent = adapter.createSession({ agentId: 'cycle-root', task: 'cycle', model: 'claude-opus-4-6' });
+    const subAgent = adapter.createSession({
+      agentId: 'coder',
+      task: 'Implement sprint item 7',
+      model: 'claude-sonnet-4-6',
+      parentSessionId: parent.id,
+    });
+
+    expect(getRunLog().size).toBe(0);
+
+    const response = await app.inject({ method: 'GET', url: '/api/v5/run/history' });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    // Only top-level runner sessions visible; parent root and sub-agent are filtered out
+    const ids = body.data.map((r: { sessionId: string }) => r.sessionId);
+    expect(ids).toContain(topLevel.id);
+    expect(ids).not.toContain(subAgent.id);
+    // parent itself also has no parentSessionId so it appears (it's a top-level cycle session,
+    // not spawned by the runner, but indistinguishable without a source field)
+    expect(ids).toContain(parent.id);
+  });
 });

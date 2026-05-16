@@ -943,3 +943,84 @@ test.describe('Real Data Validation', () => {
     }
   });
 });
+
+/**
+ * Test Group: New Communication Routes (v2 Dashboard)
+ */
+test.describe('Inbox Route (/inbox)', () => {
+  test('loads inbox page without errors', async ({ page }) => {
+    const loaded = await navigateAndVerify(page, '/inbox');
+    expect(loaded).toBe(true);
+
+    await page.waitForLoadState('load').catch(() => {});
+    await verifyNoErrors(page);
+    await verifyPageContent(page);
+  });
+
+  test('inbox page displays messages or empty state', async ({ page }) => {
+    await navigateAndVerify(page, '/inbox');
+    await page.waitForLoadState('networkidle').catch(() => {});
+
+    const messages = page.locator('[data-testid="inbox-message"], .message-item, [role="article"]').first();
+    const emptyState = page.locator('[data-testid="empty-state"], .empty-state').first();
+
+    const hasMessages = await messages.isVisible().catch(() => false);
+    const hasEmpty = await emptyState.isVisible().catch(() => false);
+
+    expect(hasMessages || hasEmpty).toBeTruthy();
+  });
+});
+
+/**
+ * Test Group: Insights Route (/insights)
+ */
+test.describe('Insights Route (/insights)', () => {
+  test('loads insights page without errors', async ({ page }) => {
+    const loaded = await navigateAndVerify(page, '/insights');
+    expect(loaded).toBe(true);
+
+    await page.waitForLoadState('load').catch(() => {});
+    await verifyNoErrors(page);
+    await verifyPageContent(page);
+  });
+
+  test('insights page displays metrics or visualizations', async ({ page }) => {
+    await navigateAndVerify(page, '/insights');
+    await page.waitForLoadState('networkidle').catch(() => {});
+
+    const metrics = page.locator('[data-testid="metric"], [data-testid="card"], .metric-card').first();
+    const charts = page.locator('canvas, svg[role="img"]').first();
+
+    const hasMetrics = await metrics.isVisible().catch(() => false);
+    const hasCharts = await charts.isVisible().catch(() => false);
+
+    expect(hasMetrics || hasCharts).toBeTruthy();
+  });
+});
+
+/**
+ * Test Group: Audit Route (/audit)
+ */
+test.describe('Audit Route (/audit)', () => {
+  test('loads audit page without errors', async ({ page }) => {
+    const loaded = await navigateAndVerify(page, '/audit');
+    expect(loaded).toBe(true);
+
+    await page.waitForLoadState('load').catch(() => {});
+    await verifyNoErrors(page);
+    await verifyPageContent(page);
+  });
+
+  test('audit page displays entries or empty state', async ({ page }) => {
+    await navigateAndVerify(page, '/audit');
+    await page.waitForLoadState('networkidle').catch(() => {});
+
+    const entries = page.locator('[data-testid="audit-entry"], .audit-row, [role="row"]').first();
+    const emptyState = page.locator('[data-testid="empty-state"], .empty-state').first();
+
+    const hasEntries = await entries.isVisible().catch(() => false);
+    const hasEmpty = await emptyState.isVisible().catch(() => false);
+
+    expect(hasEntries || hasEmpty).toBeTruthy();
+  });
+});

@@ -170,8 +170,9 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
     // SSE stream + dashboard refresh signal — in-memory, no adapter required
     await streamRoutes(app);
 
-    // Git branch manager / merge queue — in-memory, no adapter required
-    await mergeQueueRoutes(app);
+    // Git branch manager / merge queue — uses SQLite when adapter is available
+    // (else-branch may have adapter without registry; mirror knowledgeRoutes pattern)
+    await mergeQueueRoutes(app, { adapter: options.adapter });
 
     // Knowledge graph — reads .agentforge/knowledge/entities.jsonl so the
     // /knowledge page is populated from cycle-accumulated entity data.

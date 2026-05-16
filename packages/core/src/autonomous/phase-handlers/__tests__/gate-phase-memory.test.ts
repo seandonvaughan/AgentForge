@@ -935,3 +935,62 @@ describe('resolveKnownDebt', () => {
     expect(result).not.toContain('Old debt');
   });
 });
+
+// ---------------------------------------------------------------------------
+// buildKnownDebtSection — verification-protocol cross-reference step
+//
+// When known debt is present, the gate prompt must contain an explicit step
+// that cross-references the known-debt list inside the verification protocol.
+// This prevents the LLM from reasoning "finding still reproduces → REJECT"
+// while ignoring the known-debt guidance (a known false-rejection vector).
+//
+// These tests verify that `buildKnownDebtSection` returns a section whose
+// content (once embedded in the gate prompt) covers the cross-reference need.
+// The actual step-5 injection in `runGatePhase` is integration-tested via the
+// progress-events and gate-phase-memory integration test suites.
+// ---------------------------------------------------------------------------
+
+describe('buildKnownDebtSection — cross-reference guidance completeness', () => {
+  it('includes "MUST NOT independently drive a REJECT" phrasing for approved-verdict debt', () => {
+    const prior: PriorGateContext = {
+      cycleId: 'cycle-crossref',
+      verdict: 'approved',
+      majorFindings: ['readCycleRecord duplication'],
+      criticalFindings: [],
+    };
+    const section = buildKnownDebtSection(prior);
+    // The guidance must be unambiguous: known debt must not drive a REJECT
+    // even when it still reproduces in the current tree.
+    expect(section).toContain('Do NOT let them drive a REJECT');
+    expect(section).toContain('unless they have clearly worsened');
+  });
+
+  it('includes "verify whether each has been addressed" phrasing for rejected-verdict debt', () => {
+    const prior: PriorGateContext = {
+      cycleId: 'cycle-crossref-rej',
+      verdict: 'rejected',
+      majorFindings: ['capModelTier has no tests'],
+      criticalFindings: [],
+    };
+    const section = buildKnownDebtSection(prior);
+    // For rejected debt, the guidance must tell the CEO to check resolution
+    // status rather than blindly re-rejecting.
+    expect(section).toContain('Verify whether each has been addressed');
+  });
+
+  it('returns an empty string for null input — step 5 is omitted when no known debt', () => {
+    // When there is no known debt, the cross-reference step must not appear
+    // in the prompt — it would be misleading if the list were empty.
+    expect(buildKnownDebtSection(null)).toBe('');
+  });
+
+  it('returns an empty string when prior has empty findings — step 5 is omitted', () => {
+    const prior: PriorGateContext = {
+      cycleId: 'cycle-empty-crossref',
+      verdict: 'approved',
+      majorFindings: [],
+      criticalFindings: [],
+    };
+    expect(buildKnownDebtSection(prior)).toBe('');
+  });
+});

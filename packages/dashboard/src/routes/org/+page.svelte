@@ -533,16 +533,18 @@
 
   <div class="af-tree-row depth-{Math.min(node.depth, 5)}">
     <div
-      class="af-node-card {hasKids ? 'clickable' : ''} {node.depth === 0 ? 'is-root' : ''} {node.depth <= 1 ? 'is-exec' : ''}"
-      role={hasKids ? 'button' : undefined}
-      tabindex={hasKids ? 0 : undefined}
+      class="af-node-card clickable {node.depth === 0 ? 'is-root' : ''} {node.depth <= 1 ? 'is-exec' : ''}"
+      role="button"
+      tabindex={0}
+      aria-expanded={hasKids ? !isClosed : undefined}
       style="border-left-color:{color}; background:{node.depth <= 1 ? bg : 'var(--af-surface)'};"
       onclick={() => {
         if (hasKids) toggle(node.id);
         else goto(`/agents/${node.id}`);
       }}
       onkeydown={e => {
-        if (e.key === 'Enter') {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
           if (hasKids) toggle(node.id);
           else goto(`/agents/${node.id}`);
         }

@@ -16,6 +16,7 @@ import {
   parseReviewFindingMetadata,
   parseVerdict,
   collectSprintItemTags,
+  runReviewPhase,
 } from '../review-phase.js';
 import { writeMemoryEntry, readMemoryEntries } from '../../../memory/types.js';
 import {
@@ -24,6 +25,8 @@ import {
 } from '../audit-phase.js';
 import { readRelevantMemoryEntries } from '../execute-phase.js';
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { loadKnowledgeEntities } from '../../../knowledge/persistence.js';
+import type { PhaseContext } from '../../phase-scheduler.js';
 
 // ---------------------------------------------------------------------------
 // Temp dir lifecycle
@@ -518,5 +521,105 @@ describe('review-finding tag enrichment → execute-phase injection round-trip',
     // Item tags don't overlap with structural tags — should find nothing.
     const entries = readRelevantMemoryEntries(tmpRoot, ['memory', 'execute', 'backend']);
     expect(entries).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runReviewPhase — knowledge graph write
+//
+// Verifies that writeKnowledgeEntry() is called after the code-reviewer agent
+// run so that review output populates the /knowledge page across cycles.
+// This is the second half of the KG write path (audit writes findings,
+// review writes code-review output).
+// ---------------------------------------------------------------------------
+
+/** Minimal PhaseContext stub for review phase tests. */
+function makeReviewCtx(
+  cycleId: string,
+  reviewOutput = '## Code Review\n\nThe ReviewPhase validates CodeReviewer output.\n\n- AuditPhase findings look correct\n\nOverall verdict: 4/5',
+): PhaseContext {
+  return {
+    projectRoot: tmpRoot,
+    cycleId,
+    sprintId: 'sprint-kg-review',
+    sprintVersion: '9.0.0',
+    adapter: undefined as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+    bus: {
+      publish: () => undefined,
+      subscribe: () => () => undefined,
+    } as unknown as PhaseContext['bus'],
+    runtime: {
+      run: async () => ({ output: reviewOutput, costUsd: 0.02 }),
+    } as unknown as PhaseContext['runtime'],
+  };
+}
+
+describe('runReviewPhase — knowledge graph write', () => {
+  it('writes entities.jsonl when the reviewer returns output', async () => {
+    const ctx = makeReviewCtx('cycle-kg-review');
+
+    await runReviewPhase(ctx);
+
+    const entities = loadKnowledgeEntities(tmpRoot);
+    expect(entities.length).toBeGreaterThan(0);
+  });
+
+  it('persisted entities carry source="review"', async () => {
+    const ctx = makeReviewCtx('cycle-kg-review-src');
+
+    await runReviewPhase(ctx);
+
+    const entities = loadKnowledgeEntities(tmpRoot);
+    expect(entities.length).toBeGreaterThan(0);
+    expect(entities.every(e => e.properties.source === 'review')).toBe(true);
+  });
+
+  it('persisted entities carry cycleId matching the phase context', async () => {
+    const cycleId = 'cycle-kg-review-id';
+    const ctx = makeReviewCtx(cycleId);
+
+    await runReviewPhase(ctx);
+
+    const entities = loadKnowledgeEntities(tmpRoot);
+    expect(entities.length).toBeGreaterThan(0);
+    expect(entities.every(e => e.properties.cycleId === cycleId)).toBe(true);
+  });
+
+  it('does NOT write entities.jsonl when the reviewer returns empty output', async () => {
+    const ctx = makeReviewCtx('cycle-kg-review-empty', '');
+
+    await runReviewPhase(ctx);
+
+    const entities = loadKnowledgeEntities(tmpRoot);
+    expect(entities).toHaveLength(0);
+  });
+
+  it('audit and review writes accumulate in the same entities.jsonl', async () => {
+    // Simulate what happens in a real cycle: audit runs first, then review.
+    const auditCtx: PhaseContext = {
+      projectRoot: tmpRoot,
+      cycleId: 'cycle-kg-combined',
+      sprintId: 'sprint-combined',
+      sprintVersion: '9.0.0',
+      adapter: undefined as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+      bus: { publish: () => undefined, subscribe: () => () => undefined } as unknown as PhaseContext['bus'],
+      runtime: { run: async () => ({ output: 'AuditPhaseHandler ran SprintPlanner checks.', costUsd: 0.01 }) } as unknown as PhaseContext['runtime'],
+    };
+    const reviewCtx = makeReviewCtx('cycle-kg-combined');
+
+    // Import runAuditPhase inline to simulate sequential phase execution.
+    const { runAuditPhase } = await import('../audit-phase.js');
+    await runAuditPhase(auditCtx);
+    const auditCount = loadKnowledgeEntities(tmpRoot).length;
+
+    await runReviewPhase(reviewCtx);
+    const totalCount = loadKnowledgeEntities(tmpRoot).length;
+
+    // Both sources contribute — total should exceed what audit wrote alone.
+    expect(totalCount).toBeGreaterThan(auditCount);
+
+    const sources = loadKnowledgeEntities(tmpRoot).map(e => e.properties.source as string);
+    expect(sources).toContain('audit');
+    expect(sources).toContain('review');
   });
 });

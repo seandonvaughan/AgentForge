@@ -29,6 +29,42 @@ function buildExecutionResult(response: string): ExecutionResult {
   };
 }
 
+describe('ExecutionService buildRequest — timeoutMs forwarding', () => {
+  it('forwards timeoutMs from RunOptions to ExecutionRequest when set', async () => {
+    let capturedTimeout: number | undefined;
+    const transport: ExecutionTransport = {
+      kind: 'anthropic-sdk',
+      isAvailable: () => true,
+      execute: vi.fn(async (req) => {
+        capturedTimeout = req.timeoutMs;
+        return buildExecutionResult('ok');
+      }),
+    };
+    const service = new ExecutionService({ transports: [transport] });
+
+    await service.run(config, { task: 'heavy task', timeoutMs: 45 * 60 * 1000 });
+
+    expect(capturedTimeout).toBe(45 * 60 * 1000);
+  });
+
+  it('omits timeoutMs from ExecutionRequest when not provided in RunOptions', async () => {
+    let capturedRequest: { timeoutMs?: number } = {};
+    const transport: ExecutionTransport = {
+      kind: 'anthropic-sdk',
+      isAvailable: () => true,
+      execute: vi.fn(async (req) => {
+        capturedRequest = req;
+        return buildExecutionResult('ok');
+      }),
+    };
+    const service = new ExecutionService({ transports: [transport] });
+
+    await service.run(config, { task: 'normal task' });
+
+    expect(capturedRequest.timeoutMs).toBeUndefined();
+  });
+});
+
 describe('ExecutionService.runStreaming', () => {
   it('uses transport executeStreaming when available', async () => {
     const transport: ExecutionTransport = {

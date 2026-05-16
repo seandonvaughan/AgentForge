@@ -433,7 +433,19 @@ function buildLlmPhaseTask(phase: PhaseName, sprint: SprintFile, projectRoot?: s
       const priorGateCtx = projectRoot ? loadPriorGateKnownDebt(projectRoot) : null;
       const knownDebtSection = buildKnownDebtSection(priorGateCtx);
 
-      return `Approve or reject sprint v${version}: "${sprint.title}" based on the following results.\n\nTest results: ${testSummary}\n\nCode review: ${reviewSummary}\n${knownDebtSection}\nProvide a clear APPROVE or REJECT decision with rationale.`;
+      // When known debt is present, append an explicit cross-reference so the
+      // CEO agent's REJECT criteria are scoped exclusively to sprint-introduced
+      // findings — findings in the known-debt list must not independently drive REJECT.
+      const allFindings = [
+        ...(priorGateCtx?.criticalFindings ?? []),
+        ...(priorGateCtx?.majorFindings ?? []),
+      ];
+      const knownDebtCrossRef =
+        allFindings.length > 0
+          ? '\n\nIMPORTANT: Any finding listed in the "Known pre-existing debt" section above is accepted pre-existing debt from a prior cycle. It MUST NOT independently drive a REJECT verdict — even if it still reproduces. Only findings that are both unresolved AND absent from the known-debt list are valid REJECT grounds.'
+          : '';
+
+      return `Approve or reject sprint v${version}: "${sprint.title}" based on the following results.\n\nTest results: ${testSummary}\n\nCode review: ${reviewSummary}\n${knownDebtSection}\nProvide a clear APPROVE or REJECT decision with rationale.${knownDebtCrossRef}`;
     }
     default:
       return `Execute phase "${phase}" for sprint v${version}: "${sprint.title}".`;

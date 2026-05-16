@@ -194,6 +194,7 @@ export class ExecutionService {
       ...(opts.budgetUsd !== undefined ? { budgetUsd: opts.budgetUsd } : {}),
       ...(apiKey ? { apiKey } : {}),
       ...(config.effort ? { effort: config.effort } : {}),
+      ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
     };
   }
 }

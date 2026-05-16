@@ -29,10 +29,24 @@ const DEFAULT_EXCLUDE_PATHS = ["/api/v5/health"];
 
 /**
  * Returns true if the given URL path should bypass authentication.
- * Matching is prefix-based, so "/api/v1/health" also covers "/api/v1/health/live".
+ *
+ * Matching rules (in priority order):
+ *   1. Exact match   — "/api/v5/health" matches only "/api/v5/health"
+ *   2. Sub-path      — "/api/v5/health" also covers "/api/v5/health/live"
+ *   3. Query string  — "/api/v5/health" also covers "/api/v5/health?check=1"
+ *
+ * A pure `startsWith` would incorrectly exclude "/api/v5/healthdata" when the
+ * exclusion list contains "/api/v5/health" — that path-prefix collision is an
+ * auth bypass. The checks below require a path separator or query delimiter
+ * after the prefix, preventing unintended exclusions.
  */
 export function isExcluded(path: string, excludePaths: string[]): boolean {
-  return excludePaths.some((prefix) => path.startsWith(prefix));
+  return excludePaths.some(
+    (prefix) =>
+      path === prefix ||
+      path.startsWith(prefix + '/') ||
+      path.startsWith(prefix + '?'),
+  );
 }
 
 /**

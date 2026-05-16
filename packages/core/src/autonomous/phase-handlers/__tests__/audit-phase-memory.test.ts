@@ -18,6 +18,7 @@ import {
 } from '../audit-phase.js';
 import type { PhaseContext } from '../../phase-scheduler.js';
 import type { CycleMemoryEntry, MemoryEntryType } from '../../../memory/types.js';
+import { loadKnowledgeEntities } from '../../../knowledge/persistence.js';
 
 // ---------------------------------------------------------------------------
 // Temp dir lifecycle
@@ -214,5 +215,79 @@ describe('runAuditPhase — memoriesInjected in audit.json', () => {
     await runAuditPhase(ctx);
 
     expect(capturedTask()).not.toContain('Past mistakes and learnings');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runAuditPhase — knowledge graph write
+//
+// Verifies that writeKnowledgeEntry() is called after the agent run so that
+// the /knowledge page is populated from audit output across cycles.
+// ---------------------------------------------------------------------------
+
+describe('runAuditPhase — knowledge graph write', () => {
+  it('writes entities.jsonl when the agent returns findings', async () => {
+    const { ctx } = makeCtx('cycle-kg-audit');
+
+    await runAuditPhase(ctx);
+
+    const entities = loadKnowledgeEntities(tmpRoot);
+    expect(entities.length).toBeGreaterThan(0);
+  });
+
+  it('persisted entities carry source="audit"', async () => {
+    const { ctx } = makeCtx('cycle-kg-source');
+
+    await runAuditPhase(ctx);
+
+    const entities = loadKnowledgeEntities(tmpRoot);
+    expect(entities.every(e => e.properties.source === 'audit')).toBe(true);
+  });
+
+  it('persisted entities carry cycleId matching the phase context', async () => {
+    const cycleId = 'cycle-kg-cycleid';
+    const { ctx } = makeCtx(cycleId);
+
+    await runAuditPhase(ctx);
+
+    const entities = loadKnowledgeEntities(tmpRoot);
+    expect(entities.length).toBeGreaterThan(0);
+    expect(entities.every(e => e.properties.cycleId === cycleId)).toBe(true);
+  });
+
+  it('does NOT write entities.jsonl when the agent returns empty output', async () => {
+    const ctx: PhaseContext = {
+      projectRoot: tmpRoot,
+      cycleId: 'cycle-kg-empty',
+      sprintId: 'sprint-empty',
+      sprintVersion: '9.0.0',
+      adapter: undefined as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+      bus: {
+        publish: () => undefined,
+        subscribe: () => () => undefined,
+      } as unknown as PhaseContext['bus'],
+      runtime: {
+        run: async () => ({ output: '', costUsd: 0 }),
+      } as unknown as PhaseContext['runtime'],
+    };
+
+    await runAuditPhase(ctx);
+
+    const entities = loadKnowledgeEntities(tmpRoot);
+    expect(entities).toHaveLength(0);
+  });
+
+  it('knowledge entities survive multiple audit phase runs (accumulate)', async () => {
+    const { ctx: ctx1 } = makeCtx('cycle-kg-acc-1');
+    const { ctx: ctx2 } = makeCtx('cycle-kg-acc-2');
+
+    await runAuditPhase(ctx1);
+    const countAfterFirst = loadKnowledgeEntities(tmpRoot).length;
+
+    await runAuditPhase(ctx2);
+    const countAfterSecond = loadKnowledgeEntities(tmpRoot).length;
+
+    // Each run should append — second run has at least as many as the first.
+    expect(countAfterSecond).toBeGreaterThanOrEqual(countAfterFirst);
   });
 });
