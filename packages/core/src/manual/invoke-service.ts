@@ -55,9 +55,12 @@ export async function invokeAgentRun(
 
   try {
     const { adapter } = await manager.getOrCreateDefaultWorkspace();
+    // Pass the adapter so any pending DMs for this agent are spliced into the
+    // system prompt before invocation (ADR 0001 — Phase 2 comms wiring).
     const config = await loadAgentConfig(
       selectedAgent.agentId,
       join(options.projectRoot, '.agentforge'),
+      { adapter },
     );
 
     if (!config) {
