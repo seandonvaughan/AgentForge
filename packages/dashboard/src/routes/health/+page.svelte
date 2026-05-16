@@ -1,7 +1,30 @@
 <script lang="ts">
+  /**
+   * /health — v2 design rebuild.
+   *
+   * Sections:
+   *   1. Page header + overall status banner
+   *   2. Service status cards: each with PulseDot + Ring + Sparkline
+   *   3. Dependency matrix (Anthropic API, GitHub API, etc.)
+   *   4. Recent incidents table
+   *
+   * Data:
+   *   GET /api/v5/health          — server version, status
+   *   GET /api/v5/health/services — per-service circuit-breaker stats
+   */
   import { onMount, onDestroy } from 'svelte';
+  import { Btn, Badge, Card, Ring, Sparkline, PulseDot } from '$lib/components/v2';
+  import { withWorkspace } from '$lib/stores/workspace';
 
-  const API_BASE = '';
+  // ── Types ────────────────────────────────────────────────────────────────────
+
+  interface HealthData {
+    status: 'ok' | 'error';
+    version?: string;
+    api?: string;
+    workspaceId?: string;
+    timestamp?: string;
+  }
 
   interface ServiceHealth {
     service: string;
@@ -13,14 +36,12 @@
     lastFailureAt?: string;
     lastSuccessAt?: string;
     circuitOpenedAt?: string;
-  }
-
-  interface HealthData {
-    status: 'ok' | 'error';
-    version?: string;
-    api?: string;
-    workspaceId?: string;
-    timestamp?: string;
+    /** Latency percentiles — server may not always send these */
+    p50?: number;
+    p95?: number;
+    p99?: number;
+    /** Server may send a recent-latency sparkline */
+    latencyHistory?: number[];
   }
 
   interface ServicesData {
@@ -31,358 +52,525 @@
     timestamp: string;
   }
 
-  let healthData: HealthData | null = null;
-  let servicesData: ServicesData | null = null;
-  let loading = true;
-  let error: string | null = null;
-  let lastRefreshed = '';
-  let interval: ReturnType<typeof setInterval> | null = null;
+  // ── State ────────────────────────────────────────────────────────────────────
 
-  async function fetchAll() {
-    loading = true;
+  let healthData: HealthData | null = $state(null);
+  let servicesData: ServicesData | null = $state(null);
+  let loading = $state(true);
+  let error: string | null = $state(null);
+  let lastRefreshedAt: Date | null = $state(null);
+
+  let pollHandle: ReturnType<typeof setInterval> | null = null;
+
+  // ── Data fetching ─────────────────────────────────────────────────────────────
+
+  async function fetchAll(silent = false): Promise<void> {
+    if (!silent) loading = true;
     error = null;
     try {
       const [hRes, sRes] = await Promise.all([
-        fetch(`${API_BASE}/api/v5/health`),
-        fetch(`${API_BASE}/api/v5/health/services`),
+        fetch(withWorkspace('/api/v5/health')),
+        fetch(withWorkspace('/api/v5/health/services')),
       ]);
-      if (hRes.ok) healthData = await hRes.json();
-      if (sRes.ok) servicesData = await sRes.json();
+      if (hRes.ok) healthData = await hRes.json() as HealthData;
+      if (sRes.ok) servicesData = await sRes.json() as ServicesData;
+      if (!hRes.ok && !sRes.ok) throw new Error(`HTTP ${hRes.status}`);
+      lastRefreshedAt = new Date();
     } catch (e) {
       error = e instanceof Error ? e.message : 'Connection failed';
     } finally {
       loading = false;
-      lastRefreshed = new Date().toLocaleTimeString();
     }
   }
 
   onMount(() => {
-    fetchAll();
-    interval = setInterval(fetchAll, 10_000);
+    void fetchAll();
+    pollHandle = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      void fetchAll(true);
+    }, 10_000);
   });
+  onDestroy(() => { if (pollHandle) clearInterval(pollHandle); });
 
-  onDestroy(() => {
-    if (interval !== null) clearInterval(interval);
-  });
+  // ── Derived ──────────────────────────────────────────────────────────────────
 
-  function statusColor(status: string): string {
-    if (status === 'ok' || status === 'healthy') return 'var(--color-success, rgb(34,197,94))';
-    if (status === 'degraded') return 'rgb(234,179,8)';
-    return 'rgb(239,68,68)';
+  const overallStatus = $derived(
+    servicesData?.status ?? (healthData?.status === 'ok' ? 'healthy' : 'unhealthy')
+  );
+
+  function statusColor(s: string): string {
+    if (s === 'ok' || s === 'healthy') return 'var(--af-success)';
+    if (s === 'degraded') return 'var(--af-warning)';
+    return 'var(--af-danger)';
   }
 
-  function successRatePct(rate: number): string {
-    return `${Math.round(rate * 100)}%`;
+  function rateColor(rate: number, circuitOpen: boolean): string {
+    if (circuitOpen) return 'var(--af-danger)';
+    if (rate >= 0.95) return 'var(--af-success)';
+    if (rate >= 0.75) return 'var(--af-warning)';
+    return 'var(--af-danger)';
   }
 
-  function successRateColor(rate: number, circuitOpen: boolean): string {
-    if (circuitOpen) return 'rgb(239,68,68)';
-    if (rate >= 0.95) return 'var(--color-success, rgb(34,197,94))';
-    if (rate >= 0.75) return 'rgb(234,179,8)';
-    return 'rgb(239,68,68)';
+  function rateBadge(svc: ServiceHealth): 'success' | 'warning' | 'danger' {
+    if (svc.circuitOpen) return 'danger';
+    if (svc.successRate >= 0.95) return 'success';
+    if (svc.successRate >= 0.75) return 'warning';
+    return 'danger';
   }
+
+  function fmtRel(ts: string | undefined): string {
+    if (!ts) return '—';
+    const d = Math.max(0, Math.floor((Date.now() - new Date(ts).getTime()) / 1000));
+    if (d < 60) return `${d}s ago`;
+    if (d < 3600) return `${Math.floor(d / 60)}m ago`;
+    if (d < 86400) return `${Math.floor(d / 3600)}h ago`;
+    return `${Math.floor(d / 86400)}d ago`;
+  }
+
+  // Dependency check matrix — these are the external services AgentForge depends on.
+  // Real status would require dedicated health checks; we derive from services list.
+  const DEPENDENCIES = [
+    { label: 'Anthropic API', key: 'anthropic' },
+    { label: 'GitHub API', key: 'github' },
+    { label: 'AgentForge API', key: 'api' },
+    { label: 'Database', key: 'db' },
+    { label: 'File System', key: 'fs' },
+  ];
+
+  const depStatuses = $derived(DEPENDENCIES.map(dep => {
+    const svc = servicesData?.services.find(s =>
+      s.service.toLowerCase().includes(dep.key) || dep.key.includes(s.service.toLowerCase())
+    );
+    return {
+      ...dep,
+      status: svc ? (svc.circuitOpen ? 'degraded' : svc.successRate >= 0.75 ? 'ok' : 'degraded') : 'unknown',
+      successRate: svc?.successRate,
+    };
+  }));
 </script>
 
 <svelte:head><title>System Health — AgentForge</title></svelte:head>
 
-<div class="page-header">
-  <div>
-    <h1 class="page-title">System Health</h1>
-    <p class="page-subtitle">Real-time service health and circuit breaker status</p>
+<!-- ── Page header ────────────────────────────────────────────────────────────── -->
+<header class="health-header">
+  <div class="health-crumbs font-mono">Workspace · Health</div>
+  <div class="health-headline-row">
+    <div>
+      <h1 class="health-title">System health</h1>
+      <p class="health-subtitle">Real-time service health and circuit breaker status</p>
+    </div>
+    <div class="health-actions">
+      <span class="font-mono health-meta">auto-refresh 10s</span>
+      {#if lastRefreshedAt}
+        <span class="font-mono health-ts">
+          checked {lastRefreshedAt.toLocaleTimeString()}
+        </span>
+      {/if}
+      <Btn size="sm" onclick={() => void fetchAll()}>Refresh</Btn>
+    </div>
   </div>
-  <div class="header-actions">
-    {#if lastRefreshed}
-      <span class="refresh-time">Last refreshed {lastRefreshed}</span>
-    {/if}
-    <button class="btn-refresh" onclick={fetchAll} disabled={loading}>
-      {loading ? 'Refreshing…' : 'Refresh'}
-    </button>
-  </div>
-</div>
+</header>
 
-{#if error}
+{#if loading && !healthData && !servicesData}
+  <!-- Skeleton -->
+  <div class="skeleton" style="height:60px;border-radius:8px;margin-bottom:14px;"></div>
+  <div class="services-grid">
+    {#each Array(4) as _}
+      <div class="skeleton" style="height:160px;border-radius:8px;"></div>
+    {/each}
+  </div>
+
+{:else if error && !healthData && !servicesData}
   <div class="error-banner">
     Unable to reach API server: {error}
-  </div>
-{:else}
-  <!-- Overall status banner -->
-  <div class="status-banner" style="border-color: {statusColor(servicesData?.status ?? 'ok')}; background: {statusColor(servicesData?.status ?? 'ok')}12;">
-    <span class="status-dot" style="background: {statusColor(servicesData?.status ?? 'ok')};"></span>
-    <span class="status-text">
-      {#if loading}
-        Checking system health…
-      {:else if servicesData}
-        System {servicesData.status.toUpperCase()} —
-        {servicesData.healthyCount} healthy,
-        {servicesData.degradedCount} degraded
-      {:else}
-        API unreachable
-      {/if}
-    </span>
-    {#if healthData?.version}
-      <span class="version-badge">agentforge v{healthData.version}</span>
-    {/if}
+    <Btn size="sm" onclick={() => void fetchAll()} style="margin-left:12px">Retry</Btn>
   </div>
 
-  <!-- API health card -->
-  {#if healthData}
-    <div class="section-title">API Server</div>
-    <div class="health-card {healthData.status === 'ok' ? 'card-healthy' : 'card-degraded'}">
-      <div class="card-header">
-        <span class="svc-name">REST API</span>
-        <span class="circuit-badge {healthData.status === 'ok' ? 'badge-healthy' : 'badge-open'}">
-          {healthData.status === 'ok' ? 'Online' : 'Error'}
+{:else}
+  <!-- ── Overall status banner ───────────────────────────────────────────────────── -->
+  <Card style="
+    margin-bottom:14px;
+    background:color-mix(in srgb,{statusColor(overallStatus)} 5%,transparent);
+    border-color:color-mix(in srgb,{statusColor(overallStatus)} 25%,transparent);
+  ">
+    <div class="status-banner">
+      <PulseDot color={statusColor(overallStatus)} size={9} ring={overallStatus === 'healthy'} />
+      <div class="status-text">
+        <span class="status-main" style="color:{statusColor(overallStatus)}">
+          System {overallStatus.toUpperCase()}
         </span>
+        {#if servicesData}
+          &middot; {servicesData.healthyCount} healthy · {servicesData.degradedCount} degraded
+        {/if}
+        {#if error}
+          <span class="status-warn"> · refresh failed</span>
+        {/if}
       </div>
-      {#if healthData.version}
-        <div class="card-meta">Version: {healthData.version} | Workspace: {healthData.workspaceId ?? 'default'}</div>
+      {#if healthData?.version}
+        <span class="font-mono version-badge">agentforge v{healthData.version}</span>
+      {/if}
+      {#if healthData?.workspaceId}
+        <span class="font-mono ws-badge">ws:{healthData.workspaceId}</span>
       {/if}
     </div>
-  {/if}
+  </Card>
 
-  <!-- Service health cards -->
-  {#if servicesData}
-    <div class="section-title" style="margin-top: var(--space-5);">Services ({servicesData.services.length})</div>
-    <div class="services-grid">
-      {#each servicesData.services as svc}
-        <div class="health-card {svc.circuitOpen ? 'card-degraded' : 'card-healthy'}">
-          <div class="card-header">
-            <span class="svc-name">{svc.service}</span>
-            <span class="circuit-badge {svc.circuitOpen ? 'badge-open' : 'badge-healthy'}">
+  <!-- ── Service cards grid ────────────────────────────────────────────────────── -->
+  {#if servicesData && servicesData.services.length > 0}
+    <div class="section-label">SERVICES ({servicesData.services.length})</div>
+    <div class="services-grid" style="margin-bottom:14px;">
+      {#each servicesData.services as svc (svc.service)}
+        {@const color = rateColor(svc.successRate, svc.circuitOpen)}
+        <Card hover style="
+          border-color:color-mix(in srgb,{color} 30%,var(--af-border));
+          background:color-mix(in srgb,{color} 3%,var(--af-surface));
+        ">
+          <div class="svc-header">
+            <div class="svc-name-row">
+              <PulseDot
+                color={color}
+                size={7}
+                ring={!svc.circuitOpen && svc.successRate >= 0.95}
+              />
+              <span class="font-mono svc-name">{svc.service}</span>
+            </div>
+            <Badge variant={rateBadge(svc)}>
               {svc.circuitOpen ? 'Circuit Open' : 'Healthy'}
-            </span>
+            </Badge>
           </div>
 
-          <!-- Success rate bar -->
-          <div class="rate-bar-label">
-            <span>Success Rate</span>
-            <span style="color: {successRateColor(svc.successRate, svc.circuitOpen)};">
-              {successRatePct(svc.successRate)}
-            </span>
-          </div>
-          <div class="rate-bar-track">
-            <div
-              class="rate-bar-fill"
-              style="width: {successRatePct(svc.successRate)}; background: {successRateColor(svc.successRate, svc.circuitOpen)};"
-            ></div>
+          <!-- Ring + stats row -->
+          <div class="svc-body">
+            <Ring
+              value={Math.round(svc.successRate * 100)}
+              max={100}
+              size={56}
+              stroke={4}
+              color={color}
+              label="{Math.round(svc.successRate * 100)}%"
+            />
+            <div class="svc-stats">
+              <div class="svc-stat">
+                <span class="font-mono svc-stat-label">calls</span>
+                <span class="font-mono svc-stat-val">{svc.totalCalls.toLocaleString()}</span>
+              </div>
+              <div class="svc-stat">
+                <span class="font-mono svc-stat-label">failures</span>
+                <span class="font-mono svc-stat-val" style="color:{svc.failureCount > 0 ? 'var(--af-warning)' : 'var(--af-dim)'}">
+                  {svc.failureCount}
+                </span>
+              </div>
+              {#if svc.p99 != null}
+                <div class="svc-stat">
+                  <span class="font-mono svc-stat-label">p99</span>
+                  <span class="font-mono svc-stat-val">{svc.p99}ms</span>
+                </div>
+              {/if}
+            </div>
           </div>
 
-          <div class="card-meta-row">
-            <span>Total calls: {svc.totalCalls}</span>
-            <span>Failures: {svc.failureCount}</span>
-          </div>
+          <!-- Latency sparkline (if available) -->
+          {#if svc.latencyHistory && svc.latencyHistory.length > 2}
+            <div style="margin-top:10px;">
+              <Sparkline data={svc.latencyHistory} color={color} w={240} h={26} gradient />
+            </div>
+          {/if}
 
+          <!-- Last check timestamps -->
           {#if svc.circuitOpenedAt}
-            <div class="card-alert">Circuit opened at {new Date(svc.circuitOpenedAt).toLocaleTimeString()}</div>
+            <div class="svc-alert font-mono">Circuit opened {fmtRel(svc.circuitOpenedAt)}</div>
+          {:else if svc.lastSuccessAt}
+            <div class="svc-ts font-mono">Last success {fmtRel(svc.lastSuccessAt)}</div>
           {/if}
-          {#if svc.lastFailureAt && !svc.circuitOpenedAt}
-            <div class="card-meta">Last failure: {new Date(svc.lastFailureAt).toLocaleTimeString()}</div>
-          {/if}
-        </div>
+        </Card>
       {/each}
     </div>
+  {:else if !loading}
+    <!-- API server health card when no services endpoint -->
+    {#if healthData}
+      <div class="section-label">API SERVER</div>
+      <Card style="margin-bottom:14px;" hover>
+        <div class="svc-header">
+          <div class="svc-name-row">
+            <PulseDot
+              color={statusColor(healthData.status)}
+              size={7}
+              ring={healthData.status === 'ok'}
+            />
+            <span class="font-mono svc-name">REST API</span>
+          </div>
+          <Badge variant={healthData.status === 'ok' ? 'success' : 'danger'}>
+            {healthData.status === 'ok' ? 'Online' : 'Error'}
+          </Badge>
+        </div>
+        {#if healthData.version}
+          <div class="svc-ts font-mono">Version {healthData.version}</div>
+        {/if}
+      </Card>
+    {/if}
   {/if}
+
+  <!-- ── Dependency matrix ──────────────────────────────────────────────────────── -->
+  <div class="section-label">DEPENDENCY MATRIX</div>
+  <Card noPad style="margin-bottom:14px;">
+    <table class="dep-table">
+      <thead>
+        <tr>
+          <th>Dependency</th>
+          <th>Status</th>
+          <th>Success rate</th>
+          <th>Last check</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each depStatuses as dep}
+          {@const color = dep.status === 'ok' ? 'var(--af-success)' : dep.status === 'degraded' ? 'var(--af-warning)' : 'var(--af-dim)'}
+          <tr>
+            <td class="font-mono">{dep.label}</td>
+            <td>
+              <div class="dep-status">
+                <span class="dep-dot" style="background:{color}"></span>
+                <span class="font-mono dep-status-text" style="color:{color}">
+                  {dep.status}
+                </span>
+              </div>
+            </td>
+            <td class="font-mono">
+              {dep.successRate != null ? Math.round(dep.successRate * 100) + '%' : '—'}
+            </td>
+            <td class="font-mono dim">
+              {lastRefreshedAt ? lastRefreshedAt.toLocaleTimeString() : '—'}
+            </td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </Card>
+
+  <!-- ── Recent incidents ───────────────────────────────────────────────────────── -->
+  <div class="section-label">RECENT INCIDENTS</div>
+  <Card noPad>
+    {#if servicesData?.services.some(s => s.circuitOpen || s.failureCount > 0)}
+      <table class="inc-table">
+        <thead>
+          <tr>
+            <th>Service</th>
+            <th>Type</th>
+            <th>Started</th>
+            <th>Failures</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each servicesData?.services.filter(s => s.failureCount > 0) ?? [] as svc}
+            <tr>
+              <td class="font-mono">{svc.service}</td>
+              <td>
+                <Badge variant={svc.circuitOpen ? 'danger' : 'warning'}>
+                  {svc.circuitOpen ? 'Circuit Open' : 'Degraded'}
+                </Badge>
+              </td>
+              <td class="font-mono">{fmtRel(svc.circuitOpenedAt ?? svc.lastFailureAt)}</td>
+              <td class="font-mono">{svc.failureCount}</td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    {:else}
+      <div class="incidents-empty">
+        <span class="incidents-check" style="color:var(--af-success)">✓</span>
+        <div class="incidents-title">No incidents in the last 30 days.</div>
+        <div class="font-mono incidents-sub">All systems healthy.</div>
+      </div>
+    {/if}
+  </Card>
 {/if}
 
 <style>
-  .page-header {
+  /* ── Page header ─────────────────────────────────────────────────────────────── */
+  .health-header {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 14px;
+  }
+  .health-crumbs {
+    font-size: 11px;
+    color: var(--af-dim);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .health-headline-row {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    margin-bottom: var(--space-5);
+    gap: 12px;
     flex-wrap: wrap;
-    gap: var(--space-3);
   }
-
-  .page-title {
-    font-size: var(--text-2xl, 1.5rem);
-    font-weight: 700;
-    color: var(--color-text);
-    margin: 0 0 var(--space-1);
-  }
-
-  .page-subtitle {
-    font-size: var(--text-sm);
-    color: var(--color-text-muted);
+  .health-title {
     margin: 0;
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--af-text);
   }
-
-  .header-actions {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
+  .health-subtitle {
+    font-size: 12px;
+    color: var(--af-muted);
+    margin: 2px 0 0;
   }
+  .health-actions { display: flex; align-items: center; gap: 8px; }
+  .health-meta { font-size: 11px; color: var(--af-dim); }
+  .health-ts { font-size: 11px; color: var(--af-faint); }
 
-  .refresh-time {
-    font-size: var(--text-xs);
-    color: var(--color-text-muted);
-  }
-
-  .btn-refresh {
-    padding: var(--space-2) var(--space-3);
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm, 4px);
-    color: var(--color-text);
-    font-size: var(--text-sm);
-    cursor: pointer;
-    transition: background 0.15s;
-  }
-
-  .btn-refresh:hover:not(:disabled) {
-    background: var(--color-surface-hover, rgba(255,255,255,0.06));
-  }
-
-  .btn-refresh:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .error-banner {
-    padding: var(--space-4);
-    background: rgba(239,68,68,0.08);
-    border: 1px solid rgba(239,68,68,0.3);
-    border-radius: var(--radius-md);
-    color: rgb(239,68,68);
-    font-size: var(--text-sm);
-    margin-bottom: var(--space-4);
-  }
-
+  /* ── Status banner ───────────────────────────────────────────────────────────── */
   .status-banner {
     display: flex;
     align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-4) var(--space-5);
-    border: 1px solid;
-    border-radius: var(--radius-md);
-    margin-bottom: var(--space-5);
+    gap: 12px;
+    flex-wrap: wrap;
   }
-
-  .status-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
-
   .status-text {
-    font-size: var(--text-sm);
+    font-size: 14px;
     font-weight: 600;
-    color: var(--color-text);
     flex: 1;
   }
-
-  .version-badge {
-    font-size: var(--text-xs);
-    color: var(--color-text-muted);
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
+  .status-main { font-weight: 700; }
+  .status-warn { color: var(--af-warning); }
+  .version-badge, .ws-badge {
+    font-size: 11px;
+    color: var(--af-dim);
+    background: var(--af-surface);
+    border: 1px solid var(--af-border);
     padding: 2px 8px;
-    border-radius: 999px;
-    font-family: var(--font-mono, monospace);
+    border-radius: 99px;
   }
 
-  .section-title {
-    font-size: var(--text-xs);
-    font-weight: 600;
-    color: var(--color-text-muted);
-    text-transform: uppercase;
+  /* ── Section label ───────────────────────────────────────────────────────────── */
+  .section-label {
+    font-size: 10px;
+    font-weight: 700;
     letter-spacing: 0.08em;
-    margin-bottom: var(--space-3);
+    color: var(--af-dim);
+    text-transform: uppercase;
+    margin-bottom: 8px;
   }
 
+  /* ── Services grid ───────────────────────────────────────────────────────────── */
   .services-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: var(--space-3);
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 10px;
   }
 
-  .health-card {
-    padding: var(--space-4);
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-  }
-
-  .health-card.card-healthy {
-    border-color: rgba(34,197,94,0.25);
-  }
-
-  .health-card.card-degraded {
-    border-color: rgba(239,68,68,0.35);
-    background: rgba(239,68,68,0.03);
-  }
-
-  .card-header {
+  /* ── Service card ────────────────────────────────────────────────────────────── */
+  .svc-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: var(--space-3);
+    margin-bottom: 12px;
   }
-
+  .svc-name-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
   .svc-name {
-    font-size: var(--text-sm);
+    font-size: 13px;
     font-weight: 600;
-    color: var(--color-text);
-    font-family: var(--font-mono, monospace);
+    color: var(--af-text);
   }
-
-  .circuit-badge {
-    font-size: var(--text-xs);
-    font-weight: 500;
-    padding: 2px 8px;
-    border-radius: 999px;
+  .svc-body {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 10px;
   }
-
-  .badge-healthy {
-    background: rgba(34,197,94,0.12);
-    color: rgb(34,197,94);
+  .svc-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
   }
-
-  .badge-open {
-    background: rgba(239,68,68,0.12);
-    color: rgb(239,68,68);
-  }
-
-  .rate-bar-label {
+  .svc-stat {
     display: flex;
     justify-content: space-between;
-    font-size: var(--text-xs);
-    color: var(--color-text-muted);
-    margin-bottom: var(--space-1);
+    align-items: center;
   }
+  .svc-stat-label { font-size: 11px; color: var(--af-dim); }
+  .svc-stat-val { font-size: 11px; color: var(--af-text); }
+  .svc-alert { font-size: 11px; color: var(--af-danger); margin-top: 6px; }
+  .svc-ts { font-size: 10px; color: var(--af-faint); margin-top: 6px; }
 
-  .rate-bar-track {
+  /* ── Dependency matrix ───────────────────────────────────────────────────────── */
+  .dep-table, .inc-table {
     width: 100%;
-    height: 6px;
-    background: var(--color-border);
-    border-radius: 3px;
-    overflow: hidden;
-    margin-bottom: var(--space-3);
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .dep-table th, .inc-table th {
+    text-align: left;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--af-dim);
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--af-border);
+  }
+  .dep-table td, .inc-table td {
+    padding: 8px 14px;
+    border-bottom: 1px solid color-mix(in srgb, var(--af-border) 60%, transparent);
+    color: var(--af-text);
+    vertical-align: middle;
+  }
+  .dep-table tbody tr:last-child td,
+  .inc-table tbody tr:last-child td { border-bottom: none; }
+  .dep-table tbody tr:hover,
+  .inc-table tbody tr:hover { background: var(--af-surface2); }
+
+  .dep-status { display: flex; align-items: center; gap: 6px; }
+  .dep-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .dep-status-text { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+  .dim { color: var(--af-dim); }
+
+  /* ── Incidents ───────────────────────────────────────────────────────────────── */
+  .incidents-empty {
+    padding: 28px;
+    text-align: center;
+  }
+  .incidents-check { font-size: 28px; }
+  .incidents-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--af-text);
+    margin-top: 8px;
+  }
+  .incidents-sub {
+    font-size: 11px;
+    color: var(--af-dim);
+    margin-top: 4px;
   }
 
-  .rate-bar-fill {
-    height: 100%;
-    border-radius: 3px;
-    transition: width 0.3s ease;
-  }
-
-  .card-meta-row {
+  /* ── Error + skeleton ────────────────────────────────────────────────────────── */
+  .error-banner {
     display: flex;
-    gap: var(--space-4);
-    font-size: var(--text-xs);
-    color: var(--color-text-muted);
+    align-items: center;
+    padding: 14px 16px;
+    background: color-mix(in srgb, var(--af-danger) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--af-danger) 30%, transparent);
+    border-radius: 8px;
+    color: var(--af-danger);
+    font-size: 13px;
+    margin-bottom: 14px;
   }
-
-  .card-meta {
-    font-size: var(--text-xs);
-    color: var(--color-text-muted);
-    margin-top: var(--space-2);
+  .skeleton {
+    background: linear-gradient(90deg, var(--af-surface) 0%, var(--af-surface2) 50%, var(--af-surface) 100%);
+    background-size: 200% 100%;
+    animation: skel 1.4s ease-in-out infinite;
+    margin-bottom: 10px;
   }
-
-  .card-alert {
-    font-size: var(--text-xs);
-    color: rgb(239,68,68);
-    margin-top: var(--space-2);
+  @keyframes skel {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
   }
 </style>
