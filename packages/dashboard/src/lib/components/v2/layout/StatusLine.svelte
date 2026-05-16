@@ -21,8 +21,10 @@
     cyclesMonth: number;
     openBranches: number;
     pendingApprovals: number;
+    runningCycles?: number;
     todaySpend: number;
-    load: string[];
+    /** Endpoint returns `'idle' | 'busy' | 'overloaded'`; legacy fallback used [] */
+    load: 'idle' | 'busy' | 'overloaded' | '';
   }
 
   // ── State ──────────────────────────────────────────────────────────────
@@ -69,7 +71,21 @@
     try {
       const res = await fetch('/api/v5/counters');
       if (res.ok) {
-        counters = await res.json() as Counters;
+        // Normalize the endpoint's shape (todaySpendUsd, no cyclesDay/Week/Month,
+        // agents not provided) into the Counters shape StatusLine renders.
+        const raw = await res.json() as Record<string, unknown>;
+        counters = {
+          agents: typeof raw['agentsActive'] === 'number' ? raw['agentsActive'] as number : 0,
+          agentsActive: typeof raw['agentsActive'] === 'number' ? raw['agentsActive'] as number : 0,
+          cyclesDay: 0,
+          cyclesWeek: 0,
+          cyclesMonth: 0,
+          openBranches: typeof raw['openBranches'] === 'number' ? raw['openBranches'] as number : 0,
+          pendingApprovals: typeof raw['pendingApprovals'] === 'number' ? raw['pendingApprovals'] as number : 0,
+          runningCycles: typeof raw['runningCycles'] === 'number' ? raw['runningCycles'] as number : 0,
+          todaySpend: typeof raw['todaySpendUsd'] === 'number' ? raw['todaySpendUsd'] as number : 0,
+          load: (raw['load'] === 'idle' || raw['load'] === 'busy' || raw['load'] === 'overloaded') ? raw['load'] : '',
+        };
         return;
       }
     } catch { /* fall through to derived path */ }
@@ -114,7 +130,8 @@
         openBranches: 0,
         pendingApprovals: 0,
         todaySpend: 0,
-        load: [],
+        runningCycles: 0,
+        load: '',
       };
     } catch {
       // Leave counters as null — render gracefully
@@ -210,10 +227,10 @@
         </span>
       {/if}
 
-      {#if k.load.length > 0}
+      {#if k.load}
         <span class="counter">
           <span class="counter-label">load</span>
-          <span class="counter-value">{k.load.join(' ')}</span>
+          <span class="counter-value" style="color:{k.load === 'overloaded' ? 'var(--af-danger)' : k.load === 'busy' ? 'var(--af-warning)' : 'var(--af-muted)'};">{k.load}</span>
         </span>
       {/if}
     {/if}
