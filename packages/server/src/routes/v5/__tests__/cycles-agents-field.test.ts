@@ -1,0 +1,151 @@
+/**
+ * Fix 2: GET /api/v5/cycles?limit=N should include agents: string[] per row.
+ *
+ * The `summarizeCycle` function was updated to extract agent ids from
+ * phases/*.json agentRuns arrays. This test asserts:
+ *   - agents field is always present (empty array when no phase data)
+ *   - agents is populated from agentRuns in phase files
+ *   - agents is deduplicated (same agent appearing in multiple phases once)
+ *   - agents is present in both the cycle.json path and the in-progress path
+ */
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import Fastify, { type FastifyInstance } from 'fastify';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+
+vi.mock('../../../lib/cycle-sessions.js', () => ({
+  get: () => null,
+  list: () => [],
+  reap: () => ({ reaped: 0, stillRunning: 0 }),
+  startReaper: () => ({ stop: () => {} }),
+  register: () => {},
+  markTerminal: () => {},
+  stop: async () => ({ ok: true, status: 'killed', message: 'mocked' }),
+  isPidAlive: () => false,
+}));
+
+import { cyclesRoutes } from '../cycles.js';
+
+let tmpRoot: string;
+let app: FastifyInstance;
+
+beforeEach(async () => {
+  tmpRoot = mkdtempSync(join(tmpdir(), 'agentforge-cycles-agents-'));
+  mkdirSync(join(tmpRoot, '.agentforge/cycles'), { recursive: true });
+  app = Fastify({ logger: false });
+  await cyclesRoutes(app, { projectRoot: tmpRoot });
+});
+
+afterEach(async () => {
+  await app.close();
+  rmSync(tmpRoot, { recursive: true, force: true });
+});
+
+function makeCycleDir(id: string): string {
+  const dir = join(tmpRoot, '.agentforge/cycles', id);
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function writeCycleJson(id: string, dir: string, extra: Record<string, unknown> = {}): void {
+  writeFileSync(
+    join(dir, 'cycle.json'),
+    JSON.stringify({ cycleId: id, stage: 'completed', ...extra }),
+  );
+}
+
+function writePhase(dir: string, phase: string, agentRuns: Array<{ agentId: string }>): void {
+  mkdirSync(join(dir, 'phases'), { recursive: true });
+  writeFileSync(
+    join(dir, 'phases', `${phase}.json`),
+    JSON.stringify({ costUsd: 0.1, agentRuns }),
+  );
+}
+
+describe('GET /api/v5/cycles — Fix 2: agents field', () => {
+  it('includes agents: [] when no phase files exist (terminal cycle)', async () => {
+    const id = 'aaaaaaaa-0000-0000-0000-000000000001';
+    const dir = makeCycleDir(id);
+    writeCycleJson(id, dir);
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/cycles' });
+    expect(res.statusCode).toBe(200);
+    const rows = res.json().cycles as Array<Record<string, unknown>>;
+    const row = rows.find((r) => r['cycleId'] === id);
+    expect(row).toBeDefined();
+    expect(Array.isArray(row!['agents'])).toBe(true);
+    expect(row!['agents']).toEqual([]);
+  });
+
+  it('populates agents from agentRuns in a single phase file', async () => {
+    const id = 'aaaaaaaa-0000-0000-0000-000000000002';
+    const dir = makeCycleDir(id);
+    writeCycleJson(id, dir);
+    writePhase(dir, 'execute', [{ agentId: 'backend-dev' }, { agentId: 'frontend-dev' }]);
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/cycles' });
+    const rows = res.json().cycles as Array<Record<string, unknown>>;
+    const row = rows.find((r) => r['cycleId'] === id);
+    expect(row).toBeDefined();
+    const agents = row!['agents'] as string[];
+    expect(agents).toContain('backend-dev');
+    expect(agents).toContain('frontend-dev');
+    expect(agents).toHaveLength(2);
+  });
+
+  it('deduplicates agents appearing in multiple phases', async () => {
+    const id = 'aaaaaaaa-0000-0000-0000-000000000003';
+    const dir = makeCycleDir(id);
+    writeCycleJson(id, dir);
+    // Same agent in both audit and execute phases
+    writePhase(dir, 'audit', [{ agentId: 'audit-agent' }]);
+    writePhase(dir, 'execute', [{ agentId: 'audit-agent' }, { agentId: 'exec-agent' }]);
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/cycles' });
+    const rows = res.json().cycles as Array<Record<string, unknown>>;
+    const row = rows.find((r) => r['cycleId'] === id);
+    expect(row).toBeDefined();
+    const agents = row!['agents'] as string[];
+    expect(agents).toContain('audit-agent');
+    expect(agents).toContain('exec-agent');
+    // Should only appear once despite being in two phases
+    expect(agents.filter((a) => a === 'audit-agent')).toHaveLength(1);
+    expect(agents).toHaveLength(2);
+  });
+
+  it('includes agents in the in-progress (no cycle.json) path', async () => {
+    const id = 'aaaaaaaa-0000-0000-0000-000000000004';
+    const dir = makeCycleDir(id);
+    // No cycle.json — in-progress path
+    writeFileSync(
+      join(dir, 'events.jsonl'),
+      JSON.stringify({ type: 'phase.start', phase: 'execute', at: new Date().toISOString() }) + '\n',
+    );
+    writePhase(dir, 'execute', [{ agentId: 'exec-agent' }]);
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/cycles' });
+    const rows = res.json().cycles as Array<Record<string, unknown>>;
+    const row = rows.find((r) => r['cycleId'] === id);
+    expect(row).toBeDefined();
+    const agents = row!['agents'] as string[];
+    expect(agents).toContain('exec-agent');
+  });
+
+  it('includes agents: [] in in-progress path when no phases written yet', async () => {
+    const id = 'aaaaaaaa-0000-0000-0000-000000000005';
+    const dir = makeCycleDir(id);
+    writeFileSync(
+      join(dir, 'events.jsonl'),
+      JSON.stringify({ type: 'phase.start', phase: 'plan', at: new Date().toISOString() }) + '\n',
+    );
+    // No phases directory yet
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/cycles' });
+    const rows = res.json().cycles as Array<Record<string, unknown>>;
+    const row = rows.find((r) => r['cycleId'] === id);
+    expect(row).toBeDefined();
+    expect(Array.isArray(row!['agents'])).toBe(true);
+    expect(row!['agents']).toEqual([]);
+  });
+});
