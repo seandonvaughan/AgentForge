@@ -42,6 +42,7 @@ import { countersRoutes } from './counters.js';
 import { autonomousBranchesRoutes } from './autonomous-branches.js';
 import { dmsRoutes } from './dms.js';
 import { inboxRoutes } from './inbox.js';
+import { billingRoutes } from './billing.js';
 
 export interface V5RouteOptions {
   adapter: WorkspaceAdapter;
@@ -294,6 +295,9 @@ export async function registerV5Routes(
     adapter: opts.adapter,
     ...(opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {}),
   });
+
+  // ── Billing scaffolding (plan + invoice stubs; Stripe integration Phase 2) ─
+  await billingRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
 }
 
 function bridgeRuntimeEventToGlobalStream(event: RuntimeEventEnvelope): void {

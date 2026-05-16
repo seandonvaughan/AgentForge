@@ -34,6 +34,7 @@ import { settingsRoutes } from './routes/v5/settings.js';
 import { searchRoutes } from './routes/v5/search.js';
 import { knowledgeRoutes } from './routes/v5/knowledge.js';
 import { auditRoutes } from './routes/v5/audit.js';
+import { billingRoutes } from './routes/v5/billing.js';
 import { sendContainedStaticFile } from './lib/static-files.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -193,6 +194,9 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
     // Audit log — file-backed SQLite, no adapter required.
     // Guard: registerV5Routes already calls auditRoutes in adapter mode.
     await auditRoutes(app, { projectRoot });
+    // Billing scaffolding — no adapter required (reads/writes settings.yaml).
+    // Guard: registerV5Routes registers billingRoutes in adapter mode.
+    await billingRoutes(app, { projectRoot });
   }
 
   // ── Org graph (reads delegation.yaml — no adapter required) ──────────────────
