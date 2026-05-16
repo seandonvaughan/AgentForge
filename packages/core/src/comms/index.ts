@@ -33,3 +33,7 @@ export {
   type InjectAgentDmsOptions,
 } from './inject-agent-dms.js';
 export { InboxBridge, type InboxBridgeOptions } from './inbox-bridge.js';
+export {
+  resolveTeamRecipients,
+  clearTeamRecipientsCache,
+} from './team-recipients.js';

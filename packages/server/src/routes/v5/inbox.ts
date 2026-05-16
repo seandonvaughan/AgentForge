@@ -19,6 +19,7 @@ import {
   getInboxMessage,
   markInboxRead,
   countUnread,
+  resolveTeamRecipients,
   UnsupportedRecipientError,
   type InboxKind,
   type InboxStatus,
@@ -85,6 +86,7 @@ export async function inboxRoutes(app: FastifyInstance, opts: InboxRouteOptions)
       return reply.status(400).send({ error: 'recipients must be a non-empty array' });
     }
 
+    const agentforgeDir = join(projectRoot, '.agentforge');
     try {
       const result = sendInboxMessage(
         adapter,
@@ -96,7 +98,16 @@ export async function inboxRoutes(app: FastifyInstance, opts: InboxRouteOptions)
           ...(body.threadId !== undefined ? { threadId: body.threadId } : {}),
           recipients: body.recipients,
         },
-        opts.bus ? { bus: opts.bus } : {},
+        {
+          ...(opts.bus ? { bus: opts.bus } : {}),
+          // Phase 2: expand `@team-*` aliases against
+          // `.agentforge/agents/*.yaml` + `team.yaml`. The helper returns
+          // `null` for non-team-alias inputs (preserving the v1 `@user`
+          // invariant in the core layer) and an empty array for unknown
+          // aliases (treated as bad-request by `sendInboxMessage`).
+          expandRecipients: (recipient: string) =>
+            resolveTeamRecipients(agentforgeDir, recipient),
+        },
       );
       appendAuditEntry(auditDb, {
         actor: body.sourceType ?? 'system',
