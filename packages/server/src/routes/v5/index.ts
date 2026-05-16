@@ -40,6 +40,8 @@ import { apiKeysRoutes } from './api-keys.js';
 import { membersRoutes } from './members.js';
 import { countersRoutes } from './counters.js';
 import { autonomousBranchesRoutes } from './autonomous-branches.js';
+import { dmsRoutes } from './dms.js';
+import { inboxRoutes } from './inbox.js';
 
 export interface V5RouteOptions {
   adapter: WorkspaceAdapter;
@@ -282,6 +284,16 @@ export async function registerV5Routes(
 
   // ── Autonomous Branch Management (Fix 1, v2 audit) ─────────────────────
   await autonomousBranchesRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
+
+  // ── Agent comms v1: DMs + central inbox (spec v2-agent-comm) ────────────
+  await dmsRoutes(app, {
+    adapter: opts.adapter,
+    ...(opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {}),
+  });
+  await inboxRoutes(app, {
+    adapter: opts.adapter,
+    ...(opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {}),
+  });
 }
 
 function bridgeRuntimeEventToGlobalStream(event: RuntimeEventEnvelope): void {

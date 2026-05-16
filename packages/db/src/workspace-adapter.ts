@@ -292,6 +292,60 @@ export interface KnowledgeRelationshipFilters {
   offset?: number;
 }
 
+// ---------------------------------------------------------------------------
+// Agent comms (v1) — DMs + central inbox
+// See docs/v2-architecture/agent-comm-and-kb-spec.md for the full design.
+// ---------------------------------------------------------------------------
+
+export interface DirectMessageRow {
+  id: string;
+  from_agent: string;
+  to_agent: string;
+  body: string;
+  reply_to_id: string | null;
+  sent_at: string;
+  delivered_at: string | null;
+}
+
+export interface DirectMessageFilters {
+  /** Match either fromAgent OR toAgent — "all DMs touching this agent". */
+  agentId?: string;
+  /** Restrict to messages sent BY this agent. */
+  fromAgent?: string;
+  /** Restrict to messages received BY this agent. */
+  toAgent?: string;
+  /** When true, only include messages whose `delivered_at IS NULL`. */
+  undeliveredOnly?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+export interface InboxMessageRow {
+  id: string;
+  body: string;
+  kind: string;
+  source_id: string | null;
+  source_type: string | null;
+  thread_id: string | null;
+  created_at: string;
+}
+
+export interface InboxRecipientRow {
+  message_id: string;
+  recipient: string;
+  status: string;
+  read_at: string | null;
+}
+
+export interface InboxListFilters {
+  /** Recipient to fetch for. Required (v1 spec — '@user' only). */
+  recipient: string;
+  /** `unread` | `read` | `archived` | `all`. Defaults to `all`. */
+  status?: 'unread' | 'read' | 'archived' | 'all';
+  limit?: number;
+  offset?: number;
+}
+
 export class WorkspaceAdapter {
   private readonly db: Database.Database;
   readonly workspaceId: string;
@@ -1307,6 +1361,175 @@ export class WorkspaceAdapter {
       'DELETE FROM knowledge_relationships WHERE from_entity_id = ? OR to_entity_id = ?',
     ).run(entityId, entityId);
     return result.changes;
+  }
+
+  // --- Direct Messages (v1) ---
+
+  /**
+   * Insert a new DM. Caller is responsible for ensuring `fromAgent`/`toAgent`
+   * are non-empty. Returns the fully-materialised row.
+   *
+   * The runtime injects undelivered DMs into the recipient's next prompt;
+   * see `injectAgentDms` in @agentforge/core.
+   */
+  createDirectMessage(data: {
+    id?: string;
+    fromAgent: string;
+    toAgent: string;
+    body: string;
+    replyToId?: string;
+    sentAt?: string;
+  }): DirectMessageRow {
+    const id = data.id ?? generateId();
+    const sentAt = data.sentAt ?? nowIso();
+    this.db.prepare(`
+      INSERT INTO direct_messages (id, from_agent, to_agent, body, reply_to_id, sent_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(id, data.fromAgent, data.toAgent, data.body, data.replyToId ?? null, sentAt);
+    return this.getDirectMessage(id)!;
+  }
+
+  getDirectMessage(id: string): DirectMessageRow | undefined {
+    return this.db.prepare('SELECT * FROM direct_messages WHERE id = ?').get(id) as DirectMessageRow | undefined;
+  }
+
+  listDirectMessages(filters: DirectMessageFilters = {}): DirectMessageRow[] {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (filters.agentId) {
+      conditions.push('(from_agent = ? OR to_agent = ?)');
+      params.push(filters.agentId, filters.agentId);
+    }
+    if (filters.fromAgent) {
+      conditions.push('from_agent = ?');
+      params.push(filters.fromAgent);
+    }
+    if (filters.toAgent) {
+      conditions.push('to_agent = ?');
+      params.push(filters.toAgent);
+    }
+    if (filters.undeliveredOnly) {
+      conditions.push('delivered_at IS NULL');
+    }
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const limit = Math.min(filters.limit ?? 100, 500);
+    const offset = filters.offset ?? 0;
+
+    return this.db.prepare(`
+      SELECT * FROM direct_messages ${where} ORDER BY sent_at ASC LIMIT ? OFFSET ?
+    `).all(...params, limit, offset) as DirectMessageRow[];
+  }
+
+  /** Mark a set of DMs delivered (idempotent — already-delivered rows untouched). */
+  markDirectMessagesDelivered(ids: readonly string[], at: string = nowIso()): number {
+    if (ids.length === 0) return 0;
+    const placeholders = ids.map(() => '?').join(',');
+    const result = this.db
+      .prepare(`UPDATE direct_messages SET delivered_at = ? WHERE delivered_at IS NULL AND id IN (${placeholders})`)
+      .run(at, ...ids);
+    return result.changes;
+  }
+
+  // --- Central Inbox (v1) ---
+
+  /**
+   * Insert an inbox message + one recipient row per `recipients[]`. The two
+   * inserts run inside a transaction so a single failure rolls both back.
+   *
+   * v1 limits enforced upstream (helper layer): recipient must be '@user'.
+   */
+  createInboxMessage(data: {
+    id?: string;
+    body: string;
+    kind?: 'info' | 'warning' | 'action_required';
+    sourceId?: string | null;
+    sourceType?: string | null;
+    threadId?: string | null;
+    recipients: readonly string[];
+    createdAt?: string;
+  }): { message: InboxMessageRow; recipients: InboxRecipientRow[] } {
+    if (data.recipients.length === 0) {
+      throw new Error('createInboxMessage: recipients must be non-empty');
+    }
+    const id = data.id ?? generateId();
+    const createdAt = data.createdAt ?? nowIso();
+    const kind = data.kind ?? 'info';
+
+    const tx = this.db.transaction(() => {
+      this.db.prepare(`
+        INSERT INTO inbox_messages (id, body, kind, source_id, source_type, thread_id, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(id, data.body, kind, data.sourceId ?? null, data.sourceType ?? null, data.threadId ?? null, createdAt);
+      const insertRecipient = this.db.prepare(`
+        INSERT INTO inbox_recipients (message_id, recipient, status) VALUES (?, ?, 'unread')
+      `);
+      for (const r of data.recipients) {
+        insertRecipient.run(id, r);
+      }
+    });
+    tx();
+
+    return {
+      message: this.getInboxMessage(id)!,
+      recipients: this.listInboxRecipients(id),
+    };
+  }
+
+  getInboxMessage(id: string): InboxMessageRow | undefined {
+    return this.db.prepare('SELECT * FROM inbox_messages WHERE id = ?').get(id) as InboxMessageRow | undefined;
+  }
+
+  listInboxRecipients(messageId: string): InboxRecipientRow[] {
+    return this.db.prepare('SELECT * FROM inbox_recipients WHERE message_id = ? ORDER BY recipient').all(messageId) as InboxRecipientRow[];
+  }
+
+  /**
+   * List inbox messages for a recipient, ordered newest first. The status
+   * filter joins against `inbox_recipients` so per-recipient state is honoured.
+   */
+  listInboxForRecipient(filters: InboxListFilters): Array<InboxMessageRow & { status: string; read_at: string | null }> {
+    const status = filters.status ?? 'all';
+    const conditions: string[] = ['ir.recipient = ?'];
+    const params: unknown[] = [filters.recipient];
+    if (status !== 'all') {
+      conditions.push('ir.status = ?');
+      params.push(status);
+    }
+    const limit = Math.min(filters.limit ?? 100, 500);
+    const offset = filters.offset ?? 0;
+    return this.db.prepare(`
+      SELECT im.*, ir.status AS status, ir.read_at AS read_at
+      FROM inbox_messages im
+      INNER JOIN inbox_recipients ir ON ir.message_id = im.id
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY im.created_at DESC
+      LIMIT ? OFFSET ?
+    `).all(...params, limit, offset) as Array<InboxMessageRow & { status: string; read_at: string | null }>;
+  }
+
+  countInboxForRecipient(recipient: string, status?: 'unread' | 'read' | 'archived'): number {
+    const conditions: string[] = ['recipient = ?'];
+    const params: unknown[] = [recipient];
+    if (status) {
+      conditions.push('status = ?');
+      params.push(status);
+    }
+    const row = this.db.prepare(`SELECT COUNT(*) AS n FROM inbox_recipients WHERE ${conditions.join(' AND ')}`).get(...params) as { n: number };
+    return row.n;
+  }
+
+  /** Mark an inbox message read for a specific recipient. Idempotent. */
+  markInboxRead(messageId: string, recipient: string, at: string = nowIso()): InboxRecipientRow | undefined {
+    this.db.prepare(`
+      UPDATE inbox_recipients
+      SET status = 'read', read_at = COALESCE(read_at, ?)
+      WHERE message_id = ? AND recipient = ?
+    `).run(at, messageId, recipient);
+    return this.db
+      .prepare('SELECT * FROM inbox_recipients WHERE message_id = ? AND recipient = ?')
+      .get(messageId, recipient) as InboxRecipientRow | undefined;
   }
 
   // --- Lifecycle ---
