@@ -10,6 +10,7 @@
     type RuntimeJobStatus,
   } from '$lib/util/job-format.js';
   import { relativeTime } from '$lib/util/relative-time.js';
+  import { Btn, Badge, Card, KpiTile, Ring, PulseDot } from '$lib/components/v2';
 
   type StatusFilter = 'all' | RuntimeJobStatus;
 
@@ -67,9 +68,7 @@
   let jobsPoll: ReturnType<typeof setInterval> | null = null;
   let eventsPoll: ReturnType<typeof setInterval> | null = null;
 
-  let selectedJob = $derived(
-    jobs.find((job) => job.jobId === selectedJobId) ?? jobs[0] ?? null
-  );
+  let selectedJob = $derived(jobs.find((job) => job.jobId === selectedJobId) ?? jobs[0] ?? null);
 
   let jobStats = $derived.by(() => {
     const stats = { queued: 0, running: 0, completed: 0, failed: 0, cancelled: 0 };
@@ -80,23 +79,29 @@
   });
 
   let latestEvent = $derived(events[events.length - 1] ?? null);
+
   let outputPreview = $derived.by(() => {
     const chunks = events
       .map((event) => {
         const data = event.payload ?? event.data ?? {};
-        return typeof data.content === 'string'
-          ? data.content
-          : typeof data.text === 'string'
-            ? data.text
-            : '';
+        return typeof data.content === 'string' ? data.content : typeof data.text === 'string' ? data.text : '';
       })
       .filter(Boolean);
-
     const output = chunks.join('');
     return output.length > 5000 ? output.slice(-5000) : output;
   });
 
   let shouldPollEvents = $derived(selectedJob ? !isTerminalJobStatus(selectedJob.status) : false);
+
+  // Progress ring value for running jobs
+  function jobProgress(job: RuntimeJob): number {
+    if (job.status === 'completed') return 100;
+    if (job.status === 'failed' || job.status === 'cancelled') return 100;
+    if (job.status !== 'running' || !job.startedAt) return 0;
+    const elapsed = Date.now() - new Date(job.startedAt).getTime();
+    // Cap at 90% until completion
+    return Math.min(90, Math.round((elapsed / 60000) * 30));
+  }
 
   function buildJobsUrl(): string {
     const params = new URLSearchParams({ limit: '50' });
@@ -107,7 +112,6 @@
   async function loadJobs(background = false) {
     if (!background) jobsLoading = true;
     jobsError = null;
-
     try {
       const res = await fetch(buildJobsUrl());
       if (!res.ok) throw new Error(await responseError(res));
@@ -115,7 +119,6 @@
       const nextJobs = (body.data ?? []) as RuntimeJob[];
       jobs = nextJobs;
       lastLoadedAt = new Date().toLocaleTimeString('en-US', { hour12: false });
-
       if (!selectedJobId || !nextJobs.some((job) => job.jobId === selectedJobId)) {
         selectedJobId = nextJobs[0]?.jobId ?? null;
       }
@@ -127,14 +130,9 @@
   }
 
   async function loadEvents(jobId = selectedJobId) {
-    if (!jobId) {
-      events = [];
-      return;
-    }
-
+    if (!jobId) { events = []; return; }
     eventsLoading = events.length === 0;
     eventsError = null;
-
     try {
       const res = await fetch(`/api/v5/jobs/${encodeURIComponent(jobId)}/events?limit=100`);
       if (!res.ok) throw new Error(await responseError(res));
@@ -148,12 +146,8 @@
   }
 
   async function responseError(res: Response): Promise<string> {
-    try {
-      const body = await res.json();
-      return body?.error ?? body?.message ?? `HTTP ${res.status}`;
-    } catch {
-      return `HTTP ${res.status}`;
-    }
+    try { const body = await res.json(); return body?.error ?? body?.message ?? `HTTP ${res.status}`; }
+    catch { return `HTTP ${res.status}`; }
   }
 
   function selectJob(jobId: string) {
@@ -163,10 +157,7 @@
     void loadEvents(jobId);
   }
 
-  async function refresh() {
-    await loadJobs();
-    await loadEvents();
-  }
+  async function refresh() { await loadJobs(); await loadEvents(); }
 
   async function applyStatusFilter(next: StatusFilter) {
     statusFilter = next;
@@ -178,14 +169,10 @@
 
   async function cancelJob(job: RuntimeJob) {
     if (!isCancellableJobStatus(job.status) || cancellingJobId) return;
-
     cancellingJobId = job.jobId;
     cancelError = null;
-
     try {
-      const res = await fetch(`/api/v5/jobs/${encodeURIComponent(job.jobId)}/cancel`, {
-        method: 'POST',
-      });
+      const res = await fetch(`/api/v5/jobs/${encodeURIComponent(job.jobId)}/cancel`, { method: 'POST' });
       if (!res.ok) throw new Error(await responseError(res));
       const body = await res.json();
       const updated = body.data as RuntimeJob;
@@ -199,28 +186,39 @@
   }
 
   function formatDateTime(value: string | null | undefined): string {
-    if (!value) return '-';
-    try {
-      return new Date(value).toLocaleString();
-    } catch {
-      return value;
-    }
+    if (!value) return '—';
+    try { return new Date(value).toLocaleString(); } catch { return value; }
   }
 
   function formatCost(cost: number | null | undefined): string {
-    return typeof cost === 'number' ? `$${cost.toFixed(4)}` : '-';
+    return typeof cost === 'number' ? `$${cost.toFixed(4)}` : '—';
   }
 
   function formatNumber(value: number | null | undefined): string {
-    return typeof value === 'number' ? value.toLocaleString() : '-';
+    return typeof value === 'number' ? value.toLocaleString() : '—';
+  }
+
+  function statusBadgeVariant(status: string): 'success' | 'danger' | 'warning' | 'purple' | 'muted' {
+    if (status === 'completed') return 'success';
+    if (status === 'failed')    return 'danger';
+    if (status === 'running')   return 'purple';
+    if (status === 'queued')    return 'warning';
+    return 'muted';
+  }
+
+  // Dot color per status
+  function statusDotColor(status: string): string {
+    if (status === 'running')   return 'var(--af-purple)';
+    if (status === 'completed') return 'var(--af-success)';
+    if (status === 'failed')    return 'var(--af-danger)';
+    if (status === 'queued')    return 'var(--af-warning)';
+    return 'var(--af-faint)';
   }
 
   onMount(() => {
     void loadJobs().then(() => loadEvents());
     jobsPoll = setInterval(() => void loadJobs(true), 5000);
-    eventsPoll = setInterval(() => {
-      if (shouldPollEvents) void loadEvents();
-    }, 2500);
+    eventsPoll = setInterval(() => { if (shouldPollEvents) void loadEvents(); }, 2500);
   });
 
   onDestroy(() => {
@@ -229,207 +227,219 @@
   });
 </script>
 
-<svelte:head><title>Runtime Jobs - AgentForge</title></svelte:head>
+<svelte:head><title>Runtime Jobs — AgentForge</title></svelte:head>
 
+<!-- ── Page header ──────────────────────────────────────────────────────── -->
 <div class="page-header">
   <div>
     <h1 class="page-title">Runtime Jobs</h1>
-    <p class="page-subtitle">Durable operator view for queued, running, and completed agent jobs</p>
+    <p class="page-sub">Cycles running RIGHT NOW plus paginated history</p>
   </div>
-  <div class="header-actions">
+  <div class="page-actions">
     {#if lastLoadedAt}
-      <span class="loaded-at">Updated {lastLoadedAt}</span>
+      <span class="af2-mono" style="font-size:10px;color:var(--af-faint)">Updated {lastLoadedAt}</span>
     {/if}
-    <a class="btn btn-ghost btn-sm" href="/live">Live Feed</a>
-    <button class="btn btn-ghost btn-sm" onclick={refresh} disabled={jobsLoading || eventsLoading}>
-      {jobsLoading || eventsLoading ? 'Refreshing...' : 'Refresh'}
-    </button>
+    <Btn size="sm" href="/live">Live Feed</Btn>
+    <Btn size="sm" onclick={refresh} disabled={jobsLoading || eventsLoading}>
+      {jobsLoading || eventsLoading ? 'Refreshing…' : 'Refresh'}
+    </Btn>
   </div>
 </div>
 
-<div class="ops-strip">
-  <div class="ops-card active">
-    <span class="ops-value">{jobStats.queued + jobStats.running}</span>
-    <span class="ops-label">Active Queue</span>
-  </div>
-  <div class="ops-card">
-    <span class="ops-value">{jobStats.queued}</span>
-    <span class="ops-label">Queued</span>
-  </div>
-  <div class="ops-card">
-    <span class="ops-value">{jobStats.running}</span>
-    <span class="ops-label">Running</span>
-  </div>
-  <div class="ops-card danger">
-    <span class="ops-value">{jobStats.failed}</span>
-    <span class="ops-label">Failed</span>
-  </div>
-  <div class="ops-card">
-    <span class="ops-value">{jobStats.completed}</span>
-    <span class="ops-label">Completed</span>
-  </div>
+<!-- ── KPI strip ─────────────────────────────────────────────────────────── -->
+<div class="kpi-strip">
+  <KpiTile
+    label="Running"
+    value={jobStats.running}
+    color="var(--af-purple)"
+    live={jobStats.running > 0}
+  />
+  <KpiTile label="Queued"    value={jobStats.queued}    color="var(--af-warning)" />
+  <KpiTile label="Completed" value={jobStats.completed} color="var(--af-success)" />
+  <KpiTile label="Failed"    value={jobStats.failed}    color="var(--af-danger)" />
+  <KpiTile label="Cancelled" value={jobStats.cancelled} color="var(--af-faint)" />
 </div>
 
-<div class="filter-row">
-  <span class="filter-label">Status</span>
-  {#each STATUS_FILTERS as filter}
-    <button
-      class="filter-chip"
-      class:active={statusFilter === filter}
-      onclick={() => applyStatusFilter(filter)}
-    >
-      {filter}
-    </button>
-  {/each}
-</div>
+<!-- ── Filter row ────────────────────────────────────────────────────────── -->
+<Card style="margin-bottom:12px;padding:10px 14px">
+  <div class="filter-row">
+    <span class="filter-label">STATUS</span>
+    {#each STATUS_FILTERS as filter}
+      <button
+        class="chip"
+        class:chip--active={statusFilter === filter}
+        onclick={() => applyStatusFilter(filter)}
+      >{filter}</button>
+    {/each}
+  </div>
+</Card>
 
+<!-- ── Error state ───────────────────────────────────────────────────────── -->
 {#if jobsError}
-  <div class="empty-state error-state">
+  <div class="error-state">
     <strong>Unable to load runtime jobs.</strong>
     <span>{jobsError}</span>
-    <button class="btn btn-ghost btn-sm" onclick={refresh}>Retry</button>
+    <Btn size="sm" onclick={refresh}>Retry</Btn>
   </div>
 {:else}
+  <!-- ── Two-column jobs layout ──────────────────────────────────────────── -->
   <div class="jobs-layout">
-    <section class="jobs-panel card">
-      <div class="card-header">
-        <span class="card-title">Recent Jobs</span>
-        <span class="panel-count">{jobs.length}</span>
+
+    <!-- ── Left: job list ─────────────────────────────────────────────────── -->
+    <Card noPad>
+      <div class="panel-header">
+        <span class="section-title">JOBS</span>
+        <span class="af2-mono" style="font-size:10px;color:var(--af-faint)">{jobs.length}</span>
       </div>
 
       {#if jobsLoading && jobs.length === 0}
-        {#each Array(8) as _}
+        {#each Array(6) as _}
           <div class="skeleton job-skeleton"></div>
         {/each}
       {:else if jobs.length === 0}
         <div class="empty-list">
           <span>No jobs match this filter.</span>
-          <a href="/runner">Start a run -&gt;</a>
+          <a href="/runner">Start a run →</a>
         </div>
       {:else}
         <div class="job-list">
           {#each jobs as job (job.jobId)}
             <button
               class="job-row"
-              class:selected={selectedJob?.jobId === job.jobId}
+              class:job-row--selected={selectedJob?.jobId === job.jobId}
               onclick={() => selectJob(job.jobId)}
             >
-              <span class="status-rail {jobStatusBadgeClass(job.status)}"></span>
-              <span class="job-main">
-                <span class="job-title">
-                  <span class="job-agent">{job.agentId}</span>
-                  <span class="badge {jobStatusBadgeClass(job.status)}">{job.status}</span>
-                </span>
-                <span class="job-task">{job.task || 'No task recorded'}</span>
-                <span class="job-meta">
+              <!-- status rail -->
+              <span class="status-rail" style="background:{statusDotColor(job.status)}"></span>
+
+              <!-- content -->
+              <div class="job-content">
+                <div class="job-top">
+                  <span class="af2-mono job-agent">{job.agentId}</span>
+                  <div class="job-top-right">
+                    {#if job.status === 'running'}
+                      <Ring
+                        value={jobProgress(job)}
+                        max={100}
+                        size={22}
+                        stroke={2}
+                        color="var(--af-purple)"
+                        label=""
+                      />
+                    {/if}
+                    <Badge variant={statusBadgeVariant(job.status)}>{job.status}</Badge>
+                  </div>
+                </div>
+                <div class="job-task">{job.task || 'No task recorded'}</div>
+                <div class="af2-mono job-meta">
                   <span title={job.jobId}>job {compactId(job.jobId)}</span>
-                  <span title={job.sessionId}>session {compactId(job.sessionId)}</span>
                   <span>{relativeTime(job.updatedAt ?? job.createdAt)}</span>
-                </span>
-              </span>
+                  {#if job.costUsd != null}
+                    <span>${job.costUsd.toFixed(4)}</span>
+                  {/if}
+                </div>
+              </div>
             </button>
           {/each}
         </div>
       {/if}
-    </section>
+    </Card>
 
-    <section class="detail-panel">
+    <!-- ── Right: detail panel ────────────────────────────────────────────── -->
+    <div class="detail-col">
       {#if selectedJob}
-        <div class="detail-card card">
+        <!-- Job detail card -->
+        <Card>
+          <!-- Detail header -->
           <div class="detail-header">
             <div>
-              <div class="detail-eyebrow">Selected Job</div>
-              <h2>{selectedJob.agentId} - {compactId(selectedJob.jobId, 12, 6)}</h2>
+              <div class="section-title" style="margin-bottom:4px">Selected Job</div>
+              <div style="display:flex;align-items:center;gap:8px">
+                {#if selectedJob.status === 'running'}
+                  <PulseDot color="var(--af-purple)" size={6} />
+                {/if}
+                <span class="af2-mono detail-id">{compactId(selectedJob.jobId, 12, 6)}</span>
+                <Badge variant={statusBadgeVariant(selectedJob.status)}>{selectedJob.status}</Badge>
+              </div>
             </div>
             <div class="detail-actions">
-              <span class="badge {jobStatusBadgeClass(selectedJob.status)}">{selectedJob.status}</span>
-              <button
-                class="btn btn-ghost btn-sm danger-action"
+              {#if cancelError}
+                <span style="font-size:11px;color:var(--af-danger)">{cancelError}</span>
+              {/if}
+              <Btn
+                variant="danger"
+                size="sm"
                 disabled={!isCancellableJobStatus(selectedJob.status) || cancellingJobId === selectedJob.jobId}
-                onclick={() => cancelJob(selectedJob)}
-                title={isCancellableJobStatus(selectedJob.status) ? 'Request cancellation for this job' : 'Only queued or running jobs can be cancelled'}
+                onclick={() => cancelJob(selectedJob!)}
               >
-                {cancellingJobId === selectedJob.jobId ? 'Cancelling...' : 'Cancel Job'}
-              </button>
+                {cancellingJobId === selectedJob.jobId ? 'Cancelling…' : 'Cancel'}
+              </Btn>
             </div>
           </div>
 
-          {#if cancelError}
-            <div class="inline-error">{cancelError}</div>
-          {/if}
-
+          <!-- Detail grid -->
           <div class="detail-grid">
-            <div>
-              <span class="field-label">Job ID</span>
-              <code>{selectedJob.jobId}</code>
+            <div class="detail-field">
+              <span class="field-label">Agent</span>
+              <code class="af2-mono">{selectedJob.agentId}</code>
             </div>
-            <div>
-              <span class="field-label">Session ID</span>
-              <code>{selectedJob.sessionId}</code>
-            </div>
-            <div>
-              <span class="field-label">Trace ID</span>
-              <code>{selectedJob.traceId ?? '-'}</code>
-            </div>
-            <div>
+            <div class="detail-field">
               <span class="field-label">Model</span>
-              <span>{selectedJob.model ?? '-'}</span>
+              <span>{selectedJob.model ?? '—'}</span>
             </div>
-            <div>
+            <div class="detail-field">
               <span class="field-label">Runtime</span>
-              <span>{selectedJob.runtimeMode ?? '-'}</span>
+              <span>{selectedJob.runtimeMode ?? '—'}</span>
             </div>
-            <div>
+            <div class="detail-field">
               <span class="field-label">Provider</span>
-              <span>{selectedJob.providerKind ?? '-'}</span>
+              <span>{selectedJob.providerKind ?? '—'}</span>
             </div>
-            <div>
+            <div class="detail-field">
               <span class="field-label">Duration</span>
-              <span>{formatJobDuration(selectedJob.startedAt ?? selectedJob.createdAt, selectedJob.completedAt)}</span>
+              <code class="af2-mono">{formatJobDuration(selectedJob.startedAt ?? selectedJob.createdAt, selectedJob.completedAt)}</code>
             </div>
-            <div>
-              <span class="field-label">Created</span>
-              <span>{formatDateTime(selectedJob.createdAt)}</span>
+            <div class="detail-field">
+              <span class="field-label">Cost</span>
+              <code class="af2-mono">{formatCost(selectedJob.costUsd)}</code>
             </div>
-            <div>
+            <div class="detail-field">
+              <span class="field-label">Tokens</span>
+              <code class="af2-mono">{formatNumber((selectedJob.inputTokens ?? 0) + (selectedJob.outputTokens ?? 0))}</code>
+            </div>
+            <div class="detail-field">
               <span class="field-label">Started</span>
               <span>{formatDateTime(selectedJob.startedAt)}</span>
             </div>
-            <div>
+            <div class="detail-field">
               <span class="field-label">Completed</span>
               <span>{formatDateTime(selectedJob.completedAt)}</span>
             </div>
-            <div>
-              <span class="field-label">Cost</span>
-              <span>{formatCost(selectedJob.costUsd)}</span>
-            </div>
-            <div>
-              <span class="field-label">Tokens</span>
-              <span>{formatNumber((selectedJob.inputTokens ?? 0) + (selectedJob.outputTokens ?? 0))}</span>
-            </div>
-            <div>
-              <span class="field-label">Cancel Requested</span>
-              <span>{selectedJob.cancelRequested ? 'yes' : 'no'}</span>
-            </div>
           </div>
 
+          <!-- Task -->
           <div class="task-box">
             <span class="field-label">Task</span>
             <p>{selectedJob.task || 'No task recorded.'}</p>
           </div>
 
+          <!-- Error -->
           {#if selectedJob.error}
             <div class="error-box">
               <span class="field-label">Error</span>
               <p>{selectedJob.error}</p>
             </div>
           {/if}
-        </div>
+        </Card>
 
-        <div class="live-card card">
-          <div class="card-header">
-            <span class="card-title">Events & Output</span>
-            <span class="stream-affordance {shouldPollEvents ? 'live' : ''}">
+        <!-- Events & output card -->
+        <Card>
+          <div class="card-header-row">
+            <span class="section-title">EVENTS & OUTPUT</span>
+            <span
+              class="stream-status af2-mono"
+              class:stream-status--live={shouldPollEvents}
+            >
               {shouldPollEvents ? 'Polling live events' : 'Event replay'}
             </span>
           </div>
@@ -437,508 +447,483 @@
           {#if latestEvent}
             <div class="latest-event">
               <span class="latest-label">Latest</span>
-              <span>{eventSummary(latestEvent.type, latestEvent.message)}</span>
-              <span class="latest-time">{relativeTime(latestEvent.timestamp)}</span>
+              <span style="font-size:12px;color:var(--af-muted)">{eventSummary(latestEvent.type, latestEvent.message)}</span>
+              <span class="af2-mono" style="font-size:10px;color:var(--af-faint);margin-left:auto">{relativeTime(latestEvent.timestamp)}</span>
             </div>
           {/if}
 
           {#if outputPreview}
-            <pre class="output-preview">{outputPreview}</pre>
+            <pre class="output-preview af2-mono">{outputPreview}</pre>
           {:else}
-            <div class="output-empty">No streamed output chunks captured for this job yet.</div>
+            <div class="empty-inline">No streamed output chunks for this job yet.</div>
           {/if}
 
+          <!-- Event list -->
           <div class="event-list">
             {#if eventsLoading}
-              <div class="event-empty">Loading persisted events...</div>
+              <div class="empty-inline">Loading persisted events…</div>
             {:else if eventsError}
-              <div class="event-empty error-text">{eventsError}</div>
+              <div class="empty-inline" style="color:var(--af-danger)">{eventsError}</div>
             {:else if events.length === 0}
-              <div class="event-empty">No persisted events for this job.</div>
+              <div class="empty-inline">No persisted events for this job.</div>
             {:else}
               {#each events as event (event.id)}
                 <div class="event-row">
-                  <span class="event-sequence">#{event.sequence}</span>
-                  <span class="event-type">{event.type}</span>
-                  <span class="event-message">{eventSummary(event.type, event.message)}</span>
-                  <span class="event-time">{relativeTime(event.timestamp)}</span>
+                  <span class="af2-mono event-seq">#{event.sequence}</span>
+                  <span class="af2-mono event-type">{event.type}</span>
+                  <span class="event-msg">{eventSummary(event.type, event.message)}</span>
+                  <span class="af2-mono event-time">{relativeTime(event.timestamp)}</span>
                 </div>
               {/each}
             {/if}
           </div>
-        </div>
+        </Card>
+
       {:else}
         <div class="empty-state">
-          No runtime job selected.
-          <a href="/runner" class="btn btn-primary btn-sm">Start a run</a>
+          <span style="font-size:12px;color:var(--af-faint)">No job selected.</span>
+          <Btn size="sm" href="/runner">Start a run</Btn>
         </div>
       {/if}
-    </section>
+    </div>
   </div>
 {/if}
 
 <style>
-  .header-actions {
+  /* ── Page header ──────────────────────────────────────────────────────── */
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 14px;
+    gap: 16px;
+  }
+
+  .page-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--af-text);
+    margin: 0 0 4px;
+  }
+
+  .page-sub { font-size: 12px; color: var(--af-dim); margin: 0; }
+
+  .page-actions {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-    flex-wrap: wrap;
-    justify-content: flex-end;
+    gap: 8px;
+    flex-shrink: 0;
   }
 
-  .loaded-at,
-  .panel-count {
-    color: var(--color-text-faint);
-    font-family: var(--font-mono);
-    font-size: var(--text-xs);
-  }
-
-  .ops-strip {
+  /* ── KPI strip ────────────────────────────────────────────────────────── */
+  .kpi-strip {
     display: grid;
-    grid-template-columns: repeat(5, minmax(120px, 1fr));
-    gap: var(--space-3);
-    margin-bottom: var(--space-4);
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+    margin-bottom: 12px;
   }
 
-  .ops-card {
-    background: var(--color-bg-card);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    padding: var(--space-4);
-  }
-
-  .ops-card.active {
-    border-color: rgba(74,158,255,0.35);
-    background: linear-gradient(135deg, rgba(74,158,255,0.12), rgba(74,158,255,0.03));
-  }
-
-  .ops-card.danger {
-    border-color: rgba(224,90,90,0.28);
-  }
-
-  .ops-value {
-    display: block;
-    color: var(--color-text);
-    font-family: var(--font-mono);
-    font-size: var(--text-2xl);
-    font-weight: 700;
-    line-height: 1;
-  }
-
-  .ops-label {
-    display: block;
-    color: var(--color-text-muted);
-    font-size: var(--text-xs);
-    letter-spacing: 0.06em;
-    margin-top: var(--space-2);
-    text-transform: uppercase;
-  }
-
+  /* ── Filter row ───────────────────────────────────────────────────────── */
   .filter-row {
-    align-items: center;
-    background: var(--color-bg-card);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
     display: flex;
-    gap: var(--space-2);
-    margin-bottom: var(--space-4);
-    padding: var(--space-3);
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
   }
 
   .filter-label {
-    color: var(--color-text-muted);
-    font-size: var(--text-xs);
+    font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.08em;
-    margin-right: var(--space-2);
-    text-transform: uppercase;
+    color: var(--af-dim);
+    margin-right: 4px;
+    white-space: nowrap;
   }
 
-  .filter-chip {
+  .chip {
     background: transparent;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-full);
-    color: var(--color-text-muted);
+    border: 1px solid var(--af-border2);
+    border-radius: 99px;
+    padding: 3px 10px;
+    font-size: 11px;
+    color: var(--af-muted);
     cursor: pointer;
-    font-size: var(--text-xs);
-    padding: var(--space-1) var(--space-3);
+    transition: border-color 150ms, color 150ms;
     text-transform: capitalize;
   }
 
-  .filter-chip:hover,
-  .filter-chip.active {
-    border-color: var(--color-brand);
-    color: var(--color-brand);
+  .chip:hover { border-color: var(--af-border3); color: var(--af-text); }
+
+  .chip--active {
+    border-color: var(--af-purple);
+    color: var(--af-purple);
+    background: color-mix(in srgb, var(--af-purple) 8%, transparent);
   }
 
+  /* ── Error state ──────────────────────────────────────────────────────── */
+  .error-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 48px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--af-muted);
+  }
+
+  /* ── Jobs layout ──────────────────────────────────────────────────────── */
   .jobs-layout {
     display: grid;
-    grid-template-columns: minmax(320px, 430px) minmax(0, 1fr);
-    gap: var(--space-4);
+    grid-template-columns: minmax(300px, 400px) minmax(0, 1fr);
+    gap: 14px;
     align-items: start;
   }
 
-  .jobs-panel {
-    padding: var(--space-4);
-  }
-
-  .job-skeleton {
-    height: 72px;
-    margin-bottom: var(--space-2);
-  }
-
-  .job-list {
+  /* ── Panel header ─────────────────────────────────────────────────────── */
+  .panel-header {
     display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--af-border);
   }
+
+  .section-title {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--af-dim);
+    text-transform: uppercase;
+  }
+
+  /* ── Job list ─────────────────────────────────────────────────────────── */
+  .job-list { display: flex; flex-direction: column; }
 
   .job-row {
-    align-items: stretch;
-    background: var(--color-surface-1);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    color: inherit;
-    cursor: pointer;
     display: grid;
-    grid-template-columns: 4px minmax(0, 1fr);
-    overflow: hidden;
-    padding: 0;
+    grid-template-columns: 3px 1fr;
+    width: 100%;
     text-align: left;
-    transition: border-color var(--duration-fast), background var(--duration-fast);
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid color-mix(in srgb, var(--af-border) 60%, transparent);
+    color: var(--af-text);
+    cursor: pointer;
+    padding: 0;
+    overflow: hidden;
+    transition: background 120ms;
   }
 
-  .job-row:hover,
-  .job-row.selected {
-    background: var(--color-surface-2);
-    border-color: var(--color-border-strong);
+  .job-row:hover { background: var(--af-surface2); }
+
+  .job-row--selected {
+    background: color-mix(in srgb, var(--af-purple) 6%, transparent);
+    border-left: 2px solid var(--af-purple) !important;
   }
+
+  .job-row:last-child { border-bottom: none; }
 
   .status-rail {
-    background: var(--color-text-muted);
+    width: 3px;
+    background: var(--af-faint);
+    flex-shrink: 0;
   }
 
-  .status-rail.success { background: var(--color-success); }
-  .status-rail.danger { background: var(--color-danger); }
-  .status-rail.warning { background: var(--color-warning); }
-  .status-rail.sonnet { background: var(--color-sonnet); }
-
-  .job-main {
+  .job-content {
+    padding: 10px 14px;
     display: flex;
     flex-direction: column;
     gap: 3px;
     min-width: 0;
-    padding: var(--space-3);
   }
 
-  .job-title,
-  .job-meta {
-    align-items: center;
+  .job-top {
     display: flex;
-    gap: var(--space-2);
-    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .job-top-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
   }
 
   .job-agent {
-    color: var(--color-text);
-    font-family: var(--font-mono);
-    font-size: var(--text-xs);
+    font-size: 11px;
     font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .job-task {
-    color: var(--color-text-muted);
-    font-size: var(--text-sm);
+    font-size: 12px;
+    color: var(--af-muted);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .job-meta {
-    color: var(--color-text-faint);
-    font-family: var(--font-mono);
-    font-size: var(--text-xs);
+    font-size: 10px;
+    color: var(--af-faint);
+    display: flex;
+    gap: 8px;
     flex-wrap: wrap;
   }
 
-  .detail-panel {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-4);
-    min-width: 0;
+  /* ── Skeletons ────────────────────────────────────────────────────────── */
+  .skeleton {
+    background: var(--af-surface2);
+    animation: shimmer 1.4s ease infinite;
   }
 
-  .detail-card,
-  .live-card {
+  .job-skeleton { height: 68px; margin: 1px 0; }
+
+  @keyframes shimmer {
+    0%, 100% { opacity: 0.5; }
+    50%  { opacity: 0.9; }
+  }
+
+  /* ── Empty states ─────────────────────────────────────────────────────── */
+  .empty-list {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 40px 24px;
+    font-size: 12px;
+    color: var(--af-faint);
+  }
+
+  .empty-list a { color: var(--af-purple); text-decoration: none; }
+
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 64px 24px;
+  }
+
+  /* ── Detail column ────────────────────────────────────────────────────── */
+  .detail-col {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
     min-width: 0;
   }
 
   .detail-header {
-    align-items: flex-start;
-    border-bottom: 1px solid var(--color-border);
     display: flex;
+    align-items: flex-start;
     justify-content: space-between;
-    gap: var(--space-4);
-    margin-bottom: var(--space-4);
-    padding-bottom: var(--space-3);
+    gap: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--af-border);
+    margin-bottom: 14px;
   }
 
-  .detail-eyebrow {
-    color: var(--color-text-faint);
-    font-size: var(--text-xs);
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
-  .detail-header h2 {
-    color: var(--color-text);
-    font-size: var(--text-lg);
-    margin: var(--space-1) 0 0;
+  .detail-id {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--af-text);
   }
 
   .detail-actions {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
+    gap: 8px;
     flex-wrap: wrap;
     justify-content: flex-end;
   }
 
-  .danger-action:not(:disabled) {
-    border-color: rgba(224,90,90,0.45);
-    color: var(--color-danger);
-  }
-
-  .danger-action:disabled {
-    cursor: not-allowed;
-    opacity: 0.45;
-  }
-
+  /* ── Detail grid ──────────────────────────────────────────────────────── */
   .detail-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: var(--space-3);
-    margin-bottom: var(--space-4);
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 12px;
   }
 
-  .detail-grid > div,
-  .task-box,
-  .error-box,
-  .latest-event {
-    background: var(--color-surface-1);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    padding: var(--space-3);
+  .detail-field {
+    background: var(--af-surface2);
+    border: 1px solid var(--af-border2);
+    border-radius: 6px;
+    padding: 10px;
   }
 
   .field-label {
-    color: var(--color-text-faint);
     display: block;
-    font-size: var(--text-xs);
+    font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.06em;
-    margin-bottom: var(--space-1);
+    color: var(--af-faint);
     text-transform: uppercase;
+    margin-bottom: 4px;
   }
 
-  code {
-    color: var(--color-text);
-    display: block;
-    font-family: var(--font-mono);
-    font-size: var(--text-xs);
+  .detail-field code {
+    font-size: 11px;
+    color: var(--af-text);
     overflow-wrap: anywhere;
+  }
+
+  .detail-field span { font-size: 12px; color: var(--af-muted); }
+
+  /* ── Task / error boxes ───────────────────────────────────────────────── */
+  .task-box,
+  .error-box {
+    background: var(--af-surface2);
+    border: 1px solid var(--af-border2);
+    border-radius: 6px;
+    padding: 10px;
+    margin-bottom: 10px;
   }
 
   .task-box p,
   .error-box p {
-    color: var(--color-text-muted);
-    margin: 0;
+    margin: 4px 0 0;
+    font-size: 12px;
+    color: var(--af-muted);
     white-space: pre-wrap;
   }
 
-  .error-box,
-  .inline-error {
-    border-color: rgba(224,90,90,0.3);
-    background: rgba(224,90,90,0.08);
+  .error-box { border-color: color-mix(in srgb, var(--af-danger) 30%, transparent); }
+
+  /* ── Card header row ──────────────────────────────────────────────────── */
+  .card-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
   }
 
-  .inline-error {
-    border: 1px solid rgba(224,90,90,0.3);
-    border-radius: var(--radius-md);
-    color: var(--color-danger);
-    font-size: var(--text-xs);
-    margin-bottom: var(--space-3);
-    padding: var(--space-2) var(--space-3);
+  /* ── Stream status ────────────────────────────────────────────────────── */
+  .stream-status {
+    font-size: 10px;
+    color: var(--af-faint);
   }
 
-  .stream-affordance {
-    color: var(--color-text-faint);
-    font-family: var(--font-mono);
-    font-size: var(--text-xs);
+  .stream-status--live {
+    color: var(--af-success);
   }
 
-  .stream-affordance.live {
-    color: var(--color-success);
-  }
-
-  .stream-affordance.live::before {
+  .stream-status--live::before {
     content: '';
     display: inline-block;
-    width: 6px;
-    height: 6px;
-    margin-right: var(--space-2);
-    border-radius: var(--radius-full);
-    background: var(--color-success);
-    box-shadow: 0 0 8px var(--color-success);
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--af-success);
+    box-shadow: 0 0 6px var(--af-success);
+    margin-right: 5px;
+    vertical-align: middle;
   }
 
+  /* ── Latest event ─────────────────────────────────────────────────────── */
   .latest-event {
-    align-items: center;
     display: flex;
-    gap: var(--space-2);
-    margin-bottom: var(--space-3);
+    align-items: center;
+    gap: 8px;
+    background: var(--af-surface2);
+    border: 1px solid var(--af-border2);
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin-bottom: 10px;
   }
 
   .latest-label {
-    color: var(--color-brand);
-    font-size: var(--text-xs);
+    font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.06em;
+    color: var(--af-purple);
     text-transform: uppercase;
+    white-space: nowrap;
   }
 
-  .latest-time {
-    color: var(--color-text-faint);
-    font-family: var(--font-mono);
-    font-size: var(--text-xs);
-    margin-left: auto;
-  }
-
+  /* ── Output preview ───────────────────────────────────────────────────── */
   .output-preview {
-    background: #09090b;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    color: var(--color-text);
-    font-family: var(--font-mono);
-    font-size: var(--text-sm);
+    background: var(--af-bg);
+    border: 1px solid var(--af-border2);
+    border-radius: 6px;
+    color: var(--af-muted);
+    font-size: 11px;
     line-height: 1.6;
-    margin: 0 0 var(--space-4);
-    max-height: 280px;
+    margin: 0 0 12px;
+    max-height: 240px;
     overflow: auto;
-    padding: var(--space-4);
+    padding: 12px 14px;
     white-space: pre-wrap;
   }
 
-  .output-empty,
-  .event-empty,
-  .empty-list {
-    color: var(--color-text-faint);
-    font-size: var(--text-sm);
-    padding: var(--space-5);
+  /* ── Empty inline ─────────────────────────────────────────────────────── */
+  .empty-inline {
+    font-size: 12px;
+    color: var(--af-faint);
+    padding: 20px;
     text-align: center;
   }
 
-  .empty-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-
-  .empty-list a {
-    color: var(--color-brand);
-    text-decoration: none;
-  }
-
+  /* ── Event list ───────────────────────────────────────────────────────── */
   .event-list {
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    max-height: 360px;
+    border: 1px solid var(--af-border2);
+    border-radius: 6px;
+    max-height: 320px;
     overflow: auto;
   }
 
   .event-row {
-    align-items: center;
-    border-bottom: 1px solid var(--color-border);
     display: grid;
-    grid-template-columns: 64px 140px minmax(0, 1fr) 80px;
-    gap: var(--space-2);
-    padding: var(--space-2) var(--space-3);
+    grid-template-columns: 54px 130px 1fr 72px;
+    gap: 8px;
+    align-items: center;
+    padding: 7px 12px;
+    border-bottom: 1px solid color-mix(in srgb, var(--af-border) 60%, transparent);
   }
 
-  .event-row:last-child {
-    border-bottom: 0;
-  }
+  .event-row:last-child { border-bottom: none; }
 
-  .event-sequence,
+  .event-seq,
   .event-time {
-    color: var(--color-text-faint);
-    font-family: var(--font-mono);
-    font-size: var(--text-xs);
+    font-size: 10px;
+    color: var(--af-faint);
   }
 
   .event-type {
-    color: var(--color-brand);
-    font-family: var(--font-mono);
-    font-size: var(--text-xs);
-  }
-
-  .event-message {
-    color: var(--color-text-muted);
+    font-size: 10px;
+    color: var(--af-purple);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .error-state {
-    gap: var(--space-3);
+  .event-msg {
+    font-size: 11px;
+    color: var(--af-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  .error-text {
-    color: var(--color-danger);
+  .af2-mono {
+    font-family: var(--af-font-mono, 'JetBrains Mono', monospace);
+    font-feature-settings: 'tnum' 1;
   }
 
   @media (max-width: 1100px) {
-    .ops-strip {
-      grid-template-columns: repeat(2, minmax(120px, 1fr));
-    }
-
-    .jobs-layout {
-      grid-template-columns: 1fr;
-    }
-
-    .detail-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
+    .kpi-strip { grid-template-columns: repeat(3, 1fr); }
+    .jobs-layout { grid-template-columns: 1fr; }
+    .detail-grid { grid-template-columns: repeat(2, 1fr); }
   }
 
   @media (max-width: 720px) {
-    .page-header,
-    .detail-header {
-      align-items: stretch;
-      flex-direction: column;
-    }
-
-    .header-actions,
-    .detail-actions {
-      justify-content: flex-start;
-    }
-
-    .filter-row {
-      overflow-x: auto;
-    }
-
-    .detail-grid {
-      grid-template-columns: 1fr;
-    }
-
-    .event-row {
-      grid-template-columns: 48px 1fr;
-    }
-
-    .event-message,
-    .event-time {
-      grid-column: 2;
-    }
+    .detail-grid { grid-template-columns: 1fr; }
+    .event-row { grid-template-columns: 48px 1fr; }
+    .event-msg, .event-time { grid-column: 2; }
   }
 </style>
