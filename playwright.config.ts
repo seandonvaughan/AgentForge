@@ -52,13 +52,13 @@ export default defineConfig({
   /* Run local product services before starting the tests. */
   webServer: [
     {
-      command: 'corepack pnpm start',
+      command: 'pnpm start',
       url: 'http://localhost:4750/api/v5/health',
       reuseExistingServer: !process.env.CI,
       timeout: 120 * 1000,
     },
     {
-      command: 'corepack pnpm --dir packages/dashboard dev',
+      command: 'pnpm --dir packages/dashboard dev',
       url: 'http://localhost:4751',
       reuseExistingServer: !process.env.CI,
       timeout: 120 * 1000,
