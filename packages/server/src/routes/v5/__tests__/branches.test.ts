@@ -17,7 +17,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { dashboardStubRoutes } from '../dashboard-stubs.js';
+import { autonomousBranchesRoutes } from '../autonomous-branches.js';
 
 // ── Git helpers ────────────────────────────────────────────────────────────
 
@@ -109,7 +109,7 @@ beforeEach(async () => {
   tmpRoot = mkdtempSync(join(tmpdir(), 'agentforge-branches-'));
   await initGitRepo(tmpRoot);
   app = Fastify({ logger: false });
-  await dashboardStubRoutes(app, { projectRoot: tmpRoot });
+  await autonomousBranchesRoutes(app, { projectRoot: tmpRoot });
   await app.ready();
 }, HOOK_TIMEOUT_MS);
 
@@ -260,7 +260,7 @@ describe('DELETE /api/v5/autonomous-branches/*', () => {
     // Delete
     const delRes = await app.inject({
       method: 'DELETE',
-      url: '/api/v5/autonomous-branches/autonomous/v6.8.0',
+      url: '/api/v5/autonomous-branches/autonomous/v6.8.0?force=true',
     });
     expect(delRes.statusCode).toBe(200);
     const delBody = JSON.parse(delRes.body) as { ok: boolean; deleted: string };
@@ -275,7 +275,7 @@ describe('DELETE /api/v5/autonomous-branches/*', () => {
   it('returns 500 when trying to delete a non-existent branch', async () => {
     const res = await app.inject({
       method: 'DELETE',
-      url: '/api/v5/autonomous-branches/autonomous/does-not-exist',
+      url: '/api/v5/autonomous-branches/autonomous/does-not-exist?force=true',
     });
 
     expect(res.statusCode).toBe(500);
@@ -289,7 +289,7 @@ describe('DELETE /api/v5/autonomous-branches/*', () => {
 
     const delRes = await app.inject({
       method: 'DELETE',
-      url: '/api/v5/autonomous-branches/autonomous/v6.8.0',
+      url: '/api/v5/autonomous-branches/autonomous/v6.8.0?force=true',
     });
     expect(delRes.statusCode).toBe(200);
 

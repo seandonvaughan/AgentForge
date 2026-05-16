@@ -2,7 +2,6 @@ import type { FastifyInstance } from 'fastify';
 import { createReadStream, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { getWorkspace } from '@agentforge/core';
 import { readCycleRecord } from '../../lib/cycle-record.js';
 import type { CycleRecord } from '../../lib/cycle-record.js';
@@ -529,47 +528,8 @@ export async function dashboardStubRoutes(
     return reply;
   });
 
-  // ── Autonomous Git Branches ───────────────────────────────────────────────
-  // Lists real `autonomous/*` branches from git, enriched with PR status from
-  // the `gh` CLI when available. Falls back gracefully if gh is not installed.
-
-  app.get('/api/v5/autonomous-branches', async (_req, reply) => {
-    try {
-      const data = listAutonomousBranches(projectRoot);
-      return reply.send({ data, meta: { total: data.length, updatedAt: new Date().toISOString() } });
-    } catch (err) {
-      return reply.status(500).send({ error: String(err) });
-    }
-  });
-
-  // DELETE /api/v5/autonomous-branches/* — delete a stale branch by name.
-  //
-  // Branch names contain slashes (e.g. "autonomous/v6.8.0"). The frontend
-  // sends the full name via encodeURIComponent which produces "autonomous%2Fv6.8.0".
-  // Fastify decodes %2F → "/" before routing, so ":name" would only capture
-  // the first path segment. A wildcard ("*") captures the full suffix instead.
-  app.delete<{ Params: { '*': string } }>(
-    '/api/v5/autonomous-branches/*',
-    async (req, reply) => {
-      // Fastify populates params['*'] with the decoded wildcard suffix
-      const branchName = req.params['*'];
-      // Safety: only allow deleting branches under the autonomous/ namespace
-      if (!branchName.startsWith('autonomous/')) {
-        return reply.status(400).send({ error: 'Only autonomous/* branches may be deleted via this endpoint' });
-      }
-      // Validate against shell-safe characters — branch names are alphanumeric + / . -
-      if (!/^autonomous\/[a-zA-Z0-9._/-]+$/.test(branchName)) {
-        return reply.status(400).send({ error: 'Invalid branch name format' });
-      }
-      // Use spawnSync with explicit arg array — no shell, no injection risk
-      const result = spawnSync('git', ['-C', projectRoot, 'branch', '-D', branchName], { encoding: 'utf-8' });
-      if (result.status !== 0) {
-        return reply.status(500).send({ error: `Delete failed: ${(result.stderr ?? '').trim() || 'unknown error'}` });
-      }
-      return reply.send({ ok: true, deleted: branchName });
-    },
-  );
 }
+// Autonomous branch routes promoted to autonomous-branches.ts (Fix 1, v2 audit).
 
 // ── CycleRecord is imported from ../../lib/cycle-record.js ────────────────
 
@@ -1029,134 +989,4 @@ function computeMemoryStats(
   return { totalEntries, entriesPerCycleTrend, hitRate };
 }
 
-// ── Autonomous Branch Listing ─────────────────────────────────────────────
-
-export interface AutonomousBranch {
-  name: string;
-  cycle: string;
-  /** ISO timestamp of the most recent commit on this branch */
-  lastCommitAt: string;
-  /** Age of the last commit in milliseconds */
-  ageMs: number;
-  /**
-   * Derived status:
-   * - open-pr   → branch has an open PR on GitHub
-   * - merged    → branch PR was merged
-   * - active    → branch is fresh (< STALE_DAYS old) but no PR yet
-   * - stale     → branch has no PR and is older than STALE_DAYS days
-   */
-  status: 'open-pr' | 'merged' | 'active' | 'stale';
-  prNumber: number | null;
-  prUrl: string | null;
-}
-
-interface GhPr {
-  headRefName: string;
-  state: string;
-  number: number;
-  url: string;
-  mergedAt: string | null;
-}
-
-/**
- * List all `autonomous/*` local branches enriched with PR status.
- *
- * Uses `git for-each-ref` (always available) and `gh pr list` (optional).
- * A branch is "stale" when it has no open PR and its last commit is older
- * than STALE_DAYS days.
- */
-function listAutonomousBranches(cwd: string): AutonomousBranch[] {
-  const STALE_DAYS = 3;
-  const STALE_MS = STALE_DAYS * 24 * 60 * 60 * 1000;
-
-  // -- 1. Enumerate local autonomous/* branches via git for-each-ref ----------
-  const gitResult = spawnSync(
-    'git',
-    [
-      '-C', cwd,
-      'for-each-ref',
-      '--format=%(refname:short)%09%(creatordate:iso8601)',
-      'refs/heads/autonomous/',
-    ],
-    { encoding: 'utf-8' },
-  );
-
-  if (gitResult.status !== 0 || !gitResult.stdout) return [];
-
-  const localBranches: Array<{ name: string; lastCommitAt: string }> = gitResult.stdout
-    .trim()
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => {
-      const parts = line.split('\t');
-      const branchName = parts[0] ?? '';
-      const lastCommitAt = parts.slice(1).join('\t').trim();
-      return { name: branchName.trim(), lastCommitAt };
-    })
-    .filter((b) => b.name.startsWith('autonomous/'));
-
-  // -- 2. Fetch PR list from gh CLI (best-effort) ----------------------------
-  const prsByBranch = new Map<string, GhPr[]>();
-  const ghResult = spawnSync(
-    'gh',
-    ['pr', 'list', '--state', 'all', '--limit', '100', '--json', 'headRefName,state,number,url,mergedAt'],
-    { encoding: 'utf-8', cwd },
-  );
-
-  if (ghResult.status === 0 && ghResult.stdout) {
-    try {
-      const prs = JSON.parse(ghResult.stdout) as GhPr[];
-      for (const pr of prs) {
-        if (!pr.headRefName.startsWith('autonomous/')) continue;
-        const existing = prsByBranch.get(pr.headRefName) ?? [];
-        existing.push(pr);
-        prsByBranch.set(pr.headRefName, existing);
-      }
-    } catch { /* gh output not parseable — ignore */ }
-  }
-
-  // -- 3. Build result -------------------------------------------------------
-  return localBranches.map(({ name, lastCommitAt }) => {
-    const cycle = name.replace(/^autonomous\//, '');
-    const lastCommitDate = new Date(lastCommitAt);
-    const ageMs = Date.now() - lastCommitDate.getTime();
-
-    const prs = prsByBranch.get(name) ?? [];
-    const openPr = prs.find((p) => p.state === 'OPEN');
-    const mergedPr = prs.find((p) => p.state === 'MERGED' || p.mergedAt != null);
-
-    let status: AutonomousBranch['status'];
-    let prNumber: number | null = null;
-    let prUrl: string | null = null;
-
-    if (openPr) {
-      status = 'open-pr';
-      prNumber = openPr.number;
-      prUrl = openPr.url;
-    } else if (mergedPr) {
-      status = 'merged';
-      prNumber = mergedPr.number;
-      prUrl = mergedPr.url;
-    } else {
-      // No open or merged PR found — classify by age.
-      // 'active' = fresh branch, PR likely being created soon.
-      // 'stale'  = old branch, no PR, should be cleaned up.
-      status = ageMs > STALE_MS ? 'stale' : 'active';
-      const firstPr = prs.at(0);
-      if (firstPr) {
-        prNumber = firstPr.number;
-        prUrl = firstPr.url;
-      }
-    }
-
-    return {
-      name,
-      cycle,
-      lastCommitAt: lastCommitDate.toISOString(),
-      ageMs,
-      status,
-      prNumber,
-      prUrl,
-    };
-  });
-}
+// AutonomousBranch types and helpers moved to autonomous-branches.ts
