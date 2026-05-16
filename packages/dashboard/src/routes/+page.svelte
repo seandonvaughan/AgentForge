@@ -1,719 +1,1009 @@
 <script lang="ts">
-  import StatGrid from '$lib/components/StatGrid.svelte';
-  import CycleStageBar from '$lib/components/CycleStageBar.svelte';
-  import AgentTable from '$lib/components/AgentTable.svelte';
-  import RecentSessions from '$lib/components/RecentSessions.svelte';
-  import { agents, agentsLoading } from '$lib/stores/agents.js';
-  import { sessions, sessionsLoading } from '$lib/stores/sessions.js';
-  import { totalUsd, costsLoading } from '$lib/stores/costs.js';
-  import { wsConnected } from '$lib/stores/ws.js';
+  /**
+   * Command Center home page (route `/`).
+   *
+   * Rebuilt against the v2 prototype design (`design/v2-handoff/prototype/page-cmd-cycles.jsx`
+   * CommandCenter component). Composition:
+   *
+   *   1. Hero panel       — current cycle (or system-idle), large StageRail + quad-stat row.
+   *   2. KPI tile strip   — 4 tiles: cost today, tests passing, cycles this week, memory entries.
+   *   3. Agent activity   — per-agent cards with sparkline + ModelChip + last-run timestamp.
+   *   4. Recent cycles    — last 5–8 cycles, each with StageDots + cost + verdict + relative time.
+   *   5. Fleet mix        — DistBar of Opus/Sonnet/Haiku token-cost mix.
+   *
+   * Data is loaded by `+page.ts` (universal load: SSR + hydration) and re-fetched
+   * client-side every 5s while the tab is visible. All five panels degrade
+   * gracefully on empty data, show a skeleton on first load, and show a
+   * per-panel "couldn't load — retry" UI on error.
+   */
+  import { onMount, onDestroy } from 'svelte';
+  import {
+    AnimNum, Badge, Btn, Card, DistBar, KpiTile,
+    ModelChip, PulseDot, Sparkline, StageDots, StageRail,
+  } from '$lib/components/v2';
   import { withWorkspace } from '$lib/stores/workspace';
-  import { versionFull, versionShort } from '$lib/stores/version.js';
-  import { onMount } from 'svelte';
+  import type {
+    AgentListItem, CommandCenterSnapshot,
+    CountersPayload, CycleListRow, SessionRow,
+  } from './+page';
 
-  const API_BASE = '';
+  // SvelteKit gives us the load output via `data`
+  let { data }: { data: CommandCenterSnapshot } = $props();
 
-  // Derived stats — use $derived() for Svelte 5 compatibility
-  let agentCount = $derived($agents.length);
-  let activeAgents = $derived($agents.filter((a: any) => a.status === 'active').length);
-  let sessionCount = $derived($sessions.length);
-  let spend = $derived($totalUsd);
-  let isLoading = $derived($agentsLoading || $sessionsLoading || $costsLoading);
+  // ── Reactive snapshot (mutated by polling) ─────────────────────────────
+  // Seed from the load snapshot. SvelteKit only re-runs `load` on navigation,
+  // so `data` is effectively immutable for the lifetime of this page mount —
+  // we own `snapshot` and mutate it from the polling functions below.
+  let snapshot: CommandCenterSnapshot = $state(data);
 
-  // API health state
-  let apiStatus: 'checking' | 'ok' | 'error' = $state('checking');
-  let apiVersion = $state('');
-  let apiCheckedAt = $state('');
+  // ── Polling: 5s while visible, paused when tab is hidden ───────────────
+  let pollHandle: ReturnType<typeof setInterval> | null = null;
+  let elapsedHandle: ReturnType<typeof setInterval> | null = null;
+  // Tick value used to drive the elapsed-time recompute for the running cycle.
+  let nowMs = $state(Date.now());
 
-  async function checkApiHealth() {
-    apiStatus = 'checking';
+  async function fetchJson<T>(url: string): Promise<T> {
+    const res = await fetch(withWorkspace(url));
+    if (!res.ok) throw new Error(`${url} → ${res.status}`);
+    return (await res.json()) as T;
+  }
+
+  async function refreshCycles(): Promise<void> {
     try {
-      const res = await fetch(`${API_BASE}/api/v5/health`);
-      if (res.ok) {
-        const body = await res.json();
-        apiVersion = body.version ?? '';
-        apiStatus = 'ok';
-      } else {
-        apiStatus = 'error';
-      }
-    } catch {
-      apiStatus = 'error';
+      const json = await fetchJson<{ cycles: CycleListRow[] }>('/api/v5/cycles?limit=8');
+      snapshot = { ...snapshot, cycles: json.cycles ?? [], errors: { ...snapshot.errors, cycles: null } };
+    } catch (e) {
+      snapshot = { ...snapshot, errors: { ...snapshot.errors, cycles: e instanceof Error ? e.message : String(e) } };
     }
-    apiCheckedAt = new Date().toLocaleTimeString();
   }
 
-  // ── Cycles state (v6.5) ──────────────────────────────────────────────────
-  interface CycleSummary {
-    cycleId: string;
-    stage?: string;
-    status?: string;
-    sprintVersion?: string;
-    costUsd?: number;
-    totalCost?: number;
-    startedAt?: string | number;
-  }
-  let recentCycles: CycleSummary[] = $state([]);
-  let runningCycle: CycleSummary | null = $state(null);
-  let runningElapsed = $state(0);
-  let runningTimer: ReturnType<typeof setInterval> | null = null;
-
-  const TERMINAL_STATUSES = new Set(['complete', 'completed', 'success', 'failed', 'error', 'cancelled']);
-
-  function isRunning(c: CycleSummary): boolean {
-    const s = (c.status ?? '').toLowerCase();
-    if (!s) return true; // assume running if status missing
-    return !TERMINAL_STATUSES.has(s);
-  }
-
-  function getCost(c: CycleSummary): number {
-    return c.costUsd ?? c.totalCost ?? 0;
-  }
-
-  function shortCycleId(id: string): string {
-    return id.length > 10 ? id.slice(0, 10) : id;
-  }
-
-  async function loadCycles() {
+  async function refreshCounters(): Promise<void> {
     try {
-      const res = await fetch(withWorkspace(`${API_BASE}/api/v5/cycles?limit=5`));
-      if (!res.ok) return;
-      const body = await res.json();
-      const list: CycleSummary[] = body.cycles ?? body.data ?? body ?? [];
-      recentCycles = list;
-      const top = list[0];
-      if (top && isRunning(top)) {
-        runningCycle = top;
-        const startMs = top.startedAt
-          ? (typeof top.startedAt === 'number' ? top.startedAt : new Date(top.startedAt).getTime())
-          : Date.now();
-        if (runningTimer) clearInterval(runningTimer);
-        runningTimer = setInterval(() => {
-          runningElapsed = Math.floor((Date.now() - startMs) / 1000);
-        }, 1000);
-        runningElapsed = Math.floor((Date.now() - startMs) / 1000);
-      } else {
-        runningCycle = null;
-        if (runningTimer) { clearInterval(runningTimer); runningTimer = null; }
-      }
-    } catch { /* silent */ }
+      const json = await fetchJson<CountersPayload>('/api/v5/counters');
+      snapshot = { ...snapshot, counters: json, errors: { ...snapshot.errors, counters: null } };
+    } catch (e) {
+      snapshot = { ...snapshot, errors: { ...snapshot.errors, counters: e instanceof Error ? e.message : String(e) } };
+    }
   }
 
-  function fmtElapsed(sec: number): string {
-    const m = Math.floor(sec / 60).toString().padStart(2, '0');
-    const s = (sec % 60).toString().padStart(2, '0');
-    return `${m}:${s}`;
-  }
-
-  // Branch stats state
-  let branchReport: { total: number; active: number; merged: number; conflict: number; mergeQueue: number } | null = $state(null);
-
-  async function loadBranchReport() {
+  async function refreshAgents(): Promise<void> {
     try {
-      const res = await fetch(`${API_BASE}/api/v5/branches/report`);
-      if (res.ok) {
-        const body = await res.json();
-        branchReport = body.data;
-      }
-    } catch { /* silently fail if server not running */ }
+      const json = await fetchJson<{ data: AgentListItem[] }>('/api/v5/agents');
+      snapshot = { ...snapshot, agents: json.data ?? [], errors: { ...snapshot.errors, agents: null } };
+    } catch (e) {
+      snapshot = { ...snapshot, errors: { ...snapshot.errors, agents: e instanceof Error ? e.message : String(e) } };
+    }
+  }
+
+  async function refreshSessions(): Promise<void> {
+    try {
+      const json = await fetchJson<{ data: SessionRow[] }>('/api/v5/sessions?limit=100');
+      snapshot = { ...snapshot, sessions: json.data ?? [], errors: { ...snapshot.errors, sessions: null } };
+    } catch (e) {
+      snapshot = { ...snapshot, errors: { ...snapshot.errors, sessions: e instanceof Error ? e.message : String(e) } };
+    }
+  }
+
+  async function refreshCosts(): Promise<void> {
+    try {
+      const json = await fetchJson<{ data: CommandCenterSnapshot['costs'] }>('/api/v5/costs/summary');
+      snapshot = { ...snapshot, costs: json.data ?? null, errors: { ...snapshot.errors, costs: null } };
+    } catch (e) {
+      snapshot = { ...snapshot, errors: { ...snapshot.errors, costs: e instanceof Error ? e.message : String(e) } };
+    }
+  }
+
+  async function refreshMemory(): Promise<void> {
+    try {
+      const json = await fetchJson<{ meta: { total: number } }>('/api/v5/memory');
+      snapshot = { ...snapshot, memoryTotal: json.meta?.total ?? null, errors: { ...snapshot.errors, memory: null } };
+    } catch (e) {
+      snapshot = { ...snapshot, errors: { ...snapshot.errors, memory: e instanceof Error ? e.message : String(e) } };
+    }
+  }
+
+  function pollFast(): void {
+    void refreshCycles();
+    void refreshCounters();
+    void refreshSessions();
+  }
+  function pollSlow(): void {
+    void refreshAgents();
+    void refreshCosts();
+    void refreshMemory();
+  }
+
+  let slowCounter = 0;
+  function tickPoll(): void {
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+    pollFast();
+    slowCounter += 1;
+    if (slowCounter % 6 === 0) pollSlow(); // every ~30s
   }
 
   onMount(() => {
-    checkApiHealth();
-    loadBranchReport();
-    loadCycles();
-    const cyclesPoll = setInterval(loadCycles, 5000);
-    return () => {
-      clearInterval(cyclesPoll);
-      if (runningTimer) clearInterval(runningTimer);
-    };
+    pollHandle = setInterval(tickPoll, 5000);
+    elapsedHandle = setInterval(() => { nowMs = Date.now(); }, 1000);
+  });
+  onDestroy(() => {
+    if (pollHandle) clearInterval(pollHandle);
+    if (elapsedHandle) clearInterval(elapsedHandle);
   });
 
-  const sections = [
-    {
-      href: '/live',
-      label: 'Live Feed',
-      description: 'Real-time SSE event stream from all agents and workflows',
-      icon: '⬤',
-      accent: 'var(--color-success)',
-    },
-    {
-      href: '/branches',
-      label: 'Branches',
-      description: 'Agent git branches, merge queue, and conflict status',
-      icon: '⎇',
-      accent: 'var(--color-primary)',
-    },
-    {
-      href: '/agents',
-      label: 'Agents',
-      description: 'Registered agents, roles, capabilities, and model assignments',
-      icon: '◈',
-      accent: 'var(--color-warning)',
-    },
-    {
-      href: '/jobs',
-      label: 'Runtime Jobs',
-      description: 'Durable queue, job events, live output summaries, and safe cancel actions',
-      icon: '▤',
-      accent: 'var(--color-sonnet)',
-    },
-    {
-      href: '/sessions',
-      label: 'Sessions',
-      description: 'All agent execution sessions with cost, status, and output',
-      icon: '▣',
-      accent: 'var(--color-text-muted)',
-    },
-    {
-      href: '/cost',
-      label: 'Cost Analytics',
-      description: 'Token spend by agent, model, and time period',
-      icon: '◎',
-      accent: '#e879f9',
-    },
-    {
-      href: '/org',
-      label: 'Org Graph',
-      description: 'Organizational structure, delegation chains, and team topology',
-      icon: '◉',
-      accent: '#38bdf8',
-    },
-  ];
+  // ── Derived data ───────────────────────────────────────────────────────
+
+  /** Stage → macro index mapping (mirrors lib/components/CycleStageBar). */
+  const STAGE_MAP: Record<string, number> = {
+    plan: 0, audit: 0,
+    stage: 1, assign: 1,
+    run: 2, execute: 2,
+    verify: 3, test: 3,
+    commit: 4, review: 4, gate: 4,
+    release: 5, learn: 5, completed: 5,
+    failed: -1, killed: -1, crashed: -1, unknown: -1,
+  };
+  const TERMINAL_STATUSES = new Set(['completed', 'failed', 'killed', 'crashed']);
+
+  type StageStatus = 'pending' | 'active' | 'done' | 'failed';
+
+  function stagesForCycle(c: CycleListRow): StageStatus[] {
+    const key = (c.stage ?? '').toLowerCase();
+    const out: StageStatus[] = ['pending', 'pending', 'pending', 'pending', 'pending', 'pending'];
+    const isTerminalFail = key === 'failed' || key === 'killed' || key === 'crashed';
+    const isTerminalOk = key === 'completed';
+    if (isTerminalOk) return out.map(() => 'done') as StageStatus[];
+    if (isTerminalFail) {
+      out[0] = 'failed';
+      return out;
+    }
+    const idx = STAGE_MAP[key] ?? 0;
+    for (let i = 0; i < out.length; i++) {
+      if (i < idx) out[i] = 'done';
+      else if (i === idx) out[i] = 'active';
+    }
+    return out;
+  }
+
+  function isCycleRunning(c: CycleListRow): boolean {
+    const k = (c.stage ?? '').toLowerCase();
+    return !TERMINAL_STATUSES.has(k);
+  }
+
+  /** First running cycle (or first cycle if none running). */
+  const heroCycle = $derived.by<CycleListRow | null>(() => {
+    if (snapshot.cycles.length === 0) return null;
+    return snapshot.cycles.find(isCycleRunning) ?? snapshot.cycles[0] ?? null;
+  });
+
+  const heroIsRunning = $derived.by<boolean>(() => heroCycle != null && isCycleRunning(heroCycle));
+
+  /** Elapsed-time display for the hero (recomputes every second via nowMs). */
+  const heroElapsed = $derived.by<string>(() => {
+    if (!heroCycle) return '—';
+    const startMs = heroCycle.startedAt ? new Date(heroCycle.startedAt).getTime() : 0;
+    if (!startMs) return '—';
+    const endMs = heroIsRunning
+      ? nowMs
+      : (heroCycle.completedAt ? new Date(heroCycle.completedAt).getTime() : nowMs);
+    const sec = Math.max(0, Math.floor((endMs - startMs) / 1000));
+    if (sec < 60) return `${sec}s`;
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    if (m < 60) return `${m}m ${s.toString().padStart(2, '0')}s`;
+    const h = Math.floor(m / 60);
+    return `${h}h ${(m % 60).toString().padStart(2, '0')}m`;
+  });
+
+  const heroStages = $derived.by<StageStatus[]>(() => {
+    if (!heroCycle) return ['pending', 'pending', 'pending', 'pending', 'pending', 'pending'];
+    return stagesForCycle(heroCycle);
+  });
+
+  /** Cycles started in the last 7 days. */
+  const cyclesThisWeek = $derived.by<number>(() => {
+    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    return snapshot.cycles.filter(c => {
+      const t = c.startedAt ? new Date(c.startedAt).getTime() : 0;
+      return t >= weekAgo;
+    }).length;
+  });
+
+  /** Sparkline of cycles-per-day over the last 7 days (oldest → newest). */
+  const cyclesSparkline = $derived.by<number[]>(() => {
+    const buckets = [0, 0, 0, 0, 0, 0, 0];
+    const now = Date.now();
+    for (const c of snapshot.cycles) {
+      const t = c.startedAt ? new Date(c.startedAt).getTime() : 0;
+      if (!t) continue;
+      const daysAgo = Math.floor((now - t) / (24 * 60 * 60 * 1000));
+      if (daysAgo >= 0 && daysAgo < 7) buckets[6 - daysAgo]! += 1;
+    }
+    return buckets;
+  });
+
+  /** Latest cycle's tests-passing percentage (0-100). */
+  const testsPct = $derived.by<number>(() => {
+    const c = snapshot.cycles[0];
+    if (!c || c.testsTotal === 0) return 0;
+    return Math.round((c.testsPassed / c.testsTotal) * 1000) / 10;
+  });
+
+  /** Sparkline of pass-rate over the last 8 cycles (oldest → newest). */
+  const testsSparkline = $derived.by<number[]>(() => {
+    const list = [...snapshot.cycles].reverse();
+    return list.map(c => c.testsTotal > 0 ? (c.testsPassed / c.testsTotal) * 100 : 0);
+  });
+
+  /** Cost-today sparkline: last 7 daily rollups (oldest → newest). */
+  const costSparkline = $derived.by<number[]>(() => {
+    const list = snapshot.costs?.dailyRollups ?? [];
+    return list.slice(-7).map(d => d.costUsd);
+  });
+
+  /** Tier of a server `model` string. Map specific Claude model IDs to tier. */
+  function tierOf(model: string | null | undefined): 'opus' | 'sonnet' | 'haiku' | 'other' {
+    const m = (model ?? '').toLowerCase();
+    if (m.includes('opus')) return 'opus';
+    if (m.includes('sonnet')) return 'sonnet';
+    if (m.includes('haiku')) return 'haiku';
+    return 'other';
+  }
+
+  /** Per-tier cost totals derived from costs.byModel. */
+  const tierMix = $derived.by<{ opus: number; sonnet: number; haiku: number; other: number; total: number }>(() => {
+    const mix = { opus: 0, sonnet: 0, haiku: 0, other: 0, total: 0 };
+    for (const m of snapshot.costs?.byModel ?? []) {
+      const t = tierOf(m.model);
+      mix[t] += m.costUsd;
+      mix.total += m.costUsd;
+    }
+    return mix;
+  });
+
+  /** Per-agent activity rollup from the last ~100 sessions. */
+  interface AgentActivity {
+    agentId: string;
+    name: string;
+    declaredModel: string;
+    lastRun: number;
+    sparkline: number[];
+    sessionCount: number;
+    totalCostUsd: number;
+  }
+
+  const agentActivities = $derived.by<AgentActivity[]>(() => {
+    const byAgent = new Map<string, AgentActivity>();
+    // Seed from declared agents (so even agents with no sessions appear)
+    for (const a of snapshot.agents) {
+      byAgent.set(a.agentId, {
+        agentId: a.agentId, name: a.name, declaredModel: a.model,
+        lastRun: 0, sparkline: new Array<number>(12).fill(0),
+        sessionCount: 0, totalCostUsd: 0,
+      });
+    }
+    // Bucket recent sessions into 12 × 2-hour buckets over the last 24h.
+    const now = Date.now();
+    const bucketSize = 2 * 60 * 60 * 1000;
+    const horizon = now - 12 * bucketSize;
+    for (const s of snapshot.sessions) {
+      let entry = byAgent.get(s.agent_id);
+      if (!entry) {
+        entry = {
+          agentId: s.agent_id, name: s.agent_id, declaredModel: 'sonnet',
+          lastRun: 0, sparkline: new Array<number>(12).fill(0),
+          sessionCount: 0, totalCostUsd: 0,
+        };
+        byAgent.set(s.agent_id, entry);
+      }
+      const t = s.started_at ? new Date(s.started_at).getTime() : 0;
+      if (t > entry.lastRun) entry.lastRun = t;
+      entry.sessionCount += 1;
+      entry.totalCostUsd += s.cost_usd ?? 0;
+      if (t >= horizon) {
+        const bucket = Math.min(11, Math.max(0, Math.floor((t - horizon) / bucketSize)));
+        entry.sparkline[bucket]! += 1;
+      }
+    }
+    // Sort by most-recent activity desc, take top 8.
+    return [...byAgent.values()]
+      .sort((a, b) => b.lastRun - a.lastRun)
+      .slice(0, 8);
+  });
+
+  // ── Formatters ─────────────────────────────────────────────────────────
+  function fmtDollar(v: number, decimals = 2): string {
+    return `$${v.toFixed(decimals)}`;
+  }
+  function shortId(id: string): string {
+    return id.length > 10 ? id.slice(0, 10) : id;
+  }
+  function fmtRel(then: number): string {
+    if (!then) return '—';
+    const d = Math.max(0, Math.floor((nowMs - then) / 1000));
+    if (d < 60) return `${d}s ago`;
+    if (d < 3600) return `${Math.floor(d / 60)}m ago`;
+    if (d < 86400) return `${Math.floor(d / 3600)}h ago`;
+    return `${Math.floor(d / 86400)}d ago`;
+  }
+  function cycleVerdict(c: CycleListRow): 'completed' | 'failed' | 'running' {
+    const k = (c.stage ?? '').toLowerCase();
+    if (k === 'completed') return 'completed';
+    if (k === 'failed' || k === 'killed' || k === 'crashed') return 'failed';
+    return 'running';
+  }
+  function verdictVariant(v: ReturnType<typeof cycleVerdict>): 'success' | 'danger' | 'purple' {
+    return v === 'completed' ? 'success' : v === 'failed' ? 'danger' : 'purple';
+  }
+
+  // KPI deltas — compare today's spend to the prior-6-day average.
+  const costDelta = $derived.by<string | undefined>(() => {
+    const today = snapshot.counters?.todaySpendUsd ?? 0;
+    const week = snapshot.counters?.weekSpendUsd ?? 0;
+    if (week <= 0) return undefined;
+    const avgPriorDays = (week - today) / 6;
+    if (avgPriorDays <= 0) return undefined;
+    const pct = ((today - avgPriorDays) / avgPriorDays) * 100;
+    const rounded = Math.round(pct);
+    if (Math.abs(rounded) < 1) return '0%';
+    return `${rounded > 0 ? '+' : ''}${rounded}%`;
+  });
 </script>
 
-<svelte:head><title>AgentForge {$versionShort} — Command Center</title></svelte:head>
-
-<!-- ── Version banner ─────────────────────────────────────────────────────── -->
-<div class="version-banner">
-  <span class="version-badge-pill">agentforge v{$versionFull}</span>
-  <span class="sprint-label">{$versionShort} — Autonomous Cycle + Real-time Dashboard</span>
-</div>
+<svelte:head><title>Command Center — AgentForge</title></svelte:head>
 
 <!-- ── Page header ─────────────────────────────────────────────────────────── -->
-<div class="page-header">
-  <div>
-    <h1 class="page-title">Command Center</h1>
-    <p class="page-subtitle">AgentForge {$versionShort} — Real-time agent operations platform</p>
-  </div>
-  <div style="display:flex; align-items:center; gap: var(--space-3);">
-    {#if isLoading}
-      <span style="font-size:var(--text-xs); color:var(--color-text-muted);">Loading…</span>
-    {/if}
-    <span class="badge {$wsConnected ? 'success' : 'muted'}" style="font-size:var(--text-xs);">
-      {$wsConnected ? 'WebSocket Live' : 'WebSocket Offline'}
-    </span>
-  </div>
-</div>
-
-<!-- ── Autonomous Command Center (v6.5) ───────────────────────────────────── -->
-<div class="autonomous-section">
-  <div class="hero-card">
-    <div class="hero-body">
-      <div class="hero-eyebrow">AUTONOMOUS LOOP</div>
-      <h2 class="hero-title">Plan → Execute → Test → Commit → PR</h2>
-      <p class="hero-desc">
-        Launch a fully autonomous Claude Code session that picks the next sprint item,
-        implements it, verifies tests, commits, and opens a PR.
-      </p>
-      <a href="/cycles/new" class="btn btn-primary hero-cta">Launch New Cycle →</a>
+<header class="cc-header">
+  <div class="cc-crumbs font-mono">Workspace · Command Center</div>
+  <div class="cc-headline-row">
+    <h1 class="cc-title">Today&rsquo;s operations</h1>
+    <div class="cc-actions">
+      <Btn size="sm" href="/cycles">Cycles ▾</Btn>
+      <Btn size="sm" variant="purple" href="/cycles/new">+ Launch cycle</Btn>
     </div>
+  </div>
+  <div class="cc-subtitle">
+    {#if snapshot.counters}
+      <span class="font-mono">{snapshot.counters.runningCycles}</span> running ·
+      <span class="font-mono">{snapshot.counters.agentsActive}</span> agents active ·
+      spent <span class="font-mono">{fmtDollar(snapshot.counters.todaySpendUsd)}</span> today ·
+      <span class="cc-load cc-load-{snapshot.counters.load}">{snapshot.counters.load}</span>
+    {:else if snapshot.errors.counters}
+      <span class="cc-section-err">
+        couldn&rsquo;t load counters —
+        <button class="cc-link-btn" onclick={refreshCounters}>retry</button>
+      </span>
+    {:else}
+      <span class="cc-skel" style="width:240px;height:14px;display:inline-block"></span>
+    {/if}
+  </div>
+</header>
 
-    {#if runningCycle}
-      <div class="running-panel">
-        <div class="running-header">
-          <span class="running-dot pulse"></span>
-          <span class="running-title">Cycle running: {shortCycleId(runningCycle.cycleId)}</span>
+<!-- ── KPI strip ───────────────────────────────────────────────────────────── -->
+<section class="cc-kpis">
+  <KpiTile
+    label="Cost today"
+    value={snapshot.counters ? fmtDollar(snapshot.counters.todaySpendUsd) : '—'}
+    sub={snapshot.counters ? `${fmtDollar(snapshot.counters.weekSpendUsd)} this week` : ''}
+    delta={costDelta}
+    color="var(--af-purple)"
+    sparkline={costSparkline.length > 1 ? costSparkline : undefined}
+  />
+  <KpiTile
+    label="Tests passing"
+    value={snapshot.cycles[0] && snapshot.cycles[0].testsTotal > 0
+      ? `${testsPct}%`
+      : '—'}
+    sub={snapshot.cycles[0] && snapshot.cycles[0].testsTotal > 0
+      ? `${snapshot.cycles[0].testsPassed.toLocaleString()} / ${snapshot.cycles[0].testsTotal.toLocaleString()}`
+      : 'no cycle data'}
+    color={testsPct >= 99 ? 'var(--af-success)' : testsPct >= 90 ? 'var(--af-warning)' : 'var(--af-danger)'}
+    sparkline={testsSparkline.length > 1 ? testsSparkline : undefined}
+  />
+  <KpiTile
+    label="Cycles this week"
+    value={cyclesThisWeek}
+    sub={`${snapshot.cycles.length} loaded`}
+    color="var(--af-accent2)"
+    sparkline={cyclesSparkline}
+  />
+  <KpiTile
+    label="Memory entries"
+    value={snapshot.memoryTotal ?? '—'}
+    sub={snapshot.errors.memory ? 'unavailable' : 'across all types'}
+    color="var(--af-haiku)"
+  />
+</section>
+
+<!-- ── Hero panel ──────────────────────────────────────────────────────────── -->
+<section class="cc-hero-wrap">
+  <Card noPad>
+    {#if snapshot.errors.cycles && snapshot.cycles.length === 0}
+      <div class="cc-section-err-block">
+        Couldn&rsquo;t load cycles —
+        <button class="cc-link-btn" onclick={refreshCycles}>retry</button>
+      </div>
+    {:else if heroCycle}
+      <!-- Active or last-completed cycle hero -->
+      <div class="cc-hero-head">
+        <div class="cc-hero-head-left">
+          {#if heroIsRunning}
+            <PulseDot color="var(--af-purple)" size={7} />
+            <span class="cc-hero-eyebrow cc-hero-eyebrow-active">ACTIVE CYCLE</span>
+          {:else}
+            <span class="cc-hero-eyebrow cc-hero-eyebrow-idle">LAST CYCLE</span>
+          {/if}
+          <span class="font-mono cc-hero-id">{shortId(heroCycle.cycleId)}</span>
+          {#if heroCycle.sprintVersion}
+            <span class="font-mono cc-hero-version">v{heroCycle.sprintVersion}</span>
+          {/if}
+          <span class="cc-hero-sep">·</span>
+          <span class="cc-hero-stage">{heroCycle.stage} phase</span>
         </div>
-        <div class="running-row">
-          <span class="badge {runningCycle.stage ? 'sonnet' : 'muted'}">{runningCycle.stage ?? '—'}</span>
-          <span class="running-elapsed">{fmtElapsed(runningElapsed)}</span>
+        <div class="cc-hero-head-right">
+          <span class="font-mono cc-hero-elapsed">{heroElapsed}</span>
+          <Btn size="sm" href="/cycles/{heroCycle.cycleId}">Logs</Btn>
+          <Btn size="sm" variant="purple" href="/cycles/{heroCycle.cycleId}">Open detail →</Btn>
         </div>
-        <div class="mini-burn-label">
-          <span>${getCost(runningCycle).toFixed(2)}</span>
+      </div>
+
+      <div class="cc-hero-rail">
+        <StageRail stages={heroStages} />
+      </div>
+
+      <!-- Quad stats row -->
+      <div class="cc-hero-quad">
+        <div class="cc-quad">
+          <div class="cc-quad-label">BUDGET</div>
+          <div class="cc-quad-value font-mono">
+            <AnimNum value={heroCycle.costUsd} decimals={2} prefix="$" />
+          </div>
+          <div class="cc-quad-sub">of {fmtDollar(heroCycle.budgetUsd)}</div>
+          <div class="cc-quad-bar">
+            <div
+              class="cc-quad-fill cc-quad-fill-gradient"
+              style="width:{Math.min(100, (heroCycle.costUsd / Math.max(1, heroCycle.budgetUsd)) * 100)}%"
+            ></div>
+          </div>
         </div>
-        <div class="mini-burn-bar">
-          <div class="mini-burn-fill" style="width: {Math.min(100, (getCost(runningCycle) / 25) * 100)}%"></div>
+        <div class="cc-quad">
+          <div class="cc-quad-label">TESTS</div>
+          <div class="cc-quad-value font-mono">
+            {heroCycle.testsTotal > 0
+              ? `${heroCycle.testsPassed.toLocaleString()}`
+              : '—'}
+          </div>
+          <div class="cc-quad-sub">
+            {heroCycle.testsTotal > 0 ? `of ${heroCycle.testsTotal.toLocaleString()} pass` : 'no test data'}
+          </div>
+          {#if heroCycle.testsTotal > 0}
+            <div class="cc-quad-bar">
+              <div
+                class="cc-quad-fill cc-quad-fill-success"
+                style="width:{(heroCycle.testsPassed / heroCycle.testsTotal) * 100}%"
+              ></div>
+            </div>
+          {/if}
         </div>
-        <a href="/cycles/{runningCycle.cycleId}" class="running-link">View detail →</a>
+        <div class="cc-quad">
+          <div class="cc-quad-label">DURATION</div>
+          <div class="cc-quad-value font-mono">{heroElapsed}</div>
+          <div class="cc-quad-sub">
+            {heroIsRunning ? 'running' : (heroCycle.completedAt ? 'final' : 'paused')}
+          </div>
+        </div>
+        <div class="cc-quad">
+          <div class="cc-quad-label">VERDICT</div>
+          <div class="cc-quad-value">
+            <Badge variant={verdictVariant(cycleVerdict(heroCycle))}>
+              {cycleVerdict(heroCycle)}
+            </Badge>
+          </div>
+          <div class="cc-quad-sub">
+            {heroCycle.prUrl ? 'PR opened' : (heroCycle.hasApprovalPending ? 'awaiting approval' : 'no PR')}
+          </div>
+        </div>
+      </div>
+    {:else if snapshot.errors.cycles}
+      <div class="cc-section-err-block">
+        Couldn&rsquo;t load cycles —
+        <button class="cc-link-btn" onclick={refreshCycles}>retry</button>
+      </div>
+    {:else}
+      <!-- Idle hero -->
+      <div class="cc-hero-idle">
+        <div class="cc-hero-idle-eyebrow">SYSTEM STATUS</div>
+        <div class="cc-hero-idle-title font-mono">
+          <AnimNum value={snapshot.counters?.runningCycles ?? 0} /> running
+        </div>
+        <div class="cc-hero-idle-sub">
+          No cycles in flight. Launch a new cycle to get started.
+        </div>
+        <div class="cc-hero-idle-cta">
+          <Btn variant="purple" href="/cycles/new">+ Launch cycle</Btn>
+        </div>
       </div>
     {/if}
-  </div>
+  </Card>
+</section>
 
-  <div class="recent-cycles-card">
-    <div class="recent-header">
-      <span class="card-title">Recent Cycles</span>
-      <a href="/cycles" class="see-all-link">See all →</a>
+<!-- ── 2-col bottom row: Recent cycles + Right column ──────────────────────── -->
+<section class="cc-bottom">
+  <!-- Recent cycles -->
+  <Card noPad>
+    <div class="cc-card-header">
+      <span class="cc-section-title">RECENT CYCLES</span>
+      <a class="cc-link" href="/cycles">View all →</a>
     </div>
-    {#if recentCycles.length === 0}
-      <div class="recent-empty">No cycles yet — launch your first one above.</div>
+    {#if snapshot.errors.cycles && snapshot.cycles.length === 0}
+      <div class="cc-section-err-block">
+        Couldn&rsquo;t load cycles —
+        <button class="cc-link-btn" onclick={refreshCycles}>retry</button>
+      </div>
+    {:else if snapshot.cycles.length === 0}
+      <div class="cc-empty">No cycles yet. Launch the first one to start the autonomous loop.</div>
     {:else}
-      <ul class="recent-list">
-        {#each recentCycles as c (c.cycleId)}
-          <li class="recent-item">
-            <span class="recent-id">{shortCycleId(c.cycleId)}</span>
-            <CycleStageBar
-              stage={c.stage ?? c.status ?? ''}
-              isTerminal={!isRunning(c)}
-              compact={true}
-            />
-            <span class="recent-version">{c.sprintVersion ?? '—'}</span>
-            <span class="recent-cost">${getCost(c).toFixed(2)}</span>
-            <a href="/cycles/{c.cycleId}" class="recent-view">view</a>
+      <ul class="cc-cycle-list">
+        {#each snapshot.cycles.slice(0, 7) as c (c.cycleId)}
+          {@const verdict = cycleVerdict(c)}
+          <li>
+            <a class="cc-cycle-row" href="/cycles/{c.cycleId}">
+              <StageDots stages={stagesForCycle(c)} />
+              <span class="font-mono cc-cycle-id">{shortId(c.cycleId)}</span>
+              <span class="font-mono cc-cycle-ver">v{c.sprintVersion ?? '—'}</span>
+              <span class="font-mono cc-cycle-when">{fmtRel(c.startedAt ? new Date(c.startedAt).getTime() : 0)}</span>
+              <span class="font-mono cc-cycle-cost">{fmtDollar(c.costUsd)}</span>
+              <Badge variant={verdictVariant(verdict)}>{verdict}</Badge>
+            </a>
           </li>
         {/each}
       </ul>
     {/if}
-  </div>
-</div>
+  </Card>
 
-<!-- ── System status + quick stats ────────────────────────────────────────── -->
-<div class="status-row">
-  <!-- API health card -->
-  <div class="status-card {apiStatus === 'ok' ? 'status-ok' : apiStatus === 'error' ? 'status-err' : 'status-checking'}">
-    <div class="status-card-header">
-      <span class="status-dot"></span>
-      <span class="status-label">API Server</span>
-      {#if apiVersion}
-        <span class="status-version">v{apiVersion}</span>
-      {/if}
-    </div>
-    <div class="status-detail">
-      {#if apiStatus === 'checking'}
-        Connecting to {API_BASE}…
-      {:else if apiStatus === 'ok'}
-        Online — <a href="/live" style="color:inherit; text-decoration:underline;">View live feed</a>
-      {:else}
-        Unreachable — start the API server
-      {/if}
-    </div>
-    {#if apiCheckedAt}
-      <div class="status-time">Checked {apiCheckedAt}</div>
-    {/if}
-  </div>
-
-  <!-- Quick stat chips -->
-  <div class="quick-stats">
-    <div class="stat-chip">
-      <span class="stat-chip-value">{agentCount}</span>
-      <span class="stat-chip-label">Agents</span>
-    </div>
-    <div class="stat-chip">
-      <span class="stat-chip-value">{activeAgents}</span>
-      <span class="stat-chip-label">Active</span>
-    </div>
-    <div class="stat-chip">
-      <span class="stat-chip-value">{branchReport?.active ?? '—'}</span>
-      <span class="stat-chip-label">Open Branches</span>
-    </div>
-    <div class="stat-chip">
-      <span class="stat-chip-value">{branchReport?.mergeQueue ?? '—'}</span>
-      <span class="stat-chip-label">Pending Merges</span>
-    </div>
-    <div class="stat-chip">
-      <span class="stat-chip-value">${spend.toFixed(4)}</span>
-      <span class="stat-chip-label">Total Spend</span>
-    </div>
-  </div>
-</div>
-
-<!-- ── Navigation cards ────────────────────────────────────────────────────── -->
-<div class="nav-cards">
-  {#each sections as s}
-    <a href={s.href} class="nav-card">
-      <div class="nav-card-icon" style="color:{s.accent}">{s.icon}</div>
-      <div class="nav-card-body">
-        <div class="nav-card-title">{s.label}</div>
-        <div class="nav-card-desc">{s.description}</div>
+  <!-- Right column: Agent activity + Fleet mix -->
+  <div class="cc-right">
+    <!-- Agent activity -->
+    <Card>
+      <div class="cc-card-header cc-card-header-inline">
+        <span class="cc-section-title">LIVE AGENTS</span>
+        <PulseDot color="var(--af-success)" size={6} />
       </div>
-      <div class="nav-card-arrow">›</div>
-    </a>
-  {/each}
-</div>
+      {#if snapshot.errors.agents && snapshot.agents.length === 0}
+        <div class="cc-section-err-block">
+          Couldn&rsquo;t load agents —
+          <button class="cc-link-btn" onclick={refreshAgents}>retry</button>
+        </div>
+      {:else if agentActivities.length === 0}
+        <div class="cc-empty">No agents registered yet.</div>
+      {:else}
+        <ul class="cc-agent-list">
+          {#each agentActivities as ag (ag.agentId)}
+            <li>
+              <a class="cc-agent-row" href="/agents/{ag.agentId}">
+                <span
+                  class="cc-agent-dot"
+                  class:cc-agent-dot-active={ag.lastRun > Date.now() - 60 * 60 * 1000}
+                ></span>
+                <div class="cc-agent-meta">
+                  <div class="cc-agent-name">{ag.name}</div>
+                  <div class="cc-agent-sub font-mono">
+                    {ag.sessionCount} runs · {fmtRel(ag.lastRun)}
+                  </div>
+                </div>
+                <Sparkline data={ag.sparkline} color="var(--af-purple)" w={50} h={16} />
+                <ModelChip model={ag.declaredModel} />
+              </a>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </Card>
 
-<!-- ── Live metrics grid ───────────────────────────────────────────────────── -->
-<StatGrid />
-
-<!-- ── Agent table + recent sessions ─────────────────────────────────────── -->
-<AgentTable />
-<RecentSessions />
+    <!-- Fleet mix -->
+    <Card>
+      <div class="cc-card-header cc-card-header-inline">
+        <span class="cc-section-title">FLEET MIX</span>
+        <span class="font-mono cc-card-meta">{snapshot.costs?.byModel.length ?? 0} models</span>
+      </div>
+      {#if snapshot.errors.costs && !snapshot.costs}
+        <div class="cc-section-err-block">
+          Couldn&rsquo;t load costs —
+          <button class="cc-link-btn" onclick={refreshCosts}>retry</button>
+        </div>
+      {:else if tierMix.total === 0}
+        <div class="cc-empty">No cost data yet.</div>
+      {:else}
+        <DistBar segments={[
+          { value: tierMix.opus,   color: 'var(--af-opus)',   label: `opus ${fmtDollar(tierMix.opus)}` },
+          { value: tierMix.sonnet, color: 'var(--af-sonnet)', label: `sonnet ${fmtDollar(tierMix.sonnet)}` },
+          { value: tierMix.haiku,  color: 'var(--af-haiku)',  label: `haiku ${fmtDollar(tierMix.haiku)}` },
+          ...(tierMix.other > 0 ? [{ value: tierMix.other, color: 'var(--af-dim)', label: `other ${fmtDollar(tierMix.other)}` }] : []),
+        ]} h={6} />
+        <div class="cc-tier-legend">
+          <span>
+            <span class="cc-tier-swatch" style="background:var(--af-opus)"></span>
+            <span class="cc-tier-label">opus</span>
+            <span class="font-mono cc-tier-val">{fmtDollar(tierMix.opus)}</span>
+          </span>
+          <span>
+            <span class="cc-tier-swatch" style="background:var(--af-sonnet)"></span>
+            <span class="cc-tier-label">sonnet</span>
+            <span class="font-mono cc-tier-val">{fmtDollar(tierMix.sonnet)}</span>
+          </span>
+          <span>
+            <span class="cc-tier-swatch" style="background:var(--af-haiku)"></span>
+            <span class="cc-tier-label">haiku</span>
+            <span class="font-mono cc-tier-val">{fmtDollar(tierMix.haiku)}</span>
+          </span>
+        </div>
+      {/if}
+    </Card>
+  </div>
+</section>
 
 <style>
-  /* ── Version banner ──────────────────────────────────────────────────────── */
-  .version-banner {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-2) var(--space-4);
-    background: rgba(99,102,241,0.06);
-    border: 1px solid rgba(99,102,241,0.2);
-    border-radius: var(--radius-md);
-    margin-bottom: var(--space-4);
-    flex-wrap: wrap;
-  }
-
-  .version-badge-pill {
-    font-size: var(--text-xs);
-    font-weight: 700;
-    color: #818cf8;
-    background: rgba(99,102,241,0.12);
-    border: 1px solid rgba(99,102,241,0.3);
-    padding: 2px 10px;
-    border-radius: 999px;
-    font-family: var(--font-mono, monospace);
-    letter-spacing: 0.02em;
-  }
-
-  .sprint-label {
-    font-size: var(--text-xs);
-    color: var(--color-text-muted);
-    font-weight: 500;
-  }
-
-  /* ── Status row ──────────────────────────────────────────────────────────── */
-  .status-row {
-    display: flex;
-    gap: var(--space-4);
-    margin-bottom: var(--space-5);
-    flex-wrap: wrap;
-    align-items: flex-start;
-  }
-
-  .status-card {
-    flex: 0 0 280px;
-    padding: var(--space-4);
-    border-radius: var(--radius-md);
-    border: 1px solid var(--color-border);
-    background: var(--color-surface);
-  }
-
-  .status-card.status-ok {
-    border-color: rgba(34, 197, 94, 0.4);
-    background: rgba(34, 197, 94, 0.05);
-  }
-
-  .status-card.status-err {
-    border-color: rgba(239, 68, 68, 0.4);
-    background: rgba(239, 68, 68, 0.05);
-  }
-
-  .status-card.status-checking {
-    border-color: rgba(234, 179, 8, 0.3);
-    background: rgba(234, 179, 8, 0.03);
-  }
-
-  .status-card-header {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    margin-bottom: var(--space-2);
-    font-weight: 600;
-    font-size: var(--text-sm);
-  }
-
-  .status-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: currentColor;
-    flex-shrink: 0;
-  }
-
-  .status-ok .status-dot   { background: rgb(34, 197, 94); }
-  .status-err .status-dot  { background: rgb(239, 68, 68); }
-  .status-checking .status-dot { background: rgb(234, 179, 8); }
-
-  .status-label {
-    color: var(--color-text);
-    font-size: var(--text-sm);
-    font-weight: 600;
-  }
-
-  .status-version {
-    font-size: var(--text-xs);
-    color: var(--color-text-muted);
-    background: var(--color-surface-elevated, rgba(255,255,255,0.06));
-    padding: 1px 6px;
-    border-radius: 4px;
-    font-family: var(--font-mono, monospace);
-  }
-
-  .status-detail {
-    font-size: var(--text-sm);
-    color: var(--color-text-muted);
-    line-height: 1.4;
-  }
-
-  .status-time {
-    margin-top: var(--space-2);
-    font-size: var(--text-xs);
-    color: var(--color-text-muted);
-    opacity: 0.7;
-  }
-
-  /* ── Quick stats ─────────────────────────────────────────────────────────── */
-  .quick-stats {
-    display: flex;
-    gap: var(--space-3);
-    flex-wrap: wrap;
-    align-items: stretch;
-  }
-
-  .stat-chip {
+  /* ── Page header ───────────────────────────────────────────────────────── */
+  .cc-header {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: var(--space-3) var(--space-4);
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    min-width: 90px;
-    gap: var(--space-1);
+    gap: 6px;
+    margin-bottom: 14px;
   }
-
-  .stat-chip-value {
-    font-size: var(--text-xl, 1.25rem);
-    font-weight: 700;
-    color: var(--color-text);
-    font-family: var(--font-mono, monospace);
-    line-height: 1;
+  .cc-crumbs {
+    font-size: 11px;
+    color: var(--af-dim);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
   }
-
-  .stat-chip-label {
-    font-size: var(--text-xs);
-    color: var(--color-text-muted);
-    text-align: center;
-    white-space: nowrap;
-  }
-
-  /* ── Navigation cards ────────────────────────────────────────────────────── */
-  .nav-cards {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: var(--space-3);
-    margin-bottom: var(--space-5);
-  }
-
-  .nav-card {
+  .cc-headline-row {
     display: flex;
     align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-4);
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    text-decoration: none;
-    color: inherit;
-    transition: border-color 0.15s, background 0.15s;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .cc-title {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--af-text);
+  }
+  .cc-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .cc-subtitle {
+    font-size: 12px;
+    color: var(--af-muted);
+    line-height: 1.4;
+  }
+  .cc-load { font-weight: 600; }
+  .cc-load-idle { color: var(--af-success); }
+  .cc-load-busy { color: var(--af-warning); }
+  .cc-load-overloaded { color: var(--af-danger); }
+
+  /* ── KPI strip ─────────────────────────────────────────────────────────── */
+  .cc-kpis {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  @media (max-width: 980px) {
+    .cc-kpis { grid-template-columns: repeat(2, 1fr); }
   }
 
-  .nav-card:hover {
-    border-color: var(--color-primary, #6366f1);
-    background: var(--color-surface-hover, rgba(255,255,255,0.04));
-  }
+  /* ── Hero panel ────────────────────────────────────────────────────────── */
+  .cc-hero-wrap { margin-bottom: 12px; }
 
-  .nav-card-icon {
-    font-size: 1.4rem;
-    flex-shrink: 0;
-    width: 2rem;
-    text-align: center;
-    line-height: 1;
+  .cc-hero-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--af-border);
+    min-height: 50px;
+    flex-wrap: wrap;
   }
+  .cc-hero-head-left,
+  .cc-hero-head-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .cc-hero-eyebrow {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+  }
+  .cc-hero-eyebrow-active { color: var(--af-purple); }
+  .cc-hero-eyebrow-idle { color: var(--af-dim); }
+  .cc-hero-id {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--af-text);
+  }
+  .cc-hero-version {
+    font-size: 11px;
+    color: var(--af-dim);
+  }
+  .cc-hero-sep { color: var(--af-faint); }
+  .cc-hero-stage {
+    font-size: 11px;
+    color: var(--af-muted);
+    text-transform: lowercase;
+  }
+  .cc-hero-elapsed {
+    font-size: 13px;
+    color: var(--af-text);
+    font-weight: 500;
+  }
+  .cc-hero-rail {
+    padding: 18px 16px 14px;
+  }
+  .cc-hero-quad {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--af-border);
+    border-top: 1px solid var(--af-border);
+  }
+  @media (max-width: 720px) {
+    .cc-hero-quad { grid-template-columns: repeat(2, 1fr); }
+  }
+  .cc-quad {
+    padding: 12px 16px;
+    background: var(--af-surface);
+  }
+  .cc-quad-label {
+    font-size: 9px;
+    color: var(--af-dim);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .cc-quad-value {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--af-text);
+    margin-bottom: 4px;
+    letter-spacing: -0.02em;
+  }
+  .cc-quad-sub {
+    font-size: 10px;
+    color: var(--af-dim);
+  }
+  .cc-quad-bar {
+    margin-top: 8px;
+    height: 2px;
+    background: var(--af-border);
+    border-radius: 1px;
+    overflow: hidden;
+  }
+  .cc-quad-fill {
+    height: 100%;
+    transition: width 600ms ease;
+  }
+  .cc-quad-fill-gradient { background: var(--af-grad-h); }
+  .cc-quad-fill-success { background: var(--af-success); }
 
-  .nav-card-body {
-    flex: 1;
+  .cc-hero-idle {
+    padding: 32px 24px;
+    text-align: left;
+  }
+  .cc-hero-idle-eyebrow {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: var(--af-dim);
+    margin-bottom: 6px;
+  }
+  .cc-hero-idle-title {
+    font-size: 26px;
+    font-weight: 600;
+    color: var(--af-text);
+    margin-bottom: 6px;
+  }
+  .cc-hero-idle-sub {
+    font-size: 13px;
+    color: var(--af-muted);
+    margin-bottom: 16px;
+    max-width: 480px;
+  }
+  .cc-hero-idle-cta { display: flex; gap: 8px; }
+
+  /* ── Bottom row ────────────────────────────────────────────────────────── */
+  .cc-bottom {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 12px;
+  }
+  @media (max-width: 980px) {
+    .cc-bottom { grid-template-columns: 1fr; }
+  }
+  .cc-right {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
     min-width: 0;
   }
 
-  .nav-card-title {
-    font-size: var(--text-sm);
-    font-weight: 600;
-    color: var(--color-text);
-    margin-bottom: 2px;
-  }
-
-  .nav-card-desc {
-    font-size: var(--text-xs);
-    color: var(--color-text-muted);
-    line-height: 1.4;
-  }
-
-  .nav-card-arrow {
-    font-size: 1.2rem;
-    color: var(--color-text-muted);
-    flex-shrink: 0;
-  }
-
-  /* ── Autonomous section (v6.5) ─────────────────────────────────────────── */
-  .autonomous-section {
-    display: grid;
-    grid-template-columns: 2fr 1fr;
-    gap: var(--space-4);
-    margin-bottom: var(--space-5);
-  }
-  @media (max-width: 980px) {
-    .autonomous-section { grid-template-columns: 1fr; }
-  }
-
-  .hero-card {
-    display: flex;
-    gap: var(--space-5);
-    padding: var(--space-6);
-    background: linear-gradient(135deg, rgba(91,138,245,0.08), rgba(74,158,255,0.04));
-    border: 1px solid rgba(91,138,245,0.3);
-    border-radius: var(--radius-lg);
-  }
-
-  .hero-body { flex: 1; min-width: 0; }
-  .hero-eyebrow {
-    font-size: var(--text-xs);
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    color: var(--color-brand);
-    margin-bottom: var(--space-2);
-  }
-  .hero-title {
-    font-size: var(--text-xl);
-    font-weight: 700;
-    color: var(--color-text);
-    margin: 0 0 var(--space-2) 0;
-  }
-  .hero-desc {
-    font-size: var(--text-sm);
-    color: var(--color-text-muted);
-    line-height: 1.5;
-    margin: 0 0 var(--space-4) 0;
-    max-width: 540px;
-  }
-  .hero-cta {
-    padding: var(--space-3) var(--space-5);
-    font-weight: 600;
-  }
-
-  .running-panel {
-    flex: 0 0 220px;
-    padding: var(--space-3);
-    background: var(--color-bg-card);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-  .running-header {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
-  .running-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--color-info);
-    flex-shrink: 0;
-  }
-  .running-title {
-    font-size: var(--text-xs);
-    font-family: var(--font-mono);
-    color: var(--color-text);
-    font-weight: 600;
-  }
-  .running-row {
+  /* ── Card headers ──────────────────────────────────────────────────────── */
+  .cc-card-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--af-border);
   }
-  .running-elapsed {
-    font-family: var(--font-mono);
-    font-size: var(--text-xs);
-    color: var(--color-text-muted);
+  .cc-card-header-inline {
+    padding: 0 0 10px;
+    border-bottom: 1px solid var(--af-border);
+    margin-bottom: 10px;
   }
-  .mini-burn-label {
-    font-size: var(--text-xs);
-    color: var(--color-text-muted);
-    font-family: var(--font-mono);
+  .cc-section-title {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: var(--af-dim);
+    text-transform: uppercase;
   }
-  .mini-burn-bar {
-    width: 100%;
-    height: 4px;
-    background: var(--color-surface-2);
-    border-radius: var(--radius-full);
-    overflow: hidden;
-  }
-  .mini-burn-fill {
-    height: 100%;
-    background: linear-gradient(90deg, var(--color-success), var(--color-info));
-  }
-  .running-link {
-    font-size: var(--text-xs);
-    color: var(--color-brand);
+  .cc-link {
+    font-size: 11px;
+    color: var(--af-dim);
     text-decoration: none;
-    margin-top: var(--space-1);
   }
-  .running-link:hover { text-decoration: underline; }
+  .cc-link:hover { color: var(--af-accent2); }
+  .cc-card-meta {
+    font-size: 10px;
+    color: var(--af-dim);
+  }
 
-  .recent-cycles-card {
-    padding: var(--space-4);
-    background: var(--color-bg-card);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-  }
-  .recent-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    border-bottom: 1px solid var(--color-border);
-    padding-bottom: var(--space-2);
-    margin-bottom: var(--space-3);
-  }
-  .see-all-link {
-    font-size: var(--text-xs);
-    color: var(--color-brand);
-    text-decoration: none;
-  }
-  .see-all-link:hover { text-decoration: underline; }
-  .recent-empty {
-    font-size: var(--text-xs);
-    color: var(--color-text-faint);
-    text-align: center;
-    padding: var(--space-4) 0;
-  }
-  .recent-list {
+  /* ── Cycle list ────────────────────────────────────────────────────────── */
+  .cc-cycle-list {
     list-style: none;
-    margin: 0;
     padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
+    margin: 0;
   }
-  .recent-item {
+  .cc-cycle-row {
     display: grid;
-    grid-template-columns: auto 1fr auto auto auto;
-    gap: var(--space-2);
+    grid-template-columns: auto auto 1fr auto auto auto;
+    gap: 12px;
     align-items: center;
-    font-size: var(--text-xs);
-    padding: var(--space-2);
-    background: var(--color-surface-1);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-  }
-  .recent-id {
-    font-family: var(--font-mono);
-    color: var(--color-text);
-    font-weight: 600;
-  }
-  .recent-version {
-    font-family: var(--font-mono);
-    color: var(--color-text-muted);
-  }
-  .recent-cost {
-    font-family: var(--font-mono);
-    color: var(--color-text);
-  }
-  .recent-view {
-    font-size: var(--text-xs);
-    color: var(--color-brand);
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--af-border);
     text-decoration: none;
+    color: inherit;
+    transition: background 150ms ease;
   }
-  .recent-view:hover { text-decoration: underline; }
+  .cc-cycle-row:hover { background: var(--af-surface2); }
+  .cc-cycle-list li:last-child .cc-cycle-row { border-bottom: none; }
+  .cc-cycle-id {
+    font-size: 11px;
+    color: var(--af-text);
+    font-weight: 600;
+    min-width: 70px;
+  }
+  .cc-cycle-ver {
+    font-size: 11px;
+    color: var(--af-dim);
+  }
+  .cc-cycle-when {
+    font-size: 10px;
+    color: var(--af-dim);
+    text-align: right;
+    min-width: 60px;
+  }
+  .cc-cycle-cost {
+    font-size: 11px;
+    color: var(--af-text);
+    text-align: right;
+    min-width: 60px;
+  }
+
+  /* ── Agent list ────────────────────────────────────────────────────────── */
+  .cc-agent-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .cc-agent-row {
+    display: grid;
+    grid-template-columns: auto 1fr auto auto;
+    gap: 10px;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--af-border);
+    text-decoration: none;
+    color: inherit;
+  }
+  .cc-agent-list li:last-child .cc-agent-row { border-bottom: none; }
+  .cc-agent-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--af-border3);
+    flex-shrink: 0;
+  }
+  .cc-agent-dot-active {
+    background: var(--af-purple);
+    box-shadow: 0 0 6px var(--af-purple);
+  }
+  .cc-agent-meta { min-width: 0; }
+  .cc-agent-name {
+    font-size: 12px;
+    color: var(--af-text);
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cc-agent-sub {
+    font-size: 10px;
+    color: var(--af-dim);
+    margin-top: 1px;
+  }
+
+  /* ── Fleet mix legend ──────────────────────────────────────────────────── */
+  .cc-tier-legend {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 10px;
+    font-size: 10px;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .cc-tier-legend > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .cc-tier-swatch {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .cc-tier-label { color: var(--af-muted); }
+  .cc-tier-val { color: var(--af-text); }
+
+  /* ── Empty + error + skeleton ──────────────────────────────────────────── */
+  .cc-empty {
+    font-size: 12px;
+    color: var(--af-faint);
+    padding: 28px 16px;
+    text-align: center;
+  }
+  .cc-section-err { color: var(--af-danger); }
+  .cc-section-err-block {
+    color: var(--af-danger);
+    padding: 16px;
+    font-size: 12px;
+  }
+  .cc-link-btn {
+    background: none;
+    border: none;
+    color: var(--af-accent2);
+    cursor: pointer;
+    text-decoration: underline;
+    font-size: inherit;
+    padding: 0;
+  }
+  .cc-skel {
+    background: linear-gradient(90deg, var(--af-surface) 0%, var(--af-surface2) 50%, var(--af-surface) 100%);
+    background-size: 200% 100%;
+    animation: cc-skel-anim 1.4s ease-in-out infinite;
+    border-radius: 4px;
+    vertical-align: middle;
+  }
+  @keyframes cc-skel-anim {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .cc-skel { animation: none; }
+    .cc-quad-fill { transition: none; }
+  }
 </style>
