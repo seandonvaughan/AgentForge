@@ -654,3 +654,97 @@ describe('deriveStatus phase normalization', () => {
     });
   }
 });
+
+// ---------------------------------------------------------------------------
+// Security: path-traversal rejection on GET /api/v5/sprints/:version
+// ---------------------------------------------------------------------------
+// These tests pin the SAFE_VERSION + safeJoin double-guard introduced in the
+// v10.5.0 security audit to prevent `.agentforge/sprints/` directory escape.
+// They MUST all return 400 — a 200 or a file-read-error means the guard broke.
+describe('GET /api/v5/sprints/:version — path traversal guards', () => {
+  let app: ReturnType<typeof Fastify>;
+
+  afterEach(async () => {
+    await app.close();
+    cleanup();
+  });
+
+  // Vectors that reach the handler and are rejected by SAFE_VERSION → 400
+  const HANDLER_REJECTED_VECTORS = [
+    '../etc/passwd',
+    '..%2Fetc%2Fpasswd',
+    '../../.agentforge/config/settings',
+    '.',
+    '',
+    'v%2F..%2Fetc',
+    '%2e%2e',
+    'x/../../etc',
+    'x/../y',
+  ];
+
+  // Vectors that Fastify's URL router normalises away BEFORE reaching the handler
+  // (e.g. ".." collapses the path to the parent segment → 404 no-route).
+  // Both 400 and 404 are safe — neither returns file contents.
+  const ROUTER_NORMALIZED_VECTORS = ['..'];
+
+  for (const vector of HANDLER_REJECTED_VECTORS) {
+    it(`rejects version "${vector}" with 400`, async () => {
+      const root = setup();
+      app = await buildApp(root);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/v5/sprints/${encodeURIComponent(vector)}`,
+      });
+      // SAFE_VERSION regex must reject all of these before any FS access
+      expect(res.statusCode).toBe(400);
+    });
+  }
+
+  for (const vector of ROUTER_NORMALIZED_VECTORS) {
+    it(`safely rejects version "${vector}" (router-level or handler-level, not 200)`, async () => {
+      const root = setup();
+      app = await buildApp(root);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/v5/sprints/${encodeURIComponent(vector)}`,
+      });
+      // Fastify normalises ".." in the URL path before routing — the route
+      // handler may never even see it (404 from no-route-match). Either 400
+      // or 404 is acceptable; what matters is that 200 is NOT returned.
+      expect(res.statusCode).not.toBe(200);
+      expect([400, 404]).toContain(res.statusCode);
+    });
+  }
+
+  it('accepts a valid semver version (e.g. 10.5.0)', async () => {
+    const root = setup();
+    writeFileSync(join(root, '.agentforge/sprints/v10.5.0.json'), JSON.stringify({
+      version: '10.5.0',
+      title: 'Valid version',
+      phase: 'completed',
+      items: [],
+    }));
+    app = await buildApp(root);
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/sprints/10.5.0' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.version).toBe('10.5.0');
+  });
+
+  it('accepts a hyphenated sprint name (e.g. phase-active)', async () => {
+    const root = setup();
+    writeFileSync(join(root, '.agentforge/sprints/vphase-active.json'), JSON.stringify({
+      version: 'phase-active',
+      title: 'Hyphenated sprint',
+      phase: 'in_progress',
+      items: [],
+    }));
+    app = await buildApp(root);
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/sprints/phase-active' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.status).toBe('in_progress');
+  });
+});

@@ -155,3 +155,68 @@ describe('DEFAULT_CYCLE_CONFIG typecheck commands', () => {
     expect(DEFAULT_CYCLE_CONFIG.testing.typeCheckCommand).toBe('pnpm exec tsc --noEmit --pretty false');
   });
 });
+
+// ---------------------------------------------------------------------------
+// parseCommandArgs — shell tokenizer used by defaultTypeCheck
+// ---------------------------------------------------------------------------
+// These tests guard against regressing the fix for the MAJOR split(' ') bug
+// (gate-verdict 447f0e64): naive split(' ') breaks commands that contain
+// quoted arguments with interior spaces (e.g. `pnpm --filter "@agentforge/core" build`).
+
+describe('parseCommandArgs', () => {
+  it('splits a simple space-separated command', async () => {
+    const { parseCommandArgs } = await import('../cycle-runner.js');
+    expect(parseCommandArgs('pnpm exec tsc --noEmit')).toEqual([
+      'pnpm', 'exec', 'tsc', '--noEmit',
+    ]);
+  });
+
+  it('strips double quotes and preserves the quoted token as a single arg', async () => {
+    const { parseCommandArgs } = await import('../cycle-runner.js');
+    expect(parseCommandArgs('pnpm --filter "@agentforge/core" build')).toEqual([
+      'pnpm', '--filter', '@agentforge/core', 'build',
+    ]);
+  });
+
+  it('strips single quotes and preserves the quoted token as a single arg', async () => {
+    const { parseCommandArgs } = await import('../cycle-runner.js');
+    expect(parseCommandArgs("pnpm --filter '@agentforge/core' build")).toEqual([
+      'pnpm', '--filter', '@agentforge/core', 'build',
+    ]);
+  });
+
+  it('collapses consecutive whitespace between tokens', async () => {
+    const { parseCommandArgs } = await import('../cycle-runner.js');
+    expect(parseCommandArgs('pnpm  build')).toEqual(['pnpm', 'build']);
+  });
+
+  it('returns an empty array for an empty string', async () => {
+    const { parseCommandArgs } = await import('../cycle-runner.js');
+    expect(parseCommandArgs('')).toEqual([]);
+  });
+
+  it('handles a quoted token containing spaces correctly (the regression case)', async () => {
+    const { parseCommandArgs } = await import('../cycle-runner.js');
+    // This is the exact pattern that `split(' ')` broke: the quoted arg contains
+    // a scope with an @ and slash that should remain a single token.
+    const argv = parseCommandArgs('pnpm --filter "@agentforge/core" build');
+    expect(argv).toHaveLength(4);
+    expect(argv[0]).toBe('pnpm');
+    expect(argv[1]).toBe('--filter');
+    expect(argv[2]).toBe('@agentforge/core');
+    expect(argv[3]).toBe('build');
+  });
+
+  it('handles the default buildCommand without quotes correctly', async () => {
+    const { parseCommandArgs } = await import('../cycle-runner.js');
+    // The default command has no quotes — verify backward compatibility.
+    expect(parseCommandArgs('pnpm --filter @agentforge/core build')).toEqual([
+      'pnpm', '--filter', '@agentforge/core', 'build',
+    ]);
+  });
+
+  it('handles tab characters as whitespace delimiters', async () => {
+    const { parseCommandArgs } = await import('../cycle-runner.js');
+    expect(parseCommandArgs('pnpm\texec\ttsc')).toEqual(['pnpm', 'exec', 'tsc']);
+  });
+});

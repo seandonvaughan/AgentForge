@@ -106,6 +106,9 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
   await app.register(import('@fastify/websocket'));
 
   await app.register(FastifyCors, {
+    // Strict localhost-only allowlist — no wildcard, no credentials.
+    // If the server is ever exposed beyond loopback, extend this list and
+    // register the OAuth2 auth hook (registerOAuth2Hook) before doing so.
     origin: [
       `http://${host}:${port}`,
       `http://localhost:${port}`,
@@ -114,6 +117,10 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
       'http://127.0.0.1:4751',
       'http://127.0.0.1:4752',
     ],
+    // Explicit values for defense-in-depth — do not rely on @fastify/cors defaults.
+    credentials: false,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Workspace-Id'],
   });
 
   // ── v5 REST routes (full stack when adapter+registry provided) ───────────────
@@ -168,7 +175,9 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
 
     // Knowledge graph — reads .agentforge/knowledge/entities.jsonl so the
     // /knowledge page is populated from cycle-accumulated entity data.
-    await knowledgeRoutes(app, { projectRoot });
+    // Pass adapter when available (else-branch may have adapter without registry)
+    // so SQLite KV persistence is engaged rather than running fully in-memory.
+    await knowledgeRoutes(app, { projectRoot, adapter: options.adapter });
 
     // Agent runtime streaming — in-memory, no adapter required
     await agentStreamingRoutes(app);

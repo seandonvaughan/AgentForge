@@ -174,6 +174,11 @@ function registerAdapterRoutes(app: FastifyInstance, adapter: WorkspaceAdapter):
     if (!proposalId || !executionId) {
       return reply.status(400).send({ error: 'proposalId and executionId are required' });
     }
+    // Guard: diff payloads from large automated PRs can be multi-MB. Cap at 512 KiB to
+    // prevent unbounded SQLite growth while still accommodating realistic diffs.
+    if (diff !== undefined && diff.length > 524_288) {
+      return reply.status(413).send({ error: 'diff exceeds maximum length of 512 KiB' });
+    }
 
     const row = adapter.createApproval({
       id: generateId(),
@@ -274,6 +279,11 @@ function registerStandaloneRoutes(app: FastifyInstance, db: Sqlite.Database): vo
 
     if (!proposalId || !executionId) {
       return reply.status(400).send({ error: 'proposalId and executionId are required' });
+    }
+    // Guard: diff payloads from large automated PRs can be multi-MB. Cap at 512 KiB to
+    // prevent unbounded SQLite growth while still accommodating realistic diffs.
+    if (diff !== undefined && diff.length > 524_288) {
+      return reply.status(413).send({ error: 'diff exceeds maximum length of 512 KiB' });
     }
 
     const id = generateId();

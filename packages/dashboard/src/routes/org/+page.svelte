@@ -43,12 +43,18 @@
   let totalEdges = $state(_serverEdges.length);
   let orphansCollapsed = $state(true);
   let collapsed: Set<string> = $state(computeAutoCollapsed(_init.roots));
+  // Tracks the full flat node list for the model-mix sidebar and all-agents
+  // scroll list. Must be updated by BOTH the SSR $effect and the client-side
+  // API load() so those sections stay in sync regardless of which data path
+  // was used to populate the tree.
+  let allNodes: OrgNode[] = $state([..._serverNodes]);
 
   // Re-sync on data changes
   $effect(() => {
     const nodes: OrgNode[] = (data.nodes as OrgNodeData[] as OrgNode[]) ?? [];
     const edges: OrgEdge[] = (data.edges as OrgEdgeData[] as OrgEdge[]) ?? [];
     if (nodes.length === 0) return;
+    allNodes = nodes;
     const result = buildTree(nodes, edges);
     roots = result.roots;
     orphans = result.orphans;
@@ -167,10 +173,12 @@
       const res = await fetch('/api/v5/org-graph', { signal: controller.signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
+      // API wraps in { data: { nodes, edges }, meta: {...} }; unwrap if present.
       const apiData = json.data ?? json ?? { nodes: [], edges: [] };
-      totalNodes = apiData.nodes?.length ?? 0;
+      allNodes = (apiData.nodes ?? []) as OrgNode[];
+      totalNodes = allNodes.length;
       totalEdges = apiData.edges?.length ?? 0;
-      const result = buildTree(apiData.nodes ?? [], apiData.edges ?? []);
+      const result = buildTree(allNodes, apiData.edges ?? []);
       roots = result.roots;
       orphans = result.orphans;
       collapsed = computeAutoCollapsed(roots);
@@ -296,11 +304,13 @@
     return result;
   });
 
-  // Cost grouping for sidebar (approximate — no real cost data without sessions)
+  // Cost grouping for sidebar (approximate — no real cost data without sessions).
+  // Reads from allNodes (not data.nodes) so that the API-fallback path keeps
+  // the sidebar in sync with the tree when SSR returns empty data.
   let modelMix = $derived({
-    opus:   (data.nodes as OrgNodeData[]).filter(n => n.model === 'opus').length,
-    sonnet: (data.nodes as OrgNodeData[]).filter(n => n.model === 'sonnet').length,
-    haiku:  (data.nodes as OrgNodeData[]).filter(n => n.model === 'haiku').length,
+    opus:   allNodes.filter(n => n.model === 'opus').length,
+    sonnet: allNodes.filter(n => n.model === 'sonnet').length,
+    haiku:  allNodes.filter(n => n.model === 'haiku').length,
   });
   let modelTotal = $derived(modelMix.opus + modelMix.sonnet + modelMix.haiku);
 </script>
@@ -493,7 +503,7 @@
           <span class="font-mono af-section-count">{totalNodes}</span>
         </div>
         <div class="af-agent-scroll">
-          {#each (data.nodes as OrgNodeData[]).sort((a, b) => {
+          {#each [...allNodes].sort((a, b) => {
             const t: Record<string, number> = { opus: 0, sonnet: 1, haiku: 2 };
             return (t[a.model ?? ''] ?? 3) - (t[b.model ?? ''] ?? 3) || a.label.localeCompare(b.label);
           }) as node}

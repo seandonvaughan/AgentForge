@@ -128,6 +128,17 @@ describe('POST /api/v5/approvals', () => {
     expect(data.diff).toBe('--- a/foo.ts\n+++ b/foo.ts\n@@');
     expect(data.testSummary).toEqual({ passed: 10, failed: 0, total: 10 });
   });
+
+  it('returns 413 when diff exceeds 512 KiB', async () => {
+    const hugeDiff = 'x'.repeat(524_289); // one byte over the limit
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v5/approvals',
+      payload: makeBody({ diff: hugeDiff }),
+    });
+    expect(res.statusCode).toBe(413);
+    expect(res.json()).toMatchObject({ error: expect.stringContaining('512 KiB') });
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -266,6 +266,8 @@ export interface KnowledgeEntityRow {
   description: string | null;
   source_cycle_id: string | null;
   embedding: Buffer | null;
+  properties_json: string;
+  updated_at: string;
   created_at: string;
 }
 
@@ -275,6 +277,7 @@ export interface KnowledgeRelationshipRow {
   to_entity_id: string;
   type: string;
   confidence: number;
+  properties_json: string;
   created_at: string;
 }
 
@@ -405,6 +408,7 @@ export class WorkspaceAdapter {
     this.db.pragma('foreign_keys = ON');
     this.db.exec(WORKSPACE_DDL);
     this.ensureRuntimeTraceColumns();
+    this.ensureKnowledgeColumns();
   }
 
   private ensureRuntimeTraceColumns(): void {
@@ -414,6 +418,17 @@ export class WorkspaceAdapter {
     this.db.prepare("UPDATE runtime_events SET trace_id = 'trace-' || session_id WHERE trace_id IS NULL OR trace_id = ''").run();
     this.db.prepare('CREATE INDEX IF NOT EXISTS idx_runtime_jobs_trace ON runtime_jobs(trace_id)').run();
     this.db.prepare('CREATE INDEX IF NOT EXISTS idx_runtime_events_trace ON runtime_events(trace_id, sequence)').run();
+  }
+
+  /**
+   * Add `properties_json` and `updated_at` to knowledge tables when upgrading
+   * from an older DB that was created before these columns were introduced.
+   * Safe to call on a fresh DB — `ensureColumn` is idempotent.
+   */
+  private ensureKnowledgeColumns(): void {
+    this.ensureColumn('knowledge_entities', 'properties_json', "TEXT NOT NULL DEFAULT '{}'");
+    this.ensureColumn('knowledge_entities', 'updated_at', "TEXT NOT NULL DEFAULT (datetime('now'))");
+    this.ensureColumn('knowledge_relationships', 'properties_json', "TEXT NOT NULL DEFAULT '{}'");
   }
 
   private ensureColumn(table: string, column: string, definition: string): void {
@@ -1284,20 +1299,27 @@ export class WorkspaceAdapter {
     description?: string | null;
     sourceCycleId?: string | null;
     embedding?: Float32Array | null;
+    propertiesJson?: string;
+    updatedAt?: string;
     createdAt?: string;
   }): KnowledgeEntityRow {
     const id = data.id ?? generateId();
-    const createdAt = data.createdAt ?? nowIso();
+    const now = nowIso();
+    const createdAt = data.createdAt ?? now;
+    const updatedAt = data.updatedAt ?? now;
     const embeddingBlob = data.embedding ? Buffer.from(data.embedding.buffer) : null;
     this.db.prepare(`
-      INSERT INTO knowledge_entities (id, type, name, description, source_cycle_id, embedding, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO knowledge_entities
+        (id, type, name, description, source_cycle_id, embedding, properties_json, updated_at, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         type = excluded.type,
         name = excluded.name,
         description = excluded.description,
         source_cycle_id = excluded.source_cycle_id,
-        embedding = COALESCE(excluded.embedding, embedding)
+        embedding = COALESCE(excluded.embedding, embedding),
+        properties_json = excluded.properties_json,
+        updated_at = excluded.updated_at
     `).run(
       id,
       data.type,
@@ -1305,6 +1327,8 @@ export class WorkspaceAdapter {
       data.description ?? null,
       data.sourceCycleId ?? null,
       embeddingBlob,
+      data.propertiesJson ?? '{}',
+      updatedAt,
       createdAt,
     );
     return this.getKnowledgeEntity(id)!;
@@ -1349,19 +1373,22 @@ export class WorkspaceAdapter {
     toEntityId: string;
     type: string;
     confidence?: number;
+    propertiesJson?: string;
     createdAt?: string;
   }): KnowledgeRelationshipRow {
     const id = data.id ?? generateId();
     const createdAt = data.createdAt ?? nowIso();
     this.db.prepare(`
-      INSERT INTO knowledge_relationships (id, from_entity_id, to_entity_id, type, confidence, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO knowledge_relationships
+        (id, from_entity_id, to_entity_id, type, confidence, properties_json, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       data.fromEntityId,
       data.toEntityId,
       data.type,
       data.confidence ?? 0.5,
+      data.propertiesJson ?? '{}',
       createdAt,
     );
     return this.getKnowledgeRelationship(id)!;

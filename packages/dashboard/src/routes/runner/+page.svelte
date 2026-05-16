@@ -337,7 +337,7 @@
   function showHistoryRun(run: RunHistory) {
     selectedHistoryRun = run;
     currentRunOutput = '';
-    output = run.output ?? '(No output captured)';
+    output = run.output || '(No output captured)';
     outputAgentName = run.agentId;
     outputTimestamp = new Date(run.startedAt).toLocaleTimeString('en-US', { hour12: false });
     outputModel = run.model ? modelIdToTierLabel(run.model) : (MODEL_TIER_META[getAgentModel(run.agentId)]?.label ?? '—');
@@ -420,7 +420,9 @@
         status:    (r.status ?? 'completed') as RunHistory['status'],
         costUsd:   typeof r.costUsd === 'number' ? r.costUsd : undefined,
         startedAt: (r.startedAt ?? new Date().toISOString()) as string,
-        output:    typeof r.response === 'string' ? r.response : (typeof r.output === 'string' ? r.output : undefined),
+        output:    typeof r.response === 'string' && r.response ? r.response
+                 : typeof r.output === 'string' && r.output ? r.output
+                 : undefined,
         sessionId: (r.sessionId ?? r.id ?? '') as string,
         model:     typeof r.model === 'string' ? r.model : undefined,
         providerKind:        typeof r.providerKind === 'string' ? r.providerKind : undefined,
@@ -461,7 +463,7 @@
     <p class="page-sub">Trigger agent runs and observe real-time output</p>
   </div>
   {#if running}
-    <div class="running-pill">
+    <div class="running-pill running-indicator">
       <PulseDot color="var(--af-purple)" size={6} />
       <span class="af2-mono" style="font-size:11px;color:var(--af-purple)">
         {outputAgentName} · {runStatusLabel}
@@ -644,7 +646,7 @@
             </div>
           {/if}
         </div>
-        <div class="output-header-right">
+        <div class="output-header-right output-actions">
           {#if firstTokenLatencyMs !== null}
             <span class="latency-pill af2-mono">First token {formatLatency(firstTokenLatencyMs)}</span>
           {:else if running}
@@ -657,7 +659,7 @@
 
       <!-- Stream warning -->
       {#if streamWarning}
-        <div class="banner banner--warn" style="margin:0 16px 12px">
+        <div class="banner banner--warn stream-warning" style="margin:0 16px 12px">
           {streamWarning}
         </div>
       {/if}

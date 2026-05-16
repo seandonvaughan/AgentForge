@@ -19,6 +19,25 @@ function makeMockRuntime(response: string) {
   };
 }
 
+/** Captures the task prompt passed to runtime.run for assertion in tests. */
+function makeCapturingRuntime(response: string) {
+  let capturedTask = '';
+  const runtime = {
+    run: async (_config: any, task: string) => {
+      capturedTask = task;
+      return {
+        output: response,
+        usage: { input_tokens: 1000, output_tokens: 500 },
+        costUsd: 0.05,
+        durationMs: 2500,
+        model: 'claude-sonnet-4-6',
+      };
+    },
+    getTask: () => capturedTask,
+  };
+  return runtime;
+}
+
 function makeMockAdapter(p50CostByTag: Record<string, number> = {}) {
   return {
     getSprintHistory: async (_limit: number) => [],
@@ -143,6 +162,28 @@ describe('ScoringPipeline', () => {
     expect(result.warnings.some(w => w.includes('replaced with "coder"'))).toBe(true);
     // Only one replacement warning — the valid 'coder' should not be touched
     expect(result.warnings.filter(w => w.includes('replaced with "coder"'))).toHaveLength(1);
+  });
+
+  it('scorer prompt includes explicit penalty language for off-roster assignees', async () => {
+    const emptyResult = JSON.stringify({
+      rankings: [], totalEstimatedCostUsd: 0, budgetOverflowUsd: 0, summary: 's', warnings: [],
+    });
+    const runtime = makeCapturingRuntime(emptyResult);
+    const { logger } = makeMockLogger();
+    const pipeline = new ScoringPipeline(runtime as any, makeMockAdapter() as any, DEFAULT_CYCLE_CONFIG, logger);
+    await pipeline.score(fakeBacklog);
+
+    const prompt = runtime.getTask();
+    // Penalty language must be present so the LLM treats off-roster names as costly
+    expect(prompt).toContain('scoring penalty');
+    expect(prompt).toContain('gate-rejection');
+    expect(prompt).toContain('BackendEngineer');
+    expect(prompt).toContain('FrontendEngineer');
+    // Substitution hints must guide the LLM toward real IDs
+    expect(prompt).toContain('frontend-dev');
+    expect(prompt).toContain('api-specialist');
+    // Pre-flight checklist must appear
+    expect(prompt).toContain('pre-flight checklist');
   });
 
   it('sanitizes invented assignees in requiresApproval items too', async () => {

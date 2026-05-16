@@ -1,5 +1,4 @@
-import { generateId, nowIso } from '@agentforge/shared';
-import type { WorkspaceAdapter } from '@agentforge/db';
+import type { WorkspaceAdapter, KnowledgeEntityRow, KnowledgeRelationshipRow } from '@agentforge/db';
 import { EntityExtractor } from './entity-extractor.js';
 import { RelationshipMapper } from './relationship-mapper.js';
 import type {
@@ -13,29 +12,72 @@ import type {
   CreateRelationshipRequest,
 } from './types.js';
 
-const KV_ENTITIES = 'knowledge:graph:entities';
-const KV_RELATIONSHIPS = 'knowledge:graph:relationships';
+// ---------------------------------------------------------------------------
+// Row ↔ domain-type converters
+// ---------------------------------------------------------------------------
+
+function rowToEntity(row: KnowledgeEntityRow): Entity {
+  let properties: Record<string, unknown> = {};
+  try {
+    const parsed = JSON.parse(row.properties_json);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      properties = parsed as Record<string, unknown>;
+    }
+  } catch {
+    // Malformed JSON — treat as empty properties
+  }
+  return {
+    id: row.id,
+    name: row.name,
+    type: row.type as EntityType,
+    ...(row.description !== null ? { description: row.description } : {}),
+    properties,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToRelationship(row: KnowledgeRelationshipRow): Relationship {
+  let properties: Record<string, unknown> = {};
+  try {
+    const parsed = JSON.parse(row.properties_json);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      properties = parsed as Record<string, unknown>;
+    }
+  } catch {
+    // Malformed JSON — treat as empty properties
+  }
+  return {
+    id: row.id,
+    sourceId: row.from_entity_id,
+    targetId: row.to_entity_id,
+    type: row.type as RelationshipType,
+    weight: row.confidence,
+    properties,
+    createdAt: row.created_at,
+  };
+}
 
 /**
  * KnowledgeGraph — semantic memory graph with optional WorkspaceAdapter persistence.
  *
  * When constructed with an adapter, entities and relationships are persisted to
- * the workspace KV store across server restarts. Without an adapter, the graph
- * operates purely in-memory (useful for tests).
+ * the `knowledge_entities` / `knowledge_relationships` SQLite tables across server
+ * restarts. Without an adapter, the graph operates purely in-memory (useful for
+ * tests).
  *
- * Read operations always use the in-memory cache for speed. Every mutating
- * operation (add, update, delete) serializes the full collection back to the
- * adapter so the KV store is always the authoritative source of truth.
+ * The in-memory Map/array acts as a read cache: reads are always O(1) from the
+ * cache; every mutating operation writes through to the adapter so the DB is the
+ * authoritative source of truth. The cache is populated once during construction
+ * via `hydrateFromAdapter`.
  */
 export class KnowledgeGraph {
   private entities = new Map<string, Entity>();
   private relationships: Relationship[] = [];
   private readonly extractor = new EntityExtractor();
   private readonly mapper = new RelationshipMapper();
-  // Intentionally typed as `WorkspaceAdapter | undefined` (not `?`) so that
-  // the constructor assignment `this.adapter = adapter` satisfies
-  // exactOptionalPropertyTypes: the parameter is WorkspaceAdapter | undefined
-  // and cannot be assigned to a `?` field without an explicit undefined check.
+  // Typed as `WorkspaceAdapter | undefined` (not `?`) so that the constructor
+  // assignment satisfies exactOptionalPropertyTypes.
   private readonly adapter: WorkspaceAdapter | undefined;
 
   constructor(adapter?: WorkspaceAdapter) {
@@ -45,35 +87,29 @@ export class KnowledgeGraph {
     }
   }
 
-  /** Load persisted entities and relationships from the KV store on startup. */
+  /**
+   * Populate the in-memory cache from the adapter's SQLite tables on startup.
+   * Replaces the former KV-blob approach — uses proper row-level adapter methods.
+   */
   private hydrateFromAdapter(adapter: WorkspaceAdapter): void {
     try {
-      const rawEntities = adapter.kvGet(KV_ENTITIES);
-      if (rawEntities) {
-        const parsed = JSON.parse(rawEntities) as Entity[];
-        for (const entity of parsed) {
-          this.entities.set(entity.id, entity);
-        }
+      // Load up to 10 000 entities — sufficient for any realistic knowledge graph.
+      const entityRows = adapter.listKnowledgeEntities({ limit: 10_000 });
+      for (const row of entityRows) {
+        this.entities.set(row.id, rowToEntity(row));
       }
     } catch {
-      // Non-fatal: malformed KV data is treated as empty graph
+      // Non-fatal: start with empty entity map
     }
 
     try {
-      const rawRelationships = adapter.kvGet(KV_RELATIONSHIPS);
-      if (rawRelationships) {
-        this.relationships = JSON.parse(rawRelationships) as Relationship[];
+      const relRows = adapter.listKnowledgeRelationships({ limit: 100_000 });
+      for (const row of relRows) {
+        this.relationships.push(rowToRelationship(row));
       }
     } catch {
       // Non-fatal: start with empty relationship list
     }
-  }
-
-  /** Serialize both collections back to the adapter. Called after every mutation. */
-  private persist(): void {
-    if (!this.adapter) return;
-    this.adapter.kvSet(KV_ENTITIES, JSON.stringify([...this.entities.values()]));
-    this.adapter.kvSet(KV_RELATIONSHIPS, JSON.stringify(this.relationships));
   }
 
   // ── Entity operations ────────────────────────────────────────────────────────
@@ -81,7 +117,17 @@ export class KnowledgeGraph {
   addEntity(req: CreateEntityRequest): Entity {
     const entity = this.extractor.create(req);
     this.entities.set(entity.id, entity);
-    this.persist();
+    if (this.adapter) {
+      this.adapter.upsertKnowledgeEntity({
+        id: entity.id,
+        type: entity.type,
+        name: entity.name,
+        description: entity.description ?? null,
+        propertiesJson: JSON.stringify(entity.properties),
+        updatedAt: entity.updatedAt,
+        createdAt: entity.createdAt,
+      });
+    }
     return entity;
   }
 
@@ -94,18 +140,31 @@ export class KnowledgeGraph {
     if (!existing) return undefined;
     const updated = this.extractor.touch(existing, updates);
     this.entities.set(id, updated);
-    this.persist();
+    if (this.adapter) {
+      this.adapter.upsertKnowledgeEntity({
+        id: updated.id,
+        type: updated.type,
+        name: updated.name,
+        description: updated.description ?? null,
+        propertiesJson: JSON.stringify(updated.properties),
+        updatedAt: updated.updatedAt,
+        createdAt: updated.createdAt,
+      });
+    }
     return updated;
   }
 
   deleteEntity(id: string): boolean {
     if (!this.entities.has(id)) return false;
     this.entities.delete(id);
-    // Remove all relationships involving this entity
+    // Remove relationships from in-memory cache (the DB cascade handles the DB side).
     this.relationships = this.relationships.filter(
       r => r.sourceId !== id && r.targetId !== id,
     );
-    this.persist();
+    if (this.adapter) {
+      // ON DELETE CASCADE in knowledge_relationships handles relationship cleanup in DB.
+      this.adapter.deleteKnowledgeEntity(id);
+    }
     return true;
   }
 
@@ -127,7 +186,17 @@ export class KnowledgeGraph {
 
     const rel = this.mapper.create(req);
     this.relationships.push(rel);
-    this.persist();
+    if (this.adapter) {
+      this.adapter.insertKnowledgeRelationship({
+        id: rel.id,
+        fromEntityId: rel.sourceId,
+        toEntityId: rel.targetId,
+        type: rel.type,
+        confidence: rel.weight,
+        propertiesJson: JSON.stringify(rel.properties),
+        createdAt: rel.createdAt,
+      });
+    }
     return rel;
   }
 
@@ -139,7 +208,9 @@ export class KnowledgeGraph {
     const before = this.relationships.length;
     this.relationships = this.relationships.filter(r => r.id !== id);
     const deleted = this.relationships.length < before;
-    if (deleted) this.persist();
+    if (deleted && this.adapter) {
+      this.adapter.deleteKnowledgeRelationship(id);
+    }
     return deleted;
   }
 

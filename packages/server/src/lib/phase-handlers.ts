@@ -29,7 +29,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { AgentRuntime, loadAgentConfig, writeMemoryEntry, collectSprintItemTags, parseReviewFindingMetadata, extractFindingsByLevel } from '@agentforge/core';
+import { AgentRuntime, loadAgentConfig, writeMemoryEntry, writeKnowledgeEntry, collectSprintItemTags, parseReviewFindingMetadata, extractFindingsByLevel, loadPriorGateKnownDebt, buildKnownDebtSection } from '@agentforge/core';
 import type { RunResult, GateVerdictMetadata, ReviewFindingMetadata } from '@agentforge/core';
 import { generateId, nowIso } from '@agentforge/shared';
 import { globalStream } from '../routes/v5/stream.js';
@@ -397,7 +397,17 @@ function fireCareerHook(agentId: string, result: RunResult, taskTitle: string): 
 // Helper: build the LLM task prompt for an agent-driven phase
 // ---------------------------------------------------------------------------
 
-function buildLlmPhaseTask(phase: PhaseName, sprint: SprintFile): string {
+/**
+ * Build the LLM task prompt for an agent-driven phase.
+ *
+ * @param phase       - The phase being run.
+ * @param sprint      - The current sprint file (used for context).
+ * @param projectRoot - Optional project root path. When provided, the gate
+ *   phase reads the most recent gate-verdict JSONL entry and injects a
+ *   known-debt section so the CEO agent can distinguish pre-existing issues
+ *   from genuine new regressions — reducing false-positive REJECTs.
+ */
+function buildLlmPhaseTask(phase: PhaseName, sprint: SprintFile, projectRoot?: string): string {
   const version = sprint.version;
   const itemTitles = sprint.items.map((i) => i.title).join(', ');
 
@@ -416,7 +426,14 @@ function buildLlmPhaseTask(phase: PhaseName, sprint: SprintFile): string {
       const reviewResult = lastPhaseResults.filter((r) => r.phase === 'review').pop();
       const testSummary = testResult?.response?.slice(0, 500) ?? 'No test results available';
       const reviewSummary = reviewResult?.response?.slice(0, 500) ?? 'No review results available';
-      return `Approve or reject sprint v${version}: "${sprint.title}" based on the following results.\n\nTest results: ${testSummary}\n\nCode review: ${reviewSummary}\n\nProvide a clear APPROVE or REJECT decision with rationale.`;
+
+      // Inject known-debt from the most recent gate-verdict JSONL entry so the
+      // CEO agent can distinguish pre-existing debt from new regressions.
+      // Returns '' when there is no prior verdict or no findings to surface.
+      const priorGateCtx = projectRoot ? loadPriorGateKnownDebt(projectRoot) : null;
+      const knownDebtSection = buildKnownDebtSection(priorGateCtx);
+
+      return `Approve or reject sprint v${version}: "${sprint.title}" based on the following results.\n\nTest results: ${testSummary}\n\nCode review: ${reviewSummary}\n${knownDebtSection}\nProvide a clear APPROVE or REJECT decision with rationale.`;
     }
     default:
       return `Execute phase "${phase}" for sprint v${version}: "${sprint.title}".`;
@@ -478,7 +495,7 @@ async function runLlmPhase(
     throw new Error(error);
   }
 
-  const task = buildLlmPhaseTask(phase, sprint);
+  const task = buildLlmPhaseTask(phase, sprint, ctx.projectRoot);
   const currentIdx = PHASE_ORDER.indexOf(phase);
 
   try {
@@ -639,7 +656,34 @@ async function runLlmPhase(
 // ---------------------------------------------------------------------------
 
 export async function runAuditPhase(ctx: PhaseContext): Promise<PhaseResult> {
-  return runLlmPhase(ctx, 'audit');
+  const result = await runLlmPhase(ctx, 'audit');
+
+  // Persist entity-like terms extracted from the audit findings to the
+  // knowledge graph store (.agentforge/knowledge/entities.jsonl).
+  // This is one of the two write hooks that populates the /knowledge page —
+  // without it the in-memory KnowledgeGraph the server exposes is always empty.
+  // The sprint file is re-read because runLlmPhase persists the agent response
+  // there, making it the authoritative source for the audit output text.
+  try {
+    const sprint = readSprint(ctx.projectRoot, ctx.sprintVersion);
+    const auditText =
+      (sprint?.phaseResults ?? [])
+        .filter((r) => r.phase === 'audit')
+        .at(-1)?.response ?? '';
+
+    if (auditText) {
+      writeKnowledgeEntry(ctx.projectRoot, {
+        text: auditText,
+        source: 'audit',
+        tags: [`sprint:v${ctx.sprintVersion}`, 'audit-findings'],
+        cycleId: ctx.cycleId,
+      });
+    }
+  } catch {
+    // Non-fatal — phase result must not be affected by knowledge write failures.
+  }
+
+  return result;
 }
 
 export async function runPlanPhase(ctx: PhaseContext): Promise<PhaseResult> {
@@ -695,6 +739,17 @@ export async function runReviewPhase(ctx: PhaseContext): Promise<PhaseResult> {
           tags: ['review', 'finding', 'major', `sprint:v${ctx.sprintVersion}`, ...sprintDomainTags],
         });
       }
+
+      // Persist entity-like terms extracted from the full review text to the
+      // knowledge graph store (.agentforge/knowledge/entities.jsonl).
+      // This completes the write path for the review phase: cycle output →
+      // entity extraction → on-disk KG → server hydration on next restart.
+      writeKnowledgeEntry(ctx.projectRoot, {
+        text: reviewText,
+        source: 'review',
+        tags: [`sprint:v${ctx.sprintVersion}`, 'code-review', ...sprintDomainTags],
+        cycleId: ctx.cycleId,
+      });
     }
   } catch {
     // Non-fatal — phase result must not be affected by memory write failures.

@@ -79,6 +79,7 @@ vi.mock('@agentforge/shared', async () => {
 });
 
 // Import after mocks are established.
+import { AgentRuntime } from '@agentforge/core';
 import {
   runGatePhase,
   type PhaseContext,
@@ -169,6 +170,7 @@ describe('server runGatePhase — gate-verdict memory write', () => {
   let cleanup: () => void;
 
   beforeEach(() => {
+    vi.clearAllMocks();
     const tmp = makeTmp();
     cwd = tmp.cwd;
     cleanup = tmp.cleanup;
@@ -342,5 +344,153 @@ describe('server runGatePhase — gate-verdict memory write', () => {
     expect(lastEntry.tags).toContain('memory');
     expect(lastEntry.tags).toContain('execute');
     expect(lastEntry.tags).toContain('backend');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Known-debt injection into the gate-phase prompt
+//
+// The CEO agent must see known pre-existing debt from the prior gate-verdict
+// JSONL so it can distinguish old accepted issues from new regressions.
+// These tests verify that buildLlmPhaseTask (gate case) threads the known-debt
+// section into the task string that is sent to the AgentRuntime.
+// ---------------------------------------------------------------------------
+
+describe('server runGatePhase — known-debt injection into gate prompt', () => {
+  let cwd: string;
+  let cleanup: () => void;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    const tmp = makeTmp();
+    cwd = tmp.cwd;
+    cleanup = tmp.cleanup;
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  /**
+   * Write a gate-verdict.jsonl entry with structured metadata directly, without
+   * going through a full gate run. Simulates a prior cycle's gate phase output.
+   */
+  function seedPriorVerdict(
+    root: string,
+    opts: {
+      verdict: 'approved' | 'rejected';
+      cycleId: string;
+      majorFindings?: string[];
+      criticalFindings?: string[];
+    },
+  ): void {
+    const memDir = join(root, '.agentforge', 'memory');
+    mkdirSync(memDir, { recursive: true });
+    const entry = {
+      id: `prior-${opts.cycleId}`,
+      type: 'gate-verdict',
+      value: `Gate ${opts.verdict}: prior cycle entry`,
+      createdAt: '2026-04-01T00:00:00.000Z',
+      source: opts.cycleId,
+      tags: [`verdict:${opts.verdict}`, 'sprint:v0.0'],
+      metadata: {
+        cycleId: opts.cycleId,
+        verdict: opts.verdict,
+        rationale: 'prior cycle entry',
+        criticalFindings: opts.criticalFindings ?? [],
+        majorFindings: opts.majorFindings ?? [],
+      },
+    };
+    writeFileSync(join(memDir, 'gate-verdict.jsonl'), JSON.stringify(entry) + '\n', 'utf8');
+  }
+
+  it('injects known-debt section into the gate prompt when prior verdict has findings', async () => {
+    seedPriorVerdict(cwd, {
+      verdict: 'approved',
+      cycleId: 'cycle-prior-kd',
+      majorFindings: ['readCycleRecord duplicated across two packages'],
+      criticalFindings: [],
+    });
+
+    seedSprint(cwd, '6.8.kd-inject-1');
+    const ctx = makeCtx(cwd, '6.8.kd-inject-1', 'cycle-kd-inject-1');
+
+    await runGatePhase(ctx);
+
+    // Capture the task sent to the CEO agent via the mocked AgentRuntime.
+    const ctor = vi.mocked(AgentRuntime);
+    const lastInstance = ctor.mock.results.at(-1)!.value;
+    const streamingArg = lastInstance.runStreaming.mock.calls[0]![0] as { task: string };
+
+    expect(streamingArg.task).toContain('Known pre-existing debt');
+    expect(streamingArg.task).toContain('readCycleRecord duplicated across two packages');
+    // The APPROVED label from buildKnownDebtSection
+    expect(streamingArg.task).toContain('APPROVED');
+    // The guidance telling the CEO not to reject for these items
+    expect(streamingArg.task).toContain('Do NOT let them drive a REJECT');
+  });
+
+  it('includes critical findings in the known-debt section', async () => {
+    seedPriorVerdict(cwd, {
+      verdict: 'rejected',
+      cycleId: 'cycle-prior-crit',
+      criticalFindings: ['Auth bypass in middleware — token check absent'],
+      majorFindings: [],
+    });
+
+    seedSprint(cwd, '6.8.kd-inject-2');
+    const ctx = makeCtx(cwd, '6.8.kd-inject-2', 'cycle-kd-inject-2');
+
+    await runGatePhase(ctx);
+
+    const ctor = vi.mocked(AgentRuntime);
+    const lastInstance = ctor.mock.results.at(-1)!.value;
+    const streamingArg = lastInstance.runStreaming.mock.calls[0]![0] as { task: string };
+
+    expect(streamingArg.task).toContain('Known pre-existing debt');
+    expect(streamingArg.task).toContain('Auth bypass in middleware — token check absent');
+    // REJECTED label with verify-if-fixed guidance
+    expect(streamingArg.task).toContain('REJECTED');
+    expect(streamingArg.task).toContain('Verify whether each has been addressed');
+  });
+
+  it('omits the known-debt section when no prior gate-verdict exists', async () => {
+    // Do NOT seed any prior verdict — the memory dir doesn't even exist yet.
+    seedSprint(cwd, '6.8.kd-inject-3');
+    const ctx = makeCtx(cwd, '6.8.kd-inject-3', 'cycle-kd-inject-3');
+
+    await runGatePhase(ctx);
+
+    const ctor = vi.mocked(AgentRuntime);
+    const lastInstance = ctor.mock.results.at(-1)!.value;
+    const streamingArg = lastInstance.runStreaming.mock.calls[0]![0] as { task: string };
+
+    // No known-debt section should appear in the prompt.
+    expect(streamingArg.task).not.toContain('Known pre-existing debt');
+    // The base prompt should still be present.
+    expect(streamingArg.task).toContain('Approve or reject sprint');
+    expect(streamingArg.task).toContain('Provide a clear APPROVE or REJECT decision');
+  });
+
+  it('omits the known-debt section when prior verdict has no findings', async () => {
+    // Verdict with empty findings lists — section should not be injected.
+    seedPriorVerdict(cwd, {
+      verdict: 'approved',
+      cycleId: 'cycle-clean',
+      criticalFindings: [],
+      majorFindings: [],
+    });
+
+    seedSprint(cwd, '6.8.kd-inject-4');
+    const ctx = makeCtx(cwd, '6.8.kd-inject-4', 'cycle-kd-inject-4');
+
+    await runGatePhase(ctx);
+
+    const ctor = vi.mocked(AgentRuntime);
+    const lastInstance = ctor.mock.results.at(-1)!.value;
+    const streamingArg = lastInstance.runStreaming.mock.calls[0]![0] as { task: string };
+
+    expect(streamingArg.task).not.toContain('Known pre-existing debt');
+    expect(streamingArg.task).toContain('Approve or reject sprint');
   });
 });

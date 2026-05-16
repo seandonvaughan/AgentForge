@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
-import { join, resolve, sep } from 'node:path';
+import { join } from 'node:path';
+import { safeJoin } from '../../lib/safe-join.js';
 
 /**
  * Sprint version/id string validator.
@@ -19,17 +20,6 @@ import { join, resolve, sep } from 'node:path';
  * safeJoin() provides a second containment layer after this check.
  */
 const SAFE_VERSION = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
-
-/**
- * Resolve `child` relative to `base` and ensure the result stays inside `base`.
- * Returns null if the resolved path would escape `base` (e.g. via `../`).
- */
-function safeJoin(base: string, child: string): string | null {
-  const resolved = resolve(join(base, child));
-  const baseWithSep = base.endsWith(sep) ? base : base + sep;
-  if (resolved !== base && !resolved.startsWith(baseWithSep)) return null;
-  return resolved;
-}
 
 /** Normalize a raw sprint JSON (flat or nested-in-sprints-array) into a
  *  consistent shape the dashboard can render. */
