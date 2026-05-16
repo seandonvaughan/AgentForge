@@ -29,23 +29,4 @@ export async function rbacRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ data: { allowed } });
   });
 
-  // GET /api/v5/audit — query audit log
-  app.get('/api/v5/audit', async (req, reply) => {
-    const query = req.query as any;
-    const entries = auditTrail.query({
-      workspaceId: query.workspaceId,
-      actorId: query.actorId,
-      action: query.action,
-      since: query.since,
-      until: query.until,
-      limit: query.limit ? parseInt(query.limit) : 100,
-      offset: query.offset ? parseInt(query.offset) : 0,
-    });
-    return reply.send({ data: entries, meta: { total: entries.length } });
-  });
-
-  // GET /api/v5/audit/stats/:workspaceId
-  app.get<{ Params: { workspaceId: string } }>('/api/v5/audit/stats/:workspaceId', async (req, reply) => {
-    return reply.send({ data: auditTrail.stats(req.params.workspaceId) });
-  });
 }
