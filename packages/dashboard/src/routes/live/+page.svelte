@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { browser } from '$app/environment';
   import {
     type EventType,
     TYPE_COLORS,
@@ -9,8 +10,22 @@
     formatTime,
     isSilentSystemMessage,
   } from '$lib/util/live-feed.js';
+  import { Btn, Badge, Card, PulseDot } from '$lib/components/v2';
 
   const SSE_URL = '/api/v5/stream';
+  const BUFFER_MAX = 500;
+
+  // All real event-type categories from the feed
+  const FILTER_OPTIONS: { id: 'all' | EventType; label: string }[] = [
+    { id: 'all',            label: 'All' },
+    { id: 'cycle_event',    label: 'cycle.*' },
+    { id: 'agent_activity', label: 'agent.*' },
+    { id: 'workflow_event', label: 'gate.*' },
+    { id: 'cost_event',     label: 'cost.*' },
+    { id: 'sprint_event',   label: 'sprint.*' },
+    { id: 'branch_event',   label: 'branch.*' },
+    { id: 'system',         label: 'system' },
+  ];
 
   interface FeedEvent {
     id: string;
@@ -23,63 +38,56 @@
 
   type FilterType = 'all' | EventType;
 
-  // Svelte 5 rune-based reactive state (replaces writable stores)
   let connected = $state(false);
+  let paused = $state(false);
   let reconnecting = $state(false);
   let showRefreshBanner = $state(false);
   let events: FeedEvent[] = $state([]);
   let userScrolled = $state(false);
   let filterType: FilterType = $state('all');
+  let search = $state('');
+  let expandedIds: Set<string> = $state(new Set());
   let feedEl: HTMLDivElement | null = $state(null);
 
-  // Non-reactive refs — don't need to be $state
   let eventSource: EventSource | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // Replaces `$: filteredEvents = ...` reactive declaration
-  let filteredEvents = $derived(
-    filterType === 'all'
-      ? events
-      : events.filter((e) => e.type === filterType)
-  );
+  const filteredEvents = $derived.by(() => {
+    let result = filterType === 'all' ? events : events.filter((e) => e.type === filterType);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      result = result.filter(
+        (e) =>
+          e.type.toLowerCase().includes(q) ||
+          e.category?.toLowerCase().includes(q) ||
+          e.message?.toLowerCase().includes(q),
+      );
+    }
+    return result;
+  });
 
   function connect() {
-    if (eventSource) {
-      eventSource.close();
-      eventSource = null;
-    }
-
+    if (eventSource) { eventSource.close(); eventSource = null; }
     reconnecting = false;
+
     const es = new EventSource(SSE_URL);
     eventSource = es;
 
-    es.onopen = () => {
-      connected = true;
-      reconnecting = false;
-    };
+    es.onopen = () => { connected = true; reconnecting = false; };
 
     es.onmessage = (e) => {
+      if (paused) return;
+      if (browser && document.visibilityState === 'hidden') return;
       try {
         const parsed = JSON.parse(e.data) as FeedEvent & { clientId?: string };
-
-        // Skip heartbeat and connection-ack system messages — they are internal
-        // protocol noise that adds no value to the operator's activity feed.
         if (isSilentSystemMessage(parsed.type, parsed.message)) return;
+        if (parsed.type === 'refresh_signal') { showRefreshBanner = true; }
 
-        if (parsed.type === 'refresh_signal') {
-          showRefreshBanner = true;
-        }
+        const next = [...events, { ...parsed, id: parsed.id ?? `${Date.now()}-${Math.random()}` }];
+        events = next.length > BUFFER_MAX ? next.slice(next.length - BUFFER_MAX) : next;
 
-        const next = [...events, { ...parsed, id: parsed.id ?? `${Date.now()}` }];
-        // Keep at most 500 events
-        events = next.length > 500 ? next.slice(next.length - 500) : next;
-
-        if (!userScrolled) {
-          requestAnimationFrame(scrollToBottom);
-        }
-      } catch {
-        // bad parse — ignore
-      }
+        if (!userScrolled) requestAnimationFrame(scrollToBottom);
+      } catch { /* bad parse */ }
     };
 
     es.onerror = () => {
@@ -87,15 +95,12 @@
       reconnecting = true;
       es.close();
       eventSource = null;
-      // Reconnect after 3s
       reconnectTimer = setTimeout(() => connect(), 3000);
     };
   }
 
   function scrollToBottom() {
-    if (feedEl) {
-      feedEl.scrollTop = feedEl.scrollHeight;
-    }
+    if (feedEl) feedEl.scrollTop = feedEl.scrollHeight;
   }
 
   function handleScroll() {
@@ -104,19 +109,32 @@
     userScrolled = !atBottom;
   }
 
-  function handleRefreshClick() {
-    showRefreshBanner = false;
-    userScrolled = false;
-    scrollToBottom();
+  function togglePause() {
+    paused = !paused;
+    if (!paused && !userScrolled) requestAnimationFrame(scrollToBottom);
   }
 
-  function clearFeed() {
-    events = [];
+  function clearFeed() { events = []; }
+
+  function toggleExpand(id: string) {
+    const next = new Set(expandedIds);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    expandedIds = next;
   }
 
-  onMount(() => {
-    connect();
-  });
+  // Badge variant per type
+  function typeBadgeVariant(type: string): 'purple' | 'info' | 'warning' | 'danger' | 'success' | 'muted' {
+    if (type === 'agent_activity') return 'purple';
+    if (type === 'cycle_event')    return 'info';
+    if (type === 'cost_event')     return 'warning';
+    if (type === 'workflow_event') return 'info';
+    if (type === 'sprint_event')   return 'warning';
+    if (type === 'branch_event')   return 'success';
+    if (type === 'refresh_signal') return 'danger';
+    return 'muted';
+  }
+
+  onMount(() => { connect(); });
 
   onDestroy(() => {
     if (reconnectTimer) clearTimeout(reconnectTimer);
@@ -126,337 +144,435 @@
 
 <svelte:head><title>Live Feed — AgentForge</title></svelte:head>
 
-<div class="page-header">
-  <div>
-    <h1 class="page-title">Live Activity Feed</h1>
-    <p class="page-subtitle">Real-time event stream from the AgentForge autonomous team</p>
+<!-- ── Page header ──────────────────────────────────────────────────────── -->
+<div class="af2-page-header">
+  <div class="af2-page-meta">
+    <h1 class="af2-page-title">Live Activity Feed</h1>
+    <p class="af2-page-sub">
+      Real-time event stream from all autonomous agents and cycles
+    </p>
   </div>
-  <div style="display:flex; align-items:center; gap: var(--space-3);">
-    <span class="status-dot {connected ? 'live' : reconnecting ? 'reconnecting' : 'offline'}"></span>
-    <span class="status-label">
-      {#if connected}Live{:else if reconnecting}Reconnecting…{:else}Offline{/if}
+  <div class="af2-page-actions">
+    <span class="live-status">
+      {#if connected && !paused}
+        <PulseDot color="var(--af-success)" size={6} />
+        <span class="live-label" style="color:var(--af-success)">live · SSE</span>
+      {:else if reconnecting}
+        <PulseDot color="var(--af-warning)" size={6} ring={false} />
+        <span class="live-label" style="color:var(--af-warning)">reconnecting…</span>
+      {:else if paused}
+        <span class="live-label" style="color:var(--af-dim)">paused</span>
+      {:else}
+        <span class="live-label" style="color:var(--af-danger)">offline</span>
+      {/if}
     </span>
-    <button class="btn-ghost" onclick={clearFeed}>Clear</button>
+    <Btn size="sm" variant={paused ? 'primary' : 'ghost'} onclick={togglePause}>
+      {paused ? 'Resume' : 'Pause'}
+    </Btn>
+    <Btn size="sm" onclick={clearFeed}>Clear</Btn>
   </div>
 </div>
 
+<!-- ── Banners ───────────────────────────────────────────────────────────── -->
 {#if showRefreshBanner}
-  <div class="refresh-banner">
+  <div class="banner banner--warn" style="margin-bottom:10px">
     <span>New updates available — data may be stale</span>
-    <button class="btn-ghost small" onclick={handleRefreshClick}>Dismiss</button>
+    <button class="banner-dismiss" onclick={() => { showRefreshBanner = false; }}>Dismiss</button>
   </div>
 {/if}
-
 {#if reconnecting}
-  <div class="reconnect-banner">
-    Live stream disconnected — reconnecting automatically. New events may be delayed.
+  <div class="banner banner--info" style="margin-bottom:10px">
+    Live stream disconnected — reconnecting automatically.
   </div>
 {/if}
 
-<div class="toolbar">
-  <label class="filter-label" for="type-filter">Filter by type:</label>
-  <select id="type-filter" class="filter-select" bind:value={filterType}>
-    <option value="all">All events</option>
-    <option value="agent_activity">Agent Activity</option>
-    <option value="sprint_event">Sprint Events</option>
-    <option value="cost_event">Cost Events</option>
-    <option value="workflow_event">Workflow Events</option>
-    <option value="branch_event">Branch Events</option>
-    <option value="system">System</option>
-    <option value="refresh_signal">Refresh Signals</option>
-    <option value="cycle_event">Cycle Events</option>
-  </select>
-  <span class="event-count">{filteredEvents.length} event{filteredEvents.length !== 1 ? 's' : ''}</span>
-</div>
+<!-- ── Filter bar ────────────────────────────────────────────────────────── -->
+<Card style="margin-bottom:10px;padding:10px 14px">
+  <div class="filter-bar">
+    <span class="filter-label">FILTER</span>
+    {#each FILTER_OPTIONS as opt}
+      <button
+        class="chip"
+        class:chip--active={filterType === opt.id}
+        onclick={() => { filterType = opt.id; }}
+      >
+        {opt.label}
+      </button>
+    {/each}
+    <div class="search-wrap">
+      <input
+        type="search"
+        class="search-input af2-mono"
+        placeholder="Search…"
+        bind:value={search}
+      />
+    </div>
+    <span class="af2-mono event-count">{filteredEvents.length} events</span>
+  </div>
+</Card>
 
-<div
-  class="feed-container"
-  bind:this={feedEl}
-  onscroll={handleScroll}
->
+<!-- ── Event list ────────────────────────────────────────────────────────── -->
+<Card noPad>
   {#if filteredEvents.length === 0}
     <div class="empty-state">
       <span class="empty-icon">⬡</span>
       <p>Waiting for events…</p>
-      <p class="muted">Connect your agents to start seeing activity here.</p>
+      <p class="empty-sub">Connect agents to see activity here.</p>
     </div>
   {:else}
-    {#each filteredEvents as event (event.id)}
-      {@const isCycle = event.type === 'cycle_event'}
-      {@const accentColor = isCycle ? cycleAccentColor(event.category) : (TYPE_COLORS[event.type] ?? 'var(--color-text-muted)')}
-      <div
-        class="feed-row"
-        class:feed-row--cycle={isCycle}
-        style={isCycle ? `--cycle-accent: ${accentColor};` : ''}
-      >
-        <span class="timestamp">{formatTime(event.timestamp)}</span>
-        <span
-          class="type-badge"
-          style="background: {TYPE_COLORS[event.type] ?? 'var(--color-text-muted)'}22; color: {TYPE_COLORS[event.type] ?? 'var(--color-text-muted)'}; border-color: {TYPE_COLORS[event.type] ?? 'var(--color-border)'}44;"
+    <div class="feed" bind:this={feedEl} onscroll={handleScroll}>
+      {#each filteredEvents as event (event.id)}
+        {@const isCycle = event.type === 'cycle_event'}
+        {@const accentColor = isCycle
+          ? cycleAccentColor(event.category)
+          : (TYPE_COLORS[event.type] ?? 'var(--af-dim)')}
+        {@const isExpanded = expandedIds.has(event.id)}
+
+        <div
+          class="feed-row"
+          class:feed-row--cycle={isCycle}
+          style={isCycle ? `--cycle-accent:${accentColor}` : ''}
         >
-          {TYPE_LABELS[event.type] ?? event.type}
-        </span>
-        {#if event.category && event.category !== event.type && event.category !== 'system'}
+          <!-- color dot -->
           <span
-            class="category-tag"
-            class:category-tag--cycle={isCycle}
-            style={isCycle ? `color: ${accentColor};` : ''}
-          >{formatCategory(event.type, event.category)}</span>
+            class="feed-dot"
+            style="background:{accentColor}"
+          ></span>
+
+          <!-- timestamp -->
+          <span class="af2-mono feed-ts">{formatTime(event.timestamp)}</span>
+
+          <!-- type badge -->
+          <span class="feed-badge-wrap">
+            <Badge variant={typeBadgeVariant(event.type)}>
+              {TYPE_LABELS[event.type] ?? event.type}
+            </Badge>
+          </span>
+
+          <!-- source/category -->
+          {#if event.category && event.category !== event.type && event.category !== 'system'}
+            <span
+              class="af2-mono feed-cat"
+              style={isCycle ? `color:${accentColor}` : ''}
+            >
+              {formatCategory(event.type, event.category)}
+            </span>
+          {:else}
+            <span></span>
+          {/if}
+
+          <!-- message -->
+          <span class="feed-msg">{event.message}</span>
+
+          <!-- expand toggle (only if there's data) -->
+          <button
+            class="feed-expand"
+            onclick={() => toggleExpand(event.id)}
+            disabled={!event.data}
+          >
+            {isExpanded ? '▾' : '›'}
+          </button>
+        </div>
+
+        {#if isExpanded && event.data}
+          <div class="feed-detail">
+            <pre class="af2-mono feed-json">{JSON.stringify(event.data, null, 2)}</pre>
+          </div>
         {/if}
-        <span class="event-message">{event.message}</span>
-      </div>
-    {/each}
+      {/each}
+    </div>
   {/if}
-</div>
+</Card>
 
 {#if userScrolled && filteredEvents.length > 0}
-  <button class="scroll-to-bottom" onclick={() => { userScrolled = false; scrollToBottom(); }}>
+  <button
+    class="scroll-bottom"
+    onclick={() => { userScrolled = false; scrollToBottom(); }}
+  >
     ↓ Scroll to latest
   </button>
 {/if}
 
 <style>
-  .page-header {
+  /* ── Page header ──────────────────────────────────────────────────────── */
+  .af2-page-header {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    margin-bottom: var(--space-4);
+    margin-bottom: 16px;
+    gap: 16px;
   }
 
-  .page-title {
-    font-size: var(--text-xl);
+  .af2-page-title {
+    font-size: 20px;
     font-weight: 600;
-    color: var(--color-text);
-    margin: 0 0 var(--space-1) 0;
+    color: var(--af-text);
+    margin: 0 0 4px;
   }
 
-  .page-subtitle {
-    font-size: var(--text-sm);
-    color: var(--color-text-muted);
+  .af2-page-sub {
+    font-size: 12px;
+    color: var(--af-dim);
     margin: 0;
   }
 
-  .status-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: var(--radius-full);
-    display: inline-block;
+  .af2-page-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
   }
 
-  .status-dot.live { background: var(--color-success); box-shadow: 0 0 6px var(--color-success); }
-  .status-dot.reconnecting { background: var(--color-warning); animation: pulse 1.2s infinite; }
-  .status-dot.offline { background: var(--color-danger); }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
+  .live-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
 
-  .status-label {
-    font-size: var(--text-sm);
-    color: var(--color-text-muted);
+  .live-label {
+    font-size: 11px;
+    font-family: var(--af-font-mono, monospace);
   }
 
-  .btn-ghost {
-    background: transparent;
-    border: 1px solid var(--color-border);
-    color: var(--color-text-muted);
-    padding: var(--space-1) var(--space-3);
-    border-radius: var(--radius-md);
-    font-size: var(--text-sm);
-    cursor: pointer;
-    transition: border-color var(--duration-fast), color var(--duration-fast);
-  }
-
-  .btn-ghost:hover {
-    border-color: var(--color-border-strong);
-    color: var(--color-text);
-  }
-
-  .btn-ghost.small {
-    padding: 2px var(--space-2);
-    font-size: var(--text-xs);
-  }
-
-  .refresh-banner {
+  /* ── Banners ──────────────────────────────────────────────────────────── */
+  .banner {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--space-2) var(--space-4);
-    background: var(--color-danger)22;
-    border: 1px solid var(--color-danger)44;
-    border-radius: var(--radius-md);
-    margin-bottom: var(--space-3);
-    font-size: var(--text-sm);
-    color: var(--color-danger);
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-size: 12px;
+    border: 1px solid;
   }
 
-  .reconnect-banner {
-    padding: var(--space-2) var(--space-4);
-    background: rgba(245,166,35,0.1);
-    border: 1px solid rgba(245,166,35,0.3);
-    border-radius: var(--radius-md);
-    margin-bottom: var(--space-3);
-    font-size: var(--text-sm);
-    color: var(--color-warning);
+  .banner--warn {
+    background: color-mix(in srgb, var(--af-warning) 8%, transparent);
+    border-color: color-mix(in srgb, var(--af-warning) 25%, transparent);
+    color: var(--af-warning);
   }
 
-  .toolbar {
+  .banner--info {
+    background: color-mix(in srgb, var(--af-accent) 8%, transparent);
+    border-color: color-mix(in srgb, var(--af-accent) 25%, transparent);
+    color: var(--af-accent2);
+  }
+
+  .banner-dismiss {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 11px;
+    color: inherit;
+    opacity: 0.7;
+  }
+
+  /* ── Filter bar ───────────────────────────────────────────────────────── */
+  .filter-bar {
     display: flex;
     align-items: center;
-    gap: var(--space-3);
-    margin-bottom: var(--space-3);
-    padding: var(--space-2) var(--space-4);
-    background: var(--color-bg-card);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
+    gap: 6px;
+    flex-wrap: wrap;
   }
 
   .filter-label {
-    font-size: var(--text-sm);
-    color: var(--color-text-muted);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: var(--af-dim);
     white-space: nowrap;
   }
 
-  .filter-select {
-    background: var(--color-surface-2);
-    border: 1px solid var(--color-border);
-    color: var(--color-text);
-    padding: var(--space-1) var(--space-2);
-    border-radius: var(--radius-sm);
-    font-size: var(--text-sm);
+  .chip {
+    background: transparent;
+    border: 1px solid var(--af-border2);
+    border-radius: 99px;
+    padding: 3px 10px;
+    font-size: 11px;
+    color: var(--af-muted);
     cursor: pointer;
+    transition: border-color 150ms, color 150ms;
+    font-family: var(--af-font-mono, monospace);
+    white-space: nowrap;
   }
+
+  .chip:hover { border-color: var(--af-border3); color: var(--af-text); }
+
+  .chip--active {
+    border-color: var(--af-purple);
+    color: var(--af-purple);
+    background: color-mix(in srgb, var(--af-purple) 8%, transparent);
+  }
+
+  .search-wrap {
+    flex: 1;
+    min-width: 120px;
+    max-width: 280px;
+  }
+
+  .search-input {
+    width: 100%;
+    background: var(--af-surface2);
+    border: 1px solid var(--af-border2);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 11px;
+    color: var(--af-text);
+    outline: none;
+    box-sizing: border-box;
+    transition: border-color 150ms;
+  }
+
+  .search-input:focus { border-color: var(--af-purple); }
+  .search-input::placeholder { color: var(--af-faint); }
 
   .event-count {
+    font-size: 11px;
+    color: var(--af-dim);
     margin-left: auto;
-    font-size: var(--text-xs);
-    color: var(--color-text-faint);
-    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
 
-  .feed-container {
-    background: var(--color-bg-elevated);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    font-family: var(--font-mono);
-    font-size: var(--text-sm);
-    height: calc(100vh - 240px);
+  /* ── Feed container ───────────────────────────────────────────────────── */
+  .feed {
+    height: calc(100vh - 280px);
+    min-height: 320px;
     overflow-y: auto;
-    padding: var(--space-2) 0;
-    position: relative;
   }
 
+  /* ── Feed rows ────────────────────────────────────────────────────────── */
   .feed-row {
-    display: flex;
+    display: grid;
+    grid-template-columns: 8px 76px 64px 100px 1fr 20px;
+    gap: 10px;
     align-items: center;
-    gap: var(--space-2);
-    padding: 4px var(--space-4);
-    border-bottom: 1px solid var(--color-border)44;
-    transition: background var(--duration-fast);
+    padding: 8px 16px;
+    border-bottom: 1px solid color-mix(in srgb, var(--af-border) 60%, transparent);
+    cursor: pointer;
+    transition: background 120ms;
   }
 
-  .feed-row:hover {
-    background: var(--color-surface-1);
-  }
+  .feed-row:hover { background: var(--af-surface2); }
+  .feed-row:last-child { border-bottom: none; }
 
-  .feed-row:last-child {
-    border-bottom: none;
-  }
-
-  /* Cycle events get a left accent border whose color reflects their status */
   .feed-row--cycle {
-    border-left: 2px solid var(--cycle-accent, var(--color-sonnet));
-    padding-left: calc(var(--space-4) - 2px);
+    border-left: 2px solid var(--cycle-accent, var(--af-sonnet));
+    padding-left: 14px;
   }
 
   .feed-row--cycle:hover {
-    background: color-mix(in srgb, var(--cycle-accent, var(--color-sonnet)) 6%, transparent);
+    background: color-mix(in srgb, var(--cycle-accent, var(--af-sonnet)) 5%, transparent);
   }
 
-  .timestamp {
-    color: var(--color-text-faint);
-    font-size: var(--text-xs);
-    white-space: nowrap;
-    min-width: 72px;
+  .feed-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
   }
 
-  .type-badge {
+  .feed-ts {
     font-size: 10px;
-    font-weight: 600;
-    padding: 1px 6px;
-    border-radius: var(--radius-full);
-    border: 1px solid transparent;
-    white-space: nowrap;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    min-width: 58px;
-    text-align: center;
-  }
-
-  .category-tag {
-    font-size: var(--text-xs);
-    color: var(--color-text-faint);
+    color: var(--af-dim);
     white-space: nowrap;
   }
 
-  /* Cycle category labels get status-aware color (set inline) and slight weight */
-  .category-tag--cycle {
-    font-weight: 500;
+  .feed-badge-wrap {
+    display: flex;
+    align-items: center;
+  }
+
+  .feed-cat {
     font-size: 10px;
-    letter-spacing: 0.02em;
+    color: var(--af-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  .event-message {
-    color: var(--color-text);
-    flex: 1;
+  .feed-msg {
+    font-size: 12px;
+    color: var(--af-muted);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
+  .feed-expand {
+    background: none;
+    border: none;
+    color: var(--af-faint);
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0;
+    width: 20px;
+    text-align: center;
+  }
+
+  .feed-expand:disabled {
+    opacity: 0.2;
+    cursor: default;
+  }
+
+  /* ── Expanded JSON detail ─────────────────────────────────────────────── */
+  .feed-detail {
+    padding: 0 16px 12px 38px;
+    background: var(--af-surface2);
+    border-bottom: 1px solid color-mix(in srgb, var(--af-border) 60%, transparent);
+  }
+
+  .feed-json {
+    margin: 0;
+    padding: 10px 14px;
+    background: var(--af-bg);
+    border: 1px solid var(--af-border2);
+    border-radius: 6px;
+    font-size: 11px;
+    color: var(--af-muted);
+    white-space: pre-wrap;
+    word-break: break-all;
+    line-height: 1.6;
+    max-height: 300px;
+    overflow: auto;
+  }
+
+  /* ── Empty state ──────────────────────────────────────────────────────── */
   .empty-state {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    height: 100%;
-    gap: var(--space-2);
-    color: var(--color-text-muted);
+    padding: 64px 24px;
+    gap: 8px;
+    color: var(--af-dim);
+    font-size: 12px;
   }
 
-  .empty-icon {
-    font-size: 32px;
-    opacity: 0.3;
-  }
+  .empty-icon { font-size: 32px; opacity: 0.25; }
 
-  .empty-state p {
-    margin: 0;
-    font-size: var(--text-sm);
-  }
+  .empty-state p { margin: 0; }
 
-  .empty-state .muted {
-    font-size: var(--text-xs);
-    color: var(--color-text-faint);
-  }
+  .empty-sub { font-size: 11px; color: var(--af-faint); }
 
-  .scroll-to-bottom {
+  /* ── Scroll to bottom pill ────────────────────────────────────────────── */
+  .scroll-bottom {
     position: fixed;
-    bottom: var(--space-6);
-    right: var(--space-6);
-    background: var(--color-brand);
-    color: white;
+    bottom: 24px;
+    right: 24px;
+    background: var(--af-purple);
+    color: #fff;
     border: none;
-    border-radius: var(--radius-full);
-    padding: var(--space-2) var(--space-4);
-    font-size: var(--text-sm);
+    border-radius: 99px;
+    padding: 8px 16px;
+    font-size: 12px;
     font-weight: 600;
     cursor: pointer;
-    box-shadow: var(--shadow-md);
-    transition: background var(--duration-fast);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    z-index: 10;
   }
 
-  .scroll-to-bottom:hover {
-    background: var(--color-brand-hover);
+  .af2-mono {
+    font-family: var(--af-font-mono, 'JetBrains Mono', monospace);
+    font-feature-settings: 'tnum' 1;
   }
 </style>

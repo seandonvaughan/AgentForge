@@ -1,14 +1,14 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { Btn, Badge, Card, ModelChip, PulseDot } from '$lib/components/v2';
 
   const MODEL_TIER_META: Record<string, { label: string; range: string; color: string }> = {
-    opus:   { label: 'Opus',   range: '$0.015-$0.075',  color: 'var(--color-opus)' },
-    sonnet: { label: 'Sonnet', range: '$0.003-$0.015',  color: 'var(--color-sonnet)' },
-    haiku:  { label: 'Haiku',  range: '$0.0003-$0.002', color: 'var(--color-haiku)' },
+    opus:   { label: 'Opus',   range: '$0.015–$0.075',  color: 'var(--af-opus)' },
+    sonnet: { label: 'Sonnet', range: '$0.003–$0.015',  color: 'var(--af-sonnet)' },
+    haiku:  { label: 'Haiku',  range: '$0.0003–$0.002', color: 'var(--af-haiku)' },
   };
 
-  // A guaranteed-non-undefined fallback for MODEL_TIER_META lookups
-  const SONNET_TIER = { label: 'Sonnet', range: '$0.003-$0.015', color: 'var(--color-sonnet)' };
+  const SONNET_TIER = { label: 'Sonnet', range: '$0.003–$0.015', color: 'var(--af-sonnet)' };
 
   interface AgentEntry {
     agentId: string;
@@ -27,7 +27,6 @@
     sessionId?: string;
     providerKind?: string;
     runtimeModeResolved?: string;
-    /** Raw model ID from the run (e.g. "claude-sonnet-4-5") — used for accurate badge display on replay. */
     model?: string;
   }
 
@@ -48,6 +47,7 @@
   let running = $state(false);
   let runAccepted = $state(false);
   let runError: string | null = $state(null);
+  // FALLBACK_AGENTS error state — preserved from Wave 2C
   let apiUnavailable = $state(false);
 
   let output = $state('');
@@ -72,26 +72,21 @@
   let currentRunOutput = '';
   let copyStatusTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // Derived: look up model tier from the full agent roster
   function getAgentModel(id: string): 'opus' | 'sonnet' | 'haiku' {
-    const entry = agentEntries.find(a => a.agentId === id);
+    const entry = agentEntries.find((a) => a.agentId === id);
     return entry?.model ?? 'sonnet';
   }
 
-  // Use a concrete fallback so TypeScript knows modelTier is always defined
   let modelTier = $derived(MODEL_TIER_META[getAgentModel(selectedAgent)] ?? SONNET_TIER);
 
-  // Derived: agents filtered by search, grouped by model tier
   let filteredAgents = $derived.by(() => {
     const q = agentSearch.toLowerCase().trim();
     const filtered = q
-      ? agentEntries.filter(a => a.agentId.toLowerCase().includes(q) || a.name.toLowerCase().includes(q))
+      ? agentEntries.filter((a) => a.agentId.toLowerCase().includes(q) || a.name.toLowerCase().includes(q))
       : agentEntries;
-
-    // Group by model tier: opus first, then sonnet, then haiku
     const tierOrder: Record<string, number> = { opus: 0, sonnet: 1, haiku: 2 };
-    return [...filtered].sort((a, b) =>
-      (tierOrder[a.model] ?? 1) - (tierOrder[b.model] ?? 1) || a.agentId.localeCompare(b.agentId)
+    return [...filtered].sort(
+      (a, b) => (tierOrder[a.model] ?? 1) - (tierOrder[b.model] ?? 1) || a.agentId.localeCompare(b.agentId),
     );
   });
 
@@ -105,9 +100,9 @@
   });
 
   let agentCountByTier = $derived({
-    opus: agentEntries.filter(a => a.model === 'opus').length,
-    sonnet: agentEntries.filter(a => a.model === 'sonnet').length,
-    haiku: agentEntries.filter(a => a.model === 'haiku').length,
+    opus:   agentEntries.filter((a) => a.model === 'opus').length,
+    sonnet: agentEntries.filter((a) => a.model === 'sonnet').length,
+    haiku:  agentEntries.filter((a) => a.model === 'haiku').length,
   });
 
   async function loadAgents() {
@@ -115,18 +110,14 @@
     agentsLoadError = null;
     try {
       const res = await fetch('/api/v5/agents');
-      if (!res.ok) {
-        agentsLoadError = `Unable to load agents — server returned ${res.status}`;
-        agentEntries = [];
-        return;
-      }
+      if (!res.ok) { agentsLoadError = `Unable to load agents — server returned ${res.status}`; agentEntries = []; return; }
       const json = await res.json();
-      const list = (json.data ?? json.agents ?? json ?? []);
+      const list = json.data ?? json.agents ?? json ?? [];
       const loaded: AgentEntry[] = (list as Record<string, unknown>[])
         .map((a) => ({
           agentId: (a.agentId ?? a.id ?? '') as string,
-          name: (a.name ?? a.agentId ?? a.id ?? '') as string,
-          model: (a.model ?? 'sonnet') as 'opus' | 'sonnet' | 'haiku',
+          name:    (a.name ?? a.agentId ?? a.id ?? '') as string,
+          model:   (a.model ?? 'sonnet') as 'opus' | 'sonnet' | 'haiku',
         }))
         .filter((a) => a.agentId);
       if (loaded.length === 0) {
@@ -143,48 +134,25 @@
     }
   }
 
-  /**
-   * Wire a resolved EventSource (already open) to filter by sessionId.
-   * Called after we learn the sessionId from the POST response so that
-   * completion/failure workflow_events are still captured for long runs.
-   *
-   * The server sends plain unnamed SSE events (`data: {...}\n\n`) — no
-   * `event:` directive — so only `onmessage` fires. The envelope has shape:
-   *   { id, type, category, message, data: { sessionId, content, ... }, timestamp }
-   * We discriminate on `envelope.type` and read payload fields from `envelope.data`.
-   */
   function wireSSE(es: EventSource, sessionId: string) {
-    es.onopen = () => {
-      streamConnected = true;
-      streamWarning = null;
-    };
-
+    es.onopen = () => { streamConnected = true; streamWarning = null; };
     es.onmessage = (e) => {
       const envelope = parseStreamMessage(e.data);
       if (envelope) processStreamEnvelope(envelope, sessionId, es);
     };
-
     es.onerror = () => {
       streamConnected = false;
-      streamWarning = running
-        ? 'Live stream interrupted; reconnecting automatically. Run may still be active.'
-        : 'Live stream interrupted.';
-      // Don't set running = false on SSE error. EventSource will reconnect.
+      streamWarning = running ? 'Live stream interrupted; reconnecting automatically.' : 'Live stream interrupted.';
     };
   }
 
   function parseStreamMessage(raw: string): StreamEnvelope | null {
-    try {
-      return JSON.parse(raw) as StreamEnvelope;
-    } catch {
-      return null;
-    }
+    try { return JSON.parse(raw) as StreamEnvelope; } catch { return null; }
   }
 
   function processStreamEnvelope(envelope: StreamEnvelope, sessionId: string, es?: EventSource) {
     const payload = envelope.data ?? {};
     if (payload['sessionId'] !== sessionId) return;
-
     updateRunMetadata(payload);
 
     if (envelope.type === 'agent_activity') {
@@ -197,40 +165,24 @@
     }
 
     if (envelope.type !== 'workflow_event') return;
-
     const status = payload['status'] as string | undefined;
     if (status !== 'completed' && status !== 'failed') return;
 
     running = false;
     runAccepted = false;
     streamWarning = null;
-    syncHistoryStatus(
-      sessionId,
-      status,
-      payload['costUsd'] as number | undefined,
-      payload['providerKind'] as string | undefined,
-      payload['runtimeModeResolved'] as string | undefined,
-    );
+    syncHistoryStatus(sessionId, status, payload['costUsd'] as number | undefined, payload['providerKind'] as string | undefined, payload['runtimeModeResolved'] as string | undefined);
 
-    if (status === 'failed' && typeof payload['error'] === 'string') {
-      runError = payload['error'];
-    }
-
+    if (status === 'failed' && typeof payload['error'] === 'string') { runError = payload['error']; }
     es?.close();
     if (eventSource === es) eventSource = null;
     streamConnected = false;
   }
 
   function updateRunMetadata(payload: Record<string, unknown>) {
-    if (typeof payload['model'] === 'string') {
-      outputModel = modelIdToTierLabel(payload['model']);
-    }
-    if (typeof payload['providerKind'] === 'string') {
-      outputProviderKind = formatProviderKind(payload['providerKind']);
-    }
-    if (typeof payload['runtimeModeResolved'] === 'string') {
-      outputRuntimeMode = formatRuntimeMode(payload['runtimeModeResolved']);
-    }
+    if (typeof payload['model'] === 'string') outputModel = modelIdToTierLabel(payload['model']);
+    if (typeof payload['providerKind'] === 'string') outputProviderKind = formatProviderKind(payload['providerKind']);
+    if (typeof payload['runtimeModeResolved'] === 'string') outputRuntimeMode = formatRuntimeMode(payload['runtimeModeResolved']);
   }
 
   function appendOutputChunk(chunk: string) {
@@ -241,16 +193,10 @@
     currentRunOutput += chunk;
     if (selectedHistoryRun) return;
     output += chunk;
-    if (!outputAutoscrollPaused) {
-      requestAnimationFrame(scrollOutput);
-    }
+    if (!outputAutoscrollPaused) requestAnimationFrame(scrollOutput);
   }
 
-  function scrollOutput() {
-    if (outputEl) {
-      outputEl.scrollTop = outputEl.scrollHeight;
-    }
-  }
+  function scrollOutput() { if (outputEl) outputEl.scrollTop = outputEl.scrollHeight; }
 
   function handleOutputScroll() {
     if (!outputEl) return;
@@ -258,30 +204,19 @@
     outputAutoscrollPaused = !atBottom;
   }
 
-  function resumeOutputAutoscroll() {
-    outputAutoscrollPaused = false;
-    requestAnimationFrame(scrollOutput);
-  }
+  function resumeOutputAutoscroll() { outputAutoscrollPaused = false; requestAnimationFrame(scrollOutput); }
 
-  function syncHistoryStatus(
-    sessionId: string,
-    status: 'completed' | 'failed',
-    cost?: number,
-    providerKind?: string,
-    runtimeModeResolved?: string,
-  ) {
+  function syncHistoryStatus(sessionId: string, status: 'completed' | 'failed', cost?: number, providerKind?: string, runtimeModeResolved?: string) {
     history = history.map((r) => {
-      if (r.sessionId === sessionId) {
-        return {
-          ...r,
-          status,
-          ...(cost !== undefined ? { costUsd: cost } : {}),
-          ...(providerKind ? { providerKind } : {}),
-          ...(runtimeModeResolved ? { runtimeModeResolved } : {}),
-          output: currentRunOutput || output,
-        };
-      }
-      return r;
+      if (r.sessionId !== sessionId) return r;
+      return {
+        ...r,
+        status,
+        ...(cost !== undefined ? { costUsd: cost } : {}),
+        ...(providerKind ? { providerKind } : {}),
+        ...(runtimeModeResolved ? { runtimeModeResolved } : {}),
+        output: currentRunOutput || output,
+      };
     });
   }
 
@@ -305,43 +240,24 @@
     runStartedAtMs = Date.now();
     selectedHistoryRun = null;
 
-    // ── Open SSE BEFORE the POST ────────────────────────────────────────────
-    // The server holds the POST connection open while the agent runs
-    // (runStreaming is awaited in-handler). SSE chunks emitted during that
-    // window arrive at zero listeners if we only connect after the response.
-    // By opening early and buffering, we capture every chunk regardless of
-    // when the POST returns.
     if (eventSource) { eventSource.close(); eventSource = null; }
-    // SSE endpoint is /api/v5/stream — the server sends plain unnamed events
-    // (`data: {...}\n\n`) so only `onmessage` fires, not named addEventListener.
     const es = new EventSource('/api/v5/stream');
     eventSource = es;
 
-    // Buffer agent_activity chunks arriving before the POST returns the sessionId.
-    // Envelope shape: { type, data: { sessionId, content, ... }, ... }
     const earlyBuffer: StreamEnvelope[] = [];
     let resolvedSessionId: string | null = null;
 
-    es.onopen = () => {
-      streamConnected = true;
-      streamWarning = null;
-    };
-
+    es.onopen = () => { streamConnected = true; streamWarning = null; };
     es.onmessage = (e) => {
       const envelope = parseStreamMessage(e.data);
       if (!envelope) return;
-      if (resolvedSessionId === null) {
-        // Still awaiting POST response — buffer for replay once the session id is known.
-        earlyBuffer.push(envelope);
-        return;
-      }
+      if (resolvedSessionId === null) { earlyBuffer.push(envelope); return; }
       processStreamEnvelope(envelope, resolvedSessionId, es);
     };
     es.onerror = () => {
       streamConnected = false;
       streamWarning = 'Live stream interrupted; reconnecting automatically. Run may still be active.';
     };
-    // ─────────────────────────────────────────────────────────────────────────
 
     try {
       const res = await fetch('/api/v5/run', {
@@ -351,6 +267,7 @@
       });
 
       if (res.status === 404) {
+        // FALLBACK_AGENTS error state — Wave 2C preserved behavior
         apiUnavailable = true;
         running = false;
         es.close();
@@ -368,20 +285,14 @@
       }
 
       const envelope = await res.json();
-      // Server wraps the result in { data: { ...result, sessionId } }
       const json = envelope.data ?? envelope;
       const sessionId: string = json.sessionId ?? json.id ?? `local-${Date.now()}`;
       runAccepted = res.status === 202 || json.status === 'accepted' || json.status === 'running';
-      // Prefer the actual model ID returned by the server; convert to a tier
-      // label ('Opus' | 'Sonnet' | 'Haiku') so the badge class matches CSS.
-      outputModel = json.model
-        ? modelIdToTierLabel(json.model as string)
-        : (MODEL_TIER_META[getAgentModel(selectedAgent)]?.label ?? 'Sonnet');
+      outputModel = json.model ? modelIdToTierLabel(json.model as string) : (MODEL_TIER_META[getAgentModel(selectedAgent)]?.label ?? 'Sonnet');
       outputProviderKind = formatProviderKind(json.providerKind as string | undefined);
-      outputRuntimeMode = formatRuntimeMode(json.runtimeModeResolved as string | undefined);
+      outputRuntimeMode  = formatRuntimeMode(json.runtimeModeResolved as string | undefined);
       currentSessionId = sessionId;
 
-      // Add to history immediately as "running"
       const historyEntry: RunHistory = {
         id: sessionId,
         agentId: selectedAgent,
@@ -395,40 +306,24 @@
       };
       history = [historyEntry, ...history].slice(0, 5);
 
-      // Unlock the SSE handler and replay buffered chunks for this session
       resolvedSessionId = sessionId;
-      for (const buffered of earlyBuffer) {
-        processStreamEnvelope(buffered, sessionId, es);
-      }
+      for (const buffered of earlyBuffer) { processStreamEnvelope(buffered, sessionId, es); }
       if (output) requestAnimationFrame(scrollOutput);
 
-      // Wire the already-open EventSource for completion signals
       wireSSE(es, sessionId);
 
-      // Synchronous fallback: server includes full response in the HTTP reply
-      // when the run completes inline. Use it as the authoritative output.
-      // The field is `response` in RunResult (not `output`).
       const syncOutput = json.response ?? json.output;
       if (syncOutput) {
         output = syncOutput;
         currentRunOutput = syncOutput;
-        if (firstTokenLatencyMs === null && runStartedAtMs !== null) {
-          firstTokenLatencyMs = Math.max(0, Date.now() - runStartedAtMs);
-        }
+        if (firstTokenLatencyMs === null && runStartedAtMs !== null) firstTokenLatencyMs = Math.max(0, Date.now() - runStartedAtMs);
         running = false;
         runAccepted = false;
-        syncHistoryStatus(
-          sessionId,
-          json.status === 'failed' ? 'failed' : 'completed',
-          json.costUsd,
-          json.providerKind as string | undefined,
-          json.runtimeModeResolved as string | undefined,
-        );
+        syncHistoryStatus(sessionId, json.status === 'failed' ? 'failed' : 'completed', json.costUsd, json.providerKind as string | undefined, json.runtimeModeResolved as string | undefined);
         es.close();
         eventSource = null;
         streamConnected = false;
       }
-
     } catch (e) {
       runError = String(e);
       running = false;
@@ -445,16 +340,12 @@
     output = run.output ?? '(No output captured)';
     outputAgentName = run.agentId;
     outputTimestamp = new Date(run.startedAt).toLocaleTimeString('en-US', { hour12: false });
-    // Prefer the stored raw model ID (accurate); fall back to the agent's current configured tier.
-    outputModel = run.model
-      ? modelIdToTierLabel(run.model)
-      : (MODEL_TIER_META[getAgentModel(run.agentId)]?.label ?? '—');
+    outputModel = run.model ? modelIdToTierLabel(run.model) : (MODEL_TIER_META[getAgentModel(run.agentId)]?.label ?? '—');
     outputProviderKind = formatProviderKind(run.providerKind);
-    outputRuntimeMode = formatRuntimeMode(run.runtimeModeResolved);
+    outputRuntimeMode  = formatRuntimeMode(run.runtimeModeResolved);
     currentSessionId = run.sessionId ?? null;
   }
 
-  /** Map a raw Claude model ID (e.g. "claude-sonnet-4-5") to a tier label for display. */
   function modelIdToTierLabel(modelId: string): string {
     const lower = modelId.toLowerCase();
     if (lower.includes('opus'))  return 'Opus';
@@ -481,9 +372,8 @@
   }
 
   function formatTime(iso: string): string {
-    try {
-      return new Date(iso).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
-    } catch { return iso; }
+    try { return new Date(iso).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }); }
+    catch { return iso; }
   }
 
   function formatLatency(ms: number): string {
@@ -493,18 +383,10 @@
 
   async function copyOutput() {
     if (!output) return;
-    try {
-      await navigator.clipboard.writeText(output);
-      copyStatus = 'Copied';
-    } catch {
-      copyStatus = 'Copy failed';
-    }
-
+    try { await navigator.clipboard.writeText(output); copyStatus = 'Copied'; }
+    catch { copyStatus = 'Copy failed'; }
     if (copyStatusTimer) clearTimeout(copyStatusTimer);
-    copyStatusTimer = setTimeout(() => {
-      copyStatus = null;
-      copyStatusTimer = null;
-    }, 1600);
+    copyStatusTimer = setTimeout(() => { copyStatus = null; copyStatusTimer = null; }, 1600);
   }
 
   function clearOutput() {
@@ -532,102 +414,127 @@
       if (!res.ok) return;
       const json = await res.json();
       const runs: RunHistory[] = (json.data ?? []).map((r: Record<string, unknown>) => ({
-        id: (r.sessionId ?? r.id ?? '') as string,
-        agentId: (r.agentId ?? '') as string,
-        task: (r.task ?? '') as string,
-        status: (r.status ?? 'completed') as RunHistory['status'],
-        costUsd: typeof r.costUsd === 'number' ? r.costUsd : undefined,
+        id:        (r.sessionId ?? r.id ?? '') as string,
+        agentId:   (r.agentId ?? '') as string,
+        task:      (r.task ?? '') as string,
+        status:    (r.status ?? 'completed') as RunHistory['status'],
+        costUsd:   typeof r.costUsd === 'number' ? r.costUsd : undefined,
         startedAt: (r.startedAt ?? new Date().toISOString()) as string,
-        output: typeof r.response === 'string' ? r.response : (typeof r.output === 'string' ? r.output : undefined),
+        output:    typeof r.response === 'string' ? r.response : (typeof r.output === 'string' ? r.output : undefined),
         sessionId: (r.sessionId ?? r.id ?? '') as string,
-        model: typeof r.model === 'string' ? r.model : undefined,
-        providerKind: typeof r.providerKind === 'string' ? r.providerKind : undefined,
+        model:     typeof r.model === 'string' ? r.model : undefined,
+        providerKind:        typeof r.providerKind === 'string' ? r.providerKind : undefined,
         runtimeModeResolved: typeof r.runtimeModeResolved === 'string' ? r.runtimeModeResolved : undefined,
       })).filter((r: RunHistory) => r.id && r.agentId);
       history = runs.slice(0, 5);
-    } catch {
-      // history stays empty — non-fatal
-    }
+    } catch { /* non-fatal */ }
   }
 
-  onMount(() => {
-    loadAgents();
-    loadHistory();
-  });
+  onMount(() => { loadAgents(); loadHistory(); });
 
   onDestroy(() => {
     if (eventSource) eventSource.close();
     if (copyStatusTimer) clearTimeout(copyStatusTimer);
   });
+
+  // Derived: model chip prop
+  function tierToModelProp(label: string): 'opus' | 'sonnet' | 'haiku' {
+    const lower = label.toLowerCase();
+    if (lower === 'opus')  return 'opus';
+    if (lower === 'haiku') return 'haiku';
+    return 'sonnet';
+  }
+
+  function historyBadgeVariant(status: string): 'success' | 'danger' | 'warning' {
+    if (status === 'completed') return 'success';
+    if (status === 'failed')    return 'danger';
+    return 'warning';
+  }
 </script>
 
 <svelte:head><title>Agent Runner — AgentForge</title></svelte:head>
 
+<!-- ── Page header ──────────────────────────────────────────────────────── -->
 <div class="page-header">
   <div>
     <h1 class="page-title">Agent Runner</h1>
-    <p class="page-subtitle">Trigger agent runs and observe real-time output</p>
+    <p class="page-sub">Trigger agent runs and observe real-time output</p>
   </div>
   {#if running}
-    <div class="running-indicator">
-      <span class="spinner"></span>
-      <span class="running-label">Running {outputAgentName} · {runStatusLabel}</span>
+    <div class="running-pill">
+      <PulseDot color="var(--af-purple)" size={6} />
+      <span class="af2-mono" style="font-size:11px;color:var(--af-purple)">
+        {outputAgentName} · {runStatusLabel}
+      </span>
     </div>
   {/if}
 </div>
 
+<!-- ── Two-column layout ─────────────────────────────────────────────────── -->
 <div class="runner-layout">
-  <!-- Left: config + history -->
-  <div class="left-panel">
-    <div class="card">
-      <div class="card-header">
-        <span class="card-title">Run Configuration</span>
-      </div>
 
-      <div class="form-group">
-        <label class="form-label" for="agent-select">Agent ({agentEntries.length} available)</label>
+  <!-- ── Left panel ──────────────────────────────────────────────────────── -->
+  <div class="left-col">
+
+    <!-- Run config card -->
+    <Card>
+      <div class="section-title">RUN CONFIGURATION</div>
+
+      <!-- Agent selector -->
+      <div class="field" style="margin-top:12px">
+        <label class="field-label" for="agent-select">
+          Agent ({agentEntries.length} available)
+        </label>
         {#if agentsLoading}
-          <div class="skeleton" style="height:32px;border-radius:var(--radius-sm);"></div>
+          <div class="skeleton" style="height:32px;border-radius:6px;"></div>
         {:else if agentsLoadError}
-          <div class="agents-error" role="alert">
-            <span class="agents-error-msg">{agentsLoadError}</span>
-            <button class="btn btn-sm btn-secondary" onclick={loadAgents} disabled={running}>
-              Retry
-            </button>
+          <div class="error-callout">
+            <span class="error-msg">{agentsLoadError}</span>
+            <Btn size="sm" onclick={loadAgents} disabled={running}>Retry</Btn>
           </div>
         {:else}
           <input
             type="search"
-            class="form-search"
-            placeholder="Filter agents..."
+            class="field-search af2-mono"
+            placeholder="Filter agents…"
             bind:value={agentSearch}
             disabled={running}
           />
-          <select id="agent-select" class="form-select" bind:value={selectedAgent} disabled={running} size={Math.min(Math.max(filteredAgents.length, 1), 8)}>
+          <select
+            id="agent-select"
+            class="field-select af2-mono"
+            bind:value={selectedAgent}
+            disabled={running}
+            size={Math.min(Math.max(filteredAgents.length, 1), 8)}
+          >
             {#each filteredAgents as agent (agent.agentId)}
               <option value={agent.agentId}>
                 [{agent.model.charAt(0).toUpperCase()}] {agent.agentId}
               </option>
             {/each}
           </select>
-          <div class="tier-counts">
-            <span class="tier-tag opus">{agentCountByTier.opus} Opus</span>
-            <span class="tier-tag sonnet">{agentCountByTier.sonnet} Sonnet</span>
-            <span class="tier-tag haiku">{agentCountByTier.haiku} Haiku</span>
+          <div class="tier-row">
+            <span class="tier-chip opus af2-mono">{agentCountByTier.opus} Opus</span>
+            <span class="tier-chip sonnet af2-mono">{agentCountByTier.sonnet} Sonnet</span>
+            <span class="tier-chip haiku af2-mono">{agentCountByTier.haiku} Haiku</span>
           </div>
         {/if}
       </div>
 
-      <div class="cost-callout" style="--tier-color: {modelTier.color}">
-        <span class="cost-tier" style="color: {modelTier.color}">{modelTier.label}</span>
-        <span class="cost-range">est. {modelTier.range} per run</span>
-      </div>
+      <!-- Cost preview callout -->
+      {#if agentEntries.length > 0 && !agentsLoadError}
+        <div class="cost-callout" style="--tier-clr:{modelTier.color}">
+          <ModelChip model={tierToModelProp(modelTier.label)} />
+          <span class="af2-mono cost-range">est. {modelTier.range} per run</span>
+        </div>
+      {/if}
 
-      <div class="form-group">
-        <label class="form-label" for="task-input">Task</label>
+      <!-- Task textarea -->
+      <div class="field" style="margin-top:14px">
+        <label class="field-label" for="task-input">Task</label>
         <textarea
           id="task-input"
-          class="form-textarea"
+          class="field-textarea"
           rows={4}
           placeholder="Describe what you want the agent to do… (Ctrl+Enter to run)"
           bind:value={taskInput}
@@ -641,56 +548,58 @@
         ></textarea>
       </div>
 
+      <!-- Error / unavailable banners -->
       {#if runError}
-        <div class="error-msg">{runError}</div>
+        <div class="banner banner--danger" style="margin-bottom:10px">{runError}</div>
       {/if}
 
       {#if apiUnavailable}
-        <div class="unavailable-banner">
+        <div class="banner banner--warn" style="margin-bottom:10px">
           Execution API not available — <code>/api/v5/run</code> returned 404.
           The server may not have this endpoint deployed yet.
         </div>
       {/if}
 
-      <button
-        class="btn btn-primary run-btn"
+      <!-- Run button -->
+      <Btn
+        variant="purple"
+        size="lg"
         disabled={running || !taskInput.trim() || !!agentsLoadError || agentEntries.length === 0}
         onclick={handleRun}
+        class="run-btn"
       >
         {#if running}
-          <span class="spinner spinner-sm"></span>
+          <span class="spinner"></span>
           Running…
         {:else}
-          Run Agent
+          ▶ Run Agent
         {/if}
-      </button>
-    </div>
+      </Btn>
+    </Card>
 
-    <!-- Run History -->
-    <div class="card history-card">
-      <div class="card-header">
-        <span class="card-title">Recent Runs</span>
-        <span class="history-count">{history.length}</span>
+    <!-- Recent runs card -->
+    <Card>
+      <div class="card-header-row">
+        <span class="section-title">RECENT RUNS</span>
+        <span class="af2-mono" style="font-size:10px;color:var(--af-faint)">{history.length}</span>
       </div>
 
       {#if history.length === 0}
-        <div class="history-empty">No runs yet this session</div>
+        <div class="empty-inline">No runs yet this session</div>
       {:else}
         <div class="history-list">
           {#each history as run (run.id)}
             <button
               class="history-item"
-              class:active={selectedHistoryRun?.id === run.id}
+              class:history-item--active={selectedHistoryRun?.id === run.id}
               onclick={() => showHistoryRun(run)}
             >
-              <div class="history-item-header">
-                <span class="history-agent">{run.agentId}</span>
-                <span class="badge {run.status === 'completed' ? 'success' : run.status === 'failed' ? 'danger' : 'warning'}">
-                  {run.status}
-                </span>
+              <div class="history-item-top">
+                <span class="af2-mono history-agent">{run.agentId}</span>
+                <Badge variant={historyBadgeVariant(run.status)}>{run.status}</Badge>
               </div>
               <div class="history-task">{run.task.slice(0, 60)}{run.task.length > 60 ? '…' : ''}</div>
-              <div class="history-meta">
+              <div class="history-meta af2-mono">
                 <span>{formatTime(run.startedAt)}</span>
                 <span>{formatCost(run.costUsd)}</span>
               </div>
@@ -698,643 +607,487 @@
           {/each}
         </div>
       {/if}
-    </div>
+    </Card>
   </div>
 
-  <!-- Right: live output -->
-  <div class="right-panel">
-    <div class="output-card card">
+  <!-- ── Right panel: live output ────────────────────────────────────────── -->
+  <div class="right-col">
+    <Card noPad style="display:flex;flex-direction:column;min-height:calc(100vh - 180px)">
+      <!-- Output card header -->
       <div class="output-header">
-        <div class="output-heading">
+        <div class="output-header-left">
           <div class="output-title-row">
-            <span class="card-title">Live Output</span>
+            <span class="section-title">LIVE OUTPUT</span>
             {#if runAccepted}
-              <span class="badge warning">Accepted</span>
+              <Badge variant="warning">Accepted</Badge>
             {/if}
           </div>
           {#if outputAgentName}
             <div class="output-meta">
-              <span class="output-agent">{outputAgentName}</span>
+              <span class="af2-mono" style="font-size:11px;color:var(--af-muted)">{outputAgentName}</span>
               {#if outputModel}
-                <span class="badge {outputModel.toLowerCase()}">{outputModel}</span>
+                <ModelChip model={tierToModelProp(outputModel)} />
               {/if}
               {#if outputProviderKind}
-                <span class="badge">{outputProviderKind}</span>
+                <Badge variant="muted">{outputProviderKind}</Badge>
               {:else if running}
-                <span class="badge muted">Provider pending</span>
+                <Badge variant="muted">Provider pending</Badge>
               {/if}
               {#if outputRuntimeMode}
-                <span class="badge">{outputRuntimeMode}</span>
+                <Badge variant="muted">{outputRuntimeMode}</Badge>
               {:else if running}
-                <span class="badge muted">Runtime pending</span>
+                <Badge variant="muted">Runtime pending</Badge>
               {/if}
               {#if outputTimestamp}
-                <span class="output-ts">{outputTimestamp}</span>
+                <span class="af2-mono" style="font-size:10px;color:var(--af-faint)">{outputTimestamp}</span>
               {/if}
             </div>
           {/if}
         </div>
-        <div class="output-actions">
+        <div class="output-header-right">
           {#if firstTokenLatencyMs !== null}
-            <span class="latency-pill">First token {formatLatency(firstTokenLatencyMs)}</span>
+            <span class="latency-pill af2-mono">First token {formatLatency(firstTokenLatencyMs)}</span>
           {:else if running}
-            <span class="latency-pill pending">Waiting for first token</span>
+            <span class="latency-pill latency-pill--pending af2-mono">Waiting for first token</span>
           {/if}
-          <button class="btn-ghost output-action" disabled={!output} onclick={copyOutput}>
-            {copyStatus ?? 'Copy'}
-          </button>
-          <button class="btn-ghost output-action" disabled={!output && !runError} onclick={clearOutput}>
-            Clear
-          </button>
+          <Btn size="sm" disabled={!output} onclick={copyOutput}>{copyStatus ?? 'Copy'}</Btn>
+          <Btn size="sm" disabled={!output && !runError} onclick={clearOutput}>Clear</Btn>
         </div>
       </div>
 
+      <!-- Stream warning -->
       {#if streamWarning}
-        <div class="stream-warning">
-          <span>{streamWarning}</span>
+        <div class="banner banner--warn" style="margin:0 16px 12px">
+          {streamWarning}
         </div>
       {/if}
 
+      <!-- Autoscroll paused -->
       {#if outputAutoscrollPaused && running}
-        <button class="resume-output-scroll" onclick={resumeOutputAutoscroll}>
+        <button class="resume-scroll" onclick={resumeOutputAutoscroll}>
           Autoscroll paused · Jump to latest
         </button>
       {/if}
 
+      <!-- Output content -->
       {#if !output && running}
-        <div class="output-empty">
+        <div class="output-empty" style="flex:1">
           <span class="empty-icon">…</span>
           <p>{runAccepted ? 'Run accepted by server.' : 'Starting run.'}</p>
-          <p class="muted">Waiting for the first streamed token via SSE.</p>
+          <p class="empty-sub">Waiting for the first streamed token via SSE.</p>
         </div>
       {:else if !output && !running}
-        <div class="output-empty">
+        <div class="output-empty" style="flex:1">
           <span class="empty-icon">▶</span>
           <p>Configure an agent and task, then click <strong>Run Agent</strong>.</p>
-          <p class="muted">Output will stream here in real time via SSE.</p>
+          <p class="empty-sub">Output streams here in real time via SSE.</p>
         </div>
       {:else}
-        <pre class="output-pre" bind:this={outputEl} onscroll={handleOutputScroll}>{output}{#if running}<span class="cursor">▊</span>{/if}</pre>
+        <pre
+          class="output-pre af2-mono"
+          bind:this={outputEl}
+          onscroll={handleOutputScroll}
+        >{output}{#if running}<span class="cursor">▊</span>{/if}</pre>
       {/if}
-    </div>
+    </Card>
   </div>
 </div>
 
 <style>
+  /* ── Page header ──────────────────────────────────────────────────────── */
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 16px;
+    gap: 16px;
+  }
+
+  .page-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--af-text);
+    margin: 0 0 4px;
+  }
+
+  .page-sub {
+    font-size: 12px;
+    color: var(--af-dim);
+    margin: 0;
+  }
+
+  .running-pill {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: color-mix(in srgb, var(--af-purple) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--af-purple) 25%, transparent);
+    border-radius: 99px;
+    padding: 6px 12px;
+  }
+
+  /* ── Layout ───────────────────────────────────────────────────────────── */
   .runner-layout {
     display: grid;
-    grid-template-columns: 340px 1fr;
-    gap: var(--space-4);
+    grid-template-columns: 360px 1fr;
+    gap: 14px;
     align-items: start;
   }
 
-  .left-panel {
+  .left-col {
     display: flex;
     flex-direction: column;
-    gap: var(--space-4);
+    gap: 14px;
   }
 
-  .right-panel {
-    min-height: 0;
+  /* ── Section title ────────────────────────────────────────────────────── */
+  .section-title {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--af-dim);
+    text-transform: uppercase;
   }
 
-  /* Agent load error state */
-  .agents-error {
+  .card-header-row {
     display: flex;
     align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-3) var(--space-4);
-    background: color-mix(in srgb, var(--color-danger, #e05252) 8%, transparent);
-    border: 1px solid color-mix(in srgb, var(--color-danger, #e05252) 30%, transparent);
-    border-radius: var(--radius-md);
-    font-size: var(--text-sm);
-    margin-bottom: var(--space-2);
+    justify-content: space-between;
+    margin-bottom: 10px;
   }
 
-  .agents-error-msg {
-    flex: 1;
-    color: var(--color-danger, #e05252);
+  /* ── Form fields ──────────────────────────────────────────────────────── */
+  .field {
+    margin-bottom: 14px;
   }
 
-  /* Form elements */
-  .form-group {
-    margin-bottom: var(--space-4);
-  }
-
-  .form-label {
+  .field-label {
     display: block;
-    font-size: var(--text-xs);
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--color-text-muted);
-    margin-bottom: var(--space-2);
-  }
-
-  .form-select {
-    width: 100%;
-    background: var(--color-surface-2);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    color: var(--color-text);
-    padding: var(--space-2) var(--space-3);
-    font-size: var(--text-sm);
-    font-family: var(--font-sans);
-    cursor: pointer;
-    transition: border-color var(--duration-fast);
-  }
-
-  .form-select:hover:not(:disabled) {
-    border-color: var(--color-border-strong);
-  }
-
-  .form-select:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .form-textarea {
-    width: 100%;
-    background: var(--color-surface-2);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    color: var(--color-text);
-    padding: var(--space-3);
-    font-size: var(--text-sm);
-    font-family: var(--font-sans);
-    resize: vertical;
-    min-height: 96px;
-    transition: border-color var(--duration-fast);
-    box-sizing: border-box;
-  }
-
-  .form-textarea:hover:not(:disabled) {
-    border-color: var(--color-border-strong);
-  }
-
-  .form-textarea:focus {
-    outline: none;
-    border-color: var(--color-brand);
-  }
-
-  .form-textarea:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .form-textarea::placeholder {
-    color: var(--color-text-faint);
-  }
-
-  /* Agent search */
-  .form-search {
-    width: 100%;
-    background: var(--color-surface-2);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    color: var(--color-text);
-    padding: var(--space-2) var(--space-3);
-    font-size: var(--text-sm);
-    font-family: var(--font-sans);
-    outline: none;
-    margin-bottom: var(--space-2);
-    box-sizing: border-box;
-    transition: border-color var(--duration-fast);
-  }
-
-  .form-search:focus {
-    border-color: var(--color-brand);
-  }
-
-  .form-search:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .form-search::placeholder {
-    color: var(--color-text-faint);
-  }
-
-  .tier-counts {
-    display: flex;
-    gap: var(--space-2);
-    margin-top: var(--space-2);
-  }
-
-  .tier-tag {
     font-size: 10px;
     font-weight: 600;
-    padding: 1px 6px;
-    border-radius: var(--radius-full);
-    letter-spacing: 0.03em;
+    letter-spacing: 0.06em;
+    color: var(--af-dim);
+    text-transform: uppercase;
+    margin-bottom: 6px;
   }
 
-  .tier-tag.opus {
-    color: var(--color-opus);
-    background: rgba(245,200,66,0.1);
-    border: 1px solid rgba(245,200,66,0.3);
+  .field-search,
+  .field-select,
+  .field-textarea {
+    width: 100%;
+    background: var(--af-surface2);
+    border: 1px solid var(--af-border2);
+    border-radius: 6px;
+    color: var(--af-text);
+    padding: 6px 10px;
+    font-size: 12px;
+    box-sizing: border-box;
+    outline: none;
+    transition: border-color 150ms;
   }
 
-  .tier-tag.sonnet {
-    color: var(--color-sonnet);
-    background: rgba(74,158,255,0.1);
-    border: 1px solid rgba(74,158,255,0.3);
+  .field-search:focus,
+  .field-select:focus,
+  .field-textarea:focus { border-color: var(--af-purple); }
+
+  .field-search:disabled,
+  .field-select:disabled,
+  .field-textarea:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .field-search {
+    margin-bottom: 6px;
+    font-family: var(--af-font-mono, monospace);
   }
 
-  .tier-tag.haiku {
-    color: var(--color-haiku);
-    background: rgba(76,175,130,0.1);
-    border: 1px solid rgba(76,175,130,0.3);
+  .field-search::placeholder,
+  .field-textarea::placeholder { color: var(--af-faint); }
+
+  .field-textarea {
+    resize: vertical;
+    min-height: 96px;
+    line-height: 1.5;
   }
 
-  /* Cost callout */
+  .field-select {
+    cursor: pointer;
+    font-family: var(--af-font-mono, monospace);
+  }
+
+  /* ── Tier chips ───────────────────────────────────────────────────────── */
+  .tier-row {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+  }
+
+  .tier-chip {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 7px;
+    border-radius: 99px;
+    border: 1px solid;
+  }
+
+  .tier-chip.opus   { color: var(--af-opus);   border-color: color-mix(in srgb,var(--af-opus) 35%,transparent);   background: color-mix(in srgb,var(--af-opus) 8%,transparent); }
+  .tier-chip.sonnet { color: var(--af-sonnet); border-color: color-mix(in srgb,var(--af-sonnet) 35%,transparent); background: color-mix(in srgb,var(--af-sonnet) 8%,transparent); }
+  .tier-chip.haiku  { color: var(--af-haiku);  border-color: color-mix(in srgb,var(--af-haiku) 35%,transparent);  background: color-mix(in srgb,var(--af-haiku) 8%,transparent); }
+
+  /* ── Cost callout ─────────────────────────────────────────────────────── */
   .cost-callout {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-    background: color-mix(in srgb, var(--tier-color) 8%, transparent);
-    border: 1px solid color-mix(in srgb, var(--tier-color) 25%, transparent);
-    border-radius: var(--radius-md);
-    padding: var(--space-2) var(--space-3);
-    margin-bottom: var(--space-4);
-    font-size: var(--text-xs);
-  }
-
-  .cost-tier {
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    font-size: 10px;
+    gap: 8px;
+    padding: 8px 10px;
+    background: color-mix(in srgb, var(--tier-clr) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--tier-clr) 25%, transparent);
+    border-radius: 6px;
+    margin-bottom: 14px;
   }
 
   .cost-range {
-    color: var(--color-text-muted);
+    font-size: 11px;
+    color: var(--af-dim);
   }
 
-  /* Run button */
-  .run-btn {
-    width: 100%;
-    justify-content: center;
-    padding: var(--space-3) var(--space-4);
-    font-size: var(--text-sm);
-    font-weight: 600;
+  /* ── Run button ───────────────────────────────────────────────────────── */
+  :global(.run-btn) {
+    width: 100% !important;
+    justify-content: center !important;
   }
 
-  .run-btn:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-  }
-
-  /* Spinner */
-  .spinner {
-    display: inline-block;
-    width: 14px;
-    height: 14px;
-    border: 2px solid rgba(255,255,255,0.3);
-    border-top-color: white;
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-  }
-
-  .spinner-sm {
-    width: 12px;
-    height: 12px;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
-
-  /* Running indicator in header */
-  .running-indicator {
+  /* ── Error callout ────────────────────────────────────────────────────── */
+  .error-callout {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-    background: rgba(91,138,245,0.1);
-    border: 1px solid rgba(91,138,245,0.3);
-    border-radius: var(--radius-full);
-    padding: var(--space-2) var(--space-3);
+    gap: 10px;
+    padding: 10px 12px;
+    background: color-mix(in srgb, var(--af-danger) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--af-danger) 25%, transparent);
+    border-radius: 6px;
+    font-size: 12px;
+    margin-bottom: 8px;
   }
 
-  .running-label {
-    font-size: var(--text-sm);
-    color: var(--color-brand);
-    font-weight: 500;
+  .error-msg { flex: 1; color: var(--af-danger); }
+
+  /* ── Banners ──────────────────────────────────────────────────────────── */
+  .banner {
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    border: 1px solid;
+    line-height: 1.5;
   }
 
-  /* Error / unavailable */
-  .error-msg {
-    background: rgba(224,90,90,0.1);
-    border: 1px solid rgba(224,90,90,0.3);
-    border-radius: var(--radius-md);
-    color: var(--color-danger);
-    font-size: var(--text-xs);
-    padding: var(--space-2) var(--space-3);
-    margin-bottom: var(--space-3);
+  .banner--danger {
+    color: var(--af-danger);
+    background: color-mix(in srgb, var(--af-danger) 8%, transparent);
+    border-color: color-mix(in srgb, var(--af-danger) 25%, transparent);
   }
 
-  .unavailable-banner {
-    background: rgba(245,166,35,0.1);
-    border: 1px solid rgba(245,166,35,0.3);
-    border-radius: var(--radius-md);
-    color: var(--color-warning);
-    font-size: var(--text-xs);
-    padding: var(--space-2) var(--space-3);
-    margin-bottom: var(--space-3);
-    line-height: 1.6;
+  .banner--warn {
+    color: var(--af-warning);
+    background: color-mix(in srgb, var(--af-warning) 8%, transparent);
+    border-color: color-mix(in srgb, var(--af-warning) 25%, transparent);
   }
 
-  .unavailable-banner code {
-    font-family: var(--font-mono);
-    background: rgba(245,166,35,0.15);
+  .banner--warn code {
+    font-family: var(--af-font-mono, monospace);
+    background: color-mix(in srgb, var(--af-warning) 15%, transparent);
     padding: 1px 4px;
     border-radius: 3px;
   }
 
-  /* History */
-  .history-card .card-header {
-    margin-bottom: var(--space-3);
-  }
-
-  .history-count {
-    font-size: var(--text-xs);
-    color: var(--color-text-faint);
-    font-family: var(--font-mono);
-  }
-
-  .history-empty {
-    font-size: var(--text-sm);
-    color: var(--color-text-faint);
-    padding: var(--space-4) 0;
+  /* ── History list ─────────────────────────────────────────────────────── */
+  .empty-inline {
+    font-size: 12px;
+    color: var(--af-faint);
+    padding: 16px 0;
     text-align: center;
   }
 
   .history-list {
     display: flex;
     flex-direction: column;
-    gap: var(--space-2);
+    gap: 6px;
+    margin-top: 10px;
   }
 
   .history-item {
     width: 100%;
     text-align: left;
-    background: var(--color-surface-1);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    padding: var(--space-3);
+    background: var(--af-surface2);
+    border: 1px solid var(--af-border2);
+    border-radius: 6px;
+    padding: 10px;
     cursor: pointer;
-    transition: border-color var(--duration-fast), background var(--duration-fast);
+    transition: border-color 150ms, background 150ms;
+    color: var(--af-text);
   }
 
-  .history-item:hover {
-    border-color: var(--color-border-strong);
-    background: var(--color-surface-2);
+  .history-item:hover { border-color: var(--af-border3); }
+
+  .history-item--active {
+    border-color: var(--af-purple);
+    background: color-mix(in srgb, var(--af-purple) 6%, transparent);
   }
 
-  .history-item.active {
-    border-color: var(--color-brand);
-    background: rgba(91,138,245,0.06);
-  }
-
-  .history-item-header {
+  .history-item-top {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: var(--space-1);
+    margin-bottom: 4px;
   }
 
-  .history-agent {
-    font-size: var(--text-xs);
-    font-weight: 600;
-    color: var(--color-text);
-    font-family: var(--font-mono);
-  }
+  .history-agent { font-size: 11px; font-weight: 700; }
 
   .history-task {
-    font-size: var(--text-xs);
-    color: var(--color-text-muted);
-    margin-bottom: var(--space-1);
+    font-size: 11px;
+    color: var(--af-muted);
     line-height: 1.4;
+    margin-bottom: 4px;
   }
 
   .history-meta {
     display: flex;
     justify-content: space-between;
-    font-size: var(--text-xs);
-    color: var(--color-text-faint);
-    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--af-faint);
   }
 
-  /* Output panel */
-  .output-card {
-    display: flex;
-    flex-direction: column;
-    min-height: calc(100vh - 180px);
-    position: relative;
-  }
-
+  /* ── Output card ──────────────────────────────────────────────────────── */
   .output-header {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
-    border-bottom: 1px solid var(--color-border);
-    padding-bottom: var(--space-3);
-    margin-bottom: var(--space-4);
-    gap: var(--space-3);
-  }
-
-  .output-heading {
-    min-width: 0;
+    gap: 12px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--af-border);
   }
 
   .output-title-row {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-    margin-bottom: var(--space-2);
+    gap: 8px;
+    margin-bottom: 6px;
   }
 
   .output-meta {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
+    gap: 6px;
     flex-wrap: wrap;
   }
 
-  /* Copy button — compact text button, not a primary CTA */
-  .btn-copy {
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    color: var(--color-text-faint);
-    background: transparent;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    padding: 2px 8px;
-    cursor: pointer;
-    transition: color var(--duration-fast), border-color var(--duration-fast), background var(--duration-fast);
-    white-space: nowrap;
-    font-family: var(--font-sans);
-  }
-
-  .btn-copy:hover {
-    color: var(--color-text);
-    border-color: var(--color-border-strong);
-    background: var(--color-surface-2);
-  }
-
-  .output-agent {
-    font-size: var(--text-xs);
-    font-family: var(--font-mono);
-    color: var(--color-text-muted);
-  }
-
-  .output-ts {
-    font-size: var(--text-xs);
-    color: var(--color-text-faint);
-    font-family: var(--font-mono);
-  }
-
-  .output-actions {
+  .output-header-right {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-    margin-left: auto;
+    gap: 6px;
+    flex-shrink: 0;
     flex-wrap: wrap;
     justify-content: flex-end;
   }
 
-  .output-action {
-    font-size: var(--text-xs);
-    padding: 3px var(--space-2);
-  }
-
-  .output-action:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-  }
-
   .latency-pill {
-    font-size: var(--text-xs);
-    color: var(--color-success);
-    border: 1px solid rgba(76,175,130,0.3);
-    background: rgba(76,175,130,0.08);
-    border-radius: var(--radius-full);
-    padding: 2px var(--space-2);
-    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--af-success);
+    border: 1px solid color-mix(in srgb, var(--af-success) 30%, transparent);
+    background: color-mix(in srgb, var(--af-success) 8%, transparent);
+    border-radius: 99px;
+    padding: 2px 8px;
     white-space: nowrap;
   }
 
-  .latency-pill.pending {
-    color: var(--color-text-muted);
-    border-color: var(--color-border);
-    background: var(--color-surface-1);
+  .latency-pill--pending {
+    color: var(--af-dim);
+    border-color: var(--af-border2);
+    background: transparent;
   }
 
-  .stream-warning {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-3);
-    background: rgba(245,166,35,0.1);
-    border: 1px solid rgba(245,166,35,0.3);
-    border-radius: var(--radius-md);
-    color: var(--color-warning);
-    font-size: var(--text-xs);
-    padding: var(--space-2) var(--space-3);
-    margin-bottom: var(--space-3);
-  }
-
-  .resume-output-scroll {
+  .resume-scroll {
     position: absolute;
-    right: var(--space-6);
-    bottom: var(--space-6);
+    right: 24px;
+    bottom: 24px;
     z-index: 2;
-    background: var(--color-brand);
-    color: white;
+    background: var(--af-purple);
+    color: #fff;
     border: none;
-    border-radius: var(--radius-full);
-    padding: var(--space-2) var(--space-4);
-    font-size: var(--text-xs);
+    border-radius: 99px;
+    padding: 6px 14px;
+    font-size: 11px;
     font-weight: 600;
     cursor: pointer;
-    box-shadow: var(--shadow-md);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
   }
 
-  .resume-output-scroll:hover {
-    background: var(--color-brand-hover);
-  }
-
+  /* ── Output content ───────────────────────────────────────────────────── */
   .output-empty {
-    flex: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: var(--space-2);
-    color: var(--color-text-muted);
-    padding: var(--space-12) var(--space-6);
+    gap: 8px;
+    padding: 48px 24px;
+    color: var(--af-dim);
   }
 
-  .output-empty .empty-icon {
-    font-size: 28px;
-    opacity: 0.2;
-  }
+  .empty-icon { font-size: 28px; opacity: 0.2; }
 
-  .output-empty p {
-    margin: 0;
-    font-size: var(--text-sm);
-    text-align: center;
-  }
+  .output-empty p { margin: 0; font-size: 12px; text-align: center; }
 
-  .output-empty .muted {
-    font-size: var(--text-xs);
-    color: var(--color-text-faint);
-  }
+  .empty-sub { font-size: 11px; color: var(--af-faint); }
 
   .output-pre {
     flex: 1;
     margin: 0;
-    padding: 0;
-    font-family: var(--font-mono);
-    font-size: var(--text-sm);
-    color: var(--color-text);
+    padding: 14px 18px;
+    font-size: 12px;
+    color: var(--af-muted);
     white-space: pre-wrap;
     word-break: break-word;
     overflow-y: auto;
     max-height: calc(100vh - 260px);
-    line-height: 1.6;
+    line-height: 1.7;
   }
 
   .cursor {
     display: inline-block;
     animation: blink 1s step-end infinite;
-    color: var(--color-brand);
+    color: var(--af-purple);
   }
 
-  @keyframes blink {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0; }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+  /* ── Spinner ──────────────────────────────────────────────────────────── */
+  .spinner {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .skeleton {
+    background: var(--af-surface2);
+    animation: shimmer 1.4s infinite;
+  }
+
+  @keyframes shimmer {
+    0%   { opacity: 0.5; }
+    50%  { opacity: 0.8; }
+    100% { opacity: 0.5; }
+  }
+
+  .af2-mono {
+    font-family: var(--af-font-mono, 'JetBrains Mono', monospace);
+    font-feature-settings: 'tnum' 1;
   }
 
   @media (max-width: 900px) {
-    .runner-layout {
-      grid-template-columns: 1fr;
-    }
-
-    .output-card {
-      min-height: 400px;
-    }
-
-    .output-header {
-      align-items: flex-start;
-      flex-direction: column;
-    }
-
-    .output-actions {
-      margin-left: 0;
-      justify-content: flex-start;
-    }
+    .runner-layout { grid-template-columns: 1fr; }
   }
 </style>
