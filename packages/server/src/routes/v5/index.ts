@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import type { WorkspaceAdapter } from '@agentforge/db';
 import type { WorkspaceRegistry } from '@agentforge/db';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { RuntimeJobSupervisor, type RuntimeEventEnvelope } from '@agentforge/core';
 import { rbacRoutes } from './rbac.js';
 import { costsRoutes } from './costs.js';
@@ -50,6 +52,118 @@ export interface V5RouteOptions {
   projectRoot?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Session transcript loader
+// ---------------------------------------------------------------------------
+
+export interface TranscriptEntry {
+  role: string;
+  content: string;
+  ts: string;
+}
+
+/**
+ * Load a session transcript from disk, if it exists.
+ *
+ * Looks in two places (in order):
+ *   1. `<projectRoot>/.agentforge/sessions/<id>/transcript.json` — structured transcript dir
+ *   2. `<projectRoot>/.agentforge/sessions/<id>*.json` — flat file matching id prefix
+ *
+ * Returns null when:
+ *   - The file is missing (old sessions without transcript)
+ *   - The file is malformed JSON
+ *   - The file content doesn't contain recognizable transcript data
+ */
+export function loadSessionTranscript(
+  sessionId: string,
+  projectRoot: string,
+): TranscriptEntry[] | null {
+  const sessionsDir = join(projectRoot, '.agentforge', 'sessions');
+
+  // 1. Try structured transcript at sessions/<id>/transcript.json
+  const structuredPath = join(sessionsDir, sessionId, 'transcript.json');
+  if (existsSync(structuredPath)) {
+    try {
+      const raw = readFileSync(structuredPath, 'utf8');
+      const parsed: unknown = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return (parsed as unknown[]).map((entry, idx): TranscriptEntry => {
+          const e = entry as Record<string, unknown>;
+          return {
+            role: typeof e['role'] === 'string' ? e['role'] : 'unknown',
+            content: typeof e['content'] === 'string' ? e['content'] : JSON.stringify(e),
+            ts: typeof e['ts'] === 'string' ? e['ts'] : new Date(Date.now() + idx).toISOString(),
+          };
+        });
+      }
+    } catch {
+      return null;
+    }
+  }
+
+  // 2. Try flat file matching the session ID prefix
+  if (!existsSync(sessionsDir)) return null;
+
+  let matchingFile: string | null = null;
+  try {
+    const files = readdirSync(sessionsDir);
+    matchingFile = files.find(f => f.startsWith(sessionId) && f.endsWith('.json')) ?? null;
+    // Also check exact name match (like session-20260327T130000-cto-v48.json)
+    if (!matchingFile) {
+      matchingFile = files.find(f => f === `${sessionId}.json`) ?? null;
+    }
+  } catch {
+    return null;
+  }
+
+  if (!matchingFile) return null;
+
+  try {
+    const raw = readFileSync(join(sessionsDir, matchingFile), 'utf8');
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+
+    const data = parsed as Record<string, unknown>;
+
+    // If it's an array with role/content entries, use directly
+    if (Array.isArray(parsed)) {
+      return (parsed as unknown[]).map((entry, idx): TranscriptEntry => {
+        const e = entry as Record<string, unknown>;
+        return {
+          role: typeof e['role'] === 'string' ? e['role'] : 'unknown',
+          content: typeof e['content'] === 'string' ? e['content'] : JSON.stringify(e),
+          ts: typeof e['ts'] === 'string' ? e['ts'] : new Date(Date.now() + idx).toISOString(),
+        };
+      });
+    }
+
+    // Convert flat session file format to transcript entries
+    const entries: TranscriptEntry[] = [];
+    const startedAt = typeof data['startedAt'] === 'string'
+      ? data['startedAt']
+      : new Date().toISOString();
+
+    // task / objective → user message
+    const task = data['task'] ?? data['objective'];
+    if (typeof task === 'string' && task.length > 0) {
+      entries.push({ role: 'user', content: task, ts: startedAt });
+    }
+
+    // response / instruction → assistant message
+    const response = data['response'] ?? data['instruction'];
+    if (typeof response === 'string' && response.length > 0) {
+      const completedAt = typeof data['completedAt'] === 'string'
+        ? data['completedAt']
+        : startedAt;
+      entries.push({ role: 'assistant', content: response, ts: completedAt });
+    }
+
+    return entries.length > 0 ? entries : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Register all v5 REST API routes.
  *
@@ -92,6 +206,8 @@ export async function registerV5Routes(
 
   // ── Sessions ─────────────────────────────────────────────────────────────────
 
+  const sessionProjectRoot = opts.projectRoot ?? process.cwd();
+
   /** List sessions with optional pagination and filtering. */
   app.get('/api/v5/sessions', async (req, reply) => {
     const q = req.query as {
@@ -103,7 +219,7 @@ export async function registerV5Routes(
     const limit = Math.min(parseInt(q.limit ?? '50', 10), 500);
     const offset = parseInt(q.offset ?? '0', 10);
 
-    const data = adapter.listSessions({
+    const sessions = adapter.listSessions({
       limit,
       offset,
       ...(q.agentId !== undefined ? { agentId: q.agentId } : {}),
@@ -112,6 +228,15 @@ export async function registerV5Routes(
     const total = adapter.countSessions({
       ...(q.agentId !== undefined ? { agentId: q.agentId } : {}),
       ...(q.status !== undefined ? { status: q.status } : {}),
+    });
+
+    // Attach transcript to each session (null if file missing or malformed)
+    const data = sessions.map(session => {
+      const transcript = loadSessionTranscript(session.id, sessionProjectRoot);
+      if (transcript !== null) {
+        return { ...session, transcript };
+      }
+      return session;
     });
 
     return reply.send({
@@ -137,7 +262,12 @@ export async function registerV5Routes(
         details: { id },
       });
     }
-    return reply.send({ data: session, meta: { timestamp: new Date().toISOString() } });
+
+    // Attach transcript if available on disk
+    const transcript = loadSessionTranscript(id, sessionProjectRoot);
+    const data = transcript !== null ? { ...session, transcript } : session;
+
+    return reply.send({ data, meta: { timestamp: new Date().toISOString() } });
   });
 
   // ── Costs ────────────────────────────────────────────────────────────────────
