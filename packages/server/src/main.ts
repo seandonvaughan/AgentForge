@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { WorkspaceAdapter } from '@agentforge/db';
-import { MessageBusV2, WorkspaceManager } from '@agentforge/core';
+import { MessageBusV2, WorkspaceManager, InboxBridge } from '@agentforge/core';
 import { createServerV5 } from './server.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -41,6 +41,11 @@ export async function startPackageServer(
 
   seedSessionsFromFiles(adapter, projectRoot);
 
+  // Wire the InboxBridge (v1 — agent-comm spec). Subscribes to
+  // `cost.budget.warning` and mirrors to the @user inbox.
+  const inboxBridge = new InboxBridge({ bus, adapter });
+  inboxBridge.attach();
+
   const server = await createServerV5({
     port,
     host,
@@ -49,6 +54,11 @@ export async function startPackageServer(
     registry,
     dataDir,
     projectRoot,
+  });
+
+  // Make sure subscriptions are torn down on graceful shutdown.
+  server.app.addHook('onClose', async () => {
+    inboxBridge.detach();
   });
 
   (bus.publish as any)({

@@ -17,6 +17,8 @@
 
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import type { WorkspaceAdapter } from '@agentforge/db';
+import { injectAgentDms, type InjectAgentDmsOptions } from '../comms/inject-agent-dms.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -38,6 +40,17 @@ export interface FreshContextOptions {
   maxEntryChars?: number;
   /** Recency window in days — entries older than this are skipped. Default: 60. */
   windowDays?: number;
+  /**
+   * Optional workspace adapter. When provided, undelivered DMs for `agentId`
+   * are pulled and prepended as a `## Direct Messages` section ahead of the
+   * fresh-context block. See `comms/inject-agent-dms.ts` (ADR 0001).
+   *
+   * When omitted, `injectFreshContext` behaves as before — pure memory
+   * splice — keeping the existing call sites and tests unchanged.
+   */
+  adapter?: WorkspaceAdapter;
+  /** Forwarded to `injectAgentDms` when `adapter` is provided. */
+  dmOptions?: InjectAgentDmsOptions;
 }
 
 // ---------------------------------------------------------------------------
@@ -202,8 +215,12 @@ export function injectFreshContext(
   options?: FreshContextOptions,
 ): string {
   const block = buildFreshContextBlock(agentId, agentforgeDir, options);
-  if (!block) return prompt;
-  return `${prompt.trimEnd()}\n\n${block}\n`;
+  const memoryAugmented = block ? `${prompt.trimEnd()}\n\n${block}\n` : prompt;
+
+  if (options?.adapter) {
+    return injectAgentDms(memoryAugmented, agentId, options.adapter, options.dmOptions ?? {});
+  }
+  return memoryAugmented;
 }
 
 /**

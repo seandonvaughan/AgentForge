@@ -330,4 +330,46 @@ export const WORKSPACE_DDL = `
   CREATE INDEX IF NOT EXISTS idx_knowledge_relationships_from ON knowledge_relationships(from_entity_id);
   CREATE INDEX IF NOT EXISTS idx_knowledge_relationships_to ON knowledge_relationships(to_entity_id);
   CREATE INDEX IF NOT EXISTS idx_knowledge_relationships_type ON knowledge_relationships(type);
+
+  -- Agent direct messages (v1 — see docs/v2-architecture/agent-comm-and-kb-spec.md section 3).
+  -- v1 is intentionally narrower than the spec's section 3.2 schema: no thread_id,
+  -- no priority, no ttl, no context back-refs. Delivery is via prompt injection
+  -- (ADR 0001), so we track delivered_at only — read_at, threading depth, and
+  -- soft-delete are deferred to v2.
+  CREATE TABLE IF NOT EXISTS direct_messages (
+    id            TEXT PRIMARY KEY,
+    from_agent    TEXT NOT NULL,
+    to_agent      TEXT NOT NULL,
+    body          TEXT NOT NULL,
+    reply_to_id   TEXT REFERENCES direct_messages(id),
+    sent_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    delivered_at  TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_direct_messages_recipient ON direct_messages(to_agent, delivered_at);
+  CREATE INDEX IF NOT EXISTS idx_direct_messages_sender    ON direct_messages(from_agent, sent_at);
+  CREATE INDEX IF NOT EXISTS idx_direct_messages_thread    ON direct_messages(reply_to_id);
+
+  -- Central inbox (v1 — see spec section 4).
+  -- v1 limits: '@user' recipient only, no '@team-*' resolution, no FTS5, no
+  -- snooze/star. Junction table modelled per ADR 0005 so v2 can add multi-
+  -- recipient without schema churn.
+  CREATE TABLE IF NOT EXISTS inbox_messages (
+    id           TEXT PRIMARY KEY,
+    body         TEXT NOT NULL,
+    kind         TEXT NOT NULL DEFAULT 'info',
+    source_id    TEXT,
+    source_type  TEXT,
+    thread_id    TEXT,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS inbox_recipients (
+    message_id  TEXT NOT NULL REFERENCES inbox_messages(id) ON DELETE CASCADE,
+    recipient   TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'unread',
+    read_at     TEXT,
+    PRIMARY KEY (message_id, recipient)
+  );
+  CREATE INDEX IF NOT EXISTS idx_inbox_messages_created   ON inbox_messages(created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_inbox_messages_source    ON inbox_messages(source_type, source_id);
+  CREATE INDEX IF NOT EXISTS idx_inbox_recipients_lookup  ON inbox_recipients(recipient, status, message_id);
 `;
