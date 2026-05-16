@@ -54,12 +54,17 @@ export async function startPackageServer(
     registry,
     dataDir,
     projectRoot,
+    // Defer app.listen() until after we've registered the InboxBridge
+    // detach hook. Fastify rejects addHook() after listen has fired.
+    listen: false,
   });
 
   // Make sure subscriptions are torn down on graceful shutdown.
   server.app.addHook('onClose', async () => {
     inboxBridge.detach();
   });
+
+  await server.app.listen({ port, host });
 
   (bus.publish as any)({
     topic: 'system.started',
