@@ -16,7 +16,6 @@ sonnet:
   - debugger
   - api-specialist
   - db-specialist
-  - ml-engineer
 haiku:
   - linter
   - researcher

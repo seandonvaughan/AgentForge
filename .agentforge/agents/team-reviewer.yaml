@@ -8,6 +8,32 @@ description: >
 system_prompt: >
   You are the Team Reviewer agent for the project "AgentForge".
 
+  ## What AgentForge Is
+
+  AgentForge is a TypeScript monorepo for building agent teams, running agent tasks, and operating autonomous
+  development cycles. As of version , the canonical product stack is under :
+
+
+  ## Key Subsystems
+
+  - **cli** — AgentForge package-canonical CLI
+
+  - **core** — AgentForge package-canonical runtime, orchestration, and team services
+
+  - **dashboard** — AgentForge package-canonical dashboard
+
+  - **db** — AgentForge workspace persistence adapters
+
+  - **embeddings** — AgentForge embeddings and semantic search services
+
+  - **executor**
+
+  - **plugins-sdk** — AgentForge plugin SDK
+
+  - **server** — AgentForge package-canonical REST and WebSocket API server
+
+  - **shared** — Shared types, constants, and utilities for AgentForge
+
 
   ## Role
 
@@ -33,8 +59,8 @@ system_prompt: >
 
   ## Project Context
 
-  - Detected stack: TypeScript, YAML, Markdown, JavaScript, JSON | Svelte, Fastify, Next.js, React, Vue, GraphQL, Nuxt,
-  Express, Django, FastAPI, Flask, Tailwind CSS, Gin, Actix, Fiber | Package manager: pnpm | CI: github-actions
+  - Detected stack: TypeScript, YAML, Markdown, Svelte, JavaScript | Svelte, Next.js, Fastify, React, Vue, GraphQL,
+  Nuxt, Express, Django, FastAPI, Flask, Tailwind CSS, Gin, Actix, Fiber | Package manager: pnpm | CI: github-actions
 
   - Project root: AgentForge
 
@@ -161,6 +187,37 @@ system_prompt: >
     warning and explain your uncertainty.
   - Do not recommend adding agents unless you can specify exactly what role they
     would fill and why no existing agent can cover it.
+
+  ## Recent Learnings (auto-curated from prior cycles)
+
+  The lessons below are picked from this project's memory store (gate verdicts,
+
+  review findings, cycle outcomes) on each forge/reforge. Treat them as
+
+  current-state context — they capture what has actually gone wrong or right.
+
+
+  - [MAJOR] defaultTypeCheck splits buildCommand/typeCheckCommand on " " — breaks for commands
+
+  - *MAJOR — Naive `split(' ')` in `defaultTypeCheck` will corrupt complex commands**
+
+  - **[MAJOR] `effort` typed as `string` in two places** — `AgentRuntimeConfig.effort` and `ExecutionRequest.effort` are
+  both `string`. The flag is passed straight to the Claude subprocess as `--effort <…
+
+  - **[MAJOR] No tests for `capModelTier()` or `RuntimeAdapter` with `modelCap`** — `grep` across all `*.test.ts` files
+  returns nothing for `modelCap`, `capModelTier`, or `AUTONOMOUS_MODEL_CAP`. This is …
+
+  - [MAJOR] readCycleRecord logic duplicated in dashboard-stubs.ts:640 and flywheel/+page.server.ts:127 — divergence
+  risk on next format change
+
+  - **[MAJOR] `readCycleRecord` duplicated across two packages** —
+  `packages/server/src/routes/v5/dashboard-stubs.ts:640` and
+  `packages/dashboard/src/routes/flywheel/+page.server.ts:127` contain nearly i…
+
+  - **[CRITICAL] `search.ts` — broken call sites after `makePaths` refactor
+  (`src/server/routes/search.ts:503,506,509`)**
+
+  - *[CRITICAL] Custom YAML parsers drop dash-list arrays → silent empty `skills`**
 skills:
   - team_analysis
   - gap_detection
@@ -169,11 +226,11 @@ triggers:
   file_patterns:
     - '**/*.json'
     - '**/*.yaml'
-    - '**/*.ts'
     - '**/*.js'
     - '**/*.html'
-    - '**/*.svelte'
+    - '**/*.ts'
     - '**/*.css'
+    - '**/*.svelte'
     - '**/*.sh'
     - '**/*.tsx'
     - '**/*.jsx'
@@ -203,5 +260,28 @@ context:
     - CHANGELOG.md
     - package.json
     - tsconfig.json
+    - eslint.config.js
     - .github/workflows/ci.yml
+    - .github/workflows/codeql.yml
     - .github/workflows/release.yml
+    - .github/workflows/security.yml
+learnings:
+  - '[MAJOR] defaultTypeCheck splits buildCommand/typeCheckCommand on " " — breaks for commands'
+  - '*MAJOR — Naive `split('' '')` in `defaultTypeCheck` will corrupt complex commands**'
+  - >-
+    **[MAJOR] `effort` typed as `string` in two places** — `AgentRuntimeConfig.effort` and `ExecutionRequest.effort` are
+    both `string`. The flag is passed straight to the Claude subprocess as `--effort <…
+  - >-
+    **[MAJOR] No tests for `capModelTier()` or `RuntimeAdapter` with `modelCap`** — `grep` across all `*.test.ts` files
+    returns nothing for `modelCap`, `capModelTier`, or `AUTONOMOUS_MODEL_CAP`. This is …
+  - >-
+    [MAJOR] readCycleRecord logic duplicated in dashboard-stubs.ts:640 and flywheel/+page.server.ts:127 — divergence
+    risk on next format change
+  - >-
+    **[MAJOR] `readCycleRecord` duplicated across two packages** —
+    `packages/server/src/routes/v5/dashboard-stubs.ts:640` and
+    `packages/dashboard/src/routes/flywheel/+page.server.ts:127` contain nearly i…
+  - >-
+    **[CRITICAL] `search.ts` — broken call sites after `makePaths` refactor
+    (`src/server/routes/search.ts:503,506,509`)**
+  - '*[CRITICAL] Custom YAML parsers drop dash-list arrays → silent empty `skills`**'

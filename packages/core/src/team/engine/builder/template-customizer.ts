@@ -6,7 +6,7 @@
  * and context paths populated based on what actually exists in the project.
  */
 
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentTemplate } from "../types/agent.js";
 import type { FullScanResult } from "../scanner/index.js";
@@ -286,7 +286,6 @@ function buildKeySubsystems(scan: FullScanResult, projectRoot: string): string {
     if (!existsSync(dir)) continue;
     let entries: string[];
     try {
-      const { readdirSync, statSync } = require("node:fs") as typeof import("node:fs");
       entries = readdirSync(dir).filter((e) => {
         try {
           return statSync(join(dir, e)).isDirectory();
