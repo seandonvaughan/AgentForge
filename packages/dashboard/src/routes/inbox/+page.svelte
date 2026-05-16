@@ -346,13 +346,14 @@
               </span>
             </div>
           {/if}
-          {#if selected.status === 'unread'}
-            <div
-              style="margin-top:16px;padding-top:14px;border-top:1px solid var(--af-border)"
-            >
+          <div
+            style="margin-top:16px;padding-top:14px;border-top:1px solid var(--af-border);display:flex;gap:8px;flex-wrap:wrap;align-items:center"
+          >
+            <a class="thread-link" href="/inbox/{selected.id}">Open thread &rarr;</a>
+            {#if selected.status === 'unread'}
               <Btn size="sm" onclick={() => markRead(selected!.id)}>Mark as read</Btn>
-            </div>
-          {/if}
+            {/if}
+          </div>
         </Card>
       {:else}
         <Card>
@@ -569,6 +570,15 @@
     font-size: 11px;
     color: var(--af-dim);
     word-break: break-all;
+  }
+  .thread-link {
+    font-size: 11px;
+    color: var(--af-purple);
+    text-decoration: none;
+    font-weight: 500;
+  }
+  .thread-link:hover {
+    text-decoration: underline;
   }
   .state-center {
     display: flex;
