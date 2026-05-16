@@ -22,6 +22,7 @@ import {
   UnsupportedRecipientError,
   type InboxKind,
   type InboxStatus,
+  type MessageBusV2,
 } from '@agentforge/core';
 import type { WorkspaceAdapter } from '@agentforge/db';
 import { openAuditDb, appendAuditEntry } from './audit.js';
@@ -33,6 +34,11 @@ const DEFAULT_PROJECT_ROOT = join(__dirname, '../../../../../');
 export interface InboxRouteOptions {
   adapter: WorkspaceAdapter;
   projectRoot?: string;
+  /**
+   * Optional bus. When provided, inbox writes publish
+   * `inbox.message.created` so SSE consumers refresh live (Phase 2).
+   */
+  bus?: MessageBusV2;
 }
 
 interface PostInboxBody {
@@ -80,14 +86,18 @@ export async function inboxRoutes(app: FastifyInstance, opts: InboxRouteOptions)
     }
 
     try {
-      const result = sendInboxMessage(adapter, {
-        body: body.body,
-        kind: body.kind as InboxKind,
-        ...(body.sourceId !== undefined ? { sourceId: body.sourceId } : {}),
-        ...(body.sourceType !== undefined ? { sourceType: body.sourceType } : {}),
-        ...(body.threadId !== undefined ? { threadId: body.threadId } : {}),
-        recipients: body.recipients,
-      });
+      const result = sendInboxMessage(
+        adapter,
+        {
+          body: body.body,
+          kind: body.kind as InboxKind,
+          ...(body.sourceId !== undefined ? { sourceId: body.sourceId } : {}),
+          ...(body.sourceType !== undefined ? { sourceType: body.sourceType } : {}),
+          ...(body.threadId !== undefined ? { threadId: body.threadId } : {}),
+          recipients: body.recipients,
+        },
+        opts.bus ? { bus: opts.bus } : {},
+      );
       appendAuditEntry(auditDb, {
         actor: body.sourceType ?? 'system',
         action: 'inbox.send',

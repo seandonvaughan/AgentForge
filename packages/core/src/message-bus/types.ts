@@ -30,6 +30,7 @@ export type MessageCategory =
   | 'feedback'      // quality/performance feedback
   | 'cost'          // cost events and alerts
   | 'system'        // system health, bus events
+  | 'comms'         // DMs and inbox messages (v2 agent-comm)
   | 'plugin';       // plugin-emitted events
 
 // ── Topic taxonomy ────────────────────────────────────────────────────────────
@@ -77,6 +78,9 @@ export type MessageTopic =
   | 'system.health.check'
   | 'system.health.status'
   | 'bus.event.replay.requested'
+  // Communication (v2 agent-comm spec — Phase 2)
+  | 'agent.dm.sent'
+  | 'inbox.message.created'
   // Plugin
   | 'plugin.event';
 
@@ -244,6 +248,30 @@ export interface PluginEventPayload {
   source: string;
 }
 
+// ── Comms payloads (Phase 2 — v2 agent-comm spec) ─────────────────────────────
+
+/** Payload for `agent.dm.sent` — peer-to-peer DM published on the bus. */
+export interface AgentDmSentPayload {
+  id: string;
+  fromAgent: string;
+  toAgent: string;
+  body: string;
+  replyToId: string | null;
+  sentAt: string;
+}
+
+/** Payload for `inbox.message.created` — inbox row + recipient list. */
+export interface InboxMessageCreatedPayload {
+  id: string;
+  body: string;
+  kind: 'info' | 'warning' | 'action_required';
+  sourceId: string | null;
+  sourceType: string | null;
+  threadId: string | null;
+  createdAt: string;
+  recipients: string[];
+}
+
 // ── Type guards ───────────────────────────────────────────────────────────────
 
 export function isTaskTopic(topic: MessageTopic): boolean {
@@ -291,3 +319,9 @@ export type AgentLifecycleEnvelope = MessageEnvelopeV2<AgentLifecyclePayload>;
 export type CostRecordedEnvelope = MessageEnvelopeV2<CostRecordedPayload>;
 export type SystemHealthEnvelope = MessageEnvelopeV2<SystemHealthPayload>;
 export type PluginEventEnvelope = MessageEnvelopeV2<PluginEventPayload>;
+export type AgentDmSentEnvelope = MessageEnvelopeV2<AgentDmSentPayload>;
+export type InboxMessageCreatedEnvelope = MessageEnvelopeV2<InboxMessageCreatedPayload>;
+
+export function isCommsTopic(topic: MessageTopic): boolean {
+  return topic === 'agent.dm.sent' || topic === 'inbox.message.created';
+}

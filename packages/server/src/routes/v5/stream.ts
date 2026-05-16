@@ -3,7 +3,16 @@ import { generateId, nowIso } from '@agentforge/shared';
 
 export interface StreamEvent {
   id: string;
-  type: 'agent_activity' | 'sprint_event' | 'cost_event' | 'workflow_event' | 'branch_event' | 'system' | 'refresh_signal' | 'cycle_event';
+  type:
+    | 'agent_activity'
+    | 'sprint_event'
+    | 'cost_event'
+    | 'workflow_event'
+    | 'branch_event'
+    | 'system'
+    | 'refresh_signal'
+    | 'cycle_event'
+    | 'comms_event';
   workspaceId?: string;
   sessionId?: string;
   jobId?: string;

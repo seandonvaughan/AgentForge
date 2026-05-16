@@ -7,6 +7,8 @@
  */
 
 import type { WorkspaceAdapter, InboxMessageRow, InboxRecipientRow } from '@agentforge/db';
+import type { MessageBusV2 } from '../message-bus/message-bus.js';
+import type { InboxMessageCreatedPayload } from '../message-bus/types.js';
 import {
   type InboxKind,
   type InboxMessage,
@@ -45,10 +47,32 @@ export { rowToInboxMessage, rowToInboxRecipient };
 /**
  * Persist an inbox message + its recipient rows. Throws when the input
  * violates a v1 invariant — callers should treat each as bad-request.
+ *
+ * When `bus` is provided (Phase 2), also publishes an `inbox.message.created`
+ * envelope after the transaction commits so SSE consumers can refresh live.
+ * Bus errors are swallowed — a publish failure must not undo the persisted
+ * row (the inbox table is the source of truth).
+ *
+ * v2 (Fix 4): when `expandRecipients` is provided, recipients that fail the
+ * built-in `@user`-only check get one more chance via the resolver. This is
+ * how `@team-*` aliases expand into N agent IDs without sprinkling the
+ * routing logic through every caller.
  */
 export function sendInboxMessage(
   adapter: WorkspaceAdapter,
   input: SendInboxMessageInput,
+  options: {
+    bus?: MessageBusV2;
+    /**
+     * Optional recipient resolver. Called for each input recipient that is
+     * NOT in `SUPPORTED_INBOX_RECIPIENTS`. Should return the list of literal
+     * recipients to write into `inbox_recipients`. Returning an empty array
+     * is treated as "unknown alias" and rethrows the original
+     * `UnsupportedRecipientError`. Returning `null` means "I don't handle
+     * this — also rethrow".
+     */
+    expandRecipients?: (recipient: string) => readonly string[] | null;
+  } = {},
 ): { message: InboxMessage; recipients: InboxRecipient[] } {
   const body = input.body?.trim();
   if (!body) throw new Error('sendInboxMessage: body is required');
@@ -58,10 +82,28 @@ export function sendInboxMessage(
   if (input.recipients.length === 0) {
     throw new Error('sendInboxMessage: recipients must be non-empty');
   }
+
+  // Expand any recipients the v1 check would reject. `@user` falls through
+  // unchanged; `@team-*` etc. routes through `expandRecipients`. The expanded
+  // list is deduplicated to keep `inbox_recipients` clean when an alias
+  // overlaps an explicit @user/agent entry.
+  const expanded = new Set<string>();
   for (const r of input.recipients) {
-    if (!SUPPORTED_INBOX_RECIPIENTS.includes(r)) {
+    if (SUPPORTED_INBOX_RECIPIENTS.includes(r)) {
+      expanded.add(r);
+      continue;
+    }
+    const resolved = options.expandRecipients?.(r);
+    if (resolved && resolved.length > 0) {
+      for (const sub of resolved) expanded.add(sub);
+    } else {
       throw new UnsupportedRecipientError(r);
     }
+  }
+
+  const recipientsArr = Array.from(expanded);
+  if (recipientsArr.length === 0) {
+    throw new Error('sendInboxMessage: recipients resolved to an empty set');
   }
 
   const { message, recipients } = adapter.createInboxMessage({
@@ -70,13 +112,36 @@ export function sendInboxMessage(
     ...(input.sourceId !== undefined ? { sourceId: input.sourceId } : {}),
     ...(input.sourceType !== undefined ? { sourceType: input.sourceType } : {}),
     ...(input.threadId !== undefined ? { threadId: input.threadId } : {}),
-    recipients: input.recipients,
+    recipients: recipientsArr,
   });
 
-  return {
-    message: rowToInboxMessage(message),
-    recipients: recipients.map(rowToInboxRecipient),
-  };
+  const msg = rowToInboxMessage(message);
+  const recs = recipients.map(rowToInboxRecipient);
+
+  if (options.bus) {
+    try {
+      options.bus.publish<InboxMessageCreatedPayload>({
+        from: 'system',
+        to: 'broadcast',
+        topic: 'inbox.message.created',
+        category: 'comms',
+        payload: {
+          id: msg.id,
+          body: msg.body,
+          kind: msg.kind,
+          sourceId: msg.sourceId,
+          sourceType: msg.sourceType,
+          threadId: msg.threadId,
+          createdAt: msg.createdAt,
+          recipients: recs.map((r) => r.recipient),
+        },
+      });
+    } catch {
+      // best-effort
+    }
+  }
+
+  return { message: msg, recipients: recs };
 }
 
 /** Return inbox messages for a recipient, newest first. */

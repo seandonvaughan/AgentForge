@@ -81,13 +81,17 @@ export class InboxBridge {
       const body =
         `Budget usage ${pctText} of $${p.budgetUsd.toFixed(2)}${agentText}. ` +
         `Spent so far: $${p.spentUsd.toFixed(4)} (workspace \`${p.workspaceId}\`).`;
-      const result = sendInboxMessage(this.adapter, {
-        body,
-        kind: 'warning',
-        sourceId: envelope.correlationId ?? envelope.id,
-        sourceType: 'cost-warning',
-        recipients: ['@user'],
-      });
+      const result = sendInboxMessage(
+        this.adapter,
+        {
+          body,
+          kind: 'warning',
+          sourceId: envelope.correlationId ?? envelope.id,
+          sourceType: 'cost-warning',
+          recipients: ['@user'],
+        },
+        { bus: this.bus },
+      );
       return result.message;
     } catch (err) {
       this.log('error', 'InboxBridge: failed to mirror cost.budget.warning', {

@@ -3,7 +3,14 @@ import type { WorkspaceAdapter } from '@agentforge/db';
 import type { WorkspaceRegistry } from '@agentforge/db';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { RuntimeJobSupervisor, type RuntimeEventEnvelope } from '@agentforge/core';
+import {
+  RuntimeJobSupervisor,
+  type MessageBusV2,
+  type RuntimeEventEnvelope,
+  type MessageEnvelopeV2,
+  type AgentDmSentPayload,
+  type InboxMessageCreatedPayload,
+} from '@agentforge/core';
 import { rbacRoutes } from './rbac.js';
 import { costsRoutes } from './costs.js';
 import { approvalsRoutes } from './approvals.js';
@@ -51,6 +58,12 @@ export interface V5RouteOptions {
   adapter: WorkspaceAdapter;
   registry: WorkspaceRegistry;
   projectRoot?: string;
+  /**
+   * Optional bus. When provided, comms routes (`/api/v5/dms`,
+   * `/api/v5/inbox`) publish bus topics and the v5 stream forwards them as
+   * SSE events for live dashboard updates.
+   */
+  bus?: MessageBusV2;
 }
 
 // ---------------------------------------------------------------------------
@@ -420,14 +433,69 @@ export async function registerV5Routes(
   // ── Autonomous Branch Management (Fix 1, v2 audit) ─────────────────────
   await autonomousBranchesRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
 
-  // ── Agent comms v1: DMs + central inbox (spec v2-agent-comm) ────────────
+  // ── Agent comms (v1 base + v2 Phase 2 — bus topics, replies, @team-*) ───
   await dmsRoutes(app, {
     adapter: opts.adapter,
     ...(opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {}),
+    ...(opts.bus ? { bus: opts.bus } : {}),
   });
   await inboxRoutes(app, {
     adapter: opts.adapter,
     ...(opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {}),
+    ...(opts.bus ? { bus: opts.bus } : {}),
+  });
+
+  // ── Bus → SSE bridge for comms topics ───────────────────────────────────
+  // When a bus is wired, forward `agent.dm.sent` and `inbox.message.created`
+  // envelopes to `globalStream` so the dashboard (/inbox, /inbox/[id]) gets
+  // live updates without falling back to polling.
+  if (opts.bus) {
+    opts.bus.subscribe<AgentDmSentPayload>('agent.dm.sent', (envelope) => {
+      bridgeDmToGlobalStream(envelope);
+    });
+    opts.bus.subscribe<InboxMessageCreatedPayload>('inbox.message.created', (envelope) => {
+      bridgeInboxToGlobalStream(envelope);
+    });
+  }
+}
+
+/** Exported for unit-test access. Forwards a bus DM envelope as an SSE event. */
+export function bridgeDmToGlobalStream(envelope: MessageEnvelopeV2<AgentDmSentPayload>): void {
+  const p = envelope.payload;
+  globalStream.emit({
+    type: 'comms_event',
+    category: 'comms',
+    message: `DM ${p.fromAgent} → ${p.toAgent}`,
+    payload: {
+      kind: 'dm',
+      id: p.id,
+      fromAgent: p.fromAgent,
+      toAgent: p.toAgent,
+      body: p.body,
+      replyToId: p.replyToId,
+      sentAt: p.sentAt,
+    },
+  });
+}
+
+/** Exported for unit-test access. Forwards a bus inbox envelope as an SSE event. */
+export function bridgeInboxToGlobalStream(envelope: MessageEnvelopeV2<InboxMessageCreatedPayload>): void {
+  const p = envelope.payload;
+  globalStream.emit({
+    type: 'comms_event',
+    category: 'comms',
+    message: `Inbox: ${p.sourceType ?? 'system'} → ${p.recipients.join(', ')}`,
+    payload: {
+      kind: 'inbox',
+      id: p.id,
+      body: p.body,
+      messageKind: p.kind,
+      sourceId: p.sourceId,
+      sourceType: p.sourceType,
+      threadId: p.threadId,
+      createdAt: p.createdAt,
+      recipients: p.recipients,
+    },
   });
 
   // ── Billing scaffolding (plan + invoice stubs; Stripe integration Phase 2) ─
