@@ -31,6 +31,7 @@ import { spawn } from 'node:child_process';
 import { globalStream } from './stream.js';
 import { getWorkspace } from '@agentforge/core';
 import * as cycleSessions from '../../lib/cycle-sessions.js';
+import { openAuditDb, appendAuditEntry } from './audit.js';
 
 /**
  * v6.6.0 — resolve which project root a request targets.
@@ -127,6 +128,8 @@ interface CycleListRow {
   hasApprovalDecision: boolean;
   /** 'approved' | 'rejected' when hasApprovalDecision is true, else null. */
   approvalDecision: string | null;
+  /** Agent ids that participated in this cycle, sourced from session data. */
+  agents: string[];
 }
 
 function summarizeCycle(cycleDir: string, cycleId: string): CycleListRow | null {
@@ -175,6 +178,24 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleListRow | null 
         } catch { /* skip */ }
       }
     }
+    // Fix 2: collect agent ids from phase agentRuns for the list row.
+    const agentSet = new Set<string>();
+    if (existsSync(join(cycleDir, 'phases'))) {
+      for (const name of ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate', 'release', 'learn']) {
+        const pf = join(cycleDir, 'phases', `${name}.json`);
+        if (!existsSync(pf)) continue;
+        try {
+          const ph = JSON.parse(readFileSync(pf, 'utf-8')) as Record<string, unknown>;
+          if (Array.isArray(ph['agentRuns'])) {
+            for (const run of ph['agentRuns'] as Record<string, unknown>[]) {
+              const aid = run['agentId'];
+              if (typeof aid === 'string' && aid.length > 0) agentSet.add(aid);
+            }
+          }
+        } catch { /* skip */ }
+      }
+    }
+
     return {
       cycleId: (cycleJson['cycleId'] as string) ?? cycleId,
       sprintVersion: (cycleJson['sprintVersion'] as string) ?? null,
@@ -193,6 +214,7 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleListRow | null 
       hasApprovalPending,
       hasApprovalDecision,
       approvalDecision,
+      agents: Array.from(agentSet),
     };
   }
 
@@ -303,6 +325,24 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleListRow | null 
     } catch { /* non-fatal */ }
   }
 
+  // Fix 2 (in-progress path): collect agent ids from whatever phases exist.
+  const liveAgentSet = new Set<string>();
+  if (existsSync(phasesDir)) {
+    for (const name of ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate', 'release', 'learn']) {
+      const pf = join(phasesDir, `${name}.json`);
+      if (!existsSync(pf)) continue;
+      try {
+        const ph = JSON.parse(readFileSync(pf, 'utf-8')) as Record<string, unknown>;
+        if (Array.isArray(ph['agentRuns'])) {
+          for (const run of ph['agentRuns'] as Record<string, unknown>[]) {
+            const aid = run['agentId'];
+            if (typeof aid === 'string' && aid.length > 0) liveAgentSet.add(aid);
+          }
+        }
+      } catch { /* skip */ }
+    }
+  }
+
   return {
     cycleId,
     sprintVersion: null,
@@ -318,6 +358,7 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleListRow | null 
     hasApprovalPending,
     hasApprovalDecision,
     approvalDecision,
+    agents: Array.from(liveAgentSet),
   };
 }
 
@@ -474,6 +515,9 @@ export async function cyclesRoutes(
 ): Promise<void> {
   const defaultBase = cyclesBaseDir(opts.projectRoot);
 
+  // Open audit DB for SOC-2 logging of cycle mutations.
+  const auditDb = openAuditDb(opts.projectRoot);
+
   // v6.5.3-B: fan cycle events out to the SSE stream.
   const watcher = startCycleEventsWatcher(opts.projectRoot);
   // v6.7.4: cycle session manager — periodic reaper that catches dead PIDs
@@ -483,6 +527,7 @@ export async function cyclesRoutes(
   app.addHook('onClose', async () => {
     watcher.stop();
     reaper.stop();
+    auditDb.close();
   });
 
   // GET /api/v5/cycle-sessions ────────────────────────────────────────────
@@ -1450,7 +1495,32 @@ export async function cyclesRoutes(
     // CycleRunner. Without this thread-through the cycle-runner always uses
     // loadCycleConfig() defaults, so dashboard-supplied budgets are silently
     // ignored — which is how cycle 75bfaf96 ran at $200 despite a $500 launch.
-    const body = (req.body ?? {}) as { budgetUsd?: number; maxItems?: number; modelCap?: string; effortCap?: string };
+    const body = (req.body ?? {}) as {
+      budgetUsd?: number;
+      maxItems?: number;
+      modelCap?: string;
+      effortCap?: string;
+      // Fix 1 — new fields
+      maxAgents?: number;
+      tags?: unknown;
+      fallbackEnabled?: unknown;
+    };
+
+    // Fix 1: validate maxAgents, tags, fallbackEnabled before using.
+    if (body.maxAgents !== undefined) {
+      if (typeof body.maxAgents !== 'number' || !Number.isInteger(body.maxAgents) || body.maxAgents <= 0) {
+        return reply.status(400).send({ error: 'maxAgents must be a positive integer' });
+      }
+    }
+    if (body.tags !== undefined) {
+      if (!Array.isArray(body.tags) || (body.tags as unknown[]).some((t) => typeof t !== 'string')) {
+        return reply.status(400).send({ error: 'tags must be an array of strings' });
+      }
+    }
+    if (body.fallbackEnabled !== undefined && typeof body.fallbackEnabled !== 'boolean') {
+      return reply.status(400).send({ error: 'fallbackEnabled must be a boolean' });
+    }
+
     const budgetEnv = typeof body.budgetUsd === 'number' && body.budgetUsd > 0
       ? { AUTONOMOUS_BUDGET_USD: String(body.budgetUsd) }
       : {};
@@ -1462,6 +1532,13 @@ export async function cyclesRoutes(
       : {};
     const effortCapEnv = (body.effortCap === 'low' || body.effortCap === 'medium' || body.effortCap === 'high' || body.effortCap === 'xhigh' || body.effortCap === 'max')
       ? { AUTONOMOUS_EFFORT_CAP: body.effortCap }
+      : {};
+    // Fix 1: pass maxAgents and fallbackEnabled via env vars.
+    const maxAgentsEnv = typeof body.maxAgents === 'number' && body.maxAgents > 0
+      ? { AUTONOMOUS_MAX_AGENTS: String(body.maxAgents) }
+      : {};
+    const fallbackEnv = typeof body.fallbackEnabled === 'boolean'
+      ? { AUTONOMOUS_FALLBACK_ENABLED: body.fallbackEnabled ? '1' : '0' }
       : {};
 
     const cycleId = randomUUID();
@@ -1493,6 +1570,23 @@ export async function cyclesRoutes(
     // AgentForge monorepo), NOT in the target workspace.
     const cliEntry = resolve(join(opts.projectRoot, 'packages', 'cli', 'dist', 'bin.js'));
 
+    // Fix 1: persist launch config to cycle-config.json so GET /cycles can surface it.
+    const tags = Array.isArray(body.tags) ? (body.tags as string[]) : [];
+    const cycleConfig: Record<string, unknown> = {
+      cycleId,
+      startedAt,
+      budgetUsd: body.budgetUsd ?? null,
+      maxItems: body.maxItems ?? null,
+      modelCap: body.modelCap ?? null,
+      effortCap: body.effortCap ?? null,
+      maxAgents: body.maxAgents ?? null,
+      tags,
+      fallbackEnabled: body.fallbackEnabled ?? null,
+    };
+    try {
+      writeFileSync(join(cycleDir, 'cycle-config.json'), JSON.stringify(cycleConfig, null, 2));
+    } catch { /* non-fatal — cycle still starts, config just isn't persisted */ }
+
     let pid: number;
     let pgid: number;
     try {
@@ -1502,7 +1596,7 @@ export async function cyclesRoutes(
         cwd: reqProjectRoot,
         detached: true,
         stdio: ['ignore', logFd, logFd],
-        env: { ...process.env, AUTONOMOUS_CYCLE_ID: cycleId, ...budgetEnv, ...maxItemsEnv, ...modelCapEnv, ...effortCapEnv },
+        env: { ...process.env, AUTONOMOUS_CYCLE_ID: cycleId, ...budgetEnv, ...maxItemsEnv, ...modelCapEnv, ...effortCapEnv, ...maxAgentsEnv, ...fallbackEnv },
       });
       child.unref();
       pid = child.pid ?? -1;
@@ -1526,6 +1620,213 @@ export async function cyclesRoutes(
       }
     }
 
-    return reply.status(202).send({ cycleId, startedAt, pid, pgid });
+    return reply.status(202).send({ cycleId, startedAt, pid, pgid, maxAgents: body.maxAgents ?? null, tags, fallbackEnabled: body.fallbackEnabled ?? null });
+  });
+
+  // POST /api/v5/cycles/:id/cancel ────────────────────────────────────────────
+  // Fix 3: Cancel a running cycle. Sets status → 'killed' (same as /stop),
+  // but also writes a kill-switch marker to the cycle dir and audit-logs it.
+  // Idempotent: cancelling an already-terminal cycle returns 409.
+  app.post('/api/v5/cycles/:id/cancel', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!SAFE_ID.test(id)) return reply.status(400).send({ error: 'Invalid cycle id' });
+
+    // Check session state first for idempotency.
+    const session = cycleSessions.get(id);
+    const TERMINAL = new Set(['killed', 'crashed', 'failed', 'completed']);
+    if (session && TERMINAL.has(session.status)) {
+      return reply.status(409).send({
+        error: 'Cycle is already terminal',
+        status: session.status,
+        cycleId: id,
+      });
+    }
+
+    // Also check if cycle.json exists with a terminal stage (no session record).
+    const br = baseForRequest(req);
+    if ('error' in br) return reply.status(br.error.status).send(br.error.body);
+    const cycleDir = safeJoin(br.base, id);
+    if (cycleDir) {
+      const cycleJsonPath = join(cycleDir, 'cycle.json');
+      if (existsSync(cycleJsonPath)) {
+        try {
+          const cj = JSON.parse(readFileSync(cycleJsonPath, 'utf-8')) as Record<string, unknown>;
+          const terminalStages = new Set(['killed', 'crashed', 'failed', 'completed']);
+          if (typeof cj['stage'] === 'string' && terminalStages.has(cj['stage'] as string)) {
+            return reply.status(409).send({
+              error: 'Cycle is already terminal',
+              status: cj['stage'],
+              cycleId: id,
+            });
+          }
+        } catch { /* non-fatal — continue with cancel */ }
+      }
+    }
+
+    // Stop the cycle process (SIGTERM → SIGKILL).
+    let stopResult: { ok: boolean; status: cycleSessions.CycleSessionStatus; message: string };
+    if (session) {
+      stopResult = await cycleSessions.stop(id);
+    } else {
+      // No session — mark as killed in registry best-effort.
+      stopResult = { ok: true, status: 'killed', message: 'no session record; marking killed' };
+      cycleSessions.markTerminal(id, 'killed', 'cancelled via API with no session record');
+    }
+
+    // Write kill-switch marker to cycle dir so the dashboard shows the reason.
+    if (cycleDir && existsSync(cycleDir)) {
+      try {
+        writeFileSync(
+          join(cycleDir, 'kill-switch.json'),
+          JSON.stringify({ reason: 'manualCancel', cancelledAt: new Date().toISOString(), triggeredBy: 'api' }, null, 2),
+        );
+      } catch { /* non-fatal */ }
+    }
+
+    // SOC-2 audit log.
+    appendAuditEntry(auditDb, {
+      actor: 'api',
+      action: 'cycle.cancel',
+      target: id,
+      details: { stopMessage: stopResult.message, triggeredBy: 'api' },
+    });
+
+    globalStream.emit({
+      type: 'cycle_event',
+      category: 'cycle.cancelled',
+      message: `${id.slice(0, 8)} · cycle.cancelled`,
+      data: { cycleId: id, type: 'cycle.cancelled', at: new Date().toISOString() } as unknown as Record<string, unknown>,
+    });
+
+    return reply.send({ ok: stopResult.ok, cycleId: id, status: stopResult.status, message: stopResult.message });
+  });
+
+  // POST /api/v5/cycles/:id/rerun ──────────────────────────────────────────────
+  // Fix 4: Spawn a new cycle with the same config as the source cycle.
+  // Returns the new cycleId. Audit-logged. Source cycle id captured in metadata.
+  app.post('/api/v5/cycles/:id/rerun', async (req, reply) => {
+    const { id: sourceId } = req.params as { id: string };
+    if (!SAFE_ID.test(sourceId)) return reply.status(400).send({ error: 'Invalid cycle id' });
+
+    const r = resolveProjectRoot(req as { query: unknown; headers: Record<string, unknown> }, opts.projectRoot);
+    if ('error' in r) return reply.status(r.error.status).send(r.error.body);
+    const reqProjectRoot = r.projectRoot;
+    const base = cyclesBaseDir(reqProjectRoot);
+
+    // Read source cycle-config.json to inherit its settings.
+    const sourceDir = safeJoin(base, sourceId);
+    let sourceConfig: Record<string, unknown> = {};
+    if (sourceDir && existsSync(sourceDir)) {
+      const configPath = join(sourceDir, 'cycle-config.json');
+      if (existsSync(configPath)) {
+        try {
+          sourceConfig = JSON.parse(readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
+        } catch { /* use empty defaults */ }
+      }
+      // Also try reading from cycle.json cost.budgetUsd if config file is missing.
+      if (Object.keys(sourceConfig).length === 0) {
+        const cjPath = join(sourceDir, 'cycle.json');
+        if (existsSync(cjPath)) {
+          try {
+            const cj = JSON.parse(readFileSync(cjPath, 'utf-8')) as Record<string, unknown>;
+            const cost = (cj['cost'] ?? {}) as Record<string, unknown>;
+            sourceConfig = { budgetUsd: cost['budgetUsd'] ?? null };
+          } catch { /* use defaults */ }
+        }
+      }
+    }
+
+    const newCycleId = randomUUID();
+    const startedAt = new Date().toISOString();
+    const newCycleDir = safeJoin(base, newCycleId);
+    if (!newCycleDir) return reply.status(500).send({ error: 'Failed to resolve new cycle dir' });
+
+    try {
+      mkdirSync(newCycleDir, { recursive: true });
+    } catch (err) {
+      return reply.status(500).send({ error: `Failed to create cycle dir: ${(err as Error).message}` });
+    }
+
+    // Persist inherited config + source reference.
+    const rerunConfig: Record<string, unknown> = {
+      cycleId: newCycleId,
+      startedAt,
+      sourceCycleId: sourceId,
+      budgetUsd: sourceConfig['budgetUsd'] ?? null,
+      maxItems: sourceConfig['maxItems'] ?? null,
+      modelCap: sourceConfig['modelCap'] ?? null,
+      effortCap: sourceConfig['effortCap'] ?? null,
+      maxAgents: sourceConfig['maxAgents'] ?? null,
+      tags: Array.isArray(sourceConfig['tags']) ? sourceConfig['tags'] : [],
+      fallbackEnabled: sourceConfig['fallbackEnabled'] ?? null,
+    };
+    try {
+      writeFileSync(join(newCycleDir, 'cycle-config.json'), JSON.stringify(rerunConfig, null, 2));
+    } catch { /* non-fatal */ }
+
+    let logFd: number;
+    try {
+      logFd = openSync(join(newCycleDir, 'cli-stdout.log'), 'a');
+    } catch (err) {
+      return reply.status(500).send({ error: `Failed to open log file: ${(err as Error).message}` });
+    }
+
+    const nodeBin = process.execPath;
+    const cliEntry = resolve(join(opts.projectRoot, 'packages', 'cli', 'dist', 'bin.js'));
+
+    // Build env overrides from inherited config.
+    const env: NodeJS.ProcessEnv = { ...process.env, AUTONOMOUS_CYCLE_ID: newCycleId };
+    if (typeof sourceConfig['budgetUsd'] === 'number' && sourceConfig['budgetUsd'] > 0) {
+      env['AUTONOMOUS_BUDGET_USD'] = String(sourceConfig['budgetUsd']);
+    }
+    if (typeof sourceConfig['maxItems'] === 'number' && sourceConfig['maxItems'] > 0) {
+      env['AUTONOMOUS_MAX_ITEMS'] = String(sourceConfig['maxItems']);
+    }
+    const modelCap = sourceConfig['modelCap'];
+    if (modelCap === 'opus' || modelCap === 'sonnet' || modelCap === 'haiku') {
+      env['AUTONOMOUS_MODEL_CAP'] = modelCap;
+    }
+    const effortCap = sourceConfig['effortCap'];
+    if (effortCap === 'low' || effortCap === 'medium' || effortCap === 'high' || effortCap === 'xhigh' || effortCap === 'max') {
+      env['AUTONOMOUS_EFFORT_CAP'] = effortCap;
+    }
+    if (typeof sourceConfig['maxAgents'] === 'number' && sourceConfig['maxAgents'] > 0) {
+      env['AUTONOMOUS_MAX_AGENTS'] = String(sourceConfig['maxAgents']);
+    }
+    if (typeof sourceConfig['fallbackEnabled'] === 'boolean') {
+      env['AUTONOMOUS_FALLBACK_ENABLED'] = sourceConfig['fallbackEnabled'] ? '1' : '0';
+    }
+
+    let pid: number;
+    let pgid: number;
+    try {
+      const child = spawn(nodeBin, [cliEntry, 'cycle', 'run'], {
+        cwd: reqProjectRoot,
+        detached: true,
+        stdio: ['ignore', logFd, logFd],
+        env,
+      });
+      child.unref();
+      pid = child.pid ?? -1;
+      pgid = pid;
+    } catch (err) {
+      return reply.status(500).send({ error: `Failed to spawn rerun cycle: ${(err as Error).message}` });
+    }
+
+    if (pid > 0) {
+      try {
+        cycleSessions.register({ cycleId: newCycleId, pid, pgid, workspaceId: 'default', workspaceRoot: reqProjectRoot });
+      } catch { /* non-fatal */ }
+    }
+
+    // SOC-2 audit log.
+    appendAuditEntry(auditDb, {
+      actor: 'api',
+      action: 'cycle.rerun',
+      target: newCycleId,
+      details: { sourceCycleId: sourceId, inheritedConfig: rerunConfig },
+    });
+
+    return reply.status(202).send({ cycleId: newCycleId, sourceCycleId: sourceId, startedAt, pid, pgid });
   });
 }
