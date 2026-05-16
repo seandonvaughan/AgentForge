@@ -4,6 +4,7 @@
   "description": "AgentForge package-canonical dashboard",
   "type": "module",
   "scripts": {
+    "prepare": "svelte-kit sync",
     "dev": "vite dev --port 4751",
     "build": "vite build",
     "preview": "vite preview",

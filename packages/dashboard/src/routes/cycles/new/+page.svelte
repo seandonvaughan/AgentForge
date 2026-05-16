@@ -1,863 +1,692 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import { withWorkspace } from '$lib/stores/workspace';
+  import { relativeTime } from '$lib/util/relative-time';
+  import {
+    Btn, Card, Badge, StageDots, ModelChip,
+  } from '$lib/components/v2';
 
-  // ── Form state ────────────────────────────────────────────────────────────
-  let budgetUsd = $state(25);
-  let maxItems = $state(3);
-  let dryRun = $state(false);
-  let branchPrefix = $state('autonomous/');
-  let comment = $state('');
-  /** Cap all agents at this tier. 'default' means no cap (use agent YAML setting). */
-  let modelCap = $state<'default' | 'sonnet' | 'haiku'>('default');
-  /**
-   * When true (default), pass --fallback-model to the claude CLI so it can
-   * automatically fall back to a cheaper tier on overload.
-   * Ladder: opus → sonnet, sonnet → haiku.
-   */
-  let fallbackEnabled = $state(true);
-  /**
-   * Override the effort level for every agent in the cycle.
-   * 'default' means use each agent's YAML effort setting.
-   * xhigh is only honoured for Opus agents — non-Opus tiers are coerced to max.
-   */
-  let effortCap = $state<'default' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'>('default');
+  type ModelCap = 'default' | 'opus' | 'sonnet' | 'haiku';
+  type EffortCap = 'default' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
-  // ── Launch state ──────────────────────────────────────────────────────────
+  let budgetUsd = $state<number>(25);
+  let maxItems = $state<number>(3);
+  let maxAgents = $state<number>(5);
+  let branchPrefix = $state<string>('autonomous/');
+  let modelCap = $state<ModelCap>('default');
+  let effortCap = $state<EffortCap>('default');
+  let dryRun = $state<boolean>(false);
+  let fallbackEnabled = $state<boolean>(true);
+  let comment = $state<string>('');
+  let tagsInput = $state<string>('');
+
+  const tags = $derived.by<string[]>(() => {
+    const raw = tagsInput.split(/[,\s]+/).map((t) => t.trim()).filter(Boolean);
+    return Array.from(new Set(raw));
+  });
+
   let launching = $state(false);
-  let launchError: string | null = $state(null);
-  let cycleId: string | null = $state(null);
-  let startedAt: number | null = $state(null);
+  let launchError = $state<string | null>(null);
 
-  // ── Preview state (v6.5.3) ────────────────────────────────────────────────
-  type PreviewItem = {
-    itemId: string;
-    title: string;
-    rank: number;
-    estimatedCostUsd: number;
-    suggestedAssignee?: string;
-    withinBudget: boolean;
-  };
-  type PreviewResult = {
-    candidateCount: number;
-    rankedItems: PreviewItem[];
-    totalEstimatedCostUsd: number;
-    budgetOverflowUsd: number;
-    withinBudget: number;
-    requiresApproval: number;
-    summary: string;
-    warnings: string[];
-    durationMs: number;
-    scoringCostUsd: number;
-    fallback: 'static' | null;
-  };
-  let previewing = $state(false);
-  let previewError: string | null = $state(null);
-  let preview: PreviewResult | null = $state(null);
+  interface RecentCycle {
+    cycleId: string;
+    sprintVersion: string | null;
+    stage: string;
+    startedAt: string;
+    costUsd: number;
+    budgetUsd: number;
+    durationMs: number | null;
+  }
+  let recent = $state<RecentCycle[]>([]);
+  let recentLoading = $state(true);
+  let recentError = $state<string | null>(null);
 
-  async function handlePreview() {
-    if (previewing) return;
-    previewError = null;
-    previewing = true;
+  async function loadRecent(): Promise<void> {
     try {
-      const res = await fetch(withWorkspace('/api/v5/cycles/preview'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ budgetUsd, maxItems, dryRun, branchPrefix, comment, modelCap: modelCap !== 'default' ? modelCap : undefined, effortCap: effortCap !== 'default' ? effortCap : undefined }),
-      });
-      if (!res.ok) {
-        const text = await res.text().catch(() => `HTTP ${res.status}`);
-        try {
-          const j = JSON.parse(text);
-          previewError = j.error ?? text;
-        } catch {
-          previewError = text || `HTTP ${res.status}`;
-        }
-        previewing = false;
-        return;
-      }
-      preview = await res.json();
+      const res = await fetch(withWorkspace('/api/v5/cycles?limit=12'));
+      if (!res.ok) { recentError = `HTTP ${res.status}`; return; }
+      const json = (await res.json()) as { cycles?: RecentCycle[] };
+      recent = (json.cycles ?? []).slice();
+      recentError = null;
     } catch (e) {
-      previewError = String(e);
+      recentError = e instanceof Error ? e.message : String(e);
     } finally {
-      previewing = false;
+      recentLoading = false;
     }
   }
 
-  function clearPreview() {
-    preview = null;
-    previewError = null;
+  type StageBrick = 'pending' | 'active' | 'done' | 'failed';
+  function bricksFor(c: RecentCycle): StageBrick[] {
+    const stage = (c.stage ?? '').toLowerCase();
+    if (stage === 'completed') return Array.from({ length: 6 }, () => 'done' as StageBrick);
+    if (stage === 'failed' || stage === 'killed' || stage === 'crashed') {
+      const out: StageBrick[] = Array.from({ length: 6 }, () => 'pending');
+      out[0] = 'done'; out[1] = 'failed';
+      return out;
+    }
+    return Array.from({ length: 6 }, () => 'pending');
   }
 
-  // ── Progress state ────────────────────────────────────────────────────────
-  const STAGES = ['PLAN', 'STAGE', 'RUN', 'VERIFY', 'COMMIT', 'REVIEW'] as const;
-  type Stage = typeof STAGES[number];
-  type StageState = 'pending' | 'active' | 'complete';
-
-  let stageStates = $state<Record<Stage, StageState>>({
-    PLAN: 'pending', STAGE: 'pending', RUN: 'pending',
-    VERIFY: 'pending', COMMIT: 'pending', REVIEW: 'pending',
+  const avgCostPerItem = $derived.by<number>(() => {
+    const completed = recent.filter((c) => c.stage === 'completed' && c.costUsd > 0);
+    if (completed.length === 0) return 1.2;
+    const sum = completed.reduce((s, c) => s + c.costUsd, 0);
+    return sum / completed.length / 3;
   });
 
-  let currentCost = $state(0);
-  let elapsedSec = $state(0);
-  let lastEventSeq = $state(0);
-  let terminal = $state(false);
-
-  let pollTimer: ReturnType<typeof setInterval> | null = null;
-  let tickTimer: ReturnType<typeof setInterval> | null = null;
-
-  // Derived elapsed display
-  let elapsedDisplay = $derived(() => {
-    const m = Math.floor(elapsedSec / 60).toString().padStart(2, '0');
-    const s = (elapsedSec % 60).toString().padStart(2, '0');
-    return `${m}:${s}`;
+  const modelMultiplier = $derived.by<number>(() => {
+    switch (modelCap) {
+      case 'opus':   return 4;
+      case 'sonnet': return 1;
+      case 'haiku':  return 0.25;
+      default:       return 1.2;
+    }
   });
 
-  let burnPct = $derived(() => {
-    if (!budgetUsd || budgetUsd <= 0) return 0;
-    return Math.min(100, (currentCost / budgetUsd) * 100);
+  const effortMultiplier = $derived.by<number>(() => {
+    switch (effortCap) {
+      case 'low':    return 0.5;
+      case 'medium': return 0.8;
+      case 'high':   return 1.0;
+      case 'xhigh':  return 1.6;
+      case 'max':    return 2.2;
+      default:       return 1.0;
+    }
   });
 
-  function setStage(stage: Stage, state: StageState) {
-    stageStates[stage] = state;
-  }
+  const estimate = $derived<number>(maxItems * avgCostPerItem * modelMultiplier * effortMultiplier);
+  const estimatePct = $derived<number>(budgetUsd > 0 ? Math.min(100, (estimate / budgetUsd) * 100) : 0);
+  const estimateOverBudget = $derived<boolean>(estimate > budgetUsd);
 
-  function advanceTo(stage: Stage) {
-    const idx = STAGES.indexOf(stage);
-    if (idx < 0) return;
-    for (let i = 0; i < STAGES.length; i++) {
-      if (i < idx) stageStates[(STAGES[i] as Stage)] = 'complete';
-      else if (i === idx) stageStates[(STAGES[i] as Stage)] = 'active';
-      else stageStates[(STAGES[i] as Stage)] = 'pending';
-    }
-  }
+  const avgDurationMin = $derived.by<number>(() => {
+    const completed = recent.filter((c) => c.stage === 'completed' && c.durationMs != null && c.durationMs > 0);
+    if (completed.length === 0) return 0;
+    const ms = completed.reduce((s, c) => s + (c.durationMs ?? 0), 0) / completed.length;
+    return Math.round(ms / 60000);
+  });
 
-  function completeAll() {
-    for (const s of STAGES) stageStates[s] = 'complete';
-  }
+  const likelyModel = $derived<string>(modelCap === 'default' ? 'sonnet' : modelCap);
 
-  function applyEvent(ev: any) {
-    if (!ev || typeof ev !== 'object') return;
-    const type: string = (ev.type ?? ev.event ?? '').toString().toLowerCase();
-    const stage: string | undefined = (ev.stage ?? ev.phase ?? '').toString().toUpperCase();
+  const xhighWarning = $derived<string | null>(
+    effortCap === 'xhigh' && modelCap !== 'opus' && modelCap !== 'default'
+      ? `xHigh effort is Opus-only; ${modelCap === 'sonnet' ? 'Sonnet' : 'Haiku'} runs will auto-downgrade to max.`
+      : null,
+  );
 
-    if (typeof ev.costUsd === 'number') currentCost = ev.costUsd;
-    else if (typeof ev.totalCost === 'number') currentCost = ev.totalCost;
-    else if (typeof ev.cost === 'number') currentCost = ev.cost;
-
-    if (stage && (STAGES as readonly string[]).includes(stage)) {
-      if (type.includes('complete') || type.includes('end') || type.includes('finish')) {
-        setStage(stage as Stage, 'complete');
-      } else if (type.includes('start') || type.includes('begin') || type.includes('enter')) {
-        advanceTo(stage as Stage);
-      } else {
-        // generic stage event — make it at least active
-        if (stageStates[stage as Stage] === 'pending') advanceTo(stage as Stage);
-      }
-    }
-
-    if (type.includes('cycle_complete') || type.includes('done') || type === 'complete' || type === 'terminal') {
-      completeAll();
-      terminal = true;
-    }
-    if (type.includes('cycle_failed') || type.includes('failed') || type.includes('error')) {
-      terminal = true;
-    }
-  }
-
-  async function pollEvents() {
-    if (!cycleId) return;
-    try {
-      const res = await fetch(withWorkspace(`/api/v5/cycles/${cycleId}/events?since=${lastEventSeq}`));
-      if (!res.ok) return;
-      const body = await res.json();
-      const events: any[] = Array.isArray(body) ? body : (body.events ?? body.data ?? []);
-      for (const ev of events) {
-        applyEvent(ev);
-        if (typeof ev.seq === 'number') lastEventSeq = Math.max(lastEventSeq, ev.seq + 1);
-        else lastEventSeq += 1;
-      }
-      // Also fetch the cycle for cost/stage if available
-      const r2 = await fetch(withWorkspace(`/api/v5/cycles/${cycleId}`));
-      if (r2.ok) {
-        const cy = await r2.json();
-        const stage = (cy.stage ?? cy.currentStage ?? '').toString().toUpperCase();
-        if (stage && (STAGES as readonly string[]).includes(stage)) advanceTo(stage as Stage);
-        if (typeof cy.costUsd === 'number') currentCost = cy.costUsd;
-        else if (typeof cy.totalCost === 'number') currentCost = cy.totalCost;
-        const status = (cy.status ?? '').toString().toLowerCase();
-        if (status === 'complete' || status === 'completed' || status === 'success') {
-          completeAll();
-          terminal = true;
-        }
-        if (status === 'failed' || status === 'error') terminal = true;
-      }
-    } catch {
-      // silent — keep polling
-    }
-
-    if (terminal && pollTimer) {
-      clearInterval(pollTimer);
-      pollTimer = null;
-    }
-  }
-
-  async function handleLaunch() {
+  async function handleLaunch(): Promise<void> {
     if (launching) return;
     launchError = null;
     launching = true;
-
     try {
+      const body = {
+        budgetUsd,
+        maxItems,
+        maxAgents,
+        dryRun,
+        branchPrefix,
+        comment: comment.trim() || undefined,
+        tags: tags.length > 0 ? tags : undefined,
+        modelCap: modelCap !== 'default' ? modelCap : undefined,
+        effortCap: effortCap !== 'default' ? effortCap : undefined,
+        fallbackEnabled,
+      };
       const res = await fetch(withWorkspace('/api/v5/cycles'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          budgetUsd,
-          maxItems,
-          dryRun,
-          branchPrefix,
-          comment,
-          modelCap: modelCap !== 'default' ? modelCap : undefined,
-          effortCap: effortCap !== 'default' ? effortCap : undefined,
-          fallbackEnabled,
-        }),
+        body: JSON.stringify(body),
       });
-
       if (res.status !== 202 && !res.ok) {
         const text = await res.text().catch(() => `HTTP ${res.status}`);
         launchError = text || `HTTP ${res.status}`;
         launching = false;
         return;
       }
-
-      const body = await res.json();
-      cycleId = body.cycleId ?? body.id ?? null;
-      startedAt = body.startedAt ? new Date(body.startedAt).getTime() : Date.now();
-
-      if (!cycleId) {
+      const json = (await res.json()) as { cycleId?: string; id?: string };
+      const newId = json.cycleId ?? json.id;
+      if (!newId) {
         launchError = 'Server did not return a cycleId';
         launching = false;
         return;
       }
-
-      // Begin polling
-      advanceTo('PLAN');
-      pollTimer = setInterval(pollEvents, 1000);
-      tickTimer = setInterval(() => {
-        if (startedAt) elapsedSec = Math.floor((Date.now() - startedAt) / 1000);
-      }, 1000);
-      // Kick first poll immediately
-      pollEvents();
+      setTimeout(() => { void goto(`/cycles/${newId}`); }, 500);
     } catch (e) {
-      launchError = String(e);
+      launchError = e instanceof Error ? e.message : String(e);
       launching = false;
     }
   }
 
-  function viewDetails() {
-    if (cycleId) goto(`/cycles/${cycleId}`);
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+  function manage(): void {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      return;
+    }
+    if (!pollTimer) pollTimer = setInterval(loadRecent, 30000);
   }
+  function onVisibility(): void { manage(); }
 
-  function shortId(id: string): string {
-    return id.length > 12 ? id.slice(0, 12) : id;
-  }
+  onMount(() => {
+    void loadRecent();
+    manage();
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisibility);
+    }
+  });
 
   onDestroy(() => {
     if (pollTimer) clearInterval(pollTimer);
-    if (tickTimer) clearInterval(tickTimer);
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', onVisibility);
+    }
   });
 </script>
 
 <svelte:head><title>Launch Cycle — AgentForge</title></svelte:head>
 
-<div class="page-header">
+<div class="page-head">
   <div>
-    <h1 class="page-title">Launch Autonomous Cycle</h1>
-    <p class="page-subtitle">
+    <div class="crumbs af2-mono">Workspace · Cycles · Launch</div>
+    <h1 class="page-title">Launch autonomous cycle</h1>
+    <p class="page-sub">
       Plan → Stage → Run → Verify → Commit → Review via a detached Claude Code session
     </p>
   </div>
+  <div class="head-actions">
+    <Btn size="sm" href="/cycles">← Cancel</Btn>
+  </div>
 </div>
 
-{#if !cycleId}
-  <!-- ── Config Form ──────────────────────────────────────────────────────── -->
-  <div class="card form-card">
-    <div class="card-header">
-      <span class="card-title">Cycle Configuration</span>
+<div class="launch-grid">
+  <Card>
+    <div class="section-title">CYCLE CONFIGURATION</div>
+
+    <div class="form-row">
+      <div class="field">
+        <label class="field-label" for="budgetUsd">Budget (USD)</label>
+        <div class="slider-row">
+          <input id="budgetUsd" type="range" min="5" max="500" step="1" bind:value={budgetUsd} class="slider" disabled={launching} />
+          <input type="number" min="0" step="0.5" bind:value={budgetUsd} class="num" disabled={launching} aria-label="Budget in USD" />
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="maxItems">Max items / sprint</label>
+        <div class="slider-row">
+          <input id="maxItems" type="range" min="1" max="50" step="1" bind:value={maxItems} class="slider" disabled={launching} />
+          <input type="number" min="1" max="50" step="1" bind:value={maxItems} class="num" disabled={launching} aria-label="Max items per sprint" />
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="maxAgents">Max agents</label>
+        <div class="slider-row">
+          <input id="maxAgents" type="range" min="1" max="10" step="1" bind:value={maxAgents} class="slider" disabled={launching} />
+          <input type="number" min="1" max="10" step="1" bind:value={maxAgents} class="num" disabled={launching} aria-label="Max agents" />
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="branchPrefix">Branch prefix</label>
+        <input id="branchPrefix" type="text" bind:value={branchPrefix} class="text-input af2-mono" disabled={launching} />
+      </div>
     </div>
 
-    <div class="form-grid">
-      <div class="form-group">
-        <label class="form-label" for="budget">Budget (USD)</label>
-        <input id="budget" type="number" class="form-input" min="0" step="0.5" bind:value={budgetUsd} disabled={launching} />
-      </div>
-
-      <div class="form-group">
-        <label class="form-label" for="maxItems">Max items / sprint</label>
-        <input id="maxItems" type="number" class="form-input" min="1" step="1" bind:value={maxItems} disabled={launching} />
-      </div>
-
-      <div class="form-group">
-        <label class="form-label" for="branchPrefix">Branch prefix</label>
-        <input id="branchPrefix" type="text" class="form-input" bind:value={branchPrefix} disabled={launching} />
-      </div>
-
-      <div class="form-group">
-        <label class="form-label" for="modelCap">Model cap</label>
-        <select id="modelCap" class="form-input" bind:value={modelCap} disabled={launching}>
+    <div class="form-row">
+      <div class="field">
+        <label class="field-label" for="modelCap">Model cap</label>
+        <select id="modelCap" bind:value={modelCap} class="select" disabled={launching}>
           <option value="default">Default (per agent)</option>
-          <option value="sonnet">Sonnet — outage / cost reduction</option>
+          <option value="opus">Opus — most capable</option>
+          <option value="sonnet">Sonnet — balanced</option>
           <option value="haiku">Haiku — maximum savings</option>
         </select>
       </div>
 
-      <div class="form-group">
-        <label class="form-label" for="effortCap">Effort cap</label>
-        <select id="effortCap" class="form-input" bind:value={effortCap} disabled={launching}>
+      <div class="field">
+        <label class="field-label" for="effortCap">Effort cap</label>
+        <select id="effortCap" bind:value={effortCap} class="select" disabled={launching}>
           <option value="default">Default (per agent)</option>
-          <option value="low">Low — fast, mechanical work</option>
+          <option value="low">Low — fast, mechanical</option>
           <option value="medium">Medium</option>
           <option value="high">High</option>
-          <option value="xhigh">xHigh — Opus only (auto-downgrades to max on Sonnet/Haiku)</option>
+          <option value="xhigh">xHigh — Opus only</option>
           <option value="max">Max — deepest reasoning</option>
         </select>
       </div>
 
-      <div class="form-group toggle-group">
-        <label class="checkbox-label" title="Skip PR creation">
+      <div class="field toggle-field">
+        <span class="field-label">Options</span>
+        <label class="toggle">
           <input type="checkbox" bind:checked={dryRun} disabled={launching} />
-          <span>Dry run</span>
-          <span class="hint">(skip PR creation)</span>
+          <span class="toggle-track" class:on={dryRun}><span class="toggle-knob"></span></span>
+          <span class="toggle-label">Dry run <span class="hint">(skip PR creation)</span></span>
         </label>
-      </div>
-
-      <div class="form-group toggle-group">
-        <label class="checkbox-label" title="Enable --fallback-model: opus→sonnet, sonnet→haiku on overload">
+        <label class="toggle">
           <input type="checkbox" bind:checked={fallbackEnabled} disabled={launching} />
-          <span>Enable model fallback on overload</span>
-          <span class="hint">(opus→sonnet, sonnet→haiku)</span>
+          <span class="toggle-track" class:on={fallbackEnabled}><span class="toggle-knob"></span></span>
+          <span class="toggle-label">Model fallback <span class="hint">(opus → sonnet → haiku)</span></span>
         </label>
       </div>
     </div>
 
-    <div class="form-group">
-      <label class="form-label" for="comment">Cycle comment / purpose (optional)</label>
+    {#if xhighWarning}
+      <div class="warning-row">
+        <span class="warning-icon">⚠</span>
+        <span>{xhighWarning}</span>
+      </div>
+    {/if}
+
+    <div class="field" style="margin-top:14px">
+      <label class="field-label" for="tagsInput">Tags (optional)</label>
+      <input
+        id="tagsInput"
+        type="text"
+        bind:value={tagsInput}
+        class="text-input af2-mono"
+        placeholder="comma- or space-separated, e.g. ui, dashboard, v6"
+        disabled={launching}
+      />
+      {#if tags.length > 0}
+        <div class="tag-row">
+          {#each tags as t (t)}<span class="tag-chip af2-mono">#{t}</span>{/each}
+        </div>
+      {/if}
+    </div>
+
+    <div class="field" style="margin-top:14px">
+      <label class="field-label" for="comment">Cycle comment (optional)</label>
       <textarea
         id="comment"
-        class="form-textarea"
-        rows={3}
-        placeholder="Why are you running this cycle? (e.g. ‘ship v6.5 dashboard refresh’)"
         bind:value={comment}
+        rows={3}
+        placeholder="Why are you running this cycle? e.g. 'ship v14.1 dashboard refresh'"
+        class="textarea"
         disabled={launching}
       ></textarea>
     </div>
 
-    <p class="future-note">
-      Note: advanced overrides (per-agent budgets, model pinning, custom workflow) are future work.
-    </p>
-
     {#if launchError}
-      <div class="error-msg">
-        Failed to launch: {launchError}
-        <button class="btn btn-ghost btn-sm retry-btn" onclick={() => (launchError = null)}>Dismiss</button>
+      <div class="error-row">
+        <span>Failed to launch: {launchError}</span>
+        <Btn size="sm" onclick={() => (launchError = null)}>Dismiss</Btn>
       </div>
     {/if}
 
-    <div class="button-row">
-      <button class="btn btn-ghost preview-btn" onclick={handlePreview} disabled={launching || previewing}>
-        {#if previewing}Previewing…{:else}Preview Cost{/if}
-      </button>
-      <button class="btn btn-primary launch-btn" onclick={handleLaunch} disabled={launching || previewing}>
-        {#if launching}Launching…{:else}Run Cycle{/if}
-      </button>
+    <div class="launch-row">
+      <span class="hint" style="flex:1">
+        Advanced overrides (per-agent budgets, model pinning) are future work.
+      </span>
+      <Btn size="lg" variant="purple" onclick={handleLaunch} disabled={launching}>
+        {launching ? 'Launching…' : '▶ Run Cycle'}
+      </Btn>
     </div>
-  </div>
+  </Card>
 
-  {#if previewError}
-    <div class="card preview-card">
-      <div class="error-msg">
-        Preview failed: {previewError}
-        <button class="btn btn-ghost btn-sm retry-btn" onclick={handlePreview}>Retry</button>
-      </div>
-    </div>
-  {/if}
-
-  {#if preview}
-    {@const overflow = preview.budgetOverflowUsd > 0 || preview.totalEstimatedCostUsd > budgetUsd}
-    <div class="card preview-card">
-      <div class="card-header">
-        <span class="card-title">Cost Preview</span>
-        <button class="btn btn-ghost btn-sm" onclick={clearPreview}>Clear</button>
-      </div>
-
-      <div class="preview-headline">
-        <div class="preview-total">
-          <span class="preview-total-amount">${preview.totalEstimatedCostUsd.toFixed(2)}</span>
-          <span class="preview-total-budget">/ ${budgetUsd.toFixed(2)} budget</span>
-        </div>
-        <div class="preview-badges">
-          {#if overflow}
-            <span class="badge badge-danger">Overflow: ${preview.budgetOverflowUsd.toFixed(2)}</span>
-          {:else}
-            <span class="badge badge-success">Within budget</span>
-          {/if}
-          {#if preview.fallback === 'static'}
-            <span class="badge badge-warning">Static fallback</span>
-          {/if}
-        </div>
-      </div>
-
-      <div class="preview-meta">
-        <span>{preview.candidateCount} candidate{preview.candidateCount === 1 ? '' : 's'}</span>
-        <span>·</span>
-        <span>{preview.withinBudget} within budget</span>
-        {#if preview.requiresApproval > 0}
-          <span>·</span>
-          <span>{preview.requiresApproval} need approval</span>
+  <div class="side-col">
+    <Card>
+      <div class="section-title">ESTIMATE</div>
+      <div class="est-head">
+        <span class="est-amount af2-mono">${estimate.toFixed(2)}</span>
+        <span class="est-tag af2-mono">est.</span>
+        <span style="flex:1"></span>
+        {#if estimateOverBudget}
+          <span class="est-flag over af2-mono">over budget by ${Math.max(0, estimate - budgetUsd).toFixed(2)}</span>
+        {:else}
+          <span class="est-flag under af2-mono">{Math.round((1 - estimate / Math.max(0.01, budgetUsd)) * 100)}% under budget</span>
         {/if}
-        <span>·</span>
-        <span>preview took {(preview.durationMs / 1000).toFixed(1)}s</span>
+      </div>
+      <div class="est-bar-track">
+        <div class="est-bar-fill" style="width:{estimatePct}%"></div>
+      </div>
+      <div class="est-bar-meta af2-mono">
+        <span>$0</span>
+        <span>budget ${budgetUsd.toFixed(0)}</span>
       </div>
 
-      {#if overflow}
-        <div class="overflow-warning">
-          This cycle will exceed your budget. Consider raising the budget or splitting into smaller sprints.
+      <div class="est-grid">
+        <div>
+          <div class="est-key">Items</div>
+          <div class="af2-mono est-val">~{maxItems}</div>
         </div>
-      {/if}
-
-      {#if preview.rankedItems.length > 0}
-        <div class="preview-table-wrap">
-          <table class="preview-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Title</th>
-                <th>Cost</th>
-                <th>Assignee</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each preview.rankedItems as item (item.itemId)}
-                <tr>
-                  <td class="num">{item.rank}</td>
-                  <td class="title">{item.title}</td>
-                  <td class="num">${item.estimatedCostUsd.toFixed(2)}</td>
-                  <td>{item.suggestedAssignee ?? '—'}</td>
-                  <td>
-                    {#if item.withinBudget}
-                      <span class="dot dot-success"></span> ok
-                    {:else}
-                      <span class="dot dot-danger"></span> over
-                    {/if}
-                  </td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
+        <div>
+          <div class="est-key">Avg duration</div>
+          <div class="af2-mono est-val">{avgDurationMin > 0 ? `~${avgDurationMin}m` : '—'}</div>
         </div>
-      {/if}
-
-      {#if preview.summary}
-        <blockquote class="preview-summary">{preview.summary}</blockquote>
-      {/if}
-
-      {#if preview.warnings.length > 0}
-        <div class="preview-warnings">
-          <strong>Warnings</strong>
-          <ul>
-            {#each preview.warnings as w}<li>{w}</li>{/each}
-          </ul>
+        <div>
+          <div class="est-key">Likely model</div>
+          <div style="margin-top:2px"><ModelChip model={likelyModel} /></div>
         </div>
-      {/if}
-    </div>
-  {/if}
-{:else}
-  <!-- ── Live Progress ────────────────────────────────────────────────────── -->
-  <div class="card progress-card">
-    <div class="card-header">
-      <span class="card-title">Cycle {shortId(cycleId)} — Live</span>
-      <span class="elapsed-clock">{elapsedDisplay()}</span>
-    </div>
-
-    <div class="stage-row">
-      {#each STAGES as stage, i}
-        <div class="stage-pill {stageStates[stage]}">
-          <span class="stage-num">{i + 1}</span>
-          <span class="stage-name">{stage}</span>
-          {#if stageStates[stage] === 'complete'}
-            <span class="stage-check">✓</span>
-          {/if}
+        <div>
+          <div class="est-key">Branch</div>
+          <div class="af2-mono est-val">{branchPrefix}vX.Y.Z</div>
         </div>
-        {#if i < STAGES.length - 1}
-          <div class="stage-connector {stageStates[(STAGES[i] as Stage)] === 'complete' ? 'done' : ''}"></div>
-        {/if}
-      {/each}
-    </div>
-
-    <div class="burn-section">
-      <div class="burn-label">
-        <span>Budget burn</span>
-        <span class="burn-amount">${currentCost.toFixed(2)} / ${budgetUsd.toFixed(2)}</span>
+        <div>
+          <div class="est-key">Max agents</div>
+          <div class="af2-mono est-val">{maxAgents}</div>
+        </div>
+        <div>
+          <div class="est-key">Effort</div>
+          <div class="af2-mono est-val">{effortCap === 'default' ? 'per-agent' : effortCap}</div>
+        </div>
       </div>
-      <div class="burn-bar">
-        <div class="burn-fill" style="width: {burnPct()}%"></div>
-      </div>
-    </div>
+    </Card>
 
-    {#if launchError}
-      <div class="error-msg">{launchError}</div>
-    {/if}
-
-    <div class="progress-actions">
-      {#if terminal}
-        <button class="btn btn-primary" onclick={viewDetails}>View details →</button>
+    <Card>
+      <div class="section-title">SIMILAR PAST CYCLES</div>
+      {#if recentLoading}
+        <div class="muted" style="font-size:12px">Loading recent cycles…</div>
+      {:else if recentError}
+        <div class="warning-row" style="margin:0">
+          <span class="warning-icon">⚠</span>
+          <span>Could not load recent cycles: {recentError}</span>
+        </div>
+      {:else if recent.length === 0}
+        <div class="muted" style="font-size:12px">No past cycles yet.</div>
       {:else}
-        <button class="btn btn-ghost" onclick={viewDetails}>Open detail view</button>
-        <span class="polling-hint">Polling every 1s…</span>
+        <div class="recent-list">
+          {#each recent.filter((c) => c.stage === 'completed').slice(0, 5) as c (c.cycleId)}
+            <a class="recent-row" href={`/cycles/${c.cycleId}`}>
+              <StageDots stages={bricksFor(c)} />
+              <span class="af2-mono recent-id">{c.cycleId.slice(0, 8)}</span>
+              <span class="af2-mono recent-sprint">v{c.sprintVersion ?? '—'}</span>
+              <span class="af2-mono recent-cost">${c.costUsd.toFixed(2)}</span>
+              <span class="recent-when">{relativeTime(c.startedAt)}</span>
+            </a>
+          {:else}
+            <div class="muted" style="font-size:12px">No completed cycles yet.</div>
+          {/each}
+        </div>
       {/if}
-    </div>
+    </Card>
+
+    <Card>
+      <div class="section-title">SAFEGUARDS</div>
+      <ul class="safeguards">
+        <li><Badge variant="success">on</Badge> Budget kill-switch at 100% spend</li>
+        <li><Badge variant="success">on</Badge> Per-phase timeout</li>
+        <li><Badge variant={fallbackEnabled ? 'success' : 'muted'}>{fallbackEnabled ? 'on' : 'off'}</Badge> Model fallback on overload</li>
+        <li><Badge variant={dryRun ? 'warning' : 'muted'}>{dryRun ? 'on' : 'off'}</Badge> Dry run (no PR)</li>
+      </ul>
+    </Card>
   </div>
-{/if}
+</div>
 
 <style>
-  .form-card, .progress-card {
-    max-width: 820px;
+  .page-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 14px;
+    gap: 16px;
+    flex-wrap: wrap;
   }
-
-  .form-grid {
+  .crumbs {
+    font-size: 11px;
+    color: var(--af-dim);
+    letter-spacing: 0.04em;
+    margin-bottom: 4px;
+  }
+  .page-title {
+    font-size: 22px;
+    font-weight: 700;
+    margin: 0;
+    letter-spacing: -0.02em;
+    color: var(--af-text);
+  }
+  .page-sub { font-size: 12px; color: var(--af-dim); margin: 4px 0 0; }
+  .head-actions { display: flex; gap: 8px; }
+  .launch-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: var(--space-4);
-    margin-bottom: var(--space-4);
+    grid-template-columns: 1.6fr 1fr;
+    gap: 14px;
+    align-items: start;
   }
-
-  .form-group { margin-bottom: var(--space-4); }
-  .toggle-group { display: flex; align-items: flex-end; }
-
-  .form-label {
-    display: block;
-    font-size: var(--text-xs);
-    font-weight: 600;
-    letter-spacing: 0.06em;
+  .side-col {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    position: sticky;
+    top: 0;
+  }
+  @media (max-width: 960px) {
+    .launch-grid { grid-template-columns: 1fr; }
+    .side-col { position: static; }
+  }
+  .section-title {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--af-dim);
     text-transform: uppercase;
-    color: var(--color-text-muted);
-    margin-bottom: var(--space-2);
+    margin-bottom: 12px;
   }
-
-  .form-input, .form-textarea {
-    width: 100%;
-    background: var(--color-surface-2);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    color: var(--color-text);
-    padding: var(--space-2) var(--space-3);
-    font-size: var(--text-sm);
-    font-family: var(--font-sans);
-    box-sizing: border-box;
-    transition: border-color var(--duration-fast);
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 14px;
   }
-  .form-input:focus, .form-textarea:focus { outline: none; border-color: var(--color-brand); }
-  .form-textarea { resize: vertical; min-height: 72px; }
-
-  .checkbox-label {
-    display: inline-flex;
+  .form-row + .form-row { margin-top: 4px; }
+  @media (max-width: 720px) {
+    .form-row { grid-template-columns: 1fr 1fr; }
+  }
+  .field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .field-label {
+    font-size: 10px;
+    color: var(--af-dim);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  .slider-row {
+    display: grid;
+    grid-template-columns: 1fr 60px;
+    gap: 8px;
     align-items: center;
-    gap: var(--space-2);
-    font-size: var(--text-sm);
-    color: var(--color-text);
+  }
+  .slider { width: 100%; accent-color: var(--af-purple); }
+  .num,
+  .text-input,
+  .select {
+    background: var(--af-surface);
+    border: 1px solid var(--af-border2);
+    border-radius: 6px;
+    padding: 6px 10px;
+    color: var(--af-text);
+    font-size: 12px;
+    font-family: inherit;
+    height: 32px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .num:focus,
+  .text-input:focus,
+  .select:focus {
+    outline: none;
+    border-color: var(--af-purple);
+  }
+  .num { font-family: var(--af-font-mono, 'JetBrains Mono', monospace); text-align: right; }
+  .textarea {
+    width: 100%;
+    background: var(--af-surface);
+    border: 1px solid var(--af-border2);
+    border-radius: 6px;
+    padding: 10px 12px;
+    color: var(--af-text);
+    font-size: 12px;
+    font-family: inherit;
+    min-height: 70px;
+    resize: vertical;
+    box-sizing: border-box;
+  }
+  .textarea:focus { outline: none; border-color: var(--af-purple); }
+  .toggle-field { gap: 8px; }
+  .toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--af-text);
     cursor: pointer;
   }
-  .checkbox-label .hint {
-    color: var(--color-text-faint);
-    font-size: var(--text-xs);
+  .toggle input { display: none; }
+  .toggle-track {
+    width: 28px;
+    height: 16px;
+    border-radius: 999px;
+    background: var(--af-border3);
+    position: relative;
+    transition: background 200ms ease;
+    flex-shrink: 0;
   }
-
-  .future-note {
-    font-size: var(--text-xs);
-    color: var(--color-text-faint);
-    margin: 0 0 var(--space-3) 0;
-    font-style: italic;
+  .toggle-track.on { background: var(--af-accent); }
+  .toggle-knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    background: #fff;
+    border-radius: 50%;
+    transition: left 200ms ease;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.3);
   }
-
-  .launch-btn {
-    width: 100%;
-    justify-content: center;
-    padding: var(--space-3) var(--space-4);
-    font-size: var(--text-sm);
-    font-weight: 600;
+  .toggle-track.on .toggle-knob { left: 14px; }
+  .toggle-label .hint { color: var(--af-dim); font-size: 11px; }
+  .hint { color: var(--af-dim); font-size: 11px; }
+  .warning-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    background: color-mix(in srgb, var(--af-warning) 6%, transparent);
+    border: 1px solid color-mix(in srgb, var(--af-warning) 25%, transparent);
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--af-text);
+    margin-top: 8px;
   }
-
-  .error-msg {
-    background: rgba(224,90,90,0.1);
-    border: 1px solid rgba(224,90,90,0.3);
-    border-radius: var(--radius-md);
-    color: var(--color-danger);
-    font-size: var(--text-xs);
-    padding: var(--space-2) var(--space-3);
-    margin-bottom: var(--space-3);
+  .warning-icon { color: var(--af-warning); font-size: 14px; }
+  .error-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--space-3);
+    gap: 12px;
+    padding: 8px 12px;
+    margin-top: 12px;
+    background: color-mix(in srgb, var(--af-danger) 6%, transparent);
+    border: 1px solid color-mix(in srgb, var(--af-danger) 25%, transparent);
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--af-danger);
   }
-  .retry-btn { margin-left: auto; }
-
-  /* ── Stage row ──────────────────────────────────────────────────────────── */
-  .stage-row {
+  .tag-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .tag-chip {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--af-surface2);
+    border: 1px solid var(--af-border2);
+    color: var(--af-text);
+  }
+  .launch-row {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-    margin: var(--space-5) 0 var(--space-5) 0;
-    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--af-border);
   }
-
-  .stage-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius-full);
-    border: 1px solid var(--color-border);
-    background: var(--color-surface-1);
-    font-size: var(--text-xs);
+  .est-head { display: flex; align-items: baseline; gap: 6px; }
+  .est-amount {
+    font-size: 32px;
     font-weight: 600;
-    letter-spacing: 0.04em;
-    color: var(--color-text-muted);
-    transition: all var(--duration-fast);
+    color: var(--af-text);
+    letter-spacing: -0.02em;
   }
-  .stage-pill .stage-num {
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: var(--color-surface-3);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+  .est-tag { font-size: 11px; color: var(--af-dim); }
+  .est-flag {
     font-size: 10px;
-    font-family: var(--font-mono);
+    padding: 2px 6px;
+    border-radius: 3px;
   }
-
-  .stage-pill.active {
-    color: var(--color-info);
-    border-color: rgba(74,158,255,0.5);
-    background: rgba(74,158,255,0.08);
-    animation: pulse 1.6s ease-in-out infinite;
+  .est-flag.under {
+    color: var(--af-success);
+    background: color-mix(in srgb, var(--af-success) 12%, transparent);
   }
-  .stage-pill.active .stage-num {
-    background: var(--color-info);
-    color: white;
+  .est-flag.over {
+    color: var(--af-danger);
+    background: color-mix(in srgb, var(--af-danger) 12%, transparent);
   }
-
-  .stage-pill.complete {
-    color: var(--color-success);
-    border-color: rgba(76,175,130,0.5);
-    background: rgba(76,175,130,0.08);
-  }
-  .stage-pill.complete .stage-num {
-    background: var(--color-success);
-    color: white;
-  }
-  .stage-check {
-    color: var(--color-success);
-    font-weight: 700;
-  }
-
-  .stage-connector {
-    flex: 0 0 16px;
-    height: 2px;
-    background: var(--color-border);
-    border-radius: 1px;
-  }
-  .stage-connector.done { background: var(--color-success); }
-
-  /* ── Burn bar ───────────────────────────────────────────────────────────── */
-  .burn-section { margin: var(--space-4) 0; }
-  .burn-label {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: var(--text-xs);
-    color: var(--color-text-muted);
-    margin-bottom: var(--space-2);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    font-weight: 600;
-  }
-  .burn-amount {
-    color: var(--color-text);
-    font-family: var(--font-mono);
-    text-transform: none;
-    letter-spacing: 0;
-  }
-  .burn-bar {
-    width: 100%;
-    height: 8px;
-    background: var(--color-surface-2);
-    border-radius: var(--radius-full);
+  .est-bar-track {
+    margin-top: 12px;
+    height: 6px;
+    background: var(--af-border);
+    border-radius: 3px;
     overflow: hidden;
-    border: 1px solid var(--color-border);
   }
-  .burn-fill {
+  .est-bar-fill {
     height: 100%;
-    background: linear-gradient(90deg, var(--color-success), var(--color-info));
-    transition: width var(--duration-normal) var(--easing-default);
+    background: var(--af-grad-h, linear-gradient(90deg, var(--af-accent), var(--af-purple)));
+    transition: width 400ms ease;
   }
-
-  .elapsed-clock {
-    font-family: var(--font-mono);
-    font-size: var(--text-md);
-    color: var(--color-brand);
-    font-weight: 600;
-  }
-
-  .progress-actions {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    margin-top: var(--space-4);
-  }
-  .polling-hint {
-    font-size: var(--text-xs);
-    color: var(--color-text-faint);
-    font-style: italic;
-  }
-
-  /* ── Preview (v6.5.3) ──────────────────────────────────────────────────── */
-  .button-row {
-    display: flex;
-    gap: var(--space-3);
-    align-items: stretch;
-  }
-  .preview-btn {
-    flex: 0 0 auto;
-    padding: var(--space-3) var(--space-4);
-    font-size: var(--text-sm);
-    font-weight: 600;
-  }
-  .button-row .launch-btn { flex: 1; }
-
-  .preview-card {
-    max-width: 820px;
-    margin-top: var(--space-4);
-  }
-  .preview-headline {
+  .est-bar-meta {
     display: flex;
     justify-content: space-between;
+    margin-top: 4px;
+    font-size: 10px;
+    color: var(--af-dim);
+  }
+  .est-grid {
+    margin-top: 16px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    font-size: 11px;
+  }
+  .est-key { color: var(--af-dim); }
+  .est-val { color: var(--af-text); font-weight: 600; margin-top: 2px; }
+  .recent-list { display: flex; flex-direction: column; }
+  .recent-row {
+    display: grid;
+    grid-template-columns: auto auto 1fr auto auto;
     align-items: center;
-    margin: var(--space-3) 0;
-    flex-wrap: wrap;
-    gap: var(--space-3);
+    gap: 8px;
+    padding: 5px 0;
+    border-bottom: 1px solid var(--af-border);
+    color: var(--af-text);
+    text-decoration: none;
   }
-  .preview-total-amount {
-    font-size: var(--text-2xl, 1.8rem);
-    font-weight: 700;
-    color: var(--color-text);
-    font-family: var(--font-mono);
-  }
-  .preview-total-budget {
-    color: var(--color-text-muted);
-    font-size: var(--text-sm);
-    margin-left: var(--space-2);
-  }
-  .preview-badges { display: flex; gap: var(--space-2); }
-  .badge {
-    display: inline-block;
-    padding: var(--space-1) var(--space-2);
-    border-radius: var(--radius-full);
-    font-size: var(--text-xs);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-  .badge-success {
-    background: rgba(76,175,130,0.15);
-    color: var(--color-success);
-    border: 1px solid rgba(76,175,130,0.4);
-  }
-  .badge-danger {
-    background: rgba(224,90,90,0.12);
-    color: var(--color-danger);
-    border: 1px solid rgba(224,90,90,0.4);
-  }
-  .badge-warning {
-    background: rgba(240,180,40,0.12);
-    color: #f0b428;
-    border: 1px solid rgba(240,180,40,0.4);
-  }
-  .preview-meta {
+  .recent-row:last-child { border-bottom: none; }
+  .recent-row:hover { background: var(--af-surface2); }
+  .recent-id { font-size: 11px; color: var(--af-text); }
+  .recent-sprint { font-size: 10px; color: var(--af-dim); }
+  .recent-cost { font-size: 10px; color: var(--af-muted); }
+  .recent-when { font-size: 10px; color: var(--af-dim); }
+  .safeguards {
+    list-style: none;
+    padding: 0;
+    margin: 0;
     display: flex;
-    gap: var(--space-2);
-    font-size: var(--text-xs);
-    color: var(--color-text-muted);
-    margin-bottom: var(--space-3);
-    flex-wrap: wrap;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--af-text);
   }
-  .overflow-warning {
-    background: rgba(224,90,90,0.08);
-    border: 1px solid rgba(224,90,90,0.3);
-    border-radius: var(--radius-md);
-    color: var(--color-danger);
-    padding: var(--space-2) var(--space-3);
-    font-size: var(--text-xs);
-    margin-bottom: var(--space-3);
+  .safeguards li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
-  .preview-table-wrap {
-    overflow-x: auto;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    margin-bottom: var(--space-3);
+  .muted { color: var(--af-muted); }
+  .af2-mono {
+    font-family: var(--af-font-mono, 'JetBrains Mono', monospace);
+    font-feature-settings: 'tnum' 1, 'ss01' 1;
   }
-  .preview-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: var(--text-sm);
-  }
-  .preview-table th,
-  .preview-table td {
-    padding: var(--space-2) var(--space-3);
-    text-align: left;
-    border-bottom: 1px solid var(--color-border);
-  }
-  .preview-table th {
-    font-size: var(--text-xs);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--color-text-muted);
-    background: var(--color-surface-2);
-  }
-  .preview-table tr:last-child td { border-bottom: none; }
-  .preview-table .num { font-family: var(--font-mono); text-align: right; }
-  .preview-table .title { color: var(--color-text); }
-  .dot {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    margin-right: var(--space-1);
-    vertical-align: middle;
-  }
-  .dot-success { background: var(--color-success); }
-  .dot-danger  { background: var(--color-danger); }
-  .preview-summary {
-    border-left: 3px solid var(--color-brand);
-    padding: var(--space-2) var(--space-3);
-    color: var(--color-text-muted);
-    font-style: italic;
-    font-size: var(--text-sm);
-    margin: 0 0 var(--space-3) 0;
-    background: var(--color-surface-1);
-    border-radius: 0 var(--radius-md) var(--radius-md) 0;
-  }
-  .preview-warnings {
-    background: rgba(240,180,40,0.06);
-    border: 1px solid rgba(240,180,40,0.25);
-    border-radius: var(--radius-md);
-    padding: var(--space-2) var(--space-3);
-    font-size: var(--text-xs);
-    color: var(--color-text-muted);
-  }
-  .preview-warnings ul { margin: var(--space-1) 0 0 var(--space-4); }
 </style>
