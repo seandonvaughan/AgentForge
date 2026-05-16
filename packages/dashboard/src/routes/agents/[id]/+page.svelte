@@ -9,14 +9,15 @@
    *   - SSR: agent detail from +page.server.ts (reads .agentforge/agents/<id>.yaml)
    *   - Client: GET /api/v5/sessions?agentId=:id (sessions tab)
    *   - Client: GET /api/v5/memory?agentId=:id (memory tab)
-   *   - Config tab: reads raw YAML via GET /api/v5/agents/:id, editable + POST /api/v5/agents/:id
+   *   - Config tab: GET /api/v5/agents/:id/raw → textarea; PUT to save
    *
    * ENDPOINT STATUS:
-   *   ✅ GET /api/v5/agents/:id     — exists, returns agent detail
-   *   ✅ GET /api/v5/sessions        — exists, supports ?agentId filter
-   *   ✅ GET /api/v5/memory          — exists, supports ?agentId filter
-   *   ✅ PATCH /api/v5/agents/:id   — exists in agent-crud.ts for updates
-   *   ❌ Raw YAML content endpoint   — not available; synthesise from parsed fields
+   *   ✅ GET /api/v5/agents/:id       — exists, returns agent detail
+   *   ✅ GET /api/v5/sessions          — exists, supports ?agentId filter
+   *   ✅ GET /api/v5/memory            — exists, supports ?agentId filter
+   *   ✅ PATCH /api/v5/agents/:id     — exists in agent-crud.ts for JSON updates
+   *   ✅ GET /api/v5/agents/:id/raw   — returns verbatim YAML file content
+   *   ✅ PUT /api/v5/agents/:id/raw   — writes validated YAML back to file
    */
   import { goto } from '$app/navigation';
   import { onMount, onDestroy } from 'svelte';
@@ -88,6 +89,8 @@
   let configSaving = $state(false);
   let configSaveError = $state<string | null>(null);
   let configSaved = $state(false);
+  let configLoading = $state(false);
+  let configLoadError = $state<string | null>(null);
 
   // ── Polling ──────────────────────────────────────────────────────────────────
   let pollHandle: ReturnType<typeof setInterval> | null = null;
@@ -125,41 +128,33 @@
     }
   }
 
-  function buildConfigYaml(ag: AgentDetail): string {
-    const lines: string[] = [`# ${ag.agentId}.yaml`];
-    lines.push(`id: ${ag.agentId}`);
-    lines.push(`name: "${ag.name}"`);
-    lines.push(`model: claude-${ag.model}-4-6`);
-    if (ag.version) lines.push(`version: "${ag.version}"`);
-    if (ag.seniority) lines.push(`seniority: ${ag.seniority}`);
-    if (ag.layer) lines.push(`layer: ${ag.layer}`);
-    lines.push('');
-    if (ag.description) {
-      lines.push(`description: |`);
-      lines.push(`  ${ag.description}`);
-      lines.push('');
+  /** Load raw YAML from the server. Called on Config tab activation and after save. */
+  async function loadConfigYaml(): Promise<void> {
+    if (configLoading) return;
+    configLoading = true;
+    configLoadError = null;
+    try {
+      const res = await fetch(`/api/v5/agents/${encodeURIComponent(agent.agentId)}/raw`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json() as { data?: { yaml?: string } };
+      configYaml = json.data?.yaml ?? '';
+    } catch (e) {
+      configLoadError = e instanceof Error ? e.message : 'Failed to load agent YAML';
+    } finally {
+      configLoading = false;
     }
-    if (ag.systemPrompt) {
-      lines.push(`system_prompt: |`);
-      for (const line of ag.systemPrompt.split('\n')) {
-        lines.push(`  ${line}`);
-      }
-      lines.push('');
-    }
-    if (ag.skills && ag.skills.length > 0) {
-      lines.push('skills:');
-      for (const s of ag.skills) lines.push(`  - ${s}`);
-      lines.push('');
-    }
-    if (ag.reportsTo || (ag.canDelegateTo && ag.canDelegateTo.length > 0)) {
-      lines.push('collaboration:');
-      if (ag.reportsTo) lines.push(`  reports_to: ${ag.reportsTo}`);
-      if (ag.canDelegateTo && ag.canDelegateTo.length > 0) {
-        lines.push('  can_delegate_to:');
-        for (const d of ag.canDelegateTo) lines.push(`    - ${d}`);
-      }
-    }
-    return lines.join('\n');
+  }
+
+  /** Client-side lightweight YAML validity check (no external dep). */
+  function isYamlLikelyValid(text: string): boolean {
+    if (!text.trim()) return false;
+    // Reject obvious parse killers: unmatched brackets/braces, bare tabs at start
+    const openBrackets = (text.match(/\[/g) ?? []).length;
+    const closeBrackets = (text.match(/\]/g) ?? []).length;
+    const openBraces = (text.match(/\{/g) ?? []).length;
+    const closeBraces = (text.match(/\}/g) ?? []).length;
+    if (openBrackets !== closeBrackets || openBraces !== closeBraces) return false;
+    return true;
   }
 
   async function saveConfig(): Promise<void> {
@@ -167,21 +162,23 @@
     configSaveError = null;
     configSaved = false;
     try {
-      // Parse YAML client-side for basic validation: look for obviously bad syntax
-      // (no proper YAML parser available in browser without a dependency, so we do a
-      // lightweight structural check — detect unmatched quotes / forbidden chars).
       if (!configYaml.trim()) throw new Error('Config cannot be empty');
-      const res = await fetch(`/api/v5/agents/${encodeURIComponent(agent.agentId)}`, {
-        method: 'PATCH',
+      // Client-side pre-validation before round-trip
+      if (!isYamlLikelyValid(configYaml)) {
+        throw new Error('Invalid YAML: unmatched brackets or braces');
+      }
+      const res = await fetch(`/api/v5/agents/${encodeURIComponent(agent.agentId)}/raw`, {
+        method: 'PUT',
         headers: { 'content-type': 'application/json' },
-        // Extract name/model/description from the textarea text as a best-effort
-        // update. For a true YAML update, the server PATCH endpoint accepts JSON.
-        body: JSON.stringify({ description: extractYamlField(configYaml, 'description') }),
+        body: JSON.stringify({ yaml: configYaml }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Server error' })) as { error?: string };
         throw new Error(err.error ?? `HTTP ${res.status}`);
       }
+      const json = await res.json() as { data?: { yaml?: string } };
+      // Normalise to whatever the server echoes back
+      configYaml = json.data?.yaml ?? configYaml;
       configSaved = true;
       configEditing = false;
       setTimeout(() => { configSaved = false; }, 3000);
@@ -192,16 +189,10 @@
     }
   }
 
-  function extractYamlField(yaml: string, field: string): string | undefined {
-    const re = new RegExp(`^${field}:\\s*(.+)$`, 'm');
-    const m = yaml.match(re);
-    return m ? m[1].trim().replace(/^["']|["']$/g, '') : undefined;
-  }
-
   onMount(() => {
     void loadSessions();
     void loadMemory();
-    configYaml = buildConfigYaml(agent);
+    void loadConfigYaml();
     pollHandle = setInterval(() => {
       nowMs = Date.now();
     }, 1000);
@@ -679,18 +670,28 @@
           {#if configSaveError}
             <span class="af-save-err">{configSaveError}</span>
           {/if}
-          <Btn size="sm" onclick={() => { navigator.clipboard?.writeText(configYaml); }}>Copy</Btn>
+          {#if !configLoading && !configLoadError}
+            <Btn size="sm" onclick={() => { navigator.clipboard?.writeText(configYaml); }}>Copy</Btn>
+          {/if}
           {#if !configEditing}
-            <Btn size="sm" onclick={() => (configEditing = true)}>Edit</Btn>
+            <Btn size="sm" onclick={loadConfigYaml} disabled={configLoading}>↻ Refresh</Btn>
+            <Btn size="sm" onclick={() => (configEditing = true)} disabled={configLoading || !!configLoadError}>Edit</Btn>
           {:else}
-            <Btn size="sm" onclick={() => { configEditing = false; configSaveError = null; configYaml = buildConfigYaml(agent); }}>Cancel</Btn>
+            <Btn size="sm" onclick={async () => { configEditing = false; configSaveError = null; await loadConfigYaml(); }}>Cancel</Btn>
             <Btn size="sm" variant="primary" onclick={saveConfig} disabled={configSaving}>
               {configSaving ? 'Saving…' : 'Save'}
             </Btn>
           {/if}
         </div>
       </div>
-      {#if configEditing}
+      {#if configLoading}
+        <div class="af-loading-state">Loading YAML…</div>
+      {:else if configLoadError}
+        <div class="af-error-state">
+          {configLoadError}
+          <Btn size="sm" onclick={loadConfigYaml}>Retry</Btn>
+        </div>
+      {:else if configEditing}
         <textarea
           class="af-yaml-editor font-mono"
           bind:value={configYaml}

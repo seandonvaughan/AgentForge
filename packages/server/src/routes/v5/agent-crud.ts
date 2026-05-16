@@ -3,6 +3,7 @@ import { join, dirname } from 'node:path';
 import {
   readFileSync,
   writeFileSync,
+  statSync,
   unlinkSync,
   existsSync,
   mkdirSync,
@@ -12,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 import { globalStream } from './stream.js';
 import { safeJoin } from '../../lib/safe-join.js';
+import { appendAuditEntry, openAuditDb } from './audit.js';
 
 /** Agent IDs must be kebab-case slugs — mirrors the POST-create validation. */
 const SAFE_AGENT_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -225,6 +227,23 @@ function getDirectReports(agentsDir: string, supervisorId: string): string[] {
 // Route registration
 // ---------------------------------------------------------------------------
 
+// Required top-level fields for a valid AgentTemplate YAML
+const REQUIRED_AGENT_FIELDS: ReadonlyArray<keyof AgentYaml> = [
+  'name',
+  'model',
+  'system_prompt',
+];
+
+/** Verify a parsed object satisfies the minimum AgentTemplate shape. */
+function isValidAgentYaml(parsed: unknown): parsed is AgentYaml {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
+  const obj = parsed as Record<string, unknown>;
+  for (const field of REQUIRED_AGENT_FIELDS) {
+    if (typeof obj[field] !== 'string' || !(obj[field] as string).trim()) return false;
+  }
+  return true;
+}
+
 export async function agentCrudRoutes(
   app: FastifyInstance,
   opts: { projectRoot?: string },
@@ -237,6 +256,10 @@ export async function agentCrudRoutes(
 
   // Ensure agents directory exists
   if (!existsSync(agentsDir)) mkdirSync(agentsDir, { recursive: true });
+
+  // Audit DB for raw-YAML mutations
+  const auditDb = openAuditDb(root);
+  app.addHook('onClose', async () => { auditDb.close(); });
 
   /**
    * Full path to an agent YAML file, or null if `id` would escape agentsDir.
@@ -252,6 +275,97 @@ export async function agentCrudRoutes(
     if (!p || !existsSync(p)) return null;
     return readYaml<AgentYaml>(p);
   }
+
+  // ── GET /api/v5/agents/:id/raw — Return raw YAML file content ────────────
+
+  app.get<{ Params: { id: string } }>('/api/v5/agents/:id/raw', async (req, reply) => {
+    const { id } = req.params;
+    if (!SAFE_AGENT_ID.test(id)) return reply.status(400).send({ error: 'Invalid agent id' });
+
+    const filePath = agentFilePath(id);
+    if (!filePath || !existsSync(filePath)) {
+      return reply.status(404).send({ error: `Agent "${id}" not found` });
+    }
+
+    try {
+      const yamlContent = readFileSync(filePath, 'utf-8');
+      const stat = statSync(filePath);
+      return reply.send({
+        data: {
+          yaml: yamlContent,
+          agentId: id,
+          modifiedAt: stat.mtime.toISOString(),
+        },
+      });
+    } catch {
+      return reply.status(500).send({ error: 'Failed to read agent file' });
+    }
+  });
+
+  // ── PUT /api/v5/agents/:id/raw — Write raw YAML file content ─────────────
+
+  app.put<{ Params: { id: string }; Body: { yaml: string } }>(
+    '/api/v5/agents/:id/raw',
+    async (req, reply) => {
+      const { id } = req.params;
+      if (!SAFE_AGENT_ID.test(id)) return reply.status(400).send({ error: 'Invalid agent id' });
+
+      const filePath = agentFilePath(id);
+      if (!filePath) return reply.status(400).send({ error: 'Invalid agent id' });
+
+      if (!existsSync(filePath)) {
+        return reply.status(404).send({ error: `Agent "${id}" not found` });
+      }
+
+      const { yaml: yamlContent } = req.body ?? {};
+      if (typeof yamlContent !== 'string' || !yamlContent.trim()) {
+        return reply.status(400).send({ error: 'Body must include { yaml: string }' });
+      }
+
+      // Validate: must parse as valid YAML
+      let parsed: unknown;
+      try {
+        parsed = yaml.load(yamlContent);
+      } catch (e) {
+        return reply.status(400).send({
+          error: `Invalid YAML: ${e instanceof Error ? e.message : String(e)}`,
+        });
+      }
+
+      // Validate: must satisfy minimum AgentTemplate shape
+      if (!isValidAgentYaml(parsed)) {
+        return reply.status(400).send({
+          error: `YAML must include required string fields: ${REQUIRED_AGENT_FIELDS.join(', ')}`,
+        });
+      }
+
+      writeFileSync(filePath, yamlContent, 'utf-8');
+
+      // Audit log
+      appendAuditEntry(auditDb, {
+        actor: 'api',
+        action: 'agent.raw.write',
+        target: id,
+        details: { agentId: id, source: 'PUT /api/v5/agents/:id/raw' },
+      });
+
+      globalStream.emit({
+        type: 'agent_activity',
+        category: 'agent_crud',
+        message: `Agent "${id}" raw YAML updated`,
+        data: { type: 'raw_yaml_updated', agentId: id },
+      });
+
+      const stat = statSync(filePath);
+      return reply.send({
+        data: {
+          yaml: yamlContent,
+          agentId: id,
+          modifiedAt: stat.mtime.toISOString(),
+        },
+      });
+    },
+  );
 
   // ── POST /api/v5/agents — Create a new agent ──────────────────────────────
 
