@@ -46,7 +46,12 @@ function writeAgentYaml(agentId: string, learnings: string[]): void {
     `description: test`,
     `system_prompt: test`,
     `learnings:`,
-    ...learnings.map((l) => `  - "${l.replace(/"/g, '\\"')}"`),
+    // Escape backslashes FIRST, then double quotes — without escaping
+    // backslashes a learning containing a literal "\" would break YAML
+    // parsing (CodeQL: js/incomplete-sanitization).
+    ...learnings.map(
+      (l) => `  - "${l.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`,
+    ),
   ].join('\n');
   writeFileSync(join(agentsDir, `${agentId}.yaml`), yaml);
 }
