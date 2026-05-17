@@ -142,33 +142,42 @@ export async function cyclePrsRoutes(
    */
   app.get<{ Params: { cycleId: string } }>(
     '/api/v5/cycles/:cycleId/prs',
+    // TODO(security): add a per-IP rate limiter. The route reads a small ledger
+    // JSON, so a flood does not open db connections, but a determined caller
+    // can still amplify gh-checks calls. Tracked in v22.3 follow-up.
     async (req, reply) => {
-      const { cycleId } = req.params;
+      const rawCycleId = req.params.cycleId;
       const q = req.query as { ci?: string; status?: string };
 
-      // Validate cycleId
-      if (!SAFE_CYCLE_ID.test(cycleId)) {
+      // Sanitize cycleId: capture ONLY the safe-character prefix via match().
+      // This pattern (vs. validate-then-use) lets static analyzers follow the
+      // narrowing: `safeCycleId` is provably composed of characters that
+      // cannot encode a path traversal (/, \, .., %, null bytes, etc.).
+      const matched = rawCycleId.match(SAFE_CYCLE_ID);
+      if (!matched) {
         return reply.status(400).send({
           error: 'Invalid cycleId — only alphanumeric, dash, and underscore allowed',
-          cycleId,
+          cycleId: rawCycleId,
         });
       }
+      const safeCycleId: string = matched[0];
 
-      // Resolve the cycle directory
+      // Resolve the cycle directory using the sanitized id only.
       const cyclesBaseDir = resolve(join(projectRoot, '.agentforge', 'cycles'));
-      const cycleDir = resolve(join(cyclesBaseDir, cycleId));
+      const cycleDir = resolve(join(cyclesBaseDir, safeCycleId));
 
-      // Containment check (path traversal guard)
+      // Belt-and-braces containment check (already guaranteed by the regex
+      // above; kept as a defense-in-depth assertion).
       const baseWithSep = cyclesBaseDir.endsWith('/') ? cyclesBaseDir : cyclesBaseDir + '/';
       if (cycleDir !== cyclesBaseDir && !cycleDir.startsWith(baseWithSep)) {
-        return reply.status(400).send({ error: 'Invalid cycleId', cycleId });
+        return reply.status(400).send({ error: 'Invalid cycleId', cycleId: safeCycleId });
       }
 
       // Cycle dir missing → 404
       if (!existsSync(cycleDir)) {
         return reply.status(404).send({
           error: 'Cycle not found',
-          cycleId,
+          cycleId: safeCycleId,
         });
       }
 
@@ -178,7 +187,7 @@ export async function cyclePrsRoutes(
         return reply.send({
           data: [],
           meta: {
-            cycleId,
+            cycleId: safeCycleId,
             total: 0,
             counts: { open: 0, merged: 0, closed: 0, pending: 0 },
             timestamp: new Date().toISOString(),
@@ -193,7 +202,7 @@ export async function cyclePrsRoutes(
         const parsed = JSON.parse(raw) as unknown;
         entries = Array.isArray(parsed) ? (parsed as LedgerEntry[]) : [];
       } catch {
-        return reply.status(500).send({ error: 'Failed to parse ledger file', cycleId });
+        return reply.status(500).send({ error: 'Failed to parse ledger file', cycleId: safeCycleId });
       }
 
       // Apply ?status= filter
@@ -231,7 +240,7 @@ export async function cyclePrsRoutes(
       return reply.send({
         data: enriched,
         meta: {
-          cycleId,
+          cycleId: safeCycleId,
           total: enriched.length,
           counts,
           timestamp: new Date().toISOString(),
