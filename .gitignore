@@ -54,6 +54,8 @@ packages/**/package-lock.json
 .agentforge/cycles/
 .agentforge/cycles-archived/
 .agentforge/reports/
+.agentforge/forge/
+.agentforge/flywheel/
 *.png
 
 # UI export packages (kept on local disk, not in repo)

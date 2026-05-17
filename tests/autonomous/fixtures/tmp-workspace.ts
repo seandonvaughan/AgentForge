@@ -123,6 +123,22 @@ export async function setupTmpAgentforgeWorkspace(): Promise<string> {
     `import { test, expect } from 'vitest';\ntest('passes', () => expect(1).toBe(1));\n`,
   );
 
+  // --- gitignore ------------------------------------------------------------
+  // .agentforge/forge/ holds per-run intermediate state (learnings-proposed,
+  // team-plan, validation-report, mutator-report). These are never project
+  // changes — they would otherwise show up as untracked work-products and
+  // break cycle-runner's "no work product => clean no-op" guarantee.
+  // .agentforge/flywheel/ is similar (per-cycle continuous-improvement metric).
+  writeFileSync(
+    join(tmp, '.gitignore'),
+    [
+      '.agentforge/forge/',
+      '.agentforge/flywheel/',
+      '.agentforge/memory/self-eval.jsonl',
+      '',
+    ].join('\n'),
+  );
+
   // --- git repo init --------------------------------------------------------
   // `-b main` makes sure the initial branch matches the default baseBranch
   // in DEFAULT_CYCLE_CONFIG. The gpg-sign disable is so the commit does not

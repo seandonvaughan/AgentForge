@@ -137,7 +137,8 @@ function mergeConfig(defaults: CycleConfig, overrides: Partial<CycleConfig>): Cy
     } else if (key === 'fallbackEnabled') {
       merged.fallbackEnabled = override as boolean;
     } else {
-      merged[key] = { ...merged[key], ...(override as object) } as never;
+      const base = merged[key];
+      merged[key] = { ...(typeof base === 'object' && base !== null ? (base as object) : {}), ...(typeof override === 'object' && override !== null ? (override as object) : {}) } as never;
     }
   }
 
