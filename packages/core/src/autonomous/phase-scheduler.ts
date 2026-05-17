@@ -38,6 +38,24 @@ export function nextPhase(current: PhaseName): PhaseName | null {
     : PHASE_SEQUENCE[idx + 1]!;
 }
 
+// TODO(T4.2): import WorktreePool from '../runtime/worktree-pool.js' once
+// Workstream AA lands packages/core/src/runtime/worktree-pool.ts.
+// The interface below is a forward-compatible type stub; the runtime class will
+// satisfy it when AA's PR merges.
+/** Minimal interface so execute-phase can allocate/release worktrees without
+ *  depending on the full WorktreePool class (which lives in Workstream AA). */
+export interface WorktreePoolLike {
+  allocate(opts: { agentId: string; sessionId: string }): Promise<{
+    id: string;
+    path: string;
+    branch: string;
+    allocatedAt: string;
+    agentId: string;
+    sessionId: string;
+  }>;
+  release(id: string): Promise<void>;
+}
+
 export interface PhaseContext {
   sprintId: string;
   sprintVersion: string;
@@ -49,10 +67,22 @@ export interface PhaseContext {
   };
   runtime: any;
   cycleId?: string;
+  /**
+   * The base branch that agent worktrees are forked from.
+   * Defaults to 'main' when not provided.
+   */
+  baseBranch?: string;
   /** Gate retry attempt number (0 = first run). */
   retryAttempt?: number;
   /** On retry, skip phases before this one (e.g. jump straight to 'execute'). */
   skipToPhase?: PhaseName;
+  /**
+   * T4.2 — Optional WorktreePool. When provided, the execute phase allocates a
+   * fresh worktree per coder-class item and sets the agent's cwd to that path,
+   * eliminating main-tree branch ping-pong. Falls back to the existing
+   * single-tree behaviour when absent.
+   */
+  worktreePool?: WorktreePoolLike;
 }
 
 export interface PhaseResult {

@@ -86,7 +86,10 @@ export type MessageTopic =
   | 'gate.verdict.created'
   | 'review.finding.created'
   // Plugin
-  | 'plugin.event';
+  | 'plugin.event'
+  // Worktree / branch (Cycle 4 — T4.3 / T4.4)
+  | 'agent.branch.pushed'
+  | 'merge-queue.pr.opened';
 
 // ── Agent state machine ───────────────────────────────────────────────────────
 
@@ -361,10 +364,65 @@ export type InboxMessageCreatedEnvelope = MessageEnvelopeV2<InboxMessageCreatedP
 export type GateVerdictCreatedEnvelope = MessageEnvelopeV2<GateVerdictCreatedPayload>;
 export type ReviewFindingCreatedEnvelope = MessageEnvelopeV2<ReviewFindingCreatedPayload>;
 
+// ── Worktree / branch payloads (Cycle 4 — T4.3) ──────────────────────────────
+
+/**
+ * Payload for `agent.branch.pushed` — emitted by `commitAgentWork` after a
+ * coder-class agent completes its work in an isolated worktree, commits all
+ * changes, and pushes the branch to origin.  The `pr-merge-manager` (T4.4)
+ * subscribes to this topic to open a draft PR.
+ */
+export interface AgentBranchPushedPayload {
+  cycleId: string;
+  agentId: string;
+  sessionId: string;
+  /** Branch that was pushed — e.g. `autonomous/agent-coder-abc123`. */
+  branch: string;
+  /** The base branch this work was forked from — typically `main`. */
+  baseBranch: string;
+  /** HEAD sha after the commit. */
+  commitSha: string;
+  /** Number of files touched (from `git diff --name-only HEAD~1..HEAD`). */
+  filesChanged: number;
+  /** First 500 chars of `git diff --stat HEAD~1..HEAD`. */
+  diffSummary: string;
+  /** ISO timestamp when the push completed. */
+  pushedAt: string;
+  /** Sprint item ids the agent worked on. */
+  itemIds: string[];
+  /**
+   * True when origin remote does not exist (test / local-only repos).
+   * When true the branch was committed locally but NOT pushed to a remote.
+   */
+  localOnly?: boolean;
+}
+
+export type AgentBranchPushedEnvelope = MessageEnvelopeV2<AgentBranchPushedPayload>;
+
+/**
+ * Payload for `merge-queue.pr.opened` — emitted by `MergeQueue` after a draft
+ * PR is opened (or recorded in dry-run/skip modes) for an agent branch.
+ */
+export interface MergeQueuePrOpenedPayload {
+  cycleId: string;
+  agentId: string;
+  branch: string;
+  prNumber: number | null;
+  status: 'open' | 'dry-run' | 'skipped-no-gh';
+  prUrl: string | null;
+  openedAt: string;
+}
+
+export type MergeQueuePrOpenedEnvelope = MessageEnvelopeV2<MergeQueuePrOpenedPayload>;
+
 export function isCommsTopic(topic: MessageTopic): boolean {
   return topic === 'agent.dm.sent' || topic === 'inbox.message.created';
 }
 
 export function isQualityTopic(topic: MessageTopic): boolean {
   return topic === 'gate.verdict.created' || topic === 'review.finding.created';
+}
+
+export function isWorktreeTopic(topic: MessageTopic): boolean {
+  return topic === 'agent.branch.pushed' || topic === 'merge-queue.pr.opened';
 }

@@ -18,6 +18,10 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 
 import { join, dirname } from 'node:path';
 import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
 import type { ParsedMemoryEntry } from '../../memory/types.js';
+// T4.5 — ConcurrencyGate: caps MAX_PARALLEL_AGENTS (default 8, max 40) and
+// provides backpressure queue so the execute phase never spawns more agents
+// than the configured ceiling, regardless of item count or parallelism cap.
+import { ConcurrencyGate } from '../../runtime/concurrency-gate.js';
 
 // ---- Memory injection ----
 // Reads tag-filtered past failure entries from .agentforge/memory/*.jsonl so
@@ -242,6 +246,49 @@ interface ItemResult {
   error?: string;
 }
 
+/** Coder-class agent-id prefixes / tags.  An item is considered "agent code
+ *  work" eligible for worktree isolation when:
+ *    a) its `tags` array includes any of these role keywords, OR
+ *    b) its `assignee` agent-id starts with any of these prefixes.
+ *
+ *  The heuristic deliberately errs on the side of inclusion: if an item might
+ *  modify source files (coder, frontend-dev, backend-dev, etc.) it gets its
+ *  own worktree.  Non-code items (scorer, auditor, reviewer, architect) stay
+ *  on the shared tree since they typically only read files and write phase JSONs
+ *  to .agentforge/cycles/ (which are already excluded from commits).
+ */
+export const CODER_CLASS_PATTERNS = [
+  'coder',
+  'frontend',
+  'backend',
+  'fullstack',
+  'svelte',
+  'react',
+  'fastify',
+  'sqlite',
+  'playwright',
+  'vitest',
+  'engineer',
+  'developer',
+  'dev',
+];
+
+/**
+ * Returns true when the sprint item is "agent code work" and should be run
+ * inside an isolated worktree when a pool is available.
+ *
+ * Decision logic (T4.2 heuristic):
+ *   1. If any of the item's tags match a CODER_CLASS_PATTERN → true
+ *   2. If the assignee id starts with / contains a CODER_CLASS_PATTERN → true
+ *   3. Otherwise → false (e.g. scorer, auditor, ceo, reviewer)
+ */
+export function isCoderClassItem(item: { assignee: string; tags?: string[] }): boolean {
+  const assigneeLower = item.assignee.toLowerCase();
+  if (CODER_CLASS_PATTERNS.some((p) => assigneeLower.includes(p))) return true;
+  const tagSet = (item.tags ?? []).map((t) => t.toLowerCase());
+  return tagSet.some((t) => CODER_CLASS_PATTERNS.some((p) => t.includes(p)));
+}
+
 export interface ExecutePhaseOptions {
   /** Override the default Read/Write/Edit/Bash/Glob/Grep tool list. */
   allowedTools?: string[];
@@ -253,10 +300,32 @@ export interface ExecutePhaseOptions {
   /** Max retries per failing item (additional attempts beyond the first).
    *  Default 1 (so each item gets up to 2 total tries). */
   maxItemRetries?: number;
+  /**
+   * T4.2 — When true, worktree allocation is disabled even when
+   * `ctx.worktreePool` is provided. Use for smoke runs, unit tests, or any
+   * environment where real `git worktree` operations are undesirable.
+   */
+  disableWorktrees?: boolean;
 }
 
 export function makeExecutePhaseHandler(options: ExecutePhaseOptions = {}) {
   return (ctx: PhaseContext) => runExecutePhase(ctx, options);
+}
+
+// T4.5 — Priority values for the ConcurrencyGate backpressure queue.
+// Higher numbers run first (gate picks highest-priority queued caller).
+export const CONCURRENCY_PRIORITY = {
+  P0: 100,
+  P1: 50,
+  P2: 10,
+} as const;
+
+/** Map a sprint item's tag-based priority label to a ConcurrencyGate priority number. */
+function itemPriority(item: { tags?: string[] }): number {
+  const tags = (item.tags ?? []).map((t) => t.toLowerCase());
+  if (tags.includes('p0') || tags.includes('critical')) return CONCURRENCY_PRIORITY.P0;
+  if (tags.includes('p1') || tags.includes('high')) return CONCURRENCY_PRIORITY.P1;
+  return CONCURRENCY_PRIORITY.P2;
 }
 
 export async function runExecutePhase(
@@ -269,6 +338,15 @@ export async function runExecutePhase(
   const maxFailureRate = options.maxFailureRate ?? 0.5;
   const ceilingParallelism = Math.max(1, options.maxParallelism ?? 3);
   const maxItemRetries = Math.max(0, options.maxItemRetries ?? 1);
+  // T4.2: worktree pool — disabled when either disableWorktrees flag is set or
+  // the pool is not present in the context.
+  const worktreePool = options.disableWorktrees ? undefined : ctx.worktreePool;
+
+  // T4.5 — ConcurrencyGate enforces MAX_PARALLEL_AGENTS. The gate's cap is
+  // independent from execute-phase's own ceilingParallelism: ceilingParallelism
+  // is a per-phase load-assessment cap, while the gate enforces the global
+  // machine-wide limit (env: MAX_PARALLEL_AGENTS, default 8, max 40).
+  const concurrencyGate = new ConcurrencyGate();
 
   ctx.bus.publish('sprint.phase.started', {
     sprintId: ctx.sprintId,
@@ -491,6 +569,42 @@ export async function runExecutePhase(
     try {
       writeFileSync(sprintPath, JSON.stringify(sprintFile, null, 2));
     } catch { /* non-fatal */ }
+
+    // T4.2: allocate a worktree ONCE per item (before the retry loop) so all
+    // retry attempts reuse the same isolated branch.  Released in the item-level
+    // finally block so it's always freed regardless of success or failure.
+    let worktreeHandle: { id: string; path: string; branch: string; allocatedAt: string; agentId: string; sessionId: string } | undefined;
+    if (worktreePool !== undefined && isCoderClassItem(item)) {
+      try {
+        worktreeHandle = await worktreePool.allocate({
+          agentId: item.assignee,
+          sessionId: ctx.cycleId ?? ctx.sprintId,
+        });
+        ctx.bus.publish('execute.worktree.allocated', {
+          sprintId: ctx.sprintId,
+          phase,
+          cycleId: ctx.cycleId,
+          itemId: item.id,
+          agentId: item.assignee,
+          worktreeId: worktreeHandle.id,
+          worktreePath: worktreeHandle.path,
+          branch: worktreeHandle.branch,
+        });
+      } catch (allocErr) {
+        // Allocation failure is non-fatal: fall back to main-tree execution.
+        // This prevents a pool exhaustion or git error from blocking the item.
+        ctx.bus.publish('execute.worktree.alloc-failed', {
+          sprintId: ctx.sprintId,
+          phase,
+          cycleId: ctx.cycleId,
+          itemId: item.id,
+          agentId: item.assignee,
+          error: allocErr instanceof Error ? allocErr.message : String(allocErr),
+        });
+        worktreeHandle = undefined;
+      }
+    }
+
     try {
       // Read tag-filtered memory entries once per item (before retry loop) so
       // every attempt benefits from the same historical context.
@@ -512,9 +626,13 @@ export async function runExecutePhase(
           filesHinted: item.files ?? [],
         });
         try {
-          const result = await ctx.runtime.run(item.assignee, task, {
-            allowedTools,
-          });
+          const runOptions: Record<string, unknown> = { allowedTools };
+          if (worktreeHandle) {
+            // T4.2: pass cwd so the runtime runs the agent inside the isolated
+            // worktree rather than the main project root.
+            runOptions['cwd'] = worktreeHandle.path;
+          }
+          const result = await ctx.runtime.run(item.assignee, task, runOptions);
           const durationMs = Date.now() - itemStartedAt;
           const costUsd =
             typeof result?.costUsd === 'number' ? result.costUsd : 0;
@@ -531,6 +649,9 @@ export async function runExecutePhase(
             // v6.7.4: surface model + effort to the Agents tab
             model: typeof (result as any)?.model === 'string' ? (result as any).model : undefined,
             effort: typeof (result as any)?.effort === 'string' ? (result as any).effort : 'high',
+            // T4.2: surface the worktree path/branch for downstream diff capture
+            worktreePath: worktreeHandle?.path,
+            worktreeBranch: worktreeHandle?.branch,
           };
           liveResults.set(item.id, completedResult as ItemResult);
           return completedResult;
@@ -570,6 +691,39 @@ export async function runExecutePhase(
       liveResults.set(item.id, fallthroughResult as ItemResult);
       return fallthroughResult;
     } finally {
+      // T4.3: commit + push agent work BEFORE releasing the worktree so the
+      // branch is persisted to origin before the path is cleaned up.
+      // commitAgentWork is a no-op when: AGENT_AUTOCOMMIT_DISABLED is set,
+      // no worktree was allocated, or there are no changes in the worktree.
+      if (worktreeHandle) {
+        try {
+          const { commitAgentWork } = await import('../../runtime/agent-commit.js');
+          await commitAgentWork({
+            worktreePath: worktreeHandle.path,
+            branch: worktreeHandle.branch,
+            baseBranch: 'main',
+            agentId: item.assignee,
+            itemIds: [item.id],
+            ...(ctx.cycleId !== undefined ? { sessionId: ctx.cycleId, cycleId: ctx.cycleId } : { sessionId: ctx.sprintId }),
+            bus: ctx.bus as unknown as import('../../message-bus/message-bus.js').MessageBusV2,
+          });
+        } catch { /* commit errors are non-fatal — log silently */ }
+      }
+      // T4.2: release the worktree (if any) before any other finalisation so
+      // the slot is returned to the pool as soon as the agent finishes.
+      if (worktreeHandle) {
+        try {
+          await worktreePool!.release(worktreeHandle.id);
+          ctx.bus.publish('execute.worktree.released', {
+            sprintId: ctx.sprintId,
+            phase,
+            cycleId: ctx.cycleId,
+            itemId: item.id,
+            agentId: item.assignee,
+            worktreeId: worktreeHandle.id,
+          });
+        } catch { /* release errors are non-fatal */ }
+      }
       ctx.bus.publish('sprint.phase.item.completed', {
         sprintId: ctx.sprintId,
         phase,
@@ -623,6 +777,12 @@ export async function runExecutePhase(
       await Promise.race(inFlight.keys());
     }
     lockMgr.acquire(item.id, files);
+
+    // T4.5: acquire a global concurrency-gate slot (MAX_PARALLEL_AGENTS cap).
+    // Higher-priority items (P0=100, P1=50, P2=10) unblock first when slots
+    // are freed. The gate.acquire() resolves immediately when under cap.
+    const gateRelease = await concurrencyGate.acquire(itemPriority(item));
+
     const p: Promise<unknown> = dispatchItem(item).then(
       (value) => {
         settledResults[indexById.get(item.id)!] = { status: 'fulfilled', value };
@@ -634,7 +794,10 @@ export async function runExecutePhase(
         lockMgr.release(item.id);
         inFlight.delete(p);
       },
-    );
+    ).finally(() => {
+      // T4.5: release the gate slot — idempotent, always called regardless of outcome.
+      gateRelease();
+    });
     inFlight.set(p, item.id);
   }
   await Promise.allSettled(inFlight.keys());

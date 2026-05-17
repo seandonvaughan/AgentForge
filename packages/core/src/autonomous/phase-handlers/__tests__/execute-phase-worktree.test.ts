@@ -1,0 +1,480 @@
+/**
+ * Unit tests for T4.2 — WorktreePool integration in the execute phase.
+ *
+ * Tests verify that:
+ *  1. A pool is allocated/released once per coder-class item (3-item plan → 3 alloc + 3 release)
+ *  2. The runtime.run call receives `cwd` set to the worktree path
+ *  3. Non-coder-class items (scorer, auditor) do NOT allocate a worktree
+ *  4. When no pool is provided, zero allocations happen (legacy path)
+ *  5. When disableWorktrees: true, zero allocations even with a pool
+ *  6. Agent failure → worktree still released (try/finally semantics)
+ *  7. Bus events: execute.worktree.allocated + execute.worktree.released fire
+ *  8. execute.worktree.alloc-failed fires on allocation error (fallback to main tree)
+ *  9. Mixed coder + non-coder items — only coder items use worktrees
+ * 10. Worktree path is surfaced in the completed item result
+ * 11. Allocation failure is non-fatal — agent still runs (on main tree)
+ * 12. Multiple retries reuse the SAME worktree handle (allocated once per item)
+ */
+
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import type { PhaseContext } from '../../phase-scheduler.js';
+import type { WorktreePoolLike } from '../../phase-scheduler.js';
+import { runExecutePhase, isCoderClassItem, CODER_CLASS_PATTERNS } from '../execute-phase.js';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+let tmpRoot: string;
+
+beforeEach(() => {
+  tmpRoot = mkdtempSync(join(tmpdir(), 'agentforge-wt-'));
+});
+
+afterEach(() => {
+  rmSync(tmpRoot, { recursive: true, force: true });
+});
+
+function makeBus() {
+  const events: Array<{ topic: string; payload: unknown }> = [];
+  return {
+    publish: (topic: string, payload: unknown) => { events.push({ topic, payload }); },
+    subscribe: (_t: string, _cb: (e: unknown) => void) => () => {},
+    events,
+  };
+}
+
+type Bus = ReturnType<typeof makeBus>;
+
+function makeCtx(
+  bus: Bus,
+  overrides: Partial<PhaseContext> = {},
+): PhaseContext {
+  return {
+    projectRoot: tmpRoot,
+    sprintId: 'sprint-wt-1',
+    sprintVersion: '1.0.0',
+    cycleId: 'cycle-wt-1',
+    adapter: undefined as any,
+    bus,
+    runtime: {
+      run: vi.fn().mockResolvedValue({
+        output: 'done',
+        costUsd: 0.01,
+        status: 'completed',
+      }),
+    },
+    ...overrides,
+  } as PhaseContext;
+}
+
+/** Returns a mock WorktreePool with configurable behaviour. */
+function makePool(opts: {
+  allocateFn?: (req: { agentId: string; sessionId: string }) => Promise<{ id: string; path: string; branch: string; allocatedAt: string; agentId: string; sessionId: string }>;
+  releaseFn?: (id: string) => Promise<void>;
+} = {}): WorktreePoolLike & { allocateCalls: Array<{ agentId: string; sessionId: string }>; releaseCalls: string[] } {
+  const allocateCalls: Array<{ agentId: string; sessionId: string }> = [];
+  const releaseCalls: string[] = [];
+
+  const allocateFn = opts.allocateFn ?? (async (req) => {
+    allocateCalls.push(req);
+    return {
+      id: `wt-${req.agentId}-${allocateCalls.length}`,
+      path: join(tmpRoot, `.agentforge/worktrees/${req.agentId}`),
+      branch: `autonomous/${req.agentId}`,
+      allocatedAt: new Date().toISOString(),
+      agentId: req.agentId,
+      sessionId: req.sessionId,
+    };
+  });
+
+  const releaseFn = opts.releaseFn ?? (async (id: string) => {
+    releaseCalls.push(id);
+  });
+
+  return {
+    allocateCalls,
+    releaseCalls,
+    allocate: async (req) => {
+      const h = await allocateFn(req);
+      allocateCalls.push(req);
+      return h;
+    },
+    release: async (id) => {
+      await releaseFn(id);
+      releaseCalls.push(id);
+    },
+  };
+}
+
+/** Simpler pool that just tracks calls via vi.fn(). */
+function makeSpyPool(worktreePath = '/fake/worktree') {
+  const allocate = vi.fn().mockImplementation(async (req: { agentId: string; sessionId: string }) => ({
+    id: `wt-${req.agentId}`,
+    path: worktreePath,
+    branch: `autonomous/${req.agentId}`,
+    allocatedAt: new Date().toISOString(),
+    agentId: req.agentId,
+    sessionId: req.sessionId,
+  }));
+  const release = vi.fn().mockResolvedValue(undefined);
+  return { allocate, release };
+}
+
+function writeSprintFile(
+  items: Array<{
+    id: string;
+    title: string;
+    assignee: string;
+    status?: string;
+    tags?: string[];
+  }>,
+  cycleId = 'cycle-wt-1',
+) {
+  const data = {
+    version: '1.0.0',
+    sprintId: 'sprint-wt-1',
+    items: items.map((i) => ({
+      id: i.id,
+      title: i.title,
+      assignee: i.assignee,
+      status: i.status ?? 'planned',
+      tags: i.tags ?? [],
+      description: `Description for ${i.title}`,
+    })),
+  };
+
+  // Legacy path
+  const sprintsDir = join(tmpRoot, '.agentforge', 'sprints');
+  mkdirSync(sprintsDir, { recursive: true });
+  writeFileSync(join(sprintsDir, 'v1.0.0.json'), JSON.stringify(data));
+
+  // Cycle path
+  const cycleDir = join(tmpRoot, '.agentforge', 'cycles', cycleId);
+  mkdirSync(cycleDir, { recursive: true });
+  writeFileSync(join(cycleDir, 'plan.json'), JSON.stringify(data));
+}
+
+// ---------------------------------------------------------------------------
+// isCoderClassItem unit tests
+// ---------------------------------------------------------------------------
+
+describe('isCoderClassItem', () => {
+  it('returns true for assignee containing "coder"', () => {
+    expect(isCoderClassItem({ assignee: 'coder', tags: [] })).toBe(true);
+  });
+
+  it('returns true for assignee "react-component-engineer"', () => {
+    expect(isCoderClassItem({ assignee: 'react-component-engineer', tags: [] })).toBe(true);
+  });
+
+  it('returns true for assignee "svelte-runes-engineer"', () => {
+    expect(isCoderClassItem({ assignee: 'svelte-runes-engineer', tags: [] })).toBe(true);
+  });
+
+  it('returns true for assignee "fastify-route-engineer"', () => {
+    expect(isCoderClassItem({ assignee: 'fastify-route-engineer', tags: [] })).toBe(true);
+  });
+
+  it('returns true when tags contain "coder"', () => {
+    expect(isCoderClassItem({ assignee: 'unknown-agent', tags: ['coder', 'typescript'] })).toBe(true);
+  });
+
+  it('returns true when tags contain "frontend"', () => {
+    expect(isCoderClassItem({ assignee: 'generic', tags: ['frontend', 'svelte'] })).toBe(true);
+  });
+
+  it('returns false for auditor-class agent', () => {
+    expect(isCoderClassItem({ assignee: 'auditor', tags: ['audit', 'analysis'] })).toBe(false);
+  });
+
+  it('returns false for scorer agent', () => {
+    expect(isCoderClassItem({ assignee: 'scorer', tags: ['scoring', 'qa'] })).toBe(false);
+  });
+
+  it('returns false for ceo/gate agent', () => {
+    expect(isCoderClassItem({ assignee: 'ceo', tags: ['gate', 'verdict'] })).toBe(false);
+  });
+
+  it('CODER_CLASS_PATTERNS exports are non-empty', () => {
+    expect(CODER_CLASS_PATTERNS.length).toBeGreaterThan(0);
+    expect(CODER_CLASS_PATTERNS).toContain('coder');
+    expect(CODER_CLASS_PATTERNS).toContain('engineer');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Worktree pool integration — 3 coder-class items → 3 alloc + 3 release
+// ---------------------------------------------------------------------------
+
+describe('execute-phase worktree integration', () => {
+  it('allocates and releases a worktree for each coder-class item in a 3-item plan', async () => {
+    writeSprintFile([
+      { id: 'item-1', title: 'Add feature A', assignee: 'coder', tags: ['coder'] },
+      { id: 'item-2', title: 'Add feature B', assignee: 'frontend-dev', tags: ['frontend'] },
+      { id: 'item-3', title: 'Add feature C', assignee: 'react-engineer', tags: ['react'] },
+    ]);
+
+    const pool = makeSpyPool();
+    const bus = makeBus();
+    const ctx = makeCtx(bus, { worktreePool: pool });
+
+    await runExecutePhase(ctx, { maxParallelism: 1, maxItemRetries: 0 });
+
+    // Each of the 3 coder-class items should have triggered one allocate + one release
+    expect(pool.allocate).toHaveBeenCalledTimes(3);
+    expect(pool.release).toHaveBeenCalledTimes(3);
+  });
+
+  it('passes cwd = worktree path to runtime.run for coder-class items', async () => {
+    const worktreePath = join(tmpRoot, 'wt-isolated');
+    writeSprintFile([
+      { id: 'item-1', title: 'Implement X', assignee: 'coder', tags: ['coder'] },
+    ]);
+
+    const pool = makeSpyPool(worktreePath);
+    const bus = makeBus();
+    const runtime = { run: vi.fn().mockResolvedValue({ output: 'ok', costUsd: 0.01 }) };
+    const ctx = makeCtx(bus, { worktreePool: pool, runtime });
+
+    await runExecutePhase(ctx, { maxParallelism: 1, maxItemRetries: 0 });
+
+    expect(runtime.run).toHaveBeenCalledTimes(1);
+    const callArgs = runtime.run.mock.calls[0];
+    // Third argument is the options object — must contain cwd: worktreePath
+    expect(callArgs![2]).toMatchObject({ cwd: worktreePath });
+  });
+
+  it('does NOT allocate a worktree for non-coder-class items (scorer, auditor)', async () => {
+    writeSprintFile([
+      { id: 'item-1', title: 'Score sprint', assignee: 'scorer', tags: ['scoring'] },
+      { id: 'item-2', title: 'Audit code', assignee: 'auditor', tags: ['audit'] },
+    ]);
+
+    const pool = makeSpyPool();
+    const bus = makeBus();
+    const ctx = makeCtx(bus, { worktreePool: pool });
+
+    await runExecutePhase(ctx, { maxParallelism: 1, maxItemRetries: 0 });
+
+    // Neither scorer nor auditor is coder-class → zero allocations
+    expect(pool.allocate).not.toHaveBeenCalled();
+    expect(pool.release).not.toHaveBeenCalled();
+  });
+
+  it('does NOT call pool when no worktreePool is provided (legacy path)', async () => {
+    writeSprintFile([
+      { id: 'item-1', title: 'Add feature', assignee: 'coder', tags: ['coder'] },
+      { id: 'item-2', title: 'Fix bug', assignee: 'backend-dev', tags: ['backend'] },
+      { id: 'item-3', title: 'Write tests', assignee: 'vitest-author', tags: ['vitest'] },
+    ]);
+
+    const pool = makeSpyPool();
+    const bus = makeBus();
+    // No worktreePool in context
+    const ctx = makeCtx(bus);
+
+    await runExecutePhase(ctx, { maxParallelism: 1, maxItemRetries: 0 });
+
+    expect(pool.allocate).not.toHaveBeenCalled();
+    expect(pool.release).not.toHaveBeenCalled();
+  });
+
+  it('does NOT allocate when disableWorktrees: true even if pool is provided', async () => {
+    writeSprintFile([
+      { id: 'item-1', title: 'Add feature', assignee: 'coder', tags: ['coder'] },
+      { id: 'item-2', title: 'Fix bug', assignee: 'react-engineer', tags: ['react'] },
+    ]);
+
+    const pool = makeSpyPool();
+    const bus = makeBus();
+    const ctx = makeCtx(bus, { worktreePool: pool });
+
+    await runExecutePhase(ctx, { maxParallelism: 1, maxItemRetries: 0, disableWorktrees: true });
+
+    expect(pool.allocate).not.toHaveBeenCalled();
+    expect(pool.release).not.toHaveBeenCalled();
+  });
+
+  it('releases the worktree even when the agent throws (try/finally semantics)', async () => {
+    writeSprintFile([
+      { id: 'item-1', title: 'Failing task', assignee: 'coder', tags: ['coder'] },
+    ]);
+
+    const pool = makeSpyPool();
+    const bus = makeBus();
+    const runtime = {
+      run: vi.fn().mockRejectedValue(new Error('agent catastrophic failure')),
+    };
+    const ctx = makeCtx(bus, { worktreePool: pool, runtime });
+
+    // maxItemRetries: 0 so the item fails on the first attempt
+    const result = await runExecutePhase(ctx, { maxParallelism: 1, maxItemRetries: 0 });
+
+    // The phase should not throw — it tolerates individual item failures.
+    // With 1 item and it failing, failure rate = 1.0 (all items failed) → 'blocked'.
+    expect(result.status).toBe('blocked');
+    // Regardless of outcome, release must have been called
+    expect(pool.release).toHaveBeenCalledTimes(1);
+    expect(pool.allocate).toHaveBeenCalledTimes(1);
+  });
+
+  it('emits execute.worktree.allocated bus event for each coder-class item', async () => {
+    writeSprintFile([
+      { id: 'item-1', title: 'Task A', assignee: 'coder', tags: ['coder'] },
+      { id: 'item-2', title: 'Task B', assignee: 'svelte-engineer', tags: ['svelte'] },
+    ]);
+
+    const pool = makeSpyPool('/fake/worktree');
+    const bus = makeBus();
+    const ctx = makeCtx(bus, { worktreePool: pool });
+
+    await runExecutePhase(ctx, { maxParallelism: 1, maxItemRetries: 0 });
+
+    const allocEvents = bus.events.filter((e) => e.topic === 'execute.worktree.allocated');
+    expect(allocEvents).toHaveLength(2);
+    const payload = allocEvents[0]!.payload as any;
+    expect(payload.itemId).toBe('item-1');
+    expect(payload.worktreePath).toBe('/fake/worktree');
+    expect(typeof payload.worktreeId).toBe('string');
+  });
+
+  it('emits execute.worktree.released bus event for each allocated worktree', async () => {
+    writeSprintFile([
+      { id: 'item-1', title: 'Task A', assignee: 'coder', tags: ['coder'] },
+    ]);
+
+    const pool = makeSpyPool('/fake/worktree');
+    const bus = makeBus();
+    const ctx = makeCtx(bus, { worktreePool: pool });
+
+    await runExecutePhase(ctx, { maxParallelism: 1, maxItemRetries: 0 });
+
+    const releaseEvents = bus.events.filter((e) => e.topic === 'execute.worktree.released');
+    expect(releaseEvents).toHaveLength(1);
+    const payload = releaseEvents[0]!.payload as any;
+    expect(payload.itemId).toBe('item-1');
+    expect(typeof payload.worktreeId).toBe('string');
+  });
+
+  it('emits execute.worktree.alloc-failed and falls back to main tree on allocation error', async () => {
+    writeSprintFile([
+      { id: 'item-1', title: 'Task A', assignee: 'coder', tags: ['coder'] },
+    ]);
+
+    // Pool that always throws on allocate
+    const failingPool: WorktreePoolLike = {
+      allocate: vi.fn().mockRejectedValue(new Error('git worktree add failed: disk full')),
+      release: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const bus = makeBus();
+    const runtime = { run: vi.fn().mockResolvedValue({ output: 'ok', costUsd: 0.01 }) };
+    const ctx = makeCtx(bus, { worktreePool: failingPool, runtime });
+
+    await runExecutePhase(ctx, { maxParallelism: 1, maxItemRetries: 0 });
+
+    // alloc-failed event should fire
+    const failedEvents = bus.events.filter((e) => e.topic === 'execute.worktree.alloc-failed');
+    expect(failedEvents).toHaveLength(1);
+    expect((failedEvents[0]!.payload as any).error).toContain('disk full');
+
+    // Agent should still have run (fallback to main tree — no cwd set)
+    expect(runtime.run).toHaveBeenCalledTimes(1);
+    const callArgs = runtime.run.mock.calls[0]!;
+    // cwd must NOT be set when allocation failed
+    expect((callArgs[2] as any).cwd).toBeUndefined();
+
+    // release should NOT have been called (no handle to release)
+    expect((failingPool.release as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+  });
+
+  it('surfaces worktreePath in the completed item result', async () => {
+    const worktreePath = join(tmpRoot, 'wt-surface-test');
+    writeSprintFile([
+      { id: 'item-1', title: 'Task A', assignee: 'coder', tags: ['coder'] },
+    ]);
+
+    const pool = makeSpyPool(worktreePath);
+    const bus = makeBus();
+    const ctx = makeCtx(bus, { worktreePool: pool });
+
+    const result = await runExecutePhase(ctx, { maxParallelism: 1, maxItemRetries: 0 });
+
+    const itemResult = (result.itemResults as any[])?.[0];
+    expect(itemResult).toBeDefined();
+    expect(itemResult.worktreePath).toBe(worktreePath);
+    expect(typeof itemResult.worktreeBranch).toBe('string');
+  });
+
+  it('allocates ONCE per item (not per retry) on multiple retries', async () => {
+    writeSprintFile([
+      { id: 'item-1', title: 'Flaky task', assignee: 'coder', tags: ['coder'] },
+    ]);
+
+    const pool = makeSpyPool('/fake/worktree');
+    const bus = makeBus();
+
+    let callCount = 0;
+    const runtime = {
+      run: vi.fn().mockImplementation(async () => {
+        callCount++;
+        if (callCount < 3) throw new Error('transient failure');
+        return { output: 'ok', costUsd: 0.01 };
+      }),
+    };
+
+    const ctx = makeCtx(bus, { worktreePool: pool, runtime });
+
+    // maxItemRetries: 2 → up to 3 attempts for item-1
+    await runExecutePhase(ctx, { maxParallelism: 1, maxItemRetries: 2 });
+
+    // runtime.run called 3 times (2 failures + 1 success)
+    expect(runtime.run).toHaveBeenCalledTimes(3);
+    // But pool.allocate should only have been called ONCE (allocated before retry loop)
+    expect(pool.allocate).toHaveBeenCalledTimes(1);
+    // And released exactly once
+    expect(pool.release).toHaveBeenCalledTimes(1);
+  });
+
+  it('allocates only for coder items in a mixed coder + non-coder plan', async () => {
+    writeSprintFile([
+      { id: 'item-1', title: 'Code feature', assignee: 'coder', tags: ['coder'] },
+      { id: 'item-2', title: 'Score items', assignee: 'scorer', tags: ['scoring'] },
+      { id: 'item-3', title: 'Frontend work', assignee: 'frontend-dev', tags: ['frontend'] },
+      { id: 'item-4', title: 'Audit run', assignee: 'auditor', tags: ['audit'] },
+    ]);
+
+    const pool = makeSpyPool();
+    const bus = makeBus();
+    const ctx = makeCtx(bus, { worktreePool: pool });
+
+    await runExecutePhase(ctx, { maxParallelism: 1, maxItemRetries: 0 });
+
+    // item-1 (coder) + item-3 (frontend-dev) are coder-class; item-2 and item-4 are not
+    expect(pool.allocate).toHaveBeenCalledTimes(2);
+    expect(pool.release).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not set cwd when item is non-coder-class even with pool in context', async () => {
+    writeSprintFile([
+      { id: 'item-1', title: 'Run scoring', assignee: 'scorer', tags: ['scoring'] },
+    ]);
+
+    const pool = makeSpyPool('/fake/worktree');
+    const bus = makeBus();
+    const runtime = { run: vi.fn().mockResolvedValue({ output: 'ok', costUsd: 0.01 }) };
+    const ctx = makeCtx(bus, { worktreePool: pool, runtime });
+
+    await runExecutePhase(ctx, { maxParallelism: 1, maxItemRetries: 0 });
+
+    expect(runtime.run).toHaveBeenCalledTimes(1);
+    const callArgs = runtime.run.mock.calls[0]!;
+    // No cwd override for non-coder items
+    expect((callArgs[2] as any).cwd).toBeUndefined();
+    expect(pool.allocate).not.toHaveBeenCalled();
+  });
+});
