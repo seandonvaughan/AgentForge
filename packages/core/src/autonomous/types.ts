@@ -127,6 +127,13 @@ export interface CycleConfig {
    * Set to false to pin agents strictly to their assigned model tier.
    */
   fallbackEnabled?: boolean;
+  /**
+   * When true (default), automatically run the learning-curator + mutator
+   * after gate approval so all agents that participated in this cycle absorb
+   * the new lessons. Set to false to skip for smoke runs, tests, or when
+   * Workstreams P+Q are not yet available.
+   */
+  autoReforge?: boolean;
 }
 
 export interface FailedTest {

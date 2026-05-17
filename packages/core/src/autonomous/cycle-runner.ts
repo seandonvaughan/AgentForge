@@ -61,6 +61,7 @@ import { renderPrBody } from './pr-body-renderer.js';
 import type { RealTestRunner } from './exec/real-test-runner.js';
 import type { GitOps } from './exec/git-ops.js';
 import type { PROpener } from './exec/pr-opener.js';
+import { runAutoReforge, extractInvolvedAgentIds } from './auto-reforge.js';
 
 /**
  * Build a PR title that's safe for `gh pr create` and never truncated mid-word.
@@ -435,6 +436,16 @@ export class CycleRunner {
     this.checkKillSwitch();
 
     // ─────────────────────────────────────────────────────────────────
+    // STAGE 3.25 — AUTO-REFORGE
+    // After gate approval, run the learning-curator + mutator so agents
+    // absorb the lessons from this cycle before it is marked COMPLETED.
+    // Errors are swallowed — a reforge failure must never kill a passed
+    // cycle. Honoured by config.autoReforge (default true).
+    // ─────────────────────────────────────────────────────────────────
+    await this.runAutoReforgeStep();
+    this.checkKillSwitch();
+
+    // ─────────────────────────────────────────────────────────────────
     // STAGE 3.5 — TYPECHECK (fail-fast pre-verify)
     // Run pnpm build + tsc --noEmit before the full test suite. TypeScript
     // compilation errors introduced during execute are caught here rather
@@ -684,6 +695,55 @@ export class CycleRunner {
       ...(result.typeCheckError !== undefined ? { error: result.typeCheckError } : {}),
     });
     if (typeCheckTrip) throw new CycleKilledError(typeCheckTrip);
+  }
+
+  /**
+   * Run the auto-reforge step (STAGE 3.25). Extracts the unique agent IDs
+   * that ran in this cycle from phases/execute.json, then calls
+   * runAutoReforge so those agents absorb the cycle's learnings.
+   *
+   * Honoured by `config.autoReforge` (default true when the field is absent).
+   * Any error is caught and logged — a reforge failure MUST NOT kill a cycle
+   * that has already passed the gate.
+   */
+  private async runAutoReforgeStep(): Promise<void> {
+    // Default true: existing configs without the field still trigger reforge.
+    const shouldReforge = this.options.config.autoReforge !== false;
+    if (!shouldReforge) {
+      // eslint-disable-next-line no-console
+      console.log('[autonomous:cycle] stage 3.25: auto-reforge skipped (autoReforge=false)');
+      return;
+    }
+
+    // eslint-disable-next-line no-console
+    console.log('[autonomous:cycle] stage 3.25: running auto-reforge');
+    try {
+      const involvedAgentIds = extractInvolvedAgentIds(this.options.cwd, this.cycleId);
+      const result = await runAutoReforge({
+        projectRoot: this.options.cwd,
+        cycleId: this.cycleId,
+        involvedAgentIds,
+        bus: this.options.bus,
+      });
+      if (result.skipped) {
+        // eslint-disable-next-line no-console
+        console.log('[autonomous:cycle] stage 3.25: auto-reforge skipped (no proposed learnings)');
+      } else {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[autonomous:cycle] stage 3.25: auto-reforge complete in ${result.durationMs}ms` +
+          ` (applied=${result.mutatorReport?.totalApplied ?? 0})`,
+        );
+      }
+    } catch (err) {
+      // Swallow — reforge errors must never fail the cycle.
+      // eslint-disable-next-line no-console
+      console.error(
+        `[autonomous:cycle] stage 3.25: auto-reforge error (non-fatal): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   /**
