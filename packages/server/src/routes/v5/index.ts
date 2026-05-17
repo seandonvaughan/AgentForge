@@ -32,6 +32,7 @@ import { agentVersioningRoutes } from './agent-versioning.js';
 import { federationRoutes } from './federation.js';
 import { registerHealthServicesRoutes } from './health-services.js';
 import { registerHealthDependenciesRoutes } from './health-dependencies.js';
+import { registerFlywheelContinuousImprovementRoutes } from './flywheel-continuous-improvement.js';
 // sprintOrchestrationRoutes removed — mutation routes for the old manual
 // workflow were deleted as part of the sprint→cycle plan.json migration.
 import { settingsRoutes } from './settings.js';
@@ -401,6 +402,12 @@ export async function registerV5Routes(
 
   // ── External dependency health checks ──────────────────────────────────
   registerHealthDependenciesRoutes(app);
+
+  // ── Flywheel: continuous-improvement per-cycle preventability metrics ──
+  registerFlywheelContinuousImprovementRoutes(
+    app,
+    opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot as string } : {},
+  );
 
   // Sprint Orchestration routes removed — see above comment.
 

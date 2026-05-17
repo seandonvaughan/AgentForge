@@ -12,7 +12,7 @@
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && cp src/autonomous/self-eval/prompt-fragment.md dist/autonomous/self-eval/prompt-fragment.md",
     "dev": "tsc --watch",
     "clean": "rm -rf dist"
   },

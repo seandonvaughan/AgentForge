@@ -37,6 +37,7 @@ import { searchRoutes } from './routes/v5/search.js';
 import { knowledgeRoutes } from './routes/v5/knowledge.js';
 import { auditRoutes } from './routes/v5/audit.js';
 import { billingRoutes } from './routes/v5/billing.js';
+import { registerFlywheelContinuousImprovementRoutes } from './routes/v5/flywheel-continuous-improvement.js';
 import { sendContainedStaticFile } from './lib/static-files.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -234,6 +235,13 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
 
   // ── Dashboard stubs (flywheel, memory, settings — file-based, no adapter) ──
   await dashboardStubRoutes(app, { projectRoot });
+
+  // ── Flywheel: continuous-improvement per-cycle preventability metrics ──
+  // Reads .agentforge/flywheel/continuous-improvement-*.json — no adapter required.
+  // Guard: registerV5Routes already registers this in adapter mode.
+  if (!options.adapter || !options.registry) {
+    registerFlywheelContinuousImprovementRoutes(app, { projectRoot });
+  }
 
   // ── Execution API (reads .agentforge/agents/*.yaml — optional adapter for persistence) ──
   // v9.0.0: registerV5Routes also calls runRoutes in adapter mode. Guard to
