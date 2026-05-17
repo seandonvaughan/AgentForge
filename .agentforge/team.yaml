@@ -1,194 +1,107 @@
-name: AgentForge-team
-forged_at: '2026-05-16T01:16:26.551Z'
-forged_by: agentforge
-project_hash: 3aa6f1c21f86
+name: agentforge-team
+forged_at: '2026-05-17T20:11:22.490Z'
+forged_by: agentforge-synthesis
+project_hash: 4de17a412cf7
 agents:
   strategic:
-    - ceo
-    - genesis
-    - architect
-    - vp-research
-    - vp-engineering
+    - chief-architect
+    - forge-engine-architect
+    - autonomy-strategist
   implementation:
-    - cto
-    - coo
-    - cfo
-    - meta-architect
-    - project-manager
-    - skill-designer
-    - template-optimizer
-    - coder
-    - research-scientist
-    - engineering-manager-frontend
-    - engineering-manager-backend
-    - engineering-manager-infra
-    - api-gateway-engineer
-    - ui-engineer
-    - data-analyst
-    - devops-engineer
-    - frontend-dev
-    - dashboard-architect
-    - performance-engineer
-    - build-release-lead
-    - business-analyst
-    - operations-manager
-    - documentation-writer
+    - fastify-v5-engineer
+    - fastify-v6-shim-engineer
+    - db-workspace-engineer
+    - embeddings-engineer
+    - plugin-sdk-engineer
+    - executor-runtime-engineer
+    - cli-engineer
+    - scanner-engineer
+    - reforge-genesis-engineer
+    - svelte-cycles-engineer
+    - svelte-agents-engineer
+    - svelte-runner-engineer
+    - svelte-component-atoms-engineer
+    - shared-utils-engineer
   quality:
-    - team-reviewer
-    - dba
-    - debugger
-    - linter
-    - api-specialist
-    - db-specialist
-    - ml-engineer
-    - qa-manager
-    - observability-engineer
-    - test-runner
-    - code-explorer
-    - code-reviewer
+    - auth-security-engineer
+    - test-engineer
+    - ci-build-engineer
   utility:
-    - researcher
-    - experiment-runner
-    - feedback-analyst
+    - yaml-doctor
+    - memory-curator
     - file-reader
+    - pr-merge-manager
 model_routing:
   opus:
-    - ceo
-    - genesis
-    - architect
-    - cto
-    - meta-architect
-    - vp-research
-    - vp-engineering
+    - chief-architect
+    - forge-engine-architect
+    - autonomy-strategist
   sonnet:
-    - coo
-    - cfo
-    - project-manager
-    - skill-designer
-    - template-optimizer
-    - coder
-    - team-reviewer
-    - dba
-    - debugger
-    - api-specialist
-    - db-specialist
-    - ml-engineer
-    - research-scientist
-    - engineering-manager-frontend
-    - engineering-manager-backend
-    - engineering-manager-infra
-    - qa-manager
-    - api-gateway-engineer
-    - ui-engineer
-    - data-analyst
-    - observability-engineer
-    - devops-engineer
-    - frontend-dev
-    - dashboard-architect
-    - performance-engineer
-    - build-release-lead
-    - business-analyst
-    - operations-manager
-    - test-runner
-    - code-explorer
-    - code-reviewer
+    - fastify-v5-engineer
+    - fastify-v6-shim-engineer
+    - db-workspace-engineer
+    - embeddings-engineer
+    - plugin-sdk-engineer
+    - executor-runtime-engineer
+    - cli-engineer
+    - auth-security-engineer
+    - scanner-engineer
+    - reforge-genesis-engineer
+    - svelte-cycles-engineer
+    - svelte-agents-engineer
+    - svelte-runner-engineer
+    - test-engineer
+    - ci-build-engineer
+    - pr-merge-manager
   haiku:
-    - linter
-    - researcher
-    - experiment-runner
-    - feedback-analyst
+    - svelte-component-atoms-engineer
+    - shared-utils-engineer
+    - yaml-doctor
+    - memory-curator
     - file-reader
-    - documentation-writer
 delegation_graph:
-  ceo:
-    - cto
-    - coo
-    - cfo
-  cto:
-    - architect
-  coo:
-    - business-analyst
-    - operations-manager
-  genesis:
-    - project-manager
-    - researcher
-    - meta-architect
-  meta-architect:
-    - researcher
-    - file-reader
-  project-manager:
-    - researcher
-    - file-reader
-  skill-designer:
-    - researcher
-    - file-reader
-  team-reviewer:
-    - file-reader
-  template-optimizer:
-    - researcher
-    - file-reader
-  architect:
-    - coder
-    - researcher
-  coder:
-    - researcher
-    - linter
-    - file-reader
-  debugger:
-    - file-reader
-    - researcher
-    - test-runner
-    - code-explorer
-  api-specialist:
-    - researcher
-    - linter
-    - file-reader
-  db-specialist:
-    - researcher
-    - linter
-    - file-reader
-  ml-engineer:
-    - researcher
-    - linter
-    - file-reader
-  vp-research:
-    - ml-engineer
-    - research-scientist
-    - experiment-runner
-  vp-engineering:
-    - engineering-manager-frontend
-    - engineering-manager-backend
-    - engineering-manager-infra
-  engineering-manager-frontend:
-    - frontend-dev
-    - dashboard-architect
-    - ui-engineer
-  engineering-manager-backend:
-    - coder
-    - api-specialist
-    - dba
-    - api-gateway-engineer
-  engineering-manager-infra:
-    - devops-engineer
-    - performance-engineer
-    - build-release-lead
-    - observability-engineer
-  cfo:
-    - business-analyst
-    - data-analyst
-  qa-manager:
-    - team-reviewer
-    - debugger
-    - linter
-    - test-runner
-    - code-reviewer
-  api-gateway-engineer:
-    - coder
-    - api-specialist
-  ui-engineer:
-    - frontend-dev
-  data-analyst:
-    - researcher
-  code-reviewer:
-    - code-explorer
-    - file-reader
+  chief-architect:
+    - fastify-v5-engineer
+    - fastify-v6-shim-engineer
+    - db-workspace-engineer
+    - embeddings-engineer
+    - plugin-sdk-engineer
+    - executor-runtime-engineer
+    - cli-engineer
+    - scanner-engineer
+    - reforge-genesis-engineer
+    - svelte-cycles-engineer
+    - svelte-agents-engineer
+    - svelte-runner-engineer
+    - svelte-component-atoms-engineer
+    - shared-utils-engineer
+  forge-engine-architect:
+    - fastify-v5-engineer
+    - fastify-v6-shim-engineer
+    - db-workspace-engineer
+    - embeddings-engineer
+    - plugin-sdk-engineer
+    - executor-runtime-engineer
+    - cli-engineer
+    - scanner-engineer
+    - reforge-genesis-engineer
+    - svelte-cycles-engineer
+    - svelte-agents-engineer
+    - svelte-runner-engineer
+    - svelte-component-atoms-engineer
+    - shared-utils-engineer
+  autonomy-strategist:
+    - fastify-v5-engineer
+    - fastify-v6-shim-engineer
+    - db-workspace-engineer
+    - embeddings-engineer
+    - plugin-sdk-engineer
+    - executor-runtime-engineer
+    - cli-engineer
+    - scanner-engineer
+    - reforge-genesis-engineer
+    - svelte-cycles-engineer
+    - svelte-agents-engineer
+    - svelte-runner-engineer
+    - svelte-component-atoms-engineer
+    - shared-utils-engineer

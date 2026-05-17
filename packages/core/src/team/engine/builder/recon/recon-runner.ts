@@ -149,10 +149,30 @@ export async function runReconAgent(opts: RunReconAgentOpts): Promise<unknown> {
 
   const rawResponse = result.response;
 
-  // 2. Extract JSON from response
+  // Persist raw output FIRST so a downstream validation/parse failure
+  // still leaves a forensics trail at `.agentforge/forge/recon/<agentId>.json`.
+  const reconDir = join(projectRoot, ".agentforge", "forge", "recon");
+  await mkdir(reconDir, { recursive: true });
+  await writeFile(
+    join(reconDir, `${agentId}.json`),
+    JSON.stringify(
+      {
+        raw: rawResponse,
+        parsed: null,
+        schema_version: 1,
+        generated_at: new Date().toISOString(),
+        status: "raw-only",
+      },
+      null,
+      2,
+    ),
+    "utf-8",
+  );
+
+  // Extract JSON from response
   const extracted = extractJson(rawResponse);
 
-  // 3. Validate against the Zod schema
+  // Validate against the Zod schema
   const schema = SCHEMA_MAP[agentId];
   const parseResult = schema.safeParse(extracted);
 
@@ -162,15 +182,13 @@ export async function runReconAgent(opts: RunReconAgentOpts): Promise<unknown> {
 
   const parsed = parseResult.data;
 
-  // 4. Persist to .agentforge/forge/recon/<agentId>.json
-  const reconDir = join(projectRoot, ".agentforge", "forge", "recon");
-  await mkdir(reconDir, { recursive: true });
-
+  // Re-persist with parsed + validated data
   const payload = {
     raw: rawResponse,
     parsed,
     schema_version: 1,
     generated_at: new Date().toISOString(),
+    status: "validated",
   };
 
   await writeFile(

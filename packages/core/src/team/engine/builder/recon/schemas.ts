@@ -19,7 +19,7 @@ export const SubsystemsReportSchema = z.object({
       path: z.string().min(1),
       description: z.string().min(1),
       public_surface: z.array(z.string()),
-      owner_hint: z.string().optional(),
+      owner_hint: z.string().nullish(),
     }),
   ),
 });
@@ -64,14 +64,17 @@ export type DependenciesReport = z.infer<typeof DependenciesReportSchema>;
 // ---------------------------------------------------------------------------
 
 export const ConventionsReportSchema = z.object({
-  formatter: z.string().optional(),
-  linter: z.string().optional(),
+  formatter: z.string().nullish(),
+  linter: z.string().nullish(),
   linter_rules: z.array(z.string()),
-  test_runner: z.string().optional(),
+  test_runner: z.string().nullish(),
   test_pattern: z.array(z.string()),
-  file_layout: z.array(z.string()),
+  // file_layout may be either a list of patterns ("kebab-case", "PascalCase")
+  // OR an object describing per-tier layout. Accept both — the synthesizer
+  // only needs a stringy representation downstream.
+  file_layout: z.union([z.array(z.string()), z.record(z.string(), z.unknown())]),
   import_style: z.string().min(1),
-  error_handling_pattern: z.string().optional(),
+  error_handling_pattern: z.string().nullish(),
 });
 
 export type ConventionsReport = z.infer<typeof ConventionsReportSchema>;

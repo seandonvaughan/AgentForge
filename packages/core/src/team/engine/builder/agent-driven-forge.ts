@@ -209,6 +209,12 @@ async function loadReconPrompt(agentId: ReconAgentId): Promise<string> {
   const { fileURLToPath } = await import("node:url");
   const { dirname } = await import("node:path");
   const selfDir = dirname(fileURLToPath(import.meta.url));
-  const promptPath = join(selfDir, "recon", "prompts", `${agentId}.md`);
-  return readFile(promptPath, "utf-8");
+  const distPath = join(selfDir, "recon", "prompts", `${agentId}.md`);
+  try {
+    return await readFile(distPath, "utf-8");
+  } catch {
+    // tsc doesn't copy .md files to dist/; fall back to src/
+    const srcPath = distPath.replace(`${"/dist/"}`, "/src/");
+    return readFile(srcPath, "utf-8");
+  }
 }

@@ -49,8 +49,12 @@ export const BASELINE_PR_MERGE_MANAGER: TeamPlanAgent = {
 - Never merge a branch with a failing CI run unless explicitly instructed by the project lead.
 - Always leave a comment on the PR explaining what you did (rebase, squash, conflict resolution notes).
 - When opening a follow-up conflict-resolution ticket, include the full git conflict markers and the names of the files affected.`,
+  // Only the CI workflow is universally present in projects using GitHub
+  // Actions; the PR template is optional and would fail validation in
+  // projects that haven't added one. The merge manager's system prompt
+  // mentions both, but auto_include only lists files that almost-always
+  // exist when this baseline is injected.
   auto_include_files: [
-    ".github/PULL_REQUEST_TEMPLATE.md",
     ".github/workflows/ci.yml",
   ],
   learnings_seed: [],

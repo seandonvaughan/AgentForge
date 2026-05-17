@@ -417,12 +417,13 @@ describe('_loadAgents — real project data', () => {
       expect(['opus', 'sonnet', 'haiku']).toContain(agent.model);
     }
 
-    // Lead Architect must be present with correct model tier and team
-    const leadArchitect = result.find(a => a.agentId === 'lead-architect');
-    expect(leadArchitect).toBeDefined();
-    expect(leadArchitect!.name).toBe('Lead Architect');
-    expect(leadArchitect!.model).toBe('opus');
-    expect(leadArchitect!.team).toBe('strategic');
+    // At least one strategic opus agent must be present (the architect/CTO
+    // role). The exact agent id varies by forged team — v4.6 used
+    // 'lead-architect', the v22+ Opus-driven forge typically emits
+    // 'chief-architect' or similar — so we check structurally.
+    const strategicOpus = result.find(a => a.team === 'strategic' && a.model === 'opus');
+    expect(strategicOpus, 'expected at least one strategic+opus agent').toBeDefined();
+    expect(strategicOpus!.name.length).toBeGreaterThan(0);
 
     // At least some agents must have non-null team fields (60+ YAML files have team:)
     const agentsWithTeam = result.filter(a => a.team !== null);

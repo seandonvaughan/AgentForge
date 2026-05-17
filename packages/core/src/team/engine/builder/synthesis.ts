@@ -12,7 +12,7 @@
  *   .agentforge/forge/team-plan.json   — raw synthesis output for audit
  */
 
-import { readFile, writeFile, mkdir, rename } from "node:fs/promises";
+import { readFile, writeFile, mkdir, rename, readdir, unlink } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
@@ -125,11 +125,26 @@ const PR_MERGE_MANAGER_ID = "pr-merge-manager";
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-/** Load the synthesis system prompt from the sibling .md file. */
+/**
+ * Load the synthesis system prompt from the sibling .md file.
+ *
+ * Resilient to running from `dist/` (where tsc doesn't copy .md files) by
+ * falling back to the corresponding `src/` path. This lets the agent-driven
+ * forge work even when consumers haven't wired a build step to copy assets.
+ */
 async function loadSynthesisPrompt(): Promise<string> {
   const selfDir = dirname(fileURLToPath(import.meta.url));
-  const promptPath = join(selfDir, "synthesis-prompt.md");
-  return readFile(promptPath, "utf-8");
+  const distPath = join(selfDir, "synthesis-prompt.md");
+  try {
+    return await readFile(distPath, "utf-8");
+  } catch {
+    // Fall back to the src/ tree if we're running from dist/
+    const srcPath = distPath.replace(
+      `${"/dist/"}`,
+      "/src/",
+    );
+    return readFile(srcPath, "utf-8");
+  }
 }
 
 /** Build the user message from recon results and source corpus. */
@@ -232,11 +247,26 @@ async function writeAtomic(
   await rename(tmpPath, filePath);
 }
 
+/** Map an agent tier to its default reasoning-effort level. */
+function defaultEffortFor(tier: "opus" | "sonnet" | "haiku"): string {
+  // Opus runs at the highest effort by default (deep architecture / strategy
+  // work). Sonnet defaults to high (most engineers). Haiku stays at medium —
+  // it's used for utility/filter agents where xhigh is wasteful.
+  if (tier === "opus") return "xhigh";
+  if (tier === "sonnet") return "high";
+  return "medium";
+}
+
 /** Build the AgentTemplate-compatible YAML object for an agent. */
 function buildAgentYaml(agent: TeamPlanAgent): Record<string, unknown> {
   return {
     name: agent.id,
     model: agent.tier,
+    // Surface the category as a top-level field so dashboard loaders and
+    // legacy consumers that read each YAML in isolation can determine which
+    // team bucket the agent belongs to without cross-referencing team.yaml.
+    team: agent.category,
+    effort: defaultEffortFor(agent.tier),
     version: "1.0",
     description: agent.capability_tags.slice(0, 5).join(", "),
     system_prompt: agent.system_prompt,
@@ -387,6 +417,38 @@ export async function synthesizeTeam(
  * Write all output files for a synthesized team plan.
  * Extracted as a separate function so tests can verify file structure.
  */
+/**
+ * Delete every .yaml file under agentsDir and every .md file under
+ * claudeAgentsDir. Used at the start of every forge run so stale generalist
+ * agents from prior runs don't dilute the new specialist team.
+ *
+ * Scoped strictly to leaf files in the two named directories — never
+ * recursive, never touches subdirectories.
+ */
+async function clearStaleAgentFiles(
+  agentsDir: string,
+  claudeAgentsDir: string,
+): Promise<void> {
+  await Promise.all([
+    clearLeafFiles(agentsDir, [".yaml", ".yml"]),
+    clearLeafFiles(claudeAgentsDir, [".md"]),
+  ]);
+}
+
+async function clearLeafFiles(dir: string, exts: readonly string[]): Promise<void> {
+  let entries;
+  try {
+    entries = await readdir(dir);
+  } catch {
+    return;
+  }
+  await Promise.all(
+    entries
+      .filter((name) => exts.some((ext) => name.endsWith(ext)))
+      .map((name) => unlink(join(dir, name)).catch(() => undefined)),
+  );
+}
+
 async function emitFiles(plan: TeamPlan, projectRoot: string): Promise<void> {
   const agentforgeDir = join(projectRoot, ".agentforge");
   const agentsDir = join(agentforgeDir, "agents");
@@ -399,6 +461,12 @@ async function emitFiles(plan: TeamPlan, projectRoot: string): Promise<void> {
     ensureDir(claudeAgentsDir),
     ensureDir(forgeDir),
   ]);
+
+  // Clear stale agent YAMLs from any prior forge run. The new team plan is
+  // the source of truth; leaving old generalist YAMLs behind dilutes the
+  // capability-tag routing index and leaks broken prompts back into cycles.
+  // We only delete `.yaml`/`.md` files in the agents dirs — never recursive.
+  await clearStaleAgentFiles(agentsDir, claudeAgentsDir);
 
   // Build file contents
   const teamYamlContent = yaml.dump(buildTeamYaml(plan, projectRoot), {

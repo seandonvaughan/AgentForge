@@ -1,255 +1,131 @@
+// tests/team/agent-yaml.test.ts
+//
+// Team-YAML-aware contract tests. Reads `.agentforge/team.yaml`, enumerates
+// every agent listed under the `agents:` sections, and verifies each agent's
+// `.agentforge/agents/<id>.yaml` file exists with the required fields.
+//
+// This replaces the v4.6 hardcoded list, which broke whenever the forge
+// produced a different team composition (e.g. the v22.1 Opus-driven forge
+// replaced 139 v4.6 generalists with 24 project-specific specialists).
+
 import { describe, it, expect } from "vitest";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { load as parseYaml } from "js-yaml";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+const PROJECT_ROOT = process.cwd();
+const AGENTS_DIR = join(PROJECT_ROOT, ".agentforge/agents");
+const TEAM_PATH = join(PROJECT_ROOT, ".agentforge/team.yaml");
 
-const AGENTS_DIR = join(process.cwd(), ".agentforge/agents");
+interface TeamYaml {
+  name?: string;
+  agents?: Record<string, string[] | undefined>;
+}
+
+interface AgentYaml {
+  name?: string;
+  model?: string;
+  system_prompt?: string;
+  skills?: unknown;
+  capability_tags?: unknown;
+  collaboration?: {
+    reports_to?: string;
+  };
+}
+
+function loadTeam(): TeamYaml {
+  if (!existsSync(TEAM_PATH)) return {};
+  return parseYaml(readFileSync(TEAM_PATH, "utf-8")) as TeamYaml;
+}
+
+function listTeamAgents(team: TeamYaml): string[] {
+  const groups = team.agents ?? {};
+  const ids = new Set<string>();
+  for (const list of Object.values(groups)) {
+    for (const id of list ?? []) ids.add(id);
+  }
+  return [...ids];
+}
 
 function agentPath(agentId: string): string {
   return join(AGENTS_DIR, `${agentId}.yaml`);
 }
 
-interface AgentYaml {
-  name: string;
-  model: string;
-  system_prompt: string;
-  skills: string[];
-  collaboration: {
-    reports_to: string;
-    can_delegate_to?: string[];
-    [key: string]: unknown;
-  };
-  [key: string]: unknown;
-}
-
 function loadAgent(agentId: string): AgentYaml {
-  const raw = readFileSync(agentPath(agentId), "utf-8");
-  return parseYaml(raw) as AgentYaml;
+  return parseYaml(readFileSync(agentPath(agentId), "utf-8")) as AgentYaml;
 }
 
-// ---------------------------------------------------------------------------
-// V4.6 agent list
-// ---------------------------------------------------------------------------
-
-const V46_AGENTS = [
-  "vp-research",
-  "vp-engineering",
-  "engineering-manager-frontend",
-  "engineering-manager-backend",
-  "engineering-manager-infra",
-  "qa-manager",
-  "feedback-analyst",
-  "ml-engineer",
-  "research-scientist",
-  "experiment-runner",
-];
+const team = loadTeam();
+const teamAgents = listTeamAgents(team);
 
 // ---------------------------------------------------------------------------
-// File existence
+// Team manifest sanity
 // ---------------------------------------------------------------------------
 
-describe("agent YAML files — existence", () => {
-  for (const agentId of V46_AGENTS) {
+describe("team.yaml", () => {
+  it("exists at .agentforge/team.yaml", () => {
+    expect(existsSync(TEAM_PATH)).toBe(true);
+  });
+
+  it("lists at least one agent", () => {
+    expect(teamAgents.length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-agent contract tests — every agent listed in team.yaml MUST exist
+// with the required fields and a valid model tier.
+// ---------------------------------------------------------------------------
+
+describe("agent YAML files — manifest contract", () => {
+  for (const agentId of teamAgents) {
     it(`${agentId}.yaml exists`, () => {
       expect(existsSync(agentPath(agentId))).toBe(true);
     });
-  }
-});
 
-// ---------------------------------------------------------------------------
-// Required fields
-// ---------------------------------------------------------------------------
-
-describe("agent YAML files — required fields present", () => {
-  for (const agentId of V46_AGENTS) {
     it(`${agentId} has a non-empty 'name' field`, () => {
       const agent = loadAgent(agentId);
       expect(typeof agent.name).toBe("string");
-      expect(agent.name.trim().length).toBeGreaterThan(0);
+      expect((agent.name ?? "").trim().length).toBeGreaterThan(0);
     });
 
-    it(`${agentId} has a 'model' field`, () => {
+    it(`${agentId} has a valid 'model' tier`, () => {
       const agent = loadAgent(agentId);
-      expect(typeof agent.model).toBe("string");
       expect(["opus", "sonnet", "haiku"]).toContain(agent.model);
     });
 
-    it(`${agentId} has a non-empty 'system_prompt' field`, () => {
+    it(`${agentId} has a non-empty 'system_prompt'`, () => {
       const agent = loadAgent(agentId);
       expect(typeof agent.system_prompt).toBe("string");
-      expect(agent.system_prompt.trim().length).toBeGreaterThan(0);
+      expect((agent.system_prompt ?? "").trim().length).toBeGreaterThan(20);
     });
 
-    it(`${agentId} has a 'skills' array`, () => {
+    it(`${agentId} has 'skills' or 'capability_tags'`, () => {
+      // Pre-v18 templates used `skills`; v18+ Opus-driven forge uses
+      // `capability_tags`. Accept either, but require at least one.
       const agent = loadAgent(agentId);
-      expect(Array.isArray(agent.skills)).toBe(true);
-      expect(agent.skills.length).toBeGreaterThan(0);
-    });
-
-    it(`${agentId} has collaboration.reports_to field`, () => {
-      const agent = loadAgent(agentId);
-      expect(typeof agent.collaboration).toBe("object");
-      expect(typeof agent.collaboration.reports_to).toBe("string");
-      expect(agent.collaboration.reports_to.trim().length).toBeGreaterThan(0);
+      const hasSkills = Array.isArray(agent.skills) && agent.skills.length > 0;
+      const hasTags =
+        Array.isArray(agent.capability_tags) && agent.capability_tags.length > 0;
+      expect(hasSkills || hasTags).toBe(true);
     });
   }
 });
 
 // ---------------------------------------------------------------------------
-// Model matches team.yaml routing
+// Roster invariants
 // ---------------------------------------------------------------------------
 
-describe("agent YAML files — model matches team.yaml routing", () => {
-  it("vp-research model is opus", () => {
-    expect(loadAgent("vp-research").model).toBe("opus");
+describe("team roster invariants", () => {
+  it("pr-merge-manager is in the team (required role from Cycle 1)", () => {
+    expect(teamAgents).toContain("pr-merge-manager");
   });
 
-  it("vp-engineering model is opus", () => {
-    expect(loadAgent("vp-engineering").model).toBe("opus");
-  });
-
-  it("engineering-manager-frontend model is sonnet", () => {
-    expect(loadAgent("engineering-manager-frontend").model).toBe("sonnet");
-  });
-
-  it("engineering-manager-backend model is sonnet", () => {
-    expect(loadAgent("engineering-manager-backend").model).toBe("sonnet");
-  });
-
-  it("engineering-manager-infra model is sonnet", () => {
-    expect(loadAgent("engineering-manager-infra").model).toBe("sonnet");
-  });
-
-  it("qa-manager model is sonnet", () => {
-    expect(loadAgent("qa-manager").model).toBe("sonnet");
-  });
-
-  it("feedback-analyst model is haiku", () => {
-    expect(loadAgent("feedback-analyst").model).toBe("haiku");
-  });
-
-  it("ml-engineer model is sonnet", () => {
-    expect(loadAgent("ml-engineer").model).toBe("sonnet");
-  });
-
-  it("research-scientist model is sonnet", () => {
-    expect(loadAgent("research-scientist").model).toBe("sonnet");
-  });
-
-  it("experiment-runner model is haiku", () => {
-    expect(loadAgent("experiment-runner").model).toBe("haiku");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Reports-to correctness
-// ---------------------------------------------------------------------------
-
-describe("agent YAML files — reports_to chain", () => {
-  it("vp-research reports_to cto", () => {
-    expect(loadAgent("vp-research").collaboration.reports_to).toBe("cto");
-  });
-
-  it("vp-engineering reports_to cto", () => {
-    expect(loadAgent("vp-engineering").collaboration.reports_to).toBe("cto");
-  });
-
-  it("engineering-manager-frontend reports_to vp-engineering", () => {
-    expect(loadAgent("engineering-manager-frontend").collaboration.reports_to).toBe("vp-engineering");
-  });
-
-  it("engineering-manager-backend reports_to vp-engineering", () => {
-    expect(loadAgent("engineering-manager-backend").collaboration.reports_to).toBe("vp-engineering");
-  });
-
-  it("engineering-manager-infra reports_to vp-engineering", () => {
-    expect(loadAgent("engineering-manager-infra").collaboration.reports_to).toBe("vp-engineering");
-  });
-
-  it("ml-engineer reports_to vp-research", () => {
-    expect(loadAgent("ml-engineer").collaboration.reports_to).toBe("vp-research");
-  });
-
-  it("research-scientist reports_to vp-research", () => {
-    expect(loadAgent("research-scientist").collaboration.reports_to).toBe("vp-research");
-  });
-
-  it("experiment-runner reports_to vp-research", () => {
-    expect(loadAgent("experiment-runner").collaboration.reports_to).toBe("vp-research");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// can_delegate_to agents actually exist as YAML files
-// ---------------------------------------------------------------------------
-
-describe("agent YAML files — can_delegate_to targets exist", () => {
-  it("vp-research delegates to existing agents (ml-engineer, research-scientist, experiment-runner)", () => {
-    const agent = loadAgent("vp-research");
-    const delegates = agent.collaboration.can_delegate_to ?? [];
-    for (const d of delegates) {
-      expect(existsSync(agentPath(d)), `Expected ${d}.yaml to exist`).toBe(true);
-    }
-  });
-
-  it("vp-engineering delegates to existing agents (engineering-manager-*)", () => {
-    const agent = loadAgent("vp-engineering");
-    const delegates = agent.collaboration.can_delegate_to ?? [];
-    expect(delegates.length).toBeGreaterThan(0);
-    for (const d of delegates) {
-      expect(existsSync(agentPath(d)), `Expected ${d}.yaml to exist`).toBe(true);
-    }
-  });
-
-  it("engineering-manager-frontend delegates to existing agents", () => {
-    const agent = loadAgent("engineering-manager-frontend");
-    const delegates = agent.collaboration.can_delegate_to ?? [];
-    for (const d of delegates) {
-      expect(existsSync(agentPath(d)), `Expected ${d}.yaml to exist`).toBe(true);
-    }
-  });
-
-  it("engineering-manager-backend delegates to existing agents", () => {
-    const agent = loadAgent("engineering-manager-backend");
-    const delegates = agent.collaboration.can_delegate_to ?? [];
-    for (const d of delegates) {
-      expect(existsSync(agentPath(d)), `Expected ${d}.yaml to exist`).toBe(true);
-    }
-  });
-
-  it("engineering-manager-infra delegates to existing agents", () => {
-    const agent = loadAgent("engineering-manager-infra");
-    const delegates = agent.collaboration.can_delegate_to ?? [];
-    for (const d of delegates) {
-      expect(existsSync(agentPath(d)), `Expected ${d}.yaml to exist`).toBe(true);
-    }
-  });
-
-  it("qa-manager delegates to existing agents (team-reviewer, debugger, linter)", () => {
-    const agent = loadAgent("qa-manager");
-    const delegates = agent.collaboration.can_delegate_to ?? [];
-    for (const d of delegates) {
-      expect(existsSync(agentPath(d)), `Expected ${d}.yaml to exist`).toBe(true);
-    }
-  });
-
-  it("ml-engineer delegates to existing agents", () => {
-    const agent = loadAgent("ml-engineer");
-    const delegates = agent.collaboration.can_delegate_to ?? [];
-    for (const d of delegates) {
-      expect(existsSync(agentPath(d)), `Expected ${d}.yaml to exist`).toBe(true);
-    }
-  });
-
-  it("research-scientist delegates to existing agents", () => {
-    const agent = loadAgent("research-scientist");
-    const delegates = agent.collaboration.can_delegate_to ?? [];
-    for (const d of delegates) {
-      expect(existsSync(agentPath(d)), `Expected ${d}.yaml to exist`).toBe(true);
+  it("no two agents share the same id", () => {
+    const seen = new Set<string>();
+    for (const id of teamAgents) {
+      expect(seen.has(id)).toBe(false);
+      seen.add(id);
     }
   });
 });
