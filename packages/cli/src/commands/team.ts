@@ -113,11 +113,16 @@ export function registerTeamCommand(program: Command): void {
     .command('forge')
     .description('Compatibility alias for team forge')
     .option('--project-root <path>', 'Project root', process.cwd())
+    .option('--project <path>', 'Project root (alias for --project-root)')
     .option('--dry-run', 'Show what would be generated without writing files')
     .option('--verbose', 'Show detailed analysis output')
     .option('--domains <domains>', 'Comma-separated list of domains to activate')
-    .action(async (options: TeamForgeOptions, command: Command) => {
+    .action(async (options: TeamForgeOptions & { project?: string }, command: Command) => {
       console.warn('[compat] `forge` top-level form is a compatibility alias. Prefer `team forge`.');
+      // Allow --project as a short alias for --project-root
+      if (options.project && !options.projectRoot) {
+        options.projectRoot = options.project;
+      }
       await teamForgeAction(options, command);
     });
 
@@ -416,6 +421,12 @@ function resolveProjectRoot(fallback: string | undefined, command?: Command): st
     return explicitFromArgv;
   }
 
+  // AGENTFORGE_PROJECT_ROOT env var takes precedence over cwd-based defaults
+  const envRoot = process.env['AGENTFORGE_PROJECT_ROOT'];
+  if (typeof envRoot === 'string' && envRoot.length > 0) {
+    return envRoot;
+  }
+
   const localOptions = command?.optsWithGlobals?.() as { projectRoot?: unknown } | undefined;
   if (typeof localOptions?.projectRoot === 'string' && localOptions.projectRoot.length > 0) {
     return localOptions.projectRoot;
@@ -436,12 +447,18 @@ function resolveProjectRoot(fallback: string | undefined, command?: Command): st
 function readProjectRootFromArgv(): string | undefined {
   for (let index = process.argv.length - 1; index >= 0; index -= 1) {
     const current = process.argv[index];
-    if (current === '--project-root') {
+    // Support both --project-root and --project as aliases
+    if (current === '--project-root' || current === '--project') {
       const next = process.argv[index + 1];
       return typeof next === 'string' && next.length > 0 ? next : undefined;
     }
 
     if (current?.startsWith('--project-root=')) {
+      const [, value] = current.split('=', 2);
+      return value && value.length > 0 ? value : undefined;
+    }
+
+    if (current?.startsWith('--project=')) {
       const [, value] = current.split('=', 2);
       return value && value.length > 0 ? value : undefined;
     }

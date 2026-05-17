@@ -1,3 +1,9 @@
+# runtime: auto  # Execution transport mode: auto (default) | sdk | cli
+#   auto: registers both transports; picks SDK when ANTHROPIC_API_KEY is set, else CLI.
+#   sdk:  Anthropic SDK only (no claude subprocess). Required for AgentForge Cloud.
+#   cli:  Claude Code CLI subprocess only. Requires claude on PATH.
+#   Env var AGENTFORGE_RUNTIME overrides this field when both are set.
+#   See docs/runtime-modes.md for full details.
 budget:
   perCycleUsd: 200
   perItemUsd: 40

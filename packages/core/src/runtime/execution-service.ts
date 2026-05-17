@@ -1,6 +1,8 @@
 import type { WorkspaceAdapter } from '@agentforge/db';
 import type { AgentRuntimeConfig, RunOptions, RunResult } from '../agent-runtime/types.js';
 import { MODEL_IDS } from '../agent-runtime/types.js';
+import { resolveMode } from './execution-service-mode.js';
+import type { ExecutionServiceMode } from './execution-service-mode.js';
 import { ProviderResolver } from './provider-resolver.js';
 import { RuntimeSession } from './runtime-session.js';
 import { AnthropicSdkTransport } from './transports/anthropic-sdk-transport.js';
@@ -14,18 +16,72 @@ import type {
 } from './types.js';
 
 export interface ExecutionServiceOptions {
+  /**
+   * Explicit transport list. When provided, `AGENTFORGE_RUNTIME` and
+   * `autonomous.yaml` are ignored — the caller is responsible for
+   * selecting the right transports.  This is the escape hatch used by
+   * tests and by specialised factory functions.
+   */
   transports?: ExecutionTransport[];
+  /**
+   * Override the env/config resolution for the active mode.  Useful in
+   * tests that want to check mode-filtering without touching `process.env`.
+   */
+  mode?: ExecutionServiceMode;
+  /**
+   * Project root used when reading `.agentforge/autonomous.yaml`.
+   * Defaults to `process.cwd()`.  Has no effect when `options.transports`
+   * is provided explicitly (caller controls transport selection).
+   */
+  projectRoot?: string;
 }
 
 export class ExecutionService {
   private readonly resolver: ProviderResolver;
+  /** The active ExecutionServiceMode resolved at construction time. */
+  private readonly _mode: ExecutionServiceMode;
 
   constructor(options: ExecutionServiceOptions = {}) {
-    const transports = options.transports ?? [
-      new AnthropicSdkTransport(),
-      new ClaudeCodeCompatTransport(),
-    ];
+    // When the caller provides an explicit transport list we skip mode
+    // resolution entirely — backward-compatible with all existing call sites
+    // and tests that pass `{ transports: [...] }`.
+    if (options.transports !== undefined) {
+      this.resolver = new ProviderResolver(options.transports);
+      // Treat explicit transports as 'auto' for introspection purposes
+      this._mode = options.mode ?? 'auto';
+      return;
+    }
+
+    // Resolve the active mode: explicit option > env var > config file > 'auto'
+    const mode =
+      options.mode !== undefined
+        ? options.mode
+        : resolveMode(process.env, options.projectRoot);
+
+    this._mode = mode;
+
+    // Build the transport list filtered to only include what the mode allows.
+    // This is the key change that makes `AGENTFORGE_RUNTIME=sdk` guarantee no
+    // CLI subprocess paths are ever registered (AgentForge Cloud requirement).
+    let transports: ExecutionTransport[];
+    if (mode === 'sdk') {
+      transports = [new AnthropicSdkTransport()];
+    } else if (mode === 'cli') {
+      transports = [new ClaudeCodeCompatTransport()];
+    } else {
+      // 'auto' — register both, existing ProviderResolver selection logic applies
+      transports = [new AnthropicSdkTransport(), new ClaudeCodeCompatTransport()];
+    }
+
     this.resolver = new ProviderResolver(transports);
+  }
+
+  /**
+   * The `ExecutionServiceMode` that was active at construction time.
+   * Can be used for introspection, logging, and dashboard display.
+   */
+  get mode(): ExecutionServiceMode {
+    return this._mode;
   }
 
   async run(

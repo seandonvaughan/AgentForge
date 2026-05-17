@@ -8,3 +8,10 @@ export * from './engine/builder/agent-validator.js';
 export * from './engine/scanner/index.js';
 export * from './engine/genesis/index.js';
 export * from './engine/reforge/index.js';
+export {
+  resolveProjectRoot,
+  NoProjectRootError,
+  type ResolveProjectRootOptions,
+  getRepositoryTemplatesDir,
+  getRepositoryDomainsDir,
+} from './engine/path-utils.js';

@@ -55,6 +55,7 @@ import { inboxRoutes } from './inbox.js';
 import { billingRoutes } from './billing.js';
 import { kbsRoutes } from './kbs.js';
 import { workspacesActiveRoutes } from './workspaces-active.js';
+import { runStreamRoutes } from './run-stream.js';
 
 export interface V5RouteOptions {
   adapter: WorkspaceAdapter;
@@ -369,14 +370,18 @@ export async function registerV5Routes(
 
   // ── Health ────────────────────────────────────────────────────────────────────
 
-  // v6.7.3: read version from root package.json — single source of truth.
+  // v6.7.3: read version from the AgentForge server package.json.
   // Resolves at registration time so the file is read once, not per request.
+  // Uses import.meta.url to locate the package regardless of project root so
+  // this reports the AgentForge version, not the external project's version.
   let pkgVersion = 'unknown';
   try {
     const { readFileSync } = await import('node:fs');
-    const { join: pathJoin } = await import('node:path');
-    // Walk up from this module to find the workspace root package.json
-    const candidate = pathJoin(process.cwd(), 'package.json');
+    const { join: pathJoin, dirname: pathDirname } = await import('node:path');
+    const { fileURLToPath: pathFileURLToPath } = await import('node:url');
+    // Walk up from packages/server/dist/routes/v5/ to packages/server/
+    const serverDir = pathDirname(pathDirname(pathDirname(pathFileURLToPath(import.meta.url))));
+    const candidate = pathJoin(serverDir, 'package.json');
     pkgVersion = String(JSON.parse(readFileSync(candidate, 'utf8')).version ?? 'unknown');
   } catch { /* fall back to 'unknown' */ }
 
@@ -471,6 +476,9 @@ export async function registerV5Routes(
 
   // ── Active Worktrees (T4.7) ───────────────────────────────────────────────
   await workspacesActiveRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
+
+  // ── Per-run SSE stream (T5.2 — AnthropicSdkTransport cloud streaming) ────
+  await runStreamRoutes(app);
 }
 
 /** Exported for unit-test access. Forwards a bus DM envelope as an SSE event. */

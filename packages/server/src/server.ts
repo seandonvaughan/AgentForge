@@ -21,6 +21,7 @@ import { cyclesRoutes } from './routes/v5/cycles.js';
 import { cyclesPreviewRoutes } from './routes/v5/cycles-preview.js';
 import { dashboardStubRoutes } from './routes/v5/dashboard-stubs.js';
 import { runRoutes } from './routes/v5/run.js';
+import { runStreamRoutes } from './routes/v5/run-stream.js';
 import { approvalsRoutes } from './routes/v5/approvals.js';
 import { streamRoutes } from './routes/v5/stream.js';
 import { mergeQueueRoutes } from './routes/v5/merge-queue.js';
@@ -239,6 +240,9 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
   // avoid FST_ERR_DUPLICATED_ROUTE.
   if (!options.adapter || !options.registry) {
     await runRoutes(app, { ...(options.adapter !== undefined ? { adapter: options.adapter } : {}) });
+    // Per-run SSE stream (T5.2). registerV5Routes also wires this in adapter
+    // mode, so guard accordingly.
+    await runStreamRoutes(app);
   }
 
   // ── Agent Chat Interface (P0-3) — no adapter required, uses audit.db directly ──
