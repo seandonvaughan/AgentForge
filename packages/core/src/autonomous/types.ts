@@ -134,6 +134,32 @@ export interface CycleConfig {
    * Workstreams P+Q are not yet available.
    */
   autoReforge?: boolean;
+  /**
+   * PR creation mode for this cycle.
+   *
+   * - `'single'` (default): one squash-PR for the entire autonomous branch,
+   *   opened at the end of the cycle via the existing PROpener flow.
+   * - `'multi'`: one draft PR per coder-class agent, opened in real-time as
+   *   each agent pushes its branch (via MergeQueue). The single-PR step is
+   *   skipped when this mode is active.
+   *
+   * Backward-compatible: existing configs without this field behave as
+   * `'single'`.
+   */
+  prMode?: 'single' | 'multi';
+  /**
+   * Only relevant when `prMode === 'multi'`.
+   *
+   * When `true`, `drainAndMerge()` is called at cycle end with
+   * `autoMerge: true` — CI-green PRs are promoted to ready AND merged via
+   * squash automatically.
+   *
+   * Defaults to `false` (safe: only promotes drafts to ready; actual merge
+   * requires human review). This keeps the default path non-destructive so
+   * operators are always in the merge-decision loop unless they explicitly
+   * opt in.
+   */
+  autoMergePRs?: boolean;
 }
 
 export interface FailedTest {

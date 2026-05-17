@@ -70,6 +70,9 @@ import { resolveTelemetryConfig } from '../telemetry/config.js';
 // replace the inline import with a proper typed import and remove the TODO.
 import { WorktreeGc } from '../runtime/worktree-gc.js';
 import type { WorktreePool } from '../runtime/worktree-pool.js';
+import { MergeQueue } from '../runtime/merge-queue.js';
+import type { DrainAndMergeResult } from '../runtime/merge-queue.js';
+import type { MessageBusV2 } from '../message-bus/message-bus.js';
 
 /**
  * Build a PR title that's safe for `gh pr create` and never truncated mid-word.
@@ -214,6 +217,18 @@ export interface CycleRunnerOptions {
    * real isolation.
    */
   disableWorktrees?: boolean;
+  /**
+   * Full `MessageBusV2` instance required for multi-PR mode (prMode='multi').
+   *
+   * The `bus` field above uses a simplified `(topic, payload)` facade that is
+   * sufficient for most internal event publishing, but `MergeQueue` needs the
+   * full typed bus API (subscribe with typed envelopes, etc.). Provide this
+   * when constructing a cycle with `prMode='multi'`.
+   *
+   * When absent and prMode='multi', the MergeQueue will not be started and
+   * the cycle falls back to single-PR behavior with a console warning.
+   */
+  messageBus?: MessageBusV2;
 }
 
 /**
@@ -248,6 +263,8 @@ export class CycleRunner {
   };
   private scoringFallback: 'static' | 'effort-estimator' | undefined;
   private gateVerdict: 'APPROVE' | 'REJECT' | undefined = undefined;
+  /** Set in runStages() when prMode='multi'; used to drain at cycle end. */
+  private mergeQueue: MergeQueue | null = null;
 
   constructor(private readonly options: CycleRunnerOptions) {
     // Resolve cycleId in priority order:
@@ -329,6 +346,38 @@ export class CycleRunner {
     // Errors are swallowed — a GC failure must never block a new cycle.
     // ─────────────────────────────────────────────────────────────────
     await this.runWorktreeGc('start');
+
+    // ─────────────────────────────────────────────────────────────────
+    // MULTI-PR MODE SETUP
+    // When prMode='multi', start the MergeQueue now so it subscribes to
+    // agent.branch.pushed events emitted by coder-class agents during
+    // STAGE 3 (RUN). The queue opens one draft PR per agent branch in
+    // real-time, recording each in the cycle ledger at
+    // .agentforge/cycles/<cycleId>/agent-prs.json.
+    //
+    // The baseBranch is the cycle's git.baseBranch (typically 'main' or the
+    // autonomous cycle branch set by GitOps). We read it from config here
+    // because the autonomous branch itself is not yet created (STAGE 5).
+    // ─────────────────────────────────────────────────────────────────
+    if (this.options.config.prMode === 'multi') {
+      if (!this.options.messageBus) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          '[autonomous:cycle] multi-pr: prMode=multi requires options.messageBus to be set. ' +
+          'Falling back to single-PR behavior.',
+        );
+      } else {
+        this.mergeQueue = new MergeQueue({
+          projectRoot: this.options.cwd,
+          bus: this.options.messageBus,
+          parentBranch: this.options.config.git.baseBranch,
+          cycleId: this.cycleId,
+        });
+        this.mergeQueue.start();
+        // eslint-disable-next-line no-console
+        console.log(`[autonomous:cycle] multi-pr: MergeQueue started (base=${this.options.config.git.baseBranch})`);
+      }
+    }
 
     // ─────────────────────────────────────────────────────────────────
     // STAGE 1 — PLAN
@@ -603,74 +652,88 @@ export class CycleRunner {
 
     // ─────────────────────────────────────────────────────────────────
     // STAGE 6 — REVIEW
-    // Render the PR body and open the PR. Pre-built CycleResult passed
-    // to renderPrBody is intermediate (stage=REVIEW); the final returned
-    // result is built below with stage=COMPLETED.
+    // Two modes:
+    //
+    //   single (default): render PR body, open one squash-PR for the entire
+    //   autonomous branch via PROpener. This is the legacy path and remains
+    //   fully intact for backward compatibility.
+    //
+    //   multi: skip the single squash-PR entirely. Agent PRs were already
+    //   opened in real-time by MergeQueue during STAGE 3 (RUN). Drain the
+    //   queue here to await any in-flight handlers, log a per-PR summary
+    //   from the ledger, and optionally call drainAndMerge() when
+    //   autoMergePRs=true.
     // ─────────────────────────────────────────────────────────────────
-    const intermediate = this.buildResult(CycleStage.REVIEW, {
-      sprintVersion: plan.version,
-      cost: {
-        totalUsd: this.totalCostUsd,
-        budgetUsd: this.options.config.budget.perCycleUsd,
-        byAgent: {},
-        byPhase: {},
-      },
-      tests: this.testStats,
-      git: {
+    if (this.options.config.prMode === 'multi') {
+      // ── multi-PR path ──────────────────────────────────────────────
+      await this.runMultiPrDrain(plan.version, scored.summary);
+    } else {
+      // ── single-PR path (default) ────────────────────────────────────
+      const intermediate = this.buildResult(CycleStage.REVIEW, {
+        sprintVersion: plan.version,
+        cost: {
+          totalUsd: this.totalCostUsd,
+          budgetUsd: this.options.config.budget.perCycleUsd,
+          byAgent: {},
+          byPhase: {},
+        },
+        tests: this.testStats,
+        git: {
+          branch: this.branch,
+          commitSha: this.commitSha,
+          filesChanged: filesToCommit,
+        },
+      });
+
+      const prBody = renderPrBody({
+        sprint: {
+          version: plan.version,
+          items: plan.items.map((i) => ({
+            id: i.id,
+            priority: i.priority,
+            title: i.title,
+            assignee: i.assignee,
+          })),
+        },
+        result: intermediate,
+        testResult,
+        scoringResult: {
+          rankings: [...scored.withinBudget, ...scored.requiresApproval],
+          totalEstimatedCostUsd: scored.totalEstimatedCostUsd,
+          budgetOverflowUsd: scored.budgetOverflowUsd,
+          summary: scored.summary,
+          warnings: scored.warnings,
+        },
+      });
+
+      // Build the PROpener request — only include `reviewers` if we have one,
+      // and only include `dryRun` if it's truthy. `exactOptionalPropertyTypes`
+      // forbids `undefined` for optional fields, so use conditional spreads.
+      const prRequest = {
         branch: this.branch,
-        commitSha: this.commitSha,
-        filesChanged: filesToCommit,
-      },
-    });
+        baseBranch: this.options.config.git.baseBranch,
+        title: sanitizePrTitle(plan.version, scored.summary),
+        body: prBody,
+        draft: this.options.config.pr.draft,
+        labels: this.options.config.pr.labels,
+        ...(this.options.config.pr.assignReviewer
+          ? { reviewers: [this.options.config.pr.assignReviewer] }
+          : {}),
+        ...(this.options.dryRun?.prOpener ? { dryRun: true } : {}),
+      };
+      const prResult = await this.options.prOpener.open(prRequest);
 
-    const prBody = renderPrBody({
-      sprint: {
-        version: plan.version,
-        items: plan.items.map((i) => ({
-          id: i.id,
-          priority: i.priority,
-          title: i.title,
-          assignee: i.assignee,
-        })),
-      },
-      result: intermediate,
-      testResult,
-      scoringResult: {
-        rankings: [...scored.withinBudget, ...scored.requiresApproval],
-        totalEstimatedCostUsd: scored.totalEstimatedCostUsd,
-        budgetOverflowUsd: scored.budgetOverflowUsd,
-        summary: scored.summary,
-        warnings: scored.warnings,
-      },
-    });
+      this.prUrl = prResult.url;
+      this.prNumber = prResult.number;
+      this.prDraft = prResult.draft;
 
-    // Build the PROpener request — only include `reviewers` if we have one,
-    // and only include `dryRun` if it's truthy. `exactOptionalPropertyTypes`
-    // forbids `undefined` for optional fields, so use conditional spreads.
-    const prRequest = {
-      branch: this.branch,
-      baseBranch: this.options.config.git.baseBranch,
-      title: sanitizePrTitle(plan.version, scored.summary),
-      body: prBody,
-      draft: this.options.config.pr.draft,
-      labels: this.options.config.pr.labels,
-      ...(this.options.config.pr.assignReviewer
-        ? { reviewers: [this.options.config.pr.assignReviewer] }
-        : {}),
-      ...(this.options.dryRun?.prOpener ? { dryRun: true } : {}),
-    };
-    const prResult = await this.options.prOpener.open(prRequest);
-
-    this.prUrl = prResult.url;
-    this.prNumber = prResult.number;
-    this.prDraft = prResult.draft;
-
-    this.logger.logPREvent({
-      type: 'opened',
-      url: prResult.url,
-      number: prResult.number,
-      title: `autonomous(v${plan.version})`,
-    });
+      this.logger.logPREvent({
+        type: 'opened',
+        url: prResult.url,
+        number: prResult.number,
+        title: `autonomous(v${plan.version})`,
+      });
+    }
 
     // ─────────────────────────────────────────────────────────────────
     // T4.6 — WORKTREE GC (END): clean up this cycle's worktrees, keeping
@@ -699,9 +762,9 @@ export class CycleRunner {
         filesChanged: filesToCommit,
       },
       pr: {
-        url: prResult.url,
-        number: prResult.number,
-        draft: prResult.draft,
+        url: this.prUrl,
+        number: this.prNumber,
+        draft: this.prDraft,
       },
     };
     if (this.scoringFallback) {
@@ -1051,6 +1114,76 @@ Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
       merged.gateVerdict = overrides.gateVerdict;
     }
     return merged;
+  }
+
+  /**
+   * STAGE 6 multi-PR path.
+   *
+   * - Drains in-flight MergeQueue handlers.
+   * - Logs a one-line summary for each PR recorded in the ledger.
+   * - If `config.autoMergePRs === true`, calls drainAndMerge({ autoMerge: true })
+   *   to promote CI-green PRs to ready and squash-merge them.
+   * - If `config.autoMergePRs` is false/absent (default), calls
+   *   drainAndMerge({ autoMerge: false }) which only promotes drafts → ready.
+   *
+   * The single-PR (PROpener) step is NOT called in this path.
+   * Errors from drainAndMerge are swallowed — a merge failure must never
+   * kill a cycle that passed all quality gates.
+   */
+  private async runMultiPrDrain(_version: string, _summary: string): Promise<void> {
+    if (!this.mergeQueue) return;
+
+    // Stop accepting new events before draining.
+    this.mergeQueue.stop();
+
+    // eslint-disable-next-line no-console
+    console.log('[autonomous:cycle] multi-pr: draining MergeQueue...');
+
+    // Drain in-flight handlers and read the ledger summary.
+    let drainResult: Awaited<ReturnType<MergeQueue['drain']>>;
+    try {
+      drainResult = await this.mergeQueue.drain();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `[autonomous:cycle] multi-pr: drain error (non-fatal): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return;
+    }
+
+    // Log per-PR summary (one line each).
+    for (const pr of drainResult.prs) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[autonomous:cycle] multi-pr: PR #${pr.prNumber} agent=${pr.agentId} branch=${pr.branch}`,
+      );
+    }
+    // eslint-disable-next-line no-console
+    console.log(
+      `[autonomous:cycle] multi-pr: ${drainResult.pushed} branch(es) pushed, ${drainResult.prs.length} open PR(s)`,
+    );
+
+    // Optionally call drainAndMerge.
+    try {
+      const autoMerge = this.options.config.autoMergePRs === true;
+      const dmResult: DrainAndMergeResult = await this.mergeQueue.drainAndMerge({ autoMerge });
+      // eslint-disable-next-line no-console
+      console.log(
+        `[autonomous:cycle] multi-pr: drainAndMerge complete — ` +
+        `ready=${dmResult.ready.length} merged=${dmResult.merged.length} ` +
+        `failing=${dmResult.failing.length} pending=${dmResult.pending.length}`,
+      );
+    } catch (err) {
+      // Swallow — merge errors must never fail the cycle.
+      // eslint-disable-next-line no-console
+      console.error(
+        `[autonomous:cycle] multi-pr: drainAndMerge error (non-fatal): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   /**

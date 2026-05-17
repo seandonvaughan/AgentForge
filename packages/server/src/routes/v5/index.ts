@@ -57,6 +57,7 @@ import { billingRoutes } from './billing.js';
 import { kbsRoutes } from './kbs.js';
 import { workspacesActiveRoutes } from './workspaces-active.js';
 import { runStreamRoutes } from './run-stream.js';
+import { cyclePrsRoutes } from './cycle-prs.js';
 
 export interface V5RouteOptions {
   adapter: WorkspaceAdapter;
@@ -486,6 +487,9 @@ export async function registerV5Routes(
 
   // ── Per-run SSE stream (T5.2 — AnthropicSdkTransport cloud streaming) ────
   await runStreamRoutes(app);
+
+  // ── Cycle PR ledger (MergeQueue enriched with CI status) ─────────────────
+  await cyclePrsRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
 }
 
 /** Exported for unit-test access. Forwards a bus DM envelope as an SSE event. */

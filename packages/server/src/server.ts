@@ -38,6 +38,7 @@ import { knowledgeRoutes } from './routes/v5/knowledge.js';
 import { auditRoutes } from './routes/v5/audit.js';
 import { billingRoutes } from './routes/v5/billing.js';
 import { registerFlywheelContinuousImprovementRoutes } from './routes/v5/flywheel-continuous-improvement.js';
+import { cyclePrsRoutes } from './routes/v5/cycle-prs.js';
 import { sendContainedStaticFile } from './lib/static-files.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -228,6 +229,12 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
   // ── Cycles (reads .agentforge/cycles/*/ — no adapter required) ───────────────
   await cyclesRoutes(app, { projectRoot });
   await cyclesPreviewRoutes(app, { projectRoot });
+
+  // ── Cycle PR ledger (MergeQueue enriched with CI status) ─────────────────
+  // Guard: registerV5Routes already calls cyclePrsRoutes in adapter mode.
+  if (!options.adapter || !options.registry) {
+    await cyclePrsRoutes(app, { projectRoot });
+  }
 
   // ── Unified keyword search (sessions, agents, sprints, cycles, memory) ────────
   // No adapter required — falls back gracefully; adapter enables session search.

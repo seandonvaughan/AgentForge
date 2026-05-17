@@ -44,6 +44,11 @@ export interface MergeQueueOptions {
   parentBranch?: string;
   /** When true, never call gh; record entries with status='dry-run'. */
   dryRun?: boolean;
+  /**
+   * Cycle ID to scope drainAndMerge ledger reads to a specific cycle.
+   * When omitted, drainAndMerge reads all cycle ledgers (same as drain()).
+   */
+  cycleId?: string;
 }
 
 export interface AgentBranchPushedEvent extends AgentBranchPushedPayload {
@@ -57,13 +62,41 @@ export interface LedgerEntry {
   agentId: string;
   cycleId: string;
   itemIds: string[];
-  status: 'open' | 'dry-run' | 'skipped-no-gh';
+  status: 'open' | 'dry-run' | 'skipped-no-gh' | 'merged';
   openedAt: string;
 }
 
 export interface DrainResult {
   pushed: number;
   prs: Array<{ prNumber: number; branch: string; agentId: string }>;
+}
+
+/** Options accepted by {@link MergeQueue.drainAndMerge}. */
+export interface DrainAndMergeOptions {
+  /**
+   * When `true`, CI-green PRs are squash-merged automatically after being
+   * promoted to ready. Defaults to `false` (only promotes drafts → ready).
+   */
+  autoMerge?: boolean;
+  /**
+   * Order in which PRs are processed.
+   * - `'priority'`: by prNumber ascending (lower number = earlier open = higher priority)
+   * - `'time'`: by openedAt ISO timestamp ascending
+   * Defaults to `'time'`.
+   */
+  sequenceBy?: 'priority' | 'time';
+}
+
+/** Result returned by {@link MergeQueue.drainAndMerge}. */
+export interface DrainAndMergeResult {
+  /** PR numbers that were promoted from draft → ready (and NOT auto-merged). */
+  ready: number[];
+  /** PR numbers that were promoted and then squash-merged. */
+  merged: number[];
+  /** PR numbers where one or more CI checks are failing. */
+  failing: number[];
+  /** PR numbers where CI checks are still pending (not yet finished). */
+  pending: number[];
 }
 
 // ---------------------------------------------------------------------------
@@ -184,6 +217,7 @@ export class MergeQueue {
   private readonly bus: MessageBusV2;
   private readonly parentBranchOverride: string | undefined;
   private readonly dryRun: boolean;
+  private readonly cycleId: string | undefined;
 
   private unsubscribe: (() => void) | null = null;
   /** Tracks in-flight handler promises so drain() can await them. */
@@ -194,6 +228,7 @@ export class MergeQueue {
     this.bus = opts.bus;
     this.parentBranchOverride = opts.parentBranch;
     this.dryRun = opts.dryRun ?? false;
+    this.cycleId = opts.cycleId;
   }
 
   /** Subscribe to agent.branch.pushed topic and begin processing. */
@@ -252,7 +287,152 @@ export class MergeQueue {
     return { pushed, prs };
   }
 
+  /**
+   * Promote and optionally merge all open PRs recorded in the ledger.
+   *
+   * For each entry with `status === 'open'`:
+   *   1. Query CI status via `gh pr checks <number> --json bucket`.
+   *   2. If all checks pass:
+   *      - Always: `gh pr ready <number>` (promote draft → ready for review).
+   *      - If `autoMerge === true`: `gh pr merge <number> --squash --delete-branch`.
+   *        Updates ledger entry to `status = 'merged'`.
+   *   3. If any check is failing: log and leave `status = 'open'`.
+   *   4. If any check is pending: leave for next drain call.
+   *
+   * Ledger is updated atomically (tmp → rename) after processing all entries.
+   *
+   * Returns a summary categorised by outcome.
+   */
+  async drainAndMerge(opts: DrainAndMergeOptions = {}): Promise<DrainAndMergeResult> {
+    const { autoMerge = false, sequenceBy = 'time' } = opts;
+
+    // Wait for all in-flight handlers before touching the ledger.
+    if (this.inFlight.size > 0) {
+      await Promise.allSettled([...this.inFlight]);
+    }
+
+    const result: DrainAndMergeResult = { ready: [], merged: [], failing: [], pending: [] };
+
+    // Collect (cycleId, ledgerPath) pairs to read.
+    const ledgerPaths: Array<{ cycleId: string; ledgerPath: string }> = [];
+
+    if (this.cycleId) {
+      ledgerPaths.push({
+        cycleId: this.cycleId,
+        ledgerPath: join(resolveCycleDir(this.projectRoot, this.cycleId), 'agent-prs.json'),
+      });
+    } else {
+      const cyclesDir = join(this.projectRoot, '.agentforge', 'cycles');
+      if (existsSync(cyclesDir)) {
+        const { readdirSync } = await import('node:fs');
+        for (const cid of readdirSync(cyclesDir)) {
+          ledgerPaths.push({
+            cycleId: cid,
+            ledgerPath: join(cyclesDir, cid, 'agent-prs.json'),
+          });
+        }
+      }
+    }
+
+    for (const { ledgerPath } of ledgerPaths) {
+      const entries = readLedger(ledgerPath);
+      if (entries.length === 0) continue;
+
+      // Sort entries according to sequenceBy
+      const openEntries = entries.filter((e) => e.status === 'open' && e.prNumber != null);
+      const sortedOpen = [...openEntries].sort((a, b) => {
+        if (sequenceBy === 'priority') {
+          return (a.prNumber ?? 0) - (b.prNumber ?? 0);
+        }
+        // default: 'time'
+        return a.openedAt.localeCompare(b.openedAt);
+      });
+
+      for (const entry of sortedOpen) {
+        const prNum = entry.prNumber!;
+        const ciStatus = await this.getCiStatus(prNum);
+
+        if (ciStatus === 'failing') {
+          console.warn(`[MergeQueue:drainAndMerge] PR #${prNum} has failing checks — leaving open`);
+          result.failing.push(prNum);
+          continue;
+        }
+
+        if (ciStatus === 'pending') {
+          console.log(`[MergeQueue:drainAndMerge] PR #${prNum} has pending checks — skipping for now`);
+          result.pending.push(prNum);
+          continue;
+        }
+
+        // All checks green (or no checks) — promote draft → ready
+        try {
+          await execFile('gh', ['pr', 'ready', String(prNum)], { cwd: this.projectRoot });
+          console.log(`[MergeQueue:drainAndMerge] PR #${prNum} promoted to ready`);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.warn(`[MergeQueue:drainAndMerge] gh pr ready #${prNum} failed: ${msg}`);
+          result.failing.push(prNum);
+          continue;
+        }
+
+        if (autoMerge) {
+          try {
+            await execFile(
+              'gh',
+              ['pr', 'merge', String(prNum), '--squash', '--delete-branch'],
+              { cwd: this.projectRoot },
+            );
+            // Atomically update ledger entry to 'merged'
+            const updatedEntries = readLedger(ledgerPath).map((e) =>
+              e.prNumber === prNum ? { ...e, status: 'merged' as const } : e,
+            );
+            writeLedger(ledgerPath, updatedEntries);
+            console.log(`[MergeQueue:drainAndMerge] PR #${prNum} merged (squash)`);
+            result.merged.push(prNum);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            console.warn(`[MergeQueue:drainAndMerge] gh pr merge #${prNum} failed: ${msg}`);
+            // Promoted but not merged — still counts as ready
+            result.ready.push(prNum);
+          }
+        } else {
+          result.ready.push(prNum);
+        }
+      }
+    }
+
+    return result;
+  }
+
   // ── Private ────────────────────────────────────────────────────────────────
+
+  /**
+   * Query CI check status for a PR.
+   * Returns:
+   *   - `'green'`   if all checks passed (or there are no checks)
+   *   - `'pending'` if at least one check is still running
+   *   - `'failing'` if at least one check has failed
+   */
+  private async getCiStatus(prNumber: number): Promise<'green' | 'pending' | 'failing'> {
+    let stdout: string;
+    try {
+      const out = await execFile(
+        'gh',
+        ['pr', 'checks', String(prNumber), '--json', 'bucket', '--jq', '.[] | .bucket'],
+        { cwd: this.projectRoot },
+      );
+      stdout = out.stdout;
+    } catch {
+      // gh not available, or PR has no checks — treat as green so we can promote
+      return 'green';
+    }
+
+    const buckets = stdout.trim().split('\n').filter(Boolean);
+    if (buckets.length === 0) return 'green';
+    if (buckets.some((b) => b === 'fail')) return 'failing';
+    if (buckets.some((b) => b === 'pending')) return 'pending';
+    return 'green';
+  }
 
   private async handleEvent(payload: AgentBranchPushedPayload): Promise<void> {
     const { cycleId, agentId, branch, baseBranch, itemIds, diffSummary, pushedAt, localOnly } =

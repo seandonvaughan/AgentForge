@@ -14,3 +14,4 @@ export * from './concurrency-gate.js';
 export * from './worktree-gc.js';
 export * from './merge-queue.js';
 export * from './merge-queue-conflict-resolver.js';
+export * from './pr-merge-manager-runner.js';
