@@ -11,6 +11,18 @@ export { composeTeam, composeTeamFromDomains } from "./team-composer.js";
 export type { TeamComposition, CustomAgentSpec } from "./team-composer.js";
 export { customizeTemplate } from "./template-customizer.js";
 export { writeTeam } from "./team-writer.js";
+export { validateTeam } from "./validator.js";
+export type {
+  ValidationReport,
+  AgentFinding,
+  ValidationSeverity,
+  ValidateTeamOptions,
+} from "./validator.js";
+export { forgeTeamAgentDriven } from "./agent-driven-forge.js";
+export type {
+  AgentDrivenForgeOptions,
+  AgentDrivenForgeResult,
+} from "./agent-driven-forge.js";
 
 import { createHash } from "node:crypto";
 import { basename } from "node:path";

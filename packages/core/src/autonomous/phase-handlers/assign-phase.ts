@@ -1,16 +1,22 @@
 // packages/core/src/autonomous/phase-handlers/assign-phase.ts
 //
-// v6.5.2 — Pure keyword-based assignment pass. No agent call. Infers
-// assignees from item tags for any items the scoring agent didn't
-// pre-assign.
+// v18.0.0 — Phase D routing layer. Capability-tag-aware assignment pass.
+//
+// When a routing-index.json is present under .agentforge/, inferAssignee()
+// calls pickAgent() from the routing layer. If the index is absent or
+// corrupt, it falls back to the original 5-keyword logic so old cycles
+// continue to work unchanged.
 
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
+import { pickAgent } from '../routing/router.js';
+import type { RoutingIndex } from '../routing/routing-index.js';
 
 interface SprintItem {
   id: string;
   title: string;
+  description?: string;
   assignee?: string;
   tags?: string[];
   [key: string]: unknown;
@@ -22,7 +28,40 @@ interface SprintFile {
   [key: string]: unknown;
 }
 
-/** Map a single tag to a candidate assignee, or null. */
+// ---------------------------------------------------------------------------
+// Per-cycle routing index cache (cleared between cycles via clearRoutingIndexCache)
+// ---------------------------------------------------------------------------
+
+let _cachedIndexPath: string | null = null;
+let _cachedIndex: RoutingIndex | null = null;
+
+/** Clear the routing index cache — call between cycles or in tests. */
+export function clearRoutingIndexCache(): void {
+  _cachedIndexPath = null;
+  _cachedIndex = null;
+}
+
+function loadRoutingIndex(projectRoot: string): RoutingIndex | null {
+  const indexPath = join(projectRoot, '.agentforge', 'routing-index.json');
+  if (indexPath === _cachedIndexPath && _cachedIndex !== null) {
+    return _cachedIndex;
+  }
+  try {
+    const raw = readFileSync(indexPath, 'utf8');
+    const parsed = JSON.parse(raw) as RoutingIndex;
+    _cachedIndexPath = indexPath;
+    _cachedIndex = parsed;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/** Map a single tag to a candidate assignee, or null. (Unchanged — used as priority-3 fallback.) */
 export function inferAssigneeFromTag(tag: string): string | null {
   const t = tag.toLowerCase();
   if (t === 'fix' || t === 'bug' || t === 'security') return 'coder';
@@ -33,7 +72,23 @@ export function inferAssigneeFromTag(tag: string): string | null {
   return null;
 }
 
-export function inferAssignee(item: SprintItem): string {
+/**
+ * Infer the assignee for a sprint item.
+ *
+ * When projectRoot is supplied and a routing-index.json exists, delegates to
+ * the capability-tag router. Otherwise falls back to 5-keyword logic.
+ * The optional projectRoot keeps backward compat with callers that pass only
+ * an item.
+ */
+export function inferAssignee(item: SprintItem, projectRoot?: string): string {
+  if (projectRoot) {
+    const index = loadRoutingIndex(projectRoot);
+    if (index) {
+      const result = pickAgent(item, index);
+      return result.agentId;
+    }
+  }
+  // Legacy path
   for (const tag of item.tags ?? []) {
     const candidate = inferAssigneeFromTag(tag);
     if (candidate) return candidate;
@@ -76,9 +131,12 @@ export async function runAssignPhase(ctx: PhaseContext): Promise<PhaseResult> {
         : null;
     const items: SprintItem[] = (sprintObj?.items ?? []) as SprintItem[];
 
+    // Clear per-cycle cache so each cycle loads a fresh routing index
+    clearRoutingIndexCache();
+
     for (const item of items) {
       if (!item.assignee || item.assignee.trim() === '') {
-        item.assignee = inferAssignee(item);
+        item.assignee = inferAssignee(item, ctx.projectRoot);
         assignmentCount += 1;
       }
       byAgent[item.assignee] = (byAgent[item.assignee] ?? 0) + 1;
