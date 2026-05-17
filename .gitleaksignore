@@ -5,10 +5,18 @@
 #
 # Format: <commit-sha>:<file>:<rule-id>:<line>
 
-# tests/autonomous/unit/git-ops.test.ts — fake GitHub PAT used as test fixture
-# to verify that scanStagedForSecrets() rejects PAT-shaped strings.
+# tests/autonomous/unit/git-ops.test.ts — fake fixtures used to verify that
+# scanStagedForSecrets() rejects ANTHROPIC_API_KEY-shaped and GitHub PAT-shaped
+# strings. Each fingerprint corresponds to the commit that introduced the line.
 3540870a666554d821be1126965d5ac299a80d1d:tests/autonomous/unit/git-ops.test.ts:generic-api-key:79
 3540870a666554d821be1126965d5ac299a80d1d:tests/autonomous/unit/git-ops.test.ts:github-pat:79
+# Line 107 history — the original Array.join() shim was introduced in fa03aa61
+# and then renamed/cleaned in 29c651592e. The current file refactors it again
+# into disjoint string pieces (charCode + concat + join) so NEW commits won't
+# trigger the rule, but Gitleaks still scans both historical commits — both
+# fingerprints must be silenced.
+fa03aa6145e9901287ac20b570c5c145fda68a4c:tests/autonomous/unit/git-ops.test.ts:generic-api-key:107
+29c651592e83ef9ec889a853d2ecb8f79c4aade2:tests/autonomous/unit/git-ops.test.ts:generic-api-key:107
 
 # docs/superpowers/plans/2026-04-06-autonomous-loop.md — planning doc that copied
 # the same test-fixture strings from the test file above for illustration purposes.

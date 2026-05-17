@@ -4,15 +4,61 @@ Command: pnpm --filter @agentforge/dashboard exec svelte-check
 
 OUTPUT
 ------
-1778908485857 START "/Users/seandonvaughan/Projects/AgentForge/packages/dashboard"
+1778912736040 START "/Users/seandonvaughan/Projects/AgentForge/packages/dashboard"
 [64 warnings across 25 files — see details below]
-1778908485871 COMPLETED 4618 FILES  0 ERRORS  64 WARNINGS  25 FILES_WITH_PROBLEMS
+1778912736053 COMPLETED 4618 FILES  0 ERRORS  64 WARNINGS  25 FILES_WITH_PROBLEMS
 
 FINDINGS
 --------
 ✅ No type errors found.
-✅ MODEL_TIERS undefined errors resolved (resolved in prior sprint; no regressions).
-✅ TypeScript compilation clean.
+✅ MODEL_TIERS undefined errors resolved — runner page now defines MODEL_TIER_META
+   inline (packages/dashboard/src/routes/runner/+page.svelte lines 5–11); no import
+   needed. Confirmed by this sprint's fresh svelte-check run.
+✅ TypeScript compilation clean (tsc --noEmit passes with zero errors).
+✅ /api/v5/run/history now filters out cycle sub-agent sessions — only user-triggered
+   runner calls (parent_session_id IS NULL or already in runLog) appear in the history
+   panel. Fixes: packages/server/src/routes/v5/run.ts GET /api/v5/run/history handler.
+
+WARNINGS BREAKDOWN (64 total, none blocking)
+-------------------------------------------
+- ~30 warnings: Svelte 5 state_referenced_locally — variables captured in $state()
+  initializers rather than $derived(). Known pattern in the runes migration; will be
+  addressed at next major refactor pass.
+- ~25 warnings: a11y — missing ARIA roles, label associations, tabindex on interactive
+  elements, keyboard event handlers on click targets. Pre-existing issues unrelated to
+  this cycle's diffs.
+- ~8 warnings: CSS compatibility — -webkit-line-clamp vs standard line-clamp, empty
+  rulesets. Covered by Tailwind vendor prefixes; no user-visible impact.
+- 1 warning: Unknown property 'spellcheck' on a Svelte element. Benign; browsers
+  honour the attribute anyway.
+
+FILES WITH PROBLEMS (25)
+-------------------------
+src/lib/components/v2/Card.svelte
+src/lib/components/v2/AnimNum.svelte
+src/routes/+page.svelte
+src/routes/agents/+page.svelte
+src/routes/agents/[id]/+page.svelte
+src/routes/audit/+page.svelte
+src/routes/branches/+page.svelte
+src/routes/cycles/+page.svelte
+src/routes/cycles/[id]/+page.svelte
+src/routes/flywheel/+page.svelte
+src/routes/inbox/+page.svelte
+src/routes/inbox/[id]/+page.svelte
+src/routes/insights/+page.svelte
+src/routes/knowledge/kbs/+page.svelte
+src/routes/knowledge/kbs/[kbSlug]/+page.svelte
+src/routes/knowledge/kbs/[kbSlug]/[docSlug]/edit/+page.svelte
+src/routes/knowledge/kbs/[kbSlug]/[docSlug]/history/+page.svelte
+src/routes/memory/+page.svelte
+src/routes/notifications/+page.svelte
+src/routes/org/+page.svelte
+src/routes/schedule/+page.svelte
+src/routes/settings/autonomous/+page.svelte
+src/routes/settings/notifications/+page.svelte
+src/routes/settings/security/+page.svelte
+src/routes/webhooks/+page.svelte
 
 Summary
 -------
@@ -21,13 +67,7 @@ Summary
 - Warnings: 64 (a11y, CSS compat, Svelte 5 state reference patterns)
 - Files with issues: 25
 
-The 64 warnings are safe to merge with:
-  - 30+ warnings for Svelte 5 state-reference patterns (capturing initial value in
-    closures); this is a known pattern in the runes migration and is addressed via
-    `$derived()` at the next major refactor.
-  - 25+ warnings for a11y (missing ARIA roles, label associations, tabindex on
-    interactive elements); pre-existing issues unrelated to today's cycle.
-  - 8 warnings for CSS compatibility (-webkit-line-clamp vs line-clamp, etc.);
-    covered by Tailwind vendor prefixes.
-
-No critical issues block the dashboard from building or running.
+No errors block the dashboard from building or running. All 64 warnings are
+pre-existing inherited issues — none were introduced by the current sprint cycle.
+The MODEL_TIERS undefined regression has been eliminated; svelte-check is now a
+reliable signal with zero false-positive errors for CI gating.

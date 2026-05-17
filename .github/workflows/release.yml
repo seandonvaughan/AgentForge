@@ -55,7 +55,10 @@ jobs:
         run: pnpm exec vitest run
 
       - name: Type check
-        run: pnpm exec tsc --noEmit
+        # pnpm verify:gates (above) runs `pnpm build` which emits .d.ts files for all
+        # project references.  Use -b so TypeScript walks the full reference graph rather
+        # than only the root project.
+        run: pnpm exec tsc -b --noEmit
 
       - name: Install Playwright browser
         run: pnpm exec playwright install --with-deps chromium

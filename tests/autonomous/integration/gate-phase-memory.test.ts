@@ -493,4 +493,51 @@ describe('server runGatePhase — known-debt injection into gate prompt', () => 
     expect(streamingArg.task).not.toContain('Known pre-existing debt');
     expect(streamingArg.task).toContain('Approve or reject sprint');
   });
+
+  it('includes the cross-reference IMPORTANT note when known debt is present', async () => {
+    // When known debt is injected, the task must contain an explicit note that
+    // known-debt findings must not independently drive a REJECT. This prevents
+    // the LLM from reasoning "finding still reproduces → REJECT" while
+    // ignoring the known-debt guidance (a known false-rejection vector).
+    seedPriorVerdict(cwd, {
+      verdict: 'approved',
+      cycleId: 'cycle-crossref',
+      majorFindings: ['readCycleRecord duplicated across two packages'],
+      criticalFindings: [],
+    });
+
+    seedSprint(cwd, '6.8.kd-inject-5');
+    const ctx = makeCtx(cwd, '6.8.kd-inject-5', 'cycle-kd-inject-5');
+
+    await runGatePhase(ctx);
+
+    const ctor = vi.mocked(AgentRuntime);
+    const lastInstance = ctor.mock.results.at(-1)!.value;
+    const streamingArg = lastInstance.runStreaming.mock.calls[0]![0] as { task: string };
+
+    // The explicit cross-reference note must appear so the CEO agent's REJECT
+    // criteria are scoped exclusively to sprint-introduced findings.
+    expect(streamingArg.task).toContain('IMPORTANT');
+    expect(streamingArg.task).toContain('MUST NOT independently drive a REJECT');
+    // The known-debt list is also present so the note has something to reference.
+    expect(streamingArg.task).toContain('readCycleRecord duplicated across two packages');
+  });
+
+  it('omits the IMPORTANT cross-reference note when no known debt exists', async () => {
+    // When there is no known debt, the cross-reference note must not appear —
+    // its presence with an empty list would be confusing and misleading.
+    seedSprint(cwd, '6.8.kd-inject-6');
+    const ctx = makeCtx(cwd, '6.8.kd-inject-6', 'cycle-kd-inject-6');
+
+    await runGatePhase(ctx);
+
+    const ctor = vi.mocked(AgentRuntime);
+    const lastInstance = ctor.mock.results.at(-1)!.value;
+    const streamingArg = lastInstance.runStreaming.mock.calls[0]![0] as { task: string };
+
+    // No cross-reference note when there's no known debt to reference.
+    expect(streamingArg.task).not.toContain('MUST NOT independently drive a REJECT');
+    // Base prompt is still present.
+    expect(streamingArg.task).toContain('Approve or reject sprint');
+  });
 });

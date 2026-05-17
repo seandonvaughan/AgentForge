@@ -9,7 +9,9 @@ import type { MergeQueueItem } from '@agentforge/core';
 export let branchManager = new GitBranchManager(true);
 
 export interface MergeQueueRouteOptions {
-  adapter?: WorkspaceAdapter;
+  // Allow explicit undefined so callers can safely pass options.adapter
+  // (which may be WorkspaceAdapter | undefined) under exactOptionalPropertyTypes.
+  adapter?: WorkspaceAdapter | undefined;
 }
 
 export async function mergeQueueRoutes(

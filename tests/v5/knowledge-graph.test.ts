@@ -4,6 +4,7 @@ import {
   EntityExtractor,
   RelationshipMapper,
 } from '../../packages/core/src/knowledge/index.js';
+import { WorkspaceAdapter } from '../../packages/db/src/workspace-adapter.js';
 
 describe('KnowledgeGraph', () => {
   let graph: KnowledgeGraph;
@@ -294,5 +295,117 @@ describe('RelationshipMapper', () => {
     );
     expect(abPair).toBeTruthy();
     expect(abPair?.weight).toBe(1.0); // Highest frequency
+  });
+});
+
+// ── KnowledgeGraph adapter integration ───────────────────────────────────────
+// These tests verify that the write-through SQLite persistence layer works
+// correctly: mutations call through to the adapter and a freshly-constructed
+// KnowledgeGraph hydrates from what was persisted.
+
+function makeAdapter(): WorkspaceAdapter {
+  return new WorkspaceAdapter({ dbPath: ':memory:', workspaceId: 'test-ws' });
+}
+
+describe('KnowledgeGraph — adapter write-through persistence', () => {
+  it('addEntity writes through to the adapter', () => {
+    const adapter = makeAdapter();
+    const graph = new KnowledgeGraph(adapter);
+    graph.addEntity({ name: 'PersistentAgent', type: 'agent' });
+
+    // The adapter should have exactly one entity persisted.
+    expect(adapter.countKnowledgeEntities()).toBe(1);
+    const rows = adapter.listKnowledgeEntities();
+    expect(rows[0]!.name).toBe('PersistentAgent');
+    adapter.close();
+  });
+
+  it('hydrates entities from the adapter on construction', () => {
+    const adapter = makeAdapter();
+
+    // First graph writes entities.
+    const g1 = new KnowledgeGraph(adapter);
+    g1.addEntity({ name: 'AgentAlpha', type: 'agent' });
+    g1.addEntity({ name: 'ModuleBeta', type: 'module' });
+
+    // Second graph re-reads from the same adapter — simulates a server restart.
+    const g2 = new KnowledgeGraph(adapter);
+    expect(g2.entityCount()).toBe(2);
+    const names = g2.listEntities().map(e => e.name);
+    expect(names).toContain('AgentAlpha');
+    expect(names).toContain('ModuleBeta');
+    adapter.close();
+  });
+
+  it('updateEntity persists changes through to the adapter', () => {
+    const adapter = makeAdapter();
+    const graph = new KnowledgeGraph(adapter);
+    const entity = graph.addEntity({ name: 'MyModule', type: 'module' });
+
+    graph.updateEntity(entity.id, { description: 'Updated desc' });
+
+    // The raw adapter row should reflect the update.
+    const row = adapter.getKnowledgeEntity(entity.id);
+    expect(row?.description).toBe('Updated desc');
+    adapter.close();
+  });
+
+  it('deleteEntity removes the entity from the adapter', () => {
+    const adapter = makeAdapter();
+    const graph = new KnowledgeGraph(adapter);
+    const entity = graph.addEntity({ name: 'ToDelete', type: 'concept' });
+    expect(adapter.countKnowledgeEntities()).toBe(1);
+
+    graph.deleteEntity(entity.id);
+    expect(adapter.countKnowledgeEntities()).toBe(0);
+    adapter.close();
+  });
+
+  it('addRelationship writes through to the adapter', () => {
+    const adapter = makeAdapter();
+    const graph = new KnowledgeGraph(adapter);
+    const a = graph.addEntity({ name: 'A', type: 'module' });
+    const b = graph.addEntity({ name: 'B', type: 'module' });
+
+    graph.addRelationship({ sourceId: a.id, targetId: b.id, type: 'depends_on' });
+    expect(adapter.countKnowledgeRelationships()).toBe(1);
+    adapter.close();
+  });
+
+  it('hydrates relationships from the adapter on construction', () => {
+    const adapter = makeAdapter();
+    const g1 = new KnowledgeGraph(adapter);
+    const a = g1.addEntity({ name: 'A', type: 'module' });
+    const b = g1.addEntity({ name: 'B', type: 'module' });
+    g1.addRelationship({ sourceId: a.id, targetId: b.id, type: 'depends_on' });
+
+    // New instance — simulates restart — should hydrate both entities and the relationship.
+    const g2 = new KnowledgeGraph(adapter);
+    expect(g2.entityCount()).toBe(2);
+    expect(g2.relationshipCount()).toBe(1);
+    const rels = g2.listRelationships();
+    expect(rels[0]!.type).toBe('depends_on');
+    adapter.close();
+  });
+
+  it('deleteRelationship removes the relationship from the adapter', () => {
+    const adapter = makeAdapter();
+    const graph = new KnowledgeGraph(adapter);
+    const a = graph.addEntity({ name: 'A', type: 'concept' });
+    const b = graph.addEntity({ name: 'B', type: 'concept' });
+    const rel = graph.addRelationship({ sourceId: a.id, targetId: b.id, type: 'related_to' });
+    if ('error' in rel) throw new Error('Expected relationship');
+
+    graph.deleteRelationship(rel.id);
+    expect(adapter.countKnowledgeRelationships()).toBe(0);
+    adapter.close();
+  });
+
+  it('graph without adapter still works purely in-memory', () => {
+    // Regression guard: no adapter should not throw.
+    const graph = new KnowledgeGraph();
+    const e = graph.addEntity({ name: 'InMemory', type: 'concept' });
+    expect(graph.getEntity(e.id)).toBeDefined();
+    expect(graph.entityCount()).toBe(1);
   });
 });

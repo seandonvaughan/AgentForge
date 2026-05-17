@@ -101,6 +101,16 @@ describe('ClaudeCodeCompatTransport.buildClaudeArgs', () => {
     });
   });
 
+  describe('timeoutMs — not a CLI arg (used at spawn level)', () => {
+    it('setting timeoutMs on the request does not affect buildClaudeArgs output', () => {
+      // timeoutMs is consumed in invokeClaudeCli/invokeClaudeCliStreaming, not in
+      // buildClaudeArgs — it drives the spawn timer, not the CLI flag list.
+      const withTimeout = buildArgs(makeRequest({ timeoutMs: 45 * 60 * 1000 }), 'json');
+      const withoutTimeout = buildArgs(makeRequest(), 'json');
+      expect(withTimeout).toEqual(withoutTimeout);
+    });
+  });
+
   describe('MODEL_IDS opus bump', () => {
     it('MODEL_IDS.opus is claude-opus-4-7', async () => {
       const { MODEL_IDS } = await import('../../agent-runtime/types.js');

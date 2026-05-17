@@ -416,10 +416,12 @@ export async function dashboardStubRoutes(
     // URL (handles any port, e.g. Vite on 4751 → API on 4750); fall back to the
     // canonical dev-server origin so browsers still get a valid CORS response
     // when no Origin header is present.
+    // Allow both localhost and 127.0.0.1 to match the main CORS plugin allowlist.
+    // https:// is excluded: this server runs HTTP-only.
     {
       const reqOrigin = req.headers['origin'];
       const isLocalhost = typeof reqOrigin === 'string' &&
-        /^https?:\/\/localhost(:\d+)?$/.test(reqOrigin);
+        /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(reqOrigin);
       reply.raw.setHeader(
         'Access-Control-Allow-Origin',
         isLocalhost ? reqOrigin : 'http://localhost:4751',

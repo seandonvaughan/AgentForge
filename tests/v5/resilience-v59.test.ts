@@ -231,22 +231,24 @@ describe('HealthMonitor', () => {
   });
 
   it('success after circuit open closes it again', () => {
-    // Use a very short window so old failures expire immediately
+    // Use a small-but-stable window so the open assertion isn't a race
+    // against test-tick latency on slow CI runners. The 50ms value is long
+    // enough that two sequential record() + getHealth() calls always land
+    // inside the window, and the 100ms setTimeout reliably outlives it.
     const monitor = new HealthMonitor({
       failureRateThreshold: 0.5,
       minCallsBeforeOpen: 2,
-      windowMs: 1, // 1ms window — failures expire almost instantly
+      windowMs: 50,
     });
     monitor.record('svc', false);
     monitor.record('svc', false);
     expect(monitor.getHealth('svc').circuitOpen).toBe(true);
-    // Wait for window to expire, then record success
     return new Promise<void>(resolve => {
       setTimeout(() => {
         monitor.record('svc', true);
         expect(monitor.getHealth('svc').circuitOpen).toBe(false);
         resolve();
-      }, 10);
+      }, 100);
     });
   });
 

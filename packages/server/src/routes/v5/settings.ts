@@ -53,12 +53,33 @@ const DEFAULT_SETTINGS = {
 // Utilities
 // ---------------------------------------------------------------------------
 
-function deepMerge(target: any, source: any): any {
+/**
+ * Prototype-pollution-safe deep merge.
+ *
+ * Skips the well-known prototype-pollution keys (__proto__, constructor,
+ * prototype) so a crafted request body cannot modify Object.prototype or
+ * Function.prototype.  The guard matters even when the body arrives through
+ * JSON.parse — some JSON parsers (including older V8 versions) surface __proto__
+ * as an own enumerable property that Object.keys() will enumerate, and
+ * subsequent bracket-notation assignments on a plain-object target reach the
+ * prototype chain accessors rather than setting own properties.
+ */
+const PROTOTYPE_POISON_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {
   for (const key of Object.keys(source)) {
-    if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
-      target[key] = deepMerge(target[key] ?? {}, source[key]);
+    if (PROTOTYPE_POISON_KEYS.has(key)) continue;  // prevent prototype pollution
+    const srcVal = source[key];
+    if (srcVal && typeof srcVal === 'object' && !Array.isArray(srcVal)) {
+      const tgtVal = target[key];
+      target[key] = deepMerge(
+        (tgtVal && typeof tgtVal === 'object' && !Array.isArray(tgtVal)
+          ? tgtVal
+          : {}) as Record<string, unknown>,
+        srcVal as Record<string, unknown>,
+      );
     } else {
-      target[key] = source[key];
+      target[key] = srcVal;
     }
   }
   return target;
@@ -71,7 +92,7 @@ function loadSettings(): typeof DEFAULT_SETTINGS {
   try {
     const raw = readFileSync(settingsPath, 'utf-8');
     const parsed = yaml.load(raw) as Record<string, unknown>;
-    return deepMerge(structuredClone(DEFAULT_SETTINGS), parsed ?? {});
+    return deepMerge(structuredClone(DEFAULT_SETTINGS) as Record<string, unknown>, parsed ?? {}) as typeof DEFAULT_SETTINGS;
   } catch {
     return structuredClone(DEFAULT_SETTINGS);
   }
@@ -108,7 +129,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const current = loadSettings();
-    const merged = deepMerge(current, body);
+    const merged = deepMerge(current as Record<string, unknown>, body);
     saveSettings(merged);
 
     globalStream.emit({
@@ -176,7 +197,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
 
     // Merge imported settings on top of defaults so unknown keys are preserved
     // but missing keys fall back to defaults.
-    const merged = deepMerge(structuredClone(DEFAULT_SETTINGS), body.settings);
+    const merged = deepMerge(structuredClone(DEFAULT_SETTINGS) as Record<string, unknown>, body.settings);
     saveSettings(merged);
 
     globalStream.emit({

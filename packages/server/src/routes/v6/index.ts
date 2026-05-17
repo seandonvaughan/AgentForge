@@ -270,7 +270,7 @@ export async function registerV6Routes(
     (sub as any).patch  = patchMethod(_patch as AnyFn);
 
     // Register all v5 sub-modules — their internal paths will be rewritten
-    await approvalsRoutes(sub);
+    await approvalsRoutes(sub, { adapter });
     await rbacRoutes(sub);
     await costsRoutes(sub, { adapter });
     await workflowRoutes(sub);
@@ -278,7 +278,7 @@ export async function registerV6Routes(
     await observabilityRoutes(sub);
     await streamRoutes(sub);
     await mergeQueueRoutes(sub, { adapter });
-    await knowledgeRoutes(sub);
+    await knowledgeRoutes(sub, { adapter, projectRoot });
     await canaryRoutes(sub);
     await tracingRoutes(sub);
     await costAutopilotRoutes(sub);

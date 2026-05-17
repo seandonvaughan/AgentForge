@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { ScoringPipeline, DEFAULT_CYCLE_CONFIG, type AutonomousBacklogItem } from '@agentforge/core';
 
 const fakeBacklog: AutonomousBacklogItem[] = [
@@ -206,6 +209,127 @@ describe('ScoringPipeline', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Tests: getAgentRoster() — nested team.yaml format and cwd-based injection
+// These tests verify that the scorer prompt includes LIVE roster IDs from the
+// real .agentforge/team.yaml (nested group format) rather than silently
+// falling back to the 23-agent hardcoded list when team.yaml is present.
+// ---------------------------------------------------------------------------
+
+/** Create a temp directory with a mock .agentforge/team.yaml using nested groups. */
+function makeNestedTeamYamlDir(agents: Record<string, string[]>): string {
+  const dir = mkdtempSync(join(tmpdir(), 'agentforge-test-'));
+  mkdirSync(join(dir, '.agentforge'));
+  const lines = ['agents:'];
+  for (const [group, ids] of Object.entries(agents)) {
+    lines.push(`  ${group}:`);
+    for (const id of ids) lines.push(`    - ${id}`);
+  }
+  writeFileSync(join(dir, '.agentforge', 'team.yaml'), lines.join('\n'));
+  return dir;
+}
+
+describe('ScoringPipeline — roster from nested team.yaml', () => {
+  it('reads agent IDs from nested grouped team.yaml when cwd is provided', async () => {
+    const cwd = makeNestedTeamYamlDir({
+      strategic: ['ceo', 'architect'],
+      implementation: ['coder', 'frontend-dev', 'api-specialist', 'devops-engineer'],
+      quality: ['backend-qa', 'test-runner'],
+    });
+
+    const emptyResult = JSON.stringify({
+      rankings: [], totalEstimatedCostUsd: 0, budgetOverflowUsd: 0, summary: 's', warnings: [],
+    });
+    const runtime = makeCapturingRuntime(emptyResult);
+    const { logger } = makeMockLogger();
+    const pipeline = new ScoringPipeline(
+      runtime as any, makeMockAdapter() as any, DEFAULT_CYCLE_CONFIG, logger, cwd,
+    );
+    await pipeline.score(fakeBacklog);
+
+    const prompt = runtime.getTask();
+    // All agents from the nested YAML must appear in the roster section
+    expect(prompt).toContain('ceo');
+    expect(prompt).toContain('frontend-dev');
+    expect(prompt).toContain('backend-qa');
+    expect(prompt).toContain('devops-engineer');
+  });
+
+  it('prompt lists only live roster IDs, not hardcoded fallback extras, when cwd resolves', async () => {
+    // The hardcoded fallback includes 'linter' but NOT 'ceo'. If we write a team.yaml
+    // with only a single agent, the prompt roster should contain only that agent.
+    const cwd = makeNestedTeamYamlDir({
+      utility: ['my-custom-agent'],
+    });
+
+    const emptyResult = JSON.stringify({
+      rankings: [], totalEstimatedCostUsd: 0, budgetOverflowUsd: 0, summary: 's', warnings: [],
+    });
+    const runtime = makeCapturingRuntime(emptyResult);
+    const { logger } = makeMockLogger();
+    const pipeline = new ScoringPipeline(
+      runtime as any, makeMockAdapter() as any, DEFAULT_CYCLE_CONFIG, logger, cwd,
+    );
+    await pipeline.score(fakeBacklog);
+
+    const prompt = runtime.getTask();
+    // The live roster section (between "Valid agent IDs" and the ⚠️ line) must
+    // include our custom agent ID, proving the live yaml was parsed.
+    // We locate the roster line by searching for the section header pattern.
+    const rosterStart = prompt.indexOf('Valid agent IDs — use one verbatim');
+    const rosterEnd = prompt.indexOf('⚠️', rosterStart);
+    expect(rosterStart).toBeGreaterThan(-1);
+    const rosterSection = prompt.slice(rosterStart, rosterEnd);
+    expect(rosterSection).toContain('my-custom-agent');
+  });
+
+  it('sanitizeAssignees uses live roster: off-roster in team.yaml context gets replaced', async () => {
+    const cwd = makeNestedTeamYamlDir({
+      implementation: ['coder', 'frontend-dev'],
+    });
+
+    // LLM returns 'BackendEngineer' — not in the live 2-agent roster
+    const runtime = makeMockRuntime(JSON.stringify({
+      rankings: [
+        { itemId: 'i1', title: 'Fix', rank: 1, score: 0.9, confidence: 0.9,
+          estimatedCostUsd: 5, estimatedDurationMinutes: 20,
+          rationale: 'r', dependencies: [], suggestedAssignee: 'BackendEngineer',
+          suggestedTags: ['fix'], withinBudget: true },
+      ],
+      totalEstimatedCostUsd: 5, budgetOverflowUsd: 0, summary: 's', warnings: [],
+    }));
+
+    const { logger } = makeMockLogger();
+    const pipeline = new ScoringPipeline(
+      runtime as any, makeMockAdapter() as any, DEFAULT_CYCLE_CONFIG, logger, cwd,
+    );
+    const result = await pipeline.score(fakeBacklog);
+
+    expect(result.withinBudget[0]!.suggestedAssignee).toBe('coder');
+    expect(result.warnings.some(w => w.includes('BackendEngineer'))).toBe(true);
+  });
+
+  it('falls back to hardcoded roster when .agentforge/team.yaml is missing', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'agentforge-no-yaml-'));
+    // Note: no .agentforge directory created — team.yaml is absent
+
+    const emptyResult = JSON.stringify({
+      rankings: [], totalEstimatedCostUsd: 0, budgetOverflowUsd: 0, summary: 's', warnings: [],
+    });
+    const runtime = makeCapturingRuntime(emptyResult);
+    const { logger } = makeMockLogger();
+    const pipeline = new ScoringPipeline(
+      runtime as any, makeMockAdapter() as any, DEFAULT_CYCLE_CONFIG, logger, cwd,
+    );
+    await pipeline.score(fakeBacklog);
+
+    const prompt = runtime.getTask();
+    // Hardcoded fallback must include well-known agents
+    expect(prompt).toContain('coder');
+    expect(prompt).toContain('frontend-dev');
+  });
+});
+
 describe('ScoringPipeline fallback ladder', () => {
   function makeAlternatingRuntime(responses: string[]) {
     let idx = 0;
@@ -378,5 +502,165 @@ describe('ScoringPipeline fallback ladder', () => {
     for (const item of [...result.withinBudget, ...result.requiresApproval]) {
       expect(item.estimatedCostUsd).toBeCloseTo(2.50);
     }
+  });
+});
+
+describe('ScoringPipeline.staticFallback — p50CostByTag lookup', () => {
+  // staticFallback() is private; cast to any to exercise it directly.
+  // These tests verify the fix: tag-specific p50 costs replace the flat $1.50
+  // perItemUsd estimate, reducing estimation error from up to 1622× down to
+  // median-calibrated values.
+
+  function makeStaticAdapter(p50CostByTag: Record<string, number> = {}) {
+    return {
+      getSprintHistory: async () => [],
+      getCostMedians: async () => ({}),
+      getP50CostByTag: async () => p50CostByTag,
+      getTeamState: async () => ({ utilization: {} }),
+    };
+  }
+
+  function makeStaticLogger() {
+    return {
+      logs: [] as any[],
+      logger: {
+        logScoring: () => {},
+        logScoringFallback: () => {},
+      } as any,
+    };
+  }
+
+  const backlogFixture = [
+    { id: 'f1', title: 'Fix crash',    description: 'x', priority: 'P0' as const, tags: ['fix'],     source: 'failed-session' as const, confidence: 0.9 },
+    { id: 'f2', title: 'New feature',  description: 'x', priority: 'P1' as const, tags: ['feature'], source: 'todo-marker'   as const, confidence: 0.8 },
+    { id: 'f3', title: 'Cleanup',      description: 'x', priority: 'P2' as const, tags: ['chore'],   source: 'todo-marker'   as const, confidence: 0.7 },
+  ];
+
+  it('uses p50CostByTag cost for each known primary tag', async () => {
+    const p50 = { fix: 1.10, feature: 1.65, chore: 0.55 };
+    const { logger } = makeStaticLogger();
+    const pipeline = new ScoringPipeline(
+      {} as any,
+      makeStaticAdapter(p50) as any,
+      DEFAULT_CYCLE_CONFIG,
+      logger,
+    );
+
+    const result = await (pipeline as any).staticFallback(backlogFixture);
+    const byId = Object.fromEntries(
+      [...result.withinBudget, ...result.requiresApproval].map((r: any) => [r.itemId, r]),
+    );
+
+    expect(byId['f1'].estimatedCostUsd).toBeCloseTo(1.10); // fix p50
+    expect(byId['f2'].estimatedCostUsd).toBeCloseTo(1.65); // feature p50
+    expect(byId['f3'].estimatedCostUsd).toBeCloseTo(0.55); // chore p50
+  });
+
+  it('falls back to perItemUsd ($1.50) for tags absent from p50CostByTag', async () => {
+    // p50 has 'fix' but not 'feature' — feature item gets the flat $1.50 default.
+    const p50 = { fix: 1.10 };
+    const { logger } = makeStaticLogger();
+    const pipeline = new ScoringPipeline(
+      {} as any,
+      makeStaticAdapter(p50) as any,
+      DEFAULT_CYCLE_CONFIG, // perItemUsd: 1.5
+      logger,
+    );
+
+    const backlog = [
+      { id: 'known',   title: 'Fix', description: 'x', priority: 'P0' as const, tags: ['fix'],     source: 'failed-session' as const, confidence: 0.9 },
+      { id: 'unknown', title: 'Feat', description: 'x', priority: 'P1' as const, tags: ['feature'], source: 'todo-marker'   as const, confidence: 0.8 },
+    ];
+
+    const result = await (pipeline as any).staticFallback(backlog);
+    const byId = Object.fromEntries(
+      [...result.withinBudget, ...result.requiresApproval].map((r: any) => [r.itemId, r]),
+    );
+
+    expect(byId['known'].estimatedCostUsd).toBeCloseTo(1.10);   // p50 used
+    expect(byId['unknown'].estimatedCostUsd).toBeCloseTo(1.5);  // perItemUsd fallback
+  });
+
+  it('falls back to perItemUsd for items with an empty tags array', async () => {
+    const p50 = { fix: 1.10 };
+    const { logger } = makeStaticLogger();
+    const pipeline = new ScoringPipeline(
+      {} as any,
+      makeStaticAdapter(p50) as any,
+      DEFAULT_CYCLE_CONFIG,
+      logger,
+    );
+
+    const backlog = [
+      { id: 'i1', title: 'No tags', description: 'x', priority: 'P0' as const, tags: [], source: 'todo-marker' as const, confidence: 0.8 },
+    ];
+
+    const result = await (pipeline as any).staticFallback(backlog);
+    const item = [...result.withinBudget, ...result.requiresApproval][0];
+    expect(item.estimatedCostUsd).toBeCloseTo(1.5); // perItemUsd default (tags[0] is undefined)
+  });
+
+  it('falls back to perItemUsd when getP50CostByTag throws', async () => {
+    const throwingAdapter = {
+      getSprintHistory: async () => [],
+      getCostMedians: async () => ({}),
+      getP50CostByTag: async (): Promise<Record<string, number>> => { throw new Error('adapter offline'); },
+      getTeamState: async () => ({ utilization: {} }),
+    };
+    const { logger } = makeStaticLogger();
+    const pipeline = new ScoringPipeline(
+      {} as any,
+      throwingAdapter as any,
+      DEFAULT_CYCLE_CONFIG,
+      logger,
+    );
+
+    const backlog = [
+      { id: 'i1', title: 'Fix crash', description: 'x', priority: 'P0' as const, tags: ['fix'], source: 'failed-session' as const, confidence: 0.9 },
+    ];
+
+    const result = await (pipeline as any).staticFallback(backlog);
+    const item = [...result.withinBudget, ...result.requiresApproval][0];
+    // Adapter throws → p50CostByTag stays {} → perItemUsd ($1.50) applies
+    expect(item.estimatedCostUsd).toBeCloseTo(1.5);
+    expect(result.fallback).toBe('static');
+  });
+
+  it('sets fallback marker to "static" and includes the expected warning', async () => {
+    const { logger } = makeStaticLogger();
+    const pipeline = new ScoringPipeline(
+      {} as any,
+      makeStaticAdapter() as any,
+      DEFAULT_CYCLE_CONFIG,
+      logger,
+    );
+
+    const result = await (pipeline as any).staticFallback([
+      { id: 'i1', title: 'x', description: 'x', priority: 'P0' as const, tags: ['fix'], source: 'todo-marker' as const, confidence: 0.8 },
+    ]);
+
+    expect(result.fallback).toBe('static');
+    expect(result.warnings).toContain('Scoring agent failed; used static priority ranking');
+  });
+
+  it('sorts items by priority (P0 → P1 → P2) when p50 costs differ', async () => {
+    // Even with different costs per tag the priority ordering must hold.
+    const p50 = { fix: 1.10, feature: 1.65, chore: 0.55 };
+    const { logger } = makeStaticLogger();
+    const pipeline = new ScoringPipeline(
+      {} as any,
+      makeStaticAdapter(p50) as any,
+      DEFAULT_CYCLE_CONFIG,
+      logger,
+    );
+
+    const result = await (pipeline as any).staticFallback(backlogFixture);
+    const allItems = [...result.withinBudget, ...result.requiresApproval].sort(
+      (a: any, b: any) => a.rank - b.rank,
+    );
+
+    expect(allItems[0].itemId).toBe('f1'); // P0
+    expect(allItems[1].itemId).toBe('f2'); // P1
+    expect(allItems[2].itemId).toBe('f3'); // P2
   });
 });

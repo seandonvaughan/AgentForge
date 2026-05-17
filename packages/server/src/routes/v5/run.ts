@@ -506,6 +506,11 @@ export async function runRoutes(
     if (adapter) {
       for (const session of adapter.listSessions({ limit: 100 })) {
         const existing = runsBySessionId.get(session.id);
+        // Only surface adapter sessions that were directly runner-initiated:
+        // - always hydrate if already tracked in runLog (current process run)
+        // - skip sub-agent sessions (those with a parent_session_id) not yet in runLog;
+        //   those are autonomous-cycle sub-runs, not user-triggered runner calls.
+        if (!existing && session.parent_session_id !== null) continue;
         runsBySessionId.set(session.id, hydrateRunEntry(session, adapter, existing));
       }
     }

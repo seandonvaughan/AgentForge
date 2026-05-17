@@ -309,4 +309,128 @@ describe('gate-phase progress events', () => {
     expect(payload.major).toBe(0);
     expect(payload.findingsCount).toBe(0);
   });
+
+  it('writes knownDebt field to gate.json so operators can audit which findings were excluded', async () => {
+    // Seed a prior gate-verdict JSONL entry directly so the knownDebt list is non-empty.
+    const memDir = join(tmpRoot, '.agentforge', 'memory');
+    mkdirSync(memDir, { recursive: true });
+    writeFileSync(
+      join(memDir, 'gate-verdict.jsonl'),
+      JSON.stringify({
+        id: 'prior-debt-entry',
+        type: 'gate-verdict',
+        value: 'Gate approved: prior cycle',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        source: 'prior-cycle',
+        tags: ['verdict:approved'],
+        metadata: {
+          cycleId: 'prior-cycle',
+          verdict: 'approved',
+          rationale: 'prior cycle entry',
+          criticalFindings: [],
+          majorFindings: ['readCycleRecord duplicated across two packages'],
+        },
+      }) + '\n',
+    );
+
+    writeSprintFile([{ id: 'item-1', title: 'Task A', assignee: 'backend', status: 'completed' }]);
+
+    const bus = makeBus();
+    const ctx = makeCtx(bus);
+
+    (ctx.runtime.run as ReturnType<typeof vi.fn>).mockResolvedValue({
+      output: JSON.stringify({ verdict: 'APPROVE', rationale: 'All good' }),
+      costUsd: 0.05,
+      status: 'completed',
+    });
+
+    const { runGatePhase } = await import('../gate-phase.js');
+    await runGatePhase(ctx);
+
+    // The gate.json must contain the knownDebt field so operators can audit
+    // which pre-existing findings were excluded from REJECT grounds.
+    const { readFileSync, existsSync } = await import('node:fs');
+    const gateJsonPath = join(tmpRoot, '.agentforge', 'cycles', 'cycle-test-1', 'phases', 'gate.json');
+    expect(existsSync(gateJsonPath)).toBe(true);
+
+    const gateJson = JSON.parse(readFileSync(gateJsonPath, 'utf8'));
+    expect(Array.isArray(gateJson.knownDebt)).toBe(true);
+    expect(gateJson.knownDebt).toContain('readCycleRecord duplicated across two packages');
+  });
+
+  it('writes an empty knownDebt array to gate.json when no prior verdict exists', async () => {
+    writeSprintFile([{ id: 'item-1', title: 'Task A', assignee: 'backend', status: 'completed' }]);
+
+    const bus = makeBus();
+    const ctx = makeCtx(bus);
+
+    (ctx.runtime.run as ReturnType<typeof vi.fn>).mockResolvedValue({
+      output: JSON.stringify({ verdict: 'APPROVE', rationale: 'All good' }),
+      costUsd: 0.05,
+      status: 'completed',
+    });
+
+    const { runGatePhase } = await import('../gate-phase.js');
+    await runGatePhase(ctx);
+
+    const { readFileSync, existsSync } = await import('node:fs');
+    const gateJsonPath = join(tmpRoot, '.agentforge', 'cycles', 'cycle-test-1', 'phases', 'gate.json');
+    expect(existsSync(gateJsonPath)).toBe(true);
+
+    const gateJson = JSON.parse(readFileSync(gateJsonPath, 'utf8'));
+    // An empty list means the CEO evaluated all findings without any exclusions.
+    expect(Array.isArray(gateJson.knownDebt)).toBe(true);
+    expect(gateJson.knownDebt).toHaveLength(0);
+  });
+
+  it('includes the cross-reference step in the gate task when known debt is present', async () => {
+    // Seed a prior gate-verdict JSONL entry so the knownDebt list is non-empty.
+    const memDir = join(tmpRoot, '.agentforge', 'memory');
+    mkdirSync(memDir, { recursive: true });
+    writeFileSync(
+      join(memDir, 'gate-verdict.jsonl'),
+      JSON.stringify({
+        id: 'prior-crossref-entry',
+        type: 'gate-verdict',
+        value: 'Gate approved: prior',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        source: 'prior-cycle',
+        tags: ['verdict:approved'],
+        metadata: {
+          cycleId: 'prior-cycle',
+          verdict: 'approved',
+          rationale: 'prior',
+          criticalFindings: [],
+          majorFindings: ['CORS wildcard on /api/v5/memory/stream'],
+        },
+      }) + '\n',
+    );
+
+    writeSprintFile([{ id: 'item-1', title: 'Task A', assignee: 'backend', status: 'completed' }]);
+
+    const capturedTask = { value: '' };
+    const bus = makeBus();
+    const ctx = makeCtx(bus);
+
+    // Capture the task string passed to runtime.run
+    (ctx.runtime.run as ReturnType<typeof vi.fn>).mockImplementation(
+      async (_agentId: string, task: string) => {
+        capturedTask.value = task;
+        return {
+          output: JSON.stringify({ verdict: 'APPROVE', rationale: 'All good' }),
+          costUsd: 0.05,
+          status: 'completed',
+        };
+      },
+    );
+
+    const { runGatePhase } = await import('../gate-phase.js');
+    await runGatePhase(ctx);
+
+    // The gate task must include the cross-reference step so the CEO's REJECT
+    // criteria are explicitly scoped to sprint-introduced findings only.
+    expect(capturedTask.value).toContain('Cross-check every finding against the "Known pre-existing debt"');
+    expect(capturedTask.value).toContain('MUST NOT independently drive a REJECT');
+    expect(capturedTask.value).toContain('CORS wildcard on /api/v5/memory/stream');
+  });
 });

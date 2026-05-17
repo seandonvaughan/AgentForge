@@ -336,6 +336,22 @@ export async function runGatePhase(
       ? buildKnownDebtSection(priorGateContext)
       : buildKnownDebtSectionFromList(knownDebt);
 
+  // When known debt is present, add an explicit cross-reference step to the
+  // verification protocol so the CEO agent cannot reason "finding still
+  // reproduces → REJECT" while ignoring the known-debt guidance above.
+  // Without this link the two prompt sections are independent and the
+  // verification protocol (as the final, more specific instruction) wins in
+  // an LLM conflict — causing the exact false rejections this feature was
+  // built to prevent.
+  const knownDebtStep =
+    knownDebt.length > 0
+      ? '\n5. Cross-check every finding against the "Known pre-existing debt" section above. ' +
+        'Any finding listed there is accepted pre-existing debt from a prior cycle and MUST NOT ' +
+        'independently drive a REJECT verdict — even if you have verified it still reproduces in ' +
+        'the current tree. Only findings that are BOTH (a) unresolved AND (b) absent from the ' +
+        'known-debt list are valid REJECT grounds.\n'
+      : '';
+
   const task = `You are the CEO of AgentForge. Sprint v${ctx.sprintVersion} has completed execution. Here is the full state:
 
 ## Sprint items
@@ -355,8 +371,7 @@ The code review above may have been produced against an intermediate execute-pha
 1. For each CRITICAL or MAJOR finding that cites a specific file/line, use Read to look at the current contents of that file.
 2. Use Grep to search for the problematic pattern described in the finding.
 3. If the bug no longer reproduces (the line has been amended, the pattern is absent, or the finding's premise is otherwise false in the current code), treat that finding as RESOLVED. Do NOT let a resolved finding drive REJECT.
-4. Only unresolved CRITICAL or verified-still-present MAJOR findings are grounds for REJECT.
-
+4. Only unresolved CRITICAL or verified-still-present MAJOR findings are grounds for REJECT.${knownDebtStep}
 If all CRITICAL and MAJOR findings either do not reproduce or were already addressed, and tests pass, APPROVE.
 
 In your rationale, explicitly state which findings you verified and whether each still reproduces — so downstream callers can audit the decision.
@@ -431,6 +446,11 @@ Respond as JSON: { "verdict": "APPROVE" | "REJECT", "rationale": "..." }`;
             durationMs,
             startedAt: new Date(startedAt).toISOString(),
             completedAt: new Date().toISOString(),
+            // Record which findings were treated as pre-existing known debt so
+            // operators and future audit phases can distinguish sprint-introduced
+            // regressions from accepted carry-forward items. An empty list means
+            // the CEO evaluated all findings without any known-debt exclusions.
+            knownDebt,
           },
           null,
           2,
