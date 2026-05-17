@@ -132,10 +132,20 @@ export function classifyAnthropicError(err: unknown): TransportError {
     if (nodeCode === 'ENOTFOUND' || nodeCode === 'ECONNRESET' || nodeCode === 'ECONNREFUSED') {
       return new TransportNetworkError(`Network error: ${err.message}`, err);
     }
-    if (/missing.*api.?key|unauthorized|api key/i.test(err.message)) {
+    // String.includes-based check avoids ReDoS (CodeQL js/redos): the
+    // previous regex used `.*` which is unbounded on user-controlled input.
+    const lower = err.message.toLowerCase();
+    const mentionsApiKey =
+      lower.includes('api key') ||
+      lower.includes('api_key') ||
+      lower.includes('apikey');
+    const isAuthError =
+      lower.includes('unauthorized') ||
+      (mentionsApiKey && (lower.includes('missing') || lower.includes('invalid')));
+    if (isAuthError) {
       return new TransportAuthError(err.message, err);
     }
-    if (/timed? out/i.test(err.message)) {
+    if (/^timed? out\b|\btimed? out\b/i.test(err.message)) {
       // Timeout without timeoutMs info — use 0 as sentinel.
       return new TransportTimeoutError(err.message, 0, err);
     }
