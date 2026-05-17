@@ -103,8 +103,13 @@ describe('GitOps safety guards', () => {
 
   it('scanStagedForSecrets throws on ANTHROPIC_API_KEY pattern', async () => {
     await git(['checkout', '-b', 'autonomous/v6.4.0'], tmpRepo);
-    // Construct fake key at runtime so static scanners don't flag this test file
-    const fakeAntKey = ['sk', 'ant', 'api03', 'abcd1234567890abcd1234567890abcd'].join('-');
+    // Build a fake key from disjoint string pieces so static secret scanners
+    // (Gitleaks generic-api-key, etc.) can't pattern-match it in source form.
+    // The runtime assembly produces an ANTHROPIC-shaped fixture only when this
+    // test actually runs.
+    const prefix = ['sk', 'a' + 'nt', 'a' + 'pi' + '03'].join('-');
+    const suffix = String.fromCharCode(97, 98, 99, 100) + '1234567890'.repeat(3) + 'ab';
+    const fakeAntKey = `${prefix}-${suffix}`;
     writeFileSync(
       join(tmpRepo, 'bad.ts'),
       `const key = 'ANTHROPIC_API_KEY=${fakeAntKey}';`,
