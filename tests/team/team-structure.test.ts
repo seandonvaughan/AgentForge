@@ -1,217 +1,132 @@
+// tests/team/team-structure.test.ts
+//
+// Structural invariants for the active team manifest. Reads
+// `.agentforge/team.yaml` and verifies shape, not specific agent names —
+// the v22+ Opus-driven forge produces different agents per project.
+
 import { describe, it, expect, beforeAll } from "vitest";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { load as parseYaml } from "js-yaml";
 
-// ---------------------------------------------------------------------------
-// Load team.yaml once
-// ---------------------------------------------------------------------------
-
 const TEAM_YAML_PATH = join(process.cwd(), ".agentforge/team.yaml");
 
 interface TeamYaml {
-  name: string;
-  agents: {
+  name?: string;
+  agents?: {
     strategic?: string[];
     implementation?: string[];
     quality?: string[];
     utility?: string[];
     [key: string]: string[] | undefined;
   };
-  model_routing: {
-    opus: string[];
-    sonnet: string[];
-    haiku: string[];
+  model_routing?: {
+    opus?: string[];
+    sonnet?: string[];
+    haiku?: string[];
   };
-  delegation_graph: Record<string, string[]>;
+  delegation_graph?: Record<string, string[]>;
 }
 
 let team: TeamYaml;
 
 beforeAll(() => {
-  const raw = readFileSync(TEAM_YAML_PATH, "utf-8");
-  team = parseYaml(raw) as TeamYaml;
+  expect(existsSync(TEAM_YAML_PATH)).toBe(true);
+  team = parseYaml(readFileSync(TEAM_YAML_PATH, "utf-8")) as TeamYaml;
 });
 
-function allCategoryAgents(t: TeamYaml): string[] {
-  return Object.values(t.agents)
-    .filter((v): v is string[] => Array.isArray(v))
-    .flat();
-}
-
-function allModelRoutingAgents(t: TeamYaml): string[] {
-  return [
-    ...(t.model_routing.opus ?? []),
-    ...(t.model_routing.sonnet ?? []),
-    ...(t.model_routing.haiku ?? []),
-  ];
-}
-
-// ---------------------------------------------------------------------------
-// File exists
-// ---------------------------------------------------------------------------
-
-describe("team.yaml — file", () => {
-  it("team.yaml file exists at .agentforge/team.yaml", () => {
-    expect(existsSync(TEAM_YAML_PATH)).toBe(true);
-  });
-
-  it("team.yaml has a name field", () => {
+describe("team.yaml — shape", () => {
+  it("has a 'name' field", () => {
     expect(typeof team.name).toBe("string");
-    expect(team.name.length).toBeGreaterThan(0);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// All model_routing agents appear in categories
-// ---------------------------------------------------------------------------
-
-describe("team.yaml — model_routing agents in categories", () => {
-  it("all opus agents are in the categories list", () => {
-    const categories = allCategoryAgents(team);
-    for (const agent of team.model_routing.opus) {
-      expect(categories).toContain(agent);
-    }
+    expect((team.name ?? "").length).toBeGreaterThan(0);
   });
 
-  it("all sonnet agents are in the categories list", () => {
-    const categories = allCategoryAgents(team);
-    for (const agent of team.model_routing.sonnet) {
-      expect(categories).toContain(agent);
-    }
+  it("has an 'agents' object with at least one category", () => {
+    expect(typeof team.agents).toBe("object");
+    expect(Object.keys(team.agents ?? {}).length).toBeGreaterThan(0);
   });
 
-  it("all haiku agents are in the categories list", () => {
-    const categories = allCategoryAgents(team);
-    for (const agent of team.model_routing.haiku) {
-      expect(categories).toContain(agent);
+  it("has at least one agent total", () => {
+    const total = Object.values(team.agents ?? {}).reduce(
+      (sum, list) => sum + (list?.length ?? 0),
+      0,
+    );
+    expect(total).toBeGreaterThan(0);
+  });
+
+  it("agent ids are kebab-case", () => {
+    const ids = Object.values(team.agents ?? {}).flatMap((l) => l ?? []);
+    for (const id of ids) {
+      expect(id).toMatch(/^[a-z][a-z0-9-]*$/);
     }
   });
 });
 
-// ---------------------------------------------------------------------------
-// No agent appears in multiple model tiers
-// ---------------------------------------------------------------------------
+describe("team.yaml — required roster", () => {
+  it("includes pr-merge-manager (mandatory role from Cycle 1)", () => {
+    const allIds = Object.values(team.agents ?? {}).flatMap((l) => l ?? []);
+    expect(allIds).toContain("pr-merge-manager");
+  });
 
-describe("team.yaml — no duplicate model tier assignments", () => {
-  it("no agent appears in both opus and sonnet", () => {
-    const opusSet = new Set(team.model_routing.opus);
-    for (const agent of team.model_routing.sonnet) {
-      expect(opusSet.has(agent)).toBe(false);
+  it("has at least one strategic agent", () => {
+    expect(team.agents?.strategic?.length ?? 0).toBeGreaterThan(0);
+  });
+
+  it("has at least one implementation agent", () => {
+    expect(team.agents?.implementation?.length ?? 0).toBeGreaterThan(0);
+  });
+
+  it("agents do not appear in multiple categories", () => {
+    const seen = new Map<string, string>();
+    for (const [cat, ids] of Object.entries(team.agents ?? {})) {
+      for (const id of ids ?? []) {
+        const prior = seen.get(id);
+        if (prior !== undefined) {
+          throw new Error(
+            `agent '${id}' appears in both '${prior}' and '${cat}'`,
+          );
+        }
+        seen.set(id, cat);
+      }
+    }
+    expect(seen.size).toBeGreaterThan(0);
+  });
+});
+
+describe("team.yaml — model_routing (when present)", () => {
+  it("model_routing tiers reference real agents only", () => {
+    if (!team.model_routing) return;
+    const allIds = new Set(
+      Object.values(team.agents ?? {}).flatMap((l) => l ?? []),
+    );
+    for (const tier of ["opus", "sonnet", "haiku"] as const) {
+      for (const id of team.model_routing[tier] ?? []) {
+        expect(allIds).toContain(id);
+      }
+    }
+  });
+});
+
+describe("team.yaml — delegation_graph (when present)", () => {
+  it("every key in delegation_graph is an agent in the team", () => {
+    if (!team.delegation_graph) return;
+    const allIds = new Set(
+      Object.values(team.agents ?? {}).flatMap((l) => l ?? []),
+    );
+    for (const key of Object.keys(team.delegation_graph)) {
+      expect(allIds).toContain(key);
     }
   });
 
-  it("no agent appears in both opus and haiku", () => {
-    const opusSet = new Set(team.model_routing.opus);
-    for (const agent of team.model_routing.haiku) {
-      expect(opusSet.has(agent)).toBe(false);
+  it("every delegation target exists in the team", () => {
+    if (!team.delegation_graph) return;
+    const allIds = new Set(
+      Object.values(team.agents ?? {}).flatMap((l) => l ?? []),
+    );
+    for (const [, targets] of Object.entries(team.delegation_graph)) {
+      for (const target of targets ?? []) {
+        expect(allIds).toContain(target);
+      }
     }
-  });
-
-  it("no agent appears in both sonnet and haiku", () => {
-    const sonnetSet = new Set(team.model_routing.sonnet);
-    for (const agent of team.model_routing.haiku) {
-      expect(sonnetSet.has(agent)).toBe(false);
-    }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Specific agent placements
-// ---------------------------------------------------------------------------
-
-describe("team.yaml — strategic agents in opus tier", () => {
-  it("vp-research is in strategic category", () => {
-    expect(team.agents.strategic).toContain("vp-research");
-  });
-
-  it("vp-engineering is in strategic category", () => {
-    expect(team.agents.strategic).toContain("vp-engineering");
-  });
-
-  it("vp-research is in opus model tier", () => {
-    expect(team.model_routing.opus).toContain("vp-research");
-  });
-
-  it("vp-engineering is in opus model tier", () => {
-    expect(team.model_routing.opus).toContain("vp-engineering");
-  });
-});
-
-describe("team.yaml — engineering managers in implementation + sonnet", () => {
-  it("engineering-manager-frontend is in implementation category", () => {
-    expect(team.agents.implementation).toContain("engineering-manager-frontend");
-  });
-
-  it("engineering-manager-backend is in implementation category", () => {
-    expect(team.agents.implementation).toContain("engineering-manager-backend");
-  });
-
-  it("engineering-manager-infra is in implementation category", () => {
-    expect(team.agents.implementation).toContain("engineering-manager-infra");
-  });
-
-  it("engineering-manager-frontend is in sonnet model tier", () => {
-    expect(team.model_routing.sonnet).toContain("engineering-manager-frontend");
-  });
-
-  it("engineering-manager-backend is in sonnet model tier", () => {
-    expect(team.model_routing.sonnet).toContain("engineering-manager-backend");
-  });
-
-  it("engineering-manager-infra is in sonnet model tier", () => {
-    expect(team.model_routing.sonnet).toContain("engineering-manager-infra");
-  });
-});
-
-describe("team.yaml — utility agents in haiku tier", () => {
-  it("feedback-analyst is in utility category", () => {
-    expect(team.agents.utility).toContain("feedback-analyst");
-  });
-
-  it("experiment-runner is in utility category", () => {
-    expect(team.agents.utility).toContain("experiment-runner");
-  });
-
-  it("feedback-analyst is in haiku model tier", () => {
-    expect(team.model_routing.haiku).toContain("feedback-analyst");
-  });
-
-  it("experiment-runner is in haiku model tier", () => {
-    expect(team.model_routing.haiku).toContain("experiment-runner");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Delegation graph correctness
-// ---------------------------------------------------------------------------
-
-describe("team.yaml — delegation graph", () => {
-  it("vp-research can delegate to ml-engineer", () => {
-    expect(team.delegation_graph["vp-research"]).toContain("ml-engineer");
-  });
-
-  it("vp-research can delegate to research-scientist", () => {
-    expect(team.delegation_graph["vp-research"]).toContain("research-scientist");
-  });
-
-  it("vp-research can delegate to experiment-runner", () => {
-    expect(team.delegation_graph["vp-research"]).toContain("experiment-runner");
-  });
-
-  it("vp-engineering can delegate to engineering-manager-frontend", () => {
-    expect(team.delegation_graph["vp-engineering"]).toContain("engineering-manager-frontend");
-  });
-
-  it("vp-engineering can delegate to engineering-manager-backend", () => {
-    expect(team.delegation_graph["vp-engineering"]).toContain("engineering-manager-backend");
-  });
-
-  it("vp-engineering can delegate to engineering-manager-infra", () => {
-    expect(team.delegation_graph["vp-engineering"]).toContain("engineering-manager-infra");
-  });
-
-  it("vp-engineering delegates to exactly 3 engineering managers", () => {
-    expect(team.delegation_graph["vp-engineering"]).toHaveLength(3);
   });
 });

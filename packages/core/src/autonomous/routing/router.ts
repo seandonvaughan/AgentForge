@@ -108,7 +108,17 @@ function subsystemMatch(
 // Tag match (priority 2)
 // ---------------------------------------------------------------------------
 
-const TAG_MATCH_THRESHOLD = 2;
+/**
+ * Tag match scoring:
+ *   - Each capability_tag is sub-tokenized on `-` (so `fastify-route`
+ *     produces both `fastify` and `route` as match targets).
+ *   - A tag scores 2.0 for an exact whole-tag match in tokens,
+ *     1.0 for a sub-token match (a `-`-split component appears in tokens).
+ *   - The score threshold is 1.0 — a single sub-token match suffices
+ *     when there's no better candidate. Earlier threshold of 2 left
+ *     most realistic items unmatched and falling through to legacy.
+ */
+const TAG_MATCH_MIN_SCORE = 1.0;
 
 interface TagScore {
   agent: RoutingIndexAgent;
@@ -122,9 +132,22 @@ function tagMatch(tokens: Set<string>, agents: RoutingIndexAgent[]): TagScore | 
     if (agent.capability_tags.length === 0) continue;
     let score = 0;
     for (const tag of agent.capability_tags) {
-      if (tokens.has(tag.toLowerCase())) score++;
+      const lowerTag = tag.toLowerCase();
+      if (tokens.has(lowerTag)) {
+        score += 2.0; // exact whole-tag match
+        continue;
+      }
+      // Sub-token match: split kebab-case tags and check each component.
+      // "fastify-route" -> ["fastify", "route"]; each that appears in
+      // tokens contributes 1.0.
+      const subTokens = lowerTag.split(/[-_/]/);
+      if (subTokens.length > 1) {
+        for (const sub of subTokens) {
+          if (sub.length >= 2 && tokens.has(sub)) score += 1.0;
+        }
+      }
     }
-    if (score >= TAG_MATCH_THRESHOLD) {
+    if (score >= TAG_MATCH_MIN_SCORE) {
       if (
         !best ||
         score > best.score ||
@@ -175,25 +198,33 @@ export function pickAgent(item: RoutableItem, index: RoutingIndex): PickResult {
     return { agentId: tagResult.agent.id, reason: 'tag', confidence };
   }
 
-  // Priority 3: legacy 5-keyword fallback
+  // Priority 3: legacy 5-keyword fallback — but ONLY when the legacy
+  // candidate id actually exists in the current roster. The v18 Opus-driven
+  // forge replaced `coder`/`backend-tech-writer`/`architect`/`backend-qa`
+  // with project-specific specialists, so falling through to legacy and
+  // returning `coder` produces an agentId the executor can't resolve.
   for (const tag of item.tags ?? []) {
     const legacyCandidate = inferAssigneeFromTag(tag);
-    if (legacyCandidate) {
-      // Verify the legacy candidate actually exists in the index
-      const found = agents.find((a) => a.id === legacyCandidate);
+    if (legacyCandidate && agents.find((a) => a.id === legacyCandidate)) {
       return {
-        agentId: found ? legacyCandidate : legacyCandidate,
+        agentId: legacyCandidate,
         reason: 'legacy',
         confidence: 0.6,
       };
     }
   }
 
-  // Priority 4: final fallback
+  // Priority 4: final fallback. Prefer the first opus-tier agent (typically
+  // the chief-architect / strategist in an Opus-forged team) over the first
+  // agent alphabetically, since the architect is the canonical "I don't know
+  // who else owns this — figure it out" recipient.
   const coderAgent = agents.find((a) => a.id === 'coder');
   if (coderAgent) {
     return { agentId: 'coder', reason: 'fallback', confidence: 0.1 };
   }
-
+  const opusAgent = agents.find((a) => a.tier === 'opus');
+  if (opusAgent) {
+    return { agentId: opusAgent.id, reason: 'fallback', confidence: 0.1 };
+  }
   return { agentId: agents[0]!.id, reason: 'fallback', confidence: 0.1 };
 }

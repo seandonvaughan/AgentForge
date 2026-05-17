@@ -18,11 +18,23 @@ export type {
   ValidationSeverity,
   ValidateTeamOptions,
 } from "./validator.js";
+export { synthesizeTeam } from "./synthesis.js";
+export type {
+  TeamPlan,
+  TeamPlanAgent,
+  SynthesizeTeamOptions,
+} from "./synthesis.js";
 export { forgeTeamAgentDriven } from "./agent-driven-forge.js";
 export type {
   AgentDrivenForgeOptions,
   AgentDrivenForgeResult,
 } from "./agent-driven-forge.js";
+export { buildSourceCorpus } from "./source-corpus.js";
+export type {
+  SourceCorpusFile,
+  SourceCorpusOptions,
+  SourceCorpusResult,
+} from "./source-corpus.js";
 
 import { createHash } from "node:crypto";
 import { basename } from "node:path";

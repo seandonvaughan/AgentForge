@@ -1,0 +1,363 @@
+{
+  "agents": [
+    {
+      "id": "forge-engine-architect",
+      "capability_tags": [
+        "forge-pipeline",
+        "agent-driven-synthesis",
+        "domain-packs",
+        "team-manifest",
+        "reforge-diff"
+      ],
+      "owns_subsystems": [
+        "packages/core/src/team/engine/scanner",
+        "packages/core/src/team/engine/builder",
+        "packages/core/src/team/engine/genesis",
+        "packages/core/src/team/engine/reforge"
+      ],
+      "tier": "opus",
+      "priority": 34
+    },
+    {
+      "id": "reforge-genesis-engineer",
+      "capability_tags": [
+        "team-diff",
+        "agent-modification",
+        "model-routing",
+        "v1-v2-migration",
+        "domain-activation"
+      ],
+      "owns_subsystems": [
+        "packages/core/src/team/engine/reforge",
+        "packages/core/src/team/engine/genesis"
+      ],
+      "tier": "sonnet",
+      "priority": 22
+    },
+    {
+      "id": "auth-security-engineer",
+      "capability_tags": [
+        "oauth2",
+        "jwt-validation",
+        "fastify-plugin",
+        "codeql",
+        "gitleaks",
+        "redos"
+      ],
+      "owns_subsystems": [
+        "packages/server/src/lib/auth"
+      ],
+      "tier": "sonnet",
+      "priority": 17
+    },
+    {
+      "id": "autonomy-strategist",
+      "capability_tags": [
+        "autonomous-loop",
+        "cycle-orchestration",
+        "budget-governance",
+        "gate-design",
+        "self-correction"
+      ],
+      "owns_subsystems": [
+        "packages/executor/src",
+        "packages/core/src"
+      ],
+      "tier": "opus",
+      "priority": 16
+    },
+    {
+      "id": "chief-architect",
+      "capability_tags": [
+        "monorepo-architecture",
+        "pnpm-workspaces",
+        "typescript-nodenext",
+        "esm-design",
+        "cross-package-contracts"
+      ],
+      "owns_subsystems": [
+        "packages/core/src",
+        "packages/shared/src"
+      ],
+      "tier": "opus",
+      "priority": 16
+    },
+    {
+      "id": "executor-runtime-engineer",
+      "capability_tags": [
+        "planner",
+        "executor",
+        "runtime-supervisor",
+        "message-bus-v2",
+        "sse-bridge"
+      ],
+      "owns_subsystems": [
+        "packages/executor/src",
+        "packages/core/src"
+      ],
+      "tier": "sonnet",
+      "priority": 16
+    },
+    {
+      "id": "scanner-engineer",
+      "capability_tags": [
+        "file-scanner",
+        "git-analyzer",
+        "dependency-mapper",
+        "ci-auditor",
+        "comment-miner"
+      ],
+      "owns_subsystems": [
+        "packages/core/src/team/engine/scanner"
+      ],
+      "tier": "sonnet",
+      "priority": 16
+    },
+    {
+      "id": "fastify-v5-engineer",
+      "capability_tags": [
+        "fastify-route",
+        "v5-api",
+        "sse-stream",
+        "audit-db",
+        "workspace-adapter"
+      ],
+      "owns_subsystems": [
+        "packages/server/src/routes/v5"
+      ],
+      "tier": "sonnet",
+      "priority": 15
+    },
+    {
+      "id": "fastify-v6-shim-engineer",
+      "capability_tags": [
+        "fastify-route",
+        "v6-api",
+        "path-rewrite",
+        "deprecation-headers",
+        "v1-lifecycle"
+      ],
+      "owns_subsystems": [
+        "packages/server/src/routes/v6"
+      ],
+      "tier": "sonnet",
+      "priority": 15
+    },
+    {
+      "id": "svelte-agents-engineer",
+      "capability_tags": [
+        "svelte-runes",
+        "agent-detail",
+        "yaml-roundtrip",
+        "memory-browser",
+        "config-editor"
+      ],
+      "owns_subsystems": [
+        "packages/dashboard/src/routes/agents"
+      ],
+      "tier": "sonnet",
+      "priority": 15
+    },
+    {
+      "id": "svelte-component-atoms-engineer",
+      "capability_tags": [
+        "v2-design-system",
+        "svelte-components",
+        "reduced-motion",
+        "token-namespace",
+        "tabs-measurement"
+      ],
+      "owns_subsystems": [
+        "packages/dashboard/src/lib/components"
+      ],
+      "tier": "haiku",
+      "priority": 15
+    },
+    {
+      "id": "svelte-cycles-engineer",
+      "capability_tags": [
+        "svelte-runes",
+        "sse-subscription",
+        "cycle-detail",
+        "stage-rail",
+        "v2-design-system"
+      ],
+      "owns_subsystems": [
+        "packages/dashboard/src/routes/cycles"
+      ],
+      "tier": "sonnet",
+      "priority": 15
+    },
+    {
+      "id": "svelte-runner-engineer",
+      "capability_tags": [
+        "svelte-runes",
+        "sse-stream",
+        "run-history",
+        "fallback-state",
+        "event-source"
+      ],
+      "owns_subsystems": [
+        "packages/dashboard/src/routes/runner"
+      ],
+      "tier": "sonnet",
+      "priority": 15
+    },
+    {
+      "id": "cli-engineer",
+      "capability_tags": [
+        "commander",
+        "cli-bin",
+        "forge-command",
+        "genesis-command",
+        "reforge-command"
+      ],
+      "owns_subsystems": [
+        "packages/cli/src"
+      ],
+      "tier": "sonnet",
+      "priority": 13
+    },
+    {
+      "id": "db-workspace-engineer",
+      "capability_tags": [
+        "better-sqlite3",
+        "workspace-adapter",
+        "ddl-schema",
+        "wal-mode",
+        "workspace-registry"
+      ],
+      "owns_subsystems": [
+        "packages/db/src"
+      ],
+      "tier": "sonnet",
+      "priority": 13
+    },
+    {
+      "id": "embeddings-engineer",
+      "capability_tags": [
+        "xenova-transformers",
+        "vector-search",
+        "cosine-similarity",
+        "embedding-store",
+        "agent-memory"
+      ],
+      "owns_subsystems": [
+        "packages/embeddings/src"
+      ],
+      "tier": "sonnet",
+      "priority": 13
+    },
+    {
+      "id": "plugin-sdk-engineer",
+      "capability_tags": [
+        "plugin-sdk",
+        "plugin-base",
+        "plugin-host",
+        "lifecycle-hooks",
+        "extension-api"
+      ],
+      "owns_subsystems": [
+        "packages/plugins-sdk/src"
+      ],
+      "tier": "sonnet",
+      "priority": 13
+    },
+    {
+      "id": "shared-utils-engineer",
+      "capability_tags": [
+        "shared-types",
+        "circuit-breaker",
+        "retry",
+        "cycle-record",
+        "primitive-utils"
+      ],
+      "owns_subsystems": [
+        "packages/shared/src"
+      ],
+      "tier": "haiku",
+      "priority": 13
+    },
+    {
+      "id": "pr-merge-manager",
+      "capability_tags": [
+        "git",
+        "merge",
+        "rebase",
+        "pr-queue",
+        "conflict-resolution",
+        "github-cli"
+      ],
+      "owns_subsystems": [],
+      "tier": "sonnet",
+      "priority": 12
+    },
+    {
+      "id": "ci-build-engineer",
+      "capability_tags": [
+        "pnpm-workspace",
+        "tsc-project-references",
+        "eslint-v10",
+        "rolldown",
+        "verify-gates"
+      ],
+      "owns_subsystems": [],
+      "tier": "sonnet",
+      "priority": 10
+    },
+    {
+      "id": "file-reader",
+      "capability_tags": [
+        "file-lookup",
+        "grep-helper",
+        "context-prep",
+        "barrel-exports",
+        "monorepo-navigation"
+      ],
+      "owns_subsystems": [],
+      "tier": "haiku",
+      "priority": 10
+    },
+    {
+      "id": "memory-curator",
+      "capability_tags": [
+        "agentforge-memory",
+        "8-lesson-cap",
+        "memory-jsonl",
+        "forge-learnings",
+        "knowledge-base"
+      ],
+      "owns_subsystems": [],
+      "tier": "haiku",
+      "priority": 10
+    },
+    {
+      "id": "test-engineer",
+      "capability_tags": [
+        "vitest",
+        "playwright",
+        "test-fixtures",
+        "mock-adapter",
+        "e2e-dashboard"
+      ],
+      "owns_subsystems": [],
+      "tier": "sonnet",
+      "priority": 10
+    },
+    {
+      "id": "yaml-doctor",
+      "capability_tags": [
+        "js-yaml",
+        "yaml-dump",
+        "manifest-validation",
+        "codeql-yaml",
+        "round-trip-safety"
+      ],
+      "owns_subsystems": [],
+      "tier": "haiku",
+      "priority": 10
+    }
+  ],
+  "generated_at": "2026-05-17T20:14:08.761Z",
+  "team_name": "agentforge-team"
+}

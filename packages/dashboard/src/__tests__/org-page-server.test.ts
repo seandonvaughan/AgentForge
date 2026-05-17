@@ -228,49 +228,27 @@ describe('buildOrgGraph — real project data', () => {
   it('returns non-empty nodes and edges from the live .agentforge directory', () => {
     // Exercises the real agent YAMLs in the checked-in .agentforge/agents/
     // directory to confirm the SSR load path works end-to-end against
-    // production data. The project root is two levels above packages/dashboard.
+    // production data. Asserts on STRUCTURE not specific agent ids — the
+    // v22+ Opus-driven forge replaces the legacy C-suite (ceo/coo/cfo)
+    // with project-specific architects (chief-architect, autonomy-strategist, ...).
     const realRoot = join(import.meta.dirname, '../../../../');
     const result = buildOrgGraph(realRoot);
 
     // Real YAML files must be found
     expect(result.nodes.length).toBeGreaterThan(0);
 
-    // CEO must be present
-    const ids = new Set(result.nodes.map(n => n.id));
-    expect(ids.has('ceo')).toBe(true);
-
     // Every node must have a non-empty label
     for (const node of result.nodes) {
       expect(node.label.length).toBeGreaterThan(0);
     }
 
-    // Delegation hierarchy must produce real edges
-    expect(result.edges.length).toBeGreaterThan(0);
-
-    // No duplicate edges
+    // No duplicate edges (zero edges is acceptable for a flat team)
     const edgeKeys = result.edges.map(e => `${e.from}\0${e.to}`);
     expect(new Set(edgeKeys).size).toBe(edgeKeys.length);
 
-    // ceo delegates to cto — edge comes from ceo.yaml collaboration.can_delegate_to
-    const ceoToCto = result.edges.filter(e => e.from === 'ceo' && e.to === 'cto');
-    expect(ceoToCto).toHaveLength(1); // exactly one edge, no duplicates
-
-    // ceo also delegates to coo and cfo (full C-suite)
-    expect(result.edges.some(e => e.from === 'ceo' && e.to === 'coo')).toBe(true);
-    expect(result.edges.some(e => e.from === 'ceo' && e.to === 'cfo')).toBe(true);
-
-    // cto delegates to architect (full chain: ceo → cto → architect)
-    expect(result.edges.some(e => e.from === 'cto' && e.to === 'architect')).toBe(true);
-
-    // ceo is the organisation root — no agent delegates TO ceo
-    const edgesToCeo = result.edges.filter(e => e.to === 'ceo');
-    expect(edgesToCeo).toHaveLength(0);
-
-    // Full C-suite must appear as nodes
-    expect(ids.has('cto')).toBe(true);
-    expect(ids.has('coo')).toBe(true);
-    expect(ids.has('cfo')).toBe(true);
-    expect(ids.has('architect')).toBe(true);
+    // (Earlier asserted ceo/cto/coo/cfo delegation chain — removed because
+    // those agent ids only existed in the v4.6 templated team. The v22+
+    // Opus-driven forge produces project-specific architect roles.)
   });
 });
 

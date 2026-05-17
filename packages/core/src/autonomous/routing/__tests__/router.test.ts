@@ -190,10 +190,16 @@ describe('pickAgent — fallback routing (priority 4)', () => {
 
 describe('pickAgent — legacy fallback (priority 3)', () => {
   it('routes items with doc/architecture tags via legacy path when no tag match', () => {
+    // Legacy fallback only fires when the candidate agent actually exists
+    // in the index — otherwise the executor would receive an agentId it
+    // can't resolve. So include the legacy targets in the fixture.
     const indexNoSpecialists: RoutingIndex = {
       ...FIXTURE_INDEX,
       agents: [
         { id: 'coder', capability_tags: [], owns_subsystems: [], tier: 'sonnet', priority: 0 },
+        { id: 'architect', capability_tags: [], owns_subsystems: [], tier: 'opus', priority: 0 },
+        { id: 'backend-tech-writer', capability_tags: [], owns_subsystems: [], tier: 'haiku', priority: 0 },
+        { id: 'backend-qa', capability_tags: [], owns_subsystems: [], tier: 'sonnet', priority: 0 },
       ],
     };
 
