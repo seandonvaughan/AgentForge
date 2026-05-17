@@ -160,7 +160,8 @@
   <KpiTile
     label="Active"
     value={stats.active}
-    accent={stats.active > 0}
+    color={stats.active > 0 ? 'var(--af-accent)' : 'var(--af-text)'}
+    live={stats.active > 0}
   />
   <KpiTile
     label="Total Allocated"
