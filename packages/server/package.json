@@ -5,20 +5,34 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": { ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" } },
-  "scripts": { "build": "tsc", "dev": "tsc --watch", "start": "node dist/main.js", "start:dev": "node --watch dist/main.js", "clean": "rm -rf dist" },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/main.js",
+    "start:dev": "node --watch dist/main.js",
+    "clean": "rm -rf dist"
+  },
   "dependencies": {
-    "@agentforge/shared": "workspace:*",
     "@agentforge/core": "workspace:*",
     "@agentforge/db": "workspace:*",
     "@agentforge/embeddings": "workspace:*",
     "@agentforge/plugins-sdk": "workspace:*",
-    "fastify": "^5.8.5",
+    "@agentforge/shared": "workspace:*",
     "@fastify/cors": "^11.2.0",
+    "@fastify/rate-limit": "^10.3.0",
     "@fastify/websocket": "^11.0.0",
+    "fastify": "^5.8.5",
     "pino-pretty": "^13.0.0"
   },
-  "devDependencies": { "typescript": "^6.0.3" },
+  "devDependencies": {
+    "typescript": "^6.0.3"
+  },
   "engines": {
     "node": ">=22.13.0"
   }

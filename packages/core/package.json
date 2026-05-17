@@ -12,7 +12,7 @@
     }
   },
   "scripts": {
-    "build": "tsc && cp src/autonomous/self-eval/prompt-fragment.md dist/autonomous/self-eval/prompt-fragment.md",
+    "build": "tsc && cp src/autonomous/self-eval/prompt-fragment.md dist/autonomous/self-eval/prompt-fragment.md && cp src/runtime/pr-merge-manager-prompt.md dist/runtime/pr-merge-manager-prompt.md",
     "dev": "tsc --watch",
     "clean": "rm -rf dist"
   },

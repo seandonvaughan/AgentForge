@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { page } from '$app/stores';
+  import { browser } from '$app/environment';
   import { withWorkspace } from '$lib/stores/workspace';
   import { relativeTime, formatDuration } from '$lib/util/relative-time';
   import {
@@ -9,7 +10,7 @@
 
   type Tab =
     | 'overview' | 'pipeline' | 'items' | 'agents'
-    | 'scoring' | 'events' | 'files' | 'logs';
+    | 'scoring' | 'events' | 'files' | 'prs' | 'logs';
   type StageBrick = 'pending' | 'active' | 'done' | 'failed';
   type FileName = 'tests' | 'git' | 'pr' | 'approval-pending' | 'approval-decision';
   type LogName = 'cli-stdout' | 'tests-raw';
@@ -121,6 +122,39 @@
     }>;
   }
   let scoring = $state<ScoringResponse | null>(null);
+
+  // ── PRs tab ──────────────────────────────────────────────────────────────────
+  interface PrCiInfo {
+    bucket: 'pass' | 'fail' | 'pending' | 'unknown';
+    lastCheckedAt: string;
+  }
+  interface PrRow {
+    prNumber: number;
+    prUrl: string;
+    branch: string;
+    agentId: string;
+    itemIds: string[];
+    status: 'open' | 'merged' | 'closed' | 'skipped-no-gh' | 'dry-run';
+    openedAt: string;
+    ci: PrCiInfo | null;
+  }
+  interface PrsMeta {
+    cycleId: string;
+    total: number;
+    counts: { open: number; merged: number; closed: number; pending: number };
+    timestamp: string;
+  }
+  interface PrsResponse {
+    data: PrRow[];
+    meta: PrsMeta;
+  }
+
+  let prsData = $state<PrsResponse | null>(null);
+  let prsLoading = $state(false);
+  let prsError = $state<string | null>(null);
+  let prsCacheAt = $state<number>(0);
+  const PRS_CACHE_MS = 30_000;
+  let prsPollTimer: ReturnType<typeof setInterval> | null = null;
 
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let elapsedTimer: ReturnType<typeof setInterval> | null = null;
@@ -353,6 +387,7 @@
       { id: 'scoring',  label: 'Scoring',  count: radarOverall },
       { id: 'events',   label: 'Events',   count: events.length },
       { id: 'files',    label: 'Files' },
+      { id: 'prs',      label: 'PRs',      count: prsData?.meta.total },
       { id: 'logs',     label: 'Logs' },
     ];
   });
@@ -418,6 +453,62 @@
       const res = await fetch(withWorkspace(`/api/v5/cycles/${id}/scoring`));
       if (res.ok) scoring = (await res.json()) as ScoringResponse;
     } catch { /* silent */ }
+  }
+
+  async function loadPrs(force = false): Promise<void> {
+    if (!id) return;
+    const age = Date.now() - prsCacheAt;
+    if (!force && prsData !== null && age < PRS_CACHE_MS) return;
+    prsLoading = true;
+    prsError = null;
+    try {
+      const res = await fetch(withWorkspace(`/api/v5/cycles/${id}/prs?ci=true`));
+      if (res.ok) {
+        prsData = (await res.json()) as PrsResponse;
+        prsCacheAt = Date.now();
+      } else if (res.status === 404) {
+        prsData = { data: [], meta: { cycleId: id, total: 0, counts: { open: 0, merged: 0, closed: 0, pending: 0 }, timestamp: new Date().toISOString() } };
+        prsCacheAt = Date.now();
+      } else {
+        prsError = `HTTP ${res.status}`;
+      }
+    } catch (e) {
+      prsError = e instanceof Error ? e.message : String(e);
+    } finally {
+      prsLoading = false;
+    }
+  }
+
+  function startPrsPoll(): void {
+    stopPrsPoll();
+    if (browser && document.visibilityState === 'hidden') return;
+    prsPollTimer = setInterval(() => { void loadPrs(true); }, PRS_CACHE_MS);
+  }
+
+  function stopPrsPoll(): void {
+    if (prsPollTimer) { clearInterval(prsPollTimer); prsPollTimer = null; }
+  }
+
+  function fmtAge(isoDate: string): string {
+    const ms = Math.max(0, Date.now() - new Date(isoDate).getTime());
+    const totalSec = Math.floor(ms / 1000);
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+
+  function prStatusVariant(status: PrRow['status']): 'success' | 'danger' | 'muted' | 'warning' | 'purple' {
+    if (status === 'merged') return 'success';
+    if (status === 'closed') return 'danger';
+    if (status === 'open') return 'purple';
+    return 'muted';
+  }
+
+  function ciBucketColor(bucket: PrCiInfo['bucket']): string {
+    if (bucket === 'pass') return 'var(--af-success)';
+    if (bucket === 'fail') return 'var(--af-danger)';
+    if (bucket === 'pending') return 'var(--af-warning)';
+    return 'var(--af-dim)';
   }
 
   async function loadEvents(): Promise<void> {
@@ -523,8 +614,10 @@
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
       if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
       if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
+      stopPrsPoll();
       return;
     }
+    if (activeTab === 'prs' && !prsPollTimer) startPrsPoll();
     if (!isTerminal && !pollTimer) {
       pollTimer = setInterval(() => {
         void loadCycle();
@@ -544,10 +637,17 @@
   function onVisibility(): void { manage(); }
 
   function selectTab(t: string): void {
+    const prev = activeTab;
     activeTab = t as Tab;
     if (t === 'events' && events.length === 0) void loadEvents();
     if (t === 'logs' && logText[activeLog] === null && !logLoading[activeLog]) void loadLog(activeLog);
     if (t === 'files' && fileData[activeFile] === undefined) void loadFile(activeFile);
+    if (t === 'prs') {
+      void loadPrs();
+      startPrsPoll();
+    } else if (prev === 'prs') {
+      stopPrsPoll();
+    }
   }
 
   function stageBadgeVariant(s: string): 'success' | 'danger' | 'purple' | 'muted' {
@@ -603,6 +703,7 @@
     teardownLogStream();
     if (pollTimer) clearInterval(pollTimer);
     if (elapsedTimer) clearInterval(elapsedTimer);
+    stopPrsPoll();
     if (typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', onVisibility);
     }
@@ -1243,6 +1344,119 @@
         {/if}
       </Card>
     </div>
+  {/if}
+
+  {#if activeTab === 'prs'}
+    <div class="prs-bar">
+      <span class="section-title">PULL REQUESTS</span>
+      <div style="flex:1"></div>
+      <Btn size="sm" onclick={() => loadPrs(true)}>Refresh</Btn>
+    </div>
+
+    {#if prsLoading && !prsData}
+      <Card>
+        <div class="skel prs-skel"></div>
+        <div class="skel prs-skel" style="width:70%;margin-top:8px"></div>
+        <div class="skel prs-skel" style="width:85%;margin-top:8px"></div>
+      </Card>
+    {:else if prsError}
+      <Card style="border-color:color-mix(in srgb,var(--af-danger) 33%,transparent)">
+        <div class="error-row">
+          <span>Failed to load PRs: <code>{prsError}</code></span>
+          <Btn size="sm" onclick={() => loadPrs(true)}>Retry</Btn>
+        </div>
+      </Card>
+    {:else if prsData}
+      {#if prsData.data.length === 0}
+        <Card>
+          <div class="empty prs-empty">
+            This cycle ran in single-PR mode — no per-agent PRs.
+          </div>
+        </Card>
+      {:else}
+        <div class="prs-stats-strip">
+          {#each [
+            { label: 'Open',    value: prsData.meta.counts.open,    color: 'var(--af-purple)' },
+            { label: 'Merged',  value: prsData.meta.counts.merged,  color: 'var(--af-success)' },
+            { label: 'Closed',  value: prsData.meta.counts.closed,  color: 'var(--af-danger)' },
+            { label: 'Pending', value: prsData.meta.counts.pending, color: 'var(--af-warning)' },
+          ] as stat (stat.label)}
+            <div class="prs-stat-cell">
+              <div class="prs-stat-val af2-mono" style="color:{stat.color}">{stat.value}</div>
+              <div class="prs-stat-label">{stat.label}</div>
+            </div>
+          {/each}
+        </div>
+
+        <Card noPad>
+          <table class="prs-table">
+            <thead>
+              <tr>
+                <th>PR</th>
+                <th>Agent</th>
+                <th>Branch</th>
+                <th>Items</th>
+                <th>Status</th>
+                <th>CI</th>
+                <th>Age</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each prsData.data as pr (pr.prNumber)}
+                <tr>
+                  <td>
+                    <a
+                      class="pr-num-link af2-mono"
+                      href={pr.prUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >#{pr.prNumber} ↗</a>
+                  </td>
+                  <td>
+                    <Badge variant="muted">{pr.agentId}</Badge>
+                  </td>
+                  <td>
+                    <span class="af2-mono prs-branch">{pr.branch}</span>
+                  </td>
+                  <td>
+                    {#if pr.itemIds.length === 0}
+                      <span class="af2-mono dim">—</span>
+                    {:else}
+                      <span
+                        class="af2-mono prs-items-count"
+                        title={pr.itemIds.join(', ')}
+                      >{pr.itemIds.length} item{pr.itemIds.length !== 1 ? 's' : ''}</span>
+                    {/if}
+                  </td>
+                  <td>
+                    <Badge variant={prStatusVariant(pr.status)}>{pr.status}</Badge>
+                  </td>
+                  <td>
+                    {#if pr.ci}
+                      <span class="prs-ci-chip">
+                        <span
+                          class="prs-ci-dot"
+                          style="background:{ciBucketColor(pr.ci.bucket)}"
+                        ></span>
+                        <span
+                          class="af2-mono prs-ci-label"
+                          style="color:{ciBucketColor(pr.ci.bucket)}"
+                        >{pr.ci.bucket}</span>
+                      </span>
+                    {:else}
+                      <span class="af2-mono dim">—</span>
+                    {/if}
+                  </td>
+                  <td>
+                    <span class="af2-mono prs-age">{fmtAge(pr.openedAt)}</span>
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </Card>
+      {/if}
+    {/if}
   {/if}
 
   {#if activeTab === 'logs'}
@@ -2055,4 +2269,93 @@
     font-family: var(--af-font-mono, 'JetBrains Mono', monospace);
     font-feature-settings: 'tnum' 1, 'ss01' 1;
   }
+
+  /* ── PRs tab ────────────────────────────────────────────────────────────── */
+  .prs-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .prs-stats-strip {
+    display: flex;
+    gap: 0;
+    margin-bottom: 12px;
+    background: var(--af-surface);
+    border: 1px solid var(--af-border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .prs-stat-cell {
+    flex: 1;
+    padding: 14px 18px;
+    text-align: center;
+    border-right: 1px solid var(--af-border);
+  }
+  .prs-stat-cell:last-child { border-right: none; }
+  .prs-stat-val { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+  .prs-stat-label { font-size: 11px; color: var(--af-dim); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .prs-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .prs-table thead tr {
+    background: var(--af-surface2);
+    border-bottom: 1px solid var(--af-border);
+  }
+  .prs-table th {
+    padding: 9px 14px;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--af-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+  }
+  .prs-table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid color-mix(in srgb, var(--af-border) 50%, transparent);
+    vertical-align: middle;
+  }
+  .prs-table tbody tr:last-child td { border-bottom: none; }
+  .prs-table tbody tr:hover { background: color-mix(in srgb, var(--af-surface2) 60%, transparent); }
+  .pr-num-link {
+    color: var(--af-purple);
+    text-decoration: none;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .pr-num-link:hover { text-decoration: underline; }
+  .prs-branch {
+    font-size: 11px;
+    color: var(--af-accent2);
+    max-width: 200px;
+    display: inline-block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: bottom;
+  }
+  .prs-items-count {
+    font-size: 12px;
+    cursor: help;
+    border-bottom: 1px dashed var(--af-dim);
+  }
+  .prs-ci-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .prs-ci-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .prs-ci-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .prs-age { font-size: 12px; color: var(--af-muted); }
+  .prs-empty { font-size: 13px; color: var(--af-muted); text-align: center; padding: 24px 0; }
+  .prs-skel { height: 32px; width: 100%; }
 </style>

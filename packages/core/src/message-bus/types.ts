@@ -408,7 +408,7 @@ export interface MergeQueuePrOpenedPayload {
   agentId: string;
   branch: string;
   prNumber: number | null;
-  status: 'open' | 'dry-run' | 'skipped-no-gh';
+  status: 'open' | 'dry-run' | 'skipped-no-gh' | 'merged';
   prUrl: string | null;
   openedAt: string;
 }
