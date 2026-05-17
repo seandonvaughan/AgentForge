@@ -10,6 +10,7 @@
  */
 
 import type { FastifyInstance } from 'fastify';
+import rateLimit from '@fastify/rate-limit';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { execFile } from 'node:child_process';
@@ -59,46 +60,9 @@ const SAFE_CYCLE_ID = /^[a-zA-Z0-9_-]+$/;
 
 const EXEC_TIMEOUT_MS = 15_000;
 
-// ---------------------------------------------------------------------------
-// Per-IP token-bucket rate limiter (in-memory, module-scoped)
-// ---------------------------------------------------------------------------
-// CodeQL `js/missing-rate-limiting` requires this route — which does file
-// system reads + optional gh subprocess spawns — to be rate-limited. Rather
-// than pull in @fastify/rate-limit as a new dep just for one route, we use a
-// minimal per-IP token bucket: 60 requests per minute per remote address.
-// The Map is bounded by an LRU-ish trim when it crosses 10k keys.
-const RATE_LIMIT_MAX_TOKENS = 60;
-const RATE_LIMIT_REFILL_PER_SEC = 60 / 60; // 1 token/sec = 60/min
-const RATE_LIMIT_MAX_KEYS = 10_000;
-
-interface Bucket { tokens: number; lastRefill: number }
-const rateBuckets = new Map<string, Bucket>();
-
-function consumeRateToken(ip: string): boolean {
-  const now = Date.now();
-  let b = rateBuckets.get(ip);
-  if (!b) {
-    if (rateBuckets.size >= RATE_LIMIT_MAX_KEYS) {
-      // Drop the oldest 1k entries to bound memory under abusive traffic.
-      const it = rateBuckets.keys();
-      for (let i = 0; i < 1000; i++) {
-        const k = it.next();
-        if (k.done || k.value === undefined) break;
-        rateBuckets.delete(k.value);
-      }
-    }
-    b = { tokens: RATE_LIMIT_MAX_TOKENS, lastRefill: now };
-    rateBuckets.set(ip, b);
-  }
-  // Refill based on elapsed time (capped at max)
-  const elapsedSec = (now - b.lastRefill) / 1000;
-  const refilled = elapsedSec * RATE_LIMIT_REFILL_PER_SEC;
-  b.tokens = Math.min(RATE_LIMIT_MAX_TOKENS, b.tokens + refilled);
-  b.lastRefill = now;
-  if (b.tokens < 1) return false;
-  b.tokens -= 1;
-  return true;
-}
+// Per-IP rate-limit settings used below via @fastify/rate-limit.
+const RATE_LIMIT_MAX = 60;          // 60 req/min per remote address
+const RATE_LIMIT_WINDOW = '1 minute';
 
 /**
  * Parse `gh pr checks <number> --json name,state,conclusion` output into a
@@ -181,20 +145,31 @@ export async function cyclePrsRoutes(
    * Returns the MergeQueue ledger for a cycle, optionally enriched with live
    * CI status from `gh pr checks`.
    */
+  // Register @fastify/rate-limit once per server instance. Catches the
+  // "FastifyError: Plugin already registered" so calling this route module
+  // a second time (the standard adapter + no-adapter dual-registration
+  // pattern) is a no-op.
+  try {
+    await app.register(rateLimit, {
+      global: false, // we attach the limit per-route below
+      max: RATE_LIMIT_MAX,
+      timeWindow: RATE_LIMIT_WINDOW,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/already registered/i.test(msg)) throw err;
+  }
+
   app.get<{ Params: { cycleId: string } }>(
     '/api/v5/cycles/:cycleId/prs',
+    {
+      config: {
+        // 60 req/min per remote address. Returns 429 with retry-after.
+        // Recognized by CodeQL js/missing-rate-limiting.
+        rateLimit: { max: RATE_LIMIT_MAX, timeWindow: RATE_LIMIT_WINDOW },
+      },
+    },
     async (req, reply) => {
-      // Per-IP rate limit: 60 req/min per remote address. Returns 429 when
-      // exhausted. Defuses CodeQL js/missing-rate-limiting; also caps the
-      // amplification factor on the optional gh-checks subprocess fanout.
-      const clientIp = req.ip || 'unknown';
-      if (!consumeRateToken(clientIp)) {
-        return reply.status(429).send({
-          error: 'Too many requests',
-          retryAfterSeconds: 60,
-        });
-      }
-
       const rawCycleId = req.params.cycleId;
       const q = req.query as { ci?: string; status?: string };
 
