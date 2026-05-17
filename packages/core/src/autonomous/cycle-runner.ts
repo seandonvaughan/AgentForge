@@ -62,6 +62,12 @@ import type { RealTestRunner } from './exec/real-test-runner.js';
 import type { GitOps } from './exec/git-ops.js';
 import type { PROpener } from './exec/pr-opener.js';
 import { runAutoReforge, extractInvolvedAgentIds } from './auto-reforge.js';
+// T4.6 — WorktreeGc: schedule GC at cycle start (clean stale worktrees) and
+// cycle end (clean this cycle's worktrees, keep last 20 for forensics).
+// TODO(T4.6-BB): once Workstream BB lands the worktreePool in CycleRunnerOptions,
+// replace the inline import with a proper typed import and remove the TODO.
+import { WorktreeGc } from '../runtime/worktree-gc.js';
+import type { WorktreePool } from '../runtime/worktree-pool.js';
 
 /**
  * Build a PR title that's safe for `gh pr create` and never truncated mid-word.
@@ -185,6 +191,27 @@ export interface CycleRunnerOptions {
    * kill switch when the corresponding flag is true.
    */
   preVerifyTypeCheck?: (cwd: string, testing: CycleConfig['testing']) => Promise<PreVerifyTypeCheckResult>;
+  /**
+   * T4.2/T4.6 — Optional WorktreePool. When provided:
+   *   - T4.2: execute phase allocates a fresh isolated git worktree per
+   *     coder-class sprint item, preventing main-tree branch ping-pong.
+   *   - T4.6: WorktreeGc runs at cycle start + end to clean up stale worktrees.
+   *
+   * When absent, the runner falls back to single-tree execution (legacy behavior).
+   * Disable explicitly with `disableWorktrees: true` for tests/smoke runs.
+   *
+   * NOTE: WorktreePool is typed as 'any' until Workstream AA lands
+   * packages/core/src/runtime/worktree-pool.ts — the pre-existing T4.6 import
+   * already covers the class type once AA ships.
+   */
+  worktreePool?: WorktreePool;
+  /**
+   * T4.2 — When true, worktree allocation is completely disabled for this
+   * cycle, even if a `worktreePool` is provided. Use for smoke runs, CI
+   * environments without git worktree support, or unit tests that don't need
+   * real isolation.
+   */
+  disableWorktrees?: boolean;
 }
 
 /**
@@ -295,6 +322,13 @@ export class CycleRunner {
    */
   private async runStages(): Promise<CycleResult> {
     // ─────────────────────────────────────────────────────────────────
+    // T4.6 — WORKTREE GC (START): clean up stale worktrees from prior
+    // cycles before we begin so disk usage doesn't accumulate unbounded.
+    // Errors are swallowed — a GC failure must never block a new cycle.
+    // ─────────────────────────────────────────────────────────────────
+    await this.runWorktreeGc('start');
+
+    // ─────────────────────────────────────────────────────────────────
     // STAGE 1 — PLAN
     // Build a backlog from project signals, score it, and gate on budget.
     // ─────────────────────────────────────────────────────────────────
@@ -363,6 +397,15 @@ export class CycleRunner {
 
     // eslint-disable-next-line no-constant-condition
     while (true) {
+      // T4.2: resolve the worktree pool for the phase context.
+      // worktreePool is undefined when disableWorktrees is set OR when the
+      // caller provided neither a pool nor we can auto-construct one (AA not
+      // yet landed). The execute phase falls back to single-tree behavior when
+      // worktreePool is absent.
+      const phaseWorktreePool = this.options.disableWorktrees
+        ? undefined
+        : this.options.worktreePool;
+
       const scheduler = new PhaseScheduler(
         {
           sprintId: plan.sprintId,
@@ -373,6 +416,9 @@ export class CycleRunner {
           runtime: this.options.runtime,
           cycleId: this.cycleId,
           ...(retryAttempt > 0 ? { retryAttempt, skipToPhase: 'execute' as PhaseName } : {}),
+          // T4.2: pass the pool (or undefined) through so the execute phase
+          // can allocate per-item worktrees when coder-class items are dispatched.
+          ...(phaseWorktreePool !== undefined ? { worktreePool: phaseWorktreePool } : {}),
         },
         this.killSwitch,
         this.logger,
@@ -616,6 +662,13 @@ export class CycleRunner {
       number: prResult.number,
       title: `autonomous(v${plan.version})`,
     });
+
+    // ─────────────────────────────────────────────────────────────────
+    // T4.6 — WORKTREE GC (END): clean up this cycle's worktrees, keeping
+    // the last 20 for forensics. Errors are swallowed — same policy as
+    // the start-of-cycle GC pass.
+    // ─────────────────────────────────────────────────────────────────
+    await this.runWorktreeGc('end');
 
     // ─────────────────────────────────────────────────────────────────
     // COMPLETED
@@ -953,6 +1006,41 @@ Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
       merged.gateVerdict = overrides.gateVerdict;
     }
     return merged;
+  }
+
+  /**
+   * T4.6 — Run WorktreeGc at cycle start and end.
+   * - start: aggressive cleanup (olderThanMs=24h, keepLast=20, maxDiskMb=5000)
+   * - end:   keepLast=20 so forensics are preserved, no age filter override
+   *
+   * Any error is caught and logged — GC failures must never kill a cycle.
+   */
+  private async runWorktreeGc(when: 'start' | 'end'): Promise<void> {
+    if (!this.options.worktreePool) return;
+    try {
+      const gc = new WorktreeGc({
+        pool: this.options.worktreePool,
+        projectRoot: this.options.cwd,
+        keepLast: 20,
+        ...(when === 'start' ? { olderThanMs: 24 * 60 * 60 * 1000 } : {}),
+        maxDiskMb: 5000,
+      });
+      const result = await gc.run();
+      if (result.removed.length > 0) {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[autonomous:cycle] worktree-gc (${when}): removed ${result.removed.length} worktrees` +
+          ` (~${result.diskFreedMb.toFixed(1)} MB freed)`,
+        );
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `[autonomous:cycle] worktree-gc (${when}) error (non-fatal): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   /**

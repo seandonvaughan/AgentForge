@@ -27,6 +27,7 @@ import { mergeQueueRoutes } from './routes/v5/merge-queue.js';
 import { agentStreamingRoutes } from './routes/v5/streaming.js';
 import { multiWorkspaceRoutes } from './routes/v5/multi-workspace.js';
 import { workspacesRoutes } from './routes/v5/workspaces.js';
+import { workspacesActiveRoutes } from './routes/v5/workspaces-active.js';
 import { agentVersioningRoutes } from './routes/v5/agent-versioning.js';
 import { federationRoutes } from './routes/v5/federation.js';
 import { chatRoutes } from './routes/v5/chat.js';
@@ -208,6 +209,12 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
     // Billing scaffolding — no adapter required (reads/writes settings.yaml).
     // Guard: registerV5Routes registers billingRoutes in adapter mode.
     await billingRoutes(app, { projectRoot });
+  }
+
+  // ── Active Worktrees (T4.7) — no adapter required ────────────────────────────
+  // Guard: registerV5Routes already calls workspacesActiveRoutes in adapter mode.
+  if (!options.adapter || !options.registry) {
+    await workspacesActiveRoutes(app, { projectRoot });
   }
 
   // ── Org graph (reads delegation.yaml — no adapter required) ──────────────────
