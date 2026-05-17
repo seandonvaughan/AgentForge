@@ -1,5 +1,9 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { MODEL_PRICING } from '../../agent-runtime/types.js';
+import {
+  TransportInvalidRequestError,
+  classifyCliError,
+} from '../transport-errors.js';
 import type {
   ExecutionRequest,
   ExecutionResult,
@@ -45,22 +49,30 @@ export class ClaudeCodeCompatTransport implements ExecutionTransport {
   }
 
   async execute(request: ExecutionRequest): Promise<ExecutionResult> {
-    const cliResult = await this.invokeClaudeCli(request);
-    return this.toExecutionResult(request, cliResult);
+    try {
+      const cliResult = await this.invokeClaudeCli(request);
+      return this.toExecutionResult(request, cliResult);
+    } catch (err) {
+      throw classifyCliError(err, request.timeoutMs);
+    }
   }
 
   async executeStreaming(
     request: ExecutionRequest,
     options: ExecutionStreamOptions = {},
   ): Promise<ExecutionResult> {
-    const { cliResult, chunksEmitted } = await this.invokeClaudeCliStreaming(request, options);
-    const execution = this.toExecutionResult(request, cliResult);
+    try {
+      const { cliResult, chunksEmitted } = await this.invokeClaudeCliStreaming(request, options);
+      const execution = this.toExecutionResult(request, cliResult);
 
-    if (chunksEmitted === 0 && execution.response) {
-      this.emitChunk(options, execution.response, 0);
+      if (chunksEmitted === 0 && execution.response) {
+        this.emitChunk(options, execution.response, 0);
+      }
+
+      return execution;
+    } catch (err) {
+      throw classifyCliError(err, request.timeoutMs);
     }
-
-    return execution;
   }
 
   private toExecutionResult(
@@ -68,8 +80,9 @@ export class ClaudeCodeCompatTransport implements ExecutionTransport {
     cliResult: ClaudeCliResult,
   ): ExecutionResult {
     if (cliResult.is_error) {
-      throw new Error(
+      throw new TransportInvalidRequestError(
         `claude CLI reported error: subtype=${cliResult.subtype}, terminal=${cliResult.terminal_reason ?? 'unknown'}`,
+        cliResult,
       );
     }
 

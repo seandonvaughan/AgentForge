@@ -2,7 +2,14 @@ import type { FastifyInstance } from 'fastify';
 import { MarketplaceRegistry } from '@agentforge/core';
 import { join } from 'node:path';
 
-const registry = new MarketplaceRegistry(join(process.cwd(), '.agentforge/agents'));
+// Prefer AGENTFORGE_PROJECT_ROOT env var over process.cwd() so that the
+// marketplace registry points to the external project when one is configured.
+function getProjectRoot(): string {
+  const envRoot = process.env['AGENTFORGE_PROJECT_ROOT'];
+  return (typeof envRoot === 'string' && envRoot.length > 0) ? envRoot : process.cwd();
+}
+
+const registry = new MarketplaceRegistry(join(getProjectRoot(), '.agentforge/agents'));
 
 export async function marketplaceRoutes(app: FastifyInstance): Promise<void> {
   // GET /api/v5/marketplace

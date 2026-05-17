@@ -14,7 +14,7 @@ Launch the **v6.5+ Autonomous Command Center** — the SvelteKit dashboard with 
    - If output is empty, the server is NOT running. If `--restart` was passed, also kill any running instance first.
 
 2. **If the server is not running, build it and start it in the background:**
-   - Build: `cd /Users/seandonvaughan/Projects/AgentForge/packages/server && npx tsc 2>&1 | tail -3 && cd ../..`
+   - Build: `cd packages/server && npx tsc 2>&1 | tail -3 && cd ../..`
    - Start: spawn `node packages/server/dist/main.js` as a background task. Use `run_in_background: true` on the Bash tool.
    - Wait ~2 seconds, then verify with `curl -sSf http://localhost:4750/api/v1/health 2>&1 | head -3`
 
@@ -23,7 +23,7 @@ Launch the **v6.5+ Autonomous Command Center** — the SvelteKit dashboard with 
    - If output is empty, Vite is NOT running.
 
 4. **If Vite is not running, start it in the background:**
-   - Spawn `cd /Users/seandonvaughan/Projects/AgentForge/packages/dashboard && npx vite --port 4751 --host` as a background task.
+   - Spawn `cd packages/dashboard && npx vite --port 4751 --host` as a background task.
    - Wait ~3 seconds for Vite to print its ready message.
 
 5. **Open the dashboard in the default browser:**

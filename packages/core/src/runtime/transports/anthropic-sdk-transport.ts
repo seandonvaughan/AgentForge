@@ -1,4 +1,8 @@
 import { MODEL_PRICING } from '../../agent-runtime/types.js';
+import {
+  TransportAuthError,
+  classifyAnthropicError,
+} from '../transport-errors.js';
 import type {
   ExecutionRequest,
   ExecutionResult,
@@ -6,6 +10,23 @@ import type {
   ExecutionStreamOptions,
   ExecutionTransport,
 } from '../types.js';
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimum character length of a content block before we attach
+ * `cache_control: {type:'ephemeral'}` to it.  4096 chars ≈ 1024 tokens
+ * (rough 4-chars-per-token estimate).  Anthropic recommends caching blocks
+ * that are large, static, and reused across requests.  The system prompt is
+ * always cached regardless of this threshold.
+ */
+export const CACHE_CONTROL_CHAR_THRESHOLD = 4096;
+
+// ---------------------------------------------------------------------------
+// Internal types — Anthropic wire format
+// ---------------------------------------------------------------------------
 
 interface AnthropicMessageUsage {
   input_tokens?: number;
@@ -35,8 +56,19 @@ interface AnthropicStreamEvent {
   usage?: AnthropicMessageUsage;
 }
 
+// ---------------------------------------------------------------------------
+// Transport
+// ---------------------------------------------------------------------------
+
 export class AnthropicSdkTransport implements ExecutionTransport {
   readonly kind = 'anthropic-sdk' as const;
+
+  /**
+   * Character-length threshold above which a user content block gets
+   * `cache_control: {type:'ephemeral'}`.  Exposed as a mutable property so
+   * tests can lower it without monkey-patching.
+   */
+  cacheControlThreshold: number = CACHE_CONTROL_CHAR_THRESHOLD;
 
   isAvailable(request: ExecutionRequest): boolean {
     return Boolean(request.apiKey || process.env.ANTHROPIC_API_KEY);
@@ -47,17 +79,23 @@ export class AnthropicSdkTransport implements ExecutionTransport {
     const apiKey = request.apiKey ?? process.env.ANTHROPIC_API_KEY;
 
     if (!apiKey) {
-      throw new Error('Anthropic SDK transport requires ANTHROPIC_API_KEY or an explicit apiKey.');
+      throw new TransportAuthError(
+        'Anthropic SDK transport requires ANTHROPIC_API_KEY or an explicit apiKey.',
+      );
     }
 
-    const { default: Anthropic } = await import('@anthropic-ai/sdk');
-    const client = new Anthropic({ apiKey });
+    try {
+      const { default: Anthropic } = await import('@anthropic-ai/sdk');
+      const client = new Anthropic({ apiKey });
 
-    const response = (await client.messages.create(
-      this.buildMessageParams(request) as any,
-    )) as unknown as AnthropicMessageResponse;
+      const response = (await client.messages.create(
+        this.buildMessageParams(request) as any,
+      )) as unknown as AnthropicMessageResponse;
 
-    return this.toExecutionResult(request, response, Date.now() - startedAt);
+      return this.toExecutionResult(request, response, Date.now() - startedAt);
+    } catch (err) {
+      throw classifyAnthropicError(err);
+    }
   }
 
   async executeStreaming(
@@ -68,102 +106,158 @@ export class AnthropicSdkTransport implements ExecutionTransport {
     const apiKey = request.apiKey ?? process.env.ANTHROPIC_API_KEY;
 
     if (!apiKey) {
-      throw new Error('Anthropic SDK transport requires ANTHROPIC_API_KEY or an explicit apiKey.');
+      throw new TransportAuthError(
+        'Anthropic SDK transport requires ANTHROPIC_API_KEY or an explicit apiKey.',
+      );
     }
 
-    const { default: Anthropic } = await import('@anthropic-ai/sdk');
-    const client = new Anthropic({ apiKey });
-    const stream = (await client.messages.create(
-      {
-        ...this.buildMessageParams(request),
-        stream: true,
-      } as any,
-      options.signal ? { signal: options.signal } : undefined,
-    )) as unknown as AsyncIterable<AnthropicStreamEvent>;
+    try {
+      const { default: Anthropic } = await import('@anthropic-ai/sdk');
+      const client = new Anthropic({ apiKey });
 
-    let response = '';
-    let chunkIndex = 0;
-    let remoteSessionId: string | undefined;
-    let model = request.modelId;
-    let stopReason: string | undefined;
-    let usage: AnthropicMessageUsage = {};
-    let finalMessage: AnthropicMessageResponse | undefined;
+      // Use messages.stream() — the SDK's dedicated streaming helper — which
+      // yields typed MessageStreamEvent objects and exposes helper methods such
+      // as .finalMessage() and .finalText().
+      const sdkStream = client.messages.stream(
+        this.buildMessageParams(request) as any,
+        options.signal ? { signal: options.signal } : undefined,
+      );
 
-    this.emitEvent(options, {
-      type: 'start',
-      data: { providerKind: this.kind, model: request.modelId },
-    });
+      // Cast to AsyncIterable so we can iterate with our internal event types.
+      const stream = sdkStream as unknown as AsyncIterable<AnthropicStreamEvent>;
 
-    for await (const event of stream) {
-      if (event.type === 'message_start' && event.message) {
-        finalMessage = event.message;
-        if (event.message.id) remoteSessionId = event.message.id;
-        if (event.message.model) model = event.message.model;
-        usage = { ...usage, ...(event.message.usage ?? {}) };
-        this.emitEvent(options, {
-          type: 'metadata',
-          data: {
-            providerKind: this.kind,
-            ...(remoteSessionId ? { remoteSessionId } : {}),
-            model,
-          },
-        });
-        this.emitUsage(options, usage);
-        continue;
-      }
+      let response = '';
+      let chunkIndex = 0;
+      let remoteSessionId: string | undefined;
+      let model = request.modelId;
+      let stopReason: string | undefined;
+      let usage: AnthropicMessageUsage = {};
+      let finalMessage: AnthropicMessageResponse | undefined;
 
-      if (event.type === 'content_block_start' && event.content_block?.type === 'text') {
-        const text = event.content_block.text ?? '';
-        if (text) {
-          response += text;
-          this.emitChunk(options, text, chunkIndex++);
+      this.emitEvent(options, {
+        type: 'start',
+        data: { providerKind: this.kind, model: request.modelId },
+      });
+
+      for await (const event of stream) {
+        if (event.type === 'message_start' && event.message) {
+          finalMessage = event.message;
+          if (event.message.id) remoteSessionId = event.message.id;
+          if (event.message.model) model = event.message.model;
+          usage = { ...usage, ...(event.message.usage ?? {}) };
+          this.emitEvent(options, {
+            type: 'metadata',
+            data: {
+              providerKind: this.kind,
+              ...(remoteSessionId ? { remoteSessionId } : {}),
+              model,
+            },
+          });
+          this.emitUsage(options, usage);
+          continue;
         }
-        continue;
-      }
 
-      if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
-        const text = event.delta.text ?? '';
-        if (text) {
-          response += text;
-          this.emitChunk(options, text, chunkIndex++);
+        if (event.type === 'content_block_start' && event.content_block?.type === 'text') {
+          const text = event.content_block.text ?? '';
+          if (text) {
+            response += text;
+            this.emitChunk(options, text, chunkIndex++);
+          }
+          continue;
         }
-        continue;
+
+        if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
+          const text = event.delta.text ?? '';
+          if (text) {
+            response += text;
+            this.emitChunk(options, text, chunkIndex++);
+          }
+          continue;
+        }
+
+        if (event.type === 'message_delta') {
+          usage = { ...usage, ...(event.usage ?? {}) };
+          if (event.delta?.stop_reason) stopReason = event.delta.stop_reason;
+          this.emitUsage(options, usage);
+        }
       }
 
-      if (event.type === 'message_delta') {
-        usage = { ...usage, ...(event.usage ?? {}) };
-        if (event.delta?.stop_reason) stopReason = event.delta.stop_reason;
-        this.emitUsage(options, usage);
-      }
+      const inputTokens = usage.input_tokens ?? 0;
+      const outputTokens = usage.output_tokens ?? 0;
+      const cacheReadTokens = usage.cache_read_input_tokens ?? 0;
+      const cacheCreationTokens = usage.cache_creation_input_tokens ?? 0;
+      const normalizedResponse = response.trim() || (finalMessage ? this.extractText(finalMessage) : '');
+
+      const result: ExecutionResult = {
+        providerKind: this.kind,
+        response: normalizedResponse,
+        model,
+        usage: {
+          inputTokens,
+          outputTokens,
+          cacheCreationInputTokens: cacheCreationTokens,
+          cacheReadInputTokens: cacheReadTokens,
+        },
+        costUsd: this.estimateCost(
+          request.agent.model,
+          inputTokens,
+          outputTokens,
+          cacheReadTokens,
+          cacheCreationTokens,
+        ),
+        durationMs: Date.now() - startedAt,
+        raw: finalMessage,
+        ...(remoteSessionId ? { remoteSessionId } : {}),
+        ...(stopReason ? { stopReason } : {}),
+      };
+
+      this.emitEvent(options, {
+        type: 'done',
+        data: {
+          providerKind: this.kind,
+          costUsd: result.costUsd,
+          inputTokens,
+          outputTokens,
+          cacheReadTokens,
+          cacheCreationTokens,
+        },
+      });
+
+      return result;
+    } catch (err) {
+      throw classifyAnthropicError(err);
     }
-
-    const inputTokens = usage.input_tokens ?? 0;
-    const outputTokens = usage.output_tokens ?? 0;
-    const normalizedResponse = response.trim() || (finalMessage ? this.extractText(finalMessage) : '');
-
-    return {
-      providerKind: this.kind,
-      response: normalizedResponse,
-      model,
-      usage: {
-        inputTokens,
-        outputTokens,
-        cacheCreationInputTokens: usage.cache_creation_input_tokens ?? 0,
-        cacheReadInputTokens: usage.cache_read_input_tokens ?? 0,
-      },
-      costUsd: this.estimateCost(request.agent.model, inputTokens, outputTokens),
-      durationMs: Date.now() - startedAt,
-      raw: finalMessage,
-      ...(remoteSessionId ? { remoteSessionId } : {}),
-      ...(stopReason ? { stopReason } : {}),
-    };
   }
 
-  private buildMessageParams(request: ExecutionRequest): Record<string, unknown> {
+  /**
+   * Build the Anthropic `messages.create` / `messages.stream` parameter object.
+   *
+   * Cache-control rules:
+   * - System prompt: always marked ephemeral (stable, large, reused per agent).
+   * - User content: marked ephemeral only when its character length meets or
+   *   exceeds `cacheControlThreshold` (default 4096 chars ≈ 1024 tokens).
+   *
+   * Exposed as a non-private method so tests can inspect the built params
+   * without invoking the real SDK.
+   */
+  buildMessageParams(request: ExecutionRequest): Record<string, unknown> {
+    const userContent = request.userContent;
+    const shouldCacheUserContent =
+      typeof userContent === 'string' && userContent.length >= this.cacheControlThreshold;
+
+    const userContentBlock: unknown = shouldCacheUserContent
+      ? [
+          {
+            type: 'text',
+            text: userContent,
+            cache_control: { type: 'ephemeral' },
+          },
+        ]
+      : userContent;
+
     return {
       model: request.modelId,
-      // Use a content-block array with cache_control so the system prompt is
-      // cached across repeated runs (ephemeral prompt caching).
+      // System prompt is always cached — it is stable and large across runs.
       system: [
         {
           type: 'text',
@@ -175,7 +269,7 @@ export class AnthropicSdkTransport implements ExecutionTransport {
       messages: [
         {
           role: 'user',
-          content: request.userContent,
+          content: userContentBlock,
         },
       ],
       ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
@@ -190,6 +284,8 @@ export class AnthropicSdkTransport implements ExecutionTransport {
     const usage = response.usage ?? {};
     const inputTokens = usage.input_tokens ?? 0;
     const outputTokens = usage.output_tokens ?? 0;
+    const cacheReadTokens = usage.cache_read_input_tokens ?? 0;
+    const cacheCreationTokens = usage.cache_creation_input_tokens ?? 0;
 
     return {
       providerKind: this.kind,
@@ -198,10 +294,16 @@ export class AnthropicSdkTransport implements ExecutionTransport {
       usage: {
         inputTokens,
         outputTokens,
-        cacheCreationInputTokens: usage.cache_creation_input_tokens ?? 0,
-        cacheReadInputTokens: usage.cache_read_input_tokens ?? 0,
+        cacheCreationInputTokens: cacheCreationTokens,
+        cacheReadInputTokens: cacheReadTokens,
       },
-      costUsd: this.estimateCost(request.agent.model, inputTokens, outputTokens),
+      costUsd: this.estimateCost(
+        request.agent.model,
+        inputTokens,
+        outputTokens,
+        cacheReadTokens,
+        cacheCreationTokens,
+      ),
       durationMs,
       raw: response,
       ...(response.id ? { remoteSessionId: response.id } : {}),
@@ -238,10 +340,28 @@ export class AnthropicSdkTransport implements ExecutionTransport {
     return textBlocks?.map((block) => block.text).join('\n').trim() ?? '';
   }
 
-  private estimateCost(model: keyof typeof MODEL_PRICING, inputTokens: number, outputTokens: number): number {
+  /**
+   * Estimate total cost in USD for a call, accounting for Anthropic's cache
+   * pricing:
+   *   - Cache-read tokens: 10% of normal input price.
+   *   - Cache-creation tokens: 125% of normal input price.
+   *   - Regular input tokens (not cached): 100% of normal input price.
+   *   - Output tokens: 100% of output price.
+   */
+  private estimateCost(
+    model: keyof typeof MODEL_PRICING,
+    inputTokens: number,
+    outputTokens: number,
+    cacheReadTokens = 0,
+    cacheCreationTokens = 0,
+  ): number {
     const pricing = MODEL_PRICING[model];
+    // Regular input = total input minus any that were served from cache or created cache entries.
+    const regularInput = Math.max(0, inputTokens - cacheReadTokens - cacheCreationTokens);
     return (
-      (inputTokens / 1_000_000) * pricing.input +
+      (regularInput / 1_000_000) * pricing.input +
+      (cacheReadTokens / 1_000_000) * pricing.input * 0.1 +
+      (cacheCreationTokens / 1_000_000) * pricing.input * 1.25 +
       (outputTokens / 1_000_000) * pricing.output
     );
   }

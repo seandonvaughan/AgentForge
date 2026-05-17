@@ -62,6 +62,8 @@ import type { RealTestRunner } from './exec/real-test-runner.js';
 import type { GitOps } from './exec/git-ops.js';
 import type { PROpener } from './exec/pr-opener.js';
 import { runAutoReforge, extractInvolvedAgentIds } from './auto-reforge.js';
+import { exportCycleTelemetry } from '../telemetry/cycle-telemetry-export.js';
+import { resolveTelemetryConfig } from '../telemetry/config.js';
 // T4.6 — WorktreeGc: schedule GC at cycle start (clean stale worktrees) and
 // cycle end (clean this cycle's worktrees, keep last 20 for forensics).
 // TODO(T4.6-BB): once Workstream BB lands the worktreePool in CycleRunnerOptions,
@@ -492,6 +494,13 @@ export class CycleRunner {
     this.checkKillSwitch();
 
     // ─────────────────────────────────────────────────────────────────
+    // STAGE 3.3 — TELEMETRY EXPORT (T5.7)
+    // Optionally export anonymized cycle telemetry after learnings are
+    // applied. Honour the opt-in config; errors are swallowed.
+    // ─────────────────────────────────────────────────────────────────
+    await this.runTelemetryExport();
+
+    // ─────────────────────────────────────────────────────────────────
     // STAGE 3.5 — TYPECHECK (fail-fast pre-verify)
     // Run pnpm build + tsc --noEmit before the full test suite. TypeScript
     // compilation errors introduced during execute are caught here rather
@@ -793,6 +802,42 @@ export class CycleRunner {
       // eslint-disable-next-line no-console
       console.error(
         `[autonomous:cycle] stage 3.25: auto-reforge error (non-fatal): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
+  /**
+   * T5.7 — Optionally export anonymized cycle telemetry.
+   * Reads telemetry config from environment / .agentforge/telemetry.yaml.
+   * Errors are swallowed — telemetry failures must NEVER kill a cycle.
+   */
+  private async runTelemetryExport(): Promise<void> {
+    try {
+      const telConfig = resolveTelemetryConfig(this.options.cwd);
+      if (!telConfig.enabled) return;
+
+      // eslint-disable-next-line no-console
+      console.log('[autonomous:cycle] stage 3.3: exporting cycle telemetry');
+      const result = await exportCycleTelemetry({
+        projectRoot: this.options.cwd,
+        cycleId: this.cycleId,
+        enabled: true,
+        ...(telConfig.endpoint !== undefined ? { endpoint: telConfig.endpoint } : {}),
+      });
+      if (result.exported) {
+        // eslint-disable-next-line no-console
+        console.log(`[autonomous:cycle] stage 3.3: telemetry saved to ${result.localPath}`);
+      } else {
+        // eslint-disable-next-line no-console
+        console.warn(`[autonomous:cycle] stage 3.3: telemetry not exported — ${result.reason}`);
+      }
+    } catch (err) {
+      // Swallow — telemetry errors must never fail the cycle.
+      // eslint-disable-next-line no-console
+      console.error(
+        `[autonomous:cycle] stage 3.3: telemetry export error (non-fatal): ${
           err instanceof Error ? err.message : String(err)
         }`,
       );

@@ -26,6 +26,7 @@ import {
   watch as fsWatch,
 } from 'node:fs';
 import { join, resolve, sep, basename, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { globalStream } from './stream.js';
@@ -33,6 +34,26 @@ import { getWorkspace } from '@agentforge/core';
 import * as cycleSessions from '../../lib/cycle-sessions.js';
 import { openAuditDb, appendAuditEntry } from './audit.js';
 import { safeJoin } from '../../lib/safe-join.js';
+
+/**
+ * Resolve the AgentForge CLI binary path relative to THIS module's location.
+ *
+ * This is intentionally NOT relative to the external project root — the CLI
+ * binary ships inside the AgentForge package installation.  When AgentForge
+ * runs against an external project (e.g. `--project /some/other/repo`),
+ * `opts.projectRoot` points there but the CLI still lives here.
+ *
+ * Layout (from compiled server output):
+ *   packages/server/dist/routes/v5/cycles.js   (this file)
+ *   packages/cli/dist/bin.js                   (CLI target)
+ *
+ * Walking up 4 levels from __dirname and down into packages/cli/dist/bin.js.
+ */
+function resolveAgentForgeCli(metaUrl: string): string {
+  const thisFile = fileURLToPath(metaUrl);
+  const packagesDir = resolve(dirname(thisFile), '..', '..', '..', '..', '..');
+  return resolve(join(packagesDir, 'packages', 'cli', 'dist', 'bin.js'));
+}
 
 /**
  * v6.6.0 — resolve which project root a request targets.
@@ -126,7 +147,7 @@ interface CycleListRow {
   agents: string[];
 }
 
-function summarizeCycle(cycleDir: string, cycleId: string): CycleListRow | null {
+function summarizeCycle(cycleDir: string, cycleId: string, projectRoot?: string): CycleListRow | null {
   if (!existsSync(cycleDir)) return null;
 
   const cycleJson = readJsonIfExists(join(cycleDir, 'cycle.json')) as
@@ -303,7 +324,9 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleListRow | null 
       if (existsSync(linkFile)) {
         const sprintVersion = JSON.parse(readFileSync(linkFile, 'utf-8'))?.sprintVersion ?? null;
         if (sprintVersion) {
-          const sprintFile = join(process.cwd(), '.agentforge/sprints', `v${sprintVersion}.json`);
+          // Prefer injected projectRoot; fall back to AGENTFORGE_PROJECT_ROOT env var, then cwd.
+          const sprintBase = projectRoot ?? process.env['AGENTFORGE_PROJECT_ROOT'] ?? process.cwd();
+          const sprintFile = join(sprintBase, '.agentforge/sprints', `v${sprintVersion}.json`);
           if (existsSync(sprintFile)) {
             const raw = JSON.parse(readFileSync(sprintFile, 'utf-8'));
             const sprint = Array.isArray(raw.sprints) ? raw.sprints[0] : raw;
@@ -700,11 +723,11 @@ export async function cyclesRoutes(
    */
   function baseForRequest(
     req: { query: unknown; headers: Record<string, unknown> },
-  ): { base: string } | { error: { status: number; body: unknown } } {
+  ): { base: string; projectRoot: string } | { error: { status: number; body: unknown } } {
     const r = resolveProjectRoot(req, opts.projectRoot);
     if ('error' in r) return r;
-    if (r.projectRoot === opts.projectRoot) return { base: defaultBase };
-    return { base: cyclesBaseDir(r.projectRoot) };
+    if (r.projectRoot === opts.projectRoot) return { base: defaultBase, projectRoot: opts.projectRoot };
+    return { base: cyclesBaseDir(r.projectRoot), projectRoot: r.projectRoot };
   }
 
   // GET /api/v5/cycles ─────────────────────────────────────────────────────
@@ -725,7 +748,7 @@ export async function cyclesRoutes(
 
     const rows: CycleListRow[] = [];
     for (const d of entries) {
-      const row = summarizeCycle(join(base, d.name), d.name);
+      const row = summarizeCycle(join(base, d.name), d.name, br.projectRoot);
       if (row) rows.push(row);
     }
     rows.sort((a, b) => (a.startedAt < b.startedAt ? 1 : a.startedAt > b.startedAt ? -1 : 0));
@@ -1560,9 +1583,11 @@ export async function cyclesRoutes(
     // CLI) which takes priority over the env var, which in turn takes priority
     // over a fresh UUID — so the cycle dir always matches this API response.
     const nodeBin = process.execPath;
-    // CLI binary always lives in the server's project root (it's the
-    // AgentForge monorepo), NOT in the target workspace.
-    const cliEntry = resolve(join(opts.projectRoot, 'packages', 'cli', 'dist', 'bin.js'));
+    // CLI binary lives inside the AgentForge package installation, NOT in the
+    // external project root.  Use import.meta.url to locate the server module
+    // and walk up to find the sibling packages/cli/dist/bin.js.  This ensures
+    // `agentforge --project /external/repo cycle run` works correctly.
+    const cliEntry = resolveAgentForgeCli(import.meta.url);
 
     // Fix 1: persist launch config to cycle-config.json so GET /cycles can surface it.
     const tags = Array.isArray(body.tags) ? (body.tags as string[]) : [];
@@ -1766,7 +1791,9 @@ export async function cyclesRoutes(
     }
 
     const nodeBin = process.execPath;
-    const cliEntry = resolve(join(opts.projectRoot, 'packages', 'cli', 'dist', 'bin.js'));
+    // Same fix as the start-cycle handler: resolve CLI binary relative to the
+    // AgentForge package installation, not the external project root.
+    const cliEntry = resolveAgentForgeCli(import.meta.url);
 
     // Build env overrides from inherited config.
     const env: NodeJS.ProcessEnv = { ...process.env, AUTONOMOUS_CYCLE_ID: newCycleId };
