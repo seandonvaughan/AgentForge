@@ -117,3 +117,60 @@ Always respect the agent's configured model. Do not upgrade or downgrade without
 - Bus events from invocations feed the Bus Monitor (when `BusFileAdapter` is active)
 - `MetaLearningEngine` reads `sessions/index.json` for flywheel promotion decisions
 - Delegation authority checks (`DelegationProtocol`) apply when an agent sub-delegates
+
+---
+
+## Memory parity (T3.3)
+
+When invoking an agent via CC's native `Agent` tool, the `.claude/agents/<id>.md` file is
+static (emitted at forge time). To ensure the agent still receives up-to-date memory
+context, **prepend a prologue to the task** before passing it to the `Agent` tool.
+
+### How to inject the prologue
+
+Use `prepareCcAgentTask()` from `packages/core/src/agent-runtime/cc-prologue-builder.ts`:
+
+```ts
+import { prepareCcAgentTask } from '@agentforge/core/agent-runtime/cc-prologue-builder.js';
+
+const { fullTask } = await prepareCcAgentTask(
+  agentId,        // agent identifier (matches .agentforge/agents/<id>.yaml)
+  projectRoot,    // workspace root (contains .agentforge/)
+  userTask,       // the original user task string
+  adapter,        // optional WorkspaceAdapter — enables pending-DM injection
+);
+
+// Pass `fullTask` as the `prompt` argument to the CC Agent tool.
+```
+
+The returned `fullTask` is structured as:
+
+```
+# Fresh context (this cycle)
+
+<recent memory bullets>
+
+# Pending DMs (if any)
+
+<DM block from the comms layer>
+
+---
+
+# Your task
+
+<original user task>
+```
+
+### Rules
+
+- **Only prepend when `CLAUDE_CODE_RUNTIME=1`** (i.e. the CC-native invocation path is
+  active). The CLI fallback path already injects context into the system prompt via
+  `injectFreshContext()` inside `loadAgentConfig()` — do **not** double-inject.
+- **Prologue cap:** 16 000 characters (~4 000 tokens). Older memory bullets are dropped
+  first if the budget is exceeded. DMs are always preserved in full.
+- **DM delivery side-effect:** By default, DMs included in the prologue are marked
+  `delivered_at` so they are not re-injected on the next call. Pass
+  `{ markDmsDelivered: false }` to suppress this (e.g. dry-run or preview modes).
+- **No adapter → no DM block.** When no `WorkspaceAdapter` instance is available, the DM
+  section is silently omitted. The memory block is still built from
+  `.agentforge/memory/*.jsonl` on disk (no adapter required for memory reading).

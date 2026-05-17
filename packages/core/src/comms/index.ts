@@ -63,3 +63,11 @@ export {
   resolveTeamRecipients,
   clearTeamRecipientsCache,
 } from './team-recipients.js';
+export {
+  buildCcDmDirectiveBlock,
+  type BuildCcDmDirectiveBlockOptions,
+} from './cc-dm-bridge.js';
+export {
+  buildCcInboxBriefing,
+  type BuildCcInboxBriefingOptions,
+} from './cc-inbox-bridge.js';
