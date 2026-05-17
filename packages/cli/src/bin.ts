@@ -10,6 +10,7 @@ import { registerCostsCommand } from './commands/costs.js';
 import { registerRunCommand } from './commands/run.js';
 import { registerTeamCommand, registerTeamSessionsCommand } from './commands/team.js';
 import { registerWorkspacesCommand } from './commands/workspaces.js';
+import { registerDemoCommand } from './commands/demo.js';
 
 interface InitializeWorkspaceImport {
   initializeWorkspace(options: {
@@ -143,6 +144,7 @@ registerCostsCommand(program);
 registerTeamCommand(program);
 registerTeamSessionsCommand(program);
 registerWorkspacesCommand(program);
+registerDemoCommand(program);
 
 return program;
 }

@@ -52,6 +52,11 @@ import { writeTeam } from "./team-writer.js";
 import { loadAllDomains, getDefaultDomainsDir } from "../domains/index.js";
 import { activateDomains } from "../domains/domain-activator.js";
 import type { DomainId } from "../types/domain.js";
+import type { AgentRuntime } from "../../../agent-runtime/agent-runtime.js";
+import { forgeTeamAgentDriven } from "./agent-driven-forge.js";
+import { buildSourceCorpus } from "./source-corpus.js";
+import type { SourceCorpusFile } from "./source-corpus.js";
+import type { TeamPlan } from "./synthesis.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -156,23 +161,184 @@ function buildCustomAgentTemplate(
 // Public API
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// ForgeTeamOptions
+// ---------------------------------------------------------------------------
+
+/**
+ * Options for {@link forgeTeam}.
+ *
+ * All fields are optional — the function degrades gracefully to the
+ * legacy deterministic pipeline when nothing is provided.
+ */
+export interface ForgeTeamOptions {
+  /**
+   * Injected AgentRuntime. When provided, the agent-driven pipeline is
+   * used automatically (unless `strategy: 'legacy'` overrides it).
+   */
+  runtime?: AgentRuntime;
+  /**
+   * Representative source files to pass to the synthesis phase. When not
+   * provided and the agent-driven path is selected, the function will
+   * call {@link buildSourceCorpus} automatically.
+   */
+  sourceCorpus?: SourceCorpusFile[];
+  /**
+   * Explicit strategy selection.
+   *
+   * - `'agent-driven'` — always use the agent-driven pipeline (requires
+   *   `runtime` to be provided, or the pipeline will throw).
+   * - `'legacy'` — always use the deterministic legacy pipeline.
+   * - `undefined` (default) — auto-select based on `runtime` presence and
+   *   the `AGENTFORGE_FORGE_STRATEGY` environment variable.
+   */
+  strategy?: "legacy" | "agent-driven";
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Determine which strategy to run.
+ *
+ * Priority (highest to lowest):
+ *   1. `opts.strategy` explicit override
+ *   2. Presence of `opts.runtime` (implies agent-driven)
+ *   3. `AGENTFORGE_FORGE_STRATEGY` environment variable
+ *   4. Conservative default: `'legacy'`
+ */
+function resolveStrategy(opts: ForgeTeamOptions | undefined): "legacy" | "agent-driven" {
+  if (opts?.strategy === "agent-driven") return "agent-driven";
+  if (opts?.strategy === "legacy") return "legacy";
+  if (opts?.runtime !== undefined) return "agent-driven";
+  const envVal = process.env["AGENTFORGE_FORGE_STRATEGY"];
+  if (envVal === "agent-driven") return "agent-driven";
+  return "legacy";
+}
+
+/**
+ * Reshape a {@link TeamPlan} produced by synthesis into the canonical
+ * {@link TeamManifest} shape expected by callers of `forgeTeam`.
+ */
+function teamPlanToManifest(plan: TeamPlan, projectRoot: string): TeamManifest {
+  const projectName = basename(projectRoot) || "project";
+
+  const agentsByCategory: TeamAgents = {
+    strategic: [],
+    implementation: [],
+    quality: [],
+    utility: [],
+  };
+
+  const modelRouting: { opus: string[]; sonnet: string[]; haiku: string[] } = {
+    opus: [],
+    sonnet: [],
+    haiku: [],
+  };
+
+  const delegationGraph: Record<string, string[]> = {};
+
+  for (const agent of plan.agents) {
+    const catBucket = agentsByCategory[agent.category] ?? (agentsByCategory[agent.category] = []);
+    catBucket.push(agent.id);
+    modelRouting[agent.tier].push(agent.id);
+  }
+
+  // Strategic agents delegate to all implementation agents
+  const strategicAgents = agentsByCategory.strategic ?? [];
+  const implementationAgents = agentsByCategory.implementation ?? [];
+  if (strategicAgents.length > 0 && implementationAgents.length > 0) {
+    for (const sa of strategicAgents) {
+      delegationGraph[sa] = [...implementationAgents];
+    }
+  }
+
+  const projectHash = createHash("sha256")
+    .update(projectRoot)
+    .update(plan.team_name)
+    .digest("hex")
+    .slice(0, 12);
+
+  return {
+    name: plan.team_name || `${projectName}-team`,
+    forged_at: new Date().toISOString(),
+    forged_by: "agentforge-synthesis",
+    project_hash: projectHash,
+    agents: agentsByCategory,
+    model_routing: modelRouting,
+    delegation_graph: delegationGraph,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Agent-driven path
+// ---------------------------------------------------------------------------
+
+/**
+ * Run the agent-driven forge pipeline and return a {@link TeamManifest}.
+ *
+ * Builds a source corpus automatically when one is not provided.
+ * The synthesis phase writes all YAML/MD files to disk; this function
+ * only reshapes the plan into the manifest type.
+ */
+async function runAgentDrivenPath(
+  projectRoot: string,
+  opts: ForgeTeamOptions,
+): Promise<TeamManifest> {
+  const runtime = opts.runtime!;
+
+  // Build source corpus if caller didn't supply one
+  const corpusFiles = opts.sourceCorpus ?? (await buildSourceCorpus({ projectRoot })).files;
+
+  const result = await forgeTeamAgentDriven({
+    projectRoot,
+    runtime,
+    sourceCorpus: corpusFiles,
+  });
+
+  return teamPlanToManifest(result.teamPlan, projectRoot);
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
 /**
  * Run the full AgentForge pipeline against a project directory.
  *
- * Uses the domain-aware pipeline when domain packs are available:
- * 1. Scan the project (files, git, dependencies, CI).
- * 2. Load domain packs and determine which domains are active.
- * 3. Load agent templates (domain-organized when packs exist, flat otherwise).
- * 4. Compose the optimal team via domain-aware or flat-template fallback composition.
- * 5. Customize each template with project-specific context.
- * 6. Build a {@link TeamManifest}.
- * 7. Write everything to `.agentforge/` inside the project.
- * 8. Return the manifest.
+ * Strategy selection (in priority order):
+ *   1. `opts.strategy` explicit override
+ *   2. Presence of `opts.runtime` implies agent-driven
+ *   3. `AGENTFORGE_FORGE_STRATEGY=agent-driven` environment variable
+ *   4. Conservative default: legacy deterministic pipeline
+ *
+ * When `strategy === 'agent-driven'` (or auto-selected):
+ *   - Runs 5 parallel recon agents (Phase A)
+ *   - Opus synthesis writes all agent YAML/MD files (Phase B)
+ *   - Deterministic validator fact-checks the team (Phase C)
+ *   - Routing index is built (Phase D)
+ *   - Returns a {@link TeamManifest} reshaped from the synthesized plan
+ *
+ * When `strategy === 'legacy'` (default):
+ *   - Scan → domain packs → templates → compose → customize → write
+ *   - Returns a {@link TeamManifest}
  *
  * @param projectRoot - Absolute path to the project to forge a team for.
+ * @param opts - Optional strategy/runtime/corpus overrides.
  * @returns The generated {@link TeamManifest}.
  */
-export async function forgeTeam(projectRoot: string): Promise<TeamManifest> {
+export async function forgeTeam(
+  projectRoot: string,
+  opts?: ForgeTeamOptions,
+): Promise<TeamManifest> {
+  const strategy = resolveStrategy(opts);
+
+  if (strategy === "agent-driven") {
+    return runAgentDrivenPath(projectRoot, opts ?? {});
+  }
+
+  // --- Legacy pipeline below ---
   // 1. Run full scan
   const scan: FullScanResult = await runFullScan(projectRoot);
 

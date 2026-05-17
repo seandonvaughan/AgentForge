@@ -240,3 +240,215 @@ describe('pickAgent — confidence values', () => {
     expect(subsystemResult.confidence).toBeGreaterThan(tagResult.confidence);
   });
 });
+
+// ---------------------------------------------------------------------------
+// v22.1 audit: agent-id-token tie-break tests
+// ---------------------------------------------------------------------------
+
+describe('pickAgent — agent-id-token tie-break (v22.1 audit)', () => {
+  /**
+   * Two agents with IDENTICAL capability_tags but different ids.
+   * Item text mentions a token unique to one agent's id → that agent wins.
+   */
+  it('prefers the agent whose id tokens appear in item text when tag scores tie', () => {
+    const tieIndex: RoutingIndex = {
+      team_name: 'tie-test',
+      generated_at: '2026-05-17T00:00:00.000Z',
+      agents: [
+        {
+          id: 'alpha-database-engineer',
+          capability_tags: ['workspace-adapter', 'sqlite', 'migration'],
+          owns_subsystems: ['packages/db/src'],
+          tier: 'sonnet',
+          priority: 10,
+        },
+        {
+          id: 'beta-routing-engineer',
+          capability_tags: ['workspace-adapter', 'sqlite', 'migration'],
+          owns_subsystems: ['packages/server/src/routes'],
+          tier: 'sonnet',
+          priority: 10,
+        },
+      ],
+    };
+
+    // Both agents score equal on tags (sqlite matches).
+    // "database" appears in alpha's id tokens but not beta's → alpha gets +0.5 boost.
+    const result = pickAgent(
+      {
+        title: 'Fix sqlite migration in database storage',
+        description: 'The database migration is failing with a constraint error',
+        tags: [],
+      },
+      tieIndex,
+    );
+
+    expect(result.agentId).toBe('alpha-database-engineer');
+    expect(result.reason).toBe('tag');
+  });
+
+  /**
+   * v22.1 audit case: item "WorkspaceAdapter losing session rows"
+   * Candidates: fastify-v5-engineer vs db-workspace-engineer
+   * Both share the workspace-adapter tag.
+   * db-workspace-engineer id contains "workspace" which appears in item text → it wins.
+   */
+  it('v22.1-audit: routes WorkspaceAdapter item to db-workspace-engineer, not fastify-v5-engineer', () => {
+    const auditIndex: RoutingIndex = {
+      team_name: 'v22.1-audit',
+      generated_at: '2026-05-17T00:00:00.000Z',
+      agents: [
+        {
+          id: 'fastify-v5-engineer',
+          capability_tags: ['workspace-adapter', 'fastify', 'rest', 'v5-api', 'endpoint'],
+          owns_subsystems: ['packages/server/src/routes/v5'],
+          tier: 'sonnet',
+          priority: 14,
+        },
+        {
+          id: 'db-workspace-engineer',
+          capability_tags: ['workspace-adapter', 'sqlite', 'migration', 'session', 'db'],
+          owns_subsystems: ['packages/db/src'],
+          tier: 'sonnet',
+          priority: 14,
+        },
+      ],
+    };
+
+    const result = pickAgent(
+      {
+        title: 'WorkspaceAdapter losing session rows',
+        description: 'The workspace adapter is dropping session rows on concurrent writes',
+        tags: [],
+      },
+      auditIndex,
+    );
+
+    expect(result.agentId).toBe('db-workspace-engineer');
+    expect(result.reason).toBe('tag');
+  });
+
+  /**
+   * Regression: when one agent has a clearly higher tag score (no tie),
+   * the id-token bonus must NOT flip the result to the lower-scoring agent.
+   */
+  it('regression: id-token bonus cannot override a clear tag-score advantage', () => {
+    const clearWinnerIndex: RoutingIndex = {
+      team_name: 'regression-clear-winner',
+      generated_at: '2026-05-17T00:00:00.000Z',
+      agents: [
+        {
+          id: 'svelte-ui-engineer',
+          capability_tags: ['svelte', 'runes', 'dashboard', 'frontend', 'ui', 'component'],
+          owns_subsystems: ['packages/dashboard/src'],
+          tier: 'sonnet',
+          priority: 16,
+        },
+        {
+          id: 'db-workspace-engineer',
+          capability_tags: ['sqlite', 'db'],
+          owns_subsystems: ['packages/db/src'],
+          tier: 'sonnet',
+          priority: 6,
+        },
+      ],
+    };
+
+    // Item is all about svelte/UI — svelte-ui-engineer has far more tag hits.
+    // Even though "engineer" and "db" appear in item, it must NOT flip result.
+    const result = pickAgent(
+      {
+        title: 'Rebuild the svelte dashboard UI with runes and new frontend components',
+        description: 'Migrate all svelte UI components to use runes pattern',
+        tags: [],
+      },
+      clearWinnerIndex,
+    );
+
+    expect(result.agentId).toBe('svelte-ui-engineer');
+    expect(result.reason).toBe('tag');
+  });
+
+  /**
+   * Regression: existing priority-based tie-break still works when
+   * neither agent's id tokens appear in the item text.
+   */
+  it('regression: priority tie-break still fires when no id tokens match item', () => {
+    const priorityTieIndex: RoutingIndex = {
+      team_name: 'priority-tie',
+      generated_at: '2026-05-17T00:00:00.000Z',
+      agents: [
+        {
+          id: 'alpha-xyz-specialist',
+          capability_tags: ['migration', 'schema'],
+          owns_subsystems: [],
+          tier: 'sonnet',
+          priority: 8, // higher priority
+        },
+        {
+          id: 'beta-xyz-specialist',
+          capability_tags: ['migration', 'schema'],
+          owns_subsystems: [],
+          tier: 'sonnet',
+          priority: 4, // lower priority
+        },
+      ],
+    };
+
+    // Item text contains neither "alpha" nor "beta" nor any other id tokens
+    const result = pickAgent(
+      {
+        title: 'Run migration and update schema',
+        description: 'Apply the pending schema migration to the production database',
+        tags: [],
+      },
+      priorityTieIndex,
+    );
+
+    // alpha has higher priority so it should win when id-token scores are equal
+    expect(result.agentId).toBe('alpha-xyz-specialist');
+    expect(result.reason).toBe('tag');
+  });
+
+  /**
+   * Agent-id token "workspace" in db-workspace-engineer also boosts when
+   * item mentions "workspace" as part of a compound word (camelCase split).
+   * Verifies the 0.5-weight id-token score is additive and stable.
+   */
+  it('id-token score is additive: multiple id-token hits accumulate correctly', () => {
+    const multiTokenIndex: RoutingIndex = {
+      team_name: 'multi-token',
+      generated_at: '2026-05-17T00:00:00.000Z',
+      agents: [
+        {
+          id: 'workspace-session-engineer',
+          capability_tags: ['sqlite', 'adapter'],
+          owns_subsystems: [],
+          tier: 'sonnet',
+          priority: 6,
+        },
+        {
+          id: 'route-handler-engineer',
+          capability_tags: ['sqlite', 'adapter'],
+          owns_subsystems: [],
+          tier: 'sonnet',
+          priority: 6,
+        },
+      ],
+    };
+
+    // "workspace" and "session" both appear in item AND in first agent's id
+    // → first agent gains +0.5 +0.5 = +1.0 over second agent
+    const result = pickAgent(
+      {
+        title: 'Fix workspace session persistence',
+        description: 'Workspace session rows are not being committed',
+        tags: [],
+      },
+      multiTokenIndex,
+    );
+
+    expect(result.agentId).toBe('workspace-session-engineer');
+    expect(result.reason).toBe('tag');
+  });
+});

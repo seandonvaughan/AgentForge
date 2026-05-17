@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync, appendFileSync, readFileSync, existsSync } fr
 import { join } from 'node:path';
 import type { CycleResult, TestResult, ScoringResult, KillSwitchTrip } from './types.js';
 import { writeMemoryEntry } from '../memory/types.js';
+import { validateCycleJson, validateScoringJson } from './cycle-artifacts/index.js';
 
 export interface GitEvent {
   type: 'branch-created' | 'staged' | 'committed' | 'pushed' | 'rolled-back' | 'unreachable-skipped';
@@ -68,7 +69,10 @@ export class CycleLogger {
   }
 
   logScoring(result: ScoringResult, grounding: unknown): void {
-    this.writeJson(join(this.cycleDir, 'scoring.json'), { result, grounding, at: new Date().toISOString() });
+    const scoringPayload = { result, grounding, at: new Date().toISOString() };
+    // Opt-in schema validation — warns on drift, never throws.
+    validateScoringJson(scoringPayload);
+    this.writeJson(join(this.cycleDir, 'scoring.json'), scoringPayload);
     this.appendEvent({ type: 'scoring.complete', totalCostUsd: result.totalEstimatedCostUsd, at: new Date().toISOString() });
   }
 
@@ -141,6 +145,8 @@ export class CycleLogger {
   }
 
   logCycleResult(result: CycleResult): void {
+    // Opt-in schema validation — warns on drift, never throws.
+    validateCycleJson(result);
     this.writeJson(join(this.cycleDir, 'cycle.json'), result);
     this.appendEvent({ type: 'cycle.complete', stage: result.stage, at: new Date().toISOString() });
     writeMemoryEntry(this.cwd, {

@@ -14,6 +14,7 @@
    *   SSR seed from +page.server.ts (eliminates skeleton on first paint)
    */
   import { onMount, onDestroy } from 'svelte';
+  import { browser } from '$app/environment';
   import { Btn, Badge, Card, KpiTile, Ring, Sparkline, AnimNum, PulseDot } from '$lib/components/v2';
   import { withWorkspace } from '$lib/stores/workspace';
   import type { PageData } from './$types';
@@ -225,6 +226,97 @@
       velocity: passRates.slice(-14),
     };
   })());
+
+  // ── Continuous Improvement card ───────────────────────────────────────────────
+  //
+  // Polls GET /api/v5/flywheel/continuous-improvement (30 s, visibility-gated).
+  // Shows the 7-day rolling average preventability ratio + sparkline + trend chip.
+
+  const CI_ENDPOINT = '/api/v5/flywheel/continuous-improvement';
+  const CI_POLL_MS = 30_000;
+
+  interface CiDataPoint {
+    cycleId: string;
+    preventabilityRatio: number;
+  }
+
+  interface CiPayload {
+    rollingAvg7d: number;
+    trend: 'improving' | 'flat' | 'regressing' | 'insufficient-data';
+    data: CiDataPoint[];
+  }
+
+  let ciPayload = $state<CiPayload | null>(null);
+  let ciLoading = $state(true);
+  let ciError = $state<string | null>(null);
+  let ciTimer: ReturnType<typeof setInterval> | null = null;
+
+  async function loadCi(): Promise<void> {
+    ciError = null;
+    try {
+      const res = await fetch(withWorkspace(CI_ENDPOINT));
+      if (res.status === 404) {
+        // Parallel workstream may not have merged yet — treat as empty
+        ciPayload = null;
+        return;
+      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json() as CiPayload;
+      ciPayload = json;
+    } catch (e) {
+      ciError = e instanceof Error ? e.message : String(e);
+    } finally {
+      ciLoading = false;
+    }
+  }
+
+  function handleCiVisibilityChange(): void {
+    if (!browser) return;
+    if (document.visibilityState === 'visible') {
+      void loadCi();
+    }
+  }
+
+  $effect(() => {
+    void loadCi();
+    ciTimer = setInterval(() => {
+      if (browser && document.visibilityState !== 'visible') return;
+      void loadCi();
+    }, CI_POLL_MS);
+    if (browser) {
+      document.addEventListener('visibilitychange', handleCiVisibilityChange);
+    }
+    return () => {
+      if (ciTimer) { clearInterval(ciTimer); ciTimer = null; }
+      if (browser) {
+        document.removeEventListener('visibilitychange', handleCiVisibilityChange);
+      }
+    };
+  });
+
+  const ciSparklineData = $derived(
+    (ciPayload?.data ?? []).map(p => p.preventabilityRatio * 100)
+  );
+
+  const ciPct = $derived(
+    ciPayload ? Math.round(ciPayload.rollingAvg7d * 100) : 0
+  );
+
+  const ciTrend = $derived(ciPayload?.trend ?? 'insufficient-data');
+
+  const ciTrendColor: Record<string, string> = {
+    improving: 'var(--af-success)',
+    flat: 'var(--af-dim)',
+    regressing: 'var(--af-danger)',
+    'insufficient-data': 'var(--af-faint)',
+  };
+
+  const ciTrendIcon: Record<string, string> = {
+    improving: '↑',
+    flat: '→',
+    regressing: '↓',
+    'insufficient-data': '—',
+  };
 </script>
 
 <svelte:head><title>Flywheel — AgentForge</title></svelte:head>
@@ -507,6 +599,68 @@
     </p>
   {/if}
 {/if}
+
+<!-- ── Continuous Improvement card ────────────────────────────────────────────── -->
+<!-- Rendered outside the main {#if} so it always polls, even before flywheel
+     data arrives (they are independent endpoints). -->
+<Card style="margin-top:14px;background:linear-gradient(135deg,var(--af-surface),color-mix(in srgb,var(--af-success) 3%,var(--af-surface)));border-color:color-mix(in srgb,var(--af-success) 20%,transparent);">
+  <div class="ci-header">
+    <div>
+      <div class="section-label" style="color:var(--af-success)">CONTINUOUS IMPROVEMENT</div>
+      <div class="ci-sub">7-day rolling average preventability ratio</div>
+    </div>
+    {#if !ciLoading && ciPayload}
+      <span
+        class="ci-trend-chip font-mono"
+        style="color:{ciTrendColor[ciTrend]};border-color:{ciTrendColor[ciTrend]};"
+      >
+        {ciTrendIcon[ciTrend]} {ciTrend}
+      </span>
+    {/if}
+  </div>
+
+  {#if ciLoading}
+    <!-- Skeleton row while fetching -->
+    <div class="skeleton ci-skeleton"></div>
+
+  {:else if ciError}
+    <!-- Inline error banner -->
+    <div class="ci-error-banner">
+      Failed to load continuous-improvement data: {ciError}
+    </div>
+
+  {:else if !ciPayload || ciPayload.data.length === 0}
+    <!-- Empty state -->
+    <div class="ci-empty">
+      No continuous-improvement data yet — run a cycle to start tracking.
+    </div>
+
+  {:else}
+    <!-- Main content -->
+    <div class="ci-body">
+      <div class="ci-kpi-col">
+        <span class="ci-big font-mono" style="color:{ciPct > 0 ? 'var(--af-text)' : 'var(--af-dim)'}">
+          {ciPct}%
+        </span>
+        <span class="ci-kpi-label font-mono">preventable</span>
+      </div>
+
+      <div class="ci-spark-col">
+        {#if ciSparklineData.length > 1}
+          <Sparkline
+            data={ciSparklineData}
+            color="var(--af-success)"
+            w={160} h={32}
+            gradient
+          />
+          <div class="ci-spark-label font-mono">
+            Last {ciPayload.data.length} cycle{ciPayload.data.length === 1 ? '' : 's'}
+          </div>
+        {/if}
+      </div>
+    </div>
+  {/if}
+</Card>
 
 <style>
   /* ── Page header ─────────────────────────────────────────────────────────────── */
@@ -823,6 +977,85 @@
     font-size: 10px;
     color: var(--af-faint);
     margin-top: 6px;
+  }
+
+  /* ── Continuous Improvement card ────────────────────────────────────────────── */
+  .ci-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+  .ci-sub {
+    font-size: 11px;
+    color: var(--af-muted);
+    margin-top: 2px;
+  }
+  .ci-trend-chip {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 99px;
+    border: 1px solid currentColor;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .ci-skeleton {
+    height: 48px;
+    border-radius: 6px;
+    margin-bottom: 0;
+  }
+  .ci-error-banner {
+    padding: 10px 12px;
+    background: color-mix(in srgb, var(--af-danger) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--af-danger) 30%, transparent);
+    border-radius: 6px;
+    color: var(--af-danger);
+    font-size: 12px;
+  }
+  .ci-empty {
+    padding: 18px 0;
+    text-align: center;
+    font-size: 12px;
+    color: var(--af-faint);
+  }
+  .ci-body {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+  .ci-kpi-col {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .ci-big {
+    font-size: 40px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1;
+  }
+  .ci-kpi-label {
+    font-size: 10px;
+    color: var(--af-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .ci-spark-col {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+    min-width: 120px;
+  }
+  .ci-spark-label {
+    font-size: 10px;
+    color: var(--af-faint);
   }
 
   /* ── Empty + error + skeleton ────────────────────────────────────────────────── */

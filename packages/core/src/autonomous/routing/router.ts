@@ -114,9 +114,20 @@ function subsystemMatch(
  *     produces both `fastify` and `route` as match targets).
  *   - A tag scores 2.0 for an exact whole-tag match in tokens,
  *     1.0 for a sub-token match (a `-`-split component appears in tokens).
+ *   - Agent-id tokens (split on `-`, `_`, `.`) each contribute 0.5 when
+ *     the token appears in the item text. This breaks ties between agents
+ *     with identical capability_tags by rewarding the one whose identity
+ *     is more relevant to the item. Example: item "WorkspaceAdapter losing
+ *     session rows" → tokens include `workspace`; agent id
+ *     `db-workspace-engineer` yields id-tokens [`db`, `workspace`, `engineer`]
+ *     so gains +0.5 for `workspace`, beating `fastify-v5-engineer` (0 id hits).
  *   - The score threshold is 1.0 — a single sub-token match suffices
  *     when there's no better candidate. Earlier threshold of 2 left
  *     most realistic items unmatched and falling through to legacy.
+ *
+ * Final score formula:
+ *   score = Σ capability_tag score (2.0 exact, 1.0 sub-token)
+ *         + Σ agent-id-token score (0.5 per token present in item text)
  */
 const TAG_MATCH_MIN_SCORE = 1.0;
 
@@ -125,12 +136,25 @@ interface TagScore {
   score: number;
 }
 
+/**
+ * Tokenize an agent id string by splitting on `-`, `_`, and `.`.
+ * Returns only tokens of length ≥ 2 (filters out noise like single chars).
+ */
+function agentIdTokens(agentId: string): string[] {
+  return agentId
+    .toLowerCase()
+    .split(/[-_.]+/)
+    .filter((t) => t.length >= 2);
+}
+
 function tagMatch(tokens: Set<string>, agents: RoutingIndexAgent[]): TagScore | null {
   let best: TagScore | null = null;
 
   for (const agent of agents) {
     if (agent.capability_tags.length === 0) continue;
     let score = 0;
+
+    // ── Tag component of the score ────────────────────────────────────────
     for (const tag of agent.capability_tags) {
       const lowerTag = tag.toLowerCase();
       if (tokens.has(lowerTag)) {
@@ -147,6 +171,18 @@ function tagMatch(tokens: Set<string>, agents: RoutingIndexAgent[]): TagScore | 
         }
       }
     }
+
+    // ── Agent-id-token component of the score (tie-breaker, weight 0.5) ──
+    // Split the agent id itself on delimiters and check each token against
+    // the item text. This ensures that when two agents share the same
+    // capability_tags, the one whose id contains domain words that appear
+    // in the item wins.  Weight is intentionally < 1.0 so it can only
+    // influence the result when the tag scores are equal or near-equal;
+    // it cannot reverse a meaningful tag-score gap.
+    for (const idToken of agentIdTokens(agent.id)) {
+      if (tokens.has(idToken)) score += 0.5;
+    }
+
     if (score >= TAG_MATCH_MIN_SCORE) {
       if (
         !best ||

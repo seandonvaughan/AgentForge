@@ -16,12 +16,32 @@
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
 import type { ParsedMemoryEntry } from '../../memory/types.js';
 // T4.5 — ConcurrencyGate: caps MAX_PARALLEL_AGENTS (default 8, max 40) and
 // provides backpressure queue so the execute phase never spawns more agents
 // than the configured ceiling, regardless of item count or parallelism cap.
 import { ConcurrencyGate } from '../../runtime/concurrency-gate.js';
+import { parseSelfEval } from '../self-eval/parser.js';
+import { recordSelfEval } from '../self-eval/recorder.js';
+
+// ---- Self-eval prompt fragment (loaded once at module init) ----
+// Read from disk relative to this file so it works in both source and built
+// output. Falls back to empty string so the module is always importable even
+// in stripped build trees where the .md file is absent.
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+let _selfEvalFragment: string;
+try {
+  _selfEvalFragment = readFileSync(
+    join(__dirname, '../self-eval/prompt-fragment.md'),
+    'utf8',
+  );
+} catch {
+  _selfEvalFragment = '';
+}
+export const SELF_EVAL_FRAGMENT = _selfEvalFragment;
 
 // ---- Memory injection ----
 // Reads tag-filtered past failure entries from .agentforge/memory/*.jsonl so
@@ -306,6 +326,13 @@ export interface ExecutePhaseOptions {
    * environment where real `git worktree` operations are undesirable.
    */
   disableWorktrees?: boolean;
+  /**
+   * When true, the self-eval prompt fragment is NOT appended to agent system
+   * prompts and self-eval parsing/recording is skipped entirely.
+   * Use as an escape hatch in unit tests that don't want the extra prompt
+   * noise, or in smoke runs where learning overhead is undesirable.
+   */
+  selfEvalDisabled?: boolean;
 }
 
 export function makeExecutePhaseHandler(options: ExecutePhaseOptions = {}) {
@@ -338,6 +365,7 @@ export async function runExecutePhase(
   const maxFailureRate = options.maxFailureRate ?? 0.5;
   const ceilingParallelism = Math.max(1, options.maxParallelism ?? 3);
   const maxItemRetries = Math.max(0, options.maxItemRetries ?? 1);
+  const selfEvalDisabled = options.selfEvalDisabled === true;
   // T4.2: worktree pool — disabled when either disableWorktrees flag is set or
   // the pool is not present in the context.
   const worktreePool = options.disableWorktrees ? undefined : ctx.worktreePool;
@@ -614,7 +642,7 @@ export async function runExecutePhase(
       );
       for (let attempt = 0; attempt <= maxItemRetries; attempt++) {
         attempts = attempt + 1;
-        const task = buildItemPrompt(item, ctx.projectRoot, attempt, lastError, memoryEntries);
+        const task = buildItemPrompt(item, ctx.projectRoot, attempt, lastError, memoryEntries, selfEvalDisabled);
         ctx.bus.publish('sprint.phase.item.started', {
           sprintId: ctx.sprintId,
           phase,
@@ -633,6 +661,29 @@ export async function runExecutePhase(
             runOptions['cwd'] = worktreeHandle.path;
           }
           const result = await ctx.runtime.run(item.assignee, task, runOptions);
+
+          // ---- Self-eval parse + record (non-blocking) ----
+          if (!selfEvalDisabled) {
+            const agentOutput = typeof result?.output === 'string' ? result.output : '';
+            const grade = parseSelfEval(agentOutput);
+            if (grade !== null) {
+              try {
+                await recordSelfEval({
+                  projectRoot: ctx.projectRoot,
+                  record: {
+                    agentId: item.assignee,
+                    cycleId: ctx.cycleId ?? ctx.sprintId,
+                    sprintItemId: item.id,
+                    grade,
+                    recordedAt: new Date().toISOString(),
+                  },
+                });
+              } catch {
+                // recordSelfEval failure must NEVER fail the cycle.
+              }
+            }
+          }
+
           const durationMs = Date.now() - itemStartedAt;
           const costUsd =
             typeof result?.costUsd === 'number' ? result.costUsd : 0;
@@ -900,12 +951,15 @@ function buildItemPrompt(
   attempt: number = 0,
   lastError?: string,
   memoryEntries: MemoryEntry[] = [],
+  selfEvalDisabled = false,
 ): string {
   const tags =
     item.tags && item.tags.length > 0 ? item.tags.join(', ') : 'none';
   const description = item.description || item.title;
   const source = item.source || 'manual';
   const memorySec = formatMemorySection(memoryEntries);
+  // Append self-eval fragment unless explicitly disabled.
+  const selfEvalSec = selfEvalDisabled || !SELF_EVAL_FRAGMENT ? '' : `\n\n${SELF_EVAL_FRAGMENT}`;
   const base = `You are working on sprint item "${item.title}" in the AgentForge repository at ${cwd}.
 
 Description: ${description}
@@ -914,7 +968,7 @@ Tags: ${tags}
 ${memorySec}
 Your job: use the Read, Write, Edit, Bash, Glob, and Grep tools to make the code change required to resolve this item. Do NOT commit anything — the autonomous cycle's Git stage will commit everything that changed in the working tree after all items are done.
 
-Work efficiently. Report what you changed when done.`;
+Work efficiently. Report what you changed when done.${selfEvalSec}`;
 
   if (attempt > 0 && lastError) {
     return `${base}
