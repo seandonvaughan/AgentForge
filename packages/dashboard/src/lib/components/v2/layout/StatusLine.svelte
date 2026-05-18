@@ -71,19 +71,18 @@
     try {
       const res = await fetch('/api/v5/counters');
       if (res.ok) {
-        // Normalize the endpoint's shape (todaySpendUsd, no cyclesDay/Week/Month,
-        // agents not provided) into the Counters shape StatusLine renders.
         const raw = await res.json() as Record<string, unknown>;
+        const num = (k: string): number => typeof raw[k] === 'number' ? raw[k] as number : 0;
         counters = {
-          agents: typeof raw['agentsActive'] === 'number' ? raw['agentsActive'] as number : 0,
-          agentsActive: typeof raw['agentsActive'] === 'number' ? raw['agentsActive'] as number : 0,
-          cyclesDay: 0,
-          cyclesWeek: 0,
-          cyclesMonth: 0,
-          openBranches: typeof raw['openBranches'] === 'number' ? raw['openBranches'] as number : 0,
-          pendingApprovals: typeof raw['pendingApprovals'] === 'number' ? raw['pendingApprovals'] as number : 0,
-          runningCycles: typeof raw['runningCycles'] === 'number' ? raw['runningCycles'] as number : 0,
-          todaySpend: typeof raw['todaySpendUsd'] === 'number' ? raw['todaySpendUsd'] as number : 0,
+          agents: num('agentsTotal'),
+          agentsActive: num('agentsActive'),
+          cyclesDay: num('cyclesDay'),
+          cyclesWeek: num('cyclesWeek'),
+          cyclesMonth: num('cyclesMonth'),
+          openBranches: num('openBranches'),
+          pendingApprovals: num('pendingApprovals'),
+          runningCycles: num('runningCycles'),
+          todaySpend: num('todaySpendUsd'),
           load: (raw['load'] === 'idle' || raw['load'] === 'busy' || raw['load'] === 'overloaded') ? raw['load'] : '',
         };
         return;

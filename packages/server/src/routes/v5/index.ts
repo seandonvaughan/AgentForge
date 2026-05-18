@@ -443,7 +443,9 @@ export async function registerV5Routes(
   await membersRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
 
   // ── Counters (StatusLine widget) ──────────────────────────────────────────
-  await countersRoutes(app, { adapter: opts.adapter });
+  await countersRoutes(app, opts.projectRoot !== undefined
+    ? { adapter: opts.adapter, projectRoot: opts.projectRoot }
+    : { adapter: opts.adapter });
 
   // ── Autonomous Branch Management (Fix 1, v2 audit) ─────────────────────
   await autonomousBranchesRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});

@@ -1,5 +1,18 @@
 import type { FastifyInstance } from 'fastify';
 import type { WorkspaceAdapter } from '@agentforge/db';
+import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+
+// Authoritative cycle data lives in `.agentforge/cycles/<id>/cycle.json` —
+// not in the SQLite tables that the original implementation read. The
+// cycle-runner writes cycle.json on every phase boundary (via flushCycleCost),
+// every 30s heartbeat, and the terminal stage transition. The SQL tables
+// (runtime_jobs, costs, sessions) are populated by an in-process executor
+// that is NOT used by `agentforge cycle run` today — they accumulate stale
+// "running" rows and the `costs` table hasn't been written to in months.
+// We compute counters directly from the JSON ledger to give operators real
+// data; the SQL-based source is reserved for the in-server executor path
+// when it's used (and gets unioned with JSON data below).
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -12,14 +25,24 @@ export interface CountersResponse {
   openBranches: number;
   /** Count of approvals rows where status = 'pending'. */
   pendingApprovals: number;
-  /** Count of runtime_jobs rows where status = 'running'. */
+  /** Cycles with stage 'run' AND fresh heartbeat (<5min). */
   runningCycles: number;
-  /** Sum of costs.cost_usd where the record was created today (server local time). */
+  /** Sum of cycle.json cost.totalUsd within today (server local time). */
   todaySpendUsd: number;
-  /** Sum of costs.cost_usd created within the last 7 days. */
+  /** Sum of cycle.json cost.totalUsd within last 7 days. */
   weekSpendUsd: number;
-  /** Count of distinct agent_ids with at least one session started in the last hour. */
+  /** Sum of cycle.json cost.totalUsd within last 30 days. */
+  monthSpendUsd: number;
+  /** Total agents in the team (`.agentforge/agents/*.yaml`). */
+  agentsTotal: number;
+  /** Distinct agentIds across cycles completed in last hour OR currently running. */
   agentsActive: number;
+  /** Count of cycles started in last 24h. */
+  cyclesDay: number;
+  /** Count of cycles started in last 7 days. */
+  cyclesWeek: number;
+  /** Count of cycles started in last 30 days. */
+  cyclesMonth: number;
   /** idle when runningCycles===0; overloaded when runningCycles>=3; busy otherwise. */
   load: SystemLoad;
   /** ISO 8601 timestamp of when this payload was computed. */
@@ -28,6 +51,8 @@ export interface CountersResponse {
 
 export interface CountersOptions {
   adapter: WorkspaceAdapter;
+  /** Project root used to locate `.agentforge/cycles/`. Defaults to cwd. */
+  projectRoot?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -82,11 +107,156 @@ function deriveLoad(runningCycles: number): SystemLoad {
 // Counter computation (runs against the raw SQLite DB for speed)
 // ---------------------------------------------------------------------------
 
-function computeCounters(adapter: WorkspaceAdapter): CountersResponse {
-  const db = adapter.getRawDb();
-  const { todayStart, weekStart } = getWindowBoundaries();
+/**
+ * Read counters from the cycle.json ledger in `.agentforge/cycles/`. This is
+ * the authoritative source — cycle-runner writes here on every phase boundary
+ * and every 30s heartbeat. See post-mortem in
+ * memory/project_cycle_db9c145f_post_mortem.md.
+ */
+interface JsonLedgerCounts {
+  runningCycles: number;
+  todaySpendUsd: number;
+  weekSpendUsd: number;
+  monthSpendUsd: number;
+  agentsActive: number;
+  cyclesDay: number;
+  cyclesWeek: number;
+  cyclesMonth: number;
+}
 
-  // Open branches — any git_branch not in a terminal state
+function computeCountersFromJsonLedger(projectRoot: string): JsonLedgerCounts {
+  const cyclesDir = join(projectRoot, '.agentforge', 'cycles');
+  const empty: JsonLedgerCounts = {
+    runningCycles: 0, todaySpendUsd: 0, weekSpendUsd: 0, monthSpendUsd: 0,
+    agentsActive: 0, cyclesDay: 0, cyclesWeek: 0, cyclesMonth: 0,
+  };
+  if (!existsSync(cyclesDir)) return empty;
+  const { todayStart, weekStart } = getWindowBoundaries();
+  const todayStartMs = new Date(todayStart).getTime();
+  const weekStartMs = new Date(weekStart).getTime();
+  const monthStartMs = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const dayWindowMs = 24 * 60 * 60 * 1000;
+  const heartbeatMaxAgeMs = 5 * 60 * 1000;          // STALL_MS from dashboard
+  const agentsActiveWindowMs = 60 * 60 * 1000;      // last hour
+
+  let runningCycles = 0;
+  let todaySpendUsd = 0;
+  let weekSpendUsd = 0;
+  let monthSpendUsd = 0;
+  let cyclesDay = 0;
+  let cyclesWeek = 0;
+  let cyclesMonth = 0;
+  const recentAgentIds = new Set<string>();
+  const now = Date.now();
+
+  let entries: string[];
+  try {
+    entries = readdirSync(cyclesDir);
+  } catch {
+    return empty;
+  }
+
+  for (const id of entries) {
+    const cyclePath = join(cyclesDir, id, 'cycle.json');
+    if (!existsSync(cyclePath)) continue;
+    let cycle: Record<string, unknown>;
+    try {
+      cycle = JSON.parse(readFileSync(cyclePath, 'utf8')) as Record<string, unknown>;
+    } catch { continue; }
+
+    // Running = non-terminal stage AND heartbeat fresh (or no terminal stage written yet)
+    const stage = (cycle.stage as string | undefined)?.toLowerCase();
+    const isTerminal = stage !== undefined &&
+      ['completed', 'failed', 'killed', 'crashed', 'aborted'].includes(stage);
+    if (!isTerminal && stage === 'run') {
+      const hb = cycle.lastHeartbeatAt as string | undefined;
+      const fresh = hb !== undefined && now - new Date(hb).getTime() < heartbeatMaxAgeMs;
+      if (fresh) runningCycles++;
+    }
+
+    // Reference timestamp: prefer startedAt for "cycle in window", completedAt
+    // for "spend on this date". Fall back to file mtime when those are missing.
+    const startedAt = cycle.startedAt as string | undefined;
+    const completedAt = cycle.completedAt as string | undefined;
+    let cycleTsMs: number | null = null;
+    if (startedAt) cycleTsMs = new Date(startedAt).getTime();
+    else if (completedAt) cycleTsMs = new Date(completedAt).getTime();
+    else {
+      try { cycleTsMs = statSync(cyclePath).mtimeMs; } catch { cycleTsMs = null; }
+    }
+
+    if (cycleTsMs !== null) {
+      if (now - cycleTsMs < dayWindowMs) cyclesDay++;
+      if (cycleTsMs >= weekStartMs) cyclesWeek++;
+      if (cycleTsMs >= monthStartMs) cyclesMonth++;
+    }
+
+    // Spend by window — uses completedAt when present (spend "happened" at
+    // completion), else startedAt, else file mtime.
+    const cost = (cycle.cost as { totalUsd?: number } | undefined)?.totalUsd ?? 0;
+    if (cost > 0) {
+      const spendRefMs = completedAt
+        ? new Date(completedAt).getTime()
+        : cycleTsMs;
+      if (spendRefMs !== null) {
+        if (spendRefMs >= todayStartMs) todaySpendUsd += cost;
+        if (spendRefMs >= weekStartMs) weekSpendUsd += cost;
+        if (spendRefMs >= monthStartMs) monthSpendUsd += cost;
+      }
+    }
+
+    // Agents active — read execute.json agentRuns from this cycle if
+    // the cycle completed in the last hour OR is still running.
+    let activeRefMs: number | null = null;
+    if (completedAt) {
+      activeRefMs = new Date(completedAt).getTime();
+    } else if (isTerminal) {
+      try { activeRefMs = statSync(cyclePath).mtimeMs; } catch { activeRefMs = null; }
+    }
+    const recent = activeRefMs !== null && now - activeRefMs < agentsActiveWindowMs;
+    if (recent || (!isTerminal && stage === 'run')) {
+      const execPath = join(cyclesDir, id, 'phases', 'execute.json');
+      if (existsSync(execPath)) {
+        try {
+          const exec = JSON.parse(readFileSync(execPath, 'utf8')) as {
+            agentRuns?: Array<{ agentId?: string }>;
+          };
+          for (const r of exec.agentRuns ?? []) {
+            if (r.agentId) recentAgentIds.add(r.agentId);
+          }
+        } catch { /* skip */ }
+      }
+    }
+  }
+
+  return {
+    runningCycles,
+    todaySpendUsd,
+    weekSpendUsd,
+    monthSpendUsd,
+    agentsActive: recentAgentIds.size,
+    cyclesDay,
+    cyclesWeek,
+    cyclesMonth,
+  };
+}
+
+/** Count agent YAML files in `.agentforge/agents/`. */
+function countTotalAgents(projectRoot: string): number {
+  const agentsDir = join(projectRoot, '.agentforge', 'agents');
+  if (!existsSync(agentsDir)) return 0;
+  try {
+    return readdirSync(agentsDir).filter((f) => f.endsWith('.yaml')).length;
+  } catch {
+    return 0;
+  }
+}
+
+function computeCounters(adapter: WorkspaceAdapter, projectRoot: string): CountersResponse {
+  const db = adapter.getRawDb();
+
+  // SQL-backed counters (still authoritative for these — they're written by
+  // the v5 routes, not the cycle-runner): open branches + pending approvals.
   const openBranchesRow = db
     .prepare<[], { n: number }>(
       "SELECT COUNT(*) AS n FROM git_branches WHERE status NOT IN ('merged', 'deleted', 'closed')",
@@ -94,7 +264,6 @@ function computeCounters(adapter: WorkspaceAdapter): CountersResponse {
     .get();
   const openBranches = openBranchesRow?.n ?? 0;
 
-  // Pending approvals
   const pendingApprovalsRow = db
     .prepare<[], { n: number }>(
       "SELECT COUNT(*) AS n FROM approvals WHERE status = 'pending'",
@@ -102,50 +271,24 @@ function computeCounters(adapter: WorkspaceAdapter): CountersResponse {
     .get();
   const pendingApprovals = pendingApprovalsRow?.n ?? 0;
 
-  // Running cycles (runtime_jobs with status = 'running')
-  const runningCyclesRow = db
-    .prepare<[], { n: number }>(
-      "SELECT COUNT(*) AS n FROM runtime_jobs WHERE status = 'running'",
-    )
-    .get();
-  const runningCycles = runningCyclesRow?.n ?? 0;
-
-  // Today spend
-  const todaySpendRow = db
-    .prepare<[string], { total: number | null }>(
-      'SELECT SUM(cost_usd) AS total FROM costs WHERE created_at >= ?',
-    )
-    .get(todayStart);
-  const todaySpendUsd = todaySpendRow?.total ?? 0;
-
-  // Week spend
-  const weekSpendRow = db
-    .prepare<[string], { total: number | null }>(
-      'SELECT SUM(cost_usd) AS total FROM costs WHERE created_at >= ?',
-    )
-    .get(weekStart);
-  const weekSpendUsd = weekSpendRow?.total ?? 0;
-
-  // Active agents — distinct agent_ids with a session started in the last hour
-  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-  const agentsActiveRow = db
-    .prepare<[string], { n: number }>(
-      'SELECT COUNT(DISTINCT agent_id) AS n FROM sessions WHERE started_at >= ?',
-    )
-    .get(oneHourAgo);
-  const agentsActive = agentsActiveRow?.n ?? 0;
-
-  const timestamp = new Date().toISOString();
+  // JSON-ledger-backed counters (authoritative for cycle-runner data).
+  const fromJson = computeCountersFromJsonLedger(projectRoot);
+  const agentsTotal = countTotalAgents(projectRoot);
 
   return {
     openBranches,
     pendingApprovals,
-    runningCycles,
-    todaySpendUsd,
-    weekSpendUsd,
-    agentsActive,
-    load: deriveLoad(runningCycles),
-    timestamp,
+    runningCycles: fromJson.runningCycles,
+    todaySpendUsd: fromJson.todaySpendUsd,
+    weekSpendUsd: fromJson.weekSpendUsd,
+    monthSpendUsd: fromJson.monthSpendUsd,
+    agentsTotal,
+    agentsActive: fromJson.agentsActive,
+    cyclesDay: fromJson.cyclesDay,
+    cyclesWeek: fromJson.cyclesWeek,
+    cyclesMonth: fromJson.cyclesMonth,
+    load: deriveLoad(fromJson.runningCycles),
+    timestamp: new Date().toISOString(),
   };
 }
 
@@ -157,7 +300,7 @@ export async function countersRoutes(
   app: FastifyInstance,
   opts: CountersOptions,
 ): Promise<void> {
-  const { adapter } = opts;
+  const { adapter, projectRoot = process.cwd() } = opts;
 
   /**
    * GET /api/v5/counters
@@ -171,7 +314,7 @@ export async function countersRoutes(
       return reply.send(_cache.value);
     }
 
-    const value = computeCounters(adapter);
+    const value = computeCounters(adapter, projectRoot);
     _cache = { ts: now, value };
     return reply.send(value);
   });

@@ -522,29 +522,254 @@ This proves the full pipeline (catalog → synthesis → YAML → loadAgentConfi
 
 ---
 
-## 10. Open Questions for the User
+## 10. Decisions (user, 2026-05-18)
 
-1. **Operator CLI surface?** e.g.
-   `agentforge skills list`, `agentforge skills add af-tdd --agent=...`.
-   If yes, scope as v23.1.
+1. **Operator CLI surface — YES (v23.1).** Ship `agentforge skills list`,
+   `agentforge skills add <id> --agent=<name>`, `agentforge skills
+   diff-upstream`. Treat the catalog the same way as the team —
+   first-class operator-managed state.
 
-2. **Universal `af-verify-before-done`** — currently assigned to all 24
-   agents including `file-reader`. Skip read-only agents?
+2. **`af-verify-before-done` universal placement — KEEP for v1, measure.**
+   Operator's call: best judgement. Default to assigning it to all 24
+   (including `file-reader`) because (a) it's small (~600 tokens),
+   (b) it amortizes via cache after first cold boot, and (c) even
+   read-only agents benefit from "double-check before declaring done"
+   when emitting structured outputs. Re-evaluate after one full sprint of
+   skill-injection telemetry shows real cache-hit ratios.
 
-3. **Retire `learnings_seed` in favor of per-agent micro-skills?** Defer
-   to v24?
+3. **`learnings_seed` becomes a generative input for skills (v23.5).**
+   Don't retire learnings — instead extend the curator so it can:
+   - **Refine an existing skill** when a recurring learning maps onto its
+     domain (e.g. a repeated "use `execFile` not `exec`" lesson updates
+     `af-execfile-not-exec.md`'s body and bumps its version).
+   - **Propose a new skill** when 3+ cycles converge on the same
+     evidence-rich pattern that doesn't fit any existing skill body. The
+     proposal lands as a draft `.md` file under
+     `packages/skills-catalog/skills/agentforge/_proposed/` for human
+     review; a `agentforge skills approve-proposal <id>` command moves
+     it into the live catalog.
 
-4. **Opus tier cap of 4 skills (~$0.07 per cold-boot agent)** — too
-   tight? Too loose? Adjust to 3 or 5?
+   This makes the flywheel literal: cycles → learnings → curator
+   decision → either skill refinement or new skill → next cycle's
+   agents are stronger. See §11 for the full loop diagram.
 
-5. **Should skills express required tools?**
-   `requires_tools: [Bash, WebFetch]` would let a skill widen the agent's
-   `allowedTools`. Defer to v24?
+4. **No cap on Opus skill count — measure instead.** Drop the opus≤4
+   rule. Strategic agents can carry whatever skills their job actually
+   needs. Sonnet keeps ≤6 (default; can be overridden by a strong
+   rationale in the synthesis prompt) and Haiku keeps ≤8 as a soft
+   guidance. Hard guarantees move to **observability + budget alerts**:
+   - SSE event `skill.injected` with `totalTokens` per dispatch.
+   - Per-cycle cost-attribution that breaks out "skill cache creation"
+     vs "task input/output". Dashboard surfaces top 5 cost-heavy agents.
+   - Alert when an agent's monthly skill-related spend exceeds 1.5×
+     its rolling 30-day median.
 
-6. **MCP server roadmap** — confirm v23 = skills only, no new tools.
+5. **Skills can declare required tools — YES.** Extend the skill
+   frontmatter with `requires_tools: string[]` (e.g.
+   `[Bash, WebFetch]`). At dispatch time, the runtime takes the union of
+   the agent's default `allowedTools`, the phase's defaults
+   (`EXECUTE_PHASE_DEFAULT_TOOLS`), and every assigned skill's
+   `requires_tools`. The recursive-Task guard
+   (`execute-phase.ts:147`) stays intact — `Task` is never added by a
+   skill. See new §6.5 below for the tool-widening contract.
 
-7. **Phase C validator behavior** when an agent has zero skills —
-   require at least 1 (the universal `af-verify-before-done`)?
+6. **v23 ships BOTH skills AND tools. Continue refining both.**
+   Reframe v23 as the "skills + tools capability layer." Tools v1 = the
+   existing Claude Code `allowedTools` widening per #5 — no new MCP
+   server yet. v24+ adds the MCP surface for AgentForge-native tools
+   (agent dispatch, KB lookup, memory query, cost-aware fallbacks).
+   The catalog package is renamed/scoped so future MCP wrappers live
+   alongside skills: `packages/capabilities-catalog/{skills,tools}/`.
+
+7. **No minimum-skill requirement — selective injection.** Agents that
+   run a single scripted task or pure-data passthrough (file-reader,
+   yaml-doctor, some utility haiku agents) should receive ZERO skills
+   when synthesis judges they don't need them. But:
+   - **Don't pre-block opportunities.** If a coding agent normally
+     needs planning + brainstorming skills only for design tasks, give
+     it those skills but let the dispatch path **opt-in per-task**
+     (skill receives a `applies_to_tasks: [...]` predicate in
+     frontmatter and is only injected when the current task matches).
+   - **Phase C validator** removes the "min 1 skill" rule. It only
+     enforces that referenced skill IDs resolve, that per-tier
+     guidance caps are respected (with allowed override), and that
+     `requires_tools` references real Claude Code tool names.
+
+---
+
+## 11. Flywheel: Learnings → Skill Refinement (v23.5)
+
+```
+.agentforge/memory/*.jsonl  (curator-curated lessons)
+        │
+        ▼
+┌──────────────────────────────────────────┐
+│ SkillCurator (new, runs in `learn` phase)│
+│ - Group learnings by topic + agent       │
+│ - For each group:                        │
+│   • Match against existing skill bodies  │
+│     by tag overlap + cosine similarity   │
+│   • If match (≥0.75 sim):                │
+│       → refine: open PR amending the     │
+│         skill body + bumping `version:`  │
+│   • If no match + ≥3 cycles converge:    │
+│       → propose: write draft to          │
+│         skills-catalog/_proposed/<id>.md │
+│         and surface in dashboard inbox   │
+└──────────────────────────────────────────┘
+        │
+        ▼
+Operator reviews PR / approves proposal
+        │
+        ▼
+Catalog updated → next forge re-synthesises
+        │
+        ▼
+Affected agents reload with refined skill bodies
+```
+
+Operator commands (v23.5):
+
+```bash
+agentforge skills propose-from-learnings    # batch run the curator
+agentforge skills approve-proposal af-new-x # accept a draft
+agentforge skills diff-versions af-tdd      # view body change history
+```
+
+This is the missing closed-loop link: today's `learnings_seed` ends as
+inline prose in the system prompt, never gets explicitly versioned, and
+operators can't see what changed across cycles. After v23.5, every
+cycle's lessons either improve an existing skill (visible PR) or
+propose a new one (visible draft).
+
+---
+
+## 12. Tools Surface (v23 scope clarification)
+
+Tools land in two tiers:
+
+### Tier 1 — Claude Code tool widening (v23, ships with skills)
+
+Today the executor passes `allowedTools: ['Read','Write','Edit','Bash',
+'Glob','Grep']` (`execute-phase.ts:149`). v23 adds:
+
+- **Per-skill `requires_tools: string[]` in frontmatter.** Resolved at
+  `loadAgentConfig` time; runtime takes the union with the phase
+  defaults.
+- **Per-agent override** in YAML: `allowed_tools_extra: ['WebFetch']`
+  for agents that need ambient access regardless of skill.
+- **Never adds `Task`.** Recursive subagent dispatch stays guarded.
+
+### Tier 2 — AgentForge-native MCP servers (v24+)
+
+Out of scope for v23. Future MCP wrappers will live at
+`packages/capabilities-catalog/tools/` and follow the same versioning +
+per-agent assignment pattern as skills. Candidates:
+
+- `af-mcp-agent-dispatch` — programmatic agent invocation from inside
+  another agent's session.
+- `af-mcp-kb-lookup` — query the knowledge bases (Subsystem C) without
+  loading a full file.
+- `af-mcp-memory-query` — structured access to `.agentforge/memory/*.jsonl`
+  with filters.
+- `af-mcp-cost-fallback` — let an agent self-downgrade Opus→Sonnet
+  mid-task when it judges the work simpler than estimated.
+
+The framework should be designed so these can be added incrementally —
+each as a separate `packages/capabilities-catalog/tools/<name>/` package
+with a stable MCP manifest.
+
+---
+
+## 13. UI & Reporting (user request, 2026-05-18)
+
+Skills and tools must be **first-class citizens** in every reporting
+surface, with cost attribution at the input/output/tool/skill level.
+
+### 13.1 Backend data model
+
+Extend `cycle.json`, `phase-*.json`, and `agent-run` records with:
+
+```ts
+interface CostBreakdown {
+  inputTokens:  { count: number; usd: number };
+  outputTokens: { count: number; usd: number };
+  cacheCreation: { tokens: number; usd: number };  // cache writes (system prompt, skills)
+  cacheRead:     { tokens: number; usd: number };  // cache hits
+  toolUse: {
+    [toolName: string]: { invocations: number; usd: number };
+  };
+  skillsLoaded: {
+    [skillId: string]: { tokens: number; cacheCreationUsd: number; cacheReadUsd: number };
+  };
+  totalUsd: number;
+}
+```
+
+New JSONL: `.agentforge/memory/cost-attribution.jsonl` — one record per
+agent-run with the full breakdown. Curator reads this for the §11
+flywheel: "this agent's `Bash` tool use exceeded N$ across M cycles —
+worth optimizing?"
+
+### 13.2 New v5 API endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/v5/cycles/:id/cost-breakdown` | full per-phase + per-agent + per-skill rollup for one cycle |
+| `GET /api/v5/agents/:id/cost-history?since=` | rolling cost-per-agent over N days, with per-tool + per-skill split |
+| `GET /api/v5/skills/cost-summary` | total usd attributed to each skill across all cycles (drives "is this skill worth its tokens?" decisions) |
+| `GET /api/v5/tools/cost-summary` | total usd attributed to each tool name (`Bash`, `WebFetch`, etc.) |
+
+### 13.3 Dashboard surfaces
+
+| Page | New UI |
+|---|---|
+| `/cycles/:id` — Overview | Cost tile shows 4 sub-bars: input · output · tool · skill cache. Hover for breakdown. |
+| `/cycles/:id` — new **Skills tab** | Table of every skill injected this cycle: id · agents loaded into · cold-boot $ · warm-call $ · total $. |
+| `/cycles/:id` — new **Tools tab** | Table of every Claude Code tool invoked: name · invocations · total $ · agents that used it. |
+| `/agents/:id` — Overview KPI strip | Add "Skills equipped" count + "Tools used (30d)" pill. |
+| `/agents/:id` — new **Capabilities tab** | List assigned skills (with body preview, version, upstream provenance) + `requires_tools` derived widening. |
+| `/cost` | New stacked-area chart: cost split by (input vs output vs cache-create vs cache-read vs tool-use). New top-10 list of "most expensive skills" and "most expensive tools." |
+| `/flywheel` | New section "Skill Refinement Pipeline": how many proposed skills are pending review, how many refinement PRs are open, average time-to-merge. |
+| `/skills` (new page) | Catalog browser. Per-skill: body, frontmatter, upstream ref, agents that have it, lifetime cost, recent refinement PRs. Operator can run `agentforge skills add` from here. |
+| `/tools` (new page) | Mirror of `/skills` but for Claude Code tools + future MCP tools. |
+
+### 13.4 Status line + topbar
+
+Topbar adds a `Skills: <N>` pill next to existing `Agents: <N>` /
+`Cycles: <N>` pills, click navigates to `/skills`.
+
+Status line at the bottom adds a 5th tile: rolling 1-hour skill-related
+spend (so operators see if a skill catalog change is unexpectedly
+expensive in real time).
+
+### 13.5 Where the data comes from
+
+- **Per-token costs** — already produced by transports (`anthropic-sdk-transport.ts:350-385` for SDK; CLI returns `total_cost_usd` per response). Add input/output split (SDK has it; CLI rolls it into `total_cost_usd` — need to read `usage.input_tokens` + `usage.output_tokens` from the structured response and recompute the split using `MODEL_PRICING`).
+- **Cache costs** — SDK transport already breaks out `cache_creation_input_tokens` and `cache_read_input_tokens`. CLI returns them in the `usage` block.
+- **Tool-use costs** — currently invisible. Need to instrument: each
+  `tool_use` content block carries an output_token cost (the model's
+  thinking tokens before the tool call). Sum these per-tool-name.
+- **Skill costs** — derivable: when `loadAgentConfig` injects skills,
+  it records `{ agentRunId, skillIds, totalTokens }`. The cache-creation
+  cost of that prompt prefix is then attributed pro-rata across the
+  injected skill IDs based on their token contributions.
+
+### 13.6 Scope (which spec / which sprint)
+
+This UI work doesn't fit cleanly in the v23 implementation sprint —
+the data model has to land first. Sequence:
+
+1. **v23 sprint 1** — catalog package + injection mechanism + pilot
+   (PR per §8). Skills work; no UI yet; cost attribution still flat.
+2. **v23 sprint 2** — extend `CostBreakdown` schema + record `skillsLoaded` and `toolUse` rollups in cycle.json + new v5 endpoints (13.2).
+3. **v23 sprint 3** — dashboard surfaces (13.3), `/skills` + `/tools`
+   pages, topbar/statusline integration (13.4).
+4. **v23.5** — flywheel/curator integration (§11) lights up the
+   `/flywheel` skill-refinement pipeline view.
+
+Each sprint is a separate PR; the UI changes are not blocked on the
+flywheel curator (§11) and can land in parallel.
 
 ---
 
