@@ -19,6 +19,7 @@
   "dependencies": {
     "@agentforge/db": "workspace:*",
     "@agentforge/shared": "workspace:*",
+    "@agentforge/skills-catalog": "workspace:*",
     "@anthropic-ai/sdk": "^0.96.0",
     "js-yaml": "^4.1.1",
     "zod": "^4.4.3"

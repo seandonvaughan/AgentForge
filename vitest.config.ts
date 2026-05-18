@@ -10,6 +10,7 @@ export default defineConfig({
       '@agentforge/embeddings': resolve('./packages/embeddings/src/index.ts'),
       '@agentforge/plugins-sdk': resolve('./packages/plugins-sdk/src/index.ts'),
       '@agentforge/executor': resolve('./packages/executor/src/index.ts'),
+      '@agentforge/skills-catalog': resolve('./packages/skills-catalog/src/index.ts'),
     },
   },
   test: {

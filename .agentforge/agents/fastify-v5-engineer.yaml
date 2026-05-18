@@ -107,3 +107,6 @@ capability_tags:
   - workspace-adapter
 team: implementation
 effort: high
+skill_ids:
+  - af-tdd
+  - af-verify-before-done
