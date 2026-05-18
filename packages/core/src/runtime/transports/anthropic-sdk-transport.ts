@@ -10,6 +10,8 @@ import type {
   ExecutionStreamOptions,
   ExecutionTransport,
 } from '../types.js';
+import { withCacheBreakpoints } from '../cache-control.js';
+import type { SystemBlock } from '../cache-control.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -255,16 +257,22 @@ export class AnthropicSdkTransport implements ExecutionTransport {
         ]
       : userContent;
 
+    // Build raw system blocks then apply structured cache breakpoints.
+    // `withCacheBreakpoints` marks exactly:
+    //   (1) the trailing system_prompt segment
+    //   (2) the trailing CLAUDE.md segment (if present)
+    // Forge-phase requests use ttl:"1h"; cycle-phase uses the 5 min default.
+    const rawSystemBlocks: SystemBlock[] = [
+      { type: 'text', text: request.agent.systemPrompt },
+    ];
+    const systemBlocks = withCacheBreakpoints(
+      rawSystemBlocks,
+      request.phaseHint !== undefined ? { phaseHint: request.phaseHint } : {},
+    );
+
     return {
       model: request.modelId,
-      // System prompt is always cached — it is stable and large across runs.
-      system: [
-        {
-          type: 'text',
-          text: request.agent.systemPrompt,
-          cache_control: { type: 'ephemeral' },
-        },
-      ],
+      system: systemBlocks,
       max_tokens: request.maxTokens ?? 8096,
       messages: [
         {
