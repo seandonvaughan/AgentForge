@@ -54,7 +54,6 @@
         { label: 'Org Graph',      href: '/org',        icon: Network },
         { label: 'Branches',       href: '/branches',   icon: GitBranch },
         { label: 'Approvals',      href: '/approvals',  icon: ListChecks },
-        { label: 'Sessions',       href: '/sessions',   icon: Clock },
         { label: 'Live Feed',      href: '/live',       icon: Radio },
         { label: 'Runner',         href: '/runner',     icon: Play },
         { label: 'Jobs',           href: '/jobs',       icon: List },
