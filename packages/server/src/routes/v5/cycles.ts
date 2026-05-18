@@ -126,6 +126,38 @@ function readJsonIfExists(file: string): unknown | null {
   }
 }
 
+interface CycleCheckpoint {
+  resumeFromPhase: string;
+  capturedAt: string;
+  completedPhases: string[];
+}
+
+/**
+ * Read .agentforge/cycles/<cycleId>/checkpoint.json and return a typed
+ * checkpoint object, or undefined if the file is missing or malformed.
+ *
+ * Path safety: cycleId is validated by the caller against SAFE_ID before
+ * being passed here. We use match-then-use: the validated `id` (not raw
+ * request input) is used to construct the path, so the analyzer can trace
+ * a sanitized value through to the file read.
+ */
+function readCycleCheckpoint(dir: string): CycleCheckpoint | undefined {
+  const file = join(dir, 'checkpoint.json');
+  if (!existsSync(file)) return undefined;
+  try {
+    const raw = JSON.parse(readFileSync(file, 'utf-8')) as Record<string, unknown>;
+    const resumeFromPhase = typeof raw['resumeFromPhase'] === 'string' ? raw['resumeFromPhase'] : null;
+    const capturedAt = typeof raw['capturedAt'] === 'string' ? raw['capturedAt'] : null;
+    const completedPhases = Array.isArray(raw['completedPhases'])
+      ? (raw['completedPhases'] as unknown[]).filter((p): p is string => typeof p === 'string')
+      : null;
+    if (!resumeFromPhase || !capturedAt || !completedPhases) return undefined;
+    return { resumeFromPhase, capturedAt, completedPhases };
+  } catch {
+    return undefined;
+  }
+}
+
 interface CycleListRow {
   cycleId: string;
   sprintVersion: string | null;
@@ -817,6 +849,8 @@ export async function cyclesRoutes(
           (parsed as any).costHealedFromPhases = true;
         }
       }
+      const cp = readCycleCheckpoint(dir);
+      if (cp !== undefined) (parsed as any).checkpoint = cp;
       return reply.send(parsed);
     }
     // cycle.json is only written at terminal stage. While the cycle is still
@@ -900,7 +934,8 @@ export async function cyclesRoutes(
     if (session && TERMINAL.includes(session.status)) {
       const completedAt = session.lastSeenAt ?? new Date().toISOString();
       const startIso = startedAt ?? session.startedAt ?? completedAt;
-      return reply.status(200).send({
+      const sessionCheckpoint = readCycleCheckpoint(dir);
+      const sessionPayload: Record<string, unknown> = {
         cycleId: id,
         sprintVersion,
         stage: session.status === 'killed' ? 'killed' : lastStage,
@@ -916,7 +951,9 @@ export async function cyclesRoutes(
         agentRunCount,
         cycleInProgress: false,
         partialTerminal: true,
-      });
+      };
+      if (sessionCheckpoint !== undefined) sessionPayload['checkpoint'] = sessionCheckpoint;
+      return reply.status(200).send(sessionPayload);
     }
 
     // v15.1.0: Gap fix — killed cycles with no session registry entry.
@@ -939,7 +976,8 @@ export async function cyclesRoutes(
         lastStage === 'killed' || lastStage === 'crashed' || lastStage === 'failed'
           ? lastStage
           : 'crashed';
-      return reply.status(200).send({
+      const stalenessCheckpoint = readCycleCheckpoint(dir);
+      const stalenessPayload: Record<string, unknown> = {
         cycleId: id,
         sprintVersion,
         stage: inferredStage,
@@ -955,7 +993,9 @@ export async function cyclesRoutes(
         agentRunCount,
         cycleInProgress: false,
         partialTerminal: true,
-      });
+      };
+      if (stalenessCheckpoint !== undefined) stalenessPayload['checkpoint'] = stalenessCheckpoint;
+      return reply.status(200).send(stalenessPayload);
     }
 
     // cycle.json absent and session is still running (or unknown) — classic
