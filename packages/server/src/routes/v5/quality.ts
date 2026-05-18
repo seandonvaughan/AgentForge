@@ -204,18 +204,16 @@ export async function qualityRoutes(
     const safeCycleId = safeId(q.cycle_id);
 
     const filtered = applyFilters(allRows, {
-      since: q.since,
-      agent_id: q.agent_id,
-      skill_id: q.skill_id,
-      cycle_id: safeCycleId,
+      ...(q.since ? { since: q.since } : {}),
+      ...(q.agent_id ? { agent_id: q.agent_id } : {}),
+      ...(q.skill_id ? { skill_id: q.skill_id } : {}),
+      ...(safeCycleId ? { cycle_id: safeCycleId } : {}),
     });
 
     const page = filtered.slice(0, limit);
 
     // Audit log (read-only)
     appendAuditEntry(auditDb, {
-      id: generateId(),
-      ts: nowIso(),
       actor: 'api',
       action: 'quality.step-scores.read',
       target: 'step-scores.jsonl',
@@ -254,13 +252,11 @@ export async function qualityRoutes(
       return ts >= cutoff;
     });
 
-    const by_agent = aggregateBy(windowed, r => r.agent_id as string | undefined, 'agent_id') as AgentAgg[];
-    const by_skill = aggregateBy(windowed, r => r.skill_id as string | undefined, 'skill_id') as SkillAgg[];
-    const by_model = aggregateBy(windowed, r => r.model as string | undefined, 'model') as ModelAgg[];
+    const by_agent = aggregateBy(windowed, r => r.agent_id as string | undefined, 'agent_id') as unknown as AgentAgg[];
+    const by_skill = aggregateBy(windowed, r => r.skill_id as string | undefined, 'skill_id') as unknown as SkillAgg[];
+    const by_model = aggregateBy(windowed, r => r.model as string | undefined, 'model') as unknown as ModelAgg[];
 
     appendAuditEntry(auditDb, {
-      id: generateId(),
-      ts: nowIso(),
       actor: 'api',
       action: 'quality.aggregates.read',
       target: 'step-scores.jsonl',
@@ -357,8 +353,6 @@ export async function qualityRoutes(
     }
 
     appendAuditEntry(auditDb, {
-      id: generateId(),
-      ts: nowIso(),
       actor: 'api',
       action: 'quality.skill-effectiveness.read',
       target: 'step-scores.jsonl',
