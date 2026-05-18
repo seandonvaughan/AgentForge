@@ -21,6 +21,10 @@ import type { WorkspaceAdapter } from '@agentforge/db';
 import type { RuntimeForScoring } from './scoring-pipeline.js';
 import type { ModelTier } from '@agentforge/shared';
 import type { RuntimeJobSupervisor } from '../runtime/runtime-job-supervisor.js';
+import {
+  extractBreakdownFromAgentRun,
+  type CostBreakdown,
+} from './cost-breakdown.js';
 
 const TIER_RANK: Record<ModelTier, number> = { opus: 2, sonnet: 1, haiku: 0 };
 
@@ -120,10 +124,16 @@ export class RuntimeAdapter implements RuntimeForScoring {
     options?: { responseFormat?: string; allowedTools?: string[]; timeoutMs?: number; cwd?: string },
   ): Promise<{
     output: string;
-    usage: { input_tokens: number; output_tokens: number };
+    usage: {
+      input_tokens: number;
+      output_tokens: number;
+      cache_creation_input_tokens?: number;
+      cache_read_input_tokens?: number;
+    };
     costUsd: number;
     durationMs: number;
     model: string;
+    breakdown: CostBreakdown;
   }> {
     // When a supervisor is wired, every agent run creates a durable runtime_job
     // row + runtime_events so the /jobs page has persistent history across
@@ -152,15 +162,24 @@ export class RuntimeAdapter implements RuntimeForScoring {
       );
     }
 
+    const usage = {
+      input_tokens: result.inputTokens,
+      output_tokens: result.outputTokens,
+      ...(result.cacheCreationInputTokens !== undefined
+        ? { cache_creation_input_tokens: result.cacheCreationInputTokens }
+        : {}),
+      ...(result.cacheReadInputTokens !== undefined
+        ? { cache_read_input_tokens: result.cacheReadInputTokens }
+        : {}),
+    };
+    const breakdown = extractBreakdownFromAgentRun({ model: result.model, usage });
     return {
       output: result.response,
-      usage: {
-        input_tokens: result.inputTokens,
-        output_tokens: result.outputTokens,
-      },
+      usage,
       costUsd: result.costUsd,
       durationMs,
       model: result.model,
+      breakdown,
     };
   }
 
@@ -175,10 +194,16 @@ export class RuntimeAdapter implements RuntimeForScoring {
     options?: { responseFormat?: string; allowedTools?: string[]; timeoutMs?: number; cwd?: string },
   ): Promise<{
     output: string;
-    usage: { input_tokens: number; output_tokens: number };
+    usage: {
+      input_tokens: number;
+      output_tokens: number;
+      cache_creation_input_tokens?: number;
+      cache_read_input_tokens?: number;
+    };
     costUsd: number;
     durationMs: number;
     model: string;
+    breakdown: CostBreakdown;
   }> {
     const supervisor = this.options.supervisor!;
     const runtime = await this.getOrCreateRuntime(agentId);
@@ -210,15 +235,24 @@ export class RuntimeAdapter implements RuntimeForScoring {
     }
 
     const durationMs = Date.now() - jobStartedAt;
+    const supervisorUsage = {
+      input_tokens: runResult.inputTokens,
+      output_tokens: runResult.outputTokens,
+      ...(runResult.cacheCreationInputTokens !== undefined
+        ? { cache_creation_input_tokens: runResult.cacheCreationInputTokens }
+        : {}),
+      ...(runResult.cacheReadInputTokens !== undefined
+        ? { cache_read_input_tokens: runResult.cacheReadInputTokens }
+        : {}),
+    };
+    const supervisorBreakdown = extractBreakdownFromAgentRun({ model: runResult.model, usage: supervisorUsage });
     return {
       output: runResult.response,
-      usage: {
-        input_tokens: runResult.inputTokens,
-        output_tokens: runResult.outputTokens,
-      },
+      usage: supervisorUsage,
       costUsd: runResult.costUsd,
       durationMs,
       model: runResult.model,
+      breakdown: supervisorBreakdown,
     };
   }
 

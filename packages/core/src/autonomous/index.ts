@@ -2,6 +2,14 @@
 // Barrel export for the autonomous development cycle module.
 
 export * from './types.js';
+export {
+  extractBreakdownFromAgentRun,
+  mergeBreakdowns,
+} from './cost-breakdown.js';
+export type {
+  CostBreakdown as AutonomousCostBreakdown,
+  AgentRun as AutonomousAgentRun,
+} from './cost-breakdown.js';
 export * from './version-bumper.js';
 export * from './config-loader.js';
 export * from './cycle-logger.js';

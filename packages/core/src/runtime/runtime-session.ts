@@ -105,6 +105,12 @@ export class RuntimeSession {
       model: execution.model,
       inputTokens,
       outputTokens,
+      ...(execution.usage.cacheCreationInputTokens !== undefined
+        ? { cacheCreationInputTokens: execution.usage.cacheCreationInputTokens }
+        : {}),
+      ...(execution.usage.cacheReadInputTokens !== undefined
+        ? { cacheReadInputTokens: execution.usage.cacheReadInputTokens }
+        : {}),
       costUsd: execution.costUsd,
       startedAt: this.startedAt,
       completedAt,
