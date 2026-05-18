@@ -99,7 +99,7 @@ const SAFE_PHASE = new Set([
   'review', 'gate', 'release', 'learn',
 ]);
 const SAFE_FILE_NAMES = new Set([
-  'tests', 'git', 'pr', 'approval-pending', 'approval-decision',
+  'tests', 'git', 'pr', 'approval-pending', 'approval-decision', 'typecheck-failure',
 ]);
 /** Allowlist for raw .log file access via GET /api/v5/cycles/:id/logs/:name */
 const SAFE_LOG_NAMES = new Set(['cli-stdout', 'tests-raw']);

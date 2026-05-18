@@ -200,6 +200,35 @@ export class CycleLogger {
     });
   }
 
+  /**
+   * Write a structured typecheck-failure artifact to cycles/<id>/typecheck-failure.json.
+   *
+   * Extracts the first error's file path and line number from tsc output using
+   * a match-then-use pattern (capture once, use the captured value) for CodeQL
+   * js/path-injection compliance.
+   *
+   * Shape: { stdout, stderr, files, firstError: { file, line, message }, capturedAt }
+   */
+  logTypecheckFailure({ stdout, stderr, files }: { stdout: string; stderr: string; files: string[] }): void {
+    // Pattern: `src/foo.ts(12,3): error TS2304: Cannot find name 'x'.`
+    // Capture once via exec() then use only the captured variables — never re-index
+    // the raw input string (CodeQL js/path-injection compliance).
+    const errorPattern = /^([^(\n]+)\((\d+),\d+\): error TS\d+: (.+)$/m;
+    const m = errorPattern.exec(stdout) ?? errorPattern.exec(stderr);
+    const firstError = m
+      ? { file: m[1]!.trim(), line: parseInt(m[2]!, 10), message: m[3]!.trim() }
+      : null;
+
+    this.writeJson(join(this.cycleDir, 'typecheck-failure.json'), {
+      stdout,
+      stderr,
+      files,
+      firstError,
+      capturedAt: new Date().toISOString(),
+    });
+    this.appendEvent({ type: 'typecheck.failure', firstErrorFile: firstError?.file ?? null, at: new Date().toISOString() });
+  }
+
   private writeJson(path: string, data: unknown): void {
     writeFileSync(path, JSON.stringify(data, null, 2));
   }
