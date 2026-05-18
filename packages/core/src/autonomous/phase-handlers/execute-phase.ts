@@ -17,6 +17,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
 import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
 import type { ParsedMemoryEntry } from '../../memory/types.js';
 import {
@@ -24,6 +25,8 @@ import {
   mergeBreakdowns,
   type CostBreakdown,
 } from '../cost-breakdown.js';
+import { appendStepScore } from '../../scoring/jsonl-writer.js';
+import type { StepScore } from '@agentforge/shared';
 // T4.5 — ConcurrencyGate: caps MAX_PARALLEL_AGENTS (default 8, max 40) and
 // provides backpressure queue so the execute phase never spawns more agents
 // than the configured ceiling, regardless of item count or parallelism cap.
@@ -68,6 +71,59 @@ try {
   _selfEvalFragment = '';
 }
 export const SELF_EVAL_FRAGMENT = _selfEvalFragment;
+
+// ---- Scorer integration (T2) ----
+// TODO: replace stub with real import once T1 scorer merges to origin/main.
+// import { scoreStep } from '../../scoring/scorer.js';
+
+export interface ScoreStepInput {
+  cycleId: string;
+  itemId: string;
+  agentId: string;
+  model: string;
+  costUsd: number;
+  latencyMs: number;
+  tokens: { input: number; output: number; cache_read: number; cache_write: number };
+  validatedOutput?: ValidatedJsonOutput;
+  schemaValidationOk?: boolean;
+}
+
+/**
+ * T2 stub — returns a deterministic StepScore from available runtime signals.
+ * Replaced by the real scorer once T1 merges.
+ */
+async function scoreStep(input: ScoreStepInput): Promise<StepScore> {
+  const schemaValid = input.schemaValidationOk ?? (input.validatedOutput?.ok ?? true);
+  const quality = schemaValid ? Math.min(1, 0.7 + (input.costUsd > 0 ? 0.1 : 0)) : 0;
+  return {
+    step_score_id: randomUUID(),
+    cycle_id: input.cycleId,
+    phase: 'execute',
+    item_id: input.itemId,
+    agent_id: input.agentId,
+    model: (['opus', 'sonnet', 'haiku'] as const).includes(input.model as 'opus' | 'sonnet' | 'haiku')
+      ? (input.model as 'opus' | 'sonnet' | 'haiku')
+      : 'sonnet',
+    capability_tags: [],
+    skill_ids: [],
+    output_schema_id: input.validatedOutput?.schemaName ?? null,
+    quality,
+    rubric_version: '1.0.0',
+    signals: [
+      {
+        key: 'schema.valid',
+        value: schemaValid ? 1 : 0,
+        source: 'deterministic',
+        weight: 1.0,
+      },
+    ],
+    cost_usd: input.costUsd,
+    latency_ms: input.latencyMs,
+    tokens: input.tokens,
+    llm_graded: false,
+    created_at: new Date().toISOString(),
+  };
+}
 
 // ---- Memory injection ----
 // Reads tag-filtered past failure entries from .agentforge/memory/*.jsonl so
@@ -299,6 +355,11 @@ interface ItemResult {
    * re-parsing the raw response string.
    */
   validatedOutput?: ValidatedJsonOutput;
+  /**
+   * T2 — IDs of StepScore records written to step-scores.jsonl for this item.
+   * Additive: preserves existing fields; one entry per successful/failed run.
+   */
+  step_score_ids?: string[];
 }
 
 /** Coder-class agent-id prefixes / tags.  An item is considered "agent code
@@ -779,6 +840,40 @@ export async function runExecutePhase(
             };
           }
 
+          // T2 — Score the step non-blocking: call scoreStep, append to JSONL.
+          let stepScoreIds: string[] = [];
+          try {
+            const stepScoreFilePath = join(
+              ctx.projectRoot,
+              '.agentforge',
+              'memory',
+              'step-scores.jsonl',
+            );
+            const runModel =
+              typeof (result as any)?.model === 'string' ? (result as any).model : 'sonnet';
+            const score = await scoreStep({
+              cycleId: ctx.cycleId ?? ctx.sprintId,
+              itemId: item.id,
+              agentId: item.assignee,
+              model: runModel,
+              costUsd,
+              latencyMs: durationMs,
+              tokens: {
+                input: (result as any)?.usage?.input_tokens ?? 0,
+                output: (result as any)?.usage?.output_tokens ?? 0,
+                cache_read: (result as any)?.usage?.cache_read_input_tokens ?? 0,
+                cache_write: (result as any)?.usage?.cache_creation_input_tokens ?? 0,
+              },
+              validatedOutput,
+              schemaValidationOk: validatedOutput?.ok ?? true,
+            });
+            await appendStepScore(score, stepScoreFilePath);
+            stepScoreIds = [score.step_score_id];
+          } catch {
+            // Scoring failure must NEVER block the cycle — log warning only.
+            console.warn(`[execute-phase] scoreStep warning for item ${item.id}`);
+          }
+
           const completedResult = {
             itemId: item.id,
             status: 'completed' as const,
@@ -797,6 +892,8 @@ export async function runExecutePhase(
             worktreeBranch: worktreeHandle?.branch,
             // T4: attach structured output when present
             ...(validatedOutput ? { validatedOutput } : {}),
+            // T2: step score IDs for downstream traceability
+            ...(stepScoreIds.length > 0 ? { step_score_ids: stepScoreIds } : {}),
           };
           liveResults.set(item.id, completedResult as ItemResult);
           return completedResult;
@@ -805,6 +902,33 @@ export async function runExecutePhase(
           if (attempt >= maxItemRetries) {
             const durationMs = Date.now() - itemStartedAt;
             item.status = 'failed';
+
+            // T2 — Write a failure StepScore (quality: 0, schema.valid: 0) non-blocking.
+            let failStepScoreIds: string[] = [];
+            try {
+              const stepScoreFilePath = join(
+                ctx.projectRoot,
+                '.agentforge',
+                'memory',
+                'step-scores.jsonl',
+              );
+              const failScore = await scoreStep({
+                cycleId: ctx.cycleId ?? ctx.sprintId,
+                itemId: item.id,
+                agentId: item.assignee,
+                model: 'sonnet',
+                costUsd: 0,
+                latencyMs: durationMs,
+                tokens: { input: 0, output: 0, cache_read: 0, cache_write: 0 },
+                schemaValidationOk: false,
+              });
+              await appendStepScore(failScore, stepScoreFilePath);
+              failStepScoreIds = [failScore.step_score_id];
+            } catch {
+              // Non-fatal — scoring failure must never block the cycle.
+              console.warn(`[execute-phase] scoreStep warning (fail) for item ${item.id}`);
+            }
+
             const failedResult = {
               itemId: item.id,
               status: 'failed' as const,
@@ -814,6 +938,7 @@ export async function runExecutePhase(
               attempts,
               error: lastError,
               agentId: item.assignee,
+              ...(failStepScoreIds.length > 0 ? { step_score_ids: failStepScoreIds } : {}),
             };
             liveResults.set(item.id, failedResult as ItemResult);
             return failedResult;
