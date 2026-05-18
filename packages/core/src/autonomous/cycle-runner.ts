@@ -100,6 +100,24 @@ export function sanitizePrTitle(version: string, summary: string): string {
   return prefix + (lastSpace > 20 ? cut.slice(0, lastSpace) : cut) + '…';
 }
 
+/**
+ * Extract a useful error message from a failed execFileAsync call.
+ *
+ * Critical fix: TypeScript (and most build tools) write compilation errors to
+ * stdout, not stderr. Prior code used `??` which only falls through on null/
+ * undefined — an empty stderr Buffer toString() returns `""` which is NOT
+ * nullish, so the stdout fallback never fired and operators saw an empty
+ * "build failed: " message. Cycle a84ea768 was killed by 2 fixable TS errors
+ * that this bug hid.
+ */
+function extractSubprocessError(err: unknown): string {
+  const e = err as { stderr?: Buffer | string; stdout?: Buffer | string; message?: string };
+  const stderrStr = (e.stderr?.toString() ?? '').trim();
+  const stdoutStr = (e.stdout?.toString() ?? '').trim();
+  const text = stderrStr || stdoutStr || e.message || String(err);
+  return text.slice(0, 2000);
+}
+
 /** Result returned by the pre-verify typecheck step. */
 export interface PreVerifyTypeCheckResult {
   buildOk: boolean;
@@ -947,9 +965,7 @@ export class CycleRunner {
         });
       } catch (err: unknown) {
         buildOk = false;
-        const e = err as { stderr?: Buffer | string; stdout?: Buffer | string; message?: string };
-        const text = e.stderr?.toString() ?? e.stdout?.toString() ?? e.message ?? String(err);
-        buildError = text.slice(0, 2000);
+        buildError = extractSubprocessError(err);
       }
     }
 
@@ -967,9 +983,7 @@ export class CycleRunner {
         });
       } catch (err: unknown) {
         typeCheckOk = false;
-        const e = err as { stderr?: Buffer | string; stdout?: Buffer | string; message?: string };
-        const text = e.stderr?.toString() ?? e.stdout?.toString() ?? e.message ?? String(err);
-        typeCheckError = text.slice(0, 2000);
+        typeCheckError = extractSubprocessError(err);
       }
     }
 
