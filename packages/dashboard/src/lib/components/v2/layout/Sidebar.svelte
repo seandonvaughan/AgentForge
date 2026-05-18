@@ -28,6 +28,7 @@
     Shield,
     GitMerge,
     BookOpen,
+    Star,
   } from 'lucide-svelte';
 
   // ── Nav structure ──────────────────────────────────────────────────────
@@ -63,6 +64,7 @@
       section: 'Insights',
       items: [
         { label: 'Cost',      href: '/cost',     icon: DollarSign },
+        { label: 'Quality',   href: '/quality',  icon: Star },
         { label: 'Flywheel',  href: '/flywheel', icon: Sparkles },
         { label: 'Insights',  href: '/insights', icon: TrendingUp },
         { label: 'Memory',    href: '/memory',   icon: Brain },

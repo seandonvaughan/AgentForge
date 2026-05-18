@@ -12,6 +12,7 @@
   import TypecheckFailureBanner from '$lib/components/cycles/TypecheckFailureBanner.svelte';
   import type { TypecheckFailure } from '$lib/components/cycles/TypecheckFailureBanner.svelte';
   import CostBreakdownTile from '$lib/components/cycles/CostBreakdownTile.svelte';
+  import QualityTile from '$lib/components/cycles/QualityTile.svelte';
 
   type Tab =
     | 'overview' | 'pipeline' | 'items' | 'agents'
@@ -1065,6 +1066,10 @@
 
         <Card>
           <CostBreakdownTile cycleId={id} />
+        </Card>
+
+        <Card>
+          <QualityTile cycleId={id} />
         </Card>
 
         <Card>
