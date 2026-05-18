@@ -249,21 +249,57 @@
     return out;
   });
 
+  // Phase completion comes from TWO signals merged:
+  //   1. `agentsData.runs[]` — phases that dispatched LLM agents (audit/plan/
+  //      execute/test/review/gate/learn). Each agent run carries cost/duration.
+  //   2. `events[]` `phase.result` / `phase.failure` events — covers DETERMINISTIC
+  //      phases (assign, release, sometimes gate) that don't produce agent runs
+  //      but still emit phase events.
+  // Earlier versions used (1) only, which caused ASSIGN/RELEASE/LEARN to show
+  // as never-completed even after the cycle ran them successfully.
   const pipelinePhases = $derived.by<PhaseInfo[]>(() => {
-    const out: PhaseInfo[] = [];
     const runs = agentsData?.runs ?? [];
+
+    // Build a phase-event map from events.jsonl
+    const eventPhaseStatus = new Map<string, 'done' | 'failed' | 'active'>();
+    for (const ev of events) {
+      const ph = (ev.phase as string | undefined)?.toLowerCase();
+      if (!ph) continue;
+      if (ev.type === 'phase.start') {
+        if (!eventPhaseStatus.has(ph)) eventPhaseStatus.set(ph, 'active');
+      } else if (ev.type === 'phase.result') {
+        eventPhaseStatus.set(ph, 'done');
+      } else if (ev.type === 'phase.failure') {
+        eventPhaseStatus.set(ph, 'failed');
+      }
+    }
+
+    const out: PhaseInfo[] = [];
     for (const name of PHASE_ORDER) {
       const matching = runs.filter((r) => r.phase === name);
       const hasRuns = matching.length > 0;
-      const isActive = !isTerminal && name === stage.toLowerCase();
-      const isFailed = matching.some((r) => r.status === 'failed');
+      const isCurrent = !isTerminal && name === stage.toLowerCase();
+      const evStatus = eventPhaseStatus.get(name);
+      const isFailed = matching.some((r) => r.status === 'failed') || evStatus === 'failed';
+      const hasResult = evStatus === 'done';
       const sumCost = matching.reduce((s, r) => s + (r.costUsd ?? 0), 0);
       const sumDur = matching.reduce((s, r) => s + (r.durationMs ?? 0), 0);
       const lastRun = matching[matching.length - 1];
-      const status: PhaseInfo['status'] = isFailed ? 'failed' : isActive ? 'active' : hasRuns ? 'done' : 'pending';
-      if (!hasRuns && !isActive) {
-        if (isTerminal) continue;
-      }
+
+      // Done if: agent runs exist OR phase.result event emitted
+      // Active if: current stage AND not yet done
+      // Failed if: any run failed OR phase.failure event emitted
+      // Pending otherwise
+      let status: PhaseInfo['status'];
+      if (isFailed) status = 'failed';
+      else if (hasRuns || hasResult) status = 'done';
+      else if (isCurrent || evStatus === 'active') status = 'active';
+      else status = 'pending';
+
+      // Skip rendering only when truly nothing happened AND the cycle is
+      // terminal (so we don't show stale "pending" rows on a finished cycle).
+      if (status === 'pending' && isTerminal && !hasResult && !hasRuns) continue;
+
       out.push({
         name: name.toUpperCase(),
         status,
