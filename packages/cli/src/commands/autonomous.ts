@@ -25,6 +25,7 @@ import {
   WorkspaceManager,
   CycleLogger,
   MessageBusV2,
+  WorktreePool,
   runExecutePhase,
   runAuditPhase,
   runPlanPhase,
@@ -47,6 +48,8 @@ interface WorkspaceAwareOptions {
 
 interface CycleRunOptions extends WorkspaceAwareOptions {
   dryRun: boolean;
+  /** Commander sets this to false when --no-worktrees is passed. */
+  worktrees: boolean;
 }
 
 interface CyclePreviewOptions extends WorkspaceAwareOptions {
@@ -163,6 +166,7 @@ function registerCycleRunCommand(parent: Command, commandName: string, descripti
     .command(commandName)
     .description(description)
     .option('--dry-run', 'Do not actually open the PR; still runs all other stages', false)
+    .option('--no-worktrees', 'Disable isolated git worktrees; fall back to single-tree execution (env: AUTONOMOUS_DISABLE_WORKTREES=1)')
     .option('--project-root <path>', 'Project root', process.cwd())
     .option('--workspace <id>', 'Run against a registered workspace from ~/.agentforge/workspaces.json')
     .action(runCycleAction);
@@ -213,6 +217,33 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
     }
 
     const telemetry = createAutonomousTelemetryAdapters(cwd);
+
+    // T1: Construct WorktreePool so each agent in the execute phase gets an
+    // isolated git worktree, preventing branch ping-pong in the main tree.
+    // Skip when --no-worktrees flag is set or AUTONOMOUS_DISABLE_WORKTREES=1.
+    // Commander maps --no-worktrees → opts.worktrees = false.
+    const disableWorktreesFlag = opts.worktrees === false;
+    const disableWorktreesEnv = process.env['AUTONOMOUS_DISABLE_WORKTREES'] === '1';
+    const worktreesDisabled = disableWorktreesFlag || disableWorktreesEnv;
+
+    let worktreePool: WorktreePool | undefined;
+    let disableWorktrees = worktreesDisabled;
+
+    if (!worktreesDisabled) {
+      try {
+        worktreePool = new WorktreePool({
+          projectRoot: cwd,
+          baseBranch: config.git.baseBranch,
+        });
+      } catch (poolErr) {
+        const poolMsg = poolErr instanceof Error ? poolErr.message : String(poolErr);
+        process.stderr.write(
+          `[autonomous:cycle] worktree-pool unavailable: ${poolMsg} — falling back to single-tree execution\n`,
+        );
+        worktreePool = undefined;
+        disableWorktrees = true;
+      }
+    }
 
     // Build a RuntimeJobSupervisor backed by the real workspace DB so every
     // agent run during the execute phase creates a durable runtime_job row
@@ -300,6 +331,8 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
         gitOps,
         prOpener,
         bus,
+        ...(worktreePool !== undefined ? { worktreePool } : {}),
+        ...(disableWorktrees ? { disableWorktrees: true } : {}),
         ...(opts.dryRun ? { dryRun: { prOpener: true } } : {}),
       });
 
