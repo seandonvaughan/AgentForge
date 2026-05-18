@@ -7,6 +7,8 @@ AgentForge is a TypeScript monorepo for building agent teams, running agent task
 - `packages/server` - canonical API server
 - `packages/dashboard` - canonical operator UI
 
+- `packages/mcp` - stdio MCP server (`agentforge/list_agents`, `agentforge/run_cycle`, `agentforge/get_status`, `agentforge/get_memory`)
+
 The root `src/` tree still exists, but it is a compatibility layer during the convergence to the package stack.
 Its builder, scanner, genesis, and reforge modules are now shim-only forwarders to package-core.
 

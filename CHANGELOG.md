@@ -4,6 +4,50 @@ All notable changes to AgentForge are documented in this file.
 
 ## [Unreleased]
 
+## [23.5.0] - 2026-05-18
+
+### Wave 5 — Unattended guards, replay CLI, skill flywheel, MCP server, durability dashboard
+
+This release completes the five-wave night-shift arc begun in v23.0. All waves landed atomically on `main`; total test count is approximately 5,900+.
+
+**Wave 1 — Per-item resume (T1)**
+
+- Added per-item checkpoint files to `.agentforge/cycles/<id>/checkpoints/<item-id>.json` recording `phase`, `completedAt`, `status`, and `outputs`.
+- Added `--resume <cycle-id>` flag to `agentforge cycle run`; re-enters the cycle at the first non-`done` checkpoint.
+- Stale checkpoint detection: warns at >24 h, blocks at >72 h unless `--resume` is supplied.
+
+**Wave 2 — Skill flywheel propose (T2)**
+
+- Added `agentforge skills propose-from-learnings` command; clusters JSONL memory entries and writes candidate skill YAML to `.agentforge/flywheel/proposals/`.
+- Each proposal carries a `confidence` score (0–1) and links to source findings.
+- Optional `flywheel.autoPropose` flag in `autonomous.yaml` triggers proposals after each cycle's `learn` phase.
+
+**Wave 3 — MCP server (T3)**
+
+- Added `packages/mcp/` — a stdio Model Context Protocol server exposing four tools: `agentforge/list_agents`, `agentforge/run_cycle`, `agentforge/get_status`, `agentforge/get_memory`.
+- Installable in any MCP-compatible host via the `.mcp.json` config pattern.
+
+**Wave 4 — `/durability` dashboard (T4)**
+
+- Added `/durability` SvelteKit page with checkpoint ring, per-guard status panel, and resume controls.
+- New `GET /api/v5/durability` endpoint returns checkpoint inventory and guard evaluation results.
+
+**Wave 5 — Unattended guards, replay CLI, flywheel approve (T5 + T6 + T7)**
+
+- Added five pre-flight guards activated by `AGENTFORGE_UNATTENDED=1`: budget headroom, clean working tree, test baseline, stale-checkpoint check, and disk space.
+- Added `agentforge cycle replay <cycle-id>` to re-run a completed cycle's execute phase with the same item set.
+- Added `agentforge cycle coverage <cycle-id>` to print per-item test-coverage delta from a cycle run.
+- Added `/flywheel/proposals` dashboard page with Approve / Reject / Defer / Revert UX for skill proposals.
+- Added `agentforge skills revert <slug>` and `agentforge skills list` CLI commands.
+
+**Documentation**
+
+- Added `docs/wave5-shipped.md` — night-shift arc summary with wave table.
+- Added `docs/runbooks/unattended-cycle.md` — pre-flight checklist and guard-failure recovery.
+- Added `docs/runbooks/skill-flywheel.md` — skill proposal triage and approval criteria.
+- Updated `README.md` — added MCP server bullet under "What AgentForge is".
+- Updated `CLAUDE.md` — appended Wave 5 capabilities subsection.
+
 ### Security and release gates
 
 - Cleared current dependency audit findings while standardizing release support on Node `>=20.19.0`.
