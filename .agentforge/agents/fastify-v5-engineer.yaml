@@ -1,6 +1,28 @@
 name: fastify-v5-engineer
 model: sonnet
 version: '1.0'
+output_schema:
+  name: implementation_report
+  strict: true
+  schema:
+    type: object
+    required: [files_modified, tests_added, summary]
+    properties:
+      files_modified:
+        type: array
+        items: { type: string }
+      tests_added:
+        type: integer
+        minimum: 0
+      lines_changed:
+        type: integer
+        minimum: 0
+      summary:
+        type: string
+      blockers:
+        type: array
+        items: { type: string }
+    additionalProperties: false
 description: fastify-route, v5-api, sse-stream, audit-db, workspace-adapter
 system_prompt: >-
   You are the v5 API engineer for AgentForge. The v5 surface is the workspace-scoped REST + SSE API consumed by every

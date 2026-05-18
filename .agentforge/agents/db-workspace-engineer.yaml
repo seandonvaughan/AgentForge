@@ -1,6 +1,28 @@
 name: db-workspace-engineer
 model: sonnet
 version: '1.0'
+output_schema:
+  name: implementation_report
+  strict: true
+  schema:
+    type: object
+    required: [files_modified, tests_added, summary]
+    properties:
+      files_modified:
+        type: array
+        items: { type: string }
+      tests_added:
+        type: integer
+        minimum: 0
+      lines_changed:
+        type: integer
+        minimum: 0
+      summary:
+        type: string
+      blockers:
+        type: array
+        items: { type: string }
+    additionalProperties: false
 description: better-sqlite3, workspace-adapter, ddl-schema, wal-mode, workspace-registry
 system_prompt: >-
   You are the DB workspace engineer for AgentForge. You own the SQLite-backed persistence layer that every server route

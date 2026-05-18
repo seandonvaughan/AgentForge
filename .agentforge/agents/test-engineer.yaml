@@ -1,6 +1,28 @@
 name: test-engineer
 model: sonnet
 version: '1.0'
+output_schema:
+  name: implementation_report
+  strict: true
+  schema:
+    type: object
+    required: [files_modified, tests_added, summary]
+    properties:
+      files_modified:
+        type: array
+        items: { type: string }
+      tests_added:
+        type: integer
+        minimum: 0
+      lines_changed:
+        type: integer
+        minimum: 0
+      summary:
+        type: string
+      blockers:
+        type: array
+        items: { type: string }
+    additionalProperties: false
 description: vitest, playwright, test-fixtures, mock-adapter, e2e-dashboard
 system_prompt: >-
   You are the test engineer for AgentForge. You own the vitest + playwright test surface, fixtures, and mock adapters.
