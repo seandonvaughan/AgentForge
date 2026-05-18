@@ -32,6 +32,12 @@ export interface GatePhaseOptions {
    * the most recent gate-verdict entry in `.agentforge/memory/gate-verdict.jsonl`.
    */
   knownDebt?: string[];
+  /**
+   * Per-request CLI subprocess timeout in milliseconds. Overrides the transport
+   * default of 20 minutes (1_200_000 ms). Use for heavy reasoning tasks like the
+   * gate phase which performs extensive verification and review analysis.
+   */
+  timeoutMs?: number;
 }
 
 export function makeGatePhaseHandler(options: GatePhaseOptions = {}) {
@@ -548,7 +554,10 @@ Respond as JSON: { "verdict": "APPROVE" | "REJECT", "rationale": "..." }`;
   let agentError: string | undefined;
 
   try {
-    const result = await ctx.runtime.run(agentId, task, { allowedTools });
+    const result = await ctx.runtime.run(agentId, task, {
+      allowedTools,
+      ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+    });
     response = typeof result?.output === 'string' ? result.output : '';
     runCost = typeof result?.costUsd === 'number' ? result.costUsd : 0;
   } catch (err) {

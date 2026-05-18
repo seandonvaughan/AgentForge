@@ -84,6 +84,9 @@ export function registerOAuth2Hook(
       const token = extractBearerToken(request.headers["authorization"]);
 
       if (!token) {
+        // RFC 6750 §3 requires WWW-Authenticate: Bearer on every 401 response.
+        // Omitting it causes OAuth2-compliant clients to misclassify the failure.
+        reply.header("WWW-Authenticate", 'Bearer realm="AgentForge"');
         await reply.status(401).send({
           error: "Unauthorized",
           message: "Missing or invalid Authorization header. Expected: Bearer <token>",
@@ -94,6 +97,14 @@ export function registerOAuth2Hook(
       const result = await validateToken(token, config);
 
       if (!result.valid) {
+        // RFC 6750 §3: include error description when rejecting an invalid token.
+        // Sanitise the error string (strip quotes) so it can be safely embedded in
+        // the header challenge value without breaking the parameter syntax.
+        const safeDesc = (result.error ?? "Invalid token").replace(/"/g, "'");
+        reply.header(
+          "WWW-Authenticate",
+          `Bearer realm="AgentForge", error="invalid_token", error_description="${safeDesc}"`,
+        );
         await reply.status(401).send({
           error: "Unauthorized",
           message: result.error ?? "Invalid token",

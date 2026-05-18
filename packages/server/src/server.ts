@@ -221,6 +221,10 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
   }
 
   // ── Org graph (reads delegation.yaml — no adapter required) ──────────────────
+  // Registered unconditionally here (no adapter+registry guard) so it is
+  // available in BOTH adapter mode and no-adapter mode. It is intentionally
+  // NOT in registerV5Routes — adding it there would cause FST_ERR_DUPLICATED_ROUTE
+  // when adapter+registry are provided. Same pattern as searchRoutes.
   await orgGraphRoutes(app, { projectRoot });
 
   // ── Sprints (reads .agentforge/sprints/*.json — no adapter required) ─────────

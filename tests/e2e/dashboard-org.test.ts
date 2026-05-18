@@ -83,7 +83,7 @@ test.describe('Org Graph Page', () => {
     expect(nodeCount).toBeGreaterThan(0);
   });
 
-  test('displays CEO as the root node', async ({ page }) => {
+  test('displays a root node in the org hierarchy', async ({ page }) => {
     await page.goto('/org');
 
     await page.waitForLoadState('networkidle').catch(() => {});
@@ -91,9 +91,11 @@ test.describe('Org Graph Page', () => {
     // Wait for the tree to populate
     await expect(page.locator('[data-testid="org-tree"]')).toBeVisible({ timeout: 8000 });
 
-    // CEO must be visible as the root agent (label "CEO" rendered inside an org-node)
-    const ceoNode = page.locator('[data-testid="org-node"]').filter({ hasText: /^CEO$/i }).first();
-    await expect(ceoNode).toBeVisible({ timeout: 5000 });
+    // At least one root-level org-node must be visible.
+    // The v22+ Opus-driven forge produces project-specific architects (e.g. "architect",
+    // "chief-architect") rather than the legacy C-suite (CEO/CTO/COO).
+    const rootNode = page.locator('[data-testid="org-hierarchy"] [data-testid="org-node"]').first();
+    await expect(rootNode).toBeVisible({ timeout: 5000 });
   });
 
   test('page subtitle reports non-zero agent and edge counts', async ({ page }) => {
@@ -104,8 +106,9 @@ test.describe('Org Graph Page', () => {
     // Wait for the tree to be present (SSR or client fetch resolved)
     await expect(page.locator('[data-testid="org-tree"]')).toBeVisible({ timeout: 8000 });
 
-    // The subtitle "N agents · M delegation edges" must reflect real data
-    const subtitle = page.locator('.page-subtitle');
+    // The subtitle "N agents · M delegation edges" must reflect real data.
+    // The v2 design system uses .af-subtitle for all page subtitles.
+    const subtitle = page.locator('.af-subtitle');
     await expect(subtitle).toBeVisible();
 
     const text = await subtitle.textContent();
@@ -154,8 +157,9 @@ test.describe('Org Graph Page', () => {
 
     await page.waitForLoadState('networkidle').catch(() => {});
 
-    // Either show graph or empty state — never a blank/broken page
-    const emptyState = page.locator('.empty-state').first();
+    // Either show graph or empty state — never a blank/broken page.
+    // The v2 design system uses .af-empty for the empty state.
+    const emptyState = page.locator('.af-empty').first();
     const orgTree = page.locator('[data-testid="org-tree"]').first();
 
     const hasEmptyState = await emptyState.isVisible().catch(() => false);

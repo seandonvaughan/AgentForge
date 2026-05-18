@@ -544,3 +544,155 @@ describe('server runGatePhase — known-debt injection into gate prompt', () => 
     expect(streamingArg.task).toContain('Approve or reject sprint');
   });
 });
+
+// ---------------------------------------------------------------------------
+// knownDebt field is mirrored from prompt construction into the metadata write
+//
+// Regression guard for the false-positive REJECT pattern: the server's
+// runGatePhase used to inject knownDebt into the prompt but never write it to
+// GateVerdictMetadata. That broke the cross-cycle feedback loop — the next
+// gate fell back to criticalFindings+majorFindings (which conflates pre-existing
+// debt with sprint-introduced regressions) and re-rejected unchanged debt as a
+// "new" sprint issue.
+// ---------------------------------------------------------------------------
+
+describe('server runGatePhase — knownDebt mirrored into metadata write', () => {
+  let cwd: string;
+  let cleanup: () => void;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    const tmp = makeTmp();
+    cwd = tmp.cwd;
+    cleanup = tmp.cleanup;
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  function seedPriorVerdict(
+    root: string,
+    opts: {
+      verdict: 'approved' | 'rejected';
+      cycleId: string;
+      majorFindings?: string[];
+      criticalFindings?: string[];
+      knownDebt?: string[];
+    },
+  ): void {
+    const memDir = join(root, '.agentforge', 'memory');
+    mkdirSync(memDir, { recursive: true });
+    const entry = {
+      id: `prior-${opts.cycleId}`,
+      type: 'gate-verdict',
+      value: `Gate ${opts.verdict}: prior cycle entry`,
+      createdAt: '2026-04-01T00:00:00.000Z',
+      source: opts.cycleId,
+      tags: [`verdict:${opts.verdict}`, 'sprint:v0.0'],
+      metadata: {
+        cycleId: opts.cycleId,
+        verdict: opts.verdict,
+        rationale: 'prior cycle entry',
+        criticalFindings: opts.criticalFindings ?? [],
+        majorFindings: opts.majorFindings ?? [],
+        ...(opts.knownDebt !== undefined ? { knownDebt: opts.knownDebt } : {}),
+      },
+    };
+    writeFileSync(join(memDir, 'gate-verdict.jsonl'), JSON.stringify(entry) + '\n', 'utf8');
+  }
+
+  it('writes knownDebt into the new gate-verdict metadata when a prior verdict has findings', async () => {
+    seedPriorVerdict(cwd, {
+      verdict: 'approved',
+      cycleId: 'cycle-prior',
+      majorFindings: ['readCycleRecord duplicated across two packages'],
+      criticalFindings: ['Auth bypass in middleware'],
+    });
+
+    seedSprint(cwd, '17.4.kd-meta-1');
+    const ctx = makeCtx(cwd, '17.4.kd-meta-1', 'cycle-kd-meta-1');
+
+    await runGatePhase(ctx);
+
+    const memFile = join(cwd, '.agentforge', 'memory', 'gate-verdict.jsonl');
+    const lines = readFileSync(memFile, 'utf8')
+      .split('\n')
+      .filter((l) => l.trim().length > 0);
+    // Two entries: the seeded prior verdict + the new one this gate wrote.
+    expect(lines.length).toBeGreaterThanOrEqual(2);
+    const newEntry = JSON.parse(lines[lines.length - 1]!);
+
+    // The new verdict's metadata.knownDebt mirrors the prior cycle's findings
+    // — critical first, then major — exactly the prompt's known-debt list.
+    expect(newEntry.metadata.knownDebt).toEqual([
+      'Auth bypass in middleware',
+      'readCycleRecord duplicated across two packages',
+    ]);
+  });
+
+  it('prefers prior.knownDebt over criticalFindings+majorFindings when both exist', async () => {
+    // The prior verdict has BOTH an explicit knownDebt list AND broader
+    // criticalFindings — the new metadata must mirror only the explicit list,
+    // not the union, so sprint-introduced regressions aren't laundered as debt.
+    seedPriorVerdict(cwd, {
+      verdict: 'rejected',
+      cycleId: 'cycle-prior-precise',
+      criticalFindings: ['sprint-introduced-bug', 'carry-forward-bug'],
+      majorFindings: [],
+      knownDebt: ['carry-forward-bug'],
+    });
+
+    seedSprint(cwd, '17.4.kd-meta-2');
+    const ctx = makeCtx(cwd, '17.4.kd-meta-2', 'cycle-kd-meta-2');
+
+    await runGatePhase(ctx);
+
+    const memFile = join(cwd, '.agentforge', 'memory', 'gate-verdict.jsonl');
+    const lines = readFileSync(memFile, 'utf8')
+      .split('\n')
+      .filter((l) => l.trim().length > 0);
+    const newEntry = JSON.parse(lines[lines.length - 1]!);
+
+    expect(newEntry.metadata.knownDebt).toEqual(['carry-forward-bug']);
+    expect(newEntry.metadata.knownDebt).not.toContain('sprint-introduced-bug');
+  });
+
+  it('omits the knownDebt field entirely when no prior verdict exists', async () => {
+    // First-ever gate run: no prior cycle, no known debt. The new metadata
+    // should not carry an empty knownDebt array — the field must be absent.
+    seedSprint(cwd, '17.4.kd-meta-3');
+    const ctx = makeCtx(cwd, '17.4.kd-meta-3', 'cycle-kd-meta-3');
+
+    await runGatePhase(ctx);
+
+    const memFile = join(cwd, '.agentforge', 'memory', 'gate-verdict.jsonl');
+    const newEntry = JSON.parse(readFileSync(memFile, 'utf8').trim());
+
+    // The knownDebt key should be absent from the metadata, not present-but-empty.
+    expect('knownDebt' in newEntry.metadata).toBe(false);
+  });
+
+  it('omits the knownDebt field when prior verdict has empty findings', async () => {
+    // A clean prior cycle (no findings) means no debt to carry forward.
+    seedPriorVerdict(cwd, {
+      verdict: 'approved',
+      cycleId: 'cycle-clean',
+      criticalFindings: [],
+      majorFindings: [],
+    });
+
+    seedSprint(cwd, '17.4.kd-meta-4');
+    const ctx = makeCtx(cwd, '17.4.kd-meta-4', 'cycle-kd-meta-4');
+
+    await runGatePhase(ctx);
+
+    const memFile = join(cwd, '.agentforge', 'memory', 'gate-verdict.jsonl');
+    const lines = readFileSync(memFile, 'utf8')
+      .split('\n')
+      .filter((l) => l.trim().length > 0);
+    const newEntry = JSON.parse(lines[lines.length - 1]!);
+
+    expect('knownDebt' in newEntry.metadata).toBe(false);
+  });
+});

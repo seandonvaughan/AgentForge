@@ -446,7 +446,9 @@ describe('ScoringPipeline fallback ladder', () => {
 
   it('effort-estimator fallback: costs are complexity-based, not p50CostByTag', async () => {
     // Effort-estimator fires BEFORE static (v15.x), so p50CostByTag (used by
-    // staticFallback) is never consulted. All items get complexityScore*0.5 = $2.50.
+    // staticFallback) is never consulted. Costs are derived from the
+    // tag-mapped complexity score (see complexityFromTags()):
+    //   fix → 5 → $2.50, feature → 6 → $3.00, unknown → 5 → $2.50
     const runtime = makeAlternatingRuntime(['garbage', 'garbage', 'garbage']);
     const { logger } = makeLogger();
     const backlog = [
@@ -465,12 +467,19 @@ describe('ScoringPipeline fallback ladder', () => {
     const result = await pipeline.scoreWithFallback(backlog);
     expect(result.fallback).toBe('effort-estimator');
 
-    // All items cost complexityScore(5) * 0.5 = $2.50 — not the tag medians
-    for (const item of [...result.withinBudget, ...result.requiresApproval]) {
-      expect(item.estimatedCostUsd).toBeCloseTo(2.50);
+    // Tag-mapped complexity × 0.5 — values are NOT the p50CostByTag medians
+    const all = [...result.withinBudget, ...result.requiresApproval];
+    expect(all.find(r => r.itemId === 'f1')?.estimatedCostUsd).toBeCloseTo(2.50);  // fix → 5
+    expect(all.find(r => r.itemId === 'ft1')?.estimatedCostUsd).toBeCloseTo(3.00); // feature → 6
+    expect(all.find(r => r.itemId === 'u1')?.estimatedCostUsd).toBeCloseTo(2.50);  // unknown → 5 (default)
+    // None of the items match the p50CostByTag values (1.10 / 1.65) — confirms
+    // the effort-estimator tier does not consult that adapter path.
+    for (const item of all) {
+      expect(item.estimatedCostUsd).not.toBeCloseTo(1.10);
+      expect(item.estimatedCostUsd).not.toBeCloseTo(1.65);
     }
     // Priority ordering is still respected (P0 → P1 → P2)
-    const sorted = [...result.withinBudget, ...result.requiresApproval].sort((a, b) => a.rank - b.rank);
+    const sorted = all.sort((a, b) => a.rank - b.rank);
     expect(sorted.at(0)?.itemId).toBe('f1');
     expect(sorted.at(1)?.itemId).toBe('ft1');
     expect(sorted.at(2)?.itemId).toBe('u1');
@@ -498,10 +507,12 @@ describe('ScoringPipeline fallback ladder', () => {
     const result = await pipeline.scoreWithFallback(fakeBacklog);
     // Effort-estimator fires (not static), even though getP50CostByTag throws
     expect(result.fallback).toBe('effort-estimator');
-    // Costs = complexityScore(5) * 0.5 = $2.50 (zero-history analysis)
-    for (const item of [...result.withinBudget, ...result.requiresApproval]) {
-      expect(item.estimatedCostUsd).toBeCloseTo(2.50);
-    }
+    // Costs are tag-derived complexity × 0.5 (zero-history analysis).
+    // The inner-scope fakeBacklog (line ~367) has 2 items:
+    //   i1 fix → 5 → $2.50, i2 feature → 6 → $3.00
+    const all = [...result.withinBudget, ...result.requiresApproval];
+    expect(all.find(r => r.itemId === 'i1')?.estimatedCostUsd).toBeCloseTo(2.50);
+    expect(all.find(r => r.itemId === 'i2')?.estimatedCostUsd).toBeCloseTo(3.00);
   });
 });
 

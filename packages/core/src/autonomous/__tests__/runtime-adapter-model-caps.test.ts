@@ -363,4 +363,111 @@ describe('RuntimeAdapter modelCap and applyCaps()', () => {
       expect(adapter['options'].enableFallback).toBeUndefined();
     });
   });
+
+  describe('inlineAgents constructor option: caps applied via getOrCreateRuntime', () => {
+    // Regression tests for a bug where configs passed via the `inlineAgents`
+    // constructor option bypassed applyCaps() — unlike registerInlineAgent()
+    // which always called applyCaps(). Both paths must honour modelCap/effortCap.
+
+    it('applies modelCap to inlineAgents constructor config', async () => {
+      const inlineAgents = {
+        'inline-opus': {
+          agentId: 'inline-opus',
+          name: 'Inline Opus',
+          model: 'opus' as const,
+          systemPrompt: 'You are helpful.',
+          workspaceId: 'test',
+        },
+      };
+
+      const adapter = new RuntimeAdapter({
+        cwd: tmpDir,
+        modelCap: 'sonnet',
+        inlineAgents,
+      });
+
+      // getOrCreateRuntime looks up the inlineAgents map, then must apply caps
+      const runtime = await adapter['getOrCreateRuntime']('inline-opus');
+      expect(runtime['config'].model).toBe('sonnet');
+      expect(runtime['config'].effort).toBe('max');
+    });
+
+    it('applies effortCap to inlineAgents constructor config', async () => {
+      const inlineAgents = {
+        'inline-sonnet': {
+          agentId: 'inline-sonnet',
+          name: 'Inline Sonnet',
+          model: 'sonnet' as const,
+          systemPrompt: 'You are helpful.',
+          workspaceId: 'test',
+        },
+      };
+
+      const adapter = new RuntimeAdapter({
+        cwd: tmpDir,
+        effortCap: 'low',
+        inlineAgents,
+      });
+
+      const runtime = await adapter['getOrCreateRuntime']('inline-sonnet');
+      expect(runtime['config'].effort).toBe('low');
+    });
+
+    it('applies both modelCap and effortCap to inlineAgents constructor config', async () => {
+      const inlineAgents = {
+        'inline-opus-high': {
+          agentId: 'inline-opus-high',
+          name: 'Inline Opus High',
+          model: 'opus' as const,
+          effort: 'xhigh',
+          systemPrompt: 'You are helpful.',
+          workspaceId: 'test',
+        },
+      };
+
+      const adapter = new RuntimeAdapter({
+        cwd: tmpDir,
+        modelCap: 'sonnet',
+        effortCap: 'medium',
+        inlineAgents,
+      });
+
+      const runtime = await adapter['getOrCreateRuntime']('inline-opus-high');
+      // modelCap downgrades opus → sonnet
+      expect(runtime['config'].model).toBe('sonnet');
+      // effortCap overrides to medium
+      expect(runtime['config'].effort).toBe('medium');
+    });
+
+    it('inlineAgents and registerInlineAgent produce identical capped configs', async () => {
+      const baseConfig = {
+        agentId: 'shared-agent',
+        name: 'Shared Agent',
+        model: 'opus' as const,
+        systemPrompt: 'You are helpful.',
+        workspaceId: 'test',
+      };
+
+      // Path 1: inlineAgents constructor option
+      const adapter1 = new RuntimeAdapter({
+        cwd: tmpDir,
+        modelCap: 'haiku',
+        inlineAgents: { 'shared-agent': { ...baseConfig } },
+      });
+      const runtime1 = await adapter1['getOrCreateRuntime']('shared-agent');
+
+      // Path 2: registerInlineAgent method
+      const adapter2 = new RuntimeAdapter({
+        cwd: tmpDir,
+        modelCap: 'haiku',
+      });
+      adapter2.registerInlineAgent('shared-agent', { ...baseConfig });
+      const runtime2 = adapter2['runtimes'].get('shared-agent');
+
+      // Both must produce the same capped config
+      expect(runtime1['config'].model).toBe('haiku');
+      expect(runtime2!['config'].model).toBe('haiku');
+      expect(runtime1['config'].effort).toBe(runtime2!['config'].effort);
+    });
+  });
 });

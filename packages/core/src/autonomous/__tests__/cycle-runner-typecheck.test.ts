@@ -52,8 +52,8 @@ function makeConfig(qualityOverrides: Partial<CycleConfig['quality']> = {}): Cyc
       timeoutMinutes: 20,
       reporter: 'json',
       saveRawLog: false,
-      buildCommand: 'pnpm --filter @agentforge/core build',
-      typeCheckCommand: 'pnpm exec tsc --noEmit --pretty false',
+      buildCommand: 'pnpm build',
+      typeCheckCommand: 'pnpm exec tsc -b --noEmit --pretty false',
     },
     scoring: { agentId: 'backlog-scorer', maxRetries: 3, fallbackToStatic: true },
     logging: { logDir: '/tmp/cycles', retainCycles: 5 },
@@ -145,14 +145,21 @@ describe('KillSwitch.checkTypeCheckResult', () => {
 // ---------------------------------------------------------------------------
 
 describe('DEFAULT_CYCLE_CONFIG typecheck commands', () => {
-  it('buildCommand targets @agentforge/core with pnpm --filter', async () => {
+  it('buildCommand builds all workspace packages (not just core)', async () => {
     const { DEFAULT_CYCLE_CONFIG } = await import('../config-loader.js');
-    expect(DEFAULT_CYCLE_CONFIG.testing.buildCommand).toBe('pnpm --filter @agentforge/core build');
+    // Must be `pnpm build` (full workspace) so every cross-package .d.ts exists
+    // before the typecheck step.  The previous `pnpm --filter @agentforge/core build`
+    // left 7 other referenced packages unbuilt, causing tsc --noEmit to fail on
+    // unresolved imports from @agentforge/shared, @agentforge/db, etc.
+    expect(DEFAULT_CYCLE_CONFIG.testing.buildCommand).toBe('pnpm build');
   });
 
-  it('typeCheckCommand disables ANSI output via --pretty false', async () => {
+  it('typeCheckCommand uses -b flag for project-reference graph and disables ANSI output', async () => {
     const { DEFAULT_CYCLE_CONFIG } = await import('../config-loader.js');
-    expect(DEFAULT_CYCLE_CONFIG.testing.typeCheckCommand).toBe('pnpm exec tsc --noEmit --pretty false');
+    // The -b flag puts TypeScript in build mode, which walks the full project-reference
+    // graph from the root tsconfig.json.  Without -b, tsc --noEmit ignores project
+    // references and fails on cross-package imports even when packages are built.
+    expect(DEFAULT_CYCLE_CONFIG.testing.typeCheckCommand).toBe('pnpm exec tsc -b --noEmit --pretty false');
   });
 });
 

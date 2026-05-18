@@ -186,11 +186,28 @@ export class PhaseScheduler {
       });
     };
 
+    // Mid-execute-phase cost flush: the execute phase publishes execute.snapshot
+    // after every item completes (with costUsd = execute's running total). By
+    // subscribing here we can flush the cycle-level cumulative cost to cycle.json
+    // between items so operators see live spend during the long execute stage
+    // instead of waiting until all items finish and sprint.phase.completed fires.
+    //
+    // this.sumCost() at the time of each snapshot gives audit+plan+assign costs
+    // (phases already completed); event.costUsd gives execute's running spend.
+    // Together they form the correct cycle-level cumulative total.
+    const onExecuteSnapshot = (event: any) => {
+      if (event.sprintId !== this.ctx.sprintId) return;
+      if (typeof event.costUsd === 'number') {
+        this.logger.flushCycleCost(this.sumCost() + event.costUsd);
+      }
+    };
+
     this.unsubscribers.push(
       this.ctx.bus.subscribe('sprint.phase.completed', onCompleted),
       this.ctx.bus.subscribe('sprint.phase.failed', onFailed),
       this.ctx.bus.subscribe('sprint.phase.item.started', onItemStarted),
       this.ctx.bus.subscribe('sprint.phase.item.completed', onItemCompleted),
+      this.ctx.bus.subscribe('execute.snapshot', onExecuteSnapshot),
     );
   }
 

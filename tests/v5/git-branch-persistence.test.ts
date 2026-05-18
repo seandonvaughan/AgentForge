@@ -244,3 +244,39 @@ describe('GitBranchManager (adapter-backed) — delete cascade', () => {
     expect(mgr.getMergeQueue()).toHaveLength(0);
   });
 });
+
+// ── Idempotency (INSERT OR IGNORE) ────────────────────────────────────────────
+
+describe('WorkspaceAdapter git branch methods — idempotent on retry', () => {
+  it('insertGitBranch with the same name is idempotent (returns existing row)', () => {
+    const adapter = makeAdapter();
+    const mgr = makeManager(adapter);
+
+    // First call — inserts the row
+    const branch1 = mgr.createBranch('coder', 'task-idem');
+
+    // Simulate a retry: call createBranch with the same args.
+    // The adapter uses INSERT OR IGNORE so the name UNIQUE constraint is not
+    // violated; the existing row is returned instead of a new one being created.
+    const branch2 = mgr.createBranch('coder', 'task-idem');
+
+    // Only one branch should exist in the database
+    expect(mgr.listBranches()).toHaveLength(1);
+    // Both calls return the same branch name
+    expect(branch1.name).toBe(branch2.name);
+  });
+
+  it('submitForReview with the same branch is idempotent (returns existing queue entry)', () => {
+    const adapter = makeAdapter();
+    const mgr = makeManager(adapter);
+
+    const branch = mgr.createBranch('coder', 'task-qidem');
+    const item1 = mgr.submitForReview(branch.id);
+    // Second submit with the same branchId — adapter INSERT OR IGNORE prevents
+    // a second queue entry from being created.
+    const item2 = mgr.submitForReview(branch.id);
+
+    expect(mgr.getMergeQueue()).toHaveLength(1);
+    expect(item1.branchId).toBe(item2.branchId);
+  });
+});

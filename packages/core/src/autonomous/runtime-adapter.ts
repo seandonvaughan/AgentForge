@@ -101,10 +101,23 @@ export class RuntimeAdapter implements RuntimeForScoring {
     this.agentforgeDir = join(options.cwd, '.agentforge');
   }
 
+  /**
+   * Run an agent with the given task.
+   * @param agentId The agent ID to run.
+   * @param task The task prompt.
+   * @param options Optional configuration:
+   *   - allowedTools: List of Claude Code tool names to enable.
+   *   - timeoutMs: Per-request CLI subprocess timeout in milliseconds. Overrides
+   *     the transport default of 20 minutes (1_200_000 ms). Use for heavy
+   *     reasoning tasks (e.g. gate phase, scoring large backlogs) that are known
+   *     to exceed the default ceiling.
+   *   - cwd: Working directory for the agent execution (used for worktree isolation).
+   *   - responseFormat: Optional response format specification.
+   */
   async run(
     agentId: string,
     task: string,
-    options?: { responseFormat?: string; allowedTools?: string[] },
+    options?: { responseFormat?: string; allowedTools?: string[]; timeoutMs?: number; cwd?: string },
   ): Promise<{
     output: string;
     usage: { input_tokens: number; output_tokens: number };
@@ -122,8 +135,10 @@ export class RuntimeAdapter implements RuntimeForScoring {
 
     const runtime = await this.getOrCreateRuntime(agentId);
     const startedAt = Date.now();
-    const runOpts: { task: string; allowedTools?: string[]; enableFallback?: boolean } = { task };
+    const runOpts: { task: string; allowedTools?: string[]; enableFallback?: boolean; timeoutMs?: number; cwd?: string } = { task };
     if (options?.allowedTools) runOpts.allowedTools = options.allowedTools;
+    if (options?.timeoutMs !== undefined) runOpts.timeoutMs = options.timeoutMs;
+    if (options?.cwd !== undefined) runOpts.cwd = options.cwd;
     // Thread enableFallback from adapter options into each run call.
     if (this.options.enableFallback !== undefined) {
       runOpts.enableFallback = this.options.enableFallback;
@@ -157,7 +172,7 @@ export class RuntimeAdapter implements RuntimeForScoring {
   private async _runWithSupervisor(
     agentId: string,
     task: string,
-    options?: { responseFormat?: string; allowedTools?: string[] },
+    options?: { responseFormat?: string; allowedTools?: string[]; timeoutMs?: number; cwd?: string },
   ): Promise<{
     output: string;
     usage: { input_tokens: number; output_tokens: number };
@@ -172,8 +187,10 @@ export class RuntimeAdapter implements RuntimeForScoring {
     const job = supervisor.createJob({ agentId, task });
 
     const runResult = await supervisor.startJob(job.id, () => {
-      const runOpts: { task: string; allowedTools?: string[]; enableFallback?: boolean } = { task };
+      const runOpts: { task: string; allowedTools?: string[]; enableFallback?: boolean; timeoutMs?: number; cwd?: string } = { task };
       if (options?.allowedTools) runOpts.allowedTools = options.allowedTools;
+      if (options?.timeoutMs !== undefined) runOpts.timeoutMs = options.timeoutMs;
+      if (options?.cwd !== undefined) runOpts.cwd = options.cwd;
       if (this.options.enableFallback !== undefined) {
         runOpts.enableFallback = this.options.enableFallback;
       }
@@ -247,10 +264,13 @@ export class RuntimeAdapter implements RuntimeForScoring {
     const cached = this.runtimes.get(agentId);
     if (cached) return cached;
 
-    // Check inline configs first
+    // Check inline configs first. Apply caps so that modelCap/effortCap are
+    // honoured even when configs come from the constructor inlineAgents map
+    // (consistent with registerInlineAgent which also calls applyCaps).
     const inlineConfig = this.options.inlineAgents?.[agentId];
     if (inlineConfig) {
-      const runtime = new AgentRuntime(inlineConfig, this.options.workspaceAdapter);
+      const effectiveConfig = this.applyCaps(inlineConfig);
+      const runtime = new AgentRuntime(effectiveConfig, this.options.workspaceAdapter);
       this.runtimes.set(agentId, runtime);
       return runtime;
     }

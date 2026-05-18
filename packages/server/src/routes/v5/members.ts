@@ -55,8 +55,29 @@ function rowToMember(row: MemberRow): Member {
 
 const VALID_ROLES = new Set<string>(['owner', 'admin', 'operator', 'viewer']);
 
+/**
+ * Validate an email address without using regex quantifiers on user-controlled
+ * input, which CodeQL (js/redos) flags as a polynomial backtracking risk.
+ *
+ * Checks performed (equivalent to the previous /^[^\s@]+@[^\s@]+\.[^\s@]+$/):
+ *   - No whitespace characters
+ *   - Exactly one @ sign, not at position 0
+ *   - The domain portion contains a dot that is neither first nor last
+ */
 function isValidEmail(email: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  if (!email || email.length > 254) return false;
+  // No whitespace — check common whitespace chars individually to stay regex-free
+  if (email.includes(' ') || email.includes('\t') || email.includes('\n') || email.includes('\r')) return false;
+  const at = email.indexOf('@');
+  // Must have @ and it must not be the first character
+  if (at <= 0) return false;
+  // Must have exactly one @
+  if (email.lastIndexOf('@') !== at) return false;
+  const domain = email.slice(at + 1);
+  if (!domain) return false;
+  // Domain must contain a dot that is not at position 0 or the last position
+  const dot = domain.lastIndexOf('.');
+  return dot > 0 && dot < domain.length - 1;
 }
 
 // ---------------------------------------------------------------------------

@@ -4,9 +4,9 @@ Command: pnpm --filter @agentforge/dashboard exec svelte-check --output machine-
 
 OUTPUT
 ------
-1779067294030 START "/Users/seandonvaughan/Projects/AgentForge/packages/dashboard"
+1779078021483 START "/Users/seandonvaughan/Projects/AgentForge/packages/dashboard"
 [63 warnings across 24 files — see details below]
-1779067294043 COMPLETED 4623 FILES  0 ERRORS  63 WARNINGS  24 FILES_WITH_PROBLEMS
+1779078021483 COMPLETED 4624 FILES  0 ERRORS  63 WARNINGS  24 FILES_WITH_PROBLEMS
 
 FINDINGS
 --------
@@ -16,6 +16,8 @@ FINDINGS
    Confirmed by fresh svelte-check run on 2026-05-17 (sprint cycle evidence run).
 ✅ TypeScript compilation clean (tsc --noEmit passes with zero errors).
 ✅ Warning count stable: 63 warnings (24 files) — no regressions vs prior sprint.
+✅ Run history wired: loadHistory() fetches /api/v5/run/history on onMount; up to 5
+   recent runs displayed in RECENT RUNS card; clicking a run replays output.
 
 WARNINGS (inherited pre-existing debt — no regressions vs prior sprint)
 --------
@@ -33,10 +35,10 @@ src/routes/cycles/+page.svelte:486:3 — a11y_interactive_supports_focus (dialog
 src/routes/cycles/+page.svelte:486:3 — a11y_click_events_have_key_events
 src/routes/cycles/+page.svelte:487:5 — a11y_click_events_have_key_events
 src/routes/cycles/+page.svelte:487:5 — a11y_no_static_element_interactions
-src/routes/cycles/[id]/+page.svelte:1051:9 — a11y_interactive_supports_focus (dialog tabindex)
-src/routes/cycles/[id]/+page.svelte:1051:9 — a11y_click_events_have_key_events
-src/routes/cycles/[id]/+page.svelte:1052:11 — a11y_click_events_have_key_events
-src/routes/cycles/[id]/+page.svelte:1052:11 — a11y_no_static_element_interactions
+src/routes/cycles/[id]/+page.svelte:1163:9 — a11y_interactive_supports_focus (dialog tabindex)
+src/routes/cycles/[id]/+page.svelte:1163:9 — a11y_click_events_have_key_events
+src/routes/cycles/[id]/+page.svelte:1164:11 — a11y_click_events_have_key_events
+src/routes/cycles/[id]/+page.svelte:1164:11 — a11y_no_static_element_interactions
 src/routes/flywheel/+page.svelte:58:5 — state_referenced_locally (data)
 src/routes/flywheel/+page.svelte:59:14 — state_referenced_locally (data)
 src/routes/flywheel/+page.svelte:62:36 — state_referenced_locally (data)
@@ -107,3 +109,6 @@ RUNNER PAGE STATUS
 ✅ parseStreamMessage wraps JSON.parse in try/catch; malformed envelopes silently dropped
 ✅ Auto-scroll pauses when user scrolls >48px from bottom
 ✅ All tier defaults to 'sonnet' when model field missing
+✅ Run history wired: loadHistory() fetches /api/v5/run/history on onMount;
+   up to 5 recent runs displayed in RECENT RUNS card with status badges, cost, timestamps;
+   clicking a run replays its output in the right panel; history is prepended on each new run.
