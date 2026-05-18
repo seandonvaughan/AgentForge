@@ -77,7 +77,9 @@ async function showStepScores(opts: {
 
   const results: AggregateStats[] = [];
   for (const [key, entries] of grouped) {
-    const [agentId, capabilityTag] = key.split('|');
+    const parts = key.split('|');
+    const agentId = parts[0] ?? '';
+    const capabilityTag = parts[1] ?? '';
     const scores = entries.map(e => e.step_score).sort((a, b) => a - b);
     const costs = entries.map(e => e.cost_usd);
 
@@ -125,7 +127,7 @@ function parseSincePeriod(period: string): Date {
   if (period.includes('h') || period.includes('d') || period.includes('w')) {
     // Simple relative time parsing
     const match = period.match(/^(\d+)([hdw])$/);
-    if (match) {
+    if (match && match[1] && match[2]) {
       const value = Number.parseInt(match[1], 10);
       const unit = match[2];
       const msPerUnit: Record<string, number> = {
@@ -133,7 +135,10 @@ function parseSincePeriod(period: string): Date {
         d: 24 * 60 * 60 * 1000,
         w: 7 * 24 * 60 * 60 * 1000,
       };
-      return new Date(now.getTime() - value * msPerUnit[unit]);
+      const ms = msPerUnit[unit];
+      if (ms) {
+        return new Date(now.getTime() - value * ms);
+      }
     }
   }
 

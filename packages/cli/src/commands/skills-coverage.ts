@@ -86,7 +86,7 @@ async function showSkillsCoverage(opts: {
       for (const file of skillFiles) {
         // Extract capability tag from filename (e.g., af-tdd.md -> tdd)
         const match = file.match(/^af-([a-z0-9\-]+)\.md$/);
-        if (match) {
+        if (match && match[1]) {
           const tag = match[1];
           capabilityToSkills.set(tag, (capabilityToSkills.get(tag) ?? 0) + 1);
         }
