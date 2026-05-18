@@ -747,7 +747,7 @@ describe('buildKnownDebtSection', () => {
     expect(section).toContain('Do NOT let them drive a REJECT');
   });
 
-  it('includes "REJECTED" guidance directing the agent to verify if fixed', () => {
+  it('includes "REJECTED" guidance directing the agent to warn-not-reject for unchanged debt', () => {
     const prior: PriorGateContext = {
       cycleId: 'cycle-rejected',
       verdict: 'rejected',
@@ -755,9 +755,12 @@ describe('buildKnownDebtSection', () => {
       criticalFindings: [],
     };
     const section = buildKnownDebtSection(prior);
-    // The guidance must tell the agent to check whether items were fixed.
+    // The guidance must label the section as from a prior REJECTED gate.
     expect(section).toContain('REJECTED');
-    expect(section).toContain('Verify whether each has been addressed');
+    // Must tell the agent to check whether the sprint fixed or worsened the issue.
+    expect(section).toContain('Verify whether this sprint FIXED them');
+    // Must NOT re-reject if the issue is unchanged — warn only.
+    expect(section).toContain('do NOT independently');
   });
 
   it('includes the section heading "Known pre-existing debt"', () => {
@@ -965,7 +968,7 @@ describe('buildKnownDebtSection — cross-reference guidance completeness', () =
     expect(section).toContain('unless they have clearly worsened');
   });
 
-  it('includes "verify whether each has been addressed" phrasing for rejected-verdict debt', () => {
+  it('includes warn-not-reject phrasing for rejected-verdict debt that is unchanged', () => {
     const prior: PriorGateContext = {
       cycleId: 'cycle-crossref-rej',
       verdict: 'rejected',
@@ -973,9 +976,11 @@ describe('buildKnownDebtSection — cross-reference guidance completeness', () =
       criticalFindings: [],
     };
     const section = buildKnownDebtSection(prior);
-    // For rejected debt, the guidance must tell the CEO to check resolution
-    // status rather than blindly re-rejecting.
-    expect(section).toContain('Verify whether each has been addressed');
+    // For rejected debt, the guidance must verify whether the sprint fixed or
+    // worsened the issue — but must NOT re-reject if the issue is unchanged.
+    expect(section).toContain('Verify whether this sprint FIXED them');
+    // Unchanged prior-rejected debt is carry-forward that warns, not blocks.
+    expect(section).toContain('do NOT independently');
   });
 
   it('returns an empty string for null input — step 5 is omitted when no known debt', () => {
@@ -991,6 +996,231 @@ describe('buildKnownDebtSection — cross-reference guidance completeness', () =
       majorFindings: [],
       criticalFindings: [],
     };
+    expect(buildKnownDebtSection(prior)).toBe('');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// knownDebt field in GateVerdictMetadata (v17.3.0+)
+//
+// The `knownDebt` field in GateVerdictMetadata records which findings were
+// ALREADY accepted as carry-forward debt when the gate ran (seeded from the
+// prior cycle). This lets subsequent gates distinguish:
+//   - Items in `knownDebt`  → pre-existing before the sprint ran → warn only
+//   - Items in criticalFindings/majorFindings but NOT in knownDebt
+//     → newly surfaced in this sprint's review → valid reject grounds
+// ---------------------------------------------------------------------------
+
+describe('knownDebt field in GateVerdictMetadata — JSONL round-trip', () => {
+  it('knownDebt is preserved in metadata when written and read back', () => {
+    const meta: GateVerdictMetadata = {
+      cycleId: 'cycle-kd-roundtrip',
+      verdict: 'rejected',
+      rationale: 'New critical bug found',
+      criticalFindings: ['new-bug', 'pre-existing-bug'],
+      majorFindings: [],
+      knownDebt: ['pre-existing-bug'],
+    };
+
+    writeMemoryEntry(tmpRoot, {
+      type: 'gate-verdict',
+      value: 'Gate rejected: New critical bug found. Critical: new-bug; pre-existing-bug',
+      metadata: meta,
+      source: 'cycle-kd-roundtrip',
+      tags: ['verdict:rejected'],
+    });
+
+    const entries = readMemoryEntries(tmpRoot, 'gate-verdict', 1);
+    expect(entries).toHaveLength(1);
+    const stored = entries[0]!.metadata as GateVerdictMetadata;
+
+    // knownDebt field survives the JSONL round-trip
+    expect(stored.knownDebt).toEqual(['pre-existing-bug']);
+    // criticalFindings still holds ALL findings (both pre-existing and new)
+    expect(stored.criticalFindings).toEqual(['new-bug', 'pre-existing-bug']);
+  });
+
+  it('loadPriorGateKnownDebt reads knownDebt from metadata when present', () => {
+    writeMemoryEntry(tmpRoot, {
+      type: 'gate-verdict',
+      value: 'Gate rejected: sprint-introduced bug blocks release',
+      metadata: {
+        cycleId: 'cycle-kd-load',
+        verdict: 'rejected',
+        rationale: 'sprint-introduced bug blocks release',
+        criticalFindings: ['sprint-bug', 'carry-forward-bug'],
+        majorFindings: [],
+        knownDebt: ['carry-forward-bug'],
+      } satisfies GateVerdictMetadata,
+      source: 'cycle-kd-load',
+      tags: ['verdict:rejected'],
+    });
+
+    const result = loadPriorGateKnownDebt(tmpRoot);
+    expect(result).not.toBeNull();
+    // The knownDebt field is surfaced
+    expect(result!.knownDebt).toEqual(['carry-forward-bug']);
+    // criticalFindings is also preserved for backward-compat consumers
+    expect(result!.criticalFindings).toEqual(['sprint-bug', 'carry-forward-bug']);
+  });
+
+  it('loadPriorGateKnownDebt returns undefined knownDebt for legacy entries without the field', () => {
+    // Simulate a pre-v17.3.0 entry that lacks the knownDebt field.
+    writeMemoryEntry(tmpRoot, {
+      type: 'gate-verdict',
+      value: 'Gate approved: legacy entry without knownDebt',
+      metadata: {
+        cycleId: 'cycle-legacy',
+        verdict: 'approved',
+        rationale: 'legacy',
+        criticalFindings: [],
+        majorFindings: ['old debt item'],
+        // No knownDebt field — simulates pre-v17.3.0 behavior
+      } satisfies GateVerdictMetadata,
+      source: 'cycle-legacy',
+    });
+
+    const result = loadPriorGateKnownDebt(tmpRoot);
+    expect(result).not.toBeNull();
+    // knownDebt is absent on legacy entries (undefined, not empty array)
+    expect(result!.knownDebt).toBeUndefined();
+    // criticalFindings / majorFindings still accessible as fallback
+    expect(result!.majorFindings).toEqual(['old debt item']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveKnownDebt — prefers explicit knownDebt over criticalFindings fallback
+// ---------------------------------------------------------------------------
+
+describe('resolveKnownDebt — prefers explicit knownDebt field (v17.3.0+)', () => {
+  it('returns prior.knownDebt when the metadata has the field', () => {
+    writeMemoryEntry(tmpRoot, {
+      type: 'gate-verdict',
+      value: 'Gate rejected: sprint bug',
+      metadata: {
+        cycleId: 'cycle-prefer',
+        verdict: 'rejected',
+        rationale: 'sprint bug',
+        // criticalFindings has both the sprint-introduced AND the carry-forward item
+        criticalFindings: ['sprint-introduced-bug', 'carry-forward-bug'],
+        majorFindings: [],
+        // knownDebt has only the carry-forward item (what was pre-existing)
+        knownDebt: ['carry-forward-bug'],
+      } satisfies GateVerdictMetadata,
+      source: 'cycle-prefer',
+    });
+
+    const result = resolveKnownDebt(tmpRoot);
+    // Must return the explicit knownDebt, not criticalFindings+majorFindings
+    expect(result).toEqual(['carry-forward-bug']);
+    // The sprint-introduced bug must NOT be treated as known debt
+    expect(result).not.toContain('sprint-introduced-bug');
+  });
+
+  it('falls back to criticalFindings+majorFindings when knownDebt is absent (legacy)', () => {
+    writeMemoryEntry(tmpRoot, {
+      type: 'gate-verdict',
+      value: 'Gate approved: legacy',
+      metadata: {
+        cycleId: 'cycle-fallback',
+        verdict: 'approved',
+        rationale: 'legacy',
+        criticalFindings: ['legacy-critical'],
+        majorFindings: ['legacy-major'],
+        // No knownDebt field — legacy entry
+      } satisfies GateVerdictMetadata,
+      source: 'cycle-fallback',
+    });
+
+    const result = resolveKnownDebt(tmpRoot);
+    // Falls back to criticalFindings + majorFindings
+    expect(result).toEqual(['legacy-critical', 'legacy-major']);
+  });
+
+  it('returns empty array when knownDebt field is present but empty, and no findings', () => {
+    writeMemoryEntry(tmpRoot, {
+      type: 'gate-verdict',
+      value: 'Gate approved: clean with explicit empty knownDebt',
+      metadata: {
+        cycleId: 'cycle-empty-kd',
+        verdict: 'approved',
+        rationale: 'clean sprint',
+        criticalFindings: [],
+        majorFindings: [],
+        knownDebt: [],
+      } satisfies GateVerdictMetadata,
+      source: 'cycle-empty-kd',
+    });
+
+    const result = resolveKnownDebt(tmpRoot);
+    expect(result).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildKnownDebtSection — prefers prior.knownDebt over criticalFindings+majorFindings
+// ---------------------------------------------------------------------------
+
+describe('buildKnownDebtSection — uses knownDebt field when available', () => {
+  it('uses prior.knownDebt for the bullet list when present and non-empty', () => {
+    const prior: PriorGateContext = {
+      cycleId: 'cycle-kd-section',
+      verdict: 'rejected',
+      // criticalFindings has both pre-existing and new items
+      criticalFindings: ['sprint-introduced-bug', 'carry-forward-bug'],
+      majorFindings: [],
+      // knownDebt has only what was pre-existing
+      knownDebt: ['carry-forward-bug'],
+    };
+
+    const section = buildKnownDebtSection(prior);
+    // Only the pre-existing item should appear in the section
+    expect(section).toContain('- carry-forward-bug');
+    // The sprint-introduced item must NOT appear in the known-debt section
+    // (it is not pre-existing debt and should remain a valid reject ground)
+    expect(section).not.toContain('sprint-introduced-bug');
+  });
+
+  it('falls back to criticalFindings+majorFindings when knownDebt is absent', () => {
+    const prior: PriorGateContext = {
+      cycleId: 'cycle-kd-fallback',
+      verdict: 'approved',
+      criticalFindings: ['critical-debt'],
+      majorFindings: ['major-debt'],
+      // No knownDebt field — legacy PriorGateContext
+    };
+
+    const section = buildKnownDebtSection(prior);
+    // Falls back to criticalFindings + majorFindings
+    expect(section).toContain('- critical-debt');
+    expect(section).toContain('- major-debt');
+  });
+
+  it('falls back to criticalFindings+majorFindings when knownDebt is an empty array', () => {
+    const prior: PriorGateContext = {
+      cycleId: 'cycle-kd-empty-array',
+      verdict: 'approved',
+      criticalFindings: ['critical-debt'],
+      majorFindings: [],
+      // Empty array triggers fallback (prior gate was debt-free but has findings)
+      knownDebt: [],
+    };
+
+    const section = buildKnownDebtSection(prior);
+    // Falls back to criticalFindings since knownDebt is empty
+    expect(section).toContain('- critical-debt');
+  });
+
+  it('returns empty string when prior.knownDebt is empty and all findings are empty', () => {
+    const prior: PriorGateContext = {
+      cycleId: 'cycle-all-empty',
+      verdict: 'approved',
+      criticalFindings: [],
+      majorFindings: [],
+      knownDebt: [],
+    };
+
     expect(buildKnownDebtSection(prior)).toBe('');
   });
 });

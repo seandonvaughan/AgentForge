@@ -433,4 +433,134 @@ describe('gate-phase progress events', () => {
     expect(capturedTask.value).toContain('MUST NOT independently drive a REJECT');
     expect(capturedTask.value).toContain('CORS wildcard on /api/v5/memory/stream');
   });
+
+  it('extracts reviewFindings from agentRuns[0].response when review.json uses PhaseResult format', async () => {
+    // Regression test for the bug where gate-phase fell through to
+    // JSON.stringify(reviewJson) when the file used the PhaseResult format
+    // (agentRuns[0].response) instead of a top-level `review` or `findings`
+    // field. The JSON.stringify fallback produced a giant serialised blob on one
+    // line, and the |\\[MAJOR\\] regex alternative matched the whole line
+    // (because [MAJOR] appears somewhere in the text), producing a garbage
+    // "finding" that poisoned the knownDebt JSONL store.
+    const reviewText = [
+      '## Code Review — Sprint v1.0.0',
+      '',
+      '**CRITICAL: Double computeCycleHistory call in flywheel route**',
+      'Calling computeCycleHistory twice per request with different limits.',
+      '',
+      '- [MAJOR] packages/server/src/routes/search.ts — TS2554 errors at 3 call sites',
+      '',
+      'Overall: 2/5 — block on CRITICAL',
+    ].join('\n');
+
+    // Write review.json in the PhaseResult format (what the cycle runner actually writes)
+    const phasesDir = join(tmpRoot, '.agentforge', 'cycles', 'cycle-test-1', 'phases');
+    mkdirSync(phasesDir, { recursive: true });
+    writeFileSync(
+      join(phasesDir, 'review.json'),
+      JSON.stringify({
+        phase: 'review',
+        status: 'completed',
+        durationMs: 12000,
+        costUsd: 0.04,
+        agentRuns: [
+          {
+            agentId: 'code-reviewer',
+            costUsd: 0.04,
+            durationMs: 12000,
+            response: reviewText,
+          },
+        ],
+      }),
+    );
+
+    writeSprintFile([{ id: 'item-1', title: 'Task A', assignee: 'backend', status: 'completed' }]);
+
+    const capturedTask = { value: '' };
+    const bus = makeBus();
+    const ctx = makeCtx(bus);
+
+    (ctx.runtime.run as ReturnType<typeof vi.fn>).mockImplementation(
+      async (_agentId: string, task: string) => {
+        capturedTask.value = task;
+        return {
+          output: JSON.stringify({ verdict: 'REJECT', rationale: 'CRITICAL bug found' }),
+          costUsd: 0.05,
+          status: 'completed',
+        };
+      },
+    );
+
+    const { runGatePhase } = await import('../gate-phase.js');
+    await runGatePhase(ctx).catch(() => {});  // REJECT throws GateRejectedError
+
+    // The gate task should contain the actual review text, not a JSON blob.
+    // A JSON blob would start with '{"phase":' or '"agentRuns":'.
+    expect(capturedTask.value).toContain('Double computeCycleHistory call');
+    expect(capturedTask.value).toContain('TS2554 errors at 3 call sites');
+    // Must NOT contain the raw JSON structure keys which indicate the fallback path fired.
+    expect(capturedTask.value).not.toContain('"agentRuns"');
+    expect(capturedTask.value).not.toContain('"agentId": "code-reviewer"');
+  });
+
+  it('gate-verdict JSONL findings are real finding lines when reviewFindings is properly extracted', async () => {
+    // End-to-end: run a gate phase with a PhaseResult-format review.json and
+    // verify that the findings written to gate-verdict.jsonl are real finding
+    // lines (short, human-readable) — NOT the entire serialised JSON blob.
+    const reviewText = [
+      '## Code Review',
+      '',
+      'CRITICAL: YAML parser silently drops dash-list skill arrays',
+      'MAJOR: computeCycleHistory called twice per /flywheel request',
+      '',
+      'Overall: 1/5',
+    ].join('\n');
+
+    const phasesDir = join(tmpRoot, '.agentforge', 'cycles', 'cycle-test-1', 'phases');
+    mkdirSync(phasesDir, { recursive: true });
+    writeFileSync(
+      join(phasesDir, 'review.json'),
+      JSON.stringify({
+        phase: 'review',
+        status: 'completed',
+        durationMs: 8000,
+        costUsd: 0.03,
+        agentRuns: [{ agentId: 'code-reviewer', costUsd: 0.03, durationMs: 8000, response: reviewText }],
+      }),
+    );
+
+    writeSprintFile([{ id: 'item-1', title: 'Task A', assignee: 'backend', status: 'completed' }]);
+
+    const bus = makeBus();
+    const ctx = makeCtx(bus);
+
+    (ctx.runtime.run as ReturnType<typeof vi.fn>).mockResolvedValue({
+      output: JSON.stringify({ verdict: 'REJECT', rationale: 'CRITICAL finding present' }),
+      costUsd: 0.05,
+      status: 'completed',
+    });
+
+    const { runGatePhase } = await import('../gate-phase.js');
+    const { readMemoryEntries } = await import('../../../memory/types.js');
+
+    await runGatePhase(ctx).catch(() => {});  // REJECT throws GateRejectedError
+
+    // The gate-verdict JSONL entry must have real finding lines (not JSON blobs).
+    const entries = readMemoryEntries(tmpRoot, 'gate-verdict', 1);
+    expect(entries).toHaveLength(1);
+
+    const meta = entries[0]!.metadata as any;
+    expect(meta.criticalFindings).toHaveLength(1);
+    // The critical finding must be the actual finding line, not a JSON blob.
+    const critFinding = meta.criticalFindings[0] as string;
+    expect(critFinding).toContain('YAML parser silently drops dash-list skill arrays');
+    // Must not contain JSON structure keys — proof it's not the JSON blob.
+    expect(critFinding).not.toContain('"agentRuns"');
+    expect(critFinding.length).toBeLessThan(300);
+
+    expect(meta.majorFindings).toHaveLength(1);
+    const majFinding = meta.majorFindings[0] as string;
+    expect(majFinding).toContain('computeCycleHistory called twice');
+    expect(majFinding).not.toContain('"agentRuns"');
+  });
 });

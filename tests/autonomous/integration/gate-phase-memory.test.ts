@@ -449,9 +449,12 @@ describe('server runGatePhase — known-debt injection into gate prompt', () => 
 
     expect(streamingArg.task).toContain('Known pre-existing debt');
     expect(streamingArg.task).toContain('Auth bypass in middleware — token check absent');
-    // REJECTED label with verify-if-fixed guidance
+    // REJECTED label with verify-if-fixed guidance. v22.4 changed the wording
+    // from "Verify whether each has been addressed" to a longer block that
+    // distinguishes FIXED vs WORSE vs unchanged carry-forward debt; we now
+    // assert against the new phrasing.
     expect(streamingArg.task).toContain('REJECTED');
-    expect(streamingArg.task).toContain('Verify whether each has been addressed');
+    expect(streamingArg.task).toMatch(/Verify whether this sprint FIXED them|FIXED|RESOLVED/);
   });
 
   it('omits the known-debt section when no prior gate-verdict exists', async () => {

@@ -11,6 +11,24 @@
   } from '$lib/util/job-format.js';
   import { relativeTime } from '$lib/util/relative-time.js';
   import { Btn, Badge, Card, KpiTile, Ring, PulseDot } from '$lib/components/v2';
+  import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
+
+  // 'markdown' renders via the shared MarkdownRenderer; 'raw' is the
+  // monospace preformatted view. Persisted per-session via localStorage.
+  type OutputViewMode = 'markdown' | 'raw';
+  const OUTPUT_VIEW_STORAGE_KEY = 'agentforge.jobs.outputViewMode';
+  let outputViewMode = $state<OutputViewMode>('markdown');
+  function loadOutputViewMode(): OutputViewMode {
+    if (typeof localStorage === 'undefined') return 'markdown';
+    const stored = localStorage.getItem(OUTPUT_VIEW_STORAGE_KEY);
+    return stored === 'raw' ? 'raw' : 'markdown';
+  }
+  function setOutputViewMode(mode: OutputViewMode): void {
+    outputViewMode = mode;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(OUTPUT_VIEW_STORAGE_KEY, mode);
+    }
+  }
 
   type StatusFilter = 'all' | RuntimeJobStatus;
 
@@ -216,6 +234,7 @@
   }
 
   onMount(() => {
+    outputViewMode = loadOutputViewMode();
     void loadJobs().then(() => loadEvents());
     jobsPoll = setInterval(() => void loadJobs(true), 5000);
     eventsPoll = setInterval(() => { if (shouldPollEvents) void loadEvents(); }, 2500);
@@ -436,12 +455,32 @@
         <Card>
           <div class="card-header-row">
             <span class="section-title">EVENTS & OUTPUT</span>
-            <span
-              class="stream-status af2-mono"
-              class:stream-status--live={shouldPollEvents}
-            >
-              {shouldPollEvents ? 'Polling live events' : 'Event replay'}
-            </span>
+            <div class="header-controls">
+              {#if outputPreview}
+                <div class="view-toggle" role="group" aria-label="Output view mode">
+                  <button
+                    type="button"
+                    class="view-toggle-btn"
+                    class:view-toggle-btn--active={outputViewMode === 'markdown'}
+                    onclick={() => setOutputViewMode('markdown')}
+                    aria-pressed={outputViewMode === 'markdown'}
+                  >Markdown</button>
+                  <button
+                    type="button"
+                    class="view-toggle-btn"
+                    class:view-toggle-btn--active={outputViewMode === 'raw'}
+                    onclick={() => setOutputViewMode('raw')}
+                    aria-pressed={outputViewMode === 'raw'}
+                  >Raw</button>
+                </div>
+              {/if}
+              <span
+                class="stream-status af2-mono"
+                class:stream-status--live={shouldPollEvents}
+              >
+                {shouldPollEvents ? 'Polling live events' : 'Event replay'}
+              </span>
+            </div>
           </div>
 
           {#if latestEvent}
@@ -453,7 +492,13 @@
           {/if}
 
           {#if outputPreview}
-            <pre class="output-preview af2-mono">{outputPreview}</pre>
+            {#if outputViewMode === 'markdown'}
+              <div class="output-markdown">
+                <MarkdownRenderer content={outputPreview} />
+              </div>
+            {:else}
+              <pre class="output-preview af2-mono">{outputPreview}</pre>
+            {/if}
           {:else}
             <div class="empty-inline">No streamed output chunks for this job yet.</div>
           {/if}
@@ -859,6 +904,54 @@
     overflow: auto;
     padding: 12px 14px;
     white-space: pre-wrap;
+  }
+
+  /* Same chrome as the raw <pre> view; MarkdownRenderer brings its own
+     typography (.md-body inside the wrapper). */
+  .output-markdown {
+    background: var(--af-bg);
+    border: 1px solid var(--af-border2);
+    border-radius: 6px;
+    margin: 0 0 12px;
+    max-height: 480px;
+    overflow: auto;
+    padding: 12px 14px;
+    font-size: 13px;
+  }
+
+  /* Header controls: holds the view toggle + the live/replay status pill */
+  .header-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .view-toggle {
+    display: inline-flex;
+    border: 1px solid var(--af-border2);
+    border-radius: 5px;
+    overflow: hidden;
+    background: var(--af-bg);
+  }
+  .view-toggle-btn {
+    background: transparent;
+    border: 0;
+    color: var(--af-muted);
+    cursor: pointer;
+    font: inherit;
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    padding: 3px 10px;
+  }
+  .view-toggle-btn + .view-toggle-btn {
+    border-left: 1px solid var(--af-border2);
+  }
+  .view-toggle-btn:hover {
+    color: var(--af-text);
+  }
+  .view-toggle-btn--active {
+    background: var(--af-surface2, var(--af-surface));
+    color: var(--af-accent);
   }
 
   /* ── Empty inline ─────────────────────────────────────────────────────── */

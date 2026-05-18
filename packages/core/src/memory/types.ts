@@ -54,6 +54,21 @@ export interface GateVerdictMetadata {
   criticalFindings: string[];
   /** MAJOR-severity findings that contributed to the gate decision. */
   majorFindings: string[];
+  /**
+   * The explicit list of pre-existing findings that were treated as accepted
+   * carry-forward debt when this gate ran. Seeded from the prior cycle's
+   * gate-verdict JSONL entry via `loadPriorGateKnownDebt`.
+   *
+   * This field is the key that allows future gates to distinguish:
+   *   - Findings in `knownDebt` → pre-existing before this sprint ran → warn only
+   *   - Findings in `criticalFindings`/`majorFindings` but NOT in `knownDebt`
+   *     → introduced or first discovered in this sprint → valid reject grounds
+   *
+   * Optional for backward-compat with entries written before this field was
+   * added (pre-v17.3.0). When absent, consumers fall back to treating all
+   * `criticalFindings + majorFindings` as the debt list.
+   */
+  knownDebt?: string[];
 }
 
 /** Canonical shape of a cross-cycle memory entry.

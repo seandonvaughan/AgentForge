@@ -82,10 +82,13 @@ export function extractFindingsByLevel(
     .slice(0, 10); // cap to avoid bloating the memory entry
 }
 
-export function parseGateVerdict(text: string): GateVerdict {
-  // Try strict JSON first
+/**
+ * Try to parse a fragment as JSON and extract the verdict + rationale.
+ * Returns null if parse fails or the result isn't a verdict object.
+ */
+function tryExtractVerdict(fragment: string): GateVerdict | null {
   try {
-    const parsed = JSON.parse(text);
+    const parsed = JSON.parse(fragment);
     if (parsed && typeof parsed === 'object' && 'verdict' in parsed) {
       const v = String(parsed.verdict).toUpperCase();
       if (v === 'APPROVE' || v === 'REJECT') {
@@ -98,27 +101,91 @@ export function parseGateVerdict(text: string): GateVerdict {
   } catch {
     // fall through
   }
+  return null;
+}
 
-  // Try to extract a JSON object from within the text
-  const match = text.match(/\{[\s\S]*?"verdict"[\s\S]*?\}/);
-  if (match) {
-    try {
-      const parsed = JSON.parse(match[0]);
-      if (parsed && typeof parsed === 'object' && 'verdict' in parsed) {
-        const v = String(parsed.verdict).toUpperCase();
-        if (v === 'APPROVE' || v === 'REJECT') {
-          return {
-            verdict: v,
-            rationale: typeof parsed.rationale === 'string' ? parsed.rationale : '',
-          };
-        }
+/**
+ * Walk forward from `startIdx` (which points at `{`) and find the matching
+ * closing `}` while respecting strings and escape sequences. Returns the
+ * extracted JSON-object substring or null if no balanced match exists.
+ *
+ * Why this exists: previous versions used a non-greedy regex
+ * `\{[\s\S]*?"verdict"[\s\S]*?\}` which matched the FIRST `}` after `verdict`.
+ * When the rationale contained inline JSON or markdown braces, the match
+ * truncated mid-object and JSON.parse choked. This balanced-brace walker
+ * extracts the actual full object.
+ */
+function extractBalancedJson(text: string, startIdx: number): string | null {
+  if (text[startIdx] !== '{') return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = startIdx; i < text.length; i++) {
+    const ch = text[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return text.slice(startIdx, i + 1);
+    }
+  }
+  return null;
+}
+
+export function parseGateVerdict(text: string): GateVerdict {
+  // 1. Whole-text strict JSON
+  const direct = tryExtractVerdict(text);
+  if (direct) return direct;
+
+  // 2. Look for ```json fenced blocks (LLMs often wrap structured output in them)
+  const fencedRe = /```(?:json)?\s*\n?([\s\S]*?)\n?```/g;
+  for (const m of text.matchAll(fencedRe)) {
+    const body = (m[1] ?? '').trim();
+    if (!body.includes('"verdict"')) continue;
+    const inFenced = tryExtractVerdict(body);
+    if (inFenced) return inFenced;
+    // Try a balanced-brace walk within the fence body too
+    const openIdx = body.indexOf('{');
+    if (openIdx >= 0) {
+      const balanced = extractBalancedJson(body, openIdx);
+      if (balanced) {
+        const fromBalanced = tryExtractVerdict(balanced);
+        if (fromBalanced) return fromBalanced;
       }
-    } catch {
-      // fall through
     }
   }
 
-  // Malformed: treat as REJECT with raw text as rationale
+  // 3. Find every `{` that's followed somewhere by `"verdict"` and try a
+  //    balanced-brace extraction starting from each. This handles responses
+  //    where the agent emitted the verdict object inline without a fence.
+  let idx = text.indexOf('{');
+  while (idx >= 0) {
+    // Cheap pre-filter: only attempt balanced parse if "verdict" appears within
+    // the next ~8KB — keeps us from re-walking the whole text on every brace.
+    const nextChunk = text.slice(idx, idx + 8192);
+    if (nextChunk.includes('"verdict"')) {
+      const balanced = extractBalancedJson(text, idx);
+      if (balanced) {
+        const fromBalanced = tryExtractVerdict(balanced);
+        if (fromBalanced) return fromBalanced;
+      }
+    }
+    idx = text.indexOf('{', idx + 1);
+  }
+
+  // 4. Malformed: treat as REJECT with raw text as rationale (last resort)
   return { verdict: 'REJECT', rationale: text || 'Malformed gate response' };
 }
 
@@ -132,6 +199,19 @@ export interface PriorGateContext {
   verdict: 'approved' | 'rejected' | 'pending';
   majorFindings: string[];
   criticalFindings: string[];
+  /**
+   * The explicit list of findings that were already treated as accepted
+   * carry-forward debt when this prior gate ran. Present only when the
+   * entry was written by a post-v17.3.0 gate (when `knownDebt` was added
+   * to `GateVerdictMetadata`). When absent, consumers fall back to
+   * `criticalFindings + majorFindings` for backward-compat.
+   *
+   * Having this field lets the next gate tell apart:
+   *   - Items in `knownDebt` → pre-existing before the prior sprint ran
+   *   - Items in `criticalFindings`/`majorFindings` but NOT in `knownDebt`
+   *     → newly surfaced in the prior sprint's review
+   */
+  knownDebt?: string[];
 }
 
 /**
@@ -153,11 +233,16 @@ export function loadPriorGateKnownDebt(projectRoot: string): PriorGateContext | 
   const verdict = meta.verdict;
   if (verdict !== 'approved' && verdict !== 'rejected' && verdict !== 'pending') return null;
 
+  const metaTyped = meta as GateVerdictMetadata;
   return {
     cycleId: typeof meta.cycleId === 'string' ? meta.cycleId : '',
     verdict,
     majorFindings: Array.isArray(meta.majorFindings) ? meta.majorFindings : [],
     criticalFindings: Array.isArray(meta.criticalFindings) ? meta.criticalFindings : [],
+    // Read the explicit knownDebt list when present (written by post-v17.3.0 gates).
+    // Use a conditional spread so the property is absent (not set to undefined)
+    // when the field isn't in the entry — required by exactOptionalPropertyTypes.
+    ...(Array.isArray(metaTyped.knownDebt) ? { knownDebt: metaTyped.knownDebt as string[] } : {}),
   };
 }
 
@@ -173,7 +258,19 @@ export function loadPriorGateKnownDebt(projectRoot: string): PriorGateContext | 
 export function buildKnownDebtSection(prior: PriorGateContext | null): string {
   if (prior === null) return '';
 
-  const allFindings = [...prior.criticalFindings, ...prior.majorFindings];
+  // Prefer the explicit `knownDebt` field (present since v17.3.0) — it contains
+  // only findings that were ALREADY accepted as carry-forward debt when the prior
+  // gate ran, which is a more precise "pre-existing" signal than all
+  // criticalFindings + majorFindings. Some of those may have been newly surfaced
+  // in the prior sprint's review and should not automatically inherit the
+  // "warn-not-reject" treatment across successive cycles.
+  //
+  // Fallback to criticalFindings + majorFindings when `knownDebt` is absent
+  // (legacy entries written before v17.3.0 that don't have the field).
+  const allFindings =
+    prior.knownDebt !== undefined && prior.knownDebt.length > 0
+      ? prior.knownDebt
+      : [...prior.criticalFindings, ...prior.majorFindings];
   if (allFindings.length === 0) return '';
 
   const label =
@@ -183,14 +280,29 @@ export function buildKnownDebtSection(prior: PriorGateContext | null): string {
 
   const bullets = allFindings.map((f) => `- ${f}`).join('\n');
 
+  // Both approved and rejected prior findings are treated as known carry-forward
+  // debt for the purposes of this sprint's gate. The goal is to distinguish
+  // "pre-existing issue that was known before this sprint ran" (warns only) from
+  // "regression introduced by this sprint's changes" (valid REJECT ground).
+  //
+  // For a prior APPROVE, the CEO explicitly accepted the debt — clearly should
+  // not block again unless it has worsened.
+  //
+  // For a prior REJECT, the debt existed before this sprint too. If the sprint's
+  // scope didn't include a fix for it, rejecting again is a false positive that
+  // blocks unrelated work. The CEO should check whether this sprint made the issue
+  // *worse* — if it hasn't worsened, treat it as carry-forward and don't re-reject.
   const guidance =
     prior.verdict === 'approved'
       ? 'The prior gate APPROVED despite these findings — they are known pre-existing debt. ' +
         'Do NOT let them drive a REJECT in this cycle unless they have clearly worsened or new occurrences have been added. ' +
         'If the code review flags the same items, verify they have not regressed before treating them as grounds for rejection.'
       : 'The prior gate REJECTED partly due to these findings. ' +
-        'Verify whether each has been addressed — if fixed, treat as RESOLVED and do not penalise for it; ' +
-        'if still present and unaddressed, they remain valid REJECT grounds.';
+        'These issues existed before this sprint ran. ' +
+        'Verify whether this sprint FIXED them (treat as RESOLVED if so) or made them WORSE. ' +
+        'If the issue is unchanged — still present but neither fixed nor worsened — treat it as ' +
+        'accepted carry-forward debt for this cycle: warn in your rationale but do NOT independently ' +
+        'drive a REJECT verdict. Only reject if this sprint introduced new occurrences or clearly worsened the existing issue.';
 
   return `\n## Known pre-existing debt (prior gate verdict — ${label})\n${bullets}\n\n${guidance}\n`;
 }
@@ -222,9 +334,14 @@ export function buildKnownDebtSectionFromList(debt: string[]): string {
  * Priority:
  *   1. `override` — when the caller explicitly provides a list (even empty),
  *      it is returned as-is and no file I/O is performed.
- *   2. Last gate-verdict from JSONL — critical + major findings from the most
- *      recent entry in `.agentforge/memory/gate-verdict.jsonl`.
- *   3. `[]` — when no prior verdict exists or the file is unreadable.
+ *   2. `prior.knownDebt` — the explicit pre-existing debt list written by
+ *      post-v17.3.0 gates in `.agentforge/memory/gate-verdict.jsonl`. This
+ *      is the most precise signal: it only includes findings that were already
+ *      accepted as carry-forward debt when the prior gate ran, not all findings
+ *      from the review (some of which may have been genuinely new that cycle).
+ *   3. Fallback: `criticalFindings + majorFindings` from the most recent
+ *      gate-verdict entry — used for legacy entries that lack `knownDebt`.
+ *   4. `[]` — when no prior verdict exists or the file is unreadable.
  *
  * Exported so call sites and tests can verify the resolved list independently
  * of the full `runGatePhase` path.
@@ -233,7 +350,9 @@ export function resolveKnownDebt(projectRoot: string, override?: string[]): stri
   if (override !== undefined) return override;
   const prior = loadPriorGateKnownDebt(projectRoot);
   if (!prior) return [];
-  return [...prior.criticalFindings, ...prior.majorFindings];
+  // Prefer the explicit knownDebt field (v17.3.0+) over the coarser
+  // criticalFindings+majorFindings derivation (legacy fallback).
+  return prior.knownDebt ?? [...prior.criticalFindings, ...prior.majorFindings];
 }
 
 export async function runGatePhase(
@@ -295,10 +414,35 @@ export async function runGatePhase(
     }
     const reviewJson = tryReadJson(join(phasesDir, 'review.json'));
     if (reviewJson) {
+      // The review.json shape has evolved across code versions — check fields in
+      // priority order so we always extract the actual review text rather than
+      // falling through to a JSON.stringify blob.
+      //
+      //   v6.8+ (review-phase.ts):  { review: string, ... }
+      //   Legacy:                   { findings: string, ... }
+      //   PhaseResult write path:   { agentRuns: [{ response: string }], ... }
+      //
+      // IMPORTANT: Do NOT fall back to JSON.stringify(reviewJson) as a "review
+      // text" input for extractFindingsByLevel. The JSON blob puts the entire
+      // review on a single line; the |\[MAJOR\] regex alternative then matches
+      // that line (because [MAJOR] appears somewhere in the serialised string),
+      // producing a multi-KB garbage finding that fills criticalFindings /
+      // majorFindings and poisons the knownDebt JSONL store for future cycles.
+      const agentRunResponse =
+        Array.isArray(reviewJson.agentRuns) &&
+        reviewJson.agentRuns.length > 0 &&
+        typeof (reviewJson.agentRuns[0] as any)?.response === 'string'
+          ? (reviewJson.agentRuns[0] as any).response as string
+          : undefined;
+
       reviewFindings =
-        typeof reviewJson.findings === 'string'
-          ? reviewJson.findings
-          : JSON.stringify(reviewJson, null, 2);
+        typeof reviewJson.review === 'string'
+          ? reviewJson.review
+          : typeof reviewJson.findings === 'string'
+            ? reviewJson.findings
+            : agentRunResponse !== undefined
+              ? agentRunResponse
+              : '(review text not parseable)';
     }
 
     // Sum cost across all known phase JSONs
@@ -325,7 +469,13 @@ export async function runGatePhase(
     options.knownDebt !== undefined
       ? options.knownDebt
       : priorGateContext
-        ? [...priorGateContext.criticalFindings, ...priorGateContext.majorFindings]
+        // Prefer the explicit knownDebt field (v17.3.0+) — it's more precise than
+        // criticalFindings+majorFindings because it only contains items that were
+        // ALREADY accepted as carry-forward debt when the prior gate ran.
+        ? (priorGateContext.knownDebt ?? [
+            ...priorGateContext.criticalFindings,
+            ...priorGateContext.majorFindings,
+          ])
         : [];
 
   // Use the richer section (with prior verdict label + tailored guidance) when
@@ -483,6 +633,14 @@ Respond as JSON: { "verdict": "APPROVE" | "REJECT", "rationale": "..." }`;
     rationale: verdict.rationale,
     criticalFindings,
     majorFindings,
+    // Record which findings were treated as pre-existing known debt so the
+    // NEXT cycle's gate can distinguish:
+    //   - Items in knownDebt → pre-existing before this sprint ran → warn only
+    //   - Items in criticalFindings/majorFindings but NOT in knownDebt
+    //     → newly surfaced in this sprint's review → valid reject grounds
+    // This closes the feedback loop: gate.json has it for operator auditing;
+    // the JSONL metadata now has it for machine consumption by the next gate.
+    ...(knownDebt.length > 0 ? { knownDebt } : {}),
   };
 
   // Build a human-readable summary for the `value` field so the audit-phase
