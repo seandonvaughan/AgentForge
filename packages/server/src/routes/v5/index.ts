@@ -322,7 +322,7 @@ export async function registerV5Routes(
   });
 
   // ── Costs Summary ─────────────────────────────────────────────────────────────
-  await costsRoutes(app, { adapter });
+  await costsRoutes(app, opts.projectRoot !== undefined ? { adapter, projectRoot: opts.projectRoot } : { adapter });
 
   // ── Workflow orchestration ─────────────────────────────────────────────────────
   await workflowRoutes(app);
