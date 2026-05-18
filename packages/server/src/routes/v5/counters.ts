@@ -45,6 +45,8 @@ export interface CountersResponse {
   cyclesMonth: number;
   /** idle when runningCycles===0; overloaded when runningCycles>=3; busy otherwise. */
   load: SystemLoad;
+  /** Count of `.agentforge/worktrees/agent-*` dirs with mtime within last 30 min. */
+  runningWorktrees: number;
   /** ISO 8601 timestamp of when this payload was computed. */
   timestamp: string;
 }
@@ -252,6 +254,41 @@ function countTotalAgents(projectRoot: string): number {
   }
 }
 
+/**
+ * Count active worktree directories in `.agentforge/worktrees/`.
+ *
+ * A worktree is "running" when it matches `agent-*` and its mtime is within
+ * the last 30 minutes. Dirs modified longer ago are excluded — they are stale
+ * (agent completed or was force-released). Defensive: returns 0 when the
+ * worktrees directory is absent.
+ */
+const WORKTREE_ACTIVE_MS = 30 * 60 * 1000; // 30 minutes
+
+function countRunningWorktrees(projectRoot: string): number {
+  const worktreesDir = join(projectRoot, '.agentforge', 'worktrees');
+  if (!existsSync(worktreesDir)) return 0;
+  let entries: string[];
+  try {
+    entries = readdirSync(worktreesDir);
+  } catch {
+    return 0;
+  }
+  const cutoff = Date.now() - WORKTREE_ACTIVE_MS;
+  let count = 0;
+  for (const entry of entries) {
+    // Match-then-use: verify the name starts with `agent-` before stat-ing
+    if (!entry.startsWith('agent-')) continue;
+    const entryPath = join(worktreesDir, entry);
+    try {
+      const st = statSync(entryPath);
+      if (st.isDirectory() && st.mtimeMs >= cutoff) count++;
+    } catch {
+      // Ignore vanished entries
+    }
+  }
+  return count;
+}
+
 function computeCounters(adapter: WorkspaceAdapter, projectRoot: string): CountersResponse {
   const db = adapter.getRawDb();
 
@@ -274,6 +311,7 @@ function computeCounters(adapter: WorkspaceAdapter, projectRoot: string): Counte
   // JSON-ledger-backed counters (authoritative for cycle-runner data).
   const fromJson = computeCountersFromJsonLedger(projectRoot);
   const agentsTotal = countTotalAgents(projectRoot);
+  const runningWorktrees = countRunningWorktrees(projectRoot);
 
   return {
     openBranches,
@@ -288,6 +326,7 @@ function computeCounters(adapter: WorkspaceAdapter, projectRoot: string): Counte
     cyclesWeek: fromJson.cyclesWeek,
     cyclesMonth: fromJson.cyclesMonth,
     load: deriveLoad(fromJson.runningCycles),
+    runningWorktrees,
     timestamp: new Date().toISOString(),
   };
 }
