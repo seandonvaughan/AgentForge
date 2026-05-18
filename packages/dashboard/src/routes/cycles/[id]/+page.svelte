@@ -7,6 +7,7 @@
   import {
     Btn, Card, Badge, Tabs, StageRail, ModelChip, PulseDot, Ring, Sparkline, AnimNum,
   } from '$lib/components/v2';
+  import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
 
   type Tab =
     | 'overview' | 'pipeline' | 'items' | 'agents'
@@ -805,6 +806,7 @@
   });
 
   let selectedItem = $state<SprintItem | null>(null);
+  let selectedAgent = $state<string | null>(null);
 
   onMount(() => {
     void loadCycle();
@@ -1172,31 +1174,40 @@
       </div>
 
       {#if selectedItem}
+        {@const item = selectedItem}
+        {@const itemRun = (agentsData?.runs ?? []).find((r) => r.itemId === item.id)}
         <div class="drawer-overlay" role="dialog" aria-modal="true" onclick={() => (selectedItem = null)}>
           <div class="drawer" onclick={(e) => e.stopPropagation()}>
             <div class="drawer-head">
               <div>
-                <div class="drawer-kicker af2-mono">ITEM · #{selectedItem.id.slice(0, 12)}</div>
-                <div class="drawer-title">{selectedItem.title}</div>
+                <div class="drawer-kicker af2-mono">ITEM · #{item.id.slice(0, 12)}</div>
+                <div class="drawer-title">{item.title}</div>
               </div>
               <button class="drawer-close" type="button" onclick={() => (selectedItem = null)} aria-label="Close">×</button>
             </div>
             <div class="drawer-body">
               <div class="drawer-meta">
-                {#if selectedItem.assignee}<span class="af2-mono">{selectedItem.assignee}</span>{/if}
-                {#if selectedItem.durationMs} · <span class="af2-mono">{formatDuration(selectedItem.durationMs)}</span>{/if}
-                {#if selectedItem.costUsd != null} · <span class="af2-mono">${selectedItem.costUsd.toFixed(3)}</span>{/if}
+                {#if item.assignee}<span class="af2-mono">{item.assignee}</span>{/if}
+                {#if item.durationMs} · <span class="af2-mono">{formatDuration(item.durationMs)}</span>{/if}
+                {#if item.costUsd != null} · <span class="af2-mono">${item.costUsd.toFixed(3)}</span>{/if}
               </div>
               <div class="drawer-badges">
-                <Badge variant={selectedItem.status === 'completed' ? 'success' : selectedItem.status === 'failed' ? 'danger' : 'purple'}>
-                  {selectedItem.status.replace('_', ' ')}
+                <Badge variant={item.status === 'completed' ? 'success' : item.status === 'failed' ? 'danger' : 'purple'}>
+                  {item.status.replace('_', ' ')}
                 </Badge>
-                {#if selectedItem.model}<ModelChip model={selectedItem.model} />{/if}
+                {#if item.model}<ModelChip model={item.model} />{/if}
               </div>
-              {#if selectedItem.error}
-                <pre class="drawer-pre">{selectedItem.error}</pre>
-              {:else}
-                <p class="muted" style="font-size:12px">No additional output recorded for this item.</p>
+              {#if item.error}
+                <div class="drawer-section-title">ERROR</div>
+                <pre class="drawer-pre">{item.error}</pre>
+              {/if}
+              {#if itemRun?.response}
+                <div class="drawer-section-title">AGENT OUTPUT</div>
+                <div class="drawer-markdown">
+                  <MarkdownRenderer content={itemRun.response} />
+                </div>
+              {:else if !item.error}
+                <p class="muted" style="font-size:12px">No agent output recorded for this item yet.</p>
               {/if}
             </div>
           </div>
@@ -1227,27 +1238,74 @@
       <div class="agent-grid">
         {#each agentSummaries as ag (ag.agentId)}
           {@const pct = agentsData.totalCostUsd > 0 ? (ag.totalCostUsd / agentsData.totalCostUsd) * 100 : 0}
-          <Card hover>
-            <div class="ag-head">
-              <span class="ag-name">{ag.agentId}</span>
-              {#if ag.model}<ModelChip model={ag.model} />{/if}
-            </div>
-            <div class="ag-grid">
-              <div><div class="ag-key">runs</div><div class="af2-mono ag-val">{ag.runs}</div></div>
-              <div><div class="ag-key">duration</div><div class="af2-mono ag-val">{formatDuration(ag.totalDurationMs)}</div></div>
-              <div><div class="ag-key">cost</div><div class="af2-mono ag-val">${ag.totalCostUsd.toFixed(3)}</div></div>
-            </div>
-            {#if ag.spark.length > 1}
-              <Sparkline data={ag.spark} color="var(--af-purple)" w={240} h={24} gradient />
-            {/if}
-            <div class="ag-pct-track"><div class="ag-pct-fill" style="width:{pct}%"></div></div>
-            <div class="af2-mono ag-pct-label">{pct.toFixed(1)}% of cycle</div>
-            <div class="ag-phases">
-              {#each ag.phases as ph (ph)}<span class="phase-chip">{ph}</span>{/each}
-            </div>
-          </Card>
+          <button type="button" class="agent-card-btn" onclick={() => (selectedAgent = ag.agentId)} aria-label={`View ${ag.agentId} runs`}>
+            <Card hover>
+              <div class="ag-head">
+                <span class="ag-name">{ag.agentId}</span>
+                {#if ag.model}<ModelChip model={ag.model} />{/if}
+              </div>
+              <div class="ag-grid">
+                <div><div class="ag-key">runs</div><div class="af2-mono ag-val">{ag.runs}</div></div>
+                <div><div class="ag-key">duration</div><div class="af2-mono ag-val">{formatDuration(ag.totalDurationMs)}</div></div>
+                <div><div class="ag-key">cost</div><div class="af2-mono ag-val">${ag.totalCostUsd.toFixed(3)}</div></div>
+              </div>
+              {#if ag.spark.length > 1}
+                <Sparkline data={ag.spark} color="var(--af-purple)" w={240} h={24} gradient />
+              {/if}
+              <div class="ag-pct-track"><div class="ag-pct-fill" style="width:{pct}%"></div></div>
+              <div class="af2-mono ag-pct-label">{pct.toFixed(1)}% of cycle</div>
+              <div class="ag-phases">
+                {#each ag.phases as ph (ph)}<span class="phase-chip">{ph}</span>{/each}
+              </div>
+              <div class="ag-view-hint af2-mono">click to view runs ↗</div>
+            </Card>
+          </button>
         {/each}
       </div>
+
+      {#if selectedAgent}
+        {@const agentRuns = (agentsData?.runs ?? []).filter((r) => r.agentId === selectedAgent)}
+        <div class="drawer-overlay" role="dialog" aria-modal="true" onclick={() => (selectedAgent = null)}>
+          <div class="drawer" onclick={(e) => e.stopPropagation()}>
+            <div class="drawer-head">
+              <div>
+                <div class="drawer-kicker af2-mono">AGENT</div>
+                <div class="drawer-title">{selectedAgent}</div>
+              </div>
+              <button class="drawer-close" type="button" onclick={() => (selectedAgent = null)} aria-label="Close">×</button>
+            </div>
+            <div class="drawer-body">
+              <div class="drawer-meta">
+                <span class="af2-mono">{agentRuns.length} run{agentRuns.length === 1 ? '' : 's'}</span>
+                · <span class="af2-mono">${agentRuns.reduce((s, r) => s + (r.costUsd ?? 0), 0).toFixed(3)}</span>
+                · <span class="af2-mono">{formatDuration(agentRuns.reduce((s, r) => s + (r.durationMs ?? 0), 0))}</span>
+              </div>
+              {#each agentRuns as run, i (i)}
+                <div class="agent-run">
+                  <div class="agent-run-head">
+                    <span class="af2-mono phase-chip">{run.phase}</span>
+                    {#if run.itemId}<span class="af2-mono dim run-item">item #{run.itemId.slice(0, 12)}</span>{/if}
+                    <Badge variant={run.status === 'completed' ? 'success' : run.status === 'failed' ? 'danger' : 'purple'}>{run.status}</Badge>
+                    <span class="af2-mono dim run-cost">${(run.costUsd ?? 0).toFixed(3)} · {formatDuration(run.durationMs ?? 0)}</span>
+                  </div>
+                  {#if run.error}
+                    <div class="drawer-section-title">ERROR</div>
+                    <pre class="drawer-pre">{run.error}</pre>
+                  {/if}
+                  {#if run.response}
+                    <div class="drawer-section-title">RESPONSE</div>
+                    <div class="drawer-markdown">
+                      <MarkdownRenderer content={run.response} />
+                    </div>
+                  {:else if !run.error}
+                    <p class="muted" style="font-size:12px">No response captured for this run.</p>
+                  {/if}
+                </div>
+              {/each}
+            </div>
+          </div>
+        </div>
+      {/if}
     {/if}
   {/if}
 
@@ -2072,6 +2130,72 @@
     margin: 0;
     white-space: pre-wrap;
   }
+  .drawer-section-title {
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    color: var(--af-dim);
+    margin: 14px 0 6px;
+    font-family: var(--af-font-mono, 'JetBrains Mono', monospace);
+  }
+  .drawer-section-title:first-child { margin-top: 0; }
+  .drawer-markdown {
+    background: var(--af-surface2);
+    border: 1px solid var(--af-border2);
+    border-radius: 6px;
+    padding: 12px 14px;
+    font-size: 13px;
+    line-height: 1.55;
+    overflow: auto;
+    color: var(--af-text);
+  }
+  .drawer-markdown :global(pre) {
+    background: var(--af-surface);
+    border-radius: 4px;
+    padding: 8px;
+    overflow: auto;
+    font-size: 11px;
+  }
+  .drawer-markdown :global(code) { font-size: 11px; }
+  .drawer-markdown :global(h1) { font-size: 16px; margin: 12px 0 6px; }
+  .drawer-markdown :global(h2) { font-size: 14px; margin: 10px 0 4px; }
+  .drawer-markdown :global(h3) { font-size: 13px; margin: 8px 0 4px; }
+  .drawer-markdown :global(p) { margin: 6px 0; }
+  .drawer-markdown :global(ul), .drawer-markdown :global(ol) { padding-left: 20px; margin: 6px 0; }
+
+  .agent-card-btn {
+    all: unset;
+    cursor: pointer;
+    display: block;
+    width: 100%;
+    text-align: left;
+  }
+  .agent-card-btn:focus-visible {
+    outline: 2px solid var(--af-accent);
+    outline-offset: 2px;
+    border-radius: 8px;
+  }
+  .ag-view-hint {
+    margin-top: 8px;
+    font-size: 10px;
+    color: var(--af-dim);
+    text-align: right;
+  }
+
+  .agent-run {
+    border: 1px solid var(--af-border2);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 14px;
+    background: var(--af-surface);
+  }
+  .agent-run-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+  }
+  .run-item, .run-cost { font-size: 11px; }
 
   .agent-grid {
     display: grid;
