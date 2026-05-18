@@ -34,7 +34,8 @@ export {
   parseCommandArgs,
   readCheckpoint,
 } from './cycle-runner.js';
-export type { CycleRunnerOptions, CycleCheckpoint } from './cycle-runner.js';
+export type { CycleRunnerOptions } from './cycle-runner.js';
+export type { CycleCheckpoint } from './cycle-artifacts/cycle-checkpoint.js';
 export * from './runtime-adapter.js';
 export * from './workspace-telemetry-adapters.js';
 export * from './workspace-registry.js';

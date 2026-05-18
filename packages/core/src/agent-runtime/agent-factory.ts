@@ -11,7 +11,7 @@ import { injectFreshContext } from './fresh-context.js';
  *
  * T4 — inlined with TODO pending T1/T2 merge onto origin/main.
  */
-export interface AgentOutputSchema {
+interface AgentOutputSchema {
   /** Human-readable schema name used in error messages and ValidatedJsonOutput. */
   name: string;
   /**

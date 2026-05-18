@@ -24,51 +24,11 @@ import { promisify } from 'node:util';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-// ---------------------------------------------------------------------------
-// CycleCheckpoint — persisted resume state for interrupted cycles
-// ---------------------------------------------------------------------------
-
-/**
- * A checkpoint written to `.agentforge/cycles/<cycleId>/checkpoint.json`
- * when a cycle is interrupted mid-run. Allows `agentforge cycle run --resume`
- * to reuse the existing cycleId, seed accumulated spend, and skip already-
- * completed phases.
- */
-export interface CycleCheckpoint {
-  /** The cycleId this checkpoint belongs to. */
-  cycleId: string;
-  /** The last successfully completed phase before the interruption. */
-  completedPhase: string;
-  /** The next phase to run on resume (derived from completedPhase). */
-  resumeFromPhase: string;
-  /** Accumulated spend at checkpoint time (USD). */
-  spentUsd: number;
-  /** ISO timestamp when the checkpoint was written. */
-  checkpointedAt: string;
-}
-
-/**
- * Read a cycle checkpoint from disk.
- *
- * Returns null when:
- *  - the cycle directory does not exist
- *  - checkpoint.json is absent
- *  - checkpoint.json cannot be parsed
- *
- * Never throws.
- */
-export function readCheckpoint(cycleDir: string): CycleCheckpoint | null {
-  const checkpointPath = join(cycleDir, 'checkpoint.json');
-  if (!existsSync(checkpointPath)) return null;
-  try {
-    const raw = readFileSync(checkpointPath, 'utf8');
-    const parsed = JSON.parse(raw) as CycleCheckpoint;
-    if (!parsed.cycleId || !parsed.resumeFromPhase) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
+// CycleCheckpoint type + readCheckpoint helper live in
+// `./cycle-artifacts/cycle-checkpoint.ts` (Wave 3 T5). Re-export here so the
+// public surface that T6 wired up (`import { readCheckpoint } from '@agentforge/core'`)
+// keeps working without owning the canonical definitions.
+export { readCheckpoint } from './cycle-artifacts/cycle-checkpoint.js';
 
 const execFileAsync = promisify(execFile);
 
