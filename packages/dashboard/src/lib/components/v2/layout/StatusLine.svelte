@@ -22,6 +22,7 @@
     openBranches: number;
     pendingApprovals: number;
     runningCycles?: number;
+    runningWorktrees?: number;
     todaySpend: number;
     /** Endpoint returns `'idle' | 'busy' | 'overloaded'`; legacy fallback used [] */
     load: 'idle' | 'busy' | 'overloaded' | '';
@@ -82,6 +83,7 @@
           openBranches: num('openBranches'),
           pendingApprovals: num('pendingApprovals'),
           runningCycles: num('runningCycles'),
+          runningWorktrees: num('runningWorktrees'),
           todaySpend: num('todaySpendUsd'),
           load: (raw['load'] === 'idle' || raw['load'] === 'busy' || raw['load'] === 'overloaded') ? raw['load'] : '',
         };

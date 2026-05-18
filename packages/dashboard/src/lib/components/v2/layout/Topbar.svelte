@@ -28,6 +28,7 @@
 
   // ── State ──────────────────────────────────────────────────────────────
   let runningCycle: RunningCycle | null = $state(null);
+  let runningWorktrees = $state(0);
 
   // ── Polling: active cycle ──────────────────────────────────────────────
   let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -64,12 +65,32 @@
     }
   }
 
+  async function fetchCounters(): Promise<void> {
+    if (document.visibilityState === 'hidden') return;
+    try {
+      const res = await fetch('/api/v5/counters');
+      if (!res.ok) return;
+      const raw = await res.json() as Record<string, unknown>;
+      const wt = raw['runningWorktrees'];
+      runningWorktrees = typeof wt === 'number' ? wt : 0;
+    } catch {
+      // Silently ignore network errors
+    }
+  }
+
   $effect(() => {
     void fetchActiveCycle();
-    pollTimer = setInterval(() => void fetchActiveCycle(), 5000);
+    void fetchCounters();
+    pollTimer = setInterval(() => {
+      void fetchActiveCycle();
+      void fetchCounters();
+    }, 5000);
 
     const onVisibility = (): void => {
-      if (document.visibilityState === 'visible') void fetchActiveCycle();
+      if (document.visibilityState === 'visible') {
+        void fetchActiveCycle();
+        void fetchCounters();
+      }
     };
     document.addEventListener('visibilitychange', onVisibility);
 
@@ -117,6 +138,18 @@
 
   <!-- Right: running-cycle widget + avatar -->
   <div class="topbar-right">
+    {#if runningWorktrees > 0}
+      <button
+        class="worktrees-pill font-mono"
+        onclick={() => void goto('/branches')}
+        aria-label="View active worktrees"
+      >
+        <span class="wt-dot" aria-hidden="true"></span>
+        <span class="wt-label">Worktrees:</span>
+        <span class="wt-count">{runningWorktrees}</span>
+      </button>
+    {/if}
+
     {#if runningCycle !== null}
       {@const c = runningCycle}
       <button
@@ -377,6 +410,44 @@
     font-size: 10px;
     font-weight: 500;
     white-space: nowrap;
+  }
+
+  /* Worktrees pill */
+  .worktrees-pill {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0 10px;
+    background: var(--af-surface);
+    border: 1px solid var(--af-border2);
+    border-radius: 7px;
+    height: 26px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: border-color 150ms ease;
+  }
+
+  .worktrees-pill:hover {
+    border-color: var(--af-border3);
+  }
+
+  .wt-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--af-accent);
+    flex-shrink: 0;
+  }
+
+  .wt-label {
+    font-size: 10px;
+    color: var(--af-dim);
+  }
+
+  .wt-count {
+    font-size: 11px;
+    color: var(--af-text);
+    font-weight: 600;
   }
 
   /* Icon button */
