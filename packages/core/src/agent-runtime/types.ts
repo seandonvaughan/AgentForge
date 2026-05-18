@@ -44,6 +44,10 @@ export interface RunResult {
   model: string;
   inputTokens: number;
   outputTokens: number;
+  /** Cache-creation tokens surfaced by the transport (Anthropic prompt-caching). */
+  cacheCreationInputTokens?: number;
+  /** Cache-read tokens surfaced by the transport (Anthropic prompt-caching). */
+  cacheReadInputTokens?: number;
   costUsd: number;
   startedAt: string;
   completedAt: string;

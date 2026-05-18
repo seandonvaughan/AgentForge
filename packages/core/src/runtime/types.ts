@@ -45,6 +45,17 @@ export interface ExecutionRequest {
    * architectural decisions) that are known to exceed the default ceiling.
    */
   timeoutMs?: number;
+  /**
+   * Hint for prompt-cache TTL selection in the SDK transport.
+   *
+   * - `'forge'`  → stable agent system prompts baked during a forge run;
+   *                uses `ttl: "1h"` on cache breakpoints.
+   * - `'cycle'`  → per-cycle execution context; uses the Anthropic ephemeral
+   *                default (5 min, TTL key omitted from the wire format).
+   *
+   * When omitted the transport treats the request as cycle-phase.
+   */
+  phaseHint?: 'forge' | 'cycle';
 }
 
 export interface ExecutionResult {

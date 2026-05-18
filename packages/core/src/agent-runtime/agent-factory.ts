@@ -11,6 +11,7 @@ interface AgentYaml {
   system_prompt?: string;
   role?: string;
   effort?: string;
+  skill_ids?: string[];
 }
 
 export interface LoadAgentConfigOptions {
@@ -28,6 +29,42 @@ export interface LoadAgentConfigOptions {
    * is what closes the loop for Phase 2 of the comms spec.
    */
   adapter?: WorkspaceAdapter;
+}
+
+/**
+ * Build a `## Skills` section from the given skill ids.
+ *
+ * Missing skill ids are skipped with a warning — they must never throw or
+ * block a cycle. Returns an empty string when no skills are found.
+ */
+async function buildSkillsSection(skillIds: string[]): Promise<string> {
+  if (skillIds.length === 0) return '';
+
+  // Dynamically import to avoid circular deps and keep startup cost zero when
+  // no skills are requested.
+  let loadSkill: ((id: string) => import('@agentforge/skills-catalog').Skill | null) | null = null;
+  try {
+    const catalog = await import('@agentforge/skills-catalog');
+    loadSkill = catalog.loadSkill;
+  } catch {
+    // skills-catalog not available (e.g. not yet built in some CI shards)
+    console.warn('[agent-factory] @agentforge/skills-catalog not available — skipping skills injection');
+    return '';
+  }
+
+  const bodies: string[] = [];
+  for (const id of skillIds) {
+    const skill = loadSkill(id);
+    if (!skill) {
+      console.warn(`[agent-factory] Skill "${id}" not found in catalog — skipping`);
+      continue;
+    }
+    bodies.push(skill.body);
+  }
+
+  if (bodies.length === 0) return '';
+
+  return ['## Skills', bodies.join('\n\n---\n\n')].join('\n') + '\n';
 }
 
 export async function loadAgentConfig(
@@ -48,15 +85,29 @@ export async function loadAgentConfig(
     const baseSystemPrompt =
       parsed.system_prompt ?? `You are ${parsed.name ?? agentId}, an AI agent.`;
 
+    // --- Skills injection ---
+    // Splice order:
+    //   [base system_prompt]
+    //   ## Skills
+    //   <skill bodies separated by ---> (if any)
+    //   ## Fresh Context / ## Direct Messages  ← injectFreshContext handles these
+    const skillIds: string[] = parsed.skill_ids ?? [];
+    const skillsSection = await buildSkillsSection(skillIds);
+
+    const promptWithSkills = skillsSection
+      ? `${baseSystemPrompt.trimEnd()}\n\n${skillsSection}`
+      : baseSystemPrompt;
+
+    // --- Fresh context + DMs injection ---
     const shouldInject = options.injectFreshContext !== false;
     const systemPrompt = shouldInject
       ? injectFreshContext(
-          baseSystemPrompt,
+          promptWithSkills,
           agentId,
           agentforgeDir,
           options.adapter ? { adapter: options.adapter } : undefined,
         )
-      : baseSystemPrompt;
+      : promptWithSkills;
 
     return {
       agentId,
