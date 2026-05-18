@@ -121,6 +121,7 @@ import type { WorktreePool } from '../runtime/worktree-pool.js';
 import { MergeQueue } from '../runtime/merge-queue.js';
 import type { DrainAndMergeResult } from '../runtime/merge-queue.js';
 import type { MessageBusV2 } from '../message-bus/message-bus.js';
+import type { CycleCheckpoint } from './cycle-artifacts/cycle-checkpoint.js';
 
 /**
  * Build a PR title that's safe for `gh pr create` and never truncated mid-word.
@@ -288,10 +289,10 @@ export interface CycleRunnerOptions {
    */
   messageBus?: MessageBusV2;
   /**
-   * T6 — Resume checkpoint. When provided:
+   * Resume checkpoint (Wave 3 T5+T6). When provided:
    *   - The runner reuses `resumeCheckpoint.cycleId` instead of generating a new one.
    *   - `totalCostUsd` is seeded from `resumeCheckpoint.spentUsd`.
-   *   - PhaseScheduler is told to jump to `resumeCheckpoint.resumeFromPhase`.
+   *   - PhaseScheduler is told to skip phases in `completedPhases` and start at `resumeFromPhase`.
    * Supplied by the CLI when `--resume <cycleId>` is passed.
    */
   resumeCheckpoint?: CycleCheckpoint;
@@ -418,13 +419,15 @@ export class CycleRunner {
     //   4. fresh UUID — direct CLI use with no coordination
     const envId = process.env['AUTONOMOUS_CYCLE_ID'];
     const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-    const RESUME_RE = /^[a-zA-Z0-9-]{8,64}$/;
+    // Wave 3 T5+T6 — resumeCheckpoint takes priority for cycleId so durability
+    // is end-to-end. Use match-then-use on the checkpoint id.
+    const CKPT_ID_RE = /^[a-zA-Z0-9-]{8,64}$/;
     const resumeId = options.resumeCheckpoint?.cycleId;
-    this.cycleId = (resumeId && RESUME_RE.test(resumeId))
-      ? resumeId
-      : (options.cycleId && UUID_RE.test(options.cycleId))
+    const safeResumeId = resumeId && CKPT_ID_RE.test(resumeId) ? resumeId : undefined;
+    this.cycleId = safeResumeId
+      ?? ((options.cycleId && UUID_RE.test(options.cycleId))
         ? options.cycleId
-        : (envId && UUID_RE.test(envId) ? envId : randomUUID());
+        : (envId && UUID_RE.test(envId) ? envId : randomUUID()));
     this.startedAt = Date.now();
     // Seed accumulated spend from checkpoint so budget gates account for prior spend.
     if (options.resumeCheckpoint) {
@@ -662,6 +665,12 @@ export class CycleRunner {
           // T4.2: pass the pool (or undefined) through so the execute phase
           // can allocate per-item worktrees when coder-class items are dispatched.
           ...(phaseWorktreePool !== undefined ? { worktreePool: phaseWorktreePool } : {}),
+          // Wave 3 T5: forward checkpoint resume only on the FIRST attempt;
+          // gate-retries (retryAttempt > 0) re-run from 'execute' explicitly.
+          ...(retryAttempt === 0 && this.options.resumeCheckpoint
+            ? { resumeCheckpoint: this.options.resumeCheckpoint }
+            : {}),
+          budgetUsd: this.options.config.budget.perCycleUsd,
         },
         this.killSwitch,
         this.logger,
