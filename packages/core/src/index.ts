@@ -31,5 +31,6 @@ export * from './manual/index.js';
 export * from './team/index.js';
 export * from './reforge/index.js';
 export * from './comms/index.js';
+export * from './skills/index.js';
 export { MemoryRegistry, type MemoryRegistryLike } from './registry/memory-registry.js';
 export type { TaskMemory } from './team/engine/types/lifecycle.js';

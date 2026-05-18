@@ -4,6 +4,10 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdirSync, existsSync } from 'node:fs';
 import Sqlite from 'better-sqlite3';
+import {
+  runUnattendedChecks,
+  type UnattendedCheckResult,
+} from '@agentforge/core';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // packages/server/src/routes/v5/ → up 5 levels to monorepo root
@@ -165,4 +169,56 @@ export async function auditRoutes(
 
     return reply.status(201).send({ data: entry });
   });
+
+  // === wave5:T5 ===
+  // GET /api/v5/audit/unattended-checks
+  // Run the 5 pre-flight unattended-mode checks and return results.
+  // Writes an audit entry for each check result.
+  // Returns 200 with all checks when all pass; 424 (Failed Dependency) when any fail.
+  app.get('/api/v5/audit/unattended-checks', async (req, reply) => {
+    const q = req.query as { perCycleUsd?: string; spentUsd?: string };
+    const perCycleUsd = parseFloat(q.perCycleUsd ?? '30');
+    const spentUsd = parseFloat(q.spentUsd ?? '0');
+
+    const results: UnattendedCheckResult[] = [];
+
+    let guardError: Error | undefined;
+    try {
+      const checks = await runUnattendedChecks({
+        cwd: projectRoot,
+        perCycleUsd: isNaN(perCycleUsd) ? 30 : perCycleUsd,
+        spentUsd: isNaN(spentUsd) ? 0 : spentUsd,
+        onCheckResult: (r) => {
+          results.push(r);
+          // Write an audit row for each check.
+          appendAuditEntry(db, {
+            actor: 'unattended-guard',
+            action: r.passed ? 'preflight.check.passed' : 'preflight.check.failed',
+            target: r.check,
+            details: {
+              passed: r.passed,
+              detail: r.detail,
+              measuredValue: r.measuredValue,
+              threshold: r.threshold,
+            },
+          });
+        },
+      });
+      // runUnattendedChecks populates results via onCheckResult; use the returned array.
+      void checks;
+    } catch (err) {
+      guardError = err instanceof Error ? err : new Error(String(err));
+    }
+
+    const allPassed = results.every((r) => r.passed);
+    const status = allPassed ? 200 : 424;
+
+    return reply.status(status).send({
+      data: results,
+      passed: allPassed,
+      ...(guardError ? { error: guardError.message } : {}),
+      meta: { timestamp: nowIso() },
+    });
+  });
+  // === end wave5:T5 ===
 }

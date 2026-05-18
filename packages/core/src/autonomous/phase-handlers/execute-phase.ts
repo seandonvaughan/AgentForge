@@ -33,6 +33,8 @@ import type { StepScore } from '@agentforge/shared';
 import { ConcurrencyGate } from '../../runtime/concurrency-gate.js';
 import { parseSelfEval } from '../self-eval/parser.js';
 import { recordSelfEval } from '../self-eval/recorder.js';
+// Wave 5 T1 — per-item intra-phase checkpoint writer.
+import { ItemCheckpointWriter } from '../checkpoint/item-checkpoint.js';
 
 // T4 — structured-output contract (inlined pending T1 merge onto origin/main).
 /**
@@ -429,6 +431,12 @@ export interface ExecutePhaseOptions {
    * noise, or in smoke runs where learning overhead is undesirable.
    */
   selfEvalDisabled?: boolean;
+  /**
+   * Wave 5 T1 — When true, the phase reads the existing per-item checkpoint
+   * (if any) and skips items whose IDs appear in `completedItemIds`. Intended
+   * for `agentforge cycle run --resume` invocations.
+   */
+  resume?: boolean;
 }
 
 export function makeExecutePhaseHandler(options: ExecutePhaseOptions = {}) {
@@ -532,6 +540,18 @@ export async function runExecutePhase(
         ? sprintFile.sprints[0]!
         : null;
   const items: SprintItem[] = (sprintObj?.items ?? []) as SprintItem[];
+
+  // Wave 5 T1 — per-item checkpoint writer (single-concurrency serialized queue).
+  // Instantiate once per phase run; shared across all parallel dispatchItem calls.
+  const checkpointWriter = new ItemCheckpointWriter(ctx.projectRoot, items.length);
+
+  // Wave 5 T1 — resume support: read completedItemIds from an existing checkpoint.
+  // When options.resume is true and a valid schemaVersion:2 checkpoint exists,
+  // items in completedItemIds are skipped without re-dispatching their agent.
+  const resumeCompletedIds: Set<string> =
+    options.resume === true && ctx.cycleId
+      ? ItemCheckpointWriter.getCompletedItemIds(ctx.projectRoot, ctx.cycleId)
+      : new Set();
 
   // ── v6.7.4 Load Assessment ──────────────────────────────────────────────
   // Pick a parallelism that respects BOTH the configured ceiling and the
@@ -908,6 +928,17 @@ export async function runExecutePhase(
             ...(stepScoreIds.length > 0 ? { step_score_ids: stepScoreIds } : {}),
           };
           liveResults.set(item.id, completedResult as ItemResult);
+          // Wave 5 T1 — write per-item checkpoint after each successful completion.
+          // Fire-and-forget: checkpoint write is non-blocking and never fails the phase.
+          if (ctx.cycleId) {
+            checkpointWriter.enqueue(
+              ctx.cycleId,
+              item.id,
+              'completed',
+              item.assignee,
+              stepScoreIds.length > 0 ? null : null,
+            ).catch(() => { /* non-fatal */ });
+          }
           return completedResult;
         } catch (err) {
           lastError = err instanceof Error ? err.message : String(err);
@@ -953,6 +984,16 @@ export async function runExecutePhase(
               ...(failStepScoreIds.length > 0 ? { step_score_ids: failStepScoreIds } : {}),
             };
             liveResults.set(item.id, failedResult as ItemResult);
+            // Wave 5 T1 — write per-item checkpoint after each failure (final attempt).
+            if (ctx.cycleId) {
+              checkpointWriter.enqueue(
+                ctx.cycleId,
+                item.id,
+                'failed',
+                item.assignee,
+                null,
+              ).catch(() => { /* non-fatal */ });
+            }
             return failedResult;
           }
         }
@@ -1051,6 +1092,22 @@ export async function runExecutePhase(
   items.forEach((it, idx) => indexById.set(it.id, idx));
 
   for (const item of items) {
+    // Wave 5 T1 — skip items that were completed in a prior (crashed) run.
+    if (resumeCompletedIds.has(item.id)) {
+      item.status = 'completed';
+      const skippedResult: ItemResult = {
+        itemId: item.id,
+        status: 'completed',
+        costUsd: 0,
+        durationMs: 0,
+        response: '[skipped — already completed in prior run]',
+        attempts: 0,
+      };
+      liveResults.set(item.id, skippedResult);
+      settledResults[indexById.get(item.id)!] = { status: 'fulfilled', value: skippedResult };
+      continue;
+    }
+
     const files = itemFiles.get(item.id) ?? [];
     while (
       inFlight.size >= maxParallelism ||

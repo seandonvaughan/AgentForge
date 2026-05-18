@@ -76,3 +76,9 @@ export {
   type ExecutePhaseMemorySection,
 } from './execute-phase-handler.js';
 export * from './sprint-retrospective.js';
+export {
+  runUnattendedChecks,
+  assertUnattendedSafe,
+  UnattendedGuardError,
+} from './audit/unattended-guard.js';
+export type { UnattendedCheckResult } from './audit/unattended-guard.js';

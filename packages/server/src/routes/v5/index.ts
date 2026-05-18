@@ -67,6 +67,9 @@ import { qualityRoutes } from './quality.js';
 // === wave5:T4 ===
 import { durabilityRoutes } from './durability.js';
 // === /wave5:T4 ===
+// === wave5:T7 ===
+import { registerFlywheelProposalsRoutes } from './flywheel.js';
+// === /wave5:T7 ===
 
 export interface V5RouteOptions {
   adapter: WorkspaceAdapter;
@@ -546,6 +549,10 @@ export async function registerV5Routes(
   // ── Durability — checkpoint list + resume UX ─────────────────────────────
   await durabilityRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
   // === /wave5:T4 ===
+  // === wave5:T7 ===
+  // ── Flywheel proposals (skill refinement / creation proposals) ────────────
+  registerFlywheelProposalsRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
+  // === /wave5:T7 ===
 }
 
 /** Exported for unit-test access. Forwards a bus DM envelope as an SSE event. */
