@@ -214,8 +214,6 @@ export async function qualityRoutes(
 
     // Audit log (read-only)
     appendAuditEntry(auditDb, {
-      id: generateId(),
-      ts: nowIso(),
       actor: 'api',
       action: 'quality.step-scores.read',
       target: 'step-scores.jsonl',
@@ -254,13 +252,11 @@ export async function qualityRoutes(
       return ts >= cutoff;
     });
 
-    const by_agent = aggregateBy(windowed, r => r.agent_id as string | undefined, 'agent_id') as AgentAgg[];
-    const by_skill = aggregateBy(windowed, r => r.skill_id as string | undefined, 'skill_id') as SkillAgg[];
-    const by_model = aggregateBy(windowed, r => r.model as string | undefined, 'model') as ModelAgg[];
+    const by_agent = aggregateBy(windowed, r => r.agent_id as string | undefined, 'agent_id') as unknown as AgentAgg[];
+    const by_skill = aggregateBy(windowed, r => r.skill_id as string | undefined, 'skill_id') as unknown as SkillAgg[];
+    const by_model = aggregateBy(windowed, r => r.model as string | undefined, 'model') as unknown as ModelAgg[];
 
     appendAuditEntry(auditDb, {
-      id: generateId(),
-      ts: nowIso(),
       actor: 'api',
       action: 'quality.aggregates.read',
       target: 'step-scores.jsonl',
@@ -357,8 +353,6 @@ export async function qualityRoutes(
     }
 
     appendAuditEntry(auditDb, {
-      id: generateId(),
-      ts: nowIso(),
       actor: 'api',
       action: 'quality.skill-effectiveness.read',
       target: 'step-scores.jsonl',
