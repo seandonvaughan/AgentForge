@@ -14,6 +14,7 @@
   let maxItems = $state<number>(3);
   let maxAgents = $state<number>(5);
   let branchPrefix = $state<string>('codex/');
+  let baseBranch = $state<string>('codex/codex-version');
   let modelCap = $state<ModelCap>('default');
   let effortCap = $state<EffortCap>('default');
   let dryRun = $state<boolean>(false);
@@ -132,6 +133,7 @@
         maxAgents,
         dryRun,
         branchPrefix,
+        baseBranch,
         comment: comment.trim() || undefined,
         tags: tags.length > 0 ? tags : undefined,
         modelCap: modelCap !== 'default' ? modelCap : undefined,
@@ -236,6 +238,11 @@
       <div class="field">
         <label class="field-label" for="branchPrefix">Branch prefix</label>
         <input id="branchPrefix" type="text" bind:value={branchPrefix} class="text-input af2-mono" disabled={launching} />
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="baseBranch">Base branch</label>
+        <input id="baseBranch" type="text" bind:value={baseBranch} class="text-input af2-mono" disabled={launching} />
       </div>
     </div>
 
@@ -363,6 +370,10 @@
         <div>
           <div class="est-key">Likely profile</div>
           <div class="af2-mono est-val">{likelyProfile}</div>
+        </div>
+        <div>
+          <div class="est-key">Base branch</div>
+          <div class="af2-mono est-val">{baseBranch}</div>
         </div>
         <div>
           <div class="est-key">Branch</div>

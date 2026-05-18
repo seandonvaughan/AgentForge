@@ -101,7 +101,18 @@
   let agentsData = $state<AgentsResponse | null>(null);
   let agentsLoading = $state(false);
 
-  interface CycleEvent { type?: string; at?: string; phase?: string; agent?: string; msg?: string; [k: string]: unknown }
+  interface CycleEvent {
+    type?: string;
+    at?: string;
+    phase?: string;
+    agent?: string;
+    msg?: string;
+    error?: unknown;
+    reason?: unknown;
+    detail?: unknown;
+    payload?: unknown;
+    [k: string]: unknown;
+  }
   let events = $state<CycleEvent[]>([]);
   let eventsSince = $state<number>(0);
   let eventSource: EventSource | null = null;
@@ -234,6 +245,65 @@
   const sprintVersion = $derived<string | null>(
     ((cycle as { sprintVersion?: string })?.sprintVersion as string | undefined) ?? null,
   );
+  const runtimeMode = $derived<string | null>(
+    ((cycle as { runtimeMode?: string })?.runtimeMode as string | undefined) ?? null,
+  );
+  const branchPrefix = $derived<string | null>(
+    ((cycle as { branchPrefix?: string })?.branchPrefix as string | undefined) ?? null,
+  );
+  const baseBranch = $derived<string | null>(
+    ((cycle as { baseBranch?: string })?.baseBranch as string | undefined) ?? null,
+  );
+  const maxAgents = $derived<number | null>(
+    ((cycle as { maxAgents?: number })?.maxAgents as number | undefined) ?? null,
+  );
+  const fallbackEnabled = $derived<boolean | null>(
+    ((cycle as { fallbackEnabled?: boolean })?.fallbackEnabled as boolean | undefined) ?? null,
+  );
+  const dryRun = $derived<boolean | null>(
+    ((cycle as { dryRun?: boolean })?.dryRun as boolean | undefined) ?? null,
+  );
+  const tags = $derived<string[]>(
+    (((cycle as { tags?: string[] })?.tags as string[] | undefined) ?? []).filter((tag) => typeof tag === 'string'),
+  );
+  const launchConfigVisible = $derived<boolean>(
+    runtimeMode !== null ||
+    branchPrefix !== null ||
+    baseBranch !== null ||
+    maxAgents !== null ||
+    fallbackEnabled !== null ||
+    dryRun !== null ||
+    tags.length > 0,
+  );
+  const isCodexCli = $derived<boolean>((runtimeMode ?? '').toLowerCase() === 'codex-cli');
+  const cycleError = $derived<unknown>((cycle as { error?: unknown })?.error);
+  const exitNote = $derived<string | null>(
+    ((cycle as { exitNote?: string | null })?.exitNote as string | null | undefined) ?? null,
+  );
+  const killSwitch = $derived<Record<string, unknown> | null>(
+    ((cycle as { killSwitch?: Record<string, unknown> })?.killSwitch as Record<string, unknown> | undefined) ?? null,
+  );
+  const terminalStatusDetails = $derived.by<Array<{ label: string; text: string }>>(() => {
+    const rows: Array<{ label: string; text: string }> = [];
+    const err = stringifyBrief(cycleError);
+    if (err) rows.push({ label: 'Error', text: err });
+    if (exitNote) rows.push({ label: 'Exit note', text: exitNote });
+    if (killSwitch) {
+      const reason = stringifyBrief(killSwitch.reason);
+      const detail = stringifyBrief(killSwitch.detail);
+      rows.push({ label: 'Kill switch', text: [reason, detail].filter(Boolean).join(' - ') || stringifyBrief(killSwitch) || 'Triggered' });
+    }
+    return rows;
+  });
+  const showTerminalBanner = $derived<boolean>(isTerminal && stage !== 'completed' && (terminalStatusDetails.length > 0 || isStalled));
+  const terminalBannerCopy = $derived.by<string>(() => {
+    const blob = terminalStatusDetails.map((d) => d.text).join(' ').toLowerCase();
+    if (blob.includes('empty backlog') || blob.includes('no backlog') || blob.includes('no items')) {
+      return 'Cycle stopped because the backlog had no actionable items. Add or refresh backlog work, then launch again.';
+    }
+    if (isStalled) return 'Cycle stopped updating. Review the status details and logs before re-running.';
+    return 'Cycle ended before completion. Review the status details and logs before re-running.';
+  });
   const startedAt = $derived<string | null>(
     ((cycle as { startedAt?: string })?.startedAt as string | undefined) ?? null,
   );
@@ -767,7 +837,7 @@
   function ensureSse(): void {
     if (eventSource || isTerminal) return;
     try {
-      const es = new EventSource('/api/v5/stream');
+      const es = new EventSource(withWorkspace('/api/v5/stream'));
       eventSource = es;
       es.onopen = () => { sseConnected = true; };
       es.onmessage = (e) => {
@@ -833,7 +903,7 @@
   function startLogStream(name: LogName): void {
     teardownLogStream();
     try {
-      const es = new EventSource(`/api/v5/cycles/${id}/logs/${name}/stream`);
+      const es = new EventSource(withWorkspace(`/api/v5/cycles/${id}/logs/${name}/stream`));
       logStreamSource = es;
       es.onmessage = (e) => {
         try {
@@ -920,7 +990,7 @@
     if (eventSearch.trim()) {
       const q = eventSearch.toLowerCase();
       list = list.filter((e) => {
-        const blob = `${e.type ?? ''} ${e.agent ?? ''} ${e.msg ?? ''}`.toLowerCase();
+        const blob = `${e.type ?? ''} ${e.agent ?? ''} ${e.msg ?? ''} ${eventDetailText(e)}`.toLowerCase();
         return blob.includes(q);
       });
     }
@@ -964,6 +1034,26 @@
   function pretty(value: unknown): string {
     if (value == null) return 'null';
     try { return JSON.stringify(value, null, 2); } catch { return String(value); }
+  }
+
+  function stringifyBrief(value: unknown): string | null {
+    if (value == null) return null;
+    if (typeof value === 'string') return value.trim() || null;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    try { return JSON.stringify(value); } catch { return String(value); }
+  }
+
+  function eventDetailText(e: CycleEvent): string {
+    const parts = [
+      stringifyBrief(e.error),
+      stringifyBrief(e.reason),
+      stringifyBrief(e.detail),
+    ];
+    if (e.payload && typeof e.payload === 'object') {
+      const p = e.payload as Record<string, unknown>;
+      parts.push(stringifyBrief(p.error), stringifyBrief(p.reason), stringifyBrief(p.detail));
+    }
+    return parts.filter((part): part is string => !!part).join(' - ');
   }
 
   const RADAR_SIZE = 260;
@@ -1016,6 +1106,20 @@
         {#if startedAt}started {relativeTime(startedAt)}{/if}
         {#if branch} · branch <span class="af2-mono muted">{branch}</span>{/if}
       </p>
+      {#if launchConfigVisible}
+        <div class="launch-chips" aria-label="Cycle launch configuration">
+          {#if isCodexCli}<Badge variant="purple">Codex CLI</Badge>{/if}
+          {#if runtimeMode && !isCodexCli}<span class="launch-chip af2-mono">{runtimeMode}</span>{/if}
+          {#if typeof dryRun === 'boolean'}<span class="launch-chip">dry run {dryRun ? 'on' : 'off'}</span>{/if}
+          {#if typeof maxAgents === 'number'}<span class="launch-chip af2-mono">{maxAgents} agents</span>{/if}
+          {#if typeof fallbackEnabled === 'boolean'}<span class="launch-chip">fallback {fallbackEnabled ? 'on' : 'off'}</span>{/if}
+          {#if branchPrefix}<span class="launch-chip af2-mono">prefix {branchPrefix}</span>{/if}
+          {#if baseBranch}<span class="launch-chip af2-mono">base {baseBranch}</span>{/if}
+          {#each tags as tag (tag)}
+            <span class="launch-chip">#{tag}</span>
+          {/each}
+        </div>
+      {/if}
     </div>
     <div class="cycle-actions">
       {#if !isTerminal}
@@ -1031,6 +1135,25 @@
       <div class="action-error af2-mono">{actionError}</div>
     {/if}
   </div>
+
+  {#if showTerminalBanner}
+    <div class="terminal-banner" role="alert">
+      <div>
+        <div class="terminal-title">{stage.toUpperCase()} status</div>
+        <div class="terminal-copy">{terminalBannerCopy}</div>
+      </div>
+      {#if terminalStatusDetails.length > 0}
+        <div class="terminal-details">
+          {#each terminalStatusDetails as detail (detail.label)}
+            <div class="terminal-detail-row">
+              <span>{detail.label}</span>
+              <code>{detail.text}</code>
+            </div>
+          {/each}
+        </div>
+      {/if}
+    </div>
+  {/if}
 
   <Card noPad style="margin-bottom:14px">
     <div style="padding:16px 18px 22px">
@@ -1640,12 +1763,14 @@
                           : cat === 'tests' ? 'var(--af-warning)'
                           : cat === 'item' ? 'var(--af-success)'
                           : 'var(--af-dim)'}
+            {@const detailText = eventDetailText(e)}
             <div class="event-row">
               <span class="af2-mono event-time">{e.at ? relativeTime(e.at) : '—'}</span>
               <span class="af2-mono event-type" style="color:{color}">{e.type ?? '—'}</span>
               <span class="event-body">
                 {#if e.agent}<span class="af2-mono event-agent">{e.agent}</span> {/if}
                 {e.msg ?? ''}
+                {#if detailText}<span class="event-detail">{detailText}</span>{/if}
               </span>
               <span class="event-dot" style="background:{color}"></span>
             </div>
@@ -1862,6 +1987,26 @@
   }
   .cycle-id { font-weight: 500; }
   .cycle-meta { margin: 0; font-size: 12px; color: var(--af-dim); }
+  .launch-chips {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+    max-width: 780px;
+  }
+  .launch-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 20px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    border: 1px solid var(--af-border2);
+    background: var(--af-surface);
+    color: var(--af-muted);
+    font-size: 11px;
+    line-height: 1.35;
+  }
   .cycle-actions { display: flex; gap: 8px; }
   .action-error {
     color: var(--af-danger);
@@ -1872,6 +2017,45 @@
     border: 1px solid color-mix(in srgb, var(--af-danger) 35%, transparent);
     border-radius: 6px;
     text-align: right;
+  }
+  .terminal-banner {
+    display: grid;
+    grid-template-columns: minmax(220px, 0.9fr) minmax(280px, 1.4fr);
+    gap: 14px;
+    align-items: start;
+    padding: 12px 16px;
+    margin-bottom: 12px;
+    background: color-mix(in srgb, var(--af-danger) 10%, var(--af-surface));
+    border: 1px solid color-mix(in srgb, var(--af-danger) 38%, transparent);
+    border-radius: 8px;
+    color: var(--af-text);
+  }
+  @media (max-width: 760px) { .terminal-banner { grid-template-columns: 1fr; } }
+  .terminal-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--af-danger);
+  }
+  .terminal-copy { margin-top: 4px; font-size: 13px; color: var(--af-muted); }
+  .terminal-details { display: flex; flex-direction: column; gap: 6px; }
+  .terminal-detail-row {
+    display: grid;
+    grid-template-columns: 88px 1fr;
+    gap: 10px;
+    align-items: start;
+    font-size: 11px;
+    color: var(--af-dim);
+  }
+  .terminal-detail-row code {
+    font-family: var(--af-font-mono, 'JetBrains Mono', monospace);
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--af-text);
+    background: color-mix(in srgb, var(--af-danger) 9%, transparent);
+    border-radius: 4px;
+    padding: 2px 6px;
   }
   .pr-pill {
     font-size: 11px;
@@ -2575,6 +2759,12 @@
     white-space: nowrap;
   }
   .event-agent { color: var(--af-text); }
+  .event-detail {
+    margin-left: 8px;
+    color: var(--af-danger);
+    font-family: var(--af-font-mono, 'JetBrains Mono', monospace);
+    font-size: 11px;
+  }
   .event-dot { width: 6px; height: 6px; border-radius: 50%; opacity: 0.5; }
 
   .files-grid {

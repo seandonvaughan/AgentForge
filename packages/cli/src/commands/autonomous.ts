@@ -269,6 +269,11 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
       config.git.branchPrefix = branchPrefixOverride;
       console.log(`[cycle] branchPrefix override: ${branchPrefixOverride}`);
     }
+    const baseBranchOverride = process.env['AUTONOMOUS_BASE_BRANCH']?.trim();
+    if (baseBranchOverride) {
+      config.git.baseBranch = baseBranchOverride;
+      console.log(`[cycle] baseBranch override: ${baseBranchOverride}`);
+    }
     if (process.env['AUTONOMOUS_DRY_RUN'] === 'true' || process.env['AUTONOMOUS_DRY_RUN'] === '1') {
       opts.dryRun = true;
       console.log('[cycle] dry-run override: PR will not be opened');

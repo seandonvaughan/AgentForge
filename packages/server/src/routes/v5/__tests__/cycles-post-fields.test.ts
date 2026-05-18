@@ -1,11 +1,12 @@
 /**
- * Fix 1: POST /api/v5/cycles should accept maxAgents, tags, fallbackEnabled.
+ * Fix 1: POST /api/v5/cycles should accept maxAgents, tags, fallbackEnabled, baseBranch.
  *
  * Tests:
  *   - Each new field is accepted and returned in the response
  *   - maxAgents validation rejects non-integers and negative values
  *   - tags validation rejects non-string-array values
  *   - fallbackEnabled validation rejects non-boolean values
+ *   - baseBranch validation rejects invalid git branch names
  *   - Fields are persisted to cycle-config.json
  *   - Existing fields (budgetUsd, maxItems) still work
  */
@@ -14,6 +15,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { mkdtempSync, mkdirSync, existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { spawn } from 'node:child_process';
 
 // Stub cycle-sessions so tests do not touch ~/.agentforge/sessions.json
 vi.mock('../../../lib/cycle-sessions.js', () => ({
@@ -112,6 +114,21 @@ describe('POST /api/v5/cycles — Fix 1: maxAgents, tags, fallbackEnabled', () =
     expect(body.fallbackEnabled).toBe(false);
   });
 
+  it('accepts baseBranch and passes it to the Codex cycle subprocess', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v5/cycles',
+      payload: { baseBranch: 'codex/codex-version' },
+    });
+    expect(res.statusCode).toBe(202);
+    const body = res.json();
+    expect(body.baseBranch).toBe('codex/codex-version');
+
+    const spawnMock = vi.mocked(spawn);
+    const env = spawnMock.mock.calls.at(-1)?.[2]?.env as NodeJS.ProcessEnv | undefined;
+    expect(env?.['AUTONOMOUS_BASE_BRANCH']).toBe('codex/codex-version');
+  });
+
   it('rejects maxAgents: 0 (not positive) with 400', async () => {
     const res = await app.inject({
       method: 'POST',
@@ -120,6 +137,46 @@ describe('POST /api/v5/cycles — Fix 1: maxAgents, tags, fallbackEnabled', () =
     });
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toContain('maxAgents');
+  });
+
+  it('rejects invalid budgetUsd with 400', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v5/cycles',
+      payload: { budgetUsd: 0 },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toContain('budgetUsd');
+  });
+
+  it('rejects invalid maxItems with 400', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v5/cycles',
+      payload: { maxItems: 1.5 },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toContain('maxItems');
+  });
+
+  it('rejects invalid modelCap with 400', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v5/cycles',
+      payload: { modelCap: 'claude-opus' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toContain('modelCap');
+  });
+
+  it('rejects invalid effortCap with 400', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v5/cycles',
+      payload: { effortCap: 'ultra' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toContain('effortCap');
   });
 
   it('rejects maxAgents: -1 (negative) with 400', async () => {
@@ -172,11 +229,21 @@ describe('POST /api/v5/cycles — Fix 1: maxAgents, tags, fallbackEnabled', () =
     expect(res.json().error).toContain('fallbackEnabled');
   });
 
+  it('rejects invalid baseBranch with 400', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v5/cycles',
+      payload: { baseBranch: 'bad branch name' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toContain('baseBranch');
+  });
+
   it('persists all three fields to cycle-config.json', async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/v5/cycles',
-      payload: { maxAgents: 3, tags: ['ci'], fallbackEnabled: true },
+      payload: { maxAgents: 3, tags: ['ci'], fallbackEnabled: true, baseBranch: 'codex/codex-version' },
     });
     expect(res.statusCode).toBe(202);
     const { cycleId } = res.json() as { cycleId: string };
@@ -186,6 +253,7 @@ describe('POST /api/v5/cycles — Fix 1: maxAgents, tags, fallbackEnabled', () =
     expect(config['maxAgents']).toBe(3);
     expect(config['tags']).toEqual(['ci']);
     expect(config['fallbackEnabled']).toBe(true);
+    expect(config['baseBranch']).toBe('codex/codex-version');
   });
 
   it('returns empty tags array when tags not provided', async () => {

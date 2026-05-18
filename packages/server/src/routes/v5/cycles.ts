@@ -28,7 +28,7 @@ import {
 import { join, resolve, sep, basename, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { globalStream } from './stream.js';
 import { getWorkspace } from '@agentforge/core';
 import * as cycleSessions from '../../lib/cycle-sessions.js';
@@ -116,6 +116,27 @@ function cyclesBaseDir(projectRoot: string): string {
   return resolve(join(projectRoot, '.agentforge', 'cycles'));
 }
 
+function currentGitBranch(projectRoot: string): string | null {
+  try {
+    const branch = execFileSync('git', ['branch', '--show-current'], {
+      cwd: projectRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    return branch && isSafeGitBranchName(branch) ? branch : null;
+  } catch {
+    return null;
+  }
+}
+
+function isSafeGitBranchName(value: string): boolean {
+  if (value.length === 0 || value.length > 200) return false;
+  if (value.startsWith('-') || value.startsWith('/') || value.endsWith('/')) return false;
+  if (value.includes('..') || value.endsWith('.lock')) return false;
+  if ([...value].some((char) => char.charCodeAt(0) <= 32)) return false;
+  if (/[~^:?*[\\]/.test(value)) return false;
+  return value.split('/').every((part) => part.length > 0 && part !== '.' && part !== '..');
+}
 
 function readJsonIfExists(file: string): unknown | null {
   if (!existsSync(file)) return null;
@@ -177,10 +198,54 @@ interface CycleListRow {
   approvalDecision: string | null;
   /** Agent ids that participated in this cycle, sourced from session data. */
   agents: string[];
+  runtimeMode?: string | null;
+  branchPrefix?: string | null;
+  baseBranch?: string | null;
+  dryRun?: boolean | null;
+  maxAgents?: number | null;
+  tags?: string[];
+  fallbackEnabled?: boolean | null;
+  launchConfig?: Record<string, unknown>;
+}
+
+function readCycleLaunchConfig(cycleDir: string): Record<string, unknown> {
+  const config = readJsonIfExists(join(cycleDir, 'cycle-config.json'));
+  return config && typeof config === 'object' && !Array.isArray(config)
+    ? config as Record<string, unknown>
+    : {};
+}
+
+function launchConfigFields(config: Record<string, unknown>): Pick<
+  CycleListRow,
+  'runtimeMode' | 'branchPrefix' | 'baseBranch' | 'dryRun' | 'maxAgents' | 'tags' | 'fallbackEnabled' | 'launchConfig'
+> {
+  return {
+    runtimeMode: typeof config['runtimeMode'] === 'string' ? config['runtimeMode'] : null,
+    branchPrefix: typeof config['branchPrefix'] === 'string' ? config['branchPrefix'] : null,
+    baseBranch: typeof config['baseBranch'] === 'string' ? config['baseBranch'] : null,
+    dryRun: typeof config['dryRun'] === 'boolean' ? config['dryRun'] : null,
+    maxAgents: typeof config['maxAgents'] === 'number' ? config['maxAgents'] : null,
+    tags: Array.isArray(config['tags'])
+      ? config['tags'].filter((tag): tag is string => typeof tag === 'string')
+      : [],
+    fallbackEnabled: typeof config['fallbackEnabled'] === 'boolean' ? config['fallbackEnabled'] : null,
+    launchConfig: config,
+  };
+}
+
+function attachLaunchConfig<T extends Record<string, unknown>>(cycleDir: string, payload: T): T {
+  const config = readCycleLaunchConfig(cycleDir);
+  const fields = launchConfigFields(config) as Record<string, unknown>;
+  const target = payload as Record<string, unknown>;
+  for (const [key, value] of Object.entries(fields)) {
+    if (value !== undefined) target[key] = value;
+  }
+  return payload;
 }
 
 function summarizeCycle(cycleDir: string, cycleId: string, projectRoot?: string): CycleListRow | null {
   if (!existsSync(cycleDir)) return null;
+  const configFields = launchConfigFields(readCycleLaunchConfig(cycleDir));
 
   const cycleJson = readJsonIfExists(join(cycleDir, 'cycle.json')) as
     | Record<string, unknown>
@@ -262,6 +327,7 @@ function summarizeCycle(cycleDir: string, cycleId: string, projectRoot?: string)
       hasApprovalDecision,
       approvalDecision,
       agents: Array.from(agentSet),
+      ...configFields,
     };
   }
 
@@ -408,6 +474,7 @@ function summarizeCycle(cycleDir: string, cycleId: string, projectRoot?: string)
     hasApprovalDecision,
     approvalDecision,
     agents: Array.from(liveAgentSet),
+    ...configFields,
   };
 }
 
@@ -851,7 +918,7 @@ export async function cyclesRoutes(
       }
       const cp = readCycleCheckpoint(dir);
       if (cp !== undefined) (parsed as any).checkpoint = cp;
-      return reply.send(parsed);
+      return reply.send(attachLaunchConfig(dir, parsed));
     }
     // cycle.json is only written at terminal stage. While the cycle is still
     // running, synthesize a partial payload from events.jsonl so the dashboard
@@ -953,7 +1020,7 @@ export async function cyclesRoutes(
         partialTerminal: true,
       };
       if (sessionCheckpoint !== undefined) sessionPayload['checkpoint'] = sessionCheckpoint;
-      return reply.status(200).send(sessionPayload);
+      return reply.status(200).send(attachLaunchConfig(dir, sessionPayload));
     }
 
     // v15.1.0: Gap fix — killed cycles with no session registry entry.
@@ -995,7 +1062,7 @@ export async function cyclesRoutes(
         partialTerminal: true,
       };
       if (stalenessCheckpoint !== undefined) stalenessPayload['checkpoint'] = stalenessCheckpoint;
-      return reply.status(200).send(stalenessPayload);
+      return reply.status(200).send(attachLaunchConfig(dir, stalenessPayload));
     }
 
     // cycle.json absent and session is still running (or unknown) — classic
@@ -1009,7 +1076,7 @@ export async function cyclesRoutes(
     // poll, which made the dashboard's elapsed timer snap to 00:00 every
     // poll cycle. The session registry tracks the real spawn time.
     const inProgressStartedAt = startedAt ?? session?.startedAt ?? new Date().toISOString();
-    return reply.status(404).send({
+    return reply.status(404).send(attachLaunchConfig(dir, {
       cycleId: id,
       sprintVersion,
       stage: lastStage,
@@ -1022,7 +1089,7 @@ export async function cyclesRoutes(
       pr: { url: null, number: null, draft: false },
       agentRunCount,
       cycleInProgress: true,
-    });
+    }));
   });
 
   // GET /api/v5/cycles/:id/plan ─────────────────────────────────────────────
@@ -1556,11 +1623,12 @@ export async function cyclesRoutes(
     // loadCycleConfig() defaults, so dashboard-supplied budgets are silently
     // ignored — which is how cycle 75bfaf96 ran at $200 despite a $500 launch.
     const body = (req.body ?? {}) as {
-      budgetUsd?: number;
-      maxItems?: number;
+      budgetUsd?: unknown;
+      maxItems?: unknown;
       modelCap?: string;
       effortCap?: string;
       branchPrefix?: unknown;
+      baseBranch?: unknown;
       dryRun?: unknown;
       comment?: unknown;
       // Fix 1 — new fields
@@ -1569,6 +1637,29 @@ export async function cyclesRoutes(
       fallbackEnabled?: unknown;
     };
 
+    if (body.budgetUsd !== undefined) {
+      if (typeof body.budgetUsd !== 'number' || !Number.isFinite(body.budgetUsd) || body.budgetUsd <= 0) {
+        return reply.status(400).send({ error: 'budgetUsd must be a positive number' });
+      }
+    }
+    if (body.maxItems !== undefined) {
+      if (typeof body.maxItems !== 'number' || !Number.isInteger(body.maxItems) || body.maxItems <= 0) {
+        return reply.status(400).send({ error: 'maxItems must be a positive integer' });
+      }
+    }
+    if (body.modelCap !== undefined && body.modelCap !== 'opus' && body.modelCap !== 'sonnet' && body.modelCap !== 'haiku') {
+      return reply.status(400).send({ error: 'modelCap must be one of: opus, sonnet, haiku' });
+    }
+    if (
+      body.effortCap !== undefined &&
+      body.effortCap !== 'low' &&
+      body.effortCap !== 'medium' &&
+      body.effortCap !== 'high' &&
+      body.effortCap !== 'xhigh' &&
+      body.effortCap !== 'max'
+    ) {
+      return reply.status(400).send({ error: 'effortCap must be one of: low, medium, high, xhigh, max' });
+    }
     // Fix 1: validate maxAgents, tags, fallbackEnabled before using.
     if (body.maxAgents !== undefined) {
       if (typeof body.maxAgents !== 'number' || !Number.isInteger(body.maxAgents) || body.maxAgents <= 0) {
@@ -1585,6 +1676,12 @@ export async function cyclesRoutes(
     }
     if (body.branchPrefix !== undefined && typeof body.branchPrefix !== 'string') {
       return reply.status(400).send({ error: 'branchPrefix must be a string' });
+    }
+    if (body.baseBranch !== undefined && typeof body.baseBranch !== 'string') {
+      return reply.status(400).send({ error: 'baseBranch must be a string' });
+    }
+    if (typeof body.baseBranch === 'string' && body.baseBranch.trim().length > 0 && !isSafeGitBranchName(body.baseBranch.trim())) {
+      return reply.status(400).send({ error: 'baseBranch must be a valid git branch name' });
     }
     if (body.dryRun !== undefined && typeof body.dryRun !== 'boolean') {
       return reply.status(400).send({ error: 'dryRun must be a boolean' });
@@ -1614,6 +1711,12 @@ export async function cyclesRoutes(
       : {};
     const branchPrefixEnv = typeof body.branchPrefix === 'string' && body.branchPrefix.trim().length > 0
       ? { AUTONOMOUS_BRANCH_PREFIX: body.branchPrefix.trim() }
+      : {};
+    const resolvedBaseBranch = typeof body.baseBranch === 'string' && body.baseBranch.trim().length > 0
+      ? body.baseBranch.trim()
+      : currentGitBranch(reqProjectRoot);
+    const baseBranchEnv = resolvedBaseBranch !== null
+      ? { AUTONOMOUS_BASE_BRANCH: resolvedBaseBranch }
       : {};
     const dryRunEnv = body.dryRun === true ? { AUTONOMOUS_DRY_RUN: 'true' } : {};
 
@@ -1661,6 +1764,7 @@ export async function cyclesRoutes(
       modelCap: body.modelCap ?? null,
       effortCap: body.effortCap ?? null,
       branchPrefix: typeof body.branchPrefix === 'string' ? body.branchPrefix.trim() : null,
+      baseBranch: resolvedBaseBranch,
       dryRun: body.dryRun ?? null,
       comment: typeof body.comment === 'string' ? body.comment.trim() : null,
       maxAgents: body.maxAgents ?? null,
@@ -1692,6 +1796,7 @@ export async function cyclesRoutes(
           ...maxAgentsEnv,
           ...fallbackEnv,
           ...branchPrefixEnv,
+          ...baseBranchEnv,
           ...dryRunEnv,
         },
       });
@@ -1736,6 +1841,7 @@ export async function cyclesRoutes(
       pgid,
       runtimeMode: 'codex-cli',
       branchPrefix: typeof body.branchPrefix === 'string' ? body.branchPrefix.trim() : null,
+      baseBranch: resolvedBaseBranch,
       dryRun: body.dryRun ?? null,
       maxAgents: body.maxAgents ?? null,
       tags,
@@ -1890,6 +1996,12 @@ export async function cyclesRoutes(
     if (typeof sourceConfig['branchPrefix'] === 'string' && sourceConfig['branchPrefix'].trim().length > 0) {
       env['AUTONOMOUS_BRANCH_PREFIX'] = sourceConfig['branchPrefix'].trim();
     }
+    if (typeof sourceConfig['baseBranch'] === 'string' && sourceConfig['baseBranch'].trim().length > 0) {
+      env['AUTONOMOUS_BASE_BRANCH'] = sourceConfig['baseBranch'].trim();
+    } else {
+      const baseBranch = currentGitBranch(reqProjectRoot);
+      if (baseBranch !== null) env['AUTONOMOUS_BASE_BRANCH'] = baseBranch;
+    }
     if (sourceConfig['dryRun'] === true) {
       env['AUTONOMOUS_DRY_RUN'] = 'true';
     }
@@ -2008,6 +2120,7 @@ export async function cyclesRoutes(
       modelCap: sourceConfig['modelCap'] ?? null,
       effortCap: sourceConfig['effortCap'] ?? null,
       branchPrefix: sourceConfig['branchPrefix'] ?? null,
+      baseBranch: sourceConfig['baseBranch'] ?? currentGitBranch(reqProjectRoot),
       dryRun: sourceConfig['dryRun'] ?? null,
       comment: sourceConfig['comment'] ?? null,
       maxAgents: sourceConfig['maxAgents'] ?? null,
@@ -2058,6 +2171,12 @@ export async function cyclesRoutes(
     }
     if (typeof sourceConfig['branchPrefix'] === 'string' && sourceConfig['branchPrefix'].trim().length > 0) {
       env['AUTONOMOUS_BRANCH_PREFIX'] = sourceConfig['branchPrefix'].trim();
+    }
+    if (typeof sourceConfig['baseBranch'] === 'string' && sourceConfig['baseBranch'].trim().length > 0) {
+      env['AUTONOMOUS_BASE_BRANCH'] = sourceConfig['baseBranch'].trim();
+    } else {
+      const baseBranch = currentGitBranch(reqProjectRoot);
+      if (baseBranch !== null) env['AUTONOMOUS_BASE_BRANCH'] = baseBranch;
     }
     if (sourceConfig['dryRun'] === true) {
       env['AUTONOMOUS_DRY_RUN'] = 'true';

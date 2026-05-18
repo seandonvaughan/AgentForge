@@ -260,4 +260,11 @@ describe('autonomous-worktree: WorktreePool wiring at CLI launch', () => {
     expect(worktreePoolCalls).toHaveLength(1);
     expect(cycleRunnerCalls[0]?.disableWorktrees).toBeFalsy();
   });
+
+  it('uses AUTONOMOUS_BASE_BRANCH when constructing WorktreePool', async () => {
+    await runCycleRun(projectRoot, [], { AUTONOMOUS_BASE_BRANCH: 'codex/codex-version' });
+
+    expect(worktreePoolCalls).toHaveLength(1);
+    expect(worktreePoolCalls[0]?.baseBranch).toBe('codex/codex-version');
+  });
 });

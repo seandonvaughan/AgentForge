@@ -20,6 +20,13 @@
     testsTotal: number;
     prUrl: string | null;
     hasApprovalPending: boolean;
+    runtimeMode?: string | null;
+    branchPrefix?: string | null;
+    baseBranch?: string | null;
+    maxAgents?: number | null;
+    fallbackEnabled?: boolean | null;
+    tags?: string[];
+    dryRun?: boolean | null;
   }
 
   type StageBrick = 'pending' | 'active' | 'done' | 'failed';
@@ -125,6 +132,20 @@
     return 'purple';
   }
 
+  function isCodexCli(c: CycleRow): boolean {
+    return (c.runtimeMode ?? '').toLowerCase() === 'codex-cli';
+  }
+
+  function hasCycleConfig(c: CycleRow): boolean {
+    return isCodexCli(c) ||
+      !!c.branchPrefix ||
+      !!c.baseBranch ||
+      typeof c.maxAgents === 'number' ||
+      typeof c.fallbackEnabled === 'boolean' ||
+      typeof c.dryRun === 'boolean' ||
+      (c.tags?.length ?? 0) > 0;
+  }
+
   const filtered = $derived.by<CycleRow[]>(() => {
     let rows = cycles.filter((c) => {
       const s = (c.stage ?? '').toLowerCase();
@@ -138,7 +159,11 @@
       const q = searchQ.toLowerCase();
       rows = rows.filter((c) =>
         c.cycleId.toLowerCase().includes(q) ||
-        (c.sprintVersion ?? '').toLowerCase().includes(q),
+        (c.sprintVersion ?? '').toLowerCase().includes(q) ||
+        (c.runtimeMode ?? '').toLowerCase().includes(q) ||
+        (c.baseBranch ?? '').toLowerCase().includes(q) ||
+        (c.branchPrefix ?? '').toLowerCase().includes(q) ||
+        (c.tags ?? []).some((tag) => tag.toLowerCase().includes(q)),
       );
     }
     if (costThreshold != null && costThreshold > 0) {
@@ -421,6 +446,19 @@
                   {#if isLive}<PulseDot color="var(--af-purple)" size={5} />{/if}
                   <span class="af2-mono cycle-id">{shortId(c.cycleId)}</span>
                 </div>
+                {#if hasCycleConfig(c)}
+                  <div class="config-chips" aria-label="Cycle launch configuration">
+                    {#if isCodexCli(c)}<Badge variant="purple">Codex CLI</Badge>{/if}
+                    {#if typeof c.dryRun === 'boolean'}<span class="config-chip">dry run {c.dryRun ? 'on' : 'off'}</span>{/if}
+                    {#if typeof c.maxAgents === 'number'}<span class="config-chip af2-mono">{c.maxAgents} agents</span>{/if}
+                    {#if typeof c.fallbackEnabled === 'boolean'}<span class="config-chip">fallback {c.fallbackEnabled ? 'on' : 'off'}</span>{/if}
+                    {#if c.baseBranch}<span class="config-chip af2-mono">base {c.baseBranch}</span>{/if}
+                    {#if c.branchPrefix}<span class="config-chip af2-mono">prefix {c.branchPrefix}</span>{/if}
+                    {#each (c.tags ?? []) as tag (tag)}
+                      <span class="config-chip">#{tag}</span>
+                    {/each}
+                  </div>
+                {/if}
               </td>
               <td><span class="af2-mono muted">{c.sprintVersion ?? '—'}</span></td>
               <td><span class="dim">{relativeTime(c.startedAt)}</span></td>
@@ -503,6 +541,15 @@
                 <Badge variant={stageBadgeVariant(c.stage)}>{c.stage.toUpperCase()}</Badge>
               </div>
               <div class="cc-meta af2-mono">v{c.sprintVersion ?? '—'} · {relativeTime(c.startedAt)}</div>
+              {#if hasCycleConfig(c)}
+                <div class="config-chips compare-config">
+                  {#if isCodexCli(c)}<Badge variant="purple">Codex CLI</Badge>{/if}
+                  {#if typeof c.dryRun === 'boolean'}<span class="config-chip">dry run {c.dryRun ? 'on' : 'off'}</span>{/if}
+                  {#if typeof c.maxAgents === 'number'}<span class="config-chip af2-mono">{c.maxAgents} agents</span>{/if}
+                  {#if typeof c.fallbackEnabled === 'boolean'}<span class="config-chip">fallback {c.fallbackEnabled ? 'on' : 'off'}</span>{/if}
+                  {#if c.baseBranch}<span class="config-chip af2-mono">base {c.baseBranch}</span>{/if}
+                </div>
+              {/if}
               <div style="margin:10px 0"><StageDots stages={bricksFor(c)} /></div>
               <div class="cc-grid">
                 <div>
@@ -730,6 +777,28 @@
   .col-check input { accent-color: var(--af-purple); cursor: pointer; }
   .cycle-cell { display: inline-flex; align-items: center; gap: 8px; }
   .cycle-id { font-weight: 600; color: var(--af-text); }
+  .config-chips {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+    max-width: 360px;
+    margin-top: 5px;
+  }
+  .config-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 18px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--af-border2);
+    background: var(--af-surface);
+    color: var(--af-dim);
+    font-size: 10px;
+    line-height: 1.35;
+    white-space: normal;
+  }
+  .compare-config { margin: 8px 0 0; max-width: none; }
   .col-cost { min-width: 140px; }
   .cost-val { font-size: 11px; color: var(--af-text); }
   .cost-bar {

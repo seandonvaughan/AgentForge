@@ -5,7 +5,7 @@
  *   - Spawns a new cycle (202 response with new cycleId)
  *   - New cycleId is different from source cycleId
  *   - sourceCycleId is present in response
- *   - Inherits config from cycle-config.json (budget, maxItems, tags, maxAgents, fallbackEnabled)
+ *   - Inherits config from cycle-config.json (budget, maxItems, tags, maxAgents, fallbackEnabled, baseBranch)
  *   - Source cycle id is captured in new cycle-config.json metadata
  *   - Audit-logged via appendAuditEntry
  *   - Invalid source id returns 400
@@ -120,6 +120,7 @@ describe('POST /api/v5/cycles/:id/rerun — Fix 4', () => {
       tags: ['inherited'],
       maxAgents: 4,
       fallbackEnabled: true,
+      baseBranch: 'codex/codex-version',
     });
 
     const res = await app.inject({
@@ -139,6 +140,7 @@ describe('POST /api/v5/cycles/:id/rerun — Fix 4', () => {
     expect(config['maxAgents']).toBe(4);
     expect(config['tags']).toEqual(['inherited']);
     expect(config['fallbackEnabled']).toBe(true);
+    expect(config['baseBranch']).toBe('codex/codex-version');
   });
 
   it('captures sourceCycleId in new cycle-config.json metadata', async () => {

@@ -1,4 +1,4 @@
-# runtime: auto  # Execution transport mode: auto | sdk | cli | codex-cli | openai-sdk
+runtime: codex-cli  # Execution transport mode: auto | sdk | cli | codex-cli | openai-sdk
 #   auto: registers all transports; preserves existing Anthropic/Claude preference.
 #   sdk:  compatibility alias for anthropic-sdk.
 #   cli:  compatibility alias for Claude Code CLI subprocess.
@@ -23,8 +23,8 @@ quality:
   requireBuildSuccess: true
   requireTypeCheckSuccess: true
 git:
-  branchPrefix: autonomous/
-  baseBranch: main
+  branchPrefix: codex/
+  baseBranch: codex/codex-version
   refuseCommitToBaseBranch: true
   includeDiagnosticBranchOnFailure: true
   maxFilesPerCommit: 100

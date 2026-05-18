@@ -18,7 +18,7 @@ export interface BacklogItem {
   description: string;
   priority: 'P0' | 'P1' | 'P2';
   tags: string[];
-  source: 'failed-session' | 'cost-anomaly' | 'task-outcome' | 'flaking-test' | 'todo-marker';
+  source: 'failed-session' | 'cost-anomaly' | 'task-outcome' | 'flaking-test' | 'todo-marker' | 'backlog-file';
   confidence: number;
   estimatedCostUsd?: number;
 }
@@ -147,6 +147,8 @@ export class ProposalToBacklog {
       });
     }
 
+    items.push(...this.readBacklogFiles());
+
     if (this.config.sourcing.includeTodoMarkers) {
       const markers = this.scanTodoMarkers();
       for (const m of markers) {
@@ -155,6 +157,39 @@ export class ProposalToBacklog {
     }
 
     return this.sanitizeItems(this.deduplicate(items));
+  }
+
+  private readBacklogFiles(): BacklogItem[] {
+    const backlogDir = join(this.cwd, '.agentforge', 'backlog');
+    let files: string[];
+    try {
+      files = readdirSync(backlogDir).filter((file) => file.endsWith('.json'));
+    } catch {
+      return [];
+    }
+
+    const items: BacklogItem[] = [];
+    for (const file of files.sort()) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(readFileSync(join(backlogDir, file), 'utf8'));
+      } catch {
+        continue;
+      }
+
+      const rawItems = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray((parsed as { items?: unknown } | null)?.items)
+          ? (parsed as { items: unknown[] }).items
+          : [];
+
+      for (const raw of rawItems) {
+        const item = normalizeBacklogFileItem(raw, file);
+        if (item) items.push(item);
+      }
+    }
+
+    return items;
   }
 
   private scanTodoMarkers(): BacklogItem[] {
@@ -304,5 +339,61 @@ export class ProposalToBacklog {
 
   private truncate(s: string, max: number): string {
     return s.length > max ? s.slice(0, max - 3) + '...' : s;
+  }
+}
+
+function normalizeBacklogFileItem(raw: unknown, fileName: string): BacklogItem | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const obj = raw as Record<string, unknown>;
+  const title = typeof obj['title'] === 'string' ? obj['title'].trim() : '';
+  if (!title) return null;
+
+  const idRaw = typeof obj['id'] === 'string' && obj['id'].trim()
+    ? obj['id'].trim()
+    : `${fileName}-${title}`;
+  const priorityRaw = obj['priority'];
+  const priority = priorityRaw === 'P0' || priorityRaw === 'P1' || priorityRaw === 'P2'
+    ? priorityRaw
+    : 'P2';
+  const tags = Array.isArray(obj['tags'])
+    ? obj['tags'].filter((tag): tag is string => typeof tag === 'string' && tag.trim().length > 0)
+    : ['chore'];
+  const confidence = typeof obj['confidence'] === 'number' && Number.isFinite(obj['confidence'])
+    ? Math.max(0, Math.min(1, obj['confidence']))
+    : 0.9;
+  const estimatedCostUsd = typeof obj['estimatedCostUsd'] === 'number' && Number.isFinite(obj['estimatedCostUsd'])
+    ? obj['estimatedCostUsd']
+    : costFromComplexity(obj['estimatedComplexity']);
+
+  const item: BacklogItem = {
+    id: `backlog-${idRaw.replace(/\W/g, '-')}`,
+    title,
+    description: typeof obj['description'] === 'string' && obj['description'].trim()
+      ? obj['description'].trim()
+      : title,
+    priority,
+    tags,
+    source: 'backlog-file',
+    confidence,
+  };
+
+  if (estimatedCostUsd !== undefined) {
+    item.estimatedCostUsd = estimatedCostUsd;
+  }
+
+  return item;
+}
+
+function costFromComplexity(value: unknown): number | undefined {
+  if (typeof value !== 'string') return undefined;
+  switch (value.toLowerCase()) {
+    case 'low':
+      return 1;
+    case 'medium':
+      return 2;
+    case 'high':
+      return 3;
+    default:
+      return undefined;
   }
 }
