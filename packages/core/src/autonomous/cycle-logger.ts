@@ -161,13 +161,21 @@ export class CycleLogger {
           base = JSON.parse(readFileSync(cyclePath, 'utf8')) as Record<string, unknown>;
         } catch { /* keep empty base on parse error */ }
       }
-      const stage = base['stage'] ?? 'run';
-      this.writeJson(cyclePath, {
+      // Heartbeat must NEVER invent a `stage` value. flushCycleCost() writes
+      // `stage: "run"` after the first real phase result; logCycleResult()
+      // writes a terminal stage. If we default to "run" here, the dashboard
+      // sees fake progress before STAGE 1 (PLAN/scoring) even completes —
+      // top rail shows PLAN ✓ STAGE ✓ RUN active when nothing has happened.
+      // Only forward stage if it's already on disk.
+      const merged: Record<string, unknown> = {
         ...base,
         cycleId: this.cycleId,
-        stage,
         lastHeartbeatAt: new Date().toISOString(),
-      });
+      };
+      if (!('stage' in base)) {
+        delete merged['stage'];
+      }
+      this.writeJson(cyclePath, merged);
     } catch { /* non-fatal */ }
   }
 

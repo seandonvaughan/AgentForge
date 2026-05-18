@@ -728,6 +728,10 @@
         void loadCycle();
         void loadSprint();
         void loadAgents();
+        // Poll events too — pipeline tab phase status is driven by events
+        // (phase.start/result/failure). Without this, the pipeline view
+        // never updates between phase boundaries.
+        void loadEvents();
       }, 3000);
     }
     if (!isTerminal && !elapsedTimer) {

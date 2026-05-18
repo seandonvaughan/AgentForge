@@ -255,15 +255,25 @@ describe('CycleLogger', () => {
     expect(data.lastHeartbeatAt).toBeDefined();
   });
 
-  it('flushHeartbeat works when cycle.json does not yet exist', () => {
+  it('flushHeartbeat does not invent a stage when cycle.json does not yet exist', () => {
     const cyclePath = join(tmpDir, '.agentforge/cycles', cycleId, 'cycle.json');
     expect(existsSync(cyclePath)).toBe(false);
     logger.flushHeartbeat();
     expect(existsSync(cyclePath)).toBe(true);
     const data = JSON.parse(readFileSync(cyclePath, 'utf8'));
     expect(data.cycleId).toBe(cycleId);
-    expect(data.stage).toBe('run');
     expect(data.lastHeartbeatAt).toMatch(/^\d{4}/);
+    // Heartbeat must not pretend the cycle has reached the RUN stage just
+    // because the heartbeat fired. flushCycleCost() owns that transition.
+    expect(data.stage).toBeUndefined();
+  });
+
+  it('flushHeartbeat preserves an existing run stage', () => {
+    const cyclePath = join(tmpDir, '.agentforge/cycles', cycleId, 'cycle.json');
+    writeFileSync(cyclePath, JSON.stringify({ cycleId, stage: 'run', cost: { totalUsd: 4.20 } }));
+    logger.flushHeartbeat();
+    const data = JSON.parse(readFileSync(cyclePath, 'utf8'));
+    expect(data.stage).toBe('run');
   });
 
   it('events.jsonl is append-only (each line is one JSON object)', () => {
