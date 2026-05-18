@@ -406,12 +406,18 @@ export class WorkspaceAdapter {
     if (options.dbPath !== ':memory:' && !existsSync(dir)) {
       mkdirSync(dir, { recursive: true });
     }
-    this.db = new Database(options.dbPath);
-    this.db.pragma('journal_mode = WAL');
-    this.db.pragma('foreign_keys = ON');
-    this.db.exec(WORKSPACE_DDL);
-    this.ensureRuntimeTraceColumns();
-    this.ensureKnowledgeColumns();
+    const db = new Database(options.dbPath);
+    try {
+      db.pragma('journal_mode = WAL');
+      db.pragma('foreign_keys = ON');
+      db.exec(WORKSPACE_DDL);
+      this.db = db;
+      this.ensureRuntimeTraceColumns();
+      this.ensureKnowledgeColumns();
+    } catch (err) {
+      db.close();
+      throw err;
+    }
   }
 
   private ensureRuntimeTraceColumns(): void {
