@@ -11,6 +11,8 @@ import { registerRunCommand } from './commands/run.js';
 import { registerTeamCommand, registerTeamSessionsCommand } from './commands/team.js';
 import { registerWorkspacesCommand } from './commands/workspaces.js';
 import { registerDemoCommand } from './commands/demo.js';
+import { registerReplayCommand } from './commands/replay.js';
+import { registerSkillsCoverageCommand } from './commands/skills-coverage.js';
 
 interface InitializeWorkspaceImport {
   initializeWorkspace(options: {
@@ -145,6 +147,8 @@ registerTeamCommand(program);
 registerTeamSessionsCommand(program);
 registerWorkspacesCommand(program);
 registerDemoCommand(program);
+registerReplayCommand(program);
+registerSkillsCoverageCommand(program);
 
 return program;
 }

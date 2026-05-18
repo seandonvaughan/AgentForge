@@ -64,6 +64,9 @@ import { runStreamRoutes } from './run-stream.js';
 import { cyclePrsRoutes } from './cycle-prs.js';
 import { cycleCostBreakdownRoutes } from './cycle-cost-breakdown.js';
 import { qualityRoutes } from './quality.js';
+// === wave5:T4 ===
+import { durabilityRoutes } from './durability.js';
+// === /wave5:T4 ===
 
 export interface V5RouteOptions {
   adapter: WorkspaceAdapter;
@@ -538,6 +541,11 @@ export async function registerV5Routes(
 
   // ── Quality metrics (step-scores, aggregates, skill-effectiveness) ────────
   await qualityRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
+
+  // === wave5:T4 ===
+  // ── Durability — checkpoint list + resume UX ─────────────────────────────
+  await durabilityRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
+  // === /wave5:T4 ===
 }
 
 /** Exported for unit-test access. Forwards a bus DM envelope as an SSE event. */
