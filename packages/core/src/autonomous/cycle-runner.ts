@@ -249,6 +249,80 @@ export interface CycleRunnerOptions {
   messageBus?: MessageBusV2;
 }
 
+// ---------------------------------------------------------------------------
+// Exported helper: collectFilesFromAgentBranches
+//
+// Extracted from CycleRunner so it can be unit-tested without spinning up the
+// full runner (which requires a live git repo, KillSwitch, CycleLogger, etc.).
+// CycleRunner.collectFilesFromAgentBranches() delegates here.
+// ---------------------------------------------------------------------------
+
+/**
+ * Collect changed files from agent worktree branches recorded in
+ * `.agentforge/cycles/<cycleId>/phases/execute.json`.
+ *
+ * For each completed agent run that recorded a `worktreeBranch`, run:
+ *   git diff --name-only origin/<baseBranch>...<worktreeBranch>
+ * inside `cwd` (the main repo working tree). File-discovery only — the actual
+ * git add/commit/push continues to run against the main tree using the paths
+ * returned here.
+ *
+ * - Worktrees whose `worktreePath` no longer exists on disk are skipped silently
+ *   (they may have been GC'd mid-cycle by WorktreeGc).
+ * - Files under `.agentforge/cycles/` are excluded.
+ * - Results are de-duplicated across all branches and returned sorted.
+ */
+export async function collectFilesFromAgentBranches(opts: {
+  cwd: string;
+  cycleId: string;
+  baseBranch: string;
+}): Promise<string[]> {
+  const { cwd, cycleId, baseBranch } = opts;
+  const execPath = join(cwd, '.agentforge/cycles', cycleId, 'phases/execute.json');
+  if (!existsSync(execPath)) return [];
+
+  let execData: unknown;
+  try {
+    execData = JSON.parse(readFileSync(execPath, 'utf8'));
+  } catch {
+    return [];
+  }
+
+  const agentRuns: Array<Record<string, unknown>> =
+    (execData as { agentRuns?: Array<Record<string, unknown>> }).agentRuns ?? [];
+
+  const allFiles = new Set<string>();
+
+  for (const run of agentRuns) {
+    const branch = typeof run['worktreeBranch'] === 'string' ? run['worktreeBranch'] : undefined;
+    const treePath = typeof run['worktreePath'] === 'string' ? run['worktreePath'] : undefined;
+
+    if (!branch) continue;
+
+    // Skip entries whose worktree was GC'd mid-cycle — not an error.
+    if (treePath !== undefined && !existsSync(treePath)) continue;
+
+    try {
+      const { stdout } = await execFileAsync(
+        'git',
+        ['diff', '--name-only', `origin/${baseBranch}...${branch}`],
+        { cwd, maxBuffer: 10 * 1024 * 1024 },
+      );
+      const files = stdout
+        .toString()
+        .split('\n')
+        .map(f => f.trim())
+        .filter(f => f.length > 0)
+        .filter(f => !f.includes('.agentforge/cycles/'));
+      for (const f of files) allFiles.add(f);
+    } catch {
+      // Branch may not be pushed yet or remote may not know it; skip silently.
+    }
+  }
+
+  return [...allFiles].sort();
+}
+
 /**
  * The CycleRunner is constructed once per autonomous cycle and immediately
  * generates a cycleId, instantiates the per-cycle CycleLogger, and primes the
@@ -1055,6 +1129,12 @@ export class CycleRunner {
   }
 
   private async collectChangedFiles(_runSummary: SprintRunSummary): Promise<string[]> {
+    // When a worktreePool is available, collect files from individual agent
+    // worktree branches via git diff rather than git status on the main tree.
+    if (this.options.worktreePool) {
+      return this.collectFilesFromAgentBranches();
+    }
+
     try {
       const { stdout } = await execFileAsync('git', ['status', '--porcelain'], {
         cwd: this.options.cwd,
@@ -1076,6 +1156,19 @@ export class CycleRunner {
     } catch {
       return [];
     }
+  }
+
+  /**
+   * Collect changed files from agent worktree branches recorded in execute.json.
+   * Delegates to the exported `collectFilesFromAgentBranches()` helper so it can
+   * be tested in isolation without spinning up a full CycleRunner.
+   */
+  private async collectFilesFromAgentBranches(): Promise<string[]> {
+    return collectFilesFromAgentBranches({
+      cwd: this.options.cwd,
+      cycleId: this.cycleId,
+      baseBranch: this.options.config.git.baseBranch,
+    });
   }
 
   /**
