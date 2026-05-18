@@ -14,5 +14,5 @@ export { computeDeterministicSignals } from './deterministic-signals.js';
 export type { DeterministicInput } from './deterministic-signals.js';
 export { RUBRIC_V1, RUBRIC_VERSION, getRubricWeight } from './rubric-v1.js';
 export type { RubricCriterion } from './rubric-v1.js';
-export { StubLlmGrader, defaultLlmGrader } from './llm-grader.js';
-export type { LlmGrader, LlmGradeInput, LlmGraderResult } from './llm-grader.js';
+export { LlmGrader } from './llm-grader.js';
+export type { GradeResult, GradeSignal, PendingItem } from './llm-grader.js';

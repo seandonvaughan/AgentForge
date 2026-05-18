@@ -11,7 +11,18 @@
 import { randomUUID } from 'node:crypto';
 import type { ValidatedJsonOutput } from '../autonomous/phase-handlers/execute-phase.js';
 import { computeDeterministicSignals, type DeterministicInput } from './deterministic-signals.js';
-import { defaultLlmGrader, type LlmGrader } from './llm-grader.js';
+// T5's LlmGrader uses a different (batched/queued) interface than T1's stub.
+// Step-scorer takes an OPTIONAL inline grader fn (caller-provided) so the
+// scorer module stays decoupled from grader plumbing. The Wave 4 T5 grader is
+// wired in via a thin adapter at the execute-phase callsite.
+type InlineGraderFn = (input: {
+  agentId: string;
+  phase: string;
+  raw: string;
+  parsed: unknown;
+  capabilityTags: string[];
+  skillIds: string[];
+}) => Promise<{ quality: number; signals: Signal[] }>;
 import { RUBRIC_VERSION, type Signal } from './rubric-v1.js';
 
 // Re-export Signal for consumers that import from step-scorer
@@ -111,7 +122,7 @@ function weightedMean(signals: Signal[]): number {
  */
 export async function scoreStep(
   input: ScoreInput,
-  grader: LlmGrader = defaultLlmGrader,
+  grader?: InlineGraderFn,
 ): Promise<StepScore> {
   const deterministicInput: DeterministicInput = {
     validatedOutput: input.validated_output,
@@ -135,8 +146,8 @@ export async function scoreStep(
   let allSignals: Signal[] = detSignals;
   let llmGraded = false;
 
-  if (shouldGrade) {
-    const llmResult = await grader.grade({
+  if (shouldGrade && grader) {
+    const llmResult = await grader({
       agentId: input.agent_id,
       phase: input.phase,
       raw: input.validated_output.raw,

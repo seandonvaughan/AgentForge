@@ -851,6 +851,18 @@ export async function runExecutePhase(
             );
             const runModel =
               typeof (result as any)?.model === 'string' ? (result as any).model : 'sonnet';
+            // NOTE: T2 ships with a local `scoreStep` stub (defined above in
+            // this file). T1 ships the real scorer at packages/core/src/scoring/.
+            // Wiring T1's scorer through this callsite is deferred to Wave 5 —
+            // requires a small adapter (camelCase ↔ snake_case ScoreInput).
+            const validatedForScore: ValidatedJsonOutput = validatedOutput ?? {
+              agentId: item.assignee,
+              schemaName: 'no-schema',
+              raw: responseText,
+              parsed: null,
+              ok: true,
+              capturedAt: new Date().toISOString(),
+            };
             const score = await scoreStep({
               cycleId: ctx.cycleId ?? ctx.sprintId,
               itemId: item.id,
@@ -864,7 +876,7 @@ export async function runExecutePhase(
                 cache_read: (result as any)?.usage?.cache_read_input_tokens ?? 0,
                 cache_write: (result as any)?.usage?.cache_creation_input_tokens ?? 0,
               },
-              validatedOutput,
+              validatedOutput: validatedForScore,
               schemaValidationOk: validatedOutput?.ok ?? true,
             });
             await appendStepScore(score, stepScoreFilePath);
