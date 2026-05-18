@@ -11,6 +11,7 @@
   import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
   import TypecheckFailureBanner from '$lib/components/cycles/TypecheckFailureBanner.svelte';
   import type { TypecheckFailure } from '$lib/components/cycles/TypecheckFailureBanner.svelte';
+  import CostBreakdownTile from '$lib/components/cycles/CostBreakdownTile.svelte';
 
   type Tab =
     | 'overview' | 'pipeline' | 'items' | 'agents'
@@ -1020,6 +1021,10 @@
             <div><div class="kv-label">Items</div><div class="kv-val">{itemsByStatus.completed.length} done · {itemsByStatus.inProgress.length} active</div></div>
             <div><div class="kv-label">Tests</div><div class="kv-val af2-mono">{testsTotal > 0 ? `${testsPassed}/${testsTotal} (${((testsPassed / testsTotal) * 100).toFixed(1)}%)` : '—'}</div></div>
           </div>
+        </Card>
+
+        <Card>
+          <CostBreakdownTile cycleId={id} />
         </Card>
 
         <Card>

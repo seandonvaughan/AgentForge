@@ -39,6 +39,7 @@ import { auditRoutes } from './routes/v5/audit.js';
 import { billingRoutes } from './routes/v5/billing.js';
 import { registerFlywheelContinuousImprovementRoutes } from './routes/v5/flywheel-continuous-improvement.js';
 import { cyclePrsRoutes } from './routes/v5/cycle-prs.js';
+import { cycleCostBreakdownRoutes } from './routes/v5/cycle-cost-breakdown.js';
 import { sendContainedStaticFile } from './lib/static-files.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -238,6 +239,12 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
   // Guard: registerV5Routes already calls cyclePrsRoutes in adapter mode.
   if (!options.adapter || !options.registry) {
     await cyclePrsRoutes(app, { projectRoot });
+  }
+
+  // ── Cycle cost breakdown (per-token breakdown from cycle.json) ────────────
+  // Guard: registerV5Routes already calls cycleCostBreakdownRoutes in adapter mode.
+  if (!options.adapter || !options.registry) {
+    await cycleCostBreakdownRoutes(app, { projectRoot });
   }
 
   // ── Unified keyword search (sessions, agents, sprints, cycles, memory) ────────
