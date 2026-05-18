@@ -69,6 +69,7 @@ import type { GitOps } from './exec/git-ops.js';
 import type { PROpener } from './exec/pr-opener.js';
 import { runAutoReforge, extractInvolvedAgentIds } from './auto-reforge.js';
 import { runPreVerifyTypeCheck, type PreVerifyTypeCheckResult } from './pre-verify-typecheck.js';
+import { assertUnattendedSafe } from './audit/unattended-guard.js';
 import { mergeBreakdowns, type CostBreakdown } from './cost-breakdown.js';
 import { exportCycleTelemetry } from '../telemetry/cycle-telemetry-export.js';
 import { resolveTelemetryConfig } from '../telemetry/config.js';
@@ -407,6 +408,17 @@ export class CycleRunner {
    * Always writes the terminal cycle.json before returning.
    */
   async start(): Promise<CycleResult> {
+    // === wave5:T5 === Unattended pre-flight guard.
+    // Must run before any phase starts (heartbeat, stages, etc.).
+    if (process.env['AGENTFORGE_UNATTENDED'] === '1') {
+      await assertUnattendedSafe(
+        this.options.cwd,
+        this.options.config.budget.perCycleUsd,
+        this.totalCostUsd,
+      );
+    }
+    // === end wave5:T5 ===
+
     let final: CycleResult;
     // Heartbeat: every 30s, stamp lastHeartbeatAt on cycle.json so dashboards
     // can detect runners that died at the OS level (SIGKILL/OOM/terminal-close)
