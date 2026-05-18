@@ -13,6 +13,7 @@
 // See docs/superpowers/specs/2026-04-06-autonomous-loop-design.md §6.4
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import yaml from 'js-yaml';
 import type { CycleConfig, ScoringResult, RankedItem } from './types.js';
 import type { BacklogItem } from './proposal-to-backlog.js';
 import type { CycleLogger } from './cycle-logger.js';
@@ -223,8 +224,10 @@ export class ScoringPipeline {
     }
 
     // Adapt autonomous BacklogItem → predictive-planning BacklogItem.
-    // complexityScore defaults to 5 (neutral midpoint of 1–10 scale) since
-    // autonomous items don't carry a complexity field yet.
+    // complexityScore is derived from the item's primary tag so heterogeneous
+    // backlogs produce differentiated estimates instead of collapsing to a
+    // single complexity-5 default. Falls back to 5 (neutral 1–10 midpoint) for
+    // missing or unrecognised tags. See complexityFromTags() below.
     const estimateMap = new Map(
       backlog.map(item => [
         item.id,
@@ -233,7 +236,7 @@ export class ScoringPipeline {
             id: item.id,
             title: item.title,
             priority: item.priority as PriorityTier,
-            complexityScore: 5,
+            complexityScore: complexityFromTags(item.tags),
             // exactOptionalPropertyTypes: only spread when defined to avoid
             // assigning `undefined` to a field typed as `number` (not `number | undefined`)
             ...(item.estimatedCostUsd !== undefined
@@ -379,7 +382,22 @@ export class ScoringPipeline {
   }
 
   private buildScoringPrompt(backlog: BacklogItem[], grounding: object): string {
+    const rosterIds = this.getAgentRoster();
     return `You are the Backlog Scorer for AgentForge's autonomous development loop.
+
+## HARD CONSTRAINT — read before anything else
+Every \`suggestedAssignee\` in your output JSON MUST be copied verbatim from this
+roster (exact kebab-case, no alterations, no PascalCase, no invented IDs):
+
+${rosterIds.join(', ')}
+
+Inventing an agent ID that is not in this list — even a plausible-sounding one
+like "BackendEngineer", "FrontendEngineer", "QAEngineer", "InfraEngineer",
+"SeniorDeveloper", "CoreAutonomyAgent", or "DocsAgent" — is the #1 historical
+cause of sprint REJECT verdicts (UNVERIFIED ROUTING flag). A REJECT discards
+every completed item in the sprint. If you are not 100% certain a specialist
+matches, use \`coder\` — it is always a valid, always-safe fallback. The full
+penalty rules, substitution table, and mandatory re-read protocol are below.
 
 ## Candidate items
 ${JSON.stringify(backlog, null, 2)}
@@ -549,6 +567,46 @@ Do not include any text outside the JSON object.`;
       if (typeof ri.withinBudget !== 'boolean') return false;
     }
     return true;
+  }
+}
+
+/**
+ * Map a backlog item's primary tag to a complexity score on the 1–10 scale
+ * expected by EffortEstimator. Calibrated against the documented per-tag
+ * cost medians in scoring-pipeline.ts's buildScoringPrompt():
+ *   chore/doc:           ~$0.55 → low effort       → 3
+ *   ci/security:         ~$0.75–$1.00 → light fix  → 4
+ *   fix/test:            ~$0.90–$1.10 → standard   → 5
+ *   feature:             ~$1.65 → medium          → 6
+ *   migration/refactor:  ~$2.00 → heavy           → 7
+ *   e2e:                 ~$2.50 → very heavy      → 8
+ * Unknown or missing tag → 5 (neutral midpoint, preserves prior behaviour).
+ *
+ * Exported for unit-test access; the helper is part of the documented
+ * resilience contract of the effort-estimator fallback tier.
+ */
+export function complexityFromTags(tags: readonly string[] | undefined): number {
+  const primary = tags?.[0]?.toLowerCase() ?? '';
+  switch (primary) {
+    case 'chore':
+    case 'doc':
+    case 'docs':
+      return 3;
+    case 'ci':
+    case 'security':
+      return 4;
+    case 'fix':
+    case 'test':
+      return 5;
+    case 'feature':
+      return 6;
+    case 'migration':
+    case 'refactor':
+      return 7;
+    case 'e2e':
+      return 8;
+    default:
+      return 5;
   }
 }
 

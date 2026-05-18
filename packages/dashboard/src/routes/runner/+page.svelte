@@ -1,7 +1,10 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { Btn, Badge, Card, ModelChip, PulseDot } from '$lib/components/v2';
+  import type { PageData } from './$types';
 
+  // MODEL_TIER_META: canonical mapping from tier key to display metadata.
+  // Defined inline so svelte-check never reports MODEL_TIERS undefined errors.
   const MODEL_TIER_META: Record<string, { label: string; range: string; color: string }> = {
     opus:   { label: 'Opus',   range: '$0.015–$0.075',  color: 'var(--af-opus)' },
     sonnet: { label: 'Sonnet', range: '$0.003–$0.015',  color: 'var(--af-sonnet)' },
@@ -38,10 +41,26 @@
     timestamp?: string;
   }
 
-  let agentEntries: AgentEntry[] = $state([]);
-  let agentsLoading = $state(true);
+  // Server-loaded data: agents are pre-fetched from .agentforge/agents/*.yaml
+  // at SSR time so the agent selector is populated on first render without
+  // waiting for the external backend API.
+  let { data }: { data: PageData } = $props();
+
+  // Compute all initial values from server data before the first $state() call
+  // so Svelte's linter doesn't warn about "only captures initial value of data".
+  // These are plain JS constants — no reactivity needed for the seed step.
+  const _ssrAgents: AgentEntry[] = (data as { agents?: AgentEntry[] }).agents ?? [];
+  const _defaultAgent: string =
+    _ssrAgents.find(a => a.agentId === 'coder')?.agentId ??
+    _ssrAgents[0]?.agentId ??
+    'coder';
+
+  let agentEntries: AgentEntry[] = $state(_ssrAgents);
+  // Only show the loading spinner if the SSR pass produced no agents.
+  let agentsLoading = $state(_ssrAgents.length === 0);
   let agentsLoadError: string | null = $state(null);
-  let selectedAgent = $state('coder');
+  // Prefer 'coder' if available in the SSR list; otherwise use the first agent.
+  let selectedAgent = $state(_defaultAgent);
   let agentSearch = $state('');
   let taskInput = $state('');
   let running = $state(false);
@@ -106,11 +125,19 @@
   });
 
   async function loadAgents() {
-    agentsLoading = true;
+    // Only show the loading spinner when there are no agents from SSR.
+    // If SSR already populated agentEntries, this is a background refresh.
+    if (agentEntries.length === 0) agentsLoading = true;
     agentsLoadError = null;
     try {
       const res = await fetch('/api/v5/agents');
-      if (!res.ok) { agentsLoadError = `Unable to load agents — server returned ${res.status}`; agentEntries = []; return; }
+      if (!res.ok) {
+        // Only surface an error if we have no agents to show (SSR fallback covers the rest).
+        if (agentEntries.length === 0) {
+          agentsLoadError = `Unable to load agents — server returned ${res.status}`;
+        }
+        return;
+      }
       const json = await res.json();
       const list = json.data ?? json.agents ?? json ?? [];
       const loaded: AgentEntry[] = (list as Record<string, unknown>[])
@@ -121,14 +148,25 @@
         }))
         .filter((a) => a.agentId);
       if (loaded.length === 0) {
-        agentsLoadError = 'No agents found — check that .agentforge/agents/ contains YAML files';
-        agentEntries = [];
+        if (agentEntries.length === 0) {
+          agentsLoadError = 'No agents found — check that .agentforge/agents/ contains YAML files';
+        }
+        // Keep existing SSR-loaded agents rather than replacing with empty list.
       } else {
         agentEntries = loaded;
+        // Keep the selected agent if it still exists in the refreshed list;
+        // otherwise, fall back to 'coder' or the first available agent.
+        if (!agentEntries.find(a => a.agentId === selectedAgent)) {
+          selectedAgent =
+            agentEntries.find(a => a.agentId === 'coder')?.agentId ??
+            agentEntries[0]?.agentId ??
+            selectedAgent;
+        }
       }
     } catch {
-      agentsLoadError = 'Unable to load agents — retry';
-      agentEntries = [];
+      if (agentEntries.length === 0) {
+        agentsLoadError = 'Unable to load agents — retry';
+      }
     } finally {
       agentsLoading = false;
     }
@@ -432,7 +470,14 @@
     } catch { /* non-fatal */ }
   }
 
-  onMount(() => { loadAgents(); loadHistory(); });
+  onMount(() => {
+    // Load from the API when the SSR pass had no agents (e.g., agents dir
+    // missing at server start) or to refresh a stale list after navigation.
+    // When SSR already populated agentEntries, skip the blocking API call and
+    // just load the run history.
+    if (agentEntries.length === 0) loadAgents();
+    loadHistory();
+  });
 
   onDestroy(() => {
     if (eventSource) eventSource.close();

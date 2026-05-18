@@ -6,7 +6,7 @@
 // produces sensible estimates differentiated by complexity and history.
 
 import { describe, it, expect, vi } from 'vitest';
-import { ScoringPipeline } from '../scoring-pipeline.js';
+import { ScoringPipeline, complexityFromTags } from '../scoring-pipeline.js';
 import type { AdapterForScoring, RuntimeForScoring, ScoringPipelineResult } from '../scoring-pipeline.js';
 import type { BacklogItem } from '../proposal-to-backlog.js';
 import type { CycleConfig } from '../types.js';
@@ -418,5 +418,65 @@ describe('ScoringPipeline — staticFallback: p50CostByTag lookup', () => {
     const pipeline = new ScoringPipeline(makeFailingRuntime(), makeAdapter(), makeConfig(), makeLogger());
     const result = await callStaticFallback(pipeline, makeBacklogItems(2));
     expect(result.fallback).toBe('static');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: complexityFromTags helper — tag-mapped complexity scoring used by
+// the effort-estimator fallback so heterogeneous backlogs differentiate cost
+// estimates instead of collapsing to a single complexity-5 default.
+// ---------------------------------------------------------------------------
+
+describe('complexityFromTags', () => {
+  it('returns 3 for chore/doc/docs tags', () => {
+    expect(complexityFromTags(['chore'])).toBe(3);
+    expect(complexityFromTags(['doc'])).toBe(3);
+    expect(complexityFromTags(['docs'])).toBe(3);
+  });
+
+  it('returns 4 for ci/security tags', () => {
+    expect(complexityFromTags(['ci'])).toBe(4);
+    expect(complexityFromTags(['security'])).toBe(4);
+  });
+
+  it('returns 5 for fix/test tags (neutral midpoint)', () => {
+    expect(complexityFromTags(['fix'])).toBe(5);
+    expect(complexityFromTags(['test'])).toBe(5);
+  });
+
+  it('returns 6 for feature tag', () => {
+    expect(complexityFromTags(['feature'])).toBe(6);
+  });
+
+  it('returns 7 for migration/refactor tags', () => {
+    expect(complexityFromTags(['migration'])).toBe(7);
+    expect(complexityFromTags(['refactor'])).toBe(7);
+  });
+
+  it('returns 8 for e2e tag', () => {
+    expect(complexityFromTags(['e2e'])).toBe(8);
+  });
+
+  it('returns 5 (default) for empty tags array', () => {
+    expect(complexityFromTags([])).toBe(5);
+  });
+
+  it('returns 5 (default) for undefined tags', () => {
+    expect(complexityFromTags(undefined)).toBe(5);
+  });
+
+  it('returns 5 (default) for unrecognised tag', () => {
+    expect(complexityFromTags(['some-random-tag'])).toBe(5);
+  });
+
+  it('is case-insensitive on the primary tag', () => {
+    expect(complexityFromTags(['FEATURE'])).toBe(6);
+    expect(complexityFromTags(['Chore'])).toBe(3);
+  });
+
+  it('uses the first tag and ignores the rest', () => {
+    // Even when later tags would map to a different complexity, only the
+    // primary (index 0) is consulted — this keeps the contract predictable.
+    expect(complexityFromTags(['chore', 'feature', 'e2e'])).toBe(3);
   });
 });

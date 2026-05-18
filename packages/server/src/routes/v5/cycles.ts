@@ -1394,8 +1394,11 @@ export async function cyclesRoutes(
     const file: string = fileOrNull;
 
     const reqOrigin = req.headers['origin'];
+    // Mirror the pattern used by all other SSE routes (stream.ts, streaming.ts,
+    // run-stream.ts): HTTP-only, both localhost and 127.0.0.1, any port.
+    // https:// is intentionally excluded — this server runs HTTP-only locally.
     const isLocalhost = typeof reqOrigin === 'string' &&
-      /^https?:\/\/localhost(:\d+)?$/.test(reqOrigin);
+      /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(reqOrigin);
     const corsOrigin = isLocalhost ? reqOrigin : 'http://localhost:4751';
 
     reply.raw.writeHead(200, {

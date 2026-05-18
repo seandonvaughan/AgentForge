@@ -182,4 +182,71 @@ describe('RuntimeAdapter with supervisor', () => {
     expect(jobs).toHaveLength(2);
     expect(jobs.every((j) => j.status === 'completed')).toBe(true);
   });
+
+  it('threads timeoutMs parameter to AgentRuntime.run()', async () => {
+    mockRun.mockResolvedValueOnce({
+      sessionId: 'sess-timeout-test',
+      response: 'done with custom timeout',
+      model: 'claude-sonnet-4-6',
+      inputTokens: 100,
+      outputTokens: 200,
+      costUsd: 0.002,
+      startedAt: '2026-01-01T00:00:00.000Z',
+      completedAt: '2026-01-01T00:00:05.000Z',
+      status: 'completed' as const,
+    });
+
+    const runtimeAdapter = new RuntimeAdapter({ cwd: '/tmp/fake-project' });
+    const customTimeoutMs = 45 * 60 * 1000; // 45 minutes
+
+    // Call run() with a custom timeout
+    const result = await runtimeAdapter.run('coder', 'Heavy reasoning task', {
+      allowedTools: ['Read', 'Write'],
+      timeoutMs: customTimeoutMs,
+    });
+
+    expect(result.output).toBe('done with custom timeout');
+
+    // Verify that mockRun was called with options containing the timeoutMs
+    expect(mockRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        task: 'Heavy reasoning task',
+        timeoutMs: customTimeoutMs,
+      }),
+    );
+  });
+
+  it('threads timeoutMs through supervisor path', async () => {
+    mockRun.mockResolvedValueOnce({
+      sessionId: 'sess-timeout-supervisor',
+      response: 'done with supervisor timeout',
+      model: 'claude-sonnet-4-6',
+      inputTokens: 100,
+      outputTokens: 200,
+      costUsd: 0.002,
+      startedAt: '2026-01-01T00:00:00.000Z',
+      completedAt: '2026-01-01T00:00:05.000Z',
+      status: 'completed' as const,
+    });
+
+    const runtimeAdapter = new RuntimeAdapter({
+      cwd: '/tmp/fake-project',
+      supervisor,
+    });
+    const customTimeoutMs = 50 * 60 * 1000; // 50 minutes
+
+    const result = await runtimeAdapter.run('coder', 'Heavy task', {
+      allowedTools: ['Read'],
+      timeoutMs: customTimeoutMs,
+    });
+
+    expect(result.output).toBe('done with supervisor timeout');
+
+    // Verify mockRun was called with the timeout
+    expect(mockRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        timeoutMs: customTimeoutMs,
+      }),
+    );
+  });
 });

@@ -7,6 +7,8 @@ import type {
   TaskOutcomeRow,
   TestObservationRow,
 } from '@agentforge/db';
+import { computeRollingP50CostByTag } from '@agentforge/shared';
+import type { CycleDataForCostMetrics } from '@agentforge/shared';
 import { WorkspaceManager } from '../workspace/index.js';
 import type { ProposalAdapter } from './proposal-to-backlog.js';
 import type { AdapterForScoring } from './scoring-pipeline.js';
@@ -376,12 +378,9 @@ function readSprintHistory(
  * Compute the rolling p50 (median) actual cost per sprint-item tag from the
  * last `maxCycles` cycle directories.
  *
- * Algorithm per cycle:
- *   1. Read `cycle.json` for `cost.totalUsd` (actual spend for the cycle).
- *   2. Read `plan.json` for the backlog items that were executed — each has a
- *      `tags: string[]` field; the first tag is the primary classification.
- *   3. Average cost per item = totalUsd / items.length.
- *   4. Record that average cost under each item's primary tag.
+ * Reads cycle.json (for cost) and plan.json (for items with tags) from recent
+ * cycle directories, then delegates to the shared computeRollingP50CostByTag()
+ * function for the core median computation.
  *
  * Using cycle directories (not sprint files) avoids the filename/sprintVersion
  * format mismatch that would occur when correlating separately-stored files.
@@ -418,7 +417,7 @@ function computeP50CostByTag(
     .sort((a, b) => b.mtime - a.mtime)
     .slice(0, maxCycles);
 
-  const costsByTag = new Map<string, number[]>();
+  const cycleData: CycleDataForCostMetrics[] = [];
 
   for (const { path: cycleDir } of recentCycles) {
     // Read actual cycle cost from cycle.json.
@@ -427,10 +426,10 @@ function computeP50CostByTag(
 
     let totalUsd: number;
     try {
-      const cycleData = JSON.parse(readFileSync(cyclePath, 'utf8')) as {
+      const cycle = JSON.parse(readFileSync(cyclePath, 'utf8')) as {
         cost?: { totalUsd?: number };
       };
-      const raw = cycleData.cost?.totalUsd;
+      const raw = cycle.cost?.totalUsd;
       if (typeof raw !== 'number' || raw <= 0) continue;
       totalUsd = raw;
     } catch { continue; }
@@ -439,41 +438,30 @@ function computeP50CostByTag(
     const planPath = join(cycleDir, 'plan.json');
     if (!existsSync(planPath)) continue;
 
-    let items: Array<Record<string, unknown>>;
+    let items: { tags: string[]; [key: string]: unknown }[];
     try {
-      const planData = JSON.parse(readFileSync(planPath, 'utf8')) as Record<string, unknown>;
-      const rawItems = Array.isArray(planData.items) ? planData.items
-        : Array.isArray(planData.backlog) ? planData.backlog
+      const planContent = JSON.parse(readFileSync(planPath, 'utf8')) as Record<string, unknown>;
+      const rawItems = Array.isArray(planContent.items) ? planContent.items
+        : Array.isArray(planContent.backlog) ? planContent.backlog
         : [];
+      // Narrow to BacklogItemForCostMetrics: must be a non-null object with a
+      // tags field that is an array. Items missing tags are dropped because
+      // computeRollingP50CostByTag groups by primary tag.
       items = rawItems.filter(
-        (i): i is Record<string, unknown> => typeof i === 'object' && i !== null,
+        (i): i is { tags: string[]; [key: string]: unknown } =>
+          typeof i === 'object' &&
+          i !== null &&
+          Array.isArray((i as Record<string, unknown>)['tags']),
       );
     } catch { continue; }
 
     if (items.length === 0) continue;
 
-    // Avg cost per item for this cycle — proxy for per-tag calibration.
-    const avgItemCost = totalUsd / items.length;
-
-    // Record the avg cost observation under each item's primary tag.
-    for (const item of items) {
-      const tags = Array.isArray(item.tags) ? item.tags : [];
-      const primaryTag = typeof tags[0] === 'string' ? tags[0].trim() : '';
-      if (!primaryTag) continue;
-
-      const existing = costsByTag.get(primaryTag) ?? [];
-      existing.push(avgItemCost);
-      costsByTag.set(primaryTag, existing);
-    }
+    cycleData.push({ totalCostUsd: totalUsd, items });
   }
 
-  // Compute p50 (median) per tag across all observed cycles.
-  return Object.fromEntries(
-    [...costsByTag.entries()].map(([tag, values]) => [
-      tag,
-      computeMedian([...values].sort((a, b) => a - b)),
-    ]),
-  );
+  // Delegate to the shared cost metrics function for p50 computation
+  return computeRollingP50CostByTag(cycleData);
 }
 
 function safeMtime(path: string): number {

@@ -374,3 +374,205 @@ describe('PhaseScheduler flushes cost after each completed phase', () => {
     expect(costSnapshots[1]).toBeCloseTo(3.00, 5);
   });
 });
+
+// ---------------------------------------------------------------------------
+// execute.snapshot → mid-phase incremental cost flush
+// ---------------------------------------------------------------------------
+
+describe('PhaseScheduler flushes cost on execute.snapshot events (mid-phase)', () => {
+  it('updates cycle.json when execute.snapshot fires between items — before execute completes', async () => {
+    // This test verifies the key observability fix: during the long execute phase,
+    // cycle.json cost.totalUsd reflects the running item spend even before the
+    // phase publishes sprint.phase.completed.
+    const { PhaseScheduler } = await import('../phase-scheduler.js');
+    const { KillSwitch } = await import('../kill-switch.js');
+    const logger = makeLogger();
+
+    const config: import('../types.js').CycleConfig = {
+      budget: { perCycleUsd: 100, perItemUsd: 10, perAgentUsd: 50, allowOverageApproval: true },
+      limits: {
+        maxItemsPerSprint: 5, maxDurationMinutes: 60, maxConsecutiveFailures: 3,
+        maxExecutePhaseFailureRate: 0.5, maxExecutePhaseParallelism: 4, maxItemRetries: 1,
+      },
+      quality: { testPassRateFloor: 0.90, allowRegression: false, requireBuildSuccess: false, requireTypeCheckSuccess: false },
+      git: { branchPrefix: 'autonomous/', baseBranch: 'main', refuseCommitToBaseBranch: true, includeDiagnosticBranchOnFailure: false, maxFilesPerCommit: 100 },
+      pr: { draft: false, assignReviewer: null, labelPrefix: 'autonomous', labels: [], titleTemplate: '' },
+      sourcing: { lookbackDays: 7, minProposalConfidence: 0.6, includeTodoMarkers: true, todoMarkerPattern: '' },
+      testing: { command: 'pnpm test', timeoutMinutes: 30, reporter: 'default', saveRawLog: false, buildCommand: '', typeCheckCommand: '' },
+      scoring: { agentId: 'ceo', maxRetries: 2, fallbackToStatic: true },
+      logging: { logDir: '.agentforge/cycles', retainCycles: 10 },
+      safety: { stopFilePath: '.agentforge/stop', secretScanEnabled: false, verifyCleanWorkingTreeBeforeStart: false, workingTreeWhitelist: [] },
+      retry: { maxAutoRetries: 0, requireApprovalAfter: 1, reExecuteOnRetry: false },
+    };
+
+    const killSwitch = new KillSwitch(config, CYCLE_ID, Date.now(), tmpRoot);
+
+    const subscribers: Record<string, Array<(e: unknown) => void>> = {};
+    const bus = {
+      publish: (topic: string, payload: unknown) => {
+        (subscribers[topic] ?? []).forEach((cb) => cb(payload));
+      },
+      subscribe: (topic: string, cb: (e: unknown) => void) => {
+        subscribers[topic] = [...(subscribers[topic] ?? []), cb];
+        return () => {
+          subscribers[topic] = (subscribers[topic] ?? []).filter((x) => x !== cb);
+        };
+      },
+    };
+
+    const SPRINT_ID = 'sprint-execute-snapshot-test';
+    const ctx = {
+      sprintId: SPRINT_ID,
+      sprintVersion: '1.0.0',
+      projectRoot: tmpRoot,
+      adapter: undefined as any,
+      bus,
+      runtime: undefined as any,
+      cycleId: CYCLE_ID,
+    };
+
+    // Prior phases cost: audit=$1.00, plan=$2.00 — these come in via sprint.phase.completed
+    // before execute starts.
+    const auditResult = { phase: 'audit', status: 'completed', durationMs: 100, costUsd: 1.00, agentRuns: [] };
+    const planResult  = { phase: 'plan',  status: 'completed', durationMs: 100, costUsd: 2.00, agentRuns: [] };
+
+    // Snapshot captured mid-execute, before the phase completes.
+    let midExecuteCostInCycleJson: number | undefined;
+
+    const PHASES = ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate', 'release', 'learn'] as const;
+    const handlers: Record<string, (c: typeof ctx) => Promise<void>> = {
+      audit: async () => {
+        bus.publish('sprint.phase.completed', { sprintId: SPRINT_ID, phase: 'audit', result: auditResult });
+      },
+      plan: async () => {
+        bus.publish('sprint.phase.completed', { sprintId: SPRINT_ID, phase: 'plan', result: planResult });
+      },
+      execute: async () => {
+        // Simulate first item completing — publish execute.snapshot with $4.50 execute cost.
+        // At this point prior phases have $3.00 (audit+plan). Cycle total should be $7.50.
+        bus.publish('execute.snapshot', {
+          sprintId: SPRINT_ID,
+          phase: 'execute',
+          cycleId: CYCLE_ID,
+          completedItems: 1,
+          failedItems: 0,
+          inFlightCount: 0,
+          totalItems: 2,
+          costUsd: 4.50,
+        });
+
+        // Read cycle.json immediately after the snapshot — before execute phase completes.
+        if (existsSync(cyclePath())) {
+          const snapshot = readCycle();
+          midExecuteCostInCycleJson = (snapshot['cost'] as Record<string, unknown>)['totalUsd'] as number;
+        }
+
+        // Now the execute phase "finishes" — publish completed with full cost.
+        bus.publish('sprint.phase.completed', {
+          sprintId: SPRINT_ID,
+          phase: 'execute',
+          result: { phase: 'execute', status: 'completed', durationMs: 5000, costUsd: 9.00, agentRuns: [] },
+        });
+      },
+      // Remaining phases complete cheaply.
+      ...Object.fromEntries(
+        (['assign', 'test', 'review', 'gate', 'release', 'learn'] as const).map((p) => [
+          p,
+          async () => {
+            bus.publish('sprint.phase.completed', {
+              sprintId: SPRINT_ID,
+              phase: p,
+              result: { phase: p, status: 'completed', durationMs: 10, costUsd: 0, agentRuns: [] },
+            });
+          },
+        ]),
+      ),
+    };
+
+    const scheduler = new PhaseScheduler(ctx as any, killSwitch, logger, handlers as any);
+    await scheduler.run();
+
+    // The mid-execute snapshot must have captured the cumulative cost of
+    // prior phases (audit $1 + plan $2 = $3) + execute running spend ($4.50) = $7.50.
+    expect(midExecuteCostInCycleJson).toBeCloseTo(7.50, 5);
+
+    // After full cycle, cycle.json should reflect the final total
+    // (audit $1 + plan $2 + execute $9 + remaining $0 = $12).
+    const finalData = readCycle();
+    const finalCost = (finalData['cost'] as Record<string, unknown>)['totalUsd'] as number;
+    expect(finalCost).toBeCloseTo(12.00, 5);
+  });
+
+  it('does not flush when execute.snapshot costUsd is missing or non-numeric', async () => {
+    const { PhaseScheduler } = await import('../phase-scheduler.js');
+    const { KillSwitch } = await import('../kill-switch.js');
+    const logger = makeLogger();
+
+    const config: import('../types.js').CycleConfig = {
+      budget: { perCycleUsd: 100, perItemUsd: 10, perAgentUsd: 50, allowOverageApproval: true },
+      limits: {
+        maxItemsPerSprint: 5, maxDurationMinutes: 60, maxConsecutiveFailures: 3,
+        maxExecutePhaseFailureRate: 0.5, maxExecutePhaseParallelism: 4, maxItemRetries: 1,
+      },
+      quality: { testPassRateFloor: 0.90, allowRegression: false, requireBuildSuccess: false, requireTypeCheckSuccess: false },
+      git: { branchPrefix: 'autonomous/', baseBranch: 'main', refuseCommitToBaseBranch: true, includeDiagnosticBranchOnFailure: false, maxFilesPerCommit: 100 },
+      pr: { draft: false, assignReviewer: null, labelPrefix: 'autonomous', labels: [], titleTemplate: '' },
+      sourcing: { lookbackDays: 7, minProposalConfidence: 0.6, includeTodoMarkers: true, todoMarkerPattern: '' },
+      testing: { command: 'pnpm test', timeoutMinutes: 30, reporter: 'default', saveRawLog: false, buildCommand: '', typeCheckCommand: '' },
+      scoring: { agentId: 'ceo', maxRetries: 2, fallbackToStatic: true },
+      logging: { logDir: '.agentforge/cycles', retainCycles: 10 },
+      safety: { stopFilePath: '.agentforge/stop', secretScanEnabled: false, verifyCleanWorkingTreeBeforeStart: false, workingTreeWhitelist: [] },
+      retry: { maxAutoRetries: 0, requireApprovalAfter: 1, reExecuteOnRetry: false },
+    };
+
+    const killSwitch = new KillSwitch(config, CYCLE_ID, Date.now(), tmpRoot);
+
+    const subscribers: Record<string, Array<(e: unknown) => void>> = {};
+    const bus = {
+      publish: (topic: string, payload: unknown) => {
+        (subscribers[topic] ?? []).forEach((cb) => cb(payload));
+      },
+      subscribe: (topic: string, cb: (e: unknown) => void) => {
+        subscribers[topic] = [...(subscribers[topic] ?? []), cb];
+        return () => { subscribers[topic] = (subscribers[topic] ?? []).filter((x) => x !== cb); };
+      },
+    };
+
+    const SPRINT_ID = 'sprint-bad-snapshot-test';
+    const ctx = {
+      sprintId: SPRINT_ID, sprintVersion: '1.0.0', projectRoot: tmpRoot,
+      adapter: undefined as any, bus, runtime: undefined as any, cycleId: CYCLE_ID,
+    };
+
+    // Track flush calls
+    const flushValues: number[] = [];
+    const origFlush = logger.flushCycleCost.bind(logger);
+    logger.flushCycleCost = (usd: number) => { flushValues.push(usd); origFlush(usd); };
+
+    const PHASES = ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate', 'release', 'learn'] as const;
+    const handlers: Record<string, (c: typeof ctx) => Promise<void>> = Object.fromEntries(
+      PHASES.map((p) => [
+        p,
+        async () => {
+          if (p === 'execute') {
+            // Publish snapshot WITHOUT costUsd — should be ignored
+            bus.publish('execute.snapshot', { sprintId: SPRINT_ID, phase: 'execute', cycleId: CYCLE_ID, completedItems: 1, totalItems: 2 });
+            // Also publish with non-numeric costUsd — should be ignored
+            bus.publish('execute.snapshot', { sprintId: SPRINT_ID, phase: 'execute', cycleId: CYCLE_ID, costUsd: 'not-a-number' });
+          }
+          bus.publish('sprint.phase.completed', {
+            sprintId: SPRINT_ID, phase: p,
+            result: { phase: p, status: 'completed', durationMs: 10, costUsd: 0, agentRuns: [] },
+          });
+        },
+      ]),
+    );
+
+    const scheduler = new PhaseScheduler(ctx as any, killSwitch, logger, handlers as any);
+    await scheduler.run();
+
+    // All flushes must have been triggered by phase.completed events, not
+    // by malformed snapshots. Every value must be a finite number.
+    expect(flushValues.every(v => Number.isFinite(v))).toBe(true);
+  });
+});

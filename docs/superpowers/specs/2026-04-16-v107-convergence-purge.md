@@ -76,7 +76,7 @@ DONE(v10.7.0): Deleted src/cli/compat/package-run-services.ts and src/cli/compat
 
 DONE(v15.0.0): Deleted the entire `src/builder/` tree (template-loader, template-customizer, team-writer, team-composer, agent-validator, index). All six files were compatibility shims (`export * from '@agentforge/core'`) that failed typecheck. The canonical implementations live at `packages/core/src/team/engine/builder/` and are unmodified. Deleting the stubs resolved the typecheck error cluster. ✅
 
-TODO(autonomous): Fix the typecheck job ordering in `.github/workflows/ci.yml` so `pnpm build` (or at minimum `pnpm --filter @agentforge/core build`) runs before `tsc --noEmit`. Many root files reference `packages/core/dist/memory/types.d.ts` which doesn't exist until core builds. Without this fix, even after migrating root src files away, transient typecheck failures will recur whenever a fresh checkout types-checks before a build.
+DONE(v18.1.0): Fixed typecheck job ordering in CI and the cycle-runner's default commands. `.github/workflows/ci.yml` `type-check` job now runs `pnpm build` before `pnpm exec tsc -b --noEmit` (added in v16.1.0). `DEFAULT_CYCLE_CONFIG.testing.buildCommand` changed from `pnpm --filter @agentforge/core build` to `pnpm build` (all packages) and `typeCheckCommand` changed from `pnpm exec tsc --noEmit --pretty false` to `pnpm exec tsc -b --noEmit --pretty false` (uses -b for project references). Added `check:types` script to root `package.json`. ✅
 
 DONE(v15.0.0): Release gate in `.github/workflows/release.yml` already fails on presence of `src/server/`, `src/builder/`, or `src/autonomous/` at tag time — confirmed in release.yml lines 25–38. Gate covers all three deprecated root directories. ✅
 

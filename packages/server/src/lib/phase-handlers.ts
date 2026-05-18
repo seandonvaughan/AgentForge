@@ -29,7 +29,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { AgentRuntime, loadAgentConfig, writeMemoryEntry, writeKnowledgeEntry, collectSprintItemTags, parseReviewFindingMetadata, extractFindingsByLevel, loadPriorGateKnownDebt, buildKnownDebtSection } from '@agentforge/core';
+import { AgentRuntime, loadAgentConfig, writeMemoryEntry, writeKnowledgeEntry, collectSprintItemTags, parseReviewFindingMetadata, extractFindingsByLevel, loadPriorGateKnownDebt, buildKnownDebtSection, resolveKnownDebt } from '@agentforge/core';
 import type { RunResult, GateVerdictMetadata, ReviewFindingMetadata } from '@agentforge/core';
 import { generateId, nowIso } from '@agentforge/shared';
 import { globalStream } from '../routes/v5/stream.js';
@@ -823,13 +823,30 @@ export async function runGatePhase(ctx: PhaseContext): Promise<PhaseResult> {
     // Build the canonical GateVerdictMetadata — consumed by audit-phase prompt
     // injection and flywheel stats. The metadata field carries structured data;
     // the value field is a human-readable summary for direct prompt rendering.
+    //
+    // Resolve the knownDebt list that THIS gate treated as pre-existing accepted
+    // debt. The same `resolveKnownDebt` read that drives the prompt's known-debt
+    // section is mirrored into the metadata write so the NEXT cycle's gate can
+    // tell apart:
+    //   - Items in `knownDebt` → pre-existing before this sprint ran → warn only
+    //   - Items in `criticalFindings`/`majorFindings` but NOT in `knownDebt`
+    //     → newly surfaced in this sprint's review → valid reject grounds
+    //
+    // Without this write, post-server-gate cycles see only the coarse
+    // criticalFindings+majorFindings fallback, which conflates pre-existing
+    // debt with sprint-introduced regressions and produces false-positive
+    // REJECTs — the exact failure mode this sprint item targets.
     const rationale = verdictText.slice(0, 500);
+    const knownDebt = resolveKnownDebt(ctx.projectRoot);
     const gateMetadata: GateVerdictMetadata = {
       cycleId: ctx.cycleId ?? '',
       verdict: verdictNorm,
       rationale,
       criticalFindings,
       majorFindings,
+      // Conditional spread so the field is absent (not undefined) on entries
+      // where no prior debt was inherited — required by exactOptionalPropertyTypes.
+      ...(knownDebt.length > 0 ? { knownDebt } : {}),
     };
 
     const summaryParts: string[] = [`Gate ${verdictNorm}: ${rationale}`];

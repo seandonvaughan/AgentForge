@@ -5,3 +5,4 @@ export * from './utils/index.js';
 export * from './circuit-breaker.js';
 export * from './retry.js';
 export * from './cycle-record.js';
+export * from './cost-metrics.js';

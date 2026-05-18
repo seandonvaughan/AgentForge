@@ -65,8 +65,16 @@ export const DEFAULT_CYCLE_CONFIG: CycleConfig = Object.freeze({
     timeoutMinutes: 20,
     reporter: 'json',
     saveRawLog: true,
-    buildCommand: 'pnpm --filter @agentforge/core build',
-    typeCheckCommand: 'pnpm exec tsc --noEmit --pretty false',
+    // Build ALL workspace packages so every cross-package .d.ts is up-to-date
+    // before the typecheck runs.  The original default only built @agentforge/core,
+    // which left 7 other referenced packages unbuilt; tsc --noEmit then failed
+    // to resolve their type declarations.
+    buildCommand: 'pnpm build',
+    // Use -b (build mode) so TypeScript walks the full project-reference graph
+    // defined in the root tsconfig.json rather than only checking the root
+    // project in isolation.  Without -b, tsc --noEmit ignores project references
+    // and will fail on unresolved cross-package imports even after a build.
+    typeCheckCommand: 'pnpm exec tsc -b --noEmit --pretty false',
   }),
   scoring: Object.freeze({
     agentId: 'backlog-scorer',

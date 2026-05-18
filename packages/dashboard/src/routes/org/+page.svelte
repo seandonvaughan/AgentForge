@@ -10,7 +10,7 @@
    */
   import { goto } from '$app/navigation';
   import { onMount, untrack } from 'svelte';
-  import { Badge, Btn, Card, ModelChip } from '$lib/components/v2';
+  import { Btn, Card, ModelChip } from '$lib/components/v2';
   import type { PageData } from './$types';
   import type { OrgNodeData, OrgEdgeData } from './+page.server';
 
@@ -257,11 +257,13 @@
   }
 
   let svgPositions = $derived.by(() => {
-    const allNodes: OrgNode[] = [...roots, ...orphans].flatMap(function flatten(n: TreeNode): OrgNode[] {
+    // Flatten the tree into a deduplicated node list for layout computation.
+    // Named `svgFlatNodes` to avoid shadowing the outer reactive `allNodes` state.
+    const svgFlatNodes: OrgNode[] = [...roots, ...orphans].flatMap(function flatten(n: TreeNode): OrgNode[] {
       return [n, ...n.children.flatMap(flatten)];
     });
     const seen = new Set<string>();
-    const deduped = allNodes.filter(n => { if (seen.has(n.id)) return false; seen.add(n.id); return true; });
+    const deduped = svgFlatNodes.filter(n => { if (seen.has(n.id)) return false; seen.add(n.id); return true; });
 
     const allEdges: OrgEdge[] = [];
     const edgeSeen = new Set<string>();
@@ -511,6 +513,8 @@
             <button
               class="af-agent-row-btn"
               onclick={() => goto(`/agents/${node.id}`)}
+              data-testid="org-node"
+              data-agent-id={node.id}
             >
               <span class="af-agent-color-bar" style="background:{color}"></span>
               <span class="af-agent-row-name">{node.label ?? node.id}</span>

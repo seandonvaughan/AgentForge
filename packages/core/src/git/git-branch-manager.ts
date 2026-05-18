@@ -20,6 +20,25 @@ export class GitBranchManager {
     const id = generateId();
     const name = `agent/${agentId}/${taskId}`;
     const now = nowIso();
+
+    if (this.adapter) {
+      // insertGitBranch uses INSERT OR IGNORE, so retries are safe: if a branch
+      // with this name already exists the existing row is returned unchanged.
+      const row = this.adapter.insertGitBranch({
+        id,
+        name,
+        agentId,
+        taskId,
+        targetBranch,
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      });
+      // Return the actual persisted row so callers always get the canonical id,
+      // even when this call was a retry and the original row was kept.
+      return this._rowToAgentBranch(row);
+    }
+
     const branch: AgentBranch = {
       id,
       name,
@@ -30,21 +49,7 @@ export class GitBranchManager {
       createdAt: now,
       updatedAt: now,
     };
-
-    if (this.adapter) {
-      this.adapter.insertGitBranch({
-        id,
-        name,
-        agentId,
-        taskId,
-        targetBranch,
-        status: 'active',
-        createdAt: now,
-        updatedAt: now,
-      });
-    } else {
-      this.branches.set(id, branch);
-    }
+    this.branches.set(id, branch);
     // In dry-run: just record. In production: exec `git checkout -b <name>`
     return branch;
   }
@@ -54,7 +59,13 @@ export class GitBranchManager {
     if (this.adapter) {
       const row = this.adapter.getGitBranch(branchId);
       if (!row) throw new Error(`Branch ${branchId} not found`);
+      // UPDATE is always idempotent — safe to call on retry.
       this.adapter.updateGitBranch(branchId, { status: 'review', review_status: 'pending' });
+      // Idempotent: if a queue entry already exists for this branch (e.g. the
+      // runtime supervisor retried after a transient failure post-insert) return
+      // the existing entry rather than creating a duplicate.
+      const existing = this.adapter.getGitMergeQueueItemByBranchId(branchId);
+      if (existing) return this._rowToMergeQueueItem(existing);
       const item: MergeQueueItem = {
         id: generateId(),
         branchId,

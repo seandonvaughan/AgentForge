@@ -1065,8 +1065,12 @@ export class WorkspaceAdapter {
     reviewStatus?: string;
     reviewedBy?: string;
   }): GitBranchRow {
+    // INSERT OR IGNORE makes this idempotent on retry: if the name already exists
+    // (e.g. because the runtime supervisor retried after a transient failure that
+    // occurred after the first INSERT succeeded), the duplicate is silently dropped
+    // and we return the existing row instead.
     this.db.prepare(`
-      INSERT INTO git_branches (id, name, agent_id, task_id, target_branch, status, review_status, reviewed_by, merged_at, conflict_info, created_at, updated_at)
+      INSERT OR IGNORE INTO git_branches (id, name, agent_id, task_id, target_branch, status, review_status, reviewed_by, merged_at, conflict_info, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       data.id,
@@ -1082,7 +1086,8 @@ export class WorkspaceAdapter {
       data.createdAt,
       data.updatedAt,
     );
-    return this.getGitBranch(data.id)!;
+    // Return the row that was either just inserted or already existed (idempotent).
+    return (this.getGitBranch(data.id) ?? this.getGitBranchByName(data.name))!;
   }
 
   updateGitBranch(id: string, updates: {
@@ -1139,8 +1144,11 @@ export class WorkspaceAdapter {
     mergedAt?: string;
     blockReason?: string;
   }): GitMergeQueueRow {
+    // INSERT OR IGNORE makes this idempotent on retry: if a queue entry for this
+    // branch already exists (e.g. runtime supervisor retried submitForReview), the
+    // duplicate is dropped and we return the existing entry.
     this.db.prepare(`
-      INSERT INTO git_merge_queue (id, branch_id, branch_name, agent_id, priority, status, queued_at, merged_at, block_reason)
+      INSERT OR IGNORE INTO git_merge_queue (id, branch_id, branch_name, agent_id, priority, status, queued_at, merged_at, block_reason)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       data.id,
@@ -1153,7 +1161,9 @@ export class WorkspaceAdapter {
       data.mergedAt ?? null,
       data.blockReason ?? null,
     );
-    return this.db.prepare('SELECT * FROM git_merge_queue WHERE id = ?').get(data.id) as GitMergeQueueRow;
+    // Return the row that was either just inserted or already existed (idempotent).
+    return (this.db.prepare('SELECT * FROM git_merge_queue WHERE id = ?').get(data.id) ??
+      this.getGitMergeQueueItemByBranchId(data.branchId)) as GitMergeQueueRow;
   }
 
   updateGitMergeQueueItem(id: string, updates: {
