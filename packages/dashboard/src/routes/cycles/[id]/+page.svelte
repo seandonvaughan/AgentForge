@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { page } from '$app/stores';
   import { browser } from '$app/environment';
+  import { goto } from '$app/navigation';
   import { withWorkspace } from '$lib/stores/workspace';
   import { relativeTime, formatDuration } from '$lib/util/relative-time';
   import {
@@ -510,6 +511,58 @@
     ];
   });
 
+  let rerunBusy = $state(false);
+  let cancelBusy = $state(false);
+  let actionError = $state<string | null>(null);
+
+  async function rerunCycle(): Promise<void> {
+    if (rerunBusy) return;
+    rerunBusy = true;
+    actionError = null;
+    try {
+      const res = await fetch(withWorkspace(`/api/v5/cycles/${id}/rerun`), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      const body = await res.json() as { cycleId?: string; data?: { cycleId?: string } };
+      const newId = body.cycleId ?? body.data?.cycleId;
+      if (!newId) throw new Error('Rerun response missing cycleId');
+      void goto(`/cycles/${newId}`);
+    } catch (e) {
+      actionError = `Re-run failed: ${e instanceof Error ? e.message : String(e)}`;
+    } finally {
+      rerunBusy = false;
+    }
+  }
+
+  async function cancelCycle(): Promise<void> {
+    if (cancelBusy) return;
+    if (typeof window !== 'undefined' && !window.confirm('Cancel this cycle? Running agents will be killed.')) return;
+    cancelBusy = true;
+    actionError = null;
+    try {
+      const res = await fetch(withWorkspace(`/api/v5/cycles/${id}/cancel`), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      });
+      if (!res.ok && res.status !== 409) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      await loadCycle();
+    } catch (e) {
+      actionError = `Cancel failed: ${e instanceof Error ? e.message : String(e)}`;
+    } finally {
+      cancelBusy = false;
+    }
+  }
+
   async function loadCycle(): Promise<void> {
     try {
       const res = await fetch(withWorkspace(`/api/v5/cycles/${id}`));
@@ -895,9 +948,18 @@
       </p>
     </div>
     <div class="cycle-actions">
-      {#if !isTerminal}<Btn variant="danger" size="sm">Cancel</Btn>{/if}
-      <Btn size="sm">Re-run</Btn>
+      {#if !isTerminal}
+        <Btn variant="danger" size="sm" onclick={cancelCycle} disabled={cancelBusy}>
+          {cancelBusy ? 'Cancelling…' : 'Cancel'}
+        </Btn>
+      {/if}
+      <Btn size="sm" onclick={rerunCycle} disabled={rerunBusy}>
+        {rerunBusy ? 'Launching…' : 'Re-run'}
+      </Btn>
     </div>
+    {#if actionError}
+      <div class="action-error af2-mono">{actionError}</div>
+    {/if}
   </div>
 
   <Card noPad style="margin-bottom:14px">
@@ -1703,6 +1765,16 @@
   .cycle-id { font-weight: 500; }
   .cycle-meta { margin: 0; font-size: 12px; color: var(--af-dim); }
   .cycle-actions { display: flex; gap: 8px; }
+  .action-error {
+    color: var(--af-danger);
+    font-size: 12px;
+    margin-top: 6px;
+    padding: 6px 10px;
+    background: color-mix(in srgb, var(--af-danger) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--af-danger) 35%, transparent);
+    border-radius: 6px;
+    text-align: right;
+  }
   .pr-pill {
     font-size: 11px;
     color: var(--af-accent2);
