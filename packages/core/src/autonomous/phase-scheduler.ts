@@ -3,10 +3,15 @@
 // Subscribes to sprint.phase.completed/failed on the EventBus and triggers
 // the next phase in sequence. Kill switch checked between every phase.
 // See docs/superpowers/specs/2026-04-06-autonomous-loop-design.md §7.3
+import { join } from 'node:path';
 import type { KillSwitch } from './kill-switch.js';
 import type { CycleLogger } from './cycle-logger.js';
 import { CycleKilledError, PhaseFailedError } from './types.js';
 import { GateRejectedError } from './phase-handlers/gate-phase.js';
+import {
+  writeCheckpoint,
+  type CycleCheckpoint,
+} from './cycle-artifacts/cycle-checkpoint.js';
 
 export type PhaseName =
   | 'audit'
@@ -83,6 +88,18 @@ export interface PhaseContext {
    * single-tree behaviour when absent.
    */
   worktreePool?: WorktreePoolLike;
+  /**
+   * Wave 3 T5 — Optional resume checkpoint. When provided, the scheduler will
+   * skip phases listed in `completedPhases` and seed the run from
+   * `resumeFromPhase`. Independent of `skipToPhase` (gate-retry) — both can
+   * co-exist; resumeCheckpoint takes precedence for the start phase.
+   */
+  resumeCheckpoint?: CycleCheckpoint;
+  /**
+   * Wave 3 T5 — Total budget for the cycle (used by checkpoint payload).
+   * Defaults to 0 when not provided.
+   */
+  budgetUsd?: number;
 }
 
 export interface PhaseResult {
@@ -109,6 +126,8 @@ export class PhaseScheduler {
   private rejectPromise: ((err: Error) => void) | null = null;
   private phaseResults = new Map<PhaseName, PhaseResult>();
   private settled = false;
+  /** Wave 3 T5 — phases already done (seeded from resumeCheckpoint, then grown). */
+  private completedPhases: PhaseName[] = [];
 
   constructor(
     private readonly ctx: PhaseContext,
@@ -126,7 +145,17 @@ export class PhaseScheduler {
       this.resolvePromise = resolve;
       this.rejectPromise = reject;
       this.subscribe();
-      const startPhase = this.ctx.skipToPhase ?? 'audit';
+
+      // Wave 3 T5 — seed completedPhases from resume checkpoint so the
+      // checkpoint payload remains coherent across resumes.
+      const resume = this.ctx.resumeCheckpoint;
+      if (resume) {
+        this.completedPhases = [...resume.completedPhases];
+      }
+
+      // Phase ordering: explicit gate-retry hop > checkpoint resume > 'audit'.
+      const startPhase: PhaseName =
+        this.ctx.skipToPhase ?? resume?.resumeFromPhase ?? 'audit';
       void this.triggerPhase(startPhase);
     });
   }
@@ -150,7 +179,19 @@ export class PhaseScheduler {
         return this.fail(new CycleKilledError(trip));
       }
 
-      const next = nextPhase(event.phase as PhaseName);
+      const justRan = event.phase as PhaseName;
+      // Maintain ordered, deduped completedPhases list.
+      if (!this.completedPhases.includes(justRan)) {
+        this.completedPhases.push(justRan);
+      }
+      const next = nextPhase(justRan);
+
+      // Wave 3 T5 — write checkpoint AFTER every successful phase, BEFORE the
+      // next handler runs. The checkpoint is written even if the next phase
+      // later fails (durability contract). Best-effort: a checkpoint write
+      // failure must not kill the cycle.
+      this.persistCheckpoint(next ?? justRan);
+
       if (!next) return this.complete();
       void this.triggerPhase(next);
     };
@@ -212,6 +253,13 @@ export class PhaseScheduler {
   }
 
   private async triggerPhase(phase: PhaseName): Promise<void> {
+    // Wave 3 T5 — skip phases already completed (resume safety). Respect
+    // PHASE_SEQUENCE ordering: jump forward to the next not-yet-done phase.
+    if (this.completedPhases.includes(phase)) {
+      const next = nextPhase(phase);
+      if (!next) return this.complete();
+      return this.triggerPhase(next);
+    }
     this.logger.logPhaseStart(phase);
     try {
       const handler = this.handlers[phase];
@@ -255,6 +303,38 @@ export class PhaseScheduler {
   private cleanup(): void {
     this.unsubscribers.forEach((u) => u());
     this.unsubscribers = [];
+  }
+
+  /**
+   * Wave 3 T5 — Persist the cycle checkpoint after a successful phase. The
+   * `resumeFromPhase` is the next phase to run (or the just-completed phase
+   * if we're at the terminal). Best-effort: any failure is logged and
+   * swallowed so a checkpoint write cannot crash the cycle.
+   */
+  private persistCheckpoint(nextPhaseName: PhaseName): void {
+    const cycleId = this.ctx.cycleId;
+    if (!cycleId) return; // no id, nowhere to write
+    try {
+      const cycleDir = join(this.ctx.projectRoot, '.agentforge', 'cycles', cycleId);
+      const spent = this.sumCost();
+      const ckpt: CycleCheckpoint = {
+        v: 1,
+        cycleId,
+        capturedAt: new Date().toISOString(),
+        resumeFromPhase: nextPhaseName,
+        completedPhases: [...this.completedPhases],
+        budgetUsd: this.ctx.budgetUsd ?? 0,
+        spentUsd: spent,
+      };
+      writeCheckpoint(cycleDir, ckpt);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[phase-scheduler] checkpoint write failed (non-fatal): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   private sumCost(): number {

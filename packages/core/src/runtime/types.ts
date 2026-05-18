@@ -1,5 +1,23 @@
 import type { ModelTier } from '@agentforge/shared';
 
+// ---------------------------------------------------------------------------
+// Output schema types (T3 — outputFormat plumbing)
+// TODO: deduplicate once T1 lands these in @agentforge/shared
+// ---------------------------------------------------------------------------
+
+export type AgentOutputSchema = {
+  name: string;
+  description?: string;
+  schema: {
+    type: 'object';
+    properties: Record<string, unknown>;
+    required?: string[];
+    additionalProperties?: boolean;
+  };
+  /** Defaults to true when omitted. */
+  strict?: boolean;
+};
+
 export type RuntimeMode = 'auto' | 'sdk' | 'claude-code-compat';
 export type ExecutionProviderKind = 'anthropic-sdk' | 'claude-code-compat';
 export type RuntimeJobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
@@ -24,6 +42,8 @@ export interface ExecutionRequest {
   task: string;
   userContent: string;
   modelId: string;
+  /** Optional structured output schema. SDK transport threads into outputFormat; CLI transport appends schema hint to system prompt. */
+  outputSchema?: AgentOutputSchema;
   parentSessionId?: string;
   allowedTools?: string[];
   maxTokens?: number;
@@ -68,6 +88,8 @@ export interface ExecutionResult {
   remoteSessionId?: string;
   stopReason?: string;
   raw?: unknown;
+  /** Present when the request carried an outputSchema. ok=true means response parsed and validated; ok=false includes a human-readable error. */
+  schemaValidation?: { ok: boolean; error?: string };
 }
 
 export interface ExecutionStreamEvent {

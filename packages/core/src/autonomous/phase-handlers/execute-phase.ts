@@ -31,6 +31,27 @@ import { ConcurrencyGate } from '../../runtime/concurrency-gate.js';
 import { parseSelfEval } from '../self-eval/parser.js';
 import { recordSelfEval } from '../self-eval/recorder.js';
 
+// T4 — structured-output contract (inlined pending T1 merge onto origin/main).
+/**
+ * Captured structured output for an agent run that had an `output_schema`
+ * declared in its YAML. Stored in `ItemResult.validatedOutput` when
+ * schema validation succeeded.
+ */
+export interface ValidatedJsonOutput {
+  agentId: string;
+  schemaName: string;
+  /** The raw JSON string returned by the agent. */
+  raw: string;
+  /** The deserialized JavaScript value. */
+  parsed: unknown;
+  /** Whether schema validation passed (mirrors RunResult.schemaValidation.ok). */
+  ok: boolean;
+  /** Error message when ok === false. */
+  validationError?: string;
+  /** ISO timestamp when the output was captured. */
+  capturedAt: string;
+}
+
 // ---- Self-eval prompt fragment (loaded once at module init) ----
 // Read from disk relative to this file so it works in both source and built
 // output. Falls back to empty string so the module is always importable even
@@ -271,6 +292,13 @@ interface ItemResult {
   /** Per-run cost breakdown (token attribution). Populated by Wave 2. */
   breakdown?: CostBreakdown;
   error?: string;
+  /**
+   * T4 — Populated when the agent had an `output_schema` and the run
+   * returned valid JSON that passed schema validation. Used by downstream
+   * phases (e.g. review, gate) to consume typed agent output without
+   * re-parsing the raw response string.
+   */
+  validatedOutput?: ValidatedJsonOutput;
 }
 
 /** Coder-class agent-id prefixes / tags.  An item is considered "agent code
@@ -717,12 +745,46 @@ export async function runExecutePhase(
             ? runBreakdown
             : mergeBreakdowns(phaseBreakdown, runBreakdown);
 
+          // T4 — Structured-output handling.
+          // When the agent's item has an output_schema declared (passed through
+          // via RunRequest.outputSchema), check RunResult.schemaValidation and
+          // build a ValidatedJsonOutput. The keyword-search fallback path is
+          // retained when no output_schema is present (backward compat).
+          const responseText = typeof result?.output === 'string' ? result.output : '';
+          let validatedOutput: ValidatedJsonOutput | undefined;
+          const itemOutputSchema = (item as any).outputSchema as
+            | { name: string; strict?: boolean }
+            | undefined;
+          if (itemOutputSchema) {
+            const sv = (result as any)?.schemaValidation as
+              | { ok: boolean; error?: string }
+              | undefined;
+            const svOk = sv ? sv.ok : false;
+            let parsedValue: unknown = undefined;
+            if (svOk) {
+              try {
+                parsedValue = JSON.parse(responseText);
+              } catch {
+                // JSON.parse failed despite transport saying ok — treat as not-ok.
+              }
+            }
+            validatedOutput = {
+              agentId: item.assignee,
+              schemaName: itemOutputSchema.name,
+              raw: responseText,
+              parsed: parsedValue,
+              ok: svOk,
+              ...(sv && !sv.ok && sv.error ? { validationError: sv.error } : {}),
+              capturedAt: new Date().toISOString(),
+            };
+          }
+
           const completedResult = {
             itemId: item.id,
             status: 'completed' as const,
             costUsd,
             durationMs,
-            response: typeof result?.output === 'string' ? result.output : '',
+            response: responseText,
             attempts,
             agentId: item.assignee,
             // Wave 2: attach per-run breakdown for downstream accumulation.
@@ -733,6 +795,8 @@ export async function runExecutePhase(
             // T4.2: surface the worktree path/branch for downstream diff capture
             worktreePath: worktreeHandle?.path,
             worktreeBranch: worktreeHandle?.branch,
+            // T4: attach structured output when present
+            ...(validatedOutput ? { validatedOutput } : {}),
           };
           liveResults.set(item.id, completedResult as ItemResult);
           return completedResult;

@@ -5,6 +5,46 @@ import type { ModelTier } from '@agentforge/shared';
 import type { WorkspaceAdapter } from '@agentforge/db';
 import { injectFreshContext } from './fresh-context.js';
 
+/**
+ * Schema descriptor attached to an agent YAML via the `output_schema` field.
+ * When present, the agent is expected to emit structured JSON on every run.
+ *
+ * T4 — inlined with TODO pending T1/T2 merge onto origin/main.
+ */
+interface AgentOutputSchema {
+  /** Human-readable schema name used in error messages and ValidatedJsonOutput. */
+  name: string;
+  /**
+   * When true, a failed schema validation throws SchemaValidationError instead
+   * of returning the raw text. When false (default), the run still succeeds
+   * even if the output cannot be parsed as JSON.
+   */
+  strict?: boolean;
+  /** Optional JSON Schema object for structural validation (not enforced here —
+   *  transport-layer validation populates RunResult.schemaValidation). */
+  schema?: Record<string, unknown>;
+}
+
+/**
+ * Thrown by the agent factory when an agent has `output_schema.strict: true`
+ * and the transport reports that schema validation failed.
+ *
+ * Exported so callers can distinguish schema failures from other runtime errors.
+ */
+export class SchemaValidationError extends Error {
+  constructor(
+    public readonly agentId: string,
+    public readonly schemaName: string,
+    public readonly validationError: string,
+    public readonly rawOutput: string,
+  ) {
+    super(
+      `SchemaValidationError [${agentId}]: output did not satisfy schema "${schemaName}": ${validationError}`,
+    );
+    this.name = 'SchemaValidationError';
+  }
+}
+
 interface AgentYaml {
   name?: string;
   model?: string;
@@ -12,6 +52,8 @@ interface AgentYaml {
   role?: string;
   effort?: string;
   skill_ids?: string[];
+  // T4 — structured output schema declaration
+  output_schema?: AgentOutputSchema;
 }
 
 export interface LoadAgentConfigOptions {
@@ -116,8 +158,45 @@ export async function loadAgentConfig(
       systemPrompt,
       workspaceId: 'default',
       ...(parsed.effort && { effort: parsed.effort }),
+      // T4 — carry output_schema through so the execute-phase dispatch loop
+      // can attach it to the RunRequest and validate results on return.
+      ...(parsed.output_schema && { outputSchema: parsed.output_schema }),
     };
   } catch {
     return null;
   }
+}
+
+/**
+ * T4 — Validates a RunResult against an agent's declared output_schema.
+ *
+ * - If `schemaValidation.ok === false` AND `schema.strict === true`, throws
+ *   `SchemaValidationError`.
+ * - Otherwise returns the raw response string unchanged.
+ *
+ * Callers that want the parsed JSON object should call `JSON.parse()` on the
+ * return value when `schemaValidation.ok === true`.
+ */
+export function assertSchemaValidation(
+  agentId: string,
+  schema: AgentOutputSchema,
+  result: {
+    response: string;
+    schemaValidation?: { ok: boolean; error?: string };
+  },
+): string {
+  const sv = result.schemaValidation;
+  // No transport-level validation info — treat as unvalidated (pass-through).
+  if (!sv) return result.response;
+
+  if (!sv.ok && schema.strict === true) {
+    throw new SchemaValidationError(
+      agentId,
+      schema.name,
+      sv.error ?? 'unknown validation error',
+      result.response,
+    );
+  }
+
+  return result.response;
 }

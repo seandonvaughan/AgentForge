@@ -522,6 +522,34 @@
   let cancelBusy = $state(false);
   let actionError = $state<string | null>(null);
 
+  // ── Resume checkpoint banner ──────────────────────────────────────────────
+  interface CycleCheckpoint {
+    resumeFromPhase: string;
+    capturedAt: string;
+    completedPhases: string[];
+  }
+
+  const TERMINAL_NON_SUCCESS = new Set(['failed', 'crashed', 'killed', 'aborted']);
+
+  const checkpoint = $derived<CycleCheckpoint | null>(
+    ((cycle as { checkpoint?: CycleCheckpoint })?.checkpoint as CycleCheckpoint | undefined) ?? null,
+  );
+
+  const showResumeBanner = $derived<boolean>(
+    TERMINAL_NON_SUCCESS.has(stage.toLowerCase()) && checkpoint !== null,
+  );
+
+  let resumeCopied = $state(false);
+
+  function copyResumeCommand(): void {
+    if (!browser) return;
+    const cmd = `agentforge cycle run --resume ${id}`;
+    navigator.clipboard.writeText(cmd).then(() => {
+      resumeCopied = true;
+      setTimeout(() => { resumeCopied = false; }, 2000);
+    }).catch(() => { /* ignore clipboard errors */ });
+  }
+
   async function rerunCycle(): Promise<void> {
     if (rerunBusy) return;
     rerunBusy = true;
@@ -1002,6 +1030,18 @@
       {/each}
     </div>
   </Card>
+
+  {#if showResumeBanner && checkpoint}
+    <div class="resume-banner" role="alert">
+      <span class="resume-banner-text">
+        Cycle interrupted at phase <strong>{checkpoint.resumeFromPhase}</strong>.
+        Resume with: <code class="af2-mono">agentforge cycle run --resume {id}</code>
+      </span>
+      <button class="resume-copy-btn" onclick={copyResumeCommand} type="button">
+        {resumeCopied ? 'Copied!' : 'Copy'}
+      </button>
+    </div>
+  {/if}
 
   <Tabs tabs={tabs} active={activeTab} onselect={selectTab} />
 
@@ -2703,4 +2743,42 @@
   .prs-age { font-size: 12px; color: var(--af-muted); }
   .prs-empty { font-size: 13px; color: var(--af-muted); text-align: center; padding: 24px 0; }
   .prs-skel { height: 32px; width: 100%; }
+
+  /* ── Resume checkpoint banner ───────────────────────────────────────────── */
+  .resume-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    margin-bottom: 10px;
+    background: color-mix(in srgb, var(--af-warning) 12%, var(--af-surface));
+    border: 1px solid color-mix(in srgb, var(--af-warning) 40%, transparent);
+    border-radius: 8px;
+    font-size: 13px;
+  }
+  .resume-banner-text {
+    flex: 1;
+    color: var(--af-text);
+  }
+  .resume-banner-text code {
+    font-size: 12px;
+    background: color-mix(in srgb, var(--af-surface2) 80%, transparent);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  .resume-copy-btn {
+    flex-shrink: 0;
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    background: color-mix(in srgb, var(--af-warning) 20%, var(--af-surface));
+    border: 1px solid color-mix(in srgb, var(--af-warning) 50%, transparent);
+    border-radius: 6px;
+    color: var(--af-text);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .resume-copy-btn:hover {
+    background: color-mix(in srgb, var(--af-warning) 35%, var(--af-surface));
+  }
 </style>

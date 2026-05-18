@@ -24,6 +24,12 @@ import { promisify } from 'node:util';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
+// CycleCheckpoint type + readCheckpoint helper live in
+// `./cycle-artifacts/cycle-checkpoint.ts` (Wave 3 T5). Re-export here so the
+// public surface that T6 wired up (`import { readCheckpoint } from '@agentforge/core'`)
+// keeps working without owning the canonical definitions.
+export { readCheckpoint } from './cycle-artifacts/cycle-checkpoint.js';
+
 const execFileAsync = promisify(execFile);
 
 // v6.5.1: the TEST_POLLUTION_PATTERNS workaround from v6.4.4 has been removed.
@@ -75,6 +81,7 @@ import type { WorktreePool } from '../runtime/worktree-pool.js';
 import { MergeQueue } from '../runtime/merge-queue.js';
 import type { DrainAndMergeResult } from '../runtime/merge-queue.js';
 import type { MessageBusV2 } from '../message-bus/message-bus.js';
+import type { CycleCheckpoint } from './cycle-artifacts/cycle-checkpoint.js';
 
 /**
  * Build a PR title that's safe for `gh pr create` and never truncated mid-word.
@@ -241,6 +248,14 @@ export interface CycleRunnerOptions {
    * the cycle falls back to single-PR behavior with a console warning.
    */
   messageBus?: MessageBusV2;
+  /**
+   * Resume checkpoint (Wave 3 T5+T6). When provided:
+   *   - The runner reuses `resumeCheckpoint.cycleId` instead of generating a new one.
+   *   - `totalCostUsd` is seeded from `resumeCheckpoint.spentUsd`.
+   *   - PhaseScheduler is told to skip phases in `completedPhases` and start at `resumeFromPhase`.
+   * Supplied by the CLI when `--resume <cycleId>` is passed.
+   */
+  resumeCheckpoint?: CycleCheckpoint;
 }
 
 // ---------------------------------------------------------------------------
@@ -356,17 +371,28 @@ export class CycleRunner {
 
   constructor(private readonly options: CycleRunnerOptions) {
     // Resolve cycleId in priority order:
-    //   1. options.cycleId — caller pre-allocated (CLI creates logger+gitOps first)
-    //   2. AUTONOMOUS_CYCLE_ID env — server's POST /api/v5/cycles pre-allocates
+    //   1. options.resumeCheckpoint.cycleId — resume path reuses the existing cycle dir
+    //   2. options.cycleId — caller pre-allocated (CLI creates logger+gitOps first)
+    //   3. AUTONOMOUS_CYCLE_ID env — server's POST /api/v5/cycles pre-allocates
     //      the id and pre-creates the dir, then spawns the CLI with this env var
     //      so the CLI writes to the same dir the API client already has a pointer to
-    //   3. fresh UUID — direct CLI use with no coordination
+    //   4. fresh UUID — direct CLI use with no coordination
     const envId = process.env['AUTONOMOUS_CYCLE_ID'];
     const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-    this.cycleId = (options.cycleId && UUID_RE.test(options.cycleId))
-      ? options.cycleId
-      : (envId && UUID_RE.test(envId) ? envId : randomUUID());
+    // Wave 3 T5+T6 — resumeCheckpoint takes priority for cycleId so durability
+    // is end-to-end. Use match-then-use on the checkpoint id.
+    const CKPT_ID_RE = /^[a-zA-Z0-9-]{8,64}$/;
+    const resumeId = options.resumeCheckpoint?.cycleId;
+    const safeResumeId = resumeId && CKPT_ID_RE.test(resumeId) ? resumeId : undefined;
+    this.cycleId = safeResumeId
+      ?? ((options.cycleId && UUID_RE.test(options.cycleId))
+        ? options.cycleId
+        : (envId && UUID_RE.test(envId) ? envId : randomUUID()));
     this.startedAt = Date.now();
+    // Seed accumulated spend from checkpoint so budget gates account for prior spend.
+    if (options.resumeCheckpoint) {
+      this.totalCostUsd = options.resumeCheckpoint.spentUsd;
+    }
     this.logger = new CycleLogger(options.cwd, this.cycleId);
     this.killSwitch = new KillSwitch(
       options.config,
@@ -443,6 +469,25 @@ export class CycleRunner {
    * translates into the appropriate terminal stage.
    */
   private async runStages(): Promise<CycleResult> {
+    // ─────────────────────────────────────────────────────────────────
+    // T6 — RESUME: if a checkpoint was provided, emit an audit entry
+    // and log the resume event before anything else runs.
+    // ─────────────────────────────────────────────────────────────────
+    if (this.options.resumeCheckpoint) {
+      const cp = this.options.resumeCheckpoint;
+      this.logger.appendEvent({
+        type: 'cycle.resumed',
+        cycleId: this.cycleId,
+        fromPhase: cp.resumeFromPhase,
+        byUser: process.env['USER'] ?? 'cli',
+        at: new Date().toISOString(),
+      });
+      // eslint-disable-next-line no-console
+      console.log(
+        `[autonomous:cycle] resuming cycleId=${this.cycleId} fromPhase=${cp.resumeFromPhase} spentUsd=${cp.spentUsd}`,
+      );
+    }
+
     // ─────────────────────────────────────────────────────────────────
     // T4.6 — WORKTREE GC (START): clean up stale worktrees from prior
     // cycles before we begin so disk usage doesn't accumulate unbounded.
@@ -560,6 +605,12 @@ export class CycleRunner {
         ? undefined
         : this.options.worktreePool;
 
+      // T6: on first attempt, honour the resume checkpoint's phase (if any).
+      // On retry attempts, always jump to 'execute' (existing retry logic).
+      const skipToPhase: PhaseName | undefined = retryAttempt > 0
+        ? 'execute'
+        : (this.options.resumeCheckpoint?.resumeFromPhase as PhaseName | undefined);
+
       const scheduler = new PhaseScheduler(
         {
           sprintId: plan.sprintId,
@@ -570,9 +621,16 @@ export class CycleRunner {
           runtime: this.options.runtime,
           cycleId: this.cycleId,
           ...(retryAttempt > 0 ? { retryAttempt, skipToPhase: 'execute' as PhaseName } : {}),
+          ...(retryAttempt === 0 && skipToPhase !== undefined ? { skipToPhase } : {}),
           // T4.2: pass the pool (or undefined) through so the execute phase
           // can allocate per-item worktrees when coder-class items are dispatched.
           ...(phaseWorktreePool !== undefined ? { worktreePool: phaseWorktreePool } : {}),
+          // Wave 3 T5: forward checkpoint resume only on the FIRST attempt;
+          // gate-retries (retryAttempt > 0) re-run from 'execute' explicitly.
+          ...(retryAttempt === 0 && this.options.resumeCheckpoint
+            ? { resumeCheckpoint: this.options.resumeCheckpoint }
+            : {}),
+          budgetUsd: this.options.config.budget.perCycleUsd,
         },
         this.killSwitch,
         this.logger,

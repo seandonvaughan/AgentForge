@@ -38,6 +38,7 @@ import {
   previewCycle,
   getWorkspace,
   getDefaultWorkspace,
+  readCheckpoint,
 } from '@agentforge/core';
 import type { MessageTopic, MessageEnvelopeV2, CycleResult, PhaseName, PhaseHandler, PhaseContext } from '@agentforge/core';
 
@@ -50,6 +51,10 @@ interface CycleRunOptions extends WorkspaceAwareOptions {
   dryRun: boolean;
   /** Commander sets this to false when --no-worktrees is passed. */
   worktrees: boolean;
+  /** Resume a previously-checkpointed cycle by id. */
+  resume?: string;
+  /** Optional display name for a new cycle. */
+  cycleName?: string;
 }
 
 interface CyclePreviewOptions extends WorkspaceAwareOptions {
@@ -169,10 +174,46 @@ function registerCycleRunCommand(parent: Command, commandName: string, descripti
     .option('--no-worktrees', 'Disable isolated git worktrees; fall back to single-tree execution (env: AUTONOMOUS_DISABLE_WORKTREES=1)')
     .option('--project-root <path>', 'Project root', process.cwd())
     .option('--workspace <id>', 'Run against a registered workspace from ~/.agentforge/workspaces.json')
+    .option('--resume <cycleId>', 'Resume a previously-checkpointed cycle by id')
+    .option('--cycle-name <name>', 'Optional display name for this cycle')
     .action(runCycleAction);
 }
 
+/** Allowed format for --resume cycleId argument. */
+const RESUME_CYCLE_ID_RE = /^[a-zA-Z0-9-]{8,64}$/;
+
 async function runCycleAction(opts: CycleRunOptions): Promise<void> {
+  // Mutual exclusion guard: --resume implies an existing cycle, --cycle-name implies a new one.
+  if (opts.resume !== undefined && opts.cycleName !== undefined) {
+    console.error('Error: --resume and --cycle-name are mutually exclusive.');
+    process.exitCode = 1;
+    return;
+  }
+
+  // Validate --resume before resolving anything else.
+  let resumeCheckpoint: ReturnType<typeof readCheckpoint> | null = null;
+  if (opts.resume !== undefined) {
+    const rawId = opts.resume;
+    // Match-then-use: validate format first, then use the matched value so the
+    // static analyzer can trace a sanitized string through the file-system path.
+    const matched = RESUME_CYCLE_ID_RE.exec(rawId);
+    if (!matched) {
+      console.error(`Error: invalid cycle id "${rawId}". Expected ^[a-zA-Z0-9-]{8,64}$.`);
+      process.exitCode = 1;
+      return;
+    }
+    const safeId = matched[0];
+    const resolvedCwd = await resolveWorkspaceProjectRoot(opts);
+    const cycleDir = join(resolvedCwd, '.agentforge', 'cycles', safeId);
+    resumeCheckpoint = readCheckpoint(cycleDir);
+    if (resumeCheckpoint === null) {
+      console.error(`Cycle ${safeId} has no checkpoint`);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`[cycle] resuming cycleId=${safeId} fromPhase=${resumeCheckpoint.resumeFromPhase}`);
+  }
+
   const cwd = await resolveWorkspaceProjectRoot(opts);
 
   try {
@@ -285,13 +326,16 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
       };
 
       // Create a real cycle logger using the cycleId resolution logic from CycleRunner.
-      // The server may pass AUTONOMOUS_CYCLE_ID via env; if present, use it.
-      // Otherwise generate a fresh UUID so the CLI-created logger and CycleRunner's
-      // internal logger write to the same directory with consistent cycleId.
+      // Priority order:
+      //   1. resumeCheckpoint.cycleId — reuse the existing cycle directory
+      //   2. AUTONOMOUS_CYCLE_ID env — server pre-allocates the id
+      //   3. fresh UUID — direct CLI use with no coordination
       const envId = process.env['AUTONOMOUS_CYCLE_ID'];
-      const cycleId = envId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(envId)
-        ? envId
-        : randomUUID();
+      const cycleId = resumeCheckpoint
+        ? resumeCheckpoint.cycleId
+        : (envId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(envId)
+          ? envId
+          : randomUUID());
       const logger = new CycleLogger(cwd, cycleId);
 
       const testRunner = new RealTestRunner(cwd, config.testing, null);
@@ -334,6 +378,7 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
         ...(worktreePool !== undefined ? { worktreePool } : {}),
         ...(disableWorktrees ? { disableWorktrees: true } : {}),
         ...(opts.dryRun ? { dryRun: { prOpener: true } } : {}),
+        ...(resumeCheckpoint !== null ? { resumeCheckpoint } : {}),
       });
 
       const logDir = `.agentforge/cycles/${cycleId}`;
