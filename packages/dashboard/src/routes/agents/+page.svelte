@@ -189,7 +189,7 @@
       {#if errorMsg}
         <span class="af-err-inline">{errorMsg}</span>
       {/if}
-      <Btn size="sm" onclick={refreshAgents} disabled={loading}>{loading ? 'Loading…' : 'Refresh'}</Btn>
+      <Btn size="sm" onClick={refreshAgents} disabled={loading}>{loading ? 'Loading…' : 'Refresh'}</Btn>
     </div>
   </div>
 </header>

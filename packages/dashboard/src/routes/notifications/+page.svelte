@@ -141,7 +141,7 @@
     </div>
     <div class="header-actions">
       {#if unreadCount > 0}
-        <Btn size="sm" onclick={markAllRead} disabled={markingAll}>
+        <Btn size="sm" onClick={markAllRead} disabled={markingAll}>
           {markingAll ? 'Marking...' : 'Mark all read'}
         </Btn>
       {/if}
@@ -225,7 +225,7 @@
           {/if}
           {#if !selected.read}
             <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--af-border)">
-              <Btn size="sm" onclick={() => markRead(selected!.id)}>Mark as read</Btn>
+              <Btn size="sm" onClick={() => markRead(selected!.id)}>Mark as read</Btn>
             </div>
           {/if}
         </Card>

@@ -102,7 +102,7 @@
     </div>
     <div>
       {#if kb}
-        <Btn size="sm" onclick={() => (showCreate = !showCreate)}>
+        <Btn size="sm" onClick={() => (showCreate = !showCreate)}>
           {showCreate ? 'Cancel' : 'New Doc'}
         </Btn>
       {/if}

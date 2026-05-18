@@ -71,10 +71,10 @@
       </p>
     </div>
     <div class="actions">
-      <Btn size="sm" onclick={() => void goto(`/knowledge/kbs/${kb?.slug}/${doc?.slug}`)}>
+      <Btn size="sm" onClick={() => void goto(`/knowledge/kbs/${kb?.slug}/${doc?.slug}`)}>
         Cancel
       </Btn>
-      <Btn size="sm" variant="primary" onclick={save} disabled={submitting}>
+      <Btn size="sm" variant="primary" onClick={save} disabled={submitting}>
         {submitting ? 'Saving...' : 'Save new version'}
       </Btn>
     </div>

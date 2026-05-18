@@ -193,7 +193,7 @@
       </p>
     </div>
     <div class="mem-actions">
-      <Btn size="sm" onclick={() => void loadEntries()}>Refresh</Btn>
+      <Btn size="sm" onClick={() => void loadEntries()}>Refresh</Btn>
     </div>
   </div>
 </header>
@@ -294,7 +294,7 @@
 {:else if error}
   <div class="error-banner">
     {error}
-    <Btn size="sm" onclick={() => void loadEntries()} style="margin-left:12px">Retry</Btn>
+    <Btn size="sm" onClick={() => void loadEntries()} style="margin-left:12px">Retry</Btn>
   </div>
 
 {:else}

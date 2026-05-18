@@ -139,6 +139,32 @@ describe('GET /api/v5/cycles/:id', () => {
     expect(body.stage).toBe('plan');
   });
 
+  it('treats heartbeat-only cycle.json as in-progress, not terminal', async () => {
+    const id = '44444444-4444-4444-4444-444444444444';
+    const dir = makeCycleDir(id);
+    writeFileSync(
+      join(dir, 'cycle.json'),
+      JSON.stringify({ cycleId: id, lastHeartbeatAt: '2026-04-07T10:00:00.000Z' }),
+    );
+    sessionFixture = {
+      cycleId: id,
+      pid: 11111,
+      pgid: 11111,
+      workspaceId: 'default',
+      workspaceRoot: tmpRoot,
+      startedAt: '2026-04-07T10:00:00.000Z',
+      lastSeenAt: '2026-04-07T10:00:30.000Z',
+      status: 'running',
+    };
+
+    const res = await app.inject({ method: 'GET', url: `/api/v5/cycles/${id}` });
+    expect(res.statusCode).toBe(404);
+    const body = res.json();
+    expect(body.stage).toBe('plan');
+    expect(body.cycleInProgress).toBe(true);
+    expect(body.completedAt).toBeNull();
+  });
+
   it('returns 200 with cycle.json for a killed cycle (kill-switch trip writes cycle.json)', async () => {
     const id = '55555555-5555-5555-5555-555555555555';
     const dir = makeCycleDir(id);

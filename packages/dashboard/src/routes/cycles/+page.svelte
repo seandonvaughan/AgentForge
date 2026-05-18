@@ -299,7 +299,7 @@
         >{ic}</button>
       {/each}
     </div>
-    <Btn size="sm" onclick={loadCycles}>{loading ? 'Refreshing…' : 'Refresh'}</Btn>
+    <Btn size="sm" onClick={loadCycles}>{loading ? 'Refreshing…' : 'Refresh'}</Btn>
     <Btn size="sm" variant="purple" href="/cycles/new">+ New Cycle</Btn>
   </div>
 </div>
@@ -308,7 +308,7 @@
   <Card style="margin-bottom:14px;border-color:color-mix(in srgb,var(--af-danger) 30%,transparent)">
     <div class="error-row">
       <span>Failed to load cycles: <code>{error}</code></span>
-      <Btn size="sm" onclick={loadCycles}>Retry</Btn>
+      <Btn size="sm" onClick={loadCycles}>Retry</Btn>
     </div>
   </Card>
 {/if}
@@ -513,8 +513,8 @@
       {/each}
     </div>
     <div class="compare-bar-spacer"></div>
-    <Btn size="sm" onclick={clearSelected}>Clear</Btn>
-    <Btn size="sm" variant="purple" disabled={selected.length < 2} onclick={openCompare}>
+    <Btn size="sm" onClick={clearSelected}>Clear</Btn>
+    <Btn size="sm" variant="purple" disabled={selected.length < 2} onClick={openCompare}>
       Compare {selected.length} →
     </Btn>
   </div>

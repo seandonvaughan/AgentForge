@@ -1082,7 +1082,7 @@
   <Card style="border-color:color-mix(in srgb,var(--af-danger) 33%,transparent)">
     <div class="error-row">
       <span>Failed to load cycle: <code>{error}</code></span>
-      <Btn size="sm" onclick={loadCycle}>Retry</Btn>
+      <Btn size="sm" onClick={loadCycle}>Retry</Btn>
     </div>
   </Card>
 {:else if cycle}
@@ -1123,11 +1123,11 @@
     </div>
     <div class="cycle-actions">
       {#if !isTerminal}
-        <Btn variant="danger" size="sm" onclick={cancelCycle} disabled={cancelBusy}>
+        <Btn variant="danger" size="sm" onClick={cancelCycle} disabled={cancelBusy}>
           {cancelBusy ? 'Cancelling…' : 'Cancel'}
         </Btn>
       {/if}
-      <Btn size="sm" onclick={rerunCycle} disabled={rerunBusy}>
+      <Btn size="sm" onClick={rerunCycle} disabled={rerunBusy}>
         {rerunBusy ? 'Launching…' : 'Re-run'}
       </Btn>
     </div>
@@ -1747,7 +1747,7 @@
       <div style="flex:1"></div>
       <input type="text" bind:value={eventSearch} class="event-search" placeholder="search events…" />
       <span class="af2-mono dim">{filteredEvents.length} events</span>
-      <Btn size="sm" onclick={loadEvents}>Refresh</Btn>
+      <Btn size="sm" onClick={loadEvents}>Refresh</Btn>
       {#if sseConnected}<PulseDot color="var(--af-success)" size={5} />{/if}
     </div>
 
@@ -1802,7 +1802,7 @@
         {:else if fileError[activeFile]}
           <div class="error-row" style="margin:14px">
             <span>Failed: {fileError[activeFile]}</span>
-            <Btn size="sm" onclick={() => loadFile(activeFile)}>Retry</Btn>
+            <Btn size="sm" onClick={() => loadFile(activeFile)}>Retry</Btn>
           </div>
         {:else if fileData[activeFile] === null || fileData[activeFile] === undefined}
           <div class="empty">No content (file empty or not present).</div>
@@ -1817,7 +1817,7 @@
     <div class="prs-bar">
       <span class="section-title">PULL REQUESTS</span>
       <div style="flex:1"></div>
-      <Btn size="sm" onclick={() => loadPrs(true)}>Refresh</Btn>
+      <Btn size="sm" onClick={() => loadPrs(true)}>Refresh</Btn>
     </div>
 
     {#if prsLoading && !prsData}
@@ -1830,7 +1830,7 @@
       <Card style="border-color:color-mix(in srgb,var(--af-danger) 33%,transparent)">
         <div class="error-row">
           <span>Failed to load PRs: <code>{prsError}</code></span>
-          <Btn size="sm" onclick={() => loadPrs(true)}>Retry</Btn>
+          <Btn size="sm" onClick={() => loadPrs(true)}>Retry</Btn>
         </div>
       </Card>
     {:else if prsData}
@@ -1949,7 +1949,7 @@
       {:else if logError[activeLog]}
         <div class="error-row" style="margin:14px">
           <span>Failed: {logError[activeLog]}</span>
-          <Btn size="sm" onclick={() => loadLog(activeLog)}>Retry</Btn>
+          <Btn size="sm" onClick={() => loadLog(activeLog)}>Retry</Btn>
         </div>
       {:else if logText[activeLog] === null && logStreamLines.length === 0}
         <div class="empty">No log content yet.</div>

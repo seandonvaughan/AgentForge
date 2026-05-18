@@ -208,7 +208,7 @@
                 <button class="toggle-btn" class:toggle-on={s.enabled} onclick={() => toggleEnabled(s)} title={s.enabled ? 'Disable' : 'Enable'} aria-label={s.enabled ? 'Disable' : 'Enable'}>
                   <span class="toggle-track"><span class="toggle-thumb" class:thumb-on={s.enabled}></span></span>
                 </button>
-                <Btn size="sm" variant="danger" onclick={() => deleteSchedule(s.id)} disabled={deleteId === s.id}>
+                <Btn size="sm" variant="danger" onClick={() => deleteSchedule(s.id)} disabled={deleteId === s.id}>
                   {deleteId === s.id ? '...' : 'Delete'}
                 </Btn>
               </div>
@@ -254,7 +254,7 @@
           <div class="form-error">{formError}</div>
         {/if}
         <div style="margin-top:16px">
-          <Btn variant="primary" size="md" onclick={createSchedule} disabled={saving}>
+          <Btn variant="primary" size="md" onClick={createSchedule} disabled={saving}>
             {saving ? 'Creating...' : '+ Create schedule'}
           </Btn>
         </div>

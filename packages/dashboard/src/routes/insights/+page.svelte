@@ -97,7 +97,7 @@
       <p class="page-sub">Auto-generated observations from your cycle data</p>
     </div>
     <div class="header-actions">
-      <Btn size="sm" onclick={loadInsights}>↺ Refresh</Btn>
+      <Btn size="sm" onClick={loadInsights}>↺ Refresh</Btn>
     </div>
   </div>
 
@@ -120,7 +120,7 @@
       <div class="state-center">
         <span style="font-size:22px;color:var(--af-danger)">⚠</span>
         <span style="font-size:12px;color:var(--af-danger);margin-top:6px">{error}</span>
-        <div style="margin-top:10px"><Btn size="sm" variant="ghost" onclick={loadInsights}>Retry</Btn></div>
+        <div style="margin-top:10px"><Btn size="sm" variant="ghost" onClick={loadInsights}>Retry</Btn></div>
       </div>
     </Card>
   {:else if insights.length === 0}

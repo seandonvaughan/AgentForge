@@ -345,8 +345,8 @@
           onclick={() => (view = 'graph')}
         >Graph</button>
       </div>
-      <Btn size="sm" onclick={expandAll}>Expand all</Btn>
-      <Btn size="sm" onclick={collapseAll}>Collapse</Btn>
+      <Btn size="sm" onClick={expandAll}>Expand all</Btn>
+      <Btn size="sm" onClick={collapseAll}>Collapse</Btn>
     </div>
   </div>
 </header>
@@ -357,7 +357,7 @@
 {:else if error}
   <div class="af-error" data-testid="org-error">
     {error}
-    <Btn size="sm" onclick={load}>Retry</Btn>
+    <Btn size="sm" onClick={load}>Retry</Btn>
   </div>
 {:else if roots.length === 0 && orphans.length === 0}
   <div class="af-empty">

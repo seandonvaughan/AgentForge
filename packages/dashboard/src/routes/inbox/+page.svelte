@@ -351,7 +351,7 @@
           >
             <a class="thread-link" href="/inbox/{selected.id}">Open thread &rarr;</a>
             {#if selected.status === 'unread'}
-              <Btn size="sm" onclick={() => markRead(selected!.id)}>Mark as read</Btn>
+              <Btn size="sm" onClick={() => markRead(selected!.id)}>Mark as read</Btn>
             {/if}
           </div>
         </Card>

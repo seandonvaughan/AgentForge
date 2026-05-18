@@ -166,7 +166,7 @@
           checked {lastRefreshedAt.toLocaleTimeString()}
         </span>
       {/if}
-      <Btn size="sm" onclick={() => void fetchAll()}>Refresh</Btn>
+      <Btn size="sm" onClick={() => void fetchAll()}>Refresh</Btn>
     </div>
   </div>
 </header>
@@ -183,7 +183,7 @@
 {:else if error && !healthData && !servicesData}
   <div class="error-banner">
     Unable to reach API server: {error}
-    <Btn size="sm" onclick={() => void fetchAll()} style="margin-left:12px">Retry</Btn>
+    <Btn size="sm" onClick={() => void fetchAll()} style="margin-left:12px">Retry</Btn>
   </div>
 
 {:else}

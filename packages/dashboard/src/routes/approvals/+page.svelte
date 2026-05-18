@@ -184,7 +184,7 @@
   <div class="ph-actions">
     <PulseDot color="var(--af-success)" size={5} />
     <span class="auto-label">auto-refresh {POLL_MS / 1000}s</span>
-    <Btn variant="ghost" size="sm" onclick={() => load()} disabled={loading}>
+    <Btn variant="ghost" size="sm" onClick={() => load()} disabled={loading}>
       {loading ? 'Loading…' : 'Refresh'}
     </Btn>
   </div>
@@ -236,7 +236,7 @@
           <div class="ca-right">
             <div class="ca-cost font-mono">{fmtCost(withinCost)}<span class="ca-budget">/ {fmtCost(ca.budgetUsd)}</span></div>
             <div class="dim" style="font-size:11px">{ca.withinBudgetItems.length} within budget{ca.overflowItems.length > 0 ? ` · ${ca.overflowItems.length} overflow` : ''}</div>
-            <Btn variant="purple" size="sm" onclick={() => approvalsStore.open(ca)}>
+            <Btn variant="purple" size="sm" onClick={() => approvalsStore.open(ca)}>
               Review {totalItems} items
             </Btn>
           </div>
@@ -400,7 +400,7 @@
                 variant="danger"
                 size="md"
                 disabled={actioning.has(selected.id)}
-                onclick={() => patch(selected!.id, 'reject')}
+                onClick={() => patch(selected!.id, 'reject')}
               >
                 {actioning.has(selected.id) ? '…' : 'Reject'}
               </Btn>
@@ -408,7 +408,7 @@
                 variant="purple"
                 size="md"
                 disabled={actioning.has(selected.id)}
-                onclick={() => patch(selected!.id, 'approve')}
+                onClick={() => patch(selected!.id, 'approve')}
               >
                 {actioning.has(selected.id) ? '…' : 'Approve'}
               </Btn>

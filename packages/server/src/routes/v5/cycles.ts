@@ -243,6 +243,16 @@ function attachLaunchConfig<T extends Record<string, unknown>>(cycleDir: string,
   return payload;
 }
 
+function isTerminalCyclePayload(cycleJson: Record<string, unknown>): boolean {
+  return typeof cycleJson['stage'] === 'string'
+    || typeof cycleJson['completedAt'] === 'string'
+    || typeof cycleJson['durationMs'] === 'number'
+    || typeof cycleJson['cost'] === 'object'
+    || typeof cycleJson['tests'] === 'object'
+    || typeof cycleJson['git'] === 'object'
+    || typeof cycleJson['pr'] === 'object';
+}
+
 function summarizeCycle(cycleDir: string, cycleId: string, projectRoot?: string): CycleListRow | null {
   if (!existsSync(cycleDir)) return null;
   const configFields = launchConfigFields(readCycleLaunchConfig(cycleDir));
@@ -265,7 +275,7 @@ function summarizeCycle(cycleDir: string, cycleId: string, projectRoot?: string)
     } catch { /* non-fatal — leave null */ }
   }
 
-  if (cycleJson) {
+  if (cycleJson && isTerminalCyclePayload(cycleJson)) {
     const cost = (cycleJson['cost'] ?? {}) as Record<string, unknown>;
     const tests = (cycleJson['tests'] ?? {}) as Record<string, unknown>;
     const pr = (cycleJson['pr'] ?? {}) as Record<string, unknown>;
@@ -867,6 +877,7 @@ export async function cyclesRoutes(
     if (existsSync(cycleFile)) {
       const parsed = readJsonIfExists(cycleFile) as Record<string, unknown> | null;
       if (parsed === null) return reply.status(500).send({ error: 'Failed to parse cycle.json' });
+      if (isTerminalCyclePayload(parsed)) {
       // v6.7.4 heal: cycles that fail at gate have cycle.json with
       // cost.totalUsd = 0 even though phases/*.json contain real costs.
       // Roll those forward so the dashboard shows truth.
@@ -919,6 +930,7 @@ export async function cyclesRoutes(
       const cp = readCycleCheckpoint(dir);
       if (cp !== undefined) (parsed as any).checkpoint = cp;
       return reply.send(attachLaunchConfig(dir, parsed));
+      }
     }
     // cycle.json is only written at terminal stage. While the cycle is still
     // running, synthesize a partial payload from events.jsonl so the dashboard

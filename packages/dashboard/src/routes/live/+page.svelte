@@ -166,10 +166,10 @@
         <span class="live-label" style="color:var(--af-danger)">offline</span>
       {/if}
     </span>
-    <Btn size="sm" variant={paused ? 'primary' : 'ghost'} onclick={togglePause}>
+    <Btn size="sm" variant={paused ? 'primary' : 'ghost'} onClick={togglePause}>
       {paused ? 'Resume' : 'Pause'}
     </Btn>
-    <Btn size="sm" onclick={clearFeed}>Clear</Btn>
+    <Btn size="sm" onClick={clearFeed}>Clear</Btn>
   </div>
 </div>
 

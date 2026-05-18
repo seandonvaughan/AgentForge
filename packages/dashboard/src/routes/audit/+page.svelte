@@ -116,8 +116,8 @@
       <p class="page-sub">Complete trail of every administrative and autonomous action</p>
     </div>
     <div class="header-actions">
-      <Btn size="sm" onclick={exportCsv}>Export CSV</Btn>
-      <Btn size="sm" onclick={() => fetchEntries(currentSince)}>&#8635; Refresh</Btn>
+      <Btn size="sm" onClick={exportCsv}>Export CSV</Btn>
+      <Btn size="sm" onClick={() => fetchEntries(currentSince)}>&#8635; Refresh</Btn>
     </div>
   </div>
 
@@ -140,8 +140,8 @@
         <input id="audit-since" class="filter-input font-mono" type="text" placeholder="2026-05-01T00:00:00Z" bind:value={sinceFilter} />
       </div>
       <div class="filter-btns">
-        <Btn size="sm" variant="primary" onclick={applyFilters}>Apply</Btn>
-        <Btn size="sm" variant="ghost" onclick={clearFilters}>Clear</Btn>
+        <Btn size="sm" variant="primary" onClick={applyFilters}>Apply</Btn>
+        <Btn size="sm" variant="ghost" onClick={clearFilters}>Clear</Btn>
       </div>
     </div>
   </Card>

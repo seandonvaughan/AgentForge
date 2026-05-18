@@ -302,7 +302,7 @@
         <div class="send-error">{sendError}</div>
       {/if}
       <div class="composer-footer">
-        <Btn size="sm" disabled={sending || replyBody.trim().length === 0} onclick={submitReply}>
+        <Btn size="sm" disabled={sending || replyBody.trim().length === 0} onClick={submitReply}>
           {sending ? 'Sending…' : 'Send reply'}
         </Btn>
       </div>

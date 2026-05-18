@@ -235,7 +235,7 @@
           >{r}</button>
         {/each}
       </div>
-      <Btn size="sm" onclick={fetchAll}>Refresh</Btn>
+      <Btn size="sm" onClick={fetchAll}>Refresh</Btn>
     </div>
   </div>
 </header>
@@ -252,7 +252,7 @@
 {:else if error}
   <div class="error-banner">
     {error}
-    <Btn size="sm" onclick={fetchAll} style="margin-left:12px">Retry</Btn>
+    <Btn size="sm" onClick={fetchAll} style="margin-left:12px">Retry</Btn>
   </div>
 
 {:else}

@@ -122,8 +122,8 @@
     </p>
   </div>
   <div class="page-actions">
-    <Btn size="sm" onclick={() => loadWorkspaces()}>Refresh</Btn>
-    <Btn variant="purple" size="sm" onclick={() => { showCreateForm = !showCreateForm; }}>
+    <Btn size="sm" onClick={() => loadWorkspaces()}>Refresh</Btn>
+    <Btn variant="purple" size="sm" onClick={() => { showCreateForm = !showCreateForm; }}>
       {showCreateForm ? '✕ Cancel' : '+ New Workspace'}
     </Btn>
   </div>
@@ -225,12 +225,12 @@
           </div>
           <div class="ws-actions">
             {#if !isActive}
-              <Btn size="sm" onclick={() => activateWorkspace(ws.id)} disabled={busy}>Switch</Btn>
+              <Btn size="sm" onClick={() => activateWorkspace(ws.id)} disabled={busy}>Switch</Btn>
             {/if}
             {#if !isDefault}
-              <Btn size="sm" onclick={() => setDefault(ws.id)} disabled={busy}>Set default</Btn>
+              <Btn size="sm" onClick={() => setDefault(ws.id)} disabled={busy}>Set default</Btn>
             {/if}
-            <Btn variant="danger" size="sm" onclick={() => removeOne(ws.id)} disabled={busy}>Remove</Btn>
+            <Btn variant="danger" size="sm" onClick={() => removeOne(ws.id)} disabled={busy}>Remove</Btn>
           </div>
         </div>
 

@@ -337,7 +337,7 @@
       <span class="font-mono fw-countdown">
         {#if loading}Loading…{:else}next in {refreshIn}s{/if}
       </span>
-      <Btn size="sm" onclick={manualRefresh}>&#8635; Refresh</Btn>
+      <Btn size="sm" onClick={manualRefresh}>&#8635; Refresh</Btn>
     </div>
   </div>
 </header>
@@ -354,14 +354,14 @@
 {:else if error && !hasPrevData}
   <div class="error-banner">
     Failed to load flywheel data: {error}
-    <Btn size="sm" onclick={manualRefresh} style="margin-left:12px">Retry</Btn>
+    <Btn size="sm" onClick={manualRefresh} style="margin-left:12px">Retry</Btn>
   </div>
 
 {:else}
   {#if error && hasPrevData}
     <div class="warn-banner">
       Live refresh failed — showing last known data.
-      <Btn size="sm" onclick={manualRefresh} style="margin-left:12px">Retry</Btn>
+      <Btn size="sm" onClick={manualRefresh} style="margin-left:12px">Retry</Btn>
     </div>
   {/if}
 

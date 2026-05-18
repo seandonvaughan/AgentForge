@@ -553,7 +553,7 @@
         {:else if agentsLoadError}
           <div class="error-callout">
             <span class="error-msg">{agentsLoadError}</span>
-            <Btn size="sm" onclick={loadAgents} disabled={running}>Retry</Btn>
+            <Btn size="sm" onClick={loadAgents} disabled={running}>Retry</Btn>
           </div>
         {:else}
           <input
@@ -628,7 +628,7 @@
         variant="purple"
         size="lg"
         disabled={running || !taskInput.trim() || !!agentsLoadError || agentEntries.length === 0}
-        onclick={handleRun}
+        onClick={handleRun}
         class="run-btn"
       >
         {#if running}
@@ -713,8 +713,8 @@
           {:else if running}
             <span class="latency-pill latency-pill--pending af2-mono">Waiting for first token</span>
           {/if}
-          <Btn size="sm" disabled={!output} onclick={copyOutput}>{copyStatus ?? 'Copy'}</Btn>
-          <Btn size="sm" disabled={!output && !runError} onclick={clearOutput}>Clear</Btn>
+          <Btn size="sm" disabled={!output} onClick={copyOutput}>{copyStatus ?? 'Copy'}</Btn>
+          <Btn size="sm" disabled={!output && !runError} onClick={clearOutput}>Clear</Btn>
         </div>
       </div>
 

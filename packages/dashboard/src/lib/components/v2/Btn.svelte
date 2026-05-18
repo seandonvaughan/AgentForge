@@ -9,7 +9,7 @@
     size?: Size;
     disabled?: boolean;
     href?: string;
-    onclick?: (e: MouseEvent) => void;
+    onClick?: (e: MouseEvent) => void;
     children?: Snippet;
     leading?: Snippet;
     trailing?: Snippet;
@@ -24,7 +24,7 @@
     size = 'md',
     disabled = false,
     href,
-    onclick,
+    onClick,
     children,
     leading,
     trailing,
@@ -59,6 +59,14 @@
     variantStyles[variant],
     extraStyle,
   ].filter(Boolean).join(';'));
+
+  let buttonEl = $state<HTMLButtonElement | undefined>();
+
+  $effect(() => {
+    if (!buttonEl || !onClick) return;
+    buttonEl.addEventListener('click', onClick);
+    return () => buttonEl?.removeEventListener('click', onClick);
+  });
 </script>
 
 {#if href}
@@ -68,7 +76,7 @@
     {@render trailing?.()}
   </a>
 {:else}
-  <button {type} {disabled} style={inlineStyle} class={className} {onclick}>
+  <button bind:this={buttonEl} {type} {disabled} style={inlineStyle} class={className}>
     {@render leading?.()}
     {@render children?.()}
     {@render trailing?.()}

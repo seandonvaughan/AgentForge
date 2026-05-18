@@ -352,7 +352,7 @@
 
   <div class="af-agent-actions">
     <Btn size="sm" href={`/runner?agentId=${encodeURIComponent(agent.agentId)}`}>▶ Run</Btn>
-    <Btn size="sm" onclick={() => { activeTab = 'config'; configEditing = true; }}>Edit config</Btn>
+    <Btn size="sm" onClick={() => { activeTab = 'config'; configEditing = true; }}>Edit config</Btn>
   </div>
 </div>
 
@@ -544,7 +544,7 @@
     <Card>
       <div class="af-error-state">
         {sessionsError}
-        <Btn size="sm" onclick={loadSessions}>Retry</Btn>
+        <Btn size="sm" onClick={loadSessions}>Retry</Btn>
       </div>
     </Card>
   {:else if sessions.length === 0}
@@ -611,7 +611,7 @@
     <Card><div class="af-loading-state">Loading memory…</div></Card>
   {:else if memError}
     <Card>
-      <div class="af-error-state">{memError} <Btn size="sm" onclick={loadMemory}>Retry</Btn></div>
+      <div class="af-error-state">{memError} <Btn size="sm" onClick={loadMemory}>Retry</Btn></div>
     </Card>
   {:else if memEntries.length === 0}
     <Card>
@@ -685,14 +685,14 @@
             <span class="af-save-err">{configSaveError}</span>
           {/if}
           {#if !configLoading && !configLoadError}
-            <Btn size="sm" onclick={() => { navigator.clipboard?.writeText(configYaml); }}>Copy</Btn>
+            <Btn size="sm" onClick={() => { navigator.clipboard?.writeText(configYaml); }}>Copy</Btn>
           {/if}
           {#if !configEditing}
-            <Btn size="sm" onclick={loadConfigYaml} disabled={configLoading}>↻ Refresh</Btn>
-            <Btn size="sm" onclick={() => (configEditing = true)} disabled={configLoading || !!configLoadError}>Edit</Btn>
+            <Btn size="sm" onClick={loadConfigYaml} disabled={configLoading}>↻ Refresh</Btn>
+            <Btn size="sm" onClick={() => (configEditing = true)} disabled={configLoading || !!configLoadError}>Edit</Btn>
           {:else}
-            <Btn size="sm" onclick={async () => { configEditing = false; configSaveError = null; await loadConfigYaml(); }}>Cancel</Btn>
-            <Btn size="sm" variant="primary" onclick={saveConfig} disabled={configSaving}>
+            <Btn size="sm" onClick={async () => { configEditing = false; configSaveError = null; await loadConfigYaml(); }}>Cancel</Btn>
+            <Btn size="sm" variant="primary" onClick={saveConfig} disabled={configSaving}>
               {configSaving ? 'Saving…' : 'Save'}
             </Btn>
           {/if}
@@ -703,7 +703,7 @@
       {:else if configLoadError}
         <div class="af-error-state">
           {configLoadError}
-          <Btn size="sm" onclick={loadConfigYaml}>Retry</Btn>
+          <Btn size="sm" onClick={loadConfigYaml}>Retry</Btn>
         </div>
       {:else if configEditing}
         <textarea

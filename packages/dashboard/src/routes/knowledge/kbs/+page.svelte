@@ -118,7 +118,7 @@
       </p>
     </div>
     <div>
-      <Btn size="sm" onclick={() => (showCreate = !showCreate)}>
+      <Btn size="sm" onClick={() => (showCreate = !showCreate)}>
         {showCreate ? 'Cancel' : 'New KB'}
       </Btn>
     </div>

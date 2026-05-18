@@ -21,7 +21,7 @@ Primary / purple / ghost / danger button at three sizes.
 | `trailing` | `Snippet` | — | Content after label |
 
 ```svelte
-<Btn variant="primary" size="sm" onclick={launch}>Launch</Btn>
+<Btn variant="primary" size="sm" onClick={launch}>Launch</Btn>
 <Btn variant="danger" href="/delete">Delete</Btn>
 ```
 

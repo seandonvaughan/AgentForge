@@ -193,7 +193,7 @@
       <p class="page-sub">Outbound deliveries to Slack, Linear, Datadog, and custom endpoints</p>
     </div>
     <div class="header-actions">
-      <Btn variant="primary" size="sm" onclick={() => { showCreate = !showCreate; formError = null; }}>
+      <Btn variant="primary" size="sm" onClick={() => { showCreate = !showCreate; formError = null; }}>
         {showCreate ? '✕ Cancel' : '+ New webhook'}
       </Btn>
     </div>
@@ -243,8 +243,8 @@
         <div class="form-error">{formError}</div>
       {/if}
       <div style="margin-top:14px;display:flex;gap:8px">
-        <Btn variant="primary" size="md" onclick={createWebhook} disabled={saving}>{saving ? 'Creating…' : 'Create webhook'}</Btn>
-        <Btn size="md" variant="ghost" onclick={() => { showCreate = false; formError = null; }}>Cancel</Btn>
+        <Btn variant="primary" size="md" onClick={createWebhook} disabled={saving}>{saving ? 'Creating…' : 'Create webhook'}</Btn>
+        <Btn size="md" variant="ghost" onClick={() => { showCreate = false; formError = null; }}>Cancel</Btn>
       </div>
     </Card>
   {/if}
@@ -320,13 +320,13 @@
                   last {fmtRel(w.lastDeliveryAt)}
                 </div>
               </div>
-              <Btn size="sm" onclick={() => testWebhook(w.id)} disabled={testingId === w.id}>
+              <Btn size="sm" onClick={() => testWebhook(w.id)} disabled={testingId === w.id}>
                 {testingId === w.id ? '…' : 'Test'}
               </Btn>
               <button class="toggle-btn" class:toggle-on={w.enabled} onclick={() => toggleEnabled(w)} title={w.enabled ? 'Disable' : 'Enable'}>
                 <span class="toggle-track"><span class="toggle-thumb" class:thumb-on={w.enabled}></span></span>
               </button>
-              <Btn size="sm" variant="danger" onclick={() => deleteWebhook(w.id)} disabled={deletingId === w.id}>
+              <Btn size="sm" variant="danger" onClick={() => deleteWebhook(w.id)} disabled={deletingId === w.id}>
                 {deletingId === w.id ? '…' : 'Delete'}
               </Btn>
             </div>

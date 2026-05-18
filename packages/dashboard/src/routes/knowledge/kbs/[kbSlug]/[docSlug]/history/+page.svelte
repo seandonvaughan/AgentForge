@@ -130,7 +130,7 @@
         Pick any two to diff. Click "Restore" to create a new version with the old body.
       </p>
     </div>
-    <Btn size="sm" onclick={() => void goto(`/knowledge/kbs/${kb?.slug}/${doc?.slug}`)}>
+    <Btn size="sm" onClick={() => void goto(`/knowledge/kbs/${kb?.slug}/${doc?.slug}`)}>
       Back to doc
     </Btn>
   </div>
@@ -195,7 +195,7 @@
               <td>
                 <Btn
                   size="sm"
-                  onclick={() => void restoreVersion(v)}
+                  onClick={() => void restoreVersion(v)}
                   disabled={restoring || v.version === versions[0]?.version}
                 >
                   Restore

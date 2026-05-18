@@ -259,7 +259,7 @@
       <span class="af2-mono" style="font-size:10px;color:var(--af-faint)">Updated {lastLoadedAt}</span>
     {/if}
     <Btn size="sm" href="/live">Live Feed</Btn>
-    <Btn size="sm" onclick={refresh} disabled={jobsLoading || eventsLoading}>
+    <Btn size="sm" onClick={refresh} disabled={jobsLoading || eventsLoading}>
       {jobsLoading || eventsLoading ? 'Refreshing…' : 'Refresh'}
     </Btn>
   </div>
@@ -298,7 +298,7 @@
   <div class="error-state">
     <strong>Unable to load runtime jobs.</strong>
     <span>{jobsError}</span>
-    <Btn size="sm" onclick={refresh}>Retry</Btn>
+    <Btn size="sm" onClick={refresh}>Retry</Btn>
   </div>
 {:else}
   <!-- ── Two-column jobs layout ──────────────────────────────────────────── -->
@@ -389,7 +389,7 @@
                 variant="danger"
                 size="sm"
                 disabled={!isCancellableJobStatus(selectedJob.status) || cancellingJobId === selectedJob.jobId}
-                onclick={() => cancelJob(selectedJob!)}
+                onClick={() => cancelJob(selectedJob!)}
               >
                 {cancellingJobId === selectedJob.jobId ? 'Cancelling…' : 'Cancel'}
               </Btn>

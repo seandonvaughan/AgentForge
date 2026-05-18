@@ -177,7 +177,7 @@
       {/if}
     </div>
     <div class="header-actions">
-      <Btn size="sm" variant="ghost" onclick={() => goto('/flywheel/proposals')}>← Back</Btn>
+      <Btn size="sm" variant="ghost" onClick={() => goto('/flywheel/proposals')}>← Back</Btn>
     </div>
   </div>
 </header>
@@ -189,7 +189,7 @@
 {:else if error}
   <div class="error-banner">
     {error}
-    <Btn size="sm" onclick={() => void load()} style="margin-left:12px">Retry</Btn>
+    <Btn size="sm" onClick={() => void load()} style="margin-left:12px">Retry</Btn>
   </div>
 
 {:else if proposal}
@@ -220,7 +220,7 @@
         {#if proposal.status === 'proposed'}
           <div class="action-buttons">
             <Btn
-              onclick={() => void doAction('approve')}
+              onClick={() => void doAction('approve')}
               disabled={actionInProgress !== null}
               style="width:100%;margin-bottom:8px;background:var(--af-success);color:#fff;"
             >
@@ -228,7 +228,7 @@
             </Btn>
             <Btn
               variant="ghost"
-              onclick={() => void doAction('reject')}
+              onClick={() => void doAction('reject')}
               disabled={actionInProgress !== null}
               style="width:100%;color:var(--af-danger);border-color:var(--af-danger);"
             >

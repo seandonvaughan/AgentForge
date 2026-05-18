@@ -198,18 +198,18 @@
   </div>
   <div class="ph-actions">
     {#if staleList.length > 0 && !confirmBulk}
-      <Btn variant="danger" size="sm" onclick={() => (confirmBulk = true)} disabled={deletingBulk || loading}>
+      <Btn variant="danger" size="sm" onClick={() => (confirmBulk = true)} disabled={deletingBulk || loading}>
         Sweep stale ({staleList.length})
       </Btn>
     {/if}
     {#if confirmBulk}
       <span class="confirm-label">Delete {staleList.length} stale branch{staleList.length === 1 ? '' : 'es'}?</span>
-      <Btn variant="danger" size="sm" onclick={handleBulkDelete} disabled={deletingBulk}>
+      <Btn variant="danger" size="sm" onClick={handleBulkDelete} disabled={deletingBulk}>
         {deletingBulk ? 'Deleting…' : 'Yes, delete all'}
       </Btn>
-      <Btn variant="ghost" size="sm" onclick={() => (confirmBulk = false)}>Cancel</Btn>
+      <Btn variant="ghost" size="sm" onClick={() => (confirmBulk = false)}>Cancel</Btn>
     {/if}
-    <Btn variant="ghost" size="sm" onclick={() => fetchBranches()} disabled={loading}>
+    <Btn variant="ghost" size="sm" onClick={() => fetchBranches()} disabled={loading}>
       {loading ? 'Refreshing…' : 'Refresh'}
     </Btn>
   </div>
@@ -298,7 +298,7 @@
   <div class="empty">
     <span class="empty-icon">⎇</span>
     <p>No branches match the current filter.</p>
-    <Btn variant="ghost" size="sm" onclick={() => { statusFilter = 'all'; searchQ = ''; }}>Clear filters</Btn>
+    <Btn variant="ghost" size="sm" onClick={() => { statusFilter = 'all'; searchQ = ''; }}>Clear filters</Btn>
   </div>
 
 <!-- ── Table ───────────────────────────────────────────────────────────── -->
@@ -421,15 +421,15 @@
                     <input type="checkbox" bind:checked={forceDelete} />
                     force
                   </label>
-                  <Btn variant="danger" size="sm" onclick={() => handleDelete(b.name)} disabled={isDeleting}>
+                  <Btn variant="danger" size="sm" onClick={() => handleDelete(b.name)} disabled={isDeleting}>
                     {isDeleting ? '…' : 'Confirm'}
                   </Btn>
-                  <Btn variant="ghost" size="sm" onclick={() => (confirmDelete = null)}>No</Btn>
+                  <Btn variant="ghost" size="sm" onClick={() => (confirmDelete = null)}>No</Btn>
                 {:else if b.status !== 'active'}
                   <Btn
                     variant="ghost"
                     size="sm"
-                    onclick={() => { confirmDelete = b.name; forceDelete = b.status !== 'merged'; }}
+                    onClick={() => { confirmDelete = b.name; forceDelete = b.status !== 'merged'; }}
                     disabled={isDeleting || deletingBulk}
                   >
                     {isDeleting ? '…' : 'Delete'}

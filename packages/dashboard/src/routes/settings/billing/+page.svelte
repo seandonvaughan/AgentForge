@@ -49,7 +49,7 @@
 {:else if loadError}
   <Card>
     <p class="err-text">{loadError}</p>
-    <Btn onclick={() => load()}>Retry</Btn>
+    <Btn onClick={() => load()}>Retry</Btn>
   </Card>
 {:else}
   <!-- Plan tier card -->

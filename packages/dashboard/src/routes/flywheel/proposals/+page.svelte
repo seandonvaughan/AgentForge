@@ -134,7 +134,7 @@
       </p>
     </div>
     <div class="header-actions">
-      <Btn size="sm" onclick={() => void load()}>&#8635; Refresh</Btn>
+      <Btn size="sm" onClick={() => void load()}>&#8635; Refresh</Btn>
     </div>
   </div>
 </header>
@@ -160,7 +160,7 @@
 {:else if error}
   <div class="error-banner">
     Failed to load proposals: {error}
-    <Btn size="sm" onclick={() => void load()} style="margin-left:12px">Retry</Btn>
+    <Btn size="sm" onClick={() => void load()} style="margin-left:12px">Retry</Btn>
   </div>
 
 {:else if filtered.length === 0}

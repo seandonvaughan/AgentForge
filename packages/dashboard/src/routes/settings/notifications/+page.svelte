@@ -205,7 +205,7 @@
     </div>
   </Card>
 {:else if loadError}
-  <Card><p class="err-text">{loadError}</p><Btn onclick={() => loadSettings()}>Retry</Btn></Card>
+  <Card><p class="err-text">{loadError}</p><Btn onClick={() => loadSettings()}>Retry</Btn></Card>
 {:else}
   <form onsubmit={(e) => { e.preventDefault(); void saveSettings(); }}>
     <Card style="max-width:640px">
@@ -274,7 +274,7 @@
   <Card style="max-width:720px;margin-top:12px" noPad>
     <div class="card-hdr">
       <p class="section-title" style="margin:0">OUTBOUND WEBHOOKS</p>
-      <Btn variant="purple" size="sm" onclick={() => { showNewWebhook = !showNewWebhook; }}>
+      <Btn variant="purple" size="sm" onClick={() => { showNewWebhook = !showNewWebhook; }}>
         {showNewWebhook ? 'Cancel' : '+ New webhook'}
       </Btn>
     </div>
@@ -357,7 +357,7 @@
                   role="switch" aria-checked={hook.enabled} aria-label="Toggle webhook">
                   <span class="toggle-thumb"></span>
                 </button>
-                <Btn variant="danger" size="sm" onclick={() => deleteWebhook(hook.id)}>Delete</Btn>
+                <Btn variant="danger" size="sm" onClick={() => deleteWebhook(hook.id)}>Delete</Btn>
               </td>
             </tr>
           {/each}

@@ -323,7 +323,7 @@
     {#if launchError}
       <div class="error-row">
         <span>Failed to launch: {launchError}</span>
-        <Btn size="sm" onclick={() => (launchError = null)}>Dismiss</Btn>
+        <Btn size="sm" onClick={() => (launchError = null)}>Dismiss</Btn>
       </div>
     {/if}
 
@@ -331,7 +331,7 @@
       <span class="hint" style="flex:1">
         Advanced overrides (per-agent budgets, capability tier pinning) are future work.
       </span>
-      <Btn size="lg" variant="purple" onclick={handleLaunch} disabled={launching}>
+      <Btn size="lg" variant="purple" onClick={handleLaunch} disabled={launching}>
         {launching ? 'Launching…' : '▶ Run Cycle'}
       </Btn>
     </div>

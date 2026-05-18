@@ -146,8 +146,8 @@
         <code class="key-text font-mono">{createdKey}</code>
       </div>
       <div class="modal-actions">
-        <Btn variant="purple" onclick={copyKey}>{copied ? 'Copied!' : 'Copy to clipboard'}</Btn>
-        <Btn onclick={() => { createdKey = null; }}>Done</Btn>
+        <Btn variant="purple" onClick={copyKey}>{copied ? 'Copied!' : 'Copy to clipboard'}</Btn>
+        <Btn onClick={() => { createdKey = null; }}>Done</Btn>
       </div>
     </div>
   </div>
@@ -156,7 +156,7 @@
 <Card style="max-width:720px" noPad>
   <div class="card-hdr">
     <p class="section-title" style="margin:0">API KEYS</p>
-    <Btn variant="purple" size="sm" onclick={() => { showForm = !showForm; }}>
+    <Btn variant="purple" size="sm" onClick={() => { showForm = !showForm; }}>
       {showForm ? 'Cancel' : '+ New API key'}
     </Btn>
   </div>
@@ -195,7 +195,7 @@
   {:else if loadError}
     <div class="empty-row">
       <p class="err-text">{loadError}</p>
-      <Btn size="sm" onclick={() => load()}>Retry</Btn>
+      <Btn size="sm" onClick={() => load()}>Retry</Btn>
     </div>
   {:else if keys.length === 0}
     <div class="empty-row">
@@ -228,7 +228,7 @@
               </div>
             </td>
             <td>
-              <Btn variant="danger" size="sm" onclick={() => revoke(key.id)}>Revoke</Btn>
+              <Btn variant="danger" size="sm" onClick={() => revoke(key.id)}>Revoke</Btn>
             </td>
           </tr>
         {/each}

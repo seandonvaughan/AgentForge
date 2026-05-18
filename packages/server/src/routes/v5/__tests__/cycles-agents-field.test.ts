@@ -132,6 +132,23 @@ describe('GET /api/v5/cycles — Fix 2: agents field', () => {
     expect(agents).toContain('exec-agent');
   });
 
+  it('does not classify heartbeat-only cycle.json as completed', async () => {
+    const id = 'aaaaaaaa-0000-0000-0000-000000000006';
+    const dir = makeCycleDir(id);
+    writeFileSync(
+      join(dir, 'cycle.json'),
+      JSON.stringify({ cycleId: id, lastHeartbeatAt: new Date().toISOString() }),
+    );
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/cycles' });
+    expect(res.statusCode).toBe(200);
+    const rows = res.json().cycles as Array<Record<string, unknown>>;
+    const row = rows.find((r) => r['cycleId'] === id);
+    expect(row).toBeDefined();
+    expect(row!['stage']).toBe('plan');
+    expect(row!['completedAt']).toBeNull();
+  });
+
   it('includes agents: [] in in-progress path when no phases written yet', async () => {
     const id = 'aaaaaaaa-0000-0000-0000-000000000005';
     const dir = makeCycleDir(id);

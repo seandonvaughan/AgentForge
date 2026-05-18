@@ -168,7 +168,7 @@
     <p class="section-title" style="margin:0">TEAM MEMBERS</p>
     <div class="hdr-actions">
       {#if inviteOk}<span class="save-ok">Invited!</span>{/if}
-      <Btn variant="purple" size="sm" onclick={() => { showInvite = !showInvite; }}>
+      <Btn variant="purple" size="sm" onClick={() => { showInvite = !showInvite; }}>
         {showInvite ? 'Cancel' : '+ Invite'}
       </Btn>
     </div>
@@ -212,7 +212,7 @@
   {:else if loadError}
     <div class="empty-row">
       <p class="err-text">{loadError}</p>
-      <Btn size="sm" onclick={() => load()}>Retry</Btn>
+      <Btn size="sm" onClick={() => load()}>Retry</Btn>
     </div>
   {:else if members.length === 0}
     <div class="empty-row"><p class="dim-text">No members yet. Invite someone above.</p></div>
@@ -264,7 +264,7 @@
             variant="danger"
             size="sm"
             disabled={isLastOwner}
-            onclick={() => removeMember(member)}
+            onClick={() => removeMember(member)}
           >
             Remove
           </Btn>

@@ -53,14 +53,14 @@
       <div class="actions">
         <Btn
           size="sm"
-          onclick={() => void goto(`/knowledge/kbs/${kb.slug}/${doc.slug}/history`)}
+          onClick={() => void goto(`/knowledge/kbs/${kb.slug}/${doc.slug}/history`)}
         >
           History
         </Btn>
         <Btn
           size="sm"
           variant="primary"
-          onclick={() => void goto(`/knowledge/kbs/${kb.slug}/${doc.slug}/edit`)}
+          onClick={() => void goto(`/knowledge/kbs/${kb.slug}/${doc.slug}/edit`)}
         >
           Edit
         </Btn>
