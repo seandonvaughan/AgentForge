@@ -78,8 +78,8 @@ describe('afKbLookup', () => {
 
     expect(result.ok).toBe(false);
     expect(result.error?.code).toBe('INVALID_KB_ID');
-    // fetch should not have been called
-    expect(global.fetch).not.toBeDefined() || expect(vi.isMockFunction(global.fetch) ? (global.fetch as ReturnType<typeof vi.fn>).mock.calls.length : 0).toBe(0);
+    // fetch should not have been set up (mock not installed for this test)
+    expect(vi.isMockFunction(global.fetch)).toBe(false);
   });
 
   it('returns INVALID_DOC_ID for invalid doc_id', async () => {

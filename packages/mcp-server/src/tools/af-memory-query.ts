@@ -53,7 +53,7 @@ function loadMemoryRecords(memoryDir: string): Array<{ file: string; line: numbe
 
   let files: string[];
   try {
-    files = readdirSync(memoryDir).filter(f => f.endsWith('.jsonl'));
+    files = readdirSync(memoryDir).filter((f: string) => f.endsWith('.jsonl'));
   } catch {
     return [];
   }

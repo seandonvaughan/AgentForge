@@ -18,7 +18,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { createServer } from 'node:http';
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { z } from 'zod';
 
 import { validateToken, extractBearer } from './auth.js';
@@ -117,11 +118,10 @@ server.tool(
 
 async function main(): Promise<void> {
   if (process.env['AGENTFORGE_MCP_HTTP'] === '1') {
-    // HTTP transport
+    // HTTP transport — stateless mode (no session management)
     const port = parseInt(process.env['AGENTFORGE_MCP_PORT'] ?? '3741', 10);
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
 
-    const httpServer = createServer((req, res) => {
+    const httpServer = createServer((req: IncomingMessage, res: ServerResponse) => {
       // Bearer token auth check
       const token = extractBearer(req.headers['authorization']);
       const auth = validateToken(token);
@@ -130,7 +130,15 @@ async function main(): Promise<void> {
         res.end(JSON.stringify({ error: auth.message }));
         return;
       }
-      transport.handleRequest(req, res).catch((err: unknown) => {
+
+      // Create a per-request stateless transport (sessionIdGenerator omitted → stateless)
+      const transport = new StreamableHTTPServerTransport();
+
+      // Cast needed because exactOptionalPropertyTypes exposes a setter/getter
+      // mismatch in the SDK's Transport interface under strict mode.
+      server.connect(transport as unknown as Transport).then(() => {
+        return transport.handleRequest(req, res);
+      }).catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : String(err);
         if (!res.headersSent) {
           res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -139,7 +147,6 @@ async function main(): Promise<void> {
       });
     });
 
-    await server.connect(transport);
     httpServer.listen(port, () => {
       process.stderr.write(`[agentforge-mcp] HTTP server listening on port ${port}\n`);
     });
