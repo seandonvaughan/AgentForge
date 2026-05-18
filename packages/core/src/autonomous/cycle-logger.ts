@@ -144,6 +144,33 @@ export class CycleLogger {
     } catch { /* non-fatal: observability write failure must not stop the cycle */ }
   }
 
+  /**
+   * Write `lastHeartbeatAt` to cycle.json without touching cost or stage. Lets
+   * consumers detect a cycle that died at the OS level (SIGKILL, OOM, parent
+   * terminal close) where Node's try/catch in cycle-runner.start() never runs.
+   * Without a heartbeat, cycle.json sits at `stage: "run"` forever and the
+   * dashboard reports an in-flight cycle that hasn't ticked in hours.
+   * See memory/project_cycle_db9c145f_post_mortem.md.
+   */
+  flushHeartbeat(): void {
+    const cyclePath = join(this.cycleDir, 'cycle.json');
+    try {
+      let base: Record<string, unknown> = {};
+      if (existsSync(cyclePath)) {
+        try {
+          base = JSON.parse(readFileSync(cyclePath, 'utf8')) as Record<string, unknown>;
+        } catch { /* keep empty base on parse error */ }
+      }
+      const stage = base['stage'] ?? 'run';
+      this.writeJson(cyclePath, {
+        ...base,
+        cycleId: this.cycleId,
+        stage,
+        lastHeartbeatAt: new Date().toISOString(),
+      });
+    } catch { /* non-fatal */ }
+  }
+
   logCycleResult(result: CycleResult): void {
     // Opt-in schema validation — warns on drift, never throws.
     validateCycleJson(result);

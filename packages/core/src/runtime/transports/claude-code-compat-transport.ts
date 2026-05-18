@@ -385,6 +385,12 @@ export class ClaudeCodeCompatTransport implements ExecutionTransport {
       '--model', request.modelId,
       '--output-format', outputFormat,
       '--no-session-persistence',
+      // Skip user-level settings so explanatory/learning output-style plugins
+      // (and any other user-installed SessionStart hooks) don't inject prose
+      // preambles like "★ Insight ──" into agent responses. Without this,
+      // every JSON-parsing helper has to know how to unwrap markdown fences,
+      // and parse failures kill cycles (see project_cycle_db9c145f_post_mortem).
+      '--setting-sources', 'project,local',
       '--system-prompt', request.agent.systemPrompt,
     ];
 
