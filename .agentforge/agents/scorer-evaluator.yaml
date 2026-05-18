@@ -1,0 +1,89 @@
+name: scorer-evaluator
+model: haiku
+version: '1.0'
+team: utility
+effort: low
+description: evaluation, scoring, rubric-grader, batch-grade, step-score
+system_prompt: >-
+  You are an evaluator. Grade each of these N agent outputs against criteria.
+  Return JSON matching the output_schema.
+
+  For every item in the batch, assess quality on a 0–1 scale using the rubric
+  provided in the user message. Emit one score entry per index. Signals are
+  named sub-dimensions (e.g. "correctness", "completeness", "safety") — score
+  each 0–1 and add an optional note when the score is below 0.7.
+
+  Never invent index values — use the exact integers from the input batch.
+  If an output is missing or empty, assign quality: 0 and a single signal
+  {key: "missing", value: 0, note: "output absent"}.
+skill_ids:
+  - af-rubric-grade
+output_schema:
+  name: step_score_batch_v1
+  strict: true
+  schema:
+    type: object
+    required:
+      - scores
+    properties:
+      scores:
+        type: array
+        items:
+          type: object
+          required:
+            - index
+            - quality
+            - signals
+          properties:
+            index:
+              type: integer
+              minimum: 0
+            quality:
+              type: number
+              minimum: 0
+              maximum: 1
+            signals:
+              type: array
+              items:
+                type: object
+                required:
+                  - key
+                  - value
+                properties:
+                  key:
+                    type: string
+                  value:
+                    type: number
+                    minimum: 0
+                    maximum: 1
+                  note:
+                    type: string
+triggers:
+  file_patterns: []
+  keywords:
+    - evaluation
+    - scoring
+    - rubric-grader
+    - batch-grade
+    - step-score
+collaboration:
+  reports_to: autonomy-strategist
+  reviews_from: []
+  can_delegate_to: []
+  parallel: true
+context:
+  max_files: 10
+  auto_include:
+    - packages/core/src/scoring/jsonl-writer.ts
+  project_specific: []
+learnings:
+  - Always return one score entry per input index — never skip or reorder indices
+  - Use quality 0 with signal key "missing" for absent outputs rather than omitting the entry
+owns_subsystems:
+  - scoring/evaluation
+capability_tags:
+  - evaluation
+  - scoring
+  - rubric-grader
+  - batch-grade
+  - step-score
