@@ -410,4 +410,88 @@ describe('AnthropicSdkTransport', () => {
       expect(transport.isAvailable(req)).toBe(true);
     });
   });
+
+  // ── outputSchema / schemaValidation (T3) ──────────────────────────────────
+
+  describe('execute — outputSchema and schemaValidation', () => {
+    const testSchema = {
+      name: 'test_output',
+      schema: {
+        type: 'object' as const,
+        properties: { status: { type: 'string' }, count: { type: 'number' } },
+        required: ['status'],
+        additionalProperties: false,
+      },
+    };
+
+    /** Helper to create a response with a specific text payload. */
+    function textResponse(text: string) {
+      return makeApiResponse({ content: [{ type: 'text', text }] });
+    }
+
+    it('returns schemaValidation ok=true when response is valid JSON matching schema', async () => {
+      mockCreate.mockResolvedValueOnce(textResponse(JSON.stringify({ status: 'ok', count: 5 })));
+
+      const result = await transport.execute(makeRequest({ outputSchema: testSchema }));
+
+      expect(result.schemaValidation).toBeDefined();
+      expect(result.schemaValidation?.ok).toBe(true);
+      expect(result.schemaValidation?.error).toBeUndefined();
+    });
+
+    it('retries ONCE when initial response fails schema validation', async () => {
+      mockCreate.mockResolvedValueOnce(textResponse('not valid json'));
+      mockCreate.mockResolvedValueOnce(textResponse(JSON.stringify({ status: 'done' })));
+
+      const result = await transport.execute(makeRequest({ outputSchema: testSchema }));
+
+      expect(mockCreate).toHaveBeenCalledTimes(2);
+      expect(result.schemaValidation?.ok).toBe(true);
+    });
+
+    it('includes schema error message in retry prompt userContent', async () => {
+      mockCreate.mockResolvedValueOnce(textResponse('bad'));
+      mockCreate.mockResolvedValueOnce(textResponse(JSON.stringify({ status: 'ok' })));
+
+      await transport.execute(makeRequest({ outputSchema: testSchema }));
+
+      const retryCall = mockCreate.mock.calls[1]!;
+      const retryParams = retryCall[0] as { messages: Array<{ role: string; content: unknown }> };
+      const lastMessage = retryParams.messages[retryParams.messages.length - 1]!;
+      const content = typeof lastMessage.content === 'string'
+        ? lastMessage.content
+        : JSON.stringify(lastMessage.content);
+      expect(content.includes('did not match the required schema')).toBe(true);
+      expect(content.includes('Re-emit valid JSON only')).toBe(true);
+    });
+
+    it('does NOT retry more than once (second failure returns schemaValidation ok=false)', async () => {
+      mockCreate.mockResolvedValueOnce(textResponse('bad json'));
+      mockCreate.mockResolvedValueOnce(textResponse('still bad'));
+
+      const result = await transport.execute(makeRequest({ outputSchema: testSchema }));
+
+      expect(mockCreate).toHaveBeenCalledTimes(2);
+      expect(result.schemaValidation?.ok).toBe(false);
+    });
+
+    it('returns schemaValidation ok=false when required field is missing after both attempts', async () => {
+      // Missing required 'status' field — valid JSON but wrong schema
+      mockCreate.mockResolvedValueOnce(textResponse(JSON.stringify({ count: 3 })));
+      mockCreate.mockResolvedValueOnce(textResponse(JSON.stringify({ count: 3 })));
+
+      const result = await transport.execute(makeRequest({ outputSchema: testSchema }));
+
+      expect(result.schemaValidation?.ok).toBe(false);
+      expect(result.schemaValidation?.error).toContain('status');
+    });
+
+    it('does not set schemaValidation when outputSchema is absent', async () => {
+      mockCreate.mockResolvedValueOnce(makeApiResponse());
+
+      const result = await transport.execute(makeRequest());
+
+      expect(result.schemaValidation).toBeUndefined();
+    });
+  });
 });

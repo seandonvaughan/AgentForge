@@ -4,6 +4,7 @@ import {
   classifyAnthropicError,
 } from '../transport-errors.js';
 import type {
+  AgentOutputSchema,
   ExecutionRequest,
   ExecutionResult,
   ExecutionStreamEvent,
@@ -12,6 +13,38 @@ import type {
 } from '../types.js';
 import { withCacheBreakpoints } from '../cache-control.js';
 import type { SystemBlock } from '../cache-control.js';
+
+// ---------------------------------------------------------------------------
+// Inline schema validation helper
+// TODO: replace with import from @agentforge/shared once T1 lands
+// ---------------------------------------------------------------------------
+
+function validateAgainstSchema(
+  responseText: string,
+  schema: AgentOutputSchema,
+): { ok: boolean; error?: string } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(responseText);
+  } catch {
+    return { ok: false, error: 'Response is not valid JSON' };
+  }
+
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return { ok: false, error: 'Response is not a JSON object' };
+  }
+
+  const obj = parsed as Record<string, unknown>;
+
+  const required = schema.schema.required ?? [];
+  for (const key of required) {
+    if (!(key in obj)) {
+      return { ok: false, error: `Missing required property: ${key}` };
+    }
+  }
+
+  return { ok: true };
+}
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -94,7 +127,28 @@ export class AnthropicSdkTransport implements ExecutionTransport {
         this.buildMessageParams(request) as any,
       )) as unknown as AnthropicMessageResponse;
 
-      return this.toExecutionResult(request, response, Date.now() - startedAt);
+      const result = this.toExecutionResult(request, response, Date.now() - startedAt);
+
+      // If outputSchema is set, validate and retry once on failure.
+      if (request.outputSchema) {
+        const validation = validateAgainstSchema(result.response, request.outputSchema);
+        if (!validation.ok) {
+          // One retry with corrective user message appended.
+          const retryRequest: ExecutionRequest = {
+            ...request,
+            userContent: `${request.userContent}\n\nYour previous response did not match the required schema. Error: ${validation.error}. Re-emit valid JSON only.`,
+          };
+          const retryResponse = (await client.messages.create(
+            this.buildMessageParams(retryRequest) as any,
+          )) as unknown as AnthropicMessageResponse;
+          const retryResult = this.toExecutionResult(retryRequest, retryResponse, Date.now() - startedAt);
+          const retryValidation = validateAgainstSchema(retryResult.response, request.outputSchema);
+          return { ...retryResult, schemaValidation: retryValidation };
+        }
+        return { ...result, schemaValidation: { ok: true } };
+      }
+
+      return result;
     } catch (err) {
       throw classifyAnthropicError(err);
     }
@@ -281,6 +335,10 @@ export class AnthropicSdkTransport implements ExecutionTransport {
         },
       ],
       ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
+      // outputFormat plumbing: fall back to response_format json_object since
+      // @anthropic-ai/sdk does not expose a top-level outputFormat parameter.
+      // Post-validation is handled in execute() via validateAgainstSchema().
+      ...(request.outputSchema ? { response_format: { type: 'json_object' } } : {}),
     };
   }
 

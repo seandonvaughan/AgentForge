@@ -5,12 +5,45 @@ import {
   classifyCliError,
 } from '../transport-errors.js';
 import type {
+  AgentOutputSchema,
   ExecutionRequest,
   ExecutionResult,
   ExecutionStreamEvent,
   ExecutionStreamOptions,
   ExecutionTransport,
 } from '../types.js';
+
+// ---------------------------------------------------------------------------
+// Inline schema validation helper
+// TODO: replace with import from @agentforge/shared once T1 lands
+// ---------------------------------------------------------------------------
+
+function validateAgainstSchema(
+  responseText: string,
+  schema: AgentOutputSchema,
+): { ok: boolean; error?: string } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(responseText);
+  } catch {
+    return { ok: false, error: 'Response is not valid JSON' };
+  }
+
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return { ok: false, error: 'Response is not a JSON object' };
+  }
+
+  const obj = parsed as Record<string, unknown>;
+
+  const required = schema.schema.required ?? [];
+  for (const key of required) {
+    if (!(key in obj)) {
+      return { ok: false, error: `Missing required property: ${key}` };
+    }
+  }
+
+  return { ok: true };
+}
 
 interface ClaudeCliResult {
   type: string;
@@ -51,7 +84,11 @@ export class ClaudeCodeCompatTransport implements ExecutionTransport {
   async execute(request: ExecutionRequest): Promise<ExecutionResult> {
     try {
       const cliResult = await this.invokeClaudeCli(request);
-      return this.toExecutionResult(request, cliResult);
+      const result = this.toExecutionResult(request, cliResult);
+      if (request.outputSchema) {
+        return { ...result, schemaValidation: validateAgainstSchema(result.response, request.outputSchema) };
+      }
+      return result;
     } catch (err) {
       throw classifyCliError(err, request.timeoutMs);
     }
@@ -69,6 +106,9 @@ export class ClaudeCodeCompatTransport implements ExecutionTransport {
         this.emitChunk(options, execution.response, 0);
       }
 
+      if (request.outputSchema) {
+        return { ...execution, schemaValidation: validateAgainstSchema(execution.response, request.outputSchema) };
+      }
       return execution;
     } catch (err) {
       throw classifyCliError(err, request.timeoutMs);
@@ -380,6 +420,12 @@ export class ClaudeCodeCompatTransport implements ExecutionTransport {
     request: ExecutionRequest,
     outputFormat: 'json' | 'stream-json',
   ): string[] {
+    // Append schema hint to system prompt when outputSchema is provided.
+    // CLI cannot enforce schemas natively, so we instruct the model via text.
+    const systemPrompt = request.outputSchema
+      ? `${request.agent.systemPrompt}\n\nYou MUST return a JSON object matching: ${JSON.stringify(request.outputSchema.schema)}`
+      : request.agent.systemPrompt;
+
     const args = [
       '-p',
       '--model', request.modelId,
@@ -391,7 +437,7 @@ export class ClaudeCodeCompatTransport implements ExecutionTransport {
       // every JSON-parsing helper has to know how to unwrap markdown fences,
       // and parse failures kill cycles (see project_cycle_db9c145f_post_mortem).
       '--setting-sources', 'project,local',
-      '--system-prompt', request.agent.systemPrompt,
+      '--system-prompt', systemPrompt,
     ];
 
     if (outputFormat === 'stream-json') {
