@@ -19,6 +19,11 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
 import type { ParsedMemoryEntry } from '../../memory/types.js';
+import {
+  extractBreakdownFromAgentRun,
+  mergeBreakdowns,
+  type CostBreakdown,
+} from '../cost-breakdown.js';
 // T4.5 — ConcurrencyGate: caps MAX_PARALLEL_AGENTS (default 8, max 40) and
 // provides backpressure queue so the execute phase never spawns more agents
 // than the configured ceiling, regardless of item count or parallelism cap.
@@ -263,6 +268,8 @@ interface ItemResult {
   durationMs: number;
   response: string;
   attempts: number;
+  /** Per-run cost breakdown (token attribution). Populated by Wave 2. */
+  breakdown?: CostBreakdown;
   error?: string;
 }
 
@@ -532,6 +539,7 @@ export async function runExecutePhase(
   }
 
   let totalCost = 0;
+  let phaseBreakdown: CostBreakdown | undefined;
   const liveResults = new Map<string, ItemResult>();
 
   // Write an incremental execute.json snapshot so the dashboard can show
@@ -689,6 +697,26 @@ export async function runExecutePhase(
             typeof result?.costUsd === 'number' ? result.costUsd : 0;
           totalCost += costUsd;
           item.status = 'completed';
+
+          // Wave 2: extract per-run CostBreakdown and accumulate into phase total.
+          // Use the breakdown already computed by RuntimeAdapter when available;
+          // fall back to re-deriving it from usage fields so the path is always safe.
+          const runBreakdown: CostBreakdown =
+            (result as any)?.breakdown != null
+              ? (result as any).breakdown as CostBreakdown
+              : extractBreakdownFromAgentRun({
+                  model: typeof (result as any)?.model === 'string' ? (result as any).model : 'sonnet',
+                  usage: {
+                    input_tokens: (result as any)?.usage?.input_tokens ?? 0,
+                    output_tokens: (result as any)?.usage?.output_tokens ?? 0,
+                    cache_creation_input_tokens: (result as any)?.usage?.cache_creation_input_tokens,
+                    cache_read_input_tokens: (result as any)?.usage?.cache_read_input_tokens,
+                  },
+                });
+          phaseBreakdown = phaseBreakdown === undefined
+            ? runBreakdown
+            : mergeBreakdowns(phaseBreakdown, runBreakdown);
+
           const completedResult = {
             itemId: item.id,
             status: 'completed' as const,
@@ -697,6 +725,8 @@ export async function runExecutePhase(
             response: typeof result?.output === 'string' ? result.output : '',
             attempts,
             agentId: item.assignee,
+            // Wave 2: attach per-run breakdown for downstream accumulation.
+            breakdown: runBreakdown,
             // v6.7.4: surface model + effort to the Agents tab
             model: typeof (result as any)?.model === 'string' ? (result as any).model : undefined,
             effort: typeof (result as any)?.effort === 'string' ? (result as any).effort : 'high',
@@ -920,6 +950,8 @@ export async function runExecutePhase(
             costUsd: totalCost,
             durationMs,
             itemResults,
+            // Wave 2: accumulated CostBreakdown across all completed agent runs.
+            ...(phaseBreakdown !== undefined ? { breakdown: phaseBreakdown } : {}),
             startedAt: new Date(startedAt).toISOString(),
             completedAt: new Date().toISOString(),
           },

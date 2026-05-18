@@ -62,7 +62,11 @@ import type { RealTestRunner } from './exec/real-test-runner.js';
 import type { GitOps } from './exec/git-ops.js';
 import type { PROpener } from './exec/pr-opener.js';
 import { runAutoReforge, extractInvolvedAgentIds } from './auto-reforge.js';
+<<<<<<< HEAD
 import { runPreVerifyTypeCheck, type PreVerifyTypeCheckResult } from './pre-verify-typecheck.js';
+=======
+import { mergeBreakdowns, type CostBreakdown } from './cost-breakdown.js';
+>>>>>>> origin/worktree-agent-ad5699f785c633e90
 import { exportCycleTelemetry } from '../telemetry/cycle-telemetry-export.js';
 import { resolveTelemetryConfig } from '../telemetry/config.js';
 // T4.6 — WorktreeGc: schedule GC at cycle start (clean stale worktrees) and
@@ -350,6 +354,8 @@ export class CycleRunner {
   private gateVerdict: 'APPROVE' | 'REJECT' | undefined = undefined;
   /** Set in runStages() when prMode='multi'; used to drain at cycle end. */
   private mergeQueue: MergeQueue | null = null;
+  /** Accumulated CostBreakdown from the execute phase (Wave 2). */
+  private executionBreakdown: CostBreakdown | undefined = undefined;
 
   constructor(private readonly options: CycleRunnerOptions) {
     // Resolve cycleId in priority order:
@@ -584,6 +590,8 @@ export class CycleRunner {
         // Reconcile sprint file: mark all executed items as completed
         // based on execute.json (fixes stale in_progress after retries)
         this.reconcileSprintStatus(plan.version);
+        // Wave 2: load the per-item/phase CostBreakdown from execute.json.
+        this.loadExecutionBreakdownFromDisk();
         break;
       } catch (err) {
         if (!(err instanceof GateRejectedError)) throw err;
@@ -1066,6 +1074,41 @@ export class CycleRunner {
     return total;
   }
 
+  /**
+   * Wave 2 — Read the accumulated CostBreakdown from execute.json and set
+   * `this.executionBreakdown`. Called after STAGE 3 (RUN) completes so the
+   * breakdown is available for `buildResult()`.
+   *
+   * Reads `phases/execute.json` and accumulates the per-item `breakdown`
+   * objects via `mergeBreakdowns`. If the file is absent or malformed the
+   * field stays undefined — never throws.
+   */
+  private loadExecutionBreakdownFromDisk(): void {
+    const execPath = join(
+      this.options.cwd, '.agentforge/cycles', this.cycleId, 'phases/execute.json',
+    );
+    if (!existsSync(execPath)) return;
+    try {
+      const data = JSON.parse(readFileSync(execPath, 'utf8'));
+      // Prefer the phase-level breakdown if it was pre-computed.
+      if (data.breakdown && typeof data.breakdown === 'object') {
+        this.executionBreakdown = data.breakdown as CostBreakdown;
+        return;
+      }
+      // Otherwise accumulate from per-item breakdowns.
+      const runs: Array<Record<string, unknown>> = data.agentRuns ?? data.itemResults ?? [];
+      let acc: CostBreakdown | undefined;
+      for (const run of runs) {
+        if (run.breakdown && typeof run.breakdown === 'object') {
+          acc = acc === undefined
+            ? (run.breakdown as CostBreakdown)
+            : mergeBreakdowns(acc, run.breakdown as CostBreakdown);
+        }
+      }
+      if (acc !== undefined) this.executionBreakdown = acc;
+    } catch { /* non-fatal */ }
+  }
+
   private async collectChangedFiles(_runSummary: SprintRunSummary): Promise<string[]> {
     // When a worktreePool is available, collect files from individual agent
     // worktree branches via git diff rather than git status on the main tree.
@@ -1143,6 +1186,10 @@ Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
         budgetUsd: this.options.config.budget.perCycleUsd,
         byAgent: {},
         byPhase: {},
+        // Wave 2: attach granular token/tool breakdown when available.
+        ...(this.executionBreakdown !== undefined
+          ? { breakdown: this.executionBreakdown }
+          : {}),
       },
       tests: { ...this.testStats },
       git: {

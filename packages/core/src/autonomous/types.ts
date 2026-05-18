@@ -163,6 +163,27 @@ export interface CycleConfig {
   autoMergePRs?: boolean;
 }
 
+/**
+ * Represents a single agent run recorded in execute.json `agentRuns[]`.
+ * Used by downstream consumers (dashboard, cycle-runner) to read per-run data.
+ */
+export interface AgentRunRecord {
+  itemId: string;
+  status: 'completed' | 'failed';
+  costUsd: number;
+  durationMs: number;
+  response: string;
+  attempts: number;
+  agentId?: string;
+  model?: string;
+  effort?: string;
+  worktreePath?: string;
+  worktreeBranch?: string;
+  error?: string;
+  /** Granular token/tool cost breakdown. Populated by Wave 2. */
+  breakdown?: CostBreakdown;
+}
+
 export interface FailedTest {
   file: string;
   suite: string;
