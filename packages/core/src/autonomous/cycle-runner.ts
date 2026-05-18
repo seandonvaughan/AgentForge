@@ -75,6 +75,7 @@ import type { WorktreePool } from '../runtime/worktree-pool.js';
 import { MergeQueue } from '../runtime/merge-queue.js';
 import type { DrainAndMergeResult } from '../runtime/merge-queue.js';
 import type { MessageBusV2 } from '../message-bus/message-bus.js';
+import type { CycleCheckpoint } from './cycle-artifacts/cycle-checkpoint.js';
 
 /**
  * Build a PR title that's safe for `gh pr create` and never truncated mid-word.
@@ -241,6 +242,13 @@ export interface CycleRunnerOptions {
    * the cycle falls back to single-PR behavior with a console warning.
    */
   messageBus?: MessageBusV2;
+  /**
+   * Wave 3 T5 — When provided, resume an interrupted cycle. The runner reuses
+   * `resumeCheckpoint.cycleId`, seeds `totalCostUsd` from `spentUsd`, and
+   * passes the checkpoint to the PhaseScheduler so phases listed in
+   * `completedPhases` are skipped and execution starts at `resumeFromPhase`.
+   */
+  resumeCheckpoint?: CycleCheckpoint;
 }
 
 // ---------------------------------------------------------------------------
@@ -363,9 +371,19 @@ export class CycleRunner {
     //   3. fresh UUID — direct CLI use with no coordination
     const envId = process.env['AUTONOMOUS_CYCLE_ID'];
     const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-    this.cycleId = (options.cycleId && UUID_RE.test(options.cycleId))
-      ? options.cycleId
-      : (envId && UUID_RE.test(envId) ? envId : randomUUID());
+    // Wave 3 T5 — resumeCheckpoint takes priority for cycleId so durability
+    // is end-to-end. Use match-then-use on the checkpoint id.
+    const CKPT_ID_RE = /^[a-zA-Z0-9-]{8,64}$/;
+    const resumeId = options.resumeCheckpoint?.cycleId;
+    const safeResumeId = resumeId && CKPT_ID_RE.test(resumeId) ? resumeId : undefined;
+    this.cycleId = safeResumeId
+      ?? ((options.cycleId && UUID_RE.test(options.cycleId))
+        ? options.cycleId
+        : (envId && UUID_RE.test(envId) ? envId : randomUUID()));
+    // Seed cumulative spend so budget enforcement remains correct after resume.
+    if (options.resumeCheckpoint) {
+      this.totalCostUsd = options.resumeCheckpoint.spentUsd;
+    }
     this.startedAt = Date.now();
     this.logger = new CycleLogger(options.cwd, this.cycleId);
     this.killSwitch = new KillSwitch(
@@ -573,6 +591,12 @@ export class CycleRunner {
           // T4.2: pass the pool (or undefined) through so the execute phase
           // can allocate per-item worktrees when coder-class items are dispatched.
           ...(phaseWorktreePool !== undefined ? { worktreePool: phaseWorktreePool } : {}),
+          // Wave 3 T5: forward checkpoint resume only on the FIRST attempt;
+          // gate-retries (retryAttempt > 0) re-run from 'execute' explicitly.
+          ...(retryAttempt === 0 && this.options.resumeCheckpoint
+            ? { resumeCheckpoint: this.options.resumeCheckpoint }
+            : {}),
+          budgetUsd: this.options.config.budget.perCycleUsd,
         },
         this.killSwitch,
         this.logger,
