@@ -27,7 +27,14 @@ export type {
 export * from './budget-approval.js';
 export * from './scoring-pipeline.js';
 export * from './phase-scheduler.js';
-export * from './cycle-runner.js';
+export {
+  CycleRunner,
+  collectFilesFromAgentBranches,
+  sanitizePrTitle,
+  parseCommandArgs,
+  readCheckpoint,
+} from './cycle-runner.js';
+export type { CycleRunnerOptions, CycleCheckpoint } from './cycle-runner.js';
 export * from './runtime-adapter.js';
 export * from './workspace-telemetry-adapters.js';
 export * from './workspace-registry.js';
