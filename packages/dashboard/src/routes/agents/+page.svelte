@@ -29,39 +29,43 @@
   let filterTeam = $state('');
 
   let liveAgents = $state<AgentListItem[]>(data.agents ?? []);
-  let sessions = $state<SessionRow[]>([]);
   let loading = $state(false);
   let errorMsg = $state<string | null>(null);
 
-  // ── Types ───────────────────────────────────────────────────────────────────
-  interface SessionRow {
-    agent_id?: string;
-    agentId?: string;
-    started_at?: string;
-    startedAt?: string;
-    cost_usd?: number;
-    costUsd?: number;
-  }
-
   // ── Polling ─────────────────────────────────────────────────────────────────
   let pollHandle: ReturnType<typeof setInterval> | null = null;
+
+  interface AgentActivity {
+    agentId: string;
+    invocations24h: number;
+    spend24h: number;
+    lastActiveAt: string | null;
+    sparkline: number[];
+  }
+  let activity = $state<Map<string, AgentActivity>>(new Map());
 
   async function refreshAgents(): Promise<void> {
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
     loading = true;
     errorMsg = null;
     try {
-      const [agRes, sesRes] = await Promise.all([
+      // Stats come from /api/v5/agents/activity (authoritative — reads cycle.json
+      // execute.json files). The legacy `/api/v5/sessions` is fed by an
+      // in-server executor that `agentforge cycle run` doesn't use, so its data
+      // is stale by weeks. See feedback_dashboard_data_sources memory entry.
+      const [agRes, actRes] = await Promise.all([
         fetch('/api/v5/agents'),
-        fetch('/api/v5/sessions?limit=100'),
+        fetch('/api/v5/agents/activity'),
       ]);
       if (agRes.ok) {
         const json = await agRes.json() as { data?: AgentListItem[] };
         if (json.data && json.data.length > 0) liveAgents = json.data;
       }
-      if (sesRes.ok) {
-        const json = await sesRes.json() as { data?: SessionRow[] };
-        sessions = json.data ?? [];
+      if (actRes.ok) {
+        const json = await actRes.json() as { data?: AgentActivity[] };
+        const map = new Map<string, AgentActivity>();
+        for (const a of json.data ?? []) map.set(a.agentId, a);
+        activity = map;
       }
     } catch (e) {
       errorMsg = e instanceof Error ? e.message : 'Refresh failed';
@@ -93,17 +97,17 @@
     haiku:  liveAgents.filter(a => a.model === 'haiku').length,
   });
 
-  let totalSpend = $derived(
-    sessions.reduce((s, r) => s + (r.cost_usd ?? r.costUsd ?? 0), 0)
-  );
+  let totalSpend = $derived.by<number>(() => {
+    let sum = 0;
+    for (const a of activity.values()) sum += a.spend24h;
+    return sum;
+  });
 
   interface AgentSpend { agentId: string; spend: number }
   let agentSpends = $derived<AgentSpend[]>(
     liveAgents.map(a => ({
       agentId: a.agentId,
-      spend: sessions
-        .filter(s => (s.agent_id ?? s.agentId) === a.agentId)
-        .reduce((sum, s) => sum + (s.cost_usd ?? s.costUsd ?? 0), 0),
+      spend: activity.get(a.agentId)?.spend24h ?? 0,
     }))
   );
 
@@ -115,22 +119,10 @@
 
   /** Sparkline of invocations per 2-hour bucket (last 24h) for an agent. */
   function sparklineFor(agentId: string): number[] {
-    const buckets = new Array<number>(12).fill(0);
-    const now = Date.now();
-    const bucketMs = 2 * 60 * 60 * 1000;
-    const horizon = now - 12 * bucketMs;
-    for (const s of sessions) {
-      if ((s.agent_id ?? s.agentId) !== agentId) continue;
-      const t = s.started_at ?? s.startedAt;
-      const ms = t ? new Date(t).getTime() : 0;
-      if (!ms || ms < horizon) continue;
-      const idx = Math.min(11, Math.floor((ms - horizon) / bucketMs));
-      buckets[idx]! += 1;
-    }
-    return buckets;
+    return activity.get(agentId)?.sparkline ?? new Array<number>(12).fill(0);
   }
 
-  function fmtRel(ts: string | undefined): string {
+  function fmtRel(ts: string | null | undefined): string {
     if (!ts) return '—';
     const diff = Math.max(0, Math.floor((Date.now() - new Date(ts).getTime()) / 1000));
     if (diff < 60) return `${diff}s ago`;
@@ -140,12 +132,7 @@
   }
 
   function lastActive(agentId: string): string {
-    const times = sessions
-      .filter(s => (s.agent_id ?? s.agentId) === agentId)
-      .map(s => s.started_at ?? s.startedAt)
-      .filter((t): t is string => !!t);
-    if (!times.length) return '—';
-    return fmtRel(times.reduce((a, b) => (new Date(a) > new Date(b) ? a : b)));
+    return fmtRel(activity.get(agentId)?.lastActiveAt);
   }
 
   function agentSpend(agentId: string): number {
@@ -219,7 +206,7 @@
     <div class="af-stat-label">Sessions (24h)</div>
     <div style="display:flex; align-items:center; gap:6px;">
       <PulseDot color="var(--af-purple)" size={6} />
-      <span class="af-stat-value font-mono">{sessions.length}</span>
+      <span class="af-stat-value font-mono">{Array.from(activity.values()).reduce((s, a) => s + a.invocations24h, 0)}</span>
     </div>
     <div class="af-stat-sub font-mono">{liveAgents.length} registered</div>
   </Card>
