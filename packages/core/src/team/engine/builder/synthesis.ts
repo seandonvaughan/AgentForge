@@ -43,6 +43,7 @@ export const TeamPlanAgentSchema = z.object({
   system_prompt: z.string().min(1),
   auto_include_files: z.array(z.string()),
   learnings_seed: z.array(z.string()),
+  skill_ids: z.array(z.string()).optional(),
 });
 
 export type TeamPlanAgent = z.infer<typeof TeamPlanAgentSchema>;
@@ -289,6 +290,7 @@ function buildAgentYaml(agent: TeamPlanAgent): Record<string, unknown> {
     learnings: agent.learnings_seed,
     owns_subsystems: agent.owns_subsystems,
     capability_tags: agent.capability_tags,
+    ...(agent.skill_ids && agent.skill_ids.length > 0 ? { skill_ids: agent.skill_ids } : {}),
   };
 }
 

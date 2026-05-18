@@ -1,0 +1,32 @@
+{
+  "name": "@agentforge/skills-catalog",
+  "version": "10.5.1",
+  "description": "AgentForge skills catalog — fs-backed registry of injectable agent skills",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "gray-matter": "^4.0.3",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.7.0",
+    "typescript": "^6.0.3",
+    "vitest": "^3.2.3"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  }
+}
