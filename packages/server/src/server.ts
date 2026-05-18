@@ -40,6 +40,7 @@ import { billingRoutes } from './routes/v5/billing.js';
 import { registerFlywheelContinuousImprovementRoutes } from './routes/v5/flywheel-continuous-improvement.js';
 import { cyclePrsRoutes } from './routes/v5/cycle-prs.js';
 import { cycleCostBreakdownRoutes } from './routes/v5/cycle-cost-breakdown.js';
+import { qualityRoutes } from './routes/v5/quality.js';
 import { sendContainedStaticFile } from './lib/static-files.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -245,6 +246,12 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
   // Guard: registerV5Routes already calls cycleCostBreakdownRoutes in adapter mode.
   if (!options.adapter || !options.registry) {
     await cycleCostBreakdownRoutes(app, { projectRoot });
+  }
+
+  // ── Quality metrics (step-scores, aggregates, skill-effectiveness) ────────
+  // Guard: registerV5Routes already calls qualityRoutes in adapter mode.
+  if (!options.adapter || !options.registry) {
+    await qualityRoutes(app, { projectRoot });
   }
 
   // ── Unified keyword search (sessions, agents, sprints, cycles, memory) ────────
