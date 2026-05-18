@@ -18,8 +18,30 @@ export type AgentOutputSchema = {
   strict?: boolean;
 };
 
-export type RuntimeMode = 'auto' | 'sdk' | 'claude-code-compat';
-export type ExecutionProviderKind = 'anthropic-sdk' | 'claude-code-compat';
+export type RuntimeMode =
+  | 'auto'
+  | 'sdk'
+  | 'cli'
+  | 'anthropic-sdk'
+  | 'claude-cli'
+  | 'claude-code-compat'
+  | 'codex-cli'
+  | 'openai-sdk';
+
+export type ExecutionProviderKind =
+  | 'anthropic-sdk'
+  | 'claude-code-compat'
+  | 'codex-cli'
+  | 'openai-sdk';
+
+export type CodexSandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access';
+
+export interface ProviderModelProfile {
+  modelId: string;
+  effort?: string;
+}
+
+export type ProviderModelProfiles = Partial<Record<ExecutionProviderKind, ProviderModelProfile>>;
 export type RuntimeJobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 export interface ExecutionAgentConfig {
@@ -42,6 +64,9 @@ export interface ExecutionRequest {
   task: string;
   userContent: string;
   modelId: string;
+  providerModelProfiles?: ProviderModelProfiles;
+  cwd?: string;
+  codexSandbox?: CodexSandboxMode;
   /** Optional structured output schema. SDK transport threads into outputFormat; CLI transport appends schema hint to system prompt. */
   outputSchema?: AgentOutputSchema;
   parentSessionId?: string;
@@ -82,6 +107,7 @@ export interface ExecutionResult {
   providerKind: ExecutionProviderKind;
   response: string;
   model: string;
+  effort?: string;
   usage: ExecutionUsage;
   costUsd: number;
   durationMs: number;

@@ -25,6 +25,7 @@ assertCommand(["--help"], [
   "cycle",
   "autonomous:cycle",
   "run",
+  "codex",
   "invoke",
   "delegate",
   "costs",
@@ -36,6 +37,7 @@ assertCommand(["--help"], [
 ]);
 assertCommand(["cycle", "--help"], ["run", "preview", "list", "show", "approve"]);
 assertCommand(["run", "--help"], ["invoke", "delegate", "history", "show"]);
+assertCommand(["codex", "--help"], ["readiness"]);
 assertCommand(["costs", "--help"], ["report"]);
 assertCommand(["team", "--help"], ["forge", "genesis", "rebuild", "reforge"]);
 assertCommand(["team", "reforge", "--help"], ["apply", "list", "rollback", "status"]);

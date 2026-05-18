@@ -3,10 +3,13 @@ import type { AgentRuntimeConfig, RunOptions, RunResult } from '../agent-runtime
 import { MODEL_IDS } from '../agent-runtime/types.js';
 import { resolveMode } from './execution-service-mode.js';
 import type { ExecutionServiceMode } from './execution-service-mode.js';
+import { resolveProviderModelProfiles } from './model-profiles.js';
 import { ProviderResolver } from './provider-resolver.js';
 import { RuntimeSession } from './runtime-session.js';
 import { AnthropicSdkTransport } from './transports/anthropic-sdk-transport.js';
 import { ClaudeCodeCompatTransport } from './transports/claude-code-compat-transport.js';
+import { CodexCliTransport } from './transports/codex-cli-transport.js';
+import { OpenAiSdkTransport } from './transports/openai-sdk-transport.js';
 import type {
   ExecutionRequest,
   ExecutionResult,
@@ -40,8 +43,10 @@ export class ExecutionService {
   private readonly resolver: ProviderResolver;
   /** The active ExecutionServiceMode resolved at construction time. */
   private readonly _mode: ExecutionServiceMode;
+  private readonly projectRoot: string;
 
   constructor(options: ExecutionServiceOptions = {}) {
+    this.projectRoot = options.projectRoot ?? process.cwd();
     // When the caller provides an explicit transport list we skip mode
     // resolution entirely — backward-compatible with all existing call sites
     // and tests that pass `{ transports: [...] }`.
@@ -56,7 +61,7 @@ export class ExecutionService {
     const mode =
       options.mode !== undefined
         ? options.mode
-        : resolveMode(process.env, options.projectRoot);
+        : resolveMode(process.env, this.projectRoot);
 
     this._mode = mode;
 
@@ -64,13 +69,22 @@ export class ExecutionService {
     // This is the key change that makes `AGENTFORGE_RUNTIME=sdk` guarantee no
     // CLI subprocess paths are ever registered (AgentForge Cloud requirement).
     let transports: ExecutionTransport[];
-    if (mode === 'sdk') {
+    if (mode === 'sdk' || mode === 'anthropic-sdk') {
       transports = [new AnthropicSdkTransport()];
-    } else if (mode === 'cli') {
+    } else if (mode === 'cli' || mode === 'claude-cli' || mode === 'claude-code-compat') {
       transports = [new ClaudeCodeCompatTransport()];
+    } else if (mode === 'codex-cli') {
+      transports = [new CodexCliTransport()];
+    } else if (mode === 'openai-sdk') {
+      transports = [new OpenAiSdkTransport()];
     } else {
       // 'auto' — register both, existing ProviderResolver selection logic applies
-      transports = [new AnthropicSdkTransport(), new ClaudeCodeCompatTransport()];
+      transports = [
+        new AnthropicSdkTransport(),
+        new ClaudeCodeCompatTransport(),
+        new CodexCliTransport(),
+        new OpenAiSdkTransport(),
+      ];
     }
 
     this.resolver = new ProviderResolver(transports);
@@ -97,6 +111,7 @@ export class ExecutionService {
       agentId: config.agentId,
       task: opts.task,
       model: modelId,
+      capabilityTier: config.model,
       startedAt,
       ...(adapter ? { adapter } : {}),
       ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
@@ -132,6 +147,7 @@ export class ExecutionService {
       agentId: config.agentId,
       task: opts.task,
       model: modelId,
+      capabilityTier: config.model,
       startedAt,
       ...(adapter ? { adapter } : {}),
       ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
@@ -231,6 +247,7 @@ export class ExecutionService {
     const userContent = opts.context
       ? `<context>\n${opts.context}\n</context>\n\n${opts.task}`
       : opts.task;
+    const profileRoot = opts.cwd ?? this.projectRoot;
 
     return {
       agent: {
@@ -243,6 +260,7 @@ export class ExecutionService {
       task: opts.task,
       userContent,
       modelId,
+      providerModelProfiles: resolveProviderModelProfiles(config.model, config.effort, process.env, profileRoot),
       maxTokens: config.maxTokens ?? 8096,
       ...(opts.parentSessionId ? { parentSessionId: opts.parentSessionId } : {}),
       ...(opts.allowedTools ? { allowedTools: opts.allowedTools } : {}),
@@ -250,6 +268,11 @@ export class ExecutionService {
       ...(opts.budgetUsd !== undefined ? { budgetUsd: opts.budgetUsd } : {}),
       ...(apiKey ? { apiKey } : {}),
       ...(config.effort ? { effort: config.effort } : {}),
+      ...(config.outputSchema ? { outputSchema: config.outputSchema } : {}),
+      ...(opts.outputSchema ? { outputSchema: opts.outputSchema } : {}),
+      ...(opts.cwd ? { cwd: opts.cwd } : {}),
+      ...(opts.codexSandbox ? { codexSandbox: opts.codexSandbox } : {}),
+      ...(opts.enableFallback !== undefined ? { enableFallback: opts.enableFallback } : {}),
       ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
     };
   }

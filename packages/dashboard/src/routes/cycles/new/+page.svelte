@@ -4,7 +4,7 @@
   import { withWorkspace } from '$lib/stores/workspace';
   import { relativeTime } from '$lib/util/relative-time';
   import {
-    Btn, Card, Badge, StageDots, ModelChip,
+    Btn, Card, Badge, StageDots,
   } from '$lib/components/v2';
 
   type ModelCap = 'default' | 'opus' | 'sonnet' | 'haiku';
@@ -13,7 +13,7 @@
   let budgetUsd = $state<number>(25);
   let maxItems = $state<number>(3);
   let maxAgents = $state<number>(5);
-  let branchPrefix = $state<string>('autonomous/');
+  let branchPrefix = $state<string>('codex/');
   let modelCap = $state<ModelCap>('default');
   let effortCap = $state<EffortCap>('default');
   let dryRun = $state<boolean>(false);
@@ -106,13 +106,20 @@
     return Math.round(ms / 60000);
   });
 
-  const likelyModel = $derived<string>(modelCap === 'default' ? 'sonnet' : modelCap);
+  const likelyProfile = $derived<string>(profileLabel(modelCap === 'default' ? 'sonnet' : modelCap));
 
   const xhighWarning = $derived<string | null>(
     effortCap === 'xhigh' && modelCap !== 'opus' && modelCap !== 'default'
-      ? `xHigh effort is Opus-only; ${modelCap === 'sonnet' ? 'Sonnet' : 'Haiku'} runs will auto-downgrade to max.`
+      ? `xhigh effort is limited to the xhigh profile; ${profileLabel(modelCap)} runs will auto-downgrade to max.`
       : null,
   );
+
+  function profileLabel(cap: ModelCap): string {
+    if (cap === 'opus') return 'xhigh profile';
+    if (cap === 'haiku') return 'medium profile';
+    if (cap === 'default') return 'per-agent profile';
+    return 'high profile';
+  }
 
   async function handleLaunch(): Promise<void> {
     if (launching) return;
@@ -189,7 +196,7 @@
     <div class="crumbs af2-mono">Workspace · Cycles · Launch</div>
     <h1 class="page-title">Launch autonomous cycle</h1>
     <p class="page-sub">
-      Plan → Stage → Run → Verify → Commit → Review via a detached Claude Code session
+      Plan → Stage → Run → Verify → Commit → Review via a detached Codex CLI session
     </p>
   </div>
   <div class="head-actions">
@@ -234,12 +241,12 @@
 
     <div class="form-row">
       <div class="field">
-        <label class="field-label" for="modelCap">Model cap</label>
+        <label class="field-label" for="modelCap">Codex profile cap</label>
         <select id="modelCap" bind:value={modelCap} class="select" disabled={launching}>
           <option value="default">Default (per agent)</option>
-          <option value="opus">Opus — most capable</option>
-          <option value="sonnet">Sonnet — balanced</option>
-          <option value="haiku">Haiku — maximum savings</option>
+          <option value="opus">xhigh profile — most capable</option>
+          <option value="sonnet">high profile — balanced</option>
+          <option value="haiku">medium profile — maximum savings</option>
         </select>
       </div>
 
@@ -250,7 +257,7 @@
           <option value="low">Low — fast, mechanical</option>
           <option value="medium">Medium</option>
           <option value="high">High</option>
-          <option value="xhigh">xHigh — Opus only</option>
+          <option value="xhigh">xhigh — xhigh profile only</option>
           <option value="max">Max — deepest reasoning</option>
         </select>
       </div>
@@ -265,7 +272,7 @@
         <label class="toggle">
           <input type="checkbox" bind:checked={fallbackEnabled} disabled={launching} />
           <span class="toggle-track" class:on={fallbackEnabled}><span class="toggle-knob"></span></span>
-          <span class="toggle-label">Model fallback <span class="hint">(opus → sonnet → haiku)</span></span>
+          <span class="toggle-label">Profile fallback <span class="hint">(xhigh → high → medium)</span></span>
         </label>
       </div>
     </div>
@@ -315,7 +322,7 @@
 
     <div class="launch-row">
       <span class="hint" style="flex:1">
-        Advanced overrides (per-agent budgets, model pinning) are future work.
+        Advanced overrides (per-agent budgets, capability tier pinning) are future work.
       </span>
       <Btn size="lg" variant="purple" onclick={handleLaunch} disabled={launching}>
         {launching ? 'Launching…' : '▶ Run Cycle'}
@@ -354,8 +361,8 @@
           <div class="af2-mono est-val">{avgDurationMin > 0 ? `~${avgDurationMin}m` : '—'}</div>
         </div>
         <div>
-          <div class="est-key">Likely model</div>
-          <div style="margin-top:2px"><ModelChip model={likelyModel} /></div>
+          <div class="est-key">Likely profile</div>
+          <div class="af2-mono est-val">{likelyProfile}</div>
         </div>
         <div>
           <div class="est-key">Branch</div>
@@ -405,7 +412,7 @@
       <ul class="safeguards">
         <li><Badge variant="success">on</Badge> Budget kill-switch at 100% spend</li>
         <li><Badge variant="success">on</Badge> Per-phase timeout</li>
-        <li><Badge variant={fallbackEnabled ? 'success' : 'muted'}>{fallbackEnabled ? 'on' : 'off'}</Badge> Model fallback on overload</li>
+        <li><Badge variant={fallbackEnabled ? 'success' : 'muted'}>{fallbackEnabled ? 'on' : 'off'}</Badge> Profile fallback on overload</li>
         <li><Badge variant={dryRun ? 'warning' : 'muted'}>{dryRun ? 'on' : 'off'}</Badge> Dry run (no PR)</li>
       </ul>
     </Card>

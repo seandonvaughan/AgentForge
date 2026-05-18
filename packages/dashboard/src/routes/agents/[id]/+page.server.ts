@@ -11,6 +11,8 @@ import type { PageServerLoad, PageServerLoadEvent } from './$types';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { error } from '@sveltejs/kit';
+import type { CapabilityTier, CodexModelProfile } from '../agents-utils.js';
+import { resolveDashboardCodexProfile } from '../codex-profile.server.js';
 
 /** Walk up from CWD until we find a directory that contains .agentforge/agents/. */
 function findProjectRoot(): string {
@@ -167,9 +169,12 @@ function parseAgentYaml(content: string): ParsedAgent {
 export interface AgentDetail {
   agentId: string;
   name: string;
-  model: 'opus' | 'sonnet' | 'haiku';
+  model: CapabilityTier;
+  capabilityTier: CapabilityTier;
+  modelProfile: CodexModelProfile;
   description: string | null;
   role: string | null;
+  effort: string | null;
   systemPrompt: string | null;
   skills: string[];
   version: string | null;
@@ -199,15 +204,19 @@ export const load: PageServerLoad = ({ params }: PageServerLoadEvent) => {
   const collab = sections['collaboration'] ?? { strings: {}, arrays: {} };
 
   const modelRaw = strings['model'] ?? 'sonnet';
-  const model: 'opus' | 'sonnet' | 'haiku' =
+  const model: CapabilityTier =
     modelRaw === 'opus' || modelRaw === 'haiku' ? modelRaw : 'sonnet';
+  const effort = strings['effort'] ?? null;
 
   const agent: AgentDetail = {
     agentId: id,
     name: strings['name'] ?? id,
     model,
+    capabilityTier: model,
+    modelProfile: resolveDashboardCodexProfile(root, model, effort),
     description: strings['description']?.trim() ?? null,
     role: strings['role'] ?? null,
+    effort,
     systemPrompt: strings['system_prompt'] ?? null,
     skills: arrays['skills'] ?? [],
     version: strings['version'] ?? null,

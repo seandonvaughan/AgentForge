@@ -8,11 +8,12 @@ export function normalizeJobStatus(status: string | null | undefined): RuntimeJo
   if (
     normalized === 'queued' ||
     normalized === 'running' ||
+    normalized === 'succeeded' ||
     normalized === 'completed' ||
     normalized === 'failed' ||
     normalized === 'cancelled'
   ) {
-    return normalized;
+    return normalized === 'succeeded' ? 'completed' : normalized;
   }
   return 'unknown';
 }

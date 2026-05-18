@@ -26,7 +26,7 @@ import {
   type CostBreakdown,
 } from '../cost-breakdown.js';
 import { appendStepScore } from '../../scoring/jsonl-writer.js';
-import type { StepScore } from '@agentforge/shared';
+import type { ModelTier, StepScore } from '@agentforge/shared';
 // T4.5 — ConcurrencyGate: caps MAX_PARALLEL_AGENTS (default 8, max 40) and
 // provides backpressure queue so the execute phase never spawns more agents
 // than the configured ceiling, regardless of item count or parallelism cap.
@@ -347,6 +347,9 @@ interface ItemResult {
   durationMs: number;
   response: string;
   attempts: number;
+  model?: string;
+  effort?: string;
+  capabilityTier?: ModelTier;
   /** Per-run cost breakdown (token attribution). Populated by Wave 2. */
   breakdown?: CostBreakdown;
   error?: string;
@@ -390,6 +393,10 @@ export const CODER_CLASS_PATTERNS = [
   'developer',
   'dev',
 ];
+
+function isModelTier(value: unknown): value is ModelTier {
+  return value === 'opus' || value === 'sonnet' || value === 'haiku';
+}
 
 /**
  * Returns true when the sprint item is "agent code work" and should be run
@@ -806,6 +813,13 @@ export async function runExecutePhase(
             typeof result?.costUsd === 'number' ? result.costUsd : 0;
           totalCost += costUsd;
           item.status = 'completed';
+          const runModel =
+            typeof (result as any)?.model === 'string' ? (result as any).model : 'sonnet';
+          const runCapabilityTier = isModelTier((result as any)?.capabilityTier)
+            ? (result as any).capabilityTier as ModelTier
+            : undefined;
+          const runEffort =
+            typeof (result as any)?.effort === 'string' ? (result as any).effort : undefined;
 
           // Wave 2: extract per-run CostBreakdown and accumulate into phase total.
           // Use the breakdown already computed by RuntimeAdapter when available;
@@ -814,7 +828,8 @@ export async function runExecutePhase(
             (result as any)?.breakdown != null
               ? (result as any).breakdown as CostBreakdown
               : extractBreakdownFromAgentRun({
-                  model: typeof (result as any)?.model === 'string' ? (result as any).model : 'sonnet',
+                  model: runModel,
+                  ...(runCapabilityTier ? { capabilityTier: runCapabilityTier } : {}),
                   usage: {
                     input_tokens: (result as any)?.usage?.input_tokens ?? 0,
                     output_tokens: (result as any)?.usage?.output_tokens ?? 0,
@@ -869,8 +884,6 @@ export async function runExecutePhase(
               'memory',
               'step-scores.jsonl',
             );
-            const runModel =
-              typeof (result as any)?.model === 'string' ? (result as any).model : 'sonnet';
             // NOTE: T2 ships with a local `scoreStep` stub (defined above in
             // this file). T1 ships the real scorer at packages/core/src/scoring/.
             // Wiring T1's scorer through this callsite is deferred to Wave 5 —
@@ -887,7 +900,7 @@ export async function runExecutePhase(
               cycleId: ctx.cycleId ?? ctx.sprintId,
               itemId: item.id,
               agentId: item.assignee,
-              model: runModel,
+              model: runCapabilityTier ?? runModel,
               costUsd,
               latencyMs: durationMs,
               tokens: {
@@ -917,8 +930,9 @@ export async function runExecutePhase(
             // Wave 2: attach per-run breakdown for downstream accumulation.
             breakdown: runBreakdown,
             // v6.7.4: surface model + effort to the Agents tab
-            model: typeof (result as any)?.model === 'string' ? (result as any).model : undefined,
-            effort: typeof (result as any)?.effort === 'string' ? (result as any).effort : 'high',
+            model: runModel,
+            ...(runEffort ? { effort: runEffort } : {}),
+            ...(runCapabilityTier ? { capabilityTier: runCapabilityTier } : {}),
             // T4.2: surface the worktree path/branch for downstream diff capture
             worktreePath: worktreeHandle?.path,
             worktreeBranch: worktreeHandle?.branch,

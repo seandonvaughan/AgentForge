@@ -246,6 +246,7 @@ export async function registerV5Routes(
       offset?: string;
       agentId?: string;
       status?: string;
+      q?: string;
     };
     const limit = Math.min(parseInt(q.limit ?? '50', 10), 500);
     const offset = parseInt(q.offset ?? '0', 10);
@@ -256,6 +257,7 @@ export async function registerV5Routes(
       offset: 0,
       ...(q.agentId !== undefined ? { agentId: q.agentId } : {}),
       ...(q.status !== undefined ? { status: q.status } : {}),
+      ...(q.q !== undefined ? { search: q.q } : {}),
     });
 
     // Ledger sessions derived from execute.json — union when SQL is sparse
@@ -270,6 +272,13 @@ export async function registerV5Routes(
     if (q.status !== undefined) {
       const statusFilter = q.status;
       ledgerJobs = ledgerJobs.filter(r => r.status === statusFilter);
+    }
+    if (q.q !== undefined && q.q.trim()) {
+      const searchTerm = q.q.trim().toLowerCase();
+      ledgerJobs = ledgerJobs.filter(r => {
+        const searchText = `${r.id} ${r.agentId} ${r.status} ${r.cycleId}`.toLowerCase();
+        return searchText.includes(searchTerm);
+      });
     }
 
     // De-duplicate: SQL rows take precedence (match by id)

@@ -12,6 +12,7 @@ import type { PageServerLoad } from './$types';
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AgentListItem } from './agents-utils.js';
+import { resolveDashboardCodexProfile } from './codex-profile.server.js';
 export type { AgentListItem } from './agents-utils.js';
 
 /**
@@ -114,14 +115,17 @@ export function _loadAgents(root: string): AgentListItem[] {
       const modelRaw = raw.model ?? 'sonnet';
       const model: 'opus' | 'sonnet' | 'haiku' =
         modelRaw === 'opus' || modelRaw === 'haiku' ? modelRaw : 'sonnet';
+      const effort = raw.effort ?? null;
       return [{
         agentId,
         name: raw.name ?? agentId,
         model,
+        capabilityTier: model,
+        modelProfile: resolveDashboardCodexProfile(root, model, effort),
         description: raw.description?.trim() ?? null,
         role: raw.role ?? null,
         team: raw.team ?? null,
-        effort: raw.effort ?? null,
+        effort,
       }];
     } catch {
       return [];

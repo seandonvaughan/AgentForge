@@ -4,26 +4,8 @@ import type { AgentRuntimeConfig } from './types.js';
 import type { ModelTier } from '@agentforge/shared';
 import type { WorkspaceAdapter } from '@agentforge/db';
 import { injectFreshContext } from './fresh-context.js';
-
-/**
- * Schema descriptor attached to an agent YAML via the `output_schema` field.
- * When present, the agent is expected to emit structured JSON on every run.
- *
- * T4 — inlined with TODO pending T1/T2 merge onto origin/main.
- */
-interface AgentOutputSchema {
-  /** Human-readable schema name used in error messages and ValidatedJsonOutput. */
-  name: string;
-  /**
-   * When true, a failed schema validation throws SchemaValidationError instead
-   * of returning the raw text. When false (default), the run still succeeds
-   * even if the output cannot be parsed as JSON.
-   */
-  strict?: boolean;
-  /** Optional JSON Schema object for structural validation (not enforced here —
-   *  transport-layer validation populates RunResult.schemaValidation). */
-  schema?: Record<string, unknown>;
-}
+import { AgentOutputSchemaSchema } from '../team/agent-yaml/agent-yaml-schema.js';
+import type { AgentOutputSchema } from '../runtime/types.js';
 
 /**
  * Thrown by the agent factory when an agent has `output_schema.strict: true`
@@ -53,7 +35,7 @@ interface AgentYaml {
   effort?: string;
   skill_ids?: string[];
   // T4 — structured output schema declaration
-  output_schema?: AgentOutputSchema;
+  output_schema?: unknown;
 }
 
 export interface LoadAgentConfigOptions {
@@ -151,6 +133,8 @@ export async function loadAgentConfig(
         )
       : promptWithSkills;
 
+    const outputSchema = parseOutputSchema(agentId, parsed.output_schema);
+
     return {
       agentId,
       name: parsed.name ?? agentId,
@@ -160,11 +144,40 @@ export async function loadAgentConfig(
       ...(parsed.effort && { effort: parsed.effort }),
       // T4 — carry output_schema through so the execute-phase dispatch loop
       // can attach it to the RunRequest and validate results on return.
-      ...(parsed.output_schema && { outputSchema: parsed.output_schema }),
+      ...(outputSchema ? { outputSchema } : {}),
     };
   } catch {
     return null;
   }
+}
+
+function parseOutputSchema(agentId: string, value: unknown): AgentOutputSchema | undefined {
+  if (value === undefined) return undefined;
+
+  const parsed = AgentOutputSchemaSchema.safeParse(value);
+  if (!parsed.success) {
+    console.warn(
+      `[agent-factory] Agent "${agentId}" has invalid output_schema; structured validation disabled.`,
+    );
+    return undefined;
+  }
+
+  const data = parsed.data;
+  const schema: AgentOutputSchema['schema'] = {
+    type: 'object',
+    properties: data.schema.properties,
+    ...(data.schema.required !== undefined ? { required: data.schema.required } : {}),
+    ...(data.schema.additionalProperties !== undefined
+      ? { additionalProperties: data.schema.additionalProperties }
+      : {}),
+  };
+
+  return {
+    name: data.name,
+    schema,
+    ...(data.description !== undefined ? { description: data.description } : {}),
+    ...(data.strict !== undefined ? { strict: data.strict } : {}),
+  };
 }
 
 /**

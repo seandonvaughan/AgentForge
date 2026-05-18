@@ -202,6 +202,48 @@ describe('_loadAgents — model normalisation', () => {
     writeFileSync(join(dir, 'a.yaml'), 'name: A\n');
     expect(_loadAgents(tmpRoot)[0]!.model).toBe('sonnet');
   });
+
+  it('adds a resolved Codex model profile while preserving the capability tier', () => {
+    const dir = makeAgentsDir();
+    writeFileSync(join(dir, 'architect.yaml'), 'name: Architect\nmodel: opus\n');
+
+    const agent = _loadAgents(tmpRoot)[0] as AgentListItem & {
+      capabilityTier?: string;
+      modelProfile?: { provider: string; tier: string; modelId: string; effort: string };
+    };
+
+    expect(agent.model).toBe('opus');
+    expect(agent.capabilityTier).toBe('opus');
+    expect(agent.modelProfile).toEqual({
+      provider: 'codex-cli',
+      tier: 'opus',
+      modelId: 'gpt-5.3-codex',
+      effort: 'xhigh',
+    });
+  });
+
+  it('uses Codex profile overrides from .agentforge/config/models.yaml', () => {
+    const dir = makeAgentsDir();
+    mkdirSync(join(tmpRoot, '.agentforge', 'config'), { recursive: true });
+    writeFileSync(join(tmpRoot, '.agentforge', 'config', 'models.yaml'), [
+      'providers:',
+      '  codex-cli:',
+      '    tiers:',
+      '      sonnet:',
+      '        model: gpt-next-codex',
+      '        effort: medium',
+    ].join('\n'));
+    writeFileSync(join(dir, 'coder.yaml'), 'name: Coder\nmodel: sonnet\neffort: high\n');
+
+    const agent = _loadAgents(tmpRoot)[0] as AgentListItem & {
+      modelProfile?: { modelId: string; effort: string };
+    };
+
+    expect(agent.modelProfile).toMatchObject({
+      modelId: 'gpt-next-codex',
+      effort: 'medium',
+    });
+  });
 });
 
 // ── Ordering and resilience ───────────────────────────────────────────────────
@@ -293,6 +335,13 @@ const AGENT_BASE: AgentListItem = {
   agentId: 'test-agent',
   name: 'Test Agent',
   model: 'sonnet',
+  capabilityTier: 'sonnet',
+  modelProfile: {
+    provider: 'codex-cli',
+    tier: 'sonnet',
+    modelId: 'gpt-5.3-codex',
+    effort: 'high',
+  },
   description: null,
   role: null,
   team: null,
@@ -346,7 +395,17 @@ describe('matchesAgentFilter — model filter', () => {
   });
 
   it('filterModel="opus" only matches opus agents', () => {
-    const opus   = { ...AGENT_BASE, model: 'opus' as const };
+    const opus   = {
+      ...AGENT_BASE,
+      model: 'opus' as const,
+      capabilityTier: 'opus' as const,
+      modelProfile: {
+        provider: 'codex-cli' as const,
+        tier: 'opus' as const,
+        modelId: 'gpt-5.3-codex',
+        effort: 'xhigh',
+      },
+    };
     const sonnet = { ...AGENT_BASE, model: 'sonnet' as const };
     expect(matchesAgentFilter(opus,   '', 'opus', '')).toBe(true);
     expect(matchesAgentFilter(sonnet, '', 'opus', '')).toBe(false);
@@ -383,6 +442,13 @@ describe('matchesAgentFilter — combined filters', () => {
       agentId: 'planner',
       name: 'Sprint Planner',
       model: 'opus',
+      capabilityTier: 'opus',
+      modelProfile: {
+        provider: 'codex-cli',
+        tier: 'opus',
+        modelId: 'gpt-5.3-codex',
+        effort: 'xhigh',
+      },
       description: 'Plans sprints.',
       role: 'planner',
       team: 'strategic',

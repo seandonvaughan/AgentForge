@@ -153,6 +153,7 @@ export interface AgentScore {
 export interface SessionFilters {
   agentId?: string;
   status?: string;
+  search?: string;
   since?: string;
   until?: string;
   limit?: number;
@@ -265,6 +266,7 @@ export interface KnowledgeEntityRow {
   name: string;
   description: string | null;
   source_cycle_id: string | null;
+  source_type: string | null;
   embedding: Buffer | null;
   properties_json: string;
   updated_at: string;
@@ -284,6 +286,7 @@ export interface KnowledgeRelationshipRow {
 export interface KnowledgeEntityFilters {
   type?: string;
   sourceCycleId?: string;
+  sourceType?: string;
   limit?: number;
   offset?: number;
 }
@@ -428,7 +431,9 @@ export class WorkspaceAdapter {
   private ensureKnowledgeColumns(): void {
     this.ensureColumn('knowledge_entities', 'properties_json', "TEXT NOT NULL DEFAULT '{}'");
     this.ensureColumn('knowledge_entities', 'updated_at', "TEXT NOT NULL DEFAULT (datetime('now'))");
+    this.ensureColumn('knowledge_entities', 'source_type', "TEXT NOT NULL DEFAULT 'cycle'");
     this.ensureColumn('knowledge_relationships', 'properties_json', "TEXT NOT NULL DEFAULT '{}'");
+    this.db.prepare('CREATE INDEX IF NOT EXISTS idx_knowledge_entities_source_type ON knowledge_entities(source_type)').run();
   }
 
   private ensureColumn(table: string, column: string, definition: string): void {
@@ -499,6 +504,10 @@ export class WorkspaceAdapter {
 
     if (filters.agentId) { conditions.push('agent_id = ?'); params.push(filters.agentId); }
     if (filters.status) { conditions.push('status = ?'); params.push(filters.status); }
+    if (filters.search?.trim()) {
+      conditions.push('LOWER(task) LIKE LOWER(?)');
+      params.push(`%${filters.search.trim()}%`);
+    }
     if (filters.since) { conditions.push('started_at >= ?'); params.push(filters.since); }
     if (filters.until) { conditions.push('started_at <= ?'); params.push(filters.until); }
 
@@ -517,6 +526,10 @@ export class WorkspaceAdapter {
 
     if (filters.agentId) { conditions.push('agent_id = ?'); params.push(filters.agentId); }
     if (filters.status) { conditions.push('status = ?'); params.push(filters.status); }
+    if (filters.search?.trim()) {
+      conditions.push('LOWER(task) LIKE LOWER(?)');
+      params.push(`%${filters.search.trim()}%`);
+    }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const row = this.db.prepare(`SELECT COUNT(*) as n FROM sessions ${where}`).get(...params) as { n: number };
@@ -1308,6 +1321,7 @@ export class WorkspaceAdapter {
     name: string;
     description?: string | null;
     sourceCycleId?: string | null;
+    sourceType?: string | null;
     embedding?: Float32Array | null;
     propertiesJson?: string;
     updatedAt?: string;
@@ -1320,13 +1334,14 @@ export class WorkspaceAdapter {
     const embeddingBlob = data.embedding ? Buffer.from(data.embedding.buffer) : null;
     this.db.prepare(`
       INSERT INTO knowledge_entities
-        (id, type, name, description, source_cycle_id, embedding, properties_json, updated_at, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, type, name, description, source_cycle_id, source_type, embedding, properties_json, updated_at, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         type = excluded.type,
         name = excluded.name,
         description = excluded.description,
         source_cycle_id = excluded.source_cycle_id,
+        source_type = excluded.source_type,
         embedding = COALESCE(excluded.embedding, embedding),
         properties_json = excluded.properties_json,
         updated_at = excluded.updated_at
@@ -1336,6 +1351,7 @@ export class WorkspaceAdapter {
       data.name,
       data.description ?? null,
       data.sourceCycleId ?? null,
+      data.sourceType ?? 'cycle',
       embeddingBlob,
       data.propertiesJson ?? '{}',
       updatedAt,
@@ -1354,6 +1370,7 @@ export class WorkspaceAdapter {
 
     if (filters.type) { conditions.push('type = ?'); params.push(filters.type); }
     if (filters.sourceCycleId) { conditions.push('source_cycle_id = ?'); params.push(filters.sourceCycleId); }
+    if (filters.sourceType) { conditions.push('source_type = ?'); params.push(filters.sourceType); }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const limit = Math.min(filters.limit ?? 200, 2000);
@@ -1369,6 +1386,31 @@ export class WorkspaceAdapter {
       ? this.db.prepare('SELECT COUNT(*) as n FROM knowledge_entities WHERE type = ?').get(type) as { n: number }
       : this.db.prepare('SELECT COUNT(*) as n FROM knowledge_entities').get() as { n: number };
     return row.n;
+  }
+
+  upsertKnowledgeEntityByName(data: {
+    type: string;
+    name: string;
+    description?: string | null;
+    sourceCycleId?: string | null;
+    sourceType?: string | null;
+    embedding?: Float32Array | null;
+    propertiesJson?: string;
+  }): KnowledgeEntityRow {
+    const existing = this.db.prepare(`
+      SELECT * FROM knowledge_entities WHERE type = ? AND name = ? LIMIT 1
+    `).get(data.type, data.name) as KnowledgeEntityRow | undefined;
+
+    return this.upsertKnowledgeEntity({
+      ...(existing?.id ? { id: existing.id } : {}),
+      type: data.type,
+      name: data.name,
+      description: data.description ?? existing?.description ?? null,
+      sourceCycleId: data.sourceCycleId ?? existing?.source_cycle_id ?? null,
+      sourceType: data.sourceType ?? existing?.source_type ?? 'cycle',
+      ...(data.embedding !== undefined ? { embedding: data.embedding } : {}),
+      propertiesJson: data.propertiesJson ?? existing?.properties_json ?? '{}',
+    });
   }
 
   deleteKnowledgeEntity(id: string): boolean {

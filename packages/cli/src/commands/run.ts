@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import type { RuntimeMode } from '@agentforge/core';
+import type { CodexSandboxMode, RuntimeMode } from '@agentforge/core';
 import {
   invokeAgentRun,
   delegateTask,
@@ -7,7 +7,16 @@ import {
   getRunSessionDetails,
 } from '@agentforge/core';
 
-const VALID_RUNTIME_MODES: RuntimeMode[] = ['auto', 'sdk', 'claude-code-compat'];
+const VALID_RUNTIME_MODES: RuntimeMode[] = [
+  'auto',
+  'sdk',
+  'cli',
+  'anthropic-sdk',
+  'claude-cli',
+  'claude-code-compat',
+  'codex-cli',
+  'openai-sdk',
+];
 
 interface InvokeOptions {
   agent: string;
@@ -16,6 +25,7 @@ interface InvokeOptions {
   runtime: string;
   tool?: string[];
   budget?: string;
+  codexSandbox?: string;
 }
 
 interface DelegateOptions {
@@ -23,6 +33,7 @@ interface DelegateOptions {
   runtime: string;
   tool?: string[];
   budget?: string;
+  codexSandbox?: string;
   limit: string;
   run?: boolean;
 }
@@ -83,8 +94,9 @@ function registerInvokeCommand(
     .requiredOption('--agent <agent>', 'Generated agent id or name')
     .requiredOption('--task <task>', 'Task description')
     .option('--project-root <path>', 'Project root', process.cwd())
-    .option('--runtime <mode>', 'Execution runtime (auto|sdk|claude-code-compat)', 'auto')
+    .option('--runtime <mode>', 'Execution runtime (auto|sdk|cli|anthropic-sdk|claude-cli|codex-cli|openai-sdk)', 'auto')
     .option('--tool <tool...>', 'Allowed Claude Code tools for claude-code-compat mode')
+    .option('--codex-sandbox <mode>', 'Codex sandbox mode (read-only|workspace-write|danger-full-access)')
     .option('--budget <usd>', 'Budget hint for this run')
     .action(async (invokeOptions: InvokeOptions) => {
       if (options.compatibilityAlias) {
@@ -93,7 +105,8 @@ function registerInvokeCommand(
 
       const runtimeMode = parseRuntimeMode(invokeOptions.runtime);
       const budgetUsd = parseBudget(invokeOptions.budget);
-      if (!runtimeMode || budgetUsd === null) {
+      const codexSandbox = parseCodexSandbox(invokeOptions.codexSandbox);
+      if (!runtimeMode || budgetUsd === null || codexSandbox === null) {
         process.exitCode = 1;
         return;
       }
@@ -106,6 +119,7 @@ function registerInvokeCommand(
           runtimeMode,
           ...(invokeOptions.tool?.length ? { allowedTools: invokeOptions.tool } : {}),
           ...(budgetUsd !== undefined ? { budgetUsd } : {}),
+          ...(codexSandbox ? { codexSandbox } : {}),
         });
 
         console.log(`Agent:        ${response.agent.name} (${response.agent.agentId})`);
@@ -150,8 +164,9 @@ function registerDelegateCommand(
   command
     .argument('<task...>', 'Task description')
     .option('--project-root <path>', 'Project root', process.cwd())
-    .option('--runtime <mode>', 'Execution runtime (auto|sdk|claude-code-compat)', 'auto')
+    .option('--runtime <mode>', 'Execution runtime (auto|sdk|cli|anthropic-sdk|claude-cli|codex-cli|openai-sdk)', 'auto')
     .option('--tool <tool...>', 'Allowed Claude Code tools for claude-code-compat mode')
+    .option('--codex-sandbox <mode>', 'Codex sandbox mode when --run uses codex-cli')
     .option('--budget <usd>', 'Budget hint when running the selected agent')
     .option('--limit <count>', 'Maximum recommendations to show', '5')
     .option('--run', 'Execute the best match instead of recommendation-only')
@@ -162,9 +177,10 @@ function registerDelegateCommand(
 
       const runtimeMode = parseRuntimeMode(delegateOptions.runtime);
       const budgetUsd = parseBudget(delegateOptions.budget);
+      const codexSandbox = parseCodexSandbox(delegateOptions.codexSandbox);
       const limit = parseLimit(delegateOptions.limit, 5);
       const shouldRun = delegateOptions.run ?? options.defaultRun;
-      if (!runtimeMode || budgetUsd === null || limit === null) {
+      if (!runtimeMode || budgetUsd === null || codexSandbox === null || limit === null) {
         process.exitCode = 1;
         return;
       }
@@ -185,6 +201,7 @@ function registerDelegateCommand(
           runtimeMode,
           ...(delegateOptions.tool?.length ? { allowedTools: delegateOptions.tool } : {}),
           ...(budgetUsd !== undefined ? { budgetUsd } : {}),
+          ...(codexSandbox ? { codexSandbox } : {}),
         });
 
         if (delegated.recommendations.length === 0) {
@@ -335,6 +352,17 @@ function parseBudget(raw?: string): number | undefined | null {
   return parsed;
 }
 
+function parseCodexSandbox(raw?: string): CodexSandboxMode | undefined | null {
+  if (raw === undefined) return undefined;
+  const valid: CodexSandboxMode[] = ['read-only', 'workspace-write', 'danger-full-access'];
+  if (valid.includes(raw as CodexSandboxMode)) {
+    return raw as CodexSandboxMode;
+  }
+
+  console.error(`Invalid Codex sandbox mode: ${raw}. Expected one of ${valid.join(', ')}.`);
+  return null;
+}
+
 function parseLimit(raw: string, fallback: number): number | null {
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -347,12 +375,15 @@ function parseLimit(raw: string, fallback: number): number | null {
 function formatProvider(providerKind?: string): string {
   if (providerKind === 'anthropic-sdk') return 'Anthropic SDK';
   if (providerKind === 'claude-code-compat') return 'Claude Code';
+  if (providerKind === 'codex-cli') return 'Codex CLI';
+  if (providerKind === 'openai-sdk') return 'OpenAI Responses';
   return providerKind ?? 'unknown transport';
 }
 
 function formatRuntimeMode(runtimeMode?: string): string {
   if (!runtimeMode) return 'auto';
   if (runtimeMode === 'claude-code-compat') return 'claude compat';
+  if (runtimeMode === 'claude-cli' || runtimeMode === 'cli') return 'claude cli';
   return runtimeMode;
 }
 

@@ -5,7 +5,7 @@
    * Sections:
    *   1. Page header + overall status banner
    *   2. Service status cards: each with PulseDot + Ring + Sparkline
-   *   3. Dependency matrix (Anthropic API, GitHub API, etc.)
+   *   3. Dependency matrix (OpenAI API, GitHub API, etc.)
    *   4. Recent incidents table
    *
    * Data:
@@ -130,7 +130,7 @@
   // Dependency check matrix — these are the external services AgentForge depends on.
   // Real status would require dedicated health checks; we derive from services list.
   const DEPENDENCIES = [
-    { label: 'Anthropic API', key: 'anthropic' },
+    { label: 'OpenAI API', key: 'openai' },
     { label: 'GitHub API', key: 'github' },
     { label: 'AgentForge API', key: 'api' },
     { label: 'Database', key: 'db' },

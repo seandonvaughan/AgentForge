@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import type { SessionRow } from '@agentforge/db';
 import { AgentRuntime, loadAgentConfig, type RunResult } from '../agent-runtime/index.js';
 import { WorkspaceManager } from '../workspace/index.js';
-import type { RuntimeMode } from '../runtime/types.js';
+import type { CodexSandboxMode, RuntimeMode } from '../runtime/types.js';
 import {
   listCatalogAgents,
   resolveCatalogAgent,
@@ -16,6 +16,7 @@ export interface InvokeAgentRunOptions {
   runtimeMode?: RuntimeMode;
   allowedTools?: string[];
   budgetUsd?: number;
+  codexSandbox?: CodexSandboxMode;
   dataDir?: string;
 }
 
@@ -80,6 +81,7 @@ export async function invokeAgentRun(
       ...(options.runtimeMode ? { runtimeMode: options.runtimeMode } : {}),
       ...(options.allowedTools?.length ? { allowedTools: options.allowedTools } : {}),
       ...(options.budgetUsd !== undefined ? { budgetUsd: options.budgetUsd } : {}),
+      ...(options.codexSandbox ? { codexSandbox: options.codexSandbox } : {}),
     });
     const persistedSession = result.sessionId ? adapter.getSession(result.sessionId) : undefined;
 

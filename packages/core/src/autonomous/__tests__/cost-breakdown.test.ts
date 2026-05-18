@@ -175,6 +175,17 @@ describe('extractBreakdownFromAgentRun', () => {
     expect(bd.inputTokens.usd).toBeCloseTo(3.00, 6);
   });
 
+  it('uses capabilityTier before inferring from provider model id', () => {
+    const run = makeRun({
+      model: 'gpt-5.3-codex',
+      capabilityTier: 'opus',
+      usage: { input_tokens: 1_000_000, output_tokens: 0 },
+    });
+    const bd = extractBreakdownFromAgentRun(run);
+
+    expect(bd.inputTokens.usd).toBeCloseTo(15.00, 6);
+  });
+
   it('includes toolInvocations in the toolUse map', () => {
     const run = makeRun({
       toolInvocations: {

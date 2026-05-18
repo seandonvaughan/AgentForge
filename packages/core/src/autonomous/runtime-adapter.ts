@@ -133,6 +133,8 @@ export class RuntimeAdapter implements RuntimeForScoring {
     costUsd: number;
     durationMs: number;
     model: string;
+    effort?: string;
+    capabilityTier?: ModelTier;
     breakdown: CostBreakdown;
   }> {
     // When a supervisor is wired, every agent run creates a durable runtime_job
@@ -172,13 +174,20 @@ export class RuntimeAdapter implements RuntimeForScoring {
         ? { cache_read_input_tokens: result.cacheReadInputTokens }
         : {}),
     };
-    const breakdown = extractBreakdownFromAgentRun({ model: result.model, usage });
+    const breakdownRun = {
+      model: result.model,
+      usage,
+      ...(result.capabilityTier ? { capabilityTier: result.capabilityTier } : {}),
+    };
+    const breakdown = extractBreakdownFromAgentRun(breakdownRun);
     return {
       output: result.response,
       usage,
       costUsd: result.costUsd,
       durationMs,
       model: result.model,
+      ...(result.effort ? { effort: result.effort } : {}),
+      ...(result.capabilityTier ? { capabilityTier: result.capabilityTier } : {}),
       breakdown,
     };
   }
@@ -203,6 +212,8 @@ export class RuntimeAdapter implements RuntimeForScoring {
     costUsd: number;
     durationMs: number;
     model: string;
+    effort?: string;
+    capabilityTier?: ModelTier;
     breakdown: CostBreakdown;
   }> {
     const supervisor = this.options.supervisor!;
@@ -245,13 +256,20 @@ export class RuntimeAdapter implements RuntimeForScoring {
         ? { cache_read_input_tokens: runResult.cacheReadInputTokens }
         : {}),
     };
-    const supervisorBreakdown = extractBreakdownFromAgentRun({ model: runResult.model, usage: supervisorUsage });
+    const supervisorBreakdownRun = {
+      model: runResult.model,
+      usage: supervisorUsage,
+      ...(runResult.capabilityTier ? { capabilityTier: runResult.capabilityTier } : {}),
+    };
+    const supervisorBreakdown = extractBreakdownFromAgentRun(supervisorBreakdownRun);
     return {
       output: runResult.response,
       usage: supervisorUsage,
       costUsd: runResult.costUsd,
       durationMs,
       model: runResult.model,
+      ...(runResult.effort ? { effort: runResult.effort } : {}),
+      ...(runResult.capabilityTier ? { capabilityTier: runResult.capabilityTier } : {}),
       breakdown: supervisorBreakdown,
     };
   }

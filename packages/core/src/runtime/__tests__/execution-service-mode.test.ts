@@ -25,7 +25,16 @@ describe('resolveMode()', () => {
   it('is case-insensitive for env var values', () => {
     expect(resolveMode({ AGENTFORGE_RUNTIME: 'SDK' })).toBe('sdk');
     expect(resolveMode({ AGENTFORGE_RUNTIME: 'CLI' })).toBe('cli');
+    expect(resolveMode({ AGENTFORGE_RUNTIME: 'CODEX-CLI' })).toBe('codex-cli');
+    expect(resolveMode({ AGENTFORGE_RUNTIME: 'OPENAI-SDK' })).toBe('openai-sdk');
     expect(resolveMode({ AGENTFORGE_RUNTIME: 'Auto' })).toBe('auto');
+  });
+
+  it('accepts explicit provider names', () => {
+    expect(resolveMode({ AGENTFORGE_RUNTIME: 'anthropic-sdk' })).toBe('anthropic-sdk');
+    expect(resolveMode({ AGENTFORGE_RUNTIME: 'claude-cli' })).toBe('claude-cli');
+    expect(resolveMode({ AGENTFORGE_RUNTIME: 'codex-cli' })).toBe('codex-cli');
+    expect(resolveMode({ AGENTFORGE_RUNTIME: 'openai-sdk' })).toBe('openai-sdk');
   });
 });
 
@@ -40,6 +49,10 @@ describe('resolveAutoMode()', () => {
 
   it('returns "cli" directly when AGENTFORGE_RUNTIME=cli (no PATH probe)', () => {
     expect(resolveAutoMode({ AGENTFORGE_RUNTIME: 'cli' })).toBe('cli');
+  });
+
+  it('returns "codex-cli" directly when AGENTFORGE_RUNTIME=codex-cli', () => {
+    expect(resolveAutoMode({ AGENTFORGE_RUNTIME: 'codex-cli' })).toBe('codex-cli');
   });
 
   it('returns a "cli" or "sdk" string when mode is auto (PATH probe)', () => {

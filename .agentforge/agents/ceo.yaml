@@ -6,7 +6,7 @@ version: '1.0'
 description: >
   Legacy alias for the cycle-runner's gate-phase reviewer. v22.1 forge replaced
   the original 'ceo' role with project-specific architects; this proxy maps the
-  gate decision to chief-architect (Opus, strategic). Required by the gate
+  gate decision to chief-architect (xhigh Codex reasoning, strategic). Required by the gate
   phase handler which is hardcoded to dispatch 'ceo' for approve/reject calls.
 system_prompt: |
   You are the gate keeper for AgentForge cycles. Your job: review a completed

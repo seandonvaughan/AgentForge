@@ -56,7 +56,11 @@ interface AgentYaml {
 }
 
 type DelegationMap = Record<string, string[]>;
-type ModelsMap = Record<string, string[]>;
+type ModelsMap = Record<string, unknown>;
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
 
 // ---------------------------------------------------------------------------
 // Request body interfaces
@@ -170,13 +174,15 @@ function setModelRouting(mdlPath: string, agentId: string, model: string): void 
 
   // Strip from existing buckets
   for (const tier of Object.keys(map)) {
-    map[tier] = (map[tier] ?? []).filter((id) => id !== agentId);
+    if (Array.isArray(map[tier])) {
+      map[tier] = asStringArray(map[tier]).filter((id) => id !== agentId);
+    }
   }
 
   // Append to target bucket
-  if (!map[model]) map[model] = [];
-  if (!map[model].includes(agentId)) {
-    map[model] = [...map[model], agentId];
+  const target = asStringArray(map[model]);
+  if (!target.includes(agentId)) {
+    map[model] = [...target, agentId];
   }
 
   writeYaml(mdlPath, map);
@@ -189,7 +195,8 @@ function removeFromModels(mdlPath: string, agentId: string): void {
   let changed = false;
 
   for (const tier of Object.keys(map)) {
-    const before = map[tier] ?? [];
+    if (!Array.isArray(map[tier])) continue;
+    const before = asStringArray(map[tier]);
     const after = before.filter((id) => id !== agentId);
     if (after.length !== before.length) {
       map[tier] = after;

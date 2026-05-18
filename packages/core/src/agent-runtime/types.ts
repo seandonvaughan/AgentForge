@@ -1,5 +1,5 @@
 import type { ModelTier } from '@agentforge/shared';
-import type { ExecutionProviderKind, RuntimeMode } from '../runtime/types.js';
+import type { AgentOutputSchema, CodexSandboxMode, ExecutionProviderKind, RuntimeMode } from '../runtime/types.js';
 
 export interface AgentRuntimeConfig {
   agentId: string;
@@ -12,6 +12,7 @@ export interface AgentRuntimeConfig {
   runtimeMode?: RuntimeMode;
   /** Reasoning effort level — passed as --effort to the claude subprocess. */
   effort?: string;
+  outputSchema?: AgentOutputSchema;
 }
 
 export interface RunOptions {
@@ -29,6 +30,10 @@ export interface RunOptions {
    * (no tools enabled for non-interactive `claude -p`).
    */
   allowedTools?: string[];
+  cwd?: string;
+  outputSchema?: AgentOutputSchema;
+  codexSandbox?: CodexSandboxMode;
+  enableFallback?: boolean;
   /**
    * Per-request CLI subprocess timeout in milliseconds.
    * Overrides the transport default of 20 minutes (1_200_000 ms).
@@ -42,6 +47,10 @@ export interface RunResult {
   sessionId: string;
   response: string;
   model: string;
+  /** Internal AgentForge capability tier used for routing and cost semantics. */
+  capabilityTier?: ModelTier;
+  /** Provider reasoning effort used for the run, when supported. */
+  effort?: string;
   inputTokens: number;
   outputTokens: number;
   /** Cache-creation tokens surfaced by the transport (Anthropic prompt-caching). */
@@ -54,6 +63,8 @@ export interface RunResult {
   status: 'completed' | 'failed';
   providerKind?: ExecutionProviderKind;
   runtimeModeResolved?: RuntimeMode;
+  /** Present when the transport validated a requested structured output schema. */
+  schemaValidation?: { ok: boolean; error?: string };
   error?: string;
 }
 

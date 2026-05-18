@@ -42,6 +42,34 @@ async function readExistingManifest(baseDir: string): Promise<TeamManifest | nul
 }
 
 /**
+ * Preserve provider profile configuration in `.agentforge/config/models.yaml`
+ * while refreshing the legacy top-level routing buckets used by older routes.
+ */
+async function buildModelsConfig(
+  configDir: string,
+  modelRouting: ModelRouting,
+): Promise<Record<string, unknown>> {
+  const modelsPath = join(configDir, "models.yaml");
+  let existing: Record<string, unknown> = {};
+
+  try {
+    const parsed = yaml.load(await readFile(modelsPath, "utf-8"));
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      existing = parsed as Record<string, unknown>;
+    }
+  } catch {
+    // No existing config yet. The forge writes routing buckets below.
+  }
+
+  return {
+    ...existing,
+    opus: modelRouting.opus,
+    sonnet: modelRouting.sonnet,
+    haiku: modelRouting.haiku,
+  };
+}
+
+/**
  * Merge all agent names from every category in `existing` that are not
  * already present in `scanned` into the corresponding category bucket.
  *
@@ -418,6 +446,7 @@ export async function writeTeam(
 
   // Build forge log
   const forgeLog = buildForgeLog(fullManifest, agents, scanResult);
+  const modelsConfig = await buildModelsConfig(configDir, fullManifest.model_routing);
 
   // Write all files in parallel
   await Promise.all([
@@ -441,7 +470,7 @@ export async function writeTeam(
     // config/models.yaml
     writeFile(
       join(configDir, "models.yaml"),
-      yaml.dump(modelRouting, { lineWidth: 120, noRefs: true }),
+      yaml.dump(modelsConfig, { lineWidth: 120, noRefs: true }),
       "utf-8",
     ),
 

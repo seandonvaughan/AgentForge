@@ -1,0 +1,20 @@
+{
+  "name": "agentforge-local",
+  "interface": {
+    "displayName": "AgentForge Local"
+  },
+  "plugins": [
+    {
+      "name": "agentforge-codex",
+      "source": {
+        "source": "local",
+        "path": "./plugins/agentforge-codex"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

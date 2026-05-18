@@ -6,7 +6,7 @@
    *   1. Page header with range selector
    *   2. Hero KPI tiles: last 24h / week / month / YTD spend
    *   3. Spend sparkline over 30 days
-   *   4. By-model DistBar + breakdown
+   *   4. By-tier DistBar + breakdown
    *   5. Per-agent table
    *   6. Budget ring + forecast section
    *   7. Top expensive cycles list
@@ -169,7 +169,7 @@
     return rollups.slice(-30).map(d => d.costUsd);
   });
 
-  // Per-model breakdown
+  // Per-tier breakdown, sourced from the server's byModel records.
   const byModel = $derived(() => {
     const models = summary?.byModel ?? [];
     const total = models.reduce((s, m) => s + m.costUsd, 0);
@@ -222,7 +222,7 @@
   <div class="cost-headline-row">
     <div>
       <h1 class="cost-title">Cost analytics</h1>
-      <p class="cost-subtitle">Token spend by agent, model, and cycle</p>
+      <p class="cost-subtitle">Token spend by agent, capability tier, and cycle</p>
     </div>
     <div class="cost-actions">
       <!-- Range selector -->
@@ -282,7 +282,7 @@
     />
   </div>
 
-  <!-- ── Spend sparkline + model breakdown ─────────────────────────────────────── -->
+  <!-- ── Spend sparkline + tier breakdown ──────────────────────────────────────── -->
   <div class="two-col" style="margin-bottom:14px;">
     <Card>
       <div class="card-section-title">
@@ -303,9 +303,9 @@
     </Card>
 
     <Card>
-      <div class="card-section-title">BY MODEL TIER</div>
+      <div class="card-section-title">BY CAPABILITY TIER</div>
       {#if byModel().length === 0}
-        <div class="empty-state">No model data yet.</div>
+        <div class="empty-state">No capability tier data yet.</div>
       {:else}
         <div class="model-list">
           {#each byModel() as m}
@@ -347,7 +347,7 @@
         <thead>
           <tr>
             <th>Agent</th>
-            <th>Model</th>
+            <th>Tier</th>
             <th>Sessions</th>
             <th>Total spend</th>
             <th>Avg / session</th>
@@ -587,7 +587,7 @@
     margin-top: 6px;
   }
 
-  /* ── Model breakdown ─────────────────────────────────────────────────────────── */
+  /* ── Tier breakdown ──────────────────────────────────────────────────────────── */
   .model-list {
     display: flex;
     flex-direction: column;

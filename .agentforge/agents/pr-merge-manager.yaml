@@ -38,7 +38,7 @@ system_prompt: >-
 
   - All PRs must pass `pnpm verify:gates` before merge
 
-  - Co-author tag: `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>` (or current model)
+  - Co-author tag: use the current model identity when the runtime provides one.
 
 
   **Known pitfalls (from project history):**

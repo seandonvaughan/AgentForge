@@ -43,7 +43,7 @@
   let totalEdges = $state(_serverEdges.length);
   let orphansCollapsed = $state(true);
   let collapsed: Set<string> = $state(computeAutoCollapsed(_init.roots));
-  // Tracks the full flat node list for the model-mix sidebar and all-agents
+  // Tracks the full flat node list for the capability-tier sidebar and all-agents
   // scroll list. Must be updated by BOTH the SSR $effect and the client-side
   // API load() so those sections stay in sync regardless of which data path
   // was used to populate the tree.
@@ -64,7 +64,7 @@
     loading = false;
   });
 
-  // ── Model color helpers ───────────────────────────────────────────────────────
+  // ── Capability tier color helpers ────────────────────────────────────────────
   const MODEL_COLOR: Record<string, string> = {
     opus: 'var(--af-opus)', sonnet: 'var(--af-sonnet)', haiku: 'var(--af-haiku)',
   };
@@ -306,7 +306,7 @@
     return result;
   });
 
-  // Cost grouping for sidebar (approximate — no real cost data without sessions).
+  // Capability-tier grouping for sidebar.
   // Reads from allNodes (not data.nodes) so that the API-fallback path keeps
   // the sidebar in sync with the tree when SSR returns empty data.
   let modelMix = $derived({
@@ -472,10 +472,10 @@
 
     <!-- ── Right: stats ───────────────────────────────────────────────────────── -->
     <div class="af-right-col">
-      <!-- Model mix -->
+      <!-- Capability tier mix -->
       <Card>
         <div class="af-section-header">
-          <span class="af-section-title">BY MODEL</span>
+          <span class="af-section-title">BY TIER</span>
         </div>
         <div class="af-model-mix">
           {#each ([
@@ -498,7 +498,7 @@
         </div>
       </Card>
 
-      <!-- All agents list (top-down, sorted by model tier) -->
+      <!-- All agents list (top-down, sorted by capability tier) -->
       <Card noPad>
         <div class="af-tree-head">
           <span class="af-section-title">ALL AGENTS</span>
@@ -758,7 +758,7 @@
   .af-graph-wrap { padding: 14px; }
   .af-graph-svg { display: block; width: 100%; }
 
-  /* ── Model mix ───────────────────────────────────────────────────────── */
+  /* ── Capability tier mix ─────────────────────────────────────────────── */
   .af-model-mix { display: flex; flex-direction: column; gap: 10px; }
   .af-model-row { display: flex; flex-direction: column; gap: 4px; }
   .af-model-label-row {

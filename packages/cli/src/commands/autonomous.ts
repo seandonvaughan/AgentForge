@@ -259,9 +259,23 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
       config.effortCap = effortCap;
       console.log(`[cycle] effortCap override: ${effortCap}`);
     }
-    // fallbackEnabled: default true; only disabled when env var is explicitly 'false'
+    const maxAgentsOverride = parseEnvPositiveInteger(process.env['AUTONOMOUS_MAX_AGENTS']);
+    if (maxAgentsOverride !== null) {
+      config.limits.maxExecutePhaseParallelism = maxAgentsOverride;
+      console.log(`[cycle] maxAgents override: ${maxAgentsOverride}`);
+    }
+    const branchPrefixOverride = process.env['AUTONOMOUS_BRANCH_PREFIX']?.trim();
+    if (branchPrefixOverride) {
+      config.git.branchPrefix = branchPrefixOverride;
+      console.log(`[cycle] branchPrefix override: ${branchPrefixOverride}`);
+    }
+    if (process.env['AUTONOMOUS_DRY_RUN'] === 'true' || process.env['AUTONOMOUS_DRY_RUN'] === '1') {
+      opts.dryRun = true;
+      console.log('[cycle] dry-run override: PR will not be opened');
+    }
+    // fallbackEnabled: default true; disabled when env var is 'false' or '0'.
     const fallbackEnabledRaw = process.env['AUTONOMOUS_FALLBACK_ENABLED'];
-    const enableFallback = fallbackEnabledRaw === 'false' ? false : true;
+    const enableFallback = fallbackEnabledRaw === 'false' || fallbackEnabledRaw === '0' ? false : true;
     if (!enableFallback) {
       config.fallbackEnabled = false;
       console.log('[cycle] fallback disabled');

@@ -1,0 +1,26 @@
+{
+  "name": "agentforge-codex",
+  "version": "10.5.1",
+  "description": "AgentForge host plugin for Codex CLI-driven agent teams and autonomous development cycles.",
+  "author": {
+    "name": "Sean Vaughan"
+  },
+  "license": "MIT",
+  "keywords": ["agentforge", "codex", "agents", "autonomous-development"],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "AgentForge Codex",
+    "shortDescription": "Build and run AgentForge teams through Codex.",
+    "longDescription": "AgentForge Codex exposes AgentForge team forging, readiness checks, runtime invocation, and autonomous cycle workflows using the Codex CLI runtime.",
+    "developerName": "Sean Vaughan",
+    "category": "Developer Tools",
+    "capabilities": ["Interactive", "Write"],
+    "defaultPrompt": [
+      "Check AgentForge Codex readiness.",
+      "Run an AgentForge Codex cycle preview.",
+      "Invoke an AgentForge agent with Codex."
+    ],
+    "brandColor": "#2563EB"
+  }
+}

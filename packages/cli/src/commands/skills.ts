@@ -187,10 +187,11 @@ async function listProposalsAction(
 // ---------------------------------------------------------------------------
 
 export function registerSkillsCommand(program: Command): void {
-  const skills = program
-    .command('skills')
-    .description('Skill flywheel curator — cluster low-quality capability tags and propose improvements')
-    .option('--project-root <path>', 'Project root', process.cwd());
+  const skills = program.commands.find(command => command.name() === 'skills')
+    ?? program
+      .command('skills')
+      .description('Skill flywheel curator — cluster low-quality capability tags and propose improvements')
+      .option('--project-root <path>', 'Project root', process.cwd());
 
   skills
     .command('propose-from-learnings')

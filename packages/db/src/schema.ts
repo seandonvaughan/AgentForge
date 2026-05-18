@@ -312,6 +312,7 @@ export const WORKSPACE_DDL = `
     name TEXT NOT NULL,
     description TEXT,
     source_cycle_id TEXT,
+    source_type TEXT NOT NULL DEFAULT 'cycle',
     embedding BLOB,
     properties_json TEXT NOT NULL DEFAULT '{}',
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),

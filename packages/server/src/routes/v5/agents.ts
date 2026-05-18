@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { AgentRuntime, loadAgentConfig } from '@agentforge/core';
+import { AgentRuntime, loadAgentConfig, resolveProviderModelProfile, type RuntimeMode } from '@agentforge/core';
 import type { WorkspaceAdapter } from '@agentforge/db';
 import { join } from 'node:path';
 import { readdirSync, existsSync, readFileSync } from 'node:fs';
@@ -8,6 +8,25 @@ import { safeJoin } from '../../lib/safe-join.js';
 
 /** Agent IDs must be kebab-case slugs — no path separators, no traversal. */
 const SAFE_AGENT_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+type CapabilityTier = 'opus' | 'sonnet' | 'haiku';
+
+function normalizeCapabilityTier(value: unknown): CapabilityTier {
+  return value === 'opus' || value === 'haiku' ? value : 'sonnet';
+}
+
+function toCodexModelProfile(
+  projectRoot: string,
+  tier: CapabilityTier,
+  effort: string | null,
+): { provider: 'codex-cli'; tier: CapabilityTier; modelId: string; effort: string } {
+  const profile = resolveProviderModelProfile('codex-cli', tier, effort ?? undefined, process.env, projectRoot);
+  return {
+    provider: 'codex-cli',
+    tier,
+    modelId: profile.modelId,
+    effort: profile.effort ?? effort ?? '',
+  };
+}
 
 export async function agentRoutes(
   app: FastifyInstance,
@@ -28,16 +47,18 @@ export async function agentRoutes(
         try {
           const raw = yaml.load(readFileSync(join(agentsDir, f), 'utf-8')) as Record<string, unknown> | null;
           if (!raw || typeof raw !== 'object') return [];
-          const modelRaw = typeof raw.model === 'string' ? raw.model : 'sonnet';
-          const model = (modelRaw === 'opus' || modelRaw === 'haiku') ? modelRaw : 'sonnet';
+          const model = normalizeCapabilityTier(raw.model);
+          const effort = typeof raw.effort === 'string' ? raw.effort : null;
           return [{
             agentId,
             name: typeof raw.name === 'string' ? raw.name : agentId,
             model,
+            capabilityTier: model,
+            modelProfile: toCodexModelProfile(opts.projectRoot, model, effort),
             description: typeof raw.description === 'string' ? raw.description.trim() : null,
             role: typeof raw.role === 'string' ? raw.role : null,
             team: typeof raw.team === 'string' ? raw.team : null,
-            effort: typeof raw.effort === 'string' ? raw.effort : null,
+            effort,
           }];
         } catch {
           return [];
@@ -60,8 +81,8 @@ export async function agentRoutes(
     try {
       const raw = yaml.load(readFileSync(filePath, 'utf-8')) as Record<string, unknown> | null;
       if (!raw || typeof raw !== 'object') return reply.status(404).send({ error: 'Agent not found' });
-      const modelRaw = typeof raw.model === 'string' ? raw.model : 'sonnet';
-      const model = (modelRaw === 'opus' || modelRaw === 'haiku') ? modelRaw : 'sonnet';
+      const model = normalizeCapabilityTier(raw.model);
+      const effort = typeof raw.effort === 'string' ? raw.effort : null;
       const skillsRaw = Array.isArray(raw.skills) ? raw.skills : [];
       const skills = skillsRaw.filter((s): s is string => typeof s === 'string');
 
@@ -79,8 +100,11 @@ export async function agentRoutes(
           agentId,
           name: typeof raw.name === 'string' ? raw.name : agentId,
           model,
+          capabilityTier: model,
+          modelProfile: toCodexModelProfile(opts.projectRoot, model, effort),
           description: typeof raw.description === 'string' ? raw.description.trim() : null,
           role: typeof raw.role === 'string' ? raw.role : null,
+          effort,
           systemPrompt: typeof raw.system_prompt === 'string' ? raw.system_prompt : null,
           skills,
           version: typeof raw.version === 'string' ? raw.version : null,
@@ -100,11 +124,12 @@ export async function agentRoutes(
     const agentIdParam = req.params.id;
     if (!SAFE_AGENT_ID.test(agentIdParam)) return reply.status(400).send({ error: 'Invalid agent id' });
 
-    const { task, context, parentSessionId, budgetUsd } = req.body as {
+    const { task, context, parentSessionId, budgetUsd, runtimeMode } = req.body as {
       task: string;
       context?: string;
       parentSessionId?: string;
       budgetUsd?: number;
+      runtimeMode?: RuntimeMode;
     };
 
     if (!task) return reply.status(400).send({ error: 'task is required' });
@@ -125,6 +150,7 @@ export async function agentRoutes(
       ...(context !== undefined ? { context } : {}),
       ...(parentSessionId !== undefined ? { parentSessionId } : {}),
       ...(budgetUsd !== undefined ? { budgetUsd } : {}),
+      runtimeMode: runtimeMode ?? ('codex-cli' as RuntimeMode),
     };
     const result = await runtime.run(runOpts);
 

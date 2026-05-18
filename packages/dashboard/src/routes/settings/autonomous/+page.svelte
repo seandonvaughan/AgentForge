@@ -144,16 +144,16 @@
       <p class="section-title">AUTONOMOUS LOOP</p>
       <div class="field-grid">
 
-        <!-- Model cap -->
+        <!-- Codex profile cap -->
         <div class="field">
-          <label for="model-cap" class="field-label">Model cap (default)</label>
+          <label for="model-cap" class="field-label">Codex profile cap (default)</label>
           <select id="model-cap" class="field-input" bind:value={modelCap}>
-            <option value="opus">Opus — Most capable</option>
-            <option value="sonnet">Sonnet — Balanced</option>
-            <option value="haiku">Haiku — Fast &amp; efficient</option>
+            <option value="opus">xhigh profile — Most capable</option>
+            <option value="sonnet">high profile — Balanced</option>
+            <option value="haiku">medium profile — Fast &amp; efficient</option>
             <option value="none">None — No cap</option>
           </select>
-          <p class="field-hint">Upper limit on model tier for autonomous agents; individual tasks may still override.</p>
+          <p class="field-hint">Upper limit on Codex model profile for autonomous agents; individual tasks may still override.</p>
         </div>
 
         <!-- Effort cap -->
@@ -163,18 +163,18 @@
             <option value="low">Low</option>
             <option value="medium">Medium</option>
             <option value="high">High</option>
-            <option value="xhigh">X-High — Opus only</option>
-            <option value="max">Max — Opus only, extended</option>
+            <option value="xhigh">xhigh — xhigh profile only</option>
+            <option value="max">Max — xhigh profile only, extended</option>
           </select>
           {#if effortMaxWarning}
             <div class="warn-banner">
               <Badge variant="warning">Warning</Badge>
-              <span>Max effort uses extended thinking on Opus — costs will be significantly higher.</span>
+              <span>Max effort uses extended reasoning on the xhigh profile — costs will be significantly higher.</span>
             </div>
           {:else if effortXhighWarning}
             <div class="warn-banner">
-              <Badge variant="warning">Opus only</Badge>
-              <span>X-High effort requires the Opus model cap or higher.</span>
+              <Badge variant="warning">xhigh profile only</Badge>
+              <span>xhigh effort requires the xhigh profile cap or higher.</span>
             </div>
           {/if}
         </div>
@@ -184,7 +184,7 @@
           <div class="toggle-row">
             <div>
               <p class="field-label">Fallback enabled</p>
-              <p class="field-hint">Fall back to a cheaper model if the primary is unavailable.</p>
+              <p class="field-hint">Fall back to a cheaper capability tier if the primary tier is unavailable.</p>
             </div>
             <button type="button" class="toggle-btn" class:on={fallbackEnabled}
               onclick={() => { fallbackEnabled = !fallbackEnabled; }}

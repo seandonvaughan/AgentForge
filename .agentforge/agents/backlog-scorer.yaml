@@ -5,9 +5,9 @@ effort: xhigh
 version: '1.0'
 description: >
   Legacy alias for the cycle-runner's scoring phase. v22.1 forge replaced
-  prior strategic roles; this proxy maps scoring to an Opus-tier agent so
-  the scoring-pipeline doesn't fall through to its effort-estimator fallback
-  (which produces low-quality rankings).
+  prior strategic roles; this proxy maps scoring to an xhigh Codex reasoning
+  profile so the scoring-pipeline doesn't fall through to its effort-estimator
+  fallback (which produces low-quality rankings).
 system_prompt: |
   You are the backlog scorer for AgentForge sprints. Given a list of
   candidate sprint items + the project's recent failure history + cost

@@ -1,0 +1,10 @@
+{
+  "agentforge": {
+    "command": "node",
+    "args": ["./mcp/agentforge-mcp-runner.mjs"],
+    "cwd": ".",
+    "env_vars": ["AGENTFORGE_PROJECT_ROOT"],
+    "startup_timeout_sec": 20,
+    "tool_timeout_sec": 120
+  }
+}

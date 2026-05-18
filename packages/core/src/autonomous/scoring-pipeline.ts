@@ -15,6 +15,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import yaml from 'js-yaml';
 import type { CycleConfig, ScoringResult, RankedItem } from './types.js';
+import type { ModelTier } from '@agentforge/shared';
 import type { BacklogItem } from './proposal-to-backlog.js';
 import type { CycleLogger } from './cycle-logger.js';
 import { EffortEstimator } from '../predictive-planning/effort-estimator.js';
@@ -41,6 +42,8 @@ export interface RuntimeForScoring {
     costUsd: number;
     durationMs: number;
     model: string;
+    effort?: string;
+    capabilityTier?: ModelTier;
   }>;
 }
 

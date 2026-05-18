@@ -1,21 +1,59 @@
 opus:
-  - ceo
-  - genesis
   - architect
-  - cto
-  - meta-architect
+  - autonomy-strategist
+  - backlog-scorer
+  - ceo
+  - chief-architect
+  - forge-engine-architect
 sonnet:
-  - coo
-  - cfo
-  - project-manager
-  - skill-designer
-  - template-optimizer
+  - auth-security-engineer
+  - backend-qa
+  - ci-build-engineer
+  - cli-engineer
+  - code-reviewer
   - coder
-  - team-reviewer
-  - dba
-  - debugger
-  - api-specialist
-  - db-specialist
-haiku:
-  - linter
+  - db-workspace-engineer
+  - embeddings-engineer
+  - executor-runtime-engineer
+  - fastify-v5-engineer
+  - fastify-v6-shim-engineer
+  - plugin-sdk-engineer
+  - pr-merge-manager
+  - reforge-genesis-engineer
   - researcher
+  - scanner-engineer
+  - svelte-agents-engineer
+  - svelte-cycles-engineer
+  - svelte-runner-engineer
+  - test-engineer
+haiku:
+  - data-analyst
+  - file-reader
+  - memory-curator
+  - scorer-evaluator
+  - shared-utils-engineer
+  - svelte-component-atoms-engineer
+  - yaml-doctor
+providers:
+  codex-cli:
+    tiers:
+      opus:
+        model: gpt-5.3-codex
+        effort: xhigh
+      sonnet:
+        model: gpt-5.3-codex
+        effort: high
+      haiku:
+        model: gpt-5.3-codex
+        effort: medium
+  openai-sdk:
+    tiers:
+      opus:
+        model: gpt-5.3-codex
+        effort: xhigh
+      sonnet:
+        model: gpt-5.3-codex
+        effort: high
+      haiku:
+        model: gpt-5.3-codex
+        effort: medium

@@ -6,15 +6,28 @@
  * browser bundles" guard.
  */
 
+export type CapabilityTier = 'opus' | 'sonnet' | 'haiku';
+
+export interface CodexModelProfile {
+  provider: 'codex-cli';
+  tier: CapabilityTier;
+  modelId: string;
+  effort: string;
+}
+
 export interface AgentListItem {
   agentId: string;
   name: string;
-  model: 'opus' | 'sonnet' | 'haiku';
+  /** AgentForge capability tier retained for routing and team composition. */
+  model: CapabilityTier;
+  capabilityTier: CapabilityTier;
+  /** Resolved Codex runtime profile rendered by the dashboard. */
+  modelProfile: CodexModelProfile;
   description: string | null;
   role: string | null;
   /** Organisational team grouping (e.g. "strategic", "runtime", "quality"). */
   team: string | null;
-  /** Invocation effort tier from YAML ("max" | "high" | "medium" | "low"). */
+  /** Raw YAML effort, preserved for config visibility. Runtime display uses modelProfile.effort. */
   effort: string | null;
 }
 
@@ -27,7 +40,7 @@ export interface AgentListItem {
  *
  * @param agent       - The agent to test.
  * @param search      - Case-insensitive substring search across name/description/team.
- * @param filterModel - Model tier filter ('', 'opus', 'sonnet', 'haiku').
+ * @param filterModel - Capability tier filter ('', 'opus', 'sonnet', 'haiku').
  * @param filterTeam  - Team filter ('' = all, '__unassigned__' = null-team agents,
  *                      other string = exact team name match).
  */
@@ -43,7 +56,7 @@ export function matchesAgentFilter(
   const teamStr = (agent.team ?? '').toLowerCase();
 
   const nameMatch = !q || label.includes(q) || desc.includes(q) || teamStr.includes(q);
-  const modelMatch = filterModel === '' || agent.model === filterModel;
+  const modelMatch = filterModel === '' || (agent.capabilityTier ?? agent.model) === filterModel;
   // '__unassigned__' matches agents whose team is null/undefined/empty.
   // A plain string matches agents whose team exactly equals the filter value.
   // Empty string ('') matches all agents (no filter active).

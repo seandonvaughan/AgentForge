@@ -197,6 +197,8 @@ export class RuntimeJobSupervisor {
       data: {
         status: result.status,
         model: result.model,
+        ...(result.effort ? { effort: result.effort } : {}),
+        ...(result.capabilityTier ? { capabilityTier: result.capabilityTier } : {}),
         costUsd: result.costUsd,
         inputTokens: result.inputTokens,
         outputTokens: result.outputTokens,

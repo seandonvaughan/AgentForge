@@ -2,19 +2,29 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import yaml from 'js-yaml';
+import type { RuntimeMode } from './types.js';
 
 /**
- * The three possible runtime mode settings.
+ * Runtime mode settings accepted from env/config.
  *
- * - `'sdk'`  — always use the Anthropic SDK transport (AgentForge Cloud default).
- * - `'cli'`  — always use the Claude CLI subprocess transport (local default).
- * - `'auto'` — let the runtime pick based on environment availability:
- *              prefers CLI when `claude` is on PATH, falls back to SDK.
+ * Compatibility aliases:
+ * - `'sdk'` means `'anthropic-sdk'`.
+ * - `'cli'` means `'claude-cli'`.
+ * - `'claude-code-compat'` is retained for older config/tests.
  */
-export type ExecutionServiceMode = 'cli' | 'sdk' | 'auto';
+export type ExecutionServiceMode = RuntimeMode;
 
 /** All valid string values accepted in the env var or config file. */
-const VALID_MODES = new Set<string>(['auto', 'sdk', 'cli']);
+const VALID_MODES = new Set<ExecutionServiceMode>([
+  'auto',
+  'sdk',
+  'cli',
+  'anthropic-sdk',
+  'claude-cli',
+  'claude-code-compat',
+  'codex-cli',
+  'openai-sdk',
+]);
 
 /**
  * Probe whether the `claude` CLI binary is available on PATH.
@@ -25,6 +35,14 @@ function isCliAvailable(): boolean {
     process.platform === 'win32'
       ? spawnSync('where', ['claude'], { stdio: 'ignore' })
       : spawnSync('which', ['claude'], { stdio: 'ignore' });
+  return probe.status === 0;
+}
+
+function isCodexCliAvailable(): boolean {
+  const probe =
+    process.platform === 'win32'
+      ? spawnSync('where', ['codex'], { stdio: 'ignore' })
+      : spawnSync('which', ['codex'], { stdio: 'ignore' });
   return probe.status === 0;
 }
 
@@ -52,15 +70,15 @@ export function readConfigMode(projectRoot: string = process.cwd()): ExecutionSe
     if (!field || typeof field !== 'string') return undefined;
 
     const trimmed = field.trim().toLowerCase();
-    if (!VALID_MODES.has(trimmed)) {
+    if (!isExecutionServiceMode(trimmed)) {
       // eslint-disable-next-line no-console
       console.warn(
         `[agentforge] autonomous.yaml has unrecognised runtime value: "${field}". ` +
-          `Ignoring; valid values are: auto, sdk, cli.`,
+          `Ignoring; valid values are: ${Array.from(VALID_MODES).join(', ')}.`,
       );
       return undefined;
     }
-    return trimmed as ExecutionServiceMode;
+    return trimmed;
   } catch {
     // File unreadable or YAML parse error — treat as absent
     return undefined;
@@ -91,16 +109,16 @@ export function resolveMode(
   const raw = env['AGENTFORGE_RUNTIME']?.trim().toLowerCase();
 
   if (raw !== undefined && raw !== '') {
-    if (!VALID_MODES.has(raw)) {
+    if (!isExecutionServiceMode(raw)) {
       // eslint-disable-next-line no-console
       console.warn(
         `[agentforge] AGENTFORGE_RUNTIME="${env['AGENTFORGE_RUNTIME']}" is not a valid value. ` +
-          `Falling back to "auto". Valid values: auto, sdk, cli.`,
+          `Falling back to "auto". Valid values: ${Array.from(VALID_MODES).join(', ')}.`,
       );
       return 'auto';
     }
 
-    const envMode = raw as ExecutionServiceMode;
+    const envMode = raw;
 
     // Check if the config file disagrees and warn for operator visibility
     const configMode = readConfigMode(projectRoot);
@@ -134,10 +152,21 @@ export function resolveMode(
 export function resolveAutoMode(
   env: NodeJS.ProcessEnv = process.env,
   projectRoot: string = process.cwd(),
-): 'cli' | 'sdk' {
+): Exclude<ExecutionServiceMode, 'auto'> {
   const mode = resolveMode(env, projectRoot);
   if (mode === 'sdk') return 'sdk';
+  if (mode === 'anthropic-sdk') return 'anthropic-sdk';
   if (mode === 'cli') return 'cli';
-  // 'auto': probe PATH
+  if (mode === 'claude-cli' || mode === 'claude-code-compat') return mode;
+  if (mode === 'codex-cli' || mode === 'openai-sdk') return mode;
+  // 'auto': preserve the historical Claude preference, then fall back to Codex/OpenAI.
   return isCliAvailable() ? 'cli' : 'sdk';
+}
+
+export function isCodexRuntimeAvailable(): boolean {
+  return isCodexCliAvailable();
+}
+
+function isExecutionServiceMode(value: string): value is ExecutionServiceMode {
+  return VALID_MODES.has(value as ExecutionServiceMode);
 }

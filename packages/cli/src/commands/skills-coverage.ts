@@ -22,9 +22,10 @@ interface SkillCoverageEntry {
 }
 
 export function registerSkillsCoverageCommand(program: Command): void {
-  const skills = program
-    .command('skills')
-    .description('Inspect skill coverage and routing');
+  const skills = program.commands.find(command => command.name() === 'skills')
+    ?? program
+      .command('skills')
+      .description('Inspect skill coverage and routing');
 
   skills
     .command('coverage')

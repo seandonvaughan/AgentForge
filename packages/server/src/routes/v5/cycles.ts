@@ -1560,6 +1560,9 @@ export async function cyclesRoutes(
       maxItems?: number;
       modelCap?: string;
       effortCap?: string;
+      branchPrefix?: unknown;
+      dryRun?: unknown;
+      comment?: unknown;
       // Fix 1 — new fields
       maxAgents?: number;
       tags?: unknown;
@@ -1580,6 +1583,15 @@ export async function cyclesRoutes(
     if (body.fallbackEnabled !== undefined && typeof body.fallbackEnabled !== 'boolean') {
       return reply.status(400).send({ error: 'fallbackEnabled must be a boolean' });
     }
+    if (body.branchPrefix !== undefined && typeof body.branchPrefix !== 'string') {
+      return reply.status(400).send({ error: 'branchPrefix must be a string' });
+    }
+    if (body.dryRun !== undefined && typeof body.dryRun !== 'boolean') {
+      return reply.status(400).send({ error: 'dryRun must be a boolean' });
+    }
+    if (body.comment !== undefined && typeof body.comment !== 'string') {
+      return reply.status(400).send({ error: 'comment must be a string' });
+    }
 
     const budgetEnv = typeof body.budgetUsd === 'number' && body.budgetUsd > 0
       ? { AUTONOMOUS_BUDGET_USD: String(body.budgetUsd) }
@@ -1598,8 +1610,12 @@ export async function cyclesRoutes(
       ? { AUTONOMOUS_MAX_AGENTS: String(body.maxAgents) }
       : {};
     const fallbackEnv = typeof body.fallbackEnabled === 'boolean'
-      ? { AUTONOMOUS_FALLBACK_ENABLED: body.fallbackEnabled ? '1' : '0' }
+      ? { AUTONOMOUS_FALLBACK_ENABLED: body.fallbackEnabled ? 'true' : 'false' }
       : {};
+    const branchPrefixEnv = typeof body.branchPrefix === 'string' && body.branchPrefix.trim().length > 0
+      ? { AUTONOMOUS_BRANCH_PREFIX: body.branchPrefix.trim() }
+      : {};
+    const dryRunEnv = body.dryRun === true ? { AUTONOMOUS_DRY_RUN: 'true' } : {};
 
     const cycleId = randomUUID();
     const startedAt = new Date().toISOString();
@@ -1631,6 +1647,9 @@ export async function cyclesRoutes(
     // and walk up to find the sibling packages/cli/dist/bin.js.  This ensures
     // `agentforge --project /external/repo cycle run` works correctly.
     const cliEntry = resolveAgentForgeCli(import.meta.url);
+    if (!existsSync(cliEntry)) {
+      return reply.status(500).send({ error: `AgentForge CLI entry not found at ${cliEntry}` });
+    }
 
     // Fix 1: persist launch config to cycle-config.json so GET /cycles can surface it.
     const tags = Array.isArray(body.tags) ? (body.tags as string[]) : [];
@@ -1641,9 +1660,13 @@ export async function cyclesRoutes(
       maxItems: body.maxItems ?? null,
       modelCap: body.modelCap ?? null,
       effortCap: body.effortCap ?? null,
+      branchPrefix: typeof body.branchPrefix === 'string' ? body.branchPrefix.trim() : null,
+      dryRun: body.dryRun ?? null,
+      comment: typeof body.comment === 'string' ? body.comment.trim() : null,
       maxAgents: body.maxAgents ?? null,
       tags,
       fallbackEnabled: body.fallbackEnabled ?? null,
+      runtimeMode: 'codex-cli',
     };
     try {
       writeFileSync(join(cycleDir, 'cycle-config.json'), JSON.stringify(cycleConfig, null, 2));
@@ -1658,8 +1681,32 @@ export async function cyclesRoutes(
         cwd: reqProjectRoot,
         detached: true,
         stdio: ['ignore', logFd, logFd],
-        env: { ...process.env, AUTONOMOUS_CYCLE_ID: cycleId, ...budgetEnv, ...maxItemsEnv, ...modelCapEnv, ...effortCapEnv, ...maxAgentsEnv, ...fallbackEnv },
+        env: {
+          ...process.env,
+          AGENTFORGE_RUNTIME: 'codex-cli',
+          AUTONOMOUS_CYCLE_ID: cycleId,
+          ...budgetEnv,
+          ...maxItemsEnv,
+          ...modelCapEnv,
+          ...effortCapEnv,
+          ...maxAgentsEnv,
+          ...fallbackEnv,
+          ...branchPrefixEnv,
+          ...dryRunEnv,
+        },
       });
+      if (typeof child.once === 'function') {
+        child.once('error', (err) => {
+          cycleSessions.markTerminal(cycleId, 'crashed', `spawn error: ${err.message}`);
+        });
+        child.once('exit', (code, signal) => {
+          if (code !== null && code !== 0) {
+            cycleSessions.markTerminal(cycleId, 'crashed', `cycle process exited with code ${code}`);
+          } else if (signal) {
+            cycleSessions.markTerminal(cycleId, 'killed', `cycle process exited from signal ${signal}`);
+          }
+        });
+      }
       child.unref();
       pid = child.pid ?? -1;
       pgid = pid;
@@ -1682,7 +1729,18 @@ export async function cyclesRoutes(
       }
     }
 
-    return reply.status(202).send({ cycleId, startedAt, pid, pgid, maxAgents: body.maxAgents ?? null, tags, fallbackEnabled: body.fallbackEnabled ?? null });
+    return reply.status(202).send({
+      cycleId,
+      startedAt,
+      pid,
+      pgid,
+      runtimeMode: 'codex-cli',
+      branchPrefix: typeof body.branchPrefix === 'string' ? body.branchPrefix.trim() : null,
+      dryRun: body.dryRun ?? null,
+      maxAgents: body.maxAgents ?? null,
+      tags,
+      fallbackEnabled: body.fallbackEnabled ?? null,
+    });
   });
 
   // POST /api/v5/cycles/:id/cancel ────────────────────────────────────────────
@@ -1763,6 +1821,137 @@ export async function cyclesRoutes(
     return reply.send({ ok: stopResult.ok, cycleId: id, status: stopResult.status, message: stopResult.message });
   });
 
+  // POST /api/v5/cycles/:id/resume ─────────────────────────────────────────────
+  // Resume an interrupted cycle from its checkpoint using the same Codex runtime
+  // launch contract as first-run and rerun.
+  app.post('/api/v5/cycles/:id/resume', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!SAFE_ID.test(id)) return reply.status(400).send({ error: 'Invalid cycle id' });
+
+    const r = resolveProjectRoot(req as { query: unknown; headers: Record<string, unknown> }, opts.projectRoot);
+    if ('error' in r) return reply.status(r.error.status).send(r.error.body);
+    const reqProjectRoot = r.projectRoot;
+    const base = cyclesBaseDir(reqProjectRoot);
+    const cycleDir = safeJoin(base, id);
+    if (!cycleDir || !existsSync(cycleDir)) return reply.status(404).send({ error: 'Cycle not found' });
+
+    const existing = cycleSessions.get(id);
+    if (existing?.status === 'running' && cycleSessions.isPidAlive(existing.pid)) {
+      return reply.status(409).send({ error: 'Cycle is already running', cycleId: id, pid: existing.pid });
+    }
+
+    const checkpoint = readCycleCheckpoint(cycleDir);
+    if (checkpoint === undefined) {
+      return reply.status(409).send({ error: 'Cycle has no resumable checkpoint', cycleId: id });
+    }
+
+    let sourceConfig: Record<string, unknown> = {};
+    const configPath = join(cycleDir, 'cycle-config.json');
+    if (existsSync(configPath)) {
+      try {
+        sourceConfig = JSON.parse(readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
+      } catch { /* use empty defaults */ }
+    }
+
+    let logFd: number;
+    try {
+      logFd = openSync(join(cycleDir, 'cli-stdout.log'), 'a');
+    } catch (err) {
+      return reply.status(500).send({ error: `Failed to open log file: ${(err as Error).message}` });
+    }
+
+    const nodeBin = process.execPath;
+    const cliEntry = resolveAgentForgeCli(import.meta.url);
+    if (!existsSync(cliEntry)) {
+      return reply.status(500).send({ error: `AgentForge CLI entry not found at ${cliEntry}` });
+    }
+
+    const env: NodeJS.ProcessEnv = { ...process.env, AGENTFORGE_RUNTIME: 'codex-cli', AUTONOMOUS_CYCLE_ID: id };
+    if (typeof sourceConfig['budgetUsd'] === 'number' && sourceConfig['budgetUsd'] > 0) {
+      env['AUTONOMOUS_BUDGET_USD'] = String(sourceConfig['budgetUsd']);
+    }
+    if (typeof sourceConfig['maxItems'] === 'number' && sourceConfig['maxItems'] > 0) {
+      env['AUTONOMOUS_MAX_ITEMS'] = String(sourceConfig['maxItems']);
+    }
+    if (typeof sourceConfig['maxAgents'] === 'number' && sourceConfig['maxAgents'] > 0) {
+      env['AUTONOMOUS_MAX_AGENTS'] = String(sourceConfig['maxAgents']);
+    }
+    const modelCap = sourceConfig['modelCap'];
+    if (modelCap === 'opus' || modelCap === 'sonnet' || modelCap === 'haiku') {
+      env['AUTONOMOUS_MODEL_CAP'] = modelCap;
+    }
+    const effortCap = sourceConfig['effortCap'];
+    if (effortCap === 'low' || effortCap === 'medium' || effortCap === 'high' || effortCap === 'xhigh' || effortCap === 'max') {
+      env['AUTONOMOUS_EFFORT_CAP'] = effortCap;
+    }
+    if (typeof sourceConfig['fallbackEnabled'] === 'boolean') {
+      env['AUTONOMOUS_FALLBACK_ENABLED'] = sourceConfig['fallbackEnabled'] ? 'true' : 'false';
+    }
+    if (typeof sourceConfig['branchPrefix'] === 'string' && sourceConfig['branchPrefix'].trim().length > 0) {
+      env['AUTONOMOUS_BRANCH_PREFIX'] = sourceConfig['branchPrefix'].trim();
+    }
+    if (sourceConfig['dryRun'] === true) {
+      env['AUTONOMOUS_DRY_RUN'] = 'true';
+    }
+
+    let pid: number;
+    let pgid: number;
+    try {
+      const child = spawn(nodeBin, [cliEntry, 'cycle', 'run', '--resume', id], {
+        cwd: reqProjectRoot,
+        detached: true,
+        stdio: ['ignore', logFd, logFd],
+        env,
+      });
+      if (typeof child.once === 'function') {
+        child.once('error', (err) => {
+          cycleSessions.markTerminal(id, 'crashed', `spawn error: ${err.message}`);
+        });
+        child.once('exit', (code, signal) => {
+          if (code !== null && code !== 0) {
+            cycleSessions.markTerminal(id, 'crashed', `cycle process exited with code ${code}`);
+          } else if (signal) {
+            cycleSessions.markTerminal(id, 'killed', `cycle process exited from signal ${signal}`);
+          }
+        });
+      }
+      child.unref();
+      pid = child.pid ?? -1;
+      pgid = pid;
+    } catch (err) {
+      return reply.status(500).send({ error: `Failed to spawn resume cycle: ${(err as Error).message}` });
+    }
+
+    if (pid > 0) {
+      try {
+        cycleSessions.register({ cycleId: id, pid, pgid, workspaceId: 'default', workspaceRoot: reqProjectRoot });
+      } catch { /* non-fatal */ }
+    }
+
+    appendAuditEntry(auditDb, {
+      actor: 'api',
+      action: 'cycle.resume',
+      target: id,
+      details: { resumeFromPhase: checkpoint.resumeFromPhase, pid, pgid },
+    });
+
+    globalStream.emit({
+      type: 'cycle_event',
+      category: 'cycle.resumed',
+      message: `${id.slice(0, 8)} · cycle.resumed`,
+      data: { cycleId: id, type: 'cycle.resumed', at: new Date().toISOString(), resumeFromPhase: checkpoint.resumeFromPhase } as unknown as Record<string, unknown>,
+    });
+
+    return reply.status(202).send({
+      cycleId: id,
+      resumedAt: new Date().toISOString(),
+      pid,
+      pgid,
+      runtimeMode: 'codex-cli',
+      resumeFromPhase: checkpoint.resumeFromPhase,
+    });
+  });
+
   // POST /api/v5/cycles/:id/rerun ──────────────────────────────────────────────
   // Fix 4: Spawn a new cycle with the same config as the source cycle.
   // Returns the new cycleId. Audit-logged. Source cycle id captured in metadata.
@@ -1818,9 +2007,13 @@ export async function cyclesRoutes(
       maxItems: sourceConfig['maxItems'] ?? null,
       modelCap: sourceConfig['modelCap'] ?? null,
       effortCap: sourceConfig['effortCap'] ?? null,
+      branchPrefix: sourceConfig['branchPrefix'] ?? null,
+      dryRun: sourceConfig['dryRun'] ?? null,
+      comment: sourceConfig['comment'] ?? null,
       maxAgents: sourceConfig['maxAgents'] ?? null,
       tags: Array.isArray(sourceConfig['tags']) ? sourceConfig['tags'] : [],
       fallbackEnabled: sourceConfig['fallbackEnabled'] ?? null,
+      runtimeMode: 'codex-cli',
     };
     try {
       writeFileSync(join(newCycleDir, 'cycle-config.json'), JSON.stringify(rerunConfig, null, 2));
@@ -1837,9 +2030,12 @@ export async function cyclesRoutes(
     // Same fix as the start-cycle handler: resolve CLI binary relative to the
     // AgentForge package installation, not the external project root.
     const cliEntry = resolveAgentForgeCli(import.meta.url);
+    if (!existsSync(cliEntry)) {
+      return reply.status(500).send({ error: `AgentForge CLI entry not found at ${cliEntry}` });
+    }
 
     // Build env overrides from inherited config.
-    const env: NodeJS.ProcessEnv = { ...process.env, AUTONOMOUS_CYCLE_ID: newCycleId };
+    const env: NodeJS.ProcessEnv = { ...process.env, AGENTFORGE_RUNTIME: 'codex-cli', AUTONOMOUS_CYCLE_ID: newCycleId };
     if (typeof sourceConfig['budgetUsd'] === 'number' && sourceConfig['budgetUsd'] > 0) {
       env['AUTONOMOUS_BUDGET_USD'] = String(sourceConfig['budgetUsd']);
     }
@@ -1858,7 +2054,13 @@ export async function cyclesRoutes(
       env['AUTONOMOUS_MAX_AGENTS'] = String(sourceConfig['maxAgents']);
     }
     if (typeof sourceConfig['fallbackEnabled'] === 'boolean') {
-      env['AUTONOMOUS_FALLBACK_ENABLED'] = sourceConfig['fallbackEnabled'] ? '1' : '0';
+      env['AUTONOMOUS_FALLBACK_ENABLED'] = sourceConfig['fallbackEnabled'] ? 'true' : 'false';
+    }
+    if (typeof sourceConfig['branchPrefix'] === 'string' && sourceConfig['branchPrefix'].trim().length > 0) {
+      env['AUTONOMOUS_BRANCH_PREFIX'] = sourceConfig['branchPrefix'].trim();
+    }
+    if (sourceConfig['dryRun'] === true) {
+      env['AUTONOMOUS_DRY_RUN'] = 'true';
     }
 
     let pid: number;
@@ -1870,6 +2072,18 @@ export async function cyclesRoutes(
         stdio: ['ignore', logFd, logFd],
         env,
       });
+      if (typeof child.once === 'function') {
+        child.once('error', (err) => {
+          cycleSessions.markTerminal(newCycleId, 'crashed', `spawn error: ${err.message}`);
+        });
+        child.once('exit', (code, signal) => {
+          if (code !== null && code !== 0) {
+            cycleSessions.markTerminal(newCycleId, 'crashed', `cycle process exited with code ${code}`);
+          } else if (signal) {
+            cycleSessions.markTerminal(newCycleId, 'killed', `cycle process exited from signal ${signal}`);
+          }
+        });
+      }
       child.unref();
       pid = child.pid ?? -1;
       pgid = pid;

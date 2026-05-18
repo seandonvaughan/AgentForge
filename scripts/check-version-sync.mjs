@@ -18,6 +18,11 @@ if (!rootVersion) {
 const manifests = [
   { label: "package.json", path: "package.json", required: true },
   { label: ".claude-plugin/plugin.json", path: join(".claude-plugin", "plugin.json"), required: true },
+  {
+    label: "plugins/agentforge-codex/.codex-plugin/plugin.json",
+    path: join("plugins", "agentforge-codex", ".codex-plugin", "plugin.json"),
+    required: true,
+  },
   ...workspacePackageManifests(),
 ];
 

@@ -7,9 +7,9 @@
    *
    *   1. Hero panel       — current cycle (or system-idle), large StageRail + quad-stat row.
    *   2. KPI tile strip   — 4 tiles: cost today, tests passing, cycles this week, memory entries.
-   *   3. Agent activity   — per-agent cards with sparkline + ModelChip + last-run timestamp.
+   *   3. Agent activity   — per-agent cards with sparkline + Codex profile + last-run timestamp.
    *   4. Recent cycles    — last 5–8 cycles, each with StageDots + cost + verdict + relative time.
-   *   5. Fleet mix        — DistBar of Opus/Sonnet/Haiku token-cost mix.
+   *   5. Fleet mix        — DistBar of Codex profile cost mix.
    *
    * Data is loaded by `+page.ts` (universal load: SSR + hydration) and re-fetched
    * client-side every 5s while the tab is visible. All five panels degrade
@@ -19,7 +19,7 @@
   import { onMount, onDestroy } from 'svelte';
   import {
     AnimNum, Badge, Btn, Card, DistBar, KpiTile,
-    ModelChip, PulseDot, Sparkline, StageDots, StageRail,
+    PulseDot, Sparkline, StageDots, StageRail,
   } from '$lib/components/v2';
   import { withWorkspace } from '$lib/stores/workspace';
   import type {
@@ -240,12 +240,20 @@
     return list.slice(-7).map(d => d.costUsd);
   });
 
-  /** Tier of a server `model` string. Map specific Claude model IDs to tier. */
+  /** Tier of a server `model` string. Map runtime model/profile IDs to capability tier. */
   function tierOf(model: string | null | undefined): 'opus' | 'sonnet' | 'haiku' | 'other' {
     const m = (model ?? '').toLowerCase();
     if (m.includes('opus')) return 'opus';
     if (m.includes('sonnet')) return 'sonnet';
     if (m.includes('haiku')) return 'haiku';
+    return 'other';
+  }
+
+  function profileLabel(model: string | null | undefined): string {
+    const tier = tierOf(model);
+    if (tier === 'opus') return 'xhigh';
+    if (tier === 'sonnet') return 'high';
+    if (tier === 'haiku') return 'medium';
     return 'other';
   }
 
@@ -591,7 +599,7 @@
                   </div>
                 </div>
                 <Sparkline data={ag.sparkline} color="var(--af-purple)" w={50} h={16} />
-                <ModelChip model={ag.declaredModel} />
+                <span class="cc-profile-chip font-mono">{profileLabel(ag.declaredModel)}</span>
               </a>
             </li>
           {/each}
@@ -603,7 +611,7 @@
     <Card>
       <div class="cc-card-header cc-card-header-inline">
         <span class="cc-section-title">FLEET MIX</span>
-        <span class="font-mono cc-card-meta">{snapshot.costs?.byModel.length ?? 0} models</span>
+        <span class="font-mono cc-card-meta">{snapshot.costs?.byModel.length ?? 0} runtime profiles</span>
       </div>
       {#if snapshot.errors.costs && !snapshot.costs}
         <div class="cc-section-err-block">
@@ -614,25 +622,25 @@
         <div class="cc-empty">No cost data yet.</div>
       {:else}
         <DistBar segments={[
-          { value: tierMix.opus,   color: 'var(--af-opus)',   label: `opus ${fmtDollar(tierMix.opus)}` },
-          { value: tierMix.sonnet, color: 'var(--af-sonnet)', label: `sonnet ${fmtDollar(tierMix.sonnet)}` },
-          { value: tierMix.haiku,  color: 'var(--af-haiku)',  label: `haiku ${fmtDollar(tierMix.haiku)}` },
+          { value: tierMix.opus,   color: 'var(--af-opus)',   label: `xhigh ${fmtDollar(tierMix.opus)}` },
+          { value: tierMix.sonnet, color: 'var(--af-sonnet)', label: `high ${fmtDollar(tierMix.sonnet)}` },
+          { value: tierMix.haiku,  color: 'var(--af-haiku)',  label: `medium ${fmtDollar(tierMix.haiku)}` },
           ...(tierMix.other > 0 ? [{ value: tierMix.other, color: 'var(--af-dim)', label: `other ${fmtDollar(tierMix.other)}` }] : []),
         ]} h={6} />
         <div class="cc-tier-legend">
           <span>
             <span class="cc-tier-swatch" style="background:var(--af-opus)"></span>
-            <span class="cc-tier-label">opus</span>
+            <span class="cc-tier-label">xhigh</span>
             <span class="font-mono cc-tier-val">{fmtDollar(tierMix.opus)}</span>
           </span>
           <span>
             <span class="cc-tier-swatch" style="background:var(--af-sonnet)"></span>
-            <span class="cc-tier-label">sonnet</span>
+            <span class="cc-tier-label">high</span>
             <span class="font-mono cc-tier-val">{fmtDollar(tierMix.sonnet)}</span>
           </span>
           <span>
             <span class="cc-tier-swatch" style="background:var(--af-haiku)"></span>
-            <span class="cc-tier-label">haiku</span>
+            <span class="cc-tier-label">medium</span>
             <span class="font-mono cc-tier-val">{fmtDollar(tierMix.haiku)}</span>
           </span>
         </div>
@@ -944,6 +952,20 @@
     font-size: 10px;
     color: var(--af-dim);
     margin-top: 1px;
+  }
+  .cc-profile-chip {
+    display: inline-flex;
+    align-items: center;
+    height: 18px;
+    padding: 0 7px;
+    border: 1px solid color-mix(in srgb, var(--af-purple) 35%, transparent);
+    border-radius: 99px;
+    background: color-mix(in srgb, var(--af-purple) 8%, transparent);
+    color: var(--af-purple);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
   }
 
   /* ── Fleet mix legend ──────────────────────────────────────────────────── */

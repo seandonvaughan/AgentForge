@@ -1,4 +1,4 @@
-import type { ExecutionRequest, ExecutionTransport, RuntimeMode } from './types.js';
+import type { ExecutionProviderKind, ExecutionRequest, ExecutionTransport, RuntimeMode } from './types.js';
 
 export class ProviderResolver {
   constructor(private readonly transports: ExecutionTransport[]) {}
@@ -7,17 +7,11 @@ export class ProviderResolver {
     mode: RuntimeMode,
     request: ExecutionRequest,
   ): Promise<{ transport: ExecutionTransport; runtimeModeResolved: RuntimeMode }> {
-    if (mode === 'sdk') {
+    const forcedKind = this.kindForForcedMode(mode);
+    if (forcedKind) {
       return {
-        transport: await this.requireTransport('anthropic-sdk', request),
-        runtimeModeResolved: 'sdk',
-      };
-    }
-
-    if (mode === 'claude-code-compat') {
-      return {
-        transport: await this.requireTransport('claude-code-compat', request),
-        runtimeModeResolved: 'claude-code-compat',
+        transport: await this.requireTransport(forcedKind, request),
+        runtimeModeResolved: mode,
       };
     }
 
@@ -27,8 +21,13 @@ export class ProviderResolver {
         return { transport: claudeCompat, runtimeModeResolved: 'claude-code-compat' };
       }
 
+      const codexCli = await this.findTransport('codex-cli', request);
+      if (codexCli) {
+        return { transport: codexCli, runtimeModeResolved: 'codex-cli' };
+      }
+
       throw new Error(
-        'Claude Code compatibility transport is required when allowedTools are requested. Install/authenticate Claude Code or remove allowedTools.',
+        'Claude Code compatibility or Codex CLI transport is required in auto mode when allowedTools are requested. Install/authenticate Claude Code or Codex CLI, request a compatible runtime explicitly, or remove allowedTools.',
       );
     }
 
@@ -42,9 +41,27 @@ export class ProviderResolver {
       return { transport: claudeCompat, runtimeModeResolved: 'claude-code-compat' };
     }
 
+    const codexCli = await this.findTransport('codex-cli', request);
+    if (codexCli) {
+      return { transport: codexCli, runtimeModeResolved: 'codex-cli' };
+    }
+
+    const openaiSdk = await this.findTransport('openai-sdk', request);
+    if (openaiSdk) {
+      return { transport: openaiSdk, runtimeModeResolved: 'openai-sdk' };
+    }
+
     throw new Error(
-      'No execution transport is available. Configure Anthropic SDK credentials or install/authenticate Claude Code.',
+      'No execution transport is available. Configure Anthropic/OpenAI credentials, install/authenticate Claude Code, or install/authenticate Codex CLI.',
     );
+  }
+
+  private kindForForcedMode(mode: RuntimeMode): ExecutionProviderKind | null {
+    if (mode === 'sdk' || mode === 'anthropic-sdk') return 'anthropic-sdk';
+    if (mode === 'cli' || mode === 'claude-cli' || mode === 'claude-code-compat') return 'claude-code-compat';
+    if (mode === 'codex-cli') return 'codex-cli';
+    if (mode === 'openai-sdk') return 'openai-sdk';
+    return null;
   }
 
   private async requireTransport(

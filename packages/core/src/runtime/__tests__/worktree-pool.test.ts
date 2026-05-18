@@ -13,6 +13,10 @@ async function git(cwd: string, args: string[]): Promise<string> {
   return stdout;
 }
 
+function toPosixPath(path: string): string {
+  return path.replace(/\\/g, '/');
+}
+
 async function setupRepo(): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), 'af-worktree-test-'));
   await git(dir, ['init', '-b', 'main']);
@@ -321,7 +325,7 @@ describe('WorktreePool', () => {
     });
     const handle = await pool.allocate({ agentId: 'coder', sessionId: 'custom1' });
 
-    expect(handle.path).toContain('.mypool/workers');
+    expect(toPosixPath(handle.path)).toContain('.mypool/workers');
     expect(existsSync(handle.path)).toBe(true);
 
     await pool.release(handle.id);

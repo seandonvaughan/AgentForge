@@ -1,4 +1,4 @@
-import type { RuntimeMode } from '../runtime/types.js';
+import type { CodexSandboxMode, RuntimeMode } from '../runtime/types.js';
 import {
   invokeAgentRun,
   type InvokeAgentRunResult,
@@ -13,6 +13,7 @@ export interface DelegateTaskOptions {
   runtimeMode?: RuntimeMode;
   allowedTools?: string[];
   budgetUsd?: number;
+  codexSandbox?: CodexSandboxMode;
   dataDir?: string;
 }
 
@@ -67,6 +68,7 @@ export async function delegateTask(
     ...(options.runtimeMode ? { runtimeMode: options.runtimeMode } : {}),
     ...(options.allowedTools?.length ? { allowedTools: options.allowedTools } : {}),
     ...(options.budgetUsd !== undefined ? { budgetUsd: options.budgetUsd } : {}),
+    ...(options.codexSandbox ? { codexSandbox: options.codexSandbox } : {}),
     ...(options.dataDir ? { dataDir: options.dataDir } : {}),
   });
 

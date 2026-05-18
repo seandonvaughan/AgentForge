@@ -29,6 +29,8 @@ export interface CostBreakdown {
  */
 export interface AgentRun {
   model: string;
+  /** Internal AgentForge tier. Takes precedence when provider IDs are tierless. */
+  capabilityTier?: ModelTier;
   usage: {
     input_tokens: number;
     output_tokens: number;
@@ -59,7 +61,11 @@ const CACHE_CREATION_MULTIPLIER   = 1.25;
  * Falls back to `sonnet` if no match is found rather than throwing, keeping
  * the function safe for unknown future model IDs.
  */
-function resolveModelTier(model: string): ModelTier {
+function resolveModelTier(model: string, capabilityTier?: ModelTier): ModelTier {
+  if (capabilityTier === 'opus' || capabilityTier === 'sonnet' || capabilityTier === 'haiku') {
+    return capabilityTier;
+  }
+
   const lower = model.toLowerCase();
   if (lower.includes('opus'))   return 'opus';
   if (lower.includes('haiku'))  return 'haiku';
@@ -81,7 +87,7 @@ function resolveModelTier(model: string): ModelTier {
  *        + (outputTokens / 1M)  * outputRate
  */
 export function extractBreakdownFromAgentRun(run: AgentRun): CostBreakdown {
-  const tier = resolveModelTier(run.model);
+  const tier = resolveModelTier(run.model, run.capabilityTier);
   // MODEL_PRICING is a Record<ModelTier, ...> so the lookup is always defined for
   // any value produced by resolveModelTier.  The non-null assertion satisfies
   // strict TypeScript without a runtime guard.

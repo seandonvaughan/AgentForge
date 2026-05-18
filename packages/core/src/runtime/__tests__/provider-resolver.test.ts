@@ -69,4 +69,42 @@ describe('ProviderResolver', () => {
       resolver.resolve('auto', buildRequest({ allowedTools: ['Read'] })),
     ).rejects.toThrow(/allowedTools/i);
   });
+
+  it('falls back to Codex CLI in auto mode when allowed tools are requested and Claude Code is unavailable', async () => {
+    const resolver = new ProviderResolver([
+      buildTransport('anthropic-sdk'),
+      buildTransport('claude-code-compat', false),
+      buildTransport('codex-cli'),
+    ]);
+
+    const result = await resolver.resolve('auto', buildRequest({ allowedTools: ['Read'] }));
+
+    expect(result.transport.kind).toBe('codex-cli');
+    expect(result.runtimeModeResolved).toBe('codex-cli');
+  });
+
+  it('resolves explicit codex-cli mode to the Codex transport', async () => {
+    const resolver = new ProviderResolver([
+      buildTransport('anthropic-sdk'),
+      buildTransport('codex-cli'),
+      buildTransport('openai-sdk'),
+    ]);
+
+    const result = await resolver.resolve('codex-cli', buildRequest());
+
+    expect(result.transport.kind).toBe('codex-cli');
+    expect(result.runtimeModeResolved).toBe('codex-cli');
+  });
+
+  it('resolves explicit openai-sdk mode to the OpenAI transport', async () => {
+    const resolver = new ProviderResolver([
+      buildTransport('anthropic-sdk'),
+      buildTransport('openai-sdk'),
+    ]);
+
+    const result = await resolver.resolve('openai-sdk', buildRequest());
+
+    expect(result.transport.kind).toBe('openai-sdk');
+    expect(result.runtimeModeResolved).toBe('openai-sdk');
+  });
 });

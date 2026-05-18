@@ -6,8 +6,8 @@
    * Composition:
    *   1. Page header — crumbs, title, subtitle, actions.
    *   2. Stat strip — 5 KPI cards (total agents, teams, live now, total spend, top spender).
-   *   3. Filter bar — search, model pills, team select.
-   *   4. Agent table — name, ID, model chip, team badge, effort badge, description.
+   *   3. Filter bar — search, reasoning profile pills, team select.
+   *   4. Agent table — name, ID, Codex profile, team badge, reasoning effort, description.
    *
    * Data: GET /api/v5/agents (SSR via +page.server.ts + client refresh every 15s).
    * Sparklines (24h invocations) require GET /api/v5/sessions?limit=100 — aggregated client-side.
@@ -27,6 +27,12 @@
   let search = $state('');
   let filterModel: '' | 'opus' | 'sonnet' | 'haiku' = $state('');
   let filterTeam = $state('');
+  const PROFILE_FILTERS: ReadonlyArray<{ tier: '' | 'opus' | 'sonnet' | 'haiku'; label: string }> = [
+    { tier: '', label: 'all' },
+    { tier: 'opus', label: 'xhigh' },
+    { tier: 'sonnet', label: 'high' },
+    { tier: 'haiku', label: 'medium' },
+  ];
 
   let liveAgents = $state<AgentListItem[]>(data.agents ?? []);
   let loading = $state(false);
@@ -91,10 +97,10 @@
     [...new Set(liveAgents.map(a => a.team).filter((t): t is string => !!t))].sort()
   );
 
-  let modelCount = $derived({
-    opus:   liveAgents.filter(a => a.model === 'opus').length,
-    sonnet: liveAgents.filter(a => a.model === 'sonnet').length,
-    haiku:  liveAgents.filter(a => a.model === 'haiku').length,
+  let profileCount = $derived({
+    opus:   liveAgents.filter(a => (a.capabilityTier ?? a.model) === 'opus').length,
+    sonnet: liveAgents.filter(a => (a.capabilityTier ?? a.model) === 'sonnet').length,
+    haiku:  liveAgents.filter(a => (a.capabilityTier ?? a.model) === 'haiku').length,
   });
 
   let totalSpend = $derived.by<number>(() => {
@@ -139,7 +145,7 @@
     return agentSpends.find(a => a.agentId === agentId)?.spend ?? 0;
   }
 
-  const EFFORT_ORDER = ['max', 'high', 'medium', 'low'];
+  const EFFORT_ORDER = ['xhigh', 'max', 'high', 'medium', 'low'];
   function effortVariant(e: string | null): 'warning' | 'info' | 'muted' {
     if (!e) return 'muted';
     const rank = EFFORT_ORDER.indexOf(e.toLowerCase());
@@ -151,6 +157,18 @@
   function teamLabel(t: string | null): string {
     if (!t) return 'unassigned';
     return t.replace(/_/g, ' ');
+  }
+
+  function profileModel(agent: AgentListItem): string {
+    return agent.modelProfile?.modelId ?? 'gpt-5.3-codex';
+  }
+
+  function profileEffort(agent: AgentListItem): string {
+    return agent.modelProfile?.effort ?? agent.effort ?? 'medium';
+  }
+
+  function capabilityTier(agent: AgentListItem): 'opus' | 'sonnet' | 'haiku' {
+    return agent.capabilityTier ?? agent.model;
   }
 </script>
 
@@ -183,14 +201,14 @@
     <div class="af-stat-label">Total agents</div>
     <div class="af-stat-value font-mono">{liveAgents.length}</div>
     <DistBar segments={[
-      { value: modelCount.opus,   color: 'var(--af-opus)'   },
-      { value: modelCount.sonnet, color: 'var(--af-sonnet)' },
-      { value: modelCount.haiku,  color: 'var(--af-haiku)'  },
+      { value: profileCount.opus,   color: 'var(--af-opus)'   },
+      { value: profileCount.sonnet, color: 'var(--af-sonnet)' },
+      { value: profileCount.haiku,  color: 'var(--af-haiku)'  },
     ]} h={4} />
     <div class="af-tier-row">
-      <span><span style="color:var(--af-opus)">●</span> <span class="font-mono af-tier-cnt">{modelCount.opus}</span></span>
-      <span><span style="color:var(--af-sonnet)">●</span> <span class="font-mono af-tier-cnt">{modelCount.sonnet}</span></span>
-      <span><span style="color:var(--af-haiku)">●</span> <span class="font-mono af-tier-cnt">{modelCount.haiku}</span></span>
+      <span><span style="color:var(--af-opus)">●</span> <span class="font-mono af-tier-cnt">{profileCount.opus}</span> xhigh</span>
+      <span><span style="color:var(--af-sonnet)">●</span> <span class="font-mono af-tier-cnt">{profileCount.sonnet}</span> high</span>
+      <span><span style="color:var(--af-haiku)">●</span> <span class="font-mono af-tier-cnt">{profileCount.haiku}</span> medium</span>
     </div>
   </Card>
 
@@ -226,7 +244,7 @@
     {#if topSpender}
       {@const ag = liveAgents.find(a => a.agentId === topSpender!.agentId)}
       <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
-        {#if ag}<ModelChip model={ag.model} />{/if}
+        {#if ag}<ModelChip model={profileModel(ag)} effort={profileEffort(ag)} tier={capabilityTier(ag)} />{/if}
         <span class="af-stat-name">{topSpender.agentId}</span>
       </div>
       <div class="font-mono af-top-spend">${topSpender.spend.toFixed(3)}</div>
@@ -245,12 +263,12 @@
     bind:value={search}
     aria-label="Search agents"
   />
-  <span class="af-filter-label">MODEL</span>
-  {#each (['', 'opus', 'sonnet', 'haiku'] as const) as tier}
+  <span class="af-filter-label">REASONING</span>
+  {#each PROFILE_FILTERS as profile}
     <button
-      class="af-pill af-pill-{tier || 'all'} {filterModel === tier ? 'active' : ''}"
-      onclick={() => (filterModel = tier)}
-    >{tier || 'all'}</button>
+      class="af-pill af-pill-{profile.tier || 'all'} {filterModel === profile.tier ? 'active' : ''}"
+      onclick={() => (filterModel = profile.tier)}
+    >{profile.label}</button>
   {/each}
   <span class="af-filter-sep"></span>
   <span class="af-filter-label">TEAM</span>
@@ -283,7 +301,7 @@
     <table class="af-table">
       <thead>
         <tr>
-          {#each ['Name', 'Agent ID', 'Model', 'Team', 'Effort', 'Cycle spend', 'Last active', 'Description'] as h}
+          {#each ['Name', 'Agent ID', 'Codex model', 'Team', 'Reasoning', 'Cycle spend', 'Last active', 'Description'] as h}
             <th class="af-th">{h}</th>
           {/each}
         </tr>
@@ -313,9 +331,9 @@
             <td class="af-td">
               <span class="font-mono af-agent-id">{agent.agentId}</span>
             </td>
-            <!-- Model -->
+            <!-- Codex model -->
             <td class="af-td">
-              <ModelChip model={agent.model} />
+              <ModelChip model={profileModel(agent)} effort={profileEffort(agent)} tier={capabilityTier(agent)} />
             </td>
             <!-- Team -->
             <td class="af-td">
@@ -325,13 +343,9 @@
                 <span class="af-dash">—</span>
               {/if}
             </td>
-            <!-- Effort -->
+            <!-- Reasoning -->
             <td class="af-td">
-              {#if agent.effort}
-                <Badge variant={effortVariant(agent.effort)}>{agent.effort.toUpperCase()}</Badge>
-              {:else}
-                <span class="af-dash">—</span>
-              {/if}
+              <Badge variant={effortVariant(profileEffort(agent))}>{profileEffort(agent).toUpperCase()}</Badge>
             </td>
             <!-- Cycle spend -->
             <td class="af-td">

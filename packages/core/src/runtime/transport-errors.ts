@@ -101,6 +101,15 @@ function isAnthropicErrorLike(err: unknown): err is AnthropicErrorLike {
   return typeof err === 'object' && err !== null && 'status' in err;
 }
 
+interface HttpStatusErrorLike {
+  status?: number;
+  message?: string;
+}
+
+function isHttpStatusErrorLike(err: unknown): err is HttpStatusErrorLike {
+  return typeof err === 'object' && err !== null && 'status' in err;
+}
+
 /**
  * Convert an arbitrary error thrown by the Anthropic SDK into a structured
  * TransportError subtype.  Pass `cause` through so the original stack is
@@ -192,4 +201,77 @@ export function classifyCliError(err: unknown, timeoutMs?: number): TransportErr
 
   const message = err instanceof Error ? err.message : String(err);
   return new TransportInvalidRequestError(`CLI transport error: ${message}`, err);
+}
+
+/**
+ * Convert an error from the Codex CLI subprocess into a structured
+ * TransportError subtype.
+ */
+export function classifyCodexCliError(err: unknown, timeoutMs?: number): TransportError {
+  if (err instanceof TransportError) return err;
+
+  if (err instanceof Error) {
+    const msg = err.message;
+    const nodeCode = (err as NodeJS.ErrnoException).code;
+
+    if (nodeCode === 'ENOENT' || /not found|install codex/i.test(msg)) {
+      return new TransportInvalidRequestError(
+        `Codex CLI not found: ${msg}`,
+        err,
+      );
+    }
+    if (/timed? out after/i.test(msg) || /aborted/i.test(msg)) {
+      return new TransportTimeoutError(msg, timeoutMs ?? 0, err);
+    }
+    if (/auth|login|unauthorized|401|403/i.test(msg)) {
+      return new TransportAuthError(msg, err);
+    }
+    if (/rate.?limit|429/i.test(msg)) {
+      return new TransportRateLimitError(msg, err);
+    }
+    if (nodeCode === 'ENOTFOUND' || nodeCode === 'ECONNRESET' || nodeCode === 'ECONNREFUSED') {
+      return new TransportNetworkError(msg, err);
+    }
+  }
+
+  const message = err instanceof Error ? err.message : String(err);
+  return new TransportInvalidRequestError(`Codex CLI transport error: ${message}`, err);
+}
+
+export function classifyOpenAiError(err: unknown): TransportError {
+  if (err instanceof TransportError) return err;
+
+  if (isHttpStatusErrorLike(err)) {
+    const status = err.status;
+    const message = err.message ?? String(err);
+    if (status === 401 || status === 403) {
+      return new TransportAuthError(message, err);
+    }
+    if (status === 429) {
+      return new TransportRateLimitError(message, err);
+    }
+    if (status !== undefined && status >= 400 && status < 500) {
+      return new TransportInvalidRequestError(message, err);
+    }
+  }
+
+  if (err instanceof Error) {
+    const nodeCode = (err as NodeJS.ErrnoException).code;
+    if (nodeCode === 'ENOTFOUND' || nodeCode === 'ECONNRESET' || nodeCode === 'ECONNREFUSED') {
+      return new TransportNetworkError(`Network error: ${err.message}`, err);
+    }
+  }
+
+  const message = err instanceof Error ? err.message : String(err);
+  if (/401|403|auth|api key|unauthorized/i.test(message)) {
+    return new TransportAuthError(message, err);
+  }
+  if (/429|rate.?limit/i.test(message)) {
+    return new TransportRateLimitError(message, err);
+  }
+  if (/\b4\d\d\b/.test(message)) {
+    return new TransportInvalidRequestError(message, err);
+  }
+
+  return new TransportInvalidRequestError(`OpenAI transport error: ${message}`, err);
 }

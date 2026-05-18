@@ -150,10 +150,12 @@ export async function runRoutes(
 ): Promise<void> {
   const adapter = opts?.adapter;
   const supervisor = opts?.supervisor ?? (adapter ? new RuntimeJobSupervisor({ adapter }) : undefined);
+  const defaultRuntimeMode: RuntimeMode = 'codex-cli';
 
   // POST /api/v5/run — start an agent run and stream progress over SSE.
   app.post<{ Body: RunRequestBody; Querystring: RunQuerystring }>('/api/v5/run', async (req, reply) => {
     const { agentId, task, runtimeMode, allowedTools } = req.body ?? {};
+    const requestedRuntimeMode = runtimeMode ?? defaultRuntimeMode;
 
     if (!agentId) return reply.status(400).send({ error: 'agentId is required' });
     if (!task) return reply.status(400).send({ error: 'task is required' });
@@ -177,7 +179,7 @@ export async function runRoutes(
         agentId,
         task,
         model: config.model,
-        ...(runtimeMode ? { runtimeMode } : {}),
+        runtimeMode: requestedRuntimeMode,
       });
       const sessionId = job.session_id;
       const startedAt = job.created_at;
@@ -203,7 +205,7 @@ export async function runRoutes(
           const runResult = await runtime.runStreaming({
             task,
             sessionId,
-            ...(runtimeMode ? { runtimeMode } : {}),
+            runtimeMode: requestedRuntimeMode,
             ...(allowedTools?.length ? { allowedTools } : {}),
             signal,
             onChunk: (text: string, index: number) => {
@@ -306,6 +308,7 @@ export async function runRoutes(
           agentId,
           task,
           model: config.model,
+          runtimeModeResolved: requestedRuntimeMode,
           startedAt,
         },
       });
@@ -319,8 +322,8 @@ export async function runRoutes(
       sessionId,
       agentId,
       task,
-      model: config.model,
-      status: 'running',
+          model: config.model,
+          status: 'running',
       response: '',
       costUsd: 0,
       inputTokens: 0,
@@ -333,15 +336,15 @@ export async function runRoutes(
       type: 'agent_activity',
       category: 'run',
       message: `[${agentId}] run started`,
-      data: { sessionId, agentId, task: task.slice(0, 100), model: config.model },
+      data: { sessionId, agentId, task: task.slice(0, 100), model: config.model, runtimeModeResolved: requestedRuntimeMode },
     });
 
     const executeRun = async (): Promise<RunCompletion> => {
       try {
-        const result = await runtime.runStreaming({
+      const result = await runtime.runStreaming({
           task,
           sessionId,
-          ...(runtimeMode ? { runtimeMode } : {}),
+          runtimeMode: requestedRuntimeMode,
           ...(allowedTools?.length ? { allowedTools } : {}),
           // The dashboard SSE handler reads event.data.content, so emit exactly that.
           onChunk: (text: string, index: number) => {

@@ -1,17 +1,16 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { Btn, Badge, Card, ModelChip, PulseDot } from '$lib/components/v2';
+  import { Btn, Badge, Card, PulseDot } from '$lib/components/v2';
   import type { PageData } from './$types';
 
-  // MODEL_TIER_META: canonical mapping from tier key to display metadata.
-  // Defined inline so svelte-check never reports MODEL_TIERS undefined errors.
+  // MODEL_TIER_META maps persisted tier keys to Codex-facing display metadata.
   const MODEL_TIER_META: Record<string, { label: string; range: string; color: string }> = {
-    opus:   { label: 'Opus',   range: '$0.015–$0.075',  color: 'var(--af-opus)' },
-    sonnet: { label: 'Sonnet', range: '$0.003–$0.015',  color: 'var(--af-sonnet)' },
-    haiku:  { label: 'Haiku',  range: '$0.0003–$0.002', color: 'var(--af-haiku)' },
+    opus:   { label: 'xhigh profile',  range: '$0.015–$0.075',  color: 'var(--af-opus)' },
+    sonnet: { label: 'high profile',   range: '$0.003–$0.015',  color: 'var(--af-sonnet)' },
+    haiku:  { label: 'medium profile', range: '$0.0003–$0.002', color: 'var(--af-haiku)' },
   };
 
-  const SONNET_TIER = { label: 'Sonnet', range: '$0.003–$0.015', color: 'var(--af-sonnet)' };
+  const SONNET_TIER = { label: 'high profile', range: '$0.003–$0.015', color: 'var(--af-sonnet)' };
 
   interface AgentEntry {
     agentId: string;
@@ -91,9 +90,29 @@
   let currentRunOutput = '';
   let copyStatusTimer: ReturnType<typeof setTimeout> | null = null;
 
+  function requestedAgentFromQuery(): string | null {
+    if (typeof window === 'undefined') return null;
+    const params = new URLSearchParams(window.location.search);
+    return params.get('agentId') ?? params.get('agent');
+  }
+
+  function applyRequestedAgent(): void {
+    const requested = requestedAgentFromQuery();
+    if (requested && agentEntries.some((a) => a.agentId === requested)) {
+      selectedAgent = requested;
+      agentSearch = '';
+    }
+  }
+
   function getAgentModel(id: string): 'opus' | 'sonnet' | 'haiku' {
     const entry = agentEntries.find((a) => a.agentId === id);
     return entry?.model ?? 'sonnet';
+  }
+
+  function agentTierLabel(tier: 'opus' | 'sonnet' | 'haiku'): string {
+    if (tier === 'opus') return 'XHIGH';
+    if (tier === 'haiku') return 'MED';
+    return 'HIGH';
   }
 
   let modelTier = $derived(MODEL_TIER_META[getAgentModel(selectedAgent)] ?? SONNET_TIER);
@@ -154,9 +173,12 @@
         // Keep existing SSR-loaded agents rather than replacing with empty list.
       } else {
         agentEntries = loaded;
+        const requestedAgent = requestedAgentFromQuery();
         // Keep the selected agent if it still exists in the refreshed list;
         // otherwise, fall back to 'coder' or the first available agent.
-        if (!agentEntries.find(a => a.agentId === selectedAgent)) {
+        if (requestedAgent && agentEntries.find(a => a.agentId === requestedAgent)) {
+          selectedAgent = requestedAgent;
+        } else if (!agentEntries.find(a => a.agentId === selectedAgent)) {
           selectedAgent =
             agentEntries.find(a => a.agentId === 'coder')?.agentId ??
             agentEntries[0]?.agentId ??
@@ -218,7 +240,7 @@
   }
 
   function updateRunMetadata(payload: Record<string, unknown>) {
-    if (typeof payload['model'] === 'string') outputModel = modelIdToTierLabel(payload['model']);
+    if (typeof payload['model'] === 'string') outputModel = modelIdToTierLabel(payload['model'], outputAgentName || selectedAgent);
     if (typeof payload['providerKind'] === 'string') outputProviderKind = formatProviderKind(payload['providerKind']);
     if (typeof payload['runtimeModeResolved'] === 'string') outputRuntimeMode = formatRuntimeMode(payload['runtimeModeResolved']);
   }
@@ -301,7 +323,7 @@
       const res = await fetch('/api/v5/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agentId: selectedAgent, task: taskInput }),
+        body: JSON.stringify({ agentId: selectedAgent, task: taskInput, runtimeMode: 'codex-cli' }),
       });
 
       if (res.status === 404) {
@@ -326,7 +348,7 @@
       const json = envelope.data ?? envelope;
       const sessionId: string = json.sessionId ?? json.id ?? `local-${Date.now()}`;
       runAccepted = res.status === 202 || json.status === 'accepted' || json.status === 'running';
-      outputModel = json.model ? modelIdToTierLabel(json.model as string) : (MODEL_TIER_META[getAgentModel(selectedAgent)]?.label ?? 'Sonnet');
+      outputModel = json.model ? modelIdToTierLabel(json.model as string, selectedAgent) : (MODEL_TIER_META[getAgentModel(selectedAgent)]?.label ?? 'high profile');
       outputProviderKind = formatProviderKind(json.providerKind as string | undefined);
       outputRuntimeMode  = formatRuntimeMode(json.runtimeModeResolved as string | undefined);
       currentSessionId = sessionId;
@@ -378,17 +400,18 @@
     output = run.output || '(No output captured)';
     outputAgentName = run.agentId;
     outputTimestamp = new Date(run.startedAt).toLocaleTimeString('en-US', { hour12: false });
-    outputModel = run.model ? modelIdToTierLabel(run.model) : (MODEL_TIER_META[getAgentModel(run.agentId)]?.label ?? '—');
+    outputModel = run.model ? modelIdToTierLabel(run.model, run.agentId) : (MODEL_TIER_META[getAgentModel(run.agentId)]?.label ?? '—');
     outputProviderKind = formatProviderKind(run.providerKind);
     outputRuntimeMode  = formatRuntimeMode(run.runtimeModeResolved);
     currentSessionId = run.sessionId ?? null;
   }
 
-  function modelIdToTierLabel(modelId: string): string {
+  function modelIdToTierLabel(modelId: string, agentId?: string): string {
     const lower = modelId.toLowerCase();
-    if (lower.includes('opus'))  return 'Opus';
-    if (lower.includes('haiku')) return 'Haiku';
-    return 'Sonnet';
+    if (lower.includes('codex')) return MODEL_TIER_META[getAgentModel(agentId ?? selectedAgent)]?.label ?? 'high profile';
+    if (lower.includes('opus'))  return 'xhigh profile';
+    if (lower.includes('haiku')) return 'medium profile';
+    return 'high profile';
   }
 
   function formatCost(cost?: number): string {
@@ -398,14 +421,14 @@
 
   function formatProviderKind(providerKind?: string): string {
     if (!providerKind) return '';
-    if (providerKind === 'anthropic-sdk') return 'Anthropic SDK';
-    if (providerKind === 'claude-code-compat') return 'Claude Code';
+    if (providerKind === 'anthropic-sdk') return 'OpenAI SDK';
+    if (providerKind === 'claude-code-compat') return 'Codex CLI';
     return providerKind;
   }
 
   function formatRuntimeMode(runtimeMode?: string): string {
     if (!runtimeMode) return '';
-    if (runtimeMode === 'claude-code-compat') return 'Claude Compat';
+    if (runtimeMode === 'claude-code-compat') return 'Codex CLI compat';
     return runtimeMode.toUpperCase();
   }
 
@@ -475,6 +498,7 @@
     // missing at server start) or to refresh a stale list after navigation.
     // When SSR already populated agentEntries, skip the blocking API call and
     // just load the run history.
+    applyRequestedAgent();
     if (agentEntries.length === 0) loadAgents();
     loadHistory();
   });
@@ -483,14 +507,6 @@
     if (eventSource) eventSource.close();
     if (copyStatusTimer) clearTimeout(copyStatusTimer);
   });
-
-  // Derived: model chip prop
-  function tierToModelProp(label: string): 'opus' | 'sonnet' | 'haiku' {
-    const lower = label.toLowerCase();
-    if (lower === 'opus')  return 'opus';
-    if (lower === 'haiku') return 'haiku';
-    return 'sonnet';
-  }
 
   function historyBadgeVariant(status: string): 'success' | 'danger' | 'warning' {
     if (status === 'completed') return 'success';
@@ -505,7 +521,7 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">Agent Runner</h1>
-    <p class="page-sub">Trigger agent runs and observe real-time output</p>
+    <p class="page-sub">Trigger Codex CLI agent runs and observe real-time output</p>
   </div>
   {#if running}
     <div class="running-pill running-indicator">
@@ -556,14 +572,14 @@
           >
             {#each filteredAgents as agent (agent.agentId)}
               <option value={agent.agentId}>
-                [{agent.model.charAt(0).toUpperCase()}] {agent.agentId}
+                [{agentTierLabel(agent.model)}] {agent.agentId}
               </option>
             {/each}
           </select>
           <div class="tier-row">
-            <span class="tier-chip opus af2-mono">{agentCountByTier.opus} Opus</span>
-            <span class="tier-chip sonnet af2-mono">{agentCountByTier.sonnet} Sonnet</span>
-            <span class="tier-chip haiku af2-mono">{agentCountByTier.haiku} Haiku</span>
+            <span class="tier-chip opus af2-mono">{agentCountByTier.opus} xhigh</span>
+            <span class="tier-chip sonnet af2-mono">{agentCountByTier.sonnet} high</span>
+            <span class="tier-chip haiku af2-mono">{agentCountByTier.haiku} medium</span>
           </div>
         {/if}
       </div>
@@ -571,7 +587,7 @@
       <!-- Cost preview callout -->
       {#if agentEntries.length > 0 && !agentsLoadError}
         <div class="cost-callout" style="--tier-clr:{modelTier.color}">
-          <ModelChip model={tierToModelProp(modelTier.label)} />
+          <span class="profile-chip af2-mono">{modelTier.label}</span>
           <span class="af2-mono cost-range">est. {modelTier.range} per run</span>
         </div>
       {/if}
@@ -673,7 +689,7 @@
             <div class="output-meta">
               <span class="af2-mono" style="font-size:11px;color:var(--af-muted)">{outputAgentName}</span>
               {#if outputModel}
-                <ModelChip model={tierToModelProp(outputModel)} />
+                <span class="profile-chip af2-mono">{outputModel}</span>
               {/if}
               {#if outputProviderKind}
                 <Badge variant="muted">{outputProviderKind}</Badge>
@@ -878,6 +894,21 @@
   .tier-chip.opus   { color: var(--af-opus);   border-color: color-mix(in srgb,var(--af-opus) 35%,transparent);   background: color-mix(in srgb,var(--af-opus) 8%,transparent); }
   .tier-chip.sonnet { color: var(--af-sonnet); border-color: color-mix(in srgb,var(--af-sonnet) 35%,transparent); background: color-mix(in srgb,var(--af-sonnet) 8%,transparent); }
   .tier-chip.haiku  { color: var(--af-haiku);  border-color: color-mix(in srgb,var(--af-haiku) 35%,transparent);  background: color-mix(in srgb,var(--af-haiku) 8%,transparent); }
+
+  .profile-chip {
+    display: inline-flex;
+    align-items: center;
+    height: 18px;
+    padding: 0 7px;
+    border-radius: 99px;
+    border: 1px solid color-mix(in srgb, var(--tier-clr, var(--af-purple)) 35%, transparent);
+    background: color-mix(in srgb, var(--tier-clr, var(--af-purple)) 8%, transparent);
+    color: var(--tier-clr, var(--af-purple));
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+  }
 
   /* ── Cost callout ─────────────────────────────────────────────────────── */
   .cost-callout {

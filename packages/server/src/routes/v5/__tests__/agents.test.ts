@@ -124,6 +124,60 @@ describe('GET /api/v5/agents', () => {
     expect(coder).toMatchObject({ team: null, effort: null });
   });
 
+  it('returns Codex model profiles for dashboard rendering', async () => {
+    const projectRoot = makeTmpRoot();
+    const agentsDir = join(projectRoot, '.agentforge', 'agents');
+    mkdirSync(agentsDir, { recursive: true });
+
+    writeFileSync(join(agentsDir, 'architect.yaml'), [
+      'name: Architect',
+      'model: opus',
+    ].join('\n'));
+
+    writeFileSync(join(agentsDir, 'coder.yaml'), [
+      'name: Coder',
+      'model: sonnet',
+    ].join('\n'));
+
+    const { app } = await createServerV5({ listen: false, projectRoot });
+    createdApps.push(app);
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/agents' });
+    expect(res.statusCode).toBe(200);
+
+    const body = res.json<{
+      data: Array<{
+        agentId: string;
+        model: string;
+        capabilityTier?: string;
+        modelProfile?: { provider: string; tier: string; modelId: string; effort: string };
+      }>;
+    }>();
+    const architect = body.data.find(a => a.agentId === 'architect');
+    const coder = body.data.find(a => a.agentId === 'coder');
+
+    expect(architect).toMatchObject({
+      model: 'opus',
+      capabilityTier: 'opus',
+      modelProfile: {
+        provider: 'codex-cli',
+        tier: 'opus',
+        modelId: 'gpt-5.3-codex',
+        effort: 'xhigh',
+      },
+    });
+    expect(coder).toMatchObject({
+      model: 'sonnet',
+      capabilityTier: 'sonnet',
+      modelProfile: {
+        provider: 'codex-cli',
+        tier: 'sonnet',
+        modelId: 'gpt-5.3-codex',
+        effort: 'high',
+      },
+    });
+  });
+
   it('defaults unknown model values to "sonnet"', async () => {
     const projectRoot = makeTmpRoot();
     const agentsDir = join(projectRoot, '.agentforge', 'agents');

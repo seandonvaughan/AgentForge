@@ -1,6 +1,6 @@
 import { execFile as execFileCb } from 'node:child_process';
 import { existsSync, mkdirSync, realpathSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, isAbsolute, join, relative } from 'node:path';
 import { promisify } from 'node:util';
 import type { WorktreeHandle, WorktreePoolStats } from './worktree-pool-types.js';
 
@@ -15,7 +15,7 @@ function sanitize(input: string): string {
  *  original if the path does not (yet) exist on disk. */
 function realPath(p: string): string {
   try {
-    return realpathSync(p);
+    return realpathSync.native(p);
   } catch {
     return p;
   }
@@ -215,9 +215,6 @@ export class WorktreePool {
     const out = await git(this.projectRoot, ['worktree', 'list', '--porcelain']);
     // Resolve symlinks so macOS /tmp → /private/tmp comparisons work correctly.
     const absoluteRootDir = realPath(join(this.projectRoot, this.rootDir));
-    const absoluteRootDirSlash = absoluteRootDir.endsWith('/')
-      ? absoluteRootDir
-      : `${absoluteRootDir}/`;
 
     const worktrees: WorktreeHandle[] = [];
 
@@ -233,14 +230,17 @@ export class WorktreePool {
       const wtPath = realPath(pathLine.slice('worktree '.length).trim());
 
       // Only include worktrees under our rootDir.
-      if (!wtPath.startsWith(absoluteRootDirSlash)) continue;
+      const relativePath = relative(absoluteRootDir, wtPath);
+      if (relativePath === '' || relativePath.startsWith('..') || isAbsolute(relativePath)) {
+        continue;
+      }
 
       const branch = branchLine
         ? branchLine.replace('branch refs/heads/', '').trim()
         : '';
 
       // Derive the id from the directory name.
-      const dirName = wtPath.slice(absoluteRootDirSlash.length); // strip leading path+/
+      const dirName = basename(wtPath);
 
       // Try to find the cached handle for richer metadata.
       const cached = this.handles.get(dirName);

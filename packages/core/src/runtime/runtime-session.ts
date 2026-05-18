@@ -1,4 +1,5 @@
 import type { WorkspaceAdapter } from '@agentforge/db';
+import type { ModelTier } from '@agentforge/shared';
 import type { RunResult } from '../agent-runtime/types.js';
 import type {
   ExecutionProviderKind,
@@ -12,6 +13,7 @@ interface RuntimeSessionOptions {
   agentId: string;
   task: string;
   model: string;
+  capabilityTier: ModelTier;
   sessionId?: string;
   parentSessionId?: string;
   startedAt: string;
@@ -80,6 +82,8 @@ export class RuntimeSession {
           providerKind: execution.providerKind,
           runtimeModeResolved,
           model: execution.model,
+          capabilityTier: this.options.capabilityTier,
+          ...(execution.effort ? { effort: execution.effort } : {}),
         },
       });
       this.options.adapter.recordTaskOutcome({
@@ -95,6 +99,9 @@ export class RuntimeSession {
           providerKind: execution.providerKind,
           runtimeModeResolved,
           usage: execution.usage,
+          capabilityTier: this.options.capabilityTier,
+          ...(execution.effort ? { effort: execution.effort } : {}),
+          ...(execution.schemaValidation ? { schemaValidation: execution.schemaValidation } : {}),
         },
       });
     }
@@ -103,6 +110,8 @@ export class RuntimeSession {
       sessionId,
       response: execution.response,
       model: execution.model,
+      capabilityTier: this.options.capabilityTier,
+      ...(execution.effort ? { effort: execution.effort } : {}),
       inputTokens,
       outputTokens,
       ...(execution.usage.cacheCreationInputTokens !== undefined
@@ -117,6 +126,7 @@ export class RuntimeSession {
       status: 'completed',
       providerKind: execution.providerKind,
       runtimeModeResolved,
+      ...(execution.schemaValidation ? { schemaValidation: execution.schemaValidation } : {}),
     };
   }
 
@@ -147,6 +157,7 @@ export class RuntimeSession {
           providerKind: providerKind ?? null,
           runtimeModeResolved,
           model,
+          capabilityTier: this.options.capabilityTier,
           error: errorMessage,
         },
       });
@@ -162,6 +173,7 @@ export class RuntimeSession {
         payload: {
           providerKind: providerKind ?? null,
           runtimeModeResolved,
+          capabilityTier: this.options.capabilityTier,
           error: errorMessage,
         },
       });
@@ -171,6 +183,7 @@ export class RuntimeSession {
       sessionId: this.sessionId ?? '',
       response: '',
       model,
+      capabilityTier: this.options.capabilityTier,
       inputTokens: 0,
       outputTokens: 0,
       costUsd: 0,

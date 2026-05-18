@@ -521,6 +521,7 @@
 
   let rerunBusy = $state(false);
   let cancelBusy = $state(false);
+  let resumeBusy = $state(false);
   let actionError = $state<string | null>(null);
 
   // ── Resume checkpoint banner ──────────────────────────────────────────────
@@ -549,6 +550,28 @@
       resumeCopied = true;
       setTimeout(() => { resumeCopied = false; }, 2000);
     }).catch(() => { /* ignore clipboard errors */ });
+  }
+
+  async function resumeCycle(): Promise<void> {
+    if (resumeBusy) return;
+    resumeBusy = true;
+    actionError = null;
+    try {
+      const res = await fetch(withWorkspace(`/api/v5/cycles/${id}/resume`), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      await loadCycle();
+    } catch (e) {
+      actionError = `Resume failed: ${e instanceof Error ? e.message : String(e)}`;
+    } finally {
+      resumeBusy = false;
+    }
   }
 
   async function rerunCycle(): Promise<void> {
@@ -1036,11 +1059,16 @@
     <div class="resume-banner" role="alert">
       <span class="resume-banner-text">
         Cycle interrupted at phase <strong>{checkpoint.resumeFromPhase}</strong>.
-        Resume with: <code class="af2-mono">agentforge cycle run --resume {id}</code>
+        Resume from this checkpoint with Codex CLI.
       </span>
-      <button class="resume-copy-btn" onclick={copyResumeCommand} type="button">
-        {resumeCopied ? 'Copied!' : 'Copy'}
-      </button>
+      <div class="resume-actions">
+        <button class="resume-copy-btn" onclick={resumeCycle} type="button" disabled={resumeBusy}>
+          {resumeBusy ? 'Resuming…' : 'Resume'}
+        </button>
+        <button class="resume-copy-btn" onclick={copyResumeCommand} type="button">
+          {resumeCopied ? 'Copied!' : 'Copy CLI'}
+        </button>
+      </div>
     </div>
   {/if}
 
@@ -2771,6 +2799,12 @@
     padding: 2px 6px;
     border-radius: 4px;
   }
+  .resume-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
   .resume-copy-btn {
     flex-shrink: 0;
     padding: 4px 12px;
@@ -2785,5 +2819,9 @@
   }
   .resume-copy-btn:hover {
     background: color-mix(in srgb, var(--af-warning) 35%, var(--af-surface));
+  }
+  .resume-copy-btn:disabled {
+    cursor: wait;
+    opacity: 0.65;
   }
 </style>

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { classifyConflict } from '../merge-queue-conflict-resolver.js';
 
@@ -56,7 +56,7 @@ function buildConflictScenario(opts: {
   commit(repoDir, 'init');
 
   // Ensure subdirectory exists
-  const fileDir = join(repoDir, filename).substring(0, join(repoDir, filename).lastIndexOf('/'));
+  const fileDir = dirname(join(repoDir, filename));
   mkdirSync(fileDir, { recursive: true });
 
   // Write on main

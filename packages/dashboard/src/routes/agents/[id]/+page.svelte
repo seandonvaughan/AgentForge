@@ -293,6 +293,14 @@
     return 'sonnet';
   }
 
+  function profileModel(): string {
+    return agent.modelProfile?.modelId ?? 'gpt-5.3-codex';
+  }
+
+  function profileEffort(): string {
+    return agent.modelProfile?.effort ?? agent.effort ?? 'medium';
+  }
+
   function initials(name: string): string {
     return name.split(/\s+/).slice(0, 2).map(w => w[0] ?? '').join('').toUpperCase();
   }
@@ -322,7 +330,7 @@
     <div>
       <div class="af-name-row">
         <h1 class="af-agent-name">{agent.name}</h1>
-        <ModelChip model={agent.model} />
+        <ModelChip model={profileModel()} effort={profileEffort()} tier={agent.capabilityTier ?? agent.model} />
       </div>
       <div class="af-agent-meta">
         <span class="font-mono af-agent-id">{agent.agentId}</span>
@@ -343,7 +351,7 @@
   </div>
 
   <div class="af-agent-actions">
-    <Btn size="sm" href="/runner">▶ Run</Btn>
+    <Btn size="sm" href={`/runner?agentId=${encodeURIComponent(agent.agentId)}`}>▶ Run</Btn>
     <Btn size="sm" onclick={() => { activeTab = 'config'; configEditing = true; }}>Edit config</Btn>
   </div>
 </div>
@@ -481,8 +489,12 @@
           <div class="af-detail-grid">
             {#if agent.model}
               <div class="af-detail-row">
-                <span class="af-detail-label">Model</span>
-                <ModelChip model={agent.model} size="md" />
+                <span class="af-detail-label">Codex model</span>
+                <ModelChip model={profileModel()} effort={profileEffort()} tier={agent.capabilityTier ?? agent.model} size="md" />
+              </div>
+              <div class="af-detail-row">
+                <span class="af-detail-label">Reasoning</span>
+                <Badge variant="muted">{profileEffort().toUpperCase()}</Badge>
               </div>
             {/if}
             {#if agent.seniority}
@@ -542,7 +554,7 @@
         <div class="af-empty-title">No sessions yet for this agent.</div>
         <div class="af-empty-sub">Run it from the Runner to get started.</div>
         <div style="margin-top:16px;">
-          <Btn variant="purple" size="sm" href="/runner">▶ Run agent</Btn>
+          <Btn variant="purple" size="sm" href={`/runner?agentId=${encodeURIComponent(agent.agentId)}`}>▶ Run agent</Btn>
         </div>
       </div>
     </Card>
@@ -551,7 +563,7 @@
       <table class="af-table">
         <thead>
           <tr>
-            {#each ['Status', 'Task', 'Model', 'Duration', 'Cost', 'Started'] as h}
+            {#each ['Status', 'Task', 'Runtime model', 'Duration', 'Cost', 'Started'] as h}
               <th class="af-th">{h}</th>
             {/each}
           </tr>
@@ -571,7 +583,9 @@
                 <Badge variant={statusVariant(s.status)}>{s.status ?? '—'}</Badge>
               </td>
               <td class="af-td af-td-task">{s.task ?? '—'}</td>
-              <td class="af-td"><ModelChip model={modelTier(s.model)} /></td>
+              <td class="af-td">
+                <ModelChip model={s.model ?? profileModel()} tier={modelTier(s.model)} />
+              </td>
               <td class="af-td font-mono af-td-mono">{sessionDuration(s)}</td>
               <td class="af-td font-mono af-td-mono">${(s.cost_usd ?? s.costUsd ?? 0).toFixed(4)}</td>
               <td class="af-td font-mono af-td-dim">{fmtRel(s.started_at ?? s.startedAt)}</td>

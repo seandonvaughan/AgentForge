@@ -65,6 +65,50 @@ describe('ExecutionService buildRequest — timeoutMs forwarding', () => {
   });
 });
 
+describe('ExecutionService.run — structured output validation', () => {
+  it('preserves schemaValidation from transport results', async () => {
+    const transport: ExecutionTransport = {
+      kind: 'codex-cli',
+      isAvailable: () => true,
+      execute: vi.fn(async (): Promise<ExecutionResult> => {
+        return {
+          ...buildExecutionResult('{"ok":true}'),
+          providerKind: 'codex-cli',
+          model: 'gpt-5.3-codex',
+          schemaValidation: { ok: true },
+        };
+      }),
+    };
+    const service = new ExecutionService({ transports: [transport] });
+
+    const result = await service.run(config, { task: 'return json', runtimeMode: 'codex-cli' });
+
+    expect(result.schemaValidation).toEqual({ ok: true });
+  });
+
+  it('preserves resolved effort and capability tier from Codex transport results', async () => {
+    const transport: ExecutionTransport = {
+      kind: 'codex-cli',
+      isAvailable: () => true,
+      execute: vi.fn(async (): Promise<ExecutionResult> => {
+        return {
+          ...buildExecutionResult('ok'),
+          providerKind: 'codex-cli',
+          model: 'gpt-5.3-codex',
+          effort: 'high',
+        };
+      }),
+    };
+    const service = new ExecutionService({ transports: [transport] });
+
+    const result = await service.run(config, { task: 'use codex', runtimeMode: 'codex-cli' });
+
+    expect(result.model).toBe('gpt-5.3-codex');
+    expect(result.effort).toBe('high');
+    expect(result.capabilityTier).toBe('sonnet');
+  });
+});
+
 describe('ExecutionService.runStreaming', () => {
   it('uses transport executeStreaming when available', async () => {
     const transport: ExecutionTransport = {

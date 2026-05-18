@@ -25,7 +25,7 @@
 
 import { execFile as execFileCb } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import type { MessageBusV2 } from '../message-bus/message-bus.js';
 import type { AgentBranchPushedPayload, MergeQueuePrOpenedPayload } from '../message-bus/types.js';
@@ -121,8 +121,7 @@ function writeLedger(ledgerPath: string, entries: LedgerEntry[]): void {
 }
 
 function appendToLedger(ledgerPath: string, entry: LedgerEntry): void {
-  const dir = ledgerPath.substring(0, ledgerPath.lastIndexOf('/'));
-  mkdirSync(dir, { recursive: true });
+  mkdirSync(dirname(ledgerPath), { recursive: true });
   const entries = readLedger(ledgerPath);
   entries.push(entry);
   writeLedger(ledgerPath, entries);
