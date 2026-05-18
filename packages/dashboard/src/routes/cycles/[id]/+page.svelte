@@ -9,6 +9,8 @@
     Btn, Card, Badge, Tabs, StageRail, ModelChip, PulseDot, Ring, Sparkline, AnimNum,
   } from '$lib/components/v2';
   import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
+  import TypecheckFailureBanner from '$lib/components/cycles/TypecheckFailureBanner.svelte';
+  import type { TypecheckFailure } from '$lib/components/cycles/TypecheckFailureBanner.svelte';
 
   type Tab =
     | 'overview' | 'pipeline' | 'items' | 'agents'
@@ -114,6 +116,10 @@
   let logError = $state<Record<LogName, string | null>>({ 'cli-stdout': null, 'tests-raw': null });
   let logStreamSource: EventSource | null = null;
   let logStreamLines = $state<string[]>([]);
+
+  // ── Typecheck failure artifact ────────────────────────────────────────────────
+  let typecheckFailure = $state<TypecheckFailure | null>(null);
+  let typecheckFailureLoaded = $state(false);
 
   interface ScoringResponse {
     summary?: string;
@@ -626,6 +632,16 @@
     } catch { /* silent */ }
   }
 
+  async function loadTypecheckFailure(): Promise<void> {
+    if (typecheckFailureLoaded) return;
+    typecheckFailureLoaded = true;
+    try {
+      const res = await fetch(withWorkspace(`/api/v5/cycles/${id}/files/typecheck-failure`));
+      if (res.ok) typecheckFailure = (await res.json()) as TypecheckFailure;
+      // 404 means no failure artifact — stay null.
+    } catch { /* silent */ }
+  }
+
   async function loadPrs(force = false): Promise<void> {
     if (!id) return;
     const age = Date.now() - prsCacheAt;
@@ -867,6 +883,7 @@
     void loadAgents();
     void loadScoring();
     void loadEvents();
+    void loadTypecheckFailure();
     ensureSse();
     manage();
     if (typeof document !== 'undefined') {
@@ -1097,6 +1114,9 @@
   {/if}
 
   {#if activeTab === 'pipeline'}
+    {#if typecheckFailure}
+      <TypecheckFailureBanner failure={typecheckFailure} />
+    {/if}
     <Card noPad>
       <div class="section-head">
         <span class="section-title">PIPELINE PHASES</span>
