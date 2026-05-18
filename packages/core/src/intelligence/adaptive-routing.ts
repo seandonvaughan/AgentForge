@@ -1,3 +1,4 @@
+import { appendRoutingFeedback, readRoutingFeedback } from './adaptive-routing-store.js';
 import type { RoutingDecision } from './types.js';
 
 interface RoutingFeedback {
@@ -16,18 +17,81 @@ interface AgentPerformance {
   lastUpdated: string;
 }
 
+export interface AdaptiveRouterOptions {
+  /** Path to the JSONL persistence file. Defaults to `.agentforge/memory/routing-feedback.jsonl`. */
+  feedbackFilePath?: string;
+}
+
 export class AdaptiveRouter {
   private feedback: RoutingFeedback[] = [];
   private performanceCache: Map<string, AgentPerformance> = new Map();
+  private readonly feedbackFilePath: string;
 
-  /** Record feedback from a completed session. */
+  constructor(opts: AdaptiveRouterOptions = {}) {
+    this.feedbackFilePath = opts.feedbackFilePath ?? '.agentforge/memory/routing-feedback.jsonl';
+    // Replay persisted records into in-memory state on construction
+    for (const record of readRoutingFeedback(this.feedbackFilePath)) {
+      this.feedback.push({
+        agentId: record.agentId,
+        model: record.model as 'opus' | 'sonnet' | 'haiku',
+        outcome: record.success ? 'success' : 'failure',
+        taskComplexity: '',
+        timestamp: record.ts,
+      });
+    }
+  }
+
+  /** Record feedback from a completed session (legacy signature). */
   recordOutcome(
     agentId: string,
     model: 'opus' | 'sonnet' | 'haiku',
     outcome: 'success' | 'failure',
     taskComplexity: string,
+  ): void;
+  /** Record feedback with latency and cost (new persistent signature). */
+  recordOutcome(
+    agentId: string,
+    model: 'opus' | 'sonnet' | 'haiku',
+    success: boolean,
+    latencyMs: number,
+    costUsd: number,
+  ): void;
+  recordOutcome(
+    agentId: string,
+    model: 'opus' | 'sonnet' | 'haiku',
+    outcomeOrSuccess: 'success' | 'failure' | boolean,
+    taskComplexityOrLatencyMs: string | number,
+    costUsd?: number,
   ): void {
-    this.feedback.push({ agentId, model, outcome, taskComplexity, timestamp: new Date().toISOString() });
+    const ts = new Date().toISOString();
+
+    if (typeof outcomeOrSuccess === 'boolean') {
+      // New persistent signature: (agentId, model, success, latencyMs, costUsd)
+      const success = outcomeOrSuccess;
+      const latencyMs = taskComplexityOrLatencyMs as number;
+      const cost = costUsd ?? 0;
+      this.feedback.push({
+        agentId,
+        model,
+        outcome: success ? 'success' : 'failure',
+        taskComplexity: '',
+        timestamp: ts,
+      });
+      appendRoutingFeedback(this.feedbackFilePath, {
+        ts,
+        agentId,
+        model,
+        success,
+        latencyMs,
+        costUsd: cost,
+      });
+    } else {
+      // Legacy signature: (agentId, model, outcome, taskComplexity)
+      const outcome = outcomeOrSuccess;
+      const taskComplexity = taskComplexityOrLatencyMs as string;
+      this.feedback.push({ agentId, model, outcome, taskComplexity, timestamp: ts });
+    }
+
     // Invalidate cache for this agent
     this.performanceCache.delete(agentId);
   }
