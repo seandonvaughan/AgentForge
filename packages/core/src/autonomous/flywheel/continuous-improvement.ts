@@ -188,7 +188,12 @@ function loadAgentLearnings(projectRoot: string, agentId: string): string[] {
  * common punctuation. This is intentionally loose — we want substring matches
  * to succeed across minor phrasing differences.
  */
-function normalize(text: string): string {
+function normalize(text: string | null | undefined): string {
+  // Defensive: callers pass `rootCause`/`learning` from JSONL records which
+  // can be missing the field entirely. A failed `.toLowerCase()` on undefined
+  // tripped cycle a84ea768's auto-reforge step (non-fatal, but pollutes logs
+  // and skips a real learning opportunity).
+  if (typeof text !== 'string') return '';
   return text
     .toLowerCase()
     .replace(/[^\w\s]/g, ' ')
