@@ -311,6 +311,46 @@ These lessons are baked into every agent's `learnings_seed` and into this docume
 
 ---
 
+## Wave 5 capabilities (v23.5)
+
+The following capabilities shipped in the v23.5 night-shift arc and are available to operators and agents:
+
+### Per-item resume (T1)
+
+Each cycle item writes a checkpoint to `.agentforge/cycles/<id>/checkpoints/<item-id>.json`.
+Use `--resume <cycle-id>` to re-enter a cycle at the first incomplete item.
+Stale checkpoints (>72 h) block unattended runs unless `--resume` is explicitly passed.
+
+### Skill flywheel curator (T2 + T7)
+
+`agentforge skills propose-from-learnings` reads `.agentforge/memory/*.jsonl`, clusters findings, and writes proposals to `.agentforge/flywheel/proposals/`.
+Approve, reject, or revert proposals at `/flywheel/proposals` in the dashboard or via `agentforge skills revert <slug>`.
+See [docs/runbooks/skill-flywheel.md](docs/runbooks/skill-flywheel.md) for triage criteria.
+
+### MCP server (T3)
+
+`packages/mcp/` is a stdio MCP server exposing four tools: `agentforge/list_agents`, `agentforge/run_cycle`, `agentforge/get_status`, `agentforge/get_memory`.
+Configure in any MCP host via `.mcp.json`.
+
+### `/durability` dashboard page (T4)
+
+`http://localhost:4751/durability` shows the checkpoint ring, per-guard status, and resume controls.
+Backed by `GET /api/v5/durability`.
+
+### Unattended guards (T5)
+
+Set `AGENTFORGE_UNATTENDED=1` to activate five pre-flight guards before a cycle starts:
+budget headroom, clean working tree, test baseline, stale-checkpoint check, disk space.
+Any failing guard aborts with a non-zero exit and a human-readable message.
+See [docs/runbooks/unattended-cycle.md](docs/runbooks/unattended-cycle.md) for recovery steps.
+
+### Replay and coverage CLI (T6)
+
+`agentforge cycle replay <cycle-id>` — re-runs the execute phase with the same item set.
+`agentforge cycle coverage <cycle-id>` — prints per-item test-coverage delta.
+
+---
+
 ## Development commands
 
 ```bash
