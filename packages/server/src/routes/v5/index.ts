@@ -4,6 +4,10 @@ import type { WorkspaceRegistry } from '@agentforge/db';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  readAllLedgerJobs,
+  cyclesBaseDirFor,
+} from '../../lib/cycle-jobs-ledger.js';
+import {
   RuntimeJobSupervisor,
   type MessageBusV2,
   type RuntimeEventEnvelope,
@@ -238,25 +242,59 @@ export async function registerV5Routes(
     const limit = Math.min(parseInt(q.limit ?? '50', 10), 500);
     const offset = parseInt(q.offset ?? '0', 10);
 
-    const sessions = adapter.listSessions({
-      limit,
-      offset,
-      ...(q.agentId !== undefined ? { agentId: q.agentId } : {}),
-      ...(q.status !== undefined ? { status: q.status } : {}),
-    });
-    const total = adapter.countSessions({
+    // SQL sessions (primary source)
+    const sqlSessions = adapter.listSessions({
+      limit: 10_000,
+      offset: 0,
       ...(q.agentId !== undefined ? { agentId: q.agentId } : {}),
       ...(q.status !== undefined ? { status: q.status } : {}),
     });
 
-    // Attach transcript to each session (null if file missing or malformed)
-    const data = sessions.map(session => {
+    // Ledger sessions derived from execute.json — union when SQL is sparse
+    const cyclesBase = cyclesBaseDirFor(sessionProjectRoot);
+    let ledgerJobs = readAllLedgerJobs(cyclesBase);
+
+    // Apply filters (same semantics as SQL path)
+    if (q.agentId !== undefined) {
+      const agentFilter = q.agentId;
+      ledgerJobs = ledgerJobs.filter(r => r.agentId === agentFilter);
+    }
+    if (q.status !== undefined) {
+      const statusFilter = q.status;
+      ledgerJobs = ledgerJobs.filter(r => r.status === statusFilter);
+    }
+
+    // De-duplicate: SQL rows take precedence (match by id)
+    const sqlIdSet = new Set(sqlSessions.map(s => s.id));
+    const uniqueLedger = ledgerJobs.filter(r => !sqlIdSet.has(r.id));
+
+    // Convert ledger rows to session-shaped objects
+    const ledgerAsSessions = uniqueLedger.map(r => ({
+      id: r.id,
+      agentId: r.agentId,
+      status: r.status,
+      startedAt: r.startedAt,
+      completedAt: r.completedAt,
+      costUsd: r.costUsd,
+      cycleId: r.cycleId,
+      attempts: r.attempts,
+      source: 'ledger' as const,
+    }));
+
+    // Attach transcript to SQL sessions
+    const sqlWithTranscript = sqlSessions.map(session => {
       const transcript = loadSessionTranscript(session.id, sessionProjectRoot);
       if (transcript !== null) {
         return { ...session, transcript };
       }
       return session;
     });
+
+    // Union: SQL first (already filtered), then unique ledger rows
+    const allSessions = [...sqlWithTranscript, ...ledgerAsSessions];
+
+    const total = allSessions.length;
+    const data = allSessions.slice(offset, offset + limit);
 
     return reply.send({
       data,
