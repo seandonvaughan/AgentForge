@@ -1,12 +1,14 @@
+import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import type { WorkspaceAdapter } from '@agentforge/db';
 import { KnowledgeGraph, loadKnowledgeEntities } from '@agentforge/core';
+import { KGEntityIndex } from '@agentforge/embeddings';
 
 export interface KnowledgeRoutesOptions {
   /**
-   * WorkspaceAdapter for SQLite-backed KV persistence. When provided,
-   * entities and relationships survive server restarts (stored under
-   * `knowledge:graph:entities` / `knowledge:graph:relationships`).
+   * WorkspaceAdapter for SQLite-backed row-level persistence. When provided,
+   * entities and relationships survive server restarts via the
+   * `knowledge_entities` / `knowledge_relationships` tables in WORKSPACE_DDL.
    * When omitted the graph operates purely in-memory.
    */
   adapter?: WorkspaceAdapter | undefined;
@@ -29,14 +31,32 @@ export async function knowledgeRoutes(
   app: FastifyInstance,
   opts: KnowledgeRoutesOptions = {},
 ): Promise<void> {
-  // Adapter-backed construction hydrates from the KV store automatically,
-  // ensuring entities and relationships survive server restarts.
-  const graph = new KnowledgeGraph(opts.adapter);
+  // When a projectRoot is supplied, create a persistent KGEntityIndex backed
+  // by a SQLite DB at <projectRoot>/.agentforge/knowledge/embeddings.db so
+  // semantic search over entities survives server restarts.
+  //
+  // The KGEntityIndex is optional — when projectRoot is absent the graph falls
+  // back to keyword matching in graph.query().
+  const embeddingIndex = opts.projectRoot
+    ? new KGEntityIndex(join(opts.projectRoot, '.agentforge', 'knowledge', 'embeddings.db'))
+    : undefined;
 
-  // Also hydrate from entities.jsonl written by audit/review phases so the
-  // /knowledge page is populated from cycle-accumulated entity data even when
-  // the adapter KV store is empty (e.g. first run after a data directory move).
-  if (opts.projectRoot) {
+  // Adapter-backed construction hydrates from knowledge_entities /
+  // knowledge_relationships SQLite tables automatically via hydrateFromAdapter,
+  // ensuring entities and relationships survive server restarts.
+  const graph = new KnowledgeGraph(opts.adapter, embeddingIndex);
+
+  // Hydrate from entities.jsonl written by audit/review phases ONLY when the
+  // SQLite adapter has no persisted entities yet (cold start or no adapter).
+  //
+  // Guard: if the adapter already has entities, hydrateFromAdapter (called in
+  // the KnowledgeGraph constructor) has already loaded them. Calling
+  // loadKnowledgeEntities here too would generate new UUIDs for each JSONL
+  // entity and write them back to SQLite — producing duplicates on every
+  // subsequent restart. Only fall back to JSONL when the graph is still empty
+  // after adapter hydration (first run with a fresh DB, or no adapter at all).
+  const alreadyHydratedFromAdapter = opts.adapter !== undefined && graph.entityCount() > 0;
+  if (opts.projectRoot && !alreadyHydratedFromAdapter) {
     const persisted = loadKnowledgeEntities(opts.projectRoot);
     for (const entity of persisted) {
       graph.addEntity({
@@ -94,18 +114,26 @@ export async function knowledgeRoutes(
   });
 
   // POST /api/v5/knowledge/query — semantic query
+  // When an embeddingIndex is wired (projectRoot provided), uses vector
+  // similarity for ranking.  Pass `semantic: false` in the request body to
+  // force keyword-only matching regardless.
   app.post('/api/v5/knowledge/query', async (req, reply) => {
     const body = req.body as any;
     if (!body?.query) {
       return reply.status(400).send({ error: 'query is required', code: 'MISSING_FIELD' });
     }
-    const result = graph.query({
+    const queryReq = {
       query: body.query,
       entityTypes: body.entityTypes,
       maxEntities: body.maxEntities ?? 20,
       minRelevance: body.minRelevance ?? 0.1,
       includeRelationships: body.includeRelationships ?? true,
-    });
+    };
+    // Use vector search when available and not explicitly opted out.
+    const useSemantic = body.semantic !== false;
+    const result = useSemantic
+      ? await graph.semanticQuery(queryReq)
+      : graph.query(queryReq);
     return reply.send({ data: result, meta: { timestamp: new Date().toISOString() } });
   });
 

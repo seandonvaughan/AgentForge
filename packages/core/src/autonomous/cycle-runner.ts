@@ -62,6 +62,7 @@ import type { RealTestRunner } from './exec/real-test-runner.js';
 import type { GitOps } from './exec/git-ops.js';
 import type { PROpener } from './exec/pr-opener.js';
 import { runAutoReforge, extractInvolvedAgentIds } from './auto-reforge.js';
+import { runPreVerifyTypeCheck, type PreVerifyTypeCheckResult } from './pre-verify-typecheck.js';
 import { exportCycleTelemetry } from '../telemetry/cycle-telemetry-export.js';
 import { resolveTelemetryConfig } from '../telemetry/config.js';
 // T4.6 — WorktreeGc: schedule GC at cycle start (clean stale worktrees) and
@@ -116,14 +117,6 @@ function extractSubprocessError(err: unknown): string {
   const stdoutStr = (e.stdout?.toString() ?? '').trim();
   const text = stderrStr || stdoutStr || e.message || String(err);
   return text.slice(0, 2000);
-}
-
-/** Result returned by the pre-verify typecheck step. */
-export interface PreVerifyTypeCheckResult {
-  buildOk: boolean;
-  buildError?: string;
-  typeCheckOk: boolean;
-  typeCheckError?: string;
 }
 
 /**
@@ -904,7 +897,7 @@ export class CycleRunner {
     console.log('[autonomous:cycle] stage 3.5: running pre-verify typecheck');
     const result = this.options.preVerifyTypeCheck
       ? await this.options.preVerifyTypeCheck(this.options.cwd, this.options.config.testing)
-      : await this.defaultTypeCheck(this.options.cwd, this.options.config.testing);
+      : await runPreVerifyTypeCheck(this.options.cwd, this.options.config.testing, this.logger);
 
     if (!result.buildOk) {
       // eslint-disable-next-line no-console
@@ -1012,61 +1005,6 @@ export class CycleRunner {
         }`,
       );
     }
-  }
-
-  /**
-   * Built-in implementation of the pre-verify typecheck step. Runs
-   * `config.testing.buildCommand` then `config.testing.typeCheckCommand` via
-   * execFileAsync. Empty command strings are silently skipped (no-op). Does
-   * NOT throw — failures are surfaced in the returned result and the caller
-   * decides whether to trip the kill switch based on quality flags.
-   */
-  private async defaultTypeCheck(
-    cwd: string,
-    testing: CycleConfig['testing'],
-  ): Promise<PreVerifyTypeCheckResult> {
-    let buildOk = true;
-    let buildError: string | undefined;
-
-    if (testing.buildCommand) {
-      const parts = parseCommandArgs(testing.buildCommand);
-      try {
-        await execFileAsync(parts[0]!, parts.slice(1), {
-          cwd,
-          timeout: 5 * 60_000,
-          maxBuffer: 50 * 1024 * 1024,
-          env: { ...process.env, CI: '1', NO_COLOR: '1' },
-        });
-      } catch (err: unknown) {
-        buildOk = false;
-        buildError = extractSubprocessError(err);
-      }
-    }
-
-    let typeCheckOk = true;
-    let typeCheckError: string | undefined;
-
-    if (testing.typeCheckCommand) {
-      const parts = parseCommandArgs(testing.typeCheckCommand);
-      try {
-        await execFileAsync(parts[0]!, parts.slice(1), {
-          cwd,
-          timeout: 3 * 60_000,
-          maxBuffer: 50 * 1024 * 1024,
-          env: { ...process.env, CI: '1', NO_COLOR: '1' },
-        });
-      } catch (err: unknown) {
-        typeCheckOk = false;
-        typeCheckError = extractSubprocessError(err);
-      }
-    }
-
-    return {
-      buildOk,
-      ...(buildError !== undefined ? { buildError } : {}),
-      typeCheckOk,
-      ...(typeCheckError !== undefined ? { typeCheckError } : {}),
-    };
   }
 
   /**

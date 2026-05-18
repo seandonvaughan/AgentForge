@@ -78,9 +78,11 @@ export async function encode(text: string): Promise<Float32Array> {
 
 export async function encodeBatch(texts: string[]): Promise<Float32Array[]> {
   if (texts.length === 0) return [];
-  const p = await getPipeline();
-  const outputs = await p(texts);
-  return outputs.map(o => o.data instanceof Float32Array ? o.data : new Float32Array(o.data));
+  // Use individual encode() calls to avoid batch-output-shape ambiguity.
+  // The @xenova/transformers pipeline may return a single batched tensor
+  // (shape [N, 384]) rather than N separate tensors when called with an array,
+  // which would cause a length mismatch in callers.  encode() is always safe.
+  return Promise.all(texts.map(t => encode(t)));
 }
 
 export const EMBEDDING_DIMS = 384;

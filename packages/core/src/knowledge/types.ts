@@ -72,3 +72,24 @@ export interface CreateRelationshipRequest {
   weight?: number;
   properties?: Record<string, unknown>;
 }
+
+/**
+ * Structural interface satisfied by KGEntityIndex (from @agentforge/embeddings)
+ * without requiring a hard cross-package import. TypeScript duck-typing means
+ * any object with these two methods is accepted.
+ *
+ * This lives in types.ts (not knowledge-graph.ts) so it can be imported by
+ * tests and other modules without pulling in the full KnowledgeGraph class.
+ */
+export interface EntityEmbeddingIndex {
+  indexEntity(entity: {
+    id: string;
+    name: string;
+    type: string;
+    description?: string;
+  }): Promise<void>;
+  searchEntities(
+    query: string,
+    opts?: { topK?: number; minScore?: number },
+  ): Promise<Array<{ id: string; score: number }>>;
+}

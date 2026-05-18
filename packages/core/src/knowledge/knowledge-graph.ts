@@ -10,7 +10,11 @@ import type {
   KnowledgeQueryRequest,
   CreateEntityRequest,
   CreateRelationshipRequest,
+  EntityEmbeddingIndex,
 } from './types.js';
+
+// Re-export so consumers can import EntityEmbeddingIndex from this module too.
+export type { EntityEmbeddingIndex };
 
 // ---------------------------------------------------------------------------
 // Row ↔ domain-type converters
@@ -79,9 +83,14 @@ export class KnowledgeGraph {
   // Typed as `WorkspaceAdapter | undefined` (not `?`) so that the constructor
   // assignment satisfies exactOptionalPropertyTypes.
   private readonly adapter: WorkspaceAdapter | undefined;
+  // Optional vector embedding index for semantic search over entities.
+  // When present, addEntity() indexes the entity and semanticQuery() uses
+  // vector similarity instead of keyword matching.
+  private readonly embeddingIndex: EntityEmbeddingIndex | undefined;
 
-  constructor(adapter?: WorkspaceAdapter) {
+  constructor(adapter?: WorkspaceAdapter, embeddingIndex?: EntityEmbeddingIndex) {
     this.adapter = adapter;
+    this.embeddingIndex = embeddingIndex;
     if (adapter) {
       this.hydrateFromAdapter(adapter);
     }
@@ -127,6 +136,20 @@ export class KnowledgeGraph {
         updatedAt: entity.updatedAt,
         createdAt: entity.createdAt,
       });
+    }
+    // Fire-and-forget: index into the vector store for semantic search.
+    // Non-fatal — embedding failures must never break KG mutations.
+    if (this.embeddingIndex) {
+      this.embeddingIndex
+        .indexEntity({
+          id: entity.id,
+          name: entity.name,
+          type: entity.type,
+          ...(entity.description !== undefined ? { description: entity.description } : {}),
+        })
+        .catch(() => {
+          // Intentionally swallowed: embedding is best-effort.
+        });
     }
     return entity;
   }
@@ -326,6 +349,82 @@ export class KnowledgeGraph {
       entities,
       relationships,
       relevanceScores: scores,
+      queryTime: Date.now() - start,
+    };
+  }
+
+  // ── Semantic query (vector similarity) ───────────────────────────────────────
+
+  /**
+   * Query the graph using vector embeddings when an embeddingIndex is available.
+   * Falls back to keyword matching via `query()` when no index is configured so
+   * callers always get a valid result regardless of whether embeddings are wired.
+   *
+   * Unlike `query()` which is synchronous, this method is always async because
+   * the embedding model may need to encode the query text.
+   */
+  async semanticQuery(req: KnowledgeQueryRequest): Promise<GraphQueryResult> {
+    if (!this.embeddingIndex) {
+      // Graceful fallback: no embedding index — use keyword matching.
+      return this.query(req);
+    }
+
+    const start = Date.now();
+    const {
+      query,
+      entityTypes,
+      maxEntities = 20,
+      minRelevance = 0.1,
+      includeRelationships = true,
+    } = req;
+
+    // 1. Retrieve semantic matches from the vector index.
+    //    Over-fetch (×2) to account for entity-type filtering below.
+    let semanticResults: Array<{ id: string; score: number }>;
+    try {
+      semanticResults = await this.embeddingIndex.searchEntities(query, {
+        topK: maxEntities * 2,
+        minScore: minRelevance,
+      });
+    } catch {
+      // Non-fatal: fall back to keyword search if the embedding call fails.
+      return this.query(req);
+    }
+
+    // 2. Filter to only entities we know about, applying the type filter.
+    const idToScore = new Map<string, number>();
+    for (const r of semanticResults) {
+      const entity = this.entities.get(r.id);
+      if (!entity) continue;
+      if (entityTypes && !entityTypes.includes(entity.type)) continue;
+      idToScore.set(r.id, r.score);
+    }
+
+    // 3. Sort by score descending and take top maxEntities.
+    const topIds = [...idToScore.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, maxEntities)
+      .map(([id]) => id);
+
+    const entities = topIds.map(id => this.entities.get(id)).filter(Boolean) as Entity[];
+
+    const relevanceScores: Record<string, number> = {};
+    for (const [id, score] of idToScore) {
+      relevanceScores[id] = score;
+    }
+
+    let relationships: Relationship[] = [];
+    if (includeRelationships) {
+      const idSet = new Set(topIds);
+      relationships = this.relationships.filter(
+        r => idSet.has(r.sourceId) && idSet.has(r.targetId),
+      );
+    }
+
+    return {
+      entities,
+      relationships,
+      relevanceScores,
       queryTime: Date.now() - start,
     };
   }
