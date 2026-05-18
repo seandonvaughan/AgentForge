@@ -29,6 +29,7 @@ import type {
   HistoryReport,
 } from "./recon/schemas.js";
 import { BASELINE_PR_MERGE_MANAGER } from "./pr-merge-manager-baseline.js";
+import { AgentOutputSchemaSchema } from "../../agent-yaml/agent-yaml-schema.js";
 
 // ---------------------------------------------------------------------------
 // TeamPlan Zod schema
@@ -44,6 +45,9 @@ export const TeamPlanAgentSchema = z.object({
   auto_include_files: z.array(z.string()),
   learnings_seed: z.array(z.string()),
   skill_ids: z.array(z.string()).optional(),
+  // Structured return-value contract; required for implementation-tier agents
+  // but tolerated as absent for backward compatibility.
+  output_schema: AgentOutputSchemaSchema.optional(),
 });
 
 export type TeamPlanAgent = z.infer<typeof TeamPlanAgentSchema>;
@@ -260,7 +264,16 @@ function defaultEffortFor(tier: "opus" | "sonnet" | "haiku"): string {
 
 /** Build the AgentTemplate-compatible YAML object for an agent. */
 function buildAgentYaml(agent: TeamPlanAgent): Record<string, unknown> {
-  return {
+  // Warn (but do NOT fail) when an implementation-tier agent lacks output_schema.
+  // This preserves backward compat with agents synthesised before this field existed.
+  if (agent.category === "implementation" && !agent.output_schema) {
+    console.warn(
+      `[synthesis] implementation agent "${agent.id}" is missing output_schema — ` +
+        `consider adding a structured return-value contract.`,
+    );
+  }
+
+  const obj: Record<string, unknown> = {
     name: agent.id,
     model: agent.tier,
     // Surface the category as a top-level field so dashboard loaders and
@@ -292,6 +305,14 @@ function buildAgentYaml(agent: TeamPlanAgent): Record<string, unknown> {
     capability_tags: agent.capability_tags,
     ...(agent.skill_ids && agent.skill_ids.length > 0 ? { skill_ids: agent.skill_ids } : {}),
   };
+
+  // Pass output_schema through verbatim when present — js-yaml handles the
+  // nested object structure correctly.
+  if (agent.output_schema !== undefined) {
+    obj["output_schema"] = agent.output_schema;
+  }
+
+  return obj;
 }
 
 /** Build the CC-compatible .md frontmatter + body for an agent. */

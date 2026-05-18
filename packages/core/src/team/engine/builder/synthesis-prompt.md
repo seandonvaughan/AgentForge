@@ -43,11 +43,36 @@ Emit a single fenced JSON block — no prose before or after it:
       "capability_tags": ["<specific-tag>", "..."],
       "system_prompt": "<full markdown system prompt>",
       "auto_include_files": ["<real-path-from-corpus>", "..."],
-      "learnings_seed": ["<actionable-lesson>", "..."]
+      "learnings_seed": ["<actionable-lesson>", "..."],
+      "output_schema": {
+        "name": "<agent-id>-result",
+        "description": "Structured return value for <agent-id>",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "files_modified": { "type": "array", "items": { "type": "string" } },
+            "tests_added": { "type": "integer" },
+            "lines_changed": { "type": "integer" }
+          },
+          "required": ["files_modified"],
+          "additionalProperties": false
+        },
+        "strict": true
+      }
     }
   ]
 }
 ```
+
+> **`output_schema` rule (implementation-tier agents only):**
+> For every agent with `"category": "implementation"`, emit an `output_schema`
+> field describing the agent's structured return value.  The `schema` must be a
+> valid JSON Schema object with `"type": "object"` at the root.  At a minimum
+> include `files_modified` (array of strings), `tests_added` (integer), and
+> `lines_changed` (integer) in `properties`, and list `files_modified` in
+> `required`.  You may add domain-specific properties (e.g.
+> `routes_added`, `migrations_applied`).  Set `"strict": true`.
+> Strategic, quality, and utility agents do NOT need `output_schema`.
 
 ---
 
