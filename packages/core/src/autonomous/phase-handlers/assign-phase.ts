@@ -13,12 +13,20 @@ import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
 import { pickAgent } from '../routing/router.js';
 import type { RoutingIndex } from '../routing/routing-index.js';
 
+interface AssignmentHint {
+  agent_id: string;
+  model: string;
+  skill_ids: string[];
+  confidence: number;
+}
+
 interface SprintItem {
   id: string;
   title: string;
   description?: string;
   assignee?: string;
   tags?: string[];
+  assignment_hint?: AssignmentHint;
   [key: string]: unknown;
 }
 
@@ -75,12 +83,54 @@ export function inferAssigneeFromTag(tag: string): string | null {
 /**
  * Infer the assignee for a sprint item.
  *
- * When projectRoot is supplied and a routing-index.json exists, delegates to
- * the capability-tag router. Otherwise falls back to 5-keyword logic.
+ * Priority order:
+ *   1. Quality-bias hint (from plan-phase pre-hook) — respected UNLESS the
+ *      suggested agent's owns_subsystems doesn't intersect the item's touched
+ *      paths. Uses String.includes() for capability-tag checks.
+ *   2. Capability-tag router (routing-index.json).
+ *   3. Legacy 5-keyword fallback.
+ *
  * The optional projectRoot keeps backward compat with callers that pass only
  * an item.
  */
 export function inferAssignee(item: SprintItem, projectRoot?: string): string {
+  // Priority 1: respect quality-bias hint if present and not disabled
+  if (
+    item.assignment_hint &&
+    process.env['AGENTFORGE_NO_QUALITY_BIAS'] !== '1'
+  ) {
+    const hintAgentId = item.assignment_hint.agent_id;
+    // Validate that the suggested agent's subsystems intersect item's touched paths.
+    // If no routing index is available we accept the hint unconditionally.
+    if (projectRoot) {
+      const index = loadRoutingIndex(projectRoot);
+      if (index) {
+        const agentEntry = index.agents.find((a) => a.id === hintAgentId);
+        if (agentEntry) {
+          // Use String.includes() for path-prefix checks (no regex on user input)
+          const itemText = [item.title ?? '', item.description ?? '', ...(item.tags ?? [])].join(' ');
+          const subsystemsIntersect = agentEntry.owns_subsystems.some((subsystem) =>
+            itemText.includes(subsystem),
+          );
+          if (subsystemsIntersect || agentEntry.owns_subsystems.length === 0) {
+            return hintAgentId;
+          }
+          // Hint agent's subsystems don't intersect — fall through to normal routing
+        } else {
+          // Agent not in index — still accept the hint (forward-compat)
+          return hintAgentId;
+        }
+      } else {
+        // No routing index — accept hint unconditionally
+        return hintAgentId;
+      }
+    } else {
+      // No projectRoot — accept hint unconditionally
+      return hintAgentId;
+    }
+  }
+
+  // Priority 2: capability-tag router
   if (projectRoot) {
     const index = loadRoutingIndex(projectRoot);
     if (index) {

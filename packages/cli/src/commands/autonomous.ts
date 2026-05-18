@@ -51,6 +51,8 @@ interface CycleRunOptions extends WorkspaceAwareOptions {
   dryRun: boolean;
   /** Commander sets this to false when --no-worktrees is passed. */
   worktrees: boolean;
+  /** Commander sets this to false when --no-quality-bias is passed. */
+  qualityBias: boolean;
   /** Resume a previously-checkpointed cycle by id. */
   resume?: string;
   /** Optional display name for a new cycle. */
@@ -172,6 +174,7 @@ function registerCycleRunCommand(parent: Command, commandName: string, descripti
     .description(description)
     .option('--dry-run', 'Do not actually open the PR; still runs all other stages', false)
     .option('--no-worktrees', 'Disable isolated git worktrees; fall back to single-tree execution (env: AUTONOMOUS_DISABLE_WORKTREES=1)')
+    .option('--no-quality-bias', 'Disable quality-biased assignment pre-hook (env: AGENTFORGE_NO_QUALITY_BIAS=1)')
     .option('--project-root <path>', 'Project root', process.cwd())
     .option('--workspace <id>', 'Run against a registered workspace from ~/.agentforge/workspaces.json')
     .option('--resume <cycleId>', 'Resume a previously-checkpointed cycle by id')
@@ -183,6 +186,13 @@ function registerCycleRunCommand(parent: Command, commandName: string, descripti
 const RESUME_CYCLE_ID_RE = /^[a-zA-Z0-9-]{8,64}$/;
 
 async function runCycleAction(opts: CycleRunOptions): Promise<void> {
+  // --no-quality-bias flag: set env so phase handlers pick it up automatically.
+  // Commander maps --no-quality-bias → opts.qualityBias = false.
+  if (opts.qualityBias === false) {
+    process.env['AGENTFORGE_NO_QUALITY_BIAS'] = '1';
+    console.log('[cycle] quality-bias pre-hook disabled');
+  }
+
   // Mutual exclusion guard: --resume implies an existing cycle, --cycle-name implies a new one.
   if (opts.resume !== undefined && opts.cycleName !== undefined) {
     console.error('Error: --resume and --cycle-name are mutually exclusive.');
