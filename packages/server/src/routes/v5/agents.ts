@@ -146,4 +146,94 @@ export async function agentRoutes(
     const scores = opts.adapter.listAgentScores();
     return reply.send({ data: scores, meta: { total: scores.length } });
   });
+
+  // GET /api/v5/agents/activity — per-agent activity rollup over the last 24h.
+  // Reads `.agentforge/cycles/*/phases/execute.json` directly (authoritative
+  // source for cycle-runner-driven agent dispatches). The legacy `sessions`
+  // SQL table fed by the in-server executor is stale because `agentforge cycle
+  // run` doesn't write there. Powers the /agents page sparklines + lastActive
+  // + spend KPIs that were showing zeros.
+  app.get('/api/v5/agents/activity', async (_req, reply) => {
+    const cyclesDir = join(agentforgeDir, 'cycles');
+    if (!existsSync(cyclesDir)) return reply.send({ data: [], meta: { total: 0, windowHours: 24 } });
+
+    const horizonMs = Date.now() - 24 * 60 * 60 * 1000;
+    interface Activity {
+      agentId: string;
+      invocations24h: number;
+      spend24h: number;
+      lastActiveAt: string | null;
+      /** 12 buckets × 2h covering the last 24h (oldest first). */
+      sparkline: number[];
+    }
+    const byAgent = new Map<string, Activity>();
+    const bucketMs = 2 * 60 * 60 * 1000;
+
+    let cycleIds: string[];
+    try {
+      cycleIds = readdirSync(cyclesDir);
+    } catch {
+      return reply.send({ data: [], meta: { total: 0, windowHours: 24 } });
+    }
+
+    for (const id of cycleIds) {
+      const execPath = join(cyclesDir, id, 'phases', 'execute.json');
+      if (!existsSync(execPath)) continue;
+
+      // Per-cycle fallback timestamp — itemResults rows often lack their own
+      // startedAt/completedAt, so we fall back to the parent cycle's
+      // completedAt/startedAt (read from cycle.json).
+      let cycleFallbackMs: number | null = null;
+      const cyclePath = join(cyclesDir, id, 'cycle.json');
+      if (existsSync(cyclePath)) {
+        try {
+          const cyc = JSON.parse(readFileSync(cyclePath, 'utf8')) as { completedAt?: string; startedAt?: string };
+          const ref = cyc.completedAt ?? cyc.startedAt;
+          if (ref) cycleFallbackMs = new Date(ref).getTime();
+        } catch { /* ignore */ }
+      }
+
+      interface Run {
+        agentId?: string;
+        startedAt?: string;
+        completedAt?: string;
+        costUsd?: number;
+        cost_usd?: number;
+      }
+      let exec: { agentRuns?: Run[]; itemResults?: Run[] };
+      try {
+        exec = JSON.parse(readFileSync(execPath, 'utf8')) as typeof exec;
+      } catch { continue; }
+
+      // Newer cycles emit `agentRuns`; older ones emit `itemResults`. Both
+      // carry `agentId` + `costUsd`; agentRuns also has startedAt/completedAt.
+      const runs: Run[] = exec.agentRuns ?? exec.itemResults ?? [];
+
+      for (const r of runs) {
+        const agentId = r.agentId;
+        if (!agentId) continue;
+        const ts = r.completedAt ?? r.startedAt;
+        const ms = ts ? new Date(ts).getTime() : cycleFallbackMs;
+        if (ms === null || ms < horizonMs) continue;
+
+        const cost = r.costUsd ?? r.cost_usd ?? 0;
+
+        let row = byAgent.get(agentId);
+        if (!row) {
+          row = { agentId, invocations24h: 0, spend24h: 0, lastActiveAt: null, sparkline: new Array<number>(12).fill(0) };
+          byAgent.set(agentId, row);
+        }
+        row.invocations24h++;
+        row.spend24h += cost;
+        if (!row.lastActiveAt || ms > new Date(row.lastActiveAt).getTime()) {
+          row.lastActiveAt = new Date(ms).toISOString();
+        }
+        const bucketIdx = Math.min(11, Math.max(0, Math.floor((ms - horizonMs) / bucketMs)));
+        row.sparkline[bucketIdx]!++;
+      }
+    }
+
+    const data = [...byAgent.values()].sort((a, b) => b.spend24h - a.spend24h);
+    return reply.send({ data, meta: { total: data.length, windowHours: 24 } });
+  });
 }

@@ -8,7 +8,11 @@
 
   interface AutonomousBranch {
     name:          string;
-    cycleId:       string;
+    // Sprint version stripped from the branch name (e.g. branch
+    // "autonomous/v18.1.0" → cycle "v18.1.0"). The server route returns this
+    // as `cycle`; older code mistyped it as `cycleId` and tried to use it as
+    // a UUID, producing broken /cycles/<sprint-version> links.
+    cycle:         string;
     lastCommitSha: string;
     lastCommitAt:  string;
     aheadOfMain:   number;
@@ -55,7 +59,7 @@
     const q = searchQ.trim().toLowerCase();
     return branches.filter(b => {
       if (statusFilter !== 'all' && b.status !== statusFilter) return false;
-      if (q && !b.name.toLowerCase().includes(q) && !b.cycleId.toLowerCase().includes(q)) return false;
+      if (q && !b.name.toLowerCase().includes(q) && !b.cycle.toLowerCase().includes(q)) return false;
       return true;
     });
   });
@@ -357,8 +361,8 @@
 
             <!-- Cycle link -->
             <td>
-              <a class="cycle-link font-mono" href="/cycles/{encodeURIComponent(b.cycleId)}" title="View cycle {b.cycleId}">
-                {b.cycleId.slice(0, 8)}
+              <a class="cycle-link font-mono" href="/sprints/{encodeURIComponent(b.cycle)}" title="View sprint {b.cycle}">
+                {b.cycle}
               </a>
             </td>
 

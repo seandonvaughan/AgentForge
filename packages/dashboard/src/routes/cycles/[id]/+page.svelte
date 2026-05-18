@@ -160,15 +160,27 @@
   let elapsedTimer: ReturnType<typeof setInterval> | null = null;
   let now = $state(Date.now());
 
-  const stage = $derived<string>(((cycle?.stage ?? 'unknown') as string));
-  // A cycle is "stalled" when stage is non-terminal but the runner stopped
-  // writing heartbeats for >5 min — the runner is dead but cycle.json hasn't
-  // been terminalized. Treat as effectively terminal so the UI surfaces it
-  // instead of pretending the cycle is still doing work.
   const STALL_MS = 5 * 60 * 1000;
   const lastHeartbeatAt = $derived<string | null>(
     ((cycle as { lastHeartbeatAt?: string })?.lastHeartbeatAt as string | undefined) ?? null,
   );
+  // Stage falls back to "run" when the heartbeat is fresh but cycle-runner
+  // hasn't yet written a stage to cycle.json. This window covers STAGE 1
+  // (backlog/scoring) and STAGE 2 (sprint assignment) — the cycle IS running
+  // there, just not in the 9-phase RUN loop yet. Showing "unknown" while the
+  // process is actively spending money is worse than the slight imprecision.
+  // (PR #71 stopped the heartbeat from inventing stage="run"; this is the
+  // operator-facing display fallback to preserve UX.)
+  const stage = $derived.by<string>(() => {
+    const raw = (cycle?.stage as string | undefined);
+    if (raw) return raw;
+    // No stage yet: if heartbeat is fresh, the cycle is alive — call it run.
+    if (lastHeartbeatAt) {
+      const ageMs = now - new Date(lastHeartbeatAt).getTime();
+      if (ageMs < STALL_MS) return 'run';
+    }
+    return 'unknown';
+  });
   const isStalled = $derived.by<boolean>(() => {
     if (TERMINAL.has(stage.toLowerCase())) return false;
     if (!lastHeartbeatAt) return false;
