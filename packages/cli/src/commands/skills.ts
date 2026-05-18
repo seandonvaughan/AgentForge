@@ -68,7 +68,7 @@ async function proposeFromLearningsAction(
     existingSkillsSummary = listSkills().map((s) => ({
       id: s.frontmatter.id,
       tags: s.frontmatter.tags,
-      requiresTools: s.frontmatter.requires_tools,
+      ...(s.frontmatter.requires_tools ? { requiresTools: s.frontmatter.requires_tools } : {}),
     }));
   } catch {
     // If catalog load fails, continue with empty list (create-only proposals)
@@ -127,7 +127,7 @@ async function approveProposalAction(
 
   try {
     const resultPath = await approveProposal(proposalId, projectRoot, {
-      revert: options.revert,
+      ...(options.revert !== undefined ? { revert: options.revert } : {}),
     });
 
     if (options.revert) {

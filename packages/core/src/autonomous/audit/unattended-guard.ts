@@ -242,5 +242,5 @@ export async function assertUnattendedSafe(
   spentUsd = 0,
   onCheckResult?: (result: UnattendedCheckResult) => void,
 ): Promise<void> {
-  await runUnattendedChecks({ cwd, perCycleUsd, spentUsd, onCheckResult });
+  await runUnattendedChecks({ cwd, perCycleUsd, spentUsd, ...(onCheckResult ? { onCheckResult } : {}) });
 }
