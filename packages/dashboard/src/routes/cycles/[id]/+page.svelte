@@ -202,13 +202,37 @@
   const startedAt = $derived<string | null>(
     ((cycle as { startedAt?: string })?.startedAt as string | undefined) ?? null,
   );
+  const completedAt = $derived<string | null>(
+    ((cycle as { completedAt?: string })?.completedAt as string | undefined) ?? null,
+  );
   const durationMs = $derived<number | null>(
     ((cycle as { durationMs?: number })?.durationMs as number | undefined) ?? null,
   );
+  // Killed-mid-flight cycles never write startedAt/completedAt/durationMs to
+  // cycle.json, so fall back to the events stream. events[0].at is the first
+  // observed activity; events[last].at is the last write before the kill.
+  const firstEventAt = $derived.by<string | null>(() => {
+    for (const ev of events) if (ev.at) return ev.at;
+    return null;
+  });
+  const lastEventAt = $derived.by<string | null>(() => {
+    for (let i = events.length - 1; i >= 0; i--) {
+      const at = events[i]?.at;
+      if (at) return at;
+    }
+    return null;
+  });
+  const effectiveStartedAt = $derived<string | null>(startedAt ?? firstEventAt);
   const elapsedMs = $derived.by<number>(() => {
     if (durationMs != null) return durationMs;
-    if (!startedAt) return 0;
-    return Math.max(0, now - new Date(startedAt).getTime());
+    const start = effectiveStartedAt;
+    if (!start) return 0;
+    const startMs = new Date(start).getTime();
+    if (completedAt) return Math.max(0, new Date(completedAt).getTime() - startMs);
+    if (isTerminal && lastEventAt) {
+      return Math.max(0, new Date(lastEventAt).getTime() - startMs);
+    }
+    return Math.max(0, now - startMs);
   });
   const elapsedDisplay = $derived<string>(formatDuration(elapsedMs));
 
@@ -313,8 +337,40 @@
     return out;
   });
 
-  const itemsByStatus = $derived.by(() => {
+  // When a cycle is killed before phase.result flushes back to plan.json,
+  // sprint items stay stuck at 'in_progress' even though the agent runs are
+  // status='completed'. Override item status from execute-phase agent runs so
+  // the UI reflects the agents' actual outcome.
+  const executeStatusByItem = $derived.by<Map<string, SprintItem['status']>>(() => {
+    const m = new Map<string, SprintItem['status']>();
+    for (const r of agentsData?.runs ?? []) {
+      if (r.phase !== 'execute' || !r.itemId) continue;
+      const s = r.status === 'completed' ? 'completed'
+              : r.status === 'failed'    ? 'failed'
+              : r.status === 'killed'    ? 'killed'
+              : 'in_progress';
+      const prev = m.get(r.itemId);
+      // Promote: completed wins over in_progress; failed wins over in_progress
+      if (!prev || (prev === 'in_progress' && s !== 'in_progress')) m.set(r.itemId, s);
+    }
+    return m;
+  });
+
+  const effectiveItems = $derived.by<SprintItem[]>(() => {
     const items = (sprint?.items ?? []) as SprintItem[];
+    return items.map((it) => {
+      const override = executeStatusByItem.get(it.id);
+      if (!override) return it;
+      // Only override when sprint hasn't already advanced past in_progress
+      if (it.status === 'planned' || it.status === 'pending' || it.status === 'in_progress') {
+        return { ...it, status: override };
+      }
+      return it;
+    });
+  });
+
+  const itemsByStatus = $derived.by(() => {
+    const items = effectiveItems;
     return {
       planned: items.filter((i) => i.status === 'planned' || i.status === 'pending'),
       inProgress: items.filter((i) => i.status === 'in_progress'),
@@ -324,7 +380,7 @@
   });
 
   const itemsPct = $derived.by<number>(() => {
-    const items = sprint?.items ?? [];
+    const items = effectiveItems;
     if (items.length === 0) return 0;
     const done = items.filter((i) => i.status === 'completed').length;
     return (done / items.length) * 100;
@@ -385,7 +441,7 @@
     detail: string;
   }
   const radarDims = $derived.by<RadarDim[]>(() => {
-    const items = sprint?.items ?? [];
+    const items = effectiveItems;
     const itemsTotal = items.length;
     const itemsDone = items.filter((i) => i.status === 'completed').length;
     const velocity = itemsTotal > 0 ? Math.round((itemsDone / itemsTotal) * 100) : 0;
@@ -818,7 +874,7 @@
       {#each [
         { l: 'Elapsed', v: elapsedDisplay, s: 'wall clock',                                         mono: true, bar: null, bc: '' },
         { l: 'Cost',    v: `$${costUsd.toFixed(2)}`, s: `of $${budgetUsd.toFixed(0)} budget`,         mono: true, bar: budgetUsd > 0 ? Math.min(100, (costUsd / budgetUsd) * 100) : null, bc: 'var(--af-grad-h)' },
-        { l: 'Items',   v: `${itemsByStatus.completed.length}/${sprint?.items?.length ?? 0}`,        s: `${itemsByStatus.inProgress.length} in flight`, mono: true, bar: sprint?.items?.length ? itemsPct : null, bc: 'var(--af-success)' },
+        { l: 'Items',   v: `${itemsByStatus.completed.length}/${effectiveItems.length}`,             s: itemsByStatus.inProgress.length > 0 ? `${itemsByStatus.inProgress.length} in flight` : (itemsByStatus.failed.length > 0 ? `${itemsByStatus.failed.length} failed` : 'all done'), mono: true, bar: effectiveItems.length ? itemsPct : null, bc: 'var(--af-success)' },
         { l: 'Tests',   v: testsTotal > 0 ? testsPassed.toLocaleString() : '—',                       s: testsTotal > 0 ? `of ${testsTotal.toLocaleString()} pass` : 'no tests yet', mono: true, bar: testsTotal > 0 ? (testsPassed / testsTotal) * 100 : null, bc: 'var(--af-success)' },
       ] as q (q.l)}
         <div class="quad-cell">
@@ -1039,7 +1095,7 @@
           </div>
           <div class="items-pct">
             <div class="af2-mono items-pct-num"><AnimNum value={itemsPct} decimals={0} suffix="%" mono={false} /></div>
-            <div class="items-pct-sub">{itemsByStatus.completed.length}/{sprint.items.length} items</div>
+            <div class="items-pct-sub">{itemsByStatus.completed.length}/{effectiveItems.length} items</div>
           </div>
         </div>
         <div class="items-bar"><div class="items-bar-fill" style="width:{itemsPct}%"></div></div>
