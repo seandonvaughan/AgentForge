@@ -204,10 +204,10 @@ export async function qualityRoutes(
     const safeCycleId = safeId(q.cycle_id);
 
     const filtered = applyFilters(allRows, {
-      since: q.since,
-      agent_id: q.agent_id,
-      skill_id: q.skill_id,
-      cycle_id: safeCycleId,
+      ...(q.since ? { since: q.since } : {}),
+      ...(q.agent_id ? { agent_id: q.agent_id } : {}),
+      ...(q.skill_id ? { skill_id: q.skill_id } : {}),
+      ...(safeCycleId ? { cycle_id: safeCycleId } : {}),
     });
 
     const page = filtered.slice(0, limit);
