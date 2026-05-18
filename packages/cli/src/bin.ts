@@ -13,6 +13,7 @@ import { registerWorkspacesCommand } from './commands/workspaces.js';
 import { registerDemoCommand } from './commands/demo.js';
 import { registerReplayCommand } from './commands/replay.js';
 import { registerSkillsCoverageCommand } from './commands/skills-coverage.js';
+import { registerSkillsCommand } from './commands/skills.js';
 
 interface InitializeWorkspaceImport {
   initializeWorkspace(options: {
@@ -149,6 +150,7 @@ registerWorkspacesCommand(program);
 registerDemoCommand(program);
 registerReplayCommand(program);
 registerSkillsCoverageCommand(program);
+registerSkillsCommand(program);
 
 return program;
 }
