@@ -391,30 +391,33 @@ ${JSON.stringify(grounding, null, 2)}
 - Hard cap per cycle: $${this.config.budget.perCycleUsd}
 - Max items: ${this.config.limits.maxItemsPerSprint}
 
-## Roster constraint — CRITICAL (scoring penalty applies)
+## Roster constraint — CRITICAL (gate-rejection risk)
 The \`suggestedAssignee\` field MUST be one of the exact kebab-case IDs listed
 below. Invented names like "BackendEngineer", "FrontendEngineer", "QAEngineer",
 "InfraEngineer", "SeniorDeveloper", "CoreAutonomyAgent", "DocsAgent", or any
 PascalCase / camelCase / space-separated variant MUST NOT appear.
 
-**Scoring penalty**: Items with an off-roster \`suggestedAssignee\` are automatically
-reassigned to "coder" at runtime AND flagged in gate review as UNVERIFIED ROUTING.
-These flags are a historical cause of sprint gate rejections. To avoid the penalty:
+**Scoring penalty — sprint REJECT risk**: Items with an off-roster \`suggestedAssignee\`
+are automatically reassigned to "coder" at runtime AND published as UNVERIFIED ROUTING
+flags to the gate reviewer. Historically, multiple UNVERIFIED ROUTING flags in a single
+sprint have caused the gate agent to issue a REJECT verdict on the entire sprint,
+discarding all delivered work. This is the single most common avoidable gate failure.
+
+To avoid the penalty:
   1. Identify the task type (backend fix, UI change, test coverage, security audit…)
-  2. Scan the roster below for the closest specialist match
+  2. Re-read the roster list below from top to bottom and find the closest match
   3. Use \`coder\` only when genuinely no specialist matches — it is always valid
 
 Valid agent IDs — use one verbatim, no modifications:
 ${this.getAgentRoster().join(', ')}
 
-⚠️  If you find yourself writing a name that is NOT in the list above, stop and
-re-read the roster. There is almost certainly a better match. Common substitutions:
+Common off-roster substitutions (if you are about to write one of these, stop):
   - "BackendEngineer" → \`coder\` or \`api-specialist\`
   - "FrontendEngineer" → \`frontend-dev\` or \`ui-engineer\`
   - "QAEngineer" → \`backend-qa\` or \`test-runner\`
   - "InfraEngineer" → \`devops-engineer\`
   - "SeniorDeveloper" → \`coder\`
-  - Any invented name → re-read the roster and pick the closest real ID
+  - Any PascalCase / invented name → re-read the roster and pick the closest real ID
 
 ## Cost calibration (use as baseline, not training priors)
 Recent actual cost per item from grounding.history:
@@ -469,7 +472,14 @@ Return ONLY valid JSON matching this schema:
   "warnings": string[]
 }
 
-Before returning JSON, complete this pre-flight checklist (mentally):
+MANDATORY re-read step — complete this before outputting JSON:
+  1. Scroll back to the "Valid agent IDs" list above and read it from top to bottom.
+  2. For every \`suggestedAssignee\` value in your draft JSON, verify it appears
+     verbatim in that list (exact kebab-case match, no alterations).
+  3. If ANY assignee is NOT present in the list, replace it immediately before
+     returning — do not emit unverified names. Use \`coder\` as the safe fallback.
+
+Pre-flight checklist:
   [ ] Every \`suggestedAssignee\` value is an exact ID copied from the Roster list above
   [ ] Zero PascalCase names (BackendEngineer, FrontendEngineer, QAEngineer, etc.) appear
   [ ] If you used "coder", you confirmed no specialist in the roster is a better fit

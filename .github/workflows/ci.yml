@@ -199,9 +199,16 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build packages
+        # Project references require each package's dist/ to exist before tsc can
+        # resolve cross-package .d.ts files.  This step populates all dist/ trees so
+        # the type-check below has what it needs.  Do NOT remove this step -- without
+        # it, tsc fails with "File not found" errors on unbuilt dist/.d.ts paths.
         run: pnpm build
 
       - name: Type check
+        # Use -b so TypeScript walks the full project-reference graph rather than
+        # only the root project.  --noEmit prevents redundant file writes; the build
+        # step above already emitted.
         run: pnpm exec tsc -b --noEmit
 
   forge-pipeline-stats:

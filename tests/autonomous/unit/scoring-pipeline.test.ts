@@ -178,15 +178,15 @@ describe('ScoringPipeline', () => {
 
     const prompt = runtime.getTask();
     // Penalty language must be present so the LLM treats off-roster names as costly
-    expect(prompt).toContain('scoring penalty');
+    expect(prompt.toLowerCase()).toContain('scoring penalty');
     expect(prompt).toContain('gate-rejection');
     expect(prompt).toContain('BackendEngineer');
     expect(prompt).toContain('FrontendEngineer');
     // Substitution hints must guide the LLM toward real IDs
     expect(prompt).toContain('frontend-dev');
     expect(prompt).toContain('api-specialist');
-    // Pre-flight checklist must appear
-    expect(prompt).toContain('pre-flight checklist');
+    // Re-read-the-roster guidance must appear (numbered steps in the prompt)
+    expect(prompt).toMatch(/re-read the roster/i);
   });
 
   it('sanitizes invented assignees in requiresApproval items too', async () => {
