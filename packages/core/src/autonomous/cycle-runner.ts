@@ -294,6 +294,16 @@ export class CycleRunner {
    */
   async start(): Promise<CycleResult> {
     let final: CycleResult;
+    // Heartbeat: every 30s, stamp lastHeartbeatAt on cycle.json so dashboards
+    // can detect runners that died at the OS level (SIGKILL/OOM/terminal-close)
+    // where the try/catch below never gets a chance to flush a terminal stage.
+    // See memory/feedback_cycle_heartbeat_required.md for the post-mortem.
+    this.logger.flushHeartbeat();
+    const heartbeatTimer = setInterval(() => {
+      this.logger.flushHeartbeat();
+    }, 30_000);
+    // Don't keep the event loop alive just for the heartbeat.
+    heartbeatTimer.unref?.();
     try {
       final = await this.runStages();
     } catch (err) {
@@ -321,6 +331,11 @@ export class CycleRunner {
         });
       }
     }
+
+    // Stop the heartbeat before the terminal write so the two writers don't
+    // race on cycle.json (last-writer-wins on the file would otherwise wipe
+    // the terminal stage with a heartbeat-only payload).
+    clearInterval(heartbeatTimer);
 
     // ALWAYS write cycle.json — that's the contract this module guarantees to
     // every operator and downstream tool that watches .agentforge/cycles/.

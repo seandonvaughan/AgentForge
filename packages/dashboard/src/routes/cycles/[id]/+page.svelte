@@ -161,7 +161,20 @@
   let now = $state(Date.now());
 
   const stage = $derived<string>(((cycle?.stage ?? 'unknown') as string));
-  const isTerminal = $derived<boolean>(TERMINAL.has(stage.toLowerCase()));
+  // A cycle is "stalled" when stage is non-terminal but the runner stopped
+  // writing heartbeats for >5 min — the runner is dead but cycle.json hasn't
+  // been terminalized. Treat as effectively terminal so the UI surfaces it
+  // instead of pretending the cycle is still doing work.
+  const STALL_MS = 5 * 60 * 1000;
+  const lastHeartbeatAt = $derived<string | null>(
+    ((cycle as { lastHeartbeatAt?: string })?.lastHeartbeatAt as string | undefined) ?? null,
+  );
+  const isStalled = $derived.by<boolean>(() => {
+    if (TERMINAL.has(stage.toLowerCase())) return false;
+    if (!lastHeartbeatAt) return false;
+    return now - new Date(lastHeartbeatAt).getTime() > STALL_MS;
+  });
+  const isTerminal = $derived<boolean>(TERMINAL.has(stage.toLowerCase()) || isStalled);
   const costUsd = $derived<number>(
     ((cycle as { cost?: { totalUsd?: number } })?.cost?.totalUsd
     ?? (cycle as { costUsd?: number })?.costUsd
@@ -848,6 +861,9 @@
         {#if !isTerminal}<PulseDot color="var(--af-purple)" size={7} />{/if}
         <h1 class="cycle-title">Cycle <span class="af2-mono cycle-id">{id.slice(0, 8)}</span></h1>
         <Badge variant={stageBadgeVariant(stage)}>{stage.toUpperCase()}</Badge>
+        {#if isStalled}
+          <Badge variant="danger">STALLED</Badge>
+        {/if}
         {#if prUrl}
           <a class="pr-pill af2-mono" href={prUrl} target="_blank" rel="noopener">
             PR {prUrl.split('/').pop()} ↗
