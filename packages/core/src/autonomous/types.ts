@@ -3,6 +3,7 @@
 // See docs/superpowers/specs/2026-04-06-autonomous-loop-design.md
 
 import type { ModelTier } from '@agentforge/shared';
+import type { CostBreakdown } from './cost-breakdown.js';
 
 export enum CycleStage {
   PLAN = 'plan',
@@ -218,6 +219,8 @@ export interface CycleResult {
     budgetUsd: number;
     byAgent: Record<string, number>;
     byPhase: Record<string, number>;
+    /** Optional granular token/tool cost breakdown. Populated by Wave 2. */
+    breakdown?: CostBreakdown;
   };
   tests: {
     passed: number;
