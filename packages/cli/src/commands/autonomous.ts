@@ -758,14 +758,18 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleSummary | null 
     ? ((readJsonIfExists(decisionFile) as { decision?: string } | null)?.decision ?? null)
     : null;
 
-  if (cycleJson) {
+  const activeStage = inferActiveStage(cycleDir);
+  if (cycleJson && !isHeartbeatOnlyCyclePayload(cycleJson)) {
     const cost = (cycleJson.cost ?? {}) as Record<string, unknown>;
     const tests = (cycleJson.tests ?? {}) as Record<string, unknown>;
     const pr = (cycleJson.pr ?? {}) as Record<string, unknown>;
+    const stage = typeof cycleJson.stage === 'string'
+      ? cycleJson.stage
+      : inferFallbackStage(cycleJson, activeStage);
     return {
       cycleId: (cycleJson.cycleId as string) ?? cycleId,
       sprintVersion: (cycleJson.sprintVersion as string) ?? null,
-      stage: (cycleJson.stage as string) ?? 'completed',
+      stage,
       startedAt:
         (cycleJson.startedAt as string) ??
         safeStatDate(cycleDir) ??
@@ -782,9 +786,9 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleSummary | null 
   }
 
   return {
-    cycleId,
+    cycleId: (cycleJson?.cycleId as string | undefined) ?? cycleId,
     sprintVersion: null,
-    stage: 'running',
+    stage: activeStage ?? 'plan',
     startedAt: safeStatDate(cycleDir) ?? new Date(0).toISOString(),
     completedAt: null,
     costUsd: 0,
@@ -795,6 +799,56 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleSummary | null 
     hasApprovalPending,
     approvalDecision,
   };
+}
+
+function isHeartbeatOnlyCyclePayload(cycleJson: Record<string, unknown>): boolean {
+  return Object.keys(cycleJson).every((key) => key === 'cycleId' || key === 'lastHeartbeatAt');
+}
+
+function inferFallbackStage(cycleJson: Record<string, unknown>, activeStage: string | null): string {
+  if (hasTerminalCycleShape(cycleJson)) {
+    return 'completed';
+  }
+  return activeStage ?? 'running';
+}
+
+function hasTerminalCycleShape(cycleJson: Record<string, unknown>): boolean {
+  return (
+    typeof cycleJson.completedAt === 'string' ||
+    typeof cycleJson.durationMs === 'number' ||
+    typeof cycleJson.tests === 'object' ||
+    typeof cycleJson.git === 'object' ||
+    typeof cycleJson.pr === 'object' ||
+    typeof cycleJson.error === 'string' ||
+    typeof cycleJson.gateVerdict === 'string'
+  );
+}
+
+function inferActiveStage(cycleDir: string): string | null {
+  const eventsPath = join(cycleDir, 'events.jsonl');
+  if (!existsSync(eventsPath)) {
+    return null;
+  }
+
+  let stage: string | null = null;
+  try {
+    for (const line of readFileSync(eventsPath, 'utf8').split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const event = JSON.parse(trimmed) as Record<string, unknown>;
+      const type = typeof event.type === 'string' ? event.type : '';
+      const phase = typeof event.phase === 'string' ? event.phase : null;
+      if ((type === 'phase.start' || type === 'phase.result' || type === 'phase.failure') && phase) {
+        stage = phase;
+      } else if (type === 'cycle.complete' && typeof event.stage === 'string') {
+        stage = event.stage;
+      }
+    }
+  } catch {
+    return stage;
+  }
+
+  return stage;
 }
 
 function safeStatDate(path: string): string | null {
