@@ -1,5 +1,5 @@
 import { execFile as execFileCb } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -178,6 +178,17 @@ describe('WorktreePool', () => {
 
     await git(workingDir, ['worktree', 'remove', '--force', second.path]);
     await git(workingDir, ['branch', '-D', second.branch]);
+  });
+
+  it('refuses to reuse a stale directory that is not a git worktree', async () => {
+    const pool = new WorktreePool({ projectRoot: workingDir });
+    const stalePath = join(workingDir, '.agentforge/worktrees', 'agent-coder-stale1');
+    mkdirSync(stalePath, { recursive: true });
+
+    await expect(
+      pool.allocate({ agentId: 'coder', sessionId: 'stale1' }),
+    ).rejects.toThrow('not a registered git worktree');
+    expect(existsSync(stalePath)).toBe(true);
   });
 
   // -------------------------------------------------------------------------

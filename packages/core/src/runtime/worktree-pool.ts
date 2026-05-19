@@ -94,8 +94,17 @@ export class WorktreePool {
     const branch = `${this.branchPrefix}agent-${safeAgent}-${safeSession}`;
 
     // If the directory already exists the worktree was previously created
-    // (e.g. by another process or a prior run). Reuse it without re-adding.
+    // (e.g. by another process or a prior run). Only reuse it when git still
+    // knows about it; stale copied directories can contain node_modules
+    // junctions and must not be treated as runnable worktrees.
     if (existsSync(wtPath)) {
+      const registered = await this.isRegisteredWorktreePath(wtPath);
+      if (!registered) {
+        throw new Error(
+          `Existing path ${wtPath} is not a registered git worktree; remove or archive it before allocating ${id}.`,
+        );
+      }
+
       const handle: WorktreeHandle = {
         id,
         path: wtPath,
@@ -368,5 +377,29 @@ export class WorktreePool {
       // Branch might not exist remotely yet — treat as having unpushed work.
       return false;
     }
+  }
+
+  private async isRegisteredWorktreePath(path: string): Promise<boolean> {
+    let out: string;
+    try {
+      out = await git(this.projectRoot, ['worktree', 'list', '--porcelain']);
+    } catch {
+      return false;
+    }
+
+    const expected = realPath(path);
+    const blocks = out.trim().split(/\n\n+/);
+    for (const block of blocks) {
+      const pathLine = block
+        .trim()
+        .split('\n')
+        .find((line) => line.startsWith('worktree '));
+      if (!pathLine) continue;
+      if (realPath(pathLine.slice('worktree '.length).trim()) === expected) {
+        return true;
+      }
+    }
+
+    return false;
   }
 }

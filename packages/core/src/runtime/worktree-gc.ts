@@ -7,7 +7,7 @@
 // WorktreePool's release() method. It does NOT perform any git operations
 // directly — that's WorktreePool's responsibility.
 
-import { statSync, readdirSync } from 'node:fs';
+import { lstatSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { WorktreeHandle } from './worktree-pool-types.js';
 import type { WorktreePool } from './worktree-pool.js';
@@ -15,6 +15,7 @@ import type { WorktreePool } from './worktree-pool.js';
 const DEFAULT_KEEP_LAST = 20;
 const DEFAULT_OLDER_THAN_MS = 24 * 60 * 60 * 1000; // 24 hours
 const DEFAULT_MAX_DISK_MB = 5000; // 5 GB
+const DISK_MEASURE_EXCLUDED_DIRS = new Set(['.git', '.pnpm', 'node_modules']);
 
 export interface WorktreeGcOptions {
   /** The pool to query and release worktrees through. */
@@ -170,8 +171,9 @@ export class WorktreeGc {
 
   /**
    * Rough estimate of the total disk usage of the worktrees directory in MB.
-   * Uses recursive directory traversal. Silently returns 0 if the directory
-   * does not exist yet (no worktrees allocated).
+   * Uses recursive directory traversal. Dependency stores and links are
+   * skipped so copied or stale workspaces do not inflate worktree GC pressure
+   * or force traversal through Windows junctions.
    * Protected so subclasses/tests can override for deterministic disk measurement.
    */
   protected measureDiskMb(): number {
@@ -191,9 +193,17 @@ export class WorktreeGc {
       return 0;
     }
     for (const entry of entries) {
+      if (DISK_MEASURE_EXCLUDED_DIRS.has(entry)) {
+        continue;
+      }
+
       const full = join(dir, entry);
       try {
-        const st = statSync(full, { bigint: false });
+        const st = lstatSync(full, { bigint: false });
+        if (st.isSymbolicLink()) {
+          continue;
+        }
+
         if (st.isDirectory()) {
           total += this.dirSizeBytes(full);
         } else {

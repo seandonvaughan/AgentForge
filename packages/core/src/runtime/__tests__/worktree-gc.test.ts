@@ -4,6 +4,9 @@
 //
 // All tests use a fully-mocked WorktreePool so we never run real git commands.
 
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it, vi, type Mock } from 'vitest';
 import { WorktreeGc } from '../worktree-gc.js';
 import type { WorktreePool } from '../worktree-pool.js';
@@ -291,5 +294,33 @@ describe('WorktreeGc', () => {
     // With keepLast=20 default, 5 should be removed (all under 24h so age won't fire).
     expect(result.removed).toHaveLength(5);
     expect(releaseMock).toHaveBeenCalledTimes(5);
+  });
+
+  it('disk measurement skips dependency store directories', () => {
+    const root = mkdtempSync(join(tmpdir(), 'af-worktree-gc-size-'));
+    const worktreesDir = join(root, '.agentforge/worktrees');
+    const keepDir = join(worktreesDir, 'agent-coder-size', 'src');
+    const nodeModulesDir = join(worktreesDir, 'agent-coder-size', 'node_modules', 'pkg');
+    const pnpmDir = join(worktreesDir, 'agent-coder-size', '.pnpm', 'pkg');
+    mkdirSync(keepDir, { recursive: true });
+    mkdirSync(nodeModulesDir, { recursive: true });
+    mkdirSync(pnpmDir, { recursive: true });
+    writeFileSync(join(keepDir, 'keep.txt'), 'keep');
+    writeFileSync(join(nodeModulesDir, 'ignored.txt'), 'ignored dependency payload');
+    writeFileSync(join(pnpmDir, 'ignored.txt'), 'ignored pnpm payload');
+
+    const { pool } = makePool([]);
+    class ExposedGc extends WorktreeGc {
+      public sizeOf(dir: string): number {
+        return this.dirSizeBytes(dir);
+      }
+    }
+
+    try {
+      const gc = new ExposedGc({ pool, projectRoot: root });
+      expect(gc.sizeOf(worktreesDir)).toBe(4);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
