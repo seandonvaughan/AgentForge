@@ -488,13 +488,15 @@ export class CycleRunner {
    * translates into the appropriate terminal stage.
    */
   private async runStages(): Promise<CycleResult> {
+    const effectiveWorktreePool = this.getEffectiveWorktreePool();
+
     if (this.options.config.prMode === 'multi') {
       if (this.options.disableWorktrees) {
         throw new Error(
           'prMode=multi requires isolated worktrees. Remove disableWorktrees or use prMode=single.',
         );
       }
-      if (!this.options.worktreePool) {
+      if (!effectiveWorktreePool) {
         throw new Error(
           'prMode=multi requires options.worktreePool so execute items cannot modify the parent working tree.',
         );
@@ -504,6 +506,10 @@ export class CycleRunner {
           'prMode=multi requires options.messageBus so agent branches can be pushed and opened as PRs.',
         );
       }
+    } else if (effectiveWorktreePool) {
+      throw new Error(
+        'options.worktreePool currently requires prMode=multi. Use disableWorktrees for single-PR cycles until merge-back is implemented.',
+      );
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -639,9 +645,7 @@ export class CycleRunner {
       // caller provided neither a pool nor we can auto-construct one (AA not
       // yet landed). The execute phase falls back to single-tree behavior when
       // worktreePool is absent.
-      const phaseWorktreePool = this.options.disableWorktrees
-        ? undefined
-        : this.options.worktreePool;
+      const phaseWorktreePool = this.getEffectiveWorktreePool();
 
       // T6: on first attempt, honour the resume checkpoint's phase (if any).
       // On retry attempts, always jump to 'execute' (existing retry logic).
@@ -1217,7 +1221,7 @@ export class CycleRunner {
   private async collectChangedFiles(_runSummary: SprintRunSummary): Promise<string[]> {
     // When a worktreePool is available, collect files from individual agent
     // worktree branches via git diff rather than git status on the main tree.
-    if (this.options.worktreePool) {
+    if (this.options.config.prMode === 'multi' && this.getEffectiveWorktreePool()) {
       return this.collectFilesFromAgentBranches();
     }
 
@@ -1406,10 +1410,11 @@ Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
    * Any error is caught and logged — GC failures must never kill a cycle.
    */
   private async runWorktreeGc(when: 'start' | 'end'): Promise<void> {
-    if (!this.options.worktreePool) return;
+    const pool = this.getEffectiveWorktreePool();
+    if (!pool) return;
     try {
       const gc = new WorktreeGc({
-        pool: this.options.worktreePool,
+        pool,
         projectRoot: this.options.cwd,
         keepLast: 20,
         ...(when === 'start' ? { olderThanMs: 24 * 60 * 60 * 1000 } : {}),
@@ -1439,6 +1444,10 @@ Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
    */
   getCycleId(): string {
     return this.cycleId;
+  }
+
+  private getEffectiveWorktreePool(): WorktreePool | undefined {
+    return this.options.disableWorktrees ? undefined : this.options.worktreePool;
   }
 
   /**

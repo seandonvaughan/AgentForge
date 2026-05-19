@@ -294,7 +294,8 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
     // Commander maps --no-worktrees → opts.worktrees = false.
     const disableWorktreesFlag = opts.worktrees === false;
     const disableWorktreesEnv = process.env['AUTONOMOUS_DISABLE_WORKTREES'] === '1';
-    const worktreesDisabled = disableWorktreesFlag || disableWorktreesEnv;
+    const worktreesSupportedForMode = config.prMode === 'multi';
+    const worktreesDisabled = disableWorktreesFlag || disableWorktreesEnv || !worktreesSupportedForMode;
 
     let worktreePool: WorktreePool | undefined;
     let disableWorktrees = worktreesDisabled;
@@ -308,8 +309,11 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
         });
       } catch (poolErr) {
         const poolMsg = poolErr instanceof Error ? poolErr.message : String(poolErr);
+        const suffix = config.prMode === 'multi'
+          ? 'multi-PR mode requires isolated worktrees'
+          : 'falling back to single-tree execution';
         process.stderr.write(
-          `[autonomous:cycle] worktree-pool unavailable: ${poolMsg} — falling back to single-tree execution\n`,
+          `[autonomous:cycle] worktree-pool unavailable: ${poolMsg} — ${suffix}\n`,
         );
         worktreePool = undefined;
         disableWorktrees = true;

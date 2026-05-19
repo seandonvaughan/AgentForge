@@ -30,6 +30,7 @@ const {
   const poolConfig = {
     shouldThrow: false,
     throwMsg: 'not a git repository',
+    prMode: 'multi' as 'single' | 'multi' | undefined,
   };
   return { worktreePoolCalls, cycleRunnerCalls, poolConfig };
 });
@@ -88,7 +89,7 @@ vi.mock('@agentforge/core', () => {
     WorktreePool: WorktreePoolMock,
     CycleRunner: CycleRunnerMock,
     CycleStage: { COMPLETED: 'completed', KILLED: 'killed' },
-    loadCycleConfig: vi.fn().mockReturnValue({
+    loadCycleConfig: vi.fn().mockImplementation(() => ({
       budget: { perCycleUsd: 30, allowOverageApproval: false },
       limits: { maxItemsPerSprint: 5, maxExecutePhaseParallelism: 4 },
       quality: { testPassRateFloor: 0.95, requireBuildSuccess: false, requireTypeCheckSuccess: false },
@@ -96,7 +97,8 @@ vi.mock('@agentforge/core', () => {
       pr: { draft: false },
       testing: {},
       fallbackEnabled: true,
-    }),
+      ...(poolConfig.prMode ? { prMode: poolConfig.prMode } : {}),
+    })),
     createAutonomousTelemetryAdapters: vi.fn().mockReturnValue({
       proposalAdapter: {},
       scoringAdapter: {},
@@ -182,6 +184,7 @@ describe('autonomous-worktree: WorktreePool wiring at CLI launch', () => {
     cycleRunnerCalls.length = 0;
     poolConfig.shouldThrow = false;
     poolConfig.throwMsg = 'not a git repository';
+    poolConfig.prMode = 'multi';
     // Silence output.
     stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     consoleLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -219,6 +222,8 @@ describe('autonomous-worktree: WorktreePool wiring at CLI launch', () => {
   });
 
   it('disables worktrees when --no-worktrees flag is passed', async () => {
+    poolConfig.prMode = undefined;
+
     await runCycleRun(projectRoot, ['--no-worktrees']);
 
     // Pool should never have been constructed.
@@ -229,6 +234,8 @@ describe('autonomous-worktree: WorktreePool wiring at CLI launch', () => {
   });
 
   it('disables worktrees when AUTONOMOUS_DISABLE_WORKTREES=1 env is set', async () => {
+    poolConfig.prMode = undefined;
+
     await runCycleRun(projectRoot, [], { AUTONOMOUS_DISABLE_WORKTREES: '1' });
 
     expect(worktreePoolCalls).toHaveLength(0);
@@ -237,7 +244,38 @@ describe('autonomous-worktree: WorktreePool wiring at CLI launch', () => {
     expect(cycleRunnerCalls[0]?.disableWorktrees).toBe(true);
   });
 
-  it('falls back to disableWorktrees when pool construction throws, emits warning to stderr', async () => {
+  it('does not construct WorktreePool for default single-PR mode', async () => {
+    poolConfig.prMode = undefined;
+
+    await runCycleRun(projectRoot);
+
+    expect(worktreePoolCalls).toHaveLength(0);
+    expect(cycleRunnerCalls).toHaveLength(1);
+    expect(cycleRunnerCalls[0]?.worktreePool).toBeUndefined();
+    expect(cycleRunnerCalls[0]?.disableWorktrees).toBe(true);
+  });
+
+  it('fails multi-PR mode when --no-worktrees is passed', async () => {
+    await runCycleRun(projectRoot, ['--no-worktrees']);
+
+    expect(worktreePoolCalls).toHaveLength(0);
+    expect(cycleRunnerCalls).toHaveLength(0);
+    expect(process.exitCode).toBe(1);
+    const errorCalls = consoleError.mock.calls.map((c: unknown[]) => String(c[0]));
+    expect(errorCalls.some((s: string) => s.includes('prMode=multi requires isolated worktrees'))).toBe(true);
+  });
+
+  it('fails multi-PR mode when AUTONOMOUS_DISABLE_WORKTREES=1 is set', async () => {
+    await runCycleRun(projectRoot, [], { AUTONOMOUS_DISABLE_WORKTREES: '1' });
+
+    expect(worktreePoolCalls).toHaveLength(0);
+    expect(cycleRunnerCalls).toHaveLength(0);
+    expect(process.exitCode).toBe(1);
+    const errorCalls = consoleError.mock.calls.map((c: unknown[]) => String(c[0]));
+    expect(errorCalls.some((s: string) => s.includes('prMode=multi requires isolated worktrees'))).toBe(true);
+  });
+
+  it('fails multi-PR mode when pool construction throws, emits warning to stderr', async () => {
     poolConfig.shouldThrow = true;
     poolConfig.throwMsg = 'fatal: not a git repository';
 
@@ -245,16 +283,18 @@ describe('autonomous-worktree: WorktreePool wiring at CLI launch', () => {
 
     // Pool construction was attempted.
     expect(worktreePoolCalls).toHaveLength(1);
-    // Cycle still ran (CycleRunner was constructed).
-    expect(cycleRunnerCalls).toHaveLength(1);
-    // Cycle ran with worktrees disabled.
-    expect(cycleRunnerCalls[0]?.worktreePool).toBeUndefined();
-    expect(cycleRunnerCalls[0]?.disableWorktrees).toBe(true);
+    // Multi-PR mode must not silently fall back to single-tree execution.
+    expect(cycleRunnerCalls).toHaveLength(0);
+    expect(process.exitCode).toBe(1);
     // Warning was written to stderr with the required prefix.
     const stderrCalls = stderrWrite.mock.calls.map((c: unknown[]) => String(c[0]));
     const warning = stderrCalls.find((s: string) => s.includes('[autonomous:cycle] worktree-pool unavailable:'));
     expect(warning).toBeDefined();
     expect(warning).toContain('fatal: not a git repository');
+    expect(warning).toContain('multi-PR mode requires isolated worktrees');
+    expect(warning).not.toContain('falling back to single-tree execution');
+    const errorCalls = consoleError.mock.calls.map((c: unknown[]) => String(c[0]));
+    expect(errorCalls.some((s: string) => s.includes('prMode=multi requires isolated worktrees'))).toBe(true);
   });
 
   it('does not disable worktrees when AUTONOMOUS_DISABLE_WORKTREES is not 1', async () => {
@@ -263,6 +303,17 @@ describe('autonomous-worktree: WorktreePool wiring at CLI launch', () => {
     // Pool should have been constructed normally.
     expect(worktreePoolCalls).toHaveLength(1);
     expect(cycleRunnerCalls[0]?.disableWorktrees).toBeFalsy();
+  });
+
+  it('does not construct WorktreePool for single-PR mode', async () => {
+    poolConfig.prMode = 'single';
+
+    await runCycleRun(projectRoot);
+
+    expect(worktreePoolCalls).toHaveLength(0);
+    expect(cycleRunnerCalls).toHaveLength(1);
+    expect(cycleRunnerCalls[0]?.worktreePool).toBeUndefined();
+    expect(cycleRunnerCalls[0]?.disableWorktrees).toBe(true);
   });
 
   it('uses AUTONOMOUS_BASE_BRANCH when constructing WorktreePool', async () => {
