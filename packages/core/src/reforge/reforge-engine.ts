@@ -302,6 +302,7 @@ export class ReforgeEngine {
 
     await this.writeOverride(agentName, promoted);
     await this.deleteCanaryDeployment(agentName);
+    await this.deleteCanaryRollback(agentName);
     this.canaryManager.deleteFlag(deployment.flagId);
     return promoted;
   }
@@ -447,6 +448,11 @@ export class ReforgeEngine {
 
   private async deleteCanaryDeployment(agentName: string): Promise<void> {
     const filePath = path.join(this.canaryOverridesDir, `${agentName}.json`);
+    await fs.rm(filePath, { force: true });
+  }
+
+  private async deleteCanaryRollback(agentName: string): Promise<void> {
+    const filePath = path.join(this.canaryOverridesDir, `${agentName}.rollback.json`);
     await fs.rm(filePath, { force: true });
   }
 

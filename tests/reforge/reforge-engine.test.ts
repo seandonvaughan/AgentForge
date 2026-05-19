@@ -636,6 +636,15 @@ describe("ReforgeEngine", () => {
       rollbackThreshold: 0.1,
     });
 
+    const rollbackPath = path.join(
+      tmpDir,
+      ".agentforge",
+      "agent-overrides",
+      "canary",
+      "cost-analyst.rollback.json",
+    );
+    await fs.writeFile(rollbackPath, JSON.stringify({ stale: true }), "utf-8");
+
     const upgradedPlan = await engine.buildPlan(
       makeAnalysis([
         {
@@ -651,6 +660,8 @@ describe("ReforgeEngine", () => {
     await engine.executePlan(upgradedPlan);
 
     await engine.promoteCanary("cost-analyst");
+
+    await expect(fs.readFile(rollbackPath, "utf-8")).rejects.toThrow();
 
     const activePath = path.join(
       tmpDir,
