@@ -133,7 +133,10 @@ function mergeConfig(defaults: CycleConfig, overrides: Partial<CycleConfig>): Cy
   for (const key of Object.keys(overrides) as (keyof CycleConfig)[]) {
     const override = overrides[key];
     if (override === undefined || override === null) continue;
-    // modelCap is a primitive string, not a nested object — assign directly.
+
+    // Optional root fields are primitives, not nested objects. If they fall
+    // through to the object merge below, values like `prMode: multi` become
+    // `{}` and silently disable the intended runtime behavior.
     if (key === 'modelCap') {
       if (override === 'opus' || override === 'sonnet' || override === 'haiku') {
         merged.modelCap = override;
@@ -143,15 +146,35 @@ function mergeConfig(defaults: CycleConfig, overrides: Partial<CycleConfig>): Cy
         merged.effortCap = override;
       }
     } else if (key === 'fallbackEnabled') {
-      merged.fallbackEnabled = override as boolean;
+      if (typeof override === 'boolean') {
+        merged.fallbackEnabled = override;
+      }
+    } else if (key === 'autoReforge') {
+      if (typeof override === 'boolean') {
+        merged.autoReforge = override;
+      }
+    } else if (key === 'prMode') {
+      if (override === 'single' || override === 'multi') {
+        merged.prMode = override;
+      }
+    } else if (key === 'autoMergePRs') {
+      if (typeof override === 'boolean') {
+        merged.autoMergePRs = override;
+      }
     } else {
       const base = merged[key];
-      merged[key] = { ...(typeof base === 'object' && base !== null ? (base as object) : {}), ...(typeof override === 'object' && override !== null ? (override as object) : {}) } as never;
+      if (isRecord(base) && isRecord(override)) {
+        merged[key] = { ...base, ...override } as never;
+      }
     }
   }
 
   validateConfig(merged);
   return merged;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function validateConfig(config: CycleConfig): void {
@@ -172,5 +195,14 @@ function validateConfig(config: CycleConfig): void {
   }
   if (typeof config.git.baseBranch !== 'string') {
     throw new Error('git.baseBranch must be a string');
+  }
+  if (config.prMode !== undefined && config.prMode !== 'single' && config.prMode !== 'multi') {
+    throw new Error('prMode must be "single" or "multi"');
+  }
+  if (config.autoMergePRs !== undefined && typeof config.autoMergePRs !== 'boolean') {
+    throw new Error('autoMergePRs must be a boolean');
+  }
+  if (config.autoReforge !== undefined && typeof config.autoReforge !== 'boolean') {
+    throw new Error('autoReforge must be a boolean');
   }
 }

@@ -1,6 +1,6 @@
 /**
- * Coverage for loadCycleConfig() — modelCap, effortCap, and fallbackEnabled
- * field handling in autonomous.yaml.
+ * Coverage for loadCycleConfig() root primitive field handling in
+ * autonomous.yaml.
  *
  * These fields are primitive values (not nested objects) that require
  * special-case handling in mergeConfig(). Invalid values must be silently
@@ -11,10 +11,12 @@
  *   2. invalid-modelCap: non-tier values are silently rejected
  *   3. valid-effortCap: all five effort levels merge correctly
  *   4. invalid-effortCap: unknown effort strings are silently rejected
- *   5. fallbackEnabled: boolean field merges correctly
- *   6. combined: modelCap + effortCap + fallbackEnabled applied together
- *   7. missing-file: returns DEFAULT_CYCLE_CONFIG with no modelCap/effortCap
- *   8. empty-file: returns DEFAULT_CYCLE_CONFIG when autonomous.yaml is blank
+ *   5. fallbackEnabled / autoReforge: boolean fields merge correctly
+ *   6. prMode / autoMergePRs: multi-PR fields merge correctly
+ *   7. combined: primitive fields apply alongside nested object overrides
+ *   8. unknown primitive roots are ignored, not coerced to {}
+ *   9. missing-file: returns DEFAULT_CYCLE_CONFIG with no modelCap/effortCap
+ *  10. empty-file: returns DEFAULT_CYCLE_CONFIG when autonomous.yaml is blank
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
@@ -134,6 +136,63 @@ describe('loadCycleConfig() — fallbackEnabled field', () => {
     const config = loadCycleConfig(tmpDir);
     expect(config.fallbackEnabled).toBe(false);
   });
+
+  it('rejects non-boolean fallbackEnabled without corrupting the config', () => {
+    writeAutonomousYaml('fallbackEnabled: no-thanks\n');
+    const config = loadCycleConfig(tmpDir);
+    expect(config.fallbackEnabled).toBeUndefined();
+  });
+});
+
+describe('loadCycleConfig() — autoReforge field', () => {
+  it('loads autoReforge: false', () => {
+    writeAutonomousYaml('autoReforge: false\n');
+    const config = loadCycleConfig(tmpDir);
+    expect(config.autoReforge).toBe(false);
+  });
+
+  it('rejects non-boolean autoReforge', () => {
+    writeAutonomousYaml('autoReforge: sometimes\n');
+    const config = loadCycleConfig(tmpDir);
+    expect(config.autoReforge).toBeUndefined();
+  });
+});
+
+describe('loadCycleConfig() — multi-PR primitive fields', () => {
+  it('loads prMode: multi', () => {
+    writeAutonomousYaml('prMode: multi\n');
+    const config = loadCycleConfig(tmpDir);
+    expect(config.prMode).toBe('multi');
+  });
+
+  it('loads prMode: single', () => {
+    writeAutonomousYaml('prMode: single\n');
+    const config = loadCycleConfig(tmpDir);
+    expect(config.prMode).toBe('single');
+  });
+
+  it('rejects invalid prMode values', () => {
+    writeAutonomousYaml('prMode: aggregate\n');
+    const config = loadCycleConfig(tmpDir);
+    expect(config.prMode).toBeUndefined();
+  });
+
+  it('loads autoMergePRs: false without coercing it to an object', () => {
+    writeAutonomousYaml('autoMergePRs: false\n');
+    const config = loadCycleConfig(tmpDir);
+    expect(config.autoMergePRs).toBe(false);
+  });
+
+  it('loads prMode and autoMergePRs together', () => {
+    writeAutonomousYaml([
+      'prMode: multi',
+      'autoMergePRs: false',
+    ].join('\n') + '\n');
+
+    const config = loadCycleConfig(tmpDir);
+    expect(config.prMode).toBe('multi');
+    expect(config.autoMergePRs).toBe(false);
+  });
 });
 
 describe('loadCycleConfig() — combined caps', () => {
@@ -142,12 +201,16 @@ describe('loadCycleConfig() — combined caps', () => {
       'modelCap: sonnet',
       'effortCap: high',
       'fallbackEnabled: false',
+      'prMode: multi',
+      'autoMergePRs: false',
     ].join('\n') + '\n');
 
     const config = loadCycleConfig(tmpDir);
     expect(config.modelCap).toBe('sonnet');
     expect(config.effortCap).toBe('high');
     expect(config.fallbackEnabled).toBe(false);
+    expect(config.prMode).toBe('multi');
+    expect(config.autoMergePRs).toBe(false);
   });
 
   it('applies caps alongside nested budget overrides without conflict', () => {
@@ -176,6 +239,17 @@ describe('loadCycleConfig() — combined caps', () => {
     const config = loadCycleConfig(tmpDir);
     expect(config.modelCap).toBeUndefined();
     expect(config.effortCap).toBe('max');
+  });
+
+  it('ignores unknown primitive root fields instead of coercing them to empty objects', () => {
+    writeAutonomousYaml([
+      'runtime: codex-cli',
+      'modelCap: opus',
+    ].join('\n') + '\n');
+
+    const config = loadCycleConfig(tmpDir) as typeof DEFAULT_CYCLE_CONFIG & { runtime?: unknown };
+    expect(config.modelCap).toBe('opus');
+    expect(config.runtime).toBeUndefined();
   });
 });
 

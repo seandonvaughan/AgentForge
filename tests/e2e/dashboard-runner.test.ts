@@ -97,10 +97,10 @@ async function mockRunnerApis(page: Page, options: RunResponseOptions = {}) {
         data: {
           sessionId,
           agentId: 'coder',
-          model: 'claude-sonnet-4-5',
+          model: 'gpt-5.3-codex',
           status: status === 202 ? 'running' : 'completed',
-          providerKind: 'anthropic-sdk',
-          runtimeModeResolved: 'sdk',
+          providerKind: 'openai-sdk',
+          runtimeModeResolved: 'openai-sdk',
         },
       }),
     });
@@ -136,7 +136,7 @@ test.describe('Runner Page', () => {
     await page.click('button:has-text("Run Agent")');
 
     await expect(page.locator('.output-header')).toContainText('Accepted');
-    await expect(page.locator('.output-meta')).toContainText('Anthropic SDK');
+    await expect(page.locator('.output-meta')).toContainText(/(OpenAI|Anthropic) SDK/);
     await expect(page.locator('.output-meta')).toContainText('SDK');
     await expect(page.locator('.latency-pill')).toContainText('Waiting for first token');
 
@@ -144,7 +144,7 @@ test.describe('Runner Page', () => {
       type: 'agent_activity',
       category: 'run',
       message: '[coder] chunk',
-      data: { sessionId: 'run-test-1', content: 'Hello ', providerKind: 'anthropic-sdk', runtimeModeResolved: 'sdk' },
+      data: { sessionId: 'run-test-1', content: 'Hello ', providerKind: 'openai-sdk', runtimeModeResolved: 'openai-sdk' },
     });
     await emitSse(page, {
       type: 'agent_activity',
@@ -160,7 +160,7 @@ test.describe('Runner Page', () => {
       type: 'workflow_event',
       category: 'run',
       message: '[coder] run completed',
-      data: { sessionId: 'run-test-1', status: 'completed', costUsd: 0.0123, providerKind: 'anthropic-sdk', runtimeModeResolved: 'sdk' },
+      data: { sessionId: 'run-test-1', status: 'completed', costUsd: 0.0123, providerKind: 'openai-sdk', runtimeModeResolved: 'openai-sdk' },
     });
 
     await expect(page.locator('.running-indicator')).toHaveCount(0);
@@ -222,6 +222,16 @@ test.describe('Runner Page', () => {
 
     await expect(page.locator('.stream-warning')).toContainText('reconnecting automatically');
     await expect(page.locator('.running-indicator')).toContainText('Stream reconnecting');
+  });
+
+  test('shows API unavailable banner when run endpoint returns 404', async ({ page }) => {
+    await openRunner(page, { status: 404 });
+
+    await page.fill('#task-input', 'Fallback API test');
+    await page.click('button:has-text("Run Agent")');
+
+    await expect(page.locator('.banner--warn')).toContainText('Execution API not available');
+    await expect(page.locator('.running-indicator')).toHaveCount(0);
   });
 
   test('runner page remains usable on mobile and desktop viewports', async ({ page }) => {

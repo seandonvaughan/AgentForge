@@ -1,105 +1,173 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page, type Route } from '@playwright/test';
+
+type HealthResponse = {
+  status: 'ok' | 'error';
+  version?: string;
+  workspaceId?: string;
+};
+
+type ServiceHealth = {
+  service: string;
+  totalCalls: number;
+  successCount: number;
+  failureCount: number;
+  successRate: number;
+  circuitOpen: boolean;
+  lastFailureAt?: string;
+  lastSuccessAt?: string;
+  circuitOpenedAt?: string;
+  p99?: number;
+  latencyHistory?: number[];
+};
+
+type ServicesResponse = {
+  status: 'healthy' | 'degraded' | 'unhealthy';
+  healthyCount: number;
+  degradedCount: number;
+  services: ServiceHealth[];
+  timestamp: string;
+};
+
+const BASE_HEALTH: HealthResponse = {
+  status: 'ok',
+  version: '10.5.1',
+  workspaceId: 'ws-e2e',
+};
+
+const BASE_SERVICES: ServicesResponse = {
+  status: 'healthy',
+  healthyCount: 2,
+  degradedCount: 0,
+  timestamp: '2026-05-19T12:00:00.000Z',
+  services: [
+    {
+      service: 'openai',
+      totalCalls: 120,
+      successCount: 120,
+      failureCount: 0,
+      successRate: 1,
+      circuitOpen: false,
+      lastSuccessAt: '2026-05-19T11:59:00.000Z',
+      p99: 350,
+      latencyHistory: [250, 260, 245, 255],
+    },
+    {
+      service: 'github',
+      totalCalls: 80,
+      successCount: 79,
+      failureCount: 1,
+      successRate: 0.9875,
+      circuitOpen: false,
+      lastFailureAt: '2026-05-19T11:45:00.000Z',
+      lastSuccessAt: '2026-05-19T11:59:30.000Z',
+      p99: 480,
+      latencyHistory: [310, 330, 360, 320],
+    },
+  ],
+};
+
+async function fulfillJson(route: Route, status: number, body: unknown) {
+  await route.fulfill({
+    status,
+    contentType: 'application/json',
+    body: JSON.stringify(body),
+  });
+}
+
+async function mockHealthApis(
+  page: Page,
+  opts: {
+    healthStatus?: number;
+    servicesStatus?: number;
+    healthBody?: HealthResponse;
+    servicesBody?: ServicesResponse;
+  } = {},
+) {
+  const {
+    healthStatus = 200,
+    servicesStatus = 200,
+    healthBody = BASE_HEALTH,
+    servicesBody = BASE_SERVICES,
+  } = opts;
+
+  await page.route('**/api/v5/health/services', async (route) => {
+    if (servicesStatus >= 400) {
+      await fulfillJson(route, servicesStatus, { error: 'services unavailable' });
+      return;
+    }
+    await fulfillJson(route, servicesStatus, servicesBody);
+  });
+
+  await page.route('**/api/v5/health', async (route) => {
+    if (healthStatus >= 400) {
+      await fulfillJson(route, healthStatus, { error: 'health unavailable' });
+      return;
+    }
+    await fulfillJson(route, healthStatus, healthBody);
+  });
+}
+
+async function gotoHealth(page: Page) {
+  await page.goto('/health', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('h1.health-title')).toHaveText(/system health/i);
+}
 
 test.describe('Health Dashboard Page', () => {
-  async function gotoHealth(page: Page) {
+  test('renders healthy banner, service cards, and dependency matrix', async ({ page }) => {
+    await mockHealthApis(page);
+    await gotoHealth(page);
+
+    await expect(page.locator('.status-main')).toContainText(/system healthy/i);
+    await expect(page.locator('.services-grid .svc-name')).toHaveCount(2);
+    await expect(page.locator('.dep-table tbody tr')).toHaveCount(5);
+  });
+
+  test('renders recent incidents when a service is degraded or circuit-open', async ({ page }) => {
+    const degraded = structuredClone(BASE_SERVICES);
+    degraded.status = 'degraded';
+    degraded.healthyCount = 1;
+    degraded.degradedCount = 1;
+    degraded.services[1] = {
+      ...degraded.services[1],
+      failureCount: 7,
+      circuitOpen: true,
+      circuitOpenedAt: '2026-05-19T11:40:00.000Z',
+      successRate: 0.7,
+    };
+
+    await mockHealthApis(page, { servicesBody: degraded });
+    await gotoHealth(page);
+
+    await expect(page.locator('.inc-table tbody tr')).toHaveCount(1);
+    await expect(page.locator('.inc-table tbody tr').first()).toContainText('github');
+    await expect(page.locator('.inc-table tbody tr').first()).toContainText(/circuit open/i);
+  });
+
+  test('falls back to API server card when services endpoint fails', async ({ page }) => {
+    await mockHealthApis(page, { servicesStatus: 503 });
+    await gotoHealth(page);
+
+    await expect(page.locator('text=API SERVER')).toBeVisible();
+    await expect(page.locator('text=REST API')).toBeVisible();
+    await expect(page.locator('text=Online')).toBeVisible();
+  });
+
+  test('shows connection banner when both health endpoints fail', async ({ page }) => {
+    await mockHealthApis(page, { healthStatus: 503, servicesStatus: 503 });
     await page.goto('/health', { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('.page-title')).toHaveText(/System Health/i);
-  }
 
-  test('loads health page successfully', async ({ page }) => {
-    await gotoHealth(page);
-
-    // Verify page title
-    await expect(page).toHaveTitle(/Health|Status|System|AgentForge/i);
-
-    // Verify page loaded
-    const pageContent = page.locator('body');
-    await expect(pageContent).toBeVisible();
+    await expect(page.locator('.error-banner')).toContainText(/unable to reach api server/i);
+    await expect(page.locator('.error-banner')).toContainText(/http 503/i);
   });
 
-  test('displays health heading', async ({ page }) => {
+  test('health page remains usable on mobile and desktop', async ({ page }) => {
+    await mockHealthApis(page);
     await gotoHealth(page);
 
-    // Look for heading
-    const heading = page.locator('h1, h2').filter({ hasText: /Health|Status|System/i }).first();
-
-    if (await heading.isVisible().catch(() => false)) {
-      await expect(heading).toBeVisible();
-    }
-  });
-
-  test('displays system health status', async ({ page }) => {
-    await gotoHealth(page);
-
-    // Look for health status indicators
-    const statusIndicators = page.locator('[class*="status"], [class*="badge"], [class*="health"]').first();
-    const statusText = page.locator('text=/healthy|ok|good|healthy|nominal|green|online|available/i').first();
-
-    const hasStatus = await statusIndicators.isVisible().catch(() => false);
-    const hasStatusText = await statusText.isVisible().catch(() => false);
-
-    expect(hasStatus || hasStatusText).toBeTruthy();
-  });
-
-  test('displays component health information', async ({ page }) => {
-    await gotoHealth(page);
-
-    // The API-backed service grid may be replaced by the connection error shell
-    // when the dashboard dev server is not proxying package API requests.
-    const healthSurface = page.locator('.status-banner, .error-banner, .health-card, .services-grid').first();
-    await expect(healthSurface).toBeVisible();
-  });
-
-  test('displays metrics or diagnostic information', async ({ page }) => {
-    await gotoHealth(page);
-
-    const diagnostics = page.locator('.status-banner, .refresh-time, .btn-refresh, .health-card, .services-grid').first();
-    await expect(diagnostics).toBeVisible();
-  });
-
-  test('displays alerts or warnings if any', async ({ page }) => {
-    await gotoHealth(page);
-
-    // Look for alerts or warnings
-    const alerts = page.locator('[class*="alert"], [class*="warning"], [class*="error"], [role="alert"]');
-    const alertText = page.locator('text=/warning|alert|error|degraded|unhealthy/i');
-
-    const hasAlerts = await alerts.count().then(c => c > 0).catch(() => false);
-    const hasAlertText = await alertText.count().then(c => c > 0).catch(() => false);
-
-    // Alerts may or may not be present - just verify structure
-    const hasContent = await page.locator('body').isVisible();
-    await expect(hasContent).toBeTruthy();
-  });
-
-  test('health page handles loading and empty states', async ({ page }) => {
-    await gotoHealth(page);
-
-    // Check for either content or loading
-    const loading = page.locator('text=/loading|Loading|checking/i').first();
-    const healthContent = page.locator('[class*="health"], [class*="status"], [class*="metric"]').first();
-
-    const isLoading = await loading.isVisible().catch(() => false);
-    const hasContent = await healthContent.isVisible().catch(() => false);
-
-    expect(isLoading || hasContent).toBeTruthy();
-  });
-
-  test('health page is responsive', async ({ page }) => {
-    await gotoHealth(page);
-
-    // Test mobile view
     await page.setViewportSize({ width: 375, height: 667 });
+    await expect(page.locator('h1.health-title')).toBeVisible();
 
-    await page.waitForTimeout(500);
-
-    const pageContent = page.locator('body');
-    await expect(pageContent).toBeVisible();
-
-    // Test desktop view
     await page.setViewportSize({ width: 1280, height: 720 });
-
-    await page.waitForTimeout(500);
-    await expect(pageContent).toBeVisible();
+    await expect(page.locator('h1.health-title')).toBeVisible();
   });
 });

@@ -421,14 +421,19 @@
 
   function formatProviderKind(providerKind?: string): string {
     if (!providerKind) return '';
-    if (providerKind === 'anthropic-sdk') return 'OpenAI SDK';
-    if (providerKind === 'claude-code-compat') return 'Codex CLI';
+    if (providerKind === 'codex-cli') return 'Codex CLI';
+    if (providerKind === 'openai-sdk') return 'OpenAI SDK';
+    if (providerKind === 'anthropic-sdk') return 'Anthropic SDK';
+    if (providerKind === 'claude-code-compat') return 'Claude CLI compat';
     return providerKind;
   }
 
   function formatRuntimeMode(runtimeMode?: string): string {
     if (!runtimeMode) return '';
-    if (runtimeMode === 'claude-code-compat') return 'Codex CLI compat';
+    if (runtimeMode === 'codex-cli') return 'Codex CLI';
+    if (runtimeMode === 'openai-sdk') return 'OpenAI SDK';
+    if (runtimeMode === 'anthropic-sdk') return 'Anthropic SDK';
+    if (runtimeMode === 'claude-code-compat') return 'Claude CLI compat';
     return runtimeMode.toUpperCase();
   }
 

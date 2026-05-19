@@ -23,6 +23,7 @@ Thumbs.db
 
 # Test coverage
 coverage/
+test-results/
 
 # Logs
 *.log
@@ -57,6 +58,12 @@ packages/**/package-lock.json
 .agentforge/forge/
 .agentforge/flywheel/
 .agentforge/worktrees/
+.agentforge/audit.db
+.agentforge/knowledge/*.db
+.agentforge/knowledge/entities.jsonl
+.agentforge/memory/*.jsonl
+.agentforge/v5/*.db
+.agentforge/v5/*.db-*
 .agentforge/memory/step-scores.jsonl
 .agentforge/v5/recovery/
 *.png
