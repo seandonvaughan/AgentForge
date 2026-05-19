@@ -9,7 +9,9 @@
 // being present yet. When P+Q land, swap the stubs for the real imports.
 
 import { readFileSync, existsSync } from 'node:fs';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 
 // Real implementations from Workstreams P (curator) and Q (mutator).
 // Adapted to R's expected shapes below.
@@ -127,6 +129,7 @@ const _applyLearnings: (input: ApplyLearningsInput) => Promise<MutatorReport> =
     const realReport = await _realApply({
       projectRoot: input.projectRoot,
       dryRun: input.dryRun ?? false,
+      proposedByAgent: input.proposed.byAgent,
     });
     const perAgentRecord: MutatorReport['perAgent'] = {};
     let totalApplied = 0;
@@ -160,6 +163,25 @@ export interface AutoReforgeOptions {
   cycleId: string;
   involvedAgentIds: string[];
   dryRun?: boolean;
+  /**
+   * Percentage of involved agents that should receive self-modifications
+   * immediately. Remaining agents are deferred to later cycles.
+   * Defaults to 25.
+   */
+  canaryTrafficPercent?: number;
+  /**
+   * Projected spend for this cycle (typically scoring output). When provided
+   * with `actualCostUsd`, auto-reforge can trigger fail-closed rollback.
+   */
+  projectedCostUsd?: number;
+  /**
+   * Actual spend observed so far for this cycle.
+   */
+  actualCostUsd?: number;
+  /**
+   * Rollback trigger multiplier against projected spend. Defaults to 2.
+   */
+  rollbackCostMultiplier?: number;
   /** Optional bus for emitting learnings.applied events. */
   bus?: { publish: (topic: string, payload: unknown) => void };
   /** Injected curator (for testing). */
@@ -168,11 +190,29 @@ export interface AutoReforgeOptions {
   applyLearnings?: (input: ApplyLearningsInput) => Promise<MutatorReport>;
 }
 
+export interface SelfModificationCanaryResult {
+  trafficPercent: number;
+  targetedAgents: string[];
+  canaryAgents: string[];
+  deferredAgents: string[];
+}
+
+export interface SelfModificationRollbackResult {
+  triggered: boolean;
+  reason?: string;
+  projectedCostUsd?: number;
+  actualCostUsd?: number;
+  multiplier: number;
+  rolledBackAgents: string[];
+}
+
 export interface AutoReforgeResult {
   cycleId: string;
   /** true if no proposed learnings were produced (nothing to apply). */
   skipped: boolean;
   mutatorReport?: MutatorReport;
+  canary?: SelfModificationCanaryResult;
+  rollback?: SelfModificationRollbackResult;
   durationMs: number;
 }
 
@@ -190,6 +230,8 @@ export async function runAutoReforge(
   const startedAt = Date.now();
   const curate = opts.curateLearnings ?? _curateLearnings;
   const apply = opts.applyLearnings ?? _applyLearnings;
+  const canaryTrafficPercent = clampPercent(opts.canaryTrafficPercent ?? 25);
+  const rollbackCostMultiplier = opts.rollbackCostMultiplier ?? 2;
 
   // 1. Curate learnings for all agents that ran in this cycle.
   const curationResult = await curate({
@@ -206,20 +248,53 @@ export async function runAutoReforge(
     return { cycleId: opts.cycleId, skipped: true, durationMs: Date.now() - startedAt };
   }
 
-  // 3. Apply the proposed learnings via the mutator.
+  // 3. Stage canary cohort for self-modifications.
+  const targetedAgents = Object.entries(curationResult.byAgent)
+    .filter(([, learnings]) => Array.isArray(learnings) && learnings.length > 0)
+    .map(([agentId]) => agentId)
+    .sort();
+  const cohort = splitCanaryCohort(opts.cycleId, targetedAgents, canaryTrafficPercent);
+  const canaryCurationResult = filterCurationByAgents(curationResult, cohort.canaryAgents);
+  const snapshots = await snapshotAgentLearnings(opts.projectRoot, cohort.canaryAgents);
+
+  // 4. Apply only the staged canary learnings via the mutator.
   const mutatorReport = await apply({
     projectRoot: opts.projectRoot,
-    proposed: curationResult,
+    proposed: canaryCurationResult,
     dryRun: opts.dryRun ?? false,
   });
 
-  // 4. Publish a bus event when a bus is provided.
+  // 5. Fail-closed rollback when cycle spend is a cost outlier.
+  const rollback = evaluateRollback({
+    projectedCostUsd: opts.projectedCostUsd,
+    actualCostUsd: opts.actualCostUsd,
+    multiplier: rollbackCostMultiplier,
+  });
+  if (rollback.triggered && !opts.dryRun) {
+    const rolledBackAgents = await rollbackAgentLearnings(
+      opts.projectRoot,
+      snapshots,
+      appliedAgentIds(mutatorReport),
+    );
+    rollback.rolledBackAgents = rolledBackAgents;
+  }
+
+  const canary: SelfModificationCanaryResult = {
+    trafficPercent: canaryTrafficPercent,
+    targetedAgents,
+    canaryAgents: cohort.canaryAgents,
+    deferredAgents: cohort.deferredAgents,
+  };
+
+  // 6. Publish a bus event when a bus is provided.
   if (opts.bus) {
     opts.bus.publish('learnings.applied', {
       cycleId: opts.cycleId,
       perAgent: mutatorReport.perAgent,
       totalApplied: mutatorReport.totalApplied,
       dryRun: mutatorReport.dryRun,
+      canary,
+      rollback,
     });
   }
 
@@ -227,8 +302,146 @@ export async function runAutoReforge(
     cycleId: opts.cycleId,
     skipped: false,
     mutatorReport,
+    canary,
+    rollback,
     durationMs: Date.now() - startedAt,
   };
+}
+
+interface CanaryCohort {
+  canaryAgents: string[];
+  deferredAgents: string[];
+}
+
+type LearningSnapshotMap = Map<string, string | null>;
+
+function clampPercent(percent: number): number {
+  return Math.min(100, Math.max(0, Math.round(percent)));
+}
+
+function splitCanaryCohort(
+  cycleId: string,
+  agentIds: string[],
+  trafficPercent: number,
+): CanaryCohort {
+  if (trafficPercent >= 100) {
+    return { canaryAgents: [...agentIds], deferredAgents: [] };
+  }
+  if (trafficPercent <= 0 || agentIds.length === 0) {
+    return { canaryAgents: [], deferredAgents: [...agentIds] };
+  }
+
+  const canaryAgents = agentIds.filter((agentId) => {
+    const bucket = hashBucket(`${cycleId}:${agentId}`);
+    return bucket < trafficPercent;
+  });
+  const stableCanary = canaryAgents.length > 0 ? canaryAgents : [agentIds[0]!];
+  const canarySet = new Set(stableCanary);
+  const deferredAgents = agentIds.filter((agentId) => !canarySet.has(agentId));
+  return {
+    canaryAgents: stableCanary,
+    deferredAgents,
+  };
+}
+
+function hashBucket(value: string): number {
+  const digest = createHash('sha1').update(value).digest();
+  return digest.readUInt32BE(0) % 100;
+}
+
+function filterCurationByAgents(
+  curation: CurationResult,
+  agentIds: string[],
+): CurationResult {
+  const byAgent: CurationResult['byAgent'] = {};
+  const allow = new Set(agentIds);
+  for (const [agentId, learnings] of Object.entries(curation.byAgent)) {
+    if (!allow.has(agentId)) continue;
+    byAgent[agentId] = [...learnings];
+  }
+  return {
+    byAgent,
+    sourcesScanned: curation.sourcesScanned,
+    generatedAt: curation.generatedAt,
+  };
+}
+
+async function snapshotAgentLearnings(
+  projectRoot: string,
+  agentIds: string[],
+): Promise<LearningSnapshotMap> {
+  const snapshots: LearningSnapshotMap = new Map();
+  for (const agentId of agentIds) {
+    const path = join(projectRoot, '.agentforge', 'agents', `${agentId}.yaml`);
+    try {
+      snapshots.set(agentId, await readFile(path, 'utf8'));
+    } catch {
+      snapshots.set(agentId, null);
+    }
+  }
+  return snapshots;
+}
+
+function appliedAgentIds(report: MutatorReport): string[] {
+  return Object.entries(report.perAgent)
+    .filter(([, meta]) => meta.applied > 0)
+    .map(([agentId]) => agentId);
+}
+
+async function rollbackAgentLearnings(
+  projectRoot: string,
+  snapshots: LearningSnapshotMap,
+  agentIds: string[],
+): Promise<string[]> {
+  const rolledBack: string[] = [];
+  for (const agentId of agentIds) {
+    if (!snapshots.has(agentId)) continue;
+    const path = join(projectRoot, '.agentforge', 'agents', `${agentId}.yaml`);
+    const snapshot = snapshots.get(agentId);
+    try {
+      if (snapshot === null) {
+        await rm(path, { force: true });
+      } else {
+        await mkdir(join(projectRoot, '.agentforge', 'agents'), { recursive: true });
+        await writeFile(path, snapshot, 'utf8');
+      }
+      rolledBack.push(agentId);
+    } catch {
+      // Best-effort rollback to keep self-modification path non-fatal.
+    }
+  }
+  return rolledBack;
+}
+
+function evaluateRollback(input: {
+  projectedCostUsd?: number;
+  actualCostUsd?: number;
+  multiplier: number;
+}): SelfModificationRollbackResult {
+  const rollback: SelfModificationRollbackResult = {
+    triggered: false,
+    multiplier: input.multiplier,
+    rolledBackAgents: [],
+  };
+  if (input.projectedCostUsd !== undefined) rollback.projectedCostUsd = input.projectedCostUsd;
+  if (input.actualCostUsd !== undefined) rollback.actualCostUsd = input.actualCostUsd;
+
+  if (
+    input.projectedCostUsd === undefined ||
+    input.actualCostUsd === undefined ||
+    input.projectedCostUsd <= 0
+  ) {
+    return rollback;
+  }
+
+  const threshold = input.projectedCostUsd * input.multiplier;
+  if (input.actualCostUsd > threshold) {
+    rollback.triggered = true;
+    rollback.reason =
+      `Cost outlier rollback: actual $${input.actualCostUsd.toFixed(2)} exceeds ` +
+      `${input.multiplier}x projected $${input.projectedCostUsd.toFixed(2)}`;
+  }
+  return rollback;
 }
 
 // ---------------------------------------------------------------------------

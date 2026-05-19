@@ -99,6 +99,10 @@ export const DEFAULT_CYCLE_CONFIG: CycleConfig = Object.freeze({
     requireApprovalAfter: 1,
     reExecuteOnRetry: true,
   }),
+  selfModification: Object.freeze({
+    canaryTrafficPercent: 25,
+    rollbackCostMultiplier: 2,
+  }),
 }) as CycleConfig;
 
 export function loadCycleConfig(cwd: string): CycleConfig {
@@ -204,5 +208,20 @@ function validateConfig(config: CycleConfig): void {
   }
   if (config.autoReforge !== undefined && typeof config.autoReforge !== 'boolean') {
     throw new Error('autoReforge must be a boolean');
+  }
+  if (config.selfModification !== undefined) {
+    if (
+      typeof config.selfModification.canaryTrafficPercent !== 'number' ||
+      config.selfModification.canaryTrafficPercent < 0 ||
+      config.selfModification.canaryTrafficPercent > 100
+    ) {
+      throw new Error('selfModification.canaryTrafficPercent must be a number between 0 and 100');
+    }
+    if (
+      typeof config.selfModification.rollbackCostMultiplier !== 'number' ||
+      config.selfModification.rollbackCostMultiplier <= 0
+    ) {
+      throw new Error('selfModification.rollbackCostMultiplier must be a positive number');
+    }
   }
 }

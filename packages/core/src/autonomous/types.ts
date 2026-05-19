@@ -161,6 +161,21 @@ export interface CycleConfig {
    * opt in.
    */
   autoMergePRs?: boolean;
+  /**
+   * Rollout policy for autonomous self-modifications applied by auto-reforge.
+   */
+  selfModification?: {
+    /**
+     * Percent of targeted agents that receive modifications immediately.
+     * Remaining agents are deferred to later cycles.
+     */
+    canaryTrafficPercent: number;
+    /**
+     * Trigger automatic rollback when actual cycle spend exceeds this multiple
+     * of projected spend.
+     */
+    rollbackCostMultiplier: number;
+  };
 }
 
 /**

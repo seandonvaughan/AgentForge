@@ -13,7 +13,7 @@
 //   - extractInvolvedAgentIds: falls back gracefully when file absent
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
@@ -252,6 +252,77 @@ describe('runAutoReforge', () => {
         applyLearnings: apply,
       }),
     ).rejects.toThrow('mutator write error');
+  });
+
+  it('applies self-modifications only to a canary cohort', async () => {
+    const curate = vi.fn(async (): Promise<CurationResult> =>
+      makeCurationResult(['coder', 'reviewer', 'architect', 'debugger']),
+    );
+    const apply = vi.fn(async (_input: ApplyLearningsInput): Promise<MutatorReport> =>
+      makeMutatorReport(),
+    );
+
+    const result = await runAutoReforge({
+      projectRoot: tmpDir,
+      cycleId: 'cycle-canary-001',
+      involvedAgentIds: ['coder', 'reviewer', 'architect', 'debugger'],
+      canaryTrafficPercent: 25,
+      curateLearnings: curate,
+      applyLearnings: apply,
+    });
+
+    expect(result.skipped).toBe(false);
+    expect(result.canary).toBeDefined();
+    expect(result.canary?.targetedAgents).toHaveLength(4);
+    expect(result.canary?.canaryAgents.length).toBeGreaterThanOrEqual(1);
+    expect(result.canary?.canaryAgents.length).toBeLessThan(4);
+
+    const applyArg = apply.mock.calls[0]![0] as ApplyLearningsInput;
+    const proposedAgents = Object.keys(applyArg.proposed.byAgent).sort();
+    expect(proposedAgents).toEqual([...(result.canary?.canaryAgents ?? [])].sort());
+  });
+
+  it('auto-rolls back canary self-modifications on >2x cost outlier', async () => {
+    const agentsDir = join(tmpDir, '.agentforge', 'agents');
+    mkdirSync(agentsDir, { recursive: true });
+    const agentPath = join(agentsDir, 'coder.yaml');
+    const baseline = 'name: coder\nlearnings:\n  - Keep changes minimal\n';
+    writeFileSync(agentPath, baseline, 'utf8');
+
+    const curate = vi.fn(async (): Promise<CurationResult> =>
+      makeCurationResult(['coder']),
+    );
+    const apply = vi.fn(async (_input: ApplyLearningsInput): Promise<MutatorReport> => {
+      writeFileSync(
+        agentPath,
+        'name: coder\nlearnings:\n  - New unstable learning\n',
+        'utf8',
+      );
+      return {
+        perAgent: {
+          coder: { applied: 1, skipped: 0, capped: false, lessons: ['New unstable learning'] },
+        },
+        totalApplied: 1,
+        totalSkipped: 0,
+        dryRun: false,
+      };
+    });
+
+    const result = await runAutoReforge({
+      projectRoot: tmpDir,
+      cycleId: 'cycle-rollback-001',
+      involvedAgentIds: ['coder'],
+      canaryTrafficPercent: 100,
+      projectedCostUsd: 10,
+      actualCostUsd: 25,
+      rollbackCostMultiplier: 2,
+      curateLearnings: curate,
+      applyLearnings: apply,
+    });
+
+    expect(result.rollback?.triggered).toBe(true);
+    expect(result.rollback?.rolledBackAgents).toEqual(['coder']);
+    expect(readFileSync(agentPath, 'utf8')).toBe(baseline);
   });
 });
 

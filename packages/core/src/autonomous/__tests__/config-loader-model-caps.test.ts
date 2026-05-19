@@ -195,6 +195,40 @@ describe('loadCycleConfig() — multi-PR primitive fields', () => {
   });
 });
 
+describe('loadCycleConfig() — selfModification policy', () => {
+  it('loads selfModification canary and rollback policy', () => {
+    writeAutonomousYaml([
+      'selfModification:',
+      '  canaryTrafficPercent: 40',
+      '  rollbackCostMultiplier: 2.5',
+    ].join('\n') + '\n');
+
+    const config = loadCycleConfig(tmpDir);
+    expect(config.selfModification?.canaryTrafficPercent).toBe(40);
+    expect(config.selfModification?.rollbackCostMultiplier).toBe(2.5);
+  });
+
+  it('rejects out-of-range canary percentage', () => {
+    writeAutonomousYaml([
+      'selfModification:',
+      '  canaryTrafficPercent: 130',
+      '  rollbackCostMultiplier: 2',
+    ].join('\n') + '\n');
+
+    expect(() => loadCycleConfig(tmpDir)).toThrow(/selfModification\.canaryTrafficPercent/);
+  });
+
+  it('rejects non-positive rollback multiplier', () => {
+    writeAutonomousYaml([
+      'selfModification:',
+      '  canaryTrafficPercent: 25',
+      '  rollbackCostMultiplier: 0',
+    ].join('\n') + '\n');
+
+    expect(() => loadCycleConfig(tmpDir)).toThrow(/selfModification\.rollbackCostMultiplier/);
+  });
+});
+
 describe('loadCycleConfig() — combined caps', () => {
   it('loads modelCap + effortCap + fallbackEnabled together', () => {
     writeAutonomousYaml([

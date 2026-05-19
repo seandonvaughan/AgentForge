@@ -745,7 +745,10 @@ export class CycleRunner {
     // Errors are swallowed — a reforge failure must never kill a passed
     // cycle. Honoured by config.autoReforge (default true).
     // ─────────────────────────────────────────────────────────────────
-    await this.runAutoReforgeStep();
+    await this.runAutoReforgeStep({
+      projectedCostUsd: scored.totalEstimatedCostUsd,
+      actualCostUsd: this.totalCostUsd,
+    });
     this.checkKillSwitch();
 
     // ─────────────────────────────────────────────────────────────────
@@ -1048,7 +1051,10 @@ export class CycleRunner {
    * Any error is caught and logged — a reforge failure MUST NOT kill a cycle
    * that has already passed the gate.
    */
-  private async runAutoReforgeStep(): Promise<void> {
+  private async runAutoReforgeStep(costContext?: {
+    projectedCostUsd?: number;
+    actualCostUsd?: number;
+  }): Promise<void> {
     // Default true: existing configs without the field still trigger reforge.
     const shouldReforge = this.options.config.autoReforge !== false;
     if (!shouldReforge) {
@@ -1061,10 +1067,15 @@ export class CycleRunner {
     console.log('[autonomous:cycle] stage 3.25: running auto-reforge');
     try {
       const involvedAgentIds = extractInvolvedAgentIds(this.options.cwd, this.cycleId);
+      const selfModificationPolicy = this.options.config.selfModification;
       const result = await runAutoReforge({
         projectRoot: this.options.cwd,
         cycleId: this.cycleId,
         involvedAgentIds,
+        canaryTrafficPercent: selfModificationPolicy?.canaryTrafficPercent,
+        rollbackCostMultiplier: selfModificationPolicy?.rollbackCostMultiplier,
+        projectedCostUsd: costContext?.projectedCostUsd,
+        actualCostUsd: costContext?.actualCostUsd,
         bus: this.options.bus,
       });
       if (result.skipped) {
@@ -1074,8 +1085,16 @@ export class CycleRunner {
         // eslint-disable-next-line no-console
         console.log(
           `[autonomous:cycle] stage 3.25: auto-reforge complete in ${result.durationMs}ms` +
-          ` (applied=${result.mutatorReport?.totalApplied ?? 0})`,
+          ` (applied=${result.mutatorReport?.totalApplied ?? 0}, canary=${result.canary?.canaryAgents.length ?? 0}, deferred=${result.canary?.deferredAgents.length ?? 0})`,
         );
+        if (result.rollback?.triggered) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[autonomous:cycle] stage 3.25: self-mod rollback triggered` +
+            ` (rolledBack=${result.rollback.rolledBackAgents.length})` +
+            `${result.rollback.reason ? ` — ${result.rollback.reason}` : ''}`,
+          );
+        }
       }
     } catch (err) {
       // Swallow — reforge errors must never fail the cycle.

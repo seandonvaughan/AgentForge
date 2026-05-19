@@ -349,6 +349,11 @@ function mutateAgentLearnings(
 export interface ApplyLearningsOptions {
   projectRoot: string;
   dryRun?: boolean;
+  /**
+   * Optional in-memory proposals map. When provided, mutator consumes this
+   * directly instead of reading `.agentforge/forge/learnings-proposed.json`.
+   */
+  proposedByAgent?: Record<string, unknown>;
 }
 
 /**
@@ -363,33 +368,37 @@ export interface ApplyLearningsOptions {
 export async function applyLearnings(
   opts: ApplyLearningsOptions,
 ): Promise<MutatorReport> {
-  const { projectRoot, dryRun = false } = opts;
+  const { projectRoot, dryRun = false, proposedByAgent: providedProposals } = opts;
 
   const forgeDir = join(projectRoot, ".agentforge", "forge");
   const agentsDir = join(projectRoot, ".agentforge", "agents");
   const proposedPath = join(forgeDir, "learnings-proposed.json");
 
-  // Load proposed learnings
-  let rawProposed: string;
-  try {
-    rawProposed = await readFile(proposedPath, "utf8");
-  } catch (err: unknown) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code === "ENOENT") {
-      throw new Error(
-        `[mutator] learnings-proposed.json not found at ${proposedPath}. ` +
-          "Run the learning curator (Workstream P) first.",
-      );
+  // Load proposed learnings unless the caller provided an explicit map.
+  let proposedByAgent: Record<string, unknown>;
+  if (providedProposals !== undefined) {
+    proposedByAgent = providedProposals;
+  } else {
+    let rawProposed: string;
+    try {
+      rawProposed = await readFile(proposedPath, "utf8");
+    } catch (err: unknown) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "ENOENT") {
+        throw new Error(
+          `[mutator] learnings-proposed.json not found at ${proposedPath}. ` +
+            "Run the learning curator (Workstream P) first.",
+        );
+      }
+      throw err;
     }
-    throw err;
+    // Expected shape: Record<agentId, ProposedLearning[]>
+    const parsedProposed: unknown = JSON.parse(rawProposed);
+    proposedByAgent =
+      parsedProposed !== null && typeof parsedProposed === "object" && !Array.isArray(parsedProposed)
+        ? parsedProposed as Record<string, unknown>
+        : {};
   }
-
-  // Expected shape: Record<agentId, ProposedLearning[]>
-  const parsedProposed: unknown = JSON.parse(rawProposed);
-  const proposedByAgent =
-    parsedProposed !== null && typeof parsedProposed === "object" && !Array.isArray(parsedProposed)
-      ? parsedProposed
-      : {};
 
   const perAgent: AgentMutatorResult[] = [];
 
