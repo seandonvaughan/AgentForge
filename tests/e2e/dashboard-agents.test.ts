@@ -18,7 +18,7 @@ test.describe('Agents List Page', () => {
     await page.waitForLoadState('load').catch(() => {});
 
     // Heading must be present — confirms the /agents route rendered
-    const heading = page.locator('h1').filter({ hasText: /Agents/i }).first();
+    const heading = page.locator('h1').filter({ hasText: /Agent fleet/i }).first();
     await expect(heading).toBeVisible();
   });
 
@@ -104,10 +104,9 @@ test.describe('Agents List Page', () => {
     const table = page.locator('table.data-table');
     await expect(table).toBeVisible();
 
-    // Model badges (opus / sonnet / haiku) must appear on rows
-    const badges = table.locator('.badge');
-    const badgeCount = await badges.count();
-    expect(badgeCount, 'Each agent row should have a model tier badge').toBeGreaterThan(0);
+    // Resolved Codex model/effort chips must appear on rows.
+    await expect(table).toContainText(/gpt-5\.(5|4-mini|3-codex)/);
+    await expect(table).toContainText(/xhigh|high|medium/i);
   });
 
   test('agents list shows content from real YAML files, not empty state', async ({ page }) => {
@@ -135,7 +134,7 @@ test.describe('Agents List Page', () => {
     await page.setViewportSize({ width: 375, height: 667 });
 
     // Wait for heading to render at mobile viewport
-    const heading = page.locator('h1').filter({ hasText: /Agents/i }).first();
+    const heading = page.locator('h1').filter({ hasText: /Agent fleet/i }).first();
     await expect(heading).toBeVisible({ timeout: 5000 });
 
     // Resize to tablet
@@ -171,65 +170,30 @@ test.describe('Agents List Page', () => {
     await page.goto('/agents');
     await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
 
-    // The team summary bar should exist
-    const teamBar = page.locator('.team-summary-bar');
-    const isBarVisible = await teamBar.isVisible().catch(() => false);
+    const teamSelect = page.getByLabel('Filter by team');
+    await expect(teamSelect).toBeVisible();
 
-    if (!isBarVisible) {
-      // If no team bar, the page may not have agents with different teams
-      // This is OK — just verify the page loaded
+    const unassignedOption = teamSelect.locator('option[value="__unassigned__"]');
+    if (await unassignedOption.count() === 0) {
       const table = page.locator('table.data-table');
       await expect(table).toBeVisible();
       return;
     }
 
-    // Look for the __unassigned__ team chip
-    const unassignedChip = teamBar.locator('.team-stat-chip.unassigned');
-    const isChipVisible = await unassignedChip.isVisible().catch(() => false);
+    await teamSelect.selectOption('__unassigned__');
+    await expect(teamSelect).toHaveValue('__unassigned__');
 
-    if (!isChipVisible) {
-      // If there are no agents with null team, the chip won't render
-      // This is correct behavior — verify the data is as expected
-      const agents = teamBar.locator('.team-stat-chip');
-      const count = await agents.count();
-      expect(count).toBeGreaterThan(0);
-      return;
-    }
-
-    // Verify the chip has the correct label
-    const label = unassignedChip.locator('.team-name');
-    await expect(label).toContainText(/unassigned/i);
-
-    // Verify the chip has a count
-    const count = unassignedChip.locator('.team-count');
-    const countText = await count.textContent();
-    expect(countText?.trim()).toBeTruthy();
-    expect(parseInt(countText?.trim() ?? '0')).toBeGreaterThanOrEqual(0);
-
-    // Click the __unassigned__ filter
-    await unassignedChip.click();
-
-    // Verify the chip becomes active
-    await expect(unassignedChip).toHaveClass(/active/);
-
-    // The table should still be visible (a regression would cause it to disappear or error)
+    // The table or the handled empty state should remain visible.
     const table = page.locator('table.data-table');
-    await expect(table).toBeVisible({ timeout: 5000 });
+    const emptyState = page.locator('.af-empty');
+    expect(
+      (await table.isVisible().catch(() => false)) ||
+      (await emptyState.isVisible().catch(() => false)),
+      'team filtering should keep the page in a rendered table or empty state',
+    ).toBe(true);
 
-    // The clear button should appear
-    const clearButton = page.locator('.clear-filter');
-    await expect(clearButton).toBeVisible({ timeout: 2000 });
-
-    // Verify clear button contains the filter label
-    const clearText = await clearButton.textContent();
-    expect(clearText).toContain(/✕|unassigned/i);
-
-    // Click clear button
-    await clearButton.click();
-
-    // The filter should be deactivated
-    const isActive = await unassignedChip.evaluate(el => el.classList.contains('active'));
-    expect(isActive).toBe(false);
+    await teamSelect.selectOption('');
+    await expect(teamSelect).toHaveValue('');
 
     // Table should still be visible
     await expect(table).toBeVisible({ timeout: 5000 });
@@ -245,12 +209,12 @@ test.describe('Agents List Page', () => {
     await page.goto('/agents');
     await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
 
-    const filterPills = page.locator('.filter-pills .pill');
+    const filterPills = page.locator('button.af-pill');
     const pillCount = await filterPills.count();
-    expect(pillCount).toBeGreaterThanOrEqual(4); // All, opus, sonnet, haiku
+    expect(pillCount).toBeGreaterThanOrEqual(4); // all, xhigh, high, medium
 
-    // Click the opus filter
-    const opusFilter = filterPills.filter({ hasText: /opus/i }).first();
+    // Click the xhigh profile filter (AgentForge opus capability tier)
+    const opusFilter = filterPills.filter({ hasText: /^xhigh$/i }).first();
     await opusFilter.click();
 
     // Verify it becomes active
@@ -267,12 +231,7 @@ test.describe('Agents List Page', () => {
     if (rowCount > 0) {
       // Get first row and verify it has an opus badge or model indicator
       const firstRow = rows.first();
-      const opusBadge = firstRow.locator('.badge').filter({ hasText: /opus/i });
-      const isOpusVisible = await opusBadge.isVisible().catch(() => false);
-
-      if (isOpusVisible) {
-        await expect(opusBadge).toBeVisible();
-      }
+      await expect(firstRow).toContainText(/gpt-5\.5|xhigh/i);
     }
   });
 
@@ -286,20 +245,16 @@ test.describe('Agents List Page', () => {
     await page.goto('/agents');
     await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
 
-    const teamBar = page.locator('.team-summary-bar');
-    const isBarVisible = await teamBar.isVisible().catch(() => false);
+    const teamSelect = page.getByLabel('Filter by team');
+    await expect(teamSelect).toBeVisible();
 
-    if (!isBarVisible) {
-      // No team filters available, skip this test
-      return;
-    }
+    const optionValues = await teamSelect.locator('option').evaluateAll((options) =>
+      options.map((o) => (o as HTMLOptionElement).value).filter(Boolean),
+    );
+    if (optionValues.length === 0) return;
 
-    // Click a team filter
-    const firstTeam = teamBar.locator('.team-stat-chip').first();
-    await firstTeam.click();
-
-    // Verify filter is active
-    await expect(firstTeam).toHaveClass(/active/);
+    await teamSelect.selectOption(optionValues[0]!);
+    await expect(teamSelect).toHaveValue(optionValues[0]!);
 
     // Reload page
     await page.reload();
@@ -311,7 +266,7 @@ test.describe('Agents List Page', () => {
     await expect(table).toBeVisible({ timeout: 5000 });
 
     // Page should have navigated and state reset — verify it's still functional
-    const heading = page.locator('h1').filter({ hasText: /Agents/i }).first();
+    const heading = page.locator('h1').filter({ hasText: /Agent fleet/i }).first();
     await expect(heading).toBeVisible();
   });
 });

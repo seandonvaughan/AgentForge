@@ -28,7 +28,9 @@
   });
 
   let launching = $state(false);
+  let clientReady = $state(false);
   let launchError = $state<string | null>(null);
+  const formDisabled = $derived(launching || !clientReady);
 
   interface RecentCycle {
     cycleId: string;
@@ -123,7 +125,7 @@
   }
 
   async function handleLaunch(): Promise<void> {
-    if (launching) return;
+    if (launching || !clientReady) return;
     launchError = null;
     launching = true;
     try {
@@ -176,6 +178,7 @@
   function onVisibility(): void { manage(); }
 
   onMount(() => {
+    clientReady = true;
     void loadRecent();
     manage();
     if (typeof document !== 'undefined') {
@@ -214,42 +217,42 @@
       <div class="field">
         <label class="field-label" for="budgetUsd">Budget (USD)</label>
         <div class="slider-row">
-          <input id="budgetUsd" type="range" min="5" max="500" step="1" bind:value={budgetUsd} class="slider" disabled={launching} />
-          <input type="number" min="0" step="0.5" bind:value={budgetUsd} class="num" disabled={launching} aria-label="Budget in USD" />
+          <input id="budgetUsd" type="range" min="5" max="500" step="1" bind:value={budgetUsd} class="slider" disabled={formDisabled} />
+          <input type="number" min="0" step="0.5" bind:value={budgetUsd} class="num" disabled={formDisabled} aria-label="Budget in USD" />
         </div>
       </div>
 
       <div class="field">
         <label class="field-label" for="maxItems">Max items / sprint</label>
         <div class="slider-row">
-          <input id="maxItems" type="range" min="1" max="50" step="1" bind:value={maxItems} class="slider" disabled={launching} />
-          <input type="number" min="1" max="50" step="1" bind:value={maxItems} class="num" disabled={launching} aria-label="Max items per sprint" />
+          <input id="maxItems" type="range" min="1" max="50" step="1" bind:value={maxItems} class="slider" disabled={formDisabled} />
+          <input type="number" min="1" max="50" step="1" bind:value={maxItems} class="num" disabled={formDisabled} aria-label="Max items per sprint" />
         </div>
       </div>
 
       <div class="field">
         <label class="field-label" for="maxAgents">Max agents</label>
         <div class="slider-row">
-          <input id="maxAgents" type="range" min="1" max="10" step="1" bind:value={maxAgents} class="slider" disabled={launching} />
-          <input type="number" min="1" max="10" step="1" bind:value={maxAgents} class="num" disabled={launching} aria-label="Max agents" />
+          <input id="maxAgents" type="range" min="1" max="10" step="1" bind:value={maxAgents} class="slider" disabled={formDisabled} />
+          <input type="number" min="1" max="10" step="1" bind:value={maxAgents} class="num" disabled={formDisabled} aria-label="Max agents" />
         </div>
       </div>
 
       <div class="field">
         <label class="field-label" for="branchPrefix">Branch prefix</label>
-        <input id="branchPrefix" type="text" bind:value={branchPrefix} class="text-input af2-mono" disabled={launching} />
+        <input id="branchPrefix" type="text" bind:value={branchPrefix} class="text-input af2-mono" disabled={formDisabled} />
       </div>
 
       <div class="field">
         <label class="field-label" for="baseBranch">Base branch</label>
-        <input id="baseBranch" type="text" bind:value={baseBranch} class="text-input af2-mono" disabled={launching} />
+        <input id="baseBranch" type="text" bind:value={baseBranch} class="text-input af2-mono" disabled={formDisabled} />
       </div>
     </div>
 
     <div class="form-row">
       <div class="field">
         <label class="field-label" for="modelCap">Codex profile cap</label>
-        <select id="modelCap" bind:value={modelCap} class="select" disabled={launching}>
+        <select id="modelCap" bind:value={modelCap} class="select" disabled={formDisabled}>
           <option value="default">Default (per agent)</option>
           <option value="opus">xhigh profile — most capable</option>
           <option value="sonnet">high profile — balanced</option>
@@ -259,7 +262,7 @@
 
       <div class="field">
         <label class="field-label" for="effortCap">Effort cap</label>
-        <select id="effortCap" bind:value={effortCap} class="select" disabled={launching}>
+        <select id="effortCap" bind:value={effortCap} class="select" disabled={formDisabled}>
           <option value="default">Default (per agent)</option>
           <option value="low">Low — fast, mechanical</option>
           <option value="medium">Medium</option>
@@ -272,12 +275,12 @@
       <div class="field toggle-field">
         <span class="field-label">Options</span>
         <label class="toggle">
-          <input type="checkbox" bind:checked={dryRun} disabled={launching} />
+          <input type="checkbox" bind:checked={dryRun} disabled={formDisabled} />
           <span class="toggle-track" class:on={dryRun}><span class="toggle-knob"></span></span>
           <span class="toggle-label">Dry run <span class="hint">(skip PR creation)</span></span>
         </label>
         <label class="toggle">
-          <input type="checkbox" bind:checked={fallbackEnabled} disabled={launching} />
+          <input type="checkbox" bind:checked={fallbackEnabled} disabled={formDisabled} />
           <span class="toggle-track" class:on={fallbackEnabled}><span class="toggle-knob"></span></span>
           <span class="toggle-label">Profile fallback <span class="hint">(xhigh → high → medium)</span></span>
         </label>
@@ -299,7 +302,7 @@
         bind:value={tagsInput}
         class="text-input af2-mono"
         placeholder="comma- or space-separated, e.g. ui, dashboard, v6"
-        disabled={launching}
+        disabled={formDisabled}
       />
       {#if tags.length > 0}
         <div class="tag-row">
@@ -316,7 +319,7 @@
         rows={3}
         placeholder="Why are you running this cycle? e.g. 'ship v14.1 dashboard refresh'"
         class="textarea"
-        disabled={launching}
+        disabled={formDisabled}
       ></textarea>
     </div>
 
@@ -331,7 +334,7 @@
       <span class="hint" style="flex:1">
         Advanced overrides (per-agent budgets, capability tier pinning) are future work.
       </span>
-      <Btn size="lg" variant="purple" onClick={handleLaunch} disabled={launching}>
+      <Btn size="lg" variant="purple" onClick={handleLaunch} disabled={formDisabled}>
         {launching ? 'Launching…' : '▶ Run Cycle'}
       </Btn>
     </div>

@@ -97,6 +97,8 @@
     [...new Set(liveAgents.map(a => a.team).filter((t): t is string => !!t))].sort()
   );
 
+  let unassignedCount = $derived(liveAgents.filter(a => !a.team).length);
+
   let profileCount = $derived({
     opus:   liveAgents.filter(a => (a.capabilityTier ?? a.model) === 'opus').length,
     sonnet: liveAgents.filter(a => (a.capabilityTier ?? a.model) === 'sonnet').length,
@@ -216,7 +218,7 @@
   <Card style="padding:12px 14px;">
     <div class="af-stat-label">Teams</div>
     <div class="af-stat-value font-mono">{allTeams.length}</div>
-    <div class="af-stat-sub">+ <span class="font-mono">{liveAgents.filter(a => !a.team).length}</span> unassigned</div>
+    <div class="af-stat-sub">+ <span class="font-mono">{unassignedCount}</span> unassigned</div>
   </Card>
 
   <!-- Live now -->
@@ -278,6 +280,9 @@
     aria-label="Filter by team"
   >
     <option value="">All teams</option>
+    {#if unassignedCount > 0}
+      <option value="__unassigned__">Unassigned</option>
+    {/if}
     {#each allTeams as t}
       <option value={t}>{teamLabel(t)}</option>
     {/each}
@@ -298,7 +303,7 @@
   </Card>
 {:else}
   <Card noPad>
-    <table class="af-table">
+    <table class="af-table data-table">
       <thead>
         <tr>
           {#each ['Name', 'Agent ID', 'Codex model', 'Team', 'Reasoning', 'Cycle spend', 'Last active', 'Description'] as h}
