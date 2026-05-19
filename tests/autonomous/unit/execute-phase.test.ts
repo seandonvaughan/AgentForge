@@ -675,4 +675,69 @@ describe('execute phase prompt includes memory', () => {
 
     expect(capturedPrompt).not.toContain('Memory: Past Failures');
   });
+
+  it('prompt includes execute safety rails and allowed tools contract text', async () => {
+    const sprintDir = join(tmpDir, '.agentforge', 'sprints');
+    mkdirSync(sprintDir, { recursive: true });
+    const sprint = {
+      sprints: [{
+        version: '1.0.0',
+        sprintId: 'v1.0.0-test',
+        title: 'test',
+        createdAt: new Date().toISOString(),
+        phase: 'planned',
+        items: [{ id: 'i1', title: 'harden verify gates', assignee: 'coder', status: 'planned', tags: ['testing', 'gate-safety'] }],
+        budget: 1,
+        teamSize: 1,
+        successCriteria: [],
+      }],
+    };
+    writeFileSync(join(sprintDir, 'v1.0.0.json'), JSON.stringify(sprint, null, 2));
+
+    let capturedPrompt = '';
+    const runtime = {
+      run: vi.fn().mockImplementation(async (_agentId: string, prompt: string) => {
+        capturedPrompt = prompt;
+        return { output: 'done', costUsd: 0, durationMs: 0, model: 'm', usage: { input_tokens: 0, output_tokens: 0 } };
+      }),
+    };
+    const { bus } = makeMockBus();
+    await runExecutePhase(makeCtx({ cwd: tmpDir, sprintVersion: '1.0.0', runtime, bus }));
+
+    expect(capturedPrompt).toContain('use the Read, Write, Edit, Bash, Glob, and Grep tools');
+    expect(capturedPrompt).toContain('Do not delegate this item to another agent or return a plan-only response');
+    expect(capturedPrompt).toContain('Do NOT commit anything');
+  });
+
+  it('prompt includes self-evaluation rubric by default', async () => {
+    const sprintDir = join(tmpDir, '.agentforge', 'sprints');
+    mkdirSync(sprintDir, { recursive: true });
+    const sprint = {
+      sprints: [{
+        version: '1.0.0',
+        sprintId: 'v1.0.0-test',
+        title: 'test',
+        createdAt: new Date().toISOString(),
+        phase: 'planned',
+        items: [{ id: 'i1', title: 'run safety checks', assignee: 'coder', status: 'planned', tags: ['testing'] }],
+        budget: 1,
+        teamSize: 1,
+        successCriteria: [],
+      }],
+    };
+    writeFileSync(join(sprintDir, 'v1.0.0.json'), JSON.stringify(sprint, null, 2));
+
+    let capturedPrompt = '';
+    const runtime = {
+      run: vi.fn().mockImplementation(async (_agentId: string, prompt: string) => {
+        capturedPrompt = prompt;
+        return { output: 'done', costUsd: 0, durationMs: 0, model: 'm', usage: { input_tokens: 0, output_tokens: 0 } };
+      }),
+    };
+    const { bus } = makeMockBus();
+    await runExecutePhase(makeCtx({ cwd: tmpDir, sprintVersion: '1.0.0', runtime, bus }));
+
+    expect(capturedPrompt).toContain('## Self-eval');
+    expect(capturedPrompt).toContain('Score: <1-5>');
+  });
 });
