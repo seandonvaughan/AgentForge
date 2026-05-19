@@ -9,6 +9,7 @@ import { join, dirname } from 'node:path';
 import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
 import { writeMemoryEntry, readMemoryEntries, type GateVerdictMetadata } from '../../memory/types.js';
 import { collectSprintItemTags } from './sprint-utils.js';
+import type { GateVerdictCreatedPayload } from '../../message-bus/types.js';
 import {
   formatExecuteReviewTargets,
   loadExecuteReviewTargets,
@@ -678,7 +679,7 @@ Respond as JSON: { "verdict": "APPROVE" | "REJECT", "rationale": "..." }`;
     summaryParts.push(`Major: ${majorFindings.join('; ')}`);
   }
 
-  writeMemoryEntry(ctx.projectRoot, {
+  const gateEntry = writeMemoryEntry(ctx.projectRoot, {
     type: 'gate-verdict',
     value: summaryParts.join('. '),
     metadata: gateMetadata,
@@ -689,6 +690,17 @@ Respond as JSON: { "verdict": "APPROVE" | "REJECT", "rationale": "..." }`;
       ...sprintDomainTags,
     ],
   });
+
+  const gatePayload: GateVerdictCreatedPayload = {
+    entryId: gateEntry.id,
+    cycleId: ctx.cycleId ?? '',
+    verdict: verdictNorm,
+    rationale: verdict.rationale,
+    criticalFindings,
+    majorFindings,
+    createdAt: gateEntry.createdAt,
+  };
+  ctx.bus.publish('gate.verdict.created', gatePayload);
 
   if (verdict.verdict === 'REJECT') {
     throw new GateRejectedError(verdict.rationale);

@@ -52,6 +52,15 @@
     totalRuns: number;
   }
 
+  interface AutoReforgeCanarySummary {
+    enabled: boolean;
+    status: 'staged' | 'promoted' | 'rolled_back';
+    stagedAgents: string[];
+    promotedAgents: string[];
+    rolledBackAgents: string[];
+    rollbackReason?: string;
+  }
+
   interface SprintItem {
     id: string;
     title: string;
@@ -270,6 +279,21 @@
   const fallbackEnabled = $derived<boolean | null>(
     ((cycle as { fallbackEnabled?: boolean })?.fallbackEnabled as boolean | undefined) ?? null,
   );
+  const autoReforgeCanary = $derived<AutoReforgeCanarySummary | null>(
+    ((cycle as { autoReforge?: { canary?: AutoReforgeCanarySummary } })?.autoReforge?.canary
+      as AutoReforgeCanarySummary | undefined) ?? null,
+  );
+  const autoReforgeCanaryText = $derived.by<string | null>(() => {
+    if (!autoReforgeCanary || autoReforgeCanary.enabled !== true) return null;
+    const base =
+      `${autoReforgeCanary.status} · ` +
+      `staged ${autoReforgeCanary.stagedAgents.length} · ` +
+      `promoted ${autoReforgeCanary.promotedAgents.length}`;
+    if (autoReforgeCanary.rollbackReason) {
+      return `${base} · ${autoReforgeCanary.rollbackReason}`;
+    }
+    return base;
+  });
   const dryRun = $derived<boolean | null>(
     ((cycle as { dryRun?: boolean })?.dryRun as boolean | undefined) ?? null,
   );
@@ -1235,6 +1259,9 @@
             <div><div class="kv-label">Budget</div><div class="kv-val af2-mono">${costUsd.toFixed(2)} / ${budgetUsd.toFixed(0)}</div></div>
             <div><div class="kv-label">Items</div><div class="kv-val">{itemsByStatus.completed.length} done · {itemsByStatus.inProgress.length} active</div></div>
             <div><div class="kv-label">Tests</div><div class="kv-val af2-mono">{testsTotal > 0 ? `${testsPassed}/${testsTotal} (${((testsPassed / testsTotal) * 100).toFixed(1)}%)` : '—'}</div></div>
+            {#if autoReforgeCanaryText}
+              <div><div class="kv-label">Auto-reforge canary</div><div class="kv-val">{autoReforgeCanaryText}</div></div>
+            {/if}
           </div>
         </Card>
 

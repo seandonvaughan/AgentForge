@@ -136,6 +136,25 @@ export interface CycleConfig {
    */
   autoReforge?: boolean;
   /**
+   * Canary controls for auto-reforge self-modifications.
+   *
+   * When enabled, auto-reforge first applies learnings to a limited subset
+   * of agents, then promotes to the remaining agents only when the canary
+   * remains healthy.
+   */
+  autoReforgeCanary?: {
+    enabled?: boolean;
+    rolloutPercent?: number;
+    minCanaryAgents?: number;
+    autoPromote?: boolean;
+    /**
+     * Cost-outlier multiplier used for automatic rollback.
+     * When current cost exceeds `rollbackCostMultiplier × projectedBudgetUsd`,
+     * staged canary modifications are rolled back to the previous stable state.
+     */
+    rollbackCostMultiplier?: number;
+  };
+  /**
    * PR creation mode for this cycle.
    *
    * - `'single'` (default): one squash-PR for the entire autonomous branch,
@@ -265,6 +284,16 @@ export interface CycleResult {
   scoringFallback?: 'static' | 'effort-estimator';
   error?: string;
   gateVerdict?: 'APPROVE' | 'REJECT';
+  autoReforge?: {
+    canary?: {
+      enabled: boolean;
+      status: 'staged' | 'promoted' | 'rolled_back';
+      stagedAgents: string[];
+      promotedAgents: string[];
+      rolledBackAgents: string[];
+      rollbackReason?: string;
+    };
+  };
 }
 
 export class CycleKilledError extends Error {

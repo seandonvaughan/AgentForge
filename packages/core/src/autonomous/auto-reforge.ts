@@ -8,13 +8,15 @@
 // so the cycle-runner integration and tests can run without those modules
 // being present yet. When P+Q land, swap the stubs for the real imports.
 
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
 // Real implementations from Workstreams P (curator) and Q (mutator).
 // Adapted to R's expected shapes below.
 import { curateLearnings as _realCurate } from '../team/engine/learnings/curator.js';
 import { applyLearnings as _realApply } from '../team/engine/learnings/mutator.js';
+
+const SAFE_AGENT_ID = /^[a-zA-Z0-9._-]+$/;
 
 // ---------------------------------------------------------------------------
 // Upstream types from Workstreams P + Q (stubs until they land)
@@ -61,6 +63,14 @@ export interface ApplyLearningsInput {
   projectRoot: string;
   proposed: CurationResult;
   dryRun?: boolean;
+}
+
+export interface AutoReforgeCanaryOptions {
+  enabled?: boolean;
+  rolloutPercent?: number;
+  minCanaryAgents?: number;
+  autoPromote?: boolean;
+  rollbackCostMultiplier?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -121,6 +131,7 @@ const _curateLearnings: (input: CurationInput) => Promise<CurationResult> =
 const _applyLearnings: (input: ApplyLearningsInput) => Promise<MutatorReport> =
   async (input) => {
     void stubApplyLearnings; // keep reference so the stub remains as a fallback path
+    persistMutatorInput(input.projectRoot, input.proposed);
     // Q reads proposed from disk; P has already written it to
     // .agentforge/forge/learnings-proposed.json. Q's perAgent is an array;
     // we re-key it into a Record<agentId, ...> to match R's contract.
@@ -160,6 +171,9 @@ export interface AutoReforgeOptions {
   cycleId: string;
   involvedAgentIds: string[];
   dryRun?: boolean;
+  canary?: AutoReforgeCanaryOptions;
+  projectedBudgetUsd?: number;
+  currentCostUsd?: number;
   /** Optional bus for emitting learnings.applied events. */
   bus?: { publish: (topic: string, payload: unknown) => void };
   /** Injected curator (for testing). */
@@ -173,6 +187,14 @@ export interface AutoReforgeResult {
   /** true if no proposed learnings were produced (nothing to apply). */
   skipped: boolean;
   mutatorReport?: MutatorReport;
+  canary?: {
+    enabled: boolean;
+    status: 'staged' | 'promoted' | 'rolled_back';
+    stagedAgents: string[];
+    promotedAgents: string[];
+    rolledBackAgents: string[];
+    rollbackReason?: string;
+  };
   durationMs: number;
 }
 
@@ -206,6 +228,175 @@ export async function runAutoReforge(
     return { cycleId: opts.cycleId, skipped: true, durationMs: Date.now() - startedAt };
   }
 
+  const canaryEnabled = opts.canary?.enabled === true;
+  const candidateAgentIds = Object.entries(curationResult.byAgent)
+    .filter(([agentId, lessons]) => isSafeAgentId(agentId) && lessons.length > 0)
+    .map(([agentId]) => agentId);
+
+  if (canaryEnabled && candidateAgentIds.length > 1) {
+    const rolloutPercent = clamp(
+      Number.isFinite(opts.canary?.rolloutPercent)
+        ? Number(opts.canary?.rolloutPercent)
+        : 20,
+      1,
+      100,
+    );
+    const minCanaryAgents = Math.max(
+      1,
+      Number.isFinite(opts.canary?.minCanaryAgents)
+        ? Math.floor(Number(opts.canary?.minCanaryAgents))
+        : 1,
+    );
+    const canaryCount = Math.min(
+      candidateAgentIds.length,
+      Math.max(minCanaryAgents, Math.ceil((candidateAgentIds.length * rolloutPercent) / 100)),
+    );
+    const stagedAgents = candidateAgentIds.slice(0, canaryCount);
+    const remainingAgents = candidateAgentIds.slice(canaryCount);
+    const projectedBudgetUsd = Number.isFinite(opts.projectedBudgetUsd)
+      ? Number(opts.projectedBudgetUsd)
+      : 0;
+    const currentCostUsd = Number.isFinite(opts.currentCostUsd)
+      ? Number(opts.currentCostUsd)
+      : 0;
+    const rollbackCostMultiplier = Number.isFinite(opts.canary?.rollbackCostMultiplier) &&
+      Number(opts.canary?.rollbackCostMultiplier) > 0
+      ? Number(opts.canary?.rollbackCostMultiplier)
+      : 2;
+
+    if (
+      projectedBudgetUsd > 0 &&
+      currentCostUsd > projectedBudgetUsd * rollbackCostMultiplier
+    ) {
+      return {
+        cycleId: opts.cycleId,
+        skipped: false,
+        canary: {
+          enabled: true,
+          status: 'rolled_back',
+          stagedAgents: [],
+          promotedAgents: [],
+          rolledBackAgents: [],
+          rollbackReason:
+            `cost outlier: $${currentCostUsd.toFixed(2)} > ` +
+            `${rollbackCostMultiplier.toFixed(2)}x projected $${projectedBudgetUsd.toFixed(2)}`,
+        },
+        durationMs: Date.now() - startedAt,
+      };
+    }
+    const stagedSnapshot = snapshotAgentLearnings(opts.projectRoot, stagedAgents);
+
+    try {
+      const stagedReport = await apply({
+        projectRoot: opts.projectRoot,
+        proposed: sliceCurationByAgents(curationResult, stagedAgents),
+        dryRun: opts.dryRun ?? false,
+      });
+
+      if (
+        projectedBudgetUsd > 0 &&
+        currentCostUsd > projectedBudgetUsd * rollbackCostMultiplier
+      ) {
+        restoreAgentLearningsSnapshot(opts.projectRoot, stagedSnapshot);
+        return {
+          cycleId: opts.cycleId,
+          skipped: false,
+          mutatorReport: stagedReport,
+          canary: {
+            enabled: true,
+            status: 'rolled_back',
+            stagedAgents,
+            promotedAgents: [],
+            rolledBackAgents: stagedAgents,
+            rollbackReason:
+              `cost outlier: $${currentCostUsd.toFixed(2)} > ` +
+              `${rollbackCostMultiplier.toFixed(2)}x projected $${projectedBudgetUsd.toFixed(2)}`,
+          },
+          durationMs: Date.now() - startedAt,
+        };
+      }
+
+      const autoPromote = opts.canary?.autoPromote !== false;
+      if (!autoPromote || remainingAgents.length === 0) {
+        return {
+          cycleId: opts.cycleId,
+          skipped: false,
+          mutatorReport: stagedReport,
+          canary: {
+            enabled: true,
+            status: remainingAgents.length === 0 ? 'promoted' : 'staged',
+            stagedAgents,
+            promotedAgents: remainingAgents.length === 0 ? [...stagedAgents] : [],
+            rolledBackAgents: [],
+          },
+          durationMs: Date.now() - startedAt,
+        };
+      }
+
+      try {
+        const promotedReport = await apply({
+          projectRoot: opts.projectRoot,
+          proposed: sliceCurationByAgents(curationResult, remainingAgents),
+          dryRun: opts.dryRun ?? false,
+        });
+        const mergedReport = mergeMutatorReports(stagedReport, promotedReport);
+        if (opts.bus) {
+          opts.bus.publish('learnings.applied', {
+            cycleId: opts.cycleId,
+            perAgent: mergedReport.perAgent,
+            totalApplied: mergedReport.totalApplied,
+            dryRun: mergedReport.dryRun,
+          });
+        }
+
+        return {
+          cycleId: opts.cycleId,
+          skipped: false,
+          mutatorReport: mergedReport,
+          canary: {
+            enabled: true,
+            status: 'promoted',
+            stagedAgents,
+            promotedAgents: [...candidateAgentIds],
+            rolledBackAgents: [],
+          },
+          durationMs: Date.now() - startedAt,
+        };
+      } catch (promoteErr) {
+        restoreAgentLearningsSnapshot(opts.projectRoot, stagedSnapshot);
+        return {
+          cycleId: opts.cycleId,
+          skipped: false,
+          mutatorReport: stagedReport,
+          canary: {
+            enabled: true,
+            status: 'rolled_back',
+            stagedAgents,
+            promotedAgents: [],
+            rolledBackAgents: stagedAgents,
+            rollbackReason: promoteErr instanceof Error ? promoteErr.message : String(promoteErr),
+          },
+          durationMs: Date.now() - startedAt,
+        };
+      }
+    } catch (canaryErr) {
+      restoreAgentLearningsSnapshot(opts.projectRoot, stagedSnapshot);
+      return {
+        cycleId: opts.cycleId,
+        skipped: false,
+        canary: {
+          enabled: true,
+          status: 'rolled_back',
+          stagedAgents,
+          promotedAgents: [],
+          rolledBackAgents: stagedAgents,
+          rollbackReason: canaryErr instanceof Error ? canaryErr.message : String(canaryErr),
+        },
+        durationMs: Date.now() - startedAt,
+      };
+    }
+  }
+
   // 3. Apply the proposed learnings via the mutator.
   const mutatorReport = await apply({
     projectRoot: opts.projectRoot,
@@ -227,6 +418,17 @@ export async function runAutoReforge(
     cycleId: opts.cycleId,
     skipped: false,
     mutatorReport,
+    ...(canaryEnabled
+      ? {
+          canary: {
+            enabled: true,
+            status: 'promoted' as const,
+            stagedAgents: candidateAgentIds,
+            promotedAgents: candidateAgentIds,
+            rolledBackAgents: [],
+          },
+        }
+      : {}),
     durationMs: Date.now() - startedAt,
   };
 }
@@ -276,4 +478,76 @@ export function extractInvolvedAgentIds(
   } catch {
     return [];
   }
+}
+
+function persistMutatorInput(projectRoot: string, proposed: CurationResult): void {
+  const forgeDir = join(projectRoot, '.agentforge', 'forge');
+  mkdirSync(forgeDir, { recursive: true });
+  const safeByAgent = Object.fromEntries(
+    Object.entries(proposed.byAgent).filter(([agentId]) => isSafeAgentId(agentId)),
+  );
+  writeFileSync(
+    join(forgeDir, 'learnings-proposed.json'),
+    JSON.stringify(safeByAgent, null, 2),
+    'utf8',
+  );
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function sliceCurationByAgents(result: CurationResult, agentIds: string[]): CurationResult {
+  const pick = new Set(agentIds.filter(isSafeAgentId));
+  const byAgent: CurationResult['byAgent'] = {};
+  for (const [agentId, learnings] of Object.entries(result.byAgent)) {
+    if (pick.has(agentId)) byAgent[agentId] = learnings;
+  }
+  return {
+    byAgent,
+    sourcesScanned: result.sourcesScanned,
+    generatedAt: result.generatedAt,
+  };
+}
+
+function mergeMutatorReports(a: MutatorReport, b: MutatorReport): MutatorReport {
+  return {
+    perAgent: { ...a.perAgent, ...b.perAgent },
+    totalApplied: a.totalApplied + b.totalApplied,
+    totalSkipped: a.totalSkipped + b.totalSkipped,
+    dryRun: a.dryRun || b.dryRun,
+  };
+}
+
+function snapshotAgentLearnings(
+  projectRoot: string,
+  agentIds: string[],
+): Map<string, string | null> {
+  const snapshots = new Map<string, string | null>();
+  for (const agentId of agentIds) {
+    if (!isSafeAgentId(agentId)) continue;
+    const path = join(projectRoot, '.agentforge', 'agents', `${agentId}.yaml`);
+    snapshots.set(agentId, existsSync(path) ? readFileSync(path, 'utf8') : null);
+  }
+  return snapshots;
+}
+
+function restoreAgentLearningsSnapshot(
+  projectRoot: string,
+  snapshots: Map<string, string | null>,
+): void {
+  for (const [agentId, content] of snapshots.entries()) {
+    if (!isSafeAgentId(agentId)) continue;
+    const path = join(projectRoot, '.agentforge', 'agents', `${agentId}.yaml`);
+    if (content === null) {
+      rmSync(path, { force: true });
+      continue;
+    }
+    mkdirSync(join(projectRoot, '.agentforge', 'agents'), { recursive: true });
+    writeFileSync(path, content, 'utf8');
+  }
+}
+
+function isSafeAgentId(agentId: string): boolean {
+  return SAFE_AGENT_ID.test(agentId);
 }

@@ -68,6 +68,7 @@ import type { RealTestRunner } from './exec/real-test-runner.js';
 import type { GitOps } from './exec/git-ops.js';
 import type { PROpener } from './exec/pr-opener.js';
 import { runAutoReforge, extractInvolvedAgentIds } from './auto-reforge.js';
+import type { AutoReforgeResult } from './auto-reforge.js';
 import { runPreVerifyTypeCheck, type PreVerifyTypeCheckResult } from './pre-verify-typecheck.js';
 import { assertUnattendedSafe } from './audit/unattended-guard.js';
 import { mergeBreakdowns, type CostBreakdown } from './cost-breakdown.js';
@@ -372,6 +373,7 @@ export class CycleRunner {
   };
   private scoringFallback: 'static' | 'effort-estimator' | undefined;
   private gateVerdict: 'APPROVE' | 'REJECT' | undefined = undefined;
+  private autoReforgeCanary: AutoReforgeResult['canary'] | undefined = undefined;
   /** Set in runStages() when prMode='multi'; used to drain at cycle end. */
   private mergeQueue: MergeQueue | null = null;
   /** Accumulated CostBreakdown from the execute phase (Wave 2). */
@@ -745,7 +747,10 @@ export class CycleRunner {
     // Errors are swallowed — a reforge failure must never kill a passed
     // cycle. Honoured by config.autoReforge (default true).
     // ─────────────────────────────────────────────────────────────────
-    await this.runAutoReforgeStep();
+    await this.runAutoReforgeStep({
+      projectedBudgetUsd: scored.totalEstimatedCostUsd,
+      currentCostUsd: this.totalCostUsd,
+    });
     this.checkKillSwitch();
 
     // ─────────────────────────────────────────────────────────────────
@@ -1048,7 +1053,9 @@ export class CycleRunner {
    * Any error is caught and logged — a reforge failure MUST NOT kill a cycle
    * that has already passed the gate.
    */
-  private async runAutoReforgeStep(): Promise<void> {
+  private async runAutoReforgeStep(
+    context?: { projectedBudgetUsd?: number; currentCostUsd?: number },
+  ): Promise<void> {
     // Default true: existing configs without the field still trigger reforge.
     const shouldReforge = this.options.config.autoReforge !== false;
     if (!shouldReforge) {
@@ -1065,8 +1072,18 @@ export class CycleRunner {
         projectRoot: this.options.cwd,
         cycleId: this.cycleId,
         involvedAgentIds,
+        ...(this.options.config.autoReforgeCanary !== undefined
+          ? { canary: this.options.config.autoReforgeCanary }
+          : {}),
+        ...(context?.projectedBudgetUsd !== undefined
+          ? { projectedBudgetUsd: context.projectedBudgetUsd }
+          : {}),
+        ...(context?.currentCostUsd !== undefined
+          ? { currentCostUsd: context.currentCostUsd }
+          : {}),
         bus: this.options.bus,
       });
+      this.autoReforgeCanary = result.canary;
       if (result.skipped) {
         // eslint-disable-next-line no-console
         console.log('[autonomous:cycle] stage 3.25: auto-reforge skipped (no proposed learnings)');
@@ -1076,6 +1093,15 @@ export class CycleRunner {
           `[autonomous:cycle] stage 3.25: auto-reforge complete in ${result.durationMs}ms` +
           ` (applied=${result.mutatorReport?.totalApplied ?? 0})`,
         );
+        if (result.canary) {
+          // eslint-disable-next-line no-console
+          console.log(
+            `[autonomous:cycle] stage 3.25: canary status=${result.canary.status}` +
+            ` staged=${result.canary.stagedAgents.length}` +
+            ` promoted=${result.canary.promotedAgents.length}` +
+            ` rolledBack=${result.canary.rolledBackAgents.length}`,
+          );
+        }
       }
     } catch (err) {
       // Swallow — reforge errors must never fail the cycle.
@@ -1317,6 +1343,9 @@ Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
     }
     if (this.gateVerdict !== undefined) {
       base.gateVerdict = this.gateVerdict;
+    }
+    if (this.autoReforgeCanary !== undefined) {
+      base.autoReforge = { canary: this.autoReforgeCanary };
     }
     const merged: CycleResult = { ...base, ...overrides };
     // v6.4.4 bug #2: propagate `error` field so FAILED cycles surface the

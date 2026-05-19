@@ -99,6 +99,13 @@ export const DEFAULT_CYCLE_CONFIG: CycleConfig = Object.freeze({
     requireApprovalAfter: 1,
     reExecuteOnRetry: true,
   }),
+  autoReforgeCanary: Object.freeze({
+    enabled: false,
+    rolloutPercent: 20,
+    minCanaryAgents: 1,
+    autoPromote: true,
+    rollbackCostMultiplier: 2,
+  }),
 }) as CycleConfig;
 
 export function loadCycleConfig(cwd: string): CycleConfig {
@@ -153,6 +160,26 @@ function mergeConfig(defaults: CycleConfig, overrides: Partial<CycleConfig>): Cy
       if (typeof override === 'boolean') {
         merged.autoReforge = override;
       }
+    } else if (key === 'autoReforgeCanary') {
+      if (isRecord(override)) {
+        const current = merged.autoReforgeCanary ?? {};
+        const next = { ...current };
+        if (typeof override.enabled === 'boolean') next.enabled = override.enabled;
+        if (typeof override.autoPromote === 'boolean') next.autoPromote = override.autoPromote;
+        if (typeof override.rolloutPercent === 'number' && Number.isFinite(override.rolloutPercent)) {
+          next.rolloutPercent = override.rolloutPercent;
+        }
+        if (typeof override.minCanaryAgents === 'number' && Number.isFinite(override.minCanaryAgents)) {
+          next.minCanaryAgents = Math.floor(override.minCanaryAgents);
+        }
+        if (
+          typeof override.rollbackCostMultiplier === 'number' &&
+          Number.isFinite(override.rollbackCostMultiplier)
+        ) {
+          next.rollbackCostMultiplier = override.rollbackCostMultiplier;
+        }
+        merged.autoReforgeCanary = next;
+      }
     } else if (key === 'prMode') {
       if (override === 'single' || override === 'multi') {
         merged.prMode = override;
@@ -204,5 +231,34 @@ function validateConfig(config: CycleConfig): void {
   }
   if (config.autoReforge !== undefined && typeof config.autoReforge !== 'boolean') {
     throw new Error('autoReforge must be a boolean');
+  }
+  if (config.autoReforgeCanary !== undefined) {
+    const canary = config.autoReforgeCanary;
+    if (canary.enabled !== undefined && typeof canary.enabled !== 'boolean') {
+      throw new Error('autoReforgeCanary.enabled must be a boolean');
+    }
+    if (canary.autoPromote !== undefined && typeof canary.autoPromote !== 'boolean') {
+      throw new Error('autoReforgeCanary.autoPromote must be a boolean');
+    }
+    if (
+      canary.rolloutPercent !== undefined &&
+      (!Number.isFinite(canary.rolloutPercent) ||
+        canary.rolloutPercent <= 0 ||
+        canary.rolloutPercent > 100)
+    ) {
+      throw new Error('autoReforgeCanary.rolloutPercent must be between 0 and 100');
+    }
+    if (
+      canary.minCanaryAgents !== undefined &&
+      (!Number.isFinite(canary.minCanaryAgents) || canary.minCanaryAgents < 1)
+    ) {
+      throw new Error('autoReforgeCanary.minCanaryAgents must be >= 1');
+    }
+    if (
+      canary.rollbackCostMultiplier !== undefined &&
+      (!Number.isFinite(canary.rollbackCostMultiplier) || canary.rollbackCostMultiplier <= 0)
+    ) {
+      throw new Error('autoReforgeCanary.rollbackCostMultiplier must be a positive finite number');
+    }
   }
 }

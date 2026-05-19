@@ -158,6 +158,37 @@ describe('loadCycleConfig() — autoReforge field', () => {
   });
 });
 
+describe('loadCycleConfig() — autoReforgeCanary field', () => {
+  it('loads valid canary settings', () => {
+    writeAutonomousYaml([
+      'autoReforgeCanary:',
+      '  enabled: true',
+      '  rolloutPercent: 35',
+      '  minCanaryAgents: 2',
+      '  autoPromote: false',
+      '  rollbackCostMultiplier: 2.5',
+    ].join('\n') + '\n');
+
+    const config = loadCycleConfig(tmpDir);
+    expect(config.autoReforgeCanary?.enabled).toBe(true);
+    expect(config.autoReforgeCanary?.rolloutPercent).toBe(35);
+    expect(config.autoReforgeCanary?.minCanaryAgents).toBe(2);
+    expect(config.autoReforgeCanary?.autoPromote).toBe(false);
+    expect(config.autoReforgeCanary?.rollbackCostMultiplier).toBe(2.5);
+  });
+
+  it('rejects non-positive rollbackCostMultiplier', () => {
+    writeAutonomousYaml([
+      'autoReforgeCanary:',
+      '  rollbackCostMultiplier: 0',
+    ].join('\n') + '\n');
+
+    expect(() => loadCycleConfig(tmpDir)).toThrow(
+      'autoReforgeCanary.rollbackCostMultiplier must be a positive finite number',
+    );
+  });
+});
+
 describe('loadCycleConfig() — multi-PR primitive fields', () => {
   it('loads prMode: multi', () => {
     writeAutonomousYaml('prMode: multi\n');

@@ -15,6 +15,7 @@ import { writeMemoryEntry, type ReviewFindingMetadata } from '../../memory/types
 import { extractFindingsByLevel } from './gate-phase.js';
 import { collectSprintItemTags } from './sprint-utils.js';
 import { writeKnowledgeEntry } from '../../knowledge/persistence.js';
+import type { ReviewFindingCreatedPayload } from '../../message-bus/types.js';
 import {
   collectExecuteReviewMaterials,
   formatExecuteReviewTargetSummary,
@@ -117,22 +118,46 @@ Do NOT modify any files.`;
   const majorLines = extractFindingsByLevel(review, 'MAJOR');
   const sprintDomainTags = collectSprintItemTags(ctx.projectRoot, ctx.sprintVersion, ctx.cycleId);
   for (const line of criticalLines) {
-    writeMemoryEntry(ctx.projectRoot, {
+    const metadata = parseReviewFindingMetadata(line, 'CRITICAL');
+    const entry = writeMemoryEntry(ctx.projectRoot, {
       type: 'review-finding',
       value: line,
       source: ctx.cycleId,
       tags: ['review', 'finding', 'critical', `sprint:v${ctx.sprintVersion}`, ...sprintDomainTags],
-      metadata: parseReviewFindingMetadata(line, 'CRITICAL'),
+      metadata,
     });
+    const payload: ReviewFindingCreatedPayload = {
+      entryId: entry.id,
+      cycleId: ctx.cycleId ?? '',
+      severity: 'CRITICAL',
+      summary: metadata.summary,
+      file: metadata.file,
+      line: metadata.line,
+      fixSuggestion: metadata.fixSuggestion,
+      createdAt: entry.createdAt,
+    };
+    ctx.bus.publish('review.finding.created', payload);
   }
   for (const line of majorLines) {
-    writeMemoryEntry(ctx.projectRoot, {
+    const metadata = parseReviewFindingMetadata(line, 'MAJOR');
+    const entry = writeMemoryEntry(ctx.projectRoot, {
       type: 'review-finding',
       value: line,
       source: ctx.cycleId,
       tags: ['review', 'finding', 'major', `sprint:v${ctx.sprintVersion}`, ...sprintDomainTags],
-      metadata: parseReviewFindingMetadata(line, 'MAJOR'),
+      metadata,
     });
+    const payload: ReviewFindingCreatedPayload = {
+      entryId: entry.id,
+      cycleId: ctx.cycleId ?? '',
+      severity: 'MAJOR',
+      summary: metadata.summary,
+      file: metadata.file,
+      line: metadata.line,
+      fixSuggestion: metadata.fixSuggestion,
+      createdAt: entry.createdAt,
+    };
+    ctx.bus.publish('review.finding.created', payload);
   }
 
   // Persist entity-like terms extracted from the review output to the knowledge

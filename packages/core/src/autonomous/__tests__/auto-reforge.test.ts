@@ -253,6 +253,60 @@ describe('runAutoReforge', () => {
       }),
     ).rejects.toThrow('mutator write error');
   });
+
+  it('canary mode stages a subset then promotes remaining agents', async () => {
+    const curate = vi.fn(async (): Promise<CurationResult> =>
+      makeCurationResult(['coder', 'reviewer', 'qa']),
+    );
+    const apply = vi.fn(async (input: ApplyLearningsInput): Promise<MutatorReport> => {
+      const ids = Object.keys(input.proposed.byAgent);
+      return {
+        perAgent: Object.fromEntries(ids.map((id) => [id, { applied: 1, skipped: 0, capped: false, lessons: [`L-${id}`] }])),
+        totalApplied: ids.length,
+        totalSkipped: 0,
+        dryRun: false,
+      };
+    });
+
+    const result = await runAutoReforge({
+      projectRoot: tmpDir,
+      cycleId: 'cycle-canary-promote',
+      involvedAgentIds: ['coder', 'reviewer', 'qa'],
+      canary: { enabled: true, rolloutPercent: 34, minCanaryAgents: 1, autoPromote: true },
+      curateLearnings: curate,
+      applyLearnings: apply,
+    });
+
+    expect(result.skipped).toBe(false);
+    expect(result.canary?.status).toBe('promoted');
+    expect(result.canary?.stagedAgents.length).toBe(2);
+    expect(result.canary?.promotedAgents.length).toBe(3);
+    expect(apply).toHaveBeenCalledTimes(2);
+  });
+
+  it('canary mode rolls back when sprint cost is an outlier', async () => {
+    const curate = vi.fn(async (): Promise<CurationResult> =>
+      makeCurationResult(['coder', 'reviewer']),
+    );
+    const apply = vi.fn(async (): Promise<MutatorReport> => makeMutatorReport());
+
+    const result = await runAutoReforge({
+      projectRoot: tmpDir,
+      cycleId: 'cycle-canary-rollback',
+      involvedAgentIds: ['coder', 'reviewer'],
+      canary: { enabled: true, rollbackCostMultiplier: 2 },
+      projectedBudgetUsd: 10,
+      currentCostUsd: 25,
+      curateLearnings: curate,
+      applyLearnings: apply,
+    });
+
+    expect(result.skipped).toBe(false);
+    expect(result.canary?.status).toBe('rolled_back');
+    expect(result.canary?.rolledBackAgents.length).toBe(0);
+    expect(result.canary?.rollbackReason?.toLowerCase()).toContain('cost outlier');
+    expect(apply).not.toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------
