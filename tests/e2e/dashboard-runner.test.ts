@@ -53,6 +53,13 @@ async function injectMockEventSource(page: Page) {
           }
         }
       },
+      __emitAgentForgeSseRaw(raw: string) {
+        for (const source of sources) {
+          if (source.onmessage) {
+            source.onmessage(new MessageEvent('message', { data: raw }));
+          }
+        }
+      },
       __errorAgentForgeSse() {
         for (const source of sources) {
           source.onerror?.(new Event('error'));
@@ -115,6 +122,13 @@ async function emitSse(page: Page, event: StreamEvent) {
     (window as unknown as { __emitAgentForgeSse: (event: StreamEvent) => void })
       .__emitAgentForgeSse(payload);
   }, event);
+}
+
+async function emitRawSse(page: Page, raw: string) {
+  await page.evaluate((payload) => {
+    (window as unknown as { __emitAgentForgeSseRaw: (rawEvent: string) => void })
+      .__emitAgentForgeSseRaw(payload);
+  }, raw);
 }
 
 async function errorSse(page: Page) {
@@ -247,6 +261,23 @@ test.describe('Runner Page', () => {
 
     await expect(page.locator('.stream-warning')).toContainText('reconnecting automatically');
     await expect(page.locator('.running-indicator')).toContainText('Stream reconnecting');
+  });
+
+  test('ignores malformed SSE payloads and continues rendering later chunks', async ({ page }) => {
+    await openRunner(page);
+
+    await page.fill('#task-input', 'Malformed payload resilience');
+    await page.click('button:has-text("Run Agent")');
+
+    await emitRawSse(page, '{bad json');
+    await emitSse(page, {
+      type: 'agent_activity',
+      category: 'run',
+      message: '[coder] chunk',
+      data: { sessionId: 'run-test-1', content: 'still alive' },
+    });
+
+    await expect(page.locator('.output-pre')).toContainText('still alive');
   });
 
   test('shows API unavailable banner when run endpoint returns 404', async ({ page }) => {
