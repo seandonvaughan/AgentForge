@@ -146,4 +146,12 @@ describe('GET /api/v5/cycles/:id/sprint — prefers plan.json', () => {
     expect(body.file).toBe('v10.6.0.json');
     expect(body.sprint.version).toBe('10.6.0');
   });
+
+  it('returns 204 when sprint artifacts are not available yet', async () => {
+    tmpDir = makeTmp();
+    app = await buildApp(tmpDir);
+
+    const res = await app.inject({ method: 'GET', url: `/api/v5/cycles/${CYCLE_ID}/sprint` });
+    expect(res.statusCode).toBe(204);
+  });
 });

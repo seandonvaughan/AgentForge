@@ -721,13 +721,13 @@
     sprintLoading = true;
     try {
       const res = await fetch(withWorkspace(`/api/v5/cycles/${id}/sprint`));
-      if (res.ok) {
+      if (res.status === 204 || res.status === 404) {
+        sprint = null;
+        sprintError = 'Sprint not generated yet — still in audit/plan phase';
+      } else if (res.ok) {
         const json = (await res.json()) as { sprint?: typeof sprint };
         sprint = (json.sprint ?? json) as typeof sprint;
         sprintError = null;
-      } else if (res.status === 404) {
-        sprint = null;
-        sprintError = 'Sprint not generated yet — still in audit/plan phase';
       } else {
         sprintError = `HTTP ${res.status}`;
       }
@@ -751,6 +751,7 @@
   async function loadScoring(): Promise<void> {
     try {
       const res = await fetch(withWorkspace(`/api/v5/cycles/${id}/scoring`));
+      if (res.status === 204 || res.status === 404) return;
       if (res.ok) scoring = (await res.json()) as ScoringResponse;
     } catch { /* silent */ }
   }

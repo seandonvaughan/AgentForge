@@ -1194,12 +1194,12 @@ export async function cyclesRoutes(
         return typeof ev.at === 'string' ? new Date(ev.at).getTime() : null;
       } catch { return null; }
     })();
-    if (cycleStartedAt === null) return reply.status(404).send({ error: 'Cannot determine cycle start time' });
+    if (cycleStartedAt === null) return reply.status(204).send();
 
     const sprintsDir = join(opts.projectRoot, '.agentforge/sprints');
     const archiveDir = join(sprintsDir, 'archive');
     const dirs = [sprintsDir, archiveDir].filter(d => existsSync(d));
-    if (dirs.length === 0) return reply.status(404).send({ error: 'No sprints directory' });
+    if (dirs.length === 0) return reply.status(204).send();
 
     let bestMatch: { file: string; sprint: any; delta: number } | null = null;
     for (const dir of dirs) {
@@ -1219,7 +1219,7 @@ export async function cyclesRoutes(
         } catch { /* skip */ }
       }
     }
-    if (!bestMatch) return reply.status(404).send({ error: 'No matching sprint file found for this cycle' });
+    if (!bestMatch) return reply.status(204).send();
     return reply.send({ file: bestMatch.file, sprint: bestMatch.sprint });
   });
 
@@ -1399,7 +1399,7 @@ export async function cyclesRoutes(
     const dir = safeJoin(base, id);
     if (!dir || !existsSync(dir)) return reply.status(404).send({ error: 'Cycle not found' });
     const file = join(dir, 'scoring.json');
-    if (!existsSync(file)) return reply.status(404).send({ error: 'scoring.json not found' });
+    if (!existsSync(file)) return reply.status(204).send();
     const parsed = readJsonIfExists(file);
     if (parsed === null) return reply.status(500).send({ error: 'Failed to parse scoring.json' });
     return reply.send(parsed);

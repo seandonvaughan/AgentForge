@@ -205,10 +205,10 @@ describe('GET /api/v5/cycles/:id/scoring', () => {
     expect(res.json().result.score).toBe(0.9);
   });
 
-  it('404s when scoring.json missing', async () => {
+  it('returns 204 when scoring.json is not available yet', async () => {
     seedCycle('abc', makeCycleJson());
     const res = await app.inject({ method: 'GET', url: '/api/v5/cycles/abc/scoring' });
-    expect(res.statusCode).toBe(404);
+    expect(res.statusCode).toBe(204);
   });
 });
 
