@@ -42,11 +42,12 @@ export class BudgetApproval {
   ) {}
 
   async collect(req: ApprovalRequest, options: ApprovalOptions = {}): Promise<ApprovalResult> {
-    if (req.requiresApproval.length === 0) {
+    const withinBudgetCost = this.sumCosts(req.withinBudget);
+    if (req.withinBudget.length > 0 && withinBudgetCost <= req.budgetUsd) {
       return {
         approvedItems: req.withinBudget,
-        rejectedItems: [],
-        finalBudgetUsd: this.sumCosts(req.withinBudget),
+        rejectedItems: req.requiresApproval,
+        finalBudgetUsd: withinBudgetCost,
         decision: 'auto-approved',
         decidedAt: new Date().toISOString(),
         decidedBy: 'system',
