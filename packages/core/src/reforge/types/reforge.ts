@@ -133,12 +133,31 @@ export interface CanaryDeploymentRecord {
   rollbackThreshold: number;
   /** The staged override that should be applied to canary traffic. */
   override: AgentOverride;
+  /** Persisted outcome counters used to preserve rollback thresholds across process restarts. */
+  metrics?: CanaryDeploymentMetrics;
+  /** Persisted rollback marker written when this staged deployment is removed by auto-rollback. */
+  rollback?: CanaryRollbackRecord;
 }
 
 /** Context passed when resolving an override for a single request. */
 export interface CanaryRoutingContext {
   requestId?: string;
   headerValue?: string;
+}
+
+/** Outcome counters for a staged canary deployment. */
+export interface CanaryDeploymentMetrics {
+  canaryRequests: number;
+  canaryErrors: number;
+  errorRate: number;
+}
+
+/** Persisted record of an auto-rollback decision. */
+export interface CanaryRollbackRecord {
+  reason: string;
+  errorRate: number;
+  threshold: number;
+  rolledBackAt: string;
 }
 
 /** Options for staging a canary deployment. */

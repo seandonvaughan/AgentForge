@@ -410,6 +410,40 @@ describe("ReforgeEngine", () => {
     expect(controlApplied.system_prompt).not.toContain("COST AWARENESS PREAMBLE");
   });
 
+  it("deployCanary supports header-based routing when a header value is provided", async () => {
+    const canaryAnalysis = makeAnalysis([
+      {
+        action: "update-system-prompt",
+        rationale: "exercise header canary",
+        urgency: "medium",
+        theme_label: "prompt-canary",
+        confidence: 0.7,
+      },
+    ]);
+
+    const canaryPlan = await engine.buildPlan(canaryAnalysis, [makeTemplate()]);
+    await engine.deployCanary(canaryPlan, {
+      trafficPercent: 50,
+      strategy: "header",
+      rollbackThreshold: 0.1,
+    });
+
+    const canaryHeader = findRequestId(50, true);
+    const controlHeader = findRequestId(50, false);
+
+    const canaryApplied = await engine.applyOverride(makeTemplate(), {
+      requestId: "same-request",
+      headerValue: canaryHeader,
+    });
+    expect(canaryApplied.system_prompt).toContain("COST AWARENESS PREAMBLE");
+
+    const controlApplied = await engine.applyOverride(makeTemplate(), {
+      requestId: "same-request",
+      headerValue: controlHeader,
+    });
+    expect(controlApplied.system_prompt).not.toContain("COST AWARENESS PREAMBLE");
+  });
+
   it("recordCanaryOutcome rolls back a staged deployment after repeated errors", async () => {
     const baseAnalysis = makeAnalysis([
       {
@@ -488,9 +522,8 @@ describe("ReforgeEngine", () => {
       rollbackThreshold: 0.1,
     });
 
-    const restarted = new ReforgeEngine(tmpDir);
-    for (let i = 0; i < 5; i++) {
-      await restarted.recordCanaryOutcome("cost-analyst", true);
+    for (let i = 0; i < 4; i++) {
+      await engine.recordCanaryOutcome("cost-analyst", true);
     }
 
     const stagedPath = path.join(
@@ -500,7 +533,41 @@ describe("ReforgeEngine", () => {
       "canary",
       "cost-analyst.json",
     );
+    const beforeRestart = JSON.parse(await fs.readFile(stagedPath, "utf-8")) as {
+      metrics?: { canaryRequests: number; canaryErrors: number; errorRate: number };
+    };
+    expect(beforeRestart.metrics).toMatchObject({
+      canaryRequests: 4,
+      canaryErrors: 4,
+      errorRate: 1,
+    });
+
+    const restarted = new ReforgeEngine(tmpDir);
+    const outcome = await restarted.recordCanaryOutcome("cost-analyst", true);
+    expect(outcome?.rollback).toContain("Auto-rollback");
+
     await expect(fs.readFile(stagedPath, "utf-8")).rejects.toThrow();
+
+    const rollbackPath = path.join(
+      tmpDir,
+      ".agentforge",
+      "agent-overrides",
+      "canary",
+      "cost-analyst.rollback.json",
+    );
+    const rollback = JSON.parse(await fs.readFile(rollbackPath, "utf-8")) as {
+      metrics?: { canaryRequests: number; canaryErrors: number; errorRate: number };
+      rollback?: { reason: string; errorRate: number; threshold: number };
+    };
+    expect(rollback.metrics).toMatchObject({
+      canaryRequests: 5,
+      canaryErrors: 5,
+      errorRate: 1,
+    });
+    expect(rollback.rollback).toMatchObject({
+      errorRate: 1,
+      threshold: 0.1,
+    });
   });
 
   it("promoteCanary makes the staged override the active override", async () => {

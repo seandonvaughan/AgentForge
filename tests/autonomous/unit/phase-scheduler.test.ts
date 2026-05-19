@@ -27,7 +27,7 @@ function makeMockBus() {
 
 describe('PhaseScheduler', () => {
   let tmpDir: string;
-  const cycleId = 'test-ps';
+  const cycleId = 'test-ps1';
   const sprintId = 'test-sprint';
 
   beforeEach(() => {
@@ -279,6 +279,97 @@ describe('PhaseScheduler', () => {
 
     await expect(scheduler.run()).rejects.toThrow(/gate denied release/);
     expect(releaseCalls).toBe(0);
+  });
+
+  it('rewinds the resume checkpoint to execute when a gate result is rejected', async () => {
+    const { bus, logger, killSwitch } = makeDeps();
+    const handlers = makeAllPhasesCompleteHandlers();
+
+    handlers.gate = async (ctx: any) => {
+      ctx.bus.publish('sprint.phase.completed', {
+        sprintId,
+        phase: 'gate',
+        cycleId,
+        result: {
+          phase: 'gate',
+          status: 'failed',
+          durationMs: 100,
+          costUsd: 0.1,
+          agentRuns: [],
+          error: 'gate denied release',
+        },
+        completedAt: new Date().toISOString(),
+      });
+    };
+
+    const scheduler = new PhaseScheduler(
+      {
+        sprintId,
+        sprintVersion: '6.4.0',
+        projectRoot: tmpDir,
+        adapter: {} as any,
+        bus,
+        runtime: {} as any,
+        cycleId,
+      },
+      killSwitch,
+      logger,
+      handlers as any,
+    );
+
+    await expect(scheduler.run()).rejects.toThrow(/gate denied release/);
+
+    const checkpoint = JSON.parse(
+      readFileSync(join(tmpDir, '.agentforge', 'cycles', cycleId, 'checkpoint.json'), 'utf8'),
+    );
+    expect(checkpoint.resumeFromPhase).toBe('execute');
+    expect(checkpoint.completedPhases).toEqual(['audit', 'plan', 'assign']);
+  });
+
+  it('persists a failure checkpoint at the blocked phase instead of leaving the next phase stale', async () => {
+    const { bus, logger, killSwitch } = makeDeps();
+    const handlers = makeAllPhasesCompleteHandlers();
+
+    handlers.execute = async (ctx: any) => {
+      ctx.bus.publish('sprint.phase.completed', {
+        sprintId,
+        phase: 'execute',
+        cycleId,
+        result: {
+          phase: 'execute',
+          status: 'blocked',
+          durationMs: 100,
+          costUsd: 0.1,
+          agentRuns: [],
+          itemResults: [],
+          error: 'execute phase reported blocked',
+        },
+        completedAt: new Date().toISOString(),
+      });
+    };
+
+    const scheduler = new PhaseScheduler(
+      {
+        sprintId,
+        sprintVersion: '6.4.0',
+        projectRoot: tmpDir,
+        adapter: {} as any,
+        bus,
+        runtime: {} as any,
+        cycleId,
+      },
+      killSwitch,
+      logger,
+      handlers as any,
+    );
+
+    await expect(scheduler.run()).rejects.toThrow(/execute phase reported blocked/);
+
+    const checkpoint = JSON.parse(
+      readFileSync(join(tmpDir, '.agentforge', 'cycles', cycleId, 'checkpoint.json'), 'utf8'),
+    );
+    expect(checkpoint.resumeFromPhase).toBe('execute');
+    expect(checkpoint.completedPhases).toEqual(['audit', 'plan', 'assign']);
   });
 
   it('ignores events with mismatched sprintId', async () => {

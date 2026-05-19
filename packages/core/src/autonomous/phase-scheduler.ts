@@ -178,6 +178,7 @@ export class PhaseScheduler {
           typeof phaseResult.error === 'string' && phaseResult.error.length > 0
             ? phaseResult.error
             : `${justRan} phase reported ${phaseResult.status}`;
+        this.persistFailureCheckpoint(justRan);
         if (justRan === 'gate') {
           return this.fail(new GateRejectedError(reason));
         }
@@ -211,6 +212,7 @@ export class PhaseScheduler {
     const onFailed = (event: any) => {
       if (event.sprintId !== this.ctx.sprintId) return;
       this.logger.logPhaseFailure(event.phase, event.error);
+      this.persistFailureCheckpoint(event.phase as PhaseName);
       // Preserve GateRejectedError so the cycle runner's retry loop can catch it
       if (event.originalError instanceof GateRejectedError) {
         this.fail(event.originalError);
@@ -324,6 +326,22 @@ export class PhaseScheduler {
    * swallowed so a checkpoint write cannot crash the cycle.
    */
   private persistCheckpoint(nextPhaseName: PhaseName): void {
+    this.persistCheckpointWithPhases(nextPhaseName, [...this.completedPhases]);
+  }
+
+  private persistFailureCheckpoint(failedPhase: PhaseName): void {
+    const resumeFromPhase = failedPhase === 'gate' ? 'execute' : failedPhase;
+    const resumeIdx = PHASE_SEQUENCE.indexOf(resumeFromPhase);
+    const completedPhases = this.completedPhases.filter(
+      (phase) => PHASE_SEQUENCE.indexOf(phase) < resumeIdx,
+    );
+    this.persistCheckpointWithPhases(resumeFromPhase, completedPhases);
+  }
+
+  private persistCheckpointWithPhases(
+    nextPhaseName: PhaseName,
+    completedPhases: PhaseName[],
+  ): void {
     const cycleId = this.ctx.cycleId;
     if (!cycleId) return; // no id, nowhere to write
     try {
@@ -334,7 +352,7 @@ export class PhaseScheduler {
         cycleId,
         capturedAt: new Date().toISOString(),
         resumeFromPhase: nextPhaseName,
-        completedPhases: [...this.completedPhases],
+        completedPhases,
         budgetUsd: this.ctx.budgetUsd ?? 0,
         spentUsd: spent,
       };

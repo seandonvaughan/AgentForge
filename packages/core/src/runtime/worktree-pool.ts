@@ -54,10 +54,9 @@ export class WorktreePool {
   };
 
   /**
-   * Serialise git worktree remove/prune calls to avoid `.git/config` lock races.
-   * Worktree add uses --no-track so it doesn't write to .git/config, but
-   * remove+prune still do.  We serialise those through this chain so that
-   * parallel Promise.all(releases) never hits "could not lock config file".
+   * Serialise git worktree mutations to avoid `.git/config` and
+   * `.git/worktrees` races on Windows. Even when add uses --no-track, git
+   * still writes worktree metadata that can race under parallel allocation.
    */
   private gitMutex: Promise<unknown> = Promise.resolve();
 
@@ -115,34 +114,36 @@ export class WorktreePool {
     const parentDir = join(this.projectRoot, this.rootDir);
     mkdirSync(parentDir, { recursive: true });
 
-    // Check if the branch already exists in the repository.
-    let branchExists = false;
-    try {
-      const out = await git(this.projectRoot, ['branch', '--list', branch]);
-      branchExists = out.trim().length > 0;
-    } catch {
-      branchExists = false;
-    }
+    await this.enqueueGitOp(async () => {
+      // Check if the branch already exists in the repository while holding the
+      // git mutation lock so concurrent allocators don't race branch creation.
+      let branchExists = false;
+      try {
+        const out = await git(this.projectRoot, ['branch', '--list', branch]);
+        branchExists = out.trim().length > 0;
+      } catch {
+        branchExists = false;
+      }
 
-    if (branchExists) {
-      // Branch exists but no worktree directory — just add without -b.
-      // --no-track avoids writing to .git/config, preventing lock races.
-      await git(this.projectRoot, ['worktree', 'add', '--no-track', wtPath, branch]);
-    } else {
-      // Create the branch and worktree together off origin/baseBranch.
-      // --no-track avoids writing the upstream to .git/config, which causes
-      // "could not lock config file" races when many worktrees are created
-      // concurrently. Agents push with explicit refspecs so tracking is not needed.
-      await git(this.projectRoot, [
-        'worktree',
-        'add',
-        '--no-track',
-        '-b',
-        branch,
-        wtPath,
-        `origin/${this.baseBranch}`,
-      ]);
-    }
+      if (branchExists) {
+        // Branch exists but no worktree directory — just check it out into a
+        // worktree. --no-track is only valid when git is creating a new branch.
+        await git(this.projectRoot, ['worktree', 'add', wtPath, branch]);
+      } else {
+        // Create the branch and worktree together off origin/baseBranch.
+        // --no-track avoids writing upstream metadata; agents push with
+        // explicit refspecs so tracking is not needed.
+        await git(this.projectRoot, [
+          'worktree',
+          'add',
+          '--no-track',
+          '-b',
+          branch,
+          wtPath,
+          `origin/${this.baseBranch}`,
+        ]);
+      }
+    });
 
     const handle: WorktreeHandle = {
       id,

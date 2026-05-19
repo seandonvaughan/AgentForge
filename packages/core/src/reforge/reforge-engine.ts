@@ -21,7 +21,9 @@ import type {
   AgentOverride,
   CanaryDeployOptions,
   CanaryDeploymentRecord,
+  CanaryDeploymentMetrics,
   CanaryRoutingContext,
+  CanaryRollbackRecord,
   ReforgePlan,
   ReforgeResult,
 } from "./types/reforge.js";
@@ -262,6 +264,7 @@ export class ReforgeEngine {
         strategy,
         rollbackThreshold,
         override,
+        metrics: this.emptyCanaryMetrics(),
       };
 
       this.canaryManager.createFlag({
@@ -317,19 +320,35 @@ export class ReforgeEngine {
     }
 
     this.canaryManager.getFlag(deployment.flagId) ?? this.ensureCanaryFlag(deployment);
-    const result = this.canaryManager.recordOutcome(deployment.flagId, isError);
-    if (!result) {
-      return null;
-    }
+    this.canaryManager.recordOutcome(deployment.flagId, isError);
 
-    const rollbackTriggered = result.rollback !== undefined;
-    if (rollbackTriggered) {
+    const metrics = this.nextCanaryMetrics(deployment.metrics, isError);
+    const updatedDeployment: CanaryDeploymentRecord = {
+      ...deployment,
+      metrics,
+    };
+
+    const rollback = this.shouldRollbackCanary(updatedDeployment)
+      ? this.buildCanaryRollback(updatedDeployment)
+      : undefined;
+
+    if (rollback) {
+      await this.writeCanaryRollback({
+        ...updatedDeployment,
+        rollback,
+      });
       await this.deleteCanaryDeployment(agentName);
+      this.canaryManager.performRollback(deployment.flagId, rollback.reason);
+    } else {
+      await this.writeCanaryDeployment(updatedDeployment);
     }
 
     return {
-      deployment,
-      ...(result.rollback ? { rollback: result.rollback.reason } : {}),
+      deployment: {
+        ...updatedDeployment,
+        ...(rollback ? { rollback } : {}),
+      },
+      ...(rollback ? { rollback: rollback.reason } : {}),
     };
   }
 
@@ -420,6 +439,12 @@ export class ReforgeEngine {
     await fs.writeFile(filePath, JSON.stringify(deployment, null, 2), "utf-8");
   }
 
+  private async writeCanaryRollback(deployment: CanaryDeploymentRecord): Promise<void> {
+    await fs.mkdir(this.canaryOverridesDir, { recursive: true });
+    const filePath = path.join(this.canaryOverridesDir, `${deployment.agentName}.rollback.json`);
+    await fs.writeFile(filePath, JSON.stringify(deployment, null, 2), "utf-8");
+  }
+
   private async deleteCanaryDeployment(agentName: string): Promise<void> {
     const filePath = path.join(this.canaryOverridesDir, `${agentName}.json`);
     await fs.rm(filePath, { force: true });
@@ -457,6 +482,43 @@ export class ReforgeEngine {
     });
     this.canaryManager.activateFlag(flag.id);
     return flag;
+  }
+
+  private emptyCanaryMetrics(): CanaryDeploymentMetrics {
+    return {
+      canaryRequests: 0,
+      canaryErrors: 0,
+      errorRate: 0,
+    };
+  }
+
+  private nextCanaryMetrics(
+    current: CanaryDeploymentMetrics | undefined,
+    isError: boolean,
+  ): CanaryDeploymentMetrics {
+    const previous = current ?? this.emptyCanaryMetrics();
+    const canaryRequests = previous.canaryRequests + 1;
+    const canaryErrors = previous.canaryErrors + (isError ? 1 : 0);
+    return {
+      canaryRequests,
+      canaryErrors,
+      errorRate: canaryRequests > 0 ? canaryErrors / canaryRequests : 0,
+    };
+  }
+
+  private shouldRollbackCanary(deployment: CanaryDeploymentRecord): boolean {
+    const metrics = deployment.metrics ?? this.emptyCanaryMetrics();
+    return metrics.canaryRequests >= 5 && metrics.errorRate > deployment.rollbackThreshold;
+  }
+
+  private buildCanaryRollback(deployment: CanaryDeploymentRecord): CanaryRollbackRecord {
+    const metrics = deployment.metrics ?? this.emptyCanaryMetrics();
+    return {
+      reason: `Auto-rollback: error rate ${(metrics.errorRate * 100).toFixed(1)}% exceeds threshold ${(deployment.rollbackThreshold * 100).toFixed(1)}%`,
+      errorRate: metrics.errorRate,
+      threshold: deployment.rollbackThreshold,
+      rolledBackAt: new Date().toISOString(),
+    };
   }
 
   private groupMutationsByAgent(mutations: AgentMutation[]): Map<string, AgentMutation[]> {

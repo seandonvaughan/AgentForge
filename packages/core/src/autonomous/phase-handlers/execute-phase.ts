@@ -20,7 +20,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
-import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
+import type { PhaseContext, PhaseResult, WorktreePoolLike } from '../phase-scheduler.js';
 import type { ParsedMemoryEntry } from '../../memory/types.js';
 import {
   extractBreakdownFromAgentRun,
@@ -465,6 +465,60 @@ async function meaningfulWorktreeChanges(worktreePath: string): Promise<string[]
     .filter((file) => file.length > 0 && !isGeneratedRuntimePath(file));
 }
 
+type ExecuteWorktreeHandle = {
+  id: string;
+  path: string;
+  branch: string;
+  allocatedAt: string;
+  agentId: string;
+  sessionId: string;
+};
+
+function worktreeSessionCandidates(ctx: PhaseContext): string[] {
+  const baseSession = ctx.cycleId ?? ctx.sprintId;
+  const retryAttempt = typeof ctx.retryAttempt === 'number' && ctx.retryAttempt > 0
+    ? ctx.retryAttempt
+    : 0;
+  if (retryAttempt === 0) return [baseSession];
+
+  const retrySession = `${baseSession}-retry-${retryAttempt}`;
+  return [retrySession, `${retrySession}-resume-1`, `${retrySession}-resume-2`];
+}
+
+function shouldRetryWorktreeAllocation(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return (
+    message.includes('--[no-]track can only be used if a new branch is created') ||
+    message.includes('can only be used if a new branch is created') ||
+    message.includes('already exists')
+  );
+}
+
+async function allocateWorktreeForItem(
+  pool: WorktreePoolLike,
+  ctx: PhaseContext,
+  item: SprintItem,
+): Promise<ExecuteWorktreeHandle> {
+  const candidates = worktreeSessionCandidates(ctx);
+  let lastErr: unknown;
+
+  for (let i = 0; i < candidates.length; i++) {
+    try {
+      return await pool.allocate({
+        agentId: item.assignee,
+        sessionId: candidates[i]!,
+      });
+    } catch (err) {
+      lastErr = err;
+      if (i === candidates.length - 1 || !shouldRetryWorktreeAllocation(err)) {
+        throw err;
+      }
+    }
+  }
+
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+}
+
 export interface ExecutePhaseOptions {
   /** Override the default Read/Write/Edit/Bash/Glob/Grep tool list. */
   allowedTools?: string[];
@@ -608,6 +662,22 @@ export async function runExecutePhase(
   // Wave 5 T1 — per-item checkpoint writer (single-concurrency serialized queue).
   // Instantiate once per phase run; shared across all parallel dispatchItem calls.
   const checkpointWriter = new ItemCheckpointWriter(ctx.projectRoot, items.length);
+  const checkpointedItemIds = new Set<string>();
+  const enqueueItemCheckpoint = (
+    itemId: string,
+    status: 'completed' | 'failed' | 'skipped',
+    agentId: string,
+  ): void => {
+    if (!ctx.cycleId || checkpointedItemIds.has(itemId)) return;
+    checkpointedItemIds.add(itemId);
+    checkpointWriter.enqueue(
+      ctx.cycleId,
+      itemId,
+      status,
+      agentId,
+      null,
+    ).catch(() => { /* non-fatal */ });
+  };
 
   // Wave 5 T1 — resume support: read completedItemIds from an existing checkpoint.
   // When options.resume is true and a valid schemaVersion:2 checkpoint exists,
@@ -782,14 +852,11 @@ export async function runExecutePhase(
     // T4.2: allocate a worktree ONCE per item (before the retry loop) so all
     // retry attempts reuse the same isolated branch.  Released in the item-level
     // finally block so it's always freed regardless of success or failure.
-    let worktreeHandle: { id: string; path: string; branch: string; allocatedAt: string; agentId: string; sessionId: string } | undefined;
+    let worktreeHandle: ExecuteWorktreeHandle | undefined;
     let worktreeAllocationError: string | undefined;
     if (worktreePool !== undefined && isCoderClassItem(item)) {
       try {
-        worktreeHandle = await worktreePool.allocate({
-          agentId: item.assignee,
-          sessionId: ctx.cycleId ?? ctx.sprintId,
-        });
+        worktreeHandle = await allocateWorktreeForItem(worktreePool, ctx, item);
         ctx.bus.publish('execute.worktree.allocated', {
           sprintId: ctx.sprintId,
           phase,
@@ -1034,15 +1101,7 @@ export async function runExecutePhase(
           liveResults.set(item.id, completedResult as ItemResult);
           // Wave 5 T1 — write per-item checkpoint after each successful completion.
           // Fire-and-forget: checkpoint write is non-blocking and never fails the phase.
-          if (ctx.cycleId) {
-            checkpointWriter.enqueue(
-              ctx.cycleId,
-              item.id,
-              'completed',
-              item.assignee,
-              stepScoreIds.length > 0 ? null : null,
-            ).catch(() => { /* non-fatal */ });
-          }
+          enqueueItemCheckpoint(item.id, 'completed', item.assignee);
           return completedResult;
         } catch (err) {
           lastError = err instanceof Error ? err.message : String(err);
@@ -1089,15 +1148,7 @@ export async function runExecutePhase(
             };
             liveResults.set(item.id, failedResult as ItemResult);
             // Wave 5 T1 — write per-item checkpoint after each failure (final attempt).
-            if (ctx.cycleId) {
-              checkpointWriter.enqueue(
-                ctx.cycleId,
-                item.id,
-                'failed',
-                item.assignee,
-                null,
-              ).catch(() => { /* non-fatal */ });
-            }
+            enqueueItemCheckpoint(item.id, 'failed', item.assignee);
             return failedResult;
           }
         }
@@ -1175,6 +1226,10 @@ export async function runExecutePhase(
           liveResult.status = 'failed';
           liveResult.error = commitFailure.message;
         }
+      }
+      const terminalResult = liveResults.get(item.id);
+      if (terminalResult?.status === 'completed' || terminalResult?.status === 'failed') {
+        enqueueItemCheckpoint(item.id, terminalResult.status, item.assignee);
       }
       ctx.bus.publish('sprint.phase.item.completed', {
         sprintId: ctx.sprintId,
@@ -1269,6 +1324,7 @@ export async function runExecutePhase(
     inFlight.set(p, item.id);
   }
   await Promise.allSettled(inFlight.keys());
+  await checkpointWriter.flush();
   const settled = settledResults;
   const itemResults: ItemResult[] = settled.map((s, i) => {
     if (s.status === 'fulfilled') return s.value;

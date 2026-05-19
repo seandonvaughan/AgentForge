@@ -18,7 +18,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { execFile as execFileCb } from 'node:child_process';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { promisify } from 'node:util';
@@ -433,6 +433,89 @@ describe('execute-phase worktree integration', () => {
     const itemResult = (result.itemResults as any[])?.[0];
     expect(itemResult.status).toBe('failed');
     expect(itemResult.error).toContain('Worktree allocation failed');
+  });
+
+  it('persists a terminal checkpoint when required worktree allocation fails', async () => {
+    writeSprintFile([
+      { id: 'item-1', title: 'Task A', assignee: 'coder', tags: ['coder'] },
+    ]);
+
+    const failingPool = {
+      allocate: vi.fn().mockRejectedValue(new Error('disk full')),
+      release: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const bus = makeBus();
+    const runtime = { run: vi.fn().mockResolvedValue({ output: 'ok', costUsd: 0.01 }) };
+    const ctx = makeCtx(bus, { worktreePool: failingPool, runtime });
+
+    await runExecutePhase(ctx, {
+      maxParallelism: 1,
+      maxItemRetries: 0,
+      requireWorktrees: true,
+    });
+
+    const checkpoint = JSON.parse(
+      readFileSync(join(tmpRoot, '.agentforge', 'cycles', 'cycle-wt-1', 'checkpoint.json'), 'utf8'),
+    ) as { completedItemIds?: string[]; schemaVersion?: number };
+    expect(checkpoint.schemaVersion).toBe(2);
+    expect(checkpoint.completedItemIds).toContain('item-1');
+  });
+
+  it('uses a retry-specific worktree session on gate retry', async () => {
+    writeSprintFile([
+      { id: 'item-1', title: 'Task A', assignee: 'coder', tags: ['coder'] },
+    ]);
+
+    const pool = makeSpyPool('/fake/worktree');
+    const bus = makeBus();
+    const ctx = makeCtx(bus, { worktreePool: pool, retryAttempt: 1 });
+
+    await runExecutePhase(ctx, { maxParallelism: 1, maxItemRetries: 0 });
+
+    expect(pool.allocate).toHaveBeenCalledWith({
+      agentId: 'coder',
+      sessionId: 'cycle-wt-1-retry-1',
+    });
+  });
+
+  it('retries worktree allocation with an alternate session when the retry branch already exists', async () => {
+    writeSprintFile([
+      { id: 'item-1', title: 'Task A', assignee: 'coder', tags: ['coder'] },
+    ]);
+
+    const allocate = vi.fn().mockImplementation(async (req: { agentId: string; sessionId: string }) => {
+      if (req.sessionId === 'cycle-wt-1-retry-1') {
+        throw new Error('fatal: --[no-]track can only be used if a new branch is created');
+      }
+      return {
+        id: `wt-${req.sessionId}`,
+        path: `/fake/${req.sessionId}`,
+        branch: `autonomous/${req.sessionId}`,
+        allocatedAt: new Date().toISOString(),
+        agentId: req.agentId,
+        sessionId: req.sessionId,
+      };
+    });
+    const pool = {
+      allocate,
+      release: vi.fn().mockResolvedValue(undefined),
+    };
+    const bus = makeBus();
+    const runtime = { run: vi.fn().mockResolvedValue({ output: 'ok', costUsd: 0.01 }) };
+    const ctx = makeCtx(bus, { worktreePool: pool, runtime, retryAttempt: 1 });
+
+    const result = await runExecutePhase(ctx, { maxParallelism: 1, maxItemRetries: 0 });
+
+    expect(result.status).toBe('completed');
+    expect(allocate).toHaveBeenCalledTimes(2);
+    expect(allocate).toHaveBeenNthCalledWith(2, {
+      agentId: 'coder',
+      sessionId: 'cycle-wt-1-retry-1-resume-1',
+    });
+    expect(runtime.run).toHaveBeenCalledTimes(1);
+    expect((runtime.run.mock.calls[0]![2] as any).cwd).toBe('/fake/cycle-wt-1-retry-1-resume-1');
+    expect(bus.events.filter((e) => e.topic === 'execute.worktree.alloc-failed')).toHaveLength(0);
   });
 
   it('surfaces worktreePath in the completed item result', async () => {

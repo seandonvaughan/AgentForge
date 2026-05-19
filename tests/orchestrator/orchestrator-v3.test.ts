@@ -176,10 +176,16 @@ describe("OrchestratorV3", () => {
       applyOverride: ReturnType<typeof vi.fn>;
     };
 
-    await v3.runAgent(agent, "do some work");
+    await v3.runAgent(agent, "do some work", {
+      requestId: "req-1",
+      canaryHeaderValue: "x-agentforge-canary",
+    });
     expect(reforgeInstance.applyOverride).toHaveBeenCalledWith(
       agent,
-      expect.objectContaining({ requestId: expect.any(String) }),
+      expect.objectContaining({
+        requestId: "req-1",
+        headerValue: "x-agentforge-canary",
+      }),
     );
   });
 

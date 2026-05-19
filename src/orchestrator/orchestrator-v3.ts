@@ -62,6 +62,8 @@ export interface OrchestratorV3Config {
 export interface RunContext {
   /** Stable request identifier for canary routing and audit correlation. */
   requestId?: string;
+  /** Optional header value used by header-based canary routing. */
+  canaryHeaderValue?: string;
   /** Ordered list of reviewer names for strategic-agent review gating. */
   reviewers?: string[];
   /** Whether to allow fan-out execution for this run. */
@@ -138,7 +140,10 @@ export class OrchestratorV3 {
     // ── Stage 1: Apply reforge overrides ──────────────────────────────────
     const requestId = context.requestId ?? randomUUID();
     const resolvedAgent = this.config.enableReforge
-      ? await this.reforgeEngine.applyOverride(agent, { requestId })
+      ? await this.reforgeEngine.applyOverride(agent, {
+        requestId,
+        ...(context.canaryHeaderValue ? { headerValue: context.canaryHeaderValue } : {}),
+      })
       : agent;
 
     // ── Stage 2: Execute through CostAwareRunner ──────────────────────────

@@ -157,6 +157,29 @@ describe('WorktreePool', () => {
     expect(branches.trim()).toBe('');
   });
 
+  it('re-allocates a removed worktree when the agent branch already exists', async () => {
+    const pool = new WorktreePool({ projectRoot: workingDir, branchPrefix: 'codex/' });
+    const { writeFileSync } = await import('node:fs');
+
+    const first = await pool.allocate({ agentId: 'coder', sessionId: 'retry1' });
+    writeFileSync(join(first.path, 'agent-change.txt'), 'retry branch work\n');
+    await git(first.path, ['add', '.']);
+    await git(first.path, ['commit', '-m', 'agent work']);
+
+    await pool.release(first.id);
+    expect(existsSync(first.path)).toBe(false);
+    expect((await git(workingDir, ['branch', '--list', first.branch])).trim()).toContain(first.branch);
+
+    const second = await pool.allocate({ agentId: 'coder', sessionId: 'retry1' });
+    expect(second.id).toBe(first.id);
+    expect(second.branch).toBe(first.branch);
+    expect(existsSync(second.path)).toBe(true);
+    expect((await git(second.path, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim()).toBe(first.branch);
+
+    await git(workingDir, ['worktree', 'remove', '--force', second.path]);
+    await git(workingDir, ['branch', '-D', second.branch]);
+  });
+
   // -------------------------------------------------------------------------
   // 7. Idempotent allocate: same id → same handle
   // -------------------------------------------------------------------------
