@@ -29,13 +29,23 @@ describe('Btn', () => {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
+  it('invokes lowercase onclick from Svelte page markup', async () => {
+    const onclick = vi.fn();
+    const { getByRole } = render(Btn, { props: { onclick } });
+
+    await fireEvent.click(getByRole('button'));
+
+    expect(onclick).toHaveBeenCalledTimes(1);
+  });
+
   it('exposes a non-reserved onClick prop and wires it to the native button', () => {
     const source = readFileSync(componentPath, 'utf8');
 
     expect(source).toContain('onClick?: (e: MouseEvent) => void;');
-    expect(source).toContain("buttonEl.addEventListener('click', onClick);");
+    expect(source).toContain('onclick?: (e: MouseEvent) => void;');
+    expect(source).toContain('const clickHandler = $derived(onClick ?? onclick);');
+    expect(source).toContain("buttonEl.addEventListener('click', clickHandler);");
     expect(source).toContain('bind:this={buttonEl}');
-    expect(source).not.toContain('onclick?: (e: MouseEvent) => void;');
   });
 
   it('uses onClick on Btn call sites instead of the reserved lowercase event name', () => {

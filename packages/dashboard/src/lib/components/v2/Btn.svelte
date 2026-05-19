@@ -10,6 +10,7 @@
     disabled?: boolean;
     href?: string;
     onClick?: (e: MouseEvent) => void;
+    onclick?: (e: MouseEvent) => void;
     children?: Snippet;
     leading?: Snippet;
     trailing?: Snippet;
@@ -25,6 +26,7 @@
     disabled = false,
     href,
     onClick,
+    onclick,
     children,
     leading,
     trailing,
@@ -61,11 +63,12 @@
   ].filter(Boolean).join(';'));
 
   let buttonEl = $state<HTMLButtonElement | undefined>();
+  const clickHandler = $derived(onClick ?? onclick);
 
   $effect(() => {
-    if (!buttonEl || !onClick) return;
-    buttonEl.addEventListener('click', onClick);
-    return () => buttonEl?.removeEventListener('click', onClick);
+    if (!buttonEl || !clickHandler) return;
+    buttonEl.addEventListener('click', clickHandler);
+    return () => buttonEl?.removeEventListener('click', clickHandler);
   });
 </script>
 
