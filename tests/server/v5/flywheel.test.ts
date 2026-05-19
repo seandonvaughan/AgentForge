@@ -127,6 +127,32 @@ describe('loadProposals', () => {
     expect(p?.occurrences).toBe(42);
   });
 
+  it('parses requiresTools from dash-list frontmatter blocks', () => {
+    const content = `---
+id: prop-dash-list
+action: refine
+targetSkillId: agentforge:tdd
+skillId: agentforge:tdd
+capabilityTag: parser-hardening
+clusterId: cluster-quality-1
+requiresTools:
+  - Bash
+  - Edit
+  - Grep
+occurrences: 4
+status: proposed
+createdAt: "2024-01-16T10:00:00Z"
+---
+
+Body.`;
+    writeFileSync(join(PROPOSED_DIR, 'prop-dash-list.md'), content, 'utf8');
+
+    const result = loadProposals(TMP_ROOT);
+    const proposal = result.find((x) => x.id === 'prop-dash-list');
+    expect(proposal).toBeDefined();
+    expect(proposal?.requiresTools).toEqual(['Bash', 'Edit', 'Grep']);
+  });
+
   it('parses action=create correctly', () => {
     writeProposal('prop-create.md', {
       id: 'prop-create',
@@ -167,6 +193,30 @@ describe('loadProposalById', () => {
     const result = loadProposalById(TMP_ROOT, 'prop-find-exact');
     expect(result).not.toBeNull();
     expect(result!.id).toBe('prop-find-exact');
+  });
+
+  it('returns dash-list tools when loading a proposal by id', () => {
+    const content = `---
+id: prop-by-id-dash
+action: refine
+targetSkillId: agentforge:tdd
+skillId: agentforge:tdd
+capabilityTag: data-correctness
+clusterId: cluster-quality-2
+requiresTools:
+  - Read
+  - Bash
+occurrences: 2
+status: proposed
+createdAt: "2024-01-17T10:00:00Z"
+---
+
+Body.`;
+    writeFileSync(join(PROPOSED_DIR, 'prop-by-id-dash.md'), content, 'utf8');
+
+    const result = loadProposalById(TMP_ROOT, 'prop-by-id-dash');
+    expect(result).not.toBeNull();
+    expect(result?.requiresTools).toEqual(['Read', 'Bash']);
   });
 });
 
