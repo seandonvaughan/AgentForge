@@ -410,6 +410,62 @@ describe("ReforgeEngine", () => {
     expect(controlApplied.system_prompt).not.toContain("COST AWARENESS PREAMBLE");
   });
 
+  it("deployCanary rebases staged traffic onto the latest active override", async () => {
+    const baseAnalysis = makeAnalysis([
+      {
+        action: "adjust-model-routing",
+        rationale: "baseline rollout",
+        urgency: "high",
+        theme_label: "baseline",
+        confidence: 0.9,
+      },
+    ]);
+    const canaryAnalysis = makeAnalysis([
+      {
+        action: "update-system-prompt",
+        rationale: "exercise staged prompt",
+        urgency: "medium",
+        theme_label: "prompt-canary",
+        confidence: 0.7,
+      },
+    ]);
+
+    const activePlan = await engine.buildPlan(baseAnalysis, [makeTemplate()]);
+    await engine.executePlan(activePlan);
+
+    const canaryPlan = await engine.buildPlan(canaryAnalysis, [makeTemplate()]);
+    await engine.deployCanary(canaryPlan, {
+      trafficPercent: 50,
+      strategy: "hash",
+      rollbackThreshold: 0.1,
+    });
+
+    const upgradedPlan = await engine.buildPlan(
+      makeAnalysis([
+        {
+          action: "adjust-model-routing",
+          rationale: "newer active change",
+          urgency: "high",
+          theme_label: "active-update",
+          confidence: 0.8,
+        },
+      ]),
+      [makeTemplate({ model: "sonnet" })],
+    );
+    await engine.executePlan(upgradedPlan);
+
+    const canaryRequest = findRequestId(50, true);
+    const controlRequest = findRequestId(50, false);
+
+    const canaryApplied = await engine.applyOverride(makeTemplate(), { requestId: canaryRequest });
+    expect(canaryApplied.model).toBe("haiku");
+    expect(canaryApplied.system_prompt).toContain("COST AWARENESS PREAMBLE");
+
+    const controlApplied = await engine.applyOverride(makeTemplate(), { requestId: controlRequest });
+    expect(controlApplied.model).toBe("haiku");
+    expect(controlApplied.system_prompt).not.toContain("COST AWARENESS PREAMBLE");
+  });
+
   it("deployCanary supports header-based routing when a header value is provided", async () => {
     const canaryAnalysis = makeAnalysis([
       {

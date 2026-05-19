@@ -466,7 +466,28 @@ export class ReforgeEngine {
     }
 
     const route = this.canaryManager.route(flag.id, context.requestId ?? randomUUID(), context.headerValue);
-    return route.variant === "canary" ? canary.override : active;
+    if (route.variant !== "canary") {
+      return active;
+    }
+
+    return this.rebaseCanaryOverride(active, canary);
+  }
+
+  private rebaseCanaryOverride(
+    active: AgentOverride | null,
+    deployment: CanaryDeploymentRecord,
+  ): AgentOverride {
+    if (!active) {
+      return deployment.override;
+    }
+
+    // Keep the staged canary mutations, but re-anchor the history chain to the
+    // latest active override so long-lived canaries do not keep serving a stale
+    // base after the live override changes.
+    return {
+      ...deployment.override,
+      previousVersion: active,
+    };
   }
 
   private ensureCanaryFlag(deployment: CanaryDeploymentRecord) {
