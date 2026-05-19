@@ -2,12 +2,27 @@ import type { AgentProposal } from '@agentforge/core';
 
 export type ExecutionStage = 'planning' | 'architecture' | 'coding' | 'linting' | 'testing' | 'complete' | 'failed';
 
+export interface CanaryDeploymentPlan {
+  mode: 'standard' | 'canary';
+  trafficPercent: number;
+  rollbackThreshold: number;
+  minimumSampleSize: number;
+  reason: string;
+}
+
+export interface CanaryMetrics {
+  canaryRequests: number;
+  canaryErrors: number;
+  errorRate: number;
+}
+
 export interface ExecutionPlan {
   proposalId: string;
   stages: ExecutionStage[];
   estimatedAgents: string[];
   estimatedComplexity: 'low' | 'medium' | 'high';
   sandboxed: boolean;
+  deployment: CanaryDeploymentPlan;
   createdAt: string;
 }
 
@@ -26,13 +41,17 @@ export interface ExecutionResult {
   proposal: AgentProposal;
   plan: ExecutionPlan;
   stages: StageResult[];
-  status: 'pending' | 'running' | 'passed' | 'failed' | 'rejected';
+  status: 'pending' | 'running' | 'passed' | 'failed' | 'rejected' | 'rolled_back';
   diff?: string;
   testSummary?: { passed: number; failed: number; total: number };
   totalCostUsd?: number;
   totalDurationMs: number;
   startedAt: string;
   completedAt?: string;
+  deployment: CanaryDeploymentPlan;
+  rollbackTriggered?: boolean;
+  rollbackReason?: string;
+  canaryMetrics?: CanaryMetrics;
 }
 
 export interface StageExecutionRequest {
@@ -42,6 +61,8 @@ export interface StageExecutionRequest {
   stage: ExecutionStage;
   agentId: string;
   stageIndex: number;
+  deployment: CanaryDeploymentPlan;
+  deploymentVariant: 'control' | 'canary';
   timeoutMs: number;
   budgetRemainingUsd: number;
 }
@@ -54,6 +75,9 @@ export interface StageExecutionResponse {
   diff?: string;
   testSummary?: { passed: number; failed: number; total: number };
   costUsd?: number;
+  deploymentVariant?: 'control' | 'canary';
+  canaryMetrics?: CanaryMetrics;
+  rollbackReason?: string;
 }
 
 export interface ProposalRuntimeExecutor {

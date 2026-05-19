@@ -11,6 +11,14 @@ describe('ProposalExecutor execution modes', () => {
     expect(result.testSummary?.failed).toBe(0);
   });
 
+  it('routes self-modifying proposals through a canary deployment', async () => {
+    const result = await new ProposalExecutor().execute(buildSelfModProposal());
+
+    expect(result.plan.deployment.mode).toBe('canary');
+    expect(result.plan.deployment.trafficPercent).toBe(10);
+    expect(result.deployment.mode).toBe('canary');
+  });
+
   it('uses an injected runtime executor when dryRun is false', async () => {
     const stages: string[] = [];
     const result = await new ProposalExecutor({
@@ -35,6 +43,36 @@ describe('ProposalExecutor execution modes', () => {
     expect(result.totalCostUsd).toBeCloseTo(0.2);
     expect(result.diff).toContain('diff --git');
     expect(result.testSummary).toEqual({ passed: 3, failed: 0, total: 3 });
+  });
+
+  it('rolls back a canary deployment when runtime metrics regress', async () => {
+    const result = await new ProposalExecutor({
+      dryRun: false,
+      runtime: {
+        async executeStage({ stage, deploymentVariant }) {
+          return {
+            output: `${stage}:${deploymentVariant}`,
+            success: true,
+            durationMs: 10,
+            costUsd: 0.05,
+            ...(stage === 'testing'
+              ? {
+                  canaryMetrics: {
+                    canaryRequests: 4,
+                    canaryErrors: 2,
+                    errorRate: 0.5,
+                  },
+                }
+              : {}),
+          };
+        },
+      },
+    }).execute(buildSelfModProposal());
+
+    expect(result.status).toBe('rolled_back');
+    expect(result.rollbackTriggered).toBe(true);
+    expect(result.rollbackReason).toContain('Canary rollout rolled back');
+    expect(result.canaryMetrics?.errorRate).toBe(0.5);
   });
 
   it('requires a runtime executor when dryRun is false', async () => {
@@ -89,5 +127,15 @@ function buildProposal(): AgentProposal {
     tags: ['runtime'],
     proposedAt: '2026-04-30T00:00:00.000Z',
     status: 'approved',
+  };
+}
+
+function buildSelfModProposal(): AgentProposal {
+  return {
+    ...buildProposal(),
+    id: 'proposal-self-mod-1',
+    title: 'Canary self-modifying agent prompt',
+    description: 'Add a feature flag, traffic split, and auto-rollback guard for agent self-modification.',
+    tags: ['runtime', 'self-modification', 'feature-flags'],
   };
 }
