@@ -21,4 +21,4 @@ $env:AGENTFORGE_RUNTIME = 'codex-cli'
 node packages/cli/dist/bin.js run invoke --project-root . --runtime codex-cli --agent <agent-id> --task "<task>"
 ```
 
-AgentForge keeps `opus`, `sonnet`, and `haiku` as capability tiers. For Codex v1 those tiers resolve to `gpt-5.3-codex` with `xhigh`, `high`, and `medium` reasoning effort respectively, unless overridden by `.agentforge/config/models.yaml` or `AGENTFORGE_CODEX_*` environment variables.
+AgentForge keeps `opus`, `sonnet`, and `haiku` as capability tiers. For Codex v1 those tiers resolve to `gpt-5.5` with `xhigh` effort, `gpt-5.3-codex` with `high` effort, and `gpt-5.4-mini` with `medium` effort respectively, unless overridden by `.agentforge/config/models.yaml` or `AGENTFORGE_CODEX_*` environment variables.

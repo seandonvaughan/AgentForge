@@ -162,7 +162,7 @@ describe('GET /api/v5/agents', () => {
       modelProfile: {
         provider: 'codex-cli',
         tier: 'opus',
-        modelId: 'gpt-5.3-codex',
+        modelId: 'gpt-5.5',
         effort: 'xhigh',
       },
     });

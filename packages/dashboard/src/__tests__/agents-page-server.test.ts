@@ -217,7 +217,7 @@ describe('_loadAgents — model normalisation', () => {
     expect(agent.modelProfile).toEqual({
       provider: 'codex-cli',
       tier: 'opus',
-      modelId: 'gpt-5.3-codex',
+      modelId: 'gpt-5.5',
       effort: 'xhigh',
     });
   });
@@ -402,7 +402,7 @@ describe('matchesAgentFilter — model filter', () => {
       modelProfile: {
         provider: 'codex-cli' as const,
         tier: 'opus' as const,
-        modelId: 'gpt-5.3-codex',
+        modelId: 'gpt-5.5',
         effort: 'xhigh',
       },
     };
@@ -446,7 +446,7 @@ describe('matchesAgentFilter — combined filters', () => {
       modelProfile: {
         provider: 'codex-cli',
         tier: 'opus',
-        modelId: 'gpt-5.3-codex',
+        modelId: 'gpt-5.5',
         effort: 'xhigh',
       },
       description: 'Plans sprints.',

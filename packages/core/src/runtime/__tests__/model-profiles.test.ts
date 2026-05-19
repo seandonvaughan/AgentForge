@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os';
 import { resolveProviderModelProfile, resolveProviderModelProfiles } from '../model-profiles.js';
 
 describe('Codex/OpenAI model profiles', () => {
-  it('maps AgentForge tiers to gpt-5.3-codex with Codex effort defaults', () => {
+  it('maps AgentForge tiers to Codex model and effort defaults', () => {
     expect(resolveProviderModelProfile('codex-cli', 'opus', undefined, {}, '.')).toEqual({
-      modelId: 'gpt-5.3-codex',
+      modelId: 'gpt-5.5',
       effort: 'xhigh',
     });
     expect(resolveProviderModelProfile('codex-cli', 'sonnet', undefined, {}, '.')).toEqual({
@@ -14,7 +14,15 @@ describe('Codex/OpenAI model profiles', () => {
       effort: 'high',
     });
     expect(resolveProviderModelProfile('codex-cli', 'haiku', undefined, {}, '.')).toEqual({
-      modelId: 'gpt-5.3-codex',
+      modelId: 'gpt-5.4-mini',
+      effort: 'medium',
+    });
+    expect(resolveProviderModelProfile('openai-sdk', 'opus', undefined, {}, '.')).toEqual({
+      modelId: 'gpt-5.5',
+      effort: 'xhigh',
+    });
+    expect(resolveProviderModelProfile('openai-sdk', 'haiku', undefined, {}, '.')).toEqual({
+      modelId: 'gpt-5.4-mini',
       effort: 'medium',
     });
   });

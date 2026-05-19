@@ -38,22 +38,22 @@ providers:
   codex-cli:
     tiers:
       opus:
-        model: gpt-5.3-codex
+        model: gpt-5.5
         effort: xhigh
       sonnet:
         model: gpt-5.3-codex
         effort: high
       haiku:
-        model: gpt-5.3-codex
+        model: gpt-5.4-mini
         effort: medium
   openai-sdk:
     tiers:
       opus:
-        model: gpt-5.3-codex
+        model: gpt-5.5
         effort: xhigh
       sonnet:
         model: gpt-5.3-codex
         effort: high
       haiku:
-        model: gpt-5.3-codex
+        model: gpt-5.4-mini
         effort: medium
