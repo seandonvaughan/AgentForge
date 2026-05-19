@@ -2,6 +2,7 @@ import { defineConfig } from 'vitest/config';
 import { resolve } from 'node:path';
 
 export default defineConfig({
+  cacheDir: resolve(process.cwd(), '.vitest-cache'),
   resolve: {
     alias: {
       '@agentforge/shared': resolve('./packages/shared/src/index.ts'),

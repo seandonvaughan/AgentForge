@@ -359,8 +359,7 @@ export class V4ReforgeEngine {
     for (const [id, record] of this.records) {
       if (record.status === "applied" && record.appliedAt &&
           now - record.appliedAt > REFORGE_TIMEOUT_MS) {
-        record.status = "rolled_back";
-        record.history.push({ status: "rolled_back", timestamp: new Date().toISOString() });
+        this.doRollback(record, id);
         rolledBack.push(id);
         if (this.bus) {
           this.bus.publish({

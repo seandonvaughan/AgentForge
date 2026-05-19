@@ -65,6 +65,35 @@ describe('AdversarialGenerator', () => {
     expect(cases.some(c => c.name.includes('emoji'))).toBe(true);
   });
 
+  it('covers parser-hostile inputs across the built-in pools', () => {
+    const cases = generator.generate();
+    const names = new Set(cases.map(c => c.name));
+
+    expect(names.has('empty_string')).toBe(true);
+    expect(names.has('sql_injection')).toBe(true);
+    expect(names.has('json_injection')).toBe(true);
+    expect(names.has('path_traversal')).toBe(true);
+    expect(names.has('null_byte')).toBe(true);
+    expect(names.has('rtl_text')).toBe(true);
+    expect(names.has('zero_width')).toBe(true);
+    expect(names.has('malformed_json')).toBe(true);
+  });
+
+  it('keeps coercible numeric payloads when filtering for number-compatible fields', () => {
+    const cases = generator.generate({ fieldType: 'number' });
+    const names = new Set(cases.map(c => c.name));
+
+    expect(names.has('zero')).toBe(true);
+    expect(names.has('negative_one')).toBe(true);
+    expect(names.has('max_safe_integer')).toBe(true);
+    expect(names.has('min_safe_integer')).toBe(true);
+    expect(names.has('nan_value')).toBe(true);
+    expect(names.has('infinity')).toBe(true);
+    expect(names.has('numeric_string')).toBe(true);
+    expect(names.has('leading_zeros')).toBe(true);
+    expect(names.has('hex_string')).toBe(true);
+  });
+
   it('generates overflow cases', () => {
     const cases = generator.generateForCategory('overflow');
     expect(cases.some(c => c.name === 'long_string')).toBe(true);
