@@ -5,6 +5,7 @@ import { readFile, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getRequestModelProfile } from '../model-profiles.js';
+import { normalizeStrictOutputSchema } from '../output-schema.js';
 import {
   TransportInvalidRequestError,
   classifyCodexCliError,
@@ -121,7 +122,11 @@ export class CodexCliTransport implements ExecutionTransport {
       : undefined;
 
     if (schemaPath && request.outputSchema) {
-      await writeFile(schemaPath, JSON.stringify(request.outputSchema.schema), 'utf8');
+      await writeFile(
+        schemaPath,
+        JSON.stringify(normalizeStrictOutputSchema(request.outputSchema).schema),
+        'utf8',
+      );
     }
 
     const args = this.buildCodexArgs(request, lastMessagePath, schemaPath);
@@ -238,7 +243,7 @@ export class CodexCliTransport implements ExecutionTransport {
       ? `\n\nAllowed tool names requested by AgentForge: ${request.allowedTools.join(', ')}. Use only equivalent Codex capabilities available in this sandbox.`
       : '';
     const schemaHint = request.outputSchema
-      ? `\n\nReturn a final JSON object matching this schema: ${JSON.stringify(request.outputSchema.schema)}`
+      ? `\n\nReturn a final JSON object matching this schema: ${JSON.stringify(normalizeStrictOutputSchema(request.outputSchema).schema)}`
       : '';
 
     return [

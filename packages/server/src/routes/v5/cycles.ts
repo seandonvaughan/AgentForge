@@ -1059,7 +1059,7 @@ export async function cyclesRoutes(
     // v15.1.0: Gap fix — killed cycles with no session registry entry.
     //
     // When budget enforcement kills a cycle between server restarts the session
-    // record is gone.  Without this check the endpoint returns 404+cycleInProgress
+    // record is gone.  Without this check the endpoint returns 200+cycleInProgress
     // forever because the filesystem alone cannot confirm the cycle is dead.
     // The staleness heuristic closes that gap: if there is NO session record at
     // all AND every event is more than 5 minutes old, the cycle is almost
@@ -1099,17 +1099,15 @@ export async function cyclesRoutes(
     }
 
     // cycle.json absent and session is still running (or unknown) — classic
-    // in-progress case. Return 404 + cycleInProgress: true so callers can
-    // distinguish "not found" from "running but not yet terminal". The 404
-    // status prevents stale cache hits while the partial payload lets the
-    // dashboard render a live feed.
+    // in-progress case. Return 200 + cycleInProgress: true so browser clients
+    // do not report noisy failed resource loads while rendering a live feed.
     //
     // v15.0.0: startedAt fallback now uses session.startedAt before falling
     // through to Date.now(). The old fallback emitted a fresh "now" on every
     // poll, which made the dashboard's elapsed timer snap to 00:00 every
     // poll cycle. The session registry tracks the real spawn time.
     const inProgressStartedAt = startedAt ?? session?.startedAt ?? new Date().toISOString();
-    return reply.status(404).send(attachLaunchConfig(dir, {
+    return reply.status(200).send(attachLaunchConfig(dir, {
       cycleId: id,
       sprintVersion,
       stage: lastStage,

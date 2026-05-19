@@ -50,7 +50,7 @@ describe('OpenAiSdkTransport', () => {
         name: 'result',
         schema: {
           type: 'object',
-          properties: { ok: { type: 'boolean' } },
+          properties: { ok: { type: 'boolean' }, lines_changed: { type: 'integer' } },
           required: ['ok'],
         },
       },
@@ -64,8 +64,9 @@ describe('OpenAiSdkTransport', () => {
         name: 'result',
         schema: {
           type: 'object',
-          properties: { ok: { type: 'boolean' } },
-          required: ['ok'],
+          properties: { ok: { type: 'boolean' }, lines_changed: { type: 'integer' } },
+          required: ['ok', 'lines_changed'],
+          additionalProperties: false,
         },
         strict: true,
       },

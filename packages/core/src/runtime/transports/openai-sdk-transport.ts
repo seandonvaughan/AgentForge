@@ -1,4 +1,5 @@
 import { getRequestModelProfile } from '../model-profiles.js';
+import { normalizeStrictOutputSchema } from '../output-schema.js';
 import {
   TransportAuthError,
   classifyOpenAiError,
@@ -117,8 +118,11 @@ export class OpenAiSdkTransport implements ExecutionTransport {
 
   buildResponsePayload(request: ExecutionRequest): Record<string, unknown> {
     const profile = getRequestModelProfile(this.kind, request);
+    const outputSchema = request.outputSchema
+      ? normalizeStrictOutputSchema(request.outputSchema)
+      : undefined;
     const instructions = request.outputSchema
-      ? `${request.agent.systemPrompt}\n\nReturn a JSON object matching this schema: ${JSON.stringify(request.outputSchema.schema)}`
+      ? `${request.agent.systemPrompt}\n\nReturn a JSON object matching this schema: ${JSON.stringify(outputSchema?.schema)}`
       : request.agent.systemPrompt;
 
     return {
@@ -127,14 +131,14 @@ export class OpenAiSdkTransport implements ExecutionTransport {
       input: request.userContent,
       max_output_tokens: request.maxTokens ?? 8096,
       ...(profile.effort ? { reasoning: { effort: profile.effort } } : {}),
-      ...(request.outputSchema
+      ...(outputSchema
         ? {
             text: {
               format: {
                 type: 'json_schema',
-                name: request.outputSchema.name,
-                schema: request.outputSchema.schema,
-                strict: request.outputSchema.strict ?? true,
+                name: outputSchema.name,
+                schema: outputSchema.schema,
+                strict: outputSchema.strict ?? true,
               },
             },
           }
