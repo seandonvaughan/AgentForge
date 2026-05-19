@@ -236,6 +236,51 @@ describe('PhaseScheduler', () => {
     await expect(scheduler.run()).rejects.toThrow(/researcher crashed/);
   });
 
+  it('does not advance to release when a gate result is published as failed', async () => {
+    const { bus, logger, killSwitch } = makeDeps();
+    const handlers = makeAllPhasesCompleteHandlers();
+    let releaseCalls = 0;
+
+    handlers.gate = async (ctx: any) => {
+      ctx.bus.publish('sprint.phase.completed', {
+        sprintId,
+        phase: 'gate',
+        cycleId,
+        result: {
+          phase: 'gate',
+          status: 'failed',
+          durationMs: 100,
+          costUsd: 0.1,
+          agentRuns: [],
+          error: 'gate denied release',
+        },
+        completedAt: new Date().toISOString(),
+      });
+    };
+    handlers.release = async () => {
+      releaseCalls++;
+      throw new Error('release should not run');
+    };
+
+    const scheduler = new PhaseScheduler(
+      {
+        sprintId,
+        sprintVersion: '6.4.0',
+        projectRoot: tmpDir,
+        adapter: {} as any,
+        bus,
+        runtime: {} as any,
+        cycleId,
+      },
+      killSwitch,
+      logger,
+      handlers as any,
+    );
+
+    await expect(scheduler.run()).rejects.toThrow(/gate denied release/);
+    expect(releaseCalls).toBe(0);
+  });
+
   it('ignores events with mismatched sprintId', async () => {
     const { bus, logger, killSwitch } = makeDeps();
     let auditCalls = 0;

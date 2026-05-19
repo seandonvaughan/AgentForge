@@ -19,9 +19,13 @@ import type { AgentTemplate } from "../team/engine/types/agent.js";
 import type {
   AgentMutation,
   AgentOverride,
+  CanaryDeployOptions,
+  CanaryDeploymentRecord,
+  CanaryRoutingContext,
   ReforgePlan,
   ReforgeResult,
 } from "./types/reforge.js";
+import { CanaryManager } from "../canary/canary-manager.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -52,7 +56,9 @@ export interface ReforgeEngineOptions {
 
 export class ReforgeEngine {
   private readonly overridesDir: string;
+  private readonly canaryOverridesDir: string;
   private readonly proposalsDir: string;
+  private readonly canaryManager = new CanaryManager();
   private readonly options: Required<ReforgeEngineOptions>;
 
   constructor(projectRoot: string, options?: ReforgeEngineOptions) {
@@ -60,6 +66,12 @@ export class ReforgeEngine {
       projectRoot,
       ".agentforge",
       "agent-overrides",
+    );
+    this.canaryOverridesDir = path.join(
+      projectRoot,
+      ".agentforge",
+      "agent-overrides",
+      "canary",
     );
     this.proposalsDir = path.join(
       projectRoot,
@@ -215,6 +227,112 @@ export class ReforgeEngine {
     };
   }
 
+  /**
+   * Stage a canary deployment for a local reforge plan.
+   *
+   * Canary traffic is routed separately from the active override so the
+   * staged change can be exercised on a subset of requests before promotion.
+   */
+  async deployCanary(
+    plan: ReforgePlan,
+    options: CanaryDeployOptions = {},
+  ): Promise<{ plan: ReforgePlan; deployments: CanaryDeploymentRecord[] }> {
+    await this.ensureDirs();
+
+    if (plan.reforgeClass === "structural") {
+      throw new Error("Structural reforge plans cannot be deployed as canaries.");
+    }
+
+    const byAgent = this.groupMutationsByAgent(plan.mutations);
+    const deployments: CanaryDeploymentRecord[] = [];
+    const trafficPercent = this.clampPercent(options.trafficPercent ?? 10);
+    const strategy = options.strategy ?? "hash";
+    const rollbackThreshold = options.rollbackThreshold ?? 0.05;
+
+    for (const [agentName, agentMutations] of byAgent.entries()) {
+      const existing = await this.loadOverride(agentName);
+      const override = this.buildOverrideRecord(agentName, agentMutations, plan.id, existing);
+      const flagId = `${plan.id}:${agentName}`;
+      const deployment: CanaryDeploymentRecord = {
+        agentName,
+        planId: plan.id,
+        flagId,
+        stagedAt: new Date().toISOString(),
+        trafficPercent,
+        strategy,
+        rollbackThreshold,
+        override,
+      };
+
+      this.canaryManager.createFlag({
+        id: flagId,
+        name: `${plan.triggeredBy}:${agentName}`,
+        description: plan.rationale,
+        trafficPercent,
+        strategy,
+        rollbackThreshold,
+      });
+      this.canaryManager.activateFlag(flagId);
+      await this.writeCanaryDeployment(deployment);
+      deployments.push(deployment);
+    }
+
+    return { plan, deployments };
+  }
+
+  /**
+   * Promote a staged canary override into the active override slot.
+   */
+  async promoteCanary(agentName: string): Promise<AgentOverride> {
+    const deployment = await this.loadCanaryDeployment(agentName);
+    if (!deployment) {
+      throw new Error(`No staged canary deployment found for agent "${agentName}".`);
+    }
+
+    const current = await this.loadOverride(agentName);
+    const promoted = this.buildOverrideRecord(
+      agentName,
+      deployment.override.mutations,
+      deployment.planId,
+      current,
+    );
+
+    await this.writeOverride(agentName, promoted);
+    await this.deleteCanaryDeployment(agentName);
+    this.canaryManager.deleteFlag(deployment.flagId);
+    return promoted;
+  }
+
+  /**
+   * Record whether a staged canary request succeeded and auto-rollback if the
+   * error threshold is exceeded.
+   */
+  async recordCanaryOutcome(
+    agentName: string,
+    isError: boolean,
+  ): Promise<{ deployment: CanaryDeploymentRecord; rollback?: string } | null> {
+    const deployment = await this.loadCanaryDeployment(agentName);
+    if (!deployment) {
+      return null;
+    }
+
+    this.canaryManager.getFlag(deployment.flagId) ?? this.ensureCanaryFlag(deployment);
+    const result = this.canaryManager.recordOutcome(deployment.flagId, isError);
+    if (!result) {
+      return null;
+    }
+
+    const rollbackTriggered = result.rollback !== undefined;
+    if (rollbackTriggered) {
+      await this.deleteCanaryDeployment(agentName);
+    }
+
+    return {
+      deployment,
+      ...(result.rollback ? { rollback: result.rollback.reason } : {}),
+    };
+  }
+
   // =========================================================================
   // applyOverride
   // =========================================================================
@@ -225,26 +343,13 @@ export class ReforgeEngine {
    *
    * If no override exists, returns the template unchanged.
    */
-  async applyOverride(template: AgentTemplate): Promise<AgentTemplate> {
-    const override = await this.loadOverride(template.name);
+  async applyOverride(
+    template: AgentTemplate,
+    context?: CanaryRoutingContext,
+  ): Promise<AgentTemplate> {
+    const override = await this.loadEffectiveOverride(template.name, context);
     if (!override) return template;
-
-    // Shallow-clone so we never mutate the caller's object
-    const result: AgentTemplate = { ...template };
-
-    if (override.systemPromptPreamble) {
-      result.system_prompt = `${override.systemPromptPreamble}\n\n${template.system_prompt}`;
-    }
-
-    if (override.modelTierOverride !== undefined) {
-      result.model = override.modelTierOverride;
-    }
-
-    if (override.effortOverride !== undefined) {
-      result.effort = override.effortOverride;
-    }
-
-    return result;
+    return this.materializeOverride(template, override);
   }
 
   // =========================================================================
@@ -288,13 +393,144 @@ export class ReforgeEngine {
     }
   }
 
+  /** Load a staged canary deployment for an agent, or null if none exists. */
+  private async loadCanaryDeployment(agentName: string): Promise<CanaryDeploymentRecord | null> {
+    const filePath = path.join(this.canaryOverridesDir, `${agentName}.json`);
+    try {
+      const raw = await fs.readFile(filePath, "utf-8");
+      return JSON.parse(raw) as CanaryDeploymentRecord;
+    } catch {
+      return null;
+    }
+  }
+
   // =========================================================================
   // Private helpers
   // =========================================================================
 
   private async ensureDirs(): Promise<void> {
     await fs.mkdir(this.overridesDir, { recursive: true });
+    await fs.mkdir(this.canaryOverridesDir, { recursive: true });
     await fs.mkdir(this.proposalsDir, { recursive: true });
+  }
+
+  private async writeCanaryDeployment(deployment: CanaryDeploymentRecord): Promise<void> {
+    await fs.mkdir(this.canaryOverridesDir, { recursive: true });
+    const filePath = path.join(this.canaryOverridesDir, `${deployment.agentName}.json`);
+    await fs.writeFile(filePath, JSON.stringify(deployment, null, 2), "utf-8");
+  }
+
+  private async deleteCanaryDeployment(agentName: string): Promise<void> {
+    const filePath = path.join(this.canaryOverridesDir, `${agentName}.json`);
+    await fs.rm(filePath, { force: true });
+  }
+
+  private async loadEffectiveOverride(
+    agentName: string,
+    context?: CanaryRoutingContext,
+  ): Promise<AgentOverride | null> {
+    const active = await this.loadOverride(agentName);
+    const canary = await this.loadCanaryDeployment(agentName);
+    if (!canary) {
+      return active;
+    }
+
+    const flag = this.canaryManager.getFlag(canary.flagId) ?? this.ensureCanaryFlag(canary);
+    const requestId = context?.requestId ?? randomUUID();
+    const route = this.canaryManager.route(flag.id, requestId, context?.headerValue);
+    return route.variant === "canary" ? canary.override : active;
+  }
+
+  private ensureCanaryFlag(deployment: CanaryDeploymentRecord) {
+    const existing = this.canaryManager.getFlag(deployment.flagId);
+    if (existing) {
+      return existing;
+    }
+
+    const flag = this.canaryManager.createFlag({
+      id: deployment.flagId,
+      name: `${deployment.planId}:${deployment.agentName}`,
+      description: `Staged canary for ${deployment.agentName}`,
+      trafficPercent: deployment.trafficPercent,
+      strategy: deployment.strategy,
+      rollbackThreshold: deployment.rollbackThreshold,
+    });
+    this.canaryManager.activateFlag(flag.id);
+    return flag;
+  }
+
+  private groupMutationsByAgent(mutations: AgentMutation[]): Map<string, AgentMutation[]> {
+    const byAgent = new Map<string, AgentMutation[]>();
+    for (const mutation of mutations) {
+      const list = byAgent.get(mutation.agentName) ?? [];
+      list.push(mutation);
+      byAgent.set(mutation.agentName, list);
+    }
+    return byAgent;
+  }
+
+  private buildOverrideRecord(
+    agentName: string,
+    agentMutations: AgentMutation[],
+    sessionId: string,
+    existing?: AgentOverride | null,
+  ): AgentOverride {
+    const override: AgentOverride = {
+      agentName,
+      version: (existing?.version ?? 0) + 1,
+      appliedAt: new Date().toISOString(),
+      sessionId,
+      mutations: agentMutations,
+    };
+
+    for (const mutation of agentMutations) {
+      if (mutation.type === "model-tier-override") {
+        override.modelTierOverride = mutation.newValue as NonNullable<AgentOverride["modelTierOverride"]>;
+      } else if (mutation.type === "effort-override") {
+        override.effortOverride = mutation.newValue as NonNullable<AgentOverride["effortOverride"]>;
+      } else if (mutation.type === "system-prompt-preamble") {
+        override.systemPromptPreamble = mutation.newValue as string;
+      }
+    }
+
+    if (existing) {
+      override.previousVersion = this.capHistory(existing);
+    }
+
+    return override;
+  }
+
+  private materializeOverride(
+    template: AgentTemplate,
+    override: AgentOverride,
+  ): AgentTemplate {
+    const chain: AgentOverride[] = [];
+    let current: AgentOverride | undefined = override;
+    while (current) {
+      chain.push(current);
+      current = current.previousVersion;
+    }
+
+    // Apply the override chain from oldest to newest so later versions can
+    // intentionally layer on top of earlier ones.
+    const result: AgentTemplate = { ...template };
+    for (const entry of chain.reverse()) {
+      if (entry.systemPromptPreamble) {
+        result.system_prompt = `${entry.systemPromptPreamble}\n\n${result.system_prompt}`;
+      }
+      if (entry.modelTierOverride !== undefined) {
+        result.model = entry.modelTierOverride;
+      }
+      if (entry.effortOverride !== undefined) {
+        result.effort = entry.effortOverride;
+      }
+    }
+
+    return result;
+  }
+
+  private clampPercent(percent: number): number {
+    return Math.min(100, Math.max(0, percent));
   }
 
   private async writeOverride(

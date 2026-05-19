@@ -424,7 +424,7 @@
     <Card>
       <div class="section-title">SAFEGUARDS</div>
       <ul class="safeguards">
-        <li><Badge variant="success">on</Badge> Budget kill-switch at 100% spend</li>
+        <li><Badge variant="success">on</Badge> Budget approval and live spend tracking</li>
         <li><Badge variant="success">on</Badge> Per-phase timeout</li>
         <li><Badge variant={fallbackEnabled ? 'success' : 'muted'}>{fallbackEnabled ? 'on' : 'off'}</Badge> Profile fallback on overload</li>
         <li><Badge variant={dryRun ? 'warning' : 'muted'}>{dryRun ? 'on' : 'off'}</Badge> Dry run (no PR)</li>

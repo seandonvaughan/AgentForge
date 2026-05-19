@@ -43,6 +43,7 @@ export interface RollbackResult {
 }
 
 export interface CreateFlagRequest {
+  id?: string;
   name: string;
   description?: string;
   trafficPercent?: number;

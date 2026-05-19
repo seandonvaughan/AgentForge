@@ -177,7 +177,10 @@ describe("OrchestratorV3", () => {
     };
 
     await v3.runAgent(agent, "do some work");
-    expect(reforgeInstance.applyOverride).toHaveBeenCalledWith(agent);
+    expect(reforgeInstance.applyOverride).toHaveBeenCalledWith(
+      agent,
+      expect.objectContaining({ requestId: expect.any(String) }),
+    );
   });
 
   it("runAgent skips ReforgeEngine.applyOverride when enableReforge=false", async () => {

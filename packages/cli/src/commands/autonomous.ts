@@ -316,6 +316,12 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
       }
     }
 
+    if (config.prMode === 'multi' && disableWorktrees) {
+      throw new Error(
+        'prMode=multi requires isolated worktrees. Remove --no-worktrees/AUTONOMOUS_DISABLE_WORKTREES or use prMode=single.',
+      );
+    }
+
     // Build a RuntimeJobSupervisor backed by the real workspace DB so every
     // agent run during the execute phase creates a durable runtime_job row
     // and runtime_events. Without this the tables stay empty across restarts.
@@ -347,6 +353,7 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
         assign: (ctx: PhaseContext) => runAssignPhase(ctx),
         execute: (ctx: PhaseContext) => runExecutePhase(ctx, {
           maxParallelism: config.limits.maxExecutePhaseParallelism,
+          requireWorktrees: !disableWorktrees,
         }),
         test: (ctx: PhaseContext) => runTestPhase(ctx),
         review: (ctx: PhaseContext) => runReviewPhase(ctx),

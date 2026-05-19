@@ -56,6 +56,28 @@ function makeAnalysis(
   };
 }
 
+function simpleHash(str: string): number {
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash) + str.charCodeAt(i);
+    hash = hash & hash;
+  }
+  return Math.abs(hash);
+}
+
+function findRequestId(trafficPercent: number, canary: boolean): string {
+  for (let i = 0; i < 1_000; i++) {
+    const requestId = `req-${canary ? "canary" : "control"}-${i}`;
+    const bucket = simpleHash(requestId) % 100;
+    const routedToCanary = bucket < trafficPercent;
+    if (canary === routedToCanary) {
+      return requestId;
+    }
+  }
+
+  throw new Error(`Unable to find a request id for ${canary ? "canary" : "control"} routing`);
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -327,6 +349,226 @@ describe("ReforgeEngine", () => {
     const template = makeTemplate({ name: "no-override-agent" });
     const result = await engine.applyOverride(template);
     expect(result).toEqual(template);
+  });
+
+  // -------------------------------------------------------------------------
+  // Canary deployment
+  // -------------------------------------------------------------------------
+
+  it("deployCanary stages a split rollout without touching the active override", async () => {
+    const baseAnalysis = makeAnalysis([
+      {
+        action: "adjust-model-routing",
+        rationale: "baseline rollout",
+        urgency: "high",
+        theme_label: "baseline",
+        confidence: 0.9,
+      },
+    ]);
+    const canaryAnalysis = makeAnalysis([
+      {
+        action: "update-system-prompt",
+        rationale: "exercise staged prompt",
+        urgency: "medium",
+        theme_label: "prompt-canary",
+        confidence: 0.7,
+      },
+    ]);
+
+    const activePlan = await engine.buildPlan(baseAnalysis, [makeTemplate()]);
+    await engine.executePlan(activePlan);
+
+    const canaryPlan = await engine.buildPlan(canaryAnalysis, [makeTemplate()]);
+    const deployment = await engine.deployCanary(canaryPlan, {
+      trafficPercent: 50,
+      strategy: "hash",
+      rollbackThreshold: 0.1,
+    });
+
+    expect(deployment.deployments).toHaveLength(1);
+    const stagedPath = path.join(
+      tmpDir,
+      ".agentforge",
+      "agent-overrides",
+      "canary",
+      "cost-analyst.json",
+    );
+    const stagedRaw = await fs.readFile(stagedPath, "utf-8");
+    const staged = JSON.parse(stagedRaw) as { flagId: string; override: { version: number } };
+    expect(staged.flagId).toBe(deployment.deployments[0].flagId);
+    expect(staged.override.version).toBe(2);
+
+    const canaryRequest = findRequestId(50, true);
+    const controlRequest = findRequestId(50, false);
+
+    const canaryApplied = await engine.applyOverride(makeTemplate(), { requestId: canaryRequest });
+    expect(canaryApplied.model).toBe("sonnet");
+    expect(canaryApplied.system_prompt).toContain("COST AWARENESS PREAMBLE");
+
+    const controlApplied = await engine.applyOverride(makeTemplate(), { requestId: controlRequest });
+    expect(controlApplied.model).toBe("sonnet");
+    expect(controlApplied.system_prompt).not.toContain("COST AWARENESS PREAMBLE");
+  });
+
+  it("recordCanaryOutcome rolls back a staged deployment after repeated errors", async () => {
+    const baseAnalysis = makeAnalysis([
+      {
+        action: "adjust-model-routing",
+        rationale: "baseline rollout",
+        urgency: "high",
+        theme_label: "baseline",
+        confidence: 0.9,
+      },
+    ]);
+    const canaryAnalysis = makeAnalysis([
+      {
+        action: "update-system-prompt",
+        rationale: "unstable staged prompt",
+        urgency: "medium",
+        theme_label: "prompt-canary",
+        confidence: 0.7,
+      },
+    ]);
+
+    const activePlan = await engine.buildPlan(baseAnalysis, [makeTemplate()]);
+    await engine.executePlan(activePlan);
+
+    const canaryPlan = await engine.buildPlan(canaryAnalysis, [makeTemplate()]);
+    await engine.deployCanary(canaryPlan, {
+      trafficPercent: 100,
+      strategy: "hash",
+      rollbackThreshold: 0.1,
+    });
+
+    for (let i = 0; i < 5; i++) {
+      await engine.recordCanaryOutcome("cost-analyst", true);
+    }
+
+    const stagedPath = path.join(
+      tmpDir,
+      ".agentforge",
+      "agent-overrides",
+      "canary",
+      "cost-analyst.json",
+    );
+    await expect(fs.readFile(stagedPath, "utf-8")).rejects.toThrow();
+
+    const applied = await engine.applyOverride(makeTemplate(), { requestId: "req-canary-0" });
+    expect(applied.system_prompt).not.toContain("COST AWARENESS PREAMBLE");
+    expect(applied.model).toBe("sonnet");
+  });
+
+  it("recordCanaryOutcome rehydrates staged canary flags after restart", async () => {
+    const baseAnalysis = makeAnalysis([
+      {
+        action: "adjust-model-routing",
+        rationale: "baseline rollout",
+        urgency: "high",
+        theme_label: "baseline",
+        confidence: 0.9,
+      },
+    ]);
+    const canaryAnalysis = makeAnalysis([
+      {
+        action: "update-system-prompt",
+        rationale: "unstable staged prompt after restart",
+        urgency: "medium",
+        theme_label: "prompt-canary",
+        confidence: 0.7,
+      },
+    ]);
+
+    const activePlan = await engine.buildPlan(baseAnalysis, [makeTemplate()]);
+    await engine.executePlan(activePlan);
+
+    const canaryPlan = await engine.buildPlan(canaryAnalysis, [makeTemplate()]);
+    await engine.deployCanary(canaryPlan, {
+      trafficPercent: 100,
+      strategy: "hash",
+      rollbackThreshold: 0.1,
+    });
+
+    const restarted = new ReforgeEngine(tmpDir);
+    for (let i = 0; i < 5; i++) {
+      await restarted.recordCanaryOutcome("cost-analyst", true);
+    }
+
+    const stagedPath = path.join(
+      tmpDir,
+      ".agentforge",
+      "agent-overrides",
+      "canary",
+      "cost-analyst.json",
+    );
+    await expect(fs.readFile(stagedPath, "utf-8")).rejects.toThrow();
+  });
+
+  it("promoteCanary makes the staged override the active override", async () => {
+    const baseAnalysis = makeAnalysis([
+      {
+        action: "adjust-model-routing",
+        rationale: "baseline rollout",
+        urgency: "high",
+        theme_label: "baseline",
+        confidence: 0.9,
+      },
+    ]);
+    const canaryAnalysis = makeAnalysis([
+      {
+        action: "update-system-prompt",
+        rationale: "promote staged prompt",
+        urgency: "medium",
+        theme_label: "prompt-canary",
+        confidence: 0.7,
+      },
+    ]);
+
+    const activePlan = await engine.buildPlan(baseAnalysis, [makeTemplate()]);
+    await engine.executePlan(activePlan);
+
+    const canaryPlan = await engine.buildPlan(canaryAnalysis, [makeTemplate()]);
+    await engine.deployCanary(canaryPlan, {
+      trafficPercent: 100,
+      strategy: "hash",
+      rollbackThreshold: 0.1,
+    });
+
+    const upgradedPlan = await engine.buildPlan(
+      makeAnalysis([
+        {
+          action: "adjust-model-routing",
+          rationale: "newer active change",
+          urgency: "high",
+          theme_label: "active-update",
+          confidence: 0.8,
+        },
+      ]),
+      [makeTemplate({ model: "sonnet" })],
+    );
+    await engine.executePlan(upgradedPlan);
+
+    await engine.promoteCanary("cost-analyst");
+
+    const activePath = path.join(
+      tmpDir,
+      ".agentforge",
+      "agent-overrides",
+      "cost-analyst.json",
+    );
+    const activeRaw = await fs.readFile(activePath, "utf-8");
+    const active = JSON.parse(activeRaw) as {
+      version: number;
+      previousVersion?: { version: number; modelTierOverride?: string };
+      modelTierOverride?: string;
+      systemPromptPreamble?: string;
+    };
+    expect(active.version).toBe(3);
+    expect(active.previousVersion?.version).toBe(2);
+    expect(active.previousVersion?.modelTierOverride).toBe("haiku");
+
+    const applied = await engine.applyOverride(makeTemplate());
+    expect(applied.system_prompt).toContain("COST AWARENESS PREAMBLE");
+    expect(applied.model).toBe("haiku");
   });
 
   // -------------------------------------------------------------------------

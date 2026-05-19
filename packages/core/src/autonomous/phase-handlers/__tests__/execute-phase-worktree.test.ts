@@ -407,6 +407,34 @@ describe('execute-phase worktree integration', () => {
     expect((failingPool.release as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
   });
 
+  it('marks the item failed instead of running on the main tree when requireWorktrees is true', async () => {
+    writeSprintFile([
+      { id: 'item-1', title: 'Task A', assignee: 'coder', tags: ['coder'] },
+    ]);
+
+    const failingPool = {
+      allocate: vi.fn().mockRejectedValue(new Error('disk full')),
+      release: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const bus = makeBus();
+    const runtime = { run: vi.fn().mockResolvedValue({ output: 'ok', costUsd: 0.01 }) };
+    const ctx = makeCtx(bus, { worktreePool: failingPool, runtime });
+
+    const result = await runExecutePhase(ctx, {
+      maxParallelism: 1,
+      maxItemRetries: 0,
+      requireWorktrees: true,
+    });
+
+    expect(result.status).toBe('blocked');
+    expect(runtime.run).not.toHaveBeenCalled();
+    expect((failingPool.release as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+    const itemResult = (result.itemResults as any[])?.[0];
+    expect(itemResult.status).toBe('failed');
+    expect(itemResult.error).toContain('Worktree allocation failed');
+  });
+
   it('surfaces worktreePath in the completed item result', async () => {
     const worktreePath = join(tmpRoot, 'wt-surface-test');
     writeSprintFile([

@@ -483,6 +483,11 @@ export interface ExecutePhaseOptions {
    */
   disableWorktrees?: boolean;
   /**
+   * When true, coder-class items fail instead of falling back to the parent
+   * worktree if isolated worktree allocation or commit/push fails.
+   */
+  requireWorktrees?: boolean;
+  /**
    * When true, the self-eval prompt fragment is NOT appended to agent system
    * prompts and self-eval parsing/recording is skipped entirely.
    * Use as an escape hatch in unit tests that don't want the extra prompt
@@ -531,6 +536,7 @@ export async function runExecutePhase(
   // T4.2: worktree pool — disabled when either disableWorktrees flag is set or
   // the pool is not present in the context.
   const worktreePool = options.disableWorktrees ? undefined : ctx.worktreePool;
+  const requireWorktrees = options.requireWorktrees === true;
 
   // T4.5 — ConcurrencyGate enforces MAX_PARALLEL_AGENTS. The gate's cap is
   // independent from execute-phase's own ceilingParallelism: ceilingParallelism
@@ -777,6 +783,7 @@ export async function runExecutePhase(
     // retry attempts reuse the same isolated branch.  Released in the item-level
     // finally block so it's always freed regardless of success or failure.
     let worktreeHandle: { id: string; path: string; branch: string; allocatedAt: string; agentId: string; sessionId: string } | undefined;
+    let worktreeAllocationError: string | undefined;
     if (worktreePool !== undefined && isCoderClassItem(item)) {
       try {
         worktreeHandle = await worktreePool.allocate({
@@ -804,11 +811,31 @@ export async function runExecutePhase(
           agentId: item.assignee,
           error: allocErr instanceof Error ? allocErr.message : String(allocErr),
         });
+        worktreeAllocationError = allocErr instanceof Error ? allocErr.message : String(allocErr);
         worktreeHandle = undefined;
       }
     }
 
     try {
+      if (worktreeAllocationError && requireWorktrees) {
+        const durationMs = Date.now() - itemStartedAt;
+        item.status = 'failed';
+        const failedResult = {
+          itemId: item.id,
+          status: 'failed' as const,
+          costUsd: 0,
+          durationMs,
+          response: '',
+          attempts: 0,
+          error:
+            `Worktree allocation failed for ${item.assignee} on ${item.id}: ` +
+            worktreeAllocationError,
+          agentId: item.assignee,
+        };
+        liveResults.set(item.id, failedResult as ItemResult);
+        return failedResult;
+      }
+
       // Read tag-filtered memory entries once per item (before retry loop) so
       // every attempt benefits from the same historical context.
       const memoryEntries = readRelevantMemoryEntries(
@@ -1095,6 +1122,7 @@ export async function runExecutePhase(
       // branch is persisted to origin before the path is cleaned up.
       // commitAgentWork is a no-op when: AGENT_AUTOCOMMIT_DISABLED is set,
       // no worktree was allocated, or there are no changes in the worktree.
+      let commitFailure: Error | undefined;
       if (worktreeHandle) {
         try {
           const { commitAgentWork } = await import('../../runtime/agent-commit.js');
@@ -1107,7 +1135,23 @@ export async function runExecutePhase(
             ...(ctx.cycleId !== undefined ? { sessionId: ctx.cycleId, cycleId: ctx.cycleId } : { sessionId: ctx.sprintId }),
             bus: ctx.bus,
           });
-        } catch { /* commit errors are non-fatal — log silently */ }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          commitFailure = new Error(
+            `Worktree commit/push failed for ${item.assignee} on ${item.id}: ${message}`,
+          );
+          ctx.bus.publish('execute.worktree.commit-failed', {
+            sprintId: ctx.sprintId,
+            phase,
+            cycleId: ctx.cycleId,
+            itemId: item.id,
+            agentId: item.assignee,
+            worktreeId: worktreeHandle.id,
+            worktreePath: worktreeHandle.path,
+            branch: worktreeHandle.branch,
+            error: message,
+          });
+        }
       }
       // T4.2: release the worktree (if any) before any other finalisation so
       // the slot is returned to the pool as soon as the agent finishes.
@@ -1123,6 +1167,14 @@ export async function runExecutePhase(
             worktreeId: worktreeHandle.id,
           });
         } catch { /* release errors are non-fatal */ }
+      }
+      if (commitFailure && requireWorktrees) {
+        item.status = 'failed';
+        const liveResult = liveResults.get(item.id);
+        if (liveResult) {
+          liveResult.status = 'failed';
+          liveResult.error = commitFailure.message;
+        }
       }
       ctx.bus.publish('sprint.phase.item.completed', {
         sprintId: ctx.sprintId,

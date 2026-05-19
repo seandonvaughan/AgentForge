@@ -578,6 +578,9 @@ Respond as JSON: { "verdict": "APPROVE" | "REJECT", "rationale": "..." }`;
       { agentId, costUsd: runCost, durationMs, response, verdict: verdict.verdict },
     ],
   };
+  if (verdict.verdict === 'REJECT') {
+    phaseResult.error = verdict.rationale;
+  }
 
   if (ctx.cycleId) {
     const phaseJsonPath = join(
@@ -674,6 +677,10 @@ Respond as JSON: { "verdict": "APPROVE" | "REJECT", "rationale": "..." }`;
     ],
   });
 
+  if (verdict.verdict === 'REJECT') {
+    throw new GateRejectedError(verdict.rationale);
+  }
+
   ctx.bus.publish('sprint.phase.completed', {
     sprintId: ctx.sprintId,
     phase,
@@ -681,10 +688,6 @@ Respond as JSON: { "verdict": "APPROVE" | "REJECT", "rationale": "..." }`;
     result: phaseResult,
     completedAt: new Date().toISOString(),
   });
-
-  if (verdict.verdict === 'REJECT') {
-    throw new GateRejectedError(verdict.rationale);
-  }
 
   return phaseResult;
 }

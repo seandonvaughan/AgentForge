@@ -563,4 +563,29 @@ describe('gate-phase progress events', () => {
     expect(majFinding).toContain('computeCycleHistory called twice');
     expect(majFinding).not.toContain('"agentRuns"');
   });
+
+  it('does not publish phase.completed for a REJECT verdict', async () => {
+    writeSprintFile([{ id: 'item-1', title: 'Task A', assignee: 'backend', status: 'completed' }]);
+
+    const bus = makeBus();
+    const ctx = makeCtx(bus);
+
+    (ctx.runtime.run as ReturnType<typeof vi.fn>).mockResolvedValue({
+      output: JSON.stringify({ verdict: 'REJECT', rationale: 'release blocker remains' }),
+      costUsd: 0.05,
+      status: 'completed',
+    });
+
+    const { runGatePhase } = await import('../gate-phase.js');
+    await runGatePhase(ctx).catch(() => {});
+
+    expect(bus.events.some((e) => e.topic === 'sprint.phase.completed')).toBe(false);
+    const gateJson = JSON.parse(
+      (await import('node:fs')).readFileSync(
+        join(tmpRoot, '.agentforge', 'cycles', 'cycle-test-1', 'phases', 'gate.json'),
+        'utf8',
+      ),
+    );
+    expect(gateJson.verdict).toBe('REJECT');
+  });
 });

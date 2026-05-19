@@ -171,6 +171,19 @@ export class PhaseScheduler {
         this.logger.flushCycleCost(this.sumCost());
       }
 
+      const phaseResult = event.result as PhaseResult | undefined;
+      const justRan = event.phase as PhaseName;
+      if (phaseResult && phaseResult.status !== 'completed') {
+        const reason =
+          typeof phaseResult.error === 'string' && phaseResult.error.length > 0
+            ? phaseResult.error
+            : `${justRan} phase reported ${phaseResult.status}`;
+        if (justRan === 'gate') {
+          return this.fail(new GateRejectedError(reason));
+        }
+        return this.fail(new PhaseFailedError(justRan, reason));
+      }
+
       const trip = this.killSwitch.checkBetweenPhases({
         cumulativeCostUsd: this.sumCost(),
         consecutiveFailures: this.countConsecutiveFailures(),
@@ -179,7 +192,6 @@ export class PhaseScheduler {
         return this.fail(new CycleKilledError(trip));
       }
 
-      const justRan = event.phase as PhaseName;
       // Maintain ordered, deduped completedPhases list.
       if (!this.completedPhases.includes(justRan)) {
         this.completedPhases.push(justRan);

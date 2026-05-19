@@ -6,6 +6,7 @@
  */
 
 import type { ModelTier, EffortLevel } from "../../team/engine/types/agent.js";
+import type { TrafficSplitStrategy } from "../../canary/types.js";
 
 /**
  * Classification of a reforge plan.
@@ -106,4 +107,43 @@ export interface AgentOverride {
   effortOverride?: EffortLevel;
   /** The previous override version, enabling rollback. */
   previousVersion?: AgentOverride;
+}
+
+/**
+ * Metadata captured for a staged canary deployment.
+ *
+ * Canary overrides live separately from active overrides so the control path
+ * can keep serving the last-known-good configuration until the staged change
+ * is promoted.
+ */
+export interface CanaryDeploymentRecord {
+  /** The agent this staged deployment targets. */
+  agentName: string;
+  /** The reforge plan that produced the deployment. */
+  planId: string;
+  /** Canary feature-flag ID used for traffic splitting. */
+  flagId: string;
+  /** ISO 8601 timestamp when the canary was staged. */
+  stagedAt: string;
+  /** Percentage of traffic allowed to see the staged override. */
+  trafficPercent: number;
+  /** Traffic-splitting strategy used by the canary. */
+  strategy: TrafficSplitStrategy;
+  /** Auto-rollback threshold used when recording canary outcomes. */
+  rollbackThreshold: number;
+  /** The staged override that should be applied to canary traffic. */
+  override: AgentOverride;
+}
+
+/** Context passed when resolving an override for a single request. */
+export interface CanaryRoutingContext {
+  requestId?: string;
+  headerValue?: string;
+}
+
+/** Options for staging a canary deployment. */
+export interface CanaryDeployOptions {
+  trafficPercent?: number;
+  strategy?: TrafficSplitStrategy;
+  rollbackThreshold?: number;
 }

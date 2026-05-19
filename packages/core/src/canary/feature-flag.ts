@@ -9,7 +9,7 @@ export class FeatureFlagManager {
 
   create(req: CreateFlagRequest): FeatureFlag {
     const flag: FeatureFlag = {
-      id: generateId(),
+      id: req.id ?? generateId(),
       name: req.name,
       status: 'inactive',
       trafficPercent: req.trafficPercent ?? 0,
