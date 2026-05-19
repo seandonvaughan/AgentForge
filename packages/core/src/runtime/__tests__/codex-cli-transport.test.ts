@@ -22,15 +22,16 @@ function makeRequest(overrides: Partial<ExecutionRequest> = {}): ExecutionReques
 }
 
 describe('CodexCliTransport.buildCodexArgs', () => {
-  it('uses codex exec with json output, cwd, workspace-write sandbox, model, and effort config', () => {
+  it('uses codex exec with json output, cwd, platform default sandbox, model, and effort config', () => {
     const transport = new CodexCliTransport();
     const args = transport.buildCodexArgs(makeRequest({ cwd: '/repo/worktree' }), '/tmp/last.txt');
+    const expectedDefaultSandbox = process.platform === 'win32' ? 'danger-full-access' : 'workspace-write';
 
-    expect(args.slice(0, 5)).toEqual(['--ask-for-approval', 'never', 'exec', '--ignore-user-config', '--json']);
+    expect(args.slice(0, 5)).toEqual(['--ask-for-approval', 'on-failure', 'exec', '--ignore-user-config', '--json']);
     expect(args).toContain('--cd');
     expect(args[args.indexOf('--cd') + 1]).toBe('/repo/worktree');
     expect(args).toContain('--sandbox');
-    expect(args[args.indexOf('--sandbox') + 1]).toBe('workspace-write');
+    expect(args[args.indexOf('--sandbox') + 1]).toBe(expectedDefaultSandbox);
     expect(args).toContain('--model');
     expect(args[args.indexOf('--model') + 1]).toBe('gpt-5.3-codex');
     expect(args).toContain('-c');
@@ -48,6 +49,13 @@ describe('CodexCliTransport.buildCodexArgs', () => {
     expect(args[args.indexOf('--sandbox') + 1]).toBe('read-only');
     expect(args).toContain('--output-schema');
     expect(args[args.indexOf('--output-schema') + 1]).toBe('/tmp/schema.json');
+  });
+
+  it('honors explicit workspace-write sandbox overrides', () => {
+    const transport = new CodexCliTransport();
+    const args = transport.buildCodexArgs(makeRequest({ codexSandbox: 'workspace-write' }), '/tmp/last.txt');
+
+    expect(args[args.indexOf('--sandbox') + 1]).toBe('workspace-write');
   });
 });
 

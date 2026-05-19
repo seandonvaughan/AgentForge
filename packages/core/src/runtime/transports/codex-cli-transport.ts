@@ -12,6 +12,7 @@ import {
 } from '../transport-errors.js';
 import type {
   AgentOutputSchema,
+  CodexSandboxMode,
   ExecutionRequest,
   ExecutionResult,
   ExecutionStreamEvent,
@@ -22,6 +23,8 @@ import type {
 const GPT_53_CODEX_INPUT_PER_MILLION = 1.75;
 const GPT_53_CODEX_OUTPUT_PER_MILLION = 14.0;
 const CODEX_COMMAND = 'codex';
+const DEFAULT_CODEX_SANDBOX: CodexSandboxMode =
+  process.platform === 'win32' ? 'danger-full-access' : 'workspace-write';
 
 function validateAgainstSchema(
   responseText: string,
@@ -217,14 +220,15 @@ export class CodexCliTransport implements ExecutionTransport {
     schemaPath?: string,
   ): string[] {
     const profile = getRequestModelProfile(this.kind, request);
+    const sandbox = this.resolveSandbox(request);
     const args = [
       '--ask-for-approval',
-      'never',
+      'on-failure',
       'exec',
       '--ignore-user-config',
       '--json',
       '--cd', request.cwd ?? process.cwd(),
-      '--sandbox', request.codexSandbox ?? 'workspace-write',
+      '--sandbox', sandbox,
       '--model', profile.modelId,
       '--output-last-message', lastMessagePath,
     ];
@@ -241,6 +245,7 @@ export class CodexCliTransport implements ExecutionTransport {
   }
 
   private buildPrompt(request: ExecutionRequest): string {
+    const sandbox = this.resolveSandbox(request);
     const allowedTools = request.allowedTools?.length
       ? `\n\nAllowed tool names requested by AgentForge: ${request.allowedTools.join(', ')}. Use only equivalent Codex capabilities available in this sandbox.`
       : '';
@@ -250,7 +255,7 @@ export class CodexCliTransport implements ExecutionTransport {
 
     return [
       `You are AgentForge agent "${request.agent.name}" (${request.agent.agentId}).`,
-      `Codex is running non-interactively with sandbox "${request.codexSandbox ?? 'workspace-write'}". You may create, edit, and delete files inside the working directory when the task requires it. Do not stop as read-only unless an actual write command fails.`,
+      `Codex is running non-interactively with sandbox "${sandbox}". You may create, edit, and delete files inside the working directory when the task requires it. Do not stop as read-only unless an actual write command fails.`,
       '<system>',
       request.agent.systemPrompt,
       '</system>',
@@ -260,6 +265,10 @@ export class CodexCliTransport implements ExecutionTransport {
       request.userContent,
       '</task>',
     ].filter(Boolean).join('\n\n');
+  }
+
+  private resolveSandbox(request: ExecutionRequest): CodexSandboxMode {
+    return request.codexSandbox ?? DEFAULT_CODEX_SANDBOX;
   }
 
   private parseCodexOutput(stdout: string, outputText: string): ParsedCodexOutput {
