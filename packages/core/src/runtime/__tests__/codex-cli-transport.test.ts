@@ -26,7 +26,7 @@ describe('CodexCliTransport.buildCodexArgs', () => {
     const transport = new CodexCliTransport();
     const args = transport.buildCodexArgs(makeRequest({ cwd: '/repo/worktree' }), '/tmp/last.txt');
 
-    expect(args.slice(0, 3)).toEqual(['exec', '--ignore-user-config', '--json']);
+    expect(args.slice(0, 5)).toEqual(['--ask-for-approval', 'never', 'exec', '--ignore-user-config', '--json']);
     expect(args).toContain('--cd');
     expect(args[args.indexOf('--cd') + 1]).toBe('/repo/worktree');
     expect(args).toContain('--sandbox');

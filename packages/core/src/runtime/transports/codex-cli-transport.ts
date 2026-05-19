@@ -218,6 +218,8 @@ export class CodexCliTransport implements ExecutionTransport {
   ): string[] {
     const profile = getRequestModelProfile(this.kind, request);
     const args = [
+      '--ask-for-approval',
+      'never',
       'exec',
       '--ignore-user-config',
       '--json',
@@ -248,6 +250,7 @@ export class CodexCliTransport implements ExecutionTransport {
 
     return [
       `You are AgentForge agent "${request.agent.name}" (${request.agent.agentId}).`,
+      `Codex is running non-interactively with sandbox "${request.codexSandbox ?? 'workspace-write'}". You may create, edit, and delete files inside the working directory when the task requires it. Do not stop as read-only unless an actual write command fails.`,
       '<system>',
       request.agent.systemPrompt,
       '</system>',
