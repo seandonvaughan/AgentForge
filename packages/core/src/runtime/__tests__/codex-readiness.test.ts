@@ -33,6 +33,7 @@ describe('buildCodexReadinessReport', () => {
     const report = buildCodexReadinessReport({
       projectRoot,
       checkLogin: false,
+      checkDoctor: false,
       codexCliAvailable: true,
       mcpServerPath,
       env: {},
@@ -64,6 +65,7 @@ describe('buildCodexReadinessReport', () => {
     const report = buildCodexReadinessReport({
       projectRoot,
       checkLogin: false,
+      checkDoctor: false,
       codexCliAvailable: true,
       mcpServerPath: join(projectRoot, 'missing.js'),
       env: {},
@@ -91,6 +93,7 @@ describe('buildCodexReadinessReport', () => {
     const report = buildCodexReadinessReport({
       projectRoot,
       checkLogin: false,
+      checkDoctor: false,
       codexCliAvailable: true,
       mcpServerPath,
       env: {},
@@ -102,5 +105,48 @@ describe('buildCodexReadinessReport', () => {
       valid: false,
     });
     expect(report.warnings.some((warning) => warning.includes('model: gpt-5.3-codex'))).toBe(true);
+  });
+
+  it('includes codex doctor metadata and warnings when requested', () => {
+    projectRoot = mkdtempSync(join(tmpdir(), 'agentforge-codex-doctor-'));
+    mkdirSync(join(projectRoot, '.agentforge', 'agents'), { recursive: true });
+    writeFileSync(
+      join(projectRoot, '.agentforge', 'agents', 'coder.yaml'),
+      [
+        'name: Coder',
+        'model: sonnet',
+        'system_prompt: You write code.',
+        '',
+      ].join('\n'),
+    );
+    const mcpServerPath = join(projectRoot, 'mcp-server.js');
+    writeFileSync(mcpServerPath, 'console.log("ok");\n');
+
+    const report = buildCodexReadinessReport({
+      projectRoot,
+      checkLogin: false,
+      codexCliAvailable: true,
+      mcpServerPath,
+      env: {},
+      doctorJson: JSON.stringify({
+        overallStatus: 'warning',
+        codexVersion: '0.131.0',
+        checks: {
+          installation: {
+            id: 'installation',
+            category: 'install',
+            status: 'warning',
+            summary: 'npm root unavailable',
+          },
+        },
+      }),
+    });
+
+    expect(report.ready).toBe(true);
+    expect(report.codexDoctorChecked).toBe(true);
+    expect(report.codexDoctorOk).toBe(true);
+    expect(report.codexDoctorStatus).toBe('warning');
+    expect(report.codexDoctorVersion).toBe('0.131.0');
+    expect(report.warnings.some((warning) => warning.includes('codex doctor warning'))).toBe(true);
   });
 });

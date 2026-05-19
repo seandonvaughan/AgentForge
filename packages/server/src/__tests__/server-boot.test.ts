@@ -80,6 +80,17 @@ describe('createServerV5 boot', () => {
     await expect(app.ready()).resolves.not.toThrow();
   });
 
+  it('serves Codex readiness in the no-adapter dashboard boot path', async () => {
+    const projectRoot = makeTmpRoot();
+    const { app } = await createServerV5({ listen: false, projectRoot });
+    createdApps.push(app);
+    await app.ready();
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/codex/readiness?skipLogin=true' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toHaveProperty('data.summary.codexCliAvailable');
+  });
+
   it('does not serve static HTML — no static path registered without dashboardPath', async () => {
     // Regression guard: createServerV5 should NOT serve any static HTML when
     // dashboardPath is omitted (the production default). The legacy root-level

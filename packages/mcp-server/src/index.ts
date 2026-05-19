@@ -6,6 +6,9 @@
  *   - af_agent_dispatch   — look up the best agent for given capability tags
  *   - af_kb_lookup        — fetch a Knowledge Base document
  *   - af_memory_query     — semantic search over AgentForge memory JSONL files
+ *   - af_codex_readiness  — inspect Codex runtime readiness
+ *   - af_cycle_preview    — preview a cycle without starting one
+ *   - af_cycle_status     — list/show recorded cycle state
  *
  * Transport: stdio (default) or HTTP (set AGENTFORGE_MCP_HTTP=1).
  * Auth:      bearer token from AGENTFORGE_MCP_TOKEN (optional).
@@ -24,6 +27,11 @@ import { z } from 'zod';
 
 import { validateToken, extractBearer } from './auth.js';
 import { afAgentDispatch } from './tools/af-agent-dispatch.js';
+import {
+  afCodexReadiness,
+  afCyclePreview,
+  afCycleStatus,
+} from './tools/af-codex-workflows.js';
 import { afKbLookup } from './tools/af-kb-lookup.js';
 import { afMemoryQuery } from './tools/af-memory-query.js';
 
@@ -109,6 +117,93 @@ server.tool(
   async ({ text, k }) => {
     const result = await afMemoryQuery({ text, k: k ?? 5 }, PROJECT_ROOT);
     return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+  },
+);
+
+// Tool: af_codex_readiness
+server.tool(
+  'af_codex_readiness',
+  'Return the same AgentForge Codex readiness report as `agentforge codex readiness --json`. ' +
+    'Read-only; optionally provide projectRoot and skipLogin.',
+  {
+    projectRoot: z
+      .string()
+      .min(1)
+      .max(2048)
+      .optional()
+      .describe('Project root to inspect (defaults to AGENTFORGE_PROJECT_ROOT or current working directory)'),
+    skipLogin: z
+      .boolean()
+      .optional()
+      .default(false)
+      .describe('Skip `codex login status` check'),
+  },
+  async ({ projectRoot, skipLogin }) => {
+    const result = await afCodexReadiness({ projectRoot, skipLogin: skipLogin ?? false }, PROJECT_ROOT);
+    return {
+      content: [{ type: 'text', text: JSON.stringify(result) }],
+      ...(result.ok ? {} : { isError: true }),
+    };
+  },
+);
+
+// Tool: af_cycle_preview
+server.tool(
+  'af_cycle_preview',
+  'Run the existing AgentForge cycle preview path without starting a cycle. ' +
+    'Read-only/dry-run surface; returns CLI preview output and command metadata.',
+  {
+    projectRoot: z
+      .string()
+      .min(1)
+      .max(2048)
+      .optional()
+      .describe('Project root to inspect (defaults to AGENTFORGE_PROJECT_ROOT or current working directory)'),
+    budgetUsd: z.number().positive().optional().describe('Preview-only budget override'),
+    maxItems: z.number().int().positive().optional().describe('Preview-only max item override'),
+  },
+  async ({ projectRoot, budgetUsd, maxItems }) => {
+    const result = await afCyclePreview({ projectRoot, budgetUsd, maxItems }, PROJECT_ROOT);
+    return {
+      content: [{ type: 'text', text: JSON.stringify(result) }],
+      ...(result.ok ? {} : { isError: true }),
+    };
+  },
+);
+
+// Tool: af_cycle_status
+server.tool(
+  'af_cycle_status',
+  'Inspect recorded AgentForge cycle state from .agentforge/cycles. ' +
+    'Read-only; provide cycleId to show one cycle or omit it to list recent cycles.',
+  {
+    projectRoot: z
+      .string()
+      .min(1)
+      .max(2048)
+      .optional()
+      .describe('Project root to inspect (defaults to AGENTFORGE_PROJECT_ROOT or current working directory)'),
+    cycleId: z
+      .string()
+      .min(8)
+      .max(64)
+      .optional()
+      .describe('Cycle id to inspect; omit to list cycles'),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(100)
+      .optional()
+      .default(20)
+      .describe('Maximum cycles to return when listing'),
+  },
+  async ({ projectRoot, cycleId, limit }) => {
+    const result = afCycleStatus({ projectRoot, cycleId, limit: limit ?? 20 }, PROJECT_ROOT);
+    return {
+      content: [{ type: 'text', text: JSON.stringify(result) }],
+      ...(result.ok ? {} : { isError: true }),
+    };
   },
 );
 

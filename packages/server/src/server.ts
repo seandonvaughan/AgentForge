@@ -19,6 +19,7 @@ import { embeddingRoutes } from './routes/v5/embeddings.js';
 import { sprintsRoutes } from './routes/v5/sprints.js';
 import { cyclesRoutes } from './routes/v5/cycles.js';
 import { cyclesPreviewRoutes } from './routes/v5/cycles-preview.js';
+import { codexReadinessRoutes } from './routes/v5/codex-readiness.js';
 import { dashboardStubRoutes } from './routes/v5/dashboard-stubs.js';
 import { runRoutes } from './routes/v5/run.js';
 import { runStreamRoutes } from './routes/v5/run-stream.js';
@@ -157,6 +158,10 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
         timestamp: new Date().toISOString(),
       });
     });
+
+    // Codex runtime readiness is needed by the dashboard in the no-adapter
+    // local dev path as well as the full workspace-backed route set.
+    await codexReadinessRoutes(app, { projectRoot });
 
     // v6.6.0 — workspace registry CRUD (~/.agentforge/workspaces.json)
     await workspacesRoutes(app);

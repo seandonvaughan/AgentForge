@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { Btn, Badge, Card, PulseDot } from '$lib/components/v2';
+  import CodexReadinessPanel from '$lib/components/CodexReadinessPanel.svelte';
   import { codexProfileFor } from '$lib/modelProfiles';
   import type { PageData } from './$types';
 
@@ -18,6 +19,9 @@
     name: string;
     model: 'opus' | 'sonnet' | 'haiku';
   }
+
+  type RunnerRuntimeMode = 'codex-cli' | 'openai-sdk';
+  type CodexSandboxMode = 'read-only' | 'workspace-write';
 
   interface RunHistory {
     id: string;
@@ -63,6 +67,14 @@
   let selectedAgent = $state(_defaultAgent);
   let agentSearch = $state('');
   let taskInput = $state('');
+  let runtimeMode: RunnerRuntimeMode = $state('codex-cli');
+  let codexSandbox: CodexSandboxMode = $state('workspace-write');
+  let allowedToolsInput = $state('Read, Grep, Glob');
+  let codexSearch = $state(false);
+  let codexEphemeral = $state(false);
+  let codexSkipGitRepoCheck = $state(false);
+  let codexProfile = $state('');
+  let codexProfileV2 = $state('');
   let running = $state(false);
   let runAccepted = $state(false);
   let runError: string | null = $state(null);
@@ -321,10 +333,22 @@
     };
 
     try {
+      const allowedTools = parseList(allowedToolsInput);
       const res = await fetch('/api/v5/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agentId: selectedAgent, task: taskInput, runtimeMode: 'codex-cli' }),
+        body: JSON.stringify({
+          agentId: selectedAgent,
+          task: taskInput,
+          runtimeMode,
+          codexSandbox,
+          ...(allowedTools.length > 0 ? { allowedTools } : {}),
+          ...(runtimeMode === 'codex-cli' && codexSearch ? { codexSearch: true } : {}),
+          ...(runtimeMode === 'codex-cli' && codexEphemeral ? { codexEphemeral: true } : {}),
+          ...(runtimeMode === 'codex-cli' && codexSkipGitRepoCheck ? { codexSkipGitRepoCheck: true } : {}),
+          ...(runtimeMode === 'codex-cli' && codexProfile.trim() ? { codexProfile: codexProfile.trim() } : {}),
+          ...(runtimeMode === 'codex-cli' && codexProfileV2.trim() ? { codexProfileV2: codexProfileV2.trim() } : {}),
+        }),
       });
 
       if (res.status === 404) {
@@ -448,6 +472,10 @@
   function formatLatency(ms: number): string {
     if (ms < 1000) return `${ms} ms`;
     return `${(ms / 1000).toFixed(1)} s`;
+  }
+
+  function parseList(value: string): string[] {
+    return Array.from(new Set(value.split(/[,\n]/).map((tool) => tool.trim()).filter(Boolean)));
   }
 
   async function copyOutput() {
@@ -600,6 +628,72 @@
         </div>
       {/if}
 
+      <div class="runtime-grid">
+        <div class="field">
+          <label class="field-label" for="runtime-mode">Runtime</label>
+          <select id="runtime-mode" class="field-select af2-mono" bind:value={runtimeMode} disabled={running}>
+            <option value="codex-cli">Codex CLI</option>
+            <option value="openai-sdk">OpenAI SDK</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label" for="codex-sandbox">Codex sandbox</label>
+          <select id="codex-sandbox" class="field-select af2-mono" bind:value={codexSandbox} disabled={running || runtimeMode !== 'codex-cli'}>
+            <option value="read-only">read-only</option>
+            <option value="workspace-write">workspace-write</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="allowed-tools">Allowed tools</label>
+        <input
+          id="allowed-tools"
+          class="field-search af2-mono"
+          bind:value={allowedToolsInput}
+          placeholder="Read, Grep, Glob"
+          disabled={running}
+        />
+      </div>
+
+      <div class="codex-options" aria-disabled={runtimeMode !== 'codex-cli'}>
+        <label class="toggle-row">
+          <input type="checkbox" bind:checked={codexSearch} disabled={running || runtimeMode !== 'codex-cli'} />
+          <span>Search</span>
+        </label>
+        <label class="toggle-row">
+          <input type="checkbox" bind:checked={codexEphemeral} disabled={running || runtimeMode !== 'codex-cli'} />
+          <span>Ephemeral</span>
+        </label>
+        <label class="toggle-row">
+          <input type="checkbox" bind:checked={codexSkipGitRepoCheck} disabled={running || runtimeMode !== 'codex-cli'} />
+          <span>Skip git check</span>
+        </label>
+      </div>
+
+      <div class="runtime-grid">
+        <div class="field">
+          <label class="field-label" for="codex-profile">Profile</label>
+          <input
+            id="codex-profile"
+            class="field-search af2-mono"
+            bind:value={codexProfile}
+            placeholder="default"
+            disabled={running || runtimeMode !== 'codex-cli'}
+          />
+        </div>
+        <div class="field">
+          <label class="field-label" for="codex-profile-v2">Profile v2</label>
+          <input
+            id="codex-profile-v2"
+            class="field-search af2-mono"
+            bind:value={codexProfileV2}
+            placeholder="workspace"
+            disabled={running || runtimeMode !== 'codex-cli'}
+          />
+        </div>
+      </div>
+
       <!-- Task textarea -->
       <div class="field" style="margin-top:14px">
         <label class="field-label" for="task-input">Task</label>
@@ -647,6 +741,8 @@
         {/if}
       </Btn>
     </Card>
+
+    <CodexReadinessPanel compact title="CODEX READINESS" />
 
     <!-- Recent runs card -->
     <Card>
@@ -935,6 +1031,43 @@
     color: var(--af-dim);
   }
 
+  .runtime-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .codex-options {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+
+  .codex-options[aria-disabled="true"] {
+    opacity: 0.55;
+  }
+
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 32px;
+    padding: 6px 8px;
+    border: 1px solid var(--af-border2);
+    border-radius: 6px;
+    background: var(--af-surface2);
+    color: var(--af-muted);
+    font-size: 11px;
+    box-sizing: border-box;
+  }
+
+  .toggle-row input {
+    width: 14px;
+    height: 14px;
+    accent-color: var(--af-purple);
+  }
+
   /* ── Run button ───────────────────────────────────────────────────────── */
   :global(.run-btn) {
     width: 100% !important;
@@ -1175,5 +1308,7 @@
 
   @media (max-width: 900px) {
     .runner-layout { grid-template-columns: 1fr; }
+    .runtime-grid { grid-template-columns: 1fr; }
+    .codex-options { grid-template-columns: 1fr; }
   }
 </style>

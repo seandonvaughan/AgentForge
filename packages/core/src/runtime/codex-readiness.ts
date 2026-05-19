@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import yaml from 'js-yaml';
 import type { ModelTier } from '@agentforge/shared';
@@ -27,9 +27,23 @@ export interface CodexReadinessAgent {
   valid: boolean;
 }
 
+export interface CodexDoctorCheck {
+  id: string;
+  category?: string;
+  status?: string;
+  summary?: string;
+  remediation?: string | null;
+}
+
 export interface CodexReadinessReport {
   projectRoot: string;
   codexCliAvailable: boolean;
+  codexDoctorChecked: boolean;
+  codexDoctorOk: boolean | null;
+  codexDoctorStatus?: string;
+  codexDoctorVersion?: string;
+  codexDoctorChecks?: CodexDoctorCheck[];
+  codexDoctorMessage?: string;
   mcpServerAvailable: boolean;
   mcpServerPath: string;
   codexLoginChecked: boolean;
@@ -44,6 +58,8 @@ export function buildCodexReadinessReport(options: {
   projectRoot?: string;
   checkLogin?: boolean;
   codexCliAvailable?: boolean;
+  checkDoctor?: boolean;
+  doctorJson?: string;
   mcpServerPath?: string;
   env?: NodeJS.ProcessEnv;
 } = {}): CodexReadinessReport {
@@ -55,6 +71,9 @@ export function buildCodexReadinessReport(options: {
     ? resolve(options.mcpServerPath)
     : join(projectRoot, 'packages', 'mcp-server', 'dist', 'index.js');
   const mcpServerAvailable = existsSync(mcpServerPath);
+  const doctor = options.checkDoctor === false || !codexCliAvailable
+    ? { checked: false, ok: null as boolean | null, status: undefined as string | undefined, version: undefined as string | undefined, checks: undefined as CodexDoctorCheck[] | undefined, message: undefined as string | undefined }
+    : checkCodexDoctor(options.doctorJson);
   const login = options.checkLogin === false
     ? { checked: false, ok: null as boolean | null, message: undefined as string | undefined }
     : checkCodexLogin();
@@ -74,6 +93,17 @@ export function buildCodexReadinessReport(options: {
   if (!codexCliAvailable) {
     warnings.push('codex CLI is not available on PATH.');
   }
+  if (doctor.checked && doctor.ok === false) {
+    warnings.push(doctor.message ?? `codex doctor reported ${doctor.status ?? 'a failing status'}.`);
+  }
+  for (const check of doctor.checks ?? []) {
+    if (check.status === 'warning') {
+      warnings.push(`codex doctor warning (${check.id}): ${check.summary ?? 'warning'}`);
+    }
+    if (check.status === 'error' || check.status === 'fail' || check.status === 'failed') {
+      warnings.push(`codex doctor failure (${check.id}): ${check.summary ?? 'failure'}`);
+    }
+  }
   if (!mcpServerAvailable) {
     warnings.push(`AgentForge MCP server build output is missing: ${mcpServerPath}. Run corepack pnpm build.`);
   }
@@ -84,6 +114,12 @@ export function buildCodexReadinessReport(options: {
   return {
     projectRoot,
     codexCliAvailable,
+    codexDoctorChecked: doctor.checked,
+    codexDoctorOk: doctor.ok,
+    ...(doctor.status ? { codexDoctorStatus: doctor.status } : {}),
+    ...(doctor.version ? { codexDoctorVersion: doctor.version } : {}),
+    ...(doctor.checks ? { codexDoctorChecks: doctor.checks } : {}),
+    ...(doctor.message ? { codexDoctorMessage: doctor.message } : {}),
     mcpServerAvailable,
     mcpServerPath,
     codexLoginChecked: login.checked,
@@ -94,6 +130,7 @@ export function buildCodexReadinessReport(options: {
     ready: agents.length > 0
       && agents.every((agent) => agent.valid)
       && codexCliAvailable
+      && (!doctor.checked || doctor.ok !== false)
       && mcpServerAvailable
       && (!login.checked || login.ok === true),
   };
@@ -156,18 +193,118 @@ function checkCodexLogin(): { checked: boolean; ok: boolean | null; message?: st
   };
 }
 
+function checkCodexDoctor(doctorJson?: string): {
+  checked: boolean;
+  ok: boolean | null;
+  status?: string;
+  version?: string;
+  checks?: CodexDoctorCheck[];
+  message?: string;
+} {
+  let raw = doctorJson;
+  if (raw === undefined) {
+    const command = buildCodexSpawnCommand(['doctor', '--json']);
+    const result = spawnSync(command.command, command.args, {
+      encoding: 'utf8',
+      timeout: 20_000,
+    });
+
+    if (result.error) {
+      return {
+        checked: true,
+        ok: false,
+        message: result.error.message,
+      };
+    }
+
+    raw = [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
+    if (result.status !== 0) {
+      return {
+        checked: true,
+        ok: false,
+        message: raw || `codex doctor exited with status ${result.status}`,
+      };
+    }
+  }
+
+  try {
+    const parsed = JSON.parse(raw || '{}') as Record<string, unknown>;
+    const status = typeof parsed['overallStatus'] === 'string' ? parsed['overallStatus'] : undefined;
+    const version = typeof parsed['codexVersion'] === 'string' ? parsed['codexVersion'] : undefined;
+    const checksRecord = typeof parsed['checks'] === 'object' && parsed['checks'] !== null
+      ? parsed['checks'] as Record<string, unknown>
+      : {};
+    const checks = Object.values(checksRecord)
+      .filter((value): value is Record<string, unknown> => typeof value === 'object' && value !== null)
+      .map((value) => ({
+        id: typeof value['id'] === 'string' ? value['id'] : 'unknown',
+        ...(typeof value['category'] === 'string' ? { category: value['category'] } : {}),
+        ...(typeof value['status'] === 'string' ? { status: value['status'] } : {}),
+        ...(typeof value['summary'] === 'string' ? { summary: value['summary'] } : {}),
+        ...(
+          typeof value['remediation'] === 'string' || value['remediation'] === null
+            ? { remediation: value['remediation'] as string | null }
+            : {}
+        ),
+      }));
+    const ok = status === undefined
+      ? true
+      : !['error', 'fail', 'failed'].includes(status.toLowerCase());
+
+    return {
+      checked: true,
+      ok,
+      ...(status ? { status } : {}),
+      ...(version ? { version } : {}),
+      checks,
+    };
+  } catch (error) {
+    return {
+      checked: true,
+      ok: false,
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 function buildCodexSpawnCommand(args: string[]): { command: string; args: string[] } {
   if (process.platform !== 'win32') {
     return { command: CODEX_COMMAND, args };
   }
 
-  return {
-    command: process.env.ComSpec ?? 'cmd.exe',
-    args: ['/d', '/s', '/c', [CODEX_COMMAND, ...args.map(quoteCmdArg)].join(' ')],
-  };
+  const candidates = findWindowsCodexCandidates();
+  const nodeEntrypoint = findWindowsCodexNodeEntrypoint(candidates);
+  if (nodeEntrypoint) {
+    return { command: process.execPath, args: [nodeEntrypoint, ...args] };
+  }
+
+  const executable = candidates.find((candidate) => {
+    const normalized = candidate.toLowerCase();
+    return normalized.endsWith('.exe') && !normalized.includes('\\windowsapps\\');
+  });
+  return { command: executable ?? CODEX_COMMAND, args };
 }
 
-function quoteCmdArg(value: string): string {
-  if (/^[A-Za-z0-9._=:/\\-]+$/.test(value)) return value;
-  return `"${value.replace(/"/g, '\\"')}"`;
+function findWindowsCodexCandidates(): string[] {
+  const probe = spawnSync('where', ['codex'], { encoding: 'utf8' });
+  if (probe.status === 0 && typeof probe.stdout === 'string') {
+    return probe.stdout
+      .split(/\r?\n/)
+      .map((candidate) => candidate.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
+function findWindowsCodexNodeEntrypoint(candidates: string[]): string | null {
+  const searchedDirs = new Set<string>();
+  for (const candidate of candidates) {
+    const baseDir = dirname(candidate);
+    if (searchedDirs.has(baseDir)) continue;
+    searchedDirs.add(baseDir);
+    const entrypoint = join(baseDir, 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
+    if (existsSync(entrypoint)) return entrypoint;
+  }
+  return null;
 }

@@ -1,4 +1,5 @@
 import { getRequestModelProfile } from '../model-profiles.js';
+import { estimateOpenAiCostUsd } from '../openai-pricing.js';
 import { normalizeStrictOutputSchema } from '../output-schema.js';
 import {
   TransportAuthError,
@@ -12,8 +13,6 @@ import type {
 } from '../types.js';
 
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses';
-const GPT_53_CODEX_INPUT_PER_MILLION = 1.75;
-const GPT_53_CODEX_OUTPUT_PER_MILLION = 14.0;
 
 function validateAgainstSchema(
   responseText: string,
@@ -100,7 +99,7 @@ export class OpenAiSdkTransport implements ExecutionTransport {
         model: body.model ?? profile.modelId,
         ...(profile.effort ? { effort: profile.effort } : {}),
         usage: { inputTokens, outputTokens },
-        costUsd: this.estimateCost(inputTokens, outputTokens),
+        costUsd: this.estimateCost(body.model ?? profile.modelId, inputTokens, outputTokens),
         durationMs: Date.now() - startedAt,
         raw: body,
         ...(body.id ? { remoteSessionId: body.id } : {}),
@@ -170,11 +169,8 @@ export class OpenAiSdkTransport implements ExecutionTransport {
     return pieces.join('\n').trim();
   }
 
-  private estimateCost(inputTokens: number, outputTokens: number): number {
-    return (
-      (inputTokens / 1_000_000) * GPT_53_CODEX_INPUT_PER_MILLION +
-      (outputTokens / 1_000_000) * GPT_53_CODEX_OUTPUT_PER_MILLION
-    );
+  private estimateCost(modelId: string, inputTokens: number, outputTokens: number): number {
+    return estimateOpenAiCostUsd(modelId, inputTokens, outputTokens);
   }
 
   private isRecord(value: unknown): value is Record<string, unknown> {

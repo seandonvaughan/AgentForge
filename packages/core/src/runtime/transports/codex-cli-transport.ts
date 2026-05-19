@@ -3,8 +3,9 @@ import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { readFile, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { getRequestModelProfile } from '../model-profiles.js';
+import { estimateOpenAiCostUsd } from '../openai-pricing.js';
 import { normalizeStrictOutputSchema } from '../output-schema.js';
 import {
   TransportInvalidRequestError,
@@ -20,8 +21,6 @@ import type {
   ExecutionTransport,
 } from '../types.js';
 
-const GPT_53_CODEX_INPUT_PER_MILLION = 1.75;
-const GPT_53_CODEX_OUTPUT_PER_MILLION = 14.0;
 const CODEX_COMMAND = 'codex';
 const DEFAULT_CODEX_SANDBOX: CodexSandboxMode = 'workspace-write';
 
@@ -62,6 +61,7 @@ interface ParsedCodexOutput {
   response: string;
   inputTokens: number;
   outputTokens: number;
+  webSearchCalls: number;
   remoteSessionId?: string;
   stopReason?: string;
   events: unknown[];
@@ -86,6 +86,7 @@ export class CodexCliTransport implements ExecutionTransport {
       const invocation = await this.invokeCodexCli(request);
       const parsed = this.parseCodexOutput(invocation.stdout, invocation.outputText);
       const response = parsed.response;
+      const costWarnings = this.buildCostWarnings(request, parsed.webSearchCalls);
       const result: ExecutionResult = {
         providerKind: this.kind,
         response,
@@ -95,11 +96,18 @@ export class CodexCliTransport implements ExecutionTransport {
           inputTokens: parsed.inputTokens,
           outputTokens: parsed.outputTokens,
         },
-        costUsd: this.estimateCost(parsed.inputTokens, parsed.outputTokens),
+        costUsd: this.estimateCost(
+          profile.modelId,
+          parsed.inputTokens,
+          parsed.outputTokens,
+          parsed.webSearchCalls,
+        ),
         durationMs: invocation.durationMs || Date.now() - startedAt,
         raw: {
           events: parsed.events,
           stderr: invocation.stderr,
+          webSearchCalls: parsed.webSearchCalls,
+          ...(costWarnings.length ? { costWarnings } : {}),
         },
         ...(parsed.remoteSessionId ? { remoteSessionId: parsed.remoteSessionId } : {}),
         ...(parsed.stopReason ? { stopReason: parsed.stopReason } : {}),
@@ -114,7 +122,75 @@ export class CodexCliTransport implements ExecutionTransport {
     }
   }
 
-  private async invokeCodexCli(request: ExecutionRequest): Promise<CodexInvocationResult> {
+  async executeStreaming(
+    request: ExecutionRequest,
+    options: ExecutionStreamOptions = {},
+  ): Promise<ExecutionResult> {
+    const profile = getRequestModelProfile(this.kind, request);
+    const startedAt = Date.now();
+    this.emitEvent(options, {
+      type: 'start',
+      data: {
+        providerKind: this.kind,
+        model: profile.modelId,
+        ...(profile.effort ? { effort: profile.effort } : {}),
+        sandbox: this.resolveSandbox(request),
+      },
+    });
+
+    try {
+      const invocation = await this.invokeCodexCli(request, options);
+      const parsed = this.parseCodexOutput(invocation.stdout, invocation.outputText);
+      const response = parsed.response;
+      const costWarnings = this.buildCostWarnings(request, parsed.webSearchCalls);
+      const result: ExecutionResult = {
+        providerKind: this.kind,
+        response,
+        model: profile.modelId,
+        ...(profile.effort ? { effort: profile.effort } : {}),
+        usage: {
+          inputTokens: parsed.inputTokens,
+          outputTokens: parsed.outputTokens,
+        },
+        costUsd: this.estimateCost(
+          profile.modelId,
+          parsed.inputTokens,
+          parsed.outputTokens,
+          parsed.webSearchCalls,
+        ),
+        durationMs: invocation.durationMs || Date.now() - startedAt,
+        raw: {
+          events: parsed.events,
+          stderr: invocation.stderr,
+          webSearchCalls: parsed.webSearchCalls,
+          ...(costWarnings.length ? { costWarnings } : {}),
+        },
+        ...(parsed.remoteSessionId ? { remoteSessionId: parsed.remoteSessionId } : {}),
+        ...(parsed.stopReason ? { stopReason: parsed.stopReason } : {}),
+      };
+
+      this.emitEvent(options, {
+        type: 'usage_delta',
+        data: {
+          inputTokens: parsed.inputTokens,
+          outputTokens: parsed.outputTokens,
+          costUsd: result.costUsd,
+        },
+      });
+
+      if (request.outputSchema) {
+        return { ...result, schemaValidation: validateAgainstSchema(response, request.outputSchema) };
+      }
+      return result;
+    } catch (err) {
+      throw classifyCodexCliError(err, request.timeoutMs);
+    }
+  }
+
+  private async invokeCodexCli(
+    request: ExecutionRequest,
+    streamOptions: ExecutionStreamOptions = {},
+  ): Promise<CodexInvocationResult> {
     const profile = getRequestModelProfile(this.kind, request);
     const timeoutMs = request.timeoutMs ?? 20 * 60 * 1000;
     const runId = `${process.pid}-${randomUUID()}`;
@@ -124,6 +200,9 @@ export class CodexCliTransport implements ExecutionTransport {
       : undefined;
 
     if (schemaPath && request.outputSchema) {
+      if (request.codexResumeSessionId || request.codexResumeLast) {
+        throw new TransportInvalidRequestError('codex exec resume does not support outputSchema.');
+      }
       await writeFile(
         schemaPath,
         JSON.stringify(normalizeStrictOutputSchema(request.outputSchema).schema),
@@ -140,12 +219,15 @@ export class CodexCliTransport implements ExecutionTransport {
         const command = buildCodexSpawnCommand(args);
         const proc = spawn(command.command, command.args, {
           env: { ...process.env },
+          cwd: request.cwd ?? process.cwd(),
           stdio: ['pipe', 'pipe', 'pipe'],
         });
 
         let stdout = '';
         let stderr = '';
         let settled = false;
+        let lineBuffer = '';
+        let chunkIndex = 0;
 
         const finish = (fn: () => void) => {
           if (settled) return;
@@ -160,7 +242,14 @@ export class CodexCliTransport implements ExecutionTransport {
         }, timeoutMs);
 
         proc.stdout.on('data', (chunk: Buffer) => {
-          stdout += chunk.toString('utf8');
+          const text = chunk.toString('utf8');
+          stdout += text;
+          lineBuffer += text;
+          const lines = lineBuffer.split(/\r?\n/);
+          lineBuffer = lines.pop() ?? '';
+          for (const line of lines) {
+            chunkIndex = this.emitJsonLine(line, streamOptions, chunkIndex);
+          }
         });
         proc.stderr.on('data', (chunk: Buffer) => {
           stderr += chunk.toString('utf8');
@@ -178,6 +267,10 @@ export class CodexCliTransport implements ExecutionTransport {
 
         proc.on('close', (code: number | null) => {
           finish(() => {
+            if (lineBuffer.trim()) {
+              chunkIndex = this.emitJsonLine(lineBuffer, streamOptions, chunkIndex);
+              lineBuffer = '';
+            }
             if (code !== 0) {
               reject(new Error(
                 `codex CLI exited with code ${code}\nstderr: ${stderr.slice(0, 1000)}\nstdout: ${stdout.slice(0, 1000)}`,
@@ -223,15 +316,35 @@ export class CodexCliTransport implements ExecutionTransport {
     const args = [
       '--ask-for-approval',
       'never',
-      'exec',
-      '--ignore-user-config',
-      '--ignore-rules',
-      '--json',
+    ];
+
+    if (request.codexSearch) {
+      args.push('--search');
+    }
+
+    args.push('exec');
+
+    if (request.codexResumeSessionId || request.codexResumeLast) {
+      args.push('resume');
+      this.pushSharedExecOptions(args, request, lastMessagePath, profile.modelId, false);
+      if (request.codexResumeLast && !request.codexResumeSessionId) {
+        args.push('--last');
+      }
+      if (request.codexResumeSessionId) {
+        args.push(request.codexResumeSessionId);
+      }
+      if (profile.effort) {
+        args.push('-c', `model_reasoning_effort=${profile.effort}`);
+      }
+      args.push('-');
+      return args;
+    }
+
+    this.pushSharedExecOptions(args, request, lastMessagePath, profile.modelId, true);
+    args.push(
       '--cd', request.cwd ?? process.cwd(),
       '--sandbox', sandbox,
-      '--model', profile.modelId,
-      '--output-last-message', lastMessagePath,
-    ];
+    );
 
     if (process.platform === 'win32' && sandbox === 'workspace-write') {
       args.push('-c', 'windows.sandbox=elevated');
@@ -246,6 +359,43 @@ export class CodexCliTransport implements ExecutionTransport {
     }
 
     return args;
+  }
+
+  private pushSharedExecOptions(
+    args: string[],
+    request: ExecutionRequest,
+    lastMessagePath: string,
+    modelId: string,
+    includeWorkspaceOptions: boolean,
+  ): void {
+    const needsUserConfig = includeWorkspaceOptions && Boolean(request.codexProfile || request.codexProfileV2);
+    if (!needsUserConfig) {
+      args.push('--ignore-user-config');
+    }
+    args.push(
+      '--ignore-rules',
+      '--json',
+      '--model', modelId,
+      '--output-last-message', lastMessagePath,
+    );
+
+    if (request.codexEphemeral) {
+      args.push('--ephemeral');
+    }
+    if (request.codexSkipGitRepoCheck) {
+      args.push('--skip-git-repo-check');
+    }
+    if (includeWorkspaceOptions && request.codexProfile) {
+      args.push('--profile', request.codexProfile);
+    }
+    if (includeWorkspaceOptions && request.codexProfileV2) {
+      args.push('--profile-v2', request.codexProfileV2);
+    }
+    if (includeWorkspaceOptions) {
+      for (const dir of request.codexAddDirs ?? []) {
+        args.push('--add-dir', dir);
+      }
+    }
   }
 
   private buildPrompt(request: ExecutionRequest): string {
@@ -282,6 +432,7 @@ export class CodexCliTransport implements ExecutionTransport {
     const events = this.parseJsonLines(stdout);
     const inputTokens = this.sumUsage(events, ['input_tokens', 'inputTokens', 'prompt_tokens', 'promptTokens']);
     const outputTokens = this.sumUsage(events, ['output_tokens', 'outputTokens', 'completion_tokens', 'completionTokens']);
+    const webSearchCalls = this.countWebSearchCalls(events);
     const response = outputText.trim() || this.extractResponseFromEvents(events);
     const metadata = this.extractMetadata(events);
 
@@ -293,6 +444,7 @@ export class CodexCliTransport implements ExecutionTransport {
       response,
       inputTokens,
       outputTokens,
+      webSearchCalls,
       events,
       ...(metadata.remoteSessionId ? { remoteSessionId: metadata.remoteSessionId } : {}),
       ...(metadata.stopReason ? { stopReason: metadata.stopReason } : {}),
@@ -378,6 +530,50 @@ export class CodexCliTransport implements ExecutionTransport {
       .some((key) => typeof value[key] === 'number');
   }
 
+  private countWebSearchCalls(events: unknown[]): number {
+    let total = 0;
+    for (const event of events) {
+      const explicitCount = this.findWebSearchCallCount(event);
+      if (explicitCount !== null) {
+        total += explicitCount;
+        continue;
+      }
+      if (this.includesWebSearchCallMarker(event)) {
+        total += 1;
+      }
+    }
+    return total;
+  }
+
+  private findWebSearchCallCount(value: unknown): number | null {
+    if (!this.isRecord(value)) return null;
+    for (const key of ['web_search_calls', 'webSearchCalls', 'web_search_call_count', 'webSearchCallCount']) {
+      const count = value[key];
+      if (typeof count === 'number' && Number.isFinite(count)) return count;
+    }
+    if (this.isRecord(value.usage)) return this.findWebSearchCallCount(value.usage);
+    if (this.isRecord(value.response) && this.isRecord(value.response.usage)) {
+      return this.findWebSearchCallCount(value.response.usage);
+    }
+    return null;
+  }
+
+  private includesWebSearchCallMarker(value: unknown): boolean {
+    if (typeof value === 'string') {
+      const normalized = value.toLowerCase();
+      return normalized.includes('web_search') && normalized.includes('call');
+    }
+    if (Array.isArray(value)) {
+      return value.some((item) => this.includesWebSearchCallMarker(item));
+    }
+    if (!this.isRecord(value)) return false;
+
+    for (const key of ['type', 'name', 'tool_name', 'toolName']) {
+      if (this.includesWebSearchCallMarker(value[key])) return true;
+    }
+    return this.includesWebSearchCallMarker(value.item);
+  }
+
   private extractMetadata(events: unknown[]): { remoteSessionId?: string; stopReason?: string } {
     let remoteSessionId: string | undefined;
     let stopReason: string | undefined;
@@ -407,11 +603,70 @@ export class CodexCliTransport implements ExecutionTransport {
     }
   }
 
-  private estimateCost(inputTokens: number, outputTokens: number): number {
-    return (
-      (inputTokens / 1_000_000) * GPT_53_CODEX_INPUT_PER_MILLION +
-      (outputTokens / 1_000_000) * GPT_53_CODEX_OUTPUT_PER_MILLION
-    );
+  private emitJsonLine(
+    line: string,
+    options: ExecutionStreamOptions,
+    chunkIndex: number,
+  ): number {
+    const trimmed = line.trim();
+    if (!trimmed) return chunkIndex;
+    let event: unknown;
+    try {
+      event = JSON.parse(trimmed);
+    } catch {
+      return chunkIndex;
+    }
+
+    this.emitEvent(options, { type: 'codex_json', data: event });
+    const usage = this.findUsageRecord(event);
+    if (usage) {
+      this.emitEvent(options, { type: 'usage_delta', data: usage });
+    }
+
+    const text = this.extractStreamingText(event);
+    if (text) {
+      options.onChunk?.(text, chunkIndex);
+      this.emitEvent(options, {
+        type: 'text_delta',
+        data: { text, content: text, index: chunkIndex },
+      });
+      return chunkIndex + 1;
+    }
+
+    return chunkIndex;
+  }
+
+  private extractStreamingText(event: unknown): string {
+    if (!this.isRecord(event)) return '';
+    const type = typeof event.type === 'string' ? event.type : '';
+    if (type === 'response.output_text.delta' && typeof event.delta === 'string') return event.delta;
+
+    const item = this.isRecord(event.item) ? event.item : null;
+    if (!item) return '';
+    const itemType = typeof item.type === 'string' ? item.type : '';
+    if (!['agent_message', 'message'].includes(itemType)) return '';
+    if (typeof item.text === 'string') return item.text;
+    return this.extractText(item);
+  }
+
+  private emitEvent(options: ExecutionStreamOptions, event: ExecutionStreamEvent): void {
+    options.onEvent?.(event);
+  }
+
+  private buildCostWarnings(request: ExecutionRequest, webSearchCalls: number): string[] {
+    if (!request.codexSearch || webSearchCalls > 0) return [];
+    return [
+      'Web search tool calls may not be represented in Codex JSONL usage; cost may exclude search tool charges.',
+    ];
+  }
+
+  private estimateCost(
+    modelId: string,
+    inputTokens: number,
+    outputTokens: number,
+    webSearchCalls: number,
+  ): number {
+    return estimateOpenAiCostUsd(modelId, inputTokens, outputTokens, { webSearchCalls });
   }
 
   private isRecord(value: unknown): value is Record<string, unknown> {
@@ -424,13 +679,39 @@ function buildCodexSpawnCommand(args: string[]): { command: string; args: string
     return { command: CODEX_COMMAND, args };
   }
 
-  return {
-    command: process.env.ComSpec ?? 'cmd.exe',
-    args: ['/d', '/s', '/c', [CODEX_COMMAND, ...args.map(quoteCmdArg)].join(' ')],
-  };
+  const candidates = findWindowsCodexCandidates();
+  const nodeEntrypoint = findWindowsCodexNodeEntrypoint(candidates);
+  if (nodeEntrypoint) {
+    return { command: process.execPath, args: [nodeEntrypoint, ...args] };
+  }
+
+  const executable = candidates.find((candidate) => {
+    const normalized = candidate.toLowerCase();
+    return normalized.endsWith('.exe') && !normalized.includes('\\windowsapps\\');
+  });
+  return { command: executable ?? CODEX_COMMAND, args };
 }
 
-function quoteCmdArg(value: string): string {
-  if (/^[A-Za-z0-9._=:/\\~\-]+$/.test(value)) return value;
-  return `"${value.replace(/"/g, '\\"')}"`;
+function findWindowsCodexCandidates(): string[] {
+  const probe = spawnSync('where', ['codex'], { encoding: 'utf8' });
+  if (probe.status === 0 && typeof probe.stdout === 'string') {
+    return probe.stdout
+      .split(/\r?\n/)
+      .map((candidate) => candidate.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
+function findWindowsCodexNodeEntrypoint(candidates: string[]): string | null {
+  const searchedDirs = new Set<string>();
+  for (const candidate of candidates) {
+    const baseDir = dirname(candidate);
+    if (searchedDirs.has(baseDir)) continue;
+    searchedDirs.add(baseDir);
+    const entrypoint = join(baseDir, 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
+    if (existsSync(entrypoint)) return entrypoint;
+  }
+  return null;
 }

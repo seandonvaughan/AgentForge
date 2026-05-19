@@ -13,6 +13,28 @@ codex plugin install agentforge-codex@agentforge-local
 
 If Codex launches the plugin MCP server from its plugin cache, set
 `AGENTFORGE_PROJECT_ROOT` to this repository root before starting Codex.
+The cached plugin runner validates that the root contains
+`packages/mcp-server/dist/index.js`; if it cannot find it, rebuild from the
+repo with Corepack-managed pnpm:
+
+```bash
+corepack enable
+corepack pnpm install
+corepack pnpm build
+```
+
+PowerShell:
+
+```powershell
+$env:AGENTFORGE_PROJECT_ROOT = 'C:\Users\SeanVaughan\Projects\AgentForge'
+corepack enable
+corepack pnpm install
+corepack pnpm build
+```
+
+If MCP startup succeeds but Codex workflow tools report `CLI_NOT_BUILT`, the
+server was found but `packages/cli/dist/bin.js` is missing. Run
+`corepack pnpm build` at `AGENTFORGE_PROJECT_ROOT` and restart Codex.
 
 First-cycle readiness:
 
@@ -20,6 +42,14 @@ First-cycle readiness:
 corepack pnpm build
 node packages/cli/dist/bin.js codex readiness --project-root .
 ```
+
+MCP tools exposed by this plugin:
+
+| Tool | Behavior |
+| --- | --- |
+| `af_codex_readiness` | Returns `agentforge codex readiness --json`; accepts optional `projectRoot` and `skipLogin`. |
+| `af_cycle_preview` | Runs the existing `agentforge cycle preview` path and does not start a cycle. |
+| `af_cycle_status` | Lists or shows recorded `.agentforge/cycles` state without starting work. |
 
 Single-agent smoke:
 

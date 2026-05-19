@@ -5,6 +5,7 @@ import {
   RuntimeJobSupervisor,
   loadAgentConfig,
   type ExecutionProviderKind,
+  type CodexSandboxMode,
   type RuntimeEventInput,
   type RunResult,
   type RuntimeMode,
@@ -28,7 +29,13 @@ interface RunRequestBody {
   // vector (callers could supply arbitrary FS roots). The server-configured
   // DEFAULT_PROJECT_ROOT is always used instead.
   runtimeMode?: RuntimeMode;
-  allowedTools?: string[];
+  allowedTools?: string[] | string;
+  codexSandbox?: CodexSandboxMode;
+  codexSearch?: boolean | string;
+  codexEphemeral?: boolean | string;
+  codexSkipGitRepoCheck?: boolean | string;
+  codexProfile?: string;
+  codexProfileV2?: string;
 }
 
 interface RunQuerystring {
@@ -144,6 +151,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+function normalizeAllowedTools(value: string[] | string | undefined): string[] | undefined {
+  const tools = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.split(/[,\n]/)
+      : [];
+  const normalized = tools.map((tool) => tool.trim()).filter(Boolean);
+  return normalized.length > 0 ? Array.from(new Set(normalized)) : undefined;
+}
+
+function booleanBodyValue(value: unknown): boolean | undefined {
+  if (value === undefined) return undefined;
+  return value === true || value === 'true' || value === '1';
+}
+
+type HttpCodexSandboxMode = Extract<CodexSandboxMode, 'read-only' | 'workspace-write'>;
+
+function isHttpCodexSandboxMode(value: unknown): value is HttpCodexSandboxMode {
+  return value === 'read-only' || value === 'workspace-write';
+}
+
 export async function runRoutes(
   app: FastifyInstance,
   opts?: { adapter?: WorkspaceAdapter; supervisor?: RuntimeJobSupervisor },
@@ -154,11 +182,29 @@ export async function runRoutes(
 
   // POST /api/v5/run — start an agent run and stream progress over SSE.
   app.post<{ Body: RunRequestBody; Querystring: RunQuerystring }>('/api/v5/run', async (req, reply) => {
-    const { agentId, task, runtimeMode, allowedTools } = req.body ?? {};
+    const {
+      agentId,
+      task,
+      runtimeMode,
+      allowedTools,
+      codexSandbox,
+      codexSearch,
+      codexEphemeral,
+      codexSkipGitRepoCheck,
+      codexProfile,
+      codexProfileV2,
+    } = req.body ?? {};
     const requestedRuntimeMode = runtimeMode ?? defaultRuntimeMode;
+    const requestedAllowedTools = normalizeAllowedTools(allowedTools);
+    const codexSearchEnabled = booleanBodyValue(codexSearch);
+    const codexEphemeralEnabled = booleanBodyValue(codexEphemeral);
+    const codexSkipGitRepoCheckEnabled = booleanBodyValue(codexSkipGitRepoCheck);
 
     if (!agentId) return reply.status(400).send({ error: 'agentId is required' });
     if (!task) return reply.status(400).send({ error: 'task is required' });
+    if (codexSandbox !== undefined && !isHttpCodexSandboxMode(codexSandbox)) {
+      return reply.status(400).send({ error: 'codexSandbox must be read-only or workspace-write' });
+    }
 
     const agentforgeDir = join(DEFAULT_PROJECT_ROOT, '.agentforge');
 
@@ -206,7 +252,13 @@ export async function runRoutes(
             task,
             sessionId,
             runtimeMode: requestedRuntimeMode,
-            ...(allowedTools?.length ? { allowedTools } : {}),
+            ...(requestedAllowedTools ? { allowedTools: requestedAllowedTools } : {}),
+            ...(codexSandbox ? { codexSandbox } : {}),
+            ...(codexSearchEnabled !== undefined ? { codexSearch: codexSearchEnabled } : {}),
+            ...(codexEphemeralEnabled !== undefined ? { codexEphemeral: codexEphemeralEnabled } : {}),
+            ...(codexSkipGitRepoCheckEnabled !== undefined ? { codexSkipGitRepoCheck: codexSkipGitRepoCheckEnabled } : {}),
+            ...(typeof codexProfile === 'string' && codexProfile.trim() ? { codexProfile: codexProfile.trim() } : {}),
+            ...(typeof codexProfileV2 === 'string' && codexProfileV2.trim() ? { codexProfileV2: codexProfileV2.trim() } : {}),
             signal,
             onChunk: (text: string, index: number) => {
               emitRuntime({
@@ -345,7 +397,13 @@ export async function runRoutes(
           task,
           sessionId,
           runtimeMode: requestedRuntimeMode,
-          ...(allowedTools?.length ? { allowedTools } : {}),
+          ...(requestedAllowedTools ? { allowedTools: requestedAllowedTools } : {}),
+          ...(codexSandbox ? { codexSandbox } : {}),
+          ...(codexSearchEnabled !== undefined ? { codexSearch: codexSearchEnabled } : {}),
+          ...(codexEphemeralEnabled !== undefined ? { codexEphemeral: codexEphemeralEnabled } : {}),
+          ...(codexSkipGitRepoCheckEnabled !== undefined ? { codexSkipGitRepoCheck: codexSkipGitRepoCheckEnabled } : {}),
+          ...(typeof codexProfile === 'string' && codexProfile.trim() ? { codexProfile: codexProfile.trim() } : {}),
+          ...(typeof codexProfileV2 === 'string' && codexProfileV2.trim() ? { codexProfileV2: codexProfileV2.trim() } : {}),
           // The dashboard SSE handler reads event.data.content, so emit exactly that.
           onChunk: (text: string, index: number) => {
             globalStream.emit({

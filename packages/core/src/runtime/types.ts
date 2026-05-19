@@ -67,6 +67,22 @@ export interface ExecutionRequest {
   providerModelProfiles?: ProviderModelProfiles;
   cwd?: string;
   codexSandbox?: CodexSandboxMode;
+  /** Enable live web search in Codex CLI for runs that explicitly need current external context. */
+  codexSearch?: boolean;
+  /** Extra directories Codex may write to alongside the primary workspace. */
+  codexAddDirs?: string[];
+  /** Run Codex without persisting session rollout files. */
+  codexEphemeral?: boolean;
+  /** Codex config profile from CODEX_HOME/config.toml. */
+  codexProfile?: string;
+  /** Codex profile-v2 layer from CODEX_HOME/<name>.config.toml. */
+  codexProfileV2?: string;
+  /** Allow Codex CLI execution outside a Git repository. */
+  codexSkipGitRepoCheck?: boolean;
+  /** Resume a previous Codex exec session instead of starting a fresh one. */
+  codexResumeSessionId?: string;
+  /** Resume the most recent Codex exec session. Ignored when codexResumeSessionId is set. */
+  codexResumeLast?: boolean;
   /** Optional structured output schema. SDK transport threads into outputFormat; CLI transport appends schema hint to system prompt. */
   outputSchema?: AgentOutputSchema;
   parentSessionId?: string;

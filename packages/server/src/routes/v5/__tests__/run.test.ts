@@ -167,6 +167,54 @@ describe('POST /api/v5/run', () => {
     expect(body.data).toHaveProperty('runtimeModeResolved', 'sdk');
   });
 
+  it('forwards runtime mode, Codex sandbox, and allowed tools to the runtime', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v5/run?wait=true',
+      payload: {
+        agentId: 'coder',
+        task: 'Inspect workspace',
+        runtimeMode: 'codex-cli',
+        codexSandbox: 'read-only',
+        allowedTools: 'Read, Grep, Glob',
+        codexSearch: true,
+        codexEphemeral: true,
+        codexSkipGitRepoCheck: true,
+        codexProfile: 'agentforge',
+        codexProfileV2: 'ci',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(coreMocks.runStreaming).toHaveBeenCalledWith(expect.objectContaining({
+      runtimeMode: 'codex-cli',
+      codexSandbox: 'read-only',
+      allowedTools: ['Read', 'Grep', 'Glob'],
+      codexSearch: true,
+      codexEphemeral: true,
+      codexSkipGitRepoCheck: true,
+      codexProfile: 'agentforge',
+      codexProfileV2: 'ci',
+    }));
+  });
+
+  it('rejects danger-full-access sandbox from the HTTP runner', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v5/run?wait=true',
+      payload: {
+        agentId: 'coder',
+        task: 'Inspect workspace',
+        runtimeMode: 'codex-cli',
+        codexSandbox: 'danger-full-access',
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toHaveProperty('error', 'codexSandbox must be read-only or workspace-write');
+    expect(coreMocks.runStreaming).not.toHaveBeenCalled();
+  });
+
   it('persists completed run to in-memory run log', async () => {
     const response = await app.inject({
       method: 'POST',

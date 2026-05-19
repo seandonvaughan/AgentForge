@@ -14,6 +14,12 @@ export interface DelegateTaskOptions {
   allowedTools?: string[];
   budgetUsd?: number;
   codexSandbox?: CodexSandboxMode;
+  codexSearch?: boolean;
+  codexAddDirs?: string[];
+  codexEphemeral?: boolean;
+  codexProfile?: string;
+  codexProfileV2?: string;
+  codexSkipGitRepoCheck?: boolean;
   dataDir?: string;
 }
 
@@ -69,6 +75,12 @@ export async function delegateTask(
     ...(options.allowedTools?.length ? { allowedTools: options.allowedTools } : {}),
     ...(options.budgetUsd !== undefined ? { budgetUsd: options.budgetUsd } : {}),
     ...(options.codexSandbox ? { codexSandbox: options.codexSandbox } : {}),
+    ...(options.codexSearch !== undefined ? { codexSearch: options.codexSearch } : {}),
+    ...(options.codexAddDirs?.length ? { codexAddDirs: options.codexAddDirs } : {}),
+    ...(options.codexEphemeral !== undefined ? { codexEphemeral: options.codexEphemeral } : {}),
+    ...(options.codexProfile ? { codexProfile: options.codexProfile } : {}),
+    ...(options.codexProfileV2 ? { codexProfileV2: options.codexProfileV2 } : {}),
+    ...(options.codexSkipGitRepoCheck !== undefined ? { codexSkipGitRepoCheck: options.codexSkipGitRepoCheck } : {}),
     ...(options.dataDir ? { dataDir: options.dataDir } : {}),
   });
 

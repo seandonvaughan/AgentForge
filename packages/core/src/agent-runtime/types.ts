@@ -22,17 +22,19 @@ export interface RunOptions {
   context?: string;          // additional context injected before user message
   budgetUsd?: number;        // hard stop if cost would exceed this
   runtimeMode?: RuntimeMode;
-  /**
-   * Optional list of Claude Code tool names to enable on this run
-   * (e.g. ['Read','Write','Edit','Bash','Glob','Grep']). When set, the
-   * AgentRuntime appends `--allowed-tools <list>` to the `claude -p`
-   * subprocess args. Omit to leave the CLI's default behavior in place
-   * (no tools enabled for non-interactive `claude -p`).
-   */
+  /** Optional provider-neutral tool/capability hints for CLI runtimes. */
   allowedTools?: string[];
   cwd?: string;
   outputSchema?: AgentOutputSchema;
   codexSandbox?: CodexSandboxMode;
+  codexSearch?: boolean;
+  codexAddDirs?: string[];
+  codexEphemeral?: boolean;
+  codexProfile?: string;
+  codexProfileV2?: string;
+  codexSkipGitRepoCheck?: boolean;
+  codexResumeSessionId?: string;
+  codexResumeLast?: boolean;
   enableFallback?: boolean;
   /**
    * Per-request CLI subprocess timeout in milliseconds.

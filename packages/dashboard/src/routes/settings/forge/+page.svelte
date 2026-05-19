@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { Btn, Card, Badge } from '$lib/components/v2';
+  import CodexReadinessPanel from '$lib/components/CodexReadinessPanel.svelte';
 
   type CapabilityTier = 'opus' | 'sonnet' | 'haiku';
   type TeamAction = 'preview' | 'forge' | 'rebuild';
@@ -194,6 +195,8 @@
       {#if actionOk}<p class="save-ok">{actionOk}</p>{/if}
       {#if actionError}<p class="err-text">{actionError}</p>{/if}
     </Card>
+
+    <CodexReadinessPanel compact title="CODEX READINESS" />
   </div>
 {/if}
 

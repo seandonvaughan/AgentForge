@@ -4,6 +4,7 @@ export * from './provider-resolver.js';
 export * from './execution-service.js';
 export * from './execution-service-mode.js';
 export * from './model-profiles.js';
+export * from './openai-pricing.js';
 export * from './codex-readiness.js';
 export * from './transport-errors.js';
 export * from './runtime-job-supervisor.js';

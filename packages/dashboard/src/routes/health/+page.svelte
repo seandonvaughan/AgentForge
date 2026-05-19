@@ -15,6 +15,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { Btn, Badge, Card, Ring, Sparkline, PulseDot } from '$lib/components/v2';
   import { withWorkspace } from '$lib/stores/workspace';
+  import CodexReadinessPanel from '$lib/components/CodexReadinessPanel.svelte';
 
   // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -320,6 +321,11 @@
       </Card>
     {/if}
   {/if}
+
+  <div class="section-label">CODEX RUNTIME</div>
+  <div style="margin-bottom:14px;">
+    <CodexReadinessPanel title="CODEX READINESS" />
+  </div>
 
   <!-- ── Dependency matrix ──────────────────────────────────────────────────────── -->
   <div class="section-label">DEPENDENCY MATRIX</div>

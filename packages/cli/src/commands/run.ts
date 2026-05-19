@@ -26,6 +26,14 @@ interface InvokeOptions {
   tool?: string[];
   budget?: string;
   codexSandbox?: string;
+  codexSearch?: boolean;
+  codexAddDir?: string[];
+  codexEphemeral?: boolean;
+  codexProfile?: string;
+  codexProfileV2?: string;
+  codexSkipGitRepoCheck?: boolean;
+  codexResume?: string;
+  codexResumeLast?: boolean;
 }
 
 interface DelegateOptions {
@@ -34,6 +42,12 @@ interface DelegateOptions {
   tool?: string[];
   budget?: string;
   codexSandbox?: string;
+  codexSearch?: boolean;
+  codexAddDir?: string[];
+  codexEphemeral?: boolean;
+  codexProfile?: string;
+  codexProfileV2?: string;
+  codexSkipGitRepoCheck?: boolean;
   limit: string;
   run?: boolean;
 }
@@ -95,8 +109,16 @@ function registerInvokeCommand(
     .requiredOption('--task <task>', 'Task description')
     .option('--project-root <path>', 'Project root', process.cwd())
     .option('--runtime <mode>', 'Execution runtime (auto|sdk|cli|anthropic-sdk|claude-cli|codex-cli|openai-sdk)', 'auto')
-    .option('--tool <tool...>', 'Allowed Claude Code tools for claude-code-compat mode')
+    .option('--tool <tool...>', 'Allowed agent tool/capability hints for CLI runtimes')
     .option('--codex-sandbox <mode>', 'Codex sandbox mode (read-only|workspace-write|danger-full-access)')
+    .option('--codex-search', 'Enable Codex CLI web search')
+    .option('--codex-add-dir <dir...>', 'Additional writable directory for Codex CLI')
+    .option('--codex-ephemeral', 'Run Codex CLI without persisting session files')
+    .option('--codex-profile <profile>', 'Codex config profile from config.toml')
+    .option('--codex-profile-v2 <profile>', 'Codex profile-v2 config layer')
+    .option('--codex-skip-git-repo-check', 'Allow Codex CLI outside a Git repository')
+    .option('--codex-resume <sessionId>', 'Resume a previous Codex exec session')
+    .option('--codex-resume-last', 'Resume the most recent Codex exec session')
     .option('--budget <usd>', 'Budget hint for this run')
     .action(async (invokeOptions: InvokeOptions) => {
       if (options.compatibilityAlias) {
@@ -120,6 +142,14 @@ function registerInvokeCommand(
           ...(invokeOptions.tool?.length ? { allowedTools: invokeOptions.tool } : {}),
           ...(budgetUsd !== undefined ? { budgetUsd } : {}),
           ...(codexSandbox ? { codexSandbox } : {}),
+          ...(invokeOptions.codexSearch ? { codexSearch: true } : {}),
+          ...(invokeOptions.codexAddDir?.length ? { codexAddDirs: invokeOptions.codexAddDir } : {}),
+          ...(invokeOptions.codexEphemeral ? { codexEphemeral: true } : {}),
+          ...(invokeOptions.codexProfile ? { codexProfile: invokeOptions.codexProfile } : {}),
+          ...(invokeOptions.codexProfileV2 ? { codexProfileV2: invokeOptions.codexProfileV2 } : {}),
+          ...(invokeOptions.codexSkipGitRepoCheck ? { codexSkipGitRepoCheck: true } : {}),
+          ...(invokeOptions.codexResume ? { codexResumeSessionId: invokeOptions.codexResume } : {}),
+          ...(invokeOptions.codexResumeLast ? { codexResumeLast: true } : {}),
         });
 
         console.log(`Agent:        ${response.agent.name} (${response.agent.agentId})`);
@@ -165,8 +195,14 @@ function registerDelegateCommand(
     .argument('<task...>', 'Task description')
     .option('--project-root <path>', 'Project root', process.cwd())
     .option('--runtime <mode>', 'Execution runtime (auto|sdk|cli|anthropic-sdk|claude-cli|codex-cli|openai-sdk)', 'auto')
-    .option('--tool <tool...>', 'Allowed Claude Code tools for claude-code-compat mode')
+    .option('--tool <tool...>', 'Allowed agent tool/capability hints for CLI runtimes')
     .option('--codex-sandbox <mode>', 'Codex sandbox mode when --run uses codex-cli')
+    .option('--codex-search', 'Enable Codex CLI web search when --run uses codex-cli')
+    .option('--codex-add-dir <dir...>', 'Additional writable directory for Codex CLI when --run uses codex-cli')
+    .option('--codex-ephemeral', 'Run Codex CLI without persisting session files when --run uses codex-cli')
+    .option('--codex-profile <profile>', 'Codex config profile from config.toml')
+    .option('--codex-profile-v2 <profile>', 'Codex profile-v2 config layer')
+    .option('--codex-skip-git-repo-check', 'Allow Codex CLI outside a Git repository')
     .option('--budget <usd>', 'Budget hint when running the selected agent')
     .option('--limit <count>', 'Maximum recommendations to show', '5')
     .option('--run', 'Execute the best match instead of recommendation-only')
@@ -202,6 +238,12 @@ function registerDelegateCommand(
           ...(delegateOptions.tool?.length ? { allowedTools: delegateOptions.tool } : {}),
           ...(budgetUsd !== undefined ? { budgetUsd } : {}),
           ...(codexSandbox ? { codexSandbox } : {}),
+          ...(delegateOptions.codexSearch ? { codexSearch: true } : {}),
+          ...(delegateOptions.codexAddDir?.length ? { codexAddDirs: delegateOptions.codexAddDir } : {}),
+          ...(delegateOptions.codexEphemeral ? { codexEphemeral: true } : {}),
+          ...(delegateOptions.codexProfile ? { codexProfile: delegateOptions.codexProfile } : {}),
+          ...(delegateOptions.codexProfileV2 ? { codexProfileV2: delegateOptions.codexProfileV2 } : {}),
+          ...(delegateOptions.codexSkipGitRepoCheck ? { codexSkipGitRepoCheck: true } : {}),
         });
 
         if (delegated.recommendations.length === 0) {

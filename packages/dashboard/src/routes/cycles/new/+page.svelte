@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import { withWorkspace } from '$lib/stores/workspace';
   import { relativeTime } from '$lib/util/relative-time';
+  import CodexReadinessPanel from '$lib/components/CodexReadinessPanel.svelte';
   import {
     Btn, Card, Badge, StageDots,
   } from '$lib/components/v2';
@@ -341,6 +342,8 @@
   </Card>
 
   <div class="side-col">
+    <CodexReadinessPanel compact title="CODEX READINESS" />
+
     <Card>
       <div class="section-title">ESTIMATE</div>
       <div class="est-head">
