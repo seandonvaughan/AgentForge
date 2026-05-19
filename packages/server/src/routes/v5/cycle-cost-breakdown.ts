@@ -15,7 +15,7 @@
 
 import type { FastifyInstance } from 'fastify';
 import { existsSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -148,7 +148,7 @@ export async function cycleCostBreakdownRoutes(
       const cyclesBaseDir = resolve(join(projectRoot, '.agentforge', 'cycles'));
       const cycleDir = resolve(join(cyclesBaseDir, safeCycleId));
 
-      const baseWithSep = cyclesBaseDir.endsWith('/') ? cyclesBaseDir : cyclesBaseDir + '/';
+      const baseWithSep = cyclesBaseDir.endsWith(sep) ? cyclesBaseDir : cyclesBaseDir + sep;
       if (cycleDir !== cyclesBaseDir && !cycleDir.startsWith(baseWithSep)) {
         return reply.status(400).send({ error: 'Invalid cycleId', cycleId: safeCycleId });
       }

@@ -760,8 +760,8 @@
     typecheckFailureLoaded = true;
     try {
       const res = await fetch(withWorkspace(`/api/v5/cycles/${id}/files/typecheck-failure`));
+      if (res.status === 204 || res.status === 404) return;
       if (res.ok) typecheckFailure = (await res.json()) as TypecheckFailure;
-      // 404 means no failure artifact — stay null.
     } catch { /* silent */ }
   }
 
@@ -870,7 +870,7 @@
     fileError[name] = null;
     try {
       const res = await fetch(withWorkspace(`/api/v5/cycles/${id}/files/${name}`));
-      if (res.status === 404) fileData[name] = null;
+      if (res.status === 204 || res.status === 404) fileData[name] = null;
       else if (!res.ok) fileError[name] = `HTTP ${res.status}`;
       else fileData[name] = await res.json();
     } catch (e) {

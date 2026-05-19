@@ -177,10 +177,10 @@ describe('GET /api/v5/cycles/:id', () => {
     expect(res.statusCode).toBe(404);
   });
 
-  it('returns 404 with cycleInProgress when dir exists but cycle.json missing', async () => {
+  it('returns 200 with cycleInProgress when dir exists but cycle.json missing', async () => {
     seedCycle('in-progress', null);
     const res = await app.inject({ method: 'GET', url: '/api/v5/cycles/in-progress' });
-    expect(res.statusCode).toBe(404);
+    expect(res.statusCode).toBe(200);
     expect(res.json().cycleInProgress).toBe(true);
   });
 
@@ -290,10 +290,10 @@ describe('GET /api/v5/cycles/:id/files/:name', () => {
     expect(res.statusCode).toBe(400);
   });
 
-  it('404s when requested file missing', async () => {
+  it('returns 204 when an optional requested file is missing', async () => {
     seedCycle('abc', makeCycleJson());
     const res = await app.inject({ method: 'GET', url: '/api/v5/cycles/abc/files/pr' });
-    expect(res.statusCode).toBe(404);
+    expect(res.statusCode).toBe(204);
   });
 });
 

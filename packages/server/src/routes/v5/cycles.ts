@@ -1462,7 +1462,7 @@ export async function cyclesRoutes(
     const dir = safeJoin(base, id);
     if (!dir || !existsSync(dir)) return reply.status(404).send({ error: 'Cycle not found' });
     const file = safeJoin(dir, `${name}.json`);
-    if (!file || !existsSync(file)) return reply.status(404).send({ error: `${name}.json not found` });
+    if (!file || !existsSync(file)) return reply.status(204).send();
     const parsed = readJsonIfExists(file);
     if (parsed === null) return reply.status(500).send({ error: 'Failed to parse file' });
     return reply.send(parsed);
