@@ -444,6 +444,42 @@ describe("ReforgeEngine", () => {
     expect(controlApplied.system_prompt).not.toContain("COST AWARENESS PREAMBLE");
   });
 
+  it("applyOverride defaults to the active override when no routing context is provided", async () => {
+    const baseAnalysis = makeAnalysis([
+      {
+        action: "adjust-model-routing",
+        rationale: "baseline rollout",
+        urgency: "high",
+        theme_label: "baseline",
+        confidence: 0.9,
+      },
+    ]);
+    const canaryAnalysis = makeAnalysis([
+      {
+        action: "update-system-prompt",
+        rationale: "staged prompt should stay gated",
+        urgency: "medium",
+        theme_label: "prompt-canary",
+        confidence: 0.7,
+      },
+    ]);
+
+    const activePlan = await engine.buildPlan(baseAnalysis, [makeTemplate()]);
+    await engine.executePlan(activePlan);
+
+    const canaryPlan = await engine.buildPlan(canaryAnalysis, [makeTemplate()]);
+    await engine.deployCanary(canaryPlan, {
+      trafficPercent: 100,
+      strategy: "hash",
+      rollbackThreshold: 0.1,
+    });
+
+    const applied = await engine.applyOverride(makeTemplate());
+
+    expect(applied.model).toBe("sonnet");
+    expect(applied.system_prompt).not.toContain("COST AWARENESS PREAMBLE");
+  });
+
   it("recordCanaryOutcome rolls back a staged deployment after repeated errors", async () => {
     const baseAnalysis = makeAnalysis([
       {

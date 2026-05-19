@@ -488,6 +488,24 @@ export class CycleRunner {
    * translates into the appropriate terminal stage.
    */
   private async runStages(): Promise<CycleResult> {
+    if (this.options.config.prMode === 'multi') {
+      if (this.options.disableWorktrees) {
+        throw new Error(
+          'prMode=multi requires isolated worktrees. Remove disableWorktrees or use prMode=single.',
+        );
+      }
+      if (!this.options.worktreePool) {
+        throw new Error(
+          'prMode=multi requires options.worktreePool so execute items cannot modify the parent working tree.',
+        );
+      }
+      if (!this.options.messageBus) {
+        throw new Error(
+          'prMode=multi requires options.messageBus so agent branches can be pushed and opened as PRs.',
+        );
+      }
+    }
+
     // ─────────────────────────────────────────────────────────────────
     // T6 — RESUME: if a checkpoint was provided, emit an audit entry
     // and log the resume event before anything else runs.

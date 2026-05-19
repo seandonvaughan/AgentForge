@@ -52,6 +52,12 @@
     timestamp: string;
   }
 
+  function isServicesData(value: unknown): value is ServicesData {
+    if (!value || typeof value !== 'object') return false;
+    const candidate = value as Partial<ServicesData>;
+    return Array.isArray(candidate.services);
+  }
+
   // ── State ────────────────────────────────────────────────────────────────────
 
   let healthData = $state<HealthData | null>(null);
@@ -73,7 +79,12 @@
         fetch(withWorkspace('/api/v5/health/services')),
       ]);
       if (hRes.ok) healthData = await hRes.json() as HealthData;
-      if (sRes.ok) servicesData = await sRes.json() as ServicesData;
+      if (sRes.ok) {
+        const nextServices = await sRes.json() as unknown;
+        servicesData = isServicesData(nextServices) ? nextServices : null;
+      } else {
+        servicesData = null;
+      }
       if (!hRes.ok && !sRes.ok) throw new Error(`HTTP ${hRes.status}`);
       lastRefreshedAt = new Date();
     } catch (e) {

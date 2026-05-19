@@ -461,8 +461,11 @@ export class ReforgeEngine {
     }
 
     const flag = this.canaryManager.getFlag(canary.flagId) ?? this.ensureCanaryFlag(canary);
-    const requestId = context?.requestId ?? randomUUID();
-    const route = this.canaryManager.route(flag.id, requestId, context?.headerValue);
+    if (!context?.requestId && !context?.headerValue) {
+      return active;
+    }
+
+    const route = this.canaryManager.route(flag.id, context.requestId ?? randomUUID(), context.headerValue);
     return route.variant === "canary" ? canary.override : active;
   }
 

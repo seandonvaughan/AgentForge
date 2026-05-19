@@ -4,7 +4,7 @@
  * Tests verify that:
  *  1. A pool is allocated/released once per coder-class item (3-item plan → 3 alloc + 3 release)
  *  2. The runtime.run call receives `cwd` set to the worktree path
- *  3. Non-coder-class items (scorer, auditor) do NOT allocate a worktree
+ *  3. Non-coder-class items (scorer, auditor) do NOT allocate a worktree unless isolation is required
  *  4. When no pool is provided, zero allocations happen (legacy path)
  *  5. When disableWorktrees: true, zero allocations even with a pool
  *  6. Agent failure → worktree still released (try/finally semantics)
@@ -193,6 +193,10 @@ describe('isCoderClassItem', () => {
     expect(isCoderClassItem({ assignee: 'fastify-route-engineer', tags: [] })).toBe(true);
   });
 
+  it('returns true for architecture agents that can modify code', () => {
+    expect(isCoderClassItem({ assignee: 'forge-engine-architect', tags: [] })).toBe(true);
+  });
+
   it('returns true when tags contain "coder"', () => {
     expect(isCoderClassItem({ assignee: 'unknown-agent', tags: ['coder', 'typescript'] })).toBe(true);
   });
@@ -217,6 +221,7 @@ describe('isCoderClassItem', () => {
     expect(CODER_CLASS_PATTERNS.length).toBeGreaterThan(0);
     expect(CODER_CLASS_PATTERNS).toContain('coder');
     expect(CODER_CLASS_PATTERNS).toContain('engineer');
+    expect(CODER_CLASS_PATTERNS).toContain('architect');
   });
 });
 
@@ -433,6 +438,50 @@ describe('execute-phase worktree integration', () => {
     const itemResult = (result.itemResults as any[])?.[0];
     expect(itemResult.status).toBe('failed');
     expect(itemResult.error).toContain('Worktree allocation failed');
+  });
+
+  it('allocates a worktree for every execute item when requireWorktrees is true', async () => {
+    const worktreePath = join(tmpRoot, 'required-wt');
+    writeSprintFile([
+      { id: 'item-1', title: 'Prepare rollout notes', assignee: 'product-strategist', tags: ['planning'] },
+    ]);
+
+    const pool = makeSpyPool(worktreePath);
+    const bus = makeBus();
+    const runtime = { run: vi.fn().mockResolvedValue({ output: 'ok', costUsd: 0.01 }) };
+    const ctx = makeCtx(bus, { worktreePool: pool, runtime });
+
+    await runExecutePhase(ctx, {
+      maxParallelism: 1,
+      maxItemRetries: 0,
+      requireWorktrees: true,
+    });
+
+    expect(pool.allocate).toHaveBeenCalledTimes(1);
+    expect(runtime.run).toHaveBeenCalledTimes(1);
+    const callArgs = runtime.run.mock.calls[0]!;
+    expect((callArgs[2] as any).cwd).toBe(worktreePath);
+  });
+
+  it('blocks required-worktree execution before invoking the runtime when no pool is provided', async () => {
+    writeSprintFile([
+      { id: 'item-1', title: 'Prepare rollout notes', assignee: 'product-strategist', tags: ['planning'] },
+    ]);
+
+    const bus = makeBus();
+    const runtime = { run: vi.fn().mockResolvedValue({ output: 'ok', costUsd: 0.01 }) };
+    const ctx = makeCtx(bus, { runtime });
+
+    const result = await runExecutePhase(ctx, {
+      maxParallelism: 1,
+      maxItemRetries: 0,
+      requireWorktrees: true,
+    });
+
+    expect(result.status).toBe('blocked');
+    expect(runtime.run).not.toHaveBeenCalled();
+    const itemResult = (result.itemResults as any[])?.[0];
+    expect(itemResult.error).toContain('worktree pool unavailable');
   });
 
   it('persists a terminal checkpoint when required worktree allocation fails', async () => {

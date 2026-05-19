@@ -383,6 +383,9 @@ interface ItemResult {
  *  to .agentforge/cycles/ (which are already excluded from commits).
  */
 export const CODER_CLASS_PATTERNS = [
+  'architect',
+  'architecture',
+  'engine',
   'coder',
   'frontend',
   'backend',
@@ -854,7 +857,8 @@ export async function runExecutePhase(
     // finally block so it's always freed regardless of success or failure.
     let worktreeHandle: ExecuteWorktreeHandle | undefined;
     let worktreeAllocationError: string | undefined;
-    if (worktreePool !== undefined && isCoderClassItem(item)) {
+    const itemRequiresWorktree = requireWorktrees || isCoderClassItem(item);
+    if (worktreePool !== undefined && itemRequiresWorktree) {
       try {
         worktreeHandle = await allocateWorktreeForItem(worktreePool, ctx, item);
         ctx.bus.publish('execute.worktree.allocated', {
@@ -881,6 +885,9 @@ export async function runExecutePhase(
         worktreeAllocationError = allocErr instanceof Error ? allocErr.message : String(allocErr);
         worktreeHandle = undefined;
       }
+    } else if (requireWorktrees && itemRequiresWorktree) {
+      worktreeAllocationError =
+        'worktree pool unavailable while isolated worktrees are required';
     }
 
     try {

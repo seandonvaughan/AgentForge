@@ -271,6 +271,15 @@ function makeMockDeps() {
   };
 }
 
+async function initGitRepo(dir: string): Promise<void> {
+  await execFileAsync('git', ['init', '-b', 'main'], { cwd: dir });
+  await execFileAsync('git', ['config', 'user.email', 'test@example.com'], { cwd: dir });
+  await execFileAsync('git', ['config', 'user.name', 'Test'], { cwd: dir });
+  writeFileSync(join(dir, 'README.md'), '# test\n');
+  await execFileAsync('git', ['add', 'README.md'], { cwd: dir });
+  await execFileAsync('git', ['commit', '-m', 'initial'], { cwd: dir });
+}
+
 describe('CycleRunner', () => {
   let tmpDir: string;
 
@@ -289,7 +298,13 @@ describe('CycleRunner', () => {
   });
 
   it('runs a full cycle end-to-end with mocked dependencies', async () => {
+    await initGitRepo(tmpDir);
     const deps = makeMockDeps();
+    const baseExecute = deps.mockPhaseHandlers.execute;
+    deps.mockPhaseHandlers.execute = async (ctx: any) => {
+      writeFileSync(join(tmpDir, 'feature.txt'), 'implemented\n');
+      await baseExecute(ctx);
+    };
     const runner = new CycleRunner({
       cwd: tmpDir,
       config: DEFAULT_CYCLE_CONFIG,
@@ -313,6 +328,32 @@ describe('CycleRunner', () => {
     expect(result.pr.url).toBeDefined();
     expect(result.pr.url).not.toBeNull();
     expect(result.cost.totalUsd).toBeGreaterThan(0);
+  });
+
+  it('fails prMode=multi before planning when no worktree pool is available', async () => {
+    const deps = makeMockDeps();
+    const runner = new CycleRunner({
+      cwd: tmpDir,
+      config: {
+        ...DEFAULT_CYCLE_CONFIG,
+        prMode: 'multi',
+      },
+      runtime: deps.runtime as any,
+      proposalAdapter: deps.proposalAdapter as any,
+      scoringAdapter: deps.scoringAdapter as any,
+      phaseHandlers: deps.mockPhaseHandlers as any,
+      testRunner: deps.testRunner as any,
+      gitOps: deps.gitOps as any,
+      prOpener: deps.prOpener as any,
+      bus: deps.bus as any,
+      preVerifyTypeCheck: deps.preVerifyTypeCheck,
+      dryRun: { prOpener: true },
+    });
+
+    const result = await runner.start();
+
+    expect(result.stage).toBe(CycleStage.FAILED);
+    expect(result.error).toContain('prMode=multi requires options.worktreePool');
   });
 
   it('writes cycle.json on completion (happy path)', async () => {
