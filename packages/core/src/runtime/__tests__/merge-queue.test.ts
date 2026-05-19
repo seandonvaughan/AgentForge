@@ -155,6 +155,50 @@ describe('MergeQueue', () => {
     expect(result.prs).toHaveLength(0);
   });
 
+  it('drain scopes ledger summary to constructor cycleId when provided', async () => {
+    makeCycleDir(projectRoot, 'cycle-current');
+    makeCycleDir(projectRoot, 'cycle-old');
+
+    writeFileSync(
+      join(projectRoot, '.agentforge', 'cycles', 'cycle-current', 'agent-prs.json'),
+      JSON.stringify([
+        {
+          prNumber: 101,
+          prUrl: 'https://example.test/pull/101',
+          branch: 'codex/current',
+          agentId: 'current-agent',
+          cycleId: 'cycle-current',
+          itemIds: ['current'],
+          status: 'open',
+          openedAt: '2026-05-19T10:00:00.000Z',
+        },
+      ]),
+    );
+    writeFileSync(
+      join(projectRoot, '.agentforge', 'cycles', 'cycle-old', 'agent-prs.json'),
+      JSON.stringify([
+        {
+          prNumber: 99,
+          prUrl: 'https://example.test/pull/99',
+          branch: 'codex/old',
+          agentId: 'old-agent',
+          cycleId: 'cycle-old',
+          itemIds: ['old'],
+          status: 'open',
+          openedAt: '2026-05-18T10:00:00.000Z',
+        },
+      ]),
+    );
+
+    const queue = new MergeQueue({ projectRoot, bus, dryRun: true, cycleId: 'cycle-current' });
+    const result = await queue.drain();
+
+    expect(result.pushed).toBe(1);
+    expect(result.prs).toEqual([
+      { prNumber: 101, branch: 'codex/current', agentId: 'current-agent' },
+    ]);
+  });
+
   // 5. drain() does not include localOnly events
   it('drain pushed count is zero when only localOnly events were emitted', async () => {
     makeCycleDir(projectRoot, 'cycle-abc');

@@ -264,21 +264,31 @@ export class MergeQueue {
       await Promise.allSettled([...this.inFlight]);
     }
 
-    // Aggregate from all cycle ledgers we may have written
-    const cyclesDir = join(this.projectRoot, '.agentforge', 'cycles');
+    // Aggregate from the current cycle when this queue was scoped with a cycle
+    // id. Falling back to all ledgers is kept only for legacy callers that do
+    // not pass cycleId.
+    const ledgerPaths: string[] = [];
     const prs: Array<{ prNumber: number; branch: string; agentId: string }> = [];
     let pushed = 0;
 
-    if (existsSync(cyclesDir)) {
-      const { readdirSync } = await import('node:fs');
-      for (const cycleId of readdirSync(cyclesDir)) {
-        const ledgerPath = join(cyclesDir, cycleId, 'agent-prs.json');
-        const entries = readLedger(ledgerPath);
-        pushed += entries.length;
-        for (const e of entries) {
-          if (e.status === 'open' && e.prNumber != null) {
-            prs.push({ prNumber: e.prNumber, branch: e.branch, agentId: e.agentId });
-          }
+    if (this.cycleId) {
+      ledgerPaths.push(join(resolveCycleDir(this.projectRoot, this.cycleId), 'agent-prs.json'));
+    } else {
+      const cyclesDir = join(this.projectRoot, '.agentforge', 'cycles');
+      if (existsSync(cyclesDir)) {
+        const { readdirSync } = await import('node:fs');
+        for (const cycleId of readdirSync(cyclesDir)) {
+          ledgerPaths.push(join(cyclesDir, cycleId, 'agent-prs.json'));
+        }
+      }
+    }
+
+    for (const ledgerPath of ledgerPaths) {
+      const entries = readLedger(ledgerPath);
+      pushed += entries.length;
+      for (const e of entries) {
+        if (e.status === 'open' && e.prNumber != null) {
+          prs.push({ prNumber: e.prNumber, branch: e.branch, agentId: e.agentId });
         }
       }
     }

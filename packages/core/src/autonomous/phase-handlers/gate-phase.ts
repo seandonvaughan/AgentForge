@@ -9,6 +9,10 @@ import { join, dirname } from 'node:path';
 import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
 import { writeMemoryEntry, readMemoryEntries, type GateVerdictMetadata } from '../../memory/types.js';
 import { collectSprintItemTags } from './sprint-utils.js';
+import {
+  formatExecuteReviewTargets,
+  loadExecuteReviewTargets,
+} from './review-targets.js';
 
 export const GATE_PHASE_DEFAULT_TOOLS = ['Read', 'Bash', 'Glob', 'Grep'];
 
@@ -386,6 +390,12 @@ export async function runGatePhase(
   let testResults = '(no test results)';
   let reviewFindings = '(no review findings)';
   let costSoFar = 0;
+  const reviewTargets = loadExecuteReviewTargets(ctx.projectRoot, ctx.cycleId);
+  const reviewTargetSection = formatExecuteReviewTargets(
+    reviewTargets,
+    ctx.projectRoot,
+    ctx.baseBranch ?? 'main',
+  );
 
   try {
     // New cycles: plan.json in cycle dir. Legacy: .agentforge/sprints/v{N}.json.
@@ -519,13 +529,15 @@ ${testResults}
 ## Code review findings
 ${reviewFindings}
 
+${reviewTargetSection}
+
 ## Cost so far
 $${costSoFar.toFixed(4)}
 ${knownDebtSection}## Verification protocol — READ CAREFULLY
 The code review above may have been produced against an intermediate execute-phase state. Before REJECTing on any CRITICAL or MAJOR finding, VERIFY it against the current working tree:
 
-1. For each CRITICAL or MAJOR finding that cites a specific file/line, use Read to look at the current contents of that file.
-2. Use Grep to search for the problematic pattern described in the finding.
+1. For each CRITICAL or MAJOR finding that cites a specific file/line, use the execute-phase review targets above. If target worktrees are listed, inspect the file inside the relevant target worktree, not the clean parent checkout.
+2. Use Grep or \`git -C "<worktree>" grep\` to search for the problematic pattern described in the finding.
 3. If the bug no longer reproduces (the line has been amended, the pattern is absent, or the finding's premise is otherwise false in the current code), treat that finding as RESOLVED. Do NOT let a resolved finding drive REJECT.
 4. Only unresolved CRITICAL or verified-still-present MAJOR findings are grounds for REJECT.${knownDebtStep}
 If all CRITICAL and MAJOR findings either do not reproduce or were already addressed, and tests pass, APPROVE.
@@ -556,6 +568,7 @@ Respond as JSON: { "verdict": "APPROVE" | "REJECT", "rationale": "..." }`;
   try {
     const result = await ctx.runtime.run(agentId, task, {
       allowedTools,
+      codexSandbox: 'read-only',
       ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
     });
     response = typeof result?.output === 'string' ? result.output : '';

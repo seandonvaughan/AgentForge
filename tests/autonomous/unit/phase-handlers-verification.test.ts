@@ -18,6 +18,7 @@ import {
   runTestPhase,
   parseConfidence,
   runReviewPhase,
+  runGatePhase,
   parseVerdict,
   parseReviewFindingMetadata,
   runReleasePhase,
@@ -121,6 +122,7 @@ describe('verification phase handlers', () => {
     expect(runtime.run.mock.calls[0][0]).toBe('backend-qa');
     expect(runtime.run.mock.calls[0][2]).toEqual({
       allowedTools: ['Read', 'Bash', 'Glob', 'Grep'],
+      codexSandbox: 'read-only',
     });
     expect(result.status).toBe('completed');
     expect(result.costUsd).toBe(0.05);
@@ -148,6 +150,36 @@ describe('verification phase handlers', () => {
     // The prompt should still have been built — itemResults JSON would be empty array.
     const taskArg = runtime.run.mock.calls[0][1] as string;
     expect(taskArg).toContain('[]');
+  });
+
+  it('test phase points QA at execute-phase worktrees instead of the parent diff', async () => {
+    const cycleId = 'cycle-worktree-test';
+    const worktreePath = join(tmpDir, '.agentforge/worktrees/agent-coder-cycle-worktree-test');
+    writeExecuteJson(tmpDir, cycleId, [
+      {
+        itemId: 'i1',
+        agentId: 'coder',
+        status: 'completed',
+        worktreePath,
+        worktreeBranch: 'codex/agent-coder-cycle-worktree-test',
+        worktreeChangedFiles: ['packages/core/src/runtime/merge-queue.ts'],
+      },
+    ]);
+
+    const runtime = {
+      run: vi.fn().mockResolvedValue({ output: 'Confidence: 4/5', costUsd: 0.01 }),
+    };
+    const { bus } = makeMockBus();
+
+    await runTestPhase(
+      makeCtx({ cwd: tmpDir, sprintVersion: '6.5.2', cycleId, runtime, bus }),
+    );
+
+    const taskArg = runtime.run.mock.calls[0][1] as string;
+    expect(taskArg).toContain('Execute-phase review targets');
+    expect(taskArg).toContain(`git -C "${worktreePath}" diff --stat origin/main...HEAD`);
+    expect(taskArg).toContain('packages/core/src/runtime/merge-queue.ts');
+    expect(taskArg).toContain('instead of the parent checkout');
   });
 
   it('parseConfidence parses scores from various formats', () => {
@@ -213,6 +245,9 @@ describe('verification phase handlers', () => {
 
     expect(runtime.run).toHaveBeenCalledTimes(1);
     expect(runtime.run.mock.calls[0][0]).toBe('code-reviewer');
+    expect(runtime.run.mock.calls[0][2]).toMatchObject({
+      codexSandbox: 'read-only',
+    });
     expect(result.status).toBe('completed');
     expect(result.costUsd).toBe(0.07);
 
@@ -223,6 +258,85 @@ describe('verification phase handlers', () => {
     expect(written.agentId).toBe('code-reviewer');
     expect(published.find((p) => p.topic === 'sprint.phase.started')).toBeTruthy();
     expect(published.find((p) => p.topic === 'sprint.phase.completed')).toBeTruthy();
+  });
+
+  it('review phase points the reviewer at execute-phase worktrees', async () => {
+    const cycleId = 'cycle-worktree-review';
+    const worktreePath = join(tmpDir, '.agentforge/worktrees/agent-review-cycle');
+    writeExecuteJson(tmpDir, cycleId, [
+      {
+        itemId: 'i2',
+        agentId: 'review-target-agent',
+        status: 'completed',
+        worktreePath,
+        worktreeBranch: 'codex/agent-review-cycle',
+        worktreeChangedFiles: ['tests/reforge/team-reforge-canary.test.ts'],
+      },
+    ]);
+
+    const runtime = {
+      run: vi.fn().mockResolvedValue({ output: 'Verdict: 5/5', costUsd: 0.01 }),
+    };
+    const { bus } = makeMockBus();
+
+    await runReviewPhase(
+      makeCtx({ cwd: tmpDir, sprintVersion: '6.5.2', cycleId, runtime, bus }),
+    );
+
+    const taskArg = runtime.run.mock.calls[0][1] as string;
+    expect(taskArg).toContain('IMPORTANT: In multi-PR mode');
+    expect(taskArg).toContain(`git -C "${worktreePath}" diff origin/main...HEAD`);
+    expect(taskArg).toContain('tests/reforge/team-reforge-canary.test.ts');
+  });
+
+  it('gate phase verifies findings against execute-phase worktrees', async () => {
+    const cycleId = 'cycle-worktree-gate';
+    const worktreePath = join(tmpDir, '.agentforge/worktrees/agent-gate-cycle');
+    writeExecuteJson(tmpDir, cycleId, [
+      {
+        itemId: 'i3',
+        agentId: 'gate-target-agent',
+        status: 'completed',
+        worktreePath,
+        worktreeBranch: 'codex/agent-gate-cycle',
+        worktreeChangedFiles: ['packages/core/src/autonomous/phase-handlers/gate-phase.ts'],
+      },
+    ]);
+    const phasesDir = join(tmpDir, '.agentforge', 'cycles', cycleId, 'phases');
+    writeFileSync(
+      join(phasesDir, 'test.json'),
+      JSON.stringify({ phase: 'test', status: 'completed', passed: 1, failed: 0, total: 1 }),
+    );
+    writeFileSync(
+      join(phasesDir, 'review.json'),
+      JSON.stringify({
+        phase: 'review',
+        review:
+          'MAJOR: packages/core/src/autonomous/phase-handlers/gate-phase.ts:10 - verify in worktree',
+      }),
+    );
+
+    const runtime = {
+      run: vi.fn().mockResolvedValue({
+        output: '{ "verdict": "APPROVE", "rationale": "checked target worktree" }',
+        costUsd: 0.01,
+      }),
+    };
+    const { bus } = makeMockBus();
+
+    const result = await runGatePhase(
+      makeCtx({ cwd: tmpDir, sprintVersion: '6.5.2', cycleId, runtime, bus }),
+      { knownDebt: [] },
+    );
+
+    expect(result.status).toBe('completed');
+    expect(runtime.run.mock.calls[0][2]).toMatchObject({
+      codexSandbox: 'read-only',
+    });
+    const taskArg = runtime.run.mock.calls[0][1] as string;
+    expect(taskArg).toContain('Execute-phase review targets');
+    expect(taskArg).toContain(`git -C "${worktreePath}" diff --stat origin/main...HEAD`);
+    expect(taskArg).toContain('not the clean parent checkout');
   });
 
   it('parseVerdict captures the verdict score from a review', () => {

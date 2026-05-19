@@ -8,6 +8,10 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
+import {
+  formatExecuteReviewTargets,
+  loadExecuteReviewTargets,
+} from './review-targets.js';
 
 export const TEST_PHASE_DEFAULT_TOOLS = ['Read', 'Bash', 'Glob', 'Grep'];
 export const TEST_PHASE_AGENT = 'backend-qa';
@@ -39,6 +43,12 @@ export async function runTestPhase(
 
   // Load execute phase results if available.
   let itemResults: unknown[] = [];
+  const reviewTargets = loadExecuteReviewTargets(ctx.projectRoot, ctx.cycleId);
+  const reviewTargetSection = formatExecuteReviewTargets(
+    reviewTargets,
+    ctx.projectRoot,
+    ctx.baseBranch ?? 'main',
+  );
   if (ctx.cycleId) {
     const execPath = join(
       ctx.projectRoot,
@@ -61,9 +71,11 @@ export async function runTestPhase(
 
 ${JSON.stringify(itemResults, null, 2)}
 
+${reviewTargetSection}
+
 Use Read/Glob/Grep/Bash to:
-1. Identify which source files changed (git diff --stat HEAD)
-2. Look at the changed files — are there any obviously missing tests? Edge cases the executing agents might have missed?
+1. Identify which source files changed. If execute-phase review targets are listed, use their \`git -C "<worktree>" ...\` commands and changed-file lists instead of the parent checkout.
+2. Look at the changed files in the target worktree(s) — are there any obviously missing tests? Edge cases the executing agents might have missed?
 3. Check if any items reported failures or partial completion
 4. Flag anything risky (changes to core safety paths: git-ops, kill-switch, agent-runtime, cycle-runner)
 
@@ -81,7 +93,10 @@ Do NOT run tests. The VERIFY stage will do that separately. You are only analyzi
   let errorMsg: string | undefined;
 
   try {
-    const result = await ctx.runtime.run(agentId, task, { allowedTools });
+    const result = await ctx.runtime.run(agentId, task, {
+      allowedTools,
+      codexSandbox: 'read-only',
+    });
     strategy = typeof result?.output === 'string' ? result.output : '';
     costUsd = typeof result?.costUsd === 'number' ? result.costUsd : 0;
   } catch (err) {

@@ -15,6 +15,10 @@ import { writeMemoryEntry, type ReviewFindingMetadata } from '../../memory/types
 import { extractFindingsByLevel } from './gate-phase.js';
 import { collectSprintItemTags } from './sprint-utils.js';
 import { writeKnowledgeEntry } from '../../knowledge/persistence.js';
+import {
+  formatExecuteReviewTargets,
+  loadExecuteReviewTargets,
+} from './review-targets.js';
 
 export const REVIEW_PHASE_DEFAULT_TOOLS = ['Read', 'Bash', 'Glob', 'Grep'];
 export const REVIEW_PHASE_AGENT = 'code-reviewer';
@@ -44,12 +48,21 @@ export async function runReviewPhase(
     startedAt: new Date(startedAt).toISOString(),
   });
 
+  const reviewTargets = loadExecuteReviewTargets(ctx.projectRoot, ctx.cycleId);
+  const reviewTargetSection = formatExecuteReviewTargets(
+    reviewTargets,
+    ctx.projectRoot,
+    ctx.baseBranch ?? 'main',
+  );
+
   const task = `You are the code-reviewer for AgentForge. Sprint v${ctx.sprintVersion} just completed its execute phase. Review the changes.
 
+${reviewTargetSection}
+
 Use Bash to run:
-- git diff --stat HEAD (summary of what changed)
-- git diff HEAD (full diff)
-- git log -1 --format="%B" (commit message if any, though there may not be one yet)
+- If target worktrees are listed above: run the suggested \`git -C "<worktree>" ...\` commands for each target.
+- If no target worktrees are listed: run \`git diff --stat HEAD\` and \`git diff HEAD\` in the current checkout.
+- git log -1 --format="%B" in each target worktree or branch you review (commit message if any, though there may not be one yet)
 
 Then Read the changed files to understand context beyond the diff.
 
@@ -72,7 +85,10 @@ Do NOT modify any files.`;
   let errorMsg: string | undefined;
 
   try {
-    const result = await ctx.runtime.run(agentId, task, { allowedTools });
+    const result = await ctx.runtime.run(agentId, task, {
+      allowedTools,
+      codexSandbox: 'read-only',
+    });
     review = typeof result?.output === 'string' ? result.output : '';
     costUsd = typeof result?.costUsd === 'number' ? result.costUsd : 0;
     if (typeof (result as any)?.model === 'string') model = (result as any).model;
