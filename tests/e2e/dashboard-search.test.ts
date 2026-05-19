@@ -15,7 +15,7 @@ test.describe('Search Page', () => {
   test('displays search interface with input', async ({ page }) => {
     await page.goto('/search');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for search input
     const searchInput = page.locator('input[type="search"], input[type="text"], [class*="search"] input').first();
@@ -29,7 +29,7 @@ test.describe('Search Page', () => {
 
   test('search form accepts input and submits without error', async ({ page }) => {
     await page.goto('/search');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Find and fill the search input
     const searchInput = page.locator('input[type="search"]').first();
@@ -100,7 +100,7 @@ test.describe('Search Page', () => {
     });
 
     await page.goto('/search');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const searchInput = page.locator('input[type="search"]').first();
     const isInputVisible = await searchInput.isVisible().catch(() => false);
@@ -153,7 +153,7 @@ test.describe('Search Page', () => {
     });
 
     await page.goto('/search');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const searchInput = page.locator('input[type="search"]').first();
     const isInputVisible = await searchInput.isVisible().catch(() => false);
@@ -176,7 +176,7 @@ test.describe('Search Page', () => {
 
   test('type filter chips can be toggled', async ({ page }) => {
     await page.goto('/search');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Find the type filter chips
     const filterGroup = page.locator('[role="group"], [class*="type-filters"]').first();
@@ -219,7 +219,7 @@ test.describe('Search Page', () => {
   test('displays search filters or options', async ({ page }) => {
     await page.goto('/search');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for filter options
     const filters = page.locator('[class*="filter"], [class*="option"], [role="group"]').first();
@@ -248,7 +248,7 @@ test.describe('Search Page', () => {
     });
 
     await page.goto('/search');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Click one of the hint example buttons (e.g., "sprint")
     const hintButton = page.locator('.hint-examples button, [class*="hint"] button').first();
@@ -271,7 +271,7 @@ test.describe('Search Page', () => {
   test('search page handles loading and empty states', async ({ page }) => {
     await page.goto('/search');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Check for either content or empty state
     const loading = page.locator('text=/loading|Loading|searching/i').first();
@@ -290,7 +290,7 @@ test.describe('Search Page', () => {
   test('search page is responsive', async ({ page }) => {
     await page.goto('/search');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Test mobile view
     await page.setViewportSize({ width: 375, height: 667 });

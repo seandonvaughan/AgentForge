@@ -15,7 +15,7 @@ test.describe('Observability Page', () => {
   test('displays observability heading', async ({ page }) => {
     await page.goto('/observe');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for heading
     const heading = page.locator('h1, h2').filter({ hasText: /Observ|Monitor|Metric|Health|Telemetry|Debug/i }).first();
@@ -28,7 +28,7 @@ test.describe('Observability Page', () => {
   test('displays system health or status overview', async ({ page }) => {
     await page.goto('/observe');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for health/status indicators
     const healthStatus = page.locator('[class*="health"], [class*="status"], [class*="indicator"]').first();
@@ -45,7 +45,7 @@ test.describe('Observability Page', () => {
   test('displays metrics or telemetry data', async ({ page }) => {
     await page.goto('/observe');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for metrics/telemetry
     const metricsContainer = page.locator('[class*="metric"], [class*="stat"], [class*="telemetry"]').first();
@@ -62,7 +62,7 @@ test.describe('Observability Page', () => {
   test('displays monitoring dashboard or panels', async ({ page }) => {
     await page.goto('/observe');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for dashboard panels
     const dashboard = page.locator('[class*="dashboard"], [class*="panel"], [class*="card"]').first();
@@ -77,7 +77,7 @@ test.describe('Observability Page', () => {
   test('displays logs or events', async ({ page }) => {
     await page.goto('/observe');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for logs or event streams
     const logPanel = page.locator('[class*="log"], [class*="event"], [class*="stream"]').first();
@@ -94,7 +94,7 @@ test.describe('Observability Page', () => {
   test('displays resource usage or performance metrics', async ({ page }) => {
     await page.goto('/observe');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for resource metrics
     const resourceMetrics = page.locator('text=/cpu|memory|disk|network|usage|latency|throughput|bandwidth/i').first();
@@ -111,7 +111,7 @@ test.describe('Observability Page', () => {
   test('displays time range or date picker for filtering', async ({ page }) => {
     await page.goto('/observe');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for time range controls
     const datePicker = page.locator('input[type="date"], input[type="datetime-local"], [class*="date"]').first();
@@ -128,7 +128,7 @@ test.describe('Observability Page', () => {
   test('observability page handles loading and empty states', async ({ page }) => {
     await page.goto('/observe');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Check for either content or empty state
     const loading = page.locator('text=/loading|Loading|fetching|connecting/i').first();
@@ -145,7 +145,7 @@ test.describe('Observability Page', () => {
   test('observability page is responsive', async ({ page }) => {
     await page.goto('/observe');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Test mobile view
     await page.setViewportSize({ width: 375, height: 667 });
@@ -165,7 +165,7 @@ test.describe('Observability Page', () => {
   test('displays alert or anomaly detection', async ({ page }) => {
     await page.goto('/observe');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for alerts or anomalies
     const alerts = page.locator('[class*="alert"], [class*="anomaly"], [class*="notification"]').first();
@@ -180,7 +180,7 @@ test.describe('Observability Page', () => {
   test('displays filtering and search capabilities', async ({ page }) => {
     await page.goto('/observe');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for filter/search
     const searchInput = page.locator('input[type="search"], input[type="text"], [class*="search"]').first();

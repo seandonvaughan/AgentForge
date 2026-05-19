@@ -15,7 +15,7 @@ test.describe('Audit Log (Runs) Page', () => {
   test('displays audit log heading', async ({ page }) => {
     await page.goto('/runs');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for heading
     const heading = page.locator('h1, h2').filter({ hasText: /Audit|Log|Runs|Activity/i }).first();
@@ -28,7 +28,7 @@ test.describe('Audit Log (Runs) Page', () => {
   test('displays runs table or list view', async ({ page }) => {
     await page.goto('/runs');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for table or list structure
     const table = page.locator('table, [role="table"], [class*="table"]').first();
@@ -45,7 +45,7 @@ test.describe('Audit Log (Runs) Page', () => {
   test('displays run metadata (timestamp, status, duration)', async ({ page }) => {
     await page.goto('/runs');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for common audit log columns/fields
     const timestamp = page.locator('text=/time|date|timestamp|when/i').first();
@@ -63,7 +63,7 @@ test.describe('Audit Log (Runs) Page', () => {
   test('displays run filtering or search capabilities', async ({ page }) => {
     await page.goto('/runs');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for filter or search elements
     const searchInput = page.locator('input[type="search"], input[type="text"], [class*="search"]').first();
@@ -80,7 +80,7 @@ test.describe('Audit Log (Runs) Page', () => {
   test('can sort or filter audit logs', async ({ page }) => {
     await page.goto('/runs');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for sortable headers or filter controls
     const sortableHeaders = page.locator('button, [role="button"], [class*="sort"]').filter({ hasText: /time|status|duration/i }).first();
@@ -114,7 +114,7 @@ test.describe('Audit Log (Runs) Page', () => {
   test('audit log page handles loading and empty states', async ({ page }) => {
     await page.goto('/runs');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Check for either content or empty state
     const loading = page.locator('text=/loading|Loading|fetching/i').first();
@@ -131,7 +131,7 @@ test.describe('Audit Log (Runs) Page', () => {
   test('audit log page is responsive', async ({ page }) => {
     await page.goto('/runs');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Test mobile view
     await page.setViewportSize({ width: 375, height: 667 });
@@ -151,7 +151,7 @@ test.describe('Audit Log (Runs) Page', () => {
   test('displays run details or actions', async ({ page }) => {
     await page.goto('/runs');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for action buttons or detail views
     const actionButtons = page.locator('button, [role="button"], a').filter({ hasText: /view|details|inspect|logs|retry/i }).first();

@@ -15,7 +15,7 @@ test.describe('Workspaces Page', () => {
   test('displays workspaces heading', async ({ page }) => {
     await page.goto('/workspaces');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for heading
     const heading = page.locator('h1, h2').filter({ hasText: /Workspace|Project|Team/i }).first();
@@ -28,7 +28,7 @@ test.describe('Workspaces Page', () => {
   test('displays workspaces list or grid', async ({ page }) => {
     await page.goto('/workspaces');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for workspaces list, grid, or cards
     const workspacesList = page.locator('[class*="workspace"], [class*="project"], [role="table"], [role="grid"]').first();
@@ -47,7 +47,7 @@ test.describe('Workspaces Page', () => {
   test('displays workspace information (name, description, members)', async ({ page }) => {
     await page.goto('/workspaces');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for workspace names
     const workspaceNames = page.locator('text=/workspace|project|team|group|environment/i');
@@ -69,7 +69,7 @@ test.describe('Workspaces Page', () => {
   test('displays workspace status or metadata', async ({ page }) => {
     await page.goto('/workspaces');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for status indicators
     const status = page.locator('[class*="badge"], [class*="status"], text=/active|archived|created|updated/i');
@@ -83,7 +83,7 @@ test.describe('Workspaces Page', () => {
   test('workspace items are clickable for details or access', async ({ page }) => {
     await page.goto('/workspaces');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for clickable workspace items
     const workspaceLinks = page.locator('a, button, [role="button"]').filter({ hasText: /workspace|project|team|access|enter/i });
@@ -97,7 +97,7 @@ test.describe('Workspaces Page', () => {
   test('displays workspace actions (create, manage, settings)', async ({ page }) => {
     await page.goto('/workspaces');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for action buttons
     const actions = page.locator('button, [role="button"]').filter({ hasText: /create|new|manage|settings|delete|add/i });
@@ -111,7 +111,7 @@ test.describe('Workspaces Page', () => {
   test('workspaces page handles loading and empty states', async ({ page }) => {
     await page.goto('/workspaces');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Check for either content or empty state
     const loading = page.locator('text=/loading|Loading/i').first();
@@ -130,7 +130,7 @@ test.describe('Workspaces Page', () => {
   test('workspaces page is responsive', async ({ page }) => {
     await page.goto('/workspaces');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Test mobile view
     await page.setViewportSize({ width: 375, height: 667 });

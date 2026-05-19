@@ -15,7 +15,7 @@ test.describe('Plugins Page', () => {
   test('displays plugins heading', async ({ page }) => {
     await page.goto('/plugins');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for heading
     const heading = page.locator('h1, h2').filter({ hasText: /Plugin|Extension|Integration/i }).first();
@@ -28,7 +28,7 @@ test.describe('Plugins Page', () => {
   test('displays plugins list or grid', async ({ page }) => {
     await page.goto('/plugins');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for plugins list, grid, or cards
     const pluginsList = page.locator('[class*="plugin"], [class*="extension"], [role="table"], [role="grid"]').first();
@@ -47,7 +47,7 @@ test.describe('Plugins Page', () => {
   test('displays plugin information (name, status, version)', async ({ page }) => {
     await page.goto('/plugins');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for plugin names or identifiers
     const pluginNames = page.locator('text=/plugin|extension|module|component|service/i');
@@ -69,7 +69,7 @@ test.describe('Plugins Page', () => {
   test('displays plugin capabilities or features', async ({ page }) => {
     await page.goto('/plugins');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for capabilities or descriptions
     const capabilities = page.locator('text=/capability|feature|function|provides|supports/i');
@@ -83,7 +83,7 @@ test.describe('Plugins Page', () => {
   test('plugin items are interactive', async ({ page }) => {
     await page.goto('/plugins');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for interactive elements (enable/disable, configure, etc.)
     const actions = page.locator('button, a, [role="button"]').filter({ hasText: /enable|disable|configure|settings|details/i });
@@ -97,7 +97,7 @@ test.describe('Plugins Page', () => {
   test('plugins page handles loading and empty states', async ({ page }) => {
     await page.goto('/plugins');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Check for either content or empty state
     const loading = page.locator('text=/loading|Loading/i').first();
@@ -116,7 +116,7 @@ test.describe('Plugins Page', () => {
   test('plugins page is responsive', async ({ page }) => {
     await page.goto('/plugins');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Test mobile view
     await page.setViewportSize({ width: 375, height: 667 });

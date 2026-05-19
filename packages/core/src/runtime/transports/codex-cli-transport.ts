@@ -222,15 +222,20 @@ export class CodexCliTransport implements ExecutionTransport {
     const sandbox = this.resolveSandbox(request);
     const args = [
       '--ask-for-approval',
-      'on-failure',
+      'never',
       'exec',
       '--ignore-user-config',
+      '--ignore-rules',
       '--json',
       '--cd', request.cwd ?? process.cwd(),
       '--sandbox', sandbox,
       '--model', profile.modelId,
       '--output-last-message', lastMessagePath,
     ];
+
+    if (process.platform === 'win32' && sandbox === 'workspace-write') {
+      args.push('-c', 'windows.sandbox=elevated');
+    }
 
     if (profile.effort) {
       args.push('-c', `model_reasoning_effort=${profile.effort}`);

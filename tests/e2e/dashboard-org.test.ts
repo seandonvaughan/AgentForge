@@ -1,8 +1,13 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+
+async function openOrg(page: Page) {
+  await page.goto('/org', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('h1').first()).toContainText(/Org|Organization/i);
+}
 
 test.describe('Org Graph Page', () => {
   test('loads org graph page', async ({ page }) => {
-    await page.goto('/org');
+    await openOrg(page);
 
     // Verify page title
     await expect(page).toHaveTitle(/Org|Organization|AgentForge/i);
@@ -13,9 +18,7 @@ test.describe('Org Graph Page', () => {
   });
 
   test('displays org graph heading', async ({ page }) => {
-    await page.goto('/org');
-
-    await page.waitForLoadState('networkidle').catch(() => {});
+    await openOrg(page);
 
     // h1 with "Organization" must be visible
     const heading = page.locator('h1').first();
@@ -24,9 +27,7 @@ test.describe('Org Graph Page', () => {
   });
 
   test('org tree data stays in sync when API fallback is used', async ({ page }) => {
-    await page.goto('/org');
-
-    await page.waitForLoadState('networkidle').catch(() => {});
+    await openOrg(page);
 
     // Get the initial tree node count from DOM
     const initialNodes = page.locator('[data-testid="org-node"]');
@@ -35,16 +36,14 @@ test.describe('Org Graph Page', () => {
 
     // Verify the model-mix sidebar is in sync with tree
     // (It should show counts that match the visible nodes)
-    const modelMixCounts = page.locator('.model-count');
+    const modelMixCounts = page.locator('.af-model-count');
     const modelCountElements = await modelMixCounts.count();
     // Should have at least some model indicators if there are agents
-    expect(modelCountElements).toBeGreaterThanOrEqual(0);
+    expect(modelCountElements).toBeGreaterThan(0);
   });
 
   test('agent scroll list matches tree data', async ({ page }) => {
-    await page.goto('/org');
-
-    await page.waitForLoadState('networkidle').catch(() => {});
+    await openOrg(page);
 
     // Verify the agent scroll list is populated
     const agentScroll = page.locator('.af-agent-scroll').first();
@@ -65,9 +64,7 @@ test.describe('Org Graph Page', () => {
   });
 
   test('renders real agent tree with delegation hierarchy', async ({ page }) => {
-    await page.goto('/org');
-
-    await page.waitForLoadState('networkidle').catch(() => {});
+    await openOrg(page);
 
     // The org tree container must be present and visible
     const orgTree = page.locator('[data-testid="org-tree"]');
@@ -84,24 +81,19 @@ test.describe('Org Graph Page', () => {
   });
 
   test('displays a root node in the org hierarchy', async ({ page }) => {
-    await page.goto('/org');
-
-    await page.waitForLoadState('networkidle').catch(() => {});
+    await openOrg(page);
 
     // Wait for the tree to populate
     await expect(page.locator('[data-testid="org-tree"]')).toBeVisible({ timeout: 8000 });
 
     // At least one root-level org-node must be visible.
-    // The v22+ Opus-driven forge produces project-specific architects (e.g. "architect",
-    // "chief-architect") rather than the legacy C-suite (CEO/CTO/COO).
+    // The Codex forge produces project-specific architects rather than the legacy C-suite.
     const rootNode = page.locator('[data-testid="org-hierarchy"] [data-testid="org-node"]').first();
     await expect(rootNode).toBeVisible({ timeout: 5000 });
   });
 
   test('page subtitle reports non-zero agent and edge counts', async ({ page }) => {
-    await page.goto('/org');
-
-    await page.waitForLoadState('networkidle').catch(() => {});
+    await openOrg(page);
 
     // Wait for the tree to be present (SSR or client fetch resolved)
     await expect(page.locator('[data-testid="org-tree"]')).toBeVisible({ timeout: 8000 });
@@ -124,9 +116,7 @@ test.describe('Org Graph Page', () => {
   });
 
   test('displays org graph visualization', async ({ page }) => {
-    await page.goto('/org');
-
-    await page.waitForLoadState('networkidle').catch(() => {});
+    await openOrg(page);
 
     // The org tree with testid attribute must be visible
     const orgTree = page.locator('[data-testid="org-tree"]');
@@ -134,17 +124,14 @@ test.describe('Org Graph Page', () => {
   });
 
   test('renders agent nodes in org graph', async ({ page }) => {
-    await page.goto('/org');
-
-    await page.waitForLoadState('networkidle').catch(() => {});
+    await openOrg(page);
 
     await expect(page.locator('[data-testid="org-tree"]')).toBeVisible({ timeout: 8000 });
 
-    // Look for known C-suite role labels in rendered nodes
-    const ctoNode = page.locator('[data-testid="org-node"]').filter({ hasText: /^CTO$/i });
-    if (await ctoNode.count() > 0) {
-      await expect(ctoNode.first()).toBeVisible();
-    }
+    await expect(page.locator('body')).toContainText(/gpt-5\.5/i);
+    await expect(page.locator('body')).toContainText(/gpt-5\.3-codex/i);
+    await expect(page.locator('body')).toContainText(/gpt-5\.4-mini/i);
+    await expect(page.locator('body')).not.toContainText(/\bopus\b|\bsonnet\b|\bhaiku\b/i);
 
     // Look for role or team information (at least one node label must be non-empty)
     const allNodes = page.locator('[data-testid="org-node"]');
@@ -153,9 +140,7 @@ test.describe('Org Graph Page', () => {
   });
 
   test('org graph handles empty state gracefully', async ({ page }) => {
-    await page.goto('/org');
-
-    await page.waitForLoadState('networkidle').catch(() => {});
+    await openOrg(page);
 
     // Either show graph or empty state — never a blank/broken page.
     // The v2 design system uses .af-empty for the empty state.
@@ -170,9 +155,7 @@ test.describe('Org Graph Page', () => {
   });
 
   test('org graph is responsive', async ({ page }) => {
-    await page.goto('/org');
-
-    await page.waitForLoadState('networkidle').catch(() => {});
+    await openOrg(page);
 
     // Tablet viewport
     await page.setViewportSize({ width: 768, height: 1024 });

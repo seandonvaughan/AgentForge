@@ -15,7 +15,7 @@ test.describe('Decisions Page', () => {
   test('displays decisions heading', async ({ page }) => {
     await page.goto('/decisions');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for heading
     const heading = page.locator('h1, h2').filter({ hasText: /Decision|Choice|Verdict|Gate/i }).first();
@@ -28,7 +28,7 @@ test.describe('Decisions Page', () => {
   test('displays decision items or records', async ({ page }) => {
     await page.goto('/decisions');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for decision list or grid
     const decisionList = page.locator('[class*="decision"], [class*="choice"], [class*="list"]').first();
@@ -45,7 +45,7 @@ test.describe('Decisions Page', () => {
   test('displays decision metadata (title, status, date, outcome)', async ({ page }) => {
     await page.goto('/decisions');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for decision details
     const title = page.locator('text=/whether|should|decide|consider|approve|reject/i').first();
@@ -65,7 +65,7 @@ test.describe('Decisions Page', () => {
   test('displays decision reasoning or context', async ({ page }) => {
     await page.goto('/decisions');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for explanation or reasoning
     const reasoning = page.locator('[class*="reason"], [class*="context"], [class*="explain"]').first();
@@ -80,7 +80,7 @@ test.describe('Decisions Page', () => {
   test('displays decision approval or voting information', async ({ page }) => {
     await page.goto('/decisions');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for approval or voting details
     const approval = page.locator('text=/approve|reject|vote|support|against/i').first();
@@ -97,7 +97,7 @@ test.describe('Decisions Page', () => {
   test('displays decision filtering or categorization', async ({ page }) => {
     await page.goto('/decisions');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for filter controls
     const filterButton = page.locator('button, [role="button"]').filter({ hasText: /filter|category|type|status/i }).first();
@@ -114,7 +114,7 @@ test.describe('Decisions Page', () => {
   test('displays decision timeline or history', async ({ page }) => {
     await page.goto('/decisions');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for timeline or history
     const timeline = page.locator('[class*="timeline"], [class*="history"], [class*="progression"]').first();
@@ -129,7 +129,7 @@ test.describe('Decisions Page', () => {
   test('decisions page handles loading and empty states', async ({ page }) => {
     await page.goto('/decisions');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Check for either content or empty state
     const loading = page.locator('text=/loading|Loading|fetching/i').first();
@@ -146,7 +146,7 @@ test.describe('Decisions Page', () => {
   test('decisions page is responsive', async ({ page }) => {
     await page.goto('/decisions');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Test mobile view
     await page.setViewportSize({ width: 375, height: 667 });
@@ -166,7 +166,7 @@ test.describe('Decisions Page', () => {
   test('can navigate to decision details', async ({ page }) => {
     await page.goto('/decisions');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for detail or expand buttons
     const detailButton = page.locator('button, a').filter({ hasText: /view|details|expand|inspect|open/i }).first();

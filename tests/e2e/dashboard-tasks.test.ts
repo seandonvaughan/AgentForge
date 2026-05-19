@@ -15,7 +15,7 @@ test.describe('Tasks Page', () => {
   test('displays tasks heading', async ({ page }) => {
     await page.goto('/tasks');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for heading
     const heading = page.locator('h1, h2').filter({ hasText: /Task|Todo|Work|Assignment/i }).first();
@@ -28,7 +28,7 @@ test.describe('Tasks Page', () => {
   test('displays task list or board view', async ({ page }) => {
     await page.goto('/tasks');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for task list or board structure
     const taskList = page.locator('[class*="task"], [class*="todo"], [class*="list"]').first();
@@ -45,7 +45,7 @@ test.describe('Tasks Page', () => {
   test('displays task metadata (title, status, priority, assignee)', async ({ page }) => {
     await page.goto('/tasks');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for task details
     const taskTitle = page.locator('text=/Fix|Implement|Add|Update|Review|Bug|Feature/i').first();
@@ -65,7 +65,7 @@ test.describe('Tasks Page', () => {
   test('displays task status or progress indicators', async ({ page }) => {
     await page.goto('/tasks');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for status indicators
     const statusBadge = page.locator('[class*="badge"], [class*="tag"], [class*="chip"]').first();
@@ -82,7 +82,7 @@ test.describe('Tasks Page', () => {
   test('displays task filtering or categorization', async ({ page }) => {
     await page.goto('/tasks');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for filter controls
     const filterButton = page.locator('button, [role="button"]').filter({ hasText: /filter|category|priority|status|type/i }).first();
@@ -99,7 +99,7 @@ test.describe('Tasks Page', () => {
   test('displays task assignment or ownership', async ({ page }) => {
     await page.goto('/tasks');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for assignee info
     const assigneeLabel = page.locator('text=/assigned|assignee|owner|responsible/i').first();
@@ -116,7 +116,7 @@ test.describe('Tasks Page', () => {
   test('displays task dates or deadlines', async ({ page }) => {
     await page.goto('/tasks');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for date info
     const dateLabel = page.locator('text=/due|deadline|date|created|updated|when/i').first();
@@ -131,7 +131,7 @@ test.describe('Tasks Page', () => {
   test('can interact with tasks (create, edit, complete)', async ({ page }) => {
     await page.goto('/tasks');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for action buttons
     const createButton = page.locator('button, [role="button"]').filter({ hasText: /new|create|add|start/i }).first();
@@ -148,7 +148,7 @@ test.describe('Tasks Page', () => {
   test('tasks page handles loading and empty states', async ({ page }) => {
     await page.goto('/tasks');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Check for either content or empty state
     const loading = page.locator('text=/loading|Loading|fetching/i').first();
@@ -165,7 +165,7 @@ test.describe('Tasks Page', () => {
   test('tasks page is responsive', async ({ page }) => {
     await page.goto('/tasks');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Test mobile view
     await page.setViewportSize({ width: 375, height: 667 });
@@ -185,7 +185,7 @@ test.describe('Tasks Page', () => {
   test('displays task search capability', async ({ page }) => {
     await page.goto('/tasks');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for search input
     const searchInput = page.locator('input[type="search"], input[type="text"], [class*="search"]').first();
@@ -200,7 +200,7 @@ test.describe('Tasks Page', () => {
   test('displays sorting options for tasks', async ({ page }) => {
     await page.goto('/tasks');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for sort controls
     const sortButton = page.locator('button, [role="button"]').filter({ hasText: /sort|order|by/i }).first();

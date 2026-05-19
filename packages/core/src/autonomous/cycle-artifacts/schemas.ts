@@ -247,7 +247,7 @@ const ExecuteAgentRunSchema = z
     attempts: z.number().int().positive().nullish(),
     agentId: z.string().nullish(),
     model: z.string().nullish(),
-    effort: z.enum(['low', 'medium', 'high', 'max']).nullish(),
+    effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).nullish(),
     error: z.string().nullish(),
   })
   .passthrough();

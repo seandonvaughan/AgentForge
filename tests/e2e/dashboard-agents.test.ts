@@ -1,4 +1,8 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+
+async function waitForAgentsClient(page: Page) {
+  await expect(page.locator('.af-page-header[data-client-ready="true"]')).toBeVisible();
+}
 
 test.describe('Agents List Page', () => {
   test('loads agents list page', async ({ page }) => {
@@ -29,7 +33,7 @@ test.describe('Agents List Page', () => {
     // Use a short explicit timeout — the layout's persistent SSE and WebSocket
     // connections mean networkidle never fires, so the default 30s timeout would
     // consume the entire test budget. 3s is enough for SSR + initial render.
-    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
+    await page.waitForLoadState('domcontentloaded', { timeout: 3000 }).catch(() => {});
 
     // The agents table must be present with at least one data row.
     // .agentforge/agents/ contains 100+ YAML definitions, so any non-zero
@@ -55,7 +59,7 @@ test.describe('Agents List Page', () => {
   test('displays agent names from YAML — real text not placeholders', async ({ page }) => {
     await page.goto('/agents');
 
-    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
+    await page.waitForLoadState('domcontentloaded', { timeout: 3000 }).catch(() => {});
 
     // The table rows must include agent names from YAML files.
     // .agentforge/agents/ contains definitions for "Frontend Developer",
@@ -76,7 +80,8 @@ test.describe('Agents List Page', () => {
     await page.goto('/agents');
 
     // Short timeout: SSE/WS connections prevent networkidle from ever firing.
-    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
+    await page.waitForLoadState('domcontentloaded', { timeout: 3000 }).catch(() => {});
+    await waitForAgentsClient(page);
 
     const table = page.locator('table.data-table');
     await expect(table).toBeVisible();
@@ -99,7 +104,7 @@ test.describe('Agents List Page', () => {
     await page.goto('/agents');
 
     // Short timeout: SSE/WS connections prevent networkidle from ever firing.
-    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
+    await page.waitForLoadState('domcontentloaded', { timeout: 3000 }).catch(() => {});
 
     const table = page.locator('table.data-table');
     await expect(table).toBeVisible();
@@ -113,7 +118,7 @@ test.describe('Agents List Page', () => {
     await page.goto('/agents');
 
     // Short timeout: SSE/WS connections prevent networkidle from ever firing.
-    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
+    await page.waitForLoadState('domcontentloaded', { timeout: 3000 }).catch(() => {});
 
     // The empty state div must NOT be visible when agents exist
     const emptyState = page.locator('.empty-state');
@@ -168,7 +173,7 @@ test.describe('Agents List Page', () => {
    */
   test('agents page: __unassigned__ team filter works correctly (regression test)', async ({ page }) => {
     await page.goto('/agents');
-    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
+    await page.waitForLoadState('domcontentloaded', { timeout: 3000 }).catch(() => {});
 
     const teamSelect = page.getByLabel('Filter by team');
     await expect(teamSelect).toBeVisible();
@@ -207,7 +212,8 @@ test.describe('Agents List Page', () => {
    */
   test('agents page: model filter preserves data consistency', async ({ page }) => {
     await page.goto('/agents');
-    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
+    await page.waitForLoadState('domcontentloaded', { timeout: 3000 }).catch(() => {});
+    await waitForAgentsClient(page);
 
     const filterPills = page.locator('button.af-pill');
     const pillCount = await filterPills.count();
@@ -243,7 +249,7 @@ test.describe('Agents List Page', () => {
    */
   test('agents page: team filter state clears on page reload', async ({ page }) => {
     await page.goto('/agents');
-    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
+    await page.waitForLoadState('domcontentloaded', { timeout: 3000 }).catch(() => {});
 
     const teamSelect = page.getByLabel('Filter by team');
     await expect(teamSelect).toBeVisible();

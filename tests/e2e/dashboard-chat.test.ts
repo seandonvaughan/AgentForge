@@ -15,7 +15,7 @@ test.describe('Chat Page', () => {
   test('displays chat interface with conversation view', async ({ page }) => {
     await page.goto('/chat');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for chat-related elements
     const chatWindow = page.locator('[class*="chat"], [class*="conversation"], [role="main"]').first();
@@ -30,7 +30,7 @@ test.describe('Chat Page', () => {
   test('displays chat input area', async ({ page }) => {
     await page.goto('/chat');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for message input field
     const textInput = page.locator('textarea, input[type="text"], [contenteditable="true"]').first();
@@ -45,7 +45,7 @@ test.describe('Chat Page', () => {
   test('displays message bubbles or chat items', async ({ page }) => {
     await page.goto('/chat');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for individual messages
     const messageBubbles = page.locator('[class*="message"], [class*="bubble"], [class*="item"]').first();
@@ -62,7 +62,7 @@ test.describe('Chat Page', () => {
   test('displays conversation list or sidebar', async ({ page }) => {
     await page.goto('/chat');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for conversation list
     const conversationList = page.locator('[class*="list"], [class*="sidebar"], nav').first();
@@ -77,7 +77,7 @@ test.describe('Chat Page', () => {
   test('can send messages or interact with chat', async ({ page }) => {
     await page.goto('/chat');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for send button or submit mechanism
     const sendButton = page.locator('button, [role="button"]').filter({ hasText: /Send|Submit|Post|Reply/i }).first();
@@ -92,7 +92,7 @@ test.describe('Chat Page', () => {
   test('displays chat metadata (sender, timestamp, status)', async ({ page }) => {
     await page.goto('/chat');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for message metadata
     const senderInfo = page.locator('text=/User|Agent|System|Me|Them/i').first();
@@ -109,7 +109,7 @@ test.describe('Chat Page', () => {
   test('displays user list or participants', async ({ page }) => {
     await page.goto('/chat');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for participant list
     const userList = page.locator('[class*="user"], [class*="participant"], [class*="member"]').first();
@@ -124,7 +124,7 @@ test.describe('Chat Page', () => {
   test('chat page handles loading and empty states', async ({ page }) => {
     await page.goto('/chat');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Check for either content or empty state
     const loading = page.locator('text=/loading|Loading|connecting/i').first();
@@ -141,7 +141,7 @@ test.describe('Chat Page', () => {
   test('chat page is responsive', async ({ page }) => {
     await page.goto('/chat');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Test mobile view
     await page.setViewportSize({ width: 375, height: 667 });
@@ -161,7 +161,7 @@ test.describe('Chat Page', () => {
   test('displays chat features (emojis, attachments, formatting)', async ({ page }) => {
     await page.goto('/chat');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for chat features
     const emojiButton = page.locator('button, [role="button"]').filter({ hasText: /emoji|reaction|😀/i }).first();

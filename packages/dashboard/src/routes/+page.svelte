@@ -243,6 +243,9 @@
   /** Tier of a server `model` string. Map runtime model/profile IDs to capability tier. */
   function tierOf(model: string | null | undefined): 'opus' | 'sonnet' | 'haiku' | 'other' {
     const m = (model ?? '').toLowerCase();
+    if (m.includes('gpt-5.5') || m.includes('xhigh')) return 'opus';
+    if (m.includes('gpt-5.3-codex') || m.includes('high')) return 'sonnet';
+    if (m.includes('gpt-5.4-mini') || m.includes('medium')) return 'haiku';
     if (m.includes('opus')) return 'opus';
     if (m.includes('sonnet')) return 'sonnet';
     if (m.includes('haiku')) return 'haiku';
@@ -251,9 +254,9 @@
 
   function profileLabel(model: string | null | undefined): string {
     const tier = tierOf(model);
-    if (tier === 'opus') return 'xhigh';
-    if (tier === 'sonnet') return 'high';
-    if (tier === 'haiku') return 'medium';
+    if (tier === 'opus') return 'gpt-5.5 / xhigh';
+    if (tier === 'sonnet') return 'gpt-5.3-codex / high';
+    if (tier === 'haiku') return 'gpt-5.4-mini / medium';
     return 'other';
   }
 

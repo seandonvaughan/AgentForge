@@ -14,7 +14,7 @@
  *
  * Note on SSE: The live feed uses an EventSource connection (/api/v1/stream)
  * which keeps the network active indefinitely. Tests must NOT use
- * waitForLoadState('networkidle') — use element-level waits instead.
+ * waitForLoadState('domcontentloaded') — use element-level waits instead.
  */
 import { test, expect } from '@playwright/test';
 

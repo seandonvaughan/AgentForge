@@ -28,7 +28,7 @@ test.describe('Audit Page (/audit)', () => {
   test('displays audit entries or empty state', async ({ page }) => {
     await page.goto('/audit');
 
-    await page.waitForLoadState('networkidle').catch(() => {});
+    await page.waitForLoadState('domcontentloaded').catch(() => {});
 
     // Look for audit entries (table rows, list items, or audit-specific elements)
     const auditEntries = page.locator('[data-testid="audit-entry"], [data-testid="audit-log"], .audit-row, [role="row"]');
@@ -56,7 +56,7 @@ test.describe('Audit Page (/audit)', () => {
   test('audit entries display timestamps and actions', async ({ page }) => {
     await page.goto('/audit');
 
-    await page.waitForLoadState('networkidle').catch(() => {});
+    await page.waitForLoadState('domcontentloaded').catch(() => {});
 
     // Look for timestamp or action columns
     const timeElements = page.locator('[data-testid="audit-timestamp"], .timestamp, time');
@@ -112,7 +112,7 @@ test.describe('Audit Page (/audit)', () => {
     });
 
     await page.goto('/audit');
-    await page.waitForLoadState('networkidle').catch(() => {});
+    await page.waitForLoadState('domcontentloaded').catch(() => {});
 
     // Allow for some minor console warnings, but no critical errors
     const criticalErrors = errors.filter((e) => !/warning|deprecat/i.test(e));

@@ -27,7 +27,7 @@ test.describe('Inbox Page (/inbox)', () => {
   test('displays inbox messages or empty state', async ({ page }) => {
     await page.goto('/inbox');
 
-    await page.waitForLoadState('networkidle').catch(() => {});
+    await page.waitForLoadState('domcontentloaded').catch(() => {});
 
     // Should have either messages or an empty state
     const messages = page.locator('[data-testid="inbox-message"], .inbox-item, .message-row').first();
@@ -54,7 +54,7 @@ test.describe('Inbox Page (/inbox)', () => {
   test('inbox page displays inbox count or status', async ({ page }) => {
     await page.goto('/inbox');
 
-    await page.waitForLoadState('networkidle').catch(() => {});
+    await page.waitForLoadState('domcontentloaded').catch(() => {});
 
     // Look for message count, status badge, or inbox indicator
     const badge = page.locator('[data-testid="inbox-count"], .badge, .pill, .count-indicator');
@@ -86,7 +86,7 @@ test.describe('Inbox Page (/inbox)', () => {
   test('inbox messages are readable if present', async ({ page }) => {
     await page.goto('/inbox');
 
-    await page.waitForLoadState('networkidle').catch(() => {});
+    await page.waitForLoadState('domcontentloaded').catch(() => {});
 
     // Look for message content (either in DOM or rendered)
     const messageContent = page.locator('[data-testid="inbox-message-content"], .message-content, .message-body').first();

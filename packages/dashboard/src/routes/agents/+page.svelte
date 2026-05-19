@@ -37,6 +37,7 @@
   let liveAgents = $state<AgentListItem[]>(data.agents ?? []);
   let loading = $state(false);
   let errorMsg = $state<string | null>(null);
+  let clientReady = $state(false);
 
   // ── Polling ─────────────────────────────────────────────────────────────────
   let pollHandle: ReturnType<typeof setInterval> | null = null;
@@ -81,6 +82,7 @@
   }
 
   onMount(() => {
+    clientReady = true;
     void refreshAgents();
     pollHandle = setInterval(refreshAgents, 15_000);
   });
@@ -177,7 +179,7 @@
 <svelte:head><title>Agent Fleet — AgentForge</title></svelte:head>
 
 <!-- ── Page header ──────────────────────────────────────────────────────────── -->
-<header class="af-page-header">
+<header class="af-page-header" data-client-ready={clientReady ? 'true' : 'false'}>
   <div class="af-crumbs font-mono">Workspace · Agents</div>
   <div class="af-headline-row">
     <div>

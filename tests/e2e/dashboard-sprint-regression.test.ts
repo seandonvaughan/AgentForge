@@ -35,7 +35,7 @@ test.describe('Dashboard Sprint Regression Tests', () => {
    */
   test('agents page: __unassigned__ team filter renders and is clickable', async ({ page }) => {
     await page.goto('/agents');
-    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
+    await page.waitForLoadState('domcontentloaded', { timeout: 3000 }).catch(() => {});
 
     // The team summary bar should exist and contain team chips
     const teamBar = page.locator('.team-summary-bar');
@@ -70,7 +70,7 @@ test.describe('Dashboard Sprint Regression Tests', () => {
    */
   test('agents page: team filter can be cleared via clear button', async ({ page }) => {
     await page.goto('/agents');
-    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
+    await page.waitForLoadState('domcontentloaded', { timeout: 3000 }).catch(() => {});
 
     const teamBar = page.locator('.team-summary-bar');
     const firstTeamChip = teamBar.locator('.team-stat-chip').first();
@@ -99,7 +99,7 @@ test.describe('Dashboard Sprint Regression Tests', () => {
    */
   test('agents page: model tier filter (opus/sonnet/haiku) works', async ({ page }) => {
     await page.goto('/agents');
-    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
+    await page.waitForLoadState('domcontentloaded', { timeout: 3000 }).catch(() => {});
 
     const filterPills = page.locator('.filter-pills .pill');
     const count = await filterPills.count();
@@ -290,7 +290,7 @@ test.describe('Dashboard Sprint Regression Tests', () => {
    */
   test('cycles page: loads and displays cycle list', async ({ page }) => {
     await page.goto('/cycles');
-    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
+    await page.waitForLoadState('domcontentloaded', { timeout: 3000 }).catch(() => {});
 
     const heading = page.locator('h1').filter({ hasText: /Cycle/i }).first();
     await expect(heading).toBeVisible({ timeout: 8000 });

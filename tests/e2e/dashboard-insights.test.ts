@@ -28,7 +28,7 @@ test.describe('Insights Page (/insights)', () => {
   test('displays insights metrics or data visualizations', async ({ page }) => {
     await page.goto('/insights');
 
-    await page.waitForLoadState('networkidle').catch(() => {});
+    await page.waitForLoadState('domcontentloaded').catch(() => {});
 
     // Look for common analytics elements: charts, metrics, cards, stats
     const metrics = page.locator('[data-testid="metric"], [data-testid="card"], [data-testid="stat"], .metric-card, .insight-card');
@@ -58,7 +58,7 @@ test.describe('Insights Page (/insights)', () => {
   test('insights page displays meaningful content', async ({ page }) => {
     await page.goto('/insights');
 
-    await page.waitForLoadState('networkidle').catch(() => {});
+    await page.waitForLoadState('domcontentloaded').catch(() => {});
 
     // Page should have substantial content
     const body = page.locator('body');
@@ -91,7 +91,7 @@ test.describe('Insights Page (/insights)', () => {
   test('insights metrics are initialized with default values if no data', async ({ page }) => {
     await page.goto('/insights');
 
-    await page.waitForLoadState('networkidle').catch(() => {});
+    await page.waitForLoadState('domcontentloaded').catch(() => {});
 
     // Look for any metric values (should be 0 or a number if initialized)
     const metricValues = page.locator('[data-testid="metric-value"], .metric-number, .stat-value');

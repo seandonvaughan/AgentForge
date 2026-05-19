@@ -1,8 +1,13 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+
+async function openCost(page: Page) {
+  await page.goto('/cost', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('h1').first()).toContainText(/Cost/i);
+}
 
 test.describe('Cost Dashboard Page', () => {
   test('loads cost page successfully', async ({ page }) => {
-    await page.goto('/cost');
+    await openCost(page);
 
     // Verify page title
     await expect(page).toHaveTitle(/Cost|Budget|AgentForge/i);
@@ -13,22 +18,15 @@ test.describe('Cost Dashboard Page', () => {
   });
 
   test('displays cost/budget heading', async ({ page }) => {
-    await page.goto('/cost');
-
-    await page.waitForLoadState('networkidle');
+    await openCost(page);
 
     // Look for heading
     const heading = page.locator('h1, h2').filter({ hasText: /Cost|Budget|Spending/i }).first();
-
-    if (await heading.isVisible().catch(() => false)) {
-      await expect(heading).toBeVisible();
-    }
+    await expect(heading).toBeVisible();
   });
 
   test('displays cost metrics or statistics', async ({ page }) => {
-    await page.goto('/cost');
-
-    await page.waitForLoadState('networkidle');
+    await openCost(page);
 
     // Look for cost cards, metrics, or gauges
     const costMetrics = page.locator('[class*="metric"], [class*="stat"], [class*="card"], [class*="gauge"]').first();
@@ -41,9 +39,7 @@ test.describe('Cost Dashboard Page', () => {
   });
 
   test('displays cost breakdowns or charts', async ({ page }) => {
-    await page.goto('/cost');
-
-    await page.waitForLoadState('networkidle');
+    await openCost(page);
 
     // Look for charts or graphs
     const chart = page.locator('[class*="chart"], [class*="graph"], svg, canvas').first();
@@ -56,46 +52,21 @@ test.describe('Cost Dashboard Page', () => {
   });
 
   test('displays budget information (limit, spent, remaining)', async ({ page }) => {
-    await page.goto('/cost');
-
-    await page.waitForLoadState('networkidle');
+    await openCost(page);
 
     // Look for budget-related text
-    const budgetInfo = page.locator('text=/budget|limit|spent|remaining|available/i');
-    const budgetCount = await budgetInfo.count();
-
-    if (budgetCount > 0) {
-      await expect(budgetInfo.first()).toBeVisible();
-    }
+    await expect(page.locator('body')).toContainText(/budget|limit|spent|remaining|available|last 30 days|ytd/i);
   });
 
   test('displays cost by agent or task category', async ({ page }) => {
-    await page.goto('/cost');
-
-    await page.waitForLoadState('networkidle');
+    await openCost(page);
 
     // Look for agent or task names in cost breakdown
-    const agentCosts = page.locator('text=/Agent|Task|Model|API|service/i');
-    const agentCostCount = await agentCosts.count();
-
-    if (agentCostCount > 0) {
-      await expect(agentCosts.first()).toBeVisible();
-    }
+    await expect(page.locator('body')).toContainText(/Agent|Task|Model|API|service/i);
   });
 
   test('cost page handles loading and empty states', async ({ page }) => {
-    await page.goto('/cost');
-
-    await page.waitForLoadState('networkidle');
-
-    // Check for either content or empty state
-    const loading = page.locator('text=/loading|Loading/i').first();
-    const emptyState = page.locator('text=/No cost|No data|empty/i').first();
-    const costContent = page.locator('[class*="metric"], [class*="chart"], [role="grid"]').first();
-
-    const isLoading = await loading.isVisible().catch(() => false);
-    const isEmpty = await emptyState.isVisible().catch(() => false);
-    const hasContent = await costContent.isVisible().catch(() => false);
+    await openCost(page);
 
     // v6.7.4: replaced fake disjunction with real load assertion
     const _heading = page.locator("h1, h2").first();
@@ -103,22 +74,17 @@ test.describe('Cost Dashboard Page', () => {
   });
 
   test('cost page is responsive', async ({ page }) => {
-    await page.goto('/cost');
-
-    await page.waitForLoadState('networkidle');
+    await openCost(page);
 
     // Test mobile view
     await page.setViewportSize({ width: 375, height: 667 });
 
-    await page.waitForTimeout(500);
-
-    const pageContent = page.locator('body');
-    await expect(pageContent).toBeVisible();
+    const heading = page.locator('h1').first();
+    await expect(heading).toBeVisible();
 
     // Test desktop view
     await page.setViewportSize({ width: 1280, height: 720 });
 
-    await page.waitForTimeout(500);
-    await expect(pageContent).toBeVisible();
+    await expect(heading).toBeVisible();
   });
 });

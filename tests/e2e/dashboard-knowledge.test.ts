@@ -15,7 +15,7 @@ test.describe('Knowledge Page', () => {
   test('displays knowledge heading', async ({ page }) => {
     await page.goto('/knowledge');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for heading
     const heading = page.locator('h1, h2').filter({ hasText: /Knowledge|Learn|Memory|Base/i }).first();
@@ -28,7 +28,7 @@ test.describe('Knowledge Page', () => {
   test('displays knowledge items or entries', async ({ page }) => {
     await page.goto('/knowledge');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for knowledge list or grid
     const knowledgeList = page.locator('[class*="knowledge"], [class*="list"], [role="table"], [role="grid"]').first();
@@ -47,7 +47,7 @@ test.describe('Knowledge Page', () => {
   test('displays knowledge categories or tags', async ({ page }) => {
     await page.goto('/knowledge');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for categories or tags
     const categories = page.locator('[class*="category"], [class*="tag"], [class*="label"]').first();
@@ -62,7 +62,7 @@ test.describe('Knowledge Page', () => {
   test('displays knowledge metadata (created, updated, source)', async ({ page }) => {
     await page.goto('/knowledge');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for metadata like dates or sources
     const metadata = page.locator('text=/created|updated|source|author|date/i');
@@ -76,7 +76,7 @@ test.describe('Knowledge Page', () => {
   test('knowledge items or entries are actionable', async ({ page }) => {
     await page.goto('/knowledge');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for interactive elements
     const links = page.locator('a, button, [role="button"]').filter({ hasText: /view|edit|delete|open/i });
@@ -90,7 +90,7 @@ test.describe('Knowledge Page', () => {
   test('knowledge page handles loading and empty states', async ({ page }) => {
     await page.goto('/knowledge');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Check for either content or empty state
     const loading = page.locator('text=/loading|Loading/i').first();
@@ -109,7 +109,7 @@ test.describe('Knowledge Page', () => {
   test('knowledge page is responsive', async ({ page }) => {
     await page.goto('/knowledge');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Test mobile view
     await page.setViewportSize({ width: 375, height: 667 });

@@ -259,6 +259,7 @@ describe('execute-phase worktree integration', () => {
     expect(runtime.run).toHaveBeenCalledTimes(1);
     const callArgs = runtime.run.mock.calls[0];
     // Third argument is the options object — must contain cwd: worktreePath
+    expect(callArgs![1]).toContain(`repository at ${worktreePath}`);
     expect(callArgs![2]).toMatchObject({ cwd: worktreePath });
   });
 

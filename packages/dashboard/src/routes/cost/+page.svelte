@@ -20,6 +20,7 @@
   import {
     Btn, Badge, Card, DistBar, KpiTile, ModelChip, Sparkline, Ring,
   } from '$lib/components/v2';
+  import { codexProfileLabel, codexTierFor, type CapabilityTier } from '$lib/modelProfiles';
   import { withWorkspace } from '$lib/stores/workspace';
 
   // ── Types ────────────────────────────────────────────────────────────────────
@@ -199,18 +200,15 @@
   const budgetPct = $derived(Math.min(100, Math.round((last30dUsd / MONTHLY_BUDGET) * 100)));
 
   function modelColor(model: string): string {
-    const m = model.toLowerCase();
-    if (m.includes('opus')) return 'var(--af-opus)';
-    if (m.includes('sonnet')) return 'var(--af-sonnet)';
-    if (m.includes('haiku')) return 'var(--af-haiku)';
+    const tier = codexTierFor(model);
+    if (tier === 'opus') return 'var(--af-opus)';
+    if (tier === 'sonnet') return 'var(--af-sonnet)';
+    if (tier === 'haiku') return 'var(--af-haiku)';
     return 'var(--af-dim)';
   }
 
-  function modelTier(model: string): 'opus' | 'sonnet' | 'haiku' {
-    const m = model.toLowerCase();
-    if (m.includes('opus')) return 'opus';
-    if (m.includes('haiku')) return 'haiku';
-    return 'sonnet';
+  function modelTier(model: string): CapabilityTier {
+    return codexTierFor(model) ?? 'sonnet';
   }
 </script>
 
@@ -310,10 +308,10 @@
         <div class="model-list">
           {#each byModel() as m}
             <div class="model-row">
-              <div class="model-row-head">
+                <div class="model-row-head">
                 <div class="model-row-name">
                   <span class="model-swatch" style="background:{modelColor(m.model)}"></span>
-                  <span class="font-mono model-label">{m.model}</span>
+                  <span class="font-mono model-label">{codexProfileLabel(m.model)}</span>
                 </div>
                 <div class="model-row-nums">
                   <span class="font-mono">${m.costUsd.toFixed(2)}</span>

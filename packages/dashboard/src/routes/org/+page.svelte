@@ -74,12 +74,24 @@
   const MODEL_HEX: Record<string, string> = {
     opus: '#f5a623', sonnet: '#7aa0f7', haiku: '#5bd394',
   };
+  const MODEL_PROFILE: Record<string, { modelId: string; effort: string }> = {
+    opus: { modelId: 'gpt-5.5', effort: 'xhigh' },
+    sonnet: { modelId: 'gpt-5.3-codex', effort: 'high' },
+    haiku: { modelId: 'gpt-5.4-mini', effort: 'medium' },
+  };
 
   function colorFor(model: string | undefined): string {
     return MODEL_COLOR[model ?? ''] ?? 'var(--af-border3)';
   }
   function hexFor(model: string | undefined): string {
     return MODEL_HEX[model ?? ''] ?? '#52525b';
+  }
+  function profileFor(model: string | undefined): { modelId: string; effort: string } | null {
+    return MODEL_PROFILE[model ?? ''] ?? null;
+  }
+  function profileLabel(model: string | undefined): string {
+    const profile = profileFor(model);
+    return profile ? `${profile.modelId} / ${profile.effort}` : 'unmapped';
   }
 
   // ── Tree builder (preserved from v1, improved for v2 display) ────────────────
@@ -371,9 +383,9 @@
         <span class="af-section-title">{view === 'tree' ? 'HIERARCHY' : 'GRAPH'}</span>
         {#if view === 'tree'}
           <div class="af-legend">
-            <span><span class="af-leg-dot" style="background:var(--af-opus)"></span><span class="af-leg-label">opus</span></span>
-            <span><span class="af-leg-dot" style="background:var(--af-sonnet)"></span><span class="af-leg-label">sonnet</span></span>
-            <span><span class="af-leg-dot" style="background:var(--af-haiku)"></span><span class="af-leg-label">haiku</span></span>
+            <span><span class="af-leg-dot" style="background:var(--af-opus)"></span><span class="af-leg-label">gpt-5.5 / xhigh</span></span>
+            <span><span class="af-leg-dot" style="background:var(--af-sonnet)"></span><span class="af-leg-label">gpt-5.3-codex / high</span></span>
+            <span><span class="af-leg-dot" style="background:var(--af-haiku)"></span><span class="af-leg-label">gpt-5.4-mini / medium</span></span>
           </div>
         {/if}
       </div>
@@ -413,7 +425,7 @@
                     data-agent-id={node.id}
                   >
                     <span class="af-node-name">{node.label ?? node.id}</span>
-                    <span class="af-model-pill" style="color:{color}; background:{color}18; border-color:{color}44;">{node.model ?? '—'}</span>
+                    <span class="af-model-pill" style="color:{color}; background:{color}18; border-color:{color}44;">{profileLabel(node.model)}</span>
                   </button>
                 {/each}
               </div>
@@ -479,15 +491,15 @@
         </div>
         <div class="af-model-mix">
           {#each ([
-            { model: 'opus',   color: 'var(--af-opus)',   count: modelMix.opus },
-            { model: 'sonnet', color: 'var(--af-sonnet)', count: modelMix.sonnet },
-            { model: 'haiku',  color: 'var(--af-haiku)',  count: modelMix.haiku },
+            { model: 'opus',   label: 'gpt-5.5 / xhigh',        color: 'var(--af-opus)',   count: modelMix.opus },
+            { model: 'sonnet', label: 'gpt-5.3-codex / high',   color: 'var(--af-sonnet)', count: modelMix.sonnet },
+            { model: 'haiku',  label: 'gpt-5.4-mini / medium',  color: 'var(--af-haiku)',  count: modelMix.haiku },
           ]) as m}
             {@const pct = modelTotal > 0 ? (m.count / modelTotal) * 100 : 0}
             <div class="af-model-row">
               <div class="af-model-label-row">
                 <span class="af-model-dot" style="background:{m.color}"></span>
-                <span class="font-mono af-model-name">{m.model}</span>
+                <span class="font-mono af-model-name">{m.label}</span>
                 <span class="font-mono af-model-count">{m.count} <span class="af-model-pct">({pct.toFixed(0)}%)</span></span>
               </div>
               <div class="af-model-bar">
@@ -510,6 +522,7 @@
             return (t[a.model ?? ''] ?? 3) - (t[b.model ?? ''] ?? 3) || a.label.localeCompare(b.label);
           }) as node}
             {@const color = colorFor(node.model)}
+            {@const profile = profileFor(node.model)}
             <button
               class="af-agent-row-btn"
               onclick={() => goto(`/agents/${node.id}`)}
@@ -518,7 +531,7 @@
             >
               <span class="af-agent-color-bar" style="background:{color}"></span>
               <span class="af-agent-row-name">{node.label ?? node.id}</span>
-              <ModelChip model={node.model as 'opus' | 'sonnet' | 'haiku'} />
+              <ModelChip model={profile?.modelId ?? ''} tier={node.model} effort={profile?.effort} />
             </button>
           {/each}
         </div>
@@ -534,6 +547,7 @@
   {@const hasKids = node.children.length > 0}
   {@const isClosed = collapsed.has(node.id)}
   {@const desc = countDescendants(node)}
+  {@const profile = profileFor(node.model)}
 
   <div class="af-tree-row depth-{Math.min(node.depth, 5)}">
     <div
@@ -558,7 +572,7 @@
     >
       <span class="af-expand-icon">{hasKids ? (isClosed ? '▸' : '▾') : ''}</span>
       <span class="af-node-name">{node.label ?? node.id}</span>
-      <ModelChip model={node.model} />
+      <ModelChip model={profile?.modelId ?? ''} tier={node.model} effort={profile?.effort} />
       {#if hasKids}
         <span class="font-mono af-child-count">{desc}</span>
       {/if}

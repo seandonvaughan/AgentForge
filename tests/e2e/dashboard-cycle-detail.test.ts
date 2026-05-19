@@ -1,4 +1,17 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+
+async function openFirstCycleDetail(page: Page) {
+  const response = await page.request.get('/api/v5/cycles?limit=1');
+  expect(response.ok(), `GET /api/v5/cycles?limit=1 returned ${response.status()}`).toBe(true);
+  const json = await response.json() as { cycles?: Array<{ cycleId?: string }> };
+  const cycleId = json.cycles?.[0]?.cycleId;
+  expect(cycleId, 'expected at least one real cycle from /api/v5/cycles').toBeTruthy();
+
+  const cycleHref = `/cycles/${cycleId!}`;
+  await page.goto(cycleHref, { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('h1')).toContainText(/Cycle/i);
+  return cycleHref;
+}
 
 test.describe('Cycle Detail Page', () => {
   test('posts cycle manage actions from the detail header', async ({ page }) => {
@@ -25,22 +38,22 @@ test.describe('Cycle Detail Page', () => {
     });
 
     let stage = 'run';
-    let cancelBody: unknown;
-    let rerunBody: unknown;
+    let cancelRequest: { method: string; pathname: string; body: unknown } | undefined;
+    let rerunRequest: { method: string; pathname: string; body: unknown } | undefined;
 
     await page.route(/\/api\/v5\/cycles\/manage-cycle(?:\/[^?]*)?(?:\?.*)?$/, async (route) => {
       const request = route.request();
       const path = new URL(request.url()).pathname;
 
       if (path.endsWith('/cancel')) {
-        cancelBody = request.postDataJSON();
+        cancelRequest = { method: request.method(), pathname: path, body: request.postDataJSON() };
         stage = 'killed';
         await route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
         return;
       }
 
       if (path.endsWith('/rerun')) {
-        rerunBody = request.postDataJSON();
+        rerunRequest = { method: request.method(), pathname: path, body: request.postDataJSON() };
         await route.fulfill({
           status: 202,
           contentType: 'application/json',
@@ -106,198 +119,70 @@ test.describe('Cycle Detail Page', () => {
 
     page.on('dialog', async (dialog) => dialog.accept());
 
-    await page.goto('/cycles/manage-cycle');
+    await page.goto('/cycles/manage-cycle', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('h1')).toContainText('Cycle');
     await expect(page.getByRole('button', { name: /^Cancel$/ })).toBeVisible();
 
     await page.getByRole('button', { name: /^Cancel$/ }).click();
-    await expect.poll(() => cancelBody).toEqual({});
+    await expect.poll(() => cancelRequest).toEqual({
+      method: 'POST',
+      pathname: '/api/v5/cycles/manage-cycle/cancel',
+      body: {},
+    });
 
     await page.getByRole('button', { name: /^Re-run$/ }).click();
-    await expect.poll(() => rerunBody).toEqual({});
+    await expect.poll(() => rerunRequest).toEqual({
+      method: 'POST',
+      pathname: '/api/v5/cycles/manage-cycle/rerun',
+      body: {},
+    });
     await expect(page).toHaveURL(/\/cycles\/manage-cycle-rerun$/);
   });
 
   test('loads cycle detail page with real data', async ({ page }) => {
-    // Navigate to first cycle from cycles list to get a valid ID
-    await page.goto('/cycles');
+    const href = await openFirstCycleDetail(page);
 
-    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
-
-    // Get first cycle link href
-    const firstCycleLink = page.locator('a, button, [role="button"]').filter({ hasText: /v\d+\.\d+|Cycle/i }).first();
-
-    if (await firstCycleLink.isVisible()) {
-      // Extract href and navigate to it
-      const href = await firstCycleLink.getAttribute('href');
-
-      if (href) {
-        await page.goto(href);
-
-        await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
-
-        // Verify cycle detail page loaded
-        const pageContent = page.locator('body');
-        await expect(pageContent).toBeVisible();
-
-        // Verify title/heading exists
-        const cycleHeading = page.locator('h1, h2, [class*="title"], [class*="heading"]').first();
-
-        if (await cycleHeading.isVisible().catch(() => false)) {
-          await expect(cycleHeading).toBeVisible();
-        }
-      }
-    }
+    await expect(page.locator('body')).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`${href.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
   });
 
   test('displays cycle version on detail page', async ({ page }) => {
-    await page.goto('/cycles');
+    await openFirstCycleDetail(page);
 
-    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
-
-    const firstCycleLink = page.locator('a, button, [role="button"]').filter({ hasText: /v\d+\.\d+|Cycle/i }).first();
-
-    if (await firstCycleLink.isVisible()) {
-      const href = await firstCycleLink.getAttribute('href');
-
-      if (href) {
-        await page.goto(href);
-
-        await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
-
-        // Look for version display
-        const versionText = page.locator('text=/v\d+\.\d+/i').first();
-
-        if (await versionText.isVisible().catch(() => false)) {
-          await expect(versionText).toBeVisible();
-        }
-      }
-    }
+    await expect(page.locator('body')).toContainText(/v\d+\.\d+|Cycle/i);
   });
 
   test('displays cycle tabs or sections on detail page', async ({ page }) => {
-    await page.goto('/cycles');
+    await openFirstCycleDetail(page);
 
-    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
-
-    const firstCycleLink = page.locator('a, button, [role="button"]').filter({ hasText: /v\d+\.\d+|Cycle/i }).first();
-
-    if (await firstCycleLink.isVisible()) {
-      const href = await firstCycleLink.getAttribute('href');
-
-      if (href) {
-        await page.goto(href);
-
-        await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
-
-        // Look for tab navigation (Overview, Items, Agents, etc.)
-        const tabs = page.locator('[role="tab"], .tab, [data-testid="cycle-tabs"], [class*="tab"]');
-        const tabCount = await tabs.count();
-
-        // Should have at least some tabs for cycle detail or sections
-        if (tabCount > 0) {
-          await expect(tabs.first()).toBeVisible();
-        } else {
-          // If no tabs, at least have main content
-          const mainContent = page.locator('main, [role="main"]').first();
-
-          if (await mainContent.isVisible().catch(() => false)) {
-            await expect(mainContent).toBeVisible();
-          }
-        }
-      }
+    for (const label of ['Pipeline', 'Items', 'Agents', 'Events', 'Logs']) {
+      await expect(page.getByRole('tab', { name: new RegExp(`^${label}\\b`) })).toBeVisible();
     }
   });
 
   test('renders cycle metadata (cost, status, stage)', async ({ page }) => {
-    await page.goto('/cycles');
+    await openFirstCycleDetail(page);
 
-    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
-
-    const firstCycleLink = page.locator('a, button, [role="button"]').filter({ hasText: /v\d+\.\d+|Cycle/i }).first();
-
-    if (await firstCycleLink.isVisible()) {
-      const href = await firstCycleLink.getAttribute('href');
-
-      if (href) {
-        await page.goto(href);
-
-        await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
-
-        // Look for cycle metadata displays
-        const costBadge = page.locator('text=/Cost|cost|\$|💰|tokens/i').first();
-        const stageBadge = page.locator('text=/Stage|stage|Status|status/i').first();
-
-        // At least one of these should be visible
-        const isCostVisible = await costBadge.isVisible().catch(() => false);
-        const isStageVisible = await stageBadge.isVisible().catch(() => false);
-
-        // v6.7.4: replaced fake disjunction with real load assertion
-        const _heading = page.locator("h1, h2").first();
-        await expect(_heading).toBeVisible(); // Page loads successfully is the main test
-      }
-    }
+    await expect(page.locator('body')).toContainText(/Cost/i);
+    await expect(page.locator('body')).toContainText(/Items/i);
+    await expect(page.locator('body')).toContainText(/Tests/i);
+    await expect(page.locator('.cycle-title-row')).toContainText(/RUN|COMPLETED|FAILED|KILLED|CRASHED|STALLED/i);
   });
 
   test('cycle detail page handles real data loading', async ({ page }) => {
-    await page.goto('/cycles');
+    await openFirstCycleDetail(page);
 
-    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
-
-    const firstCycleLink = page.locator('a, button, [role="button"]').filter({ hasText: /v\d+\.\d+|Cycle/i }).first();
-
-    if (await firstCycleLink.isVisible()) {
-      const href = await firstCycleLink.getAttribute('href');
-
-      if (href) {
-        await page.goto(href);
-
-        // Wait for content to load
-        await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
-
-        // Verify page is fully loaded
-        const pageBody = page.locator('body');
-        await expect(pageBody).toBeVisible();
-
-        // Should not have error states (check for error messages)
-        const errorMessage = page.locator('text=/Error|error|failed|Failed/i').filter({ hasText: /500|404|not found|connection/i });
-        const errorCount = await errorMessage.count();
-
-        expect(errorCount).toBe(0);
-      }
-    }
+    await expect(page.locator('body')).toBeVisible();
+    await expect(page.locator('body')).not.toContainText(/HTTP 500|HTTP 404|not found|connection refused/i);
   });
 
   test('cycle detail page is responsive', async ({ page }) => {
-    await page.goto('/cycles');
+    await openFirstCycleDetail(page);
 
-    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
+    await page.setViewportSize({ width: 375, height: 667 });
+    await expect(page.locator('h1')).toContainText(/Cycle/i);
 
-    const firstCycleLink = page.locator('a, button, [role="button"]').filter({ hasText: /v\d+\.\d+|Cycle/i }).first();
-
-    if (await firstCycleLink.isVisible()) {
-      const href = await firstCycleLink.getAttribute('href');
-
-      if (href) {
-        await page.goto(href);
-
-        await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
-
-        // Test mobile view
-        await page.setViewportSize({ width: 375, height: 667 });
-
-        await page.waitForTimeout(500);
-
-        let pageContent = page.locator('body');
-        await expect(pageContent).toBeVisible();
-
-        // Test desktop view
-        await page.setViewportSize({ width: 1280, height: 720 });
-
-        await page.waitForTimeout(500);
-        pageContent = page.locator('body');
-        await expect(pageContent).toBeVisible();
-      }
-    }
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await expect(page.locator('h1')).toContainText(/Cycle/i);
   });
 });

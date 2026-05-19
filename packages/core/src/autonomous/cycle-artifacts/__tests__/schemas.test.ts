@@ -355,8 +355,8 @@ const EXECUTE_FIXTURE = {
       response: 'Already implemented.',
       attempts: 1,
       agentId: 'architect',
-      model: 'claude-opus-4-6',
-      effort: 'high',
+      model: 'gpt-5.5',
+      effort: 'xhigh',
     },
   ],
 };

@@ -19,7 +19,7 @@ test.describe('Sprint Detail Page', () => {
 
   test('loads the sprint detail page at a direct URL', async ({ page }) => {
     await page.goto(SPRINT_URL);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Page title must include a version number (h1 element)
     const heading = page.locator('h1');
@@ -29,7 +29,7 @@ test.describe('Sprint Detail Page', () => {
 
   test('renders the Kanban Sprint Board section', async ({ page }) => {
     await page.goto(SPRINT_URL);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // The kanban section heading must be present
     const boardHeading = page.getByText('Sprint Board', { exact: false });
@@ -42,7 +42,7 @@ test.describe('Sprint Detail Page', () => {
 
   test('renders the Success Criteria section (populated or empty state)', async ({ page }) => {
     await page.goto(SPRINT_URL);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Section heading is always rendered (never hidden)
     const criteriaHeading = page.getByText('Success Criteria', { exact: false });
@@ -58,7 +58,7 @@ test.describe('Sprint Detail Page', () => {
 
   test('renders the Audit Findings section (populated or empty state)', async ({ page }) => {
     await page.goto(SPRINT_URL);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Section heading is always rendered (never hidden)
     const findingsHeading = page.getByText('Audit Findings', { exact: false });
@@ -76,7 +76,7 @@ test.describe('Sprint Detail Page', () => {
 
   test('displays progress summary cards', async ({ page }) => {
     await page.goto(SPRINT_URL);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Summary row with completion stats
     const summaryRow = page.locator('.summary-row').first();
@@ -90,7 +90,7 @@ test.describe('Sprint Detail Page', () => {
 
   test('displays priority badge labels (P0 / P1 / P2) in items list', async ({ page }) => {
     await page.goto(SPRINT_URL);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Priority badges are present when the sprint has items
     const priorityBadges = page.locator('.priority-badge');
@@ -104,7 +104,7 @@ test.describe('Sprint Detail Page', () => {
 
   test('navigates back to sprints list via back link', async ({ page }) => {
     await page.goto(SPRINT_URL);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const backLink = page.locator('.back-link');
     await expect(backLink).toBeVisible();
@@ -115,7 +115,7 @@ test.describe('Sprint Detail Page', () => {
 
   test('shows 404-style empty state for a non-existent sprint version', async ({ page }) => {
     await page.goto('/sprints/99.99.99-nonexistent');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Must show the "not found" empty state, not a blank page
     const emptyState = page.locator('.empty-state');

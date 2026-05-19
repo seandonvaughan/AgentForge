@@ -15,7 +15,7 @@ test.describe('Branches Page', () => {
 
   test('loads and renders the Autonomous Branches heading', async ({ page }) => {
     await page.goto('/branches');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // The page-specific h2 must be present — not just any heading on the layout
     const heading = page.locator('h2').filter({ hasText: /Autonomous Branches/i });
@@ -24,7 +24,7 @@ test.describe('Branches Page', () => {
 
   test('displays the four summary stat chips with numeric values', async ({ page }) => {
     await page.goto('/branches');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // All four stat ids are rendered via Svelte $derived state once the API responds.
     // The values should be digits (0 is fine — no autonomous/* branches in test env).
@@ -38,7 +38,7 @@ test.describe('Branches Page', () => {
 
   test('filter bar: search input and all four status filter pills are present', async ({ page }) => {
     await page.goto('/branches');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Search input must be visible
     await expect(page.locator('#branches-search')).toBeVisible();
@@ -57,7 +57,7 @@ test.describe('Branches Page', () => {
 
   test('shows either the branches table with correct headers or the empty state', async ({ page }) => {
     await page.goto('/branches');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const tableWrap = page.locator('#branches-table-wrap');
     const emptyState = page.locator('#branches-empty');
@@ -82,7 +82,7 @@ test.describe('Branches Page', () => {
 
   test('loading state is hidden and error state is absent after successful load', async ({ page }) => {
     await page.goto('/branches');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Loading indicator must be gone — controlled by Svelte $state(loading) with hidden={!loading}
     await expect(page.locator('#branches-loading')).toBeHidden();
@@ -92,7 +92,7 @@ test.describe('Branches Page', () => {
 
   test('refresh button re-fetches branches without breaking the page', async ({ page }) => {
     await page.goto('/branches');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Capture the total count before refresh
     const totalBefore = await page.locator('#branches-stat-total').textContent();
@@ -114,7 +114,7 @@ test.describe('Branches Page', () => {
 
   test('search filter narrows visible rows without showing the error state', async ({ page }) => {
     await page.goto('/branches');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const tableVisible = await page.locator('#branches-table-wrap').isVisible().catch(() => false);
     if (!tableVisible) {
@@ -138,7 +138,7 @@ test.describe('Branches Page', () => {
 
   test('age heat bar is rendered for each branch row', async ({ page }) => {
     await page.goto('/branches');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const tableVisible = await page.locator('#branches-table-wrap').isVisible().catch(() => false);
     if (!tableVisible) {
@@ -162,7 +162,7 @@ test.describe('Branches Page', () => {
 
   test('branches page is responsive at mobile and desktop widths', async ({ page }) => {
     await page.goto('/branches');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Mobile — Playwright's expect() auto-retries, no arbitrary sleep needed
     await page.setViewportSize({ width: 375, height: 667 });

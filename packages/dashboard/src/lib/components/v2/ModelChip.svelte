@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { codexProfileFor } from '$lib/modelProfiles';
+
   type Model = 'opus' | 'sonnet' | 'haiku' | string;
   type Size = 'sm' | 'md';
 
@@ -11,8 +13,11 @@
 
   let { model = '', tier = '', effort = null, size = 'sm' }: Props = $props();
 
-  const colorKey = $derived(tier || model);
-  const isCodexProfile = $derived(model.toLowerCase().includes('codex') || model.toLowerCase().startsWith('gpt-'));
+  const profile = $derived(codexProfileFor(model || tier, effort));
+  const displayModel = $derived(profile?.modelId ?? model);
+  const displayEffort = $derived(effort ?? profile?.effort ?? null);
+  const colorKey = $derived(tier || profile?.tier || model);
+  const isCodexProfile = $derived(displayModel.toLowerCase().includes('codex') || displayModel.toLowerCase().startsWith('gpt-'));
 
   const color = $derived(
     colorKey === 'opus'   ? 'var(--af-opus)'   :
@@ -42,12 +47,12 @@
   );
 </script>
 
-{#if model}
+{#if displayModel}
   <span style={inlineStyle}>
-    <span>{model}</span>
-    {#if effort}
+    <span>{displayModel}</span>
+    {#if displayEffort}
       <span aria-hidden="true">·</span>
-      <span style={effortStyle}>{effort}</span>
+      <span style={effortStyle}>{displayEffort}</span>
     {/if}
   </span>
 {:else}

@@ -959,7 +959,7 @@ test.describe('Inbox Route (/inbox)', () => {
 
   test('inbox page displays messages or empty state', async ({ page }) => {
     await navigateAndVerify(page, '/inbox');
-    await page.waitForLoadState('networkidle').catch(() => {});
+    await page.waitForLoadState('domcontentloaded').catch(() => {});
 
     const messages = page.locator('[data-testid="inbox-message"], .message-item, [role="article"]').first();
     const emptyState = page.locator('[data-testid="empty-state"], .empty-state').first();
@@ -986,7 +986,7 @@ test.describe('Insights Route (/insights)', () => {
 
   test('insights page displays metrics or visualizations', async ({ page }) => {
     await navigateAndVerify(page, '/insights');
-    await page.waitForLoadState('networkidle').catch(() => {});
+    await page.waitForLoadState('domcontentloaded').catch(() => {});
 
     const metrics = page.locator('[data-testid="metric"], [data-testid="card"], .metric-card').first();
     const charts = page.locator('canvas, svg[role="img"]').first();
@@ -1013,7 +1013,7 @@ test.describe('Audit Route (/audit)', () => {
 
   test('audit page displays entries or empty state', async ({ page }) => {
     await navigateAndVerify(page, '/audit');
-    await page.waitForLoadState('networkidle').catch(() => {});
+    await page.waitForLoadState('domcontentloaded').catch(() => {});
 
     const entries = page.locator('[data-testid="audit-entry"], .audit-row, [role="row"]').first();
     const emptyState = page.locator('[data-testid="empty-state"], .empty-state').first();

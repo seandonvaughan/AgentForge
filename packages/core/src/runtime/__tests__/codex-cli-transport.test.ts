@@ -26,7 +26,7 @@ describe('CodexCliTransport.buildCodexArgs', () => {
     const transport = new CodexCliTransport();
     const args = transport.buildCodexArgs(makeRequest({ cwd: '/repo/worktree' }), '/tmp/last.txt');
 
-    expect(args.slice(0, 5)).toEqual(['--ask-for-approval', 'on-failure', 'exec', '--ignore-user-config', '--json']);
+    expect(args.slice(0, 6)).toEqual(['--ask-for-approval', 'never', 'exec', '--ignore-user-config', '--ignore-rules', '--json']);
     expect(args).toContain('--cd');
     expect(args[args.indexOf('--cd') + 1]).toBe('/repo/worktree');
     expect(args).toContain('--sandbox');
@@ -35,6 +35,9 @@ describe('CodexCliTransport.buildCodexArgs', () => {
     expect(args[args.indexOf('--model') + 1]).toBe('gpt-5.3-codex');
     expect(args).toContain('-c');
     expect(args).toContain('model_reasoning_effort=high');
+    if (process.platform === 'win32') {
+      expect(args).toContain('windows.sandbox=elevated');
+    }
   });
 
   it('allows sandbox and output schema overrides', () => {
@@ -46,6 +49,7 @@ describe('CodexCliTransport.buildCodexArgs', () => {
     );
 
     expect(args[args.indexOf('--sandbox') + 1]).toBe('read-only');
+    expect(args).not.toContain('windows.sandbox=elevated');
     expect(args).toContain('--output-schema');
     expect(args[args.indexOf('--output-schema') + 1]).toBe('/tmp/schema.json');
   });

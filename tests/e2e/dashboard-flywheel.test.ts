@@ -15,7 +15,7 @@ test.describe('Flywheel Page', () => {
   test('displays flywheel heading', async ({ page }) => {
     await page.goto('/flywheel');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for heading
     const heading = page.locator('h1, h2').filter({ hasText: /Flywheel|Meta|Learning|Feedback/i }).first();
@@ -28,7 +28,7 @@ test.describe('Flywheel Page', () => {
   test('displays flywheel visualization or metrics', async ({ page }) => {
     await page.goto('/flywheel');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for flywheel diagram, chart, or metrics
     const flywheelViz = page.locator('[class*="flywheel"], [class*="chart"], [class*="graph"], svg, canvas').first();
@@ -43,7 +43,7 @@ test.describe('Flywheel Page', () => {
   test('displays learning cycles or phases', async ({ page }) => {
     await page.goto('/flywheel');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for cycle or phase labels
     const cycleLabels = page.locator('text=/cycle|phase|stage|step|iteration/i');
@@ -57,7 +57,7 @@ test.describe('Flywheel Page', () => {
   test('displays autonomy or capability information', async ({ page }) => {
     await page.goto('/flywheel');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for autonomy or capability metrics
     const autonomyInfo = page.locator('text=/autonomy|capability|level|progress|score/i');
@@ -71,7 +71,7 @@ test.describe('Flywheel Page', () => {
   test('displays feedback or learning indicators', async ({ page }) => {
     await page.goto('/flywheel');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for feedback or learning-related elements
     const feedbackElements = page.locator('text=/feedback|learning|improvement|score|rating/i');
@@ -85,7 +85,7 @@ test.describe('Flywheel Page', () => {
   test('flywheel page handles loading and empty states', async ({ page }) => {
     await page.goto('/flywheel');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Check for either content or empty state
     const loading = page.locator('text=/loading|Loading/i').first();
@@ -104,7 +104,7 @@ test.describe('Flywheel Page', () => {
   test('memory stats card renders total entries, sparkline, and hit rate', async ({ page }) => {
     await page.goto('/flywheel');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // +page.server.ts always computes memoryStats via computeMemoryStats() —
     // even for an empty project the function returns { totalEntries: 0,
@@ -137,7 +137,7 @@ test.describe('Flywheel Page', () => {
   test('flywheel page is responsive', async ({ page }) => {
     await page.goto('/flywheel');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Test mobile view
     await page.setViewportSize({ width: 375, height: 667 });

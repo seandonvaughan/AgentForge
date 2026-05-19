@@ -15,7 +15,7 @@ test.describe('Sessions Page', () => {
   test('displays sessions heading', async ({ page }) => {
     await page.goto('/sessions');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for heading
     const heading = page.locator('h1, h2').filter({ hasText: /Session|Activity|History/i }).first();
@@ -28,7 +28,7 @@ test.describe('Sessions Page', () => {
   test('displays sessions list or grid', async ({ page }) => {
     await page.goto('/sessions');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for sessions list, grid, or table
     const sessionsList = page.locator('[class*="session"], [class*="list"], [role="table"], [role="grid"]').first();
@@ -47,7 +47,7 @@ test.describe('Sessions Page', () => {
   test('displays session information (id, status, duration)', async ({ page }) => {
     await page.goto('/sessions');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for session identifiers or metadata
     const sessionInfo = page.locator('text=/session|id|status|duration|time|started|ended/i');
@@ -61,7 +61,7 @@ test.describe('Sessions Page', () => {
   test('displays session status or activity indicators', async ({ page }) => {
     await page.goto('/sessions');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for status badges
     const statusBadges = page.locator('[class*="badge"], [class*="status"], text=/active|completed|failed|pending|running/i');
@@ -75,7 +75,7 @@ test.describe('Sessions Page', () => {
   test('session items are clickable for details', async ({ page }) => {
     await page.goto('/sessions');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for clickable session items
     const sessionLinks = page.locator('a, button, [role="button"]').filter({ hasText: /session|view|details|open/i });
@@ -89,7 +89,7 @@ test.describe('Sessions Page', () => {
   test('displays session metadata (agent, task, result)', async ({ page }) => {
     await page.goto('/sessions');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for session context
     const agentInfo = page.locator('text=/agent|task|workflow|request|result/i');
@@ -103,7 +103,7 @@ test.describe('Sessions Page', () => {
   test('sessions page handles loading and empty states', async ({ page }) => {
     await page.goto('/sessions');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Check for either content or empty state
     const loading = page.locator('text=/loading|Loading/i').first();
@@ -122,7 +122,7 @@ test.describe('Sessions Page', () => {
   test('sessions page is responsive', async ({ page }) => {
     await page.goto('/sessions');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Test mobile view
     await page.setViewportSize({ width: 375, height: 667 });

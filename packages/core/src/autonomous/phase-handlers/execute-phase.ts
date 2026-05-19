@@ -817,7 +817,8 @@ export async function runExecutePhase(
       );
       for (let attempt = 0; attempt <= maxItemRetries; attempt++) {
         attempts = attempt + 1;
-        const task = buildItemPrompt(item, ctx.projectRoot, attempt, lastError, memoryEntries, selfEvalDisabled);
+        const runtimeCwd = worktreeHandle?.path ?? ctx.projectRoot;
+        const task = buildItemPrompt(item, runtimeCwd, attempt, lastError, memoryEntries, selfEvalDisabled);
         ctx.bus.publish('sprint.phase.item.started', {
           sprintId: ctx.sprintId,
           phase,

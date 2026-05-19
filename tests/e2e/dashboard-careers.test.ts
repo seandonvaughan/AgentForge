@@ -15,7 +15,7 @@ test.describe('Careers Page', () => {
   test('displays careers heading and introduction', async ({ page }) => {
     await page.goto('/careers');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for heading
     const heading = page.locator('h1, h2').filter({ hasText: /Career|Job|Hiring|Join/i }).first();
@@ -28,7 +28,7 @@ test.describe('Careers Page', () => {
   test('displays job listings or positions', async ({ page }) => {
     await page.goto('/careers');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for job listings
     const jobList = page.locator('[class*="job"], [class*="position"], [class*="role"]').first();
@@ -45,7 +45,7 @@ test.describe('Careers Page', () => {
   test('displays job metadata (title, level, department, location)', async ({ page }) => {
     await page.goto('/careers');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for job details
     const jobTitle = page.locator('text=/Engineer|Designer|Manager|Product/i').first();
@@ -65,7 +65,7 @@ test.describe('Careers Page', () => {
   test('displays apply or learn more buttons', async ({ page }) => {
     await page.goto('/careers');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for action buttons
     const applyButton = page.locator('button, a').filter({ hasText: /Apply|Learn|More|View|Details/i }).first();
@@ -80,7 +80,7 @@ test.describe('Careers Page', () => {
   test('displays job categories or filters', async ({ page }) => {
     await page.goto('/careers');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for filter or category controls
     const filterButton = page.locator('button, [role="button"]').filter({ hasText: /filter|category|department|level|type/i }).first();
@@ -97,7 +97,7 @@ test.describe('Careers Page', () => {
   test('displays company culture or benefits information', async ({ page }) => {
     await page.goto('/careers');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for benefits or culture info
     const benefits = page.locator('text=/benefit|culture|perks|health|remote|401|equity/i');
@@ -111,7 +111,7 @@ test.describe('Careers Page', () => {
   test('careers page handles loading and empty states', async ({ page }) => {
     await page.goto('/careers');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Check for either content or empty state
     const loading = page.locator('text=/loading|Loading|fetching/i').first();
@@ -128,7 +128,7 @@ test.describe('Careers Page', () => {
   test('careers page is responsive', async ({ page }) => {
     await page.goto('/careers');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Test mobile view
     await page.setViewportSize({ width: 375, height: 667 });
@@ -148,7 +148,7 @@ test.describe('Careers Page', () => {
   test('displays job search or filtering capability', async ({ page }) => {
     await page.goto('/careers');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for search or filter controls
     const searchInput = page.locator('input[type="search"], input[type="text"], [class*="search"]').first();
