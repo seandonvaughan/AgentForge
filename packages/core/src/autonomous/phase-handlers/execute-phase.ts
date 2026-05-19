@@ -1104,7 +1104,7 @@ export async function runExecutePhase(
             agentId: item.assignee,
             itemIds: [item.id],
             ...(ctx.cycleId !== undefined ? { sessionId: ctx.cycleId, cycleId: ctx.cycleId } : { sessionId: ctx.sprintId }),
-            bus: ctx.bus as unknown as import('../../message-bus/message-bus.js').MessageBusV2,
+            bus: ctx.bus,
           });
         } catch { /* commit errors are non-fatal — log silently */ }
       }

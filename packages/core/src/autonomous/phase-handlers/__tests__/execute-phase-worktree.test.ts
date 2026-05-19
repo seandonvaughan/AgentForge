@@ -424,6 +424,45 @@ describe('execute-phase worktree integration', () => {
     expect(typeof itemResult.worktreeBranch).toBe('string');
   });
 
+  it('publishes agent.branch.pushed through the phase bus after worktree commit', async () => {
+    const worktreePath = join(tmpRoot, 'wt-branch-event');
+    await initGitRepo(worktreePath);
+    writeSprintFile([
+      { id: 'item-1', title: 'Task A', assignee: 'coder', tags: ['coder'] },
+    ]);
+
+    const pool = makeSpyPool(worktreePath);
+    const bus = makeBus();
+    const runtime = {
+      run: vi.fn().mockImplementation(async (_agentId: string, _task: string, options: { cwd?: string }) => {
+        if (!options.cwd) throw new Error('missing worktree cwd');
+        writeFileSync(join(options.cwd, 'feature.ts'), 'export const feature = true;\n');
+        return {
+          output: 'Implemented feature.ts',
+          costUsd: 0.01,
+        };
+      }),
+    };
+    const ctx = makeCtx(bus, {
+      worktreePool: pool,
+      runtime,
+      baseBranch: 'codex/codex-version',
+    });
+
+    const result = await runExecutePhase(ctx, { maxParallelism: 1, maxItemRetries: 0 });
+
+    expect(result.status).toBe('completed');
+    const branchEvents = bus.events.filter((e) => e.topic === 'agent.branch.pushed');
+    expect(branchEvents).toHaveLength(1);
+    const payload = branchEvents[0]!.payload as any;
+    expect(payload.cycleId).toBe('cycle-wt-1');
+    expect(payload.agentId).toBe('coder');
+    expect(payload.branch).toBe('autonomous/coder');
+    expect(payload.baseBranch).toBe('codex/codex-version');
+    expect(payload.filesChanged).toBeGreaterThan(0);
+    expect(payload.localOnly).toBe(true);
+  });
+
   it('marks a coder item failed when the worktree has no source changes', async () => {
     const worktreePath = join(tmpRoot, 'wt-no-change');
     await initGitRepo(worktreePath);

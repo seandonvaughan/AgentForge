@@ -40,7 +40,7 @@ export interface AgentCommitOptions {
   /** Sprint item ids the agent worked on. */
   itemIds: string[];
   /** Optional bus to emit `agent.branch.pushed` on after a successful push. */
-  bus?: MessageBusV2;
+  bus?: AgentCommitBus;
 }
 
 export interface AgentCommitResult {
@@ -60,6 +60,12 @@ export interface AgentCommitResult {
    */
   localOnly: boolean;
 }
+
+interface PhaseBusLike {
+  publish(topic: 'agent.branch.pushed', payload: AgentBranchPushedPayload): void;
+}
+
+type AgentCommitBus = MessageBusV2 | PhaseBusLike;
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
@@ -92,6 +98,29 @@ async function hasChanges(worktreePath: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+function isMessageBusV2(bus: AgentCommitBus): bus is MessageBusV2 {
+  return typeof (bus as { getStats?: unknown }).getStats === 'function';
+}
+
+function publishAgentBranchPushed(
+  bus: AgentCommitBus,
+  agentId: string,
+  payload: AgentBranchPushedPayload,
+): void {
+  if (isMessageBusV2(bus)) {
+    bus.publish({
+      from: agentId as import('@agentforge/shared').AgentId,
+      to: 'system',
+      topic: 'agent.branch.pushed',
+      category: 'task',
+      payload,
+    });
+    return;
+  }
+
+  bus.publish('agent.branch.pushed', payload);
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -219,13 +248,7 @@ export async function commitAgentWork(
       ...(localOnly ? { localOnly: true } : {}),
     };
 
-    bus.publish({
-      from: agentId as import('@agentforge/shared').AgentId,
-      to: 'system',
-      topic: 'agent.branch.pushed',
-      category: 'task',
-      payload,
-    });
+    publishAgentBranchPushed(bus, agentId, payload);
   }
 
   return {

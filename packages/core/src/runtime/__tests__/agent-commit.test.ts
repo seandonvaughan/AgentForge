@@ -205,6 +205,35 @@ describe('commitAgentWork', () => {
     expect(ev.localOnly).toBe(true); // no remote in this repo
   });
 
+  it('emits agent.branch.pushed through the phase bus facade', async () => {
+    const dir = await createLocalRepo();
+    dirs.push(dir);
+    makeChange(dir, 'phase-bus.ts', 'export const phaseBus = true;\n');
+
+    const events: Array<{ topic: string; payload: AgentBranchPushedPayload }> = [];
+    const phaseBus = {
+      publish: (topic: string, payload: AgentBranchPushedPayload) => {
+        events.push({ topic, payload });
+      },
+    };
+
+    await commitAgentWork({
+      worktreePath: dir,
+      branch: 'autonomous/agent-coder-phase-bus',
+      agentId: 'agent-coder',
+      sessionId: 'sess-phase',
+      cycleId: 'cycle-phase',
+      itemIds: ['ITEM-PHASE'],
+      bus: phaseBus,
+    });
+
+    expect(events).toHaveLength(1);
+    expect(events[0]!.topic).toBe('agent.branch.pushed');
+    expect(events[0]!.payload.cycleId).toBe('cycle-phase');
+    expect(events[0]!.payload.branch).toBe('autonomous/agent-coder-phase-bus');
+    expect(events[0]!.payload.localOnly).toBe(true);
+  });
+
   // ── 6. commitSha is 40-char hex ───────────────────────────────────────────
   it('commitSha is a valid 40-char hex SHA', async () => {
     const dir = await createLocalRepo();
