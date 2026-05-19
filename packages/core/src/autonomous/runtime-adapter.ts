@@ -21,12 +21,21 @@ import type { WorkspaceAdapter } from '@agentforge/db';
 import type { RuntimeForScoring } from './scoring-pipeline.js';
 import type { ModelTier } from '@agentforge/shared';
 import type { RuntimeJobSupervisor } from '../runtime/runtime-job-supervisor.js';
+import type { CodexSandboxMode } from '../runtime/types.js';
 import {
   extractBreakdownFromAgentRun,
   type CostBreakdown,
 } from './cost-breakdown.js';
 
 const TIER_RANK: Record<ModelTier, number> = { opus: 2, sonnet: 1, haiku: 0 };
+
+interface RuntimeRunOptions {
+  responseFormat?: string;
+  allowedTools?: string[];
+  timeoutMs?: number;
+  cwd?: string;
+  codexSandbox?: CodexSandboxMode;
+}
 
 function capModelTier(requested: ModelTier, cap: ModelTier): { model: ModelTier; effort?: string } {
   const downgraded = TIER_RANK[requested] > TIER_RANK[cap];
@@ -121,7 +130,7 @@ export class RuntimeAdapter implements RuntimeForScoring {
   async run(
     agentId: string,
     task: string,
-    options?: { responseFormat?: string; allowedTools?: string[]; timeoutMs?: number; cwd?: string },
+    options?: RuntimeRunOptions,
   ): Promise<{
     output: string;
     usage: {
@@ -147,10 +156,11 @@ export class RuntimeAdapter implements RuntimeForScoring {
 
     const runtime = await this.getOrCreateRuntime(agentId);
     const startedAt = Date.now();
-    const runOpts: { task: string; allowedTools?: string[]; enableFallback?: boolean; timeoutMs?: number; cwd?: string } = { task };
+    const runOpts: { task: string; allowedTools?: string[]; enableFallback?: boolean; timeoutMs?: number; cwd?: string; codexSandbox?: CodexSandboxMode } = { task };
     if (options?.allowedTools) runOpts.allowedTools = options.allowedTools;
     if (options?.timeoutMs !== undefined) runOpts.timeoutMs = options.timeoutMs;
     if (options?.cwd !== undefined) runOpts.cwd = options.cwd;
+    if (options?.codexSandbox !== undefined) runOpts.codexSandbox = options.codexSandbox;
     // Thread enableFallback from adapter options into each run call.
     if (this.options.enableFallback !== undefined) {
       runOpts.enableFallback = this.options.enableFallback;
@@ -200,7 +210,7 @@ export class RuntimeAdapter implements RuntimeForScoring {
   private async _runWithSupervisor(
     agentId: string,
     task: string,
-    options?: { responseFormat?: string; allowedTools?: string[]; timeoutMs?: number; cwd?: string },
+    options?: RuntimeRunOptions,
   ): Promise<{
     output: string;
     usage: {
@@ -223,10 +233,11 @@ export class RuntimeAdapter implements RuntimeForScoring {
     const job = supervisor.createJob({ agentId, task });
 
     const runResult = await supervisor.startJob(job.id, () => {
-      const runOpts: { task: string; allowedTools?: string[]; enableFallback?: boolean; timeoutMs?: number; cwd?: string } = { task };
+      const runOpts: { task: string; allowedTools?: string[]; enableFallback?: boolean; timeoutMs?: number; cwd?: string; codexSandbox?: CodexSandboxMode } = { task };
       if (options?.allowedTools) runOpts.allowedTools = options.allowedTools;
       if (options?.timeoutMs !== undefined) runOpts.timeoutMs = options.timeoutMs;
       if (options?.cwd !== undefined) runOpts.cwd = options.cwd;
+      if (options?.codexSandbox !== undefined) runOpts.codexSandbox = options.codexSandbox;
       if (this.options.enableFallback !== undefined) {
         runOpts.enableFallback = this.options.enableFallback;
       }

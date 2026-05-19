@@ -102,6 +102,11 @@ async function writeProposed(byAgent: Record<string, ProposedLearning[]>): Promi
   await writeFile(join(forgeDir, "learnings-proposed.json"), JSON.stringify(byAgent), "utf8");
 }
 
+async function writeRawProposed(value: unknown): Promise<void> {
+  const { writeFile } = await import("node:fs/promises");
+  await writeFile(join(forgeDir, "learnings-proposed.json"), JSON.stringify(value), "utf8");
+}
+
 async function readAgentYaml(agentId: string): Promise<Record<string, unknown>> {
   const raw = await readFile(join(agentsDir, `${agentId}.yaml`), "utf8");
   return yaml.load(raw) as Record<string, unknown>;
@@ -423,6 +428,68 @@ learnings:
     // One deduped, one added
     expect(entry.deduped).toBe(1);
     expect(entry.added).toHaveLength(1);
+  });
+
+  it("skips malformed existing learnings instead of crashing during mutation", async () => {
+    const { writeFile } = await import("node:fs/promises");
+    const malformedYaml = `
+name: Architect
+model: opus
+system_prompt: You are the architect.
+learnings:
+  - "Always keep valid persisted lessons."
+  -
+  - 42
+  - bad: true
+`.trim();
+    await writeFile(join(agentsDir, `${AGENT_A}.yaml`), malformedYaml, "utf8");
+    await writeProposed({
+      [AGENT_A]: [
+        makeProposal({
+          agentId: AGENT_A,
+          lesson: "Always merge only valid learning entries.",
+          score: 0.8,
+        }),
+      ],
+    });
+
+    const report = await applyLearnings({ projectRoot: tmpRoot });
+
+    const entry = report.perAgent.find((p) => p.agentId === AGENT_A)!;
+    expect(entry.before).toBe(1);
+    expect(entry.after).toBe(2);
+    expect(entry.added).toContain("Always merge only valid learning entries.");
+
+    const data = await readAgentYaml(AGENT_A);
+    const learnings = data["learnings"] as unknown[];
+    expect(learnings).toContain("Always keep valid persisted lessons.");
+    expect(learnings).toContain("Always merge only valid learning entries.");
+    expect(learnings.every((learning) => typeof learning === "string")).toBe(true);
+  });
+
+  it("skips malformed proposed learnings instead of crashing during mutation", async () => {
+    await writeRawProposed({
+      [AGENT_B]: [
+        makeProposal({
+          agentId: AGENT_B,
+          lesson: "Always keep the valid proposal.",
+          score: 0.8,
+        }),
+        { agentId: AGENT_B, score: 0.9, sourceCreatedAt: "2026-05-17T10:00:00.000Z" },
+        { agentId: AGENT_B, lesson: undefined, score: 0.9, sourceCreatedAt: "2026-05-17T10:00:00.000Z" },
+        { agentId: AGENT_B, lesson: "   ", score: 0.9, sourceCreatedAt: "2026-05-17T10:00:00.000Z" },
+        null,
+      ],
+    });
+
+    const report = await applyLearnings({ projectRoot: tmpRoot });
+
+    const entry = report.perAgent.find((p) => p.agentId === AGENT_B)!;
+    expect(entry.added).toEqual(["Always keep the valid proposal."]);
+    expect(entry.after).toBe(1);
+
+    const data = await readAgentYaml(AGENT_B);
+    expect(data["learnings"]).toEqual(["Always keep the valid proposal."]);
   });
 
   // -------------------------------------------------------------------------

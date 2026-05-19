@@ -6,7 +6,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
 
-export const LEARN_PHASE_DEFAULT_TOOLS = ['Read', 'Bash', 'Glob', 'Grep'];
+export const LEARN_PHASE_DEFAULT_TOOLS = ['Read', 'Glob', 'Grep'];
 
 export interface LearnPhaseOptions {
   allowedTools?: string[];
@@ -67,13 +67,15 @@ export async function runLearnPhase(
     if (cycleJson) summary.cycle = { stage: cycleJson.stage };
   }
 
-  const task = `You are the data-analyst for AgentForge. Sprint v${ctx.sprintVersion} has completed. Write a retrospective (markdown, ~400 words) covering:
+  const task = `You are the data-analyst for AgentForge. Sprint v${ctx.sprintVersion} has completed. Return a retrospective (markdown, ~400 words) covering:
 
 1. What went well (specific items, specific agents)
 2. What failed or underperformed (with root cause guesses)
 3. Cost vs. expected — were estimates accurate?
 4. Test results — any flaky or concerning tests?
 5. Recommendations for the next cycle (concrete items to add to the backlog)
+
+Return the markdown as your final answer only. Do not create, edit, delete, or append any files; AgentForge persists your response into cycle artifacts.
 
 Cycle data summary:
 ${JSON.stringify(summary, null, 2)}
@@ -88,7 +90,10 @@ Format as markdown with section headers.`;
   let error: string | undefined;
 
   try {
-    const result = await ctx.runtime.run(agentId, task, { allowedTools });
+    const result = await ctx.runtime.run(agentId, task, {
+      allowedTools,
+      codexSandbox: 'read-only',
+    });
     retrospective = typeof result?.output === 'string' ? result.output : '';
     costUsd = typeof result?.costUsd === 'number' ? result.costUsd : 0;
     if (typeof (result as any)?.model === 'string') model = (result as any).model;
@@ -119,6 +124,14 @@ Format as markdown with section headers.`;
     );
     try {
       mkdirSync(dirname(phaseJsonPath), { recursive: true });
+      const retrospectivePath = join(
+        ctx.projectRoot,
+        '.agentforge',
+        'cycles',
+        ctx.cycleId,
+        'retrospective.md',
+      );
+      writeFileSync(retrospectivePath, retrospective, 'utf8');
       writeFileSync(
         phaseJsonPath,
         JSON.stringify(
@@ -128,6 +141,7 @@ Format as markdown with section headers.`;
             sprintVersion: ctx.sprintVersion,
             cycleId: ctx.cycleId,
             agentId,
+            retrospectivePath,
             retrospective,
             costUsd,
             durationMs,

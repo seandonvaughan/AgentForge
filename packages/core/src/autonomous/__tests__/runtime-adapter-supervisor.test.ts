@@ -203,6 +203,7 @@ describe('RuntimeAdapter with supervisor', () => {
     const result = await runtimeAdapter.run('coder', 'Heavy reasoning task', {
       allowedTools: ['Read', 'Write'],
       timeoutMs: customTimeoutMs,
+      codexSandbox: 'read-only',
     });
 
     expect(result.output).toBe('done with custom timeout');
@@ -212,6 +213,7 @@ describe('RuntimeAdapter with supervisor', () => {
       expect.objectContaining({
         task: 'Heavy reasoning task',
         timeoutMs: customTimeoutMs,
+        codexSandbox: 'read-only',
       }),
     );
   });
@@ -238,6 +240,7 @@ describe('RuntimeAdapter with supervisor', () => {
     const result = await runtimeAdapter.run('coder', 'Heavy task', {
       allowedTools: ['Read'],
       timeoutMs: customTimeoutMs,
+      codexSandbox: 'read-only',
     });
 
     expect(result.output).toBe('done with supervisor timeout');
@@ -246,6 +249,7 @@ describe('RuntimeAdapter with supervisor', () => {
     expect(mockRun).toHaveBeenCalledWith(
       expect.objectContaining({
         timeoutMs: customTimeoutMs,
+        codexSandbox: 'read-only',
       }),
     );
   });

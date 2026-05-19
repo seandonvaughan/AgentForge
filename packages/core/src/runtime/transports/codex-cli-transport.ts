@@ -250,6 +250,9 @@ export class CodexCliTransport implements ExecutionTransport {
 
   private buildPrompt(request: ExecutionRequest): string {
     const sandbox = this.resolveSandbox(request);
+    const sandboxInstruction = sandbox === 'read-only'
+      ? `Codex is running non-interactively with sandbox "${sandbox}". Inspect files as needed, but do not create, edit, delete, or append files. Return the requested result in the final answer.`
+      : `Codex is running non-interactively with sandbox "${sandbox}". You may create, edit, and delete files inside the working directory when the task requires it. Do not stop as read-only unless an actual write command fails.`;
     const allowedTools = request.allowedTools?.length
       ? `\n\nAllowed tool names requested by AgentForge: ${request.allowedTools.join(', ')}. Use only equivalent Codex capabilities available in this sandbox.`
       : '';
@@ -259,7 +262,7 @@ export class CodexCliTransport implements ExecutionTransport {
 
     return [
       `You are AgentForge agent "${request.agent.name}" (${request.agent.agentId}).`,
-      `Codex is running non-interactively with sandbox "${sandbox}". You may create, edit, and delete files inside the working directory when the task requires it. Do not stop as read-only unless an actual write command fails.`,
+      sandboxInstruction,
       '<system>',
       request.agent.systemPrompt,
       '</system>',

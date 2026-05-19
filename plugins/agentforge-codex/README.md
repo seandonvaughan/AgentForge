@@ -27,6 +27,14 @@ Single-agent smoke:
 AGENTFORGE_RUNTIME=codex-cli node packages/cli/dist/bin.js run invoke --agent cli-engineer --task "Return a short readiness summary." --runtime codex-cli
 ```
 
+Default Codex runtime tier mapping:
+
+| AgentForge tier | Codex model | Reasoning effort |
+| --- | --- | --- |
+| `opus` | `gpt-5.5` | `xhigh` |
+| `sonnet` | `gpt-5.3-codex` | `high` |
+| `haiku` | `gpt-5.4-mini` | `medium` |
+
 PowerShell:
 
 ```powershell

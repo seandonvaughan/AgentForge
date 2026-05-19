@@ -54,6 +54,16 @@ describe('CodexCliTransport.buildCodexArgs', () => {
     expect(args[args.indexOf('--output-schema') + 1]).toBe('/tmp/schema.json');
   });
 
+  it('uses read-only prompt instructions when sandbox is read-only', () => {
+    const transport = new CodexCliTransport();
+    const prompt = (transport as unknown as { buildPrompt: (request: ExecutionRequest) => string })
+      .buildPrompt(makeRequest({ codexSandbox: 'read-only' }));
+
+    expect(prompt).toContain('sandbox "read-only"');
+    expect(prompt).toContain('do not create, edit, delete, or append files');
+    expect(prompt).not.toContain('You may create, edit, and delete files');
+  });
+
   it('honors explicit workspace-write sandbox overrides', () => {
     const transport = new CodexCliTransport();
     const args = transport.buildCodexArgs(makeRequest({ codexSandbox: 'workspace-write' }), '/tmp/last.txt');

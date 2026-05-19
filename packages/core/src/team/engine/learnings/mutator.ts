@@ -134,7 +134,7 @@ function areContradicting(a: string, b: string): boolean {
 // ---------------------------------------------------------------------------
 
 interface AgentYaml {
-  learnings?: string[];
+  learnings?: unknown[];
   [key: string]: unknown;
 }
 
@@ -172,8 +172,72 @@ interface RichLearning {
   sourceCreatedAt: string;
 }
 
+function asLearningText(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function asScore(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function asSourceCreatedAt(value: unknown): string {
+  return typeof value === "string" && value.trim().length > 0
+    ? value
+    : "1970-01-01T00:00:00.000Z";
+}
+
+function asSeverity(value: unknown): ProposedLearning["severity"] {
+  return value === "CRITICAL" ||
+    value === "MAJOR" ||
+    value === "MINOR" ||
+    value === "INFO"
+    ? value
+    : "INFO";
+}
+
+function asRationale(value: unknown): ProposedLearning["rationale"] {
+  return value === "role-tag" ||
+    value === "subsystem" ||
+    value === "recurring-pattern"
+    ? value
+    : "role-tag";
+}
+
+function sanitizeExistingLearnings(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map(asLearningText)
+    .filter((lesson): lesson is string => lesson !== null);
+}
+
+function sanitizeProposal(value: unknown, agentId: string): ProposedLearning | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as Partial<ProposedLearning>;
+  const lesson = asLearningText(raw.lesson);
+  if (!lesson) return null;
+
+  return {
+    agentId: asLearningText(raw.agentId) ?? agentId,
+    lesson,
+    score: asScore(raw.score),
+    sourceId: asLearningText(raw.sourceId) ?? "unknown",
+    severity: asSeverity(raw.severity),
+    rationale: asRationale(raw.rationale),
+    sourceCreatedAt: asSourceCreatedAt(raw.sourceCreatedAt),
+  };
+}
+
+function sanitizeProposals(value: unknown, agentId: string): ProposedLearning[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((proposal) => sanitizeProposal(proposal, agentId))
+    .filter((proposal): proposal is ProposedLearning => proposal !== null);
+}
+
 function mutateAgentLearnings(
-  existing: string[],
+  existingInput: readonly unknown[],
   proposals: ProposedLearning[],
 ): {
   merged: string[];
@@ -182,6 +246,8 @@ function mutateAgentLearnings(
   contradicted: number;
   capped: number;
 } {
+  const existing = sanitizeExistingLearnings(existingInput);
+
   // Build hash set of existing learnings for O(1) dedup
   const existingHashes = new Set<string>(existing.map(lessonHash));
 
@@ -319,21 +385,21 @@ export async function applyLearnings(
   }
 
   // Expected shape: Record<agentId, ProposedLearning[]>
-  const proposedByAgent = JSON.parse(rawProposed) as Record<
-    string,
-    ProposedLearning[]
-  >;
+  const parsedProposed: unknown = JSON.parse(rawProposed);
+  const proposedByAgent =
+    parsedProposed !== null && typeof parsedProposed === "object" && !Array.isArray(parsedProposed)
+      ? parsedProposed
+      : {};
 
   const perAgent: AgentMutatorResult[] = [];
 
-  for (const [agentId, proposals] of Object.entries(proposedByAgent)) {
-    if (!Array.isArray(proposals) || proposals.length === 0) continue;
+  for (const [agentId, proposalInput] of Object.entries(proposedByAgent)) {
+    const proposals = sanitizeProposals(proposalInput, agentId);
+    if (proposals.length === 0) continue;
 
     const agentPath = join(agentsDir, `${agentId}.yaml`);
     const agentData = await loadAgentYaml(agentPath);
-    const existing: string[] = Array.isArray(agentData.learnings)
-      ? (agentData.learnings as string[])
-      : [];
+    const existing = sanitizeExistingLearnings(agentData.learnings);
 
     const { merged, added, deduped, contradicted, capped } =
       mutateAgentLearnings(existing, proposals);

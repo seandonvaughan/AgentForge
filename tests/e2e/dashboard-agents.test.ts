@@ -100,6 +100,72 @@ test.describe('Agents List Page', () => {
     expect(page.url()).toMatch(/\/agents\//);
   });
 
+  test('agent detail Run action opens runner with the selected Codex agent', async ({ page }) => {
+    await page.goto('/agents/cli-engineer');
+    await page.waitForLoadState('domcontentloaded', { timeout: 3000 }).catch(() => {});
+
+    await expect(page.locator('h1')).toContainText(/cli-engineer/i);
+
+    await page.getByRole('link', { name: /run/i }).first().click();
+
+    await expect(page).toHaveURL(/\/runner\?agentId=cli-engineer/);
+    await expect(page.locator('#agent-select')).toHaveValue('cli-engineer');
+    await expect(page.locator('.cost-callout')).toContainText(/gpt-5\.3-codex|high/i);
+  });
+
+  test('agent detail config editor saves raw YAML through the management API', async ({ page }) => {
+    let savedYaml = '';
+    let rawGets = 0;
+    const initialYaml = [
+      'name: cli-engineer',
+      'model: sonnet',
+      'description: Original CLI engineer',
+      '',
+    ].join('\n');
+    const updatedYaml = [
+      'name: cli-engineer',
+      'model: sonnet',
+      'description: Updated from dashboard test',
+      '',
+    ].join('\n');
+
+    await page.route('**/api/v5/agents/cli-engineer/raw', async (route) => {
+      if (route.request().method() === 'PUT') {
+        const payload = route.request().postDataJSON() as { yaml?: string };
+        savedYaml = payload.yaml ?? '';
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ data: { yaml: savedYaml } }),
+        });
+        return;
+      }
+
+      rawGets += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { yaml: initialYaml } }),
+      });
+    });
+
+    await page.goto('/agents/cli-engineer');
+    await page.waitForLoadState('domcontentloaded', { timeout: 3000 }).catch(() => {});
+    await expect.poll(() => rawGets).toBeGreaterThan(0);
+
+    await page.getByRole('button', { name: 'Edit config' }).click();
+    await expect(page.getByRole('tab', { name: 'Config' })).toHaveAttribute('aria-selected', 'true');
+    const editor = page.getByLabel('Agent YAML configuration');
+    await expect(editor).toBeVisible();
+
+    await editor.fill(updatedYaml);
+    await page.getByRole('button', { name: 'Save' }).click();
+
+    await expect.poll(() => savedYaml).toContain('Updated from dashboard test');
+    await expect(page.locator('.af-save-ok')).toContainText('Saved');
+    await expect(page.locator('.af-yaml-preview')).toContainText('Updated from dashboard test');
+  });
+
   test('model tier badges are present on agent rows', async ({ page }) => {
     await page.goto('/agents');
 

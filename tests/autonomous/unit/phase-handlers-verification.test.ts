@@ -21,6 +21,7 @@ import {
   parseVerdict,
   parseReviewFindingMetadata,
   runReleasePhase,
+  runLearnPhase,
   type PhaseContext,
 } from '@agentforge/core';
 
@@ -160,6 +161,39 @@ describe('verification phase handlers', () => {
     expect(parseConfidence('')).toBe(3);
     expect(parseConfidence('no numbers here at all')).toBe(3);
     expect(parseConfidence('confidence: high')).toBe(3);
+  });
+
+  it('learn phase runs read-only and persists the returned retrospective inside the cycle', async () => {
+    const cycleId = 'cycle-learn';
+    const runtime = {
+      run: vi.fn().mockResolvedValue({
+        output: '# Retrospective\n\nReturned markdown only.',
+        costUsd: 0.05,
+        durationMs: 10,
+        model: 'gpt-5.4-mini',
+        effort: 'medium',
+      }),
+    };
+    const { bus } = makeMockBus();
+
+    const result = await runLearnPhase(
+      makeCtx({ cwd: tmpDir, sprintVersion: '6.5.2', cycleId, runtime, bus }),
+    );
+
+    expect(result.status).toBe('completed');
+    expect(runtime.run).toHaveBeenCalledWith(
+      'data-analyst',
+      expect.stringContaining('Do not create, edit, delete, or append any files'),
+      {
+        allowedTools: ['Read', 'Glob', 'Grep'],
+        codexSandbox: 'read-only',
+      },
+    );
+    expect(existsSync(join(tmpDir, '.agentforge/sprint-reports/v6.5.2-retrospective.md'))).toBe(false);
+    expect(readFileSync(
+      join(tmpDir, '.agentforge/cycles/cycle-learn/retrospective.md'),
+      'utf8',
+    )).toContain('Returned markdown only.');
   });
 
   // ----- REVIEW phase -----
