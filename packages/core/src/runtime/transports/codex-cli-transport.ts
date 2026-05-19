@@ -214,6 +214,7 @@ export class CodexCliTransport implements ExecutionTransport {
     const profile = getRequestModelProfile(this.kind, request);
     const args = [
       'exec',
+      '--ignore-user-config',
       '--json',
       '--cd', request.cwd ?? process.cwd(),
       '--sandbox', request.codexSandbox ?? 'workspace-write',
@@ -406,6 +407,6 @@ function buildCodexSpawnCommand(args: string[]): { command: string; args: string
 }
 
 function quoteCmdArg(value: string): string {
-  if (/^[A-Za-z0-9._=:/\\-]+$/.test(value)) return value;
+  if (/^[A-Za-z0-9._=:/\\~\-]+$/.test(value)) return value;
   return `"${value.replace(/"/g, '\\"')}"`;
 }

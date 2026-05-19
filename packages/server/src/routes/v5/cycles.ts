@@ -233,10 +233,29 @@ function launchConfigFields(config: Record<string, unknown>): Pick<
   };
 }
 
+function configuredBudgetUsd(config: Record<string, unknown>, fallback = 200): number {
+  const budget = config['budgetUsd'];
+  return typeof budget === 'number' && Number.isFinite(budget) && budget > 0
+    ? budget
+    : fallback;
+}
+
 function attachLaunchConfig<T extends Record<string, unknown>>(cycleDir: string, payload: T): T {
   const config = readCycleLaunchConfig(cycleDir);
   const fields = launchConfigFields(config) as Record<string, unknown>;
   const target = payload as Record<string, unknown>;
+  const budget = configuredBudgetUsd(config, NaN);
+  if (Number.isFinite(budget)) {
+    const cost = target['cost'];
+    if (cost && typeof cost === 'object' && !Array.isArray(cost)) {
+      const costRecord = cost as Record<string, unknown>;
+      if (typeof costRecord['budgetUsd'] !== 'number' || costRecord['budgetUsd'] === 200) {
+        costRecord['budgetUsd'] = budget;
+      }
+    } else if (typeof target['budgetUsd'] !== 'number' || target['budgetUsd'] === 200) {
+      target['budgetUsd'] = budget;
+    }
+  }
   for (const [key, value] of Object.entries(fields)) {
     if (value !== undefined) target[key] = value;
   }
@@ -255,7 +274,9 @@ function isTerminalCyclePayload(cycleJson: Record<string, unknown>): boolean {
 
 function summarizeCycle(cycleDir: string, cycleId: string, projectRoot?: string): CycleListRow | null {
   if (!existsSync(cycleDir)) return null;
-  const configFields = launchConfigFields(readCycleLaunchConfig(cycleDir));
+  const launchConfig = readCycleLaunchConfig(cycleDir);
+  const configFields = launchConfigFields(launchConfig);
+  const fallbackBudgetUsd = configuredBudgetUsd(launchConfig);
 
   const cycleJson = readJsonIfExists(join(cycleDir, 'cycle.json')) as
     | Record<string, unknown>
@@ -329,7 +350,7 @@ function summarizeCycle(cycleDir: string, cycleId: string, projectRoot?: string)
       completedAt: (cycleJson['completedAt'] as string) ?? null,
       durationMs: (cycleJson['durationMs'] as number) ?? null,
       costUsd,
-      budgetUsd: Number(cost['budgetUsd'] ?? 200),
+      budgetUsd: Number(cost['budgetUsd'] ?? fallbackBudgetUsd),
       testsPassed,
       testsTotal,
       prUrl: (pr['url'] as string) ?? null,
@@ -476,7 +497,7 @@ function summarizeCycle(cycleDir: string, cycleId: string, projectRoot?: string)
     completedAt: null,
     durationMs: Date.now() - new Date(startedAt).getTime(),
     costUsd,
-    budgetUsd: 200,
+    budgetUsd: fallbackBudgetUsd,
     testsPassed,
     testsTotal,
     prUrl: null,

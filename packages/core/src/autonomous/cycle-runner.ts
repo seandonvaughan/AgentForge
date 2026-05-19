@@ -632,6 +632,7 @@ export class CycleRunner {
           bus: this.options.bus,
           runtime: this.options.runtime,
           cycleId: this.cycleId,
+          baseBranch: this.options.config.git.baseBranch,
           ...(retryAttempt > 0 ? { retryAttempt, skipToPhase: 'execute' as PhaseName } : {}),
           ...(retryAttempt === 0 && skipToPhase !== undefined ? { skipToPhase } : {}),
           // T4.2: pass the pool (or undefined) through so the execute phase

@@ -1,7 +1,9 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render } from '@testing-library/svelte';
+import { describe, expect, it, vi } from 'vitest';
+import Btn from '../Btn.svelte';
 
 const componentPath = resolve(import.meta.dirname, '../Btn.svelte');
 const sourceRoot = resolve(import.meta.dirname, '../../../..');
@@ -18,6 +20,15 @@ function svelteFiles(dir: string): string[] {
 }
 
 describe('Btn', () => {
+  it('invokes onClick when the rendered button is clicked', async () => {
+    const onClick = vi.fn();
+    const { getByRole } = render(Btn, { props: { onClick } });
+
+    await fireEvent.click(getByRole('button'));
+
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
   it('exposes a non-reserved onClick prop and wires it to the native button', () => {
     const source = readFileSync(componentPath, 'utf8');
 

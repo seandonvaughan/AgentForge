@@ -56,6 +56,8 @@ packages/**/package-lock.json
 .agentforge/reports/
 .agentforge/forge/
 .agentforge/flywheel/
+.agentforge/worktrees/
+.agentforge/memory/step-scores.jsonl
 .agentforge/v5/recovery/
 *.png
 

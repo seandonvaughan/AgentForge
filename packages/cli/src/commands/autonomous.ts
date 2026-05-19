@@ -304,6 +304,7 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
         worktreePool = new WorktreePool({
           projectRoot: cwd,
           baseBranch: config.git.baseBranch,
+          branchPrefix: config.git.branchPrefix,
         });
       } catch (poolErr) {
         const poolMsg = poolErr instanceof Error ? poolErr.message : String(poolErr);

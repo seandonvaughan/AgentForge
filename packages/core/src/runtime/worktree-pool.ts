@@ -11,6 +11,12 @@ function sanitize(input: string): string {
   return input.replace(/[^a-zA-Z0-9_-]/g, '_');
 }
 
+function normalizeBranchPrefix(prefix: string): string {
+  const trimmed = prefix.trim();
+  if (!trimmed) return 'autonomous/';
+  return trimmed.endsWith('/') ? trimmed : `${trimmed}/`;
+}
+
 /** Resolve a path to its real path, following symlinks.  Falls back to the
  *  original if the path does not (yet) exist on disk. */
 function realPath(p: string): string {
@@ -29,12 +35,14 @@ async function git(cwd: string, args: string[]): Promise<string> {
 export interface WorktreePoolOptions {
   projectRoot: string;
   baseBranch?: string;
+  branchPrefix?: string;
   rootDir?: string;
 }
 
 export class WorktreePool {
   private readonly projectRoot: string;
   private readonly baseBranch: string;
+  private readonly branchPrefix: string;
   private readonly rootDir: string;
 
   private readonly handles = new Map<string, WorktreeHandle>();
@@ -56,6 +64,7 @@ export class WorktreePool {
   constructor(opts: WorktreePoolOptions) {
     this.projectRoot = opts.projectRoot;
     this.baseBranch = opts.baseBranch ?? 'main';
+    this.branchPrefix = normalizeBranchPrefix(opts.branchPrefix ?? 'autonomous/');
     this.rootDir = opts.rootDir ?? '.agentforge/worktrees';
   }
 
@@ -83,7 +92,7 @@ export class WorktreePool {
     }
 
     const wtPath = join(this.projectRoot, this.rootDir, id);
-    const branch = `autonomous/agent-${safeAgent}-${safeSession}`;
+    const branch = `${this.branchPrefix}agent-${safeAgent}-${safeSession}`;
 
     // If the directory already exists the worktree was previously created
     // (e.g. by another process or a prior run). Reuse it without re-adding.

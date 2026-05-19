@@ -17,12 +17,16 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { execFile as execFileCb } from 'node:child_process';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { promisify } from 'node:util';
 import type { PhaseContext } from '../../phase-scheduler.js';
 import type { WorktreePoolLike } from '../../phase-scheduler.js';
 import { runExecutePhase, isCoderClassItem, CODER_CLASS_PATTERNS } from '../execute-phase.js';
+
+const execFile = promisify(execFileCb);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -156,6 +160,16 @@ function writeSprintFile(
   const cycleDir = join(tmpRoot, '.agentforge', 'cycles', cycleId);
   mkdirSync(cycleDir, { recursive: true });
   writeFileSync(join(cycleDir, 'plan.json'), JSON.stringify(data));
+}
+
+async function initGitRepo(dir: string): Promise<void> {
+  mkdirSync(dir, { recursive: true });
+  await execFile('git', ['init', '-b', 'main'], { cwd: dir });
+  await execFile('git', ['config', 'user.email', 'test@example.com'], { cwd: dir });
+  await execFile('git', ['config', 'user.name', 'Test'], { cwd: dir });
+  writeFileSync(join(dir, 'README.md'), '# test\n');
+  await execFile('git', ['add', 'README.md'], { cwd: dir });
+  await execFile('git', ['commit', '-m', 'initial'], { cwd: dir });
 }
 
 // ---------------------------------------------------------------------------
@@ -408,6 +422,32 @@ describe('execute-phase worktree integration', () => {
     expect(itemResult).toBeDefined();
     expect(itemResult.worktreePath).toBe(worktreePath);
     expect(typeof itemResult.worktreeBranch).toBe('string');
+  });
+
+  it('marks a coder item failed when the worktree has no source changes', async () => {
+    const worktreePath = join(tmpRoot, 'wt-no-change');
+    await initGitRepo(worktreePath);
+    writeSprintFile([
+      { id: 'item-1', title: 'Task A', assignee: 'coder', tags: ['coder'] },
+    ]);
+
+    const pool = makeSpyPool(worktreePath);
+    const bus = makeBus();
+    const runtime = {
+      run: vi.fn().mockResolvedValue({
+        output: 'Delegate to `embeddings-engineer`.',
+        costUsd: 0.01,
+      }),
+    };
+    const ctx = makeCtx(bus, { worktreePool: pool, runtime });
+
+    const result = await runExecutePhase(ctx, { maxParallelism: 1, maxItemRetries: 0 });
+
+    expect(result.status).toBe('blocked');
+    const itemResult = (result.itemResults as any[])?.[0];
+    expect(itemResult.status).toBe('failed');
+    expect(itemResult.error).toContain('produced no source changes');
+    expect(pool.release).toHaveBeenCalledTimes(1);
   });
 
   it('allocates ONCE per item (not per retry) on multiple retries', async () => {

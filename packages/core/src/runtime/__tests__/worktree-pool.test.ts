@@ -110,6 +110,15 @@ describe('WorktreePool', () => {
     expect(branches.trim()).toContain(handle.branch);
   });
 
+  it('uses the configured branch prefix for agent worktree branches', async () => {
+    const pool = new WorktreePool({ projectRoot: workingDir, branchPrefix: 'codex/' });
+    const handle = await pool.allocate({ agentId: 'coder', sessionId: 'sess-codex' });
+
+    expect(handle.branch).toBe('codex/agent-coder-sess-codex');
+    const branches = await git(workingDir, ['branch', '--list', handle.branch]);
+    expect(branches.trim()).toContain(handle.branch);
+  });
+
   // -------------------------------------------------------------------------
   // 4. Allocate: worktree HEAD matches origin/main
   // -------------------------------------------------------------------------

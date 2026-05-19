@@ -22,7 +22,7 @@ const {
   cycleRunnerCalls,
   poolConfig,
 } = vi.hoisted(() => {
-  const worktreePoolCalls: Array<{ projectRoot: string; baseBranch?: string }> = [];
+  const worktreePoolCalls: Array<{ projectRoot: string; baseBranch?: string; branchPrefix?: string }> = [];
   const cycleRunnerCalls: Array<{
     worktreePool: unknown;
     disableWorktrees: unknown;
@@ -38,10 +38,13 @@ const {
 // Mock @agentforge/core before the module-under-test is imported.
 // ---------------------------------------------------------------------------
 vi.mock('@agentforge/core', () => {
-  function WorktreePoolMock(this: object, opts: { projectRoot: string; baseBranch?: string }) {
-    const entry: { projectRoot: string; baseBranch?: string } = { projectRoot: opts.projectRoot };
+  function WorktreePoolMock(this: object, opts: { projectRoot: string; baseBranch?: string; branchPrefix?: string }) {
+    const entry: { projectRoot: string; baseBranch?: string; branchPrefix?: string } = { projectRoot: opts.projectRoot };
     if (opts.baseBranch !== undefined) {
       entry.baseBranch = opts.baseBranch;
+    }
+    if (opts.branchPrefix !== undefined) {
+      entry.branchPrefix = opts.branchPrefix;
     }
     worktreePoolCalls.push(entry);
     if (poolConfig.shouldThrow) {
@@ -202,6 +205,7 @@ describe('autonomous-worktree: WorktreePool wiring at CLI launch', () => {
     expect(worktreePoolCalls[0]?.projectRoot).toBe(projectRoot);
     // baseBranch comes from the mocked loadCycleConfig: 'main'
     expect(worktreePoolCalls[0]?.baseBranch).toBe('main');
+    expect(worktreePoolCalls[0]?.branchPrefix).toBe('autonomous/');
   });
 
   it('passes worktreePool to CycleRunner when pool construction succeeds', async () => {
@@ -266,5 +270,12 @@ describe('autonomous-worktree: WorktreePool wiring at CLI launch', () => {
 
     expect(worktreePoolCalls).toHaveLength(1);
     expect(worktreePoolCalls[0]?.baseBranch).toBe('codex/codex-version');
+  });
+
+  it('uses AUTONOMOUS_BRANCH_PREFIX when constructing WorktreePool', async () => {
+    await runCycleRun(projectRoot, [], { AUTONOMOUS_BRANCH_PREFIX: 'codex/' });
+
+    expect(worktreePoolCalls).toHaveLength(1);
+    expect(worktreePoolCalls[0]?.branchPrefix).toBe('codex/');
   });
 });

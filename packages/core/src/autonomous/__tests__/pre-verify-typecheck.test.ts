@@ -8,10 +8,14 @@
 //     are spawned and no child_process mocking is needed.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync, existsSync, readFileSync, mkdirSync } from 'node:fs';
+import { execFile as execFileCb } from 'node:child_process';
+import { mkdtempSync, rmSync, existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { promisify } from 'node:util';
 import type { ExecFileAsyncFn } from '../pre-verify-typecheck.js';
+
+const execFile = promisify(execFileCb);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -269,5 +273,52 @@ describe('runPreVerifyTypeCheck', () => {
     expect(result.buildOk).toBe(false);
     expect(result.buildError).toBeTruthy();
     expect(result.typeCheckOk).toBe(true); // typecheck was skipped (no command)
+  });
+});
+
+describe('resolveCommandForExecFile', () => {
+  it('wraps Windows Node shims with cmd.exe for execFile', async () => {
+    const { resolveCommandForExecFile } = await import('../pre-verify-typecheck.js');
+    const tmp = tmpDir();
+    try {
+      writeFileSync(join(tmp, 'corepack.cmd'), '@echo off\n');
+      const resolved = resolveCommandForExecFile('corepack', ['pnpm', 'build'], 'win32', join(tmp, 'node.exe'), { ComSpec: 'cmd.exe' });
+      expect(resolved.command).toBe('cmd.exe');
+      expect(resolved.args.slice(0, 3)).toEqual(['/d', '/s', '/c']);
+      expect(resolved.args[3]).toContain('call');
+      expect(resolved.args[3]).toContain('corepack.cmd');
+      expect(resolved.args[3]).toContain('pnpm');
+      expect(resolved.args[3]).toContain('build');
+      expect(resolved.windowsVerbatimArguments).toBe(true);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('leaves POSIX commands unchanged', async () => {
+    const { resolveCommandForExecFile } = await import('../pre-verify-typecheck.js');
+    expect(resolveCommandForExecFile('corepack', ['pnpm'], 'linux', '/usr/bin/node')).toEqual({
+      command: 'corepack',
+      args: ['pnpm'],
+    });
+  });
+
+  const winIt = process.platform === 'win32' ? it : it.skip;
+
+  winIt('executes resolved .cmd shims through cmd.exe on Windows', async () => {
+    const { resolveCommandForExecFile } = await import('../pre-verify-typecheck.js');
+    const tmp = tmpDir();
+    try {
+      writeFileSync(join(tmp, 'fake-shim.cmd'), '@echo off\necho ok %1 %2\n');
+      const resolved = resolveCommandForExecFile('fake-shim', ['one', 'two'], 'win32', join(tmp, 'node.exe'), { ComSpec: process.env['ComSpec'] });
+
+      const result = await execFile(resolved.command, resolved.args, {
+        windowsVerbatimArguments: resolved.windowsVerbatimArguments,
+      });
+
+      expect(result.stdout.toString().trim()).toBe('ok one two');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });

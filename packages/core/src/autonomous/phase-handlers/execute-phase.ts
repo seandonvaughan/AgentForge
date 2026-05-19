@@ -15,9 +15,11 @@
 // of items fail. All-failures returns 'blocked'.
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
+import { execFile } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
+import { promisify } from 'node:util';
 import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
 import type { ParsedMemoryEntry } from '../../memory/types.js';
 import {
@@ -73,6 +75,8 @@ try {
   _selfEvalFragment = '';
 }
 export const SELF_EVAL_FRAGMENT = _selfEvalFragment;
+
+const execFileAsync = promisify(execFile);
 
 // ---- Scorer integration (T2) ----
 // TODO: replace stub with real import once T1 scorer merges to origin/main.
@@ -412,6 +416,53 @@ export function isCoderClassItem(item: { assignee: string; tags?: string[] }): b
   if (CODER_CLASS_PATTERNS.some((p) => assigneeLower.includes(p))) return true;
   const tagSet = (item.tags ?? []).map((t) => t.toLowerCase());
   return tagSet.some((t) => CODER_CLASS_PATTERNS.some((p) => t.includes(p)));
+}
+
+const GENERATED_RUNTIME_PATHS = [
+  '.agentforge/cycles/',
+  '.agentforge/worktrees/',
+  '.agentforge/knowledge/entities.jsonl',
+  '.agentforge/knowledge/embeddings.db',
+  '.agentforge/memory/cycle-outcome.jsonl',
+  '.agentforge/memory/step-scores.jsonl',
+  '.agentforge/v5/agentforge-master.db',
+  '.agentforge/v5/workspace-default.db',
+];
+
+function parsePorcelainPath(line: string): string {
+  const rest = line.slice(3).trim();
+  const arrowIdx = rest.indexOf(' -> ');
+  const path = arrowIdx >= 0 ? rest.slice(arrowIdx + 4).trim() : rest;
+  return path.replace(/^"|"$/g, '').replace(/\\/g, '/');
+}
+
+function isGeneratedRuntimePath(file: string): boolean {
+  const normalized = file.replace(/\\/g, '/');
+  return GENERATED_RUNTIME_PATHS.some((entry) => (
+    entry.endsWith('/')
+      ? normalized.startsWith(entry)
+      : normalized === entry
+  ));
+}
+
+async function meaningfulWorktreeChanges(worktreePath: string): Promise<string[]> {
+  if (!existsSync(worktreePath)) return ['__worktree_unverified__'];
+  let stdout: string | Buffer;
+  try {
+    ({ stdout } = await execFileAsync('git', ['status', '--porcelain', '--untracked-files=all'], {
+      cwd: worktreePath,
+      maxBuffer: 10 * 1024 * 1024,
+    }));
+  } catch {
+    return ['__worktree_unverified__'];
+  }
+  return stdout
+    .toString()
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .filter(Boolean)
+    .map(parsePorcelainPath)
+    .filter((file) => file.length > 0 && !isGeneratedRuntimePath(file));
 }
 
 export interface ExecutePhaseOptions {
@@ -811,7 +862,18 @@ export async function runExecutePhase(
           const durationMs = Date.now() - itemStartedAt;
           const costUsd =
             typeof result?.costUsd === 'number' ? result.costUsd : 0;
+          const responseText = typeof result?.output === 'string' ? result.output : '';
           totalCost += costUsd;
+          let worktreeChangedFiles: string[] = [];
+          if (worktreeHandle) {
+            worktreeChangedFiles = await meaningfulWorktreeChanges(worktreeHandle.path);
+            if (worktreeChangedFiles.length === 0) {
+              throw new Error(
+                `Agent ${item.assignee} produced no source changes for item ${item.id}. ` +
+                `Response was: ${responseText.slice(0, 240) || '(empty)'}`,
+              );
+            }
+          }
           item.status = 'completed';
           const runModel =
             typeof (result as any)?.model === 'string' ? (result as any).model : 'sonnet';
@@ -846,7 +908,6 @@ export async function runExecutePhase(
           // via RunRequest.outputSchema), check RunResult.schemaValidation and
           // build a ValidatedJsonOutput. The keyword-search fallback path is
           // retained when no output_schema is present (backward compat).
-          const responseText = typeof result?.output === 'string' ? result.output : '';
           let validatedOutput: ValidatedJsonOutput | undefined;
           const itemOutputSchema = (item as any).outputSchema as
             | { name: string; strict?: boolean }
@@ -936,6 +997,7 @@ export async function runExecutePhase(
             // T4.2: surface the worktree path/branch for downstream diff capture
             worktreePath: worktreeHandle?.path,
             worktreeBranch: worktreeHandle?.branch,
+            ...(worktreeChangedFiles.length > 0 ? { worktreeChangedFiles } : {}),
             // T4: attach structured output when present
             ...(validatedOutput ? { validatedOutput } : {}),
             // T2: step score IDs for downstream traceability
@@ -1038,7 +1100,7 @@ export async function runExecutePhase(
           await commitAgentWork({
             worktreePath: worktreeHandle.path,
             branch: worktreeHandle.branch,
-            baseBranch: 'main',
+            baseBranch: ctx.baseBranch ?? 'main',
             agentId: item.assignee,
             itemIds: [item.id],
             ...(ctx.cycleId !== undefined ? { sessionId: ctx.cycleId, cycleId: ctx.cycleId } : { sessionId: ctx.sprintId }),
@@ -1270,7 +1332,7 @@ Description: ${description}
 Source: ${source} (e.g., TODO(autonomous) marker)
 Tags: ${tags}
 ${memorySec}
-Your job: use the Read, Write, Edit, Bash, Glob, and Grep tools to make the code change required to resolve this item. Do NOT commit anything — the autonomous cycle's Git stage will commit everything that changed in the working tree after all items are done.
+Your job: use the Read, Write, Edit, Bash, Glob, and Grep tools to make the code change required to resolve this item. Do not delegate this item to another agent or return a plan-only response. If you cannot make a concrete repository change, report the blocker clearly. Do NOT commit anything — the autonomous cycle's Git stage will commit everything that changed in the working tree after all items are done.
 
 Work efficiently. Report what you changed when done.${selfEvalSec}`;
 
