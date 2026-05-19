@@ -184,8 +184,17 @@ export class AgentForgeSession {
   ): Promise<V3RunResult> {
     this.totalAgentRuns++;
 
+    // Canary routing must stay stable across a session when the caller does not
+    // provide an explicit request id. Using the session id prevents per-agent
+    // random routing, which would fragment a single request across control and
+    // canary variants.
+    const routedContext: RunContext = {
+      ...context,
+      requestId: context.requestId ?? this.sessionId,
+    };
+
     // Step 1: Execute through OrchestratorV3
-    const result = await this.orchestrator.runAgent(agent, task, context);
+    const result = await this.orchestrator.runAgent(agent, task, routedContext);
 
     // Step 2: [REFORGE REQUESTED] detection (Phase 3e)
     const reforgeSignals = this.detectReforgeRequested(result.content);

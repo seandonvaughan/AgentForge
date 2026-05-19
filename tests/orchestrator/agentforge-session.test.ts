@@ -129,6 +129,30 @@ describe("AgentForgeSession", () => {
     });
     expect(session).toBeDefined();
   });
+
+  it("runAgent supplies a stable requestId when the caller omits one", async () => {
+    const session = await AgentForgeSession.create(config);
+    const agent = makeAgent("canary-agent");
+    const orchestratorRun = vi
+      .spyOn(session.orchestrator, "runAgent")
+      .mockResolvedValue({
+        content: "Mock response",
+        modelUsed: "haiku",
+        inputTokens: 10,
+        outputTokens: 5,
+        escalated: false,
+      } as any);
+
+    await session.runAgent(agent, "do canary work");
+
+    expect(orchestratorRun).toHaveBeenCalledWith(
+      agent,
+      "do canary work",
+      expect.objectContaining({
+        requestId: session.getSessionId(),
+      }),
+    );
+  });
 });
 
 describe("REFORGE REQUESTED detection", () => {
