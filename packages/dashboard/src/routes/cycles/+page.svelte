@@ -24,6 +24,8 @@
     branchPrefix?: string | null;
     baseBranch?: string | null;
     maxAgents?: number | null;
+    modelCap?: string | null;
+    effortCap?: string | null;
     fallbackEnabled?: boolean | null;
     tags?: string[];
     dryRun?: boolean | null;
@@ -141,6 +143,8 @@
       !!c.branchPrefix ||
       !!c.baseBranch ||
       typeof c.maxAgents === 'number' ||
+      !!c.modelCap ||
+      !!c.effortCap ||
       typeof c.fallbackEnabled === 'boolean' ||
       typeof c.dryRun === 'boolean' ||
       (c.tags?.length ?? 0) > 0;
@@ -451,6 +455,8 @@
                     {#if isCodexCli(c)}<Badge variant="purple">Codex CLI</Badge>{/if}
                     {#if typeof c.dryRun === 'boolean'}<span class="config-chip">dry run {c.dryRun ? 'on' : 'off'}</span>{/if}
                     {#if typeof c.maxAgents === 'number'}<span class="config-chip af2-mono">{c.maxAgents} agents</span>{/if}
+                    {#if c.modelCap}<span class="config-chip af2-mono">profile {c.modelCap}</span>{/if}
+                    {#if c.effortCap}<span class="config-chip af2-mono">effort {c.effortCap}</span>{/if}
                     {#if typeof c.fallbackEnabled === 'boolean'}<span class="config-chip">fallback {c.fallbackEnabled ? 'on' : 'off'}</span>{/if}
                     {#if c.baseBranch}<span class="config-chip af2-mono">base {c.baseBranch}</span>{/if}
                     {#if c.branchPrefix}<span class="config-chip af2-mono">prefix {c.branchPrefix}</span>{/if}
@@ -546,6 +552,8 @@
                   {#if isCodexCli(c)}<Badge variant="purple">Codex CLI</Badge>{/if}
                   {#if typeof c.dryRun === 'boolean'}<span class="config-chip">dry run {c.dryRun ? 'on' : 'off'}</span>{/if}
                   {#if typeof c.maxAgents === 'number'}<span class="config-chip af2-mono">{c.maxAgents} agents</span>{/if}
+                  {#if c.modelCap}<span class="config-chip af2-mono">profile {c.modelCap}</span>{/if}
+                  {#if c.effortCap}<span class="config-chip af2-mono">effort {c.effortCap}</span>{/if}
                   {#if typeof c.fallbackEnabled === 'boolean'}<span class="config-chip">fallback {c.fallbackEnabled ? 'on' : 'off'}</span>{/if}
                   {#if c.baseBranch}<span class="config-chip af2-mono">base {c.baseBranch}</span>{/if}
                 </div>

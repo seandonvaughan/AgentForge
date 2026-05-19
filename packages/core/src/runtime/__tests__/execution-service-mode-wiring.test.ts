@@ -86,8 +86,13 @@ describe('resolveMode()', () => {
     expect(resolveMode({ AGENTFORGE_RUNTIME: 'cli' })).toBe('cli');
   });
 
-  it('returns auto when AGENTFORGE_RUNTIME is not set', () => {
-    expect(resolveMode({})).toBe('auto');
+  it('returns auto when AGENTFORGE_RUNTIME and config runtime are not set', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agentforge-test-'));
+    try {
+      expect(resolveMode({}, dir)).toBe('auto');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('returns auto and warns on an invalid AGENTFORGE_RUNTIME value', () => {
@@ -281,10 +286,15 @@ describe('ExecutionService AGENTFORGE_RUNTIME env var wiring', () => {
     expect(svc.mode).toBe('cli');
   });
 
-  it('AGENTFORGE_RUNTIME unset → mode is auto', () => {
+  it('AGENTFORGE_RUNTIME unset and no config runtime → mode is auto', () => {
     delete process.env.AGENTFORGE_RUNTIME;
-    const svc = new ExecutionService({ mode: resolveMode({}) });
-    expect(svc.mode).toBe('auto');
+    const dir = mkdtempSync(join(tmpdir(), 'agentforge-test-'));
+    try {
+      const svc = new ExecutionService({ mode: resolveMode({}, dir) });
+      expect(svc.mode).toBe('auto');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('invalid AGENTFORGE_RUNTIME → warns and falls back to auto', () => {

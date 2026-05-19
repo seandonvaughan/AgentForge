@@ -203,6 +203,8 @@ interface CycleListRow {
   baseBranch?: string | null;
   dryRun?: boolean | null;
   maxAgents?: number | null;
+  modelCap?: string | null;
+  effortCap?: string | null;
   tags?: string[];
   fallbackEnabled?: boolean | null;
   launchConfig?: Record<string, unknown>;
@@ -217,7 +219,7 @@ function readCycleLaunchConfig(cycleDir: string): Record<string, unknown> {
 
 function launchConfigFields(config: Record<string, unknown>): Pick<
   CycleListRow,
-  'runtimeMode' | 'branchPrefix' | 'baseBranch' | 'dryRun' | 'maxAgents' | 'tags' | 'fallbackEnabled' | 'launchConfig'
+  'runtimeMode' | 'branchPrefix' | 'baseBranch' | 'dryRun' | 'maxAgents' | 'modelCap' | 'effortCap' | 'tags' | 'fallbackEnabled' | 'launchConfig'
 > {
   return {
     runtimeMode: typeof config['runtimeMode'] === 'string' ? config['runtimeMode'] : null,
@@ -225,6 +227,8 @@ function launchConfigFields(config: Record<string, unknown>): Pick<
     baseBranch: typeof config['baseBranch'] === 'string' ? config['baseBranch'] : null,
     dryRun: typeof config['dryRun'] === 'boolean' ? config['dryRun'] : null,
     maxAgents: typeof config['maxAgents'] === 'number' ? config['maxAgents'] : null,
+    modelCap: typeof config['modelCap'] === 'string' ? config['modelCap'] : null,
+    effortCap: typeof config['effortCap'] === 'string' ? config['effortCap'] : null,
     tags: Array.isArray(config['tags'])
       ? config['tags'].filter((tag): tag is string => typeof tag === 'string')
       : [],

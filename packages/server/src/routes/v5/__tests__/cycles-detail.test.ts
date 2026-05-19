@@ -169,7 +169,7 @@ describe('GET /api/v5/cycles/:id', () => {
     const dir = makeCycleDir(id);
     writeFileSync(
       join(dir, 'cycle-config.json'),
-      JSON.stringify({ cycleId: id, budgetUsd: 25, runtimeMode: 'codex-cli' }),
+      JSON.stringify({ cycleId: id, budgetUsd: 25, runtimeMode: 'codex-cli', modelCap: 'sonnet', effortCap: 'high' }),
     );
     writeFileSync(
       join(dir, 'events.jsonl'),
@@ -192,6 +192,8 @@ describe('GET /api/v5/cycles/:id', () => {
     expect(body.cycleInProgress).toBe(true);
     expect(body.cost.budgetUsd).toBe(25);
     expect(body.runtimeMode).toBe('codex-cli');
+    expect(body.modelCap).toBe('sonnet');
+    expect(body.effortCap).toBe('high');
   });
 
   it('returns 200 with cycle.json for a killed cycle (kill-switch trip writes cycle.json)', async () => {

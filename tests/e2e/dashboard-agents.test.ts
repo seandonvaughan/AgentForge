@@ -1,7 +1,16 @@
 import { test, expect, type Page } from '@playwright/test';
 
 async function waitForAgentsClient(page: Page) {
-  await expect(page.locator('.af-page-header[data-client-ready="true"]')).toBeVisible();
+  await expect(page.locator('table.data-table tbody tr').first()).toBeVisible({ timeout: 10000 });
+}
+
+async function waitForAgentsHydrated(page: Page) {
+  const header = page.locator('header.af-page-header');
+  await expect(header).toBeVisible({ timeout: 10000 });
+  await expect.poll(
+    () => header.getAttribute('data-client-ready'),
+    { timeout: 15000 },
+  ).toBe('true');
 }
 
 test.describe('Agents List Page', () => {
@@ -89,8 +98,12 @@ test.describe('Agents List Page', () => {
     const firstRow = table.locator('tbody tr').first();
     await expect(firstRow).toBeVisible();
 
-    // Rows are keyboard-accessible with role="button" and tabindex="0"
-    await expect(firstRow).toHaveAttribute('tabindex', '0');
+    const agentId = (await firstRow.locator('.af-agent-id').textContent())?.trim();
+    expect(agentId, 'Expected first row to expose an agent id').toBeTruthy();
+
+    // Rows expose a native link so click/keyboard navigation does not depend on
+    // a hydrated JavaScript handler attached to <tr>.
+    await expect(firstRow.locator(`a.af-row-link[href="/agents/${agentId}"]`)).toBeVisible();
 
     // Click triggers SvelteKit client-side navigation to /agents/:id.
     // waitForLoadState('load') is a no-op after client-side routing (the page
@@ -240,6 +253,7 @@ test.describe('Agents List Page', () => {
   test('agents page: __unassigned__ team filter works correctly (regression test)', async ({ page }) => {
     await page.goto('/agents');
     await page.waitForLoadState('domcontentloaded', { timeout: 3000 }).catch(() => {});
+    await waitForAgentsHydrated(page);
 
     const teamSelect = page.getByLabel('Filter by team');
     await expect(teamSelect).toBeVisible();
@@ -279,6 +293,7 @@ test.describe('Agents List Page', () => {
   test('agents page: model filter preserves data consistency', async ({ page }) => {
     await page.goto('/agents');
     await page.waitForLoadState('domcontentloaded', { timeout: 3000 }).catch(() => {});
+    await waitForAgentsHydrated(page);
     await waitForAgentsClient(page);
 
     const filterPills = page.locator('button.af-pill');
@@ -316,6 +331,7 @@ test.describe('Agents List Page', () => {
   test('agents page: team filter state clears on page reload', async ({ page }) => {
     await page.goto('/agents');
     await page.waitForLoadState('domcontentloaded', { timeout: 3000 }).catch(() => {});
+    await waitForAgentsHydrated(page);
 
     const teamSelect = page.getByLabel('Filter by team');
     await expect(teamSelect).toBeVisible();

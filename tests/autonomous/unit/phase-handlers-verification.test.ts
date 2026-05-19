@@ -285,9 +285,9 @@ describe('verification phase handlers', () => {
     );
 
     const taskArg = runtime.run.mock.calls[0][1] as string;
-    expect(taskArg).toContain('IMPORTANT: In multi-PR mode');
-    expect(taskArg).toContain('git diff origin/main...codex/agent-review-cycle');
-    expect(taskArg).toContain('Do not inspect unrelated directories under `.agentforge/worktrees`');
+    expect(taskArg).toContain('AgentForge collected the target metadata');
+    expect(taskArg).toContain('Diff range: origin/main...codex/agent-review-cycle');
+    expect(taskArg).toContain('Do not run Bash, shell, or git commands');
     expect(taskArg).toContain('tests/reforge/team-reforge-canary.test.ts');
   });
 

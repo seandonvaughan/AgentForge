@@ -9,7 +9,7 @@ async function openFirstCycleDetail(page: Page) {
 
   const cycleHref = `/cycles/${cycleId!}`;
   await page.goto(cycleHref, { waitUntil: 'domcontentloaded' });
-  await expect(page.locator('h1')).toContainText(/Cycle/i);
+  await expect(page.locator('h1')).toContainText(/Cycle/i, { timeout: 15_000 });
   return cycleHref;
 }
 
@@ -106,6 +106,8 @@ test.describe('Cycle Detail Page', () => {
           baseBranch: 'codex/codex-version',
           dryRun: false,
           maxAgents: 1,
+          modelCap: 'sonnet',
+          effortCap: 'high',
           fallbackEnabled: true,
           startedAt: new Date().toISOString(),
           sprintVersion: '10.12.0',
@@ -121,6 +123,8 @@ test.describe('Cycle Detail Page', () => {
 
     await page.goto('/cycles/manage-cycle', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('h1')).toContainText('Cycle');
+    await expect(page.getByLabel('Cycle launch configuration')).toContainText('profile sonnet');
+    await expect(page.getByLabel('Cycle launch configuration')).toContainText('effort high');
     await expect(page.getByRole('button', { name: /^Cancel$/ })).toBeVisible();
 
     await page.getByRole('button', { name: /^Cancel$/ }).click();

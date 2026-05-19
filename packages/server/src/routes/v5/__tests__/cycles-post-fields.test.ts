@@ -239,11 +239,18 @@ describe('POST /api/v5/cycles — Fix 1: maxAgents, tags, fallbackEnabled', () =
     expect(res.json().error).toContain('baseBranch');
   });
 
-  it('persists all three fields to cycle-config.json', async () => {
+  it('persists launch fields to cycle-config.json', async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/v5/cycles',
-      payload: { maxAgents: 3, tags: ['ci'], fallbackEnabled: true, baseBranch: 'codex/codex-version' },
+      payload: {
+        maxAgents: 3,
+        tags: ['ci'],
+        fallbackEnabled: true,
+        baseBranch: 'codex/codex-version',
+        modelCap: 'sonnet',
+        effortCap: 'high',
+      },
     });
     expect(res.statusCode).toBe(202);
     const { cycleId } = res.json() as { cycleId: string };
@@ -254,6 +261,8 @@ describe('POST /api/v5/cycles — Fix 1: maxAgents, tags, fallbackEnabled', () =
     expect(config['tags']).toEqual(['ci']);
     expect(config['fallbackEnabled']).toBe(true);
     expect(config['baseBranch']).toBe('codex/codex-version');
+    expect(config['modelCap']).toBe('sonnet');
+    expect(config['effortCap']).toBe('high');
   });
 
   it('returns empty tags array when tags not provided', async () => {

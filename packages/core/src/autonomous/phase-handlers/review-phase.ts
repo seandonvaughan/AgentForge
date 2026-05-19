@@ -16,11 +16,12 @@ import { extractFindingsByLevel } from './gate-phase.js';
 import { collectSprintItemTags } from './sprint-utils.js';
 import { writeKnowledgeEntry } from '../../knowledge/persistence.js';
 import {
-  formatExecuteReviewTargets,
+  collectExecuteReviewMaterials,
+  formatExecuteReviewTargetSummary,
   loadExecuteReviewTargets,
 } from './review-targets.js';
 
-export const REVIEW_PHASE_DEFAULT_TOOLS = ['Read', 'Bash', 'Glob', 'Grep'];
+export const REVIEW_PHASE_DEFAULT_TOOLS = ['Read', 'Glob', 'Grep'];
 export const REVIEW_PHASE_AGENT = 'code-reviewer';
 
 export interface ReviewPhaseOptions {
@@ -49,7 +50,11 @@ export async function runReviewPhase(
   });
 
   const reviewTargets = loadExecuteReviewTargets(ctx.projectRoot, ctx.cycleId);
-  const reviewTargetSection = formatExecuteReviewTargets(
+  const reviewTargetSection = formatExecuteReviewTargetSummary(
+    reviewTargets,
+    ctx.projectRoot,
+  );
+  const reviewMaterialSection = collectExecuteReviewMaterials(
     reviewTargets,
     ctx.projectRoot,
     ctx.baseBranch ?? 'main',
@@ -59,12 +64,9 @@ export async function runReviewPhase(
 
 ${reviewTargetSection}
 
-Use Bash to run:
-- If target worktrees are listed above: run the suggested \`git -C "<worktree>" ...\` commands for each target.
-- If no target worktrees are listed: run \`git diff --stat HEAD\` and \`git diff HEAD\` in the current checkout.
-- git log -1 --format="%B" in each target worktree or branch you review (commit message if any, though there may not be one yet)
+${reviewMaterialSection}
 
-Then Read the changed files to understand context beyond the diff.
+AgentForge has already collected the target metadata, diff stats, full diffs, and latest commit messages above. Do not run Bash, shell, or git commands during this review. Use the embedded material as the source of truth. If any material is unavailable or truncated, call that out as a review limitation instead of attempting your own command.
 
 Produce a code review (markdown, ~400 words) covering:
 - Overall correctness — does the code do what the sprint items asked for?

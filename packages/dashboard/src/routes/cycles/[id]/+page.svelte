@@ -257,6 +257,16 @@
   const maxAgents = $derived<number | null>(
     ((cycle as { maxAgents?: number })?.maxAgents as number | undefined) ?? null,
   );
+  const modelCap = $derived<string | null>(
+    ((cycle as { modelCap?: string; launchConfig?: { modelCap?: string } })?.modelCap
+    ?? (cycle as { launchConfig?: { modelCap?: string } })?.launchConfig?.modelCap
+    ?? null) as string | null,
+  );
+  const effortCap = $derived<string | null>(
+    ((cycle as { effortCap?: string; launchConfig?: { effortCap?: string } })?.effortCap
+    ?? (cycle as { launchConfig?: { effortCap?: string } })?.launchConfig?.effortCap
+    ?? null) as string | null,
+  );
   const fallbackEnabled = $derived<boolean | null>(
     ((cycle as { fallbackEnabled?: boolean })?.fallbackEnabled as boolean | undefined) ?? null,
   );
@@ -271,6 +281,8 @@
     branchPrefix !== null ||
     baseBranch !== null ||
     maxAgents !== null ||
+    modelCap !== null ||
+    effortCap !== null ||
     fallbackEnabled !== null ||
     dryRun !== null ||
     tags.length > 0,
@@ -835,6 +847,16 @@
     } catch { /* silent */ }
   }
 
+  async function loadSecondaryCycleData(): Promise<void> {
+    await Promise.allSettled([
+      loadSprint(),
+      loadAgents(),
+      loadScoring(),
+      loadEvents(),
+      loadTypecheckFailure(),
+    ]);
+  }
+
   function ensureSse(): void {
     if (eventSource || isTerminal) return;
     try {
@@ -1002,14 +1024,12 @@
   let selectedAgent = $state<string | null>(null);
 
   onMount(() => {
-    void loadCycle();
-    void loadSprint();
-    void loadAgents();
-    void loadScoring();
-    void loadEvents();
-    void loadTypecheckFailure();
-    ensureSse();
-    manage();
+    void (async () => {
+      await loadCycle();
+      void loadSecondaryCycleData();
+      if (!isTerminal) ensureSse();
+      manage();
+    })();
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', onVisibility);
     }
@@ -1113,6 +1133,8 @@
           {#if runtimeMode && !isCodexCli}<span class="launch-chip af2-mono">{runtimeMode}</span>{/if}
           {#if typeof dryRun === 'boolean'}<span class="launch-chip">dry run {dryRun ? 'on' : 'off'}</span>{/if}
           {#if typeof maxAgents === 'number'}<span class="launch-chip af2-mono">{maxAgents} agents</span>{/if}
+          {#if modelCap}<span class="launch-chip af2-mono">profile {modelCap}</span>{/if}
+          {#if effortCap}<span class="launch-chip af2-mono">effort {effortCap}</span>{/if}
           {#if typeof fallbackEnabled === 'boolean'}<span class="launch-chip">fallback {fallbackEnabled ? 'on' : 'off'}</span>{/if}
           {#if branchPrefix}<span class="launch-chip af2-mono">prefix {branchPrefix}</span>{/if}
           {#if baseBranch}<span class="launch-chip af2-mono">base {baseBranch}</span>{/if}

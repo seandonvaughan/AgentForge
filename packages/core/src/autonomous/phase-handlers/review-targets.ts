@@ -1,3 +1,4 @@
+import { execFileSync, type ExecFileSyncOptionsWithStringEncoding } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 
@@ -9,6 +10,18 @@ export interface ExecuteReviewTarget {
   worktreeBranch?: string;
   changedFiles: string[];
 }
+
+export interface ExecuteReviewMaterialOptions {
+  maxDiffChars?: number;
+}
+
+const DEFAULT_MAX_DIFF_CHARS = 120_000;
+const GIT_EXEC_OPTIONS: Omit<ExecFileSyncOptionsWithStringEncoding, 'cwd'> = {
+  encoding: 'utf8',
+  maxBuffer: 1024 * 1024 * 8,
+  stdio: ['ignore', 'pipe', 'pipe'],
+  windowsHide: true,
+};
 
 function asString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
@@ -131,6 +144,163 @@ export function formatExecuteReviewTargets(
   return [
     '## Execute-phase review targets',
     'IMPORTANT: In multi-PR mode, sprint changes live on isolated agent branches. The temporary worktree may already be removed and the parent checkout may be clean. Prefer the branch diff commands below. Do not inspect unrelated directories under `.agentforge/worktrees`, and do not substitute `git diff HEAD` in the parent checkout when a target branch is listed.',
+    ...sections,
+  ].join('\n\n');
+}
+
+function runGit(
+  cwd: string,
+  args: string[],
+): { output: string; error?: undefined } | { output?: undefined; error: string } {
+  try {
+    const isInsideWorkTree = execFileSync('git', ['rev-parse', '--is-inside-work-tree'], {
+      cwd,
+      ...GIT_EXEC_OPTIONS,
+    }).trim();
+    if (isInsideWorkTree !== 'true') {
+      return { error: `Not a git repository: ${cwd}` };
+    }
+    return {
+      output: execFileSync('git', args, {
+        cwd,
+        ...GIT_EXEC_OPTIONS,
+      }).trim(),
+    };
+  } catch (err) {
+    const stderr = typeof (err as { stderr?: unknown }).stderr === 'string'
+      ? (err as { stderr: string }).stderr.trim()
+      : '';
+    const message = err instanceof Error ? err.message : String(err);
+    return { error: (stderr || message).trim() };
+  }
+}
+
+function truncateSection(value: string, maxChars: number): string {
+  if (value.length <= maxChars) return value;
+  return `${value.slice(0, maxChars)}\n\n[AgentForge truncated this diff at ${maxChars} characters. Review the visible changes and flag that the diff was truncated.]`;
+}
+
+function fenced(label: string, value: string): string {
+  return [`${label}:`, '```', value.trim() || '(empty)', '```'].join('\n');
+}
+
+function formatGitResult(label: string, result: ReturnType<typeof runGit>, maxChars: number): string {
+  if (result.error) {
+    return fenced(`${label} unavailable`, truncateSection(result.error, Math.min(maxChars, 2_000)));
+  }
+  return fenced(label, truncateSection(result.output ?? '', maxChars));
+}
+
+function formatTargetSummary(target: ExecuteReviewTarget, projectRoot: string, index: number): string {
+  const labelParts = [
+    `Target ${index + 1}`,
+    target.itemId ? `item=${target.itemId}` : null,
+    target.agentId ? `agent=${target.agentId}` : null,
+    target.status ? `status=${target.status}` : null,
+  ].filter(Boolean);
+  const resolvedPath = target.worktreePath
+    ? resolveTargetPath(projectRoot, target.worktreePath)
+    : '(no worktree path recorded)';
+  const files = target.changedFiles.length > 0
+    ? target.changedFiles.map((file) => `- ${file}`).join('\n')
+    : '- (no changed files recorded)';
+
+  return [
+    `### ${labelParts.join(' ')}`,
+    `Worktree path: ${resolvedPath}`,
+    `Worktree available: ${target.worktreePath && existsSync(resolvedPath) ? 'yes' : 'no'}`,
+    `Branch: ${target.worktreeBranch ?? '(not recorded)'}`,
+    'Changed files:',
+    files,
+  ].join('\n');
+}
+
+export function formatExecuteReviewTargetSummary(
+  targets: ExecuteReviewTarget[],
+  projectRoot: string,
+): string {
+  if (targets.length === 0) {
+    return [
+      '## Execute-phase review targets',
+      'No isolated execute worktrees were recorded. Review the current checkout material below.',
+    ].join('\n');
+  }
+
+  return [
+    '## Execute-phase review targets',
+    'Sprint changes may live on isolated agent branches. AgentForge collected the target metadata below before invoking the reviewer.',
+    ...targets.map((target, index) => formatTargetSummary(target, projectRoot, index)),
+  ].join('\n\n');
+}
+
+export function collectExecuteReviewMaterials(
+  targets: ExecuteReviewTarget[],
+  projectRoot: string,
+  baseBranch = 'main',
+  options: ExecuteReviewMaterialOptions = {},
+): string {
+  const maxDiffChars = options.maxDiffChars ?? DEFAULT_MAX_DIFF_CHARS;
+  const baseRef = `origin/${baseBranch}`;
+
+  if (targets.length === 0) {
+    const stat = runGit(projectRoot, ['diff', '--stat', 'HEAD']);
+    const diff = runGit(projectRoot, ['diff', 'HEAD']);
+    const log = runGit(projectRoot, ['log', '-1', '--format=%B']);
+    return [
+      '## Precomputed review materials',
+      '### Current checkout',
+      formatGitResult('Latest commit message', log, maxDiffChars),
+      formatGitResult('Diff stat', stat, maxDiffChars),
+      formatGitResult('Full diff', diff, maxDiffChars),
+    ].join('\n\n');
+  }
+
+  const sections = targets.map((target, index) => {
+    const heading = `### Target ${index + 1}${target.itemId ? ` (${target.itemId})` : ''}`;
+    if (target.worktreeBranch) {
+      const range = `${baseRef}...${target.worktreeBranch}`;
+      const stat = runGit(projectRoot, ['diff', '--stat', range]);
+      const diff = runGit(projectRoot, ['diff', range]);
+      const log = runGit(projectRoot, ['log', '-1', '--format=%B', target.worktreeBranch]);
+      return [
+        heading,
+        `Diff range: ${range}`,
+        formatGitResult('Latest branch commit message', log, maxDiffChars),
+        formatGitResult('Diff stat', stat, maxDiffChars),
+        formatGitResult('Full diff', diff, maxDiffChars),
+      ].join('\n\n');
+    }
+
+    if (target.worktreePath) {
+      const resolvedPath = resolveTargetPath(projectRoot, target.worktreePath);
+      if (existsSync(resolvedPath)) {
+        const range = `${baseRef}...HEAD`;
+        const stat = runGit(resolvedPath, ['diff', '--stat', range]);
+        const diff = runGit(resolvedPath, ['diff', range]);
+        const log = runGit(resolvedPath, ['log', '-1', '--format=%B']);
+        return [
+          heading,
+          `Worktree diff range: ${range}`,
+          formatGitResult('Latest worktree commit message', log, maxDiffChars),
+          formatGitResult('Diff stat', stat, maxDiffChars),
+          formatGitResult('Full diff', diff, maxDiffChars),
+        ].join('\n\n');
+      }
+    }
+
+    const files = target.changedFiles.length > 0
+      ? target.changedFiles.map((file) => `- ${file}`).join('\n')
+      : '- (no changed files recorded)';
+    return [
+      heading,
+      'No live worktree or branch was recorded for this target.',
+      'Recorded changed files:',
+      files,
+    ].join('\n');
+  });
+
+  return [
+    '## Precomputed review materials',
     ...sections,
   ].join('\n\n');
 }

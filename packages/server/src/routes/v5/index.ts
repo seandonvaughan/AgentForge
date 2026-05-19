@@ -40,6 +40,7 @@ import { registerFlywheelContinuousImprovementRoutes } from './flywheel-continuo
 // sprintOrchestrationRoutes removed — mutation routes for the old manual
 // workflow were deleted as part of the sprint→cycle plan.json migration.
 import { settingsRoutes } from './settings.js';
+import { teamControlRoutes } from './team-control.js';
 import { agentCrudRoutes } from './agent-crud.js';
 import { agentRoutes } from './agents.js';
 import { chatRoutes } from './chat.js';
@@ -469,6 +470,9 @@ export async function registerV5Routes(
 
   // ── Settings persistence ───────────────────────────────────────────────────
   await settingsRoutes(app);
+
+  // ── AgentForge team forge/rebuild control ──────────────────────────────────
+  await teamControlRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
 
   // ── Agent listing (GET /api/v5/agents — reads .agentforge/agents/*.yaml) ───
   await agentRoutes(app, { adapter, projectRoot: opts.projectRoot ?? process.cwd() });

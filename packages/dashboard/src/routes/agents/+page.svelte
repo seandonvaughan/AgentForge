@@ -12,7 +12,6 @@
    * Data: GET /api/v5/agents (SSR via +page.server.ts + client refresh every 15s).
    * Sparklines (24h invocations) require GET /api/v5/sessions?limit=100 — aggregated client-side.
    */
-  import { goto } from '$app/navigation';
   import { onMount, onDestroy } from 'svelte';
   import {
     Badge, Btn, Card, DistBar, ModelChip, PulseDot, Sparkline,
@@ -174,6 +173,10 @@
   function capabilityTier(agent: AgentListItem): 'opus' | 'sonnet' | 'haiku' {
     return agent.capabilityTier ?? agent.model;
   }
+
+  function agentDetailHref(agentId: string): string {
+    return `/agents/${encodeURIComponent(agentId)}`;
+  }
 </script>
 
 <svelte:head><title>Agent Fleet — AgentForge</title></svelte:head>
@@ -318,45 +321,52 @@
           {@const spark = sparklineFor(agent.agentId)}
           {@const spend = agentSpend(agent.agentId)}
           {@const topSpend = topSpender?.spend ?? 0}
-          <tr
-            class="af-tr"
-            role="button"
-            tabindex="0"
-            onclick={() => goto(`/agents/${agent.agentId}`)}
-            onkeydown={e => e.key === 'Enter' && goto(`/agents/${agent.agentId}`)}
-          >
+          {@const detailHref = agentDetailHref(agent.agentId)}
+          <tr class="af-tr">
             <!-- Name -->
             <td class="af-td af-td-name">
-              <div style="display:flex; align-items:center; gap:8px;">
+              <a
+                class="af-cell-link af-row-link"
+                href={detailHref}
+                aria-label={`View ${agent.name || agent.agentId} agent details`}
+              >
                 {#if spark.some(v => v > 0)}
                   <PulseDot color="var(--af-purple)" size={5} />
                 {/if}
                 <span style="font-weight:500; color:var(--af-text);">{agent.name}</span>
-              </div>
+              </a>
             </td>
             <!-- Agent ID -->
             <td class="af-td">
-              <span class="font-mono af-agent-id">{agent.agentId}</span>
+              <a class="af-cell-link" href={detailHref} tabindex="-1">
+                <span class="font-mono af-agent-id">{agent.agentId}</span>
+              </a>
             </td>
             <!-- Codex model -->
             <td class="af-td">
-              <ModelChip model={profileModel(agent)} effort={profileEffort(agent)} tier={capabilityTier(agent)} />
+              <a class="af-cell-link" href={detailHref} tabindex="-1">
+                <ModelChip model={profileModel(agent)} effort={profileEffort(agent)} tier={capabilityTier(agent)} />
+              </a>
             </td>
             <!-- Team -->
             <td class="af-td">
-              {#if agent.team}
-                <Badge variant="muted">{teamLabel(agent.team)}</Badge>
-              {:else}
-                <span class="af-dash">—</span>
-              {/if}
+              <a class="af-cell-link" href={detailHref} tabindex="-1">
+                {#if agent.team}
+                  <Badge variant="muted">{teamLabel(agent.team)}</Badge>
+                {:else}
+                  <span class="af-dash">—</span>
+                {/if}
+              </a>
             </td>
             <!-- Reasoning -->
             <td class="af-td">
-              <Badge variant={effortVariant(profileEffort(agent))}>{profileEffort(agent).toUpperCase()}</Badge>
+              <a class="af-cell-link" href={detailHref} tabindex="-1">
+                <Badge variant={effortVariant(profileEffort(agent))}>{profileEffort(agent).toUpperCase()}</Badge>
+              </a>
             </td>
             <!-- Cycle spend -->
             <td class="af-td">
-              <div style="display:flex; align-items:center; gap:8px;">
+              <a class="af-cell-link af-spend-link" href={detailHref} tabindex="-1">
                 <span class="font-mono af-spend">${spend.toFixed(3)}</span>
                 <div class="af-spend-bar">
                   <div
@@ -364,19 +374,23 @@
                     style="width:{topSpend > 0 ? Math.min(100, (spend / topSpend) * 100) : 0}%"
                   ></div>
                 </div>
-              </div>
+              </a>
             </td>
             <!-- Last active -->
             <td class="af-td">
-              <span class="font-mono af-last-active">{lastActive(agent.agentId)}</span>
-              {#if spark.some(v => v > 0)}
-                <div class="af-spark-wrap">
-                  <Sparkline data={spark} color="var(--af-purple)" w={60} h={14} />
-                </div>
-              {/if}
+              <a class="af-cell-link" href={detailHref} tabindex="-1">
+                <span class="font-mono af-last-active">{lastActive(agent.agentId)}</span>
+                {#if spark.some(v => v > 0)}
+                  <div class="af-spark-wrap">
+                    <Sparkline data={spark} color="var(--af-purple)" w={60} h={14} />
+                  </div>
+                {/if}
+              </a>
             </td>
             <!-- Description -->
-            <td class="af-td af-td-desc">{agent.description ?? '—'}</td>
+            <td class="af-td af-td-desc">
+              <a class="af-cell-link" href={detailHref} tabindex="-1">{agent.description ?? '—'}</a>
+            </td>
           </tr>
         {/each}
       </tbody>
@@ -595,6 +609,26 @@
     vertical-align: middle;
   }
   .af-td-name { white-space: nowrap; }
+  .af-cell-link {
+    display: block;
+    margin: -8px -14px;
+    padding: 8px 14px;
+    color: inherit;
+    text-decoration: none;
+  }
+  .af-cell-link:visited {
+    color: inherit;
+  }
+  .af-cell-link:focus-visible {
+    outline: 2px solid var(--af-accent);
+    outline-offset: -2px;
+  }
+  .af-row-link,
+  .af-spend-link {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
   .af-agent-id {
     font-size: 11px;
     color: var(--af-muted);

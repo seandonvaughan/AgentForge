@@ -43,7 +43,15 @@ export class BudgetApproval {
 
   async collect(req: ApprovalRequest, options: ApprovalOptions = {}): Promise<ApprovalResult> {
     const withinBudgetCost = this.sumCosts(req.withinBudget);
-    if (req.withinBudget.length > 0 && withinBudgetCost <= req.budgetUsd) {
+    const overflowCost = this.sumCosts(req.requiresApproval);
+    const newTotal = withinBudgetCost + overflowCost;
+    const explicitMode = options.mode;
+
+    if (
+      req.withinBudget.length > 0 &&
+      withinBudgetCost <= req.budgetUsd &&
+      (explicitMode === undefined || explicitMode === 'auto')
+    ) {
       return {
         approvedItems: req.withinBudget,
         rejectedItems: req.requiresApproval,
@@ -55,20 +63,20 @@ export class BudgetApproval {
     }
 
     // Write pending
-    const overflowCost = this.sumCosts(req.requiresApproval);
-    const newTotal = this.sumCosts(req.withinBudget) + overflowCost;
 
     this.logger.logApprovalPending({
       cycleId: this.cycleId,
       requestedAt: new Date().toISOString(),
-      withinBudget: { items: req.withinBudget, totalCostUsd: this.sumCosts(req.withinBudget) },
+      withinBudget: { items: req.withinBudget, totalCostUsd: withinBudgetCost },
       overflow: { items: req.requiresApproval, additionalCostUsd: overflowCost },
       newTotalUsd: newTotal,
       budgetUsd: req.budgetUsd,
       agentSummary: req.summary,
     });
 
-    const mode = options.mode ?? (process.stdin.isTTY ? 'tty' : 'file');
+    const mode = explicitMode === 'auto' || explicitMode === undefined
+      ? (process.stdin.isTTY ? 'tty' : 'file')
+      : explicitMode;
 
     let decision: {
       decision: 'approved' | 'rejected';

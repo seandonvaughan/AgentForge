@@ -1,5 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { resolveMode, resolveAutoMode } from '../execution-service-mode.js';
+
+function withEmptyProjectRoot<T>(fn: (projectRoot: string) => T): T {
+  const dir = mkdtempSync(join(tmpdir(), 'agentforge-runtime-mode-'));
+  try {
+    return fn(dir);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Tests for resolveMode()
@@ -14,8 +26,10 @@ describe('resolveMode()', () => {
     expect(resolveMode({ AGENTFORGE_RUNTIME: 'cli' })).toBe('cli');
   });
 
-  it('returns "auto" when AGENTFORGE_RUNTIME is not set', () => {
-    expect(resolveMode({})).toBe('auto');
+  it('returns "auto" when AGENTFORGE_RUNTIME and config runtime are not set', () => {
+    withEmptyProjectRoot((projectRoot) => {
+      expect(resolveMode({}, projectRoot)).toBe('auto');
+    });
   });
 
   it('returns "auto" when AGENTFORGE_RUNTIME is an unrecognised value', () => {
@@ -56,12 +70,16 @@ describe('resolveAutoMode()', () => {
   });
 
   it('returns a "cli" or "sdk" string when mode is auto (PATH probe)', () => {
-    const result = resolveAutoMode({});
-    expect(['cli', 'sdk']).toContain(result);
+    withEmptyProjectRoot((projectRoot) => {
+      const result = resolveAutoMode({}, projectRoot);
+      expect(['cli', 'sdk']).toContain(result);
+    });
   });
 
   it('returns "cli" | "sdk" — never "auto"', () => {
-    const result = resolveAutoMode({});
-    expect(result).not.toBe('auto');
+    withEmptyProjectRoot((projectRoot) => {
+      const result = resolveAutoMode({}, projectRoot);
+      expect(result).not.toBe('auto');
+    });
   });
 });
