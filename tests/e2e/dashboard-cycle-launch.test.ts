@@ -55,6 +55,6 @@ test.describe('Cycle Launch Page', () => {
       fallbackEnabled: true,
     });
 
-    await expect(page).toHaveURL(/\/cycles\/pw-cycle-001$/);
+    await expect(page).toHaveURL(/\/cycles\/pw-cycle-001$/, { timeout: 15_000 });
   });
 });

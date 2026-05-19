@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { Btn, Badge, Card, PulseDot } from '$lib/components/v2';
+  import { codexProfileFor } from '$lib/modelProfiles';
   import type { PageData } from './$types';
 
   // MODEL_TIER_META maps persisted tier keys to Codex-facing display metadata.
@@ -407,11 +408,13 @@
   }
 
   function modelIdToTierLabel(modelId: string, agentId?: string): string {
+    const profile = codexProfileFor(modelId);
+    if (profile) return MODEL_TIER_META[profile.tier]?.label ?? `${profile.effort} profile`;
+
     const lower = modelId.toLowerCase();
-    if (lower.includes('codex')) return MODEL_TIER_META[getAgentModel(agentId ?? selectedAgent)]?.label ?? 'high profile';
     if (lower.includes('opus'))  return 'xhigh profile';
     if (lower.includes('haiku')) return 'medium profile';
-    return 'high profile';
+    return MODEL_TIER_META[getAgentModel(agentId ?? selectedAgent)]?.label ?? 'high profile';
   }
 
   function formatCost(cost?: number): string {

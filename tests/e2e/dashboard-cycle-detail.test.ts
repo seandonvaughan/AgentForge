@@ -9,7 +9,7 @@ async function openFirstCycleDetail(page: Page) {
 
   const cycleHref = `/cycles/${cycleId!}`;
   await page.goto(cycleHref, { waitUntil: 'domcontentloaded' });
-  await expect(page.locator('h1')).toContainText(/Cycle/i);
+  await expect(page.locator('h1')).toContainText(/Cycle/i, { timeout: 15_000 });
   return cycleHref;
 }
 

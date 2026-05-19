@@ -835,6 +835,16 @@
     } catch { /* silent */ }
   }
 
+  async function loadSecondaryCycleData(): Promise<void> {
+    await Promise.allSettled([
+      loadSprint(),
+      loadAgents(),
+      loadScoring(),
+      loadEvents(),
+      loadTypecheckFailure(),
+    ]);
+  }
+
   function ensureSse(): void {
     if (eventSource || isTerminal) return;
     try {
@@ -1002,14 +1012,12 @@
   let selectedAgent = $state<string | null>(null);
 
   onMount(() => {
-    void loadCycle();
-    void loadSprint();
-    void loadAgents();
-    void loadScoring();
-    void loadEvents();
-    void loadTypecheckFailure();
-    ensureSse();
-    manage();
+    void (async () => {
+      await loadCycle();
+      void loadSecondaryCycleData();
+      if (!isTerminal) ensureSse();
+      manage();
+    })();
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', onVisibility);
     }

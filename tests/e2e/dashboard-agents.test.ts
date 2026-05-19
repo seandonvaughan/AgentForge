@@ -89,8 +89,12 @@ test.describe('Agents List Page', () => {
     const firstRow = table.locator('tbody tr').first();
     await expect(firstRow).toBeVisible();
 
-    // Rows are keyboard-accessible with role="button" and tabindex="0"
-    await expect(firstRow).toHaveAttribute('tabindex', '0');
+    const agentId = (await firstRow.locator('.af-agent-id').textContent())?.trim();
+    expect(agentId, 'Expected first row to expose an agent id').toBeTruthy();
+
+    // Rows expose a native link so click/keyboard navigation does not depend on
+    // a hydrated JavaScript handler attached to <tr>.
+    await expect(firstRow.locator(`a.af-row-link[href="/agents/${agentId}"]`)).toBeVisible();
 
     // Click triggers SvelteKit client-side navigation to /agents/:id.
     // waitForLoadState('load') is a no-op after client-side routing (the page

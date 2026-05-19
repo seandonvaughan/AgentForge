@@ -160,7 +160,7 @@
         launching = false;
         return;
       }
-      setTimeout(() => { void goto(`/cycles/${newId}`); }, 500);
+      await goto(`/cycles/${newId}`);
     } catch (e) {
       launchError = e instanceof Error ? e.message : String(e);
       launching = false;

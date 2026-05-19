@@ -11,6 +11,7 @@ type StreamEvent = {
 type RunResponseOptions = {
   sessionId?: string;
   status?: number;
+  model?: string;
   responseDelayMs?: number;
   onRunRequest?: (payload: Record<string, unknown>) => void;
 };
@@ -99,7 +100,7 @@ async function mockRunnerApis(page: Page, options: RunResponseOptions = {}) {
         data: {
           sessionId,
           agentId: 'coder',
-          model: 'gpt-5.3-codex',
+          model: options.model ?? 'gpt-5.3-codex',
           status: status === 202 ? 'running' : 'completed',
           providerKind: 'codex-cli',
           runtimeModeResolved: 'codex-cli',
@@ -173,6 +174,22 @@ test.describe('Runner Page', () => {
 
     await expect(page.locator('.running-indicator')).toHaveCount(0);
     await expect(page.locator('.history-item').first()).toContainText('completed');
+  });
+
+  test('renders raw gpt-5.5 invoke metadata as the xhigh profile', async ({ page }) => {
+    await openRunner(page, { model: 'gpt-5.5' });
+
+    await page.fill('#task-input', 'Show profile');
+    await page.click('button:has-text("Run Agent")');
+    await expect(page.locator('.output-meta')).toContainText('xhigh profile');
+  });
+
+  test('renders raw gpt-5.4-mini invoke metadata as the medium profile', async ({ page }) => {
+    await openRunner(page, { sessionId: 'run-mini-1', model: 'gpt-5.4-mini' });
+
+    await page.fill('#task-input', 'Show mini profile');
+    await page.click('button:has-text("Run Agent")');
+    await expect(page.locator('.output-meta')).toContainText('medium profile');
   });
 
   test('replays chunks that arrive before the 202 response returns', async ({ page }) => {

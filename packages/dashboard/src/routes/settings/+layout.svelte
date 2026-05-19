@@ -11,6 +11,7 @@
   const SECTIONS = [
     { id: 'workspace',     label: 'Workspace',      href: '/settings/workspace' },
     { id: 'autonomous',    label: 'Autonomous',      href: '/settings/autonomous' },
+    { id: 'forge',         label: 'Forge',           href: '/settings/forge' },
     { id: 'notifications', label: 'Notifications',   href: '/settings/notifications' },
     { id: 'security',      label: 'Security',        href: '/settings/security' },
     { id: 'team',          label: 'Team',            href: '/settings/team' },
