@@ -405,6 +405,7 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
         gitOps,
         prOpener,
         bus,
+        messageBus: messageBusV2,
         ...(worktreePool !== undefined ? { worktreePool } : {}),
         ...(disableWorktrees ? { disableWorktrees: true } : {}),
         ...(opts.dryRun ? { dryRun: { prOpener: true } } : {}),

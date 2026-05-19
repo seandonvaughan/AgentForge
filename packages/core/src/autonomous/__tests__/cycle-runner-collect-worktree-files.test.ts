@@ -13,7 +13,7 @@
 // Coverage:
 //   1. Two agent branches each contribute one file → both returned, sorted+deduped.
 //   2. Files under .agentforge/cycles/ are excluded.
-//   3. A worktree path that no longer exists on disk is skipped silently.
+//   3. A worktree path that no longer exists on disk still resolves through the pushed branch.
 //   4. worktreePool === undefined → CycleRunner falls back to git status (regression).
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -181,7 +181,7 @@ describe('collectFilesFromAgentBranches', () => {
     expect(files).toContain('src/real.ts');
   }, 30_000);
 
-  it('AC4: worktreePath that no longer exists is skipped silently', async () => {
+  it('AC4: worktreePath that no longer exists still returns branch changes', async () => {
     await createAgentBranch(workDir, 'autonomous/agent-d', 'src/delta.ts', 'export const d = 4;\n');
 
     const phasesDir = writePhasesDir(workDir, CYCLE_ID);
@@ -204,8 +204,7 @@ describe('collectFilesFromAgentBranches', () => {
     });
 
     expect(Array.isArray(files)).toBe(true);
-    // delta.ts NOT returned because its worktree path was gone
-    expect(files).not.toContain('src/delta.ts');
+    expect(files).toContain('src/delta.ts');
   }, 20_000);
 });
 

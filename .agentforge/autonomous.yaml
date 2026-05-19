@@ -36,6 +36,8 @@ pr:
     - autonomous
     - needs-review
   titleTemplate: 'autonomous(v{version}): {summary}'
+prMode: multi
+autoMergePRs: false
 sourcing:
   lookbackDays: 7
   minProposalConfidence: 0.6
@@ -46,8 +48,8 @@ testing:
   timeoutMinutes: 20
   reporter: json
   saveRawLog: true
-  buildCommand: corepack pnpm --filter @agentforge/core build
-  typeCheckCommand: corepack pnpm exec tsc --noEmit --pretty false
+  buildCommand: corepack pnpm build
+  typeCheckCommand: corepack pnpm exec tsc -b --noEmit --pretty false
 scoring:
   agentId: backlog-scorer
   maxRetries: 3

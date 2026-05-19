@@ -110,6 +110,10 @@ export function sanitizePrTitle(version: string, summary: string): string {
   return prefix + (lastSpace > 20 ? cut.slice(0, lastSpace) : cut) + '…';
 }
 
+export function shouldOpenSingleCyclePr(filesChanged: string[], commitSha: string | null): boolean {
+  return filesChanged.length > 0 && commitSha !== null;
+}
+
 /**
  * Extract a useful error message from a failed execFileAsync call.
  *
@@ -277,8 +281,8 @@ export interface CycleRunnerOptions {
  * git add/commit/push continues to run against the main tree using the paths
  * returned here.
  *
- * - Worktrees whose `worktreePath` no longer exists on disk are skipped silently
- *   (they may have been GC'd mid-cycle by WorktreeGc).
+ * - Worktrees may already have been released by the time this helper runs;
+ *   use the recorded branch as source of truth instead of the checkout path.
  * - Files under `.agentforge/cycles/` are excluded.
  * - Results are de-duplicated across all branches and returned sorted.
  */
@@ -305,12 +309,8 @@ export async function collectFilesFromAgentBranches(opts: {
 
   for (const run of agentRuns) {
     const branch = typeof run['worktreeBranch'] === 'string' ? run['worktreeBranch'] : undefined;
-    const treePath = typeof run['worktreePath'] === 'string' ? run['worktreePath'] : undefined;
 
     if (!branch) continue;
-
-    // Skip entries whose worktree was GC'd mid-cycle — not an error.
-    if (treePath !== undefined && !existsSync(treePath)) continue;
 
     try {
       const { stdout } = await execFileAsync(
@@ -532,6 +532,7 @@ export class CycleRunner {
           bus: this.options.messageBus,
           parentBranch: this.options.config.git.baseBranch,
           cycleId: this.cycleId,
+          dryRun: this.options.dryRun?.prOpener === true,
         });
         this.mergeQueue.start();
         // eslint-disable-next-line no-console
@@ -845,70 +846,78 @@ export class CycleRunner {
       await this.runMultiPrDrain(plan.version, scored.summary);
     } else {
       // ── single-PR path (default) ────────────────────────────────────
-      const intermediate = this.buildResult(CycleStage.REVIEW, {
-        sprintVersion: plan.version,
-        cost: {
-          totalUsd: this.totalCostUsd,
-          budgetUsd: this.options.config.budget.perCycleUsd,
-          byAgent: {},
-          byPhase: {},
-        },
-        tests: this.testStats,
-        git: {
+      if (shouldOpenSingleCyclePr(filesToCommit, this.commitSha)) {
+        const intermediate = this.buildResult(CycleStage.REVIEW, {
+          sprintVersion: plan.version,
+          cost: {
+            totalUsd: this.totalCostUsd,
+            budgetUsd: this.options.config.budget.perCycleUsd,
+            byAgent: {},
+            byPhase: {},
+          },
+          tests: this.testStats,
+          git: {
+            branch: this.branch,
+            commitSha: this.commitSha,
+            filesChanged: filesToCommit,
+          },
+        });
+
+        const prBody = renderPrBody({
+          sprint: {
+            version: plan.version,
+            items: plan.items.map((i) => ({
+              id: i.id,
+              priority: i.priority,
+              title: i.title,
+              assignee: i.assignee,
+            })),
+          },
+          result: intermediate,
+          testResult,
+          scoringResult: {
+            rankings: [...scored.withinBudget, ...scored.requiresApproval],
+            totalEstimatedCostUsd: scored.totalEstimatedCostUsd,
+            budgetOverflowUsd: scored.budgetOverflowUsd,
+            summary: scored.summary,
+            warnings: scored.warnings,
+          },
+        });
+
+        // Build the PROpener request — only include `reviewers` if we have one,
+        // and only include `dryRun` if it's truthy. `exactOptionalPropertyTypes`
+        // forbids `undefined` for optional fields, so use conditional spreads.
+        const prRequest = {
           branch: this.branch,
-          commitSha: this.commitSha,
-          filesChanged: filesToCommit,
-        },
-      });
+          baseBranch: this.options.config.git.baseBranch,
+          title: sanitizePrTitle(plan.version, scored.summary),
+          body: prBody,
+          draft: this.options.config.pr.draft,
+          labels: this.options.config.pr.labels,
+          ...(this.options.config.pr.assignReviewer
+            ? { reviewers: [this.options.config.pr.assignReviewer] }
+            : {}),
+          ...(this.options.dryRun?.prOpener ? { dryRun: true } : {}),
+        };
+        const prResult = await this.options.prOpener.open(prRequest);
 
-      const prBody = renderPrBody({
-        sprint: {
-          version: plan.version,
-          items: plan.items.map((i) => ({
-            id: i.id,
-            priority: i.priority,
-            title: i.title,
-            assignee: i.assignee,
-          })),
-        },
-        result: intermediate,
-        testResult,
-        scoringResult: {
-          rankings: [...scored.withinBudget, ...scored.requiresApproval],
-          totalEstimatedCostUsd: scored.totalEstimatedCostUsd,
-          budgetOverflowUsd: scored.budgetOverflowUsd,
-          summary: scored.summary,
-          warnings: scored.warnings,
-        },
-      });
+        this.prUrl = prResult.url;
+        this.prNumber = prResult.number;
+        this.prDraft = prResult.draft;
 
-      // Build the PROpener request — only include `reviewers` if we have one,
-      // and only include `dryRun` if it's truthy. `exactOptionalPropertyTypes`
-      // forbids `undefined` for optional fields, so use conditional spreads.
-      const prRequest = {
-        branch: this.branch,
-        baseBranch: this.options.config.git.baseBranch,
-        title: sanitizePrTitle(plan.version, scored.summary),
-        body: prBody,
-        draft: this.options.config.pr.draft,
-        labels: this.options.config.pr.labels,
-        ...(this.options.config.pr.assignReviewer
-          ? { reviewers: [this.options.config.pr.assignReviewer] }
-          : {}),
-        ...(this.options.dryRun?.prOpener ? { dryRun: true } : {}),
-      };
-      const prResult = await this.options.prOpener.open(prRequest);
-
-      this.prUrl = prResult.url;
-      this.prNumber = prResult.number;
-      this.prDraft = prResult.draft;
-
-      this.logger.logPREvent({
-        type: 'opened',
-        url: prResult.url,
-        number: prResult.number,
-        title: `autonomous(v${plan.version})`,
-      });
+        this.logger.logPREvent({
+          type: 'opened',
+          url: prResult.url,
+          number: prResult.number,
+          title: `autonomous(v${plan.version})`,
+        });
+      } else {
+        this.options.bus.publish('sprint.phase.review.step', {
+          cycleId: this.cycleId,
+          step: 'skipped',
+          detail: 'no commit was produced — skipping single-PR open',
+        });
+      }
     }
 
     // ─────────────────────────────────────────────────────────────────

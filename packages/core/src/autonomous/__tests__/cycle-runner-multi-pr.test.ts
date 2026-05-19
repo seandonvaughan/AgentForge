@@ -29,6 +29,7 @@ import { MessageBusV2 } from '../../message-bus/message-bus.js';
 import { MergeQueue } from '../../runtime/merge-queue.js';
 import type { AgentBranchPushedPayload } from '../../message-bus/types.js';
 import type { DrainResult, DrainAndMergeResult } from '../../runtime/merge-queue.js';
+import { shouldOpenSingleCyclePr } from '../cycle-runner.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -269,6 +270,13 @@ describe('prMode cycle-end drain behavior', () => {
     expect(prOpenerCalled).toBe(true);
     expect(mock.drain).not.toHaveBeenCalled();
     expect(mock.drainAndMerge).not.toHaveBeenCalled();
+  });
+
+  it('8b. prMode=\'single\' with no commit skips PR open', () => {
+    expect(shouldOpenSingleCyclePr([], null)).toBe(false);
+    expect(shouldOpenSingleCyclePr(['src/a.ts'], null)).toBe(false);
+    expect(shouldOpenSingleCyclePr([], 'deadbeef')).toBe(false);
+    expect(shouldOpenSingleCyclePr(['src/a.ts'], 'deadbeef')).toBe(true);
   });
 
   it('9. prMode=\'multi\' + autoMergePRs=true → drainAndMerge called with autoMerge: true', async () => {
