@@ -6,8 +6,8 @@
  * agent team should be updated.
  */
 
-import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { readFile, writeFile, mkdir, readdir, rm } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import yaml from "js-yaml";
 import type { DomainId } from "../types/domain.js";
 
@@ -49,6 +49,40 @@ export interface TeamDiff {
   model_changes: ModelChange[];
   skill_updates: SkillUpdate[];
   summary: string;
+}
+
+/** Options for applying a diff with optional canary safety checks. */
+export interface ApplyDiffOptions {
+  /**
+   * Enable canary protection for the write path.
+   *
+   * When enabled, the current `.agentforge/` state is backed up before the
+   * forge reruns. If the canary validation fails, the previous state is
+   * restored automatically.
+   */
+  canary?: boolean;
+  /**
+   * Traffic split recorded in the canary metadata. This does not affect file
+   * routing directly, but it documents how aggressively the rollout was staged.
+   */
+  trafficPercent?: number;
+  /**
+   * Rollback threshold recorded in the canary metadata.
+   *
+   * Defaults to 0.05 to match the existing canary subsystem.
+   */
+  rollbackThreshold?: number;
+  /**
+   * Optional validator for the newly forged manifest.
+   *
+   * Returning `false` triggers an automatic rollback to the backed-up state.
+   */
+  validate?: (manifest: TeamManifest) => boolean | Promise<boolean>;
+  /**
+   * Optional forge implementation override used for tests and alternate
+   * rollout strategies.
+   */
+  forgeTeam?: (projectRoot: string) => Promise<TeamManifest>;
 }
 
 // ---------------------------------------------------------------------------
@@ -223,6 +257,212 @@ function diffManifests(
   };
 }
 
+interface ForgeSnapshotEntry {
+  path: string;
+  existed: boolean;
+  content?: string;
+}
+
+interface CanaryRolloutRecord {
+  enabled: boolean;
+  trafficPercent: number;
+  rollbackThreshold: number;
+  status: "staged" | "promoted" | "rolled_back";
+  reason?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
+function normalizeCanaryPercent(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.min(100, Math.max(0, value));
+}
+
+function normalizeCanaryThreshold(value: number): number {
+  if (!Number.isFinite(value) || value < 0) {
+    return 0.05;
+  }
+  return Math.min(1, value);
+}
+
+function shouldUseCanary(options?: ApplyDiffOptions): boolean {
+  if (options?.canary !== undefined) {
+    return options.canary;
+  }
+
+  return process.env["AGENTFORGE_REFORGE_CANARY"] === "1";
+}
+
+function isManifestValid(manifest: TeamManifest): boolean {
+  const allAgents = new Set<string>();
+  for (const bucket of Object.values(manifest.agents)) {
+    if (!Array.isArray(bucket)) {
+      return false;
+    }
+    for (const agent of bucket) {
+      allAgents.add(agent);
+    }
+  }
+
+  const routedAgents = [
+    ...manifest.model_routing.opus,
+    ...manifest.model_routing.sonnet,
+    ...manifest.model_routing.haiku,
+  ];
+  if (routedAgents.length === 0) {
+    return false;
+  }
+
+  for (const agent of routedAgents) {
+    if (!allAgents.has(agent)) {
+      return false;
+    }
+  }
+
+  return (
+    typeof manifest.name === "string" &&
+    manifest.name.length > 0 &&
+    typeof manifest.forged_at === "string" &&
+    manifest.forged_at.length > 0 &&
+    typeof manifest.project_hash === "string" &&
+    manifest.project_hash.length > 0
+  );
+}
+
+async function readSnapshotFile(path: string): Promise<ForgeSnapshotEntry> {
+  try {
+    const content = await readFile(path, "utf-8");
+    return { path, existed: true, content };
+  } catch {
+    return { path, existed: false };
+  }
+}
+
+async function readSnapshotDirectory(
+  dirPath: string,
+  prefix: string,
+): Promise<ForgeSnapshotEntry[]> {
+  try {
+    const entries = await readdir(dirPath, { withFileTypes: true });
+    const snapshots: ForgeSnapshotEntry[] = [];
+
+    for (const entry of entries) {
+      const entryPath = join(dirPath, entry.name);
+      const relativePath = join(prefix, entry.name);
+      if (entry.isDirectory()) {
+        snapshots.push(...await readSnapshotDirectory(entryPath, relativePath));
+        continue;
+      }
+      snapshots.push(await readSnapshotFile(entryPath));
+    }
+
+    return snapshots;
+  } catch {
+    return [];
+  }
+}
+
+async function captureForgeSnapshot(projectRoot: string): Promise<ForgeSnapshotEntry[]> {
+  const agentforgeDir = join(projectRoot, ".agentforge");
+  const snapshots: ForgeSnapshotEntry[] = [];
+
+  const topLevelFiles = [
+    join(agentforgeDir, "team.yaml"),
+    join(agentforgeDir, "forge.log"),
+  ];
+  for (const filePath of topLevelFiles) {
+    snapshots.push(await readSnapshotFile(filePath));
+  }
+
+  snapshots.push(
+    ...(await readSnapshotDirectory(join(agentforgeDir, "analysis"), join(agentforgeDir, "analysis"))),
+  );
+  snapshots.push(
+    ...(await readSnapshotDirectory(join(agentforgeDir, "config"), join(agentforgeDir, "config"))),
+  );
+  snapshots.push(
+    ...(await readSnapshotDirectory(join(agentforgeDir, "agents"), join(agentforgeDir, "agents"))),
+  );
+
+  return snapshots;
+}
+
+async function collectManagedForgeFiles(projectRoot: string): Promise<string[]> {
+  const agentforgeDir = join(projectRoot, ".agentforge");
+  const files: string[] = [];
+
+  async function walk(dirPath: string): Promise<void> {
+    const entries = await readdir(dirPath, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      const entryPath = join(dirPath, entry.name);
+      if (entry.isDirectory()) {
+        await walk(entryPath);
+        continue;
+      }
+      files.push(entryPath);
+    }
+  }
+
+  for (const filePath of [
+    join(agentforgeDir, "team.yaml"),
+    join(agentforgeDir, "forge.log"),
+  ]) {
+    files.push(filePath);
+  }
+
+  await walk(join(agentforgeDir, "analysis"));
+  await walk(join(agentforgeDir, "config"));
+  await walk(join(agentforgeDir, "agents"));
+
+  return files;
+}
+
+async function restoreForgeSnapshot(snapshot: ForgeSnapshotEntry[]): Promise<void> {
+  const preservedPaths = new Set(
+    snapshot.filter((entry) => entry.existed).map((entry) => entry.path),
+  );
+  const firstSnapshot = snapshot[0];
+
+  const currentFiles = await collectManagedForgeFiles(
+    firstSnapshot ? dirname(dirname(firstSnapshot.path)) : process.cwd(),
+  ).catch(() => []);
+
+  await Promise.all(
+    currentFiles
+      .filter((filePath) => !preservedPaths.has(filePath))
+      .map((filePath) => rm(filePath, { force: true })),
+  );
+
+  await Promise.all(
+    snapshot.map(async (entry) => {
+      if (!entry.existed) {
+        await rm(entry.path, { force: true });
+        return;
+      }
+      if (entry.content === undefined) {
+        return;
+      }
+      await mkdir(dirname(entry.path), { recursive: true }).catch(() => undefined);
+      await writeFile(entry.path, entry.content, "utf-8");
+    }),
+  );
+}
+
+async function writeCanaryRolloutRecord(
+  projectRoot: string,
+  record: CanaryRolloutRecord,
+): Promise<void> {
+  const forgeDir = join(projectRoot, ".agentforge", "forge");
+  await mkdir(forgeDir, { recursive: true });
+  await writeFile(
+    join(forgeDir, "canary-rollout.json"),
+    JSON.stringify(record, null, 2),
+    "utf-8",
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -345,6 +585,7 @@ export async function reforgeTeam(projectRoot: string): Promise<TeamDiff> {
 export async function applyDiff(
   projectRoot: string,
   diff: TeamDiff,
+  options: ApplyDiffOptions = {},
 ): Promise<void> {
   if (
     diff.agents_added.length === 0 &&
@@ -356,9 +597,45 @@ export async function applyDiff(
     return;
   }
 
-  // Re-run forge to write updated files
-  await forgeTeam(projectRoot);
-  console.log("Team updated successfully.");
+  const canaryEnabled = shouldUseCanary(options);
+  const forge = options.forgeTeam ?? forgeTeam;
+  if (!canaryEnabled) {
+    await forge(projectRoot);
+    console.log("Team updated successfully.");
+    return;
+  }
+
+  const snapshot = await captureForgeSnapshot(projectRoot);
+  const rolloutRecord: CanaryRolloutRecord = {
+    enabled: true,
+    trafficPercent: normalizeCanaryPercent(options.trafficPercent ?? 10),
+    rollbackThreshold: normalizeCanaryThreshold(options.rollbackThreshold ?? 0.05),
+    status: "staged",
+    createdAt: new Date().toISOString(),
+  };
+
+  await writeCanaryRolloutRecord(projectRoot, rolloutRecord);
+
+  try {
+    const manifest = await forge(projectRoot);
+    const isValid = options.validate ? await options.validate(manifest) : isManifestValid(manifest);
+
+    if (!isValid) {
+      throw new Error("Canary validation failed for the newly forged team.");
+    }
+
+    rolloutRecord.status = "promoted";
+    rolloutRecord.completedAt = new Date().toISOString();
+    await writeCanaryRolloutRecord(projectRoot, rolloutRecord);
+    console.log("Team updated successfully via canary rollout.");
+  } catch (error) {
+    await restoreForgeSnapshot(snapshot);
+    rolloutRecord.status = "rolled_back";
+    rolloutRecord.reason = error instanceof Error ? error.message : String(error);
+    rolloutRecord.completedAt = new Date().toISOString();
+    await writeCanaryRolloutRecord(projectRoot, rolloutRecord);
+    throw error;
+  }
 }
 
 /**
