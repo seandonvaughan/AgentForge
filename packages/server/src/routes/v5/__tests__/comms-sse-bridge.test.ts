@@ -13,8 +13,28 @@ import type {
 import {
   bridgeDmToGlobalStream,
   bridgeInboxToGlobalStream,
+  bridgeCanaryToGlobalStream,
 } from '../index.js';
 import { globalStream, type StreamEvent } from '../stream.js';
+
+interface ReforgeCanaryOutcomePayload {
+  planId: string;
+  agentName: string;
+  flagId: string;
+  requestId: string;
+  isError: boolean;
+  canaryRequests: number;
+  canaryErrors: number;
+  errorRate: number;
+  rollbackThreshold: number;
+  status: 'healthy' | 'degraded' | 'rolled_back';
+}
+
+interface ReforgeCanaryEnvelope<TPayload> {
+  workspaceId: string;
+  topic: 'reforge.canary.outcome';
+  payload: TPayload;
+}
 
 function dmEnvelope(
   payload: AgentDmSentPayload,
@@ -46,6 +66,16 @@ function inboxEnvelope(
     topic: 'inbox.message.created',
     category: 'comms',
     priority: 'normal',
+    payload,
+  };
+}
+
+function canaryEnvelope(
+  payload: ReforgeCanaryOutcomePayload,
+): ReforgeCanaryEnvelope<ReforgeCanaryOutcomePayload> {
+  return {
+    workspaceId: 'test',
+    topic: 'reforge.canary.outcome',
     payload,
   };
 }
@@ -116,5 +146,45 @@ describe('bridgeInboxToGlobalStream', () => {
     expect(payload.id).toBe('inbox-1');
     expect(payload.messageKind).toBe('warning');
     expect(payload.recipients).toEqual(['@user']);
+  });
+});
+
+describe('bridgeCanaryToGlobalStream', () => {
+  it('emits a system event with the canary summary payload', () => {
+    const received: StreamEvent[] = [];
+    const unsub = globalStream.subscribe('test-canary-bridge', (e) => received.push(e));
+    try {
+      bridgeCanaryToGlobalStream(
+        canaryEnvelope({
+          planId: 'plan-1',
+          agentName: 'coder',
+          flagId: 'flag-1',
+          requestId: 'req-1',
+          isError: false,
+          canaryRequests: 4,
+          canaryErrors: 0,
+          errorRate: 0,
+          rollbackThreshold: 0.1,
+          status: 'healthy',
+        }),
+      );
+    } finally {
+      unsub();
+    }
+
+    expect(received).toHaveLength(1);
+    const ev = received[0]!;
+    expect(ev.type).toBe('system');
+    expect(ev.category).toBe('reforge');
+    const payload = ev.payload as {
+      kind: string;
+      topic: string;
+      agentName: string;
+      requestId: string;
+    };
+    expect(payload.kind).toBe('canary');
+    expect(payload.topic).toBe('reforge.canary.outcome');
+    expect(payload.agentName).toBe('coder');
+    expect(payload.requestId).toBe('req-1');
   });
 });

@@ -1,4 +1,5 @@
 import type { AgentId, SessionId, WorkspaceId } from '@agentforge/shared';
+import type { TrafficSplitStrategy } from '../canary/types.js';
 
 // ── Message envelope ─────────────────────────────────────────────────────────
 
@@ -85,6 +86,11 @@ export type MessageTopic =
   // Quality + gate (mirrored to @user inbox by InboxBridge — ADR 0004)
   | 'gate.verdict.created'
   | 'review.finding.created'
+  // Reforge / canary lifecycle
+  | 'reforge.canary.staged'
+  | 'reforge.canary.promoted'
+  | 'reforge.canary.outcome'
+  | 'reforge.canary.rolled_back'
   // Plugin
   | 'plugin.event'
   // Worktree / branch (Cycle 4 — T4.3 / T4.4)
@@ -312,6 +318,52 @@ export interface ReviewFindingCreatedPayload {
   createdAt: string;
 }
 
+// ── Reforge / canary payloads ────────────────────────────────────────────────
+
+/** Payload for `reforge.canary.staged` — staged override published for rollout. */
+export interface ReforgeCanaryStagedPayload {
+  planId: string;
+  agentName: string;
+  flagId: string;
+  trafficPercent: number;
+  strategy: TrafficSplitStrategy;
+  rollbackThreshold: number;
+  stagedAt: string;
+}
+
+/** Payload for `reforge.canary.promoted` — staged override promoted to active. */
+export interface ReforgeCanaryPromotedPayload {
+  planId: string;
+  agentName: string;
+  flagId: string;
+  promotedAt: string;
+}
+
+/** Payload for `reforge.canary.outcome` — a staged canary request outcome. */
+export interface ReforgeCanaryOutcomePayload {
+  planId: string;
+  agentName: string;
+  flagId: string;
+  requestId: string;
+  isError: boolean;
+  canaryRequests: number;
+  canaryErrors: number;
+  errorRate: number;
+  rollbackThreshold: number;
+  status: 'healthy' | 'degraded' | 'rolled_back';
+}
+
+/** Payload for `reforge.canary.rolled_back` — staged override auto-rolled back. */
+export interface ReforgeCanaryRolledBackPayload {
+  planId: string;
+  agentName: string;
+  flagId: string;
+  reason: string;
+  errorRate: number;
+  threshold: number;
+  rolledBackAt: string;
+}
+
 // ── Type guards ───────────────────────────────────────────────────────────────
 
 export function isTaskTopic(topic: MessageTopic): boolean {
@@ -363,6 +415,10 @@ export type AgentDmSentEnvelope = MessageEnvelopeV2<AgentDmSentPayload>;
 export type InboxMessageCreatedEnvelope = MessageEnvelopeV2<InboxMessageCreatedPayload>;
 export type GateVerdictCreatedEnvelope = MessageEnvelopeV2<GateVerdictCreatedPayload>;
 export type ReviewFindingCreatedEnvelope = MessageEnvelopeV2<ReviewFindingCreatedPayload>;
+export type ReforgeCanaryStagedEnvelope = MessageEnvelopeV2<ReforgeCanaryStagedPayload>;
+export type ReforgeCanaryPromotedEnvelope = MessageEnvelopeV2<ReforgeCanaryPromotedPayload>;
+export type ReforgeCanaryOutcomeEnvelope = MessageEnvelopeV2<ReforgeCanaryOutcomePayload>;
+export type ReforgeCanaryRolledBackEnvelope = MessageEnvelopeV2<ReforgeCanaryRolledBackPayload>;
 
 // ── Worktree / branch payloads (Cycle 4 — T4.3) ──────────────────────────────
 

@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { MessageBusV2 } from "@agentforge/core";
 import { ReforgeEngine } from "../../src/reforge/reforge-engine.js";
 import type { FeedbackAnalysis } from "../../src/types/feedback.js";
 import type { AgentTemplate } from "../../src/types/agent.js";
@@ -85,10 +86,12 @@ function findRequestId(trafficPercent: number, canary: boolean): string {
 describe("ReforgeEngine", () => {
   let tmpDir: string;
   let engine: ReforgeEngine;
+  let bus: MessageBusV2;
 
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "agentforge-reforge-test-"));
-    engine = new ReforgeEngine(tmpDir);
+    bus = new MessageBusV2({ workspaceId: "test" });
+    engine = new ReforgeEngine(tmpDir, { bus });
   });
 
   afterEach(async () => {
@@ -385,6 +388,18 @@ describe("ReforgeEngine", () => {
       rollbackThreshold: 0.1,
     });
 
+    const staged = bus.getHistory(10).filter((event) => String(event.topic) === "reforge.canary.staged");
+    expect(staged).toHaveLength(1);
+    expect(staged[0]?.workspaceId).toBe("test");
+    expect(staged[0]?.payload).toMatchObject({
+      planId: canaryPlan.id,
+      agentName: "cost-analyst",
+      flagId: deployment.deployments[0].flagId,
+      trafficPercent: 50,
+      strategy: "hash",
+      rollbackThreshold: 0.1,
+    });
+
     expect(deployment.deployments).toHaveLength(1);
     const stagedPath = path.join(
       tmpDir,
@@ -513,6 +528,14 @@ describe("ReforgeEngine", () => {
     for (let i = 0; i < 5; i++) {
       await engine.recordCanaryOutcome("cost-analyst", true);
     }
+
+    const rolledBack = bus.getHistory(10).filter((event) => String(event.topic) === "reforge.canary.rolled_back");
+    expect(rolledBack).toHaveLength(1);
+    expect(rolledBack[0]?.payload).toMatchObject({
+      agentName: "cost-analyst",
+      planId: canaryPlan.id,
+      reason: expect.stringContaining("Auto-rollback"),
+    });
 
     const stagedPath = path.join(
       tmpDir,

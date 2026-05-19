@@ -15,6 +15,12 @@ import {
   type AgentDmSentPayload,
   type InboxMessageCreatedPayload,
 } from '@agentforge/core';
+
+type ReforgeCanaryTopic =
+  | 'reforge.canary.staged'
+  | 'reforge.canary.promoted'
+  | 'reforge.canary.outcome'
+  | 'reforge.canary.rolled_back';
 import { rbacRoutes } from './rbac.js';
 import { costsRoutes } from './costs.js';
 import { approvalsRoutes } from './approvals.js';
@@ -528,6 +534,18 @@ export async function registerV5Routes(
     opts.bus.subscribe<InboxMessageCreatedPayload>('inbox.message.created', (envelope) => {
       bridgeInboxToGlobalStream(envelope);
     });
+    opts.bus.subscribe<ReforgeCanaryStagedPayload>('reforge.canary.staged' as ReforgeCanaryTopic as never, (envelope) => {
+      bridgeCanaryToGlobalStream(envelope as ReforgeCanaryEnvelope<ReforgeCanaryStagedPayload>);
+    });
+    opts.bus.subscribe<ReforgeCanaryPromotedPayload>('reforge.canary.promoted' as ReforgeCanaryTopic as never, (envelope) => {
+      bridgeCanaryToGlobalStream(envelope as ReforgeCanaryEnvelope<ReforgeCanaryPromotedPayload>);
+    });
+    opts.bus.subscribe<ReforgeCanaryOutcomePayload>('reforge.canary.outcome' as ReforgeCanaryTopic as never, (envelope) => {
+      bridgeCanaryToGlobalStream(envelope as ReforgeCanaryEnvelope<ReforgeCanaryOutcomePayload>);
+    });
+    opts.bus.subscribe<ReforgeCanaryRolledBackPayload>('reforge.canary.rolled_back' as ReforgeCanaryTopic as never, (envelope) => {
+      bridgeCanaryToGlobalStream(envelope as ReforgeCanaryEnvelope<ReforgeCanaryRolledBackPayload>);
+    });
   }
 
   // ── Billing scaffolding (plan + invoice stubs; Stripe integration Phase 2) ─
@@ -600,6 +618,85 @@ export function bridgeInboxToGlobalStream(envelope: MessageEnvelopeV2<InboxMessa
       threadId: p.threadId,
       createdAt: p.createdAt,
       recipients: p.recipients,
+    },
+  });
+}
+
+interface ReforgeCanaryStagedPayload {
+  planId: string;
+  agentName: string;
+  flagId: string;
+  trafficPercent: number;
+  strategy: string;
+  rollbackThreshold: number;
+  stagedAt: string;
+}
+
+interface ReforgeCanaryPromotedPayload {
+  planId: string;
+  agentName: string;
+  flagId: string;
+  promotedAt: string;
+}
+
+interface ReforgeCanaryOutcomePayload {
+  planId: string;
+  agentName: string;
+  flagId: string;
+  requestId: string;
+  isError: boolean;
+  canaryRequests: number;
+  canaryErrors: number;
+  errorRate: number;
+  rollbackThreshold: number;
+  status: 'healthy' | 'degraded' | 'rolled_back';
+}
+
+interface ReforgeCanaryRolledBackPayload {
+  planId: string;
+  agentName: string;
+  flagId: string;
+  reason: string;
+  errorRate: number;
+  threshold: number;
+  rolledBackAt: string;
+}
+
+interface ReforgeCanaryEnvelope<TPayload> {
+  workspaceId: string;
+  topic: ReforgeCanaryTopic;
+  payload: TPayload;
+}
+
+/** Exported for unit-test access. Forwards a canary lifecycle envelope to SSE. */
+export function bridgeCanaryToGlobalStream(
+  envelope:
+    | ReforgeCanaryEnvelope<ReforgeCanaryStagedPayload>
+    | ReforgeCanaryEnvelope<ReforgeCanaryPromotedPayload>
+    | ReforgeCanaryEnvelope<ReforgeCanaryOutcomePayload>
+    | ReforgeCanaryEnvelope<ReforgeCanaryRolledBackPayload>,
+): void {
+  const p = envelope.payload;
+  let message = `Canary ${envelope.topic}`;
+  if (envelope.topic === 'reforge.canary.staged') {
+    message = `Canary staged for ${p.agentName}`;
+  } else if (envelope.topic === 'reforge.canary.promoted') {
+    message = `Canary promoted for ${p.agentName}`;
+  } else if (envelope.topic === 'reforge.canary.outcome') {
+    message = `Canary outcome for ${p.agentName}: ${p.status}`;
+  } else if (envelope.topic === 'reforge.canary.rolled_back') {
+    message = `Canary rolled back for ${p.agentName}`;
+  }
+
+  globalStream.emit({
+    type: 'system',
+    category: 'reforge',
+    message,
+    payload: {
+      kind: 'canary',
+      topic: envelope.topic,
+      workspaceId: envelope.workspaceId,
+      ...p,
     },
   });
 }
