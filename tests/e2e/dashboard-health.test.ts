@@ -152,6 +152,30 @@ test.describe('Health Dashboard Page', () => {
     await expect(page.locator('text=Online')).toBeVisible();
   });
 
+  test('falls back to API server card when services payload is malformed', async ({ page }) => {
+    await page.route('**/api/v5/health/services', async (route) => {
+      await fulfillJson(route, 200, { status: 'healthy', services: 'not-an-array' });
+    });
+    await page.route('**/api/v5/health', async (route) => {
+      await fulfillJson(route, 200, BASE_HEALTH);
+    });
+
+    await gotoHealth(page);
+
+    await expect(page.locator('text=API SERVER')).toBeVisible();
+    await expect(page.locator('text=REST API')).toBeVisible();
+    await expect(page.locator('.error-banner')).toHaveCount(0);
+  });
+
+  test('keeps services grid visible when /health fails but /health/services succeeds', async ({ page }) => {
+    await mockHealthApis(page, { healthStatus: 503 });
+    await gotoHealth(page);
+
+    await expect(page.locator('.services-grid .svc-name')).toHaveCount(2);
+    await expect(page.locator('.status-main')).toContainText(/system healthy/i);
+    await expect(page.locator('.error-banner')).toHaveCount(0);
+  });
+
   test('shows connection banner when both health endpoints fail', async ({ page }) => {
     await mockHealthApis(page, { healthStatus: 503, servicesStatus: 503 });
     await page.goto('/health', { waitUntil: 'domcontentloaded' });

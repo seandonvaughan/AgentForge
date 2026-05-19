@@ -208,6 +208,29 @@ test.describe('Runner Page', () => {
     await expect(page.locator('.output-pre')).toContainText('Buffered token');
   });
 
+  test('ignores streamed chunks for a different session id', async ({ page }) => {
+    await openRunner(page, { sessionId: 'run-target-1' });
+
+    await page.fill('#task-input', 'Keep only active session output');
+    await page.click('button:has-text("Run Agent")');
+
+    await emitSse(page, {
+      type: 'agent_activity',
+      category: 'run',
+      message: '[coder] chunk',
+      data: { sessionId: 'run-other-9', content: 'wrong-session-output' },
+    });
+    await emitSse(page, {
+      type: 'agent_activity',
+      category: 'run',
+      message: '[coder] chunk',
+      data: { sessionId: 'run-target-1', content: 'right-session-output' },
+    });
+
+    await expect(page.locator('.output-pre')).toContainText('right-session-output');
+    await expect(page.locator('.output-pre')).not.toContainText('wrong-session-output');
+  });
+
   test('copies and clears streamed output', async ({ page, context }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
       origin: 'http://localhost:4751',

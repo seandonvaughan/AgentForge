@@ -209,4 +209,52 @@ test.describe('Live Feed Page (/live)', () => {
 
     await expect(page.locator('.banner--warn')).toContainText(/new updates available/i);
   });
+
+  test('does not ingest events while paused and resumes cleanly', async ({ page }) => {
+    await page.goto('/live');
+    await waitForLiveSource(page);
+
+    await page.click('button:has-text("Pause")');
+    await expect(page.locator('.live-label')).toContainText(/paused/i);
+
+    await emitEvent(page, {
+      id: 'paused-drop-1',
+      type: 'agent_activity',
+      category: 'run',
+      message: 'should be dropped while paused',
+      timestamp: '2026-04-07T10:00:03.000Z',
+    });
+    await expect(page.locator('.event-count')).toContainText('0 events');
+
+    await page.click('button:has-text("Resume")');
+    await emitEvent(page, {
+      id: 'resumed-1',
+      type: 'agent_activity',
+      category: 'run',
+      message: 'accepted after resume',
+      timestamp: '2026-04-07T10:00:04.000Z',
+    });
+
+    await expect(page.locator('.event-count')).toContainText('1 events');
+    await expect(page.locator('.feed-row .feed-msg')).toContainText('accepted after resume');
+  });
+
+  test('caps the in-memory feed buffer at 500 events under burst traffic', async ({ page }) => {
+    await page.goto('/live');
+    await waitForLiveSource(page);
+
+    for (let i = 0; i < 520; i++) {
+      await emitEvent(page, {
+        id: `burst-${i}`,
+        type: 'agent_activity',
+        category: 'run',
+        message: `burst message ${i}`,
+        timestamp: `2026-04-07T10:10:${String(i % 60).padStart(2, '0')}.000Z`,
+      });
+    }
+
+    await expect(page.locator('.event-count')).toContainText('500 events');
+    await expect(page.locator('.feed-row .feed-msg').first()).toHaveText('burst message 20');
+    await expect(page.locator('.feed-row .feed-msg').last()).toHaveText('burst message 519');
+  });
 });
