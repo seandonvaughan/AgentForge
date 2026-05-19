@@ -114,6 +114,13 @@ export function shouldOpenSingleCyclePr(filesChanged: string[], commitSha: strin
   return filesChanged.length > 0 && commitSha !== null;
 }
 
+export function shouldRunAggregateCommit(
+  prMode: CycleConfig['prMode'] | undefined,
+  filesChanged: string[],
+): boolean {
+  return prMode !== 'multi' && filesChanged.length > 0;
+}
+
 /**
  * Extract a useful error message from a failed execFileAsync call.
  *
@@ -772,27 +779,30 @@ export class CycleRunner {
     // Verify git/gh preconditions, create the autonomous feature branch,
     // stage the changed files, commit (with secret scan), and push.
     // ─────────────────────────────────────────────────────────────────
-    await this.options.gitOps.verifyPreconditions();
-    this.options.bus.publish('sprint.phase.commit.step', {
-      cycleId: this.cycleId,
-      step: 'preconditions',
-      detail: 'git/gh preconditions verified',
-    });
-
-    this.branch = await this.options.gitOps.createBranch(plan.version);
-    this.options.bus.publish('sprint.phase.commit.step', {
-      cycleId: this.cycleId,
-      step: 'branch-created',
-      detail: this.branch,
-    });
-
     const filesToCommit = await this.collectChangedFiles(runSummary);
     this.filesChanged = filesToCommit;
 
-    // Only call gitOps.stage if we have files. Real GitOps refuses an empty
-    // list (good safety), but mocked GitOps in unit tests is permissive. The
-    // smoke test (Task 25) is responsible for end-to-end file detection.
-    if (filesToCommit.length > 0) {
+    if (this.options.config.prMode === 'multi') {
+      this.options.bus.publish('sprint.phase.commit.step', {
+        cycleId: this.cycleId,
+        step: 'skipped',
+        detail: 'multi-PR mode uses agent branches directly — skipping aggregate commit',
+      });
+    } else if (shouldRunAggregateCommit(this.options.config.prMode, filesToCommit)) {
+      await this.options.gitOps.verifyPreconditions();
+      this.options.bus.publish('sprint.phase.commit.step', {
+        cycleId: this.cycleId,
+        step: 'preconditions',
+        detail: 'git/gh preconditions verified',
+      });
+
+      this.branch = await this.options.gitOps.createBranch(plan.version);
+      this.options.bus.publish('sprint.phase.commit.step', {
+        cycleId: this.cycleId,
+        step: 'branch-created',
+        detail: this.branch,
+      });
+
       await this.options.gitOps.stage(filesToCommit);
       this.options.bus.publish('sprint.phase.commit.step', {
         cycleId: this.cycleId,
@@ -823,7 +833,7 @@ export class CycleRunner {
       this.options.bus.publish('sprint.phase.commit.step', {
         cycleId: this.cycleId,
         step: 'skipped',
-        detail: 'no file changes produced by execute phase — skipping commit + push',
+        detail: 'no file changes produced by execute phase — skipping branch, commit, push, and PR',
       });
     }
 

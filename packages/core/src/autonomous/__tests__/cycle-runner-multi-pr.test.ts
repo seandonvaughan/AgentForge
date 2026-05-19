@@ -29,7 +29,7 @@ import { MessageBusV2 } from '../../message-bus/message-bus.js';
 import { MergeQueue } from '../../runtime/merge-queue.js';
 import type { AgentBranchPushedPayload } from '../../message-bus/types.js';
 import type { DrainResult, DrainAndMergeResult } from '../../runtime/merge-queue.js';
-import { shouldOpenSingleCyclePr } from '../cycle-runner.js';
+import { shouldOpenSingleCyclePr, shouldRunAggregateCommit } from '../cycle-runner.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -277,6 +277,13 @@ describe('prMode cycle-end drain behavior', () => {
     expect(shouldOpenSingleCyclePr(['src/a.ts'], null)).toBe(false);
     expect(shouldOpenSingleCyclePr([], 'deadbeef')).toBe(false);
     expect(shouldOpenSingleCyclePr(['src/a.ts'], 'deadbeef')).toBe(true);
+  });
+
+  it('8c. prMode=\'multi\' skips aggregate commit even when agent branches changed files', () => {
+    expect(shouldRunAggregateCommit('multi', ['src/a.ts'])).toBe(false);
+    expect(shouldRunAggregateCommit('single', ['src/a.ts'])).toBe(true);
+    expect(shouldRunAggregateCommit(undefined, ['src/a.ts'])).toBe(true);
+    expect(shouldRunAggregateCommit('single', [])).toBe(false);
   });
 
   it('9. prMode=\'multi\' + autoMergePRs=true → drainAndMerge called with autoMerge: true', async () => {
