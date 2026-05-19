@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   AdversarialGenerator,
   ChaosInjector,
+  Guardrails,
   RegressionGate,
 } from '../../packages/core/src/adversarial/index.js';
 
@@ -306,5 +307,41 @@ describe('RegressionGate', () => {
     const after = gate.record(105, 2, 'after');
     const result = gate.evaluate(before, after);
     expect(result.passed).toBe(true);
+  });
+});
+
+describe('Self-modification release gate', () => {
+  it('blocks release when a self-modification removes tests and increases failures', () => {
+    const guardrails = new Guardrails();
+    const gate = new RegressionGate();
+
+    const operation = 'remove test files for deprecated modules before release';
+    const violation = guardrails.check(operation);
+    expect(violation?.blocked).toBe(true);
+    expect(violation?.rule).toBe('no-test-removal');
+    expect(violation?.operation).toBe(operation);
+
+    const before = gate.record(150, 0, 'pre-self-modification');
+    const after = gate.record(137, 2, 'post-self-modification');
+    const result = gate.evaluate(before, after);
+
+    expect(result.passed).toBe(false);
+    expect(result.reason).toContain('decreased');
+    expect(result.blockedAt).toBeTruthy();
+    expect(gate.getGateHistory()).toHaveLength(1);
+  });
+
+  it('allows safe self-modification when coverage improves and failures stay flat', () => {
+    const guardrails = new Guardrails();
+    expect(guardrails.check('implement new authentication endpoint')).toBeNull();
+
+    const gate = new RegressionGate();
+    const before = gate.record(150, 2, 'pre-self-modification');
+    const after = gate.record(162, 2, 'post-self-modification');
+    const result = gate.evaluate(before, after);
+
+    expect(result.passed).toBe(true);
+    expect(result.delta).toBe(12);
+    expect(result.failureDelta).toBe(0);
   });
 });
