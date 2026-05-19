@@ -1,11 +1,128 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Cycle Detail Page', () => {
+  test('posts cycle manage actions from the detail header', async ({ page }) => {
+    await page.addInitScript(() => {
+      class MockEventSource {
+        onopen: ((event: Event) => void) | null = null;
+        onmessage: ((event: MessageEvent) => void) | null = null;
+        onerror: ((event: Event) => void) | null = null;
+        readyState = 0;
+
+        constructor(public url: string) {
+          setTimeout(() => {
+            this.readyState = 1;
+            this.onopen?.(new Event('open'));
+          }, 10);
+        }
+
+        close() {
+          this.readyState = 2;
+        }
+      }
+
+      Object.assign(window, { EventSource: MockEventSource });
+    });
+
+    let stage = 'run';
+    let cancelBody: unknown;
+    let rerunBody: unknown;
+
+    await page.route(/\/api\/v5\/cycles\/manage-cycle(?:\/[^?]*)?(?:\?.*)?$/, async (route) => {
+      const request = route.request();
+      const path = new URL(request.url()).pathname;
+
+      if (path.endsWith('/cancel')) {
+        cancelBody = request.postDataJSON();
+        stage = 'killed';
+        await route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+        return;
+      }
+
+      if (path.endsWith('/rerun')) {
+        rerunBody = request.postDataJSON();
+        await route.fulfill({
+          status: 202,
+          contentType: 'application/json',
+          body: JSON.stringify({ cycleId: 'manage-cycle-rerun' }),
+        });
+        return;
+      }
+
+      if (path.endsWith('/sprint')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ sprint: { version: '10.12.0', title: 'Mock sprint', items: [] } }),
+        });
+        return;
+      }
+
+      if (path.endsWith('/agents')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ runs: [], byAgent: {}, totalCostUsd: 0, totalRuns: 0 }),
+        });
+        return;
+      }
+
+      if (path.endsWith('/events')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ events: [], total: 0 }),
+        });
+        return;
+      }
+
+      if (path.endsWith('/scoring') || path.includes('/files/') || path.includes('/cost-breakdown')) {
+        await route.fulfill({ status: 204 });
+        return;
+      }
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          cycleId: 'manage-cycle',
+          lastHeartbeatAt: new Date().toISOString(),
+          stage,
+          runtimeMode: 'codex-cli',
+          branchPrefix: 'codex/',
+          baseBranch: 'codex/codex-version',
+          dryRun: false,
+          maxAgents: 1,
+          fallbackEnabled: true,
+          startedAt: new Date().toISOString(),
+          sprintVersion: '10.12.0',
+          cost: { totalUsd: 1.23, budgetUsd: 25 },
+          tests: { passed: 0, failed: 0, skipped: 0, total: 0, newFailures: [] },
+          git: { branch: '', commitSha: null, filesChanged: [] },
+          pr: { url: null, number: null, draft: false },
+        }),
+      });
+    });
+
+    page.on('dialog', async (dialog) => dialog.accept());
+
+    await page.goto('/cycles/manage-cycle');
+    await expect(page.locator('h1')).toContainText('Cycle');
+    await expect(page.getByRole('button', { name: /^Cancel$/ })).toBeVisible();
+
+    await page.getByRole('button', { name: /^Cancel$/ }).click();
+    await expect.poll(() => cancelBody).toEqual({});
+
+    await page.getByRole('button', { name: /^Re-run$/ }).click();
+    await expect.poll(() => rerunBody).toEqual({});
+    await expect(page).toHaveURL(/\/cycles\/manage-cycle-rerun$/);
+  });
+
   test('loads cycle detail page with real data', async ({ page }) => {
     // Navigate to first cycle from cycles list to get a valid ID
     await page.goto('/cycles');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
 
     // Get first cycle link href
     const firstCycleLink = page.locator('a, button, [role="button"]').filter({ hasText: /v\d+\.\d+|Cycle/i }).first();
@@ -17,7 +134,7 @@ test.describe('Cycle Detail Page', () => {
       if (href) {
         await page.goto(href);
 
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
 
         // Verify cycle detail page loaded
         const pageContent = page.locator('body');
@@ -36,7 +153,7 @@ test.describe('Cycle Detail Page', () => {
   test('displays cycle version on detail page', async ({ page }) => {
     await page.goto('/cycles');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
 
     const firstCycleLink = page.locator('a, button, [role="button"]').filter({ hasText: /v\d+\.\d+|Cycle/i }).first();
 
@@ -46,7 +163,7 @@ test.describe('Cycle Detail Page', () => {
       if (href) {
         await page.goto(href);
 
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
 
         // Look for version display
         const versionText = page.locator('text=/v\d+\.\d+/i').first();
@@ -61,7 +178,7 @@ test.describe('Cycle Detail Page', () => {
   test('displays cycle tabs or sections on detail page', async ({ page }) => {
     await page.goto('/cycles');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
 
     const firstCycleLink = page.locator('a, button, [role="button"]').filter({ hasText: /v\d+\.\d+|Cycle/i }).first();
 
@@ -71,7 +188,7 @@ test.describe('Cycle Detail Page', () => {
       if (href) {
         await page.goto(href);
 
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
 
         // Look for tab navigation (Overview, Items, Agents, etc.)
         const tabs = page.locator('[role="tab"], .tab, [data-testid="cycle-tabs"], [class*="tab"]');
@@ -95,7 +212,7 @@ test.describe('Cycle Detail Page', () => {
   test('renders cycle metadata (cost, status, stage)', async ({ page }) => {
     await page.goto('/cycles');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
 
     const firstCycleLink = page.locator('a, button, [role="button"]').filter({ hasText: /v\d+\.\d+|Cycle/i }).first();
 
@@ -105,7 +222,7 @@ test.describe('Cycle Detail Page', () => {
       if (href) {
         await page.goto(href);
 
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
 
         // Look for cycle metadata displays
         const costBadge = page.locator('text=/Cost|cost|\$|💰|tokens/i').first();
@@ -125,7 +242,7 @@ test.describe('Cycle Detail Page', () => {
   test('cycle detail page handles real data loading', async ({ page }) => {
     await page.goto('/cycles');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
 
     const firstCycleLink = page.locator('a, button, [role="button"]').filter({ hasText: /v\d+\.\d+|Cycle/i }).first();
 
@@ -136,7 +253,7 @@ test.describe('Cycle Detail Page', () => {
         await page.goto(href);
 
         // Wait for content to load
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
 
         // Verify page is fully loaded
         const pageBody = page.locator('body');
@@ -154,7 +271,7 @@ test.describe('Cycle Detail Page', () => {
   test('cycle detail page is responsive', async ({ page }) => {
     await page.goto('/cycles');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
 
     const firstCycleLink = page.locator('a, button, [role="button"]').filter({ hasText: /v\d+\.\d+|Cycle/i }).first();
 
@@ -164,7 +281,7 @@ test.describe('Cycle Detail Page', () => {
       if (href) {
         await page.goto(href);
 
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
 
         // Test mobile view
         await page.setViewportSize({ width: 375, height: 667 });

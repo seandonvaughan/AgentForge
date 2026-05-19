@@ -12,6 +12,7 @@ type RunResponseOptions = {
   sessionId?: string;
   status?: number;
   responseDelayMs?: number;
+  onRunRequest?: (payload: Record<string, unknown>) => void;
 };
 
 async function injectMockEventSource(page: Page) {
@@ -86,6 +87,7 @@ async function mockRunnerApis(page: Page, options: RunResponseOptions = {}) {
   });
 
   await page.route('/api/v5/run', async (route: Route) => {
+    options.onRunRequest?.(route.request().postDataJSON() as Record<string, unknown>);
     if (options.responseDelayMs) {
       await new Promise((resolve) => setTimeout(resolve, options.responseDelayMs));
     }
@@ -99,8 +101,8 @@ async function mockRunnerApis(page: Page, options: RunResponseOptions = {}) {
           agentId: 'coder',
           model: 'gpt-5.3-codex',
           status: status === 202 ? 'running' : 'completed',
-          providerKind: 'openai-sdk',
-          runtimeModeResolved: 'openai-sdk',
+          providerKind: 'codex-cli',
+          runtimeModeResolved: 'codex-cli',
         },
       }),
     });
@@ -130,21 +132,27 @@ async function openRunner(page: Page, options?: RunResponseOptions) {
 
 test.describe('Runner Page', () => {
   test('accepts async 202 run starts and renders streamed chunks with operator metadata', async ({ page }) => {
-    await openRunner(page);
+    let runRequest: Record<string, unknown> | undefined;
+    await openRunner(page, { onRunRequest: (payload) => { runRequest = payload; } });
 
     await page.fill('#task-input', 'Summarize the queue');
     await page.click('button:has-text("Run Agent")');
 
+    await expect.poll(() => runRequest).toBeTruthy();
+    expect(runRequest).toMatchObject({
+      agentId: 'coder',
+      task: 'Summarize the queue',
+      runtimeMode: 'codex-cli',
+    });
     await expect(page.locator('.output-header')).toContainText('Accepted');
-    await expect(page.locator('.output-meta')).toContainText(/(OpenAI|Anthropic) SDK/);
-    await expect(page.locator('.output-meta')).toContainText('SDK');
+    await expect(page.locator('.output-meta')).toContainText('Codex CLI');
     await expect(page.locator('.latency-pill')).toContainText('Waiting for first token');
 
     await emitSse(page, {
       type: 'agent_activity',
       category: 'run',
       message: '[coder] chunk',
-      data: { sessionId: 'run-test-1', content: 'Hello ', providerKind: 'openai-sdk', runtimeModeResolved: 'openai-sdk' },
+      data: { sessionId: 'run-test-1', content: 'Hello ', providerKind: 'codex-cli', runtimeModeResolved: 'codex-cli' },
     });
     await emitSse(page, {
       type: 'agent_activity',
@@ -160,7 +168,7 @@ test.describe('Runner Page', () => {
       type: 'workflow_event',
       category: 'run',
       message: '[coder] run completed',
-      data: { sessionId: 'run-test-1', status: 'completed', costUsd: 0.0123, providerKind: 'openai-sdk', runtimeModeResolved: 'openai-sdk' },
+      data: { sessionId: 'run-test-1', status: 'completed', costUsd: 0.0123, providerKind: 'codex-cli', runtimeModeResolved: 'codex-cli' },
     });
 
     await expect(page.locator('.running-indicator')).toHaveCount(0);
