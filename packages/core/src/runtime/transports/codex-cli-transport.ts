@@ -23,8 +23,7 @@ import type {
 const GPT_53_CODEX_INPUT_PER_MILLION = 1.75;
 const GPT_53_CODEX_OUTPUT_PER_MILLION = 14.0;
 const CODEX_COMMAND = 'codex';
-const DEFAULT_CODEX_SANDBOX: CodexSandboxMode =
-  process.platform === 'win32' ? 'danger-full-access' : 'workspace-write';
+const DEFAULT_CODEX_SANDBOX: CodexSandboxMode = 'workspace-write';
 
 function validateAgainstSchema(
   responseText: string,
