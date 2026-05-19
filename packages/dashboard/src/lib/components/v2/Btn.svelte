@@ -62,14 +62,7 @@
     extraStyle,
   ].filter(Boolean).join(';'));
 
-  let buttonEl = $state<HTMLButtonElement | undefined>();
   const clickHandler = $derived(onClick ?? onclick);
-
-  $effect(() => {
-    if (!buttonEl || !clickHandler) return;
-    buttonEl.addEventListener('click', clickHandler);
-    return () => buttonEl?.removeEventListener('click', clickHandler);
-  });
 </script>
 
 {#if href}
@@ -79,7 +72,7 @@
     {@render trailing?.()}
   </a>
 {:else}
-  <button bind:this={buttonEl} {type} {disabled} style={inlineStyle} class={className}>
+  <button {type} {disabled} onclick={clickHandler} style={inlineStyle} class={className}>
     {@render leading?.()}
     {@render children?.()}
     {@render trailing?.()}

@@ -1,23 +1,11 @@
-import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 import { fireEvent, render } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import Btn from '../Btn.svelte';
 
 const componentPath = resolve(import.meta.dirname, '../Btn.svelte');
-const sourceRoot = resolve(import.meta.dirname, '../../../..');
-
-function svelteFiles(dir: string): string[] {
-  const out: string[] = [];
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry);
-    const stat = statSync(full);
-    if (stat.isDirectory()) out.push(...svelteFiles(full));
-    else if (entry.endsWith('.svelte')) out.push(full);
-  }
-  return out;
-}
 
 describe('Btn', () => {
   it('invokes onClick when the rendered button is clicked', async () => {
@@ -44,17 +32,13 @@ describe('Btn', () => {
     expect(source).toContain('onClick?: (e: MouseEvent) => void;');
     expect(source).toContain('onclick?: (e: MouseEvent) => void;');
     expect(source).toContain('const clickHandler = $derived(onClick ?? onclick);');
-    expect(source).toContain("buttonEl.addEventListener('click', clickHandler);");
-    expect(source).toContain('bind:this={buttonEl}');
+    expect(source).toContain('onclick={clickHandler}');
   });
 
-  it('uses onClick on Btn call sites instead of the reserved lowercase event name', () => {
-    for (const file of svelteFiles(sourceRoot)) {
-      const source = readFileSync(file, 'utf8');
-      const btnTags = source.match(/<Btn\b[\s\S]*?>/g) ?? [];
-      for (const tag of btnTags) {
-        expect(tag, file).not.toMatch(/\bonclick=/);
-      }
-    }
+  it('does not install click listeners imperatively after render', () => {
+    const source = readFileSync(componentPath, 'utf8');
+
+    expect(source).not.toContain("addEventListener('click'");
+    expect(source).not.toContain('bind:this=');
   });
 });
