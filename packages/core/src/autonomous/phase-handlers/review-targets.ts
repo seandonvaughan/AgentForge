@@ -96,22 +96,30 @@ export function formatExecuteReviewTargets(
     const resolvedPath = target.worktreePath
       ? resolveTargetPath(projectRoot, target.worktreePath)
       : '(no worktree path recorded)';
+    const worktreeExists = target.worktreePath ? existsSync(resolvedPath) : false;
 
     const files =
       target.changedFiles.length > 0
         ? target.changedFiles.map((file) => `  - ${file}`).join('\n')
         : '  - (no changed files recorded)';
 
-    const commands = target.worktreePath
+    const commands = target.worktreeBranch
+      ? [
+          `  git diff --stat origin/${baseBranch}...${target.worktreeBranch}`,
+          `  git diff origin/${baseBranch}...${target.worktreeBranch}`,
+          ...target.changedFiles.map((file) => `  git show ${target.worktreeBranch}:${file}`),
+        ].join('\n')
+      : target.worktreePath && worktreeExists
       ? [
           `  git -C "${resolvedPath}" diff --stat origin/${baseBranch}...HEAD`,
           `  git -C "${resolvedPath}" diff origin/${baseBranch}...HEAD`,
         ].join('\n')
-      : '  Use the recorded branch/changed files to inspect the diff.';
+      : '  No live worktree or branch was recorded; use the changed-file list and execute output only.';
 
     return [
       `### ${labelParts.join(' ')}`,
       `Worktree path: ${resolvedPath}`,
+      `Worktree available: ${worktreeExists ? 'yes' : 'no - use the branch commands below'}`,
       `Branch: ${target.worktreeBranch ?? '(not recorded)'}`,
       'Changed files:',
       files,
@@ -122,7 +130,7 @@ export function formatExecuteReviewTargets(
 
   return [
     '## Execute-phase review targets',
-    'IMPORTANT: In multi-PR mode, sprint changes live in isolated agent worktrees and the parent checkout may be clean. Review the targets below; do not substitute `git diff HEAD` in the parent checkout when a target worktree is listed.',
+    'IMPORTANT: In multi-PR mode, sprint changes live on isolated agent branches. The temporary worktree may already be removed and the parent checkout may be clean. Prefer the branch diff commands below. Do not inspect unrelated directories under `.agentforge/worktrees`, and do not substitute `git diff HEAD` in the parent checkout when a target branch is listed.',
     ...sections,
   ].join('\n\n');
 }

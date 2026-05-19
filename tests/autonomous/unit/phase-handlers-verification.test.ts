@@ -177,7 +177,8 @@ describe('verification phase handlers', () => {
 
     const taskArg = runtime.run.mock.calls[0][1] as string;
     expect(taskArg).toContain('Execute-phase review targets');
-    expect(taskArg).toContain(`git -C "${worktreePath}" diff --stat origin/main...HEAD`);
+    expect(taskArg).toContain('git diff --stat origin/main...codex/agent-coder-cycle-worktree-test');
+    expect(taskArg).toContain('Worktree available: no - use the branch commands below');
     expect(taskArg).toContain('packages/core/src/runtime/merge-queue.ts');
     expect(taskArg).toContain('instead of the parent checkout');
   });
@@ -285,7 +286,8 @@ describe('verification phase handlers', () => {
 
     const taskArg = runtime.run.mock.calls[0][1] as string;
     expect(taskArg).toContain('IMPORTANT: In multi-PR mode');
-    expect(taskArg).toContain(`git -C "${worktreePath}" diff origin/main...HEAD`);
+    expect(taskArg).toContain('git diff origin/main...codex/agent-review-cycle');
+    expect(taskArg).toContain('Do not inspect unrelated directories under `.agentforge/worktrees`');
     expect(taskArg).toContain('tests/reforge/team-reforge-canary.test.ts');
   });
 
@@ -335,7 +337,7 @@ describe('verification phase handlers', () => {
     });
     const taskArg = runtime.run.mock.calls[0][1] as string;
     expect(taskArg).toContain('Execute-phase review targets');
-    expect(taskArg).toContain(`git -C "${worktreePath}" diff --stat origin/main...HEAD`);
+    expect(taskArg).toContain('git diff --stat origin/main...codex/agent-gate-cycle');
     expect(taskArg).toContain('not the clean parent checkout');
   });
 
