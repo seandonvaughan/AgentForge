@@ -185,6 +185,57 @@ test.describe('Live Feed Page (/live)', () => {
     await expect(page.locator('.feed-row .feed-msg')).toContainText('visible cycle event');
   });
 
+  test('pause mode drops incoming events until resumed', async ({ page }) => {
+    await page.goto('/live');
+    await waitForLiveSource(page);
+
+    await page.click('button:has-text("Pause")');
+    await emitEvent(page, {
+      id: 'evt-paused-1',
+      type: 'cycle_event',
+      category: 'phase.start',
+      message: 'should be dropped',
+      timestamp: '2026-04-07T10:00:00.000Z',
+    });
+
+    await expect(page.locator('.feed-row')).toHaveCount(0);
+    await page.click('button:has-text("Resume")');
+
+    await emitEvent(page, {
+      id: 'evt-resumed-1',
+      type: 'cycle_event',
+      category: 'phase.complete',
+      message: 'should be visible',
+      timestamp: '2026-04-07T10:00:01.000Z',
+    });
+
+    await expect(page.locator('.feed-row')).toHaveCount(1);
+    await expect(page.locator('.feed-row .feed-msg')).toContainText('should be visible');
+  });
+
+  test('caps retained events at 500 to prevent unbounded feed growth', async ({ page }) => {
+    await page.goto('/live');
+    await waitForLiveSource(page);
+
+    await page.evaluate(() => {
+      const emit = (window as unknown as {
+        __emitAgentForgeLiveEvent: (event: StreamEvent) => void;
+      }).__emitAgentForgeLiveEvent;
+      for (let i = 0; i < 520; i += 1) {
+        emit({
+          id: `evt-bulk-${i}`,
+          type: 'agent_activity',
+          category: 'run',
+          message: `bulk-${i}`,
+          timestamp: '2026-04-07T10:00:00.000Z',
+        });
+      }
+    });
+
+    await expect(page.locator('.feed-row')).toHaveCount(500);
+    await expect(page.locator('.event-count')).toContainText('500 events');
+  });
+
   test('ignores malformed stream payloads without crashing the page', async ({ page }) => {
     await page.goto('/live');
     await waitForLiveSource(page);
