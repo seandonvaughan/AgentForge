@@ -9,7 +9,7 @@
 //
 // `autonomous:cycle` remains as a compatibility alias for `cycle run`.
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Command } from 'commander';
 import {
@@ -697,7 +697,7 @@ async function resolveWorkspaceProjectRoot(options: WorkspaceAwareOptions): Prom
     }
   }
 
-  return cwd;
+  return resolve(cwd);
 }
 
 function printCycleRunResult(

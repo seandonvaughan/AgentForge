@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { resolve } from 'node:path';
 import { CodexCliTransport } from '../transports/codex-cli-transport.js';
 import type { ExecutionRequest, ExecutionStreamOptions } from '../types.js';
 
@@ -42,7 +43,7 @@ describe('CodexCliTransport.buildCodexArgs', () => {
 
     expect(args.slice(0, 6)).toEqual(['--ask-for-approval', 'never', 'exec', '--ignore-user-config', '--ignore-rules', '--json']);
     expect(args).toContain('--cd');
-    expect(args[args.indexOf('--cd') + 1]).toBe('/repo/worktree');
+    expect(args[args.indexOf('--cd') + 1]).toBe(resolve('/repo/worktree'));
     expect(args).toContain('--sandbox');
     expect(args[args.indexOf('--sandbox') + 1]).toBe('workspace-write');
     expect(args).toContain('--model');
@@ -83,6 +84,15 @@ describe('CodexCliTransport.buildCodexArgs', () => {
     const args = transport.buildCodexArgs(makeRequest({ codexSandbox: 'workspace-write' }), '/tmp/last.txt');
 
     expect(args[args.indexOf('--sandbox') + 1]).toBe('workspace-write');
+  });
+
+  it('normalizes relative cwd before passing it to codex --cd', () => {
+    const transport = new CodexCliTransport();
+    const args = transport.buildCodexArgs(makeRequest({ cwd: '.agentforge/worktrees/agent-coder-cycle' }), '/tmp/last.txt');
+
+    expect(args[args.indexOf('--cd') + 1]).toBe(
+      resolve('.agentforge/worktrees/agent-coder-cycle'),
+    );
   });
 
   it('threads Codex-native execution options into codex exec args', () => {

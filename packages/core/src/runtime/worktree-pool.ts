@@ -1,6 +1,6 @@
 import { execFile as execFileCb } from 'node:child_process';
 import { existsSync, mkdirSync, realpathSync } from 'node:fs';
-import { basename, isAbsolute, join, relative } from 'node:path';
+import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import type { WorktreeHandle, WorktreePoolStats } from './worktree-pool-types.js';
 
@@ -61,7 +61,7 @@ export class WorktreePool {
   private gitMutex: Promise<unknown> = Promise.resolve();
 
   constructor(opts: WorktreePoolOptions) {
-    this.projectRoot = opts.projectRoot;
+    this.projectRoot = resolve(opts.projectRoot);
     this.baseBranch = opts.baseBranch ?? 'main';
     this.branchPrefix = normalizeBranchPrefix(opts.branchPrefix ?? 'autonomous/');
     this.rootDir = opts.rootDir ?? '.agentforge/worktrees';

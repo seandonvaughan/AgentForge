@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { readFile, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { getRequestModelProfile } from '../model-profiles.js';
 import { estimateOpenAiCostUsd } from '../openai-pricing.js';
 import { normalizeStrictOutputSchema } from '../output-schema.js';
@@ -213,13 +213,14 @@ export class CodexCliTransport implements ExecutionTransport {
     const args = this.buildCodexArgs(request, lastMessagePath, schemaPath);
     const prompt = this.buildPrompt(request);
     const startedAt = Date.now();
+    const cwd = this.resolveCwd(request);
 
     try {
       return await new Promise<CodexInvocationResult>((resolve, reject) => {
         const command = buildCodexSpawnCommand(args);
         const proc = spawn(command.command, command.args, {
           env: { ...process.env },
-          cwd: request.cwd ?? process.cwd(),
+          cwd,
           stdio: ['pipe', 'pipe', 'pipe'],
         });
 
@@ -342,7 +343,7 @@ export class CodexCliTransport implements ExecutionTransport {
 
     this.pushSharedExecOptions(args, request, lastMessagePath, profile.modelId, true);
     args.push(
-      '--cd', request.cwd ?? process.cwd(),
+      '--cd', this.resolveCwd(request),
       '--sandbox', sandbox,
     );
 
@@ -426,6 +427,10 @@ export class CodexCliTransport implements ExecutionTransport {
 
   private resolveSandbox(request: ExecutionRequest): CodexSandboxMode {
     return request.codexSandbox ?? DEFAULT_CODEX_SANDBOX;
+  }
+
+  private resolveCwd(request: ExecutionRequest): string {
+    return resolve(request.cwd ?? process.cwd());
   }
 
   private parseCodexOutput(stdout: string, outputText: string): ParsedCodexOutput {

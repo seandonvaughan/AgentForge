@@ -10,7 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 // ---------------------------------------------------------------------------
 // Hoisted state shared between the vi.mock factory and test bodies.
@@ -209,6 +209,19 @@ describe('autonomous-worktree: WorktreePool wiring at CLI launch', () => {
     // baseBranch comes from the mocked loadCycleConfig: 'main'
     expect(worktreePoolCalls[0]?.baseBranch).toBe('main');
     expect(worktreePoolCalls[0]?.branchPrefix).toBe('autonomous/');
+  });
+
+  it('normalizes relative project roots before constructing WorktreePool', async () => {
+    const previousCwd = process.cwd();
+    try {
+      process.chdir(dirname(projectRoot));
+      await runCycleRun(basename(projectRoot));
+    } finally {
+      process.chdir(previousCwd);
+    }
+
+    expect(worktreePoolCalls).toHaveLength(1);
+    expect(worktreePoolCalls[0]?.projectRoot).toBe(projectRoot);
   });
 
   it('passes worktreePool to CycleRunner when pool construction succeeds', async () => {
