@@ -53,6 +53,11 @@ async function injectMockEventSource(page: Page) {
           }
         }
       },
+      __emitAgentForgeRawSse(raw: string) {
+        for (const source of sources) {
+          source.onmessage?.(new MessageEvent('message', { data: raw }));
+        }
+      },
       __errorAgentForgeSse() {
         for (const source of sources) {
           source.onerror?.(new Event('error'));
@@ -115,6 +120,13 @@ async function emitSse(page: Page, event: StreamEvent) {
     (window as unknown as { __emitAgentForgeSse: (event: StreamEvent) => void })
       .__emitAgentForgeSse(payload);
   }, event);
+}
+
+async function emitRawSse(page: Page, raw: string) {
+  await page.evaluate((payload) => {
+    (window as unknown as { __emitAgentForgeRawSse: (rawEvent: string) => void })
+      .__emitAgentForgeRawSse(payload);
+  }, raw);
 }
 
 async function errorSse(page: Page) {
@@ -206,6 +218,51 @@ test.describe('Runner Page', () => {
     });
 
     await expect(page.locator('.output-pre')).toContainText('Buffered token');
+  });
+
+  test('ignores malformed SSE payloads and stream data for other sessions', async ({ page }) => {
+    await openRunner(page, { sessionId: 'run-target-1' });
+
+    await page.fill('#task-input', 'Ignore adversarial stream payloads');
+    await page.click('button:has-text("Run Agent")');
+
+    await emitRawSse(page, '{broken');
+    await emitSse(page, {
+      type: 'agent_activity',
+      category: 'run',
+      message: '[coder] wrong session',
+      data: { sessionId: 'run-other-1', content: 'poison' },
+    });
+
+    await expect(page.locator('.output-pre')).toHaveCount(0);
+    await expect(page.locator('.latency-pill')).toContainText('Waiting for first token');
+
+    await emitSse(page, {
+      type: 'agent_activity',
+      category: 'run',
+      message: '[coder] target session',
+      data: { sessionId: 'run-target-1', content: 'good token' },
+    });
+
+    await expect(page.locator('.output-pre')).toContainText('good token');
+    await expect(page.locator('.output-pre')).not.toContainText('poison');
+  });
+
+  test('marks run failed when workflow event reports failure', async ({ page }) => {
+    await openRunner(page, { sessionId: 'run-fail-1' });
+
+    await page.fill('#task-input', 'Force failure state');
+    await page.click('button:has-text("Run Agent")');
+    await emitSse(page, {
+      type: 'workflow_event',
+      category: 'run',
+      message: '[coder] run failed',
+      data: { sessionId: 'run-fail-1', status: 'failed', error: 'simulated failure' },
+    });
+
+    await expect(page.locator('.banner--danger')).toContainText('simulated failure');
+    await expect(page.locator('.running-indicator')).toHaveCount(0);
+    await expect(page.locator('.history-item').first()).toContainText('failed');
   });
 
   test('copies and clears streamed output', async ({ page, context }) => {

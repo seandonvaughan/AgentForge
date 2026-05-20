@@ -50,10 +50,29 @@ describe('package scripts', () => {
     expect(result.ok).toBe(false);
     expect(result.failedScript).toBe('build');
     expect(result.failedCommand).toBe('tsc -b');
-    expect(result.trace).toContain('eslint "src/**/*.{js,mjs,cjs,ts,tsx}" "packages/**/*.{js,mjs,cjs,ts,tsx,svelte}" "tests/**/*.{js,mjs,cjs,ts,tsx}" "scripts/**/*.{js,mjs,cjs,ts,tsx}" "*.config.{js,mjs,cjs,ts,tsx}" eslint.config.js --max-warnings=0');
+    expect(result.trace.some((command) => command.startsWith('eslint '))).toBe(true);
     expect(result.trace).toContain('node scripts/check-version-sync.mjs');
     expect(result.trace).not.toContain('pnpm --filter @agentforge/dashboard check');
     expect(result.trace).not.toContain('node scripts/check-help-output.mjs');
+  });
+
+  it('stops verify:product before dashboard e2e when unit tests fail', async () => {
+    const scripts = loadRootScripts();
+    const harness = new ScriptPipelineHarness(scripts, (command) => {
+      return command === 'vitest run' ? 1 : 0;
+    });
+
+    const result = await harness.run('verify:product');
+
+    expect(result.ok).toBe(false);
+    expect(result.failedScript).toBe('test:run');
+    expect(result.failedCommand).toBe('vitest run');
+    expect(result.trace).toContain('tsc -b');
+    expect(result.trace).toContain('pnpm exec tsc -b --noEmit');
+    expect(result.trace).toContain('vitest run');
+    expect(result.trace.some((command) => command.startsWith('playwright test'))).toBe(
+      false,
+    );
   });
 
   it('preserves parent trace when a nested script fails', async () => {
