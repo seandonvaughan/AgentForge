@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { encode, encodeBatch, EMBEDDING_DIMS } from './encoder.js';
-import { topK } from './similarity.js';
+import { topKAsync } from './similarity.js';
 import type { EmbeddingDocument, EmbeddingResult, EmbeddingSearchOptions, EmbeddingStats } from './types.js';
 
 const DDL = `
@@ -21,6 +21,7 @@ type CacheEntry = {
   id: string;
   vec: Float32Array;
   content: string;
+  workspaceId?: string;
   metadata?: Record<string, unknown>;
 };
 
@@ -38,6 +39,17 @@ function isMetadataRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function vectorToBlob(vec: Float32Array): Buffer {
+  return Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength);
+}
+
+function blobToVector(blob: Buffer): Float32Array {
+  if (blob.byteLength % 4 !== 0) {
+    throw new Error('Invalid embedding vector blob length');
+  }
+  return new Float32Array(blob.buffer, blob.byteOffset, blob.byteLength / 4);
+}
+
 export class EmbeddingStore {
   private db: Database.Database;
   private cache: Map<string, CacheEntry> = new Map();
@@ -52,7 +64,7 @@ export class EmbeddingStore {
   /** Index a single document. Returns the embedding vector. */
   async index(doc: EmbeddingDocument): Promise<Float32Array> {
     const vec = await encode(doc.content);
-    const blob = Buffer.from(vec.buffer);
+    const blob = vectorToBlob(vec);
     this.db.prepare(`
       INSERT OR REPLACE INTO embeddings (id, content, workspace_id, metadata, vector)
       VALUES (?, ?, ?, ?, ?)
@@ -61,7 +73,7 @@ export class EmbeddingStore {
     this.cache.set(
       doc.id,
       withOptionalMetadata<CacheEntry>(
-        { id: doc.id, vec, content: doc.content },
+        { id: doc.id, vec, content: doc.content, ...(doc.workspaceId !== undefined ? { workspaceId: doc.workspaceId } : {}) },
         doc.metadata,
       ),
     );
@@ -84,7 +96,7 @@ export class EmbeddingStore {
           throw new Error('Embedding batch length mismatch');
         }
 
-        const blob = Buffer.from(vec.buffer);
+        const blob = vectorToBlob(vec);
         insert.run(
           doc.id,
           doc.content,
@@ -95,7 +107,7 @@ export class EmbeddingStore {
         this.cache.set(
           doc.id,
           withOptionalMetadata<CacheEntry>(
-            { id: doc.id, vec, content: doc.content },
+            { id: doc.id, vec, content: doc.content, ...(doc.workspaceId !== undefined ? { workspaceId: doc.workspaceId } : {}) },
             doc.metadata,
           ),
         );
@@ -138,10 +150,10 @@ export class EmbeddingStore {
 
     // Filter pool by workspace if specified
     const pool = workspaceId
-      ? [...this.cache.values()].filter(() => true) // workspace filter simplified; production should query db
+      ? [...this.cache.values()].filter(entry => entry.workspaceId === workspaceId)
       : [...this.cache.values()];
 
-    return topK(queryVec, pool, k, minScore);
+    return topKAsync(queryVec, pool, k, minScore);
   }
 
   /** Delete a document by ID. */
@@ -169,10 +181,10 @@ export class EmbeddingStore {
 
   private _loadCache(): void {
     const rows = this.db
-      .prepare('SELECT id, content, metadata, vector FROM embeddings')
-      .all() as Array<{ id: string; content: string; metadata: string; vector: Buffer }>;
+      .prepare('SELECT id, content, workspace_id, metadata, vector FROM embeddings')
+      .all() as Array<{ id: string; content: string; workspace_id: string | null; metadata: string; vector: Buffer }>;
     for (const row of rows) {
-      const vec = new Float32Array(row.vector.buffer, row.vector.byteOffset, row.vector.byteLength / 4);
+      const vec = blobToVector(row.vector);
       let metadata: Record<string, unknown> | undefined;
       try {
         const parsed: unknown = JSON.parse(row.metadata);
@@ -185,7 +197,7 @@ export class EmbeddingStore {
       this.cache.set(
         row.id,
         withOptionalMetadata<CacheEntry>(
-          { id: row.id, vec, content: row.content },
+          { id: row.id, vec, content: row.content, ...(row.workspace_id !== null ? { workspaceId: row.workspace_id } : {}) },
           metadata,
         ),
       );
