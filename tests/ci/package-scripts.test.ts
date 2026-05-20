@@ -50,7 +50,12 @@ describe('package scripts', () => {
     expect(result.ok).toBe(false);
     expect(result.failedScript).toBe('build');
     expect(result.failedCommand).toBe('tsc -b');
-    expect(result.trace.some((command) => command.startsWith('eslint '))).toBe(true);
+    const lintCommand = result.trace.find((command) => command.startsWith('eslint '));
+    expect(lintCommand).toBeDefined();
+    expect(lintCommand).toContain('"src/**/*.{js,mjs,cjs,ts,tsx}"');
+    expect(lintCommand).toContain('"packages/**/*.{js,mjs,cjs,ts,tsx,svelte}"');
+    expect(lintCommand).toContain('"tests/**/*.{js,mjs,cjs,ts,tsx}"');
+    expect(lintCommand).toContain('--max-warnings=0');
     expect(result.trace).toContain('node scripts/check-version-sync.mjs');
     expect(result.trace).not.toContain('pnpm --filter @agentforge/dashboard check');
     expect(result.trace).not.toContain('node scripts/check-help-output.mjs');
