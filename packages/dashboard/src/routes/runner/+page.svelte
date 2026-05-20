@@ -1,8 +1,14 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { Btn, Badge, Card, PulseDot } from '$lib/components/v2';
+  import { Btn, Badge, Card, ModelChip, PulseDot } from '$lib/components/v2';
   import CodexReadinessPanel from '$lib/components/CodexReadinessPanel.svelte';
   import { codexProfileFor } from '$lib/modelProfiles';
+  import {
+    deriveTaskFromCommand,
+    normalizeNlParseResponse,
+    resolveAgentId,
+    type RunnerNlParseView,
+  } from '$lib/util/runner-nl';
   import type { PageData } from './$types';
 
   // MODEL_TIER_META maps persisted tier keys to Codex-facing display metadata.
@@ -67,6 +73,11 @@
   let selectedAgent = $state(_defaultAgent);
   let agentSearch = $state('');
   let taskInput = $state('');
+  let nlCommand = $state('');
+  let nlParsing = $state(false);
+  let nlParseError: string | null = $state(null);
+  let nlPreview: RunnerNlParseView | null = $state(null);
+  let nlPreviewSource = $state('');
   let runtimeMode: RunnerRuntimeMode = $state('codex-cli');
   let codexSandbox: CodexSandboxMode = $state('workspace-write');
   let allowedToolsInput = $state('Read, Grep, Glob');
@@ -155,6 +166,8 @@
     sonnet: agentEntries.filter((a) => a.model === 'sonnet').length,
     haiku:  agentEntries.filter((a) => a.model === 'haiku').length,
   });
+  let nlPreviewIsCurrent = $derived(!!nlPreview && nlPreviewSource === nlCommand.trim());
+  let mappedNlAgentId = $derived(nlPreview ? resolveAgentId(nlPreview.agentCandidate, agentEntries) : null);
 
   async function loadAgents() {
     // Only show the loading spinner when there are no agents from SSR.
@@ -478,6 +491,64 @@
     return Array.from(new Set(value.split(/[,\n]/).map((tool) => tool.trim()).filter(Boolean)));
   }
 
+  function formatIntent(intent: string): string {
+    return intent.replace(/_/g, ' ');
+  }
+
+  function formatConfidence(confidence: number): string {
+    return `${Math.round(confidence * 100)}%`;
+  }
+
+  async function parseNlCommand() {
+    const input = nlCommand.trim();
+    if (!input || nlParsing || running) return;
+
+    nlParsing = true;
+    nlParseError = null;
+
+    try {
+      const res = await fetch('/api/v5/nl/parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input }),
+      });
+      if (!res.ok) {
+        const err = await res.text().catch(() => `HTTP ${res.status}`);
+        nlParseError = err || `HTTP ${res.status}`;
+        nlPreview = null;
+        return;
+      }
+
+      const json = await res.json();
+      const normalized = normalizeNlParseResponse(json);
+      if (!normalized) {
+        nlParseError = 'Parser returned an invalid payload.';
+        nlPreview = null;
+        return;
+      }
+
+      nlPreview = normalized;
+      nlPreviewSource = input;
+    } catch {
+      nlParseError = 'Unable to parse natural-language command — retry.';
+      nlPreview = null;
+    } finally {
+      nlParsing = false;
+    }
+  }
+
+  async function applyNlPreviewToForm(runAfterApply = false) {
+    if (!nlPreview || !nlPreviewIsCurrent) return;
+
+    const matchedAgentId = resolveAgentId(nlPreview.agentCandidate, agentEntries);
+    if (matchedAgentId) selectedAgent = matchedAgentId;
+
+    const derivedTask = deriveTaskFromCommand(nlCommand);
+    if (derivedTask) taskInput = derivedTask;
+
+    if (runAfterApply) await handleRun();
+  }
+
   async function copyOutput() {
     if (!output) return;
     try { await navigator.clipboard.writeText(output); copyStatus = 'Copied'; }
@@ -693,6 +764,75 @@
           />
         </div>
       </div>
+
+      <!-- Natural language command -->
+      <div class="field" style="margin-top:14px">
+        <label class="field-label" for="nl-command-input">Natural-language command</label>
+        <textarea
+          id="nl-command-input"
+          class="field-textarea nl-command-input af2-mono"
+          rows={3}
+          placeholder="Example: run coder agent: summarize failing tests and patch them"
+          bind:value={nlCommand}
+          disabled={running}
+          onkeydown={(e) => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+              e.preventDefault();
+              parseNlCommand();
+            }
+          }}
+        ></textarea>
+        <div class="nl-actions">
+          <Btn size="sm" onClick={parseNlCommand} disabled={running || nlParsing || !nlCommand.trim()}>
+            {nlParsing ? 'Parsing…' : 'Parse'}
+          </Btn>
+          <Btn size="sm" onClick={() => applyNlPreviewToForm(false)} disabled={running || !nlPreviewIsCurrent}>
+            Apply to form
+          </Btn>
+          <Btn
+            variant="purple"
+            size="sm"
+            onClick={() => applyNlPreviewToForm(true)}
+            disabled={running || !nlPreviewIsCurrent || !agentEntries.length}
+          >
+            Apply + Run
+          </Btn>
+        </div>
+      </div>
+
+      {#if nlParseError}
+        <div class="banner banner--danger" style="margin-bottom:10px">{nlParseError}</div>
+      {/if}
+
+      {#if nlPreview}
+        <div class="nl-preview" class:nl-preview--stale={!nlPreviewIsCurrent}>
+          <div class="nl-preview-top">
+            <Badge variant={nlPreview.intent === 'unknown' ? 'warning' : 'success'}>
+              {formatIntent(nlPreview.intent)}
+            </Badge>
+            <span class="af2-mono nl-confidence">{formatConfidence(nlPreview.confidence)}</span>
+            {#if mappedNlAgentId}
+              <span class="af2-mono nl-mapped">→ {mappedNlAgentId}</span>
+              <ModelChip model={getAgentModel(mappedNlAgentId)} tier={getAgentModel(mappedNlAgentId)} />
+            {/if}
+          </div>
+          {#if nlPreview.action?.method || nlPreview.action?.path}
+            <div class="af2-mono nl-action">
+              {nlPreview.action?.method} {nlPreview.action?.path}
+            </div>
+          {/if}
+          {#if nlPreview.entities.length > 0}
+            <div class="nl-entities">
+              {#each nlPreview.entities as entity (`${entity.type}:${entity.value}`)}
+                <Badge variant="muted">{entity.type}: {entity.value}</Badge>
+              {/each}
+            </div>
+          {/if}
+          {#if !nlPreviewIsCurrent}
+            <div class="af2-mono nl-stale-hint">Command changed since parse. Parse again to apply safely.</div>
+          {/if}
+        </div>
+      {/if}
 
       <!-- Task textarea -->
       <div class="field" style="margin-top:14px">
@@ -973,6 +1113,66 @@
     resize: vertical;
     min-height: 96px;
     line-height: 1.5;
+  }
+
+  .nl-command-input {
+    min-height: 78px;
+    margin-bottom: 8px;
+  }
+
+  .nl-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .nl-preview {
+    border: 1px solid var(--af-border2);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--af-purple) 6%, transparent);
+    padding: 10px;
+    margin-bottom: 14px;
+  }
+
+  .nl-preview--stale {
+    opacity: 0.76;
+  }
+
+  .nl-preview-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+  }
+
+  .nl-confidence {
+    font-size: 10px;
+    color: var(--af-faint);
+  }
+
+  .nl-mapped {
+    font-size: 10px;
+    color: var(--af-muted);
+  }
+
+  .nl-action {
+    font-size: 11px;
+    color: var(--af-dim);
+    margin-bottom: 6px;
+    word-break: break-word;
+  }
+
+  .nl-entities {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .nl-stale-hint {
+    font-size: 10px;
+    color: var(--af-faint);
+    margin-top: 8px;
   }
 
   .field-select {
