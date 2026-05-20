@@ -1,4 +1,4 @@
-import { JsonRpcRequest, JsonRpcResponse, JsonRpcNotification } from './types.js';
+import type { JsonRpcRequest, JsonRpcResponse, JsonRpcNotification } from './types.js';
 
 export abstract class PluginBase {
   private pendingRequests = new Map<string | number, { resolve: Function; reject: Function }>();

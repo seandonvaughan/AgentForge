@@ -2,7 +2,201 @@ import { fork, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { PluginManifest, PluginInstance, PluginStatus, JsonRpcRequest, JsonRpcResponse } from './types.js';
+import type {
+  PluginManifest,
+  PluginInstance,
+  PluginStatus,
+  JsonRpcRequest,
+  JsonRpcResponse,
+  PluginPermission,
+  PluginHook,
+  PluginSkill,
+  PluginMarketplaceMetadata,
+  PluginSandboxPolicy,
+} from './types.js';
+
+const VALID_PERMISSIONS = new Set<PluginPermission>([
+  'filesystem:read',
+  'filesystem:write',
+  'network',
+  'agent:invoke',
+  'db:read',
+  'db:write',
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function expectNonEmptyString(obj: Record<string, unknown>, key: string, label: string): string {
+  const value = obj[key];
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`Invalid plugin manifest: ${label} must be a non-empty string`);
+  }
+  return value.trim();
+}
+
+function parseStringArray(value: unknown, label: string): string[] {
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string')) {
+    throw new Error(`Invalid plugin manifest: ${label} must be an array of strings`);
+  }
+
+  const deduped = new Set<string>();
+  for (const entry of value) {
+    const trimmed = entry.trim();
+    if (trimmed.length === 0) {
+      throw new Error(`Invalid plugin manifest: ${label} cannot contain empty values`);
+    }
+    deduped.add(trimmed);
+  }
+  return [...deduped];
+}
+
+function parsePermissions(value: unknown): PluginPermission[] {
+  const values = parseStringArray(value, 'permissions');
+  for (const permission of values) {
+    if (!VALID_PERMISSIONS.has(permission as PluginPermission)) {
+      throw new Error(`Invalid plugin manifest: unsupported permission '${permission}'`);
+    }
+  }
+  return values as PluginPermission[];
+}
+
+function parseHooks(value: unknown): PluginHook[] {
+  if (!Array.isArray(value)) {
+    throw new Error('Invalid plugin manifest: hooks must be an array');
+  }
+
+  return value.map((hook, index) => {
+    if (!isRecord(hook)) {
+      throw new Error(`Invalid plugin manifest: hooks[${index}] must be an object`);
+    }
+    return {
+      event: expectNonEmptyString(hook, 'event', `hooks[${index}].event`),
+      handler: expectNonEmptyString(hook, 'handler', `hooks[${index}].handler`),
+    };
+  });
+}
+
+function parseSkills(value: unknown): PluginSkill[] {
+  if (!Array.isArray(value)) {
+    throw new Error('Invalid plugin manifest: skills must be an array');
+  }
+
+  return value.map((skill, index) => {
+    if (!isRecord(skill)) {
+      throw new Error(`Invalid plugin manifest: skills[${index}] must be an object`);
+    }
+    return {
+      name: expectNonEmptyString(skill, 'name', `skills[${index}].name`),
+      description: expectNonEmptyString(skill, 'description', `skills[${index}].description`),
+      handler: expectNonEmptyString(skill, 'handler', `skills[${index}].handler`),
+    };
+  });
+}
+
+function parseMarketplaceMetadata(value: unknown): PluginMarketplaceMetadata | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!isRecord(value)) {
+    throw new Error('Invalid plugin manifest: marketplace must be an object');
+  }
+
+  const metadata: PluginMarketplaceMetadata = {};
+
+  if (value['license'] !== undefined) {
+    metadata.license = expectNonEmptyString(value, 'license', 'marketplace.license');
+  }
+  if (value['homepage'] !== undefined) {
+    metadata.homepage = expectNonEmptyString(value, 'homepage', 'marketplace.homepage');
+  }
+  if (value['repository'] !== undefined) {
+    metadata.repository = expectNonEmptyString(value, 'repository', 'marketplace.repository');
+  }
+  if (value['category'] !== undefined) {
+    metadata.category = expectNonEmptyString(value, 'category', 'marketplace.category');
+  }
+  if (value['tags'] !== undefined) {
+    metadata.tags = parseStringArray(value['tags'], 'marketplace.tags');
+  }
+  if (value['keywords'] !== undefined) {
+    metadata.keywords = parseStringArray(value['keywords'], 'marketplace.keywords');
+  }
+  if (value['visibility'] !== undefined) {
+    const visibility = expectNonEmptyString(value, 'visibility', 'marketplace.visibility');
+    if (visibility !== 'public' && visibility !== 'private' && visibility !== 'unlisted') {
+      throw new Error("Invalid plugin manifest: marketplace.visibility must be 'public', 'private', or 'unlisted'");
+    }
+    metadata.visibility = visibility;
+  }
+
+  return Object.keys(metadata).length > 0 ? metadata : undefined;
+}
+
+function parseSandboxPolicy(value: unknown): PluginSandboxPolicy | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!isRecord(value)) {
+    throw new Error('Invalid plugin manifest: sandbox must be an object');
+  }
+
+  const mode = expectNonEmptyString(value, 'mode', 'sandbox.mode');
+  if (mode !== 'process' && mode !== 'inherit') {
+    throw new Error("Invalid plugin manifest: sandbox.mode must be 'process' or 'inherit'");
+  }
+
+  const policy: PluginSandboxPolicy = { mode };
+
+  if (value['allowedHosts'] !== undefined) {
+    policy.allowedHosts = parseStringArray(value['allowedHosts'], 'sandbox.allowedHosts');
+  }
+  if (value['allowedEnv'] !== undefined) {
+    policy.allowedEnv = parseStringArray(value['allowedEnv'], 'sandbox.allowedEnv');
+  }
+  if (value['workspaceWriteOnly'] !== undefined) {
+    if (typeof value['workspaceWriteOnly'] !== 'boolean') {
+      throw new Error('Invalid plugin manifest: sandbox.workspaceWriteOnly must be a boolean');
+    }
+    policy.workspaceWriteOnly = value['workspaceWriteOnly'];
+  }
+
+  return policy;
+}
+
+function validatePluginManifest(raw: unknown): PluginManifest {
+  if (!isRecord(raw)) {
+    throw new Error('Invalid plugin manifest: root must be an object');
+  }
+
+  const manifest: PluginManifest = {
+    id: expectNonEmptyString(raw, 'id', 'id'),
+    name: expectNonEmptyString(raw, 'name', 'name'),
+    version: expectNonEmptyString(raw, 'version', 'version'),
+    description: expectNonEmptyString(raw, 'description', 'description'),
+    entrypoint: expectNonEmptyString(raw, 'entrypoint', 'entrypoint'),
+    permissions: parsePermissions(raw['permissions']),
+    hooks: parseHooks(raw['hooks']),
+    skills: parseSkills(raw['skills']),
+  };
+
+  if (raw['author'] !== undefined) {
+    manifest.author = expectNonEmptyString(raw, 'author', 'author');
+  }
+
+  const marketplace = parseMarketplaceMetadata(raw['marketplace']);
+  if (marketplace !== undefined) {
+    manifest.marketplace = marketplace;
+  }
+
+  const sandbox = parseSandboxPolicy(raw['sandbox']);
+  if (sandbox !== undefined) {
+    manifest.sandbox = sandbox;
+  }
+
+  return manifest;
+}
 
 export class PluginHost extends EventEmitter {
   private instances = new Map<string, PluginInstance & { process?: ChildProcess; buffer: string }>();
@@ -11,7 +205,15 @@ export class PluginHost extends EventEmitter {
 
   async load(manifestPath: string): Promise<PluginInstance> {
     const raw = await readFile(manifestPath, 'utf-8');
-    const manifest: PluginManifest = JSON.parse(raw);
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new Error(`Invalid plugin manifest JSON: ${manifestPath}`);
+    }
+
+    const manifest = validatePluginManifest(parsed);
 
     if (this.instances.has(manifest.id)) {
       throw new Error(`Plugin ${manifest.id} already loaded`);
@@ -22,6 +224,8 @@ export class PluginHost extends EventEmitter {
       manifest,
       status: 'stopped',
       buffer: '',
+      manifestPath,
+      loadedAt: new Date().toISOString(),
     };
     this.instances.set(manifest.id, instance);
     return instance;
@@ -73,7 +277,7 @@ export class PluginHost extends EventEmitter {
     if (!instance?.process) return;
     instance.status = 'stopping';
     instance.process.kill('SIGTERM');
-    await new Promise<void>(resolve => instance.process!.once('exit', () => resolve()));
+    await new Promise<void>((resolve) => instance.process!.once('exit', () => resolve()));
   }
 
   async call<T = unknown>(pluginId: string, method: string, params?: unknown): Promise<T> {
@@ -109,7 +313,7 @@ export class PluginHost extends EventEmitter {
     const lines = instance.buffer.split('\n');
     instance.buffer = lines.pop() ?? '';
 
-    for (const line of lines.filter(l => l.trim())) {
+    for (const line of lines.filter((l) => l.trim())) {
       try {
         const msg = JSON.parse(line) as JsonRpcResponse | { jsonrpc: '2.0'; method: string; params?: unknown };
         if ('result' in msg || 'error' in msg) {
@@ -131,7 +335,9 @@ export class PluginHost extends EventEmitter {
             this.emit('plugin.event', { pluginId, event: msg.method, data: msg.params });
           }
         }
-      } catch { /* skip malformed */ }
+      } catch {
+        // skip malformed
+      }
     }
   }
 

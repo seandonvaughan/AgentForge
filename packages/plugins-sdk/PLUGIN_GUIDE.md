@@ -142,7 +142,7 @@ plugins:
 
 ## 3. Plugin Manifest Reference
 
-The `plugin.json` file is the contract between your plugin and the AgentForge host. All fields except `author` are required.
+The `plugin.json` file is the contract between your plugin and the AgentForge host. `author`, `marketplace`, and `sandbox` are optional; all other fields are required.
 
 ```json
 {
@@ -154,7 +154,22 @@ The `plugin.json` file is the contract between your plugin and the AgentForge ho
   "permissions": ["string"],
   "hooks": [{ "event": "string", "handler": "string" }],
   "skills": [{ "name": "string", "description": "string", "handler": "string" }],
-  "author": "string"
+  "author": "string",
+  "marketplace": {
+    "license": "string",
+    "homepage": "string",
+    "repository": "string",
+    "tags": ["string"],
+    "keywords": ["string"],
+    "category": "string",
+    "visibility": "public | private | unlisted"
+  },
+  "sandbox": {
+    "mode": "process | inherit",
+    "allowedHosts": ["string"],
+    "allowedEnv": ["string"],
+    "workspaceWriteOnly": true
+  }
 }
 ```
 
@@ -171,6 +186,8 @@ The `plugin.json` file is the contract between your plugin and the AgentForge ho
 | `hooks` | `PluginHook[]` | Yes | Array of event hooks the plugin subscribes to. |
 | `skills` | `PluginSkill[]` | Yes | Array of skills the plugin exposes to Claude Code. |
 | `author` | `string` | No | Optional attribution string. |
+| `marketplace` | `PluginMarketplaceMetadata` | No | Optional metadata for registry search, listing, and publishing controls. |
+| `sandbox` | `PluginSandboxPolicy` | No | Optional declared sandbox intent used by host policy checks and registry review. |
 
 ### PluginHook
 

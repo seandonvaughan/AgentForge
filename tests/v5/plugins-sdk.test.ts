@@ -17,6 +17,8 @@ import type {
   PluginStatus,
   PluginHook,
   PluginSkill,
+  PluginSandboxPolicy,
+  PluginMarketplaceMetadata,
 } from '../../packages/plugins-sdk/src/types.js';
 
 // ── PluginHost — initial state ────────────────────────────────────────────────
@@ -168,6 +170,89 @@ describe('PluginHost — load()', () => {
     expect(instance.manifest.name).toBe('Manifest Plugin');
     expect(instance.manifest.version).toBe('2.0.0');
   });
+
+  it('load() rejects unsupported permissions', async () => {
+    const manifest = {
+      id: 'bad-perms',
+      name: 'Bad Perms',
+      version: '1.0.0',
+      description: 'Invalid permission',
+      entrypoint: 'index.js',
+      permissions: ['filesystem:read', 'kernel:root'],
+      hooks: [],
+      skills: [],
+    };
+    const { writeFile, mkdtemp } = await import('node:fs/promises');
+    const { join } = await import('node:path');
+    const { tmpdir } = await import('node:os');
+    const dir = await mkdtemp(join(tmpdir(), 'plugin-test-'));
+    const manifestPath = join(dir, 'plugin.json');
+    await writeFile(manifestPath, JSON.stringify(manifest));
+
+    await expect(host.load(manifestPath)).rejects.toThrow('unsupported permission');
+  });
+
+  it('load() rejects invalid sandbox mode', async () => {
+    const manifest = {
+      id: 'bad-sandbox',
+      name: 'Bad Sandbox',
+      version: '1.0.0',
+      description: 'Invalid sandbox mode',
+      entrypoint: 'index.js',
+      permissions: [],
+      hooks: [],
+      skills: [],
+      sandbox: { mode: 'container' },
+    };
+    const { writeFile, mkdtemp } = await import('node:fs/promises');
+    const { join } = await import('node:path');
+    const { tmpdir } = await import('node:os');
+    const dir = await mkdtemp(join(tmpdir(), 'plugin-test-'));
+    const manifestPath = join(dir, 'plugin.json');
+    await writeFile(manifestPath, JSON.stringify(manifest));
+
+    await expect(host.load(manifestPath)).rejects.toThrow('sandbox.mode');
+  });
+
+  it('load() preserves optional marketplace and sandbox metadata', async () => {
+    const manifest: PluginManifest = {
+      id: 'registry-metadata',
+      name: 'Registry Metadata',
+      version: '1.2.3',
+      description: 'Metadata shape',
+      entrypoint: 'index.js',
+      permissions: [],
+      hooks: [],
+      skills: [],
+      marketplace: {
+        license: 'MIT',
+        homepage: 'https://example.com',
+        repository: 'https://github.com/example/registry-metadata',
+        tags: ['marketplace', 'plugin'],
+        keywords: ['registry', 'sandbox'],
+        category: 'integration',
+        visibility: 'public',
+      },
+      sandbox: {
+        mode: 'process',
+        allowedHosts: ['api.example.com'],
+        allowedEnv: ['OPENAI_API_KEY'],
+        workspaceWriteOnly: true,
+      },
+    };
+    const { writeFile, mkdtemp } = await import('node:fs/promises');
+    const { join } = await import('node:path');
+    const { tmpdir } = await import('node:os');
+    const dir = await mkdtemp(join(tmpdir(), 'plugin-test-'));
+    const manifestPath = join(dir, 'plugin.json');
+    await writeFile(manifestPath, JSON.stringify(manifest));
+
+    const instance = await host.load(manifestPath);
+    expect(instance.manifest.marketplace?.visibility).toBe('public');
+    expect(instance.manifest.sandbox?.mode).toBe('process');
+    expect(instance.manifestPath).toBe(manifestPath);
+    expect(instance.loadedAt).toBeTruthy();
+  });
 });
 
 // ── JSON-RPC 2.0 message types ────────────────────────────────────────────────
@@ -279,6 +364,46 @@ describe('PluginManifest validation', () => {
       author: 'Sean',
     };
     expect(manifest.author).toBe('Sean');
+  });
+
+  it('marketplace metadata is optional and typed', () => {
+    const marketplace: PluginMarketplaceMetadata = {
+      license: 'Apache-2.0',
+      visibility: 'unlisted',
+      tags: ['ecosystem'],
+    };
+    const manifest: PluginManifest = {
+      id: 'p2',
+      name: 'P2',
+      version: '1.0.0',
+      description: 'Desc',
+      entrypoint: 'index.js',
+      permissions: [],
+      hooks: [],
+      skills: [],
+      marketplace,
+    };
+    expect(manifest.marketplace?.visibility).toBe('unlisted');
+  });
+
+  it('sandbox policy is optional and typed', () => {
+    const sandbox: PluginSandboxPolicy = {
+      mode: 'process',
+      allowedHosts: ['api.internal'],
+      workspaceWriteOnly: true,
+    };
+    const manifest: PluginManifest = {
+      id: 'p3',
+      name: 'P3',
+      version: '1.0.0',
+      description: 'Desc',
+      entrypoint: 'index.js',
+      permissions: [],
+      hooks: [],
+      skills: [],
+      sandbox,
+    };
+    expect(manifest.sandbox?.mode).toBe('process');
   });
 
   it('PluginStatus covers all lifecycle states', () => {
