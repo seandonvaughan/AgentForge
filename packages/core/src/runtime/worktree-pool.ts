@@ -1,5 +1,5 @@
 import { execFile as execFileCb } from 'node:child_process';
-import { existsSync, mkdirSync, realpathSync } from 'node:fs';
+import { existsSync, mkdirSync, realpathSync, symlinkSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import type { WorktreeHandle, WorktreePoolStats } from './worktree-pool-types.js';
@@ -116,6 +116,7 @@ export class WorktreePool {
       this.handles.set(id, handle);
       this.stats.active += 1;
       this.stats.totalAllocations += 1;
+      this.provisionDependencyLinks(wtPath);
       return handle;
     }
 
@@ -166,6 +167,7 @@ export class WorktreePool {
     this.handles.set(id, handle);
     this.stats.active += 1;
     this.stats.totalAllocations += 1;
+    this.provisionDependencyLinks(wtPath);
     return handle;
   }
 
@@ -401,5 +403,20 @@ export class WorktreePool {
     }
 
     return false;
+  }
+
+  private provisionDependencyLinks(worktreePath: string): void {
+    const source = join(this.projectRoot, 'node_modules');
+    const target = join(worktreePath, 'node_modules');
+    if (!existsSync(source) || existsSync(target)) {
+      return;
+    }
+
+    try {
+      symlinkSync(source, target, process.platform === 'win32' ? 'junction' : 'dir');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`[WorktreePool] Could not link node_modules into ${worktreePath}: ${message}`);
+    }
   }
 }
