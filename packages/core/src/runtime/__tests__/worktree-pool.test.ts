@@ -100,14 +100,14 @@ describe('WorktreePool', () => {
     expect(existsSync(handle.path)).toBe(true);
   });
 
-  it('links root node_modules into allocated worktrees when available', async () => {
+  it('does not link root node_modules into allocated worktrees', async () => {
     const rootNodeModules = join(workingDir, 'node_modules');
     mkdirSync(rootNodeModules, { recursive: true });
 
     const pool = new WorktreePool({ projectRoot: workingDir });
     const handle = await pool.allocate({ agentId: 'coder', sessionId: 'deps' });
 
-    expect(existsSync(join(handle.path, 'node_modules'))).toBe(true);
+    expect(existsSync(join(handle.path, 'node_modules'))).toBe(false);
     await pool.release(handle.id);
     expect(existsSync(rootNodeModules)).toBe(true);
   });
