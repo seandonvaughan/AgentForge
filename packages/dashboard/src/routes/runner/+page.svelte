@@ -4,6 +4,7 @@
   import CodexReadinessPanel from '$lib/components/CodexReadinessPanel.svelte';
   import { codexProfileFor } from '$lib/modelProfiles';
   import type { PageData } from './$types';
+  import { buildRunDraftFromNl, normalizeNlParseResponse, type RunnerNlParseData } from './nl-command';
 
   // MODEL_TIER_META maps persisted tier keys to Codex-facing display metadata.
   const MODEL_TIER_META: Record<string, { label: string; range: string; color: string }> = {
@@ -66,6 +67,11 @@
   // Prefer 'coder' if available in the SSR list; otherwise use the first agent.
   let selectedAgent = $state(_defaultAgent);
   let agentSearch = $state('');
+  let nlCommandInput = $state('');
+  let nlParsing = $state(false);
+  let nlParseError: string | null = $state(null);
+  let nlParseResult: RunnerNlParseData | null = $state(null);
+  let nlApplyStatus: string | null = $state(null);
   let taskInput = $state('');
   let runtimeMode: RunnerRuntimeMode = $state('codex-cli');
   let codexSandbox: CodexSandboxMode = $state('workspace-write');
@@ -149,6 +155,10 @@
     if (firstTokenLatencyMs !== null) return 'Streaming output';
     return 'Starting run';
   });
+
+  let hasFreshNlPreview = $derived(
+    nlParseResult?.parsed?.rawInput?.trim() === nlCommandInput.trim() && nlCommandInput.trim().length > 0,
+  );
 
   let agentCountByTier = $derived({
     opus:   agentEntries.filter((a) => a.model === 'opus').length,
@@ -291,6 +301,99 @@
         output: currentRunOutput || output,
       };
     });
+  }
+
+  async function parseNlCommand(force = false): Promise<RunnerNlParseData | null> {
+    const input = nlCommandInput.trim();
+    if (!input) {
+      nlParseError = 'Enter a natural language command to parse.';
+      return null;
+    }
+
+    if (!force && nlParseResult?.parsed?.rawInput?.trim() === input) return nlParseResult;
+
+    nlParsing = true;
+    nlParseError = null;
+    nlApplyStatus = null;
+    try {
+      const res = await fetch('/api/v5/nl/parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input }),
+      });
+      if (!res.ok) {
+        nlParseResult = null;
+        if (res.status === 404) {
+          nlParseError = 'Natural language API not available — /api/v5/nl/parse returned 404.';
+        } else {
+          const err = await res.text().catch(() => `HTTP ${res.status}`);
+          nlParseError = err || `HTTP ${res.status}`;
+        }
+        return null;
+      }
+
+      const payload = await res.json().catch(() => null);
+      const normalized = normalizeNlParseResponse(payload);
+      if (!normalized) {
+        nlParseResult = null;
+        nlParseError = 'Natural language parser returned an unexpected response.';
+        return null;
+      }
+
+      nlParseResult = normalized;
+      return normalized;
+    } catch (e) {
+      nlParseResult = null;
+      nlParseError = String(e);
+      return null;
+    } finally {
+      nlParsing = false;
+    }
+  }
+
+  function applyParsedNlToForm(parsed: RunnerNlParseData, commandInput: string): boolean {
+    const draft = buildRunDraftFromNl(parsed, commandInput);
+    if (!draft) {
+      nlApplyStatus = 'Intent is not run_agent. Only run-agent commands can be applied to this form.';
+      return false;
+    }
+
+    const warnings = [...draft.warnings];
+    if (draft.agentId) {
+      if (agentEntries.some((entry) => entry.agentId === draft.agentId)) {
+        selectedAgent = draft.agentId;
+      } else {
+        warnings.push(`Parsed agent "${draft.agentId}" was not found in the current roster.`);
+      }
+    }
+
+    const task = draft.task.trim();
+    if (!task) {
+      nlParseError = 'Could not derive a runnable task from the natural language command.';
+      return false;
+    }
+
+    taskInput = task;
+    runError = null;
+    selectedHistoryRun = null;
+    nlParseError = null;
+    nlApplyStatus = warnings.length > 0
+      ? warnings.join(' ')
+      : 'Applied natural language command to run form.';
+    return true;
+  }
+
+  async function applyNlCommandToForm() {
+    const parsed = await parseNlCommand();
+    if (!parsed) return;
+    applyParsedNlToForm(parsed, nlCommandInput);
+  }
+
+  async function runFromNlCommand() {
+    const parsed = await parseNlCommand();
+    if (!parsed) return;
+    if (!applyParsedNlToForm(parsed, nlCommandInput)) return;
+    await handleRun();
   }
 
   async function handleRun() {
@@ -694,6 +797,63 @@
         </div>
       </div>
 
+      <div class="field" style="margin-top:14px">
+        <label class="field-label" for="nl-command-input">Natural language command</label>
+        <input
+          id="nl-command-input"
+          class="field-search af2-mono"
+          bind:value={nlCommandInput}
+          placeholder="Run the coder agent to add retry logic to stream parsing"
+          disabled={running || !!agentsLoadError || agentEntries.length === 0}
+          onkeydown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              applyNlCommandToForm();
+            }
+          }}
+        />
+        <div class="nl-actions">
+          <Btn
+            size="sm"
+            onClick={applyNlCommandToForm}
+            disabled={running || nlParsing || !nlCommandInput.trim() || !!agentsLoadError || agentEntries.length === 0}
+          >
+            {nlParsing ? 'Parsing…' : 'Apply command'}
+          </Btn>
+          <Btn
+            size="sm"
+            variant="ghost"
+            onClick={runFromNlCommand}
+            disabled={running || nlParsing || !nlCommandInput.trim() || !!agentsLoadError || agentEntries.length === 0}
+          >
+            Apply + run
+          </Btn>
+        </div>
+
+        {#if hasFreshNlPreview && nlParseResult?.parsed}
+          <div class="nl-preview">
+            <Badge variant="muted">{nlParseResult.parsed.intent ?? 'unknown'}</Badge>
+            {#if typeof nlParseResult.parsed.confidence === 'number'}
+              <span class="af2-mono nl-preview-meta">
+                {Math.round(nlParseResult.parsed.confidence * 100)}%
+              </span>
+            {/if}
+            {#if nlParseResult.action?.path}
+              <span class="af2-mono nl-preview-meta">
+                {nlParseResult.action.method ?? 'POST'} {nlParseResult.action.path}
+              </span>
+            {/if}
+          </div>
+        {/if}
+
+        {#if nlParseError}
+          <div class="banner banner--danger" style="margin-top:8px">{nlParseError}</div>
+        {/if}
+        {#if nlApplyStatus}
+          <div class="banner banner--warn" style="margin-top:8px">{nlApplyStatus}</div>
+        {/if}
+      </div>
+
       <!-- Task textarea -->
       <div class="field" style="margin-top:14px">
         <label class="field-label" for="task-input">Task</label>
@@ -973,6 +1133,25 @@
     resize: vertical;
     min-height: 96px;
     line-height: 1.5;
+  }
+
+  .nl-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  .nl-preview {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+  }
+
+  .nl-preview-meta {
+    font-size: 10px;
+    color: var(--af-faint);
   }
 
   .field-select {
