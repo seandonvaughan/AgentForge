@@ -91,5 +91,42 @@ describe('package scripts', () => {
 
     await expect(circular.run('a')).rejects.toThrow('circular script reference detected: a');
     await expect(missing.run('b')).rejects.toThrow('script not found: b');
+    await expect(missing.run('a')).rejects.toThrow('script not found: b');
+  });
+
+  it('resolves pnpm run invocations with flags and passthrough args', async () => {
+    const harness = new ScriptPipelineHarness(
+      {
+        parent:
+          'pnpm --filter @agentforge/server run --if-present child -- --watch && pnpm -C . run child-2',
+        child: 'echo child-one',
+        'child-2': 'echo child-two',
+      },
+      () => 0,
+    );
+
+    const result = await harness.run('parent');
+
+    expect(result).toMatchObject({
+      ok: true,
+      trace: ['echo child-one', 'echo child-two'],
+    });
+  });
+
+  it('does not split chained commands when && appears inside quotes', async () => {
+    const harness = new ScriptPipelineHarness(
+      {
+        parent: 'echo "lhs && rhs" && pnpm child',
+        child: "echo 'child && still-child'",
+      },
+      () => 0,
+    );
+
+    const result = await harness.run('parent');
+
+    expect(result).toMatchObject({
+      ok: true,
+      trace: ['echo "lhs && rhs"', "echo 'child && still-child'"],
+    });
   });
 });
