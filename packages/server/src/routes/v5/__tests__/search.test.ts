@@ -93,6 +93,36 @@ describe('POST /api/v5/search', () => {
     expect(body.meta.query).toBe('anything');
   });
 
+  it('skips malformed JSON route inputs and still returns 200', async () => {
+    const projectRoot = makeTmpRoot();
+    const sprintsDir = join(projectRoot, '.agentforge', 'sprints');
+    const cyclesDir = join(projectRoot, '.agentforge', 'cycles', 'cycle-malformed');
+    const memoryDir = join(projectRoot, '.agentforge', 'memory');
+    mkdirSync(sprintsDir, { recursive: true });
+    mkdirSync(cyclesDir, { recursive: true });
+    mkdirSync(memoryDir, { recursive: true });
+
+    writeFileSync(join(sprintsDir, 'bad.json'), '{"sprints": [');
+    writeFileSync(join(cyclesDir, 'cycle.json'), '{"cycleId": "cycle-malformed", "stage":');
+    writeFileSync(join(memoryDir, 'entries.jsonl'), [
+      '{"id":"line-1","value":"valid searchable line"}',
+      '{"id":"line-2","value":"broken line"',
+    ].join('\n'));
+
+    const { app } = await createServerV5({ listen: false, projectRoot });
+    createdApps.push(app);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v5/search',
+      payload: { query: 'searchable', limit: 20 },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<SearchResponse>();
+    expect(body.data.some((r) => r.type === 'memory')).toBe(true);
+    expect(body.data.some((r) => r.id === 'memory:line-1')).toBe(true);
+  });
+
   it('finds agents by YAML content', async () => {
     const projectRoot = makeTmpRoot();
     const agentsDir = join(projectRoot, '.agentforge', 'agents');
@@ -320,6 +350,27 @@ describe('POST /api/v5/search', () => {
     const body = res.json<SearchResponse>();
     // Only agent results should be returned (sprint filtered out)
     expect(body.data.every(r => r.type === 'agent')).toBe(true);
+  });
+
+  it('returns empty data for unknown type filters without throwing', async () => {
+    const projectRoot = makeTmpRoot();
+    const agentsDir = join(projectRoot, '.agentforge', 'agents');
+    mkdirSync(agentsDir, { recursive: true });
+    writeFileSync(join(agentsDir, 'router.yaml'), 'name: Router\ndescription: route planning');
+
+    const { app } = await createServerV5({ listen: false, projectRoot });
+    createdApps.push(app);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v5/search',
+      payload: { query: 'route', types: ['not-a-real-type'] },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json<SearchResponse>();
+    expect(body.data).toEqual([]);
+    expect(body.meta.total).toBe(0);
   });
 
   it('sorts results by score descending', async () => {

@@ -164,6 +164,62 @@ Dash-list parser coverage.`;
     expect(p!.occurrences).toBe(7);
   });
 
+  it('parses quoted dash-list requiresTools entries in order', () => {
+    const content = `---
+id: prop-dash-list-quoted
+action: refine
+targetSkillId: agentforge:tdd
+skillId: agentforge:tdd
+capabilityTag: parser-hardening
+clusterId: cluster-parser-quoted
+requiresTools:
+  - "Bash"
+  - 'Edit'
+  - Read
+occurrences: 3
+status: proposed
+createdAt: "2024-01-16T10:00:00Z"
+---
+
+Quoted dash-list parser coverage.`;
+    writeFileSync(join(PROPOSED_DIR, 'prop-dash-list-quoted.md'), content, 'utf8');
+
+    const result = loadProposals(TMP_ROOT);
+    const p = result.find((x) => x.id === 'prop-dash-list-quoted');
+    expect(p).toBeDefined();
+    expect(p!.requiresTools).toEqual(['Bash', 'Edit', 'Read']);
+    expect(p!.occurrences).toBe(3);
+  });
+
+  it('keeps requiresTools isolated when another dash-list key follows', () => {
+    const content = `---
+id: prop-dash-list-multi
+action: refine
+targetSkillId: agentforge:tdd
+skillId: agentforge:tdd
+capabilityTag: parser-hardening
+clusterId: cluster-parser-multi
+requiresTools:
+  - Bash
+  - Edit
+tags:
+  - parser
+  - regression
+occurrences: 8
+status: proposed
+createdAt: "2024-01-16T10:00:00Z"
+---
+
+Multiple list keys parser coverage.`;
+    writeFileSync(join(PROPOSED_DIR, 'prop-dash-list-multi.md'), content, 'utf8');
+
+    const result = loadProposals(TMP_ROOT);
+    const p = result.find((x) => x.id === 'prop-dash-list-multi');
+    expect(p).toBeDefined();
+    expect(p!.requiresTools).toEqual(['Bash', 'Edit']);
+    expect(p!.frontmatter['tags']).toEqual(['parser', 'regression']);
+  });
+
   it('includes body content', () => {
     writeProposal('prop-body.md', {
       id: 'prop-body',
@@ -345,6 +401,14 @@ Proposal to approve.`,
     // Fastify URL-decodes, so this hits the route with id=../evil which fails validation
     expect([400, 404]).toContain(res.statusCode);
   });
+
+  it('requires exact proposal id match for approval', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v5/flywheel/proposals/prop-approve/approve',
+    });
+    expect(res.statusCode).toBe(404);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -420,6 +484,22 @@ Proposal to reject.`,
     const res = await app.inject({
       method: 'POST',
       url: '/api/v5/flywheel/proposals/no-such-proposal/reject',
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('returns 400 for id with path traversal characters', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v5/flywheel/proposals/..%2Fevil/reject',
+    });
+    expect([400, 404]).toContain(res.statusCode);
+  });
+
+  it('requires exact proposal id match for rejection', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v5/flywheel/proposals/prop-reject/reject',
     });
     expect(res.statusCode).toBe(404);
   });

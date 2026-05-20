@@ -21,6 +21,25 @@ describe('package scripts', () => {
     );
   });
 
+  it('stops verify:product before tests when noEmit typecheck fails', async () => {
+    const scripts = loadRootScripts();
+    const harness = new ScriptPipelineHarness(scripts, (command) => {
+      return command === 'pnpm exec tsc -b --noEmit' ? 1 : 0;
+    });
+
+    const result = await harness.run('verify:product');
+
+    expect(result.ok).toBe(false);
+    expect(result.failedScript).toBe('check:types');
+    expect(result.failedCommand).toBe('pnpm exec tsc -b --noEmit');
+    expect(result.trace).toContain('tsc -b');
+    expect(result.trace).toContain('pnpm exec tsc -b --noEmit');
+    expect(result.trace).not.toContain('vitest run');
+    expect(result.trace.some((command) => command.startsWith('playwright test'))).toBe(
+      false,
+    );
+  });
+
   it('runs typecheck leaf commands before unit tests in verify:product', async () => {
     const scripts = loadRootScripts();
     const harness = new ScriptPipelineHarness(scripts, () => 0);
