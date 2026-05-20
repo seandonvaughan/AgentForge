@@ -40,6 +40,11 @@ export async function knowledgeRoutes(
   const embeddingIndex = opts.projectRoot
     ? new KGEntityIndex(join(opts.projectRoot, '.agentforge', 'knowledge', 'embeddings.db'))
     : undefined;
+  if (embeddingIndex) {
+    app.addHook('onClose', async () => {
+      embeddingIndex.close();
+    });
+  }
 
   // Adapter-backed construction hydrates from knowledge_entities /
   // knowledge_relationships SQLite tables automatically via hydrateFromAdapter,

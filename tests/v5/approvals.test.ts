@@ -1,15 +1,32 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createServerV5 } from '../../packages/server/src/server.js';
 import { MessageBusV2 } from '../../packages/core/src/message-bus/message-bus.js';
 
 describe('approvals gateway', () => {
   let server: Awaited<ReturnType<typeof createServerV5>>;
+  let projectRoot: string;
 
   beforeAll(async () => {
-    server = await createServerV5({ port: 4798, bus: new MessageBusV2({ workspaceId: 'test' }), listen: false });
+    projectRoot = mkdtempSync(join(tmpdir(), 'agentforge-v5-approvals-'));
+    server = await createServerV5({
+      port: 4798,
+      projectRoot,
+      bus: new MessageBusV2({ workspaceId: 'test' }),
+      listen: false,
+    });
   });
 
-  afterAll(() => server.app.close());
+  afterAll(async () => {
+    await server.app.close();
+    try {
+      rmSync(projectRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    } catch {
+      // Windows can release SQLite handles after Fastify close resolves.
+    }
+  });
 
   it('GET /api/v5/approvals returns empty queue', async () => {
     const res = await server.app.inject({ method: 'GET', url: '/api/v5/approvals' });

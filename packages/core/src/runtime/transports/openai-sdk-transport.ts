@@ -325,7 +325,15 @@ export class OpenAiSdkTransport implements ExecutionTransport {
         buffer = buffer.slice(boundary + 2);
         if (processBlock(block)) {
           reader.releaseLock();
-          return { text: textParts.join(''), inputTokens, outputTokens, model, remoteSessionId, stopReason, events };
+          return {
+            text: textParts.join(''),
+            inputTokens,
+            outputTokens,
+            ...(model ? { model } : {}),
+            ...(remoteSessionId ? { remoteSessionId } : {}),
+            ...(stopReason ? { stopReason } : {}),
+            events,
+          };
         }
         boundary = buffer.indexOf('\n\n');
       }
@@ -337,7 +345,15 @@ export class OpenAiSdkTransport implements ExecutionTransport {
       void processBlock(trailing);
     }
 
-    return { text: textParts.join(''), inputTokens, outputTokens, model, remoteSessionId, stopReason, events };
+    return {
+      text: textParts.join(''),
+      inputTokens,
+      outputTokens,
+      ...(model ? { model } : {}),
+      ...(remoteSessionId ? { remoteSessionId } : {}),
+      ...(stopReason ? { stopReason } : {}),
+      events,
+    };
   }
 
   private parseResponseBody(rawText: string): OpenAiResponseBody {

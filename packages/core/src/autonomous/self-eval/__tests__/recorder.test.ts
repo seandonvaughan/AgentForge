@@ -3,7 +3,7 @@
 // Tests for recordSelfEval() — atomic append to self-eval.jsonl.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { recordSelfEval } from '../recorder.js';
@@ -82,11 +82,10 @@ describe('recordSelfEval', () => {
   });
 
   it('throws when projectRoot path is invalid', async () => {
-    const badRoot = '/this-path-does-not-exist-at-all-____xyz/proj';
-    // mkdirSync with recursive:true on a path with a non-existent root on
-    // a read-only or permission-denied path should throw.
+    const badRoot = join(projectRoot, 'not-a-directory');
+    writeFileSync(badRoot, 'file');
     await expect(
-      recordSelfEval({ projectRoot: badRoot, record: makeRecord() }),
+      recordSelfEval({ projectRoot: join(badRoot, 'proj'), record: makeRecord() }),
     ).rejects.toThrow();
   });
 });

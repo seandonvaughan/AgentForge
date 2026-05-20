@@ -1,6 +1,7 @@
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
 
 // ---------------------------------------------------------------------------
 // AgentForge package-internal paths (templates, prompts, etc.)
@@ -96,6 +97,7 @@ export function resolveProjectRoot(opts?: ResolveProjectRootOptions): string {
  */
 function traverseUpForAgentForge(startDir: string): string | null {
   let current = startDir;
+  const homeRoot = comparablePath(homedir());
   for (;;) {
     const parent = dirname(current);
     if (parent === current) {
@@ -103,8 +105,21 @@ function traverseUpForAgentForge(startDir: string): string | null {
       return null;
     }
     current = parent;
+    if (comparablePath(current) === homeRoot) {
+      return null;
+    }
     if (existsSync(join(current, '.agentforge'))) {
       return current;
     }
   }
+}
+
+function comparablePath(path: string): string {
+  let resolved: string;
+  try {
+    resolved = realpathSync.native(path);
+  } catch {
+    resolved = resolve(path);
+  }
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
 }

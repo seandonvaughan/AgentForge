@@ -6,6 +6,7 @@ type EmbeddingOutput = { data: EmbeddingData };
 type EmbeddingPipeline = (text: string | string[]) => Promise<EmbeddingOutput[]>;
 
 let pipeline: EmbeddingPipeline | undefined;
+let pipelinePromise: Promise<EmbeddingPipeline> | undefined;
 
 const MODEL_ID = 'Xenova/all-MiniLM-L6-v2';
 
@@ -26,7 +27,10 @@ function normalizeOutputs(output: unknown): EmbeddingOutput[] {
 }
 
 async function getPipeline(): Promise<EmbeddingPipeline> {
-  if (pipeline === undefined) {
+  if (pipeline !== undefined) return pipeline;
+  if (pipelinePromise !== undefined) return pipelinePromise;
+
+  pipelinePromise = (async () => {
     try {
       const { pipeline: createPipeline } = await import('@xenova/transformers');
       const p = await createPipeline('feature-extraction', MODEL_ID, {
@@ -37,14 +41,18 @@ async function getPipeline(): Promise<EmbeddingPipeline> {
         return normalizeOutputs(output);
       };
     } catch {
-      // Fallback: deterministic hash-based pseudo-embeddings for environments without transformers
+      // Fallback: deterministic hash-based pseudo-embeddings for environments without transformers.
       pipeline = async (text: string | string[]) => {
         const texts = Array.isArray(text) ? text : [text];
         return texts.map(t => ({ data: hashEmbed(t, 384) }));
       };
+    } finally {
+      pipelinePromise = undefined;
     }
-  }
-  return pipeline;
+    return pipeline;
+  })();
+
+  return pipelinePromise;
 }
 
 /** Simple deterministic pseudo-embedding for fallback (no ML dependency). */

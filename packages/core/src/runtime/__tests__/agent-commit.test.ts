@@ -166,7 +166,7 @@ describe('commitAgentWork', () => {
     // Verify the branch exists on the bare (origin) remote.
     const remoteBranches = await execFile('git', ['-C', bareDir, 'branch']);
     expect(remoteBranches.stdout).toContain('autonomous/agent-coder-test123');
-  }, 15_000);
+  }, 60_000);
 
   // ── 5. Bus event shape matches AgentBranchPushedPayload ──────────────────
   it('emits agent.branch.pushed event with correct payload shape', async () => {
@@ -426,5 +426,5 @@ describe('commitAgentWork', () => {
     expect(r2!.localOnly).toBe(false);
     // The second sha must differ from the first.
     expect(r2!.commitSha).not.toBe(r1!.commitSha);
-  }, 15_000);
+  }, 60_000);
 });

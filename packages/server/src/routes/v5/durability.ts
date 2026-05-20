@@ -19,7 +19,7 @@ import {
   readFileSync,
   statSync,
 } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 
@@ -74,7 +74,8 @@ function readCheckpoint(
 
   const checkpointPath = resolve(join(cyclesBaseDir, safeId, 'checkpoint.json'));
   // Ensure resolved path stays inside cyclesBaseDir (no traversal)
-  if (!checkpointPath.startsWith(cyclesBaseDir + '/') && checkpointPath !== cyclesBaseDir) {
+  const rel = relative(cyclesBaseDir, checkpointPath);
+  if (rel.startsWith('..') || isAbsolute(rel)) {
     return null;
   }
 

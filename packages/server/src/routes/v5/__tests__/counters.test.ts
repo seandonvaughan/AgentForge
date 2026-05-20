@@ -8,6 +8,9 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { WorkspaceAdapter } from '@agentforge/db';
 import { countersRoutes, _resetCache, type CountersResponse } from '../counters.js';
 
@@ -19,9 +22,9 @@ function makeAdapter(): WorkspaceAdapter {
   return new WorkspaceAdapter({ dbPath: ':memory:', workspaceId: 'test-ws' });
 }
 
-async function buildApp(adapter: WorkspaceAdapter): Promise<FastifyInstance> {
+async function buildApp(adapter: WorkspaceAdapter, projectRoot: string): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
-  await countersRoutes(app, { adapter });
+  await countersRoutes(app, { adapter, projectRoot });
   await app.ready();
   return app;
 }
@@ -90,16 +93,19 @@ function seedApproval(adapter: WorkspaceAdapter, status: string): void {
 
 let adapter: WorkspaceAdapter;
 let app: FastifyInstance;
+let projectRoot: string;
 
 beforeEach(async () => {
   _resetCache(); // ensure no cross-test cache bleed
+  projectRoot = mkdtempSync(join(tmpdir(), 'agentforge-counters-'));
   adapter = makeAdapter();
-  app = await buildApp(adapter);
+  app = await buildApp(adapter, projectRoot);
 });
 
 afterEach(async () => {
   await app.close();
   adapter.close();
+  rmSync(projectRoot, { recursive: true, force: true });
   _resetCache();
 });
 

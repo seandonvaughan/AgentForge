@@ -9,6 +9,7 @@ import { mkdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
+import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
 
 import {
@@ -241,7 +242,7 @@ describe("synthesizeTeam", () => {
 
     it("synthesis-prompt.md contains key instructions", async () => {
       const promptPath = new URL("../synthesis-prompt.md", import.meta.url);
-      const content = await readFile(promptPath.pathname, "utf-8");
+      const content = await readFile(fileURLToPath(promptPath), "utf-8");
 
       expect(content).toContain("pr-merge-manager");
       expect(content).toContain("12–30");

@@ -13,7 +13,7 @@
  * entries.
  *
  * Constraints:
- *   - No real LLM or GitHub API calls (fake gh binary via temp PATH)
+ *   - No real LLM or GitHub API calls (fake draft PR opener)
  *   - Uses a local bare repo as the push remote
  *   - Uses node:child_process.execFile throughout (never exec)
  *   - Wall-clock budget: <90 s
@@ -27,7 +27,6 @@ import {
   readFileSync,
   existsSync,
   rmSync,
-  chmodSync,
 } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -39,7 +38,7 @@ import { WorktreePool } from '../../packages/core/src/runtime/worktree-pool.js';
 import { commitAgentWork } from '../../packages/core/src/runtime/agent-commit.js';
 import { MergeQueue } from '../../packages/core/src/runtime/merge-queue.js';
 import { MessageBusV2 } from '../../packages/core/src/message-bus/message-bus.js';
-import type { LedgerEntry } from '../../packages/core/src/runtime/merge-queue.js';
+import type { DraftPrOpener, LedgerEntry } from '../../packages/core/src/runtime/merge-queue.js';
 
 const execFile = promisify(execFileCb);
 
@@ -104,48 +103,20 @@ async function setupRepoWithBareRemote(): Promise<{
   return { workDir, bareDir, cleanupDirs: [seedDir, bareDir, workDir] };
 }
 
-/**
- * Write a fake `gh` shell script into binDir and return an env object that
- * has that dir prepended to PATH.
- *
- * Behaviour:
- *   - `gh pr create --draft ...` → increments counter file, prints fake PR URL
- *   - `gh pr checks ...`         → exits 0 with empty output (all-green)
- *   - Everything else            → exits 0 silently
- */
-function setupFakeGh(binDir: string, counterFile: string): Record<string, string> {
+function initPrCounter(counterFile: string): void {
   // Initialise counter to 9000 so first PR is 9001.
   writeFileSync(counterFile, '9000\n');
+}
 
-  // Use POSIX sh so the script is portable. Counter incremented with a lock
-  // file to prevent races when multiple agents push concurrently.
-  const ghScript = `#!/bin/sh
-COUNTER_FILE="${counterFile}"
-
-# Read current value, increment, write back
-CURRENT=$(cat "$COUNTER_FILE" | tr -d '[:space:]')
-NEXT=$((CURRENT + 1))
-printf "%s\\n" "$NEXT" > "$COUNTER_FILE"
-
-if [ "$1" = "pr" ] && [ "$2" = "create" ]; then
-  printf "https://github.com/test/test/pull/%s\\n" "$NEXT"
-  exit 0
-fi
-
-if [ "$1" = "pr" ] && [ "$2" = "checks" ]; then
-  exit 0
-fi
-
-exit 0
-`;
-
-  const ghPath = join(binDir, 'gh');
-  writeFileSync(ghPath, ghScript);
-  chmodSync(ghPath, 0o755);
-
-  return {
-    ...process.env,
-    PATH: `${binDir}:${process.env['PATH'] ?? ''}`,
+function createFakeDraftPrOpener(counterFile: string): DraftPrOpener {
+  return async () => {
+    const current = Number.parseInt(readFileSync(counterFile, 'utf8').trim(), 10);
+    const next = current + 1;
+    writeFileSync(counterFile, `${next}\n`);
+    return {
+      prNumber: next,
+      prUrl: `https://github.com/test/test/pull/${next}`,
+    };
   };
 }
 
@@ -202,14 +173,7 @@ beforeAll(async () => {
   const binDir = mkdtempSync(join(tmpdir(), 'af-mpr-bin-'));
   const counterFile = join(binDir, 'pr-counter.txt');
 
-  // Patch PATH so commitAgentWork's git-push and MergeQueue's gh calls resolve
-  // to our fake binary. We do this by overriding process.env.PATH for the
-  // duration of the test. We restore it in afterAll.
-  const fakeGhEnv = setupFakeGh(binDir, counterFile);
-
-  // Temporarily override PATH so child_process.execFile picks up fake gh.
-  // Note: execFile inherits process.env at call time, so we can patch it here.
-  process.env['PATH'] = fakeGhEnv['PATH'];
+  initPrCounter(counterFile);
 
   // Ensure .agentforge skeleton exists
   mkdirSync(join(workDir, '.agentforge', 'agents'), { recursive: true });
@@ -224,7 +188,7 @@ beforeAll(async () => {
   // WorktreePool pointing at the working clone
   const pool = new WorktreePool({ projectRoot: workDir, baseBranch: 'main' });
 
-  // MergeQueue in LIVE mode — it will call our fake `gh` binary.
+  // MergeQueue in live-ledger mode with a fake draft PR opener.
   // cycleId scopes ledger reads to this cycle only.
   const mergeQueue = new MergeQueue({
     projectRoot: workDir,
@@ -232,6 +196,7 @@ beforeAll(async () => {
     parentBranch: 'main',
     dryRun: false,
     cycleId,
+    draftPrOpener: createFakeDraftPrOpener(counterFile),
   });
 
   // Start the MergeQueue listener before running agents
@@ -247,7 +212,7 @@ beforeAll(async () => {
   //   2. Write the agent's file (makes the worktree dirty).
   //   3. commitAgentWork() — stages, commits, pushes to bare remote,
   //      and emits agent.branch.pushed on the bus.
-  //      MergeQueue picks up the event and calls fake `gh pr create`.
+  //      MergeQueue picks up the event and calls the fake draft PR opener.
   // ---------------------------------------------------------------------------
   for (const agent of AGENTS) {
     const handle = await pool.allocate({

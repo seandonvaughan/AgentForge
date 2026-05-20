@@ -6,12 +6,11 @@
  * agent team should be updated.
  */
 
-import { readFile, writeFile, mkdir, rename } from "node:fs/promises";
-import { randomBytes } from "node:crypto";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
 import yaml from "js-yaml";
 import type { DomainId } from "../types/domain.js";
+import { writeFileAtomic } from "../fs/atomic-write.js";
 
 import { runFullScan } from "../scanner/index.js";
 import type { FullScanResult } from "../scanner/index.js";
@@ -78,9 +77,7 @@ const YAML_DUMP_OPTS: yaml.DumpOptions = {
 };
 
 async function writeAtomic(filePath: string, content: string): Promise<void> {
-  const tmpPath = join(tmpdir(), `agentforge-${randomBytes(8).toString("hex")}.tmp`);
-  await writeFile(tmpPath, content, "utf-8");
-  await rename(tmpPath, filePath);
+  await writeFileAtomic(filePath, content);
 }
 
 /** Determine the category of an agent within a manifest. */

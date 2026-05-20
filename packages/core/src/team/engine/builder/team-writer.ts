@@ -10,11 +10,10 @@
  * team_size, version, and other custom metadata are never lost.
  */
 
-import { mkdir, writeFile, readFile, rename } from "node:fs/promises";
-import { randomBytes } from "node:crypto";
+import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
 import yaml from "js-yaml";
+import { writeFileAtomic } from "../fs/atomic-write.js";
 
 import type { AgentTemplate } from "../types/agent.js";
 import type { TeamManifest, ModelRouting, DelegationGraph, TeamAgents, TeamUnit } from "../types/team.js";
@@ -273,9 +272,7 @@ const YAML_DUMP_OPTS: yaml.DumpOptions = {
 };
 
 async function writeAtomic(filePath: string, content: string): Promise<void> {
-  const tmpPath = join(tmpdir(), `agentforge-${randomBytes(8).toString("hex")}.tmp`);
-  await writeFile(tmpPath, content, "utf-8");
-  await rename(tmpPath, filePath);
+  await writeFileAtomic(filePath, content);
 }
 
 async function writeYamlAtomic(filePath: string, value: unknown): Promise<void> {

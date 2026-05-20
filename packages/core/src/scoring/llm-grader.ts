@@ -18,6 +18,7 @@
 //   - No `exec` / shell injection vectors.
 
 import type { RuntimeForScoring } from '../autonomous/scoring-pipeline.js';
+import type { Signal } from './rubric-v1.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -170,6 +171,32 @@ export class LlmGrader {
     return map;
   }
 }
+
+type StubLlmGraderInput = {
+  agentId: string;
+  phase: string;
+  raw: string;
+  parsed: unknown;
+  capabilityTags: string[];
+  skillIds: string[];
+};
+
+type StubLlmGraderFn = (input: StubLlmGraderInput) => Promise<{
+  quality: number;
+  signals: Signal[];
+}>;
+
+interface StubLlmGraderConstructor {
+  new(): StubLlmGraderFn;
+  (): StubLlmGraderFn;
+}
+
+export const StubLlmGrader = function StubLlmGrader(): StubLlmGraderFn {
+  return async () => ({
+    quality: 0.8,
+    signals: [],
+  });
+} as StubLlmGraderConstructor;
 
 // ---------------------------------------------------------------------------
 // Helpers

@@ -120,7 +120,7 @@ interface JsonLedgerCounts {
   todaySpendUsd: number;
   weekSpendUsd: number;
   monthSpendUsd: number;
-  agentsActive: number;
+  activeAgentIds: Set<string>;
   cyclesDay: number;
   cyclesWeek: number;
   cyclesMonth: number;
@@ -130,7 +130,7 @@ function computeCountersFromJsonLedger(projectRoot: string): JsonLedgerCounts {
   const cyclesDir = join(projectRoot, '.agentforge', 'cycles');
   const empty: JsonLedgerCounts = {
     runningCycles: 0, todaySpendUsd: 0, weekSpendUsd: 0, monthSpendUsd: 0,
-    agentsActive: 0, cyclesDay: 0, cyclesWeek: 0, cyclesMonth: 0,
+    activeAgentIds: new Set(), cyclesDay: 0, cyclesWeek: 0, cyclesMonth: 0,
   };
   if (!existsSync(cyclesDir)) return empty;
   const { todayStart, weekStart } = getWindowBoundaries();
@@ -236,7 +236,7 @@ function computeCountersFromJsonLedger(projectRoot: string): JsonLedgerCounts {
     todaySpendUsd,
     weekSpendUsd,
     monthSpendUsd,
-    agentsActive: recentAgentIds.size,
+    activeAgentIds: recentAgentIds,
     cyclesDay,
     cyclesWeek,
     cyclesMonth,
@@ -291,6 +291,9 @@ function countRunningWorktrees(projectRoot: string): number {
 
 function computeCounters(adapter: WorkspaceAdapter, projectRoot: string): CountersResponse {
   const db = adapter.getRawDb();
+  const { todayStart, weekStart } = getWindowBoundaries();
+  const monthStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
 
   // SQL-backed counters (still authoritative for these — they're written by
   // the v5 routes, not the cycle-runner): open branches + pending approvals.
@@ -313,19 +316,44 @@ function computeCounters(adapter: WorkspaceAdapter, projectRoot: string): Counte
   const agentsTotal = countTotalAgents(projectRoot);
   const runningWorktrees = countRunningWorktrees(projectRoot);
 
+  const sqlRunningCycles = db
+    .prepare<[], { n: number }>("SELECT COUNT(*) AS n FROM runtime_jobs WHERE status = 'running'")
+    .get()?.n ?? 0;
+
+  const sqlTodaySpend = db
+    .prepare<[string], { n: number }>('SELECT COALESCE(SUM(cost_usd), 0) AS n FROM costs WHERE created_at >= ?')
+    .get(todayStart)?.n ?? 0;
+  const sqlWeekSpend = db
+    .prepare<[string], { n: number }>('SELECT COALESCE(SUM(cost_usd), 0) AS n FROM costs WHERE created_at >= ?')
+    .get(weekStart)?.n ?? 0;
+  const sqlMonthSpend = db
+    .prepare<[string], { n: number }>('SELECT COALESCE(SUM(cost_usd), 0) AS n FROM costs WHERE created_at >= ?')
+    .get(monthStart)?.n ?? 0;
+
+  const activeAgentRows = db
+    .prepare<[string], { agent_id: string }>(
+      'SELECT DISTINCT agent_id FROM sessions WHERE started_at >= ?',
+    )
+    .all(oneHourAgo);
+  const activeAgentIds = new Set(fromJson.activeAgentIds);
+  for (const row of activeAgentRows) {
+    if (row.agent_id) activeAgentIds.add(row.agent_id);
+  }
+  const runningCycles = fromJson.runningCycles + sqlRunningCycles;
+
   return {
     openBranches,
     pendingApprovals,
-    runningCycles: fromJson.runningCycles,
-    todaySpendUsd: fromJson.todaySpendUsd,
-    weekSpendUsd: fromJson.weekSpendUsd,
-    monthSpendUsd: fromJson.monthSpendUsd,
+    runningCycles,
+    todaySpendUsd: fromJson.todaySpendUsd + sqlTodaySpend,
+    weekSpendUsd: fromJson.weekSpendUsd + sqlWeekSpend,
+    monthSpendUsd: fromJson.monthSpendUsd + sqlMonthSpend,
     agentsTotal,
-    agentsActive: fromJson.agentsActive,
+    agentsActive: activeAgentIds.size,
     cyclesDay: fromJson.cyclesDay,
     cyclesWeek: fromJson.cyclesWeek,
     cyclesMonth: fromJson.cyclesMonth,
-    load: deriveLoad(fromJson.runningCycles),
+    load: deriveLoad(runningCycles),
     runningWorktrees,
     timestamp: new Date().toISOString(),
   };

@@ -13,11 +13,13 @@
     "@agentforge/server": "workspace:*",
     "@agentforge/skills-catalog": "workspace:*",
     "better-sqlite3": "^12.9.0",
-    "commander": "^14.0.3"
+    "commander": "^14.0.3",
+    "js-yaml": "^4.1.1"
   },
   "devDependencies": {
-    "typescript": "^6.0.3",
-    "@types/better-sqlite3": "^7.6.0"
+    "@types/better-sqlite3": "^7.6.0",
+    "@types/js-yaml": "^4.0.9",
+    "typescript": "^6.0.3"
   },
   "engines": {
     "node": ">=22.13.0"

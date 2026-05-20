@@ -49,7 +49,26 @@ export interface MergeQueueOptions {
    * When omitted, drainAndMerge reads all cycle ledgers (same as drain()).
    */
   cycleId?: string;
+  /** Test seam for opening draft PRs without invoking the GitHub CLI. */
+  draftPrOpener?: DraftPrOpener;
 }
+
+export interface DraftPrOpenRequest {
+  parentBranch: string;
+  branch: string;
+  agentId: string;
+  itemIds: string[];
+  diffSummary: string;
+  cycleId: string;
+  projectRoot: string;
+}
+
+export interface DraftPrOpenResult {
+  prNumber: number;
+  prUrl: string;
+}
+
+export type DraftPrOpener = (opts: DraftPrOpenRequest) => Promise<DraftPrOpenResult>;
 
 export interface AgentBranchPushedEvent extends AgentBranchPushedPayload {
   topic: 'agent.branch.pushed';
@@ -148,15 +167,7 @@ function resolveParentBranchFromCycleJson(
   return null;
 }
 
-async function openDraftPr(opts: {
-  parentBranch: string;
-  branch: string;
-  agentId: string;
-  itemIds: string[];
-  diffSummary: string;
-  cycleId: string;
-  projectRoot: string;
-}): Promise<{ prNumber: number; prUrl: string }> {
+async function openDraftPr(opts: DraftPrOpenRequest): Promise<DraftPrOpenResult> {
   const title = `agent(${opts.agentId}): ${opts.itemIds.join(', ')}`;
   const body = [
     `## Agent PR — ${opts.agentId}`,
@@ -217,6 +228,7 @@ export class MergeQueue {
   private readonly parentBranchOverride: string | undefined;
   private readonly dryRun: boolean;
   private readonly cycleId: string | undefined;
+  private readonly draftPrOpener: DraftPrOpener;
 
   private unsubscribe: (() => void) | null = null;
   /** Tracks in-flight handler promises so drain() can await them. */
@@ -228,6 +240,7 @@ export class MergeQueue {
     this.parentBranchOverride = opts.parentBranch;
     this.dryRun = opts.dryRun ?? false;
     this.cycleId = opts.cycleId;
+    this.draftPrOpener = opts.draftPrOpener ?? openDraftPr;
   }
 
   /** Subscribe to agent.branch.pushed topic and begin processing. */
@@ -498,7 +511,7 @@ export class MergeQueue {
     // Live mode: attempt to open a draft PR
     let entry: LedgerEntry;
     try {
-      const { prNumber, prUrl } = await openDraftPr({
+      const { prNumber, prUrl } = await this.draftPrOpener({
         parentBranch,
         branch,
         agentId,

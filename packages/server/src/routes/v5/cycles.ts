@@ -704,7 +704,10 @@ export async function cyclesRoutes(
   // having to scan the full cycles list endpoint.
   app.get('/api/v5/cycle-sessions', async (_req, reply) => {
     cycleSessions.reap();
-    const sessions = cycleSessions.list();
+    const routeProjectRoot = resolve(opts.projectRoot);
+    const sessions = cycleSessions
+      .list()
+      .filter((s) => resolve(s.workspaceRoot) === routeProjectRoot);
 
     const enriched = sessions.map((s) => {
       let hasApprovalPending = false;

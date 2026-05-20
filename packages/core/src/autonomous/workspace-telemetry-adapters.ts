@@ -387,7 +387,7 @@ function readSprintHistory(
  * Reads from both `cycles/` (active) and `cycles-archived/` to get the full
  * rolling window even after old cycles are archived.
  */
-function computeP50CostByTag(
+export function computeRollingP50CostByTagFromCycles(
   projectRoot: string,
   maxCycles: number,
 ): Record<string, number> {
@@ -463,6 +463,8 @@ function computeP50CostByTag(
   // Delegate to the shared cost metrics function for p50 computation
   return computeRollingP50CostByTag(cycleData);
 }
+
+const computeP50CostByTag = computeRollingP50CostByTagFromCycles;
 
 function safeMtime(path: string): number {
   try {

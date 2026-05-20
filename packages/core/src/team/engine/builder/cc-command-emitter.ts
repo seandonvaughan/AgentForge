@@ -8,9 +8,9 @@
  * Used by both the legacy `forgeTeam()` path (builder/index.ts) and the
  * Opus-driven `forgeTeamAgentDriven()` orchestrator (agent-driven-forge.ts).
  *
- * Atomic write strategy: content is first written to a temp file in `os.tmpdir()`
- * then renamed into place, preventing partial files from being observed during
- * concurrent forge runs.
+ * Atomic write strategy: content is first written to a sibling temp file beside
+ * the destination and then renamed into place, preventing partial files from
+ * being observed during concurrent forge runs without crossing filesystems.
  *
  * Skip behaviour: if the `.claude/` directory does NOT exist at the project root,
  * the function resolves immediately with `{ written: [] }` — no directory is
@@ -18,10 +18,9 @@
  * untouched.
  */
 
-import { access, mkdir, writeFile, rename } from "node:fs/promises";
+import { access, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
-import { randomBytes } from "node:crypto";
+import { writeFileAtomic } from "../fs/atomic-write.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -73,12 +72,7 @@ async function ensureDir(dirPath: string): Promise<void> {
  * partial write.
  */
 async function writeAtomic(filePath: string, content: string): Promise<void> {
-  const tmpPath = join(
-    tmpdir(),
-    `agentforge-cc-cmd-${randomBytes(8).toString("hex")}.tmp`,
-  );
-  await writeFile(tmpPath, content, "utf-8");
-  await rename(tmpPath, filePath);
+  await writeFileAtomic(filePath, content);
 }
 
 /**

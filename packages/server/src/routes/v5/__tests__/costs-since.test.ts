@@ -13,11 +13,15 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { WorkspaceAdapter } from '@agentforge/db';
 import { costsRoutes } from '../costs.js';
 
 let app: FastifyInstance;
 let adapter: WorkspaceAdapter;
+let projectRoot: string;
 
 /** Create a cost row with a specific created_at timestamp. */
 function addCost(
@@ -43,9 +47,10 @@ function addCost(
 }
 
 beforeEach(async () => {
+  projectRoot = mkdtempSync(join(tmpdir(), 'agentforge-costs-since-'));
   adapter = new WorkspaceAdapter({ dbPath: ':memory:', workspaceId: 'test' });
   app = Fastify({ logger: false });
-  await costsRoutes(app, { adapter });
+  await costsRoutes(app, { adapter, projectRoot });
 
   const now = new Date();
   const ago1d = new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000);
@@ -66,6 +71,8 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await app.close();
+  adapter.close();
+  rmSync(projectRoot, { recursive: true, force: true });
 });
 
 function since(daysAgo: number): string {

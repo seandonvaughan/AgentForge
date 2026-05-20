@@ -12,7 +12,7 @@
 import type { FastifyInstance } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
 import { existsSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -192,8 +192,8 @@ export async function cyclePrsRoutes(
 
       // Belt-and-braces containment check (already guaranteed by the regex
       // above; kept as a defense-in-depth assertion).
-      const baseWithSep = cyclesBaseDir.endsWith('/') ? cyclesBaseDir : cyclesBaseDir + '/';
-      if (cycleDir !== cyclesBaseDir && !cycleDir.startsWith(baseWithSep)) {
+      const cycleRel = relative(cyclesBaseDir, cycleDir);
+      if (cycleRel === '' || cycleRel.startsWith('..') || isAbsolute(cycleRel)) {
         return reply.status(400).send({ error: 'Invalid cycleId', cycleId: safeCycleId });
       }
 

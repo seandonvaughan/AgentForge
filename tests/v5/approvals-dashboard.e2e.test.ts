@@ -38,6 +38,7 @@ describe('Approvals Dashboard E2E', () => {
     const server = await createServerV5({
       port: 4799,
       bus: new MessageBusV2({ workspaceId: 'test' }),
+      projectRoot: tmpDir,
       listen: false,
     });
 

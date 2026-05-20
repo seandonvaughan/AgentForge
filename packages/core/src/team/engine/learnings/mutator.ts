@@ -15,12 +15,11 @@
  *  4. Sort: final list is newest-first (ties broken by score desc).
  */
 
-import { readFile, writeFile, mkdir, rename } from "node:fs/promises";
-import { randomBytes } from "node:crypto";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import yaml from "js-yaml";
+import { writeFileAtomic } from "../fs/atomic-write.js";
 
 // TODO: import { ProposedLearning } from "./types.js" once Workstream P lands
 // Inline copy until then:
@@ -162,9 +161,7 @@ async function writeAgentYaml(agentPath: string, data: AgentYaml): Promise<void>
     noRefs: true,
     sortKeys: false,
   });
-  const tmpPath = join(tmpdir(), `agentforge-${randomBytes(8).toString("hex")}.tmp`);
-  await writeFile(tmpPath, dumped, "utf8");
-  await rename(tmpPath, agentPath);
+  await writeFileAtomic(agentPath, dumped);
 }
 
 // ---------------------------------------------------------------------------

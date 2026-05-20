@@ -1,11 +1,10 @@
 import type { FastifyInstance } from 'fastify';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from 'node:fs';
+import { readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { tmpdir } from 'node:os';
-import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 import { globalStream } from './stream.js';
+import { writeFileAtomicSync } from '../../lib/atomic-write.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -106,12 +105,7 @@ function saveSettings(settings: Record<string, unknown>): void {
     mkdirSync(configDir, { recursive: true });
   }
   const dumped = yaml.dump(settings, { indent: 2, sortKeys: false, noRefs: true });
-  const tmpPath = join(
-    tmpdir(),
-    `agentforge-${randomBytes(8).toString('hex')}.tmp`,
-  );
-  writeFileSync(tmpPath, dumped, 'utf-8');
-  renameSync(tmpPath, settingsPath);
+  writeFileAtomicSync(settingsPath, dumped);
 }
 
 function validateSettingsShape(obj: unknown): obj is Record<string, unknown> {
@@ -175,12 +169,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
       const parsed = yaml.load(raw) as Record<string, unknown>;
       (parsed as any).retry = { ...((parsed as any).retry ?? {}), ...body.retry };
       const dumped = yaml.dump(parsed, { indent: 2, sortKeys: false, noRefs: true });
-      const tmpPath = join(
-        tmpdir(),
-        `agentforge-${randomBytes(8).toString('hex')}.tmp`,
-      );
-      writeFileSync(tmpPath, dumped, 'utf-8');
-      renameSync(tmpPath, autoPath);
+      writeFileAtomicSync(autoPath, dumped);
       return reply.send({ data: { retry: (parsed as any).retry } });
     } catch (e) {
       return reply.status(500).send({ error: String(e) });

@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import Fastify from 'fastify';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { WorkspaceAdapter } from '@agentforge/db';
 import { RuntimeJobSupervisor } from '@agentforge/core';
 import { jobsRoutes } from '../jobs.js';
@@ -8,17 +11,20 @@ describe('/api/v5/jobs', () => {
   let adapter: WorkspaceAdapter;
   let supervisor: RuntimeJobSupervisor;
   let app: ReturnType<typeof Fastify>;
+  let projectRoot: string;
 
   beforeEach(async () => {
+    projectRoot = mkdtempSync(join(tmpdir(), 'agentforge-jobs-route-'));
     adapter = new WorkspaceAdapter({ dbPath: ':memory:', workspaceId: 'test' });
     supervisor = new RuntimeJobSupervisor({ adapter });
     app = Fastify({ logger: false });
-    await jobsRoutes(app, { adapter, supervisor });
+    await jobsRoutes(app, { adapter, supervisor, projectRoot });
   });
 
   afterEach(async () => {
     await app.close();
     adapter.close();
+    rmSync(projectRoot, { recursive: true, force: true });
   });
 
   it('lists durable runtime jobs', async () => {

@@ -27,11 +27,13 @@ function makeTmpDir(): string {
 
 function writeFakeCheckpoint(cycleDir: string, cp: Partial<CycleCheckpoint> = {}): CycleCheckpoint {
   const checkpoint: CycleCheckpoint = {
+    v: 1,
     cycleId: cp.cycleId ?? 'abc12345-1234-1234-1234-123456789abc',
-    completedPhase: cp.completedPhase ?? 'plan',
+    capturedAt: cp.capturedAt ?? new Date().toISOString(),
     resumeFromPhase: cp.resumeFromPhase ?? 'assign',
+    completedPhases: cp.completedPhases ?? ['audit', 'plan'],
+    budgetUsd: cp.budgetUsd ?? 50,
     spentUsd: cp.spentUsd ?? 3.50,
-    checkpointedAt: cp.checkpointedAt ?? new Date().toISOString(),
   };
   mkdirSync(cycleDir, { recursive: true });
   writeFileSync(join(cycleDir, 'checkpoint.json'), JSON.stringify(checkpoint, null, 2));
@@ -238,11 +240,13 @@ describe('CycleRunner resume wire-up', () => {
 
   it('reuses checkpoint cycleId when resumeCheckpoint is provided', () => {
     const checkpoint: CycleCheckpoint = {
+      v: 1,
       cycleId: 'resume-test-cycle-id-1234',
-      completedPhase: 'plan',
+      capturedAt: new Date().toISOString(),
       resumeFromPhase: 'assign',
+      completedPhases: ['audit', 'plan'],
+      budgetUsd: 50,
       spentUsd: 4.20,
-      checkpointedAt: new Date().toISOString(),
     };
 
     const runner = buildMinimalRunner({ resumeCheckpoint: checkpoint });
@@ -258,11 +262,13 @@ describe('CycleRunner resume wire-up', () => {
 
   it('writes a cycle.resumed event to events.jsonl when resumeCheckpoint is provided', async () => {
     const checkpoint: CycleCheckpoint = {
+      v: 1,
       cycleId: 'resume-audit-test-1234567',
-      completedPhase: 'audit',
+      capturedAt: new Date().toISOString(),
       resumeFromPhase: 'plan',
+      completedPhases: ['audit'],
+      budgetUsd: 50,
       spentUsd: 1.00,
-      checkpointedAt: new Date().toISOString(),
     };
 
     // CycleRunner.start() will run stages and eventually fail because our

@@ -10,12 +10,13 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 // ---------------------------------------------------------------------------
 // Setup
 // ---------------------------------------------------------------------------
 
-const REPO_ROOT = join(new URL(".", import.meta.url).pathname, "../..");
+const REPO_ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const CLAUDE_MD_PATH = join(REPO_ROOT, "CLAUDE.md");
 
 let content = "";

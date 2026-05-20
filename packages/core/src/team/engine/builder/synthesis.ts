@@ -12,13 +12,13 @@
  *   .agentforge/forge/team-plan.json   — raw synthesis output for audit
  */
 
-import { readFile, writeFile, mkdir, rename, readdir, unlink } from "node:fs/promises";
+import { readFile, mkdir, readdir, unlink } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { tmpdir } from "node:os";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import yaml from "js-yaml";
 import { z } from "zod";
+import { writeFileAtomic } from "../fs/atomic-write.js";
 
 import type { AgentRuntime } from "../../../agent-runtime/agent-runtime.js";
 import type {
@@ -244,12 +244,7 @@ async function writeAtomic(
   filePath: string,
   content: string,
 ): Promise<void> {
-  const tmpPath = join(
-    tmpdir(),
-    `agentforge-${randomBytes(8).toString("hex")}.tmp`,
-  );
-  await writeFile(tmpPath, content, "utf-8");
-  await rename(tmpPath, filePath);
+  await writeFileAtomic(filePath, content);
 }
 
 /** Map an agent tier to its default reasoning-effort level. */

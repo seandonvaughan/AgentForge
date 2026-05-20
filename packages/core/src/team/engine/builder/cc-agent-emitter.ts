@@ -8,16 +8,15 @@
  * Opus-driven `synthesizeTeam()` path (synthesis.ts) so the .md output
  * format has a single source of truth.
  *
- * Atomic write strategy: content is first written to a temp file in `os.tmpdir()`
- * then renamed into place, preventing partial files from being observed during
- * concurrent forge runs.
+ * Atomic write strategy: content is first written to a sibling temp file beside
+ * the destination and then renamed into place, preventing partial files from
+ * being observed during concurrent forge runs without crossing filesystems.
  */
 
-import { mkdir, writeFile, rename } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
-import { randomBytes } from "node:crypto";
 import yaml from "js-yaml";
+import { writeFileAtomic } from "../fs/atomic-write.js";
 
 // ---------------------------------------------------------------------------
 // Shared contract — Workstream U canonical definition (Workstream V imports
@@ -77,12 +76,7 @@ async function ensureDir(dirPath: string): Promise<void> {
  * partial write.
  */
 async function writeAtomic(filePath: string, content: string): Promise<void> {
-  const tmpPath = join(
-    tmpdir(),
-    `agentforge-cc-${randomBytes(8).toString("hex")}.tmp`,
-  );
-  await writeFile(tmpPath, content, "utf-8");
-  await rename(tmpPath, filePath);
+  await writeFileAtomic(filePath, content);
 }
 
 /**

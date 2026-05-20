@@ -14,7 +14,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -225,6 +225,12 @@ function monorepoRoot(): string {
   return '/Users/seandonvaughan/Projects/AgentForge/packages';
 }
 
+function relativeProjectPath(filePath: string): string {
+  const rel = relative(externalProjectDir, filePath);
+  expect(rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))).toBe(true);
+  return rel;
+}
+
 // ---------------------------------------------------------------------------
 // Test 2 — forgeTeam(): .agentforge/team.yaml written to external project
 // ---------------------------------------------------------------------------
@@ -306,9 +312,9 @@ describe('smoke: emitClaudeCodeAgents() on external project', () => {
 
     // Every written path must be inside the external project
     for (const written of result.written) {
-      expect(written.startsWith(externalProjectDir)).toBe(true);
-      expect(written).toContain('.claude/agents/');
-      expect(written.endsWith('.md')).toBe(true);
+      const rel = relativeProjectPath(written);
+      expect(dirname(rel)).toBe(join('.claude', 'agents'));
+      expect(basename(rel).endsWith('.md')).toBe(true);
       expect(existsSync(written)).toBe(true);
     }
   }, 15_000);
@@ -342,9 +348,10 @@ describe('smoke: emitClaudeCodeTeamCommands() on external project', () => {
     expect(result.written.length).toBe(commandSpecs.length);
 
     for (const written of result.written) {
-      expect(written.startsWith(externalProjectDir)).toBe(true);
-      expect(written).toContain('.claude/commands/team-');
-      expect(written.endsWith('.md')).toBe(true);
+      const rel = relativeProjectPath(written);
+      expect(dirname(rel)).toBe(join('.claude', 'commands'));
+      expect(basename(rel).startsWith('team-')).toBe(true);
+      expect(basename(rel).endsWith('.md')).toBe(true);
       expect(existsSync(written)).toBe(true);
     }
   }, 15_000);

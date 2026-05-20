@@ -14,7 +14,7 @@
 
 import { describe, it, expect } from "vitest";
 import { mkdir, readFile, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
 import yaml from "js-yaml";
@@ -103,7 +103,7 @@ describe("emitClaudeCodeAgents", () => {
       });
 
       for (const p of result.written) {
-        expect(p.startsWith("/")).toBe(true);
+        expect(isAbsolute(p)).toBe(true);
       }
     });
   });
@@ -266,8 +266,8 @@ describe("emitClaudeCodeAgents", () => {
     });
 
     it("tmp file does not appear in the target directory during write", async () => {
-      // Atomicity: the write goes to os.tmpdir(), not to the .claude/agents/
-      // directory.  So no .tmp files should ever appear in the agents dir.
+      // Atomicity: the write uses a same-directory temp file and renames it
+      // into place, so no .tmp files should remain in the agents dir.
       const projectRoot = await makeTmpRoot();
       const agentsDir = join(projectRoot, ".claude", "agents");
 

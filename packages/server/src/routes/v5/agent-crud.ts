@@ -1,11 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { join, dirname } from 'node:path';
-import { tmpdir } from 'node:os';
-import { randomBytes } from 'node:crypto';
 import {
   readFileSync,
-  writeFileSync,
-  renameSync,
   statSync,
   unlinkSync,
   existsSync,
@@ -17,6 +13,7 @@ import yaml from 'js-yaml';
 import { globalStream } from './stream.js';
 import { safeJoin } from '../../lib/safe-join.js';
 import { appendAuditEntry, openAuditDb } from './audit.js';
+import { writeFileAtomicSync } from '../../lib/atomic-write.js';
 
 /** Agent IDs must be kebab-case slugs — mirrors the POST-create validation. */
 const SAFE_AGENT_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -117,12 +114,7 @@ function writeYaml(filePath: string, data: unknown): void {
     noRefs: true,
     sortKeys: false,
   });
-  const tmpPath = join(
-    tmpdir(),
-    `agentforge-${randomBytes(8).toString('hex')}.tmp`,
-  );
-  writeFileSync(tmpPath, dumped, 'utf-8');
-  renameSync(tmpPath, filePath);
+  writeFileAtomicSync(filePath, dumped);
 }
 
 /**
@@ -359,12 +351,7 @@ export async function agentCrudRoutes(
         });
       }
 
-      const tmpPath = join(
-        tmpdir(),
-        `agentforge-${randomBytes(8).toString('hex')}.tmp`,
-      );
-      writeFileSync(tmpPath, yamlContent, 'utf-8');
-      renameSync(tmpPath, filePath);
+      writeFileAtomicSync(filePath, yamlContent);
 
       // Audit log
       appendAuditEntry(auditDb, {

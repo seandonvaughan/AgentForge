@@ -138,6 +138,12 @@ describe('Full autonomous cycle end-to-end', () => {
     const makeHandler =
       (phase: string, costUsd = 0.5): PhaseHandler =>
       async (ctx: PhaseContext) => {
+        if (phase === 'execute') {
+          writeFileSync(
+            join(tmpWorkspace, 'cycle-output.txt'),
+            'cycle ran\n',
+          );
+        }
         ctx.bus.publish('sprint.phase.completed', {
           sprintId: ctx.sprintId,
           phase,
@@ -230,23 +236,15 @@ describe('Full autonomous cycle end-to-end', () => {
         return branch;
       },
       stage: async (_files: string[]) => {
-        // Never called in this test because collectChangedFiles returns [].
-        // Kept here to satisfy the GitOps interface shape.
+        if (_files.length > 0) {
+          await execFileAsync('git', ['add', ..._files], {
+            cwd: tmpWorkspace,
+          });
+        }
       },
       commit: async (message: string) => {
-        // Write a real file into the working tree so git actually has
-        // something to commit. This simulates what a real execute phase
-        // would have done during the RUN stage.
-        writeFileSync(
-          join(tmpWorkspace, 'cycle-output.txt'),
-          'cycle ran\n',
-        );
-        await execFileAsync('git', ['add', 'cycle-output.txt'], {
-          cwd: tmpWorkspace,
-        });
-        // Use -F - to feed the multi-line commit message via stdin, matching
-        // the real GitOps behavior. Spawn via node -e would be overkill; we
-        // use execFile with `input` instead.
+        // The wrapped GitOps path still uses the real git binary against the
+        // temp repo so this integration test exercises the commit stage.
         await execFileAsync('git', ['commit', '-m', message], {
           cwd: tmpWorkspace,
         });
@@ -356,9 +354,7 @@ describe('Full autonomous cycle end-to-end', () => {
 
     // 9. Wrapped gitOps actually moved the branch (sanity check).
     expect(branchCreated).toBe('autonomous/v6.3.6');
-    // Mocked phase handlers produce no source file changes, so collectChangedFiles
-    // returns [] and the commit/push block is deliberately skipped (v15.0.0
-    // guard: "treat no work product as a clean no-op"). commitSha is null.
-    expect(result.git.commitSha).toBeNull();
+    expect(result.git.filesChanged).toContain('cycle-output.txt');
+    expect(result.git.commitSha).toMatch(/^[0-9a-f]{40}$/);
   }, 120_000);
 });

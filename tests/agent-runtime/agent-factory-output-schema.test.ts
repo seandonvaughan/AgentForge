@@ -135,6 +135,13 @@ system_prompt: You are a schema agent.
 output_schema:
   name: ScoreOutput
   strict: true
+  schema:
+    type: object
+    required: [score]
+    properties:
+      score:
+        type: number
+    additionalProperties: false
 `,
       );
 
@@ -146,6 +153,16 @@ output_schema:
       expect((config as any).outputSchema).toEqual({
         name: 'ScoreOutput',
         strict: true,
+        schema: {
+          type: 'object',
+          required: ['score'],
+          properties: {
+            score: {
+              type: 'number',
+            },
+          },
+          additionalProperties: false,
+        },
       });
     } finally {
       await rm(tmpDir, { recursive: true, force: true });

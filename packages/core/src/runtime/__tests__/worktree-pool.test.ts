@@ -438,12 +438,13 @@ describe('WorktreePool', () => {
     expect(pool.getStats().active).toBe(COUNT);
     expect(pool.getStats().totalAllocations).toBe(COUNT);
 
-    // Should complete well within 60s (25 parallel git ops on macOS).
-    expect(elapsed).toBeLessThan(60_000);
+    // Should complete within two minutes even when the full suite is also
+    // running other real git worktree tests on Windows.
+    expect(elapsed).toBeLessThan(120_000);
     console.log(`[stress] 25 parallel allocations completed in ${elapsed}ms`);
 
     // Release all in parallel.
     await Promise.all(handles.map((h) => pool.release(h.id)));
     expect(pool.getStats().active).toBe(0);
-  }, 90_000); // generous timeout for 25 real git worktree ops
+  }, 180_000); // generous timeout for 25 real git worktree ops under full-suite load
 });
