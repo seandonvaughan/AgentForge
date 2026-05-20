@@ -22,6 +22,7 @@ import type {
   CanaryDeployOptions,
   CanaryDeploymentRecord,
   CanaryDeploymentMetrics,
+  CanaryOutcome,
   CanaryRoutingContext,
   CanaryRollbackRecord,
   ReforgePlan,
@@ -39,6 +40,8 @@ const MAX_VERSION_DEPTH = 5;
 /** Default downgrade tier when adjust-model-routing fires on an Opus agent. */
 const OPUS_DOWNGRADE_TARGET = "sonnet" as const;
 const SONNET_DOWNGRADE_TARGET = "haiku" as const;
+const DEFAULT_CANARY_ROLLBACK_COST_MULTIPLIER = 2;
+const SAFE_AGENT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 // ---------------------------------------------------------------------------
 // Options
@@ -249,7 +252,8 @@ export class ReforgeEngine {
     const deployments: CanaryDeploymentRecord[] = [];
     const trafficPercent = this.clampPercent(options.trafficPercent ?? 10);
     const strategy = options.strategy ?? "hash";
-    const rollbackThreshold = options.rollbackThreshold ?? 0.05;
+    const rollbackThreshold = this.normalizeRollbackThreshold(options.rollbackThreshold ?? 0.05);
+    const guardrails = this.buildCanaryGuardrails(options);
 
     for (const [agentName, agentMutations] of byAgent.entries()) {
       const existing = await this.loadOverride(agentName);
@@ -265,6 +269,7 @@ export class ReforgeEngine {
         rollbackThreshold,
         override,
         metrics: this.emptyCanaryMetrics(),
+        guardrails,
       };
 
       this.canaryManager.createFlag({
@@ -312,25 +317,24 @@ export class ReforgeEngine {
    */
   async recordCanaryOutcome(
     agentName: string,
-    isError: boolean,
+    outcomeInput: boolean | CanaryOutcome,
   ): Promise<{ deployment: CanaryDeploymentRecord; rollback?: string } | null> {
     const deployment = await this.loadCanaryDeployment(agentName);
     if (!deployment) {
       return null;
     }
 
+    const outcome = this.normalizeCanaryOutcome(outcomeInput);
     this.canaryManager.getFlag(deployment.flagId) ?? this.ensureCanaryFlag(deployment);
-    this.canaryManager.recordOutcome(deployment.flagId, isError);
+    this.canaryManager.recordOutcome(deployment.flagId, outcome.isError);
 
-    const metrics = this.nextCanaryMetrics(deployment.metrics, isError);
+    const metrics = this.nextCanaryMetrics(deployment.metrics, outcome, deployment);
     const updatedDeployment: CanaryDeploymentRecord = {
       ...deployment,
       metrics,
     };
 
-    const rollback = this.shouldRollbackCanary(updatedDeployment)
-      ? this.buildCanaryRollback(updatedDeployment)
-      : undefined;
+    const rollback = this.buildCanaryRollback(updatedDeployment);
 
     if (rollback) {
       await this.writeCanaryRollback({
@@ -371,6 +375,29 @@ export class ReforgeEngine {
     return this.materializeOverride(template, override);
   }
 
+  /**
+   * Returns true when the supplied request context is routed to a staged
+   * canary override. Callers use this to record canary-only outcomes after
+   * the request finishes.
+   */
+  async isCanaryRouted(
+    agentName: string,
+    context?: CanaryRoutingContext,
+  ): Promise<boolean> {
+    if (!context?.requestId && !context?.headerValue) {
+      return false;
+    }
+
+    const canary = await this.loadCanaryDeployment(agentName);
+    if (!canary) {
+      return false;
+    }
+
+    const flag = this.canaryManager.getFlag(canary.flagId) ?? this.ensureCanaryFlag(canary);
+    const route = this.canaryManager.route(flag.id, context.requestId ?? randomUUID(), context.headerValue);
+    return route.variant === "canary";
+  }
+
   // =========================================================================
   // rollback
   // =========================================================================
@@ -403,29 +430,79 @@ export class ReforgeEngine {
 
   /** Load the current override for an agent from disk, or null if none. */
   async loadOverride(agentName: string): Promise<AgentOverride | null> {
-    const filePath = path.join(this.overridesDir, `${agentName}.json`);
+    const filePath = this.overridePath(agentName);
     try {
       const raw = await fs.readFile(filePath, "utf-8");
       return JSON.parse(raw) as AgentOverride;
-    } catch {
-      return null;
+    } catch (err) {
+      if (this.isNotFound(err)) {
+        return null;
+      }
+      throw err;
     }
   }
 
   /** Load a staged canary deployment for an agent, or null if none exists. */
   private async loadCanaryDeployment(agentName: string): Promise<CanaryDeploymentRecord | null> {
-    const filePath = path.join(this.canaryOverridesDir, `${agentName}.json`);
+    const filePath = this.canaryDeploymentPath(agentName);
     try {
       const raw = await fs.readFile(filePath, "utf-8");
-      return JSON.parse(raw) as CanaryDeploymentRecord;
-    } catch {
-      return null;
+      const parsed = JSON.parse(raw) as CanaryDeploymentRecord;
+      return {
+        ...parsed,
+        guardrails: parsed.guardrails ?? this.buildCanaryGuardrails({}),
+      };
+    } catch (err) {
+      if (this.isNotFound(err)) {
+        return null;
+      }
+      throw err;
     }
   }
 
   // =========================================================================
   // Private helpers
   // =========================================================================
+
+  private isNotFound(err: unknown): boolean {
+    return (
+      typeof err === "object" &&
+      err !== null &&
+      "code" in err &&
+      (err as NodeJS.ErrnoException).code === "ENOENT"
+    );
+  }
+
+  private assertSafeAgentName(agentName: string): string {
+    if (!SAFE_AGENT_NAME.test(agentName)) {
+      throw new Error(`Unsafe agent name for reforge storage path: "${agentName}".`);
+    }
+    return agentName;
+  }
+
+  private containedPath(baseDir: string, filename: string): string {
+    const resolvedBase = path.resolve(baseDir);
+    const resolvedPath = path.resolve(resolvedBase, filename);
+    const basePrefix = resolvedBase.endsWith(path.sep)
+      ? resolvedBase
+      : `${resolvedBase}${path.sep}`;
+    if (!resolvedPath.startsWith(basePrefix)) {
+      throw new Error(`Resolved reforge path escapes ${resolvedBase}: ${filename}`);
+    }
+    return resolvedPath;
+  }
+
+  private overridePath(agentName: string): string {
+    return this.containedPath(this.overridesDir, `${this.assertSafeAgentName(agentName)}.json`);
+  }
+
+  private canaryDeploymentPath(agentName: string): string {
+    return this.containedPath(this.canaryOverridesDir, `${this.assertSafeAgentName(agentName)}.json`);
+  }
+
+  private canaryRollbackPath(agentName: string): string {
+    return this.containedPath(this.canaryOverridesDir, `${this.assertSafeAgentName(agentName)}.rollback.json`);
+  }
 
   private async ensureDirs(): Promise<void> {
     await fs.mkdir(this.overridesDir, { recursive: true });
@@ -435,18 +512,18 @@ export class ReforgeEngine {
 
   private async writeCanaryDeployment(deployment: CanaryDeploymentRecord): Promise<void> {
     await fs.mkdir(this.canaryOverridesDir, { recursive: true });
-    const filePath = path.join(this.canaryOverridesDir, `${deployment.agentName}.json`);
+    const filePath = this.canaryDeploymentPath(deployment.agentName);
     await fs.writeFile(filePath, JSON.stringify(deployment, null, 2), "utf-8");
   }
 
   private async writeCanaryRollback(deployment: CanaryDeploymentRecord): Promise<void> {
     await fs.mkdir(this.canaryOverridesDir, { recursive: true });
-    const filePath = path.join(this.canaryOverridesDir, `${deployment.agentName}.rollback.json`);
+    const filePath = this.canaryRollbackPath(deployment.agentName);
     await fs.writeFile(filePath, JSON.stringify(deployment, null, 2), "utf-8");
   }
 
   private async deleteCanaryDeployment(agentName: string): Promise<void> {
-    const filePath = path.join(this.canaryOverridesDir, `${agentName}.json`);
+    const filePath = this.canaryDeploymentPath(agentName);
     await fs.rm(filePath, { force: true });
   }
 
@@ -497,25 +574,55 @@ export class ReforgeEngine {
 
   private nextCanaryMetrics(
     current: CanaryDeploymentMetrics | undefined,
-    isError: boolean,
+    outcome: Required<Pick<CanaryOutcome, "isError">> & Omit<CanaryOutcome, "isError">,
+    deployment: CanaryDeploymentRecord,
   ): CanaryDeploymentMetrics {
     const previous = current ?? this.emptyCanaryMetrics();
     const canaryRequests = previous.canaryRequests + 1;
-    const canaryErrors = previous.canaryErrors + (isError ? 1 : 0);
+    const canaryErrors = previous.canaryErrors + (outcome.isError ? 1 : 0);
+    const totalCostUsd = (previous.totalCostUsd ?? 0) + (outcome.costUsd ?? 0);
+    const projectedBudgetUsd = outcome.projectedBudgetUsd ?? deployment.guardrails.projectedBudgetUsd;
+    const currentCostUsd = outcome.currentCostUsd ?? (totalCostUsd > 0 ? totalCostUsd : undefined);
+    const costMultiplier =
+      currentCostUsd !== undefined && projectedBudgetUsd !== undefined
+        ? currentCostUsd / projectedBudgetUsd
+        : undefined;
     return {
       canaryRequests,
       canaryErrors,
       errorRate: canaryRequests > 0 ? canaryErrors / canaryRequests : 0,
+      ...(totalCostUsd > 0 ? { totalCostUsd } : {}),
+      ...(currentCostUsd !== undefined ? { currentCostUsd } : {}),
+      ...(projectedBudgetUsd !== undefined ? { projectedBudgetUsd } : {}),
+      ...(costMultiplier !== undefined ? { costMultiplier } : {}),
     };
   }
 
-  private shouldRollbackCanary(deployment: CanaryDeploymentRecord): boolean {
+  private buildCanaryRollback(deployment: CanaryDeploymentRecord): CanaryRollbackRecord | undefined {
     const metrics = deployment.metrics ?? this.emptyCanaryMetrics();
-    return metrics.canaryRequests >= 5 && metrics.errorRate > deployment.rollbackThreshold;
-  }
+    if (
+      metrics.currentCostUsd !== undefined &&
+      metrics.projectedBudgetUsd !== undefined &&
+      metrics.currentCostUsd > metrics.projectedBudgetUsd * deployment.guardrails.rollbackCostMultiplier
+    ) {
+      return {
+        reason:
+          `Cost-outlier rollback: current canary cost $${metrics.currentCostUsd.toFixed(2)} ` +
+          `exceeds ${deployment.guardrails.rollbackCostMultiplier.toFixed(2)}x projected budget ` +
+          `$${metrics.projectedBudgetUsd.toFixed(2)}`,
+        errorRate: metrics.errorRate,
+        threshold: deployment.rollbackThreshold,
+        rolledBackAt: new Date().toISOString(),
+        currentCostUsd: metrics.currentCostUsd,
+        projectedBudgetUsd: metrics.projectedBudgetUsd,
+        costMultiplier: metrics.costMultiplier ?? metrics.currentCostUsd / metrics.projectedBudgetUsd,
+      };
+    }
 
-  private buildCanaryRollback(deployment: CanaryDeploymentRecord): CanaryRollbackRecord {
-    const metrics = deployment.metrics ?? this.emptyCanaryMetrics();
+    if (metrics.canaryRequests < 5 || metrics.errorRate <= deployment.rollbackThreshold) {
+      return undefined;
+    }
+
     return {
       reason: `Auto-rollback: error rate ${(metrics.errorRate * 100).toFixed(1)}% exceeds threshold ${(deployment.rollbackThreshold * 100).toFixed(1)}%`,
       errorRate: metrics.errorRate,
@@ -594,7 +701,66 @@ export class ReforgeEngine {
     return result;
   }
 
+  private normalizeCanaryOutcome(
+    input: boolean | CanaryOutcome,
+  ): Required<Pick<CanaryOutcome, "isError">> & Omit<CanaryOutcome, "isError"> {
+    if (typeof input === "boolean") {
+      return { isError: input };
+    }
+
+    const outcome: Required<Pick<CanaryOutcome, "isError">> & Omit<CanaryOutcome, "isError"> = {
+      isError: input.isError ?? false,
+    };
+    if (input.costUsd !== undefined) {
+      outcome.costUsd = this.normalizeNonNegativeFinite(input.costUsd, "costUsd");
+    }
+    if (input.currentCostUsd !== undefined) {
+      outcome.currentCostUsd = this.normalizeNonNegativeFinite(input.currentCostUsd, "currentCostUsd");
+    }
+    if (input.projectedBudgetUsd !== undefined) {
+      outcome.projectedBudgetUsd = this.normalizePositiveFinite(input.projectedBudgetUsd, "projectedBudgetUsd");
+    }
+    return outcome;
+  }
+
+  private buildCanaryGuardrails(options: CanaryDeployOptions) {
+    const rollbackCostMultiplier = this.normalizePositiveFinite(
+      options.rollbackCostMultiplier ?? DEFAULT_CANARY_ROLLBACK_COST_MULTIPLIER,
+      "rollbackCostMultiplier",
+    );
+    return {
+      rollbackCostMultiplier,
+      ...(options.projectedBudgetUsd !== undefined
+        ? { projectedBudgetUsd: this.normalizePositiveFinite(options.projectedBudgetUsd, "projectedBudgetUsd") }
+        : {}),
+    };
+  }
+
+  private normalizeRollbackThreshold(threshold: number): number {
+    if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
+      throw new Error("rollbackThreshold must be a finite number between 0 and 1.");
+    }
+    return threshold;
+  }
+
+  private normalizePositiveFinite(value: number, field: string): number {
+    if (!Number.isFinite(value) || value <= 0) {
+      throw new Error(`${field} must be a finite positive number.`);
+    }
+    return value;
+  }
+
+  private normalizeNonNegativeFinite(value: number, field: string): number {
+    if (!Number.isFinite(value) || value < 0) {
+      throw new Error(`${field} must be a finite non-negative number.`);
+    }
+    return value;
+  }
+
   private clampPercent(percent: number): number {
+    if (!Number.isFinite(percent)) {
+      throw new Error("trafficPercent must be finite.");
+    }
     return Math.min(100, Math.max(0, percent));
   }
 
@@ -603,7 +769,7 @@ export class ReforgeEngine {
     override: AgentOverride,
   ): Promise<void> {
     await fs.mkdir(this.overridesDir, { recursive: true });
-    const filePath = path.join(this.overridesDir, `${agentName}.json`);
+    const filePath = this.overridePath(agentName);
     await fs.writeFile(filePath, JSON.stringify(override, null, 2), "utf-8");
   }
 

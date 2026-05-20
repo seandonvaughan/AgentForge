@@ -238,8 +238,86 @@ describe('CostAutopilot', () => {
       { task: 'budget constrained high complexity', complexity: 'high', maxCostUsd: 0.002 },
       trackingExecutor,
     );
-    // budget < opus cost (0.015) → downgrade to sonnet
+    // budget < opus cost (0.015) -> downgrade to a cheaper tier before dispatch
     expect(['haiku', 'sonnet']).toContain(selectedModel);
+  });
+
+  it('fails closed before dispatch when no model fits the request budget', async () => {
+    let calls = 0;
+    const trackingExecutor = async (_task: string, _model: string) => {
+      calls++;
+      return { response: 'should not dispatch', costUsd: 0.001 };
+    };
+    const autopilot = new CostAutopilot(trackingExecutor);
+
+    await expect(
+      autopilot.process({ task: 'impossibly cheap request', maxCostUsd: 0.0001 }, trackingExecutor),
+    ).rejects.toMatchObject({ code: 'BUDGET_EXCEEDED' });
+
+    expect(calls).toBe(0);
+    expect(autopilot.getStats().optimization.budgetRejections).toBe(1);
+  });
+
+  it('uses the per-call executor and selected model for batched requests', async () => {
+    let constructorCalls = 0;
+    const constructorExecutor = async (_task: string, _model: string) => {
+      constructorCalls++;
+      return { response: 'constructor', costUsd: 0.015 };
+    };
+    const perCallModels: string[] = [];
+    const perCallExecutor = async (task: string, model: string) => {
+      perCallModels.push(model);
+      return { response: { text: `per-call:${task}`, model }, costUsd: 0.001 };
+    };
+    const autopilot = new CostAutopilot(constructorExecutor);
+
+    const result = await autopilot.process(
+      { task: 'batched high complexity under tight cap', complexity: 'high', maxCostUsd: 0.002, allowBatching: true },
+      perCallExecutor,
+    );
+
+    expect(constructorCalls).toBe(0);
+    expect(perCallModels).toEqual(['haiku']);
+    expect(result.response).toEqual({ text: 'per-call:batched high complexity under tight cap', model: 'haiku' });
+    expect(result.model).toBe('haiku');
+  });
+
+  it('deduplicates identical batched requests without extra executor calls', async () => {
+    let calls = 0;
+    const trackingExecutor = async (task: string, model: string) => {
+      calls++;
+      return { response: { text: `done:${task}`, model }, costUsd: 0.003 };
+    };
+    const autopilot = new CostAutopilot(trackingExecutor);
+
+    const [first, second] = await Promise.all([
+      autopilot.process({ task: 'same batched request', allowBatching: true }, trackingExecutor),
+      autopilot.process({ task: 'same batched request', allowBatching: true }, trackingExecutor),
+    ]);
+
+    expect(calls).toBe(1);
+    expect(first.costUsd + second.costUsd).toBeCloseTo(0.003);
+    expect([first, second].filter(result => result.deduped).length).toBe(1);
+    expect(autopilot.getStats().optimization.dedupedRequests).toBe(1);
+  });
+
+  it('reports dispatch metrics by model tier', async () => {
+    const trackingExecutor = async (_task: string, model: string) => ({
+      response: { model },
+      costUsd: model === 'haiku' ? 0.001 : model === 'sonnet' ? 0.003 : 0.015,
+    });
+    const autopilot = new CostAutopilot(trackingExecutor);
+
+    await autopilot.process({ task: 'low metrics task', complexity: 'low' }, trackingExecutor);
+    await autopilot.process({ task: 'medium metrics task', complexity: 'medium' }, trackingExecutor);
+    await autopilot.process({ task: 'high metrics task', complexity: 'high', maxCostUsd: 0.002 }, trackingExecutor);
+
+    const stats = autopilot.getStats();
+    expect(stats.optimization.executorInvocations).toBe(3);
+    expect(stats.optimization.modelDispatches.haiku).toBe(2);
+    expect(stats.optimization.modelDispatches.sonnet).toBe(1);
+    expect(stats.optimization.modelDispatches.opus).toBe(0);
+    expect(stats.optimization.downgradedByBudget).toBe(1);
   });
 
   it('reports estimated savings after cache hits', async () => {

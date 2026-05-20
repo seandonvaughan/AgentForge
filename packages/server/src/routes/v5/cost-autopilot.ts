@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { CostAutopilot } from '@agentforge/core';
+import { BudgetExceededError, CostAutopilot } from '@agentforge/core';
 
 const autopilot = new CostAutopilot(async (task, model) => {
   // Stub executor — real usage would call an LLM
@@ -37,20 +37,27 @@ export async function costAutopilotRoutes(app: FastifyInstance): Promise<void> {
       costUsd: model === 'haiku' ? 0.001 : model === 'sonnet' ? 0.003 : 0.015,
     });
 
-    const result = await autopilot.process(
-      {
-        task: body.task,
-        ...(body.complexity !== undefined ? { complexity: body.complexity } : {}),
-        ...(body.maxCostUsd !== undefined ? { maxCostUsd: body.maxCostUsd } : {}),
-        ...(body.allowBatching !== undefined ? { allowBatching: body.allowBatching } : {}),
-      },
-      executor as Parameters<typeof autopilot.process>[1],
-    );
+    try {
+      const result = await autopilot.process(
+        {
+          task: body.task,
+          ...(body.complexity !== undefined ? { complexity: body.complexity } : {}),
+          ...(body.maxCostUsd !== undefined ? { maxCostUsd: body.maxCostUsd } : {}),
+          ...(body.allowBatching !== undefined ? { allowBatching: body.allowBatching } : {}),
+        },
+        executor as Parameters<typeof autopilot.process>[1],
+      );
 
-    return reply.send({
-      data: result,
-      meta: { timestamp: new Date().toISOString() },
-    });
+      return reply.send({
+        data: result,
+        meta: { timestamp: new Date().toISOString() },
+      });
+    } catch (err) {
+      if (err instanceof BudgetExceededError) {
+        return reply.status(429).send({ error: err.message, code: err.code });
+      }
+      throw err;
+    }
   });
 
   // POST /api/v5/cost-autopilot/cache/clear

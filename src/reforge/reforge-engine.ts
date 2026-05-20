@@ -10,6 +10,13 @@ export type {
   RecommendedAction,
   AgentMutation,
   AgentOverride,
+  CanaryDeployOptions,
+  CanaryDeploymentGuardrails,
+  CanaryDeploymentMetrics,
+  CanaryDeploymentRecord,
+  CanaryOutcome,
+  CanaryRollbackRecord,
+  CanaryRoutingContext,
   ReforgePlan,
   ReforgeResult,
 } from '@agentforge/core';

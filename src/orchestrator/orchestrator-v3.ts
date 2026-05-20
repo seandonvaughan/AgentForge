@@ -139,26 +139,51 @@ export class OrchestratorV3 {
 
     // ── Stage 1: Apply reforge overrides ──────────────────────────────────
     const requestId = context.requestId ?? randomUUID();
+    const canaryContext = {
+      requestId,
+      ...(context.canaryHeaderValue !== undefined ? { headerValue: context.canaryHeaderValue } : {}),
+    };
+    const canaryRouted = this.config.enableReforge
+      ? await this.reforgeEngine.isCanaryRouted(agent.name, canaryContext)
+      : false;
     const resolvedAgent = this.config.enableReforge
-      ? await this.reforgeEngine.applyOverride(agent, {
-        requestId,
-        ...(context.canaryHeaderValue ? { headerValue: context.canaryHeaderValue } : {}),
-      })
+      ? await this.reforgeEngine.applyOverride(agent, canaryContext)
       : agent;
 
     // ── Stage 2: Execute through CostAwareRunner ──────────────────────────
-    const runResult = await runCostAware({
-      agent: resolvedAgent,
-      task,
-      envelope: this.budgetEnvelope,
-      allowFanOut: context.allowFanOut ?? false,
-    });
+    const totalBefore = this.budgetEnvelope.getSpendReport().totalSpentUsd;
+    let runResult: CostAwareRunResult;
+    try {
+      runResult = await runCostAware({
+        agent: resolvedAgent,
+        task,
+        envelope: this.budgetEnvelope,
+        allowFanOut: context.allowFanOut ?? false,
+      });
+    } catch (err) {
+      if (canaryRouted) {
+        await this.reforgeEngine.recordCanaryOutcome(agent.name, {
+          isError: true,
+          currentCostUsd: this.budgetEnvelope.getSpendReport().totalSpentUsd,
+          projectedBudgetUsd: this.config.sessionBudgetUsd,
+        }).catch(() => undefined);
+      }
+      throw err;
+    }
 
     // ── Track per-agent spend ─────────────────────────────────────────────
     const prevSpend = this.agentSpend.get(agent.name) ?? 0;
     // Estimate actual cost from the run: use the recorded spend difference
     const spendReport = this.budgetEnvelope.getSpendReport();
     const totalAfter = spendReport.totalSpentUsd;
+    if (canaryRouted) {
+      await this.reforgeEngine.recordCanaryOutcome(agent.name, {
+        isError: false,
+        costUsd: Math.max(totalAfter - totalBefore, 0),
+        currentCostUsd: totalAfter,
+        projectedBudgetUsd: this.config.sessionBudgetUsd,
+      }).catch(() => undefined);
+    }
     // The per-agent spend delta is the session total minus what was spent before
     // We can't get the exact delta from the envelope, so we approximate from
     // MODEL_COSTS applied to actual tokens.

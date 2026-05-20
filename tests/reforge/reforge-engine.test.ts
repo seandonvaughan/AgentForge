@@ -606,6 +606,115 @@ describe("ReforgeEngine", () => {
     });
   });
 
+  it("recordCanaryOutcome rolls back when fresh canary cost exceeds the projected budget multiplier", async () => {
+    const canaryAnalysis = makeAnalysis([
+      {
+        action: "update-system-prompt",
+        rationale: "exercise cost guardrail",
+        urgency: "medium",
+        theme_label: "prompt-canary",
+        confidence: 0.7,
+      },
+    ]);
+
+    const canaryPlan = await engine.buildPlan(canaryAnalysis, [makeTemplate()]);
+    await engine.deployCanary(canaryPlan, {
+      trafficPercent: 100,
+      strategy: "hash",
+      rollbackThreshold: 1,
+      projectedBudgetUsd: 1,
+      rollbackCostMultiplier: 2,
+    });
+
+    const first = await engine.recordCanaryOutcome("cost-analyst", {
+      isError: false,
+      currentCostUsd: 1.75,
+      projectedBudgetUsd: 1,
+    });
+    expect(first?.rollback).toBeUndefined();
+
+    const second = await engine.recordCanaryOutcome("cost-analyst", {
+      isError: false,
+      currentCostUsd: 2.25,
+      projectedBudgetUsd: 1,
+    });
+    expect(second?.rollback).toContain("Cost-outlier rollback");
+
+    const stagedPath = path.join(
+      tmpDir,
+      ".agentforge",
+      "agent-overrides",
+      "canary",
+      "cost-analyst.json",
+    );
+    await expect(fs.readFile(stagedPath, "utf-8")).rejects.toThrow();
+
+    const rollbackPath = path.join(
+      tmpDir,
+      ".agentforge",
+      "agent-overrides",
+      "canary",
+      "cost-analyst.rollback.json",
+    );
+    const rollback = JSON.parse(await fs.readFile(rollbackPath, "utf-8")) as {
+      rollback?: { currentCostUsd: number; projectedBudgetUsd: number; costMultiplier: number };
+    };
+    expect(rollback.rollback).toMatchObject({
+      currentCostUsd: 2.25,
+      projectedBudgetUsd: 1,
+      costMultiplier: 2.25,
+    });
+  });
+
+  it("deployCanary rejects invalid rollback cost multipliers before staging", async () => {
+    const canaryPlan = await engine.buildPlan(
+      makeAnalysis([
+        {
+          action: "update-system-prompt",
+          rationale: "bad cost guardrail config",
+          urgency: "medium",
+          theme_label: "prompt-canary",
+          confidence: 0.7,
+        },
+      ]),
+      [makeTemplate()],
+    );
+
+    await expect(
+      engine.deployCanary(canaryPlan, {
+        rollbackCostMultiplier: Number.NaN,
+      }),
+    ).rejects.toThrow("rollbackCostMultiplier");
+  });
+
+  it("rejects unsafe agent names before writing override or canary files", async () => {
+    const unsafePlan = {
+      id: "unsafe-plan",
+      timestamp: new Date().toISOString(),
+      reforgeClass: "local" as const,
+      triggeredBy: "path-traversal",
+      rationale: "malicious agent name",
+      estimatedImpact: "No write should occur.",
+      mutations: [
+        {
+          type: "system-prompt-preamble" as const,
+          agentName: "../escape",
+          field: "system_prompt",
+          oldValue: null,
+          newValue: "bad",
+          rationale: "must not escape storage root",
+        },
+      ],
+    };
+
+    await expect(engine.executePlan(unsafePlan)).rejects.toThrow("Unsafe agent name");
+    await expect(engine.deployCanary(unsafePlan)).rejects.toThrow("Unsafe agent name");
+
+    await expect(
+      fs.readFile(path.join(tmpDir, ".agentforge", "escape.json"), "utf-8"),
+    ).rejects.toThrow();
+  });
+
   it("promoteCanary makes the staged override the active override", async () => {
     const baseAnalysis = makeAnalysis([
       {

@@ -10,6 +10,8 @@ import type { ModelTier, EffortLevel } from "./agent.js";
 // Re-export for convenience so consumers can import from one place
 export type { ModelTier, EffortLevel };
 
+export type TrafficSplitStrategy = "percentage" | "hash" | "header";
+
 /**
  * Classification of a reforge plan.
  *
@@ -109,4 +111,66 @@ export interface AgentOverride {
   effortOverride?: EffortLevel;
   /** The previous override version, enabling rollback. */
   previousVersion?: AgentOverride;
+}
+
+/**
+ * Metadata captured for a staged canary deployment.
+ */
+export interface CanaryDeploymentRecord {
+  agentName: string;
+  planId: string;
+  flagId: string;
+  stagedAt: string;
+  trafficPercent: number;
+  strategy: TrafficSplitStrategy;
+  rollbackThreshold: number;
+  override: AgentOverride;
+  metrics?: CanaryDeploymentMetrics;
+  guardrails: CanaryDeploymentGuardrails;
+  rollback?: CanaryRollbackRecord;
+}
+
+export interface CanaryRoutingContext {
+  requestId?: string;
+  headerValue?: string;
+}
+
+export interface CanaryDeploymentMetrics {
+  canaryRequests: number;
+  canaryErrors: number;
+  errorRate: number;
+  totalCostUsd?: number;
+  currentCostUsd?: number;
+  projectedBudgetUsd?: number;
+  costMultiplier?: number;
+}
+
+export interface CanaryRollbackRecord {
+  reason: string;
+  errorRate: number;
+  threshold: number;
+  rolledBackAt: string;
+  currentCostUsd?: number;
+  projectedBudgetUsd?: number;
+  costMultiplier?: number;
+}
+
+export interface CanaryDeploymentGuardrails {
+  rollbackCostMultiplier: number;
+  projectedBudgetUsd?: number;
+}
+
+export interface CanaryDeployOptions {
+  trafficPercent?: number;
+  strategy?: TrafficSplitStrategy;
+  rollbackThreshold?: number;
+  projectedBudgetUsd?: number;
+  rollbackCostMultiplier?: number;
+}
+
+export interface CanaryOutcome {
+  isError?: boolean;
+  costUsd?: number;
+  currentCostUsd?: number;
+  projectedBudgetUsd?: number;
 }

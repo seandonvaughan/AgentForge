@@ -13,6 +13,10 @@ export interface CacheConfig {
   similarityThreshold: number;
 }
 
+export type AutopilotModelTier = 'haiku' | 'sonnet' | 'opus';
+
+export type AutopilotDecision = 'cache-hit' | 'executed' | 'deduped';
+
 export interface BatchRequest {
   id: string;
   task: string;
@@ -25,6 +29,20 @@ export interface BatchResult {
   costUsd: number;
   fromCache: boolean;
   batchId?: string;
+  model?: AutopilotModelTier;
+  decision?: AutopilotDecision;
+  deduped?: boolean;
+  estimatedCostUsd?: number;
+}
+
+export type AutopilotModelStats = Record<AutopilotModelTier, number>;
+
+export interface AutopilotOptimizationStats {
+  executorInvocations: number;
+  dedupedRequests: number;
+  budgetRejections: number;
+  downgradedByBudget: number;
+  modelDispatches: AutopilotModelStats;
 }
 
 export interface AutopilotStats {
@@ -35,4 +53,5 @@ export interface AutopilotStats {
   totalRequests: number;
   estimatedSavingsUsd: number;
   avgCostPerRequest: number;
+  optimization: AutopilotOptimizationStats;
 }

@@ -135,6 +135,8 @@ export interface CanaryDeploymentRecord {
   override: AgentOverride;
   /** Persisted outcome counters used to preserve rollback thresholds across process restarts. */
   metrics?: CanaryDeploymentMetrics;
+  /** Guardrails that can roll back the staged deployment before promotion. */
+  guardrails: CanaryDeploymentGuardrails;
   /** Persisted rollback marker written when this staged deployment is removed by auto-rollback. */
   rollback?: CanaryRollbackRecord;
 }
@@ -150,6 +152,14 @@ export interface CanaryDeploymentMetrics {
   canaryRequests: number;
   canaryErrors: number;
   errorRate: number;
+  /** Cumulative canary request cost observed by recordCanaryOutcome. */
+  totalCostUsd?: number;
+  /** Latest recomputed absolute canary/sprint cost, if supplied by the caller. */
+  currentCostUsd?: number;
+  /** Latest projected budget used for the cost-outlier guardrail. */
+  projectedBudgetUsd?: number;
+  /** Latest current/projected ratio used for rollback decisions. */
+  costMultiplier?: number;
 }
 
 /** Persisted record of an auto-rollback decision. */
@@ -158,6 +168,17 @@ export interface CanaryRollbackRecord {
   errorRate: number;
   threshold: number;
   rolledBackAt: string;
+  currentCostUsd?: number;
+  projectedBudgetUsd?: number;
+  costMultiplier?: number;
+}
+
+/** Cost guardrails attached to a staged canary deployment. */
+export interface CanaryDeploymentGuardrails {
+  /** Roll back if currentCostUsd exceeds projectedBudgetUsd by this multiplier. */
+  rollbackCostMultiplier: number;
+  /** Optional budget baseline; callers can override per outcome with fresh values. */
+  projectedBudgetUsd?: number;
 }
 
 /** Options for staging a canary deployment. */
@@ -165,4 +186,19 @@ export interface CanaryDeployOptions {
   trafficPercent?: number;
   strategy?: TrafficSplitStrategy;
   rollbackThreshold?: number;
+  /** Optional projected budget used by the cost-outlier rollback guardrail. */
+  projectedBudgetUsd?: number;
+  /** Defaults to 2x. Must be finite and positive. */
+  rollbackCostMultiplier?: number;
+}
+
+/** Outcome data for a single canary request. */
+export interface CanaryOutcome {
+  isError?: boolean;
+  /** Incremental cost of this canary request. */
+  costUsd?: number;
+  /** Fresh absolute cost after this canary request. */
+  currentCostUsd?: number;
+  /** Fresh projected budget to compare against currentCostUsd. */
+  projectedBudgetUsd?: number;
 }
