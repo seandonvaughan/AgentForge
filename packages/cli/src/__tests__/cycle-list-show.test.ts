@@ -57,17 +57,42 @@ describe('cycle list/show summaries', () => {
     expect(output()).toContain(`${cycleId}  plan`);
   });
 
+  it('shows PRs from agent-prs ledger when cycle.json has no cycle-level PR', async () => {
+    const cycleId = '44444444-4444-4444-8444-444444444444';
+    const cycleDir = writeCycle(cycleId, {
+      cycleId,
+      stage: 'completed',
+      startedAt: '2026-05-19T18:40:03.005Z',
+      completedAt: '2026-05-19T19:06:46.966Z',
+      pr: { url: null, number: null, draft: false },
+    });
+    writeFileSync(join(cycleDir, 'agent-prs.json'), JSON.stringify([
+      {
+        prNumber: 99,
+        prUrl: 'https://github.com/seandonvaughan/AgentForge/pull/99',
+        branch: 'codex/agent-test',
+        status: 'open',
+        openedAt: '2026-05-19T18:56:08.691Z',
+      },
+    ], null, 2));
+
+    await runCli('cycle', 'show', cycleId, '--project-root', projectRoot);
+
+    expect(output()).toContain('PR:           https://github.com/seandonvaughan/AgentForge/pull/99');
+  });
+
   function writeCycle(
     cycleId: string,
     cycleJson: Record<string, unknown>,
     events: Array<Record<string, unknown>> = [],
-  ): void {
+  ): string {
     const cycleDir = join(projectRoot, '.agentforge', 'cycles', cycleId);
     mkdirSync(cycleDir, { recursive: true });
     writeFileSync(join(cycleDir, 'cycle.json'), JSON.stringify(cycleJson, null, 2));
     if (events.length > 0) {
       writeFileSync(join(cycleDir, 'events.jsonl'), `${events.map((event) => JSON.stringify(event)).join('\n')}\n`);
     }
+    return cycleDir;
   }
 
   async function runCli(...args: string[]): Promise<void> {

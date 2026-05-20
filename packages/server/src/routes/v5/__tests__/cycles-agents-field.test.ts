@@ -165,4 +165,36 @@ describe('GET /api/v5/cycles — Fix 2: agents field', () => {
     expect(Array.isArray(row!['agents'])).toBe(true);
     expect(row!['agents']).toEqual([]);
   });
+
+  it('uses agent-prs ledger URL when cycle.json has no cycle-level PR', async () => {
+    const id = 'aaaaaaaa-0000-0000-0000-000000000007';
+    const dir = makeCycleDir(id);
+    writeCycleJson(id, dir, { pr: { url: null, number: null, draft: false } });
+    writeFileSync(join(dir, 'agent-prs.json'), JSON.stringify([
+      {
+        prNumber: 99,
+        prUrl: 'https://github.com/seandonvaughan/AgentForge/pull/99',
+        branch: 'codex/agent-test',
+        status: 'open',
+        openedAt: '2026-05-19T18:56:08.691Z',
+      },
+    ]));
+
+    const listRes = await app.inject({ method: 'GET', url: '/api/v5/cycles' });
+    expect(listRes.statusCode).toBe(200);
+    const rows = listRes.json().cycles as Array<Record<string, unknown>>;
+    const row = rows.find((r) => r['cycleId'] === id);
+    expect(row).toBeDefined();
+    expect(row!['prUrl']).toBe('https://github.com/seandonvaughan/AgentForge/pull/99');
+
+    const detailRes = await app.inject({ method: 'GET', url: `/api/v5/cycles/${id}` });
+    expect(detailRes.statusCode).toBe(200);
+    const detail = detailRes.json() as Record<string, unknown>;
+    expect(detail['prUrl']).toBe('https://github.com/seandonvaughan/AgentForge/pull/99');
+    expect(detail['pr']).toMatchObject({
+      url: 'https://github.com/seandonvaughan/AgentForge/pull/99',
+      number: 99,
+      source: 'agent-prs',
+    });
+  });
 });

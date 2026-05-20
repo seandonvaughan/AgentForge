@@ -92,6 +92,14 @@ interface CycleSummary {
   approvalDecision: string | null;
 }
 
+interface AgentPrLedgerEntry {
+  prNumber?: number | null;
+  prUrl?: string | null;
+  branch?: string;
+  status?: string;
+  openedAt?: string;
+}
+
 interface ApprovalItem {
   itemId: string;
   title?: string;
@@ -763,6 +771,7 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleSummary | null 
     const cost = (cycleJson.cost ?? {}) as Record<string, unknown>;
     const tests = (cycleJson.tests ?? {}) as Record<string, unknown>;
     const pr = (cycleJson.pr ?? {}) as Record<string, unknown>;
+    const agentPr = firstCycleAgentPr(cycleDir);
     const stage = typeof cycleJson.stage === 'string'
       ? cycleJson.stage
       : inferFallbackStage(cycleJson, activeStage);
@@ -779,7 +788,9 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleSummary | null 
       budgetUsd: Number(cost.budgetUsd ?? 200),
       testsPassed: Number(tests.passed ?? 0),
       testsTotal: Number(tests.total ?? 0),
-      prUrl: (pr.url as string) ?? null,
+      prUrl: typeof pr.url === 'string' && pr.url.length > 0
+        ? pr.url
+        : agentPr?.prUrl ?? null,
       hasApprovalPending,
       approvalDecision,
     };
@@ -799,6 +810,22 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleSummary | null 
     hasApprovalPending,
     approvalDecision,
   };
+}
+
+function firstCycleAgentPr(cycleDir: string): AgentPrLedgerEntry | null {
+  const ledger = readJsonIfExists(join(cycleDir, 'agent-prs.json'));
+  if (!Array.isArray(ledger)) return null;
+
+  const entries = ledger
+    .filter((entry): entry is AgentPrLedgerEntry => entry !== null && typeof entry === 'object')
+    .filter((entry) => typeof entry.prUrl === 'string' && entry.prUrl.length > 0)
+    .sort((left, right) => {
+      const leftTime = typeof left.openedAt === 'string' ? left.openedAt : '';
+      const rightTime = typeof right.openedAt === 'string' ? right.openedAt : '';
+      return leftTime.localeCompare(rightTime);
+    });
+
+  return entries[0] ?? null;
 }
 
 function isHeartbeatOnlyCyclePayload(cycleJson: Record<string, unknown>): boolean {

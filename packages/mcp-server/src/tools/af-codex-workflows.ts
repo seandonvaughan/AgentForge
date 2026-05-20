@@ -51,6 +51,14 @@ interface CycleSummary {
   eventsCount: number;
 }
 
+interface AgentPrLedgerEntry {
+  prNumber?: number | null;
+  prUrl?: string | null;
+  branch?: string;
+  status?: string;
+  openedAt?: string;
+}
+
 export async function afCodexReadiness(
   input: AfCodexReadinessInputType,
   defaultProjectRoot?: string,
@@ -259,6 +267,7 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleSummary | null 
   const cost = readRecord(cycleJson?.['cost']);
   const tests = readRecord(cycleJson?.['tests']);
   const pr = readRecord(cycleJson?.['pr']);
+  const agentPr = firstCycleAgentPr(cycleDir);
   const activeStage = inferActiveStage(cycleDir);
   const hasApprovalPending =
     existsSync(join(cycleDir, 'approval-pending.json')) &&
@@ -277,11 +286,29 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleSummary | null 
     budgetUsd: toNumber(cost['budgetUsd'], 200),
     testsPassed: toNumber(tests['passed'], 0),
     testsTotal: toNumber(tests['total'], 0),
-    prUrl: typeof pr['url'] === 'string' ? pr['url'] : null,
+    prUrl: typeof pr['url'] === 'string' && pr['url'].length > 0
+      ? pr['url']
+      : agentPr?.prUrl ?? null,
     hasApprovalPending,
     approvalDecision: typeof decision?.['decision'] === 'string' ? decision['decision'] : null,
     eventsCount: countJsonlLines(join(cycleDir, 'events.jsonl')),
   };
+}
+
+function firstCycleAgentPr(cycleDir: string): AgentPrLedgerEntry | null {
+  const ledger = readJson(join(cycleDir, 'agent-prs.json'));
+  if (!Array.isArray(ledger)) return null;
+
+  const entries = ledger
+    .filter((entry): entry is AgentPrLedgerEntry => entry !== null && typeof entry === 'object')
+    .filter((entry) => typeof entry.prUrl === 'string' && entry.prUrl.length > 0)
+    .sort((left, right) => {
+      const leftTime = typeof left.openedAt === 'string' ? left.openedAt : '';
+      const rightTime = typeof right.openedAt === 'string' ? right.openedAt : '';
+      return leftTime.localeCompare(rightTime);
+    });
+
+  return entries[0] ?? null;
 }
 
 function readCycleArtifacts(cycleDir: string): Record<string, unknown> {
