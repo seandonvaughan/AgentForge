@@ -73,8 +73,8 @@ export class CodexCliTransport implements ExecutionTransport {
   isAvailable(): boolean {
     const probe =
       process.platform === 'win32'
-        ? spawnSync('where', ['codex'], { stdio: 'ignore' })
-        : spawnSync('which', ['codex'], { stdio: 'ignore' });
+        ? spawnSync('where', ['codex'], { stdio: 'ignore', windowsHide: true })
+        : spawnSync('which', ['codex'], { stdio: 'ignore', windowsHide: true });
     return probe.status === 0;
   }
 
@@ -222,6 +222,7 @@ export class CodexCliTransport implements ExecutionTransport {
           env: { ...process.env },
           cwd,
           stdio: ['pipe', 'pipe', 'pipe'],
+          windowsHide: true,
         });
 
         let stdout = '';
@@ -698,7 +699,7 @@ function buildCodexSpawnCommand(args: string[]): { command: string; args: string
 }
 
 function findWindowsCodexCandidates(): string[] {
-  const probe = spawnSync('where', ['codex'], { encoding: 'utf8' });
+  const probe = spawnSync('where', ['codex'], { encoding: 'utf8', windowsHide: true });
   if (probe.status === 0 && typeof probe.stdout === 'string') {
     return probe.stdout
       .split(/\r?\n/)

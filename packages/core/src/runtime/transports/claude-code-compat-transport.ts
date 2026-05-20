@@ -76,8 +76,8 @@ export class ClaudeCodeCompatTransport implements ExecutionTransport {
 
   isAvailable(): boolean {
     const probe = process.platform === 'win32'
-      ? spawnSync('where', ['claude'], { stdio: 'ignore' })
-      : spawnSync('which', ['claude'], { stdio: 'ignore' });
+      ? spawnSync('where', ['claude'], { stdio: 'ignore', windowsHide: true })
+      : spawnSync('which', ['claude'], { stdio: 'ignore', windowsHide: true });
     return probe.status === 0;
   }
 
@@ -173,6 +173,7 @@ export class ClaudeCodeCompatTransport implements ExecutionTransport {
       const proc = spawn('claude', args, {
         env: { ...process.env },
         stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
       });
 
       let stdout = '';
@@ -263,6 +264,7 @@ export class ClaudeCodeCompatTransport implements ExecutionTransport {
       const proc = spawn('claude', args, {
         env: { ...process.env },
         stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
       });
 
       let stdout = '';

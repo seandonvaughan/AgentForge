@@ -23,6 +23,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { spawn } from 'node:child_process';
 import Database from 'better-sqlite3';
 
 vi.mock('../../../lib/cycle-sessions.js', () => ({
@@ -98,6 +99,7 @@ describe('POST /api/v5/cycles/:id/rerun — Fix 4', () => {
     const body = res.json();
     expect(typeof body.cycleId).toBe('string');
     expect(body.cycleId).not.toBe(SOURCE_ID);
+    expect(vi.mocked(spawn).mock.calls.at(-1)?.[2]?.windowsHide).toBe(true);
   });
 
   it('response includes sourceCycleId pointing to the original', async () => {

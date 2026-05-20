@@ -32,6 +32,7 @@ function runGh(
     const child = spawn('gh', args, {
       cwd: opts.cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
     });
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
@@ -209,6 +210,7 @@ export class PROpener {
       (async () => {
         const result = await execFileAsync('gh', ['api', 'user', '--jq', '.login'], {
           timeout: 10_000,
+          windowsHide: true,
         });
         return result.stdout.toString().trim();
       });
@@ -224,7 +226,7 @@ export class PROpener {
         const result = await execFileAsync(
           'gh',
           ['label', 'list', '--limit', '200', '--json', 'name', '--jq', '.[].name'],
-          { cwd: this.cwd, timeout: 15_000 },
+          { cwd: this.cwd, timeout: 15_000, windowsHide: true },
         );
         return result.stdout
           .toString()
@@ -247,7 +249,7 @@ export class PROpener {
 
   private async requireGhInstalled(): Promise<void> {
     try {
-      await execFileAsync('gh', ['--version'], { timeout: 5_000 });
+      await execFileAsync('gh', ['--version'], { timeout: 5_000, windowsHide: true });
     } catch {
       throw new PROpenerError('gh CLI not installed. See https://cli.github.com');
     }
@@ -255,7 +257,7 @@ export class PROpener {
 
   private async requireGhAuthed(): Promise<void> {
     try {
-      await execFileAsync('gh', ['auth', 'status'], { timeout: 10_000 });
+      await execFileAsync('gh', ['auth', 'status'], { timeout: 10_000, windowsHide: true });
     } catch {
       throw new PROpenerError('gh CLI not authenticated. Run `gh auth login`');
     }

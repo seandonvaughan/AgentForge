@@ -46,14 +46,14 @@ export interface GitAdapter {
 
 export class RealGitAdapter implements GitAdapter {
   createTag(tag: string): void {
-    execFileSync("git", ["tag", tag], { stdio: "pipe" });
+    execFileSync("git", ["tag", tag], { stdio: "pipe", windowsHide: true });
   }
   deleteTag(tag: string): void {
-    try { execFileSync("git", ["tag", "-d", tag], { stdio: "pipe" }); } catch { /* tag may not exist */ }
+    try { execFileSync("git", ["tag", "-d", tag], { stdio: "pipe", windowsHide: true }); } catch { /* tag may not exist */ }
   }
   tagExists(tag: string): boolean {
     try {
-      execFileSync("git", ["rev-parse", tag], { stdio: "pipe" });
+      execFileSync("git", ["rev-parse", tag], { stdio: "pipe", windowsHide: true });
       return true;
     } catch { return false; }
   }

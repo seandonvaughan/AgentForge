@@ -125,6 +125,7 @@ describe('POST /api/v5/cycles — Fix 1: maxAgents, tags, fallbackEnabled', () =
     expect(body.baseBranch).toBe('codex/codex-version');
 
     const spawnMock = vi.mocked(spawn);
+    expect(spawnMock.mock.calls.at(-1)?.[2]?.windowsHide).toBe(true);
     const env = spawnMock.mock.calls.at(-1)?.[2]?.env as NodeJS.ProcessEnv | undefined;
     expect(env?.['AUTONOMOUS_BASE_BRANCH']).toBe('codex/codex-version');
   });

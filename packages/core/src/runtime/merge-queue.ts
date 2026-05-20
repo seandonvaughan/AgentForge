@@ -189,7 +189,7 @@ async function openDraftPr(opts: {
       '--body',
       body,
     ],
-    { cwd: opts.projectRoot },
+    { cwd: opts.projectRoot, windowsHide: true },
   );
 
   // `gh pr create` prints the PR URL on the last non-empty line
@@ -375,7 +375,7 @@ export class MergeQueue {
 
         // All checks green (or no checks) — promote draft → ready
         try {
-          await execFile('gh', ['pr', 'ready', String(prNum)], { cwd: this.projectRoot });
+          await execFile('gh', ['pr', 'ready', String(prNum)], { cwd: this.projectRoot, windowsHide: true });
           console.log(`[MergeQueue:drainAndMerge] PR #${prNum} promoted to ready`);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
@@ -389,7 +389,7 @@ export class MergeQueue {
             await execFile(
               'gh',
               ['pr', 'merge', String(prNum), '--squash', '--delete-branch'],
-              { cwd: this.projectRoot },
+              { cwd: this.projectRoot, windowsHide: true },
             );
             // Atomically update ledger entry to 'merged'
             const updatedEntries = readLedger(ledgerPath).map((e) =>
@@ -428,7 +428,7 @@ export class MergeQueue {
       const out = await execFile(
         'gh',
         ['pr', 'checks', String(prNumber), '--json', 'bucket', '--jq', '.[] | .bucket'],
-        { cwd: this.projectRoot },
+        { cwd: this.projectRoot, windowsHide: true },
       );
       stdout = out.stdout;
     } catch {

@@ -132,6 +132,7 @@ export class GitCheckpoint {
         cwd: this.opts.cwd,
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
       });
     } catch (error) {
       const stderr = readExecStderr(error);

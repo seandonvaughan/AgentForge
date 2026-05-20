@@ -95,7 +95,7 @@ function classifyFiles(files: string[]): ConflictType {
 }
 
 async function git(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
-  return execFile('git', args, { cwd });
+  return execFile('git', args, { cwd, windowsHide: true });
 }
 
 // ---------------------------------------------------------------------------

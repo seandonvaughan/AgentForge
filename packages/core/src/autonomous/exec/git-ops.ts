@@ -45,7 +45,7 @@ function gitWithStdin(
   timeoutMs = 120_000,
 ): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolveP, rejectP) => {
-    const child = spawn('git', args, { cwd });
+    const child = spawn('git', args, { cwd, windowsHide: true });
     let stdout = '';
     let stderr = '';
     const timer = setTimeout(() => {

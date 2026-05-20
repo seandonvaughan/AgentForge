@@ -175,6 +175,7 @@ function checkCodexLogin(): { checked: boolean; ok: boolean | null; message?: st
   const result = spawnSync(command.command, command.args, {
     encoding: 'utf8',
     timeout: 10_000,
+    windowsHide: true,
   });
 
   if (result.error) {
@@ -207,6 +208,7 @@ function checkCodexDoctor(doctorJson?: string): {
     const result = spawnSync(command.command, command.args, {
       encoding: 'utf8',
       timeout: 20_000,
+      windowsHide: true,
     });
 
     if (result.error) {
@@ -286,7 +288,7 @@ function buildCodexSpawnCommand(args: string[]): { command: string; args: string
 }
 
 function findWindowsCodexCandidates(): string[] {
-  const probe = spawnSync('where', ['codex'], { encoding: 'utf8' });
+  const probe = spawnSync('where', ['codex'], { encoding: 'utf8', windowsHide: true });
   if (probe.status === 0 && typeof probe.stdout === 'string') {
     return probe.stdout
       .split(/\r?\n/)

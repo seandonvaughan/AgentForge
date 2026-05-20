@@ -122,6 +122,7 @@ function currentGitBranch(projectRoot: string): string | null {
       cwd: projectRoot,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
+      windowsHide: true,
     }).trim();
     return branch && isSafeGitBranchName(branch) ? branch : null;
   } catch {
@@ -1845,6 +1846,7 @@ export async function cyclesRoutes(
         cwd: reqProjectRoot,
         detached: true,
         stdio: ['ignore', logFd, logFd],
+        windowsHide: true,
         env: {
           ...process.env,
           AGENTFORGE_RUNTIME: 'codex-cli',
@@ -2073,6 +2075,7 @@ export async function cyclesRoutes(
         cwd: reqProjectRoot,
         detached: true,
         stdio: ['ignore', logFd, logFd],
+        windowsHide: true,
         env,
       });
       if (typeof child.once === 'function') {
@@ -2249,6 +2252,7 @@ export async function cyclesRoutes(
         cwd: reqProjectRoot,
         detached: true,
         stdio: ['ignore', logFd, logFd],
+        windowsHide: true,
         env,
       });
       if (typeof child.once === 'function') {

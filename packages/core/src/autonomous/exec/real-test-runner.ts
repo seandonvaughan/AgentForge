@@ -99,6 +99,7 @@ export class RealTestRunner {
         timeout: timeoutMs,
         maxBuffer: 50 * 1024 * 1024,
         env: { ...process.env, CI: '1', NO_COLOR: '1' },
+        windowsHide: true,
       });
       stdout = result.stdout.toString();
       stderr = result.stderr.toString();
@@ -159,6 +160,7 @@ export class RealTestRunner {
         env: { ...process.env, CI: '1', NO_COLOR: '1' },
         stdio: ['ignore', 'pipe', 'pipe'],
         timeout: timeoutMs,
+        windowsHide: true,
       });
 
       const handleLine = (line: string): void => {

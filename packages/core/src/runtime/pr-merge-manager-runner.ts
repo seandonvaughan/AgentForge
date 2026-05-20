@@ -182,7 +182,7 @@ export async function fetchCiChecks(
     const { stdout } = await execFile(
       'gh',
       ['pr', 'checks', String(prNumber), '--json', 'bucket,name'],
-      { cwd: projectRoot },
+      { cwd: projectRoot, windowsHide: true },
     );
     const parsed: unknown = JSON.parse(stdout);
     if (!Array.isArray(parsed)) return [];
@@ -310,7 +310,7 @@ async function executeDecision(
       const { stdout } = await execFile(
         'gh',
         ['pr', 'merge', String(prNumber), '--squash', '--auto'],
-        { cwd: projectRoot },
+        { cwd: projectRoot, windowsHide: true },
       );
       return { prNumber, action, ghOutput: stdout.trim() };
     } catch (err) {
@@ -324,7 +324,7 @@ async function executeDecision(
       const { stdout } = await execFile(
         'gh',
         ['pr', 'comment', String(prNumber), '--body', decision.comment],
-        { cwd: projectRoot },
+        { cwd: projectRoot, windowsHide: true },
       );
       return { prNumber, action, ghOutput: stdout.trim() };
     } catch (err) {

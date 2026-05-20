@@ -125,6 +125,7 @@ export type ExecFileAsyncFn = (
     maxBuffer: number;
     env: Record<string, string | undefined>;
     windowsVerbatimArguments?: boolean;
+    windowsHide?: boolean;
   },
 ) => Promise<{ stdout: string | Buffer; stderr: string | Buffer }>;
 
@@ -160,6 +161,7 @@ export async function runPreVerifyTypeCheck(
         timeout: 5 * 60_000,
         maxBuffer: 50 * 1024 * 1024,
         env: { ...process.env, CI: '1', NO_COLOR: '1' },
+        windowsHide: true,
         ...(invocation.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
       });
     } catch (err: unknown) {
@@ -184,6 +186,7 @@ export async function runPreVerifyTypeCheck(
         timeout: 3 * 60_000,
         maxBuffer: 50 * 1024 * 1024,
         env: { ...process.env, CI: '1', NO_COLOR: '1' },
+        windowsHide: true,
         ...(invocation.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
       });
       // On success, result.stdout / result.stderr may still contain warnings.

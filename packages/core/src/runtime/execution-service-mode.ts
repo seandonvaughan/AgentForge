@@ -33,16 +33,16 @@ const VALID_MODES = new Set<ExecutionServiceMode>([
 function isCliAvailable(): boolean {
   const probe =
     process.platform === 'win32'
-      ? spawnSync('where', ['claude'], { stdio: 'ignore' })
-      : spawnSync('which', ['claude'], { stdio: 'ignore' });
+      ? spawnSync('where', ['claude'], { stdio: 'ignore', windowsHide: true })
+      : spawnSync('which', ['claude'], { stdio: 'ignore', windowsHide: true });
   return probe.status === 0;
 }
 
 function isCodexCliAvailable(): boolean {
   const probe =
     process.platform === 'win32'
-      ? spawnSync('where', ['codex'], { stdio: 'ignore' })
-      : spawnSync('which', ['codex'], { stdio: 'ignore' });
+      ? spawnSync('where', ['codex'], { stdio: 'ignore', windowsHide: true })
+      : spawnSync('which', ['codex'], { stdio: 'ignore', windowsHide: true });
   return probe.status === 0;
 }
 

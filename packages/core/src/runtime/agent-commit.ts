@@ -71,7 +71,7 @@ type AgentCommitBus = MessageBusV2 | PhaseBusLike;
 
 /** Run a git command in the given directory using execFile (never exec). */
 async function git(cwd: string, args: string[]): Promise<string> {
-  const { stdout } = await execFile('git', ['-C', cwd, ...args]);
+  const { stdout } = await execFile('git', ['-C', cwd, ...args], { windowsHide: true });
   return stdout.trim();
 }
 

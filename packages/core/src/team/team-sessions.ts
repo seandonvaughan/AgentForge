@@ -100,6 +100,7 @@ function getCurrentCommit(projectRoot: string): string {
       cwd: projectRoot,
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'ignore'],
+      windowsHide: true,
     }).trim();
   } catch {
     return '';

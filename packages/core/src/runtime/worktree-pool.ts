@@ -28,7 +28,7 @@ function realPath(p: string): string {
 }
 
 async function git(cwd: string, args: string[]): Promise<string> {
-  const { stdout } = await execFile('git', args, { cwd });
+  const { stdout } = await execFile('git', args, { cwd, windowsHide: true });
   return stdout;
 }
 
