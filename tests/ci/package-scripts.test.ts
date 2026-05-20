@@ -156,6 +156,26 @@ describe('package scripts', () => {
     });
   });
 
+  it('does not split command chains on && inside quoted leaf commands', async () => {
+    const observed: string[] = [];
+    const harness = new ScriptPipelineHarness(
+      {
+        parent: 'echo "alpha && beta" && pnpm run child',
+        child: "echo 'gamma && delta'",
+      },
+      (command) => {
+        observed.push(command);
+        return 0;
+      },
+    );
+
+    const result = await harness.run('parent');
+
+    expect(result.ok).toBe(true);
+    expect(result.trace).toEqual(['echo "alpha && beta"', "echo 'gamma && delta'"]);
+    expect(observed).toEqual(result.trace);
+  });
+
   it('rejects circular and missing script references', async () => {
     const circular = new ScriptPipelineHarness({ a: 'pnpm b', b: 'pnpm a' }, () => 0);
     const missing = new ScriptPipelineHarness({ a: 'pnpm run b' }, () => 0);
