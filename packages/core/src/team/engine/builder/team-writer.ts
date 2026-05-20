@@ -10,8 +10,10 @@
  * team_size, version, and other custom metadata are never lost.
  */
 
-import { mkdir, writeFile, readFile } from "node:fs/promises";
+import { mkdir, writeFile, readFile, rename } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import yaml from "js-yaml";
 
 import type { AgentTemplate } from "../types/agent.js";
@@ -264,6 +266,22 @@ async function ensureDir(dirPath: string): Promise<void> {
   await mkdir(dirPath, { recursive: true });
 }
 
+const YAML_DUMP_OPTS: yaml.DumpOptions = {
+  lineWidth: 120,
+  noRefs: true,
+  sortKeys: false,
+};
+
+async function writeAtomic(filePath: string, content: string): Promise<void> {
+  const tmpPath = join(tmpdir(), `agentforge-${randomBytes(8).toString("hex")}.tmp`);
+  await writeFile(tmpPath, content, "utf-8");
+  await rename(tmpPath, filePath);
+}
+
+async function writeYamlAtomic(filePath: string, value: unknown): Promise<void> {
+  await writeAtomic(filePath, yaml.dump(value, YAML_DUMP_OPTS));
+}
+
 /** Build a {@link ModelRouting} from the manifest's agent lists and agent templates. */
 function buildModelRouting(
   manifest: TeamManifest,
@@ -451,11 +469,7 @@ export async function writeTeam(
   // Write all files in parallel
   await Promise.all([
     // team.yaml
-    writeFile(
-      join(baseDir, "team.yaml"),
-      yaml.dump(fullManifest, { lineWidth: 120, noRefs: true }),
-      "utf-8",
-    ),
+    writeYamlAtomic(join(baseDir, "team.yaml"), fullManifest),
 
     // forge.log
     writeFile(join(baseDir, "forge.log"), forgeLog, "utf-8"),
@@ -468,38 +482,22 @@ export async function writeTeam(
     ),
 
     // config/models.yaml
-    writeFile(
-      join(configDir, "models.yaml"),
-      yaml.dump(modelsConfig, { lineWidth: 120, noRefs: true }),
-      "utf-8",
-    ),
+    writeYamlAtomic(join(configDir, "models.yaml"), modelsConfig),
 
     // config/delegation.yaml
-    writeFile(
-      join(configDir, "delegation.yaml"),
-      yaml.dump(delegationGraph, { lineWidth: 120, noRefs: true }),
-      "utf-8",
-    ),
+    writeYamlAtomic(join(configDir, "delegation.yaml"), delegationGraph),
 
     // config/teams.yaml — team units organized by layer (v6.1+)
     ...(fullManifest.team_units && fullManifest.team_units.length > 0
       ? [
-          writeFile(
-            join(configDir, "teams.yaml"),
-            yaml.dump(fullManifest.team_units, { lineWidth: 120, noRefs: true }),
-            "utf-8",
-          ),
+          writeYamlAtomic(join(configDir, "teams.yaml"), fullManifest.team_units),
         ]
       : []),
 
     // config/topology.yaml — written only when collaboration data is present
     ...(fullManifest.collaboration
       ? [
-          writeFile(
-            join(configDir, "topology.yaml"),
-            yaml.dump(fullManifest.collaboration, { lineWidth: 120, noRefs: true }),
-            "utf-8",
-          ),
+          writeYamlAtomic(join(configDir, "topology.yaml"), fullManifest.collaboration),
         ]
       : []),
 
@@ -513,9 +511,9 @@ export async function writeTeam(
           const merged = existingReportsTo && existingReportsTo !== template.collaboration.reports_to
             ? { ...template, collaboration: { ...template.collaboration, reports_to: existingReportsTo } }
             : template;
-          return writeFile(existingPath, yaml.dump(merged, { lineWidth: 120, noRefs: true }), "utf-8");
+          return writeYamlAtomic(existingPath, merged);
         })
-        .catch(() => writeFile(existingPath, yaml.dump(template, { lineWidth: 120, noRefs: true }), "utf-8"));
+        .catch(() => writeYamlAtomic(existingPath, template));
     }),
   ]);
 }

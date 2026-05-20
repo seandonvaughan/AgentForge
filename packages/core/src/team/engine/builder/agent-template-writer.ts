@@ -17,6 +17,7 @@ import type { TeamPlanAgent } from "./synthesis.js";
 const DUMP_OPTS: yaml.DumpOptions = {
   lineWidth: 120,
   noRefs: true,
+  sortKeys: false,
 };
 
 /** Map an agent tier to its default reasoning-effort level. */

@@ -1,8 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import { join, dirname } from 'node:path';
+import { tmpdir } from 'node:os';
+import { randomBytes } from 'node:crypto';
 import {
   readFileSync,
   writeFileSync,
+  renameSync,
   statSync,
   unlinkSync,
   existsSync,
@@ -109,7 +112,17 @@ function readYaml<T>(filePath: string): T {
 }
 
 function writeYaml(filePath: string, data: unknown): void {
-  writeFileSync(filePath, yaml.dump(data, { lineWidth: 120 }), 'utf-8');
+  const dumped = yaml.dump(data, {
+    lineWidth: 120,
+    noRefs: true,
+    sortKeys: false,
+  });
+  const tmpPath = join(
+    tmpdir(),
+    `agentforge-${randomBytes(8).toString('hex')}.tmp`,
+  );
+  writeFileSync(tmpPath, dumped, 'utf-8');
+  renameSync(tmpPath, filePath);
 }
 
 /**
@@ -346,7 +359,12 @@ export async function agentCrudRoutes(
         });
       }
 
-      writeFileSync(filePath, yamlContent, 'utf-8');
+      const tmpPath = join(
+        tmpdir(),
+        `agentforge-${randomBytes(8).toString('hex')}.tmp`,
+      );
+      writeFileSync(tmpPath, yamlContent, 'utf-8');
+      renameSync(tmpPath, filePath);
 
       // Audit log
       appendAuditEntry(auditDb, {

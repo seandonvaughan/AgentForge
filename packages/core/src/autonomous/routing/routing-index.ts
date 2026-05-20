@@ -9,6 +9,7 @@
 
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import yaml from 'js-yaml';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -29,46 +30,14 @@ export interface RoutingIndex {
   team_name: string;
 }
 
-// ---------------------------------------------------------------------------
-// Internal YAML parsing (intentionally lightweight — no js-yaml dep)
-// ---------------------------------------------------------------------------
-
-/**
- * A minimal YAML scalar-list reader that understands:
- *   key: [val1, val2, ...]
- *   key:
- *     - val1
- *     - val2
- * Only reads string values. Ignores nested structures.
- */
-function readYamlStringList(content: string, key: string): string[] {
-  // Inline list: key: [a, b, c]
-  const inlineRe = new RegExp(`^${key}:\\s*\\[([^\\]\\n]*)\\]`, 'm');
-  const inlineMatch = inlineRe.exec(content);
-  if (inlineMatch?.[1]) {
-    return inlineMatch[1]
-      .split(',')
-      .map((s) => s.replace(/['"]/g, '').trim())
-      .filter(Boolean);
-  }
-
-  // Block list: key:\n  - val\n  - val
-  const blockRe = new RegExp(`^${key}:\\s*\\n((?:[ \\t]+-[^\\n]*\\n?)*)`, 'm');
-  const blockMatch = blockRe.exec(content);
-  if (blockMatch?.[1]) {
-    return blockMatch[1]
-      .split('\n')
-      .map((line) => line.replace(/^[ \t]+-\s*/, '').replace(/['"]/g, '').trim())
-      .filter(Boolean);
-  }
-
-  return [];
+function asRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
 }
 
-function readYamlScalar(content: string, key: string): string | undefined {
-  const re = new RegExp(`^${key}:\\s*['"]?([^'"\\n]+)['"]?`, 'm');
-  const match = re.exec(content);
-  return match?.[1]?.trim();
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }
 
 // ---------------------------------------------------------------------------
@@ -120,8 +89,8 @@ export function buildRoutingIndex(opts: BuildRoutingIndexOptions): RoutingIndex 
   let teamName = 'default';
   if (teamPath && existsSync(teamPath)) {
     const teamContent = readFileSync(teamPath, 'utf8');
-    const parsed = readYamlScalar(teamContent, 'name');
-    if (parsed) teamName = parsed;
+    const parsed = asRecord(yaml.load(teamContent));
+    if (typeof parsed.name === 'string' && parsed.name.trim()) teamName = parsed.name.trim();
   }
 
   // Collect all agent YAMLs
@@ -145,9 +114,10 @@ export function buildRoutingIndex(opts: BuildRoutingIndexOptions): RoutingIndex 
       continue;
     }
 
-    const capability_tags = readYamlStringList(content, 'capability_tags');
-    const owns_subsystems = readYamlStringList(content, 'owns_subsystems');
-    const modelRaw = readYamlScalar(content, 'model');
+    const parsed = asRecord(yaml.load(content));
+    const capability_tags = asStringArray(parsed.capability_tags);
+    const owns_subsystems = asStringArray(parsed.owns_subsystems);
+    const modelRaw = typeof parsed.model === 'string' ? parsed.model : undefined;
     const tier = parseTier(modelRaw);
     const priority = computePriority(capability_tags, owns_subsystems);
 
