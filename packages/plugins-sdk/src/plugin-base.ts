@@ -1,13 +1,18 @@
 import { JsonRpcRequest, JsonRpcResponse, JsonRpcNotification } from './types.js';
 
 export abstract class PluginBase {
-  private pendingRequests = new Map<string | number, { resolve: Function; reject: Function }>();
+  private pendingRequests = new Map<string | number, { resolve: (value: any) => void; reject: (reason?: unknown) => void }>();
   private requestCounter = 0;
+  private incomingBuffer = '';
 
   constructor() {
     process.stdin.setEncoding('utf-8');
     process.stdin.on('data', (chunk: string) => this._handleIncoming(chunk));
     process.on('uncaughtException', (err) => this._sendError('uncaughtException', err.message));
+    process.on('unhandledRejection', (err) => {
+      const message = err instanceof Error ? err.message : String(err);
+      this._sendError('unhandledRejection', message);
+    });
   }
 
   /** Override to handle hook events from the host. */
@@ -30,7 +35,11 @@ export abstract class PluginBase {
   }
 
   private _handleIncoming(chunk: string): void {
-    for (const line of chunk.split('\n').filter(l => l.trim())) {
+    this.incomingBuffer += chunk;
+    const lines = this.incomingBuffer.split('\n');
+    this.incomingBuffer = lines.pop() ?? '';
+
+    for (const line of lines.filter(l => l.trim())) {
       try {
         const msg = JSON.parse(line) as JsonRpcResponse | JsonRpcRequest;
         if ('result' in msg || 'error' in msg) {

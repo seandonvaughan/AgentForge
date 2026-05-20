@@ -7,6 +7,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PluginHost } from '../../packages/plugins-sdk/src/plugin-host.js';
+import { validatePluginManifest } from '../../packages/plugins-sdk/src/manifest.js';
 import type {
   PluginManifest,
   PluginPermission,
@@ -168,6 +169,28 @@ describe('PluginHost — load()', () => {
     expect(instance.manifest.name).toBe('Manifest Plugin');
     expect(instance.manifest.version).toBe('2.0.0');
   });
+
+  it('load() rejects invalid permissions in manifest', async () => {
+    const invalidManifest = {
+      id: 'invalid-perms',
+      name: 'Invalid Perms',
+      version: '1.0.0',
+      description: 'bad permission',
+      entrypoint: 'index.js',
+      permissions: ['filesystem:read', 'root:write'],
+      hooks: [],
+      skills: [],
+    };
+
+    const { writeFile, mkdtemp } = await import('node:fs/promises');
+    const { join } = await import('node:path');
+    const { tmpdir } = await import('node:os');
+    const dir = await mkdtemp(join(tmpdir(), 'plugin-test-'));
+    const manifestPath = join(dir, 'plugin.json');
+    await writeFile(manifestPath, JSON.stringify(invalidManifest));
+
+    await expect(host.load(manifestPath)).rejects.toThrow('supported permission');
+  });
 });
 
 // ── JSON-RPC 2.0 message types ────────────────────────────────────────────────
@@ -284,5 +307,40 @@ describe('PluginManifest validation', () => {
   it('PluginStatus covers all lifecycle states', () => {
     const statuses: PluginStatus[] = ['stopped', 'starting', 'running', 'error', 'stopping'];
     expect(statuses.length).toBe(5);
+  });
+
+  it('validatePluginManifest parses optional marketplace and compatibility metadata', () => {
+    const manifest = validatePluginManifest({
+      id: 'meta-plugin',
+      name: 'Meta Plugin',
+      version: '1.0.0',
+      description: 'Metadata test plugin',
+      entrypoint: 'dist/index.js',
+      permissions: ['network'],
+      hooks: [],
+      skills: [],
+      compatibility: { minAgentforgeVersion: '10.0.0', node: '>=22' },
+      marketplace: {
+        tags: ['marketplace', 'security'],
+        category: 'observability',
+        license: 'MIT',
+        homepage: 'https://example.com/meta-plugin',
+        repository: { type: 'git', url: 'https://github.com/example/meta-plugin' },
+        keywords: ['agentforge', 'plugin'],
+      },
+    });
+
+    expect(manifest.marketplace?.category).toBe('observability');
+    expect(manifest.compatibility?.node).toBe('>=22');
+  });
+
+  it('validatePluginManifest rejects missing required fields', () => {
+    expect(() => validatePluginManifest({
+      id: 'broken',
+      name: 'Broken Plugin',
+      permissions: [],
+      hooks: [],
+      skills: [],
+    })).toThrow('manifest.version');
   });
 });

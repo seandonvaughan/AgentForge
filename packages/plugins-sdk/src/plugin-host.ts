@@ -2,6 +2,7 @@ import { fork, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { validatePluginManifest } from './manifest.js';
 import type { PluginManifest, PluginInstance, PluginStatus, JsonRpcRequest, JsonRpcResponse } from './types.js';
 
 export class PluginHost extends EventEmitter {
@@ -11,7 +12,7 @@ export class PluginHost extends EventEmitter {
 
   async load(manifestPath: string): Promise<PluginInstance> {
     const raw = await readFile(manifestPath, 'utf-8');
-    const manifest: PluginManifest = JSON.parse(raw);
+    const manifest: PluginManifest = validatePluginManifest(JSON.parse(raw) as unknown);
 
     if (this.instances.has(manifest.id)) {
       throw new Error(`Plugin ${manifest.id} already loaded`);
