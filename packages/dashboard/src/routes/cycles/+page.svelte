@@ -1,7 +1,14 @@
 <script lang="ts">
+  import { browser } from '$app/environment';
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import { withWorkspace } from '$lib/stores/workspace';
+  import {
+    withWorkspace,
+    currentWorkspaceId,
+    workspaces,
+    loadWorkspaces,
+    selectWorkspace,
+  } from '$lib/stores/workspace';
   import { relativeTime, formatDuration } from '$lib/util/relative-time';
   import {
     Btn, Card, Badge, KpiTile, StageDots, PulseDot,
@@ -31,6 +38,23 @@
     dryRun?: boolean | null;
   }
 
+  interface WorkspaceSummaryRow {
+    workspaceId: string;
+    name: string;
+    totalCostUsd: number;
+    sessionCount: number;
+    activeAgents: number;
+    lastActivityAt: string;
+  }
+
+  interface WorkspaceSummaryView {
+    workspaces: WorkspaceSummaryRow[];
+    combinedCostUsd: number;
+    combinedSessionCount: number;
+    highestCostWorkspaceId: string | null;
+    generatedAt: string;
+  }
+
   type StageBrick = 'pending' | 'active' | 'done' | 'failed';
   type FilterId = 'all' | 'active' | 'success' | 'failed';
   type SortCol = 'startedAt' | 'cost' | 'duration' | 'stage' | 'tests' | 'cycle' | 'sprint';
@@ -53,6 +77,20 @@
   let comparing = $state(false);
   let searchQ = $state('');
   let costThreshold = $state<number | null>(null);
+  let wsSummary = $state<WorkspaceSummaryView | null>(null);
+  let wsSummaryLoading = $state(true);
+  let wsSummaryError = $state<string | null>(null);
+
+  const workspaceRows = $derived.by<WorkspaceSummaryRow[]>(() => {
+    return [...(wsSummary?.workspaces ?? [])]
+      .sort((a, b) => b.totalCostUsd - a.totalCostUsd);
+  });
+
+  const activeWorkspaceLabel = $derived.by<string>(() => {
+    if (!$currentWorkspaceId) return 'server default';
+    const ws = $workspaces.find((item) => item.id === $currentWorkspaceId);
+    return ws?.name ?? $currentWorkspaceId;
+  });
 
   async function loadCycles(): Promise<void> {
     try {
@@ -69,18 +107,50 @@
     }
   }
 
+  async function loadWorkspaceSummary(): Promise<void> {
+    try {
+      const res = await fetch('/api/v5/workspaces/summary');
+      if (!res.ok) { wsSummaryError = `HTTP ${res.status}`; return; }
+      const json = (await res.json()) as { data?: WorkspaceSummaryView };
+      wsSummary = json.data ?? null;
+      wsSummaryError = null;
+    } catch (e) {
+      wsSummaryError = e instanceof Error ? e.message : String(e);
+    } finally {
+      wsSummaryLoading = false;
+    }
+  }
+
+  function refreshAll(): void {
+    loading = true;
+    wsSummaryLoading = true;
+    void loadCycles();
+    void loadWorkspaceSummary();
+  }
+
+  function switchWorkspace(id: string | null): void {
+    selectWorkspace(id);
+    loading = true;
+    void loadCycles();
+  }
+
   function hasActive(): boolean {
     return cycles.some((c) => !TERMINAL.has((c.stage ?? '').toLowerCase()));
   }
 
   function managePolling(): void {
-    const paused = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+    const paused = browser && document.visibilityState === 'hidden';
     if (paused) {
       if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
       return;
     }
     if (hasActive()) {
-      if (!pollTimer) pollTimer = setInterval(loadCycles, POLL_MS);
+      if (!pollTimer) {
+        pollTimer = setInterval(() => {
+          void loadCycles();
+          void loadWorkspaceSummary();
+        }, POLL_MS);
+      }
     } else if (pollTimer) {
       clearInterval(pollTimer);
       pollTimer = null;
@@ -268,15 +338,16 @@
   }
 
   onMount(() => {
-    void loadCycles();
-    if (typeof document !== 'undefined') {
+    void loadWorkspaces();
+    refreshAll();
+    if (browser) {
       document.addEventListener('visibilitychange', onVisibilityChange);
     }
   });
 
   onDestroy(() => {
     if (pollTimer) clearInterval(pollTimer);
-    if (typeof document !== 'undefined') {
+    if (browser) {
       document.removeEventListener('visibilitychange', onVisibilityChange);
     }
   });
@@ -288,7 +359,10 @@
   <div>
     <div class="crumbs af2-mono">Workspace · Cycles</div>
     <h1 class="page-title">Cycles</h1>
-    <p class="page-sub"><span class="af2-mono">{cycles.length}</span> total · autonomous sprint history</p>
+    <p class="page-sub">
+      <span class="af2-mono">{cycles.length}</span> total · scope
+      <span class="af2-mono">{activeWorkspaceLabel}</span> · autonomous sprint history
+    </p>
   </div>
   <div class="head-actions">
     <div class="density-toggle">
@@ -303,7 +377,7 @@
         >{ic}</button>
       {/each}
     </div>
-    <Btn size="sm" onClick={loadCycles}>{loading ? 'Refreshing…' : 'Refresh'}</Btn>
+    <Btn size="sm" onClick={refreshAll}>{loading || wsSummaryLoading ? 'Refreshing…' : 'Refresh'}</Btn>
     <Btn size="sm" variant="purple" href="/cycles/new">+ New Cycle</Btn>
   </div>
 </div>
@@ -316,6 +390,85 @@
     </div>
   </Card>
 {/if}
+
+<Card style="margin-bottom:12px">
+  <div class="ws-summary-head">
+    <div>
+      <div class="ws-kicker">WORKSPACE SCOPE</div>
+      <div class="ws-summary-sub">
+        Compare operational metrics across all registered workspaces, then switch this view instantly.
+      </div>
+    </div>
+    <a class="ws-manage-link" href="/workspaces">Manage workspaces →</a>
+  </div>
+
+  <div class="ws-switch-row">
+    <button
+      type="button"
+      class="ws-switch-chip"
+      class:ws-switch-chip-active={$currentWorkspaceId == null}
+      onclick={() => switchWorkspace(null)}
+    >
+      server default
+    </button>
+    {#each $workspaces as ws (ws.id)}
+      <button
+        type="button"
+        class="ws-switch-chip"
+        class:ws-switch-chip-active={$currentWorkspaceId === ws.id}
+        onclick={() => switchWorkspace(ws.id)}
+      >
+        {ws.name}
+      </button>
+    {/each}
+  </div>
+
+  {#if wsSummaryError}
+    <div class="ws-summary-error">
+      <span>Couldn&rsquo;t load workspace summary: <code>{wsSummaryError}</code></span>
+      <Btn size="sm" onClick={loadWorkspaceSummary}>Retry</Btn>
+    </div>
+  {:else if wsSummaryLoading && workspaceRows.length === 0}
+    <div class="ws-summary-skel"></div>
+  {:else if workspaceRows.length === 0}
+    <div class="ws-summary-empty">No workspace metrics available yet.</div>
+  {:else}
+    <div class="ws-summary-kpis">
+      <KpiTile label="Workspaces" value={workspaceRows.length} color="var(--af-text)" />
+      <KpiTile label="Combined cost" value={`$${(wsSummary?.combinedCostUsd ?? 0).toFixed(2)}`} color="var(--af-purple)" />
+      <KpiTile label="Combined sessions" value={wsSummary?.combinedSessionCount ?? 0} color="var(--af-accent2)" />
+      <KpiTile
+        label="Highest cost"
+        value={workspaceRows.find((ws) => ws.workspaceId === wsSummary?.highestCostWorkspaceId)?.name ?? '—'}
+        color="var(--af-warning)"
+      />
+    </div>
+
+    <div class="ws-summary-grid">
+      {#each workspaceRows as ws (ws.workspaceId)}
+        {@const isCurrent = $currentWorkspaceId === ws.workspaceId}
+        <button
+          type="button"
+          class="ws-summary-card"
+          class:ws-summary-card-active={isCurrent}
+          onclick={() => switchWorkspace(ws.workspaceId)}
+        >
+          <div class="ws-summary-card-top">
+            <span class="ws-summary-name">{ws.name}</span>
+            {#if isCurrent}<Badge variant="purple">active</Badge>{/if}
+          </div>
+          <div class="ws-summary-card-id af2-mono">{ws.workspaceId}</div>
+          <div class="ws-summary-card-stats">
+            <span class="af2-mono">${ws.totalCostUsd.toFixed(2)}</span>
+            <span class="af2-mono">{ws.sessionCount} sessions</span>
+            <span class="af2-mono">{ws.activeAgents} active</span>
+          </div>
+          <div class="ws-summary-card-time">Last activity: {relativeTime(ws.lastActivityAt)}</div>
+        </button>
+      {/each}
+    </div>
+  {/if}
+</Card>
 
 <div class="stats-strip">
   <KpiTile label="Total" value={stats.total} color="var(--af-text)" sparkline={passRateSpark} />
@@ -651,6 +804,137 @@
   }
   .page-sub { font-size: 12px; color: var(--af-dim); margin: 4px 0 0; }
   .head-actions { display: flex; gap: 8px; align-items: center; }
+  .ws-summary-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .ws-kicker {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--af-dim);
+    letter-spacing: 0.08em;
+  }
+  .ws-summary-sub {
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--af-muted);
+  }
+  .ws-manage-link {
+    font-size: 11px;
+    color: var(--af-accent2);
+    text-decoration: none;
+  }
+  .ws-manage-link:hover { text-decoration: underline; }
+  .ws-switch-row {
+    margin-top: 10px;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .ws-switch-chip {
+    border: 1px solid var(--af-border2);
+    background: var(--af-surface);
+    color: var(--af-muted);
+    border-radius: 999px;
+    font-size: 11px;
+    padding: 5px 10px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .ws-switch-chip-active {
+    border-color: color-mix(in srgb, var(--af-purple) 45%, transparent);
+    color: var(--af-text);
+    background: color-mix(in srgb, var(--af-purple) 10%, transparent);
+  }
+  .ws-summary-error {
+    margin-top: 12px;
+    color: var(--af-danger);
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .ws-summary-error code {
+    font-family: var(--af-font-mono, 'JetBrains Mono', monospace);
+    background: color-mix(in srgb, var(--af-danger) 12%, transparent);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+  .ws-summary-skel {
+    margin-top: 12px;
+    height: 60px;
+    border-radius: 8px;
+    background: linear-gradient(90deg, var(--af-surface) 0%, var(--af-surface2) 50%, var(--af-surface) 100%);
+    background-size: 200% 100%;
+    animation: skel 1.4s linear infinite;
+  }
+  .ws-summary-empty {
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--af-dim);
+  }
+  .ws-summary-kpis {
+    margin-top: 12px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+  }
+  .ws-summary-grid {
+    margin-top: 10px;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+  .ws-summary-card {
+    border: 1px solid var(--af-border2);
+    background: var(--af-surface);
+    border-radius: 8px;
+    padding: 10px;
+    text-align: left;
+    color: var(--af-text);
+    cursor: pointer;
+    transition: border-color 150ms ease, background 150ms ease;
+  }
+  .ws-summary-card:hover {
+    border-color: color-mix(in srgb, var(--af-purple) 40%, transparent);
+    background: color-mix(in srgb, var(--af-surface2) 55%, transparent);
+  }
+  .ws-summary-card-active {
+    border-color: color-mix(in srgb, var(--af-purple) 45%, transparent);
+    background: color-mix(in srgb, var(--af-purple) 8%, transparent);
+  }
+  .ws-summary-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .ws-summary-name {
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .ws-summary-card-id {
+    margin-top: 3px;
+    font-size: 10px;
+    color: var(--af-faint);
+  }
+  .ws-summary-card-stats {
+    margin-top: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    font-size: 11px;
+    color: var(--af-muted);
+  }
+  .ws-summary-card-time {
+    margin-top: 7px;
+    font-size: 10px;
+    color: var(--af-dim);
+  }
   .density-toggle {
     display: flex;
     background: var(--af-surface);
@@ -673,6 +957,10 @@
     grid-template-columns: repeat(5, 1fr);
     gap: 8px;
     margin-bottom: 12px;
+  }
+  @media (max-width: 1100px) {
+    .ws-summary-kpis { grid-template-columns: repeat(2, 1fr); }
+    .ws-summary-grid { grid-template-columns: 1fr; }
   }
   @media (max-width: 1100px) { .stats-strip { grid-template-columns: repeat(2, 1fr); } }
   .filter-bar {
