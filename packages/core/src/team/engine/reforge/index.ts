@@ -6,8 +6,9 @@
  * agent team should be updated.
  */
 
-import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { readFile, writeFile, mkdir, rename, unlink } from "node:fs/promises";
+import { join, dirname, basename } from "node:path";
+import { randomBytes } from "node:crypto";
 import yaml from "js-yaml";
 import type { DomainId } from "../types/domain.js";
 
@@ -249,7 +250,11 @@ export async function migrateV1ToV2(projectRoot: string): Promise<void> {
     throw new Error("No team.yaml found. Run 'agentforge forge' first.");
   }
 
-  const manifest = yaml.load(raw) as Record<string, unknown>;
+  const parsed = yaml.load(raw);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("team.yaml must contain a YAML mapping.");
+  }
+  const manifest = parsed as Record<string, unknown>;
 
   let modified = false;
 
@@ -269,7 +274,22 @@ export async function migrateV1ToV2(projectRoot: string): Promise<void> {
   }
 
   if (modified) {
-    await writeFile(teamPath, yaml.dump(manifest), "utf-8");
+    const content = yaml.dump(manifest, {
+      lineWidth: 120,
+      noRefs: true,
+      sortKeys: false,
+    });
+    const tmpPath = join(
+      dirname(teamPath),
+      `.${basename(teamPath)}.${randomBytes(6).toString("hex")}.tmp`,
+    );
+    await writeFile(tmpPath, content, "utf-8");
+    try {
+      await rename(tmpPath, teamPath);
+    } catch (err) {
+      try { await unlink(tmpPath); } catch { /* ignore */ }
+      throw err;
+    }
   }
 }
 
@@ -283,6 +303,14 @@ export async function reforgeTeam(projectRoot: string): Promise<TeamDiff> {
   const agentforgeDir = join(projectRoot, ".agentforge");
   const scanPath = join(agentforgeDir, "analysis", "project-scan.json");
   const teamPath = join(agentforgeDir, "team.yaml");
+
+  function parseTeamManifest(raw: string): TeamManifest {
+    const parsed = yaml.load(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("team.yaml must contain a YAML mapping.");
+    }
+    return parsed as TeamManifest;
+  }
 
   // 1. Read existing scan
   let oldScan: FullScanResult;
@@ -299,7 +327,7 @@ export async function reforgeTeam(projectRoot: string): Promise<TeamDiff> {
   let oldManifest: TeamManifest;
   try {
     const raw = await readFile(teamPath, "utf-8");
-    oldManifest = yaml.load(raw) as TeamManifest;
+    oldManifest = parseTeamManifest(raw);
   } catch {
     throw new Error(
       "No existing team manifest found. Run 'agentforge forge' first.",
@@ -311,7 +339,7 @@ export async function reforgeTeam(projectRoot: string): Promise<TeamDiff> {
     await migrateV1ToV2(projectRoot);
     // Re-read the updated manifest
     const raw = await readFile(teamPath, "utf-8");
-    oldManifest = yaml.load(raw) as TeamManifest;
+    oldManifest = parseTeamManifest(raw);
   }
 
   // 3. Run a fresh scan

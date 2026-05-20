@@ -7,9 +7,10 @@
  * Uses a temporary project root for hermeticity.
  */
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import yaml from 'js-yaml';
 import { createServerV5 } from '../../../server.js';
 
 let createdApps: Array<{ close: () => Promise<void> }> = [];
@@ -133,7 +134,7 @@ describe('PUT /api/v5/agents/:id/raw', () => {
 
     expect(res.statusCode).toBe(200);
     const body = res.json<{ data: { yaml: string; agentId: string } }>();
-    expect(body.data.yaml).toBe(newYaml);
+    expect(yaml.load(body.data.yaml)).toEqual(yaml.load(newYaml));
     expect(body.data.agentId).toBe('edit-agent');
   });
 
@@ -156,11 +157,12 @@ describe('PUT /api/v5/agents/:id/raw', () => {
     const getRes = await app.inject({ method: 'GET', url: '/api/v5/agents/roundtrip/raw' });
     expect(getRes.statusCode).toBe(200);
     const body = getRes.json<{ data: { yaml: string } }>();
-    expect(body.data.yaml).toBe(editedYaml);
+    expect(yaml.load(body.data.yaml)).toEqual(yaml.load(editedYaml));
 
     // Also verify the file on disk
     const onDisk = readFileSync(join(agentsDir, 'roundtrip.yaml'), 'utf-8');
-    expect(onDisk).toBe(editedYaml);
+    expect(yaml.load(onDisk)).toEqual(yaml.load(editedYaml));
+    expect(readdirSync(agentsDir).some((name) => name.endsWith('.tmp'))).toBe(false);
   });
 
   it('rejects malformed YAML with 400', async () => {

@@ -1,14 +1,16 @@
 import type { FastifyInstance } from 'fastify';
-import { join, dirname } from 'node:path';
+import { join, dirname, basename } from 'node:path';
 import {
   readFileSync,
   writeFileSync,
+  renameSync,
   statSync,
   unlinkSync,
   existsSync,
   mkdirSync,
   readdirSync,
 } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 import { globalStream } from './stream.js';
@@ -109,7 +111,18 @@ function readYaml<T>(filePath: string): T {
 }
 
 function writeYaml(filePath: string, data: unknown): void {
-  writeFileSync(filePath, yaml.dump(data, { lineWidth: 120 }), 'utf-8');
+  const tmpPath = join(
+    dirname(filePath),
+    `.${basename(filePath)}.${randomBytes(6).toString('hex')}.tmp`,
+  );
+  const content = yaml.dump(data, { lineWidth: 120, noRefs: true, sortKeys: false });
+  try {
+    writeFileSync(tmpPath, content, 'utf-8');
+    renameSync(tmpPath, filePath);
+  } catch (err) {
+    try { unlinkSync(tmpPath); } catch { /* ignore */ }
+    throw err;
+  }
 }
 
 /**
@@ -346,7 +359,7 @@ export async function agentCrudRoutes(
         });
       }
 
-      writeFileSync(filePath, yamlContent, 'utf-8');
+      writeYaml(filePath, parsed);
 
       // Audit log
       appendAuditEntry(auditDb, {

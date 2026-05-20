@@ -10,8 +10,9 @@
  * team_size, version, and other custom metadata are never lost.
  */
 
-import { mkdir, writeFile, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, writeFile, readFile, rename, unlink } from "node:fs/promises";
+import { join, dirname, basename } from "node:path";
+import { randomBytes } from "node:crypto";
 import yaml from "js-yaml";
 
 import type { AgentTemplate } from "../types/agent.js";
@@ -31,7 +32,7 @@ async function readExistingManifest(baseDir: string): Promise<TeamManifest | nul
   try {
     const raw = await readFile(teamYamlPath, "utf-8");
     const parsed = yaml.load(raw);
-    if (parsed && typeof parsed === "object") {
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       return parsed as TeamManifest;
     }
     return null;
@@ -264,6 +265,26 @@ async function ensureDir(dirPath: string): Promise<void> {
   await mkdir(dirPath, { recursive: true });
 }
 
+/** Write YAML atomically using a sibling temp file and rename. */
+async function writeYamlAtomic(filePath: string, content: unknown): Promise<void> {
+  const tmpPath = join(
+    dirname(filePath),
+    `.${basename(filePath)}.${randomBytes(8).toString("hex")}.tmp`,
+  );
+  const yamlContent = yaml.dump(content, {
+    lineWidth: 120,
+    noRefs: true,
+    sortKeys: false,
+  });
+  await writeFile(tmpPath, yamlContent, "utf-8");
+  try {
+    await rename(tmpPath, filePath);
+  } catch (err) {
+    try { await unlink(tmpPath); } catch { /* ignore */ }
+    throw err;
+  }
+}
+
 /** Build a {@link ModelRouting} from the manifest's agent lists and agent templates. */
 function buildModelRouting(
   manifest: TeamManifest,
@@ -451,11 +472,7 @@ export async function writeTeam(
   // Write all files in parallel
   await Promise.all([
     // team.yaml
-    writeFile(
-      join(baseDir, "team.yaml"),
-      yaml.dump(fullManifest, { lineWidth: 120, noRefs: true }),
-      "utf-8",
-    ),
+    writeYamlAtomic(join(baseDir, "team.yaml"), fullManifest),
 
     // forge.log
     writeFile(join(baseDir, "forge.log"), forgeLog, "utf-8"),
@@ -468,38 +485,22 @@ export async function writeTeam(
     ),
 
     // config/models.yaml
-    writeFile(
-      join(configDir, "models.yaml"),
-      yaml.dump(modelsConfig, { lineWidth: 120, noRefs: true }),
-      "utf-8",
-    ),
+    writeYamlAtomic(join(configDir, "models.yaml"), modelsConfig),
 
     // config/delegation.yaml
-    writeFile(
-      join(configDir, "delegation.yaml"),
-      yaml.dump(delegationGraph, { lineWidth: 120, noRefs: true }),
-      "utf-8",
-    ),
+    writeYamlAtomic(join(configDir, "delegation.yaml"), delegationGraph),
 
     // config/teams.yaml — team units organized by layer (v6.1+)
     ...(fullManifest.team_units && fullManifest.team_units.length > 0
       ? [
-          writeFile(
-            join(configDir, "teams.yaml"),
-            yaml.dump(fullManifest.team_units, { lineWidth: 120, noRefs: true }),
-            "utf-8",
-          ),
+          writeYamlAtomic(join(configDir, "teams.yaml"), fullManifest.team_units),
         ]
       : []),
 
     // config/topology.yaml — written only when collaboration data is present
     ...(fullManifest.collaboration
       ? [
-          writeFile(
-            join(configDir, "topology.yaml"),
-            yaml.dump(fullManifest.collaboration, { lineWidth: 120, noRefs: true }),
-            "utf-8",
-          ),
+          writeYamlAtomic(join(configDir, "topology.yaml"), fullManifest.collaboration),
         ]
       : []),
 
@@ -513,9 +514,9 @@ export async function writeTeam(
           const merged = existingReportsTo && existingReportsTo !== template.collaboration.reports_to
             ? { ...template, collaboration: { ...template.collaboration, reports_to: existingReportsTo } }
             : template;
-          return writeFile(existingPath, yaml.dump(merged, { lineWidth: 120, noRefs: true }), "utf-8");
+          return writeYamlAtomic(existingPath, merged);
         })
-        .catch(() => writeFile(existingPath, yaml.dump(template, { lineWidth: 120, noRefs: true }), "utf-8"));
+        .catch(() => writeYamlAtomic(existingPath, template));
     }),
   ]);
 }

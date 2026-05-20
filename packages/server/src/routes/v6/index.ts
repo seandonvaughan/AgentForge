@@ -85,8 +85,11 @@ function loadTeams(): TeamUnit[] {
   const teamYamlPath = join(PROJECT_ROOT, '.agentforge', 'team.yaml');
   if (existsSync(teamYamlPath)) {
     const raw = readFileSync(teamYamlPath, 'utf-8');
-    const manifest = yaml.load(raw) as { team_units?: TeamUnit[] };
-    return manifest.team_units ?? [];
+    const manifest = yaml.load(raw);
+    if (manifest && typeof manifest === 'object' && !Array.isArray(manifest)) {
+      const data = manifest as { team_units?: TeamUnit[] };
+      return data.team_units ?? [];
+    }
   }
   return [];
 }
