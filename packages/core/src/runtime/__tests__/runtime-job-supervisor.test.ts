@@ -56,6 +56,42 @@ describe('RuntimeJobSupervisor', () => {
     adapter.close();
   });
 
+  it('emits chunk events before persisting them so SSE first-token latency stays low', async () => {
+    const adapter = buildAdapter();
+    const originalRecord = adapter.recordRuntimeEvent.bind(adapter);
+    let chunkPersistenceStarted = false;
+
+    adapter.recordRuntimeEvent = ((input: Parameters<typeof originalRecord>[0]) => {
+      if (input.type === 'chunk') {
+        chunkPersistenceStarted = true;
+      }
+      return originalRecord(input);
+    }) as typeof adapter.recordRuntimeEvent;
+
+    let chunkObservedBeforePersistence: boolean | undefined;
+    const supervisor = new RuntimeJobSupervisor({
+      adapter,
+      onEvent: (event) => {
+        if (event.type === 'chunk') {
+          chunkObservedBeforePersistence = chunkPersistenceStarted;
+        }
+      },
+    });
+    const job = supervisor.createJob({ agentId: 'coder', task: 'Stream quickly', model: 'sonnet' });
+
+    await supervisor.startJob(job.id, async ({ emit }) => {
+      emit({
+        type: 'chunk',
+        message: '[coder] chunk',
+        data: { content: 'fast', index: 0 },
+      });
+      return completedResult(job.session_id);
+    });
+
+    expect(chunkObservedBeforePersistence).toBe(false);
+
+    adapter.close();
+  });
   it('aborts an active job when cancelled', async () => {
     const adapter = buildAdapter();
     const supervisor = new RuntimeJobSupervisor({ adapter });
@@ -79,3 +115,4 @@ describe('RuntimeJobSupervisor', () => {
     adapter.close();
   });
 });
+

@@ -211,6 +211,36 @@ export class RuntimeJobSupervisor {
 
   private emit(job: RuntimeJobRow, input: RuntimeEventInput): RuntimeEventEnvelope {
     const timestamp = nowIso();
+    const payload: Record<string, unknown> = {
+      workspaceId: this.options.adapter.workspaceId,
+      traceId: job.trace_id,
+      jobId: job.id,
+      sessionId: job.session_id,
+      agentId: job.agent_id,
+      ...(input.data ?? {}),
+    };
+
+    // Fast path for token/chunk streaming: publish to the SSE bridge before the
+    // SQLite write so first-token UX is not blocked on persistence.
+    let streamedEarly = false;
+    if (input.type === 'chunk' && this.options.onEvent) {
+      this.options.onEvent({
+        id: generateId(),
+        workspaceId: this.options.adapter.workspaceId,
+        jobId: job.id,
+        sessionId: job.session_id,
+        traceId: job.trace_id,
+        agentId: job.agent_id,
+        type: input.type,
+        category: input.category ?? 'run',
+        message: input.message,
+        payload,
+        data: payload,
+        timestamp,
+      });
+      streamedEarly = true;
+    }
+
     const row = this.options.adapter.recordRuntimeEvent({
       id: generateId(),
       jobId: job.id,
@@ -220,18 +250,11 @@ export class RuntimeJobSupervisor {
       type: input.type,
       category: input.category ?? 'run',
       message: input.message,
-      data: {
-        workspaceId: this.options.adapter.workspaceId,
-        traceId: job.trace_id,
-        jobId: job.id,
-        sessionId: job.session_id,
-        agentId: job.agent_id,
-        ...(input.data ?? {}),
-      },
+      data: payload,
       createdAt: timestamp,
     });
 
-    const payload = parseEventData(row.data_json);
+    const persistedPayload = parseEventData(row.data_json);
     const envelope: RuntimeEventEnvelope = {
       id: row.id,
       sequence: row.sequence,
@@ -243,12 +266,14 @@ export class RuntimeJobSupervisor {
       type: row.type,
       category: row.category,
       message: row.message,
-      payload,
-      data: payload,
+      payload: persistedPayload,
+      data: persistedPayload,
       timestamp: row.created_at,
     };
 
-    this.options.onEvent?.(envelope);
+    if (!streamedEarly) {
+      this.options.onEvent?.(envelope);
+    }
     return envelope;
   }
 }
@@ -269,3 +294,4 @@ function parseEventData(json: string): Record<string, unknown> {
     return {};
   }
 }
+
