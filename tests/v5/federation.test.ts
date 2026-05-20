@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach, beforeAll, afterAll } from 'vitest';
-import { FederationManager, FederationPeer, SharedLearning } from '../../packages/core/src/federation/index.js';
+import {
+  FEDERATION_PROTOCOL_VERSION,
+  FederationManager,
+  FederationPeer,
+  SharedLearning,
+} from '../../packages/core/src/federation/index.js';
 import { createServerV5 } from '../../packages/server/src/server.js';
 
 // ── Unit tests: FederationManager ─────────────────────────────────────────────
@@ -76,6 +81,8 @@ describe('FederationManager.shareLearning()', () => {
     expect(learning.category).toBe('patterns');
     expect(learning.confidence).toBe(0.9);
     expect(learning.learnedAt).toBeTruthy();
+    expect(learning.protocolVersion).toBe(FEDERATION_PROTOCOL_VERSION);
+    expect(learning.piiRedactions).toBe(0);
   });
 
   it('strips email PII from content', () => {
@@ -88,6 +95,7 @@ describe('FederationManager.shareLearning()', () => {
     });
     expect(learning.content).not.toContain('user@example.com');
     expect(learning.content).toContain('[REDACTED]');
+    expect(learning.piiRedactions).toBe(1);
   });
 
   it('strips phone numbers from content', () => {
@@ -146,6 +154,60 @@ describe('FederationManager.receiveLearning()', () => {
     };
     const sanitized = mgr.receiveLearning(learning);
     expect(sanitized.content).not.toContain('admin@corp.com');
+    expect(sanitized.piiRedactions).toBe(1);
+    expect(Number.isFinite(sanitized.piiRedactions)).toBe(true);
+  });
+
+  it('normalizes malformed inbound redaction counts before storing', () => {
+    const learning: SharedLearning = {
+      id: 'learn-bad-redactions',
+      agentId: 'remote',
+      category: 'test',
+      content: 'admin@corp.com is the contact',
+      confidence: 0.5,
+      learnedAt: new Date().toISOString(),
+      sourcePeerId: 'peer-1',
+      piiRedactions: Number.NaN,
+    };
+    const sanitized = mgr.receiveLearning(learning);
+    expect(sanitized.piiRedactions).toBe(1);
+    expect(mgr.getStatus().metrics.piiRedactions).toBe(1);
+  });
+
+  it('rejects unsupported federation protocol versions and records the rejection', () => {
+    const learning: SharedLearning = {
+      id: 'learn-old-protocol',
+      protocolVersion: 'agentforge-federation-v0',
+      agentId: 'remote',
+      category: 'test',
+      content: 'legacy payload',
+      confidence: 0.8,
+      learnedAt: new Date().toISOString(),
+      sourcePeerId: 'peer-1',
+    };
+    expect(() => mgr.receiveLearning(learning)).toThrow(/Unsupported federation protocol/);
+    const status = mgr.getStatus();
+    expect(status.metrics.rejected).toBe(1);
+    expect(status.metrics.lastRejectedReason).toContain('Unsupported federation protocol');
+  });
+
+  it('can require inbound learnings to come from registered peers', () => {
+    const guarded = new FederationManager({ dryRun: true, requireRegisteredPeers: true });
+    const learning: SharedLearning = {
+      id: 'learn-peer-policy',
+      agentId: 'remote',
+      category: 'test',
+      content: 'registered peers only',
+      confidence: 0.8,
+      learnedAt: new Date().toISOString(),
+      sourcePeerId: 'peer-1',
+    };
+    expect(() => guarded.receiveLearning(learning)).toThrow(/Unknown federation peer/);
+
+    guarded.registerPeer(makePeer('peer-1'));
+    const accepted = guarded.receiveLearning(learning);
+    expect(accepted.sourcePeerId).toBe('peer-1');
+    expect(guarded.getStatus().metrics.received).toBe(1);
   });
 });
 
@@ -158,6 +220,9 @@ describe('FederationManager.getStatus()', () => {
     expect(status.peerCount).toBe(0);
     expect(status.learningCount).toBe(0);
     expect(status.checkedAt).toBeTruthy();
+    expect(status.safetyControls.protocolVersion).toBe(FEDERATION_PROTOCOL_VERSION);
+    expect(status.safetyControls.networkExchangeEnabled).toBe(false);
+    expect(status.metrics.rejected).toBe(0);
   });
 
   it('reflects current peer and learning counts', () => {
@@ -167,6 +232,7 @@ describe('FederationManager.getStatus()', () => {
     const status = mgr.getStatus();
     expect(status.peerCount).toBe(1);
     expect(status.learningCount).toBe(1);
+    expect(status.metrics.shared).toBe(1);
   });
 });
 
@@ -188,6 +254,8 @@ describe('Federation REST API', () => {
     expect(body.data.enabled).toBe(true);
     expect(body.data.dryRun).toBe(true);
     expect(typeof body.data.peerCount).toBe('number');
+    expect(body.data.safetyControls.protocolVersion).toBe(FEDERATION_PROTOCOL_VERSION);
+    expect(body.data.safetyControls.networkExchangeEnabled).toBe(false);
   });
 
   it('GET /api/v5/federation/peers returns empty array initially', async () => {
@@ -243,6 +311,7 @@ describe('Federation REST API', () => {
     expect(body.data.id).toBeTruthy();
     expect(body.data.agentId).toBe('coder');
     expect(body.data.category).toBe('patterns');
+    expect(body.data.protocolVersion).toBe(FEDERATION_PROTOCOL_VERSION);
   });
 
   it('POST /api/v5/federation/share returns 400 when required fields missing', async () => {
@@ -252,6 +321,21 @@ describe('Federation REST API', () => {
       payload: { agentId: 'coder' },
     });
     expect(res.statusCode).toBe(400);
+  });
+
+  it('POST /api/v5/federation/share returns 422 when safety controls reject payload', async () => {
+    const res = await server.app.inject({
+      method: 'POST',
+      url: '/api/v5/federation/share',
+      payload: {
+        agentId: 'coder',
+        category: 'patterns',
+        content: { text: 'not a string' },
+      },
+    });
+    expect(res.statusCode).toBe(422);
+    const body = JSON.parse(res.body);
+    expect(body.code).toBe('LEARNING_REJECTED');
   });
 
   it('shared learning appears in GET /api/v5/federation/learnings', async () => {

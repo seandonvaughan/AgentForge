@@ -74,17 +74,22 @@ export async function federationRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
-    const learning = federation.shareLearning({
-      agentId: body.agentId,
-      category: body.category,
-      content: body.content,
-      confidence: body.confidence ?? 0.8,
-      sourcePeerId: body.sourcePeerId ?? null,
-    });
+    try {
+      const learning = federation.shareLearning({
+        agentId: body.agentId,
+        category: body.category,
+        content: body.content,
+        confidence: body.confidence ?? 0.8,
+        sourcePeerId: body.sourcePeerId ?? null,
+      });
 
-    return reply.status(201).send({
-      data: learning,
-      meta: { timestamp: new Date().toISOString() },
-    });
+      return reply.status(201).send({
+        data: learning,
+        meta: { timestamp: new Date().toISOString() },
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Learning rejected';
+      return reply.status(422).send({ error: message, code: 'LEARNING_REJECTED' });
+    }
   });
 }
