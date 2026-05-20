@@ -16,7 +16,7 @@
  */
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import { createHash } from "node:crypto";
 import yaml from "js-yaml";
 
@@ -142,7 +142,9 @@ async function loadAgentYaml(agentPath: string): Promise<AgentYaml> {
   let raw: string;
   try {
     raw = await readFile(agentPath, "utf8");
-  } catch {
+  } catch (err: unknown) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== "ENOENT") throw err;
     // Agent file missing — treat as empty
     return {};
   }
@@ -386,18 +388,19 @@ export async function applyLearnings(
 
   // Expected shape: Record<agentId, ProposedLearning[]>
   const parsedProposed: unknown = JSON.parse(rawProposed);
-  const proposedByAgent =
-    parsedProposed !== null && typeof parsedProposed === "object" && !Array.isArray(parsedProposed)
-      ? parsedProposed
-      : {};
+  const proposedByAgent = normalizeProposedByAgent(parsedProposed);
 
   const perAgent: AgentMutatorResult[] = [];
+  const proposedEntries = Object.entries(proposedByAgent);
+  for (const [agentId] of proposedEntries) {
+    safeAgentYamlPath(agentsDir, agentId);
+  }
 
-  for (const [agentId, proposalInput] of Object.entries(proposedByAgent)) {
+  for (const [agentId, proposalInput] of proposedEntries) {
     const proposals = sanitizeProposals(proposalInput, agentId);
     if (proposals.length === 0) continue;
 
-    const agentPath = join(agentsDir, `${agentId}.yaml`);
+    const agentPath = safeAgentYamlPath(agentsDir, agentId);
     const agentData = await loadAgentYaml(agentPath);
     const existing = sanitizeExistingLearnings(agentData.learnings);
 
@@ -436,4 +439,34 @@ export async function applyLearnings(
   }
 
   return report;
+}
+
+function normalizeProposedByAgent(value: unknown): Record<string, unknown> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  const record = value as Record<string, unknown>;
+  if (
+    record["byAgent"] !== null &&
+    typeof record["byAgent"] === "object" &&
+    !Array.isArray(record["byAgent"])
+  ) {
+    return record["byAgent"] as Record<string, unknown>;
+  }
+  return record;
+}
+
+const SAFE_AGENT_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+
+function safeAgentYamlPath(agentsDir: string, agentId: string): string {
+  if (!SAFE_AGENT_ID.test(agentId)) {
+    throw new Error(`[mutator] invalid agent id: ${agentId}`);
+  }
+  const base = resolve(agentsDir);
+  const filePath = resolve(base, `${agentId}.yaml`);
+  const rel = relative(base, filePath);
+  if (rel.startsWith("..") || rel === ".." || rel.includes(`..${sep}`) || resolve(rel) === rel) {
+    throw new Error(`[mutator] agent path escapes agents dir: ${agentId}`);
+  }
+  return filePath;
 }

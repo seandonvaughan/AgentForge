@@ -13,7 +13,7 @@
 //   - extractInvolvedAgentIds: falls back gracefully when file absent
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
@@ -252,6 +252,109 @@ describe('runAutoReforge', () => {
         applyLearnings: apply,
       }),
     ).rejects.toThrow('mutator write error');
+  });
+
+  it('rolls back a canary self-modification when post-stage cost becomes an outlier', async () => {
+    const agentsDir = join(tmpDir, '.agentforge', 'agents');
+    mkdirSync(agentsDir, { recursive: true });
+    const agentPath = join(agentsDir, 'coder.yaml');
+    const originalYaml = 'name: Coder\nmodel: sonnet\nlearnings: []\n';
+    writeFileSync(agentPath, originalYaml, 'utf8');
+
+    const costs = [
+      { currentCostUsd: 10, projectedBudgetUsd: 100 },
+      { currentCostUsd: 250, projectedBudgetUsd: 100 },
+    ];
+    const readCostMetrics = vi.fn(() => costs.shift()!);
+    const curate = vi.fn(async (): Promise<CurationResult> =>
+      makeCurationResult(['coder']),
+    );
+    const apply = vi.fn(async (): Promise<MutatorReport> => {
+      writeFileSync(
+        agentPath,
+        'name: Coder\nmodel: sonnet\nlearnings:\n  - rolled back lesson\n',
+        'utf8',
+      );
+      return makeMutatorReport();
+    });
+
+    const result = await runAutoReforge({
+      projectRoot: tmpDir,
+      cycleId: 'cycle-canary-rollback',
+      involvedAgentIds: ['coder'],
+      canary: { enabled: true, rollbackCostMultiplier: 2, readCostMetrics },
+      curateLearnings: curate,
+      applyLearnings: apply,
+    });
+
+    expect(result.canary?.status).toBe('rolled_back');
+    expect(result.canary?.rollbackReason).toContain('exceeds 2x projected budget');
+    expect(readCostMetrics).toHaveBeenCalledTimes(2);
+    expect(readFileSync(agentPath, 'utf8')).toBe(originalYaml);
+  });
+
+  it('promotes a canary self-modification when YAML and cost guardrails pass', async () => {
+    const agentsDir = join(tmpDir, '.agentforge', 'agents');
+    mkdirSync(agentsDir, { recursive: true });
+    const agentPath = join(agentsDir, 'coder.yaml');
+    writeFileSync(agentPath, 'name: Coder\nmodel: sonnet\nlearnings: []\n', 'utf8');
+
+    const readCostMetrics = vi.fn(() => ({ currentCostUsd: 15, projectedBudgetUsd: 100 }));
+    const apply = vi.fn(async (): Promise<MutatorReport> => {
+      writeFileSync(
+        agentPath,
+        'name: Coder\nmodel: sonnet\nlearnings:\n  - promoted lesson\n',
+        'utf8',
+      );
+      return makeMutatorReport();
+    });
+
+    const result = await runAutoReforge({
+      projectRoot: tmpDir,
+      cycleId: 'cycle-canary-promote',
+      involvedAgentIds: ['coder'],
+      canary: { enabled: true, rollbackCostMultiplier: 2, readCostMetrics },
+      curateLearnings: async () => makeCurationResult(['coder']),
+      applyLearnings: apply,
+    });
+
+    expect(result.canary?.status).toBe('promoted');
+    expect(readCostMetrics).toHaveBeenCalledTimes(2);
+    expect(readFileSync(agentPath, 'utf8')).toContain('promoted lesson');
+    expect(existsSync(join(tmpDir, '.agentforge', 'forge', 'auto-reforge-canaries', 'cycle-canary-promote.json'))).toBe(true);
+  });
+
+  it('rejects invalid canary rollback multipliers before applying learnings', async () => {
+    const apply = vi.fn(async (): Promise<MutatorReport> => makeMutatorReport());
+
+    await expect(
+      runAutoReforge({
+        projectRoot: tmpDir,
+        cycleId: 'cycle-bad-multiplier',
+        involvedAgentIds: ['coder'],
+        canary: { enabled: true, rollbackCostMultiplier: 0 },
+        curateLearnings: async () => makeCurationResult(['coder']),
+        applyLearnings: apply,
+      }),
+    ).rejects.toThrow('rollbackCostMultiplier');
+
+    expect(apply).not.toHaveBeenCalled();
+  });
+
+  it('rejects unsafe agent ids before curation can read outside .agentforge/agents', async () => {
+    const curate = vi.fn(async (): Promise<CurationResult> => makeCurationResult(['coder']));
+
+    await expect(
+      runAutoReforge({
+        projectRoot: tmpDir,
+        cycleId: 'cycle-unsafe-id',
+        involvedAgentIds: ['../escape'],
+        curateLearnings: curate,
+        applyLearnings: async () => makeMutatorReport(),
+      }),
+    ).rejects.toThrow('Invalid agent id');
+
+    expect(curate).not.toHaveBeenCalled();
   });
 });
 

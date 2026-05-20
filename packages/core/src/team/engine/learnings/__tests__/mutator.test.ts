@@ -492,6 +492,43 @@ learnings:
     expect(data["learnings"]).toEqual(["Always keep the valid proposal."]);
   });
 
+  it("accepts curator CurationResult shape by reading its byAgent field", async () => {
+    await writeRawProposed({
+      byAgent: {
+        [AGENT_B]: [
+          makeProposal({
+            agentId: AGENT_B,
+            lesson: "Always preserve the curator result shape.",
+            score: 0.8,
+          }),
+        ],
+      },
+      sourcesScanned: [],
+      generatedAt: "2026-05-17T10:00:00.000Z",
+    });
+
+    const report = await applyLearnings({ projectRoot: tmpRoot });
+
+    const entry = report.perAgent.find((p) => p.agentId === AGENT_B)!;
+    expect(entry.added).toEqual(["Always preserve the curator result shape."]);
+    const data = await readAgentYaml(AGENT_B);
+    expect(data["learnings"]).toEqual(["Always preserve the curator result shape."]);
+  });
+
+  it("rejects unsafe agent ids before writing YAML", async () => {
+    await writeRawProposed({
+      "../escape": [
+        makeProposal({
+          agentId: "../escape",
+          lesson: "This must never be written outside the agents directory.",
+          score: 0.9,
+        }),
+      ],
+    });
+
+    await expect(applyLearnings({ projectRoot: tmpRoot })).rejects.toThrow("invalid agent id");
+  });
+
   // -------------------------------------------------------------------------
   // T13: Missing learnings-proposed.json throws descriptive error
   // -------------------------------------------------------------------------

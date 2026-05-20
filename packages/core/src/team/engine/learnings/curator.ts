@@ -9,7 +9,7 @@
  */
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import yaml from "js-yaml";
 
 import { readMemoryEntries } from "./memory-reader.js";
@@ -45,7 +45,7 @@ async function loadAgentTags(
   projectRoot: string,
   agentId: string,
 ): Promise<string[]> {
-  const yamlPath = join(projectRoot, ".agentforge", "agents", `${agentId}.yaml`);
+  const yamlPath = safeAgentYamlPath(projectRoot, agentId);
   let raw: string;
   try {
     raw = await readFile(yamlPath, "utf8");
@@ -74,6 +74,21 @@ async function loadAgentTags(
   }
 
   return [];
+}
+
+const SAFE_AGENT_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+
+function safeAgentYamlPath(projectRoot: string, agentId: string): string {
+  if (!SAFE_AGENT_ID.test(agentId)) {
+    throw new Error(`[curator] invalid agent id: ${agentId}`);
+  }
+  const agentsDir = resolve(projectRoot, ".agentforge", "agents");
+  const yamlPath = resolve(agentsDir, `${agentId}.yaml`);
+  const rel = relative(agentsDir, yamlPath);
+  if (rel.startsWith("..") || rel === ".." || rel.includes(`..${sep}`) || resolve(rel) === rel) {
+    throw new Error(`[curator] agent path escapes agents dir: ${agentId}`);
+  }
+  return yamlPath;
 }
 
 // ---------------------------------------------------------------------------

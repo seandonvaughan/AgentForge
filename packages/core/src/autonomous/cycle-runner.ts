@@ -1065,6 +1065,11 @@ export class CycleRunner {
         projectRoot: this.options.cwd,
         cycleId: this.cycleId,
         involvedAgentIds,
+        canary: {
+          enabled: true,
+          rollbackCostMultiplier: 2,
+          readCostMetrics: () => this.readAutoReforgeCostMetrics(),
+        },
         bus: this.options.bus,
       });
       if (result.skipped) {
@@ -1086,6 +1091,29 @@ export class CycleRunner {
         }`,
       );
     }
+  }
+
+  private readAutoReforgeCostMetrics(): { currentCostUsd: number; projectedBudgetUsd: number } {
+    const cyclePath = join(this.options.cwd, '.agentforge/cycles', this.cycleId, 'cycle.json');
+    if (existsSync(cyclePath)) {
+      try {
+        const data = JSON.parse(readFileSync(cyclePath, 'utf8')) as {
+          cost?: { totalUsd?: unknown; budgetUsd?: unknown };
+        };
+        const currentCostUsd = Number(data.cost?.totalUsd);
+        const projectedBudgetUsd = Number(data.cost?.budgetUsd);
+        if (Number.isFinite(currentCostUsd) && Number.isFinite(projectedBudgetUsd) && projectedBudgetUsd > 0) {
+          return { currentCostUsd, projectedBudgetUsd };
+        }
+      } catch {
+        // Fall through to in-memory totals; the canary still recomputes via this function.
+      }
+    }
+
+    return {
+      currentCostUsd: this.totalCostUsd,
+      projectedBudgetUsd: this.options.config.budget.perCycleUsd,
+    };
   }
 
   /**

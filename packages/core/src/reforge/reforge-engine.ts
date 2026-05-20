@@ -39,6 +39,7 @@ const MAX_VERSION_DEPTH = 5;
 /** Default downgrade tier when adjust-model-routing fires on an Opus agent. */
 const OPUS_DOWNGRADE_TARGET = "sonnet" as const;
 const SONNET_DOWNGRADE_TARGET = "haiku" as const;
+const SAFE_AGENT_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 
 // ---------------------------------------------------------------------------
 // Options
@@ -403,22 +404,26 @@ export class ReforgeEngine {
 
   /** Load the current override for an agent from disk, or null if none. */
   async loadOverride(agentName: string): Promise<AgentOverride | null> {
-    const filePath = path.join(this.overridesDir, `${agentName}.json`);
+    const filePath = this.overridePath(agentName);
     try {
       const raw = await fs.readFile(filePath, "utf-8");
       return JSON.parse(raw) as AgentOverride;
-    } catch {
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT") throw err;
       return null;
     }
   }
 
   /** Load a staged canary deployment for an agent, or null if none exists. */
   private async loadCanaryDeployment(agentName: string): Promise<CanaryDeploymentRecord | null> {
-    const filePath = path.join(this.canaryOverridesDir, `${agentName}.json`);
+    const filePath = this.canaryDeploymentPath(agentName);
     try {
       const raw = await fs.readFile(filePath, "utf-8");
       return JSON.parse(raw) as CanaryDeploymentRecord;
-    } catch {
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT") throw err;
       return null;
     }
   }
@@ -435,18 +440,18 @@ export class ReforgeEngine {
 
   private async writeCanaryDeployment(deployment: CanaryDeploymentRecord): Promise<void> {
     await fs.mkdir(this.canaryOverridesDir, { recursive: true });
-    const filePath = path.join(this.canaryOverridesDir, `${deployment.agentName}.json`);
+    const filePath = this.canaryDeploymentPath(deployment.agentName);
     await fs.writeFile(filePath, JSON.stringify(deployment, null, 2), "utf-8");
   }
 
   private async writeCanaryRollback(deployment: CanaryDeploymentRecord): Promise<void> {
     await fs.mkdir(this.canaryOverridesDir, { recursive: true });
-    const filePath = path.join(this.canaryOverridesDir, `${deployment.agentName}.rollback.json`);
+    const filePath = this.canaryRollbackPath(deployment.agentName);
     await fs.writeFile(filePath, JSON.stringify(deployment, null, 2), "utf-8");
   }
 
   private async deleteCanaryDeployment(agentName: string): Promise<void> {
-    const filePath = path.join(this.canaryOverridesDir, `${agentName}.json`);
+    const filePath = this.canaryDeploymentPath(agentName);
     await fs.rm(filePath, { force: true });
   }
 
@@ -527,6 +532,7 @@ export class ReforgeEngine {
   private groupMutationsByAgent(mutations: AgentMutation[]): Map<string, AgentMutation[]> {
     const byAgent = new Map<string, AgentMutation[]>();
     for (const mutation of mutations) {
+      this.assertSafeAgentName(mutation.agentName);
       const list = byAgent.get(mutation.agentName) ?? [];
       list.push(mutation);
       byAgent.set(mutation.agentName, list);
@@ -603,8 +609,37 @@ export class ReforgeEngine {
     override: AgentOverride,
   ): Promise<void> {
     await fs.mkdir(this.overridesDir, { recursive: true });
-    const filePath = path.join(this.overridesDir, `${agentName}.json`);
+    const filePath = this.overridePath(agentName);
     await fs.writeFile(filePath, JSON.stringify(override, null, 2), "utf-8");
+  }
+
+  private overridePath(agentName: string): string {
+    return this.safePathInDir(this.overridesDir, `${this.assertSafeAgentName(agentName)}.json`);
+  }
+
+  private canaryDeploymentPath(agentName: string): string {
+    return this.safePathInDir(this.canaryOverridesDir, `${this.assertSafeAgentName(agentName)}.json`);
+  }
+
+  private canaryRollbackPath(agentName: string): string {
+    return this.safePathInDir(this.canaryOverridesDir, `${this.assertSafeAgentName(agentName)}.rollback.json`);
+  }
+
+  private assertSafeAgentName(agentName: string): string {
+    if (!SAFE_AGENT_NAME.test(agentName)) {
+      throw new Error(`Invalid agent name for reforge override: "${agentName}"`);
+    }
+    return agentName;
+  }
+
+  private safePathInDir(baseDir: string, fileName: string): string {
+    const base = path.resolve(baseDir);
+    const filePath = path.resolve(base, fileName);
+    const rel = path.relative(base, filePath);
+    if (rel.startsWith("..") || rel === ".." || rel.includes(`..${path.sep}`) || path.resolve(rel) === rel) {
+      throw new Error(`Reforge path escapes target directory: ${fileName}`);
+    }
+    return filePath;
   }
 
   private async writeStructuralProposal(plan: ReforgePlan): Promise<void> {

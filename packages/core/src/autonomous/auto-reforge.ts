@@ -9,7 +9,9 @@
 // being present yet. When P+Q land, swap the stubs for the real imports.
 
 import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { dirname, join, relative, resolve, sep } from 'node:path';
+import yaml from 'js-yaml';
 
 // Real implementations from Workstreams P (curator) and Q (mutator).
 // Adapted to R's expected shapes below.
@@ -61,6 +63,39 @@ export interface ApplyLearningsInput {
   projectRoot: string;
   proposed: CurationResult;
   dryRun?: boolean;
+}
+
+export interface AutoReforgeCostMetrics {
+  /** Current observed cost after reading the latest ledger/cycle files. */
+  currentCostUsd: number;
+  /** Projected budget used to decide whether this self-modification is an outlier. */
+  projectedBudgetUsd: number;
+}
+
+export interface AutoReforgeCanaryOptions {
+  /**
+   * Stage auto-reforge as a rollbackable self-modification canary.
+   *
+   * Disabled by default for direct callers to preserve legacy behavior. The
+   * unattended cycle runner enables it for production auto-reforge.
+   */
+  enabled?: boolean;
+  /** Roll back when currentCostUsd is more than this multiple of projectedBudgetUsd. */
+  rollbackCostMultiplier?: number;
+  /** Re-read cost metrics before and after the staged write. */
+  readCostMetrics?: () => AutoReforgeCostMetrics | Promise<AutoReforgeCostMetrics>;
+}
+
+export interface AutoReforgeCanaryRecord {
+  cycleId: string;
+  status: 'promoted' | 'rolled_back';
+  targetAgentIds: string[];
+  startedAt: string;
+  completedAt: string;
+  rollbackCostMultiplier: number;
+  costBefore?: AutoReforgeCostMetrics;
+  costAfter?: AutoReforgeCostMetrics;
+  rollbackReason?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -121,9 +156,10 @@ const _curateLearnings: (input: CurationInput) => Promise<CurationResult> =
 const _applyLearnings: (input: ApplyLearningsInput) => Promise<MutatorReport> =
   async (input) => {
     void stubApplyLearnings; // keep reference so the stub remains as a fallback path
-    // Q reads proposed from disk; P has already written it to
-    // .agentforge/forge/learnings-proposed.json. Q's perAgent is an array;
-    // we re-key it into a Record<agentId, ...> to match R's contract.
+    // Q reads a Record<agentId, ProposedLearning[]> from disk. P persists the
+    // richer CurationResult for curator tests, so the auto-reforge boundary
+    // writes the mutator's exact input shape immediately before applying.
+    await persistMutatorInput(input.projectRoot, input.proposed);
     const realReport = await _realApply({
       projectRoot: input.projectRoot,
       dryRun: input.dryRun ?? false,
@@ -160,6 +196,8 @@ export interface AutoReforgeOptions {
   cycleId: string;
   involvedAgentIds: string[];
   dryRun?: boolean;
+  /** Canary/rollback guardrails for the self-modification write. */
+  canary?: AutoReforgeCanaryOptions;
   /** Optional bus for emitting learnings.applied events. */
   bus?: { publish: (topic: string, payload: unknown) => void };
   /** Injected curator (for testing). */
@@ -173,6 +211,7 @@ export interface AutoReforgeResult {
   /** true if no proposed learnings were produced (nothing to apply). */
   skipped: boolean;
   mutatorReport?: MutatorReport;
+  canary?: AutoReforgeCanaryRecord;
   durationMs: number;
 }
 
@@ -190,11 +229,12 @@ export async function runAutoReforge(
   const startedAt = Date.now();
   const curate = opts.curateLearnings ?? _curateLearnings;
   const apply = opts.applyLearnings ?? _applyLearnings;
+  const involvedAgentIds = opts.involvedAgentIds.map(assertSafeAgentId);
 
   // 1. Curate learnings for all agents that ran in this cycle.
   const curationResult = await curate({
     projectRoot: opts.projectRoot,
-    agentIds: opts.involvedAgentIds,
+    agentIds: involvedAgentIds,
   });
 
   // 2. Short-circuit if the curator produced nothing.
@@ -206,15 +246,29 @@ export async function runAutoReforge(
     return { cycleId: opts.cycleId, skipped: true, durationMs: Date.now() - startedAt };
   }
 
-  // 3. Apply the proposed learnings via the mutator.
-  const mutatorReport = await apply({
+  // 3. Apply the proposed learnings via the mutator. In unattended cycles this
+  // is staged as a rollbackable canary so bad self-modifications do not remain
+  // active after YAML, model, or cost guardrails fail.
+  const targetAgentIds = targetAgentsForCuration(curationResult);
+  const canaryEnabled = opts.canary?.enabled === true && opts.dryRun !== true;
+  const applyInput: ApplyLearningsInput = {
     projectRoot: opts.projectRoot,
     proposed: curationResult,
     dryRun: opts.dryRun ?? false,
-  });
+  };
+  const { mutatorReport, canary } = canaryEnabled
+    ? await applyWithCanaryGuardrails({
+        projectRoot: opts.projectRoot,
+        cycleId: opts.cycleId,
+        targetAgentIds,
+        apply,
+        applyInput,
+        canary: opts.canary ?? {},
+      })
+    : { mutatorReport: await apply(applyInput), canary: undefined };
 
   // 4. Publish a bus event when a bus is provided.
-  if (opts.bus) {
+  if (opts.bus && canary?.status !== 'rolled_back') {
     opts.bus.publish('learnings.applied', {
       cycleId: opts.cycleId,
       perAgent: mutatorReport.perAgent,
@@ -227,8 +281,234 @@ export async function runAutoReforge(
     cycleId: opts.cycleId,
     skipped: false,
     mutatorReport,
+    ...(canary ? { canary } : {}),
     durationMs: Date.now() - startedAt,
   };
+}
+
+async function persistMutatorInput(
+  projectRoot: string,
+  proposed: CurationResult,
+): Promise<void> {
+  const forgeDir = join(projectRoot, '.agentforge', 'forge');
+  await mkdir(forgeDir, { recursive: true });
+  await writeFile(
+    join(forgeDir, 'learnings-proposed.json'),
+    JSON.stringify(proposed.byAgent, null, 2),
+    'utf8',
+  );
+}
+
+interface ApplyWithCanaryInput {
+  projectRoot: string;
+  cycleId: string;
+  targetAgentIds: string[];
+  apply: (input: ApplyLearningsInput) => Promise<MutatorReport>;
+  applyInput: ApplyLearningsInput;
+  canary: AutoReforgeCanaryOptions;
+}
+
+async function applyWithCanaryGuardrails(
+  input: ApplyWithCanaryInput,
+): Promise<{ mutatorReport: MutatorReport; canary: AutoReforgeCanaryRecord }> {
+  const startedAt = new Date().toISOString();
+  const rollbackCostMultiplier = validateRollbackCostMultiplier(
+    input.canary.rollbackCostMultiplier ?? 2,
+  );
+  const snapshots = await snapshotAgentFiles(input.projectRoot, input.targetAgentIds);
+  const costBefore = await readOptionalCostMetrics(input.canary.readCostMetrics);
+
+  let mutatorReport: MutatorReport;
+  try {
+    mutatorReport = await input.apply(input.applyInput);
+  } catch (err) {
+    await restoreAgentSnapshots(snapshots);
+    throw err;
+  }
+
+  let costAfter: AutoReforgeCostMetrics | undefined;
+  let rollbackReason: string | undefined;
+  try {
+    costAfter = await readOptionalCostMetrics(input.canary.readCostMetrics);
+    rollbackReason =
+      validateChangedAgentYaml(input.projectRoot, input.targetAgentIds) ??
+      evaluateCostOutlier(costAfter, rollbackCostMultiplier);
+  } catch (err) {
+    rollbackReason = `Auto-rollback: ${
+      err instanceof Error ? err.message : String(err)
+    }`;
+  }
+
+  const baseRecord = {
+    cycleId: input.cycleId,
+    targetAgentIds: input.targetAgentIds,
+    startedAt,
+    completedAt: new Date().toISOString(),
+    rollbackCostMultiplier,
+    ...(costBefore ? { costBefore } : {}),
+    ...(costAfter ? { costAfter } : {}),
+  };
+
+  if (rollbackReason) {
+    await restoreAgentSnapshots(snapshots);
+    const rolledBack: AutoReforgeCanaryRecord = {
+      ...baseRecord,
+      status: 'rolled_back',
+      rollbackReason,
+    };
+    await writeCanaryRecord(input.projectRoot, rolledBack);
+    return { mutatorReport, canary: rolledBack };
+  }
+
+  const promoted: AutoReforgeCanaryRecord = {
+    ...baseRecord,
+    status: 'promoted',
+  };
+  await writeCanaryRecord(input.projectRoot, promoted);
+  return { mutatorReport, canary: promoted };
+}
+
+function targetAgentsForCuration(curationResult: CurationResult): string[] {
+  return Object.entries(curationResult.byAgent)
+    .filter(([, proposals]) => proposals.length > 0)
+    .map(([agentId]) => assertSafeAgentId(agentId));
+}
+
+function validateRollbackCostMultiplier(multiplier: number): number {
+  if (!Number.isFinite(multiplier) || multiplier <= 0) {
+    throw new Error('auto-reforge canary rollbackCostMultiplier must be a finite positive number');
+  }
+  return multiplier;
+}
+
+async function readOptionalCostMetrics(
+  reader: AutoReforgeCanaryOptions['readCostMetrics'],
+): Promise<AutoReforgeCostMetrics | undefined> {
+  if (!reader) return undefined;
+  const metrics = await reader();
+  if (!isFiniteNonNegative(metrics.currentCostUsd) || !isFinitePositive(metrics.projectedBudgetUsd)) {
+    throw new Error('auto-reforge canary cost metrics must be finite and non-negative with a positive projected budget');
+  }
+  return metrics;
+}
+
+function evaluateCostOutlier(
+  metrics: AutoReforgeCostMetrics | undefined,
+  rollbackCostMultiplier: number,
+): string | undefined {
+  if (!metrics) return undefined;
+  const limit = metrics.projectedBudgetUsd * rollbackCostMultiplier;
+  if (metrics.currentCostUsd > limit) {
+    return `Auto-rollback: current cost $${metrics.currentCostUsd.toFixed(2)} exceeds ` +
+      `${rollbackCostMultiplier}x projected budget $${metrics.projectedBudgetUsd.toFixed(2)}`;
+  }
+  return undefined;
+}
+
+function validateChangedAgentYaml(projectRoot: string, agentIds: string[]): string | undefined {
+  for (const agentId of agentIds) {
+    const filePath = safeAgentYamlPath(projectRoot, agentId);
+    let raw: string;
+    try {
+      raw = readFileSync(filePath, 'utf8');
+    } catch {
+      return `Auto-rollback: missing agent YAML for "${agentId}" after auto-reforge`;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = yaml.load(raw);
+    } catch (err) {
+      return `Auto-rollback: invalid YAML for "${agentId}": ${err instanceof Error ? err.message : String(err)}`;
+    }
+
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return `Auto-rollback: agent YAML for "${agentId}" must be an object`;
+    }
+    const model = (parsed as { model?: unknown }).model;
+    if (model !== 'opus' && model !== 'sonnet' && model !== 'haiku') {
+      return `Auto-rollback: agent "${agentId}" must declare an explicit model tier`;
+    }
+  }
+  return undefined;
+}
+
+interface AgentSnapshot {
+  agentId: string;
+  filePath: string;
+  existed: boolean;
+  content?: string;
+}
+
+async function snapshotAgentFiles(
+  projectRoot: string,
+  agentIds: string[],
+): Promise<AgentSnapshot[]> {
+  const snapshots: AgentSnapshot[] = [];
+  for (const agentId of agentIds) {
+    const filePath = safeAgentYamlPath(projectRoot, agentId);
+    try {
+      snapshots.push({
+        agentId,
+        filePath,
+        existed: true,
+        content: await readFile(filePath, 'utf8'),
+      });
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== 'ENOENT') throw err;
+      snapshots.push({ agentId, filePath, existed: false });
+    }
+  }
+  return snapshots;
+}
+
+async function restoreAgentSnapshots(snapshots: AgentSnapshot[]): Promise<void> {
+  for (const snapshot of snapshots) {
+    if (snapshot.existed) {
+      await mkdir(dirname(snapshot.filePath), { recursive: true });
+      await writeFile(snapshot.filePath, snapshot.content ?? '', 'utf8');
+    } else {
+      await rm(snapshot.filePath, { force: true });
+    }
+  }
+}
+
+async function writeCanaryRecord(
+  projectRoot: string,
+  record: AutoReforgeCanaryRecord,
+): Promise<void> {
+  const dir = join(projectRoot, '.agentforge', 'forge', 'auto-reforge-canaries');
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, `${record.cycleId}.json`), JSON.stringify(record, null, 2), 'utf8');
+}
+
+const SAFE_AGENT_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+
+function assertSafeAgentId(agentId: string): string {
+  if (!SAFE_AGENT_ID.test(agentId)) {
+    throw new Error(`Invalid agent id for auto-reforge: "${agentId}"`);
+  }
+  return agentId;
+}
+
+function safeAgentYamlPath(projectRoot: string, agentId: string): string {
+  assertSafeAgentId(agentId);
+  const agentsDir = resolve(projectRoot, '.agentforge', 'agents');
+  const filePath = resolve(agentsDir, `${agentId}.yaml`);
+  const rel = relative(agentsDir, filePath);
+  if (rel.startsWith('..') || rel === '..' || rel.includes(`..${sep}`) || resolve(rel) === rel) {
+    throw new Error(`Agent path escapes .agentforge/agents for "${agentId}"`);
+  }
+  return filePath;
+}
+
+function isFinitePositive(value: number): boolean {
+  return Number.isFinite(value) && value > 0;
+}
+
+function isFiniteNonNegative(value: number): boolean {
+  return Number.isFinite(value) && value >= 0;
 }
 
 // ---------------------------------------------------------------------------

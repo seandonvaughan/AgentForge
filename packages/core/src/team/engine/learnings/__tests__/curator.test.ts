@@ -189,6 +189,15 @@ describe("curateLearnings — happy path", () => {
     // With role match the score should be above MIN_SCORE
     expect(proposals.length).toBeGreaterThan(0);
   });
+
+  it("rejects unsafe agent ids before reading agent YAML", async () => {
+    await expect(
+      curateLearnings({
+        projectRoot,
+        agentIds: ["../escape"],
+      }),
+    ).rejects.toThrow("invalid agent id");
+  });
 });
 
 // ---------------------------------------------------------------------------

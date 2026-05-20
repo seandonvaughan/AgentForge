@@ -1,4 +1,13 @@
-import type { CacheEntry, CacheConfig } from './types.js';
+import type { AutopilotTraceContext, CacheEntry, CacheConfig, ModelTier } from './types.js';
+
+export interface CacheStoreMetadata {
+  model?: ModelTier;
+  trace?: AutopilotTraceContext;
+}
+
+export interface CacheLookupOptions {
+  allowSimilar?: boolean;
+}
 
 function stringSimilarity(a: string, b: string): number {
   if (a === b) return 1;
@@ -35,7 +44,7 @@ export class ResponseCache {
     };
   }
 
-  store(key: string, response: unknown, costUsd: number): CacheEntry {
+  store(key: string, response: unknown, costUsd: number, metadata: CacheStoreMetadata = {}): CacheEntry {
     this.evictExpired();
 
     if (this.entries.size >= this.config.maxEntries) {
@@ -52,13 +61,15 @@ export class ResponseCache {
       createdAt: now,
       expiresAt: now + this.config.ttlMs,
       hits: 0,
+      ...(metadata.model ? { model: metadata.model } : {}),
+      ...(metadata.trace ? { trace: metadata.trace } : {}),
     };
 
     this.entries.set(key, entry);
     return entry;
   }
 
-  lookup(key: string): CacheEntry | null {
+  lookup(key: string, options: CacheLookupOptions = {}): CacheEntry | null {
     this.evictExpired();
 
     // Exact match first
@@ -68,6 +79,11 @@ export class ResponseCache {
       this.hits++;
       this.totalSavingsUsd += exact.costUsd;
       return exact;
+    }
+
+    if (options.allowSimilar === false) {
+      this.misses++;
+      return null;
     }
 
     // Semantic similarity search

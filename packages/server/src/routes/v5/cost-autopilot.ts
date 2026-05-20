@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
-import { CostAutopilot } from '@agentforge/core';
+import { AutopilotBudgetError, CostAutopilot } from '@agentforge/core';
+import type { AutopilotModelTier, AutopilotTraceContext } from '@agentforge/core';
 
 const autopilot = new CostAutopilot(async (task, model) => {
   // Stub executor — real usage would call an LLM
@@ -26,6 +27,9 @@ export async function costAutopilotRoutes(app: FastifyInstance): Promise<void> {
       complexity?: 'low' | 'medium' | 'high';
       maxCostUsd?: number;
       allowBatching?: boolean;
+      modelOverride?: AutopilotModelTier;
+      minModelTier?: AutopilotModelTier;
+      trace?: AutopilotTraceContext;
     };
 
     if (!body?.task) {
@@ -37,15 +41,26 @@ export async function costAutopilotRoutes(app: FastifyInstance): Promise<void> {
       costUsd: model === 'haiku' ? 0.001 : model === 'sonnet' ? 0.003 : 0.015,
     });
 
-    const result = await autopilot.process(
-      {
-        task: body.task,
-        ...(body.complexity !== undefined ? { complexity: body.complexity } : {}),
-        ...(body.maxCostUsd !== undefined ? { maxCostUsd: body.maxCostUsd } : {}),
-        ...(body.allowBatching !== undefined ? { allowBatching: body.allowBatching } : {}),
-      },
-      executor as Parameters<typeof autopilot.process>[1],
-    );
+    let result;
+    try {
+      result = await autopilot.process(
+        {
+          task: body.task,
+          ...(body.complexity !== undefined ? { complexity: body.complexity } : {}),
+          ...(body.maxCostUsd !== undefined ? { maxCostUsd: body.maxCostUsd } : {}),
+          ...(body.allowBatching !== undefined ? { allowBatching: body.allowBatching } : {}),
+          ...(body.modelOverride !== undefined ? { modelOverride: body.modelOverride } : {}),
+          ...(body.minModelTier !== undefined ? { minModelTier: body.minModelTier } : {}),
+          ...(body.trace !== undefined ? { trace: body.trace } : {}),
+        },
+        executor as Parameters<typeof autopilot.process>[1],
+      );
+    } catch (err) {
+      if (err instanceof AutopilotBudgetError) {
+        return reply.status(402).send({ error: err.message, code: err.code });
+      }
+      throw err;
+    }
 
     return reply.send({
       data: result,

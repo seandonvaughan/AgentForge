@@ -296,6 +296,25 @@ describe("ReforgeEngine", () => {
     expect(depth).toBeLessThanOrEqual(5);
   });
 
+  it("executePlan rejects unsafe agent names before writing override files", async () => {
+    const analysis = makeAnalysis([
+      {
+        action: "adjust-model-routing",
+        rationale: "cost waste",
+        urgency: "high",
+        theme_label: "model-routing",
+        confidence: 0.8,
+      },
+    ]);
+    const plan = await engine.buildPlan(analysis, [makeTemplate({ name: "../escape" })]);
+
+    await expect(engine.executePlan(plan)).rejects.toThrow("Invalid agent name");
+
+    await expect(
+      fs.readFile(path.join(tmpDir, ".agentforge", "escape.json"), "utf-8"),
+    ).rejects.toThrow();
+  });
+
   // -------------------------------------------------------------------------
   // applyOverride
   // -------------------------------------------------------------------------
