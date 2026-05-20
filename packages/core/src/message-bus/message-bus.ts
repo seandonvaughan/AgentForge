@@ -1,6 +1,7 @@
 import { generateId, nowIso } from '@agentforge/shared';
 import type { AgentId, WorkspaceId } from '@agentforge/shared';
 import type { MessageEnvelopeV2, MessageTopic, MessageCategory, MessagePriority } from './types.js';
+import { TraceContext } from '../tracing/trace-context.js';
 
 export type MessageHandler<T = unknown> = (envelope: MessageEnvelopeV2<T>) => void | Promise<void>;
 export type TopicPattern = MessageTopic | `${string}.*`; // supports wildcard e.g. 'agent.task.*'
@@ -22,6 +23,10 @@ export interface PublishParams<T> {
   topic: MessageTopic;
   category: MessageCategory;
   payload: T;
+  traceId?: string;
+  spanId?: string;
+  parentSpanId?: string;
+  traceparent?: string;
   priority?: MessagePriority;
   correlationId?: string;
   sessionId?: string;
@@ -45,11 +50,16 @@ export class MessageBusV2 {
    * Handlers are called asynchronously (fire-and-forget).
    */
   publish<T>(params: PublishParams<T>): MessageEnvelopeV2<T> {
+    const trace = resolveTraceMetadata(params);
     const envelope: MessageEnvelopeV2<T> = {
       id: generateId(),
       version: '2.0',
       timestamp: nowIso(),
       workspaceId: this.workspaceId,
+      ...(trace.traceId ? { traceId: trace.traceId } : {}),
+      ...(trace.spanId ? { spanId: trace.spanId } : {}),
+      ...(trace.parentSpanId ? { parentSpanId: trace.parentSpanId } : {}),
+      ...(trace.traceparent ? { traceparent: trace.traceparent } : {}),
       from: params.from,
       to: params.to,
       topic: params.topic,
@@ -199,4 +209,50 @@ export class MessageBusV2 {
       }
     }
   }
+}
+
+function resolveTraceMetadata(params: PublishParams<unknown>): {
+  traceId?: string;
+  spanId?: string;
+  parentSpanId?: string;
+  traceparent?: string;
+} {
+  const fromParent = typeof params.traceparent === 'string'
+    ? TraceContext.fromHeader(params.traceparent)
+    : null;
+
+  if (fromParent) {
+    const child = fromParent.child();
+    return {
+      traceId: child.traceId,
+      spanId: child.spanId,
+      parentSpanId: fromParent.spanId,
+      traceparent: child.toHeader(),
+    };
+  }
+
+  if (!params.traceId) {
+    return {};
+  }
+
+  if (params.spanId) {
+    const header = new TraceContext(params.traceId, params.spanId, true).toHeader();
+    return {
+      traceId: params.traceId,
+      spanId: params.spanId,
+      ...(params.parentSpanId ? { parentSpanId: params.parentSpanId } : {}),
+      traceparent: header,
+    };
+  }
+
+  const context = params.parentSpanId
+    ? new TraceContext(params.traceId, params.parentSpanId, true).child()
+    : new TraceContext(params.traceId, generateId(), true);
+
+  return {
+    traceId: params.traceId,
+    spanId: context.spanId,
+    ...(params.parentSpanId ? { parentSpanId: params.parentSpanId } : {}),
+    traceparent: context.toHeader(),
+  };
 }

@@ -9,6 +9,8 @@ export interface ExecutionPlan {
   estimatedComplexity: 'low' | 'medium' | 'high';
   sandboxed: boolean;
   createdAt: string;
+  traceId?: string;
+  rootSpanId?: string;
 }
 
 export interface StageResult {
@@ -17,11 +19,13 @@ export interface StageResult {
   output: string;
   durationMs: number;
   success: boolean;
+  spanId?: string;
   error?: string;
 }
 
 export interface ExecutionResult {
   executionId: string;
+  traceId: string;
   proposalId: string;
   proposal: AgentProposal;
   plan: ExecutionPlan;
@@ -37,6 +41,9 @@ export interface ExecutionResult {
 
 export interface StageExecutionRequest {
   executionId: string;
+  traceId: string;
+  parentSpanId: string;
+  traceparent: string;
   proposal: AgentProposal;
   plan: ExecutionPlan;
   stage: ExecutionStage;

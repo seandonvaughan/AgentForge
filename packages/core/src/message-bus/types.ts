@@ -7,6 +7,10 @@ export interface MessageEnvelopeV2<TPayload = unknown> {
   version: '2.0';
   timestamp: string;
   workspaceId: WorkspaceId;
+  traceId?: string;
+  spanId?: string;
+  parentSpanId?: string;
+  traceparent?: string;
   from: AgentId | 'system' | 'user';
   to: AgentId | 'broadcast' | 'system';
   topic: MessageTopic;

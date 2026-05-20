@@ -1,23 +1,33 @@
 import { describe, expect, it } from 'vitest';
 import { ProposalExecutor, ProposalSprintExecutor } from '../executor.js';
-import type { AgentProposal } from '@agentforge/core';
+import { getGlobalTraceCollector, type AgentProposal } from '@agentforge/core';
 
 describe('ProposalExecutor execution modes', () => {
   it('keeps dry-run execution as the default', async () => {
+    const collector = getGlobalTraceCollector();
+    collector.clear();
     const result = await new ProposalExecutor().execute(buildProposal());
 
     expect(result.status).toBe('passed');
+    expect(result.traceId).toContain('trace-exec-');
+    expect(result.plan.traceId).toBe(result.traceId);
+    expect(result.stages[0]?.spanId).toEqual(expect.any(String));
     expect(result.diff).toContain('Applied: Add runtime-backed execution');
     expect(result.testSummary?.failed).toBe(0);
+    expect(collector.getTrace(result.traceId)).toBeDefined();
   });
 
   it('uses an injected runtime executor when dryRun is false', async () => {
     const stages: string[] = [];
+    const traceIds: string[] = [];
+    const parentSpanIds: string[] = [];
     const result = await new ProposalExecutor({
       dryRun: false,
       runtime: {
-        async executeStage({ stage }) {
+        async executeStage({ stage, traceId, parentSpanId }) {
           stages.push(stage);
+          traceIds.push(traceId);
+          parentSpanIds.push(parentSpanId);
           return {
             output: `ran ${stage}`,
             success: true,
@@ -31,6 +41,8 @@ describe('ProposalExecutor execution modes', () => {
     }).execute(buildProposal());
 
     expect(stages).toEqual(['planning', 'coding', 'linting', 'testing']);
+    expect(new Set(traceIds)).toEqual(new Set([result.traceId]));
+    expect(parentSpanIds.every(Boolean)).toBe(true);
     expect(result.status).toBe('passed');
     expect(result.totalCostUsd).toBeCloseTo(0.2);
     expect(result.diff).toContain('diff --git');

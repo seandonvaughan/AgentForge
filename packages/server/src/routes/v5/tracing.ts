@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
-import { TraceCollector } from '@agentforge/core';
+import { getGlobalTraceCollector } from '@agentforge/core';
 
-const collector = new TraceCollector({ serviceName: 'agentforge', maxTraces: 1000 });
+const collector = getGlobalTraceCollector();
 
 export async function tracingRoutes(app: FastifyInstance): Promise<void> {
   // GET /api/v5/traces — list traces with optional filters

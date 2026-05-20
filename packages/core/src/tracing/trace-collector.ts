@@ -32,6 +32,23 @@ export class TraceCollector {
   }
 
   /**
+   * Start a new root span using a caller-provided trace id.
+   * Useful when another subsystem (runtime jobs, external request id, etc.)
+   * already owns trace identity and we only need local span collection.
+   */
+  startRootSpanWithTraceId(
+    traceId: string,
+    opts: Omit<StartSpanOptions, 'parentContext'>,
+  ): Span {
+    const spanCtx = TraceContext.create();
+    return this.createSpan({
+      ...opts,
+      traceId,
+      spanId: spanCtx.spanId,
+    });
+  }
+
+  /**
    * Start a child span within an existing trace.
    */
   startSpan(opts: StartSpanOptions): Span {
@@ -187,4 +204,13 @@ export class TraceCollector {
       avgDurationMs: Math.round(avgDurationMs * 100) / 100,
     };
   }
+}
+
+const globalTraceCollector = new TraceCollector({
+  serviceName: 'agentforge',
+  maxTraces: 5000,
+});
+
+export function getGlobalTraceCollector(): TraceCollector {
+  return globalTraceCollector;
 }

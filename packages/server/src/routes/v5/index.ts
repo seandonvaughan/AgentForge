@@ -577,6 +577,9 @@ export function bridgeDmToGlobalStream(envelope: MessageEnvelopeV2<AgentDmSentPa
   const p = envelope.payload;
   globalStream.emit({
     type: 'comms_event',
+    workspaceId: envelope.workspaceId,
+    ...(envelope.sessionId ? { sessionId: envelope.sessionId } : {}),
+    ...(envelope.traceId ? { traceId: envelope.traceId } : {}),
     category: 'comms',
     message: `DM ${p.fromAgent} → ${p.toAgent}`,
     payload: {
@@ -587,6 +590,10 @@ export function bridgeDmToGlobalStream(envelope: MessageEnvelopeV2<AgentDmSentPa
       body: p.body,
       replyToId: p.replyToId,
       sentAt: p.sentAt,
+      ...(envelope.traceId ? { traceId: envelope.traceId } : {}),
+      ...(envelope.spanId ? { spanId: envelope.spanId } : {}),
+      ...(envelope.parentSpanId ? { parentSpanId: envelope.parentSpanId } : {}),
+      ...(envelope.traceparent ? { traceparent: envelope.traceparent } : {}),
     },
   });
 }
@@ -596,6 +603,9 @@ export function bridgeInboxToGlobalStream(envelope: MessageEnvelopeV2<InboxMessa
   const p = envelope.payload;
   globalStream.emit({
     type: 'comms_event',
+    workspaceId: envelope.workspaceId,
+    ...(envelope.sessionId ? { sessionId: envelope.sessionId } : {}),
+    ...(envelope.traceId ? { traceId: envelope.traceId } : {}),
     category: 'comms',
     message: `Inbox: ${p.sourceType ?? 'system'} → ${p.recipients.join(', ')}`,
     payload: {
@@ -608,6 +618,10 @@ export function bridgeInboxToGlobalStream(envelope: MessageEnvelopeV2<InboxMessa
       threadId: p.threadId,
       createdAt: p.createdAt,
       recipients: p.recipients,
+      ...(envelope.traceId ? { traceId: envelope.traceId } : {}),
+      ...(envelope.spanId ? { spanId: envelope.spanId } : {}),
+      ...(envelope.parentSpanId ? { parentSpanId: envelope.parentSpanId } : {}),
+      ...(envelope.traceparent ? { traceparent: envelope.traceparent } : {}),
     },
   });
 }
@@ -617,6 +631,9 @@ function bridgeRuntimeEventToGlobalStream(event: RuntimeEventEnvelope): void {
     ...event.payload,
     workspaceId: event.workspaceId,
     traceId: event.traceId,
+    ...(event.spanId ? { spanId: event.spanId } : {}),
+    ...(event.parentSpanId ? { parentSpanId: event.parentSpanId } : {}),
+    ...(event.traceparent ? { traceparent: event.traceparent } : {}),
     jobId: event.jobId,
     sessionId: event.sessionId,
     agentId: event.agentId,

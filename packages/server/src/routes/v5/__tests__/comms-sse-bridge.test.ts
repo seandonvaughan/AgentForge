@@ -18,6 +18,7 @@ import { globalStream, type StreamEvent } from '../stream.js';
 
 function dmEnvelope(
   payload: AgentDmSentPayload,
+  trace: { traceId?: string; spanId?: string; parentSpanId?: string; traceparent?: string } = {},
 ): MessageEnvelopeV2<AgentDmSentPayload> {
   return {
     id: 'env-1',
@@ -30,11 +31,13 @@ function dmEnvelope(
     category: 'comms',
     priority: 'normal',
     payload,
+    ...trace,
   };
 }
 
 function inboxEnvelope(
   payload: InboxMessageCreatedPayload,
+  trace: { traceId?: string; spanId?: string; parentSpanId?: string; traceparent?: string } = {},
 ): MessageEnvelopeV2<InboxMessageCreatedPayload> {
   return {
     id: 'env-2',
@@ -47,6 +50,7 @@ function inboxEnvelope(
     category: 'comms',
     priority: 'normal',
     payload,
+    ...trace,
   };
 }
 
@@ -63,6 +67,11 @@ describe('bridgeDmToGlobalStream', () => {
           body: 'design review please',
           replyToId: null,
           sentAt: '2026-05-15T00:00:00.000Z',
+        }, {
+          traceId: 'trace-dm-1',
+          spanId: 'span-dm-1',
+          parentSpanId: 'span-parent-1',
+          traceparent: '00|trace-dm-1|span-dm-1|01',
         }),
       );
     } finally {
@@ -72,13 +81,28 @@ describe('bridgeDmToGlobalStream', () => {
     const ev = received[0]!;
     expect(ev.type).toBe('comms_event');
     expect(ev.category).toBe('comms');
+    expect(ev.workspaceId).toBe('test');
+    expect(ev.traceId).toBe('trace-dm-1');
     expect(ev.message).toContain('coder-1');
     expect(ev.message).toContain('architect');
-    const payload = ev.payload as { kind: string; fromAgent: string; toAgent: string; id: string };
+    const payload = ev.payload as {
+      kind: string;
+      fromAgent: string;
+      toAgent: string;
+      id: string;
+      traceId: string;
+      spanId: string;
+      parentSpanId: string;
+      traceparent: string;
+    };
     expect(payload.kind).toBe('dm');
     expect(payload.id).toBe('dm-1');
     expect(payload.fromAgent).toBe('coder-1');
     expect(payload.toAgent).toBe('architect');
+    expect(payload.traceId).toBe('trace-dm-1');
+    expect(payload.spanId).toBe('span-dm-1');
+    expect(payload.parentSpanId).toBe('span-parent-1');
+    expect(payload.traceparent).toBe('00|trace-dm-1|span-dm-1|01');
   });
 });
 
@@ -97,6 +121,10 @@ describe('bridgeInboxToGlobalStream', () => {
           threadId: null,
           createdAt: '2026-05-15T00:00:00.000Z',
           recipients: ['@user'],
+        }, {
+          traceId: 'trace-inbox-1',
+          spanId: 'span-inbox-1',
+          traceparent: '00|trace-inbox-1|span-inbox-1|01',
         }),
       );
     } finally {
@@ -106,15 +134,23 @@ describe('bridgeInboxToGlobalStream', () => {
     const ev = received[0]!;
     expect(ev.type).toBe('comms_event');
     expect(ev.category).toBe('comms');
+    expect(ev.workspaceId).toBe('test');
+    expect(ev.traceId).toBe('trace-inbox-1');
     const payload = ev.payload as {
       kind: string;
       id: string;
       messageKind: string;
       recipients: string[];
+      traceId: string;
+      spanId: string;
+      traceparent: string;
     };
     expect(payload.kind).toBe('inbox');
     expect(payload.id).toBe('inbox-1');
     expect(payload.messageKind).toBe('warning');
     expect(payload.recipients).toEqual(['@user']);
+    expect(payload.traceId).toBe('trace-inbox-1');
+    expect(payload.spanId).toBe('span-inbox-1');
+    expect(payload.traceparent).toBe('00|trace-inbox-1|span-inbox-1|01');
   });
 });

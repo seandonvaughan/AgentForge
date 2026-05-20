@@ -2,6 +2,9 @@ import type { RuntimeJobRow, WorkspaceAdapter } from '@agentforge/db';
 import type { RunResult } from '../agent-runtime/types.js';
 import { generateId, nowIso } from '@agentforge/shared';
 import type { RuntimeEventEnvelope, RuntimeJobStatus, RuntimeMode } from './types.js';
+import { getGlobalTraceCollector } from '../tracing/trace-collector.js';
+import { TraceContext } from '../tracing/trace-context.js';
+import type { Span } from '../tracing/span.js';
 
 export interface RuntimeJobSupervisorOptions {
   adapter: WorkspaceAdapter;
@@ -32,8 +35,13 @@ export interface CreateRuntimeJobInput {
 
 export type RuntimeJobExecutor = (context: RuntimeJobExecutionContext) => Promise<RunResult>;
 
+interface ActiveJobState {
+  controller: AbortController;
+  runSpan: Span;
+}
+
 export class RuntimeJobSupervisor {
-  private readonly activeJobs = new Map<string, AbortController>();
+  private readonly activeJobs = new Map<string, ActiveJobState>();
 
   constructor(private readonly options: RuntimeJobSupervisorOptions) {}
 
@@ -63,8 +71,21 @@ export class RuntimeJobSupervisor {
     const started = this.options.adapter.startRuntimeJob(jobId);
     if (!started) return undefined;
 
+    const collector = getGlobalTraceCollector();
     const controller = new AbortController();
-    this.activeJobs.set(jobId, controller);
+    const runSpan = collector.startRootSpanWithTraceId(started.trace_id, {
+      name: 'runtime.job.run',
+      kind: 'server',
+      attributes: {
+        'service.name': 'agentforge.runtime',
+        'runtime.job.id': started.id,
+        'runtime.job.agent_id': started.agent_id,
+        'runtime.job.session_id': started.session_id,
+        'runtime.job.model': started.model ?? 'unknown',
+        'runtime.job.runtime_mode': started.runtime_mode ?? 'unknown',
+      },
+    });
+    this.activeJobs.set(jobId, { controller, runSpan });
 
     this.emit(started, {
       type: 'job_started',
@@ -81,11 +102,18 @@ export class RuntimeJobSupervisor {
 
       const latest = this.options.adapter.getRuntimeJob(jobId);
       if (latest?.status === 'cancelled' || latest?.cancel_requested) {
+        runSpan.setStatus('error', 'Run cancelled');
         this.markCancelled(latest, 'Run cancelled');
         return result;
       }
 
       if (result.status === 'failed') {
+        runSpan.setAttributes({
+          'runtime.job.cost_usd': result.costUsd,
+          'runtime.job.input_tokens': result.inputTokens,
+          'runtime.job.output_tokens': result.outputTokens,
+        });
+        runSpan.setStatus('error', result.error ?? 'Run failed');
         const failed = this.options.adapter.completeRuntimeJob(jobId, {
           status: 'failed',
           model: result.model,
@@ -101,6 +129,12 @@ export class RuntimeJobSupervisor {
         return result;
       }
 
+      runSpan.setAttributes({
+        'runtime.job.cost_usd': result.costUsd,
+        'runtime.job.input_tokens': result.inputTokens,
+        'runtime.job.output_tokens': result.outputTokens,
+      });
+      runSpan.setStatus('ok');
       const completed = this.options.adapter.completeRuntimeJob(jobId, {
         status: 'completed',
         model: result.model,
@@ -116,10 +150,16 @@ export class RuntimeJobSupervisor {
     } catch (error) {
       const latest = this.options.adapter.getRuntimeJob(jobId);
       if (latest?.status === 'cancelled' || latest?.cancel_requested || controller.signal.aborted) {
+        runSpan.setStatus('error', errorMessage(error));
         this.markCancelled(latest ?? started, errorMessage(error));
         return undefined;
       }
 
+      if (error instanceof Error) {
+        runSpan.recordException(error);
+      } else {
+        runSpan.setStatus('error', errorMessage(error));
+      }
       const failed = this.options.adapter.completeRuntimeJob(jobId, {
         status: 'failed',
         error: errorMessage(error),
@@ -134,6 +174,7 @@ export class RuntimeJobSupervisor {
       }
       return undefined;
     } finally {
+      collector.endSpan(runSpan);
       this.activeJobs.delete(jobId);
     }
   }
@@ -144,7 +185,7 @@ export class RuntimeJobSupervisor {
     if (isTerminalStatus(current.status)) return current;
 
     this.options.adapter.requestRuntimeJobCancel(jobId);
-    this.activeJobs.get(jobId)?.abort();
+    this.activeJobs.get(jobId)?.controller.abort();
     const cancelled = this.options.adapter.cancelRuntimeJob(jobId, nowIso(), 'Cancellation requested');
     if (cancelled) {
       this.emit(cancelled, {
@@ -210,46 +251,94 @@ export class RuntimeJobSupervisor {
   }
 
   private emit(job: RuntimeJobRow, input: RuntimeEventInput): RuntimeEventEnvelope {
+    const collector = getGlobalTraceCollector();
+    const eventSpan = this.createEventSpan(job, input);
+    const context = eventSpan.context();
     const timestamp = nowIso();
-    const row = this.options.adapter.recordRuntimeEvent({
-      id: generateId(),
-      jobId: job.id,
-      sessionId: job.session_id,
-      traceId: job.trace_id,
-      agentId: job.agent_id,
-      type: input.type,
-      category: input.category ?? 'run',
-      message: input.message,
-      data: {
-        workspaceId: this.options.adapter.workspaceId,
-        traceId: job.trace_id,
+    try {
+      const row = this.options.adapter.recordRuntimeEvent({
+        id: generateId(),
         jobId: job.id,
         sessionId: job.session_id,
+        traceId: job.trace_id,
         agentId: job.agent_id,
-        ...(input.data ?? {}),
+        type: input.type,
+        category: input.category ?? 'run',
+        message: input.message,
+        data: {
+          ...(input.data ?? {}),
+          workspaceId: this.options.adapter.workspaceId,
+          traceId: job.trace_id,
+          spanId: eventSpan.spanId,
+          ...(eventSpan.parentSpanId ? { parentSpanId: eventSpan.parentSpanId } : {}),
+          traceparent: context.toHeader(),
+          jobId: job.id,
+          sessionId: job.session_id,
+          agentId: job.agent_id,
+        },
+        createdAt: timestamp,
+      });
+
+      const payload = parseEventData(row.data_json);
+      const envelope: RuntimeEventEnvelope = {
+        id: row.id,
+        sequence: row.sequence,
+        workspaceId: this.options.adapter.workspaceId,
+        jobId: row.job_id,
+        sessionId: row.session_id,
+        traceId: row.trace_id,
+        ...(typeof payload.spanId === 'string' ? { spanId: payload.spanId } : {}),
+        ...(typeof payload.parentSpanId === 'string' ? { parentSpanId: payload.parentSpanId } : {}),
+        ...(typeof payload.traceparent === 'string' ? { traceparent: payload.traceparent } : {}),
+        agentId: row.agent_id,
+        type: row.type,
+        category: row.category,
+        message: row.message,
+        payload,
+        data: payload,
+        timestamp: row.created_at,
+      };
+
+      this.options.onEvent?.(envelope);
+      eventSpan.setStatus('ok');
+      return envelope;
+    } catch (error) {
+      if (error instanceof Error) eventSpan.recordException(error);
+      else eventSpan.setStatus('error', String(error));
+      throw error;
+    } finally {
+      collector.endSpan(eventSpan);
+    }
+  }
+
+  private createEventSpan(job: RuntimeJobRow, input: RuntimeEventInput): Span {
+    const active = this.activeJobs.get(job.id);
+    const parentContext = active
+      ? active.runSpan.context().toSpanContext()
+      : new TraceContext(job.trace_id, `job-${job.id}`, true).toSpanContext();
+
+    const span = getGlobalTraceCollector().startSpan({
+      name: `runtime.event.${input.type}`,
+      kind: 'internal',
+      parentContext,
+      attributes: {
+        'service.name': 'agentforge.runtime',
+        'runtime.job.id': job.id,
+        'runtime.job.agent_id': job.agent_id,
+        'runtime.event.type': input.type,
+        'runtime.event.category': input.category ?? 'run',
       },
-      createdAt: timestamp,
     });
 
-    const payload = parseEventData(row.data_json);
-    const envelope: RuntimeEventEnvelope = {
-      id: row.id,
-      sequence: row.sequence,
-      workspaceId: this.options.adapter.workspaceId,
-      jobId: row.job_id,
-      sessionId: row.session_id,
-      traceId: row.trace_id,
-      agentId: row.agent_id,
-      type: row.type,
-      category: row.category,
-      message: row.message,
-      payload,
-      data: payload,
-      timestamp: row.created_at,
-    };
+    if (input.data) {
+      const keys = Object.keys(input.data);
+      span.setAttributes({
+        'runtime.event.data_key_count': keys.length,
+        'runtime.event.data_keys': keys.slice(0, 20).join(','),
+      });
+    }
 
-    this.options.onEvent?.(envelope);
-    return envelope;
+    return span;
   }
 }
 

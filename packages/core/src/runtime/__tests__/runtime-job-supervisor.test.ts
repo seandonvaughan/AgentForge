@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { WorkspaceAdapter } from '@agentforge/db';
 import { RuntimeJobSupervisor } from '../runtime-job-supervisor.js';
 import type { RunResult } from '../../agent-runtime/types.js';
+import { getGlobalTraceCollector } from '../../tracing/trace-collector.js';
 
 function buildAdapter(): WorkspaceAdapter {
   return new WorkspaceAdapter({ dbPath: ':memory:', workspaceId: 'test' });
@@ -25,6 +26,8 @@ function completedResult(sessionId: string): RunResult {
 
 describe('RuntimeJobSupervisor', () => {
   it('creates, starts, completes, and persists runtime events', async () => {
+    const collector = getGlobalTraceCollector();
+    collector.clear();
     const adapter = buildAdapter();
     const onEvent = vi.fn();
     const supervisor = new RuntimeJobSupervisor({ adapter, onEvent });
@@ -50,13 +53,22 @@ describe('RuntimeJobSupervisor', () => {
       'chunk',
       'job_completed',
     ]);
-    expect(JSON.parse(events[2]!.data_json)).toMatchObject({ content: 'done', jobId: job.id });
+    const chunkPayload = JSON.parse(events[2]!.data_json);
+    expect(chunkPayload).toMatchObject({ content: 'done', jobId: job.id, traceId: job.trace_id });
+    expect(chunkPayload.spanId).toEqual(expect.any(String));
+    expect(chunkPayload.traceparent).toEqual(expect.any(String));
+    expect(onEvent.mock.calls[2]?.[0]?.spanId).toBe(chunkPayload.spanId);
     expect(onEvent).toHaveBeenCalledTimes(4);
+    const trace = collector.getTrace(job.trace_id);
+    expect(trace).toBeDefined();
+    expect(trace?.spans.some((span) => span.name === 'runtime.job.run')).toBe(true);
 
     adapter.close();
   });
 
   it('aborts an active job when cancelled', async () => {
+    const collector = getGlobalTraceCollector();
+    collector.clear();
     const adapter = buildAdapter();
     const supervisor = new RuntimeJobSupervisor({ adapter });
     const job = supervisor.createJob({ agentId: 'coder', task: 'Wait' });
@@ -75,6 +87,7 @@ describe('RuntimeJobSupervisor', () => {
     expect(cancelled?.status).toBe('cancelled');
     expect(adapter.getRuntimeJob(job.id)?.status).toBe('cancelled');
     expect(adapter.listRuntimeEvents({ jobId: job.id }).map((event) => event.type)).toContain('job_cancelled');
+    expect(collector.getTrace(job.trace_id)).toBeDefined();
 
     adapter.close();
   });

@@ -1,4 +1,4 @@
-import { generateId, nowIso } from '@agentforge/shared';
+import { nowIso } from '@agentforge/shared';
 import type { AgentProposal } from '@agentforge/core';
 import type { ExecutionPlan } from './types.js';
 
@@ -15,7 +15,12 @@ function inferComplexity(proposal: AgentProposal): 'low' | 'medium' | 'high' {
   return 'medium';
 }
 
-export function buildPlan(proposal: AgentProposal): ExecutionPlan {
+export interface BuildPlanOptions {
+  traceId?: string;
+  rootSpanId?: string;
+}
+
+export function buildPlan(proposal: AgentProposal, options: BuildPlanOptions = {}): ExecutionPlan {
   const complexity = inferComplexity(proposal);
 
   const stages = complexity === 'high'
@@ -37,5 +42,7 @@ export function buildPlan(proposal: AgentProposal): ExecutionPlan {
     estimatedComplexity: complexity,
     sandboxed: true,
     createdAt: nowIso(),
+    ...(options.traceId ? { traceId: options.traceId } : {}),
+    ...(options.rootSpanId ? { rootSpanId: options.rootSpanId } : {}),
   };
 }
