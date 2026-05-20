@@ -495,6 +495,7 @@ async function emitFiles(plan: TeamPlan, projectRoot: string): Promise<void> {
   const teamYamlContent = yaml.dump(buildTeamYaml(plan, projectRoot), {
     lineWidth: 120,
     noRefs: true,
+    sortKeys: false,
   });
 
   const teamPlanJsonContent = JSON.stringify(plan, null, 2);
@@ -512,7 +513,7 @@ async function emitFiles(plan: TeamPlan, projectRoot: string): Promise<void> {
       // .agentforge/agents/<id>.yaml
       writeAtomic(
         join(agentsDir, `${agent.id}.yaml`),
-        yaml.dump(buildAgentYaml(agent), { lineWidth: 120, noRefs: true }),
+        yaml.dump(buildAgentYaml(agent), { lineWidth: 120, noRefs: true, sortKeys: false }),
       ),
 
       // .claude/agents/<id>.md

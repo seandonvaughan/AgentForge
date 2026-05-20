@@ -14,6 +14,7 @@ import type { AgentYaml } from "./agent-yaml-schema.js";
 const DUMP_OPTS: yaml.DumpOptions = {
   lineWidth: 120,
   noRefs: true,
+  sortKeys: false,
 };
 
 /**

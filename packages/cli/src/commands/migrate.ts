@@ -2,6 +2,7 @@ import { readdir, mkdir } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import Database from 'better-sqlite3';
+import yaml from 'js-yaml';
 
 export interface MigrationReport {
   agentsMigrated: number;
@@ -11,6 +12,12 @@ export interface MigrationReport {
   errors: string[];
   startedAt: string;
   completedAt?: string;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
 }
 
 export async function migrateV4ToV5(projectRoot: string, targetDbPath: string): Promise<MigrationReport> {
@@ -90,17 +97,15 @@ export async function migrateV4ToV5(projectRoot: string, targetDbPath: string): 
         for (const file of files) {
           try {
             const content = readFileSync(join(agentsDir, file), 'utf-8');
+            const parsed = asRecord(yaml.load(content));
             const agentId = basename(file, '.yaml');
-            const nameMatch = content.match(/^name:\s*(.+)$/m);
-            const modelMatch = content.match(/^model:\s*(.+)$/m);
-            const roleMatch = content.match(/^role:\s*(.+)$/m);
 
             insertAgent.run(
               agentId,
               workspaceId,
-              nameMatch?.[1]?.trim() ?? agentId,
-              modelMatch?.[1]?.trim() ?? 'sonnet',
-              roleMatch?.[1]?.trim() ?? null,
+              typeof parsed.name === 'string' && parsed.name.trim() ? parsed.name.trim() : agentId,
+              typeof parsed.model === 'string' && parsed.model.trim() ? parsed.model.trim() : 'sonnet',
+              typeof parsed.role === 'string' && parsed.role.trim() ? parsed.role.trim() : null,
               null, // system_prompt skipped for migration brevity
               '[]',
               JSON.stringify({ sourceFile: file }),

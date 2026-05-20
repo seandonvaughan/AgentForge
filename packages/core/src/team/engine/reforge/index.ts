@@ -6,8 +6,10 @@
  * agent team should be updated.
  */
 
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir, rename } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import yaml from "js-yaml";
 import type { DomainId } from "../types/domain.js";
 
@@ -67,6 +69,18 @@ function agentModel(manifest: TeamManifest, agentName: string): ModelTier | unde
   if (manifest.model_routing.sonnet.includes(agentName)) return "sonnet";
   if (manifest.model_routing.haiku.includes(agentName)) return "haiku";
   return undefined;
+}
+
+const YAML_DUMP_OPTS: yaml.DumpOptions = {
+  lineWidth: 120,
+  noRefs: true,
+  sortKeys: false,
+};
+
+async function writeAtomic(filePath: string, content: string): Promise<void> {
+  const tmpPath = join(tmpdir(), `agentforge-${randomBytes(8).toString("hex")}.tmp`);
+  await writeFile(tmpPath, content, "utf-8");
+  await rename(tmpPath, filePath);
 }
 
 /** Determine the category of an agent within a manifest. */
@@ -249,7 +263,11 @@ export async function migrateV1ToV2(projectRoot: string): Promise<void> {
     throw new Error("No team.yaml found. Run 'agentforge forge' first.");
   }
 
-  const manifest = yaml.load(raw) as Record<string, unknown>;
+  const loaded = yaml.load(raw);
+  if (!loaded || typeof loaded !== "object" || Array.isArray(loaded)) {
+    throw new Error("team.yaml must contain a YAML mapping");
+  }
+  const manifest = loaded as Record<string, unknown>;
 
   let modified = false;
 
@@ -269,7 +287,7 @@ export async function migrateV1ToV2(projectRoot: string): Promise<void> {
   }
 
   if (modified) {
-    await writeFile(teamPath, yaml.dump(manifest), "utf-8");
+    await writeAtomic(teamPath, yaml.dump(manifest, YAML_DUMP_OPTS));
   }
 }
 

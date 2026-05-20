@@ -5,15 +5,13 @@
  * selector renders with real data on the first request — no dependency on the
  * external backend server at port 4750 for the initial render.
  *
- * Uses the same minimal YAML field extractor as agents/+page.server.ts to
- * avoid a js-yaml dependency in this package's server bundle.
- *
  * Exports _loadRunnerAgents(root) for hermetic unit tests (same convention as
  * agents/+page.server.ts#_loadAgents and flywheel/+page.server.ts#_computeMetrics).
  */
 import type { PageServerLoad } from './$types';
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import yaml from 'js-yaml';
 
 export interface RunnerAgentEntry {
   agentId: string;
@@ -21,56 +19,10 @@ export interface RunnerAgentEntry {
   model: 'opus' | 'sonnet' | 'haiku';
 }
 
-/**
- * Minimal YAML top-level field extractor.
- *
- * Handles:
- *   key: simple value
- *   key: >          (folded block scalar — joins indented lines with spaces)
- *   key: |          (literal block scalar — preserves newlines)
- *
- * Only extracts the fields listed in `wantKeys`. Nested mappings are skipped.
- * This avoids a js-yaml dependency in the dashboard package's server bundle.
- */
-function extractYamlFields(
-  content: string,
-  wantKeys: string[],
-): Record<string, string> {
-  const result: Record<string, string> = {};
-  const lines = content.split('\n');
-  const wanted = new Set(wantKeys);
-
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i];
-    const m = line.match(/^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)/);
-    if (!m) { i++; continue; }
-
-    const key = m[1];
-    const rest = m[2].trim();
-
-    if (!wanted.has(key)) { i++; continue; }
-
-    if (rest === '>' || rest === '|') {
-      const scalar = rest;
-      const parts: string[] = [];
-      i++;
-      while (i < lines.length && /^[ \t]/.test(lines[i])) {
-        parts.push(lines[i].trim());
-        i++;
-      }
-      result[key] = scalar === '>'
-        ? parts.join(' ')
-        : parts.join('\n');
-    } else if (rest !== '') {
-      result[key] = rest.replace(/^["']|["']$/g, '');
-      i++;
-    } else {
-      i++;
-    }
-  }
-
-  return result;
+function asRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
 }
 
 /** Walk up from CWD until we find a directory containing .agentforge/agents/. */
@@ -111,11 +63,11 @@ export function _loadRunnerAgents(root: string): RunnerAgentEntry[] {
     const agentId = f.replace(/\.ya?ml$/, '');
     try {
       const content = readFileSync(join(agentsDir, f), 'utf-8');
-      const raw = extractYamlFields(content, ['name', 'model']);
-      const modelRaw = raw['model'] ?? 'sonnet';
+      const raw = asRecord(yaml.load(content));
+      const modelRaw = typeof raw.model === 'string' ? raw.model : 'sonnet';
       const model: 'opus' | 'sonnet' | 'haiku' =
         modelRaw === 'opus' || modelRaw === 'haiku' ? modelRaw : 'sonnet';
-      return [{ agentId, name: raw['name'] ?? agentId, model }];
+      return [{ agentId, name: typeof raw.name === 'string' ? raw.name : agentId, model }];
     } catch {
       return [];
     }

@@ -29,6 +29,7 @@
 import type { PageServerLoad } from './$types';
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import yaml from 'js-yaml';
 
 export interface OrgNodeData {
   id: string;
@@ -56,119 +57,14 @@ function findProjectRoot(): string {
   return process.cwd();
 }
 
-/**
- * Minimal YAML top-level field extractor.
- * Handles: key: value, key: 'value', key: "value", and block scalars (> and |).
- * Only extracts fields in wantKeys. Does not recurse into nested mappings.
- * Avoids adding js-yaml as a dashboard package dependency.
- */
-function extractYamlFields(content: string, wantKeys: string[]): Record<string, string> {
-  const result: Record<string, string> = {};
-  const wanted = new Set(wantKeys);
-  const lines = content.split('\n');
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i];
-    const m = line.match(/^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)/);
-    if (!m) { i++; continue; }
-    const key = m[1];
-    const rest = m[2].trim();
-    if (!wanted.has(key)) { i++; continue; }
-    if (rest === '>' || rest === '|') {
-      const parts: string[] = [];
-      i++;
-      while (i < lines.length && /^[ \t]/.test(lines[i])) {
-        parts.push(lines[i].trim());
-        i++;
-      }
-      result[key] = rest === '>' ? parts.join(' ') : parts.join('\n');
-    } else if (rest !== '') {
-      result[key] = rest.replace(/^["']|["']$/g, '');
-      i++;
-    } else {
-      i++;
-    }
-  }
-  return result;
+function asRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
 }
 
-/**
- * Extract collaboration.reports_to (string) and collaboration.can_delegate_to
- * (string[]) from an agent YAML file.
- *
- * Handles block-sequence style:
- *   collaboration:
- *     reports_to: manager
- *     can_delegate_to:
- *       - worker1
- *       - worker2
- *
- * And inline list style:
- *   collaboration:
- *     can_delegate_to: [worker1, worker2]
- */
-function extractCollaboration(content: string): {
-  reportsTo: string | null;
-  canDelegateTo: string[];
-} {
-  const lines = content.split('\n');
-  let inCollab = false;
-  let inDelegateList = false;
-  let reportsTo: string | null = null;
-  const canDelegateTo: string[] = [];
-
-  for (const line of lines) {
-    if (!line.trim()) continue;
-    const indent = line.length - line.trimStart().length;
-    const trimmed = line.trim();
-
-    if (indent === 0) {
-      // Top-level key — enter or exit collaboration block
-      inCollab = trimmed.startsWith('collaboration:');
-      inDelegateList = false;
-      continue;
-    }
-
-    if (!inCollab) continue;
-
-    // reports_to
-    const rtMatch = trimmed.match(/^reports_to\s*:\s*(.*)/);
-    if (rtMatch) {
-      inDelegateList = false;
-      const val = rtMatch[1].trim().replace(/^["']|["']$/g, '');
-      if (val && val !== 'null' && val !== '~') reportsTo = val;
-      continue;
-    }
-
-    // can_delegate_to
-    const cdMatch = trimmed.match(/^can_delegate_to\s*:\s*(.*)/);
-    if (cdMatch) {
-      const rest = cdMatch[1].trim();
-      inDelegateList = true;
-      if (rest.startsWith('[')) {
-        // Inline list: [a, b, c]
-        const inner = rest.slice(1, rest.lastIndexOf(']'));
-        canDelegateTo.push(
-          ...inner.split(',').map(s => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean),
-        );
-        inDelegateList = false;
-      }
-      continue;
-    }
-
-    // Another collaboration sub-key ends the delegate list
-    if (inDelegateList && !trimmed.startsWith('-') && /^[A-Za-z_]/.test(trimmed)) {
-      inDelegateList = false;
-    }
-
-    // List item under can_delegate_to
-    if (inDelegateList && trimmed.startsWith('- ')) {
-      const val = trimmed.slice(2).trim().replace(/^["']|["']$/g, '');
-      if (val) canDelegateTo.push(val);
-    }
-  }
-
-  return { reportsTo, canDelegateTo };
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }
 
 /**
@@ -231,8 +127,12 @@ export function _buildOrgGraph(projectRoot: string): { nodes: OrgNodeData[]; edg
       if (EXCLUDED_AGENTS.has(id)) continue;
       try {
         const content = readFileSync(join(agentsDir, file), 'utf-8');
-        const fields = extractYamlFields(content, ['name', 'model']);
-        nodes.push({ id, label: fields.name ?? id, model: fields.model });
+        const fields = asRecord(yaml.load(content));
+        nodes.push({
+          id,
+          label: typeof fields.name === 'string' ? fields.name : id,
+          model: typeof fields.model === 'string' ? fields.model : undefined,
+        });
         agentContents.set(id, content);
       } catch { /* skip malformed */ }
     }
@@ -252,13 +152,16 @@ export function _buildOrgGraph(projectRoot: string): { nodes: OrgNodeData[]; edg
 
   // Source 1: can_delegate_to (authoritative parent → child grants)
   for (const [id, content] of agentContents) {
-    const { canDelegateTo } = extractCollaboration(content);
-    for (const to of canDelegateTo) addEdge(id, to);
+    const doc = asRecord(yaml.load(content));
+    const collab = asRecord(doc.collaboration);
+    for (const to of asStringArray(collab.can_delegate_to)) addEdge(id, to);
   }
 
   // Source 2: reports_to (child declares parent — fills gaps in can_delegate_to)
   for (const [id, content] of agentContents) {
-    const { reportsTo } = extractCollaboration(content);
+    const doc = asRecord(yaml.load(content));
+    const collab = asRecord(doc.collaboration);
+    const reportsTo = typeof collab.reports_to === 'string' ? collab.reports_to : null;
     if (reportsTo) addEdge(reportsTo, id);
   }
 

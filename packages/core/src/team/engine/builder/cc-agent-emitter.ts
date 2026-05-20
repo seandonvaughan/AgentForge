@@ -114,6 +114,7 @@ export function buildAgentMarkdown(spec: ClaudeCodeAgentSpec): string {
   const yamlBody = yaml.dump(frontmatterObj, {
     lineWidth: -1, // prevent wrapping
     noRefs: true,
+    sortKeys: false,
     quotingType: '"',
     forceQuotes: false,
   });
