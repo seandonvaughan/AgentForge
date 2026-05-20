@@ -39,6 +39,15 @@ describe('package scripts', () => {
     );
   });
 
+  it('keeps dashboard route smoke specs pinned in test:e2e:dashboard', async () => {
+    const scripts = loadRootScripts();
+    const command = scripts['test:e2e:dashboard'];
+    expect(command).toBeDefined();
+    expect(command).toContain('tests/e2e/dashboard-runner.test.ts');
+    expect(command).toContain('tests/e2e/dashboard-live.test.ts');
+    expect(command).toContain('tests/e2e/dashboard-health.test.ts');
+  });
+
   it('stops verify:gates before dashboard checks when build fails', async () => {
     const scripts = loadRootScripts();
     const harness = new ScriptPipelineHarness(scripts, (command) => {

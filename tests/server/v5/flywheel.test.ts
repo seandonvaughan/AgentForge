@@ -164,6 +164,35 @@ Dash-list parser coverage.`;
     expect(p!.occurrences).toBe(7);
   });
 
+  it('parses CRLF dash-list requiresTools arrays without dropping items', () => {
+    const content = [
+      '---',
+      'id: prop-crlf-dash-list',
+      'action: refine',
+      'targetSkillId: agentforge:tdd',
+      'skillId: agentforge:tdd',
+      'capabilityTag: parser-hardening',
+      'clusterId: cluster-parser-2',
+      'requiresTools:',
+      '  - Bash',
+      '  - Edit',
+      '  - Glob',
+      'occurrences: 4',
+      'status: proposed',
+      'createdAt: "2024-01-16T10:00:00Z"',
+      '---',
+      '',
+      'CRLF parser coverage.',
+    ].join('\r\n');
+    writeFileSync(join(PROPOSED_DIR, 'prop-crlf-dash-list.md'), content, 'utf8');
+
+    const result = loadProposals(TMP_ROOT);
+    const p = result.find((x) => x.id === 'prop-crlf-dash-list');
+    expect(p).toBeDefined();
+    expect(p!.requiresTools).toEqual(['Bash', 'Edit', 'Glob']);
+    expect(p!.occurrences).toBe(4);
+  });
+
   it('includes body content', () => {
     writeProposal('prop-body.md', {
       id: 'prop-body',

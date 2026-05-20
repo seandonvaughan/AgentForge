@@ -188,6 +188,33 @@ test.describe('Runner Page', () => {
     await expect(page.locator('.history-item').first()).toContainText('completed');
   });
 
+  test('normalizes allowed tools and codex option payload fields', async ({ page }) => {
+    let runRequest: Record<string, unknown> | undefined;
+    await openRunner(page, { onRunRequest: (payload) => { runRequest = payload; } });
+
+    await page.check('.toggle-row:has-text("Search") input[type="checkbox"]');
+    await page.check('.toggle-row:has-text("Ephemeral") input[type="checkbox"]');
+    await page.check('.toggle-row:has-text("Skip git check") input[type="checkbox"]');
+    await page.fill('#codex-profile', '  workspace  ');
+    await page.fill('#codex-profile-v2', '  team  ');
+
+    await page.fill('#allowed-tools', 'Read, Read,\nGlob, , Edit');
+    await page.fill('#task-input', 'Validate payload guards');
+    await page.click('button:has-text("Run Agent")');
+
+    await expect.poll(() => runRequest).toBeTruthy();
+    expect(runRequest).toMatchObject({
+      runtimeMode: 'codex-cli',
+      codexSandbox: 'workspace-write',
+      allowedTools: ['Read', 'Glob', 'Edit'],
+      codexSearch: true,
+      codexEphemeral: true,
+      codexSkipGitRepoCheck: true,
+      codexProfile: 'workspace',
+      codexProfileV2: 'team',
+    });
+  });
+
   test('renders raw gpt-5.5 invoke metadata as the xhigh profile', async ({ page }) => {
     await openRunner(page, { model: 'gpt-5.5' });
 

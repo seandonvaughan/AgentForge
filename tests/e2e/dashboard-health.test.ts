@@ -143,6 +143,28 @@ test.describe('Health Dashboard Page', () => {
     await expect(page.locator('.inc-table tbody tr').first()).toContainText(/circuit open/i);
   });
 
+  test('shows degraded system status when services endpoint reports degraded health', async ({ page }) => {
+    const degraded = structuredClone(BASE_SERVICES);
+    degraded.status = 'degraded';
+    degraded.healthyCount = 1;
+    degraded.degradedCount = 1;
+    degraded.services[0] = {
+      ...degraded.services[0],
+      successRate: 0.72,
+      failureCount: 8,
+      circuitOpen: true,
+      circuitOpenedAt: '2026-05-19T11:30:00.000Z',
+    };
+
+    await mockHealthApis(page, { servicesBody: degraded });
+    await gotoHealth(page);
+
+    await expect(page.locator('body')).toContainText(/system degraded/i);
+    await expect(page.locator('body')).toContainText('1 healthy');
+    await expect(page.locator('body')).toContainText('1 degraded');
+    await expect(page.locator('.services-grid .svc-name').first()).toContainText('openai');
+  });
+
   test('falls back to API server card when services endpoint fails', async ({ page }) => {
     await mockHealthApis(page, { servicesStatus: 503 });
     await gotoHealth(page);

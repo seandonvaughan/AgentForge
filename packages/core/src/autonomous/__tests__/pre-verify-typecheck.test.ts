@@ -239,6 +239,45 @@ describe('runPreVerifyTypeCheck', () => {
     expect(artifact.firstError!.line).toBe(3);
   });
 
+  it('deduplicates repeated TS2554 callsite errors for the same file in typecheck artifacts', async () => {
+    const { runPreVerifyTypeCheck } = await import('../pre-verify-typecheck.js');
+    const { CycleLogger } = await import('../cycle-logger.js');
+    const logger = new CycleLogger(tmp, 'tc-cycle');
+
+    const stdout = [
+      'packages/server/src/routes/search.ts(81,18): error TS2554: Expected 4 arguments, but got 3.',
+      'packages/server/src/routes/search.ts(134,24): error TS2554: Expected 4 arguments, but got 3.',
+      'packages/server/src/routes/search.ts(205,29): error TS2554: Expected 4 arguments, but got 3.',
+      'packages/core/src/autonomous/cycle-runner.ts(55,9): error TS2322: Type string is not assignable to number.',
+    ].join('\n');
+
+    const execFn = failOnCall(1, stdout);
+
+    const result = await runPreVerifyTypeCheck(
+      tmp,
+      makeTestingConfig({ buildCommand: '', typeCheckCommand: 'pnpm exec tsc --noEmit' }),
+      logger,
+      execFn,
+    );
+
+    expect(result.typeCheckOk).toBe(false);
+
+    const artifactPath = join(cycleDir(tmp, 'tc-cycle'), 'typecheck-failure.json');
+    const artifact = JSON.parse(readFileSync(artifactPath, 'utf-8')) as {
+      files: string[];
+      firstError: { file: string; line: number } | null;
+    };
+
+    expect(artifact.firstError).toMatchObject({
+      file: 'packages/server/src/routes/search.ts',
+      line: 81,
+    });
+    expect(artifact.files).toEqual([
+      'packages/server/src/routes/search.ts',
+      'packages/core/src/autonomous/cycle-runner.ts',
+    ]);
+  });
+
   it('does NOT write typecheck-failure.json when typecheck succeeds', async () => {
     const { runPreVerifyTypeCheck } = await import('../pre-verify-typecheck.js');
     const { CycleLogger } = await import('../cycle-logger.js');
