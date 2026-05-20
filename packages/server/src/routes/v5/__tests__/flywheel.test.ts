@@ -12,10 +12,12 @@ import { dashboardStubRoutes } from '../dashboard-stubs.js';
 
 let tmpRoot: string;
 let app: FastifyInstance;
+let memoryEntryCounter = 0;
 
 beforeEach(async () => {
   tmpRoot = mkdtempSync(join(tmpdir(), 'agentforge-flywheel-'));
   app = Fastify({ logger: false });
+  memoryEntryCounter = 0;
   await dashboardStubRoutes(app, { projectRoot: tmpRoot });
 });
 
@@ -38,7 +40,7 @@ function writeMemoryEntry(
   const memDir = join(tmpRoot, '.agentforge/memory');
   mkdirSync(memDir, { recursive: true });
   const entry = JSON.stringify({
-    id: `${source}-${Math.random().toString(36).slice(2)}`,
+    id: `${source}-${String(memoryEntryCounter++).padStart(4, '0')}`,
     type,
     value: 'test memory entry',
     createdAt,

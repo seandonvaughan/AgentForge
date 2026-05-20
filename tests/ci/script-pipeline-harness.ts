@@ -14,10 +14,52 @@ export type ScriptRunResult = {
 };
 
 function splitAndChain(command: string): string[] {
-  return command
-    .split(/\s*&&\s*/)
-    .map((part) => part.trim())
-    .filter((part) => part.length > 0);
+  const parts: string[] = [];
+  let current = '';
+  let quote: '"' | "'" | null = null;
+  let escaped = false;
+
+  for (let i = 0; i < command.length; i++) {
+    const ch = command[i] ?? '';
+
+    if (escaped) {
+      current += ch;
+      escaped = false;
+      continue;
+    }
+
+    if (ch === '\\') {
+      current += ch;
+      escaped = true;
+      continue;
+    }
+
+    if (quote !== null) {
+      current += ch;
+      if (ch === quote) quote = null;
+      continue;
+    }
+
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      current += ch;
+      continue;
+    }
+
+    if (ch === '&' && command[i + 1] === '&') {
+      const trimmed = current.trim();
+      if (trimmed.length > 0) parts.push(trimmed);
+      current = '';
+      i++;
+      continue;
+    }
+
+    current += ch;
+  }
+
+  const trimmed = current.trim();
+  if (trimmed.length > 0) parts.push(trimmed);
+  return parts;
 }
 
 function resolveScriptInvocation(
