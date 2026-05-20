@@ -267,7 +267,7 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleSummary | null 
   const cost = readRecord(cycleJson?.['cost']);
   const tests = readRecord(cycleJson?.['tests']);
   const pr = readRecord(cycleJson?.['pr']);
-  const agentPr = firstCycleAgentPr(cycleDir);
+  const agentPr = latestCycleAgentPr(cycleDir);
   const activeStage = inferActiveStage(cycleDir);
   const hasApprovalPending =
     existsSync(join(cycleDir, 'approval-pending.json')) &&
@@ -295,7 +295,7 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleSummary | null 
   };
 }
 
-function firstCycleAgentPr(cycleDir: string): AgentPrLedgerEntry | null {
+function latestCycleAgentPr(cycleDir: string): AgentPrLedgerEntry | null {
   const ledger = readJson(join(cycleDir, 'agent-prs.json'));
   if (!Array.isArray(ledger)) return null;
 
@@ -305,7 +305,7 @@ function firstCycleAgentPr(cycleDir: string): AgentPrLedgerEntry | null {
     .sort((left, right) => {
       const leftTime = typeof left.openedAt === 'string' ? left.openedAt : '';
       const rightTime = typeof right.openedAt === 'string' ? right.openedAt : '';
-      return leftTime.localeCompare(rightTime);
+      return rightTime.localeCompare(leftTime);
     });
 
   return entries[0] ?? null;

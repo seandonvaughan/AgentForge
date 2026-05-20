@@ -81,6 +81,38 @@ describe('cycle list/show summaries', () => {
     expect(output()).toContain('PR:           https://github.com/seandonvaughan/AgentForge/pull/99');
   });
 
+  it('shows the latest retry PR from agent-prs ledger', async () => {
+    const cycleId = '55555555-5555-4555-8555-555555555555';
+    const cycleDir = writeCycle(cycleId, {
+      cycleId,
+      stage: 'completed',
+      startedAt: '2026-05-20T00:49:19.642Z',
+      completedAt: '2026-05-20T01:09:07.298Z',
+      pr: { url: null, number: null, draft: false },
+    });
+    writeFileSync(join(cycleDir, 'agent-prs.json'), JSON.stringify([
+      {
+        prNumber: 102,
+        prUrl: 'https://github.com/seandonvaughan/AgentForge/pull/102',
+        branch: 'codex/agent-test',
+        status: 'open',
+        openedAt: '2026-05-20T00:54:02.427Z',
+      },
+      {
+        prNumber: 103,
+        prUrl: 'https://github.com/seandonvaughan/AgentForge/pull/103',
+        branch: 'codex/agent-test-retry-1',
+        status: 'open',
+        openedAt: '2026-05-20T01:01:07.957Z',
+      },
+    ], null, 2));
+
+    await runCli('cycle', 'show', cycleId, '--project-root', projectRoot);
+
+    expect(output()).toContain('PR:           https://github.com/seandonvaughan/AgentForge/pull/103');
+    expect(output()).not.toContain('PR:           https://github.com/seandonvaughan/AgentForge/pull/102');
+  });
+
   function writeCycle(
     cycleId: string,
     cycleJson: Record<string, unknown>,

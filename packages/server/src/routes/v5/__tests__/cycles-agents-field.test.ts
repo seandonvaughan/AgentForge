@@ -197,4 +197,36 @@ describe('GET /api/v5/cycles — Fix 2: agents field', () => {
       source: 'agent-prs',
     });
   });
+
+  it('uses the latest retry PR from the agent-prs ledger', async () => {
+    const id = 'aaaaaaaa-0000-0000-0000-000000000008';
+    const dir = makeCycleDir(id);
+    writeCycleJson(id, dir, { pr: { url: null, number: null, draft: false } });
+    writeFileSync(join(dir, 'agent-prs.json'), JSON.stringify([
+      {
+        prNumber: 102,
+        prUrl: 'https://github.com/seandonvaughan/AgentForge/pull/102',
+        branch: 'codex/agent-test',
+        status: 'open',
+        openedAt: '2026-05-20T00:54:02.427Z',
+      },
+      {
+        prNumber: 103,
+        prUrl: 'https://github.com/seandonvaughan/AgentForge/pull/103',
+        branch: 'codex/agent-test-retry-1',
+        status: 'open',
+        openedAt: '2026-05-20T01:01:07.957Z',
+      },
+    ]));
+
+    const detailRes = await app.inject({ method: 'GET', url: `/api/v5/cycles/${id}` });
+    expect(detailRes.statusCode).toBe(200);
+    const detail = detailRes.json() as Record<string, unknown>;
+    expect(detail['prUrl']).toBe('https://github.com/seandonvaughan/AgentForge/pull/103');
+    expect(detail['pr']).toMatchObject({
+      url: 'https://github.com/seandonvaughan/AgentForge/pull/103',
+      number: 103,
+      source: 'agent-prs',
+    });
+  });
 });

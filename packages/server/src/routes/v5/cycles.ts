@@ -312,7 +312,7 @@ function summarizeCycle(cycleDir: string, cycleId: string, projectRoot?: string)
     const cost = (cycleJson['cost'] ?? {}) as Record<string, unknown>;
     const tests = (cycleJson['tests'] ?? {}) as Record<string, unknown>;
     const pr = (cycleJson['pr'] ?? {}) as Record<string, unknown>;
-    const agentPr = firstCycleAgentPr(cycleDir);
+    const agentPr = latestCycleAgentPr(cycleDir);
     let costUsd = Number(cost['totalUsd'] ?? 0);
     let testsPassed = Number(tests['passed'] ?? 0);
     let testsTotal = Number(tests['total'] ?? 0);
@@ -967,7 +967,7 @@ export async function cyclesRoutes(
       if (cp !== undefined) (parsed as any).checkpoint = cp;
       const pr = (parsed['pr'] ?? {}) as Record<string, unknown>;
       if (!(typeof pr['url'] === 'string' && pr['url'].length > 0)) {
-        const agentPr = firstCycleAgentPr(dir);
+        const agentPr = latestCycleAgentPr(dir);
         if (agentPr?.prUrl) {
           (parsed as any).pr = {
             ...pr,
@@ -2288,7 +2288,7 @@ export async function cyclesRoutes(
   });
 }
 
-function firstCycleAgentPr(cycleDir: string): AgentPrLedgerEntry | null {
+function latestCycleAgentPr(cycleDir: string): AgentPrLedgerEntry | null {
   const ledger = readJsonIfExists(join(cycleDir, 'agent-prs.json'));
   if (!Array.isArray(ledger)) return null;
 
@@ -2298,7 +2298,7 @@ function firstCycleAgentPr(cycleDir: string): AgentPrLedgerEntry | null {
     .sort((left, right) => {
       const leftTime = typeof left.openedAt === 'string' ? left.openedAt : '';
       const rightTime = typeof right.openedAt === 'string' ? right.openedAt : '';
-      return leftTime.localeCompare(rightTime);
+      return rightTime.localeCompare(leftTime);
     });
 
   return entries[0] ?? null;

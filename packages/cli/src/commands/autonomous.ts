@@ -709,8 +709,9 @@ function printCycleRunResult(
     case cycleStage.COMPLETED: {
       console.log('');
       console.log('[cycle] COMPLETED');
+      const prUrl = result.pr.url ?? latestCycleAgentPr(logDir)?.prUrl ?? null;
       console.log(`  sprint:       v${result.sprintVersion}`);
-      console.log(`  pr:           ${result.pr.url ?? '(none)'}`);
+      console.log(`  pr:           ${prUrl ?? '(none)'}`);
       console.log(
         `  cost:         $${result.cost.totalUsd.toFixed(4)} / $${result.cost.budgetUsd}`,
       );
@@ -771,7 +772,7 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleSummary | null 
     const cost = (cycleJson.cost ?? {}) as Record<string, unknown>;
     const tests = (cycleJson.tests ?? {}) as Record<string, unknown>;
     const pr = (cycleJson.pr ?? {}) as Record<string, unknown>;
-    const agentPr = firstCycleAgentPr(cycleDir);
+    const agentPr = latestCycleAgentPr(cycleDir);
     const stage = typeof cycleJson.stage === 'string'
       ? cycleJson.stage
       : inferFallbackStage(cycleJson, activeStage);
@@ -812,7 +813,7 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleSummary | null 
   };
 }
 
-function firstCycleAgentPr(cycleDir: string): AgentPrLedgerEntry | null {
+function latestCycleAgentPr(cycleDir: string): AgentPrLedgerEntry | null {
   const ledger = readJsonIfExists(join(cycleDir, 'agent-prs.json'));
   if (!Array.isArray(ledger)) return null;
 
@@ -822,7 +823,7 @@ function firstCycleAgentPr(cycleDir: string): AgentPrLedgerEntry | null {
     .sort((left, right) => {
       const leftTime = typeof left.openedAt === 'string' ? left.openedAt : '';
       const rightTime = typeof right.openedAt === 'string' ? right.openedAt : '';
-      return leftTime.localeCompare(rightTime);
+      return rightTime.localeCompare(leftTime);
     });
 
   return entries[0] ?? null;
