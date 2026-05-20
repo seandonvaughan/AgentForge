@@ -1,4 +1,5 @@
 import { generateId, nowIso } from '@agentforge/shared';
+import { getGlobalTraceCollector } from '@agentforge/core';
 import type { AgentProposal, SprintItemExecutionRequest, SprintItemExecutionResult } from '@agentforge/core';
 import { buildPlan } from './planner.js';
 import type {
@@ -59,9 +60,24 @@ export class ProposalExecutor {
 
   /** Execute a proposal through the agent pipeline. Returns an ExecutionResult. */
   async execute(proposal: AgentProposal): Promise<ExecutionResult> {
+    const collector = getGlobalTraceCollector();
     const executionId = generateId();
     const startedAt = nowIso();
-    const plan = buildPlan(proposal);
+    const executionTraceId = `trace-exec-${executionId}`;
+    const executionSpan = collector.startRootSpan({
+      traceId: executionTraceId,
+      name: 'executor.run',
+      kind: 'internal',
+      attributes: {
+        'agentforge.execution_id': executionId,
+        'agentforge.proposal_id': proposal.id,
+        'agentforge.proposal_agent': proposal.agentId,
+      },
+    });
+    const plan = {
+      ...buildPlan(proposal, { traceId: executionTraceId }),
+      traceId: executionTraceId,
+    };
 
     const execution: ExecutionResult = {
       executionId,
@@ -70,6 +86,7 @@ export class ProposalExecutor {
       plan,
       stages: [],
       status: 'running',
+      traceId: executionTraceId,
       totalDurationMs: 0,
       startedAt,
     };
@@ -85,12 +102,29 @@ export class ProposalExecutor {
     for (let i = 0; i < stagesToRun.length; i++) {
       const stage = stagesToRun[i]!;
       const agentId = plan.estimatedAgents[i] ?? plan.estimatedAgents[plan.estimatedAgents.length - 1] ?? 'coder';
+      const stageSpan = collector.startRootSpan({
+        traceId: executionTraceId,
+        name: `executor.stage.${stage}`,
+        kind: 'internal',
+        attributes: {
+          'agentforge.execution_id': executionId,
+          'agentforge.proposal_id': proposal.id,
+          'agentforge.stage': stage,
+          'agentforge.stage_index': i,
+          'agentforge.stage_agent': agentId,
+        },
+      });
+      const stageTraceparent = stageSpan.context().toHeader();
 
       let stageResult: StageResult;
       if (this.opts.dryRun) {
         stageResult = simulateStage(stage, agentId);
       } else {
         if (!this.opts.runtime) {
+          stageSpan.setStatus('error', 'runtime executor missing');
+          collector.endSpan(stageSpan);
+          executionSpan.setStatus('error', 'runtime executor missing');
+          collector.endSpan(executionSpan);
           throw new Error('ProposalExecutor dryRun:false requires an injected runtime executor');
         }
 
@@ -105,6 +139,8 @@ export class ProposalExecutor {
             stageIndex: i,
             timeoutMs: this.opts.stageTimeoutMs,
             budgetRemainingUsd: Math.max(this.opts.budgetUsd - totalCostUsd, 0),
+            traceId: executionTraceId,
+            traceparent: stageTraceparent,
           });
         } catch (error) {
           response = {
@@ -122,14 +158,24 @@ export class ProposalExecutor {
 
       execution.stages.push(stageResult);
       totalMs += stageResult.durationMs;
+      stageSpan.setAttributes({
+        'agentforge.stage.duration_ms': stageResult.durationMs,
+        'agentforge.stage.success': stageResult.success,
+      });
 
       if (!stageResult.success) {
+        stageSpan.setStatus('error', stageResult.error ?? 'stage failed');
+        collector.endSpan(stageSpan);
+        executionSpan.setStatus('error', stageResult.error ?? 'stage failed');
         execution.status = 'failed';
         execution.completedAt = nowIso();
         execution.totalDurationMs = totalMs;
         if (totalCostUsd > 0) execution.totalCostUsd = totalCostUsd;
+        collector.endSpan(executionSpan);
         return execution;
       }
+      stageSpan.setStatus('ok');
+      collector.endSpan(stageSpan);
 
       if (!this.opts.dryRun && totalCostUsd > this.opts.budgetUsd) {
         const message = `Execution budget exceeded: $${totalCostUsd.toFixed(4)} > $${this.opts.budgetUsd.toFixed(4)}`;
@@ -145,6 +191,8 @@ export class ProposalExecutor {
         execution.completedAt = nowIso();
         execution.totalDurationMs = totalMs;
         execution.totalCostUsd = totalCostUsd;
+        executionSpan.setStatus('error', message);
+        collector.endSpan(executionSpan);
         return execution;
       }
     }
@@ -161,6 +209,13 @@ export class ProposalExecutor {
     execution.status = 'passed';
     execution.completedAt = nowIso();
     execution.totalDurationMs = totalMs;
+    executionSpan.setAttributes({
+      'agentforge.execution.duration_ms': totalMs,
+      'agentforge.execution.stage_count': execution.stages.length,
+      'agentforge.execution.cost_usd': totalCostUsd,
+    });
+    executionSpan.setStatus('ok');
+    collector.endSpan(executionSpan);
 
     execution.stages.push({ stage: 'complete', agentId: 'executor', output: 'All stages passed.', durationMs: 0, success: true });
 

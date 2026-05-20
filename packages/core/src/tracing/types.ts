@@ -52,6 +52,10 @@ export interface TraceRecord {
 export interface StartSpanOptions {
   name: string;
   kind?: SpanKind;
+  /** Optional explicit trace id for externally-correlated traces (runtime jobs, SSE, bus). */
+  traceId?: string;
+  /** Optional explicit span id when importing external spans. */
+  spanId?: string;
   parentContext?: SpanContext;
   attributes?: Record<string, unknown>;
   serviceName?: string;

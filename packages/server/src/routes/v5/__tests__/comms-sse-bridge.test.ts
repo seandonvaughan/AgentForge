@@ -71,6 +71,7 @@ describe('bridgeDmToGlobalStream', () => {
     expect(received).toHaveLength(1);
     const ev = received[0]!;
     expect(ev.type).toBe('comms_event');
+    expect(ev.workspaceId).toBe('test');
     expect(ev.category).toBe('comms');
     expect(ev.message).toContain('coder-1');
     expect(ev.message).toContain('architect');
@@ -79,6 +80,11 @@ describe('bridgeDmToGlobalStream', () => {
     expect(payload.id).toBe('dm-1');
     expect(payload.fromAgent).toBe('coder-1');
     expect(payload.toAgent).toBe('architect');
+    expect(payload).toMatchObject({
+      traceId: null,
+      spanId: null,
+      traceparent: null,
+    });
   });
 });
 
@@ -105,6 +111,7 @@ describe('bridgeInboxToGlobalStream', () => {
     expect(received).toHaveLength(1);
     const ev = received[0]!;
     expect(ev.type).toBe('comms_event');
+    expect(ev.workspaceId).toBe('test');
     expect(ev.category).toBe('comms');
     const payload = ev.payload as {
       kind: string;
@@ -116,5 +123,10 @@ describe('bridgeInboxToGlobalStream', () => {
     expect(payload.id).toBe('inbox-1');
     expect(payload.messageKind).toBe('warning');
     expect(payload.recipients).toEqual(['@user']);
+    expect(payload).toMatchObject({
+      traceId: null,
+      spanId: null,
+      traceparent: null,
+    });
   });
 });

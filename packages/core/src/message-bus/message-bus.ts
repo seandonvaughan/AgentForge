@@ -26,6 +26,10 @@ export interface PublishParams<T> {
   correlationId?: string;
   sessionId?: string;
   ttlMs?: number;
+  traceId?: string;
+  spanId?: string;
+  parentSpanId?: string;
+  traceparent?: string;
 }
 
 export class MessageBusV2 {
@@ -59,6 +63,10 @@ export class MessageBusV2 {
       ...(params.correlationId ? { correlationId: params.correlationId } : {}),
       ...(params.sessionId ? { sessionId: params.sessionId } : {}),
       ...(params.ttlMs !== undefined ? { ttlMs: params.ttlMs } : {}),
+      ...(params.traceId ? { traceId: params.traceId } : {}),
+      ...(params.spanId ? { spanId: params.spanId } : {}),
+      ...(params.parentSpanId ? { parentSpanId: params.parentSpanId } : {}),
+      ...(params.traceparent ? { traceparent: params.traceparent } : {}),
     };
 
     // Store in history with ring-buffer semantics

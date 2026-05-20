@@ -13,11 +13,15 @@ describe('ProposalExecutor execution modes', () => {
 
   it('uses an injected runtime executor when dryRun is false', async () => {
     const stages: string[] = [];
+    const traceIds = new Set<string>();
+    const traceparents: string[] = [];
     const result = await new ProposalExecutor({
       dryRun: false,
       runtime: {
-        async executeStage({ stage }) {
+        async executeStage({ stage, traceId, traceparent }) {
           stages.push(stage);
+          traceIds.add(traceId);
+          traceparents.push(traceparent);
           return {
             output: `ran ${stage}`,
             success: true,
@@ -33,6 +37,11 @@ describe('ProposalExecutor execution modes', () => {
     expect(stages).toEqual(['planning', 'coding', 'linting', 'testing']);
     expect(result.status).toBe('passed');
     expect(result.totalCostUsd).toBeCloseTo(0.2);
+    expect(result.traceId).toMatch(/^trace-exec-/);
+    expect(traceIds.size).toBe(1);
+    expect([...traceIds][0]).toBe(result.traceId);
+    expect(traceparents).toHaveLength(4);
+    expect(traceparents.every((value) => value.startsWith('00|'))).toBe(true);
     expect(result.diff).toContain('diff --git');
     expect(result.testSummary).toEqual({ passed: 3, failed: 0, total: 3 });
   });

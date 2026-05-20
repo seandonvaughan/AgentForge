@@ -1,4 +1,5 @@
-import { generateId, nowIso } from '@agentforge/shared';
+import { nowIso } from '@agentforge/shared';
+import { getGlobalTraceCollector } from '@agentforge/core';
 import type { AgentProposal } from '@agentforge/core';
 import type { ExecutionPlan } from './types.js';
 
@@ -15,7 +16,20 @@ function inferComplexity(proposal: AgentProposal): 'low' | 'medium' | 'high' {
   return 'medium';
 }
 
-export function buildPlan(proposal: AgentProposal): ExecutionPlan {
+export function buildPlan(proposal: AgentProposal, options: { traceId?: string } = {}): ExecutionPlan {
+  const collector = getGlobalTraceCollector();
+  const span = collector.startRootSpan({
+    ...(options.traceId ? { traceId: options.traceId } : {}),
+    name: 'executor.plan',
+    kind: 'internal',
+    attributes: {
+      'agentforge.proposal_id': proposal.id,
+      'agentforge.agent_id': proposal.agentId,
+      'agentforge.priority': proposal.priority,
+      'agentforge.tag_count': proposal.tags.length,
+    },
+  });
+
   const complexity = inferComplexity(proposal);
 
   const stages = complexity === 'high'
@@ -30,12 +44,24 @@ export function buildPlan(proposal: AgentProposal): ExecutionPlan {
     ? ['project-manager', 'coder', 'linter', 'debugger']
     : ['coder', 'debugger'];
 
-  return {
+  const plan: ExecutionPlan = {
     proposalId: proposal.id,
     stages: [...stages],
     estimatedAgents: agents,
     estimatedComplexity: complexity,
     sandboxed: true,
     createdAt: nowIso(),
+    traceId: span.traceId,
   };
+
+  span.setAttributes({
+    'agentforge.plan.trace_id': span.traceId,
+    'agentforge.plan.complexity': complexity,
+    'agentforge.plan.stage_count': stages.length,
+    'agentforge.plan.estimated_agent_count': agents.length,
+  });
+  span.setStatus('ok');
+  collector.endSpan(span);
+
+  return plan;
 }

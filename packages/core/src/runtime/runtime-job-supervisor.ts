@@ -2,10 +2,14 @@ import type { RuntimeJobRow, WorkspaceAdapter } from '@agentforge/db';
 import type { RunResult } from '../agent-runtime/types.js';
 import { generateId, nowIso } from '@agentforge/shared';
 import type { RuntimeEventEnvelope, RuntimeJobStatus, RuntimeMode } from './types.js';
+import type { TraceCollector } from '../tracing/trace-collector.js';
+import { TraceContext } from '../tracing/trace-context.js';
+import { getGlobalTraceCollector } from '../tracing/runtime-tracing.js';
 
 export interface RuntimeJobSupervisorOptions {
   adapter: WorkspaceAdapter;
   onEvent?: (event: RuntimeEventEnvelope) => void;
+  traceCollector?: TraceCollector;
 }
 
 export interface RuntimeJobExecutionContext {
@@ -34,8 +38,11 @@ export type RuntimeJobExecutor = (context: RuntimeJobExecutionContext) => Promis
 
 export class RuntimeJobSupervisor {
   private readonly activeJobs = new Map<string, AbortController>();
+  private readonly traceCollector: TraceCollector;
 
-  constructor(private readonly options: RuntimeJobSupervisorOptions) {}
+  constructor(private readonly options: RuntimeJobSupervisorOptions) {
+    this.traceCollector = options.traceCollector ?? getGlobalTraceCollector();
+  }
 
   createJob(input: CreateRuntimeJobInput): RuntimeJobRow {
     const sessionId = input.sessionId ?? `run-${generateId()}`;
@@ -210,28 +217,59 @@ export class RuntimeJobSupervisor {
   }
 
   private emit(job: RuntimeJobRow, input: RuntimeEventInput): RuntimeEventEnvelope {
-    const timestamp = nowIso();
-    const row = this.options.adapter.recordRuntimeEvent({
-      id: generateId(),
-      jobId: job.id,
-      sessionId: job.session_id,
+    const span = this.traceCollector.startRootSpan({
       traceId: job.trace_id,
-      agentId: job.agent_id,
-      type: input.type,
-      category: input.category ?? 'run',
-      message: input.message,
-      data: {
-        workspaceId: this.options.adapter.workspaceId,
-        traceId: job.trace_id,
+      name: `runtime.event.${input.type}`,
+      kind: 'internal',
+      attributes: {
+        'agentforge.workspace_id': this.options.adapter.workspaceId,
+        'agentforge.job_id': job.id,
+        'agentforge.session_id': job.session_id,
+        'agentforge.trace_id': job.trace_id,
+        'agentforge.agent_id': job.agent_id,
+        'agentforge.event_type': input.type,
+        'agentforge.event_category': input.category ?? 'run',
+      },
+    });
+    const traceparent = new TraceContext(span.traceId, span.spanId, true).toHeader();
+    const timestamp = nowIso();
+    let row: ReturnType<WorkspaceAdapter['recordRuntimeEvent']>;
+    try {
+      row = this.options.adapter.recordRuntimeEvent({
+        id: generateId(),
         jobId: job.id,
         sessionId: job.session_id,
+        traceId: job.trace_id,
         agentId: job.agent_id,
-        ...(input.data ?? {}),
-      },
-      createdAt: timestamp,
-    });
+        type: input.type,
+        category: input.category ?? 'run',
+        message: input.message,
+        data: {
+          workspaceId: this.options.adapter.workspaceId,
+          traceId: job.trace_id,
+          jobId: job.id,
+          sessionId: job.session_id,
+          agentId: job.agent_id,
+          spanId: span.spanId,
+          traceparent,
+          ...(input.data ?? {}),
+        },
+        createdAt: timestamp,
+      });
+    } catch (error) {
+      span.recordException(error instanceof Error ? error : new Error(String(error)));
+      this.traceCollector.endSpan(span);
+      throw error;
+    }
 
     const payload = parseEventData(row.data_json);
+    if (input.type.includes('failed') || input.type.includes('error')) {
+      span.setStatus('error', input.message);
+    } else {
+      span.setStatus('ok');
+    }
+    this.traceCollector.endSpan(span);
+
     const envelope: RuntimeEventEnvelope = {
       id: row.id,
       sequence: row.sequence,
@@ -239,6 +277,8 @@ export class RuntimeJobSupervisor {
       jobId: row.job_id,
       sessionId: row.session_id,
       traceId: row.trace_id,
+      spanId: span.spanId,
+      traceparent,
       agentId: row.agent_id,
       type: row.type,
       category: row.category,

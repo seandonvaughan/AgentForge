@@ -12,3 +12,4 @@ export type { Span as TraceSpanData } from './types.js';
 export * from './trace-context.js';
 export * from './span.js';
 export * from './trace-collector.js';
+export * from './runtime-tracing.js';

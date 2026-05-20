@@ -50,7 +50,20 @@ describe('RuntimeJobSupervisor', () => {
       'chunk',
       'job_completed',
     ]);
-    expect(JSON.parse(events[2]!.data_json)).toMatchObject({ content: 'done', jobId: job.id });
+    expect(JSON.parse(events[2]!.data_json)).toMatchObject({
+      content: 'done',
+      jobId: job.id,
+      traceId: job.trace_id,
+    });
+    expect(JSON.parse(events[2]!.data_json)).toEqual(expect.objectContaining({
+      spanId: expect.any(String),
+      traceparent: expect.any(String),
+    }));
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+      traceId: job.trace_id,
+      spanId: expect.any(String),
+      traceparent: expect.any(String),
+    }));
     expect(onEvent).toHaveBeenCalledTimes(4);
 
     adapter.close();

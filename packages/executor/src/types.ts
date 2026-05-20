@@ -9,6 +9,7 @@ export interface ExecutionPlan {
   estimatedComplexity: 'low' | 'medium' | 'high';
   sandboxed: boolean;
   createdAt: string;
+  traceId?: string;
 }
 
 export interface StageResult {
@@ -27,6 +28,7 @@ export interface ExecutionResult {
   plan: ExecutionPlan;
   stages: StageResult[];
   status: 'pending' | 'running' | 'passed' | 'failed' | 'rejected';
+  traceId?: string;
   diff?: string;
   testSummary?: { passed: number; failed: number; total: number };
   totalCostUsd?: number;
@@ -44,6 +46,8 @@ export interface StageExecutionRequest {
   stageIndex: number;
   timeoutMs: number;
   budgetRemainingUsd: number;
+  traceId: string;
+  traceparent: string;
 }
 
 export interface StageExecutionResponse {

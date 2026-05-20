@@ -160,6 +160,9 @@ export interface RuntimeEventEnvelope {
   jobId: string;
   sessionId: string;
   traceId: string;
+  spanId?: string;
+  parentSpanId?: string;
+  traceparent?: string;
   agentId: string;
   type: string;
   category: string;

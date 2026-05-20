@@ -38,6 +38,28 @@ function mockFetch(status: number, body: unknown): void {
   );
 }
 
+function mockStreamingFetch(events: string[]): void {
+  const encoder = new TextEncoder();
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const event of events) {
+        controller.enqueue(encoder.encode(event));
+      }
+      controller.close();
+    },
+  });
+
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      body,
+      text: async () => '',
+    })),
+  );
+}
+
 describe('OpenAiSdkTransport', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -111,5 +133,26 @@ describe('OpenAiSdkTransport', () => {
 
     mockFetch(400, { error: { message: 'bad request' } });
     await expect(transport.execute(makeRequest())).rejects.toThrow(TransportInvalidRequestError);
+  });
+
+  it('streams response.output_text.delta chunks and returns usage from response.completed', async () => {
+    mockStreamingFetch([
+      'data: {"type":"response.output_text.delta","delta":"Hello "}\n\n',
+      'data: {"type":"response.output_text.delta","delta":"world"}\n\n',
+      'data: {"type":"response.completed","response":{"id":"resp_stream_1","model":"gpt-5.3-codex","usage":{"input_tokens":13,"output_tokens":8}}}\n\n',
+      'data: [DONE]\n\n',
+    ]);
+    const transport = new OpenAiSdkTransport();
+    const chunks: string[] = [];
+
+    const result = await transport.executeStreaming(makeRequest(), {
+      onChunk: (text) => chunks.push(text),
+    });
+
+    expect(chunks).toEqual(['Hello ', 'world']);
+    expect(result.response).toBe('Hello world');
+    expect(result.remoteSessionId).toBe('resp_stream_1');
+    expect(result.model).toBe('gpt-5.3-codex');
+    expect(result.usage).toEqual({ inputTokens: 13, outputTokens: 8 });
   });
 });

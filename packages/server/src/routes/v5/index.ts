@@ -577,6 +577,8 @@ export function bridgeDmToGlobalStream(envelope: MessageEnvelopeV2<AgentDmSentPa
   const p = envelope.payload;
   globalStream.emit({
     type: 'comms_event',
+    workspaceId: envelope.workspaceId,
+    ...(envelope.traceId ? { traceId: envelope.traceId } : {}),
     category: 'comms',
     message: `DM ${p.fromAgent} → ${p.toAgent}`,
     payload: {
@@ -587,6 +589,9 @@ export function bridgeDmToGlobalStream(envelope: MessageEnvelopeV2<AgentDmSentPa
       body: p.body,
       replyToId: p.replyToId,
       sentAt: p.sentAt,
+      traceId: envelope.traceId ?? null,
+      spanId: envelope.spanId ?? null,
+      traceparent: envelope.traceparent ?? null,
     },
   });
 }
@@ -596,6 +601,8 @@ export function bridgeInboxToGlobalStream(envelope: MessageEnvelopeV2<InboxMessa
   const p = envelope.payload;
   globalStream.emit({
     type: 'comms_event',
+    workspaceId: envelope.workspaceId,
+    ...(envelope.traceId ? { traceId: envelope.traceId } : {}),
     category: 'comms',
     message: `Inbox: ${p.sourceType ?? 'system'} → ${p.recipients.join(', ')}`,
     payload: {
@@ -608,6 +615,9 @@ export function bridgeInboxToGlobalStream(envelope: MessageEnvelopeV2<InboxMessa
       threadId: p.threadId,
       createdAt: p.createdAt,
       recipients: p.recipients,
+      traceId: envelope.traceId ?? null,
+      spanId: envelope.spanId ?? null,
+      traceparent: envelope.traceparent ?? null,
     },
   });
 }
@@ -617,6 +627,9 @@ function bridgeRuntimeEventToGlobalStream(event: RuntimeEventEnvelope): void {
     ...event.payload,
     workspaceId: event.workspaceId,
     traceId: event.traceId,
+    spanId: event.spanId,
+    parentSpanId: event.parentSpanId,
+    traceparent: event.traceparent,
     jobId: event.jobId,
     sessionId: event.sessionId,
     agentId: event.agentId,

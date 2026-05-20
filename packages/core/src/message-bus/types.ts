@@ -16,6 +16,10 @@ export interface MessageEnvelopeV2<TPayload = unknown> {
   correlationId?: string; // links request → response
   sessionId?: SessionId;
   ttlMs?: number; // message expires after this many ms
+  traceId?: string;
+  spanId?: string;
+  parentSpanId?: string;
+  traceparent?: string;
 }
 
 // ── Enums ─────────────────────────────────────────────────────────────────────

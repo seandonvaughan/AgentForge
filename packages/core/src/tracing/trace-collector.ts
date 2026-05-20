@@ -11,10 +11,16 @@ export class TraceCollector {
   private traces = new Map<string, TraceRecord>(); // traceId -> TraceRecord
   private readonly maxTraces: number;
   private readonly defaultServiceName: string;
+  private readonly onSpanEnded: ((span: Span, trace: TraceRecord) => void) | undefined;
 
-  constructor(opts: { maxTraces?: number; serviceName?: string } = {}) {
+  constructor(opts: {
+    maxTraces?: number;
+    serviceName?: string;
+    onSpanEnded?: (span: Span, trace: TraceRecord) => void;
+  } = {}) {
     this.maxTraces = opts.maxTraces ?? 1000;
     this.defaultServiceName = opts.serviceName ?? 'agentforge';
+    this.onSpanEnded = opts.onSpanEnded;
   }
 
   // ── Span creation ────────────────────────────────────────────────────────────
@@ -24,10 +30,12 @@ export class TraceCollector {
    */
   startRootSpan(opts: Omit<StartSpanOptions, 'parentContext'>): Span {
     const ctx = TraceContext.create();
+    const traceId = opts.traceId ?? ctx.traceId;
+    const spanId = opts.spanId ?? ctx.spanId;
     return this.createSpan({
       ...opts,
-      traceId: ctx.traceId,
-      spanId: ctx.spanId,
+      traceId,
+      spanId,
     });
   }
 
@@ -71,6 +79,7 @@ export class TraceCollector {
   private collectSpan(span: Span): void {
     const traceId = span.traceId;
     const existing = this.traces.get(traceId);
+    let targetTrace: TraceRecord;
 
     if (existing) {
       existing.spans.push(span.toData());
@@ -83,6 +92,7 @@ export class TraceCollector {
       if (existing.startTime && existing.endTime) {
         existing.totalDurationMs = new Date(existing.endTime).getTime() - new Date(existing.startTime).getTime();
       }
+      targetTrace = existing;
     } else {
       // First span for this trace — create the record
       const record: TraceRecord = {
@@ -97,11 +107,20 @@ export class TraceCollector {
         ...(span.durationMs !== undefined ? { totalDurationMs: span.durationMs } : {}),
       };
       this.traces.set(traceId, record);
+      targetTrace = record;
 
       // Evict oldest trace if over limit
       if (this.traces.size > this.maxTraces) {
         const oldest = this.traces.keys().next().value;
         if (oldest) this.traces.delete(oldest);
+      }
+    }
+
+    if (this.onSpanEnded) {
+      try {
+        this.onSpanEnded(span, targetTrace);
+      } catch {
+        // Export hooks must not affect trace collection.
       }
     }
   }
