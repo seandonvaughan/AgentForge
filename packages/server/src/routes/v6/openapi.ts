@@ -477,17 +477,17 @@ const paths: Record<string, PathItem> = {
 
   // ── Federation ────────────────────────────────────────────────────────────────
   '/api/v6/federation/peers': {
-    get: { tags: ['Federation'], summary: 'List federated peers', responses: { '200': { description: 'Peer list.' } } },
-    post: { tags: ['Federation'], summary: 'Register a peer', responses: { '201': { description: 'Peer registered.' } } },
+    get: { tags: ['Federation'], summary: 'List preview federation peers', responses: { '200': { description: 'Peer list.' } } },
+    post: { tags: ['Federation'], summary: 'Register a preview peer after operator opt-in', responses: { '201': { description: 'Peer registered.' }, '403': { description: 'Federation preview is disabled.' } } },
   },
   '/api/v6/federation/status': {
-    get: { tags: ['Federation'], summary: 'Federation health status', responses: { '200': { description: 'Status.' } } },
+    get: { tags: ['Federation'], summary: 'Federation preview status, protocol, safety, and metrics', responses: { '200': { description: 'Status.' } } },
   },
   '/api/v6/federation/share': {
-    post: { tags: ['Federation'], summary: 'Share data with peers', responses: { '200': { description: 'Share result.' } } },
+    post: { tags: ['Federation'], summary: 'Store a redacted dry-run learning after operator opt-in', responses: { '201': { description: 'Learning stored.' }, '403': { description: 'Federation preview is disabled.' } } },
   },
   '/api/v6/federation/learnings': {
-    get: { tags: ['Federation'], summary: 'Shared learnings from peers', responses: { '200': { description: 'Learnings.' } } },
+    get: { tags: ['Federation'], summary: 'Dry-run federation learning store', responses: { '200': { description: 'Learnings.' } } },
   },
 
   // ── Sprint Orchestration ──────────────────────────────────────────────────────

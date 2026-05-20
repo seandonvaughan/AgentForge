@@ -22,6 +22,7 @@ import {
   KnowledgeGraph,
   CanaryManager,
   FederationManager,
+  FEDERATION_PROTOCOL_VERSION,
 } from '@agentforge/core';
 import type { BacklogItem, WorkflowDefinition } from '@agentforge/core';
 
@@ -438,18 +439,24 @@ describe('FederationManager — dry-run learning exchange', () => {
   let fed: FederationManager;
 
   beforeEach(() => {
-    fed = new FederationManager({ dryRun: true });
+    fed = new FederationManager({ enabled: true, dryRun: true });
   });
 
   it('registers a peer and lists it', () => {
-    fed.registerPeer({ id: 'peer-1', name: 'Instance A', endpoint: 'https://a.example.com', version: '5.9' });
+    fed.registerPeer({
+      id: 'peer-1',
+      name: 'Instance A',
+      url: 'https://a.example.com',
+      protocolVersion: FEDERATION_PROTOCOL_VERSION,
+    });
     expect(fed.listPeers().length).toBe(1);
     expect(fed.listPeers()[0]?.id).toBe('peer-1');
   });
 
   it('shares a learning and retrieves it', () => {
     const learning = fed.shareLearning({
-      domain: 'cost-governance',
+      agentId: 'cost-governor',
+      category: 'cost-governance',
       content: 'Haiku is sufficient for lint tasks',
       confidence: 0.9,
       sourcePeerId: null,
@@ -460,7 +467,8 @@ describe('FederationManager — dry-run learning exchange', () => {
 
   it('strips PII from shared learnings', () => {
     const learning = fed.shareLearning({
-      domain: 'agent-ops',
+      agentId: 'agent-ops',
+      category: 'agent-ops',
       content: 'Contact user@example.com for issues',
       confidence: 0.7,
       sourcePeerId: null,
@@ -470,8 +478,19 @@ describe('FederationManager — dry-run learning exchange', () => {
   });
 
   it('status reflects peer and learning counts', () => {
-    fed.registerPeer({ id: 'p1', name: 'P1', endpoint: 'https://p1.example.com', version: '5.9' });
-    fed.shareLearning({ domain: 'cost', content: 'Optimize early', confidence: 0.8, sourcePeerId: null });
+    fed.registerPeer({
+      id: 'p1',
+      name: 'P1',
+      url: 'https://p1.example.com',
+      protocolVersion: FEDERATION_PROTOCOL_VERSION,
+    });
+    fed.shareLearning({
+      agentId: 'cost-governor',
+      category: 'cost',
+      content: 'Optimize early',
+      confidence: 0.8,
+      sourcePeerId: null,
+    });
     const status = fed.getStatus();
     expect(status.peerCount).toBe(1);
     expect(status.learningCount).toBe(1);
@@ -479,7 +498,12 @@ describe('FederationManager — dry-run learning exchange', () => {
   });
 
   it('dry-run mode marks peers as reachable', () => {
-    fed.registerPeer({ id: 'p2', name: 'P2', endpoint: 'https://p2.example.com', version: '5.9' });
+    fed.registerPeer({
+      id: 'p2',
+      name: 'P2',
+      url: 'https://p2.example.com',
+      protocolVersion: FEDERATION_PROTOCOL_VERSION,
+    });
     const peers = fed.listPeers();
     expect(peers[0]?.reachable).toBe(true);
   });
