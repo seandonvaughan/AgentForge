@@ -1,7 +1,11 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { browser } from '$app/environment';
   import { goto } from '$app/navigation';
-  import { withWorkspace } from '$lib/stores/workspace';
+  import { get } from 'svelte/store';
+  import {
+    withWorkspace, workspaces, currentWorkspaceId, loadWorkspaces, selectWorkspace,
+  } from '$lib/stores/workspace';
   import { relativeTime, formatDuration } from '$lib/util/relative-time';
   import {
     Btn, Card, Badge, KpiTile, StageDots, PulseDot,
@@ -29,6 +33,9 @@
     fallbackEnabled?: boolean | null;
     tags?: string[];
     dryRun?: boolean | null;
+    workspaceId?: string | null;
+    workspaceName?: string | null;
+    rowKey?: string;
   }
 
   type StageBrick = 'pending' | 'active' | 'done' | 'failed';
@@ -36,6 +43,7 @@
   type SortCol = 'startedAt' | 'cost' | 'duration' | 'stage' | 'tests' | 'cycle' | 'sprint';
   type SortDir = 'asc' | 'desc';
   type Density = 'comfortable' | 'compact';
+  type WorkspaceScope = 'selected' | 'all';
 
   const TERMINAL = new Set(['completed', 'failed', 'killed', 'crashed']);
   const POLL_MS = 5000;
@@ -53,14 +61,87 @@
   let comparing = $state(false);
   let searchQ = $state('');
   let costThreshold = $state<number | null>(null);
+  let workspaceScope = $state<WorkspaceScope>('selected');
+
+  const currentWorkspaceName = $derived.by<string>(() => {
+    const id = $currentWorkspaceId;
+    if (!id) return 'Server default';
+    return $workspaces.find((ws) => ws.id === id)?.name ?? id;
+  });
+
+  function workspaceLabel(c: CycleRow): string {
+    const id = c.workspaceId ?? 'default';
+    const name = c.workspaceName ?? (id === 'default' ? 'Server default' : id);
+    return `${name} (${id})`;
+  }
+
+  function cycleRowKey(c: CycleRow): string {
+    if (c.rowKey) return c.rowKey;
+    return `${c.workspaceId ?? 'default'}:${c.cycleId}`;
+  }
 
   async function loadCycles(): Promise<void> {
     try {
-      const res = await fetch(withWorkspace('/api/v5/cycles?limit=200'));
-      if (!res.ok) { error = `HTTP ${res.status}`; return; }
-      const json = (await res.json()) as { cycles?: CycleRow[] };
-      cycles = (json.cycles ?? []).slice();
-      error = null;
+      if (workspaceScope === 'all') {
+        await loadWorkspaces();
+        const known = get(workspaces);
+        const targets = [
+          { id: null as string | null, name: 'Server default' },
+          ...known.map((ws) => ({ id: ws.id, name: ws.name })),
+        ];
+        const byId = new Map<string, { id: string | null; name: string }>();
+        for (const t of targets) {
+          const key = t.id ?? 'default';
+          if (!byId.has(key)) byId.set(key, t);
+        }
+        const uniqueTargets = [...byId.values()];
+        const perWorkspaceLimit = Math.max(16, Math.floor(240 / Math.max(1, uniqueTargets.length)));
+        const settled = await Promise.allSettled(uniqueTargets.map(async (target) => {
+          const qs = target.id ? `?limit=${perWorkspaceLimit}&workspaceId=${encodeURIComponent(target.id)}` : `?limit=${perWorkspaceLimit}`;
+          const res = await fetch(`/api/v5/cycles${qs}`);
+          if (!res.ok) throw new Error(`${target.name}: HTTP ${res.status}`);
+          const json = (await res.json()) as { cycles?: CycleRow[] };
+          const rows = (json.cycles ?? []).map((row) => ({
+            ...row,
+            workspaceId: target.id ?? 'default',
+            workspaceName: target.name,
+            rowKey: `${target.id ?? 'default'}:${row.cycleId}`,
+          }));
+          return rows;
+        }));
+        const merged: CycleRow[] = [];
+        const failures: string[] = [];
+        for (const result of settled) {
+          if (result.status === 'fulfilled') merged.push(...result.value);
+          else failures.push(result.reason instanceof Error ? result.reason.message : String(result.reason));
+        }
+        merged.sort((a, b) => {
+          const at = new Date(a.startedAt).getTime();
+          const bt = new Date(b.startedAt).getTime();
+          return bt - at;
+        });
+        cycles = merged;
+        if (merged.length === 0 && failures.length > 0) {
+          error = failures.slice(0, 2).join(' · ');
+          return;
+        }
+        error = failures.length > 0 ? `Loaded with partial data (${failures.length} workspace fetch${failures.length === 1 ? '' : 'es'} failed).` : null;
+      } else {
+        const res = await fetch(withWorkspace('/api/v5/cycles?limit=200'));
+        if (!res.ok) { error = `HTTP ${res.status}`; return; }
+        const json = (await res.json()) as { cycles?: CycleRow[] };
+        const selectedWorkspace = get(currentWorkspaceId) ?? 'default';
+        const selectedWorkspaceName = selectedWorkspace === 'default'
+          ? 'Server default'
+          : (get(workspaces).find((ws) => ws.id === selectedWorkspace)?.name ?? selectedWorkspace);
+        cycles = (json.cycles ?? []).map((row) => ({
+          ...row,
+          workspaceId: selectedWorkspace,
+          workspaceName: selectedWorkspaceName,
+          rowKey: `${selectedWorkspace}:${row.cycleId}`,
+        }));
+        error = null;
+      }
       managePolling();
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -74,7 +155,7 @@
   }
 
   function managePolling(): void {
-    const paused = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+    const paused = browser && document.visibilityState === 'hidden';
     if (paused) {
       if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
       return;
@@ -255,28 +336,62 @@
     return out.length > 1 ? out : [...out, ...out];
   });
 
-  function openCompare(): void { if (selected.length >= 2) comparing = true; }
+  function openCompare(): void { if (selectedRows.length >= 2) comparing = true; }
   function closeCompare(): void { comparing = false; }
 
-  const compareCycles = $derived<CycleRow[]>(
-    selected.map((id) => cycles.find((c) => c.cycleId === id)).filter((c): c is CycleRow => !!c),
+  const selectedRows = $derived<CycleRow[]>(
+    selected.map((rowKey) => cycles.find((c) => cycleRowKey(c) === rowKey)).filter((c): c is CycleRow => !!c),
   );
 
-  function onRowClick(c: CycleRow): void { void goto(`/cycles/${c.cycleId}`); }
+  const compareCycles = $derived<CycleRow[]>(
+    selectedRows,
+  );
+
+  function selectScope(scope: WorkspaceScope): void {
+    if (workspaceScope === scope) return;
+    workspaceScope = scope;
+    loading = true;
+    comparing = false;
+    selected = [];
+    void loadCycles();
+  }
+
+  function onRowClick(c: CycleRow): void {
+    if (workspaceScope === 'all') {
+      const id = c.workspaceId ?? 'default';
+      if (id === 'default') selectWorkspace(null);
+      else selectWorkspace(id);
+    }
+    void goto(`/cycles/${c.cycleId}`);
+  }
   function onRowKey(e: KeyboardEvent, c: CycleRow): void {
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onRowClick(c); }
   }
 
+  $effect(() => {
+    if (workspaceScope !== 'selected') return;
+    $currentWorkspaceId;
+    if (!loading) {
+      void loadCycles();
+    }
+  });
+
+  $effect(() => {
+    if (selectedRows.length === selected.length) return;
+    selected = selectedRows.map((c) => cycleRowKey(c));
+  });
+
   onMount(() => {
+    void loadWorkspaces();
     void loadCycles();
-    if (typeof document !== 'undefined') {
+    if (browser) {
       document.addEventListener('visibilitychange', onVisibilityChange);
     }
   });
 
   onDestroy(() => {
     if (pollTimer) clearInterval(pollTimer);
-    if (typeof document !== 'undefined') {
+    if (browser) {
       document.removeEventListener('visibilitychange', onVisibilityChange);
     }
   });
@@ -288,7 +403,14 @@
   <div>
     <div class="crumbs af2-mono">Workspace · Cycles</div>
     <h1 class="page-title">Cycles</h1>
-    <p class="page-sub"><span class="af2-mono">{cycles.length}</span> total · autonomous sprint history</p>
+    <p class="page-sub">
+      <span class="af2-mono">{cycles.length}</span> total · autonomous sprint history ·
+      {#if workspaceScope === 'selected'}
+        <span class="af2-mono">scope: {currentWorkspaceName}</span>
+      {:else}
+        <span class="af2-mono">scope: all workspaces</span>
+      {/if}
+    </p>
   </div>
   <div class="head-actions">
     <div class="density-toggle">
@@ -326,6 +448,25 @@
 </div>
 
 <div class="filter-bar">
+  <div class="scope-toggle" role="group" aria-label="Workspace scope">
+    <button
+      type="button"
+      class="chip"
+      class:chip-active={workspaceScope === 'selected'}
+      onclick={() => selectScope('selected')}
+    >
+      Current workspace
+    </button>
+    <button
+      type="button"
+      class="chip"
+      class:chip-active={workspaceScope === 'all'}
+      onclick={() => selectScope('all')}
+    >
+      All workspaces
+    </button>
+  </div>
+
   {#each [
     { id: 'all',     label: 'All',       count: cycles.length, c: 'var(--af-muted)' },
     { id: 'active',  label: 'Running',   count: cycles.filter((c) => !TERMINAL.has(c.stage.toLowerCase())).length, c: 'var(--af-purple)' },
@@ -397,10 +538,10 @@
             <th class="col-check">
               <input
                 type="checkbox"
-                checked={selected.length > 0 && filtered.slice(0, 3).every((c) => selected.includes(c.cycleId))}
+                checked={selected.length > 0 && filtered.slice(0, 3).every((c) => selected.includes(cycleRowKey(c)))}
                 onchange={() => {
-                  const allSel = selected.length > 0 && filtered.slice(0, 3).every((c) => selected.includes(c.cycleId));
-                  selected = allSel ? [] : filtered.slice(0, 3).map((c) => c.cycleId);
+                  const allSel = selected.length > 0 && filtered.slice(0, 3).every((c) => selected.includes(cycleRowKey(c)));
+                  selected = allSel ? [] : filtered.slice(0, 3).map((c) => cycleRowKey(c));
                 }}
                 aria-label="Select up to 3 cycles to compare"
               />
@@ -424,13 +565,15 @@
             <th class="sortable" onclick={() => toggleSort('tests')}>
               Tests{#if sortCol === 'tests'}<span class="sort-arrow">{sortDir === 'asc' ? '▲' : '▼'}</span>{/if}
             </th>
+            <th>Workspace</th>
             <th>PR</th>
             <th>Verdict</th>
           </tr>
         </thead>
         <tbody>
-          {#each filtered as c (c.cycleId)}
-            {@const isSel = selected.includes(c.cycleId)}
+          {#each filtered as c (cycleRowKey(c))}
+            {@const rowKey = cycleRowKey(c)}
+            {@const isSel = selected.includes(rowKey)}
             {@const isLive = !isTerminal(c)}
             {@const costPct = c.budgetUsd > 0 ? Math.min(100, (c.costUsd / c.budgetUsd) * 100) : 0}
             <tr
@@ -441,7 +584,7 @@
               onclick={() => onRowClick(c)}
               onkeydown={(e) => onRowKey(e, c)}
             >
-              <td class="col-check" onclick={(e) => { e.stopPropagation(); toggleRow(c.cycleId); }}>
+              <td class="col-check" onclick={(e) => { e.stopPropagation(); toggleRow(rowKey); }}>
                 <input type="checkbox" checked={isSel} onchange={() => {}} aria-label="Select cycle for compare" />
               </td>
               <td><StageDots stages={bricksFor(c)} /></td>
@@ -483,6 +626,9 @@
                 {/if}
               </td>
               <td>
+                <span class="af2-mono dim">{workspaceLabel(c)}</span>
+              </td>
+              <td>
                 {#if c.prUrl}
                   <a class="pr-link af2-mono" href={c.prUrl} target="_blank" rel="noopener" onclick={(e) => e.stopPropagation()}>PR ↗</a>
                 {:else}
@@ -504,24 +650,25 @@
   </div>
 {/if}
 
-{#if selected.length > 0}
+{#if selectedRows.length > 0}
   <div class="compare-bar" role="region" aria-label="Compare cycles selection">
     <span class="af2-mono">
-      <span style="color:var(--af-purple);font-weight:700">{selected.length}</span> selected
-      {#if selected.length < 2}<span class="faint">· pick 2-3 to compare</span>{/if}
+      <span style="color:var(--af-purple);font-weight:700">{selectedRows.length}</span> selected
+      {#if selectedRows.length < 2}<span class="faint">· pick 2-3 to compare</span>{/if}
     </span>
     <div class="compare-chips">
-      {#each selected as id (id)}
+      {#each selectedRows as c (cycleRowKey(c))}
         <span class="compare-chip af2-mono">
-          {shortId(id)}
-          <button type="button" onclick={() => toggleRow(id)} aria-label="Deselect">×</button>
+          {shortId(c.cycleId)}
+          <span class="compare-chip-ws">{c.workspaceId ?? 'default'}</span>
+          <button type="button" onclick={() => toggleRow(cycleRowKey(c))} aria-label="Deselect">×</button>
         </span>
       {/each}
     </div>
     <div class="compare-bar-spacer"></div>
     <Btn size="sm" onClick={clearSelected}>Clear</Btn>
-    <Btn size="sm" variant="purple" disabled={selected.length < 2} onClick={openCompare}>
-      Compare {selected.length} →
+    <Btn size="sm" variant="purple" disabled={selectedRows.length < 2} onClick={openCompare}>
+      Compare {selectedRows.length} →
     </Btn>
   </div>
 {/if}
@@ -539,14 +686,14 @@
 
       <div class="compare-body">
         <div class="compare-cards" style="grid-template-columns:repeat({compareCycles.length},1fr)">
-          {#each compareCycles as c (c.cycleId)}
+          {#each compareCycles as c (cycleRowKey(c))}
             <Card>
               <div class="cc-head">
                 {#if !isTerminal(c)}<PulseDot color="var(--af-purple)" size={5} />{/if}
                 <span class="af2-mono cc-id">{shortId(c.cycleId)}</span>
                 <Badge variant={stageBadgeVariant(c.stage)}>{c.stage.toUpperCase()}</Badge>
               </div>
-              <div class="cc-meta af2-mono">v{c.sprintVersion ?? '—'} · {relativeTime(c.startedAt)}</div>
+              <div class="cc-meta af2-mono">v{c.sprintVersion ?? '—'} · {relativeTime(c.startedAt)} · {workspaceLabel(c)}</div>
               {#if hasCycleConfig(c)}
                 <div class="config-chips compare-config">
                   {#if isCodexCli(c)}<Badge variant="purple">Codex CLI</Badge>{/if}
@@ -571,7 +718,7 @@
                 </div>
               </div>
               <div style="margin-top:10px">
-                <Btn size="sm" href={`/cycles/${c.cycleId}`}>Open detail →</Btn>
+                <Btn size="sm" onClick={() => onRowClick(c)}>Open detail →</Btn>
               </div>
             </Card>
           {/each}
@@ -583,7 +730,7 @@
             {#each ['PLAN','STAGE','RUN','VERIFY','COMMIT','REVIEW'] as name, idx (name)}
               <div class="cc-stage-row" style="grid-template-columns:80px repeat({compareCycles.length},1fr)">
                 <span class="af2-mono cc-stage-name">{name}</span>
-                {#each compareCycles as c (c.cycleId)}
+                {#each compareCycles as c (cycleRowKey(c))}
                   {@const s = bricksFor(c)[idx]!}
                   <div class="cc-stage-cell" data-state={s}>
                     {s === 'done' ? '✓ done' : s === 'active' ? '◐ active' : s === 'failed' ? '✗ failed' : 'pending'}
@@ -612,7 +759,7 @@
                 : null}
             <div class="cc-metric-row" style="grid-template-columns:140px repeat({compareCycles.length},1fr)">
               <span class="cc-metric-label">{m.label}</span>
-              {#each compareCycles as c (c.cycleId)}
+              {#each compareCycles as c (cycleRowKey(c))}
                 {@const v = m.get(c)}
                 {@const isBest = best != null && v === best}
                 <span class="af2-mono" class:cc-best={isBest}>
@@ -681,6 +828,12 @@
     gap: 6px;
     margin-bottom: 12px;
     flex-wrap: wrap;
+  }
+  .scope-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-right: 6px;
   }
   .filter-spacer { flex: 1; min-width: 8px; }
   .chip {
@@ -884,6 +1037,14 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
+  }
+  .compare-chip-ws {
+    font-size: 9px;
+    color: var(--af-dim);
+    padding: 1px 5px;
+    border-radius: 999px;
+    border: 1px solid var(--af-border2);
+    background: var(--af-surface);
   }
   .compare-chip button {
     background: none;
