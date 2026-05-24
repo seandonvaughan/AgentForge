@@ -1066,10 +1066,19 @@ export class CycleRunner {
         cycleId: this.cycleId,
         involvedAgentIds,
         bus: this.options.bus,
+        ...(this.options.config.safety.selfModificationCanary
+          ? { selfModificationCanary: this.options.config.safety.selfModificationCanary }
+          : {}),
       });
       if (result.skipped) {
         // eslint-disable-next-line no-console
         console.log('[autonomous:cycle] stage 3.25: auto-reforge skipped (no proposed learnings)');
+      } else if (result.canaryDeployments && result.canaryDeployments.length > 0) {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[autonomous:cycle] stage 3.25: auto-reforge canary staged in ${result.durationMs}ms` +
+          ` (deployments=${result.canaryDeployments.length}, proposed=${result.mutatorReport?.totalApplied ?? 0})`,
+        );
       } else {
         // eslint-disable-next-line no-console
         console.log(

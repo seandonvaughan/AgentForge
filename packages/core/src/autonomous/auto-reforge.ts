@@ -10,6 +10,11 @@
 
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import {
+  SelfModificationCanaryManager,
+  type SelfModificationCanaryDeployment,
+  type SelfModificationCanaryPolicy,
+} from './self-modification-canary.js';
 
 // Real implementations from Workstreams P (curator) and Q (mutator).
 // Adapted to R's expected shapes below.
@@ -162,6 +167,11 @@ export interface AutoReforgeOptions {
   dryRun?: boolean;
   /** Optional bus for emitting learnings.applied events. */
   bus?: { publish: (topic: string, payload: unknown) => void };
+  /**
+   * When provided and enabled, stage proposed learnings behind a persistent
+   * canary instead of mutating agent YAML immediately.
+   */
+  selfModificationCanary?: SelfModificationCanaryPolicy | false;
   /** Injected curator (for testing). */
   curateLearnings?: (input: CurationInput) => Promise<CurationResult>;
   /** Injected mutator (for testing). */
@@ -173,6 +183,7 @@ export interface AutoReforgeResult {
   /** true if no proposed learnings were produced (nothing to apply). */
   skipped: boolean;
   mutatorReport?: MutatorReport;
+  canaryDeployments?: SelfModificationCanaryDeployment[];
   durationMs: number;
 }
 
@@ -206,7 +217,56 @@ export async function runAutoReforge(
     return { cycleId: opts.cycleId, skipped: true, durationMs: Date.now() - startedAt };
   }
 
-  // 3. Apply the proposed learnings via the mutator.
+  // 3. Canary mode: compute the mutator diff in dry-run, then stage the new
+  // lessons behind feature-flagged traffic splitting. Promotion/rollback is
+  // driven later by RuntimeAdapter outcome metrics from canary requests.
+  if (opts.selfModificationCanary && opts.selfModificationCanary.enabled) {
+    const mutatorReport = await apply({
+      projectRoot: opts.projectRoot,
+      proposed: curationResult,
+      dryRun: true,
+    });
+    if (opts.dryRun) {
+      return {
+        cycleId: opts.cycleId,
+        skipped: mutatorReport.totalApplied === 0,
+        mutatorReport,
+        canaryDeployments: [],
+        durationMs: Date.now() - startedAt,
+      };
+    }
+    const canary = new SelfModificationCanaryManager(opts.projectRoot);
+    const deployments = await canary.stage({
+      cycleId: opts.cycleId,
+      report: mutatorReport,
+      policy: opts.selfModificationCanary,
+    });
+
+    if (deployments.length > 0 && opts.bus) {
+      opts.bus.publish('self-modification.canary.staged', {
+        cycleId: opts.cycleId,
+        deployments: deployments.map((deployment) => ({
+          agentId: deployment.agentId,
+          flagId: deployment.flagId,
+          trafficPercent: deployment.trafficPercent,
+          strategy: deployment.strategy,
+          rollbackThreshold: deployment.rollbackThreshold,
+          lessons: deployment.lessons.length,
+          stagedAt: deployment.stagedAt,
+        })),
+      });
+    }
+
+    return {
+      cycleId: opts.cycleId,
+      skipped: deployments.length === 0,
+      mutatorReport,
+      canaryDeployments: deployments,
+      durationMs: Date.now() - startedAt,
+    };
+  }
+
+  // 4. Direct mode: apply the proposed learnings via the mutator.
   const mutatorReport = await apply({
     projectRoot: opts.projectRoot,
     proposed: curationResult,

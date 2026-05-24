@@ -117,21 +117,43 @@ Do NOT modify any files.`;
   const majorLines = extractFindingsByLevel(review, 'MAJOR');
   const sprintDomainTags = collectSprintItemTags(ctx.projectRoot, ctx.sprintVersion, ctx.cycleId);
   for (const line of criticalLines) {
-    writeMemoryEntry(ctx.projectRoot, {
+    const metadata = parseReviewFindingMetadata(line, 'CRITICAL');
+    const entry = writeMemoryEntry(ctx.projectRoot, {
       type: 'review-finding',
       value: line,
       source: ctx.cycleId,
       tags: ['review', 'finding', 'critical', `sprint:v${ctx.sprintVersion}`, ...sprintDomainTags],
-      metadata: parseReviewFindingMetadata(line, 'CRITICAL'),
+      metadata,
+    });
+    ctx.bus.publish('review.finding.created', {
+      entryId: entry.id,
+      cycleId: ctx.cycleId ?? '',
+      severity: 'CRITICAL',
+      summary: metadata.summary,
+      file: metadata.file,
+      line: metadata.line,
+      fixSuggestion: metadata.fixSuggestion,
+      createdAt: entry.createdAt,
     });
   }
   for (const line of majorLines) {
-    writeMemoryEntry(ctx.projectRoot, {
+    const metadata = parseReviewFindingMetadata(line, 'MAJOR');
+    const entry = writeMemoryEntry(ctx.projectRoot, {
       type: 'review-finding',
       value: line,
       source: ctx.cycleId,
       tags: ['review', 'finding', 'major', `sprint:v${ctx.sprintVersion}`, ...sprintDomainTags],
-      metadata: parseReviewFindingMetadata(line, 'MAJOR'),
+      metadata,
+    });
+    ctx.bus.publish('review.finding.created', {
+      entryId: entry.id,
+      cycleId: ctx.cycleId ?? '',
+      severity: 'MAJOR',
+      summary: metadata.summary,
+      file: metadata.file,
+      line: metadata.line,
+      fixSuggestion: metadata.fixSuggestion,
+      createdAt: entry.createdAt,
     });
   }
 

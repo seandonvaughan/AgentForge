@@ -215,6 +215,81 @@ describe('runAutoReforge', () => {
     expect(publishSpy).not.toHaveBeenCalled();
   });
 
+  it('stages learnings as canaries when self-modification canary is enabled', async () => {
+    const publishSpy = vi.fn();
+    const curate = vi.fn(async (): Promise<CurationResult> =>
+      makeCurationResult(['coder']),
+    );
+    const apply = vi.fn(async (input: ApplyLearningsInput): Promise<MutatorReport> =>
+      makeMutatorReport(input.dryRun),
+    );
+
+    const result = await runAutoReforge({
+      projectRoot: tmpDir,
+      cycleId: 'cycle-canary',
+      involvedAgentIds: ['coder'],
+      bus: { publish: publishSpy },
+      curateLearnings: curate,
+      applyLearnings: apply,
+      selfModificationCanary: {
+        enabled: true,
+        trafficPercent: 25,
+        strategy: 'hash',
+        rollbackThreshold: 0.1,
+        minCanaryRequests: 5,
+        promoteAfterHealthyRequests: 20,
+      },
+    });
+
+    expect(result.skipped).toBe(false);
+    expect(result.mutatorReport?.dryRun).toBe(true);
+    expect(result.canaryDeployments).toHaveLength(1);
+    expect(result.canaryDeployments?.[0]).toMatchObject({
+      agentId: 'coder',
+      trafficPercent: 25,
+      rollbackThreshold: 0.1,
+    });
+    const applyArg = apply.mock.calls[0]![0] as ApplyLearningsInput;
+    expect(applyArg.dryRun).toBe(true);
+    expect(publishSpy).toHaveBeenCalledWith(
+      'self-modification.canary.staged',
+      expect.objectContaining({ cycleId: 'cycle-canary' }),
+    );
+  });
+
+  it('does not write canary deployments during an auto-reforge dry run', async () => {
+    const publishSpy = vi.fn();
+    const curate = vi.fn(async (): Promise<CurationResult> =>
+      makeCurationResult(['coder']),
+    );
+    const apply = vi.fn(async (input: ApplyLearningsInput): Promise<MutatorReport> =>
+      makeMutatorReport(input.dryRun),
+    );
+
+    const result = await runAutoReforge({
+      projectRoot: tmpDir,
+      cycleId: 'cycle-canary-dry-run',
+      involvedAgentIds: ['coder'],
+      dryRun: true,
+      bus: { publish: publishSpy },
+      curateLearnings: curate,
+      applyLearnings: apply,
+      selfModificationCanary: {
+        enabled: true,
+        trafficPercent: 25,
+        strategy: 'hash',
+        rollbackThreshold: 0.1,
+        minCanaryRequests: 5,
+        promoteAfterHealthyRequests: 20,
+      },
+    });
+
+    expect(result.skipped).toBe(false);
+    expect(result.mutatorReport?.dryRun).toBe(true);
+    expect(result.canaryDeployments).toEqual([]);
+    expect(publishSpy).not.toHaveBeenCalled();
+  });
+
   it('propagates curator errors (caller is responsible for swallowing)', async () => {
     const curate = vi.fn(async (): Promise<CurationResult> => {
       throw new Error('curator failed: JSONL parse error');

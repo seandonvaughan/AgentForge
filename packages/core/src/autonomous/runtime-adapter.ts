@@ -26,6 +26,11 @@ import {
   extractBreakdownFromAgentRun,
   type CostBreakdown,
 } from './cost-breakdown.js';
+import {
+  SelfModificationCanaryManager,
+  type SelfModificationCanaryPolicy,
+  type SelfModificationCanaryResolution,
+} from './self-modification-canary.js';
 
 const TIER_RANK: Record<ModelTier, number> = { opus: 2, sonnet: 1, haiku: 0 };
 
@@ -35,6 +40,38 @@ interface RuntimeRunOptions {
   timeoutMs?: number;
   cwd?: string;
   codexSandbox?: CodexSandboxMode;
+  requestId?: string;
+  canaryHeaderValue?: string;
+}
+
+export interface RuntimeAdapterCanaryRunInfo {
+  flagId: string;
+  agentId: string;
+  variant: 'canary';
+  lessons: number;
+}
+
+type RuntimeAdapterRunResult = {
+  output: string;
+  usage: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
+  };
+  costUsd: number;
+  durationMs: number;
+  model: string;
+  effort?: string;
+  capabilityTier?: ModelTier;
+  breakdown: CostBreakdown;
+  selfModificationCanary?: RuntimeAdapterCanaryRunInfo;
+};
+
+interface RuntimeHandle {
+  runtime: AgentRuntime;
+  config: AgentRuntimeConfig;
+  canary?: SelfModificationCanaryResolution;
 }
 
 function capModelTier(requested: ModelTier, cap: ModelTier): { model: ModelTier; effort?: string } {
@@ -99,6 +136,11 @@ export interface RuntimeAdapterOptions {
    * Propagated to RunOptions so each agent invocation emits the flag.
    */
   enableFallback?: boolean;
+  /**
+   * Policy for staged auto-reforge learnings. When enabled, run() resolves a
+   * canary variant per requestId/headerValue and records success/error metrics.
+   */
+  selfModificationCanary?: SelfModificationCanaryPolicy | false;
 }
 
 /**
@@ -108,10 +150,15 @@ export interface RuntimeAdapterOptions {
  */
 export class RuntimeAdapter implements RuntimeForScoring {
   private readonly runtimes = new Map<string, AgentRuntime>();
+  private readonly runtimeConfigs = new Map<string, AgentRuntimeConfig>();
   private readonly agentforgeDir: string;
+  private readonly selfModificationCanaryManager?: SelfModificationCanaryManager;
 
   constructor(private readonly options: RuntimeAdapterOptions) {
     this.agentforgeDir = join(options.cwd, '.agentforge');
+    if (options.selfModificationCanary && options.selfModificationCanary.enabled) {
+      this.selfModificationCanaryManager = new SelfModificationCanaryManager(options.cwd);
+    }
   }
 
   /**
@@ -131,21 +178,7 @@ export class RuntimeAdapter implements RuntimeForScoring {
     agentId: string,
     task: string,
     options?: RuntimeRunOptions,
-  ): Promise<{
-    output: string;
-    usage: {
-      input_tokens: number;
-      output_tokens: number;
-      cache_creation_input_tokens?: number;
-      cache_read_input_tokens?: number;
-    };
-    costUsd: number;
-    durationMs: number;
-    model: string;
-    effort?: string;
-    capabilityTier?: ModelTier;
-    breakdown: CostBreakdown;
-  }> {
+  ): Promise<RuntimeAdapterRunResult> {
     // When a supervisor is wired, every agent run creates a durable runtime_job
     // row + runtime_events so the /jobs page has persistent history across
     // server restarts. This closes the observability gap where the execute phase
@@ -154,25 +187,25 @@ export class RuntimeAdapter implements RuntimeForScoring {
       return this._runWithSupervisor(agentId, task, options);
     }
 
-    const runtime = await this.getOrCreateRuntime(agentId);
+    const handle = await this.getRuntimeForRun(agentId, options);
     const startedAt = Date.now();
-    const runOpts: { task: string; allowedTools?: string[]; enableFallback?: boolean; timeoutMs?: number; cwd?: string; codexSandbox?: CodexSandboxMode } = { task };
-    if (options?.allowedTools) runOpts.allowedTools = options.allowedTools;
-    if (options?.timeoutMs !== undefined) runOpts.timeoutMs = options.timeoutMs;
-    if (options?.cwd !== undefined) runOpts.cwd = options.cwd;
-    if (options?.codexSandbox !== undefined) runOpts.codexSandbox = options.codexSandbox;
-    // Thread enableFallback from adapter options into each run call.
-    if (this.options.enableFallback !== undefined) {
-      runOpts.enableFallback = this.options.enableFallback;
+    const runOpts = this.buildRunOptions(task, options);
+    let result: RunResult;
+    try {
+      result = await handle.runtime.run(runOpts);
+    } catch (error) {
+      await this.recordSelfModificationCanaryOutcome(handle.canary, true);
+      throw error;
     }
-    const result: RunResult = await runtime.run(runOpts);
     const durationMs = Date.now() - startedAt;
 
     if (result.status === 'failed') {
+      await this.recordSelfModificationCanaryOutcome(handle.canary, true);
       throw new RuntimeAdapterError(
         `Agent ${agentId} run failed: ${result.error ?? 'unknown error'}`,
       );
     }
+    await this.recordSelfModificationCanaryOutcome(handle.canary, false);
 
     const usage = {
       input_tokens: result.inputTokens,
@@ -199,6 +232,9 @@ export class RuntimeAdapter implements RuntimeForScoring {
       ...(result.effort ? { effort: result.effort } : {}),
       ...(result.capabilityTier ? { capabilityTier: result.capabilityTier } : {}),
       breakdown,
+      ...(handle.canary && handle.canary.route.variant === 'canary'
+        ? { selfModificationCanary: this.canaryRunInfo(handle.canary) }
+        : {}),
     };
   }
 
@@ -211,50 +247,31 @@ export class RuntimeAdapter implements RuntimeForScoring {
     agentId: string,
     task: string,
     options?: RuntimeRunOptions,
-  ): Promise<{
-    output: string;
-    usage: {
-      input_tokens: number;
-      output_tokens: number;
-      cache_creation_input_tokens?: number;
-      cache_read_input_tokens?: number;
-    };
-    costUsd: number;
-    durationMs: number;
-    model: string;
-    effort?: string;
-    capabilityTier?: ModelTier;
-    breakdown: CostBreakdown;
-  }> {
+  ): Promise<RuntimeAdapterRunResult> {
     const supervisor = this.options.supervisor!;
-    const runtime = await this.getOrCreateRuntime(agentId);
+    const handle = await this.getRuntimeForRun(agentId, options);
     const jobStartedAt = Date.now();
 
-    const job = supervisor.createJob({ agentId, task });
+    const job = supervisor.createJob({ agentId, task, model: handle.config.model });
 
     const runResult = await supervisor.startJob(job.id, () => {
-      const runOpts: { task: string; allowedTools?: string[]; enableFallback?: boolean; timeoutMs?: number; cwd?: string; codexSandbox?: CodexSandboxMode } = { task };
-      if (options?.allowedTools) runOpts.allowedTools = options.allowedTools;
-      if (options?.timeoutMs !== undefined) runOpts.timeoutMs = options.timeoutMs;
-      if (options?.cwd !== undefined) runOpts.cwd = options.cwd;
-      if (options?.codexSandbox !== undefined) runOpts.codexSandbox = options.codexSandbox;
-      if (this.options.enableFallback !== undefined) {
-        runOpts.enableFallback = this.options.enableFallback;
-      }
-      return runtime.run(runOpts);
+      return handle.runtime.run(this.buildRunOptions(task, options));
     });
 
     if (!runResult) {
+      await this.recordSelfModificationCanaryOutcome(handle.canary, true);
       const latestJob = supervisor.getJob(job.id);
       throw new RuntimeAdapterError(
         latestJob?.error ?? `Agent ${agentId} run did not complete`,
       );
     }
     if (runResult.status === 'failed') {
+      await this.recordSelfModificationCanaryOutcome(handle.canary, true);
       throw new RuntimeAdapterError(
         runResult.error ?? `Agent ${agentId} run failed: unknown error`,
       );
     }
+    await this.recordSelfModificationCanaryOutcome(handle.canary, false);
 
     const durationMs = Date.now() - jobStartedAt;
     const supervisorUsage = {
@@ -282,6 +299,9 @@ export class RuntimeAdapter implements RuntimeForScoring {
       ...(runResult.effort ? { effort: runResult.effort } : {}),
       ...(runResult.capabilityTier ? { capabilityTier: runResult.capabilityTier } : {}),
       breakdown: supervisorBreakdown,
+      ...(handle.canary && handle.canary.route.variant === 'canary'
+        ? { selfModificationCanary: this.canaryRunInfo(handle.canary) }
+        : {}),
     };
   }
 
@@ -294,6 +314,7 @@ export class RuntimeAdapter implements RuntimeForScoring {
     const effectiveConfig = this.applyCaps(config);
     const runtime = new AgentRuntime(effectiveConfig, this.options.workspaceAdapter);
     this.runtimes.set(agentId, runtime);
+    this.runtimeConfigs.set(agentId, effectiveConfig);
   }
 
   /**
@@ -321,21 +342,66 @@ export class RuntimeAdapter implements RuntimeForScoring {
   /** Clear the runtime cache. Useful between cycles if agent configs changed. */
   clearCache(): void {
     this.runtimes.clear();
+    this.runtimeConfigs.clear();
   }
 
-  private async getOrCreateRuntime(agentId: string): Promise<AgentRuntime> {
-    const cached = this.runtimes.get(agentId);
-    if (cached) return cached;
+  private buildRunOptions(
+    task: string,
+    options?: RuntimeRunOptions,
+  ): { task: string; allowedTools?: string[]; enableFallback?: boolean; timeoutMs?: number; cwd?: string; codexSandbox?: CodexSandboxMode } {
+    const runOpts: { task: string; allowedTools?: string[]; enableFallback?: boolean; timeoutMs?: number; cwd?: string; codexSandbox?: CodexSandboxMode } = { task };
+    if (options?.allowedTools) runOpts.allowedTools = options.allowedTools;
+    if (options?.timeoutMs !== undefined) runOpts.timeoutMs = options.timeoutMs;
+    if (options?.cwd !== undefined) runOpts.cwd = options.cwd;
+    if (options?.codexSandbox !== undefined) runOpts.codexSandbox = options.codexSandbox;
+    if (this.options.enableFallback !== undefined) {
+      runOpts.enableFallback = this.options.enableFallback;
+    }
+    return runOpts;
+  }
+
+  private async getOrCreateRuntime(agentId: string, options?: RuntimeRunOptions): Promise<AgentRuntime> {
+    return (await this.getRuntimeForRun(agentId, options)).runtime;
+  }
+
+  private async getRuntimeForRun(agentId: string, options?: RuntimeRunOptions): Promise<RuntimeHandle> {
+    const canary = await this.resolveSelfModificationCanary(agentId, options);
+    const cacheKey = canary && canary.route.variant === 'canary' && canary.lessons.length > 0
+      ? `${agentId}::self-mod-canary::${canary.deployment.flagId}`
+      : agentId;
+
+    const cached = this.runtimes.get(cacheKey);
+    const cachedConfig = this.runtimeConfigs.get(cacheKey);
+    if (cached && cachedConfig) {
+      return {
+        runtime: cached,
+        config: cachedConfig,
+        ...(canary && canary.route.variant === 'canary' ? { canary } : {}),
+      };
+    }
+
+    const baseConfig = await this.loadEffectiveConfig(agentId);
+    const effectiveConfig = canary && canary.route.variant === 'canary' && canary.lessons.length > 0
+      ? this.applySelfModificationCanary(baseConfig, canary)
+      : baseConfig;
+    const runtime = new AgentRuntime(effectiveConfig, this.options.workspaceAdapter);
+    this.runtimes.set(cacheKey, runtime);
+    this.runtimeConfigs.set(cacheKey, effectiveConfig);
+    return {
+      runtime,
+      config: effectiveConfig,
+      ...(canary && canary.route.variant === 'canary' ? { canary } : {}),
+    };
+  }
+
+  private async loadEffectiveConfig(agentId: string): Promise<AgentRuntimeConfig> {
 
     // Check inline configs first. Apply caps so that modelCap/effortCap are
     // honoured even when configs come from the constructor inlineAgents map
     // (consistent with registerInlineAgent which also calls applyCaps).
     const inlineConfig = this.options.inlineAgents?.[agentId];
     if (inlineConfig) {
-      const effectiveConfig = this.applyCaps(inlineConfig);
-      const runtime = new AgentRuntime(effectiveConfig, this.options.workspaceAdapter);
-      this.runtimes.set(agentId, runtime);
-      return runtime;
+      return this.applyCaps(inlineConfig);
     }
 
     // Load from .agentforge/agents/{agentId}.yaml. Pass the workspace adapter
@@ -427,9 +493,78 @@ export class RuntimeAdapter implements RuntimeForScoring {
       );
     }
 
-    const effectiveConfig = this.applyCaps(config);
-    const runtime = new AgentRuntime(effectiveConfig, this.options.workspaceAdapter);
-    this.runtimes.set(agentId, runtime);
-    return runtime;
+    return this.applyCaps(config);
+  }
+
+  private async resolveSelfModificationCanary(
+    agentId: string,
+    options?: RuntimeRunOptions,
+  ): Promise<SelfModificationCanaryResolution | null> {
+    if (!this.selfModificationCanaryManager) return null;
+    const requestId = options?.requestId;
+    const headerValue = options?.canaryHeaderValue;
+    if (!requestId && !headerValue) return null;
+    try {
+      const resolution = await this.selfModificationCanaryManager.resolve(agentId, {
+        ...(requestId ? { requestId } : {}),
+        ...(headerValue ? { headerValue } : {}),
+      });
+      return resolution && resolution.route.variant === 'canary' && resolution.lessons.length > 0
+        ? resolution
+        : null;
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[runtime-adapter] self-modification canary routing skipped for ${agentId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
+    }
+  }
+
+  private applySelfModificationCanary(
+    config: AgentRuntimeConfig,
+    canary: SelfModificationCanaryResolution,
+  ): AgentRuntimeConfig {
+    const bullets = canary.lessons.map((lesson) => `- ${lesson}`).join('\n');
+    return {
+      ...config,
+      systemPrompt:
+        `${config.systemPrompt.trimEnd()}\n\n` +
+        `## Canary Self-Modification Learnings\n` +
+        `These staged learnings are active only for canary traffic under ${canary.deployment.flagId}.\n` +
+        `${bullets}`,
+    };
+  }
+
+  private async recordSelfModificationCanaryOutcome(
+    canary: SelfModificationCanaryResolution | undefined,
+    isError: boolean,
+  ): Promise<void> {
+    if (!canary || canary.route.variant !== 'canary') return;
+    try {
+      await this.selfModificationCanaryManager?.recordOutcome(
+        canary.deployment.agentId,
+        canary.deployment.flagId,
+        isError,
+      );
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[runtime-adapter] self-modification canary metric failed for ${canary.deployment.agentId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  private canaryRunInfo(canary: SelfModificationCanaryResolution): RuntimeAdapterCanaryRunInfo {
+    return {
+      flagId: canary.deployment.flagId,
+      agentId: canary.deployment.agentId,
+      variant: 'canary',
+      lessons: canary.lessons.length,
+    };
   }
 }

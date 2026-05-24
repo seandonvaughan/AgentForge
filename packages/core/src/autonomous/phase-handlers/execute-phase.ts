@@ -354,6 +354,12 @@ interface ItemResult {
   model?: string;
   effort?: string;
   capabilityTier?: ModelTier;
+  selfModificationCanary?: {
+    flagId: string;
+    agentId: string;
+    variant: 'canary';
+    lessons: number;
+  };
   /** Per-run cost breakdown (token attribution). Populated by Wave 2. */
   breakdown?: CostBreakdown;
   error?: string;
@@ -931,7 +937,10 @@ export async function runExecutePhase(
           filesHinted: item.files ?? [],
         });
         try {
-          const runOptions: Record<string, unknown> = { allowedTools };
+          const runOptions: Record<string, unknown> = {
+            allowedTools,
+            requestId: `${ctx.cycleId ?? ctx.sprintId}:${item.id}:attempt-${attempts}`,
+          };
           if (worktreeHandle) {
             // T4.2: pass cwd so the runtime runs the agent inside the isolated
             // worktree rather than the main project root.
@@ -984,6 +993,7 @@ export async function runExecutePhase(
             : undefined;
           const runEffort =
             typeof (result as any)?.effort === 'string' ? (result as any).effort : undefined;
+          const selfModificationCanary = (result as any)?.selfModificationCanary;
 
           // Wave 2: extract per-run CostBreakdown and accumulate into phase total.
           // Use the breakdown already computed by RuntimeAdapter when available;
@@ -1096,6 +1106,7 @@ export async function runExecutePhase(
             model: runModel,
             ...(runEffort ? { effort: runEffort } : {}),
             ...(runCapabilityTier ? { capabilityTier: runCapabilityTier } : {}),
+            ...(selfModificationCanary ? { selfModificationCanary } : {}),
             // T4.2: surface the worktree path/branch for downstream diff capture
             worktreePath: worktreeHandle?.path,
             worktreeBranch: worktreeHandle?.branch,

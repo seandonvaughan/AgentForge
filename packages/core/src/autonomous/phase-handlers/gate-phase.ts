@@ -678,7 +678,7 @@ Respond as JSON: { "verdict": "APPROVE" | "REJECT", "rationale": "..." }`;
     summaryParts.push(`Major: ${majorFindings.join('; ')}`);
   }
 
-  writeMemoryEntry(ctx.projectRoot, {
+  const gateEntry = writeMemoryEntry(ctx.projectRoot, {
     type: 'gate-verdict',
     value: summaryParts.join('. '),
     metadata: gateMetadata,
@@ -688,6 +688,16 @@ Respond as JSON: { "verdict": "APPROVE" | "REJECT", "rationale": "..." }`;
       `sprint:v${ctx.sprintVersion}`,
       ...sprintDomainTags,
     ],
+  });
+
+  ctx.bus.publish('gate.verdict.created', {
+    entryId: gateEntry.id,
+    cycleId: ctx.cycleId ?? '',
+    verdict: verdictNorm,
+    rationale: verdict.rationale,
+    criticalFindings,
+    majorFindings,
+    createdAt: gateEntry.createdAt,
   });
 
   if (verdict.verdict === 'REJECT') {

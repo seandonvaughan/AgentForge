@@ -139,6 +139,10 @@ interface AgentYaml {
   [key: string]: unknown;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
 async function loadAgentYaml(agentPath: string): Promise<AgentYaml> {
   let raw: string;
   try {
@@ -388,10 +392,9 @@ export async function applyLearnings(
 
   // Expected shape: Record<agentId, ProposedLearning[]>
   const parsedProposed: unknown = JSON.parse(rawProposed);
-  const proposedByAgent =
-    parsedProposed !== null && typeof parsedProposed === "object" && !Array.isArray(parsedProposed)
-      ? parsedProposed
-      : {};
+  const proposedByAgent = isRecord(parsedProposed)
+    ? (isRecord(parsedProposed["byAgent"]) ? parsedProposed["byAgent"] : parsedProposed)
+    : {};
 
   const perAgent: AgentMutatorResult[] = [];
 

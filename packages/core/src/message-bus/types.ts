@@ -85,6 +85,10 @@ export type MessageTopic =
   // Quality + gate (mirrored to @user inbox by InboxBridge — ADR 0004)
   | 'gate.verdict.created'
   | 'review.finding.created'
+  // Autonomous self-modification canaries
+  | 'self-modification.canary.staged'
+  | 'self-modification.canary.promoted'
+  | 'self-modification.canary.rolled_back'
   // Plugin
   | 'plugin.event'
   // Worktree / branch (Cycle 4 — T4.3 / T4.4)
@@ -312,6 +316,32 @@ export interface ReviewFindingCreatedPayload {
   createdAt: string;
 }
 
+export interface SelfModificationCanaryDeploymentSummary {
+  agentId: string;
+  flagId: string;
+  trafficPercent: number;
+  strategy: 'percentage' | 'hash' | 'header';
+  rollbackThreshold: number;
+  lessons: number;
+  stagedAt: string;
+}
+
+export interface SelfModificationCanaryStagedPayload {
+  cycleId: string;
+  deployments: SelfModificationCanaryDeploymentSummary[];
+}
+
+export interface SelfModificationCanaryTerminalPayload {
+  cycleId: string;
+  agentId: string;
+  flagId: string;
+  canaryRequests: number;
+  canaryErrors: number;
+  errorRate: number;
+  completedAt: string;
+  reason?: string;
+}
+
 // ── Type guards ───────────────────────────────────────────────────────────────
 
 export function isTaskTopic(topic: MessageTopic): boolean {
@@ -363,6 +393,8 @@ export type AgentDmSentEnvelope = MessageEnvelopeV2<AgentDmSentPayload>;
 export type InboxMessageCreatedEnvelope = MessageEnvelopeV2<InboxMessageCreatedPayload>;
 export type GateVerdictCreatedEnvelope = MessageEnvelopeV2<GateVerdictCreatedPayload>;
 export type ReviewFindingCreatedEnvelope = MessageEnvelopeV2<ReviewFindingCreatedPayload>;
+export type SelfModificationCanaryStagedEnvelope = MessageEnvelopeV2<SelfModificationCanaryStagedPayload>;
+export type SelfModificationCanaryTerminalEnvelope = MessageEnvelopeV2<SelfModificationCanaryTerminalPayload>;
 
 // ── Worktree / branch payloads (Cycle 4 — T4.3) ──────────────────────────────
 
@@ -425,4 +457,8 @@ export function isQualityTopic(topic: MessageTopic): boolean {
 
 export function isWorktreeTopic(topic: MessageTopic): boolean {
   return topic === 'agent.branch.pushed' || topic === 'merge-queue.pr.opened';
+}
+
+export function isSelfModificationCanaryTopic(topic: MessageTopic): boolean {
+  return topic.startsWith('self-modification.canary.');
 }

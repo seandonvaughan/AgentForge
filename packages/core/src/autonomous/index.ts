@@ -37,6 +37,7 @@ export {
 export type { CycleRunnerOptions } from './cycle-runner.js';
 export type { CycleCheckpoint } from './cycle-artifacts/cycle-checkpoint.js';
 export * from './runtime-adapter.js';
+export * from './self-modification-canary.js';
 export * from './workspace-telemetry-adapters.js';
 export * from './workspace-registry.js';
 export * from './phase-handlers/index.js';

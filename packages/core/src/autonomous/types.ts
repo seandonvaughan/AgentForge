@@ -4,6 +4,7 @@
 
 import type { ModelTier } from '@agentforge/shared';
 import type { CostBreakdown } from './cost-breakdown.js';
+import type { SelfModificationCanaryPolicy } from './self-modification-canary.js';
 
 export enum CycleStage {
   PLAN = 'plan',
@@ -98,6 +99,12 @@ export interface CycleConfig {
     secretScanEnabled: boolean;
     verifyCleanWorkingTreeBeforeStart: boolean;
     workingTreeWhitelist: string[];
+    /**
+     * Canary policy for autonomous self-modification. When enabled, auto-reforge
+     * learnings are staged behind traffic splitting and promoted only after
+     * healthy canary metrics.
+     */
+    selfModificationCanary?: SelfModificationCanaryPolicy;
   };
   retry: {
     /** Max automatic gate-rejection retries before requiring approval. */

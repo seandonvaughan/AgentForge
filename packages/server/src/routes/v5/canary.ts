@@ -84,6 +84,17 @@ export async function canaryRoutes(app: FastifyInstance): Promise<void> {
     });
   });
 
+  // POST /api/v5/canary/metrics — record a canary outcome and auto-rollback if unhealthy
+  app.post('/api/v5/canary/metrics', async (req, reply) => {
+    const body = req.body as any;
+    if (!body?.flagId || typeof body.isError !== 'boolean') {
+      return reply.status(400).send({ error: 'flagId and boolean isError are required', code: 'MISSING_FIELD' });
+    }
+    const result = canary.recordOutcome(body.flagId, body.isError);
+    if (!result) return reply.status(404).send({ error: 'Flag not found', code: 'FLAG_NOT_FOUND' });
+    return reply.status(201).send({ data: result, meta: { timestamp: new Date().toISOString() } });
+  });
+
   // GET /api/v5/canary/metrics/:flagId — metrics for a specific flag
   app.get<{ Params: { flagId: string } }>('/api/v5/canary/metrics/:flagId', async (req, reply) => {
     const metrics = canary.getMetrics(req.params.flagId);

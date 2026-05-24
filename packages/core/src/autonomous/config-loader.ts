@@ -3,6 +3,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import yaml from 'js-yaml';
 import type { CycleConfig } from './types.js';
+import { DEFAULT_SELF_MODIFICATION_CANARY_POLICY } from './self-modification-canary.js';
 
 export const DEFAULT_CYCLE_CONFIG: CycleConfig = Object.freeze({
   budget: Object.freeze({
@@ -93,6 +94,7 @@ export const DEFAULT_CYCLE_CONFIG: CycleConfig = Object.freeze({
       '.agentforge/cycles/**',
       '.agentforge/audit.db-*',
     ]) as unknown as string[],
+    selfModificationCanary: Object.freeze({ ...DEFAULT_SELF_MODIFICATION_CANARY_POLICY }),
   }),
   retry: Object.freeze({
     maxAutoRetries: 1,
@@ -164,7 +166,7 @@ function mergeConfig(defaults: CycleConfig, overrides: Partial<CycleConfig>): Cy
     } else {
       const base = merged[key];
       if (isRecord(base) && isRecord(override)) {
-        merged[key] = { ...base, ...override } as never;
+        merged[key] = mergeRecords(base, override) as never;
       }
     }
   }
@@ -175,6 +177,21 @@ function mergeConfig(defaults: CycleConfig, overrides: Partial<CycleConfig>): Cy
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function mergeRecords(
+  base: Record<string, unknown>,
+  override: Record<string, unknown>,
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(override)) {
+    if (value === undefined || value === null) continue;
+    const baseValue = merged[key];
+    merged[key] = isRecord(baseValue) && isRecord(value)
+      ? mergeRecords(baseValue, value)
+      : value;
+  }
+  return merged;
 }
 
 function validateConfig(config: CycleConfig): void {
@@ -204,5 +221,24 @@ function validateConfig(config: CycleConfig): void {
   }
   if (config.autoReforge !== undefined && typeof config.autoReforge !== 'boolean') {
     throw new Error('autoReforge must be a boolean');
+  }
+  const canary = config.safety.selfModificationCanary ?? DEFAULT_SELF_MODIFICATION_CANARY_POLICY;
+  if (typeof canary.enabled !== 'boolean') {
+    throw new Error('safety.selfModificationCanary.enabled must be a boolean');
+  }
+  if (typeof canary.trafficPercent !== 'number' || canary.trafficPercent < 0 || canary.trafficPercent > 100) {
+    throw new Error('safety.selfModificationCanary.trafficPercent must be between 0 and 100');
+  }
+  if (canary.strategy !== 'percentage' && canary.strategy !== 'hash' && canary.strategy !== 'header') {
+    throw new Error('safety.selfModificationCanary.strategy must be percentage, hash, or header');
+  }
+  if (typeof canary.rollbackThreshold !== 'number' || canary.rollbackThreshold < 0 || canary.rollbackThreshold > 1) {
+    throw new Error('safety.selfModificationCanary.rollbackThreshold must be between 0 and 1');
+  }
+  if (typeof canary.minCanaryRequests !== 'number' || canary.minCanaryRequests < 1) {
+    throw new Error('safety.selfModificationCanary.minCanaryRequests must be at least 1');
+  }
+  if (typeof canary.promoteAfterHealthyRequests !== 'number' || canary.promoteAfterHealthyRequests < 0) {
+    throw new Error('safety.selfModificationCanary.promoteAfterHealthyRequests must be 0 or greater');
   }
 }

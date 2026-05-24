@@ -357,6 +357,9 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
         ...(config.modelCap ? { modelCap: config.modelCap } : {}),
         ...(config.effortCap ? { effortCap: config.effortCap } : {}),
         enableFallback,
+        ...(config.safety.selfModificationCanary
+          ? { selfModificationCanary: config.safety.selfModificationCanary }
+          : {}),
         ...(supervisor ? { supervisor } : {}),
       });
       const phaseHandlers = {
