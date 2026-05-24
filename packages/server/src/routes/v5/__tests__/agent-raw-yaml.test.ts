@@ -2,7 +2,7 @@
  * Integration tests for GET /api/v5/agents/:id/raw and PUT /api/v5/agents/:id/raw.
  *
  * Tests the raw YAML round-trip: read the actual YAML file off disk, edit it,
- * write it back, and verify the content is preserved byte-for-byte.
+ * write it back, and verify the content is reserialized through js-yaml.
  *
  * Uses a temporary project root for hermeticity.
  */
@@ -10,6 +10,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import yaml from 'js-yaml';
 import { createServerV5 } from '../../../server.js';
 
 let createdApps: Array<{ close: () => Promise<void> }> = [];
@@ -116,14 +117,27 @@ describe('GET /api/v5/agents/:id/raw', () => {
 // ---------------------------------------------------------------------------
 
 describe('PUT /api/v5/agents/:id/raw', () => {
-  it('writes the new YAML and returns updated content', async () => {
+  it('writes normalized YAML and returns updated content', async () => {
     const projectRoot = makeTmpRoot();
     const agentsDir = join(projectRoot, '.agentforge', 'agents');
     mkdirSync(agentsDir, { recursive: true });
     writeFileSync(join(agentsDir, 'edit-agent.yaml'), makeAgentYaml({ name: 'Before' }));
 
     const app = await makeApp(projectRoot);
-    const newYaml = makeAgentYaml({ name: 'After' });
+    const newYaml = [
+      '# comments are not preserved by js-yaml serialization',
+      'name: "After"',
+      'model: sonnet',
+      'version: "1.0"',
+      'description: "Path C:\\\\temp\\\\agent"',
+      'system_prompt: |',
+      '  Render this path exactly: C:\\temp\\agent',
+    ].join('\n') + '\n';
+    const expectedYaml = yaml.dump(yaml.load(newYaml) as Record<string, unknown>, {
+      lineWidth: 120,
+      noRefs: true,
+      sortKeys: false,
+    });
     const res = await app.inject({
       method: 'PUT',
       url: '/api/v5/agents/edit-agent/raw',
@@ -133,18 +147,30 @@ describe('PUT /api/v5/agents/:id/raw', () => {
 
     expect(res.statusCode).toBe(200);
     const body = res.json<{ data: { yaml: string; agentId: string } }>();
-    expect(body.data.yaml).toBe(newYaml);
+    expect(body.data.yaml).toBe(expectedYaml);
     expect(body.data.agentId).toBe('edit-agent');
   });
 
-  it('persists the file so a re-GET returns the edited content', async () => {
+  it('persists the normalized YAML so a re-GET returns the serialized content', async () => {
     const projectRoot = makeTmpRoot();
     const agentsDir = join(projectRoot, '.agentforge', 'agents');
     mkdirSync(agentsDir, { recursive: true });
     writeFileSync(join(agentsDir, 'roundtrip.yaml'), makeAgentYaml({ name: 'Original' }));
 
     const app = await makeApp(projectRoot);
-    const editedYaml = makeAgentYaml({ name: 'Edited' });
+    const editedYaml = [
+      'name: "Edited"',
+      'model: haiku',
+      'version: "1.0"',
+      'description: "Edited path C:\\\\temp\\\\agent"',
+      'system_prompt: |',
+      '  Edited prompt',
+    ].join('\n') + '\n';
+    const expectedYaml = yaml.dump(yaml.load(editedYaml) as Record<string, unknown>, {
+      lineWidth: 120,
+      noRefs: true,
+      sortKeys: false,
+    });
 
     await app.inject({
       method: 'PUT',
@@ -156,11 +182,11 @@ describe('PUT /api/v5/agents/:id/raw', () => {
     const getRes = await app.inject({ method: 'GET', url: '/api/v5/agents/roundtrip/raw' });
     expect(getRes.statusCode).toBe(200);
     const body = getRes.json<{ data: { yaml: string } }>();
-    expect(body.data.yaml).toBe(editedYaml);
+    expect(body.data.yaml).toBe(expectedYaml);
 
     // Also verify the file on disk
     const onDisk = readFileSync(join(agentsDir, 'roundtrip.yaml'), 'utf-8');
-    expect(onDisk).toBe(editedYaml);
+    expect(onDisk).toBe(expectedYaml);
   });
 
   it('rejects malformed YAML with 400', async () => {

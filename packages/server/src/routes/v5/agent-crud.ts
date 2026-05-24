@@ -351,7 +351,13 @@ export async function agentCrudRoutes(
         });
       }
 
-      writeFileAtomicSync(filePath, yamlContent);
+      const normalizedYaml = yaml.dump(parsed as unknown as Record<string, unknown>, {
+        lineWidth: 120,
+        noRefs: true,
+        sortKeys: false,
+      });
+
+      writeFileAtomicSync(filePath, normalizedYaml);
 
       // Audit log
       appendAuditEntry(auditDb, {
@@ -371,7 +377,7 @@ export async function agentCrudRoutes(
       const stat = statSync(filePath);
       return reply.send({
         data: {
-          yaml: yamlContent,
+          yaml: normalizedYaml,
           agentId: id,
           modifiedAt: stat.mtime.toISOString(),
         },
