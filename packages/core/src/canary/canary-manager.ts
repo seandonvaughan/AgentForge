@@ -18,7 +18,17 @@ interface PendingCanaryOutcome {
   requestId: string;
   outcomeToken: string;
   routedAt: string;
+  expiresAtMs: number;
 }
+
+export interface CanaryManagerOptions {
+  pendingOutcomeTtlMs?: number;
+  maxPendingOutcomes?: number;
+  nowMs?: () => number;
+}
+
+const DEFAULT_PENDING_OUTCOME_TTL_MS = 5 * 60 * 1000;
+const DEFAULT_MAX_PENDING_OUTCOMES = 1000;
 
 /**
  * CanaryManager — orchestrates feature flags, traffic splitting, and auto-rollback.
@@ -28,6 +38,21 @@ export class CanaryManager {
   private readonly splitter = new TrafficSplitter();
   private rollbackLog: RollbackResult[] = [];
   private readonly pendingOutcomes = new Map<string, PendingCanaryOutcome>();
+  private readonly pendingOutcomeTtlMs: number;
+  private readonly maxPendingOutcomes: number;
+  private readonly nowMs: () => number;
+
+  constructor(options: CanaryManagerOptions = {}) {
+    this.pendingOutcomeTtlMs = this.resolvePositiveInteger(
+      options.pendingOutcomeTtlMs,
+      DEFAULT_PENDING_OUTCOME_TTL_MS,
+    );
+    this.maxPendingOutcomes = this.resolvePositiveInteger(
+      options.maxPendingOutcomes,
+      DEFAULT_MAX_PENDING_OUTCOMES,
+    );
+    this.nowMs = options.nowMs ?? Date.now;
+  }
 
   // ── Flag management ──────────────────────────────────────────────────────────
 
@@ -56,11 +81,19 @@ export class CanaryManager {
   }
 
   deactivateFlag(id: string): FeatureFlag | undefined {
-    return this.flagManager.deactivate(id);
+    const flag = this.flagManager.deactivate(id);
+    if (flag) {
+      this.deletePendingOutcomesForFlag(id);
+    }
+    return flag;
   }
 
   deleteFlag(id: string): boolean {
-    return this.flagManager.delete(id);
+    const deleted = this.flagManager.delete(id);
+    if (deleted) {
+      this.deletePendingOutcomesForFlag(id);
+    }
+    return deleted;
   }
 
   // ── Traffic splitting ────────────────────────────────────────────────────────
@@ -85,13 +118,18 @@ export class CanaryManager {
       return result;
     }
 
+    this.evictExpiredPendingOutcomes();
     const outcomeToken = generateId();
-    this.pendingOutcomes.set(this.pendingKey(flagId, requestId), {
+    const pendingKey = this.pendingKey(flagId, requestId);
+    this.pendingOutcomes.delete(pendingKey);
+    this.pendingOutcomes.set(pendingKey, {
       flagId,
       requestId,
       outcomeToken,
       routedAt: nowIso(),
+      expiresAtMs: this.nowMs() + this.pendingOutcomeTtlMs,
     });
+    this.enforcePendingOutcomeCap();
 
     return { ...result, outcomeToken };
   }
@@ -136,6 +174,7 @@ export class CanaryManager {
     outcomeToken: string,
     outcome: CanaryOutcomeKind,
   ): VerifiedCanaryOutcomeResult {
+    this.evictExpiredPendingOutcomes();
     const flag = this.flagManager.get(flagId);
     if (!flag) {
       return {
@@ -205,6 +244,8 @@ export class CanaryManager {
     const rolled = this.flagManager.markRolledBack(flagId, reason);
     if (!rolled) return null;
 
+    this.deletePendingOutcomesForFlag(flagId);
+
     const result: RollbackResult = {
       flagId,
       success: true,
@@ -256,6 +297,42 @@ export class CanaryManager {
 
   flagCount(): number {
     return this.flagManager.count();
+  }
+
+  pendingOutcomeCount(): number {
+    this.evictExpiredPendingOutcomes();
+    return this.pendingOutcomes.size;
+  }
+
+  private deletePendingOutcomesForFlag(flagId: string): void {
+    for (const [key, pending] of this.pendingOutcomes.entries()) {
+      if (pending.flagId === flagId) {
+        this.pendingOutcomes.delete(key);
+      }
+    }
+  }
+
+  private evictExpiredPendingOutcomes(nowMs = this.nowMs()): void {
+    for (const [key, pending] of this.pendingOutcomes.entries()) {
+      if (pending.expiresAtMs <= nowMs) {
+        this.pendingOutcomes.delete(key);
+      }
+    }
+  }
+
+  private enforcePendingOutcomeCap(): void {
+    while (this.pendingOutcomes.size > this.maxPendingOutcomes) {
+      const oldestKey = this.pendingOutcomes.keys().next().value as string | undefined;
+      if (!oldestKey) return;
+      this.pendingOutcomes.delete(oldestKey);
+    }
+  }
+
+  private resolvePositiveInteger(value: number | undefined, fallback: number): number {
+    if (!Number.isFinite(value) || value === undefined || value <= 0) {
+      return fallback;
+    }
+    return Math.floor(value);
   }
 
   private pendingKey(flagId: string, requestId: string): string {

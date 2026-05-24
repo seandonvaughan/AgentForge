@@ -225,6 +225,98 @@ describe('CanaryManager', () => {
     expect(manager.getMetrics(flag.id)?.canaryRequests).toBe(1);
   });
 
+  it('expires pending outcome tokens after the configured TTL', () => {
+    let now = 1000;
+    manager = new CanaryManager({
+      pendingOutcomeTtlMs: 10,
+      nowMs: () => now,
+    });
+    const flag = manager.createFlag({ name: 'ttl-outcome', trafficPercent: 100 });
+    manager.activateFlag(flag.id);
+
+    const split = manager.route(flag.id, 'req-expiring');
+    expect(split.variant).toBe('canary');
+    expect(split.outcomeToken).toBeTruthy();
+    expect(manager.pendingOutcomeCount()).toBe(1);
+
+    now += 11;
+    const expired = manager.recordVerifiedOutcome(
+      flag.id,
+      split.requestId,
+      split.outcomeToken!,
+      'success',
+    );
+
+    expect(expired.ok).toBe(false);
+    if (!expired.ok) {
+      expect(expired.statusCode).toBe(403);
+      expect(expired.code).toBe('CANARY_OUTCOME_NOT_AUTHORIZED');
+    }
+    expect(manager.pendingOutcomeCount()).toBe(0);
+    expect(manager.getMetrics(flag.id)?.canaryRequests).toBe(0);
+  });
+
+  it('caps pending outcome tokens and evicts the oldest entries', () => {
+    manager = new CanaryManager({ maxPendingOutcomes: 2 });
+    const flag = manager.createFlag({ name: 'bounded-outcomes', trafficPercent: 100 });
+    manager.activateFlag(flag.id);
+
+    const first = manager.route(flag.id, 'req-1');
+    const second = manager.route(flag.id, 'req-2');
+    const third = manager.route(flag.id, 'req-3');
+
+    expect(manager.pendingOutcomeCount()).toBe(2);
+
+    const evicted = manager.recordVerifiedOutcome(
+      flag.id,
+      first.requestId,
+      first.outcomeToken!,
+      'success',
+    );
+    expect(evicted.ok).toBe(false);
+
+    const acceptedSecond = manager.recordVerifiedOutcome(
+      flag.id,
+      second.requestId,
+      second.outcomeToken!,
+      'success',
+    );
+    const acceptedThird = manager.recordVerifiedOutcome(
+      flag.id,
+      third.requestId,
+      third.outcomeToken!,
+      'success',
+    );
+
+    expect(acceptedSecond.ok).toBe(true);
+    expect(acceptedThird.ok).toBe(true);
+    expect(manager.pendingOutcomeCount()).toBe(0);
+    expect(manager.getMetrics(flag.id)?.canaryRequests).toBe(2);
+  });
+
+  it('clears pending outcome tokens when flags leave the active lifecycle', () => {
+    const deactivated = manager.createFlag({ name: 'deactivate-outcomes', trafficPercent: 100 });
+    manager.activateFlag(deactivated.id);
+    manager.route(deactivated.id, 'req-deactivate');
+    expect(manager.pendingOutcomeCount()).toBe(1);
+    manager.deactivateFlag(deactivated.id);
+    expect(manager.pendingOutcomeCount()).toBe(0);
+
+    const deleted = manager.createFlag({ name: 'delete-outcomes', trafficPercent: 100 });
+    manager.activateFlag(deleted.id);
+    manager.route(deleted.id, 'req-delete');
+    expect(manager.pendingOutcomeCount()).toBe(1);
+    expect(manager.deleteFlag(deleted.id)).toBe(true);
+    expect(manager.pendingOutcomeCount()).toBe(0);
+
+    const rolledBack = manager.createFlag({ name: 'rollback-outcomes', trafficPercent: 100 });
+    manager.activateFlag(rolledBack.id);
+    manager.route(rolledBack.id, 'req-rollback');
+    expect(manager.pendingOutcomeCount()).toBe(1);
+    expect(manager.performRollback(rolledBack.id, 'Manual rollback by operator')).toBeTruthy();
+    expect(manager.pendingOutcomeCount()).toBe(0);
+  });
+
   it('does not count runtime failures toward canary rollback metrics', () => {
     const flag = manager.createFlag({ name: 'infra-flaky', trafficPercent: 100 });
     manager.activateFlag(flag.id);
