@@ -160,6 +160,23 @@ export interface CanaryRollbackRecord {
   rolledBackAt: string;
 }
 
+/** Outcome classification for staged canary requests. */
+export type CanaryOutcomeKind =
+  | 'success'
+  | 'regression'
+  | 'infra_failure';
+
+/**
+ * Input for recording a staged canary outcome.
+ *
+ * `infra_failure` does not count toward rollback metrics so transient
+ * runtime outages do not trigger auto-rollback of healthy canary changes.
+ */
+export interface RecordCanaryOutcomeInput {
+  kind: CanaryOutcomeKind;
+  reason?: string;
+}
+
 /** Options for staging a canary deployment. */
 export interface CanaryDeployOptions {
   trafficPercent?: number;

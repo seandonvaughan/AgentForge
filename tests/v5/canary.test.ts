@@ -1,9 +1,15 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import os from 'node:os';
+import path from 'node:path';
+import { promises as fs } from 'node:fs';
 import {
   CanaryManager,
   FeatureFlagManager,
   TrafficSplitter,
 } from '../../packages/core/src/canary/index.js';
+import { MessageBusV2 } from '../../packages/core/src/message-bus/index.js';
+import { ReforgeEngine } from '../../packages/core/src/reforge/reforge-engine.js';
+import type { ReforgePlan } from '../../packages/core/src/reforge/types/reforge.js';
 
 describe('FeatureFlagManager', () => {
   let manager: FeatureFlagManager;
@@ -272,5 +278,83 @@ describe('CanaryManager', () => {
     manager.createFlag({ name: 'f1' });
     manager.createFlag({ name: 'f2' });
     expect(manager.flagCount()).toBe(2);
+  });
+});
+
+describe('ReforgeEngine canary lifecycle', () => {
+  async function makeLocalPlan(engine: ReforgeEngine): Promise<ReforgePlan> {
+    const templates = [{
+      name: 'cost-analyst',
+      role: 'Cost Analyst',
+      model: 'sonnet',
+      system_prompt: 'Base prompt',
+    }] as any;
+    return engine.buildPlan(
+      {
+        themes: [],
+        confidence_score: 0.9,
+        recommended_actions: [{
+          action: 'update-system-prompt',
+          rationale: 'exercise canary path',
+          urgency: 'medium',
+          theme_label: 'canary-test',
+          confidence: 0.9,
+        }],
+      },
+      templates,
+    );
+  }
+
+  it('publishes staged/promoted lifecycle events', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentforge-canary-lifecycle-'));
+    try {
+      const bus = new MessageBusV2({ workspaceId: 'ws-test' });
+      const engine = new ReforgeEngine(tmpDir, { bus, workspaceId: 'ws-test' });
+      const plan = await makeLocalPlan(engine);
+
+      await engine.deployCanary(plan, { trafficPercent: 100, strategy: 'hash', rollbackThreshold: 0.2 });
+      await engine.promoteCanary('cost-analyst');
+
+      const staged = bus.getHistory(10).find((env) => env.topic === 'self-modification.canary.staged');
+      const promoted = bus.getHistory(10).find((env) => env.topic === 'self-modification.canary.promoted');
+      expect(staged?.payload).toMatchObject({
+        workspaceId: 'ws-test',
+        planId: plan.id,
+        agentName: 'cost-analyst',
+      });
+      expect(promoted?.payload).toMatchObject({
+        workspaceId: 'ws-test',
+        planId: plan.id,
+        agentName: 'cost-analyst',
+      });
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not count infra failures toward rollback thresholds', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentforge-canary-outcome-'));
+    try {
+      const bus = new MessageBusV2({ workspaceId: 'ws-test' });
+      const engine = new ReforgeEngine(tmpDir, { bus, workspaceId: 'ws-test' });
+      const plan = await makeLocalPlan(engine);
+      await engine.deployCanary(plan, { trafficPercent: 100, strategy: 'hash', rollbackThreshold: 0.1 });
+
+      const outcome = await engine.recordCanaryOutcome('cost-analyst', { kind: 'infra_failure', reason: 'transient timeout' });
+      expect(outcome?.rollback).toBeUndefined();
+
+      const stagedPath = path.join(tmpDir, '.agentforge', 'agent-overrides', 'canary', 'cost-analyst.json');
+      const staged = JSON.parse(await fs.readFile(stagedPath, 'utf-8')) as {
+        metrics: { canaryRequests: number; canaryErrors: number; errorRate: number };
+      };
+      expect(staged.metrics).toMatchObject({
+        canaryRequests: 0,
+        canaryErrors: 0,
+        errorRate: 0,
+      });
+      expect(bus.getHistory(10).some((env) => env.topic === 'self-modification.canary.rolled_back')).toBe(false);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
   });
 });
