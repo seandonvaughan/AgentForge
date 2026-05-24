@@ -130,6 +130,19 @@ vi.mock('@agentforge/core', () => {
 // Import after mock registration so the mock is in place.
 import { createCliProgram } from '../bin.js';
 
+const CYCLE_ENV_KEYS = [
+  'AUTONOMOUS_BASE_BRANCH',
+  'AUTONOMOUS_BRANCH_PREFIX',
+  'AUTONOMOUS_BUDGET_USD',
+  'AUTONOMOUS_DISABLE_WORKTREES',
+  'AUTONOMOUS_DRY_RUN',
+  'AUTONOMOUS_EFFORT_CAP',
+  'AUTONOMOUS_FALLBACK_ENABLED',
+  'AUTONOMOUS_MAX_AGENTS',
+  'AUTONOMOUS_MAX_ITEMS',
+  'AUTONOMOUS_MODEL_CAP',
+] as const;
+
 // ---------------------------------------------------------------------------
 // Helper: run `cycle run` with given args against a tmpdir
 // ---------------------------------------------------------------------------
@@ -139,7 +152,11 @@ async function runCycleRun(
   envOverrides: Record<string, string | undefined> = {},
 ): Promise<void> {
   const prev: Record<string, string | undefined> = {};
-  for (const [k, v] of Object.entries(envOverrides)) {
+  const keys = new Set<string>([...CYCLE_ENV_KEYS, ...Object.keys(envOverrides)]);
+  for (const k of keys) {
+    const v = Object.prototype.hasOwnProperty.call(envOverrides, k)
+      ? envOverrides[k]
+      : undefined;
     prev[k] = process.env[k];
     if (v === undefined) {
       delete process.env[k];
