@@ -35,6 +35,12 @@ interface AgentTemplate {
   };
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
 export async function showGeneratedTeam(
   projectRoot: string,
   options: { verbose?: boolean } = {},
@@ -74,7 +80,7 @@ export async function showGeneratedTeam(
 
     try {
       const raw = await readFile(agentPath, 'utf-8');
-      const agent = yaml.load(raw) as AgentTemplate;
+      const agent = asRecord(yaml.load(raw)) as unknown as AgentTemplate;
       console.log(`\n  ${agent.name} (v${agent.version})`);
       console.log(`    Model: ${agent.model}`);
       console.log(`    Description: ${agent.description ?? '(none)'}`);
@@ -106,7 +112,7 @@ async function loadTeamManifest(projectRoot: string): Promise<TeamManifest | nul
   const teamPath = join(projectRoot, '.agentforge', 'team.yaml');
   try {
     const raw = await readFile(teamPath, 'utf-8');
-    return yaml.load(raw) as TeamManifest;
+    return asRecord(yaml.load(raw)) as unknown as TeamManifest;
   } catch {
     return null;
   }

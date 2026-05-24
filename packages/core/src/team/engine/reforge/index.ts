@@ -89,6 +89,12 @@ function agentCategory(manifest: TeamManifest, agentName: string): string | unde
   return undefined;
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
 /**
  * Detect whether changes between two scans are significant enough
  * to warrant a reforge.
@@ -314,7 +320,7 @@ export async function reforgeTeam(projectRoot: string): Promise<TeamDiff> {
   let oldManifest: TeamManifest;
   try {
     const raw = await readFile(teamPath, "utf-8");
-    oldManifest = yaml.load(raw) as TeamManifest;
+    oldManifest = asRecord(yaml.load(raw)) as unknown as TeamManifest;
   } catch {
     throw new Error(
       "No existing team manifest found. Run 'agentforge forge' first.",
@@ -326,7 +332,7 @@ export async function reforgeTeam(projectRoot: string): Promise<TeamDiff> {
     await migrateV1ToV2(projectRoot);
     // Re-read the updated manifest
     const raw = await readFile(teamPath, "utf-8");
-    oldManifest = yaml.load(raw) as TeamManifest;
+    oldManifest = asRecord(yaml.load(raw)) as unknown as TeamManifest;
   }
 
   // 3. Run a fresh scan

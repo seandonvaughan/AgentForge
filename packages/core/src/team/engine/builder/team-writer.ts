@@ -32,7 +32,7 @@ async function readExistingManifest(baseDir: string): Promise<TeamManifest | nul
   try {
     const raw = await readFile(teamYamlPath, "utf-8");
     const parsed = yaml.load(raw);
-    if (parsed && typeof parsed === "object") {
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       return parsed as TeamManifest;
     }
     return null;
@@ -55,9 +55,9 @@ async function buildModelsConfig(
 
   try {
     const parsed = yaml.load(await readFile(modelsPath, "utf-8"));
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      existing = parsed as Record<string, unknown>;
-    }
+    existing = parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {};
   } catch {
     // No existing config yet. The forge writes routing buckets below.
   }
@@ -503,7 +503,10 @@ export async function writeTeam(
       const existingPath = join(agentsDir, `${name}.yaml`);
       return readFile(existingPath, "utf-8")
         .then((raw) => {
-          const existing = yaml.load(raw) as { collaboration?: { reports_to?: string } } | null;
+          const parsed = yaml.load(raw);
+          const existing = parsed && typeof parsed === "object" && !Array.isArray(parsed)
+            ? parsed as { collaboration?: { reports_to?: string } }
+            : undefined;
           const existingReportsTo = existing?.collaboration?.reports_to;
           const merged = existingReportsTo && existingReportsTo !== template.collaboration.reports_to
             ? { ...template, collaboration: { ...template.collaboration, reports_to: existingReportsTo } }

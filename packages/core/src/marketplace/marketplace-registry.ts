@@ -1,20 +1,37 @@
-import { readFileSync, readdirSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, mkdirSync, writeFileSync, renameSync, unlinkSync } from 'node:fs';
 import { join, basename } from 'node:path';
+import yaml from 'js-yaml';
 import type { MarketplaceEntry, EntryMetadata, InstallResult, MarketplaceStats } from './types.js';
 
-function parseYamlSimple(content: string): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  const lines = content.split('\n');
-  for (const line of lines) {
-    const m = line.match(/^(\w[\w-]*):\s*(.+)$/);
-    const key = m?.[1];
-    const rawValue = m?.[2];
-    if (key && rawValue) {
-      const val = rawValue.trim().replace(/^['"]|['"]$/g, '');
-      result[key] = val;
-    }
+function loadYamlRecord(content: string): Record<string, unknown> {
+  const parsed = yaml.load(content);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('YAML content must be a mapping');
   }
-  return result;
+  return parsed as Record<string, unknown>;
+}
+
+function dumpYaml(value: unknown): string {
+  return yaml.dump(value, {
+    lineWidth: 120,
+    noRefs: true,
+    sortKeys: false,
+  });
+}
+
+function writeYamlAtomicSync(filePath: string, content: string): void {
+  const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    writeFileSync(tmpPath, content, 'utf-8');
+    renameSync(tmpPath, filePath);
+  } catch (error) {
+    try {
+      unlinkSync(tmpPath);
+    } catch {
+      // Best-effort cleanup only; preserve the original write/rename error.
+    }
+    throw error;
+  }
 }
 
 export class MarketplaceRegistry {
@@ -34,7 +51,7 @@ export class MarketplaceRegistry {
       for (const file of files) {
         try {
           const content = readFileSync(join(this.agentsDir, file), 'utf-8');
-          const parsed = parseYamlSimple(content);
+          const parsed = loadYamlRecord(content);
           const id = basename(file, '.yaml').replace('.yml', '');
           const entry: MarketplaceEntry = {
             id,
@@ -93,8 +110,9 @@ export class MarketplaceRegistry {
     try {
       if (entry.yamlPath && existsSync(entry.yamlPath)) {
         const content = readFileSync(entry.yamlPath, 'utf-8');
+        const parsed = loadYamlRecord(content);
         const installedPath = join(dest, `${id}.yaml`);
-        writeFileSync(installedPath, content, 'utf-8');
+        writeYamlAtomicSync(installedPath, dumpYaml(parsed));
         entry.downloadCount++;
         entry.installedAt = new Date().toISOString();
         return { success: true, entryId: id, installedPath };
@@ -127,7 +145,8 @@ export class MarketplaceRegistry {
     if (agentConfig.yamlContent) {
       const yamlPath = join(this.agentsDir, `${agentConfig.id}.yaml`);
       if (existsSync(this.agentsDir)) {
-        writeFileSync(yamlPath, agentConfig.yamlContent, 'utf-8');
+        const parsed = loadYamlRecord(agentConfig.yamlContent);
+        writeYamlAtomicSync(yamlPath, dumpYaml(parsed));
         entry.yamlPath = yamlPath;
       }
     }
