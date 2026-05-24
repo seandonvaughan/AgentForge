@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { resolve } from 'node:path';
-import { CodexCliTransport } from '../transports/codex-cli-transport.js';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { CodexCliTransport, buildCodexSpawnCommand } from '../transports/codex-cli-transport.js';
 import type { ExecutionRequest, ExecutionStreamOptions } from '../types.js';
 
 interface MockCodexInvocationResult {
@@ -34,6 +36,43 @@ function makeRequest(overrides: Partial<ExecutionRequest> = {}): ExecutionReques
     },
     ...overrides,
   };
+}
+
+function makeFakeCodexPackage(options: { nativeBinary?: boolean } = {}): {
+  root: string;
+  cmdShim: string;
+  entrypoint: string;
+  packageRoot: string;
+  nativeExe: string;
+  pathDir: string;
+} {
+  const root = join(tmpdir(), `agentforge-codex-test-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  const npmRoot = join(root, 'npm');
+  const packageRoot = join(npmRoot, 'node_modules', '@openai', 'codex');
+  const entrypoint = join(packageRoot, 'bin', 'codex.js');
+  const archRoot = join(
+    packageRoot,
+    'node_modules',
+    '@openai',
+    'codex-win32-x64',
+    'vendor',
+    'x86_64-pc-windows-msvc',
+  );
+  const nativeExe = join(archRoot, 'codex', 'codex.exe');
+  const pathDir = join(archRoot, 'path');
+  const cmdShim = join(npmRoot, 'codex.cmd');
+
+  mkdirSync(join(packageRoot, 'bin'), { recursive: true });
+  mkdirSync(pathDir, { recursive: true });
+  writeFileSync(entrypoint, '#!/usr/bin/env node\n', 'utf8');
+  writeFileSync(cmdShim, '@echo off\n', 'utf8');
+
+  if (options.nativeBinary !== false) {
+    mkdirSync(join(archRoot, 'codex'), { recursive: true });
+    writeFileSync(nativeExe, '', 'utf8');
+  }
+
+  return { root, cmdShim, entrypoint, packageRoot, nativeExe, pathDir };
 }
 
 describe('CodexCliTransport.buildCodexArgs', () => {
@@ -140,6 +179,45 @@ describe('CodexCliTransport.buildCodexArgs', () => {
     expect(args.at(-1)).toBe('-');
     expect(args).not.toContain('--sandbox');
     expect(args).not.toContain('--cd');
+  });
+});
+
+describe('buildCodexSpawnCommand', () => {
+  it('prefers the native packaged codex.exe on Windows so windowsHide applies to the real process', () => {
+    const tmp = makeFakeCodexPackage();
+    try {
+      const command = buildCodexSpawnCommand(['exec', '--json'], {
+        platform: 'win32',
+        arch: 'x64',
+        candidates: [tmp.cmdShim],
+        env: { PATH: 'C:\\Windows\\System32' },
+      });
+
+      expect(command.command).toBe(tmp.nativeExe);
+      expect(command.args).toEqual(['exec', '--json']);
+      expect(command.env?.PATH).toContain(tmp.pathDir);
+      expect(command.env?.CODEX_MANAGED_BY_NPM).toBe('1');
+      expect(command.env?.CODEX_MANAGED_PACKAGE_ROOT).toBe(tmp.packageRoot);
+    } finally {
+      rmSync(tmp.root, { recursive: true, force: true });
+    }
+  });
+
+  it('falls back to the Node entrypoint when the native Codex binary is missing', () => {
+    const tmp = makeFakeCodexPackage({ nativeBinary: false });
+    try {
+      const command = buildCodexSpawnCommand(['exec'], {
+        platform: 'win32',
+        arch: 'x64',
+        candidates: [tmp.cmdShim],
+        env: { PATH: 'C:\\Windows\\System32' },
+      });
+
+      expect(command.command).toBe(process.execPath);
+      expect(command.args).toEqual([tmp.entrypoint, 'exec']);
+    } finally {
+      rmSync(tmp.root, { recursive: true, force: true });
+    }
   });
 });
 

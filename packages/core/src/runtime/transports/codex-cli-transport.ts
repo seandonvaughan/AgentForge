@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { readFile, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -219,7 +219,7 @@ export class CodexCliTransport implements ExecutionTransport {
       return await new Promise<CodexInvocationResult>((resolve, reject) => {
         const command = buildCodexSpawnCommand(args);
         const proc = spawn(command.command, command.args, {
-          env: { ...process.env },
+          env: command.env ?? { ...process.env },
           cwd,
           stdio: ['pipe', 'pipe', 'pipe'],
           windowsHide: true,
@@ -680,12 +680,34 @@ export class CodexCliTransport implements ExecutionTransport {
   }
 }
 
-function buildCodexSpawnCommand(args: string[]): { command: string; args: string[] } {
-  if (process.platform !== 'win32') {
+interface CodexSpawnCommand {
+  command: string;
+  args: string[];
+  env?: NodeJS.ProcessEnv;
+}
+
+interface CodexSpawnCommandOptions {
+  platform?: NodeJS.Platform;
+  arch?: NodeJS.Architecture;
+  candidates?: string[];
+  env?: NodeJS.ProcessEnv;
+}
+
+export function buildCodexSpawnCommand(
+  args: string[],
+  options: CodexSpawnCommandOptions = {},
+): CodexSpawnCommand {
+  const platform = options.platform ?? process.platform;
+  if (platform !== 'win32') {
     return { command: CODEX_COMMAND, args };
   }
 
-  const candidates = findWindowsCodexCandidates();
+  const candidates = options.candidates ?? findWindowsCodexCandidates();
+  const nativeExecutable = findWindowsCodexNativeExecutable(candidates, options);
+  if (nativeExecutable) {
+    return { command: nativeExecutable.command, args, env: nativeExecutable.env };
+  }
+
   const nodeEntrypoint = findWindowsCodexNodeEntrypoint(candidates);
   if (nodeEntrypoint) {
     return { command: process.execPath, args: [nodeEntrypoint, ...args] };
@@ -720,4 +742,67 @@ function findWindowsCodexNodeEntrypoint(candidates: string[]): string | null {
     if (existsSync(entrypoint)) return entrypoint;
   }
   return null;
+}
+
+function findWindowsCodexNativeExecutable(
+  candidates: string[],
+  options: Pick<CodexSpawnCommandOptions, 'arch' | 'env'> = {},
+): { command: string; env: NodeJS.ProcessEnv } | null {
+  const arch = options.arch ?? process.arch;
+  const targetTriple = arch === 'arm64'
+    ? 'aarch64-pc-windows-msvc'
+    : arch === 'x64'
+      ? 'x86_64-pc-windows-msvc'
+      : null;
+  if (!targetTriple) return null;
+
+  const platformPackage = arch === 'arm64'
+    ? '@openai/codex-win32-arm64'
+    : '@openai/codex-win32-x64';
+
+  const searchedPackageRoots = new Set<string>();
+  for (const candidate of candidates) {
+    const baseDir = dirname(candidate);
+    const entrypoint = join(baseDir, 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
+    if (!existsSync(entrypoint)) continue;
+
+    const packageRoot = resolve(dirname(entrypoint), '..');
+    if (searchedPackageRoots.has(packageRoot)) continue;
+    searchedPackageRoots.add(packageRoot);
+
+    const archRoots = [
+      join(packageRoot, 'node_modules', platformPackage, 'vendor', targetTriple),
+      join(packageRoot, 'vendor', targetTriple),
+    ];
+
+    for (const archRoot of archRoots) {
+      const executable = join(archRoot, 'codex', 'codex.exe');
+      if (!existsSync(executable)) continue;
+      return {
+        command: executable,
+        env: buildWindowsNativeCodexEnv(archRoot, packageRoot, options.env ?? process.env),
+      };
+    }
+  }
+
+  return null;
+}
+
+function buildWindowsNativeCodexEnv(
+  archRoot: string,
+  packageRoot: string,
+  baseEnv: NodeJS.ProcessEnv,
+): NodeJS.ProcessEnv {
+  const nextEnv: NodeJS.ProcessEnv = { ...baseEnv };
+  const pathKey = Object.keys(nextEnv).find((key) => key.toLowerCase() === 'path') ?? 'PATH';
+  const currentPath = nextEnv[pathKey] ?? '';
+  const pathDir = join(archRoot, 'path');
+  if (existsSync(pathDir)) {
+    const parts = currentPath.split(';').filter(Boolean);
+    nextEnv[pathKey] = [pathDir, ...parts].join(';');
+    nextEnv.PATH = nextEnv[pathKey];
+  }
+  nextEnv.CODEX_MANAGED_BY_NPM = '1';
+  nextEnv.CODEX_MANAGED_PACKAGE_ROOT = realpathSync(packageRoot);
+  return nextEnv;
 }
