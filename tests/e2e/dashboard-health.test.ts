@@ -163,6 +163,21 @@ test.describe('Health Dashboard Page', () => {
     await expect(page.locator('.services-grid .svc-name')).toHaveCount(0);
   });
 
+  test('falls back to API server card when services payload is valid but empty', async ({ page }) => {
+    const emptyServices = structuredClone(BASE_SERVICES);
+    emptyServices.services = [];
+    emptyServices.healthyCount = 0;
+    emptyServices.degradedCount = 0;
+
+    await mockHealthApis(page, { servicesBody: emptyServices });
+    await gotoHealth(page);
+
+    await expect(page.locator('text=API SERVER')).toBeVisible();
+    await expect(page.locator('text=REST API')).toBeVisible();
+    await expect(page.locator('text=Online')).toBeVisible();
+    await expect(page.locator('.services-grid .svc-name')).toHaveCount(0);
+  });
+
   test('keeps rendering service telemetry when health endpoint fails but services are available', async ({ page }) => {
     await mockHealthApis(page, { healthStatus: 503 });
     await gotoHealth(page);

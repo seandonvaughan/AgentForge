@@ -265,6 +265,53 @@ test.describe('Runner Page', () => {
     await expect(page.locator('.history-item').first()).toContainText('failed');
   });
 
+  test('ignores workflow status events for other sessions', async ({ page }) => {
+    await openRunner(page, { sessionId: 'run-main-1' });
+
+    await page.fill('#task-input', 'Ignore forged workflow status');
+    await page.click('button:has-text("Run Agent")');
+    await emitSse(page, {
+      type: 'workflow_event',
+      category: 'run',
+      message: '[coder] run failed',
+      data: { sessionId: 'run-other-1', status: 'failed', error: 'forged failure' },
+    });
+
+    await expect(page.locator('.banner--danger')).toHaveCount(0);
+    await expect(page.locator('.running-indicator')).toHaveCount(1);
+
+    await emitSse(page, {
+      type: 'workflow_event',
+      category: 'run',
+      message: '[coder] run completed',
+      data: { sessionId: 'run-main-1', status: 'completed' },
+    });
+
+    await expect(page.locator('.running-indicator')).toHaveCount(0);
+    await expect(page.locator('.history-item').first()).toContainText('completed');
+    await expect(page.locator('.history-item').first()).not.toContainText('failed');
+  });
+
+  test('clears reconnect warning when the active run eventually completes', async ({ page }) => {
+    await openRunner(page, { sessionId: 'run-reconnect-1' });
+
+    await page.fill('#task-input', 'Recover after stream error');
+    await page.click('button:has-text("Run Agent")');
+    await errorSse(page);
+
+    await expect(page.locator('.stream-warning')).toContainText('reconnecting automatically');
+    await emitSse(page, {
+      type: 'workflow_event',
+      category: 'run',
+      message: '[coder] run completed',
+      data: { sessionId: 'run-reconnect-1', status: 'completed' },
+    });
+
+    await expect(page.locator('.stream-warning')).toHaveCount(0);
+    await expect(page.locator('.running-indicator')).toHaveCount(0);
+    await expect(page.locator('.history-item').first()).toContainText('completed');
+  });
+
   test('copies and clears streamed output', async ({ page, context }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
       origin: 'http://localhost:4751',

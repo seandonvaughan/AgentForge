@@ -213,7 +213,7 @@ test.describe('Live Feed Page (/live)', () => {
     await expect(page.locator('.feed-row .feed-msg')).toContainText('should be visible');
   });
 
-  test('caps retained events at 500 to prevent unbounded feed growth', async ({ page }) => {
+  test('caps retained events at 500 and evicts the oldest rows first', async ({ page }) => {
     await page.goto('/live');
     await waitForLiveSource(page);
 
@@ -234,6 +234,9 @@ test.describe('Live Feed Page (/live)', () => {
 
     await expect(page.locator('.feed-row')).toHaveCount(500);
     await expect(page.locator('.event-count')).toContainText('500 events');
+    await expect(page.locator('.feed-row .feed-msg').first()).toContainText('bulk-20');
+    await expect(page.locator('.feed-row .feed-msg').last()).toContainText('bulk-519');
+    await expect(page.locator('.feed-row .feed-msg', { hasText: 'bulk-0' })).toHaveCount(0);
   });
 
   test('ignores malformed stream payloads without crashing the page', async ({ page }) => {

@@ -80,6 +80,25 @@ describe('package scripts', () => {
     );
   });
 
+  it('fails verify:product when dashboard e2e fails and preserves the failing playwright command', async () => {
+    const scripts = loadRootScripts();
+    const harness = new ScriptPipelineHarness(scripts, (command) => {
+      return command.startsWith('playwright test ') ? 1 : 0;
+    });
+
+    const result = await harness.run('verify:product');
+
+    expect(result.ok).toBe(false);
+    expect(result.failedScript).toBe('test:e2e:dashboard');
+    expect(result.failedCommand).toBeDefined();
+    expect(result.failedCommand?.startsWith('playwright test ')).toBe(true);
+    expect(result.failedCommand).toContain('tests/e2e/dashboard-runner.test.ts');
+    expect(result.failedCommand).toContain('tests/e2e/dashboard-live.test.ts');
+    expect(result.trace).toContain('tsc -b');
+    expect(result.trace).toContain('pnpm exec tsc -b --noEmit');
+    expect(result.trace).toContain('vitest run');
+  });
+
   it('preserves parent trace when a nested script fails', async () => {
     const harness = new ScriptPipelineHarness(
       {
