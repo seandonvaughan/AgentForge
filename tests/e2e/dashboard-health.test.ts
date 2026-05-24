@@ -117,7 +117,10 @@ test.describe('Health Dashboard Page', () => {
     await mockHealthApis(page);
     await gotoHealth(page);
 
-    await expect(page.locator('.status-main')).toContainText(/system healthy/i);
+    await expect(page.locator('.status-main')).toContainText('System HEALTHY');
+    await expect(page.locator('.status-text')).toContainText('2 healthy · 0 degraded');
+    await expect(page.locator('.version-badge')).toContainText('agentforge v10.5.1');
+    await expect(page.locator('.ws-badge')).toContainText('ws:ws-e2e');
     await expect(page.locator('.services-grid .svc-name')).toHaveCount(2);
     await expect(page.locator('.dep-table tbody tr')).toHaveCount(5);
   });
@@ -167,7 +170,8 @@ test.describe('Health Dashboard Page', () => {
     await mockHealthApis(page, { healthStatus: 503 });
     await gotoHealth(page);
 
-    await expect(page.locator('.status-main')).toContainText(/system healthy/i);
+    await expect(page.locator('.status-main')).toContainText('System HEALTHY');
+    await expect(page.locator('.status-text')).toContainText('2 healthy · 0 degraded');
     await expect(page.locator('.services-grid .svc-name')).toHaveCount(2);
     await expect(page.locator('.error-banner')).toHaveCount(0);
   });

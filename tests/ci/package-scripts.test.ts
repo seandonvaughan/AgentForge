@@ -21,6 +21,15 @@ describe('package scripts', () => {
     );
   });
 
+  it('pins dashboard regression suites inside test:e2e:dashboard', () => {
+    const scripts = loadRootScripts();
+    const dashboardSuite = scripts['test:e2e:dashboard'];
+    expect(dashboardSuite).toBeDefined();
+    expect(dashboardSuite).toContain('tests/e2e/dashboard-runner.test.ts');
+    expect(dashboardSuite).toContain('tests/e2e/dashboard-live.test.ts');
+    expect(dashboardSuite).toContain('tests/e2e/dashboard-health.test.ts');
+  });
+
   it('runs typecheck leaf commands before unit tests in verify:product', async () => {
     const scripts = loadRootScripts();
     const harness = new ScriptPipelineHarness(scripts, () => 0);

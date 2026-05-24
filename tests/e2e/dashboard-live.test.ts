@@ -234,6 +234,10 @@ test.describe('Live Feed Page (/live)', () => {
 
     await expect(page.locator('.feed-row')).toHaveCount(500);
     await expect(page.locator('.event-count')).toContainText('500 events');
+    await expect(page.locator('.feed-row .feed-msg').first()).toHaveText('bulk-20');
+    await expect(page.locator('.feed-row .feed-msg').last()).toHaveText('bulk-519');
+    await expect(page.locator('.feed-row .feed-msg')).not.toContainText('bulk-0');
+    await expect(page.locator('.feed-row .feed-msg')).not.toContainText('bulk-19');
   });
 
   test('ignores malformed stream payloads without crashing the page', async ({ page }) => {
