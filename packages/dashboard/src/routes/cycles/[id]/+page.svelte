@@ -257,6 +257,11 @@
   const maxAgents = $derived<number | null>(
     ((cycle as { maxAgents?: number })?.maxAgents as number | undefined) ?? null,
   );
+  const fastMode = $derived<boolean | null>(
+    ((cycle as { fastMode?: boolean; launchConfig?: { fastMode?: boolean } })?.fastMode
+    ?? (cycle as { launchConfig?: { fastMode?: boolean } })?.launchConfig?.fastMode
+    ?? null) as boolean | null,
+  );
   const modelCap = $derived<string | null>(
     ((cycle as { modelCap?: string; launchConfig?: { modelCap?: string } })?.modelCap
     ?? (cycle as { launchConfig?: { modelCap?: string } })?.launchConfig?.modelCap
@@ -281,6 +286,7 @@
     branchPrefix !== null ||
     baseBranch !== null ||
     maxAgents !== null ||
+    fastMode === true ||
     modelCap !== null ||
     effortCap !== null ||
     fallbackEnabled !== null ||
@@ -1133,6 +1139,7 @@
           {#if runtimeMode && !isCodexCli}<span class="launch-chip af2-mono">{runtimeMode}</span>{/if}
           {#if typeof dryRun === 'boolean'}<span class="launch-chip">dry run {dryRun ? 'on' : 'off'}</span>{/if}
           {#if typeof maxAgents === 'number'}<span class="launch-chip af2-mono">{maxAgents} agents</span>{/if}
+          {#if fastMode === true}<span class="launch-chip">fast mode</span>{/if}
           {#if modelCap}<span class="launch-chip af2-mono">profile {modelCap}</span>{/if}
           {#if effortCap}<span class="launch-chip af2-mono">effort {effortCap}</span>{/if}
           {#if typeof fallbackEnabled === 'boolean'}<span class="launch-chip">fallback {fallbackEnabled ? 'on' : 'off'}</span>{/if}

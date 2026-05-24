@@ -15,6 +15,7 @@ import { registerReplayCommand } from './commands/replay.js';
 import { registerSkillsCoverageCommand } from './commands/skills-coverage.js';
 import { registerSkillsCommand } from './commands/skills.js';
 import { registerCodexCommand } from './commands/codex.js';
+import { registerResearchCommand } from './commands/research.js';
 
 interface InitializeWorkspaceImport {
   initializeWorkspace(options: {
@@ -153,6 +154,7 @@ registerReplayCommand(program);
 registerSkillsCoverageCommand(program);
 registerSkillsCommand(program);
 registerCodexCommand(program);
+registerResearchCommand(program);
 
 return program;
 }

@@ -47,6 +47,7 @@ vi.mock('node:fs', async (importOriginal) => {
   return {
     ...actual,
     openSync: vi.fn(() => 3),
+    closeSync: vi.fn(),
   };
 });
 
@@ -112,6 +113,25 @@ describe('POST /api/v5/cycles — Fix 1: maxAgents, tags, fallbackEnabled', () =
     expect(res.statusCode).toBe(202);
     const body = res.json();
     expect(body.fallbackEnabled).toBe(false);
+  });
+
+  it('fastMode defaults the cycle to high effort when no effortCap is provided', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v5/cycles',
+      payload: { fastMode: true, maxAgents: 10 },
+    });
+    expect(res.statusCode).toBe(202);
+    const body = res.json() as { cycleId: string; fastMode: boolean };
+    expect(body.fastMode).toBe(true);
+
+    const spawnMock = vi.mocked(spawn);
+    const env = spawnMock.mock.calls.at(-1)?.[2]?.env as NodeJS.ProcessEnv | undefined;
+    expect(env?.['AUTONOMOUS_EFFORT_CAP']).toBe('high');
+    const configPath = join(tmpRoot, '.agentforge/cycles', body.cycleId, 'cycle-config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
+    expect(config['fastMode']).toBe(true);
+    expect(config['effortCap']).toBe('high');
   });
 
   it('accepts baseBranch and passes it to the Codex cycle subprocess', async () => {

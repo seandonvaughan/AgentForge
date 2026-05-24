@@ -24,6 +24,7 @@
     branchPrefix?: string | null;
     baseBranch?: string | null;
     maxAgents?: number | null;
+    fastMode?: boolean | null;
     modelCap?: string | null;
     effortCap?: string | null;
     fallbackEnabled?: boolean | null;
@@ -143,6 +144,7 @@
       !!c.branchPrefix ||
       !!c.baseBranch ||
       typeof c.maxAgents === 'number' ||
+      c.fastMode === true ||
       !!c.modelCap ||
       !!c.effortCap ||
       typeof c.fallbackEnabled === 'boolean' ||
@@ -455,6 +457,7 @@
                     {#if isCodexCli(c)}<Badge variant="purple">Codex CLI</Badge>{/if}
                     {#if typeof c.dryRun === 'boolean'}<span class="config-chip">dry run {c.dryRun ? 'on' : 'off'}</span>{/if}
                     {#if typeof c.maxAgents === 'number'}<span class="config-chip af2-mono">{c.maxAgents} agents</span>{/if}
+                    {#if c.fastMode === true}<span class="config-chip">fast mode</span>{/if}
                     {#if c.modelCap}<span class="config-chip af2-mono">profile {c.modelCap}</span>{/if}
                     {#if c.effortCap}<span class="config-chip af2-mono">effort {c.effortCap}</span>{/if}
                     {#if typeof c.fallbackEnabled === 'boolean'}<span class="config-chip">fallback {c.fallbackEnabled ? 'on' : 'off'}</span>{/if}
@@ -552,6 +555,7 @@
                   {#if isCodexCli(c)}<Badge variant="purple">Codex CLI</Badge>{/if}
                   {#if typeof c.dryRun === 'boolean'}<span class="config-chip">dry run {c.dryRun ? 'on' : 'off'}</span>{/if}
                   {#if typeof c.maxAgents === 'number'}<span class="config-chip af2-mono">{c.maxAgents} agents</span>{/if}
+                  {#if c.fastMode === true}<span class="config-chip">fast mode</span>{/if}
                   {#if c.modelCap}<span class="config-chip af2-mono">profile {c.modelCap}</span>{/if}
                   {#if c.effortCap}<span class="config-chip af2-mono">effort {c.effortCap}</span>{/if}
                   {#if typeof c.fallbackEnabled === 'boolean'}<span class="config-chip">fallback {c.fallbackEnabled ? 'on' : 'off'}</span>{/if}

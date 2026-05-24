@@ -1,4 +1,5 @@
 runtime: codex-cli  # Execution transport mode: auto | sdk | cli | codex-cli | openai-sdk
+effortCap: high     # High-throughput Codex preset while the Codex line is being hardened.
 #   auto: registers all transports; preserves existing Anthropic/Claude preference.
 #   sdk:  compatibility alias for anthropic-sdk.
 #   cli:  compatibility alias for Claude Code CLI subprocess.

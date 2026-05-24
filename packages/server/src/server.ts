@@ -19,6 +19,7 @@ import { embeddingRoutes } from './routes/v5/embeddings.js';
 import { sprintsRoutes } from './routes/v5/sprints.js';
 import { cyclesRoutes } from './routes/v5/cycles.js';
 import { cyclesPreviewRoutes } from './routes/v5/cycles-preview.js';
+import { researchRunsRoutes } from './routes/v5/research-runs.js';
 import { codexReadinessRoutes } from './routes/v5/codex-readiness.js';
 import { dashboardStubRoutes } from './routes/v5/dashboard-stubs.js';
 import { runRoutes } from './routes/v5/run.js';
@@ -240,6 +241,7 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
   // ── Cycles (reads .agentforge/cycles/*/ — no adapter required) ───────────────
   await cyclesRoutes(app, { projectRoot });
   await cyclesPreviewRoutes(app, { projectRoot });
+  await researchRunsRoutes(app, { projectRoot });
 
   // ── Cycle PR ledger (MergeQueue enriched with CI status) ─────────────────
   // Guard: registerV5Routes already calls cyclePrsRoutes in adapter mode.

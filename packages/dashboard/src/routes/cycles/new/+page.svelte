@@ -8,20 +8,57 @@
     Btn, Card, Badge, StageDots,
   } from '$lib/components/v2';
 
+  type LaunchMode = 'cycle' | 'research';
   type ModelCap = 'default' | 'opus' | 'sonnet' | 'haiku';
   type EffortCap = 'default' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  type ResearchMode = 'operator-seeded' | 'autonomous';
+  type ResearchIdeaStatus = 'proposed' | 'approved' | 'rejected' | 'planned' | 'executed';
 
-  let budgetUsd = $state<number>(25);
-  let maxItems = $state<number>(3);
-  let maxAgents = $state<number>(5);
+  interface ResearchIdea {
+    ideaId: string;
+    title: string;
+    problem: string;
+    hypothesis: string;
+    expectedImpact: string;
+    risk: 'low' | 'medium' | 'high';
+    suggestedAgents: string[];
+    touchedAreas: string[];
+    acceptanceChecks: string[];
+    status: ResearchIdeaStatus;
+  }
+
+  interface ResearchRun {
+    runId: string;
+    prompt: string;
+    mode: ResearchMode;
+    status: string;
+    ideas: ResearchIdea[];
+    plannedCycle?: {
+      title: string;
+      ideaIds: string[];
+      cycleRequest: Record<string, unknown>;
+    };
+  }
+
+  let launchMode = $state<LaunchMode>('cycle');
+  let fastMode = $state<boolean>(true);
+  let budgetUsd = $state<number>(200);
+  let maxItems = $state<number>(10);
+  let maxAgents = $state<number>(10);
   let branchPrefix = $state<string>('codex/');
   let baseBranch = $state<string>('codex/codex-version');
   let modelCap = $state<ModelCap>('default');
-  let effortCap = $state<EffortCap>('default');
+  let effortCap = $state<EffortCap>('high');
   let dryRun = $state<boolean>(false);
   let fallbackEnabled = $state<boolean>(true);
   let comment = $state<string>('');
   let tagsInput = $state<string>('');
+  let researchPrompt = $state<string>('Plan the next AgentForge product improvements that improve Codex-backed cycle reliability and self-improvement.');
+  let researchMode = $state<ResearchMode>('operator-seeded');
+  let researchMaxIdeas = $state<number>(3);
+  let researchRun = $state<ResearchRun | null>(null);
+  let researchBusy = $state<boolean>(false);
+  let researchError = $state<string | null>(null);
 
   const tags = $derived.by<string[]>(() => {
     const raw = tagsInput.split(/[,\s]+/).map((t) => t.trim()).filter(Boolean);
@@ -31,7 +68,10 @@
   let launching = $state(false);
   let clientReady = $state(false);
   let launchError = $state<string | null>(null);
-  const formDisabled = $derived(launching || !clientReady);
+  const formDisabled = $derived(launching || researchBusy || !clientReady);
+  const approvedIdeaCount = $derived<number>(
+    researchRun?.ideas.filter((idea) => idea.status === 'approved' || idea.status === 'planned').length ?? 0,
+  );
 
   interface RecentCycle {
     cycleId: string;
@@ -141,6 +181,7 @@
         tags: tags.length > 0 ? tags : undefined,
         modelCap: modelCap !== 'default' ? modelCap : undefined,
         effortCap: effortCap !== 'default' ? effortCap : undefined,
+        fastMode,
         fallbackEnabled,
       };
       const res = await fetch(withWorkspace('/api/v5/cycles'), {
@@ -166,6 +207,115 @@
       launchError = e instanceof Error ? e.message : String(e);
       launching = false;
     }
+  }
+
+  async function createResearchRun(): Promise<void> {
+    if (researchBusy || !clientReady) return;
+    researchBusy = true;
+    researchError = null;
+    launchError = null;
+    try {
+      const res = await fetch(withWorkspace('/api/v5/research-runs'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: researchPrompt.trim() || undefined,
+          mode: researchMode,
+          maxIdeas: researchMaxIdeas,
+          tags: tags.length > 0 ? tags : ['launch'],
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
+      const json = (await res.json()) as { data?: ResearchRun };
+      researchRun = json.data ?? null;
+    } catch (e) {
+      researchError = e instanceof Error ? e.message : String(e);
+    } finally {
+      researchBusy = false;
+    }
+  }
+
+  async function decideResearchIdea(ideaId: string, decision: 'approve' | 'reject'): Promise<void> {
+    if (!researchRun || researchBusy) return;
+    researchBusy = true;
+    researchError = null;
+    try {
+      const res = await fetch(withWorkspace(`/api/v5/research-runs/${researchRun.runId}/ideas/${ideaId}/${decision}`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note: `${decision}d from Launch UI` }),
+      });
+      if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
+      const json = (await res.json()) as { data?: ResearchRun };
+      researchRun = json.data ?? researchRun;
+    } catch (e) {
+      researchError = e instanceof Error ? e.message : String(e);
+    } finally {
+      researchBusy = false;
+    }
+  }
+
+  async function planResearchRun(): Promise<ResearchRun | null> {
+    if (!researchRun || researchBusy) return null;
+    researchBusy = true;
+    researchError = null;
+    try {
+      const res = await fetch(withWorkspace(`/api/v5/research-runs/${researchRun.runId}/plan`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          budgetUsd,
+          maxItems,
+          maxAgents,
+          dryRun,
+          branchPrefix,
+          baseBranch,
+          modelCap: modelCap !== 'default' ? modelCap : undefined,
+          effortCap: effortCap !== 'default' ? effortCap : undefined,
+          fastMode,
+          fallbackEnabled,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
+      const json = (await res.json()) as { data?: ResearchRun };
+      researchRun = json.data ?? researchRun;
+      return researchRun;
+    } catch (e) {
+      researchError = e instanceof Error ? e.message : String(e);
+      return null;
+    } finally {
+      researchBusy = false;
+    }
+  }
+
+  async function launchResearchPlan(): Promise<void> {
+    if (!researchRun || launching || researchBusy) return;
+    launchError = null;
+    const plannedRun = researchRun.plannedCycle ? researchRun : await planResearchRun();
+    const cycleRequest = plannedRun?.plannedCycle?.cycleRequest;
+    if (!cycleRequest) return;
+    launching = true;
+    try {
+      const res = await fetch(withWorkspace('/api/v5/cycles'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cycleRequest),
+      });
+      if (res.status !== 202 && !res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
+      const json = (await res.json()) as { cycleId?: string; id?: string };
+      const newId = json.cycleId ?? json.id;
+      if (!newId) throw new Error('Server did not return a cycleId');
+      await goto(`/cycles/${newId}`);
+    } catch (e) {
+      launchError = e instanceof Error ? e.message : String(e);
+      launching = false;
+    }
+  }
+
+  function ideaVariant(status: ResearchIdeaStatus): 'success' | 'warning' | 'danger' | 'muted' {
+    if (status === 'approved' || status === 'planned' || status === 'executed') return 'success';
+    if (status === 'rejected') return 'danger';
+    return 'muted';
   }
 
   let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -210,10 +360,20 @@
   </div>
 </div>
 
+<div class="mode-tabs" aria-label="Launch mode">
+  <button type="button" class:active={launchMode === 'cycle'} onclick={() => (launchMode = 'cycle')}>
+    Cycle
+  </button>
+  <button type="button" class:active={launchMode === 'research'} onclick={() => (launchMode = 'research')}>
+    R&D
+  </button>
+</div>
+
 <div class="launch-grid">
   <Card>
-    <div class="section-title">CYCLE CONFIGURATION</div>
+    <div class="section-title">{launchMode === 'cycle' ? 'CYCLE CONFIGURATION' : 'R&D WORKFLOW'}</div>
 
+    {#if launchMode === 'cycle'}
     <div class="form-row">
       <div class="field">
         <label class="field-label" for="budgetUsd">Budget (USD)</label>
@@ -275,6 +435,11 @@
 
       <div class="field toggle-field">
         <span class="field-label">Options</span>
+        <label class="toggle">
+          <input type="checkbox" bind:checked={fastMode} disabled={formDisabled} />
+          <span class="toggle-track" class:on={fastMode}><span class="toggle-knob"></span></span>
+          <span class="toggle-label">Fast mode <span class="hint">(parallel high effort)</span></span>
+        </label>
         <label class="toggle">
           <input type="checkbox" bind:checked={dryRun} disabled={formDisabled} />
           <span class="toggle-track" class:on={dryRun}><span class="toggle-knob"></span></span>
@@ -339,6 +504,175 @@
         {launching ? 'Launching…' : '▶ Run Cycle'}
       </Btn>
     </div>
+    {:else}
+      <div class="field">
+        <label class="field-label" for="researchPrompt">Research prompt</label>
+        <textarea
+          id="researchPrompt"
+          bind:value={researchPrompt}
+          rows={4}
+          class="textarea"
+          disabled={formDisabled}
+        ></textarea>
+      </div>
+
+      <div class="form-row rd-controls">
+        <div class="field">
+          <label class="field-label" for="researchMode">Mode</label>
+          <select id="researchMode" bind:value={researchMode} class="select" disabled={formDisabled}>
+            <option value="operator-seeded">Operator seeded</option>
+            <option value="autonomous">Autonomous</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="researchMaxIdeas">Ideas</label>
+          <div class="slider-row">
+            <input id="researchMaxIdeas" type="range" min="1" max="6" step="1" bind:value={researchMaxIdeas} class="slider" disabled={formDisabled} />
+            <input type="number" min="1" max="6" step="1" bind:value={researchMaxIdeas} class="num" disabled={formDisabled} aria-label="R&D idea count" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="rdBudgetUsd">Cycle budget</label>
+          <div class="slider-row">
+            <input id="rdBudgetUsd" type="range" min="5" max="500" step="1" bind:value={budgetUsd} class="slider" disabled={formDisabled} />
+            <input type="number" min="0" step="0.5" bind:value={budgetUsd} class="num" disabled={formDisabled} aria-label="R&D cycle budget" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="rdMaxAgents">Max agents</label>
+          <div class="slider-row">
+            <input id="rdMaxAgents" type="range" min="1" max="10" step="1" bind:value={maxAgents} class="slider" disabled={formDisabled} />
+            <input type="number" min="1" max="10" step="1" bind:value={maxAgents} class="num" disabled={formDisabled} aria-label="R&D max agents" />
+          </div>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="field toggle-field">
+          <span class="field-label">Execution</span>
+          <label class="toggle">
+            <input type="checkbox" bind:checked={fastMode} disabled={formDisabled} />
+            <span class="toggle-track" class:on={fastMode}><span class="toggle-knob"></span></span>
+            <span class="toggle-label">Fast mode <span class="hint">(parallel high effort)</span></span>
+          </label>
+          <label class="toggle">
+            <input type="checkbox" bind:checked={fallbackEnabled} disabled={formDisabled} />
+            <span class="toggle-track" class:on={fallbackEnabled}><span class="toggle-knob"></span></span>
+            <span class="toggle-label">Profile fallback</span>
+          </label>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="rdModelCap">Codex profile cap</label>
+          <select id="rdModelCap" bind:value={modelCap} class="select" disabled={formDisabled}>
+            <option value="default">Default (per agent)</option>
+            <option value="opus">gpt-5.5 / xhigh</option>
+            <option value="sonnet">gpt-5.3-codex / high</option>
+            <option value="haiku">gpt-5.4-mini / medium</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="rdEffortCap">Effort cap</label>
+          <select id="rdEffortCap" bind:value={effortCap} class="select" disabled={formDisabled}>
+            <option value="default">Default (per agent)</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+            <option value="xhigh">xhigh</option>
+            <option value="max">Max</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="rdBranchPrefix">Branch prefix</label>
+          <input id="rdBranchPrefix" type="text" bind:value={branchPrefix} class="text-input af2-mono" disabled={formDisabled} />
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="rdBaseBranch">Base branch</label>
+          <input id="rdBaseBranch" type="text" bind:value={baseBranch} class="text-input af2-mono" disabled={formDisabled} />
+        </div>
+      </div>
+
+      {#if researchError}
+        <div class="error-row">
+          <span>R&D error: {researchError}</span>
+          <Btn size="sm" onClick={() => (researchError = null)}>Dismiss</Btn>
+        </div>
+      {/if}
+
+      {#if launchError}
+        <div class="error-row">
+          <span>Failed to launch: {launchError}</span>
+          <Btn size="sm" onClick={() => (launchError = null)}>Dismiss</Btn>
+        </div>
+      {/if}
+
+      <div class="launch-row">
+        <span class="hint" style="flex:1">
+          Ideas are saved under .agentforge/research-runs and can be approved individually.
+        </span>
+        <Btn size="lg" variant="purple" onClick={createResearchRun} disabled={formDisabled}>
+          {researchBusy && !researchRun ? 'Researching…' : 'Run R&D'}
+        </Btn>
+      </div>
+
+      {#if researchRun}
+        <div class="rd-run-head">
+          <div>
+            <div class="field-label">Research run</div>
+            <div class="af2-mono rd-run-id">{researchRun.runId}</div>
+          </div>
+          <Badge variant={researchRun.status === 'planned' ? 'success' : 'info'}>{researchRun.status}</Badge>
+          <Badge variant="purple">{approvedIdeaCount} approved</Badge>
+        </div>
+
+        <div class="idea-list">
+          {#each researchRun.ideas as idea (idea.ideaId)}
+            <div class="idea-card">
+              <div class="idea-top">
+                <div>
+                  <div class="idea-title">{idea.title}</div>
+                  <div class="idea-meta af2-mono">{idea.ideaId} · risk {idea.risk}</div>
+                </div>
+                <Badge variant={ideaVariant(idea.status)}>{idea.status}</Badge>
+              </div>
+              <p class="idea-text">{idea.problem}</p>
+              <p class="idea-text muted">{idea.expectedImpact}</p>
+              <div class="tag-row">
+                {#each idea.suggestedAgents.slice(0, 4) as agent (agent)}
+                  <span class="tag-chip af2-mono">{agent}</span>
+                {/each}
+              </div>
+              <div class="idea-actions">
+                <Btn size="sm" onClick={() => void decideResearchIdea(idea.ideaId, 'approve')} disabled={formDisabled || idea.status === 'approved' || idea.status === 'planned'}>
+                  Approve
+                </Btn>
+                <Btn size="sm" onClick={() => void decideResearchIdea(idea.ideaId, 'reject')} disabled={formDisabled || idea.status === 'rejected' || idea.status === 'planned'}>
+                  Reject
+                </Btn>
+              </div>
+            </div>
+          {/each}
+        </div>
+
+        <div class="launch-row">
+          <span class="hint" style="flex:1">
+            {researchRun.plannedCycle ? researchRun.plannedCycle.title : 'Approve at least one idea, then create a cycle request.'}
+          </span>
+          <Btn size="lg" onClick={() => void planResearchRun()} disabled={formDisabled || approvedIdeaCount === 0}>
+            {researchRun.plannedCycle ? 'Replan' : 'Plan Approved'}
+          </Btn>
+          <Btn size="lg" variant="purple" onClick={launchResearchPlan} disabled={formDisabled || approvedIdeaCount === 0}>
+            {launching ? 'Launching…' : 'Run Planned Cycle'}
+          </Btn>
+        </div>
+      {/if}
+    {/if}
   </Card>
 
   <div class="side-col">
@@ -387,7 +721,7 @@
         </div>
         <div>
           <div class="est-key">Max agents</div>
-          <div class="af2-mono est-val">{maxAgents}</div>
+          <div class="af2-mono est-val">{maxAgents}{fastMode ? ' fast' : ''}</div>
         </div>
         <div>
           <div class="est-key">Effort</div>
@@ -460,6 +794,32 @@
   }
   .page-sub { font-size: 12px; color: var(--af-dim); margin: 4px 0 0; }
   .head-actions { display: flex; gap: 8px; }
+  .mode-tabs {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    border: 1px solid var(--af-border2);
+    border-radius: 6px;
+    background: var(--af-surface2);
+    margin-bottom: 14px;
+  }
+  .mode-tabs button {
+    height: 28px;
+    min-width: 72px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--af-muted);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .mode-tabs button.active {
+    background: var(--af-surface);
+    color: var(--af-text);
+    box-shadow: inset 0 0 0 1px var(--af-border2);
+  }
   .launch-grid {
     display: grid;
     grid-template-columns: 1.6fr 1fr;
@@ -491,6 +851,7 @@
     gap: 14px;
     margin-bottom: 14px;
   }
+  .form-row.rd-controls { margin-top: 14px; }
   .form-row + .form-row { margin-top: 4px; }
   @media (max-width: 720px) {
     .form-row { grid-template-columns: 1fr 1fr; }
@@ -626,6 +987,64 @@
     margin-top: 16px;
     padding-top: 14px;
     border-top: 1px solid var(--af-border);
+  }
+  .rd-run-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--af-border);
+  }
+  .rd-run-id {
+    font-size: 12px;
+    color: var(--af-text);
+    margin-top: 2px;
+  }
+  .idea-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+  }
+  @media (max-width: 820px) {
+    .idea-list { grid-template-columns: 1fr; }
+  }
+  .idea-card {
+    border: 1px solid var(--af-border2);
+    border-radius: 6px;
+    background: var(--af-surface2);
+    padding: 12px;
+    min-width: 0;
+  }
+  .idea-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .idea-title {
+    color: var(--af-text);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.25;
+  }
+  .idea-meta {
+    color: var(--af-dim);
+    font-size: 10px;
+    margin-top: 3px;
+  }
+  .idea-text {
+    color: var(--af-muted);
+    font-size: 12px;
+    line-height: 1.45;
+    margin: 9px 0 0;
+  }
+  .idea-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 10px;
   }
   .est-head { display: flex; align-items: baseline; gap: 6px; }
   .est-amount {

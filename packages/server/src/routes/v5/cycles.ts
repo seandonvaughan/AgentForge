@@ -20,6 +20,7 @@ import {
   statSync,
   mkdirSync,
   openSync,
+  closeSync,
   open as fsOpen,
   read as fsRead,
   close as fsClose,
@@ -28,7 +29,7 @@ import {
 import { join, resolve, sep, basename, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { globalStream } from './stream.js';
 import { getWorkspace } from '@agentforge/core';
 import * as cycleSessions from '../../lib/cycle-sessions.js';
@@ -69,7 +70,7 @@ function resolveAgentForgeCli(metaUrl: string): string {
 function resolveProjectRoot(
   req: { query: unknown; headers: Record<string, unknown> },
   fallbackRoot: string,
-): { projectRoot: string } | { error: { status: number; body: unknown } } {
+): { projectRoot: string; workspaceId: string } | { error: { status: number; body: unknown } } {
   const q = (req.query ?? {}) as { workspaceId?: string };
   const headerVal = req.headers['x-workspace-id'];
   const workspaceId =
@@ -83,12 +84,12 @@ function resolveProjectRoot(
   // an explicit workspace selection; without this fallthrough every such
   // cycle's detail + approval endpoint 404s once the dashboard passes the
   // sentinel back as a query param.
-  if (!workspaceId || workspaceId === 'default') return { projectRoot: fallbackRoot };
+  if (!workspaceId || workspaceId === 'default') return { projectRoot: fallbackRoot, workspaceId: 'default' };
   const ws = getWorkspace(workspaceId);
   if (!ws) {
     return { error: { status: 404, body: { error: 'workspace not found', workspaceId } } };
   }
-  return { projectRoot: ws.path };
+  return { projectRoot: ws.path, workspaceId };
 }
 
 // ── constants ───────────────────────────────────────────────────────────────
@@ -204,6 +205,7 @@ interface CycleListRow {
   baseBranch?: string | null;
   dryRun?: boolean | null;
   maxAgents?: number | null;
+  fastMode?: boolean | null;
   modelCap?: string | null;
   effortCap?: string | null;
   tags?: string[];
@@ -228,7 +230,7 @@ function readCycleLaunchConfig(cycleDir: string): Record<string, unknown> {
 
 function launchConfigFields(config: Record<string, unknown>): Pick<
   CycleListRow,
-  'runtimeMode' | 'branchPrefix' | 'baseBranch' | 'dryRun' | 'maxAgents' | 'modelCap' | 'effortCap' | 'tags' | 'fallbackEnabled' | 'launchConfig'
+  'runtimeMode' | 'branchPrefix' | 'baseBranch' | 'dryRun' | 'maxAgents' | 'fastMode' | 'modelCap' | 'effortCap' | 'tags' | 'fallbackEnabled' | 'launchConfig'
 > {
   return {
     runtimeMode: typeof config['runtimeMode'] === 'string' ? config['runtimeMode'] : null,
@@ -236,6 +238,7 @@ function launchConfigFields(config: Record<string, unknown>): Pick<
     baseBranch: typeof config['baseBranch'] === 'string' ? config['baseBranch'] : null,
     dryRun: typeof config['dryRun'] === 'boolean' ? config['dryRun'] : null,
     maxAgents: typeof config['maxAgents'] === 'number' ? config['maxAgents'] : null,
+    fastMode: typeof config['fastMode'] === 'boolean' ? config['fastMode'] : null,
     modelCap: typeof config['modelCap'] === 'string' ? config['modelCap'] : null,
     effortCap: typeof config['effortCap'] === 'string' ? config['effortCap'] : null,
     tags: Array.isArray(config['tags'])
@@ -273,6 +276,26 @@ function attachLaunchConfig<T extends Record<string, unknown>>(cycleDir: string,
     if (value !== undefined) target[key] = value;
   }
   return payload;
+}
+
+function closeLogFd(fd: number): void {
+  try { closeSync(fd); } catch { /* best effort */ }
+}
+
+function bindCycleChildLifecycle(child: ChildProcess, cycleId: string): void {
+  if (typeof child.once !== 'function') return;
+  child.once('error', (err) => {
+    cycleSessions.markTerminal(cycleId, 'crashed', `spawn error: ${err.message}`);
+  });
+  child.once('exit', (code, signal) => {
+    if (code === 0) {
+      cycleSessions.markTerminal(cycleId, 'completed', 'cycle process exited successfully');
+    } else if (code !== null) {
+      cycleSessions.markTerminal(cycleId, 'crashed', `cycle process exited with code ${code}`);
+    } else if (signal) {
+      cycleSessions.markTerminal(cycleId, 'killed', `cycle process exited from signal ${signal}`);
+    }
+  });
 }
 
 function isTerminalCyclePayload(cycleJson: Record<string, unknown>): boolean {
@@ -1678,6 +1701,7 @@ export async function cyclesRoutes(
     const r = resolveProjectRoot(req as any, opts.projectRoot);
     if ('error' in r) return reply.status(r.error.status).send(r.error.body);
     const reqProjectRoot = r.projectRoot;
+    const workspaceId = r.workspaceId;
     const base = cyclesBaseDir(reqProjectRoot);
 
     // Honour launch-time budget / item-cap overrides from the request body.
@@ -1695,6 +1719,7 @@ export async function cyclesRoutes(
       baseBranch?: unknown;
       dryRun?: unknown;
       comment?: unknown;
+      fastMode?: unknown;
       // Fix 1 — new fields
       maxAgents?: number;
       tags?: unknown;
@@ -1753,6 +1778,9 @@ export async function cyclesRoutes(
     if (body.comment !== undefined && typeof body.comment !== 'string') {
       return reply.status(400).send({ error: 'comment must be a string' });
     }
+    if (body.fastMode !== undefined && typeof body.fastMode !== 'boolean') {
+      return reply.status(400).send({ error: 'fastMode must be a boolean' });
+    }
 
     const budgetEnv = typeof body.budgetUsd === 'number' && body.budgetUsd > 0
       ? { AUTONOMOUS_BUDGET_USD: String(body.budgetUsd) }
@@ -1763,8 +1791,13 @@ export async function cyclesRoutes(
     const modelCapEnv = (body.modelCap === 'opus' || body.modelCap === 'sonnet' || body.modelCap === 'haiku')
       ? { AUTONOMOUS_MODEL_CAP: body.modelCap }
       : {};
-    const effortCapEnv = (body.effortCap === 'low' || body.effortCap === 'medium' || body.effortCap === 'high' || body.effortCap === 'xhigh' || body.effortCap === 'max')
-      ? { AUTONOMOUS_EFFORT_CAP: body.effortCap }
+    const effectiveEffortCap = (body.effortCap === 'low' || body.effortCap === 'medium' || body.effortCap === 'high' || body.effortCap === 'xhigh' || body.effortCap === 'max')
+      ? body.effortCap
+      : body.fastMode === true
+        ? 'high'
+        : undefined;
+    const effortCapEnv = effectiveEffortCap
+      ? { AUTONOMOUS_EFFORT_CAP: effectiveEffortCap }
       : {};
     // Fix 1: pass maxAgents and fallbackEnabled via env vars.
     const maxAgentsEnv = typeof body.maxAgents === 'number' && body.maxAgents > 0
@@ -1815,6 +1848,7 @@ export async function cyclesRoutes(
     // `agentforge --project /external/repo cycle run` works correctly.
     const cliEntry = resolveAgentForgeCli(import.meta.url);
     if (!existsSync(cliEntry)) {
+      closeLogFd(logFd);
       return reply.status(500).send({ error: `AgentForge CLI entry not found at ${cliEntry}` });
     }
 
@@ -1826,7 +1860,7 @@ export async function cyclesRoutes(
       budgetUsd: body.budgetUsd ?? null,
       maxItems: body.maxItems ?? null,
       modelCap: body.modelCap ?? null,
-      effortCap: body.effortCap ?? null,
+      effortCap: effectiveEffortCap ?? null,
       branchPrefix: typeof body.branchPrefix === 'string' ? body.branchPrefix.trim() : null,
       baseBranch: resolvedBaseBranch,
       dryRun: body.dryRun ?? null,
@@ -1835,6 +1869,8 @@ export async function cyclesRoutes(
       tags,
       fallbackEnabled: body.fallbackEnabled ?? null,
       runtimeMode: 'codex-cli',
+      workspaceId,
+      fastMode: body.fastMode === true,
     };
     try {
       writeFileSync(join(cycleDir, 'cycle-config.json'), JSON.stringify(cycleConfig, null, 2));
@@ -1865,22 +1901,13 @@ export async function cyclesRoutes(
           ...dryRunEnv,
         },
       });
-      if (typeof child.once === 'function') {
-        child.once('error', (err) => {
-          cycleSessions.markTerminal(cycleId, 'crashed', `spawn error: ${err.message}`);
-        });
-        child.once('exit', (code, signal) => {
-          if (code !== null && code !== 0) {
-            cycleSessions.markTerminal(cycleId, 'crashed', `cycle process exited with code ${code}`);
-          } else if (signal) {
-            cycleSessions.markTerminal(cycleId, 'killed', `cycle process exited from signal ${signal}`);
-          }
-        });
-      }
+      bindCycleChildLifecycle(child, cycleId);
       child.unref();
       pid = child.pid ?? -1;
       pgid = pid;
+      closeLogFd(logFd);
     } catch (err) {
+      closeLogFd(logFd);
       return reply.status(500).send({ error: `Failed to spawn cycle: ${(err as Error).message}` });
     }
 
@@ -1890,7 +1917,7 @@ export async function cyclesRoutes(
           cycleId,
           pid,
           pgid,
-          workspaceId: 'default',
+          workspaceId,
           workspaceRoot: reqProjectRoot,
         });
       } catch (err) {
@@ -1905,12 +1932,14 @@ export async function cyclesRoutes(
       pid,
       pgid,
       runtimeMode: 'codex-cli',
+      workspaceId,
       branchPrefix: typeof body.branchPrefix === 'string' ? body.branchPrefix.trim() : null,
       baseBranch: resolvedBaseBranch,
       dryRun: body.dryRun ?? null,
       maxAgents: body.maxAgents ?? null,
       tags,
       fallbackEnabled: body.fallbackEnabled ?? null,
+      fastMode: body.fastMode === true,
     });
   });
 
@@ -2002,6 +2031,7 @@ export async function cyclesRoutes(
     const r = resolveProjectRoot(req as { query: unknown; headers: Record<string, unknown> }, opts.projectRoot);
     if ('error' in r) return reply.status(r.error.status).send(r.error.body);
     const reqProjectRoot = r.projectRoot;
+    const workspaceId = r.workspaceId;
     const base = cyclesBaseDir(reqProjectRoot);
     const cycleDir = safeJoin(base, id);
     if (!cycleDir || !existsSync(cycleDir)) return reply.status(404).send({ error: 'Cycle not found' });
@@ -2034,6 +2064,7 @@ export async function cyclesRoutes(
     const nodeBin = process.execPath;
     const cliEntry = resolveAgentForgeCli(import.meta.url);
     if (!existsSync(cliEntry)) {
+      closeLogFd(logFd);
       return reply.status(500).send({ error: `AgentForge CLI entry not found at ${cliEntry}` });
     }
 
@@ -2054,6 +2085,8 @@ export async function cyclesRoutes(
     const effortCap = sourceConfig['effortCap'];
     if (effortCap === 'low' || effortCap === 'medium' || effortCap === 'high' || effortCap === 'xhigh' || effortCap === 'max') {
       env['AUTONOMOUS_EFFORT_CAP'] = effortCap;
+    } else if (sourceConfig['fastMode'] === true) {
+      env['AUTONOMOUS_EFFORT_CAP'] = 'high';
     }
     if (typeof sourceConfig['fallbackEnabled'] === 'boolean') {
       env['AUTONOMOUS_FALLBACK_ENABLED'] = sourceConfig['fallbackEnabled'] ? 'true' : 'false';
@@ -2081,28 +2114,19 @@ export async function cyclesRoutes(
         windowsHide: true,
         env,
       });
-      if (typeof child.once === 'function') {
-        child.once('error', (err) => {
-          cycleSessions.markTerminal(id, 'crashed', `spawn error: ${err.message}`);
-        });
-        child.once('exit', (code, signal) => {
-          if (code !== null && code !== 0) {
-            cycleSessions.markTerminal(id, 'crashed', `cycle process exited with code ${code}`);
-          } else if (signal) {
-            cycleSessions.markTerminal(id, 'killed', `cycle process exited from signal ${signal}`);
-          }
-        });
-      }
+      bindCycleChildLifecycle(child, id);
       child.unref();
       pid = child.pid ?? -1;
       pgid = pid;
+      closeLogFd(logFd);
     } catch (err) {
+      closeLogFd(logFd);
       return reply.status(500).send({ error: `Failed to spawn resume cycle: ${(err as Error).message}` });
     }
 
     if (pid > 0) {
       try {
-        cycleSessions.register({ cycleId: id, pid, pgid, workspaceId: 'default', workspaceRoot: reqProjectRoot });
+        cycleSessions.register({ cycleId: id, pid, pgid, workspaceId, workspaceRoot: reqProjectRoot });
       } catch { /* non-fatal */ }
     }
 
@@ -2126,6 +2150,7 @@ export async function cyclesRoutes(
       pid,
       pgid,
       runtimeMode: 'codex-cli',
+      workspaceId,
       resumeFromPhase: checkpoint.resumeFromPhase,
     });
   });
@@ -2140,6 +2165,7 @@ export async function cyclesRoutes(
     const r = resolveProjectRoot(req as { query: unknown; headers: Record<string, unknown> }, opts.projectRoot);
     if ('error' in r) return reply.status(r.error.status).send(r.error.body);
     const reqProjectRoot = r.projectRoot;
+    const workspaceId = r.workspaceId;
     const base = cyclesBaseDir(reqProjectRoot);
 
     // Read source cycle-config.json to inherit its settings.
@@ -2193,6 +2219,8 @@ export async function cyclesRoutes(
       tags: Array.isArray(sourceConfig['tags']) ? sourceConfig['tags'] : [],
       fallbackEnabled: sourceConfig['fallbackEnabled'] ?? null,
       runtimeMode: 'codex-cli',
+      workspaceId,
+      fastMode: sourceConfig['fastMode'] === true,
     };
     try {
       writeFileSync(join(newCycleDir, 'cycle-config.json'), JSON.stringify(rerunConfig, null, 2));
@@ -2210,6 +2238,7 @@ export async function cyclesRoutes(
     // AgentForge package installation, not the external project root.
     const cliEntry = resolveAgentForgeCli(import.meta.url);
     if (!existsSync(cliEntry)) {
+      closeLogFd(logFd);
       return reply.status(500).send({ error: `AgentForge CLI entry not found at ${cliEntry}` });
     }
 
@@ -2228,6 +2257,8 @@ export async function cyclesRoutes(
     const effortCap = sourceConfig['effortCap'];
     if (effortCap === 'low' || effortCap === 'medium' || effortCap === 'high' || effortCap === 'xhigh' || effortCap === 'max') {
       env['AUTONOMOUS_EFFORT_CAP'] = effortCap;
+    } else if (sourceConfig['fastMode'] === true) {
+      env['AUTONOMOUS_EFFORT_CAP'] = 'high';
     }
     if (typeof sourceConfig['maxAgents'] === 'number' && sourceConfig['maxAgents'] > 0) {
       env['AUTONOMOUS_MAX_AGENTS'] = String(sourceConfig['maxAgents']);
@@ -2258,28 +2289,19 @@ export async function cyclesRoutes(
         windowsHide: true,
         env,
       });
-      if (typeof child.once === 'function') {
-        child.once('error', (err) => {
-          cycleSessions.markTerminal(newCycleId, 'crashed', `spawn error: ${err.message}`);
-        });
-        child.once('exit', (code, signal) => {
-          if (code !== null && code !== 0) {
-            cycleSessions.markTerminal(newCycleId, 'crashed', `cycle process exited with code ${code}`);
-          } else if (signal) {
-            cycleSessions.markTerminal(newCycleId, 'killed', `cycle process exited from signal ${signal}`);
-          }
-        });
-      }
+      bindCycleChildLifecycle(child, newCycleId);
       child.unref();
       pid = child.pid ?? -1;
       pgid = pid;
+      closeLogFd(logFd);
     } catch (err) {
+      closeLogFd(logFd);
       return reply.status(500).send({ error: `Failed to spawn rerun cycle: ${(err as Error).message}` });
     }
 
     if (pid > 0) {
       try {
-        cycleSessions.register({ cycleId: newCycleId, pid, pgid, workspaceId: 'default', workspaceRoot: reqProjectRoot });
+        cycleSessions.register({ cycleId: newCycleId, pid, pgid, workspaceId, workspaceRoot: reqProjectRoot });
       } catch { /* non-fatal */ }
     }
 

@@ -53,6 +53,7 @@ vi.mock('node:fs', async (importOriginal) => {
   return {
     ...actual,
     openSync: vi.fn(() => 3),
+    closeSync: vi.fn(),
   };
 });
 

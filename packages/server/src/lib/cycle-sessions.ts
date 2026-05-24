@@ -23,6 +23,7 @@ import {
   writeFileSync,
   chmodSync,
 } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 
 const SESSIONS_DIR = join(homedir(), '.agentforge');
 const SESSIONS_FILE = join(SESSIONS_DIR, 'sessions.json');
@@ -163,7 +164,7 @@ export async function stop(cycleId: string, opts?: { graceMs?: number }): Promis
   // Send SIGTERM to the entire process group. The negative pgid tells the
   // kernel to deliver to every process whose pgid matches.
   try {
-    process.kill(-session.pgid, 'SIGTERM');
+    terminateSessionTree(session, false);
   } catch {
     // pgid may have died between probe and kill — fall through
   }
@@ -180,10 +181,25 @@ export async function stop(cycleId: string, opts?: { graceMs?: number }): Promis
 
   // Hard kill — SIGKILL to the group.
   try {
-    process.kill(-session.pgid, 'SIGKILL');
+    terminateSessionTree(session, true);
   } catch { /* ignore */ }
   markTerminal(cycleId, 'killed', 'SIGKILL after grace period expired');
   return { ok: true, status: 'killed', message: 'force-killed after grace period' };
+}
+
+function terminateSessionTree(session: CycleSession, force: boolean): void {
+  if (process.platform === 'win32') {
+    const args = ['/PID', String(session.pid), '/T'];
+    if (force) args.push('/F');
+    const result = spawnSync('taskkill', args, { stdio: 'ignore', windowsHide: true });
+    if (result.error) throw result.error;
+    if (typeof result.status === 'number' && result.status !== 0 && isPidAlive(session.pid)) {
+      throw new Error(`taskkill exited with status ${result.status}`);
+    }
+    return;
+  }
+
+  process.kill(-session.pgid, force ? 'SIGKILL' : 'SIGTERM');
 }
 
 /**
