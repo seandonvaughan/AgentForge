@@ -265,6 +265,33 @@ test.describe('Runner Page', () => {
     await expect(page.locator('.history-item').first()).toContainText('failed');
   });
 
+  test('ignores completion events for other sessions and keeps the active run in-flight', async ({ page }) => {
+    await openRunner(page, { sessionId: 'run-main-1' });
+
+    await page.fill('#task-input', 'Ignore off-session completion events');
+    await page.click('button:has-text("Run Agent")');
+
+    await emitSse(page, {
+      type: 'workflow_event',
+      category: 'run',
+      message: '[coder] wrong session complete',
+      data: { sessionId: 'run-other-1', status: 'completed' },
+    });
+
+    await expect(page.locator('.running-indicator')).toHaveCount(1);
+    await expect(page.locator('.history-item').first()).toContainText('running');
+
+    await emitSse(page, {
+      type: 'workflow_event',
+      category: 'run',
+      message: '[coder] right session complete',
+      data: { sessionId: 'run-main-1', status: 'completed' },
+    });
+
+    await expect(page.locator('.running-indicator')).toHaveCount(0);
+    await expect(page.locator('.history-item').first()).toContainText('completed');
+  });
+
   test('copies and clears streamed output', async ({ page, context }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
       origin: 'http://localhost:4751',

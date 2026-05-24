@@ -15,6 +15,24 @@ function createHarnessWithFailures(failingLeafCommands: Set<string>) {
 }
 
 describe('dashboard verification adversarial guards', () => {
+  it('fails verify:product before unit tests when no-emit typecheck fails', async () => {
+    const { harness, trace } = createHarnessWithFailures(
+      new Set(['pnpm exec tsc -b --noEmit']),
+    );
+
+    const result = await harness.run('verify:product');
+
+    expect(result.ok).toBe(false);
+    expect(result.failedCommand).toBe('pnpm exec tsc -b --noEmit');
+    expect(result.trace).toContain('tsc -b');
+    expect(result.trace).toContain('pnpm exec tsc -b --noEmit');
+    expect(result.trace).not.toContain('vitest run');
+    expect(result.trace.some((command) => command.startsWith('playwright test'))).toBe(
+      false,
+    );
+    expect(trace).toEqual(result.trace);
+  });
+
   it('fails verify:dashboard fast when dashboard check fails', async () => {
     const { harness, trace } = createHarnessWithFailures(
       new Set(['pnpm --filter @agentforge/dashboard check']),

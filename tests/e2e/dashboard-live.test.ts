@@ -185,6 +185,29 @@ test.describe('Live Feed Page (/live)', () => {
     await expect(page.locator('.feed-row .feed-msg')).toContainText('visible cycle event');
   });
 
+  test('filters out connected system messages', async ({ page }) => {
+    await page.goto('/live');
+    await waitForLiveSource(page);
+
+    await emitEvent(page, {
+      id: 'sys-connected-1',
+      type: 'system',
+      category: 'system',
+      message: 'connected',
+      timestamp: '2026-04-07T10:00:00.000Z',
+    });
+    await emitEvent(page, {
+      id: 'evt-visible-2',
+      type: 'workflow_event',
+      category: 'gate',
+      message: 'gate finished',
+      timestamp: '2026-04-07T10:00:01.000Z',
+    });
+
+    await expect(page.locator('.feed-row')).toHaveCount(1);
+    await expect(page.locator('.feed-row .feed-msg')).toContainText('gate finished');
+  });
+
   test('pause mode drops incoming events until resumed', async ({ page }) => {
     await page.goto('/live');
     await waitForLiveSource(page);
