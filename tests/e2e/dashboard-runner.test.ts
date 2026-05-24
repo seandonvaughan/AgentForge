@@ -220,6 +220,30 @@ test.describe('Runner Page', () => {
     await expect(page.locator('.output-pre')).toContainText('Buffered token');
   });
 
+  test('replay buffer rejects adversarial early chunks from other sessions', async ({ page }) => {
+    await openRunner(page, { sessionId: 'run-buffered-2', responseDelayMs: 150 });
+
+    await page.fill('#task-input', 'Replay only matching buffered chunks');
+    await page.click('button:has-text("Run Agent")');
+
+    await emitSse(page, {
+      type: 'agent_activity',
+      category: 'run',
+      message: '[coder] wrong buffered session',
+      data: { sessionId: 'run-other-buffered', content: 'poison token' },
+    });
+    await emitRawSse(page, '{"invalid":');
+    await emitSse(page, {
+      type: 'agent_activity',
+      category: 'run',
+      message: '[coder] target buffered session',
+      data: { sessionId: 'run-buffered-2', content: 'safe token' },
+    });
+
+    await expect(page.locator('.output-pre')).toContainText('safe token');
+    await expect(page.locator('.output-pre')).not.toContainText('poison token');
+  });
+
   test('ignores malformed SSE payloads and stream data for other sessions', async ({ page }) => {
     await openRunner(page, { sessionId: 'run-target-1' });
 

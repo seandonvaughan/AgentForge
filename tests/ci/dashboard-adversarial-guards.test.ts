@@ -63,4 +63,35 @@ describe('dashboard verification adversarial guards', () => {
     expect(result.trace).not.toContain('pnpm audit --audit-level low');
     expect(trace).toEqual(result.trace);
   });
+
+  it('fails verify:product before unit and dashboard e2e when noEmit typecheck fails', async () => {
+    const { harness, trace } = createHarnessWithFailures(
+      new Set(['pnpm exec tsc -b --noEmit']),
+    );
+
+    const result = await harness.run('verify:product');
+
+    expect(result.ok).toBe(false);
+    expect(result.failedCommand).toBe('pnpm exec tsc -b --noEmit');
+    expect(result.trace).toContain('tsc -b');
+    expect(result.trace).toContain('pnpm exec tsc -b --noEmit');
+    expect(result.trace).not.toContain('vitest run');
+    expect(result.trace.some((command) => command.startsWith('playwright test'))).toBe(false);
+    expect(trace).toEqual(result.trace);
+  });
+
+  it('keeps critical dashboard regression suites wired into verify:product e2e', async () => {
+    const { harness } = createHarnessWithFailures(new Set());
+
+    const result = await harness.run('verify:product');
+
+    expect(result.ok).toBe(true);
+    const dashboardE2eCommand = result.trace.find((command) =>
+      command.startsWith('playwright test '),
+    );
+    expect(dashboardE2eCommand).toBeDefined();
+    expect(dashboardE2eCommand).toContain('tests/e2e/dashboard-runner.test.ts');
+    expect(dashboardE2eCommand).toContain('tests/e2e/dashboard-live.test.ts');
+    expect(dashboardE2eCommand).toContain('tests/e2e/dashboard-health.test.ts');
+  });
 });
