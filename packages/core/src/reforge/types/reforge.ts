@@ -150,6 +150,8 @@ export interface CanaryDeploymentMetrics {
   canaryRequests: number;
   canaryErrors: number;
   errorRate: number;
+  ignoredRuntimeErrors?: number;
+  ignoredInfrastructureErrors?: number;
 }
 
 /** Persisted record of an auto-rollback decision. */
@@ -166,3 +168,9 @@ export interface CanaryDeployOptions {
   strategy?: TrafficSplitStrategy;
   rollbackThreshold?: number;
 }
+
+export type ReforgeCanaryOutcomeKind =
+  | "success"
+  | "behavior_error"
+  | "runtime_error"
+  | "infrastructure_error";

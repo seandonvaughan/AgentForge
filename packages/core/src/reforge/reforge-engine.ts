@@ -22,12 +22,19 @@ import type {
   CanaryDeployOptions,
   CanaryDeploymentRecord,
   CanaryDeploymentMetrics,
+  ReforgeCanaryOutcomeKind,
   CanaryRoutingContext,
   CanaryRollbackRecord,
   ReforgePlan,
   ReforgeResult,
 } from "./types/reforge.js";
 import { CanaryManager } from "../canary/canary-manager.js";
+import type {
+  MessageBusV2,
+  SelfModificationCanaryPromotedPayload,
+  SelfModificationCanaryRolledBackPayload,
+  SelfModificationCanaryStagedPayload,
+} from "../message-bus/index.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -50,6 +57,13 @@ export interface ReforgeEngineOptions {
    * Defaults to a generic cost-awareness reminder.
    */
   defaultPreamble?: string;
+  /** Optional v2 bus used to publish self-modification canary lifecycle events. */
+  bus?: MessageBusV2;
+}
+
+interface ResolvedReforgeEngineOptions {
+  defaultPreamble: string;
+  bus?: MessageBusV2;
 }
 
 // ---------------------------------------------------------------------------
@@ -61,7 +75,7 @@ export class ReforgeEngine {
   private readonly canaryOverridesDir: string;
   private readonly proposalsDir: string;
   private readonly canaryManager = new CanaryManager();
-  private readonly options: Required<ReforgeEngineOptions>;
+  private readonly options: ResolvedReforgeEngineOptions;
 
   constructor(projectRoot: string, options?: ReforgeEngineOptions) {
     this.overridesDir = path.join(
@@ -85,6 +99,7 @@ export class ReforgeEngine {
         options?.defaultPreamble ??
         "COST AWARENESS PREAMBLE: Prefer the most economical approach. " +
           "Avoid over-engineering. Escalate only when necessary.",
+      ...(options?.bus ? { bus: options.bus } : {}),
     };
   }
 
@@ -277,6 +292,16 @@ export class ReforgeEngine {
       });
       this.canaryManager.activateFlag(flagId);
       await this.writeCanaryDeployment(deployment);
+      this.publishCanaryStaged({
+        planId: deployment.planId,
+        agentName: deployment.agentName,
+        flagId: deployment.flagId,
+        trafficPercent: deployment.trafficPercent,
+        strategy: deployment.strategy,
+        rollbackThreshold: deployment.rollbackThreshold,
+        overrideVersion: deployment.override.version,
+        stagedAt: deployment.stagedAt,
+      });
       deployments.push(deployment);
     }
 
@@ -303,6 +328,14 @@ export class ReforgeEngine {
     await this.writeOverride(agentName, promoted);
     await this.deleteCanaryDeployment(agentName);
     this.canaryManager.deleteFlag(deployment.flagId);
+    this.publishCanaryPromoted({
+      planId: deployment.planId,
+      agentName,
+      flagId: deployment.flagId,
+      promotedVersion: promoted.version,
+      previousVersion: current?.version ?? null,
+      promotedAt: promoted.appliedAt,
+    });
     return promoted;
   }
 
@@ -312,7 +345,7 @@ export class ReforgeEngine {
    */
   async recordCanaryOutcome(
     agentName: string,
-    isError: boolean,
+    outcome: boolean | ReforgeCanaryOutcomeKind,
   ): Promise<{ deployment: CanaryDeploymentRecord; rollback?: string } | null> {
     const deployment = await this.loadCanaryDeployment(agentName);
     if (!deployment) {
@@ -320,9 +353,12 @@ export class ReforgeEngine {
     }
 
     this.canaryManager.getFlag(deployment.flagId) ?? this.ensureCanaryFlag(deployment);
-    this.canaryManager.recordOutcome(deployment.flagId, isError);
+    const normalizedOutcome = this.normalizeCanaryOutcome(outcome);
+    if (normalizedOutcome.countsTowardRollback) {
+      this.canaryManager.recordOutcome(deployment.flagId, normalizedOutcome.isError);
+    }
 
-    const metrics = this.nextCanaryMetrics(deployment.metrics, isError);
+    const metrics = this.nextCanaryMetrics(deployment.metrics, normalizedOutcome);
     const updatedDeployment: CanaryDeploymentRecord = {
       ...deployment,
       metrics,
@@ -339,6 +375,17 @@ export class ReforgeEngine {
       });
       await this.deleteCanaryDeployment(agentName);
       this.canaryManager.performRollback(deployment.flagId, rollback.reason);
+      this.publishCanaryRolledBack({
+        planId: updatedDeployment.planId,
+        agentName: updatedDeployment.agentName,
+        flagId: updatedDeployment.flagId,
+        reason: rollback.reason,
+        errorRate: rollback.errorRate,
+        threshold: rollback.threshold,
+        canaryRequests: metrics.canaryRequests,
+        canaryErrors: metrics.canaryErrors,
+        rolledBackAt: rollback.rolledBackAt,
+      });
     } else {
       await this.writeCanaryDeployment(updatedDeployment);
     }
@@ -492,17 +539,35 @@ export class ReforgeEngine {
       canaryRequests: 0,
       canaryErrors: 0,
       errorRate: 0,
+      ignoredRuntimeErrors: 0,
+      ignoredInfrastructureErrors: 0,
     };
   }
 
   private nextCanaryMetrics(
     current: CanaryDeploymentMetrics | undefined,
-    isError: boolean,
+    outcome: {
+      countsTowardRollback: boolean;
+      isError: boolean;
+      ignoredRuntimeError: boolean;
+      ignoredInfrastructureError: boolean;
+    },
   ): CanaryDeploymentMetrics {
     const previous = current ?? this.emptyCanaryMetrics();
+    if (!outcome.countsTowardRollback) {
+      return {
+        ...previous,
+        ignoredRuntimeErrors:
+          (previous.ignoredRuntimeErrors ?? 0) + (outcome.ignoredRuntimeError ? 1 : 0),
+        ignoredInfrastructureErrors:
+          (previous.ignoredInfrastructureErrors ?? 0) + (outcome.ignoredInfrastructureError ? 1 : 0),
+      };
+    }
+
     const canaryRequests = previous.canaryRequests + 1;
-    const canaryErrors = previous.canaryErrors + (isError ? 1 : 0);
+    const canaryErrors = previous.canaryErrors + (outcome.isError ? 1 : 0);
     return {
+      ...previous,
       canaryRequests,
       canaryErrors,
       errorRate: canaryRequests > 0 ? canaryErrors / canaryRequests : 0,
@@ -512,6 +577,36 @@ export class ReforgeEngine {
   private shouldRollbackCanary(deployment: CanaryDeploymentRecord): boolean {
     const metrics = deployment.metrics ?? this.emptyCanaryMetrics();
     return metrics.canaryRequests >= 5 && metrics.errorRate > deployment.rollbackThreshold;
+  }
+
+  private normalizeCanaryOutcome(outcome: boolean | ReforgeCanaryOutcomeKind): {
+    countsTowardRollback: boolean;
+    isError: boolean;
+    ignoredRuntimeError: boolean;
+    ignoredInfrastructureError: boolean;
+  } {
+    if (outcome === true || outcome === "behavior_error") {
+      return {
+        countsTowardRollback: true,
+        isError: true,
+        ignoredRuntimeError: false,
+        ignoredInfrastructureError: false,
+      };
+    }
+    if (outcome === false || outcome === "success") {
+      return {
+        countsTowardRollback: true,
+        isError: false,
+        ignoredRuntimeError: false,
+        ignoredInfrastructureError: false,
+      };
+    }
+    return {
+      countsTowardRollback: false,
+      isError: false,
+      ignoredRuntimeError: outcome === "runtime_error",
+      ignoredInfrastructureError: outcome === "infrastructure_error",
+    };
   }
 
   private buildCanaryRollback(deployment: CanaryDeploymentRecord): CanaryRollbackRecord {
@@ -605,6 +700,42 @@ export class ReforgeEngine {
     await fs.mkdir(this.overridesDir, { recursive: true });
     const filePath = path.join(this.overridesDir, `${agentName}.json`);
     await fs.writeFile(filePath, JSON.stringify(override, null, 2), "utf-8");
+  }
+
+  private publishCanaryStaged(payload: SelfModificationCanaryStagedPayload): void {
+    this.options.bus?.publish<SelfModificationCanaryStagedPayload>({
+      from: "system",
+      to: "broadcast",
+      topic: "self-modification.canary.staged",
+      category: "system",
+      priority: "high",
+      payload,
+      correlationId: payload.planId,
+    });
+  }
+
+  private publishCanaryPromoted(payload: SelfModificationCanaryPromotedPayload): void {
+    this.options.bus?.publish<SelfModificationCanaryPromotedPayload>({
+      from: "system",
+      to: "broadcast",
+      topic: "self-modification.canary.promoted",
+      category: "system",
+      priority: "high",
+      payload,
+      correlationId: payload.planId,
+    });
+  }
+
+  private publishCanaryRolledBack(payload: SelfModificationCanaryRolledBackPayload): void {
+    this.options.bus?.publish<SelfModificationCanaryRolledBackPayload>({
+      from: "system",
+      to: "broadcast",
+      topic: "self-modification.canary.rolled_back",
+      category: "system",
+      priority: "critical",
+      payload,
+      correlationId: payload.planId,
+    });
   }
 
   private async writeStructuralProposal(plan: ReforgePlan): Promise<void> {

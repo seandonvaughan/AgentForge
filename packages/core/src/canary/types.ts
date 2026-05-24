@@ -31,6 +31,8 @@ export interface TrafficSplitResult {
   variant: 'control' | 'canary';
   requestId: string;
   reason: string;
+  /** One-use token required when recording metrics for a routed canary request. */
+  outcomeToken?: string;
 }
 
 export interface RollbackResult {
@@ -68,3 +70,28 @@ export interface CanaryMetricsReport {
   rollbackThreshold: number;
   isHealthy: boolean;
 }
+
+export type CanaryOutcomeKind =
+  | 'success'
+  | 'behavior_error'
+  | 'runtime_error'
+  | 'infrastructure_error';
+
+export interface VerifiedCanaryOutcomeAccepted {
+  ok: true;
+  ignored: boolean;
+  outcome: CanaryOutcomeKind;
+  flag: FeatureFlag;
+  rollback?: RollbackResult;
+}
+
+export interface VerifiedCanaryOutcomeRejected {
+  ok: false;
+  statusCode: 400 | 403 | 404 | 409;
+  code: string;
+  error: string;
+}
+
+export type VerifiedCanaryOutcomeResult =
+  | VerifiedCanaryOutcomeAccepted
+  | VerifiedCanaryOutcomeRejected;

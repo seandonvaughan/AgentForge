@@ -4,6 +4,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { ReforgeEngine } from "../../src/reforge/reforge-engine.js";
+import { MessageBusV2 } from "@agentforge/core";
 import type { FeedbackAnalysis } from "../../src/types/feedback.js";
 import type { AgentTemplate } from "../../src/types/agent.js";
 import type { AgentOverride } from "../../src/types/reforge.js";
@@ -672,6 +673,68 @@ describe("ReforgeEngine", () => {
     const applied = await engine.applyOverride(makeTemplate());
     expect(applied.system_prompt).toContain("COST AWARENESS PREAMBLE");
     expect(applied.model).toBe("haiku");
+  });
+
+  it("publishes staged and promoted self-modification canary events", async () => {
+    const bus = new MessageBusV2({ workspaceId: "test" });
+    engine = new ReforgeEngine(tmpDir, { bus });
+    const canaryAnalysis = makeAnalysis([
+      {
+        action: "update-system-prompt",
+        rationale: "promote with bus event",
+        urgency: "medium",
+        theme_label: "prompt-canary",
+        confidence: 0.7,
+      },
+    ]);
+
+    const canaryPlan = await engine.buildPlan(canaryAnalysis, [makeTemplate()]);
+    await engine.deployCanary(canaryPlan, {
+      trafficPercent: 25,
+      strategy: "hash",
+      rollbackThreshold: 0.1,
+    });
+    await engine.promoteCanary("cost-analyst");
+
+    const topics = bus.getHistory(10).map((event) => event.topic);
+    expect(topics).toContain("self-modification.canary.staged");
+    expect(topics).toContain("self-modification.canary.promoted");
+  });
+
+  it("publishes rolled_back canary events and ignores runtime errors for rollback metrics", async () => {
+    const bus = new MessageBusV2({ workspaceId: "test" });
+    engine = new ReforgeEngine(tmpDir, { bus });
+    const canaryAnalysis = makeAnalysis([
+      {
+        action: "update-system-prompt",
+        rationale: "unstable prompt with runtime noise",
+        urgency: "medium",
+        theme_label: "prompt-canary",
+        confidence: 0.7,
+      },
+    ]);
+
+    const canaryPlan = await engine.buildPlan(canaryAnalysis, [makeTemplate()]);
+    await engine.deployCanary(canaryPlan, {
+      trafficPercent: 100,
+      strategy: "hash",
+      rollbackThreshold: 0.1,
+    });
+
+    await engine.recordCanaryOutcome("cost-analyst", "runtime_error");
+    for (let i = 0; i < 5; i++) {
+      await engine.recordCanaryOutcome("cost-analyst", "behavior_error");
+    }
+
+    const rollbackEvent = bus
+      .getHistory(10)
+      .find((event) => event.topic === "self-modification.canary.rolled_back");
+    expect(rollbackEvent).toBeDefined();
+    expect(rollbackEvent?.payload).toMatchObject({
+      agentName: "cost-analyst",
+      canaryRequests: 5,
+      canaryErrors: 5,
+    });
   });
 
   // -------------------------------------------------------------------------

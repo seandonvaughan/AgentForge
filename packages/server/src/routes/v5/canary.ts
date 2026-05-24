@@ -1,9 +1,25 @@
 import type { FastifyInstance } from 'fastify';
-import { CanaryManager } from '@agentforge/core';
+import { CanaryManager, type CanaryOutcomeKind } from '@agentforge/core';
 
-const canary = new CanaryManager();
+const defaultCanary = new CanaryManager();
 
-export async function canaryRoutes(app: FastifyInstance): Promise<void> {
+export interface CanaryRoutesOptions {
+  manager?: CanaryManager;
+}
+
+const VALID_CANARY_OUTCOMES = new Set<CanaryOutcomeKind>([
+  'success',
+  'behavior_error',
+  'runtime_error',
+  'infrastructure_error',
+]);
+
+export async function canaryRoutes(
+  app: FastifyInstance,
+  opts: CanaryRoutesOptions = {},
+): Promise<void> {
+  const canary = opts.manager ?? defaultCanary;
+
   // POST /api/v5/canary/flags — create a feature flag
   app.post('/api/v5/canary/flags', async (req, reply) => {
     const body = req.body as any;
@@ -75,6 +91,48 @@ export async function canaryRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ data: result, meta: { timestamp: new Date().toISOString() } });
   });
 
+  // POST /api/v5/canary/metrics — record an outcome for a split-issued canary token
+  app.post('/api/v5/canary/metrics', async (req, reply) => {
+    const body = req.body as any;
+    const flagId = typeof body?.flagId === 'string' ? body.flagId : '';
+    const requestId = typeof body?.requestId === 'string' ? body.requestId : '';
+    const outcomeToken = typeof body?.outcomeToken === 'string' ? body.outcomeToken : '';
+    const outcome = typeof body?.outcome === 'string' ? body.outcome : '';
+
+    if (!flagId || !requestId || !outcomeToken || !outcome) {
+      return reply.status(400).send({
+        error: 'flagId, requestId, outcomeToken, and outcome are required',
+        code: 'MISSING_FIELD',
+      });
+    }
+
+    if (!isCanaryOutcome(outcome)) {
+      return reply.status(400).send({
+        error: 'outcome must be success, behavior_error, runtime_error, or infrastructure_error',
+        code: 'INVALID_OUTCOME',
+      });
+    }
+
+    const result = canary.recordVerifiedOutcome(flagId, requestId, outcomeToken, outcome);
+    if (!result.ok) {
+      return reply.status(result.statusCode).send({
+        error: result.error,
+        code: result.code,
+      });
+    }
+
+    return reply.status(result.ignored ? 202 : 201).send({
+      data: {
+        accepted: true,
+        ignored: result.ignored,
+        outcome: result.outcome,
+        flag: result.flag,
+        ...(result.rollback ? { rollback: result.rollback } : {}),
+      },
+      meta: { timestamp: new Date().toISOString() },
+    });
+  });
+
   // GET /api/v5/canary/metrics — all flag metrics
   app.get('/api/v5/canary/metrics', async (_req, reply) => {
     const metrics = canary.getAllMetrics();
@@ -96,4 +154,8 @@ export async function canaryRoutes(app: FastifyInstance): Promise<void> {
     const log = canary.getRollbackLog();
     return reply.send({ data: log, meta: { total: log.length, timestamp: new Date().toISOString() } });
   });
+}
+
+function isCanaryOutcome(value: string): value is CanaryOutcomeKind {
+  return VALID_CANARY_OUTCOMES.has(value as CanaryOutcomeKind);
 }

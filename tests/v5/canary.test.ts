@@ -187,6 +187,60 @@ describe('CanaryManager', () => {
     manager.activateFlag(flag.id);
     const result = manager.route(flag.id, 'req-1');
     expect(result.variant).toBe('canary');
+    expect(result.outcomeToken).toBeTruthy();
+  });
+
+  it('records verified outcomes only for split-issued canary tokens', () => {
+    const flag = manager.createFlag({ name: 'verified-outcome', trafficPercent: 100 });
+    manager.activateFlag(flag.id);
+
+    const unauthorized = manager.recordVerifiedOutcome(
+      flag.id,
+      'req-unauthorized',
+      'bad-token',
+      'behavior_error',
+    );
+    expect(unauthorized.ok).toBe(false);
+
+    const split = manager.route(flag.id, 'req-authorized');
+    expect(split.variant).toBe('canary');
+    expect(split.outcomeToken).toBeTruthy();
+
+    const accepted = manager.recordVerifiedOutcome(
+      flag.id,
+      split.requestId,
+      split.outcomeToken!,
+      'behavior_error',
+    );
+    expect(accepted.ok).toBe(true);
+    expect(manager.getMetrics(flag.id)?.canaryRequests).toBe(1);
+
+    const replay = manager.recordVerifiedOutcome(
+      flag.id,
+      split.requestId,
+      split.outcomeToken!,
+      'behavior_error',
+    );
+    expect(replay.ok).toBe(false);
+    expect(manager.getMetrics(flag.id)?.canaryRequests).toBe(1);
+  });
+
+  it('does not count runtime failures toward canary rollback metrics', () => {
+    const flag = manager.createFlag({ name: 'infra-flaky', trafficPercent: 100 });
+    manager.activateFlag(flag.id);
+
+    const split = manager.route(flag.id, 'req-runtime-error');
+    const result = manager.recordVerifiedOutcome(
+      flag.id,
+      split.requestId,
+      split.outcomeToken!,
+      'runtime_error',
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.ignored).toBe(true);
+    expect(manager.getMetrics(flag.id)?.canaryRequests).toBe(0);
+    expect(manager.getMetrics(flag.id)?.canaryErrors).toBe(0);
   });
 
   it('auto-rolls back when error rate exceeds threshold', () => {

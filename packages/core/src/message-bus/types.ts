@@ -85,6 +85,10 @@ export type MessageTopic =
   // Quality + gate (mirrored to @user inbox by InboxBridge — ADR 0004)
   | 'gate.verdict.created'
   | 'review.finding.created'
+  // Self-modification safety events (canary rollout lifecycle)
+  | 'self-modification.canary.staged'
+  | 'self-modification.canary.promoted'
+  | 'self-modification.canary.rolled_back'
   // Plugin
   | 'plugin.event'
   // Worktree / branch (Cycle 4 — T4.3 / T4.4)
@@ -312,6 +316,44 @@ export interface ReviewFindingCreatedPayload {
   createdAt: string;
 }
 
+/**
+ * Payload for `self-modification.canary.staged` — emitted when a reforge plan
+ * is staged behind a canary flag instead of becoming the active override.
+ */
+export interface SelfModificationCanaryStagedPayload {
+  planId: string;
+  agentName: string;
+  flagId: string;
+  trafficPercent: number;
+  strategy: string;
+  rollbackThreshold: number;
+  overrideVersion: number;
+  stagedAt: string;
+}
+
+/** Payload for `self-modification.canary.promoted` — terminal canary event. */
+export interface SelfModificationCanaryPromotedPayload {
+  planId: string;
+  agentName: string;
+  flagId: string;
+  promotedVersion: number;
+  previousVersion: number | null;
+  promotedAt: string;
+}
+
+/** Payload for `self-modification.canary.rolled_back` — terminal canary event. */
+export interface SelfModificationCanaryRolledBackPayload {
+  planId: string;
+  agentName: string;
+  flagId: string;
+  reason: string;
+  errorRate: number;
+  threshold: number;
+  canaryRequests: number;
+  canaryErrors: number;
+  rolledBackAt: string;
+}
+
 // ── Type guards ───────────────────────────────────────────────────────────────
 
 export function isTaskTopic(topic: MessageTopic): boolean {
@@ -363,6 +405,12 @@ export type AgentDmSentEnvelope = MessageEnvelopeV2<AgentDmSentPayload>;
 export type InboxMessageCreatedEnvelope = MessageEnvelopeV2<InboxMessageCreatedPayload>;
 export type GateVerdictCreatedEnvelope = MessageEnvelopeV2<GateVerdictCreatedPayload>;
 export type ReviewFindingCreatedEnvelope = MessageEnvelopeV2<ReviewFindingCreatedPayload>;
+export type SelfModificationCanaryStagedEnvelope =
+  MessageEnvelopeV2<SelfModificationCanaryStagedPayload>;
+export type SelfModificationCanaryPromotedEnvelope =
+  MessageEnvelopeV2<SelfModificationCanaryPromotedPayload>;
+export type SelfModificationCanaryRolledBackEnvelope =
+  MessageEnvelopeV2<SelfModificationCanaryRolledBackPayload>;
 
 // ── Worktree / branch payloads (Cycle 4 — T4.3) ──────────────────────────────
 
@@ -421,6 +469,10 @@ export function isCommsTopic(topic: MessageTopic): boolean {
 
 export function isQualityTopic(topic: MessageTopic): boolean {
   return topic === 'gate.verdict.created' || topic === 'review.finding.created';
+}
+
+export function isSelfModificationTopic(topic: MessageTopic): boolean {
+  return topic.startsWith('self-modification.');
 }
 
 export function isWorktreeTopic(topic: MessageTopic): boolean {
