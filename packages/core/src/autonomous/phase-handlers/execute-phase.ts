@@ -499,7 +499,7 @@ function worktreeSessionCandidates(ctx: PhaseContext): string[] {
   if (retryAttempt === 0) return [baseSession];
 
   const retrySession = `${baseSession}-retry-${retryAttempt}`;
-  return [retrySession, `${retrySession}-resume-1`, `${retrySession}-resume-2`];
+  return [baseSession, retrySession, `${retrySession}-resume-1`, `${retrySession}-resume-2`];
 }
 
 function shouldRetryWorktreeAllocation(err: unknown): boolean {

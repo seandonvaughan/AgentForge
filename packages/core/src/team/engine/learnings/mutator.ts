@@ -64,6 +64,7 @@ export interface MutatorReport {
 // ---------------------------------------------------------------------------
 
 const LEARNINGS_CAP = 12;
+const FULL_AGENT_REFRESH_SLOTS = 4;
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -380,20 +381,41 @@ function mutateAgentLearnings(
 
   const surviving: RichLearning[] = allRich.filter((_, i) => !dropped.has(i));
 
-  // Phase 3 — keep trusted existing learnings first; sort new proposals
-  // newest-first (tie-break by score desc).
-  surviving.sort((a, b) => {
-    if (a.existing !== b.existing) return a.existing ? -1 : 1;
+  const sortNewLearnings = (a: RichLearning, b: RichLearning): number => {
     const dateDiff =
       new Date(b.sourceCreatedAt).getTime() -
       new Date(a.sourceCreatedAt).getTime();
     if (dateDiff !== 0) return dateDiff;
     return b.score - a.score;
-  });
+  };
+
+  // Phase 3 — keep trusted existing learnings first while the agent has room.
+  // Once an agent is already full, reserve a small refresh window for newer
+  // proposed learnings; otherwise a capped agent can never learn again.
+  let orderedSurviving: RichLearning[];
+  if (existing.length >= LEARNINGS_CAP) {
+    const existingSurviving = surviving.filter((entry) => entry.existing);
+    const newSurviving = surviving
+      .filter((entry) => !entry.existing)
+      .sort(sortNewLearnings);
+    const refreshCount = Math.min(FULL_AGENT_REFRESH_SLOTS, newSurviving.length);
+    const retainedExistingCount = Math.max(0, LEARNINGS_CAP - refreshCount);
+    orderedSurviving = [
+      ...newSurviving.slice(0, refreshCount),
+      ...existingSurviving.slice(0, retainedExistingCount),
+      ...newSurviving.slice(refreshCount),
+      ...existingSurviving.slice(retainedExistingCount),
+    ];
+  } else {
+    orderedSurviving = surviving.sort((a, b) => {
+      if (a.existing !== b.existing) return a.existing ? -1 : 1;
+      return sortNewLearnings(a, b);
+    });
+  }
 
   // Phase 4 — cap at LEARNINGS_CAP
-  const overflow = Math.max(0, surviving.length - LEARNINGS_CAP);
-  const cappedSurviving = surviving.slice(0, LEARNINGS_CAP);
+  const overflow = Math.max(0, orderedSurviving.length - LEARNINGS_CAP);
+  const cappedSurviving = orderedSurviving.slice(0, LEARNINGS_CAP);
 
   // Determine which lessons are newly added
   const existingSet = new Set<string>(existing.map(lessonHash));

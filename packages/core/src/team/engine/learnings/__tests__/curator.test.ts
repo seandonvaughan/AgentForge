@@ -197,20 +197,22 @@ describe("curateLearnings — happy path", () => {
     expect(parsed.byAgent).toBeDefined();
   });
 
-  it("fills sourcesScanned with the three memory types", async () => {
+  it("fills sourcesScanned with the canonical learning memory types", async () => {
     writeAgentYaml("coder", ["review"]);
     writeMemoryFile("gate-verdict", []);
     writeMemoryFile("review-finding", []);
     writeMemoryFile("cycle-outcome", []);
 
     const result = await curateLearnings({ projectRoot, agentIds: ["coder"] });
-    expect(result.sourcesScanned).toHaveLength(3);
+    expect(result.sourcesScanned).toHaveLength(5);
     const types = result.sourcesScanned.map((s) =>
       s.path.replace(/.*[/\\]/, "").replace(".jsonl", ""),
     );
     expect(types).toContain("gate-verdict");
     expect(types).toContain("review-finding");
     expect(types).toContain("cycle-outcome");
+    expect(types).toContain("learned-fact");
+    expect(types).toContain("failure-pattern");
   });
 
   it("falls back to skills array when capability_tags is absent", async () => {
@@ -223,6 +225,29 @@ describe("curateLearnings — happy path", () => {
     const proposals = result.byAgent["test-runner"] ?? [];
     // With role match the score should be above MIN_SCORE
     expect(proposals.length).toBeGreaterThan(0);
+  });
+
+  it("curates learned-fact entries from manual invokes", async () => {
+    writeAgentYaml("runtime-engineer", ["runtime", "manual-invoke"]);
+    writeMemoryFile("learned-fact", [
+      makeMemEntry(
+        "lf-manual",
+        "learned-fact",
+        JSON.stringify({ lesson: "Always preserve manual invoke outcomes in canonical memory." }),
+        ["manual-invoke", "runtime"],
+        undefined,
+        { severity: "MINOR" },
+      ),
+    ]);
+
+    const result = await curateLearnings({
+      projectRoot,
+      agentIds: ["runtime-engineer"],
+    });
+
+    expect(result.byAgent["runtime-engineer"]?.[0]?.lesson).toBe(
+      "Always preserve manual invoke outcomes in canonical memory.",
+    );
   });
 
   it("prefers structured metadata summaries over noisy rendered values", async () => {
@@ -485,7 +510,7 @@ describe("curateLearnings — end-to-end multi-agent distribution", () => {
     const outPath = join(projectRoot, ".agentforge", "forge", "learnings-proposed.json");
     const parsed = JSON.parse(readFileSync(outPath, "utf8")) as CurationResult;
     expect(Object.keys(parsed.byAgent)).toHaveLength(3);
-    expect(parsed.sourcesScanned).toHaveLength(3);
+    expect(parsed.sourcesScanned).toHaveLength(5);
     expect(new Date(parsed.generatedAt).getTime()).toBeGreaterThan(0);
   });
 });

@@ -150,9 +150,11 @@ describe('file paths mentioned in quickstart are real conventions', () => {
     expect(existsSync(teamYaml)).toBe(true);
   });
 
-  it('.agentforge/memory/ exists in this repo', () => {
-    const memDir = join(REPO_ROOT, '.agentforge/memory');
-    expect(existsSync(memDir)).toBe(true);
+  it('.agentforge/memory/ is a documented convention (gitignored - may not exist in fresh checkout)', () => {
+    // `.agentforge/memory/` is runtime state. Fresh verification worktrees may
+    // not contain it, so assert the documented convention instead.
+    const quickstart = readDoc(QUICKSTART_PATH);
+    expect(quickstart).toContain('.agentforge/memory/');
   });
 
   it('.agentforge/agents/ exists in this repo', () => {

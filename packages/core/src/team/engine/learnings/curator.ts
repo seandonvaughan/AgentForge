@@ -21,7 +21,13 @@ import type { CurationInput, CurationResult, ProposedLearning } from "./types.js
 // Constants
 // ---------------------------------------------------------------------------
 
-const MEMORY_TYPES = ["gate-verdict", "review-finding", "cycle-outcome"] as const;
+const MEMORY_TYPES = [
+  "gate-verdict",
+  "review-finding",
+  "cycle-outcome",
+  "learned-fact",
+  "failure-pattern",
+] as const;
 const MIN_SCORE = 0.3;
 const CAP_PER_AGENT = 30;
 const DEFAULT_MAX_ENTRIES = 500;
@@ -249,17 +255,27 @@ function deriveRationale(
 export async function curateLearnings(opts: CurationInput): Promise<CurationResult> {
   const { projectRoot, agentIds, maxEntriesPerSource = DEFAULT_MAX_ENTRIES } = opts;
 
-  // 1. Read all three memory types in parallel
-  const [gateEntries, reviewEntries, cycleEntries] = await Promise.all([
+  // 1. Read all canonical learning memory types in parallel
+  const [
+    gateEntries,
+    reviewEntries,
+    cycleEntries,
+    learnedFactEntries,
+    failurePatternEntries,
+  ] = await Promise.all([
     readMemoryEntries(projectRoot, "gate-verdict"),
     readMemoryEntries(projectRoot, "review-finding"),
     readMemoryEntries(projectRoot, "cycle-outcome"),
+    readMemoryEntries(projectRoot, "learned-fact"),
+    readMemoryEntries(projectRoot, "failure-pattern"),
   ]);
 
   const allMemory: Record<string, MemoryEntry[]> = {
     "gate-verdict": gateEntries.slice(0, maxEntriesPerSource),
     "review-finding": reviewEntries.slice(0, maxEntriesPerSource),
     "cycle-outcome": cycleEntries.slice(0, maxEntriesPerSource),
+    "learned-fact": learnedFactEntries.slice(0, maxEntriesPerSource),
+    "failure-pattern": failurePatternEntries.slice(0, maxEntriesPerSource),
   };
 
   // Build sourcesScanned metadata
@@ -275,6 +291,8 @@ export async function curateLearnings(opts: CurationInput): Promise<CurationResu
     ...allMemory["gate-verdict"]!,
     ...allMemory["review-finding"]!,
     ...allMemory["cycle-outcome"]!,
+    ...allMemory["learned-fact"]!,
+    ...allMemory["failure-pattern"]!,
   ];
 
   // 2. Load agent tags in parallel
@@ -292,6 +310,8 @@ export async function curateLearnings(opts: CurationInput): Promise<CurationResu
     "gate-verdict": 0,
     "review-finding": 0,
     "cycle-outcome": 0,
+    "learned-fact": 0,
+    "failure-pattern": 0,
   };
 
   for (const agentId of agentIds) {

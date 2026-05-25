@@ -281,6 +281,51 @@ learnings:
     expect(learnings).toContain("[CRITICAL] Never expose internal ports in docker-compose.");
   });
 
+  it("admits new learnings when an agent is already capped", async () => {
+    const { writeFile } = await import("node:fs/promises");
+    const existingLessons = Array.from(
+      { length: 12 },
+      (_, i) => `Always preserve existing capped lesson ${i + 1}.`,
+    );
+    const fullYaml = `
+name: Coder
+model: sonnet
+system_prompt: You are the coder.
+learnings:
+${existingLessons.map((lesson) => `  - "${lesson}"`).join("\n")}
+`.trim();
+    await writeFile(join(agentsDir, `${AGENT_B}.yaml`), fullYaml, "utf8");
+
+    const newLessons = Array.from({ length: 3 }, (_, i) =>
+      `Always learn from fresh cycle finding ${i + 1} before the next run.`,
+    );
+    await writeProposed({
+      [AGENT_B]: newLessons.map((lesson, i) =>
+        makeProposal({
+          agentId: AGENT_B,
+          lesson,
+          score: 0.9 - i * 0.01,
+          sourceCreatedAt: "2026-05-20T00:00:00.000Z",
+        }),
+      ),
+    });
+
+    const report = await applyLearnings({ projectRoot: tmpRoot });
+
+    const entry = report.perAgent.find((p) => p.agentId === AGENT_B)!;
+    expect(entry.before).toBe(12);
+    expect(entry.after).toBe(12);
+    expect(entry.added).toEqual(newLessons);
+    expect(entry.capped).toBe(3);
+
+    const data = await readAgentYaml(AGENT_B);
+    const learnings = data["learnings"] as string[];
+    for (const lesson of newLessons) {
+      expect(learnings).toContain(lesson);
+    }
+    expect(learnings.filter((lesson) => existingLessons.includes(lesson))).toHaveLength(9);
+  });
+
   // -------------------------------------------------------------------------
   // T7: dryRun=true does not write any file changes
   // -------------------------------------------------------------------------

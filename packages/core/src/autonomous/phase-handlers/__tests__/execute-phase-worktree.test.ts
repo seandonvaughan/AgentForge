@@ -511,7 +511,7 @@ describe('execute-phase worktree integration', () => {
     expect(checkpoint.completedItemIds).toContain('item-1');
   });
 
-  it('uses a retry-specific worktree session on gate retry', async () => {
+  it('reuses the original worktree session on gate retry', async () => {
     writeSprintFile([
       { id: 'item-1', title: 'Task A', assignee: 'coder', tags: ['coder'] },
     ]);
@@ -524,7 +524,7 @@ describe('execute-phase worktree integration', () => {
 
     expect(pool.allocate).toHaveBeenCalledWith({
       agentId: 'coder',
-      sessionId: 'cycle-wt-1-retry-1',
+      sessionId: 'cycle-wt-1',
     });
   });
 
@@ -565,13 +565,13 @@ describe('execute-phase worktree integration', () => {
     expect(prompt).toContain('Do not broaden the scope');
   });
 
-  it('retries worktree allocation with an alternate session when the retry branch already exists', async () => {
+  it('falls back to a retry-specific worktree session when the original branch cannot be reused', async () => {
     writeSprintFile([
       { id: 'item-1', title: 'Task A', assignee: 'coder', tags: ['coder'] },
     ]);
 
     const allocate = vi.fn().mockImplementation(async (req: { agentId: string; sessionId: string }) => {
-      if (req.sessionId === 'cycle-wt-1-retry-1') {
+      if (req.sessionId === 'cycle-wt-1') {
         throw new Error('fatal: --[no-]track can only be used if a new branch is created');
       }
       return {
@@ -597,10 +597,10 @@ describe('execute-phase worktree integration', () => {
     expect(allocate).toHaveBeenCalledTimes(2);
     expect(allocate).toHaveBeenNthCalledWith(2, {
       agentId: 'coder',
-      sessionId: 'cycle-wt-1-retry-1-resume-1',
+      sessionId: 'cycle-wt-1-retry-1',
     });
     expect(runtime.run).toHaveBeenCalledTimes(1);
-    expect((runtime.run.mock.calls[0]![2] as any).cwd).toBe('/fake/cycle-wt-1-retry-1-resume-1');
+    expect((runtime.run.mock.calls[0]![2] as any).cwd).toBe('/fake/cycle-wt-1-retry-1');
     expect(bus.events.filter((e) => e.topic === 'execute.worktree.alloc-failed')).toHaveLength(0);
   });
 
