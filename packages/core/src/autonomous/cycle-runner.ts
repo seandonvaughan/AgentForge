@@ -447,7 +447,7 @@ export async function collectFilesFromAgentBranches(opts: {
       const { stdout } = await execFileAsync(
         'git',
         ['diff', '--name-only', `origin/${baseBranch}...${branch}`],
-        { cwd, maxBuffer: 10 * 1024 * 1024 },
+        { cwd, timeout: 120_000, maxBuffer: 10 * 1024 * 1024, windowsHide: true },
       );
       const files = stdout
         .toString()
@@ -465,7 +465,12 @@ export async function collectFilesFromAgentBranches(opts: {
 }
 
 const DEFAULT_MULTI_PR_VERIFY_INSTALL_COMMAND =
-  'corepack pnpm install --frozen-lockfile --ignore-scripts --prefer-offline';
+  'corepack pnpm install --frozen-lockfile --prefer-offline';
+
+const REQUIRED_MULTI_PR_VERIFY_BOOTSTRAP_COMMANDS = [
+  'corepack pnpm rebuild better-sqlite3',
+  'corepack pnpm --filter @agentforge/dashboard exec svelte-kit sync',
+] as const;
 
 function readMultiPrBranchRuns(cwd: string, cycleId: string): MultiPrBranchVerificationRun[] {
   const execPath = join(cwd, '.agentforge/cycles', cycleId, 'phases/execute.json');
@@ -504,10 +509,15 @@ function readMultiPrBranchRuns(cwd: string, cycleId: string): MultiPrBranchVerif
   return runs;
 }
 
-function multiPrVerifyCommands(testing: CycleConfig['testing']): string[] {
+export function multiPrVerifyCommands(testing: CycleConfig['testing']): string[] {
+  const installOverride = process.env['AGENTFORGE_MULTI_PR_VERIFY_INSTALL_COMMAND']?.trim();
+  const installCommand = installOverride && installOverride.length > 0
+    ? installOverride
+    : DEFAULT_MULTI_PR_VERIFY_INSTALL_COMMAND;
+
   return [
-    process.env['AGENTFORGE_MULTI_PR_VERIFY_INSTALL_COMMAND']
-      ?? DEFAULT_MULTI_PR_VERIFY_INSTALL_COMMAND,
+    installCommand,
+    ...REQUIRED_MULTI_PR_VERIFY_BOOTSTRAP_COMMANDS,
     testing.buildCommand,
     testing.typeCheckCommand,
     testing.command,
@@ -688,6 +698,15 @@ export async function verifyMultiPrAgentBranches(opts: {
         );
       } catch {
         safeRemoveVerificationWorktree(worktreePath, worktreesRoot);
+        try {
+          await execFileAsync(
+            'git',
+            ['worktree', 'prune'],
+            { cwd: opts.cwd, timeout: 120_000, maxBuffer: 10 * 1024 * 1024, windowsHide: true },
+          );
+        } catch {
+          // Best-effort metadata cleanup only.
+        }
       }
     }
   }
@@ -1661,7 +1680,9 @@ export class CycleRunner {
     try {
       const { stdout } = await execFileAsync('git', ['status', '--porcelain'], {
         cwd: this.options.cwd,
+        timeout: 120_000,
         maxBuffer: 10 * 1024 * 1024,
+        windowsHide: true,
       });
       return stdout
         .toString()

@@ -31,6 +31,7 @@ import { promisify } from 'node:util';
 import { setTimeout as sleep } from 'node:timers/promises';
 import {
   collectFilesFromAgentBranches,
+  multiPrVerifyCommands,
   verificationWorktreeName,
   verifyMultiPrAgentBranches,
 } from '../cycle-runner.js';
@@ -266,6 +267,94 @@ describe('collectFilesFromAgentBranches regression: worktreePool=undefined path'
 });
 
 describe('verifyMultiPrAgentBranches', () => {
+  it('prepares verification worktrees with install scripts and SvelteKit sync', () => {
+    const previous = process.env['AGENTFORGE_MULTI_PR_VERIFY_INSTALL_COMMAND'];
+    delete process.env['AGENTFORGE_MULTI_PR_VERIFY_INSTALL_COMMAND'];
+
+    try {
+      const commands = multiPrVerifyCommands({
+        command: 'corepack pnpm exec vitest run',
+        timeoutMinutes: 1,
+        reporter: 'json',
+        saveRawLog: false,
+        buildCommand: '',
+        typeCheckCommand: '',
+      });
+
+      expect(commands).toEqual([
+        'corepack pnpm install --frozen-lockfile --prefer-offline',
+        'corepack pnpm rebuild better-sqlite3',
+        'corepack pnpm --filter @agentforge/dashboard exec svelte-kit sync',
+        'corepack pnpm exec vitest run',
+      ]);
+      expect(commands.join(' ')).not.toContain('--ignore-scripts');
+    } finally {
+      if (previous === undefined) {
+        delete process.env['AGENTFORGE_MULTI_PR_VERIFY_INSTALL_COMMAND'];
+      } else {
+        process.env['AGENTFORGE_MULTI_PR_VERIFY_INSTALL_COMMAND'] = previous;
+      }
+    }
+  });
+
+  it('treats empty install-command override as unset', () => {
+    const previous = process.env['AGENTFORGE_MULTI_PR_VERIFY_INSTALL_COMMAND'];
+    process.env['AGENTFORGE_MULTI_PR_VERIFY_INSTALL_COMMAND'] = '';
+
+    try {
+      const commands = multiPrVerifyCommands({
+        command: 'node --version',
+        timeoutMinutes: 1,
+        reporter: 'json',
+        saveRawLog: false,
+        buildCommand: '',
+        typeCheckCommand: '',
+      });
+
+      expect(commands).toEqual([
+        'corepack pnpm install --frozen-lockfile --prefer-offline',
+        'corepack pnpm rebuild better-sqlite3',
+        'corepack pnpm --filter @agentforge/dashboard exec svelte-kit sync',
+        'node --version',
+      ]);
+    } finally {
+      if (previous === undefined) {
+        delete process.env['AGENTFORGE_MULTI_PR_VERIFY_INSTALL_COMMAND'];
+      } else {
+        process.env['AGENTFORGE_MULTI_PR_VERIFY_INSTALL_COMMAND'] = previous;
+      }
+    }
+  });
+
+  it('keeps required bootstrap commands when the install command is overridden', () => {
+    const previous = process.env['AGENTFORGE_MULTI_PR_VERIFY_INSTALL_COMMAND'];
+    process.env['AGENTFORGE_MULTI_PR_VERIFY_INSTALL_COMMAND'] = 'corepack pnpm install --offline';
+
+    try {
+      const commands = multiPrVerifyCommands({
+        command: 'node --version',
+        timeoutMinutes: 1,
+        reporter: 'json',
+        saveRawLog: false,
+        buildCommand: '',
+        typeCheckCommand: '',
+      });
+
+      expect(commands).toEqual([
+        'corepack pnpm install --offline',
+        'corepack pnpm rebuild better-sqlite3',
+        'corepack pnpm --filter @agentforge/dashboard exec svelte-kit sync',
+        'node --version',
+      ]);
+    } finally {
+      if (previous === undefined) {
+        delete process.env['AGENTFORGE_MULTI_PR_VERIFY_INSTALL_COMMAND'];
+      } else {
+        process.env['AGENTFORGE_MULTI_PR_VERIFY_INSTALL_COMMAND'] = previous;
+      }
+    }
+  });
+
   it('uses short deterministic verification worktree names', () => {
     const cycleId = 'aaae9534-72c7-494b-85e1-b5eab6593c25';
     const branch = 'codex/agent-executor-runtime-engineer-aaae9534-72c7-494b-85e1-b5eab6593c25';
