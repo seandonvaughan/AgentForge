@@ -798,11 +798,12 @@ export class WorkspaceAdapter {
   }
 
   startRuntimeJob(id: string, startedAt = nowIso()): RuntimeJobRow | undefined {
-    this.db.prepare(`
+    const result = this.db.prepare(`
       UPDATE runtime_jobs
       SET status = 'running', started_at = COALESCE(started_at, ?), updated_at = ?
-      WHERE id = ? AND status IN ('queued', 'running')
+      WHERE id = ? AND status = 'queued'
     `).run(startedAt, startedAt, id);
+    if (result.changes === 0) return undefined;
     return this.getRuntimeJob(id);
   }
 
