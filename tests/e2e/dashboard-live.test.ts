@@ -246,6 +246,23 @@ test.describe('Live Feed Page (/live)', () => {
     await expect(page.locator('.empty-state')).toContainText(/waiting for events/i);
   });
 
+  test('renders unknown event types without crashing filter and feed state', async ({ page }) => {
+    await page.goto('/live');
+    await waitForLiveSource(page);
+
+    await emitEvent(page, {
+      id: 'evt-unknown-1',
+      type: 'unexpected_event',
+      category: 'adversarial',
+      message: 'unknown event type payload',
+      timestamp: '2026-04-07T10:01:00.000Z',
+    });
+
+    await expect(page.locator('.feed-row')).toHaveCount(1);
+    await expect(page.locator('.feed-row .feed-msg')).toContainText('unknown event type payload');
+    await expect(page.locator('.event-count')).toContainText('1 events');
+  });
+
   test('shows refresh banner when refresh_signal arrives', async ({ page }) => {
     await page.goto('/live');
     await waitForLiveSource(page);

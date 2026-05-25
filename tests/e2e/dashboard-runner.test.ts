@@ -248,6 +248,34 @@ test.describe('Runner Page', () => {
     await expect(page.locator('.output-pre')).not.toContainText('poison');
   });
 
+  test('ignores terminal workflow events for a different session', async ({ page }) => {
+    await openRunner(page, { sessionId: 'run-target-2' });
+
+    await page.fill('#task-input', 'Ignore stale completion events');
+    await page.click('button:has-text("Run Agent")');
+    await expect(page.locator('.running-indicator')).toBeVisible();
+
+    await emitSse(page, {
+      type: 'workflow_event',
+      category: 'run',
+      message: '[coder] stale run failed',
+      data: { sessionId: 'run-other-2', status: 'failed', error: 'stale failure' },
+    });
+
+    await expect(page.locator('.running-indicator')).toBeVisible();
+    await expect(page.locator('.banner--danger')).toHaveCount(0);
+
+    await emitSse(page, {
+      type: 'workflow_event',
+      category: 'run',
+      message: '[coder] target run completed',
+      data: { sessionId: 'run-target-2', status: 'completed' },
+    });
+
+    await expect(page.locator('.running-indicator')).toHaveCount(0);
+    await expect(page.locator('.history-item').first()).toContainText('completed');
+  });
+
   test('marks run failed when workflow event reports failure', async ({ page }) => {
     await openRunner(page, { sessionId: 'run-fail-1' });
 

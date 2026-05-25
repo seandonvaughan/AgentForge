@@ -15,6 +15,16 @@ function createHarnessWithFailures(failingLeafCommands: Set<string>) {
 }
 
 describe('dashboard verification adversarial guards', () => {
+  it('pins critical dashboard e2e coverage in test:e2e:dashboard', () => {
+    const scripts = loadRootScripts();
+    const dashboardSuite = scripts['test:e2e:dashboard'];
+
+    expect(typeof dashboardSuite).toBe('string');
+    expect(dashboardSuite).toContain('tests/e2e/dashboard-runner.test.ts');
+    expect(dashboardSuite).toContain('tests/e2e/dashboard-live.test.ts');
+    expect(dashboardSuite).toContain('tests/e2e/dashboard-health.test.ts');
+  });
+
   it('fails verify:dashboard fast when dashboard check fails', async () => {
     const { harness, trace } = createHarnessWithFailures(
       new Set(['pnpm --filter @agentforge/dashboard check']),
@@ -39,6 +49,24 @@ describe('dashboard verification adversarial guards', () => {
       'pnpm --filter @agentforge/dashboard build',
     ]);
     expect(trace).toEqual(result.trace);
+  });
+
+  it('keeps dashboard e2e after vitest in verify:product', async () => {
+    const { harness } = createHarnessWithFailures(new Set());
+
+    const result = await harness.run('verify:product');
+
+    expect(result.ok).toBe(true);
+    const vitestIndex = result.trace.indexOf('vitest run');
+    const dashboardE2eIndex = result.trace.findIndex((command) =>
+      command.includes('playwright test tests/e2e/dashboard-agents.test.ts'),
+    );
+    expect(vitestIndex).toBeGreaterThanOrEqual(0);
+    expect(dashboardE2eIndex).toBeGreaterThan(vitestIndex);
+    const dashboardE2eCommand = result.trace[dashboardE2eIndex] ?? '';
+    expect(dashboardE2eCommand).toContain('tests/e2e/dashboard-runner.test.ts');
+    expect(dashboardE2eCommand).toContain('tests/e2e/dashboard-live.test.ts');
+    expect(dashboardE2eCommand).toContain('tests/e2e/dashboard-health.test.ts');
   });
 
   it('propagates dashboard verification failure into verify:gates and aborts post-check steps', async () => {
