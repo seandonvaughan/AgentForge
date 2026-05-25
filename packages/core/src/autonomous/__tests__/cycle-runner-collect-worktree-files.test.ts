@@ -283,7 +283,7 @@ describe('verifyMultiPrAgentBranches', () => {
 
       expect(commands).toEqual([
         'corepack pnpm install --frozen-lockfile --prefer-offline',
-        'corepack pnpm rebuild better-sqlite3',
+        'node -e "require(\'better-sqlite3\'); console.log(\'better-sqlite3 ok\')"',
         'corepack pnpm --filter @agentforge/dashboard exec svelte-kit sync',
         'corepack pnpm exec vitest run',
       ]);
@@ -313,7 +313,7 @@ describe('verifyMultiPrAgentBranches', () => {
 
       expect(commands).toEqual([
         'corepack pnpm install --frozen-lockfile --prefer-offline',
-        'corepack pnpm rebuild better-sqlite3',
+        'node -e "require(\'better-sqlite3\'); console.log(\'better-sqlite3 ok\')"',
         'corepack pnpm --filter @agentforge/dashboard exec svelte-kit sync',
         'node --version',
       ]);
@@ -342,7 +342,7 @@ describe('verifyMultiPrAgentBranches', () => {
 
       expect(commands).toEqual([
         'corepack pnpm install --offline',
-        'corepack pnpm rebuild better-sqlite3',
+        'node -e "require(\'better-sqlite3\'); console.log(\'better-sqlite3 ok\')"',
         'corepack pnpm --filter @agentforge/dashboard exec svelte-kit sync',
         'node --version',
       ]);

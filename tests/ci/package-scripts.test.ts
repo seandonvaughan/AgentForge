@@ -35,7 +35,7 @@ describe('package scripts', () => {
     );
   });
 
-  it('stops verify:gates before dashboard checks when build fails', async () => {
+  it('stops verify:gates before dashboard checks when verify:product typecheck fails', async () => {
     const scripts = loadRootScripts();
     const harness = new ScriptPipelineHarness(scripts, (command) => {
       return command === 'tsc -b' ? 1 : 0;
@@ -44,7 +44,7 @@ describe('package scripts', () => {
     const result = await harness.run('verify:gates');
 
     expect(result.ok).toBe(false);
-    expect(result.failedScript).toBe('build');
+    expect(result.failedScript).toBe('check:types');
     expect(result.failedCommand).toBe('tsc -b');
     const lintCommand = result.trace.find((command) => command.startsWith('eslint '));
     expect(lintCommand).toBeDefined();
@@ -76,22 +76,15 @@ describe('package scripts', () => {
     );
   });
 
-  it('stops verify:gates before dashboard checks when verify:product typecheck fails', async () => {
+  it('runs typecheck exactly once during verify:gates', async () => {
     const scripts = loadRootScripts();
-    let typecheckRuns = 0;
-    const harness = new ScriptPipelineHarness(scripts, (command) => {
-      if (command !== 'tsc -b') return 0;
-      typecheckRuns += 1;
-      return typecheckRuns === 2 ? 1 : 0;
-    });
+    const harness = new ScriptPipelineHarness(scripts, () => 0);
 
     const result = await harness.run('verify:gates');
 
-    expect(result.ok).toBe(false);
-    expect(result.failedScript).toBe('check:types');
-    expect(result.failedCommand).toBe('tsc -b');
-    expect(result.trace).not.toContain('pnpm --filter @agentforge/dashboard check');
-    expect(result.trace).not.toContain('pnpm --filter @agentforge/dashboard build');
+    expect(result.ok).toBe(true);
+    const typecheckRuns = result.trace.filter((command) => command === 'tsc -b');
+    expect(typecheckRuns).toHaveLength(1);
   });
 
   it('stops verify:product before dashboard e2e when unit tests fail', async () => {

@@ -468,7 +468,7 @@ const DEFAULT_MULTI_PR_VERIFY_INSTALL_COMMAND =
   'corepack pnpm install --frozen-lockfile --prefer-offline';
 
 const REQUIRED_MULTI_PR_VERIFY_BOOTSTRAP_COMMANDS = [
-  'corepack pnpm rebuild better-sqlite3',
+  'node -e "require(\'better-sqlite3\'); console.log(\'better-sqlite3 ok\')"',
   'corepack pnpm --filter @agentforge/dashboard exec svelte-kit sync',
 ] as const;
 
