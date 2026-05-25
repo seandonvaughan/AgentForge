@@ -75,18 +75,26 @@ interface TeamUnit {
   [key: string]: unknown;
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
 function loadTeams(): TeamUnit[] {
   const teamsPath = join(PROJECT_ROOT, '.agentforge', 'config', 'teams.yaml');
   if (existsSync(teamsPath)) {
     const raw = readFileSync(teamsPath, 'utf-8');
     const parsed = yaml.load(raw);
     if (Array.isArray(parsed)) return parsed as TeamUnit[];
+    const record = asRecord(parsed);
+    if (Array.isArray(record.team_units)) return record.team_units as TeamUnit[];
   }
   const teamYamlPath = join(PROJECT_ROOT, '.agentforge', 'team.yaml');
   if (existsSync(teamYamlPath)) {
     const raw = readFileSync(teamYamlPath, 'utf-8');
-    const manifest = yaml.load(raw) as { team_units?: TeamUnit[] };
-    return manifest.team_units ?? [];
+    const manifest = asRecord(yaml.load(raw));
+    if (Array.isArray(manifest.team_units)) return manifest.team_units as TeamUnit[];
   }
   return [];
 }

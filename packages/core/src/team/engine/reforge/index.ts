@@ -312,21 +312,30 @@ export async function reforgeTeam(projectRoot: string): Promise<TeamDiff> {
 
   // 2. Read existing team manifest
   let oldManifest: TeamManifest;
+  let rawTeamManifest: string;
   try {
-    const raw = await readFile(teamPath, "utf-8");
-    oldManifest = yaml.load(raw) as TeamManifest;
+    rawTeamManifest = await readFile(teamPath, "utf-8");
   } catch {
     throw new Error(
       "No existing team manifest found. Run 'agentforge forge' first.",
     );
   }
+  const loaded = yaml.load(rawTeamManifest);
+  if (!loaded || typeof loaded !== "object" || Array.isArray(loaded)) {
+    throw new Error("team.yaml must contain a YAML mapping");
+  }
+  oldManifest = loaded as TeamManifest;
 
   // 2b. Auto-migrate v1 manifests that are missing v2 fields
   if (!oldManifest.domains || !oldManifest.collaboration || !oldManifest.project_brief) {
     await migrateV1ToV2(projectRoot);
     // Re-read the updated manifest
-    const raw = await readFile(teamPath, "utf-8");
-    oldManifest = yaml.load(raw) as TeamManifest;
+    const migratedRaw = await readFile(teamPath, "utf-8");
+    const migrated = yaml.load(migratedRaw);
+    if (!migrated || typeof migrated !== "object" || Array.isArray(migrated)) {
+      throw new Error("team.yaml must contain a YAML mapping");
+    }
+    oldManifest = migrated as TeamManifest;
   }
 
   // 3. Run a fresh scan

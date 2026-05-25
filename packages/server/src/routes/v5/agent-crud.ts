@@ -105,7 +105,11 @@ interface PromoteBody {
 // ---------------------------------------------------------------------------
 
 function readYaml<T>(filePath: string): T {
-  return yaml.load(readFileSync(filePath, 'utf-8')) as T;
+  const parsed = yaml.load(readFileSync(filePath, 'utf-8'));
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`Expected YAML mapping in ${filePath}`);
+  }
+  return parsed as T;
 }
 
 function writeYaml(filePath: string, data: unknown): void {
