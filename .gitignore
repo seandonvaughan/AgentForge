@@ -89,3 +89,4 @@ dashboard-v*-export.zip
 .agentforge/run-logs/
 .agentforge/tmp/
 .agentforge/_archive-*/
+.agentforge/loop-state.json
