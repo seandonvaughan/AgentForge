@@ -458,6 +458,19 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
     }
   } catch (err) {
     const e = err as Error;
+    // Cross-cycle loop guard (safeguard #1): a clean HALT, not a crash. Exit 3
+    // so an external repeat-invoker can distinguish "stop spinning" from a
+    // genuine cycle error (exit 1) and stop the chain.
+    if (e.name === 'LoopHaltedError') {
+      console.error(`\n[cycle] HALTED by loop guard: ${e.message}`);
+      console.error(
+        '[cycle] No cycle was started — this prevents unproductive spinning. ' +
+          'Investigate the most recent cycle, then delete or reset ' +
+          '.agentforge/loop-state.json to resume.',
+      );
+      process.exitCode = 3;
+      return;
+    }
     console.error(`[cycle] error: ${e.message}`);
     if (e.stack) console.error(e.stack);
     process.exitCode = 1;

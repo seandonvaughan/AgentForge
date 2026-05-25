@@ -43,6 +43,7 @@ import {
   PhaseFailedError,
 } from './types.js';
 import { GateRejectedError } from './phase-handlers/gate-phase.js';
+import { assertLoopNotHalted, persistCycleOutcome } from './loop-guard.js';
 import type { CycleConfig, CycleResult, KillSwitchTrip } from './types.js';
 import {
   ProposalToBacklog,
@@ -798,6 +799,21 @@ export class CycleRunner {
     }
     // === end wave5:T5 ===
 
+    // === safeguard #1 === Cross-cycle loop guard — prevents the multi-day spin.
+    // If the previous N cycles all failed to complete, HALT before starting
+    // another one. State persists in .agentforge/loop-state.json and is updated
+    // at the end of every cycle below. Override the threshold with
+    // AGENTFORGE_MAX_FAILED_CYCLES (default 3). Throws LoopHaltedError so an
+    // external repeat-invoker sees a non-zero exit and stops re-spinning.
+    {
+      const envMax = Number(process.env['AGENTFORGE_MAX_FAILED_CYCLES']);
+      assertLoopNotHalted(this.options.cwd, {
+        maxConsecutiveFailedCycles:
+          Number.isFinite(envMax) && envMax > 0 ? Math.floor(envMax) : 3,
+      });
+    }
+    // === end safeguard #1 ===
+
     let final: CycleResult;
     // Heartbeat: every 30s, stamp lastHeartbeatAt on cycle.json so dashboards
     // can detect runners that died at the OS level (SIGKILL/OOM/terminal-close)
@@ -852,6 +868,18 @@ export class CycleRunner {
       // result. The operator will see the missing file and know something
       // catastrophic happened to the logger itself.
     }
+
+    // === safeguard #1 === Record this cycle's outcome for the cross-cycle guard
+    // so the next start() can HALT if the loop is failing repeatedly.
+    try {
+      persistCycleOutcome(this.options.cwd, {
+        cycleId: this.cycleId,
+        completed: final.stage === CycleStage.COMPLETED,
+      });
+    } catch {
+      // Guard bookkeeping must never fail or alter a cycle's own result.
+    }
+    // === end safeguard #1 ===
 
     if (this.shouldRunAutoReforgeAfterTerminalResult(final)) {
       await this.runAutoReforgeStep();
