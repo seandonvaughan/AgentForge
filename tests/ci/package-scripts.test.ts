@@ -28,6 +28,9 @@ describe('package scripts', () => {
     const result = await harness.run('verify:product');
 
     expect(result.ok).toBe(true);
+    expect(result.trace.indexOf(
+      'vitest run tests/ci/dashboard-adversarial-guards.test.ts packages/server/src/routes/v5/__tests__/flywheel.test.ts packages/server/src/routes/v5/__tests__/search.test.ts',
+    )).toBeGreaterThanOrEqual(0);
     expect(result.trace.indexOf('tsc -b')).toBeGreaterThanOrEqual(0);
     expect(result.trace.indexOf('pnpm exec tsc -b --noEmit')).toBeGreaterThanOrEqual(0);
     expect(result.trace.indexOf('vitest run')).toBeGreaterThanOrEqual(0);
@@ -37,6 +40,9 @@ describe('package scripts', () => {
     expect(result.trace.indexOf('pnpm exec tsc -b --noEmit')).toBeLessThan(
       result.trace.indexOf('vitest run'),
     );
+    expect(result.trace.indexOf(
+      'vitest run tests/ci/dashboard-adversarial-guards.test.ts packages/server/src/routes/v5/__tests__/flywheel.test.ts packages/server/src/routes/v5/__tests__/search.test.ts',
+    )).toBeLessThan(result.trace.indexOf('vitest run'));
   });
 
   it('stops verify:gates before dashboard checks when build fails', async () => {
@@ -74,7 +80,32 @@ describe('package scripts', () => {
     expect(result.failedCommand).toBe('vitest run');
     expect(result.trace).toContain('tsc -b');
     expect(result.trace).toContain('pnpm exec tsc -b --noEmit');
+    expect(result.trace).toContain(
+      'vitest run tests/ci/dashboard-adversarial-guards.test.ts packages/server/src/routes/v5/__tests__/flywheel.test.ts packages/server/src/routes/v5/__tests__/search.test.ts',
+    );
     expect(result.trace).toContain('vitest run');
+    expect(result.trace.some((command) => command.startsWith('playwright test'))).toBe(
+      false,
+    );
+  });
+
+  it('stops verify:product before unit tests when adversarial gate fails', async () => {
+    const scripts = loadRootScripts();
+    const harness = new ScriptPipelineHarness(scripts, (command) => {
+      return command ===
+        'vitest run tests/ci/dashboard-adversarial-guards.test.ts packages/server/src/routes/v5/__tests__/flywheel.test.ts packages/server/src/routes/v5/__tests__/search.test.ts'
+        ? 1
+        : 0;
+    });
+
+    const result = await harness.run('verify:product');
+
+    expect(result.ok).toBe(false);
+    expect(result.failedScript).toBe('test:adversarial');
+    expect(result.failedCommand).toBe(
+      'vitest run tests/ci/dashboard-adversarial-guards.test.ts packages/server/src/routes/v5/__tests__/flywheel.test.ts packages/server/src/routes/v5/__tests__/search.test.ts',
+    );
+    expect(result.trace).not.toContain('vitest run');
     expect(result.trace.some((command) => command.startsWith('playwright test'))).toBe(
       false,
     );

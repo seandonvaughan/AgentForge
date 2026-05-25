@@ -37,6 +37,7 @@ describe('dashboard verification adversarial guards', () => {
     expect(result.trace).toEqual([
       'pnpm --filter @agentforge/dashboard check',
       'pnpm --filter @agentforge/dashboard build',
+      'playwright test tests/e2e/dashboard-runner.test.ts tests/e2e/dashboard-live.test.ts tests/e2e/dashboard-health.test.ts tests/e2e/dashboard-flywheel.test.ts tests/e2e/dashboard-sprint-regression.test.ts',
     ]);
     expect(trace).toEqual(result.trace);
   });
@@ -58,9 +59,28 @@ describe('dashboard verification adversarial guards', () => {
     expect(result.trace).toContain('node scripts/check-version-sync.mjs');
     expect(result.trace).toContain('tsc -b');
     expect(result.trace).toContain('pnpm --filter @agentforge/dashboard check');
+    expect(result.trace).not.toContain(
+      'playwright test tests/e2e/dashboard-runner.test.ts tests/e2e/dashboard-live.test.ts tests/e2e/dashboard-health.test.ts tests/e2e/dashboard-flywheel.test.ts tests/e2e/dashboard-sprint-regression.test.ts',
+    );
     expect(result.trace).not.toContain('node scripts/check-help-output.mjs');
     expect(result.trace).not.toContain('node scripts/check-changelog.mjs');
     expect(result.trace).not.toContain('pnpm audit --audit-level low');
+    expect(trace).toEqual(result.trace);
+  });
+
+  it('stops verify:dashboard before regression e2e when dashboard build fails', async () => {
+    const { harness, trace } = createHarnessWithFailures(
+      new Set(['pnpm --filter @agentforge/dashboard build']),
+    );
+
+    const result = await harness.run('verify:dashboard');
+
+    expect(result.ok).toBe(false);
+    expect(result.failedCommand).toBe('pnpm --filter @agentforge/dashboard build');
+    expect(result.trace).toEqual([
+      'pnpm --filter @agentforge/dashboard check',
+      'pnpm --filter @agentforge/dashboard build',
+    ]);
     expect(trace).toEqual(result.trace);
   });
 });
