@@ -246,6 +246,24 @@ test.describe('Live Feed Page (/live)', () => {
     await expect(page.locator('.empty-state')).toContainText(/waiting for events/i);
   });
 
+  test('ignores valid JSON scalar stream payloads without dropping subsequent events', async ({ page }) => {
+    await page.goto('/live');
+    await waitForLiveSource(page);
+
+    await emitRaw(page, '42');
+    await emitRaw(page, '"scalar payload"');
+
+    await emitEvent(page, {
+      id: 'evt-after-scalar',
+      type: 'cycle_event',
+      category: 'phase.complete',
+      message: 'event after scalar payloads',
+      timestamp: '2026-04-07T10:00:03.000Z',
+    });
+
+    await expect(page.getByText('event after scalar payloads')).toBeVisible();
+  });
+
   test('shows refresh banner when refresh_signal arrives', async ({ page }) => {
     await page.goto('/live');
     await waitForLiveSource(page);

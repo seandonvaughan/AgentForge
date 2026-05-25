@@ -248,6 +248,26 @@ test.describe('Runner Page', () => {
     await expect(page.locator('.output-pre')).not.toContainText('poison');
   });
 
+  test('ignores valid JSON scalar SSE payloads and keeps stream processing active', async ({ page }) => {
+    await openRunner(page, { sessionId: 'run-json-scalar-1' });
+
+    await page.fill('#task-input', 'Ignore scalar stream payloads');
+    await page.click('button:has-text("Run Agent")');
+
+    await emitRawSse(page, '42');
+    await emitRawSse(page, '"scalar payload"');
+    await expect(page.locator('.output-pre')).toHaveCount(0);
+
+    await emitSse(page, {
+      type: 'agent_activity',
+      category: 'run',
+      message: '[coder] target session',
+      data: { sessionId: 'run-json-scalar-1', content: 'still streaming' },
+    });
+
+    await expect(page.locator('.output-pre')).toContainText('still streaming');
+  });
+
   test('marks run failed when workflow event reports failure', async ({ page }) => {
     await openRunner(page, { sessionId: 'run-fail-1' });
 

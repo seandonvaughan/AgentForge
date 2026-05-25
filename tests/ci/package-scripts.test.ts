@@ -4,6 +4,8 @@ import {
   loadRootScripts,
 } from './script-pipeline-harness.js';
 
+const ADVERSARIAL_REGRESSION_COMMAND = 'vitest run tests/ci/dashboard-adversarial-guards.test.ts tests/ci/package-scripts.test.ts packages/server/src/routes/v5/__tests__/flywheel.test.ts packages/server/src/routes/v5/__tests__/search.test.ts';
+
 describe('package scripts', () => {
   it('stops verify:product before tests when typecheck fails', async () => {
     const scripts = loadRootScripts();
@@ -75,6 +77,47 @@ describe('package scripts', () => {
     expect(result.trace).toContain('tsc -b');
     expect(result.trace).toContain('pnpm exec tsc -b --noEmit');
     expect(result.trace).toContain('vitest run');
+    expect(result.trace).not.toContain(ADVERSARIAL_REGRESSION_COMMAND);
+    expect(result.trace.some((command) => command.startsWith('playwright test'))).toBe(
+      false,
+    );
+  });
+
+  it('runs adversarial regression suite after unit tests and before dashboard e2e', async () => {
+    const scripts = loadRootScripts();
+    const harness = new ScriptPipelineHarness(scripts, () => 0);
+
+    const result = await harness.run('verify:product');
+
+    expect(result.ok).toBe(true);
+    expect(result.trace.indexOf('vitest run')).toBeGreaterThanOrEqual(0);
+    expect(result.trace.indexOf(ADVERSARIAL_REGRESSION_COMMAND)).toBeGreaterThanOrEqual(
+      0,
+    );
+    expect(result.trace.some((command) => command.startsWith('playwright test'))).toBe(
+      true,
+    );
+    expect(result.trace.indexOf('vitest run')).toBeLessThan(
+      result.trace.indexOf(ADVERSARIAL_REGRESSION_COMMAND),
+    );
+    expect(result.trace.indexOf(ADVERSARIAL_REGRESSION_COMMAND)).toBeLessThan(
+      result.trace.findIndex((command) => command.startsWith('playwright test')),
+    );
+  });
+
+  it('stops verify:product before dashboard e2e when adversarial regression suite fails', async () => {
+    const scripts = loadRootScripts();
+    const harness = new ScriptPipelineHarness(scripts, (command) => {
+      return command === ADVERSARIAL_REGRESSION_COMMAND ? 1 : 0;
+    });
+
+    const result = await harness.run('verify:product');
+
+    expect(result.ok).toBe(false);
+    expect(result.failedScript).toBe('test:regression:adversarial');
+    expect(result.failedCommand).toBe(ADVERSARIAL_REGRESSION_COMMAND);
+    expect(result.trace).toContain('vitest run');
+    expect(result.trace).toContain(ADVERSARIAL_REGRESSION_COMMAND);
     expect(result.trace.some((command) => command.startsWith('playwright test'))).toBe(
       false,
     );
