@@ -80,6 +80,16 @@ describe('package scripts', () => {
     );
   });
 
+  it('does not run duplicate TypeScript builds in verify:gates', async () => {
+    const scripts = loadRootScripts();
+    const harness = new ScriptPipelineHarness(scripts, () => 0);
+
+    const result = await harness.run('verify:gates');
+
+    expect(result.ok).toBe(true);
+    expect(result.trace.filter((command) => command === 'tsc -b')).toHaveLength(1);
+  });
+
   it('stops verify:gates before dashboard checks when verify:product typecheck fails', async () => {
     const scripts = loadRootScripts();
     const harness = new ScriptPipelineHarness(scripts, (command) => {
