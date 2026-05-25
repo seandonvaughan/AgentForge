@@ -1498,6 +1498,15 @@ Your job: use the Read, Write, Edit, Bash, Glob, and Grep tools to make the code
 
 Tooling: use \`corepack pnpm\` for every package/test command in this repo. Do not use bare \`pnpm\` or \`npx\`. If the isolated worktree is missing installed workspace links, run \`corepack pnpm install --frozen-lockfile\` before targeted tests. Prefer targeted checks first, for example \`corepack pnpm exec vitest run <test-file>\`, then broader checks when risk warrants it.
 
+## Scope — keep the diff minimal
+Produce the smallest diff that resolves this item. Do not refactor, reformat, or "improve" unrelated code, and do not touch files outside this item's scope. Add or adjust at least one test that fails without your change and passes with it.
+
+## Self-verify before you report done
+Before you report completion you MUST verify your own work and paste the passing output:
+1. Type-check the affected package(s): \`corepack pnpm exec tsc -b --noEmit\`
+2. Run the targeted tests you added or touched: \`corepack pnpm exec vitest run <files>\`
+If either check fails, fix it before finishing. Never report done on unverified work.
+
 Work efficiently. Report what you changed when done.${selfEvalSec}`;
 
   if (attempt > 0 && lastError) {
