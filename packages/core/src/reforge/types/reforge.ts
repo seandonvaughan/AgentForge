@@ -143,6 +143,14 @@ export interface CanaryDeploymentRecord {
 export interface CanaryRoutingContext {
   requestId?: string;
   headerValue?: string;
+  outcomeToken?: string;
+}
+
+/** Context passed when reporting a canary outcome. */
+export interface CanaryOutcomeOptions {
+  requestId?: string;
+  outcomeToken?: string;
+  source?: string;
 }
 
 /** Outcome counters for a staged canary deployment. */
