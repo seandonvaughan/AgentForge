@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { encode, encodeBatch, EMBEDDING_DIMS } from './encoder.js';
-import { topK } from './similarity.js';
+import { topK, topKAsync } from './similarity.js';
 import type { EmbeddingDocument, EmbeddingResult, EmbeddingSearchOptions, EmbeddingStats } from './types.js';
 
 const DDL = `
@@ -22,15 +22,21 @@ type CacheEntry = {
   vec: Float32Array;
   content: string;
   metadata?: Record<string, unknown>;
+  workspaceId?: string;
 };
 
-function withOptionalMetadata<T extends { metadata?: Record<string, unknown> }>(
-  value: Omit<T, 'metadata'>,
+const ASYNC_SEARCH_THRESHOLD = 10_000;
+const ASYNC_BATCH_SIZE = 2_048;
+
+function withOptionalFields<T extends { metadata?: Record<string, unknown>; workspaceId?: string }>(
+  value: Omit<T, 'metadata' | 'workspaceId'>,
   metadata: Record<string, unknown> | undefined,
+  workspaceId: string | undefined,
 ): T {
   return {
     ...value,
     ...(metadata !== undefined ? { metadata } : {}),
+    ...(workspaceId !== undefined ? { workspaceId } : {}),
   } as T;
 }
 
@@ -60,9 +66,10 @@ export class EmbeddingStore {
 
     this.cache.set(
       doc.id,
-      withOptionalMetadata<CacheEntry>(
+      withOptionalFields<CacheEntry>(
         { id: doc.id, vec, content: doc.content },
         doc.metadata,
+        doc.workspaceId,
       ),
     );
     return vec;
@@ -94,9 +101,10 @@ export class EmbeddingStore {
         );
         this.cache.set(
           doc.id,
-          withOptionalMetadata<CacheEntry>(
+          withOptionalFields<CacheEntry>(
             { id: doc.id, vec, content: doc.content },
             doc.metadata,
+            doc.workspaceId,
           ),
         );
       }
@@ -136,10 +144,13 @@ export class EmbeddingStore {
 
     const queryVec = await encode(query);
 
-    // Filter pool by workspace if specified
     const pool = workspaceId
-      ? [...this.cache.values()].filter(() => true) // workspace filter simplified; production should query db
+      ? [...this.cache.values()].filter(doc => doc.workspaceId === workspaceId)
       : [...this.cache.values()];
+
+    if (pool.length > ASYNC_SEARCH_THRESHOLD) {
+      return topKAsync(queryVec, pool, k, minScore, ASYNC_BATCH_SIZE);
+    }
 
     return topK(queryVec, pool, k, minScore);
   }
@@ -169,8 +180,8 @@ export class EmbeddingStore {
 
   private _loadCache(): void {
     const rows = this.db
-      .prepare('SELECT id, content, metadata, vector FROM embeddings')
-      .all() as Array<{ id: string; content: string; metadata: string; vector: Buffer }>;
+      .prepare('SELECT id, content, workspace_id, metadata, vector FROM embeddings')
+      .all() as Array<{ id: string; content: string; workspace_id: string | null; metadata: string; vector: Buffer }>;
     for (const row of rows) {
       const vec = new Float32Array(row.vector.buffer, row.vector.byteOffset, row.vector.byteLength / 4);
       let metadata: Record<string, unknown> | undefined;
@@ -184,9 +195,10 @@ export class EmbeddingStore {
       }
       this.cache.set(
         row.id,
-        withOptionalMetadata<CacheEntry>(
+        withOptionalFields<CacheEntry>(
           { id: row.id, vec, content: row.content },
           metadata,
+          row.workspace_id ?? undefined,
         ),
       );
     }
