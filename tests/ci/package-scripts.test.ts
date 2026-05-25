@@ -35,6 +35,15 @@ describe('package scripts', () => {
     );
   });
 
+  it('keeps verify:product on the reduced dashboard e2e selector', () => {
+    const scripts = loadRootScripts();
+    const verifyProduct = scripts['verify:product'];
+
+    expect(verifyProduct).toContain('pnpm test:e2e:dashboard');
+    expect(verifyProduct).not.toContain('test:e2e:dashboard:full');
+    expect(verifyProduct).not.toContain('dashboard-agents.test.ts');
+  });
+
   it('stops verify:gates before dashboard checks when verify:product typecheck fails', async () => {
     const scripts = loadRootScripts();
     const harness = new ScriptPipelineHarness(scripts, (command) => {
