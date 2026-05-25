@@ -341,12 +341,11 @@ export class ReforgeEngine {
       };
     }
 
-    const hasOptions = Object.keys(options).length > 0;
-    const hasCorrelation = Boolean(options.requestId?.trim() || options.outcomeToken?.trim());
-    if (hasOptions && !hasCorrelation) {
+    const correlation = this.normalizeCanaryCorrelation(options);
+    if (!correlation.requestId && !correlation.outcomeToken) {
       return { deployment, ignored: "missing-correlation" };
     }
-    if (hasCorrelation && !this.consumePendingCanaryOutcome(agentName, deployment, options)) {
+    if (!this.consumePendingCanaryOutcome(agentName, deployment, correlation)) {
       return { deployment, ignored: "no-pending-canary-outcome" };
     }
 
@@ -513,23 +512,29 @@ export class ReforgeEngine {
     deployment: CanaryDeploymentRecord,
     context: CanaryRoutingContext,
   ): void {
-    if (!context.requestId && !context.outcomeToken) {
+    const correlation = this.normalizeCanaryCorrelation(context);
+    if (!correlation.requestId && !correlation.outcomeToken) {
       return;
     }
 
-    const keys = this.pendingOutcomeKeys(agentName, deployment.flagId, context);
+    const keys = this.pendingOutcomeKeys(agentName, deployment.flagId, correlation);
     const existing = keys
       .map((key) => this.pendingCanaryOutcomes.get(key))
       .find((entry): entry is PendingCanaryOutcome => entry !== undefined);
 
     if (existing) {
-      if (!existing.requestId && context.requestId) {
-        existing.requestId = context.requestId;
+      if (!this.pendingCanaryOutcomeCompatible(existing, correlation)) {
+        return;
       }
-      if (!existing.outcomeToken && context.outcomeToken) {
-        existing.outcomeToken = context.outcomeToken;
+
+      if (!existing.requestId && correlation.requestId) {
+        existing.requestId = correlation.requestId;
       }
-      for (const key of this.pendingOutcomeKeys(agentName, deployment.flagId, context)) {
+      if (!existing.outcomeToken && correlation.outcomeToken) {
+        existing.outcomeToken = correlation.outcomeToken;
+      }
+
+      for (const key of this.pendingOutcomeKeys(agentName, deployment.flagId, correlation)) {
         this.pendingCanaryOutcomes.set(key, existing);
         existing.keys.add(key);
       }
@@ -540,8 +545,8 @@ export class ReforgeEngine {
       id: randomUUID(),
       agentName,
       flagId: deployment.flagId,
-      ...(context.requestId ? { requestId: context.requestId } : {}),
-      ...(context.outcomeToken ? { outcomeToken: context.outcomeToken } : {}),
+      ...(correlation.requestId ? { requestId: correlation.requestId } : {}),
+      ...(correlation.outcomeToken ? { outcomeToken: correlation.outcomeToken } : {}),
       keys: new Set(keys),
     };
 
@@ -557,11 +562,16 @@ export class ReforgeEngine {
     deployment: CanaryDeploymentRecord,
     options: Pick<CanaryOutcomeOptions, "requestId" | "outcomeToken">,
   ): boolean {
-    const keys = this.pendingOutcomeKeys(agentName, deployment.flagId, options);
+    const correlation = this.normalizeCanaryCorrelation(options);
+    if (!correlation.requestId && !correlation.outcomeToken) {
+      return false;
+    }
+
+    const keys = this.pendingOutcomeKeys(agentName, deployment.flagId, correlation);
     const pending = keys
       .map((key) => this.pendingCanaryOutcomes.get(key))
       .find((entry): entry is PendingCanaryOutcome => (
-        entry !== undefined && this.pendingCanaryOutcomeMatches(entry, options)
+        entry !== undefined && this.pendingCanaryOutcomeMatches(entry, correlation)
       ));
 
     if (!pending) {
@@ -605,6 +615,30 @@ export class ReforgeEngine {
       return false;
     }
     return true;
+  }
+
+  private pendingCanaryOutcomeCompatible(
+    pending: PendingCanaryOutcome,
+    options: Pick<CanaryOutcomeOptions, "requestId" | "outcomeToken">,
+  ): boolean {
+    if (pending.requestId && options.requestId && pending.requestId !== options.requestId) {
+      return false;
+    }
+    if (pending.outcomeToken && options.outcomeToken && pending.outcomeToken !== options.outcomeToken) {
+      return false;
+    }
+    return true;
+  }
+
+  private normalizeCanaryCorrelation(
+    options: Pick<CanaryOutcomeOptions, "requestId" | "outcomeToken">,
+  ): Pick<CanaryOutcomeOptions, "requestId" | "outcomeToken"> {
+    const requestId = options.requestId?.trim();
+    const outcomeToken = options.outcomeToken?.trim();
+    return {
+      ...(requestId ? { requestId } : {}),
+      ...(outcomeToken ? { outcomeToken } : {}),
+    };
   }
 
   private pendingOutcomeKeys(
