@@ -1,6 +1,6 @@
 import { generateId, nowIso } from '@agentforge/shared';
 import type { AgentProposal } from '@agentforge/core';
-import type { ExecutionPlan } from './types.js';
+import type { ExecutionPlan, ExecutionStage, RuntimeModelTier } from './types.js';
 
 const COMPLEXITY_KEYWORDS = {
   high: ['architecture', 'refactor', 'migrate', 'overhaul', 'redesign', 'replace'],
@@ -13,6 +13,29 @@ function inferComplexity(proposal: AgentProposal): 'low' | 'medium' | 'high' {
   if (COMPLEXITY_KEYWORDS.high.some(k => text.includes(k))) return 'high';
   if (COMPLEXITY_KEYWORDS.low.some(k => text.includes(k))) return 'low';
   return 'medium';
+}
+
+export function modelForStage(
+  complexity: 'low' | 'medium' | 'high',
+  stage: ExecutionStage,
+): RuntimeModelTier {
+  switch (stage) {
+    case 'planning':
+      return complexity === 'high' ? 'sonnet' : 'haiku';
+    case 'architecture':
+      return 'sonnet';
+    case 'coding':
+      return 'sonnet';
+    case 'linting':
+      return 'haiku';
+    case 'testing':
+      return 'haiku';
+    case 'complete':
+    case 'failed':
+      return 'haiku';
+    default:
+      return 'haiku';
+  }
 }
 
 export function buildPlan(proposal: AgentProposal): ExecutionPlan {

@@ -13,11 +13,13 @@ describe('ProposalExecutor execution modes', () => {
 
   it('uses an injected runtime executor when dryRun is false', async () => {
     const stages: string[] = [];
+    const models: string[] = [];
     const result = await new ProposalExecutor({
       dryRun: false,
       runtime: {
-        async executeStage({ stage }) {
+        async executeStage({ stage, model }) {
           stages.push(stage);
+          models.push(model);
           return {
             output: `ran ${stage}`,
             success: true,
@@ -31,6 +33,7 @@ describe('ProposalExecutor execution modes', () => {
     }).execute(buildProposal());
 
     expect(stages).toEqual(['planning', 'coding', 'linting', 'testing']);
+    expect(models).toEqual(['haiku', 'sonnet', 'haiku', 'haiku']);
     expect(result.status).toBe('passed');
     expect(result.totalCostUsd).toBeCloseTo(0.2);
     expect(result.diff).toContain('diff --git');

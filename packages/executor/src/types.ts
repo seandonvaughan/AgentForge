@@ -1,6 +1,7 @@
 import type { AgentProposal } from '@agentforge/core';
 
 export type ExecutionStage = 'planning' | 'architecture' | 'coding' | 'linting' | 'testing' | 'complete' | 'failed';
+export type RuntimeModelTier = 'haiku' | 'sonnet' | 'opus';
 
 export interface ExecutionPlan {
   proposalId: string;
@@ -41,6 +42,7 @@ export interface StageExecutionRequest {
   plan: ExecutionPlan;
   stage: ExecutionStage;
   agentId: string;
+  model: RuntimeModelTier;
   stageIndex: number;
   timeoutMs: number;
   budgetRemainingUsd: number;
