@@ -1,7 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import type { WorkspaceAdapter } from '@agentforge/db';
+import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 
 // Authoritative cycle data lives in `.agentforge/cycles/<id>/cycle.json` —
 // not in the SQLite tables that the original implementation read. The
@@ -45,7 +46,7 @@ export interface CountersResponse {
   cyclesMonth: number;
   /** idle when runningCycles===0; overloaded when runningCycles>=3; busy otherwise. */
   load: SystemLoad;
-  /** Count of `.agentforge/worktrees/agent-*` dirs with mtime within last 30 min. */
+  /** Count of registered `.agentforge/worktrees/agent-*` git worktrees with mtime within last 30 min. */
   runningWorktrees: number;
   /** ISO 8601 timestamp of when this payload was computed. */
   timestamp: string;
@@ -262,32 +263,55 @@ function countTotalAgents(projectRoot: string): number {
 }
 
 /**
- * Count active worktree directories in `.agentforge/worktrees/`.
+ * Count active registered worktrees in `.agentforge/worktrees/`.
  *
- * A worktree is "running" when it matches `agent-*` and its mtime is within
- * the last 30 minutes. Dirs modified longer ago are excluded — they are stale
- * (agent completed or was force-released). Defensive: returns 0 when the
- * worktrees directory is absent.
+ * A worktree is "running" when Git still lists it, it lives under
+ * `.agentforge/worktrees/agent-*`, and its mtime is within the last 30 minutes.
+ * Raw directories are not authoritative; completed agent worktrees can leave
+ * empty folders behind after `git worktree remove`, and counting those makes
+ * the dashboard report phantom running agents.
  */
 const WORKTREE_ACTIVE_MS = 30 * 60 * 1000; // 30 minutes
 
+function parseGitWorktreePaths(output: string): string[] {
+  return output
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith('worktree '))
+    .map((line) => line.slice('worktree '.length).trim())
+    .filter((line) => line.length > 0);
+}
+
+function isPathWithin(childPath: string, parentPath: string): boolean {
+  const rel = relative(parentPath, childPath);
+  return rel === '' || (rel.length > 0 && !rel.startsWith('..') && !isAbsolute(rel));
+}
+
 function countRunningWorktrees(projectRoot: string): number {
-  const worktreesDir = join(projectRoot, '.agentforge', 'worktrees');
+  const worktreesDir = resolve(projectRoot, '.agentforge', 'worktrees');
   if (!existsSync(worktreesDir)) return 0;
-  let entries: string[];
+
+  let registeredPaths: string[];
   try {
-    entries = readdirSync(worktreesDir);
+    const output = execFileSync('git', ['worktree', 'list', '--porcelain'], {
+      cwd: projectRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 5_000,
+      windowsHide: true,
+    });
+    registeredPaths = parseGitWorktreePaths(output);
   } catch {
     return 0;
   }
+
   const cutoff = Date.now() - WORKTREE_ACTIVE_MS;
   let count = 0;
-  for (const entry of entries) {
-    // Match-then-use: verify the name starts with `agent-` before stat-ing
-    if (!entry.startsWith('agent-')) continue;
-    const entryPath = join(worktreesDir, entry);
+  for (const registeredPath of registeredPaths) {
+    const resolvedPath = resolve(registeredPath);
+    if (!isPathWithin(resolvedPath, worktreesDir)) continue;
+    if (!basename(resolvedPath).startsWith('agent-')) continue;
     try {
-      const st = statSync(entryPath);
+      const st = statSync(resolvedPath);
       if (st.isDirectory() && st.mtimeMs >= cutoff) count++;
     } catch {
       // Ignore vanished entries

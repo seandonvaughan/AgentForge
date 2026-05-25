@@ -686,7 +686,7 @@ interface CodexSpawnCommand {
   env?: NodeJS.ProcessEnv;
 }
 
-interface CodexSpawnCommandOptions {
+export interface CodexSpawnCommandOptions {
   platform?: NodeJS.Platform;
   arch?: NodeJS.Architecture;
   candidates?: string[];
@@ -699,10 +699,10 @@ export function buildCodexSpawnCommand(
 ): CodexSpawnCommand {
   const platform = options.platform ?? process.platform;
   if (platform !== 'win32') {
-    return { command: CODEX_COMMAND, args };
+    return { command: CODEX_COMMAND, args, ...(options.env ? { env: options.env } : {}) };
   }
 
-  const candidates = options.candidates ?? findWindowsCodexCandidates();
+  const candidates = options.candidates ?? findWindowsCodexCandidates(options.env);
   const nativeExecutable = findWindowsCodexNativeExecutable(candidates, options);
   if (nativeExecutable) {
     return { command: nativeExecutable.command, args, env: nativeExecutable.env };
@@ -710,18 +710,22 @@ export function buildCodexSpawnCommand(
 
   const nodeEntrypoint = findWindowsCodexNodeEntrypoint(candidates);
   if (nodeEntrypoint) {
-    return { command: process.execPath, args: [nodeEntrypoint, ...args] };
+    return { command: process.execPath, args: [nodeEntrypoint, ...args], ...(options.env ? { env: options.env } : {}) };
   }
 
   const executable = candidates.find((candidate) => {
     const normalized = candidate.toLowerCase();
     return normalized.endsWith('.exe') && !normalized.includes('\\windowsapps\\');
   });
-  return { command: executable ?? CODEX_COMMAND, args };
+  return { command: executable ?? CODEX_COMMAND, args, ...(options.env ? { env: options.env } : {}) };
 }
 
-function findWindowsCodexCandidates(): string[] {
-  const probe = spawnSync('where', ['codex'], { encoding: 'utf8', windowsHide: true });
+function findWindowsCodexCandidates(env?: NodeJS.ProcessEnv): string[] {
+  const probe = spawnSync('where', ['codex'], {
+    encoding: 'utf8',
+    windowsHide: true,
+    ...(env ? { env } : {}),
+  });
   if (probe.status === 0 && typeof probe.stdout === 'string') {
     return probe.stdout
       .split(/\r?\n/)

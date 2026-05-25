@@ -184,9 +184,35 @@ describe('GET /api/v5/cycles — Fix 2: agents field', () => {
     const row = rows.find((r) => r['cycleId'] === id);
     expect(row).toBeDefined();
     expect(row!['stage']).toBe('execute');
+    expect(row!['status']).toBe('running');
     expect(row!['sprintVersion']).toBe('10.38.0');
     expect(row!['completedAt']).toBeNull();
     expect(row!['agents']).toEqual(['yaml-doctor']);
+  });
+
+  it('populates agents from both agentRuns and itemResults in the same phase file', async () => {
+    const id = 'aaaaaaaa-0000-0000-0000-000000000011';
+    const dir = makeCycleDir(id);
+    writeFileSync(
+      join(dir, 'events.jsonl'),
+      JSON.stringify({ type: 'phase.start', phase: 'execute', at: new Date().toISOString() }) + '\n',
+    );
+    mkdirSync(join(dir, 'phases'), { recursive: true });
+    writeFileSync(
+      join(dir, 'phases', 'execute.json'),
+      JSON.stringify({
+        costUsd: 0.2,
+        agentRuns: [{ agentId: 'route-engineer' }],
+        itemResults: [{ agentId: 'test-author' }],
+      }),
+    );
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/cycles' });
+    expect(res.statusCode).toBe(200);
+    const rows = res.json().cycles as Array<Record<string, unknown>>;
+    const row = rows.find((r) => r['cycleId'] === id);
+    expect(row).toBeDefined();
+    expect(row!['agents']).toEqual(['route-engineer', 'test-author']);
   });
 
   it('lets terminal cycle session status override partial running cycle.json', async () => {

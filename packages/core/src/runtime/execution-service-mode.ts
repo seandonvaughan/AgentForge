@@ -3,6 +3,10 @@ import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import yaml from 'js-yaml';
 import type { RuntimeMode } from './types.js';
+import {
+  buildCodexSpawnCommand,
+  type CodexSpawnCommandOptions,
+} from './transports/codex-cli-transport.js';
 
 /**
  * Runtime mode settings accepted from env/config.
@@ -38,11 +42,13 @@ function isCliAvailable(): boolean {
   return probe.status === 0;
 }
 
-function isCodexCliAvailable(): boolean {
-  const probe =
-    process.platform === 'win32'
-      ? spawnSync('where', ['codex'], { stdio: 'ignore', windowsHide: true })
-      : spawnSync('which', ['codex'], { stdio: 'ignore', windowsHide: true });
+function isCodexCliAvailable(options: CodexSpawnCommandOptions = {}): boolean {
+  const command = buildCodexSpawnCommand(['--version'], options);
+  const probe = spawnSync(command.command, command.args, {
+    stdio: 'ignore',
+    windowsHide: true,
+    ...(command.env ? { env: command.env } : {}),
+  });
   return probe.status === 0;
 }
 
@@ -163,8 +169,8 @@ export function resolveAutoMode(
   return isCliAvailable() ? 'cli' : 'sdk';
 }
 
-export function isCodexRuntimeAvailable(): boolean {
-  return isCodexCliAvailable();
+export function isCodexRuntimeAvailable(options: CodexSpawnCommandOptions = {}): boolean {
+  return isCodexCliAvailable(options);
 }
 
 function isExecutionServiceMode(value: string): value is ExecutionServiceMode {

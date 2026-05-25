@@ -108,6 +108,7 @@ const SAFE_FILE_NAMES = new Set([
 const SAFE_LOG_NAMES = new Set(['cli-stdout', 'tests-raw']);
 /** 2 MB cap for log reads unless ?full=1 is passed. */
 const LOG_READ_CAP_BYTES = 2 * 1024 * 1024;
+const TERMINAL_SESSION_STATUSES = new Set(['killed', 'crashed', 'failed', 'completed']);
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -187,6 +188,7 @@ interface CycleListRow {
   cycleId: string;
   sprintVersion: string | null;
   stage: string;
+  status: string;
   startedAt: string;
   completedAt: string | null;
   durationMs: number | null;
@@ -225,6 +227,7 @@ interface AgentPrLedgerEntry {
 
 interface CycleEventsSummary {
   stage: string;
+  status: string | null;
   startedAt: string | null;
   lastEventAt: number;
   sprintVersion: string | null;
@@ -233,6 +236,7 @@ interface CycleEventsSummary {
 function readCycleEventsSummary(cycleDir: string): CycleEventsSummary {
   const summary: CycleEventsSummary = {
     stage: 'plan',
+    status: null,
     startedAt: null,
     lastEventAt: 0,
     sprintVersion: null,
@@ -249,8 +253,13 @@ function readCycleEventsSummary(cycleDir: string): CycleEventsSummary {
         const ev = JSON.parse(line) as Record<string, unknown>;
         if (!summary.startedAt && typeof ev['at'] === 'string') summary.startedAt = ev['at'];
         if (typeof ev['sprintVersion'] === 'string') summary.sprintVersion = ev['sprintVersion'];
-        if (typeof ev['stage'] === 'string') summary.stage = ev['stage'];
-        else if (ev['type'] === 'phase.start' && typeof ev['phase'] === 'string') summary.stage = ev['phase'];
+        if (typeof ev['stage'] === 'string') {
+          summary.stage = ev['stage'];
+          if (TERMINAL_SESSION_STATUSES.has(ev['stage'])) summary.status = ev['stage'];
+        } else if (ev['type'] === 'phase.start' && typeof ev['phase'] === 'string') {
+          summary.stage = ev['phase'];
+        }
+        if (typeof ev['status'] === 'string' && ev['status'].length > 0) summary.status = ev['status'];
         if (typeof ev['at'] === 'string') {
           const t = new Date(ev['at']).getTime();
           if (t > summary.lastEventAt) summary.lastEventAt = t;
@@ -278,18 +287,57 @@ function readCycleSprintVersion(cycleDir: string, events?: CycleEventsSummary): 
   return events?.sprintVersion ?? null;
 }
 
+function phaseRunKey(run: Record<string, unknown>): string {
+  const parts = [
+    run['agentId'],
+    run['itemId'],
+    run['taskId'],
+    run['sessionId'],
+    run['status'],
+    run['costUsd'],
+    run['durationMs'],
+  ].map((value) => (typeof value === 'string' || typeof value === 'number' ? String(value) : ''));
+
+  if (parts.some((part) => part.length > 0)) return parts.join('\u0000');
+
+  try {
+    return JSON.stringify(run);
+  } catch {
+    return String(Object.keys(run).sort().join('\u0000'));
+  }
+}
+
 function phaseRunsFromArtifact(phase: Record<string, unknown>): Record<string, unknown>[] {
-  if (Array.isArray(phase['agentRuns']) && phase['agentRuns'].length > 0) {
-    return (phase['agentRuns'] as unknown[]).filter(
-      (run): run is Record<string, unknown> => run !== null && typeof run === 'object' && !Array.isArray(run),
-    );
+  const runs: Record<string, unknown>[] = [];
+  const seen = new Set<string>();
+
+  for (const key of ['agentRuns', 'itemResults'] as const) {
+    if (!Array.isArray(phase[key])) continue;
+    for (const candidate of phase[key] as unknown[]) {
+      if (candidate === null || typeof candidate !== 'object' || Array.isArray(candidate)) continue;
+      const run = candidate as Record<string, unknown>;
+      const dedupeKey = phaseRunKey(run);
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      runs.push(run);
+    }
   }
-  if (Array.isArray(phase['itemResults'])) {
-    return (phase['itemResults'] as unknown[]).filter(
-      (run): run is Record<string, unknown> => run !== null && typeof run === 'object' && !Array.isArray(run),
-    );
-  }
-  return [];
+
+  return runs;
+}
+
+function deriveCycleStatus(
+  stage: string,
+  cycleJson?: Record<string, unknown> | null,
+  events?: CycleEventsSummary,
+  sessionStatus?: string | null,
+): string {
+  if (sessionStatus && TERMINAL_SESSION_STATUSES.has(sessionStatus)) return sessionStatus;
+  if (TERMINAL_SESSION_STATUSES.has(stage)) return stage;
+  const cycleStatus = cycleJson?.['status'];
+  if (typeof cycleStatus === 'string' && cycleStatus.length > 0) return cycleStatus;
+  if (events?.status) return events.status;
+  return 'running';
 }
 
 function collectCycleAgentIds(cycleDir: string): string[] {
@@ -455,6 +503,7 @@ function summarizeCycle(cycleDir: string, cycleId: string, projectRoot?: string)
       cycleId: (cycleJson['cycleId'] as string) ?? cycleId,
       sprintVersion: (cycleJson['sprintVersion'] as string) ?? readCycleSprintVersion(cycleDir),
       stage: (cycleJson['stage'] as string) ?? 'completed',
+      status: deriveCycleStatus((cycleJson['stage'] as string) ?? 'completed', cycleJson),
       startedAt:
         (cycleJson['startedAt'] as string) ??
         deriveStartedAt(cycleDir) ??
@@ -480,6 +529,7 @@ function summarizeCycle(cycleDir: string, cycleId: string, projectRoot?: string)
   // partial live cycle.json snapshots that only contain heartbeat/stage/cost.
   const events = readCycleEventsSummary(cycleDir);
   let stage = events.stage;
+  let sessionStatus: string | null = null;
   const startedAt = events.startedAt ?? deriveStartedAt(cycleDir) ?? new Date(0).toISOString();
   const lastEventAt = events.lastEventAt;
 
@@ -494,10 +544,10 @@ function summarizeCycle(cycleDir: string, cycleId: string, projectRoot?: string)
   // Fallback: if no session record exists (cycles predating the registry) OR
   // the session still shows running but last event is >5min old, stamp the row
   // as 'crashed' so the UI doesn't show an obviously-dead cycle as in-progress.
-  const TERMINAL_STATUSES = new Set(['killed', 'crashed', 'failed', 'completed']);
   try {
     const session = cycleSessions.get(cycleId);
-    if (session && TERMINAL_STATUSES.has(session.status)) {
+    sessionStatus = session?.status ?? null;
+    if (session && TERMINAL_SESSION_STATUSES.has(session.status)) {
       stage = session.status;
     } else if (
       lastEventAt > 0 &&
@@ -568,6 +618,7 @@ function summarizeCycle(cycleDir: string, cycleId: string, projectRoot?: string)
     cycleId,
     sprintVersion: readCycleSprintVersion(cycleDir, events),
     stage,
+    status: deriveCycleStatus(stage, cycleJson, events, sessionStatus),
     startedAt,
     completedAt: null,
     durationMs: Date.now() - new Date(startedAt).getTime(),
@@ -973,6 +1024,7 @@ export async function cyclesRoutes(
     const dir = safeJoin(base, id);
     if (!dir || !existsSync(dir)) return reply.status(404).send({ error: 'Cycle not found' });
     const cycleFile = join(dir, 'cycle.json');
+    let partialCycleJson: Record<string, unknown> | null = null;
     if (existsSync(cycleFile)) {
       const parsed = readJsonIfExists(cycleFile) as Record<string, unknown> | null;
       if (parsed === null) return reply.status(500).send({ error: 'Failed to parse cycle.json' });
@@ -1030,6 +1082,9 @@ export async function cyclesRoutes(
         const sprintVersion = readCycleSprintVersion(dir);
         if (sprintVersion) (parsed as any).sprintVersion = sprintVersion;
       }
+      if (typeof parsed['status'] !== 'string') {
+        (parsed as any).status = deriveCycleStatus((parsed['stage'] as string) ?? 'completed', parsed);
+      }
       const pr = (parsed['pr'] ?? {}) as Record<string, unknown>;
       if (!(typeof pr['url'] === 'string' && pr['url'].length > 0)) {
         const agentPr = latestCycleAgentPr(dir);
@@ -1046,6 +1101,7 @@ export async function cyclesRoutes(
       }
       return reply.send(attachLaunchConfig(dir, parsed));
       }
+      partialCycleJson = parsed;
     }
     // cycle.json is only written at terminal stage. While the cycle is still
     // running, synthesize a partial payload from events.jsonl so the dashboard
@@ -1120,7 +1176,7 @@ export async function cyclesRoutes(
       const sessionPayload: Record<string, unknown> = {
         cycleId: id,
         sprintVersion,
-        stage: session.status === 'killed' ? 'killed' : lastStage,
+        stage: session.status,
         status: session.status,
         exitNote: session.exitNote ?? null,
         startedAt: startIso,
@@ -1195,6 +1251,7 @@ export async function cyclesRoutes(
       cycleId: id,
       sprintVersion,
       stage: lastStage,
+      status: deriveCycleStatus(lastStage, partialCycleJson, events, session?.status ?? null),
       startedAt: inProgressStartedAt,
       completedAt: null,
       durationMs: Date.now() - new Date(inProgressStartedAt).getTime(),

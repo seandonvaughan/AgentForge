@@ -220,6 +220,17 @@ describe('GET /api/v5/counters — runningCycles', () => {
   });
 });
 
+describe('GET /api/v5/counters — runningWorktrees', () => {
+  it('ignores stale agent worktree directories that are not registered with git', async () => {
+    mkdirSync(join(projectRoot, '.agentforge', 'worktrees', 'agent-stale-dir'), { recursive: true });
+
+    _resetCache();
+    const body = await getCounters(app);
+
+    expect(body.runningWorktrees).toBe(0);
+  });
+});
+
 describe('GET /api/v5/counters — load derivation', () => {
   it('load=busy when 1 or 2 cycles are running', async () => {
     seedFreshRunningCycle('cycle-a');

@@ -56,6 +56,17 @@ describe('Topbar — fetchCounters reads runningWorktrees from API', () => {
   });
 });
 
+describe('Topbar — fetchActiveCycle reads the v5 cycles response shape', () => {
+  it('uses the cycles array returned by /api/v5/cycles', () => {
+    expect(source).toContain('cycles: Array<{');
+    expect(source).toContain('json.cycles?.find');
+  });
+
+  it('does not depend on the legacy data array for active cycle polling', () => {
+    expect(source).not.toContain('json.data?.[0]');
+  });
+});
+
 describe('Topbar — browser safety', () => {
   it('does not call document.* directly at the script top level', () => {
     // Split source on `<script` to isolate the script block

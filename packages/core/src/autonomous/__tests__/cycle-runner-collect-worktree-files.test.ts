@@ -28,7 +28,10 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { collectFilesFromAgentBranches } from '../cycle-runner.js';
+import {
+  collectFilesFromAgentBranches,
+  verifyMultiPrAgentBranches,
+} from '../cycle-runner.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -242,6 +245,56 @@ describe('collectFilesFromAgentBranches regression: worktreePool=undefined path'
     } finally {
       rmSync(workDir2, { recursive: true, force: true });
       try { rmSync(bareDir2, { recursive: true, force: true }); } catch { /* ok */ }
+    }
+  }, 20_000);
+});
+
+describe('verifyMultiPrAgentBranches', () => {
+  it('treats itemResults worktreeBranch entries as branch verification work', async () => {
+    const workDir = mkdtempSync(join(tmpdir(), 'cr-verify-itemresults-'));
+    const bareDir = join(tmpdir(), `cr-verify-itemresults-bare-${Date.now()}`);
+
+    try {
+      await initRepoWithBareRemote(workDir, bareDir);
+      const phasesDir = writePhasesDir(workDir, 'test-cycle-verify-itemresults');
+      writeFileSync(join(phasesDir, 'execute.json'), JSON.stringify({
+        itemResults: [
+          {
+            itemId: 'item-1',
+            status: 'completed',
+            agentId: 'coder',
+            worktreeBranch: 'autonomous/missing-agent-branch',
+          },
+        ],
+      }));
+
+      const result = await verifyMultiPrAgentBranches({
+        cwd: workDir,
+        cycleId: 'test-cycle-verify-itemresults',
+        baseBranch: 'main',
+        testing: {
+          command: 'node --version',
+          timeoutMinutes: 1,
+          reporter: 'json',
+          saveRawLog: false,
+          buildCommand: '',
+          typeCheckCommand: '',
+        },
+      });
+
+      expect(result.skipped).not.toBe(true);
+      expect(result.passed).toBe(false);
+      expect(result.results).toEqual([
+        expect.objectContaining({
+          branch: 'autonomous/missing-agent-branch',
+          agentId: 'coder',
+          itemId: 'item-1',
+          status: 'failed',
+        }),
+      ]);
+    } finally {
+      rmSync(workDir, { recursive: true, force: true });
+      try { rmSync(bareDir, { recursive: true, force: true }); } catch { /* ok */ }
     }
   }, 20_000);
 });

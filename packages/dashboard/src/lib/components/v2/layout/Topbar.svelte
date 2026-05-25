@@ -15,10 +15,11 @@
   }
 
   interface CyclesResponse {
-    data: Array<{
+    cycles: Array<{
       cycleId: string;
       short?: string;
       stages?: StageStatus[];
+      stage?: string;
       elapsedMs?: number;
       costUsd?: number;
       budgetUsd?: number;
@@ -44,11 +45,11 @@
   async function fetchActiveCycle(): Promise<void> {
     if (document.visibilityState === 'hidden') return;
     try {
-      const res = await fetch('/api/v5/cycles?limit=1&status=running');
+      const res = await fetch('/api/v5/cycles?limit=20&status=running');
       if (!res.ok) return;
       const json: CyclesResponse = await res.json() as CyclesResponse;
-      const c = json.data?.[0];
-      if (c && c.status === 'running') {
+      const c = json.cycles?.find((row) => row.status === 'running' || isActiveStage(row.stage));
+      if (c) {
         runningCycle = {
           id: c.cycleId,
           short: c.short ?? c.cycleId.slice(0, 8),
@@ -109,6 +110,11 @@
   // ── Navigate to cycle ──────────────────────────────────────────────────
   function openCycle(): void {
     if (runningCycle) void goto(`/cycles/${runningCycle.id}`);
+  }
+
+  function isActiveStage(stage: string | undefined): boolean {
+    if (!stage) return false;
+    return !['completed', 'failed', 'killed', 'crashed', 'aborted'].includes(stage.toLowerCase());
   }
 
   // ── Stage brick colour ─────────────────────────────────────────────────

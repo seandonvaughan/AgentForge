@@ -21,8 +21,8 @@
 import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 
 // CycleCheckpoint type + readCheckpoint helper live in
 // `./cycle-artifacts/cycle-checkpoint.ts` (Wave 3 T5). Re-export here so the
@@ -68,7 +68,11 @@ import type { RealTestRunner } from './exec/real-test-runner.js';
 import type { GitOps } from './exec/git-ops.js';
 import type { PROpener } from './exec/pr-opener.js';
 import { runAutoReforge, extractInvolvedAgentIds } from './auto-reforge.js';
-import { runPreVerifyTypeCheck, type PreVerifyTypeCheckResult } from './pre-verify-typecheck.js';
+import {
+  resolveCommandForExecFile,
+  runPreVerifyTypeCheck,
+  type PreVerifyTypeCheckResult,
+} from './pre-verify-typecheck.js';
 import { assertUnattendedSafe } from './audit/unattended-guard.js';
 import { mergeBreakdowns, type CostBreakdown } from './cost-breakdown.js';
 import { exportCycleTelemetry } from '../telemetry/cycle-telemetry-export.js';
@@ -228,6 +232,13 @@ export interface CycleRunnerOptions {
    */
   preVerifyTypeCheck?: (cwd: string, testing: CycleConfig['testing']) => Promise<PreVerifyTypeCheckResult>;
   /**
+   * Optional branch-level verifier for prMode='multi'. Production defaults to
+   * checking each recorded agent branch in an isolated temporary git worktree.
+   * Tests inject this so the runner behavior can be verified without shelling
+   * out to package managers.
+   */
+  multiPrBranchVerifier?: MultiPrBranchVerifier;
+  /**
    * T4.2/T4.6 — Optional WorktreePool. When provided:
    *   - T4.2: execute phase allocates a fresh isolated git worktree per
    *     coder-class sprint item, preventing main-tree branch ping-pong.
@@ -269,6 +280,38 @@ export interface CycleRunnerOptions {
    */
   resumeCheckpoint?: CycleCheckpoint;
 }
+
+export interface MultiPrBranchVerificationRun {
+  branch: string;
+  agentId?: string;
+  itemId?: string;
+}
+
+export interface MultiPrBranchVerificationEntry {
+  branch: string;
+  agentId?: string;
+  itemId?: string;
+  status: 'passed' | 'failed';
+  command?: string;
+  durationMs: number;
+  stdout?: string;
+  stderr?: string;
+  error?: string;
+}
+
+export interface MultiPrBranchVerificationResult {
+  passed: boolean;
+  results: MultiPrBranchVerificationEntry[];
+  skipped?: boolean;
+  reason?: string;
+}
+
+export type MultiPrBranchVerifier = (opts: {
+  cwd: string;
+  cycleId: string;
+  baseBranch: string;
+  testing: CycleConfig['testing'];
+}) => Promise<MultiPrBranchVerificationResult>;
 
 // ---------------------------------------------------------------------------
 // Exported helper: collectFilesFromAgentBranches
@@ -338,6 +381,236 @@ export async function collectFilesFromAgentBranches(opts: {
   }
 
   return [...allFiles].sort();
+}
+
+const DEFAULT_MULTI_PR_VERIFY_INSTALL_COMMAND =
+  'corepack pnpm install --frozen-lockfile --ignore-scripts --prefer-offline';
+
+function readMultiPrBranchRuns(cwd: string, cycleId: string): MultiPrBranchVerificationRun[] {
+  const execPath = join(cwd, '.agentforge/cycles', cycleId, 'phases/execute.json');
+  if (!existsSync(execPath)) return [];
+
+  let execData: unknown;
+  try {
+    execData = JSON.parse(readFileSync(execPath, 'utf8'));
+  } catch {
+    return [];
+  }
+
+  const agentRuns: Array<Record<string, unknown>> =
+    (execData as {
+      agentRuns?: Array<Record<string, unknown>>;
+      itemResults?: Array<Record<string, unknown>>;
+    }).agentRuns ?? (execData as {
+      itemResults?: Array<Record<string, unknown>>;
+    }).itemResults ?? [];
+  const seen = new Set<string>();
+  const runs: MultiPrBranchVerificationRun[] = [];
+
+  for (const run of agentRuns) {
+    const branch = typeof run['worktreeBranch'] === 'string' ? run['worktreeBranch'].trim() : '';
+    if (!branch || seen.has(branch)) continue;
+    seen.add(branch);
+    const agentId = typeof run['agentId'] === 'string' ? run['agentId'] : undefined;
+    const itemId = typeof run['itemId'] === 'string' ? run['itemId'] : undefined;
+    runs.push({
+      branch,
+      ...(agentId !== undefined ? { agentId } : {}),
+      ...(itemId !== undefined ? { itemId } : {}),
+    });
+  }
+
+  return runs;
+}
+
+function multiPrVerifyCommands(testing: CycleConfig['testing']): string[] {
+  return [
+    process.env['AGENTFORGE_MULTI_PR_VERIFY_INSTALL_COMMAND']
+      ?? DEFAULT_MULTI_PR_VERIFY_INSTALL_COMMAND,
+    testing.buildCommand,
+    testing.typeCheckCommand,
+    testing.command,
+  ]
+    .map((cmd) => cmd?.trim() ?? '')
+    .filter((cmd) => cmd.length > 0);
+}
+
+function safePathWithin(childPath: string, parentPath: string): boolean {
+  const rel = relative(parentPath, childPath);
+  return rel === '' || (rel.length > 0 && !rel.startsWith('..') && !isAbsolute(rel));
+}
+
+function branchSlug(branch: string): string {
+  return branch.replace(/[^A-Za-z0-9._-]+/g, '-').slice(0, 80) || 'branch';
+}
+
+async function execCommandInDir(
+  cwd: string,
+  command: string,
+  timeoutMs: number,
+): Promise<{ stdout: string; stderr: string }> {
+  const parts = parseCommandArgs(command);
+  if (parts.length === 0) return { stdout: '', stderr: '' };
+  const invocation = resolveCommandForExecFile(parts[0]!, parts.slice(1));
+  const result = await execFileAsync(invocation.command, invocation.args, {
+    cwd,
+    timeout: timeoutMs,
+    maxBuffer: 50 * 1024 * 1024,
+    env: { ...process.env, CI: '1', NO_COLOR: '1' },
+    windowsHide: true,
+    ...(invocation.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
+  });
+  return {
+    stdout: result.stdout.toString(),
+    stderr: result.stderr.toString(),
+  };
+}
+
+async function resolveBranchRef(cwd: string, branch: string): Promise<string> {
+  try {
+    await execFileAsync(
+      'git',
+      ['fetch', 'origin', `${branch}:refs/remotes/origin/${branch}`],
+      { cwd, timeout: 120_000, maxBuffer: 10 * 1024 * 1024, windowsHide: true },
+    );
+  } catch {
+    // Local-only branches are valid in dry-run/dev workflows.
+  }
+
+  for (const ref of [branch, `origin/${branch}`]) {
+    try {
+      await execFileAsync(
+        'git',
+        ['rev-parse', '--verify', `${ref}^{commit}`],
+        { cwd, timeout: 30_000, maxBuffer: 1024 * 1024, windowsHide: true },
+      );
+      return ref;
+    } catch {
+      // Try the next candidate.
+    }
+  }
+
+  throw new Error(`branch ref not found: ${branch}`);
+}
+
+function safeRemoveVerificationWorktree(worktreePath: string, worktreesRoot: string): void {
+  const resolved = resolve(worktreePath);
+  const root = resolve(worktreesRoot);
+  const rel = relative(root, resolved);
+  if (!safePathWithin(resolved, root) || !rel.startsWith('verify-')) {
+    return;
+  }
+  rmSync(resolved, { recursive: true, force: true });
+}
+
+/**
+ * Verify every completed agent branch recorded in execute.json by checking it
+ * out into an isolated temporary git worktree and running the real project
+ * verification commands. This prevents a multi-PR cycle from treating the base
+ * checkout's green test run as proof that each agent PR branch is green.
+ */
+export async function verifyMultiPrAgentBranches(opts: {
+  cwd: string;
+  cycleId: string;
+  baseBranch: string;
+  testing: CycleConfig['testing'];
+}): Promise<MultiPrBranchVerificationResult> {
+  const runs = readMultiPrBranchRuns(opts.cwd, opts.cycleId);
+  if (runs.length === 0) {
+    return {
+      passed: true,
+      results: [],
+      skipped: true,
+      reason: 'no agent worktree branches recorded',
+    };
+  }
+
+  const commands = multiPrVerifyCommands(opts.testing);
+  if (commands.length === 0) {
+    return {
+      passed: true,
+      results: [],
+      skipped: true,
+      reason: 'no verification commands configured',
+    };
+  }
+
+  const worktreesRoot = resolve(opts.cwd, '.agentforge', 'worktrees');
+  mkdirSync(worktreesRoot, { recursive: true });
+  const timeoutMs = Math.max(5, opts.testing.timeoutMinutes) * 60_000;
+  const results: MultiPrBranchVerificationEntry[] = [];
+
+  for (const [index, run] of runs.entries()) {
+    const startedAt = Date.now();
+    const worktreePath = join(
+      worktreesRoot,
+      `verify-${opts.cycleId.slice(0, 8)}-${index + 1}-${branchSlug(run.branch)}`,
+    );
+
+    try {
+      safeRemoveVerificationWorktree(worktreePath, worktreesRoot);
+      const ref = await resolveBranchRef(opts.cwd, run.branch);
+      await execFileAsync(
+        'git',
+        ['worktree', 'add', '--detach', worktreePath, ref],
+        { cwd: opts.cwd, timeout: 120_000, maxBuffer: 10 * 1024 * 1024, windowsHide: true },
+      );
+
+      for (const command of commands) {
+        try {
+          await execCommandInDir(worktreePath, command, timeoutMs);
+        } catch (err) {
+          const e = err as { stdout?: Buffer | string; stderr?: Buffer | string; message?: string };
+          results.push({
+            branch: run.branch,
+            ...(run.agentId !== undefined ? { agentId: run.agentId } : {}),
+            ...(run.itemId !== undefined ? { itemId: run.itemId } : {}),
+            status: 'failed',
+            command,
+            durationMs: Date.now() - startedAt,
+            stdout: (e.stdout?.toString() ?? '').slice(0, 10_000),
+            stderr: (e.stderr?.toString() ?? '').slice(0, 10_000),
+            error: extractSubprocessError(err),
+          });
+          break;
+        }
+      }
+
+      if (!results.some((result) => result.branch === run.branch && result.status === 'failed')) {
+        results.push({
+          branch: run.branch,
+          ...(run.agentId !== undefined ? { agentId: run.agentId } : {}),
+          ...(run.itemId !== undefined ? { itemId: run.itemId } : {}),
+          status: 'passed',
+          durationMs: Date.now() - startedAt,
+        });
+      }
+    } catch (err) {
+      results.push({
+        branch: run.branch,
+        ...(run.agentId !== undefined ? { agentId: run.agentId } : {}),
+        ...(run.itemId !== undefined ? { itemId: run.itemId } : {}),
+        status: 'failed',
+        durationMs: Date.now() - startedAt,
+        error: extractSubprocessError(err),
+      });
+    } finally {
+      try {
+        await execFileAsync(
+          'git',
+          ['worktree', 'remove', '--force', worktreePath],
+          { cwd: opts.cwd, timeout: 120_000, maxBuffer: 10 * 1024 * 1024, windowsHide: true },
+        );
+      } catch {
+        safeRemoveVerificationWorktree(worktreePath, worktreesRoot);
+      }
+    }
+  }
+
+  return {
+    passed: results.every((result) => result.status === 'passed'),
+    results,
+  };
 }
 
 /**
@@ -469,6 +742,7 @@ export class CycleRunner {
     // race on cycle.json (last-writer-wins on the file would otherwise wipe
     // the terminal stage with a heartbeat-only payload).
     clearInterval(heartbeatTimer);
+    this.mergeQueue?.stop();
 
     // ALWAYS write cycle.json — that's the contract this module guarantees to
     // every operator and downstream tool that watches .agentforge/cycles/.
@@ -795,6 +1069,8 @@ export class CycleRunner {
     if (verifyTrip) {
       throw new CycleKilledError(verifyTrip);
     }
+    await this.verifyMultiPrBranches();
+    this.checkKillSwitch();
 
     // ─────────────────────────────────────────────────────────────────
     // STAGE 5 — COMMIT
@@ -1037,6 +1313,52 @@ export class CycleRunner {
       ...(result.typeCheckError !== undefined ? { error: result.typeCheckError } : {}),
     });
     if (typeCheckTrip) throw new CycleKilledError(typeCheckTrip);
+  }
+
+  private async verifyMultiPrBranches(): Promise<void> {
+    if (this.options.config.prMode !== 'multi') return;
+
+    // eslint-disable-next-line no-console
+    console.log('[autonomous:cycle] multi-pr: verifying agent branches');
+    const verifier = this.options.multiPrBranchVerifier ?? verifyMultiPrAgentBranches;
+    const result = await verifier({
+      cwd: this.options.cwd,
+      cycleId: this.cycleId,
+      baseBranch: this.options.config.git.baseBranch,
+      testing: this.options.config.testing,
+    });
+
+    const artifactPath = join(
+      this.options.cwd,
+      '.agentforge/cycles',
+      this.cycleId,
+      'multi-pr-branch-verification.json',
+    );
+    try {
+      writeFileSync(artifactPath, JSON.stringify({
+        ...result,
+        capturedAt: new Date().toISOString(),
+      }, null, 2));
+    } catch {
+      // Observability-only.
+    }
+
+    this.logger.appendEvent({
+      type: 'multi-pr.branch-verification',
+      passed: result.passed,
+      branches: result.results.length,
+      skipped: result.skipped === true,
+      at: new Date().toISOString(),
+    });
+
+    if (result.passed) return;
+
+    const failed = result.results
+      .filter((entry) => entry.status === 'failed')
+      .map((entry) => `${entry.branch}${entry.command ? ` (${entry.command})` : ''}`)
+      .slice(0, 5)
+      .join(', ');
+    throw new Error(`multi-pr branch verification failed: ${failed || 'unknown branch failure'}`);
   }
 
   /**

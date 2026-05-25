@@ -214,6 +214,7 @@ describe('GET /api/v5/cycles/:id', () => {
     const body = res.json();
     expect(body.cycleInProgress).toBe(true);
     expect(body.stage).toBe('execute');
+    expect(body.status).toBe('running');
     expect(body.sprintVersion).toBe('10.38.0');
     expect(body.cost.totalUsd).toBe(1.25);
     expect(body.agentRunCount).toBe(1);
@@ -222,6 +223,85 @@ describe('GET /api/v5/cycles/:id', () => {
       url: 'https://github.com/seandonvaughan/AgentForge/pull/144',
       number: 144,
       source: 'agent-prs',
+    });
+  });
+
+  it('lets terminal session status correct a partial running cycle.json detail snapshot', async () => {
+    const id = '4b4b4b4b-4444-4444-4444-444444444444';
+    const dir = makeCycleDir(id);
+    writeFileSync(
+      join(dir, 'cycle.json'),
+      JSON.stringify({ cycleId: id, stage: 'run', cost: { totalUsd: 5 } }),
+    );
+    writeFileSync(join(dir, 'sprint-link.json'), JSON.stringify({ sprintVersion: '10.39.0' }));
+    writeFileSync(
+      join(dir, 'events.jsonl'),
+      [
+        JSON.stringify({ type: 'sprint.assigned', sprintVersion: '10.39.0', at: '2026-05-25T01:00:00.000Z' }),
+        JSON.stringify({ type: 'phase.start', phase: 'execute', at: '2026-05-25T01:05:00.000Z' }),
+      ].join('\n') + '\n',
+    );
+    sessionFixture = {
+      cycleId: id,
+      pid: 11111,
+      pgid: 11111,
+      workspaceId: 'default',
+      workspaceRoot: tmpRoot,
+      startedAt: '2026-05-25T01:00:00.000Z',
+      lastSeenAt: '2026-05-25T01:10:00.000Z',
+      status: 'crashed',
+      exitNote: 'PID disappeared',
+    };
+
+    const res = await app.inject({ method: 'GET', url: `/api/v5/cycles/${id}` });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.sprintVersion).toBe('10.39.0');
+    expect(body.stage).toBe('crashed');
+    expect(body.status).toBe('crashed');
+    expect(body.partialTerminal).toBe(true);
+    expect(body.cycleInProgress).toBe(false);
+  });
+
+  it('counts agentRuns and itemResults from the same live phase artifact', async () => {
+    const id = '4c4c4c4c-4444-4444-4444-444444444444';
+    const dir = makeCycleDir(id);
+    writeFileSync(join(dir, 'sprint-link.json'), JSON.stringify({ sprintVersion: '10.40.0' }));
+    writeFileSync(
+      join(dir, 'events.jsonl'),
+      JSON.stringify({ type: 'phase.start', phase: 'execute', at: '2026-05-25T01:05:00.000Z' }) + '\n',
+    );
+    mkdirSync(join(dir, 'phases'), { recursive: true });
+    writeFileSync(
+      join(dir, 'phases', 'execute.json'),
+      JSON.stringify({
+        costUsd: 3.75,
+        agentRuns: [
+          { itemId: 'backlog-bl-101', agentId: 'route-engineer', status: 'completed', costUsd: 1.25 },
+        ],
+        itemResults: [
+          { itemId: 'backlog-bl-102', agentId: 'test-author', status: 'completed', costUsd: 2.5 },
+        ],
+      }),
+    );
+    sessionFixture = {
+      cycleId: id,
+      pid: 11111,
+      pgid: 11111,
+      workspaceId: 'default',
+      workspaceRoot: tmpRoot,
+      startedAt: '2026-05-25T01:00:00.000Z',
+      lastSeenAt: '2026-05-25T01:06:00.000Z',
+      status: 'running',
+    };
+
+    const res = await app.inject({ method: 'GET', url: `/api/v5/cycles/${id}` });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.agentRunCount).toBe(2);
+    expect(body.cost.byAgent).toMatchObject({
+      'route-engineer': 1.25,
+      'test-author': 2.5,
     });
   });
 

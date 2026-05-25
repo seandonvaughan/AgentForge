@@ -26,7 +26,7 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 
-import { CycleRunner, DEFAULT_CYCLE_CONFIG, CycleStage } from '@agentforge/core';
+import { CycleRunner, DEFAULT_CYCLE_CONFIG, CycleStage, MessageBusV2 } from '@agentforge/core';
 
 /**
  * Build the full set of mocked dependencies the CycleRunner needs.
@@ -413,6 +413,81 @@ describe('CycleRunner', () => {
     expect(result.stage).toBe(CycleStage.COMPLETED);
     expect(listActive).not.toHaveBeenCalled();
     expect(stage).toHaveBeenCalledWith(expect.arrayContaining(['feature.txt']));
+  });
+
+  it('marks multi-PR cycles failed when an agent branch verifier fails', async () => {
+    await initGitRepo(tmpDir);
+    const deps = makeMockDeps();
+    deps.mockPhaseHandlers.execute = async (ctx: any) => {
+      ctx.bus.publish('sprint.phase.completed', {
+        sprintId: ctx.sprintId,
+        phase: 'execute',
+        cycleId: ctx.cycleId,
+        result: {
+          phase: 'execute',
+          status: 'completed',
+          durationMs: 500,
+          costUsd: 1.0,
+          agentRuns: [
+            {
+              itemId: 'i1',
+              status: 'completed',
+              costUsd: 1.0,
+              durationMs: 500,
+              response: 'implemented',
+              attempts: 1,
+              agentId: 'coder',
+              worktreeBranch: 'codex/agent-failing',
+            },
+          ],
+          itemResults: [],
+        },
+        completedAt: new Date().toISOString(),
+      });
+    };
+    const branchVerifier = vi.fn(async () => ({
+      passed: false,
+      results: [
+        {
+          branch: 'codex/agent-failing',
+          agentId: 'coder',
+          itemId: 'i1',
+          status: 'failed' as const,
+          command: 'corepack pnpm test',
+          durationMs: 100,
+          stdout: '',
+          stderr: 'branch tests failed',
+          error: 'branch tests failed',
+        },
+      ],
+    }));
+    const runner = new CycleRunner({
+      cwd: tmpDir,
+      config: {
+        ...DEFAULT_CYCLE_CONFIG,
+        prMode: 'multi',
+      },
+      runtime: deps.runtime as any,
+      proposalAdapter: deps.proposalAdapter as any,
+      scoringAdapter: deps.scoringAdapter as any,
+      phaseHandlers: deps.mockPhaseHandlers as any,
+      testRunner: deps.testRunner as any,
+      gitOps: deps.gitOps as any,
+      prOpener: deps.prOpener as any,
+      bus: deps.bus as any,
+      messageBus: new MessageBusV2({ workspaceId: 'test' }),
+      preVerifyTypeCheck: deps.preVerifyTypeCheck,
+      dryRun: { prOpener: true },
+      worktreePool: { listActive: async () => [] } as any,
+      multiPrBranchVerifier: branchVerifier as any,
+    } as any);
+
+    const result = await runner.start();
+
+    expect(branchVerifier).toHaveBeenCalledOnce();
+    expect(result.stage).toBe(CycleStage.FAILED);
+    expect(result.error).toContain('multi-pr branch verification failed');
+    expect(result.error).toContain('codex/agent-failing');
   });
 
   it('writes cycle.json on completion (happy path)', async () => {

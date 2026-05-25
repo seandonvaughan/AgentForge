@@ -164,6 +164,36 @@ Dash-list parser coverage.`;
     expect(p!.occurrences).toBe(7);
   });
 
+  it('preserves multiple dash-list arrays in frontmatter without cross-field loss', () => {
+    const content = `---
+id: prop-multi-dash-list
+action: refine
+targetSkillId: agentforge:tdd
+skillId: agentforge:tdd
+capabilityTag: parser-hardening
+clusterId: cluster-parser-2
+requiresTools:
+  - Bash
+  - Edit
+skills:
+  - af-tdd
+  - af-regression
+occurrences: 9
+status: proposed
+createdAt: "2024-01-16T11:00:00Z"
+---
+
+Multi-list parser coverage.`;
+    writeFileSync(join(PROPOSED_DIR, 'prop-multi-dash-list.md'), content, 'utf8');
+
+    const result = loadProposals(TMP_ROOT);
+    const p = result.find((x) => x.id === 'prop-multi-dash-list');
+    expect(p).toBeDefined();
+    expect(p!.requiresTools).toEqual(['Bash', 'Edit']);
+    expect(p!.frontmatter['skills']).toEqual(['af-tdd', 'af-regression']);
+    expect(p!.status).toBe('proposed');
+  });
+
   it('includes body content', () => {
     writeProposal('prop-body.md', {
       id: 'prop-body',

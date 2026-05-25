@@ -5,7 +5,10 @@ import yaml from 'js-yaml';
 import type { ModelTier } from '@agentforge/shared';
 import { resolveProviderModelProfile } from './model-profiles.js';
 import { isCodexRuntimeAvailable } from './execution-service-mode.js';
-import { buildCodexSpawnCommand } from './transports/codex-cli-transport.js';
+import {
+  buildCodexSpawnCommand,
+  type CodexSpawnCommandOptions,
+} from './transports/codex-cli-transport.js';
 
 const VALID_TIERS = new Set<ModelTier>(['opus', 'sonnet', 'haiku']);
 const VALID_CODEX_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh']);
@@ -62,21 +65,23 @@ export function buildCodexReadinessReport(options: {
   doctorJson?: string;
   mcpServerPath?: string;
   env?: NodeJS.ProcessEnv;
+  codexSpawnOptions?: CodexSpawnCommandOptions;
 } = {}): CodexReadinessReport {
   const projectRoot = resolve(options.projectRoot ?? process.cwd());
   const env = options.env ?? process.env;
+  const codexSpawnOptions = { ...options.codexSpawnOptions, env };
   const agents = readAgentProfiles(projectRoot, env);
-  const codexCliAvailable = options.codexCliAvailable ?? isCodexRuntimeAvailable();
+  const codexCliAvailable = options.codexCliAvailable ?? isCodexRuntimeAvailable(codexSpawnOptions);
   const mcpServerPath = options.mcpServerPath
     ? resolve(options.mcpServerPath)
     : join(projectRoot, 'packages', 'mcp-server', 'dist', 'index.js');
   const mcpServerAvailable = existsSync(mcpServerPath);
   const doctor = options.checkDoctor === false || !codexCliAvailable
     ? { checked: false, ok: null as boolean | null, status: undefined as string | undefined, version: undefined as string | undefined, checks: undefined as CodexDoctorCheck[] | undefined, message: undefined as string | undefined }
-    : checkCodexDoctor(options.doctorJson);
+    : checkCodexDoctor(options.doctorJson, codexSpawnOptions);
   const login = options.checkLogin === false
     ? { checked: false, ok: null as boolean | null, message: undefined as string | undefined }
-    : checkCodexLogin();
+    : checkCodexLogin(codexSpawnOptions);
 
   const warnings: string[] = [];
   if (agents.length === 0) {
@@ -170,8 +175,8 @@ function readAgentProfiles(projectRoot: string, env: NodeJS.ProcessEnv): CodexRe
   });
 }
 
-function checkCodexLogin(): { checked: boolean; ok: boolean | null; message?: string } {
-  const command = buildCodexSpawnCommand(['login', 'status']);
+function checkCodexLogin(codexSpawnOptions: CodexSpawnCommandOptions): { checked: boolean; ok: boolean | null; message?: string } {
+  const command = buildCodexSpawnCommand(['login', 'status'], codexSpawnOptions);
   const result = spawnSync(command.command, command.args, {
     encoding: 'utf8',
     timeout: 10_000,
@@ -195,7 +200,7 @@ function checkCodexLogin(): { checked: boolean; ok: boolean | null; message?: st
   };
 }
 
-function checkCodexDoctor(doctorJson?: string): {
+function checkCodexDoctor(doctorJson: string | undefined, codexSpawnOptions: CodexSpawnCommandOptions): {
   checked: boolean;
   ok: boolean | null;
   status?: string;
@@ -205,7 +210,7 @@ function checkCodexDoctor(doctorJson?: string): {
 } {
   let raw = doctorJson;
   if (raw === undefined) {
-    const command = buildCodexSpawnCommand(['doctor', '--json']);
+    const command = buildCodexSpawnCommand(['doctor', '--json'], codexSpawnOptions);
     const result = spawnSync(command.command, command.args, {
       encoding: 'utf8',
       timeout: 20_000,

@@ -183,6 +183,23 @@ describe('CodexCliTransport.buildCodexArgs', () => {
 });
 
 describe('buildCodexSpawnCommand', () => {
+  it('preserves explicit env overrides on non-Windows platforms', () => {
+    const command = buildCodexSpawnCommand(['exec'], {
+      platform: 'linux',
+      env: {
+        PATH: '/tmp/codex-bin',
+        CODEX_HOME: '/tmp/codex-home',
+      },
+    });
+
+    expect(command.command).toBe('codex');
+    expect(command.args).toEqual(['exec']);
+    expect(command.env).toMatchObject({
+      PATH: '/tmp/codex-bin',
+      CODEX_HOME: '/tmp/codex-home',
+    });
+  });
+
   it('prefers the native packaged codex.exe on Windows so windowsHide applies to the real process', () => {
     const tmp = makeFakeCodexPackage();
     try {
