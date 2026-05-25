@@ -61,6 +61,40 @@ describe('package scripts', () => {
     expect(result.trace).not.toContain('node scripts/check-help-output.mjs');
   });
 
+  it('runs verify:product before verify:dashboard in verify:gates', async () => {
+    const scripts = loadRootScripts();
+    const harness = new ScriptPipelineHarness(scripts, () => 0);
+
+    const result = await harness.run('verify:gates');
+
+    expect(result.ok).toBe(true);
+    expect(result.trace).toContain('vitest run');
+    expect(
+      result.trace.some((command) =>
+        command.startsWith('playwright test tests/e2e/dashboard-agents.test.ts'),
+      ),
+    ).toBe(true);
+    expect(result.trace).toContain('pnpm --filter @agentforge/dashboard check');
+    expect(result.trace.indexOf('vitest run')).toBeLessThan(
+      result.trace.indexOf('pnpm --filter @agentforge/dashboard check'),
+    );
+  });
+
+  it('stops verify:gates before dashboard checks when verify:product typecheck fails', async () => {
+    const scripts = loadRootScripts();
+    const harness = new ScriptPipelineHarness(scripts, (command) => {
+      return command === 'pnpm exec tsc -b --noEmit' ? 1 : 0;
+    });
+
+    const result = await harness.run('verify:gates');
+
+    expect(result.ok).toBe(false);
+    expect(result.failedScript).toBe('check:types');
+    expect(result.failedCommand).toBe('pnpm exec tsc -b --noEmit');
+    expect(result.trace).not.toContain('pnpm --filter @agentforge/dashboard check');
+    expect(result.trace).not.toContain('pnpm --filter @agentforge/dashboard build');
+  });
+
   it('stops verify:product before dashboard e2e when unit tests fail', async () => {
     const scripts = loadRootScripts();
     const harness = new ScriptPipelineHarness(scripts, (command) => {
