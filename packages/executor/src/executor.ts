@@ -14,6 +14,7 @@ interface NormalizedExecutorOptions {
   dryRun: boolean;
   stageTimeoutMs: number;
   budgetUsd: number;
+  canaryEnabledForSelfModification: boolean;
   runtime?: ProposalRuntimeExecutor;
 }
 
@@ -21,6 +22,7 @@ const DEFAULT_OPTS = {
   dryRun: true,
   stageTimeoutMs: 30_000,
   budgetUsd: 1.00,
+  canaryEnabledForSelfModification: true,
 } satisfies Omit<NormalizedExecutorOptions, 'runtime'>;
 
 /** Simulates a stage result in dry-run mode. */
@@ -31,6 +33,8 @@ function simulateStage(stage: ExecutionStage, agentId: string): StageResult {
     coding: `Implementation drafted: ${Math.ceil(Math.random() * 6) + 2} files modified.`,
     linting: `Linting passed: 0 errors, ${Math.floor(Math.random() * 3)} warnings.`,
     testing: `Tests executed: ${Math.ceil(Math.random() * 20) + 5} passing, 0 failing.`,
+    canary: `Canary validated: staged rollout metric checks passed on ${Math.ceil(Math.random() * 10) + 5} samples.`,
+    rollback: 'Rollback executed: reverted staged canary deployment to last-known-good override.',
     complete: 'Execution complete — diff ready for review.',
     failed: 'Stage failed during execution.',
   };
@@ -53,6 +57,8 @@ export class ProposalExecutor {
       dryRun: opts.dryRun ?? DEFAULT_OPTS.dryRun,
       stageTimeoutMs: opts.stageTimeoutMs ?? DEFAULT_OPTS.stageTimeoutMs,
       budgetUsd: opts.budgetUsd ?? DEFAULT_OPTS.budgetUsd,
+      canaryEnabledForSelfModification:
+        opts.canary?.enabledForSelfModification ?? DEFAULT_OPTS.canaryEnabledForSelfModification,
       ...(opts.runtime ? { runtime: opts.runtime } : {}),
     };
   }
@@ -76,7 +82,7 @@ export class ProposalExecutor {
 
     this.executions.set(executionId, execution);
 
-    const stagesToRun = plan.stages.filter(s => s !== 'complete' && s !== 'failed');
+    const stagesToRun = plan.stages.filter((stage) => this.shouldExecuteStage(stage));
     let totalMs = 0;
     let totalCostUsd = 0;
     const diffs: string[] = [];
@@ -175,6 +181,12 @@ export class ProposalExecutor {
   /** List all execution results. */
   list(): ExecutionResult[] {
     return [...this.executions.values()];
+  }
+
+  private shouldExecuteStage(stage: ExecutionStage): boolean {
+    if (stage === 'complete' || stage === 'failed') return false;
+    if (stage === 'canary' && !this.opts.canaryEnabledForSelfModification) return false;
+    return true;
   }
 }
 

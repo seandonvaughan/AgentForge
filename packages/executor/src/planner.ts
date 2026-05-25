@@ -15,20 +15,35 @@ function inferComplexity(proposal: AgentProposal): 'low' | 'medium' | 'high' {
   return 'medium';
 }
 
+const SELF_MODIFICATION_HINTS = ['self-modification', 'self modification', 'reforge'];
+
+function isSelfModificationProposal(proposal: AgentProposal): boolean {
+  const titleAndDescription = `${proposal.title} ${proposal.description}`.toLowerCase();
+  if (SELF_MODIFICATION_HINTS.some((hint) => titleAndDescription.includes(hint))) {
+    return true;
+  }
+  return proposal.tags.some((tag) => {
+    const normalized = tag.toLowerCase();
+    return normalized === 'self-modification' || normalized === 'self_modification' || normalized === 'reforge';
+  });
+}
+
 export function buildPlan(proposal: AgentProposal): ExecutionPlan {
   const complexity = inferComplexity(proposal);
+  const includeCanary = isSelfModificationProposal(proposal);
 
-  const stages = complexity === 'high'
-    ? ['planning', 'architecture', 'coding', 'linting', 'testing', 'complete'] as const
+  const baseStages = complexity === 'high'
+    ? ['planning', 'architecture', 'coding', 'linting', 'testing'] as const
     : complexity === 'medium'
-    ? ['planning', 'coding', 'linting', 'testing', 'complete'] as const
-    : ['planning', 'coding', 'testing', 'complete'] as const;
+    ? ['planning', 'coding', 'linting', 'testing'] as const
+    : ['planning', 'coding', 'testing'] as const;
+  const stages = [...baseStages, ...(includeCanary ? ['canary' as const] : []), 'complete' as const];
 
   const agents = complexity === 'high'
-    ? ['project-manager', 'architect', 'coder', 'linter', 'debugger']
+    ? ['project-manager', 'architect', 'coder', 'linter', 'debugger', ...(includeCanary ? ['qa-manager'] : [])]
     : complexity === 'medium'
-    ? ['project-manager', 'coder', 'linter', 'debugger']
-    : ['coder', 'debugger'];
+    ? ['project-manager', 'coder', 'linter', 'debugger', ...(includeCanary ? ['qa-manager'] : [])]
+    : ['coder', 'debugger', ...(includeCanary ? ['qa-manager'] : [])];
 
   return {
     proposalId: proposal.id,

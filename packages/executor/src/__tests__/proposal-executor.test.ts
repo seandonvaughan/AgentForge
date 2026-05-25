@@ -43,6 +43,39 @@ describe('ProposalExecutor execution modes', () => {
     );
   });
 
+  it('plans and executes a canary stage for self-modification proposals by default', async () => {
+    const stages: string[] = [];
+    const result = await new ProposalExecutor({
+      dryRun: false,
+      runtime: {
+        async executeStage({ stage }) {
+          stages.push(stage);
+          return { output: `ran ${stage}`, success: true };
+        },
+      },
+    }).execute(buildSelfModificationProposal());
+
+    expect(stages).toEqual(['planning', 'coding', 'linting', 'testing', 'canary']);
+    expect(result.plan.stages).toEqual(['planning', 'coding', 'linting', 'testing', 'canary', 'complete']);
+  });
+
+  it('skips planned canary stage when self-modification canary is disabled', async () => {
+    const stages: string[] = [];
+    const result = await new ProposalExecutor({
+      dryRun: false,
+      canary: { enabledForSelfModification: false },
+      runtime: {
+        async executeStage({ stage }) {
+          stages.push(stage);
+          return { output: `ran ${stage}`, success: true };
+        },
+      },
+    }).execute(buildSelfModificationProposal());
+
+    expect(result.plan.stages).toContain('canary');
+    expect(stages).toEqual(['planning', 'coding', 'linting', 'testing']);
+  });
+
   it('adapts proposal execution to the SprintRunner executor interface', async () => {
     const sprintExecutor = new ProposalSprintExecutor(new ProposalExecutor({
       dryRun: false,
@@ -87,6 +120,21 @@ function buildProposal(): AgentProposal {
     confidence: 0.9,
     estimatedImpact: 'Medium',
     tags: ['runtime'],
+    proposedAt: '2026-04-30T00:00:00.000Z',
+    status: 'approved',
+  };
+}
+
+function buildSelfModificationProposal(): AgentProposal {
+  return {
+    id: 'proposal-self-mod-1',
+    agentId: 'coder',
+    title: 'Canary self-modification rollout',
+    description: 'stage and validate self-modification before full promotion',
+    priority: 'P0',
+    confidence: 0.95,
+    estimatedImpact: 'High',
+    tags: ['self-modification', 'safety'],
     proposedAt: '2026-04-30T00:00:00.000Z',
     status: 'approved',
   };
