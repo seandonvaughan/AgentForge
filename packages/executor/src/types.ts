@@ -1,7 +1,35 @@
 import type { AgentProposal } from '@agentforge/core';
 
-export type ExecutionStage = 'planning' | 'architecture' | 'coding' | 'linting' | 'testing' | 'complete' | 'failed';
+export type ExecutionStage =
+  | 'planning'
+  | 'architecture'
+  | 'coding'
+  | 'linting'
+  | 'testing'
+  | 'canary'
+  | 'rollback'
+  | 'complete'
+  | 'failed';
 export type RuntimeModelTier = 'haiku' | 'sonnet' | 'opus';
+
+export interface CanaryOptions {
+  /** Global feature flag for canary controls. */
+  enabled?: boolean;
+  /** Enables canary execution for self-modifying proposals. */
+  enabledForSelfModification?: boolean;
+  /** Percentage of self-mod proposals routed to canary execution. */
+  trafficPercent?: number;
+  /** Trigger rollback when a runtime stage fails during canary execution. */
+  rollbackOnStageFailure?: boolean;
+  /** Trigger rollback when test failures exceed configured thresholds. */
+  rollbackOnTestFailure?: boolean;
+  /** Max failed tests allowed in canary before rollback. Default: 0. */
+  maxFailedTests?: number;
+  /** Max failed-tests ratio (0-1) allowed in canary before rollback. Default: 0. */
+  maxFailureRate?: number;
+  /** Tags/keywords that classify a proposal as self-modifying. */
+  selfModificationMarkers?: string[];
+}
 
 export interface ExecutionPlan {
   proposalId: string;
@@ -9,6 +37,11 @@ export interface ExecutionPlan {
   estimatedAgents: string[];
   estimatedComplexity: 'low' | 'medium' | 'high';
   sandboxed: boolean;
+  canary?: {
+    enabled: boolean;
+    appliesToSelfModification: boolean;
+    trafficPercent: number;
+  };
   createdAt: string;
 }
 
@@ -71,4 +104,6 @@ export interface ExecutorOptions {
   budgetUsd?: number;
   /** Required when dryRun is false. */
   runtime?: ProposalRuntimeExecutor;
+  /** Canary rollout + rollback controls for self-modifying behavior. */
+  canary?: CanaryOptions;
 }

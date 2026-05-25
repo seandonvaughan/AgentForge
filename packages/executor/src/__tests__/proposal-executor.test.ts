@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ProposalExecutor, ProposalSprintExecutor } from '../executor.js';
 import type { AgentProposal } from '@agentforge/core';
 
@@ -96,6 +96,116 @@ describe('ProposalExecutor execution modes', () => {
     expect(models).toEqual(['haiku', 'sonnet', 'haiku']);
     expect(result.status).toBe('passed');
     expect(result.stages.map((stage) => stage.stage)).toEqual(['planning', 'coding', 'testing', 'complete']);
+  });
+
+  it('runs canary validation for self-mod proposals when enabled', async () => {
+    const stages: string[] = [];
+    const models: string[] = [];
+    const result = await new ProposalExecutor({
+      dryRun: false,
+      canary: {
+        enabledForSelfModification: true,
+        trafficPercent: 100,
+      },
+      runtime: {
+        async executeStage({ stage, model }) {
+          stages.push(stage);
+          models.push(model);
+          return {
+            output: `ran ${stage}`,
+            success: true,
+            durationMs: 10,
+            costUsd: 0.01,
+          };
+        },
+      },
+    }).execute(buildSelfModificationProposal());
+
+    expect(stages).toEqual(['planning', 'coding', 'linting', 'testing', 'canary']);
+    expect(models).toEqual(['haiku', 'sonnet', 'haiku', 'haiku', 'haiku']);
+    expect(result.status).toBe('passed');
+    expect(result.stages.map((stage) => stage.stage)).toEqual(['planning', 'coding', 'linting', 'testing', 'canary', 'complete']);
+  });
+
+  it('skips self-mod canary stage when enabledForSelfModification is false', async () => {
+    const stages: string[] = [];
+    const result = await new ProposalExecutor({
+      dryRun: false,
+      canary: {
+        enabledForSelfModification: false,
+        trafficPercent: 100,
+      },
+      runtime: {
+        async executeStage({ stage }) {
+          stages.push(stage);
+          return {
+            output: `ran ${stage}`,
+            success: true,
+            durationMs: 10,
+            costUsd: 0.01,
+          };
+        },
+      },
+    }).execute(buildSelfModificationProposal());
+
+    expect(stages).toEqual(['planning', 'coding', 'linting', 'testing']);
+    expect(result.status).toBe('passed');
+    expect(result.stages.map((stage) => stage.stage)).toEqual(['planning', 'coding', 'linting', 'testing', 'complete']);
+  });
+
+  it('routes self-mod proposals to control and rejects without executing runtime when traffic is 0%', async () => {
+    const executeStage = vi.fn();
+    const result = await new ProposalExecutor({
+      dryRun: false,
+      canary: {
+        enabledForSelfModification: true,
+        trafficPercent: 0,
+      },
+      runtime: {
+        executeStage,
+      },
+    }).execute(buildSelfModificationProposal());
+
+    expect(executeStage).not.toHaveBeenCalled();
+    expect(result.status).toBe('rejected');
+    expect(result.stages.map((stage) => stage.stage)).toEqual(['canary']);
+  });
+
+  it('rolls back self-mod canary execution when testing fails thresholds', async () => {
+    const stages: string[] = [];
+    const result = await new ProposalExecutor({
+      dryRun: false,
+      canary: {
+        enabledForSelfModification: true,
+        trafficPercent: 100,
+        maxFailedTests: 0,
+        maxFailureRate: 0,
+      },
+      runtime: {
+        async executeStage({ stage }) {
+          stages.push(stage);
+          if (stage === 'testing') {
+            return {
+              output: 'tests failed',
+              success: true,
+              durationMs: 10,
+              costUsd: 0.01,
+              testSummary: { passed: 2, failed: 1, total: 3 },
+            };
+          }
+          return {
+            output: `ran ${stage}`,
+            success: true,
+            durationMs: 10,
+            costUsd: 0.01,
+          };
+        },
+      },
+    }).execute(buildSelfModificationProposal());
+
+    expect(stages).toEqual(['planning', 'coding', 'linting', 'testing']);
+    expect(result.status).toBe('rejected');
+    expect(result.stages.map((stage) => stage.stage)).toEqual(['planning', 'coding', 'linting', 'testing', 'rollback']);
   });
 
   it('preserves partial cost, test summary, and diff when a stage fails', async () => {
@@ -209,5 +319,15 @@ function buildLowComplexityProposal(): AgentProposal {
     id: 'proposal-low-1',
     title: 'Patch runtime typo',
     description: 'fix minor executor log typo',
+  };
+}
+
+function buildSelfModificationProposal(): AgentProposal {
+  return {
+    ...buildMediumProposal(),
+    id: 'proposal-selfmod-1',
+    title: 'Self-modification rollout for agent prompt override',
+    description: 'apply self-modification canary controls before promoting override',
+    tags: ['runtime', 'self-modification'],
   };
 }

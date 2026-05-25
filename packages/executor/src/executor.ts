@@ -1,7 +1,8 @@
 import { generateId, nowIso } from '@agentforge/shared';
 import type { AgentProposal, SprintItemExecutionRequest, SprintItemExecutionResult } from '@agentforge/core';
-import { buildPlan, modelForStage } from './planner.js';
+import { buildPlan, isSelfModificationProposal, modelForStage } from './planner.js';
 import type {
+  CanaryOptions,
   ExecutionResult,
   ExecutorOptions,
   ProposalRuntimeExecutor,
@@ -14,13 +15,42 @@ interface NormalizedExecutorOptions {
   dryRun: boolean;
   stageTimeoutMs: number;
   budgetUsd: number;
+  canary: NormalizedCanaryOptions;
   runtime?: ProposalRuntimeExecutor;
+}
+
+type CanaryRoute = 'canary' | 'control' | 'disabled' | 'not-applicable';
+
+interface CanaryDecision {
+  route: CanaryRoute;
+  reason: string;
+}
+
+interface NormalizedCanaryOptions {
+  enabled: boolean;
+  enabledForSelfModification: boolean;
+  trafficPercent: number;
+  rollbackOnStageFailure: boolean;
+  rollbackOnTestFailure: boolean;
+  maxFailedTests: number;
+  maxFailureRate: number;
+  selfModificationMarkers: string[] | undefined;
 }
 
 const DEFAULT_OPTS = {
   dryRun: true,
   stageTimeoutMs: 30_000,
   budgetUsd: 1.00,
+  canary: {
+    enabled: true,
+    enabledForSelfModification: false,
+    trafficPercent: 10,
+    rollbackOnStageFailure: true,
+    rollbackOnTestFailure: true,
+    maxFailedTests: 0,
+    maxFailureRate: 0,
+    selfModificationMarkers: undefined,
+  },
 } satisfies Omit<NormalizedExecutorOptions, 'runtime'>;
 
 /** Simulates a stage result in dry-run mode. */
@@ -31,6 +61,8 @@ function simulateStage(stage: ExecutionStage, agentId: string): StageResult {
     coding: `Implementation drafted: ${Math.ceil(Math.random() * 6) + 2} files modified.`,
     linting: `Linting passed: 0 errors, ${Math.floor(Math.random() * 3)} warnings.`,
     testing: `Tests executed: ${Math.ceil(Math.random() * 20) + 5} passing, 0 failing.`,
+    canary: 'Canary validation passed for staged self-modification rollout.',
+    rollback: 'Canary rollback executed to restore stable behavior.',
     complete: 'Execution complete — diff ready for review.',
     failed: 'Stage failed during execution.',
   };
@@ -53,6 +85,13 @@ export class ProposalExecutor {
       dryRun: opts.dryRun ?? DEFAULT_OPTS.dryRun,
       stageTimeoutMs: opts.stageTimeoutMs ?? DEFAULT_OPTS.stageTimeoutMs,
       budgetUsd: opts.budgetUsd ?? DEFAULT_OPTS.budgetUsd,
+      canary: {
+        ...DEFAULT_OPTS.canary,
+        ...(opts.canary ?? {}),
+        trafficPercent: clampPercent(opts.canary?.trafficPercent ?? DEFAULT_OPTS.canary.trafficPercent),
+        maxFailedTests: Math.max(opts.canary?.maxFailedTests ?? DEFAULT_OPTS.canary.maxFailedTests, 0),
+        maxFailureRate: clampFailureRate(opts.canary?.maxFailureRate ?? DEFAULT_OPTS.canary.maxFailureRate),
+      },
       ...(opts.runtime ? { runtime: opts.runtime } : {}),
     };
   }
@@ -61,7 +100,9 @@ export class ProposalExecutor {
   async execute(proposal: AgentProposal): Promise<ExecutionResult> {
     const executionId = generateId();
     const startedAt = nowIso();
-    const plan = buildPlan(proposal);
+    const plan = buildPlan(proposal, toCanaryPlanOptions(this.opts.canary));
+    const isSelfModification = isSelfModificationProposal(proposal, this.opts.canary.selfModificationMarkers);
+    const canaryDecision = resolveCanaryDecision(proposal, isSelfModification, this.opts.canary);
 
     const execution: ExecutionResult = {
       executionId,
@@ -76,7 +117,25 @@ export class ProposalExecutor {
 
     this.executions.set(executionId, execution);
 
-    const stagesToRun = plan.stages.filter(s => s !== 'complete' && s !== 'failed');
+    if (canaryDecision.route === 'control') {
+      execution.stages.push({
+        stage: 'canary',
+        agentId: 'safety-auditor',
+        output: `Self-modification held in control cohort (${this.opts.canary.trafficPercent}% canary split). ${canaryDecision.reason}`,
+        durationMs: 0,
+        success: true,
+      });
+      execution.status = 'rejected';
+      execution.completedAt = nowIso();
+      execution.totalDurationMs = 0;
+      return execution;
+    }
+
+    const stagesToRun = plan.stages.filter((stage) => (
+      stage !== 'complete'
+      && stage !== 'failed'
+      && shouldExecuteStage(stage, canaryDecision, isSelfModification, this.opts.canary)
+    ));
     let totalMs = 0;
     let totalCostUsd = 0;
     const diffs: string[] = [];
@@ -84,7 +143,7 @@ export class ProposalExecutor {
 
     for (let i = 0; i < stagesToRun.length; i++) {
       const stage = stagesToRun[i]!;
-      const agentId = plan.estimatedAgents[i] ?? plan.estimatedAgents[plan.estimatedAgents.length - 1] ?? 'coder';
+      const agentId = resolveAgentForStage(plan.estimatedAgents, stage, i);
 
       let stageResult: StageResult;
       if (this.opts.dryRun) {
@@ -125,6 +184,19 @@ export class ProposalExecutor {
       totalMs += stageResult.durationMs;
 
       if (!stageResult.success) {
+        if (canaryDecision.route === 'canary' && this.opts.canary.rollbackOnStageFailure) {
+          appendRollbackStage(execution, `Canary rollback after ${stage} stage failure.`);
+          if (!this.opts.dryRun) {
+            if (diffs.length > 0) execution.diff = diffs.join('\n');
+            if (testSummary) execution.testSummary = testSummary;
+          }
+          execution.status = 'rejected';
+          execution.completedAt = nowIso();
+          execution.totalDurationMs = totalMs;
+          if (totalCostUsd > 0) execution.totalCostUsd = totalCostUsd;
+          return execution;
+        }
+
         if (!this.opts.dryRun) {
           if (diffs.length > 0) execution.diff = diffs.join('\n');
           if (testSummary) execution.testSummary = testSummary;
@@ -133,6 +205,29 @@ export class ProposalExecutor {
         execution.completedAt = nowIso();
         execution.totalDurationMs = totalMs;
         if (totalCostUsd > 0) execution.totalCostUsd = totalCostUsd;
+        return execution;
+      }
+
+      if (
+        canaryDecision.route === 'canary'
+        && this.opts.canary.rollbackOnTestFailure
+        && stage === 'testing'
+        && testSummary
+        && exceedsCanaryTestThreshold(testSummary, this.opts.canary)
+      ) {
+        const failRate = testSummary.total > 0 ? testSummary.failed / testSummary.total : 0;
+        appendRollbackStage(
+          execution,
+          `Canary rollback after testing threshold breach (failed=${testSummary.failed}, rate=${(failRate * 100).toFixed(1)}%).`,
+        );
+        if (!this.opts.dryRun) {
+          if (diffs.length > 0) execution.diff = diffs.join('\n');
+          execution.testSummary = testSummary;
+          if (totalCostUsd > 0) execution.totalCostUsd = totalCostUsd;
+        }
+        execution.status = 'rejected';
+        execution.completedAt = nowIso();
+        execution.totalDurationMs = totalMs;
         return execution;
       }
 
@@ -221,6 +316,133 @@ function normalizeRuntimeStage(
     durationMs: response.durationMs ?? 0,
     success: response.success,
     ...(response.error ? { error: response.error } : {}),
+  };
+}
+
+function shouldExecuteStage(
+  stage: ExecutionStage,
+  canaryDecision: CanaryDecision,
+  isSelfModification: boolean,
+  canary: NormalizedCanaryOptions,
+): boolean {
+  if (stage !== 'canary') return true;
+  if (!canary.enabled) return false;
+  if (!isSelfModification) return true;
+  if (!canary.enabledForSelfModification) return false;
+  return canaryDecision.route === 'canary';
+}
+
+function resolveCanaryDecision(
+  proposal: AgentProposal,
+  isSelfModification: boolean,
+  canary: NormalizedCanaryOptions,
+): CanaryDecision {
+  if (!canary.enabled) {
+    return { route: 'disabled', reason: 'canary feature flag is disabled' };
+  }
+
+  if (!isSelfModification) {
+    return { route: 'not-applicable', reason: 'proposal is not self-modifying' };
+  }
+
+  if (!canary.enabledForSelfModification) {
+    return {
+      route: 'disabled',
+      reason: 'self-modification canary feature flag is disabled',
+    };
+  }
+
+  if (canary.trafficPercent <= 0) {
+    return { route: 'control', reason: 'traffic split set to 0%' };
+  }
+
+  if (canary.trafficPercent >= 100) {
+    return { route: 'canary', reason: 'traffic split set to 100%' };
+  }
+
+  const bucket = deterministicPercent(proposal.id);
+  if (bucket < canary.trafficPercent) {
+    return { route: 'canary', reason: `proposal bucket ${bucket} < ${canary.trafficPercent}` };
+  }
+  return { route: 'control', reason: `proposal bucket ${bucket} >= ${canary.trafficPercent}` };
+}
+
+function deterministicPercent(seed: string): number {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = ((hash << 5) - hash + seed.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash % 100);
+}
+
+function appendRollbackStage(execution: ExecutionResult, reason: string): void {
+  execution.stages.push({
+    stage: 'rollback',
+    agentId: 'safety-auditor',
+    output: reason,
+    durationMs: 0,
+    success: true,
+  });
+}
+
+function exceedsCanaryTestThreshold(
+  summary: NonNullable<ExecutionResult['testSummary']>,
+  canary: NormalizedCanaryOptions,
+): boolean {
+  if (summary.failed > canary.maxFailedTests) return true;
+  if (summary.total <= 0) return summary.failed > 0;
+  const failureRate = summary.failed / summary.total;
+  return failureRate > canary.maxFailureRate;
+}
+
+function resolveAgentForStage(estimatedAgents: string[], stage: ExecutionStage, stageIndex: number): string {
+  const preferredAgent = preferredAgentForStage(stage);
+  if (preferredAgent && estimatedAgents.includes(preferredAgent)) {
+    return preferredAgent;
+  }
+  return estimatedAgents[stageIndex] ?? estimatedAgents[estimatedAgents.length - 1] ?? preferredAgent ?? 'coder';
+}
+
+function preferredAgentForStage(stage: ExecutionStage): string | null {
+  switch (stage) {
+    case 'planning':
+      return 'project-manager';
+    case 'architecture':
+      return 'architect';
+    case 'coding':
+      return 'coder';
+    case 'linting':
+      return 'linter';
+    case 'testing':
+      return 'debugger';
+    case 'canary':
+    case 'rollback':
+      return 'safety-auditor';
+    default:
+      return null;
+  }
+}
+
+function clampPercent(value: number): number {
+  if (!Number.isFinite(value) || Number.isNaN(value)) return 0;
+  return Math.max(0, Math.min(100, Math.floor(value)));
+}
+
+function clampFailureRate(value: number): number {
+  if (!Number.isFinite(value) || Number.isNaN(value)) return 0;
+  return Math.max(0, Math.min(1, value));
+}
+
+function toCanaryPlanOptions(canary: NormalizedCanaryOptions): CanaryOptions {
+  return {
+    enabled: canary.enabled,
+    enabledForSelfModification: canary.enabledForSelfModification,
+    trafficPercent: canary.trafficPercent,
+    rollbackOnStageFailure: canary.rollbackOnStageFailure,
+    rollbackOnTestFailure: canary.rollbackOnTestFailure,
+    maxFailedTests: canary.maxFailedTests,
+    maxFailureRate: canary.maxFailureRate,
+    ...(canary.selfModificationMarkers ? { selfModificationMarkers: canary.selfModificationMarkers } : {}),
   };
 }
 
