@@ -349,7 +349,10 @@ export class ReforgeEngine {
       };
     }
 
-    const correlation = this.consumePendingOutcome(normalized, context);
+    const hasCorrelationInput = Boolean(context.outcomeToken?.trim() || context.requestId?.trim());
+    const correlation = hasCorrelationInput
+      ? this.consumePendingOutcome(normalized, context)
+      : { deployment: normalized, matched: true };
     if (!correlation.matched) {
       return {
         deployment: normalized,
@@ -618,16 +621,22 @@ export class ReforgeEngine {
       ...(rollbackReason ? { rollbackReason } : {}),
     };
 
-    this.publishEvent({
-      from: "system",
-      to: "broadcast",
-      topic,
-      category: "system",
-      payload,
-      priority: topic === "self-modification.canary.rolled_back" ? "high" : "normal",
-      correlationId: deployment.flagId,
-      sessionId: deployment.planId,
-    });
+    try {
+      this.publishEvent({
+        from: "system",
+        to: "broadcast",
+        topic,
+        category: "system",
+        payload,
+        priority: topic === "self-modification.canary.rolled_back" ? "high" : "normal",
+        correlationId: deployment.flagId,
+        sessionId: deployment.planId,
+      });
+    } catch {
+      // Lifecycle events are observability. Durable canary state changes have
+      // already happened, so publisher failure must not turn them into partial
+      // operation failures.
+    }
   }
 
   private ensureCanaryFlag(deployment: CanaryDeploymentRecord) {

@@ -621,6 +621,35 @@ describe("ReforgeEngine", () => {
     });
   });
 
+  it("recordCanaryOutcome preserves legacy tokenless quality metrics", async () => {
+    const canaryAnalysis = makeAnalysis([
+      {
+        action: "update-system-prompt",
+        rationale: "legacy callers still report quality",
+        urgency: "medium",
+        theme_label: "prompt-canary",
+        confidence: 0.7,
+      },
+    ]);
+
+    const canaryPlan = await engine.buildPlan(canaryAnalysis, [makeTemplate()]);
+    await engine.deployCanary(canaryPlan, {
+      trafficPercent: 100,
+      strategy: "hash",
+      rollbackThreshold: 0.1,
+    });
+
+    for (let i = 0; i < 4; i++) {
+      const outcome = await engine.recordCanaryOutcome("cost-analyst", true);
+      expect(outcome?.ignored).toBeUndefined();
+      expect(outcome?.deployment.metrics.canaryRequests).toBe(i + 1);
+      expect(outcome?.deployment.metrics.canaryErrors).toBe(i + 1);
+    }
+
+    const rollback = await engine.recordCanaryOutcome("cost-analyst", true);
+    expect(rollback?.rollback).toContain("Auto-rollback");
+  });
+
   it("recordCanaryOutcome ignores non-quality signals and only counts correlated quality outcomes", async () => {
     const canaryAnalysis = makeAnalysis([
       {
@@ -803,6 +832,63 @@ describe("ReforgeEngine", () => {
       });
     }
     expect(events.map((e) => e.topic)).toContain("self-modification.canary.rolled_back");
+  });
+
+  it("does not fail canary state transitions when lifecycle publishing throws", async () => {
+    const noisyEngine = new ReforgeEngine(tmpDir, {
+      publishEvent: () => {
+        throw new Error("publisher unavailable");
+      },
+    });
+    const canaryAnalysis = makeAnalysis([
+      {
+        action: "update-system-prompt",
+        rationale: "publish failure must not fail state transition",
+        urgency: "medium",
+        theme_label: "prompt-canary",
+        confidence: 0.8,
+      },
+    ]);
+
+    const canaryPlan = await noisyEngine.buildPlan(canaryAnalysis, [makeTemplate()]);
+    await expect(noisyEngine.deployCanary(canaryPlan, {
+      trafficPercent: 100,
+      strategy: "hash",
+      rollbackThreshold: 0.1,
+    })).resolves.toBeTruthy();
+
+    const stagedPath = path.join(
+      tmpDir,
+      ".agentforge",
+      "agent-overrides",
+      "canary",
+      "cost-analyst.json",
+    );
+    await expect(fs.readFile(stagedPath, "utf-8")).resolves.toContain("cost-analyst");
+
+    await expect(noisyEngine.promoteCanary("cost-analyst")).resolves.toBeTruthy();
+
+    await noisyEngine.deployCanary(canaryPlan, {
+      trafficPercent: 100,
+      strategy: "hash",
+      rollbackThreshold: 0.1,
+    });
+    for (let i = 0; i < 4; i++) {
+      const requestId = `publish-rollback-${i}`;
+      await noisyEngine.applyOverride(makeTemplate(), { requestId });
+      await noisyEngine.recordCanaryOutcome("cost-analyst", true, {
+        source: "quality",
+        requestId,
+      });
+    }
+    const requestId = "publish-rollback-final";
+    await noisyEngine.applyOverride(makeTemplate(), { requestId });
+    await expect(noisyEngine.recordCanaryOutcome("cost-analyst", true, {
+      source: "quality",
+      requestId,
+    })).resolves.toMatchObject({
+      rollback: expect.stringContaining("Auto-rollback"),
+    });
   });
 
   // -------------------------------------------------------------------------
