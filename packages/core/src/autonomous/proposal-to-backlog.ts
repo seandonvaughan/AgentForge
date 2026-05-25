@@ -21,6 +21,10 @@ export interface BacklogItem {
   source: 'failed-session' | 'cost-anomaly' | 'task-outcome' | 'flaking-test' | 'todo-marker' | 'backlog-file';
   confidence: number;
   estimatedCostUsd?: number;
+  /** Declared complexity (from backlog files). Drives the unattended difficulty gate. */
+  estimatedComplexity?: 'low' | 'medium' | 'high';
+  /** Declared file scope. Required for unattended auto-pick of backlog-file items. */
+  files?: string[];
 }
 
 export interface ProposalAdapter {
@@ -156,7 +160,50 @@ export class ProposalToBacklog {
       }
     }
 
-    return this.sanitizeItems(this.deduplicate(items));
+    const base = this.applyQuarantine(this.sanitizeItems(this.deduplicate(items)));
+    // Unattended runs must not auto-attempt items too large to ship in one
+    // cycle — that was the root trigger of the 2026-05-25 spin. A human
+    // (attended mode) can still pick big items or decompose them first.
+    return process.env['AGENTFORGE_UNATTENDED'] === '1'
+      ? this.applyDifficultyGate(base)
+      : base;
+  }
+
+  /** Item ids the operator/loop has parked so they are never auto-picked again. */
+  private readQuarantineIds(): Set<string> {
+    const path = join(this.cwd, '.agentforge', 'backlog', 'quarantine.json');
+    try {
+      const parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown;
+      const ids = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray((parsed as { ids?: unknown } | null)?.ids)
+          ? (parsed as { ids: unknown[] }).ids
+          : [];
+      return new Set(ids.filter((x): x is string => typeof x === 'string'));
+    } catch {
+      return new Set();
+    }
+  }
+
+  private applyQuarantine(items: BacklogItem[]): BacklogItem[] {
+    const quarantined = this.readQuarantineIds();
+    if (quarantined.size === 0) return items;
+    return items.filter((item) => !quarantined.has(item.id));
+  }
+
+  /**
+   * Unattended difficulty gate: refuse to auto-attempt backlog-file items that
+   * are too large to ship in one cycle (estimatedComplexity 'high', or no
+   * declared file scope). Other sources (failed-session, flaking-test,
+   * todo-marker) are inherently small and pass through.
+   */
+  private applyDifficultyGate(items: BacklogItem[]): BacklogItem[] {
+    return items.filter((item) => {
+      if (item.source !== 'backlog-file') return true;
+      if (item.estimatedComplexity === 'high') return false;
+      if (item.files === undefined || item.files.length === 0) return false;
+      return true;
+    });
   }
 
   private readBacklogFiles(): BacklogItem[] {
@@ -379,6 +426,20 @@ function normalizeBacklogFileItem(raw: unknown, fileName: string): BacklogItem |
 
   if (estimatedCostUsd !== undefined) {
     item.estimatedCostUsd = estimatedCostUsd;
+  }
+
+  const complexityRaw = typeof obj['estimatedComplexity'] === 'string'
+    ? obj['estimatedComplexity'].toLowerCase()
+    : undefined;
+  if (complexityRaw === 'low' || complexityRaw === 'medium' || complexityRaw === 'high') {
+    item.estimatedComplexity = complexityRaw;
+  }
+
+  const files = Array.isArray(obj['files'])
+    ? obj['files'].filter((f): f is string => typeof f === 'string' && f.trim().length > 0)
+    : [];
+  if (files.length > 0) {
+    item.files = files;
   }
 
   return item;
