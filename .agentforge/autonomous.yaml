@@ -13,7 +13,7 @@ budget:
   perAgentUsd: 60
   allowOverageApproval: true
 limits:
-  maxItemsPerSprint: 20
+  maxItemsPerSprint: 3
   maxDurationMinutes: 180
   maxConsecutiveFailures: 5
   maxExecutePhaseFailureRate: 0.5
