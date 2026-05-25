@@ -9,10 +9,12 @@ import type { MessageEnvelopeV2 } from '@agentforge/core';
 import type {
   AgentDmSentPayload,
   InboxMessageCreatedPayload,
+  SelfModificationCanaryStagedPayload,
 } from '@agentforge/core';
 import {
   bridgeDmToGlobalStream,
   bridgeInboxToGlobalStream,
+  bridgeCanaryLifecycleToGlobalStream,
 } from '../index.js';
 import { globalStream, type StreamEvent } from '../stream.js';
 
@@ -46,6 +48,23 @@ function inboxEnvelope(
     topic: 'inbox.message.created',
     category: 'comms',
     priority: 'normal',
+    payload,
+  };
+}
+
+function canaryStagedEnvelope(
+  payload: SelfModificationCanaryStagedPayload,
+): MessageEnvelopeV2<SelfModificationCanaryStagedPayload> {
+  return {
+    id: 'env-3',
+    version: '2.0',
+    timestamp: '2026-05-15T00:00:00.000Z',
+    workspaceId: 'test',
+    from: 'system',
+    to: 'broadcast',
+    topic: 'self-modification.canary.staged',
+    category: 'quality',
+    priority: 'high',
     payload,
   };
 }
@@ -116,5 +135,40 @@ describe('bridgeInboxToGlobalStream', () => {
     expect(payload.id).toBe('inbox-1');
     expect(payload.messageKind).toBe('warning');
     expect(payload.recipients).toEqual(['@user']);
+  });
+});
+
+describe('bridgeCanaryLifecycleToGlobalStream', () => {
+  it('emits a workflow_event with canary lifecycle payload shape', () => {
+    const received: StreamEvent[] = [];
+    const unsub = globalStream.subscribe('test-canary-bridge', (e) => received.push(e));
+    try {
+      bridgeCanaryLifecycleToGlobalStream(
+        canaryStagedEnvelope({
+          agentName: 'cost-analyst',
+          planId: 'plan-1',
+          flagId: 'plan-1:cost-analyst',
+          trafficPercent: 25,
+          strategy: 'hash',
+          rollbackThreshold: 0.1,
+          stagedAt: '2026-05-15T00:00:00.000Z',
+          overrideVersion: 3,
+          mutationCount: 2,
+        }),
+      );
+    } finally {
+      unsub();
+    }
+
+    expect(received).toHaveLength(1);
+    const ev = received[0]!;
+    expect(ev.type).toBe('workflow_event');
+    expect(ev.category).toBe('quality');
+    expect(ev.message).toContain('Self-mod canary staged');
+    const payload = ev.payload as { kind: string; topic: string; agentName: string; flagId: string };
+    expect(payload.kind).toBe('self_mod_canary_staged');
+    expect(payload.topic).toBe('self-modification.canary.staged');
+    expect(payload.agentName).toBe('cost-analyst');
+    expect(payload.flagId).toBe('plan-1:cost-analyst');
   });
 });

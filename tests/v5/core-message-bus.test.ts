@@ -14,6 +14,7 @@ import {
   isCostTopic,
   isFeedbackTopic,
   isSystemTopic,
+  isQualityTopic,
 } from '../../packages/core/src/message-bus/types.js';
 import type { MessageTopic } from '../../packages/core/src/message-bus/types.js';
 
@@ -311,5 +312,11 @@ describe('Topic type guards', () => {
 
   it('isSystemTopic returns true for system.health.check', () => {
     expect(isSystemTopic('system.health.check')).toBe(true);
+  });
+
+  it('isQualityTopic returns true for self-modification canary lifecycle topics', () => {
+    expect(isQualityTopic('self-modification.canary.staged')).toBe(true);
+    expect(isQualityTopic('self-modification.canary.promoted')).toBe(true);
+    expect(isQualityTopic('self-modification.canary.rolled_back')).toBe(true);
   });
 });

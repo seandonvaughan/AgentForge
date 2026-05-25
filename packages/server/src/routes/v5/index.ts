@@ -14,6 +14,9 @@ import {
   type MessageEnvelopeV2,
   type AgentDmSentPayload,
   type InboxMessageCreatedPayload,
+  type SelfModificationCanaryStagedPayload,
+  type SelfModificationCanaryPromotedPayload,
+  type SelfModificationCanaryRolledBackPayload,
 } from '@agentforge/core';
 import { rbacRoutes } from './rbac.js';
 import { costsRoutes } from './costs.js';
@@ -536,6 +539,15 @@ export async function registerV5Routes(
     opts.bus.subscribe<InboxMessageCreatedPayload>('inbox.message.created', (envelope) => {
       bridgeInboxToGlobalStream(envelope);
     });
+    opts.bus.subscribe<SelfModificationCanaryStagedPayload>('self-modification.canary.staged', (envelope) => {
+      bridgeCanaryLifecycleToGlobalStream(envelope);
+    });
+    opts.bus.subscribe<SelfModificationCanaryPromotedPayload>('self-modification.canary.promoted', (envelope) => {
+      bridgeCanaryLifecycleToGlobalStream(envelope);
+    });
+    opts.bus.subscribe<SelfModificationCanaryRolledBackPayload>('self-modification.canary.rolled_back', (envelope) => {
+      bridgeCanaryLifecycleToGlobalStream(envelope);
+    });
   }
 
   // ── Billing scaffolding (plan + invoice stubs; Stripe integration Phase 2) ─
@@ -608,6 +620,29 @@ export function bridgeInboxToGlobalStream(envelope: MessageEnvelopeV2<InboxMessa
       threadId: p.threadId,
       createdAt: p.createdAt,
       recipients: p.recipients,
+    },
+  });
+}
+
+export function bridgeCanaryLifecycleToGlobalStream(
+  envelope: MessageEnvelopeV2<
+    | SelfModificationCanaryStagedPayload
+    | SelfModificationCanaryPromotedPayload
+    | SelfModificationCanaryRolledBackPayload
+  >,
+): void {
+  const kind = envelope.topic.replace('self-modification.canary.', '');
+  globalStream.emit({
+    type: 'workflow_event',
+    category: 'quality',
+    message: `Self-mod canary ${kind}: ${(envelope.payload as { agentName?: string }).agentName ?? 'unknown-agent'}`,
+    payload: {
+      kind: `self_mod_canary_${kind}`,
+      topic: envelope.topic,
+      workspaceId: envelope.workspaceId,
+      envelopeId: envelope.id,
+      timestamp: envelope.timestamp,
+      ...envelope.payload,
     },
   });
 }

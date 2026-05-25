@@ -166,3 +166,17 @@ export interface CanaryDeployOptions {
   strategy?: TrafficSplitStrategy;
   rollbackThreshold?: number;
 }
+
+/** Source classification for canary outcome recording. */
+export type CanaryOutcomeSource = "quality" | "runtime" | "infrastructure";
+
+/** Options for recording canary outcomes in a retry-safe way. */
+export interface RecordCanaryOutcomeOptions {
+  /** Stable request id used for canary-route correlation and idempotent retries. */
+  requestId?: string;
+  /**
+   * Only `quality` outcomes are counted toward rollback thresholds.
+   * Runtime/infrastructure failures are ignored to prevent false rollbacks.
+   */
+  source?: CanaryOutcomeSource;
+}
