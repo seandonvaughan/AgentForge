@@ -13,6 +13,7 @@ const DASHBOARD_E2E_SPECS = [
   'tests/e2e/dashboard-cycle-launch.test.ts',
   'tests/e2e/dashboard-cycle-detail.test.ts',
 ] as const;
+const DASHBOARD_E2E_COMMAND = `playwright test ${DASHBOARD_E2E_SPECS.join(' ')}`;
 
 function parseDashboardE2eSpecs(script: string): string[] {
   const prefix = 'playwright test';
@@ -84,6 +85,20 @@ describe('package scripts', () => {
     expect(new Set(selectedSpecs).size).toBe(selectedSpecs.length);
   });
 
+  it('runs exactly one approved dashboard playwright command in verify:product', async () => {
+    const scripts = loadRootScripts();
+    const harness = new ScriptPipelineHarness(scripts, () => 0);
+
+    const result = await harness.run('verify:product');
+    const playwrightRuns = result.trace.filter((command) =>
+      command.startsWith('playwright test'),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(playwrightRuns).toEqual([DASHBOARD_E2E_COMMAND]);
+    expect(result.trace).not.toContain('playwright test');
+  });
+
   it('runs exactly one dashboard e2e invocation during verify:gates', async () => {
     const scripts = loadRootScripts();
     const harness = new ScriptPipelineHarness(scripts, () => 0);
@@ -98,6 +113,20 @@ describe('package scripts', () => {
     expect(parseDashboardE2eSpecs(dashboardE2eRuns[0] ?? '')).toEqual([
       ...DASHBOARD_E2E_SPECS,
     ]);
+  });
+
+  it('does not invoke broad playwright e2e selectors during verify:gates', async () => {
+    const scripts = loadRootScripts();
+    const harness = new ScriptPipelineHarness(scripts, () => 0);
+
+    const result = await harness.run('verify:gates');
+    const playwrightRuns = result.trace.filter((command) =>
+      command.startsWith('playwright test'),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(playwrightRuns).toEqual([DASHBOARD_E2E_COMMAND]);
+    expect(result.trace).not.toContain('playwright test');
   });
 
   it('stops verify:gates before dashboard checks when verify:product typecheck fails', async () => {
