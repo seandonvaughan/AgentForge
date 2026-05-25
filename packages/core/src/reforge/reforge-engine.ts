@@ -361,16 +361,17 @@ export class ReforgeEngine {
       return null;
     }
 
+    const source: CanaryOutcomeSource = options.source ?? "quality";
+    if (source !== "quality") {
+      this.pruneExpiredPendingOutcomes();
+      return { deployment };
+    }
+
     if (options.requestId) {
       const pending = this.consumePendingCanaryOutcome(agentName, options.requestId);
       if (!pending || pending.flagId !== deployment.flagId) {
         return { deployment };
       }
-    }
-
-    const source: CanaryOutcomeSource = options.source ?? "quality";
-    if (source !== "quality") {
-      return { deployment };
     }
 
     this.canaryManager.getFlag(deployment.flagId) ?? this.ensureCanaryFlag(deployment);

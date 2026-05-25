@@ -872,6 +872,40 @@ describe("ReforgeEngine", () => {
     expect(outcome?.deployment.metrics?.canaryErrors ?? 0).toBe(0);
   });
 
+  it("does not consume canary request correlation for non-quality outcomes", async () => {
+    const canaryPlan = await engine.buildPlan(
+      makeAnalysis([
+        {
+          action: "update-system-prompt",
+          rationale: "non-quality outcomes should not mask later regressions",
+          urgency: "medium",
+          theme_label: "prompt-canary",
+          confidence: 0.7,
+        },
+      ]),
+      [makeTemplate()],
+    );
+    await engine.deployCanary(canaryPlan, {
+      trafficPercent: 100,
+      strategy: "hash",
+      rollbackThreshold: 0.1,
+    });
+
+    const requestId = "infra-then-regression-1";
+    await engine.applyOverride(makeTemplate(), { requestId });
+
+    const infrastructure = await engine.recordCanaryOutcome("cost-analyst", true, {
+      requestId,
+      source: "infrastructure",
+    });
+    expect(infrastructure?.deployment.metrics?.canaryRequests ?? 0).toBe(0);
+    expect(infrastructure?.deployment.metrics?.canaryErrors ?? 0).toBe(0);
+
+    const quality = await engine.recordCanaryOutcome("cost-analyst", true, { requestId });
+    expect(quality?.deployment.metrics?.canaryRequests).toBe(1);
+    expect(quality?.deployment.metrics?.canaryErrors).toBe(1);
+  });
+
   // -------------------------------------------------------------------------
   // rollback
   // -------------------------------------------------------------------------
