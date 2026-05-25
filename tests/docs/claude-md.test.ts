@@ -18,11 +18,14 @@ import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const CLAUDE_MD_PATH = join(REPO_ROOT, "CLAUDE.md");
+const RUNTIME_MODES_MD_PATH = join(REPO_ROOT, "docs", "runtime-modes.md");
 
 let content = "";
+let runtimeModesContent = "";
 
 beforeAll(async () => {
   content = await readFile(CLAUDE_MD_PATH, "utf-8");
+  runtimeModesContent = await readFile(RUNTIME_MODES_MD_PATH, "utf-8");
 });
 
 // ---------------------------------------------------------------------------
@@ -155,5 +158,23 @@ describe("CLAUDE.md", () => {
 
   it("does not reference stale 'lead-architect' agent role", () => {
     expect(content).not.toMatch(/lead-architect/);
+  });
+});
+
+describe("docs/runtime-modes.md", () => {
+  it("exists and includes Claude and Codex transport modes", () => {
+    expect(existsSync(RUNTIME_MODES_MD_PATH)).toBe(true);
+    expect(runtimeModesContent).toMatch(/anthropic-sdk/);
+    expect(runtimeModesContent).toMatch(/claude-code-compat/);
+    expect(runtimeModesContent).toMatch(/codex-cli/);
+    expect(runtimeModesContent).toMatch(/openai-sdk/);
+  });
+
+  it("documents per-job provider model profile behavior", () => {
+    expect(runtimeModesContent).toMatch(/providerModelProfiles/);
+    expect(runtimeModesContent).toMatch(/AGENTFORGE_CODEX_/);
+    expect(runtimeModesContent).toMatch(/AGENTFORGE_OPENAI_/);
+    expect(runtimeModesContent).toMatch(/modelId/);
+    expect(runtimeModesContent).toMatch(/effort/);
   });
 });

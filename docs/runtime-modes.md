@@ -5,22 +5,26 @@ environment variable or the `runtime:` field in `.agentforge/autonomous.yaml`.
 
 ---
 
-## The three modes
+## Runtime modes and transports
 
 | Mode | Value | Transport registered | Best for |
 |---|---|---|---|
-| SDK only | `sdk` | `AnthropicSdkTransport` only | AgentForge Cloud, CI, any environment where the `claude` CLI is not installed |
-| CLI only | `cli` | `ClaudeCodeCompatTransport` only | Local Claude Code users who want to guarantee the CLI path |
-| Auto (default) | `auto` | Both | Local development; falls back gracefully when only one transport is available |
+| Anthropic SDK | `sdk` or `anthropic-sdk` | `AnthropicSdkTransport` only | AgentForge Cloud, CI, any environment with Anthropic API credentials |
+| Claude CLI compat | `cli`, `claude-cli`, or `claude-code-compat` | `ClaudeCodeCompatTransport` only | Local Claude Code users who want to guarantee the `claude` subprocess path |
+| Codex CLI | `codex-cli` | `CodexCliTransport` only | Local Codex users who need CLI tool execution and Codex sandbox controls |
+| OpenAI SDK | `openai-sdk` | `OpenAiSdkTransport` only | Headless OpenAI API usage without local CLI dependencies |
+| Auto (default) | `auto` | Resolver chooses from available transports | Local development with graceful fallback across providers |
 
 ### `auto` (default)
 
-Both transports are registered. The `ProviderResolver` selects one at runtime:
+All transports can be registered. The `ProviderResolver` selects one at runtime:
 
-- When `allowedTools` are requested it always picks the CLI transport (tool execution
-  requires the Claude Code subprocess).
-- Otherwise it prefers the SDK transport when `ANTHROPIC_API_KEY` is present.
-- Falls back to the CLI transport when the API key is absent but `claude` is on PATH.
+- When `allowedTools` are requested, it prefers `claude-code-compat`, then `codex-cli`.
+- Otherwise selection order is:
+  1. `anthropic-sdk`
+  2. `claude-code-compat`
+  3. `codex-cli`
+  4. `openai-sdk`
 
 ### `sdk`
 
@@ -35,6 +39,17 @@ explicit `apiKey` on the request).  No `claude` subprocess is ever spawned.
 Only `ClaudeCodeCompatTransport` is registered.  Requires the `claude` binary to be
 authenticated and on PATH.  Useful when you explicitly want to exercise the Claude
 Code path (e.g. during local integration testing of tool-use flows).
+
+### `codex-cli`
+
+Only `CodexCliTransport` is registered. Requires the Codex CLI to be installed and
+authenticated. This mode is the forced option when a job must run with Codex CLI
+settings (for example `codexSandbox`, `codexProfile`, or `codexSearch`).
+
+### `openai-sdk`
+
+Only `OpenAiSdkTransport` is registered. Requires `OPENAI_API_KEY` (or an explicit
+`apiKey` in the request). No local CLI subprocess is required.
 
 ---
 
@@ -77,6 +92,12 @@ export AGENTFORGE_RUNTIME=sdk
 # Always use the Claude Code CLI subprocess
 export AGENTFORGE_RUNTIME=cli
 
+# Always use Codex CLI
+export AGENTFORGE_RUNTIME=codex-cli
+
+# Always use OpenAI SDK
+export AGENTFORGE_RUNTIME=openai-sdk
+
 # Let AgentForge decide (default)
 export AGENTFORGE_RUNTIME=auto
 ```
@@ -86,7 +107,7 @@ export AGENTFORGE_RUNTIME=auto
 Add a top-level `runtime:` field:
 
 ```yaml
-runtime: sdk   # or: cli | auto
+runtime: sdk   # or: cli | auto | codex-cli | openai-sdk | anthropic-sdk | claude-cli | claude-code-compat
 
 budget:
   perCycleUsd: 200
@@ -102,8 +123,35 @@ back to `auto`:
 
 ```
 [agentforge] AGENTFORGE_RUNTIME="turbo" is not a valid value.
-Falling back to "auto". Valid values: auto, sdk, cli.
+Falling back to "auto". Valid values: auto, sdk, cli, anthropic-sdk, claude-cli, claude-code-compat, codex-cli, openai-sdk.
 ```
+
+---
+
+## Per-job model profiles
+
+Each runtime job carries an explicit model profile per provider via
+`providerModelProfiles`. This keeps retries idempotent and guarantees the selected
+transport receives a concrete `modelId` (and optional `effort`) for that job.
+
+Precedence for Codex/OpenAI model profile resolution:
+
+1. Tier-specific environment overrides (for example `AGENTFORGE_CODEX_OPUS_MODEL`)
+2. Provider-wide environment overrides (for example `AGENTFORGE_CODEX_MODEL`)
+3. Runtime-supplied job effort override (`agentEffort`)
+4. `.agentforge/config/models.yaml` provider/tier overrides
+5. Built-in defaults
+
+Transport-specific profiles are read from `providerModelProfiles[providerKind]`;
+when missing, runtime falls back to request-level `modelId` and `effort`.
+
+Supported environment prefixes for profile overrides:
+
+- `AGENTFORGE_CODEX_*` for `codex-cli`
+- `AGENTFORGE_OPENAI_*` for `openai-sdk`
+
+Anthropic transports (`anthropic-sdk` and `claude-code-compat`) keep Claude model
+IDs per tier unless explicitly overridden in request payloads.
 
 ---
 
@@ -111,6 +159,7 @@ Falling back to "auto". Valid values: auto, sdk, cli.
 
 ```typescript
 import { resolveMode, readConfigMode } from '@agentforge/core/runtime/execution-service-mode';
+import { resolveProviderModelProfiles } from '@agentforge/core/runtime/model-profiles';
 
 // Resolve from process.env + autonomous.yaml in cwd
 const mode = resolveMode();         // 'auto' | 'sdk' | 'cli'
@@ -122,4 +171,8 @@ const configMode = readConfigMode('/path/to/project');
 import { ExecutionService } from '@agentforge/core';
 const svc = new ExecutionService({ mode: 'sdk' });
 console.log(svc.mode); // 'sdk'
+
+// Resolve per-provider model profiles for a specific job.
+const providerModelProfiles = resolveProviderModelProfiles('sonnet', 'high');
+console.log(providerModelProfiles['codex-cli']); // { modelId: 'gpt-5.3-codex', effort: 'high' }
 ```
