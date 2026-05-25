@@ -4,6 +4,30 @@ import {
   loadRootScripts,
 } from './script-pipeline-harness.js';
 
+const DASHBOARD_E2E_SPECS = [
+  'tests/e2e/dashboard-agents.test.ts',
+  'tests/e2e/dashboard-runner.test.ts',
+  'tests/e2e/dashboard-live.test.ts',
+  'tests/e2e/dashboard-health.test.ts',
+  'tests/e2e/dashboard-org.test.ts',
+  'tests/e2e/dashboard-cycle-launch.test.ts',
+  'tests/e2e/dashboard-cycle-detail.test.ts',
+] as const;
+
+function parseDashboardE2eSpecs(script: string): string[] {
+  const prefix = 'playwright test';
+  const trimmed = script.trim();
+  if (!trimmed.startsWith(prefix)) {
+    return [];
+  }
+
+  return trimmed
+    .slice(prefix.length)
+    .trim()
+    .split(/\s+/)
+    .filter((token) => token.length > 0);
+}
+
 describe('package scripts', () => {
   it('stops verify:product before tests when typecheck fails', async () => {
     const scripts = loadRootScripts();
@@ -49,6 +73,31 @@ describe('package scripts', () => {
     expect(dashboardE2e).toContain('dashboard-org.test.ts');
     expect(dashboardE2e).toContain('dashboard-cycle-launch.test.ts');
     expect(dashboardE2e).toContain('dashboard-cycle-detail.test.ts');
+  });
+
+  it('pins dashboard e2e to the exact approved spec list with no duplicates', () => {
+    const scripts = loadRootScripts();
+    const dashboardE2e = scripts['test:e2e:dashboard'];
+    const selectedSpecs = parseDashboardE2eSpecs(dashboardE2e);
+
+    expect(selectedSpecs).toEqual([...DASHBOARD_E2E_SPECS]);
+    expect(new Set(selectedSpecs).size).toBe(selectedSpecs.length);
+  });
+
+  it('runs exactly one dashboard e2e invocation during verify:gates', async () => {
+    const scripts = loadRootScripts();
+    const harness = new ScriptPipelineHarness(scripts, () => 0);
+
+    const result = await harness.run('verify:gates');
+    const dashboardE2eRuns = result.trace.filter((command) =>
+      command.startsWith('playwright test tests/e2e/dashboard-'),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(dashboardE2eRuns).toHaveLength(1);
+    expect(parseDashboardE2eSpecs(dashboardE2eRuns[0] ?? '')).toEqual([
+      ...DASHBOARD_E2E_SPECS,
+    ]);
   });
 
   it('stops verify:gates before dashboard checks when verify:product typecheck fails', async () => {

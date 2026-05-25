@@ -524,7 +524,47 @@ describe('execute-phase worktree integration', () => {
 
     expect(pool.allocate).toHaveBeenCalledWith({
       agentId: 'coder',
-      sessionId: 'cycle-wt-1',
+      sessionId: 'cycle-wt-1-item-1',
+    });
+  });
+
+  it('uses item-specific worktree sessions for parallel same-agent items', async () => {
+    writeSprintFile([
+      { id: 'item-a', title: 'Task A', assignee: 'coder', tags: ['coder'] },
+      { id: 'item-b', title: 'Task B', assignee: 'coder', tags: ['coder'] },
+    ]);
+
+    const allocate = vi.fn().mockImplementation(async (req: { agentId: string; sessionId: string }) => ({
+      id: `wt-${req.sessionId}`,
+      path: `/fake/${req.sessionId}`,
+      branch: `autonomous/${req.sessionId}`,
+      allocatedAt: new Date().toISOString(),
+      agentId: req.agentId,
+      sessionId: req.sessionId,
+    }));
+    const pool = {
+      allocate,
+      release: vi.fn().mockResolvedValue(undefined),
+    };
+    const bus = makeBus();
+    const runtime = { run: vi.fn().mockResolvedValue({ output: 'ok', costUsd: 0.01 }) };
+    const ctx = makeCtx(bus, { worktreePool: pool, runtime });
+
+    const result = await runExecutePhase(ctx, {
+      maxParallelism: 2,
+      maxItemRetries: 0,
+      requireWorktrees: true,
+    });
+
+    expect(result.status).toBe('completed');
+    expect(allocate).toHaveBeenCalledTimes(2);
+    expect(allocate).toHaveBeenCalledWith({
+      agentId: 'coder',
+      sessionId: 'cycle-wt-1-item-a',
+    });
+    expect(allocate).toHaveBeenCalledWith({
+      agentId: 'coder',
+      sessionId: 'cycle-wt-1-item-b',
     });
   });
 
@@ -571,7 +611,7 @@ describe('execute-phase worktree integration', () => {
     ]);
 
     const allocate = vi.fn().mockImplementation(async (req: { agentId: string; sessionId: string }) => {
-      if (req.sessionId === 'cycle-wt-1') {
+      if (req.sessionId === 'cycle-wt-1-item-1') {
         throw new Error('fatal: --[no-]track can only be used if a new branch is created');
       }
       return {
@@ -597,10 +637,10 @@ describe('execute-phase worktree integration', () => {
     expect(allocate).toHaveBeenCalledTimes(2);
     expect(allocate).toHaveBeenNthCalledWith(2, {
       agentId: 'coder',
-      sessionId: 'cycle-wt-1-retry-1',
+      sessionId: 'cycle-wt-1-item-1-retry-1',
     });
     expect(runtime.run).toHaveBeenCalledTimes(1);
-    expect((runtime.run.mock.calls[0]![2] as any).cwd).toBe('/fake/cycle-wt-1-retry-1');
+    expect((runtime.run.mock.calls[0]![2] as any).cwd).toBe('/fake/cycle-wt-1-item-1-retry-1');
     expect(bus.events.filter((e) => e.topic === 'execute.worktree.alloc-failed')).toHaveLength(0);
   });
 

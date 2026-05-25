@@ -491,8 +491,9 @@ type ExecuteWorktreeHandle = {
   sessionId: string;
 };
 
-function worktreeSessionCandidates(ctx: PhaseContext): string[] {
-  const baseSession = ctx.cycleId ?? ctx.sprintId;
+function worktreeSessionCandidates(ctx: PhaseContext, item: SprintItem): string[] {
+  const runSession = ctx.cycleId ?? ctx.sprintId;
+  const baseSession = `${runSession}-${item.id}`;
   const retryAttempt = typeof ctx.retryAttempt === 'number' && ctx.retryAttempt > 0
     ? ctx.retryAttempt
     : 0;
@@ -516,7 +517,7 @@ async function allocateWorktreeForItem(
   ctx: PhaseContext,
   item: SprintItem,
 ): Promise<ExecuteWorktreeHandle> {
-  const candidates = worktreeSessionCandidates(ctx);
+  const candidates = worktreeSessionCandidates(ctx, item);
   let lastErr: unknown;
 
   for (let i = 0; i < candidates.length; i++) {

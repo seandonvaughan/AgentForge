@@ -109,24 +109,23 @@ context:
   project_specific: []
 learnings:
   - >-
+    Add exact-spec package-script guards for dashboard e2e coverage; broad contains checks missed accidental cost-driven
+    selector drift.
+  - >-
+    Parallel same-agent execution needs distinct worktree sessions per item; test this with two same-agent items and
+    maxParallelism > 1.
+  - >-
     Do not reduce test:e2e:dashboard coverage unless a separate full dashboard lane is enforced and tested; gate will
     reject coverage cuts without that safeguard.
   - Effort-level tests should use allowed values ('low', 'medium', 'high', 'max') or a shared EffortLevel type.
   - >-
     RuntimeAdapter model-cap changes need pure capModelTier coverage plus integration proof that the selected model and
     effort are both substituted.
-  - >-
-    Treat type-only drift as maintenance unless a live config or runtime path proves behavior divergence.
+  - Treat type-only drift as maintenance unless a live config or runtime path proves behavior divergence.
   - Test-fixture tokens must be constructed at runtime via .join() — string literals trigger Gitleaks false positives
   - Never name SvelteKit tests +page.test.ts — svelte-kit sync crashes in <30s and breaks every CI job
   - Tests asserting .gitignored directory contents fail in fresh CI checkouts — assert parent dir or doc-grep instead
   - Rebase staged promotion onto the current active override or reject promotion when the staged base is stale.
-  - test coverage does not exercise the real orchestrator path or stale-canary promotion
-  - staticFallback() silently mishandles P3 priority
-  - >-
-    Code reviewers sometimes analyze an intermediate execute-phase snapshot — by the time the gate runs, a flagged bug
-    may already be patched.
-  - stringify must never be used as fallback.
 owns_subsystems: []
 capability_tags:
   - vitest

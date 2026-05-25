@@ -86,6 +86,16 @@ context:
     - packages/core/src
 learnings:
   - >-
+    Parallel cycle execution must allocate worktrees from an item-specific session key; agent-only/cycle-only keys collide
+    when one agent receives multiple items.
+  - >-
+    Codex CLI exit errors need durable raw stdout/stderr artifacts because truncated transport errors can hide the real
+    failing command.
+  - Effort-level tests should use allowed values ('low', 'medium', 'high', 'max') or a shared EffortLevel type.
+  - >-
+    RuntimeAdapter model-cap changes need pure capModelTier coverage plus integration proof that the selected model and
+    effort are both substituted.
+  - >-
     TypeScript LSP/HMR deletes newly created .ts files during parallel sessions — write + git add in a single atomic
     bash call
   - >-
@@ -99,15 +109,6 @@ learnings:
     Code reviewers sometimes analyze an intermediate execute-phase snapshot — by the time the gate runs, a flagged bug
     may already be patched.
   - stringify must never be used as fallback.
-  - >-
-    ts:647,667 reproduces but is a latent trap — defaults (pnpm build, tsc --noEmit) tokenize safely; the bug only fires
-    under custom CycleConfig with quoted args or space-containing paths.
-  - defaultTypeCheck splits buildCommand/typeCheckCommand on " " — breaks for commands
-  - Naive split(' ') in defaultTypeCheck will corrupt complex commands
-  - >-
-    This is production-critical cost-control code introduced in this sprint (commits 93d7b08, b101e5c) and must ship
-    with at minimum a unit test for the pure capModelTier() function covering same-tier, upward-cap, and
-    downgrade-with-effort cases.
 owns_subsystems:
   - packages/executor/src
   - packages/core/src
