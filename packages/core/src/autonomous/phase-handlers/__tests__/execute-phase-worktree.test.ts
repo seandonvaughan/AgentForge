@@ -679,6 +679,34 @@ describe('execute-phase worktree integration', () => {
     expect(pool.release).toHaveBeenCalledTimes(1);
   });
 
+  it('does not retry non-transient no-change failures even when retries are available', async () => {
+    const worktreePath = join(tmpRoot, 'wt-no-change-no-retry');
+    await initGitRepo(worktreePath);
+    writeSprintFile([
+      { id: 'item-1', title: 'Task A', assignee: 'coder', tags: ['coder'] },
+    ]);
+
+    const pool = makeSpyPool(worktreePath);
+    const bus = makeBus();
+    const runtime = {
+      run: vi.fn().mockResolvedValue({
+        output: 'Delegate to `embeddings-engineer`.',
+        costUsd: 0.01,
+      }),
+    };
+    const ctx = makeCtx(bus, { worktreePool: pool, runtime });
+
+    // Omit maxItemRetries to use the default (1). The item should still run
+    // only once because the failure is deterministic/non-transient.
+    const result = await runExecutePhase(ctx, { maxParallelism: 1 });
+
+    expect(result.status).toBe('blocked');
+    expect(runtime.run).toHaveBeenCalledTimes(1);
+    const itemResult = (result.itemResults as any[])?.[0];
+    expect(itemResult.status).toBe('failed');
+    expect(itemResult.error).toContain('produced no source changes');
+  });
+
   it('allocates ONCE per item (not per retry) on multiple retries', async () => {
     writeSprintFile([
       { id: 'item-1', title: 'Flaky task', assignee: 'coder', tags: ['coder'] },

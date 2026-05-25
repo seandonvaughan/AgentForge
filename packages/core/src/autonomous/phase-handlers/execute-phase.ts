@@ -506,6 +506,34 @@ function shouldRetryWorktreeAllocation(err: unknown): boolean {
   );
 }
 
+/**
+ * Retry only transient runtime failures. Deterministic failures (for example:
+ * "produced no source changes") should not re-dispatch an identical expensive
+ * model invocation.
+ */
+function isRetriableExecuteError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes('transient') ||
+    lower.includes('timeout') ||
+    lower.includes('timed out') ||
+    lower.includes('rate limit') ||
+    lower.includes('rate-limit') ||
+    lower.includes('quota') ||
+    lower.includes('429') ||
+    lower.includes('503') ||
+    lower.includes('502') ||
+    lower.includes('504') ||
+    lower.includes('service unavailable') ||
+    lower.includes('temporarily unavailable') ||
+    lower.includes('overloaded') ||
+    lower.includes('econnreset') ||
+    lower.includes('etimedout') ||
+    lower.includes('econnrefused') ||
+    lower.includes('eai_again')
+  );
+}
+
 async function allocateWorktreeForItem(
   pool: WorktreePoolLike,
   ctx: PhaseContext,
@@ -539,7 +567,7 @@ export interface ExecutePhaseOptions {
   maxFailureRate?: number;
   /** Max concurrent item dispatches. Default 3. */
   maxParallelism?: number;
-  /** Max retries per failing item (additional attempts beyond the first).
+  /** Max retries per item on retriable failures (additional attempts beyond the first).
    *  Default 1 (so each item gets up to 2 total tries). */
   maxItemRetries?: number;
   /**
@@ -1121,7 +1149,9 @@ export async function runExecutePhase(
           return completedResult;
         } catch (err) {
           lastError = err instanceof Error ? err.message : String(err);
-          if (attempt >= maxItemRetries) {
+          const shouldRetry =
+            attempt < maxItemRetries && isRetriableExecuteError(lastError);
+          if (!shouldRetry) {
             const durationMs = Date.now() - itemStartedAt;
             item.status = 'failed';
 
