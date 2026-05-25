@@ -528,6 +528,194 @@ describe("ReforgeEngine", () => {
     expect(applied.model).toBe("sonnet");
   });
 
+  it("recordCanaryOutcome ignores non-quality outcomes without consuming the pending canary correlation", async () => {
+    const canaryAnalysis = makeAnalysis([
+      {
+        action: "update-system-prompt",
+        rationale: "exercise correlated staged prompt",
+        urgency: "medium",
+        theme_label: "prompt-canary",
+        confidence: 0.7,
+      },
+    ]);
+
+    const canaryPlan = await engine.buildPlan(canaryAnalysis, [makeTemplate()]);
+    const deployment = await engine.deployCanary(canaryPlan, {
+      trafficPercent: 100,
+      strategy: "hash",
+      rollbackThreshold: 0.1,
+    });
+
+    await engine.applyOverride(makeTemplate(), {
+      requestId: "req-correlated-runtime",
+      outcomeToken: "quality-token-1",
+    });
+
+    const runtimeOutcome = await engine.recordCanaryOutcome("cost-analyst", true, {
+      requestId: "req-correlated-runtime",
+      outcomeToken: "quality-token-1",
+      source: "runtime",
+    });
+    expect(runtimeOutcome?.ignored).toBe("non-quality-source");
+
+    const stagedPath = path.join(
+      tmpDir,
+      ".agentforge",
+      "agent-overrides",
+      "canary",
+      "cost-analyst.json",
+    );
+    const afterRuntime = JSON.parse(await fs.readFile(stagedPath, "utf-8")) as {
+      metrics?: { canaryRequests: number; canaryErrors: number; errorRate: number };
+    };
+    expect(afterRuntime.metrics).toMatchObject({
+      canaryRequests: 0,
+      canaryErrors: 0,
+      errorRate: 0,
+    });
+
+    const qualityOutcome = await engine.recordCanaryOutcome("cost-analyst", true, {
+      requestId: "req-correlated-runtime",
+      outcomeToken: "quality-token-1",
+      source: "quality",
+    });
+    expect(qualityOutcome?.ignored).toBeUndefined();
+    expect(qualityOutcome?.deployment.flagId).toBe(deployment.deployments[0].flagId);
+    expect(qualityOutcome?.deployment.metrics).toMatchObject({
+      canaryRequests: 1,
+      canaryErrors: 1,
+      errorRate: 1,
+    });
+  });
+
+  it("recordCanaryOutcome ignores correlated quality outcomes that did not route through canary", async () => {
+    const canaryAnalysis = makeAnalysis([
+      {
+        action: "update-system-prompt",
+        rationale: "control traffic must not contaminate canary metrics",
+        urgency: "medium",
+        theme_label: "prompt-canary",
+        confidence: 0.7,
+      },
+    ]);
+
+    const canaryPlan = await engine.buildPlan(canaryAnalysis, [makeTemplate()]);
+    await engine.deployCanary(canaryPlan, {
+      trafficPercent: 50,
+      strategy: "hash",
+      rollbackThreshold: 0.1,
+    });
+
+    const controlRequest = findRequestId(50, false);
+    const applied = await engine.applyOverride(makeTemplate(), {
+      requestId: controlRequest,
+      outcomeToken: "control-token",
+    });
+    expect(applied.system_prompt).not.toContain("COST AWARENESS PREAMBLE");
+
+    const ignored = await engine.recordCanaryOutcome("cost-analyst", true, {
+      requestId: controlRequest,
+      outcomeToken: "control-token",
+      source: "quality",
+    });
+    expect(ignored?.ignored).toBe("no-pending-canary-outcome");
+
+    const stagedPath = path.join(
+      tmpDir,
+      ".agentforge",
+      "agent-overrides",
+      "canary",
+      "cost-analyst.json",
+    );
+    const staged = JSON.parse(await fs.readFile(stagedPath, "utf-8")) as {
+      metrics?: { canaryRequests: number; canaryErrors: number; errorRate: number };
+    };
+    expect(staged.metrics).toMatchObject({
+      canaryRequests: 0,
+      canaryErrors: 0,
+      errorRate: 0,
+    });
+  });
+
+  it("recordCanaryOutcome ignores tokenless quality outcomes when correlation options are provided", async () => {
+    const canaryAnalysis = makeAnalysis([
+      {
+        action: "update-system-prompt",
+        rationale: "uncorrelated quality outcome must stay fail-closed",
+        urgency: "medium",
+        theme_label: "prompt-canary",
+        confidence: 0.7,
+      },
+    ]);
+
+    const canaryPlan = await engine.buildPlan(canaryAnalysis, [makeTemplate()]);
+    await engine.deployCanary(canaryPlan, {
+      trafficPercent: 100,
+      strategy: "hash",
+      rollbackThreshold: 0.1,
+    });
+
+    const ignored = await engine.recordCanaryOutcome("cost-analyst", true, {
+      source: "quality",
+    });
+    expect(ignored?.ignored).toBe("missing-correlation");
+
+    const stagedPath = path.join(
+      tmpDir,
+      ".agentforge",
+      "agent-overrides",
+      "canary",
+      "cost-analyst.json",
+    );
+    const staged = JSON.parse(await fs.readFile(stagedPath, "utf-8")) as {
+      metrics?: { canaryRequests: number; canaryErrors: number; errorRate: number };
+    };
+    expect(staged.metrics).toMatchObject({
+      canaryRequests: 0,
+      canaryErrors: 0,
+      errorRate: 0,
+    });
+  });
+
+  it("retains pending canary outcomes by logical outcome count when request and token are both present", async () => {
+    const canaryAnalysis = makeAnalysis([
+      {
+        action: "update-system-prompt",
+        rationale: "dual-key pending outcomes must not evict early",
+        urgency: "medium",
+        theme_label: "prompt-canary",
+        confidence: 0.7,
+      },
+    ]);
+
+    const canaryPlan = await engine.buildPlan(canaryAnalysis, [makeTemplate()]);
+    await engine.deployCanary(canaryPlan, {
+      trafficPercent: 100,
+      strategy: "hash",
+      rollbackThreshold: 0.1,
+    });
+
+    for (let i = 0; i < 1_000; i++) {
+      await engine.applyOverride(makeTemplate(), {
+        requestId: `req-retention-${i}`,
+        outcomeToken: `token-retention-${i}`,
+      });
+    }
+
+    const outcome = await engine.recordCanaryOutcome("cost-analyst", false, {
+      requestId: "req-retention-0",
+      outcomeToken: "token-retention-0",
+      source: "quality",
+    });
+
+    expect(outcome?.ignored).toBeUndefined();
+    expect(outcome?.deployment.metrics).toMatchObject({
+      canaryRequests: 1,
+      canaryErrors: 0,
+      errorRate: 0,
+    });
+  });
+
   it("recordCanaryOutcome rehydrates staged canary flags after restart", async () => {
     const baseAnalysis = makeAnalysis([
       {

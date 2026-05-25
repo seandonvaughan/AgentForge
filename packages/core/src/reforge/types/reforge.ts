@@ -143,6 +143,31 @@ export interface CanaryDeploymentRecord {
 export interface CanaryRoutingContext {
   requestId?: string;
   headerValue?: string;
+  /**
+   * Optional stable token used to correlate a canary-routed request with the
+   * later quality outcome that is allowed to update rollback metrics.
+   */
+  outcomeToken?: string;
+}
+
+export type CanaryOutcomeSource = "quality" | "runtime" | "infrastructure";
+
+/** Options passed when recording a canary outcome for a routed request. */
+export interface CanaryOutcomeOptions {
+  requestId?: string;
+  outcomeToken?: string;
+  source?: CanaryOutcomeSource;
+}
+
+export type CanaryOutcomeIgnoredReason =
+  | "non-quality-source"
+  | "missing-correlation"
+  | "no-pending-canary-outcome";
+
+export interface CanaryOutcomeRecordResult {
+  deployment: CanaryDeploymentRecord;
+  rollback?: string;
+  ignored?: CanaryOutcomeIgnoredReason;
 }
 
 /** Outcome counters for a staged canary deployment. */
