@@ -286,6 +286,7 @@ export interface InboxMessageCreatedPayload {
  * surfacing layer).
  */
 export interface GateVerdictCreatedPayload {
+  workspaceId: WorkspaceId;
   /** Memory-entry id (`writeMemoryEntry({type: 'gate-verdict'}).id`). */
   entryId: string;
   cycleId: string;
@@ -302,6 +303,7 @@ export interface GateVerdictCreatedPayload {
  * `InboxBridge` per ADR 0004.
  */
 export interface ReviewFindingCreatedPayload {
+  workspaceId: WorkspaceId;
   entryId: string;
   cycleId: string;
   severity: 'CRITICAL' | 'MAJOR';

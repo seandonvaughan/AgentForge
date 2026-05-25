@@ -14,6 +14,8 @@ import {
   type MessageEnvelopeV2,
   type AgentDmSentPayload,
   type InboxMessageCreatedPayload,
+  type GateVerdictCreatedPayload,
+  type ReviewFindingCreatedPayload,
 } from '@agentforge/core';
 import { rbacRoutes } from './rbac.js';
 import { costsRoutes } from './costs.js';
@@ -525,16 +527,21 @@ export async function registerV5Routes(
     ...(opts.bus ? { bus: opts.bus } : {}),
   });
 
-  // ── Bus → SSE bridge for comms topics ───────────────────────────────────
-  // When a bus is wired, forward `agent.dm.sent` and `inbox.message.created`
-  // envelopes to `globalStream` so the dashboard (/inbox, /inbox/[id]) gets
-  // live updates without falling back to polling.
+  // ── Bus → SSE bridge for comms + quality topics ─────────────────────────
+  // When a bus is wired, forward comms and quality envelopes to globalStream
+  // so the dashboard gets live updates without polling.
   if (opts.bus) {
     opts.bus.subscribe<AgentDmSentPayload>('agent.dm.sent', (envelope) => {
       bridgeDmToGlobalStream(envelope);
     });
     opts.bus.subscribe<InboxMessageCreatedPayload>('inbox.message.created', (envelope) => {
       bridgeInboxToGlobalStream(envelope);
+    });
+    opts.bus.subscribe<GateVerdictCreatedPayload>('gate.verdict.created', (envelope) => {
+      bridgeGateVerdictToGlobalStream(envelope);
+    });
+    opts.bus.subscribe<ReviewFindingCreatedPayload>('review.finding.created', (envelope) => {
+      bridgeReviewFindingToGlobalStream(envelope);
     });
   }
 
@@ -608,6 +615,57 @@ export function bridgeInboxToGlobalStream(envelope: MessageEnvelopeV2<InboxMessa
       threadId: p.threadId,
       createdAt: p.createdAt,
       recipients: p.recipients,
+    },
+  });
+}
+
+/** Exported for unit-test access. Forwards a gate verdict envelope as an SSE event. */
+export function bridgeGateVerdictToGlobalStream(
+  envelope: MessageEnvelopeV2<GateVerdictCreatedPayload>,
+): void {
+  const p = envelope.payload;
+  const findingsLine = `${p.criticalFindings.length} critical, ${p.majorFindings.length} major`;
+  globalStream.emit({
+    type: 'sprint_event',
+    workspaceId: envelope.workspaceId,
+    category: 'quality',
+    message: `Gate ${p.verdict.toUpperCase()} (${findingsLine})`,
+    payload: {
+      kind: 'gate-verdict',
+      workspaceId: p.workspaceId,
+      entryId: p.entryId,
+      cycleId: p.cycleId,
+      verdict: p.verdict,
+      rationale: p.rationale,
+      criticalFindings: p.criticalFindings,
+      majorFindings: p.majorFindings,
+      createdAt: p.createdAt,
+    },
+  });
+}
+
+/** Exported for unit-test access. Forwards a review finding envelope as an SSE event. */
+export function bridgeReviewFindingToGlobalStream(
+  envelope: MessageEnvelopeV2<ReviewFindingCreatedPayload>,
+): void {
+  const p = envelope.payload;
+  const location = p.file ? `${p.file}${p.line != null ? `:${p.line}` : ''}` : 'unknown location';
+  globalStream.emit({
+    type: 'sprint_event',
+    workspaceId: envelope.workspaceId,
+    category: 'quality',
+    message: `[${p.severity}] ${location}`,
+    payload: {
+      kind: 'review-finding',
+      workspaceId: p.workspaceId,
+      entryId: p.entryId,
+      cycleId: p.cycleId,
+      severity: p.severity,
+      summary: p.summary,
+      file: p.file,
+      line: p.line,
+      fixSuggestion: p.fixSuggestion,
+      createdAt: p.createdAt,
     },
   });
 }

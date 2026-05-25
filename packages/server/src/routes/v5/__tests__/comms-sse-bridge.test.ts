@@ -9,10 +9,14 @@ import type { MessageEnvelopeV2 } from '@agentforge/core';
 import type {
   AgentDmSentPayload,
   InboxMessageCreatedPayload,
+  GateVerdictCreatedPayload,
+  ReviewFindingCreatedPayload,
 } from '@agentforge/core';
 import {
   bridgeDmToGlobalStream,
   bridgeInboxToGlobalStream,
+  bridgeGateVerdictToGlobalStream,
+  bridgeReviewFindingToGlobalStream,
 } from '../index.js';
 import { globalStream, type StreamEvent } from '../stream.js';
 
@@ -45,6 +49,40 @@ function inboxEnvelope(
     to: 'broadcast',
     topic: 'inbox.message.created',
     category: 'comms',
+    priority: 'normal',
+    payload,
+  };
+}
+
+function gateEnvelope(
+  payload: GateVerdictCreatedPayload,
+): MessageEnvelopeV2<GateVerdictCreatedPayload> {
+  return {
+    id: 'env-3',
+    version: '2.0',
+    timestamp: '2026-05-15T00:00:00.000Z',
+    workspaceId: 'test',
+    from: 'system',
+    to: 'broadcast',
+    topic: 'gate.verdict.created',
+    category: 'quality',
+    priority: 'normal',
+    payload,
+  };
+}
+
+function findingEnvelope(
+  payload: ReviewFindingCreatedPayload,
+): MessageEnvelopeV2<ReviewFindingCreatedPayload> {
+  return {
+    id: 'env-4',
+    version: '2.0',
+    timestamp: '2026-05-15T00:00:00.000Z',
+    workspaceId: 'test',
+    from: 'system',
+    to: 'broadcast',
+    topic: 'review.finding.created',
+    category: 'quality',
     priority: 'normal',
     payload,
   };
@@ -116,5 +154,72 @@ describe('bridgeInboxToGlobalStream', () => {
     expect(payload.id).toBe('inbox-1');
     expect(payload.messageKind).toBe('warning');
     expect(payload.recipients).toEqual(['@user']);
+  });
+});
+
+describe('bridgeGateVerdictToGlobalStream', () => {
+  it('emits a sprint_event with quality category and gate payload', () => {
+    const received: StreamEvent[] = [];
+    const unsub = globalStream.subscribe('test-gate-bridge', (e) => received.push(e));
+    try {
+      bridgeGateVerdictToGlobalStream(
+        gateEnvelope({
+          workspaceId: 'test',
+          entryId: 'gate-1',
+          cycleId: 'cycle-1',
+          verdict: 'rejected',
+          rationale: 'Critical issues remain',
+          criticalFindings: ['one'],
+          majorFindings: ['two'],
+          createdAt: '2026-05-15T00:00:00.000Z',
+        }),
+      );
+    } finally {
+      unsub();
+    }
+
+    expect(received).toHaveLength(1);
+    const ev = received[0]!;
+    expect(ev.type).toBe('sprint_event');
+    expect(ev.category).toBe('quality');
+    expect(ev.workspaceId).toBe('test');
+    const payload = ev.payload as { kind: string; verdict: string; entryId: string };
+    expect(payload.kind).toBe('gate-verdict');
+    expect(payload.verdict).toBe('rejected');
+    expect(payload.entryId).toBe('gate-1');
+  });
+});
+
+describe('bridgeReviewFindingToGlobalStream', () => {
+  it('emits a sprint_event with quality category and review-finding payload', () => {
+    const received: StreamEvent[] = [];
+    const unsub = globalStream.subscribe('test-review-bridge', (e) => received.push(e));
+    try {
+      bridgeReviewFindingToGlobalStream(
+        findingEnvelope({
+          workspaceId: 'test',
+          entryId: 'finding-1',
+          cycleId: 'cycle-1',
+          severity: 'CRITICAL',
+          summary: 'SQL injection',
+          file: 'packages/server/src/foo.ts',
+          line: 42,
+          fixSuggestion: 'Use parameterized SQL',
+          createdAt: '2026-05-15T00:00:00.000Z',
+        }),
+      );
+    } finally {
+      unsub();
+    }
+
+    expect(received).toHaveLength(1);
+    const ev = received[0]!;
+    expect(ev.type).toBe('sprint_event');
+    expect(ev.category).toBe('quality');
+    expect(ev.workspaceId).toBe('test');
+    const payload = ev.payload as { kind: string; severity: string; entryId: string };
+    expect(payload.kind).toBe('review-finding');
+    expect(payload.severity).toBe('CRITICAL');
+    expect(payload.entryId).toBe('finding-1');
   });
 });

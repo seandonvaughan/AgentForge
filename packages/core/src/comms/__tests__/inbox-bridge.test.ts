@@ -101,6 +101,7 @@ describe('InboxBridge — gate.verdict.created mirroring (Phase 2 / ADR 0004)', 
       topic: 'gate.verdict.created',
       category: 'quality',
       payload: {
+        workspaceId: 'test',
         entryId: 'entry-rej-1',
         cycleId: 'cycle-v2.4',
         verdict: 'rejected',
@@ -128,6 +129,7 @@ describe('InboxBridge — gate.verdict.created mirroring (Phase 2 / ADR 0004)', 
       topic: 'gate.verdict.created',
       category: 'quality',
       payload: {
+        workspaceId: 'test',
         entryId: 'entry-ok-1',
         cycleId: 'cycle-v2.5',
         verdict: 'approved',
@@ -145,6 +147,7 @@ describe('InboxBridge — gate.verdict.created mirroring (Phase 2 / ADR 0004)', 
 
   it('is idempotent on replay — same entryId only produces one row', () => {
     const payload: GateVerdictCreatedPayload = {
+      workspaceId: 'test',
       entryId: 'entry-dup-1',
       cycleId: 'cycle-replay',
       verdict: 'rejected',
@@ -171,6 +174,7 @@ describe('InboxBridge — review.finding.created mirroring (Phase 2 / ADR 0004)'
       topic: 'review.finding.created',
       category: 'quality',
       payload: {
+        workspaceId: 'test',
         entryId: 'finding-crit-1',
         cycleId: 'cycle-v2.5',
         severity: 'CRITICAL',
@@ -199,6 +203,7 @@ describe('InboxBridge — review.finding.created mirroring (Phase 2 / ADR 0004)'
       topic: 'review.finding.created',
       category: 'quality',
       payload: {
+        workspaceId: 'test',
         entryId: 'finding-major-1',
         cycleId: 'cycle-v2.5',
         severity: 'MAJOR',
@@ -223,6 +228,7 @@ describe('InboxBridge — review.finding.created mirroring (Phase 2 / ADR 0004)'
       topic: 'review.finding.created',
       category: 'quality',
       payload: {
+        workspaceId: 'test',
         entryId: 'finding-x',
         cycleId: 'c',
         severity: 'MINOR' as unknown as 'CRITICAL',
@@ -238,6 +244,7 @@ describe('InboxBridge — review.finding.created mirroring (Phase 2 / ADR 0004)'
 
   it('is idempotent on replay', () => {
     const payload: ReviewFindingCreatedPayload = {
+      workspaceId: 'test',
       entryId: 'finding-dup-1',
       cycleId: 'cycle-replay',
       severity: 'CRITICAL',

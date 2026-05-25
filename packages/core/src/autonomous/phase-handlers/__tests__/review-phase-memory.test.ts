@@ -622,4 +622,44 @@ describe('runReviewPhase — knowledge graph write', () => {
     expect(sources).toContain('audit');
     expect(sources).toContain('review');
   });
+
+  it('publishes review.finding.created for each CRITICAL/MAJOR memory entry', async () => {
+    const events: Array<{ topic: string; payload: unknown }> = [];
+    const ctx: PhaseContext = {
+      projectRoot: tmpRoot,
+      cycleId: 'cycle-review-events',
+      sprintId: 'sprint-review-events',
+      sprintVersion: '9.0.0',
+      adapter: undefined as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+      bus: {
+        publish: (topic: string, payload: unknown) => { events.push({ topic, payload }); },
+        subscribe: () => () => undefined,
+      } as unknown as PhaseContext['bus'],
+      runtime: {
+        run: async () => ({
+          output: [
+            'CRITICAL: src/auth.ts:42 — token validation bypass. Fix: verify JWT before route handler',
+            'MAJOR: packages/core/src/runtime/runtime-job-supervisor.ts:80 — missing retry backoff',
+            'Overall verdict: 2/5',
+          ].join('\n'),
+          costUsd: 0.02,
+        }),
+      } as unknown as PhaseContext['runtime'],
+    };
+
+    await runReviewPhase(ctx);
+
+    const findingEvents = events.filter((e) => e.topic === 'review.finding.created');
+    expect(findingEvents).toHaveLength(2);
+    const critical = findingEvents[0]!.payload as any;
+    const major = findingEvents[1]!.payload as any;
+    expect(critical.workspaceId).toBe('default');
+    expect(critical.severity).toBe('CRITICAL');
+    expect(critical.file).toBe('src/auth.ts');
+    expect(critical.line).toBe(42);
+    expect(typeof critical.entryId).toBe('string');
+    expect(major.severity).toBe('MAJOR');
+    expect(major.file).toBe('packages/core/src/runtime/runtime-job-supervisor.ts');
+    expect(major.line).toBe(80);
+  });
 });

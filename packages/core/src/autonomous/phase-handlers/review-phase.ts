@@ -12,6 +12,7 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
 import { writeMemoryEntry, type ReviewFindingMetadata } from '../../memory/types.js';
+import type { ReviewFindingCreatedPayload } from '../../message-bus/types.js';
 import { extractFindingsByLevel } from './gate-phase.js';
 import { collectSprintItemTags } from './sprint-utils.js';
 import { writeKnowledgeEntry } from '../../knowledge/persistence.js';
@@ -116,23 +117,50 @@ Do NOT modify any files.`;
   const criticalLines = extractFindingsByLevel(review, 'CRITICAL');
   const majorLines = extractFindingsByLevel(review, 'MAJOR');
   const sprintDomainTags = collectSprintItemTags(ctx.projectRoot, ctx.sprintVersion, ctx.cycleId);
+  const workspaceId = resolveWorkspaceId(ctx);
   for (const line of criticalLines) {
-    writeMemoryEntry(ctx.projectRoot, {
+    const metadata = parseReviewFindingMetadata(line, 'CRITICAL');
+    const entry = writeMemoryEntry(ctx.projectRoot, {
       type: 'review-finding',
       value: line,
       source: ctx.cycleId,
       tags: ['review', 'finding', 'critical', `sprint:v${ctx.sprintVersion}`, ...sprintDomainTags],
-      metadata: parseReviewFindingMetadata(line, 'CRITICAL'),
+      metadata,
     });
+    const payload: ReviewFindingCreatedPayload = {
+      workspaceId,
+      entryId: entry.id,
+      cycleId: ctx.cycleId ?? '',
+      severity: 'CRITICAL',
+      summary: metadata.summary,
+      file: metadata.file,
+      line: metadata.line,
+      fixSuggestion: metadata.fixSuggestion,
+      createdAt: entry.createdAt,
+    };
+    ctx.bus.publish('review.finding.created', payload);
   }
   for (const line of majorLines) {
-    writeMemoryEntry(ctx.projectRoot, {
+    const metadata = parseReviewFindingMetadata(line, 'MAJOR');
+    const entry = writeMemoryEntry(ctx.projectRoot, {
       type: 'review-finding',
       value: line,
       source: ctx.cycleId,
       tags: ['review', 'finding', 'major', `sprint:v${ctx.sprintVersion}`, ...sprintDomainTags],
-      metadata: parseReviewFindingMetadata(line, 'MAJOR'),
+      metadata,
     });
+    const payload: ReviewFindingCreatedPayload = {
+      workspaceId,
+      entryId: entry.id,
+      cycleId: ctx.cycleId ?? '',
+      severity: 'MAJOR',
+      summary: metadata.summary,
+      file: metadata.file,
+      line: metadata.line,
+      fixSuggestion: metadata.fixSuggestion,
+      createdAt: entry.createdAt,
+    };
+    ctx.bus.publish('review.finding.created', payload);
   }
 
   // Persist entity-like terms extracted from the review output to the knowledge
@@ -313,3 +341,8 @@ export function parseReviewFindingMetadata(
 // (→ review-phase). Any code that previously imported collectSprintItemTags
 // from this module can continue doing so via the re-export below.
 export { collectSprintItemTags } from './sprint-utils.js';
+
+function resolveWorkspaceId(ctx: PhaseContext): string {
+  const raw = (ctx.adapter as { workspaceId?: unknown } | undefined)?.workspaceId;
+  return typeof raw === 'string' && raw.trim().length > 0 ? raw : 'default';
+}

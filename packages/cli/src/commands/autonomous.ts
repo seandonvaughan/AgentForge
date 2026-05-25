@@ -340,10 +340,12 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
     // Non-fatal: if the workspace DB can't be opened the cycle continues
     // without persistence (identical to previous behaviour).
     let workspaceManager: WorkspaceManager | null = null;
+    let runtimeWorkspaceId = 'default';
     let supervisor: RuntimeJobSupervisor | undefined;
     try {
       workspaceManager = new WorkspaceManager({ dataDir: join(cwd, '.agentforge', 'v5') });
       const { adapter: workspaceAdapter } = await workspaceManager.getOrCreateDefaultWorkspace();
+      runtimeWorkspaceId = workspaceAdapter.workspaceId ?? 'default';
       supervisor = new RuntimeJobSupervisor({ adapter: workspaceAdapter });
     } catch {
       // Best-effort — if the workspace DB is unavailable, skip persistence.
@@ -394,15 +396,16 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
       // Create a real event bus using MessageBusV2 from packages/core,
       // adapting its envelope-based interface to the simple (topic, payload) interface.
       // Cast internal cycle topics to MessageTopic to satisfy the stricter type.
-      const messageBusV2 = new MessageBusV2();
+      const messageBusV2 = new MessageBusV2({ workspaceId: runtimeWorkspaceId });
       const bus = {
         publish: (topic: string, payload: unknown) => {
+          const normalizedPayload = normalizeCycleBusPayload(payload, runtimeWorkspaceId);
           messageBusV2.publish({
             from: 'system',
             to: 'broadcast',
             topic: topic as MessageTopic,
-            category: 'system',
-            payload,
+            category: classifyCycleBusCategory(topic),
+            payload: normalizedPayload,
           });
         },
         subscribe: (topic: string, cb: (event: unknown) => void) => {
@@ -952,6 +955,23 @@ function parseLimit(raw: string, fallback: number): number | null {
     return null;
   }
   return parsed ?? fallback;
+}
+
+function classifyCycleBusCategory(topic: string): 'system' | 'quality' | 'comms' {
+  if (topic === 'gate.verdict.created' || topic === 'review.finding.created') return 'quality';
+  if (topic === 'agent.dm.sent' || topic === 'inbox.message.created') return 'comms';
+  return 'system';
+}
+
+function normalizeCycleBusPayload(payload: unknown, workspaceId: string): unknown {
+  if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+    const obj = payload as Record<string, unknown>;
+    if (typeof obj['workspaceId'] === 'string' && obj['workspaceId'].length > 0) {
+      return obj;
+    }
+    return { workspaceId, ...obj };
+  }
+  return { workspaceId, value: payload };
 }
 
 

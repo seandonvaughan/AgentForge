@@ -8,6 +8,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
 import { writeMemoryEntry, readMemoryEntries, type GateVerdictMetadata } from '../../memory/types.js';
+import type { GateVerdictCreatedPayload } from '../../message-bus/types.js';
 import { collectSprintItemTags } from './sprint-utils.js';
 import {
   formatExecuteReviewTargets,
@@ -678,7 +679,7 @@ Respond as JSON: { "verdict": "APPROVE" | "REJECT", "rationale": "..." }`;
     summaryParts.push(`Major: ${majorFindings.join('; ')}`);
   }
 
-  writeMemoryEntry(ctx.projectRoot, {
+  const gateEntry = writeMemoryEntry(ctx.projectRoot, {
     type: 'gate-verdict',
     value: summaryParts.join('. '),
     metadata: gateMetadata,
@@ -689,6 +690,18 @@ Respond as JSON: { "verdict": "APPROVE" | "REJECT", "rationale": "..." }`;
       ...sprintDomainTags,
     ],
   });
+
+  const gateVerdictPayload: GateVerdictCreatedPayload = {
+    workspaceId: resolveWorkspaceId(ctx),
+    entryId: gateEntry.id,
+    cycleId: ctx.cycleId ?? '',
+    verdict: verdictNorm,
+    rationale: verdict.rationale,
+    criticalFindings,
+    majorFindings,
+    createdAt: gateEntry.createdAt,
+  };
+  ctx.bus.publish('gate.verdict.created', gateVerdictPayload);
 
   if (verdict.verdict === 'REJECT') {
     throw new GateRejectedError(verdict.rationale);
@@ -703,4 +716,9 @@ Respond as JSON: { "verdict": "APPROVE" | "REJECT", "rationale": "..." }`;
   });
 
   return phaseResult;
+}
+
+function resolveWorkspaceId(ctx: PhaseContext): string {
+  const raw = (ctx.adapter as { workspaceId?: unknown } | undefined)?.workspaceId;
+  return typeof raw === 'string' && raw.trim().length > 0 ? raw : 'default';
 }
