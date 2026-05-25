@@ -1,6 +1,15 @@
 import type { AgentProposal } from '@agentforge/core';
 
-export type ExecutionStage = 'planning' | 'architecture' | 'coding' | 'linting' | 'testing' | 'complete' | 'failed';
+export type ExecutionStage =
+  | 'planning'
+  | 'architecture'
+  | 'coding'
+  | 'linting'
+  | 'testing'
+  | 'canary'
+  | 'rollback'
+  | 'complete'
+  | 'failed';
 
 export interface ExecutionPlan {
   proposalId: string;
@@ -67,6 +76,13 @@ export interface ExecutorOptions {
   stageTimeoutMs?: number;
   /** Budget cap in USD across the entire execution. Default: 1.00 */
   budgetUsd?: number;
+  /**
+   * Canary controls for autonomous self-modification proposals.
+   * When disabled, planned canary stages are skipped only for self-modification proposals.
+   */
+  canary?: {
+    enabledForSelfModification?: boolean;
+  };
   /** Required when dryRun is false. */
   runtime?: ProposalRuntimeExecutor;
 }

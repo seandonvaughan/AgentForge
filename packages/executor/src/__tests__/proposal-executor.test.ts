@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ProposalExecutor, ProposalSprintExecutor } from '../executor.js';
+import * as planner from '../planner.js';
 import type { AgentProposal } from '@agentforge/core';
 
 describe('ProposalExecutor execution modes', () => {
@@ -41,6 +42,69 @@ describe('ProposalExecutor execution modes', () => {
     await expect(new ProposalExecutor({ dryRun: false }).execute(buildProposal())).rejects.toThrow(
       /requires an injected runtime executor/,
     );
+  });
+
+  it('plans and executes a canary stage for self-modification proposals by default', async () => {
+    const stages: string[] = [];
+    const result = await new ProposalExecutor({
+      dryRun: false,
+      runtime: {
+        async executeStage({ stage }) {
+          stages.push(stage);
+          return { output: `ran ${stage}`, success: true };
+        },
+      },
+    }).execute(buildSelfModificationProposal());
+
+    expect(stages).toEqual(['planning', 'coding', 'linting', 'testing', 'canary']);
+    expect(result.plan.stages).toEqual(['planning', 'coding', 'linting', 'testing', 'canary', 'complete']);
+  });
+
+  it('skips planned canary stage when self-modification canary is disabled', async () => {
+    const stages: string[] = [];
+    const result = await new ProposalExecutor({
+      dryRun: false,
+      canary: { enabledForSelfModification: false },
+      runtime: {
+        async executeStage({ stage }) {
+          stages.push(stage);
+          return { output: `ran ${stage}`, success: true };
+        },
+      },
+    }).execute(buildSelfModificationProposal());
+
+    expect(result.plan.stages).toContain('canary');
+    expect(stages).toEqual(['planning', 'coding', 'linting', 'testing']);
+  });
+
+  it('does not skip canary stage for non-self-mod plans when self-mod canary is disabled', async () => {
+    const stages: string[] = [];
+    const buildPlanSpy = vi.spyOn(planner, 'buildPlan').mockReturnValue({
+      proposalId: 'proposal-1',
+      stages: ['planning', 'coding', 'canary', 'complete'],
+      estimatedAgents: ['project-manager', 'coder', 'qa-manager'],
+      estimatedComplexity: 'medium',
+      sandboxed: true,
+      createdAt: '2026-04-30T00:00:00.000Z',
+    });
+
+    try {
+      const result = await new ProposalExecutor({
+        dryRun: false,
+        canary: { enabledForSelfModification: false },
+        runtime: {
+          async executeStage({ stage }) {
+            stages.push(stage);
+            return { output: `ran ${stage}`, success: true };
+          },
+        },
+      }).execute(buildProposal());
+
+      expect(result.plan.stages).toContain('canary');
+      expect(stages).toEqual(['planning', 'coding', 'canary']);
+    } finally {
+      buildPlanSpy.mockRestore();
+    }
   });
 
   it('adapts proposal execution to the SprintRunner executor interface', async () => {
@@ -87,6 +151,21 @@ function buildProposal(): AgentProposal {
     confidence: 0.9,
     estimatedImpact: 'Medium',
     tags: ['runtime'],
+    proposedAt: '2026-04-30T00:00:00.000Z',
+    status: 'approved',
+  };
+}
+
+function buildSelfModificationProposal(): AgentProposal {
+  return {
+    id: 'proposal-self-mod-1',
+    agentId: 'coder',
+    title: 'Canary self-modification rollout',
+    description: 'stage and validate self-modification before full promotion',
+    priority: 'P0',
+    confidence: 0.95,
+    estimatedImpact: 'High',
+    tags: ['self-modification', 'safety'],
     proposedAt: '2026-04-30T00:00:00.000Z',
     status: 'approved',
   };
