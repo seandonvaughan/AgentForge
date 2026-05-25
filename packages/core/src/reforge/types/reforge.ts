@@ -145,6 +145,23 @@ export interface CanaryRoutingContext {
   headerValue?: string;
 }
 
+/** Source classification for canary outcome signals. */
+export type CanaryOutcomeSource = 'quality' | 'runtime' | 'infrastructure';
+
+/** Options for recording a canary outcome. */
+export interface RecordCanaryOutcomeOptions {
+  /**
+   * Correlation token for a previously routed canary request.
+   *
+   * When provided, only outcomes from `source: 'quality'` consume the token.
+   * Runtime/infrastructure outcomes are ignored so transient execution issues
+   * cannot inflate quality rollback metrics.
+   */
+  requestId?: string;
+  /** Origin of the outcome signal. Defaults to `'quality'`. */
+  source?: CanaryOutcomeSource;
+}
+
 /** Outcome counters for a staged canary deployment. */
 export interface CanaryDeploymentMetrics {
   canaryRequests: number;

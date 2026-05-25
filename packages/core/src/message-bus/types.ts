@@ -85,6 +85,10 @@ export type MessageTopic =
   // Quality + gate (mirrored to @user inbox by InboxBridge — ADR 0004)
   | 'gate.verdict.created'
   | 'review.finding.created'
+  // Self-modification canary lifecycle
+  | 'self-modification.canary.staged'
+  | 'self-modification.canary.promoted'
+  | 'self-modification.canary.rolled_back'
   // Plugin
   | 'plugin.event'
   // Worktree / branch (Cycle 4 — T4.3 / T4.4)
@@ -312,6 +316,34 @@ export interface ReviewFindingCreatedPayload {
   createdAt: string;
 }
 
+export interface SelfModificationCanaryStagedPayload {
+  agentName: string;
+  planId: string;
+  flagId: string;
+  trafficPercent: number;
+  strategy: string;
+  rollbackThreshold: number;
+  stagedAt: string;
+}
+
+export interface SelfModificationCanaryPromotedPayload {
+  agentName: string;
+  planId: string;
+  flagId: string;
+  promotedAt: string;
+  promotedVersion: number;
+}
+
+export interface SelfModificationCanaryRolledBackPayload {
+  agentName: string;
+  planId: string;
+  flagId: string;
+  rolledBackAt: string;
+  reason: string;
+  errorRate: number;
+  threshold: number;
+}
+
 // ── Type guards ───────────────────────────────────────────────────────────────
 
 export function isTaskTopic(topic: MessageTopic): boolean {
@@ -363,6 +395,9 @@ export type AgentDmSentEnvelope = MessageEnvelopeV2<AgentDmSentPayload>;
 export type InboxMessageCreatedEnvelope = MessageEnvelopeV2<InboxMessageCreatedPayload>;
 export type GateVerdictCreatedEnvelope = MessageEnvelopeV2<GateVerdictCreatedPayload>;
 export type ReviewFindingCreatedEnvelope = MessageEnvelopeV2<ReviewFindingCreatedPayload>;
+export type SelfModificationCanaryStagedEnvelope = MessageEnvelopeV2<SelfModificationCanaryStagedPayload>;
+export type SelfModificationCanaryPromotedEnvelope = MessageEnvelopeV2<SelfModificationCanaryPromotedPayload>;
+export type SelfModificationCanaryRolledBackEnvelope = MessageEnvelopeV2<SelfModificationCanaryRolledBackPayload>;
 
 // ── Worktree / branch payloads (Cycle 4 — T4.3) ──────────────────────────────
 

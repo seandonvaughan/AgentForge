@@ -22,12 +22,14 @@ import type {
   CanaryDeployOptions,
   CanaryDeploymentRecord,
   CanaryDeploymentMetrics,
+  RecordCanaryOutcomeOptions,
   CanaryRoutingContext,
   CanaryRollbackRecord,
   ReforgePlan,
   ReforgeResult,
 } from "./types/reforge.js";
 import { CanaryManager } from "../canary/canary-manager.js";
+import type { MessageBusV2 } from "../message-bus/message-bus.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -39,6 +41,8 @@ const MAX_VERSION_DEPTH = 5;
 /** Default downgrade tier when adjust-model-routing fires on an Opus agent. */
 const OPUS_DOWNGRADE_TARGET = "sonnet" as const;
 const SONNET_DOWNGRADE_TARGET = "haiku" as const;
+const DEFAULT_PENDING_OUTCOME_TTL_MS = 30 * 60 * 1000;
+const DEFAULT_MAX_PENDING_OUTCOMES = 5_000;
 
 // ---------------------------------------------------------------------------
 // Options
@@ -50,6 +54,22 @@ export interface ReforgeEngineOptions {
    * Defaults to a generic cost-awareness reminder.
    */
   defaultPreamble?: string;
+  /**
+   * Optional bus used to publish canary lifecycle events:
+   *   - self-modification.canary.staged
+   *   - self-modification.canary.promoted
+   *   - self-modification.canary.rolled_back
+   */
+  messageBus?: MessageBusV2;
+  /** TTL for pending canary correlation tokens. */
+  pendingOutcomeTtlMs?: number;
+  /** Upper bound on pending canary correlation tokens. */
+  maxPendingOutcomes?: number;
+}
+
+interface PendingCanaryOutcome {
+  agentName: string;
+  expiresAtMs: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -61,7 +81,13 @@ export class ReforgeEngine {
   private readonly canaryOverridesDir: string;
   private readonly proposalsDir: string;
   private readonly canaryManager = new CanaryManager();
-  private readonly options: Required<ReforgeEngineOptions>;
+  private readonly options: {
+    defaultPreamble: string;
+    messageBus?: MessageBusV2;
+    pendingOutcomeTtlMs: number;
+    maxPendingOutcomes: number;
+  };
+  private readonly pendingCanaryOutcomes = new Map<string, PendingCanaryOutcome>();
 
   constructor(projectRoot: string, options?: ReforgeEngineOptions) {
     this.overridesDir = path.join(
@@ -85,6 +111,9 @@ export class ReforgeEngine {
         options?.defaultPreamble ??
         "COST AWARENESS PREAMBLE: Prefer the most economical approach. " +
           "Avoid over-engineering. Escalate only when necessary.",
+      ...(options?.messageBus ? { messageBus: options.messageBus } : {}),
+      pendingOutcomeTtlMs: Math.max(1_000, options?.pendingOutcomeTtlMs ?? DEFAULT_PENDING_OUTCOME_TTL_MS),
+      maxPendingOutcomes: Math.max(100, options?.maxPendingOutcomes ?? DEFAULT_MAX_PENDING_OUTCOMES),
     };
   }
 
@@ -277,6 +306,15 @@ export class ReforgeEngine {
       });
       this.canaryManager.activateFlag(flagId);
       await this.writeCanaryDeployment(deployment);
+      this.publishCanaryEvent("self-modification.canary.staged", {
+        agentName: deployment.agentName,
+        planId: deployment.planId,
+        flagId: deployment.flagId,
+        trafficPercent: deployment.trafficPercent,
+        strategy: deployment.strategy,
+        rollbackThreshold: deployment.rollbackThreshold,
+        stagedAt: deployment.stagedAt,
+      });
       deployments.push(deployment);
     }
 
@@ -302,7 +340,15 @@ export class ReforgeEngine {
 
     await this.writeOverride(agentName, promoted);
     await this.deleteCanaryDeployment(agentName);
+    this.clearPendingCanaryOutcomesForAgent(agentName);
     this.canaryManager.deleteFlag(deployment.flagId);
+    this.publishCanaryEvent("self-modification.canary.promoted", {
+      agentName: deployment.agentName,
+      planId: deployment.planId,
+      flagId: deployment.flagId,
+      promotedAt: new Date().toISOString(),
+      promotedVersion: promoted.version,
+    });
     return promoted;
   }
 
@@ -313,10 +359,29 @@ export class ReforgeEngine {
   async recordCanaryOutcome(
     agentName: string,
     isError: boolean,
-  ): Promise<{ deployment: CanaryDeploymentRecord; rollback?: string } | null> {
+    options: RecordCanaryOutcomeOptions = {},
+  ): Promise<{ deployment: CanaryDeploymentRecord; rollback?: string; recorded: boolean; ignoredReason?: string } | null> {
     const deployment = await this.loadCanaryDeployment(agentName);
     if (!deployment) {
       return null;
+    }
+
+    const source = options.source ?? "quality";
+    if (source !== "quality") {
+      return {
+        deployment,
+        recorded: false,
+        ignoredReason: `Ignored non-quality canary outcome source: ${source}`,
+      };
+    }
+    if (options.requestId) {
+      if (!this.consumePendingCanaryOutcome(options.requestId, agentName)) {
+        return {
+          deployment,
+          recorded: false,
+          ignoredReason: "Ignored canary outcome without a live correlation token",
+        };
+      }
     }
 
     this.canaryManager.getFlag(deployment.flagId) ?? this.ensureCanaryFlag(deployment);
@@ -338,7 +403,17 @@ export class ReforgeEngine {
         rollback,
       });
       await this.deleteCanaryDeployment(agentName);
+      this.clearPendingCanaryOutcomesForAgent(agentName);
       this.canaryManager.performRollback(deployment.flagId, rollback.reason);
+      this.publishCanaryEvent("self-modification.canary.rolled_back", {
+        agentName: updatedDeployment.agentName,
+        planId: updatedDeployment.planId,
+        flagId: updatedDeployment.flagId,
+        rolledBackAt: rollback.rolledBackAt,
+        reason: rollback.reason,
+        errorRate: rollback.errorRate,
+        threshold: rollback.threshold,
+      });
     } else {
       await this.writeCanaryDeployment(updatedDeployment);
     }
@@ -348,6 +423,7 @@ export class ReforgeEngine {
         ...updatedDeployment,
         ...(rollback ? { rollback } : {}),
       },
+      recorded: true,
       ...(rollback ? { rollback: rollback.reason } : {}),
     };
   }
@@ -466,6 +542,9 @@ export class ReforgeEngine {
     }
 
     const route = this.canaryManager.route(flag.id, context.requestId ?? randomUUID(), context.headerValue);
+    if (route.variant === "canary" && context?.requestId) {
+      this.registerPendingCanaryOutcome(context.requestId, agentName);
+    }
     return route.variant === "canary" ? canary.override : active;
   }
 
@@ -485,6 +564,61 @@ export class ReforgeEngine {
     });
     this.canaryManager.activateFlag(flag.id);
     return flag;
+  }
+
+  private registerPendingCanaryOutcome(requestId: string, agentName: string): void {
+    this.prunePendingCanaryOutcomes();
+    this.pendingCanaryOutcomes.set(requestId, {
+      agentName,
+      expiresAtMs: Date.now() + this.options.pendingOutcomeTtlMs,
+    });
+    while (this.pendingCanaryOutcomes.size > this.options.maxPendingOutcomes) {
+      const oldestKey = this.pendingCanaryOutcomes.keys().next().value;
+      if (!oldestKey) break;
+      this.pendingCanaryOutcomes.delete(oldestKey);
+    }
+  }
+
+  private consumePendingCanaryOutcome(requestId: string, agentName: string): boolean {
+    this.prunePendingCanaryOutcomes();
+    const pending = this.pendingCanaryOutcomes.get(requestId);
+    if (!pending || pending.agentName !== agentName) {
+      return false;
+    }
+    this.pendingCanaryOutcomes.delete(requestId);
+    return true;
+  }
+
+  private clearPendingCanaryOutcomesForAgent(agentName: string): void {
+    for (const [requestId, pending] of this.pendingCanaryOutcomes.entries()) {
+      if (pending.agentName === agentName) {
+        this.pendingCanaryOutcomes.delete(requestId);
+      }
+    }
+  }
+
+  private prunePendingCanaryOutcomes(now = Date.now()): void {
+    for (const [requestId, pending] of this.pendingCanaryOutcomes.entries()) {
+      if (pending.expiresAtMs <= now) {
+        this.pendingCanaryOutcomes.delete(requestId);
+      }
+    }
+  }
+
+  private publishCanaryEvent(
+    topic:
+      | "self-modification.canary.staged"
+      | "self-modification.canary.promoted"
+      | "self-modification.canary.rolled_back",
+    payload: Record<string, unknown>,
+  ): void {
+    this.options.messageBus?.publish({
+      from: "system",
+      to: "broadcast",
+      topic,
+      category: "lifecycle",
+      payload,
+    });
   }
 
   private emptyCanaryMetrics(): CanaryDeploymentMetrics {

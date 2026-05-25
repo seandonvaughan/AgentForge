@@ -4,6 +4,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { ReforgeEngine } from "../../src/reforge/reforge-engine.js";
+import { MessageBusV2 } from "../../src/message-bus/message-bus.js";
 import type { FeedbackAnalysis } from "../../src/types/feedback.js";
 import type { AgentTemplate } from "../../src/types/agent.js";
 import type { AgentOverride } from "../../src/types/reforge.js";
@@ -604,6 +605,110 @@ describe("ReforgeEngine", () => {
       errorRate: 1,
       threshold: 0.1,
     });
+  });
+
+  it("recordCanaryOutcome ignores non-quality sources without consuming the request token", async () => {
+    const baseAnalysis = makeAnalysis([
+      {
+        action: "adjust-model-routing",
+        rationale: "baseline rollout",
+        urgency: "high",
+        theme_label: "baseline",
+        confidence: 0.9,
+      },
+    ]);
+    const canaryAnalysis = makeAnalysis([
+      {
+        action: "update-system-prompt",
+        rationale: "quality-only canary outcome accounting",
+        urgency: "medium",
+        theme_label: "prompt-canary",
+        confidence: 0.7,
+      },
+    ]);
+
+    const activePlan = await engine.buildPlan(baseAnalysis, [makeTemplate()]);
+    await engine.executePlan(activePlan);
+
+    const canaryPlan = await engine.buildPlan(canaryAnalysis, [makeTemplate()]);
+    await engine.deployCanary(canaryPlan, {
+      trafficPercent: 100,
+      strategy: "hash",
+      rollbackThreshold: 0.1,
+    });
+
+    const requestId = "req-quality-only-1";
+    const canaryApplied = await engine.applyOverride(makeTemplate(), { requestId });
+    expect(canaryApplied.system_prompt).toContain("COST AWARENESS PREAMBLE");
+
+    const infraOutcome = await engine.recordCanaryOutcome("cost-analyst", true, {
+      requestId,
+      source: "runtime",
+    });
+    expect(infraOutcome?.recorded).toBe(false);
+
+    const qualityOutcome = await engine.recordCanaryOutcome("cost-analyst", true, {
+      requestId,
+      source: "quality",
+    });
+    expect(qualityOutcome?.recorded).toBe(true);
+    expect(qualityOutcome?.deployment.metrics).toMatchObject({
+      canaryRequests: 1,
+      canaryErrors: 1,
+      errorRate: 1,
+    });
+  });
+
+  it("publishes canary lifecycle events on stage, promote, and rollback", async () => {
+    const bus = new MessageBusV2({ workspaceId: "test-ws" });
+    engine = new ReforgeEngine(tmpDir, { messageBus: bus });
+
+    const baseAnalysis = makeAnalysis([
+      {
+        action: "adjust-model-routing",
+        rationale: "baseline rollout",
+        urgency: "high",
+        theme_label: "baseline",
+        confidence: 0.9,
+      },
+    ]);
+    const canaryAnalysis = makeAnalysis([
+      {
+        action: "update-system-prompt",
+        rationale: "canary lifecycle eventing",
+        urgency: "medium",
+        theme_label: "prompt-canary",
+        confidence: 0.7,
+      },
+    ]);
+
+    const activePlan = await engine.buildPlan(baseAnalysis, [makeTemplate()]);
+    await engine.executePlan(activePlan);
+
+    const canaryPlan = await engine.buildPlan(canaryAnalysis, [makeTemplate()]);
+    await engine.deployCanary(canaryPlan, {
+      trafficPercent: 100,
+      strategy: "hash",
+      rollbackThreshold: 0.1,
+    });
+
+    await engine.promoteCanary("cost-analyst");
+
+    const canaryPlan2 = await engine.buildPlan(canaryAnalysis, [makeTemplate()]);
+    await engine.deployCanary(canaryPlan2, {
+      trafficPercent: 100,
+      strategy: "hash",
+      rollbackThreshold: 0.1,
+    });
+
+    for (let i = 0; i < 5; i++) {
+      await engine.recordCanaryOutcome("cost-analyst", true);
+    }
+
+    const topics = bus.getHistory(20).map((entry) => entry.topic);
+    expect(topics).toContain("self-modification.canary.staged");
+    expect(topics).toContain("self-modification.canary.promoted");
+    expect(topics).toContain("self-modification.canary.rolled_back");
   });
 
   it("promoteCanary makes the staged override the active override", async () => {
