@@ -5,6 +5,16 @@ import {
 } from './script-pipeline-harness.js';
 
 describe('package scripts', () => {
+  it('keeps verify:product on the critical dashboard e2e subset', async () => {
+    const scripts = loadRootScripts();
+
+    expect(scripts['verify:product']).toContain('pnpm test:e2e:dashboard');
+    expect(scripts['test:e2e:dashboard']).toBe(
+      'playwright test tests/e2e/dashboard-runner.test.ts tests/e2e/dashboard-live.test.ts tests/e2e/dashboard-health.test.ts',
+    );
+    expect(scripts['test:e2e:dashboard:full']).toContain('tests/e2e/dashboard-agents.test.ts');
+  });
+
   it('stops verify:product before tests when typecheck fails', async () => {
     const scripts = loadRootScripts();
     const harness = new ScriptPipelineHarness(scripts, (command) => {
@@ -67,7 +77,7 @@ describe('package scripts', () => {
     expect(result.trace).toContain('vitest run');
     expect(
       result.trace.some((command) =>
-        command.startsWith('playwright test tests/e2e/dashboard-agents.test.ts'),
+        command.startsWith('playwright test tests/e2e/dashboard-runner.test.ts'),
       ),
     ).toBe(true);
     expect(result.trace).toContain('pnpm --filter @agentforge/dashboard check');
