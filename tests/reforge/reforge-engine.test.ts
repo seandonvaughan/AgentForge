@@ -716,6 +716,111 @@ describe("ReforgeEngine", () => {
     });
   });
 
+  it("recordCanaryOutcome requires both identifiers when a pending canary outcome has both", async () => {
+    const canaryAnalysis = makeAnalysis([
+      {
+        action: "update-system-prompt",
+        rationale: "partial correlation must not count quality outcomes",
+        urgency: "medium",
+        theme_label: "prompt-canary",
+        confidence: 0.7,
+      },
+    ]);
+
+    const canaryPlan = await engine.buildPlan(canaryAnalysis, [makeTemplate()]);
+    await engine.deployCanary(canaryPlan, {
+      trafficPercent: 100,
+      strategy: "hash",
+      rollbackThreshold: 0.1,
+    });
+
+    await engine.applyOverride(makeTemplate(), {
+      requestId: "req-strict-correlation",
+      outcomeToken: "token-strict-correlation",
+    });
+
+    const requestOnly = await engine.recordCanaryOutcome("cost-analyst", true, {
+      requestId: "req-strict-correlation",
+      source: "quality",
+    });
+    expect(requestOnly?.ignored).toBe("no-pending-canary-outcome");
+
+    const tokenOnly = await engine.recordCanaryOutcome("cost-analyst", true, {
+      outcomeToken: "token-strict-correlation",
+      source: "quality",
+    });
+    expect(tokenOnly?.ignored).toBe("no-pending-canary-outcome");
+
+    const complete = await engine.recordCanaryOutcome("cost-analyst", true, {
+      requestId: "req-strict-correlation",
+      outcomeToken: "token-strict-correlation",
+      source: "quality",
+    });
+    expect(complete?.ignored).toBeUndefined();
+    expect(complete?.deployment.metrics).toMatchObject({
+      canaryRequests: 1,
+      canaryErrors: 1,
+      errorRate: 1,
+    });
+  });
+
+  it("recordCanaryOutcome does not reuse stale pending aliases after consumption", async () => {
+    const canaryAnalysis = makeAnalysis([
+      {
+        action: "update-system-prompt",
+        rationale: "consumed pending aliases must be fully removed",
+        urgency: "medium",
+        theme_label: "prompt-canary",
+        confidence: 0.7,
+      },
+    ]);
+
+    const canaryPlan = await engine.buildPlan(canaryAnalysis, [makeTemplate()]);
+    await engine.deployCanary(canaryPlan, {
+      trafficPercent: 100,
+      strategy: "hash",
+      rollbackThreshold: 0.1,
+    });
+
+    await engine.applyOverride(makeTemplate(), {
+      requestId: "req-stale-alias",
+      outcomeToken: "token-original",
+    });
+    await engine.applyOverride(makeTemplate(), {
+      requestId: "req-stale-alias",
+      outcomeToken: "token-alias",
+    });
+
+    const original = await engine.recordCanaryOutcome("cost-analyst", false, {
+      requestId: "req-stale-alias",
+      outcomeToken: "token-original",
+      source: "quality",
+    });
+    expect(original?.ignored).toBeUndefined();
+
+    const staleAlias = await engine.recordCanaryOutcome("cost-analyst", true, {
+      outcomeToken: "token-alias",
+      source: "quality",
+    });
+    expect(staleAlias?.ignored).toBe("no-pending-canary-outcome");
+
+    const stagedPath = path.join(
+      tmpDir,
+      ".agentforge",
+      "agent-overrides",
+      "canary",
+      "cost-analyst.json",
+    );
+    const staged = JSON.parse(await fs.readFile(stagedPath, "utf-8")) as {
+      metrics?: { canaryRequests: number; canaryErrors: number; errorRate: number };
+    };
+    expect(staged.metrics).toMatchObject({
+      canaryRequests: 1,
+      canaryErrors: 0,
+      errorRate: 0,
+    });
+  });
+
   it("recordCanaryOutcome rehydrates staged canary flags after restart", async () => {
     const baseAnalysis = makeAnalysis([
       {

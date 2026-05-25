@@ -49,6 +49,7 @@ interface PendingCanaryOutcome {
   flagId: string;
   requestId?: string;
   outcomeToken?: string;
+  keys: Set<string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -572,6 +573,7 @@ export class ReforgeEngine {
       }
       for (const key of this.pendingOutcomeKeys(agentName, deployment.flagId, context)) {
         this.pendingCanaryOutcomes.set(key, existing);
+        existing.keys.add(key);
       }
       return;
     }
@@ -582,6 +584,7 @@ export class ReforgeEngine {
       flagId: deployment.flagId,
       ...(context.requestId ? { requestId: context.requestId } : {}),
       ...(context.outcomeToken ? { outcomeToken: context.outcomeToken } : {}),
+      keys: new Set(keys),
     };
 
     for (const key of keys) {
@@ -599,7 +602,9 @@ export class ReforgeEngine {
     const keys = this.pendingOutcomeKeys(agentName, deployment.flagId, options);
     const pending = keys
       .map((key) => this.pendingCanaryOutcomes.get(key))
-      .find((entry): entry is PendingCanaryOutcome => entry !== undefined);
+      .find((entry): entry is PendingCanaryOutcome => (
+        entry !== undefined && this.pendingCanaryOutcomeMatches(entry, options)
+      ));
 
     if (!pending) {
       return false;
@@ -619,21 +624,29 @@ export class ReforgeEngine {
   }
 
   private deletePendingCanaryOutcome(pending: PendingCanaryOutcome): void {
-    const context: Pick<CanaryRoutingContext, "requestId" | "outcomeToken"> = {};
-    if (pending.requestId) {
-      context.requestId = pending.requestId;
+    for (const key of pending.keys) {
+      if (this.pendingCanaryOutcomes.get(key)?.id === pending.id) {
+        this.pendingCanaryOutcomes.delete(key);
+      }
     }
-    if (pending.outcomeToken) {
-      context.outcomeToken = pending.outcomeToken;
-    }
-
-    for (const key of this.pendingOutcomeKeys(pending.agentName, pending.flagId, context)) {
-      this.pendingCanaryOutcomes.delete(key);
-    }
+    pending.keys.clear();
     const index = this.pendingCanaryOutcomeOrder.findIndex((entry) => entry.id === pending.id);
     if (index >= 0) {
       this.pendingCanaryOutcomeOrder.splice(index, 1);
     }
+  }
+
+  private pendingCanaryOutcomeMatches(
+    pending: PendingCanaryOutcome,
+    options: Pick<CanaryOutcomeOptions, "requestId" | "outcomeToken">,
+  ): boolean {
+    if (pending.requestId && pending.requestId !== options.requestId) {
+      return false;
+    }
+    if (pending.outcomeToken && pending.outcomeToken !== options.outcomeToken) {
+      return false;
+    }
+    return true;
   }
 
   private pendingOutcomeKeys(
