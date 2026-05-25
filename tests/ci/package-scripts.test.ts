@@ -4,6 +4,9 @@ import {
   loadRootScripts,
 } from './script-pipeline-harness.js';
 
+const DASHBOARD_GATE_COMMAND =
+  'playwright test tests/e2e/dashboard-runner.test.ts tests/e2e/dashboard-live.test.ts tests/e2e/dashboard-health.test.ts';
+
 describe('package scripts', () => {
   it('stops verify:product before tests when typecheck fails', async () => {
     const scripts = loadRootScripts();
@@ -38,10 +41,15 @@ describe('package scripts', () => {
   it('keeps verify:product on the reduced dashboard e2e selector', () => {
     const scripts = loadRootScripts();
     const verifyProduct = scripts['verify:product'];
+    const dashboardE2e = scripts['test:e2e:dashboard'];
 
     expect(verifyProduct).toContain('pnpm test:e2e:dashboard');
+    expect(dashboardE2e).toBe(DASHBOARD_GATE_COMMAND);
+    expect(dashboardE2e).not.toContain('dashboard-agents.test.ts');
+    expect(dashboardE2e).not.toContain('dashboard-org.test.ts');
+    expect(dashboardE2e).not.toContain('dashboard-cycle-launch.test.ts');
+    expect(dashboardE2e).not.toContain('dashboard-cycle-detail.test.ts');
     expect(verifyProduct).not.toContain('test:e2e:dashboard:full');
-    expect(verifyProduct).not.toContain('dashboard-agents.test.ts');
   });
 
   it('stops verify:gates before dashboard checks when verify:product typecheck fails', async () => {
@@ -74,11 +82,7 @@ describe('package scripts', () => {
 
     expect(result.ok).toBe(true);
     expect(result.trace).toContain('vitest run');
-    expect(
-      result.trace.some((command) =>
-        command.startsWith('playwright test tests/e2e/dashboard-agents.test.ts'),
-      ),
-    ).toBe(true);
+    expect(result.trace).toContain(DASHBOARD_GATE_COMMAND);
     expect(result.trace).toContain('pnpm --filter @agentforge/dashboard check');
     expect(result.trace.indexOf('vitest run')).toBeLessThan(
       result.trace.indexOf('pnpm --filter @agentforge/dashboard check'),
