@@ -172,6 +172,23 @@ describe('WorktreeGc', () => {
     expect(releaseMock).not.toHaveBeenCalled();
   });
 
+  it('does not measure stale worktree directories when there are no registered handles', async () => {
+    const { pool } = makePool([]);
+
+    class NoMeasureGc extends WorktreeGc {
+      protected override measureDiskMb(): number {
+        throw new Error('measureDiskMb should not run without active handles');
+      }
+    }
+
+    const gc = new NoMeasureGc({
+      pool,
+      projectRoot: PROJECT_ROOT,
+    });
+
+    await expect(gc.run()).resolves.toEqual({ removed: [], diskFreedMb: 0 });
+  });
+
   // 5. pool.release throws for one handle — error propagates after others are processed
   it('re-throws first pool.release error after processing all other handles', async () => {
     const now = Date.now();

@@ -95,6 +95,9 @@ export class WorktreeGc {
       (a, b) =>
         new Date(a.allocatedAt).getTime() - new Date(b.allocatedAt).getTime(),
     );
+    if (sorted.length === 0) {
+      return { removed: [], diskFreedMb: 0 };
+    }
 
     const toRemoveSet = new Set<string>();
     const now = Date.now();
