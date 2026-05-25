@@ -189,6 +189,22 @@ describe('ScoringPipeline', () => {
     expect(prompt).toMatch(/re-read the roster/i);
   });
 
+  it('scorer prompt includes utilization-aware guidance for cost anomaly triage', async () => {
+    const emptyResult = JSON.stringify({
+      rankings: [], totalEstimatedCostUsd: 0, budgetOverflowUsd: 0, summary: 's', warnings: [],
+    });
+    const runtime = makeCapturingRuntime(emptyResult);
+    const { logger } = makeMockLogger();
+    const pipeline = new ScoringPipeline(runtime as any, makeMockAdapter() as any, DEFAULT_CYCLE_CONFIG, logger);
+    await pipeline.score(fakeBacklog);
+
+    const prompt = runtime.getTask();
+    expect(prompt).toContain('cost-anomaly triage');
+    expect(prompt).toContain('full utilization');
+    expect(prompt).toContain('P0 gate-risk');
+    expect(prompt).toContain('larger runtime cost delta');
+  });
+
   it('sanitizes invented assignees in requiresApproval items too', async () => {
     const runtime = makeMockRuntime(JSON.stringify({
       rankings: [

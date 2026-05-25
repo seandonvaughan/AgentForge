@@ -464,6 +464,11 @@ Item type → median actual (from prior cycles, use these as priors):
 DO NOT estimate above $5/item unless the item explicitly spans multiple
 subsystems with new architecture. Trust the median, not your training priors.
 
+## cost-anomaly triage (ranking guardrail)
+- A high-confidence cost anomaly is important, but do not rank it above a P0 gate-risk fix.
+- If the anomaly targets an agent already at full utilization, keep it in-plan but rank it below similarly urgent items that can ship now.
+- When comparing two cost anomalies at the same priority, prefer the one with the larger runtime cost delta first.
+
 ## Task
 Rank the candidate items, estimate cost, and split into:
 - withinBudget: items that fit in $${this.config.budget.perCycleUsd}
