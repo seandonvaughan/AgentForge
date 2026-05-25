@@ -67,6 +67,17 @@ describe('package-native team helpers', () => {
     expect(output).toContain('Delegation Graph');
   });
 
+  it('treats malformed team.yaml as absent instead of crashing', async () => {
+    mkdirSync(join(projectRoot, '.agentforge'), { recursive: true });
+    writeFileSync(join(projectRoot, '.agentforge', 'team.yaml'), '[]\n');
+
+    const exitCode = await showGeneratedTeam(projectRoot);
+
+    expect(exitCode).toBe(0);
+    const output = consoleLog.mock.calls.map((call: unknown[]) => String(call[0])).join('\n');
+    expect(output).toContain('No agents configured yet');
+  });
+
   it('lists and deletes hibernated team sessions from compatibility directories', async () => {
     mkdirSync(join(projectRoot, '.agentforge', 'sessions'), { recursive: true });
     mkdirSync(join(projectRoot, '.agentforge', 'team-sessions'), { recursive: true });

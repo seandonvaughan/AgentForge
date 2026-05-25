@@ -35,6 +35,25 @@ interface AgentTemplate {
   };
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function isTeamManifestRecord(value: unknown): value is TeamManifest {
+  const manifest = asRecord(value);
+  return (
+    manifest !== null &&
+    typeof manifest.name === 'string' &&
+    typeof manifest.forged_at === 'string' &&
+    typeof manifest.project_hash === 'string' &&
+    asRecord(manifest.agents) !== null &&
+    asRecord(manifest.model_routing) !== null &&
+    asRecord(manifest.delegation_graph) !== null
+  );
+}
+
 export async function showGeneratedTeam(
   projectRoot: string,
   options: { verbose?: boolean } = {},
@@ -106,7 +125,8 @@ async function loadTeamManifest(projectRoot: string): Promise<TeamManifest | nul
   const teamPath = join(projectRoot, '.agentforge', 'team.yaml');
   try {
     const raw = await readFile(teamPath, 'utf-8');
-    return yaml.load(raw) as TeamManifest;
+    const parsed = yaml.load(raw);
+    return isTeamManifestRecord(parsed) ? parsed : null;
   } catch {
     return null;
   }
