@@ -230,6 +230,7 @@ async function runCli(
       timeout,
       maxBuffer: 1024 * 1024 * 5,
       env: { ...process.env, AGENTFORGE_PROJECT_ROOT: cwd },
+      windowsHide: true,
     });
     return { ok: true, data: result.stdout.trim(), error: null };
   } catch (err) {

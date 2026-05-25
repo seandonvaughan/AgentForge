@@ -164,6 +164,67 @@ describe('GET /api/v5/cycles/:id', () => {
     expect(body.completedAt).toBeNull();
   });
 
+  it('merges partial running cycle.json with live sprint, PR, and phase data', async () => {
+    const id = '4a4a4a4a-4444-4444-4444-444444444444';
+    const dir = makeCycleDir(id);
+    writeFileSync(
+      join(dir, 'cycle.json'),
+      JSON.stringify({ cycleId: id, stage: 'run', cost: { totalUsd: 5 } }),
+    );
+    writeFileSync(join(dir, 'sprint-link.json'), JSON.stringify({ sprintVersion: '10.38.0' }));
+    writeFileSync(
+      join(dir, 'events.jsonl'),
+      [
+        JSON.stringify({ type: 'sprint.assigned', sprintVersion: '10.38.0', at: '2026-05-25T01:00:00.000Z' }),
+        JSON.stringify({ type: 'phase.start', phase: 'execute', at: '2026-05-25T01:05:00.000Z' }),
+      ].join('\n') + '\n',
+    );
+    mkdirSync(join(dir, 'phases'), { recursive: true });
+    writeFileSync(
+      join(dir, 'phases', 'execute.json'),
+      JSON.stringify({
+        costUsd: 1.25,
+        itemResults: [
+          { itemId: 'backlog-bl-012', agentId: 'yaml-doctor', status: 'completed', costUsd: 1.25 },
+        ],
+      }),
+    );
+    writeFileSync(join(dir, 'agent-prs.json'), JSON.stringify([
+      {
+        prNumber: 144,
+        prUrl: 'https://github.com/seandonvaughan/AgentForge/pull/144',
+        branch: 'codex/agent-yaml-doctor',
+        status: 'open',
+        openedAt: '2026-05-25T02:13:44.527Z',
+      },
+    ]));
+    sessionFixture = {
+      cycleId: id,
+      pid: 11111,
+      pgid: 11111,
+      workspaceId: 'default',
+      workspaceRoot: tmpRoot,
+      startedAt: '2026-05-25T01:00:00.000Z',
+      lastSeenAt: '2026-05-25T01:05:00.000Z',
+      status: 'running',
+    };
+
+    const res = await app.inject({ method: 'GET', url: `/api/v5/cycles/${id}` });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.cycleInProgress).toBe(true);
+    expect(body.stage).toBe('execute');
+    expect(body.sprintVersion).toBe('10.38.0');
+    expect(body.cost.totalUsd).toBe(1.25);
+    expect(body.agentRunCount).toBe(1);
+    expect(body.prUrl).toBe('https://github.com/seandonvaughan/AgentForge/pull/144');
+    expect(body.pr).toMatchObject({
+      url: 'https://github.com/seandonvaughan/AgentForge/pull/144',
+      number: 144,
+      source: 'agent-prs',
+    });
+  });
+
   it('uses launch-config budget in synthesized in-progress detail payloads', async () => {
     const id = '45454545-4545-4545-4545-454545454545';
     const dir = makeCycleDir(id);

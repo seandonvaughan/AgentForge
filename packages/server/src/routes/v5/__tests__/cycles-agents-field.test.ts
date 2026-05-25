@@ -14,9 +14,10 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
+let sessionFixture: Record<string, unknown> | null = null;
 vi.mock('../../../lib/cycle-sessions.js', () => ({
-  get: () => null,
-  list: () => [],
+  get: (id: string) => (sessionFixture && sessionFixture['cycleId'] === id ? sessionFixture : null),
+  list: () => (sessionFixture ? [sessionFixture] : []),
   reap: () => ({ reaped: 0, stillRunning: 0 }),
   startReaper: () => ({ stop: () => {} }),
   register: () => {},
@@ -35,11 +36,13 @@ beforeEach(async () => {
   mkdirSync(join(tmpRoot, '.agentforge/cycles'), { recursive: true });
   app = Fastify({ logger: false });
   await cyclesRoutes(app, { projectRoot: tmpRoot });
+  sessionFixture = null;
 });
 
 afterEach(async () => {
   await app.close();
   rmSync(tmpRoot, { recursive: true, force: true });
+  sessionFixture = null;
 });
 
 function makeCycleDir(id: string): string {
@@ -147,6 +150,73 @@ describe('GET /api/v5/cycles — Fix 2: agents field', () => {
     expect(row).toBeDefined();
     expect(row!['stage']).toBe('plan');
     expect(row!['completedAt']).toBeNull();
+  });
+
+  it('merges partial running cycle.json with live sprint and itemResult agents', async () => {
+    const id = 'aaaaaaaa-0000-0000-0000-000000000009';
+    const dir = makeCycleDir(id);
+    writeFileSync(
+      join(dir, 'cycle.json'),
+      JSON.stringify({ cycleId: id, stage: 'run', cost: { totalUsd: 5 } }),
+    );
+    writeFileSync(join(dir, 'sprint-link.json'), JSON.stringify({ sprintVersion: '10.38.0' }));
+    writeFileSync(
+      join(dir, 'events.jsonl'),
+      [
+        JSON.stringify({ type: 'sprint.assigned', sprintVersion: '10.38.0', at: new Date().toISOString() }),
+        JSON.stringify({ type: 'phase.start', phase: 'execute', at: new Date().toISOString() }),
+      ].join('\n') + '\n',
+    );
+    mkdirSync(join(dir, 'phases'), { recursive: true });
+    writeFileSync(
+      join(dir, 'phases', 'execute.json'),
+      JSON.stringify({
+        costUsd: 1.25,
+        itemResults: [
+          { itemId: 'backlog-bl-012', agentId: 'yaml-doctor', status: 'completed', costUsd: 1.25 },
+        ],
+      }),
+    );
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/cycles' });
+    expect(res.statusCode).toBe(200);
+    const rows = res.json().cycles as Array<Record<string, unknown>>;
+    const row = rows.find((r) => r['cycleId'] === id);
+    expect(row).toBeDefined();
+    expect(row!['stage']).toBe('execute');
+    expect(row!['sprintVersion']).toBe('10.38.0');
+    expect(row!['completedAt']).toBeNull();
+    expect(row!['agents']).toEqual(['yaml-doctor']);
+  });
+
+  it('lets terminal cycle session status override partial running cycle.json', async () => {
+    const id = 'aaaaaaaa-0000-0000-0000-000000000010';
+    const dir = makeCycleDir(id);
+    writeFileSync(
+      join(dir, 'cycle.json'),
+      JSON.stringify({ cycleId: id, stage: 'run', cost: { totalUsd: 5 } }),
+    );
+    writeFileSync(
+      join(dir, 'events.jsonl'),
+      JSON.stringify({ type: 'phase.start', phase: 'execute', at: new Date().toISOString() }) + '\n',
+    );
+    sessionFixture = {
+      cycleId: id,
+      pid: 1234,
+      pgid: 1234,
+      workspaceId: 'default',
+      workspaceRoot: tmpRoot,
+      startedAt: '2026-05-25T01:00:00.000Z',
+      lastSeenAt: '2026-05-25T01:05:00.000Z',
+      status: 'killed',
+    };
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/cycles' });
+    expect(res.statusCode).toBe(200);
+    const rows = res.json().cycles as Array<Record<string, unknown>>;
+    const row = rows.find((r) => r['cycleId'] === id);
+    expect(row).toBeDefined();
+    expect(row!['stage']).toBe('killed');
   });
 
   it('includes agents: [] in in-progress path when no phases written yet', async () => {

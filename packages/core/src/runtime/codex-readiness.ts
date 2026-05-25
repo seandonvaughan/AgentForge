@@ -1,14 +1,14 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import yaml from 'js-yaml';
 import type { ModelTier } from '@agentforge/shared';
 import { resolveProviderModelProfile } from './model-profiles.js';
 import { isCodexRuntimeAvailable } from './execution-service-mode.js';
+import { buildCodexSpawnCommand } from './transports/codex-cli-transport.js';
 
 const VALID_TIERS = new Set<ModelTier>(['opus', 'sonnet', 'haiku']);
 const VALID_CODEX_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh']);
-const CODEX_COMMAND = 'codex';
 
 interface AgentYaml {
   name?: string;
@@ -176,6 +176,7 @@ function checkCodexLogin(): { checked: boolean; ok: boolean | null; message?: st
     encoding: 'utf8',
     timeout: 10_000,
     windowsHide: true,
+    ...(command.env ? { env: command.env } : {}),
   });
 
   if (result.error) {
@@ -209,6 +210,7 @@ function checkCodexDoctor(doctorJson?: string): {
       encoding: 'utf8',
       timeout: 20_000,
       windowsHide: true,
+      ...(command.env ? { env: command.env } : {}),
     });
 
     if (result.error) {
@@ -267,46 +269,4 @@ function checkCodexDoctor(doctorJson?: string): {
       message: error instanceof Error ? error.message : String(error),
     };
   }
-}
-
-function buildCodexSpawnCommand(args: string[]): { command: string; args: string[] } {
-  if (process.platform !== 'win32') {
-    return { command: CODEX_COMMAND, args };
-  }
-
-  const candidates = findWindowsCodexCandidates();
-  const nodeEntrypoint = findWindowsCodexNodeEntrypoint(candidates);
-  if (nodeEntrypoint) {
-    return { command: process.execPath, args: [nodeEntrypoint, ...args] };
-  }
-
-  const executable = candidates.find((candidate) => {
-    const normalized = candidate.toLowerCase();
-    return normalized.endsWith('.exe') && !normalized.includes('\\windowsapps\\');
-  });
-  return { command: executable ?? CODEX_COMMAND, args };
-}
-
-function findWindowsCodexCandidates(): string[] {
-  const probe = spawnSync('where', ['codex'], { encoding: 'utf8', windowsHide: true });
-  if (probe.status === 0 && typeof probe.stdout === 'string') {
-    return probe.stdout
-      .split(/\r?\n/)
-      .map((candidate) => candidate.trim())
-      .filter(Boolean);
-  }
-
-  return [];
-}
-
-function findWindowsCodexNodeEntrypoint(candidates: string[]): string | null {
-  const searchedDirs = new Set<string>();
-  for (const candidate of candidates) {
-    const baseDir = dirname(candidate);
-    if (searchedDirs.has(baseDir)) continue;
-    searchedDirs.add(baseDir);
-    const entrypoint = join(baseDir, 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
-    if (existsSync(entrypoint)) return entrypoint;
-  }
-  return null;
 }

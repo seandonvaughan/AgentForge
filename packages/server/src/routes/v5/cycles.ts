@@ -99,6 +99,8 @@ const SAFE_PHASE = new Set([
   'audit', 'plan', 'assign', 'execute', 'test',
   'review', 'gate', 'release', 'learn',
 ]);
+const CYCLE_PHASES = ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate', 'release', 'learn'] as const;
+const TERMINAL_CYCLE_STAGES = new Set(['killed', 'crashed', 'failed', 'completed']);
 const SAFE_FILE_NAMES = new Set([
   'tests', 'git', 'pr', 'approval-pending', 'approval-decision', 'typecheck-failure',
 ]);
@@ -221,6 +223,95 @@ interface AgentPrLedgerEntry {
   openedAt?: string;
 }
 
+interface CycleEventsSummary {
+  stage: string;
+  startedAt: string | null;
+  lastEventAt: number;
+  sprintVersion: string | null;
+}
+
+function readCycleEventsSummary(cycleDir: string): CycleEventsSummary {
+  const summary: CycleEventsSummary = {
+    stage: 'plan',
+    startedAt: null,
+    lastEventAt: 0,
+    sprintVersion: null,
+  };
+  const eventsPath = join(cycleDir, 'events.jsonl');
+  if (!existsSync(eventsPath)) return summary;
+
+  try {
+    const lines = readFileSync(eventsPath, 'utf-8')
+      .split('\n')
+      .filter((line) => line.trim().length > 0);
+    for (const line of lines) {
+      try {
+        const ev = JSON.parse(line) as Record<string, unknown>;
+        if (!summary.startedAt && typeof ev['at'] === 'string') summary.startedAt = ev['at'];
+        if (typeof ev['sprintVersion'] === 'string') summary.sprintVersion = ev['sprintVersion'];
+        if (typeof ev['stage'] === 'string') summary.stage = ev['stage'];
+        else if (ev['type'] === 'phase.start' && typeof ev['phase'] === 'string') summary.stage = ev['phase'];
+        if (typeof ev['at'] === 'string') {
+          const t = new Date(ev['at']).getTime();
+          if (t > summary.lastEventAt) summary.lastEventAt = t;
+        }
+      } catch { /* skip malformed lines */ }
+    }
+  } catch { /* leave defaults */ }
+
+  return summary;
+}
+
+function readCycleSprintVersion(cycleDir: string, events?: CycleEventsSummary): string | null {
+  const plan = readJsonIfExists(join(cycleDir, 'plan.json'));
+  if (plan && typeof plan === 'object' && !Array.isArray(plan)) {
+    const version = (plan as Record<string, unknown>)['version'];
+    if (typeof version === 'string' && version.length > 0) return version;
+  }
+
+  const link = readJsonIfExists(join(cycleDir, 'sprint-link.json'));
+  if (link && typeof link === 'object' && !Array.isArray(link)) {
+    const version = (link as Record<string, unknown>)['sprintVersion'];
+    if (typeof version === 'string' && version.length > 0) return version;
+  }
+
+  return events?.sprintVersion ?? null;
+}
+
+function phaseRunsFromArtifact(phase: Record<string, unknown>): Record<string, unknown>[] {
+  if (Array.isArray(phase['agentRuns']) && phase['agentRuns'].length > 0) {
+    return (phase['agentRuns'] as unknown[]).filter(
+      (run): run is Record<string, unknown> => run !== null && typeof run === 'object' && !Array.isArray(run),
+    );
+  }
+  if (Array.isArray(phase['itemResults'])) {
+    return (phase['itemResults'] as unknown[]).filter(
+      (run): run is Record<string, unknown> => run !== null && typeof run === 'object' && !Array.isArray(run),
+    );
+  }
+  return [];
+}
+
+function collectCycleAgentIds(cycleDir: string): string[] {
+  const phasesDir = join(cycleDir, 'phases');
+  const agents = new Set<string>();
+  if (!existsSync(phasesDir)) return [];
+
+  for (const name of CYCLE_PHASES) {
+    const phaseFile = join(phasesDir, `${name}.json`);
+    if (!existsSync(phaseFile)) continue;
+    try {
+      const phase = JSON.parse(readFileSync(phaseFile, 'utf-8')) as Record<string, unknown>;
+      for (const run of phaseRunsFromArtifact(phase)) {
+        const agentId = run['agentId'];
+        if (typeof agentId === 'string' && agentId.length > 0) agents.add(agentId);
+      }
+    } catch { /* skip malformed phase file */ }
+  }
+
+  return Array.from(agents);
+}
+
 function readCycleLaunchConfig(cycleDir: string): Record<string, unknown> {
   const config = readJsonIfExists(join(cycleDir, 'cycle-config.json'));
   return config && typeof config === 'object' && !Array.isArray(config)
@@ -299,13 +390,15 @@ function bindCycleChildLifecycle(child: ChildProcess, cycleId: string): void {
 }
 
 function isTerminalCyclePayload(cycleJson: Record<string, unknown>): boolean {
-  return typeof cycleJson['stage'] === 'string'
+  const stage = cycleJson['stage'];
+  return (typeof stage === 'string' && TERMINAL_CYCLE_STAGES.has(stage))
     || typeof cycleJson['completedAt'] === 'string'
     || typeof cycleJson['durationMs'] === 'number'
-    || typeof cycleJson['cost'] === 'object'
     || typeof cycleJson['tests'] === 'object'
     || typeof cycleJson['git'] === 'object'
-    || typeof cycleJson['pr'] === 'object';
+    || typeof cycleJson['gateVerdict'] === 'string'
+    || typeof cycleJson['error'] === 'string'
+    || typeof cycleJson['killSwitch'] === 'object';
 }
 
 function summarizeCycle(cycleDir: string, cycleId: string, projectRoot?: string): CycleListRow | null {
@@ -358,27 +451,9 @@ function summarizeCycle(cycleDir: string, cycleId: string, projectRoot?: string)
         } catch { /* skip */ }
       }
     }
-    // Fix 2: collect agent ids from phase agentRuns for the list row.
-    const agentSet = new Set<string>();
-    if (existsSync(join(cycleDir, 'phases'))) {
-      for (const name of ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate', 'release', 'learn']) {
-        const pf = join(cycleDir, 'phases', `${name}.json`);
-        if (!existsSync(pf)) continue;
-        try {
-          const ph = JSON.parse(readFileSync(pf, 'utf-8')) as Record<string, unknown>;
-          if (Array.isArray(ph['agentRuns'])) {
-            for (const run of ph['agentRuns'] as Record<string, unknown>[]) {
-              const aid = run['agentId'];
-              if (typeof aid === 'string' && aid.length > 0) agentSet.add(aid);
-            }
-          }
-        } catch { /* skip */ }
-      }
-    }
-
     return {
       cycleId: (cycleJson['cycleId'] as string) ?? cycleId,
-      sprintVersion: (cycleJson['sprintVersion'] as string) ?? null,
+      sprintVersion: (cycleJson['sprintVersion'] as string) ?? readCycleSprintVersion(cycleDir),
       stage: (cycleJson['stage'] as string) ?? 'completed',
       startedAt:
         (cycleJson['startedAt'] as string) ??
@@ -396,39 +471,17 @@ function summarizeCycle(cycleDir: string, cycleId: string, projectRoot?: string)
       hasApprovalPending,
       hasApprovalDecision,
       approvalDecision,
-      agents: Array.from(agentSet),
+      agents: collectCycleAgentIds(cycleDir),
       ...configFields,
     };
   }
 
-  // No cycle.json — synthesize an in-progress row from whatever's on disk.
-  const eventsPath = join(cycleDir, 'events.jsonl');
-  let stage = 'plan';
-  let startedAt = deriveStartedAt(cycleDir) ?? new Date(0).toISOString();
-  let lastEventAt = 0;
-  if (existsSync(eventsPath)) {
-    try {
-      const lines = readFileSync(eventsPath, 'utf-8')
-        .split('\n')
-        .filter(l => l.trim().length > 0);
-      for (const line of lines) {
-        try {
-          const ev = JSON.parse(line) as Record<string, unknown>;
-          if (typeof ev['stage'] === 'string') stage = ev['stage'] as string;
-          else if (ev['type'] === 'phase.start' && typeof ev['phase'] === 'string') {
-            stage = ev['phase'] as string;
-          }
-          if (!startedAt || startedAt === new Date(0).toISOString()) {
-            if (typeof ev['at'] === 'string') startedAt = ev['at'] as string;
-          }
-          if (typeof ev['at'] === 'string') {
-            const t = new Date(ev['at'] as string).getTime();
-            if (t > lastEventAt) lastEventAt = t;
-          }
-        } catch { /* skip */ }
-      }
-    } catch { /* ignore */ }
-  }
+  // Synthesize an in-progress row from whatever's on disk. This also handles
+  // partial live cycle.json snapshots that only contain heartbeat/stage/cost.
+  const events = readCycleEventsSummary(cycleDir);
+  let stage = events.stage;
+  const startedAt = events.startedAt ?? deriveStartedAt(cycleDir) ?? new Date(0).toISOString();
+  const lastEventAt = events.lastEventAt;
 
   // v10.7.0: consult the session registry as the authoritative source of truth
   // for terminal state. A cycle that was stopped via POST /cycles/:id/stop has
@@ -510,27 +563,10 @@ function summarizeCycle(cycleDir: string, cycleId: string, projectRoot?: string)
     } catch { /* non-fatal */ }
   }
 
-  // Fix 2 (in-progress path): collect agent ids from whatever phases exist.
-  const liveAgentSet = new Set<string>();
-  if (existsSync(phasesDir)) {
-    for (const name of ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate', 'release', 'learn']) {
-      const pf = join(phasesDir, `${name}.json`);
-      if (!existsSync(pf)) continue;
-      try {
-        const ph = JSON.parse(readFileSync(pf, 'utf-8')) as Record<string, unknown>;
-        if (Array.isArray(ph['agentRuns'])) {
-          for (const run of ph['agentRuns'] as Record<string, unknown>[]) {
-            const aid = run['agentId'];
-            if (typeof aid === 'string' && aid.length > 0) liveAgentSet.add(aid);
-          }
-        }
-      } catch { /* skip */ }
-    }
-  }
-
+  const liveAgentPr = latestCycleAgentPr(cycleDir);
   return {
     cycleId,
-    sprintVersion: null,
+    sprintVersion: readCycleSprintVersion(cycleDir, events),
     stage,
     startedAt,
     completedAt: null,
@@ -539,11 +575,11 @@ function summarizeCycle(cycleDir: string, cycleId: string, projectRoot?: string)
     budgetUsd: fallbackBudgetUsd,
     testsPassed,
     testsTotal,
-    prUrl: null,
+    prUrl: liveAgentPr?.prUrl ?? null,
     hasApprovalPending,
     hasApprovalDecision,
     approvalDecision,
-    agents: Array.from(liveAgentSet),
+    agents: collectCycleAgentIds(cycleDir),
     ...configFields,
   };
 }
@@ -953,7 +989,7 @@ export async function cyclesRoutes(
         const costByAgent: Record<string, number> = {};
         let agentRunCount = 0;
         let tp = 0; let tf = 0; let tt = 0;
-        for (const name of ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate', 'release', 'learn']) {
+        for (const name of CYCLE_PHASES) {
           const pf = join(phasesDir, `${name}.json`);
           if (!existsSync(pf)) continue;
           try {
@@ -961,13 +997,11 @@ export async function cyclesRoutes(
             const c = typeof ph.costUsd === 'number' ? ph.costUsd : 0;
             totalCostUsd += c;
             if (c > 0) costByPhase[name] = c;
-            if (Array.isArray(ph.agentRuns)) {
-              for (const run of ph.agentRuns as any[]) {
-                agentRunCount++;
-                const aid = run.agentId ?? 'unknown';
-                const rc = typeof run.costUsd === 'number' ? run.costUsd : 0;
-                costByAgent[aid] = (costByAgent[aid] ?? 0) + rc;
-              }
+            for (const run of phaseRunsFromArtifact(ph)) {
+              agentRunCount++;
+              const aid = typeof run['agentId'] === 'string' ? run['agentId'] : 'unknown';
+              const rc = typeof run['costUsd'] === 'number' ? run['costUsd'] : 0;
+              costByAgent[aid] = (costByAgent[aid] ?? 0) + rc;
             }
             if (name === 'test') {
               if (typeof ph.passed === 'number') tp = ph.passed;
@@ -992,6 +1026,10 @@ export async function cyclesRoutes(
       }
       const cp = readCycleCheckpoint(dir);
       if (cp !== undefined) (parsed as any).checkpoint = cp;
+      if (typeof parsed['sprintVersion'] !== 'string') {
+        const sprintVersion = readCycleSprintVersion(dir);
+        if (sprintVersion) (parsed as any).sprintVersion = sprintVersion;
+      }
       const pr = (parsed['pr'] ?? {}) as Record<string, unknown>;
       if (!(typeof pr['url'] === 'string' && pr['url'].length > 0)) {
         const agentPr = latestCycleAgentPr(dir);
@@ -1012,33 +1050,14 @@ export async function cyclesRoutes(
     // cycle.json is only written at terminal stage. While the cycle is still
     // running, synthesize a partial payload from events.jsonl so the dashboard
     // detail page can render the live feed instead of showing HTTP 404.
-    const eventsFile = join(dir, 'events.jsonl');
-    let lastStage = 'plan';
-    let startedAt: string | null = null;
-    let sprintVersion: string | null = null;
+    const events = readCycleEventsSummary(dir);
+    const lastStage = events.stage;
+    const startedAt = events.startedAt;
+    const sprintVersion = readCycleSprintVersion(dir, events);
     // lastEventAt tracks the epoch ms of the most-recent event — used by the
     // v15.1.0 staleness heuristic to infer crashed cycles whose session record
     // was lost on server restart.
-    let lastEventAt = 0;
-    if (existsSync(eventsFile)) {
-      try {
-        const text = readFileSync(eventsFile, 'utf8');
-        const lines = text.split('\n').filter(Boolean);
-        for (const line of lines) {
-          try {
-            const ev = JSON.parse(line) as { type?: string; phase?: string; stage?: string; at?: string; sprintVersion?: string };
-            if (!startedAt && ev.at) startedAt = ev.at;
-            if (ev.sprintVersion && !sprintVersion) sprintVersion = ev.sprintVersion;
-            if (ev.stage) lastStage = ev.stage;
-            else if (ev.type === 'phase.start' && ev.phase) lastStage = ev.phase;
-            if (ev.at) {
-              const t = new Date(ev.at).getTime();
-              if (t > lastEventAt) lastEventAt = t;
-            }
-          } catch { /* skip malformed lines */ }
-        }
-      } catch { /* fall through to defaults */ }
-    }
+    const lastEventAt = events.lastEventAt;
     // Aggregate live progress from phases/<name>.json. Each phase handler
     // writes its own JSON on completion with costUsd / durationMs / agentRuns.
     // This gives the dashboard real numbers (cost, agent activity, test
@@ -1052,7 +1071,7 @@ export async function cyclesRoutes(
     let testsTotal = 0;
     let agentRunCount = 0;
     if (existsSync(phasesDir)) {
-      for (const name of ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate', 'release', 'learn']) {
+      for (const name of CYCLE_PHASES) {
         const phaseFile = join(phasesDir, `${name}.json`);
         if (!existsSync(phaseFile)) continue;
         try {
@@ -1060,13 +1079,11 @@ export async function cyclesRoutes(
           const phaseCost = typeof phase.costUsd === 'number' ? phase.costUsd : 0;
           totalCostUsd += phaseCost;
           if (phaseCost > 0) costByPhase[name] = phaseCost;
-          if (Array.isArray(phase.agentRuns)) {
-            for (const run of phase.agentRuns) {
-              agentRunCount++;
-              const aid = run.agentId ?? 'unknown';
-              const c = typeof run.costUsd === 'number' ? run.costUsd : 0;
-              costByAgent[aid] = (costByAgent[aid] ?? 0) + c;
-            }
+          for (const run of phaseRunsFromArtifact(phase)) {
+            agentRunCount++;
+            const aid = typeof run['agentId'] === 'string' ? run['agentId'] : 'unknown';
+            const c = typeof run['costUsd'] === 'number' ? run['costUsd'] : 0;
+            costByAgent[aid] = (costByAgent[aid] ?? 0) + c;
           }
           if (name === 'test') {
             if (typeof phase.passed === 'number') testsPassed = phase.passed;
@@ -1077,6 +1094,15 @@ export async function cyclesRoutes(
       }
     }
     const passRate = testsTotal > 0 ? testsPassed / testsTotal : 0;
+    const liveAgentPr = latestCycleAgentPr(dir);
+    const livePr = liveAgentPr?.prUrl
+      ? {
+          url: liveAgentPr.prUrl,
+          number: typeof liveAgentPr.prNumber === 'number' ? liveAgentPr.prNumber : null,
+          draft: false,
+          source: 'agent-prs',
+        }
+      : { url: null, number: null, draft: false };
 
     // Cross-check the session registry before deciding "in progress". A killed
     // or crashed cycle never writes cycle.json, so filesystem-only inference
@@ -1103,7 +1129,8 @@ export async function cyclesRoutes(
         cost: { totalUsd: totalCostUsd, budgetUsd: 200, byAgent: costByAgent, byPhase: costByPhase },
         tests: { passed: testsPassed, failed: testsFailed, skipped: 0, total: testsTotal, passRate, newFailures: [] },
         git: { branch: '', commitSha: null, filesChanged: [] },
-        pr: { url: null, number: null, draft: false },
+        pr: livePr,
+        prUrl: liveAgentPr?.prUrl ?? null,
         agentRunCount,
         cycleInProgress: false,
         partialTerminal: true,
@@ -1145,7 +1172,8 @@ export async function cyclesRoutes(
         cost: { totalUsd: totalCostUsd, budgetUsd: 200, byAgent: costByAgent, byPhase: costByPhase },
         tests: { passed: testsPassed, failed: testsFailed, skipped: 0, total: testsTotal, passRate, newFailures: [] },
         git: { branch: '', commitSha: null, filesChanged: [] },
-        pr: { url: null, number: null, draft: false },
+        pr: livePr,
+        prUrl: liveAgentPr?.prUrl ?? null,
         agentRunCount,
         cycleInProgress: false,
         partialTerminal: true,
@@ -1173,7 +1201,8 @@ export async function cyclesRoutes(
       cost: { totalUsd: totalCostUsd, budgetUsd: 200, byAgent: costByAgent, byPhase: costByPhase },
       tests: { passed: testsPassed, failed: testsFailed, skipped: 0, total: testsTotal, passRate, newFailures: [] },
       git: { branch: '', commitSha: null, filesChanged: [] },
-      pr: { url: null, number: null, draft: false },
+      pr: livePr,
+      prUrl: liveAgentPr?.prUrl ?? null,
       agentRunCount,
       cycleInProgress: true,
     }));
@@ -1347,27 +1376,29 @@ export async function cyclesRoutes(
     const byAgent: Record<string, { runs: number; totalCostUsd: number; totalDurationMs: number; phases: Set<string> }> = {};
 
     const seenExecuteItemIds = new Set<string>();
-    for (const name of ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate', 'release', 'learn']) {
+    for (const name of CYCLE_PHASES) {
       const phaseFile = join(phasesDir, `${name}.json`);
       if (!existsSync(phaseFile)) continue;
       try {
         const phase = JSON.parse(readFileSync(phaseFile, 'utf8'));
-        const phaseRuns = Array.isArray(phase.agentRuns) ? phase.agentRuns : [];
+        const phaseRuns = phaseRunsFromArtifact(phase);
         for (const run of phaseRuns) {
-          const agentId = String(run.agentId ?? 'unknown');
+          const agentId = String(run['agentId'] ?? 'unknown');
           const defaults = getAgentDefaults(agentId);
           const row: AgentRunRow = {
             phase: name,
             agentId,
-            itemId: typeof run.itemId === 'string' ? run.itemId : undefined,
-            status: String(run.status ?? 'unknown'),
-            costUsd: typeof run.costUsd === 'number' ? run.costUsd : 0,
-            durationMs: typeof run.durationMs === 'number' ? run.durationMs : 0,
-            response: typeof run.response === 'string' ? run.response : undefined,
-            error: typeof run.error === 'string' ? run.error : undefined,
-            attempts: typeof run.attempts === 'number' ? run.attempts : undefined,
-            model: typeof run.model === 'string' ? run.model : defaults.model,
-            effort: typeof run.effort === 'string' ? run.effort : (defaults.effort ?? 'high'),
+            status: String(run['status'] ?? 'unknown'),
+            costUsd: typeof run['costUsd'] === 'number' ? run['costUsd'] : 0,
+            durationMs: typeof run['durationMs'] === 'number' ? run['durationMs'] : 0,
+            ...(typeof run['itemId'] === 'string' ? { itemId: run['itemId'] } : {}),
+            ...(typeof run['response'] === 'string' ? { response: run['response'] } : {}),
+            ...(typeof run['error'] === 'string' ? { error: run['error'] } : {}),
+            ...(typeof run['attempts'] === 'number' ? { attempts: run['attempts'] } : {}),
+            ...(typeof run['model'] === 'string'
+              ? { model: run['model'] }
+              : defaults.model ? { model: defaults.model } : {}),
+            effort: typeof run['effort'] === 'string' ? run['effort'] : (defaults.effort ?? 'high'),
           };
           runs.push(row);
           if (row.itemId && name === 'execute') seenExecuteItemIds.add(row.itemId);
