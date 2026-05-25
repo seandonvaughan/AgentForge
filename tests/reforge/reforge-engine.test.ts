@@ -480,6 +480,116 @@ describe("ReforgeEngine", () => {
     expect(applied.system_prompt).not.toContain("COST AWARENESS PREAMBLE");
   });
 
+  it("recordCanaryOutcome ignores tokenless quality outcomes", async () => {
+    const canaryAnalysis = makeAnalysis([
+      {
+        action: "update-system-prompt",
+        rationale: "quality outcomes must be correlated",
+        urgency: "medium",
+        theme_label: "prompt-canary",
+        confidence: 0.7,
+      },
+    ]);
+
+    const canaryPlan = await engine.buildPlan(canaryAnalysis, [makeTemplate()]);
+    await engine.deployCanary(canaryPlan, {
+      trafficPercent: 100,
+      strategy: "hash",
+      rollbackThreshold: 0.1,
+    });
+
+    const outcome = await engine.recordCanaryOutcome("cost-analyst", true, {
+      source: "quality",
+    });
+
+    expect(outcome?.status).toBe("ignored");
+
+    const stagedPath = path.join(
+      tmpDir,
+      ".agentforge",
+      "agent-overrides",
+      "canary",
+      "cost-analyst.json",
+    );
+    const staged = JSON.parse(await fs.readFile(stagedPath, "utf-8")) as {
+      metrics?: { canaryRequests: number; canaryErrors: number; errorRate: number };
+    };
+    expect(staged.metrics).toMatchObject({
+      canaryRequests: 0,
+      canaryErrors: 0,
+      errorRate: 0,
+    });
+  });
+
+  it("recordCanaryOutcome does not consume correlation for non-quality outcomes", async () => {
+    const canaryAnalysis = makeAnalysis([
+      {
+        action: "update-system-prompt",
+        rationale: "runtime outcomes must not burn quality tokens",
+        urgency: "medium",
+        theme_label: "prompt-canary",
+        confidence: 0.7,
+      },
+    ]);
+
+    const canaryPlan = await engine.buildPlan(canaryAnalysis, [makeTemplate()]);
+    await engine.deployCanary(canaryPlan, {
+      trafficPercent: 100,
+      strategy: "hash",
+      rollbackThreshold: 0.1,
+    });
+
+    await engine.applyOverride(makeTemplate(), {
+      requestId: "req-correlated",
+      outcomeToken: "outcome-token-1",
+    });
+
+    const ignored = await engine.recordCanaryOutcome("cost-analyst", true, {
+      source: "runtime",
+      requestId: "req-correlated",
+      outcomeToken: "outcome-token-1",
+    });
+    expect(ignored?.status).toBe("ignored");
+
+    const recorded = await engine.recordCanaryOutcome("cost-analyst", true, {
+      source: "quality",
+      requestId: "req-correlated",
+      outcomeToken: "outcome-token-1",
+    });
+    expect(recorded?.status).toBe("recorded");
+    expect(recorded?.deployment.metrics).toMatchObject({
+      canaryRequests: 1,
+      canaryErrors: 1,
+      errorRate: 1,
+    });
+  });
+
+  it("recordCanaryOutcome ignores unmatched request-scoped quality outcomes", async () => {
+    const canaryAnalysis = makeAnalysis([
+      {
+        action: "update-system-prompt",
+        rationale: "unrouted quality outcomes must not contaminate metrics",
+        urgency: "medium",
+        theme_label: "prompt-canary",
+        confidence: 0.7,
+      },
+    ]);
+
+    const canaryPlan = await engine.buildPlan(canaryAnalysis, [makeTemplate()]);
+    await engine.deployCanary(canaryPlan, {
+      trafficPercent: 100,
+      strategy: "hash",
+      rollbackThreshold: 0.1,
+    });
+
+    const outcome = await engine.recordCanaryOutcome("cost-analyst", true, {
+      source: "quality",
+      requestId: "req-never-routed",
+    });
+
+    expect(outcome?.status).toBe("ignored");
+  });
+
   it("recordCanaryOutcome rolls back a staged deployment after repeated errors", async () => {
     const baseAnalysis = makeAnalysis([
       {
