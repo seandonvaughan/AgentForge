@@ -18,7 +18,13 @@ export default defineConfig({
     environment: 'node',
     include: ['tests/**/*.test.ts', 'packages/**/__tests__/*.test.ts'],
     exclude: ['tests/e2e/**/*.test.ts', '**/node_modules/**'],
-    testTimeout: 15000,
+    // Real-git / subprocess tests (worktree pool, multi-PR cycle, external-repo
+    // smoke) are fast in isolation but can starve under maximum full-suite
+    // parallelism on Windows — a 2s worktree test was observed taking 23s under
+    // load. Give them headroom so the gate is deterministic; genuine hangs still
+    // fail well within these bounds.
+    testTimeout: 60000,
+    hookTimeout: 30000,
     coverage: { provider: 'v8', reporter: ['text', 'json-summary'] },
     // Suppress root CLI deprecation warnings during unit tests so [compat]
     // notices don't pollute test output.  Set AGENTFORGE_SUPPRESS_DEPRECATION=1
