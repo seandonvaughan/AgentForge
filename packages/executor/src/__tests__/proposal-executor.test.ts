@@ -13,11 +13,13 @@ describe('ProposalExecutor execution modes', () => {
 
   it('uses an injected runtime executor when dryRun is false', async () => {
     const stages: string[] = [];
+    const models: string[] = [];
     const result = await new ProposalExecutor({
       dryRun: false,
       runtime: {
-        async executeStage({ stage }) {
+        async executeStage({ stage, model }) {
           stages.push(stage);
+          models.push(model);
           return {
             output: `ran ${stage}`,
             success: true,
@@ -35,6 +37,45 @@ describe('ProposalExecutor execution modes', () => {
     expect(result.totalCostUsd).toBeCloseTo(0.2);
     expect(result.diff).toContain('diff --git');
     expect(result.testSummary).toEqual({ passed: 3, failed: 0, total: 3 });
+    expect(models).toEqual(['haiku', 'haiku', 'haiku', 'sonnet']);
+  });
+
+  it('adds a canary stage and rolls back on rejected canary validation for self-modification proposals', async () => {
+    const stages: string[] = [];
+    const result = await new ProposalExecutor({
+      dryRun: false,
+      runtime: {
+        async executeStage({ stage }) {
+          stages.push(stage);
+          if (stage === 'canary') {
+            return {
+              output: 'canary verdict',
+              success: true,
+              canary: {
+                approved: false,
+                reason: 'regression detected',
+                sampleSize: 5,
+                observedErrorRate: 0.2,
+                threshold: 0.05,
+              },
+            };
+          }
+          if (stage === 'rollback') {
+            return { output: 'rolled back', success: true };
+          }
+          return { output: `ran ${stage}`, success: true };
+        },
+      },
+    }).execute(buildProposal({
+      title: 'Canary Deployments for Self-Modifications',
+      description: 'Introduce safer rollout for self modification changes.',
+      tags: ['deployment', 'safety', 'self-modification'],
+    }));
+
+    expect(stages).toEqual(['planning', 'coding', 'linting', 'testing', 'canary', 'rollback']);
+    expect(result.status).toBe('failed');
+    expect(result.stages.some((stage) => stage.stage === 'rollback')).toBe(true);
+    expect(result.stages.find((stage) => stage.stage === 'failed')?.error).toContain('regression detected');
   });
 
   it('requires a runtime executor when dryRun is false', async () => {
@@ -77,7 +118,7 @@ describe('ProposalExecutor execution modes', () => {
   });
 });
 
-function buildProposal(): AgentProposal {
+function buildProposal(overrides: Partial<AgentProposal> = {}): AgentProposal {
   return {
     id: 'proposal-1',
     agentId: 'coder',
@@ -89,5 +130,6 @@ function buildProposal(): AgentProposal {
     tags: ['runtime'],
     proposedAt: '2026-04-30T00:00:00.000Z',
     status: 'approved',
+    ...overrides,
   };
 }

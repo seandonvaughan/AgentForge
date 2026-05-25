@@ -1,12 +1,29 @@
 import type { AgentProposal } from '@agentforge/core';
 
-export type ExecutionStage = 'planning' | 'architecture' | 'coding' | 'linting' | 'testing' | 'complete' | 'failed';
+export type ExecutionStage =
+  | 'planning'
+  | 'architecture'
+  | 'coding'
+  | 'linting'
+  | 'testing'
+  | 'canary'
+  | 'rollback'
+  | 'complete'
+  | 'failed';
+
+export interface CanaryExecutionPolicy {
+  enabled: boolean;
+  reason: string;
+  rollbackOnFailure: boolean;
+  minSuccessfulStages: number;
+}
 
 export interface ExecutionPlan {
   proposalId: string;
   stages: ExecutionStage[];
   estimatedAgents: string[];
   estimatedComplexity: 'low' | 'medium' | 'high';
+  canary?: CanaryExecutionPolicy;
   sandboxed: boolean;
   createdAt: string;
 }
@@ -14,6 +31,7 @@ export interface ExecutionPlan {
 export interface StageResult {
   stage: ExecutionStage;
   agentId: string;
+  model: 'opus' | 'sonnet' | 'haiku';
   output: string;
   durationMs: number;
   success: boolean;
@@ -41,9 +59,15 @@ export interface StageExecutionRequest {
   plan: ExecutionPlan;
   stage: ExecutionStage;
   agentId: string;
+  model: 'opus' | 'sonnet' | 'haiku';
   stageIndex: number;
   timeoutMs: number;
   budgetRemainingUsd: number;
+  rollbackContext?: {
+    failedStage: ExecutionStage;
+    reason: string;
+    completedStages: ExecutionStage[];
+  };
 }
 
 export interface StageExecutionResponse {
@@ -54,6 +78,13 @@ export interface StageExecutionResponse {
   diff?: string;
   testSummary?: { passed: number; failed: number; total: number };
   costUsd?: number;
+  canary?: {
+    approved: boolean;
+    reason?: string;
+    sampleSize?: number;
+    observedErrorRate?: number;
+    threshold?: number;
+  };
 }
 
 export interface ProposalRuntimeExecutor {
@@ -67,6 +98,17 @@ export interface ExecutorOptions {
   stageTimeoutMs?: number;
   /** Budget cap in USD across the entire execution. Default: 1.00 */
   budgetUsd?: number;
+  /**
+   * Canary safety controls for self-modifying proposals.
+   * These options are only applied when planning includes a `canary` stage.
+   */
+  canary?: {
+    enabledForSelfModification?: boolean;
+    rollbackOnFailure?: boolean;
+    minCanarySampleSize?: number;
+    maxCanaryErrorRate?: number;
+    requireCanarySignal?: boolean;
+  };
   /** Required when dryRun is false. */
   runtime?: ProposalRuntimeExecutor;
 }

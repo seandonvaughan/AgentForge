@@ -61,4 +61,16 @@ describe('executor — ProposalExecutor', () => {
     expect(plan.estimatedComplexity).toBe('high');
     expect(plan.stages).toContain('architecture');
   });
+
+  it('self-modification proposals include canary safety stage', () => {
+    const selfModProposal = {
+      ...mockProposal,
+      title: 'Canary Deployments for Self-Modifications',
+      description: 'Introduce safer rollout and rollback controls for self modification changes.',
+      tags: ['deployment', 'safety', 'self-modification'],
+    };
+    const plan = buildPlan(selfModProposal);
+    expect(plan.canary?.enabled).toBe(true);
+    expect(plan.stages).toContain('canary');
+  });
 });
