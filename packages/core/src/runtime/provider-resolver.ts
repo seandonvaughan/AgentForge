@@ -16,6 +16,9 @@ export class ProviderResolver {
     }
 
     if (request.allowedTools?.length) {
+      const preferredCliTransport = await this.resolvePreferredAllowedToolsTransport(request);
+      if (preferredCliTransport) return preferredCliTransport;
+
       const claudeCompat = await this.findTransport('claude-code-compat', request);
       if (claudeCompat) {
         return { transport: claudeCompat, runtimeModeResolved: 'claude-code-compat' };
@@ -30,6 +33,9 @@ export class ProviderResolver {
         'Claude Code compatibility or Codex CLI transport is required in auto mode when allowedTools are requested. Install/authenticate Claude Code or Codex CLI, request a compatible runtime explicitly, or remove allowedTools.',
       );
     }
+
+    const preferredAutoTransport = await this.resolvePreferredAutoTransport(request);
+    if (preferredAutoTransport) return preferredAutoTransport;
 
     const sdkTransport = await this.findTransport('anthropic-sdk', request);
     if (sdkTransport) {
@@ -82,5 +88,35 @@ export class ProviderResolver {
     const transport = this.transports.find((candidate) => candidate.kind === kind);
     if (!transport) return null;
     return (await transport.isAvailable(request)) ? transport : null;
+  }
+
+  private async resolvePreferredAllowedToolsTransport(
+    request: ExecutionRequest,
+  ): Promise<{ transport: ExecutionTransport; runtimeModeResolved: RuntimeMode } | null> {
+    if (!request.preferredProvider) return null;
+    if (request.preferredProvider !== 'claude-code-compat' && request.preferredProvider !== 'codex-cli') {
+      return null;
+    }
+
+    const preferred = await this.findTransport(request.preferredProvider, request);
+    if (!preferred) return null;
+    return { transport: preferred, runtimeModeResolved: request.preferredProvider };
+  }
+
+  private async resolvePreferredAutoTransport(
+    request: ExecutionRequest,
+  ): Promise<{ transport: ExecutionTransport; runtimeModeResolved: RuntimeMode } | null> {
+    if (!request.preferredProvider) return null;
+    const preferred = await this.findTransport(request.preferredProvider, request);
+    if (!preferred) return null;
+    return {
+      transport: preferred,
+      runtimeModeResolved: this.runtimeModeForProvider(request.preferredProvider),
+    };
+  }
+
+  private runtimeModeForProvider(kind: ExecutionProviderKind): RuntimeMode {
+    if (kind === 'anthropic-sdk') return 'sdk';
+    return kind;
   }
 }

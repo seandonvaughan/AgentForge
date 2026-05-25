@@ -31,6 +31,7 @@ export interface RunOptions {
   context?: string;          // additional context injected before user message
   budgetUsd?: number;        // hard stop if cost would exceed this
   runtimeMode?: RuntimeMode;
+  preferredProvider?: ExecutionProviderKind;
   /** Optional provider-neutral tool/capability hints for CLI runtimes. */
   allowedTools?: string[];
   cwd?: string;

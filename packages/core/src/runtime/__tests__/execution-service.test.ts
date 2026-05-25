@@ -64,6 +64,23 @@ describe('ExecutionService buildRequest — timeoutMs forwarding', () => {
 
     expect(capturedRequest.timeoutMs).toBeUndefined();
   });
+
+  it('forwards preferredProvider from RunOptions to ExecutionRequest when set', async () => {
+    let capturedPreferredProvider: ExecutionRequest['preferredProvider'];
+    const transport: ExecutionTransport = {
+      kind: 'anthropic-sdk',
+      isAvailable: () => true,
+      execute: vi.fn(async (req) => {
+        capturedPreferredProvider = req.preferredProvider;
+        return buildExecutionResult('ok');
+      }),
+    };
+    const service = new ExecutionService({ transports: [transport] });
+
+    await service.run(config, { task: 'route this', preferredProvider: 'openai-sdk' });
+
+    expect(capturedPreferredProvider).toBe('openai-sdk');
+  });
 });
 
 describe('ExecutionService buildRequest — allowedTools from skills', () => {

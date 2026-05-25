@@ -270,6 +270,7 @@ export class ExecutionService {
       task: opts.task,
       userContent,
       modelId,
+      ...(opts.preferredProvider ? { preferredProvider: opts.preferredProvider } : {}),
       providerModelProfiles: resolveProviderModelProfiles(config.model, config.effort, process.env, profileRoot),
       maxTokens: config.maxTokens ?? 8096,
       ...(opts.parentSessionId ? { parentSessionId: opts.parentSessionId } : {}),

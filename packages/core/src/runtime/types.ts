@@ -64,6 +64,8 @@ export interface ExecutionRequest {
   task: string;
   userContent: string;
   modelId: string;
+  /** Optional auto-mode routing hint. Resolver falls back when unavailable. */
+  preferredProvider?: ExecutionProviderKind;
   providerModelProfiles?: ProviderModelProfiles;
   cwd?: string;
   codexSandbox?: CodexSandboxMode;

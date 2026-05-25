@@ -32,6 +32,36 @@ function buildRequest(overrides: Partial<ExecutionRequest> = {}): ExecutionReque
 }
 
 describe('ProviderResolver', () => {
+  it('honors preferredProvider in auto mode when that transport is available', async () => {
+    const resolver = new ProviderResolver([
+      buildTransport('anthropic-sdk'),
+      buildTransport('openai-sdk'),
+    ]);
+
+    const result = await resolver.resolve(
+      'auto',
+      buildRequest({ preferredProvider: 'openai-sdk' }),
+    );
+
+    expect(result.transport.kind).toBe('openai-sdk');
+    expect(result.runtimeModeResolved).toBe('openai-sdk');
+  });
+
+  it('falls back to default auto-mode order when preferredProvider is unavailable', async () => {
+    const resolver = new ProviderResolver([
+      buildTransport('anthropic-sdk'),
+      buildTransport('openai-sdk', false),
+    ]);
+
+    const result = await resolver.resolve(
+      'auto',
+      buildRequest({ preferredProvider: 'openai-sdk' }),
+    );
+
+    expect(result.transport.kind).toBe('anthropic-sdk');
+    expect(result.runtimeModeResolved).toBe('sdk');
+  });
+
   it('prefers the Anthropic SDK transport in auto mode when both transports are available', async () => {
     const resolver = new ProviderResolver([
       buildTransport('anthropic-sdk'),
@@ -78,6 +108,21 @@ describe('ProviderResolver', () => {
     ]);
 
     const result = await resolver.resolve('auto', buildRequest({ allowedTools: ['Read'] }));
+
+    expect(result.transport.kind).toBe('codex-cli');
+    expect(result.runtimeModeResolved).toBe('codex-cli');
+  });
+
+  it('honors preferredProvider for allowedTools when set to codex-cli', async () => {
+    const resolver = new ProviderResolver([
+      buildTransport('claude-code-compat'),
+      buildTransport('codex-cli'),
+    ]);
+
+    const result = await resolver.resolve(
+      'auto',
+      buildRequest({ allowedTools: ['Read'], preferredProvider: 'codex-cli' }),
+    );
 
     expect(result.transport.kind).toBe('codex-cli');
     expect(result.runtimeModeResolved).toBe('codex-cli');
