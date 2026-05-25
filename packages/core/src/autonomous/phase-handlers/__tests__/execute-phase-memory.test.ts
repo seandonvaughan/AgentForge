@@ -295,4 +295,33 @@ describe('formatMemorySection', () => {
     const section = formatMemorySection(entries);
     expect(section).toContain('avoid repeating past mistakes');
   });
+
+  it('truncates oversized memory values to bound prompt growth', () => {
+    const entries: MemoryEntry[] = [
+      {
+        id: 'big-1',
+        type: 'review-finding',
+        value: 'x'.repeat(1_000),
+        tags: [],
+      },
+    ];
+
+    const section = formatMemorySection(entries);
+    expect(section).toContain('...[truncated]');
+    expect(section).not.toContain('x'.repeat(600));
+  });
+
+  it('caps total memory section size and appends an omission marker', () => {
+    const entries: MemoryEntry[] = Array.from({ length: 20 }, (_, i) => ({
+      id: `entry-${i}`,
+      type: 'failure-pattern',
+      value: `value-${i}-` + 'y'.repeat(220),
+      tags: [],
+    }));
+
+    const section = formatMemorySection(entries);
+    expect(section).toContain('older entries omitted to stay within prompt budget');
+    const lines = section.split('\n').filter((l) => l.startsWith('- [failure-pattern]'));
+    expect(lines.length).toBeLessThan(entries.length);
+  });
 });

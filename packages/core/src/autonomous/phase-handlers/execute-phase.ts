@@ -156,6 +156,10 @@ export type MemoryEntry = ParsedMemoryEntry;
 /** Types we prioritise when selecting entries to inject into a prompt.
  *  cycle-outcome is skipped — it's high-level and less actionable. */
 const PRIORITY_TYPES = new Set(['failure-pattern', 'review-finding', 'gate-verdict', 'learned-fact']);
+const MEMORY_VALUE_CHAR_LIMIT = 400;
+const MEMORY_SECTION_CHAR_LIMIT = 2_400;
+const MEMORY_VALUE_TRUNCATION_SUFFIX = ' ...[truncated]';
+const MEMORY_SECTION_TRUNCATION_LINE = '- _(older entries omitted to stay within prompt budget)_';
 
 /**
  * Reads .agentforge/memory/*.jsonl, parses each JSONL line, filters to
@@ -220,16 +224,34 @@ export function readRelevantMemoryEntries(
  *  is empty so callers can safely concatenate without extra whitespace. */
 export function formatMemorySection(entries: MemoryEntry[]): string {
   if (entries.length === 0) return '';
-  const lines = entries.map((e) => {
+  const lines: string[] = [];
+  let usedChars = 0;
+
+  for (const e of entries) {
     // Value may be a raw string or a JSON-stringified object — normalise to string.
-    const value = typeof e.value === 'string' ? e.value : JSON.stringify(e.value, null, 2);
+    const rawValue = typeof e.value === 'string' ? e.value : JSON.stringify(e.value, null, 2);
+    const value = truncateMemoryValue(rawValue);
     // Prefer the human-readable `key` slug (used by backlog generators and
     // test fixtures), then fall back to the canonical UUID `id`, then to the
     // entry type so the label is always non-empty.
     const label = e.key ?? e.id ?? e.type;
-    return `- [${e.type}] **${label}**: ${value}`;
-  });
+    const line = `- [${e.type}] **${label}**: ${value}`;
+    const nextLen = usedChars + line.length + 1;
+    if (nextLen > MEMORY_SECTION_CHAR_LIMIT) {
+      lines.push(MEMORY_SECTION_TRUNCATION_LINE);
+      break;
+    }
+    lines.push(line);
+    usedChars = nextLen;
+  }
+
   return `\n## Memory: Past Failures on Similar Work\n\nThe following entries from prior cycles matched this item's tags. Use them to avoid repeating past mistakes:\n\n${lines.join('\n')}\n`;
+}
+
+function truncateMemoryValue(value: string): string {
+  if (value.length <= MEMORY_VALUE_CHAR_LIMIT) return value;
+  const keep = Math.max(0, MEMORY_VALUE_CHAR_LIMIT - MEMORY_VALUE_TRUNCATION_SUFFIX.length);
+  return `${value.slice(0, keep)}${MEMORY_VALUE_TRUNCATION_SUFFIX}`;
 }
 
 /** Default tools enabled for execute-phase agent runs. Task is intentionally
