@@ -135,11 +135,17 @@ export class CycleLogger {
       // Only default to 'run' when no stage has been set yet.
       const stage = base['stage'] ?? 'run';
       const existingCost = (base['cost'] ?? {}) as Record<string, unknown>;
+      const existingTotalUsd =
+        typeof existingCost['totalUsd'] === 'number' && Number.isFinite(existingCost['totalUsd'])
+          ? existingCost['totalUsd']
+          : undefined;
+      const nextTotalUsd =
+        existingTotalUsd === undefined ? totalUsd : Math.max(existingTotalUsd, totalUsd);
       this.writeJson(cyclePath, {
         ...base,
         cycleId: this.cycleId,
         stage,
-        cost: { ...existingCost, totalUsd },
+        cost: { ...existingCost, totalUsd: nextTotalUsd },
       });
     } catch { /* non-fatal: observability write failure must not stop the cycle */ }
   }

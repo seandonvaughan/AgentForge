@@ -140,6 +140,19 @@ describe('CycleLogger.flushCycleCost', () => {
     expect((data['cost'] as Record<string, unknown>)['totalUsd']).toBe(7.25);
   });
 
+  it('does not decrease live cost when a retry flush reports only the current attempt', () => {
+    const logger = makeLogger();
+
+    logger.flushCycleCost(20.00);
+    logger.flushCycleCost(3.00);
+
+    expect((readCycle()['cost'] as Record<string, unknown>)['totalUsd']).toBe(20.00);
+
+    logger.flushCycleCost(25.00);
+
+    expect((readCycle()['cost'] as Record<string, unknown>)['totalUsd']).toBe(25.00);
+  });
+
   it('writes cycleId into the flushed file for dashboard correlation', () => {
     const logger = makeLogger();
 

@@ -1450,6 +1450,8 @@ Tags: ${tags}
 ${memorySec}
 Your job: use the Read, Write, Edit, Bash, Glob, and Grep tools to make the code change required to resolve this item. Do not delegate this item to another agent or return a plan-only response. If you cannot make a concrete repository change, report the blocker clearly. Do NOT commit anything — the autonomous cycle's Git stage will commit everything that changed in the working tree after all items are done.
 
+Tooling: use \`corepack pnpm\` for every package/test command in this repo. Do not use bare \`pnpm\` or \`npx\`. If the isolated worktree is missing installed workspace links, run \`corepack pnpm install --frozen-lockfile\` before targeted tests. Prefer targeted checks first, for example \`corepack pnpm exec vitest run <test-file>\`, then broader checks when risk warrants it.
+
 Work efficiently. Report what you changed when done.${selfEvalSec}`;
 
   if (attempt > 0 && lastError) {

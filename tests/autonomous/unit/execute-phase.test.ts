@@ -110,6 +110,26 @@ describe('runExecutePhase', () => {
     expect(result.itemResults).toHaveLength(3);
   });
 
+  it('tells agents to use corepack pnpm for repo package and test commands', async () => {
+    writeSprintFile(tmpDir, '9.9.9', [
+      { id: 'i1', title: 'fix tooling drift', assignee: 'coder' },
+    ]);
+    const runtime = {
+      run: vi.fn().mockResolvedValue({ output: 'done', costUsd: 0.01, durationMs: 5, model: 'm', usage: { input_tokens: 1, output_tokens: 1 } }),
+    };
+    const { bus } = makeMockBus();
+
+    await runExecutePhase(
+      makeCtx({ cwd: tmpDir, sprintVersion: '9.9.9', runtime, bus }),
+      { maxParallelism: 1, maxItemRetries: 0 },
+    );
+
+    const prompt = runtime.run.mock.calls[0]![1] as string;
+    expect(prompt).toContain('use `corepack pnpm`');
+    expect(prompt).toContain('Do not use bare `pnpm` or `npx`');
+    expect(prompt).toContain('corepack pnpm exec vitest run <test-file>');
+  });
+
   it('updates item status to completed in sprint JSON when runtime.run succeeds', async () => {
     writeSprintFile(tmpDir, '9.9.9', [
       { id: 'i1', title: 'a', assignee: 'coder' },

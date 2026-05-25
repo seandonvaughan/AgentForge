@@ -85,7 +85,7 @@ function resolveOpenAiLikeProfile(
   const fileProfile = readConfigProfile(projectRoot, providerKind, tier);
   const envProfile = readEnvProfile(env, providerKind, tier);
 
-  const effort = envProfile.effort ?? fileProfile.effort ?? agentEffort ?? defaults.effort;
+  const effort = envProfile.effort ?? agentEffort ?? fileProfile.effort ?? defaults.effort;
   return {
     modelId: envProfile.modelId ?? fileProfile.modelId ?? defaults.modelId,
     ...(effort !== undefined ? { effort } : {}),

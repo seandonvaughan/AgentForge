@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { resolveProviderModelProfile, resolveProviderModelProfiles } from '../model-profiles.js';
 
 describe('Codex/OpenAI model profiles', () => {
@@ -65,6 +66,44 @@ describe('Codex/OpenAI model profiles', () => {
     expect(resolveProviderModelProfile('codex-cli', 'haiku', undefined, env, '.')).toEqual({
       modelId: 'codex-mini-latest',
       effort: 'low',
+    });
+  });
+
+  it('lets runtime agent effort caps override configured Codex tier effort', () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), 'agentforge-model-config-'));
+    try {
+      const configDir = join(projectRoot, '.agentforge', 'config');
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(
+        join(configDir, 'models.yaml'),
+        [
+          'providers:',
+          '  codex-cli:',
+          '    tiers:',
+          '      opus:',
+          '        model: gpt-5.5',
+          '        effort: xhigh',
+          '',
+        ].join('\n'),
+      );
+
+      expect(resolveProviderModelProfile('codex-cli', 'opus', 'high', {}, projectRoot)).toEqual({
+        modelId: 'gpt-5.5',
+        effort: 'high',
+      });
+    } finally {
+      rmSync(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps env effort overrides above runtime agent effort caps', () => {
+    const env = {
+      AGENTFORGE_CODEX_OPUS_EFFORT: 'medium',
+    };
+
+    expect(resolveProviderModelProfile('codex-cli', 'opus', 'high', env, '.')).toEqual({
+      modelId: 'gpt-5.5',
+      effort: 'medium',
     });
   });
 });
