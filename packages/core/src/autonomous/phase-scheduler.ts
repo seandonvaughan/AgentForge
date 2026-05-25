@@ -67,6 +67,7 @@ export interface GateRetryContext {
   rejectedBranch?: string;
   prNumber?: number;
   prUrl?: string;
+  itemIds?: string[];
   files?: string[];
   findings?: string[];
 }

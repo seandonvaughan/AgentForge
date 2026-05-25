@@ -192,13 +192,13 @@ export class ProposalToBacklog {
   }
 
   /**
-   * Unattended difficulty gate: refuse to auto-attempt backlog-file items that
-   * are too large to ship in one cycle (estimatedComplexity 'high', or no
-   * declared file scope). Other sources (failed-session, flaking-test,
-   * todo-marker) are inherently small and pass through.
+   * Unattended difficulty gate: refuse to auto-attempt backlog items that are
+   * too large or too vague to ship in one cycle. Cost anomalies are broad
+   * investigations with no file scope, so keep them for attended planning.
    */
   private applyDifficultyGate(items: BacklogItem[]): BacklogItem[] {
     return items.filter((item) => {
+      if (item.source === 'cost-anomaly') return false;
       if (item.source !== 'backlog-file') return true;
       if (item.estimatedComplexity === 'high') return false;
       if (item.files === undefined || item.files.length === 0) return false;

@@ -476,7 +476,23 @@ function isGeneratedRuntimePath(file: string): boolean {
   ));
 }
 
-async function meaningfulWorktreeChanges(worktreePath: string): Promise<string[]> {
+async function gitChangedFiles(worktreePath: string, args: string[]): Promise<string[]> {
+  const { stdout } = await execFileAsync('git', args, {
+    cwd: worktreePath,
+    maxBuffer: 10 * 1024 * 1024,
+  });
+  return stdout
+    .toString()
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((file) => file.length > 0 && !isGeneratedRuntimePath(file))
+    .slice(0, MAX_RECORDED_WORKTREE_CHANGES);
+}
+
+async function meaningfulWorktreeChanges(
+  worktreePath: string,
+  baseBranch = 'main',
+): Promise<string[]> {
   if (!existsSync(worktreePath)) return ['__worktree_unverified__'];
   let stdout: string | Buffer;
   try {
@@ -487,7 +503,7 @@ async function meaningfulWorktreeChanges(worktreePath: string): Promise<string[]
   } catch {
     return ['__worktree_unverified__'];
   }
-  return stdout
+  const worktreeStatusChanges = stdout
     .toString()
     .split('\n')
     .map((line) => line.trimEnd())
@@ -495,6 +511,22 @@ async function meaningfulWorktreeChanges(worktreePath: string): Promise<string[]
     .map(parsePorcelainPath)
     .filter((file) => file.length > 0 && !isGeneratedRuntimePath(file))
     .slice(0, MAX_RECORDED_WORKTREE_CHANGES);
+  if (worktreeStatusChanges.length > 0) return worktreeStatusChanges;
+
+  const baseRefs = [...new Set([`origin/${baseBranch}`, baseBranch])];
+  for (const baseRef of baseRefs) {
+    try {
+      const branchChanges = await gitChangedFiles(worktreePath, [
+        'diff',
+        '--name-only',
+        `${baseRef}...HEAD`,
+      ]);
+      if (branchChanges.length > 0) return branchChanges;
+    } catch {
+      // Try the next base ref candidate.
+    }
+  }
+  return [];
 }
 
 type ExecuteWorktreeHandle = {
@@ -1026,7 +1058,10 @@ export async function runExecutePhase(
           totalCost += costUsd;
           let worktreeChangedFiles: string[] = [];
           if (worktreeHandle) {
-            worktreeChangedFiles = await meaningfulWorktreeChanges(worktreeHandle.path);
+            worktreeChangedFiles = await meaningfulWorktreeChanges(
+              worktreeHandle.path,
+              ctx.baseBranch ?? 'main',
+            );
             if (worktreeChangedFiles.length === 0) {
               throw new Error(
                 `Agent ${item.assignee} produced no source changes for item ${item.id}. ` +
@@ -1349,8 +1384,14 @@ export async function runExecutePhase(
   // blocking the whole cycle (observed in live cycle c6954dbe). If no item
   // matches the findings, fall back to re-executing all (no regression).
   let retryImplicatedIds: Set<string> | null = null;
+  const planItemIds = new Set(items.map((it) => it.id));
+  const gateRetryItemIds = (ctx.gateRetry?.itemIds ?? [])
+    .filter((id) => typeof id === 'string' && planItemIds.has(id));
+  if (gateRetryItemIds.length > 0) {
+    retryImplicatedIds = new Set(gateRetryItemIds);
+  }
   const gateRetryFiles = ctx.gateRetry?.files ?? [];
-  if (gateRetryFiles.length > 0) {
+  if (!retryImplicatedIds && gateRetryFiles.length > 0) {
     const implicated = new Set<string>();
     for (const it of items) {
       const declared = itemFiles.get(it.id) ?? [];
@@ -1588,6 +1629,9 @@ function formatGateRetrySection(gateRetry?: GateRetryContext): string {
   }
   if (gateRetry.files && gateRetry.files.length > 0) {
     lines.push(`Files mentioned by the gate: ${gateRetry.files.join(', ')}`);
+  }
+  if (gateRetry.itemIds && gateRetry.itemIds.length > 0) {
+    lines.push(`Sprint items mapped from the rejected branch: ${gateRetry.itemIds.join(', ')}`);
   }
   if (gateRetry.findings && gateRetry.findings.length > 0) {
     lines.push('Gate findings:');

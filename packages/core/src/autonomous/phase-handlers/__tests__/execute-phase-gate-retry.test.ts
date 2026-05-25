@@ -106,6 +106,40 @@ describe('execute phase — gate-retry routes findings to the owning item', () =
     expect(byId.get('item-A')?.response).not.toContain('kept');
   });
 
+  it('uses rejected branch ledger item IDs when gate files do not match declared item files', async () => {
+    writeSprint([
+      { id: 'item-A', title: 'Fix runtime-modes docs', assignee: 'docs-engineer', files: [] },
+      { id: 'item-B', title: 'Reconcile CLAUDE.md', assignee: 'chief-architect', files: [] },
+      { id: 'item-C', title: 'preferredProvider hint', assignee: 'executor-runtime-engineer', files: [] },
+    ]);
+    const runtime = { run: vi.fn().mockResolvedValue({ output: 'fixed', costUsd: 0.01 }) };
+    const gateRetry = {
+      attempt: 1,
+      rationale:
+        'Verified finding against branch codex/agent-executor-runtime-engineer-2b3018a8ef57.',
+      rejectedBranch: 'codex/agent-executor-runtime-engineer-2b3018a8ef57',
+      itemIds: ['item-C'],
+      files: ['tests/docs/runtime-modes.test.ts'],
+      findings: ['MAJOR: the new runtime-modes test can pass vacuously'],
+    };
+
+    const result = await runExecutePhase(makeCtx(runtime, gateRetry), {
+      maxParallelism: 3,
+      maxItemRetries: 0,
+      disableWorktrees: true,
+      selfEvalDisabled: true,
+    });
+
+    expect(runtime.run).toHaveBeenCalledTimes(1);
+
+    const rows = (result.itemResults ?? []) as Array<{ itemId: string; status: string; response: string }>;
+    const byId = new Map(rows.map((r) => [r.itemId, r] as const));
+    expect(byId.get('item-A')?.response).toContain('kept');
+    expect(byId.get('item-B')?.response).toContain('kept');
+    expect(byId.get('item-C')?.status).toBe('completed');
+    expect(byId.get('item-C')?.response).not.toContain('kept');
+  });
+
   it('falls back to re-executing all items when no item file matches the finding', async () => {
     writeSprint([
       { id: 'item-A', title: 'A', assignee: 'a', files: ['docs/a.md'] },

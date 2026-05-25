@@ -756,6 +756,41 @@ describe('execute-phase worktree integration', () => {
     expect(pool.release).toHaveBeenCalledTimes(1);
   });
 
+  it('accepts a clean retry worktree when its branch already has source changes against base', async () => {
+    const worktreePath = join(tmpRoot, 'wt-existing-branch-diff');
+    await initGitRepo(worktreePath);
+    await execFile('git', ['checkout', '-b', 'autonomous/coder'], { cwd: worktreePath });
+    writeFileSync(join(worktreePath, 'feature.ts'), 'export const feature = true;\n');
+    await execFile('git', ['add', 'feature.ts'], { cwd: worktreePath });
+    await execFile('git', ['commit', '-m', 'agent attempt 1'], { cwd: worktreePath });
+
+    writeSprintFile([
+      { id: 'item-1', title: 'Fix rejected branch', assignee: 'coder', tags: ['coder'] },
+    ]);
+
+    const pool = makeSpyPool(worktreePath);
+    const bus = makeBus();
+    const runtime = {
+      run: vi.fn().mockResolvedValue({
+        output: 'confirmed branch fix',
+        costUsd: 0.01,
+      }),
+    };
+    const ctx = makeCtx(bus, {
+      worktreePool: pool,
+      runtime,
+      retryAttempt: 1,
+      baseBranch: 'main',
+    });
+
+    const result = await runExecutePhase(ctx, { maxParallelism: 1, maxItemRetries: 0 });
+
+    expect(result.status).toBe('completed');
+    const itemResult = (result.itemResults as any[])?.[0];
+    expect(itemResult.status).toBe('completed');
+    expect(itemResult.worktreeChangedFiles).toEqual(['feature.ts']);
+  });
+
   it('allocates ONCE per item (not per retry) on multiple retries', async () => {
     writeSprintFile([
       { id: 'item-1', title: 'Flaky task', assignee: 'coder', tags: ['coder'] },

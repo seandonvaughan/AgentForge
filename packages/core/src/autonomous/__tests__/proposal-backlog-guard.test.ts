@@ -22,6 +22,15 @@ const emptyAdapter: ProposalAdapter = {
   getFlakingTests: async () => [],
 };
 
+const costAnomalyAdapter: ProposalAdapter = {
+  getRecentFailedSessions: async () => [],
+  getCostAnomalies: async () => [
+    { agent: 'executor-runtime-engineer', anomaly: '3x median cost', confidence: 0.95 },
+  ],
+  getFailedTaskOutcomes: async () => [],
+  getFlakingTests: async () => [],
+};
+
 function cfg(): CycleConfig {
   return {
     sourcing: {
@@ -97,6 +106,12 @@ describe('difficulty gating (unattended)', () => {
     const item = items.find((i) => i.title === 'Small scoped fix');
     expect(item?.estimatedComplexity).toBe('low');
     expect(item?.files).toEqual(['packages/x/y.ts']);
+  });
+
+  it('excludes file-less cost-anomaly investigations when AGENTFORGE_UNATTENDED=1', async () => {
+    process.env['AGENTFORGE_UNATTENDED'] = '1';
+    const items = await new ProposalToBacklog(costAnomalyAdapter, root, cfg()).build();
+    expect(items.map((i) => i.source)).not.toContain('cost-anomaly');
   });
 });
 

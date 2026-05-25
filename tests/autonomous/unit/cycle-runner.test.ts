@@ -510,6 +510,7 @@ describe('CycleRunner', () => {
               prNumber: 153,
               prUrl: 'https://github.com/example/repo/pull/153',
               branch: 'codex/agent-executor-runtime-engineer-06e26f07b342',
+              itemIds: ['i1'],
               status: 'open',
               openedAt: '2026-05-25T08:32:58.533Z',
             },
@@ -556,6 +557,7 @@ describe('CycleRunner', () => {
         rejectedBranch: 'codex/agent-executor-runtime-engineer-06e26f07b342',
         prNumber: 153,
         prUrl: 'https://github.com/example/repo/pull/153',
+        itemIds: ['i1'],
       },
     });
     expect((observedExecuteContexts[1]!.gateRetry as any).rationale).toContain('truncateMemoryValue');

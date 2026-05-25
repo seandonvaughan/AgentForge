@@ -135,6 +135,7 @@ interface AgentPrRecord {
   prUrl?: string;
   url?: string;
   branch?: string;
+  itemIds?: string[];
   status?: string;
   openedAt?: string;
 }
@@ -193,17 +194,21 @@ function buildGateRetryContext(
   const prFromRationale = extractPrNumber(rationale);
   const matchingRecord = branchFromRationale
     ? records.find((record) => record.branch === branchFromRationale)
-    : undefined;
+    : prFromRationale !== undefined
+      ? records.find((record) => (record.prNumber ?? record.number) === prFromRationale)
+      : undefined;
   const fallbackRecord = matchingRecord ?? latestAgentPr(records);
   const rejectedBranch = branchFromRationale ?? fallbackRecord?.branch;
   const prNumber = prFromRationale ?? fallbackRecord?.prNumber ?? fallbackRecord?.number;
   const prUrl = fallbackRecord?.prUrl ?? fallbackRecord?.url;
+  const itemIds = matchingRecord?.itemIds?.filter((id) => typeof id === 'string' && id.length > 0);
   return {
     attempt,
     rationale,
     ...(rejectedBranch !== undefined ? { rejectedBranch } : {}),
     ...(prNumber !== undefined ? { prNumber } : {}),
     ...(prUrl !== undefined ? { prUrl } : {}),
+    ...(itemIds !== undefined && itemIds.length > 0 ? { itemIds } : {}),
     files: extractMentionedFiles(rationale),
     findings: extractFindingLines(rationale),
   };
