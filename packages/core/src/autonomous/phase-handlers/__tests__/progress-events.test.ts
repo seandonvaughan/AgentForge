@@ -588,4 +588,75 @@ describe('gate-phase progress events', () => {
     );
     expect(gateJson.verdict).toBe('REJECT');
   });
+
+  it('publishes gate.verdict.created after writing the gate-verdict memory entry', async () => {
+    writeSprintFile([{ id: 'item-1', title: 'Task A', assignee: 'backend', status: 'completed' }]);
+
+    const phasesDir = join(tmpRoot, '.agentforge', 'cycles', 'cycle-test-1', 'phases');
+    mkdirSync(phasesDir, { recursive: true });
+    writeFileSync(
+      join(phasesDir, 'review.json'),
+      JSON.stringify({
+        findings: 'MAJOR: Missing input validation on search route',
+      }),
+    );
+
+    const bus = makeBus();
+    const ctx = makeCtx(bus);
+
+    (ctx.runtime.run as ReturnType<typeof vi.fn>).mockResolvedValue({
+      output: JSON.stringify({ verdict: 'APPROVE', rationale: 'Ship it' }),
+      costUsd: 0.01,
+      status: 'completed',
+    });
+
+    const { runGatePhase } = await import('../gate-phase.js');
+    await runGatePhase(ctx);
+
+    const emitted = bus.events.filter((e) => e.topic === 'gate.verdict.created');
+    expect(emitted).toHaveLength(1);
+    const payload = emitted[0]!.payload as any;
+    expect(payload.cycleId).toBe('cycle-test-1');
+    expect(payload.verdict).toBe('approved');
+    expect(payload.majorFindings).toHaveLength(1);
+    expect(payload.entryId).toEqual(expect.any(String));
+    expect(payload.createdAt).toEqual(expect.any(String));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// review-phase: review.finding.created
+// ---------------------------------------------------------------------------
+
+describe('review-phase progress events', () => {
+  it('publishes review.finding.created for CRITICAL and MAJOR findings', async () => {
+    writeSprintFile([{ id: 'item-1', title: 'Task A', assignee: 'reviewer', status: 'completed' }]);
+
+    const bus = makeBus();
+    const ctx = makeCtx(bus);
+
+    (ctx.runtime.run as ReturnType<typeof vi.fn>).mockResolvedValue({
+      output: [
+        'CRITICAL: src/server/auth.ts:42 — auth bypass on missing token',
+        'MAJOR: packages/core/src/runtime/runtime-job-supervisor.ts — missing retry guard',
+      ].join('\n'),
+      costUsd: 0.02,
+      status: 'completed',
+    });
+
+    const { runReviewPhase } = await import('../review-phase.js');
+    await runReviewPhase(ctx);
+
+    const emitted = bus.events.filter((e) => e.topic === 'review.finding.created');
+    expect(emitted).toHaveLength(2);
+    const severities = emitted.map((e) => (e.payload as any).severity).sort();
+    expect(severities).toEqual(['CRITICAL', 'MAJOR']);
+    for (const event of emitted) {
+      const payload = event.payload as any;
+      expect(payload.cycleId).toBe('cycle-test-1');
+      expect(payload.entryId).toEqual(expect.any(String));
+      expect(payload.summary).toEqual(expect.any(String));
+      expect(payload.createdAt).toEqual(expect.any(String));
+    }
+  });
 });

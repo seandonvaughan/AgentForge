@@ -12,6 +12,7 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
 import { writeMemoryEntry, type ReviewFindingMetadata } from '../../memory/types.js';
+import type { ReviewFindingCreatedPayload } from '../../message-bus/types.js';
 import { extractFindingsByLevel } from './gate-phase.js';
 import { collectSprintItemTags } from './sprint-utils.js';
 import { writeKnowledgeEntry } from '../../knowledge/persistence.js';
@@ -31,6 +32,17 @@ export interface ReviewPhaseOptions {
 
 export function makeReviewPhaseHandler(options: ReviewPhaseOptions = {}) {
   return (ctx: PhaseContext) => runReviewPhase(ctx, options);
+}
+
+function safePublishReviewFindingCreated(
+  ctx: PhaseContext,
+  payload: ReviewFindingCreatedPayload,
+): void {
+  try {
+    ctx.bus.publish('review.finding.created', payload);
+  } catch {
+    // Non-fatal: memory write is canonical; bus publish is best-effort.
+  }
 }
 
 export async function runReviewPhase(
@@ -117,21 +129,43 @@ Do NOT modify any files.`;
   const majorLines = extractFindingsByLevel(review, 'MAJOR');
   const sprintDomainTags = collectSprintItemTags(ctx.projectRoot, ctx.sprintVersion, ctx.cycleId);
   for (const line of criticalLines) {
-    writeMemoryEntry(ctx.projectRoot, {
+    const metadata = parseReviewFindingMetadata(line, 'CRITICAL');
+    const entry = writeMemoryEntry(ctx.projectRoot, {
       type: 'review-finding',
       value: line,
       source: ctx.cycleId,
       tags: ['review', 'finding', 'critical', `sprint:v${ctx.sprintVersion}`, ...sprintDomainTags],
-      metadata: parseReviewFindingMetadata(line, 'CRITICAL'),
+      metadata,
+    });
+    safePublishReviewFindingCreated(ctx, {
+      entryId: entry.id,
+      cycleId: ctx.cycleId ?? '',
+      severity: metadata.severity,
+      summary: metadata.summary,
+      file: metadata.file,
+      line: metadata.line,
+      fixSuggestion: metadata.fixSuggestion,
+      createdAt: entry.createdAt,
     });
   }
   for (const line of majorLines) {
-    writeMemoryEntry(ctx.projectRoot, {
+    const metadata = parseReviewFindingMetadata(line, 'MAJOR');
+    const entry = writeMemoryEntry(ctx.projectRoot, {
       type: 'review-finding',
       value: line,
       source: ctx.cycleId,
       tags: ['review', 'finding', 'major', `sprint:v${ctx.sprintVersion}`, ...sprintDomainTags],
-      metadata: parseReviewFindingMetadata(line, 'MAJOR'),
+      metadata,
+    });
+    safePublishReviewFindingCreated(ctx, {
+      entryId: entry.id,
+      cycleId: ctx.cycleId ?? '',
+      severity: metadata.severity,
+      summary: metadata.summary,
+      file: metadata.file,
+      line: metadata.line,
+      fixSuggestion: metadata.fixSuggestion,
+      createdAt: entry.createdAt,
     });
   }
 

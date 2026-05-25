@@ -341,10 +341,12 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
     // without persistence (identical to previous behaviour).
     let workspaceManager: WorkspaceManager | null = null;
     let supervisor: RuntimeJobSupervisor | undefined;
+    let runtimeWorkspaceId = 'default';
     try {
       workspaceManager = new WorkspaceManager({ dataDir: join(cwd, '.agentforge', 'v5') });
       const { adapter: workspaceAdapter } = await workspaceManager.getOrCreateDefaultWorkspace();
       supervisor = new RuntimeJobSupervisor({ adapter: workspaceAdapter });
+      runtimeWorkspaceId = workspaceAdapter.workspaceId;
     } catch {
       // Best-effort — if the workspace DB is unavailable, skip persistence.
       workspaceManager?.close();
@@ -394,7 +396,7 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
       // Create a real event bus using MessageBusV2 from packages/core,
       // adapting its envelope-based interface to the simple (topic, payload) interface.
       // Cast internal cycle topics to MessageTopic to satisfy the stricter type.
-      const messageBusV2 = new MessageBusV2();
+      const messageBusV2 = new MessageBusV2({ workspaceId: runtimeWorkspaceId });
       const bus = {
         publish: (topic: string, payload: unknown) => {
           messageBusV2.publish({
