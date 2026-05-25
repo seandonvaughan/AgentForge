@@ -35,13 +35,20 @@ describe('package scripts', () => {
     );
   });
 
-  it('keeps verify:product on the reduced dashboard e2e selector', () => {
+  it('keeps verify:product on the full dashboard e2e selector', () => {
     const scripts = loadRootScripts();
     const verifyProduct = scripts['verify:product'];
+    const dashboardE2e = scripts['test:e2e:dashboard'];
 
     expect(verifyProduct).toContain('pnpm test:e2e:dashboard');
     expect(verifyProduct).not.toContain('test:e2e:dashboard:full');
-    expect(verifyProduct).not.toContain('dashboard-agents.test.ts');
+    expect(dashboardE2e).toContain('dashboard-agents.test.ts');
+    expect(dashboardE2e).toContain('dashboard-runner.test.ts');
+    expect(dashboardE2e).toContain('dashboard-live.test.ts');
+    expect(dashboardE2e).toContain('dashboard-health.test.ts');
+    expect(dashboardE2e).toContain('dashboard-org.test.ts');
+    expect(dashboardE2e).toContain('dashboard-cycle-launch.test.ts');
+    expect(dashboardE2e).toContain('dashboard-cycle-detail.test.ts');
   });
 
   it('stops verify:gates before dashboard checks when verify:product typecheck fails', async () => {

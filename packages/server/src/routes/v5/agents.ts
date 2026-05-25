@@ -1,5 +1,13 @@
 import type { FastifyInstance } from 'fastify';
-import { AgentRuntime, loadAgentConfig, resolveProviderModelProfile, type RuntimeMode } from '@agentforge/core';
+import {
+  AgentRuntime,
+  loadAgentConfig,
+  recordManualInvokeMemory,
+  resolveProviderModelProfile,
+  type AgentRuntimeConfig,
+  type RunResult,
+  type RuntimeMode,
+} from '@agentforge/core';
 import type { WorkspaceAdapter } from '@agentforge/db';
 import { join } from 'node:path';
 import { readdirSync, existsSync, readFileSync } from 'node:fs';
@@ -26,6 +34,36 @@ function toCodexModelProfile(
     modelId: profile.modelId,
     effort: profile.effort ?? effort ?? '',
   };
+}
+
+function manualMemorySkills(config: AgentRuntimeConfig, agentId: string): string[] {
+  if (config.skillIds?.length) return config.skillIds;
+  if (config.resolvedSkills?.length) return config.resolvedSkills.map((skill) => skill.id);
+  return agentId.toLowerCase().split(/[-_]/).filter(Boolean);
+}
+
+function recordAgentRouteInvokeMemory(input: {
+  projectRoot: string;
+  agentId: string;
+  config: AgentRuntimeConfig;
+  task: string;
+  result?: RunResult;
+  error?: string;
+}): void {
+  try {
+    recordManualInvokeMemory({
+      projectRoot: input.projectRoot,
+      agent: {
+        agentId: input.agentId,
+        skills: manualMemorySkills(input.config, input.agentId),
+      },
+      task: input.task,
+      ...(input.result ? { result: input.result } : {}),
+      ...(input.error ? { error: input.error } : {}),
+    });
+  } catch {
+    // Memory writes must not break invoke responses.
+  }
 }
 
 export async function agentRoutes(
@@ -152,7 +190,26 @@ export async function agentRoutes(
       ...(budgetUsd !== undefined ? { budgetUsd } : {}),
       runtimeMode: runtimeMode ?? ('codex-cli' as RuntimeMode),
     };
-    const result = await runtime.run(runOpts);
+    let result;
+    try {
+      result = await runtime.run(runOpts);
+    } catch (err) {
+      recordAgentRouteInvokeMemory({
+        projectRoot: opts.projectRoot,
+        agentId: agentIdParam,
+        config,
+        task,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    }
+    recordAgentRouteInvokeMemory({
+      projectRoot: opts.projectRoot,
+      agentId: agentIdParam,
+      config,
+      task,
+      result,
+    });
 
     return reply.send({ data: result });
   });

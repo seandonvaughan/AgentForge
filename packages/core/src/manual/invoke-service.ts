@@ -49,9 +49,14 @@ export class AgentLookupError extends Error {
   }
 }
 
-interface ManualInvokeMemoryInput {
+export interface ManualInvokeMemoryAgent {
+  agentId: string;
+  skills: string[];
+}
+
+export interface ManualInvokeMemoryInput {
   projectRoot: string;
-  agent: CatalogAgent;
+  agent: ManualInvokeMemoryAgent;
   task: string;
   result?: RunResult;
   error?: string;

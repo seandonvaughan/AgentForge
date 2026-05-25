@@ -22,7 +22,7 @@ vi.mock('../../agent-runtime/index.js', async (importOriginal) => {
   return {
     ...actual,
     AgentRuntime: vi.fn(function () {
-      return { run: mockRun };
+      return { run: mockRun, runStreaming: mockRun };
     }),
     loadAgentConfig: vi.fn(async (_agentId: string, _dir: string) => ({
       agentId: 'coder',
@@ -250,6 +250,36 @@ describe('RuntimeAdapter with supervisor', () => {
       expect.objectContaining({
         timeoutMs: customTimeoutMs,
         codexSandbox: 'read-only',
+        signal: expect.any(AbortSignal),
+      }),
+    );
+  });
+
+  it('threads supervisor AbortSignal through streaming runtime calls', async () => {
+    mockRun.mockResolvedValueOnce({
+      sessionId: 'sess-signal-supervisor',
+      response: 'done with supervisor signal',
+      model: 'claude-sonnet-4-6',
+      inputTokens: 100,
+      outputTokens: 200,
+      costUsd: 0.002,
+      startedAt: '2026-01-01T00:00:00.000Z',
+      completedAt: '2026-01-01T00:00:05.000Z',
+      status: 'completed' as const,
+    });
+
+    const runtimeAdapter = new RuntimeAdapter({
+      cwd: '/tmp/fake-project',
+      supervisor,
+    });
+
+    await runtimeAdapter.run('coder', 'Cancellable task');
+
+    expect(mockRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        task: 'Cancellable task',
+        signal: expect.any(AbortSignal),
+        onEvent: expect.any(Function),
       }),
     );
   });

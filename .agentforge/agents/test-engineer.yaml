@@ -108,6 +108,15 @@ context:
     - packages/core/src/team/engine/scanner/index.ts
   project_specific: []
 learnings:
+  - >-
+    Do not reduce test:e2e:dashboard coverage unless a separate full dashboard lane is enforced and tested; gate will
+    reject coverage cuts without that safeguard.
+  - Effort-level tests should use allowed values ('low', 'medium', 'high', 'max') or a shared EffortLevel type.
+  - >-
+    RuntimeAdapter model-cap changes need pure capModelTier coverage plus integration proof that the selected model and
+    effort are both substituted.
+  - >-
+    Treat type-only drift as maintenance unless a live config or runtime path proves behavior divergence.
   - Test-fixture tokens must be constructed at runtime via .join() — string literals trigger Gitleaks false positives
   - Never name SvelteKit tests +page.test.ts — svelte-kit sync crashes in <30s and breaks every CI job
   - Tests asserting .gitignored directory contents fail in fresh CI checkouts — assert parent dir or doc-grep instead
@@ -118,15 +127,6 @@ learnings:
     Code reviewers sometimes analyze an intermediate execute-phase snapshot — by the time the gate runs, a flagged bug
     may already be patched.
   - stringify must never be used as fallback.
-  - >-
-    ts:647,667 reproduces but is a latent trap — defaults (pnpm build, tsc --noEmit) tokenize safely; the bug only fires
-    under custom CycleConfig with quoted args or space-containing paths.
-  - defaultTypeCheck splits buildCommand/typeCheckCommand on " " — breaks for commands
-  - Naive split(' ') in defaultTypeCheck will corrupt complex commands
-  - >-
-    This is production-critical cost-control code introduced in this sprint (commits 93d7b08, b101e5c) and must ship
-    with at minimum a unit test for the pure capModelTier() function covering same-tier, upward-cap, and
-    downgrade-with-effort cases.
 owns_subsystems: []
 capability_tags:
   - vitest

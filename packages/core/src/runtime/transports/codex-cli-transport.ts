@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, realpathSync } from 'node:fs';
 import { readFile, unlink, writeFile } from 'node:fs/promises';
@@ -246,13 +246,25 @@ export class CodexCliTransport implements ExecutionTransport {
           if (settled) return;
           settled = true;
           clearTimeout(timer);
+          streamOptions.signal?.removeEventListener('abort', abortHandler);
           fn();
         };
 
+        const abortHandler = () => {
+          this.terminateProcessTree(proc);
+          finish(() => reject(new Error('codex CLI run was aborted')));
+        };
+
         const timer = setTimeout(() => {
-          proc.kill('SIGTERM');
+          this.terminateProcessTree(proc);
           finish(() => reject(new Error(`codex CLI timed out after ${timeoutMs}ms`)));
         }, timeoutMs);
+
+        if (streamOptions.signal?.aborted) {
+          abortHandler();
+          return;
+        }
+        streamOptions.signal?.addEventListener('abort', abortHandler, { once: true });
 
         proc.stdout.on('data', (chunk: Buffer) => {
           const text = chunk.toString('utf8');
@@ -668,6 +680,41 @@ export class CodexCliTransport implements ExecutionTransport {
 
   private emitEvent(options: ExecutionStreamOptions, event: ExecutionStreamEvent): void {
     options.onEvent?.(event);
+  }
+
+  private terminateProcessTree(proc: ChildProcessWithoutNullStreams): void {
+    if (process.platform === 'win32' && proc.pid) {
+      try {
+        spawn('taskkill', ['/PID', String(proc.pid), '/T'], {
+          stdio: 'ignore',
+          windowsHide: true,
+        });
+        const force = setTimeout(() => {
+          try {
+            spawn('taskkill', ['/PID', String(proc.pid), '/T', '/F'], {
+              stdio: 'ignore',
+              windowsHide: true,
+            });
+          } catch {
+            // Best-effort forced termination.
+          }
+        }, 5000);
+        force.unref?.();
+      } catch {
+        proc.kill('SIGTERM');
+      }
+      return;
+    }
+
+    proc.kill('SIGTERM');
+    const force = setTimeout(() => {
+      try {
+        proc.kill('SIGKILL');
+      } catch {
+        // Best-effort forced termination.
+      }
+    }, 5000);
+    force.unref?.();
   }
 
   private buildCostWarnings(request: ExecutionRequest, webSearchCalls: number): string[] {

@@ -21,7 +21,7 @@ import type { WorkspaceAdapter } from '@agentforge/db';
 import type { RuntimeForScoring } from './scoring-pipeline.js';
 import type { ModelTier } from '@agentforge/shared';
 import type { RuntimeJobSupervisor } from '../runtime/runtime-job-supervisor.js';
-import type { CodexSandboxMode } from '../runtime/types.js';
+import type { CodexSandboxMode, ExecutionStreamEvent } from '../runtime/types.js';
 import {
   extractBreakdownFromAgentRun,
   type CostBreakdown,
@@ -232,8 +232,27 @@ export class RuntimeAdapter implements RuntimeForScoring {
 
     const job = supervisor.createJob({ agentId, task });
 
-    const runResult = await supervisor.startJob(job.id, () => {
-      const runOpts: { task: string; allowedTools?: string[]; enableFallback?: boolean; timeoutMs?: number; cwd?: string; codexSandbox?: CodexSandboxMode } = { task };
+    const runResult = await supervisor.startJob(job.id, ({ signal, emit }) => {
+      const runOpts: {
+        task: string;
+        allowedTools?: string[];
+        enableFallback?: boolean;
+        timeoutMs?: number;
+        cwd?: string;
+        codexSandbox?: CodexSandboxMode;
+        signal: AbortSignal;
+        onEvent: (event: ExecutionStreamEvent) => void;
+      } = {
+        task,
+        signal,
+        onEvent: (event) => {
+          emit({
+            type: event.type,
+            message: `[${agentId}] ${event.type}`,
+            data: streamEventData(event),
+          });
+        },
+      };
       if (options?.allowedTools) runOpts.allowedTools = options.allowedTools;
       if (options?.timeoutMs !== undefined) runOpts.timeoutMs = options.timeoutMs;
       if (options?.cwd !== undefined) runOpts.cwd = options.cwd;
@@ -241,7 +260,7 @@ export class RuntimeAdapter implements RuntimeForScoring {
       if (this.options.enableFallback !== undefined) {
         runOpts.enableFallback = this.options.enableFallback;
       }
-      return runtime.run(runOpts);
+      return runtime.runStreaming(runOpts);
     });
 
     if (!runResult) {
@@ -432,4 +451,11 @@ export class RuntimeAdapter implements RuntimeForScoring {
     this.runtimes.set(agentId, runtime);
     return runtime;
   }
+}
+
+function streamEventData(event: ExecutionStreamEvent): Record<string, unknown> {
+  if (typeof event.data === 'object' && event.data !== null && !Array.isArray(event.data)) {
+    return event.data as Record<string, unknown>;
+  }
+  return { value: event.data };
 }

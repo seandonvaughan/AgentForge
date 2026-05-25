@@ -19,6 +19,7 @@ const coreMocks = vi.hoisted(() => {
   return {
     loadAgentConfig: vi.fn(),
     mockRunResult,
+    recordManualInvokeMemory: vi.fn(),
     runStreaming: vi.fn(),
   };
 });
@@ -35,6 +36,7 @@ vi.mock('@agentforge/core', () => {
       return {};
     }),
     loadAgentConfig: coreMocks.loadAgentConfig,
+    recordManualInvokeMemory: coreMocks.recordManualInvokeMemory,
   };
 });
 
@@ -106,6 +108,7 @@ describe('POST /api/v5/run', () => {
     getRunLog().clear();
     mockEmit.mockClear();
     coreMocks.loadAgentConfig.mockReset();
+    coreMocks.recordManualInvokeMemory.mockReset();
     coreMocks.runStreaming.mockReset();
     installDefaultCoreMocks();
     app = await buildApp();
@@ -235,6 +238,38 @@ describe('POST /api/v5/run', () => {
     expect(entry!.runtimeModeResolved).toBe('sdk');
   });
 
+  it('records canonical memory for dashboard runner invokes', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v5/run?wait=true',
+      payload: { agentId: 'coder', task: 'Remember this result' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(coreMocks.recordManualInvokeMemory).toHaveBeenCalledWith(expect.objectContaining({
+      agent: { agentId: 'coder', skills: ['coder'] },
+      task: 'Remember this result',
+      result: expect.objectContaining({ status: 'completed' }),
+    }));
+  });
+
+  it('records canonical failure memory for dashboard runner failures', async () => {
+    coreMocks.runStreaming.mockRejectedValueOnce(new Error('runtime exploded'));
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v5/run?wait=true',
+      payload: { agentId: 'coder', task: 'Fail and learn' },
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(coreMocks.recordManualInvokeMemory).toHaveBeenCalledWith(expect.objectContaining({
+      agent: { agentId: 'coder', skills: ['coder'] },
+      task: 'Fail and learn',
+      error: 'runtime exploded',
+    }));
+  });
+
   it('returns 404 when agentId does not match any agent YAML', async () => {
     const response = await app.inject({
       method: 'POST',
@@ -322,6 +357,7 @@ describe('GET /api/v5/run/history', () => {
     getRunLog().clear();
     mockEmit.mockClear();
     coreMocks.loadAgentConfig.mockReset();
+    coreMocks.recordManualInvokeMemory.mockReset();
     coreMocks.runStreaming.mockReset();
     installDefaultCoreMocks();
     app = await buildApp();
@@ -370,6 +406,7 @@ describe('GET /api/v5/run/:sessionId', () => {
     getRunLog().clear();
     mockEmit.mockClear();
     coreMocks.loadAgentConfig.mockReset();
+    coreMocks.recordManualInvokeMemory.mockReset();
     coreMocks.runStreaming.mockReset();
     installDefaultCoreMocks();
     app = await buildApp();

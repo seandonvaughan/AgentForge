@@ -379,4 +379,23 @@ describe('CodexCliTransport.execute', () => {
     expect(events).toContain('codex_json');
     expect(events).toContain('usage_delta');
   });
+
+  it('passes AbortSignal into the Codex CLI streaming invocation', async () => {
+    const transport = new CodexCliTransport();
+    const invokeSpy = vi.spyOn(transport as unknown as CodexCliTransportTestAccess, 'invokeCodexCli')
+      .mockResolvedValue({
+        stdout: '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":2}}\n',
+        stderr: '',
+        outputText: 'done',
+        durationMs: 12,
+      } as never);
+    const controller = new AbortController();
+
+    await transport.executeStreaming(makeRequest(), { signal: controller.signal });
+
+    expect(invokeSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ signal: controller.signal }),
+    );
+  });
 });

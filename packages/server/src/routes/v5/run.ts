@@ -4,6 +4,8 @@ import {
   AgentRuntime,
   RuntimeJobSupervisor,
   loadAgentConfig,
+  recordManualInvokeMemory,
+  type AgentRuntimeConfig,
   type ExecutionProviderKind,
   type CodexSandboxMode,
   type RuntimeEventInput,
@@ -166,6 +168,35 @@ function booleanBodyValue(value: unknown): boolean | undefined {
   return value === true || value === 'true' || value === '1';
 }
 
+function manualMemorySkills(config: AgentRuntimeConfig, agentId: string): string[] {
+  if (config.skillIds?.length) return config.skillIds;
+  if (config.resolvedSkills?.length) return config.resolvedSkills.map((skill) => skill.id);
+  return agentId.toLowerCase().split(/[-_]/).filter(Boolean);
+}
+
+function recordRunnerInvokeMemory(input: {
+  agentId: string;
+  config: AgentRuntimeConfig;
+  task: string;
+  result?: RunResult;
+  error?: string;
+}): void {
+  try {
+    recordManualInvokeMemory({
+      projectRoot: DEFAULT_PROJECT_ROOT,
+      agent: {
+        agentId: input.agentId,
+        skills: manualMemorySkills(input.config, input.agentId),
+      },
+      task: input.task,
+      ...(input.result ? { result: input.result } : {}),
+      ...(input.error ? { error: input.error } : {}),
+    });
+  } catch {
+    // Memory writes must not break dashboard/API runs.
+  }
+}
+
 type HttpCodexSandboxMode = Extract<CodexSandboxMode, 'read-only' | 'workspace-write'>;
 
 function isHttpCodexSandboxMode(value: unknown): value is HttpCodexSandboxMode {
@@ -277,6 +308,8 @@ export async function runRoutes(
             },
           });
 
+          recordRunnerInvokeMemory({ agentId, config, task, result: runResult });
+
           const completedSessionId = runResult.sessionId || sessionId;
           if (completedSessionId !== sessionId) {
             runLog.delete(sessionId);
@@ -332,6 +365,7 @@ export async function runRoutes(
         if (!result) {
           const latest = supervisor.getJob(job.id);
           const message = latest?.error ?? 'Run did not complete';
+          recordRunnerInvokeMemory({ agentId, config, task, error: message });
           return { ok: false, error: message, sessionId };
         }
 
@@ -425,6 +459,8 @@ export async function runRoutes(
           },
         });
 
+        recordRunnerInvokeMemory({ agentId, config, task, result });
+
         // Persist to in-memory run log
         const completedSessionId = result.sessionId || sessionId;
         if (completedSessionId !== sessionId) {
@@ -517,6 +553,7 @@ export async function runRoutes(
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         const completedAt = nowIso();
+        recordRunnerInvokeMemory({ agentId, config, task, error: message });
 
         // Persist failure to run log
         const existing = runLog.get(sessionId);
