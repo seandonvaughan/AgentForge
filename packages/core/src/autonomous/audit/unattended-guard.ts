@@ -12,7 +12,7 @@
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { statSync, existsSync, readdirSync } from 'node:fs';
+import { statSync, existsSync, readdirSync, statfsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const execFileAsync = promisify(execFile);
@@ -86,10 +86,24 @@ export async function checkDiskSpace(agentforgeDir: string): Promise<UnattendedC
     const parts = dataLine.trim().split(/\s+/);
     freeKb = parseInt(parts[3] ?? '0', 10);
     if (isNaN(freeKb)) freeKb = 0;
-  } catch {
-    // df unavailable — treat as unknown, pass conservatively only if we got 0
-    freeKb = 0;
-    raw = '';
+  } catch (err) {
+    const code = typeof err === 'object' && err !== null
+      ? (err as { code?: unknown }).code
+      : undefined;
+    if (code === 'ENOENT') {
+      try {
+        const stats = statfsSync(resolved);
+        freeKb = Math.floor((Number(stats.bavail) * Number(stats.bsize)) / 1024);
+        raw = Number.isFinite(freeKb) && freeKb > 0 ? 'statfs' : '';
+      } catch {
+        freeKb = 0;
+        raw = '';
+      }
+    } else {
+      // df failed for a reason other than being absent; keep the conservative failure.
+      freeKb = 0;
+      raw = '';
+    }
   }
 
   const passed = freeKb >= THRESHOLD_KB;

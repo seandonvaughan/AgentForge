@@ -194,6 +194,28 @@ describe('check: disk_space', () => {
       cleanup();
     }
   });
+
+  it('falls back to statfs when df is unavailable', async () => {
+    const enoent = Object.assign(new Error('df not found'), { code: 'ENOENT' });
+    mockExecFile.mockImplementation(
+      (
+        _cmd: string,
+        _args: string[],
+        cb: (err: Error) => void,
+      ) => {
+        cb(enoent);
+      },
+    );
+    const { cwd, cleanup } = makeTmpProject();
+    try {
+      const results = await runUnattendedChecks({ cwd, perCycleUsd: 30 });
+      const check = results.find((r) => r.check === 'disk_space');
+      expect(check?.passed).toBe(true);
+      expect(check?.detail).toContain('Free space');
+    } finally {
+      cleanup();
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
