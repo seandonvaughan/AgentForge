@@ -45,7 +45,7 @@ export function buildPlan(proposal: AgentProposal): ExecutionPlan {
     ? ['planning', 'architecture', 'coding', 'linting', 'testing', 'complete'] as const
     : complexity === 'medium'
     ? ['planning', 'coding', 'linting', 'testing', 'complete'] as const
-    : ['planning', 'coding', 'testing', 'complete'] as const;
+    : ['coding', 'testing', 'complete'] as const;
 
   const agents = complexity === 'high'
     ? ['project-manager', 'architect', 'coder', 'linter', 'debugger']

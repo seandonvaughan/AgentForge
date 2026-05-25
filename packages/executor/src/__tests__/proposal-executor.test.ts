@@ -73,7 +73,7 @@ describe('ProposalExecutor execution modes', () => {
     ]);
   });
 
-  it('routes low-complexity proposals without linting stage', async () => {
+  it('routes low-complexity proposals without planning or linting stages', async () => {
     const stages: string[] = [];
     const models: string[] = [];
     const result = await new ProposalExecutor({
@@ -92,10 +92,10 @@ describe('ProposalExecutor execution modes', () => {
       },
     }).execute(buildLowComplexityProposal());
 
-    expect(stages).toEqual(['planning', 'coding', 'testing']);
-    expect(models).toEqual(['haiku', 'sonnet', 'haiku']);
+    expect(stages).toEqual(['coding', 'testing']);
+    expect(models).toEqual(['sonnet', 'haiku']);
     expect(result.status).toBe('passed');
-    expect(result.stages.map((stage) => stage.stage)).toEqual(['planning', 'coding', 'testing', 'complete']);
+    expect(result.stages.map((stage) => stage.stage)).toEqual(['coding', 'testing', 'complete']);
   });
 
   it('preserves partial cost, test summary, and diff when a stage fails', async () => {
