@@ -219,6 +219,19 @@ describe("memory-curator", () => {
       const lessons = curateLearnings(agent, entries, { maxLessons: 4 });
       expect(lessons.length).toBe(4);
     });
+
+    it("defaults to the 12 lesson cap used by the mutator", () => {
+      const agent = makeAgent("Coder");
+      const entries = Array.from({ length: 20 }, (_, i) =>
+        makeEntry({
+          value: `[MAJOR] default cap entry ${i}`,
+          tags: ["fix"],
+        })
+      );
+
+      const lessons = curateLearnings(agent, entries);
+      expect(lessons.length).toBe(12);
+    });
   });
 
   // -------------------------------------------------------------------------

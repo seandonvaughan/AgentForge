@@ -29,6 +29,7 @@ interface AgentYamlShape {
   model: string;
   system_prompt: string;
   skill_ids?: unknown;
+  skills?: unknown;
   learnings?: unknown;
 }
 
@@ -257,6 +258,95 @@ describe('loadAgentConfig — skills injection', () => {
     expect(config!.systemPrompt).not.toContain('## Skills');
     // Base prompt preserved
     expect(config!.systemPrompt).toContain('Unknown skill agent.');
+  });
+
+  it('uses skill_ids as canonical and ignores legacy skills when both are present', async () => {
+    await writeAgentYaml(agentforgeDir, 'canonical-agent', {
+      name: 'canonical-agent',
+      model: 'sonnet',
+      system_prompt: 'Canonical skill agent.',
+      skill_ids: ['af-verify-before-done'],
+      skills: ['test_generation'],
+    });
+
+    const config = await loadAgentConfig('canonical-agent', agentforgeDir, {
+      injectFreshContext: false,
+    });
+
+    expect(config).not.toBeNull();
+    expect(config!.skillIds).toEqual(['af-verify-before-done']);
+    expect(config!.resolvedSkills!.map((skill) => skill.id)).toEqual(['af-verify-before-done']);
+    expect(config!.missingSkillIds).toEqual([]);
+    expect(config!.systemPrompt).toContain('Verify Before Declaring Done');
+    expect(config!.systemPrompt).not.toContain('Test-Driven Development');
+  });
+
+  it('maps legacy skills only when skill_ids are absent', async () => {
+    await writeAgentYaml(agentforgeDir, 'legacy-agent', {
+      name: 'legacy-agent',
+      model: 'sonnet',
+      system_prompt: 'Legacy skill agent.',
+      skills: ['test_generation', 'code_review'],
+    });
+
+    const config = await loadAgentConfig('legacy-agent', agentforgeDir, {
+      injectFreshContext: false,
+    });
+
+    expect(config).not.toBeNull();
+    expect(config!.skillIds).toEqual(['af-tdd', 'af-verify-before-done']);
+    expect(config!.resolvedSkills!.map((skill) => skill.id)).toEqual([
+      'af-tdd',
+      'af-verify-before-done',
+    ]);
+    expect(config!.systemPrompt).toContain('Test-Driven Development');
+    expect(config!.systemPrompt).toContain('Verify Before Declaring Done');
+  });
+
+  it('exposes missing skill_ids while injecting the skills that resolve', async () => {
+    await writeAgentYaml(agentforgeDir, 'partial-agent', {
+      name: 'partial-agent',
+      model: 'sonnet',
+      system_prompt: 'Partial skill agent.',
+      skill_ids: ['af-verify-before-done', 'missing-skill-id'],
+    });
+
+    const config = await loadAgentConfig('partial-agent', agentforgeDir, {
+      injectFreshContext: false,
+    });
+
+    expect(config).not.toBeNull();
+    expect(config!.skillIds).toEqual(['af-verify-before-done', 'missing-skill-id']);
+    expect(config!.resolvedSkills!.map((skill) => skill.id)).toEqual(['af-verify-before-done']);
+    expect(config!.missingSkillIds).toEqual(['missing-skill-id']);
+    expect(config!.systemPrompt).toContain('Verify Before Declaring Done');
+    expect(config!.systemPrompt).not.toContain('missing-skill-id');
+  });
+
+  it('exposes the union of required tools from resolved skill metadata', async () => {
+    await writeAgentYaml(agentforgeDir, 'tools-agent', {
+      name: 'tools-agent',
+      model: 'sonnet',
+      system_prompt: 'Tool widening agent.',
+      skill_ids: ['af-tdd', 'af-rubric-grade'],
+    });
+
+    const config = await loadAgentConfig('tools-agent', agentforgeDir, {
+      injectFreshContext: false,
+    });
+
+    expect(config).not.toBeNull();
+    expect(config!.requiredTools).toEqual(['Bash', 'Edit', 'Read', 'Write']);
+    expect(config!.resolvedSkills).toEqual([
+      expect.objectContaining({
+        id: 'af-tdd',
+        requiredTools: ['Bash', 'Write', 'Edit'],
+      }),
+      expect.objectContaining({
+        id: 'af-rubric-grade',
+        requiredTools: ['Read'],
+      }),
+    ]);
   });
 
   it('returns null for a non-existent agent — no crash', async () => {

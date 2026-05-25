@@ -183,6 +183,41 @@ async function listProposalsAction(
 }
 
 // ---------------------------------------------------------------------------
+// Action: catalog (read-only skill catalog metadata)
+// ---------------------------------------------------------------------------
+
+function catalogAction(options: { json?: boolean }): void {
+  const catalog = listSkills().map((skill) => ({
+    id: skill.frontmatter.id,
+    version: skill.frontmatter.version,
+    tags: skill.frontmatter.tags,
+    appliesTo: skill.frontmatter.applies_to,
+    mandatoryFor: skill.frontmatter.mandatory_for ?? [],
+    maxTokens: skill.frontmatter.max_tokens,
+    requiredTools: skill.frontmatter.requires_tools ?? [],
+    appliesToTasks: skill.frontmatter.applies_to_tasks ?? [],
+    ...(skill.frontmatter.upstream ? { upstream: skill.frontmatter.upstream } : {}),
+    ...(skill.frontmatter.upstream_ref ? { upstreamRef: skill.frontmatter.upstream_ref } : {}),
+  }));
+
+  if (options.json) {
+    console.log(JSON.stringify(catalog, null, 2));
+    return;
+  }
+
+  if (catalog.length === 0) {
+    console.log('[skills] No catalog skills found.');
+    return;
+  }
+
+  console.log(`[skills] ${catalog.length} catalog skill(s):`);
+  for (const skill of catalog) {
+    const tools = skill.requiredTools.length > 0 ? ` tools=${skill.requiredTools.join(',')}` : '';
+    console.log(`  - ${skill.id} (${skill.version})${tools}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
 
@@ -192,6 +227,19 @@ export function registerSkillsCommand(program: Command): void {
       .command('skills')
       .description('Skill flywheel curator — cluster low-quality capability tags and propose improvements')
       .option('--project-root <path>', 'Project root', process.cwd());
+
+  skills
+    .command('catalog')
+    .description('List bundled skill catalog metadata without modifying proposals')
+    .option('--json', 'Print catalog metadata as JSON')
+    .action((opts: { json?: boolean }) => {
+      try {
+        catalogAction(opts);
+      } catch (err) {
+        console.error(err instanceof Error ? err.message : String(err));
+        process.exitCode = 1;
+      }
+    });
 
   skills
     .command('propose-from-learnings')

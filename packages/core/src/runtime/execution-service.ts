@@ -238,6 +238,15 @@ export class ExecutionService {
     opts.onEvent?.(event);
   }
 
+  private mergeAllowedTools(
+    allowedTools?: string[],
+    requiredTools?: string[],
+  ): string[] | undefined {
+    const merged = [...new Set([...(allowedTools ?? []), ...(requiredTools ?? [])])];
+    if (merged.length > 0) return merged;
+    return allowedTools !== undefined ? [] : undefined;
+  }
+
   private buildRequest(
     config: AgentRuntimeConfig,
     opts: RunOptions,
@@ -248,6 +257,7 @@ export class ExecutionService {
       ? `<context>\n${opts.context}\n</context>\n\n${opts.task}`
       : opts.task;
     const profileRoot = opts.cwd ?? this.projectRoot;
+    const allowedTools = this.mergeAllowedTools(opts.allowedTools, config.requiredTools);
 
     return {
       agent: {
@@ -263,7 +273,7 @@ export class ExecutionService {
       providerModelProfiles: resolveProviderModelProfiles(config.model, config.effort, process.env, profileRoot),
       maxTokens: config.maxTokens ?? 8096,
       ...(opts.parentSessionId ? { parentSessionId: opts.parentSessionId } : {}),
-      ...(opts.allowedTools ? { allowedTools: opts.allowedTools } : {}),
+      ...(allowedTools !== undefined ? { allowedTools } : {}),
       ...(config.temperature !== undefined ? { temperature: config.temperature } : {}),
       ...(opts.budgetUsd !== undefined ? { budgetUsd: opts.budgetUsd } : {}),
       ...(apiKey ? { apiKey } : {}),

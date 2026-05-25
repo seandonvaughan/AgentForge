@@ -43,7 +43,12 @@ function isCliAvailable(): boolean {
 }
 
 function isCodexCliAvailable(options: CodexSpawnCommandOptions = {}): boolean {
-  const command = buildCodexSpawnCommand(['--version'], options);
+  let command;
+  try {
+    command = buildCodexSpawnCommand(['--version'], options);
+  } catch {
+    return false;
+  }
   const probe = spawnSync(command.command, command.args, {
     stdio: 'ignore',
     windowsHide: true,

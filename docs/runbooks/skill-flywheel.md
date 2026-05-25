@@ -4,6 +4,22 @@ The skill flywheel (Wave 5, T2 + T7) converts accumulated agent learnings into n
 
 ---
 
+## Inspect the read-only catalog
+
+Use the catalog command before assigning or reviewing skill IDs:
+
+```bash
+agentforge skills catalog --json
+```
+
+The JSON output is metadata only: `id`, `version`, tags, applicability, token budget, provenance, and `requiredTools`. It does not print skill bodies and does not modify proposals or agent files.
+
+At runtime, `skill_ids` is the canonical agent YAML field. If `skill_ids` is present, AgentForge resolves only those IDs and ignores legacy `skills`. If `skill_ids` is absent, the agent-runtime resolver may map known legacy `skills` entries to catalog IDs as a compatibility fallback.
+
+Resolved skill metadata is carried on `AgentRuntimeConfig` as `skillIds`, `resolvedSkills`, `missingSkillIds`, and `requiredTools`. Missing IDs are skipped for prompt injection and surfaced for diagnostics; they do not block a cycle.
+
+---
+
 ## When to run `propose-from-learnings`
 
 Run after any of these conditions:

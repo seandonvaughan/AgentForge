@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ExecutionService } from '../execution-service.js';
 import type { AgentRuntimeConfig } from '../../agent-runtime/types.js';
 import type {
+  ExecutionRequest,
   ExecutionResult,
   ExecutionStreamEvent,
   ExecutionTransport,
@@ -62,6 +63,45 @@ describe('ExecutionService buildRequest — timeoutMs forwarding', () => {
     await service.run(config, { task: 'normal task' });
 
     expect(capturedRequest.timeoutMs).toBeUndefined();
+  });
+});
+
+describe('ExecutionService buildRequest — allowedTools from skills', () => {
+  it('merges resolved requiredTools with caller allowedTools as a deduped union', async () => {
+    const capturedCliRequests: ExecutionRequest[] = [];
+    const sdkTransport: ExecutionTransport = {
+      kind: 'anthropic-sdk',
+      isAvailable: () => true,
+      execute: vi.fn(async () => buildExecutionResult('sdk')),
+    };
+    const cliTransport: ExecutionTransport = {
+      kind: 'claude-code-compat',
+      isAvailable: () => true,
+      execute: vi.fn(async (req): Promise<ExecutionResult> => {
+        capturedCliRequests.push(req);
+        return {
+          ...buildExecutionResult('cli'),
+          providerKind: 'claude-code-compat',
+        };
+      }),
+    };
+    const service = new ExecutionService({ transports: [sdkTransport, cliTransport] });
+
+    const skillsOnly = await service.run(
+      { ...config, requiredTools: ['Read', 'Write', 'Read'] },
+      { task: 'use skill tools' },
+    );
+    const explicitTools = await service.run(
+      { ...config, requiredTools: ['Write', 'Read'] },
+      { task: 'use caller and skill tools', allowedTools: ['Read', 'Bash'] },
+    );
+
+    expect(skillsOnly.runtimeModeResolved).toBe('claude-code-compat');
+    expect(explicitTools.runtimeModeResolved).toBe('claude-code-compat');
+    expect(capturedCliRequests.map((req) => req.allowedTools)).toEqual([
+      ['Read', 'Write'],
+      ['Read', 'Bash', 'Write'],
+    ]);
   });
 });
 

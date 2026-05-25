@@ -61,6 +61,16 @@ export interface WorktreePoolLike {
   release(id: string): Promise<void>;
 }
 
+export interface GateRetryContext {
+  attempt: number;
+  rationale: string;
+  rejectedBranch?: string;
+  prNumber?: number;
+  prUrl?: string;
+  files?: string[];
+  findings?: string[];
+}
+
 export interface PhaseContext {
   sprintId: string;
   sprintVersion: string;
@@ -81,6 +91,12 @@ export interface PhaseContext {
   retryAttempt?: number;
   /** On retry, skip phases before this one (e.g. jump straight to 'execute'). */
   skipToPhase?: PhaseName;
+  /**
+   * Gate rejection details from the previous attempt. Execute uses this to
+   * repair the rejected PR/branch instead of reinterpreting the original item
+   * as fresh work.
+   */
+  gateRetry?: GateRetryContext;
   /**
    * T4.2 — Optional WorktreePool. When provided, the execute phase allocates a
    * fresh worktree per coder-class item and sets the agent's cwd to that path,

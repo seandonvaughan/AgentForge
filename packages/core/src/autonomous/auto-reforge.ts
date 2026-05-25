@@ -8,7 +8,7 @@
 // so the cycle-runner integration and tests can run without those modules
 // being present yet. When P+Q land, swap the stubs for the real imports.
 
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 // Real implementations from Workstreams P (curator) and Q (mutator).
@@ -172,7 +172,22 @@ export interface AutoReforgeResult {
   cycleId: string;
   /** true if no proposed learnings were produced (nothing to apply). */
   skipped: boolean;
+  skipReason?: 'no-involved-agents' | 'no-proposed-learnings';
   mutatorReport?: MutatorReport;
+  durationMs: number;
+}
+
+export interface AutoReforgeReport {
+  cycleId: string;
+  generatedAt: string;
+  involvedAgentIds: string[];
+  sourcesScanned: Array<{ path: string; entriesRead: number; scored: number }>;
+  sourceCounts: { entriesRead: number; scored: number };
+  proposalCounts: { beforeFiltering: number; afterFiltering?: number };
+  appliedCount: number;
+  skippedProposalCount?: number;
+  skipReason?: 'no-involved-agents' | 'no-proposed-learnings';
+  dryRun: boolean;
   durationMs: number;
 }
 
@@ -191,6 +206,38 @@ export async function runAutoReforge(
   const curate = opts.curateLearnings ?? _curateLearnings;
   const apply = opts.applyLearnings ?? _applyLearnings;
 
+  if (opts.involvedAgentIds.length === 0) {
+    const durationMs = Date.now() - startedAt;
+    persistAutoReforgeReport(opts.projectRoot, {
+      cycleId: opts.cycleId,
+      generatedAt: new Date().toISOString(),
+      involvedAgentIds: [],
+      sourcesScanned: [],
+      sourceCounts: { entriesRead: 0, scored: 0 },
+      proposalCounts: { beforeFiltering: 0 },
+      appliedCount: 0,
+      skipReason: 'no-involved-agents',
+      dryRun: opts.dryRun ?? false,
+      durationMs,
+    });
+    if (opts.bus) {
+      opts.bus.publish('learnings.skipped', {
+        cycleId: opts.cycleId,
+        reason: 'no-involved-agents',
+        totalProposed: 0,
+        involvedAgentIds: [],
+        generatedAt: new Date().toISOString(),
+        sourcesScanned: [],
+      });
+    }
+    return {
+      cycleId: opts.cycleId,
+      skipped: true,
+      skipReason: 'no-involved-agents',
+      durationMs,
+    };
+  }
+
   // 1. Curate learnings for all agents that ran in this cycle.
   const curationResult = await curate({
     projectRoot: opts.projectRoot,
@@ -203,6 +250,15 @@ export async function runAutoReforge(
     0,
   );
   if (totalProposed === 0) {
+    const durationMs = Date.now() - startedAt;
+    persistAutoReforgeReport(opts.projectRoot, buildAutoReforgeReport({
+      cycleId: opts.cycleId,
+      involvedAgentIds: opts.involvedAgentIds,
+      curationResult,
+      dryRun: opts.dryRun ?? false,
+      durationMs,
+      skipReason: 'no-proposed-learnings',
+    }));
     if (opts.bus) {
       opts.bus.publish('learnings.skipped', {
         cycleId: opts.cycleId,
@@ -213,7 +269,12 @@ export async function runAutoReforge(
         sourcesScanned: curationResult.sourcesScanned,
       });
     }
-    return { cycleId: opts.cycleId, skipped: true, durationMs: Date.now() - startedAt };
+    return {
+      cycleId: opts.cycleId,
+      skipped: true,
+      skipReason: 'no-proposed-learnings',
+      durationMs,
+    };
   }
 
   // 3. Apply the proposed learnings via the mutator.
@@ -233,12 +294,81 @@ export async function runAutoReforge(
     });
   }
 
+  const durationMs = Date.now() - startedAt;
+  persistAutoReforgeReport(opts.projectRoot, buildAutoReforgeReport({
+    cycleId: opts.cycleId,
+    involvedAgentIds: opts.involvedAgentIds,
+    curationResult,
+    mutatorReport,
+    dryRun: opts.dryRun ?? false,
+    durationMs,
+  }));
+
   return {
     cycleId: opts.cycleId,
     skipped: false,
     mutatorReport,
-    durationMs: Date.now() - startedAt,
+    durationMs,
   };
+}
+
+function buildAutoReforgeReport(input: {
+  cycleId: string;
+  involvedAgentIds: string[];
+  curationResult: CurationResult;
+  mutatorReport?: MutatorReport;
+  dryRun: boolean;
+  durationMs: number;
+  skipReason?: AutoReforgeReport['skipReason'];
+}): AutoReforgeReport {
+  const sourceCounts = input.curationResult.sourcesScanned.reduce(
+    (acc, source) => ({
+      entriesRead: acc.entriesRead + source.entriesRead,
+      scored: acc.scored + source.scored,
+    }),
+    { entriesRead: 0, scored: 0 },
+  );
+  const totalProposed = countProposedLearnings(input.curationResult);
+  const report: AutoReforgeReport = {
+    cycleId: input.cycleId,
+    generatedAt: new Date().toISOString(),
+    involvedAgentIds: [...input.involvedAgentIds],
+    sourcesScanned: input.curationResult.sourcesScanned,
+    sourceCounts,
+    proposalCounts: { beforeFiltering: totalProposed },
+    appliedCount: input.mutatorReport?.totalApplied ?? 0,
+    dryRun: input.dryRun,
+    durationMs: input.durationMs,
+  };
+
+  if (input.mutatorReport) {
+    report.proposalCounts.afterFiltering = input.mutatorReport.totalApplied;
+    report.skippedProposalCount = input.mutatorReport.totalSkipped;
+  }
+  if (input.skipReason) {
+    report.skipReason = input.skipReason;
+  }
+  return report;
+}
+
+function countProposedLearnings(curationResult: CurationResult): number {
+  return Object.values(curationResult.byAgent).reduce(
+    (sum, arr) => sum + arr.length,
+    0,
+  );
+}
+
+function persistAutoReforgeReport(
+  projectRoot: string,
+  report: AutoReforgeReport,
+): void {
+  const cycleDir = join(projectRoot, '.agentforge', 'cycles', report.cycleId);
+  mkdirSync(cycleDir, { recursive: true });
+  writeFileSync(
+    join(cycleDir, 'auto-reforge-report.json'),
+    JSON.stringify(report, null, 2),
+    'utf8',
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -263,14 +393,25 @@ export function extractInvolvedAgentIds(
   projectRoot: string,
   cycleId: string,
 ): string[] {
+  const cycleDir = join(projectRoot, '.agentforge', 'cycles', cycleId);
   const execPath = join(
-    projectRoot,
-    '.agentforge',
-    'cycles',
-    cycleId,
+    cycleDir,
     'phases',
     'execute.json',
   );
+  const executeIds = extractAgentIdsFromExecuteJson(execPath);
+  if (executeIds.length > 0) return executeIds;
+
+  const planIds = extractAgentIdsFromPlanJson(join(cycleDir, 'plan.json'));
+  if (planIds.length > 0) return planIds;
+
+  const eventIds = extractAgentIdsFromEventsJsonl(join(cycleDir, 'events.jsonl'));
+  if (eventIds.length > 0) return eventIds;
+
+  return extractAgentIdsFromAssignJson(join(cycleDir, 'phases', 'assign.json'));
+}
+
+function extractAgentIdsFromExecuteJson(execPath: string): string[] {
   if (!existsSync(execPath)) return [];
   try {
     const raw = readFileSync(execPath, 'utf8');
@@ -286,4 +427,130 @@ export function extractInvolvedAgentIds(
   } catch {
     return [];
   }
+}
+
+function extractAgentIdsFromPlanJson(planPath: string): string[] {
+  const data = readJsonObject(planPath);
+  if (!data) return [];
+  const items = collectPlanItems(data);
+  return uniqueStrings(
+    items.flatMap((item) => [
+      stringField(item, 'assignee'),
+      stringField(item, 'agentId'),
+      stringField(item, 'assignedAgent'),
+      assignmentHintAgentId(item),
+    ]),
+  );
+}
+
+function collectPlanItems(data: Record<string, unknown>): Array<Record<string, unknown>> {
+  const directItems = arrayOfObjects(data['items']);
+  const sprintItems = arrayOfObjects(data['sprints']).flatMap((sprint) =>
+    arrayOfObjects(sprint['items']),
+  );
+  return [...directItems, ...sprintItems];
+}
+
+function extractAgentIdsFromEventsJsonl(eventsPath: string): string[] {
+  if (!existsSync(eventsPath)) return [];
+  const ids: string[] = [];
+  try {
+    const raw = readFileSync(eventsPath, 'utf8');
+    for (const line of raw.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        const event = JSON.parse(trimmed) as Record<string, unknown>;
+        for (const record of collectRunRecords(event)) {
+          ids.push(
+            ...[
+              stringField(record, 'agentId'),
+              stringField(record, 'assignee'),
+              stringField(record, 'assignedAgent'),
+            ].filter((id): id is string => id !== undefined),
+          );
+        }
+      } catch {
+        // Ignore partial JSONL writes.
+      }
+    }
+  } catch {
+    return [];
+  }
+  return uniqueStrings(ids);
+}
+
+function collectRunRecords(event: Record<string, unknown>): Array<Record<string, unknown>> {
+  const payloads = [
+    event,
+    objectField(event, 'payload'),
+    objectField(event, 'result'),
+    objectField(objectField(event, 'payload'), 'result'),
+  ].filter((value): value is Record<string, unknown> => value !== undefined);
+
+  return payloads.flatMap((payload) => [
+    ...arrayOfObjects(payload['agentRuns']),
+    ...arrayOfObjects(payload['itemResults']),
+  ]);
+}
+
+function extractAgentIdsFromAssignJson(assignPath: string): string[] {
+  const data = readJsonObject(assignPath);
+  if (!data) return [];
+
+  const byAgent = objectField(data, 'byAgent');
+  const byAgentIds = byAgent ? Object.keys(byAgent) : [];
+  const assignments = arrayOfObjects(data['assignments']);
+  return uniqueStrings([
+    ...byAgentIds,
+    ...assignments.flatMap((assignment) => [
+      stringField(assignment, 'agentId'),
+      stringField(assignment, 'assignee'),
+      stringField(assignment, 'assignedAgent'),
+    ]),
+  ]);
+}
+
+function readJsonObject(path: string): Record<string, unknown> | null {
+  if (!existsSync(path)) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown;
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function arrayOfObjects(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is Record<string, unknown> =>
+      entry !== null && typeof entry === 'object' && !Array.isArray(entry),
+    )
+    : [];
+}
+
+function objectField(
+  obj: Record<string, unknown> | undefined,
+  key: string,
+): Record<string, unknown> | undefined {
+  const value = obj?.[key];
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function stringField(obj: Record<string, unknown>, key: string): string | undefined {
+  const value = obj[key];
+  return typeof value === 'string' && value.trim() !== '' ? value : undefined;
+}
+
+function assignmentHintAgentId(item: Record<string, unknown>): string | undefined {
+  const hint = objectField(item, 'assignment_hint');
+  return hint ? stringField(hint, 'agent_id') : undefined;
+}
+
+function uniqueStrings(values: Array<string | undefined>): string[] {
+  return [...new Set(values.filter((value): value is string => value !== undefined))];
 }

@@ -20,7 +20,12 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
-import type { PhaseContext, PhaseResult, WorktreePoolLike } from '../phase-scheduler.js';
+import type {
+  GateRetryContext,
+  PhaseContext,
+  PhaseResult,
+  WorktreePoolLike,
+} from '../phase-scheduler.js';
 import type { ParsedMemoryEntry } from '../../memory/types.js';
 import {
   extractBreakdownFromAgentRun,
@@ -760,10 +765,30 @@ export async function runExecutePhase(
   // If we see N in a row, halve parallelism (down to floor of 1).
   let consecutiveRateLimitFails = 0;
   const RATE_LIMIT_TRIP_THRESHOLD = 3;
+  function stringifyExecuteError(err: unknown): string {
+    if (err instanceof Error) return err.message;
+    if (typeof err === 'string') return err;
+    try {
+      const json = JSON.stringify(err);
+      if (json && json !== '{}') return json;
+    } catch {
+      // Fall through to String(err).
+    }
+    return String(err);
+  }
+  function isQuotaExhaustion(message: string): boolean {
+    const lower = message.toLowerCase();
+    return /\b(?:insufficient[_\s-]?quota|quota[_\s-]?exceeded|quota exhausted|billing|credits?)\b/.test(lower);
+  }
+  function isTransientExecuteError(err: unknown): boolean {
+    const lower = stringifyExecuteError(err).toLowerCase();
+    if (!lower || isQuotaExhaustion(lower)) return false;
+    return /\b(?:429|rate\s*limit(?:ed)?|rate-limit(?:ed)?|throttl(?:e|ed|ing)|timeout|timed out|temporar(?:y|ily)|transient|econnreset|etimedout|eai_again|503|502|504)\b/.test(lower);
+  }
   function looksLikeRateLimit(err: string): boolean {
     const lower = err.toLowerCase();
-    return lower.includes('rate') || lower.includes('quota') ||
-           lower.includes('429') || lower.includes('exited with code 1');
+    if (isQuotaExhaustion(lower)) return false;
+    return /\b(?:429|rate\s*limit(?:ed)?|rate-limit(?:ed)?|throttl(?:e|ed|ing)|timeout|timed out|503|502|504)\b/.test(lower);
   }
   function recordItemResult(success: boolean, errStr?: string): void {
     if (success) {
@@ -928,7 +953,15 @@ export async function runExecutePhase(
       for (let attempt = 0; attempt <= maxItemRetries; attempt++) {
         attempts = attempt + 1;
         const runtimeCwd = worktreeHandle?.path ?? ctx.projectRoot;
-        const task = buildItemPrompt(item, runtimeCwd, attempt, lastError, memoryEntries, selfEvalDisabled);
+        const task = buildItemPrompt(
+          item,
+          runtimeCwd,
+          attempt,
+          lastError,
+          memoryEntries,
+          selfEvalDisabled,
+          ctx.gateRetry,
+        );
         ctx.bus.publish('sprint.phase.item.started', {
           sprintId: ctx.sprintId,
           phase,
@@ -1120,8 +1153,9 @@ export async function runExecutePhase(
           enqueueItemCheckpoint(item.id, 'completed', item.assignee);
           return completedResult;
         } catch (err) {
-          lastError = err instanceof Error ? err.message : String(err);
-          if (attempt >= maxItemRetries) {
+          lastError = stringifyExecuteError(err);
+          const shouldRetry = attempt < maxItemRetries && isTransientExecuteError(err);
+          if (!shouldRetry) {
             const durationMs = Date.now() - itemStartedAt;
             item.status = 'failed';
 
@@ -1443,15 +1477,17 @@ function buildItemPrompt(
   lastError?: string,
   memoryEntries: MemoryEntry[] = [],
   selfEvalDisabled = false,
+  gateRetry?: GateRetryContext,
 ): string {
   const tags =
     item.tags && item.tags.length > 0 ? item.tags.join(', ') : 'none';
   const description = item.description || item.title;
   const source = item.source || 'manual';
   const memorySec = formatMemorySection(memoryEntries);
+  const gateRetrySec = formatGateRetrySection(gateRetry);
   // Append self-eval fragment unless explicitly disabled.
   const selfEvalSec = selfEvalDisabled || !SELF_EVAL_FRAGMENT ? '' : `\n\n${SELF_EVAL_FRAGMENT}`;
-  const base = `You are working on sprint item "${item.title}" in the AgentForge repository at ${cwd}.
+  const base = `${gateRetrySec}You are working on sprint item "${item.title}" in the AgentForge repository at ${cwd}.
 
 Description: ${description}
 Source: ${source} (e.g., TODO(autonomous) marker)
@@ -1472,4 +1508,35 @@ ${lastError}
 Please take a different approach. Read the relevant files carefully before making changes.`;
   }
   return base;
+}
+
+function formatGateRetrySection(gateRetry?: GateRetryContext): string {
+  if (!gateRetry) return '';
+  const lines = [
+    '## Gate Rejection Retry',
+    `This is a gate-rejection retry (attempt ${gateRetry.attempt}). Your first priority is to fix the gate finding that rejected the prior PR or branch before continuing the original sprint item.`,
+  ];
+  if (gateRetry.prNumber !== undefined) {
+    lines.push(`Rejected PR: #${gateRetry.prNumber}`);
+  }
+  if (gateRetry.prUrl) {
+    lines.push(`Rejected PR URL: ${gateRetry.prUrl}`);
+  }
+  if (gateRetry.rejectedBranch) {
+    lines.push(`Rejected branch: ${gateRetry.rejectedBranch}`);
+  }
+  if (gateRetry.files && gateRetry.files.length > 0) {
+    lines.push(`Files mentioned by the gate: ${gateRetry.files.join(', ')}`);
+  }
+  if (gateRetry.findings && gateRetry.findings.length > 0) {
+    lines.push('Gate findings:');
+    for (const finding of gateRetry.findings) {
+      lines.push(`- ${finding}`);
+    }
+  } else {
+    lines.push('Gate rationale:');
+    lines.push(gateRetry.rationale);
+  }
+  lines.push('Do not broaden the scope or start unrelated work until the rejected finding is fixed and covered by tests.');
+  return `${lines.join('\n')}\n\n`;
 }

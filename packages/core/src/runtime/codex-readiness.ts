@@ -7,6 +7,8 @@ import { resolveProviderModelProfile } from './model-profiles.js';
 import { isCodexRuntimeAvailable } from './execution-service-mode.js';
 import {
   buildCodexSpawnCommand,
+  resolveCodexSpawnLaunchKind,
+  type CodexSpawnLaunchKind,
   type CodexSpawnCommandOptions,
 } from './transports/codex-cli-transport.js';
 
@@ -41,6 +43,7 @@ export interface CodexDoctorCheck {
 export interface CodexReadinessReport {
   projectRoot: string;
   codexCliAvailable: boolean;
+  codexCliLaunchKind?: CodexSpawnLaunchKind;
   codexDoctorChecked: boolean;
   codexDoctorOk: boolean | null;
   codexDoctorStatus?: string;
@@ -71,6 +74,7 @@ export function buildCodexReadinessReport(options: {
   const env = options.env ?? process.env;
   const codexSpawnOptions = { ...options.codexSpawnOptions, env };
   const agents = readAgentProfiles(projectRoot, env);
+  const codexCliLaunchKind = resolveCodexSpawnLaunchKind(['--version'], codexSpawnOptions);
   const codexCliAvailable = options.codexCliAvailable ?? isCodexRuntimeAvailable(codexSpawnOptions);
   const mcpServerPath = options.mcpServerPath
     ? resolve(options.mcpServerPath)
@@ -119,6 +123,7 @@ export function buildCodexReadinessReport(options: {
   return {
     projectRoot,
     codexCliAvailable,
+    ...(codexCliLaunchKind ? { codexCliLaunchKind } : {}),
     codexDoctorChecked: doctor.checked,
     codexDoctorOk: doctor.ok,
     ...(doctor.status ? { codexDoctorStatus: doctor.status } : {}),
@@ -176,7 +181,16 @@ function readAgentProfiles(projectRoot: string, env: NodeJS.ProcessEnv): CodexRe
 }
 
 function checkCodexLogin(codexSpawnOptions: CodexSpawnCommandOptions): { checked: boolean; ok: boolean | null; message?: string } {
-  const command = buildCodexSpawnCommand(['login', 'status'], codexSpawnOptions);
+  let command;
+  try {
+    command = buildCodexSpawnCommand(['login', 'status'], codexSpawnOptions);
+  } catch (err) {
+    return {
+      checked: true,
+      ok: false,
+      message: err instanceof Error ? err.message : String(err),
+    };
+  }
   const result = spawnSync(command.command, command.args, {
     encoding: 'utf8',
     timeout: 10_000,
@@ -210,7 +224,16 @@ function checkCodexDoctor(doctorJson: string | undefined, codexSpawnOptions: Cod
 } {
   let raw = doctorJson;
   if (raw === undefined) {
-    const command = buildCodexSpawnCommand(['doctor', '--json'], codexSpawnOptions);
+    let command;
+    try {
+      command = buildCodexSpawnCommand(['doctor', '--json'], codexSpawnOptions);
+    } catch (err) {
+      return {
+        checked: true,
+        ok: false,
+        message: err instanceof Error ? err.message : String(err),
+      };
+    }
     const result = spawnSync(command.command, command.args, {
       encoding: 'utf8',
       timeout: 20_000,

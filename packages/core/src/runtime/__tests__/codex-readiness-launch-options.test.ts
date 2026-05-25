@@ -101,6 +101,7 @@ describe('buildCodexReadinessReport launch options', () => {
     } as Parameters<typeof buildCodexReadinessReport>[0] & Record<string, unknown>);
 
     expect(report.codexCliAvailable).toBe(true);
+    expect(report.codexCliLaunchKind).toBe('windows-native-package');
     expect(spawnSyncMock).toHaveBeenCalledWith(
       codexPackage.nativeExe,
       ['--version'],

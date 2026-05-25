@@ -52,4 +52,4 @@ The **test phase** (phase 5 of 9) runs `pnpm test` and gates on `quality.testPas
 
 ### The flywheel connection
 
-Every test failure surfaced by the autonomous **test phase** becomes a `review-finding.jsonl` entry. The `memory-curator` agent distils these into up to 8 lessons per agent at the next forge boundary. Writing clear failure messages (`expect(actual).toBe(expected, 'reason')`) accelerates the learning loop.
+Every test failure surfaced by the autonomous **test phase** becomes a `review-finding.jsonl` entry. The `memory-curator` agent distils these into up to 12 lessons per agent at the next forge boundary. Writing clear failure messages (`expect(actual).toBe(expected, 'reason')`) accelerates the learning loop.

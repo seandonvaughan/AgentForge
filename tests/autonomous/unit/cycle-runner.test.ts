@@ -29,6 +29,7 @@ const execFileAsync = promisify(execFile);
 import { CycleRunner, DEFAULT_CYCLE_CONFIG, CycleStage, MessageBusV2 } from '@agentforge/core';
 import * as autoReforgeModule from '../../../packages/core/src/autonomous/auto-reforge.js';
 import { GateRejectedError } from '../../../packages/core/src/autonomous/phase-handlers/gate-phase.js';
+import { runExecutePhase } from '../../../packages/core/src/autonomous/phase-handlers/execute-phase.js';
 
 /**
  * Build the full set of mocked dependencies the CycleRunner needs.
@@ -426,6 +427,205 @@ describe('CycleRunner', () => {
     expect(result.stage).toBe(CycleStage.COMPLETED);
     expect(listActive).not.toHaveBeenCalled();
     expect(stage).toHaveBeenCalledWith(expect.arrayContaining(['feature.txt']));
+  });
+
+  it('passes gate rejection details into the retry execute phase', async () => {
+    await initGitRepo(tmpDir);
+    const deps = makeMockDeps();
+    const observedExecuteContexts: Array<{
+      retryAttempt?: number;
+      gateRetry?: unknown;
+    }> = [];
+    const baseExecute = deps.mockPhaseHandlers.execute;
+    deps.mockPhaseHandlers.execute = async (ctx: any) => {
+      observedExecuteContexts.push({
+        retryAttempt: ctx.retryAttempt,
+        gateRetry: ctx.gateRetry,
+      });
+      writeFileSync(join(tmpDir, 'feature.txt'), `implemented attempt ${observedExecuteContexts.length}\n`);
+      await baseExecute(ctx);
+    };
+
+    let gateCalls = 0;
+    const baseGate = deps.mockPhaseHandlers.gate;
+    deps.mockPhaseHandlers.gate = async (ctx: any) => {
+      gateCalls++;
+      if (gateCalls === 1) {
+        const cycleDir = join(tmpDir, '.agentforge/cycles', ctx.cycleId);
+        mkdirSync(cycleDir, { recursive: true });
+        writeFileSync(
+          join(cycleDir, 'agent-prs.json'),
+          JSON.stringify([
+            {
+              prNumber: 153,
+              prUrl: 'https://github.com/example/repo/pull/153',
+              branch: 'codex/agent-executor-runtime-engineer-06e26f07b342',
+              status: 'open',
+              openedAt: '2026-05-25T08:32:58.533Z',
+            },
+          ]),
+        );
+        throw new GateRejectedError(
+          'MAJOR: packages/core/src/autonomous/phase-handlers/execute-phase.ts can pass undefined to truncateMemoryValue on branch codex/agent-executor-runtime-engineer-06e26f07b342.',
+        );
+      }
+      await baseGate(ctx);
+    };
+
+    const runner = new CycleRunner({
+      cwd: tmpDir,
+      config: {
+        ...DEFAULT_CYCLE_CONFIG,
+        retry: {
+          ...DEFAULT_CYCLE_CONFIG.retry,
+          maxAutoRetries: 1,
+          requireApprovalAfter: 99,
+        },
+      },
+      runtime: deps.runtime as any,
+      proposalAdapter: deps.proposalAdapter as any,
+      scoringAdapter: deps.scoringAdapter as any,
+      phaseHandlers: deps.mockPhaseHandlers as any,
+      testRunner: deps.testRunner as any,
+      gitOps: deps.gitOps as any,
+      prOpener: deps.prOpener as any,
+      bus: deps.bus as any,
+      preVerifyTypeCheck: deps.preVerifyTypeCheck,
+      dryRun: { prOpener: true },
+    });
+
+    const result = await runner.start();
+
+    expect(result.stage).toBe(CycleStage.COMPLETED);
+    expect(observedExecuteContexts).toHaveLength(2);
+    expect(observedExecuteContexts[0]!.gateRetry).toBeUndefined();
+    expect(observedExecuteContexts[1]).toMatchObject({
+      retryAttempt: 1,
+      gateRetry: {
+        attempt: 1,
+        rejectedBranch: 'codex/agent-executor-runtime-engineer-06e26f07b342',
+        prNumber: 153,
+        prUrl: 'https://github.com/example/repo/pull/153',
+      },
+    });
+    expect((observedExecuteContexts[1]!.gateRetry as any).rationale).toContain('truncateMemoryValue');
+    expect((observedExecuteContexts[1]!.gateRetry as any).files).toContain(
+      'packages/core/src/autonomous/phase-handlers/execute-phase.ts',
+    );
+  });
+
+  it('routes gate rejection context into the real retry execute prompt', async () => {
+    await initGitRepo(tmpDir);
+    const deps = makeMockDeps();
+    const coderPrompts: string[] = [];
+    deps.runtime.run = vi.fn(async (agent: string, task: string) => {
+      if (agent === 'coder') {
+        coderPrompts.push(task);
+        writeFileSync(join(tmpDir, 'feature.txt'), `implemented attempt ${coderPrompts.length}\n`);
+        return {
+          output: 'ok',
+          costUsd: 0.01,
+          durationMs: 1,
+          model: 'sonnet',
+          usage: { input_tokens: 0, output_tokens: 0 },
+        };
+      }
+      return {
+        output: JSON.stringify({
+          rankings: [
+            {
+              itemId: 'i1',
+              title: 'Fix bug',
+              rank: 1,
+              score: 0.9,
+              confidence: 0.9,
+              estimatedCostUsd: 5,
+              estimatedDurationMinutes: 15,
+              rationale: 'r',
+              dependencies: [],
+              suggestedAssignee: 'coder',
+              suggestedTags: ['fix'],
+              withinBudget: true,
+            },
+          ],
+          totalEstimatedCostUsd: 5,
+          budgetOverflowUsd: 0,
+          summary: 'one fix',
+          warnings: [],
+        }),
+        usage: { input_tokens: 100, output_tokens: 50 },
+        costUsd: 0.01,
+        durationMs: 500,
+        model: 'sonnet',
+      };
+    });
+    deps.mockPhaseHandlers.execute = async (ctx: any) => {
+      await runExecutePhase(ctx, {
+        maxParallelism: 1,
+        maxItemRetries: 0,
+        disableWorktrees: true,
+        selfEvalDisabled: true,
+      });
+    };
+
+    let gateCalls = 0;
+    const baseGate = deps.mockPhaseHandlers.gate;
+    deps.mockPhaseHandlers.gate = async (ctx: any) => {
+      gateCalls++;
+      if (gateCalls === 1) {
+        const cycleDir = join(tmpDir, '.agentforge/cycles', ctx.cycleId);
+        mkdirSync(cycleDir, { recursive: true });
+        writeFileSync(
+          join(cycleDir, 'agent-prs.json'),
+          JSON.stringify([
+            {
+              prNumber: 153,
+              prUrl: 'https://github.com/example/repo/pull/153',
+              branch: 'codex/agent-executor-runtime-engineer-06e26f07b342',
+              status: 'open',
+              openedAt: '2026-05-25T08:32:58.533Z',
+            },
+          ]),
+        );
+        throw new GateRejectedError(
+          'MAJOR: packages/core/src/autonomous/phase-handlers/execute-phase.ts can pass undefined to truncateMemoryValue.',
+        );
+      }
+      await baseGate(ctx);
+    };
+
+    const runner = new CycleRunner({
+      cwd: tmpDir,
+      config: {
+        ...DEFAULT_CYCLE_CONFIG,
+        retry: {
+          ...DEFAULT_CYCLE_CONFIG.retry,
+          maxAutoRetries: 1,
+          requireApprovalAfter: 99,
+        },
+      },
+      runtime: deps.runtime as any,
+      proposalAdapter: deps.proposalAdapter as any,
+      scoringAdapter: deps.scoringAdapter as any,
+      phaseHandlers: deps.mockPhaseHandlers as any,
+      testRunner: deps.testRunner as any,
+      gitOps: deps.gitOps as any,
+      prOpener: deps.prOpener as any,
+      bus: deps.bus as any,
+      preVerifyTypeCheck: deps.preVerifyTypeCheck,
+      dryRun: { prOpener: true },
+      disableWorktrees: true,
+    });
+
+    const result = await runner.start();
+
+    expect(result.stage).toBe(CycleStage.COMPLETED);
+    expect(coderPrompts).toHaveLength(2);
+    expect(coderPrompts[0]).not.toContain('Gate Rejection Retry');
+    expect(coderPrompts[1]!.startsWith('## Gate Rejection Retry')).toBe(true);
+    expect(coderPrompts[1]).toContain('Rejected PR: #153');
+    expect(coderPrompts[1]).toContain('Rejected branch: codex/agent-executor-runtime-engineer-06e26f07b342');
+    expect(coderPrompts[1]).toContain('truncateMemoryValue');
   });
 
   it('marks multi-PR cycles failed when an agent branch verifier fails', async () => {

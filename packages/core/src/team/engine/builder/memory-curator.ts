@@ -28,7 +28,7 @@ export interface MemoryEntry {
 }
 
 export interface CuratedLearningOptions {
-  /** Max number of lessons to return for this agent. Default: 8. */
+  /** Max number of lessons to return for this agent. Default: 12. */
   maxLessons?: number;
   /** Cap on each lesson's character length. Longer values are truncated. Default: 200. */
   maxLessonChars?: number;
@@ -234,7 +234,7 @@ export function curateLearnings(
   entries: MemoryEntry[],
   options: CuratedLearningOptions = {},
 ): string[] {
-  const maxLessons = options.maxLessons ?? 8;
+  const maxLessons = options.maxLessons ?? 12;
   const maxChars = options.maxLessonChars ?? 200;
   const halfLife = options.recencyHalfLifeDays ?? 45;
 

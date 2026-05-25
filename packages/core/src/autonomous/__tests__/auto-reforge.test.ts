@@ -13,7 +13,7 @@
 //   - extractInvolvedAgentIds: falls back gracefully when file absent
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
@@ -60,6 +60,15 @@ function makeMutatorReport(dryRun = false): MutatorReport {
     totalSkipped: 0,
     dryRun,
   };
+}
+
+function readAutoReforgeReport(cycleId: string): Record<string, unknown> {
+  return JSON.parse(
+    readFileSync(
+      join(tmpDir, '.agentforge', 'cycles', cycleId, 'auto-reforge-report.json'),
+      'utf8',
+    ),
+  ) as Record<string, unknown>;
 }
 
 // ---------------------------------------------------------------------------
@@ -111,7 +120,13 @@ describe('runAutoReforge', () => {
   });
 
   it('returns skipped=true when curator produces no proposals', async () => {
-    const curate = vi.fn(async (): Promise<CurationResult> => makeEmptyCurationResult());
+    const curate = vi.fn(async (): Promise<CurationResult> => ({
+      byAgent: {},
+      sourcesScanned: [
+        { path: '.agentforge/memory/review-finding.jsonl', entriesRead: 3, scored: 0 },
+      ],
+      generatedAt: '2026-05-25T00:00:00.000Z',
+    }));
     const apply = vi.fn(async (): Promise<MutatorReport> => makeMutatorReport());
 
     const result = await runAutoReforge({
@@ -126,6 +141,16 @@ describe('runAutoReforge', () => {
     expect(result.mutatorReport).toBeUndefined();
     // Apply must NOT be called when curation is empty.
     expect(apply).not.toHaveBeenCalled();
+
+    const report = readAutoReforgeReport('cycle-002');
+    expect(report).toMatchObject({
+      cycleId: 'cycle-002',
+      involvedAgentIds: ['coder'],
+      sourceCounts: { entriesRead: 3, scored: 0 },
+      proposalCounts: { beforeFiltering: 0 },
+      appliedCount: 0,
+      skipReason: 'no-proposed-learnings',
+    });
   });
 
   it('passes dryRun=true through to the mutator', async () => {
@@ -175,6 +200,68 @@ describe('runAutoReforge', () => {
     expect(payload).toMatchObject({ cycleId: 'cycle-004' });
     expect(payload).toHaveProperty('perAgent');
     expect(payload).toHaveProperty('totalApplied');
+  });
+
+  it('persists proposal and apply counts when learnings are applied', async () => {
+    const curationResult = makeCurationResult(['coder', 'reviewer']);
+    curationResult.sourcesScanned = [
+      { path: '.agentforge/memory/gate-verdict.jsonl', entriesRead: 2, scored: 2 },
+      { path: '.agentforge/memory/review-finding.jsonl', entriesRead: 4, scored: 1 },
+    ];
+    const curate = vi.fn(async (): Promise<CurationResult> => curationResult);
+    const apply = vi.fn(async (): Promise<MutatorReport> => ({
+      perAgent: {
+        coder: { applied: 1, skipped: 0, capped: false, lessons: ['lesson 1'] },
+        reviewer: { applied: 0, skipped: 1, capped: false, lessons: [] },
+      },
+      totalApplied: 1,
+      totalSkipped: 1,
+      dryRun: false,
+    }));
+
+    const result = await runAutoReforge({
+      projectRoot: tmpDir,
+      cycleId: 'cycle-report',
+      involvedAgentIds: ['coder', 'reviewer'],
+      curateLearnings: curate,
+      applyLearnings: apply,
+    });
+
+    expect(result.skipped).toBe(false);
+    const report = readAutoReforgeReport('cycle-report');
+    expect(report).toMatchObject({
+      cycleId: 'cycle-report',
+      involvedAgentIds: ['coder', 'reviewer'],
+      sourceCounts: { entriesRead: 6, scored: 3 },
+      proposalCounts: { beforeFiltering: 2, afterFiltering: 1 },
+      appliedCount: 1,
+      skippedProposalCount: 1,
+    });
+    expect(report).not.toHaveProperty('skipReason');
+  });
+
+  it('persists skip reason when no involved agents are available', async () => {
+    const curate = vi.fn(async (): Promise<CurationResult> => makeCurationResult(['coder']));
+    const apply = vi.fn(async (): Promise<MutatorReport> => makeMutatorReport());
+
+    const result = await runAutoReforge({
+      projectRoot: tmpDir,
+      cycleId: 'cycle-no-agents',
+      involvedAgentIds: [],
+      curateLearnings: curate,
+      applyLearnings: apply,
+    });
+
+    expect(result.skipped).toBe(true);
+    expect(curate).not.toHaveBeenCalled();
+    expect(apply).not.toHaveBeenCalled();
+    expect(readAutoReforgeReport('cycle-no-agents')).toMatchObject({
+      cycleId: 'cycle-no-agents',
+      involvedAgentIds: [],
+      proposalCounts: { beforeFiltering: 0 },
+      appliedCount: 0,
+      skipReason: 'no-involved-agents',
+    });
   });
 
   it('does not crash when no bus is provided', async () => {
@@ -311,13 +398,65 @@ describe('extractInvolvedAgentIds', () => {
     expect(ids).toEqual([]);
   });
 
-  it('returns empty array when execute.json is malformed JSON', () => {
+  it('falls back to plan.json assignees when execute.json is malformed', () => {
     const cyclesDir = join(tmpDir, '.agentforge', 'cycles', 'cycle-bad', 'phases');
     mkdirSync(cyclesDir, { recursive: true });
     writeFileSync(join(cyclesDir, 'execute.json'), 'not-json{{{');
+    writeFileSync(
+      join(tmpDir, '.agentforge', 'cycles', 'cycle-bad', 'plan.json'),
+      JSON.stringify({
+        items: [
+          { id: 'T1', title: 'Implement feature', assignee: 'coder' },
+          { id: 'T2', title: 'Review feature', assignee: 'reviewer' },
+          { id: 'T3', title: 'Duplicate', assignee: 'coder' },
+        ],
+      }),
+    );
 
     const ids = extractInvolvedAgentIds(tmpDir, 'cycle-bad');
-    expect(ids).toEqual([]);
+    expect(ids).toEqual(['coder', 'reviewer']);
+  });
+
+  it('falls back to events.jsonl agent IDs when execute.json is missing', () => {
+    const cycleDir = join(tmpDir, '.agentforge', 'cycles', 'cycle-events');
+    mkdirSync(cycleDir, { recursive: true });
+    writeFileSync(
+      join(cycleDir, 'events.jsonl'),
+      [
+        JSON.stringify({
+          type: 'sprint.phase.completed',
+          result: {
+            phase: 'execute',
+            agentRuns: [
+              { itemId: 'T1', agentId: 'backend-dev' },
+              { itemId: 'T2', agentId: 'qa-reviewer' },
+            ],
+          },
+        }),
+        'not-json',
+      ].join('\n'),
+    );
+
+    const ids = extractInvolvedAgentIds(tmpDir, 'cycle-events');
+    expect(ids).toEqual(['backend-dev', 'qa-reviewer']);
+  });
+
+  it('falls back to assign phase byAgent keys when execute.json and plan.json are unavailable', () => {
+    const phasesDir = join(tmpDir, '.agentforge', 'cycles', 'cycle-assign', 'phases');
+    mkdirSync(phasesDir, { recursive: true });
+    writeFileSync(
+      join(phasesDir, 'assign.json'),
+      JSON.stringify({
+        phase: 'assign',
+        byAgent: {
+          architect: 1,
+          'backend-qa': 2,
+        },
+      }),
+    );
+
+    const ids = extractInvolvedAgentIds(tmpDir, 'cycle-assign');
+    expect(ids).toEqual(['architect', 'backend-qa']);
   });
 
   it('skips entries with missing or non-string agentId', () => {
@@ -337,5 +476,12 @@ describe('extractInvolvedAgentIds', () => {
 
     const ids = extractInvolvedAgentIds(tmpDir, 'cycle-partial');
     expect(ids).toEqual(['coder']);
+  });
+
+  it('does not create an auto-reforge report during agent ID extraction', () => {
+    extractInvolvedAgentIds(tmpDir, 'cycle-missing');
+    expect(
+      existsSync(join(tmpDir, '.agentforge', 'cycles', 'cycle-missing', 'auto-reforge-report.json')),
+    ).toBe(false);
   });
 });

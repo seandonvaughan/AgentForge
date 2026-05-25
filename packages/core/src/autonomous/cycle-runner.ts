@@ -57,6 +57,7 @@ import { BudgetApproval } from './budget-approval.js';
 import { SprintGenerator, type SprintPlan } from './sprint-generator.js';
 import {
   PhaseScheduler,
+  type GateRetryContext,
   type PhaseHandler,
   type PhaseName,
   type SprintRunSummary,
@@ -123,6 +124,86 @@ export function shouldRunAggregateCommit(
   filesChanged: string[],
 ): boolean {
   return prMode !== 'multi' && filesChanged.length > 0;
+}
+
+interface AgentPrRecord {
+  prNumber?: number;
+  number?: number;
+  prUrl?: string;
+  url?: string;
+  branch?: string;
+  status?: string;
+  openedAt?: string;
+}
+
+function extractPrNumber(rationale: string): number | undefined {
+  const match = rationale.match(/\b(?:PR|pull request)\s*#?(\d+)\b/i);
+  if (!match?.[1]) return undefined;
+  const parsed = Number.parseInt(match[1], 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function extractBranchName(rationale: string): string | undefined {
+  const match = rationale.match(/\b(?:target\s+branch|branch)\s+([A-Za-z0-9._/-]+)/i);
+  return match?.[1]?.replace(/[.,;:)]+$/, '');
+}
+
+function extractMentionedFiles(rationale: string): string[] {
+  const matches = rationale.matchAll(/\b(?:packages|tests|docs|scripts|plugins|apps)\/[A-Za-z0-9._/-]+\b/g);
+  return [...new Set(Array.from(matches, (match) => match[0]))].slice(0, 12);
+}
+
+function extractFindingLines(rationale: string): string[] {
+  return rationale
+    .split(/\r?\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
+function readAgentPrRecords(projectRoot: string, cycleId: string): AgentPrRecord[] {
+  const path = join(projectRoot, '.agentforge', 'cycles', cycleId, 'agent-prs.json');
+  if (!existsSync(path)) return [];
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown;
+    return Array.isArray(parsed) ? parsed as AgentPrRecord[] : [];
+  } catch {
+    return [];
+  }
+}
+
+function latestAgentPr(records: AgentPrRecord[]): AgentPrRecord | undefined {
+  return [...records]
+    .filter((record) => record.branch || record.prNumber || record.number)
+    .sort((a, b) => (a.openedAt ?? '').localeCompare(b.openedAt ?? ''))
+    .at(-1);
+}
+
+function buildGateRetryContext(
+  projectRoot: string,
+  cycleId: string,
+  attempt: number,
+  rationale: string,
+): GateRetryContext {
+  const records = readAgentPrRecords(projectRoot, cycleId);
+  const branchFromRationale = extractBranchName(rationale);
+  const prFromRationale = extractPrNumber(rationale);
+  const matchingRecord = branchFromRationale
+    ? records.find((record) => record.branch === branchFromRationale)
+    : undefined;
+  const fallbackRecord = matchingRecord ?? latestAgentPr(records);
+  const rejectedBranch = branchFromRationale ?? fallbackRecord?.branch;
+  const prNumber = prFromRationale ?? fallbackRecord?.prNumber ?? fallbackRecord?.number;
+  const prUrl = fallbackRecord?.prUrl ?? fallbackRecord?.url;
+  return {
+    attempt,
+    rationale,
+    ...(rejectedBranch !== undefined ? { rejectedBranch } : {}),
+    ...(prNumber !== undefined ? { prNumber } : {}),
+    ...(prUrl !== undefined ? { prUrl } : {}),
+    files: extractMentionedFiles(rationale),
+    findings: extractFindingLines(rationale),
+  };
 }
 
 /**
@@ -918,6 +999,7 @@ export class CycleRunner {
     // ─────────────────────────────────────────────────────────────────
     const retryConfig = this.options.config.retry;
     let retryAttempt = 0;
+    let gateRetry: GateRetryContext | undefined;
     let runSummary!: SprintRunSummary;
 
     // eslint-disable-next-line no-constant-condition
@@ -946,6 +1028,7 @@ export class CycleRunner {
           cycleId: this.cycleId,
           baseBranch: this.options.config.git.baseBranch,
           ...(retryAttempt > 0 ? { retryAttempt, skipToPhase: 'execute' as PhaseName } : {}),
+          ...(gateRetry !== undefined ? { gateRetry } : {}),
           ...(retryAttempt === 0 && skipToPhase !== undefined ? { skipToPhase } : {}),
           // T4.2: pass the pool (or undefined) through so the execute phase
           // can allocate per-item worktrees when coder-class items are dispatched.
@@ -985,6 +1068,12 @@ export class CycleRunner {
         this.logger.flushCycleCost(this.totalCostUsd);
 
         retryAttempt++;
+        gateRetry = buildGateRetryContext(
+          this.options.cwd,
+          this.cycleId,
+          retryAttempt,
+          err.rationale,
+        );
         this.logger.logPhaseFailure('gate', `retry ${retryAttempt}/${retryConfig.maxAutoRetries}: ${err.rationale.slice(0, 500)}`);
 
         // Check if we've exhausted auto-retries

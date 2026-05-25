@@ -1,5 +1,6 @@
 import type { ModelTier } from '@agentforge/shared';
 import type { AgentOutputSchema, CodexSandboxMode, ExecutionProviderKind, RuntimeMode } from '../runtime/types.js';
+import type { ResolvedAgentSkill } from './skill-resolver.js';
 
 export interface AgentRuntimeConfig {
   agentId: string;
@@ -13,6 +14,14 @@ export interface AgentRuntimeConfig {
   /** Reasoning effort level — passed as --effort to the claude subprocess. */
   effort?: string;
   outputSchema?: AgentOutputSchema;
+  /** Canonical skill ids requested for this agent after legacy mapping, if any. */
+  skillIds?: string[];
+  /** Catalog metadata for requested skill ids that resolved successfully. */
+  resolvedSkills?: ResolvedAgentSkill[];
+  /** Canonical skill ids requested by the agent but absent from the catalog. */
+  missingSkillIds?: string[];
+  /** Union of required tools declared by resolved skills. */
+  requiredTools?: string[];
 }
 
 export interface RunOptions {

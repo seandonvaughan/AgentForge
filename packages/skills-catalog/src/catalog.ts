@@ -75,6 +75,8 @@ function parseSkillFile(filePath: string): Skill | null {
 // Discovery: walk the skills/ tree
 // ---------------------------------------------------------------------------
 
+const RESERVED_WORKFLOW_DIRS = new Set(['_proposed', '_approved']);
+
 function discoverSkillFiles(skillsRoot: string): string[] {
   if (!existsSync(skillsRoot)) return [];
   const found: string[] = [];
@@ -95,6 +97,7 @@ function discoverSkillFiles(skillsRoot: string): string[] {
         continue;
       }
       if (isDir) {
+        if (RESERVED_WORKFLOW_DIRS.has(entry)) continue;
         walk(full);
       } else if (entry.endsWith('.md')) {
         found.push(full);

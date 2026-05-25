@@ -528,6 +528,43 @@ describe('execute-phase worktree integration', () => {
     });
   });
 
+  it('places gate rejection context before the original sprint item prompt', async () => {
+    writeSprintFile([
+      { id: 'item-1', title: 'Fix memory prompt rendering', assignee: 'coder', tags: ['coder'] },
+    ]);
+
+    const bus = makeBus();
+    const runtime = { run: vi.fn().mockResolvedValue({ output: 'ok', costUsd: 0.01 }) };
+    const ctx = makeCtx(bus, {
+      runtime,
+      retryAttempt: 1,
+      gateRetry: {
+        attempt: 1,
+        rationale:
+          'MAJOR: packages/core/src/autonomous/phase-handlers/execute-phase.ts can pass undefined to truncateMemoryValue.',
+        rejectedBranch: 'codex/agent-executor-runtime-engineer-06e26f07b342',
+        prNumber: 153,
+        files: ['packages/core/src/autonomous/phase-handlers/execute-phase.ts'],
+        findings: [
+          'MAJOR: rawValue from JSON.stringify can be undefined before truncateMemoryValue reads value.length.',
+        ],
+      },
+    });
+
+    await runExecutePhase(ctx, { maxParallelism: 1, maxItemRetries: 0 });
+
+    expect(runtime.run).toHaveBeenCalledTimes(1);
+    const prompt = runtime.run.mock.calls[0]![1] as string;
+    expect(prompt.startsWith('## Gate Rejection Retry')).toBe(true);
+    expect(prompt.indexOf('This is a gate-rejection retry')).toBeLessThan(
+      prompt.indexOf('You are working on sprint item'),
+    );
+    expect(prompt).toContain('Rejected PR: #153');
+    expect(prompt).toContain('Rejected branch: codex/agent-executor-runtime-engineer-06e26f07b342');
+    expect(prompt).toContain('packages/core/src/autonomous/phase-handlers/execute-phase.ts');
+    expect(prompt).toContain('Do not broaden the scope');
+  });
+
   it('retries worktree allocation with an alternate session when the retry branch already exists', async () => {
     writeSprintFile([
       { id: 'item-1', title: 'Task A', assignee: 'coder', tags: ['coder'] },

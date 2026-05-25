@@ -6,6 +6,8 @@ import type { WorkspaceAdapter } from '@agentforge/db';
 import { injectFreshContext } from './fresh-context.js';
 import { AgentOutputSchemaSchema } from '../team/agent-yaml/agent-yaml-schema.js';
 import type { AgentOutputSchema } from '../runtime/types.js';
+import { resolveAgentSkills } from './skill-resolver.js';
+import type { AgentSkillResolution, SkillLoader } from './skill-resolver.js';
 
 /**
  * Thrown by the agent factory when an agent has `output_schema.strict: true`
@@ -34,6 +36,7 @@ interface AgentYaml {
   role?: string;
   effort?: string;
   skill_ids?: unknown;
+  skills?: unknown;
   learnings?: unknown;
   // T4 — structured output schema declaration
   output_schema?: unknown;
@@ -57,36 +60,44 @@ export interface LoadAgentConfigOptions {
 }
 
 /**
- * Build a `## Skills` section from the given skill ids.
- *
- * Missing skill ids are skipped with a warning — they must never throw or
- * block a cycle. Returns an empty string when no skills are found.
+ * Resolve skill ids and build prompt metadata. Missing skill ids are skipped
+ * with a warning — they must never throw or block a cycle.
  */
-async function buildSkillsSection(skillIds: string[]): Promise<string> {
-  if (skillIds.length === 0) return '';
+async function resolveSkills(agent: AgentYaml): Promise<AgentSkillResolution> {
+  const skillIds = Array.isArray(agent.skill_ids) ? agent.skill_ids : undefined;
+  const legacySkills = Array.isArray(agent.skills) ? agent.skills : undefined;
+  const empty = resolveAgentSkills(
+    {
+      ...(Object.prototype.hasOwnProperty.call(agent, 'skill_ids') ? { skill_ids: skillIds } : {}),
+      ...(legacySkills ? { skills: legacySkills } : {}),
+    },
+    () => null,
+  );
+
+  if (empty.skillIds.length === 0) return empty;
 
   // Dynamically import to avoid circular deps and keep startup cost zero when
   // no skills are requested.
-  let loadSkill: ((id: string) => import('@agentforge/skills-catalog').Skill | null) | null = null;
+  let loadSkill: SkillLoader | null = null;
   try {
     const catalog = await import('@agentforge/skills-catalog');
     loadSkill = catalog.loadSkill;
   } catch {
     // skills-catalog not available (e.g. not yet built in some CI shards)
     console.warn('[agent-factory] @agentforge/skills-catalog not available — skipping skills injection');
-    return '';
+    return empty;
   }
 
-  const bodies: string[] = [];
-  for (const id of skillIds) {
-    const skill = loadSkill(id);
-    if (!skill) {
-      console.warn(`[agent-factory] Skill "${id}" not found in catalog — skipping`);
-      continue;
-    }
-    bodies.push(skill.body);
+  const resolved = resolveAgentSkills(agent, loadSkill);
+  for (const id of resolved.missingSkillIds) {
+    console.warn(`[agent-factory] Skill "${id}" not found in catalog — skipping`);
   }
 
+  return resolved;
+}
+
+function buildSkillsSection(resolution: AgentSkillResolution): string {
+  const bodies = resolution.resolvedSkills.map((skill) => skill.body);
   if (bodies.length === 0) return '';
 
   return ['## Skills', bodies.join('\n\n---\n\n')].join('\n') + '\n';
@@ -135,10 +146,8 @@ export async function loadAgentConfig(
     //   ## Skills
     //   <skill bodies separated by ---> (if any)
     //   ## Fresh Context / ## Direct Messages  ← injectFreshContext handles these
-    const skillIds = Array.isArray(parsed.skill_ids)
-      ? parsed.skill_ids.filter((id): id is string => typeof id === 'string')
-      : [];
-    const skillsSection = await buildSkillsSection(skillIds);
+    const skillResolution = await resolveSkills(parsed);
+    const skillsSection = buildSkillsSection(skillResolution);
     const learnings = Array.isArray(parsed.learnings) ? parsed.learnings : [];
     const learningsSection = buildLearningsSection(learnings);
 
@@ -168,6 +177,10 @@ export async function loadAgentConfig(
       model: modelMap[parsed.model ?? 'sonnet'] ?? 'sonnet',
       systemPrompt,
       workspaceId: 'default',
+      skillIds: skillResolution.skillIds,
+      resolvedSkills: skillResolution.resolvedSkills.map(({ body: _body, ...metadata }) => metadata),
+      missingSkillIds: skillResolution.missingSkillIds,
+      requiredTools: skillResolution.requiredTools,
       ...(parsed.effort && { effort: parsed.effort }),
       // T4 — carry output_schema through so the execute-phase dispatch loop
       // can attach it to the RunRequest and validate results on return.

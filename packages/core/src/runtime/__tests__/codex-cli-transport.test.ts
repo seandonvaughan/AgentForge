@@ -212,6 +212,7 @@ describe('buildCodexSpawnCommand', () => {
 
       expect(command.command).toBe(tmp.nativeExe);
       expect(command.args).toEqual(['exec', '--json']);
+      expect(command.launchKind).toBe('windows-native-package');
       expect(command.env?.PATH).toContain(tmp.pathDir);
       expect(command.env?.CODEX_MANAGED_BY_NPM).toBe('1');
       expect(command.env?.CODEX_MANAGED_PACKAGE_ROOT).toBe(tmp.packageRoot);
@@ -232,8 +233,36 @@ describe('buildCodexSpawnCommand', () => {
 
       expect(command.command).toBe(process.execPath);
       expect(command.args).toEqual([tmp.entrypoint, 'exec']);
+      expect(command.launchKind).toBe('windows-node-entrypoint');
     } finally {
       rmSync(tmp.root, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses ambiguous WindowsApps aliases instead of falling back to plain codex', () => {
+    expect(() => buildCodexSpawnCommand(['exec'], {
+      platform: 'win32',
+      arch: 'x64',
+      candidates: ['C:\\Users\\Agent\\AppData\\Local\\Microsoft\\WindowsApps\\codex.exe'],
+      env: { PATH: 'C:\\Users\\Agent\\AppData\\Local\\Microsoft\\WindowsApps' },
+    })).toThrow(/Install Codex CLI from npm or provide a resolvable codex\.exe/i);
+  });
+
+  it('refuses npm shims when neither native codex.exe nor the node entrypoint is resolvable', () => {
+    const root = join(tmpdir(), `agentforge-codex-shim-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+    const cmdShim = join(root, 'codex.cmd');
+    try {
+      mkdirSync(root, { recursive: true });
+      writeFileSync(cmdShim, '@echo off\n', 'utf8');
+
+      expect(() => buildCodexSpawnCommand(['exec'], {
+        platform: 'win32',
+        arch: 'x64',
+        candidates: [cmdShim],
+        env: { PATH: root },
+      })).toThrow(/native packaged codex\.exe or node entrypoint/i);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

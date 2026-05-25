@@ -301,7 +301,7 @@ describe('runExecutePhase', () => {
     const runtime = {
       run: vi
         .fn()
-        .mockRejectedValueOnce(new Error('first-fail'))
+        .mockRejectedValueOnce(new Error('transient timeout first-fail'))
         .mockResolvedValueOnce({ output: 'ok', costUsd: 0.01, durationMs: 1, model: 'm', usage: { input_tokens: 0, output_tokens: 0 } }),
     };
     const { bus } = makeMockBus();
@@ -321,7 +321,7 @@ describe('runExecutePhase', () => {
     const runtime = {
       run: vi
         .fn()
-        .mockRejectedValueOnce(new Error('boom-xyz'))
+        .mockRejectedValueOnce(new Error('transient timeout boom-xyz'))
         .mockResolvedValueOnce({ output: '', costUsd: 0, durationMs: 0, model: 'm', usage: { input_tokens: 0, output_tokens: 0 } }),
     };
     const { bus } = makeMockBus();
@@ -340,7 +340,7 @@ describe('runExecutePhase', () => {
       { id: 'i1', title: 'a', assignee: 'coder' },
     ]);
     const runtime = {
-      run: vi.fn().mockRejectedValue(new Error('always-fail')),
+      run: vi.fn().mockRejectedValue(new Error('transient timeout always-fail')),
     };
     const { bus } = makeMockBus();
     const result = await runExecutePhase(
@@ -352,6 +352,44 @@ describe('runExecutePhase', () => {
     expect(r0.status).toBe('failed');
     expect(r0.attempts).toBe(2);
     expect(r0.error).toContain('always-fail');
+  });
+
+  it('does not retry quota exhaustion errors', async () => {
+    writeSprintFile(tmpDir, '9.9.9', [
+      { id: 'i1', title: 'a', assignee: 'coder' },
+    ]);
+    const runtime = {
+      run: vi.fn().mockRejectedValue(new Error('insufficient_quota: credits exhausted')),
+    };
+    const { bus } = makeMockBus();
+    const result = await runExecutePhase(
+      makeCtx({ cwd: tmpDir, sprintVersion: '9.9.9', runtime, bus }),
+      { maxItemRetries: 2 },
+    );
+    expect(runtime.run).toHaveBeenCalledTimes(1);
+    const r0 = (result.itemResults as any[])[0];
+    expect(r0.status).toBe('failed');
+    expect(r0.attempts).toBe(1);
+    expect(r0.error).toContain('insufficient_quota');
+  });
+
+  it('does not retry unknown object-shaped errors', async () => {
+    writeSprintFile(tmpDir, '9.9.9', [
+      { id: 'i1', title: 'a', assignee: 'coder' },
+    ]);
+    const runtime = {
+      run: vi.fn().mockRejectedValue({ code: 'PERMANENT_FAILURE', reason: 'invalid patch' }),
+    };
+    const { bus } = makeMockBus();
+    const result = await runExecutePhase(
+      makeCtx({ cwd: tmpDir, sprintVersion: '9.9.9', runtime, bus }),
+      { maxItemRetries: 2 },
+    );
+    expect(runtime.run).toHaveBeenCalledTimes(1);
+    const r0 = (result.itemResults as any[])[0];
+    expect(r0.status).toBe('failed');
+    expect(r0.attempts).toBe(1);
+    expect(r0.error).toContain('PERMANENT_FAILURE');
   });
 
   it('writes attempts field to execute.json per-item', async () => {

@@ -71,10 +71,21 @@ export class CodexCliTransport implements ExecutionTransport {
   readonly kind = 'codex-cli' as const;
 
   isAvailable(): boolean {
-    const probe =
-      process.platform === 'win32'
-        ? spawnSync('where', ['codex'], { stdio: 'ignore', windowsHide: true })
-        : spawnSync('which', ['codex'], { stdio: 'ignore', windowsHide: true });
+    if (process.platform === 'win32') {
+      try {
+        const command = buildCodexSpawnCommand(['--version']);
+        const probe = spawnSync(command.command, command.args, {
+          stdio: 'ignore',
+          windowsHide: true,
+          ...(command.env ? { env: command.env } : {}),
+        });
+        return probe.status === 0;
+      } catch {
+        return false;
+      }
+    }
+
+    const probe = spawnSync('which', ['codex'], { stdio: 'ignore', windowsHide: true });
     return probe.status === 0;
   }
 
@@ -680,11 +691,17 @@ export class CodexCliTransport implements ExecutionTransport {
   }
 }
 
-interface CodexSpawnCommand {
+export interface CodexSpawnCommand {
   command: string;
   args: string[];
   env?: NodeJS.ProcessEnv;
+  launchKind: CodexSpawnLaunchKind;
 }
+
+export type CodexSpawnLaunchKind =
+  | 'path-command'
+  | 'windows-native-package'
+  | 'windows-node-entrypoint';
 
 export interface CodexSpawnCommandOptions {
   platform?: NodeJS.Platform;
@@ -699,25 +716,47 @@ export function buildCodexSpawnCommand(
 ): CodexSpawnCommand {
   const platform = options.platform ?? process.platform;
   if (platform !== 'win32') {
-    return { command: CODEX_COMMAND, args, ...(options.env ? { env: options.env } : {}) };
+    return {
+      command: CODEX_COMMAND,
+      args,
+      ...(options.env ? { env: options.env } : {}),
+      launchKind: 'path-command',
+    };
   }
 
   const candidates = options.candidates ?? findWindowsCodexCandidates(options.env);
   const nativeExecutable = findWindowsCodexNativeExecutable(candidates, options);
   if (nativeExecutable) {
-    return { command: nativeExecutable.command, args, env: nativeExecutable.env };
+    return {
+      command: nativeExecutable.command,
+      args,
+      env: nativeExecutable.env,
+      launchKind: 'windows-native-package',
+    };
   }
 
   const nodeEntrypoint = findWindowsCodexNodeEntrypoint(candidates);
   if (nodeEntrypoint) {
-    return { command: process.execPath, args: [nodeEntrypoint, ...args], ...(options.env ? { env: options.env } : {}) };
+    return {
+      command: process.execPath,
+      args: [nodeEntrypoint, ...args],
+      ...(options.env ? { env: options.env } : {}),
+      launchKind: 'windows-node-entrypoint',
+    };
   }
 
-  const executable = candidates.find((candidate) => {
-    const normalized = candidate.toLowerCase();
-    return normalized.endsWith('.exe') && !normalized.includes('\\windowsapps\\');
-  });
-  return { command: executable ?? CODEX_COMMAND, args, ...(options.env ? { env: options.env } : {}) };
+  throw new Error(buildWindowsCodexResolutionError(candidates));
+}
+
+export function resolveCodexSpawnLaunchKind(
+  args: string[] = ['--version'],
+  options: CodexSpawnCommandOptions = {},
+): CodexSpawnLaunchKind | undefined {
+  try {
+    return buildCodexSpawnCommand(args, options).launchKind;
+  } catch {
+    return undefined;
+  }
 }
 
 function findWindowsCodexCandidates(env?: NodeJS.ProcessEnv): string[] {
@@ -790,6 +829,18 @@ function findWindowsCodexNativeExecutable(
   }
 
   return null;
+}
+
+function buildWindowsCodexResolutionError(candidates: string[]): string {
+  const suffix = candidates.length
+    ? ` Candidates: ${candidates.join(', ')}.`
+    : ' No codex candidates were found on PATH.';
+  return (
+    'Codex CLI launch could not be resolved on Windows. ' +
+    'Install Codex CLI from npm or provide a resolvable codex.exe; AgentForge requires ' +
+    'a native packaged codex.exe or node entrypoint and refuses ambiguous WindowsApps/npm-shim fallback.' +
+    suffix
+  );
 }
 
 function buildWindowsNativeCodexEnv(
