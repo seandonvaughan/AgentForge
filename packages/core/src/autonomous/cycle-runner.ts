@@ -28,6 +28,7 @@ import { isAbsolute, join, relative, resolve } from 'node:path';
 // `./cycle-artifacts/cycle-checkpoint.ts` (Wave 3 T5). Re-export here so the
 // public surface that T6 wired up (`import { readCheckpoint } from '@agentforge/core'`)
 // keeps working without owning the canonical definitions.
+import { writeCheckpoint } from './cycle-artifacts/cycle-checkpoint.js';
 export { readCheckpoint } from './cycle-artifacts/cycle-checkpoint.js';
 
 const execFileAsync = promisify(execFile);
@@ -1001,6 +1002,7 @@ export class CycleRunner {
     // Log sprint assignment in events.jsonl so the dashboard can resolve the
     // sprint version without timestamp matching.
     this.logger.logSprintAssigned(plan.version);
+    this.persistPreAuditCheckpoint();
     this.checkKillSwitch();
 
     // ─────────────────────────────────────────────────────────────────
@@ -1387,6 +1389,32 @@ export class CycleRunner {
       consecutiveFailures: 0,
     });
     if (trip) throw new CycleKilledError(trip);
+  }
+
+  /**
+   * Persist a resume point after planning but before the PhaseScheduler starts.
+   * Without this, an interrupted cycle can be stranded after plan.json exists
+   * but before the first phase-level checkpoint is written.
+   */
+  private persistPreAuditCheckpoint(): void {
+    try {
+      writeCheckpoint(join(this.options.cwd, '.agentforge', 'cycles', this.cycleId), {
+        v: 1,
+        cycleId: this.cycleId,
+        capturedAt: new Date().toISOString(),
+        resumeFromPhase: 'audit',
+        completedPhases: [],
+        budgetUsd: this.options.config.budget.perCycleUsd,
+        spentUsd: this.totalCostUsd,
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[autonomous:cycle] pre-audit checkpoint write failed (non-fatal): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   /**

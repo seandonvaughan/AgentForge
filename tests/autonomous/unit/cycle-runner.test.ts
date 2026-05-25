@@ -344,6 +344,56 @@ describe('CycleRunner', () => {
     expect(result.cost.totalUsd).toBeGreaterThan(0);
   });
 
+  it('writes an audit resume checkpoint before the first scheduled phase starts', async () => {
+    await initGitRepo(tmpDir);
+    const deps = makeMockDeps();
+    let checkpointAtAuditStart: any;
+
+    const baseAudit = deps.mockPhaseHandlers.audit;
+    deps.mockPhaseHandlers.audit = async (ctx: any) => {
+      checkpointAtAuditStart = JSON.parse(
+        readFileSync(
+          join(tmpDir, '.agentforge', 'cycles', ctx.cycleId, 'checkpoint.json'),
+          'utf8',
+        ),
+      );
+      await baseAudit(ctx);
+    };
+
+    const baseExecute = deps.mockPhaseHandlers.execute;
+    deps.mockPhaseHandlers.execute = async (ctx: any) => {
+      writeFileSync(join(tmpDir, 'feature.txt'), 'implemented\n');
+      await baseExecute(ctx);
+    };
+
+    const runner = new CycleRunner({
+      cwd: tmpDir,
+      config: DEFAULT_CYCLE_CONFIG,
+      runtime: deps.runtime as any,
+      proposalAdapter: deps.proposalAdapter as any,
+      scoringAdapter: deps.scoringAdapter as any,
+      phaseHandlers: deps.mockPhaseHandlers as any,
+      testRunner: deps.testRunner as any,
+      gitOps: deps.gitOps as any,
+      prOpener: deps.prOpener as any,
+      bus: deps.bus as any,
+      preVerifyTypeCheck: deps.preVerifyTypeCheck,
+      dryRun: { prOpener: true },
+    });
+
+    const result = await runner.start();
+
+    expect(result.stage).toBe(CycleStage.COMPLETED);
+    expect(checkpointAtAuditStart).toMatchObject({
+      v: 1,
+      resumeFromPhase: 'audit',
+      completedPhases: [],
+      budgetUsd: DEFAULT_CYCLE_CONFIG.budget.perCycleUsd,
+      spentUsd: 0,
+    });
+    expect(checkpointAtAuditStart.cycleId).toBe(result.cycleId);
+  });
+
   it('fails prMode=multi before planning when no worktree pool is available', async () => {
     const deps = makeMockDeps();
     const runner = new CycleRunner({

@@ -10,7 +10,7 @@
 // /^[a-zA-Z0-9-]{8,64}$/ — we use the regex's matched substring rather than
 // the raw caller input so the static analyzer can trace a sanitized value.
 
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { z } from 'zod';
 
@@ -111,6 +111,21 @@ export function writeCheckpoint(cycleDir: string, checkpoint: CycleCheckpoint): 
   mkdirSync(dirname(finalPath), { recursive: true });
 
   writeFileSync(tmpPath, JSON.stringify(parsed, null, 2), 'utf8');
+  renameReplacingExisting(tmpPath, finalPath);
+}
+
+function renameReplacingExisting(tmpPath: string, finalPath: string): void {
+  try {
+    renameSync(tmpPath, finalPath);
+    return;
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== 'EEXIST' && code !== 'EPERM') {
+      throw err;
+    }
+  }
+
+  rmSync(finalPath, { force: true });
   renameSync(tmpPath, finalPath);
 }
 
