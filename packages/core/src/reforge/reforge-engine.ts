@@ -22,12 +22,16 @@ import type {
   CanaryDeployOptions,
   CanaryDeploymentRecord,
   CanaryDeploymentMetrics,
+  CanaryOutcomeContext,
   CanaryRoutingContext,
   CanaryRollbackRecord,
+  ReforgeCanaryLifecyclePayload,
   ReforgePlan,
   ReforgeResult,
+  SelfModificationCanaryTopic,
 } from "./types/reforge.js";
 import { CanaryManager } from "../canary/canary-manager.js";
+import type { PublishParams } from "../message-bus/message-bus.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -39,6 +43,8 @@ const MAX_VERSION_DEPTH = 5;
 /** Default downgrade tier when adjust-model-routing fires on an Opus agent. */
 const OPUS_DOWNGRADE_TARGET = "sonnet" as const;
 const SONNET_DOWNGRADE_TARGET = "haiku" as const;
+const CANARY_PENDING_TTL_MS = 30 * 60 * 1000;
+const MAX_PENDING_CANARY_OUTCOMES = 500;
 
 // ---------------------------------------------------------------------------
 // Options
@@ -50,6 +56,11 @@ export interface ReforgeEngineOptions {
    * Defaults to a generic cost-awareness reminder.
    */
   defaultPreamble?: string;
+  /**
+   * Optional event publisher used for self-modification canary lifecycle
+   * observability (`staged`, `promoted`, `rolled_back`).
+   */
+  publishEvent?: (params: PublishParams<unknown>) => unknown;
 }
 
 // ---------------------------------------------------------------------------
@@ -61,7 +72,8 @@ export class ReforgeEngine {
   private readonly canaryOverridesDir: string;
   private readonly proposalsDir: string;
   private readonly canaryManager = new CanaryManager();
-  private readonly options: Required<ReforgeEngineOptions>;
+  private readonly options: { defaultPreamble: string };
+  private readonly publishEvent?: ReforgeEngineOptions["publishEvent"];
 
   constructor(projectRoot: string, options?: ReforgeEngineOptions) {
     this.overridesDir = path.join(
@@ -86,6 +98,7 @@ export class ReforgeEngine {
         "COST AWARENESS PREAMBLE: Prefer the most economical approach. " +
           "Avoid over-engineering. Escalate only when necessary.",
     };
+    this.publishEvent = options?.publishEvent;
   }
 
   // =========================================================================
@@ -265,6 +278,7 @@ export class ReforgeEngine {
         rollbackThreshold,
         override,
         metrics: this.emptyCanaryMetrics(),
+        pendingOutcomes: [],
       };
 
       this.canaryManager.createFlag({
@@ -278,6 +292,7 @@ export class ReforgeEngine {
       this.canaryManager.activateFlag(flagId);
       await this.writeCanaryDeployment(deployment);
       deployments.push(deployment);
+      this.publishCanaryLifecycle("self-modification.canary.staged", deployment);
     }
 
     return { plan, deployments };
@@ -303,6 +318,7 @@ export class ReforgeEngine {
     await this.writeOverride(agentName, promoted);
     await this.deleteCanaryDeployment(agentName);
     this.canaryManager.deleteFlag(deployment.flagId);
+    this.publishCanaryLifecycle("self-modification.canary.promoted", deployment);
     return promoted;
   }
 
@@ -313,18 +329,40 @@ export class ReforgeEngine {
   async recordCanaryOutcome(
     agentName: string,
     isError: boolean,
-  ): Promise<{ deployment: CanaryDeploymentRecord; rollback?: string } | null> {
+    context: CanaryOutcomeContext = {},
+  ): Promise<{ deployment: CanaryDeploymentRecord; rollback?: string; ignored?: string } | null> {
     const deployment = await this.loadCanaryDeployment(agentName);
     if (!deployment) {
       return null;
     }
 
-    this.canaryManager.getFlag(deployment.flagId) ?? this.ensureCanaryFlag(deployment);
-    this.canaryManager.recordOutcome(deployment.flagId, isError);
+    const normalized = this.prunePendingOutcomes(deployment);
+    if (normalized !== deployment) {
+      await this.writeCanaryDeployment(normalized);
+    }
 
-    const metrics = this.nextCanaryMetrics(deployment.metrics, isError);
+    const source = context.source ?? "quality";
+    if (source !== "quality") {
+      return {
+        deployment: normalized,
+        ignored: `Ignored ${source} canary outcome; only quality outcomes affect rollback.`,
+      };
+    }
+
+    const correlation = this.consumePendingOutcome(normalized, context);
+    if (!correlation.matched) {
+      return {
+        deployment: normalized,
+        ignored: "Ignored canary outcome without matching correlation token/requestId.",
+      };
+    }
+
+    this.canaryManager.getFlag(normalized.flagId) ?? this.ensureCanaryFlag(normalized);
+    this.canaryManager.recordOutcome(normalized.flagId, isError);
+
+    const metrics = this.nextCanaryMetrics(normalized.metrics, isError);
     const updatedDeployment: CanaryDeploymentRecord = {
-      ...deployment,
+      ...correlation.deployment,
       metrics,
     };
 
@@ -338,7 +376,8 @@ export class ReforgeEngine {
         rollback,
       });
       await this.deleteCanaryDeployment(agentName);
-      this.canaryManager.performRollback(deployment.flagId, rollback.reason);
+      this.canaryManager.performRollback(updatedDeployment.flagId, rollback.reason);
+      this.publishCanaryLifecycle("self-modification.canary.rolled_back", updatedDeployment, rollback.reason);
     } else {
       await this.writeCanaryDeployment(updatedDeployment);
     }
@@ -366,9 +405,9 @@ export class ReforgeEngine {
     template: AgentTemplate,
     context?: CanaryRoutingContext,
   ): Promise<AgentTemplate> {
-    const override = await this.loadEffectiveOverride(template.name, context);
-    if (!override) return template;
-    return this.materializeOverride(template, override);
+    const resolved = await this.loadEffectiveOverride(template.name, context);
+    if (!resolved.override) return template;
+    return this.materializeOverride(template, resolved.override);
   }
 
   // =========================================================================
@@ -453,20 +492,142 @@ export class ReforgeEngine {
   private async loadEffectiveOverride(
     agentName: string,
     context?: CanaryRoutingContext,
-  ): Promise<AgentOverride | null> {
+  ): Promise<{ override: AgentOverride | null; outcomeToken?: string; requestId?: string }> {
     const active = await this.loadOverride(agentName);
     const canary = await this.loadCanaryDeployment(agentName);
     if (!canary) {
-      return active;
+      return { override: active };
     }
 
     const flag = this.canaryManager.getFlag(canary.flagId) ?? this.ensureCanaryFlag(canary);
     if (!context?.requestId && !context?.headerValue) {
-      return active;
+      return { override: active };
     }
 
     const route = this.canaryManager.route(flag.id, context.requestId ?? randomUUID(), context.headerValue);
-    return route.variant === "canary" ? canary.override : active;
+    if (route.variant !== "canary") {
+      return { override: active, requestId: route.requestId };
+    }
+
+    if (!context.requestId) {
+      return { override: canary.override, requestId: route.requestId };
+    }
+
+    const pending = this.registerPendingOutcome(canary, route.requestId);
+    await this.writeCanaryDeployment(pending.deployment);
+    return {
+      override: pending.deployment.override,
+      requestId: route.requestId,
+      outcomeToken: pending.token,
+    };
+  }
+
+  private prunePendingOutcomes(deployment: CanaryDeploymentRecord): CanaryDeploymentRecord {
+    const pending = deployment.pendingOutcomes ?? [];
+    if (pending.length === 0) {
+      return deployment;
+    }
+
+    const now = Date.now();
+    const filtered = pending
+      .filter((entry) => Number.isFinite(Date.parse(entry.expiresAt)) && Date.parse(entry.expiresAt) > now)
+      .slice(-MAX_PENDING_CANARY_OUTCOMES);
+
+    if (filtered.length === pending.length) {
+      return deployment;
+    }
+    return { ...deployment, pendingOutcomes: filtered };
+  }
+
+  private registerPendingOutcome(
+    deployment: CanaryDeploymentRecord,
+    requestId: string,
+  ): { deployment: CanaryDeploymentRecord; token: string } {
+    const normalized = this.prunePendingOutcomes(deployment);
+    const token = randomUUID();
+    const now = Date.now();
+    const expiresAt = new Date(now + CANARY_PENDING_TTL_MS).toISOString();
+    const retained = (normalized.pendingOutcomes ?? []).filter((entry) => entry.requestId !== requestId);
+    const next = [
+      ...retained,
+      { token, requestId, createdAt: new Date(now).toISOString(), expiresAt },
+    ].slice(-MAX_PENDING_CANARY_OUTCOMES);
+
+    return {
+      deployment: {
+        ...normalized,
+        pendingOutcomes: next,
+      },
+      token,
+    };
+  }
+
+  private consumePendingOutcome(
+    deployment: CanaryDeploymentRecord,
+    context: CanaryOutcomeContext,
+  ): { deployment: CanaryDeploymentRecord; matched: boolean } {
+    const pending = deployment.pendingOutcomes ?? [];
+    if (pending.length === 0) {
+      return { deployment, matched: false };
+    }
+
+    const token = context.outcomeToken?.trim();
+    const requestId = context.requestId?.trim();
+    if (!token && !requestId) {
+      return { deployment, matched: false };
+    }
+
+    const index = token
+      ? pending.findIndex((entry) => entry.token === token)
+      : pending.findIndex((entry) => entry.requestId === requestId);
+    if (index < 0) {
+      return { deployment, matched: false };
+    }
+
+    if (token && requestId && pending[index]!.requestId !== requestId) {
+      return { deployment, matched: false };
+    }
+
+    const nextPending = pending.slice(0, index).concat(pending.slice(index + 1));
+    return {
+      deployment: {
+        ...deployment,
+        pendingOutcomes: nextPending,
+      },
+      matched: true,
+    };
+  }
+
+  private publishCanaryLifecycle(
+    topic: SelfModificationCanaryTopic,
+    deployment: CanaryDeploymentRecord,
+    rollbackReason?: string,
+  ): void {
+    if (!this.publishEvent) return;
+    const metrics = deployment.metrics ?? this.emptyCanaryMetrics();
+    const payload: ReforgeCanaryLifecyclePayload = {
+      agentName: deployment.agentName,
+      planId: deployment.planId,
+      flagId: deployment.flagId,
+      trafficPercent: deployment.trafficPercent,
+      strategy: deployment.strategy,
+      rollbackThreshold: deployment.rollbackThreshold,
+      canaryRequests: metrics.canaryRequests,
+      canaryErrors: metrics.canaryErrors,
+      errorRate: metrics.errorRate,
+      ...(rollbackReason ? { rollbackReason } : {}),
+    };
+
+    this.publishEvent({
+      from: "system",
+      to: "broadcast",
+      topic,
+      category: "system",
+      payload,
+      priority: topic === "self-modification.canary.rolled_back" ? "high" : "normal",
+      correlationId: deployment.flagId,
+      sessionId: deployment.planId,
+    });
   }
 
   private ensureCanaryFlag(deployment: CanaryDeploymentRecord) {

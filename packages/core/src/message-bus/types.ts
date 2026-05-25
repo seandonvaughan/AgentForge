@@ -87,6 +87,10 @@ export type MessageTopic =
   | 'review.finding.created'
   // Plugin
   | 'plugin.event'
+  // Self-modification canary lifecycle
+  | 'self-modification.canary.staged'
+  | 'self-modification.canary.promoted'
+  | 'self-modification.canary.rolled_back'
   // Worktree / branch (Cycle 4 — T4.3 / T4.4)
   | 'agent.branch.pushed'
   | 'merge-queue.pr.opened';
@@ -312,6 +316,20 @@ export interface ReviewFindingCreatedPayload {
   createdAt: string;
 }
 
+/** Payload for self-modification canary lifecycle events. */
+export interface SelfModificationCanaryLifecyclePayload {
+  agentName: string;
+  planId: string;
+  flagId: string;
+  trafficPercent: number;
+  strategy: 'hash' | 'header' | 'percentage';
+  rollbackThreshold: number;
+  canaryRequests: number;
+  canaryErrors: number;
+  errorRate: number;
+  rollbackReason?: string;
+}
+
 // ── Type guards ───────────────────────────────────────────────────────────────
 
 export function isTaskTopic(topic: MessageTopic): boolean {
@@ -339,7 +357,9 @@ export function isFeedbackTopic(topic: MessageTopic): boolean {
 }
 
 export function isSystemTopic(topic: MessageTopic): boolean {
-  return topic.startsWith('system.') || topic.startsWith('bus.');
+  return topic.startsWith('system.')
+    || topic.startsWith('bus.')
+    || topic.startsWith('self-modification.');
 }
 
 // ── Typed envelope constructors ───────────────────────────────────────────────
@@ -363,6 +383,8 @@ export type AgentDmSentEnvelope = MessageEnvelopeV2<AgentDmSentPayload>;
 export type InboxMessageCreatedEnvelope = MessageEnvelopeV2<InboxMessageCreatedPayload>;
 export type GateVerdictCreatedEnvelope = MessageEnvelopeV2<GateVerdictCreatedPayload>;
 export type ReviewFindingCreatedEnvelope = MessageEnvelopeV2<ReviewFindingCreatedPayload>;
+export type SelfModificationCanaryLifecycleEnvelope =
+  MessageEnvelopeV2<SelfModificationCanaryLifecyclePayload>;
 
 // ── Worktree / branch payloads (Cycle 4 — T4.3) ──────────────────────────────
 
@@ -425,4 +447,10 @@ export function isQualityTopic(topic: MessageTopic): boolean {
 
 export function isWorktreeTopic(topic: MessageTopic): boolean {
   return topic === 'agent.branch.pushed' || topic === 'merge-queue.pr.opened';
+}
+
+export function isSelfModificationTopic(topic: MessageTopic): boolean {
+  return topic === 'self-modification.canary.staged'
+    || topic === 'self-modification.canary.promoted'
+    || topic === 'self-modification.canary.rolled_back';
 }

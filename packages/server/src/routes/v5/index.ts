@@ -14,6 +14,7 @@ import {
   type MessageEnvelopeV2,
   type AgentDmSentPayload,
   type InboxMessageCreatedPayload,
+  type SelfModificationCanaryLifecyclePayload,
 } from '@agentforge/core';
 import { rbacRoutes } from './rbac.js';
 import { costsRoutes } from './costs.js';
@@ -536,6 +537,15 @@ export async function registerV5Routes(
     opts.bus.subscribe<InboxMessageCreatedPayload>('inbox.message.created', (envelope) => {
       bridgeInboxToGlobalStream(envelope);
     });
+    opts.bus.subscribe<SelfModificationCanaryLifecyclePayload>('self-modification.canary.staged', (envelope) => {
+      bridgeSelfModificationCanaryToGlobalStream(envelope);
+    });
+    opts.bus.subscribe<SelfModificationCanaryLifecyclePayload>('self-modification.canary.promoted', (envelope) => {
+      bridgeSelfModificationCanaryToGlobalStream(envelope);
+    });
+    opts.bus.subscribe<SelfModificationCanaryLifecyclePayload>('self-modification.canary.rolled_back', (envelope) => {
+      bridgeSelfModificationCanaryToGlobalStream(envelope);
+    });
   }
 
   // ── Billing scaffolding (plan + invoice stubs; Stripe integration Phase 2) ─
@@ -608,6 +618,28 @@ export function bridgeInboxToGlobalStream(envelope: MessageEnvelopeV2<InboxMessa
       threadId: p.threadId,
       createdAt: p.createdAt,
       recipients: p.recipients,
+    },
+  });
+}
+
+/** Exported for unit-test access. Forwards self-mod canary lifecycle events as SSE workflow events. */
+export function bridgeSelfModificationCanaryToGlobalStream(
+  envelope: MessageEnvelopeV2<SelfModificationCanaryLifecyclePayload>,
+): void {
+  const p = envelope.payload;
+  const action = envelope.topic.endsWith(".staged")
+    ? "staged"
+    : envelope.topic.endsWith(".promoted")
+      ? "promoted"
+      : "rolled back";
+  globalStream.emit({
+    type: "workflow_event",
+    workspaceId: envelope.workspaceId,
+    category: "deployment",
+    message: `Self-mod canary ${action}: ${p.agentName}`,
+    payload: {
+      topic: envelope.topic,
+      ...p,
     },
   });
 }

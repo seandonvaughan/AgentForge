@@ -511,7 +511,12 @@ describe("ReforgeEngine", () => {
     });
 
     for (let i = 0; i < 5; i++) {
-      await engine.recordCanaryOutcome("cost-analyst", true);
+      const requestId = `req-canary-error-${i}`;
+      await engine.applyOverride(makeTemplate(), { requestId });
+      await engine.recordCanaryOutcome("cost-analyst", true, {
+        source: "quality",
+        requestId,
+      });
     }
 
     const stagedPath = path.join(
@@ -559,7 +564,12 @@ describe("ReforgeEngine", () => {
     });
 
     for (let i = 0; i < 4; i++) {
-      await engine.recordCanaryOutcome("cost-analyst", true);
+      const requestId = `req-pre-restart-${i}`;
+      await engine.applyOverride(makeTemplate(), { requestId });
+      await engine.recordCanaryOutcome("cost-analyst", true, {
+        source: "quality",
+        requestId,
+      });
     }
 
     const stagedPath = path.join(
@@ -579,7 +589,12 @@ describe("ReforgeEngine", () => {
     });
 
     const restarted = new ReforgeEngine(tmpDir);
-    const outcome = await restarted.recordCanaryOutcome("cost-analyst", true);
+    const restartRequestId = "req-after-restart";
+    await restarted.applyOverride(makeTemplate(), { requestId: restartRequestId });
+    const outcome = await restarted.recordCanaryOutcome("cost-analyst", true, {
+      source: "quality",
+      requestId: restartRequestId,
+    });
     expect(outcome?.rollback).toContain("Auto-rollback");
 
     await expect(fs.readFile(stagedPath, "utf-8")).rejects.toThrow();
@@ -603,6 +618,75 @@ describe("ReforgeEngine", () => {
     expect(rollback.rollback).toMatchObject({
       errorRate: 1,
       threshold: 0.1,
+    });
+  });
+
+  it("recordCanaryOutcome ignores non-quality signals and only counts correlated quality outcomes", async () => {
+    const canaryAnalysis = makeAnalysis([
+      {
+        action: "update-system-prompt",
+        rationale: "exercise canary correlation",
+        urgency: "medium",
+        theme_label: "prompt-canary",
+        confidence: 0.7,
+      },
+    ]);
+
+    const canaryPlan = await engine.buildPlan(canaryAnalysis, [makeTemplate()]);
+    await engine.deployCanary(canaryPlan, {
+      trafficPercent: 100,
+      strategy: "hash",
+      rollbackThreshold: 0.5,
+    });
+
+    const requestId = "req-canary-correlation";
+    await engine.applyOverride(makeTemplate(), { requestId });
+
+    const runtimeOutcome = await engine.recordCanaryOutcome("cost-analyst", true, {
+      source: "runtime",
+      requestId,
+    });
+    expect(runtimeOutcome?.ignored).toContain("Ignored runtime canary outcome");
+
+    const qualityOutcome = await engine.recordCanaryOutcome("cost-analyst", true, {
+      source: "quality",
+      requestId,
+    });
+    expect(qualityOutcome?.ignored).toBeUndefined();
+    expect(qualityOutcome?.deployment.metrics).toMatchObject({
+      canaryRequests: 1,
+      canaryErrors: 1,
+      errorRate: 1,
+    });
+  });
+
+  it("recordCanaryOutcome ignores uncorrelated quality outcomes", async () => {
+    const canaryAnalysis = makeAnalysis([
+      {
+        action: "update-system-prompt",
+        rationale: "exercise correlation guard",
+        urgency: "medium",
+        theme_label: "prompt-canary",
+        confidence: 0.7,
+      },
+    ]);
+
+    const canaryPlan = await engine.buildPlan(canaryAnalysis, [makeTemplate()]);
+    await engine.deployCanary(canaryPlan, {
+      trafficPercent: 100,
+      strategy: "hash",
+      rollbackThreshold: 0.1,
+    });
+
+    const outcome = await engine.recordCanaryOutcome("cost-analyst", true, {
+      source: "quality",
+      requestId: "req-not-routed-via-canary",
+    });
+    expect(outcome?.ignored).toContain("without matching correlation");
+    expect(outcome?.deployment.metrics).toMatchObject({
+      canaryRequests: 0,
+      canaryErrors: 0,
+      errorRate: 0,
     });
   });
 
@@ -672,6 +756,53 @@ describe("ReforgeEngine", () => {
     const applied = await engine.applyOverride(makeTemplate());
     expect(applied.system_prompt).toContain("COST AWARENESS PREAMBLE");
     expect(applied.model).toBe("haiku");
+  });
+
+  it("emits self-modification canary lifecycle events for stage, promote, and rollback", async () => {
+    const events: Array<{ topic: string; payload: unknown }> = [];
+    const eventingEngine = new ReforgeEngine(tmpDir, {
+      publishEvent: (params) => {
+        events.push({ topic: params.topic, payload: params.payload });
+      },
+    });
+
+    const canaryAnalysis = makeAnalysis([
+      {
+        action: "update-system-prompt",
+        rationale: "emit canary lifecycle events",
+        urgency: "medium",
+        theme_label: "prompt-canary",
+        confidence: 0.8,
+      },
+    ]);
+
+    const canaryPlan = await eventingEngine.buildPlan(canaryAnalysis, [makeTemplate()]);
+    await eventingEngine.deployCanary(canaryPlan, {
+      trafficPercent: 100,
+      strategy: "hash",
+      rollbackThreshold: 0.1,
+    });
+    await eventingEngine.promoteCanary("cost-analyst");
+    expect(events.map((e) => e.topic)).toEqual([
+      "self-modification.canary.staged",
+      "self-modification.canary.promoted",
+    ]);
+
+    events.length = 0;
+    await eventingEngine.deployCanary(canaryPlan, {
+      trafficPercent: 100,
+      strategy: "hash",
+      rollbackThreshold: 0.1,
+    });
+    for (let i = 0; i < 5; i++) {
+      const requestId = `rollback-request-${i}`;
+      await eventingEngine.applyOverride(makeTemplate(), { requestId });
+      await eventingEngine.recordCanaryOutcome("cost-analyst", true, {
+        source: "quality",
+        requestId,
+      });
+    }
+    expect(events.map((e) => e.topic)).toContain("self-modification.canary.rolled_back");
   });
 
   // -------------------------------------------------------------------------

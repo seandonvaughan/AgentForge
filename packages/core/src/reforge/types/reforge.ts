@@ -7,6 +7,7 @@
 
 import type { ModelTier, EffortLevel } from "../../team/engine/types/agent.js";
 import type { TrafficSplitStrategy } from "../../canary/types.js";
+import type { MessageTopic } from "../../message-bus/types.js";
 
 /**
  * Classification of a reforge plan.
@@ -137,12 +138,32 @@ export interface CanaryDeploymentRecord {
   metrics?: CanaryDeploymentMetrics;
   /** Persisted rollback marker written when this staged deployment is removed by auto-rollback. */
   rollback?: CanaryRollbackRecord;
+  /** Correlation records for canary-routed requests awaiting quality outcomes. */
+  pendingOutcomes?: PendingCanaryOutcome[];
 }
 
 /** Context passed when resolving an override for a single request. */
 export interface CanaryRoutingContext {
   requestId?: string;
   headerValue?: string;
+}
+
+/** Source for a canary outcome signal. Only quality signals are rollback-eligible. */
+export type CanaryOutcomeSource = "quality" | "runtime" | "infrastructure";
+
+/** Correlation record for a canary-routed request awaiting quality outcome. */
+export interface PendingCanaryOutcome {
+  token: string;
+  requestId: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
+/** Context used to correlate and classify a canary outcome. */
+export interface CanaryOutcomeContext {
+  outcomeToken?: string;
+  requestId?: string;
+  source?: CanaryOutcomeSource;
 }
 
 /** Outcome counters for a staged canary deployment. */
@@ -166,3 +187,23 @@ export interface CanaryDeployOptions {
   strategy?: TrafficSplitStrategy;
   rollbackThreshold?: number;
 }
+
+/** Payload shape for self-modification canary lifecycle bus topics. */
+export interface ReforgeCanaryLifecyclePayload {
+  agentName: string;
+  planId: string;
+  flagId: string;
+  trafficPercent: number;
+  strategy: TrafficSplitStrategy;
+  rollbackThreshold: number;
+  canaryRequests: number;
+  canaryErrors: number;
+  errorRate: number;
+  rollbackReason?: string;
+}
+
+/** Versioned bus topics emitted for self-modification canary lifecycle updates. */
+export type SelfModificationCanaryTopic =
+  | Extract<MessageTopic, "self-modification.canary.staged">
+  | Extract<MessageTopic, "self-modification.canary.promoted">
+  | Extract<MessageTopic, "self-modification.canary.rolled_back">;
