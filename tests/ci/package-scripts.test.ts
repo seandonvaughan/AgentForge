@@ -71,9 +71,12 @@ describe('package scripts', () => {
     expect(result.trace).toContain('vitest run');
     expect(
       result.trace.some((command) =>
-        command.startsWith('playwright test tests/e2e/dashboard-agents.test.ts'),
+        command.startsWith('playwright test tests/e2e/dashboard-runner.test.ts'),
       ),
     ).toBe(true);
+    expect(
+      result.trace.some((command) => command.includes('tests/e2e/dashboard-agents.test.ts')),
+    ).toBe(false);
     expect(result.trace).toContain('pnpm --filter @agentforge/dashboard check');
     expect(result.trace.indexOf('vitest run')).toBeLessThan(
       result.trace.indexOf('pnpm --filter @agentforge/dashboard check'),
@@ -112,6 +115,18 @@ describe('package scripts', () => {
     expect(result.trace.some((command) => command.startsWith('playwright test'))).toBe(
       false,
     );
+  });
+
+  it('keeps a full dashboard e2e command available for broader regression sweeps', async () => {
+    const scripts = loadRootScripts();
+    const harness = new ScriptPipelineHarness(scripts, () => 0);
+
+    const result = await harness.run('test:e2e:dashboard:full');
+
+    expect(result.ok).toBe(true);
+    expect(result.trace).toEqual([
+      'playwright test tests/e2e/dashboard-agents.test.ts tests/e2e/dashboard-runner.test.ts tests/e2e/dashboard-live.test.ts tests/e2e/dashboard-health.test.ts tests/e2e/dashboard-org.test.ts tests/e2e/dashboard-cycle-launch.test.ts tests/e2e/dashboard-cycle-detail.test.ts',
+    ]);
   });
 
   it('preserves parent trace when a nested script fails', async () => {
