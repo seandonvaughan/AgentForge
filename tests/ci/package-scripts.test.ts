@@ -4,16 +4,20 @@ import {
   loadRootScripts,
 } from './script-pipeline-harness.js';
 
-const DASHBOARD_E2E_SPECS = [
-  'tests/e2e/dashboard-agents.test.ts',
+const DASHBOARD_E2E_SMOKE_SPECS = [
   'tests/e2e/dashboard-runner.test.ts',
   'tests/e2e/dashboard-live.test.ts',
   'tests/e2e/dashboard-health.test.ts',
+] as const;
+const DASHBOARD_E2E_FULL_SPECS = [
+  'tests/e2e/dashboard-agents.test.ts',
+  ...DASHBOARD_E2E_SMOKE_SPECS,
   'tests/e2e/dashboard-org.test.ts',
   'tests/e2e/dashboard-cycle-launch.test.ts',
   'tests/e2e/dashboard-cycle-detail.test.ts',
 ] as const;
-const DASHBOARD_E2E_COMMAND = `playwright test ${DASHBOARD_E2E_SPECS.join(' ')}`;
+const DASHBOARD_E2E_SMOKE_COMMAND = `playwright test ${DASHBOARD_E2E_SMOKE_SPECS.join(' ')}`;
+const DASHBOARD_E2E_FULL_COMMAND = `playwright test ${DASHBOARD_E2E_FULL_SPECS.join(' ')}`;
 
 function parseDashboardE2eSpecs(script: string): string[] {
   const prefix = 'playwright test';
@@ -67,29 +71,38 @@ describe('package scripts', () => {
     );
   });
 
-  it('keeps verify:product on the full dashboard e2e selector', () => {
+  it('keeps verify:product on the lean dashboard selector with a separate full-lane safeguard', () => {
     const scripts = loadRootScripts();
     const verifyProduct = scripts['verify:product'];
     const dashboardE2e = scripts['test:e2e:dashboard'];
+    const dashboardE2eFull = scripts['test:e2e:dashboard:full'];
 
     expect(verifyProduct).toContain('pnpm test:e2e:dashboard');
     expect(verifyProduct).not.toContain('test:e2e:dashboard:full');
-    expect(dashboardE2e).toContain('dashboard-agents.test.ts');
     expect(dashboardE2e).toContain('dashboard-runner.test.ts');
     expect(dashboardE2e).toContain('dashboard-live.test.ts');
     expect(dashboardE2e).toContain('dashboard-health.test.ts');
-    expect(dashboardE2e).toContain('dashboard-org.test.ts');
-    expect(dashboardE2e).toContain('dashboard-cycle-launch.test.ts');
-    expect(dashboardE2e).toContain('dashboard-cycle-detail.test.ts');
+    expect(dashboardE2e).not.toContain('dashboard-agents.test.ts');
+    expect(dashboardE2e).not.toContain('dashboard-org.test.ts');
+    expect(dashboardE2e).not.toContain('dashboard-cycle-launch.test.ts');
+    expect(dashboardE2e).not.toContain('dashboard-cycle-detail.test.ts');
+    expect(dashboardE2eFull).toContain('dashboard-agents.test.ts');
+    expect(dashboardE2eFull).toContain('dashboard-org.test.ts');
+    expect(dashboardE2eFull).toContain('dashboard-cycle-launch.test.ts');
+    expect(dashboardE2eFull).toContain('dashboard-cycle-detail.test.ts');
   });
 
-  it('pins dashboard e2e to the exact approved spec list with no duplicates', () => {
+  it('pins dashboard smoke and full e2e commands to exact spec lists with no duplicates', () => {
     const scripts = loadRootScripts();
-    const dashboardE2e = scripts['test:e2e:dashboard'];
-    const selectedSpecs = parseDashboardE2eSpecs(dashboardE2e);
+    const dashboardE2eSmoke = scripts['test:e2e:dashboard'];
+    const dashboardE2eFull = scripts['test:e2e:dashboard:full'];
+    const smokeSpecs = parseDashboardE2eSpecs(dashboardE2eSmoke);
+    const fullSpecs = parseDashboardE2eSpecs(dashboardE2eFull);
 
-    expect(selectedSpecs).toEqual([...DASHBOARD_E2E_SPECS]);
-    expect(new Set(selectedSpecs).size).toBe(selectedSpecs.length);
+    expect(smokeSpecs).toEqual([...DASHBOARD_E2E_SMOKE_SPECS]);
+    expect(fullSpecs).toEqual([...DASHBOARD_E2E_FULL_SPECS]);
+    expect(new Set(smokeSpecs).size).toBe(smokeSpecs.length);
+    expect(new Set(fullSpecs).size).toBe(fullSpecs.length);
   });
 
   it('locks verify:product to the exact regression-gate pipeline shape', () => {
@@ -113,11 +126,11 @@ describe('package scripts', () => {
     );
 
     expect(result.ok).toBe(true);
-    expect(playwrightRuns).toEqual([DASHBOARD_E2E_COMMAND]);
+    expect(playwrightRuns).toEqual([DASHBOARD_E2E_SMOKE_COMMAND]);
     expect(result.trace).not.toContain('playwright test');
   });
 
-  it('locks verify:gates to run verify:product and verify:dashboard before post-check jobs', () => {
+  it('locks verify:gates to run verify:product, verify:dashboard, and full dashboard e2e before post-check jobs', () => {
     const scripts = loadRootScripts();
     const verifyGates = scripts['verify:gates'];
 
@@ -126,13 +139,14 @@ describe('package scripts', () => {
       'corepack pnpm check:versions',
       'corepack pnpm verify:product',
       'corepack pnpm verify:dashboard',
+      'corepack pnpm test:e2e:dashboard:full',
       'corepack pnpm check:help',
       'corepack pnpm check:changelog',
       'corepack pnpm audit:deps',
     ]);
   });
 
-  it('runs exactly one dashboard e2e invocation during verify:gates', async () => {
+  it('runs both approved dashboard playwright invocations during verify:gates', async () => {
     const scripts = loadRootScripts();
     const harness = new ScriptPipelineHarness(scripts, () => 0);
 
@@ -142,9 +156,12 @@ describe('package scripts', () => {
     );
 
     expect(result.ok).toBe(true);
-    expect(dashboardE2eRuns).toHaveLength(1);
+    expect(dashboardE2eRuns).toHaveLength(2);
     expect(parseDashboardE2eSpecs(dashboardE2eRuns[0] ?? '')).toEqual([
-      ...DASHBOARD_E2E_SPECS,
+      ...DASHBOARD_E2E_SMOKE_SPECS,
+    ]);
+    expect(parseDashboardE2eSpecs(dashboardE2eRuns[1] ?? '')).toEqual([
+      ...DASHBOARD_E2E_FULL_SPECS,
     ]);
   });
 
@@ -158,7 +175,10 @@ describe('package scripts', () => {
     );
 
     expect(result.ok).toBe(true);
-    expect(playwrightRuns).toEqual([DASHBOARD_E2E_COMMAND]);
+    expect(playwrightRuns).toEqual([
+      DASHBOARD_E2E_SMOKE_COMMAND,
+      DASHBOARD_E2E_FULL_COMMAND,
+    ]);
     expect(result.trace).not.toContain('playwright test');
   });
 
@@ -184,7 +204,7 @@ describe('package scripts', () => {
     expect(result.trace).not.toContain('node scripts/check-help-output.mjs');
   });
 
-  it('runs verify:product before verify:dashboard in verify:gates', async () => {
+  it('runs verify:product before verify:dashboard and full dashboard e2e in verify:gates', async () => {
     const scripts = loadRootScripts();
     const harness = new ScriptPipelineHarness(scripts, () => 0);
 
@@ -194,12 +214,22 @@ describe('package scripts', () => {
     expect(result.trace).toContain('vitest run');
     expect(
       result.trace.some((command) =>
+        command.startsWith('playwright test tests/e2e/dashboard-runner.test.ts'),
+      ),
+    ).toBe(true);
+    expect(
+      result.trace.some((command) =>
         command.startsWith('playwright test tests/e2e/dashboard-agents.test.ts'),
       ),
     ).toBe(true);
     expect(result.trace).toContain('corepack pnpm --filter @agentforge/dashboard check');
     expect(result.trace.indexOf('vitest run')).toBeLessThan(
       result.trace.indexOf('corepack pnpm --filter @agentforge/dashboard check'),
+    );
+    expect(
+      result.trace.indexOf('corepack pnpm --filter @agentforge/dashboard build'),
+    ).toBeLessThan(
+      result.trace.indexOf('playwright test tests/e2e/dashboard-agents.test.ts tests/e2e/dashboard-runner.test.ts tests/e2e/dashboard-live.test.ts tests/e2e/dashboard-health.test.ts tests/e2e/dashboard-org.test.ts tests/e2e/dashboard-cycle-launch.test.ts tests/e2e/dashboard-cycle-detail.test.ts'),
     );
   });
 
