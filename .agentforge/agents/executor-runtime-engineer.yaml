@@ -92,6 +92,22 @@ learnings:
     v6.4 autonomous loop concentrated spend in synthesis phases — bus producers must respect per-phase caps before
     dispatch
   - Bus topic names are versioned — never reuse agent.dm.sent or inbox.message.created with a different payload shape
+  - Rebase staged promotion onto the current active override or reject promotion when the staged base is stale.
+  - test coverage does not exercise the real orchestrator path or stale-canary promotion
+  - staticFallback() silently mishandles P3 priority
+  - >-
+    Code reviewers sometimes analyze an intermediate execute-phase snapshot — by the time the gate runs, a flagged bug
+    may already be patched.
+  - stringify must never be used as fallback.
+  - >-
+    ts:647,667 reproduces but is a latent trap — defaults (pnpm build, tsc --noEmit) tokenize safely; the bug only fires
+    under custom CycleConfig with quoted args or space-containing paths.
+  - defaultTypeCheck splits buildCommand/typeCheckCommand on " " — breaks for commands
+  - Naive split(' ') in defaultTypeCheck will corrupt complex commands
+  - >-
+    This is production-critical cost-control code introduced in this sprint (commits 93d7b08, b101e5c) and must ship
+    with at minimum a unit test for the pure capModelTier() function covering same-tier, upward-cap, and
+    downgrade-with-effort cases.
 owns_subsystems:
   - packages/executor/src
   - packages/core/src

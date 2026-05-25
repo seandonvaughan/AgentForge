@@ -38,9 +38,9 @@ export function resolveDashboardCodexProfile(
   const effort =
     env[`${tierPrefix}_EFFORT`] ??
     env.AGENTFORGE_CODEX_EFFORT ??
+    agentEffort ??
     tierConfig.effort ??
     config.effort ??
-    agentEffort ??
     DEFAULT_CODEX_PROFILES[tier].effort;
 
   return {

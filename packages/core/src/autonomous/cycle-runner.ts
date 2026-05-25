@@ -757,6 +757,10 @@ export class CycleRunner {
       // result. The operator will see the missing file and know something
       // catastrophic happened to the logger itself.
     }
+
+    if (this.shouldRunAutoReforgeAfterTerminalResult(final)) {
+      await this.runAutoReforgeStep();
+    }
     return final;
   }
 
@@ -1371,8 +1375,7 @@ export class CycleRunner {
    * runAutoReforge so those agents absorb the cycle's learnings.
    *
    * Honoured by `config.autoReforge` (default true when the field is absent).
-   * Any error is caught and logged — a reforge failure MUST NOT kill a cycle
-   * that has already passed the gate.
+   * Any error is caught and logged — a reforge failure MUST NOT kill a cycle.
    */
   private async runAutoReforgeStep(): Promise<void> {
     // Default true: existing configs without the field still trigger reforge.
@@ -1412,6 +1415,21 @@ export class CycleRunner {
         }`,
       );
     }
+  }
+
+  private shouldRunAutoReforgeAfterTerminalResult(result: CycleResult): boolean {
+    if (result.stage !== CycleStage.FAILED) return false;
+    return this.hasExecutePhaseArtifact();
+  }
+
+  private hasExecutePhaseArtifact(): boolean {
+    return existsSync(join(
+      this.options.cwd,
+      '.agentforge/cycles',
+      this.cycleId,
+      'phases',
+      'execute.json',
+    ));
   }
 
   /**

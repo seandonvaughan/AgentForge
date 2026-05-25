@@ -1,20 +1,46 @@
 import { execFile as execFileCb } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, realpathSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import type { WorktreeHandle, WorktreePoolStats } from './worktree-pool-types.js';
 
 const execFile = promisify(execFileCb);
-
-/** Replace any character outside [a-zA-Z0-9_-] with an underscore. */
-function sanitize(input: string): string {
-  return input.replace(/[^a-zA-Z0-9_-]/g, '_');
-}
+const ID_PREFIX = 'agent-';
+const AGENT_SEGMENT_MAX = 64;
+const HASH_SEGMENT_LENGTH = 12;
 
 function normalizeBranchPrefix(prefix: string): string {
   const trimmed = prefix.trim();
   if (!trimmed) return 'autonomous/';
   return trimmed.endsWith('/') ? trimmed : `${trimmed}/`;
+}
+
+function sanitizeAgentSegment(agentId: string): string {
+  const sanitized = agentId
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^[_-]+|[_-]+$/g, '');
+
+  if (!sanitized) return 'unknown';
+  return sanitized.length <= AGENT_SEGMENT_MAX
+    ? sanitized
+    : sanitized.slice(0, AGENT_SEGMENT_MAX);
+}
+
+function stableKey(agentId: string, sessionId: string): string {
+  const digest = createHash('sha256')
+    .update(agentId, 'utf8')
+    .update('\u0000', 'utf8')
+    .update(sessionId, 'utf8')
+    .digest('hex');
+  return digest.slice(0, HASH_SEGMENT_LENGTH);
+}
+
+function buildHandleId(agentId: string, sessionId: string): string {
+  const safeAgent = sanitizeAgentSegment(agentId);
+  return `${ID_PREFIX}${safeAgent}-${stableKey(agentId, sessionId)}`;
 }
 
 /** Resolve a path to its real path, following symlinks.  Falls back to the
@@ -80,9 +106,7 @@ export class WorktreePool {
    * Idempotent: if the worktree already exists, returns the existing handle.
    */
   async allocate(opts: { agentId: string; sessionId: string }): Promise<WorktreeHandle> {
-    const safeAgent = sanitize(opts.agentId);
-    const safeSession = sanitize(opts.sessionId);
-    const id = `agent-${safeAgent}-${safeSession}`;
+    const id = buildHandleId(opts.agentId, opts.sessionId);
 
     // Idempotent: return cached handle if already allocated in this pool instance.
     const cached = this.handles.get(id);
@@ -91,7 +115,7 @@ export class WorktreePool {
     }
 
     const wtPath = join(this.projectRoot, this.rootDir, id);
-    const branch = `${this.branchPrefix}agent-${safeAgent}-${safeSession}`;
+    const branch = `${this.branchPrefix}${id}`;
 
     // If the directory already exists the worktree was previously created
     // (e.g. by another process or a prior run). Only reuse it when git still
@@ -269,15 +293,23 @@ export class WorktreePool {
       }
 
       // Reconstruct a minimal handle from what we can parse.
-      // id format: agent-<agentId>-<sessionId>
-      const idMatch = dirName.match(/^agent-(.+)-([^-]+)$/);
+      // Current id format: agent-<safe-agent-id-or-truncated>-<hash>
+      // Legacy id format:  agent-<agentId>-<sessionId>
+      const compactIdMatch = dirName.match(
+        /^agent-(.+)-([a-f0-9]{12})$/,
+      );
+      const legacyIdMatch = compactIdMatch ? null : dirName.match(/^agent-(.+)-([^-]+)$/);
       worktrees.push({
         id: dirName,
         path: wtPath,
         branch,
         allocatedAt: new Date(0).toISOString(), // unknown
-        agentId: idMatch ? idMatch[1] ?? dirName : dirName,
-        sessionId: idMatch ? (idMatch[2] ?? '') : '',
+        agentId: compactIdMatch
+          ? (compactIdMatch[1] ?? dirName)
+          : legacyIdMatch
+            ? (legacyIdMatch[1] ?? dirName)
+            : dirName,
+        sessionId: compactIdMatch ? (compactIdMatch[2] ?? '') : legacyIdMatch ? (legacyIdMatch[2] ?? '') : '',
       });
     }
 

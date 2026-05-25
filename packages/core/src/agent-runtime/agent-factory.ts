@@ -33,7 +33,8 @@ interface AgentYaml {
   system_prompt?: string;
   role?: string;
   effort?: string;
-  skill_ids?: string[];
+  skill_ids?: unknown;
+  learnings?: unknown;
   // T4 — structured output schema declaration
   output_schema?: unknown;
 }
@@ -91,6 +92,25 @@ async function buildSkillsSection(skillIds: string[]): Promise<string> {
   return ['## Skills', bodies.join('\n\n---\n\n')].join('\n') + '\n';
 }
 
+function buildLearningsSection(learnings: unknown[]): string {
+  const cleaned = learnings
+    .map((lesson) => typeof lesson === 'string'
+      ? Array.from(lesson)
+        .map((ch) => {
+          const code = ch.charCodeAt(0);
+          return code < 32 || code === 127 ? ' ' : ch;
+        })
+        .join('')
+        .replace(/\s+/g, ' ')
+        .trim()
+      : '')
+    .filter((lesson) => lesson.length > 0);
+
+  if (cleaned.length === 0) return '';
+
+  return ['## Learnings', cleaned.map((lesson) => `- ${lesson}`).join('\n')].join('\n') + '\n';
+}
+
 export async function loadAgentConfig(
   agentId: string,
   agentforgeDir: string,
@@ -115,23 +135,30 @@ export async function loadAgentConfig(
     //   ## Skills
     //   <skill bodies separated by ---> (if any)
     //   ## Fresh Context / ## Direct Messages  ← injectFreshContext handles these
-    const skillIds: string[] = parsed.skill_ids ?? [];
+    const skillIds = Array.isArray(parsed.skill_ids)
+      ? parsed.skill_ids.filter((id): id is string => typeof id === 'string')
+      : [];
     const skillsSection = await buildSkillsSection(skillIds);
+    const learnings = Array.isArray(parsed.learnings) ? parsed.learnings : [];
+    const learningsSection = buildLearningsSection(learnings);
 
     const promptWithSkills = skillsSection
       ? `${baseSystemPrompt.trimEnd()}\n\n${skillsSection}`
       : baseSystemPrompt;
+    const promptWithLearnings = learningsSection
+      ? `${promptWithSkills.trimEnd()}\n\n${learningsSection}`
+      : promptWithSkills;
 
     // --- Fresh context + DMs injection ---
     const shouldInject = options.injectFreshContext !== false;
     const systemPrompt = shouldInject
       ? injectFreshContext(
-          promptWithSkills,
+          promptWithLearnings,
           agentId,
           agentforgeDir,
           options.adapter ? { adapter: options.adapter } : undefined,
         )
-      : promptWithSkills;
+      : promptWithLearnings;
 
     const outputSchema = parseOutputSchema(agentId, parsed.output_schema);
 

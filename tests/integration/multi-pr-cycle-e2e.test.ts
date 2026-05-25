@@ -320,16 +320,20 @@ describe('multi-PR cycle (prMode=multi)', () => {
       .filter(Boolean);
 
     expect(branches).toHaveLength(3);
+    for (const branch of branches) {
+      expect(branch).toMatch(/^autonomous\/agent-[a-zA-Z0-9_-]+-[a-f0-9]{12}$/);
+    }
 
-    // Verify each expected branch name is present
-    // WorktreePool sanitizes agentId/sessionId: replaces [^a-zA-Z0-9_-] with _
-    const expectedBranches = state.agents.map(a => {
+    // Verify each expected readable agent segment is present in branch names.
+    const expectedBranchPrefixes = state.agents.map(a => {
       const safeAgent = a.agentId.replace(/[^a-zA-Z0-9_-]/g, '_');
-      const safeSession = a.sessionId.replace(/[^a-zA-Z0-9_-]/g, '_');
-      return `autonomous/agent-${safeAgent}-${safeSession}`;
+      return `autonomous/agent-${safeAgent}-`;
     });
-    for (const expected of expectedBranches) {
-      expect(branches, `Branch ${expected} must exist in bare remote`).toContain(expected);
+    for (const expectedPrefix of expectedBranchPrefixes) {
+      expect(
+        branches.some(branch => branch.startsWith(expectedPrefix)),
+        `Branch with prefix ${expectedPrefix} must exist in bare remote`,
+      ).toBe(true);
     }
   });
 

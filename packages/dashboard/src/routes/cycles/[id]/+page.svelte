@@ -509,6 +509,25 @@
     return (done / items.length) * 100;
   });
 
+  function sprintItemKey(item: SprintItem, index: number, scope = ''): string {
+    return [
+      scope,
+      item.id,
+      item.assignee,
+      item.status,
+      item.title,
+      index,
+    ].filter(Boolean).join('::');
+  }
+
+  function scoredItemKey(item: { id?: string; title?: string }, index: number): string {
+    return [
+      item.id,
+      item.title,
+      index,
+    ].filter(Boolean).join('::');
+  }
+
   const costByPhase = $derived.by(() => {
     const runs = agentsData?.runs ?? [];
     const map: Record<string, number> = {};
@@ -1305,7 +1324,7 @@
               <span class="section-title">NOW EXECUTING</span>
               <PulseDot color="var(--af-purple)" size={5} />
             </div>
-            {#each itemsByStatus.inProgress.slice(0, 1) as it (it.id)}
+            {#each itemsByStatus.inProgress.slice(0, 1) as it, i (sprintItemKey(it, i, 'now'))}
               <div style="margin-top:8px">
                 <div class="exec-meta">
                   <span class="af2-mono dim">#{it.id.slice(0, 12)}</span>
@@ -1460,7 +1479,7 @@
               <span style="color:{col.color}">{col.title}</span>
               <span class="kan-count af2-mono">{col.items.length}</span>
             </div>
-            {#each col.items as it (it.id)}
+            {#each col.items as it, i (sprintItemKey(it, i, col.title))}
               <button
                 type="button"
                 class="kan-card"
@@ -1736,7 +1755,7 @@
             </tr>
           </thead>
           <tbody>
-            {#each [...scoring.items].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)) as it, idx (it.id ?? idx)}
+            {#each [...scoring.items].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)) as it, idx (scoredItemKey(it, idx))}
               {@const s = it.score ?? 0}
               {@const itCost = it.cost ?? it.estimatedCost ?? 0}
               <tr>

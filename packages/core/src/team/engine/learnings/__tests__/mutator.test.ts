@@ -261,7 +261,7 @@ learnings:
     const proposals: ProposedLearning[] = Array.from({ length: 15 }, (_, i) =>
       makeProposal({
         agentId: AGENT_A,
-        lesson: `Unique lesson number ${i + 1} to fill the cap`,
+        lesson: `Always apply unique lesson number ${i + 1} before the cap check`,
         score: 0.5 + i * 0.01,
         sourceCreatedAt: `2026-05-${String(i + 1).padStart(2, "0")}T00:00:00.000Z`,
       }),
@@ -274,6 +274,11 @@ learnings:
     expect(entry.after).toBe(12);
     // 2 existing + 15 new = 17 total; 17 - 12 = 5 capped
     expect(entry.capped).toBe(5);
+
+    const data = await readAgentYaml(AGENT_A);
+    const learnings = data["learnings"] as string[];
+    expect(learnings).toContain("[MAJOR] Always write integration tests before merging.");
+    expect(learnings).toContain("[CRITICAL] Never expose internal ports in docker-compose.");
   });
 
   // -------------------------------------------------------------------------
@@ -400,6 +405,38 @@ learnings:
     expect(learnings).toContain("Always leave inline comments on complex logic.");
   });
 
+  it("accepts curator-shaped learnings-proposed.json payloads", async () => {
+    await writeRawProposed({
+      byAgent: {
+        [AGENT_C]: [
+          makeProposal({
+            agentId: AGENT_C,
+            lesson: "Always preserve curator-shaped memory output.",
+            score: 0.91,
+          }),
+        ],
+      },
+      sourcesScanned: [
+        {
+          path: join(forgeDir, "learnings-proposed.json"),
+          entriesRead: 1,
+          scored: 1,
+        },
+      ],
+      generatedAt: "2026-05-25T00:00:00.000Z",
+    });
+
+    const report = await applyLearnings({ projectRoot: tmpRoot });
+
+    const entry = report.perAgent.find((p) => p.agentId === AGENT_C)!;
+    expect(entry.added).toEqual(["Always preserve curator-shaped memory output."]);
+
+    const data = await readAgentYaml(AGENT_C);
+    const learnings = data["learnings"] as string[];
+    expect(learnings).toContain("Always preserve curator-shaped memory output.");
+    expect(learnings.length).toBeGreaterThan(0);
+  });
+
   // -------------------------------------------------------------------------
   // T12: Within-batch duplicates are deduped
   // -------------------------------------------------------------------------
@@ -490,6 +527,94 @@ learnings:
 
     const data = await readAgentYaml(AGENT_B);
     expect(data["learnings"]).toEqual(["Always keep the valid proposal."]);
+  });
+
+  it("rejects placeholder and status text while preserving valid proposals", async () => {
+    const junkLessons = [
+      "CRITICAL",
+      "review",
+      "No action required now",
+      "*** INSIGHT: Review cycle complete ***",
+      "Status: all checks passed",
+      "!!!",
+    ];
+    const validLesson = "Always run targeted mutator tests before merging learning changes.";
+
+    await writeRawProposed({
+      [AGENT_B]: [
+        ...junkLessons.map((lesson) =>
+          makeProposal({
+            agentId: AGENT_B,
+            lesson,
+            score: 0.99,
+          }),
+        ),
+        makeProposal({
+          agentId: AGENT_B,
+          lesson: validLesson,
+          score: 0.8,
+        }),
+      ],
+    });
+
+    const report = await applyLearnings({ projectRoot: tmpRoot });
+
+    const entry = report.perAgent.find((p) => p.agentId === AGENT_B)!;
+    expect(entry.added).toEqual([validLesson]);
+
+    const data = await readAgentYaml(AGENT_B);
+    expect(data["learnings"]).toEqual([validLesson]);
+  });
+
+  it("preserves useful defect-shaped lessons without imperative wording", async () => {
+    const defectLesson = "staticFallback() silently mishandles P3 priority";
+
+    await writeRawProposed({
+      [AGENT_B]: [
+        makeProposal({
+          agentId: AGENT_B,
+          lesson: defectLesson,
+          score: 0.8,
+        }),
+      ],
+    });
+
+    const report = await applyLearnings({ projectRoot: tmpRoot });
+
+    const entry = report.perAgent.find((p) => p.agentId === AGENT_B)!;
+    expect(entry.added).toEqual([defectLesson]);
+
+    const data = await readAgentYaml(AGENT_B);
+    expect(data["learnings"]).toEqual([defectLesson]);
+  });
+
+  it("does not mutate agent YAML when proposals contain only junk lessons", async () => {
+    const before = await readFile(join(agentsDir, `${AGENT_C}.yaml`), "utf8");
+
+    await writeRawProposed({
+      [AGENT_C]: [
+        makeProposal({
+          agentId: AGENT_C,
+          lesson: ":::",
+          score: 0.9,
+        }),
+        makeProposal({
+          agentId: AGENT_C,
+          lesson: "Decorative insight banner",
+          score: 0.9,
+        }),
+        makeProposal({
+          agentId: AGENT_C,
+          lesson: "Looks good",
+          score: 0.9,
+        }),
+      ],
+    });
+
+    const report = await applyLearnings({ projectRoot: tmpRoot });
+
+    expect(report.perAgent.find((p) => p.agentId === AGENT_C)).toBeUndefined();
+    await expect(readFile(join(agentsDir, `${AGENT_C}.yaml`), "utf8")).resolves.toBe(before);
   });
 
   // -------------------------------------------------------------------------

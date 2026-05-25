@@ -4,9 +4,9 @@ team: strategic
 effort: xhigh
 version: '1.0'
 description: >
-  Legacy alias for the cycle-runner's plan phase. v22.1 forge replaced this
-  role with chief-architect/forge-engine-architect/autonomy-strategist; this
-  proxy delegates plan-phase work to the chief-architect role.
+  Legacy alias for the cycle-runner's plan phase. v22.1 forge replaced this role with
+  chief-architect/forge-engine-architect/autonomy-strategist; this proxy delegates plan-phase work to the
+  chief-architect role.
 system_prompt: |
   You are the plan-phase architect for AgentForge cycles. Given an audited
   backlog of candidate items, produce a sprint plan: pick the version,
@@ -39,3 +39,29 @@ context:
     - CLAUDE.md
     - .agentforge/team.yaml
   project_specific: []
+learnings:
+  - Rebase staged promotion onto the current active override or reject promotion when the staged base is stale.
+  - test coverage does not exercise the real orchestrator path or stale-canary promotion
+  - staticFallback() silently mishandles P3 priority
+  - >-
+    Code reviewers sometimes analyze an intermediate execute-phase snapshot — by the time the gate runs, a flagged bug
+    may already be patched.
+  - stringify must never be used as fallback.
+  - >-
+    ts:647,667 reproduces but is a latent trap — defaults (pnpm build, tsc --noEmit) tokenize safely; the bug only fires
+    under custom CycleConfig with quoted args or space-containing paths.
+  - defaultTypeCheck splits buildCommand/typeCheckCommand on " " — breaks for commands
+  - Naive split(' ') in defaultTypeCheck will corrupt complex commands
+  - >-
+    This is production-critical cost-control code introduced in this sprint (commits 93d7b08, b101e5c) and must ship
+    with at minimum a unit test for the pure capModelTier() function covering same-tier, upward-cap, and
+    downgrade-with-effort cases.
+  - Should be narrowed to 'low' 'medium' 'high' 'max' or a shared EffortLevel type from @agentforge/shared.
+  - >-
+    At minimum: a unit test for the pure capModelTier() function covering same-tier, upward-cap (no-op), and
+    downgrade-with-effort cases; plus an integration test on RuntimeAdapter confirming that modelCap: 'sonnet'
+    substitutes both the model and effort fields.
+  - >-
+    view surfaced a CRITICAL data-consistency bug (double computeCycleHistory call with mismatched limits causing
+    metrics to reflect hidden cycles not shown in the UI) and a MAJOR timestamp-fallback issue that poisons trend math
+    with misleadingly optimistic scores.

@@ -35,12 +35,13 @@ import {
   runTestPhase,
   runReviewPhase,
   runReleasePhase,
-  previewCycle,
+  ProposalToBacklog,
+  ScoringPipeline,
   getWorkspace,
   getDefaultWorkspace,
   readCheckpoint,
 } from '@agentforge/core';
-import type { MessageTopic, MessageEnvelopeV2, CycleResult, PhaseName, PhaseHandler, PhaseContext } from '@agentforge/core';
+import type { MessageTopic, MessageEnvelopeV2, CycleResult, PhaseName, PhaseHandler, PhaseContext, CycleConfig, CycleLogger as CycleLoggerType } from '@agentforge/core';
 
 interface WorkspaceAwareOptions {
   projectRoot: string;
@@ -57,11 +58,21 @@ interface CycleRunOptions extends WorkspaceAwareOptions {
   resume?: string;
   /** Optional display name for a new cycle. */
   cycleName?: string;
+  fastMode?: boolean;
+  modelCap?: string;
+  effortCap?: string;
+  maxAgents?: string;
+  fallback?: boolean;
 }
 
 interface CyclePreviewOptions extends WorkspaceAwareOptions {
   budgetUsd?: string;
   maxItems?: string;
+  fastMode?: boolean;
+  modelCap?: string;
+  effortCap?: string;
+  maxAgents?: string;
+  fallback?: boolean;
 }
 
 interface CycleListOptions extends WorkspaceAwareOptions {
@@ -120,6 +131,16 @@ interface PendingApproval {
 }
 
 const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
+type ModelCap = 'opus' | 'sonnet' | 'haiku';
+type EffortCap = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
+interface CycleLaunchControls {
+  fastMode: boolean;
+  modelCap?: ModelCap;
+  effortCap?: EffortCap;
+  maxAgents?: number;
+  fallbackEnabled?: boolean;
+}
 
 export function registerCycleCommand(program: Command): void {
   const cycle = program
@@ -139,6 +160,12 @@ export function registerCycleCommand(program: Command): void {
     .option('--workspace <id>', 'Run against a registered workspace from ~/.agentforge/workspaces.json')
     .option('--budget-usd <usd>', 'Override per-cycle budget for preview only')
     .option('--max-items <count>', 'Override max sprint items for preview only')
+    .option('--fast-mode', 'Use the fast parallel launch preset (defaults effort cap to high unless --effort-cap is set)')
+    .option('--model-cap <tier>', 'Cap Codex model tier: opus, sonnet, or haiku')
+    .option('--effort-cap <effort>', 'Cap Codex effort: low, medium, high, xhigh, or max')
+    .option('--max-agents <count>', 'Override maximum execute-phase parallel agents')
+    .option('--fallback', 'Enable runtime fallback for this preview')
+    .option('--no-fallback', 'Disable runtime fallback for this preview')
     .action(runCyclePreviewAction);
 
   cycle
@@ -187,6 +214,12 @@ function registerCycleRunCommand(parent: Command, commandName: string, descripti
     .option('--workspace <id>', 'Run against a registered workspace from ~/.agentforge/workspaces.json')
     .option('--resume <cycleId>', 'Resume a previously-checkpointed cycle by id')
     .option('--cycle-name <name>', 'Optional display name for this cycle')
+    .option('--fast-mode', 'Use the fast parallel launch preset (defaults effort cap to high unless --effort-cap is set)')
+    .option('--model-cap <tier>', 'Cap Codex model tier: opus, sonnet, or haiku')
+    .option('--effort-cap <effort>', 'Cap Codex effort: low, medium, high, xhigh, or max')
+    .option('--max-agents <count>', 'Override maximum execute-phase parallel agents')
+    .option('--fallback', 'Enable runtime fallback for this cycle')
+    .option('--no-fallback', 'Disable runtime fallback for this cycle')
     .action(runCycleAction);
 }
 
@@ -236,6 +269,11 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
 
   try {
     const config = loadCycleConfig(cwd);
+    const launchControls = resolveCycleLaunchControls(opts);
+    if (launchControls === null) {
+      process.exitCode = 1;
+      return;
+    }
 
     // Launch-time overrides threaded through env by the server's POST handler
     // (and by anyone driving the CLI directly). Mirrors the previewCycle
@@ -251,27 +289,7 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
       config.limits.maxItemsPerSprint = maxItemsOverride;
       console.log(`[cycle] maxItems override: ${maxItemsOverride}`);
     }
-    const modelCapRaw = process.env['AUTONOMOUS_MODEL_CAP'];
-    const modelCap = (modelCapRaw === 'opus' || modelCapRaw === 'sonnet' || modelCapRaw === 'haiku')
-      ? modelCapRaw
-      : undefined;
-    if (modelCap) {
-      config.modelCap = modelCap;
-      console.log(`[cycle] modelCap override: ${modelCap}`);
-    }
-    const effortCapRaw = process.env['AUTONOMOUS_EFFORT_CAP'];
-    const effortCap = (effortCapRaw === 'low' || effortCapRaw === 'medium' || effortCapRaw === 'high' || effortCapRaw === 'xhigh' || effortCapRaw === 'max')
-      ? effortCapRaw
-      : undefined;
-    if (effortCap) {
-      config.effortCap = effortCap;
-      console.log(`[cycle] effortCap override: ${effortCap}`);
-    }
-    const maxAgentsOverride = parseEnvPositiveInteger(process.env['AUTONOMOUS_MAX_AGENTS']);
-    if (maxAgentsOverride !== null) {
-      config.limits.maxExecutePhaseParallelism = maxAgentsOverride;
-      console.log(`[cycle] maxAgents override: ${maxAgentsOverride}`);
-    }
+    applyCycleLaunchControls(config, launchControls, '[cycle]');
     const branchPrefixOverride = process.env['AUTONOMOUS_BRANCH_PREFIX']?.trim();
     if (branchPrefixOverride) {
       config.git.branchPrefix = branchPrefixOverride;
@@ -286,13 +304,9 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
       opts.dryRun = true;
       console.log('[cycle] dry-run override: PR will not be opened');
     }
-    // fallbackEnabled: default true; disabled when env var is 'false' or '0'.
-    const fallbackEnabledRaw = process.env['AUTONOMOUS_FALLBACK_ENABLED'];
-    const enableFallback = fallbackEnabledRaw === 'false' || fallbackEnabledRaw === '0' ? false : true;
-    if (!enableFallback) {
-      config.fallbackEnabled = false;
-      console.log('[cycle] fallback disabled');
-    }
+    // Runtime fallback defaults to enabled for compatibility unless this
+    // launch explicitly disabled it through CLI flags or server env.
+    const enableFallback = launchControls.fallbackEnabled ?? true;
 
     const telemetry = createAutonomousTelemetryAdapters(cwd);
 
@@ -454,16 +468,18 @@ async function runCyclePreviewAction(opts: CyclePreviewOptions): Promise<void> {
   const projectRoot = await resolveWorkspaceProjectRoot(opts);
   const budgetUsd = parseOptionalPositiveNumber(opts.budgetUsd, '--budget-usd');
   const maxItems = parseOptionalInteger(opts.maxItems, '--max-items');
-  if (budgetUsd === null || maxItems === null) {
+  const launchControls = resolveCycleLaunchControls(opts);
+  if (budgetUsd === null || maxItems === null || launchControls === null) {
     process.exitCode = 1;
     return;
   }
 
   try {
-    const preview = await previewCycle({
+    const preview = await runCyclePreview({
       projectRoot,
       ...(budgetUsd !== undefined ? { budgetUsd } : {}),
       ...(maxItems !== undefined ? { maxItems } : {}),
+      launchControls,
     });
 
     console.log(`Candidates:   ${preview.candidateCount}`);
@@ -499,6 +515,80 @@ async function runCyclePreviewAction(opts: CyclePreviewOptions): Promise<void> {
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
+  }
+}
+
+async function runCyclePreview(options: {
+  projectRoot: string;
+  budgetUsd?: number;
+  maxItems?: number;
+  launchControls: CycleLaunchControls;
+}) {
+  const startedAt = Date.now();
+  const config = loadCycleConfig(options.projectRoot);
+  if (typeof options.budgetUsd === 'number') {
+    config.budget.perCycleUsd = options.budgetUsd;
+  }
+  if (typeof options.maxItems === 'number') {
+    config.limits.maxItemsPerSprint = options.maxItems;
+  }
+  applyCycleLaunchControls(config, options.launchControls, '[cycle preview]');
+
+  const telemetry = createAutonomousTelemetryAdapters(options.projectRoot);
+  try {
+    const backlog = await new ProposalToBacklog(
+      telemetry.proposalAdapter,
+      options.projectRoot,
+      config,
+    ).build();
+
+    if (backlog.length === 0) {
+      return {
+        candidateCount: 0,
+        rankedItems: [],
+        totalEstimatedCostUsd: 0,
+        budgetOverflowUsd: 0,
+        withinBudget: 0,
+        requiresApproval: 0,
+        summary: 'No backlog items found — nothing to score.',
+        warnings: ['Empty backlog: no proposals or TODO(autonomous) markers detected.'],
+        durationMs: Date.now() - startedAt,
+        scoringCostUsd: 0,
+        fallback: null,
+      };
+    }
+
+    const runtime = new RuntimeAdapter({
+      cwd: options.projectRoot,
+      ...(config.modelCap ? { modelCap: config.modelCap } : {}),
+      ...(config.effortCap ? { effortCap: config.effortCap } : {}),
+      enableFallback: options.launchControls.fallbackEnabled ?? true,
+    });
+    const pipeline = new ScoringPipeline(
+      runtime,
+      telemetry.scoringAdapter,
+      config,
+      createPreviewCycleLogger(),
+      options.projectRoot,
+    );
+    const scored = await pipeline.scoreWithFallback(backlog);
+    const rankedItems = [...scored.withinBudget, ...scored.requiresApproval];
+
+    return {
+      candidateCount: backlog.length,
+      rankedItems,
+      totalEstimatedCostUsd: Number(scored.totalEstimatedCostUsd ?? 0),
+      budgetOverflowUsd: Number(scored.budgetOverflowUsd ?? 0),
+      withinBudget: scored.withinBudget.length,
+      requiresApproval: scored.requiresApproval.length,
+      summary: String(scored.summary ?? ''),
+      warnings: Array.isArray(scored.warnings) ? scored.warnings : [],
+      durationMs: Date.now() - startedAt,
+      scoringCostUsd: 0,
+      fallback: scored.fallback ?? null,
+    };
+  } finally {
+    telemetry.close();
   }
 }
 
@@ -931,6 +1021,115 @@ function parseOptionalInteger(raw: string | undefined, label: string): number | 
     return null;
   }
   return parsed;
+}
+
+function resolveCycleLaunchControls(opts: {
+  fastMode?: boolean;
+  modelCap?: string;
+  effortCap?: string;
+  maxAgents?: string;
+  fallback?: boolean;
+}): CycleLaunchControls | null {
+  const modelCapRaw = opts.modelCap ?? process.env['AUTONOMOUS_MODEL_CAP'];
+  const modelCap = parseModelCap(modelCapRaw);
+  if (modelCap === null) {
+    console.error(`Invalid --model-cap value: ${modelCapRaw}. Expected opus, sonnet, or haiku.`);
+    return null;
+  }
+
+  const fastMode = opts.fastMode === true;
+  const effortCapRaw = opts.effortCap ?? process.env['AUTONOMOUS_EFFORT_CAP'];
+  const effortCap = effortCapRaw === undefined && fastMode
+    ? 'high'
+    : parseEffortCap(effortCapRaw);
+  if (effortCap === null) {
+    console.error(`Invalid --effort-cap value: ${effortCapRaw}. Expected low, medium, high, xhigh, or max.`);
+    return null;
+  }
+
+  const maxAgentsRaw = opts.maxAgents ?? process.env['AUTONOMOUS_MAX_AGENTS'];
+  const maxAgents = parseOptionalPositiveIntegerStrict(maxAgentsRaw, '--max-agents');
+  if (maxAgents === null) {
+    return null;
+  }
+
+  const fallbackEnabled = opts.fallback !== undefined
+    ? opts.fallback
+    : parseEnvFallbackEnabled(process.env['AUTONOMOUS_FALLBACK_ENABLED']);
+
+  return {
+    fastMode,
+    ...(modelCap ? { modelCap } : {}),
+    ...(effortCap ? { effortCap } : {}),
+    ...(maxAgents !== undefined ? { maxAgents } : {}),
+    ...(fallbackEnabled !== undefined ? { fallbackEnabled } : {}),
+  };
+}
+
+function applyCycleLaunchControls(
+  config: CycleConfig,
+  controls: CycleLaunchControls,
+  logPrefix: string,
+): void {
+  if (controls.fastMode) {
+    console.log(`${logPrefix} fast-mode enabled`);
+  }
+  if (controls.modelCap) {
+    config.modelCap = controls.modelCap;
+    console.log(`${logPrefix} modelCap override: ${controls.modelCap}`);
+  }
+  if (controls.effortCap) {
+    config.effortCap = controls.effortCap;
+    console.log(`${logPrefix} effortCap override: ${controls.effortCap}`);
+  }
+  if (controls.maxAgents !== undefined) {
+    config.limits.maxExecutePhaseParallelism = controls.maxAgents;
+    console.log(`${logPrefix} maxAgents override: ${controls.maxAgents}`);
+  }
+  if (controls.fallbackEnabled !== undefined) {
+    config.fallbackEnabled = controls.fallbackEnabled;
+    console.log(`${logPrefix} fallback ${controls.fallbackEnabled ? 'enabled' : 'disabled'}`);
+  }
+}
+
+function parseModelCap(raw: string | undefined): ModelCap | undefined | null {
+  if (raw === undefined || raw === '') return undefined;
+  return raw === 'opus' || raw === 'sonnet' || raw === 'haiku' ? raw : null;
+}
+
+function parseEffortCap(raw: string | undefined): EffortCap | undefined | null {
+  if (raw === undefined || raw === '') return undefined;
+  return raw === 'low' || raw === 'medium' || raw === 'high' || raw === 'xhigh' || raw === 'max' ? raw : null;
+}
+
+function parseOptionalPositiveIntegerStrict(raw: string | undefined, label: string): number | undefined | null {
+  if (raw === undefined || raw === '') return undefined;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    console.error(`Invalid ${label} value: ${raw}`);
+    return null;
+  }
+  return parsed;
+}
+
+function parseEnvFallbackEnabled(raw: string | undefined): boolean | undefined {
+  if (raw === undefined || raw === '') return undefined;
+  const normalized = raw.toLowerCase();
+  if (normalized === 'false' || normalized === '0') return false;
+  if (normalized === 'true' || normalized === '1') return true;
+  return undefined;
+}
+
+function createPreviewCycleLogger(): CycleLoggerType {
+  return {
+    logScoring: (_result: unknown, _grounding: unknown) => {},
+    logScoringFallback: (_strike: number, _reason: string) => {},
+    logKillSwitch: (_trip: unknown) => {},
+    logCycleResult: (_result: unknown) => {},
+    logGitEvent: (_event: unknown) => {},
+    logTestRun: (_result: unknown) => {},
+    logPREvent: (_event: unknown) => {},
+  } as CycleLoggerType;
 }
 
 function parseEnvPositiveNumber(raw: string | undefined): number | null {

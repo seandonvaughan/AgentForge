@@ -64,6 +64,7 @@ function makeMemEntry(
   value: string,
   tags: string[],
   createdAt?: string,
+  metadata?: unknown,
 ): object {
   return {
     id,
@@ -71,6 +72,7 @@ function makeMemEntry(
     value,
     createdAt: createdAt ?? new Date().toISOString(),
     tags,
+    ...(metadata !== undefined ? { metadata } : {}),
   };
 }
 
@@ -100,7 +102,40 @@ describe("extractLesson", () => {
 
   it("handles non-JSON string gracefully", () => {
     const result = extractLesson("[CRITICAL] Missing auth check on endpoint");
-    expect(result.length).toBeGreaterThan(0);
+    expect(result).toBe("Missing auth check on endpoint");
+  });
+
+  it("returns empty output for severity-only noise", () => {
+    expect(extractLesson("CRITICAL")).toBe("");
+    expect(extractLesson("✅ review.")).toBe("");
+  });
+
+  it("drops decorative insight banner text", () => {
+    expect(
+      extractLesson(
+        "`★ Insight ─────────────────────────────────────` The verification protocol here is commentary.",
+      ),
+    ).toBe("");
+    expect(
+      extractLesson("Insight The verification protocol here is the key guard against stale-review false positives."),
+    ).toBe("");
+  });
+
+  it("selects actionable sentences from noisy summaries", () => {
+    expect(
+      extractLesson(
+        "data quality regression. The entity extractor needs a stop-list or minimum-specificity filter.",
+      ),
+    ).toBe("The entity extractor needs a stop-list or minimum-specificity filter.");
+  });
+
+  it("rejects review-status phrases", () => {
+    expect(extractLesson("Verified all reviewer findings against current working tree.")).toBe("");
+    expect(extractLesson("Both MAJOR findings verified as still present in the current working tree.")).toBe("");
+    expect(extractLesson("No action required now.")).toBe("");
+    expect(
+      extractLesson(", 'med', '', a stray config key), the CLI call fails at runtime with no type-system protection."),
+    ).toBe("");
   });
 });
 
@@ -181,13 +216,108 @@ describe("curateLearnings — happy path", () => {
   it("falls back to skills array when capability_tags is absent", async () => {
     writeAgentYamlSkills("test-runner", ["testing", "ci"]);
     writeMemoryFile("review-finding", [
-      makeMemEntry("e1", "review-finding", "[MAJOR] Test coverage dropped.", ["testing"]),
+      makeMemEntry("e1", "review-finding", "[MAJOR] Add missing test coverage for fallback skills.", ["testing"]),
     ]);
 
     const result = await curateLearnings({ projectRoot, agentIds: ["test-runner"] });
     const proposals = result.byAgent["test-runner"] ?? [];
     // With role match the score should be above MIN_SCORE
     expect(proposals.length).toBeGreaterThan(0);
+  });
+
+  it("prefers structured metadata summaries over noisy rendered values", async () => {
+    writeAgentYaml("runtime-engineer", ["runtime", "executor"]);
+    writeMemoryFile("review-finding", [
+      makeMemEntry(
+        "rf-noisy",
+        "review-finding",
+        "CRITICAL",
+        ["runtime", "critical"],
+        undefined,
+        {
+          severity: "CRITICAL",
+          summary: "Canary disable flag must skip planned canary stages.",
+          fixSuggestion: "Filter canary out of stagesToRun when canary is disabled.",
+        },
+      ),
+    ]);
+
+    const result = await curateLearnings({
+      projectRoot,
+      agentIds: ["runtime-engineer"],
+    });
+
+    const proposals = result.byAgent["runtime-engineer"] ?? [];
+    expect(proposals[0]?.lesson).toBe(
+      "Filter canary out of stagesToRun when canary is disabled.",
+    );
+    expect(proposals[0]?.severity).toBe("CRITICAL");
+  });
+
+  it("does not propose empty placeholder lessons", async () => {
+    writeAgentYaml("runtime-engineer", ["runtime"]);
+    writeMemoryFile("review-finding", [
+      makeMemEntry("rf-empty", "review-finding", "CRITICAL", ["runtime", "critical"]),
+      makeMemEntry("rf-review", "review-finding", "✅ review.", ["runtime", "major"]),
+    ]);
+
+    const result = await curateLearnings({
+      projectRoot,
+      agentIds: ["runtime-engineer"],
+    });
+
+    expect(result.byAgent["runtime-engineer"]).toEqual([]);
+  });
+
+  it("does not propose malformed fix suggestion fragments", async () => {
+    writeAgentYaml("runtime-engineer", ["runtime"]);
+    writeMemoryFile("review-finding", [
+      makeMemEntry(
+        "rf-fragment",
+        "review-finding",
+        "MAJOR",
+        ["runtime", "major"],
+        undefined,
+        {
+          severity: "MAJOR",
+          summary: "review extraction fix.",
+          fixSuggestion: "checks fields in priority order — .",
+        },
+      ),
+    ]);
+
+    const result = await curateLearnings({
+      projectRoot,
+      agentIds: ["runtime-engineer"],
+    });
+
+    expect(result.byAgent["runtime-engineer"]).toEqual([]);
+  });
+
+  it("uses an actionable metadata summary when an earlier sentence is just a label", async () => {
+    writeAgentYaml("runtime-engineer", ["runtime"]);
+    writeMemoryFile("review-finding", [
+      makeMemEntry(
+        "rf-actionable",
+        "review-finding",
+        "MAJOR",
+        ["runtime", "major"],
+        undefined,
+        {
+          severity: "MAJOR",
+          summary: "data quality regression. The entity extractor needs a stop-list or minimum-specificity filter.",
+        },
+      ),
+    ]);
+
+    const result = await curateLearnings({
+      projectRoot,
+      agentIds: ["runtime-engineer"],
+    });
+
+    expect(result.byAgent["runtime-engineer"]?.[0]?.lesson).toBe(
+      "The entity extractor needs a stop-list or minimum-specificity filter.",
+    );
   });
 });
 

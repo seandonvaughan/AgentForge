@@ -55,6 +55,14 @@ export function recencyScore(createdAt: string, halfLifeDays = RECENCY_HALF_LIFE
  *   4. Falls back to INFO
  */
 export function parseSeverity(entry: MemoryEntry): ProposedLearning["severity"] {
+  if (entry.metadata !== null && typeof entry.metadata === "object") {
+    const severity = (entry.metadata as Record<string, unknown>).severity;
+    if (typeof severity === "string") {
+      const upper = severity.toUpperCase() as ProposedLearning["severity"];
+      if (upper in SEVERITY_WEIGHTS) return upper;
+    }
+  }
+
   // 1. Tags
   const tags = entry.tags ?? [];
   for (const tag of tags) {

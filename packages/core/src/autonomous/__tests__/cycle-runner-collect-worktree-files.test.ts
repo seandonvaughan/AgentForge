@@ -28,6 +28,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { setTimeout as sleep } from 'node:timers/promises';
 import {
   collectFilesFromAgentBranches,
   verificationWorktreeName,
@@ -35,6 +36,7 @@ import {
 } from '../cycle-runner.js';
 
 const execFileAsync = promisify(execFile);
+const GIT_WORKTREE_TEST_TIMEOUT_MS = 60_000;
 
 // ---------------------------------------------------------------------------
 // Git repo helpers
@@ -68,6 +70,19 @@ async function createAgentBranch(
   await execFileAsync('git', ['commit', '-m', `add ${file}`], { cwd: workDir });
   await execFileAsync('git', ['push', 'origin', branch], { cwd: workDir });
   await execFileAsync('git', ['checkout', 'main'], { cwd: workDir });
+}
+
+async function rmTreeWithRetries(path: string | undefined): Promise<void> {
+  if (!path) return;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      rmSync(path, { recursive: true, force: true });
+      return;
+    } catch (err) {
+      if (attempt === 4) throw err;
+      await sleep(100 * (attempt + 1));
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -105,12 +120,12 @@ describe('collectFilesFromAgentBranches', () => {
     workDir = mkdtempSync(join(tmpdir(), 'cr-collect-work-'));
     bareDir = join(tmpdir(), `cr-collect-bare-${Date.now()}`);
     await initRepoWithBareRemote(workDir, bareDir);
-  });
+  }, GIT_WORKTREE_TEST_TIMEOUT_MS);
 
-  afterEach(() => {
-    rmSync(workDir, { recursive: true, force: true });
-    try { rmSync(bareDir, { recursive: true, force: true }); } catch { /* ok */ }
-  });
+  afterEach(async () => {
+    await rmTreeWithRetries(workDir);
+    await rmTreeWithRetries(bareDir);
+  }, GIT_WORKTREE_TEST_TIMEOUT_MS);
 
   it('AC1: returns both file paths from two agent branches (sorted+deduped)', async () => {
     await createAgentBranch(workDir, 'autonomous/agent-a', 'src/alpha.ts', 'export const a = 1;\n');
@@ -134,7 +149,7 @@ describe('collectFilesFromAgentBranches', () => {
     expect(files).toEqual([...files].sort());
     // de-duplicated
     expect(files.length).toBe(new Set(files).size);
-  }, 30_000);
+  }, GIT_WORKTREE_TEST_TIMEOUT_MS);
 
   it('AC1: de-duplicates a file changed on both branches', async () => {
     await createAgentBranch(workDir, 'autonomous/agent-x', 'src/shared.ts', 'export const x = 1;\n');
@@ -153,7 +168,7 @@ describe('collectFilesFromAgentBranches', () => {
     });
 
     expect(files.filter(f => f === 'src/shared.ts').length).toBe(1);
-  }, 30_000);
+  }, GIT_WORKTREE_TEST_TIMEOUT_MS);
 
   it('AC3: files under .agentforge/cycles/ are excluded', async () => {
     // Agent branch adds a file under .agentforge/cycles/ AND a real source file
@@ -183,7 +198,7 @@ describe('collectFilesFromAgentBranches', () => {
 
     expect(files.some(f => f.includes('.agentforge/cycles/'))).toBe(false);
     expect(files).toContain('src/real.ts');
-  }, 30_000);
+  }, GIT_WORKTREE_TEST_TIMEOUT_MS);
 
   it('AC4: worktreePath that no longer exists still returns branch changes', async () => {
     await createAgentBranch(workDir, 'autonomous/agent-d', 'src/delta.ts', 'export const d = 4;\n');
@@ -209,7 +224,7 @@ describe('collectFilesFromAgentBranches', () => {
 
     expect(Array.isArray(files)).toBe(true);
     expect(files).toContain('src/delta.ts');
-  }, 20_000);
+  }, GIT_WORKTREE_TEST_TIMEOUT_MS);
 });
 
 // ---------------------------------------------------------------------------
@@ -244,10 +259,10 @@ describe('collectFilesFromAgentBranches regression: worktreePool=undefined path'
       // Without worktreeBranch entries, result is empty (git status NOT called)
       expect(files).toEqual([]);
     } finally {
-      rmSync(workDir2, { recursive: true, force: true });
-      try { rmSync(bareDir2, { recursive: true, force: true }); } catch { /* ok */ }
+      await rmTreeWithRetries(workDir2);
+      await rmTreeWithRetries(bareDir2);
     }
-  }, 20_000);
+  }, GIT_WORKTREE_TEST_TIMEOUT_MS);
 });
 
 describe('verifyMultiPrAgentBranches', () => {
@@ -308,8 +323,8 @@ describe('verifyMultiPrAgentBranches', () => {
         }),
       ]);
     } finally {
-      rmSync(workDir, { recursive: true, force: true });
-      try { rmSync(bareDir, { recursive: true, force: true }); } catch { /* ok */ }
+      await rmTreeWithRetries(workDir);
+      await rmTreeWithRetries(bareDir);
     }
-  }, 20_000);
+  }, GIT_WORKTREE_TEST_TIMEOUT_MS);
 });

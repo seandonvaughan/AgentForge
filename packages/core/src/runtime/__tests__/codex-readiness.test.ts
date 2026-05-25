@@ -49,6 +49,39 @@ describe('buildCodexReadinessReport', () => {
     });
   });
 
+  it('accepts max effort because the Codex runtime supports it', () => {
+    projectRoot = mkdtempSync(join(tmpdir(), 'agentforge-codex-ready-max-'));
+    mkdirSync(join(projectRoot, '.agentforge', 'agents'), { recursive: true });
+    writeFileSync(
+      join(projectRoot, '.agentforge', 'agents', 'coder.yaml'),
+      [
+        'name: Coder',
+        'model: sonnet',
+        'effort: max',
+        'system_prompt: You write code.',
+        '',
+      ].join('\n'),
+    );
+    const mcpServerPath = join(projectRoot, 'mcp-server.js');
+    writeFileSync(mcpServerPath, 'console.log("ok");\n');
+
+    const report = buildCodexReadinessReport({
+      projectRoot,
+      checkLogin: false,
+      checkDoctor: false,
+      codexCliAvailable: true,
+      mcpServerPath,
+      env: {},
+    });
+
+    expect(report.ready).toBe(true);
+    expect(report.agents[0]).toMatchObject({
+      agentId: 'coder',
+      codexEffort: 'max',
+      valid: true,
+    });
+  });
+
   it('fails readiness when MCP server build output is missing', () => {
     projectRoot = mkdtempSync(join(tmpdir(), 'agentforge-codex-not-ready-'));
     mkdirSync(join(projectRoot, '.agentforge', 'agents'), { recursive: true });

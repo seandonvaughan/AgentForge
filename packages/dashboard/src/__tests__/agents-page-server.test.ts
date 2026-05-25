@@ -222,7 +222,7 @@ describe('_loadAgents — model normalisation', () => {
     });
   });
 
-  it('uses Codex profile overrides from .agentforge/config/models.yaml', () => {
+  it('uses Codex model overrides from models.yaml while agent effort takes precedence', () => {
     const dir = makeAgentsDir();
     mkdirSync(join(tmpRoot, '.agentforge', 'config'), { recursive: true });
     writeFileSync(join(tmpRoot, '.agentforge', 'config', 'models.yaml'), [
@@ -241,7 +241,7 @@ describe('_loadAgents — model normalisation', () => {
 
     expect(agent.modelProfile).toMatchObject({
       modelId: 'gpt-next-codex',
-      effort: 'medium',
+      effort: 'high',
     });
   });
 });

@@ -27,6 +27,8 @@ import { promisify } from 'node:util';
 const execFileAsync = promisify(execFile);
 
 import { CycleRunner, DEFAULT_CYCLE_CONFIG, CycleStage, MessageBusV2 } from '@agentforge/core';
+import * as autoReforgeModule from '../../../packages/core/src/autonomous/auto-reforge.js';
+import { GateRejectedError } from '../../../packages/core/src/autonomous/phase-handlers/gate-phase.js';
 
 /**
  * Build the full set of mocked dependencies the CycleRunner needs.
@@ -280,6 +282,16 @@ async function initGitRepo(dir: string): Promise<void> {
   await execFileAsync('git', ['commit', '-m', 'initial'], { cwd: dir });
 }
 
+function readCycleOutcomeMemoryStage(dir: string): string | undefined {
+  const memoryPath = join(dir, '.agentforge', 'memory', 'cycle-outcome.jsonl');
+  if (!existsSync(memoryPath)) return undefined;
+  const lines = readFileSync(memoryPath, 'utf8').trim().split(/\r?\n/);
+  const last = lines.at(-1);
+  if (!last) return undefined;
+  const entry = JSON.parse(last) as { value: string };
+  return (JSON.parse(entry.value) as { stage?: string }).stage;
+}
+
 describe('CycleRunner', () => {
   let tmpDir: string;
 
@@ -295,6 +307,7 @@ describe('CycleRunner', () => {
 
   afterEach(() => {
     rmSync(tmpDir, { recursive: true, force: true });
+    vi.restoreAllMocks();
   });
 
   it('runs a full cycle end-to-end with mocked dependencies', async () => {
@@ -490,6 +503,175 @@ describe('CycleRunner', () => {
     expect(result.error).toContain('codex/agent-failing');
   });
 
+  it('records terminal FAILED result before auto-reforge on a final gate rejection', async () => {
+    await initGitRepo(tmpDir);
+    const deps = makeMockDeps();
+    deps.mockPhaseHandlers.gate = async () => {
+      throw new GateRejectedError('final gate rejection');
+    };
+    const observed: { cycleStage?: string; memoryStage?: string; gateVerdict?: string | null } = {};
+    const reforgeSpy = vi.spyOn(autoReforgeModule, 'runAutoReforge').mockImplementation(async (opts) => {
+      const cycleJsonPath = join(tmpDir, '.agentforge/cycles', opts.cycleId, 'cycle.json');
+      const cycleJson = JSON.parse(readFileSync(cycleJsonPath, 'utf8')) as {
+        stage?: string;
+        gateVerdict?: string | null;
+      };
+      observed.cycleStage = cycleJson.stage;
+      observed.gateVerdict = cycleJson.gateVerdict ?? null;
+      observed.memoryStage = readCycleOutcomeMemoryStage(tmpDir);
+      return {
+        cycleId: opts.cycleId,
+        skipped: true,
+        durationMs: 0,
+      };
+    });
+    vi.spyOn(autoReforgeModule, 'extractInvolvedAgentIds').mockReturnValue([]);
+
+    const runner = new CycleRunner({
+      cwd: tmpDir,
+      config: {
+        ...DEFAULT_CYCLE_CONFIG,
+        retry: { ...DEFAULT_CYCLE_CONFIG.retry, maxAutoRetries: 0 },
+      },
+      runtime: deps.runtime as any,
+      proposalAdapter: deps.proposalAdapter as any,
+      scoringAdapter: deps.scoringAdapter as any,
+      phaseHandlers: deps.mockPhaseHandlers as any,
+      testRunner: deps.testRunner as any,
+      gitOps: deps.gitOps as any,
+      prOpener: deps.prOpener as any,
+      bus: deps.bus as any,
+      preVerifyTypeCheck: deps.preVerifyTypeCheck,
+      dryRun: { prOpener: true },
+    });
+
+    const result = await runner.start();
+
+    expect(reforgeSpy).toHaveBeenCalledOnce();
+    expect(observed).toEqual({
+      cycleStage: 'failed',
+      memoryStage: 'failed',
+      gateVerdict: 'REJECT',
+    });
+    expect(result.stage).toBe(CycleStage.FAILED);
+    expect(result.error).toContain('gate: final gate rejection');
+  });
+
+  it('runs auto-reforge after terminal FAILED memory when execute phase fails', async () => {
+    await initGitRepo(tmpDir);
+    const deps = makeMockDeps();
+    deps.mockPhaseHandlers.execute = async (ctx: any) => {
+      ctx.bus.publish('sprint.phase.completed', {
+        sprintId: ctx.sprintId,
+        phase: 'execute',
+        cycleId: ctx.cycleId,
+        result: {
+          phase: 'execute',
+          status: 'failed',
+          error: 'agent implementation failed',
+          durationMs: 100,
+          costUsd: 0.4,
+          agentRuns: [
+            {
+              itemId: 'i1',
+              status: 'failed',
+              costUsd: 0.4,
+              durationMs: 100,
+              response: '',
+              attempts: 1,
+              agentId: 'coder',
+              error: 'agent implementation failed',
+            },
+          ],
+        },
+        completedAt: new Date().toISOString(),
+      });
+    };
+
+    const observed: { cycleStage?: string; memoryStage?: string; involvedAgentIds?: string[] } = {};
+    const reforgeSpy = vi.spyOn(autoReforgeModule, 'runAutoReforge').mockImplementation(async (opts) => {
+      const cycleJsonPath = join(tmpDir, '.agentforge/cycles', opts.cycleId, 'cycle.json');
+      observed.cycleStage = JSON.parse(readFileSync(cycleJsonPath, 'utf8')).stage;
+      observed.memoryStage = readCycleOutcomeMemoryStage(tmpDir);
+      observed.involvedAgentIds = [...opts.involvedAgentIds];
+      return {
+        cycleId: opts.cycleId,
+        skipped: true,
+        durationMs: 0,
+      };
+    });
+
+    const runner = new CycleRunner({
+      cwd: tmpDir,
+      config: DEFAULT_CYCLE_CONFIG,
+      runtime: deps.runtime as any,
+      proposalAdapter: deps.proposalAdapter as any,
+      scoringAdapter: deps.scoringAdapter as any,
+      phaseHandlers: deps.mockPhaseHandlers as any,
+      testRunner: deps.testRunner as any,
+      gitOps: deps.gitOps as any,
+      prOpener: deps.prOpener as any,
+      bus: deps.bus as any,
+      preVerifyTypeCheck: deps.preVerifyTypeCheck,
+      dryRun: { prOpener: true },
+    });
+
+    const result = await runner.start();
+
+    expect(reforgeSpy).toHaveBeenCalledOnce();
+    expect(observed).toEqual({
+      cycleStage: 'failed',
+      memoryStage: 'failed',
+      involvedAgentIds: ['coder'],
+    });
+    expect(result.stage).toBe(CycleStage.FAILED);
+    expect(result.error).toBe('execute: agent implementation failed');
+  });
+
+  it('runs auto-reforge after terminal FAILED memory when a post-execute generic error fails the cycle', async () => {
+    await initGitRepo(tmpDir);
+    const deps = makeMockDeps();
+    deps.preVerifyTypeCheck = async () => {
+      throw new Error('preverify crashed');
+    };
+    const observed: { cycleStage?: string; memoryStage?: string } = {};
+    const reforgeSpy = vi.spyOn(autoReforgeModule, 'runAutoReforge').mockImplementation(async (opts) => {
+      const cycleJsonPath = join(tmpDir, '.agentforge/cycles', opts.cycleId, 'cycle.json');
+      observed.cycleStage = JSON.parse(readFileSync(cycleJsonPath, 'utf8')).stage;
+      observed.memoryStage = readCycleOutcomeMemoryStage(tmpDir);
+      return {
+        cycleId: opts.cycleId,
+        skipped: true,
+        durationMs: 0,
+      };
+    });
+
+    const runner = new CycleRunner({
+      cwd: tmpDir,
+      config: DEFAULT_CYCLE_CONFIG,
+      runtime: deps.runtime as any,
+      proposalAdapter: deps.proposalAdapter as any,
+      scoringAdapter: deps.scoringAdapter as any,
+      phaseHandlers: deps.mockPhaseHandlers as any,
+      testRunner: deps.testRunner as any,
+      gitOps: deps.gitOps as any,
+      prOpener: deps.prOpener as any,
+      bus: deps.bus as any,
+      preVerifyTypeCheck: deps.preVerifyTypeCheck,
+      dryRun: { prOpener: true },
+    });
+
+    const result = await runner.start();
+
+    expect(reforgeSpy).toHaveBeenCalledTimes(2);
+    expect(observed).toEqual({
+      cycleStage: 'failed',
+      memoryStage: 'failed',
+    });
+    expect(result.stage).toBe(CycleStage.FAILED);
+    expect(result.error).toBe('preverify crashed');
+  });
+
   it('writes cycle.json on completion (happy path)', async () => {
     const deps = makeMockDeps();
     const runner = new CycleRunner({
@@ -607,6 +789,11 @@ describe('CycleRunner', () => {
     deps.proposalAdapter.getRecentFailedSessions = async () => {
       throw new Error('database connection refused');
     };
+    const reforgeSpy = vi.spyOn(autoReforgeModule, 'runAutoReforge').mockResolvedValue({
+      cycleId: 'test-cycle',
+      skipped: true,
+      durationMs: 0,
+    });
 
     const runner = new CycleRunner({
       cwd: tmpDir,
@@ -626,6 +813,7 @@ describe('CycleRunner', () => {
     const result = await runner.start();
     expect(result.stage).toBe(CycleStage.FAILED);
     expect(result.pr.url).toBeNull();
+    expect(reforgeSpy).not.toHaveBeenCalled();
 
     const cycleJsonPath = join(
       tmpDir,

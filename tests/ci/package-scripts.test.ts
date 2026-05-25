@@ -21,7 +21,7 @@ describe('package scripts', () => {
     );
   });
 
-  it('runs typecheck leaf commands before unit tests in verify:product', async () => {
+  it('runs the build-mode typecheck before unit tests in verify:product', async () => {
     const scripts = loadRootScripts();
     const harness = new ScriptPipelineHarness(scripts, () => 0);
 
@@ -29,12 +29,8 @@ describe('package scripts', () => {
 
     expect(result.ok).toBe(true);
     expect(result.trace.indexOf('tsc -b')).toBeGreaterThanOrEqual(0);
-    expect(result.trace.indexOf('pnpm exec tsc -b --noEmit')).toBeGreaterThanOrEqual(0);
     expect(result.trace.indexOf('vitest run')).toBeGreaterThanOrEqual(0);
     expect(result.trace.indexOf('tsc -b')).toBeLessThan(
-      result.trace.indexOf('vitest run'),
-    );
-    expect(result.trace.indexOf('pnpm exec tsc -b --noEmit')).toBeLessThan(
       result.trace.indexOf('vitest run'),
     );
   });
@@ -82,15 +78,18 @@ describe('package scripts', () => {
 
   it('stops verify:gates before dashboard checks when verify:product typecheck fails', async () => {
     const scripts = loadRootScripts();
+    let typecheckRuns = 0;
     const harness = new ScriptPipelineHarness(scripts, (command) => {
-      return command === 'pnpm exec tsc -b --noEmit' ? 1 : 0;
+      if (command !== 'tsc -b') return 0;
+      typecheckRuns += 1;
+      return typecheckRuns === 2 ? 1 : 0;
     });
 
     const result = await harness.run('verify:gates');
 
     expect(result.ok).toBe(false);
     expect(result.failedScript).toBe('check:types');
-    expect(result.failedCommand).toBe('pnpm exec tsc -b --noEmit');
+    expect(result.failedCommand).toBe('tsc -b');
     expect(result.trace).not.toContain('pnpm --filter @agentforge/dashboard check');
     expect(result.trace).not.toContain('pnpm --filter @agentforge/dashboard build');
   });
@@ -107,7 +106,6 @@ describe('package scripts', () => {
     expect(result.failedScript).toBe('test:run');
     expect(result.failedCommand).toBe('vitest run');
     expect(result.trace).toContain('tsc -b');
-    expect(result.trace).toContain('pnpm exec tsc -b --noEmit');
     expect(result.trace).toContain('vitest run');
     expect(result.trace.some((command) => command.startsWith('playwright test'))).toBe(
       false,

@@ -3,9 +3,8 @@ model: sonnet
 team: quality
 effort: high
 version: '1.0'
-description: >
-  Legacy alias for the cycle-runner's test phase. Proxies to the test-engineer
-  specialist forged in v22.1.
+description: |
+  Legacy alias for the cycle-runner's test phase. Proxies to the test-engineer specialist forged in v22.1.
 system_prompt: |
   You are the test-phase agent for AgentForge cycles. Run `pnpm test -- --run`
   and capture pass/fail counts, failing test names, and newly-failing test
@@ -37,3 +36,28 @@ context:
   max_files: 30
   auto_include: []
   project_specific: []
+learnings:
+  - Rebase staged promotion onto the current active override or reject promotion when the staged base is stale.
+  - test coverage does not exercise the real orchestrator path or stale-canary promotion
+  - staticFallback() silently mishandles P3 priority
+  - >-
+    Code reviewers sometimes analyze an intermediate execute-phase snapshot — by the time the gate runs, a flagged bug
+    may already be patched.
+  - stringify must never be used as fallback.
+  - >-
+    ts:647,667 reproduces but is a latent trap — defaults (pnpm build, tsc --noEmit) tokenize safely; the bug only fires
+    under custom CycleConfig with quoted args or space-containing paths.
+  - defaultTypeCheck splits buildCommand/typeCheckCommand on " " — breaks for commands
+  - Naive split(' ') in defaultTypeCheck will corrupt complex commands
+  - >-
+    This is production-critical cost-control code introduced in this sprint (commits 93d7b08, b101e5c) and must ship
+    with at minimum a unit test for the pure capModelTier() function covering same-tier, upward-cap, and
+    downgrade-with-effort cases.
+  - Should be narrowed to 'low' 'medium' 'high' 'max' or a shared EffortLevel type from @agentforge/shared.
+  - >-
+    At minimum: a unit test for the pure capModelTier() function covering same-tier, upward-cap (no-op), and
+    downgrade-with-effort cases; plus an integration test on RuntimeAdapter confirming that modelCap: 'sonnet'
+    substitutes both the model and effort fields.
+  - >-
+    ts confirmed present, but this is a maintenance/refactor concern, not a correctness bug — no divergence exists
+    today.

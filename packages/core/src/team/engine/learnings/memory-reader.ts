@@ -19,6 +19,7 @@ export interface MemoryEntry {
   createdAt: string;
   source?: string;
   tags?: string[];
+  metadata?: unknown;
 }
 
 // ---------------------------------------------------------------------------

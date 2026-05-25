@@ -1,9 +1,9 @@
 export interface WorktreeHandle {
-  /** Unique within the pool — `agent-<agentId>-<sessionId>`. */
+  /** Unique deterministic key within the pool — `agent-<safe-agent>-<hash>`. */
   id: string;
   /** Absolute path to the worktree's root directory. */
   path: string;
-  /** Branch checked out in the worktree (e.g. `autonomous/agent-coder-abc123`). */
+  /** Branch checked out in the worktree (e.g. `autonomous/agent-<safe-agent>-<hash>`). */
   branch: string;
   /** ISO timestamp when the worktree was allocated. */
   allocatedAt: string;

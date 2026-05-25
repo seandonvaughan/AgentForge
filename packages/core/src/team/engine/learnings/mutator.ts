@@ -139,6 +139,13 @@ interface AgentYaml {
   [key: string]: unknown;
 }
 
+interface ProposedLearningsFile {
+  byAgent?: Record<string, unknown>;
+  sourcesScanned?: unknown;
+  generatedAt?: unknown;
+  [key: string]: unknown;
+}
+
 async function loadAgentYaml(agentPath: string): Promise<AgentYaml> {
   let raw: string;
   try {
@@ -172,12 +179,48 @@ interface RichLearning {
   lesson: string;
   score: number;
   sourceCreatedAt: string;
+  existing: boolean;
 }
 
 function asLearningText(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+const PLACEHOLDER_LESSONS = new Set([
+  "critical",
+  "major",
+  "minor",
+  "info",
+  "review",
+  "n a",
+  "na",
+  "none",
+]);
+
+const NO_ACTION_LESSON_RE =
+  /\b(no action required|no action needed|nothing to do|no changes needed|looks good|all good)\b/i;
+const DECORATIVE_LESSON_RE = /^[\W_]*(insight|status|summary|observation)\s*[:\-.]/i;
+const ACTIONABLE_LESSON_RE =
+  /\b(always|never|must|cannot|can't|should|do not|don't|avoid|prefer|require|requires|required|ensure|validate|run|write|document|preserve|merge|use|keep|add|remove|update|check|test|lint|typecheck|commit|handle|leave|expose)\b/i;
+const DEFECT_LESSON_RE =
+  /\b(breaks|bug|corrupt|crash|fail(?:s|ure)?|missing|mishandles|regression|risk|silently|stale|overwrite)\b/i;
+const FUNCTION_LESSON_RE = /[A-Za-z_$][\w$]*\([^)]*\)/;
+
+function hasActionableLessonSignal(lesson: string): boolean {
+  const normalized = normalise(lesson);
+  if (normalized.length === 0) return false;
+  if (PLACEHOLDER_LESSONS.has(normalized)) return false;
+  if (NO_ACTION_LESSON_RE.test(lesson)) return false;
+  if (DECORATIVE_LESSON_RE.test(lesson)) return false;
+
+  const words = normalized.split(" ");
+  if (words.length < 3) return false;
+
+  return ACTIONABLE_LESSON_RE.test(lesson) ||
+    DEFECT_LESSON_RE.test(lesson) ||
+    FUNCTION_LESSON_RE.test(lesson);
 }
 
 function asScore(value: unknown): number {
@@ -219,6 +262,7 @@ function sanitizeProposal(value: unknown, agentId: string): ProposedLearning | n
   const raw = value as Partial<ProposedLearning>;
   const lesson = asLearningText(raw.lesson);
   if (!lesson) return null;
+  if (!hasActionableLessonSignal(lesson)) return null;
 
   return {
     agentId: asLearningText(raw.agentId) ?? agentId,
@@ -238,6 +282,24 @@ function sanitizeProposals(value: unknown, agentId: string): ProposedLearning[] 
     .filter((proposal): proposal is ProposedLearning => proposal !== null);
 }
 
+function readProposedLearningsByAgent(parsed: unknown): Record<string, unknown> {
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return {};
+  }
+
+  const candidate = parsed as ProposedLearningsFile;
+  if (
+    candidate.byAgent !== undefined &&
+    candidate.byAgent !== null &&
+    typeof candidate.byAgent === "object" &&
+    !Array.isArray(candidate.byAgent)
+  ) {
+    return candidate.byAgent;
+  }
+
+  return candidate as Record<string, unknown>;
+}
+
 function mutateAgentLearnings(
   existingInput: readonly unknown[],
   proposals: ProposedLearning[],
@@ -253,13 +315,14 @@ function mutateAgentLearnings(
   // Build hash set of existing learnings for O(1) dedup
   const existingHashes = new Set<string>(existing.map(lessonHash));
 
-  // Augment existing learnings with a placeholder score/date so they can
-  // participate in contradiction resolution. Existing learnings are treated
-  // as having score=1 (trusted) and date=epoch (oldest).
+  // Augment existing learnings so they can participate in contradiction
+  // resolution. Existing learnings are trusted and preserved ahead of new
+  // proposals when the cap is reached.
   const existingRich: RichLearning[] = existing.map((lesson) => ({
     lesson,
     score: 1,
     sourceCreatedAt: "1970-01-01T00:00:00.000Z",
+    existing: true,
   }));
 
   let deduped = 0;
@@ -284,6 +347,7 @@ function mutateAgentLearnings(
       lesson: p.lesson,
       score: p.score,
       sourceCreatedAt: p.sourceCreatedAt,
+      existing: false,
     })),
   ];
 
@@ -316,8 +380,10 @@ function mutateAgentLearnings(
 
   const surviving: RichLearning[] = allRich.filter((_, i) => !dropped.has(i));
 
-  // Phase 3 — sort surviving: newest-first (tie-break by score desc)
+  // Phase 3 — keep trusted existing learnings first; sort new proposals
+  // newest-first (tie-break by score desc).
   surviving.sort((a, b) => {
+    if (a.existing !== b.existing) return a.existing ? -1 : 1;
     const dateDiff =
       new Date(b.sourceCreatedAt).getTime() -
       new Date(a.sourceCreatedAt).getTime();
@@ -386,12 +452,8 @@ export async function applyLearnings(
     throw err;
   }
 
-  // Expected shape: Record<agentId, ProposedLearning[]>
   const parsedProposed: unknown = JSON.parse(rawProposed);
-  const proposedByAgent =
-    parsedProposed !== null && typeof parsedProposed === "object" && !Array.isArray(parsedProposed)
-      ? parsedProposed
-      : {};
+  const proposedByAgent = readProposedLearningsByAgent(parsedProposed);
 
   const perAgent: AgentMutatorResult[] = [];
 

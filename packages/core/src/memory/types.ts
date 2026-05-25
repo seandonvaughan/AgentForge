@@ -229,8 +229,12 @@ export function writeMemoryEntry(
     } finally {
       if (locked) releaseLock(lockPath);
     }
-  } catch {
+  } catch (err) {
     // non-fatal — phase result must not be affected by memory write failures
+    console.warn(
+      `[memory] Failed to write ${join('.agentforge', 'memory', `${full.type}.jsonl`)}`,
+      err,
+    );
   }
 
   return full;

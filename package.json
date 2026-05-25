@@ -21,7 +21,7 @@
   ],
   "scripts": {
     "build": "tsc -b",
-    "check:types": "pnpm build && pnpm exec tsc -b --noEmit",
+    "check:types": "tsc -b",
     "start": "npm run build && node packages/server/dist/main.js",
     "dev": "npm run build && concurrently --names \"build,server,dash\" --prefix-colors \"yellow,blue,green\" \"tsc -b --watch\" \"node --watch packages/server/dist/main.js\" \"cd packages/dashboard && npx vite dev --port 4751\"",
     "test": "vitest",

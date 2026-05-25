@@ -97,7 +97,8 @@ export function extractLesson(value: string): string {
       for (const key of ["lesson", "recommendation", "summary", "description", "message"]) {
         const candidate = obj[key];
         if (typeof candidate === "string" && candidate.trim()) {
-          return firstSentence(candidate);
+          const lesson = extractUsefulSentence(candidate);
+          if (lesson) return lesson;
         }
       }
     }
@@ -106,22 +107,97 @@ export function extractLesson(value: string): string {
   }
 
   // Fallback: first sentence of the raw string
-  return firstSentence(value);
+  return extractUsefulSentence(value);
 }
 
-function firstSentence(text: string): string {
+function extractLessonFromEntry(entry: MemoryEntry): string {
+  if (entry.metadata !== null && typeof entry.metadata === "object") {
+    const metadata = entry.metadata as Record<string, unknown>;
+    for (const key of ["fixSuggestion", "summary", "rationale", "message"]) {
+      const candidate = metadata[key];
+      if (typeof candidate === "string" && candidate.trim()) {
+        const lesson = extractUsefulSentence(candidate);
+        if (lesson) return lesson;
+      }
+    }
+  }
+
+  return extractLesson(entry.value);
+}
+
+function normalizeLessonText(text: string): string {
   // Strip markdown bold / italic markers and excess whitespace
-  const clean = text
+  return text
     .replace(/\*\*/g, "")
     .replace(/\*/g, "")
     .replace(/`/g, "")
+    .replace(/\|/g, " ")
+    .replace(/\s*[─━]{3,}\s*/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
 
-  // Truncate at the first sentence boundary (. ! ?) or 200 chars
-  const match = clean.match(/^[^.!?]{1,200}[.!?]/);
-  if (match) return match[0].trim();
-  return clean.slice(0, 200).trim();
+function extractUsefulSentence(text: string): string {
+  const clean = normalizeLessonText(text);
+  if (!clean) return "";
+
+  const sentenceMatches = clean.match(/[^.!?]{1,260}[.!?](?=\s|$)/g) ?? [];
+  const candidates = sentenceMatches.length > 0
+    ? sentenceMatches
+    : [clean.slice(0, 260)];
+
+  const cleanedCandidates = candidates
+    .map((candidate) => cleanLesson(candidate))
+    .filter((candidate) => candidate.length > 0);
+
+  return cleanedCandidates.find(hasActionableSignal) ?? "";
+}
+
+function hasActionableSignal(text: string): boolean {
+  return /\b(add|avoid|build|cannot|configure|declare|ensure|filter|keep|must|need(?:s|ed)?|never|pass|preserve|rebase|reject|replace|route|run|should|thread|use|validate|write)\b/i.test(text) ||
+    /\b(breaks|bug|corrupt|crash|fail(?:s|ure)?|missing|mishandles|regression|risk|silently|stale|overwrite)\b/i.test(text) ||
+    /[A-Za-z_$][\w$]*\([^)]*\)/.test(text);
+}
+
+function cleanLesson(text: string): string {
+  if (/^\s*`?\s*(?:★\s*)?Insight\b/i.test(text)) return "";
+
+  const cleaned = text
+    .replace(/[★]/gu, " ")
+    .replace(/\s*[─━]{3,}\s*/gu, " ")
+    .replace(/^#+\s*/, "")
+    .replace(/^[-*]\s+/, "")
+    .replace(/^[\u2705\u274c]\s*/u, "")
+    .replace(/^\[?(CRITICAL|MAJOR|MINOR|INFO)\]?\s*(?:[:\u2014-]\s*)?/i, "")
+    .replace(/^Gate\s+(approved|rejected):\s*/i, "")
+    .replace(/\*\*/g, "")
+    .replace(/\s+(Correct|Ship it)\.?$/i, "")
+    .replace(/\s+/g, " ")
+    .replace(/\s*[—-]\s*\.$/, ".")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^Insight\s+/i, "")
+    .trim();
+
+  if (!isUsefulLesson(cleaned)) return "";
+  return cleaned;
+}
+
+function isUsefulLesson(text: string): boolean {
+  if (text.length < 12) return false;
+  if (/[★─━]/u.test(text)) return false;
+  if (/^[^\p{L}\p{N}`]/u.test(text)) return false;
+  if (/^[{}[\]",:0-9.\s-]+$/.test(text)) return false;
+  if (/^(critical|major|minor|info|review|approved|rejected|correct|verdict|summary)$/i.test(text)) return false;
+  if (/^insight\b/i.test(text)) return false;
+  if (/^(i\s+)?verified\b/i.test(text)) return false;
+  if (/^both\s+(critical|major|minor|info)\s+findings?\s+verified\b/i.test(text)) return false;
+  if (/^no action required\b/i.test(text)) return false;
+  if (/\breviewer findings?\b/i.test(text)) return false;
+  if (/\bworking tree\b/i.test(text)) return false;
+  if (/[—-]\s*\.$/.test(text)) return false;
+  const wordCount = text.match(/[a-z][a-z0-9_-]{2,}/gi)?.length ?? 0;
+  return wordCount >= 4 && hasActionableSignal(text);
 }
 
 // ---------------------------------------------------------------------------
@@ -226,7 +302,7 @@ export async function curateLearnings(opts: CurationInput): Promise<CurationResu
       const { score, severity, roleMatched } = scoreEntry(entry, agentId, agentTags);
       if (score < MIN_SCORE) continue;
 
-      const lesson = extractLesson(entry.value);
+      const lesson = extractLessonFromEntry(entry);
       if (!lesson) continue;
 
       const rationale = roleMatched

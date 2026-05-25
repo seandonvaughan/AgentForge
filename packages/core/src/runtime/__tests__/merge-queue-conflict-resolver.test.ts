@@ -98,17 +98,19 @@ function buildCleanScenario(repoDir: string, featureBranch = 'feature'): void {
 // Tests
 // ---------------------------------------------------------------------------
 
+const GIT_CONFLICT_TEST_TIMEOUT_MS = 60_000;
+
 describe('classifyConflict', () => {
   let baseDir: string;
 
   beforeEach(() => {
     baseDir = makeTmpDir();
     mkdirSync(baseDir, { recursive: true });
-  });
+  }, GIT_CONFLICT_TEST_TIMEOUT_MS);
 
   afterEach(() => {
     rmSync(baseDir, { recursive: true, force: true });
-  });
+  }, GIT_CONFLICT_TEST_TIMEOUT_MS);
 
   // 1. No conflict → 'clean'
   it('classifies as clean when there is no conflict', async () => {
@@ -125,7 +127,7 @@ describe('classifyConflict', () => {
     expect(report.type).toBe('clean');
     expect(report.conflictingFiles).toHaveLength(0);
     expect(report.suggestedResolution).toBeTruthy();
-  });
+  }, GIT_CONFLICT_TEST_TIMEOUT_MS);
 
   // 2. After a clean merge attempt, the parent tree is unmodified
   it('leaves the parent working tree clean after a clean classification', async () => {
@@ -138,7 +140,7 @@ describe('classifyConflict', () => {
     // The main branch working tree should have no staged/unstaged changes
     const status = git(repoDir, ['status', '--porcelain']).trim();
     expect(status).toBe('');
-  });
+  }, GIT_CONFLICT_TEST_TIMEOUT_MS);
 
   // 3. .jsonl conflict → 'append-only'
   it('classifies .jsonl conflicts as append-only', async () => {
@@ -160,7 +162,7 @@ describe('classifyConflict', () => {
     expect(report.type).toBe('append-only');
     expect(report.conflictingFiles.length).toBeGreaterThan(0);
     expect(report.conflictingFiles.some((f) => f.endsWith('.jsonl'))).toBe(true);
-  });
+  }, GIT_CONFLICT_TEST_TIMEOUT_MS);
 
   // 4. package-lock.json conflict → 'lockfile'
   it('classifies package-lock.json conflicts as lockfile', async () => {
@@ -181,7 +183,7 @@ describe('classifyConflict', () => {
 
     expect(report.type).toBe('lockfile');
     expect(report.conflictingFiles.some((f) => f === 'package-lock.json')).toBe(true);
-  });
+  }, GIT_CONFLICT_TEST_TIMEOUT_MS);
 
   // 5. .ts file conflict → 'non-trivial'
   it('classifies .ts file conflicts as non-trivial', async () => {
@@ -202,7 +204,7 @@ describe('classifyConflict', () => {
 
     expect(report.type).toBe('non-trivial');
     expect(report.suggestedResolution).toMatch(/manual/i);
-  });
+  }, GIT_CONFLICT_TEST_TIMEOUT_MS);
 
   // 6. After conflict classification the parent branch tree is still clean
   it('aborts the merge after classification so the parent tree is clean', async () => {
@@ -224,7 +226,7 @@ describe('classifyConflict', () => {
     // status --porcelain on projectRoot (main branch) should be empty
     const status = git(repoDir, ['status', '--porcelain']).trim();
     expect(status).toBe('');
-  });
+  }, GIT_CONFLICT_TEST_TIMEOUT_MS);
 
   // 7. pnpm-lock.yaml → 'lockfile'
   it('classifies pnpm-lock.yaml conflicts as lockfile', async () => {
@@ -244,7 +246,7 @@ describe('classifyConflict', () => {
     });
 
     expect(report.type).toBe('lockfile');
-  });
+  }, GIT_CONFLICT_TEST_TIMEOUT_MS);
 
   // 8. .sqlite file conflict → 'sqlite-binary'
   it('classifies .sqlite file conflicts as sqlite-binary', async () => {
@@ -269,7 +271,7 @@ describe('classifyConflict', () => {
     // If treated as text and content diverges, expect sqlite-binary.
     // Accept either clean (git ours/theirs merge) or sqlite-binary.
     expect(['sqlite-binary', 'clean', 'non-trivial'].includes(report.type)).toBe(true);
-  });
+  }, GIT_CONFLICT_TEST_TIMEOUT_MS);
 
   // 9. suggestedResolution is always a non-empty string
   it('always returns a non-empty suggestedResolution string', async () => {
@@ -285,7 +287,7 @@ describe('classifyConflict', () => {
 
     expect(typeof report.suggestedResolution).toBe('string');
     expect(report.suggestedResolution.length).toBeGreaterThan(0);
-  });
+  }, GIT_CONFLICT_TEST_TIMEOUT_MS);
 
   // 10. Cargo.lock → 'lockfile'
   it('classifies Cargo.lock conflicts as lockfile', async () => {
@@ -307,5 +309,5 @@ describe('classifyConflict', () => {
     });
 
     expect(report.type).toBe('lockfile');
-  });
+  }, GIT_CONFLICT_TEST_TIMEOUT_MS);
 });

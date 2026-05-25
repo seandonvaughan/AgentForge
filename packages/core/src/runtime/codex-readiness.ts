@@ -11,7 +11,7 @@ import {
 } from './transports/codex-cli-transport.js';
 
 const VALID_TIERS = new Set<ModelTier>(['opus', 'sonnet', 'haiku']);
-const VALID_CODEX_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh']);
+const VALID_CODEX_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 
 interface AgentYaml {
   name?: string;

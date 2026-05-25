@@ -195,7 +195,7 @@ describe('runAutoReforge', () => {
     ).resolves.not.toThrow();
   });
 
-  it('does not emit bus event when skipped (empty curation)', async () => {
+  it('emits learnings.skipped bus event when curation is empty', async () => {
     const publishSpy = vi.fn();
     const bus = { publish: publishSpy };
 
@@ -212,7 +212,17 @@ describe('runAutoReforge', () => {
     });
 
     expect(result.skipped).toBe(true);
-    expect(publishSpy).not.toHaveBeenCalled();
+    expect(publishSpy).toHaveBeenCalledOnce();
+    const [topic, payload] = publishSpy.mock.calls[0]!;
+    expect(topic).toBe('learnings.skipped');
+    expect(payload).toMatchObject({
+      cycleId: 'cycle-006',
+      reason: 'no-proposed-learnings',
+      totalProposed: 0,
+      involvedAgentIds: ['coder'],
+    });
+    expect(payload).toHaveProperty('generatedAt');
+    expect(payload).toHaveProperty('sourcesScanned');
   });
 
   it('propagates curator errors (caller is responsible for swallowing)', async () => {

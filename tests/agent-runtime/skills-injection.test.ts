@@ -28,7 +28,8 @@ interface AgentYamlShape {
   name: string;
   model: string;
   system_prompt: string;
-  skill_ids?: string[];
+  skill_ids?: unknown;
+  learnings?: unknown;
 }
 
 async function writeAgentYaml(
@@ -122,6 +123,84 @@ describe('loadAgentConfig — skills injection', () => {
     expect(prompt).toContain('Verify Before Declaring Done');
     // Separator between skills
     expect(prompt).toContain('---');
+  });
+
+  it('splices learnings after skills and before Fresh Context', async () => {
+    const memDir = join(agentforgeDir, 'memory');
+    await mkdir(memDir, { recursive: true });
+    await writeFile(
+      join(memDir, 'gate-verdict.jsonl'),
+      JSON.stringify({
+        id: 'memory-1',
+        type: 'gate-verdict',
+        value: '[CRITICAL] gate failed last cycle',
+        createdAt: new Date().toISOString(),
+        tags: ['gate', 'verdict', 'critical'],
+      }) + '\n',
+      'utf-8',
+    );
+
+    await writeAgentYaml(agentforgeDir, 'learning-agent', {
+      name: 'learning-agent',
+      model: 'sonnet',
+      system_prompt: 'Base prompt.',
+      skill_ids: ['af-verify-before-done'],
+      learnings: ['Always preserve agent learnings.', 'Prefer durable lessons over transient notes.'],
+    });
+
+    const config = await loadAgentConfig('learning-agent', agentforgeDir, {
+      injectFreshContext: true,
+    });
+
+    expect(config).not.toBeNull();
+    const prompt = config!.systemPrompt;
+    expect(prompt).toContain('## Learnings');
+    expect(prompt).toContain('Always preserve agent learnings.');
+    expect(prompt).toContain('Prefer durable lessons over transient notes.');
+
+    const skillsIdx = prompt.indexOf('## Skills');
+    const learningsIdx = prompt.indexOf('## Learnings');
+    const freshIdx = prompt.indexOf('## Fresh Context');
+    expect(skillsIdx).toBeGreaterThan(-1);
+    expect(learningsIdx).toBeGreaterThan(-1);
+    expect(freshIdx).toBeGreaterThan(-1);
+    expect(skillsIdx).toBeLessThan(learningsIdx);
+    expect(learningsIdx).toBeLessThan(freshIdx);
+  });
+
+  it('ignores malformed learnings without dropping the agent config', async () => {
+    await writeAgentYaml(agentforgeDir, 'bad-learning-agent', {
+      name: 'bad-learning-agent',
+      model: 'sonnet',
+      system_prompt: 'Base prompt.',
+      learnings: { lesson: 'not an array' },
+    });
+
+    const config = await loadAgentConfig('bad-learning-agent', agentforgeDir, {
+      injectFreshContext: false,
+    });
+
+    expect(config).not.toBeNull();
+    expect(config!.systemPrompt).toBe('Base prompt.');
+    expect(config!.systemPrompt).not.toContain('## Learnings');
+  });
+
+  it('normalizes multiline learnings into single prompt bullets', async () => {
+    await writeAgentYaml(agentforgeDir, 'multiline-learning-agent', {
+      name: 'multiline-learning-agent',
+      model: 'sonnet',
+      system_prompt: 'Base prompt.',
+      learnings: ['Preserve context\nDo not drop memory\tentries'],
+    });
+
+    const config = await loadAgentConfig('multiline-learning-agent', agentforgeDir, {
+      injectFreshContext: false,
+    });
+
+    expect(config).not.toBeNull();
+    expect(config!.systemPrompt).toContain('## Learnings');
+    expect(config!.systemPrompt).toContain('- Preserve context Do not drop memory entries');
+    expect(config!.systemPrompt).not.toContain('Preserve context\nDo not drop');
   });
 
   it('skills section appears BEFORE ## Fresh Context', async () => {

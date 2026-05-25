@@ -1,4 +1,5 @@
 import { execFile as execFileCb } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,10 +8,27 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { WorktreePool } from '../worktree-pool.js';
 
 const execFile = promisify(execFileCb);
+const AGENT_SEGMENT_MAX = 64;
+const HASH_SEGMENT_LENGTH = 12;
 
 async function git(cwd: string, args: string[]): Promise<string> {
   const { stdout } = await execFile('git', args, { cwd });
   return stdout;
+}
+
+function expectedHandleId(agentId: string, sessionId: string): string {
+  const safeAgent = agentId
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^[_-]+|[_-]+$/g, '');
+  const compactAgent = (safeAgent || 'unknown').slice(0, AGENT_SEGMENT_MAX);
+  const digest = createHash('sha256')
+    .update(agentId, 'utf8')
+    .update('\u0000', 'utf8')
+    .update(sessionId, 'utf8')
+    .digest('hex');
+  return `agent-${compactAgent}-${digest.slice(0, HASH_SEGMENT_LENGTH)}`;
 }
 
 function toPosixPath(path: string): string {
@@ -83,11 +101,11 @@ describe('WorktreePool', () => {
     const pool = new WorktreePool({ projectRoot: workingDir });
     const handle = await pool.allocate({ agentId: 'coder', sessionId: 'sess1' });
 
-    expect(handle.id).toBe('agent-coder-sess1');
+    expect(handle.id).toBe(expectedHandleId('coder', 'sess1'));
     expect(handle.agentId).toBe('coder');
     expect(handle.sessionId).toBe('sess1');
-    expect(handle.branch).toBe('autonomous/agent-coder-sess1');
-    expect(handle.path).toBe(join(workingDir, '.agentforge/worktrees', 'agent-coder-sess1'));
+    expect(handle.branch).toBe(`autonomous/${handle.id}`);
+    expect(handle.path).toBe(join(workingDir, '.agentforge/worktrees', handle.id));
     expect(handle.allocatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
@@ -126,7 +144,7 @@ describe('WorktreePool', () => {
     const pool = new WorktreePool({ projectRoot: workingDir, branchPrefix: 'codex/' });
     const handle = await pool.allocate({ agentId: 'coder', sessionId: 'sess-codex' });
 
-    expect(handle.branch).toBe('codex/agent-coder-sess-codex');
+    expect(handle.branch).toBe(`codex/${handle.id}`);
     const branches = await git(workingDir, ['branch', '--list', handle.branch]);
     expect(branches.trim()).toContain(handle.branch);
   });
@@ -194,7 +212,11 @@ describe('WorktreePool', () => {
 
   it('refuses to reuse a stale directory that is not a git worktree', async () => {
     const pool = new WorktreePool({ projectRoot: workingDir });
-    const stalePath = join(workingDir, '.agentforge/worktrees', 'agent-coder-stale1');
+    const stalePath = join(
+      workingDir,
+      '.agentforge/worktrees',
+      expectedHandleId('coder', 'stale1'),
+    );
     mkdirSync(stalePath, { recursive: true });
 
     await expect(
@@ -246,6 +268,52 @@ describe('WorktreePool', () => {
     expect(paths).not.toContain(workingDir);
   });
 
+  it('listActive reconstructs readable agentId from registered compact worktrees', async () => {
+    const allocator = new WorktreePool({ projectRoot: workingDir });
+    const created = await allocator.allocate({
+      agentId: 'executor-runtime-engineer',
+      sessionId: 'sess-recover-1',
+    });
+
+    // Simulate dashboard recovery in a fresh process with an empty cache.
+    const recoveringPool = new WorktreePool({ projectRoot: workingDir });
+    const active = await recoveringPool.listActive();
+    const recovered = active.find((item) => item.id === created.id);
+
+    expect(recovered).toBeDefined();
+    expect(recovered?.agentId).toBe('executor-runtime-engineer');
+    expect(recovered?.sessionId).toMatch(/^[a-f0-9]{12}$/);
+    expect(recovered?.branch).toBe(created.branch);
+
+    await allocator.release(created.id);
+  });
+
+  it('listActive preserves the trailing segment for legacy ids that look like compact hashes', async () => {
+    const pool = new WorktreePool({ projectRoot: workingDir });
+    const branch = 'autonomous/agent-coder-deadbeefcafe';
+    const worktreePath = join(workingDir, '.agentforge', 'worktrees', 'agent-coder-deadbeefcafe');
+
+    await git(workingDir, [
+      'worktree',
+      'add',
+      '--no-track',
+      '-b',
+      branch,
+      worktreePath,
+      'origin/main',
+    ]);
+
+    const active = await pool.listActive();
+    const recovered = active.find((item) => item.id === 'agent-coder-deadbeefcafe');
+
+    expect(recovered).toBeDefined();
+    expect(recovered?.agentId).toBe('coder');
+    expect(recovered?.sessionId).toBe('deadbeefcafe');
+
+    await git(workingDir, ['worktree', 'remove', '--force', worktreePath]);
+    await git(workingDir, ['branch', '-D', branch]);
+  });
+
   // -------------------------------------------------------------------------
   // 10. GC by age: keeps recent, removes old
   // -------------------------------------------------------------------------
@@ -275,7 +343,7 @@ describe('WorktreePool', () => {
 
     // cleanup
     await pool.release(recent.id);
-  });
+  }, 60_000);
 
   // -------------------------------------------------------------------------
   // 11. GC by count: keeps last N
@@ -309,7 +377,7 @@ describe('WorktreePool', () => {
 
     // cleanup
     await pool.release(h3.id);
-  });
+  }, 60_000);
 
   // -------------------------------------------------------------------------
   // 12. GC respects unmerged commits — skips the worktree
@@ -342,7 +410,7 @@ describe('WorktreePool', () => {
     // Force clean up after test.
     await git(workingDir, ['worktree', 'remove', '--force', handle.path]);
     await git(workingDir, ['branch', '-D', handle.branch]);
-  });
+  }, 60_000);
 
   // -------------------------------------------------------------------------
   // 13. Stats counters update correctly
@@ -387,20 +455,105 @@ describe('WorktreePool', () => {
   });
 
   // -------------------------------------------------------------------------
-  // 15. Sanitization: special chars in agentId/sessionId are replaced with _
+  // 15. Deterministic compact naming: special chars are encoded into stable hash
   // -------------------------------------------------------------------------
-  it('sanitizes agentId and sessionId replacing special chars with underscore', async () => {
+  it('uses short deterministic ids and safe branch names for special-character ids', async () => {
     const pool = new WorktreePool({ projectRoot: workingDir });
     const handle = await pool.allocate({
       agentId: 'react/component.engineer',
       sessionId: 'cycle@2026#5',
     });
 
-    expect(handle.id).toMatch(/^[a-zA-Z0-9_/-]+$/);
+    expect(handle.id).toBe(expectedHandleId('react/component.engineer', 'cycle@2026#5'));
+    expect(handle.id).toMatch(/^agent-[a-zA-Z0-9_-]+-[a-f0-9]{12}$/);
+    expect(handle.branch).toBe(`autonomous/${handle.id}`);
     expect(handle.branch).toMatch(/^[a-zA-Z0-9_/-]+$/);
     expect(existsSync(handle.path)).toBe(true);
 
     await pool.release(handle.id);
+  });
+
+  it('keeps common AgentForge agent ids readable inside deterministic worktree ids', async () => {
+    const pool = new WorktreePool({ projectRoot: workingDir });
+
+    const executorHandle = await pool.allocate({
+      agentId: 'executor-runtime-engineer',
+      sessionId: 'cycle-readable-1',
+    });
+    const svelteHandle = await pool.allocate({
+      agentId: 'svelte-component-atoms-engineer',
+      sessionId: 'cycle-readable-2',
+    });
+
+    expect(executorHandle.id).toMatch(/^agent-executor-runtime-engineer-[a-f0-9]{12}$/);
+    expect(svelteHandle.id).toMatch(/^agent-svelte-component-atoms-engineer-[a-f0-9]{12}$/);
+
+    const active = await pool.listActive();
+    const activeById = new Map(active.map((item) => [item.id, item]));
+    expect(activeById.get(executorHandle.id)?.agentId).toBe('executor-runtime-engineer');
+    expect(activeById.get(svelteHandle.id)?.agentId).toBe('svelte-component-atoms-engineer');
+
+    await pool.release(executorHandle.id);
+    await pool.release(svelteHandle.id);
+  });
+
+  it('keeps worktree paths short for very long agent and session ids', async () => {
+    const pool = new WorktreePool({ projectRoot: workingDir });
+    const longAgentId = `agent-${'a'.repeat(500)}`;
+    const longSessionId = `session-${'b'.repeat(500)}`;
+
+    const handle = await pool.allocate({
+      agentId: longAgentId,
+      sessionId: longSessionId,
+    });
+
+    expect(handle.id).toBe(expectedHandleId(longAgentId, longSessionId));
+    expect(handle.id.length).toBeLessThanOrEqual('agent-'.length + AGENT_SEGMENT_MAX + 1 + HASH_SEGMENT_LENGTH);
+    expect(handle.id).toMatch(/^agent-[a-zA-Z0-9_-]{1,64}-[a-f0-9]{12}$/);
+    expect(handle.path.length).toBeLessThan(220);
+    expect(existsSync(handle.path)).toBe(true);
+
+    await pool.release(handle.id);
+  });
+
+  it('is deterministic for retries and unique across different long ids', async () => {
+    const pool = new WorktreePool({ projectRoot: workingDir });
+    const longAgentId = `agent-${'x'.repeat(400)}`;
+    const sessionA = `session-${'y'.repeat(400)}-A`;
+    const sessionB = `session-${'y'.repeat(400)}-B`;
+
+    const first = await pool.allocate({ agentId: longAgentId, sessionId: sessionA });
+    await pool.release(first.id);
+
+    const second = await pool.allocate({ agentId: longAgentId, sessionId: sessionA });
+    const third = await pool.allocate({ agentId: longAgentId, sessionId: sessionB });
+
+    expect(second.id).toBe(first.id);
+    expect(second.branch).toBe(first.branch);
+    expect(third.id).not.toBe(first.id);
+    expect(third.branch).not.toBe(first.branch);
+
+    await pool.release(second.id);
+    await pool.release(third.id);
+  });
+
+  it('keeps truncated visible agent collisions unique via the hash suffix', async () => {
+    const pool = new WorktreePool({ projectRoot: workingDir });
+    const sharedPrefix = `agent-${'x'.repeat(80)}`;
+    const agentA = `${sharedPrefix}-A`;
+    const agentB = `${sharedPrefix}-B`;
+
+    const first = await pool.allocate({ agentId: agentA, sessionId: 'same-session' });
+    const second = await pool.allocate({ agentId: agentB, sessionId: 'same-session' });
+
+    expect(first.id.slice(0, 'agent-'.length + AGENT_SEGMENT_MAX)).toBe(
+      second.id.slice(0, 'agent-'.length + AGENT_SEGMENT_MAX),
+    );
+    expect(first.id).not.toBe(second.id);
+    expect(first.branch).not.toBe(second.branch);
+
+    await pool.release(first.id);
+    await pool.release(second.id);
   });
 
   // -------------------------------------------------------------------------

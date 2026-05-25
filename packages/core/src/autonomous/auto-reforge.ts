@@ -203,6 +203,16 @@ export async function runAutoReforge(
     0,
   );
   if (totalProposed === 0) {
+    if (opts.bus) {
+      opts.bus.publish('learnings.skipped', {
+        cycleId: opts.cycleId,
+        reason: 'no-proposed-learnings',
+        totalProposed,
+        involvedAgentIds: [...opts.involvedAgentIds],
+        generatedAt: curationResult.generatedAt,
+        sourcesScanned: curationResult.sourcesScanned,
+      });
+    }
     return { cycleId: opts.cycleId, skipped: true, durationMs: Date.now() - startedAt };
   }
 

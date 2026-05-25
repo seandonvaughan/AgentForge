@@ -218,7 +218,7 @@ describe('Worktree 20-agent stress test (T4.8)', () => {
 
       // Verify every branch name follows the expected pattern
       for (const branch of uniqueBranches) {
-        expect(branch).toMatch(/^autonomous\/agent-agent-\d+-stress-sess-\d+$/);
+        expect(branch).toMatch(/^autonomous\/agent-agent-\d+-[a-f0-9]{12}$/);
       }
 
       // ── Assertion 2: branches with unmerged commits have exactly 1 commit ─

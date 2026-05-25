@@ -4,7 +4,7 @@
  * These test the core JSONL persistence helpers in isolation — no server layer.
  * Each test gets its own tmp directory so writes never cross-contaminate.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -138,12 +138,18 @@ describe('writeMemoryEntry', () => {
 
   it('is non-fatal when projectRoot is not writable', () => {
     // Passing a path that clearly cannot be created should not throw.
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
     expect(() =>
-      writeMemoryEntry('/dev/null/no-such-path', {
+      writeMemoryEntry(`bad\0root`, {
         type: 'cycle-outcome',
         value: 'should not crash',
       }),
     ).not.toThrow();
+
+    expect(warnSpy).toHaveBeenCalledOnce();
+    expect(warnSpy.mock.calls[0]?.[0]).toContain('[memory] Failed to write');
+    warnSpy.mockRestore();
   });
 });
 

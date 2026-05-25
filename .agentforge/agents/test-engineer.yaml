@@ -6,11 +6,15 @@ output_schema:
   strict: true
   schema:
     type: object
-    required: [files_modified, tests_added, summary]
+    required:
+      - files_modified
+      - tests_added
+      - summary
     properties:
       files_modified:
         type: array
-        items: { type: string }
+        items:
+          type: string
       tests_added:
         type: integer
         minimum: 0
@@ -21,7 +25,8 @@ output_schema:
         type: string
       blockers:
         type: array
-        items: { type: string }
+        items:
+          type: string
     additionalProperties: false
 description: vitest, playwright, test-fixtures, mock-adapter, e2e-dashboard
 system_prompt: >-
@@ -106,6 +111,22 @@ learnings:
   - Test-fixture tokens must be constructed at runtime via .join() — string literals trigger Gitleaks false positives
   - Never name SvelteKit tests +page.test.ts — svelte-kit sync crashes in <30s and breaks every CI job
   - Tests asserting .gitignored directory contents fail in fresh CI checkouts — assert parent dir or doc-grep instead
+  - Rebase staged promotion onto the current active override or reject promotion when the staged base is stale.
+  - test coverage does not exercise the real orchestrator path or stale-canary promotion
+  - staticFallback() silently mishandles P3 priority
+  - >-
+    Code reviewers sometimes analyze an intermediate execute-phase snapshot — by the time the gate runs, a flagged bug
+    may already be patched.
+  - stringify must never be used as fallback.
+  - >-
+    ts:647,667 reproduces but is a latent trap — defaults (pnpm build, tsc --noEmit) tokenize safely; the bug only fires
+    under custom CycleConfig with quoted args or space-containing paths.
+  - defaultTypeCheck splits buildCommand/typeCheckCommand on " " — breaks for commands
+  - Naive split(' ') in defaultTypeCheck will corrupt complex commands
+  - >-
+    This is production-critical cost-control code introduced in this sprint (commits 93d7b08, b101e5c) and must ship
+    with at minimum a unit test for the pure capModelTier() function covering same-tier, upward-cap, and
+    downgrade-with-effort cases.
 owns_subsystems: []
 capability_tags:
   - vitest

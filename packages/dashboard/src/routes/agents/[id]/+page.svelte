@@ -245,6 +245,25 @@
 
   let memKinds = $derived([...new Set(memEntries.map(m => m.type ?? '').filter(Boolean))].sort());
 
+  function sessionRowKey(session: SessionRow, index: number): string {
+    return [
+      session.id,
+      session.agent_id ?? session.agentId,
+      session.started_at ?? session.startedAt,
+      index,
+    ].filter(Boolean).join('::');
+  }
+
+  function memoryEntryKey(entry: MemEntry, index: number): string {
+    return [
+      entry.id,
+      entry.type,
+      entry.source ?? entry.agentId,
+      entry.createdAt,
+      index,
+    ].filter(Boolean).join('::');
+  }
+
   // ── Formatters ───────────────────────────────────────────────────────────────
   function fmtDuration(ms: number): string {
     if (!ms) return '—';
@@ -569,7 +588,7 @@
           </tr>
         </thead>
         <tbody>
-          {#each sessions as s (s.id ?? Math.random())}
+          {#each sessions as s, i (sessionRowKey(s, i))}
             {@const sid = s.id ?? ''}
             {@const isExpanded = expandedSession === sid}
             <tr
@@ -637,7 +656,7 @@
     {/if}
 
     <div class="af-mem-list">
-      {#each memFiltered as m (m.id)}
+      {#each memFiltered as m, i (memoryEntryKey(m, i))}
         {@const kindColor = m.type === 'failure' ? 'var(--af-danger)' : m.type === 'decision' ? 'var(--af-sonnet)' : m.type === 'metric' ? 'var(--af-warning)' : 'var(--af-purple)'}
         <Card hover style="border-left:3px solid {kindColor}; padding:14px 16px; margin-bottom:8px;">
           <div class="af-mem-header">

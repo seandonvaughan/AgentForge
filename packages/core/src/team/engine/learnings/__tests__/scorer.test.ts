@@ -94,6 +94,30 @@ describe("parseSeverity", () => {
     ).toBe("MINOR");
   });
 
+  it("prefers metadata severity over tags and value", () => {
+    expect(
+      parseSeverity(
+        makeEntry({
+          value: "[MINOR] rendered text is lower severity",
+          tags: ["minor"],
+          metadata: { severity: "CRITICAL" },
+        }),
+      ),
+    ).toBe("CRITICAL");
+  });
+
+  it("falls back when metadata severity is invalid", () => {
+    expect(
+      parseSeverity(
+        makeEntry({
+          value: "[MAJOR] rendered text carries valid severity",
+          tags: [],
+          metadata: { severity: "not-real" },
+        }),
+      ),
+    ).toBe("MAJOR");
+  });
+
   it("defaults to INFO when no severity markers present", () => {
     expect(
       parseSeverity(makeEntry({ value: "A generic note", tags: [] })),
