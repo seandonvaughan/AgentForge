@@ -341,6 +341,21 @@ export function extractFilesFromItem(item: {
   return Array.from(new Set(matches));
 }
 
+/**
+ * Safeguard #2 — true when an item's declared file and a gate-finding file
+ * refer to the same path. Matches on normalized equality or a clean path-suffix
+ * (tolerates relative-vs-absolute). Deliberately strict (no basename-only match)
+ * so a finding routes to exactly the item that owns it — an over-match would
+ * re-run a non-faulted item and reintroduce the "no source changes" failure.
+ */
+export function fileMatchesFinding(itemFile: string, findingFile: string): boolean {
+  const norm = (p: string): string => p.replace(/\\/g, '/').replace(/^\.\//, '').trim();
+  const a = norm(itemFile);
+  const b = norm(findingFile);
+  if (!a || !b) return false;
+  return a === b || a.endsWith('/' + b) || b.endsWith('/' + a);
+}
+
 interface SprintFile {
   version?: string;
   items?: SprintItem[];
@@ -1326,6 +1341,26 @@ export async function runExecutePhase(
   const indexById = new Map<string, number>();
   items.forEach((it, idx) => indexById.set(it.id, idx));
 
+  // === safeguard #2 === Gate-retry finding routing.
+  // On a gate-rejection retry, re-execute ONLY the items whose declared files
+  // match the gate findings; keep the rest (their attempt-1 branch/PR stands).
+  // The cycle-level retry used to tell EVERY item to fix the one finding, so
+  // non-owning agents made no edit and failed "produced no source changes",
+  // blocking the whole cycle (observed in live cycle c6954dbe). If no item
+  // matches the findings, fall back to re-executing all (no regression).
+  let retryImplicatedIds: Set<string> | null = null;
+  const gateRetryFiles = ctx.gateRetry?.files ?? [];
+  if (gateRetryFiles.length > 0) {
+    const implicated = new Set<string>();
+    for (const it of items) {
+      const declared = itemFiles.get(it.id) ?? [];
+      if (declared.some((f) => gateRetryFiles.some((ff) => fileMatchesFinding(f, ff)))) {
+        implicated.add(it.id);
+      }
+    }
+    if (implicated.size > 0) retryImplicatedIds = implicated;
+  }
+
   for (const item of items) {
     // Wave 5 T1 — skip items that were completed in a prior (crashed) run.
     if (resumeCompletedIds.has(item.id)) {
@@ -1340,6 +1375,22 @@ export async function runExecutePhase(
       };
       liveResults.set(item.id, skippedResult);
       settledResults[indexById.get(item.id)!] = { status: 'fulfilled', value: skippedResult };
+      continue;
+    }
+
+    // Safeguard #2 — on a gate retry, keep items the gate did not fault.
+    if (retryImplicatedIds && !retryImplicatedIds.has(item.id)) {
+      item.status = 'completed';
+      const keptResult: ItemResult = {
+        itemId: item.id,
+        status: 'completed',
+        costUsd: 0,
+        durationMs: 0,
+        response: '[kept — not faulted by the gate retry; prior attempt branch/PR stands]',
+        attempts: 0,
+      };
+      liveResults.set(item.id, keptResult);
+      settledResults[indexById.get(item.id)!] = { status: 'fulfilled', value: keptResult };
       continue;
     }
 
