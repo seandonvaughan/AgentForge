@@ -1,17 +1,31 @@
 # AgentForge Runtime Modes
 
-AgentForge supports three execution backends, selected via the `AGENTFORGE_RUNTIME`
-environment variable or the `runtime:` field in `.agentforge/autonomous.yaml`.
+AgentForge supports multiple runtime modes across Claude and Codex transports,
+selected via the `AGENTFORGE_RUNTIME` environment variable or the `runtime:`
+field in `.agentforge/autonomous.yaml`.
 
 ---
 
-## The three modes
+## Primary modes
 
 | Mode | Value | Transport registered | Best for |
 |---|---|---|---|
 | SDK only | `sdk` | `AnthropicSdkTransport` only | AgentForge Cloud, CI, any environment where the `claude` CLI is not installed |
 | CLI only | `cli` | `ClaudeCodeCompatTransport` only | Local Claude Code users who want to guarantee the CLI path |
 | Auto (default) | `auto` | Both | Local development; falls back gracefully when only one transport is available |
+
+## Full `resolveMode()` contract
+
+`resolveMode()` accepts and can return the full `RuntimeMode` union:
+
+- `auto`
+- `sdk` (compat alias for Anthropic SDK routing)
+- `cli` (compat alias for Claude CLI routing)
+- `anthropic-sdk`
+- `claude-cli`
+- `claude-code-compat`
+- `codex-cli`
+- `openai-sdk`
 
 ### `auto` (default)
 
@@ -86,7 +100,7 @@ export AGENTFORGE_RUNTIME=auto
 Add a top-level `runtime:` field:
 
 ```yaml
-runtime: sdk   # or: cli | auto
+runtime: sdk   # or: auto | cli | anthropic-sdk | claude-cli | claude-code-compat | codex-cli | openai-sdk
 
 budget:
   perCycleUsd: 200
@@ -102,7 +116,7 @@ back to `auto`:
 
 ```
 [agentforge] AGENTFORGE_RUNTIME="turbo" is not a valid value.
-Falling back to "auto". Valid values: auto, sdk, cli.
+Falling back to "auto". Valid values: auto, sdk, cli, anthropic-sdk, claude-cli, claude-code-compat, codex-cli, openai-sdk.
 ```
 
 ---
@@ -113,7 +127,7 @@ Falling back to "auto". Valid values: auto, sdk, cli.
 import { resolveMode, readConfigMode } from '@agentforge/core/runtime/execution-service-mode';
 
 // Resolve from process.env + autonomous.yaml in cwd
-const mode = resolveMode();         // 'auto' | 'sdk' | 'cli'
+const mode = resolveMode(); // 'auto' | 'sdk' | 'cli' | 'anthropic-sdk' | 'claude-cli' | 'claude-code-compat' | 'codex-cli' | 'openai-sdk'
 
 // Read only the config-file field
 const configMode = readConfigMode('/path/to/project');
