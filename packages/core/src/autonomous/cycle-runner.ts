@@ -70,10 +70,11 @@ import type { GitOps } from './exec/git-ops.js';
 import type { PROpener } from './exec/pr-opener.js';
 import { runAutoReforge, extractInvolvedAgentIds } from './auto-reforge.js';
 import {
-  resolveCommandForExecFile,
   runPreVerifyTypeCheck,
   type PreVerifyTypeCheckResult,
 } from './pre-verify-typecheck.js';
+import { parseCommandArgs, resolveCommandForExecFile } from './subprocess-command.js';
+export { parseCommandArgs } from './subprocess-command.js';
 import { assertUnattendedSafe } from './audit/unattended-guard.js';
 import { mergeBreakdowns, type CostBreakdown } from './cost-breakdown.js';
 import { exportCycleTelemetry } from '../telemetry/cycle-telemetry-export.js';
@@ -224,60 +225,6 @@ function extractSubprocessError(err: unknown): string {
   return text.slice(0, 2000);
 }
 
-/**
- * Tokenise a shell command string into argv suitable for `execFile`.
- *
- * Handles single-quoted and double-quoted tokens so command strings like
- *   `pnpm --filter "@agentforge/core" build`
- * are split into:
- *   `['pnpm', '--filter', '@agentforge/core', 'build']`
- *
- * Replaces the previous naive `cmd.split(' ')` which corrupted commands
- * containing quoted arguments with interior spaces. This function is the
- * correct counterpart to using `execFile` (which bypasses the shell and
- * requires the caller to pre-tokenize argv).
- *
- * Constraints:
- * - No backslash escape handling outside of double quotes (not needed for
- *   the pnpm/tsc invocations stored in CycleConfig.testing).
- * - No subshells, pipes, or other shell meta-characters.
- *
- * Exported so unit tests can verify tokenisation independently of CycleRunner.
- */
-export function parseCommandArgs(cmd: string): string[] {
-  const tokens: string[] = [];
-  let current = '';
-  let i = 0;
-
-  while (i < cmd.length) {
-    const ch = cmd[i]!;
-
-    if (ch === '"' || ch === "'") {
-      // Collect all characters until the matching closing quote.
-      const quote = ch;
-      i++;
-      while (i < cmd.length && cmd[i] !== quote) {
-        current += cmd[i];
-        i++;
-      }
-      i++; // consume closing quote
-    } else if (ch === ' ' || ch === '\t') {
-      // Whitespace ends the current token (consecutive whitespace is collapsed).
-      if (current.length > 0) {
-        tokens.push(current);
-        current = '';
-      }
-      i++;
-    } else {
-      current += ch;
-      i++;
-    }
-  }
-
-  if (current.length > 0) tokens.push(current);
-  return tokens;
-}
-
 export interface CycleRunnerOptions {
   cwd: string;
   config: CycleConfig;
@@ -383,6 +330,7 @@ export interface MultiPrBranchVerificationEntry {
 export interface MultiPrBranchVerificationResult {
   passed: boolean;
   results: MultiPrBranchVerificationEntry[];
+  parallelism?: number;
   skipped?: boolean;
   reason?: string;
 }
@@ -598,6 +546,29 @@ function safeRemoveVerificationWorktree(worktreePath: string, worktreesRoot: str
   rmSync(resolved, { recursive: true, force: true });
 }
 
+function createAsyncMutex(): <T>(task: () => Promise<T>) => Promise<T> {
+  let tail: Promise<unknown> = Promise.resolve();
+  return async <T>(task: () => Promise<T>): Promise<T> => {
+    const run = tail.then(task, task);
+    tail = run.catch(() => undefined);
+    return run;
+  };
+}
+
+export function resolveMultiPrVerifyParallelism(
+  runCount: number,
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  if (runCount <= 0) return 0;
+  const raw = env['AGENTFORGE_MULTI_PR_VERIFY_PARALLELISM']?.trim()
+    ?? env['AUTONOMOUS_MAX_AGENTS']?.trim();
+  const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return Math.min(runCount, Math.max(1, parsed));
+  }
+  return Math.min(runCount, 3);
+}
+
 /**
  * Verify every completed agent branch recorded in execute.json by checking it
  * out into an isolated temporary git worktree and running the real project
@@ -633,9 +604,14 @@ export async function verifyMultiPrAgentBranches(opts: {
   const worktreesRoot = resolve(opts.cwd, '.agentforge', 'worktrees');
   mkdirSync(worktreesRoot, { recursive: true });
   const timeoutMs = Math.max(5, opts.testing.timeoutMinutes) * 60_000;
-  const results: MultiPrBranchVerificationEntry[] = [];
+  const results: MultiPrBranchVerificationEntry[] = new Array(runs.length);
+  const parallelism = resolveMultiPrVerifyParallelism(runs.length);
+  const withGitMutation = createAsyncMutex();
 
-  for (const [index, run] of runs.entries()) {
+  const verifyRun = async (
+    run: MultiPrBranchVerificationRun,
+    index: number,
+  ): Promise<MultiPrBranchVerificationEntry> => {
     const startedAt = Date.now();
     const worktreePath = join(
       worktreesRoot,
@@ -644,11 +620,13 @@ export async function verifyMultiPrAgentBranches(opts: {
 
     try {
       safeRemoveVerificationWorktree(worktreePath, worktreesRoot);
-      const ref = await resolveBranchRef(opts.cwd, run.branch);
-      await execFileAsync(
-        'git',
-        ['worktree', 'add', '--detach', worktreePath, ref],
-        { cwd: opts.cwd, timeout: 120_000, maxBuffer: 10 * 1024 * 1024, windowsHide: true },
+      const ref = await withGitMutation(() => resolveBranchRef(opts.cwd, run.branch));
+      await withGitMutation(() =>
+        execFileAsync(
+          'git',
+          ['worktree', 'add', '--detach', worktreePath, ref],
+          { cwd: opts.cwd, timeout: 120_000, maxBuffer: 10 * 1024 * 1024, windowsHide: true },
+        ),
       );
 
       for (const command of commands) {
@@ -656,7 +634,7 @@ export async function verifyMultiPrAgentBranches(opts: {
           await execCommandInDir(worktreePath, command, timeoutMs);
         } catch (err) {
           const e = err as { stdout?: Buffer | string; stderr?: Buffer | string; message?: string };
-          results.push({
+          return {
             branch: run.branch,
             ...(run.agentId !== undefined ? { agentId: run.agentId } : {}),
             ...(run.itemId !== undefined ? { itemId: run.itemId } : {}),
@@ -666,54 +644,70 @@ export async function verifyMultiPrAgentBranches(opts: {
             stdout: (e.stdout?.toString() ?? '').slice(0, 10_000),
             stderr: (e.stderr?.toString() ?? '').slice(0, 10_000),
             error: extractSubprocessError(err),
-          });
-          break;
+          };
         }
       }
 
-      if (!results.some((result) => result.branch === run.branch && result.status === 'failed')) {
-        results.push({
-          branch: run.branch,
-          ...(run.agentId !== undefined ? { agentId: run.agentId } : {}),
-          ...(run.itemId !== undefined ? { itemId: run.itemId } : {}),
-          status: 'passed',
-          durationMs: Date.now() - startedAt,
-        });
-      }
+      return {
+        branch: run.branch,
+        ...(run.agentId !== undefined ? { agentId: run.agentId } : {}),
+        ...(run.itemId !== undefined ? { itemId: run.itemId } : {}),
+        status: 'passed',
+        durationMs: Date.now() - startedAt,
+      };
     } catch (err) {
-      results.push({
+      return {
         branch: run.branch,
         ...(run.agentId !== undefined ? { agentId: run.agentId } : {}),
         ...(run.itemId !== undefined ? { itemId: run.itemId } : {}),
         status: 'failed',
         durationMs: Date.now() - startedAt,
         error: extractSubprocessError(err),
-      });
+      };
     } finally {
       try {
-        await execFileAsync(
-          'git',
-          ['worktree', 'remove', '--force', worktreePath],
-          { cwd: opts.cwd, timeout: 120_000, maxBuffer: 10 * 1024 * 1024, windowsHide: true },
+        await withGitMutation(() =>
+          execFileAsync(
+            'git',
+            ['worktree', 'remove', '--force', worktreePath],
+            { cwd: opts.cwd, timeout: 120_000, maxBuffer: 10 * 1024 * 1024, windowsHide: true },
+          ),
         );
       } catch {
         safeRemoveVerificationWorktree(worktreePath, worktreesRoot);
         try {
-          await execFileAsync(
-            'git',
-            ['worktree', 'prune'],
-            { cwd: opts.cwd, timeout: 120_000, maxBuffer: 10 * 1024 * 1024, windowsHide: true },
+          await withGitMutation(() =>
+            execFileAsync(
+              'git',
+              ['worktree', 'prune'],
+              { cwd: opts.cwd, timeout: 120_000, maxBuffer: 10 * 1024 * 1024, windowsHide: true },
+            ),
           );
         } catch {
           // Best-effort metadata cleanup only.
         }
       }
     }
-  }
+  };
+
+  let next = 0;
+  const workers = Array.from({ length: parallelism }, async () => {
+    while (next < runs.length) {
+      const index = next;
+      next++;
+      results[index] = await verifyRun(runs[index]!, index);
+    }
+  });
+  await Promise.all(workers);
+
+  const orderedResults = results.filter(
+    (result): result is MultiPrBranchVerificationEntry => result !== undefined,
+  );
 
   return {
-    passed: results.every((result) => result.status === 'passed'),
-    results,
+    passed: orderedResults.every((result) => result.status === 'passed'),
+    results: orderedResults,
+    parallelism,
   };
 }
 

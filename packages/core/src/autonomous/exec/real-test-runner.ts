@@ -12,6 +12,7 @@ import { promisify } from 'node:util';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { CycleConfig, TestResult, FailedTest } from '../types.js';
+import { parseCommandArgs, resolveCommandForExecFile } from '../subprocess-command.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -30,7 +31,6 @@ export class TestRunnerError extends Error {
     this.name = 'TestRunnerError';
   }
 }
-
 /**
  * Thrown when the underlying vitest process exceeds `config.timeoutMinutes`.
  * The orchestrator treats this as a hard kill condition.
@@ -64,7 +64,7 @@ export class RealTestRunner {
     const outputFile = join(this.cwd, '.agentforge/cycles', cycleId, 'test-results.json');
     mkdirSync(dirname(outputFile), { recursive: true });
 
-    const cmdParts = this.config.command.split(' ');
+    const cmdParts = parseCommandArgs(this.config.command);
     const cmd = cmdParts[0]!;
     // When the command invokes vitest directly (e.g. `pnpm exec vitest run`),
     // skip the `--` separator — vitest treats `--` as a test file filter and
@@ -79,7 +79,7 @@ export class RealTestRunner {
       outputFile,
     ];
     const timeoutMs = this.config.timeoutMinutes * 60_000;
-    const invocation = buildExecInvocation(cmd, args);
+    const invocation = resolveCommandForExecFile(cmd, args);
 
     let stdout = '';
     let stderr = '';
@@ -89,17 +89,23 @@ export class RealTestRunner {
     // If a bus is provided, also run a streaming spawn to emit line-buffered
     // progress events. The execFileAsync below still owns the authoritative
     // JSON output; the spawn is fire-and-forget for UX only.
-    if (this.bus) {
-      this._streamProgressLines(invocation.file, invocation.args, timeoutMs);
+    if (this.bus && process.platform !== 'win32') {
+      this._streamProgressLines(
+        invocation.command,
+        invocation.args,
+        timeoutMs,
+        invocation.windowsVerbatimArguments,
+      );
     }
 
     try {
-      const result = await execFileAsync(invocation.file, invocation.args, {
+      const result = await execFileAsync(invocation.command, invocation.args, {
         cwd: this.cwd,
         timeout: timeoutMs,
         maxBuffer: 50 * 1024 * 1024,
         env: { ...process.env, CI: '1', NO_COLOR: '1' },
         windowsHide: true,
+        ...(invocation.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
       });
       stdout = result.stdout.toString();
       stderr = result.stderr.toString();
@@ -146,7 +152,12 @@ export class RealTestRunner {
    * Emits one `test.progress` bus event per 10 lines (or on file-level events)
    * with best-effort parsing of vitest tap/verbose output for passed/failed counts.
    */
-  private _streamProgressLines(file: string, args: string[], timeoutMs: number): void {
+  private _streamProgressLines(
+    file: string,
+    args: string[],
+    timeoutMs: number,
+    windowsVerbatimArguments?: boolean,
+  ): void {
     if (!this.bus) return;
     const bus = this.bus;
     let lineCount = 0;
@@ -161,6 +172,7 @@ export class RealTestRunner {
         stdio: ['ignore', 'pipe', 'pipe'],
         timeout: timeoutMs,
         windowsHide: true,
+        ...(windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
       });
 
       const handleLine = (line: string): void => {
@@ -282,20 +294,4 @@ export class RealTestRunner {
       exitCode,
     };
   }
-}
-
-function buildExecInvocation(command: string, args: string[]): { file: string; args: string[] } {
-  if (process.platform !== 'win32') {
-    return { file: command, args };
-  }
-
-  return {
-    file: 'cmd.exe',
-    args: ['/d', '/s', '/c', [command, ...args].map(quoteCmdArg).join(' ')],
-  };
-}
-
-function quoteCmdArg(arg: string): string {
-  if (/^[A-Za-z0-9_./:=,+@%\\-]+$/.test(arg)) return arg;
-  return `"${arg.replace(/"/g, '\\"')}"`;
 }

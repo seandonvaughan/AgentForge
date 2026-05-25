@@ -13,6 +13,7 @@ const DASHBOARD_E2E_SPECS = [
   'tests/e2e/dashboard-cycle-launch.test.ts',
   'tests/e2e/dashboard-cycle-detail.test.ts',
 ] as const;
+const DASHBOARD_E2E_COMMAND = `playwright test ${DASHBOARD_E2E_SPECS.join(' ')}`;
 
 function parseDashboardE2eSpecs(script: string): string[] {
   const prefix = 'playwright test';
@@ -26,6 +27,13 @@ function parseDashboardE2eSpecs(script: string): string[] {
     .trim()
     .split(/\s+/)
     .filter((token) => token.length > 0);
+}
+
+function parsePipelineSteps(script: string): string[] {
+  return script
+    .split('&&')
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0);
 }
 
 describe('package scripts', () => {
@@ -84,6 +92,46 @@ describe('package scripts', () => {
     expect(new Set(selectedSpecs).size).toBe(selectedSpecs.length);
   });
 
+  it('locks verify:product to the exact regression-gate pipeline shape', () => {
+    const scripts = loadRootScripts();
+    const verifyProduct = scripts['verify:product'];
+
+    expect(parsePipelineSteps(verifyProduct)).toEqual([
+      'corepack pnpm check:types',
+      'corepack pnpm test:run',
+      'corepack pnpm test:e2e:dashboard',
+    ]);
+  });
+
+  it('runs exactly one approved dashboard playwright command in verify:product', async () => {
+    const scripts = loadRootScripts();
+    const harness = new ScriptPipelineHarness(scripts, () => 0);
+
+    const result = await harness.run('verify:product');
+    const playwrightRuns = result.trace.filter((command) =>
+      command.startsWith('playwright test'),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(playwrightRuns).toEqual([DASHBOARD_E2E_COMMAND]);
+    expect(result.trace).not.toContain('playwright test');
+  });
+
+  it('locks verify:gates to run verify:product and verify:dashboard before post-check jobs', () => {
+    const scripts = loadRootScripts();
+    const verifyGates = scripts['verify:gates'];
+
+    expect(parsePipelineSteps(verifyGates)).toEqual([
+      'corepack pnpm lint',
+      'corepack pnpm check:versions',
+      'corepack pnpm verify:product',
+      'corepack pnpm verify:dashboard',
+      'corepack pnpm check:help',
+      'corepack pnpm check:changelog',
+      'corepack pnpm audit:deps',
+    ]);
+  });
+
   it('runs exactly one dashboard e2e invocation during verify:gates', async () => {
     const scripts = loadRootScripts();
     const harness = new ScriptPipelineHarness(scripts, () => 0);
@@ -98,6 +146,20 @@ describe('package scripts', () => {
     expect(parseDashboardE2eSpecs(dashboardE2eRuns[0] ?? '')).toEqual([
       ...DASHBOARD_E2E_SPECS,
     ]);
+  });
+
+  it('does not invoke broad playwright e2e selectors during verify:gates', async () => {
+    const scripts = loadRootScripts();
+    const harness = new ScriptPipelineHarness(scripts, () => 0);
+
+    const result = await harness.run('verify:gates');
+    const playwrightRuns = result.trace.filter((command) =>
+      command.startsWith('playwright test'),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(playwrightRuns).toEqual([DASHBOARD_E2E_COMMAND]);
+    expect(result.trace).not.toContain('playwright test');
   });
 
   it('stops verify:gates before dashboard checks when verify:product typecheck fails', async () => {
@@ -118,7 +180,7 @@ describe('package scripts', () => {
     expect(lintCommand).toContain('"tests/**/*.{js,mjs,cjs,ts,tsx}"');
     expect(lintCommand).toContain('--max-warnings=0');
     expect(result.trace).toContain('node scripts/check-version-sync.mjs');
-    expect(result.trace).not.toContain('pnpm --filter @agentforge/dashboard check');
+    expect(result.trace).not.toContain('corepack pnpm --filter @agentforge/dashboard check');
     expect(result.trace).not.toContain('node scripts/check-help-output.mjs');
   });
 
@@ -135,9 +197,9 @@ describe('package scripts', () => {
         command.startsWith('playwright test tests/e2e/dashboard-agents.test.ts'),
       ),
     ).toBe(true);
-    expect(result.trace).toContain('pnpm --filter @agentforge/dashboard check');
+    expect(result.trace).toContain('corepack pnpm --filter @agentforge/dashboard check');
     expect(result.trace.indexOf('vitest run')).toBeLessThan(
-      result.trace.indexOf('pnpm --filter @agentforge/dashboard check'),
+      result.trace.indexOf('corepack pnpm --filter @agentforge/dashboard check'),
     );
   });
 
@@ -208,6 +270,21 @@ describe('package scripts', () => {
       'pnpm exec tsx C:\\repo\\scripts\\smoke.ts',
     ]);
     expect(observed).toEqual(result.trace);
+  });
+
+  it('resolves corepack pnpm script invocations', async () => {
+    const harness = new ScriptPipelineHarness(
+      {
+        parent: 'echo before && corepack pnpm child && echo after',
+        child: 'echo nested-ok',
+      },
+      () => 0,
+    );
+
+    const result = await harness.run('parent');
+
+    expect(result.ok).toBe(true);
+    expect(result.trace).toEqual(['echo before', 'echo nested-ok', 'echo after']);
   });
 
   it('cleans in-flight tracking when a leaf command throws', async () => {

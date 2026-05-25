@@ -277,18 +277,53 @@ describe('runPreVerifyTypeCheck', () => {
 });
 
 describe('resolveCommandForExecFile', () => {
-  it('wraps Windows Node shims with cmd.exe for execFile', async () => {
+  it('runs Windows corepack through node instead of cmd.exe when corepack.js is available', async () => {
     const { resolveCommandForExecFile } = await import('../pre-verify-typecheck.js');
     const tmp = tmpDir();
     try {
+      const nodePath = join(tmp, 'node.exe');
+      const corepackJs = join(tmp, 'node_modules', 'corepack', 'dist', 'corepack.js');
+      mkdirSync(join(tmp, 'node_modules', 'corepack', 'dist'), { recursive: true });
+      writeFileSync(corepackJs, '');
       writeFileSync(join(tmp, 'corepack.cmd'), '@echo off\n');
-      const resolved = resolveCommandForExecFile('corepack', ['pnpm', 'build'], 'win32', join(tmp, 'node.exe'), { ComSpec: 'cmd.exe' });
+      const resolved = resolveCommandForExecFile('corepack', ['pnpm', 'build'], 'win32', nodePath, { ComSpec: 'cmd.exe' });
+      expect(resolved).toEqual({
+        command: nodePath,
+        args: [corepackJs, 'pnpm', 'build'],
+      });
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('runs Windows pnpm shims through node corepack.js when available', async () => {
+    const { resolveCommandForExecFile } = await import('../pre-verify-typecheck.js');
+    const tmp = tmpDir();
+    try {
+      const nodePath = join(tmp, 'node.exe');
+      const corepackJs = join(tmp, 'node_modules', 'corepack', 'dist', 'corepack.js');
+      mkdirSync(join(tmp, 'node_modules', 'corepack', 'dist'), { recursive: true });
+      writeFileSync(corepackJs, '');
+      writeFileSync(join(tmp, 'pnpm.cmd'), '@echo off\n');
+      const resolved = resolveCommandForExecFile('pnpm', ['exec', 'vitest', 'run'], 'win32', nodePath, { PATH: tmp });
+      expect(resolved).toEqual({
+        command: nodePath,
+        args: [corepackJs, 'pnpm', 'exec', 'vitest', 'run'],
+      });
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('wraps non-corepack Windows shims with cmd.exe for execFile', async () => {
+    const { resolveCommandForExecFile } = await import('../pre-verify-typecheck.js');
+    const tmp = tmpDir();
+    try {
+      writeFileSync(join(tmp, 'fake.cmd'), '@echo off\n');
+      const resolved = resolveCommandForExecFile('fake', ['one'], 'win32', join(tmp, 'node.exe'), { PATH: tmp, ComSpec: 'cmd.exe' });
       expect(resolved.command).toBe('cmd.exe');
       expect(resolved.args.slice(0, 3)).toEqual(['/d', '/s', '/c']);
-      expect(resolved.args[3]).toContain('call');
-      expect(resolved.args[3]).toContain('corepack.cmd');
-      expect(resolved.args[3]).toContain('pnpm');
-      expect(resolved.args[3]).toContain('build');
+      expect(resolved.args[3]).toContain('fake.cmd');
       expect(resolved.windowsVerbatimArguments).toBe(true);
     } finally {
       rmSync(tmp, { recursive: true, force: true });

@@ -66,7 +66,10 @@ function resolveScriptInvocation(
   command: string,
   scripts: ScriptDictionary,
 ): string | null {
-  const tokens = command.trim().split(/\s+/);
+  const rawTokens = command.trim().split(/\s+/);
+  const tokens = rawTokens[0] === 'corepack' && rawTokens[1] === 'pnpm'
+    ? rawTokens.slice(1)
+    : rawTokens;
   if (tokens.length < 2 || tokens[0] !== 'pnpm') {
     return null;
   }

@@ -369,6 +369,27 @@ describe('verifyMultiPrAgentBranches', () => {
     expect(verificationWorktreeName(cycleId, 0, branch)).toBe(first);
   });
 
+  it('defaults multi-PR verification to bounded branch parallelism', async () => {
+    const { resolveMultiPrVerifyParallelism } = await import('../cycle-runner.js');
+    expect(resolveMultiPrVerifyParallelism(0, {})).toBe(0);
+    expect(resolveMultiPrVerifyParallelism(2, {})).toBe(2);
+    expect(resolveMultiPrVerifyParallelism(8, {})).toBe(3);
+  });
+
+  it('honors explicit multi-PR verification parallelism over max agents', async () => {
+    const { resolveMultiPrVerifyParallelism } = await import('../cycle-runner.js');
+    expect(resolveMultiPrVerifyParallelism(5, {
+      AUTONOMOUS_MAX_AGENTS: '4',
+      AGENTFORGE_MULTI_PR_VERIFY_PARALLELISM: '2',
+    })).toBe(2);
+    expect(resolveMultiPrVerifyParallelism(2, {
+      AGENTFORGE_MULTI_PR_VERIFY_PARALLELISM: '9',
+    })).toBe(2);
+    expect(resolveMultiPrVerifyParallelism(4, {
+      AGENTFORGE_MULTI_PR_VERIFY_PARALLELISM: 'nope',
+    })).toBe(3);
+  });
+
   it('treats itemResults worktreeBranch entries as branch verification work', async () => {
     const workDir = mkdtempSync(join(tmpdir(), 'cr-verify-itemresults-'));
     const bareDir = join(tmpdir(), `cr-verify-itemresults-bare-${Date.now()}`);

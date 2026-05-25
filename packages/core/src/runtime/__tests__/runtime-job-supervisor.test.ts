@@ -114,5 +114,31 @@ describe('RuntimeJobSupervisor', () => {
 
     adapter.close();
   });
+
+  it('does not execute the same job twice when startJob is called again while running', async () => {
+    const adapter = buildAdapter();
+    const supervisor = new RuntimeJobSupervisor({ adapter });
+    const job = supervisor.createJob({ agentId: 'coder', task: 'Run once' });
+    let releaseFirstRun: (() => void) | undefined;
+    const firstRunDone = new Promise<void>((resolve) => {
+      releaseFirstRun = resolve;
+    });
+    const executor = vi.fn(async () => {
+      await firstRunDone;
+      return completedResult(job.session_id);
+    });
+
+    const firstStart = supervisor.startJob(job.id, executor);
+    await Promise.resolve();
+    const secondStart = await supervisor.startJob(job.id, executor);
+    releaseFirstRun!();
+    await firstStart;
+
+    expect(secondStart).toBeUndefined();
+    expect(executor).toHaveBeenCalledTimes(1);
+    expect(adapter.getRuntimeJob(job.id)?.status).toBe('completed');
+
+    adapter.close();
+  });
 });
 

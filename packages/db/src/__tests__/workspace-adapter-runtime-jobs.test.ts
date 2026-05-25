@@ -96,12 +96,13 @@ describe('WorkspaceAdapter — runtime_jobs table', () => {
     expect(started!.started_at).not.toBeNull();
   });
 
-  it('startRuntimeJob is idempotent when already running', () => {
+  it('startRuntimeJob returns undefined when already running', () => {
     const job = adapter.createRuntimeJob({ sessionId: 'sess-idem', agentId: 'a', task: 't' });
     adapter.startRuntimeJob(job.id);
     const started2 = adapter.startRuntimeJob(job.id);
 
-    expect(started2!.status).toBe('running'); // still running, no error
+    expect(started2).toBeUndefined();
+    expect(adapter.getRuntimeJob(job.id)?.status).toBe('running');
   });
 
   it('startRuntimeJob returns undefined on unknown id', () => {

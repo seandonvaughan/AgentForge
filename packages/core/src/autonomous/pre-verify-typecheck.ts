@@ -9,14 +9,18 @@
 // NOT wired into cycle-runner.ts here — that integration is handled by a separate task.
 
 import { execFile } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { delimiter, dirname, extname, join } from 'node:path';
 import { promisify } from 'node:util';
 import type { CycleConfig } from './types.js';
 import type { CycleLogger } from './cycle-logger.js';
-import { parseCommandArgs } from './cycle-runner.js';
+import {
+  parseCommandArgs,
+  resolveCommandForExecFile,
+  type ResolvedExecFileCommand,
+} from './subprocess-command.js';
 
 const execFileAsync = promisify(execFile);
+
+export { resolveCommandForExecFile, type ResolvedExecFileCommand };
 
 /** Result returned by runPreVerifyTypeCheck. */
 export interface PreVerifyTypeCheckResult {
@@ -40,79 +44,6 @@ function extractOutput(err: unknown): { stdout: string; stderr: string; message:
   const stderr = (e.stderr?.toString() ?? '').trim();
   const message = (stderr || stdout || e.message || String(err)).slice(0, 2000);
   return { stdout, stderr, message };
-}
-
-export function resolveCommandForExecFile(
-  cmd: string,
-  args: string[] = [],
-  platform: NodeJS.Platform = process.platform,
-  nodeExecPath: string = process.execPath,
-  env: NodeJS.ProcessEnv = process.env,
-): ResolvedExecFileCommand {
-  if (platform !== 'win32') return { command: cmd, args };
-
-  const explicitExt = extname(cmd).toLowerCase();
-  if (explicitExt === '.cmd' || explicitExt === '.bat') {
-    return windowsBatchInvocation(cmd, args, env);
-  }
-  if (cmd.includes('/') || cmd.includes('\\') || explicitExt) {
-    return { command: cmd, args };
-  }
-
-  const resolved = findWindowsCommand(cmd, nodeExecPath, env);
-  if (resolved?.endsWith('.cmd') || resolved?.endsWith('.bat')) {
-    return windowsBatchInvocation(resolved, args, env);
-  }
-  if (resolved) return { command: resolved, args };
-
-  // Fall back to cmd.exe so PATHEXT can resolve package-manager shims.
-  return windowsBatchInvocation(cmd, args, env);
-}
-
-export interface ResolvedExecFileCommand {
-  command: string;
-  args: string[];
-  windowsVerbatimArguments?: boolean;
-}
-
-function findWindowsCommand(
-  cmd: string,
-  nodeExecPath: string,
-  env: NodeJS.ProcessEnv,
-): string | null {
-  const nodeDir = dirname(nodeExecPath);
-  const pathDirs = (env['PATH'] ?? env['Path'] ?? '')
-    .split(delimiter)
-    .filter(Boolean);
-  const dirs = [nodeDir, ...pathDirs];
-  const seen = new Set<string>();
-  for (const dir of dirs) {
-    const key = dir.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    for (const ext of ['.exe', '.cmd', '.bat']) {
-      const candidate = join(dir, `${cmd}${ext}`);
-      if (existsSync(candidate)) return candidate;
-    }
-  }
-  return null;
-}
-
-function windowsBatchInvocation(
-  cmd: string,
-  args: string[],
-  env: NodeJS.ProcessEnv,
-): ResolvedExecFileCommand {
-  return {
-    command: env['ComSpec'] ?? 'cmd.exe',
-    args: ['/d', '/s', '/c', ['call', quoteWindowsCmdArg(cmd), ...args.map(quoteWindowsCmdArg)].join(' ')],
-    windowsVerbatimArguments: true,
-  };
-}
-
-function quoteWindowsCmdArg(value: string): string {
-  if (/^[A-Za-z0-9._=:/\\~\-]+$/.test(value)) return value;
-  return `"${value.replace(/"/g, '""').replace(/%/g, '%%')}"`;
 }
 
 /** Internal execFile-style signature used for dependency injection in tests. */

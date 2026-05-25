@@ -86,8 +86,17 @@ context:
     - packages/core/src
 learnings:
   - >-
-    Parallel cycle execution must allocate worktrees from an item-specific session key; agent-only/cycle-only keys collide
-    when one agent receives multiple items.
+    On Windows, resolve corepack/pnpm through node corepack.js for cycle verification commands to avoid cmd.exe shims
+    and visible console-host popups.
+  - >-
+    Multi-PR branch verification can run branch checks concurrently only when git fetch/worktree add/remove/prune
+    operations are serialized behind a mutation mutex.
+  - >-
+    RuntimeJobSupervisor must treat a second startJob call on an already-running job as a no-op; startRuntimeJob should
+    transition queued jobs only.
+  - >-
+    Parallel cycle execution must allocate worktrees from an item-specific session key; agent-only/cycle-only keys
+    collide when one agent receives multiple items.
   - >-
     Codex CLI exit errors need durable raw stdout/stderr artifacts because truncated transport errors can hide the real
     failing command.
@@ -103,12 +112,6 @@ learnings:
     dispatch
   - Bus topic names are versioned — never reuse agent.dm.sent or inbox.message.created with a different payload shape
   - Rebase staged promotion onto the current active override or reject promotion when the staged base is stale.
-  - test coverage does not exercise the real orchestrator path or stale-canary promotion
-  - staticFallback() silently mishandles P3 priority
-  - >-
-    Code reviewers sometimes analyze an intermediate execute-phase snapshot — by the time the gate runs, a flagged bug
-    may already be patched.
-  - stringify must never be used as fallback.
 owns_subsystems:
   - packages/executor/src
   - packages/core/src

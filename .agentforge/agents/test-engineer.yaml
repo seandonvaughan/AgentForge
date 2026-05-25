@@ -117,6 +117,9 @@ learnings:
   - >-
     Do not reduce test:e2e:dashboard coverage unless a separate full dashboard lane is enforced and tested; gate will
     reject coverage cuts without that safeguard.
+  - >-
+    Package-script guards should verify the exact verify:product and verify:gates pipeline shape plus the approved
+    dashboard Playwright command, not only broad substring matches.
   - Effort-level tests should use allowed values ('low', 'medium', 'high', 'max') or a shared EffortLevel type.
   - >-
     RuntimeAdapter model-cap changes need pure capModelTier coverage plus integration proof that the selected model and
