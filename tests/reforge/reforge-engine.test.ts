@@ -7,6 +7,7 @@ import { ReforgeEngine } from "../../src/reforge/reforge-engine.js";
 import type { FeedbackAnalysis } from "../../src/types/feedback.js";
 import type { AgentTemplate } from "../../src/types/agent.js";
 import type { AgentOverride } from "../../src/types/reforge.js";
+import { MessageBusV2 } from "../../packages/core/src/message-bus/message-bus.js";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -604,6 +605,121 @@ describe("ReforgeEngine", () => {
       errorRate: 1,
       threshold: 0.1,
     });
+  });
+
+  it("recordCanaryOutcome ignores non-quality outcomes without consuming the canary token", async () => {
+    const baseAnalysis = makeAnalysis([
+      {
+        action: "adjust-model-routing",
+        rationale: "baseline rollout",
+        urgency: "high",
+        theme_label: "baseline",
+        confidence: 0.9,
+      },
+    ]);
+    const canaryAnalysis = makeAnalysis([
+      {
+        action: "update-system-prompt",
+        rationale: "quality-only rollback accounting",
+        urgency: "medium",
+        theme_label: "prompt-canary",
+        confidence: 0.7,
+      },
+    ]);
+
+    const activePlan = await engine.buildPlan(baseAnalysis, [makeTemplate()]);
+    await engine.executePlan(activePlan);
+
+    const canaryPlan = await engine.buildPlan(canaryAnalysis, [makeTemplate()]);
+    await engine.deployCanary(canaryPlan, {
+      trafficPercent: 100,
+      strategy: "hash",
+      rollbackThreshold: 0.1,
+    });
+
+    await engine.applyOverride(makeTemplate(), {
+      requestId: "req-quality-only-1",
+      outcomeToken: "tok-quality-only-1",
+    });
+
+    const ignored = await engine.recordCanaryOutcome("cost-analyst", true, {
+      source: "runtime",
+      outcomeToken: "tok-quality-only-1",
+    });
+    expect(ignored?.ignored).toBe(true);
+    expect(ignored?.ignoreReason).toBe("non-quality-source");
+
+    const counted = await engine.recordCanaryOutcome("cost-analyst", true, {
+      source: "quality",
+      outcomeToken: "tok-quality-only-1",
+    });
+    expect(counted?.ignored).toBeUndefined();
+
+    const stagedPath = path.join(
+      tmpDir,
+      ".agentforge",
+      "agent-overrides",
+      "canary",
+      "cost-analyst.json",
+    );
+    const staged = JSON.parse(await fs.readFile(stagedPath, "utf-8")) as {
+      metrics?: { canaryRequests: number; canaryErrors: number; errorRate: number };
+    };
+    expect(staged.metrics).toMatchObject({
+      canaryRequests: 1,
+      canaryErrors: 1,
+      errorRate: 1,
+    });
+  });
+
+  it("publishes staged/promoted/rolled-back self-modification canary events", async () => {
+    const bus = new MessageBusV2({ workspaceId: "ws-selfmod" });
+    const busBackedEngine = new ReforgeEngine(tmpDir, { bus });
+
+    const baseAnalysis = makeAnalysis([
+      {
+        action: "adjust-model-routing",
+        rationale: "baseline rollout",
+        urgency: "high",
+        theme_label: "baseline",
+        confidence: 0.9,
+      },
+    ]);
+    const canaryAnalysis = makeAnalysis([
+      {
+        action: "update-system-prompt",
+        rationale: "emit canary lifecycle events",
+        urgency: "medium",
+        theme_label: "prompt-canary",
+        confidence: 0.7,
+      },
+    ]);
+
+    const activePlan = await busBackedEngine.buildPlan(baseAnalysis, [makeTemplate()]);
+    await busBackedEngine.executePlan(activePlan);
+
+    const promotePlan = await busBackedEngine.buildPlan(canaryAnalysis, [makeTemplate()]);
+    await busBackedEngine.deployCanary(promotePlan, {
+      trafficPercent: 100,
+      strategy: "hash",
+      rollbackThreshold: 0.1,
+    });
+    await busBackedEngine.promoteCanary("cost-analyst");
+
+    const rollbackPlan = await busBackedEngine.buildPlan(canaryAnalysis, [makeTemplate()]);
+    await busBackedEngine.deployCanary(rollbackPlan, {
+      trafficPercent: 100,
+      strategy: "hash",
+      rollbackThreshold: 0.1,
+    });
+
+    for (let i = 0; i < 5; i++) {
+      await busBackedEngine.recordCanaryOutcome("cost-analyst", true);
+    }
+
+    expect(bus.getHistory(10, "self-modification.canary.staged")).toHaveLength(2);
+    expect(bus.getHistory(10, "self-modification.canary.promoted")).toHaveLength(1);
+    expect(bus.getHistory(10, "self-modification.canary.rolled_back")).toHaveLength(1);
   });
 
   it("promoteCanary makes the staged override the active override", async () => {

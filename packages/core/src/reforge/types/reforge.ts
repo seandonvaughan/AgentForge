@@ -143,6 +143,11 @@ export interface CanaryDeploymentRecord {
 export interface CanaryRoutingContext {
   requestId?: string;
   headerValue?: string;
+  /**
+   * Optional correlation token for matching this routed canary request to a
+   * later quality verdict.
+   */
+  outcomeToken?: string;
 }
 
 /** Outcome counters for a staged canary deployment. */
@@ -165,4 +170,22 @@ export interface CanaryDeployOptions {
   trafficPercent?: number;
   strategy?: TrafficSplitStrategy;
   rollbackThreshold?: number;
+}
+
+/** Source classification for canary outcomes. */
+export type CanaryOutcomeSource = "quality" | "runtime" | "infrastructure" | "unknown";
+
+/** Optional metadata passed when recording a canary outcome. */
+export interface RecordCanaryOutcomeOptions {
+  source?: CanaryOutcomeSource;
+  requestId?: string;
+  outcomeToken?: string;
+}
+
+/** Result from recording a canary outcome. */
+export interface RecordCanaryOutcomeResult {
+  deployment: CanaryDeploymentRecord;
+  rollback?: string;
+  ignored?: true;
+  ignoreReason?: "non-quality-source" | "unknown-or-expired-token";
 }
