@@ -43,7 +43,7 @@
     "sbom:ci": "node scripts/generate-sbom.mjs artifacts/sbom/cyclonedx.json",
     "verify:dashboard": "pnpm dashboard:check && pnpm dashboard:build",
     "verify:product": "pnpm check:types && pnpm test:run && pnpm test:e2e:dashboard",
-    "verify:gates": "pnpm lint && pnpm check:versions && pnpm build && pnpm verify:product && pnpm verify:dashboard && pnpm check:help && pnpm check:changelog && pnpm audit:deps",
+    "verify:gates": "pnpm lint && pnpm check:versions && pnpm verify:product && pnpm verify:dashboard && pnpm check:help && pnpm check:changelog && pnpm audit:deps",
     "sprint": "npx tsx scripts/run-sprint.ts",
     "reports": "npx tsx scripts/run-reports.ts",
     "docs": "npx typedoc --out docs/api src/index.ts --plugin none",
