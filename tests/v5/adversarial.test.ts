@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   AdversarialGenerator,
   ChaosInjector,
@@ -110,6 +110,11 @@ describe('ChaosInjector', () => {
     injector = new ChaosInjector();
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
   it('adds and retrieves a scenario', () => {
     const scenario = injector.addScenario({
       type: 'error',
@@ -158,10 +163,49 @@ describe('ChaosInjector', () => {
     expect(result.kind).toBe('pass');
   });
 
+  it('injects latency chaos with configured delay', async () => {
+    vi.useFakeTimers();
+    injector.addScenario({ type: 'latency', targetComponent: 'latency-comp', probability: 1.0, delayMs: 25 });
+
+    const pending = injector.inject('latency-comp', async () => 'not-called');
+    await vi.advanceTimersByTimeAsync(25);
+    const result = await pending;
+
+    expect(result).toMatchObject({ kind: 'chaos', type: 'latency', delayMs: 25 });
+  });
+
+  it('injects timeout chaos without waiting in real time', async () => {
+    vi.useFakeTimers();
+    injector.addScenario({ type: 'timeout', targetComponent: 'timeout-comp', probability: 1.0 });
+
+    const pending = injector.inject('timeout-comp', async () => 'not-called');
+    await vi.advanceTimersByTimeAsync(30_000);
+    const result = await pending;
+
+    expect(result).toMatchObject({ kind: 'chaos', type: 'timeout' });
+  });
+
+  it('injects partial chaos', async () => {
+    injector.addScenario({ type: 'partial', targetComponent: 'partial-comp', probability: 1.0 });
+    const result = await injector.inject('partial-comp', async () => 'not-called');
+    expect(result).toMatchObject({ kind: 'chaos', type: 'partial' });
+  });
+
   it('injects synchronously', () => {
     injector.addScenario({ type: 'error', targetComponent: 'sync-comp', probability: 1.0, errorMessage: 'Sync error' });
     const result = injector.injectSync('sync-comp', () => 'value');
     expect(result.kind).toBe('chaos');
+  });
+
+  it('injects unavailable chaos in sync mode with a default message', () => {
+    injector.addScenario({ type: 'unavailable', targetComponent: 'sync-unavailable', probability: 1.0 });
+    const result = injector.injectSync('sync-unavailable', () => 'value');
+
+    expect(result.kind).toBe('chaos');
+    if (result.kind === 'chaos') {
+      expect(result.type).toBe('unavailable');
+      expect(result.error?.message).toContain('Chaos: unavailable');
+    }
   });
 
   it('syncs pass-through works', () => {
@@ -177,6 +221,36 @@ describe('ChaosInjector', () => {
     await injector.inject('logger-comp', async () => {});
     expect(injector.injectionCount()).toBe(1);
     expect(injector.getInjectionLog()).toHaveLength(1);
+  });
+
+  it('supports wildcard scenarios that target all components', async () => {
+    injector.addScenario({ type: 'error', targetComponent: '*', probability: 1.0, errorMessage: 'global-chaos' });
+
+    const result = await injector.inject('any-component', async () => 'not-called');
+
+    expect(result.kind).toBe('chaos');
+    if (result.kind === 'chaos') {
+      expect(result.type).toBe('error');
+      expect(result.error?.message).toContain('global-chaos');
+    }
+  });
+
+  it('does not inject when probability is zero', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    injector.addScenario({ type: 'error', targetComponent: 'prob-zero', probability: 0 });
+
+    const result = await injector.inject('prob-zero', async () => 'safe');
+
+    expect(result).toEqual({ kind: 'pass', value: 'safe' });
+  });
+
+  it('does not inject when random draw exceeds probability', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.9);
+    injector.addScenario({ type: 'error', targetComponent: 'prob-low', probability: 0.4 });
+
+    const result = await injector.inject('prob-low', async () => 'safe');
+
+    expect(result).toEqual({ kind: 'pass', value: 'safe' });
   });
 
   it('activates and deactivates scenarios', () => {
@@ -275,6 +349,7 @@ describe('RegressionGate', () => {
     const result = gate.check(100, 0)!;
     expect(result.passed).toBe(true);
     expect(result.testsAfter).toBe(100);
+    expect(gate.latest()?.label).toBe('initial');
   });
 
   it('check compares against previous snapshot', () => {
@@ -289,6 +364,23 @@ describe('RegressionGate', () => {
     const after = gate.record(110, 0);
     gate.evaluate(before, after);
     expect(gate.getGateHistory()).toHaveLength(1);
+  });
+
+  it('check blocks when failures increase relative to an existing failing baseline', () => {
+    gate.record(100, 2, 'baseline');
+    const result = gate.check(100, 3)!;
+
+    expect(result.passed).toBe(false);
+    expect(result.failureDelta).toBe(1);
+    expect(result.reason).toContain('Failure count increased by 1');
+  });
+
+  it('check passes when failures decrease relative to baseline', () => {
+    gate.record(100, 3, 'baseline');
+    const result = gate.check(100, 2)!;
+
+    expect(result.passed).toBe(true);
+    expect(result.failureDelta).toBe(-1);
   });
 
   it('resets all state', () => {
