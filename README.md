@@ -1,13 +1,20 @@
 # AgentForge
 
-AgentForge is a TypeScript monorepo for building agent teams, running agent tasks, and operating autonomous development cycles. As of version `10.5.0`, the canonical product stack is under `packages/*`:
+AgentForge is a TypeScript monorepo for building agent teams, running agent tasks, and operating autonomous development cycles. As of version `10.5.1`, the canonical product stack is under `packages/*`:
 
 - `packages/cli` - canonical CLI surface
 - `packages/core` - runtime, team, and cycle services
+- `packages/shared` - shared types and utilities
+- `packages/db` - workspace/session persistence
 - `packages/server` - canonical API server
 - `packages/dashboard` - canonical operator UI
+- `packages/embeddings` - embedding and similarity services
+- `packages/executor` - autonomous cycle executor
+- `packages/mcp-server` - stdio MCP server (`af_codex_readiness`, `af_cycle_preview`, `af_cycle_status`)
+- `packages/plugins-sdk` - plugin authoring helpers
+- `packages/skills-catalog` - skill catalog and governance helpers
 
-- `packages/mcp` - stdio MCP server (`agentforge/list_agents`, `agentforge/run_cycle`, `agentforge/get_status`, `agentforge/get_memory`)
+`plugins/agentforge-codex` is the Codex host surface. It reuses the package CLI and `packages/mcp-server` build outputs.
 
 The root `src/` tree still exists, but it is a compatibility layer during the convergence to the package stack.
 Its builder, scanner, genesis, and reforge modules are now shim-only forwarders to package-core.
@@ -45,7 +52,7 @@ agentforge info
 agentforge migrate
 agentforge start
 
-agentforge run invoke --agent <agent> --task <task> [--runtime auto|sdk|claude-code-compat]
+agentforge run invoke --agent <agent> --task <task> [--runtime auto|sdk|cli|anthropic-sdk|claude-cli|claude-code-compat|codex-cli|openai-sdk]
 agentforge run delegate <task...> [--run]
 agentforge run history
 agentforge run show <sessionId>
@@ -77,9 +84,14 @@ Package runtime commands currently support:
 
 - `auto`
 - `sdk`
+- `cli`
+- `anthropic-sdk`
+- `claude-cli`
 - `claude-code-compat`
+- `codex-cli`
+- `openai-sdk`
 
-`auto` prefers the canonical package runtime path and can fall back to Claude Code compatibility transport when needed.
+`auto` asks the provider resolver to use an available canonical package runtime transport. It prefers Anthropic SDK, then Claude Code compatibility, then Codex CLI when those transports are available.
 
 Streaming runtime transports normalize provider output into `start`, `text_delta`, `usage_delta`, `done`, and `error` events. Non-streaming transports remain supported through a full-response fallback.
 
@@ -96,7 +108,7 @@ The package dashboard in `packages/dashboard` is the canonical operator UI. In d
 
 ## Release and Security Gates
 
-AgentForge requires Node.js `>=20.19.0`. CI and release gates run on Node `20.19.x` and `22.13.x`; Node 18 is no longer a supported compatibility target.
+AgentForge requires Node.js `>=22.13.0`. Node 18 and 20 are no longer supported compatibility targets.
 
 - `corepack pnpm verify:gates` runs lint, version sync, TypeScript build, dashboard check/build, help/changelog truth checks, and the dependency audit.
 - `corepack pnpm test:run` runs the Vitest suite.
@@ -129,8 +141,7 @@ node packages/cli/dist/bin.js --help
 node packages/cli/dist/bin.js start
 
 # Dashboard dev server
-cd packages/dashboard
-npx vite --port 4751
+corepack pnpm --filter @agentforge/dashboard dev -- --port 4751
 ```
 
 ## Repository Layout
@@ -143,6 +154,11 @@ packages/
   dashboard/    Canonical UI
   db/           Workspace/session persistence
   embeddings/   Embedding and similarity services
+  executor/     Autonomous cycle executor
+  mcp-server/   MCP server used by Codex and other MCP hosts
+  plugins-sdk/  Plugin authoring helpers
+  shared/       Shared types and utilities
+  skills-catalog/ Skill catalog and governance helpers
 
 src/
   cli/          Root compatibility CLI

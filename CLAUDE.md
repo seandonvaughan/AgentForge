@@ -2,7 +2,7 @@
 
 **Audience:** An AI agent (or human developer) opening this repository for the first time.
 
-AgentForge is a Claude Code plugin and TypeScript monorepo that scans a software project and forges an optimized AI agent team to develop it autonomously within Claude Code. It runs unattended development cycles under hard budget caps and gate verdicts, accumulating learnings each cycle so the forged agents become more specialized over time.
+AgentForge is a TypeScript monorepo with Codex and Claude Code host surfaces. It scans a software project and forges an optimized AI agent team to develop it autonomously. It runs unattended development cycles under hard budget caps and gate verdicts, accumulating learnings each cycle so the forged agents become more specialized over time.
 
 ---
 
@@ -18,9 +18,12 @@ packages/
   shared/       — shared types and utilities
   embeddings/   — vector embeddings subsystem
   executor/     — autonomous cycle executor
+  mcp-server/   — stdio MCP server used by Codex and other MCP hosts
   plugins-sdk/  — plugin authoring helpers
+  skills-catalog/ — skill catalog and governance helpers
 
 src/            — legacy compatibility shims (forward to packages/)
+plugins/agentforge-codex/ — Codex host plugin wrapper
 tests/          — vitest test suites (mirrors packages/ structure)
 .agentforge/    — workspace data: agents/, team.yaml, memory/, cycles/
 ```
@@ -29,7 +32,7 @@ tests/          — vitest test suites (mirrors packages/ structure)
 
 ## What AgentForge is
 
-AgentForge scans a software project's source tree, dependency graph, git history, and engineering conventions and forges an optimized AI agent team specialized to develop that project autonomously inside Claude Code. The forged agents run as Claude Code subagents, each owning a well-scoped subsystem, with model routing that puts Opus on strategic decisions, Sonnet on implementation, and Haiku on utility tasks.
+AgentForge scans a software project's source tree, dependency graph, git history, and engineering conventions and forges an optimized AI agent team specialized to develop that project autonomously through the configured runtime host. The forged agents each own a well-scoped subsystem, with capability tiers that route strategic work to `opus`, implementation work to `sonnet`, and utility work to `haiku` provider profiles.
 
 ---
 
@@ -206,13 +209,19 @@ The cycle execution transport is controlled by `AGENTFORGE_RUNTIME`:
 
 | Value | Transport | Use case |
 |---|---|---|
-| `auto` | Both; SDK preferred when `ANTHROPIC_API_KEY` is set, else CLI | Default for local development |
-| `sdk` | Anthropic SDK only (no `claude` subprocess) | AgentForge Cloud, CI |
-| `cli` | Claude Code CLI subprocess only | Local when you want to guarantee the CLI path |
+| `auto` | Provider resolver; Anthropic SDK, Claude Code compatibility, or Codex CLI when available | Default for local development |
+| `sdk` | Anthropic SDK alias | AgentForge Cloud, CI |
+| `cli` | Claude CLI alias | Local when you want to guarantee the Claude CLI path |
+| `anthropic-sdk` | Anthropic SDK transport | Explicit SDK transport selection |
+| `claude-cli` | Claude CLI compatibility transport | Explicit Claude CLI selection |
+| `claude-code-compat` | Legacy Claude Code compatibility transport name | Existing configs and tests |
+| `codex-cli` | Codex CLI transport | Codex plugin and Codex-local execution |
+| `openai-sdk` | OpenAI SDK transport | OpenAI-compatible runtime execution |
 
 ```bash
 export AGENTFORGE_RUNTIME=cli          # explicit CLI transport
 export AGENTFORGE_RUNTIME=sdk          # requires ANTHROPIC_API_KEY
+export AGENTFORGE_RUNTIME=codex-cli    # Codex CLI transport
 export AGENTFORGE_RUNTIME=auto         # default
 ```
 
@@ -223,7 +232,7 @@ Precedence: `AGENTFORGE_RUNTIME` env var > `runtime:` in `.agentforge/autonomous
 `.agentforge/autonomous.yaml` controls all cycle parameters:
 
 ```yaml
-runtime: auto     # transport: auto | sdk | cli
+runtime: auto     # transport: auto | sdk | cli | anthropic-sdk | claude-cli | claude-code-compat | codex-cli | openai-sdk
 
 budget:
   perCycleUsd: 30
@@ -329,7 +338,7 @@ See [docs/runbooks/skill-flywheel.md](docs/runbooks/skill-flywheel.md) for triag
 
 ### MCP server (T3)
 
-`packages/mcp/` is a stdio MCP server exposing four tools: `agentforge/list_agents`, `agentforge/run_cycle`, `agentforge/get_status`, `agentforge/get_memory`.
+`packages/mcp-server/` is a stdio MCP server used by Codex and other MCP hosts. The Codex plugin exposes `af_codex_readiness`, `af_cycle_preview`, and `af_cycle_status`.
 Configure in any MCP host via `.mcp.json`.
 
 ### `/durability` dashboard page (T4)
@@ -355,30 +364,30 @@ See [docs/runbooks/unattended-cycle.md](docs/runbooks/unattended-cycle.md) for r
 
 ```bash
 # Install dependencies
-corepack enable && pnpm install
+corepack enable && corepack pnpm install
 
 # Build all packages
-pnpm build
+corepack pnpm build
 
 # Run all tests
-pnpm test
+corepack pnpm test
 
 # Run a specific test file
-pnpm test -- --run tests/genesis/team-designer.test.ts
+corepack pnpm exec vitest run tests/genesis/team-designer.test.ts
 
 # Type-check (no emit)
-pnpm exec tsc --noEmit
+corepack pnpm exec tsc -b --noEmit
 
 # Lint
-pnpm exec eslint .
+corepack pnpm exec eslint .
 
 # Full verification gate (lint + versions + build + dashboard check)
-pnpm verify:gates
+corepack pnpm verify:gates
 
 # Start the development server
 agentforge start
 # or:
-pnpm --filter @agentforge/server dev
+corepack pnpm --filter @agentforge/server dev
 ```
 
 ---
@@ -387,7 +396,7 @@ pnpm --filter @agentforge/server dev
 
 | Variable | Default | Description |
 |---|---|---|
-| `AGENTFORGE_RUNTIME` | `auto` | Execution transport: `auto`, `sdk`, `cli` |
+| `AGENTFORGE_RUNTIME` | `auto` | Execution transport: `auto`, `sdk`, `cli`, `anthropic-sdk`, `claude-cli`, `claude-code-compat`, `codex-cli`, `openai-sdk` |
 | `AGENTFORGE_FORGE_STRATEGY` | `legacy` | Forge pipeline: `legacy` (deterministic) or `agent-driven` (Opus synthesis) |
 | `MAX_PARALLEL_AGENTS` | `8` | Max concurrent agents in the execute phase (hard cap: 40) |
 | `ANTHROPIC_API_KEY` | — | Required when `AGENTFORGE_RUNTIME=sdk` |
@@ -397,7 +406,7 @@ pnpm --filter @agentforge/server dev
 
 ## Required versions
 
-- Node.js `>=20.19.0`
+- Node.js `>=22.13.0`
 - pnpm (via Corepack)
 - TypeScript strict mode, NodeNext module resolution
 - ESM only — all imports must end in `.js`, Node builtins must use the `node:` prefix
