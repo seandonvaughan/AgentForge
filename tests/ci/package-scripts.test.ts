@@ -28,6 +28,13 @@ function parseDashboardE2eSpecs(script: string): string[] {
     .filter((token) => token.length > 0);
 }
 
+function parsePipelineSteps(script: string): string[] {
+  return script
+    .split('&&')
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0);
+}
+
 describe('package scripts', () => {
   it('stops verify:product before tests when typecheck fails', async () => {
     const scripts = loadRootScripts();
@@ -82,6 +89,32 @@ describe('package scripts', () => {
 
     expect(selectedSpecs).toEqual([...DASHBOARD_E2E_SPECS]);
     expect(new Set(selectedSpecs).size).toBe(selectedSpecs.length);
+  });
+
+  it('locks verify:product to the exact regression-gate pipeline shape', () => {
+    const scripts = loadRootScripts();
+    const verifyProduct = scripts['verify:product'];
+
+    expect(parsePipelineSteps(verifyProduct)).toEqual([
+      'pnpm check:types',
+      'pnpm test:run',
+      'pnpm test:e2e:dashboard',
+    ]);
+  });
+
+  it('locks verify:gates to run verify:product and verify:dashboard before post-check jobs', () => {
+    const scripts = loadRootScripts();
+    const verifyGates = scripts['verify:gates'];
+
+    expect(parsePipelineSteps(verifyGates)).toEqual([
+      'pnpm lint',
+      'pnpm check:versions',
+      'pnpm verify:product',
+      'pnpm verify:dashboard',
+      'pnpm check:help',
+      'pnpm check:changelog',
+      'pnpm audit:deps',
+    ]);
   });
 
   it('runs exactly one dashboard e2e invocation during verify:gates', async () => {
