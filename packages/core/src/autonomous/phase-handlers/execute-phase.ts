@@ -430,7 +430,15 @@ const GENERATED_RUNTIME_PATHS = [
   '.agentforge/memory/step-scores.jsonl',
   '.agentforge/v5/agentforge-master.db',
   '.agentforge/v5/workspace-default.db',
+  '.playwright-mcp/',
+  '.pnpm-store/',
+  '.svelte-kit/',
+  'coverage/',
+  'dist/',
+  'node_modules/',
+  'test-results/',
 ];
+const MAX_RECORDED_WORKTREE_CHANGES = 200;
 
 function parsePorcelainPath(line: string): string {
   const rest = line.slice(3).trim();
@@ -465,7 +473,8 @@ async function meaningfulWorktreeChanges(worktreePath: string): Promise<string[]
     .map((line) => line.trimEnd())
     .filter(Boolean)
     .map(parsePorcelainPath)
-    .filter((file) => file.length > 0 && !isGeneratedRuntimePath(file));
+    .filter((file) => file.length > 0 && !isGeneratedRuntimePath(file))
+    .slice(0, MAX_RECORDED_WORKTREE_CHANGES);
 }
 
 type ExecuteWorktreeHandle = {

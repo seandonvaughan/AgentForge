@@ -585,6 +585,35 @@ describe('execute-phase worktree integration', () => {
     expect(typeof itemResult.worktreeBranch).toBe('string');
   });
 
+  it('filters package manager caches out of recorded worktree changed files', async () => {
+    const worktreePath = join(tmpRoot, 'wt-cache-filter');
+    await initGitRepo(worktreePath);
+    writeSprintFile([
+      { id: 'item-1', title: 'Task A', assignee: 'coder', tags: ['coder'] },
+    ]);
+
+    const pool = makeSpyPool(worktreePath);
+    const bus = makeBus();
+    const runtime = {
+      run: vi.fn().mockImplementation(async (_agentId: string, _task: string, options: { cwd?: string }) => {
+        if (!options.cwd) throw new Error('missing worktree cwd');
+        writeFileSync(join(options.cwd, 'feature.ts'), 'export const feature = true;\n');
+        mkdirSync(join(options.cwd, '.pnpm-store', 'v3', 'files', '00'), { recursive: true });
+        writeFileSync(join(options.cwd, '.pnpm-store', 'v3', 'files', '00', 'cache-file'), 'cache\n');
+        mkdirSync(join(options.cwd, 'node_modules', 'pkg'), { recursive: true });
+        writeFileSync(join(options.cwd, 'node_modules', 'pkg', 'index.js'), 'module.exports = {};\n');
+        return { output: 'Implemented feature.ts', costUsd: 0.01 };
+      }),
+    };
+    const ctx = makeCtx(bus, { worktreePool: pool, runtime });
+
+    const result = await runExecutePhase(ctx, { maxParallelism: 1, maxItemRetries: 0 });
+
+    expect(result.status).toBe('completed');
+    const itemResult = (result.itemResults as any[])?.[0];
+    expect(itemResult.worktreeChangedFiles).toEqual(['feature.ts']);
+  });
+
   it('publishes agent.branch.pushed through the phase bus after worktree commit', async () => {
     const worktreePath = join(tmpRoot, 'wt-branch-event');
     await initGitRepo(worktreePath);

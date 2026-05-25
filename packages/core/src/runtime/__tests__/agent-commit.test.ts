@@ -19,7 +19,7 @@
 //  14. Push is idempotent when called twice with same remote (force-with-lease)
 
 import { execFile as execFileCb } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -266,6 +266,31 @@ describe('commitAgentWork', () => {
     });
 
     expect(result!.filesChanged).toBe(3);
+  });
+
+  it('does not stage package manager stores created inside an agent worktree', async () => {
+    const dir = await createLocalRepo();
+    dirs.push(dir);
+    makeChange(dir, 'feature.ts', 'export const feature = true;\n');
+    mkdirSync(join(dir, '.pnpm-store', 'v3', 'files', '00'), { recursive: true });
+    writeFileSync(join(dir, '.pnpm-store', 'v3', 'files', '00', 'cache-file'), 'cache\n');
+    mkdirSync(join(dir, 'node_modules', 'pkg'), { recursive: true });
+    writeFileSync(join(dir, 'node_modules', 'pkg', 'index.js'), 'module.exports = {};\n');
+
+    const result = await commitAgentWork({
+      worktreePath: dir,
+      branch: 'autonomous/ignore-tooling-cache',
+      agentId: 'agent-x',
+      itemIds: ['CACHE-1'],
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.filesChanged).toBe(1);
+    const committedFiles = await git(dir, ['diff', '--name-only', 'HEAD~1..HEAD']);
+    expect(committedFiles).toBe('feature.ts');
+    const status = await git(dir, ['status', '--porcelain', '--untracked-files=all']);
+    expect(status).toContain('?? .pnpm-store/v3/files/00/cache-file');
+    expect(status).toContain('?? node_modules/pkg/index.js');
   });
 
   // ── 8. diffSummary truncated at 500 chars ─────────────────────────────────

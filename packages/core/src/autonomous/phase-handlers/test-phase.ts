@@ -15,6 +15,21 @@ import {
 
 export const TEST_PHASE_DEFAULT_TOOLS = ['Read', 'Bash', 'Glob', 'Grep'];
 export const TEST_PHASE_AGENT = 'backend-qa';
+const MAX_TEST_PHASE_ITEM_RESULTS = 20;
+const MAX_TEST_PHASE_CHANGED_FILES = 100;
+const MAX_TEST_PHASE_TEXT_CHARS = 2_000;
+
+const EXCLUDED_TEST_PHASE_PATH_PREFIXES = [
+  '.agentforge/cycles/',
+  '.agentforge/worktrees/',
+  '.playwright-mcp/',
+  '.pnpm-store/',
+  '.svelte-kit/',
+  'coverage/',
+  'dist/',
+  'node_modules/',
+  'test-results/',
+];
 
 export interface TestPhaseOptions {
   allowedTools?: string[];
@@ -23,6 +38,76 @@ export interface TestPhaseOptions {
 
 export function makeTestPhaseHandler(options: TestPhaseOptions = {}) {
   return (ctx: PhaseContext) => runTestPhase(ctx, options);
+}
+
+function isTestPhasePath(path: string): boolean {
+  const normalized = path.replace(/\\/g, '/').replace(/^\/+/, '');
+  if (!normalized) return false;
+  const lower = normalized.toLowerCase();
+  return !EXCLUDED_TEST_PHASE_PATH_PREFIXES.some((prefix) => (
+    lower === prefix.slice(0, -1) || lower.startsWith(prefix)
+  ));
+}
+
+function truncatePromptText(value: string, maxChars = MAX_TEST_PHASE_TEXT_CHARS): string {
+  if (value.length <= maxChars) return value;
+  return `${value.slice(0, maxChars)}\n[AgentForge truncated this execute result field at ${maxChars} chars.]`;
+}
+
+function summarizeExecuteItemForPrompt(entry: unknown): unknown {
+  if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) return entry;
+  const source = entry as Record<string, unknown>;
+  const summary: Record<string, unknown> = {};
+  for (const key of [
+    'itemId',
+    'status',
+    'agentId',
+    'attempts',
+    'costUsd',
+    'durationMs',
+    'model',
+    'effort',
+    'capabilityTier',
+    'worktreePath',
+    'worktreeBranch',
+  ]) {
+    if (source[key] !== undefined) summary[key] = source[key];
+  }
+
+  const changedFiles = Array.isArray(source['worktreeChangedFiles'])
+    ? source['worktreeChangedFiles'].filter((file): file is string => typeof file === 'string' && file.trim().length > 0)
+    : [];
+  const filteredChangedFiles = changedFiles
+    .map((file) => file.replace(/\\/g, '/'))
+    .filter(isTestPhasePath)
+    .slice(0, MAX_TEST_PHASE_CHANGED_FILES);
+  if (filteredChangedFiles.length > 0) {
+    summary['worktreeChangedFiles'] = filteredChangedFiles;
+  }
+  if (changedFiles.length > filteredChangedFiles.length) {
+    summary['worktreeChangedFilesOmitted'] = changedFiles.length - filteredChangedFiles.length;
+  }
+
+  if (typeof source['error'] === 'string') {
+    summary['error'] = truncatePromptText(source['error']);
+  }
+  if (typeof source['response'] === 'string') {
+    summary['response'] = truncatePromptText(source['response']);
+  }
+
+  const validatedOutput = source['validatedOutput'];
+  if (validatedOutput && typeof validatedOutput === 'object' && !Array.isArray(validatedOutput)) {
+    const vo = validatedOutput as Record<string, unknown>;
+    summary['validatedOutput'] = {
+      schemaName: vo['schemaName'],
+      ok: vo['ok'],
+      ...(typeof vo['validationError'] === 'string'
+        ? { validationError: truncatePromptText(vo['validationError'], 500) }
+        : {}),
+    };
+  }
+
+  return summary;
 }
 
 export async function runTestPhase(
@@ -67,9 +152,21 @@ export async function runTestPhase(
     }
   }
 
-  const task = `You are the backend QA lead for AgentForge. Sprint v${ctx.sprintVersion} just completed its execute phase with these results:
+  const promptItemResults = itemResults
+    .slice(0, MAX_TEST_PHASE_ITEM_RESULTS)
+    .map(summarizeExecuteItemForPrompt);
+  const omittedItemCount = Math.max(0, itemResults.length - promptItemResults.length);
+  const itemResultsJson = JSON.stringify(
+    omittedItemCount > 0
+      ? [...promptItemResults, { omittedItemResults: omittedItemCount }]
+      : promptItemResults,
+    null,
+    2,
+  );
 
-${JSON.stringify(itemResults, null, 2)}
+  const task = `You are the backend QA lead for AgentForge. Sprint v${ctx.sprintVersion} just completed its execute phase with these summarized results:
+
+${itemResultsJson}
 
 ${reviewTargetSection}
 

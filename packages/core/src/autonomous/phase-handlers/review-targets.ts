@@ -16,6 +16,7 @@ export interface ExecuteReviewMaterialOptions {
 }
 
 const DEFAULT_MAX_DIFF_CHARS = 120_000;
+const MAX_REVIEW_TARGET_CHANGED_FILES = 100;
 const GIT_EXEC_OPTIONS: Omit<ExecFileSyncOptionsWithStringEncoding, 'cwd'> = {
   encoding: 'utf8',
   maxBuffer: 1024 * 1024 * 8,
@@ -27,9 +28,34 @@ function asString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
 }
 
+const EXCLUDED_REVIEW_TARGET_PREFIXES = [
+  '.agentforge/cycles/',
+  '.agentforge/worktrees/',
+  '.playwright-mcp/',
+  '.pnpm-store/',
+  '.svelte-kit/',
+  'coverage/',
+  'dist/',
+  'node_modules/',
+  'test-results/',
+];
+
+function isReviewTargetPath(path: string): boolean {
+  const normalized = path.replace(/\\/g, '/').replace(/^\/+/, '');
+  if (!normalized) return false;
+  const lower = normalized.toLowerCase();
+  return !EXCLUDED_REVIEW_TARGET_PREFIXES.some((prefix) => (
+    lower === prefix.slice(0, -1) || lower.startsWith(prefix)
+  ));
+}
+
 function asStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return value.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0);
+  return value
+    .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+    .map((entry) => entry.replace(/\\/g, '/'))
+    .filter(isReviewTargetPath)
+    .slice(0, MAX_REVIEW_TARGET_CHANGED_FILES);
 }
 
 export function resolveTargetPath(projectRoot: string, worktreePath: string): string {

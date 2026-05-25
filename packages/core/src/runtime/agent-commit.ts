@@ -4,7 +4,7 @@
 //
 // After an agent finishes work in its isolated worktree, call
 // `commitAgentWork` to:
-//   1. Stage all changes (`git add -A`)
+//   1. Stage meaningful repository changes
 //   2. Commit with a structured message
 //   3. Capture commit metadata (sha, diff stat)
 //   4. Push the branch to origin (skipped when no remote exists)
@@ -71,8 +71,14 @@ type AgentCommitBus = MessageBusV2 | PhaseBusLike;
 
 /** Run a git command in the given directory using execFile (never exec). */
 async function git(cwd: string, args: string[]): Promise<string> {
-  const { stdout } = await execFile('git', ['-C', cwd, ...args], { windowsHide: true });
+  const stdout = await gitRaw(cwd, args);
   return stdout.trim();
+}
+
+/** Run a git command and return raw stdout. Used for NUL-delimited output. */
+async function gitRaw(cwd: string, args: string[]): Promise<string> {
+  const { stdout } = await execFile('git', ['-C', cwd, ...args], { windowsHide: true });
+  return stdout;
 }
 
 /** Sanitize a branch name to only allow [a-zA-Z0-9_/-]. */
@@ -90,13 +96,64 @@ async function hasOriginRemote(worktreePath: string): Promise<boolean> {
   }
 }
 
-/** Return true when there are any staged or unstaged changes. */
-async function hasChanges(worktreePath: string): Promise<boolean> {
-  try {
-    const out = await git(worktreePath, ['status', '--porcelain']);
-    return out.length > 0;
-  } catch {
+const EXCLUDED_AGENT_STAGE_PREFIXES = [
+  '.agentforge/cycles/',
+  '.agentforge/worktrees/',
+  '.git/',
+  '.pnpm-store/',
+  '.playwright-mcp/',
+  '.svelte-kit/',
+  'coverage/',
+  'dist/',
+  'node_modules/',
+  'test-results/',
+];
+
+const EXCLUDED_AGENT_STAGE_SUFFIXES = [
+  '.log',
+  '.tsbuildinfo',
+];
+
+function isStageableAgentPath(path: string): boolean {
+  const normalized = path.replace(/\\/g, '/').replace(/^\/+/, '');
+  if (!normalized) return false;
+  const lower = normalized.toLowerCase();
+  if (EXCLUDED_AGENT_STAGE_PREFIXES.some((prefix) => lower === prefix.slice(0, -1) || lower.startsWith(prefix))) {
     return false;
+  }
+  if (EXCLUDED_AGENT_STAGE_SUFFIXES.some((suffix) => lower.endsWith(suffix))) {
+    return false;
+  }
+  return true;
+}
+
+async function listStageableChanges(worktreePath: string): Promise<string[]> {
+  try {
+    const out = await gitRaw(worktreePath, [
+      'ls-files',
+      '--modified',
+      '--deleted',
+      '--others',
+      '--exclude-standard',
+      '-z',
+    ]);
+    const seen = new Set<string>();
+    const paths: string[] = [];
+    for (const path of out.split('\0')) {
+      if (!path || seen.has(path) || !isStageableAgentPath(path)) continue;
+      seen.add(path);
+      paths.push(path);
+    }
+    return paths;
+  } catch {
+    return [];
+  }
+}
+
+async function stagePaths(worktreePath: string, paths: string[]): Promise<void> {
+  const chunkSize = 100;
+  for (let i = 0; i < paths.length; i += chunkSize) {
+    await git(worktreePath, ['add', '--', ...paths.slice(i, i + chunkSize)]);
   }
 }
 
@@ -159,12 +216,13 @@ export async function commitAgentWork(
   const branch = sanitizeBranch(opts.branch);
 
   // ── Clean-worktree check ────────────────────────────────────────────────────
-  if (!(await hasChanges(worktreePath))) {
+  const stageablePaths = await listStageableChanges(worktreePath);
+  if (stageablePaths.length === 0) {
     return null;
   }
 
-  // ── Stage all changes ────────────────────────────────────────────────────────
-  await git(worktreePath, ['add', '-A']);
+  // ── Stage only meaningful repository changes ────────────────────────────────
+  await stagePaths(worktreePath, stageablePaths);
 
   // ── Commit ──────────────────────────────────────────────────────────────────
   // Build a structured commit message:  agent(<agentId>): <itemIds>

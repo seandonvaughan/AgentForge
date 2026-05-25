@@ -183,6 +183,41 @@ describe('verification phase handlers', () => {
     expect(taskArg).toContain('instead of the parent checkout');
   });
 
+  it('test phase keeps execute summaries below Codex input limits', async () => {
+    const cycleId = 'cycle-large-execute-summary';
+    const cacheFiles = Array.from(
+      { length: 5_000 },
+      (_value, index) => `.pnpm-store/v3/files/${String(index).padStart(2, '0')}/cache-file-${index}`,
+    );
+    writeExecuteJson(tmpDir, cycleId, [
+      {
+        itemId: 'i1',
+        agentId: 'coder',
+        status: 'failed',
+        response: 'agent response '.repeat(1_000),
+        error: 'commit failed '.repeat(1_000),
+        worktreeBranch: 'codex/agent-coder-large',
+        worktreeChangedFiles: [...cacheFiles, 'packages/core/src/runtime/agent-commit.ts'],
+      },
+    ]);
+
+    const runtime = {
+      run: vi.fn().mockResolvedValue({ output: 'Confidence: 3/5', costUsd: 0.01 }),
+    };
+    const { bus } = makeMockBus();
+
+    await runTestPhase(
+      makeCtx({ cwd: tmpDir, sprintVersion: '6.5.2', cycleId, runtime, bus }),
+    );
+
+    const taskArg = runtime.run.mock.calls[0][1] as string;
+    expect(taskArg.length).toBeLessThan(50_000);
+    expect(taskArg).toContain('packages/core/src/runtime/agent-commit.ts');
+    expect(taskArg).toContain('worktreeChangedFilesOmitted');
+    expect(taskArg).toContain('AgentForge truncated this execute result field');
+    expect(taskArg).not.toContain('.pnpm-store');
+  });
+
   it('parseConfidence parses scores from various formats', () => {
     expect(parseConfidence('Confidence: 5/5')).toBe(5);
     expect(parseConfidence('Confidence: 2')).toBe(2);
