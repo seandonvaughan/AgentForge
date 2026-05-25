@@ -1,8 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import type { WorkspaceAdapter } from '@agentforge/db';
 import { execFileSync } from 'node:child_process';
-import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
-import { basename, isAbsolute, join, relative, resolve } from 'node:path';
+import { readFileSync, readdirSync, existsSync, statSync, realpathSync } from 'node:fs';
+import { basename, join, resolve } from 'node:path';
 
 // Authoritative cycle data lives in `.agentforge/cycles/<id>/cycle.json` —
 // not in the SQLite tables that the original implementation read. The
@@ -281,9 +281,23 @@ function parseGitWorktreePaths(output: string): string[] {
     .filter((line) => line.length > 0);
 }
 
+function canonicalPathForCompare(path: string): string {
+  let resolved = resolve(path);
+  try {
+    resolved = realpathSync.native(resolved);
+  } catch {
+    // The entry may have vanished between `git worktree list` and `stat`.
+    // Fall back to lexical resolution; the later stat call decides liveness.
+  }
+  const normalized = resolved.replace(/\\/g, '/').replace(/\/+$/g, '');
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
+
 function isPathWithin(childPath: string, parentPath: string): boolean {
-  const rel = relative(parentPath, childPath);
-  return rel === '' || (rel.length > 0 && !rel.startsWith('..') && !isAbsolute(rel));
+  const child = canonicalPathForCompare(childPath);
+  const parent = canonicalPathForCompare(parentPath);
+  if (child === parent) return true;
+  return child.startsWith(`${parent}/`);
 }
 
 function countRunningWorktrees(projectRoot: string): number {

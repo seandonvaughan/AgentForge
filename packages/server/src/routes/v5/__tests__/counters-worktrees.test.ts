@@ -1,17 +1,22 @@
 /**
  * Tests for runningWorktrees counter in GET /api/v5/counters
  *
- * Verifies that countRunningWorktrees correctly counts agent-* subdirectories
- * in .agentforge/worktrees/ whose mtime is within the last 30 minutes, and
- * returns 0 when the directory is absent or contains only stale/non-matching entries.
+ * Verifies that countRunningWorktrees correctly counts registered agent-* git
+ * worktrees in .agentforge/worktrees/ whose mtime is within the last 30
+ * minutes, and returns 0 for absent, stale, unregistered, or non-matching
+ * entries.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { mkdtempSync, mkdirSync, rmSync, utimesSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { WorkspaceAdapter } from '@agentforge/db';
 import { countersRoutes, _resetCache, type CountersResponse } from '../counters.js';
+
+const execFileAsync = promisify(execFile);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -37,18 +42,28 @@ async function getCounters(app: FastifyInstance): Promise<CountersResponse> {
   return res.json() as CountersResponse;
 }
 
-/** Create a subdirectory under worktreesDir and optionally backdate its mtime. */
-function makeWorktreeDir(
-  worktreesDir: string,
+async function initGitRepo(projectRoot: string): Promise<void> {
+  await execFileAsync('git', ['init', '-b', 'main'], { cwd: projectRoot });
+  await execFileAsync('git', ['config', 'user.email', 'test@example.com'], { cwd: projectRoot });
+  await execFileAsync('git', ['config', 'user.name', 'Test'], { cwd: projectRoot });
+  writeFileSync(join(projectRoot, 'README.md'), '# test\n');
+  await execFileAsync('git', ['add', 'README.md'], { cwd: projectRoot });
+  await execFileAsync('git', ['commit', '-m', 'initial'], { cwd: projectRoot });
+}
+
+async function makeRegisteredWorktree(
+  projectRoot: string,
   name: string,
   ageMs = 0,
-): void {
-  const p = join(worktreesDir, name);
-  mkdirSync(p, { recursive: true });
+): Promise<void> {
+  const worktreePath = join(projectRoot, '.agentforge', 'worktrees', name);
+  mkdirSync(join(projectRoot, '.agentforge', 'worktrees'), { recursive: true });
+  await execFileAsync('git', ['worktree', 'add', '-b', `test-${name}`, worktreePath, 'HEAD'], {
+    cwd: projectRoot,
+  });
   if (ageMs > 0) {
-    // Set mtime to `ageMs` milliseconds in the past
     const t = new Date(Date.now() - ageMs);
-    utimesSync(p, t, t);
+    utimesSync(worktreePath, t, t);
   }
 }
 
@@ -57,17 +72,17 @@ function makeWorktreeDir(
 // ---------------------------------------------------------------------------
 
 let adapter: WorkspaceAdapter;
-let app: FastifyInstance;
+let app: FastifyInstance | undefined;
 let tmpRoot: string;
 
 beforeEach(() => {
   _resetCache();
-  tmpRoot = mkdtempSync(join(tmpdir(), 'counters-worktrees-'));
+  tmpRoot = realpathSync.native(mkdtempSync(join(tmpdir(), 'counters-worktrees-')));
   adapter = makeAdapter();
 });
 
 afterEach(async () => {
-  await app.close();
+  await app?.close();
   adapter.close();
   _resetCache();
   rmSync(tmpRoot, { recursive: true, force: true });
@@ -95,23 +110,31 @@ describe('GET /api/v5/counters — runningWorktrees — empty directory', () => 
 });
 
 describe('GET /api/v5/counters — runningWorktrees — recent agent dirs', () => {
-  it('counts 3 fresh agent-* dirs as 3', async () => {
-    const worktreesDir = join(tmpRoot, '.agentforge', 'worktrees');
-    mkdirSync(worktreesDir, { recursive: true });
-    makeWorktreeDir(worktreesDir, 'agent-foo-abc123');
-    makeWorktreeDir(worktreesDir, 'agent-bar-def456');
-    makeWorktreeDir(worktreesDir, 'agent-baz-789xyz');
+  it('counts 3 fresh registered agent-* worktrees as 3', async () => {
+    await initGitRepo(tmpRoot);
+    await makeRegisteredWorktree(tmpRoot, 'agent-foo-abc123');
+    await makeRegisteredWorktree(tmpRoot, 'agent-bar-def456');
+    await makeRegisteredWorktree(tmpRoot, 'agent-baz-789xyz');
     app = await buildApp(adapter, tmpRoot);
     const body = await getCounters(app);
     expect(body.runningWorktrees).toBe(3);
   });
 
-  it('ignores dirs whose name does not start with agent-', async () => {
-    const worktreesDir = join(tmpRoot, '.agentforge', 'worktrees');
-    mkdirSync(worktreesDir, { recursive: true });
-    makeWorktreeDir(worktreesDir, 'agent-active-001');
-    makeWorktreeDir(worktreesDir, 'tmp-scratch');      // no agent- prefix
-    makeWorktreeDir(worktreesDir, 'main');             // no agent- prefix
+  it('ignores registered worktrees whose name does not start with agent-', async () => {
+    await initGitRepo(tmpRoot);
+    await makeRegisteredWorktree(tmpRoot, 'agent-active-001');
+    await makeRegisteredWorktree(tmpRoot, 'tmp-scratch');
+    await makeRegisteredWorktree(tmpRoot, 'main');
+    app = await buildApp(adapter, tmpRoot);
+    const body = await getCounters(app);
+    expect(body.runningWorktrees).toBe(1);
+  });
+
+  it('ignores unregistered orphan agent-* directories', async () => {
+    await initGitRepo(tmpRoot);
+    await makeRegisteredWorktree(tmpRoot, 'agent-active-001');
+    mkdirSync(join(tmpRoot, '.agentforge', 'worktrees', 'agent-orphan-999'), { recursive: true });
+
     app = await buildApp(adapter, tmpRoot);
     const body = await getCounters(app);
     expect(body.runningWorktrees).toBe(1);
@@ -119,23 +142,19 @@ describe('GET /api/v5/counters — runningWorktrees — recent agent dirs', () =
 });
 
 describe('GET /api/v5/counters — runningWorktrees — stale dirs excluded', () => {
-  it('excludes agent dirs older than 30 minutes', async () => {
-    const worktreesDir = join(tmpRoot, '.agentforge', 'worktrees');
-    mkdirSync(worktreesDir, { recursive: true });
-    // Fresh dir (2 minutes old)
-    makeWorktreeDir(worktreesDir, 'agent-fresh-111', 2 * 60 * 1000);
-    // Stale dir (31 minutes old)
-    makeWorktreeDir(worktreesDir, 'agent-stale-222', 31 * 60 * 1000);
+  it('excludes registered agent worktrees older than 30 minutes', async () => {
+    await initGitRepo(tmpRoot);
+    await makeRegisteredWorktree(tmpRoot, 'agent-fresh-111', 2 * 60 * 1000);
+    await makeRegisteredWorktree(tmpRoot, 'agent-stale-222', 31 * 60 * 1000);
     app = await buildApp(adapter, tmpRoot);
     const body = await getCounters(app);
     expect(body.runningWorktrees).toBe(1);
   });
 
-  it('excludes agent dirs older than 30 minutes and counts zero when all stale', async () => {
-    const worktreesDir = join(tmpRoot, '.agentforge', 'worktrees');
-    mkdirSync(worktreesDir, { recursive: true });
-    makeWorktreeDir(worktreesDir, 'agent-old-001', 35 * 60 * 1000);
-    makeWorktreeDir(worktreesDir, 'agent-old-002', 60 * 60 * 1000);
+  it('excludes registered agent worktrees older than 30 minutes and counts zero when all stale', async () => {
+    await initGitRepo(tmpRoot);
+    await makeRegisteredWorktree(tmpRoot, 'agent-old-001', 35 * 60 * 1000);
+    await makeRegisteredWorktree(tmpRoot, 'agent-old-002', 60 * 60 * 1000);
     app = await buildApp(adapter, tmpRoot);
     const body = await getCounters(app);
     expect(body.runningWorktrees).toBe(0);

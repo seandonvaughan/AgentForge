@@ -18,7 +18,7 @@
 // See docs/superpowers/specs/2026-04-06-autonomous-loop-design.md §6 and
 // docs/superpowers/plans/2026-04-06-autonomous-loop-part2.md Task 21.
 
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
@@ -440,8 +440,12 @@ function safePathWithin(childPath: string, parentPath: string): boolean {
   return rel === '' || (rel.length > 0 && !rel.startsWith('..') && !isAbsolute(rel));
 }
 
-function branchSlug(branch: string): string {
-  return branch.replace(/[^A-Za-z0-9._-]+/g, '-').slice(0, 80) || 'branch';
+export function verificationWorktreeName(cycleId: string, index: number, branch: string): string {
+  const hash = createHash('sha256')
+    .update(`${cycleId}\0${branch}`)
+    .digest('hex')
+    .slice(0, 12);
+  return `verify-${index + 1}-${hash}`;
 }
 
 async function execCommandInDir(
@@ -544,7 +548,7 @@ export async function verifyMultiPrAgentBranches(opts: {
     const startedAt = Date.now();
     const worktreePath = join(
       worktreesRoot,
-      `verify-${opts.cycleId.slice(0, 8)}-${index + 1}-${branchSlug(run.branch)}`,
+      verificationWorktreeName(opts.cycleId, index, run.branch),
     );
 
     try {

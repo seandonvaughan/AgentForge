@@ -30,6 +30,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import {
   collectFilesFromAgentBranches,
+  verificationWorktreeName,
   verifyMultiPrAgentBranches,
 } from '../cycle-runner.js';
 
@@ -250,6 +251,20 @@ describe('collectFilesFromAgentBranches regression: worktreePool=undefined path'
 });
 
 describe('verifyMultiPrAgentBranches', () => {
+  it('uses short deterministic verification worktree names', () => {
+    const cycleId = 'aaae9534-72c7-494b-85e1-b5eab6593c25';
+    const branch = 'codex/agent-executor-runtime-engineer-aaae9534-72c7-494b-85e1-b5eab6593c25';
+
+    const first = verificationWorktreeName(cycleId, 0, branch);
+    const second = verificationWorktreeName(cycleId, 1, branch);
+
+    expect(first).toMatch(/^verify-1-[a-f0-9]{12}$/);
+    expect(second).toMatch(/^verify-2-[a-f0-9]{12}$/);
+    expect(first).toHaveLength('verify-1-'.length + 12);
+    expect(second).not.toBe(first);
+    expect(verificationWorktreeName(cycleId, 0, branch)).toBe(first);
+  });
+
   it('treats itemResults worktreeBranch entries as branch verification work', async () => {
     const workDir = mkdtempSync(join(tmpdir(), 'cr-verify-itemresults-'));
     const bareDir = join(tmpdir(), `cr-verify-itemresults-bare-${Date.now()}`);

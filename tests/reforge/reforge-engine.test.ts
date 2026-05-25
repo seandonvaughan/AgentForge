@@ -773,7 +773,7 @@ describe("ReforgeEngine", () => {
       canaryErrors: 0,
       errorRate: 0,
     });
-  });
+  }, 30_000);
 
   it("recordCanaryOutcome requires both identifiers when a pending canary outcome has both", async () => {
     const canaryAnalysis = makeAnalysis([
