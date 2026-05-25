@@ -18,11 +18,36 @@ import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const CLAUDE_MD_PATH = join(REPO_ROOT, "CLAUDE.md");
+const README_MD_PATH = join(REPO_ROOT, "README.md");
+const PACKAGE_JSON_PATH = join(REPO_ROOT, "package.json");
+const RUNTIME_TYPES_PATH = join(REPO_ROOT, "packages", "core", "src", "runtime", "types.ts");
 
 let content = "";
+let readmeContent = "";
+let packageVersion = "";
+let nodeEngine = "";
+let runtimeModes: string[] = [];
 
 beforeAll(async () => {
-  content = await readFile(CLAUDE_MD_PATH, "utf-8");
+  const [claudeMd, readmeMd, packageJson, runtimeTypes] = await Promise.all([
+    readFile(CLAUDE_MD_PATH, "utf-8"),
+    readFile(README_MD_PATH, "utf-8"),
+    readFile(PACKAGE_JSON_PATH, "utf-8"),
+    readFile(RUNTIME_TYPES_PATH, "utf-8"),
+  ]);
+
+  content = claudeMd;
+  readmeContent = readmeMd;
+  const packageManifest = JSON.parse(packageJson) as {
+    version: string;
+    engines: { node: string };
+  };
+  packageVersion = packageManifest.version;
+  nodeEngine = packageManifest.engines.node;
+  const runtimeModeType = runtimeTypes.match(/export type RuntimeMode =([\s\S]*?);/);
+  runtimeModes = runtimeModeType
+    ? Array.from(runtimeModeType[1].matchAll(/^\s*\|\s+'([^']+)'/gm), (match) => match[1])
+    : [];
 });
 
 // ---------------------------------------------------------------------------
@@ -155,5 +180,47 @@ describe("CLAUDE.md", () => {
 
   it("does not reference stale 'lead-architect' agent role", () => {
     expect(content).not.toMatch(/lead-architect/);
+  });
+
+  it("documents the current MCP package path", () => {
+    expect(content).toContain("packages/mcp-server");
+    expect(content).not.toContain("packages/mcp/");
+  });
+
+  it("uses Corepack-managed pnpm in development commands", () => {
+    expect(content).not.toMatch(/^pnpm\s/m);
+    expect(content).not.toMatch(/^npx\s/m);
+  });
+
+  it("documents the current Node engine", () => {
+    expect(content).toContain(`Node.js \`${nodeEngine}\``);
+  });
+});
+
+describe("README.md", () => {
+  it("documents the current package version", () => {
+    expect(readmeContent).toContain(`version \`${packageVersion}\``);
+  });
+
+  it("documents the current MCP package path", () => {
+    expect(readmeContent).toContain("packages/mcp-server");
+    expect(readmeContent).not.toContain("packages/mcp`");
+    expect(readmeContent).not.toContain("packages/mcp/");
+  });
+
+  it("documents each runtime mode from the package runtime contract", () => {
+    for (const mode of runtimeModes) {
+      expect(readmeContent).toContain(mode);
+      expect(content).toContain(mode);
+    }
+  });
+
+  it("uses Corepack-managed pnpm in development commands", () => {
+    expect(readmeContent).not.toMatch(/^pnpm\s/m);
+    expect(readmeContent).not.toMatch(/^npx\s/m);
+  });
+
+  it("documents the current Node engine", () => {
+    expect(readmeContent).toContain(`Node.js \`${nodeEngine}\``);
   });
 });
