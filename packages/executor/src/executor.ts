@@ -1,6 +1,6 @@
 import { generateId, nowIso } from '@agentforge/shared';
 import type { AgentProposal, SprintItemExecutionRequest, SprintItemExecutionResult } from '@agentforge/core';
-import { buildPlan } from './planner.js';
+import { buildPlan, modelForStage } from './planner.js';
 import type {
   ExecutionResult,
   ExecutorOptions,
@@ -102,6 +102,7 @@ export class ProposalExecutor {
             plan,
             stage,
             agentId,
+            model: modelForStage(plan.estimatedComplexity, stage),
             stageIndex: i,
             timeoutMs: this.opts.stageTimeoutMs,
             budgetRemainingUsd: Math.max(this.opts.budgetUsd - totalCostUsd, 0),
@@ -124,6 +125,10 @@ export class ProposalExecutor {
       totalMs += stageResult.durationMs;
 
       if (!stageResult.success) {
+        if (!this.opts.dryRun) {
+          if (diffs.length > 0) execution.diff = diffs.join('\n');
+          if (testSummary) execution.testSummary = testSummary;
+        }
         execution.status = 'failed';
         execution.completedAt = nowIso();
         execution.totalDurationMs = totalMs;
