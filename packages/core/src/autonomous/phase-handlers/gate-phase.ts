@@ -536,8 +536,8 @@ $${costSoFar.toFixed(4)}
 ${knownDebtSection}## Verification protocol — READ CAREFULLY
 The code review above may have been produced against an intermediate execute-phase state. Before REJECTing on any CRITICAL or MAJOR finding, VERIFY it against the current working tree:
 
-1. For each CRITICAL or MAJOR finding that cites a specific file/line, use the execute-phase review targets above. If target worktrees are listed, inspect the file inside the relevant target worktree, not the clean parent checkout.
-2. Use Grep or \`git -C "<worktree>" grep\` to search for the problematic pattern described in the finding.
+1. For each CRITICAL or MAJOR finding that cites a specific file/line, use the execute-phase review targets above. If target branches are listed, inspect them with \`git diff origin/<base>...<branch>\` and \`git show <branch>:<file>\`; if only target worktrees are listed, use Read/Grep tools or direct file reads against the listed changed files. Do not inspect the clean parent checkout.
+2. Use Grep/Read tools, \`git show <branch>:<file>\`, or direct file reads to search for the problematic pattern described in the finding. Avoid worktree-scoped git commands and Git grep in Codex read-only sandbox.
 3. If the bug no longer reproduces (the line has been amended, the pattern is absent, or the finding's premise is otherwise false in the current code), treat that finding as RESOLVED. Do NOT let a resolved finding drive REJECT.
 4. Only unresolved CRITICAL or verified-still-present MAJOR findings are grounds for REJECT.${knownDebtStep}
 If all CRITICAL and MAJOR findings either do not reproduce or were already addressed, and tests pass, APPROVE.

@@ -25,7 +25,7 @@ export interface CountersResponse {
   openBranches: number;
   /** Count of approvals rows where status = 'pending'. */
   pendingApprovals: number;
-  /** Cycles with stage 'run' AND fresh heartbeat (<5min). */
+  /** Non-terminal cycle ledger entries with a fresh heartbeat (<5min). */
   runningCycles: number;
   /** Sum of cycle.json cost.totalUsd within today (server local time). */
   todaySpendUsd: number;
@@ -126,6 +126,8 @@ interface JsonLedgerCounts {
   cyclesMonth: number;
 }
 
+const RUNNING_FRESHNESS_MS = 5 * 60 * 1000;
+
 function computeCountersFromJsonLedger(projectRoot: string): JsonLedgerCounts {
   const cyclesDir = join(projectRoot, '.agentforge', 'cycles');
   const empty: JsonLedgerCounts = {
@@ -138,7 +140,7 @@ function computeCountersFromJsonLedger(projectRoot: string): JsonLedgerCounts {
   const weekStartMs = new Date(weekStart).getTime();
   const monthStartMs = Date.now() - 30 * 24 * 60 * 60 * 1000;
   const dayWindowMs = 24 * 60 * 60 * 1000;
-  const heartbeatMaxAgeMs = 5 * 60 * 1000;          // STALL_MS from dashboard
+  const heartbeatMaxAgeMs = RUNNING_FRESHNESS_MS;   // STALL_MS from dashboard
   const agentsActiveWindowMs = 60 * 60 * 1000;      // last hour
 
   let runningCycles = 0;
@@ -166,15 +168,14 @@ function computeCountersFromJsonLedger(projectRoot: string): JsonLedgerCounts {
       cycle = JSON.parse(readFileSync(cyclePath, 'utf8')) as Record<string, unknown>;
     } catch { continue; }
 
-    // Running = non-terminal stage AND heartbeat fresh (or no terminal stage written yet)
+    // Running = non-terminal cycle with a fresh heartbeat. During early
+    // planning/audit windows the heartbeat can exist before a stage is written.
     const stage = (cycle.stage as string | undefined)?.toLowerCase();
     const isTerminal = stage !== undefined &&
       ['completed', 'failed', 'killed', 'crashed', 'aborted'].includes(stage);
-    if (!isTerminal && stage === 'run') {
-      const hb = cycle.lastHeartbeatAt as string | undefined;
-      const fresh = hb !== undefined && now - new Date(hb).getTime() < heartbeatMaxAgeMs;
-      if (fresh) runningCycles++;
-    }
+    const hbMs = parseTimestampMs(cycle.lastHeartbeatAt as string | undefined);
+    const hasFreshHeartbeat = hbMs !== null && now - hbMs < heartbeatMaxAgeMs;
+    if (!isTerminal && hasFreshHeartbeat) runningCycles++;
 
     // Reference timestamp: prefer startedAt for "cycle in window", completedAt
     // for "spend on this date". Fall back to file mtime when those are missing.
@@ -216,7 +217,7 @@ function computeCountersFromJsonLedger(projectRoot: string): JsonLedgerCounts {
       try { activeRefMs = statSync(cyclePath).mtimeMs; } catch { activeRefMs = null; }
     }
     const recent = activeRefMs !== null && now - activeRefMs < agentsActiveWindowMs;
-    if (recent || (!isTerminal && stage === 'run')) {
+    if (recent || (!isTerminal && hasFreshHeartbeat)) {
       const execPath = join(cyclesDir, id, 'phases', 'execute.json');
       if (existsSync(execPath)) {
         try {
@@ -241,6 +242,12 @@ function computeCountersFromJsonLedger(projectRoot: string): JsonLedgerCounts {
     cyclesWeek,
     cyclesMonth,
   };
+}
+
+function parseTimestampMs(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 /** Count agent YAML files in `.agentforge/agents/`. */
@@ -316,10 +323,6 @@ function computeCounters(adapter: WorkspaceAdapter, projectRoot: string): Counte
   const agentsTotal = countTotalAgents(projectRoot);
   const runningWorktrees = countRunningWorktrees(projectRoot);
 
-  const sqlRunningCycles = db
-    .prepare<[], { n: number }>("SELECT COUNT(*) AS n FROM runtime_jobs WHERE status = 'running'")
-    .get()?.n ?? 0;
-
   const sqlTodaySpend = db
     .prepare<[string], { n: number }>('SELECT COALESCE(SUM(cost_usd), 0) AS n FROM costs WHERE created_at >= ?')
     .get(todayStart)?.n ?? 0;
@@ -339,7 +342,9 @@ function computeCounters(adapter: WorkspaceAdapter, projectRoot: string): Counte
   for (const row of activeAgentRows) {
     if (row.agent_id) activeAgentIds.add(row.agent_id);
   }
-  const runningCycles = fromJson.runningCycles + sqlRunningCycles;
+  // SQL runtime_jobs are per-agent/manual job rows, not autonomous cycles.
+  // Counting them here makes one parallel cycle look like many running cycles.
+  const runningCycles = fromJson.runningCycles;
 
   return {
     openBranches,

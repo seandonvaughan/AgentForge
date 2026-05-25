@@ -171,7 +171,7 @@ ${itemResultsJson}
 ${reviewTargetSection}
 
 Use Read/Glob/Grep/Bash to:
-1. Identify which source files changed. If execute-phase review targets are listed, use their \`git -C "<worktree>" ...\` commands and changed-file lists instead of the parent checkout.
+1. Identify which source files changed. If execute-phase review targets are listed, use their branch-safe \`git diff\` / \`git show\` commands, direct file read commands, and changed-file lists instead of the parent checkout. Avoid worktree-scoped git commands and Git grep in Codex read-only sandbox.
 2. Look at the changed files in the target worktree(s) — are there any obviously missing tests? Edge cases the executing agents might have missed?
 3. Check if any items reported failures or partial completion
 4. Flag anything risky (changes to core safety paths: git-ops, kill-switch, agent-runtime, cycle-runner)

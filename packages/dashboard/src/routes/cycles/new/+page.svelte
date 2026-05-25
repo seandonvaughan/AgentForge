@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import { withWorkspace } from '$lib/stores/workspace';
   import { relativeTime } from '$lib/util/relative-time';
+  import { codexProfileLabel } from '$lib/modelProfiles';
   import CodexReadinessPanel from '$lib/components/CodexReadinessPanel.svelte';
   import {
     Btn, Card, Badge, StageDots,
@@ -154,15 +155,13 @@
 
   const xhighWarning = $derived<string | null>(
     effortCap === 'xhigh' && modelCap !== 'opus' && modelCap !== 'default'
-      ? `xhigh effort is limited to the xhigh profile; ${profileLabel(modelCap)} runs will auto-downgrade to max.`
+      ? `xhigh effort is limited to ${profileLabel('opus')}; ${profileLabel(modelCap)} runs will auto-downgrade to max.`
       : null,
   );
 
   function profileLabel(cap: ModelCap): string {
-    if (cap === 'opus') return 'xhigh profile';
-    if (cap === 'haiku') return 'medium profile';
     if (cap === 'default') return 'per-agent profile';
-    return 'high profile';
+    return codexProfileLabel(cap);
   }
 
   async function handleLaunch(): Promise<void> {
@@ -415,9 +414,9 @@
         <label class="field-label" for="modelCap">Codex profile cap</label>
         <select id="modelCap" bind:value={modelCap} class="select" disabled={formDisabled}>
           <option value="default">Default (per agent)</option>
-          <option value="opus">xhigh profile — most capable</option>
-          <option value="sonnet">high profile — balanced</option>
-          <option value="haiku">medium profile — maximum savings</option>
+          <option value="opus">{profileLabel('opus')} — most capable</option>
+          <option value="sonnet">{profileLabel('sonnet')} — balanced</option>
+          <option value="haiku">{profileLabel('haiku')} — maximum savings</option>
         </select>
       </div>
 
@@ -428,7 +427,7 @@
           <option value="low">Low — fast, mechanical</option>
           <option value="medium">Medium</option>
           <option value="high">High</option>
-          <option value="xhigh">xhigh — xhigh profile only</option>
+          <option value="xhigh">xhigh — gpt-5.5 only</option>
           <option value="max">Max — deepest reasoning</option>
         </select>
       </div>
@@ -448,7 +447,7 @@
         <label class="toggle">
           <input type="checkbox" bind:checked={fallbackEnabled} disabled={formDisabled} />
           <span class="toggle-track" class:on={fallbackEnabled}><span class="toggle-knob"></span></span>
-          <span class="toggle-label">Profile fallback <span class="hint">(xhigh → high → medium)</span></span>
+          <span class="toggle-label">Profile fallback <span class="hint">(gpt-5.5 → gpt-5.3-codex → gpt-5.4-mini)</span></span>
         </label>
       </div>
     </div>
@@ -569,9 +568,9 @@
           <label class="field-label" for="rdModelCap">Codex profile cap</label>
           <select id="rdModelCap" bind:value={modelCap} class="select" disabled={formDisabled}>
             <option value="default">Default (per agent)</option>
-            <option value="opus">gpt-5.5 / xhigh</option>
-            <option value="sonnet">gpt-5.3-codex / high</option>
-            <option value="haiku">gpt-5.4-mini / medium</option>
+            <option value="opus">{profileLabel('opus')}</option>
+            <option value="sonnet">{profileLabel('sonnet')}</option>
+            <option value="haiku">{profileLabel('haiku')}</option>
           </select>
         </div>
 

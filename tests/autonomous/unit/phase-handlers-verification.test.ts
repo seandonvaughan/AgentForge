@@ -181,6 +181,40 @@ describe('verification phase handlers', () => {
     expect(taskArg).toContain('Worktree available: no - use the branch commands below');
     expect(taskArg).toContain('packages/core/src/runtime/merge-queue.ts');
     expect(taskArg).toContain('instead of the parent checkout');
+    expect(taskArg).not.toContain('git -C');
+    expect(taskArg).not.toContain('git grep');
+  });
+
+  it('test phase gives read-only-safe file reads for live worktrees without branches', async () => {
+    const cycleId = 'cycle-live-worktree-test';
+    const worktreePath = join(tmpDir, '.agentforge/worktrees/agent-live-cycle');
+    const changedFile = 'packages/core/src/runtime/merge-queue.ts';
+    mkdirSync(join(worktreePath, 'packages/core/src/runtime'), { recursive: true });
+    writeFileSync(join(worktreePath, changedFile), 'export const changed = true;\n');
+    writeExecuteJson(tmpDir, cycleId, [
+      {
+        itemId: 'i1',
+        agentId: 'coder',
+        status: 'completed',
+        worktreePath,
+        worktreeChangedFiles: [changedFile],
+      },
+    ]);
+
+    const runtime = {
+      run: vi.fn().mockResolvedValue({ output: 'Confidence: 4/5', costUsd: 0.01 }),
+    };
+    const { bus } = makeMockBus();
+
+    await runTestPhase(
+      makeCtx({ cwd: tmpDir, sprintVersion: '6.5.2', cycleId, runtime, bus }),
+    );
+
+    const taskArg = runtime.run.mock.calls[0][1] as string;
+    expect(taskArg).toContain('Get-Content -LiteralPath');
+    expect(taskArg).toContain(changedFile);
+    expect(taskArg).not.toContain('git -C');
+    expect(taskArg).not.toContain('git grep');
   });
 
   it('test phase keeps execute summaries below Codex input limits', async () => {
@@ -373,7 +407,10 @@ describe('verification phase handlers', () => {
     const taskArg = runtime.run.mock.calls[0][1] as string;
     expect(taskArg).toContain('Execute-phase review targets');
     expect(taskArg).toContain('git diff --stat origin/main...codex/agent-gate-cycle');
-    expect(taskArg).toContain('not the clean parent checkout');
+    expect(taskArg).toContain('Do not inspect the clean parent checkout');
+    expect(taskArg).toContain('git show <branch>:<file>');
+    expect(taskArg).not.toContain('git -C');
+    expect(taskArg).not.toContain('git grep');
   });
 
   it('parseVerdict captures the verdict score from a review', () => {

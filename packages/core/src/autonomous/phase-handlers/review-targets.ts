@@ -58,6 +58,10 @@ function asStringArray(value: unknown): string[] {
     .slice(0, MAX_REVIEW_TARGET_CHANGED_FILES);
 }
 
+function quotePowerShellLiteral(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
 export function resolveTargetPath(projectRoot: string, worktreePath: string): string {
   return isAbsolute(worktreePath) ? worktreePath : join(projectRoot, worktreePath);
 }
@@ -150,8 +154,10 @@ export function formatExecuteReviewTargets(
         ].join('\n')
       : target.worktreePath && worktreeExists
       ? [
-          `  git -C "${resolvedPath}" diff --stat origin/${baseBranch}...HEAD`,
-          `  git -C "${resolvedPath}" diff origin/${baseBranch}...HEAD`,
+          '  Use Read/Grep tools against the absolute worktree path, or these PowerShell reads:',
+          ...target.changedFiles.map((file) => (
+            `  Get-Content -LiteralPath ${quotePowerShellLiteral(join(resolvedPath, file))} -TotalCount 240`
+          )),
         ].join('\n')
       : '  No live worktree or branch was recorded; use the changed-file list and execute output only.';
 
@@ -169,7 +175,7 @@ export function formatExecuteReviewTargets(
 
   return [
     '## Execute-phase review targets',
-    'IMPORTANT: In multi-PR mode, sprint changes live on isolated agent branches. The temporary worktree may already be removed and the parent checkout may be clean. Prefer the branch diff commands below. Do not inspect unrelated directories under `.agentforge/worktrees`, and do not substitute `git diff HEAD` in the parent checkout when a target branch is listed.',
+    'IMPORTANT: In multi-PR mode, sprint changes live on isolated agent branches. The temporary worktree may already be removed and the parent checkout may be clean. Prefer the branch diff commands below. When only a live worktree path is listed, use Read/Grep tools or direct file reads against the listed changed files; avoid worktree-scoped git commands and Git grep in Codex read-only sandbox. Do not inspect unrelated directories under `.agentforge/worktrees`, and do not substitute `git diff HEAD` in the parent checkout when a target branch is listed.',
     ...sections,
   ].join('\n\n');
 }

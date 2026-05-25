@@ -3,12 +3,11 @@
  *
  * The counters endpoint aggregates system-wide metrics (open branches,
  * pending approvals, running cycles, spend, active agents, load) from the
- * workspace SQLite DB. All tests use an in-memory WorkspaceAdapter so there
- * is no filesystem I/O.
+ * workspace SQLite DB and cycle ledger fixtures.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { WorkspaceAdapter } from '@agentforge/db';
@@ -44,10 +43,38 @@ function seedSessionAt(adapter: WorkspaceAdapter, agentId: string, startedAt: st
   ).run(`sess-${String(Math.random()).slice(2)}`, agentId, startedAt, startedAt);
 }
 
-/** Insert a runtime_job row at status='running' to drive runningCycles. */
+/** Insert a runtime_job row at status='running'. These are jobs, not cycles. */
 function seedRunningJob(adapter: WorkspaceAdapter, agentId: string): void {
   const session = adapter.createSession({ agentId, task: 'run' });
   adapter.createRuntimeJob({ sessionId: session.id, agentId, task: 'run', status: 'running' });
+}
+
+/** Insert an abandoned runtime_job row that should not drive live counters. */
+function seedStaleRunningJob(adapter: WorkspaceAdapter, agentId: string): void {
+  const stale = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  const session = adapter.createSession({ agentId, task: 'stale-run' });
+  adapter.createRuntimeJob({
+    sessionId: session.id,
+    agentId,
+    task: 'stale-run',
+    status: 'running',
+    createdAt: stale,
+  });
+}
+
+function seedCycleLedger(cycleId: string, payload: Record<string, unknown>): void {
+  const cycleDir = join(projectRoot, '.agentforge', 'cycles', cycleId);
+  mkdirSync(cycleDir, { recursive: true });
+  writeFileSync(join(cycleDir, 'cycle.json'), JSON.stringify(payload, null, 2));
+}
+
+function seedFreshRunningCycle(cycleId: string, extra: Record<string, unknown> = {}): void {
+  seedCycleLedger(cycleId, {
+    startedAt: new Date(Date.now() - 60_000).toISOString(),
+    lastHeartbeatAt: new Date().toISOString(),
+    stage: 'run',
+    ...extra,
+  });
 }
 
 /** Seed a cost record with a specific created_at for spend windowing tests. */
@@ -161,7 +188,8 @@ describe('GET /api/v5/counters — openBranches', () => {
 });
 
 describe('GET /api/v5/counters — runningCycles', () => {
-  it('counts only running runtime_jobs', async () => {
+  it('counts fresh running cycle ledger entries without counting per-agent jobs', async () => {
+    seedFreshRunningCycle('cycle-running');
     seedRunningJob(adapter, 'agent-a');
     seedRunningJob(adapter, 'agent-b');
     // Seed a completed job that should NOT be counted
@@ -170,22 +198,40 @@ describe('GET /api/v5/counters — runningCycles', () => {
     adapter.completeRuntimeJob(job.id, { status: 'completed' });
     _resetCache();
     const body = await getCounters(app);
-    expect(body.runningCycles).toBe(2);
+    expect(body.runningCycles).toBe(1);
+  });
+
+  it('counts heartbeat-only cycle ledger entries before a stage is written', async () => {
+    seedFreshRunningCycle('cycle-heartbeat-only', { stage: undefined });
+    _resetCache();
+    const body = await getCounters(app);
+    expect(body.runningCycles).toBe(1);
+    expect(body.load).toBe('busy');
+  });
+
+  it('ignores SQL runtime_jobs left running by agent invocations', async () => {
+    seedRunningJob(adapter, 'agent-fresh-a');
+    seedRunningJob(adapter, 'agent-fresh-b');
+    seedStaleRunningJob(adapter, 'agent-stale');
+    _resetCache();
+    const body = await getCounters(app);
+    expect(body.runningCycles).toBe(0);
+    expect(body.load).toBe('idle');
   });
 });
 
 describe('GET /api/v5/counters — load derivation', () => {
   it('load=busy when 1 or 2 cycles are running', async () => {
-    seedRunningJob(adapter, 'agent-a');
+    seedFreshRunningCycle('cycle-a');
     _resetCache();
     const body = await getCounters(app);
     expect(body.load).toBe('busy');
   });
 
   it('load=overloaded when 3 or more cycles are running', async () => {
-    seedRunningJob(adapter, 'agent-a');
-    seedRunningJob(adapter, 'agent-b');
-    seedRunningJob(adapter, 'agent-c');
+    seedFreshRunningCycle('cycle-a');
+    seedFreshRunningCycle('cycle-b');
+    seedFreshRunningCycle('cycle-c');
     _resetCache();
     const body = await getCounters(app);
     expect(body.load).toBe('overloaded');
@@ -247,7 +293,7 @@ describe('GET /api/v5/counters — caching', () => {
     vi.useFakeTimers();
     try {
       const first = await getCounters(app);
-      seedRunningJob(adapter, 'agent-x');
+      seedFreshRunningCycle('cycle-cache-refresh');
       // Advance time past TTL
       vi.advanceTimersByTime(6_000);
       _resetCache();
