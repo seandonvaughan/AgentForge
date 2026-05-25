@@ -1,32 +1,12 @@
 {
   "version": "v6-backlog",
-  "description": "Convergence backlog (2026-05-25): small, gate-passable Phase-1 items chosen to PROVE the autonomous loop ships end-to-end and to advance Claude+Codex convergence. The original 12-item product roadmap is parked in product-roadmap.json and is restored once the loop reliably ships. Each item is scoped to <=2 files with explicit `files` hints so agents stay narrow and the gate has little surface to reject. See docs/superpowers/specs/2026-05-25-agentforge-convergence-and-cloud-design.md.",
+  "description": "Convergence backlog (2026-05-25, post-merge). bl-001 (CLAUDE.md/README) and bl-002 (preferredProvider hint) SHIPPED via merged PRs #172/#171. This single small, genuine-pending item validates the loop end-to-end after the #2 retry-routing fix: runtime-modes.md docs (the deferred PR #170 content). Specified to pass the gate clean — aiming for the first fully-green cycle. Original 12-item roadmap parked in .agentforge/product-roadmap.json.",
   "northStar": "One unforked, runtime-agnostic AgentForge (Claude + Codex, best provider x model x effort per job) whose autonomous loop reliably ships, then builds AgentForge Cloud.",
   "items": [
     {
-      "id": "bl-001",
-      "title": "Reconcile CLAUDE.md and README with current architecture",
-      "description": "Docs-only; do NOT change code. Fix the documented drift so the docs match the code that exists today: (1) the MCP server package is `packages/mcp-server`, not `packages/mcp`; (2) `.agentforge/agents/` currently contains 35 agent YAMLs, not 24; (3) the package version line is 10.5.x — remove or reframe stale 'v22.1'/'v23.5' narrative as historical; (4) the execution runtime supports four transports: anthropic-sdk, claude-code-compat (alias cli), codex-cli, and openai-sdk. Edit only CLAUDE.md and README.md prose. Keep changes factual, minimal, and verifiable against the repository.",
-      "priority": "P0",
-      "estimatedComplexity": "low",
-      "tags": ["docs", "chore", "convergence"],
-      "source": "convergence-2026-05-25",
-      "files": ["CLAUDE.md", "README.md"]
-    },
-    {
-      "id": "bl-002",
-      "title": "Add optional preferredProvider hint to ExecutionRequest",
-      "description": "Type-only foundation for per-job provider routing — NO cost/capability policy yet. In packages/core/src/runtime/types.ts add an optional advisory field `preferredProvider?: ExecutionProviderKind` to ExecutionRequest with a doc comment. In packages/core/src/runtime/provider-resolver.ts, when `request.preferredProvider` is set and that transport's isAvailable(request) returns true, select it first; otherwise keep the existing selection order unchanged. Add a focused unit test under packages/core/src/runtime/__tests__/ covering (a) the hint is honored when the provider is available and (b) it falls back gracefully when the hinted provider is unavailable. Keep the diff small and do not alter unrelated behavior.",
-      "priority": "P0",
-      "estimatedComplexity": "low",
-      "tags": ["runtime", "convergence", "feature"],
-      "source": "convergence-2026-05-25",
-      "files": ["packages/core/src/runtime/types.ts", "packages/core/src/runtime/provider-resolver.ts"]
-    },
-    {
       "id": "bl-003",
-      "title": "Document Claude+Codex transports and per-job model profiles",
-      "description": "Docs-only; do NOT change code. Update docs/runtime-modes.md to accurately document: the four execution transports (anthropic-sdk, claude-code-compat/cli, codex-cli, openai-sdk); the AGENTFORGE_RUNTIME values (auto, sdk, cli, codex-cli, openai-sdk) and how they resolve; and how each agent tier maps to a per-provider model+effort profile (opus -> gpt-5.5/xhigh, sonnet -> gpt-5.3-codex/high, haiku -> gpt-5.4-mini/medium on the Codex side, with the Claude model IDs on the Anthropic side). Describe only what packages/core/src/runtime actually does today.",
+      "title": "Document Claude+Codex runtime transports in docs/runtime-modes.md",
+      "description": "Docs-only; do NOT change code. Update docs/runtime-modes.md to document the four execution transports (anthropic-sdk, claude-code-compat/cli, codex-cli, openai-sdk) and the AGENTFORGE_RUNTIME values (auto, sdk, cli, codex-cli, openai-sdk) and how each resolves. CRITICAL for internal consistency (a prior gate rejected on exactly this): the resolveMode() code-sample inline comment MUST list ALL valid modes — 'auto' | 'sdk' | 'anthropic-sdk' | 'cli' | 'claude-cli' | 'claude-code-compat' | 'codex-cli' | 'openai-sdk' — matching the modes table elsewhere in the document; do NOT leave it as only 'auto' | 'sdk' | 'cli'. Describe what packages/core/src/runtime actually does today. Add or adjust a doc-truth assertion in tests/docs/claude-md.test.ts if helpful, and self-verify (corepack pnpm exec vitest run tests/docs/claude-md.test.ts) before finishing.",
       "priority": "P0",
       "estimatedComplexity": "low",
       "tags": ["docs", "convergence", "runtime"],
