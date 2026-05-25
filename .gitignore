@@ -57,6 +57,7 @@ packages/**/package-lock.json
 .agentforge/cycles/
 .agentforge/cycles-archived/
 .agentforge/reports/
+.agentforge/logs/
 .agentforge/pnpm-store/
 .agentforge/forge/
 .agentforge/flywheel/
