@@ -4,7 +4,7 @@ import type { AgentProposal } from '@agentforge/core';
 
 describe('ProposalExecutor execution modes', () => {
   it('keeps dry-run execution as the default', async () => {
-    const result = await new ProposalExecutor().execute(buildProposal());
+    const result = await new ProposalExecutor().execute(buildMediumProposal());
 
     expect(result.status).toBe('passed');
     expect(result.diff).toContain('Applied: Add runtime-backed execution');
@@ -28,17 +28,101 @@ describe('ProposalExecutor execution modes', () => {
           };
         },
       },
-    }).execute(buildProposal());
+    }).execute(buildMediumProposal());
 
     expect(stages).toEqual(['planning', 'coding', 'linting', 'testing']);
     expect(result.status).toBe('passed');
     expect(result.totalCostUsd).toBeCloseTo(0.2);
     expect(result.diff).toContain('diff --git');
     expect(result.testSummary).toEqual({ passed: 3, failed: 0, total: 3 });
+    expect(result.stages.map((stage) => stage.stage)).toEqual(['planning', 'coding', 'linting', 'testing', 'complete']);
+  });
+
+  it('routes high-complexity proposals through architecture before coding', async () => {
+    const stages: string[] = [];
+    const result = await new ProposalExecutor({
+      dryRun: false,
+      runtime: {
+        async executeStage({ stage }) {
+          stages.push(stage);
+          return {
+            output: `ran ${stage}`,
+            success: true,
+            durationMs: 10,
+            costUsd: 0.01,
+          };
+        },
+      },
+    }).execute(buildHighComplexityProposal());
+
+    expect(stages).toEqual(['planning', 'architecture', 'coding', 'linting', 'testing']);
+    expect(result.status).toBe('passed');
+    expect(result.stages.map((stage) => stage.stage)).toEqual([
+      'planning',
+      'architecture',
+      'coding',
+      'linting',
+      'testing',
+      'complete',
+    ]);
+  });
+
+  it('routes low-complexity proposals without linting stage', async () => {
+    const stages: string[] = [];
+    const result = await new ProposalExecutor({
+      dryRun: false,
+      runtime: {
+        async executeStage({ stage }) {
+          stages.push(stage);
+          return {
+            output: `ran ${stage}`,
+            success: true,
+            durationMs: 10,
+            costUsd: 0.01,
+          };
+        },
+      },
+    }).execute(buildLowComplexityProposal());
+
+    expect(stages).toEqual(['planning', 'coding', 'testing']);
+    expect(result.status).toBe('passed');
+    expect(result.stages.map((stage) => stage.stage)).toEqual(['planning', 'coding', 'testing', 'complete']);
+  });
+
+  it('marks execution failed and does not append complete when a stage fails', async () => {
+    const stages: string[] = [];
+    const result = await new ProposalExecutor({
+      dryRun: false,
+      runtime: {
+        async executeStage({ stage }) {
+          stages.push(stage);
+          if (stage === 'architecture') {
+            return {
+              output: 'architecture failed',
+              success: false,
+              durationMs: 5,
+              error: 'invalid architecture plan',
+            };
+          }
+          return {
+            output: `ran ${stage}`,
+            success: true,
+            durationMs: 10,
+            costUsd: 0.01,
+          };
+        },
+      },
+    }).execute(buildHighComplexityProposal());
+
+    expect(stages).toEqual(['planning', 'architecture']);
+    expect(result.status).toBe('failed');
+    expect(result.stages.map((stage) => stage.stage)).toEqual(['planning', 'architecture']);
+    expect(result.stages[1]?.success).toBe(false);
+    expect(result.stages[1]?.error).toContain('invalid architecture plan');
   });
 
   it('requires a runtime executor when dryRun is false', async () => {
-    await expect(new ProposalExecutor({ dryRun: false }).execute(buildProposal())).rejects.toThrow(
+    await expect(new ProposalExecutor({ dryRun: false }).execute(buildMediumProposal())).rejects.toThrow(
       /requires an injected runtime executor/,
     );
   });
@@ -77,7 +161,7 @@ describe('ProposalExecutor execution modes', () => {
   });
 });
 
-function buildProposal(): AgentProposal {
+function buildMediumProposal(): AgentProposal {
   return {
     id: 'proposal-1',
     agentId: 'coder',
@@ -89,5 +173,23 @@ function buildProposal(): AgentProposal {
     tags: ['runtime'],
     proposedAt: '2026-04-30T00:00:00.000Z',
     status: 'approved',
+  };
+}
+
+function buildHighComplexityProposal(): AgentProposal {
+  return {
+    ...buildMediumProposal(),
+    id: 'proposal-high-1',
+    title: 'Architecture redesign for runtime executor',
+    description: 'refactor and migrate runtime orchestration with architecture review',
+  };
+}
+
+function buildLowComplexityProposal(): AgentProposal {
+  return {
+    ...buildMediumProposal(),
+    id: 'proposal-low-1',
+    title: 'Patch runtime typo',
+    description: 'fix minor executor log typo',
   };
 }
