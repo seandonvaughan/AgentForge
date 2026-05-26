@@ -78,6 +78,7 @@ import {
 import { parseCommandArgs, resolveCommandForExecFile } from './subprocess-command.js';
 export { parseCommandArgs } from './subprocess-command.js';
 import { assertUnattendedSafe } from './audit/unattended-guard.js';
+import { buildVerificationSubprocessEnv } from './verification-env.js';
 import { mergeBreakdowns, type CostBreakdown } from './cost-breakdown.js';
 import { exportCycleTelemetry } from '../telemetry/cycle-telemetry-export.js';
 import { resolveTelemetryConfig } from '../telemetry/config.js';
@@ -494,7 +495,7 @@ export function verificationWorktreeName(cycleId: string, index: number, branch:
   return `verify-${index + 1}-${hash}`;
 }
 
-async function execCommandInDir(
+export async function execCommandInDir(
   cwd: string,
   command: string,
   timeoutMs: number,
@@ -506,7 +507,7 @@ async function execCommandInDir(
     cwd,
     timeout: timeoutMs,
     maxBuffer: 50 * 1024 * 1024,
-    env: { ...process.env, CI: '1', NO_COLOR: '1' },
+    env: buildVerificationSubprocessEnv(),
     windowsHide: true,
     ...(invocation.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
   });

@@ -31,6 +31,7 @@ import { promisify } from 'node:util';
 import { setTimeout as sleep } from 'node:timers/promises';
 import {
   collectFilesFromAgentBranches,
+  execCommandInDir,
   multiPrVerifyCommands,
   verificationWorktreeName,
   verifyMultiPrAgentBranches,
@@ -388,6 +389,26 @@ describe('verifyMultiPrAgentBranches', () => {
     expect(resolveMultiPrVerifyParallelism(4, {
       AGENTFORGE_MULTI_PR_VERIFY_PARALLELISM: 'nope',
     })).toBe(3);
+  });
+
+  it('does not leak unattended cycle control env into verification commands', async () => {
+    const previous = process.env['AGENTFORGE_UNATTENDED'];
+    process.env['AGENTFORGE_UNATTENDED'] = '1';
+
+    try {
+      const result = await execCommandInDir(
+        process.cwd(),
+        'node -e "if (process.env.AGENTFORGE_UNATTENDED) process.exit(7); console.log(`${process.env.CI}:${process.env.NO_COLOR}`)"',
+        10_000,
+      );
+      expect(result.stdout.trim()).toBe('1:1');
+    } finally {
+      if (previous === undefined) {
+        delete process.env['AGENTFORGE_UNATTENDED'];
+      } else {
+        process.env['AGENTFORGE_UNATTENDED'] = previous;
+      }
+    }
   });
 
   it('treats itemResults worktreeBranch entries as branch verification work', async () => {

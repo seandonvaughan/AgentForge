@@ -13,6 +13,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { CycleConfig, TestResult, FailedTest } from '../types.js';
 import { parseCommandArgs, resolveCommandForExecFile } from '../subprocess-command.js';
+import { buildVerificationSubprocessEnv } from '../verification-env.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -103,7 +104,7 @@ export class RealTestRunner {
         cwd: this.cwd,
         timeout: timeoutMs,
         maxBuffer: 50 * 1024 * 1024,
-        env: { ...process.env, CI: '1', NO_COLOR: '1' },
+        env: buildVerificationSubprocessEnv(),
         windowsHide: true,
         ...(invocation.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
       });
@@ -168,7 +169,7 @@ export class RealTestRunner {
     try {
       const child = spawn(file, args, {
         cwd: this.cwd,
-        env: { ...process.env, CI: '1', NO_COLOR: '1' },
+        env: buildVerificationSubprocessEnv(),
         stdio: ['ignore', 'pipe', 'pipe'],
         timeout: timeoutMs,
         windowsHide: true,

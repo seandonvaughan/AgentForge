@@ -124,4 +124,28 @@ describe('RealTestRunner (unit, mocked execFile)', () => {
     const runner = new RealTestRunner(tmpDir, DEFAULT_CYCLE_CONFIG.testing, null);
     await expect(runner.run(cycleId)).rejects.toThrow(TestRunnerError);
   });
+
+  it('does not leak unattended cycle control env into the vitest process', async () => {
+    const { execFile } = await import('node:child_process');
+    const previous = process.env['AGENTFORGE_UNATTENDED'];
+    process.env['AGENTFORGE_UNATTENDED'] = '1';
+
+    try {
+      const runner = new RealTestRunner(tmpDir, DEFAULT_CYCLE_CONFIG.testing, null);
+      await runner.run(cycleId);
+
+      const calls = (execFile as unknown as ReturnType<typeof vi.fn>).mock.calls;
+      const [, , opts] = calls.at(-1)!;
+      const env = (opts as { env: NodeJS.ProcessEnv }).env;
+      expect(env['CI']).toBe('1');
+      expect(env['NO_COLOR']).toBe('1');
+      expect(env['AGENTFORGE_UNATTENDED']).toBeUndefined();
+    } finally {
+      if (previous === undefined) {
+        delete process.env['AGENTFORGE_UNATTENDED'];
+      } else {
+        process.env['AGENTFORGE_UNATTENDED'] = previous;
+      }
+    }
+  });
 });
