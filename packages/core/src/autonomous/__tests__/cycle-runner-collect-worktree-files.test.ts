@@ -389,6 +389,47 @@ describe('verifyMultiPrAgentBranches', () => {
     }
   });
 
+  it('lets a process-local env var override configured multi-PR verification commands', () => {
+    const previousInstall = process.env['AGENTFORGE_MULTI_PR_VERIFY_INSTALL_COMMAND'];
+    const previousCommands = process.env['AGENTFORGE_MULTI_PR_VERIFY_COMMANDS'];
+    delete process.env['AGENTFORGE_MULTI_PR_VERIFY_INSTALL_COMMAND'];
+    process.env['AGENTFORGE_MULTI_PR_VERIFY_COMMANDS'] = JSON.stringify([
+      'corepack pnpm exec vitest run tests/docs/runtime-modes.test.ts',
+    ]);
+
+    try {
+      const commands = multiPrVerifyCommands({
+        command: 'corepack pnpm exec vitest run',
+        timeoutMinutes: 1,
+        reporter: 'json',
+        saveRawLog: false,
+        buildCommand: 'corepack pnpm build',
+        typeCheckCommand: 'corepack pnpm exec tsc -b --noEmit',
+        multiPrVerifyCommands: [
+          'corepack pnpm exec vitest run tests/docs/claude-md.test.ts',
+        ],
+      });
+
+      expect(commands).toEqual([
+        'corepack pnpm install --frozen-lockfile --prefer-offline',
+        'node -e "require(\'better-sqlite3\'); console.log(\'better-sqlite3 ok\')"',
+        'corepack pnpm --filter @agentforge/dashboard exec svelte-kit sync',
+        'corepack pnpm exec vitest run tests/docs/runtime-modes.test.ts',
+      ]);
+    } finally {
+      if (previousInstall === undefined) {
+        delete process.env['AGENTFORGE_MULTI_PR_VERIFY_INSTALL_COMMAND'];
+      } else {
+        process.env['AGENTFORGE_MULTI_PR_VERIFY_INSTALL_COMMAND'] = previousInstall;
+      }
+      if (previousCommands === undefined) {
+        delete process.env['AGENTFORGE_MULTI_PR_VERIFY_COMMANDS'];
+      } else {
+        process.env['AGENTFORGE_MULTI_PR_VERIFY_COMMANDS'] = previousCommands;
+      }
+    }
+  });
+
   it('uses short deterministic verification worktree names', () => {
     const cycleId = 'aaae9534-72c7-494b-85e1-b5eab6593c25';
     const branch = 'codex/agent-executor-runtime-engineer-aaae9534-72c7-494b-85e1-b5eab6593c25';

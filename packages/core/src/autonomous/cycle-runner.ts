@@ -433,6 +433,25 @@ const REQUIRED_MULTI_PR_VERIFY_BOOTSTRAP_COMMANDS = [
   'corepack pnpm --filter @agentforge/dashboard exec svelte-kit sync',
 ] as const;
 
+function parseMultiPrVerifyCommandOverride(raw: string | undefined): string[] | undefined {
+  const trimmed = raw?.trim();
+  if (!trimmed) return undefined;
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (Array.isArray(parsed) && parsed.every((cmd) => typeof cmd === 'string')) {
+      return parsed;
+    }
+  } catch {
+    // Fall through to newline-delimited parsing for ad-hoc shell use.
+  }
+
+  return trimmed
+    .split(/\r?\n/)
+    .map((cmd) => cmd.trim())
+    .filter((cmd) => cmd.length > 0);
+}
+
 function readMultiPrBranchRuns(cwd: string, cycleId: string): MultiPrBranchVerificationRun[] {
   const execPath = join(cwd, '.agentforge/cycles', cycleId, 'phases/execute.json');
   if (!existsSync(execPath)) return [];
@@ -475,11 +494,16 @@ export function multiPrVerifyCommands(testing: CycleConfig['testing']): string[]
   const installCommand = installOverride && installOverride.length > 0
     ? installOverride
     : DEFAULT_MULTI_PR_VERIFY_INSTALL_COMMAND;
+  const envVerificationCommands = parseMultiPrVerifyCommandOverride(
+    process.env['AGENTFORGE_MULTI_PR_VERIFY_COMMANDS'],
+  );
   const configuredVerificationCommands = Array.isArray(testing.multiPrVerifyCommands)
     ? testing.multiPrVerifyCommands
     : undefined;
   const verificationCommands =
-    configuredVerificationCommands && configuredVerificationCommands.length > 0
+    envVerificationCommands && envVerificationCommands.length > 0
+      ? envVerificationCommands
+      : configuredVerificationCommands && configuredVerificationCommands.length > 0
       ? configuredVerificationCommands
       : [testing.buildCommand, testing.typeCheckCommand, testing.command];
 
