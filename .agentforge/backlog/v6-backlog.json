@@ -1,17 +1,17 @@
 {
   "version": "v6-backlog",
-  "description": "Convergence backlog (2026-05-27, controlled green-run streak). Runtime docs items bl-003/bl-004 shipped via merged PRs #178/#179. Keep exactly one small, genuine-pending item here while proving consecutive meaningful cycles. Original 12-item roadmap remains parked in .agentforge/product-roadmap.json.",
+  "description": "Convergence backlog (2026-05-27, controlled green-run streak). Runtime docs items bl-003/bl-005 shipped via merged PRs #178/#180. Keep exactly one small, genuine-pending item here while proving consecutive meaningful cycles. Original 12-item roadmap remains parked in .agentforge/product-roadmap.json.",
   "northStar": "One unforked, runtime-agnostic AgentForge (Claude + Codex, best provider x model x effort per job) whose autonomous loop reliably ships, then builds AgentForge Cloud.",
   "items": [
     {
-      "id": "bl-005",
-      "title": "Align README auto runtime wording with the current provider resolver",
-      "description": "Docs/test-only; do NOT change production code. In README.md, update the Runtime Modes `auto` paragraph so it no longer implies only Anthropic SDK, Claude Code compatibility, and Codex CLI are considered. It should mention the available Anthropic SDK, Claude Code compatibility, Codex CLI, and OpenAI SDK transports, preserve Claude-first routing by default, and note that explicit provider requests can route to Codex/OpenAI. Add or update a docs test so this README wording is checked. Self-verify with `corepack pnpm exec vitest run tests/docs/runtime-modes.test.ts tests/docs/claude-md.test.ts`.",
+      "id": "bl-006",
+      "title": "Align CLAUDE.md auto runtime wording with the current provider resolver",
+      "description": "Docs/test-only; do NOT change production code. In CLAUDE.md, update the Runtime transport table's `auto` row so it no longer implies only Anthropic SDK, Claude Code compatibility, and Codex CLI are considered. It should mention the available Anthropic SDK, Claude Code compatibility, Codex CLI, and OpenAI SDK transports, preserve the current Claude-first resolver order, and stay consistent with README.md and docs/runtime-modes.md. Add or update a docs test so this CLAUDE.md wording is checked. Self-verify with `corepack pnpm exec vitest run tests/docs/runtime-modes.test.ts tests/docs/claude-md.test.ts`.",
       "priority": "P0",
       "estimatedComplexity": "low",
       "tags": ["docs", "convergence", "runtime"],
       "source": "convergence-2026-05-25",
-      "files": ["README.md", "tests/docs/runtime-modes.test.ts"]
+      "files": ["CLAUDE.md", "tests/docs/claude-md.test.ts"]
     }
   ]
 }
