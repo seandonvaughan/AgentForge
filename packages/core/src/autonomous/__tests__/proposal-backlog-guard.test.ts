@@ -63,6 +63,9 @@ function writeBacklog(items: unknown[]): void {
 function writeQuarantine(ids: string[]): void {
   writeFileSync(join(root, '.agentforge', 'backlog', 'quarantine.json'), JSON.stringify({ ids }));
 }
+function writeCompletedLedger(entries: unknown): void {
+  writeFileSync(join(root, '.agentforge', 'backlog', 'completed.json'), JSON.stringify(entries));
+}
 
 describe('difficulty gating (unattended)', () => {
   it('excludes high-complexity or file-less backlog items when AGENTFORGE_UNATTENDED=1', async () => {
@@ -132,6 +135,44 @@ describe('quarantine', () => {
     writeBacklog([
       { id: 'keep', title: 'Keep me', priority: 'P1', estimatedComplexity: 'low', files: ['a.ts'] },
     ]);
+    const items = await new ProposalToBacklog(emptyAdapter, root, cfg()).build();
+    expect(items.map((i) => i.title)).toContain('Keep me');
+  });
+});
+
+describe('completed ledger replay guard', () => {
+  it('excludes items whose id is listed in completed.json', async () => {
+    writeBacklog([
+      { id: 'keep', title: 'Keep me', priority: 'P1', estimatedComplexity: 'low', files: ['a.ts'] },
+      { id: 'done', title: 'Already shipped', priority: 'P1', estimatedComplexity: 'low', files: ['b.ts'] },
+    ]);
+    writeCompletedLedger({
+      entries: [
+        { itemId: 'backlog-done', completedAt: '2026-05-27T00:00:00.000Z', cycleId: 'c1', prNumber: 123 },
+      ],
+    });
+
+    const items = await new ProposalToBacklog(emptyAdapter, root, cfg()).build();
+    const titles = items.map((i) => i.title);
+    expect(titles).toContain('Keep me');
+    expect(titles).not.toContain('Already shipped');
+  });
+
+  it('tolerates a missing completed ledger file', async () => {
+    writeBacklog([
+      { id: 'keep', title: 'Keep me', priority: 'P1', estimatedComplexity: 'low', files: ['a.ts'] },
+    ]);
+
+    const items = await new ProposalToBacklog(emptyAdapter, root, cfg()).build();
+    expect(items.map((i) => i.title)).toContain('Keep me');
+  });
+
+  it('tolerates malformed completed ledger JSON', async () => {
+    writeBacklog([
+      { id: 'keep', title: 'Keep me', priority: 'P1', estimatedComplexity: 'low', files: ['a.ts'] },
+    ]);
+    writeFileSync(join(root, '.agentforge', 'backlog', 'completed.json'), '{ malformed');
+
     const items = await new ProposalToBacklog(emptyAdapter, root, cfg()).build();
     expect(items.map((i) => i.title)).toContain('Keep me');
   });

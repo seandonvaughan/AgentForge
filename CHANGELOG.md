@@ -4,6 +4,11 @@ All notable changes to AgentForge are documented in this file.
 
 ## [Unreleased]
 
+### CLI
+
+- Added `agentforge backlog complete <itemId>` to record durable backlog completion entries in `.agentforge/backlog/completed.json` (idempotent upsert with optional `--cycle`, `--pr`, and `--reason` metadata).
+- `ProposalToBacklog` now filters ids recorded in `.agentforge/backlog/completed.json`, preventing completed backlog items from being replayed in new autonomous cycle intake.
+
 ## [23.5.0] - 2026-05-18
 
 ### Wave 5 — Unattended guards, replay CLI, skill flywheel, MCP server, durability dashboard

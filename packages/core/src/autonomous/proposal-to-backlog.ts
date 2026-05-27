@@ -160,7 +160,9 @@ export class ProposalToBacklog {
       }
     }
 
-    const base = this.applyQuarantine(this.sanitizeItems(this.deduplicate(items)));
+    const base = this.applyCompletedItems(
+      this.applyQuarantine(this.sanitizeItems(this.deduplicate(items))),
+    );
     // Unattended runs must not auto-attempt items too large to ship in one
     // cycle — that was the root trigger of the 2026-05-25 spin. A human
     // (attended mode) can still pick big items or decompose them first.
@@ -189,6 +191,37 @@ export class ProposalToBacklog {
     const quarantined = this.readQuarantineIds();
     if (quarantined.size === 0) return items;
     return items.filter((item) => !quarantined.has(item.id));
+  }
+
+  /** Item ids already completed and merged; never pick them again. */
+  private readCompletedItemIds(): Set<string> {
+    const path = join(this.cwd, '.agentforge', 'backlog', 'completed.json');
+    try {
+      const parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown;
+      const entries = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray((parsed as { entries?: unknown } | null)?.entries)
+          ? (parsed as { entries: unknown[] }).entries
+          : [];
+      const ids = entries
+        .map((entry) => {
+          if (!entry || typeof entry !== 'object') return null;
+          const obj = entry as Record<string, unknown>;
+          if (typeof obj['itemId'] === 'string') return obj['itemId'];
+          if (typeof obj['id'] === 'string') return obj['id'];
+          return null;
+        })
+        .filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
+      return new Set(ids);
+    } catch {
+      return new Set();
+    }
+  }
+
+  private applyCompletedItems(items: BacklogItem[]): BacklogItem[] {
+    const completed = this.readCompletedItemIds();
+    if (completed.size === 0) return items;
+    return items.filter((item) => !completed.has(item.id));
   }
 
   /**
