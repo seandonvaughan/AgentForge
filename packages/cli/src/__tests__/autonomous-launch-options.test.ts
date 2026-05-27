@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const CYCLE_LAUNCH_ENV_KEYS = [
+  'AUTONOMOUS_MAX_ITEMS',
   'AUTONOMOUS_EFFORT_CAP',
   'AUTONOMOUS_FALLBACK_ENABLED',
   'AUTONOMOUS_MAX_AGENTS',
@@ -14,6 +15,8 @@ const captures = vi.hoisted(() => ({
   runtimeAdapterOptions: [] as Array<Record<string, unknown>>,
   cycleRunnerOptions: [] as Array<Record<string, unknown>>,
   scoringPipelineOptions: [] as Array<Record<string, unknown>>,
+  auditPhaseCallOptions: [] as Array<unknown>,
+  configMaxItemsPerSprint: 5,
 }));
 
 vi.mock('@agentforge/core', () => {
@@ -108,7 +111,7 @@ vi.mock('@agentforge/core', () => {
   return {
     loadCycleConfig: vi.fn().mockImplementation(() => ({
       budget: { perCycleUsd: 30, allowOverageApproval: false },
-      limits: { maxItemsPerSprint: 5, maxExecutePhaseParallelism: 4 },
+      limits: { maxItemsPerSprint: captures.configMaxItemsPerSprint, maxExecutePhaseParallelism: 4 },
       quality: { testPassRateFloor: 0.95, requireBuildSuccess: false, requireTypeCheckSuccess: false },
       git: { branchPrefix: 'autonomous/', baseBranch: 'main' },
       pr: { draft: false },
@@ -134,7 +137,10 @@ vi.mock('@agentforge/core', () => {
       close: vi.fn(),
     }),
     runExecutePhase: vi.fn().mockResolvedValue(undefined),
-    runAuditPhase: vi.fn().mockResolvedValue(undefined),
+    runAuditPhase: vi.fn().mockImplementation((_ctx: unknown, options?: unknown) => {
+      captures.auditPhaseCallOptions.push(options);
+      return Promise.resolve(undefined);
+    }),
     runPlanPhase: vi.fn().mockResolvedValue(undefined),
     runAssignPhase: vi.fn().mockResolvedValue(undefined),
     runGatePhase: vi.fn().mockResolvedValue(undefined),
@@ -177,6 +183,8 @@ describe('cycle launch options', () => {
     captures.runtimeAdapterOptions.length = 0;
     captures.cycleRunnerOptions.length = 0;
     captures.scoringPipelineOptions.length = 0;
+    captures.auditPhaseCallOptions.length = 0;
+    captures.configMaxItemsPerSprint = 5;
     consoleLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     process.exitCode = undefined;
@@ -223,6 +231,38 @@ describe('cycle launch options', () => {
       effortCap: 'high',
       fallbackEnabled: false,
     });
+  });
+
+  it('uses a 5-minute audit timeout when effective maxItemsPerSprint is 1', async () => {
+    process.env['AUTONOMOUS_MAX_ITEMS'] = '1';
+    await runCli([
+      'cycle',
+      'run',
+      '--project-root',
+      projectRoot,
+    ]);
+
+    const phaseHandlers = captures.cycleRunnerOptions[0]?.['phaseHandlers'] as Record<string, (ctx: unknown) => Promise<unknown>> | undefined;
+    const auditHandler = phaseHandlers?.['audit'];
+    expect(auditHandler).toBeDefined();
+    await auditHandler?.({});
+    expect(captures.auditPhaseCallOptions[0]).toMatchObject({ timeoutMs: 300000 });
+  });
+
+  it('keeps default audit runtime options when maxItemsPerSprint is greater than 1', async () => {
+    captures.configMaxItemsPerSprint = 5;
+    await runCli([
+      'cycle',
+      'run',
+      '--project-root',
+      projectRoot,
+    ]);
+
+    const phaseHandlers = captures.cycleRunnerOptions[0]?.['phaseHandlers'] as Record<string, (ctx: unknown) => Promise<unknown>> | undefined;
+    const auditHandler = phaseHandlers?.['audit'];
+    expect(auditHandler).toBeDefined();
+    await auditHandler?.({});
+    expect(captures.auditPhaseCallOptions[0]).toBeUndefined();
   });
 
   it('lets an explicit run effort cap override fast mode', async () => {

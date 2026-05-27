@@ -142,6 +142,8 @@ interface CycleLaunchControls {
   fallbackEnabled?: boolean;
 }
 
+const ONE_ITEM_AUDIT_TIMEOUT_MS = 5 * 60 * 1000;
+
 export function registerCycleCommand(program: Command): void {
   const cycle = program
     .command('cycle')
@@ -307,6 +309,9 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
     // Runtime fallback defaults to enabled for compatibility unless this
     // launch explicitly disabled it through CLI flags or server env.
     const enableFallback = launchControls.fallbackEnabled ?? true;
+    const auditPhaseOptions = config.limits.maxItemsPerSprint === 1
+      ? { timeoutMs: ONE_ITEM_AUDIT_TIMEOUT_MS }
+      : undefined;
 
     const telemetry = createAutonomousTelemetryAdapters(cwd);
 
@@ -374,7 +379,7 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
         ...(supervisor ? { supervisor } : {}),
       });
       const phaseHandlers = {
-        audit: (ctx: PhaseContext) => runAuditPhase(ctx),
+        audit: (ctx: PhaseContext) => runAuditPhase(ctx, auditPhaseOptions),
         plan: (ctx: PhaseContext) => runPlanPhase(ctx),
         assign: (ctx: PhaseContext) => runAssignPhase(ctx),
         execute: (ctx: PhaseContext) => runExecutePhase(ctx, {

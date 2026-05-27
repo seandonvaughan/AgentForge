@@ -216,6 +216,62 @@ describe('runAuditPhase — memoriesInjected in audit.json', () => {
 
     expect(capturedTask()).not.toContain('Past mistakes and learnings');
   });
+
+  it('forwards timeoutMs to runtime.run when provided', async () => {
+    let capturedOptions: Record<string, unknown> | undefined;
+    const ctx: PhaseContext = {
+      projectRoot: tmpRoot,
+      cycleId: 'cycle-timeout-forward',
+      sprintId: 'sprint-timeout-forward',
+      sprintVersion: '9.0.0',
+      adapter: undefined as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+      bus: {
+        publish: () => undefined,
+        subscribe: () => () => undefined,
+      } as unknown as PhaseContext['bus'],
+      runtime: {
+        run: async (_agentId: string, _task: string, options?: Record<string, unknown>) => {
+          capturedOptions = options;
+          return { output: 'ok', costUsd: 0 };
+        },
+      } as unknown as PhaseContext['runtime'],
+    };
+
+    await runAuditPhase(ctx, { timeoutMs: 300_000 });
+
+    expect(capturedOptions).toMatchObject({ timeoutMs: 300_000 });
+  });
+
+  it('writes failed status/error to audit.json when runtime times out', async () => {
+    const ctx: PhaseContext = {
+      projectRoot: tmpRoot,
+      cycleId: 'cycle-timeout-failed',
+      sprintId: 'sprint-timeout-failed',
+      sprintVersion: '9.0.0',
+      adapter: undefined as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+      bus: {
+        publish: () => undefined,
+        subscribe: () => () => undefined,
+      } as unknown as PhaseContext['bus'],
+      runtime: {
+        run: async () => {
+          throw new Error('Operation timed out after 300000ms');
+        },
+      } as unknown as PhaseContext['runtime'],
+    };
+
+    const result = await runAuditPhase(ctx, { timeoutMs: 300_000 });
+
+    expect(result.status).toBe('failed');
+    const auditPath = join(tmpRoot, '.agentforge/cycles/cycle-timeout-failed/phases/audit.json');
+    expect(existsSync(auditPath)).toBe(true);
+    const written = JSON.parse(readFileSync(auditPath, 'utf-8')) as {
+      status: string;
+      error?: string;
+    };
+    expect(written.status).toBe('failed');
+    expect(written.error).toContain('timed out');
+  });
 });
 
 // ---------------------------------------------------------------------------
