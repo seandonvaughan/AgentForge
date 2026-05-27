@@ -90,6 +90,20 @@
         "packages/cli/src/__tests__/loop-guard-command.test.ts",
         "CHANGELOG.md"
       ]
+    },
+    {
+      "id": "dogfood-007",
+      "title": "Add JSON output for loop guard reset",
+      "description": "Make loop guard recovery automation-friendly by adding `--json` to `agentforge cycle loop-guard reset`. The JSON output should include projectRoot, path, state, reset, and the persisted default state fields after reset. Preserve current text output when `--json` is omitted. Add focused CLI tests proving JSON reset output, persisted defaults, and unchanged text reset output.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": ["feature", "dogfood", "autonomous", "operator-visibility", "json", "cli"],
+      "source": "dogfood-2026-05-27",
+      "files": [
+        "packages/cli/src/commands/autonomous.ts",
+        "packages/cli/src/__tests__/loop-guard-command.test.ts",
+        "CHANGELOG.md"
+      ]
     }
   ]
 }
