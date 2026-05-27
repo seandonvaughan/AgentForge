@@ -74,6 +74,48 @@ describe('ProviderResolver', () => {
     expect(result.runtimeModeResolved).toBe('sdk');
   });
 
+  it('falls back to Claude Code compat in auto mode when Anthropic SDK is unavailable', async () => {
+    const resolver = new ProviderResolver([
+      buildTransport('anthropic-sdk', false),
+      buildTransport('claude-code-compat'),
+      buildTransport('codex-cli'),
+      buildTransport('openai-sdk'),
+    ]);
+
+    const result = await resolver.resolve('auto', buildRequest());
+
+    expect(result.transport.kind).toBe('claude-code-compat');
+    expect(result.runtimeModeResolved).toBe('claude-code-compat');
+  });
+
+  it('falls back to Codex CLI in auto mode when SDK and Claude Code compat are unavailable', async () => {
+    const resolver = new ProviderResolver([
+      buildTransport('anthropic-sdk', false),
+      buildTransport('claude-code-compat', false),
+      buildTransport('codex-cli'),
+      buildTransport('openai-sdk'),
+    ]);
+
+    const result = await resolver.resolve('auto', buildRequest());
+
+    expect(result.transport.kind).toBe('codex-cli');
+    expect(result.runtimeModeResolved).toBe('codex-cli');
+  });
+
+  it('falls back to OpenAI SDK in auto mode when SDK, Claude Code compat, and Codex CLI are unavailable', async () => {
+    const resolver = new ProviderResolver([
+      buildTransport('anthropic-sdk', false),
+      buildTransport('claude-code-compat', false),
+      buildTransport('codex-cli', false),
+      buildTransport('openai-sdk'),
+    ]);
+
+    const result = await resolver.resolve('auto', buildRequest());
+
+    expect(result.transport.kind).toBe('openai-sdk');
+    expect(result.runtimeModeResolved).toBe('openai-sdk');
+  });
+
   it('requires the Claude Code compatibility transport when allowed tools are requested', async () => {
     const resolver = new ProviderResolver([
       buildTransport('anthropic-sdk'),
