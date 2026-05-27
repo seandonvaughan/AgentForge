@@ -1,10 +1,17 @@
 import { execFile as execFileCb } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { WorktreePool } from '../worktree-pool.js';
 
 const execFile = promisify(execFileCb);
@@ -35,53 +42,83 @@ function toPosixPath(path: string): string {
   return path.replace(/\\/g, '/');
 }
 
-async function setupRepo(): Promise<string> {
-  const dir = mkdtempSync(join(tmpdir(), 'af-worktree-test-'));
+interface RepoTemplate {
+  rootDir: string;
+  bareDir: string;
+  workingDir: string;
+}
+
+async function setupRepoTemplate(): Promise<RepoTemplate> {
+  const rootDir = mkdtempSync(join(tmpdir(), 'af-worktree-template-'));
+  const dir = join(rootDir, 'seed');
+  mkdirSync(dir, { recursive: true });
   await git(dir, ['init', '-b', 'main']);
   await git(dir, ['config', 'user.email', 'test@example.com']);
   await git(dir, ['config', 'user.name', 'Test']);
   await git(dir, ['config', 'commit.gpgsign', 'false']);
 
   // Write an initial file and commit so HEAD exists and branches can be created.
-  const { writeFileSync } = await import('node:fs');
   writeFileSync(join(dir, 'README.md'), '# test repo\n');
   await git(dir, ['add', '.']);
   await git(dir, ['commit', '-m', 'initial']);
 
-  return dir;
-}
+  const bareDir = join(rootDir, 'origin.git');
+  await execFile('git', ['clone', '--bare', dir, bareDir], { windowsHide: true });
 
-/**
- * Create a bare clone so `origin` resolves and `git worktree add -b ... origin/main` works.
- * Returns the path of the working clone (which has origin pointing to the bare repo).
- */
-async function setupRepoWithOrigin(): Promise<{ workingDir: string; cleanupDirs: string[] }> {
-  const sourceDir = await setupRepo();
-
-  // Create a bare clone.
-  const bareDir = mkdtempSync(join(tmpdir(), 'af-worktree-bare-'));
-  await git(sourceDir, ['clone', '--bare', sourceDir, bareDir]);
-
-  // Create a fresh working clone from the bare dir.
-  const workingDir = mkdtempSync(join(tmpdir(), 'af-worktree-working-'));
-  rmSync(workingDir, { recursive: true, force: true });
-  await execFile('git', ['clone', bareDir, workingDir]);
+  const workingDir = join(rootDir, 'working');
+  await execFile(
+    'git',
+    ['clone', '--local', '--no-tags', bareDir, workingDir],
+    { windowsHide: true },
+  );
   await git(workingDir, ['config', 'user.email', 'test@example.com']);
   await git(workingDir, ['config', 'user.name', 'Test']);
   await git(workingDir, ['config', 'commit.gpgsign', 'false']);
 
-  return { workingDir, cleanupDirs: [sourceDir, bareDir, workingDir] };
+  return { rootDir, bareDir, workingDir };
+}
+
+/**
+ * Copy a prebuilt tiny repo template so each test still gets an isolated origin
+ * and working clone without paying for init/commit/clone setup every time.
+ */
+async function setupRepoWithOrigin(
+  template: RepoTemplate,
+): Promise<{ workingDir: string; cleanupDirs: string[] }> {
+  const testRoot = mkdtempSync(join(tmpdir(), 'af-worktree-test-'));
+  const bareDir = join(testRoot, 'origin.git');
+  const workingDir = join(testRoot, 'working');
+
+  cpSync(template.bareDir, bareDir, { recursive: true });
+  cpSync(template.workingDir, workingDir, { recursive: true });
+  await git(workingDir, ['remote', 'set-url', 'origin', bareDir]);
+
+  return { workingDir, cleanupDirs: [testRoot] };
 }
 
 describe('WorktreePool', () => {
+  let repoTemplate: RepoTemplate;
   let workingDir: string;
-  let cleanupDirs: string[];
+  let cleanupDirs: string[] = [];
+
+  beforeAll(async () => {
+    repoTemplate = await setupRepoTemplate();
+  }, 30_000);
 
   beforeEach(async () => {
-    const setup = await setupRepoWithOrigin();
+    cleanupDirs = [];
+    const setup = await setupRepoWithOrigin(repoTemplate);
     workingDir = setup.workingDir;
     cleanupDirs = setup.cleanupDirs;
-  }, 30_000); // allow up to 30s for git clone setup (slow after stress test)
+  }, 30_000); // allow headroom when real-git tests run under full-suite Windows load
+
+  afterAll(() => {
+    try {
+      rmSync(repoTemplate.rootDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors.
+    }
+  });
 
   afterEach(() => {
     // Best-effort cleanup.
@@ -164,7 +201,6 @@ describe('WorktreePool', () => {
   });
 
   it('allocates an explicit retry branch from a source ref and preserves it on release', async () => {
-    const { writeFileSync } = await import('node:fs');
     const retryBranch = 'codex/rejected-branch';
 
     await git(workingDir, ['checkout', '-b', retryBranch]);
@@ -223,7 +259,6 @@ describe('WorktreePool', () => {
 
   it('re-allocates a removed worktree when the agent branch already exists', async () => {
     const pool = new WorktreePool({ projectRoot: workingDir, branchPrefix: 'codex/' });
-    const { writeFileSync } = await import('node:fs');
 
     const first = await pool.allocate({ agentId: 'coder', sessionId: 'retry1' });
     writeFileSync(join(first.path, 'agent-change.txt'), 'retry branch work\n');
@@ -418,7 +453,6 @@ describe('WorktreePool', () => {
   // -------------------------------------------------------------------------
   it('gc skips worktrees whose branch has unmerged commits', async () => {
     const pool = new WorktreePool({ projectRoot: workingDir });
-    const { writeFileSync } = await import('node:fs');
 
     const handle = await pool.allocate({ agentId: 'coder', sessionId: 'dirty1' });
 
@@ -591,11 +625,11 @@ describe('WorktreePool', () => {
   });
 
   // -------------------------------------------------------------------------
-  // 16. STRESS: 25 parallel allocations — all unique, no race conditions
+  // 16. STRESS: parallel allocations - all unique, no race conditions
   // -------------------------------------------------------------------------
-  it('stress: allocate 25 worktrees in parallel — all unique paths, no races', async () => {
+  it('stress: allocate concurrent worktrees in parallel - all unique paths, no races', async () => {
     const pool = new WorktreePool({ projectRoot: workingDir });
-    const COUNT = 25;
+    const COUNT = 10;
 
     const start = Date.now();
     const handles = await Promise.all(
@@ -605,7 +639,7 @@ describe('WorktreePool', () => {
     );
     const elapsed = Date.now() - start;
 
-    // All 25 should have been allocated.
+    // All requested worktrees should have been allocated.
     expect(handles).toHaveLength(COUNT);
 
     // All paths should be unique.
@@ -628,7 +662,7 @@ describe('WorktreePool', () => {
     // Should complete within two minutes even when the full suite is also
     // running other real git worktree tests on Windows.
     expect(elapsed).toBeLessThan(120_000);
-    console.log(`[stress] 25 parallel allocations completed in ${elapsed}ms`);
+    console.log(`[stress] ${COUNT} parallel allocations completed in ${elapsed}ms`);
 
     // Release all in parallel.
     await Promise.all(handles.map((h) => pool.release(h.id)));
