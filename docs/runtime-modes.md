@@ -33,8 +33,10 @@ compatibility, Codex CLI, and OpenAI SDK transports, selected via the
 `auto` registers the available Anthropic SDK, Claude Code compatibility, Codex
 CLI, and OpenAI SDK transports. The `ProviderResolver` selects one at runtime:
 
-- When `allowedTools` are requested it always picks the CLI transport (tool execution
-  requires the Claude Code subprocess).
+- When `allowedTools` are requested, it first honors a compatible
+  `preferredProvider` (`claude-code-compat` or `codex-cli`), then falls back to
+  Claude Code compatibility and finally Codex CLI. Tool execution requires one of
+  those CLI-backed transports.
 - Otherwise it preserves the historical Claude-first preference by preferring the
   SDK transport when `ANTHROPIC_API_KEY` is present.
 - Falls back to the CLI transport when the API key is absent but `claude` is on PATH,
