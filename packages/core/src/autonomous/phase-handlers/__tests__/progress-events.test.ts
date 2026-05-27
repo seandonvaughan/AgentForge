@@ -346,6 +346,10 @@ describe('gate-phase progress events', () => {
     expect(capturedTask.value).toContain('## QA strategy report (not executable test results)');
     expect(capturedTask.value).toContain('Do not treat the QA strategy report above as executable test evidence');
     expect(capturedTask.value).toContain('If the QA strategy says tests were not run, that is expected');
+    expect(capturedTask.value).toContain('Do not use');
+    expect(capturedTask.value).toContain('agentforge cycle list');
+    expect(capturedTask.value).toContain('current cycle has not reached VERIFY yet');
+    expect(capturedTask.value).toContain('MUST NOT independently drive a REJECT verdict for the');
     expect(capturedTask.value).not.toContain('## Test results');
   });
 

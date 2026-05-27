@@ -545,6 +545,15 @@ read-only analysis artifact; the cycle VERIFY stage enforces real test execution
 after this gate. If the QA strategy says tests were not run, that is expected
 for this phase and is not by itself a REJECT reason.
 
+Gate scope constraint: evaluate only this sprint's current execute-phase target
+branch/worktree and the current phase artifacts provided above. Do not use
+\`agentforge cycle list\`, dashboard summaries, historical cycle rows, or the
+active cycle's pre-VERIFY \`tests=0/0\` / \`stage=run\` summary as release
+blockers. At this gate point the current cycle has not reached VERIFY yet, so
+those summary fields are expected placeholders. Historical failed cycles may
+inform caution, but they MUST NOT independently drive a REJECT verdict for the
+current branch.
+
 If all CRITICAL and MAJOR findings either do not reproduce or were already addressed, APPROVE. The later VERIFY stage remains responsible for executable test pass/fail enforcement.
 
 In your rationale, explicitly state which findings you verified and whether each still reproduces — so downstream callers can audit the decision.
