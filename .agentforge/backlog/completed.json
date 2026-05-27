@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "itemId": "backlog-dogfood-001",
+      "completedAt": "2026-05-27T20:11:22.608Z",
+      "updatedAt": "2026-05-27T20:11:22.608Z",
+      "cycleId": "1270787e-ce31-4fba-a3e6-5d9d15824a73",
+      "prNumber": 184,
+      "reason": "Merged retained value from failed guided cycle attempt"
+    }
+  ]
+}
