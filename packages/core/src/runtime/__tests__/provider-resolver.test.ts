@@ -31,6 +31,22 @@ function buildRequest(overrides: Partial<ExecutionRequest> = {}): ExecutionReque
   };
 }
 
+const AUTO_TRANSPORT_ORDER: ExecutionTransport['kind'][] = [
+  'anthropic-sdk',
+  'claude-code-compat',
+  'codex-cli',
+  'openai-sdk',
+];
+
+function buildAutoModeResolver(
+  unavailable: ExecutionTransport['kind'][] = [],
+): ProviderResolver {
+  const unavailableSet = new Set(unavailable);
+  return new ProviderResolver(
+    AUTO_TRANSPORT_ORDER.map((kind) => buildTransport(kind, !unavailableSet.has(kind))),
+  );
+}
+
 describe('ProviderResolver', () => {
   it('honors preferredProvider in auto mode when that transport is available', async () => {
     const resolver = new ProviderResolver([
@@ -72,6 +88,46 @@ describe('ProviderResolver', () => {
 
     expect(result.transport.kind).toBe('anthropic-sdk');
     expect(result.runtimeModeResolved).toBe('sdk');
+  });
+
+  it.each([
+    {
+      unavailable: ['anthropic-sdk'],
+      expectedKind: 'claude-code-compat',
+      expectedRuntimeMode: 'claude-code-compat',
+    },
+    {
+      unavailable: ['anthropic-sdk', 'claude-code-compat'],
+      expectedKind: 'codex-cli',
+      expectedRuntimeMode: 'codex-cli',
+    },
+    {
+      unavailable: ['anthropic-sdk', 'claude-code-compat', 'codex-cli'],
+      expectedKind: 'openai-sdk',
+      expectedRuntimeMode: 'openai-sdk',
+    },
+  ] as Array<{
+    unavailable: ExecutionTransport['kind'][];
+    expectedKind: ExecutionTransport['kind'];
+    expectedRuntimeMode: string;
+  }>)(
+    'falls back to $expectedKind in no-tools auto mode when earlier transports are unavailable',
+    async ({ unavailable, expectedKind, expectedRuntimeMode }) => {
+      const resolver = buildAutoModeResolver(unavailable);
+
+      const result = await resolver.resolve('auto', buildRequest());
+
+      expect(result.transport.kind).toBe(expectedKind);
+      expect(result.runtimeModeResolved).toBe(expectedRuntimeMode);
+    },
+  );
+
+  it('fails fast in auto mode when every transport is unavailable', async () => {
+    const resolver = buildAutoModeResolver(AUTO_TRANSPORT_ORDER);
+
+    await expect(resolver.resolve('auto', buildRequest())).rejects.toThrow(
+      /No execution transport is available/i,
+    );
   });
 
   it('requires the Claude Code compatibility transport when allowed tools are requested', async () => {
