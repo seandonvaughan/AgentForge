@@ -98,10 +98,10 @@ async function markBacklogItemCompleted(itemIdInput: string, opts: BacklogComple
 
 function parsePrNumber(raw: string | undefined): number | undefined {
   if (raw === undefined) return undefined;
-  const num = Number.parseInt(raw, 10);
-  if (!Number.isFinite(num) || num <= 0) {
-    throw new Error(`Invalid --pr value: ${raw}`);
+  if (!/^[1-9][0-9]*$/.test(raw)) {
+    throw new Error(`Invalid --pr value "${raw}": expected a positive integer like 123`);
   }
+  const num = Number(raw);
   return num;
 }
 

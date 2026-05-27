@@ -88,6 +88,56 @@ describe('agentforge backlog complete', () => {
     });
   });
 
+  it.each(['0', '-1', '1.5', '123abc', ' 123', '123 ', '01'])(
+    'rejects invalid --pr value %s and does not create completed.json',
+    async (prValue) => {
+      await runCli([
+        'backlog',
+        'complete',
+        'backlog-dogfood-001',
+        '--project-root',
+        projectRoot,
+        '--pr',
+        prValue,
+      ]);
+
+      const ledgerPath = join(projectRoot, '.agentforge', 'backlog', 'completed.json');
+      expect(process.exitCode).toBe(1);
+      expect(existsSync(ledgerPath)).toBe(false);
+    },
+  );
+
+  it('does not corrupt an existing completed.json when --pr is invalid', async () => {
+    await runCli([
+      'backlog',
+      'complete',
+      'backlog-existing',
+      '--project-root',
+      projectRoot,
+      '--pr',
+      '42',
+    ]);
+
+    const ledgerPath = join(projectRoot, '.agentforge', 'backlog', 'completed.json');
+    const before = readFileSync(ledgerPath, 'utf8');
+
+    await runCli([
+      'backlog',
+      'complete',
+      'backlog-existing',
+      '--project-root',
+      projectRoot,
+      '--pr',
+      '42oops',
+      '--reason',
+      'should fail',
+    ]);
+
+    const after = readFileSync(ledgerPath, 'utf8');
+    expect(process.exitCode).toBe(1);
+    expect(after).toBe(before);
+  });
+
   async function runCli(args: string[]): Promise<void> {
     const program = createCliProgram();
     program.exitOverride();

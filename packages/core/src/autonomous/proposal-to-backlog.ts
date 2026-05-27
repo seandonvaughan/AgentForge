@@ -207,11 +207,17 @@ export class ProposalToBacklog {
         .map((entry) => {
           if (!entry || typeof entry !== 'object') return null;
           const obj = entry as Record<string, unknown>;
-          if (typeof obj['itemId'] === 'string') return obj['itemId'];
-          if (typeof obj['id'] === 'string') return obj['id'];
-          return null;
+          const rawId = typeof obj['itemId'] === 'string'
+            ? obj['itemId']
+            : typeof obj['id'] === 'string'
+              ? obj['id']
+              : null;
+          if (rawId === null) return null;
+          const trimmed = rawId.trim();
+          if (!trimmed) return null;
+          return trimmed;
         })
-        .filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
+        .filter((id): id is string => typeof id === 'string');
       return new Set(ids);
     } catch {
       return new Set();

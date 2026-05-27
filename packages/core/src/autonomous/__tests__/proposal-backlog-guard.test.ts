@@ -176,4 +176,25 @@ describe('completed ledger replay guard', () => {
     const items = await new ProposalToBacklog(emptyAdapter, root, cfg()).build();
     expect(items.map((i) => i.title)).toContain('Keep me');
   });
+
+  it('normalizes whitespace-padded item ids and legacy id fields in completed.json', async () => {
+    writeBacklog([
+      { id: 'keep', title: 'Keep me', priority: 'P1', estimatedComplexity: 'low', files: ['a.ts'] },
+      { id: 'done', title: 'Done item', priority: 'P1', estimatedComplexity: 'low', files: ['b.ts'] },
+      { id: 'legacy', title: 'Legacy done item', priority: 'P1', estimatedComplexity: 'low', files: ['c.ts'] },
+    ]);
+    writeCompletedLedger({
+      entries: [
+        { itemId: '  backlog-done  ', completedAt: '2026-05-27T00:00:00.000Z' },
+        { id: '\tbacklog-legacy\n', completedAt: '2026-05-27T00:00:00.000Z' },
+        { itemId: '   ' },
+      ],
+    });
+
+    const items = await new ProposalToBacklog(emptyAdapter, root, cfg()).build();
+    const titles = items.map((i) => i.title);
+    expect(titles).toContain('Keep me');
+    expect(titles).not.toContain('Done item');
+    expect(titles).not.toContain('Legacy done item');
+  });
 });
