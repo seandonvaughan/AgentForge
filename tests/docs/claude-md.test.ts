@@ -221,6 +221,16 @@ describe("README.md", () => {
     );
   });
 
+  it("keeps CLAUDE.md auto-mode wording aligned with ProviderResolver order", () => {
+    const autoRuntimeRowMatch = content.match(/^\|\s*`auto`\s*\|([^\n]+)\|/m);
+    expect(autoRuntimeRowMatch).not.toBeNull();
+
+    const autoRuntimeRow = autoRuntimeRowMatch?.[1] ?? "";
+    expect(autoRuntimeRow).toMatch(
+      /prefers Anthropic SDK,\s*then Claude Code compatibility,\s*then Codex CLI,\s*then OpenAI SDK/i,
+    );
+  });
+
   it("uses Corepack-managed pnpm in development commands", () => {
     expect(readmeContent).not.toMatch(/^pnpm\s/m);
     expect(readmeContent).not.toMatch(/^npx\s/m);

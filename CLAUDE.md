@@ -209,7 +209,7 @@ The cycle execution transport is controlled by `AGENTFORGE_RUNTIME`:
 
 | Value | Transport | Use case |
 |---|---|---|
-| `auto` | Provider resolver; Anthropic SDK, Claude Code compatibility, or Codex CLI when available | Default for local development |
+| `auto` | Provider resolver; prefers Anthropic SDK, then Claude Code compatibility, then Codex CLI, then OpenAI SDK when available | Default for local development |
 | `sdk` | Anthropic SDK alias | AgentForge Cloud, CI |
 | `cli` | Claude CLI alias | Local when you want to guarantee the Claude CLI path |
 | `anthropic-sdk` | Anthropic SDK transport | Explicit SDK transport selection |
