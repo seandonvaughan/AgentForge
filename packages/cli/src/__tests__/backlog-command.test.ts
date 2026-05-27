@@ -208,6 +208,47 @@ describe('agentforge backlog status', () => {
     expect(output).not.toContain('No Scope Task');
   });
 
+  it('prints deterministic machine-readable JSON status with --json', async () => {
+    const backlogDir = join(projectRoot, '.agentforge', 'backlog');
+    mkdirSync(backlogDir, { recursive: true });
+    writeFileSync(
+      join(backlogDir, 'items.json'),
+      JSON.stringify({
+        items: [
+          { id: 'scoped task', title: 'Scoped Task', estimatedComplexity: 'low', files: ['packages/cli/src/bin.ts'] },
+          { id: 'high task', title: 'High Task', estimatedComplexity: 'high', files: ['packages/core/src/autonomous/proposal-to-backlog.ts'] },
+          { id: 'done task', title: 'Done Task', estimatedComplexity: 'low', files: ['packages/cli/src/commands/backlog.ts'] },
+        ],
+      }),
+      'utf8',
+    );
+    writeFileSync(
+      join(backlogDir, 'completed.json'),
+      JSON.stringify({ entries: [{ itemId: ' Done Task ', completedAt: '2026-05-27T00:00:00.000Z' }] }),
+      'utf8',
+    );
+    writeFileSync(
+      join(backlogDir, 'quarantine.json'),
+      JSON.stringify({ ids: ['missing-item'] }),
+      'utf8',
+    );
+
+    await runCli(['backlog', 'status', '--project-root', projectRoot, '--json']);
+
+    const output = consoleLog.mock.calls.map((args: unknown[]) => String(args[0] ?? '')).join('\n');
+    expect(output).not.toContain('[backlog] status');
+    expect(JSON.parse(output)).toEqual({
+      projectRoot,
+      activeBacklogFileItems: 2,
+      completedLedgerEntries: 1,
+      quarantinedIds: 1,
+      unattendedExcludedBacklogItems: 1,
+      activeScopedItems: [
+        { id: 'backlog-scoped-task', title: 'Scoped Task' },
+      ],
+    });
+  });
+
   it('normalizes mixed raw/canonical IDs and drops blank or un-normalizable IDs', async () => {
     const backlogDir = join(projectRoot, '.agentforge', 'backlog');
     mkdirSync(backlogDir, { recursive: true });
