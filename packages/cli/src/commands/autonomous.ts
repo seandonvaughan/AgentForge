@@ -88,7 +88,9 @@ interface CycleApproveOptions extends WorkspaceAwareOptions {
   decidedBy?: string;
 }
 
-interface LoopGuardStatusOptions extends WorkspaceAwareOptions {}
+interface LoopGuardStatusOptions extends WorkspaceAwareOptions {
+  json?: boolean;
+}
 
 interface LoopGuardResetOptions extends WorkspaceAwareOptions {}
 
@@ -209,6 +211,7 @@ export function registerCycleCommand(program: Command): void {
     .description('Show loop guard status from .agentforge/loop-state.json')
     .option('--project-root <path>', 'Project root', process.cwd())
     .option('--workspace <id>', 'Run against a registered workspace from ~/.agentforge/workspaces.json')
+    .option('--json', 'Print machine-readable JSON')
     .action(runLoopGuardStatusAction);
 
   loopGuard
@@ -808,6 +811,24 @@ async function runLoopGuardStatusAction(opts: LoopGuardStatusOptions): Promise<v
   const statePath = join(projectRoot, '.agentforge', 'loop-state.json');
   const parsed = readLoopGuardStateForStatus(statePath);
   const state = parsed.state ?? localDefaultLoopGuardState();
+
+  if (opts.json) {
+    console.log(JSON.stringify({
+      projectRoot,
+      path: statePath,
+      stateFileStatus: parsed.fileStatus,
+      fileStatus: parsed.fileStatus,
+      halted: Boolean(state.haltedReason),
+      haltedReason: state.haltedReason ?? null,
+      reason: state.haltedReason ?? null,
+      failures: state.consecutiveFailedCycles,
+      lastCycleId: state.lastCycleId,
+      lastOutcome: state.lastOutcome,
+      lastUpdatedAt: state.lastUpdatedAt,
+      updatedAt: state.lastUpdatedAt,
+    }, null, 2));
+    return;
+  }
 
   console.log('[loop-guard] status');
   console.log(`Path:         ${statePath}`);
