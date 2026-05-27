@@ -814,13 +814,17 @@ async function runLoopGuardStatusAction(opts: LoopGuardStatusOptions): Promise<v
 
   if (opts.json) {
     console.log(JSON.stringify({
+      projectRoot,
       path: statePath,
+      stateFileStatus: parsed.fileStatus,
       fileStatus: parsed.fileStatus,
       halted: Boolean(state.haltedReason),
+      haltedReason: state.haltedReason ?? null,
       reason: state.haltedReason ?? null,
       failures: state.consecutiveFailedCycles,
       lastCycleId: state.lastCycleId,
       lastOutcome: state.lastOutcome,
+      lastUpdatedAt: state.lastUpdatedAt,
       updatedAt: state.lastUpdatedAt,
     }, null, 2));
     return;

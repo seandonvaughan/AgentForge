@@ -119,22 +119,30 @@ describe('cycle loop-guard commands', () => {
     await runCli('cycle', 'loop-guard', 'status', '--project-root', projectRoot, '--json');
 
     const parsed = JSON.parse(stdout()) as {
+      projectRoot: string;
       path: string;
+      stateFileStatus: string;
       fileStatus: string;
       halted: boolean;
+      haltedReason: string | null;
       reason: string | null;
       failures: number;
       lastCycleId: string | null;
       lastOutcome: string | null;
+      lastUpdatedAt: string;
       updatedAt: string;
     };
+    expect(parsed.projectRoot).toBe(projectRoot);
     expect(parsed.path).toBe(statePath);
+    expect(parsed.stateFileStatus).toBe('valid');
     expect(parsed.fileStatus).toBe('valid');
     expect(parsed.halted).toBe(false);
+    expect(parsed.haltedReason).toBeNull();
     expect(parsed.reason).toBeNull();
     expect(parsed.failures).toBe(1);
     expect(parsed.lastCycleId).toBe('12345678-1234-1234-1234-123456789012');
     expect(parsed.lastOutcome).toBe('failed');
+    expect(parsed.lastUpdatedAt).toBe('2026-05-27T00:00:00.000Z');
     expect(parsed.updatedAt).toBe('2026-05-27T00:00:00.000Z');
   });
 
@@ -146,20 +154,26 @@ describe('cycle loop-guard commands', () => {
     await runCli('cycle', 'loop-guard', 'status', '--project-root', projectRoot, '--json');
 
     const parsed = JSON.parse(stdout()) as {
+      stateFileStatus: string;
       fileStatus: string;
       halted: boolean;
+      haltedReason: string | null;
       reason: string | null;
       failures: number;
       lastCycleId: string | null;
       lastOutcome: string | null;
+      lastUpdatedAt: string;
       updatedAt: string;
     };
+    expect(parsed.stateFileStatus).toBe('corrupt');
     expect(parsed.fileStatus).toBe('corrupt');
     expect(parsed.halted).toBe(false);
+    expect(parsed.haltedReason).toBeNull();
     expect(parsed.reason).toBeNull();
     expect(parsed.failures).toBe(0);
     expect(parsed.lastCycleId).toBeNull();
     expect(parsed.lastOutcome).toBeNull();
+    expect(parsed.lastUpdatedAt).toBe('1970-01-01T00:00:00.000Z');
     expect(parsed.updatedAt).toBe('1970-01-01T00:00:00.000Z');
   });
 
