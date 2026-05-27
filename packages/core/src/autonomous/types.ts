@@ -208,6 +208,7 @@ export interface TestResult {
 export interface RankedItem {
   itemId: string;
   title: string;
+  files?: string[];
   rank: number;
   score: number;
   confidence: number;

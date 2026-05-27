@@ -29,7 +29,11 @@ import { MessageBusV2 } from '../../message-bus/message-bus.js';
 import { MergeQueue } from '../../runtime/merge-queue.js';
 import type { AgentBranchPushedPayload } from '../../message-bus/types.js';
 import type { DrainResult, DrainAndMergeResult } from '../../runtime/merge-queue.js';
-import { shouldOpenSingleCyclePr, shouldRunAggregateCommit } from '../cycle-runner.js';
+import {
+  buildGateRetryContext,
+  shouldOpenSingleCyclePr,
+  shouldRunAggregateCommit,
+} from '../cycle-runner.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -49,6 +53,12 @@ function readLedger(projectRoot: string, cycleId: string): unknown[] {
   const p = join(projectRoot, '.agentforge', 'cycles', cycleId, 'agent-prs.json');
   if (!existsSync(p)) return [];
   return JSON.parse(readFileSync(p, 'utf-8')) as unknown[];
+}
+
+function writeLedger(projectRoot: string, cycleId: string, entries: unknown[]): void {
+  const p = join(projectRoot, '.agentforge', 'cycles', cycleId, 'agent-prs.json');
+  mkdirSync(join(projectRoot, '.agentforge', 'cycles', cycleId), { recursive: true });
+  writeFileSync(p, JSON.stringify(entries, null, 2));
 }
 
 function buildPayload(overrides: Partial<AgentBranchPushedPayload> = {}): AgentBranchPushedPayload {
@@ -97,7 +107,7 @@ function makeMockQueue(): IMergeQueue {
       prs: [{ prNumber: 42, branch: 'auto/a', agentId: 'coder-1' }],
     }),
     drainAndMerge: vi.fn<(opts?: { autoMerge?: boolean }) => Promise<DrainAndMergeResult>>()
-      .mockResolvedValue({ ready: [42], merged: [], failing: [], pending: [] }),
+      .mockResolvedValue({ ready: [42], merged: [], failing: [], pending: [], unknown: [] }),
   };
 }
 
@@ -115,6 +125,89 @@ beforeEach(() => {
 afterEach(() => {
   rmSync(projectRoot, { recursive: true, force: true });
   vi.restoreAllMocks();
+});
+
+describe('gate retry context — agent PR ledger routing', () => {
+  it('maps itemIds from the exact rejected branch record', () => {
+    const cycleId = 'cycle-retry-ledger';
+    writeLedger(projectRoot, cycleId, [
+      {
+        prNumber: 175,
+        branch: 'codex/agent-docs-a',
+        itemIds: ['item-A'],
+        openedAt: '2026-05-25T01:00:00.000Z',
+      },
+      {
+        prNumber: 176,
+        branch: 'codex/agent-runtime-b',
+        itemIds: ['item-B'],
+        openedAt: '2026-05-25T01:01:00.000Z',
+      },
+    ]);
+
+    const context = buildGateRetryContext(
+      projectRoot,
+      cycleId,
+      1,
+      'Gate rejected the work against branch codex/agent-runtime-b.',
+    );
+
+    expect(context.rejectedBranch).toBe('codex/agent-runtime-b');
+    expect(context.prNumber).toBe(176);
+    expect(context.itemIds).toEqual(['item-B']);
+  });
+
+  it('uses the sole ledger record as a safe fallback and preserves itemIds', () => {
+    const cycleId = 'cycle-retry-single-ledger';
+    writeLedger(projectRoot, cycleId, [
+      {
+        prNumber: 178,
+        branch: 'codex/agent-runtime-only',
+        itemIds: ['item-only'],
+        openedAt: '2026-05-25T01:00:00.000Z',
+      },
+    ]);
+
+    const context = buildGateRetryContext(
+      projectRoot,
+      cycleId,
+      1,
+      'Gate rejected docs/runtime-modes.md because the test was vacuous.',
+    );
+
+    expect(context.rejectedBranch).toBe('codex/agent-runtime-only');
+    expect(context.prNumber).toBe(178);
+    expect(context.itemIds).toEqual(['item-only']);
+  });
+
+  it('does not guess itemIds from the latest PR when multiple records are ambiguous', () => {
+    const cycleId = 'cycle-retry-ambiguous-ledger';
+    writeLedger(projectRoot, cycleId, [
+      {
+        prNumber: 175,
+        branch: 'codex/agent-docs-a',
+        itemIds: ['item-A'],
+        openedAt: '2026-05-25T01:00:00.000Z',
+      },
+      {
+        prNumber: 176,
+        branch: 'codex/agent-runtime-b',
+        itemIds: ['item-B'],
+        openedAt: '2026-05-25T01:01:00.000Z',
+      },
+    ]);
+
+    const context = buildGateRetryContext(
+      projectRoot,
+      cycleId,
+      1,
+      'Gate rejected docs/runtime-modes.md because the test was vacuous.',
+    );
+
+    expect(context.rejectedBranch).toBeUndefined();
+    expect(context.prNumber).toBeUndefined();
+    expect(context.itemIds).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -323,7 +416,7 @@ describe('prMode cycle-end drain behavior', () => {
       }),
       drainAndMerge: vi.fn<(opts?: { autoMerge?: boolean }) => Promise<DrainAndMergeResult>>(() => {
         callOrder.push('drainAndMerge');
-        return Promise.resolve({ ready: [], merged: [], failing: [], pending: [] });
+        return Promise.resolve({ ready: [], merged: [], failing: [], pending: [], unknown: [] });
       }),
     };
 

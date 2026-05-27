@@ -50,10 +50,19 @@ export function nextPhase(current: PhaseName): PhaseName | null {
 /** Minimal interface so execute-phase can allocate/release worktrees without
  *  depending on the full WorktreePool class (which lives in Workstream AA). */
 export interface WorktreePoolLike {
-  allocate(opts: { agentId: string; sessionId: string }): Promise<{
+  allocate(opts: {
+    agentId: string;
+    sessionId: string;
+    branchName?: string;
+    sourceRef?: string;
+    deleteBranchOnRelease?: boolean;
+  }): Promise<{
     id: string;
     path: string;
     branch: string;
+    baselineHead?: string;
+    deleteBranchOnRelease?: boolean;
+    sourceRef?: string;
     allocatedAt: string;
     agentId: string;
     sessionId: string;

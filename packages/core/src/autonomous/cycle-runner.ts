@@ -184,7 +184,7 @@ function latestAgentPr(records: AgentPrRecord[]): AgentPrRecord | undefined {
     .at(-1);
 }
 
-function buildGateRetryContext(
+export function buildGateRetryContext(
   projectRoot: string,
   cycleId: string,
   attempt: number,
@@ -198,11 +198,12 @@ function buildGateRetryContext(
     : prFromRationale !== undefined
       ? records.find((record) => (record.prNumber ?? record.number) === prFromRationale)
       : undefined;
-  const fallbackRecord = matchingRecord ?? latestAgentPr(records);
-  const rejectedBranch = branchFromRationale ?? fallbackRecord?.branch;
-  const prNumber = prFromRationale ?? fallbackRecord?.prNumber ?? fallbackRecord?.number;
-  const prUrl = fallbackRecord?.prUrl ?? fallbackRecord?.url;
-  const itemIds = matchingRecord?.itemIds?.filter((id) => typeof id === 'string' && id.length > 0);
+  const fallbackRecord = matchingRecord ?? (records.length === 1 ? latestAgentPr(records) : undefined);
+  const selectedRecord = matchingRecord ?? fallbackRecord;
+  const rejectedBranch = branchFromRationale ?? selectedRecord?.branch;
+  const prNumber = prFromRationale ?? selectedRecord?.prNumber ?? selectedRecord?.number;
+  const prUrl = selectedRecord?.prUrl ?? selectedRecord?.url;
+  const itemIds = selectedRecord?.itemIds?.filter((id) => typeof id === 'string' && id.length > 0);
   return {
     attempt,
     rationale,
@@ -1870,6 +1871,11 @@ Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
     try {
       drainResult = await this.mergeQueue.drain();
     } catch (err) {
+      this.writeMultiPrMergeDrainArtifact({
+        ok: false,
+        stage: 'drain',
+        error: err instanceof Error ? err.message : String(err),
+      });
       // eslint-disable-next-line no-console
       console.error(
         `[autonomous:cycle] multi-pr: drain error (non-fatal): ${
@@ -1895,13 +1901,27 @@ Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
     try {
       const autoMerge = this.options.config.autoMergePRs === true;
       const dmResult: DrainAndMergeResult = await this.mergeQueue.drainAndMerge({ autoMerge });
+      this.writeMultiPrMergeDrainArtifact({
+        ok: true,
+        stage: 'drainAndMerge',
+        drain: drainResult,
+        drainAndMerge: dmResult,
+        autoMerge,
+      });
       // eslint-disable-next-line no-console
       console.log(
         `[autonomous:cycle] multi-pr: drainAndMerge complete — ` +
         `ready=${dmResult.ready.length} merged=${dmResult.merged.length} ` +
-        `failing=${dmResult.failing.length} pending=${dmResult.pending.length}`,
+        `failing=${dmResult.failing.length} pending=${dmResult.pending.length} ` +
+        `unknown=${dmResult.unknown.length}`,
       );
     } catch (err) {
+      this.writeMultiPrMergeDrainArtifact({
+        ok: false,
+        stage: 'drainAndMerge',
+        drain: drainResult,
+        error: err instanceof Error ? err.message : String(err),
+      });
       // Swallow — merge errors must never fail the cycle.
       // eslint-disable-next-line no-console
       console.error(
@@ -1909,6 +1929,23 @@ Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
           err instanceof Error ? err.message : String(err)
         }`,
       );
+    }
+  }
+
+  private writeMultiPrMergeDrainArtifact(payload: Record<string, unknown>): void {
+    try {
+      const cycleDir = join(this.options.cwd, '.agentforge/cycles', this.cycleId);
+      mkdirSync(cycleDir, { recursive: true });
+      writeFileSync(
+        join(cycleDir, 'multi-pr-merge-drain.json'),
+        JSON.stringify({
+          cycleId: this.cycleId,
+          recordedAt: new Date().toISOString(),
+          ...payload,
+        }, null, 2) + '\n',
+      );
+    } catch {
+      // Best-effort artifact only; merge-drain telemetry must not fail cycles.
     }
   }
 

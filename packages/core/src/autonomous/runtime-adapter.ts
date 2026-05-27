@@ -21,7 +21,12 @@ import type { WorkspaceAdapter } from '@agentforge/db';
 import type { RuntimeForScoring } from './scoring-pipeline.js';
 import type { ModelTier } from '@agentforge/shared';
 import type { RuntimeJobSupervisor } from '../runtime/runtime-job-supervisor.js';
-import type { CodexSandboxMode, ExecutionStreamEvent } from '../runtime/types.js';
+import type {
+  CodexSandboxMode,
+  ExecutionProviderKind,
+  ExecutionStreamEvent,
+  RuntimeMode,
+} from '../runtime/types.js';
 import {
   extractBreakdownFromAgentRun,
   type CostBreakdown,
@@ -35,6 +40,8 @@ interface RuntimeRunOptions {
   timeoutMs?: number;
   cwd?: string;
   codexSandbox?: CodexSandboxMode;
+  runtimeMode?: RuntimeMode;
+  preferredProvider?: ExecutionProviderKind;
 }
 
 function capModelTier(requested: ModelTier, cap: ModelTier): { model: ModelTier; effort?: string } {
@@ -156,11 +163,22 @@ export class RuntimeAdapter implements RuntimeForScoring {
 
     const runtime = await this.getOrCreateRuntime(agentId);
     const startedAt = Date.now();
-    const runOpts: { task: string; allowedTools?: string[]; enableFallback?: boolean; timeoutMs?: number; cwd?: string; codexSandbox?: CodexSandboxMode } = { task };
+    const runOpts: {
+      task: string;
+      allowedTools?: string[];
+      enableFallback?: boolean;
+      timeoutMs?: number;
+      cwd?: string;
+      codexSandbox?: CodexSandboxMode;
+      runtimeMode?: RuntimeMode;
+      preferredProvider?: ExecutionProviderKind;
+    } = { task };
     if (options?.allowedTools) runOpts.allowedTools = options.allowedTools;
     if (options?.timeoutMs !== undefined) runOpts.timeoutMs = options.timeoutMs;
     if (options?.cwd !== undefined) runOpts.cwd = options.cwd;
     if (options?.codexSandbox !== undefined) runOpts.codexSandbox = options.codexSandbox;
+    if (options?.runtimeMode !== undefined) runOpts.runtimeMode = options.runtimeMode;
+    if (options?.preferredProvider !== undefined) runOpts.preferredProvider = options.preferredProvider;
     // Thread enableFallback from adapter options into each run call.
     if (this.options.enableFallback !== undefined) {
       runOpts.enableFallback = this.options.enableFallback;
@@ -240,6 +258,8 @@ export class RuntimeAdapter implements RuntimeForScoring {
         timeoutMs?: number;
         cwd?: string;
         codexSandbox?: CodexSandboxMode;
+        runtimeMode?: RuntimeMode;
+        preferredProvider?: ExecutionProviderKind;
         signal: AbortSignal;
         onEvent: (event: ExecutionStreamEvent) => void;
       } = {
@@ -257,6 +277,8 @@ export class RuntimeAdapter implements RuntimeForScoring {
       if (options?.timeoutMs !== undefined) runOpts.timeoutMs = options.timeoutMs;
       if (options?.cwd !== undefined) runOpts.cwd = options.cwd;
       if (options?.codexSandbox !== undefined) runOpts.codexSandbox = options.codexSandbox;
+      if (options?.runtimeMode !== undefined) runOpts.runtimeMode = options.runtimeMode;
+      if (options?.preferredProvider !== undefined) runOpts.preferredProvider = options.preferredProvider;
       if (this.options.enableFallback !== undefined) {
         runOpts.enableFallback = this.options.enableFallback;
       }

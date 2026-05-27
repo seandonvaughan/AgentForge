@@ -116,7 +116,11 @@ export interface DrainAndMergeResult {
   failing: number[];
   /** PR numbers where CI checks are still pending (not yet finished). */
   pending: number[];
+  /** PR numbers where CI state could not be determined safely. */
+  unknown: number[];
 }
+
+type CiStatus = 'green' | 'pending' | 'failing' | 'unknown';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -333,7 +337,13 @@ export class MergeQueue {
       await Promise.allSettled([...this.inFlight]);
     }
 
-    const result: DrainAndMergeResult = { ready: [], merged: [], failing: [], pending: [] };
+    const result: DrainAndMergeResult = {
+      ready: [],
+      merged: [],
+      failing: [],
+      pending: [],
+      unknown: [],
+    };
 
     // Collect (cycleId, ledgerPath) pairs to read.
     const ledgerPaths: Array<{ cycleId: string; ledgerPath: string }> = [];
@@ -386,7 +396,13 @@ export class MergeQueue {
           continue;
         }
 
-        // All checks green (or no checks) — promote draft → ready
+        if (ciStatus === 'unknown') {
+          console.warn(`[MergeQueue:drainAndMerge] PR #${prNum} has unknown CI state — leaving open`);
+          result.unknown.push(prNum);
+          continue;
+        }
+
+        // Explicitly green checks — promote draft → ready.
         try {
           await execFile('gh', ['pr', 'ready', String(prNum)], { cwd: this.projectRoot, windowsHide: true });
           console.log(`[MergeQueue:drainAndMerge] PR #${prNum} promoted to ready`);
@@ -431,11 +447,12 @@ export class MergeQueue {
   /**
    * Query CI check status for a PR.
    * Returns:
-   *   - `'green'`   if all checks passed (or there are no checks)
+   *   - `'green'`   if all checks explicitly passed or were skipped
    *   - `'pending'` if at least one check is still running
    *   - `'failing'` if at least one check has failed
+   *   - `'unknown'` if CI cannot be queried or returns an unrecognized state
    */
-  private async getCiStatus(prNumber: number): Promise<'green' | 'pending' | 'failing'> {
+  private async getCiStatus(prNumber: number): Promise<CiStatus> {
     let stdout: string;
     try {
       const out = await execFile(
@@ -445,15 +462,21 @@ export class MergeQueue {
       );
       stdout = out.stdout;
     } catch {
-      // gh not available, or PR has no checks — treat as green so we can promote
-      return 'green';
+      return 'unknown';
     }
 
     const buckets = stdout.trim().split('\n').filter(Boolean);
-    if (buckets.length === 0) return 'green';
-    if (buckets.some((b) => b === 'fail')) return 'failing';
-    if (buckets.some((b) => b === 'pending')) return 'pending';
-    return 'green';
+    if (buckets.length === 0) return 'unknown';
+    const normalized = buckets.map((b) => b.trim().toLowerCase()).filter(Boolean);
+    if (normalized.some((b) => ['fail', 'failing', 'cancel', 'cancelled', 'timed_out'].includes(b))) {
+      return 'failing';
+    }
+    if (normalized.some((b) => ['pending', 'queued', 'in_progress', 'waiting'].includes(b))) {
+      return 'pending';
+    }
+    const greenBuckets = new Set(['pass', 'success', 'skipping', 'skipped']);
+    if (normalized.every((b) => greenBuckets.has(b))) return 'green';
+    return 'unknown';
   }
 
   private async handleEvent(payload: AgentBranchPushedPayload): Promise<void> {

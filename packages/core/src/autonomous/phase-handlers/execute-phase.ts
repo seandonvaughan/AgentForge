@@ -492,6 +492,7 @@ async function gitChangedFiles(worktreePath: string, args: string[]): Promise<st
 async function meaningfulWorktreeChanges(
   worktreePath: string,
   baseBranch = 'main',
+  baselineHead?: string,
 ): Promise<string[]> {
   if (!existsSync(worktreePath)) return ['__worktree_unverified__'];
   let stdout: string | Buffer;
@@ -513,6 +514,18 @@ async function meaningfulWorktreeChanges(
     .slice(0, MAX_RECORDED_WORKTREE_CHANGES);
   if (worktreeStatusChanges.length > 0) return worktreeStatusChanges;
 
+  if (baselineHead !== undefined && baselineHead.trim().length > 0) {
+    try {
+      return await gitChangedFiles(worktreePath, [
+        'diff',
+        '--name-only',
+        `${baselineHead.trim()}...HEAD`,
+      ]);
+    } catch {
+      return [];
+    }
+  }
+
   const baseRefs = [...new Set([`origin/${baseBranch}`, baseBranch])];
   for (const baseRef of baseRefs) {
     try {
@@ -533,6 +546,9 @@ type ExecuteWorktreeHandle = {
   id: string;
   path: string;
   branch: string;
+  baselineHead?: string;
+  deleteBranchOnRelease?: boolean;
+  sourceRef?: string;
   allocatedAt: string;
   agentId: string;
   sessionId: string;
@@ -559,12 +575,31 @@ function shouldRetryWorktreeAllocation(err: unknown): boolean {
   );
 }
 
+function normalizeRejectedBranch(branch: string): string {
+  return branch
+    .trim()
+    .replace(/^refs\/heads\//, '')
+    .replace(/^origin\//, '')
+    .replace(/[.,;:)]+$/, '');
+}
+
+function shouldUseRejectedBranch(ctx: PhaseContext, item: SprintItem): string | undefined {
+  const rejectedBranch = ctx.gateRetry?.rejectedBranch;
+  if (!rejectedBranch) return undefined;
+  const itemIds = (ctx.gateRetry?.itemIds ?? [])
+    .filter((id) => typeof id === 'string' && id.length > 0);
+  if (itemIds.length > 0 && !itemIds.includes(item.id)) return undefined;
+  const normalized = normalizeRejectedBranch(rejectedBranch);
+  return normalized.length > 0 ? normalized : undefined;
+}
+
 async function allocateWorktreeForItem(
   pool: WorktreePoolLike,
   ctx: PhaseContext,
   item: SprintItem,
 ): Promise<ExecuteWorktreeHandle> {
   const candidates = worktreeSessionCandidates(ctx, item);
+  const rejectedBranch = shouldUseRejectedBranch(ctx, item);
   let lastErr: unknown;
 
   for (let i = 0; i < candidates.length; i++) {
@@ -572,6 +607,13 @@ async function allocateWorktreeForItem(
       return await pool.allocate({
         agentId: item.assignee,
         sessionId: candidates[i]!,
+        ...(rejectedBranch
+          ? {
+              branchName: rejectedBranch,
+              sourceRef: `origin/${rejectedBranch}`,
+              deleteBranchOnRelease: false,
+            }
+          : {}),
       });
     } catch (err) {
       lastErr = err;
@@ -940,6 +982,7 @@ export async function runExecutePhase(
     let worktreeHandle: ExecuteWorktreeHandle | undefined;
     let worktreeAllocationError: string | undefined;
     const itemRequiresWorktree = requireWorktrees || isCoderClassItem(item);
+    const retryRejectedBranch = shouldUseRejectedBranch(ctx, item);
     if (worktreePool !== undefined && itemRequiresWorktree) {
       try {
         worktreeHandle = await allocateWorktreeForItem(worktreePool, ctx, item);
@@ -964,7 +1007,10 @@ export async function runExecutePhase(
           agentId: item.assignee,
           error: allocErr instanceof Error ? allocErr.message : String(allocErr),
         });
-        worktreeAllocationError = allocErr instanceof Error ? allocErr.message : String(allocErr);
+        const rawError = allocErr instanceof Error ? allocErr.message : String(allocErr);
+        worktreeAllocationError = retryRejectedBranch
+          ? `Rejected branch checkout failed for ${retryRejectedBranch}: ${rawError}`
+          : rawError;
         worktreeHandle = undefined;
       }
     } else if (requireWorktrees && itemRequiresWorktree) {
@@ -973,7 +1019,7 @@ export async function runExecutePhase(
     }
 
     try {
-      if (worktreeAllocationError && requireWorktrees) {
+      if (worktreeAllocationError && (requireWorktrees || retryRejectedBranch)) {
         const durationMs = Date.now() - itemStartedAt;
         item.status = 'failed';
         const failedResult = {
@@ -1061,6 +1107,7 @@ export async function runExecutePhase(
             worktreeChangedFiles = await meaningfulWorktreeChanges(
               worktreeHandle.path,
               ctx.baseBranch ?? 'main',
+              worktreeHandle.baselineHead,
             );
             if (worktreeChangedFiles.length === 0) {
               throw new Error(

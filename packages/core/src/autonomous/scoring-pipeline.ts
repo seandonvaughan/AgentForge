@@ -142,7 +142,10 @@ export class ScoringPipeline {
       const runResult = await this.runtime.run(this.config.scoring.agentId, task, {
         responseFormat: 'json',
       });
-      scoringResult = this.sanitizeAssignees(this.parseAndValidate(runResult.output));
+      scoringResult = this.attachBacklogFiles(
+        this.sanitizeAssignees(this.parseAndValidate(runResult.output)),
+        backlog,
+      );
     } catch (err) {
       throw new ScoringPipelineError(
         `Scoring agent failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -275,6 +278,7 @@ export class ScoringPipeline {
         suggestedAssignee: 'coder',
         suggestedTags: item.tags,
         withinBudget: true,
+        ...(item.files !== undefined ? { files: [...item.files] } : {}),
       };
     });
 
@@ -337,6 +341,7 @@ export class ScoringPipeline {
       suggestedAssignee: 'coder',
       suggestedTags: item.tags,
       withinBudget: true,
+      ...(item.files !== undefined ? { files: [...item.files] } : {}),
     }));
 
     // Enforce per-cycle budget
@@ -533,6 +538,24 @@ Do not include any text outside the JSON object.`;
       ...result,
       rankings: sanitizedRankings,
       warnings: [...result.warnings, ...sanitizationWarnings],
+    };
+  }
+
+  private attachBacklogFiles(result: ScoringResult, backlog: BacklogItem[]): ScoringResult {
+    const filesByItemId = new Map(
+      backlog
+        .filter((item): item is BacklogItem & { files: string[] } => item.files !== undefined)
+        .map((item) => [item.id, [...item.files]] as const),
+    );
+
+    if (filesByItemId.size === 0) return result;
+
+    return {
+      ...result,
+      rankings: result.rankings.map((ranking) => {
+        const files = filesByItemId.get(ranking.itemId);
+        return files === undefined ? ranking : { ...ranking, files: [...files] };
+      }),
     };
   }
 

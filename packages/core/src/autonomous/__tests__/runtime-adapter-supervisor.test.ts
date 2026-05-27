@@ -218,6 +218,35 @@ describe('RuntimeAdapter with supervisor', () => {
     );
   });
 
+  it('threads runtime routing options to AgentRuntime.run()', async () => {
+    mockRun.mockResolvedValueOnce({
+      sessionId: 'sess-routing-test',
+      response: 'done with explicit runtime routing',
+      model: 'gpt-5-codex',
+      inputTokens: 100,
+      outputTokens: 200,
+      costUsd: 0.002,
+      startedAt: '2026-01-01T00:00:00.000Z',
+      completedAt: '2026-01-01T00:00:05.000Z',
+      status: 'completed' as const,
+    });
+
+    const runtimeAdapter = new RuntimeAdapter({ cwd: '/tmp/fake-project' });
+
+    await runtimeAdapter.run('coder', 'Route through Codex', {
+      runtimeMode: 'auto',
+      preferredProvider: 'codex-cli',
+    });
+
+    expect(mockRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        task: 'Route through Codex',
+        runtimeMode: 'auto',
+        preferredProvider: 'codex-cli',
+      }),
+    );
+  });
+
   it('threads timeoutMs through supervisor path', async () => {
     mockRun.mockResolvedValueOnce({
       sessionId: 'sess-timeout-supervisor',
@@ -250,6 +279,39 @@ describe('RuntimeAdapter with supervisor', () => {
       expect.objectContaining({
         timeoutMs: customTimeoutMs,
         codexSandbox: 'read-only',
+        signal: expect.any(AbortSignal),
+      }),
+    );
+  });
+
+  it('threads runtime routing options through supervisor path', async () => {
+    mockRun.mockResolvedValueOnce({
+      sessionId: 'sess-routing-supervisor',
+      response: 'done with supervisor routing',
+      model: 'gpt-5-codex',
+      inputTokens: 100,
+      outputTokens: 200,
+      costUsd: 0.002,
+      startedAt: '2026-01-01T00:00:00.000Z',
+      completedAt: '2026-01-01T00:00:05.000Z',
+      status: 'completed' as const,
+    });
+
+    const runtimeAdapter = new RuntimeAdapter({
+      cwd: '/tmp/fake-project',
+      supervisor,
+    });
+
+    await runtimeAdapter.run('coder', 'Route supervised Codex', {
+      runtimeMode: 'auto',
+      preferredProvider: 'codex-cli',
+    });
+
+    expect(mockRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        task: 'Route supervised Codex',
+        runtimeMode: 'auto',
+        preferredProvider: 'codex-cli',
         signal: expect.any(AbortSignal),
       }),
     );

@@ -3,7 +3,11 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, realpathSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import { promisify } from 'node:util';
-import type { WorktreeHandle, WorktreePoolStats } from './worktree-pool-types.js';
+import type {
+  WorktreeAllocateOptions,
+  WorktreeHandle,
+  WorktreePoolStats,
+} from './worktree-pool-types.js';
 
 const execFile = promisify(execFileCb);
 const ID_PREFIX = 'agent-';
@@ -105,17 +109,27 @@ export class WorktreePool {
    * Allocate (or reuse) a worktree for the given agent/session pair.
    * Idempotent: if the worktree already exists, returns the existing handle.
    */
-  async allocate(opts: { agentId: string; sessionId: string }): Promise<WorktreeHandle> {
+  async allocate(opts: WorktreeAllocateOptions): Promise<WorktreeHandle> {
     const id = buildHandleId(opts.agentId, opts.sessionId);
+    const explicitBranch = opts.branchName?.trim();
+    const branch = explicitBranch && explicitBranch.length > 0
+      ? explicitBranch
+      : `${this.branchPrefix}${id}`;
+    const sourceRef = opts.sourceRef?.trim() || `origin/${this.baseBranch}`;
+    const deleteBranchOnRelease = opts.deleteBranchOnRelease ?? (explicitBranch === undefined);
 
     // Idempotent: return cached handle if already allocated in this pool instance.
     const cached = this.handles.get(id);
     if (cached) {
+      if (explicitBranch && cached.branch !== explicitBranch) {
+        throw new Error(
+          `Worktree ${id} is already allocated for ${cached.branch}; cannot reuse it for ${explicitBranch}.`,
+        );
+      }
       return cached;
     }
 
     const wtPath = join(this.projectRoot, this.rootDir, id);
-    const branch = `${this.branchPrefix}${id}`;
 
     // If the directory already exists the worktree was previously created
     // (e.g. by another process or a prior run). Only reuse it when git still
@@ -133,6 +147,9 @@ export class WorktreePool {
         id,
         path: wtPath,
         branch,
+        baselineHead: (await git(wtPath, ['rev-parse', 'HEAD'])).trim(),
+        deleteBranchOnRelease,
+        sourceRef,
         allocatedAt: new Date().toISOString(),
         agentId: opts.agentId,
         sessionId: opts.sessionId,
@@ -159,11 +176,14 @@ export class WorktreePool {
       }
 
       if (branchExists) {
+        if (opts.sourceRef?.trim()) {
+          await git(this.projectRoot, ['branch', '--force', branch, sourceRef]);
+        }
         // Branch exists but no worktree directory — just check it out into a
         // worktree. --no-track is only valid when git is creating a new branch.
         await git(this.projectRoot, ['worktree', 'add', wtPath, branch]);
       } else {
-        // Create the branch and worktree together off origin/baseBranch.
+        // Create the branch and worktree together off the requested source ref.
         // --no-track avoids writing upstream metadata; agents push with
         // explicit refspecs so tracking is not needed.
         await git(this.projectRoot, [
@@ -173,7 +193,7 @@ export class WorktreePool {
           '-b',
           branch,
           wtPath,
-          `origin/${this.baseBranch}`,
+          sourceRef,
         ]);
       }
     });
@@ -182,6 +202,9 @@ export class WorktreePool {
       id,
       path: wtPath,
       branch,
+      baselineHead: (await git(wtPath, ['rev-parse', 'HEAD'])).trim(),
+      deleteBranchOnRelease,
+      sourceRef,
       allocatedAt: new Date().toISOString(),
       agentId: opts.agentId,
       sessionId: opts.sessionId,
@@ -225,23 +248,25 @@ export class WorktreePool {
         // Non-fatal.
       }
 
-      // Attempt to delete the branch. If the branch has unmerged commits, warn
-      // and leave it for forensics.
-      try {
-        // -d (lowercase) refuses to delete branches with unmerged commits.
-        await git(this.projectRoot, ['branch', '-d', handle.branch]);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        // Check for the canonical git error messages for unmerged branches.
-        if (
-          msg.includes('not fully merged') ||
-          msg.includes('is not fully merged')
-        ) {
-          console.warn(
-            `[WorktreePool] Branch ${handle.branch} has unmerged commits — leaving branch intact.`,
-          );
+      if (handle.deleteBranchOnRelease !== false) {
+        // Attempt to delete the branch. If the branch has unmerged commits,
+        // warn and leave it for forensics.
+        try {
+          // -d (lowercase) refuses to delete branches with unmerged commits.
+          await git(this.projectRoot, ['branch', '-d', handle.branch]);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          // Check for the canonical git error messages for unmerged branches.
+          if (
+            msg.includes('not fully merged') ||
+            msg.includes('is not fully merged')
+          ) {
+            console.warn(
+              `[WorktreePool] Branch ${handle.branch} has unmerged commits — leaving branch intact.`,
+            );
+          }
+          // If the branch simply doesn't exist (already deleted), that is fine.
         }
-        // If the branch simply doesn't exist (already deleted), that is fine.
       }
     });
 

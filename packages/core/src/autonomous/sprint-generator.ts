@@ -113,7 +113,7 @@ export class SprintGenerator {
   }
 
   private toSprintItem(item: RankedItem): SprintPlanItem {
-    return {
+    const sprintItem: SprintPlanItem = {
       id: item.itemId,
       title: item.title,
       description: item.rationale,
@@ -123,6 +123,10 @@ export class SprintGenerator {
       estimatedCostUsd: item.estimatedCostUsd,
       tags: item.suggestedTags,
     };
+    if (item.files !== undefined) {
+      sprintItem.files = [...item.files];
+    }
+    return sprintItem;
   }
 
   private rankToPriority(rank: number): 'P0' | 'P1' | 'P2' {

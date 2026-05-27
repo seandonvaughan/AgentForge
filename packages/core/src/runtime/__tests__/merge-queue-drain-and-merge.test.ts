@@ -10,7 +10,7 @@
 //   4. Failing CI check → PR left in 'open', added to result.failing
 //   5. Pending CI check → PR left in 'open', added to result.pending
 //   6. Mixed status (green/failing/pending) → correct categorization
-//   7. gh pr checks unavailable (execFile throws) → treated as green
+//   7. Unknown/unavailable CI blocks promotion and merge
 //   8. gh pr ready fails → PR moves to failing, not ready
 //   9. sequenceBy='priority' → processes by prNumber ascending
 //  10. cycleId scoped → reads only the specific cycle's ledger
@@ -126,6 +126,7 @@ describe('MergeQueue.drainAndMerge', () => {
     expect(result.merged).toHaveLength(0);
     expect(result.failing).toHaveLength(0);
     expect(result.pending).toHaveLength(0);
+    expect(result.unknown).toHaveLength(0);
   });
 
   it('2. All CI checks green + autoMerge=false → PRs promoted to ready, NOT merged', async () => {
@@ -150,6 +151,7 @@ describe('MergeQueue.drainAndMerge', () => {
     expect(result.merged).toHaveLength(0);
     expect(result.failing).toHaveLength(0);
     expect(result.pending).toHaveLength(0);
+    expect(result.unknown).toHaveLength(0);
   });
 
   it('3. All green + autoMerge=true → PRs merged and ledger updated to \'merged\'', async () => {
@@ -263,12 +265,14 @@ describe('MergeQueue.drainAndMerge', () => {
     expect(result.merged).toHaveLength(0);
   });
 
-  it('7. gh pr checks unavailable (execFile throws) → treated as green (PR promoted)', async () => {
+  it('7. gh pr checks unavailable (execFile throws) → unknown CI blocks promotion', async () => {
     const cycleId = 'cycle-abc';
     makeCycleDir(projectRoot, cycleId);
     writeLedger(projectRoot, cycleId, [makeOpenEntry({ prNumber: 55, cycleId })]);
 
+    const calls: string[] = [];
     mockExecFile((file, args, _opts, cb) => {
+      calls.push(args.join(' '));
       if (args.includes('checks')) {
         cb(new Error('gh: command not found'), { stdout: '', stderr: '' });
       } else if (args.includes('ready')) {
@@ -279,11 +283,48 @@ describe('MergeQueue.drainAndMerge', () => {
     });
 
     const queue = new MergeQueue({ projectRoot, bus, cycleId });
-    const result = await queue.drainAndMerge({ autoMerge: false });
+    const result = await queue.drainAndMerge({ autoMerge: true });
 
-    // gh not available → getCiStatus returns 'green' → PR promoted to ready
-    expect(result.ready).toContain(55);
+    expect(result.unknown).toContain(55);
+    expect(result.ready).toHaveLength(0);
+    expect(result.merged).toHaveLength(0);
     expect(result.failing).toHaveLength(0);
+    expect(calls.some((call) => call.includes(' ready '))).toBe(false);
+    expect(calls.some((call) => call.includes(' merge '))).toBe(false);
+  });
+
+  it('7b. empty or unrecognized check buckets → unknown CI blocks promotion', async () => {
+    const cycleId = 'cycle-abc';
+    makeCycleDir(projectRoot, cycleId);
+    writeLedger(projectRoot, cycleId, [
+      makeOpenEntry({ prNumber: 56, cycleId }),
+      makeOpenEntry({ prNumber: 57, cycleId }),
+    ]);
+
+    const calls: string[] = [];
+    mockExecFile((file, args, _opts, cb) => {
+      calls.push(args.join(' '));
+      if (args.includes('checks')) {
+        const prNumIdx = args.indexOf('checks') + 1;
+        const prNum = parseInt(args[prNumIdx] ?? '0', 10);
+        if (prNum === 56) {
+          cb(null, { stdout: '', stderr: '' });
+        } else {
+          cb(null, { stdout: makeGhChecksResponse(['mystery']), stderr: '' });
+        }
+      } else {
+        cb(null, { stdout: '', stderr: '' });
+      }
+    });
+
+    const queue = new MergeQueue({ projectRoot, bus, cycleId });
+    const result = await queue.drainAndMerge({ autoMerge: true });
+
+    expect(result.unknown).toEqual([56, 57]);
+    expect(result.ready).toHaveLength(0);
+    expect(result.merged).toHaveLength(0);
+    expect(calls.some((call) => call.includes(' ready '))).toBe(false);
+    expect(calls.some((call) => call.includes(' merge '))).toBe(false);
   });
 
   it('8. gh pr ready fails → PR moved to failing, not in ready', async () => {

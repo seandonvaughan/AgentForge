@@ -76,11 +76,35 @@ function makeCtx(
 }
 
 /** Returns a mock WorktreePool with configurable behaviour. */
+type PoolAllocateCall = {
+  agentId: string;
+  sessionId: string;
+  branchName?: string;
+  sourceRef?: string;
+  deleteBranchOnRelease?: boolean;
+};
+
 function makePool(opts: {
-  allocateFn?: (req: { agentId: string; sessionId: string }) => Promise<{ id: string; path: string; branch: string; allocatedAt: string; agentId: string; sessionId: string }>;
+  allocateFn?: (req: {
+    agentId: string;
+    sessionId: string;
+    branchName?: string;
+    sourceRef?: string;
+    deleteBranchOnRelease?: boolean;
+  }) => Promise<{
+    id: string;
+    path: string;
+    branch: string;
+    baselineHead?: string;
+    deleteBranchOnRelease?: boolean;
+    sourceRef?: string;
+    allocatedAt: string;
+    agentId: string;
+    sessionId: string;
+  }>;
   releaseFn?: (id: string) => Promise<void>;
-} = {}): WorktreePoolLike & { allocateCalls: Array<{ agentId: string; sessionId: string }>; releaseCalls: string[] } {
-  const allocateCalls: Array<{ agentId: string; sessionId: string }> = [];
+} = {}): WorktreePoolLike & { allocateCalls: PoolAllocateCall[]; releaseCalls: string[] } {
+  const allocateCalls: PoolAllocateCall[] = [];
   const releaseCalls: string[] = [];
 
   const allocateFn = opts.allocateFn ?? (async (req) => {
@@ -115,11 +139,18 @@ function makePool(opts: {
 }
 
 /** Simpler pool that just tracks calls via vi.fn(). */
-function makeSpyPool(worktreePath = '/fake/worktree') {
-  const allocate = vi.fn().mockImplementation(async (req: { agentId: string; sessionId: string }) => ({
+function makeSpyPool(worktreePath = '/fake/worktree', handleOverrides: Record<string, unknown> = {}) {
+  const allocate = vi.fn().mockImplementation(async (req: {
+    agentId: string;
+    sessionId: string;
+    branchName?: string;
+    sourceRef?: string;
+    deleteBranchOnRelease?: boolean;
+  }) => ({
     id: `wt-${req.agentId}`,
     path: worktreePath,
     branch: `autonomous/${req.agentId}`,
+    ...handleOverrides,
     allocatedAt: new Date().toISOString(),
     agentId: req.agentId,
     sessionId: req.sessionId,
@@ -789,6 +820,141 @@ describe('execute-phase worktree integration', () => {
     const itemResult = (result.itemResults as any[])?.[0];
     expect(itemResult.status).toBe('completed');
     expect(itemResult.worktreeChangedFiles).toEqual(['feature.ts']);
+  });
+
+  it('checks out a gate retry on the rejected branch and preserves it on release', async () => {
+    writeSprintFile([
+      { id: 'item-1', title: 'Fix rejected branch', assignee: 'coder', tags: ['coder'] },
+    ]);
+
+    const pool = makeSpyPool('/fake/worktree');
+    const bus = makeBus();
+    const runtime = {
+      run: vi.fn().mockResolvedValue({
+        output: 'retry branch fixed',
+        costUsd: 0.01,
+      }),
+    };
+    const ctx = makeCtx(bus, {
+      worktreePool: pool,
+      runtime,
+      retryAttempt: 1,
+      gateRetry: {
+        attempt: 1,
+        rationale: 'Gate rejected against branch codex/rejected-branch.',
+        rejectedBranch: 'codex/rejected-branch',
+        itemIds: ['item-1'],
+      },
+    });
+
+    const result = await runExecutePhase(ctx, { maxParallelism: 1, maxItemRetries: 0 });
+
+    expect(result.status).toBe('completed');
+    expect(pool.allocate).toHaveBeenCalledWith(expect.objectContaining({
+      agentId: 'coder',
+      branchName: 'codex/rejected-branch',
+      sourceRef: 'origin/codex/rejected-branch',
+      deleteBranchOnRelease: false,
+    }));
+  });
+
+  it('fails a gate retry when the rejected branch has no changes beyond allocation baseline', async () => {
+    const worktreePath = join(tmpRoot, 'wt-retry-no-new-change');
+    await initGitRepo(worktreePath);
+    await execFile('git', ['checkout', '-b', 'codex/rejected-branch'], { cwd: worktreePath });
+    writeFileSync(join(worktreePath, 'feature.ts'), 'export const feature = true;\n');
+    await execFile('git', ['add', 'feature.ts'], { cwd: worktreePath });
+    await execFile('git', ['commit', '-m', 'agent attempt 1'], { cwd: worktreePath });
+    const rejectedHead = (
+      await execFile('git', ['rev-parse', 'HEAD'], { cwd: worktreePath })
+    ).stdout.toString().trim();
+
+    writeSprintFile([
+      { id: 'item-1', title: 'Fix rejected branch', assignee: 'coder', tags: ['coder'] },
+    ]);
+
+    const pool = makeSpyPool(worktreePath, {
+      branch: 'codex/rejected-branch',
+      baselineHead: rejectedHead,
+      deleteBranchOnRelease: false,
+    });
+    const bus = makeBus();
+    const runtime = {
+      run: vi.fn().mockResolvedValue({
+        output: 'I looked and it is fine',
+        costUsd: 0.01,
+      }),
+    };
+    const ctx = makeCtx(bus, {
+      worktreePool: pool,
+      runtime,
+      retryAttempt: 1,
+      baseBranch: 'main',
+      gateRetry: {
+        attempt: 1,
+        rationale: 'Gate rejected against branch codex/rejected-branch.',
+        rejectedBranch: 'codex/rejected-branch',
+        itemIds: ['item-1'],
+      },
+    });
+
+    const result = await runExecutePhase(ctx, { maxParallelism: 1, maxItemRetries: 0 });
+
+    expect(result.status).toBe('blocked');
+    const itemResult = (result.itemResults as any[])?.[0];
+    expect(itemResult.status).toBe('failed');
+    expect(itemResult.error).toContain('produced no source changes');
+  });
+
+  it('accepts a gate retry when the rejected branch receives a new correction', async () => {
+    const worktreePath = join(tmpRoot, 'wt-retry-correction');
+    await initGitRepo(worktreePath);
+    await execFile('git', ['checkout', '-b', 'codex/rejected-branch'], { cwd: worktreePath });
+    writeFileSync(join(worktreePath, 'feature.ts'), 'export const feature = true;\n');
+    await execFile('git', ['add', 'feature.ts'], { cwd: worktreePath });
+    await execFile('git', ['commit', '-m', 'agent attempt 1'], { cwd: worktreePath });
+    const rejectedHead = (
+      await execFile('git', ['rev-parse', 'HEAD'], { cwd: worktreePath })
+    ).stdout.toString().trim();
+
+    writeSprintFile([
+      { id: 'item-1', title: 'Fix rejected branch', assignee: 'coder', tags: ['coder'] },
+    ]);
+
+    const pool = makeSpyPool(worktreePath, {
+      branch: 'codex/rejected-branch',
+      baselineHead: rejectedHead,
+      deleteBranchOnRelease: false,
+    });
+    const bus = makeBus();
+    const runtime = {
+      run: vi.fn().mockImplementation(async (_agentId: string, _task: string, opts: any) => {
+        writeFileSync(join(opts.cwd, 'fix.ts'), 'export const fix = true;\n');
+        return {
+          output: 'fixed rejected branch',
+          costUsd: 0.01,
+        };
+      }),
+    };
+    const ctx = makeCtx(bus, {
+      worktreePool: pool,
+      runtime,
+      retryAttempt: 1,
+      baseBranch: 'main',
+      gateRetry: {
+        attempt: 1,
+        rationale: 'Gate rejected against branch codex/rejected-branch.',
+        rejectedBranch: 'codex/rejected-branch',
+        itemIds: ['item-1'],
+      },
+    });
+
+    const result = await runExecutePhase(ctx, { maxParallelism: 1, maxItemRetries: 0 });
+
+    expect(result.status).toBe('completed');
+    const itemResult = (result.itemResults as any[])?.[0];
+    expect(itemResult.status).toBe('completed');
+    expect(itemResult.worktreeChangedFiles).toEqual(['fix.ts']);
   });
 
   it('allocates ONCE per item (not per retry) on multiple retries', async () => {

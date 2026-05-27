@@ -163,6 +163,40 @@ describe('WorktreePool', () => {
     expect(wtHead).toBe(originHead);
   });
 
+  it('allocates an explicit retry branch from a source ref and preserves it on release', async () => {
+    const { writeFileSync } = await import('node:fs');
+    const retryBranch = 'codex/rejected-branch';
+
+    await git(workingDir, ['checkout', '-b', retryBranch]);
+    writeFileSync(join(workingDir, 'rejected.txt'), 'attempt 1\n');
+    await git(workingDir, ['add', 'rejected.txt']);
+    await git(workingDir, ['commit', '-m', 'rejected attempt']);
+    const rejectedHead = (await git(workingDir, ['rev-parse', 'HEAD'])).trim();
+    await git(workingDir, ['push', 'origin', retryBranch]);
+    await git(workingDir, ['checkout', 'main']);
+
+    const pool = new WorktreePool({ projectRoot: workingDir });
+    const handle = await pool.allocate({
+      agentId: 'coder',
+      sessionId: 'retry-rejected',
+      branchName: retryBranch,
+      sourceRef: `origin/${retryBranch}`,
+      deleteBranchOnRelease: false,
+    });
+
+    expect(handle.branch).toBe(retryBranch);
+    expect(handle.sourceRef).toBe(`origin/${retryBranch}`);
+    expect(handle.deleteBranchOnRelease).toBe(false);
+    expect(handle.baselineHead).toBe(rejectedHead);
+    expect((await git(handle.path, ['rev-parse', 'HEAD'])).trim()).toBe(rejectedHead);
+    expect(existsSync(join(handle.path, 'rejected.txt'))).toBe(true);
+
+    await pool.release(handle.id);
+
+    expect(existsSync(handle.path)).toBe(false);
+    expect((await git(workingDir, ['branch', '--list', retryBranch])).trim()).toContain(retryBranch);
+  });
+
   // -------------------------------------------------------------------------
   // 5. Release: removes the worktree directory
   // -------------------------------------------------------------------------
