@@ -46,6 +46,44 @@ describe('cycle loop-guard commands', () => {
     expect(output).toContain('Failures:     0');
   });
 
+  it('treats partially valid state shape as corrupt', async () => {
+    const statePath = join(projectRoot, '.agentforge', 'loop-state.json');
+    mkdirSync(join(projectRoot, '.agentforge'), { recursive: true });
+    writeFileSync(statePath, JSON.stringify({
+      consecutiveFailedCycles: 2,
+      lastCycleId: 123,
+      lastOutcome: 'failed',
+      lastUpdatedAt: '2026-05-27T00:00:00.000Z',
+    }, null, 2));
+
+    await runCli('cycle', 'loop-guard', 'status', '--project-root', projectRoot);
+
+    const output = stdout();
+    expect(output).toContain('State file:   corrupt');
+    expect(output).toContain('Halted:       no');
+    expect(output).toContain('Failures:     0');
+  });
+
+  it('treats semantically malformed JSON state as corrupt', async () => {
+    const statePath = join(projectRoot, '.agentforge', 'loop-state.json');
+    mkdirSync(join(projectRoot, '.agentforge'), { recursive: true });
+    writeFileSync(statePath, JSON.stringify({
+      v: 1,
+      consecutiveFailedCycles: 2,
+      lastCycleId: '12345678-1234-1234-1234-123456789012',
+      lastOutcome: 'blocked',
+      lastUpdatedAt: 'not-an-iso-date',
+      haltedReason: { reason: 'halted' },
+    }, null, 2));
+
+    await runCli('cycle', 'loop-guard', 'status', '--project-root', projectRoot);
+
+    const output = stdout();
+    expect(output).toContain('State file:   corrupt');
+    expect(output).toContain('Halted:       no');
+    expect(output).toContain('Failures:     0');
+  });
+
   it('shows halted state reason from guard file', async () => {
     const statePath = join(projectRoot, '.agentforge', 'loop-state.json');
     mkdirSync(join(projectRoot, '.agentforge'), { recursive: true });

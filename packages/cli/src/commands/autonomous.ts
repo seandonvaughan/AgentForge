@@ -1073,6 +1073,11 @@ function countJsonlLines(path: string): number {
   }
 }
 
+function isIsoDateString(value: string): boolean {
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
+}
+
 function readLoopGuardStateForStatus(path: string): {
   fileStatus: 'valid' | 'missing' | 'corrupt';
   state: ReturnType<typeof localDefaultLoopGuardState> | null;
@@ -1082,12 +1087,35 @@ function readLoopGuardStateForStatus(path: string): {
   }
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf8')) as Partial<ReturnType<typeof localDefaultLoopGuardState>>;
+    const consecutiveFailedCycles = parsed.consecutiveFailedCycles;
+    const lastCycleId = parsed.lastCycleId;
+    const lastOutcome = parsed.lastOutcome;
+    const lastUpdatedAt = parsed.lastUpdatedAt;
+    const haltedReason = parsed.haltedReason;
     if (
       parsed &&
       typeof parsed === 'object' &&
-      typeof parsed.consecutiveFailedCycles === 'number'
+      parsed.v === 1 &&
+      Number.isInteger(consecutiveFailedCycles) &&
+      consecutiveFailedCycles !== undefined &&
+      consecutiveFailedCycles >= 0 &&
+      (lastCycleId === null || typeof lastCycleId === 'string') &&
+      (lastOutcome === null || lastOutcome === 'completed' || lastOutcome === 'failed') &&
+      typeof lastUpdatedAt === 'string' &&
+      isIsoDateString(lastUpdatedAt) &&
+      (haltedReason === undefined || typeof haltedReason === 'string')
     ) {
-      return { fileStatus: 'valid', state: { ...localDefaultLoopGuardState(), ...parsed } };
+      return {
+        fileStatus: 'valid',
+        state: {
+          v: 1,
+          consecutiveFailedCycles,
+          lastCycleId,
+          lastOutcome,
+          lastUpdatedAt,
+          ...(haltedReason !== undefined ? { haltedReason } : {}),
+        },
+      };
     }
   } catch {
     // fall through
