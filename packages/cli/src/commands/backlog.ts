@@ -70,7 +70,7 @@ export function registerBacklogCommand(program: Command): void {
 }
 
 async function markBacklogItemCompleted(itemIdInput: string, opts: BacklogCompleteOptions): Promise<void> {
-  const itemId = itemIdInput.trim();
+  const itemId = normalizeBacklogId(itemIdInput);
   if (!itemId) {
     throw new Error('itemId must not be empty');
   }
@@ -159,7 +159,11 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
   const unattendedExcluded = activeItems.filter(isUnattendedExcludedBacklogItem);
   const activeScoped = activeItems
     .filter((item) => !isUnattendedExcludedBacklogItem(item))
-    .sort((a, b) => a.id.localeCompare(b.id));
+    .sort((a, b) => {
+      const idCompare = a.id.localeCompare(b.id);
+      if (idCompare !== 0) return idCompare;
+      return a.title.localeCompare(b.title);
+    });
 
   console.log('[backlog] status');
   console.log(`  projectRoot: ${projectRoot}`);
@@ -219,8 +223,10 @@ function normalizeBacklogFileItem(raw: unknown, fileName: string): BacklogFileIt
   const idRaw = typeof obj['id'] === 'string' && obj['id'].trim()
     ? obj['id'].trim()
     : `${fileName}-${title}`;
+  const id = normalizeBacklogId(idRaw);
+  if (!id) return null;
   const item: BacklogFileItem = {
-    id: `backlog-${idRaw.replace(/\W/g, '-')}`,
+    id,
     title,
   };
 
@@ -250,7 +256,11 @@ function readQuarantineIds(path: string): Set<string> {
       : Array.isArray((parsed as { ids?: unknown } | null)?.ids)
         ? (parsed as { ids: unknown[] }).ids
         : [];
-    return new Set(ids.filter((x): x is string => typeof x === 'string'));
+    return new Set(
+      ids
+        .map((x) => (typeof x === 'string' ? normalizeBacklogId(x) : null))
+        .filter((id): id is string => id !== null),
+    );
   } catch {
     return new Set();
   }
@@ -265,11 +275,12 @@ function isUnattendedExcludedBacklogItem(item: BacklogFileItem): boolean {
 function normalizeEntry(value: unknown): CompletedBacklogEntry | null {
   if (!value || typeof value !== 'object') return null;
   const obj = value as Record<string, unknown>;
-  const itemId = typeof obj['itemId'] === 'string'
+  const itemIdRaw = typeof obj['itemId'] === 'string'
     ? obj['itemId'].trim()
     : typeof obj['id'] === 'string'
       ? obj['id'].trim()
       : '';
+  const itemId = normalizeBacklogId(itemIdRaw);
   if (!itemId) return null;
 
   const completedAt = typeof obj['completedAt'] === 'string' && obj['completedAt'].trim().length > 0
@@ -296,4 +307,17 @@ function normalizeEntry(value: unknown): CompletedBacklogEntry | null {
   }
 
   return entry;
+}
+
+function normalizeBacklogId(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  let normalized = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  normalized = normalized.replace(/^-+|-+$/g, '');
+  if (!normalized) return null;
+
+  if (normalized === 'backlog') return null;
+  if (normalized.startsWith('backlog-')) return normalized;
+  return `backlog-${normalized}`;
 }
