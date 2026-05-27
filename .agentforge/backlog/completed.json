@@ -8,6 +8,14 @@
       "cycleId": "1270787e-ce31-4fba-a3e6-5d9d15824a73",
       "prNumber": 184,
       "reason": "Merged retained value from failed guided cycle attempt"
+    },
+    {
+      "itemId": "backlog-dogfood-002",
+      "completedAt": "2026-05-27T21:20:19.269Z",
+      "updatedAt": "2026-05-27T21:20:19.269Z",
+      "cycleId": "7fd13ab8-56c8-42bf-ada8-7c25d7aa1ca7",
+      "prNumber": 185,
+      "reason": "Merged retained value from failed guided cycle attempt"
     }
   ]
 }
