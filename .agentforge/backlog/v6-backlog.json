@@ -61,6 +61,21 @@
         "packages/cli/src/commands/autonomous.ts",
         "packages/cli/src/__tests__/autonomous-launch-options.test.ts"
       ]
+    },
+    {
+      "id": "dogfood-005",
+      "title": "Add loop guard status and reset commands",
+      "description": "Improve operator visibility for halted or nearly-halted autonomous cycles by exposing the existing `.agentforge/loop-state.json` guard state through the CLI. Add `agentforge cycle guard status --project-root .` to print the consecutive failed cycle count, last cycle id, last outcome, last updated time, and halted reason when present. Add `agentforge cycle guard reset --project-root . --reason <text>` to reset the guard to a clean state after an operator investigates the latest failure, writing a deterministic reset timestamp/reason entry into the state file. Reuse the existing loop-guard read/write helpers, tolerate missing or corrupt state the same way the runtime does, and do not change cycle execution semantics. Add focused CLI tests for missing state, halted state display, reset behavior, and malformed-state tolerance.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "tags": ["feature", "dogfood", "autonomous", "operator-visibility", "loop-guard", "cli"],
+      "source": "dogfood-2026-05-27",
+      "files": [
+        "packages/core/src/autonomous/loop-guard.ts",
+        "packages/core/src/autonomous/index.ts",
+        "packages/cli/src/commands/autonomous.ts",
+        "packages/cli/src/__tests__/cycle-list-show.test.ts"
+      ]
     }
   ]
 }
