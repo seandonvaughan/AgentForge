@@ -23,14 +23,22 @@ const config = {
 
 describe('ProposalToBacklog', () => {
   let projectRoot: string;
+  let previousUnattended: string | undefined;
 
   beforeEach(() => {
+    previousUnattended = process.env['AGENTFORGE_UNATTENDED'];
+    delete process.env['AGENTFORGE_UNATTENDED'];
     projectRoot = mkdtempSync(join(tmpdir(), 'agentforge-proposal-backlog-'));
     mkdirSync(join(projectRoot, '.agentforge', 'backlog'), { recursive: true });
   });
 
   afterEach(() => {
     rmSync(projectRoot, { recursive: true, force: true });
+    if (previousUnattended === undefined) {
+      delete process.env['AGENTFORGE_UNATTENDED'];
+    } else {
+      process.env['AGENTFORGE_UNATTENDED'] = previousUnattended;
+    }
   });
 
   it('loads checked-in .agentforge/backlog JSON items as cycle candidates', async () => {

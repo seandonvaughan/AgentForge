@@ -269,6 +269,34 @@ describe('collectFilesFromAgentBranches regression: worktreePool=undefined path'
 });
 
 describe('verifyMultiPrAgentBranches', () => {
+  const isolatedEnvKeys = [
+    'AGENTFORGE_MULTI_PR_VERIFY_COMMANDS',
+    'AGENTFORGE_MULTI_PR_VERIFY_INSTALL_COMMAND',
+  ] as const;
+  let previousEnv: Record<typeof isolatedEnvKeys[number], string | undefined>;
+
+  beforeEach(() => {
+    previousEnv = {
+      AGENTFORGE_MULTI_PR_VERIFY_COMMANDS: process.env['AGENTFORGE_MULTI_PR_VERIFY_COMMANDS'],
+      AGENTFORGE_MULTI_PR_VERIFY_INSTALL_COMMAND: process.env['AGENTFORGE_MULTI_PR_VERIFY_INSTALL_COMMAND'],
+    };
+
+    for (const key of isolatedEnvKeys) {
+      delete process.env[key];
+    }
+  });
+
+  afterEach(() => {
+    for (const key of isolatedEnvKeys) {
+      const value = previousEnv[key];
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  });
+
   it('prepares verification worktrees with install scripts and SvelteKit sync', () => {
     const previous = process.env['AGENTFORGE_MULTI_PR_VERIFY_INSTALL_COMMAND'];
     delete process.env['AGENTFORGE_MULTI_PR_VERIFY_INSTALL_COMMAND'];

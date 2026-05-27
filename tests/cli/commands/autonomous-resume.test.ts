@@ -150,13 +150,21 @@ describe('RESUME_CYCLE_ID_RE format validation', () => {
 
 describe('CycleRunner resume wire-up', () => {
   let tmpRoot: string;
+  let previousUnattended: string | undefined;
 
   beforeEach(() => {
+    previousUnattended = process.env['AGENTFORGE_UNATTENDED'];
+    delete process.env['AGENTFORGE_UNATTENDED'];
     tmpRoot = makeTmpDir();
   });
 
   afterEach(() => {
     rmSync(tmpRoot, { recursive: true, force: true });
+    if (previousUnattended === undefined) {
+      delete process.env['AGENTFORGE_UNATTENDED'];
+    } else {
+      process.env['AGENTFORGE_UNATTENDED'] = previousUnattended;
+    }
   });
 
   function buildMinimalRunner(overrides: Partial<CycleRunnerOptions> = {}): CycleRunner {

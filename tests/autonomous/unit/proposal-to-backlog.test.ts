@@ -6,13 +6,21 @@ import { ProposalToBacklog, DEFAULT_CYCLE_CONFIG } from '@agentforge/core';
 
 describe('ProposalToBacklog', () => {
   let tmpDir: string;
+  let previousUnattended: string | undefined;
 
   beforeEach(() => {
+    previousUnattended = process.env['AGENTFORGE_UNATTENDED'];
+    delete process.env['AGENTFORGE_UNATTENDED'];
     tmpDir = mkdtempSync(join(tmpdir(), 'agentforge-p2b-'));
   });
 
   afterEach(() => {
     rmSync(tmpDir, { recursive: true, force: true });
+    if (previousUnattended === undefined) {
+      delete process.env['AGENTFORGE_UNATTENDED'];
+    } else {
+      process.env['AGENTFORGE_UNATTENDED'] = previousUnattended;
+    }
   });
 
   function makeMockAdapter(overrides: any = {}) {
