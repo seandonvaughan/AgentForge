@@ -91,7 +91,7 @@ Package runtime commands currently support:
 - `codex-cli`
 - `openai-sdk`
 
-`auto` asks the provider resolver to use an available canonical package runtime transport. It prefers Anthropic SDK, then Claude Code compatibility, then Codex CLI when those transports are available.
+`auto` asks the provider resolver to use an available canonical package runtime transport. It prefers Anthropic SDK, then Claude Code compatibility, then Codex CLI, then OpenAI SDK when those transports are available.
 
 Streaming runtime transports normalize provider output into `start`, `text_delta`, `usage_delta`, `done`, and `error` events. Non-streaming transports remain supported through a full-response fallback.
 
