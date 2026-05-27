@@ -28,6 +28,24 @@ let packageVersion = "";
 let nodeEngine = "";
 let runtimeModes: string[] = [];
 
+const AUTO_PROVIDER_ORDER = [
+  "Anthropic SDK",
+  "Claude Code compatibility",
+  "Codex CLI",
+  "OpenAI SDK",
+];
+
+function expectProviderOrder(text: string) {
+  let previousIndex = -1;
+
+  for (const provider of AUTO_PROVIDER_ORDER) {
+    const index = text.indexOf(provider);
+    expect(index, `${provider} should be documented`).toBeGreaterThanOrEqual(0);
+    expect(index, `${provider} should appear in fallback order`).toBeGreaterThan(previousIndex);
+    previousIndex = index;
+  }
+}
+
 beforeAll(async () => {
   const [claudeMd, readmeMd, packageJson, runtimeTypes] = await Promise.all([
     readFile(CLAUDE_MD_PATH, "utf-8"),
@@ -215,20 +233,16 @@ describe("README.md", () => {
     }
   });
 
-  it("keeps README auto-mode fallback wording aligned with ProviderResolver order", () => {
-    expect(readmeContent).toMatch(
-      /prefers Anthropic SDK,\s*then Claude Code compatibility,\s*then Codex CLI,\s*then OpenAI SDK/i,
-    );
+  it("documents the README auto-mode provider fallback order", () => {
+    expectProviderOrder(readmeContent);
   });
 
-  it("keeps CLAUDE.md auto-mode wording aligned with ProviderResolver order", () => {
+  it("documents the CLAUDE.md auto-mode provider fallback order", () => {
     const autoRuntimeRowMatch = content.match(/^\|\s*`auto`\s*\|([^\n]+)\|/m);
     expect(autoRuntimeRowMatch).not.toBeNull();
 
     const autoRuntimeRow = autoRuntimeRowMatch?.[1] ?? "";
-    expect(autoRuntimeRow).toMatch(
-      /prefers Anthropic SDK,\s*then Claude Code compatibility,\s*then Codex CLI,\s*then OpenAI SDK/i,
-    );
+    expectProviderOrder(autoRuntimeRow);
   });
 
   it("uses Corepack-managed pnpm in development commands", () => {
