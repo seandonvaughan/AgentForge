@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { Command } from 'commander';
 
@@ -7,6 +7,10 @@ interface BacklogCompleteOptions {
   cycle?: string;
   pr?: string;
   reason?: string;
+}
+
+interface BacklogStatusOptions {
+  projectRoot: string;
 }
 
 interface CompletedBacklogEntry {
@@ -21,6 +25,13 @@ interface CompletedBacklogEntry {
 interface CompletedBacklogLedger {
   version: 1;
   entries: CompletedBacklogEntry[];
+}
+
+interface BacklogFileItem {
+  id: string;
+  title: string;
+  estimatedComplexity?: 'low' | 'medium' | 'high';
+  files?: string[];
 }
 
 export function registerBacklogCommand(program: Command): void {
@@ -38,6 +49,19 @@ export function registerBacklogCommand(program: Command): void {
     .action(async (itemId: string, opts: BacklogCompleteOptions) => {
       try {
         await markBacklogItemCompleted(itemId, opts);
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : String(error));
+        process.exitCode = 1;
+      }
+    });
+
+  backlog
+    .command('status')
+    .description('Show deterministic backlog visibility before cycle replay')
+    .option('--project-root <path>', 'Project root', process.cwd())
+    .action(async (opts: BacklogStatusOptions) => {
+      try {
+        await printBacklogStatus(opts);
       } catch (error) {
         console.error(error instanceof Error ? error.message : String(error));
         process.exitCode = 1;
@@ -122,6 +146,120 @@ function readLedger(path: string): CompletedBacklogLedger {
   } catch {
     return { version: 1, entries: [] };
   }
+}
+
+async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
+  const projectRoot = resolve(opts.projectRoot);
+  const backlogDir = join(projectRoot, '.agentforge', 'backlog');
+  const completed = readLedger(join(backlogDir, 'completed.json'));
+  const completedIds = new Set(completed.entries.map((entry) => entry.itemId));
+  const quarantineIds = readQuarantineIds(join(backlogDir, 'quarantine.json'));
+  const backlogItems = readBacklogFileItems(backlogDir);
+  const activeItems = backlogItems.filter((item) => !completedIds.has(item.id) && !quarantineIds.has(item.id));
+  const unattendedExcluded = activeItems.filter(isUnattendedExcludedBacklogItem);
+  const activeScoped = activeItems
+    .filter((item) => !isUnattendedExcludedBacklogItem(item))
+    .sort((a, b) => a.id.localeCompare(b.id));
+
+  console.log('[backlog] status');
+  console.log(`  projectRoot: ${projectRoot}`);
+  console.log(`  activeBacklogFileItems: ${activeItems.length}`);
+  console.log(`  completedLedgerEntries: ${completed.entries.length}`);
+  console.log(`  quarantinedIds: ${quarantineIds.size}`);
+  console.log(`  unattendedExcludedBacklogItems: ${unattendedExcluded.length}`);
+  console.log('  activeScopedItems:');
+  if (activeScoped.length === 0) {
+    console.log('    (none)');
+    return;
+  }
+
+  for (const item of activeScoped) {
+    console.log(`    - ${item.id}: ${item.title}`);
+  }
+}
+
+function readBacklogFileItems(backlogDir: string): BacklogFileItem[] {
+  let files: string[];
+  try {
+    files = readdirSync(backlogDir).filter((file) => file.endsWith('.json'));
+  } catch {
+    return [];
+  }
+
+  const items: BacklogFileItem[] = [];
+  for (const file of files.sort()) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(readFileSync(join(backlogDir, file), 'utf8')) as unknown;
+    } catch {
+      continue;
+    }
+
+    const rawItems = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray((parsed as { items?: unknown } | null)?.items)
+        ? (parsed as { items: unknown[] }).items
+        : [];
+
+    for (const raw of rawItems) {
+      const item = normalizeBacklogFileItem(raw, file);
+      if (item) items.push(item);
+    }
+  }
+
+  return items;
+}
+
+function normalizeBacklogFileItem(raw: unknown, fileName: string): BacklogFileItem | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const obj = raw as Record<string, unknown>;
+  const title = typeof obj['title'] === 'string' ? obj['title'].trim() : '';
+  if (!title) return null;
+
+  const idRaw = typeof obj['id'] === 'string' && obj['id'].trim()
+    ? obj['id'].trim()
+    : `${fileName}-${title}`;
+  const item: BacklogFileItem = {
+    id: `backlog-${idRaw.replace(/\W/g, '-')}`,
+    title,
+  };
+
+  const complexity = typeof obj['estimatedComplexity'] === 'string'
+    ? obj['estimatedComplexity'].toLowerCase()
+    : undefined;
+  if (complexity === 'low' || complexity === 'medium' || complexity === 'high') {
+    item.estimatedComplexity = complexity;
+  }
+
+  const files = Array.isArray(obj['files'])
+    ? obj['files'].filter((f): f is string => typeof f === 'string' && f.trim().length > 0)
+    : [];
+  if (files.length > 0) {
+    item.files = files;
+  }
+
+  return item;
+}
+
+function readQuarantineIds(path: string): Set<string> {
+  if (!existsSync(path)) return new Set();
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown;
+    const ids = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray((parsed as { ids?: unknown } | null)?.ids)
+        ? (parsed as { ids: unknown[] }).ids
+        : [];
+    return new Set(ids.filter((x): x is string => typeof x === 'string'));
+  } catch {
+    return new Set();
+  }
+}
+
+function isUnattendedExcludedBacklogItem(item: BacklogFileItem): boolean {
+  if (item.estimatedComplexity === 'high') return true;
+  if (item.files === undefined || item.files.length === 0) return true;
+  return false;
 }
 
 function normalizeEntry(value: unknown): CompletedBacklogEntry | null {
