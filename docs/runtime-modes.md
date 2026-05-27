@@ -1,8 +1,9 @@
 # AgentForge Runtime Modes
 
-AgentForge supports multiple runtime modes across Claude and Codex transports,
-selected via the `AGENTFORGE_RUNTIME` environment variable or the `runtime:`
-field in `.agentforge/autonomous.yaml`.
+AgentForge supports multiple runtime modes across Anthropic SDK, Claude Code
+compatibility, Codex CLI, and OpenAI SDK transports, selected via the
+`AGENTFORGE_RUNTIME` environment variable or the `runtime:` field in
+`.agentforge/autonomous.yaml`.
 
 ---
 
@@ -12,7 +13,7 @@ field in `.agentforge/autonomous.yaml`.
 |---|---|---|---|
 | SDK only | `sdk` | `AnthropicSdkTransport` only | AgentForge Cloud, CI, any environment where the `claude` CLI is not installed |
 | CLI only | `cli` | `ClaudeCodeCompatTransport` only | Local Claude Code users who want to guarantee the CLI path |
-| Auto (default) | `auto` | Both | Local development; falls back gracefully when only one transport is available |
+| Auto (default) | `auto` | Available transports | Local development and mixed-provider setups; preserves Claude-first routing when possible |
 
 ## Full `resolveMode()` contract
 
@@ -29,12 +30,15 @@ field in `.agentforge/autonomous.yaml`.
 
 ### `auto` (default)
 
-Both transports are registered. The `ProviderResolver` selects one at runtime:
+`auto` registers the available Anthropic SDK, Claude Code compatibility, Codex
+CLI, and OpenAI SDK transports. The `ProviderResolver` selects one at runtime:
 
 - When `allowedTools` are requested it always picks the CLI transport (tool execution
   requires the Claude Code subprocess).
-- Otherwise it prefers the SDK transport when `ANTHROPIC_API_KEY` is present.
-- Falls back to the CLI transport when the API key is absent but `claude` is on PATH.
+- Otherwise it preserves the historical Claude-first preference by preferring the
+  SDK transport when `ANTHROPIC_API_KEY` is present.
+- Falls back to the CLI transport when the API key is absent but `claude` is on PATH,
+  and can route to Codex/OpenAI transports when they are requested explicitly.
 
 ### `sdk`
 
