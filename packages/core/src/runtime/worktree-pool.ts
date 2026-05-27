@@ -142,6 +142,14 @@ export class WorktreePool {
           `Existing path ${wtPath} is not a registered git worktree; remove or archive it before allocating ${id}.`,
         );
       }
+      if (explicitBranch) {
+        const currentBranch = (await git(wtPath, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
+        if (currentBranch !== explicitBranch) {
+          throw new Error(
+            `Existing worktree ${wtPath} is checked out on ${currentBranch}; cannot reuse it for ${explicitBranch}.`,
+          );
+        }
+      }
 
       const handle: WorktreeHandle = {
         id,

@@ -294,6 +294,25 @@ describe('WorktreePool', () => {
     expect(existsSync(stalePath)).toBe(true);
   });
 
+  it('refuses to reuse an existing registered worktree for a different explicit branch', async () => {
+    const pool = new WorktreePool({ projectRoot: workingDir });
+    const handle = await pool.allocate({ agentId: 'coder', sessionId: 'explicit-branch-stale' });
+    const retryPool = new WorktreePool({ projectRoot: workingDir });
+
+    await git(workingDir, ['fetch', 'origin', 'main']);
+    await expect(
+      retryPool.allocate({
+        agentId: 'coder',
+        sessionId: 'explicit-branch-stale',
+        branchName: 'codex/rejected-branch',
+        sourceRef: 'origin/main',
+        deleteBranchOnRelease: false,
+      }),
+    ).rejects.toThrow('cannot reuse it for codex/rejected-branch');
+
+    await pool.release(handle.id);
+  });
+
   // -------------------------------------------------------------------------
   // 7. Idempotent allocate: same id → same handle
   // -------------------------------------------------------------------------

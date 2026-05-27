@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import type { SessionRow } from '@agentforge/db';
 import { AgentRuntime, loadAgentConfig, type RunResult } from '../agent-runtime/index.js';
 import { writeMemoryEntry, type CycleMemoryEntry } from '../memory/types.js';
@@ -130,7 +130,8 @@ export function recordManualInvokeMemory(
 export async function invokeAgentRun(
   options: InvokeAgentRunOptions,
 ): Promise<InvokeAgentRunResult> {
-  const agents = await listCatalogAgents(options.projectRoot);
+  const projectRoot = resolve(options.projectRoot);
+  const agents = await listCatalogAgents(projectRoot);
   const selectedAgent = resolveCatalogAgent(options.agent, agents);
 
   if (!selectedAgent) {
@@ -138,7 +139,7 @@ export async function invokeAgentRun(
   }
 
   const manager = new WorkspaceManager({
-    dataDir: options.dataDir ?? join(options.projectRoot, '.agentforge', 'v5'),
+    dataDir: options.dataDir ?? join(projectRoot, '.agentforge', 'v5'),
   });
 
   try {
@@ -147,7 +148,7 @@ export async function invokeAgentRun(
     // system prompt before invocation (ADR 0001 — Phase 2 comms wiring).
     const config = await loadAgentConfig(
       selectedAgent.agentId,
-      join(options.projectRoot, '.agentforge'),
+      join(projectRoot, '.agentforge'),
       { adapter },
     );
 
@@ -167,6 +168,7 @@ export async function invokeAgentRun(
     try {
       result = await runtime.run({
         task: options.task,
+        cwd: projectRoot,
         ...(options.runtimeMode ? { runtimeMode: options.runtimeMode } : {}),
         ...(options.allowedTools?.length ? { allowedTools: options.allowedTools } : {}),
         ...(options.budgetUsd !== undefined ? { budgetUsd: options.budgetUsd } : {}),
@@ -182,7 +184,7 @@ export async function invokeAgentRun(
       });
     } catch (err) {
       recordManualInvokeMemory({
-        projectRoot: options.projectRoot,
+        projectRoot,
         agent: selectedAgent,
         task: options.task,
         error: err instanceof Error ? err.message : String(err),
@@ -190,7 +192,7 @@ export async function invokeAgentRun(
       throw err;
     }
     recordManualInvokeMemory({
-      projectRoot: options.projectRoot,
+      projectRoot,
       agent: selectedAgent,
       task: options.task,
       result,
