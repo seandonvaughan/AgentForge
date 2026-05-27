@@ -76,6 +76,20 @@
         "packages/cli/src/commands/autonomous.ts",
         "packages/cli/src/__tests__/cycle-list-show.test.ts"
       ]
+    },
+    {
+      "id": "dogfood-006",
+      "title": "Add JSON output for loop guard status",
+      "description": "Make the new loop guard status command automation-friendly by adding `--json` to `agentforge cycle loop-guard status`. The JSON output should include projectRoot, stateFileStatus, halted, failures, lastCycleId, lastOutcome, lastUpdatedAt, and haltedReason when present. Preserve the current text output when `--json` is omitted. Reuse the existing loop guard status parser so malformed or missing state reports the same semantics in both modes. Add focused CLI tests for missing state JSON, valid halted JSON, corrupt state JSON, and unchanged text output.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": ["feature", "dogfood", "autonomous", "operator-visibility", "json", "cli"],
+      "source": "dogfood-2026-05-27",
+      "files": [
+        "packages/cli/src/commands/autonomous.ts",
+        "packages/cli/src/__tests__/loop-guard-command.test.ts",
+        "CHANGELOG.md"
+      ]
     }
   ]
 }
