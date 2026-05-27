@@ -32,6 +32,20 @@
         "packages/cli/src/__tests__/backlog-command.test.ts",
         "scripts/check-help-output.mjs"
       ]
+    },
+    {
+      "id": "dogfood-003",
+      "title": "Add JSON output for backlog status",
+      "description": "Extend `agentforge backlog status --project-root .` with an optional `--json` flag for automation. The JSON output must be deterministic and include the same normalized data the text status uses: projectRoot, activeBacklogFileItems, completedLedgerEntries, quarantinedIds, unattendedExcludedBacklogItems, and activeScopedItems with id/title fields. Keep the existing text output unchanged when `--json` is omitted. Reuse the current backlog ID normalization and malformed-file tolerance; do not change cycle execution semantics. Add focused CLI tests for JSON output shape, deterministic ordering, and parity with completed/quarantine filtering. Update the help-output check if needed.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": ["feature", "dogfood", "autonomous", "backlog", "cli"],
+      "source": "dogfood-2026-05-27",
+      "files": [
+        "packages/cli/src/commands/backlog.ts",
+        "packages/cli/src/__tests__/backlog-command.test.ts",
+        "scripts/check-help-output.mjs"
+      ]
     }
   ]
 }
