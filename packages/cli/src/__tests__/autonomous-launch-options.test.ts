@@ -3,6 +3,13 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+const CYCLE_LAUNCH_ENV_KEYS = [
+  'AUTONOMOUS_EFFORT_CAP',
+  'AUTONOMOUS_FALLBACK_ENABLED',
+  'AUTONOMOUS_MAX_AGENTS',
+  'AUTONOMOUS_MODEL_CAP',
+] as const;
+
 const captures = vi.hoisted(() => ({
   runtimeAdapterOptions: [] as Array<Record<string, unknown>>,
   cycleRunnerOptions: [] as Array<Record<string, unknown>>,
@@ -158,9 +165,15 @@ describe('cycle launch options', () => {
   let projectRoot: string;
   let consoleLog: ReturnType<typeof vi.spyOn>;
   let consoleError: ReturnType<typeof vi.spyOn>;
+  let savedLaunchEnv: Record<string, string | undefined>;
 
   beforeEach(() => {
     projectRoot = mkdtempSync(join(tmpdir(), 'agentforge-cycle-launch-options-'));
+    savedLaunchEnv = {};
+    for (const key of CYCLE_LAUNCH_ENV_KEYS) {
+      savedLaunchEnv[key] = process.env[key];
+      delete process.env[key];
+    }
     captures.runtimeAdapterOptions.length = 0;
     captures.cycleRunnerOptions.length = 0;
     captures.scoringPipelineOptions.length = 0;
@@ -173,6 +186,14 @@ describe('cycle launch options', () => {
     consoleLog.mockRestore();
     consoleError.mockRestore();
     rmSync(projectRoot, { recursive: true, force: true });
+    for (const key of CYCLE_LAUNCH_ENV_KEYS) {
+      const value = savedLaunchEnv[key];
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
     process.exitCode = undefined;
   });
 
