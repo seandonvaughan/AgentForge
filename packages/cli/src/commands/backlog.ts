@@ -11,6 +11,7 @@ interface BacklogCompleteOptions {
 
 interface BacklogStatusOptions {
   projectRoot: string;
+  json?: boolean;
 }
 
 interface CompletedBacklogEntry {
@@ -59,6 +60,7 @@ export function registerBacklogCommand(program: Command): void {
     .command('status')
     .description('Show deterministic backlog visibility before cycle replay')
     .option('--project-root <path>', 'Project root', process.cwd())
+    .option('--json', 'Print machine-readable JSON')
     .action(async (opts: BacklogStatusOptions) => {
       try {
         await printBacklogStatus(opts);
@@ -164,6 +166,18 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
       if (idCompare !== 0) return idCompare;
       return a.title.localeCompare(b.title);
     });
+
+  if (opts.json) {
+    console.log(JSON.stringify({
+      projectRoot,
+      activeBacklogFileItems: activeItems.length,
+      completedLedgerEntries: completed.entries.length,
+      quarantinedIds: quarantineIds.size,
+      unattendedExcludedBacklogItems: unattendedExcluded.length,
+      activeScopedItems: activeScoped.map((item) => ({ id: item.id, title: item.title })),
+    }, null, 2));
+    return;
+  }
 
   console.log('[backlog] status');
   console.log(`  projectRoot: ${projectRoot}`);
