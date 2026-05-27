@@ -36,4 +36,20 @@ describe("docs/runtime-modes.md", () => {
 
     expect(documentedUnion).toBe(expectedUnion);
   });
+
+  it("describes auto mode as registering the available transports", () => {
+    const autoSectionMatch = docsContent.match(
+      /### `auto` \(default\)([\s\S]*?)### `sdk`/,
+    );
+    expect(autoSectionMatch).not.toBeNull();
+
+    const autoSection = autoSectionMatch?.[1] ?? "";
+
+    expect(autoSection).toMatch(/available Anthropic SDK/i);
+    expect(autoSection).toMatch(/Claude Code compatibility/i);
+    expect(autoSection).toMatch(/Codex\s+CLI/i);
+    expect(autoSection).toMatch(/OpenAI\s+SDK/i);
+    expect(autoSection).toMatch(/historical Claude-first preference/i);
+    expect(autoSection).not.toMatch(/Both transports are registered/i);
+  });
 });
