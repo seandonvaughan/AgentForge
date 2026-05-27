@@ -24,6 +24,8 @@ export interface AuditPhaseOptions {
   agentId?: string;
   /** Max entries to inject per type. Defaults to 10. */
   memoryLimit?: number;
+  /** Optional per-request runtime timeout for the audit agent subprocess. */
+  timeoutMs?: number;
 }
 
 export function makeAuditPhaseHandler(options: AuditPhaseOptions = {}) {
@@ -126,6 +128,7 @@ export async function runAuditPhase(
   const allowedTools = options.allowedTools ?? AUDIT_PHASE_DEFAULT_TOOLS;
   const agentId = options.agentId ?? 'researcher';
   const memoryLimit = options.memoryLimit ?? 10;
+  const timeoutMs = options.timeoutMs;
 
   ctx.bus.publish('sprint.phase.started', {
     sprintId: ctx.sprintId,
@@ -170,7 +173,10 @@ Produce a 1-paragraph executive summary + a bulleted list of 5-10 concrete findi
   let error: string | undefined;
 
   try {
-    const result = await ctx.runtime.run(agentId, task, { allowedTools });
+    const result = await ctx.runtime.run(agentId, task, {
+      allowedTools,
+      ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+    });
     findings = typeof result?.output === 'string' ? result.output : '';
     costUsd = typeof result?.costUsd === 'number' ? result.costUsd : 0;
     if (typeof (result as any)?.model === 'string') model = (result as any).model;
@@ -225,9 +231,11 @@ Produce a 1-paragraph executive summary + a bulleted list of 5-10 concrete findi
             agentId,
             findings,
             costUsd,
+            status,
             durationMs,
             startedAt: new Date(startedAt).toISOString(),
             completedAt: new Date().toISOString(),
+            ...(error ? { error } : {}),
             // Number of cross-cycle memory entries actually injected into this
             // audit prompt.  Used by computeMemoryStats() (dashboard flywheel) to
             // compute a precise "memory hit rate" — cycles where this is > 0 are
