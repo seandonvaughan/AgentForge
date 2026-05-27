@@ -181,7 +181,11 @@ export class ProposalToBacklog {
         : Array.isArray((parsed as { ids?: unknown } | null)?.ids)
           ? (parsed as { ids: unknown[] }).ids
           : [];
-      return new Set(ids.filter((x): x is string => typeof x === 'string'));
+      return new Set(
+        ids
+          .map((x) => (typeof x === 'string' ? normalizeBacklogId(x) : null))
+          .filter((id): id is string => id !== null),
+      );
     } catch {
       return new Set();
     }
@@ -213,9 +217,7 @@ export class ProposalToBacklog {
               ? obj['id']
               : null;
           if (rawId === null) return null;
-          const trimmed = rawId.trim();
-          if (!trimmed) return null;
-          return trimmed;
+          return normalizeBacklogId(rawId);
         })
         .filter((id): id is string => typeof id === 'string');
       return new Set(ids);
@@ -437,6 +439,8 @@ function normalizeBacklogFileItem(raw: unknown, fileName: string): BacklogItem |
   const idRaw = typeof obj['id'] === 'string' && obj['id'].trim()
     ? obj['id'].trim()
     : `${fileName}-${title}`;
+  const normalizedId = normalizeBacklogId(idRaw);
+  if (!normalizedId) return null;
   const priorityRaw = obj['priority'];
   const priority = priorityRaw === 'P0' || priorityRaw === 'P1' || priorityRaw === 'P2'
     ? priorityRaw
@@ -452,7 +456,7 @@ function normalizeBacklogFileItem(raw: unknown, fileName: string): BacklogItem |
     : costFromComplexity(obj['estimatedComplexity']);
 
   const item: BacklogItem = {
-    id: `backlog-${idRaw.replace(/\W/g, '-')}`,
+    id: normalizedId,
     title,
     description: typeof obj['description'] === 'string' && obj['description'].trim()
       ? obj['description'].trim()
@@ -496,4 +500,17 @@ function costFromComplexity(value: unknown): number | undefined {
     default:
       return undefined;
   }
+}
+
+function normalizeBacklogId(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  let normalized = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  normalized = normalized.replace(/^-+|-+$/g, '');
+  if (!normalized) return null;
+
+  if (normalized === 'backlog') return null;
+  if (normalized.startsWith('backlog-')) return normalized;
+  return `backlog-${normalized}`;
 }

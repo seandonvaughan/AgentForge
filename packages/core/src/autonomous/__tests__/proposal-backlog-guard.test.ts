@@ -138,6 +138,21 @@ describe('quarantine', () => {
     const items = await new ProposalToBacklog(emptyAdapter, root, cfg()).build();
     expect(items.map((i) => i.title)).toContain('Keep me');
   });
+
+  it('normalizes whitespace/punctuation/case quarantine ids and drops blank/un-normalizable ids', async () => {
+    writeBacklog([
+      { id: 'keep', title: 'Keep me', priority: 'P1', estimatedComplexity: 'low', files: ['a.ts'] },
+      { id: 'sPaCe Case!!!', title: 'Quarantined item', priority: 'P1', estimatedComplexity: 'low', files: ['b.ts'] },
+      { id: 'backlog', title: 'Prefix only item', priority: 'P1', estimatedComplexity: 'low', files: ['c.ts'] },
+    ]);
+    writeQuarantine(['  Backlog Space Case  ', '!!!', '   ']);
+
+    const items = await new ProposalToBacklog(emptyAdapter, root, cfg()).build();
+    const titles = items.map((i) => i.title);
+    expect(titles).toContain('Keep me');
+    expect(titles).not.toContain('Quarantined item');
+    expect(titles).not.toContain('Prefix only item');
+  });
 });
 
 describe('completed ledger replay guard', () => {
@@ -177,16 +192,18 @@ describe('completed ledger replay guard', () => {
     expect(items.map((i) => i.title)).toContain('Keep me');
   });
 
-  it('normalizes whitespace-padded item ids and legacy id fields in completed.json', async () => {
+  it('normalizes mixed raw/canonical completed ids across itemId and legacy id fields', async () => {
     writeBacklog([
       { id: 'keep', title: 'Keep me', priority: 'P1', estimatedComplexity: 'low', files: ['a.ts'] },
-      { id: 'done', title: 'Done item', priority: 'P1', estimatedComplexity: 'low', files: ['b.ts'] },
-      { id: 'legacy', title: 'Legacy done item', priority: 'P1', estimatedComplexity: 'low', files: ['c.ts'] },
+      { id: 'Raw Done', title: 'Raw done item', priority: 'P1', estimatedComplexity: 'low', files: ['b.ts'] },
+      { id: 'backlog-canonical-done', title: 'Canonical done item', priority: 'P1', estimatedComplexity: 'low', files: ['c.ts'] },
+      { id: 'legacy done', title: 'Legacy done item', priority: 'P1', estimatedComplexity: 'low', files: ['d.ts'] },
     ]);
     writeCompletedLedger({
       entries: [
-        { itemId: '  backlog-done  ', completedAt: '2026-05-27T00:00:00.000Z' },
-        { id: '\tbacklog-legacy\n', completedAt: '2026-05-27T00:00:00.000Z' },
+        { itemId: '  raw done  ', completedAt: '2026-05-27T00:00:00.000Z' },
+        { itemId: '\tBACKLOG-canonical-done\n', completedAt: '2026-05-27T00:00:00.000Z' },
+        { id: ' Legacy Done!!! ', completedAt: '2026-05-27T00:00:00.000Z' },
         { itemId: '   ' },
       ],
     });
@@ -194,7 +211,31 @@ describe('completed ledger replay guard', () => {
     const items = await new ProposalToBacklog(emptyAdapter, root, cfg()).build();
     const titles = items.map((i) => i.title);
     expect(titles).toContain('Keep me');
-    expect(titles).not.toContain('Done item');
+    expect(titles).not.toContain('Raw done item');
+    expect(titles).not.toContain('Canonical done item');
     expect(titles).not.toContain('Legacy done item');
+  });
+
+  it('filters duplicate backlog items that normalize to the same completed id', async () => {
+    writeBacklog([
+      { id: 'alpha', title: 'Alpha one', priority: 'P1', estimatedComplexity: 'low', files: ['a.ts'] },
+      { id: 'ALPHA!!!', title: 'Alpha two', priority: 'P1', estimatedComplexity: 'low', files: ['b.ts'] },
+      { id: 'beta', title: 'Beta keep', priority: 'P1', estimatedComplexity: 'low', files: ['c.ts'] },
+    ]);
+    writeCompletedLedger({
+      entries: [{ itemId: ' backlog alpha ', completedAt: '2026-05-27T00:00:00.000Z' }],
+    });
+
+    const items = await new ProposalToBacklog(emptyAdapter, root, cfg()).build();
+    const titles = items.map((i) => i.title);
+    expect(titles).toContain('Beta keep');
+    expect(titles).not.toContain('Alpha one');
+    expect(titles).not.toContain('Alpha two');
+  });
+
+  it('tolerates a missing backlog directory', async () => {
+    rmSync(join(root, '.agentforge', 'backlog'), { recursive: true, force: true });
+    const items = await new ProposalToBacklog(emptyAdapter, root, cfg()).build();
+    expect(items).toEqual([]);
   });
 });

@@ -44,7 +44,7 @@ assertCommand(["team", "--help"], ["forge", "genesis", "rebuild", "reforge"]);
 assertCommand(["team", "reforge", "--help"], ["apply", "list", "rollback", "status"]);
 assertCommand(["team-sessions", "--help"], ["list", "delete"]);
 assertCommand(["workspaces", "--help"], ["list", "add", "remove", "default"]);
-assertCommand(["backlog", "--help"], ["complete"]);
+assertCommand(["backlog", "--help"], ["complete", "status"]);
 
 if (failures.length > 0) {
   console.error("CLI help output check failed:");
