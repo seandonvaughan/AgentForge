@@ -105,6 +105,64 @@ describe('cycle loop-guard commands', () => {
     expect(output).toContain('Failures:     3');
   });
 
+  it('prints machine-readable JSON status with --json', async () => {
+    const statePath = join(projectRoot, '.agentforge', 'loop-state.json');
+    mkdirSync(join(projectRoot, '.agentforge'), { recursive: true });
+    writeFileSync(statePath, JSON.stringify({
+      v: 1,
+      consecutiveFailedCycles: 1,
+      lastCycleId: '12345678-1234-1234-1234-123456789012',
+      lastOutcome: 'failed',
+      lastUpdatedAt: '2026-05-27T00:00:00.000Z',
+    }, null, 2));
+
+    await runCli('cycle', 'loop-guard', 'status', '--project-root', projectRoot, '--json');
+
+    const parsed = JSON.parse(stdout()) as {
+      path: string;
+      fileStatus: string;
+      halted: boolean;
+      reason: string | null;
+      failures: number;
+      lastCycleId: string | null;
+      lastOutcome: string | null;
+      updatedAt: string;
+    };
+    expect(parsed.path).toBe(statePath);
+    expect(parsed.fileStatus).toBe('valid');
+    expect(parsed.halted).toBe(false);
+    expect(parsed.reason).toBeNull();
+    expect(parsed.failures).toBe(1);
+    expect(parsed.lastCycleId).toBe('12345678-1234-1234-1234-123456789012');
+    expect(parsed.lastOutcome).toBe('failed');
+    expect(parsed.updatedAt).toBe('2026-05-27T00:00:00.000Z');
+  });
+
+  it('prints defaulted machine-readable JSON status for corrupt state with --json', async () => {
+    const statePath = join(projectRoot, '.agentforge', 'loop-state.json');
+    mkdirSync(join(projectRoot, '.agentforge'), { recursive: true });
+    writeFileSync(statePath, '{ not json');
+
+    await runCli('cycle', 'loop-guard', 'status', '--project-root', projectRoot, '--json');
+
+    const parsed = JSON.parse(stdout()) as {
+      fileStatus: string;
+      halted: boolean;
+      reason: string | null;
+      failures: number;
+      lastCycleId: string | null;
+      lastOutcome: string | null;
+      updatedAt: string;
+    };
+    expect(parsed.fileStatus).toBe('corrupt');
+    expect(parsed.halted).toBe(false);
+    expect(parsed.reason).toBeNull();
+    expect(parsed.failures).toBe(0);
+    expect(parsed.lastCycleId).toBeNull();
+    expect(parsed.lastOutcome).toBeNull();
+    expect(parsed.updatedAt).toBe('1970-01-01T00:00:00.000Z');
+  });
+
   it('resets loop guard state file to defaults', async () => {
     const statePath = join(projectRoot, '.agentforge', 'loop-state.json');
     mkdirSync(join(projectRoot, '.agentforge'), { recursive: true });
