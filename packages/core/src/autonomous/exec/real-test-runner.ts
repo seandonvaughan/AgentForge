@@ -17,6 +17,27 @@ import { buildVerificationSubprocessEnv } from '../verification-env.js';
 
 const execFileAsync = promisify(execFile);
 
+const AGENTFORGE_CYCLE_CONTROL_ENV_KEYS = [
+  'AGENTFORGE_UNATTENDED',
+  'AGENTFORGE_MAX_FAILED_CYCLES',
+] as const;
+
+function buildTestSubprocessEnv(): NodeJS.ProcessEnv {
+  const env = buildVerificationSubprocessEnv();
+
+  for (const key of Object.keys(env)) {
+    if (key.startsWith('AUTONOMOUS_')) {
+      delete env[key];
+    }
+  }
+
+  for (const key of AGENTFORGE_CYCLE_CONTROL_ENV_KEYS) {
+    delete env[key];
+  }
+
+  return env;
+}
+
 export interface TestProgressBus {
   publish: (topic: string, payload: unknown) => void;
 }
@@ -104,7 +125,7 @@ export class RealTestRunner {
         cwd: this.cwd,
         timeout: timeoutMs,
         maxBuffer: 50 * 1024 * 1024,
-        env: buildVerificationSubprocessEnv(),
+        env: buildTestSubprocessEnv(),
         windowsHide: true,
         ...(invocation.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
       });
@@ -169,7 +190,7 @@ export class RealTestRunner {
     try {
       const child = spawn(file, args, {
         cwd: this.cwd,
-        env: buildVerificationSubprocessEnv(),
+        env: buildTestSubprocessEnv(),
         stdio: ['ignore', 'pipe', 'pipe'],
         timeout: timeoutMs,
         windowsHide: true,

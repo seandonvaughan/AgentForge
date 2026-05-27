@@ -148,4 +148,44 @@ describe('RealTestRunner (unit, mocked execFile)', () => {
       }
     }
   });
+
+  it('does not leak autonomous cycle-control env into the vitest process', async () => {
+    const { execFile } = await import('node:child_process');
+    const keys = [
+      'AUTONOMOUS_EFFORT_CAP',
+      'AUTONOMOUS_MODEL_CAP',
+      'AUTONOMOUS_MAX_AGENTS',
+      'AUTONOMOUS_CYCLE_ID',
+      'AGENTFORGE_UNATTENDED',
+      'AGENTFORGE_MAX_FAILED_CYCLES',
+    ];
+    const previous = new Map(keys.map((key) => [key, process.env[key]]));
+
+    try {
+      for (const key of keys) {
+        process.env[key] = key === 'AUTONOMOUS_EFFORT_CAP' ? 'max' : 'cycle-control';
+      }
+
+      const runner = new RealTestRunner(tmpDir, DEFAULT_CYCLE_CONFIG.testing, null);
+      await runner.run(cycleId);
+
+      const calls = (execFile as unknown as ReturnType<typeof vi.fn>).mock.calls;
+      const [, , opts] = calls.at(-1)!;
+      const env = (opts as { env: NodeJS.ProcessEnv }).env;
+      expect(env['CI']).toBe('1');
+      expect(env['NO_COLOR']).toBe('1');
+      for (const key of keys) {
+        expect(env[key]).toBeUndefined();
+      }
+    } finally {
+      for (const key of keys) {
+        const value = previous.get(key);
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
+    }
+  });
 });
