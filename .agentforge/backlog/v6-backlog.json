@@ -46,6 +46,21 @@
         "packages/cli/src/__tests__/backlog-command.test.ts",
         "scripts/check-help-output.mjs"
       ]
+    },
+    {
+      "id": "dogfood-004",
+      "title": "Bound audit phase runtime for one-item cycles",
+      "description": "Make curated one-item autonomous cycles faster and more predictable by adding a bounded audit timeout. Add a `timeoutMs` option to `runAuditPhase` and pass it through to `ctx.runtime.run`. When the timeout causes the audit agent to fail, preserve the existing hard-fail behavior and write the audit artifact with failure metadata so operators can see the timeout. In the CLI cycle launcher, use a 5-minute audit timeout only when the effective cycle item cap is 1; keep multi-item/default cycles on the current runtime default. Do not weaken review, gate, branch verification, or test execution. Add focused tests proving `timeoutMs` is forwarded, timeout failures write status/error in `audit.json`, and one-item launch wiring uses the bounded audit handler while multi-item launches preserve the default.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "tags": ["feature", "dogfood", "autonomous", "cycle-speed"],
+      "source": "dogfood-2026-05-27",
+      "files": [
+        "packages/core/src/autonomous/phase-handlers/audit-phase.ts",
+        "tests/autonomous/unit/audit-phase.test.ts",
+        "packages/cli/src/commands/autonomous.ts",
+        "packages/cli/src/__tests__/autonomous-launch-options.test.ts"
+      ]
     }
   ]
 }
