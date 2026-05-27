@@ -1,6 +1,6 @@
 {
   "version": "v6-backlog",
-  "description": "Dogfood backlog (2026-05-27). First guided large cycle: make the loop better at not repeating shipped backlog work before moving into the rest of the five-cycle streak.",
+  "description": "Dogfood backlog (2026-05-27). Guided cycles make the loop better at selecting, shipping, auditing, and not repeating AgentForge work before moving into autonomous streak runs.",
   "northStar": "One unforked, runtime-agnostic AgentForge (Claude + Codex, best provider x model x effort per job) whose autonomous loop reliably ships, then builds AgentForge Cloud.",
   "items": [
     {
@@ -17,6 +17,20 @@
         "packages/cli/src/bin.ts",
         "packages/cli/src/commands/backlog.ts",
         "packages/cli/src/__tests__/backlog-command.test.ts"
+      ]
+    },
+    {
+      "id": "dogfood-002",
+      "title": "Add backlog status command for cycle replay visibility",
+      "description": "Extend the new `agentforge backlog` CLI surface with a read-only `status` subcommand that helps operators see what the next cycle can select before spending runtime. It should support `agentforge backlog status --project-root .` and print a concise deterministic summary including counts for active backlog-file items, completed ledger entries, quarantined ids, and unattended-excluded backlog items. It should normalize backlog-file ids exactly like ProposalToBacklog (`backlog-<id>`), tolerate missing or malformed completed/quarantine files, and include item ids/titles for active scoped items. Add focused tests in the backlog CLI test file. Do not change cycle execution semantics.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "tags": ["feature", "dogfood", "autonomous", "backlog", "cli"],
+      "source": "dogfood-2026-05-27",
+      "files": [
+        "packages/cli/src/commands/backlog.ts",
+        "packages/cli/src/__tests__/backlog-command.test.ts",
+        "scripts/check-help-output.mjs"
       ]
     }
   ]
