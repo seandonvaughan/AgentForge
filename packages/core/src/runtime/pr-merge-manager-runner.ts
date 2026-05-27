@@ -169,6 +169,16 @@ export interface CiBucket {
   bucket: string;
 }
 
+type AggregateCiState = 'green' | 'failing' | 'pending' | 'unknown';
+
+const FAILING_CI_BUCKETS = new Set(['fail', 'failing', 'error', 'cancel', 'cancelled', 'timed_out']);
+const PENDING_CI_BUCKETS = new Set(['pending', 'queued', 'in_progress', 'waiting']);
+const GREEN_CI_BUCKETS = new Set(['pass', 'success', 'skipping', 'skipped']);
+
+function normalizeCiBucket(bucket: string): string {
+  return bucket.toLowerCase();
+}
+
 /**
  * Fetch CI check results for a PR number.
  * Returns an empty array on any error (auth failure, PR not found, etc.)
@@ -201,16 +211,16 @@ function summariseCi(checks: CiBucket[]): string {
   if (checks.length === 0) return 'UNKNOWN (CI data unavailable)';
 
   const failing = checks.filter((c) =>
-    ['fail', 'error'].includes(c.bucket.toLowerCase()),
+    FAILING_CI_BUCKETS.has(normalizeCiBucket(c.bucket)),
   );
   const pending = checks.filter((c) =>
-    ['pending', 'queued'].includes(c.bucket.toLowerCase()),
+    PENDING_CI_BUCKETS.has(normalizeCiBucket(c.bucket)),
   );
   const passing = checks.filter((c) =>
-    ['pass', 'success'].includes(c.bucket.toLowerCase()),
+    ['pass', 'success'].includes(normalizeCiBucket(c.bucket)),
   );
   const skipped = checks.filter((c) =>
-    ['skipped'].includes(c.bucket.toLowerCase()),
+    ['skipping', 'skipped'].includes(normalizeCiBucket(c.bucket)),
   );
 
   if (failing.length > 0) {
@@ -223,6 +233,53 @@ function summariseCi(checks: CiBucket[]): string {
     return `PASS (${passing.length} passing, ${skipped.length} skipped)`;
   }
   return 'UNKNOWN';
+}
+
+function getAggregateCiState(checks: CiBucket[]): AggregateCiState {
+  if (checks.length === 0) {
+    return 'unknown';
+  }
+
+  let hasPending = false;
+  let hasUnknown = false;
+
+  for (const check of checks) {
+    const bucket = normalizeCiBucket(check.bucket);
+    if (FAILING_CI_BUCKETS.has(bucket)) {
+      return 'failing';
+    }
+    if (PENDING_CI_BUCKETS.has(bucket)) {
+      hasPending = true;
+      continue;
+    }
+    if (!GREEN_CI_BUCKETS.has(bucket)) {
+      hasUnknown = true;
+    }
+  }
+
+  if (hasPending) {
+    return 'pending';
+  }
+  if (hasUnknown) {
+    return 'unknown';
+  }
+
+  return 'green';
+}
+
+function getCiMergeBlockReason(checks: CiBucket[]): string | undefined {
+  const state = getAggregateCiState(checks);
+
+  switch (state) {
+    case 'failing':
+      return 'CI is failing';
+    case 'pending':
+      return 'CI is still pending';
+    case 'unknown':
+      return 'CI status is unknown or unavailable';
+    case 'green':
+      return undefined;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -306,6 +363,17 @@ async function executeDecision(
   const { prNumber, action } = decision;
 
   if (action === 'merge') {
+    const checks = await fetchCiChecks(prNumber, projectRoot);
+    const blockReason = getCiMergeBlockReason(checks);
+
+    if (blockReason) {
+      return {
+        prNumber,
+        action,
+        error: `Blocked merge: ${blockReason}`,
+      };
+    }
+
     try {
       const { stdout } = await execFile(
         'gh',

@@ -17,7 +17,8 @@
  *  9.  Malformed JSON response → throws PrMergeManagerParseError
  * 10.  Valid JSON wrong shape  → throws PrMergeManagerParseError
  * 11.  CI fetch error          → falls back to UNKNOWN CI, still runs
- * 12.  gh merge fails          → ExecutedDecision has error field, does not throw
+ * 12.  unknown CI merge        → model merge decision is blocked before gh merge
+ * 13.  gh merge fails          → ExecutedDecision has error field, does not throw
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
@@ -124,6 +125,12 @@ const THREE_PR_RESPONSE = JSON.stringify({
     },
   ],
 });
+
+function checksOutput(bucket: string): string {
+  return JSON.stringify([{ name: 'build', bucket }]);
+}
+
+const PASSING_CHECKS = checksOutput('pass');
 
 /**
  * Build a promisify-compatible execFile stub.
@@ -258,6 +265,10 @@ describe('runPrMergeManager', () => {
     mockExecFile.mockImplementation(
       (cmd: string, args: string[], _opts: unknown, cb: (err: Error | null, r?: { stdout: string }) => void) => {
         ghCalls.push({ cmd, args });
+        if (args.includes('checks')) {
+          cb(null, { stdout: PASSING_CHECKS });
+          return;
+        }
         cb(null, { stdout: 'merged' });
       },
     );
@@ -357,6 +368,10 @@ describe('runPrMergeManager', () => {
     mockExecFile.mockImplementation(
       (cmd: string, args: string[], _opts: unknown, cb: (err: Error | null, r?: { stdout: string }) => void) => {
         ghCalls.push({ cmd, args });
+        if (args.includes('checks')) {
+          cb(null, { stdout: PASSING_CHECKS });
+          return;
+        }
         cb(null, { stdout: 'ok' });
       },
     );
@@ -500,10 +515,90 @@ describe('runPrMergeManager', () => {
     expect(runtimeCall[0].task).toContain('UNKNOWN');
   });
 
-  // 12. gh merge fails → error field set, does not throw
+  // 12. model says merge but CI is unknown → merge is blocked before gh merge
+  it('blocks merge decisions when CI is unknown even if the model says merge', async () => {
+    const ghCalls: Array<{ cmd: string; args: string[] }> = [];
+    mockExecFile.mockImplementation(
+      (cmd: string, args: string[], _opts: unknown, cb: (err: Error | null, r?: { stdout: string }) => void) => {
+        ghCalls.push({ cmd, args });
+        if (Array.isArray(args) && args.includes('checks')) {
+          cb(new Error('gh auth token not found'));
+          return;
+        }
+        cb(null, { stdout: 'should not merge' });
+      },
+    );
+
+    writeLedger(projectRoot, 'cycle-v22', [makeEntry()]);
+    const response = JSON.stringify({
+      decisions: [{ prNumber: 1234, action: 'merge', reason: 'model ignored unknown CI' }],
+    });
+    const runtime = makeRuntime(response);
+
+    const result = await runPrMergeManager({
+      projectRoot,
+      cycleId: 'cycle-v22',
+      runtime,
+      dryRun: false,
+    });
+
+    expect(result.decisions[0]!.action).toBe('merge');
+    expect(result.executed[0]!.action).toBe('merge');
+    expect(result.executed[0]!.error).toMatch(/Blocked merge: CI status is unknown/i);
+
+    const mergeCalls = ghCalls.filter(
+      (c) => c.args.includes('merge') && c.args.includes('1234'),
+    );
+    expect(mergeCalls).toHaveLength(0);
+  });
+
+  it.each([
+    ['fail', /Blocked merge: CI is failing/i],
+    ['queued', /Blocked merge: CI is still pending/i],
+    ['mystery', /Blocked merge: CI status is unknown/i],
+  ])('blocks merge decisions when CI bucket is %s', async (bucket, expectedError) => {
+    const ghCalls: Array<{ cmd: string; args: string[] }> = [];
+    mockExecFile.mockImplementation(
+      (cmd: string, args: string[], _opts: unknown, cb: (err: Error | null, r?: { stdout: string }) => void) => {
+        ghCalls.push({ cmd, args });
+        if (Array.isArray(args) && args.includes('checks')) {
+          cb(null, { stdout: checksOutput(bucket) });
+          return;
+        }
+        cb(null, { stdout: 'should not merge' });
+      },
+    );
+
+    writeLedger(projectRoot, 'cycle-v22', [makeEntry()]);
+    const response = JSON.stringify({
+      decisions: [{ prNumber: 1234, action: 'merge', reason: 'model ignored non-green CI' }],
+    });
+    const runtime = makeRuntime(response);
+
+    const result = await runPrMergeManager({
+      projectRoot,
+      cycleId: 'cycle-v22',
+      runtime,
+      dryRun: false,
+    });
+
+    expect(result.executed[0]!.action).toBe('merge');
+    expect(result.executed[0]!.error).toMatch(expectedError);
+
+    const mergeCalls = ghCalls.filter(
+      (c) => c.args.includes('merge') && c.args.includes('1234'),
+    );
+    expect(mergeCalls).toHaveLength(0);
+  });
+
+  // 13. gh merge fails → error field set, does not throw
   it('captures gh merge failure in ExecutedDecision.error without throwing', async () => {
     mockExecFile.mockImplementation(
       (_cmd: string, args: string[], _opts: unknown, cb: (err: Error | null, r?: { stdout: string }) => void) => {
+        if (Array.isArray(args) && args.includes('checks')) {
+          cb(null, { stdout: PASSING_CHECKS });
+          return;
+        }
         if (Array.isArray(args) && args.includes('merge')) {
           cb(new Error('gh: PR already merged'));
         } else {
