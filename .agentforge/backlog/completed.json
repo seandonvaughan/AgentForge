@@ -32,6 +32,14 @@
       "cycleId": "dfcc94a9-a353-4728-8fae-9bd0fddce375",
       "prNumber": 187,
       "reason": "Merged retained audit timeout value from failed cycle"
+    },
+    {
+      "itemId": "backlog-dogfood-005",
+      "completedAt": "2026-05-27T23:29:17.761Z",
+      "updatedAt": "2026-05-27T23:29:17.761Z",
+      "cycleId": "6b1e2238-a2bf-49e0-9cb1-936b24a64edc",
+      "prNumber": 188,
+      "reason": "Merged retained loop guard CLI value from failed cycle"
     }
   ]
 }
