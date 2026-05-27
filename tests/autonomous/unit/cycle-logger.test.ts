@@ -276,6 +276,47 @@ describe('CycleLogger', () => {
     expect(data.stage).toBe('run');
   });
 
+  it('flushCycleStatus merges live verify status without losing cost', () => {
+    const cyclePath = join(tmpDir, '.agentforge/cycles', cycleId, 'cycle.json');
+    writeFileSync(cyclePath, JSON.stringify({
+      cycleId,
+      stage: 'run',
+      cost: { totalUsd: 4.20 },
+    }));
+
+    logger.flushCycleStatus({
+      stage: 'verify',
+      status: 'running',
+      currentStep: 'branch-verify',
+      extra: { branchVerification: { branches: 1 } },
+    });
+
+    const data = JSON.parse(readFileSync(cyclePath, 'utf8'));
+    expect(data.stage).toBe('verify');
+    expect(data.status).toBe('running');
+    expect(data.currentStep).toBe('branch-verify');
+    expect(data.branchVerification.branches).toBe(1);
+    expect(data.cost.totalUsd).toBe(4.20);
+    expect(data.lastHeartbeatAt).toMatch(/^\d{4}/);
+    expect(data.updatedAt).toMatch(/^\d{4}/);
+  });
+
+  it('flushCycleStatus does not downgrade a terminal stage', () => {
+    const cyclePath = join(tmpDir, '.agentforge/cycles', cycleId, 'cycle.json');
+    writeFileSync(cyclePath, JSON.stringify({ cycleId, stage: 'failed' }));
+
+    logger.flushCycleStatus({
+      stage: 'verify',
+      status: 'running',
+      currentStep: 'branch-verify',
+    });
+
+    const data = JSON.parse(readFileSync(cyclePath, 'utf8'));
+    expect(data.stage).toBe('failed');
+    expect(data.status).toBe('running');
+    expect(data.currentStep).toBe('branch-verify');
+  });
+
   it('events.jsonl is append-only (each line is one JSON object)', () => {
     logger.logPhaseStart('audit');
     logger.logPhaseStart('plan');

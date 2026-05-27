@@ -20,6 +20,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   mkdtempSync,
   mkdirSync,
+  readFileSync,
   rmSync,
   writeFileSync,
   existsSync,
@@ -356,6 +357,38 @@ describe('verifyMultiPrAgentBranches', () => {
     }
   });
 
+  it('uses configured multi-PR verification commands after required bootstrap', () => {
+    const previous = process.env['AGENTFORGE_MULTI_PR_VERIFY_INSTALL_COMMAND'];
+    delete process.env['AGENTFORGE_MULTI_PR_VERIFY_INSTALL_COMMAND'];
+
+    try {
+      const commands = multiPrVerifyCommands({
+        command: 'corepack pnpm exec vitest run',
+        timeoutMinutes: 1,
+        reporter: 'json',
+        saveRawLog: false,
+        buildCommand: 'corepack pnpm build',
+        typeCheckCommand: 'corepack pnpm exec tsc -b --noEmit',
+        multiPrVerifyCommands: [
+          'corepack pnpm exec vitest run tests/docs/runtime-modes.test.ts',
+        ],
+      });
+
+      expect(commands).toEqual([
+        'corepack pnpm install --frozen-lockfile --prefer-offline',
+        'node -e "require(\'better-sqlite3\'); console.log(\'better-sqlite3 ok\')"',
+        'corepack pnpm --filter @agentforge/dashboard exec svelte-kit sync',
+        'corepack pnpm exec vitest run tests/docs/runtime-modes.test.ts',
+      ]);
+    } finally {
+      if (previous === undefined) {
+        delete process.env['AGENTFORGE_MULTI_PR_VERIFY_INSTALL_COMMAND'];
+      } else {
+        process.env['AGENTFORGE_MULTI_PR_VERIFY_INSTALL_COMMAND'] = previous;
+      }
+    }
+  });
+
   it('uses short deterministic verification worktree names', () => {
     const cycleId = 'aaae9534-72c7-494b-85e1-b5eab6593c25';
     const branch = 'codex/agent-executor-runtime-engineer-aaae9534-72c7-494b-85e1-b5eab6593c25';
@@ -451,6 +484,19 @@ describe('verifyMultiPrAgentBranches', () => {
           agentId: 'coder',
           itemId: 'item-1',
           status: 'failed',
+        }),
+      ]);
+      const artifact = JSON.parse(readFileSync(
+        join(workDir, '.agentforge/cycles/test-cycle-verify-itemresults/multi-pr-branch-verification.json'),
+        'utf8',
+      ));
+      expect(artifact.passed).toBe(false);
+      expect(artifact.capturedAt).toMatch(/^\d{4}/);
+      expect(artifact.results).toEqual([
+        expect.objectContaining({
+          branch: 'autonomous/missing-agent-branch',
+          status: 'failed',
+          cleanupCompleted: true,
         }),
       ]);
     } finally {

@@ -205,4 +205,13 @@ function validateConfig(config: CycleConfig): void {
   if (config.autoReforge !== undefined && typeof config.autoReforge !== 'boolean') {
     throw new Error('autoReforge must be a boolean');
   }
+  if (
+    config.testing.multiPrVerifyCommands !== undefined &&
+    (
+      !Array.isArray(config.testing.multiPrVerifyCommands) ||
+      config.testing.multiPrVerifyCommands.some((cmd) => typeof cmd !== 'string')
+    )
+  ) {
+    throw new Error('testing.multiPrVerifyCommands must be an array of strings');
+  }
 }

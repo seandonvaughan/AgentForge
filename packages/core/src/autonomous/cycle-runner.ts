@@ -328,8 +328,12 @@ export interface MultiPrBranchVerificationEntry {
   branch: string;
   agentId?: string;
   itemId?: string;
-  status: 'passed' | 'failed';
+  status: 'pending' | 'running' | 'passed' | 'failed';
+  currentStep?: string;
   command?: string;
+  commandIndex?: number;
+  commandsCompleted?: number;
+  cleanupCompleted?: boolean;
   durationMs: number;
   stdout?: string;
   stderr?: string;
@@ -471,16 +475,45 @@ export function multiPrVerifyCommands(testing: CycleConfig['testing']): string[]
   const installCommand = installOverride && installOverride.length > 0
     ? installOverride
     : DEFAULT_MULTI_PR_VERIFY_INSTALL_COMMAND;
+  const configuredVerificationCommands = Array.isArray(testing.multiPrVerifyCommands)
+    ? testing.multiPrVerifyCommands
+    : undefined;
+  const verificationCommands =
+    configuredVerificationCommands && configuredVerificationCommands.length > 0
+      ? configuredVerificationCommands
+      : [testing.buildCommand, testing.typeCheckCommand, testing.command];
 
   return [
     installCommand,
     ...REQUIRED_MULTI_PR_VERIFY_BOOTSTRAP_COMMANDS,
-    testing.buildCommand,
-    testing.typeCheckCommand,
-    testing.command,
+    ...verificationCommands,
   ]
     .map((cmd) => cmd?.trim() ?? '')
     .filter((cmd) => cmd.length > 0);
+}
+
+function writeMultiPrBranchVerificationArtifact(
+  cwd: string,
+  cycleId: string,
+  payload: unknown,
+): void {
+  try {
+    const cycleDir = join(cwd, '.agentforge/cycles', cycleId);
+    mkdirSync(cycleDir, { recursive: true });
+    const body =
+      typeof payload === 'object' && payload !== null
+        ? payload as Record<string, unknown>
+        : { value: payload };
+    writeFileSync(
+      join(cycleDir, 'multi-pr-branch-verification.json'),
+      JSON.stringify({
+        ...body,
+        capturedAt: new Date().toISOString(),
+      }, null, 2),
+    );
+  } catch {
+    // Observability-only.
+  }
 }
 
 function safePathWithin(childPath: string, parentPath: string): boolean {
@@ -592,22 +625,26 @@ export async function verifyMultiPrAgentBranches(opts: {
 }): Promise<MultiPrBranchVerificationResult> {
   const runs = readMultiPrBranchRuns(opts.cwd, opts.cycleId);
   if (runs.length === 0) {
-    return {
+    const skipped = {
       passed: true,
       results: [],
       skipped: true,
       reason: 'no agent worktree branches recorded',
     };
+    writeMultiPrBranchVerificationArtifact(opts.cwd, opts.cycleId, skipped);
+    return skipped;
   }
 
   const commands = multiPrVerifyCommands(opts.testing);
   if (commands.length === 0) {
-    return {
+    const skipped = {
       passed: true,
       results: [],
       skipped: true,
       reason: 'no verification commands configured',
     };
+    writeMultiPrBranchVerificationArtifact(opts.cwd, opts.cycleId, skipped);
+    return skipped;
   }
 
   const worktreesRoot = resolve(opts.cwd, '.agentforge', 'worktrees');
@@ -617,19 +654,57 @@ export async function verifyMultiPrAgentBranches(opts: {
   const parallelism = resolveMultiPrVerifyParallelism(runs.length);
   const withGitMutation = createAsyncMutex();
 
+  const snapshot = (detail?: Record<string, unknown>) => {
+    const orderedResults = results.filter(
+      (result): result is MultiPrBranchVerificationEntry => result !== undefined,
+    );
+    writeMultiPrBranchVerificationArtifact(opts.cwd, opts.cycleId, {
+      passed: orderedResults.length === runs.length && orderedResults.every((result) => result.status === 'passed'),
+      results: orderedResults,
+      parallelism,
+      totalBranches: runs.length,
+      commands,
+      ...(detail ?? {}),
+    });
+  };
+
   const verifyRun = async (
     run: MultiPrBranchVerificationRun,
     index: number,
-  ): Promise<MultiPrBranchVerificationEntry> => {
+  ): Promise<void> => {
     const startedAt = Date.now();
     const worktreePath = join(
       worktreesRoot,
       verificationWorktreeName(opts.cycleId, index, run.branch),
     );
+    const baseEntry = {
+      branch: run.branch,
+      ...(run.agentId !== undefined ? { agentId: run.agentId } : {}),
+      ...(run.itemId !== undefined ? { itemId: run.itemId } : {}),
+    };
+    const update = (entry: MultiPrBranchVerificationEntry, detail?: Record<string, unknown>) => {
+      results[index] = entry;
+      snapshot({
+        activeBranch: run.branch,
+        ...(detail ?? {}),
+      });
+    };
 
     try {
+      update({
+        ...baseEntry,
+        status: 'running',
+        currentStep: 'prepare-worktree',
+        durationMs: Date.now() - startedAt,
+      });
       safeRemoveVerificationWorktree(worktreePath, worktreesRoot);
       const ref = await withGitMutation(() => resolveBranchRef(opts.cwd, run.branch));
+      update({
+        ...baseEntry,
+        status: 'running',
+        currentStep: 'add-worktree',
+        durationMs: Date.now() - startedAt,
+      });
       await withGitMutation(() =>
         execFileAsync(
           'git',
@@ -638,42 +713,69 @@ export async function verifyMultiPrAgentBranches(opts: {
         ),
       );
 
-      for (const command of commands) {
+      for (let commandIndex = 0; commandIndex < commands.length; commandIndex++) {
+        const command = commands[commandIndex]!;
         try {
+          update({
+            ...baseEntry,
+            status: 'running',
+            currentStep: 'command',
+            command,
+            commandIndex,
+            commandsCompleted: commandIndex,
+            durationMs: Date.now() - startedAt,
+          });
           await execCommandInDir(worktreePath, command, timeoutMs);
+          update({
+            ...baseEntry,
+            status: 'running',
+            currentStep: 'command-complete',
+            command,
+            commandIndex,
+            commandsCompleted: commandIndex + 1,
+            durationMs: Date.now() - startedAt,
+          });
         } catch (err) {
           const e = err as { stdout?: Buffer | string; stderr?: Buffer | string; message?: string };
-          return {
-            branch: run.branch,
-            ...(run.agentId !== undefined ? { agentId: run.agentId } : {}),
-            ...(run.itemId !== undefined ? { itemId: run.itemId } : {}),
+          update({
+            ...baseEntry,
             status: 'failed',
+            currentStep: 'command',
             command,
+            commandIndex,
+            commandsCompleted: commandIndex,
             durationMs: Date.now() - startedAt,
             stdout: (e.stdout?.toString() ?? '').slice(0, 10_000),
             stderr: (e.stderr?.toString() ?? '').slice(0, 10_000),
             error: extractSubprocessError(err),
-          };
+          });
+          return;
         }
       }
 
-      return {
-        branch: run.branch,
-        ...(run.agentId !== undefined ? { agentId: run.agentId } : {}),
-        ...(run.itemId !== undefined ? { itemId: run.itemId } : {}),
+      update({
+        ...baseEntry,
         status: 'passed',
+        commandsCompleted: commands.length,
         durationMs: Date.now() - startedAt,
-      };
+      });
     } catch (err) {
-      return {
-        branch: run.branch,
-        ...(run.agentId !== undefined ? { agentId: run.agentId } : {}),
-        ...(run.itemId !== undefined ? { itemId: run.itemId } : {}),
+      update({
+        ...baseEntry,
         status: 'failed',
+        currentStep: 'prepare-worktree',
         durationMs: Date.now() - startedAt,
         error: extractSubprocessError(err),
-      };
+      });
     } finally {
+      const current = results[index];
+      if (current?.status === 'running') {
+        update({
+          ...current,
+          currentStep: 'cleanup-worktree',
+          durationMs: Date.now() - startedAt,
+        });
+      }
       try {
         await withGitMutation(() =>
           execFileAsync(
@@ -696,15 +798,36 @@ export async function verifyMultiPrAgentBranches(opts: {
           // Best-effort metadata cleanup only.
         }
       }
+      const afterCleanup = results[index];
+      if (afterCleanup) {
+        update({
+          ...afterCleanup,
+          cleanupCompleted: true,
+          durationMs: Date.now() - startedAt,
+        }, { currentStep: 'cleanup-complete' });
+      }
     }
   };
+
+  for (let index = 0; index < runs.length; index++) {
+    const run = runs[index]!;
+    results[index] = {
+      branch: run.branch,
+      ...(run.agentId !== undefined ? { agentId: run.agentId } : {}),
+      ...(run.itemId !== undefined ? { itemId: run.itemId } : {}),
+      status: 'pending',
+      currentStep: 'queued',
+      durationMs: 0,
+    };
+  }
+  snapshot({ currentStep: 'queued' });
 
   let next = 0;
   const workers = Array.from({ length: parallelism }, async () => {
     while (next < runs.length) {
       const index = next;
       next++;
-      results[index] = await verifyRun(runs[index]!, index);
+      await verifyRun(runs[index]!, index);
     }
   });
   await Promise.all(workers);
@@ -713,11 +836,13 @@ export async function verifyMultiPrAgentBranches(opts: {
     (result): result is MultiPrBranchVerificationEntry => result !== undefined,
   );
 
-  return {
+  const finalResult = {
     passed: orderedResults.every((result) => result.status === 'passed'),
     results: orderedResults,
     parallelism,
   };
+  writeMultiPrBranchVerificationArtifact(opts.cwd, opts.cycleId, finalResult);
+  return finalResult;
 }
 
 /**
@@ -1192,8 +1317,41 @@ export class CycleRunner {
     // Run the project's real test command, derive a TestResult, then check
     // the kill switch's post-verify gate (test floor + regression policy).
     // ─────────────────────────────────────────────────────────────────
+    this.logger.flushCycleStatus({
+      stage: CycleStage.VERIFY,
+      status: 'running',
+      currentStep: 'verify',
+      detail: 'running project test command',
+    });
+    this.options.bus.publish('sprint.phase.verify.step', {
+      cycleId: this.cycleId,
+      step: 'tests-started',
+      detail: this.options.config.testing.command,
+    });
     const testResult = await this.options.testRunner.run(this.cycleId);
     this.logger.logTestRun(testResult);
+    this.logger.flushCycleStatus({
+      stage: CycleStage.VERIFY,
+      status: 'tests-complete',
+      currentStep: 'verify',
+      extra: {
+        tests: {
+          passed: testResult.passed,
+          failed: testResult.failed,
+          skipped: testResult.skipped,
+          total: testResult.total,
+          passRate: testResult.passRate,
+        },
+      },
+    });
+    this.options.bus.publish('sprint.phase.verify.step', {
+      cycleId: this.cycleId,
+      step: 'tests-complete',
+      passed: testResult.passed,
+      failed: testResult.failed,
+      total: testResult.total,
+      passRate: testResult.passRate,
+    });
     this.testStats = {
       passed: testResult.passed,
       failed: testResult.failed,
@@ -1215,6 +1373,18 @@ export class CycleRunner {
     const verifyTrip = this.killSwitch.checkPostVerify(testResult, regression);
     if (verifyTrip) {
       throw new CycleKilledError(verifyTrip);
+    }
+    if (this.options.config.prMode === 'multi') {
+      this.logger.flushCycleStatus({
+        stage: CycleStage.VERIFY,
+        status: 'running',
+        currentStep: 'branch-verify',
+        detail: 'verifying agent PR branches',
+      });
+      this.options.bus.publish('sprint.phase.verify.step', {
+        cycleId: this.cycleId,
+        step: 'branch-verify-started',
+      });
     }
     await this.verifyMultiPrBranches();
     this.checkKillSwitch();
@@ -1493,6 +1663,12 @@ export class CycleRunner {
 
     // eslint-disable-next-line no-console
     console.log('[autonomous:cycle] multi-pr: verifying agent branches');
+    this.logger.flushCycleStatus({
+      stage: CycleStage.VERIFY,
+      status: 'running',
+      currentStep: 'branch-verify',
+      detail: 'multi-PR branch verification started',
+    });
     const verifier = this.options.multiPrBranchVerifier ?? verifyMultiPrAgentBranches;
     const result = await verifier({
       cwd: this.options.cwd,
@@ -1500,21 +1676,7 @@ export class CycleRunner {
       baseBranch: this.options.config.git.baseBranch,
       testing: this.options.config.testing,
     });
-
-    const artifactPath = join(
-      this.options.cwd,
-      '.agentforge/cycles',
-      this.cycleId,
-      'multi-pr-branch-verification.json',
-    );
-    try {
-      writeFileSync(artifactPath, JSON.stringify({
-        ...result,
-        capturedAt: new Date().toISOString(),
-      }, null, 2));
-    } catch {
-      // Observability-only.
-    }
+    writeMultiPrBranchVerificationArtifact(this.options.cwd, this.cycleId, result);
 
     this.logger.appendEvent({
       type: 'multi-pr.branch-verification',
@@ -1522,6 +1684,26 @@ export class CycleRunner {
       branches: result.results.length,
       skipped: result.skipped === true,
       at: new Date().toISOString(),
+    });
+    this.logger.flushCycleStatus({
+      stage: CycleStage.VERIFY,
+      status: result.passed ? 'branch-verify-passed' : 'branch-verify-failed',
+      currentStep: 'branch-verify',
+      extra: {
+        branchVerification: {
+          passed: result.passed,
+          branches: result.results.length,
+          skipped: result.skipped === true,
+          reason: result.reason ?? null,
+        },
+      },
+    });
+    this.options.bus.publish('sprint.phase.verify.step', {
+      cycleId: this.cycleId,
+      step: 'branch-verify-complete',
+      passed: result.passed,
+      branches: result.results.length,
+      skipped: result.skipped === true,
     });
 
     if (result.passed) return;

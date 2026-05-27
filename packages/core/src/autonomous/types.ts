@@ -83,6 +83,12 @@ export interface CycleConfig {
     saveRawLog: boolean;
     buildCommand: string;
     typeCheckCommand: string;
+    /**
+     * Optional commands used for per-agent-branch verification in multi-PR
+     * mode after the required install/bootstrap commands. When omitted, the
+     * branch verifier runs buildCommand, typeCheckCommand, then command.
+     */
+    multiPrVerifyCommands?: string[];
   };
   scoring: {
     agentId: string;

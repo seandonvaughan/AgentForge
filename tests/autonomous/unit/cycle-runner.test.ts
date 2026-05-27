@@ -726,6 +726,10 @@ describe('CycleRunner', () => {
         },
       ],
     }));
+    const verifyEvents: any[] = [];
+    deps.bus.subscribe('sprint.phase.verify.step', (event: any) => {
+      verifyEvents.push(event);
+    });
     const runner = new CycleRunner({
       cwd: tmpDir,
       config: {
@@ -753,6 +757,17 @@ describe('CycleRunner', () => {
     expect(result.stage).toBe(CycleStage.FAILED);
     expect(result.error).toContain('multi-pr branch verification failed');
     expect(result.error).toContain('codex/agent-failing');
+    expect(verifyEvents.map((event) => event.step)).toEqual([
+      'tests-started',
+      'tests-complete',
+      'branch-verify-started',
+      'branch-verify-complete',
+    ]);
+    expect(verifyEvents.at(-1)).toEqual(expect.objectContaining({
+      passed: false,
+      branches: 1,
+      skipped: false,
+    }));
   });
 
   it('records terminal FAILED result before auto-reforge on a final gate rejection', async () => {

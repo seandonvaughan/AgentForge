@@ -22,6 +22,14 @@ export interface PREvent {
   error?: string;
 }
 
+export interface CycleStatusUpdate {
+  stage?: string;
+  status?: string;
+  currentStep?: string;
+  detail?: string;
+  extra?: Record<string, unknown>;
+}
+
 export class CycleLogger {
   private readonly cycleDir: string;
   private readonly eventsPath: string;
@@ -181,6 +189,46 @@ export class CycleLogger {
       if (!('stage' in base)) {
         delete merged['stage'];
       }
+      this.writeJson(cyclePath, merged);
+    } catch { /* non-fatal */ }
+  }
+
+  /**
+   * Merge a live cycle status update into cycle.json. This is intentionally
+   * non-fatal and preserves terminal stages, so observability writes cannot
+   * change the outcome of a cycle that has already completed or failed.
+   */
+  flushCycleStatus(update: CycleStatusUpdate): void {
+    const cyclePath = join(this.cycleDir, 'cycle.json');
+    try {
+      let base: Record<string, unknown> = {};
+      if (existsSync(cyclePath)) {
+        try {
+          base = JSON.parse(readFileSync(cyclePath, 'utf8')) as Record<string, unknown>;
+        } catch { /* keep empty base on parse error */ }
+      }
+
+      const terminalStages = new Set(['completed', 'failed', 'killed']);
+      const baseStage = typeof base['stage'] === 'string' ? base['stage'] : undefined;
+      const requestedStage = update.stage ?? baseStage;
+      const stage =
+        baseStage !== undefined && terminalStages.has(baseStage) && requestedStage !== baseStage
+          ? baseStage
+          : requestedStage;
+      const now = new Date().toISOString();
+      const merged: Record<string, unknown> = {
+        ...base,
+        ...(update.extra ?? {}),
+        cycleId: this.cycleId,
+        lastHeartbeatAt: now,
+        updatedAt: now,
+      };
+
+      if (stage !== undefined) merged['stage'] = stage;
+      if (update.status !== undefined) merged['status'] = update.status;
+      if (update.currentStep !== undefined) merged['currentStep'] = update.currentStep;
+      if (update.detail !== undefined) merged['detail'] = update.detail;
+
       this.writeJson(cyclePath, merged);
     } catch { /* non-fatal */ }
   }
