@@ -303,14 +303,18 @@ describe('RuntimeAdapter with supervisor', () => {
     });
 
     await runtimeAdapter.run('coder', 'Route supervised Codex', {
-      runtimeMode: 'auto',
+      runtimeMode: 'codex-cli',
       preferredProvider: 'codex-cli',
     });
+
+    const jobs = adapter.listRuntimeJobs({});
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]!.runtime_mode).toBe('codex-cli');
 
     expect(mockRun).toHaveBeenCalledWith(
       expect.objectContaining({
         task: 'Route supervised Codex',
-        runtimeMode: 'auto',
+        runtimeMode: 'codex-cli',
         preferredProvider: 'codex-cli',
         signal: expect.any(AbortSignal),
       }),

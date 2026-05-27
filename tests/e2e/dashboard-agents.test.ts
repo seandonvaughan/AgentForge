@@ -105,12 +105,11 @@ test.describe('Agents List Page', () => {
     // a hydrated JavaScript handler attached to <tr>.
     await expect(firstRow.locator(`a.af-row-link[href="/agents/${agentId}"]`)).toBeVisible();
 
-    // Click triggers SvelteKit client-side navigation to /agents/:id.
+    // Click the native link so navigation does not depend on a hydrated row handler.
     // waitForLoadState('load') is a no-op after client-side routing (the page
     // is already in 'load' state), so we wait for the URL to change instead.
-    await firstRow.click();
-    await page.waitForURL(/\/agents\/.+/, { timeout: 5000 }).catch(() => {});
-    expect(page.url()).toMatch(/\/agents\//);
+    await firstRow.locator(`a.af-row-link[href="/agents/${agentId}"]`).click();
+    await expect(page).toHaveURL(/\/agents\/.+/, { timeout: 5000 });
   });
 
   test('agent detail Run action opens runner with the selected Codex agent', async ({ page }) => {

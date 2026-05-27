@@ -1,5 +1,11 @@
 import { defineConfig, devices } from '@playwright/test';
 
+function parseBooleanEnv(value: string | undefined): boolean {
+  return /^(1|true|yes)$/i.test(value ?? '');
+}
+
+const reuseExistingServer = parseBooleanEnv(process.env.PLAYWRIGHT_REUSE_SERVER) && !process.env.CI;
+
 /**
  * Read environment variables from file.
  * https://github.com/motdotla/dotenv
@@ -54,13 +60,13 @@ export default defineConfig({
     {
       command: 'corepack pnpm start',
       url: 'http://localhost:4750/api/v5/health',
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer,
       timeout: 120 * 1000,
     },
     {
       command: 'corepack pnpm --dir packages/dashboard dev',
       url: 'http://localhost:4751',
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer,
       timeout: 120 * 1000,
     },
   ],

@@ -248,7 +248,11 @@ export class RuntimeAdapter implements RuntimeForScoring {
     const runtime = await this.getOrCreateRuntime(agentId);
     const jobStartedAt = Date.now();
 
-    const job = supervisor.createJob({ agentId, task });
+    const job = supervisor.createJob({
+      agentId,
+      task,
+      ...(options?.runtimeMode ? { runtimeMode: options.runtimeMode } : {}),
+    });
 
     const runResult = await supervisor.startJob(job.id, ({ signal, emit }) => {
       const runOpts: {
