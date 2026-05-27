@@ -1,17 +1,23 @@
 {
   "version": "v6-backlog",
-  "description": "Convergence backlog (2026-05-27, controlled green-run streak). Runtime docs items bl-003/bl-006 shipped via merged PRs #178/#181. Keep exactly one small, genuine-pending item here while proving consecutive meaningful cycles. Original 12-item roadmap remains parked in .agentforge/product-roadmap.json.",
+  "description": "Dogfood backlog (2026-05-27). First guided large cycle: make the loop better at not repeating shipped backlog work before moving into the rest of the five-cycle streak.",
   "northStar": "One unforked, runtime-agnostic AgentForge (Claude + Codex, best provider x model x effort per job) whose autonomous loop reliably ships, then builds AgentForge Cloud.",
   "items": [
     {
-      "id": "bl-007",
-      "title": "Add auto runtime resolver fallback-order tests",
-      "description": "Tests-only; do NOT change production code. In packages/core/src/runtime/__tests__/provider-resolver.test.ts, add focused tests proving no-tools auto mode walks the available transports in this order: Anthropic SDK, then Claude Code compatibility, then Codex CLI, then OpenAI SDK. Include a case proving OpenAI SDK is selected only when the earlier transports are unavailable. Self-verify with `corepack pnpm exec vitest run packages/core/src/runtime/__tests__/provider-resolver.test.ts`.",
+      "id": "dogfood-001",
+      "title": "Add backlog completion ledger and replay guard",
+      "description": "Implement a real product improvement for dogfooding autonomous cycles. Add a durable backlog completion ledger under `.agentforge/backlog/completed.json`, make `ProposalToBacklog` filter completed backlog item ids the same way it filters quarantine ids, and add a package CLI command for operators to mark items completed after a PR is audited and merged. The command should support at minimum `agentforge backlog complete <itemId> --project-root . --cycle <cycleId> --pr <number> --reason <text>` and should append/update completed entries idempotently. Keep existing quarantine behavior intact. Add tests proving completed ids are filtered, missing/malformed ledgers are tolerated, and the CLI writes an idempotent completion entry. Self-verify with focused vitest for proposal backlog guards and the new CLI tests.",
       "priority": "P0",
-      "estimatedComplexity": "low",
-      "tags": ["tests", "convergence", "runtime"],
-      "source": "convergence-2026-05-27-cycle-retro",
-      "files": ["packages/core/src/runtime/__tests__/provider-resolver.test.ts"]
+      "estimatedComplexity": "medium",
+      "tags": ["feature", "dogfood", "autonomous", "backlog"],
+      "source": "dogfood-2026-05-27",
+      "files": [
+        "packages/core/src/autonomous/proposal-to-backlog.ts",
+        "packages/core/src/autonomous/__tests__/proposal-backlog-guard.test.ts",
+        "packages/cli/src/bin.ts",
+        "packages/cli/src/commands/backlog.ts",
+        "packages/cli/src/__tests__/backlog-command.test.ts"
+      ]
     }
   ]
 }
