@@ -215,6 +215,12 @@ describe("README.md", () => {
     }
   });
 
+  it("keeps README auto-mode fallback wording aligned with ProviderResolver order", () => {
+    expect(readmeContent).toMatch(
+      /prefers Anthropic SDK,\s*then Claude Code compatibility,\s*then Codex CLI,\s*then OpenAI SDK/i,
+    );
+  });
+
   it("uses Corepack-managed pnpm in development commands", () => {
     expect(readmeContent).not.toMatch(/^pnpm\s/m);
     expect(readmeContent).not.toMatch(/^npx\s/m);
