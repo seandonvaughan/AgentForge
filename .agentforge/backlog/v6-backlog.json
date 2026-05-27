@@ -1,12 +1,12 @@
 {
   "version": "v6-backlog",
-  "description": "Convergence backlog (2026-05-25, post-merge). bl-001 (CLAUDE.md/README) and bl-002 (preferredProvider hint) SHIPPED via merged PRs #172/#171. This single small, genuine-pending item validates the loop end-to-end after the #2 retry-routing fix: runtime-modes.md docs (the deferred PR #170 content). Specified to pass the gate clean — aiming for the first fully-green cycle. Original 12-item roadmap parked in .agentforge/product-roadmap.json.",
+  "description": "Convergence backlog (2026-05-27, controlled green-run streak). Prior runtime docs item bl-003 shipped via merged PR #178. Keep exactly one small, genuine-pending item here while proving consecutive meaningful cycles. Original 12-item roadmap remains parked in .agentforge/product-roadmap.json.",
   "northStar": "One unforked, runtime-agnostic AgentForge (Claude + Codex, best provider x model x effort per job) whose autonomous loop reliably ships, then builds AgentForge Cloud.",
   "items": [
     {
-      "id": "bl-003",
-      "title": "Document Claude+Codex runtime transports in docs/runtime-modes.md",
-      "description": "Docs-only; do NOT change code. Update docs/runtime-modes.md to document the four execution transports (anthropic-sdk, claude-code-compat/cli, codex-cli, openai-sdk) and the AGENTFORGE_RUNTIME values (auto, sdk, cli, codex-cli, openai-sdk) and how each resolves. CRITICAL for internal consistency (a prior gate rejected on exactly this): the resolveMode() code-sample inline comment MUST list ALL valid modes — 'auto' | 'sdk' | 'anthropic-sdk' | 'cli' | 'claude-cli' | 'claude-code-compat' | 'codex-cli' | 'openai-sdk' — matching the modes table elsewhere in the document; do NOT leave it as only 'auto' | 'sdk' | 'cli'. Describe what packages/core/src/runtime actually does today. Add or adjust a doc-truth assertion in tests/docs/claude-md.test.ts if helpful, and self-verify (corepack pnpm exec vitest run tests/docs/claude-md.test.ts) before finishing.",
+      "id": "bl-004",
+      "title": "Clarify auto runtime wording in docs/runtime-modes.md",
+      "description": "Docs-only; do NOT change code. In docs/runtime-modes.md, replace stale wording that says auto mode registers 'both transports' or implies only Claude SDK/CLI. It should describe the current runtime behavior: auto registers the available Anthropic SDK, Claude Code compatibility, Codex CLI, and OpenAI SDK transports while preserving the historical Claude-first preference unless a preferred provider is requested. Keep the modes table, AGENTFORGE_RUNTIME values, and resolveMode() sample consistent. Self-verify with `corepack pnpm exec vitest run tests/docs/runtime-modes.test.ts tests/docs/claude-md.test.ts`.",
       "priority": "P0",
       "estimatedComplexity": "low",
       "tags": ["docs", "convergence", "runtime"],
