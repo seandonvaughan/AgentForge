@@ -8,8 +8,8 @@
 //   - approve
 //
 // `autonomous:cycle` remains as a compatibility alias for `cycle run`.
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Command } from 'commander';
 import {
@@ -87,6 +87,10 @@ interface CycleApproveOptions extends WorkspaceAwareOptions {
   rejected?: string[];
   decidedBy?: string;
 }
+
+interface LoopGuardStatusOptions extends WorkspaceAwareOptions {}
+
+interface LoopGuardResetOptions extends WorkspaceAwareOptions {}
 
 interface CycleSummary {
   cycleId: string;
@@ -195,6 +199,24 @@ export function registerCycleCommand(program: Command): void {
     .option('--rejected <itemIds...>', 'Explicit item IDs to reject')
     .option('--decided-by <name>', 'Decision author label', 'cli')
     .action(runCycleApproveAction);
+
+  const loopGuard = cycle
+    .command('loop-guard')
+    .description('Inspect or reset the autonomous loop guard state');
+
+  loopGuard
+    .command('status')
+    .description('Show loop guard status from .agentforge/loop-state.json')
+    .option('--project-root <path>', 'Project root', process.cwd())
+    .option('--workspace <id>', 'Run against a registered workspace from ~/.agentforge/workspaces.json')
+    .action(runLoopGuardStatusAction);
+
+  loopGuard
+    .command('reset')
+    .description('Reset loop guard state to defaults')
+    .option('--project-root <path>', 'Project root', process.cwd())
+    .option('--workspace <id>', 'Run against a registered workspace from ~/.agentforge/workspaces.json')
+    .action(runLoopGuardResetAction);
 }
 
 export function registerAutonomousCommand(program: Command): void {
@@ -781,6 +803,36 @@ async function runCycleApproveAction(cycleId: string, opts: CycleApproveOptions)
   console.log(`Rejected:     ${rejectedItemIds.length}`);
 }
 
+async function runLoopGuardStatusAction(opts: LoopGuardStatusOptions): Promise<void> {
+  const projectRoot = await resolveWorkspaceProjectRoot(opts);
+  const statePath = join(projectRoot, '.agentforge', 'loop-state.json');
+  const parsed = readLoopGuardStateForStatus(statePath);
+  const state = parsed.state ?? localDefaultLoopGuardState();
+
+  console.log('[loop-guard] status');
+  console.log(`Path:         ${statePath}`);
+  console.log(`State file:   ${parsed.fileStatus}`);
+  console.log(`Halted:       ${state.haltedReason ? 'yes' : 'no'}`);
+  if (state.haltedReason) {
+    console.log(`Reason:       ${state.haltedReason}`);
+  }
+  console.log(`Failures:     ${state.consecutiveFailedCycles}`);
+  console.log(`Last cycle:   ${state.lastCycleId ?? '(none)'}`);
+  console.log(`Last outcome: ${state.lastOutcome ?? '(none)'}`);
+  console.log(`Updated:      ${state.lastUpdatedAt}`);
+}
+
+async function runLoopGuardResetAction(opts: LoopGuardResetOptions): Promise<void> {
+  const projectRoot = await resolveWorkspaceProjectRoot(opts);
+  const statePath = join(projectRoot, '.agentforge', 'loop-state.json');
+  const next = localDefaultLoopGuardState();
+  mkdirSync(dirname(statePath), { recursive: true });
+  writeFileSync(statePath, JSON.stringify(next, null, 2));
+  console.log('[loop-guard] reset');
+  console.log(`Path:         ${statePath}`);
+  console.log('State:        reset to defaults');
+}
+
 async function resolveWorkspaceProjectRoot(options: WorkspaceAwareOptions): Promise<string> {
   let cwd = options.projectRoot;
   try {
@@ -1019,6 +1071,45 @@ function countJsonlLines(path: string): number {
   } catch {
     return 0;
   }
+}
+
+function readLoopGuardStateForStatus(path: string): {
+  fileStatus: 'valid' | 'missing' | 'corrupt';
+  state: ReturnType<typeof localDefaultLoopGuardState> | null;
+} {
+  if (!existsSync(path)) {
+    return { fileStatus: 'missing', state: null };
+  }
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as Partial<ReturnType<typeof localDefaultLoopGuardState>>;
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      typeof parsed.consecutiveFailedCycles === 'number'
+    ) {
+      return { fileStatus: 'valid', state: { ...localDefaultLoopGuardState(), ...parsed } };
+    }
+  } catch {
+    // fall through
+  }
+  return { fileStatus: 'corrupt', state: null };
+}
+
+function localDefaultLoopGuardState(): {
+  v: 1;
+  consecutiveFailedCycles: number;
+  lastCycleId: string | null;
+  lastOutcome: 'completed' | 'failed' | null;
+  lastUpdatedAt: string;
+  haltedReason?: string;
+} {
+  return {
+    v: 1,
+    consecutiveFailedCycles: 0,
+    lastCycleId: null,
+    lastOutcome: null,
+    lastUpdatedAt: new Date(0).toISOString(),
+  };
 }
 
 function parseOptionalPositiveNumber(raw: string | undefined, label: string): number | undefined | null {

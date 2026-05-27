@@ -36,7 +36,8 @@ assertCommand(["--help"], [
   "workspaces",
   "backlog",
 ]);
-assertCommand(["cycle", "--help"], ["run", "preview", "list", "show", "approve"]);
+assertCommand(["cycle", "--help"], ["run", "preview", "list", "show", "approve", "loop-guard"]);
+assertCommand(["cycle", "loop-guard", "--help"], ["status", "reset"]);
 assertCommand(["run", "--help"], ["invoke", "delegate", "history", "show"]);
 assertCommand(["codex", "--help"], ["readiness"]);
 assertCommand(["costs", "--help"], ["report"]);
