@@ -180,6 +180,29 @@ describe('gate retry context — agent PR ledger routing', () => {
     expect(context.itemIds).toEqual(['item-only']);
   });
 
+  it('does not parse "target branch diff" as a rejected branch when the ledger has the actual branch', () => {
+    const cycleId = 'cycle-retry-branch-diff';
+    writeLedger(projectRoot, cycleId, [
+      {
+        prNumber: 187,
+        branch: 'codex/agent-autonomy-strategist-29a15f123f4e',
+        itemIds: ['backlog-dogfood-004'],
+        openedAt: '2026-05-27T22:46:16.893Z',
+      },
+    ]);
+
+    const context = buildGateRetryContext(
+      projectRoot,
+      cycleId,
+      1,
+      'I verified the execute target branch diff (`origin/codex/codex-version...codex/agent-autonomy-strategist-29a15f123f4e`) and the four changed files.',
+    );
+
+    expect(context.rejectedBranch).toBe('codex/agent-autonomy-strategist-29a15f123f4e');
+    expect(context.prNumber).toBe(187);
+    expect(context.itemIds).toEqual(['backlog-dogfood-004']);
+  });
+
   it('does not guess itemIds from the latest PR when multiple records are ambiguous', () => {
     const cycleId = 'cycle-retry-ambiguous-ledger';
     writeLedger(projectRoot, cycleId, [

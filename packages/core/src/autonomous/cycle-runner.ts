@@ -150,7 +150,12 @@ function extractPrNumber(rationale: string): number | undefined {
 
 function extractBranchName(rationale: string): string | undefined {
   const match = rationale.match(/\b(?:target\s+branch|branch)\s+([A-Za-z0-9._/-]+)/i);
-  return match?.[1]?.replace(/[.,;:)]+$/, '');
+  const candidate = match?.[1]?.replace(/[.,;:)]+$/, '');
+  if (!candidate) return undefined;
+  // Avoid treating ordinary prose such as "target branch diff" as a branch.
+  // Agent PR branches are namespaced; unqualified words are not actionable for
+  // retry checkout and should fall through to the cycle ledger.
+  return candidate.includes('/') ? candidate : undefined;
 }
 
 function extractMentionedFiles(rationale: string): string[] {
@@ -193,14 +198,18 @@ export function buildGateRetryContext(
   const records = readAgentPrRecords(projectRoot, cycleId);
   const branchFromRationale = extractBranchName(rationale);
   const prFromRationale = extractPrNumber(rationale);
-  const matchingRecord = branchFromRationale
-    ? records.find((record) => record.branch === branchFromRationale)
-    : prFromRationale !== undefined
-      ? records.find((record) => (record.prNumber ?? record.number) === prFromRationale)
-      : undefined;
+  const matchingRecord = prFromRationale !== undefined
+    ? records.find((record) => (record.prNumber ?? record.number) === prFromRationale)
+    : branchFromRationale !== undefined
+      ? records.find((record) => record.branch === branchFromRationale)
+      : records.find((record) => (
+        typeof record.branch === 'string' &&
+        record.branch.length > 0 &&
+        (rationale.includes(record.branch) || rationale.includes(`origin/${record.branch}`))
+      ));
   const fallbackRecord = matchingRecord ?? (records.length === 1 ? latestAgentPr(records) : undefined);
   const selectedRecord = matchingRecord ?? fallbackRecord;
-  const rejectedBranch = branchFromRationale ?? selectedRecord?.branch;
+  const rejectedBranch = selectedRecord?.branch ?? branchFromRationale;
   const prNumber = prFromRationale ?? selectedRecord?.prNumber ?? selectedRecord?.number;
   const prUrl = selectedRecord?.prUrl ?? selectedRecord?.url;
   const itemIds = selectedRecord?.itemIds?.filter((id) => typeof id === 'string' && id.length > 0);

@@ -523,7 +523,7 @@ export async function runGatePhase(
 ## Sprint items
 ${items}
 
-## Test results
+## QA strategy report (not executable test results)
 ${testResults}
 
 ## Code review findings
@@ -540,7 +540,12 @@ The code review above may have been produced against an intermediate execute-pha
 2. Use Grep/Read tools, \`git show <branch>:<file>\`, or direct file reads to search for the problematic pattern described in the finding. Avoid worktree-scoped git commands and Git grep in Codex read-only sandbox.
 3. If the bug no longer reproduces (the line has been amended, the pattern is absent, or the finding's premise is otherwise false in the current code), treat that finding as RESOLVED. Do NOT let a resolved finding drive REJECT.
 4. Only unresolved CRITICAL or verified-still-present MAJOR findings are grounds for REJECT.${knownDebtStep}
-If all CRITICAL and MAJOR findings either do not reproduce or were already addressed, and tests pass, APPROVE.
+Do not treat the QA strategy report above as executable test evidence. It is a
+read-only analysis artifact; the cycle VERIFY stage enforces real test execution
+after this gate. If the QA strategy says tests were not run, that is expected
+for this phase and is not by itself a REJECT reason.
+
+If all CRITICAL and MAJOR findings either do not reproduce or were already addressed, APPROVE. The later VERIFY stage remains responsible for executable test pass/fail enforcement.
 
 In your rationale, explicitly state which findings you verified and whether each still reproduces — so downstream callers can audit the decision.
 

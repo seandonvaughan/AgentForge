@@ -230,10 +230,12 @@ Do NOT run tests. The VERIFY stage will do that separately. You are only analyzi
         JSON.stringify(
           {
             phase,
+            kind: 'qa-strategy',
             sprintId: ctx.sprintId,
             sprintVersion: ctx.sprintVersion,
             cycleId: ctx.cycleId,
             status,
+            testsRun: false,
             agentId,
             strategy,
             confidence,

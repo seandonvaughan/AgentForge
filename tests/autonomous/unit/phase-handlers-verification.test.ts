@@ -130,6 +130,8 @@ describe('verification phase handlers', () => {
     const written = JSON.parse(
       readFileSync(join(tmpDir, '.agentforge/cycles/cycle-1/phases/test.json'), 'utf8'),
     );
+    expect(written.kind).toBe('qa-strategy');
+    expect(written.testsRun).toBe(false);
     expect(written.confidence).toBe(4);
     expect(written.agentId).toBe('backend-qa');
     expect(written.concerns.length).toBeGreaterThanOrEqual(2);
