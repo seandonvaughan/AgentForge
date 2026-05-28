@@ -17,6 +17,47 @@ const captures = vi.hoisted(() => ({
   scoringPipelineOptions: [] as Array<Record<string, unknown>>,
   auditPhaseCallOptions: [] as Array<unknown>,
   configMaxItemsPerSprint: 5,
+  previewBacklog: [
+    {
+      itemId: 'item-1',
+      title: 'Previewable item',
+      rank: 1,
+      score: 1,
+      confidence: 1,
+      estimatedCostUsd: 1,
+      estimatedDurationMinutes: 1,
+      rationale: 'test',
+      dependencies: [],
+      suggestedAssignee: 'coder',
+      suggestedTags: [],
+      withinBudget: true,
+      source: 'todo-marker',
+    },
+  ] as Array<Record<string, unknown>>,
+  previewScored: {
+    withinBudget: [
+      {
+        itemId: 'item-1',
+        title: 'Previewable item',
+        rank: 1,
+        score: 1,
+        confidence: 1,
+        estimatedCostUsd: 1,
+        estimatedDurationMinutes: 1,
+        rationale: 'test',
+        dependencies: [],
+        suggestedAssignee: 'coder',
+        suggestedTags: [],
+        withinBudget: true,
+      },
+    ],
+    requiresApproval: [],
+    totalEstimatedCostUsd: 1,
+    budgetOverflowUsd: 0,
+    summary: 'ok',
+    warnings: [],
+    fallback: null,
+  } as Record<string, unknown>,
 }));
 
 vi.mock('@agentforge/core', () => {
@@ -39,22 +80,7 @@ vi.mock('@agentforge/core', () => {
 
   function ProposalToBacklogMock() {}
   ProposalToBacklogMock.prototype.build = function () {
-    return Promise.resolve([
-      {
-        itemId: 'item-1',
-        title: 'Previewable item',
-        rank: 1,
-        score: 1,
-        confidence: 1,
-        estimatedCostUsd: 1,
-        estimatedDurationMinutes: 1,
-        rationale: 'test',
-        dependencies: [],
-        suggestedAssignee: 'coder',
-        suggestedTags: [],
-        withinBudget: true,
-      },
-    ]);
+    return Promise.resolve(captures.previewBacklog);
   };
 
   function ScoringPipelineMock(
@@ -66,30 +92,7 @@ vi.mock('@agentforge/core', () => {
     captures.scoringPipelineOptions.push({ runtime, scoringAdapter, config });
   }
   ScoringPipelineMock.prototype.scoreWithFallback = function () {
-    return Promise.resolve({
-      withinBudget: [
-        {
-          itemId: 'item-1',
-          title: 'Previewable item',
-          rank: 1,
-          score: 1,
-          confidence: 1,
-          estimatedCostUsd: 1,
-          estimatedDurationMinutes: 1,
-          rationale: 'test',
-          dependencies: [],
-          suggestedAssignee: 'coder',
-          suggestedTags: [],
-          withinBudget: true,
-        },
-      ],
-      requiresApproval: [],
-      totalEstimatedCostUsd: 1,
-      budgetOverflowUsd: 0,
-      summary: 'ok',
-      warnings: [],
-      fallback: null,
-    });
+    return Promise.resolve(captures.previewScored);
   };
 
   function WorkspaceManagerMock(this: object) {}
@@ -157,6 +160,10 @@ vi.mock('@agentforge/core', () => {
 
 import { createCliProgram } from '../bin.js';
 
+function collectConsoleOutput(calls: ReadonlyArray<ReadonlyArray<unknown>>): string {
+  return calls.map((call) => call.join(' ')).join('\n');
+}
+
 async function runCli(args: string[]): Promise<void> {
   const program = createCliProgram();
   program.exitOverride();
@@ -185,6 +192,47 @@ describe('cycle launch options', () => {
     captures.scoringPipelineOptions.length = 0;
     captures.auditPhaseCallOptions.length = 0;
     captures.configMaxItemsPerSprint = 5;
+    captures.previewBacklog = [
+      {
+        itemId: 'item-1',
+        title: 'Previewable item',
+        rank: 1,
+        score: 1,
+        confidence: 1,
+        estimatedCostUsd: 1,
+        estimatedDurationMinutes: 1,
+        rationale: 'test',
+        dependencies: [],
+        suggestedAssignee: 'coder',
+        suggestedTags: [],
+        withinBudget: true,
+        source: 'todo-marker',
+      },
+    ];
+    captures.previewScored = {
+      withinBudget: [
+        {
+          itemId: 'item-1',
+          title: 'Previewable item',
+          rank: 1,
+          score: 1,
+          confidence: 1,
+          estimatedCostUsd: 1,
+          estimatedDurationMinutes: 1,
+          rationale: 'test',
+          dependencies: [],
+          suggestedAssignee: 'coder',
+          suggestedTags: [],
+          withinBudget: true,
+        },
+      ],
+      requiresApproval: [],
+      totalEstimatedCostUsd: 1,
+      budgetOverflowUsd: 0,
+      summary: 'ok',
+      warnings: [],
+      fallback: null,
+    };
     consoleLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     process.exitCode = undefined;
@@ -307,5 +355,156 @@ describe('cycle launch options', () => {
       effortCap: 'high',
       fallbackEnabled: false,
     });
+  });
+
+  it('prints deterministic source breakdown in cycle preview text output', async () => {
+    captures.previewBacklog = [
+      { itemId: 'b1', title: 'A', source: 'backlog-file' },
+      { itemId: 'b2', title: 'B', source: 'backlog-file' },
+      { itemId: 'r1', title: 'C', source: 'research-plan' },
+      { itemId: 't1', title: 'D', source: 'todo-marker' },
+    ];
+
+    await runCli([
+      'cycle',
+      'preview',
+      '--project-root',
+      projectRoot,
+    ]);
+
+    const output = collectConsoleOutput(consoleLog.mock.calls);
+    expect(output).toContain('Sources:      backlog-file=2, research-plan=1, todo-marker=1');
+  });
+
+  it('prints machine-readable cycle preview JSON with source breakdown and ranked items', async () => {
+    captures.previewBacklog = [
+      { itemId: 'b1', title: 'A', source: 'backlog-file' },
+      { itemId: 'f1', title: 'B', source: 'failed-session' },
+    ];
+    captures.previewScored = {
+      withinBudget: [
+        {
+          itemId: 'item-1',
+          title: 'Previewable item',
+          rank: 1,
+          score: 1,
+          confidence: 1,
+          estimatedCostUsd: 1,
+          estimatedDurationMinutes: 1,
+          rationale: 'test',
+          dependencies: [],
+          suggestedAssignee: 'coder',
+          suggestedTags: [],
+          withinBudget: true,
+        },
+      ],
+      requiresApproval: [],
+      totalEstimatedCostUsd: 1,
+      budgetOverflowUsd: 0,
+      summary: 'ok',
+      warnings: ['warn'],
+      fallback: 'effort-estimator',
+    };
+
+    await runCli([
+      'cycle',
+      'preview',
+      '--project-root',
+      projectRoot,
+      '--json',
+    ]);
+
+    const parsed = JSON.parse(collectConsoleOutput(consoleLog.mock.calls)) as {
+      projectRoot: string;
+      candidateCount: number;
+      sourceBreakdown: Record<string, number>;
+      rankedItems: Array<{ itemId: string }>;
+      fallback: string | null;
+      warnings: string[];
+      summary: string;
+    };
+    expect(parsed.projectRoot).toBe(projectRoot);
+    expect(parsed.candidateCount).toBe(2);
+    expect(parsed.sourceBreakdown).toMatchObject({
+      'backlog-file': 1,
+      'research-plan': 0,
+      'todo-marker': 0,
+      'failed-session': 1,
+      'cost-anomaly': 0,
+      'task-outcome': 0,
+      'flaking-test': 0,
+    });
+    expect(parsed.rankedItems).toHaveLength(1);
+    expect(parsed.rankedItems[0]?.itemId).toBe('item-1');
+    expect(parsed.fallback).toBe('effort-estimator');
+    expect(parsed.warnings).toEqual(['warn']);
+    expect(parsed.summary).toBe('ok');
+  });
+
+  it('prints deterministic empty cycle preview JSON when backlog is empty', async () => {
+    captures.previewBacklog = [];
+
+    await runCli([
+      'cycle',
+      'preview',
+      '--project-root',
+      projectRoot,
+      '--json',
+    ]);
+
+    const parsed = JSON.parse(collectConsoleOutput(consoleLog.mock.calls)) as {
+      candidateCount: number;
+      rankedItems: unknown[];
+      sourceBreakdown: Record<string, number>;
+      warnings: string[];
+      summary: string;
+    };
+    expect(parsed.candidateCount).toBe(0);
+    expect(parsed.rankedItems).toEqual([]);
+    expect(parsed.sourceBreakdown).toMatchObject({
+      'backlog-file': 0,
+      'research-plan': 0,
+      'todo-marker': 0,
+      'failed-session': 0,
+      'cost-anomaly': 0,
+      'task-outcome': 0,
+      'flaking-test': 0,
+    });
+    expect(parsed.warnings).toEqual(['Empty backlog: no proposals or TODO(autonomous) markers detected.']);
+    expect(parsed.summary).toBe('No backlog items found — nothing to score.');
+  });
+
+  it('keeps cycle preview text backward-compatible when sources are unavailable', async () => {
+    captures.previewBacklog = [
+      { itemId: 'x1', title: 'No source field' },
+    ];
+
+    await runCli([
+      'cycle',
+      'preview',
+      '--project-root',
+      projectRoot,
+    ]);
+
+    const output = collectConsoleOutput(consoleLog.mock.calls);
+    expect(output).toContain('Ranked items:');
+    expect(output).not.toContain('Sources:');
+  });
+
+  it('keeps cycle preview text backward-compatible when no candidates are found', async () => {
+    captures.previewBacklog = [];
+
+    await runCli([
+      'cycle',
+      'preview',
+      '--project-root',
+      projectRoot,
+    ]);
+
+    const output = collectConsoleOutput(consoleLog.mock.calls);
+    expect(output).toContain('Candidates:   0');
+    expect(output).toContain('Summary:      No backlog items found — nothing to score.');
+    expect(output).toContain('  - Empty backlog: no proposals or TODO(autonomous) markers detected.');
+    expect(output).not.toContain('Sources:');
   });
 });

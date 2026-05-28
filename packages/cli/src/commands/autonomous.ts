@@ -70,12 +70,25 @@ interface CycleRunOptions extends WorkspaceAwareOptions {
 interface CyclePreviewOptions extends WorkspaceAwareOptions {
   budgetUsd?: string;
   maxItems?: string;
+  json?: boolean;
   fastMode?: boolean;
   modelCap?: string;
   effortCap?: string;
   maxAgents?: string;
   fallback?: boolean;
 }
+
+const PREVIEW_SOURCE_ORDER = [
+  'backlog-file',
+  'research-plan',
+  'todo-marker',
+  'failed-session',
+  'cost-anomaly',
+  'task-outcome',
+  'flaking-test',
+] as const;
+
+type PreviewSource = (typeof PREVIEW_SOURCE_ORDER)[number];
 
 interface CycleListOptions extends WorkspaceAwareOptions {
   limit: string;
@@ -254,6 +267,7 @@ export function registerCycleCommand(program: Command): void {
     .description('Preview PLAN-stage backlog and budget before running a cycle')
     .option('--project-root <path>', 'Project root', process.cwd())
     .option('--workspace <id>', 'Run against a registered workspace from ~/.agentforge/workspaces.json')
+    .option('--json', 'Print machine-readable JSON')
     .option('--budget-usd <usd>', 'Override per-cycle budget for preview only')
     .option('--max-items <count>', 'Override max sprint items for preview only')
     .option('--fast-mode', 'Use the fast parallel launch preset (defaults effort cap to high unless --effort-cap is set)')
@@ -648,6 +662,23 @@ async function runCyclePreviewAction(opts: CyclePreviewOptions): Promise<void> {
       launchControls,
     });
 
+    if (opts.json) {
+      console.log(JSON.stringify({
+        projectRoot,
+        candidateCount: preview.candidateCount,
+        sourceBreakdown: preview.sourceBreakdown,
+        withinBudget: preview.withinBudget,
+        requiresApproval: preview.requiresApproval,
+        totalEstimatedCostUsd: preview.totalEstimatedCostUsd,
+        budgetOverflowUsd: preview.budgetOverflowUsd,
+        fallback: preview.fallback,
+        warnings: preview.warnings,
+        summary: preview.summary,
+        rankedItems: preview.rankedItems,
+      }, null, 2));
+      return;
+    }
+
     console.log(`Candidates:   ${preview.candidateCount}`);
     console.log(`Within budget:${preview.withinBudget}`);
     console.log(`Needs approval:${preview.requiresApproval}`);
@@ -676,6 +707,16 @@ async function runCyclePreviewAction(opts: CyclePreviewOptions): Promise<void> {
         console.log(
           `     score=${item.score.toFixed(2)}  confidence=${item.confidence.toFixed(2)}  est=$${item.estimatedCostUsd.toFixed(2)}  assignee=${item.suggestedAssignee}`,
         );
+      }
+    }
+
+    if (preview.candidateCount > 0) {
+      const nonZeroSources = PREVIEW_SOURCE_ORDER
+        .filter((source) => preview.sourceBreakdown[source] > 0)
+        .map((source) => `${source}=${preview.sourceBreakdown[source]}`);
+      if (nonZeroSources.length > 0) {
+        console.log('');
+        console.log(`Sources:      ${nonZeroSources.join(', ')}`);
       }
     }
   } catch (error) {
@@ -707,6 +748,7 @@ async function runCyclePreview(options: {
       options.projectRoot,
       config,
     ).build();
+    const sourceBreakdown = summarizePreviewSources(backlog);
 
     if (backlog.length === 0) {
       return {
@@ -718,6 +760,7 @@ async function runCyclePreview(options: {
         requiresApproval: 0,
         summary: 'No backlog items found — nothing to score.',
         warnings: ['Empty backlog: no proposals or TODO(autonomous) markers detected.'],
+        sourceBreakdown,
         durationMs: Date.now() - startedAt,
         scoringCostUsd: 0,
         fallback: null,
@@ -749,6 +792,7 @@ async function runCyclePreview(options: {
       requiresApproval: scored.requiresApproval.length,
       summary: String(scored.summary ?? ''),
       warnings: Array.isArray(scored.warnings) ? scored.warnings : [],
+      sourceBreakdown,
       durationMs: Date.now() - startedAt,
       scoringCostUsd: 0,
       fallback: scored.fallback ?? null,
@@ -756,6 +800,28 @@ async function runCyclePreview(options: {
   } finally {
     telemetry.close();
   }
+}
+
+function summarizePreviewSources(backlog: unknown[]): Record<PreviewSource, number> {
+  const counts = PREVIEW_SOURCE_ORDER.reduce((acc, source) => {
+    acc[source] = 0;
+    return acc;
+  }, {} as Record<PreviewSource, number>);
+
+  for (const item of backlog) {
+    const source =
+      typeof item === 'object' && item !== null && 'source' in item
+        ? (item as { source?: unknown }).source
+        : undefined;
+    if (typeof source !== 'string') {
+      continue;
+    }
+    if ((PREVIEW_SOURCE_ORDER as readonly string[]).includes(source)) {
+      counts[source as PreviewSource] += 1;
+    }
+  }
+
+  return counts;
 }
 
 async function runCycleListAction(opts: CycleListOptions): Promise<void> {
