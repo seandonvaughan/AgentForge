@@ -2061,7 +2061,11 @@ function readCycleStreakMergeEvidence(
   if (cyclePr && cyclePrNumber === prNumber) {
     const evidence = {
       ...(typeof cyclePr.url === 'string' && cyclePr.url.length > 0 ? { prUrl: cyclePr.url } : {}),
-      ...(typeof cyclePr.status === 'string' && cyclePr.status.length > 0 ? { status: cyclePr.status } : {}),
+      ...(typeof cyclePr.status === 'string' &&
+        cyclePr.status.length > 0 &&
+        cyclePr.status !== 'open'
+        ? { status: cyclePr.status }
+        : {}),
       ...(typeof cyclePr.mergedAt === 'string' && cyclePr.mergedAt.length > 0 ? { mergedAt: cyclePr.mergedAt } : {}),
       ...(typeof cyclePr.openedAt === 'string' && cyclePr.openedAt.length > 0 ? { openedAt: cyclePr.openedAt } : {}),
     };
