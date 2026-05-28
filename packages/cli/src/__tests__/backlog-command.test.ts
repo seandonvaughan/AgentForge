@@ -207,6 +207,7 @@ describe('agentforge backlog status', () => {
     expect(output).toContain('runtimeRoutingHints: scoped=2 routed=1 default=1');
     expect(output).toContain('duplicateNormalizedIds: (none)');
     expect(output).toContain('activeScopedItemsCount: 2');
+    expect(output).toContain('readyForCycle: yes');
     expect(output).toContain('- backlog-scoped-task: Scoped Task [complexity=low, source=items.json, scope=packages/cli/src/bin.ts]');
     expect(output).toContain('- backlog-routed-task: Routed Task [complexity=low, source=items.json, scope=packages/cli/src/commands/backlog.ts, runtime=codex-cli, provider=codex-cli]');
     expect(output).not.toContain('sourceFile: items.json');
@@ -256,6 +257,7 @@ describe('agentforge backlog status', () => {
         defaultItems: 1,
       },
       duplicateNormalizedIds: [],
+      readyForCycle: true,
       activeScopedItemsCount: 2,
       activeScopedItems: [
         {
@@ -454,9 +456,20 @@ describe('agentforge backlog status', () => {
     expect(output).toContain('runtimeRoutingHints: scoped=0 routed=0 default=0');
     expect(output).toContain('duplicateNormalizedIds: (none)');
     expect(output).toContain('  activeScopedItemsCount: 0');
+    expect(output).toContain('  readyForCycle: no');
     expect(output).toContain('  activeScopedItems:');
     expect(output).toContain('    (none)');
     expect(process.exitCode).toBeUndefined();
+  });
+
+  it('prints readyForCycle false in JSON when active scoped items are empty', async () => {
+    await runCli(['backlog', 'status', '--project-root', projectRoot, '--json']);
+
+    const output = consoleLog.mock.calls.map((args: unknown[]) => String(args[0] ?? '')).join('\n');
+    const parsed = JSON.parse(output);
+    expect(parsed.activeScopedItemsCount).toBe(0);
+    expect(parsed.activeScopedItems).toEqual([]);
+    expect(parsed.readyForCycle).toBe(false);
   });
 
   async function runCli(args: string[]): Promise<void> {

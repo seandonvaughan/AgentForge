@@ -183,6 +183,7 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
   const defaultScoped = activeScoped.length - routedScoped.length;
 
   if (opts.json) {
+    const readyForCycle = activeScoped.length > 0;
     console.log(JSON.stringify({
       projectRoot,
       activeBacklogFileItems: activeItems.length,
@@ -195,6 +196,7 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
         defaultItems: defaultScoped,
       },
       duplicateNormalizedIds,
+      readyForCycle,
       activeScopedItemsCount: activeScoped.length,
       activeScopedItems: activeScoped.map((item) => ({
         id: item.id,
@@ -218,6 +220,7 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
   console.log(`  runtimeRoutingHints: scoped=${activeScoped.length} routed=${routedScoped.length} default=${defaultScoped}`);
   console.log(`  duplicateNormalizedIds: ${formatDuplicateNormalizedIds(duplicateNormalizedIds)}`);
   console.log(`  activeScopedItemsCount: ${activeScoped.length}`);
+  console.log(`  readyForCycle: ${activeScoped.length > 0 ? 'yes' : 'no'}`);
   console.log('  activeScopedItems:');
   if (activeScoped.length === 0) {
     console.log('    (none)');
