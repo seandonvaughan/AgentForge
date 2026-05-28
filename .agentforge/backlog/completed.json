@@ -64,6 +64,14 @@
       "cycleId": "e0bd7895-3e24-4097-a45a-63bf7176d73c",
       "prNumber": 191,
       "reason": "Merged successful dogfood cycle"
+    },
+    {
+      "itemId": "backlog-dogfood-009",
+      "completedAt": "2026-05-28T01:28:32.438Z",
+      "updatedAt": "2026-05-28T01:28:32.438Z",
+      "cycleId": "2d863608-21a2-449e-a098-e9bd8a530e68",
+      "prNumber": 192,
+      "reason": "Merged successful dogfood cycle"
     }
   ]
 }
