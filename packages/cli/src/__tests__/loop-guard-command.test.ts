@@ -209,6 +209,33 @@ describe('cycle loop-guard commands', () => {
     expect(saved.haltedReason).toBeUndefined();
   });
 
+  it('prints machine-readable JSON reset output with --json', async () => {
+    const statePath = join(projectRoot, '.agentforge', 'loop-state.json');
+
+    await runCli('cycle', 'loop-guard', 'reset', '--project-root', projectRoot, '--json');
+
+    const parsed = JSON.parse(stdout()) as {
+      projectRoot: string;
+      path: string;
+      state: {
+        v: number;
+        consecutiveFailedCycles: number;
+        lastCycleId: string | null;
+        lastOutcome: string | null;
+        lastUpdatedAt: string;
+      };
+      reset: boolean;
+    };
+    expect(parsed.projectRoot).toBe(projectRoot);
+    expect(parsed.path).toBe(statePath);
+    expect(parsed.reset).toBe(true);
+    expect(parsed.state.v).toBe(1);
+    expect(parsed.state.consecutiveFailedCycles).toBe(0);
+    expect(parsed.state.lastCycleId).toBeNull();
+    expect(parsed.state.lastOutcome).toBeNull();
+    expect(parsed.state.lastUpdatedAt).toBe('1970-01-01T00:00:00.000Z');
+  });
+
   async function runCli(...args: string[]): Promise<void> {
     const program = createCliProgram();
     program.exitOverride();
