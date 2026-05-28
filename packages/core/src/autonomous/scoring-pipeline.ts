@@ -59,6 +59,8 @@ export interface RuntimeForScoring {
     model: string;
     effort?: string;
     capabilityTier?: ModelTier;
+    resolvedProvider?: ExecutionProviderKind;
+    resolvedRuntimeMode?: RuntimeMode;
   }>;
 }
 

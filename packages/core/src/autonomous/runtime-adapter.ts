@@ -151,6 +151,8 @@ export class RuntimeAdapter implements RuntimeForScoring {
     model: string;
     effort?: string;
     capabilityTier?: ModelTier;
+    resolvedProvider?: ExecutionProviderKind;
+    resolvedRuntimeMode?: RuntimeMode;
     breakdown: CostBreakdown;
   }> {
     // When a supervisor is wired, every agent run creates a durable runtime_job
@@ -216,6 +218,8 @@ export class RuntimeAdapter implements RuntimeForScoring {
       model: result.model,
       ...(result.effort ? { effort: result.effort } : {}),
       ...(result.capabilityTier ? { capabilityTier: result.capabilityTier } : {}),
+      ...(result.providerKind ? { resolvedProvider: result.providerKind } : {}),
+      ...(result.runtimeModeResolved ? { resolvedRuntimeMode: result.runtimeModeResolved } : {}),
       breakdown,
     };
   }
@@ -242,6 +246,8 @@ export class RuntimeAdapter implements RuntimeForScoring {
     model: string;
     effort?: string;
     capabilityTier?: ModelTier;
+    resolvedProvider?: ExecutionProviderKind;
+    resolvedRuntimeMode?: RuntimeMode;
     breakdown: CostBreakdown;
   }> {
     const supervisor = this.options.supervisor!;
@@ -326,6 +332,8 @@ export class RuntimeAdapter implements RuntimeForScoring {
       model: runResult.model,
       ...(runResult.effort ? { effort: runResult.effort } : {}),
       ...(runResult.capabilityTier ? { capabilityTier: runResult.capabilityTier } : {}),
+      ...(runResult.providerKind ? { resolvedProvider: runResult.providerKind } : {}),
+      ...(runResult.runtimeModeResolved ? { resolvedRuntimeMode: runResult.runtimeModeResolved } : {}),
       breakdown: supervisorBreakdown,
     };
   }
