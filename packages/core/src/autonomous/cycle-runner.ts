@@ -669,6 +669,11 @@ function parseMultiPrVerifyCommandOverride(raw: string | undefined): string[] | 
     .filter((cmd) => cmd.length > 0);
 }
 
+function hasTemplatePlaceholderArg(command: string): boolean {
+  const tokens = parseCommandArgs(command);
+  return tokens.some((token) => /^<[^>]+>$/.test(token));
+}
+
 function readMultiPrBranchRuns(cwd: string, cycleId: string): MultiPrBranchVerificationRun[] {
   const execPath = join(cwd, '.agentforge/cycles', cycleId, 'phases/execute.json');
   if (!existsSync(execPath)) return [];
@@ -717,17 +722,25 @@ export function multiPrVerifyCommands(testing: CycleConfig['testing']): string[]
   const configuredVerificationCommands = Array.isArray(testing.multiPrVerifyCommands)
     ? testing.multiPrVerifyCommands
     : undefined;
-  const verificationCommands =
+  const defaultVerificationCommands = [testing.buildCommand, testing.typeCheckCommand, testing.command]
+    .map((cmd) => cmd?.trim() ?? '')
+    .filter((cmd) => cmd.length > 0 && !hasTemplatePlaceholderArg(cmd));
+
+  const selectedVerificationCommands =
     envVerificationCommands && envVerificationCommands.length > 0
       ? envVerificationCommands
       : configuredVerificationCommands && configuredVerificationCommands.length > 0
       ? configuredVerificationCommands
-      : [testing.buildCommand, testing.typeCheckCommand, testing.command];
+      : defaultVerificationCommands;
+
+  const verificationCommands = selectedVerificationCommands
+    .map((cmd) => cmd?.trim() ?? '')
+    .filter((cmd) => cmd.length > 0 && !hasTemplatePlaceholderArg(cmd));
 
   return [
     installCommand,
     ...REQUIRED_MULTI_PR_VERIFY_BOOTSTRAP_COMMANDS,
-    ...verificationCommands,
+    ...(verificationCommands.length > 0 ? verificationCommands : defaultVerificationCommands),
   ]
     .map((cmd) => cmd?.trim() ?? '')
     .filter((cmd) => cmd.length > 0);
