@@ -37,6 +37,24 @@ function loadCiYaml(): Record<string, unknown> {
   return yaml.load(raw) as Record<string, unknown>;
 }
 
+function loadWorkflowYaml(rel: string): Record<string, unknown> {
+  const raw = readRepo(rel);
+  return yaml.load(raw) as Record<string, unknown>;
+}
+
+function expectPlaywrightInstallBeforeVerifyGates(workflowRel: string, jobName: string): void {
+  const workflow = loadWorkflowYaml(workflowRel);
+  const jobs = workflow['jobs'] as Record<string, unknown>;
+  const job = jobs[jobName] as { steps?: Array<Record<string, unknown>> } | undefined;
+  expect(job).toBeDefined();
+  const steps = job?.steps ?? [];
+  const installIndex = steps.findIndex((step) => step['run'] === 'pnpm exec playwright install --with-deps chromium');
+  const verifyIndex = steps.findIndex((step) => step['run'] === 'pnpm verify:gates');
+  expect(installIndex, `${workflowRel} ${jobName} must install Playwright browsers`).toBeGreaterThanOrEqual(0);
+  expect(verifyIndex, `${workflowRel} ${jobName} must run verify:gates`).toBeGreaterThanOrEqual(0);
+  expect(installIndex, `${workflowRel} ${jobName} installs Playwright before verify:gates`).toBeLessThan(verifyIndex);
+}
+
 // ── Test 1: the e2e test file exists and is in the right location ────────────
 
 describe('agent-driven-forge-e2e file presence', () => {
@@ -143,5 +161,15 @@ describe('ci-verify-forge-e2e-ran.mjs wiring', () => {
     expect(script).toContain('process.argv');
     // And it must reference junit.xml as the default artifact location
     expect(script).toContain('junit.xml');
+  });
+});
+
+describe('Playwright browser install ordering', () => {
+  it('ci release-gates installs Playwright before verify:gates', () => {
+    expectPlaywrightInstallBeforeVerifyGates('.github/workflows/ci.yml', 'release-gates');
+  });
+
+  it('release test suite installs Playwright before verify:gates', () => {
+    expectPlaywrightInstallBeforeVerifyGates('.github/workflows/release.yml', 'test');
   });
 });
