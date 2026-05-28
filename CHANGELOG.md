@@ -13,6 +13,7 @@ All notable changes to AgentForge are documented in this file.
 - Added `agentforge cycle loop-guard reset --json` to emit deterministic machine-readable reset confirmation and defaulted state for automation-driven recovery flows.
 - Added `agentforge cycle list --json` to emit deterministic machine-readable cycle summaries for unattended operator visibility and automation.
 - Added `agentforge cycle show --json` to emit machine-readable per-cycle detail output while preserving legacy text-mode output by default.
+- Added runtime routing observability to `agentforge cycle show --json` via a `runtimeRouting` section summarizing routed vs default execute-phase item decisions from `phases/execute.json`.
 - `ProposalToBacklog` now filters ids recorded in `.agentforge/backlog/completed.json`, preventing completed backlog items from being replayed in new autonomous cycle intake.
 
 ## [23.5.0] - 2026-05-18
