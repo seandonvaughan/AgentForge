@@ -92,7 +92,9 @@ interface LoopGuardStatusOptions extends WorkspaceAwareOptions {
   json?: boolean;
 }
 
-interface LoopGuardResetOptions extends WorkspaceAwareOptions {}
+interface LoopGuardResetOptions extends WorkspaceAwareOptions {
+  json?: boolean;
+}
 
 interface CycleSummary {
   cycleId: string;
@@ -219,6 +221,7 @@ export function registerCycleCommand(program: Command): void {
     .description('Reset loop guard state to defaults')
     .option('--project-root <path>', 'Project root', process.cwd())
     .option('--workspace <id>', 'Run against a registered workspace from ~/.agentforge/workspaces.json')
+    .option('--json', 'Print machine-readable JSON')
     .action(runLoopGuardResetAction);
 }
 
@@ -849,6 +852,17 @@ async function runLoopGuardResetAction(opts: LoopGuardResetOptions): Promise<voi
   const next = localDefaultLoopGuardState();
   mkdirSync(dirname(statePath), { recursive: true });
   writeFileSync(statePath, JSON.stringify(next, null, 2));
+
+  if (opts.json) {
+    console.log(JSON.stringify({
+      projectRoot,
+      path: statePath,
+      state: next,
+      reset: true,
+    }, null, 2));
+    return;
+  }
+
   console.log('[loop-guard] reset');
   console.log(`Path:         ${statePath}`);
   console.log('State:        reset to defaults');
