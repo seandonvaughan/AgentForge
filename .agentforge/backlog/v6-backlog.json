@@ -582,6 +582,26 @@
         "packages/cli/src/__tests__/backlog-command.test.ts",
         "CHANGELOG.md"
       ]
+    },
+    {
+      "id": "guided-big-007",
+      "title": "Lock explicit backlog source all parity",
+      "description": "Close the review follow-up from the backlog source-filter cycle by adding focused regression coverage for explicit `agentforge backlog status --source all`. The new test should prove `--source all` produces the same active scoped item ids, readyForCycle value, and source counts as the default no-filter path when backlog-file and research-plan candidates both exist. Prefer adding test coverage only; change production code only if the parity test exposes a real bug. Keep cycle execution, research planning, and backlog completion semantics unchanged. Run the focused backlog CLI test file and build.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": [
+        "test",
+        "guided-big",
+        "dogfood",
+        "operator-visibility",
+        "backlog",
+        "cli"
+      ],
+      "source": "guided-big-2026-05-28",
+      "files": [
+        "packages/cli/src/__tests__/backlog-command.test.ts",
+        "packages/cli/src/commands/backlog.ts"
+      ]
     }
   ]
 }
