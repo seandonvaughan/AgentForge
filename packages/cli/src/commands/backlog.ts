@@ -32,6 +32,7 @@ interface BacklogFileItem {
   id: string;
   title: string;
   sourceFile: string;
+  sourceHint?: string;
   estimatedComplexity?: 'low' | 'medium' | 'high';
   files?: string[];
   runtimeMode?: 'auto' | 'sdk' | 'claude-code-compat' | 'codex-cli' | 'openai-sdk' | 'anthropic-sdk';
@@ -169,7 +170,10 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
   const completedIds = new Set(completed.entries.map((entry) => entry.itemId));
   const quarantineIds = readQuarantineIds(join(backlogDir, 'quarantine.json'));
   const backlogItems = readBacklogFileItems(backlogDir);
-  const activeItems = backlogItems.filter((item) => !completedIds.has(item.id) && !quarantineIds.has(item.id));
+  const researchItems = readResearchPlanItems(projectRoot);
+  const activeBacklogItems = backlogItems.filter((item) => !completedIds.has(item.id) && !quarantineIds.has(item.id));
+  const activeResearchItems = researchItems.filter((item) => !completedIds.has(item.id) && !quarantineIds.has(item.id));
+  const activeItems = [...activeBacklogItems, ...activeResearchItems];
   const unattendedExcluded = activeItems.filter(isUnattendedExcludedBacklogItem);
   const activeScoped = activeItems
     .filter((item) => !isUnattendedExcludedBacklogItem(item))
@@ -186,7 +190,8 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
     const readyForCycle = activeScoped.length > 0;
     console.log(JSON.stringify({
       projectRoot,
-      activeBacklogFileItems: activeItems.length,
+      activeBacklogFileItems: activeBacklogItems.length,
+      activeResearchPlanItems: activeResearchItems.length,
       completedLedgerEntries: completed.entries.length,
       quarantinedIds: quarantineIds.size,
       unattendedExcludedBacklogItems: unattendedExcluded.length,
@@ -204,7 +209,7 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
         estimatedComplexity: item.estimatedComplexity,
         runtimeMode: item.runtimeMode ?? null,
         preferredProvider: item.preferredProvider ?? null,
-        sourceFile: item.sourceFile,
+        sourceFile: item.sourceHint ?? item.sourceFile,
         scopeFiles: item.files ?? [],
       })),
     }, null, 2));
@@ -213,7 +218,8 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
 
   console.log('[backlog] status');
   console.log(`  projectRoot: ${projectRoot}`);
-  console.log(`  activeBacklogFileItems: ${activeItems.length}`);
+  console.log(`  activeBacklogFileItems: ${activeBacklogItems.length}`);
+  console.log(`  activeResearchPlanItems: ${activeResearchItems.length}`);
   console.log(`  completedLedgerEntries: ${completed.entries.length}`);
   console.log(`  quarantinedIds: ${quarantineIds.size}`);
   console.log(`  unattendedExcludedBacklogItems: ${unattendedExcluded.length}`);
@@ -230,7 +236,7 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
   for (const item of activeScoped) {
     const hints = [
       item.estimatedComplexity ? `complexity=${item.estimatedComplexity}` : null,
-      `source=${item.sourceFile}`,
+      `source=${item.sourceHint ?? item.sourceFile}`,
       `scope=${(item.files ?? []).join(',')}`,
       item.runtimeMode ? `runtime=${item.runtimeMode}` : null,
       item.preferredProvider ? `provider=${item.preferredProvider}` : null,
@@ -309,6 +315,81 @@ function readBacklogFileItems(backlogDir: string): BacklogFileItem[] {
   }
 
   return items;
+}
+
+function readResearchPlanItems(projectRoot: string): BacklogFileItem[] {
+  const researchDir = join(projectRoot, '.agentforge', 'research-runs');
+  let runIds: string[];
+  try {
+    runIds = readdirSync(researchDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
+  } catch {
+    return [];
+  }
+
+  const items: BacklogFileItem[] = [];
+  for (const runId of runIds) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(readFileSync(join(researchDir, runId, 'run.json'), 'utf8')) as unknown;
+    } catch {
+      continue;
+    }
+
+    const run = parsed as Record<string, unknown>;
+    const plannedCycle = run['plannedCycle'];
+    if (!plannedCycle || typeof plannedCycle !== 'object') continue;
+    const ideaIds = Array.isArray((plannedCycle as { ideaIds?: unknown }).ideaIds)
+      ? (plannedCycle as { ideaIds: unknown[] }).ideaIds
+        .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+        .map((id) => id.trim())
+      : [];
+    if (ideaIds.length === 0) continue;
+    const plannedIds = new Set(ideaIds);
+    const ideas = Array.isArray(run['ideas']) ? run['ideas'] : [];
+    for (const raw of ideas) {
+      const item = normalizeResearchPlanItem(raw, runId, plannedIds);
+      if (item) items.push(item);
+    }
+  }
+
+  return items;
+}
+
+function normalizeResearchPlanItem(raw: unknown, runId: string, plannedIds: Set<string>): BacklogFileItem | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const obj = raw as Record<string, unknown>;
+  const ideaId = typeof obj['ideaId'] === 'string' ? obj['ideaId'].trim() : '';
+  if (!ideaId || !plannedIds.has(ideaId)) return null;
+  const status = typeof obj['status'] === 'string' ? obj['status'] : '';
+  if (status !== 'planned') return null;
+  const title = typeof obj['title'] === 'string' ? obj['title'].trim() : '';
+  if (!title) return null;
+
+  const id = normalizeBacklogId(`research-${runId}-${ideaId}`);
+  if (!id) return null;
+  const item: BacklogFileItem = {
+    id,
+    title,
+    sourceFile: 'research-run.json',
+    sourceHint: `research:${runId}`,
+  };
+
+  const risk = typeof obj['risk'] === 'string' ? obj['risk'].toLowerCase() : '';
+  if (risk === 'low' || risk === 'medium' || risk === 'high') {
+    item.estimatedComplexity = risk;
+  }
+
+  const files = Array.isArray(obj['touchedAreas'])
+    ? obj['touchedAreas'].filter((f): f is string => typeof f === 'string' && f.trim().length > 0)
+    : [];
+  if (files.length > 0) {
+    item.files = files;
+  }
+
+  return item;
 }
 
 function normalizeBacklogFileItem(raw: unknown, fileName: string): BacklogFileItem | null {
