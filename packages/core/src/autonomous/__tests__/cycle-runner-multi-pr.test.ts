@@ -128,6 +128,67 @@ afterEach(() => {
 });
 
 describe('gate retry context — agent PR ledger routing', () => {
+  it('maps itemIds from the exact rejected PR number record', () => {
+    const cycleId = 'cycle-retry-pr-number';
+    writeLedger(projectRoot, cycleId, [
+      {
+        prNumber: 175,
+        branch: 'codex/agent-docs-a',
+        itemIds: ['item-A'],
+        openedAt: '2026-05-25T01:00:00.000Z',
+      },
+      {
+        prNumber: 176,
+        branch: 'codex/agent-runtime-b',
+        itemIds: ['item-B'],
+        openedAt: '2026-05-25T01:01:00.000Z',
+      },
+    ]);
+
+    const context = buildGateRetryContext(
+      projectRoot,
+      cycleId,
+      1,
+      'Gate rejected PR #176 because packages/core/src/runtime.ts still diverges.',
+    );
+
+    expect(context.rejectedBranch).toBe('codex/agent-runtime-b');
+    expect(context.prNumber).toBe(176);
+    expect(context.itemIds).toEqual(['item-B']);
+  });
+
+  it('maps itemIds from the exact rejected PR URL record', () => {
+    const cycleId = 'cycle-retry-pr-url';
+    writeLedger(projectRoot, cycleId, [
+      {
+        prNumber: 175,
+        prUrl: 'https://github.com/acme/agentforge/pull/175',
+        branch: 'codex/agent-docs-a',
+        itemIds: ['item-A'],
+        openedAt: '2026-05-25T01:00:00.000Z',
+      },
+      {
+        prNumber: 176,
+        prUrl: 'https://github.com/acme/agentforge/pull/176',
+        branch: 'codex/agent-runtime-b',
+        itemIds: ['item-B'],
+        openedAt: '2026-05-25T01:01:00.000Z',
+      },
+    ]);
+
+    const context = buildGateRetryContext(
+      projectRoot,
+      cycleId,
+      1,
+      'Gate rejected https://github.com/acme/agentforge/pull/176 because runtime checks still diverge.',
+    );
+
+    expect(context.rejectedBranch).toBe('codex/agent-runtime-b');
+    expect(context.prNumber).toBe(176);
+    expect(context.prUrl).toBe('https://github.com/acme/agentforge/pull/176');
+    expect(context.itemIds).toEqual(['item-B']);
+  });
+
   it('maps itemIds from the exact rejected branch record', () => {
     const cycleId = 'cycle-retry-ledger';
     writeLedger(projectRoot, cycleId, [
@@ -155,6 +216,87 @@ describe('gate retry context — agent PR ledger routing', () => {
     expect(context.rejectedBranch).toBe('codex/agent-runtime-b');
     expect(context.prNumber).toBe(176);
     expect(context.itemIds).toEqual(['item-B']);
+  });
+
+  it('falls back from a stale PR number to the exact rejected branch record', () => {
+    const cycleId = 'cycle-retry-stale-pr-exact-branch';
+    writeLedger(projectRoot, cycleId, [
+      {
+        prNumber: 175,
+        branch: 'codex/agent-docs-a',
+        itemIds: ['item-A'],
+        openedAt: '2026-05-25T01:00:00.000Z',
+      },
+      {
+        prNumber: 176,
+        branch: 'codex/agent-runtime-b',
+        itemIds: ['item-B'],
+        openedAt: '2026-05-25T01:01:00.000Z',
+      },
+    ]);
+
+    const context = buildGateRetryContext(
+      projectRoot,
+      cycleId,
+      1,
+      'Gate rejected PR #999 against branch codex/agent-runtime-b.',
+    );
+
+    expect(context.rejectedBranch).toBe('codex/agent-runtime-b');
+    expect(context.prNumber).toBe(176);
+    expect(context.itemIds).toEqual(['item-B']);
+  });
+
+  it('does not match a ledger branch by prefix inside a longer rationale branch', () => {
+    const cycleId = 'cycle-retry-branch-prefix-collision';
+    writeLedger(projectRoot, cycleId, [
+      {
+        prNumber: 175,
+        branch: 'codex/foo',
+        itemIds: ['item-short'],
+        openedAt: '2026-05-25T01:00:00.000Z',
+      },
+      {
+        prNumber: 176,
+        branch: 'codex/unrelated',
+        itemIds: ['item-other'],
+        openedAt: '2026-05-25T01:01:00.000Z',
+      },
+    ]);
+
+    const context = buildGateRetryContext(
+      projectRoot,
+      cycleId,
+      1,
+      'Gate rejected origin/codex/foo-bar after inspecting the diff.',
+    );
+
+    expect(context.rejectedBranch).toBeUndefined();
+    expect(context.prNumber).toBeUndefined();
+    expect(context.itemIds).toBeUndefined();
+  });
+
+  it('still uses the sole ledger record fallback when a branch prefix collision is otherwise ambiguous', () => {
+    const cycleId = 'cycle-retry-prefix-single-ledger';
+    writeLedger(projectRoot, cycleId, [
+      {
+        prNumber: 175,
+        branch: 'codex/foo',
+        itemIds: ['item-only'],
+        openedAt: '2026-05-25T01:00:00.000Z',
+      },
+    ]);
+
+    const context = buildGateRetryContext(
+      projectRoot,
+      cycleId,
+      1,
+      'Gate rejected origin/codex/foo-bar after inspecting the diff.',
+    );
+
+    expect(context.rejectedBranch).toBe('codex/foo');
+    expect(context.prNumber).toBe(175);
+    expect(context.itemIds).toEqual(['item-only']);
   });
 
   it('uses the sole ledger record as a safe fallback and preserves itemIds', () => {

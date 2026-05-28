@@ -34,6 +34,7 @@ import {
 } from '../cost-breakdown.js';
 import { appendStepScore } from '../../scoring/jsonl-writer.js';
 import type { ModelTier, StepScore } from '@agentforge/shared';
+import type { ExecutionProviderKind, RuntimeMode } from '../../runtime/types.js';
 // T4.5 — ConcurrencyGate: caps MAX_PARALLEL_AGENTS (default 8, max 40) and
 // provides backpressure queue so the execute phase never spawns more agents
 // than the configured ceiling, regardless of item count or parallelism cap.
@@ -256,10 +257,19 @@ interface SprintItem {
   status: string;
   source?: string;
   tags?: string[];
+  runtimeMode?: RuntimeMode;
+  preferredProvider?: ExecutionProviderKind;
   /** v6.6.0 — Optional declared file paths the item will touch. If absent,
    *  the FileLockManager falls back to a heuristic regex over title +
    *  description, then to "empty" (conservative — serializes against all). */
   files?: string[];
+}
+
+interface ExecutePhaseRunOptions {
+  allowedTools: string[];
+  cwd?: string;
+  runtimeMode?: RuntimeMode;
+  preferredProvider?: ExecutionProviderKind;
 }
 
 /** v6.6.0 — File-aware lock manager used by the execute-phase dispatch loop.
@@ -1067,11 +1077,17 @@ export async function runExecutePhase(
           filesHinted: item.files ?? [],
         });
         try {
-          const runOptions: Record<string, unknown> = { allowedTools };
+          const runOptions: ExecutePhaseRunOptions = { allowedTools };
           if (worktreeHandle) {
             // T4.2: pass cwd so the runtime runs the agent inside the isolated
             // worktree rather than the main project root.
-            runOptions['cwd'] = worktreeHandle.path;
+            runOptions.cwd = worktreeHandle.path;
+          }
+          if (item.runtimeMode !== undefined) {
+            runOptions.runtimeMode = item.runtimeMode;
+          }
+          if (item.preferredProvider !== undefined) {
+            runOptions.preferredProvider = item.preferredProvider;
           }
           const result = await ctx.runtime.run(item.assignee, task, runOptions);
 
