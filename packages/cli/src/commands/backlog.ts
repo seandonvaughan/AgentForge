@@ -31,10 +31,20 @@ interface CompletedBacklogLedger {
 interface BacklogFileItem {
   id: string;
   title: string;
+  sourceFile: string;
   estimatedComplexity?: 'low' | 'medium' | 'high';
   files?: string[];
   runtimeMode?: 'auto' | 'sdk' | 'claude-code-compat' | 'codex-cli' | 'openai-sdk' | 'anthropic-sdk';
   preferredProvider?: 'claude-code-compat' | 'codex-cli' | 'openai-sdk' | 'anthropic-sdk';
+}
+
+interface DuplicateNormalizedIdSummary {
+  id: string;
+  count: number;
+  items: Array<{
+    title: string;
+    sourceFile: string;
+  }>;
 }
 
 export function registerBacklogCommand(program: Command): void {
@@ -168,6 +178,7 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
       if (idCompare !== 0) return idCompare;
       return a.title.localeCompare(b.title);
     });
+  const duplicateNormalizedIds = summarizeDuplicateNormalizedIds(activeScoped);
   const routedScoped = activeScoped.filter((item) => item.runtimeMode !== undefined || item.preferredProvider !== undefined);
   const defaultScoped = activeScoped.length - routedScoped.length;
 
@@ -183,6 +194,7 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
         routedItems: routedScoped.length,
         defaultItems: defaultScoped,
       },
+      duplicateNormalizedIds,
       activeScopedItems: activeScoped.map((item) => ({
         id: item.id,
         title: item.title,
@@ -202,6 +214,7 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
   console.log(`  quarantinedIds: ${quarantineIds.size}`);
   console.log(`  unattendedExcludedBacklogItems: ${unattendedExcluded.length}`);
   console.log(`  runtimeRoutingHints: scoped=${activeScoped.length} routed=${routedScoped.length} default=${defaultScoped}`);
+  console.log(`  duplicateNormalizedIds: ${formatDuplicateNormalizedIds(duplicateNormalizedIds)}`);
   console.log('  activeScopedItems:');
   if (activeScoped.length === 0) {
     console.log('    (none)');
@@ -218,6 +231,45 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
     const suffix = hints.length > 0 ? ` [${hints.join(', ')}]` : '';
     console.log(`    - ${item.id}: ${item.title}${suffix}`);
   }
+}
+
+function summarizeDuplicateNormalizedIds(items: BacklogFileItem[]): DuplicateNormalizedIdSummary[] {
+  const byId = new Map<string, BacklogFileItem[]>();
+  for (const item of items) {
+    const group = byId.get(item.id) ?? [];
+    group.push(item);
+    byId.set(item.id, group);
+  }
+
+  return Array.from(byId.entries())
+    .filter(([, matches]) => matches.length > 1)
+    .map(([id, matches]) => ({
+      id,
+      count: matches.length,
+      items: matches
+        .map((item) => ({
+          title: item.title,
+          sourceFile: item.sourceFile,
+        }))
+        .sort((a, b) => {
+          const titleCompare = a.title.localeCompare(b.title);
+          if (titleCompare !== 0) return titleCompare;
+          return a.sourceFile.localeCompare(b.sourceFile);
+        }),
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
+function formatDuplicateNormalizedIds(dupes: DuplicateNormalizedIdSummary[]): string {
+  if (dupes.length === 0) return '(none)';
+  return dupes
+    .map((entry) => {
+      const sources = entry.items
+        .map((item) => `${item.title} (${item.sourceFile})`)
+        .join('; ');
+      return `${entry.id} x${entry.count}: ${sources}`;
+    })
+    .join(', ');
 }
 
 function readBacklogFileItems(backlogDir: string): BacklogFileItem[] {
@@ -266,6 +318,7 @@ function normalizeBacklogFileItem(raw: unknown, fileName: string): BacklogFileIt
   const item: BacklogFileItem = {
     id,
     title,
+    sourceFile: fileName,
   };
 
   const complexity = typeof obj['estimatedComplexity'] === 'string'
