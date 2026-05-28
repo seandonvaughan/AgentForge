@@ -472,6 +472,27 @@
         "playwright.config.ts",
         "tests/playwright-config.test.ts"
       ]
+    },
+    {
+      "id": "guided-big-002",
+      "title": "Add target-aware cycle streak status",
+      "description": "Improve AgentForge dogfood visibility by extending `agentforge cycle streak status` with an optional positive integer `--target <n>` flag. When provided, text output should include deterministic `Target:`, `Remaining:`, and `Goal met:` lines derived from the current consecutive success count. JSON output should include `targetSuccesses`, `remainingSuccesses`, and `goalMet`. Preserve existing status text and JSON behavior when `--target` is omitted, and reject missing, zero, negative, decimal, or non-numeric target values with a clear error and non-zero exit code. Add focused CLI tests for no-target backward compatibility, text target unmet/met output, JSON target output, and invalid target handling. Do not change cycle execution or streak recording semantics.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "tags": [
+        "feature",
+        "guided-big",
+        "dogfood",
+        "operator-visibility",
+        "streak",
+        "cli"
+      ],
+      "source": "guided-big-2026-05-28",
+      "files": [
+        "packages/cli/src/commands/autonomous.ts",
+        "packages/cli/src/__tests__/cycle-list-show.test.ts",
+        "CHANGELOG.md"
+      ]
     }
   ]
 }
