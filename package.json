@@ -34,6 +34,7 @@
     "test:e2e:debug": "playwright test --debug",
     "lint": "eslint \"src/**/*.{js,mjs,cjs,ts,tsx}\" \"packages/**/*.{js,mjs,cjs,ts,tsx,svelte}\" \"tests/**/*.{js,mjs,cjs,ts,tsx}\" \"scripts/**/*.{js,mjs,cjs,ts,tsx}\" \"*.config.{js,mjs,cjs,ts,tsx}\" eslint.config.js --max-warnings=0",
     "check:versions": "node scripts/check-version-sync.mjs",
+    "check:legacy-src": "node scripts/check-no-legacy-src-imports.mjs",
     "check:help": "node scripts/check-help-output.mjs",
     "check:changelog": "node scripts/check-changelog.mjs",
     "dashboard:check": "node scripts/run-pnpm.mjs -- --filter @agentforge/dashboard check",

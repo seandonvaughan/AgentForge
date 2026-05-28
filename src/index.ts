@@ -1,34 +1,9 @@
 /**
- * AgentForge — Adaptive Agent Team Builder for Claude Code
+ * AgentForge — root compatibility shim.
  *
- * Main entry point for the Claude Code plugin.
+ * All concrete implementations live in the @agentforge/* packages.
+ * This file is a thin re-export so that any remaining consumer that
+ * imports from the root src/ entry point continues to resolve
+ * against the canonical package.
  */
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-
-export interface AgentForgePlugin {
-  name: string;
-  version: string;
-}
-
-const plugin: AgentForgePlugin = {
-  name: "agentforge",
-  version: readPackageVersion(),
-};
-
-console.log("AgentForge loaded");
-
-// Export utilities
-export * from './utils/index.js';
-
-export default plugin;
-
-function readPackageVersion(): string {
-  try {
-    const packageJsonPath = fileURLToPath(new URL('../package.json', import.meta.url));
-    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as { version?: string };
-    return packageJson.version ?? 'unknown';
-  } catch {
-    return 'unknown';
-  }
-}
+export * from '@agentforge/core';
