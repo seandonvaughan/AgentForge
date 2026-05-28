@@ -195,6 +195,7 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
         defaultItems: defaultScoped,
       },
       duplicateNormalizedIds,
+      activeScopedItemsCount: activeScoped.length,
       activeScopedItems: activeScoped.map((item) => ({
         id: item.id,
         title: item.title,
@@ -216,6 +217,7 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
   console.log(`  unattendedExcludedBacklogItems: ${unattendedExcluded.length}`);
   console.log(`  runtimeRoutingHints: scoped=${activeScoped.length} routed=${routedScoped.length} default=${defaultScoped}`);
   console.log(`  duplicateNormalizedIds: ${formatDuplicateNormalizedIds(duplicateNormalizedIds)}`);
+  console.log(`  activeScopedItemsCount: ${activeScoped.length}`);
   console.log('  activeScopedItems:');
   if (activeScoped.length === 0) {
     console.log('    (none)');
