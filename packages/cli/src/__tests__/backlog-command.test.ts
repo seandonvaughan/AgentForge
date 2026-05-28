@@ -262,6 +262,7 @@ describe('agentforge backlog status', () => {
           estimatedComplexity: 'low',
           runtimeMode: 'codex-cli',
           preferredProvider: 'codex-cli',
+          sourceFile: 'items.json',
           scopeFiles: ['packages/cli/src/commands/backlog.ts'],
         },
         {
@@ -270,6 +271,7 @@ describe('agentforge backlog status', () => {
           estimatedComplexity: 'low',
           runtimeMode: null,
           preferredProvider: null,
+          sourceFile: 'items.json',
           scopeFiles: ['packages/cli/src/bin.ts'],
         },
       ],

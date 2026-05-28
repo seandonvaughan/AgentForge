@@ -201,6 +201,7 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
         estimatedComplexity: item.estimatedComplexity,
         runtimeMode: item.runtimeMode ?? null,
         preferredProvider: item.preferredProvider ?? null,
+        sourceFile: item.sourceFile,
         scopeFiles: item.files ?? [],
       })),
     }, null, 2));
