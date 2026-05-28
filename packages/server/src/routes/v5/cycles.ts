@@ -101,6 +101,8 @@ const SAFE_PHASE = new Set([
 ]);
 const CYCLE_PHASES = ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate', 'release', 'learn'] as const;
 const TERMINAL_CYCLE_STAGES = new Set(['killed', 'crashed', 'failed', 'completed']);
+/** Per-phase pipeline status for the dashboard cycle-progress bricks. */
+type CycleStageStatus = 'pending' | 'active' | 'done';
 const SAFE_FILE_NAMES = new Set([
   'tests', 'git', 'pr', 'approval-pending', 'approval-decision', 'typecheck-failure',
 ]);
@@ -189,6 +191,8 @@ interface CycleListRow {
   sprintVersion: string | null;
   stage: string;
   status: string;
+  /** Per-phase pipeline status in CYCLE_PHASES order, for dashboard progress bricks. */
+  stages: CycleStageStatus[];
   startedAt: string;
   completedAt: string | null;
   durationMs: number | null;
@@ -449,6 +453,41 @@ function isTerminalCyclePayload(cycleJson: Record<string, unknown>): boolean {
     || typeof cycleJson['killSwitch'] === 'object';
 }
 
+/**
+ * Project a cycle's phase progress into per-phase pipeline status (CYCLE_PHASES
+ * order) for the dashboard progress bricks. Prefers the checkpoint's
+ * completedPhases/resumeFromPhase; falls back to which phases/<name>.json
+ * artifacts exist on disk. A completed cycle is all 'done'; a failed/crashed/
+ * killed cycle shows the phases it reached as 'done' with no 'active' brick.
+ */
+function computeStageStatuses(cycleDir: string, status: string): CycleStageStatus[] {
+  if (status === 'completed') return CYCLE_PHASES.map(() => 'done');
+
+  // A phase is 'done' if EITHER it wrote its phases/<name>.json artifact OR the
+  // checkpoint lists it as completed — union the two so a phase that produced
+  // output is never shown as pending even if the checkpoint pointer regressed.
+  const completed = new Set<string>();
+  for (const p of CYCLE_PHASES) {
+    if (existsSync(join(cycleDir, 'phases', `${p}.json`))) completed.add(p);
+  }
+  let current: string | null = null;
+  const checkpoint = readCycleCheckpoint(cycleDir);
+  if (checkpoint) {
+    for (const p of checkpoint.completedPhases) completed.add(p);
+    current = checkpoint.resumeFromPhase;
+  }
+  if (!current) current = CYCLE_PHASES.find((p) => !completed.has(p)) ?? null;
+
+  // failed / crashed / killed: terminal but not completed — no in-flight brick.
+  const stalledTerminal = TERMINAL_CYCLE_STAGES.has(status) && status !== 'completed';
+
+  return CYCLE_PHASES.map((phase): CycleStageStatus => {
+    if (completed.has(phase)) return 'done';
+    if (!stalledTerminal && phase === current) return 'active';
+    return 'pending';
+  });
+}
+
 function summarizeCycle(cycleDir: string, cycleId: string, projectRoot?: string): CycleListRow | null {
   if (!existsSync(cycleDir)) return null;
   const launchConfig = readCycleLaunchConfig(cycleDir);
@@ -504,6 +543,10 @@ function summarizeCycle(cycleDir: string, cycleId: string, projectRoot?: string)
       sprintVersion: (cycleJson['sprintVersion'] as string) ?? readCycleSprintVersion(cycleDir),
       stage: (cycleJson['stage'] as string) ?? 'completed',
       status: deriveCycleStatus((cycleJson['stage'] as string) ?? 'completed', cycleJson),
+      stages: computeStageStatuses(
+        cycleDir,
+        deriveCycleStatus((cycleJson['stage'] as string) ?? 'completed', cycleJson),
+      ),
       startedAt:
         (cycleJson['startedAt'] as string) ??
         deriveStartedAt(cycleDir) ??
@@ -619,6 +662,7 @@ function summarizeCycle(cycleDir: string, cycleId: string, projectRoot?: string)
     sprintVersion: readCycleSprintVersion(cycleDir, events),
     stage,
     status: deriveCycleStatus(stage, cycleJson, events, sessionStatus),
+    stages: computeStageStatuses(cycleDir, deriveCycleStatus(stage, cycleJson, events, sessionStatus)),
     startedAt,
     completedAt: null,
     durationMs: Date.now() - new Date(startedAt).getTime(),
