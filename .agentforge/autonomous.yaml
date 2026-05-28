@@ -25,7 +25,7 @@ quality:
   requireTypeCheckSuccess: true
 git:
   branchPrefix: codex/
-  baseBranch: codex/codex-version
+  baseBranch: main
   refuseCommitToBaseBranch: true
   includeDiagnosticBranchOnFailure: true
   maxFilesPerCommit: 100
