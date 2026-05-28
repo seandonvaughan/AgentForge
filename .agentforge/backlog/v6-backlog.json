@@ -207,6 +207,19 @@
         "packages/cli/src/commands/backlog.ts",
         "packages/cli/src/__tests__/backlog-command.test.ts"
       ]
+    },
+    {
+      "id": "guided-large-006",
+      "title": "Show backlog item scope in backlog status",
+      "description": "Extend `agentforge backlog status` so each active scoped item shows its declared estimatedComplexity and files in both text and `--json` output. Keep current filtering, counts, and runtime/provider hint visibility unchanged. This helps operators verify a curated cycle is still tightly scoped before spending runtime. Add focused CLI tests covering text and JSON output for complexity, file scope, and existing routing hints.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": ["feature", "guided-large", "operator-visibility", "backlog", "cli"],
+      "source": "guided-large-2026-05-27",
+      "files": [
+        "packages/cli/src/commands/backlog.ts",
+        "packages/cli/src/__tests__/backlog-command.test.ts"
+      ]
     }
   ]
 }
