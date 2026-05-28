@@ -493,6 +493,28 @@
         "packages/cli/src/__tests__/cycle-list-show.test.ts",
         "CHANGELOG.md"
       ]
+    },
+    {
+      "id": "guided-big-003",
+      "title": "Source planned R&D ideas into autonomous backlog intake",
+      "description": "Unlock meaningful autonomous cycles when the normal backlog is empty by teaching ProposalToBacklog to read planned R&D artifacts under `.agentforge/research-runs`. For each research run with a `plannedCycle`, create deterministic backlog candidates for the planned idea ids only. Candidate ids should be stable, e.g. `research-<runId>-<ideaId>`, and descriptions should include the idea problem, hypothesis, expected impact, and acceptance checks. Preserve the existing completed/quarantine replay guards by normalizing these ids through the same path as other backlog items. Add a new source type such as `research-plan`, map idea risk to estimatedComplexity (`low|medium|high`), carry file/scope hints from `touchedAreas`, and update the unattended difficulty gate so research-plan items must be low/medium and have non-empty scope before auto-pick. Tolerate missing, malformed, and partial research-run files. Add focused tests proving planned ideas are sourced, unplanned/rejected/proposed ideas are ignored, completed research ids are filtered, malformed research runs are ignored, and unattended mode excludes high-risk or file-less research-plan candidates. Update changelog. Do not change research proposal generation, approval semantics, cycle execution semantics, or backlog-file behavior.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "tags": [
+        "feature",
+        "guided-big",
+        "dogfood",
+        "autonomous",
+        "research",
+        "backlog"
+      ],
+      "source": "guided-big-2026-05-28",
+      "files": [
+        "packages/core/src/autonomous/proposal-to-backlog.ts",
+        "packages/core/src/autonomous/__tests__/proposal-backlog-guard.test.ts",
+        "packages/core/src/research/types.ts",
+        "CHANGELOG.md"
+      ]
     }
   ]
 }
