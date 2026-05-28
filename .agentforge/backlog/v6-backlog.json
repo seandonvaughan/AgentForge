@@ -515,6 +515,28 @@
         "packages/core/src/research/types.ts",
         "CHANGELOG.md"
       ]
+    },
+    {
+      "id": "guided-big-004",
+      "title": "Show planned R&D candidates in backlog status",
+      "description": "Now that ProposalToBacklog sources planned R&D ideas, extend `agentforge backlog status` so operators can see those research-plan candidates before running a cycle. The status command should include planned research candidates in active scoped counts, readyForCycle, routing/default counts, text `activeScopedItems`, and JSON `activeScopedItems`. Preserve existing backlog-file counts as `activeBacklogFileItems`, and add a separate deterministic count such as `activeResearchPlanItems` so old meaning is not lost. Research-plan rows should show a source hint like `source=research:<runId>` or equivalent, estimatedComplexity, and scope files from touchedAreas. Reuse the same completed/quarantine normalization semantics so completed research ids are hidden. Preserve existing behavior when no research runs exist. Add focused backlog CLI tests for text output with research-plan candidates, JSON output, completed filtering, and no-research backward compatibility. Update changelog. Do not change cycle execution semantics or research approval/planning semantics.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "tags": [
+        "feature",
+        "guided-big",
+        "dogfood",
+        "operator-visibility",
+        "research",
+        "backlog",
+        "cli"
+      ],
+      "source": "guided-big-2026-05-28",
+      "files": [
+        "packages/cli/src/commands/backlog.ts",
+        "packages/cli/src/__tests__/backlog-command.test.ts",
+        "CHANGELOG.md"
+      ]
     }
   ]
 }
