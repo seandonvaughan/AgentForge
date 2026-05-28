@@ -412,6 +412,26 @@
         "packages/cli/src/commands/backlog.ts",
         "packages/cli/src/__tests__/backlog-command.test.ts"
       ]
+    },
+    {
+      "id": "guided-large-017",
+      "title": "Show active backlog item count in status headers",
+      "description": "Extend `agentforge backlog status` to print the active scoped item count near the active item section. In text output, add a deterministic line `activeScopedItemsCount: <n>` immediately before the `activeScopedItems:` heading. In `--json` output, add top-level `activeScopedItemsCount` equal to `activeScopedItems.length`. Preserve existing counts, duplicate diagnostics, runtime routing hints, active item ordering, and active item fields unchanged. Add focused CLI tests proving the count appears in both text and JSON output and matches the active scoped item array length.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": [
+        "feature",
+        "guided-large",
+        "dogfood",
+        "operator-visibility",
+        "backlog",
+        "cli"
+      ],
+      "source": "guided-large-2026-05-28",
+      "files": [
+        "packages/cli/src/commands/backlog.ts",
+        "packages/cli/src/__tests__/backlog-command.test.ts"
+      ]
     }
   ]
 }
