@@ -178,6 +178,22 @@
         "packages/cli/src/__tests__/cycle-list-show.test.ts",
         "CHANGELOG.md"
       ]
+    },
+    {
+      "id": "guided-large-004",
+      "title": "Preserve backlog runtime and provider hints through planning",
+      "description": "Let backlog-file items declare runtimeMode and preferredProvider, then preserve those fields through ProposalToBacklog -> RankedItem -> SprintGenerator -> plan.json. Execute phase already forwards item-level hints, so this fills the upstream Stream B gap without changing execution defaults. Add focused tests proving backlog-file runtime/provider hints survive sourcing, scoring fallback, scorer-produced rankings, and sprint plan generation. Keep current global runtime behavior unchanged for items without hints.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "tags": ["feature", "guided-large", "stream-b", "runtime-routing", "backlog", "planning"],
+      "source": "guided-large-2026-05-27",
+      "files": [
+        "packages/core/src/autonomous/proposal-to-backlog.ts",
+        "packages/core/src/autonomous/types.ts",
+        "packages/core/src/autonomous/scoring-pipeline.ts",
+        "packages/core/src/autonomous/sprint-generator.ts",
+        "packages/core/src/autonomous/__tests__/sourcing-stability.test.ts"
+      ]
     }
   ]
 }
