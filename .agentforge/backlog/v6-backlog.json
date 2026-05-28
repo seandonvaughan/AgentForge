@@ -271,6 +271,27 @@
         "scripts/check-help-output.mjs",
         "CHANGELOG.md"
       ]
+    },
+    {
+      "id": "guided-large-010",
+      "title": "Show duplicate normalized backlog IDs in backlog status",
+      "description": "Extend `agentforge backlog status` to report when active backlog JSON items collapse to the same normalized `backlog-*` ID, including enough title/source context in both text and `--json` output for operators to fix the ambiguity before spending a cycle. Preserve existing completion/quarantine filtering, unattended exclusions, runtime routing visibility, and completion semantics. Add focused CLI tests for duplicate normalized IDs across backlog JSON files, deterministic text output, and a machine-readable duplicate list in JSON.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": [
+        "feature",
+        "guided-large",
+        "dogfood",
+        "operator-visibility",
+        "backlog",
+        "cli"
+      ],
+      "source": "guided-large-2026-05-28",
+      "files": [
+        "packages/cli/src/commands/backlog.ts",
+        "packages/cli/src/__tests__/backlog-command.test.ts",
+        "CHANGELOG.md"
+      ]
     }
   ]
 }
