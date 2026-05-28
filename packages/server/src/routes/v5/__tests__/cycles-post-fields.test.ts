@@ -16,6 +16,9 @@ import { mkdtempSync, mkdirSync, existsSync, readFileSync, rmSync } from 'node:f
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawn } from 'node:child_process';
+import * as cycleSessions from '../../../lib/cycle-sessions.js';
+
+const markTerminalMock = vi.fn();
 
 // Stub cycle-sessions so tests do not touch ~/.agentforge/sessions.json
 vi.mock('../../../lib/cycle-sessions.js', () => ({
@@ -24,7 +27,7 @@ vi.mock('../../../lib/cycle-sessions.js', () => ({
   reap: () => ({ reaped: 0, stillRunning: 0 }),
   startReaper: () => ({ stop: () => {} }),
   register: () => {},
-  markTerminal: () => {},
+  markTerminal: markTerminalMock,
   stop: async () => ({ ok: true, status: 'killed', message: 'mocked' }),
   isPidAlive: () => false,
 }));
@@ -294,5 +297,30 @@ describe('POST /api/v5/cycles — Fix 1: maxAgents, tags, fallbackEnabled', () =
     });
     expect(res.statusCode).toBe(202);
     expect(res.json().tags).toEqual([]);
+  });
+
+  it('marks cycle terminal when child already exited before listener delivery', async () => {
+    vi.mocked(spawn).mockImplementationOnce(() => ({
+      pid: 12345,
+      exitCode: 0,
+      signalCode: null,
+      once: vi.fn(),
+      unref: vi.fn(),
+    }) as unknown as ReturnType<typeof spawn>);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v5/cycles',
+      payload: {},
+    });
+
+    expect(res.statusCode).toBe(202);
+    const body = res.json() as { cycleId: string };
+    expect(markTerminalMock).toHaveBeenCalledWith(
+      body.cycleId,
+      'completed',
+      'cycle process exited successfully',
+    );
+    expect(cycleSessions.markTerminal).toBe(markTerminalMock);
   });
 });

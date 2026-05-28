@@ -437,6 +437,16 @@ function bindCycleChildLifecycle(child: ChildProcess, cycleId: string): void {
   });
 }
 
+function reconcileCycleChildImmediateExit(child: ChildProcess, cycleId: string): void {
+  if (child.exitCode === 0) {
+    cycleSessions.markTerminal(cycleId, 'completed', 'cycle process exited successfully');
+  } else if (typeof child.exitCode === 'number') {
+    cycleSessions.markTerminal(cycleId, 'crashed', `cycle process exited with code ${child.exitCode}`);
+  } else if (child.signalCode) {
+    cycleSessions.markTerminal(cycleId, 'killed', `cycle process exited from signal ${child.signalCode}`);
+  }
+}
+
 function isTerminalCyclePayload(cycleJson: Record<string, unknown>): boolean {
   const stage = cycleJson['stage'];
   return (typeof stage === 'string' && TERMINAL_CYCLE_STAGES.has(stage))
@@ -1969,10 +1979,11 @@ export async function cyclesRoutes(
 
     let pid: number;
     let pgid: number;
+    let child: ChildProcess;
     try {
       // detached: true makes the child a process group leader (pgid === pid),
       // which lets the stop endpoint kill the entire group via -pgid.
-      const child = spawn(nodeBin, [cliEntry, 'cycle', 'run'], {
+      child = spawn(nodeBin, [cliEntry, 'cycle', 'run'], {
         cwd: reqProjectRoot,
         detached: true,
         stdio: ['ignore', logFd, logFd],
@@ -1993,7 +2004,6 @@ export async function cyclesRoutes(
         },
       });
       bindCycleChildLifecycle(child, cycleId);
-      child.unref();
       pid = child.pid ?? -1;
       pgid = pid;
       closeLogFd(logFd);
@@ -2015,6 +2025,8 @@ export async function cyclesRoutes(
         // eslint-disable-next-line no-console
         console.warn(`[cycles] failed to register session ${cycleId}:`, err);
       }
+      reconcileCycleChildImmediateExit(child, cycleId);
+      child.unref();
     }
 
     return reply.status(202).send({
@@ -2197,8 +2209,9 @@ export async function cyclesRoutes(
 
     let pid: number;
     let pgid: number;
+    let child: ChildProcess;
     try {
-      const child = spawn(nodeBin, [cliEntry, 'cycle', 'run', '--resume', id], {
+      child = spawn(nodeBin, [cliEntry, 'cycle', 'run', '--resume', id], {
         cwd: reqProjectRoot,
         detached: true,
         stdio: ['ignore', logFd, logFd],
@@ -2206,7 +2219,6 @@ export async function cyclesRoutes(
         env,
       });
       bindCycleChildLifecycle(child, id);
-      child.unref();
       pid = child.pid ?? -1;
       pgid = pid;
       closeLogFd(logFd);
@@ -2219,6 +2231,8 @@ export async function cyclesRoutes(
       try {
         cycleSessions.register({ cycleId: id, pid, pgid, workspaceId, workspaceRoot: reqProjectRoot });
       } catch { /* non-fatal */ }
+      reconcileCycleChildImmediateExit(child, id);
+      child.unref();
     }
 
     appendAuditEntry(auditDb, {
@@ -2372,8 +2386,9 @@ export async function cyclesRoutes(
 
     let pid: number;
     let pgid: number;
+    let child: ChildProcess;
     try {
-      const child = spawn(nodeBin, [cliEntry, 'cycle', 'run'], {
+      child = spawn(nodeBin, [cliEntry, 'cycle', 'run'], {
         cwd: reqProjectRoot,
         detached: true,
         stdio: ['ignore', logFd, logFd],
@@ -2381,7 +2396,6 @@ export async function cyclesRoutes(
         env,
       });
       bindCycleChildLifecycle(child, newCycleId);
-      child.unref();
       pid = child.pid ?? -1;
       pgid = pid;
       closeLogFd(logFd);
@@ -2394,6 +2408,8 @@ export async function cyclesRoutes(
       try {
         cycleSessions.register({ cycleId: newCycleId, pid, pgid, workspaceId, workspaceRoot: reqProjectRoot });
       } catch { /* non-fatal */ }
+      reconcileCycleChildImmediateExit(child, newCycleId);
+      child.unref();
     }
 
     // SOC-2 audit log.
