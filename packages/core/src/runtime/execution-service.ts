@@ -4,7 +4,7 @@ import { MODEL_IDS } from '../agent-runtime/types.js';
 import { resolveMode } from './execution-service-mode.js';
 import type { ExecutionServiceMode } from './execution-service-mode.js';
 import { resolveProviderModelProfiles } from './model-profiles.js';
-import { ProviderResolver } from './provider-resolver.js';
+import { getProviderAvailability, ProviderResolver } from './provider-resolver.js';
 import { RuntimeSession } from './runtime-session.js';
 import { AnthropicSdkTransport } from './transports/anthropic-sdk-transport.js';
 import { ClaudeCodeCompatTransport } from './transports/claude-code-compat-transport.js';
@@ -87,7 +87,10 @@ export class ExecutionService {
       ];
     }
 
-    this.resolver = new ProviderResolver(transports);
+    this.resolver = new ProviderResolver(transports, {
+      getProviderAvailability,
+      env: process.env,
+    });
   }
 
   /**
