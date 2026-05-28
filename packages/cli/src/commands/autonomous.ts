@@ -11,8 +11,8 @@
 //
 // `autonomous:cycle` remains as a compatibility alias for `cycle run`.
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { basename, dirname, join, resolve } from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
 import type { Command } from 'commander';
 import {
   loadCycleConfig,
@@ -477,6 +477,8 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
           projectRoot: cwd,
           baseBranch: config.git.baseBranch,
           branchPrefix: config.git.branchPrefix,
+          rootDir: process.env['AUTONOMOUS_WORKTREE_ROOT_DIR']?.trim() ||
+            buildCycleWorktreeRootDir(cwd),
         });
       } catch (poolErr) {
         const poolMsg = poolErr instanceof Error ? poolErr.message : String(poolErr);
@@ -1242,6 +1244,18 @@ async function resolveWorkspaceProjectRoot(options: WorkspaceAwareOptions): Prom
   }
 
   return resolve(cwd);
+}
+
+function buildCycleWorktreeRootDir(projectRoot: string): string {
+  const resolvedRoot = resolve(projectRoot);
+  const repoName = basename(resolvedRoot)
+    .replace(/[^a-zA-Z0-9_.-]+/g, '_')
+    .replace(/^_+|_+$/g, '') || 'workspace';
+  const rootHash = createHash('sha256')
+    .update(process.platform === 'win32' ? resolvedRoot.toLowerCase() : resolvedRoot)
+    .digest('hex')
+    .slice(0, 12);
+  return join('..', '.agentforge-worktrees', `${repoName}-${rootHash}`);
 }
 
 function printCycleRunResult(

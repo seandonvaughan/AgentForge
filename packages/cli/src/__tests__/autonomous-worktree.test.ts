@@ -10,7 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 
 // ---------------------------------------------------------------------------
 // Hoisted state shared between the vi.mock factory and test bodies.
@@ -22,7 +22,12 @@ const {
   cycleRunnerCalls,
   poolConfig,
 } = vi.hoisted(() => {
-  const worktreePoolCalls: Array<{ projectRoot: string; baseBranch?: string; branchPrefix?: string }> = [];
+  const worktreePoolCalls: Array<{
+    projectRoot: string;
+    baseBranch?: string;
+    branchPrefix?: string;
+    rootDir?: string;
+  }> = [];
   const cycleRunnerCalls: Array<{
     worktreePool: unknown;
     disableWorktrees: unknown;
@@ -39,13 +44,24 @@ const {
 // Mock @agentforge/core before the module-under-test is imported.
 // ---------------------------------------------------------------------------
 vi.mock('@agentforge/core', () => {
-  function WorktreePoolMock(this: object, opts: { projectRoot: string; baseBranch?: string; branchPrefix?: string }) {
-    const entry: { projectRoot: string; baseBranch?: string; branchPrefix?: string } = { projectRoot: opts.projectRoot };
+  function WorktreePoolMock(
+    this: object,
+    opts: { projectRoot: string; baseBranch?: string; branchPrefix?: string; rootDir?: string },
+  ) {
+    const entry: {
+      projectRoot: string;
+      baseBranch?: string;
+      branchPrefix?: string;
+      rootDir?: string;
+    } = { projectRoot: opts.projectRoot };
     if (opts.baseBranch !== undefined) {
       entry.baseBranch = opts.baseBranch;
     }
     if (opts.branchPrefix !== undefined) {
       entry.branchPrefix = opts.branchPrefix;
+    }
+    if (opts.rootDir !== undefined) {
+      entry.rootDir = opts.rootDir;
     }
     worktreePoolCalls.push(entry);
     if (poolConfig.shouldThrow) {
@@ -226,6 +242,9 @@ describe('autonomous-worktree: WorktreePool wiring at CLI launch', () => {
     // baseBranch comes from the mocked loadCycleConfig: 'main'
     expect(worktreePoolCalls[0]?.baseBranch).toBe('main');
     expect(worktreePoolCalls[0]?.branchPrefix).toBe('autonomous/');
+    expect(worktreePoolCalls[0]?.rootDir).toContain(join('..', '.agentforge-worktrees'));
+    const resolvedWorktreeRoot = resolve(projectRoot, worktreePoolCalls[0]!.rootDir!);
+    expect(relative(projectRoot, resolvedWorktreeRoot).startsWith('..')).toBe(true);
   });
 
   it('normalizes relative project roots before constructing WorktreePool', async () => {

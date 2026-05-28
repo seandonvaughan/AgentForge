@@ -5,11 +5,12 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { promisify } from 'node:util';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { WorktreePool } from '../worktree-pool.js';
@@ -40,6 +41,10 @@ function expectedHandleId(agentId: string, sessionId: string): string {
 
 function toPosixPath(path: string): string {
   return path.replace(/\\/g, '/');
+}
+
+function comparablePath(path: string): string {
+  return toPosixPath(realpathSync.native(path)).toLowerCase();
 }
 
 interface RepoTemplate {
@@ -537,6 +542,20 @@ describe('WorktreePool', () => {
 
     expect(toPosixPath(handle.path)).toContain('.mypool/workers');
     expect(existsSync(handle.path)).toBe(true);
+
+    await pool.release(handle.id);
+  });
+
+  it('supports a rootDir outside the parent checkout', async () => {
+    const pool = new WorktreePool({
+      projectRoot: workingDir,
+      rootDir: join('..', '.agentforge-worktrees', 'outside-root'),
+    });
+    const handle = await pool.allocate({ agentId: 'coder', sessionId: 'outside-root' });
+
+    expect(relative(workingDir, handle.path).startsWith('..')).toBe(true);
+    expect(comparablePath((await git(handle.path, ['rev-parse', '--show-toplevel'])).trim()))
+      .toBe(comparablePath(handle.path));
 
     await pool.release(handle.id);
   });
