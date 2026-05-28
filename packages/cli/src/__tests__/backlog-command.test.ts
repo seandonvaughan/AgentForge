@@ -201,12 +201,17 @@ describe('agentforge backlog status', () => {
     const output = consoleLog.mock.calls.map((args: unknown[]) => String(args[0] ?? '')).join('\n');
     expect(output).toContain('[backlog] status');
     expect(output).toContain('activeBacklogFileItems: 4');
+    expect(output).toContain('activeResearchPlanItems: 0');
     expect(output).toContain('completedLedgerEntries: 1');
     expect(output).toContain('quarantinedIds: 1');
     expect(output).toContain('unattendedExcludedBacklogItems: 2');
     expect(output).toContain('runtimeRoutingHints: scoped=2 routed=1 default=1');
-    expect(output).toContain('- backlog-scoped-task: Scoped Task [complexity=low, scope=packages/cli/src/bin.ts]');
-    expect(output).toContain('- backlog-routed-task: Routed Task [complexity=low, scope=packages/cli/src/commands/backlog.ts, runtime=codex-cli, provider=codex-cli]');
+    expect(output).toContain('duplicateNormalizedIds: (none)');
+    expect(output).toContain('activeScopedItemsCount: 2');
+    expect(output).toContain('readyForCycle: yes');
+    expect(output).toContain('- backlog-scoped-task: Scoped Task [complexity=low, source=items.json, scope=packages/cli/src/bin.ts]');
+    expect(output).toContain('- backlog-routed-task: Routed Task [complexity=low, source=items.json, scope=packages/cli/src/commands/backlog.ts, runtime=codex-cli, provider=codex-cli]');
+    expect(output).not.toContain('sourceFile: items.json');
     expect(output).not.toContain('High Task');
     expect(output).not.toContain('No Scope Task');
   });
@@ -243,7 +248,9 @@ describe('agentforge backlog status', () => {
     expect(output).not.toContain('[backlog] status');
     expect(JSON.parse(output)).toEqual({
       projectRoot,
+      sourceFilter: 'all',
       activeBacklogFileItems: 3,
+      activeResearchPlanItems: 0,
       completedLedgerEntries: 1,
       quarantinedIds: 1,
       unattendedExcludedBacklogItems: 1,
@@ -252,6 +259,9 @@ describe('agentforge backlog status', () => {
         routedItems: 1,
         defaultItems: 1,
       },
+      duplicateNormalizedIds: [],
+      readyForCycle: true,
+      activeScopedItemsCount: 2,
       activeScopedItems: [
         {
           id: 'backlog-routed-task',
@@ -259,6 +269,7 @@ describe('agentforge backlog status', () => {
           estimatedComplexity: 'low',
           runtimeMode: 'codex-cli',
           preferredProvider: 'codex-cli',
+          sourceFile: 'items.json',
           scopeFiles: ['packages/cli/src/commands/backlog.ts'],
         },
         {
@@ -267,6 +278,7 @@ describe('agentforge backlog status', () => {
           estimatedComplexity: 'low',
           runtimeMode: null,
           preferredProvider: null,
+          sourceFile: 'items.json',
           scopeFiles: ['packages/cli/src/bin.ts'],
         },
       ],
@@ -306,11 +318,14 @@ describe('agentforge backlog status', () => {
 
     const output = consoleLog.mock.calls.map((args: unknown[]) => String(args[0] ?? '')).join('\n');
     expect(output).toContain('activeBacklogFileItems: 1');
+    expect(output).toContain('activeResearchPlanItems: 0');
     expect(output).toContain('completedLedgerEntries: 1');
     expect(output).toContain('quarantinedIds: 1');
     expect(output).toContain('unattendedExcludedBacklogItems: 0');
     expect(output).toContain('runtimeRoutingHints: scoped=1 routed=0 default=1');
-    expect(output).toContain('- backlog-items-json-no-id-uses-fallback: No ID uses fallback [complexity=low, scope=README.md]');
+    expect(output).toContain('duplicateNormalizedIds: (none)');
+    expect(output).toContain('activeScopedItemsCount: 1');
+    expect(output).toContain('- backlog-items-json-no-id-uses-fallback: No ID uses fallback [complexity=low, source=items.json, scope=README.md]');
     expect(output).not.toContain('Dogfood Raw');
     expect(output).not.toContain('Dogfood Canonical');
     expect(output).not.toContain('Dogfood Prefix Phrase');
@@ -334,22 +349,34 @@ describe('agentforge backlog status', () => {
 
     const output = consoleLog.mock.calls.map((args: unknown[]) => String(args[0] ?? '')).join('\n');
     expect(output).toContain('activeBacklogFileItems: 1');
+    expect(output).toContain('activeResearchPlanItems: 0');
     expect(output).toContain('completedLedgerEntries: 0');
     expect(output).toContain('quarantinedIds: 0');
     expect(output).toContain('unattendedExcludedBacklogItems: 0');
     expect(output).toContain('runtimeRoutingHints: scoped=1 routed=0 default=1');
-    expect(output).toContain('- backlog-visible: Visible Item [complexity=low, scope=README.md]');
+    expect(output).toContain('duplicateNormalizedIds: (none)');
+    expect(output).toContain('activeScopedItemsCount: 1');
+    expect(output).toContain('- backlog-visible: Visible Item [complexity=low, source=items.json, scope=README.md]');
     expect(process.exitCode).toBeUndefined();
   });
 
-  it('orders duplicate normalized IDs deterministically by title', async () => {
+  it('reports duplicate normalized IDs with source context deterministically', async () => {
     const backlogDir = join(projectRoot, '.agentforge', 'backlog');
     mkdirSync(backlogDir, { recursive: true });
     writeFileSync(
-      join(backlogDir, 'items.json'),
+      join(backlogDir, 'alpha-a.json'),
       JSON.stringify({
         items: [
           { id: 'alpha', title: 'Zulu', estimatedComplexity: 'low', files: ['README.md'] },
+          { id: 'beta', title: 'Beta', estimatedComplexity: 'low', files: ['README.md'] },
+        ],
+      }),
+      'utf8',
+    );
+    writeFileSync(
+      join(backlogDir, 'alpha-b.json'),
+      JSON.stringify({
+        items: [
           { id: 'alpha!!', title: 'Alpha', estimatedComplexity: 'low', files: ['README.md'] },
         ],
       }),
@@ -361,9 +388,64 @@ describe('agentforge backlog status', () => {
     const scopedLines = consoleLog.mock.calls
       .map((args: unknown[]) => String(args[0] ?? ''))
       .filter((line: string) => line.startsWith('    - '));
+    const output = consoleLog.mock.calls.map((args: unknown[]) => String(args[0] ?? '')).join('\n');
+    expect(output).toContain(
+      'duplicateNormalizedIds: backlog-alpha x2: Alpha (alpha-b.json); Zulu (alpha-a.json)',
+    );
     expect(scopedLines).toEqual([
-      '    - backlog-alpha: Alpha [complexity=low, scope=README.md]',
-      '    - backlog-alpha: Zulu [complexity=low, scope=README.md]',
+      '    - backlog-alpha: Alpha [complexity=low, source=alpha-b.json, scope=README.md]',
+      '    - backlog-alpha: Zulu [complexity=low, source=alpha-a.json, scope=README.md]',
+      '    - backlog-beta: Beta [complexity=low, source=alpha-a.json, scope=README.md]',
+    ]);
+    expect(output).not.toContain('sourceFile: alpha-a.json');
+    expect(output).not.toContain('sourceFile: alpha-b.json');
+  });
+
+  it('prints duplicate normalized ID source context in JSON', async () => {
+    const backlogDir = join(projectRoot, '.agentforge', 'backlog');
+    mkdirSync(backlogDir, { recursive: true });
+    writeFileSync(
+      join(backlogDir, 'beta.json'),
+      JSON.stringify({
+        items: [
+          { id: 'beta', title: 'Beta Two', estimatedComplexity: 'low', files: ['README.md'] },
+        ],
+      }),
+      'utf8',
+    );
+    writeFileSync(
+      join(backlogDir, 'alpha.json'),
+      JSON.stringify({
+        items: [
+          { id: 'alpha', title: 'Alpha Two', estimatedComplexity: 'low', files: ['README.md'] },
+          { id: 'backlog-alpha', title: 'Alpha One', estimatedComplexity: 'low', files: ['README.md'] },
+          { id: 'beta!!', title: 'Beta One', estimatedComplexity: 'low', files: ['README.md'] },
+        ],
+      }),
+      'utf8',
+    );
+
+    await runCli(['backlog', 'status', '--project-root', projectRoot, '--json']);
+
+    const output = consoleLog.mock.calls.map((args: unknown[]) => String(args[0] ?? '')).join('\n');
+    const parsed = JSON.parse(output);
+    expect(parsed.duplicateNormalizedIds).toEqual([
+      {
+        id: 'backlog-alpha',
+        count: 2,
+        items: [
+          { title: 'Alpha One', sourceFile: 'alpha.json' },
+          { title: 'Alpha Two', sourceFile: 'alpha.json' },
+        ],
+      },
+      {
+        id: 'backlog-beta',
+        count: 2,
+        items: [
+          { title: 'Beta One', sourceFile: 'alpha.json' },
+          { title: 'Beta Two', sourceFile: 'beta.json' },
+        ],
+      },
     ]);
   });
 
@@ -373,13 +455,309 @@ describe('agentforge backlog status', () => {
     const output = consoleLog.mock.calls.map((args: unknown[]) => String(args[0] ?? '')).join('\n');
     expect(output).toContain('[backlog] status');
     expect(output).toContain('activeBacklogFileItems: 0');
+    expect(output).toContain('activeResearchPlanItems: 0');
     expect(output).toContain('completedLedgerEntries: 0');
     expect(output).toContain('quarantinedIds: 0');
     expect(output).toContain('unattendedExcludedBacklogItems: 0');
     expect(output).toContain('runtimeRoutingHints: scoped=0 routed=0 default=0');
+    expect(output).toContain('duplicateNormalizedIds: (none)');
+    expect(output).toContain('  activeScopedItemsCount: 0');
+    expect(output).toContain('  readyForCycle: no');
     expect(output).toContain('  activeScopedItems:');
     expect(output).toContain('    (none)');
     expect(process.exitCode).toBeUndefined();
+  });
+
+  it('prints readyForCycle false in JSON when active scoped items are empty', async () => {
+    await runCli(['backlog', 'status', '--project-root', projectRoot, '--json']);
+
+    const output = consoleLog.mock.calls.map((args: unknown[]) => String(args[0] ?? '')).join('\n');
+    const parsed = JSON.parse(output);
+    expect(parsed.activeScopedItemsCount).toBe(0);
+    expect(parsed.activeScopedItems).toEqual([]);
+    expect(parsed.readyForCycle).toBe(false);
+    expect(parsed.activeBacklogFileItems).toBe(0);
+    expect(parsed.activeResearchPlanItems).toBe(0);
+  });
+
+  it('includes planned research candidates in text status and scoped/routing counts', async () => {
+    const backlogDir = join(projectRoot, '.agentforge', 'backlog');
+    const researchRunDir = join(projectRoot, '.agentforge', 'research-runs', 'run-123');
+    mkdirSync(backlogDir, { recursive: true });
+    mkdirSync(researchRunDir, { recursive: true });
+    writeFileSync(
+      join(backlogDir, 'items.json'),
+      JSON.stringify({
+        items: [
+          { id: 'scoped task', title: 'Scoped Task', estimatedComplexity: 'low', files: ['packages/cli/src/bin.ts'] },
+        ],
+      }),
+      'utf8',
+    );
+    writeFileSync(
+      join(researchRunDir, 'run.json'),
+      JSON.stringify({
+        plannedCycle: { ideaIds: ['idea-001'] },
+        ideas: [
+          { ideaId: 'idea-001', status: 'planned', title: 'Research Candidate', risk: 'medium', touchedAreas: ['packages/core/src/autonomous/proposal-to-backlog.ts'] },
+        ],
+      }),
+      'utf8',
+    );
+
+    await runCli(['backlog', 'status', '--project-root', projectRoot]);
+
+    const output = consoleLog.mock.calls.map((args: unknown[]) => String(args[0] ?? '')).join('\n');
+    expect(output).toContain('activeBacklogFileItems: 1');
+    expect(output).toContain('activeResearchPlanItems: 1');
+    expect(output).toContain('runtimeRoutingHints: scoped=2 routed=0 default=2');
+    expect(output).toContain('activeScopedItemsCount: 2');
+    expect(output).toContain('readyForCycle: yes');
+    expect(output).toContain('- backlog-research-run-123-idea-001: Research Candidate [complexity=medium, source=research:run-123, scope=packages/core/src/autonomous/proposal-to-backlog.ts]');
+  });
+
+  it('includes planned research candidates in JSON activeScopedItems and counts', async () => {
+    const backlogDir = join(projectRoot, '.agentforge', 'backlog');
+    const researchRunDir = join(projectRoot, '.agentforge', 'research-runs', 'run-456');
+    mkdirSync(backlogDir, { recursive: true });
+    mkdirSync(researchRunDir, { recursive: true });
+    writeFileSync(
+      join(backlogDir, 'items.json'),
+      JSON.stringify({
+        items: [
+          { id: 'scoped task', title: 'Scoped Task', estimatedComplexity: 'low', files: ['packages/cli/src/bin.ts'] },
+        ],
+      }),
+      'utf8',
+    );
+    writeFileSync(
+      join(researchRunDir, 'run.json'),
+      JSON.stringify({
+        plannedCycle: { ideaIds: ['idea-002'] },
+        ideas: [
+          { ideaId: 'idea-002', status: 'planned', title: 'JSON Research Candidate', risk: 'low', touchedAreas: ['packages/cli/src/commands/backlog.ts'] },
+        ],
+      }),
+      'utf8',
+    );
+
+    await runCli(['backlog', 'status', '--project-root', projectRoot, '--json']);
+    const parsed = JSON.parse(consoleLog.mock.calls.map((args: unknown[]) => String(args[0] ?? '')).join('\n'));
+    expect(parsed.activeBacklogFileItems).toBe(1);
+    expect(parsed.activeResearchPlanItems).toBe(1);
+    expect(parsed.readyForCycle).toBe(true);
+    expect(parsed.runtimeRoutingHints).toEqual({ scopedItems: 2, routedItems: 0, defaultItems: 2 });
+    expect(parsed.activeScopedItems).toEqual([
+      {
+        id: 'backlog-research-run-456-idea-002',
+        title: 'JSON Research Candidate',
+        estimatedComplexity: 'low',
+        runtimeMode: null,
+        preferredProvider: null,
+        sourceFile: 'research:run-456',
+        scopeFiles: ['packages/cli/src/commands/backlog.ts'],
+      },
+      {
+        id: 'backlog-scoped-task',
+        title: 'Scoped Task',
+        estimatedComplexity: 'low',
+        runtimeMode: null,
+        preferredProvider: null,
+        sourceFile: 'items.json',
+        scopeFiles: ['packages/cli/src/bin.ts'],
+      },
+    ]);
+  });
+
+  it('filters completed research candidates using normalized IDs', async () => {
+    const backlogDir = join(projectRoot, '.agentforge', 'backlog');
+    const researchRunDir = join(projectRoot, '.agentforge', 'research-runs', 'run-789');
+    mkdirSync(backlogDir, { recursive: true });
+    mkdirSync(researchRunDir, { recursive: true });
+    writeFileSync(
+      join(researchRunDir, 'run.json'),
+      JSON.stringify({
+        plannedCycle: { ideaIds: ['idea-003', 'idea-004'] },
+        ideas: [
+          { ideaId: 'idea-003', status: 'planned', title: 'Completed Research', risk: 'low', touchedAreas: ['README.md'] },
+          { ideaId: 'idea-004', status: 'planned', title: 'Visible Research', risk: 'low', touchedAreas: ['packages/cli/src/bin.ts'] },
+        ],
+      }),
+      'utf8',
+    );
+    writeFileSync(
+      join(backlogDir, 'completed.json'),
+      JSON.stringify({
+        entries: [{ itemId: ' Research Run 789 Idea 003 ', completedAt: '2026-05-27T00:00:00.000Z' }],
+      }),
+      'utf8',
+    );
+
+    await runCli(['backlog', 'status', '--project-root', projectRoot]);
+    const output = consoleLog.mock.calls.map((args: unknown[]) => String(args[0] ?? '')).join('\n');
+    expect(output).toContain('activeResearchPlanItems: 1');
+    expect(output).toContain('readyForCycle: yes');
+    expect(output).toContain('Visible Research');
+    expect(output).not.toContain('Completed Research');
+  });
+
+  it('filters text status active scoped items to research-plan source', async () => {
+    const backlogDir = join(projectRoot, '.agentforge', 'backlog');
+    const researchRunDir = join(projectRoot, '.agentforge', 'research-runs', 'run-filter-text');
+    mkdirSync(backlogDir, { recursive: true });
+    mkdirSync(researchRunDir, { recursive: true });
+    writeFileSync(
+      join(backlogDir, 'items.json'),
+      JSON.stringify({
+        items: [
+          { id: 'backlog scoped', title: 'Backlog Scoped', estimatedComplexity: 'low', files: ['README.md'] },
+        ],
+      }),
+      'utf8',
+    );
+    writeFileSync(
+      join(researchRunDir, 'run.json'),
+      JSON.stringify({
+        plannedCycle: { ideaIds: ['idea-101'] },
+        ideas: [
+          { ideaId: 'idea-101', status: 'planned', title: 'Research Scoped', risk: 'low', touchedAreas: ['packages/cli/src/commands/backlog.ts'] },
+        ],
+      }),
+      'utf8',
+    );
+
+    await runCli(['backlog', 'status', '--project-root', projectRoot, '--source', 'research-plan']);
+
+    const output = consoleLog.mock.calls.map((args: unknown[]) => String(args[0] ?? '')).join('\n');
+    expect(output).toContain('sourceFilter: research-plan');
+    expect(output).toContain('activeBacklogFileItems: 1');
+    expect(output).toContain('activeResearchPlanItems: 1');
+    expect(output).toContain('runtimeRoutingHints: scoped=1 routed=0 default=1');
+    expect(output).toContain('activeScopedItemsCount: 1');
+    expect(output).toContain('readyForCycle: yes');
+    expect(output).toContain('Research Scoped');
+    expect(output).not.toContain('Backlog Scoped');
+  });
+
+  it('filters JSON status active scoped items to backlog-file source and includes sourceFilter', async () => {
+    const backlogDir = join(projectRoot, '.agentforge', 'backlog');
+    const researchRunDir = join(projectRoot, '.agentforge', 'research-runs', 'run-filter-json');
+    mkdirSync(backlogDir, { recursive: true });
+    mkdirSync(researchRunDir, { recursive: true });
+    writeFileSync(
+      join(backlogDir, 'items.json'),
+      JSON.stringify({
+        items: [
+          { id: 'backlog routed', title: 'Backlog Routed', estimatedComplexity: 'low', files: ['packages/cli/src/bin.ts'], runtimeMode: 'codex-cli' },
+        ],
+      }),
+      'utf8',
+    );
+    writeFileSync(
+      join(researchRunDir, 'run.json'),
+      JSON.stringify({
+        plannedCycle: { ideaIds: ['idea-202'] },
+        ideas: [
+          { ideaId: 'idea-202', status: 'planned', title: 'Research Routed', risk: 'low', touchedAreas: ['packages/core/src/autonomous/proposal-to-backlog.ts'] },
+        ],
+      }),
+      'utf8',
+    );
+
+    await runCli(['backlog', 'status', '--project-root', projectRoot, '--json', '--source', 'backlog-file']);
+    const parsed = JSON.parse(consoleLog.mock.calls.map((args: unknown[]) => String(args[0] ?? '')).join('\n'));
+    expect(parsed.sourceFilter).toBe('backlog-file');
+    expect(parsed.activeBacklogFileItems).toBe(1);
+    expect(parsed.activeResearchPlanItems).toBe(1);
+    expect(parsed.runtimeRoutingHints).toEqual({ scopedItems: 1, routedItems: 1, defaultItems: 0 });
+    expect(parsed.activeScopedItemsCount).toBe(1);
+    expect(parsed.readyForCycle).toBe(true);
+    expect(parsed.duplicateNormalizedIds).toEqual([]);
+    expect(parsed.activeScopedItems).toHaveLength(1);
+    expect(parsed.activeScopedItems[0].title).toBe('Backlog Routed');
+  });
+
+  it('keeps default all behavior for status source filtering', async () => {
+    const backlogDir = join(projectRoot, '.agentforge', 'backlog');
+    const researchRunDir = join(projectRoot, '.agentforge', 'research-runs', 'run-filter-default');
+    mkdirSync(backlogDir, { recursive: true });
+    mkdirSync(researchRunDir, { recursive: true });
+    writeFileSync(
+      join(backlogDir, 'items.json'),
+      JSON.stringify({
+        items: [{ id: 'backlog all', title: 'Backlog All', estimatedComplexity: 'low', files: ['README.md'] }],
+      }),
+      'utf8',
+    );
+    writeFileSync(
+      join(researchRunDir, 'run.json'),
+      JSON.stringify({
+        plannedCycle: { ideaIds: ['idea-303'] },
+        ideas: [{ ideaId: 'idea-303', status: 'planned', title: 'Research All', risk: 'low', touchedAreas: ['packages/cli/src/commands/backlog.ts'] }],
+      }),
+      'utf8',
+    );
+
+    await runCli(['backlog', 'status', '--project-root', projectRoot]);
+    const textOutput = consoleLog.mock.calls.map((args: unknown[]) => String(args[0] ?? '')).join('\n');
+    expect(textOutput).not.toContain('sourceFilter:');
+    expect(textOutput).toContain('activeScopedItemsCount: 2');
+    expect(textOutput).toContain('Backlog All');
+    expect(textOutput).toContain('Research All');
+
+    consoleLog.mockClear();
+    await runCli(['backlog', 'status', '--project-root', projectRoot, '--json']);
+    const parsed = JSON.parse(consoleLog.mock.calls.map((args: unknown[]) => String(args[0] ?? '')).join('\n'));
+    expect(parsed.sourceFilter).toBe('all');
+    expect(parsed.activeScopedItemsCount).toBe(2);
+  });
+
+  it('matches explicit --source all with default status output for scoped ids and counts', async () => {
+    const backlogDir = join(projectRoot, '.agentforge', 'backlog');
+    const researchRunDir = join(projectRoot, '.agentforge', 'research-runs', 'run-source-all-parity');
+    mkdirSync(backlogDir, { recursive: true });
+    mkdirSync(researchRunDir, { recursive: true });
+    writeFileSync(
+      join(backlogDir, 'items.json'),
+      JSON.stringify({
+        items: [
+          { id: 'backlog parity', title: 'Backlog Parity', estimatedComplexity: 'low', files: ['README.md'] },
+        ],
+      }),
+      'utf8',
+    );
+    writeFileSync(
+      join(researchRunDir, 'run.json'),
+      JSON.stringify({
+        plannedCycle: { ideaIds: ['idea-404'] },
+        ideas: [
+          { ideaId: 'idea-404', status: 'planned', title: 'Research Parity', risk: 'low', touchedAreas: ['packages/cli/src/commands/backlog.ts'] },
+        ],
+      }),
+      'utf8',
+    );
+
+    await runCli(['backlog', 'status', '--project-root', projectRoot, '--json']);
+    const defaultParsed = JSON.parse(consoleLog.mock.calls.map((args: unknown[]) => String(args[0] ?? '')).join('\n'));
+
+    consoleLog.mockClear();
+    await runCli(['backlog', 'status', '--project-root', projectRoot, '--json', '--source', 'all']);
+    const explicitAllParsed = JSON.parse(consoleLog.mock.calls.map((args: unknown[]) => String(args[0] ?? '')).join('\n'));
+
+    expect(explicitAllParsed.sourceFilter).toBe('all');
+    expect(explicitAllParsed.activeBacklogFileItems).toBe(defaultParsed.activeBacklogFileItems);
+    expect(explicitAllParsed.activeResearchPlanItems).toBe(defaultParsed.activeResearchPlanItems);
+    expect(explicitAllParsed.readyForCycle).toBe(defaultParsed.readyForCycle);
+    expect(explicitAllParsed.activeScopedItems.map((item: { id: string }) => item.id)).toEqual(
+      defaultParsed.activeScopedItems.map((item: { id: string }) => item.id),
+    );
+  });
+
+  it('fails with clear error for invalid --source value', async () => {
+    await runCli(['backlog', 'status', '--project-root', projectRoot, '--source', 'todo-marker']);
+    const errorOutput = consoleError.mock.calls.map((args: unknown[]) => String(args[0] ?? '')).join('\n');
+    expect(process.exitCode).toBe(1);
+    expect(errorOutput).toContain('Invalid --source value "todo-marker": expected one of all, backlog-file, research-plan');
   });
 
   async function runCli(args: string[]): Promise<void> {

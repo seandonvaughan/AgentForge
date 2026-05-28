@@ -118,6 +118,15 @@ describe('CodexCliTransport.buildCodexArgs', () => {
     expect(prompt).not.toContain('You may create, edit, and delete files');
   });
 
+  it('instructs writable Codex agents not to alter git metadata', () => {
+    const transport = new CodexCliTransport();
+    const prompt = (transport as unknown as { buildPrompt: (request: ExecutionRequest) => string })
+      .buildPrompt(makeRequest({ codexSandbox: 'workspace-write' }));
+
+    expect(prompt).toContain('Never create, edit, delete, move, or rewrite `.git`');
+    expect(prompt).toContain('keep the allocated worktree metadata intact');
+  });
+
   it('honors explicit workspace-write sandbox overrides', () => {
     const transport = new CodexCliTransport();
     const args = transport.buildCodexArgs(makeRequest({ codexSandbox: 'workspace-write' }), '/tmp/last.txt');

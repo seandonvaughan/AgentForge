@@ -1,6 +1,6 @@
 import { execFile as execFileCb } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, realpathSync } from 'node:fs';
+import { existsSync, mkdirSync, realpathSync, rmSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import type {
@@ -126,7 +126,12 @@ export class WorktreePool {
           `Worktree ${id} is already allocated for ${cached.branch}; cannot reuse it for ${explicitBranch}.`,
         );
       }
-      return cached;
+      if (await this.isUsableCachedWorktree(cached, explicitBranch)) {
+        return cached;
+      }
+      this.handles.delete(id);
+      this.stats.active = Math.max(0, this.stats.active - 1);
+      await this.removeStaleCachedWorktreePath(cached.path);
     }
 
     const wtPath = join(this.projectRoot, this.rootDir, id);
@@ -492,6 +497,39 @@ export class WorktreePool {
   private normalizePath(path: string): string {
     const normalized = realPath(path);
     return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+  }
+
+  private async isUsableCachedWorktree(
+    handle: WorktreeHandle,
+    explicitBranch: string | undefined,
+  ): Promise<boolean> {
+    if (!existsSync(handle.path)) return false;
+    if (!(await this.isRegisteredWorktreePath(handle.path))) return false;
+
+    try {
+      await this.assertWorktreeGitRoot(handle.path);
+      if (explicitBranch) {
+        const currentBranch = (await git(handle.path, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
+        if (currentBranch !== explicitBranch) return false;
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async removeStaleCachedWorktreePath(path: string): Promise<void> {
+    if (!existsSync(path)) return;
+    if (await this.isRegisteredWorktreePath(path)) return;
+
+    const poolRoot = realPath(join(this.projectRoot, this.rootDir));
+    const actual = realPath(path);
+    const relativePath = relative(poolRoot, actual);
+    if (!relativePath || relativePath.startsWith('..') || isAbsolute(relativePath)) {
+      throw new Error(`Refusing to remove stale cached worktree outside pool root: ${path}`);
+    }
+
+    rmSync(path, { recursive: true, force: true });
   }
 
 }

@@ -5,11 +5,12 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { promisify } from 'node:util';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { WorktreePool } from '../worktree-pool.js';
@@ -40,6 +41,10 @@ function expectedHandleId(agentId: string, sessionId: string): string {
 
 function toPosixPath(path: string): string {
   return path.replace(/\\/g, '/');
+}
+
+function comparablePath(path: string): string {
+  return toPosixPath(realpathSync.native(path)).toLowerCase();
 }
 
 interface RepoTemplate {
@@ -277,6 +282,47 @@ describe('WorktreePool', () => {
 
     await git(workingDir, ['worktree', 'remove', '--force', second.path]);
     await git(workingDir, ['branch', '-D', second.branch]);
+  });
+
+  it('revalidates cached handles before retry allocation', async () => {
+    const retryBranch = 'codex/rejected-cached-branch';
+    await git(workingDir, ['checkout', '-b', retryBranch]);
+    writeFileSync(join(workingDir, 'retry-cached.txt'), 'attempt 1\n');
+    await git(workingDir, ['add', 'retry-cached.txt']);
+    await git(workingDir, ['commit', '-m', 'rejected cached branch']);
+    await git(workingDir, ['push', 'origin', retryBranch]);
+    await git(workingDir, ['checkout', 'main']);
+
+    const pool = new WorktreePool({ projectRoot: workingDir, branchPrefix: 'codex/' });
+    const first = await pool.allocate({
+      agentId: 'coder',
+      sessionId: 'retry-cached',
+      branchName: retryBranch,
+      sourceRef: `origin/${retryBranch}`,
+      deleteBranchOnRelease: false,
+    });
+
+    await git(workingDir, ['worktree', 'remove', '--force', first.path]);
+    mkdirSync(first.path, { recursive: true });
+    writeFileSync(join(first.path, 'stale.txt'), 'not a git worktree\n');
+
+    const second = await pool.allocate({
+      agentId: 'coder',
+      sessionId: 'retry-cached',
+      branchName: retryBranch,
+      sourceRef: `origin/${retryBranch}`,
+      deleteBranchOnRelease: false,
+    });
+
+    expect(second.id).toBe(first.id);
+    expect(second.branch).toBe(retryBranch);
+    expect((await git(second.path, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim()).toBe(retryBranch);
+    expect(comparablePath((await git(second.path, ['rev-parse', '--show-toplevel'])).trim()))
+      .toBe(comparablePath(second.path));
+    expect(existsSync(join(second.path, 'retry-cached.txt'))).toBe(true);
+    expect(existsSync(join(second.path, 'stale.txt'))).toBe(false);
+
+    await pool.release(second.id);
   });
 
   it('refuses to reuse a stale directory that is not a git worktree', async () => {
@@ -537,6 +583,20 @@ describe('WorktreePool', () => {
 
     expect(toPosixPath(handle.path)).toContain('.mypool/workers');
     expect(existsSync(handle.path)).toBe(true);
+
+    await pool.release(handle.id);
+  });
+
+  it('supports a rootDir outside the parent checkout', async () => {
+    const pool = new WorktreePool({
+      projectRoot: workingDir,
+      rootDir: join('..', '.agentforge-worktrees', 'outside-root'),
+    });
+    const handle = await pool.allocate({ agentId: 'coder', sessionId: 'outside-root' });
+
+    expect(relative(workingDir, handle.path).startsWith('..')).toBe(true);
+    expect(comparablePath((await git(handle.path, ['rev-parse', '--show-toplevel'])).trim()))
+      .toBe(comparablePath(handle.path));
 
     await pool.release(handle.id);
   });

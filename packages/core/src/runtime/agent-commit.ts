@@ -29,6 +29,9 @@ const execFile = promisify(execFileCb);
 export interface AgentCommitOptions {
   /** Absolute path to the worktree directory. */
   worktreePath: string;
+  /** Root repository that owns the git worktree metadata. Enables repair if the
+   * worktree's local .git file is missing or broken. */
+  projectRoot?: string;
   /** Branch name that is checked out in the worktree. */
   branch: string;
   /** Base branch this work was forked from (default: 'main'). */
@@ -141,23 +144,75 @@ function comparablePath(path: string): string {
   return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
 }
 
-async function assertCommitWorktreeRoot(worktreePath: string): Promise<void> {
+async function repairWorktreeMetadata(
+  projectRoot: string | undefined,
+  worktreePath: string,
+): Promise<boolean> {
+  if (!projectRoot) return false;
+  const pathVariants = (path: string): string[] => {
+    const variants = [path, resolve(path)];
+    try {
+      variants.push(realpathSync.native(path));
+    } catch {
+      // Path may be missing; keep the resolvable variants above.
+    }
+    return [...new Set(variants)];
+  };
+
+  for (const root of pathVariants(projectRoot)) {
+    for (const path of pathVariants(worktreePath)) {
+      try {
+        await git(root, ['worktree', 'repair', path]);
+        return true;
+      } catch {
+        // Try the next normalized path combination.
+      }
+    }
+  }
+  return false;
+}
+
+async function resolveWorktreeTopLevel(worktreePath: string): Promise<string> {
+  return git(worktreePath, ['rev-parse', '--show-toplevel']);
+}
+
+async function assertCommitWorktreeRoot(
+  worktreePath: string,
+  projectRoot?: string,
+): Promise<void> {
   if (!existsSync(worktreePath)) {
     throw new Error(`Worktree path ${worktreePath} does not exist; cannot commit agent work.`);
   }
 
   let topLevel: string;
   try {
-    topLevel = await git(worktreePath, ['rev-parse', '--show-toplevel']);
+    topLevel = await resolveWorktreeTopLevel(worktreePath);
   } catch {
-    throw new Error(`Worktree path ${worktreePath} is not a git worktree; cannot commit agent work.`);
+    if (await repairWorktreeMetadata(projectRoot, worktreePath)) {
+      try {
+        topLevel = await resolveWorktreeTopLevel(worktreePath);
+      } catch {
+        throw new Error(`Worktree path ${worktreePath} is not a git worktree; cannot commit agent work.`);
+      }
+    } else {
+      throw new Error(`Worktree path ${worktreePath} is not a git worktree; cannot commit agent work.`);
+    }
   }
 
   if (comparablePath(topLevel) !== comparablePath(worktreePath)) {
-    throw new Error(
-      `Worktree path ${worktreePath} resolves git root ${topLevel}; ` +
-      'refusing to commit changes outside the allocated worktree.',
-    );
+    if (await repairWorktreeMetadata(projectRoot, worktreePath)) {
+      try {
+        topLevel = await resolveWorktreeTopLevel(worktreePath);
+      } catch {
+        // Fall through to the original diagnostic below.
+      }
+    }
+    if (comparablePath(topLevel) !== comparablePath(worktreePath)) {
+      throw new Error(
+        `Worktree path ${worktreePath} resolves git root ${topLevel}; ` +
+        'refusing to commit changes outside the allocated worktree.',
+      );
+    }
   }
 }
 
@@ -239,6 +294,7 @@ export async function commitAgentWork(
 
   const {
     worktreePath,
+    projectRoot,
     agentId,
     itemIds,
     bus,
@@ -249,7 +305,7 @@ export async function commitAgentWork(
   const cycleId = opts.cycleId ?? '';
   const branch = sanitizeBranch(opts.branch);
 
-  await assertCommitWorktreeRoot(worktreePath);
+  await assertCommitWorktreeRoot(worktreePath, projectRoot);
 
   // ── Clean-worktree check ────────────────────────────────────────────────────
   const stageablePaths = await listStageableChanges(worktreePath);

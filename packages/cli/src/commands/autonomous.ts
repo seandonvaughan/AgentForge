@@ -5,12 +5,14 @@
 //   - preview
 //   - list
 //   - show
+//   - assess-pr
+//   - streak
 //   - approve
 //
 // `autonomous:cycle` remains as a compatibility alias for `cycle run`.
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { basename, dirname, join, resolve } from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
 import type { Command } from 'commander';
 import {
   loadCycleConfig,
@@ -68,6 +70,7 @@ interface CycleRunOptions extends WorkspaceAwareOptions {
 interface CyclePreviewOptions extends WorkspaceAwareOptions {
   budgetUsd?: string;
   maxItems?: string;
+  json?: boolean;
   fastMode?: boolean;
   modelCap?: string;
   effortCap?: string;
@@ -75,12 +78,29 @@ interface CyclePreviewOptions extends WorkspaceAwareOptions {
   fallback?: boolean;
 }
 
+const PREVIEW_SOURCE_ORDER = [
+  'backlog-file',
+  'research-plan',
+  'todo-marker',
+  'failed-session',
+  'cost-anomaly',
+  'task-outcome',
+  'flaking-test',
+] as const;
+
+type PreviewSource = (typeof PREVIEW_SOURCE_ORDER)[number];
+
 interface CycleListOptions extends WorkspaceAwareOptions {
   limit: string;
+  stage?: string;
   json?: boolean;
 }
 
 interface CycleShowOptions extends WorkspaceAwareOptions {
+  json?: boolean;
+}
+
+interface CycleAssessPrOptions extends WorkspaceAwareOptions {
   json?: boolean;
 }
 
@@ -96,6 +116,18 @@ interface LoopGuardStatusOptions extends WorkspaceAwareOptions {
 }
 
 interface LoopGuardResetOptions extends WorkspaceAwareOptions {
+  json?: boolean;
+}
+
+interface CycleStreakStatusOptions extends WorkspaceAwareOptions {
+  json?: boolean;
+  target?: string;
+}
+
+interface CycleStreakRecordOptions extends WorkspaceAwareOptions {
+  pr?: string;
+  result?: string;
+  reason?: string;
   json?: boolean;
 }
 
@@ -155,7 +187,59 @@ interface RuntimeRoutingSummary {
   decisions: RuntimeRoutingDecision[];
 }
 
+interface CycleStreakEntry {
+  cycleId: string;
+  prNumber: number;
+  result: 'success' | 'failure';
+  reason: string;
+  recordedAt: string;
+  mergeEvidence?: {
+    prUrl?: string;
+    status?: string;
+    mergedAt?: string;
+    openedAt?: string;
+  };
+}
+
+interface CycleStreakLedger {
+  version: 1;
+  entries: CycleStreakEntry[];
+}
+
+interface MergeReadinessCheck {
+  id:
+    | 'cycle-completed'
+    | 'pr-linked'
+    | 'approval-state'
+    | 'cycle-error'
+    | 'gate-approved'
+    | 'review-findings'
+    | 'execute-failures'
+    | 'tests';
+  status: 'pass' | 'fail';
+  detail: string;
+}
+
+interface PrMergeAssessment {
+  cycleId: string;
+  mergeReady: boolean;
+  verdict: 'ready' | 'blocked';
+  prUrl: string | null;
+  checks: MergeReadinessCheck[];
+  blockingReasons: string[];
+  metrics: {
+    gateVerdict: 'APPROVE' | 'REJECT' | null;
+    criticalFindings: number;
+    majorFindings: number;
+    failedItems: number;
+    testsPassed: number;
+    testsTotal: number;
+    newFailures: number;
+  };
+}
+
 const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
+const CYCLE_STAGE_FILTER_RE = /^[a-z][a-z0-9_-]*$/;
 type ModelCap = 'opus' | 'sonnet' | 'haiku';
 type EffortCap = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
@@ -166,8 +250,6 @@ interface CycleLaunchControls {
   maxAgents?: number;
   fallbackEnabled?: boolean;
 }
-
-const ONE_ITEM_AUDIT_TIMEOUT_MS = 5 * 60 * 1000;
 
 export function registerCycleCommand(program: Command): void {
   const cycle = program
@@ -185,6 +267,7 @@ export function registerCycleCommand(program: Command): void {
     .description('Preview PLAN-stage backlog and budget before running a cycle')
     .option('--project-root <path>', 'Project root', process.cwd())
     .option('--workspace <id>', 'Run against a registered workspace from ~/.agentforge/workspaces.json')
+    .option('--json', 'Print machine-readable JSON')
     .option('--budget-usd <usd>', 'Override per-cycle budget for preview only')
     .option('--max-items <count>', 'Override max sprint items for preview only')
     .option('--fast-mode', 'Use the fast parallel launch preset (defaults effort cap to high unless --effort-cap is set)')
@@ -201,6 +284,7 @@ export function registerCycleCommand(program: Command): void {
     .option('--project-root <path>', 'Project root', process.cwd())
     .option('--workspace <id>', 'Run against a registered workspace from ~/.agentforge/workspaces.json')
     .option('--limit <count>', 'Maximum rows to show', '20')
+    .option('--stage <stage>', 'Filter by cycle stage')
     .option('--json', 'Print machine-readable JSON')
     .action(runCycleListAction);
 
@@ -211,6 +295,14 @@ export function registerCycleCommand(program: Command): void {
     .option('--workspace <id>', 'Run against a registered workspace from ~/.agentforge/workspaces.json')
     .option('--json', 'Print machine-readable JSON')
     .action(runCycleShowAction);
+
+  cycle
+    .command('assess-pr <cycleId>')
+    .description('Assess post-cycle PR merge readiness from deterministic cycle artifacts')
+    .option('--project-root <path>', 'Project root', process.cwd())
+    .option('--workspace <id>', 'Run against a registered workspace from ~/.agentforge/workspaces.json')
+    .option('--json', 'Print machine-readable JSON')
+    .action(runCycleAssessPrAction);
 
   cycle
     .command('approve <cycleId>')
@@ -242,6 +334,30 @@ export function registerCycleCommand(program: Command): void {
     .option('--workspace <id>', 'Run against a registered workspace from ~/.agentforge/workspaces.json')
     .option('--json', 'Print machine-readable JSON')
     .action(runLoopGuardResetAction);
+
+  const streak = cycle
+    .command('streak')
+    .description('Record and inspect cross-cycle success streak evidence');
+
+  streak
+    .command('status')
+    .description('Show cycle streak ledger status from .agentforge/cycles/streak-ledger.json')
+    .option('--project-root <path>', 'Project root', process.cwd())
+    .option('--workspace <id>', 'Run against a registered workspace from ~/.agentforge/workspaces.json')
+    .option('--target <n>', 'Target consecutive successes (positive integer)')
+    .option('--json', 'Print machine-readable JSON')
+    .action(runCycleStreakStatusAction);
+
+  streak
+    .command('record <cycleId>')
+    .description('Record one cycle streak ledger entry (idempotent upsert by cycleId)')
+    .option('--project-root <path>', 'Project root', process.cwd())
+    .option('--workspace <id>', 'Run against a registered workspace from ~/.agentforge/workspaces.json')
+    .option('--pr <number>', 'PR number for this cycle evidence')
+    .option('--result <result>', 'Cycle outcome: success or failure')
+    .option('--reason <text>', 'Operator note describing this outcome')
+    .option('--json', 'Print machine-readable JSON')
+    .action(runCycleStreakRecordAction);
 }
 
 export function registerAutonomousCommand(program: Command): void {
@@ -356,9 +472,6 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
     // Runtime fallback defaults to enabled for compatibility unless this
     // launch explicitly disabled it through CLI flags or server env.
     const enableFallback = launchControls.fallbackEnabled ?? true;
-    const auditPhaseOptions = config.limits.maxItemsPerSprint === 1
-      ? { timeoutMs: ONE_ITEM_AUDIT_TIMEOUT_MS }
-      : undefined;
 
     const telemetry = createAutonomousTelemetryAdapters(cwd);
 
@@ -380,6 +493,8 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
           projectRoot: cwd,
           baseBranch: config.git.baseBranch,
           branchPrefix: config.git.branchPrefix,
+          rootDir: process.env['AUTONOMOUS_WORKTREE_ROOT_DIR']?.trim() ||
+            buildCycleWorktreeRootDir(cwd),
         });
       } catch (poolErr) {
         const poolMsg = poolErr instanceof Error ? poolErr.message : String(poolErr);
@@ -426,7 +541,7 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
         ...(supervisor ? { supervisor } : {}),
       });
       const phaseHandlers = {
-        audit: (ctx: PhaseContext) => runAuditPhase(ctx, auditPhaseOptions),
+        audit: (ctx: PhaseContext) => runAuditPhase(ctx),
         plan: (ctx: PhaseContext) => runPlanPhase(ctx),
         assign: (ctx: PhaseContext) => runAssignPhase(ctx),
         execute: (ctx: PhaseContext) => runExecutePhase(ctx, {
@@ -547,6 +662,23 @@ async function runCyclePreviewAction(opts: CyclePreviewOptions): Promise<void> {
       launchControls,
     });
 
+    if (opts.json) {
+      console.log(JSON.stringify({
+        projectRoot,
+        candidateCount: preview.candidateCount,
+        sourceBreakdown: preview.sourceBreakdown,
+        withinBudget: preview.withinBudget,
+        requiresApproval: preview.requiresApproval,
+        totalEstimatedCostUsd: preview.totalEstimatedCostUsd,
+        budgetOverflowUsd: preview.budgetOverflowUsd,
+        fallback: preview.fallback,
+        warnings: preview.warnings,
+        summary: preview.summary,
+        rankedItems: preview.rankedItems,
+      }, null, 2));
+      return;
+    }
+
     console.log(`Candidates:   ${preview.candidateCount}`);
     console.log(`Within budget:${preview.withinBudget}`);
     console.log(`Needs approval:${preview.requiresApproval}`);
@@ -575,6 +707,16 @@ async function runCyclePreviewAction(opts: CyclePreviewOptions): Promise<void> {
         console.log(
           `     score=${item.score.toFixed(2)}  confidence=${item.confidence.toFixed(2)}  est=$${item.estimatedCostUsd.toFixed(2)}  assignee=${item.suggestedAssignee}`,
         );
+      }
+    }
+
+    if (preview.candidateCount > 0) {
+      const nonZeroSources = PREVIEW_SOURCE_ORDER
+        .filter((source) => preview.sourceBreakdown[source] > 0)
+        .map((source) => `${source}=${preview.sourceBreakdown[source]}`);
+      if (nonZeroSources.length > 0) {
+        console.log('');
+        console.log(`Sources:      ${nonZeroSources.join(', ')}`);
       }
     }
   } catch (error) {
@@ -606,6 +748,7 @@ async function runCyclePreview(options: {
       options.projectRoot,
       config,
     ).build();
+    const sourceBreakdown = summarizePreviewSources(backlog);
 
     if (backlog.length === 0) {
       return {
@@ -617,6 +760,7 @@ async function runCyclePreview(options: {
         requiresApproval: 0,
         summary: 'No backlog items found — nothing to score.',
         warnings: ['Empty backlog: no proposals or TODO(autonomous) markers detected.'],
+        sourceBreakdown,
         durationMs: Date.now() - startedAt,
         scoringCostUsd: 0,
         fallback: null,
@@ -648,6 +792,7 @@ async function runCyclePreview(options: {
       requiresApproval: scored.requiresApproval.length,
       summary: String(scored.summary ?? ''),
       warnings: Array.isArray(scored.warnings) ? scored.warnings : [],
+      sourceBreakdown,
       durationMs: Date.now() - startedAt,
       scoringCostUsd: 0,
       fallback: scored.fallback ?? null,
@@ -657,6 +802,28 @@ async function runCyclePreview(options: {
   }
 }
 
+function summarizePreviewSources(backlog: unknown[]): Record<PreviewSource, number> {
+  const counts = PREVIEW_SOURCE_ORDER.reduce((acc, source) => {
+    acc[source] = 0;
+    return acc;
+  }, {} as Record<PreviewSource, number>);
+
+  for (const item of backlog) {
+    const source =
+      typeof item === 'object' && item !== null && 'source' in item
+        ? (item as { source?: unknown }).source
+        : undefined;
+    if (typeof source !== 'string') {
+      continue;
+    }
+    if ((PREVIEW_SOURCE_ORDER as readonly string[]).includes(source)) {
+      counts[source as PreviewSource] += 1;
+    }
+  }
+
+  return counts;
+}
+
 async function runCycleListAction(opts: CycleListOptions): Promise<void> {
   const projectRoot = await resolveWorkspaceProjectRoot(opts);
   const limit = parseLimit(opts.limit, 20);
@@ -664,18 +831,28 @@ async function runCycleListAction(opts: CycleListOptions): Promise<void> {
     process.exitCode = 1;
     return;
   }
+  const stageFilter = parseCycleListStageFilter(opts.stage);
+  if (stageFilter === null) {
+    process.exitCode = 1;
+    return;
+  }
 
-  const cycles = listCycles(projectRoot).slice(0, limit);
+  const cycles = listCycles(projectRoot)
+    .filter((cycle) => stageFilter === undefined || cycle.stage === stageFilter)
+    .slice(0, limit);
   if (cycles.length === 0) {
     if (opts.json) {
       console.log(JSON.stringify({
         projectRoot,
         limit,
+        ...(stageFilter !== undefined ? { stage: stageFilter } : {}),
         cycles: [],
       }, null, 2));
       return;
     }
-    console.log('(no cycles recorded)');
+    console.log(stageFilter === undefined
+      ? '(no cycles recorded)'
+      : `(no cycles matched --stage ${stageFilter})`);
     return;
   }
 
@@ -683,6 +860,7 @@ async function runCycleListAction(opts: CycleListOptions): Promise<void> {
     console.log(JSON.stringify({
       projectRoot,
       limit,
+      ...(stageFilter !== undefined ? { stage: stageFilter } : {}),
       cycles,
     }, null, 2));
     return;
@@ -700,6 +878,22 @@ async function runCycleListAction(opts: CycleListOptions): Promise<void> {
     }
     console.log('');
   }
+}
+
+function parseCycleListStageFilter(rawStage: string | undefined): string | null | undefined {
+  if (rawStage === undefined) {
+    return undefined;
+  }
+  const stage = rawStage.trim().toLowerCase();
+  if (stage.length === 0) {
+    console.error('Invalid value for --stage: expected non-empty stage name');
+    return null;
+  }
+  if (!CYCLE_STAGE_FILTER_RE.test(stage)) {
+    console.error(`Invalid value for --stage: ${rawStage}. Expected a stage token like completed, failed, verify, or custom-stage.`);
+    return null;
+  }
+  return stage;
 }
 
 async function runCycleShowAction(cycleId: string, opts: CycleShowOptions): Promise<void> {
@@ -814,6 +1008,58 @@ async function runCycleShowAction(cycleId: string, opts: CycleShowOptions): Prom
     console.log('');
     console.log('Decision:');
     console.log(`  ${JSON.stringify(decision)}`);
+  }
+}
+
+async function runCycleAssessPrAction(cycleId: string, opts: CycleAssessPrOptions): Promise<void> {
+  const projectRoot = await resolveWorkspaceProjectRoot(opts);
+  if (!SAFE_ID.test(cycleId)) {
+    console.error(`Invalid cycle id: ${cycleId}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const cycleDir = join(projectRoot, '.agentforge', 'cycles', cycleId);
+  if (!existsSync(cycleDir)) {
+    console.error(`Cycle not found: ${cycleId}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const summary = summarizeCycle(cycleDir, cycleId);
+  if (!summary) {
+    console.error(`Cycle not found: ${cycleId}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const assessment = assessCyclePrMergeReadiness(cycleDir, summary);
+
+  if (opts.json) {
+    console.log(JSON.stringify({
+      projectRoot,
+      cycleId: summary.cycleId,
+      cycleDir,
+      assessment,
+    }, null, 2));
+    return;
+  }
+
+  console.log(`Cycle:        ${assessment.cycleId}`);
+  console.log(`PR:           ${assessment.prUrl ?? '(none)'}`);
+  console.log(`Merge ready:  ${assessment.mergeReady ? 'yes' : 'no'}`);
+  console.log(`Verdict:      ${assessment.verdict}`);
+  console.log('');
+  console.log('Checks:');
+  for (const check of assessment.checks) {
+    console.log(`  ${check.status.toUpperCase()} ${check.id}: ${check.detail}`);
+  }
+  if (assessment.blockingReasons.length > 0) {
+    console.log('');
+    console.log('Blocking reasons:');
+    for (const reason of assessment.blockingReasons) {
+      console.log(`  - ${reason}`);
+    }
   }
 }
 
@@ -934,6 +1180,140 @@ async function runLoopGuardResetAction(opts: LoopGuardResetOptions): Promise<voi
   console.log('State:        reset to defaults');
 }
 
+async function runCycleStreakStatusAction(opts: CycleStreakStatusOptions): Promise<void> {
+  const projectRoot = await resolveWorkspaceProjectRoot(opts);
+  const ledgerPath = join(projectRoot, '.agentforge', 'cycles', 'streak-ledger.json');
+  const ledger = readCycleStreakLedger(ledgerPath);
+  const entries = sortCycleStreakEntriesNewestFirst(ledger.entries);
+  const consecutiveSuccesses = countConsecutiveSuccessesFromNewest(entries);
+  const latestEntry = entries[0] ?? null;
+  let targetSuccesses: number | undefined;
+  if (opts.target !== undefined) {
+    const parsedTarget = parseRequiredPositiveInteger(opts.target, '--target');
+    if (parsedTarget === null) {
+      process.exitCode = 1;
+      return;
+    }
+    targetSuccesses = parsedTarget;
+  }
+  const remainingSuccesses = targetSuccesses === undefined
+    ? undefined
+    : Math.max(0, targetSuccesses - consecutiveSuccesses);
+  const goalMet = targetSuccesses === undefined
+    ? undefined
+    : consecutiveSuccesses >= targetSuccesses;
+
+  if (opts.json) {
+    console.log(JSON.stringify({
+      projectRoot,
+      path: ledgerPath,
+      totalEntries: entries.length,
+      consecutiveSuccesses,
+      ...(targetSuccesses === undefined
+        ? {}
+        : {
+          targetSuccesses,
+          remainingSuccesses,
+          goalMet,
+        }),
+      latestEntry,
+      entries,
+    }, null, 2));
+    return;
+  }
+
+  console.log('[cycle streak] status');
+  console.log(`Path:         ${ledgerPath}`);
+  console.log(`Entries:      ${entries.length}`);
+  console.log(`Consecutive:  ${consecutiveSuccesses}`);
+  if (targetSuccesses !== undefined) {
+    console.log(`Target:       ${targetSuccesses}`);
+    console.log(`Remaining:    ${remainingSuccesses}`);
+    console.log(`Goal met:     ${goalMet ? 'yes' : 'no'}`);
+  }
+  if (!latestEntry) {
+    console.log('Latest:       (none)');
+    return;
+  }
+
+  console.log(`Latest:       ${latestEntry.cycleId}  pr=${latestEntry.prNumber}  result=${latestEntry.result}`);
+  console.log(`Reason:       ${latestEntry.reason}`);
+  console.log(`Recorded:     ${latestEntry.recordedAt}`);
+}
+
+async function runCycleStreakRecordAction(cycleId: string, opts: CycleStreakRecordOptions): Promise<void> {
+  const projectRoot = await resolveWorkspaceProjectRoot(opts);
+  if (!SAFE_ID.test(cycleId)) {
+    console.error(`Invalid cycle id: ${cycleId}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const prNumber = parseRequiredPositiveInteger(opts.pr, '--pr');
+  if (prNumber === null) {
+    process.exitCode = 1;
+    return;
+  }
+
+  const result = normalizeStreakResult(opts.result);
+  if (result === null) {
+    console.error(`Invalid --result value: ${opts.result ?? '(missing)'}. Expected success or failure.`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const reason = normalizeRequiredText(opts.reason);
+  if (reason === null) {
+    console.error('Missing --reason value. Provide a non-empty reason.');
+    process.exitCode = 1;
+    return;
+  }
+
+  const ledgerPath = join(projectRoot, '.agentforge', 'cycles', 'streak-ledger.json');
+  const now = new Date().toISOString();
+  const mergeEvidence = readCycleStreakMergeEvidence(projectRoot, cycleId, prNumber);
+  const nextEntry: CycleStreakEntry = {
+    cycleId,
+    prNumber,
+    result,
+    reason,
+    recordedAt: now,
+    ...(mergeEvidence ? { mergeEvidence } : {}),
+  };
+
+  const ledger = readCycleStreakLedger(ledgerPath);
+  const index = ledger.entries.findIndex((entry) => entry.cycleId === cycleId);
+  const action = index >= 0 ? 'updated' : 'recorded';
+  if (index >= 0) {
+    ledger.entries[index] = nextEntry;
+  } else {
+    ledger.entries.push(nextEntry);
+  }
+
+  mkdirSync(dirname(ledgerPath), { recursive: true });
+  writeFileSync(ledgerPath, `${JSON.stringify({ version: 1, entries: ledger.entries }, null, 2)}\n`, 'utf8');
+
+  const sortedEntries = sortCycleStreakEntriesNewestFirst(ledger.entries);
+  const consecutiveSuccesses = countConsecutiveSuccessesFromNewest(sortedEntries);
+  if (opts.json) {
+    console.log(JSON.stringify({
+      projectRoot,
+      path: ledgerPath,
+      action,
+      consecutiveSuccesses,
+      entry: nextEntry,
+    }, null, 2));
+    return;
+  }
+
+  console.log(`[cycle streak] ${action}: ${cycleId}`);
+  console.log(`Path:         ${ledgerPath}`);
+  console.log(`PR:           ${prNumber}`);
+  console.log(`Result:       ${result}`);
+  console.log(`Reason:       ${reason}`);
+  console.log(`Consecutive:  ${consecutiveSuccesses}`);
+}
+
 async function resolveWorkspaceProjectRoot(options: WorkspaceAwareOptions): Promise<string> {
   let cwd = options.projectRoot;
   try {
@@ -959,6 +1339,18 @@ async function resolveWorkspaceProjectRoot(options: WorkspaceAwareOptions): Prom
   }
 
   return resolve(cwd);
+}
+
+function buildCycleWorktreeRootDir(projectRoot: string): string {
+  const resolvedRoot = resolve(projectRoot);
+  const repoName = basename(resolvedRoot)
+    .replace(/[^a-zA-Z0-9_.-]+/g, '_')
+    .replace(/^_+|_+$/g, '') || 'workspace';
+  const rootHash = createHash('sha256')
+    .update(process.platform === 'win32' ? resolvedRoot.toLowerCase() : resolvedRoot)
+    .digest('hex')
+    .slice(0, 12);
+  return join('..', '.agentforge-worktrees', `${repoName}-${rootHash}`);
 }
 
 function printCycleRunResult(
@@ -1217,6 +1609,197 @@ function readRuntimeRoutingSummary(cycleDir: string): RuntimeRoutingSummary | nu
   };
 }
 
+function assessCyclePrMergeReadiness(cycleDir: string, summary: CycleSummary): PrMergeAssessment {
+  const cycleJson = readJsonIfExists(join(cycleDir, 'cycle.json')) as Record<string, unknown> | null;
+  const gateJson = readJsonIfExists(join(cycleDir, 'phases', 'gate.json')) as Record<string, unknown> | null;
+  const reviewJson = readJsonIfExists(join(cycleDir, 'phases', 'review.json')) as Record<string, unknown> | null;
+  const executeJson = readJsonIfExists(join(cycleDir, 'phases', 'execute.json')) as Record<string, unknown> | null;
+  const gateVerdict = readGateVerdict(cycleJson, gateJson);
+  const reviewFindingCounts = readReviewFindingCounts(reviewJson);
+  const failedItems = countFailedExecuteItems(executeJson);
+  const cycleError = cycleJson && typeof cycleJson.error === 'string' && cycleJson.error.trim().length > 0
+    ? cycleJson.error.trim()
+    : null;
+  const tests = cycleJson && typeof cycleJson.tests === 'object' && cycleJson.tests !== null
+    ? cycleJson.tests as Record<string, unknown>
+    : null;
+  const newFailures = tests && Array.isArray(tests.newFailures) ? tests.newFailures.length : 0;
+
+  const checks: MergeReadinessCheck[] = [
+    {
+      id: 'cycle-completed',
+      status: summary.stage === 'completed' ? 'pass' : 'fail',
+      detail: summary.stage === 'completed'
+        ? 'cycle stage is completed'
+        : `cycle stage is ${summary.stage}`,
+    },
+    {
+      id: 'pr-linked',
+      status: summary.prUrl ? 'pass' : 'fail',
+      detail: summary.prUrl ? 'cycle has an associated PR URL' : 'cycle has no associated PR URL',
+    },
+    {
+      id: 'approval-state',
+      status: summary.hasApprovalPending || summary.approvalDecision === 'rejected' ? 'fail' : 'pass',
+      detail: summary.hasApprovalPending
+        ? 'approval decision is still pending'
+        : summary.approvalDecision === 'rejected'
+          ? 'approval decision is rejected'
+          : summary.approvalDecision
+            ? `approval decision is ${summary.approvalDecision}`
+            : 'no blocking approval decision detected',
+    },
+    {
+      id: 'cycle-error',
+      status: cycleError ? 'fail' : 'pass',
+      detail: cycleError ? `cycle error recorded: ${cycleError}` : 'no cycle-level error recorded',
+    },
+    {
+      id: 'gate-approved',
+      status: gateVerdict === 'APPROVE' ? 'pass' : 'fail',
+      detail: gateVerdict === 'APPROVE'
+        ? 'gate verdict is APPROVE'
+        : gateVerdict === 'REJECT'
+          ? 'gate verdict is REJECT'
+          : 'gate verdict is missing',
+    },
+    {
+      id: 'review-findings',
+      status: reviewFindingCounts.critical === 0 && reviewFindingCounts.major === 0 ? 'pass' : 'fail',
+      detail: `review findings CRITICAL=${reviewFindingCounts.critical} MAJOR=${reviewFindingCounts.major}`,
+    },
+    {
+      id: 'execute-failures',
+      status: failedItems === 0 ? 'pass' : 'fail',
+      detail: failedItems === 0 ? 'no failed execute items detected' : `failed execute items=${failedItems}`,
+    },
+    {
+      id: 'tests',
+      status: summary.testsTotal > 0 && summary.testsPassed === summary.testsTotal && newFailures === 0 ? 'pass' : 'fail',
+      detail: `tests passed=${summary.testsPassed}/${summary.testsTotal} newFailures=${newFailures}`,
+    },
+  ];
+
+  const blockingReasons = checks
+    .filter((check) => check.status === 'fail')
+    .map((check) => `${check.id}: ${check.detail}`);
+  const mergeReady = blockingReasons.length === 0;
+
+  return {
+    cycleId: summary.cycleId,
+    mergeReady,
+    verdict: mergeReady ? 'ready' : 'blocked',
+    prUrl: summary.prUrl,
+    checks,
+    blockingReasons,
+    metrics: {
+      gateVerdict,
+      criticalFindings: reviewFindingCounts.critical,
+      majorFindings: reviewFindingCounts.major,
+      failedItems,
+      testsPassed: summary.testsPassed,
+      testsTotal: summary.testsTotal,
+      newFailures,
+    },
+  };
+}
+
+function readGateVerdict(
+  cycleJson: Record<string, unknown> | null,
+  gateJson: Record<string, unknown> | null,
+): 'APPROVE' | 'REJECT' | null {
+  const fromCycle = cycleJson?.gateVerdict;
+  if (fromCycle === 'APPROVE' || fromCycle === 'REJECT') {
+    return fromCycle;
+  }
+  const fromGate = gateJson?.verdict;
+  if (fromGate === 'APPROVE' || fromGate === 'REJECT') {
+    return fromGate;
+  }
+  return null;
+}
+
+function readReviewFindingCounts(reviewJson: Record<string, unknown> | null): { critical: number; major: number } {
+  const structuredSeverities = readStructuredReviewSeverities(reviewJson);
+  const severities = structuredSeverities.length > 0
+    ? structuredSeverities
+    : readReviewSeveritiesFromResponses(reviewJson);
+  return {
+    critical: severities.filter((severity) => severity === 'CRITICAL').length,
+    major: severities.filter((severity) => severity === 'MAJOR').length,
+  };
+}
+
+function readStructuredReviewSeverities(reviewJson: Record<string, unknown> | null): Array<'CRITICAL' | 'MAJOR'> {
+  if (!reviewJson) return [];
+
+  const severities: Array<'CRITICAL' | 'MAJOR'> = [];
+  const addFromFindings = (findings: unknown): void => {
+    if (!Array.isArray(findings)) return;
+    for (const finding of findings) {
+      if (!finding || typeof finding !== 'object') continue;
+      const severity = (finding as { severity?: unknown }).severity;
+      if (severity === 'CRITICAL' || severity === 'MAJOR') {
+        severities.push(severity);
+      }
+    }
+  };
+
+  addFromFindings(reviewJson.findings);
+  const agentRuns = Array.isArray(reviewJson.agentRuns) ? reviewJson.agentRuns : [];
+  for (const run of agentRuns) {
+    if (!run || typeof run !== 'object') continue;
+    addFromFindings((run as { findings?: unknown }).findings);
+  }
+  return severities;
+}
+
+function readReviewSeveritiesFromResponses(reviewJson: Record<string, unknown> | null): Array<'CRITICAL' | 'MAJOR'> {
+  if (!reviewJson || !Array.isArray(reviewJson.agentRuns)) return [];
+
+  const severities: Array<'CRITICAL' | 'MAJOR'> = [];
+  for (const run of reviewJson.agentRuns) {
+    if (!run || typeof run !== 'object') continue;
+    const response = (run as { response?: unknown }).response;
+    if (typeof response !== 'string') continue;
+    for (const line of response.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const match = /^[-*>\s]*\[?(CRITICAL|MAJOR)\]?\s*:/i.exec(trimmed);
+      if (match?.[1] === 'CRITICAL' || match?.[1] === 'MAJOR') {
+        severities.push(match[1]);
+      }
+    }
+  }
+  return severities;
+}
+
+function countFailedExecuteItems(executeJson: Record<string, unknown> | null): number {
+  if (!executeJson) return 0;
+
+  const itemResults = Array.isArray(executeJson.itemResults) ? executeJson.itemResults : [];
+  const agentRuns = Array.isArray(executeJson.agentRuns) ? executeJson.agentRuns : [];
+  const runs = itemResults.length > 0 ? itemResults : agentRuns;
+  if (runs.length === 0) return 0;
+
+  const seenItemIds = new Set<string>();
+  let failed = 0;
+  for (let index = 0; index < runs.length; index += 1) {
+    const run = runs[index];
+    if (!run || typeof run !== 'object') continue;
+    const itemId = typeof (run as { itemId?: unknown }).itemId === 'string'
+      ? (run as { itemId: string }).itemId
+      : null;
+    const dedupeKey = itemId && itemId.length > 0 ? itemId : `index:${index}`;
+    if (seenItemIds.has(dedupeKey)) continue;
+    seenItemIds.add(dedupeKey);
+    if ((run as { status?: unknown }).status === 'failed') {
+      failed += 1;
+    }
+  }
+  return failed;
+}
+
 function isIsoDateString(value: string): boolean {
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
@@ -1432,6 +2015,170 @@ function parseLimit(raw: string, fallback: number): number | null {
     return null;
   }
   return parsed ?? fallback;
+}
+
+function parseRequiredPositiveInteger(raw: string | undefined, label: string): number | null {
+  if (raw === undefined || raw.trim().length === 0) {
+    console.error(`Missing ${label} value.`);
+    return null;
+  }
+  const value = raw.trim();
+  if (!/^[1-9]\d*$/.test(value)) {
+    console.error(`Invalid ${label} value: ${raw}`);
+    return null;
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) {
+    console.error(`Invalid ${label} value: ${raw}`);
+    return null;
+  }
+  return parsed;
+}
+
+function normalizeRequiredText(raw: string | undefined): string | null {
+  if (typeof raw !== 'string') return null;
+  const value = raw.trim();
+  return value.length > 0 ? value : null;
+}
+
+function normalizeStreakResult(raw: string | undefined): 'success' | 'failure' | null {
+  if (raw !== 'success' && raw !== 'failure') return null;
+  return raw;
+}
+
+function readCycleStreakLedger(path: string): CycleStreakLedger {
+  if (!existsSync(path)) return { version: 1, entries: [] };
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown;
+    const rawEntries = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray((parsed as { entries?: unknown } | null)?.entries)
+        ? (parsed as { entries: unknown[] }).entries
+        : [];
+    const entries = rawEntries
+      .map(normalizeCycleStreakEntry)
+      .filter((entry): entry is CycleStreakEntry => entry !== null);
+    return { version: 1, entries };
+  } catch {
+    return { version: 1, entries: [] };
+  }
+}
+
+function normalizeCycleStreakEntry(value: unknown): CycleStreakEntry | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const obj = value as Record<string, unknown>;
+  const cycleId = typeof obj['cycleId'] === 'string' ? obj['cycleId'].trim() : '';
+  if (!cycleId || !SAFE_ID.test(cycleId)) return null;
+
+  const prNumber = typeof obj['prNumber'] === 'number' && Number.isInteger(obj['prNumber']) && obj['prNumber'] > 0
+    ? obj['prNumber']
+    : null;
+  if (prNumber === null) return null;
+
+  const result = obj['result'] === 'success' || obj['result'] === 'failure'
+    ? obj['result']
+    : null;
+  if (result === null) return null;
+
+  const reason = typeof obj['reason'] === 'string' && obj['reason'].trim().length > 0
+    ? obj['reason'].trim()
+    : null;
+  if (reason === null) return null;
+
+  const normalized: CycleStreakEntry = {
+    cycleId,
+    prNumber,
+    result,
+    reason,
+    recordedAt: normalizeStreakRecordedAt(obj['recordedAt']),
+  };
+
+  if (obj['mergeEvidence'] && typeof obj['mergeEvidence'] === 'object' && !Array.isArray(obj['mergeEvidence'])) {
+    const evidence = obj['mergeEvidence'] as Record<string, unknown>;
+    const normalizedEvidence = {
+      ...(typeof evidence['prUrl'] === 'string' && evidence['prUrl'].length > 0 ? { prUrl: evidence['prUrl'] } : {}),
+      ...(typeof evidence['status'] === 'string' && evidence['status'].length > 0 ? { status: evidence['status'] } : {}),
+      ...(typeof evidence['mergedAt'] === 'string' && evidence['mergedAt'].length > 0 ? { mergedAt: evidence['mergedAt'] } : {}),
+      ...(typeof evidence['openedAt'] === 'string' && evidence['openedAt'].length > 0 ? { openedAt: evidence['openedAt'] } : {}),
+    };
+    if (Object.keys(normalizedEvidence).length > 0) {
+      normalized.mergeEvidence = normalizedEvidence;
+    }
+  }
+
+  return normalized;
+}
+
+function normalizeStreakRecordedAt(value: unknown): string {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed.length > 0) {
+      const timestamp = Date.parse(trimmed);
+      if (Number.isFinite(timestamp)) {
+        return new Date(timestamp).toISOString();
+      }
+    }
+  }
+  return new Date(0).toISOString();
+}
+
+function sortCycleStreakEntriesNewestFirst(entries: CycleStreakEntry[]): CycleStreakEntry[] {
+  return [...entries].sort((left, right) => {
+    const byDate = right.recordedAt.localeCompare(left.recordedAt);
+    if (byDate !== 0) return byDate;
+    return right.cycleId.localeCompare(left.cycleId);
+  });
+}
+
+function countConsecutiveSuccessesFromNewest(entries: CycleStreakEntry[]): number {
+  let count = 0;
+  for (const entry of entries) {
+    if (entry.result !== 'success') {
+      break;
+    }
+    count += 1;
+  }
+  return count;
+}
+
+function readCycleStreakMergeEvidence(
+  projectRoot: string,
+  cycleId: string,
+  prNumber: number,
+): CycleStreakEntry['mergeEvidence'] | null {
+  const cycleDir = join(projectRoot, '.agentforge', 'cycles', cycleId);
+  const cycleJson = readJsonIfExists(join(cycleDir, 'cycle.json')) as Record<string, unknown> | null;
+  const cyclePr = cycleJson && typeof cycleJson.pr === 'object' && cycleJson.pr !== null
+    ? cycleJson.pr as Record<string, unknown>
+    : null;
+
+  const cyclePrNumber = typeof cyclePr?.number === 'number' ? cyclePr.number : null;
+  if (cyclePr && cyclePrNumber === prNumber) {
+    const evidence = {
+      ...(typeof cyclePr.url === 'string' && cyclePr.url.length > 0 ? { prUrl: cyclePr.url } : {}),
+      ...(typeof cyclePr.status === 'string' && cyclePr.status.length > 0 ? { status: cyclePr.status } : {}),
+      ...(typeof cyclePr.mergedAt === 'string' && cyclePr.mergedAt.length > 0 ? { mergedAt: cyclePr.mergedAt } : {}),
+      ...(typeof cyclePr.openedAt === 'string' && cyclePr.openedAt.length > 0 ? { openedAt: cyclePr.openedAt } : {}),
+    };
+    if (Object.keys(evidence).length > 0) return evidence;
+  }
+
+  const agentPr = latestCycleAgentPr(cycleDir);
+  if (agentPr && agentPr.prNumber === prNumber) {
+    const agentPrStatus = typeof agentPr.status === 'string' ? agentPr.status : null;
+    const evidence = {
+      ...(typeof agentPr.prUrl === 'string' && agentPr.prUrl.length > 0 ? { prUrl: agentPr.prUrl } : {}),
+      ...(agentPrStatus !== null &&
+        agentPrStatus.length > 0 &&
+        agentPrStatus.trim().toLowerCase() !== 'open'
+        ? { status: agentPrStatus }
+        : {}),
+      ...(typeof agentPr.openedAt === 'string' && agentPr.openedAt.length > 0 ? { openedAt: agentPr.openedAt } : {}),
+    };
+    if (Object.keys(evidence).length > 0) return evidence;
+  }
+
+  return null;
 }
 
 

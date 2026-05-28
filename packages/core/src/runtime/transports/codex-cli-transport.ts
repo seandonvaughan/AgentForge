@@ -428,6 +428,7 @@ export class CodexCliTransport implements ExecutionTransport {
     const sandboxInstruction = sandbox === 'read-only'
       ? `Codex is running non-interactively with sandbox "${sandbox}". Inspect files as needed, but do not create, edit, delete, or append files. Return the requested result in the final answer.`
       : `Codex is running non-interactively with sandbox "${sandbox}". You may create, edit, and delete files inside the working directory when the task requires it. Do not stop as read-only unless an actual write command fails.`;
+    const gitMetadataInstruction = 'Never create, edit, delete, move, or rewrite `.git`, `.git/worktrees`, or git metadata files. Use normal git commands for repository state and keep the allocated worktree metadata intact.';
     const allowedTools = request.allowedTools?.length
       ? `\n\nAllowed tool names requested by AgentForge: ${request.allowedTools.join(', ')}. Use only equivalent Codex capabilities available in this sandbox.`
       : '';
@@ -441,6 +442,7 @@ export class CodexCliTransport implements ExecutionTransport {
       '<system>',
       request.agent.systemPrompt,
       '</system>',
+      gitMetadataInstruction,
       allowedTools.trim(),
       schemaHint.trim(),
       '<task>',

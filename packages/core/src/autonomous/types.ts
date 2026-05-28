@@ -76,6 +76,13 @@ export interface CycleConfig {
     minProposalConfidence: number;
     includeTodoMarkers: boolean;
     todoMarkerPattern: string;
+    /**
+     * Allow the loop to source its OWN speculative R&D ideas (research-plan
+     * items) into the backlog. Default false: when the human/curated backlog is
+     * empty the loop must idle, not manufacture busywork. Re-enabling this was
+     * the mechanism behind the 2026-05-28 self-sourced-busywork spin.
+     */
+    allowSelfSourcedBacklog?: boolean;
   };
   testing: {
     command: string;
@@ -215,6 +222,8 @@ export interface TestResult {
 export interface RankedItem {
   itemId: string;
   title: string;
+  /** Original backlog description/acceptance contract, preserved for planning and gate audit. */
+  description?: string;
   files?: string[];
   runtimeMode?: RuntimeMode;
   preferredProvider?: ExecutionProviderKind;

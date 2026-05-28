@@ -31,13 +31,14 @@ const costAnomalyAdapter: ProposalAdapter = {
   getFlakingTests: async () => [],
 };
 
-function cfg(): CycleConfig {
+function cfg(overrides?: Partial<CycleConfig['sourcing']>): CycleConfig {
   return {
     sourcing: {
       lookbackDays: 7,
       minProposalConfidence: 0.6,
       includeTodoMarkers: false,
       todoMarkerPattern: 'TODO\\(autonomous\\)',
+      ...overrides,
     },
   } as unknown as CycleConfig;
 }
@@ -65,6 +66,10 @@ function writeQuarantine(ids: string[]): void {
 }
 function writeCompletedLedger(entries: unknown): void {
   writeFileSync(join(root, '.agentforge', 'backlog', 'completed.json'), JSON.stringify(entries));
+}
+function writeResearchRun(runId: string, run: unknown): void {
+  mkdirSync(join(root, '.agentforge', 'research-runs', runId), { recursive: true });
+  writeFileSync(join(root, '.agentforge', 'research-runs', runId, 'run.json'), JSON.stringify(run));
 }
 
 describe('difficulty gating (unattended)', () => {
@@ -115,6 +120,94 @@ describe('difficulty gating (unattended)', () => {
     process.env['AGENTFORGE_UNATTENDED'] = '1';
     const items = await new ProposalToBacklog(costAnomalyAdapter, root, cfg()).build();
     expect(items.map((i) => i.source)).not.toContain('cost-anomaly');
+  });
+
+  it('excludes high-risk or file-less research-plan items when AGENTFORGE_UNATTENDED=1', async () => {
+    process.env['AGENTFORGE_UNATTENDED'] = '1';
+    writeResearchRun('rd-run-guard', {
+      runId: 'rd-run-guard',
+      plannedCycle: { ideaIds: ['idea-low', 'idea-high', 'idea-noscope'] },
+      ideas: [
+        {
+          ideaId: 'idea-low',
+          title: 'Scoped low-risk idea',
+          problem: 'P',
+          hypothesis: 'H',
+          expectedImpact: 'E',
+          acceptanceChecks: ['A'],
+          touchedAreas: ['packages/core/src/autonomous/proposal-to-backlog.ts'],
+          risk: 'low',
+          status: 'planned',
+        },
+        {
+          ideaId: 'idea-high',
+          title: 'High-risk idea',
+          problem: 'P',
+          hypothesis: 'H',
+          expectedImpact: 'E',
+          acceptanceChecks: ['A'],
+          touchedAreas: ['packages/core/src/autonomous/proposal-to-backlog.ts'],
+          risk: 'high',
+          status: 'planned',
+        },
+        {
+          ideaId: 'idea-noscope',
+          title: 'No scope idea',
+          problem: 'P',
+          hypothesis: 'H',
+          expectedImpact: 'E',
+          acceptanceChecks: ['A'],
+          touchedAreas: [],
+          risk: 'medium',
+          status: 'planned',
+        },
+      ],
+    });
+    const items = await new ProposalToBacklog(emptyAdapter, root, cfg({ allowSelfSourcedBacklog: true })).build();
+    const researchItems = items.filter((i) => i.source === 'research-plan').map((i) => i.title);
+    expect(researchItems).toContain('Scoped low-risk idea');
+    expect(researchItems).not.toContain('High-risk idea');
+    expect(researchItems).not.toContain('No scope idea');
+  });
+});
+
+describe('self-sourcing guard', () => {
+  function plannedRun(): void {
+    writeResearchRun('rd-run-selfsource', {
+      runId: 'rd-run-selfsource',
+      plannedCycle: { ideaIds: ['idea-01'] },
+      ideas: [
+        {
+          ideaId: 'idea-01',
+          title: 'Self-sourced idea',
+          problem: 'P',
+          hypothesis: 'H',
+          expectedImpact: 'E',
+          acceptanceChecks: ['A'],
+          touchedAreas: ['packages/core/src/autonomous/proposal-to-backlog.ts'],
+          risk: 'low',
+          status: 'planned',
+        },
+      ],
+    });
+  }
+
+  it('does NOT source research-plan items by default (loop idles instead of inventing work)', async () => {
+    plannedRun();
+    const items = await new ProposalToBacklog(emptyAdapter, root, cfg()).build();
+    expect(items.filter((i) => i.source === 'research-plan')).toEqual([]);
+  });
+
+  it('sources research-plan items only when allowSelfSourcedBacklog is explicitly enabled', async () => {
+    plannedRun();
+    const items = await new ProposalToBacklog(
+      emptyAdapter,
+      root,
+      cfg({ allowSelfSourcedBacklog: true }),
+    ).build();
+    expect(items.filter((i) => i.source === 'research-plan').map((i) => i.title)).toContain(
+      'Self-sourced idea',
+    );
   });
 });
 
@@ -231,6 +324,45 @@ describe('completed ledger replay guard', () => {
     expect(titles).toContain('Beta keep');
     expect(titles).not.toContain('Alpha one');
     expect(titles).not.toContain('Alpha two');
+  });
+
+  it('filters completed research-plan ids using the same normalization path', async () => {
+    writeResearchRun('rd-run-completed', {
+      runId: 'rd-run-completed',
+      plannedCycle: { ideaIds: ['idea-01', 'idea-02'] },
+      ideas: [
+        {
+          ideaId: 'idea-01',
+          title: 'Completed research idea',
+          problem: 'P',
+          hypothesis: 'H',
+          expectedImpact: 'E',
+          acceptanceChecks: ['A'],
+          touchedAreas: ['packages/core/src/autonomous/proposal-to-backlog.ts'],
+          risk: 'low',
+          status: 'planned',
+        },
+        {
+          ideaId: 'idea-02',
+          title: 'Visible research idea',
+          problem: 'P',
+          hypothesis: 'H',
+          expectedImpact: 'E',
+          acceptanceChecks: ['A'],
+          touchedAreas: ['packages/core/src/autonomous/proposal-to-backlog.ts'],
+          risk: 'medium',
+          status: 'planned',
+        },
+      ],
+    });
+    writeCompletedLedger({
+      entries: [{ itemId: '  research rd run completed idea 01  ', completedAt: '2026-05-27T00:00:00.000Z' }],
+    });
+
+    const items = await new ProposalToBacklog(emptyAdapter, root, cfg({ allowSelfSourcedBacklog: true })).build();
+    const titles = items.filter((i) => i.source === 'research-plan').map((i) => i.title);
+    expect(titles).toContain('Visible research idea');
+    expect(titles).not.toContain('Completed research idea');
   });
 
   it('tolerates a missing backlog directory', async () => {

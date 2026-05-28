@@ -1247,7 +1247,8 @@ export async function cyclesRoutes(
     // poll, which made the dashboard's elapsed timer snap to 00:00 every
     // poll cycle. The session registry tracks the real spawn time.
     const inProgressStartedAt = startedAt ?? session?.startedAt ?? new Date().toISOString();
-    return reply.status(200).send(attachLaunchConfig(dir, {
+    const inProgressCheckpoint = readCycleCheckpoint(dir);
+    const inProgressPayload: Record<string, unknown> = {
       cycleId: id,
       sprintVersion,
       stage: lastStage,
@@ -1262,7 +1263,9 @@ export async function cyclesRoutes(
       prUrl: liveAgentPr?.prUrl ?? null,
       agentRunCount,
       cycleInProgress: true,
-    }));
+    };
+    if (inProgressCheckpoint !== undefined) inProgressPayload['checkpoint'] = inProgressCheckpoint;
+    return reply.status(200).send(attachLaunchConfig(dir, inProgressPayload));
   });
 
   // GET /api/v5/cycles/:id/plan ─────────────────────────────────────────────

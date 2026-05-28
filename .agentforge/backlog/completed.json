@@ -120,6 +120,158 @@
       "cycleId": "ed6bd5cf-a1d3-4578-a0b5-7bbccc57485a",
       "prNumber": 198,
       "reason": "Merged successful backlog scope visibility cycle after audit correction"
+    },
+    {
+      "itemId": "backlog-guided-large-007",
+      "completedAt": "2026-05-28T06:33:22.731Z",
+      "updatedAt": "2026-05-28T06:33:22.731Z",
+      "cycleId": "40c2dff4-d780-4ee3-b7d8-83e6b91d3d14",
+      "prNumber": 200,
+      "reason": "Merged retained value from failed cycle: cycle assess-pr command"
+    },
+    {
+      "itemId": "backlog-guided-large-008",
+      "completedAt": "2026-05-28T06:33:23.467Z",
+      "updatedAt": "2026-05-28T06:33:23.467Z",
+      "cycleId": "40c2dff4-d780-4ee3-b7d8-83e6b91d3d14",
+      "prNumber": 201,
+      "reason": "Merged retained value from failed cycle: cycle streak ledger command"
+    },
+    {
+      "itemId": "backlog-guided-large-009",
+      "completedAt": "2026-05-28T07:15:38.654Z",
+      "updatedAt": "2026-05-28T07:15:38.654Z",
+      "cycleId": "8de2c0b2-b176-48a5-9f3c-01398c185047",
+      "prNumber": 202,
+      "reason": "Merged retained value from failed cycle: cycle list stage filter"
+    },
+    {
+      "itemId": "backlog-guided-large-010",
+      "completedAt": "2026-05-28T07:44:26.741Z",
+      "updatedAt": "2026-05-28T07:44:26.741Z",
+      "cycleId": "2b8acae7-d088-427a-94c9-8cce8d0890e2",
+      "prNumber": 203,
+      "reason": "Merged retained value after audit correction: duplicate backlog diagnostics"
+    },
+    {
+      "itemId": "backlog-guided-large-011",
+      "completedAt": "2026-05-28T08:14:04.978Z",
+      "updatedAt": "2026-05-28T08:14:04.978Z",
+      "cycleId": "5f9dfe28-39fc-472c-9f04-c2a16852722e",
+      "prNumber": 204,
+      "reason": "Merged retained value after audit correction: codex readiness CLI JSON coverage"
+    },
+    {
+      "itemId": "backlog-guided-large-012",
+      "completedAt": "2026-05-28T08:46:39.990Z",
+      "updatedAt": "2026-05-28T08:46:39.990Z",
+      "cycleId": "50d4c9d8-6554-40ef-938c-d57f0f6e7c70",
+      "prNumber": 205,
+      "reason": "Merged green dogfood cycle: live cycle detail checkpoint metadata"
+    },
+    {
+      "itemId": "backlog-guided-large-013",
+      "completedAt": "2026-05-28T09:11:51.927Z",
+      "updatedAt": "2026-05-28T09:11:51.927Z",
+      "cycleId": "25e1b146-5435-4cec-83b4-73460706cafd",
+      "prNumber": 206,
+      "reason": "Merged green dogfood cycle: stale open PR streak evidence suppression"
+    },
+    {
+      "itemId": "backlog-guided-large-014",
+      "completedAt": "2026-05-28T09:26:12.835Z",
+      "updatedAt": "2026-05-28T09:26:12.835Z",
+      "cycleId": "c57a5c39-8a8d-46b0-b3af-fe89c07a222b",
+      "prNumber": 207,
+      "reason": "Merged retained value after failed cycle and manual correction: normalized stale open streak fallback status"
+    },
+    {
+      "itemId": "backlog-guided-large-015",
+      "completedAt": "2026-05-28T09:55:50.117Z",
+      "updatedAt": "2026-05-28T09:55:50.117Z",
+      "cycleId": "fc96e5d7-e5fa-4073-a562-63148f0405f0",
+      "prNumber": 208,
+      "reason": "Merged retained value after manual JSON sourceFile correction"
+    },
+    {
+      "itemId": "backlog-guided-large-016",
+      "completedAt": "2026-05-28T10:22:03.905Z",
+      "updatedAt": "2026-05-28T10:22:03.905Z",
+      "cycleId": "7c2eeec7-b26d-455c-bb0f-b81445192725",
+      "prNumber": 209,
+      "reason": "Merged green dogfood cycle: backlog source file on active status line"
+    },
+    {
+      "itemId": "backlog-guided-large-017",
+      "completedAt": "2026-05-28T10:46:36.749Z",
+      "updatedAt": "2026-05-28T10:46:36.749Z",
+      "cycleId": "7579d68f-7de9-4b49-ab45-8d2d2441b910",
+      "prNumber": 210,
+      "reason": "Green dogfood cycle: activeScopedItemsCount shipped via PR #210 without manual code correction"
+    },
+    {
+      "itemId": "backlog-guided-large-018",
+      "completedAt": "2026-05-28T11:09:17.324Z",
+      "updatedAt": "2026-05-28T11:09:17.324Z",
+      "cycleId": "f88484c3-80c2-4079-b0d7-0b0ed4fdd056",
+      "prNumber": 211,
+      "reason": "Green dogfood cycle: readyForCycle shipped via PR #211 without manual code correction"
+    },
+    {
+      "itemId": "backlog-guided-big-001",
+      "completedAt": "2026-05-28T12:03:22.169Z",
+      "updatedAt": "2026-05-28T12:03:22.169Z",
+      "cycleId": "cd821978-18fa-443d-9681-18f5fcf71ba7",
+      "prNumber": 212,
+      "reason": "Guided big cycle 1: dashboard E2E reuse default shipped via PR #212 without manual code correction"
+    },
+    {
+      "itemId": "backlog-guided-big-002",
+      "completedAt": "2026-05-28T12:24:14.682Z",
+      "updatedAt": "2026-05-28T12:24:14.682Z",
+      "cycleId": "9f57d3b9-6a5a-4184-b5d4-157da00ff133",
+      "prNumber": 213,
+      "reason": "Guided big cycle 2 retained via PR #213, but required operator TypeScript correction after branch verification failure"
+    },
+    {
+      "itemId": "backlog-guided-big-003",
+      "completedAt": "2026-05-28T12:55:14.153Z",
+      "updatedAt": "2026-05-28T12:55:14.153Z",
+      "cycleId": "7fd52ebb-d711-40a4-b423-134a51d70f52",
+      "prNumber": 214,
+      "reason": "Guided big cycle retained via PR #214, but required AgentForge runtime invoke repair after gate retry failed"
+    },
+    {
+      "itemId": "backlog-guided-big-004",
+      "completedAt": "2026-05-28T13:16:43.645Z",
+      "updatedAt": "2026-05-28T13:16:43.645Z",
+      "cycleId": "549d2529-9572-4268-a776-cffdca3f89fc",
+      "prNumber": 215,
+      "reason": "Clean guided big cycle 1: PR #215 merged without manual code correction after local audit and tests"
+    },
+    {
+      "itemId": "backlog-guided-big-005",
+      "completedAt": "2026-05-28T13:38:40.388Z",
+      "updatedAt": "2026-05-28T13:38:40.388Z",
+      "cycleId": "19163d51-7582-4247-ab89-d2974a7b2ac7",
+      "prNumber": 216,
+      "reason": "Guided cycle retained via PR #216, but required AgentForge runtime invoke repair after gate retry failed"
+    },
+    {
+      "itemId": "backlog-guided-big-006",
+      "completedAt": "2026-05-28T14:00:36.014Z",
+      "updatedAt": "2026-05-28T14:00:36.014Z",
+      "cycleId": "c02786db-63e5-4d2d-a6f6-738c64ff58ba",
+      "prNumber": 217,
+      "reason": "Clean guided big cycle 1: PR #217 merged without manual code correction after local audit and tests"
+    },
+    {
+      "itemId": "backlog-guided-big-007",
+      "completedAt": "2026-05-28T14:22:30.933Z",
+      "updatedAt": "2026-05-28T14:22:30.933Z",
+      "cycleId": "b5bfe272-e916-4a69-89ac-ab3afae72ee1",
+      "prNumber": 218,
+      "reason": "Clean guided big cycle 2: PR #218 merged without manual code correction after local audit and tests"
     }
   ]
 }

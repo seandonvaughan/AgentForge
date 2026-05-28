@@ -12,6 +12,7 @@ interface BacklogCompleteOptions {
 interface BacklogStatusOptions {
   projectRoot: string;
   json?: boolean;
+  source?: string;
 }
 
 interface CompletedBacklogEntry {
@@ -31,11 +32,24 @@ interface CompletedBacklogLedger {
 interface BacklogFileItem {
   id: string;
   title: string;
+  sourceFile: string;
+  sourceHint?: string;
   estimatedComplexity?: 'low' | 'medium' | 'high';
   files?: string[];
   runtimeMode?: 'auto' | 'sdk' | 'claude-code-compat' | 'codex-cli' | 'openai-sdk' | 'anthropic-sdk';
   preferredProvider?: 'claude-code-compat' | 'codex-cli' | 'openai-sdk' | 'anthropic-sdk';
 }
+
+interface DuplicateNormalizedIdSummary {
+  id: string;
+  count: number;
+  items: Array<{
+    title: string;
+    sourceFile: string;
+  }>;
+}
+
+type BacklogStatusSourceFilter = 'all' | 'backlog-file' | 'research-plan';
 
 export function registerBacklogCommand(program: Command): void {
   const backlog = program
@@ -63,6 +77,7 @@ export function registerBacklogCommand(program: Command): void {
     .description('Show deterministic backlog visibility before cycle replay')
     .option('--project-root <path>', 'Project root', process.cwd())
     .option('--json', 'Print machine-readable JSON')
+    .option('--source <source>', 'Filter active scoped items by source (all|backlog-file|research-plan)', 'all')
     .action(async (opts: BacklogStatusOptions) => {
       try {
         await printBacklogStatus(opts);
@@ -153,28 +168,39 @@ function readLedger(path: string): CompletedBacklogLedger {
 }
 
 async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
+  const sourceFilter = parseBacklogStatusSourceFilter(opts.source);
   const projectRoot = resolve(opts.projectRoot);
   const backlogDir = join(projectRoot, '.agentforge', 'backlog');
   const completed = readLedger(join(backlogDir, 'completed.json'));
   const completedIds = new Set(completed.entries.map((entry) => entry.itemId));
   const quarantineIds = readQuarantineIds(join(backlogDir, 'quarantine.json'));
   const backlogItems = readBacklogFileItems(backlogDir);
-  const activeItems = backlogItems.filter((item) => !completedIds.has(item.id) && !quarantineIds.has(item.id));
+  const researchItems = readResearchPlanItems(projectRoot);
+  const activeBacklogItems = backlogItems.filter((item) => !completedIds.has(item.id) && !quarantineIds.has(item.id));
+  const activeResearchItems = researchItems.filter((item) => !completedIds.has(item.id) && !quarantineIds.has(item.id));
+  const activeItems = [...activeBacklogItems, ...activeResearchItems];
   const unattendedExcluded = activeItems.filter(isUnattendedExcludedBacklogItem);
-  const activeScoped = activeItems
+  const activeScopedUnfiltered = activeItems
     .filter((item) => !isUnattendedExcludedBacklogItem(item))
     .sort((a, b) => {
       const idCompare = a.id.localeCompare(b.id);
       if (idCompare !== 0) return idCompare;
       return a.title.localeCompare(b.title);
     });
+  const activeScoped = sourceFilter === 'all'
+    ? activeScopedUnfiltered
+    : activeScopedUnfiltered.filter((item) => getBacklogItemSource(item) === sourceFilter);
+  const duplicateNormalizedIds = summarizeDuplicateNormalizedIds(activeScoped);
   const routedScoped = activeScoped.filter((item) => item.runtimeMode !== undefined || item.preferredProvider !== undefined);
   const defaultScoped = activeScoped.length - routedScoped.length;
 
   if (opts.json) {
+    const readyForCycle = activeScoped.length > 0;
     console.log(JSON.stringify({
       projectRoot,
-      activeBacklogFileItems: activeItems.length,
+      sourceFilter,
+      activeBacklogFileItems: activeBacklogItems.length,
+      activeResearchPlanItems: activeResearchItems.length,
       completedLedgerEntries: completed.entries.length,
       quarantinedIds: quarantineIds.size,
       unattendedExcludedBacklogItems: unattendedExcluded.length,
@@ -183,12 +209,16 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
         routedItems: routedScoped.length,
         defaultItems: defaultScoped,
       },
+      duplicateNormalizedIds,
+      readyForCycle,
+      activeScopedItemsCount: activeScoped.length,
       activeScopedItems: activeScoped.map((item) => ({
         id: item.id,
         title: item.title,
         estimatedComplexity: item.estimatedComplexity,
         runtimeMode: item.runtimeMode ?? null,
         preferredProvider: item.preferredProvider ?? null,
+        sourceFile: item.sourceHint ?? item.sourceFile,
         scopeFiles: item.files ?? [],
       })),
     }, null, 2));
@@ -197,11 +227,18 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
 
   console.log('[backlog] status');
   console.log(`  projectRoot: ${projectRoot}`);
-  console.log(`  activeBacklogFileItems: ${activeItems.length}`);
+  if (sourceFilter !== 'all') {
+    console.log(`  sourceFilter: ${sourceFilter}`);
+  }
+  console.log(`  activeBacklogFileItems: ${activeBacklogItems.length}`);
+  console.log(`  activeResearchPlanItems: ${activeResearchItems.length}`);
   console.log(`  completedLedgerEntries: ${completed.entries.length}`);
   console.log(`  quarantinedIds: ${quarantineIds.size}`);
   console.log(`  unattendedExcludedBacklogItems: ${unattendedExcluded.length}`);
   console.log(`  runtimeRoutingHints: scoped=${activeScoped.length} routed=${routedScoped.length} default=${defaultScoped}`);
+  console.log(`  duplicateNormalizedIds: ${formatDuplicateNormalizedIds(duplicateNormalizedIds)}`);
+  console.log(`  activeScopedItemsCount: ${activeScoped.length}`);
+  console.log(`  readyForCycle: ${activeScoped.length > 0 ? 'yes' : 'no'}`);
   console.log('  activeScopedItems:');
   if (activeScoped.length === 0) {
     console.log('    (none)');
@@ -211,6 +248,7 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
   for (const item of activeScoped) {
     const hints = [
       item.estimatedComplexity ? `complexity=${item.estimatedComplexity}` : null,
+      `source=${item.sourceHint ?? item.sourceFile}`,
       `scope=${(item.files ?? []).join(',')}`,
       item.runtimeMode ? `runtime=${item.runtimeMode}` : null,
       item.preferredProvider ? `provider=${item.preferredProvider}` : null,
@@ -218,6 +256,55 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
     const suffix = hints.length > 0 ? ` [${hints.join(', ')}]` : '';
     console.log(`    - ${item.id}: ${item.title}${suffix}`);
   }
+}
+
+function parseBacklogStatusSourceFilter(raw: string | undefined): BacklogStatusSourceFilter {
+  if (raw === undefined) return 'all';
+  if (raw === 'all' || raw === 'backlog-file' || raw === 'research-plan') return raw;
+  throw new Error(`Invalid --source value "${raw}": expected one of all, backlog-file, research-plan`);
+}
+
+function getBacklogItemSource(item: BacklogFileItem): Exclude<BacklogStatusSourceFilter, 'all'> {
+  return item.sourceHint?.startsWith('research:') ? 'research-plan' : 'backlog-file';
+}
+
+function summarizeDuplicateNormalizedIds(items: BacklogFileItem[]): DuplicateNormalizedIdSummary[] {
+  const byId = new Map<string, BacklogFileItem[]>();
+  for (const item of items) {
+    const group = byId.get(item.id) ?? [];
+    group.push(item);
+    byId.set(item.id, group);
+  }
+
+  return Array.from(byId.entries())
+    .filter(([, matches]) => matches.length > 1)
+    .map(([id, matches]) => ({
+      id,
+      count: matches.length,
+      items: matches
+        .map((item) => ({
+          title: item.title,
+          sourceFile: item.sourceFile,
+        }))
+        .sort((a, b) => {
+          const titleCompare = a.title.localeCompare(b.title);
+          if (titleCompare !== 0) return titleCompare;
+          return a.sourceFile.localeCompare(b.sourceFile);
+        }),
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
+function formatDuplicateNormalizedIds(dupes: DuplicateNormalizedIdSummary[]): string {
+  if (dupes.length === 0) return '(none)';
+  return dupes
+    .map((entry) => {
+      const sources = entry.items
+        .map((item) => `${item.title} (${item.sourceFile})`)
+        .join('; ');
+      return `${entry.id} x${entry.count}: ${sources}`;
+    })
+    .join(', ');
 }
 
 function readBacklogFileItems(backlogDir: string): BacklogFileItem[] {
@@ -252,6 +339,81 @@ function readBacklogFileItems(backlogDir: string): BacklogFileItem[] {
   return items;
 }
 
+function readResearchPlanItems(projectRoot: string): BacklogFileItem[] {
+  const researchDir = join(projectRoot, '.agentforge', 'research-runs');
+  let runIds: string[];
+  try {
+    runIds = readdirSync(researchDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
+  } catch {
+    return [];
+  }
+
+  const items: BacklogFileItem[] = [];
+  for (const runId of runIds) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(readFileSync(join(researchDir, runId, 'run.json'), 'utf8')) as unknown;
+    } catch {
+      continue;
+    }
+
+    const run = parsed as Record<string, unknown>;
+    const plannedCycle = run['plannedCycle'];
+    if (!plannedCycle || typeof plannedCycle !== 'object') continue;
+    const ideaIds = Array.isArray((plannedCycle as { ideaIds?: unknown }).ideaIds)
+      ? (plannedCycle as { ideaIds: unknown[] }).ideaIds
+        .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+        .map((id) => id.trim())
+      : [];
+    if (ideaIds.length === 0) continue;
+    const plannedIds = new Set(ideaIds);
+    const ideas = Array.isArray(run['ideas']) ? run['ideas'] : [];
+    for (const raw of ideas) {
+      const item = normalizeResearchPlanItem(raw, runId, plannedIds);
+      if (item) items.push(item);
+    }
+  }
+
+  return items;
+}
+
+function normalizeResearchPlanItem(raw: unknown, runId: string, plannedIds: Set<string>): BacklogFileItem | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const obj = raw as Record<string, unknown>;
+  const ideaId = typeof obj['ideaId'] === 'string' ? obj['ideaId'].trim() : '';
+  if (!ideaId || !plannedIds.has(ideaId)) return null;
+  const status = typeof obj['status'] === 'string' ? obj['status'] : '';
+  if (status !== 'planned') return null;
+  const title = typeof obj['title'] === 'string' ? obj['title'].trim() : '';
+  if (!title) return null;
+
+  const id = normalizeBacklogId(`research-${runId}-${ideaId}`);
+  if (!id) return null;
+  const item: BacklogFileItem = {
+    id,
+    title,
+    sourceFile: 'research-run.json',
+    sourceHint: `research:${runId}`,
+  };
+
+  const risk = typeof obj['risk'] === 'string' ? obj['risk'].toLowerCase() : '';
+  if (risk === 'low' || risk === 'medium' || risk === 'high') {
+    item.estimatedComplexity = risk;
+  }
+
+  const files = Array.isArray(obj['touchedAreas'])
+    ? obj['touchedAreas'].filter((f): f is string => typeof f === 'string' && f.trim().length > 0)
+    : [];
+  if (files.length > 0) {
+    item.files = files;
+  }
+
+  return item;
+}
+
 function normalizeBacklogFileItem(raw: unknown, fileName: string): BacklogFileItem | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const obj = raw as Record<string, unknown>;
@@ -266,6 +428,7 @@ function normalizeBacklogFileItem(raw: unknown, fileName: string): BacklogFileIt
   const item: BacklogFileItem = {
     id,
     title,
+    sourceFile: fileName,
   };
 
   const complexity = typeof obj['estimatedComplexity'] === 'string'

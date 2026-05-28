@@ -337,6 +337,69 @@ describe('GET /api/v5/cycles/:id', () => {
     expect(body.effortCap).toBe('high');
   });
 
+  it('includes checkpoint metadata in synthesized in-progress detail payloads', async () => {
+    const id = '46464646-4646-4646-4646-464646464646';
+    const dir = makeCycleDir(id);
+    writeFileSync(
+      join(dir, 'events.jsonl'),
+      JSON.stringify({ type: 'phase.start', phase: 'execute', at: '2026-04-07T10:00:00.000Z' }) + '\n',
+    );
+    writeFileSync(
+      join(dir, 'checkpoint.json'),
+      JSON.stringify({
+        resumeFromPhase: 'execute',
+        capturedAt: '2026-04-07T10:01:00.000Z',
+        completedPhases: ['audit', 'plan', 'assign'],
+      }),
+    );
+    sessionFixture = {
+      cycleId: id,
+      pid: 11111,
+      pgid: 11111,
+      workspaceId: 'default',
+      workspaceRoot: tmpRoot,
+      startedAt: '2026-04-07T10:00:00.000Z',
+      lastSeenAt: '2026-04-07T10:01:00.000Z',
+      status: 'running',
+    };
+
+    const res = await app.inject({ method: 'GET', url: `/api/v5/cycles/${id}` });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.cycleInProgress).toBe(true);
+    expect(body.checkpoint).toEqual({
+      resumeFromPhase: 'execute',
+      capturedAt: '2026-04-07T10:01:00.000Z',
+      completedPhases: ['audit', 'plan', 'assign'],
+    });
+  });
+
+  it('ignores malformed checkpoint.json in synthesized in-progress detail payloads', async () => {
+    const id = '47474747-4747-4747-4747-474747474747';
+    const dir = makeCycleDir(id);
+    writeFileSync(
+      join(dir, 'events.jsonl'),
+      JSON.stringify({ type: 'phase.start', phase: 'execute', at: '2026-04-07T10:00:00.000Z' }) + '\n',
+    );
+    writeFileSync(join(dir, 'checkpoint.json'), '{not valid json}');
+    sessionFixture = {
+      cycleId: id,
+      pid: 11111,
+      pgid: 11111,
+      workspaceId: 'default',
+      workspaceRoot: tmpRoot,
+      startedAt: '2026-04-07T10:00:00.000Z',
+      lastSeenAt: '2026-04-07T10:01:00.000Z',
+      status: 'running',
+    };
+
+    const res = await app.inject({ method: 'GET', url: `/api/v5/cycles/${id}` });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.cycleInProgress).toBe(true);
+    expect(body.checkpoint).toBeUndefined();
+  });
+
   it('returns 200 with cycle.json for a killed cycle (kill-switch trip writes cycle.json)', async () => {
     const id = '55555555-5555-5555-5555-555555555555';
     const dir = makeCycleDir(id);

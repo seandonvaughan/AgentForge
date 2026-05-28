@@ -1,0 +1,607 @@
+{
+  "version": "v6-backlog",
+  "description": "Dogfood backlog (2026-05-27). Guided cycles make the loop better at selecting, shipping, auditing, and not repeating AgentForge work before moving into autonomous streak runs.",
+  "northStar": "One unforked, runtime-agnostic AgentForge (Claude + Codex, best provider x model x effort per job) whose autonomous loop reliably ships, then builds AgentForge Cloud.",
+  "items": [
+    {
+      "id": "dogfood-001",
+      "title": "Add backlog completion ledger and replay guard",
+      "description": "Implement a real product improvement for dogfooding autonomous cycles. Add a durable backlog completion ledger under `.agentforge/backlog/completed.json`, make `ProposalToBacklog` filter completed backlog item ids the same way it filters quarantine ids, and add a package CLI command for operators to mark items completed after a PR is audited and merged. The command should support at minimum `agentforge backlog complete <itemId> --project-root . --cycle <cycleId> --pr <number> --reason <text>` and should append/update completed entries idempotently. Keep existing quarantine behavior intact. Add tests proving completed ids are filtered, missing/malformed ledgers are tolerated, and the CLI writes an idempotent completion entry. Self-verify with focused vitest for proposal backlog guards and the new CLI tests.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "tags": ["feature", "dogfood", "autonomous", "backlog"],
+      "source": "dogfood-2026-05-27",
+      "files": [
+        "packages/core/src/autonomous/proposal-to-backlog.ts",
+        "packages/core/src/autonomous/__tests__/proposal-backlog-guard.test.ts",
+        "packages/cli/src/bin.ts",
+        "packages/cli/src/commands/backlog.ts",
+        "packages/cli/src/__tests__/backlog-command.test.ts"
+      ]
+    },
+    {
+      "id": "dogfood-002",
+      "title": "Add backlog status command for cycle replay visibility",
+      "description": "Extend the new `agentforge backlog` CLI surface with a read-only `status` subcommand that helps operators see what the next cycle can select before spending runtime. It should support `agentforge backlog status --project-root .` and print a concise deterministic summary including counts for active backlog-file items, completed ledger entries, quarantined ids, and unattended-excluded backlog items. It should normalize backlog-file ids exactly like ProposalToBacklog (`backlog-<id>`), tolerate missing or malformed completed/quarantine files, and include item ids/titles for active scoped items. Add focused tests in the backlog CLI test file. Do not change cycle execution semantics.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "tags": ["feature", "dogfood", "autonomous", "backlog", "cli"],
+      "source": "dogfood-2026-05-27",
+      "files": [
+        "packages/cli/src/commands/backlog.ts",
+        "packages/cli/src/__tests__/backlog-command.test.ts",
+        "scripts/check-help-output.mjs"
+      ]
+    },
+    {
+      "id": "dogfood-003",
+      "title": "Add JSON output for backlog status",
+      "description": "Extend `agentforge backlog status --project-root .` with an optional `--json` flag for automation. The JSON output must be deterministic and include the same normalized data the text status uses: projectRoot, activeBacklogFileItems, completedLedgerEntries, quarantinedIds, unattendedExcludedBacklogItems, and activeScopedItems with id/title fields. Keep the existing text output unchanged when `--json` is omitted. Reuse the current backlog ID normalization and malformed-file tolerance; do not change cycle execution semantics. Add focused CLI tests for JSON output shape, deterministic ordering, and parity with completed/quarantine filtering. Update the help-output check if needed.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": ["feature", "dogfood", "autonomous", "backlog", "cli"],
+      "source": "dogfood-2026-05-27",
+      "files": [
+        "packages/cli/src/commands/backlog.ts",
+        "packages/cli/src/__tests__/backlog-command.test.ts",
+        "scripts/check-help-output.mjs"
+      ]
+    },
+    {
+      "id": "dogfood-004",
+      "title": "Bound audit phase runtime for one-item cycles",
+      "description": "Make curated one-item autonomous cycles faster and more predictable by adding a bounded audit timeout. Add a `timeoutMs` option to `runAuditPhase` and pass it through to `ctx.runtime.run`. When the timeout causes the audit agent to fail, preserve the existing hard-fail behavior and write the audit artifact with failure metadata so operators can see the timeout. In the CLI cycle launcher, use a 5-minute audit timeout only when the effective cycle item cap is 1; keep multi-item/default cycles on the current runtime default. Do not weaken review, gate, branch verification, or test execution. Add focused tests proving `timeoutMs` is forwarded, timeout failures write status/error in `audit.json`, and one-item launch wiring uses the bounded audit handler while multi-item launches preserve the default.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "tags": ["feature", "dogfood", "autonomous", "cycle-speed"],
+      "source": "dogfood-2026-05-27",
+      "files": [
+        "packages/core/src/autonomous/phase-handlers/audit-phase.ts",
+        "tests/autonomous/unit/audit-phase.test.ts",
+        "packages/cli/src/commands/autonomous.ts",
+        "packages/cli/src/__tests__/autonomous-launch-options.test.ts"
+      ]
+    },
+    {
+      "id": "dogfood-005",
+      "title": "Add loop guard status and reset commands",
+      "description": "Improve operator visibility for halted or nearly-halted autonomous cycles by exposing the existing `.agentforge/loop-state.json` guard state through the CLI. Add `agentforge cycle guard status --project-root .` to print the consecutive failed cycle count, last cycle id, last outcome, last updated time, and halted reason when present. Add `agentforge cycle guard reset --project-root . --reason <text>` to reset the guard to a clean state after an operator investigates the latest failure, writing a deterministic reset timestamp/reason entry into the state file. Reuse the existing loop-guard read/write helpers, tolerate missing or corrupt state the same way the runtime does, and do not change cycle execution semantics. Add focused CLI tests for missing state, halted state display, reset behavior, and malformed-state tolerance.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "tags": ["feature", "dogfood", "autonomous", "operator-visibility", "loop-guard", "cli"],
+      "source": "dogfood-2026-05-27",
+      "files": [
+        "packages/core/src/autonomous/loop-guard.ts",
+        "packages/core/src/autonomous/index.ts",
+        "packages/cli/src/commands/autonomous.ts",
+        "packages/cli/src/__tests__/cycle-list-show.test.ts"
+      ]
+    },
+    {
+      "id": "dogfood-006",
+      "title": "Add JSON output for loop guard status",
+      "description": "Make the new loop guard status command automation-friendly by adding `--json` to `agentforge cycle loop-guard status`. The JSON output should include projectRoot, stateFileStatus, halted, failures, lastCycleId, lastOutcome, lastUpdatedAt, and haltedReason when present. Preserve the current text output when `--json` is omitted. Reuse the existing loop guard status parser so malformed or missing state reports the same semantics in both modes. Add focused CLI tests for missing state JSON, valid halted JSON, corrupt state JSON, and unchanged text output.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": ["feature", "dogfood", "autonomous", "operator-visibility", "json", "cli"],
+      "source": "dogfood-2026-05-27",
+      "files": [
+        "packages/cli/src/commands/autonomous.ts",
+        "packages/cli/src/__tests__/loop-guard-command.test.ts",
+        "CHANGELOG.md"
+      ]
+    },
+    {
+      "id": "dogfood-007",
+      "title": "Add JSON output for loop guard reset",
+      "description": "Make loop guard recovery automation-friendly by adding `--json` to `agentforge cycle loop-guard reset`. The JSON output should include projectRoot, path, state, reset, and the persisted default state fields after reset. Preserve current text output when `--json` is omitted. Add focused CLI tests proving JSON reset output, persisted defaults, and unchanged text reset output.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": ["feature", "dogfood", "autonomous", "operator-visibility", "json", "cli"],
+      "source": "dogfood-2026-05-27",
+      "files": [
+        "packages/cli/src/commands/autonomous.ts",
+        "packages/cli/src/__tests__/loop-guard-command.test.ts",
+        "CHANGELOG.md"
+      ]
+    },
+    {
+      "id": "dogfood-008",
+      "title": "Add JSON output for cycle list",
+      "description": "Make cycle history automation-friendly by adding `--json` to `agentforge cycle list`. The JSON output should be deterministic and include projectRoot plus the cycle summaries currently shown by the text list, including id, status/stage, selected item count, test totals when available, gate verdict when available, cost when available, and PR metadata when available. Preserve the current text output when `--json` is omitted. Reuse the existing cycle-list loading and sorting behavior; do not change cycle execution semantics. Add focused CLI tests for JSON output shape, deterministic ordering, missing/partial cycle artifacts, and unchanged text output.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": ["feature", "dogfood", "autonomous", "operator-visibility", "json", "cli"],
+      "source": "dogfood-2026-05-27",
+      "files": [
+        "packages/cli/src/commands/autonomous.ts",
+        "packages/cli/src/__tests__/cycle-list-show.test.ts",
+        "CHANGELOG.md"
+      ]
+    },
+    {
+      "id": "dogfood-009",
+      "title": "Add JSON output for cycle show",
+      "description": "Make single-cycle diagnostics automation-friendly by adding `--json` to `agentforge cycle show <cycleId>`. The JSON output should include projectRoot, cycleId, cycle summary fields already shown by text mode, event count, pending approval/decision metadata when present, PR metadata including agent-prs fallback when cycle.json lacks a cycle-level PR, and available scoring/test/gate fields. Preserve the current text output when `--json` is omitted. Reuse the existing cycle-show loading path; do not change cycle execution semantics. Add focused CLI tests for JSON output shape, agent-prs fallback metadata, missing cycle behavior, and unchanged text output.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": ["feature", "dogfood", "autonomous", "operator-visibility", "json", "cli"],
+      "source": "dogfood-2026-05-27",
+      "files": [
+        "packages/cli/src/commands/autonomous.ts",
+        "packages/cli/src/__tests__/cycle-list-show.test.ts",
+        "CHANGELOG.md"
+      ]
+    },
+    {
+      "id": "guided-large-001",
+      "title": "Use structured gate findings for retry correction prompts",
+      "description": "Improve autonomous self-correction by feeding rejected gate artifacts into retry execution as structured findings, not only prose rationale. When a gate rejection has criticalFindings, majorFindings, knownDebt, or named files in the gate artifact, buildGateRetryContext and execute retry prompts should preserve those fields, attach them to the implicated item, and tell the retry agent to fix the existing rejected branch in place with the smallest net-new correction. Preserve existing branch/PR ledger routing and baselineHead no-op detection. Add tests proving structured critical/major findings and file paths survive gate artifact -> retry context -> execute prompt, and that legacy prose-only gate rejections still work.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "tags": ["feature", "guided-large", "autonomous", "retry", "gate", "self-correction"],
+      "source": "guided-large-2026-05-27",
+      "files": [
+        "packages/core/src/autonomous/cycle-runner.ts",
+        "packages/core/src/autonomous/phase-handlers/execute-phase.ts",
+        "packages/core/src/autonomous/__tests__/cycle-runner-multi-pr.test.ts",
+        "tests/autonomous/unit/cycle-runner.test.ts",
+        "packages/core/src/autonomous/phase-handlers/__tests__/execute-phase-prompt-contract.test.ts"
+      ]
+    },
+    {
+      "id": "guided-large-002",
+      "title": "Make retry branch PR handling idempotent",
+      "description": "Harden multi-PR retry behavior so a correction pushed to an existing rejected branch updates the existing PR ledger entry instead of attempting to create duplicate PRs or duplicate open ledger records. MergeQueue should recognize a pushed branch that already has an open PR record for the current cycle, refresh its PR metadata when possible, and avoid appending duplicate records. Keep normal first-time branch PR creation unchanged. Add focused tests for repeated agent.branch.pushed events on the same branch, retry branches with existing PR numbers, and duplicate ledger prevention.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "tags": ["feature", "guided-large", "autonomous", "retry", "merge-queue", "multi-pr"],
+      "source": "guided-large-2026-05-27",
+      "files": [
+        "packages/core/src/runtime/merge-queue.ts",
+        "packages/core/src/runtime/__tests__/merge-queue.test.ts",
+        "packages/core/src/autonomous/__tests__/cycle-runner-multi-pr.test.ts"
+      ]
+    },
+    {
+      "id": "guided-large-003",
+      "title": "Expose runtime routing decisions in cycle artifacts and CLI JSON",
+      "description": "Make per-job runtime routing observable after the Stream B routing bridge. When execute items include runtimeMode or preferredProvider, persist the requested routing hints and resolved provider/runtime metadata into execute artifacts and cycle show/list JSON where available. Preserve default behavior for items without hints. Add tests proving routed and default items produce deterministic artifact/JSON output without changing execution semantics.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "tags": ["feature", "guided-large", "autonomous", "runtime-routing", "observability", "cli"],
+      "source": "guided-large-2026-05-27",
+      "files": [
+        "packages/core/src/autonomous/phase-handlers/execute-phase.ts",
+        "packages/core/src/autonomous/phase-handlers/__tests__/execute-phase-routing-options.test.ts",
+        "packages/cli/src/commands/autonomous.ts",
+        "packages/cli/src/__tests__/cycle-list-show.test.ts",
+        "CHANGELOG.md"
+      ]
+    },
+    {
+      "id": "guided-large-004",
+      "title": "Preserve backlog runtime and provider hints through planning",
+      "description": "Let backlog-file items declare runtimeMode and preferredProvider, then preserve those fields through ProposalToBacklog -> RankedItem -> SprintGenerator -> plan.json. Execute phase already forwards item-level hints, so this fills the upstream Stream B gap without changing execution defaults. Add focused tests proving backlog-file runtime/provider hints survive sourcing, scoring fallback, scorer-produced rankings, and sprint plan generation. Keep current global runtime behavior unchanged for items without hints.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "tags": ["feature", "guided-large", "stream-b", "runtime-routing", "backlog", "planning"],
+      "source": "guided-large-2026-05-27",
+      "files": [
+        "packages/core/src/autonomous/proposal-to-backlog.ts",
+        "packages/core/src/autonomous/types.ts",
+        "packages/core/src/autonomous/scoring-pipeline.ts",
+        "packages/core/src/autonomous/sprint-generator.ts",
+        "packages/core/src/autonomous/__tests__/sourcing-stability.test.ts"
+      ]
+    },
+    {
+      "id": "guided-large-005",
+      "title": "Show runtime routing hints in backlog status",
+      "description": "Extend `agentforge backlog status --json` and text output so active scoped backlog-file items include runtimeMode and preferredProvider when present. Preserve current counts, filtering, and output shape for items without hints. This makes the new Stream B planning hints visible before a cycle spends runtime. Add focused CLI tests covering routed and default active scoped items.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": ["feature", "guided-large", "stream-b", "runtime-routing", "operator-visibility", "cli"],
+      "source": "guided-large-2026-05-27",
+      "files": [
+        "packages/cli/src/commands/backlog.ts",
+        "packages/cli/src/__tests__/backlog-command.test.ts"
+      ]
+    },
+    {
+      "id": "guided-large-006",
+      "title": "Show backlog item scope in backlog status",
+      "description": "Extend `agentforge backlog status` so each active scoped item shows its declared estimatedComplexity and files in both text and `--json` output. Keep current filtering, counts, and runtime/provider hint visibility unchanged. This helps operators verify a curated cycle is still tightly scoped before spending runtime. Add focused CLI tests covering text and JSON output for complexity, file scope, and existing routing hints.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": ["feature", "guided-large", "operator-visibility", "backlog", "cli"],
+      "source": "guided-large-2026-05-27",
+      "files": [
+        "packages/cli/src/commands/backlog.ts",
+        "packages/cli/src/__tests__/backlog-command.test.ts"
+      ]
+    },
+    {
+      "id": "guided-large-007",
+      "title": "Add post-cycle PR assessment command",
+      "description": "Add an operator-facing `agentforge cycle assess <cycleId>` command that summarizes whether a completed AgentForge cycle produced merge-ready work. It should read cycle.json, gate/review/test artifacts, and agent-prs.json, then print deterministic text and optional `--json` output with cycle id, stage/status, gate verdict, test totals, cost, agent PRs, and an overall recommendation of `merge-ready`, `needs-review`, or `blocked`. When `--ci` is supplied, enrich PR rows from `gh pr checks` using an injectable/mocked exec path in tests; default mode must not call GitHub. Preserve existing cycle run/list/show behavior. Add focused CLI tests for missing cycles, completed green cycles with PR ledger entries, rejected/failed cycles, JSON shape, and mocked CI enrichment.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "tags": ["feature", "guided-large", "dogfood", "operator-visibility", "pr-audit", "cli"],
+      "source": "guided-large-2026-05-28",
+      "files": [
+        "packages/cli/src/commands/autonomous.ts",
+        "packages/cli/src/__tests__/cycle-list-show.test.ts",
+        "scripts/check-help-output.mjs",
+        "CHANGELOG.md"
+      ]
+    },
+    {
+      "id": "guided-large-008",
+      "title": "Add cycle streak ledger and status command",
+      "description": "Add a durable dogfood streak ledger that lets operators prove consecutive meaningful AgentForge cycles without scraping chat history. Implement `agentforge cycle streak status --project-root .` and `agentforge cycle streak record <cycleId> --project-root . --pr <number> --result success|failure --reason <text>`, with optional `--json` for both commands. Store entries under `.agentforge/cycles/streak-ledger.json`, compute current consecutive success count from newest entries, and include cycle id, PR number, result, reason, recordedAt, and merge evidence fields when available. Preserve existing loop guard and cycle execution semantics. Add focused CLI tests for missing ledger, recording success/failure idempotently, consecutive count reset on failure, JSON output, and text output.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "tags": ["feature", "guided-large", "dogfood", "operator-visibility", "streak", "cli"],
+      "source": "guided-large-2026-05-28",
+      "files": [
+        "packages/cli/src/commands/autonomous.ts",
+        "packages/cli/src/__tests__/cycle-list-show.test.ts",
+        "CHANGELOG.md"
+      ]
+    },
+    {
+      "id": "guided-large-009",
+      "title": "Add stage filtering to cycle list",
+      "description": "Make post-run triage faster by adding a read-only `--stage <stage>` filter to `agentforge cycle list`. The filter should work for text and `--json` output, matching the normalized stage values already emitted by cycle summaries such as completed, failed, audit, execute, review, gate, and run. Preserve the default unfiltered output and existing `--limit` behavior after filtering. Invalid or empty stage filters should print a clear error and set a non-zero exit code without reading GitHub or mutating artifacts. Add focused CLI tests for text filtering, JSON filtering, no-match output, invalid stage handling, and unchanged default behavior. Update help/changelog if needed.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": [
+        "feature",
+        "guided-large",
+        "dogfood",
+        "operator-visibility",
+        "cycle-list",
+        "cli"
+      ],
+      "source": "guided-large-2026-05-28",
+      "files": [
+        "packages/cli/src/commands/autonomous.ts",
+        "packages/cli/src/__tests__/cycle-list-show.test.ts",
+        "scripts/check-help-output.mjs",
+        "CHANGELOG.md"
+      ]
+    },
+    {
+      "id": "guided-large-010",
+      "title": "Show duplicate normalized backlog IDs in backlog status",
+      "description": "Extend `agentforge backlog status` to report when active backlog JSON items collapse to the same normalized `backlog-*` ID, including enough title/source context in both text and `--json` output for operators to fix the ambiguity before spending a cycle. Preserve existing completion/quarantine filtering, unattended exclusions, runtime routing visibility, and completion semantics. Add focused CLI tests for duplicate normalized IDs across backlog JSON files, deterministic text output, and a machine-readable duplicate list in JSON.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": [
+        "feature",
+        "guided-large",
+        "dogfood",
+        "operator-visibility",
+        "backlog",
+        "cli"
+      ],
+      "source": "guided-large-2026-05-28",
+      "files": [
+        "packages/cli/src/commands/backlog.ts",
+        "packages/cli/src/__tests__/backlog-command.test.ts",
+        "CHANGELOG.md"
+      ]
+    },
+    {
+      "id": "guided-large-011",
+      "title": "Add direct CLI coverage for Codex readiness JSON mode",
+      "description": "Add a focused CLI test for `agentforge codex readiness --project-root <tmp> --json --skip-login`. Mock `buildCodexReadinessReport`, verify the command passes `checkLogin: false`, prints the report as JSON, and sets `process.exitCode = 1` when the mocked report is not ready. Keep production behavior unchanged unless the test exposes a small wiring bug. Add the new test in a dedicated `codex-readiness-command.test.ts` file and avoid touching autonomous cycle or backlog command surfaces.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": [
+        "feature",
+        "guided-large",
+        "dogfood",
+        "codex",
+        "readiness",
+        "cli-test"
+      ],
+      "source": "guided-large-2026-05-28",
+      "files": [
+        "packages/cli/src/commands/codex.ts",
+        "packages/cli/src/__tests__/codex-readiness-command.test.ts"
+      ]
+    },
+    {
+      "id": "guided-large-012",
+      "title": "Surface checkpoint metadata on live cycle detail responses",
+      "description": "Extend `GET /api/v5/cycles/:id` so live `cycleInProgress: true` detail responses include the same checkpoint metadata already attached to terminal and partial cycle responses when `.agentforge/cycles/<id>/checkpoint.json` is valid. Return exactly `{ resumeFromPhase, capturedAt, completedPhases }` from the existing checkpoint reader. Keep missing or malformed checkpoint behavior unchanged: omit `checkpoint` and preserve the successful live response. Add focused tests in the cycle detail route test covering a live in-progress cycle with a valid checkpoint and confirming the existing malformed/missing tolerance remains intact.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": [
+        "feature",
+        "guided-large",
+        "dogfood",
+        "operator-visibility",
+        "cycles",
+        "api"
+      ],
+      "source": "guided-large-2026-05-28",
+      "files": [
+        "packages/server/src/routes/v5/cycles.ts",
+        "packages/server/src/routes/v5/__tests__/cycles-detail.test.ts"
+      ]
+    },
+    {
+      "id": "guided-large-013",
+      "title": "Avoid stale open PR status in cycle streak evidence",
+      "description": "`agentforge cycle streak record` can fall back to `.agentforge/cycles/<cycleId>/agent-prs.json` for merge evidence, but that ledger often still says `status: \"open\"` after the operator has merged the PR. Avoid recording misleading stale `open` status as success evidence: keep `prUrl` and `openedAt` from agent-prs fallback, preserve non-open statuses when present, and preserve richer `cycle.json` PR evidence including `mergedAt` unchanged. Add focused CLI tests proving an agent-prs-only success entry with `status: \"open\"` omits `mergeEvidence.status`, while a cycle.json merged PR still records `status: \"merged\"` and `mergedAt`.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": [
+        "feature",
+        "guided-large",
+        "dogfood",
+        "operator-visibility",
+        "streak",
+        "cli"
+      ],
+      "source": "guided-large-2026-05-28",
+      "files": [
+        "packages/cli/src/commands/autonomous.ts",
+        "packages/cli/src/__tests__/cycle-list-show.test.ts"
+      ]
+    },
+    {
+      "id": "guided-large-014",
+      "title": "Normalize stale open PR status in cycle streak fallback",
+      "description": "Harden the `agentforge cycle streak record` agent-prs fallback so stale open PR statuses are suppressed even when the ledger value has casing or whitespace variants such as `\"OPEN\"` or `\" open \"`. Keep preserving `prUrl` and `openedAt`, and keep preserving the original status string for non-open statuses. Add one focused CLI regression test showing a variant open status is omitted from `mergeEvidence.status` while the fallback URL/timestamp remain present. Do not change cycle execution, merge queue behavior, or cycle show/list PR metadata.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": [
+        "feature",
+        "guided-large",
+        "dogfood",
+        "operator-visibility",
+        "streak",
+        "cli"
+      ],
+      "source": "guided-large-2026-05-28",
+      "files": [
+        "packages/cli/src/commands/autonomous.ts",
+        "packages/cli/src/__tests__/cycle-list-show.test.ts"
+      ]
+    },
+    {
+      "id": "guided-large-015",
+      "title": "Show source file for active backlog status items",
+      "description": "Extend `agentforge backlog status` so each active scoped backlog-file item exposes the source backlog JSON file it came from. In `--json` output, add a deterministic `sourceFile` field to each `activeScopedItems[]` entry when known. In text output, include the source file on the active item line without changing counts or filtering behavior. Preserve duplicate diagnostics, completion/quarantine filtering, runtime/provider hints, complexity, and scope file output. Add focused CLI tests proving source file appears for active items in both text and JSON output.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": [
+        "feature",
+        "guided-large",
+        "dogfood",
+        "operator-visibility",
+        "backlog",
+        "cli"
+      ],
+      "source": "guided-large-2026-05-28",
+      "files": [
+        "packages/cli/src/commands/backlog.ts",
+        "packages/cli/src/__tests__/backlog-command.test.ts"
+      ]
+    },
+    {
+      "id": "guided-large-016",
+      "title": "Keep backlog source file on active status item line",
+      "description": "Refine `agentforge backlog status` text output so active scoped item source file appears in the same bracketed hint list as complexity, scope, runtime, and provider, for example `[complexity=low, source=items.json, scope=README.md]`. Remove the detached follow-up `sourceFile:` line for active items. Preserve JSON `activeScopedItems[].sourceFile`, duplicate diagnostics, counts, filtering, routing hints, and ordering unchanged. Add focused CLI tests proving text output has source on the active item line and no detached `sourceFile:` line.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": [
+        "feature",
+        "guided-large",
+        "dogfood",
+        "operator-visibility",
+        "backlog",
+        "cli"
+      ],
+      "source": "guided-large-2026-05-28",
+      "files": [
+        "packages/cli/src/commands/backlog.ts",
+        "packages/cli/src/__tests__/backlog-command.test.ts"
+      ]
+    },
+    {
+      "id": "guided-large-017",
+      "title": "Show active backlog item count in status headers",
+      "description": "Extend `agentforge backlog status` to print the active scoped item count near the active item section. In text output, add a deterministic line `activeScopedItemsCount: <n>` immediately before the `activeScopedItems:` heading. In `--json` output, add top-level `activeScopedItemsCount` equal to `activeScopedItems.length`. Preserve existing counts, duplicate diagnostics, runtime routing hints, active item ordering, and active item fields unchanged. Add focused CLI tests proving the count appears in both text and JSON output and matches the active scoped item array length.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": [
+        "feature",
+        "guided-large",
+        "dogfood",
+        "operator-visibility",
+        "backlog",
+        "cli"
+      ],
+      "source": "guided-large-2026-05-28",
+      "files": [
+        "packages/cli/src/commands/backlog.ts",
+        "packages/cli/src/__tests__/backlog-command.test.ts"
+      ]
+    },
+    {
+      "id": "guided-large-018",
+      "title": "Show backlog cycle readiness in status headers",
+      "description": "Extend `agentforge backlog status` to make one-item cycle readiness explicit from the active scoped item count. In text output, add a deterministic line `readyForCycle: yes` when `activeScopedItemsCount` is greater than zero, otherwise `readyForCycle: no`, immediately after `activeScopedItemsCount: <n>` and before `activeScopedItems:`. In `--json` output, add top-level `readyForCycle` as a boolean derived from `activeScopedItems.length > 0`. Preserve existing counts, duplicate diagnostics, runtime routing hints, active item ordering, active item fields, and `activeScopedItemsCount` unchanged. Add focused CLI tests proving ready/no-ready behavior in both text and JSON output.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": [
+        "feature",
+        "guided-large",
+        "dogfood",
+        "operator-visibility",
+        "backlog",
+        "cli"
+      ],
+      "source": "guided-large-2026-05-28",
+      "files": [
+        "packages/cli/src/commands/backlog.ts",
+        "packages/cli/src/__tests__/backlog-command.test.ts"
+      ]
+    },
+    {
+      "id": "guided-big-001",
+      "title": "Make local dashboard E2E reuse live dev servers by default",
+      "description": "Improve AgentForge dogfood gate reliability after the verified failure where `verify:gates` reached dashboard E2E and stopped because `http://localhost:4750/api/v5/health` was already in use. Update the Playwright dashboard E2E configuration so local, non-CI runs reuse existing API/dashboard servers by default, while CI still starts fresh servers and an explicit `PLAYWRIGHT_REUSE_SERVER=0|false|no` opt-out still disables reuse locally. Preserve the current positive env override behavior, dashboard base URL, webServer commands, and CI behavior. Add focused unit coverage for the reuse decision including default local reuse, local opt-out, local positive override, and CI no-reuse. Keep this scoped to Playwright config/test surfaces and do not modify product runtime APIs.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "tags": [
+        "feature",
+        "guided-big",
+        "dogfood",
+        "gates",
+        "dashboard",
+        "e2e"
+      ],
+      "source": "guided-big-2026-05-28",
+      "files": [
+        "playwright.config.ts",
+        "tests/playwright-config.test.ts"
+      ]
+    },
+    {
+      "id": "guided-big-002",
+      "title": "Add target-aware cycle streak status",
+      "description": "Improve AgentForge dogfood visibility by extending `agentforge cycle streak status` with an optional positive integer `--target <n>` flag. When provided, text output should include deterministic `Target:`, `Remaining:`, and `Goal met:` lines derived from the current consecutive success count. JSON output should include `targetSuccesses`, `remainingSuccesses`, and `goalMet`. Preserve existing status text and JSON behavior when `--target` is omitted, and reject missing, zero, negative, decimal, or non-numeric target values with a clear error and non-zero exit code. Add focused CLI tests for no-target backward compatibility, text target unmet/met output, JSON target output, and invalid target handling. Do not change cycle execution or streak recording semantics.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "tags": [
+        "feature",
+        "guided-big",
+        "dogfood",
+        "operator-visibility",
+        "streak",
+        "cli"
+      ],
+      "source": "guided-big-2026-05-28",
+      "files": [
+        "packages/cli/src/commands/autonomous.ts",
+        "packages/cli/src/__tests__/cycle-list-show.test.ts",
+        "CHANGELOG.md"
+      ]
+    },
+    {
+      "id": "guided-big-003",
+      "title": "Source planned R&D ideas into autonomous backlog intake",
+      "description": "Unlock meaningful autonomous cycles when the normal backlog is empty by teaching ProposalToBacklog to read planned R&D artifacts under `.agentforge/research-runs`. For each research run with a `plannedCycle`, create deterministic backlog candidates for the planned idea ids only. Candidate ids should be stable, e.g. `research-<runId>-<ideaId>`, and descriptions should include the idea problem, hypothesis, expected impact, and acceptance checks. Preserve the existing completed/quarantine replay guards by normalizing these ids through the same path as other backlog items. Add a new source type such as `research-plan`, map idea risk to estimatedComplexity (`low|medium|high`), carry file/scope hints from `touchedAreas`, and update the unattended difficulty gate so research-plan items must be low/medium and have non-empty scope before auto-pick. Tolerate missing, malformed, and partial research-run files. Add focused tests proving planned ideas are sourced, unplanned/rejected/proposed ideas are ignored, completed research ids are filtered, malformed research runs are ignored, and unattended mode excludes high-risk or file-less research-plan candidates. Update changelog. Do not change research proposal generation, approval semantics, cycle execution semantics, or backlog-file behavior.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "tags": [
+        "feature",
+        "guided-big",
+        "dogfood",
+        "autonomous",
+        "research",
+        "backlog"
+      ],
+      "source": "guided-big-2026-05-28",
+      "files": [
+        "packages/core/src/autonomous/proposal-to-backlog.ts",
+        "packages/core/src/autonomous/__tests__/proposal-backlog-guard.test.ts",
+        "packages/core/src/research/types.ts",
+        "CHANGELOG.md"
+      ]
+    },
+    {
+      "id": "guided-big-004",
+      "title": "Show planned R&D candidates in backlog status",
+      "description": "Now that ProposalToBacklog sources planned R&D ideas, extend `agentforge backlog status` so operators can see those research-plan candidates before running a cycle. The status command should include planned research candidates in active scoped counts, readyForCycle, routing/default counts, text `activeScopedItems`, and JSON `activeScopedItems`. Preserve existing backlog-file counts as `activeBacklogFileItems`, and add a separate deterministic count such as `activeResearchPlanItems` so old meaning is not lost. Research-plan rows should show a source hint like `source=research:<runId>` or equivalent, estimatedComplexity, and scope files from touchedAreas. Reuse the same completed/quarantine normalization semantics so completed research ids are hidden. Preserve existing behavior when no research runs exist. Add focused backlog CLI tests for text output with research-plan candidates, JSON output, completed filtering, and no-research backward compatibility. Update changelog. Do not change cycle execution semantics or research approval/planning semantics.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "tags": [
+        "feature",
+        "guided-big",
+        "dogfood",
+        "operator-visibility",
+        "research",
+        "backlog",
+        "cli"
+      ],
+      "source": "guided-big-2026-05-28",
+      "files": [
+        "packages/cli/src/commands/backlog.ts",
+        "packages/cli/src/__tests__/backlog-command.test.ts",
+        "CHANGELOG.md"
+      ]
+    },
+    {
+      "id": "guided-big-005",
+      "title": "Add JSON and source breakdown to cycle preview",
+      "description": "Make autonomous run selection easier to audit before spending runtime. Extend `agentforge cycle preview` with optional `--json` output and a deterministic backlog source breakdown. The breakdown should count raw preview candidates by BacklogItem source, including at least backlog-file, research-plan, todo-marker, failed-session, cost-anomaly, task-outcome, and flaking-test, with zero-count sources omitted from text but present or deterministically represented in JSON. Text mode should preserve existing summary/ranked-item output and add a concise `Sources:` section when candidates exist. JSON mode should include projectRoot, candidateCount, sourceBreakdown, withinBudget, requiresApproval, totalEstimatedCostUsd, budgetOverflowUsd, fallback, warnings, summary, and rankedItems. Preserve existing preview launch controls, model/effort/fallback behavior, and cycle execution semantics. Add focused CLI tests for text source breakdown, JSON output shape with ranked items, empty preview JSON, and no-source/no-candidate backward-compatible text behavior. Update changelog/help checks if needed.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "tags": [
+        "feature",
+        "guided-big",
+        "dogfood",
+        "operator-visibility",
+        "cycle-preview",
+        "cli",
+        "autonomous"
+      ],
+      "source": "guided-big-2026-05-28",
+      "files": [
+        "packages/cli/src/commands/autonomous.ts",
+        "packages/cli/src/__tests__/autonomous-launch-options.test.ts",
+        "packages/cli/src/__tests__/cycle-list-show.test.ts",
+        "CHANGELOG.md"
+      ]
+    },
+    {
+      "id": "guided-big-006",
+      "title": "Add source filtering to backlog status",
+      "description": "Add a small but useful operator control to `agentforge backlog status`: an optional `--source <source>` filter for active scoped items. Support `backlog-file`, `research-plan`, and `all` (default). The filter should affect the active scoped item list, `activeScopedItemsCount`, `readyForCycle`, `runtimeRoutingHints`, and duplicate diagnostics, while preserving the unfiltered source counts `activeBacklogFileItems` and `activeResearchPlanItems`. Text output should show the selected source filter only when it is not `all`; JSON output should include `sourceFilter`. Invalid source values should print a clear error and set a non-zero exit code. Preserve completed/quarantine filtering and existing no-source behavior. Add focused CLI tests for text filtering to research-plan, JSON filtering to backlog-file, default all behavior, and invalid source handling. Update changelog. Do not change cycle execution or research planning semantics.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "tags": [
+        "feature",
+        "guided-big",
+        "dogfood",
+        "operator-visibility",
+        "backlog",
+        "research",
+        "cli"
+      ],
+      "source": "guided-big-2026-05-28",
+      "files": [
+        "packages/cli/src/commands/backlog.ts",
+        "packages/cli/src/__tests__/backlog-command.test.ts",
+        "CHANGELOG.md"
+      ]
+    },
+    {
+      "id": "guided-big-007",
+      "title": "Lock explicit backlog source all parity",
+      "description": "Close the review follow-up from the backlog source-filter cycle by adding focused regression coverage for explicit `agentforge backlog status --source all`. The new test should prove `--source all` produces the same active scoped item ids, readyForCycle value, and source counts as the default no-filter path when backlog-file and research-plan candidates both exist. Prefer adding test coverage only; change production code only if the parity test exposes a real bug. Keep cycle execution, research planning, and backlog completion semantics unchanged. Run the focused backlog CLI test file and build.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": [
+        "test",
+        "guided-big",
+        "dogfood",
+        "operator-visibility",
+        "backlog",
+        "cli"
+      ],
+      "source": "guided-big-2026-05-28",
+      "files": [
+        "packages/cli/src/__tests__/backlog-command.test.ts",
+        "packages/cli/src/commands/backlog.ts"
+      ]
+    }
+  ]
+}

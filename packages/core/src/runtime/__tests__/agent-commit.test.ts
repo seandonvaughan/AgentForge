@@ -19,7 +19,7 @@
 //  14. Push is idempotent when called twice with same remote (force-with-lease)
 
 import { execFile as execFileCb } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -35,6 +35,10 @@ const execFile = promisify(execFileCb);
 async function git(cwd: string, args: string[]): Promise<string> {
   const { stdout } = await execFile('git', ['-C', cwd, ...args]);
   return stdout.trim();
+}
+
+function comparablePath(path: string): string {
+  return realpathSync.native(path).replace(/\\/g, '/').toLowerCase();
 }
 
 /** Create a plain local git repo with one initial commit on branch `main`. */
@@ -141,6 +145,38 @@ describe('commitAgentWork', () => {
         itemIds: ['ITEM-1'],
       }),
     ).rejects.toThrow('refusing to commit changes outside the allocated worktree');
+  });
+
+  it('repairs a registered worktree with a missing .git file before committing', async () => {
+    const dir = await createLocalRepo();
+    dirs.push(dir);
+    const worktreePath = join(dir, '.agentforge', 'worktrees', 'agent-coder-repair');
+    mkdirSync(join(dir, '.agentforge', 'worktrees'), { recursive: true });
+    await git(dir, [
+      'worktree',
+      'add',
+      '--no-track',
+      '-b',
+      'codex/rejected-branch',
+      worktreePath,
+      'HEAD',
+    ]);
+    makeChange(worktreePath, 'repair.ts', 'export const repaired = true;\n');
+    rmSync(join(worktreePath, '.git'), { force: true });
+
+    const result = await commitAgentWork({
+      worktreePath,
+      projectRoot: dir,
+      branch: 'codex/rejected-branch',
+      agentId: 'agent-coder',
+      itemIds: ['ITEM-RETRY'],
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.localOnly).toBe(true);
+    expect(comparablePath(await git(worktreePath, ['rev-parse', '--show-toplevel'])))
+      .toBe(comparablePath(worktreePath));
+    expect(await git(worktreePath, ['log', '--oneline', '-1'])).toContain('ITEM-RETRY');
   });
 
   // ── 2. AGENT_AUTOCOMMIT_DISABLED → null ──────────────────────────────────

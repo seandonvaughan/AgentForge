@@ -1404,6 +1404,7 @@ export async function runExecutePhase(
           const { commitAgentWork } = await import('../../runtime/agent-commit.js');
           await commitAgentWork({
             worktreePath: worktreeHandle.path,
+            projectRoot: ctx.projectRoot,
             branch: worktreeHandle.branch,
             baseBranch: ctx.baseBranch ?? 'main',
             agentId: item.assignee,

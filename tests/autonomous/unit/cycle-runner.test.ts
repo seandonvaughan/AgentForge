@@ -680,10 +680,33 @@ describe('CycleRunner', () => {
     expect(coderPrompts[1]).toContain('truncateMemoryValue');
   });
 
-  it('marks multi-PR cycles failed when an agent branch verifier fails', async () => {
+  it('retries multi-PR cycles on agent branch verification failures', async () => {
     await initGitRepo(tmpDir);
     const deps = makeMockDeps();
+    const observedExecuteContexts: Array<{
+      retryAttempt?: number;
+      gateRetry?: unknown;
+    }> = [];
     deps.mockPhaseHandlers.execute = async (ctx: any) => {
+      observedExecuteContexts.push({
+        retryAttempt: ctx.retryAttempt,
+        gateRetry: ctx.gateRetry,
+      });
+      const cycleDir = join(tmpDir, '.agentforge/cycles', ctx.cycleId);
+      mkdirSync(cycleDir, { recursive: true });
+      writeFileSync(
+        join(cycleDir, 'agent-prs.json'),
+        JSON.stringify([
+          {
+            prNumber: 413,
+            prUrl: 'https://github.com/example/repo/pull/413',
+            branch: 'codex/agent-failing',
+            itemIds: ['i1'],
+            status: 'open',
+            openedAt: '2026-05-28T12:00:00.000Z',
+          },
+        ]),
+      );
       ctx.bus.publish('sprint.phase.completed', {
         sprintId: ctx.sprintId,
         phase: 'execute',
@@ -710,22 +733,42 @@ describe('CycleRunner', () => {
         completedAt: new Date().toISOString(),
       });
     };
-    const branchVerifier = vi.fn(async () => ({
-      passed: false,
-      results: [
-        {
-          branch: 'codex/agent-failing',
-          agentId: 'coder',
-          itemId: 'i1',
-          status: 'failed' as const,
-          command: 'corepack pnpm test',
-          durationMs: 100,
-          stdout: '',
-          stderr: 'branch tests failed',
-          error: 'branch tests failed',
-        },
-      ],
-    }));
+    let verifierCalls = 0;
+    const branchVerifier = vi.fn(async () => {
+      verifierCalls++;
+      if (verifierCalls === 1) {
+        return {
+          passed: false,
+          results: [
+            {
+              branch: 'codex/agent-failing',
+              agentId: 'coder',
+              itemId: 'i1',
+              status: 'failed' as const,
+              command: 'corepack pnpm build',
+              durationMs: 100,
+              stdout: 'packages/cli/src/commands/autonomous.ts(1133,19): error TS18047',
+              stderr: '',
+              error: 'packages/cli/src/commands/autonomous.ts(1133,19): error TS18047',
+            },
+          ],
+        };
+      }
+      return {
+        passed: true,
+        results: [
+          {
+            branch: 'codex/agent-failing',
+            agentId: 'coder',
+            itemId: 'i1',
+            status: 'passed' as const,
+            command: 'corepack pnpm build',
+            durationMs: 100,
+            commandsCompleted: 4,
+          },
+        ],
+      };
+    });
     const verifyEvents: any[] = [];
     deps.bus.subscribe('sprint.phase.verify.step', (event: any) => {
       verifyEvents.push(event);
@@ -735,6 +778,11 @@ describe('CycleRunner', () => {
       config: {
         ...DEFAULT_CYCLE_CONFIG,
         prMode: 'multi',
+        retry: {
+          ...DEFAULT_CYCLE_CONFIG.retry,
+          maxAutoRetries: 1,
+          requireApprovalAfter: 99,
+        },
       },
       runtime: deps.runtime as any,
       proposalAdapter: deps.proposalAdapter as any,
@@ -753,18 +801,35 @@ describe('CycleRunner', () => {
 
     const result = await runner.start();
 
-    expect(branchVerifier).toHaveBeenCalledOnce();
-    expect(result.stage).toBe(CycleStage.FAILED);
-    expect(result.error).toContain('multi-pr branch verification failed');
-    expect(result.error).toContain('codex/agent-failing');
+    expect(branchVerifier).toHaveBeenCalledTimes(2);
+    expect(result.stage).toBe(CycleStage.COMPLETED);
+    expect(observedExecuteContexts).toHaveLength(2);
+    expect(observedExecuteContexts[0]!.gateRetry).toBeUndefined();
+    expect(observedExecuteContexts[1]).toMatchObject({
+      retryAttempt: 1,
+      gateRetry: {
+        attempt: 1,
+        rejectedBranch: 'codex/agent-failing',
+        prNumber: 413,
+        prUrl: 'https://github.com/example/repo/pull/413',
+        itemIds: ['i1'],
+      },
+    });
+    expect((observedExecuteContexts[1]!.gateRetry as any).rationale).toContain('corepack pnpm build');
+    expect((observedExecuteContexts[1]!.gateRetry as any).rationale).toContain('TS18047');
     expect(verifyEvents.map((event) => event.step)).toEqual([
+      'branch-verify-complete',
+      'branch-verify-complete',
       'tests-started',
       'tests-complete',
-      'branch-verify-started',
-      'branch-verify-complete',
     ]);
-    expect(verifyEvents.at(-1)).toEqual(expect.objectContaining({
+    expect(verifyEvents[0]).toEqual(expect.objectContaining({
       passed: false,
+      branches: 1,
+      skipped: false,
+    }));
+    expect(verifyEvents[1]).toEqual(expect.objectContaining({
+      passed: true,
       branches: 1,
       skipped: false,
     }));

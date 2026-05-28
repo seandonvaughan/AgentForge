@@ -10,12 +10,25 @@ All notable changes to AgentForge are documented in this file.
 - Added `agentforge backlog status --project-root <path>` to print deterministic pre-cycle backlog visibility (active backlog-file count, completed/quarantined counts, unattended exclusions, and active scoped item IDs/titles), plus optional `--json` machine-readable output for automation.
 - Added runtime routing visibility to `agentforge backlog status` (text and `--json`) so operators can see scoped routed/default counts and per-item `runtimeMode`/`preferredProvider` hints before cycle run.
 - Added backlog item scope visibility to `agentforge backlog status` (text and `--json`) by emitting per-item `estimatedComplexity`/`scopeFiles` in JSON and `complexity=<level>`/`scope=<file,...>` in text output.
+- Added duplicate normalized backlog ID visibility to `agentforge backlog status` (text and `--json`) so operators can detect ambiguous active scoped items before unattended execution.
+- Extended `agentforge backlog status` to include planned research-run candidates from `.agentforge/research-runs/*/run.json` in scoped visibility and `readyForCycle`, with separate `activeResearchPlanItems` count, preserved `activeBacklogFileItems` semantics, and research source hints in text/JSON item output.
+- Added optional `agentforge backlog status --source <all|backlog-file|research-plan>` to filter active scoped items and derived routing/readiness/duplicate diagnostics, while preserving unfiltered source counts; JSON now includes `sourceFilter`.
+- Added direct CLI test coverage for `agentforge codex readiness --json --skip-login` to lock deterministic JSON-mode login-skip behavior in a dogfood-critical readiness path.
 - Added `agentforge cycle loop-guard status` and `agentforge cycle loop-guard reset` for operator visibility and recovery of `.agentforge/loop-state.json`, including deterministic handling of missing/corrupt state files.
 - Added `agentforge cycle loop-guard status --json` to emit deterministic machine-readable loop-guard state for automation and unattended operator checks.
 - Added `agentforge cycle loop-guard reset --json` to emit deterministic machine-readable reset confirmation and defaulted state for automation-driven recovery flows.
 - Added `agentforge cycle list --json` to emit deterministic machine-readable cycle summaries for unattended operator visibility and automation.
+- Added `agentforge cycle list --stage <stage>` (plus `--json`) to filter cycle summaries by stage for faster failed-cycle triage and operator visibility.
 - Added `agentforge cycle show --json` to emit machine-readable per-cycle detail output while preserving legacy text-mode output by default.
+- Added `agentforge cycle streak status` and `agentforge cycle streak record <cycleId>` with optional `--json`, durable ledger storage at `.agentforge/cycles/streak-ledger.json`, idempotent upsert-by-cycle recording, and consecutive-success streak visibility.
+- Added optional `--target <n>` to `agentforge cycle streak status` so text output includes deterministic `Target`/`Remaining`/`Goal met` lines and `--json` includes `targetSuccesses`/`remainingSuccesses`/`goalMet` when provided.
+- Added `agentforge cycle preview --json` plus deterministic candidate `sourceBreakdown` reporting (backlog-file/research-plan/todo-marker/failed-session/cost-anomaly/task-outcome/flaking-test) and a concise text-mode `Sources:` summary for non-zero candidate sources.
+- Added `agentforge cycle assess-pr <cycleId>` (with `--json`) for deterministic post-cycle PR merge-readiness assessment from existing cycle artifacts (stage, approvals, gate verdict, review findings, execute failures, and test outcomes).
+- Hardened multi-PR cycle retries so agent branch verification failures feed the existing gate-retry path and repair the implicated PR branch instead of failing after gate approval.
+- Kept one-item cycle audit runs on the normal runtime timeout path so curated single-item cycles do not fail under a special five-minute cap.
+- Hardened Codex cycle worktrees by placing them outside the parent checkout and repairing registered worktree metadata before commit when the local `.git` file is missing or broken.
 - `ProposalToBacklog` now filters ids recorded in `.agentforge/backlog/completed.json`, preventing completed backlog items from being replayed in new autonomous cycle intake.
+- `ProposalToBacklog` now also sources planned R&D ideas from `.agentforge/research-runs/*/run.json` as deterministic `research-plan` backlog candidates, reuses completed/quarantine replay guards via normalized ids, and enforces unattended auto-pick gating to require low/medium risk plus non-empty scope.
 
 ## [23.5.0] - 2026-05-18
 
