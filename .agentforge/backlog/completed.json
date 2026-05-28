@@ -152,6 +152,14 @@
       "cycleId": "2b8acae7-d088-427a-94c9-8cce8d0890e2",
       "prNumber": 203,
       "reason": "Merged retained value after audit correction: duplicate backlog diagnostics"
+    },
+    {
+      "itemId": "backlog-guided-large-011",
+      "completedAt": "2026-05-28T08:14:04.978Z",
+      "updatedAt": "2026-05-28T08:14:04.978Z",
+      "cycleId": "5f9dfe28-39fc-472c-9f04-c2a16852722e",
+      "prNumber": 204,
+      "reason": "Merged retained value after audit correction: codex readiness CLI JSON coverage"
     }
   ]
 }
