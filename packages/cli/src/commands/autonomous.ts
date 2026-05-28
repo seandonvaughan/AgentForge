@@ -225,22 +225,7 @@ interface PrMergeAssessment {
 }
 
 const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
-const KNOWN_CYCLE_STAGES = new Set([
-  'plan',
-  'assign',
-  'execute',
-  'test',
-  'gate',
-  'learn',
-  'review',
-  'release',
-  'run',
-  'audit',
-  'completed',
-  'failed',
-  'killed',
-  'running',
-]);
+const CYCLE_STAGE_FILTER_RE = /^[a-z][a-z0-9_-]*$/;
 type ModelCap = 'opus' | 'sonnet' | 'haiku';
 type EffortCap = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
@@ -795,7 +780,9 @@ async function runCycleListAction(opts: CycleListOptions): Promise<void> {
       }, null, 2));
       return;
     }
-    console.log('(no cycles recorded)');
+    console.log(stageFilter === undefined
+      ? '(no cycles recorded)'
+      : `(no cycles matched --stage ${stageFilter})`);
     return;
   }
 
@@ -832,8 +819,8 @@ function parseCycleListStageFilter(rawStage: string | undefined): string | null 
     console.error('Invalid value for --stage: expected non-empty stage name');
     return null;
   }
-  if (!KNOWN_CYCLE_STAGES.has(stage)) {
-    console.error(`Invalid value for --stage: ${rawStage}. Allowed stages: ${[...KNOWN_CYCLE_STAGES].join(', ')}`);
+  if (!CYCLE_STAGE_FILTER_RE.test(stage)) {
+    console.error(`Invalid value for --stage: ${rawStage}. Expected a stage token like completed, failed, verify, or custom-stage.`);
     return null;
   }
   return stage;

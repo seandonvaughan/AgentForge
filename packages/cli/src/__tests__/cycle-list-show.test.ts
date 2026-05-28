@@ -140,11 +140,47 @@ describe('cycle list/show summaries', () => {
     expect(parsed.cycles[0]?.stage).toBe('completed');
   });
 
-  it('fails cycle list when stage filter is invalid', async () => {
-    await runCli('cycle', 'list', '--project-root', projectRoot, '--stage', 'bogus-stage');
+  it('filters by canonical and artifact cycle stages not known to the CLI filter', async () => {
+    const stages = ['stage', 'verify', 'commit', 'aborted'];
+    for (const stage of stages) {
+      writeCycle(`${stage.padEnd(8, '0')}-1111-4111-8111-111111111111`, {
+        cycleId: `${stage.padEnd(8, '0')}-1111-4111-8111-111111111111`,
+        stage,
+        startedAt: '2026-05-20T00:00:00.000Z',
+      });
+    }
+
+    for (const stage of stages) {
+      consoleLog.mockClear();
+      await runCli('cycle', 'list', '--project-root', projectRoot, '--stage', stage, '--json');
+
+      const parsed = JSON.parse(output()) as {
+        stage: string;
+        cycles: Array<{ stage: string }>;
+      };
+      expect(parsed.stage).toBe(stage);
+      expect(parsed.cycles).toHaveLength(1);
+      expect(parsed.cycles[0]?.stage).toBe(stage);
+    }
+  });
+
+  it('reports an accurate text empty state when a valid stage filter matches no cycles', async () => {
+    writeCycle('99999999-1111-4111-8111-111111111111', {
+      cycleId: '99999999-1111-4111-8111-111111111111',
+      stage: 'completed',
+      startedAt: '2026-05-20T00:00:00.000Z',
+    });
+
+    await runCli('cycle', 'list', '--project-root', projectRoot, '--stage', 'verify');
+
+    expect(output()).toBe('(no cycles matched --stage verify)');
+  });
+
+  it('fails cycle list when stage filter syntax is invalid', async () => {
+    await runCli('cycle', 'list', '--project-root', projectRoot, '--stage', 'bad stage');
 
     expect(process.exitCode).toBe(1);
-    expect(errorOutput()).toContain('Invalid value for --stage: bogus-stage.');
+    expect(errorOutput()).toContain('Invalid value for --stage: bad stage.');
     expect(output()).toBe('');
   });
 
