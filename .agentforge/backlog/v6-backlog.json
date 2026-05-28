@@ -537,6 +537,29 @@
         "packages/cli/src/__tests__/backlog-command.test.ts",
         "CHANGELOG.md"
       ]
+    },
+    {
+      "id": "guided-big-005",
+      "title": "Add JSON and source breakdown to cycle preview",
+      "description": "Make autonomous run selection easier to audit before spending runtime. Extend `agentforge cycle preview` with optional `--json` output and a deterministic backlog source breakdown. The breakdown should count raw preview candidates by BacklogItem source, including at least backlog-file, research-plan, todo-marker, failed-session, cost-anomaly, task-outcome, and flaking-test, with zero-count sources omitted from text but present or deterministically represented in JSON. Text mode should preserve existing summary/ranked-item output and add a concise `Sources:` section when candidates exist. JSON mode should include projectRoot, candidateCount, sourceBreakdown, withinBudget, requiresApproval, totalEstimatedCostUsd, budgetOverflowUsd, fallback, warnings, summary, and rankedItems. Preserve existing preview launch controls, model/effort/fallback behavior, and cycle execution semantics. Add focused CLI tests for text source breakdown, JSON output shape with ranked items, empty preview JSON, and no-source/no-candidate backward-compatible text behavior. Update changelog/help checks if needed.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "tags": [
+        "feature",
+        "guided-big",
+        "dogfood",
+        "operator-visibility",
+        "cycle-preview",
+        "cli",
+        "autonomous"
+      ],
+      "source": "guided-big-2026-05-28",
+      "files": [
+        "packages/cli/src/commands/autonomous.ts",
+        "packages/cli/src/__tests__/autonomous-launch-options.test.ts",
+        "packages/cli/src/__tests__/cycle-list-show.test.ts",
+        "CHANGELOG.md"
+      ]
     }
   ]
 }
