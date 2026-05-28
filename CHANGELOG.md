@@ -19,6 +19,7 @@ All notable changes to AgentForge are documented in this file.
 - Added `agentforge cycle list --stage <stage>` (plus `--json`) to filter cycle summaries by stage for faster failed-cycle triage and operator visibility.
 - Added `agentforge cycle show --json` to emit machine-readable per-cycle detail output while preserving legacy text-mode output by default.
 - Added `agentforge cycle streak status` and `agentforge cycle streak record <cycleId>` with optional `--json`, durable ledger storage at `.agentforge/cycles/streak-ledger.json`, idempotent upsert-by-cycle recording, and consecutive-success streak visibility.
+- Added optional `--target <n>` to `agentforge cycle streak status` so text output includes deterministic `Target`/`Remaining`/`Goal met` lines and `--json` includes `targetSuccesses`/`remainingSuccesses`/`goalMet` when provided.
 - Added `agentforge cycle assess-pr <cycleId>` (with `--json`) for deterministic post-cycle PR merge-readiness assessment from existing cycle artifacts (stage, approvals, gate verdict, review findings, execute failures, and test outcomes).
 - Kept one-item cycle audit runs on the normal runtime timeout path so curated single-item cycles do not fail under a special five-minute cap.
 - Hardened Codex cycle worktrees by placing them outside the parent checkout and repairing registered worktree metadata before commit when the local `.git` file is missing or broken.

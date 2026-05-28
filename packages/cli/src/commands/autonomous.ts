@@ -108,6 +108,7 @@ interface LoopGuardResetOptions extends WorkspaceAwareOptions {
 
 interface CycleStreakStatusOptions extends WorkspaceAwareOptions {
   json?: boolean;
+  target?: string;
 }
 
 interface CycleStreakRecordOptions extends WorkspaceAwareOptions {
@@ -329,6 +330,7 @@ export function registerCycleCommand(program: Command): void {
     .description('Show cycle streak ledger status from .agentforge/cycles/streak-ledger.json')
     .option('--project-root <path>', 'Project root', process.cwd())
     .option('--workspace <id>', 'Run against a registered workspace from ~/.agentforge/workspaces.json')
+    .option('--target <n>', 'Target consecutive successes (positive integer)')
     .option('--json', 'Print machine-readable JSON')
     .action(runCycleStreakStatusAction);
 
@@ -1119,6 +1121,19 @@ async function runCycleStreakStatusAction(opts: CycleStreakStatusOptions): Promi
   const entries = sortCycleStreakEntriesNewestFirst(ledger.entries);
   const consecutiveSuccesses = countConsecutiveSuccessesFromNewest(entries);
   const latestEntry = entries[0] ?? null;
+  const targetSuccesses = opts.target === undefined
+    ? undefined
+    : parseRequiredPositiveInteger(opts.target, '--target');
+  if (opts.target !== undefined && targetSuccesses === null) {
+    process.exitCode = 1;
+    return;
+  }
+  const remainingSuccesses = targetSuccesses === undefined
+    ? undefined
+    : Math.max(0, targetSuccesses - consecutiveSuccesses);
+  const goalMet = targetSuccesses === undefined
+    ? undefined
+    : consecutiveSuccesses >= targetSuccesses;
 
   if (opts.json) {
     console.log(JSON.stringify({
@@ -1126,6 +1141,13 @@ async function runCycleStreakStatusAction(opts: CycleStreakStatusOptions): Promi
       path: ledgerPath,
       totalEntries: entries.length,
       consecutiveSuccesses,
+      ...(targetSuccesses === undefined
+        ? {}
+        : {
+          targetSuccesses,
+          remainingSuccesses,
+          goalMet,
+        }),
       latestEntry,
       entries,
     }, null, 2));
@@ -1136,6 +1158,11 @@ async function runCycleStreakStatusAction(opts: CycleStreakStatusOptions): Promi
   console.log(`Path:         ${ledgerPath}`);
   console.log(`Entries:      ${entries.length}`);
   console.log(`Consecutive:  ${consecutiveSuccesses}`);
+  if (targetSuccesses !== undefined) {
+    console.log(`Target:       ${targetSuccesses}`);
+    console.log(`Remaining:    ${remainingSuccesses}`);
+    console.log(`Goal met:     ${goalMet ? 'yes' : 'no'}`);
+  }
   if (!latestEntry) {
     console.log('Latest:       (none)');
     return;

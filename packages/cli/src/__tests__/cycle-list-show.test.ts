@@ -510,6 +510,151 @@ describe('cycle list/show summaries', () => {
     expect(output()).toContain('Latest:       (none)');
   });
 
+  it('keeps streak status text unchanged when --target is omitted', async () => {
+    await runCli(
+      'cycle',
+      'streak',
+      'record',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      '--project-root',
+      projectRoot,
+      '--pr',
+      '301',
+      '--result',
+      'success',
+      '--reason',
+      'First success',
+    );
+    consoleLog.mockClear();
+
+    await runCli('cycle', 'streak', 'status', '--project-root', projectRoot);
+
+    expect(output()).toContain('Consecutive:  1');
+    expect(output()).not.toContain('Target:');
+    expect(output()).not.toContain('Remaining:');
+    expect(output()).not.toContain('Goal met:');
+  });
+
+  it('prints target streak fields in text mode when goal is unmet', async () => {
+    await runCli(
+      'cycle',
+      'streak',
+      'record',
+      'abababab-abab-4aba-8aba-abababababab',
+      '--project-root',
+      projectRoot,
+      '--pr',
+      '302',
+      '--result',
+      'success',
+      '--reason',
+      'Single success',
+    );
+    consoleLog.mockClear();
+
+    await runCli('cycle', 'streak', 'status', '--project-root', projectRoot, '--target', '3');
+
+    expect(output()).toContain('Consecutive:  1');
+    expect(output()).toContain('Target:       3');
+    expect(output()).toContain('Remaining:    2');
+    expect(output()).toContain('Goal met:     no');
+  });
+
+  it('prints target streak fields in text mode when goal is met', async () => {
+    await runCli(
+      'cycle',
+      'streak',
+      'record',
+      'bcbcbcbc-bcbc-4bcb-8bcb-bcbcbcbcbcbc',
+      '--project-root',
+      projectRoot,
+      '--pr',
+      '303',
+      '--result',
+      'success',
+      '--reason',
+      'Success one',
+    );
+    consoleLog.mockClear();
+    await runCli(
+      'cycle',
+      'streak',
+      'record',
+      'cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd',
+      '--project-root',
+      projectRoot,
+      '--pr',
+      '304',
+      '--result',
+      'success',
+      '--reason',
+      'Success two',
+    );
+    consoleLog.mockClear();
+
+    await runCli('cycle', 'streak', 'status', '--project-root', projectRoot, '--target', '2');
+
+    expect(output()).toContain('Consecutive:  2');
+    expect(output()).toContain('Target:       2');
+    expect(output()).toContain('Remaining:    0');
+    expect(output()).toContain('Goal met:     yes');
+  });
+
+  it('emits target streak fields in JSON mode when --target is provided', async () => {
+    await runCli(
+      'cycle',
+      'streak',
+      'record',
+      'dededede-dede-4ded-8ded-dededededede',
+      '--project-root',
+      projectRoot,
+      '--pr',
+      '305',
+      '--result',
+      'success',
+      '--reason',
+      'JSON target success',
+    );
+    consoleLog.mockClear();
+
+    await runCli('cycle', 'streak', 'status', '--project-root', projectRoot, '--json', '--target', '2');
+    const parsed = JSON.parse(output()) as {
+      consecutiveSuccesses: number;
+      targetSuccesses: number;
+      remainingSuccesses: number;
+      goalMet: boolean;
+    };
+    expect(parsed.consecutiveSuccesses).toBe(1);
+    expect(parsed.targetSuccesses).toBe(2);
+    expect(parsed.remainingSuccesses).toBe(1);
+    expect(parsed.goalMet).toBe(false);
+  });
+
+  it('rejects invalid streak status --target values', async () => {
+    const invalidValues = ['0', '-1', '1.5', 'abc'];
+
+    for (const value of invalidValues) {
+      consoleLog.mockClear();
+      consoleError.mockClear();
+      process.exitCode = undefined;
+
+      await runCli('cycle', 'streak', 'status', '--project-root', projectRoot, '--target', value);
+
+      expect(process.exitCode).toBe(1);
+      expect(errorOutput()).toContain(`Invalid --target value: ${value}`);
+      expect(output()).toBe('');
+    }
+  });
+
+  it('rejects missing streak status --target value', async () => {
+    consoleLog.mockClear();
+    consoleError.mockClear();
+    process.exitCode = undefined;
+
+    await expect(runCli('cycle', 'streak', 'status', '--project-root', projectRoot, '--target'))
+      .rejects.toThrow('process.exit unexpectedly called with "1"');
+  });
+
   it('records streak entries idempotently by cycleId and emits json when requested', async () => {
     const cycleId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
     writeCycle(cycleId, {
