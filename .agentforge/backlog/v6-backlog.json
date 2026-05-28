@@ -392,6 +392,26 @@
         "packages/cli/src/commands/backlog.ts",
         "packages/cli/src/__tests__/backlog-command.test.ts"
       ]
+    },
+    {
+      "id": "guided-large-016",
+      "title": "Keep backlog source file on active status item line",
+      "description": "Refine `agentforge backlog status` text output so active scoped item source file appears in the same bracketed hint list as complexity, scope, runtime, and provider, for example `[complexity=low, source=items.json, scope=README.md]`. Remove the detached follow-up `sourceFile:` line for active items. Preserve JSON `activeScopedItems[].sourceFile`, duplicate diagnostics, counts, filtering, routing hints, and ordering unchanged. Add focused CLI tests proving text output has source on the active item line and no detached `sourceFile:` line.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": [
+        "feature",
+        "guided-large",
+        "dogfood",
+        "operator-visibility",
+        "backlog",
+        "cli"
+      ],
+      "source": "guided-large-2026-05-28",
+      "files": [
+        "packages/cli/src/commands/backlog.ts",
+        "packages/cli/src/__tests__/backlog-command.test.ts"
+      ]
     }
   ]
 }
