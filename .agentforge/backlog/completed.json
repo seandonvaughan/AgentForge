@@ -96,6 +96,14 @@
       "cycleId": "21bdeac2-2b38-4be9-9d95-39648e239539",
       "prNumber": 195,
       "reason": "Retained manually in commit a17acbd after failed guided cycle"
+    },
+    {
+      "itemId": "backlog-guided-large-004",
+      "completedAt": "2026-05-28T03:09:13.831Z",
+      "updatedAt": "2026-05-28T03:09:13.831Z",
+      "cycleId": "f9795d7c-5e50-4e52-805f-80f317cd2475",
+      "prNumber": 196,
+      "reason": "Merged successful Stream B planning hint cycle"
     }
   ]
 }
