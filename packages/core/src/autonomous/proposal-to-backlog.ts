@@ -157,7 +157,12 @@ export class ProposalToBacklog {
     }
 
     items.push(...this.readBacklogFiles());
-    items.push(...this.readResearchPlans());
+    // Self-sourcing is OFF by default. When the curated/human backlog is empty
+    // the loop must idle, not manufacture speculative R&D busywork — that engine
+    // produced the 2026-05-28 self-sourced-busywork spin (e.g. PR #219).
+    if (this.config.sourcing.allowSelfSourcedBacklog === true) {
+      items.push(...this.readResearchPlans());
+    }
 
     if (this.config.sourcing.includeTodoMarkers) {
       const markers = this.scanTodoMarkers();

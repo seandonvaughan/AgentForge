@@ -18,6 +18,9 @@ const config = {
     minProposalConfidence: 0.6,
     includeTodoMarkers: false,
     todoMarkerPattern: 'TODO\\(autonomous\\)|FIXME\\(autonomous\\)',
+    // This suite exercises research-plan (self-sourced) parsing, so it opts in.
+    // The default-OFF contract is covered in proposal-backlog-guard.test.ts.
+    allowSelfSourcedBacklog: true,
   },
 } as CycleConfig;
 

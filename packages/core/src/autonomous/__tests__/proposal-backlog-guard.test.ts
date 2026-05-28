@@ -31,13 +31,14 @@ const costAnomalyAdapter: ProposalAdapter = {
   getFlakingTests: async () => [],
 };
 
-function cfg(): CycleConfig {
+function cfg(overrides?: Partial<CycleConfig['sourcing']>): CycleConfig {
   return {
     sourcing: {
       lookbackDays: 7,
       minProposalConfidence: 0.6,
       includeTodoMarkers: false,
       todoMarkerPattern: 'TODO\\(autonomous\\)',
+      ...overrides,
     },
   } as unknown as CycleConfig;
 }
@@ -162,11 +163,51 @@ describe('difficulty gating (unattended)', () => {
         },
       ],
     });
-    const items = await new ProposalToBacklog(emptyAdapter, root, cfg()).build();
+    const items = await new ProposalToBacklog(emptyAdapter, root, cfg({ allowSelfSourcedBacklog: true })).build();
     const researchItems = items.filter((i) => i.source === 'research-plan').map((i) => i.title);
     expect(researchItems).toContain('Scoped low-risk idea');
     expect(researchItems).not.toContain('High-risk idea');
     expect(researchItems).not.toContain('No scope idea');
+  });
+});
+
+describe('self-sourcing guard', () => {
+  function plannedRun(): void {
+    writeResearchRun('rd-run-selfsource', {
+      runId: 'rd-run-selfsource',
+      plannedCycle: { ideaIds: ['idea-01'] },
+      ideas: [
+        {
+          ideaId: 'idea-01',
+          title: 'Self-sourced idea',
+          problem: 'P',
+          hypothesis: 'H',
+          expectedImpact: 'E',
+          acceptanceChecks: ['A'],
+          touchedAreas: ['packages/core/src/autonomous/proposal-to-backlog.ts'],
+          risk: 'low',
+          status: 'planned',
+        },
+      ],
+    });
+  }
+
+  it('does NOT source research-plan items by default (loop idles instead of inventing work)', async () => {
+    plannedRun();
+    const items = await new ProposalToBacklog(emptyAdapter, root, cfg()).build();
+    expect(items.filter((i) => i.source === 'research-plan')).toEqual([]);
+  });
+
+  it('sources research-plan items only when allowSelfSourcedBacklog is explicitly enabled', async () => {
+    plannedRun();
+    const items = await new ProposalToBacklog(
+      emptyAdapter,
+      root,
+      cfg({ allowSelfSourcedBacklog: true }),
+    ).build();
+    expect(items.filter((i) => i.source === 'research-plan').map((i) => i.title)).toContain(
+      'Self-sourced idea',
+    );
   });
 });
 
@@ -318,7 +359,7 @@ describe('completed ledger replay guard', () => {
       entries: [{ itemId: '  research rd run completed idea 01  ', completedAt: '2026-05-27T00:00:00.000Z' }],
     });
 
-    const items = await new ProposalToBacklog(emptyAdapter, root, cfg()).build();
+    const items = await new ProposalToBacklog(emptyAdapter, root, cfg({ allowSelfSourcedBacklog: true })).build();
     const titles = items.filter((i) => i.source === 'research-plan').map((i) => i.title);
     expect(titles).toContain('Visible research idea');
     expect(titles).not.toContain('Completed research idea');
