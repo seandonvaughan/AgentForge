@@ -225,13 +225,13 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
   for (const item of activeScoped) {
     const hints = [
       item.estimatedComplexity ? `complexity=${item.estimatedComplexity}` : null,
+      `source=${item.sourceFile}`,
       `scope=${(item.files ?? []).join(',')}`,
       item.runtimeMode ? `runtime=${item.runtimeMode}` : null,
       item.preferredProvider ? `provider=${item.preferredProvider}` : null,
     ].filter((hint): hint is string => hint !== null);
     const suffix = hints.length > 0 ? ` [${hints.join(', ')}]` : '';
     console.log(`    - ${item.id}: ${item.title}${suffix}`);
-    console.log(`      sourceFile: ${item.sourceFile}`);
   }
 }
 
