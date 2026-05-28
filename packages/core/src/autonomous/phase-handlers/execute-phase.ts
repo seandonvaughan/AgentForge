@@ -383,6 +383,10 @@ interface ItemResult {
   attempts: number;
   model?: string;
   effort?: string;
+  resolvedModelId?: string;
+  resolvedEffort?: string;
+  resolvedProvider?: ExecutionProviderKind;
+  resolvedRuntimeMode?: RuntimeMode;
   capabilityTier?: ModelTier;
   /** Per-run cost breakdown (token attribution). Populated by Wave 2. */
   breakdown?: CostBreakdown;
@@ -1201,6 +1205,18 @@ export async function runExecutePhase(
             : undefined;
           const runEffort =
             typeof (result as any)?.effort === 'string' ? (result as any).effort : undefined;
+          const resolvedProvider =
+            typeof (result as any)?.resolvedProvider === 'string'
+              ? (result as any).resolvedProvider as ExecutionProviderKind
+              : typeof (result as any)?.providerKind === 'string'
+              ? (result as any).providerKind as ExecutionProviderKind
+              : undefined;
+          const resolvedRuntimeMode =
+            typeof (result as any)?.resolvedRuntimeMode === 'string'
+              ? (result as any).resolvedRuntimeMode as RuntimeMode
+              : typeof (result as any)?.runtimeModeResolved === 'string'
+              ? (result as any).runtimeModeResolved as RuntimeMode
+              : undefined;
 
           // Wave 2: extract per-run CostBreakdown and accumulate into phase total.
           // Use the breakdown already computed by RuntimeAdapter when available;
@@ -1312,6 +1328,10 @@ export async function runExecutePhase(
             // v6.7.4: surface model + effort to the Agents tab
             model: runModel,
             ...(runEffort ? { effort: runEffort } : {}),
+            resolvedModelId: runModel,
+            ...(runEffort ? { resolvedEffort: runEffort } : {}),
+            ...(resolvedProvider ? { resolvedProvider } : {}),
+            ...(resolvedRuntimeMode ? { resolvedRuntimeMode } : {}),
             ...(runCapabilityTier ? { capabilityTier: runCapabilityTier } : {}),
             // T4.2: surface the worktree path/branch for downstream diff capture
             worktreePath: worktreeHandle?.path,

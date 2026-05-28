@@ -247,6 +247,32 @@ describe('RuntimeAdapter with supervisor', () => {
     );
   });
 
+  it('returns resolved provider/runtime from RunResult (not requested routing hints)', async () => {
+    mockRun.mockResolvedValueOnce({
+      sessionId: 'sess-routing-resolved-test',
+      response: 'resolved via fallback provider',
+      model: 'gpt-5-codex',
+      inputTokens: 111,
+      outputTokens: 222,
+      costUsd: 0.003,
+      startedAt: '2026-01-01T00:00:00.000Z',
+      completedAt: '2026-01-01T00:00:05.000Z',
+      status: 'completed' as const,
+      providerKind: 'openai-sdk' as const,
+      runtimeModeResolved: 'sdk' as const,
+    });
+
+    const runtimeAdapter = new RuntimeAdapter({ cwd: '/tmp/fake-project' });
+    const result = await runtimeAdapter.run('coder', 'Route through Codex with fallback', {
+      runtimeMode: 'codex-cli',
+      preferredProvider: 'codex-cli',
+    });
+
+    expect(result.resolvedProvider).toBe('openai-sdk');
+    expect(result.resolvedRuntimeMode).toBe('sdk');
+    expect(result.resolvedProvider).not.toBe('codex-cli');
+  });
+
   it('threads timeoutMs through supervisor path', async () => {
     mockRun.mockResolvedValueOnce({
       sessionId: 'sess-timeout-supervisor',

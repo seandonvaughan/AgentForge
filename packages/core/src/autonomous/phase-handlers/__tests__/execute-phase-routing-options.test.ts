@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { PhaseContext } from '../../phase-scheduler.js';
@@ -103,5 +103,92 @@ describe('execute-phase runtime routing options', () => {
     const defaultOptions = runtime.run.mock.calls[1]![2] as Record<string, unknown>;
     expect(defaultOptions).not.toHaveProperty('runtimeMode');
     expect(defaultOptions).not.toHaveProperty('preferredProvider');
+  });
+
+  it('persists resolved provider/model/effort in execute artifacts using runtime-returned values', async () => {
+    writeSprintFile([
+      {
+        id: 'item-fallback-provider',
+        title: 'Requested provider unavailable should fallback',
+        assignee: 'coder',
+        runtimeMode: 'auto',
+        preferredProvider: 'codex-cli',
+      },
+      {
+        id: 'item-anthropic-provider',
+        title: 'Second item resolves to different transport',
+        assignee: 'backend-dev',
+        runtimeMode: 'sdk',
+        preferredProvider: 'anthropic-sdk',
+      },
+    ]);
+
+    const runtime = {
+      run: vi.fn(async (_agentId: string, _task: string, options?: {
+        preferredProvider?: ExecutionProviderKind;
+      }) => {
+        if (options?.preferredProvider === 'codex-cli') {
+          return {
+            output: 'fell back to OpenAI transport',
+            costUsd: 0.02,
+            model: 'gpt-5-codex',
+            effort: 'high',
+            resolvedProvider: 'openai-sdk' as const,
+            resolvedRuntimeMode: 'sdk' as const,
+            status: 'completed' as const,
+          };
+        }
+        return {
+          output: 'used Anthropic transport',
+          costUsd: 0.03,
+          model: 'claude-sonnet-4-6',
+          effort: 'medium',
+          resolvedProvider: 'anthropic-sdk' as const,
+          resolvedRuntimeMode: 'sdk' as const,
+          status: 'completed' as const,
+        };
+      }),
+    };
+
+    await runExecutePhase(makeCtx(runtime), {
+      maxParallelism: 1,
+      maxItemRetries: 0,
+      disableWorktrees: true,
+      selfEvalDisabled: true,
+    });
+
+    const executeArtifactPath = join(
+      tmpRoot,
+      '.agentforge',
+      'cycles',
+      'cycle-routing-1',
+      'phases',
+      'execute.json',
+    );
+    const executeArtifact = JSON.parse(readFileSync(executeArtifactPath, 'utf8')) as {
+      itemResults: Array<{
+        itemId: string;
+        resolvedProvider?: string;
+        resolvedRuntimeMode?: string;
+        resolvedModelId?: string;
+        resolvedEffort?: string;
+      }>;
+    };
+    const byId = new Map(executeArtifact.itemResults.map((row) => [row.itemId, row]));
+
+    expect(runtime.run).toHaveBeenCalledTimes(2);
+    expect(byId.get('item-fallback-provider')).toMatchObject({
+      resolvedProvider: 'openai-sdk',
+      resolvedRuntimeMode: 'sdk',
+      resolvedModelId: 'gpt-5-codex',
+      resolvedEffort: 'high',
+    });
+    expect(byId.get('item-fallback-provider')?.resolvedProvider).not.toBe('codex-cli');
+    expect(byId.get('item-anthropic-provider')).toMatchObject({
+      resolvedProvider: 'anthropic-sdk',
+      resolvedRuntimeMode: 'sdk',
+      resolvedModelId: 'claude-sonnet-4-6',
+      resolvedEffort: 'medium',
+    });
   });
 });
