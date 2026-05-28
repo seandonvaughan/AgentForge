@@ -284,6 +284,47 @@ describe('WorktreePool', () => {
     await git(workingDir, ['branch', '-D', second.branch]);
   });
 
+  it('revalidates cached handles before retry allocation', async () => {
+    const retryBranch = 'codex/rejected-cached-branch';
+    await git(workingDir, ['checkout', '-b', retryBranch]);
+    writeFileSync(join(workingDir, 'retry-cached.txt'), 'attempt 1\n');
+    await git(workingDir, ['add', 'retry-cached.txt']);
+    await git(workingDir, ['commit', '-m', 'rejected cached branch']);
+    await git(workingDir, ['push', 'origin', retryBranch]);
+    await git(workingDir, ['checkout', 'main']);
+
+    const pool = new WorktreePool({ projectRoot: workingDir, branchPrefix: 'codex/' });
+    const first = await pool.allocate({
+      agentId: 'coder',
+      sessionId: 'retry-cached',
+      branchName: retryBranch,
+      sourceRef: `origin/${retryBranch}`,
+      deleteBranchOnRelease: false,
+    });
+
+    await git(workingDir, ['worktree', 'remove', '--force', first.path]);
+    mkdirSync(first.path, { recursive: true });
+    writeFileSync(join(first.path, 'stale.txt'), 'not a git worktree\n');
+
+    const second = await pool.allocate({
+      agentId: 'coder',
+      sessionId: 'retry-cached',
+      branchName: retryBranch,
+      sourceRef: `origin/${retryBranch}`,
+      deleteBranchOnRelease: false,
+    });
+
+    expect(second.id).toBe(first.id);
+    expect(second.branch).toBe(retryBranch);
+    expect((await git(second.path, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim()).toBe(retryBranch);
+    expect(comparablePath((await git(second.path, ['rev-parse', '--show-toplevel'])).trim()))
+      .toBe(comparablePath(second.path));
+    expect(existsSync(join(second.path, 'retry-cached.txt'))).toBe(true);
+    expect(existsSync(join(second.path, 'stale.txt'))).toBe(false);
+
+    await pool.release(second.id);
+  });
+
   it('refuses to reuse a stale directory that is not a git worktree', async () => {
     const pool = new WorktreePool({ projectRoot: workingDir });
     const stalePath = join(
