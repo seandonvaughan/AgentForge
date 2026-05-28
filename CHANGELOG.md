@@ -12,6 +12,7 @@ All notable changes to AgentForge are documented in this file.
 - Added backlog item scope visibility to `agentforge backlog status` (text and `--json`) by emitting per-item `estimatedComplexity`/`scopeFiles` in JSON and `complexity=<level>`/`scope=<file,...>` in text output.
 - Added duplicate normalized backlog ID visibility to `agentforge backlog status` (text and `--json`) so operators can detect ambiguous active scoped items before unattended execution.
 - Extended `agentforge backlog status` to include planned research-run candidates from `.agentforge/research-runs/*/run.json` in scoped visibility and `readyForCycle`, with separate `activeResearchPlanItems` count, preserved `activeBacklogFileItems` semantics, and research source hints in text/JSON item output.
+- Added optional `agentforge backlog status --source <all|backlog-file|research-plan>` to filter active scoped items and derived routing/readiness/duplicate diagnostics, while preserving unfiltered source counts; JSON now includes `sourceFilter`.
 - Added direct CLI test coverage for `agentforge codex readiness --json --skip-login` to lock deterministic JSON-mode login-skip behavior in a dogfood-critical readiness path.
 - Added `agentforge cycle loop-guard status` and `agentforge cycle loop-guard reset` for operator visibility and recovery of `.agentforge/loop-state.json`, including deterministic handling of missing/corrupt state files.
 - Added `agentforge cycle loop-guard status --json` to emit deterministic machine-readable loop-guard state for automation and unattended operator checks.

@@ -248,6 +248,7 @@ describe('agentforge backlog status', () => {
     expect(output).not.toContain('[backlog] status');
     expect(JSON.parse(output)).toEqual({
       projectRoot,
+      sourceFilter: 'all',
       activeBacklogFileItems: 3,
       activeResearchPlanItems: 0,
       completedLedgerEntries: 1,
@@ -598,6 +599,124 @@ describe('agentforge backlog status', () => {
     expect(output).toContain('readyForCycle: yes');
     expect(output).toContain('Visible Research');
     expect(output).not.toContain('Completed Research');
+  });
+
+  it('filters text status active scoped items to research-plan source', async () => {
+    const backlogDir = join(projectRoot, '.agentforge', 'backlog');
+    const researchRunDir = join(projectRoot, '.agentforge', 'research-runs', 'run-filter-text');
+    mkdirSync(backlogDir, { recursive: true });
+    mkdirSync(researchRunDir, { recursive: true });
+    writeFileSync(
+      join(backlogDir, 'items.json'),
+      JSON.stringify({
+        items: [
+          { id: 'backlog scoped', title: 'Backlog Scoped', estimatedComplexity: 'low', files: ['README.md'] },
+        ],
+      }),
+      'utf8',
+    );
+    writeFileSync(
+      join(researchRunDir, 'run.json'),
+      JSON.stringify({
+        plannedCycle: { ideaIds: ['idea-101'] },
+        ideas: [
+          { ideaId: 'idea-101', status: 'planned', title: 'Research Scoped', risk: 'low', touchedAreas: ['packages/cli/src/commands/backlog.ts'] },
+        ],
+      }),
+      'utf8',
+    );
+
+    await runCli(['backlog', 'status', '--project-root', projectRoot, '--source', 'research-plan']);
+
+    const output = consoleLog.mock.calls.map((args: unknown[]) => String(args[0] ?? '')).join('\n');
+    expect(output).toContain('sourceFilter: research-plan');
+    expect(output).toContain('activeBacklogFileItems: 1');
+    expect(output).toContain('activeResearchPlanItems: 1');
+    expect(output).toContain('runtimeRoutingHints: scoped=1 routed=0 default=1');
+    expect(output).toContain('activeScopedItemsCount: 1');
+    expect(output).toContain('readyForCycle: yes');
+    expect(output).toContain('Research Scoped');
+    expect(output).not.toContain('Backlog Scoped');
+  });
+
+  it('filters JSON status active scoped items to backlog-file source and includes sourceFilter', async () => {
+    const backlogDir = join(projectRoot, '.agentforge', 'backlog');
+    const researchRunDir = join(projectRoot, '.agentforge', 'research-runs', 'run-filter-json');
+    mkdirSync(backlogDir, { recursive: true });
+    mkdirSync(researchRunDir, { recursive: true });
+    writeFileSync(
+      join(backlogDir, 'items.json'),
+      JSON.stringify({
+        items: [
+          { id: 'backlog routed', title: 'Backlog Routed', estimatedComplexity: 'low', files: ['packages/cli/src/bin.ts'], runtimeMode: 'codex-cli' },
+        ],
+      }),
+      'utf8',
+    );
+    writeFileSync(
+      join(researchRunDir, 'run.json'),
+      JSON.stringify({
+        plannedCycle: { ideaIds: ['idea-202'] },
+        ideas: [
+          { ideaId: 'idea-202', status: 'planned', title: 'Research Routed', risk: 'low', touchedAreas: ['packages/core/src/autonomous/proposal-to-backlog.ts'] },
+        ],
+      }),
+      'utf8',
+    );
+
+    await runCli(['backlog', 'status', '--project-root', projectRoot, '--json', '--source', 'backlog-file']);
+    const parsed = JSON.parse(consoleLog.mock.calls.map((args: unknown[]) => String(args[0] ?? '')).join('\n'));
+    expect(parsed.sourceFilter).toBe('backlog-file');
+    expect(parsed.activeBacklogFileItems).toBe(1);
+    expect(parsed.activeResearchPlanItems).toBe(1);
+    expect(parsed.runtimeRoutingHints).toEqual({ scopedItems: 1, routedItems: 1, defaultItems: 0 });
+    expect(parsed.activeScopedItemsCount).toBe(1);
+    expect(parsed.readyForCycle).toBe(true);
+    expect(parsed.duplicateNormalizedIds).toEqual([]);
+    expect(parsed.activeScopedItems).toHaveLength(1);
+    expect(parsed.activeScopedItems[0].title).toBe('Backlog Routed');
+  });
+
+  it('keeps default all behavior for status source filtering', async () => {
+    const backlogDir = join(projectRoot, '.agentforge', 'backlog');
+    const researchRunDir = join(projectRoot, '.agentforge', 'research-runs', 'run-filter-default');
+    mkdirSync(backlogDir, { recursive: true });
+    mkdirSync(researchRunDir, { recursive: true });
+    writeFileSync(
+      join(backlogDir, 'items.json'),
+      JSON.stringify({
+        items: [{ id: 'backlog all', title: 'Backlog All', estimatedComplexity: 'low', files: ['README.md'] }],
+      }),
+      'utf8',
+    );
+    writeFileSync(
+      join(researchRunDir, 'run.json'),
+      JSON.stringify({
+        plannedCycle: { ideaIds: ['idea-303'] },
+        ideas: [{ ideaId: 'idea-303', status: 'planned', title: 'Research All', risk: 'low', touchedAreas: ['packages/cli/src/commands/backlog.ts'] }],
+      }),
+      'utf8',
+    );
+
+    await runCli(['backlog', 'status', '--project-root', projectRoot]);
+    const textOutput = consoleLog.mock.calls.map((args: unknown[]) => String(args[0] ?? '')).join('\n');
+    expect(textOutput).not.toContain('sourceFilter:');
+    expect(textOutput).toContain('activeScopedItemsCount: 2');
+    expect(textOutput).toContain('Backlog All');
+    expect(textOutput).toContain('Research All');
+
+    consoleLog.mockClear();
+    await runCli(['backlog', 'status', '--project-root', projectRoot, '--json']);
+    const parsed = JSON.parse(consoleLog.mock.calls.map((args: unknown[]) => String(args[0] ?? '')).join('\n'));
+    expect(parsed.sourceFilter).toBe('all');
+    expect(parsed.activeScopedItemsCount).toBe(2);
+  });
+
+  it('fails with clear error for invalid --source value', async () => {
+    await runCli(['backlog', 'status', '--project-root', projectRoot, '--source', 'todo-marker']);
+    const errorOutput = consoleError.mock.calls.map((args: unknown[]) => String(args[0] ?? '')).join('\n');
+    expect(process.exitCode).toBe(1);
+    expect(errorOutput).toContain('Invalid --source value "todo-marker": expected one of all, backlog-file, research-plan');
   });
 
   async function runCli(args: string[]): Promise<void> {
