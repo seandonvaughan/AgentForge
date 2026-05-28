@@ -160,6 +160,10 @@ vi.mock('@agentforge/core', () => {
 
 import { createCliProgram } from '../bin.js';
 
+function collectConsoleOutput(calls: ReadonlyArray<ReadonlyArray<unknown>>): string {
+  return calls.map((call) => call.join(' ')).join('\n');
+}
+
 async function runCli(args: string[]): Promise<void> {
   const program = createCliProgram();
   program.exitOverride();
@@ -368,7 +372,7 @@ describe('cycle launch options', () => {
       projectRoot,
     ]);
 
-    const output = consoleLog.mock.calls.map((call: unknown[]) => call.join(' ')).join('\n');
+    const output = collectConsoleOutput(consoleLog.mock.calls);
     expect(output).toContain('Sources:      backlog-file=2, research-plan=1, todo-marker=1');
   });
 
@@ -410,7 +414,7 @@ describe('cycle launch options', () => {
       '--json',
     ]);
 
-    const parsed = JSON.parse(consoleLog.mock.calls.map((call: unknown[]) => call.join(' ')).join('\n')) as {
+    const parsed = JSON.parse(collectConsoleOutput(consoleLog.mock.calls)) as {
       projectRoot: string;
       candidateCount: number;
       sourceBreakdown: Record<string, number>;
@@ -448,7 +452,7 @@ describe('cycle launch options', () => {
       '--json',
     ]);
 
-    const parsed = JSON.parse(consoleLog.mock.calls.map((call: unknown[]) => call.join(' ')).join('\n')) as {
+    const parsed = JSON.parse(collectConsoleOutput(consoleLog.mock.calls)) as {
       candidateCount: number;
       rankedItems: unknown[];
       sourceBreakdown: Record<string, number>;
@@ -482,8 +486,25 @@ describe('cycle launch options', () => {
       projectRoot,
     ]);
 
-    const output = consoleLog.mock.calls.map((call: unknown[]) => call.join(' ')).join('\n');
+    const output = collectConsoleOutput(consoleLog.mock.calls);
     expect(output).toContain('Ranked items:');
+    expect(output).not.toContain('Sources:');
+  });
+
+  it('keeps cycle preview text backward-compatible when no candidates are found', async () => {
+    captures.previewBacklog = [];
+
+    await runCli([
+      'cycle',
+      'preview',
+      '--project-root',
+      projectRoot,
+    ]);
+
+    const output = collectConsoleOutput(consoleLog.mock.calls);
+    expect(output).toContain('Candidates:   0');
+    expect(output).toContain('Summary:      No backlog items found — nothing to score.');
+    expect(output).toContain('  - Empty backlog: no proposals or TODO(autonomous) markers detected.');
     expect(output).not.toContain('Sources:');
   });
 });
