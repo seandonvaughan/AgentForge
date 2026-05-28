@@ -249,6 +249,28 @@
         "packages/cli/src/__tests__/cycle-list-show.test.ts",
         "CHANGELOG.md"
       ]
+    },
+    {
+      "id": "guided-large-009",
+      "title": "Add stage filtering to cycle list",
+      "description": "Make post-run triage faster by adding a read-only `--stage <stage>` filter to `agentforge cycle list`. The filter should work for text and `--json` output, matching the normalized stage values already emitted by cycle summaries such as completed, failed, audit, execute, review, gate, and run. Preserve the default unfiltered output and existing `--limit` behavior after filtering. Invalid or empty stage filters should print a clear error and set a non-zero exit code without reading GitHub or mutating artifacts. Add focused CLI tests for text filtering, JSON filtering, no-match output, invalid stage handling, and unchanged default behavior. Update help/changelog if needed.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": [
+        "feature",
+        "guided-large",
+        "dogfood",
+        "operator-visibility",
+        "cycle-list",
+        "cli"
+      ],
+      "source": "guided-large-2026-05-28",
+      "files": [
+        "packages/cli/src/commands/autonomous.ts",
+        "packages/cli/src/__tests__/cycle-list-show.test.ts",
+        "scripts/check-help-output.mjs",
+        "CHANGELOG.md"
+      ]
     }
   ]
 }
