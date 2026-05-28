@@ -223,6 +223,122 @@ function rationaleMentionsBranch(rationale: string, branch: string): boolean {
     .some((token) => containsExactToken(rationale, token, isBranchTokenChar, true));
 }
 
+function tokenIndexes(
+  text: string,
+  token: string,
+  isTokenChar: (char: string | undefined) => boolean,
+  allowGitRangeSeparator = false,
+): number[] {
+  const indexes: number[] = [];
+  if (token.length === 0) return indexes;
+
+  let index = text.indexOf(token);
+  while (index !== -1) {
+    const end = index + token.length;
+    const before = index > 0 ? text[index - 1] : undefined;
+    const after = end < text.length ? text[end] : undefined;
+    const hasBeforeGitRange =
+      allowGitRangeSeparator && text.slice(Math.max(0, index - 3), index) === '...';
+    const hasAfterGitRange = allowGitRangeSeparator && text.slice(end, end + 3) === '...';
+    const startsOnBoundary = index === 0 || !isTokenChar(before) || hasBeforeGitRange;
+    const endsOnBoundary = end >= text.length || !isTokenChar(after) || hasAfterGitRange;
+    if (startsOnBoundary && endsOnBoundary) indexes.push(index);
+    index = text.indexOf(token, index + 1);
+  }
+
+  return indexes;
+}
+
+function branchMentionContexts(rationale: string, branch: string): string[] {
+  const mentions = [
+    branch,
+    `origin/${branch}`,
+    `refs/heads/${branch}`,
+  ].flatMap((token) => tokenIndexes(rationale, token, isBranchTokenChar, true));
+
+  if (mentions.length === 0) return [];
+
+  const targetStarts = [...rationale.matchAll(/\bTarget\s+\d+\b/gi)]
+    .map((match) => match.index ?? -1)
+    .filter((index) => index >= 0);
+
+  return [...new Set(mentions)].map((index) => {
+    const previousTarget = targetStarts
+      .filter((targetStart) => targetStart <= index)
+      .at(-1);
+    const nextTarget = targetStarts.find((targetStart) => targetStart > index);
+    const fallbackStart = Math.max(0, index - 180);
+    const fallbackEnd = Math.min(rationale.length, index + branch.length + 360);
+    const start = previousTarget ?? fallbackStart;
+    const end = nextTarget ?? fallbackEnd;
+    return rationale.slice(start, end);
+  });
+}
+
+function branchFindingContextScore(context: string): number {
+  let score = 0;
+  if (/\b(has\s+)?no\s+unresolved\b/i.test(context)) score -= 100;
+  if (/\bdoes\s+not\s+reproduce\b/i.test(context)) score -= 100;
+  if (/\bnot\s+faulted\b/i.test(context)) score -= 100;
+
+  if (/\bstill\s+reproduces?\b/i.test(context)) score += 50;
+  if (/\brelease\s+blockers?\b/i.test(context)) score += 35;
+  if (/\bapproval\s+is\s+disallowed\b/i.test(context)) score += 35;
+  if (/\brejected\b/i.test(context)) score += 30;
+  if (/\bCRITICAL\b/.test(context)) score += 25;
+  if (/\bMAJOR\b/.test(context)) score += 20;
+  if (/\bfailed\b/i.test(context)) score += 20;
+  if (/\bmust\s+fix\b/i.test(context)) score += 20;
+  return score;
+}
+
+function findAgentPrRecordByBranchFindingContext(
+  records: AgentPrRecord[],
+  rationale: string,
+): AgentPrRecord | undefined {
+  const scored = records
+    .map((record) => {
+      if (typeof record.branch !== 'string' || record.branch.length === 0) {
+        return undefined;
+      }
+      const contexts = branchMentionContexts(rationale, record.branch);
+      if (contexts.length === 0) return undefined;
+      const score = Math.max(...contexts.map(branchFindingContextScore));
+      return { record, score };
+    })
+    .filter((entry): entry is { record: AgentPrRecord; score: number } => entry !== undefined);
+
+  const positive = scored.filter((entry) => entry.score > 0);
+  if (positive.length === 0) return undefined;
+
+  positive.sort((a, b) => b.score - a.score);
+  const best = positive[0]!;
+  const second = positive[1];
+  if (second !== undefined && second.score === best.score) return undefined;
+  return best.record;
+}
+
+function mentionedBranchRecords(
+  records: AgentPrRecord[],
+  rationale: string,
+): AgentPrRecord[] {
+  const seen = new Set<string>();
+  const matches: AgentPrRecord[] = [];
+  for (const record of records) {
+    if (
+      typeof record.branch !== 'string' ||
+      record.branch.length === 0 ||
+      seen.has(record.branch) ||
+      !rationaleMentionsBranch(rationale, record.branch)
+    ) {
+      continue;
+    }
+    seen.add(record.branch);
+    matches.push(record);
+  }
+  return matches;
+}
+
 function findAgentPrRecord(
   records: AgentPrRecord[],
   rationale: string,
@@ -238,16 +354,17 @@ function findAgentPrRecord(
   });
   if (prNumberMatch !== undefined) return prNumberMatch;
 
+  const branchFindingMatch = findAgentPrRecordByBranchFindingContext(records, rationale);
+  if (branchFindingMatch !== undefined) return branchFindingMatch;
+
+  const mentionedBranchMatches = mentionedBranchRecords(records, rationale);
+
   if (branchFromRationale !== undefined) {
     const branchMatch = records.find((record) => record.branch === branchFromRationale);
-    if (branchMatch !== undefined) return branchMatch;
+    if (branchMatch !== undefined && mentionedBranchMatches.length <= 1) return branchMatch;
   }
 
-  return records.find((record) => (
-    typeof record.branch === 'string' &&
-    record.branch.length > 0 &&
-    rationaleMentionsBranch(rationale, record.branch)
-  ));
+  return mentionedBranchMatches.length === 1 ? mentionedBranchMatches[0] : undefined;
 }
 
 function extractMentionedFiles(rationale: string): string[] {

@@ -570,6 +570,210 @@ describe('cycle list/show summaries', () => {
     expect(output()).toContain('Consecutive:  0');
   });
 
+  it('rejects malformed streak PR numbers without partial parsing', async () => {
+    const invalidValues = ['321abc', 'abc321', '1.5', '0'];
+
+    for (const value of invalidValues) {
+      consoleLog.mockClear();
+      consoleError.mockClear();
+      process.exitCode = undefined;
+
+      await runCli(
+        'cycle',
+        'streak',
+        'record',
+        '99999999-9999-4999-8999-999999999999',
+        '--project-root',
+        projectRoot,
+        '--pr',
+        value,
+        '--result',
+        'success',
+        '--reason',
+        'Invalid PR value should fail',
+      );
+
+      expect(process.exitCode).toBe(1);
+      expect(consoleError.mock.calls.map((call: unknown[]) => String(call[0]))).toContain(`Invalid --pr value: ${value}`);
+      expect(output()).toBe('');
+    }
+
+    consoleLog.mockClear();
+    consoleError.mockClear();
+    process.exitCode = undefined;
+
+    await runCli(
+      'cycle',
+      'streak',
+      'record',
+      '99999999-9999-4999-8999-999999999999',
+      '--project-root',
+      projectRoot,
+      '--result',
+      'success',
+      '--reason',
+      'Missing PR should fail',
+    );
+
+    expect(process.exitCode).toBe(1);
+    expect(consoleError.mock.calls.map((call: unknown[]) => String(call[0]))).toContain('Missing --pr value.');
+  });
+
+  it('normalizes malformed streak timestamps before sorting status', async () => {
+    const ledgerDir = join(projectRoot, '.agentforge', 'cycles');
+    mkdirSync(ledgerDir, { recursive: true });
+    writeFileSync(join(ledgerDir, 'streak-ledger.json'), JSON.stringify({
+      version: 1,
+      entries: [
+        {
+          cycleId: 'success-with-bad-time',
+          prNumber: 501,
+          result: 'success',
+          reason: 'Malformed timestamp should not win sorting',
+          recordedAt: 'zzzz',
+        },
+        {
+          cycleId: 'latest-valid-failure',
+          prNumber: 502,
+          result: 'failure',
+          reason: 'Newest valid record is a failure',
+          recordedAt: '2026-05-20T00:00:00.000Z',
+        },
+      ],
+    }, null, 2));
+
+    await runCli('cycle', 'streak', 'status', '--project-root', projectRoot, '--json');
+
+    const status = JSON.parse(output()) as {
+      consecutiveSuccesses: number;
+      latestEntry: { cycleId: string; result: string } | null;
+      entries: Array<{ cycleId: string; recordedAt: string }>;
+    };
+
+    expect(status.consecutiveSuccesses).toBe(0);
+    expect(status.latestEntry).toMatchObject({
+      cycleId: 'latest-valid-failure',
+      result: 'failure',
+    });
+    expect(status.entries.find((entry) => entry.cycleId === 'success-with-bad-time')?.recordedAt)
+      .toBe('1970-01-01T00:00:00.000Z');
+  });
+
+  it('reports merge-ready assessment for a completed cycle with passing checks', async () => {
+    const cycleId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    const cycleDir = writeCycle(cycleId, {
+      cycleId,
+      stage: 'completed',
+      startedAt: '2026-05-20T00:00:00.000Z',
+      completedAt: '2026-05-20T00:05:00.000Z',
+      gateVerdict: 'APPROVE',
+      cost: { totalUsd: 1.2, budgetUsd: 10 },
+      tests: { passed: 4, failed: 0, total: 4, passRate: 1, newFailures: [] },
+      pr: { url: 'https://github.com/seandonvaughan/AgentForge/pull/301' },
+    });
+    mkdirSync(join(cycleDir, 'phases'), { recursive: true });
+    writeFileSync(join(cycleDir, 'phases', 'review.json'), JSON.stringify({
+      phase: 'review',
+      status: 'completed',
+      findings: [],
+    }, null, 2));
+    writeFileSync(join(cycleDir, 'phases', 'execute.json'), JSON.stringify({
+      phase: 'execute',
+      status: 'completed',
+      itemResults: [
+        { itemId: 'item-1', status: 'completed' },
+      ],
+    }, null, 2));
+
+    await runCli('cycle', 'assess-pr', cycleId, '--project-root', projectRoot, '--json');
+
+    const parsed = JSON.parse(output()) as {
+      assessment: {
+        mergeReady: boolean;
+        verdict: string;
+        blockingReasons: string[];
+        checks: Array<{ id: string; status: string }>;
+      };
+    };
+
+    expect(parsed.assessment.mergeReady).toBe(true);
+    expect(parsed.assessment.verdict).toBe('ready');
+    expect(parsed.assessment.blockingReasons).toEqual([]);
+    expect(parsed.assessment.checks).toContainEqual({
+      id: 'gate-approved',
+      status: 'pass',
+      detail: 'gate verdict is APPROVE',
+    });
+  });
+
+  it('reports blocked merge assessment with deterministic blocking reasons and deduped failed items', async () => {
+    const cycleId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    const cycleDir = writeCycle(cycleId, {
+      cycleId,
+      stage: 'run',
+      startedAt: '2026-05-20T00:00:00.000Z',
+      completedAt: null,
+      error: 'gate rejected due to critical defects',
+      cost: { totalUsd: 2.5, budgetUsd: 10 },
+      tests: { passed: 2, failed: 1, total: 3, passRate: 0.6667, newFailures: ['new-fail-a'] },
+      pr: { url: null },
+    });
+    mkdirSync(join(cycleDir, 'phases'), { recursive: true });
+    writeFileSync(join(cycleDir, 'phases', 'gate.json'), JSON.stringify({
+      phase: 'gate',
+      verdict: 'REJECT',
+      rationale: 'Blocking issues remain',
+    }, null, 2));
+    writeFileSync(join(cycleDir, 'phases', 'review.json'), JSON.stringify({
+      phase: 'review',
+      status: 'completed',
+      findings: [
+        { severity: 'CRITICAL', message: 'Critical issue' },
+        { severity: 'MAJOR', message: 'Major issue' },
+      ],
+    }, null, 2));
+    writeFileSync(join(cycleDir, 'phases', 'execute.json'), JSON.stringify({
+      phase: 'execute',
+      status: 'completed',
+      itemResults: [
+        { itemId: 'item-failed', status: 'failed' },
+        { itemId: 'item-failed', status: 'failed' },
+      ],
+    }, null, 2));
+    writeFileSync(join(cycleDir, 'approval-decision.json'), JSON.stringify({
+      cycleId,
+      decision: 'rejected',
+    }, null, 2));
+
+    await runCli('cycle', 'assess-pr', cycleId, '--project-root', projectRoot, '--json');
+
+    const parsed = JSON.parse(output()) as {
+      assessment: {
+        mergeReady: boolean;
+        verdict: string;
+        blockingReasons: string[];
+        metrics: {
+          gateVerdict: string | null;
+          criticalFindings: number;
+          majorFindings: number;
+          failedItems: number;
+          newFailures: number;
+        };
+      };
+    };
+
+    expect(parsed.assessment.mergeReady).toBe(false);
+    expect(parsed.assessment.verdict).toBe('blocked');
+    expect(parsed.assessment.metrics.gateVerdict).toBe('REJECT');
+    expect(parsed.assessment.metrics.criticalFindings).toBe(1);
+    expect(parsed.assessment.metrics.majorFindings).toBe(1);
+    expect(parsed.assessment.metrics.failedItems).toBe(1);
+    expect(parsed.assessment.metrics.newFailures).toBe(1);
+    expect(parsed.assessment.blockingReasons).toContain('cycle-completed: cycle stage is run');
+    expect(parsed.assessment.blockingReasons).toContain('gate-approved: gate verdict is REJECT');
+    expect(parsed.assessment.blockingReasons).toContain('tests: tests passed=2/3 newFailures=1');
+  });
+
   function writeCycle(
     cycleId: string,
     cycleJson: Record<string, unknown>,
