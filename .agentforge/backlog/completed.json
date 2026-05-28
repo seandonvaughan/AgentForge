@@ -184,6 +184,14 @@
       "cycleId": "c57a5c39-8a8d-46b0-b3af-fe89c07a222b",
       "prNumber": 207,
       "reason": "Merged retained value after failed cycle and manual correction: normalized stale open streak fallback status"
+    },
+    {
+      "itemId": "backlog-guided-large-015",
+      "completedAt": "2026-05-28T09:55:50.117Z",
+      "updatedAt": "2026-05-28T09:55:50.117Z",
+      "cycleId": "fc96e5d7-e5fa-4073-a562-63148f0405f0",
+      "prNumber": 208,
+      "reason": "Merged retained value after manual JSON sourceFile correction"
     }
   ]
 }
