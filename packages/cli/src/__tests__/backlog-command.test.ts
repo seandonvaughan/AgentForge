@@ -176,6 +176,7 @@ describe('agentforge backlog status', () => {
       JSON.stringify({
         items: [
           { id: 'scoped task', title: 'Scoped Task', estimatedComplexity: 'low', files: ['packages/cli/src/bin.ts'] },
+          { id: 'routed task', title: 'Routed Task', estimatedComplexity: 'low', files: ['packages/cli/src/commands/backlog.ts'], runtimeMode: 'codex-cli', preferredProvider: 'codex-cli' },
           { id: 'high task', title: 'High Task', estimatedComplexity: 'high', files: ['packages/core/src/autonomous/proposal-to-backlog.ts'] },
           { id: 'noscope', title: 'No Scope Task', estimatedComplexity: 'low' },
           { id: 'done task', title: 'Done Task', estimatedComplexity: 'low', files: ['packages/cli/src/commands/backlog.ts'] },
@@ -199,11 +200,13 @@ describe('agentforge backlog status', () => {
 
     const output = consoleLog.mock.calls.map((args: unknown[]) => String(args[0] ?? '')).join('\n');
     expect(output).toContain('[backlog] status');
-    expect(output).toContain('activeBacklogFileItems: 3');
+    expect(output).toContain('activeBacklogFileItems: 4');
     expect(output).toContain('completedLedgerEntries: 1');
     expect(output).toContain('quarantinedIds: 1');
     expect(output).toContain('unattendedExcludedBacklogItems: 2');
+    expect(output).toContain('runtimeRoutingHints: scoped=2 routed=1 default=1');
     expect(output).toContain('- backlog-scoped-task: Scoped Task');
+    expect(output).toContain('- backlog-routed-task: Routed Task [runtime=codex-cli, provider=codex-cli]');
     expect(output).not.toContain('High Task');
     expect(output).not.toContain('No Scope Task');
   });
@@ -216,6 +219,7 @@ describe('agentforge backlog status', () => {
       JSON.stringify({
         items: [
           { id: 'scoped task', title: 'Scoped Task', estimatedComplexity: 'low', files: ['packages/cli/src/bin.ts'] },
+          { id: 'routed task', title: 'Routed Task', estimatedComplexity: 'low', files: ['packages/cli/src/commands/backlog.ts'], runtimeMode: 'codex-cli', preferredProvider: 'codex-cli' },
           { id: 'high task', title: 'High Task', estimatedComplexity: 'high', files: ['packages/core/src/autonomous/proposal-to-backlog.ts'] },
           { id: 'done task', title: 'Done Task', estimatedComplexity: 'low', files: ['packages/cli/src/commands/backlog.ts'] },
         ],
@@ -239,12 +243,18 @@ describe('agentforge backlog status', () => {
     expect(output).not.toContain('[backlog] status');
     expect(JSON.parse(output)).toEqual({
       projectRoot,
-      activeBacklogFileItems: 2,
+      activeBacklogFileItems: 3,
       completedLedgerEntries: 1,
       quarantinedIds: 1,
       unattendedExcludedBacklogItems: 1,
+      runtimeRoutingHints: {
+        scopedItems: 2,
+        routedItems: 1,
+        defaultItems: 1,
+      },
       activeScopedItems: [
-        { id: 'backlog-scoped-task', title: 'Scoped Task' },
+        { id: 'backlog-routed-task', title: 'Routed Task', runtimeMode: 'codex-cli', preferredProvider: 'codex-cli' },
+        { id: 'backlog-scoped-task', title: 'Scoped Task', runtimeMode: null, preferredProvider: null },
       ],
     });
   });
@@ -285,6 +295,7 @@ describe('agentforge backlog status', () => {
     expect(output).toContain('completedLedgerEntries: 1');
     expect(output).toContain('quarantinedIds: 1');
     expect(output).toContain('unattendedExcludedBacklogItems: 0');
+    expect(output).toContain('runtimeRoutingHints: scoped=1 routed=0 default=1');
     expect(output).toContain('- backlog-items-json-no-id-uses-fallback: No ID uses fallback');
     expect(output).not.toContain('Dogfood Raw');
     expect(output).not.toContain('Dogfood Canonical');
@@ -312,6 +323,7 @@ describe('agentforge backlog status', () => {
     expect(output).toContain('completedLedgerEntries: 0');
     expect(output).toContain('quarantinedIds: 0');
     expect(output).toContain('unattendedExcludedBacklogItems: 0');
+    expect(output).toContain('runtimeRoutingHints: scoped=1 routed=0 default=1');
     expect(output).toContain('- backlog-visible: Visible Item');
     expect(process.exitCode).toBeUndefined();
   });
@@ -350,6 +362,7 @@ describe('agentforge backlog status', () => {
     expect(output).toContain('completedLedgerEntries: 0');
     expect(output).toContain('quarantinedIds: 0');
     expect(output).toContain('unattendedExcludedBacklogItems: 0');
+    expect(output).toContain('runtimeRoutingHints: scoped=0 routed=0 default=0');
     expect(output).toContain('  activeScopedItems:');
     expect(output).toContain('    (none)');
     expect(process.exitCode).toBeUndefined();
