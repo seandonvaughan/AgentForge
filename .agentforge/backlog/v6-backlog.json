@@ -118,6 +118,20 @@
         "packages/cli/src/__tests__/cycle-list-show.test.ts",
         "CHANGELOG.md"
       ]
+    },
+    {
+      "id": "dogfood-009",
+      "title": "Add JSON output for cycle show",
+      "description": "Make single-cycle diagnostics automation-friendly by adding `--json` to `agentforge cycle show <cycleId>`. The JSON output should include projectRoot, cycleId, cycle summary fields already shown by text mode, event count, pending approval/decision metadata when present, PR metadata including agent-prs fallback when cycle.json lacks a cycle-level PR, and available scoring/test/gate fields. Preserve the current text output when `--json` is omitted. Reuse the existing cycle-show loading path; do not change cycle execution semantics. Add focused CLI tests for JSON output shape, agent-prs fallback metadata, missing cycle behavior, and unchanged text output.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": ["feature", "dogfood", "autonomous", "operator-visibility", "json", "cli"],
+      "source": "dogfood-2026-05-27",
+      "files": [
+        "packages/cli/src/commands/autonomous.ts",
+        "packages/cli/src/__tests__/cycle-list-show.test.ts",
+        "CHANGELOG.md"
+      ]
     }
   ]
 }
