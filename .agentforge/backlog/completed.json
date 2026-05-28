@@ -232,6 +232,14 @@
       "cycleId": "9f57d3b9-6a5a-4184-b5d4-157da00ff133",
       "prNumber": 213,
       "reason": "Guided big cycle 2 retained via PR #213, but required operator TypeScript correction after branch verification failure"
+    },
+    {
+      "itemId": "backlog-guided-big-003",
+      "completedAt": "2026-05-28T12:55:14.153Z",
+      "updatedAt": "2026-05-28T12:55:14.153Z",
+      "cycleId": "7fd52ebb-d711-40a4-b423-134a51d70f52",
+      "prNumber": 214,
+      "reason": "Guided big cycle retained via PR #214, but required AgentForge runtime invoke repair after gate retry failed"
     }
   ]
 }
