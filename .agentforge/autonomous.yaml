@@ -13,7 +13,7 @@ budget:
   perAgentUsd: 60
   allowOverageApproval: true
 limits:
-  maxItemsPerSprint: 3
+  maxItemsPerSprint: 1
   maxDurationMinutes: 180
   maxConsecutiveFailures: 5
   maxExecutePhaseFailureRate: 0.5
@@ -45,7 +45,7 @@ sourcing:
   includeTodoMarkers: true
   todoMarkerPattern: TODO\(autonomous\)|FIXME\(autonomous\)
 testing:
-  command: corepack pnpm exec vitest run
+  command: corepack pnpm exec vitest run --maxWorkers=2 --minWorkers=1
   timeoutMinutes: 20
   reporter: json
   saveRawLog: true
