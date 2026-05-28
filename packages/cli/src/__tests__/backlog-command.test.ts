@@ -206,6 +206,7 @@ describe('agentforge backlog status', () => {
     expect(output).toContain('unattendedExcludedBacklogItems: 2');
     expect(output).toContain('runtimeRoutingHints: scoped=2 routed=1 default=1');
     expect(output).toContain('duplicateNormalizedIds: (none)');
+    expect(output).toContain('activeScopedItemsCount: 2');
     expect(output).toContain('- backlog-scoped-task: Scoped Task [complexity=low, source=items.json, scope=packages/cli/src/bin.ts]');
     expect(output).toContain('- backlog-routed-task: Routed Task [complexity=low, source=items.json, scope=packages/cli/src/commands/backlog.ts, runtime=codex-cli, provider=codex-cli]');
     expect(output).not.toContain('sourceFile: items.json');
@@ -255,6 +256,7 @@ describe('agentforge backlog status', () => {
         defaultItems: 1,
       },
       duplicateNormalizedIds: [],
+      activeScopedItemsCount: 2,
       activeScopedItems: [
         {
           id: 'backlog-routed-task',
@@ -316,6 +318,7 @@ describe('agentforge backlog status', () => {
     expect(output).toContain('unattendedExcludedBacklogItems: 0');
     expect(output).toContain('runtimeRoutingHints: scoped=1 routed=0 default=1');
     expect(output).toContain('duplicateNormalizedIds: (none)');
+    expect(output).toContain('activeScopedItemsCount: 1');
     expect(output).toContain('- backlog-items-json-no-id-uses-fallback: No ID uses fallback [complexity=low, source=items.json, scope=README.md]');
     expect(output).not.toContain('Dogfood Raw');
     expect(output).not.toContain('Dogfood Canonical');
@@ -345,6 +348,7 @@ describe('agentforge backlog status', () => {
     expect(output).toContain('unattendedExcludedBacklogItems: 0');
     expect(output).toContain('runtimeRoutingHints: scoped=1 routed=0 default=1');
     expect(output).toContain('duplicateNormalizedIds: (none)');
+    expect(output).toContain('activeScopedItemsCount: 1');
     expect(output).toContain('- backlog-visible: Visible Item [complexity=low, source=items.json, scope=README.md]');
     expect(process.exitCode).toBeUndefined();
   });
@@ -449,6 +453,7 @@ describe('agentforge backlog status', () => {
     expect(output).toContain('unattendedExcludedBacklogItems: 0');
     expect(output).toContain('runtimeRoutingHints: scoped=0 routed=0 default=0');
     expect(output).toContain('duplicateNormalizedIds: (none)');
+    expect(output).toContain('  activeScopedItemsCount: 0');
     expect(output).toContain('  activeScopedItems:');
     expect(output).toContain('    (none)');
     expect(process.exitCode).toBeUndefined();
