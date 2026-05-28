@@ -67,9 +67,15 @@ function resolveScriptInvocation(
   scripts: ScriptDictionary,
 ): string | null {
   const rawTokens = command.trim().split(/\s+/);
-  const tokens = rawTokens[0] === 'corepack' && rawTokens[1] === 'pnpm'
-    ? rawTokens.slice(1)
-    : rawTokens;
+  const wrapperArgs = rawTokens[0] === 'node' && rawTokens[1] === 'scripts/run-pnpm.mjs'
+    ? rawTokens.slice(rawTokens[2] === '--' ? 3 : 2)
+    : null;
+  const withoutWrapper = wrapperArgs === null
+    ? rawTokens
+    : ['pnpm', ...wrapperArgs];
+  const tokens = withoutWrapper[0] === 'corepack' && withoutWrapper[1] === 'pnpm'
+    ? withoutWrapper.slice(1)
+    : withoutWrapper;
   if (tokens.length < 2 || tokens[0] !== 'pnpm') {
     return null;
   }

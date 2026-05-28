@@ -378,7 +378,8 @@ function normalizeBacklogId(input: string): string | null {
   if (!trimmed) return null;
 
   let normalized = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-  normalized = normalized.replace(/^-+|-+$/g, '');
+  while (normalized.startsWith('-')) normalized = normalized.slice(1);
+  while (normalized.endsWith('-')) normalized = normalized.slice(0, -1);
   if (!normalized) return null;
 
   if (normalized === 'backlog') return null;

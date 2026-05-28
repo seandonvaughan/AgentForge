@@ -14,9 +14,9 @@ function createHarnessWithFailures(failingLeafCommands: Set<string>) {
   return { harness, trace };
 }
 
-const DASHBOARD_CHECK = 'corepack pnpm --filter @agentforge/dashboard check';
-const DASHBOARD_BUILD = 'corepack pnpm --filter @agentforge/dashboard build';
-const AUDIT_DEPS = 'corepack pnpm audit --audit-level low';
+const DASHBOARD_CHECK = 'node scripts/run-pnpm.mjs -- --filter @agentforge/dashboard check';
+const DASHBOARD_BUILD = 'node scripts/run-pnpm.mjs -- --filter @agentforge/dashboard build';
+const AUDIT_DEPS = 'node scripts/run-pnpm.mjs -- audit --audit-level low';
 
 describe('dashboard verification adversarial guards', () => {
   it('fails verify:dashboard fast when dashboard check fails', async () => {
