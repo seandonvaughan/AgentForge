@@ -186,6 +186,7 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
       activeScopedItems: activeScoped.map((item) => ({
         id: item.id,
         title: item.title,
+        estimatedComplexity: item.estimatedComplexity,
         runtimeMode: item.runtimeMode ?? null,
         preferredProvider: item.preferredProvider ?? null,
         scopeFiles: item.files ?? [],
@@ -209,6 +210,7 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
 
   for (const item of activeScoped) {
     const hints = [
+      item.estimatedComplexity ? `complexity=${item.estimatedComplexity}` : null,
       `scope=${(item.files ?? []).join(',')}`,
       item.runtimeMode ? `runtime=${item.runtimeMode}` : null,
       item.preferredProvider ? `provider=${item.preferredProvider}` : null,
