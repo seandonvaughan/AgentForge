@@ -99,6 +99,17 @@ interface LoopGuardResetOptions extends WorkspaceAwareOptions {
   json?: boolean;
 }
 
+interface CycleStreakStatusOptions extends WorkspaceAwareOptions {
+  json?: boolean;
+}
+
+interface CycleStreakRecordOptions extends WorkspaceAwareOptions {
+  pr?: string;
+  result?: string;
+  reason?: string;
+  json?: boolean;
+}
+
 interface CycleSummary {
   cycleId: string;
   sprintVersion: string | null;
@@ -153,6 +164,25 @@ interface RuntimeRoutingSummary {
   routedItems: number;
   defaultItems: number;
   decisions: RuntimeRoutingDecision[];
+}
+
+interface CycleStreakEntry {
+  cycleId: string;
+  prNumber: number;
+  result: 'success' | 'failure';
+  reason: string;
+  recordedAt: string;
+  mergeEvidence?: {
+    prUrl?: string;
+    status?: string;
+    mergedAt?: string;
+    openedAt?: string;
+  };
+}
+
+interface CycleStreakLedger {
+  version: 1;
+  entries: CycleStreakEntry[];
 }
 
 const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
@@ -242,6 +272,29 @@ export function registerCycleCommand(program: Command): void {
     .option('--workspace <id>', 'Run against a registered workspace from ~/.agentforge/workspaces.json')
     .option('--json', 'Print machine-readable JSON')
     .action(runLoopGuardResetAction);
+
+  const streak = cycle
+    .command('streak')
+    .description('Record and inspect cross-cycle success streak evidence');
+
+  streak
+    .command('status')
+    .description('Show cycle streak ledger status from .agentforge/cycles/streak-ledger.json')
+    .option('--project-root <path>', 'Project root', process.cwd())
+    .option('--workspace <id>', 'Run against a registered workspace from ~/.agentforge/workspaces.json')
+    .option('--json', 'Print machine-readable JSON')
+    .action(runCycleStreakStatusAction);
+
+  streak
+    .command('record <cycleId>')
+    .description('Record one cycle streak ledger entry (idempotent upsert by cycleId)')
+    .option('--project-root <path>', 'Project root', process.cwd())
+    .option('--workspace <id>', 'Run against a registered workspace from ~/.agentforge/workspaces.json')
+    .option('--pr <number>', 'PR number for this cycle evidence')
+    .option('--result <result>', 'Cycle outcome: success or failure')
+    .option('--reason <text>', 'Operator note describing this outcome')
+    .option('--json', 'Print machine-readable JSON')
+    .action(runCycleStreakRecordAction);
 }
 
 export function registerAutonomousCommand(program: Command): void {
@@ -934,6 +987,113 @@ async function runLoopGuardResetAction(opts: LoopGuardResetOptions): Promise<voi
   console.log('State:        reset to defaults');
 }
 
+async function runCycleStreakStatusAction(opts: CycleStreakStatusOptions): Promise<void> {
+  const projectRoot = await resolveWorkspaceProjectRoot(opts);
+  const ledgerPath = join(projectRoot, '.agentforge', 'cycles', 'streak-ledger.json');
+  const ledger = readCycleStreakLedger(ledgerPath);
+  const entries = sortCycleStreakEntriesNewestFirst(ledger.entries);
+  const consecutiveSuccesses = countConsecutiveSuccessesFromNewest(entries);
+  const latestEntry = entries[0] ?? null;
+
+  if (opts.json) {
+    console.log(JSON.stringify({
+      projectRoot,
+      path: ledgerPath,
+      totalEntries: entries.length,
+      consecutiveSuccesses,
+      latestEntry,
+      entries,
+    }, null, 2));
+    return;
+  }
+
+  console.log('[cycle streak] status');
+  console.log(`Path:         ${ledgerPath}`);
+  console.log(`Entries:      ${entries.length}`);
+  console.log(`Consecutive:  ${consecutiveSuccesses}`);
+  if (!latestEntry) {
+    console.log('Latest:       (none)');
+    return;
+  }
+
+  console.log(`Latest:       ${latestEntry.cycleId}  pr=${latestEntry.prNumber}  result=${latestEntry.result}`);
+  console.log(`Reason:       ${latestEntry.reason}`);
+  console.log(`Recorded:     ${latestEntry.recordedAt}`);
+}
+
+async function runCycleStreakRecordAction(cycleId: string, opts: CycleStreakRecordOptions): Promise<void> {
+  const projectRoot = await resolveWorkspaceProjectRoot(opts);
+  if (!SAFE_ID.test(cycleId)) {
+    console.error(`Invalid cycle id: ${cycleId}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const prNumber = parseRequiredPositiveInteger(opts.pr, '--pr');
+  if (prNumber === null) {
+    process.exitCode = 1;
+    return;
+  }
+
+  const result = normalizeStreakResult(opts.result);
+  if (result === null) {
+    console.error(`Invalid --result value: ${opts.result ?? '(missing)'}. Expected success or failure.`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const reason = normalizeRequiredText(opts.reason);
+  if (reason === null) {
+    console.error('Missing --reason value. Provide a non-empty reason.');
+    process.exitCode = 1;
+    return;
+  }
+
+  const ledgerPath = join(projectRoot, '.agentforge', 'cycles', 'streak-ledger.json');
+  const now = new Date().toISOString();
+  const mergeEvidence = readCycleStreakMergeEvidence(projectRoot, cycleId, prNumber);
+  const nextEntry: CycleStreakEntry = {
+    cycleId,
+    prNumber,
+    result,
+    reason,
+    recordedAt: now,
+    ...(mergeEvidence ? { mergeEvidence } : {}),
+  };
+
+  const ledger = readCycleStreakLedger(ledgerPath);
+  const index = ledger.entries.findIndex((entry) => entry.cycleId === cycleId);
+  const action = index >= 0 ? 'updated' : 'recorded';
+  if (index >= 0) {
+    ledger.entries[index] = nextEntry;
+  } else {
+    ledger.entries.push(nextEntry);
+  }
+
+  mkdirSync(dirname(ledgerPath), { recursive: true });
+  writeFileSync(ledgerPath, `${JSON.stringify({ version: 1, entries: ledger.entries }, null, 2)}\n`, 'utf8');
+
+  const sortedEntries = sortCycleStreakEntriesNewestFirst(ledger.entries);
+  const consecutiveSuccesses = countConsecutiveSuccessesFromNewest(sortedEntries);
+  if (opts.json) {
+    console.log(JSON.stringify({
+      projectRoot,
+      path: ledgerPath,
+      action,
+      consecutiveSuccesses,
+      entry: nextEntry,
+    }, null, 2));
+    return;
+  }
+
+  console.log(`[cycle streak] ${action}: ${cycleId}`);
+  console.log(`Path:         ${ledgerPath}`);
+  console.log(`PR:           ${prNumber}`);
+  console.log(`Result:       ${result}`);
+  console.log(`Reason:       ${reason}`);
+  console.log(`Consecutive:  ${consecutiveSuccesses}`);
+}
+
 async function resolveWorkspaceProjectRoot(options: WorkspaceAwareOptions): Promise<string> {
   let cwd = options.projectRoot;
   try {
@@ -1432,6 +1592,151 @@ function parseLimit(raw: string, fallback: number): number | null {
     return null;
   }
   return parsed ?? fallback;
+}
+
+function parseRequiredPositiveInteger(raw: string | undefined, label: string): number | null {
+  if (raw === undefined || raw.trim().length === 0) {
+    console.error(`Missing ${label} value.`);
+    return null;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    console.error(`Invalid ${label} value: ${raw}`);
+    return null;
+  }
+  return parsed;
+}
+
+function normalizeRequiredText(raw: string | undefined): string | null {
+  if (typeof raw !== 'string') return null;
+  const value = raw.trim();
+  return value.length > 0 ? value : null;
+}
+
+function normalizeStreakResult(raw: string | undefined): 'success' | 'failure' | null {
+  if (raw !== 'success' && raw !== 'failure') return null;
+  return raw;
+}
+
+function readCycleStreakLedger(path: string): CycleStreakLedger {
+  if (!existsSync(path)) return { version: 1, entries: [] };
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown;
+    const rawEntries = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray((parsed as { entries?: unknown } | null)?.entries)
+        ? (parsed as { entries: unknown[] }).entries
+        : [];
+    const entries = rawEntries
+      .map(normalizeCycleStreakEntry)
+      .filter((entry): entry is CycleStreakEntry => entry !== null);
+    return { version: 1, entries };
+  } catch {
+    return { version: 1, entries: [] };
+  }
+}
+
+function normalizeCycleStreakEntry(value: unknown): CycleStreakEntry | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const obj = value as Record<string, unknown>;
+  const cycleId = typeof obj['cycleId'] === 'string' ? obj['cycleId'].trim() : '';
+  if (!cycleId || !SAFE_ID.test(cycleId)) return null;
+
+  const prNumber = typeof obj['prNumber'] === 'number' && Number.isInteger(obj['prNumber']) && obj['prNumber'] > 0
+    ? obj['prNumber']
+    : null;
+  if (prNumber === null) return null;
+
+  const result = obj['result'] === 'success' || obj['result'] === 'failure'
+    ? obj['result']
+    : null;
+  if (result === null) return null;
+
+  const reason = typeof obj['reason'] === 'string' && obj['reason'].trim().length > 0
+    ? obj['reason'].trim()
+    : null;
+  if (reason === null) return null;
+
+  const recordedAt = typeof obj['recordedAt'] === 'string' && obj['recordedAt'].trim().length > 0
+    ? obj['recordedAt']
+    : new Date(0).toISOString();
+
+  const normalized: CycleStreakEntry = {
+    cycleId,
+    prNumber,
+    result,
+    reason,
+    recordedAt,
+  };
+
+  if (obj['mergeEvidence'] && typeof obj['mergeEvidence'] === 'object' && !Array.isArray(obj['mergeEvidence'])) {
+    const evidence = obj['mergeEvidence'] as Record<string, unknown>;
+    const normalizedEvidence = {
+      ...(typeof evidence['prUrl'] === 'string' && evidence['prUrl'].length > 0 ? { prUrl: evidence['prUrl'] } : {}),
+      ...(typeof evidence['status'] === 'string' && evidence['status'].length > 0 ? { status: evidence['status'] } : {}),
+      ...(typeof evidence['mergedAt'] === 'string' && evidence['mergedAt'].length > 0 ? { mergedAt: evidence['mergedAt'] } : {}),
+      ...(typeof evidence['openedAt'] === 'string' && evidence['openedAt'].length > 0 ? { openedAt: evidence['openedAt'] } : {}),
+    };
+    if (Object.keys(normalizedEvidence).length > 0) {
+      normalized.mergeEvidence = normalizedEvidence;
+    }
+  }
+
+  return normalized;
+}
+
+function sortCycleStreakEntriesNewestFirst(entries: CycleStreakEntry[]): CycleStreakEntry[] {
+  return [...entries].sort((left, right) => {
+    const byDate = right.recordedAt.localeCompare(left.recordedAt);
+    if (byDate !== 0) return byDate;
+    return right.cycleId.localeCompare(left.cycleId);
+  });
+}
+
+function countConsecutiveSuccessesFromNewest(entries: CycleStreakEntry[]): number {
+  let count = 0;
+  for (const entry of entries) {
+    if (entry.result !== 'success') {
+      break;
+    }
+    count += 1;
+  }
+  return count;
+}
+
+function readCycleStreakMergeEvidence(
+  projectRoot: string,
+  cycleId: string,
+  prNumber: number,
+): CycleStreakEntry['mergeEvidence'] | null {
+  const cycleDir = join(projectRoot, '.agentforge', 'cycles', cycleId);
+  const cycleJson = readJsonIfExists(join(cycleDir, 'cycle.json')) as Record<string, unknown> | null;
+  const cyclePr = cycleJson && typeof cycleJson.pr === 'object' && cycleJson.pr !== null
+    ? cycleJson.pr as Record<string, unknown>
+    : null;
+
+  const cyclePrNumber = typeof cyclePr?.number === 'number' ? cyclePr.number : null;
+  if (cyclePr && cyclePrNumber === prNumber) {
+    const evidence = {
+      ...(typeof cyclePr.url === 'string' && cyclePr.url.length > 0 ? { prUrl: cyclePr.url } : {}),
+      ...(typeof cyclePr.status === 'string' && cyclePr.status.length > 0 ? { status: cyclePr.status } : {}),
+      ...(typeof cyclePr.mergedAt === 'string' && cyclePr.mergedAt.length > 0 ? { mergedAt: cyclePr.mergedAt } : {}),
+      ...(typeof cyclePr.openedAt === 'string' && cyclePr.openedAt.length > 0 ? { openedAt: cyclePr.openedAt } : {}),
+    };
+    if (Object.keys(evidence).length > 0) return evidence;
+  }
+
+  const agentPr = latestCycleAgentPr(cycleDir);
+  if (agentPr && agentPr.prNumber === prNumber) {
+    const evidence = {
+      ...(typeof agentPr.prUrl === 'string' && agentPr.prUrl.length > 0 ? { prUrl: agentPr.prUrl } : {}),
+      ...(typeof agentPr.status === 'string' && agentPr.status.length > 0 ? { status: agentPr.status } : {}),
+      ...(typeof agentPr.openedAt === 'string' && agentPr.openedAt.length > 0 ? { openedAt: agentPr.openedAt } : {}),
+    };
+    if (Object.keys(evidence).length > 0) return evidence;
+  }
+
+  return null;
 }
 
 

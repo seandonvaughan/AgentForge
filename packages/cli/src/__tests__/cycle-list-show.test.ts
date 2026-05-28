@@ -411,6 +411,165 @@ describe('cycle list/show summaries', () => {
     ]);
   });
 
+  it('prints deterministic streak status when the streak ledger is missing', async () => {
+    await runCli('cycle', 'streak', 'status', '--project-root', projectRoot);
+
+    expect(output()).toContain('[cycle streak] status');
+    expect(output()).toContain('Entries:      0');
+    expect(output()).toContain('Consecutive:  0');
+    expect(output()).toContain('Latest:       (none)');
+  });
+
+  it('records streak entries idempotently by cycleId and emits json when requested', async () => {
+    const cycleId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    writeCycle(cycleId, {
+      cycleId,
+      stage: 'completed',
+      pr: {
+        number: 321,
+        url: 'https://github.com/seandonvaughan/AgentForge/pull/321',
+        status: 'merged',
+        mergedAt: '2026-05-20T00:10:00.000Z',
+      },
+    });
+
+    await runCli(
+      'cycle',
+      'streak',
+      'record',
+      cycleId,
+      '--project-root',
+      projectRoot,
+      '--pr',
+      '321',
+      '--result',
+      'success',
+      '--reason',
+      'Initial success',
+      '--json',
+    );
+
+    const first = JSON.parse(output()) as {
+      action: string;
+      entry: {
+        cycleId: string;
+        prNumber: number;
+        result: string;
+        reason: string;
+        mergeEvidence?: {
+          prUrl?: string;
+          status?: string;
+          mergedAt?: string;
+        };
+      };
+    };
+    expect(first.action).toBe('recorded');
+    expect(first.entry.cycleId).toBe(cycleId);
+    expect(first.entry.result).toBe('success');
+    expect(first.entry.mergeEvidence).toMatchObject({
+      prUrl: 'https://github.com/seandonvaughan/AgentForge/pull/321',
+      status: 'merged',
+      mergedAt: '2026-05-20T00:10:00.000Z',
+    });
+
+    consoleLog.mockClear();
+    await runCli(
+      'cycle',
+      'streak',
+      'record',
+      cycleId,
+      '--project-root',
+      projectRoot,
+      '--pr',
+      '321',
+      '--result',
+      'failure',
+      '--reason',
+      'Regression found',
+      '--json',
+    );
+    const second = JSON.parse(output()) as {
+      action: string;
+      entry: {
+        result: string;
+        reason: string;
+      };
+      consecutiveSuccesses: number;
+    };
+    expect(second.action).toBe('updated');
+    expect(second.entry.result).toBe('failure');
+    expect(second.entry.reason).toBe('Regression found');
+    expect(second.consecutiveSuccesses).toBe(0);
+
+    consoleLog.mockClear();
+    await runCli('cycle', 'streak', 'status', '--project-root', projectRoot, '--json');
+    const status = JSON.parse(output()) as {
+      totalEntries: number;
+      consecutiveSuccesses: number;
+      latestEntry: {
+        cycleId: string;
+        result: string;
+      } | null;
+    };
+    expect(status.totalEntries).toBe(1);
+    expect(status.consecutiveSuccesses).toBe(0);
+    expect(status.latestEntry).toMatchObject({
+      cycleId,
+      result: 'failure',
+    });
+  });
+
+  it('resets consecutive streak count when the newest entry is a failure', async () => {
+    await runCli(
+      'cycle',
+      'streak',
+      'record',
+      'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      '--project-root',
+      projectRoot,
+      '--pr',
+      '401',
+      '--result',
+      'success',
+      '--reason',
+      'Cycle one passed',
+    );
+    consoleLog.mockClear();
+
+    await runCli(
+      'cycle',
+      'streak',
+      'record',
+      'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      '--project-root',
+      projectRoot,
+      '--pr',
+      '402',
+      '--result',
+      'success',
+      '--reason',
+      'Cycle two passed',
+    );
+    consoleLog.mockClear();
+
+    await runCli(
+      'cycle',
+      'streak',
+      'record',
+      'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      '--project-root',
+      projectRoot,
+      '--pr',
+      '403',
+      '--result',
+      'failure',
+      '--reason',
+      'Gate rejected',
+    );
+    expect(output()).toContain('[cycle streak] recorded: ffffffff-ffff-4fff-8fff-ffffffffffff');
+    expect(output()).toContain('Consecutive:  0');
+  });
+
   function writeCycle(
     cycleId: string,
     cycleJson: Record<string, unknown>,
