@@ -192,6 +192,14 @@
       "cycleId": "fc96e5d7-e5fa-4073-a562-63148f0405f0",
       "prNumber": 208,
       "reason": "Merged retained value after manual JSON sourceFile correction"
+    },
+    {
+      "itemId": "backlog-guided-large-016",
+      "completedAt": "2026-05-28T10:22:03.905Z",
+      "updatedAt": "2026-05-28T10:22:03.905Z",
+      "cycleId": "7c2eeec7-b26d-455c-bb0f-b81445192725",
+      "prNumber": 209,
+      "reason": "Merged green dogfood cycle: backlog source file on active status line"
     }
   ]
 }
