@@ -31,10 +31,20 @@ interface CompletedBacklogLedger {
 interface BacklogFileItem {
   id: string;
   title: string;
+  sourceFile: string;
   estimatedComplexity?: 'low' | 'medium' | 'high';
   files?: string[];
   runtimeMode?: 'auto' | 'sdk' | 'claude-code-compat' | 'codex-cli' | 'openai-sdk' | 'anthropic-sdk';
   preferredProvider?: 'claude-code-compat' | 'codex-cli' | 'openai-sdk' | 'anthropic-sdk';
+}
+
+interface DuplicateNormalizedIdSummary {
+  id: string;
+  count: number;
+  items: Array<{
+    title: string;
+    sourceFile: string;
+  }>;
 }
 
 export function registerBacklogCommand(program: Command): void {
@@ -223,21 +233,43 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
   }
 }
 
-function summarizeDuplicateNormalizedIds(items: BacklogFileItem[]): Array<{ id: string; count: number }> {
-  const counts = new Map<string, number>();
+function summarizeDuplicateNormalizedIds(items: BacklogFileItem[]): DuplicateNormalizedIdSummary[] {
+  const byId = new Map<string, BacklogFileItem[]>();
   for (const item of items) {
-    counts.set(item.id, (counts.get(item.id) ?? 0) + 1);
+    const group = byId.get(item.id) ?? [];
+    group.push(item);
+    byId.set(item.id, group);
   }
 
-  return Array.from(counts.entries())
-    .filter(([, count]) => count > 1)
-    .map(([id, count]) => ({ id, count }))
+  return Array.from(byId.entries())
+    .filter(([, matches]) => matches.length > 1)
+    .map(([id, matches]) => ({
+      id,
+      count: matches.length,
+      items: matches
+        .map((item) => ({
+          title: item.title,
+          sourceFile: item.sourceFile,
+        }))
+        .sort((a, b) => {
+          const titleCompare = a.title.localeCompare(b.title);
+          if (titleCompare !== 0) return titleCompare;
+          return a.sourceFile.localeCompare(b.sourceFile);
+        }),
+    }))
     .sort((a, b) => a.id.localeCompare(b.id));
 }
 
-function formatDuplicateNormalizedIds(dupes: Array<{ id: string; count: number }>): string {
+function formatDuplicateNormalizedIds(dupes: DuplicateNormalizedIdSummary[]): string {
   if (dupes.length === 0) return '(none)';
-  return dupes.map((entry) => `${entry.id} x${entry.count}`).join(', ');
+  return dupes
+    .map((entry) => {
+      const sources = entry.items
+        .map((item) => `${item.title} (${item.sourceFile})`)
+        .join('; ');
+      return `${entry.id} x${entry.count}: ${sources}`;
+    })
+    .join(', ');
 }
 
 function readBacklogFileItems(backlogDir: string): BacklogFileItem[] {
@@ -286,6 +318,7 @@ function normalizeBacklogFileItem(raw: unknown, fileName: string): BacklogFileIt
   const item: BacklogFileItem = {
     id,
     title,
+    sourceFile: fileName,
   };
 
   const complexity = typeof obj['estimatedComplexity'] === 'string'

@@ -346,14 +346,23 @@ describe('agentforge backlog status', () => {
     expect(process.exitCode).toBeUndefined();
   });
 
-  it('orders duplicate normalized IDs deterministically by title', async () => {
+  it('reports duplicate normalized IDs with source context deterministically', async () => {
     const backlogDir = join(projectRoot, '.agentforge', 'backlog');
     mkdirSync(backlogDir, { recursive: true });
     writeFileSync(
-      join(backlogDir, 'items.json'),
+      join(backlogDir, 'alpha-a.json'),
       JSON.stringify({
         items: [
           { id: 'alpha', title: 'Zulu', estimatedComplexity: 'low', files: ['README.md'] },
+          { id: 'beta', title: 'Beta', estimatedComplexity: 'low', files: ['README.md'] },
+        ],
+      }),
+      'utf8',
+    );
+    writeFileSync(
+      join(backlogDir, 'alpha-b.json'),
+      JSON.stringify({
+        items: [
           { id: 'alpha!!', title: 'Alpha', estimatedComplexity: 'low', files: ['README.md'] },
         ],
       }),
@@ -366,10 +375,61 @@ describe('agentforge backlog status', () => {
       .map((args: unknown[]) => String(args[0] ?? ''))
       .filter((line: string) => line.startsWith('    - '));
     const output = consoleLog.mock.calls.map((args: unknown[]) => String(args[0] ?? '')).join('\n');
-    expect(output).toContain('duplicateNormalizedIds: backlog-alpha x2');
+    expect(output).toContain(
+      'duplicateNormalizedIds: backlog-alpha x2: Alpha (alpha-b.json); Zulu (alpha-a.json)',
+    );
     expect(scopedLines).toEqual([
       '    - backlog-alpha: Alpha [complexity=low, scope=README.md]',
       '    - backlog-alpha: Zulu [complexity=low, scope=README.md]',
+      '    - backlog-beta: Beta [complexity=low, scope=README.md]',
+    ]);
+  });
+
+  it('prints duplicate normalized ID source context in JSON', async () => {
+    const backlogDir = join(projectRoot, '.agentforge', 'backlog');
+    mkdirSync(backlogDir, { recursive: true });
+    writeFileSync(
+      join(backlogDir, 'beta.json'),
+      JSON.stringify({
+        items: [
+          { id: 'beta', title: 'Beta Two', estimatedComplexity: 'low', files: ['README.md'] },
+        ],
+      }),
+      'utf8',
+    );
+    writeFileSync(
+      join(backlogDir, 'alpha.json'),
+      JSON.stringify({
+        items: [
+          { id: 'alpha', title: 'Alpha Two', estimatedComplexity: 'low', files: ['README.md'] },
+          { id: 'backlog-alpha', title: 'Alpha One', estimatedComplexity: 'low', files: ['README.md'] },
+          { id: 'beta!!', title: 'Beta One', estimatedComplexity: 'low', files: ['README.md'] },
+        ],
+      }),
+      'utf8',
+    );
+
+    await runCli(['backlog', 'status', '--project-root', projectRoot, '--json']);
+
+    const output = consoleLog.mock.calls.map((args: unknown[]) => String(args[0] ?? '')).join('\n');
+    const parsed = JSON.parse(output);
+    expect(parsed.duplicateNormalizedIds).toEqual([
+      {
+        id: 'backlog-alpha',
+        count: 2,
+        items: [
+          { title: 'Alpha One', sourceFile: 'alpha.json' },
+          { title: 'Alpha Two', sourceFile: 'alpha.json' },
+        ],
+      },
+      {
+        id: 'backlog-beta',
+        count: 2,
+        items: [
+          { title: 'Beta One', sourceFile: 'alpha.json' },
+          { title: 'Beta Two', sourceFile: 'beta.json' },
+        ],
+      },
     ]);
   });
 
