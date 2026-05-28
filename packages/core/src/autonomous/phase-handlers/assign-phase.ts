@@ -12,6 +12,14 @@ import { join, dirname } from 'node:path';
 import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
 import { pickAgent } from '../routing/router.js';
 import type { RoutingIndex } from '../routing/routing-index.js';
+import {
+  resolveJobRouting,
+  DEFAULT_JOB_ROUTING_POLICY,
+  type RoutableJob,
+} from '../routing/job-router.js';
+import { getProviderAvailability } from '../../runtime/provider-availability.js';
+import type { ProviderAvailabilityMap } from '../../runtime/provider-availability.js';
+import type { ExecutionProviderKind, RuntimeMode } from '../../runtime/types.js';
 
 interface AssignmentHint {
   agent_id: string;
@@ -26,7 +34,15 @@ interface SprintItem {
   description?: string;
   assignee?: string;
   tags?: string[];
+  files?: string[];
+  estimatedComplexity?: 'high' | 'medium' | 'low';
+  priorFailureCount?: number;
   assignment_hint?: AssignmentHint;
+  // Per-job routing decision written by the assign phase; read by execute.
+  preferredProvider?: ExecutionProviderKind;
+  runtimeMode?: RuntimeMode;
+  tier?: string;
+  effort?: string;
   [key: string]: unknown;
 }
 
@@ -146,6 +162,48 @@ export function inferAssignee(item: SprintItem, projectRoot?: string): string {
   return 'coder';
 }
 
+/**
+ * Compute and write the per-job routing decision onto a sprint item.
+ *
+ * Calls the pure `resolveJobRouting` with the supplied availability snapshot
+ * and copies the returned fields onto the item so the execute phase reads
+ * `item.preferredProvider` / `item.runtimeMode` directly. Existing
+ * preferredProvider/runtimeMode hints already on the item (e.g. from scoring)
+ * are preserved — routing only fills fields that are not already set.
+ */
+export function applyJobRouting(
+  item: SprintItem,
+  availability?: ProviderAvailabilityMap,
+): void {
+  const job: RoutableJob = {
+    id: item.id,
+    itemId: item.id,
+    title: item.title,
+    ...(item.description !== undefined ? { description: item.description } : {}),
+    ...(item.tags !== undefined ? { tags: item.tags } : {}),
+    ...(item.files !== undefined ? { files: item.files } : {}),
+    ...(item.estimatedComplexity !== undefined
+      ? { estimatedComplexity: item.estimatedComplexity }
+      : {}),
+    ...(item.priorFailureCount !== undefined
+      ? { priorFailureCount: item.priorFailureCount }
+      : {}),
+  };
+
+  const decision = resolveJobRouting(job, DEFAULT_JOB_ROUTING_POLICY, availability);
+
+  // Preserve any explicit upstream hint; otherwise write the routed decision.
+  if (item.preferredProvider === undefined) {
+    item.preferredProvider = decision.preferredProvider;
+  }
+  if (item.runtimeMode === undefined) {
+    item.runtimeMode = decision.runtimeMode;
+  }
+  // tier/effort are audit/metadata fields; always record the routed values.
+  item.tier = decision.tier;
+  item.effort = decision.effort;
+}
+
 export function makeAssignPhaseHandler() {
   return (ctx: PhaseContext) => runAssignPhase(ctx);
 }
@@ -184,11 +242,25 @@ export async function runAssignPhase(ctx: PhaseContext): Promise<PhaseResult> {
     // Clear per-cycle cache so each cycle loads a fresh routing index
     clearRoutingIndexCache();
 
+    // Per-job routing: derive the best provider/model/effort PER ITEM from the
+    // item's own characteristics. Read the availability snapshot once so all
+    // items in this plan are routed against the same view; a provider that is
+    // down causes the affected items to fall back to their configured
+    // alternate rather than the whole cycle picking one global runtime.
+    let availability: ProviderAvailabilityMap | undefined;
+    try {
+      availability = getProviderAvailability();
+    } catch {
+      // Backward-compatible: if probing fails, route as if all available.
+      availability = undefined;
+    }
+
     for (const item of items) {
       if (!item.assignee || item.assignee.trim() === '') {
         item.assignee = inferAssignee(item, ctx.projectRoot);
         assignmentCount += 1;
       }
+      applyJobRouting(item, availability);
       byAgent[item.assignee] = (byAgent[item.assignee] ?? 0) + 1;
     }
 

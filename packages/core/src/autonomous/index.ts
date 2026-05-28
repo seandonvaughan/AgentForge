@@ -40,6 +40,7 @@ export * from './runtime-adapter.js';
 export * from './workspace-telemetry-adapters.js';
 export * from './workspace-registry.js';
 export * from './phase-handlers/index.js';
+export * from './routing/job-router.js';
 export * from './exec/pr-opener.js';
 export * from './exec/real-test-runner.js';
 export * from './exec/git-ops.js';
