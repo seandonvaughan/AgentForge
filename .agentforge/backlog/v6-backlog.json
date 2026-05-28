@@ -332,6 +332,26 @@
         "packages/server/src/routes/v5/cycles.ts",
         "packages/server/src/routes/v5/__tests__/cycles-detail.test.ts"
       ]
+    },
+    {
+      "id": "guided-large-013",
+      "title": "Avoid stale open PR status in cycle streak evidence",
+      "description": "`agentforge cycle streak record` can fall back to `.agentforge/cycles/<cycleId>/agent-prs.json` for merge evidence, but that ledger often still says `status: \"open\"` after the operator has merged the PR. Avoid recording misleading stale `open` status as success evidence: keep `prUrl` and `openedAt` from agent-prs fallback, preserve non-open statuses when present, and preserve richer `cycle.json` PR evidence including `mergedAt` unchanged. Add focused CLI tests proving an agent-prs-only success entry with `status: \"open\"` omits `mergeEvidence.status`, while a cycle.json merged PR still records `status: \"merged\"` and `mergedAt`.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": [
+        "feature",
+        "guided-large",
+        "dogfood",
+        "operator-visibility",
+        "streak",
+        "cli"
+      ],
+      "source": "guided-large-2026-05-28",
+      "files": [
+        "packages/cli/src/commands/autonomous.ts",
+        "packages/cli/src/__tests__/cycle-list-show.test.ts"
+      ]
     }
   ]
 }
