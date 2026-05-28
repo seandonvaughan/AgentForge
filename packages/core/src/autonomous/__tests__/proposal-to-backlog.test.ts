@@ -144,6 +144,40 @@ describe('ProposalToBacklog', () => {
     expect(planned.some((item) => item.title === 'Executed idea')).toBe(false);
   });
 
+  it('trims planned research idea ids before matching candidates', async () => {
+    mkdirSync(join(projectRoot, '.agentforge', 'research-runs', 'rd-run-padded'), { recursive: true });
+    writeFileSync(
+      join(projectRoot, '.agentforge', 'research-runs', 'rd-run-padded', 'run.json'),
+      JSON.stringify({
+        runId: 'rd-run-padded',
+        plannedCycle: { ideaIds: ['  idea-padded  ', '   '] },
+        ideas: [
+          {
+            ideaId: 'idea-padded',
+            title: 'Whitespace planned idea',
+            problem: 'P',
+            hypothesis: 'H',
+            expectedImpact: 'E',
+            acceptanceChecks: ['A1'],
+            touchedAreas: ['packages/core/src/autonomous/proposal-to-backlog.ts'],
+            risk: 'low',
+            status: 'planned',
+          },
+        ],
+      }),
+    );
+
+    const backlog = await new ProposalToBacklog(adapter, projectRoot, config).build();
+    const planned = backlog.filter((item) => item.source === 'research-plan');
+    expect(planned).toHaveLength(1);
+    expect(planned[0]).toMatchObject({
+      id: 'backlog-research-rd-run-padded-idea-padded',
+      title: 'Whitespace planned idea',
+      source: 'research-plan',
+      estimatedComplexity: 'low',
+    });
+  });
+
   it('ignores malformed and partial research runs', async () => {
     mkdirSync(join(projectRoot, '.agentforge', 'research-runs', 'rd-bad-json'), { recursive: true });
     writeFileSync(join(projectRoot, '.agentforge', 'research-runs', 'rd-bad-json', 'run.json'), '{ bad');

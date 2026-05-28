@@ -319,7 +319,9 @@ export class ProposalToBacklog {
       if (!plannedCycle || typeof plannedCycle !== 'object') continue;
 
       const ideaIds = Array.isArray((plannedCycle as { ideaIds?: unknown }).ideaIds)
-        ? (plannedCycle as { ideaIds: unknown[] }).ideaIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+        ? (plannedCycle as { ideaIds: unknown[] }).ideaIds
+          .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+          .map((id) => id.trim())
         : [];
       if (ideaIds.length === 0) continue;
 
