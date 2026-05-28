@@ -74,6 +74,30 @@ export class ProviderResolver {
     );
   }
 
+  /**
+   * Resolve an ordered provider preference list to the ordered, eligible
+   * transports backing it — for the auto-switch path. Each preference kind is
+   * mapped to its transport only when both the availability snapshot (item 2)
+   * and the transport's own isAvailable() accept it; unavailable or unknown
+   * kinds are skipped, and duplicate kinds are de-duplicated so the same
+   * transport is never offered (or retried) twice.
+   */
+  async resolveOrdered(
+    request: ExecutionRequest,
+    preference: ExecutionProviderKind[],
+  ): Promise<Array<{ transport: ExecutionTransport; runtimeModeResolved: RuntimeMode }>> {
+    const seen = new Set<ExecutionProviderKind>();
+    const ordered: Array<{ transport: ExecutionTransport; runtimeModeResolved: RuntimeMode }> = [];
+    for (const kind of preference) {
+      if (seen.has(kind)) continue;
+      seen.add(kind);
+      const transport = await this.findTransport(kind, request);
+      if (!transport) continue;
+      ordered.push({ transport, runtimeModeResolved: this.runtimeModeForProvider(kind) });
+    }
+    return ordered;
+  }
+
   private kindForForcedMode(mode: RuntimeMode): ExecutionProviderKind | null {
     if (mode === 'sdk' || mode === 'anthropic-sdk') return 'anthropic-sdk';
     if (mode === 'cli' || mode === 'claude-cli' || mode === 'claude-code-compat') return 'claude-code-compat';

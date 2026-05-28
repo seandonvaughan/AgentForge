@@ -105,6 +105,18 @@ export class CodexAuthError extends TransportError {
   }
 }
 
+/**
+ * The classified-retriable set: true only for a {@link TransportError} whose
+ * `retryable` flag is set (timeout, rate-limit, network, Codex auth). Plain
+ * errors and non-retriable transport errors (auth-missing, invalid-request)
+ * return false. This is the single predicate the auto-switch path consults to
+ * decide whether to fail over to the next provider — never a message-string
+ * heuristic.
+ */
+export function isRetriableTransportError(err: unknown): boolean {
+  return err instanceof TransportError && err.retryable === true;
+}
+
 // ---------------------------------------------------------------------------
 // Helper: classify a raw error from the Anthropic SDK or node:child_process
 // into the appropriate TransportError subtype.

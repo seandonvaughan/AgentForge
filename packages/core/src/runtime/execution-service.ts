@@ -1,16 +1,23 @@
 import type { WorkspaceAdapter } from '@agentforge/db';
-import type { AgentRuntimeConfig, RunOptions, RunResult } from '../agent-runtime/types.js';
+import type {
+  AgentRuntimeConfig,
+  ProviderSwitchEvent,
+  RunOptions,
+  RunResult,
+} from '../agent-runtime/types.js';
 import { MODEL_IDS } from '../agent-runtime/types.js';
 import { resolveMode } from './execution-service-mode.js';
 import type { ExecutionServiceMode } from './execution-service-mode.js';
 import { resolveProviderModelProfiles } from './model-profiles.js';
 import { ProviderResolver } from './provider-resolver.js';
 import { RuntimeSession } from './runtime-session.js';
+import { isRetriableTransportError } from './transport-errors.js';
 import { AnthropicSdkTransport } from './transports/anthropic-sdk-transport.js';
 import { ClaudeCodeCompatTransport } from './transports/claude-code-compat-transport.js';
 import { CodexCliTransport } from './transports/codex-cli-transport.js';
 import { OpenAiSdkTransport } from './transports/openai-sdk-transport.js';
 import type {
+  ExecutionProviderKind,
   ExecutionRequest,
   ExecutionResult,
   ExecutionStreamEvent,
@@ -121,6 +128,12 @@ export class ExecutionService {
     session.start();
     const requestedMode = opts.runtimeMode ?? config.runtimeMode ?? 'auto';
 
+    // Auto-switch path: an ordered provider preference enables failover across
+    // providers on classified-retriable errors.
+    if (opts.providerPreference && opts.providerPreference.length > 0) {
+      return this.runWithFailover(opts.providerPreference, request, session, modelId);
+    }
+
     try {
       const { transport, runtimeModeResolved } = await this.resolver.resolve(requestedMode, request);
       try {
@@ -132,6 +145,56 @@ export class ExecutionService {
     } catch (error) {
       return session.completeFailure(modelId, requestedMode, error);
     }
+  }
+
+  /**
+   * Try each provider in the ordered preference list, switching to the next
+   * eligible transport ONLY on a classified-retriable error. A non-retriable
+   * error (e.g. invalid request) surfaces immediately with no switch. The same
+   * transport is never tried twice (resolveOrdered de-duplicates). The returned
+   * RunResult.providerKind is whichever transport actually produced the result
+   * (proving real re-dispatch), and providerSwitches records each hop.
+   */
+  private async runWithFailover(
+    preference: ExecutionProviderKind[],
+    request: ExecutionRequest,
+    session: RuntimeSession,
+    modelId: string,
+  ): Promise<RunResult> {
+    const candidates = await this.resolver.resolveOrdered(request, preference);
+    if (candidates.length === 0) {
+      return session.completeFailure(
+        modelId,
+        'auto',
+        new Error(`No available transport among provider preference: ${preference.join(', ')}`),
+      );
+    }
+
+    const switches: ProviderSwitchEvent[] = [];
+    for (let i = 0; i < candidates.length; i += 1) {
+      const { transport, runtimeModeResolved } = candidates[i]!;
+      try {
+        const execution = await transport.execute(request);
+        const result = session.completeSuccess(execution, runtimeModeResolved);
+        return switches.length > 0 ? { ...result, providerSwitches: switches } : result;
+      } catch (error) {
+        const next = candidates[i + 1];
+        if (isRetriableTransportError(error) && next) {
+          switches.push({
+            from: transport.kind,
+            to: next.transport.kind,
+            reason: error instanceof Error ? error.message : String(error),
+          });
+          continue;
+        }
+        const result = session.completeFailure(modelId, runtimeModeResolved, error, transport.kind);
+        return switches.length > 0 ? { ...result, providerSwitches: switches } : result;
+      }
+    }
+
+    // Unreachable: the final candidate always returns via success or the
+    // no-next failure branch above. Satisfy the type checker defensively.
+    return session.completeFailure(modelId, 'auto', new Error('Provider failover exhausted'));
   }
 
   async runStreaming(

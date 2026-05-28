@@ -32,6 +32,13 @@ export interface RunOptions {
   budgetUsd?: number;        // hard stop if cost would exceed this
   runtimeMode?: RuntimeMode;
   preferredProvider?: ExecutionProviderKind;
+  /**
+   * Ordered provider failover list. When set (length > 0), ExecutionService.run
+   * tries each provider in order, switching to the next on a classified-retriable
+   * error (see isRetriableTransportError). Absent → single-provider resolution
+   * with no failover (legacy behavior).
+   */
+  providerPreference?: ExecutionProviderKind[];
   /** Optional provider-neutral tool/capability hints for CLI runtimes. */
   allowedTools?: string[];
   cwd?: string;
@@ -75,9 +82,21 @@ export interface RunResult {
   status: 'completed' | 'failed';
   providerKind?: ExecutionProviderKind;
   runtimeModeResolved?: RuntimeMode;
+  /**
+   * Provider auto-switch trail (item 8). Present and non-empty when one or more
+   * retriable failures caused failover; each entry records the hop and reason.
+   */
+  providerSwitches?: ProviderSwitchEvent[];
   /** Present when the transport validated a requested structured output schema. */
   schemaValidation?: { ok: boolean; error?: string };
   error?: string;
+}
+
+/** A single auto-switch hop: `from` failed retriably and the run moved to `to`. */
+export interface ProviderSwitchEvent {
+  from: ExecutionProviderKind;
+  to: ExecutionProviderKind;
+  reason: string;
 }
 
 // Model pricing per 1M tokens (input / output)
