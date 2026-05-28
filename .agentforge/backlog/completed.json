@@ -176,6 +176,14 @@
       "cycleId": "25e1b146-5435-4cec-83b4-73460706cafd",
       "prNumber": 206,
       "reason": "Merged green dogfood cycle: stale open PR streak evidence suppression"
+    },
+    {
+      "itemId": "backlog-guided-large-014",
+      "completedAt": "2026-05-28T09:26:12.835Z",
+      "updatedAt": "2026-05-28T09:26:12.835Z",
+      "cycleId": "c57a5c39-8a8d-46b0-b3af-fe89c07a222b",
+      "prNumber": 207,
+      "reason": "Merged retained value after failed cycle and manual correction: normalized stale open streak fallback status"
     }
   ]
 }
