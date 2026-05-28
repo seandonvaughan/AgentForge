@@ -14,6 +14,7 @@ All notable changes to AgentForge are documented in this file.
 - Added `agentforge cycle loop-guard status --json` to emit deterministic machine-readable loop-guard state for automation and unattended operator checks.
 - Added `agentforge cycle loop-guard reset --json` to emit deterministic machine-readable reset confirmation and defaulted state for automation-driven recovery flows.
 - Added `agentforge cycle list --json` to emit deterministic machine-readable cycle summaries for unattended operator visibility and automation.
+- Added `agentforge cycle list --stage <stage>` (plus `--json`) to filter cycle summaries by stage for faster failed-cycle triage and operator visibility.
 - Added `agentforge cycle show --json` to emit machine-readable per-cycle detail output while preserving legacy text-mode output by default.
 - Added `agentforge cycle streak status` and `agentforge cycle streak record <cycleId>` with optional `--json`, durable ledger storage at `.agentforge/cycles/streak-ledger.json`, idempotent upsert-by-cycle recording, and consecutive-success streak visibility.
 - Added `agentforge cycle assess-pr <cycleId>` (with `--json`) for deterministic post-cycle PR merge-readiness assessment from existing cycle artifacts (stage, approvals, gate verdict, review findings, execute failures, and test outcomes).
