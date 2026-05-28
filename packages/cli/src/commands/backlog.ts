@@ -33,6 +33,8 @@ interface BacklogFileItem {
   title: string;
   estimatedComplexity?: 'low' | 'medium' | 'high';
   files?: string[];
+  runtimeMode?: 'auto' | 'sdk' | 'claude-code-compat' | 'codex-cli' | 'openai-sdk' | 'anthropic-sdk';
+  preferredProvider?: 'claude-code-compat' | 'codex-cli' | 'openai-sdk' | 'anthropic-sdk';
 }
 
 export function registerBacklogCommand(program: Command): void {
@@ -166,6 +168,8 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
       if (idCompare !== 0) return idCompare;
       return a.title.localeCompare(b.title);
     });
+  const routedScoped = activeScoped.filter((item) => item.runtimeMode !== undefined || item.preferredProvider !== undefined);
+  const defaultScoped = activeScoped.length - routedScoped.length;
 
   if (opts.json) {
     console.log(JSON.stringify({
@@ -174,7 +178,17 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
       completedLedgerEntries: completed.entries.length,
       quarantinedIds: quarantineIds.size,
       unattendedExcludedBacklogItems: unattendedExcluded.length,
-      activeScopedItems: activeScoped.map((item) => ({ id: item.id, title: item.title })),
+      runtimeRoutingHints: {
+        scopedItems: activeScoped.length,
+        routedItems: routedScoped.length,
+        defaultItems: defaultScoped,
+      },
+      activeScopedItems: activeScoped.map((item) => ({
+        id: item.id,
+        title: item.title,
+        runtimeMode: item.runtimeMode ?? null,
+        preferredProvider: item.preferredProvider ?? null,
+      })),
     }, null, 2));
     return;
   }
@@ -185,6 +199,7 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
   console.log(`  completedLedgerEntries: ${completed.entries.length}`);
   console.log(`  quarantinedIds: ${quarantineIds.size}`);
   console.log(`  unattendedExcludedBacklogItems: ${unattendedExcluded.length}`);
+  console.log(`  runtimeRoutingHints: scoped=${activeScoped.length} routed=${routedScoped.length} default=${defaultScoped}`);
   console.log('  activeScopedItems:');
   if (activeScoped.length === 0) {
     console.log('    (none)');
@@ -192,7 +207,12 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
   }
 
   for (const item of activeScoped) {
-    console.log(`    - ${item.id}: ${item.title}`);
+    const hints = [
+      item.runtimeMode ? `runtime=${item.runtimeMode}` : null,
+      item.preferredProvider ? `provider=${item.preferredProvider}` : null,
+    ].filter((hint): hint is string => hint !== null);
+    const suffix = hints.length > 0 ? ` [${hints.join(', ')}]` : '';
+    console.log(`    - ${item.id}: ${item.title}${suffix}`);
   }
 }
 
@@ -256,6 +276,32 @@ function normalizeBacklogFileItem(raw: unknown, fileName: string): BacklogFileIt
     : [];
   if (files.length > 0) {
     item.files = files;
+  }
+
+  const runtimeMode = typeof obj['runtimeMode'] === 'string'
+    ? obj['runtimeMode']
+    : undefined;
+  if (
+    runtimeMode === 'auto'
+    || runtimeMode === 'sdk'
+    || runtimeMode === 'claude-code-compat'
+    || runtimeMode === 'codex-cli'
+    || runtimeMode === 'openai-sdk'
+    || runtimeMode === 'anthropic-sdk'
+  ) {
+    item.runtimeMode = runtimeMode;
+  }
+
+  const preferredProvider = typeof obj['preferredProvider'] === 'string'
+    ? obj['preferredProvider']
+    : undefined;
+  if (
+    preferredProvider === 'claude-code-compat'
+    || preferredProvider === 'codex-cli'
+    || preferredProvider === 'openai-sdk'
+    || preferredProvider === 'anthropic-sdk'
+  ) {
+    item.preferredProvider = preferredProvider;
   }
 
   return item;
