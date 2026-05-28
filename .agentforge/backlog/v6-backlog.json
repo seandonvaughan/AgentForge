@@ -560,6 +560,28 @@
         "packages/cli/src/__tests__/cycle-list-show.test.ts",
         "CHANGELOG.md"
       ]
+    },
+    {
+      "id": "guided-big-006",
+      "title": "Add source filtering to backlog status",
+      "description": "Add a small but useful operator control to `agentforge backlog status`: an optional `--source <source>` filter for active scoped items. Support `backlog-file`, `research-plan`, and `all` (default). The filter should affect the active scoped item list, `activeScopedItemsCount`, `readyForCycle`, `runtimeRoutingHints`, and duplicate diagnostics, while preserving the unfiltered source counts `activeBacklogFileItems` and `activeResearchPlanItems`. Text output should show the selected source filter only when it is not `all`; JSON output should include `sourceFilter`. Invalid source values should print a clear error and set a non-zero exit code. Preserve completed/quarantine filtering and existing no-source behavior. Add focused CLI tests for text filtering to research-plan, JSON filtering to backlog-file, default all behavior, and invalid source handling. Update changelog. Do not change cycle execution or research planning semantics.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "tags": [
+        "feature",
+        "guided-big",
+        "dogfood",
+        "operator-visibility",
+        "backlog",
+        "research",
+        "cli"
+      ],
+      "source": "guided-big-2026-05-28",
+      "files": [
+        "packages/cli/src/commands/backlog.ts",
+        "packages/cli/src/__tests__/backlog-command.test.ts",
+        "CHANGELOG.md"
+      ]
     }
   ]
 }
