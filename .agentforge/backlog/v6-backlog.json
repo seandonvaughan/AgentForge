@@ -194,6 +194,19 @@
         "packages/core/src/autonomous/sprint-generator.ts",
         "packages/core/src/autonomous/__tests__/sourcing-stability.test.ts"
       ]
+    },
+    {
+      "id": "guided-large-005",
+      "title": "Show runtime routing hints in backlog status",
+      "description": "Extend `agentforge backlog status --json` and text output so active scoped backlog-file items include runtimeMode and preferredProvider when present. Preserve current counts, filtering, and output shape for items without hints. This makes the new Stream B planning hints visible before a cycle spends runtime. Add focused CLI tests covering routed and default active scoped items.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": ["feature", "guided-large", "stream-b", "runtime-routing", "operator-visibility", "cli"],
+      "source": "guided-large-2026-05-27",
+      "files": [
+        "packages/cli/src/commands/backlog.ts",
+        "packages/cli/src/__tests__/backlog-command.test.ts"
+      ]
     }
   ]
 }
