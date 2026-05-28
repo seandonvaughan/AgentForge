@@ -372,6 +372,26 @@
         "packages/cli/src/commands/autonomous.ts",
         "packages/cli/src/__tests__/cycle-list-show.test.ts"
       ]
+    },
+    {
+      "id": "guided-large-015",
+      "title": "Show source file for active backlog status items",
+      "description": "Extend `agentforge backlog status` so each active scoped backlog-file item exposes the source backlog JSON file it came from. In `--json` output, add a deterministic `sourceFile` field to each `activeScopedItems[]` entry when known. In text output, include the source file on the active item line without changing counts or filtering behavior. Preserve duplicate diagnostics, completion/quarantine filtering, runtime/provider hints, complexity, and scope file output. Add focused CLI tests proving source file appears for active items in both text and JSON output.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": [
+        "feature",
+        "guided-large",
+        "dogfood",
+        "operator-visibility",
+        "backlog",
+        "cli"
+      ],
+      "source": "guided-large-2026-05-28",
+      "files": [
+        "packages/cli/src/commands/backlog.ts",
+        "packages/cli/src/__tests__/backlog-command.test.ts"
+      ]
     }
   ]
 }
