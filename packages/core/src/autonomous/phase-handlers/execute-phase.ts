@@ -1227,6 +1227,10 @@ export async function runExecutePhase(
               : extractBreakdownFromAgentRun({
                   model: runModel,
                   ...(runCapabilityTier ? { capabilityTier: runCapabilityTier } : {}),
+                  // Price the fallback path by the provider/model that actually
+                  // ran so Codex/OpenAI runs aren't mispriced as Anthropic.
+                  ...(resolvedProvider ? { resolvedProvider } : {}),
+                  resolvedModelId: runModel,
                   usage: {
                     input_tokens: (result as any)?.usage?.input_tokens ?? 0,
                     output_tokens: (result as any)?.usage?.output_tokens ?? 0,

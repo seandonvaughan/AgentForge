@@ -208,6 +208,10 @@ export class RuntimeAdapter implements RuntimeForScoring {
       model: result.model,
       usage,
       ...(result.capabilityTier ? { capabilityTier: result.capabilityTier } : {}),
+      // Price by the provider/model that actually ran (item 1's resolved values),
+      // so a Codex/OpenAI run is billed against the OpenAI table, not Anthropic.
+      ...(result.providerKind ? { resolvedProvider: result.providerKind } : {}),
+      ...(result.model ? { resolvedModelId: result.model } : {}),
     };
     const breakdown = extractBreakdownFromAgentRun(breakdownRun);
     return {
@@ -322,6 +326,9 @@ export class RuntimeAdapter implements RuntimeForScoring {
       model: runResult.model,
       usage: supervisorUsage,
       ...(runResult.capabilityTier ? { capabilityTier: runResult.capabilityTier } : {}),
+      // Price by the provider/model that actually ran (item 1's resolved values).
+      ...(runResult.providerKind ? { resolvedProvider: runResult.providerKind } : {}),
+      ...(runResult.model ? { resolvedModelId: runResult.model } : {}),
     };
     const supervisorBreakdown = extractBreakdownFromAgentRun(supervisorBreakdownRun);
     return {

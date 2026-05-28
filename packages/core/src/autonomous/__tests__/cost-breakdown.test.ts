@@ -301,6 +301,94 @@ describe('mergeBreakdowns', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Provider-keyed pricing (v7 item 3 — unify cost across Claude and Codex/OpenAI)
+// ---------------------------------------------------------------------------
+
+describe('extractBreakdownFromAgentRun — resolved provider pricing', () => {
+  it('prices a codex-cli run using the OpenAI/Codex table, NOT Anthropic', () => {
+    // gpt-5.3-codex: $1.75/M input, $14/M output.
+    // 1M input + 1M output = 1.75 + 14.00 = 15.75.
+    // The same tokens under Anthropic sonnet pricing would be 3 + 15 = 18.00.
+    const run = makeRun({
+      model: 'gpt-5.3-codex',
+      resolvedProvider: 'codex-cli',
+      resolvedModelId: 'gpt-5.3-codex',
+      usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
+    });
+    const bd = extractBreakdownFromAgentRun(run);
+
+    expect(bd.inputTokens.usd).toBeCloseTo(1.75, 6);
+    expect(bd.outputTokens.usd).toBeCloseTo(14.0, 6);
+    expect(bd.totalUsd).toBeCloseTo(15.75, 6);
+
+    // Anti-fake guard: a breakdown that always applies Anthropic pricing would
+    // report 18.00 for these tokens. Prove we did NOT.
+    expect(bd.totalUsd).not.toBeCloseTo(18.0, 6);
+  });
+
+  it('prices an openai-sdk run using the OpenAI table keyed off resolvedModelId', () => {
+    // gpt-5.4: $2.5/M input, $15/M output.
+    const run = makeRun({
+      model: 'gpt-5.4',
+      resolvedProvider: 'openai-sdk',
+      resolvedModelId: 'gpt-5.4',
+      usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
+    });
+    const bd = extractBreakdownFromAgentRun(run);
+
+    expect(bd.inputTokens.usd).toBeCloseTo(2.5, 6);
+    expect(bd.outputTokens.usd).toBeCloseTo(15.0, 6);
+    expect(bd.totalUsd).toBeCloseTo(17.5, 6);
+  });
+
+  it('still prices anthropic-sdk runs with the Anthropic tier table', () => {
+    const run = makeRun({
+      model: 'claude-sonnet-4-6',
+      resolvedProvider: 'anthropic-sdk',
+      resolvedModelId: 'claude-sonnet-4-6',
+      usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
+    });
+    const bd = extractBreakdownFromAgentRun(run);
+
+    expect(bd.totalUsd).toBeCloseTo(18.0, 6);
+  });
+
+  it('keys OpenAI pricing off resolvedModelId even when model says otherwise', () => {
+    // resolvedModelId is the source of truth; a stale `model` must not win.
+    const run = makeRun({
+      model: 'claude-sonnet-4-6',
+      resolvedProvider: 'codex-cli',
+      resolvedModelId: 'gpt-5.3-codex',
+      usage: { input_tokens: 1_000_000, output_tokens: 0 },
+    });
+    const bd = extractBreakdownFromAgentRun(run);
+    expect(bd.inputTokens.usd).toBeCloseTo(1.75, 6);
+  });
+
+  it('a cycle mixing providers sums the two DIFFERENT correct figures', () => {
+    const codexRun = makeRun({
+      model: 'gpt-5.3-codex',
+      resolvedProvider: 'codex-cli',
+      resolvedModelId: 'gpt-5.3-codex',
+      usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 }, // 15.75
+    });
+    const anthropicRun = makeRun({
+      model: 'claude-sonnet-4-6',
+      resolvedProvider: 'anthropic-sdk',
+      resolvedModelId: 'claude-sonnet-4-6',
+      usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 }, // 18.00
+    });
+
+    const merged = mergeBreakdowns(
+      extractBreakdownFromAgentRun(codexRun),
+      extractBreakdownFromAgentRun(anthropicRun),
+    );
+
+    expect(merged.totalUsd).toBeCloseTo(33.75, 6);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Round-trip: extract then merge
 // ---------------------------------------------------------------------------
 

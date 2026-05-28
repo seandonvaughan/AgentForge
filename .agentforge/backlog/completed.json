@@ -285,6 +285,12 @@
       "completedAt": "2026-05-28T18:44:23.403Z",
       "updatedAt": "2026-05-28T18:44:23.403Z",
       "reason": "v7 item 2 implemented manually via TDD: getProviderAvailability + createProviderAvailabilityProbe (TTL cache, injectable clock/probes); ProviderResolver consumes availability and excludes unavailable providers. 282 runtime tests + tsc -b + eslint green. No cycle (manual)."
+    },
+    {
+      "itemId": "backlog-unified-cost-across-providers",
+      "completedAt": "2026-05-28T19:14:24.397Z",
+      "updatedAt": "2026-05-28T19:14:24.397Z",
+      "reason": "v7 item 3 implemented manually via TDD: extractBreakdownFromAgentRun now prices each run by resolvedProvider (Anthropic tier table vs OpenAI/Codex table keyed off resolvedModelId); RuntimeAdapter (both call sites) + execute-phase fallback wire the resolved provider/model through. Anti-fake guard: codex modelId prices to OpenAI figure (15.75), not the Anthropic figure (18.00). 26 cost-breakdown + 250 phase-handler tests + tsc -b + eslint green. No cycle (manual)."
     }
   ]
 }
