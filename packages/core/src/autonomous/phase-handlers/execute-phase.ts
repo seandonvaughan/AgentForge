@@ -1696,6 +1696,26 @@ function formatGateRetrySection(gateRetry?: GateRetryContext): string {
   if (gateRetry.itemIds && gateRetry.itemIds.length > 0) {
     lines.push(`Sprint items mapped from the rejected branch: ${gateRetry.itemIds.join(', ')}`);
   }
+  if (gateRetry.knownDebt && gateRetry.knownDebt.length > 0) {
+    lines.push('Known pre-existing debt (do not treat as new regressions):');
+    for (const debt of gateRetry.knownDebt) {
+      lines.push(`- ${debt}`);
+    }
+  }
+  if (gateRetry.structuredFindings && gateRetry.structuredFindings.length > 0) {
+    lines.push('Structured gate findings (fix unresolved non-debt findings first):');
+    for (const finding of gateRetry.structuredFindings) {
+      const location =
+        finding.file !== undefined
+          ? ` @ ${finding.file}${finding.line !== undefined ? `:${finding.line}` : ''}`
+          : '';
+      const debt = finding.knownDebt ? ' [known-debt]' : '';
+      lines.push(`- [${finding.severity}]${location}${debt} ${finding.message}`);
+      if (finding.fixSuggestion !== undefined && finding.fixSuggestion.length > 0) {
+        lines.push(`  Suggested fix: ${finding.fixSuggestion}`);
+      }
+    }
+  }
   if (gateRetry.findings && gateRetry.findings.length > 0) {
     lines.push('Gate findings:');
     for (const finding of gateRetry.findings) {

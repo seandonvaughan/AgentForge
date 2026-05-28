@@ -128,6 +128,65 @@ afterEach(() => {
 });
 
 describe('gate retry context — agent PR ledger routing', () => {
+  it('preserves structured CRITICAL/MAJOR findings, debt, and file targets from phase artifacts', () => {
+    const cycleId = 'cycle-retry-structured-findings';
+    makeCycleDir(projectRoot, cycleId);
+    mkdirSync(join(projectRoot, '.agentforge', 'cycles', cycleId, 'phases'), { recursive: true });
+    writeFileSync(
+      join(projectRoot, '.agentforge', 'cycles', cycleId, 'phases', 'review.json'),
+      JSON.stringify({
+        findings: [
+          {
+            severity: 'CRITICAL',
+            message: 'SQL injection in list endpoint',
+            file: 'packages/server/src/routes/v5/index.ts',
+            line: 44,
+            fixSuggestion: 'parameterize the query',
+          },
+          {
+            severity: 'MAJOR',
+            message: 'Retry prompt loses debt context',
+            file: 'packages/core/src/autonomous/cycle-runner.ts',
+          },
+          { severity: 'INFO', message: 'ignore non-blocking' },
+        ],
+      }),
+    );
+    writeFileSync(
+      join(projectRoot, '.agentforge', 'cycles', cycleId, 'phases', 'gate.json'),
+      JSON.stringify({
+        knownDebt: ['Retry prompt loses debt context'],
+      }),
+    );
+
+    const context = buildGateRetryContext(
+      projectRoot,
+      cycleId,
+      2,
+      'Gate rejected with critical and major findings.',
+    );
+
+    expect(context.files).toContain('packages/server/src/routes/v5/index.ts');
+    expect(context.files).toContain('packages/core/src/autonomous/cycle-runner.ts');
+    expect(context.knownDebt).toEqual(['Retry prompt loses debt context']);
+    expect(context.structuredFindings).toBeDefined();
+    expect(context.structuredFindings).toHaveLength(2);
+    expect(context.structuredFindings?.[0]).toMatchObject({
+      severity: 'CRITICAL',
+      message: 'SQL injection in list endpoint',
+      file: 'packages/server/src/routes/v5/index.ts',
+      line: 44,
+      fixSuggestion: 'parameterize the query',
+    });
+    expect(context.structuredFindings?.[1]).toMatchObject({
+      severity: 'MAJOR',
+      message: 'Retry prompt loses debt context',
+      knownDebt: true,
+    });
+    expect(context.findings).toContain('CRITICAL: SQL injection in list endpoint');
+    expect(context.findings).toContain('MAJOR: Retry prompt loses debt context');
+  });
+
   it('maps itemIds from the exact rejected PR number record', () => {
     const cycleId = 'cycle-retry-pr-number';
     writeLedger(projectRoot, cycleId, [

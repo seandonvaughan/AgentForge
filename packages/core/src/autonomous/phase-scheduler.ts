@@ -79,6 +79,15 @@ export interface GateRetryContext {
   itemIds?: string[];
   files?: string[];
   findings?: string[];
+  knownDebt?: string[];
+  structuredFindings?: Array<{
+    severity: 'CRITICAL' | 'MAJOR';
+    message: string;
+    file?: string;
+    line?: number;
+    fixSuggestion?: string;
+    knownDebt?: boolean;
+  }>;
 }
 
 export interface PhaseContext {

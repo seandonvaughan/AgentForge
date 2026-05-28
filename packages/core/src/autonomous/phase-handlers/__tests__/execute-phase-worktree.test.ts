@@ -616,6 +616,21 @@ describe('execute-phase worktree integration', () => {
         rejectedBranch: 'codex/agent-executor-runtime-engineer-06e26f07b342',
         prNumber: 153,
         files: ['packages/core/src/autonomous/phase-handlers/execute-phase.ts'],
+        knownDebt: ['Old debt that should not block this retry'],
+        structuredFindings: [
+          {
+            severity: 'CRITICAL',
+            message: 'Unchecked null branch dereference',
+            file: 'packages/core/src/autonomous/phase-handlers/execute-phase.ts',
+            line: 1701,
+            fixSuggestion: 'guard branch lookup before dereference',
+          },
+          {
+            severity: 'MAJOR',
+            message: 'Old debt that should not block this retry',
+            knownDebt: true,
+          },
+        ],
         findings: [
           'MAJOR: rawValue from JSON.stringify can be undefined before truncateMemoryValue reads value.length.',
         ],
@@ -633,6 +648,10 @@ describe('execute-phase worktree integration', () => {
     expect(prompt).toContain('Rejected PR: #153');
     expect(prompt).toContain('Rejected branch: codex/agent-executor-runtime-engineer-06e26f07b342');
     expect(prompt).toContain('packages/core/src/autonomous/phase-handlers/execute-phase.ts');
+    expect(prompt).toContain('Structured gate findings');
+    expect(prompt).toContain('[CRITICAL] @ packages/core/src/autonomous/phase-handlers/execute-phase.ts:1701');
+    expect(prompt).toContain('Suggested fix: guard branch lookup before dereference');
+    expect(prompt).toContain('[known-debt] Old debt that should not block this retry');
     expect(prompt).toContain('Do not broaden the scope');
   });
 

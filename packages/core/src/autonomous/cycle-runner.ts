@@ -141,6 +141,21 @@ interface AgentPrRecord {
   openedAt?: string;
 }
 
+interface RetryFinding {
+  severity: 'CRITICAL' | 'MAJOR';
+  message: string;
+  file?: string;
+  line?: number;
+  fixSuggestion?: string;
+  knownDebt?: boolean;
+}
+
+interface StructuredRetryContext {
+  findings: RetryFinding[];
+  files: string[];
+  knownDebt: string[];
+}
+
 function parsePrNumber(value: string | undefined): number | undefined {
   if (value === undefined) return undefined;
   const parsed = Number.parseInt(value, 10);
@@ -263,6 +278,51 @@ function extractFindingLines(rationale: string): string[] {
     .slice(0, 8);
 }
 
+function readStructuredRetryContext(projectRoot: string, cycleId: string): StructuredRetryContext {
+  const phasesDir = join(projectRoot, '.agentforge', 'cycles', cycleId, 'phases');
+  const reviewPath = join(phasesDir, 'review.json');
+  const gatePath = join(phasesDir, 'gate.json');
+  let knownDebt: string[] = [];
+  try {
+    const gateJson = JSON.parse(readFileSync(gatePath, 'utf8')) as { knownDebt?: unknown };
+    if (Array.isArray(gateJson.knownDebt)) {
+      knownDebt = gateJson.knownDebt.filter((v): v is string => typeof v === 'string' && v.trim().length > 0);
+    }
+  } catch {
+    // best-effort
+  }
+
+  const findings: RetryFinding[] = [];
+  const files = new Set<string>();
+  try {
+    const reviewJson = JSON.parse(readFileSync(reviewPath, 'utf8')) as { findings?: unknown };
+    const entries = Array.isArray(reviewJson.findings) ? reviewJson.findings : [];
+    for (const entry of entries) {
+      if (!entry || typeof entry !== 'object') continue;
+      const severityRaw = (entry as { severity?: unknown }).severity;
+      if (severityRaw !== 'CRITICAL' && severityRaw !== 'MAJOR') continue;
+      const message = (entry as { message?: unknown }).message;
+      if (typeof message !== 'string' || message.trim().length === 0) continue;
+      const file = (entry as { file?: unknown }).file;
+      const line = (entry as { line?: unknown }).line;
+      const fixSuggestion = (entry as { fixSuggestion?: unknown }).fixSuggestion;
+      if (typeof file === 'string' && file.trim().length > 0) files.add(file);
+      const isKnownDebt = knownDebt.some((debt) => message.includes(debt) || debt.includes(message));
+      findings.push({
+        severity: severityRaw,
+        message,
+        ...(typeof file === 'string' && file.trim().length > 0 ? { file } : {}),
+        ...(typeof line === 'number' && Number.isInteger(line) && line > 0 ? { line } : {}),
+        ...(typeof fixSuggestion === 'string' && fixSuggestion.trim().length > 0 ? { fixSuggestion } : {}),
+        ...(isKnownDebt ? { knownDebt: true } : {}),
+      });
+    }
+  } catch {
+    // best-effort
+  }
+  return { findings, files: [...files], knownDebt };
+}
+
 function readAgentPrRecords(projectRoot: string, cycleId: string): AgentPrRecord[] {
   const path = join(projectRoot, '.agentforge', 'cycles', cycleId, 'agent-prs.json');
   if (!existsSync(path)) return [];
@@ -304,6 +364,13 @@ export function buildGateRetryContext(
   const prNumber = selectedPrNumber ?? (records.length === 0 ? prFromRationale : undefined);
   const prUrl = selectedRecord?.prUrl ?? selectedRecord?.url;
   const itemIds = selectedRecord?.itemIds?.filter((id) => typeof id === 'string' && id.length > 0);
+  const structured = readStructuredRetryContext(projectRoot, cycleId);
+  const extractedFiles = extractMentionedFiles(rationale);
+  const files = structured.files.length > 0 ? structured.files : extractedFiles;
+  const findings =
+    structured.findings.length > 0
+      ? structured.findings.map((f) => `${f.severity}: ${f.message}`)
+      : extractFindingLines(rationale);
   return {
     attempt,
     rationale,
@@ -311,8 +378,10 @@ export function buildGateRetryContext(
     ...(prNumber !== undefined ? { prNumber } : {}),
     ...(prUrl !== undefined ? { prUrl } : {}),
     ...(itemIds !== undefined && itemIds.length > 0 ? { itemIds } : {}),
-    files: extractMentionedFiles(rationale),
-    findings: extractFindingLines(rationale),
+    files,
+    findings,
+    ...(structured.knownDebt.length > 0 ? { knownDebt: structured.knownDebt } : {}),
+    ...(structured.findings.length > 0 ? { structuredFindings: structured.findings } : {}),
   };
 }
 
