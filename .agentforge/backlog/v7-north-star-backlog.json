@@ -1,0 +1,128 @@
+{
+  "version": "v7-north-star",
+  "description": "Real, externally-valuable, UNGAMEABLE work toward the north star. Replaces the v6 self-observability backlog (parked in .agentforge/_parked/). Every item changes runtime behavior or repo topology and carries an anti-fake guard in its description so the CEO gate enforces real change, not a printed flag.",
+  "northStar": "One unforked, runtime-agnostic AgentForge (Claude + Codex, best provider x model x effort PER JOB, auto-switch) whose autonomous loop reliably ships, then builds AgentForge Cloud.",
+  "items": [
+    {
+      "id": "runtime-record-resolved-provider-per-item",
+      "title": "Record the resolved provider/model/effort per job in execute artifacts",
+      "description": "WHY: Per-job routing is meaningless unless we can prove which provider/model actually ran each job; this is the data contract every later routing, cost, and failover item depends on. Today RuntimeAdapter.run() drops providerKind/runtimeModeResolved that the underlying RunResult already carries.\n\nACCEPTANCE (ungameable): RuntimeAdapter.run() must return resolvedProvider and resolvedRuntimeMode populated from the underlying RunResult.providerKind / runtimeModeResolved (NOT echoed from the request). The execute phase must persist resolvedProvider, resolvedModelId, resolvedEffort per item into the execute artifact. Integration test: stub two transports returning DIFFERENT providerKind; dispatch two items; assert the artifact records the transport's returned provider, and that when a requested preferredProvider is unavailable the artifact records the FALLBACK provider, not the requested one.\n\nANTI-FAKE GUARD: A test that merely echoes the requested preferredProvider into the artifact must FAIL. The test must make requested != resolved (mark the requested provider unavailable) and assert the recorded value equals the transport's returned providerKind.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "valueClass": "external",
+      "northStarRef": "per-job-routing",
+      "tags": ["feature", "runtime-routing", "north-star"],
+      "files": [
+        "packages/core/src/autonomous/runtime-adapter.ts",
+        "packages/core/src/autonomous/phase-handlers/execute-phase.ts",
+        "packages/core/src/autonomous/phase-handlers/__tests__/execute-phase-routing-options.test.ts"
+      ]
+    },
+    {
+      "id": "provider-availability-probe-cache",
+      "title": "Provider availability probe with TTL cache",
+      "description": "WHY: Routing and auto-switch need a fast, correct 'is this provider usable right now' signal (Anthropic key present, Claude CLI on PATH, Codex authed, OpenAI key present) without re-probing per job.\n\nACCEPTANCE (ungameable): getProviderAvailability(env) returns a per-provider { available, reason } map, cached with a TTL and an INJECTABLE clock. The provider resolver consumes it. Test: toggling env/auth fixtures flips availability; a removed credential yields available:false with the correct reason; the cache returns the stale value within TTL and refreshes after the injected clock advances past it.\n\nANTI-FAKE GUARD: A probe that always returns all-available must FAIL — the test asserts a removed credential produces available:false AND that the resolver then excludes that provider from selection.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "valueClass": "reliability",
+      "northStarRef": "per-job-routing",
+      "tags": ["feature", "runtime-routing", "north-star"],
+      "files": [
+        "packages/core/src/runtime/provider-availability.ts",
+        "packages/core/src/runtime/provider-resolver.ts",
+        "packages/core/src/runtime/__tests__/provider-availability.test.ts"
+      ]
+    },
+    {
+      "id": "unified-cost-across-providers",
+      "title": "Unify per-job cost across Claude and Codex/OpenAI pricing",
+      "description": "WHY: Per-job routing and the budget gate are incoherent unless Claude and Codex/OpenAI costs roll into one comparable USD number; today OpenAI/Codex pricing is isolated from the cost breakdown.\n\nACCEPTANCE (ungameable): the cost breakdown computes each item's cost using the RESOLVED provider's pricing table (Anthropic tier pricing vs OpenAI/Codex pricing), keyed off resolvedProvider + resolvedModelId from item 'runtime-record-resolved-provider-per-item'. Test: identical token usage on a Codex model vs an Anthropic model yields the two DIFFERENT correct USD figures, and a cycle mixing providers sums them.\n\nANTI-FAKE GUARD: A breakdown that always applies Anthropic pricing must FAIL — feed a Codex modelId and assert the cost equals the OpenAI/Codex pricing computation, which differs from the Anthropic figure for the same tokens.",
+      "priority": "P1",
+      "estimatedComplexity": "medium",
+      "valueClass": "external",
+      "northStarRef": "per-job-routing",
+      "tags": ["feature", "runtime-routing", "cost", "north-star"],
+      "files": [
+        "packages/core/src/autonomous/cost-breakdown.ts",
+        "packages/core/src/runtime/openai-pricing.ts",
+        "packages/core/src/autonomous/__tests__/cost-breakdown.test.ts"
+      ]
+    },
+    {
+      "id": "codex-auth-mapping-into-runtime",
+      "title": "Locate and validate local Codex auth for the runtime",
+      "description": "WHY: Codex is only a real runtime peer if the loop can find and use the operator's existing `codex login` credentials (CODEX_HOME / auth.json). This is also the foundation for the future AgentForge Cloud goal of mapping local auth into a container.\n\nACCEPTANCE (ungameable): resolveCodexAuth(env) locates the credential path (CODEX_HOME override, else default home dir), reports authenticated | expired | missing from the auth file contents, and the Codex transport refuses to dispatch with a CLASSIFIED retriable auth error (feeding the future auto-switch) when unauthenticated. Test with a fixture CODEX_HOME containing a valid vs absent vs malformed auth file; assert all three states are derived from file contents WITHOUT spawning a subprocess.\n\nANTI-FAKE GUARD: An implementation that only shells out to `codex login status` or always returns authenticated must FAIL — the test injects a fixture CODEX_HOME and asserts the 'missing' case throws the retriable auth error class.",
+      "priority": "P1",
+      "estimatedComplexity": "medium",
+      "valueClass": "reliability",
+      "northStarRef": "codex-runtime-peer",
+      "tags": ["feature", "runtime", "codex", "north-star"],
+      "files": [
+        "packages/core/src/runtime/transports/codex-cli-transport.ts",
+        "packages/core/src/runtime/codex-auth.ts",
+        "packages/core/src/runtime/codex-readiness.ts",
+        "packages/core/src/runtime/__tests__/codex-auth.test.ts"
+      ]
+    },
+    {
+      "id": "converge-src-shims-to-packages",
+      "title": "Converge legacy src/ tree into packages/* (one version)",
+      "description": "WHY: Phase 1 demands ONE version. The legacy src/ tree is the fork surface — until consumers import from @agentforge/* packages and the duplicated implementations are removed, every change risks divergence.\n\nACCEPTANCE (ungameable): every file under src/ is a thin re-export of its packages/* equivalent (or deleted). A repo-check script fails CI when any non-test file imports a CONCRETE implementation from src/ rather than an @agentforge/* package, and reports the count of remaining real (non-shim) src/ modules. Test: introduce a deep import from a concrete src/ module in a fixture and assert the check script exits non-zero.\n\nANTI-FAKE GUARD: Adding the check but allowlisting every current violation must FAIL review — the remaining-real-src count must be asserted and must DECREASE; a temporary all-pass allowlist is disallowed by asserting the violating fixture import fails.",
+      "priority": "P1",
+      "estimatedComplexity": "medium",
+      "valueClass": "reliability",
+      "northStarRef": "one-version-convergence",
+      "tags": ["feature", "convergence", "north-star"],
+      "files": [
+        "src/index.ts",
+        "tsconfig.json",
+        "scripts/check-no-legacy-src-imports.mjs"
+      ]
+    },
+    {
+      "id": "one-cli-surface-parity",
+      "title": "Single source-of-truth CLI command registry (binary + Codex plugin parity)",
+      "description": "WHY: 'One CLI surface' requires the Codex plugin wrapper and the `agentforge` binary to expose the same command set, or operators get two divergent products.\n\nACCEPTANCE (ungameable): a single command registry drives both surfaces; a parity test enumerates registered commands by INTROSPECTING each surface's Commander program object and asserts they register the identical set (allowing an explicit, asserted exclusion list). The test fails if a command exists on one surface only.\n\nANTI-FAKE GUARD: Hard-coding two matching string arrays in the test must FAIL the intent — the test must read the ACTUAL registered commands from each program object, not a literal list.",
+      "priority": "P1",
+      "estimatedComplexity": "medium",
+      "valueClass": "reliability",
+      "northStarRef": "one-version-convergence",
+      "tags": ["feature", "convergence", "cli", "north-star"],
+      "files": [
+        "packages/cli/src/commands/autonomous.ts",
+        "packages/cli/src/__tests__/cli-surface-parity.test.ts"
+      ]
+    },
+    {
+      "id": "per-job-routing-policy-engine",
+      "title": "Per-job provider x model x effort routing policy engine",
+      "description": "WHY: This is the actual differentiator — choosing the best provider/model/effort PER JOB from job characteristics (kind, touched subsystems, complexity, prior failures) instead of one global runtime. The v6 backlog only ever added passive hints. HIGH complexity: decompose before unattended pickup.\n\nACCEPTANCE (ungameable): a pure resolveJobRouting(item, policy, availability) returns { preferredProvider, runtimeMode, tier, effort }. The assign phase calls it and writes the decision onto each item so execute dispatches accordingly. Test matrix: a security/high-complexity item routes to the Anthropic profile; a bulk/docs low-complexity item routes to the cheaper Codex profile; an item whose preferred provider is unavailable routes to the configured alternate. Assert DIFFERENT items in the SAME plan receive different preferredProvider, AND that execute (with stub transports) dispatches each to the matching transport, verified by transport-call inspection.\n\nANTI-FAKE GUARD: Hard-coding one provider and testing only one item must FAIL — the test requires >=2 distinct providers chosen within a single plan plus an availability-driven override, asserting on which stub transport's execute() was invoked per item.",
+      "priority": "P1",
+      "estimatedComplexity": "high",
+      "valueClass": "external",
+      "northStarRef": "per-job-routing",
+      "tags": ["feature", "runtime-routing", "north-star", "needs-decomposition"],
+      "files": [
+        "packages/core/src/autonomous/routing/job-router.ts",
+        "packages/core/src/autonomous/phase-handlers/assign-phase.ts",
+        "packages/core/src/autonomous/routing/__tests__/job-router.test.ts"
+      ]
+    },
+    {
+      "id": "runtime-auto-switch-on-failure",
+      "title": "Auto-switch to the next provider on a retriable runtime failure",
+      "description": "WHY: 'Auto-switch across Claude+Codex' is the north star's reliability promise — a job whose chosen provider errors/times-out/hits an auth failure must transparently retry on the next eligible provider so the loop ships instead of stalling. HIGH complexity: decompose before unattended pickup.\n\nACCEPTANCE (ungameable): ExecutionService.run accepts an ordered provider preference list; when the first transport throws a RETRIABLE error (auth/unavailable/timeout, classified in transport-errors), it executes on the next available transport and the returned RunResult.providerKind is the FALLBACK, with a recorded switch reason. Non-retriable errors (e.g. validation) do NOT switch. Test: transport A throws auth error, B succeeds -> result reflects B and exactly one switch event; A throws a non-retriable error -> no switch, error surfaces.\n\nANTI-FAKE GUARD: A catch-all that swallows every error or always tries B must FAIL — assert the switch happens ONLY for the classified-retriable set, the same transport is never retried twice, and the result's providerKind is B (proving real re-dispatch, not a re-label).",
+      "priority": "P1",
+      "estimatedComplexity": "high",
+      "valueClass": "reliability",
+      "northStarRef": "per-job-routing",
+      "tags": ["feature", "runtime-routing", "reliability", "north-star", "needs-decomposition"],
+      "files": [
+        "packages/core/src/runtime/provider-resolver.ts",
+        "packages/core/src/runtime/execution-service.ts",
+        "packages/core/src/runtime/transport-errors.ts",
+        "packages/core/src/runtime/__tests__/provider-resolver-failover.test.ts"
+      ]
+    }
+  ]
+}
