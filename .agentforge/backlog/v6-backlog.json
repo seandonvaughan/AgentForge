@@ -352,6 +352,26 @@
         "packages/cli/src/commands/autonomous.ts",
         "packages/cli/src/__tests__/cycle-list-show.test.ts"
       ]
+    },
+    {
+      "id": "guided-large-014",
+      "title": "Normalize stale open PR status in cycle streak fallback",
+      "description": "Harden the `agentforge cycle streak record` agent-prs fallback so stale open PR statuses are suppressed even when the ledger value has casing or whitespace variants such as `\"OPEN\"` or `\" open \"`. Keep preserving `prUrl` and `openedAt`, and keep preserving the original status string for non-open statuses. Add one focused CLI regression test showing a variant open status is omitted from `mergeEvidence.status` while the fallback URL/timestamp remain present. Do not change cycle execution, merge queue behavior, or cycle show/list PR metadata.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": [
+        "feature",
+        "guided-large",
+        "dogfood",
+        "operator-visibility",
+        "streak",
+        "cli"
+      ],
+      "source": "guided-large-2026-05-28",
+      "files": [
+        "packages/cli/src/commands/autonomous.ts",
+        "packages/cli/src/__tests__/cycle-list-show.test.ts"
+      ]
     }
   ]
 }
