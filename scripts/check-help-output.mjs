@@ -34,8 +34,10 @@ assertCommand(["--help"], [
   "team-sessions",
   "sessions",
   "workspaces",
+  "backlog",
 ]);
-assertCommand(["cycle", "--help"], ["run", "preview", "list", "show", "approve"]);
+assertCommand(["cycle", "--help"], ["run", "preview", "list", "show", "approve", "loop-guard"]);
+assertCommand(["cycle", "loop-guard", "--help"], ["status", "reset"]);
 assertCommand(["run", "--help"], ["invoke", "delegate", "history", "show"]);
 assertCommand(["codex", "--help"], ["readiness"]);
 assertCommand(["costs", "--help"], ["report"]);
@@ -43,6 +45,7 @@ assertCommand(["team", "--help"], ["forge", "genesis", "rebuild", "reforge"]);
 assertCommand(["team", "reforge", "--help"], ["apply", "list", "rollback", "status"]);
 assertCommand(["team-sessions", "--help"], ["list", "delete"]);
 assertCommand(["workspaces", "--help"], ["list", "add", "remove", "default"]);
+assertCommand(["backlog", "--help"], ["complete", "status"]);
 
 if (failures.length > 0) {
   console.error("CLI help output check failed:");

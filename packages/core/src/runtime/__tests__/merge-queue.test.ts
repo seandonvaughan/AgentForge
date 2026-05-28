@@ -325,6 +325,49 @@ describe('MergeQueue', () => {
     expect(entries).toHaveLength(1);
   });
 
+  it('skips duplicate branch events in the same cycle without adding a ledger row', async () => {
+    makeCycleDir(projectRoot, 'cycle-abc');
+
+    const receivedEvents: MergeQueuePrOpenedPayload[] = [];
+    bus.subscribe<MergeQueuePrOpenedPayload>('merge-queue.pr.opened', (env) => {
+      receivedEvents.push(env.payload);
+    });
+    const draftPrOpener = vi.fn(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+      return {
+        prNumber: 123,
+        prUrl: 'https://example.test/pull/123',
+      };
+    });
+
+    const queue = new MergeQueue({ projectRoot, bus, parentBranch: 'main', draftPrOpener });
+    queue.start();
+
+    emitBranchPushed(bus, buildPayload({ pushedAt: '2026-05-17T10:00:00.000Z' }));
+    emitBranchPushed(
+      bus,
+      buildPayload({
+        pushedAt: '2026-05-17T10:05:00.000Z',
+        diffSummary: '+2 -0 src/foo.ts',
+        itemIds: ['T4.4', 'T4.5', 'T4.6'],
+      }),
+    );
+
+    await new Promise((r) => setTimeout(r, 30));
+    const result = await queue.drain();
+    queue.stop();
+
+    const entries = readLedger(projectRoot, 'cycle-abc') as Array<Record<string, unknown>>;
+    expect(entries).toHaveLength(1);
+    expect(result.pushed).toBe(1);
+    expect(result.prs).toEqual([
+      { prNumber: 123, branch: 'autonomous/agent-coder-1-sess-1', agentId: 'coder-1' },
+    ]);
+    expect(draftPrOpener).toHaveBeenCalledTimes(1);
+    expect(receivedEvents).toHaveLength(1);
+    expect(entries[0]!['branch']).toBe('autonomous/agent-coder-1-sess-1');
+  });
+
   // 11. stop() prevents future events from being processed
   it('stop() prevents subsequent events from being processed', async () => {
     makeCycleDir(projectRoot, 'cycle-abc');

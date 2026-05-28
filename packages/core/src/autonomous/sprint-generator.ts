@@ -2,6 +2,7 @@
 import { readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { CycleConfig, RankedItem } from './types.js';
+import type { ExecutionProviderKind, RuntimeMode } from '../runtime/types.js';
 import { bumpVersion, determineVersionTier } from './version-bumper.js';
 
 export interface SprintPlan {
@@ -56,6 +57,8 @@ export interface SprintPlanItem {
    *  to touch. Used by the execute phase's FileLockManager to serialize
    *  items that would race on the same file. */
   files?: string[];
+  runtimeMode?: RuntimeMode;
+  preferredProvider?: ExecutionProviderKind;
 }
 
 const DEFAULT_STARTING_VERSION = '6.4.0';
@@ -125,6 +128,12 @@ export class SprintGenerator {
     };
     if (item.files !== undefined) {
       sprintItem.files = [...item.files];
+    }
+    if (item.runtimeMode !== undefined) {
+      sprintItem.runtimeMode = item.runtimeMode;
+    }
+    if (item.preferredProvider !== undefined) {
+      sprintItem.preferredProvider = item.preferredProvider;
     }
     return sprintItem;
   }

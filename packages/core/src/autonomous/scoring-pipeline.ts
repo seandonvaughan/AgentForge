@@ -18,6 +18,11 @@ import type { CycleConfig, ScoringResult, RankedItem } from './types.js';
 import type { ModelTier } from '@agentforge/shared';
 import type { BacklogItem } from './proposal-to-backlog.js';
 import type { CycleLogger } from './cycle-logger.js';
+import type {
+  CodexSandboxMode,
+  ExecutionProviderKind,
+  RuntimeMode,
+} from '../runtime/types.js';
 import { EffortEstimator } from '../predictive-planning/effort-estimator.js';
 import { HistoryAnalyzer } from '../predictive-planning/history-analyzer.js';
 import type { HistoryAnalysis } from '../predictive-planning/history-analyzer.js';
@@ -35,8 +40,18 @@ export interface AdapterForScoring {
   getTeamState(): Promise<{ utilization: Record<string, number> }>;
 }
 
+export interface RuntimeForScoringRunOptions {
+  responseFormat?: string;
+  allowedTools?: string[];
+  timeoutMs?: number;
+  cwd?: string;
+  codexSandbox?: CodexSandboxMode;
+  runtimeMode?: RuntimeMode;
+  preferredProvider?: ExecutionProviderKind;
+}
+
 export interface RuntimeForScoring {
-  run(agentId: string, task: string, options?: { responseFormat?: string }): Promise<{
+  run(agentId: string, task: string, options?: RuntimeForScoringRunOptions): Promise<{
     output: string;
     usage: { input_tokens: number; output_tokens: number };
     costUsd: number;
@@ -279,6 +294,8 @@ export class ScoringPipeline {
         suggestedTags: item.tags,
         withinBudget: true,
         ...(item.files !== undefined ? { files: [...item.files] } : {}),
+        ...(item.runtimeMode !== undefined ? { runtimeMode: item.runtimeMode } : {}),
+        ...(item.preferredProvider !== undefined ? { preferredProvider: item.preferredProvider } : {}),
       };
     });
 
@@ -342,6 +359,8 @@ export class ScoringPipeline {
       suggestedTags: item.tags,
       withinBudget: true,
       ...(item.files !== undefined ? { files: [...item.files] } : {}),
+      ...(item.runtimeMode !== undefined ? { runtimeMode: item.runtimeMode } : {}),
+      ...(item.preferredProvider !== undefined ? { preferredProvider: item.preferredProvider } : {}),
     }));
 
     // Enforce per-cycle budget
@@ -542,19 +561,26 @@ Do not include any text outside the JSON object.`;
   }
 
   private attachBacklogFiles(result: ScoringResult, backlog: BacklogItem[]): ScoringResult {
-    const filesByItemId = new Map(
-      backlog
-        .filter((item): item is BacklogItem & { files: string[] } => item.files !== undefined)
-        .map((item) => [item.id, [...item.files]] as const),
+    const hintsByItemId = new Map(
+      backlog.map((item) => [
+        item.id,
+        {
+          ...(item.files !== undefined ? { files: [...item.files] } : {}),
+          ...(item.runtimeMode !== undefined ? { runtimeMode: item.runtimeMode } : {}),
+          ...(item.preferredProvider !== undefined ? { preferredProvider: item.preferredProvider } : {}),
+        },
+      ] as const),
     );
 
-    if (filesByItemId.size === 0) return result;
+    const hasHints = Array.from(hintsByItemId.values()).some((hints) => Object.keys(hints).length > 0);
+    if (!hasHints) return result;
 
     return {
       ...result,
       rankings: result.rankings.map((ranking) => {
-        const files = filesByItemId.get(ranking.itemId);
-        return files === undefined ? ranking : { ...ranking, files: [...files] };
+        const hints = hintsByItemId.get(ranking.itemId);
+        if (!hints || Object.keys(hints).length === 0) return ranking;
+        return { ...ranking, ...hints };
       }),
     };
   }

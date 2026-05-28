@@ -11,6 +11,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { CycleConfig } from './types.js';
+import type { ExecutionProviderKind, RuntimeMode } from '../runtime/types.js';
 
 export interface BacklogItem {
   id: string;
@@ -25,6 +26,10 @@ export interface BacklogItem {
   estimatedComplexity?: 'low' | 'medium' | 'high';
   /** Declared file scope. Required for unattended auto-pick of backlog-file items. */
   files?: string[];
+  /** Optional per-item runtime routing hint from backlog files. */
+  runtimeMode?: RuntimeMode;
+  /** Optional per-item provider preference hint from backlog files. */
+  preferredProvider?: ExecutionProviderKind;
 }
 
 export interface ProposalAdapter {
@@ -160,7 +165,9 @@ export class ProposalToBacklog {
       }
     }
 
-    const base = this.applyQuarantine(this.sanitizeItems(this.deduplicate(items)));
+    const base = this.applyCompletedItems(
+      this.applyQuarantine(this.sanitizeItems(this.deduplicate(items))),
+    );
     // Unattended runs must not auto-attempt items too large to ship in one
     // cycle — that was the root trigger of the 2026-05-25 spin. A human
     // (attended mode) can still pick big items or decompose them first.
@@ -179,7 +186,11 @@ export class ProposalToBacklog {
         : Array.isArray((parsed as { ids?: unknown } | null)?.ids)
           ? (parsed as { ids: unknown[] }).ids
           : [];
-      return new Set(ids.filter((x): x is string => typeof x === 'string'));
+      return new Set(
+        ids
+          .map((x) => (typeof x === 'string' ? normalizeBacklogId(x) : null))
+          .filter((id): id is string => id !== null),
+      );
     } catch {
       return new Set();
     }
@@ -189,6 +200,41 @@ export class ProposalToBacklog {
     const quarantined = this.readQuarantineIds();
     if (quarantined.size === 0) return items;
     return items.filter((item) => !quarantined.has(item.id));
+  }
+
+  /** Item ids already completed and merged; never pick them again. */
+  private readCompletedItemIds(): Set<string> {
+    const path = join(this.cwd, '.agentforge', 'backlog', 'completed.json');
+    try {
+      const parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown;
+      const entries = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray((parsed as { entries?: unknown } | null)?.entries)
+          ? (parsed as { entries: unknown[] }).entries
+          : [];
+      const ids = entries
+        .map((entry) => {
+          if (!entry || typeof entry !== 'object') return null;
+          const obj = entry as Record<string, unknown>;
+          const rawId = typeof obj['itemId'] === 'string'
+            ? obj['itemId']
+            : typeof obj['id'] === 'string'
+              ? obj['id']
+              : null;
+          if (rawId === null) return null;
+          return normalizeBacklogId(rawId);
+        })
+        .filter((id): id is string => typeof id === 'string');
+      return new Set(ids);
+    } catch {
+      return new Set();
+    }
+  }
+
+  private applyCompletedItems(items: BacklogItem[]): BacklogItem[] {
+    const completed = this.readCompletedItemIds();
+    if (completed.size === 0) return items;
+    return items.filter((item) => !completed.has(item.id));
   }
 
   /**
@@ -398,6 +444,8 @@ function normalizeBacklogFileItem(raw: unknown, fileName: string): BacklogItem |
   const idRaw = typeof obj['id'] === 'string' && obj['id'].trim()
     ? obj['id'].trim()
     : `${fileName}-${title}`;
+  const normalizedId = normalizeBacklogId(idRaw);
+  if (!normalizedId) return null;
   const priorityRaw = obj['priority'];
   const priority = priorityRaw === 'P0' || priorityRaw === 'P1' || priorityRaw === 'P2'
     ? priorityRaw
@@ -413,7 +461,7 @@ function normalizeBacklogFileItem(raw: unknown, fileName: string): BacklogItem |
     : costFromComplexity(obj['estimatedComplexity']);
 
   const item: BacklogItem = {
-    id: `backlog-${idRaw.replace(/\W/g, '-')}`,
+    id: normalizedId,
     title,
     description: typeof obj['description'] === 'string' && obj['description'].trim()
       ? obj['description'].trim()
@@ -442,6 +490,32 @@ function normalizeBacklogFileItem(raw: unknown, fileName: string): BacklogItem |
     item.files = files;
   }
 
+  const runtimeMode = typeof obj['runtimeMode'] === 'string'
+    ? obj['runtimeMode']
+    : undefined;
+  if (
+    runtimeMode === 'auto'
+    || runtimeMode === 'sdk'
+    || runtimeMode === 'claude-code-compat'
+    || runtimeMode === 'codex-cli'
+    || runtimeMode === 'openai-sdk'
+    || runtimeMode === 'anthropic-sdk'
+  ) {
+    item.runtimeMode = runtimeMode;
+  }
+
+  const preferredProvider = typeof obj['preferredProvider'] === 'string'
+    ? obj['preferredProvider']
+    : undefined;
+  if (
+    preferredProvider === 'claude-code-compat'
+    || preferredProvider === 'codex-cli'
+    || preferredProvider === 'openai-sdk'
+    || preferredProvider === 'anthropic-sdk'
+  ) {
+    item.preferredProvider = preferredProvider;
+  }
+
   return item;
 }
 
@@ -457,4 +531,17 @@ function costFromComplexity(value: unknown): number | undefined {
     default:
       return undefined;
   }
+}
+
+function normalizeBacklogId(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  let normalized = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  normalized = normalized.replace(/^-+|-+$/g, '');
+  if (!normalized) return null;
+
+  if (normalized === 'backlog') return null;
+  if (normalized.startsWith('backlog-')) return normalized;
+  return `backlog-${normalized}`;
 }

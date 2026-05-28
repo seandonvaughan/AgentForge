@@ -8,8 +8,8 @@
 //   - approve
 //
 // `autonomous:cycle` remains as a compatibility alias for `cycle run`.
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Command } from 'commander';
 import {
@@ -77,15 +77,26 @@ interface CyclePreviewOptions extends WorkspaceAwareOptions {
 
 interface CycleListOptions extends WorkspaceAwareOptions {
   limit: string;
+  json?: boolean;
 }
 
-interface CycleShowOptions extends WorkspaceAwareOptions {}
+interface CycleShowOptions extends WorkspaceAwareOptions {
+  json?: boolean;
+}
 
 interface CycleApproveOptions extends WorkspaceAwareOptions {
   all?: boolean;
   approved?: string[];
   rejected?: string[];
   decidedBy?: string;
+}
+
+interface LoopGuardStatusOptions extends WorkspaceAwareOptions {
+  json?: boolean;
+}
+
+interface LoopGuardResetOptions extends WorkspaceAwareOptions {
+  json?: boolean;
 }
 
 interface CycleSummary {
@@ -130,6 +141,20 @@ interface PendingApproval {
   sprintVersion?: string;
 }
 
+interface RuntimeRoutingDecision {
+  itemId: string;
+  decision: 'routed' | 'default';
+  runtimeMode: string | null;
+  preferredProvider: string | null;
+}
+
+interface RuntimeRoutingSummary {
+  totalItems: number;
+  routedItems: number;
+  defaultItems: number;
+  decisions: RuntimeRoutingDecision[];
+}
+
 const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
 type ModelCap = 'opus' | 'sonnet' | 'haiku';
 type EffortCap = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
@@ -141,6 +166,8 @@ interface CycleLaunchControls {
   maxAgents?: number;
   fallbackEnabled?: boolean;
 }
+
+const ONE_ITEM_AUDIT_TIMEOUT_MS = 5 * 60 * 1000;
 
 export function registerCycleCommand(program: Command): void {
   const cycle = program
@@ -174,6 +201,7 @@ export function registerCycleCommand(program: Command): void {
     .option('--project-root <path>', 'Project root', process.cwd())
     .option('--workspace <id>', 'Run against a registered workspace from ~/.agentforge/workspaces.json')
     .option('--limit <count>', 'Maximum rows to show', '20')
+    .option('--json', 'Print machine-readable JSON')
     .action(runCycleListAction);
 
   cycle
@@ -181,6 +209,7 @@ export function registerCycleCommand(program: Command): void {
     .description('Show one autonomous cycle in detail')
     .option('--project-root <path>', 'Project root', process.cwd())
     .option('--workspace <id>', 'Run against a registered workspace from ~/.agentforge/workspaces.json')
+    .option('--json', 'Print machine-readable JSON')
     .action(runCycleShowAction);
 
   cycle
@@ -193,6 +222,26 @@ export function registerCycleCommand(program: Command): void {
     .option('--rejected <itemIds...>', 'Explicit item IDs to reject')
     .option('--decided-by <name>', 'Decision author label', 'cli')
     .action(runCycleApproveAction);
+
+  const loopGuard = cycle
+    .command('loop-guard')
+    .description('Inspect or reset the autonomous loop guard state');
+
+  loopGuard
+    .command('status')
+    .description('Show loop guard status from .agentforge/loop-state.json')
+    .option('--project-root <path>', 'Project root', process.cwd())
+    .option('--workspace <id>', 'Run against a registered workspace from ~/.agentforge/workspaces.json')
+    .option('--json', 'Print machine-readable JSON')
+    .action(runLoopGuardStatusAction);
+
+  loopGuard
+    .command('reset')
+    .description('Reset loop guard state to defaults')
+    .option('--project-root <path>', 'Project root', process.cwd())
+    .option('--workspace <id>', 'Run against a registered workspace from ~/.agentforge/workspaces.json')
+    .option('--json', 'Print machine-readable JSON')
+    .action(runLoopGuardResetAction);
 }
 
 export function registerAutonomousCommand(program: Command): void {
@@ -307,6 +356,9 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
     // Runtime fallback defaults to enabled for compatibility unless this
     // launch explicitly disabled it through CLI flags or server env.
     const enableFallback = launchControls.fallbackEnabled ?? true;
+    const auditPhaseOptions = config.limits.maxItemsPerSprint === 1
+      ? { timeoutMs: ONE_ITEM_AUDIT_TIMEOUT_MS }
+      : undefined;
 
     const telemetry = createAutonomousTelemetryAdapters(cwd);
 
@@ -374,7 +426,7 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
         ...(supervisor ? { supervisor } : {}),
       });
       const phaseHandlers = {
-        audit: (ctx: PhaseContext) => runAuditPhase(ctx),
+        audit: (ctx: PhaseContext) => runAuditPhase(ctx, auditPhaseOptions),
         plan: (ctx: PhaseContext) => runPlanPhase(ctx),
         assign: (ctx: PhaseContext) => runAssignPhase(ctx),
         execute: (ctx: PhaseContext) => runExecutePhase(ctx, {
@@ -615,7 +667,24 @@ async function runCycleListAction(opts: CycleListOptions): Promise<void> {
 
   const cycles = listCycles(projectRoot).slice(0, limit);
   if (cycles.length === 0) {
+    if (opts.json) {
+      console.log(JSON.stringify({
+        projectRoot,
+        limit,
+        cycles: [],
+      }, null, 2));
+      return;
+    }
     console.log('(no cycles recorded)');
+    return;
+  }
+
+  if (opts.json) {
+    console.log(JSON.stringify({
+      projectRoot,
+      limit,
+      cycles,
+    }, null, 2));
     return;
   }
 
@@ -660,6 +729,36 @@ async function runCycleShowAction(cycleId: string, opts: CycleShowOptions): Prom
   const decision = readJsonIfExists(join(cycleDir, 'approval-decision.json')) as Record<string, unknown> | null;
   const scoring = readJsonIfExists(join(cycleDir, 'scoring.json')) as Record<string, unknown> | null;
   const eventsCount = countJsonlLines(join(cycleDir, 'events.jsonl'));
+  const agentPr = latestCycleAgentPr(cycleDir);
+  const runtimeRouting = readRuntimeRoutingSummary(cycleDir);
+
+  if (opts.json) {
+    console.log(JSON.stringify({
+      projectRoot,
+      cycleId: summary.cycleId,
+      cycleDir,
+      summary,
+      pr: {
+        url: summary.prUrl,
+        agentPr: agentPr
+          ? {
+              prNumber: typeof agentPr.prNumber === 'number' ? agentPr.prNumber : null,
+              prUrl: agentPr.prUrl ?? null,
+              branch: agentPr.branch ?? null,
+              status: agentPr.status ?? null,
+              openedAt: agentPr.openedAt ?? null,
+            }
+          : null,
+      },
+      eventsCount,
+      error: cycleJson && typeof cycleJson.error === 'string' ? cycleJson.error : null,
+      scoring,
+      runtimeRouting,
+      pendingApproval,
+      decision,
+    }, null, 2));
+    return;
+  }
 
   console.log(`Cycle:        ${summary.cycleId}`);
   console.log(`Stage:        ${summary.stage}`);
@@ -774,6 +873,65 @@ async function runCycleApproveAction(cycleId: string, opts: CycleApproveOptions)
   console.log(`Decision:     ${decision.decision}`);
   console.log(`Approved:     ${approvedItemIds.length}`);
   console.log(`Rejected:     ${rejectedItemIds.length}`);
+}
+
+async function runLoopGuardStatusAction(opts: LoopGuardStatusOptions): Promise<void> {
+  const projectRoot = await resolveWorkspaceProjectRoot(opts);
+  const statePath = join(projectRoot, '.agentforge', 'loop-state.json');
+  const parsed = readLoopGuardStateForStatus(statePath);
+  const state = parsed.state ?? localDefaultLoopGuardState();
+
+  if (opts.json) {
+    console.log(JSON.stringify({
+      projectRoot,
+      path: statePath,
+      stateFileStatus: parsed.fileStatus,
+      fileStatus: parsed.fileStatus,
+      halted: Boolean(state.haltedReason),
+      haltedReason: state.haltedReason ?? null,
+      reason: state.haltedReason ?? null,
+      failures: state.consecutiveFailedCycles,
+      lastCycleId: state.lastCycleId,
+      lastOutcome: state.lastOutcome,
+      lastUpdatedAt: state.lastUpdatedAt,
+      updatedAt: state.lastUpdatedAt,
+    }, null, 2));
+    return;
+  }
+
+  console.log('[loop-guard] status');
+  console.log(`Path:         ${statePath}`);
+  console.log(`State file:   ${parsed.fileStatus}`);
+  console.log(`Halted:       ${state.haltedReason ? 'yes' : 'no'}`);
+  if (state.haltedReason) {
+    console.log(`Reason:       ${state.haltedReason}`);
+  }
+  console.log(`Failures:     ${state.consecutiveFailedCycles}`);
+  console.log(`Last cycle:   ${state.lastCycleId ?? '(none)'}`);
+  console.log(`Last outcome: ${state.lastOutcome ?? '(none)'}`);
+  console.log(`Updated:      ${state.lastUpdatedAt}`);
+}
+
+async function runLoopGuardResetAction(opts: LoopGuardResetOptions): Promise<void> {
+  const projectRoot = await resolveWorkspaceProjectRoot(opts);
+  const statePath = join(projectRoot, '.agentforge', 'loop-state.json');
+  const next = localDefaultLoopGuardState();
+  mkdirSync(dirname(statePath), { recursive: true });
+  writeFileSync(statePath, JSON.stringify(next, null, 2));
+
+  if (opts.json) {
+    console.log(JSON.stringify({
+      projectRoot,
+      path: statePath,
+      state: next,
+      reset: true,
+    }, null, 2));
+    return;
+  }
+
+  console.log('[loop-guard] reset');
+  console.log(`Path:         ${statePath}`);
+  console.log('State:        reset to defaults');
 }
 
 async function resolveWorkspaceProjectRoot(options: WorkspaceAwareOptions): Promise<string> {
@@ -1014,6 +1172,116 @@ function countJsonlLines(path: string): number {
   } catch {
     return 0;
   }
+}
+
+function readRuntimeRoutingSummary(cycleDir: string): RuntimeRoutingSummary | null {
+  const execute = readJsonIfExists(join(cycleDir, 'phases', 'execute.json')) as {
+    itemResults?: Array<Record<string, unknown>>;
+    agentRuns?: Array<Record<string, unknown>>;
+  } | null;
+  if (!execute) return null;
+
+  const itemResults = Array.isArray(execute.itemResults) ? execute.itemResults : [];
+  const agentRuns = Array.isArray(execute.agentRuns) ? execute.agentRuns : [];
+  const runs = itemResults.length > 0 ? itemResults : agentRuns;
+  if (runs.length === 0) return null;
+
+  const decisionsByItemId = new Map<string, RuntimeRoutingDecision>();
+  for (const run of runs) {
+    const itemId = typeof run.itemId === 'string' ? run.itemId : null;
+    if (!itemId || decisionsByItemId.has(itemId)) continue;
+
+    const runtimeMode = typeof run.runtimeMode === 'string' && run.runtimeMode.length > 0
+      ? run.runtimeMode
+      : null;
+    const preferredProvider = typeof run.preferredProvider === 'string' && run.preferredProvider.length > 0
+      ? run.preferredProvider
+      : null;
+    decisionsByItemId.set(itemId, {
+      itemId,
+      decision: runtimeMode !== null || preferredProvider !== null ? 'routed' : 'default',
+      runtimeMode,
+      preferredProvider,
+    });
+  }
+
+  const decisions = [...decisionsByItemId.values()];
+  if (decisions.length === 0) return null;
+
+  const routedItems = decisions.filter((entry) => entry.decision === 'routed').length;
+  return {
+    totalItems: decisions.length,
+    routedItems,
+    defaultItems: decisions.length - routedItems,
+    decisions,
+  };
+}
+
+function isIsoDateString(value: string): boolean {
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
+}
+
+function readLoopGuardStateForStatus(path: string): {
+  fileStatus: 'valid' | 'missing' | 'corrupt';
+  state: ReturnType<typeof localDefaultLoopGuardState> | null;
+} {
+  if (!existsSync(path)) {
+    return { fileStatus: 'missing', state: null };
+  }
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as Partial<ReturnType<typeof localDefaultLoopGuardState>>;
+    const consecutiveFailedCycles = parsed.consecutiveFailedCycles;
+    const lastCycleId = parsed.lastCycleId;
+    const lastOutcome = parsed.lastOutcome;
+    const lastUpdatedAt = parsed.lastUpdatedAt;
+    const haltedReason = parsed.haltedReason;
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      parsed.v === 1 &&
+      Number.isInteger(consecutiveFailedCycles) &&
+      consecutiveFailedCycles !== undefined &&
+      consecutiveFailedCycles >= 0 &&
+      (lastCycleId === null || typeof lastCycleId === 'string') &&
+      (lastOutcome === null || lastOutcome === 'completed' || lastOutcome === 'failed') &&
+      typeof lastUpdatedAt === 'string' &&
+      isIsoDateString(lastUpdatedAt) &&
+      (haltedReason === undefined || typeof haltedReason === 'string')
+    ) {
+      return {
+        fileStatus: 'valid',
+        state: {
+          v: 1,
+          consecutiveFailedCycles,
+          lastCycleId,
+          lastOutcome,
+          lastUpdatedAt,
+          ...(haltedReason !== undefined ? { haltedReason } : {}),
+        },
+      };
+    }
+  } catch {
+    // fall through
+  }
+  return { fileStatus: 'corrupt', state: null };
+}
+
+function localDefaultLoopGuardState(): {
+  v: 1;
+  consecutiveFailedCycles: number;
+  lastCycleId: string | null;
+  lastOutcome: 'completed' | 'failed' | null;
+  lastUpdatedAt: string;
+  haltedReason?: string;
+} {
+  return {
+    v: 1,
+    consecutiveFailedCycles: 0,
+    lastCycleId: null,
+    lastOutcome: null,
+    lastUpdatedAt: new Date(0).toISOString(),
+  };
 }
 
 function parseOptionalPositiveNumber(raw: string | undefined, label: string): number | undefined | null {

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import process from 'node:process';
 import yaml from 'js-yaml';
@@ -105,7 +105,13 @@ const workspaceManifestPaths = async (manifest) => {
 
     for (const entry of entries) {
       if (entry.isDirectory()) {
-        paths.push(join(workspaceDir, entry.name, 'package.json'));
+        const manifestPath = join(workspaceDir, entry.name, 'package.json');
+        try {
+          await access(join(root, manifestPath));
+          paths.push(manifestPath);
+        } catch {
+          // Some plugin wrappers are Codex/host manifests rather than npm packages.
+        }
       }
     }
   }

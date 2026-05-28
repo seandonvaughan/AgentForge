@@ -53,7 +53,7 @@ function realPath(p: string): string {
   try {
     return realpathSync.native(p);
   } catch {
-    return p;
+    return resolve(p);
   }
 }
 
@@ -142,6 +142,15 @@ export class WorktreePool {
           `Existing path ${wtPath} is not a registered git worktree; remove or archive it before allocating ${id}.`,
         );
       }
+      if (explicitBranch) {
+        const currentBranch = (await git(wtPath, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
+        if (currentBranch !== explicitBranch) {
+          throw new Error(
+            `Existing worktree ${wtPath} is checked out on ${currentBranch}; cannot reuse it for ${explicitBranch}.`,
+          );
+        }
+      }
+      await this.assertWorktreeGitRoot(wtPath);
 
       const handle: WorktreeHandle = {
         id,
@@ -197,6 +206,7 @@ export class WorktreePool {
         ]);
       }
     });
+    await this.assertWorktreeGitRoot(wtPath);
 
     const handle: WorktreeHandle = {
       id,
@@ -458,6 +468,30 @@ export class WorktreePool {
     }
 
     return false;
+  }
+
+  private async assertWorktreeGitRoot(path: string): Promise<void> {
+    let topLevel: string;
+    try {
+      topLevel = (await git(path, ['rev-parse', '--show-toplevel'])).trim();
+    } catch {
+      throw new Error(
+        `Worktree path ${path} is not a git worktree root after allocation.`,
+      );
+    }
+
+    const expected = this.normalizePath(path);
+    const actual = this.normalizePath(topLevel);
+    if (actual !== expected) {
+      throw new Error(
+        `Worktree path ${path} resolves git root ${topLevel}; refusing to allocate a nested or stale checkout.`,
+      );
+    }
+  }
+
+  private normalizePath(path: string): string {
+    const normalized = realPath(path);
+    return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
   }
 
 }

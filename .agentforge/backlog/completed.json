@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "itemId": "backlog-dogfood-001",
+      "completedAt": "2026-05-27T20:11:22.608Z",
+      "updatedAt": "2026-05-27T20:11:22.608Z",
+      "cycleId": "1270787e-ce31-4fba-a3e6-5d9d15824a73",
+      "prNumber": 184,
+      "reason": "Merged retained value from failed guided cycle attempt"
+    },
+    {
+      "itemId": "backlog-dogfood-002",
+      "completedAt": "2026-05-27T21:20:19.269Z",
+      "updatedAt": "2026-05-27T21:20:19.269Z",
+      "cycleId": "7fd13ab8-56c8-42bf-ada8-7c25d7aa1ca7",
+      "prNumber": 185,
+      "reason": "Merged retained value from failed guided cycle attempt"
+    },
+    {
+      "itemId": "backlog-dogfood-003",
+      "completedAt": "2026-05-27T22:21:48.141Z",
+      "updatedAt": "2026-05-27T22:21:48.141Z",
+      "cycleId": "e4e08c78-feca-4150-83a4-4c48b40eabc2",
+      "prNumber": 186,
+      "reason": "Merged successful dogfood cycle"
+    },
+    {
+      "itemId": "backlog-dogfood-004",
+      "completedAt": "2026-05-27T23:03:12.970Z",
+      "updatedAt": "2026-05-27T23:03:12.970Z",
+      "cycleId": "dfcc94a9-a353-4728-8fae-9bd0fddce375",
+      "prNumber": 187,
+      "reason": "Merged retained audit timeout value from failed cycle"
+    },
+    {
+      "itemId": "backlog-dogfood-005",
+      "completedAt": "2026-05-27T23:29:17.761Z",
+      "updatedAt": "2026-05-27T23:29:17.761Z",
+      "cycleId": "6b1e2238-a2bf-49e0-9cb1-936b24a64edc",
+      "prNumber": 188,
+      "reason": "Merged retained loop guard CLI value from failed cycle"
+    },
+    {
+      "itemId": "backlog-dogfood-006",
+      "completedAt": "2026-05-27T23:49:27.105Z",
+      "updatedAt": "2026-05-27T23:49:27.105Z",
+      "cycleId": "a3e6f8af-6960-464c-983f-88047d260dba",
+      "prNumber": 189,
+      "reason": "Merged retained loop guard JSON value from failed cycle"
+    },
+    {
+      "itemId": "backlog-dogfood-007",
+      "completedAt": "2026-05-28T00:20:49.640Z",
+      "updatedAt": "2026-05-28T00:20:49.640Z",
+      "cycleId": "36a60751-9e9d-48ee-a79d-b3a1e27598d4",
+      "prNumber": 190,
+      "reason": "Merged successful dogfood cycle"
+    },
+    {
+      "itemId": "backlog-dogfood-008",
+      "completedAt": "2026-05-28T00:55:50.042Z",
+      "updatedAt": "2026-05-28T00:55:50.042Z",
+      "cycleId": "e0bd7895-3e24-4097-a45a-63bf7176d73c",
+      "prNumber": 191,
+      "reason": "Merged successful dogfood cycle"
+    },
+    {
+      "itemId": "backlog-dogfood-009",
+      "completedAt": "2026-05-28T01:28:32.438Z",
+      "updatedAt": "2026-05-28T01:28:32.438Z",
+      "cycleId": "2d863608-21a2-449e-a098-e9bd8a530e68",
+      "prNumber": 192,
+      "reason": "Merged successful dogfood cycle"
+    },
+    {
+      "itemId": "backlog-guided-large-001",
+      "completedAt": "2026-05-28T02:39:56.573Z",
+      "updatedAt": "2026-05-28T02:39:56.573Z",
+      "cycleId": "21bdeac2-2b38-4be9-9d95-39648e239539",
+      "prNumber": 193,
+      "reason": "Retained manually in commit a17acbd after failed guided cycle"
+    },
+    {
+      "itemId": "backlog-guided-large-002",
+      "completedAt": "2026-05-28T02:39:57.196Z",
+      "updatedAt": "2026-05-28T02:39:57.196Z",
+      "cycleId": "21bdeac2-2b38-4be9-9d95-39648e239539",
+      "prNumber": 194,
+      "reason": "Retained manually in commit a17acbd after failed guided cycle"
+    },
+    {
+      "itemId": "backlog-guided-large-003",
+      "completedAt": "2026-05-28T02:39:57.756Z",
+      "updatedAt": "2026-05-28T02:39:57.756Z",
+      "cycleId": "21bdeac2-2b38-4be9-9d95-39648e239539",
+      "prNumber": 195,
+      "reason": "Retained manually in commit a17acbd after failed guided cycle"
+    },
+    {
+      "itemId": "backlog-guided-large-004",
+      "completedAt": "2026-05-28T03:09:13.831Z",
+      "updatedAt": "2026-05-28T03:09:13.831Z",
+      "cycleId": "f9795d7c-5e50-4e52-805f-80f317cd2475",
+      "prNumber": 196,
+      "reason": "Merged successful Stream B planning hint cycle"
+    },
+    {
+      "itemId": "backlog-guided-large-005",
+      "completedAt": "2026-05-28T03:36:52.127Z",
+      "updatedAt": "2026-05-28T03:36:52.127Z",
+      "cycleId": "9b2130c9-9f4b-489e-9c30-37da80d858bb",
+      "prNumber": 197,
+      "reason": "Merged successful backlog routing visibility cycle"
+    },
+    {
+      "itemId": "backlog-guided-large-006",
+      "completedAt": "2026-05-28T04:07:07.655Z",
+      "updatedAt": "2026-05-28T04:07:07.655Z",
+      "cycleId": "ed6bd5cf-a1d3-4578-a0b5-7bbccc57485a",
+      "prNumber": 198,
+      "reason": "Merged successful backlog scope visibility cycle after audit correction"
+    }
+  ]
+}

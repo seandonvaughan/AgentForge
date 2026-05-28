@@ -15,6 +15,8 @@
 // that do not want side-effects).
 
 import { execFile as execFileCb } from 'node:child_process';
+import { existsSync, realpathSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 import type { MessageBusV2 } from '../message-bus/message-bus.js';
 import type { AgentBranchPushedPayload } from '../message-bus/types.js';
@@ -97,7 +99,9 @@ async function hasOriginRemote(worktreePath: string): Promise<boolean> {
 }
 
 const EXCLUDED_AGENT_STAGE_PREFIXES = [
+  '.agentforge/audit-worktrees/',
   '.agentforge/cycles/',
+  '.agentforge/run-logs/',
   '.agentforge/worktrees/',
   '.git/',
   '.pnpm-store/',
@@ -125,6 +129,36 @@ function isStageableAgentPath(path: string): boolean {
     return false;
   }
   return true;
+}
+
+function comparablePath(path: string): string {
+  let resolved: string;
+  try {
+    resolved = realpathSync.native(path);
+  } catch {
+    resolved = resolve(path);
+  }
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
+async function assertCommitWorktreeRoot(worktreePath: string): Promise<void> {
+  if (!existsSync(worktreePath)) {
+    throw new Error(`Worktree path ${worktreePath} does not exist; cannot commit agent work.`);
+  }
+
+  let topLevel: string;
+  try {
+    topLevel = await git(worktreePath, ['rev-parse', '--show-toplevel']);
+  } catch {
+    throw new Error(`Worktree path ${worktreePath} is not a git worktree; cannot commit agent work.`);
+  }
+
+  if (comparablePath(topLevel) !== comparablePath(worktreePath)) {
+    throw new Error(
+      `Worktree path ${worktreePath} resolves git root ${topLevel}; ` +
+      'refusing to commit changes outside the allocated worktree.',
+    );
+  }
 }
 
 async function listStageableChanges(worktreePath: string): Promise<string[]> {
@@ -214,6 +248,8 @@ export async function commitAgentWork(
   const sessionId = opts.sessionId ?? '';
   const cycleId = opts.cycleId ?? '';
   const branch = sanitizeBranch(opts.branch);
+
+  await assertCommitWorktreeRoot(worktreePath);
 
   // ── Clean-worktree check ────────────────────────────────────────────────────
   const stageablePaths = await listStageableChanges(worktreePath);

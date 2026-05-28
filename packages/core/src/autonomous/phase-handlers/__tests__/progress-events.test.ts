@@ -310,6 +310,49 @@ describe('gate-phase progress events', () => {
     expect(payload.findingsCount).toBe(0);
   });
 
+  it('labels test-phase output as QA strategy rather than executable test results', async () => {
+    writeSprintFile([{ id: 'item-1', title: 'Task A', assignee: 'backend', status: 'completed' }]);
+
+    const phasesDir = join(tmpRoot, '.agentforge', 'cycles', 'cycle-test-1', 'phases');
+    mkdirSync(phasesDir, { recursive: true });
+    writeFileSync(
+      join(phasesDir, 'test.json'),
+      JSON.stringify({
+        kind: 'qa-strategy',
+        testsRun: false,
+        status: 'completed',
+        strategy: 'Tests were not run because this is a read-only QA strategy phase.',
+      }),
+    );
+
+    const capturedTask = { value: '' };
+    const bus = makeBus();
+    const ctx = makeCtx(bus);
+
+    (ctx.runtime.run as ReturnType<typeof vi.fn>).mockImplementation(
+      async (_agentId: string, task: string) => {
+        capturedTask.value = task;
+        return {
+          output: JSON.stringify({ verdict: 'APPROVE', rationale: 'No blocking findings' }),
+          costUsd: 0.05,
+          status: 'completed',
+        };
+      },
+    );
+
+    const { runGatePhase } = await import('../gate-phase.js');
+    await runGatePhase(ctx);
+
+    expect(capturedTask.value).toContain('## QA strategy report (not executable test results)');
+    expect(capturedTask.value).toContain('Do not treat the QA strategy report above as executable test evidence');
+    expect(capturedTask.value).toContain('If the QA strategy says tests were not run, that is expected');
+    expect(capturedTask.value).toContain('Do not use');
+    expect(capturedTask.value).toContain('agentforge cycle list');
+    expect(capturedTask.value).toContain('current cycle has not reached VERIFY yet');
+    expect(capturedTask.value).toContain('MUST NOT independently drive a REJECT verdict for the');
+    expect(capturedTask.value).not.toContain('## Test results');
+  });
+
   it('writes knownDebt field to gate.json so operators can audit which findings were excluded', async () => {
     // Seed a prior gate-verdict JSONL entry directly so the knownDebt list is non-empty.
     const memDir = join(tmpRoot, '.agentforge', 'memory');

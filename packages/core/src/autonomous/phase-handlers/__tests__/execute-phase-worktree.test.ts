@@ -565,20 +565,30 @@ describe('execute-phase worktree integration', () => {
       { id: 'item-b', title: 'Task B', assignee: 'coder', tags: ['coder'] },
     ]);
 
-    const allocate = vi.fn().mockImplementation(async (req: { agentId: string; sessionId: string }) => ({
-      id: `wt-${req.sessionId}`,
-      path: `/fake/${req.sessionId}`,
-      branch: `autonomous/${req.sessionId}`,
-      allocatedAt: new Date().toISOString(),
-      agentId: req.agentId,
-      sessionId: req.sessionId,
-    }));
+    const allocate = vi.fn().mockImplementation(async (req: { agentId: string; sessionId: string }) => {
+      const path = join(tmpRoot, `fake-${req.sessionId}`);
+      await initGitRepo(path);
+      return {
+        id: `wt-${req.sessionId}`,
+        path,
+        branch: `autonomous/${req.sessionId}`,
+        allocatedAt: new Date().toISOString(),
+        agentId: req.agentId,
+        sessionId: req.sessionId,
+      };
+    });
     const pool = {
       allocate,
       release: vi.fn().mockResolvedValue(undefined),
     };
     const bus = makeBus();
-    const runtime = { run: vi.fn().mockResolvedValue({ output: 'ok', costUsd: 0.01 }) };
+    const runtime = {
+      run: vi.fn().mockImplementation(async (_agentId: string, _task: string, opts: { cwd?: string }) => {
+        if (!opts.cwd) throw new Error('missing worktree cwd');
+        writeFileSync(join(opts.cwd, 'feature.ts'), 'export const feature = true;\n');
+        return { output: 'ok', costUsd: 0.01 };
+      }),
+    };
     const ctx = makeCtx(bus, { worktreePool: pool, runtime });
 
     const result = await runExecutePhase(ctx, {
@@ -706,6 +716,11 @@ describe('execute-phase worktree integration', () => {
       run: vi.fn().mockImplementation(async (_agentId: string, _task: string, options: { cwd?: string }) => {
         if (!options.cwd) throw new Error('missing worktree cwd');
         writeFileSync(join(options.cwd, 'feature.ts'), 'export const feature = true;\n');
+        mkdirSync(join(options.cwd, '.agentforge', 'audit-worktrees', 'pr-195'), { recursive: true });
+        writeFileSync(
+          join(options.cwd, '.agentforge', 'audit-worktrees', 'pr-195', 'scratch.ts'),
+          'export const scratch = true;\n',
+        );
         mkdirSync(join(options.cwd, '.pnpm-store', 'v3', 'files', '00'), { recursive: true });
         writeFileSync(join(options.cwd, '.pnpm-store', 'v3', 'files', '00', 'cache-file'), 'cache\n');
         mkdirSync(join(options.cwd, 'node_modules', 'pkg'), { recursive: true });
@@ -784,6 +799,57 @@ describe('execute-phase worktree integration', () => {
     const itemResult = (result.itemResults as any[])?.[0];
     expect(itemResult.status).toBe('failed');
     expect(itemResult.error).toContain('produced no source changes');
+    expect(pool.release).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails instead of counting parent repo audit worktrees from a stale nested path', async () => {
+    await initGitRepo(tmpRoot);
+    const stalePath = join(tmpRoot, '.agentforge', 'worktrees', 'agent-cli-engineer-stale');
+    mkdirSync(stalePath, { recursive: true });
+    mkdirSync(join(tmpRoot, '.agentforge', 'audit-worktrees', 'pr-195'), { recursive: true });
+    writeFileSync(
+      join(tmpRoot, '.agentforge', 'audit-worktrees', 'pr-195', 'scratch.ts'),
+      'export const scratch = true;\n',
+    );
+    const rootHead = (
+      await execFile('git', ['rev-parse', 'HEAD'], { cwd: tmpRoot })
+    ).stdout.toString().trim();
+
+    writeSprintFile([
+      { id: 'item-1', title: 'Fix rejected branch', assignee: 'coder', tags: ['coder'] },
+    ]);
+
+    const pool = makeSpyPool(stalePath, {
+      branch: 'codex/rejected-branch',
+      baselineHead: rootHead,
+      deleteBranchOnRelease: false,
+    });
+    const bus = makeBus();
+    const runtime = {
+      run: vi.fn().mockResolvedValue({
+        output: 'I fixed the retry',
+        costUsd: 0.01,
+      }),
+    };
+    const ctx = makeCtx(bus, {
+      worktreePool: pool,
+      runtime,
+      retryAttempt: 1,
+      gateRetry: {
+        attempt: 1,
+        rationale: 'Gate rejected against branch codex/rejected-branch.',
+        rejectedBranch: 'codex/rejected-branch',
+        itemIds: ['item-1'],
+      },
+    });
+
+    const result = await runExecutePhase(ctx, { maxParallelism: 1, maxItemRetries: 0 });
+
+    expect(result.status).toBe('blocked');
+    const itemResult = (result.itemResults as any[])?.[0];
+    expect(itemResult.status).toBe('failed');
+    expect(itemResult.error).toContain('refusing to count changes outside the allocated worktree');
+    expect(itemResult.worktreeChangedFiles).toBeUndefined();
     expect(pool.release).toHaveBeenCalledTimes(1);
   });
 

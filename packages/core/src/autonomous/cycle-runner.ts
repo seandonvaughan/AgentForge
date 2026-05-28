@@ -141,16 +141,113 @@ interface AgentPrRecord {
   openedAt?: string;
 }
 
-function extractPrNumber(rationale: string): number | undefined {
-  const match = rationale.match(/\b(?:PR|pull request)\s*#?(\d+)\b/i);
-  if (!match?.[1]) return undefined;
-  const parsed = Number.parseInt(match[1], 10);
-  return Number.isFinite(parsed) ? parsed : undefined;
+function parsePrNumber(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function extractPrNumbers(rationale: string): number[] {
+  const numbers = new Set<number>();
+  for (const match of rationale.matchAll(/\b(?:PR|pull request)\s*#?(\d+)\b/gi)) {
+    const parsed = parsePrNumber(match[1]);
+    if (parsed !== undefined) numbers.add(parsed);
+  }
+  for (const match of rationale.matchAll(/\/pull\/(\d+)\b/gi)) {
+    const parsed = parsePrNumber(match[1]);
+    if (parsed !== undefined) numbers.add(parsed);
+  }
+  return [...numbers];
 }
 
 function extractBranchName(rationale: string): string | undefined {
   const match = rationale.match(/\b(?:target\s+branch|branch)\s+([A-Za-z0-9._/-]+)/i);
-  return match?.[1]?.replace(/[.,;:)]+$/, '');
+  const candidate = match?.[1]?.replace(/[.,;:)]+$/, '');
+  if (!candidate) return undefined;
+  // Avoid treating ordinary prose such as "target branch diff" as a branch.
+  // Agent PR branches are namespaced; unqualified words are not actionable for
+  // retry checkout and should fall through to the cycle ledger.
+  return candidate.includes('/') ? candidate : undefined;
+}
+
+function recordPrNumber(record: AgentPrRecord): number | undefined {
+  const candidate = record.prNumber ?? record.number;
+  return typeof candidate === 'number' && Number.isFinite(candidate) && candidate > 0
+    ? candidate
+    : undefined;
+}
+
+function isBranchTokenChar(char: string | undefined): boolean {
+  return char !== undefined && /^[A-Za-z0-9._/-]$/.test(char);
+}
+
+function isUrlTokenChar(char: string | undefined): boolean {
+  return char !== undefined && /^[A-Za-z0-9._~:/?#@!$&*+,;=%-]$/.test(char);
+}
+
+function containsExactToken(
+  text: string,
+  token: string,
+  isTokenChar: (char: string | undefined) => boolean,
+  allowGitRangeSeparator = false,
+): boolean {
+  if (token.length === 0) return false;
+  let index = text.indexOf(token);
+  while (index !== -1) {
+    const end = index + token.length;
+    const before = index > 0 ? text[index - 1] : undefined;
+    const after = end < text.length ? text[end] : undefined;
+    const hasBeforeGitRange =
+      allowGitRangeSeparator && text.slice(Math.max(0, index - 3), index) === '...';
+    const hasAfterGitRange = allowGitRangeSeparator && text.slice(end, end + 3) === '...';
+    const startsOnBoundary = index === 0 || !isTokenChar(before) || hasBeforeGitRange;
+    const endsOnBoundary = end >= text.length || !isTokenChar(after) || hasAfterGitRange;
+
+    if (startsOnBoundary && endsOnBoundary) return true;
+    index = text.indexOf(token, index + 1);
+  }
+  return false;
+}
+
+function recordPrUrls(record: AgentPrRecord): string[] {
+  return [record.prUrl, record.url]
+    .filter((url): url is string => typeof url === 'string' && url.length > 0);
+}
+
+function rationaleMentionsPrUrl(rationale: string, record: AgentPrRecord): boolean {
+  return recordPrUrls(record).some((url) => containsExactToken(rationale, url, isUrlTokenChar));
+}
+
+function rationaleMentionsBranch(rationale: string, branch: string): boolean {
+  return [branch, `origin/${branch}`, `refs/heads/${branch}`]
+    .some((token) => containsExactToken(rationale, token, isBranchTokenChar, true));
+}
+
+function findAgentPrRecord(
+  records: AgentPrRecord[],
+  rationale: string,
+  branchFromRationale: string | undefined,
+  prNumbersFromRationale: number[],
+): AgentPrRecord | undefined {
+  const prUrlMatch = records.find((record) => rationaleMentionsPrUrl(rationale, record));
+  if (prUrlMatch !== undefined) return prUrlMatch;
+
+  const prNumberMatch = records.find((record) => {
+    const number = recordPrNumber(record);
+    return number !== undefined && prNumbersFromRationale.includes(number);
+  });
+  if (prNumberMatch !== undefined) return prNumberMatch;
+
+  if (branchFromRationale !== undefined) {
+    const branchMatch = records.find((record) => record.branch === branchFromRationale);
+    if (branchMatch !== undefined) return branchMatch;
+  }
+
+  return records.find((record) => (
+    typeof record.branch === 'string' &&
+    record.branch.length > 0 &&
+    rationaleMentionsBranch(rationale, record.branch)
+  ));
 }
 
 function extractMentionedFiles(rationale: string): string[] {
@@ -192,16 +289,19 @@ export function buildGateRetryContext(
 ): GateRetryContext {
   const records = readAgentPrRecords(projectRoot, cycleId);
   const branchFromRationale = extractBranchName(rationale);
-  const prFromRationale = extractPrNumber(rationale);
-  const matchingRecord = branchFromRationale
-    ? records.find((record) => record.branch === branchFromRationale)
-    : prFromRationale !== undefined
-      ? records.find((record) => (record.prNumber ?? record.number) === prFromRationale)
-      : undefined;
+  const prNumbersFromRationale = extractPrNumbers(rationale);
+  const prFromRationale = prNumbersFromRationale[0];
+  const matchingRecord = findAgentPrRecord(
+    records,
+    rationale,
+    branchFromRationale,
+    prNumbersFromRationale,
+  );
   const fallbackRecord = matchingRecord ?? (records.length === 1 ? latestAgentPr(records) : undefined);
   const selectedRecord = matchingRecord ?? fallbackRecord;
-  const rejectedBranch = branchFromRationale ?? selectedRecord?.branch;
-  const prNumber = prFromRationale ?? selectedRecord?.prNumber ?? selectedRecord?.number;
+  const selectedPrNumber = selectedRecord !== undefined ? recordPrNumber(selectedRecord) : undefined;
+  const rejectedBranch = selectedRecord?.branch ?? (records.length === 0 ? branchFromRationale : undefined);
+  const prNumber = selectedPrNumber ?? (records.length === 0 ? prFromRationale : undefined);
   const prUrl = selectedRecord?.prUrl ?? selectedRecord?.url;
   const itemIds = selectedRecord?.itemIds?.filter((id) => typeof id === 'string' && id.length > 0);
   return {

@@ -57,6 +57,43 @@ describe('cycle list/show summaries', () => {
     expect(output()).toContain(`${cycleId}  plan`);
   });
 
+  it('prints machine-readable JSON for cycle list with --json', async () => {
+    const cycleId = '66666666-6666-4666-8666-666666666666';
+    writeCycle(cycleId, {
+      cycleId,
+      stage: 'completed',
+      sprintVersion: '10.8.0',
+      startedAt: '2026-05-20T00:00:00.000Z',
+      completedAt: '2026-05-20T00:05:00.000Z',
+      cost: { totalUsd: 1.25, budgetUsd: 10 },
+      tests: { passed: 12, total: 12 },
+      pr: { url: 'https://github.com/seandonvaughan/AgentForge/pull/666' },
+    });
+
+    await runCli('cycle', 'list', '--project-root', projectRoot, '--limit', '1', '--json');
+
+    const parsed = JSON.parse(output()) as {
+      projectRoot: string;
+      limit: number;
+      cycles: Array<{
+        cycleId: string;
+        stage: string;
+        sprintVersion: string | null;
+        testsPassed: number;
+        testsTotal: number;
+      }>;
+    };
+
+    expect(parsed.projectRoot).toBe(projectRoot);
+    expect(parsed.limit).toBe(1);
+    expect(parsed.cycles).toHaveLength(1);
+    expect(parsed.cycles[0]?.cycleId).toBe(cycleId);
+    expect(parsed.cycles[0]?.stage).toBe('completed');
+    expect(parsed.cycles[0]?.sprintVersion).toBe('10.8.0');
+    expect(parsed.cycles[0]?.testsPassed).toBe(12);
+    expect(parsed.cycles[0]?.testsTotal).toBe(12);
+  });
+
   it('shows PRs from agent-prs ledger when cycle.json has no cycle-level PR', async () => {
     const cycleId = '44444444-4444-4444-8444-444444444444';
     const cycleDir = writeCycle(cycleId, {
@@ -111,6 +148,267 @@ describe('cycle list/show summaries', () => {
 
     expect(output()).toContain('PR:           https://github.com/seandonvaughan/AgentForge/pull/103');
     expect(output()).not.toContain('PR:           https://github.com/seandonvaughan/AgentForge/pull/102');
+  });
+
+  it('prints machine-readable JSON for cycle show with --json', async () => {
+    const cycleId = '77777777-7777-4777-8777-777777777777';
+    writeCycle(cycleId, {
+      cycleId,
+      stage: 'completed',
+      sprintVersion: '10.8.1',
+      startedAt: '2026-05-20T00:00:00.000Z',
+      completedAt: '2026-05-20T00:05:00.000Z',
+      cost: { totalUsd: 2.5, budgetUsd: 10 },
+      tests: { passed: 8, total: 10 },
+      pr: { url: 'https://github.com/seandonvaughan/AgentForge/pull/777' },
+    }, [
+      { type: 'phase.start', phase: 'plan', at: '2026-05-20T00:00:01.000Z' },
+      { type: 'phase.complete', phase: 'plan', at: '2026-05-20T00:01:01.000Z' },
+    ]);
+
+    await runCli('cycle', 'show', cycleId, '--project-root', projectRoot, '--json');
+
+    const parsed = JSON.parse(output()) as {
+      projectRoot: string;
+      cycleId: string;
+      summary: {
+        stage: string;
+        testsPassed: number;
+        testsTotal: number;
+      };
+      eventsCount: number;
+      error: string | null;
+    };
+
+    expect(parsed.projectRoot).toBe(projectRoot);
+    expect(parsed.cycleId).toBe(cycleId);
+    expect(parsed.summary.stage).toBe('completed');
+    expect(parsed.summary.testsPassed).toBe(8);
+    expect(parsed.summary.testsTotal).toBe(10);
+    expect(parsed.eventsCount).toBe(2);
+    expect(parsed.error).toBeNull();
+    expect(output()).not.toContain('Cycle:');
+  });
+
+  it('includes latest agent PR fallback metadata in cycle show JSON', async () => {
+    const cycleId = '88888888-8888-4888-8888-888888888888';
+    const cycleDir = writeCycle(cycleId, {
+      cycleId,
+      stage: 'completed',
+      startedAt: '2026-05-20T00:00:00.000Z',
+      completedAt: '2026-05-20T00:05:00.000Z',
+      pr: { url: null, number: null, draft: false },
+    });
+    writeFileSync(join(cycleDir, 'agent-prs.json'), JSON.stringify([
+      {
+        prNumber: 201,
+        prUrl: 'https://github.com/seandonvaughan/AgentForge/pull/201',
+        branch: 'codex/agent-test-old',
+        status: 'open',
+        openedAt: '2026-05-20T00:01:00.000Z',
+      },
+      {
+        prNumber: 202,
+        prUrl: 'https://github.com/seandonvaughan/AgentForge/pull/202',
+        branch: 'codex/agent-test-retry',
+        status: 'open',
+        openedAt: '2026-05-20T00:02:00.000Z',
+      },
+    ], null, 2));
+
+    await runCli('cycle', 'show', cycleId, '--project-root', projectRoot, '--json');
+
+    const parsed = JSON.parse(output()) as {
+      summary: { prUrl: string | null };
+      pr: {
+        url: string | null;
+        agentPr: {
+          prNumber: number | null;
+          prUrl: string | null;
+          branch: string | null;
+          status: string | null;
+        } | null;
+      };
+    };
+
+    expect(parsed.summary.prUrl).toBe('https://github.com/seandonvaughan/AgentForge/pull/202');
+    expect(parsed.pr.url).toBe('https://github.com/seandonvaughan/AgentForge/pull/202');
+    expect(parsed.pr.agentPr).toMatchObject({
+      prNumber: 202,
+      prUrl: 'https://github.com/seandonvaughan/AgentForge/pull/202',
+      branch: 'codex/agent-test-retry',
+      status: 'open',
+    });
+  });
+
+  it('deduplicates runtime routing decisions by itemId from itemResults in cycle show JSON', async () => {
+    const cycleId = '99999999-9999-4999-8999-999999999999';
+    const cycleDir = writeCycle(cycleId, {
+      cycleId,
+      stage: 'completed',
+      startedAt: '2026-05-20T00:00:00.000Z',
+      completedAt: '2026-05-20T00:05:00.000Z',
+    });
+    mkdirSync(join(cycleDir, 'phases'), { recursive: true });
+    writeFileSync(join(cycleDir, 'phases', 'execute.json'), JSON.stringify({
+      itemResults: [
+        {
+          itemId: 'item-routed',
+          status: 'completed',
+          runtimeMode: 'codex-cli',
+          preferredProvider: 'codex-cli',
+        },
+        {
+          itemId: 'item-routed',
+          status: 'completed',
+          runtimeMode: 'codex-cli',
+          preferredProvider: 'codex-cli',
+        },
+        {
+          itemId: 'item-default',
+          status: 'completed',
+        },
+        {
+          itemId: 'item-default',
+          status: 'completed',
+        },
+      ],
+    }, null, 2));
+
+    await runCli('cycle', 'show', cycleId, '--project-root', projectRoot, '--json');
+
+    const parsed = JSON.parse(output()) as {
+      runtimeRouting: {
+        totalItems: number;
+        routedItems: number;
+        defaultItems: number;
+        decisions: Array<{
+          itemId: string;
+          decision: string;
+          runtimeMode: string | null;
+          preferredProvider: string | null;
+        }>;
+      } | null;
+    };
+
+    expect(parsed.runtimeRouting).toBeTruthy();
+    expect(parsed.runtimeRouting).toMatchObject({
+      totalItems: 2,
+      routedItems: 1,
+      defaultItems: 1,
+    });
+    expect(parsed.runtimeRouting?.decisions).toEqual([
+      {
+        itemId: 'item-routed',
+        decision: 'routed',
+        runtimeMode: 'codex-cli',
+        preferredProvider: 'codex-cli',
+      },
+      {
+        itemId: 'item-default',
+        decision: 'default',
+        runtimeMode: null,
+        preferredProvider: null,
+      },
+    ]);
+  });
+
+  it('deduplicates runtime routing decisions from agentRuns when itemResults is absent', async () => {
+    const cycleId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const cycleDir = writeCycle(cycleId, {
+      cycleId,
+      stage: 'completed',
+      startedAt: '2026-05-20T00:00:00.000Z',
+      completedAt: '2026-05-20T00:05:00.000Z',
+    });
+    mkdirSync(join(cycleDir, 'phases'), { recursive: true });
+    writeFileSync(join(cycleDir, 'phases', 'execute.json'), JSON.stringify({
+      agentRuns: [
+        {
+          itemId: 'fallback-routed',
+          status: 'completed',
+          preferredProvider: 'codex-cli',
+        },
+        {
+          itemId: 'fallback-routed',
+          status: 'completed',
+          preferredProvider: 'codex-cli',
+        },
+        {
+          itemId: 'fallback-default',
+          status: 'completed',
+        },
+      ],
+    }, null, 2));
+
+    await runCli('cycle', 'show', cycleId, '--project-root', projectRoot, '--json');
+
+    const parsed = JSON.parse(output()) as {
+      runtimeRouting: {
+        totalItems: number;
+        routedItems: number;
+        defaultItems: number;
+        decisions: Array<{ itemId: string; decision: string }>;
+      } | null;
+    };
+
+    expect(parsed.runtimeRouting).toMatchObject({
+      totalItems: 2,
+      routedItems: 1,
+      defaultItems: 1,
+    });
+    expect(parsed.runtimeRouting?.decisions.map((decision) => decision.itemId)).toEqual([
+      'fallback-routed',
+      'fallback-default',
+    ]);
+  });
+
+  it('falls back to agentRuns when itemResults is empty and ignores invalid itemIds', async () => {
+    const cycleId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const cycleDir = writeCycle(cycleId, {
+      cycleId,
+      stage: 'completed',
+      startedAt: '2026-05-20T00:00:00.000Z',
+      completedAt: '2026-05-20T00:05:00.000Z',
+    });
+    mkdirSync(join(cycleDir, 'phases'), { recursive: true });
+    writeFileSync(join(cycleDir, 'phases', 'execute.json'), JSON.stringify({
+      itemResults: [],
+      agentRuns: [
+        {
+          itemId: '',
+          preferredProvider: 'codex-cli',
+        },
+        {
+          itemId: null,
+          preferredProvider: 'codex-cli',
+        },
+        {
+          itemId: 'fallback-valid',
+          preferredProvider: 'codex-cli',
+        },
+      ],
+    }, null, 2));
+
+    await runCli('cycle', 'show', cycleId, '--project-root', projectRoot, '--json');
+
+    const parsed = JSON.parse(output()) as {
+      runtimeRouting: {
+        totalItems: number;
+        routedItems: number;
+        defaultItems: number;
+        decisions: Array<{ itemId: string }>;
+      } | null;
+    };
+
+    expect(parsed.runtimeRouting).toMatchObject({
+      totalItems: 1,
+      routedItems: 1,
+      defaultItems: 0,
+    });
+    expect(parsed.runtimeRouting?.decisions).toEqual([
+      expect.objectContaining({ itemId: 'fallback-valid' }),
+    ]);
   });
 
   function writeCycle(

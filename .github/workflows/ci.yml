@@ -69,6 +69,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
       - name: Run release gates
         run: pnpm verify:gates
 
@@ -88,6 +91,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm build
 
       - name: Run tests
         run: pnpm exec vitest run --reporter=junit --outputFile=test-results/junit.xml

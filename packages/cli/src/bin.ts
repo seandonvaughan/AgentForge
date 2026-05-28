@@ -16,6 +16,7 @@ import { registerSkillsCoverageCommand } from './commands/skills-coverage.js';
 import { registerSkillsCommand } from './commands/skills.js';
 import { registerCodexCommand } from './commands/codex.js';
 import { registerResearchCommand } from './commands/research.js';
+import { registerBacklogCommand } from './commands/backlog.js';
 
 interface InitializeWorkspaceImport {
   initializeWorkspace(options: {
@@ -155,6 +156,7 @@ registerSkillsCoverageCommand(program);
 registerSkillsCommand(program);
 registerCodexCommand(program);
 registerResearchCommand(program);
+registerBacklogCommand(program);
 
 return program;
 }
