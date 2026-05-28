@@ -72,6 +72,30 @@
       "cycleId": "2d863608-21a2-449e-a098-e9bd8a530e68",
       "prNumber": 192,
       "reason": "Merged successful dogfood cycle"
+    },
+    {
+      "itemId": "backlog-guided-large-001",
+      "completedAt": "2026-05-28T02:39:56.573Z",
+      "updatedAt": "2026-05-28T02:39:56.573Z",
+      "cycleId": "21bdeac2-2b38-4be9-9d95-39648e239539",
+      "prNumber": 193,
+      "reason": "Retained manually in commit a17acbd after failed guided cycle"
+    },
+    {
+      "itemId": "backlog-guided-large-002",
+      "completedAt": "2026-05-28T02:39:57.196Z",
+      "updatedAt": "2026-05-28T02:39:57.196Z",
+      "cycleId": "21bdeac2-2b38-4be9-9d95-39648e239539",
+      "prNumber": 194,
+      "reason": "Retained manually in commit a17acbd after failed guided cycle"
+    },
+    {
+      "itemId": "backlog-guided-large-003",
+      "completedAt": "2026-05-28T02:39:57.756Z",
+      "updatedAt": "2026-05-28T02:39:57.756Z",
+      "cycleId": "21bdeac2-2b38-4be9-9d95-39648e239539",
+      "prNumber": 195,
+      "reason": "Retained manually in commit a17acbd after failed guided cycle"
     }
   ]
 }
