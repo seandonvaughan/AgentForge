@@ -233,7 +233,7 @@ describe('cycle launch options', () => {
     });
   });
 
-  it('uses a 5-minute audit timeout when effective maxItemsPerSprint is 1', async () => {
+  it('keeps default audit runtime options when effective maxItemsPerSprint is 1', async () => {
     process.env['AUTONOMOUS_MAX_ITEMS'] = '1';
     await runCli([
       'cycle',
@@ -246,7 +246,7 @@ describe('cycle launch options', () => {
     const auditHandler = phaseHandlers?.['audit'];
     expect(auditHandler).toBeDefined();
     await auditHandler?.({});
-    expect(captures.auditPhaseCallOptions[0]).toMatchObject({ timeoutMs: 300000 });
+    expect(captures.auditPhaseCallOptions[0]).toBeUndefined();
   });
 
   it('keeps default audit runtime options when maxItemsPerSprint is greater than 1', async () => {

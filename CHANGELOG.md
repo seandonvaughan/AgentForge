@@ -17,6 +17,7 @@ All notable changes to AgentForge are documented in this file.
 - Added `agentforge cycle show --json` to emit machine-readable per-cycle detail output while preserving legacy text-mode output by default.
 - Added `agentforge cycle streak status` and `agentforge cycle streak record <cycleId>` with optional `--json`, durable ledger storage at `.agentforge/cycles/streak-ledger.json`, idempotent upsert-by-cycle recording, and consecutive-success streak visibility.
 - Added `agentforge cycle assess-pr <cycleId>` (with `--json`) for deterministic post-cycle PR merge-readiness assessment from existing cycle artifacts (stage, approvals, gate verdict, review findings, execute failures, and test outcomes).
+- Kept one-item cycle audit runs on the normal runtime timeout path so curated single-item cycles do not fail under a special five-minute cap.
 - `ProposalToBacklog` now filters ids recorded in `.agentforge/backlog/completed.json`, preventing completed backlog items from being replayed in new autonomous cycle intake.
 
 ## [23.5.0] - 2026-05-18
