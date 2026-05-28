@@ -94,6 +94,96 @@ describe('cycle list/show summaries', () => {
     expect(parsed.cycles[0]?.testsTotal).toBe(12);
   });
 
+  it('filters cycle list output by stage', async () => {
+    const completedCycleId = '12121212-1212-4212-8212-121212121212';
+    const failedCycleId = '34343434-3434-4343-8343-343434343434';
+    writeCycle(completedCycleId, {
+      cycleId: completedCycleId,
+      stage: 'completed',
+      startedAt: '2026-05-20T00:00:00.000Z',
+    });
+    writeCycle(failedCycleId, {
+      cycleId: failedCycleId,
+      stage: 'failed',
+      startedAt: '2026-05-20T00:01:00.000Z',
+    });
+
+    await runCli('cycle', 'list', '--project-root', projectRoot, '--stage', 'failed');
+
+    expect(output()).toContain(`${failedCycleId}  failed`);
+    expect(output()).not.toContain(`${completedCycleId}  completed`);
+  });
+
+  it('filters cycle list JSON output by stage and includes the stage filter', async () => {
+    const completedCycleId = '56565656-5656-4565-8565-565656565656';
+    const failedCycleId = '78787878-7878-4787-8787-787878787878';
+    writeCycle(completedCycleId, {
+      cycleId: completedCycleId,
+      stage: 'completed',
+      startedAt: '2026-05-20T00:00:00.000Z',
+    });
+    writeCycle(failedCycleId, {
+      cycleId: failedCycleId,
+      stage: 'failed',
+      startedAt: '2026-05-20T00:01:00.000Z',
+    });
+
+    await runCli('cycle', 'list', '--project-root', projectRoot, '--stage', 'completed', '--json');
+
+    const parsed = JSON.parse(output()) as {
+      stage: string;
+      cycles: Array<{ cycleId: string; stage: string }>;
+    };
+    expect(parsed.stage).toBe('completed');
+    expect(parsed.cycles).toHaveLength(1);
+    expect(parsed.cycles[0]?.cycleId).toBe(completedCycleId);
+    expect(parsed.cycles[0]?.stage).toBe('completed');
+  });
+
+  it('filters by canonical and artifact cycle stages not known to the CLI filter', async () => {
+    const stages = ['stage', 'verify', 'commit', 'aborted'];
+    for (const stage of stages) {
+      writeCycle(`${stage.padEnd(8, '0')}-1111-4111-8111-111111111111`, {
+        cycleId: `${stage.padEnd(8, '0')}-1111-4111-8111-111111111111`,
+        stage,
+        startedAt: '2026-05-20T00:00:00.000Z',
+      });
+    }
+
+    for (const stage of stages) {
+      consoleLog.mockClear();
+      await runCli('cycle', 'list', '--project-root', projectRoot, '--stage', stage, '--json');
+
+      const parsed = JSON.parse(output()) as {
+        stage: string;
+        cycles: Array<{ stage: string }>;
+      };
+      expect(parsed.stage).toBe(stage);
+      expect(parsed.cycles).toHaveLength(1);
+      expect(parsed.cycles[0]?.stage).toBe(stage);
+    }
+  });
+
+  it('reports an accurate text empty state when a valid stage filter matches no cycles', async () => {
+    writeCycle('99999999-1111-4111-8111-111111111111', {
+      cycleId: '99999999-1111-4111-8111-111111111111',
+      stage: 'completed',
+      startedAt: '2026-05-20T00:00:00.000Z',
+    });
+
+    await runCli('cycle', 'list', '--project-root', projectRoot, '--stage', 'verify');
+
+    expect(output()).toBe('(no cycles matched --stage verify)');
+  });
+
+  it('fails cycle list when stage filter syntax is invalid', async () => {
+    await runCli('cycle', 'list', '--project-root', projectRoot, '--stage', 'bad stage');
+
+    expect(process.exitCode).toBe(1);
+    expect(errorOutput()).toContain('Invalid value for --stage: bad stage.');
+    expect(output()).toBe('');
+  });
+
   it('shows PRs from agent-prs ledger when cycle.json has no cycle-level PR', async () => {
     const cycleId = '44444444-4444-4444-8444-444444444444';
     const cycleDir = writeCycle(cycleId, {
@@ -796,5 +886,9 @@ describe('cycle list/show summaries', () => {
 
   function output(): string {
     return consoleLog.mock.calls.map((call: unknown[]) => String(call[0])).join('\n');
+  }
+
+  function errorOutput(): string {
+    return consoleError.mock.calls.map((call: unknown[]) => String(call[0])).join('\n');
   }
 });

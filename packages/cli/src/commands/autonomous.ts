@@ -79,6 +79,7 @@ interface CyclePreviewOptions extends WorkspaceAwareOptions {
 
 interface CycleListOptions extends WorkspaceAwareOptions {
   limit: string;
+  stage?: string;
   json?: boolean;
 }
 
@@ -224,6 +225,7 @@ interface PrMergeAssessment {
 }
 
 const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
+const CYCLE_STAGE_FILTER_RE = /^[a-z][a-z0-9_-]*$/;
 type ModelCap = 'opus' | 'sonnet' | 'haiku';
 type EffortCap = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
@@ -267,6 +269,7 @@ export function registerCycleCommand(program: Command): void {
     .option('--project-root <path>', 'Project root', process.cwd())
     .option('--workspace <id>', 'Run against a registered workspace from ~/.agentforge/workspaces.json')
     .option('--limit <count>', 'Maximum rows to show', '20')
+    .option('--stage <stage>', 'Filter by cycle stage')
     .option('--json', 'Print machine-readable JSON')
     .action(runCycleListAction);
 
@@ -758,18 +761,28 @@ async function runCycleListAction(opts: CycleListOptions): Promise<void> {
     process.exitCode = 1;
     return;
   }
+  const stageFilter = parseCycleListStageFilter(opts.stage);
+  if (stageFilter === null) {
+    process.exitCode = 1;
+    return;
+  }
 
-  const cycles = listCycles(projectRoot).slice(0, limit);
+  const cycles = listCycles(projectRoot)
+    .filter((cycle) => stageFilter === undefined || cycle.stage === stageFilter)
+    .slice(0, limit);
   if (cycles.length === 0) {
     if (opts.json) {
       console.log(JSON.stringify({
         projectRoot,
         limit,
+        ...(stageFilter !== undefined ? { stage: stageFilter } : {}),
         cycles: [],
       }, null, 2));
       return;
     }
-    console.log('(no cycles recorded)');
+    console.log(stageFilter === undefined
+      ? '(no cycles recorded)'
+      : `(no cycles matched --stage ${stageFilter})`);
     return;
   }
 
@@ -777,6 +790,7 @@ async function runCycleListAction(opts: CycleListOptions): Promise<void> {
     console.log(JSON.stringify({
       projectRoot,
       limit,
+      ...(stageFilter !== undefined ? { stage: stageFilter } : {}),
       cycles,
     }, null, 2));
     return;
@@ -794,6 +808,22 @@ async function runCycleListAction(opts: CycleListOptions): Promise<void> {
     }
     console.log('');
   }
+}
+
+function parseCycleListStageFilter(rawStage: string | undefined): string | null | undefined {
+  if (rawStage === undefined) {
+    return undefined;
+  }
+  const stage = rawStage.trim().toLowerCase();
+  if (stage.length === 0) {
+    console.error('Invalid value for --stage: expected non-empty stage name');
+    return null;
+  }
+  if (!CYCLE_STAGE_FILTER_RE.test(stage)) {
+    console.error(`Invalid value for --stage: ${rawStage}. Expected a stage token like completed, failed, verify, or custom-stage.`);
+    return null;
+  }
+  return stage;
 }
 
 async function runCycleShowAction(cycleId: string, opts: CycleShowOptions): Promise<void> {
