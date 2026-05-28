@@ -220,6 +220,35 @@
         "packages/cli/src/commands/backlog.ts",
         "packages/cli/src/__tests__/backlog-command.test.ts"
       ]
+    },
+    {
+      "id": "guided-large-007",
+      "title": "Add post-cycle PR assessment command",
+      "description": "Add an operator-facing `agentforge cycle assess <cycleId>` command that summarizes whether a completed AgentForge cycle produced merge-ready work. It should read cycle.json, gate/review/test artifacts, and agent-prs.json, then print deterministic text and optional `--json` output with cycle id, stage/status, gate verdict, test totals, cost, agent PRs, and an overall recommendation of `merge-ready`, `needs-review`, or `blocked`. When `--ci` is supplied, enrich PR rows from `gh pr checks` using an injectable/mocked exec path in tests; default mode must not call GitHub. Preserve existing cycle run/list/show behavior. Add focused CLI tests for missing cycles, completed green cycles with PR ledger entries, rejected/failed cycles, JSON shape, and mocked CI enrichment.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "tags": ["feature", "guided-large", "dogfood", "operator-visibility", "pr-audit", "cli"],
+      "source": "guided-large-2026-05-28",
+      "files": [
+        "packages/cli/src/commands/autonomous.ts",
+        "packages/cli/src/__tests__/cycle-list-show.test.ts",
+        "scripts/check-help-output.mjs",
+        "CHANGELOG.md"
+      ]
+    },
+    {
+      "id": "guided-large-008",
+      "title": "Add cycle streak ledger and status command",
+      "description": "Add a durable dogfood streak ledger that lets operators prove consecutive meaningful AgentForge cycles without scraping chat history. Implement `agentforge cycle streak status --project-root .` and `agentforge cycle streak record <cycleId> --project-root . --pr <number> --result success|failure --reason <text>`, with optional `--json` for both commands. Store entries under `.agentforge/cycles/streak-ledger.json`, compute current consecutive success count from newest entries, and include cycle id, PR number, result, reason, recordedAt, and merge evidence fields when available. Preserve existing loop guard and cycle execution semantics. Add focused CLI tests for missing ledger, recording success/failure idempotently, consecutive count reset on failure, JSON output, and text output.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "tags": ["feature", "guided-large", "dogfood", "operator-visibility", "streak", "cli"],
+      "source": "guided-large-2026-05-28",
+      "files": [
+        "packages/cli/src/commands/autonomous.ts",
+        "packages/cli/src/__tests__/cycle-list-show.test.ts",
+        "CHANGELOG.md"
+      ]
     }
   ]
 }
