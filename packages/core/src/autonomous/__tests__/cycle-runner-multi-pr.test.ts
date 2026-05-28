@@ -247,6 +247,103 @@ describe('gate retry context — agent PR ledger routing', () => {
     expect(context.itemIds).toEqual(['item-B']);
   });
 
+  it('maps retry to the faulted target when a clean target branch is mentioned first', () => {
+    const cycleId = 'cycle-retry-faulted-target';
+    writeLedger(projectRoot, cycleId, [
+      {
+        prNumber: 200,
+        branch: 'codex/agent-cli-engineer-d8a7b62e2d6f',
+        itemIds: ['backlog-guided-large-007'],
+        openedAt: '2026-05-28T05:46:02.304Z',
+      },
+      {
+        prNumber: 201,
+        branch: 'codex/agent-cli-engineer-15b2cd62362b',
+        itemIds: ['backlog-guided-large-008'],
+        openedAt: '2026-05-28T05:54:34.972Z',
+      },
+    ]);
+
+    const context = buildGateRetryContext(
+      projectRoot,
+      cycleId,
+      1,
+      'Verified current execute-phase branch artifacts before deciding. ' +
+      'Target 1 (backlog-guided-large-007, branch codex/agent-cli-engineer-d8a7b62e2d6f) ' +
+      'has no unresolved CRITICAL/MAJOR findings from the provided review set. ' +
+      'Target 2 (backlog-guided-large-008, branch codex/agent-cli-engineer-15b2cd62362b) ' +
+      'still reproduces both cited MAJOR issues in packages/cli/src/commands/autonomous.ts. ' +
+      'No CRITICAL findings were provided, but these verified-still-present MAJOR correctness ' +
+      'issues are release blockers, so the sprint is rejected.',
+    );
+
+    expect(context.rejectedBranch).toBe('codex/agent-cli-engineer-15b2cd62362b');
+    expect(context.prNumber).toBe(201);
+    expect(context.itemIds).toEqual(['backlog-guided-large-008']);
+  });
+
+  it('does not select the first mentioned branch when multiple target branches are ambiguous', () => {
+    const cycleId = 'cycle-retry-ambiguous-targets';
+    writeLedger(projectRoot, cycleId, [
+      {
+        prNumber: 200,
+        branch: 'codex/agent-cli-engineer-d8a7b62e2d6f',
+        itemIds: ['backlog-guided-large-007'],
+        openedAt: '2026-05-28T05:46:02.304Z',
+      },
+      {
+        prNumber: 201,
+        branch: 'codex/agent-cli-engineer-15b2cd62362b',
+        itemIds: ['backlog-guided-large-008'],
+        openedAt: '2026-05-28T05:54:34.972Z',
+      },
+    ]);
+
+    const context = buildGateRetryContext(
+      projectRoot,
+      cycleId,
+      1,
+      'Gate reviewed Target 1 (backlog-guided-large-007, branch codex/agent-cli-engineer-d8a7b62e2d6f) ' +
+      'and Target 2 (backlog-guided-large-008, branch codex/agent-cli-engineer-15b2cd62362b), ' +
+      'but the rationale did not identify which branch owns the finding.',
+    );
+
+    expect(context.rejectedBranch).toBeUndefined();
+    expect(context.prNumber).toBeUndefined();
+    expect(context.itemIds).toBeUndefined();
+  });
+
+  it('keeps exact PR number precedence over target prose', () => {
+    const cycleId = 'cycle-retry-pr-precedence';
+    writeLedger(projectRoot, cycleId, [
+      {
+        prNumber: 200,
+        branch: 'codex/agent-cli-engineer-d8a7b62e2d6f',
+        itemIds: ['backlog-guided-large-007'],
+        openedAt: '2026-05-28T05:46:02.304Z',
+      },
+      {
+        prNumber: 201,
+        branch: 'codex/agent-cli-engineer-15b2cd62362b',
+        itemIds: ['backlog-guided-large-008'],
+        openedAt: '2026-05-28T05:54:34.972Z',
+      },
+    ]);
+
+    const context = buildGateRetryContext(
+      projectRoot,
+      cycleId,
+      1,
+      'Gate rejected PR #201. Target 1 (backlog-guided-large-007, branch codex/agent-cli-engineer-d8a7b62e2d6f) ' +
+      'still reproduces a MAJOR issue, while Target 2 (backlog-guided-large-008, branch codex/agent-cli-engineer-15b2cd62362b) ' +
+      'has no unresolved findings.',
+    );
+
+    expect(context.rejectedBranch).toBe('codex/agent-cli-engineer-15b2cd62362b');
+    expect(context.prNumber).toBe(201);
+    expect(context.itemIds).toEqual(['backlog-guided-large-008']);
+  });
+
   it('does not match a ledger branch by prefix inside a longer rationale branch', () => {
     const cycleId = 'cycle-retry-branch-prefix-collision';
     writeLedger(projectRoot, cycleId, [
