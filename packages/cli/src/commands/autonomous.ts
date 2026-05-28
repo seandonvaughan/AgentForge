@@ -2070,12 +2070,13 @@ function readCycleStreakMergeEvidence(
 
   const agentPr = latestCycleAgentPr(cycleDir);
   if (agentPr && agentPr.prNumber === prNumber) {
+    const agentPrStatus = typeof agentPr.status === 'string' ? agentPr.status : null;
     const evidence = {
       ...(typeof agentPr.prUrl === 'string' && agentPr.prUrl.length > 0 ? { prUrl: agentPr.prUrl } : {}),
-      ...(typeof agentPr.status === 'string' &&
-        agentPr.status.length > 0 &&
-        agentPr.status !== 'open'
-        ? { status: agentPr.status }
+      ...(agentPrStatus !== null &&
+        agentPrStatus.length > 0 &&
+        agentPrStatus.trim().toLowerCase() !== 'open'
+        ? { status: agentPrStatus }
         : {}),
       ...(typeof agentPr.openedAt === 'string' && agentPr.openedAt.length > 0 ? { openedAt: agentPr.openedAt } : {}),
     };
