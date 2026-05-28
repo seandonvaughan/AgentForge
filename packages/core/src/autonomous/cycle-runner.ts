@@ -757,6 +757,32 @@ function writeMultiPrBranchVerificationArtifact(
   }
 }
 
+function formatMultiPrBranchVerificationFailure(result: MultiPrBranchVerificationResult): string {
+  const failed = result.results
+    .filter((entry) => entry.status === 'failed')
+    .slice(0, 5)
+    .map((entry) => {
+      const parts = [
+        `branch ${entry.branch}`,
+        entry.agentId ? `agent ${entry.agentId}` : undefined,
+        entry.itemId ? `item ${entry.itemId}` : undefined,
+        entry.command ? `command ${entry.command}` : undefined,
+      ].filter((part): part is string => part !== undefined);
+      const details = (entry.error ?? entry.stderr ?? entry.stdout ?? '').trim();
+      return details.length > 0
+        ? `${parts.join(', ')} failed: ${details.slice(0, 800)}`
+        : `${parts.join(', ')} failed`;
+    });
+
+  return [
+    'Multi-PR branch verification rejected the cycle after gate approval.',
+    'Retry the implicated branch in place and fix the failing verification command before changing unrelated files.',
+    failed.length > 0
+      ? `Failed branch verification: ${failed.join(' | ')}`
+      : `Failed branch verification: ${result.reason ?? 'unknown branch failure'}`,
+  ].join(' ');
+}
+
 function safePathWithin(childPath: string, parentPath: string): boolean {
   const rel = relative(parentPath, childPath);
   return rel === '' || (rel.length > 0 && !rel.startsWith('..') && !isAbsolute(rel));
@@ -1417,6 +1443,7 @@ export class CycleRunner {
     let retryAttempt = 0;
     let gateRetry: GateRetryContext | undefined;
     let runSummary!: SprintRunSummary;
+    let branchVerificationCompletedInRetryLoop = false;
 
     // eslint-disable-next-line no-constant-condition
     while (true) {
@@ -1471,6 +1498,8 @@ export class CycleRunner {
         this.reconcileSprintStatus(plan.version);
         // Wave 2: load the per-item/phase CostBreakdown from execute.json.
         this.loadExecutionBreakdownFromDisk();
+        await this.verifyMultiPrBranches();
+        branchVerificationCompletedInRetryLoop = true;
         break;
       } catch (err) {
         if (!(err instanceof GateRejectedError)) throw err;
@@ -1615,7 +1644,7 @@ export class CycleRunner {
     if (verifyTrip) {
       throw new CycleKilledError(verifyTrip);
     }
-    if (this.options.config.prMode === 'multi') {
+    if (this.options.config.prMode === 'multi' && !branchVerificationCompletedInRetryLoop) {
       this.logger.flushCycleStatus({
         stage: CycleStage.VERIFY,
         status: 'running',
@@ -1627,7 +1656,9 @@ export class CycleRunner {
         step: 'branch-verify-started',
       });
     }
-    await this.verifyMultiPrBranches();
+    if (!branchVerificationCompletedInRetryLoop) {
+      await this.verifyMultiPrBranches();
+    }
     this.checkKillSwitch();
 
     // ─────────────────────────────────────────────────────────────────
@@ -1949,12 +1980,7 @@ export class CycleRunner {
 
     if (result.passed) return;
 
-    const failed = result.results
-      .filter((entry) => entry.status === 'failed')
-      .map((entry) => `${entry.branch}${entry.command ? ` (${entry.command})` : ''}`)
-      .slice(0, 5)
-      .join(', ');
-    throw new Error(`multi-pr branch verification failed: ${failed || 'unknown branch failure'}`);
+    throw new GateRejectedError(formatMultiPrBranchVerificationFailure(result));
   }
 
   /**
