@@ -206,9 +206,9 @@ describe('agentforge backlog status', () => {
     expect(output).toContain('unattendedExcludedBacklogItems: 2');
     expect(output).toContain('runtimeRoutingHints: scoped=2 routed=1 default=1');
     expect(output).toContain('duplicateNormalizedIds: (none)');
-    expect(output).toContain('- backlog-scoped-task: Scoped Task [complexity=low, scope=packages/cli/src/bin.ts]');
-    expect(output).toContain('- backlog-routed-task: Routed Task [complexity=low, scope=packages/cli/src/commands/backlog.ts, runtime=codex-cli, provider=codex-cli]');
-    expect(output).toContain('sourceFile: items.json');
+    expect(output).toContain('- backlog-scoped-task: Scoped Task [complexity=low, source=items.json, scope=packages/cli/src/bin.ts]');
+    expect(output).toContain('- backlog-routed-task: Routed Task [complexity=low, source=items.json, scope=packages/cli/src/commands/backlog.ts, runtime=codex-cli, provider=codex-cli]');
+    expect(output).not.toContain('sourceFile: items.json');
     expect(output).not.toContain('High Task');
     expect(output).not.toContain('No Scope Task');
   });
@@ -316,7 +316,7 @@ describe('agentforge backlog status', () => {
     expect(output).toContain('unattendedExcludedBacklogItems: 0');
     expect(output).toContain('runtimeRoutingHints: scoped=1 routed=0 default=1');
     expect(output).toContain('duplicateNormalizedIds: (none)');
-    expect(output).toContain('- backlog-items-json-no-id-uses-fallback: No ID uses fallback [complexity=low, scope=README.md]');
+    expect(output).toContain('- backlog-items-json-no-id-uses-fallback: No ID uses fallback [complexity=low, source=items.json, scope=README.md]');
     expect(output).not.toContain('Dogfood Raw');
     expect(output).not.toContain('Dogfood Canonical');
     expect(output).not.toContain('Dogfood Prefix Phrase');
@@ -345,7 +345,7 @@ describe('agentforge backlog status', () => {
     expect(output).toContain('unattendedExcludedBacklogItems: 0');
     expect(output).toContain('runtimeRoutingHints: scoped=1 routed=0 default=1');
     expect(output).toContain('duplicateNormalizedIds: (none)');
-    expect(output).toContain('- backlog-visible: Visible Item [complexity=low, scope=README.md]');
+    expect(output).toContain('- backlog-visible: Visible Item [complexity=low, source=items.json, scope=README.md]');
     expect(process.exitCode).toBeUndefined();
   });
 
@@ -382,12 +382,12 @@ describe('agentforge backlog status', () => {
       'duplicateNormalizedIds: backlog-alpha x2: Alpha (alpha-b.json); Zulu (alpha-a.json)',
     );
     expect(scopedLines).toEqual([
-      '    - backlog-alpha: Alpha [complexity=low, scope=README.md]',
-      '    - backlog-alpha: Zulu [complexity=low, scope=README.md]',
-      '    - backlog-beta: Beta [complexity=low, scope=README.md]',
+      '    - backlog-alpha: Alpha [complexity=low, source=alpha-b.json, scope=README.md]',
+      '    - backlog-alpha: Zulu [complexity=low, source=alpha-a.json, scope=README.md]',
+      '    - backlog-beta: Beta [complexity=low, source=alpha-a.json, scope=README.md]',
     ]);
-    expect(output).toContain('sourceFile: alpha-a.json');
-    expect(output).toContain('sourceFile: alpha-b.json');
+    expect(output).not.toContain('sourceFile: alpha-a.json');
+    expect(output).not.toContain('sourceFile: alpha-b.json');
   });
 
   it('prints duplicate normalized ID source context in JSON', async () => {
