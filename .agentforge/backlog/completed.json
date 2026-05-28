@@ -208,6 +208,14 @@
       "cycleId": "7579d68f-7de9-4b49-ab45-8d2d2441b910",
       "prNumber": 210,
       "reason": "Green dogfood cycle: activeScopedItemsCount shipped via PR #210 without manual code correction"
+    },
+    {
+      "itemId": "backlog-guided-large-018",
+      "completedAt": "2026-05-28T11:09:17.324Z",
+      "updatedAt": "2026-05-28T11:09:17.324Z",
+      "cycleId": "f88484c3-80c2-4079-b0d7-0b0ed4fdd056",
+      "prNumber": 211,
+      "reason": "Green dogfood cycle: readyForCycle shipped via PR #211 without manual code correction"
     }
   ]
 }
