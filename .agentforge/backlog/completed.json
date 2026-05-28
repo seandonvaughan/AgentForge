@@ -160,6 +160,14 @@
       "cycleId": "5f9dfe28-39fc-472c-9f04-c2a16852722e",
       "prNumber": 204,
       "reason": "Merged retained value after audit correction: codex readiness CLI JSON coverage"
+    },
+    {
+      "itemId": "backlog-guided-large-012",
+      "completedAt": "2026-05-28T08:46:39.990Z",
+      "updatedAt": "2026-05-28T08:46:39.990Z",
+      "cycleId": "50d4c9d8-6554-40ef-938c-d57f0f6e7c70",
+      "prNumber": 205,
+      "reason": "Merged green dogfood cycle: live cycle detail checkpoint metadata"
     }
   ]
 }
