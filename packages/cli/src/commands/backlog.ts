@@ -230,6 +230,7 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
     ].filter((hint): hint is string => hint !== null);
     const suffix = hints.length > 0 ? ` [${hints.join(', ')}]` : '';
     console.log(`    - ${item.id}: ${item.title}${suffix}`);
+    console.log(`      sourceFile: ${item.sourceFile}`);
   }
 }
 

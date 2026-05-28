@@ -208,6 +208,7 @@ describe('agentforge backlog status', () => {
     expect(output).toContain('duplicateNormalizedIds: (none)');
     expect(output).toContain('- backlog-scoped-task: Scoped Task [complexity=low, scope=packages/cli/src/bin.ts]');
     expect(output).toContain('- backlog-routed-task: Routed Task [complexity=low, scope=packages/cli/src/commands/backlog.ts, runtime=codex-cli, provider=codex-cli]');
+    expect(output).toContain('sourceFile: items.json');
     expect(output).not.toContain('High Task');
     expect(output).not.toContain('No Scope Task');
   });
@@ -383,6 +384,8 @@ describe('agentforge backlog status', () => {
       '    - backlog-alpha: Zulu [complexity=low, scope=README.md]',
       '    - backlog-beta: Beta [complexity=low, scope=README.md]',
     ]);
+    expect(output).toContain('sourceFile: alpha-a.json');
+    expect(output).toContain('sourceFile: alpha-b.json');
   });
 
   it('prints duplicate normalized ID source context in JSON', async () => {
