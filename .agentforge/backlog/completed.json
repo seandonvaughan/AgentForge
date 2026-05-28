@@ -112,6 +112,14 @@
       "cycleId": "9b2130c9-9f4b-489e-9c30-37da80d858bb",
       "prNumber": 197,
       "reason": "Merged successful backlog routing visibility cycle"
+    },
+    {
+      "itemId": "backlog-guided-large-006",
+      "completedAt": "2026-05-28T04:07:07.655Z",
+      "updatedAt": "2026-05-28T04:07:07.655Z",
+      "cycleId": "ed6bd5cf-a1d3-4578-a0b5-7bbccc57485a",
+      "prNumber": 198,
+      "reason": "Merged successful backlog scope visibility cycle after audit correction"
     }
   ]
 }
