@@ -248,6 +248,14 @@
       "cycleId": "549d2529-9572-4268-a776-cffdca3f89fc",
       "prNumber": 215,
       "reason": "Clean guided big cycle 1: PR #215 merged without manual code correction after local audit and tests"
+    },
+    {
+      "itemId": "backlog-guided-big-005",
+      "completedAt": "2026-05-28T13:38:40.388Z",
+      "updatedAt": "2026-05-28T13:38:40.388Z",
+      "cycleId": "19163d51-7582-4247-ab89-d2974a7b2ac7",
+      "prNumber": 216,
+      "reason": "Guided cycle retained via PR #216, but required AgentForge runtime invoke repair after gate retry failed"
     }
   ]
 }
