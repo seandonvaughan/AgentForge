@@ -77,6 +77,7 @@ interface CyclePreviewOptions extends WorkspaceAwareOptions {
 
 interface CycleListOptions extends WorkspaceAwareOptions {
   limit: string;
+  json?: boolean;
 }
 
 interface CycleShowOptions extends WorkspaceAwareOptions {}
@@ -184,6 +185,7 @@ export function registerCycleCommand(program: Command): void {
     .option('--project-root <path>', 'Project root', process.cwd())
     .option('--workspace <id>', 'Run against a registered workspace from ~/.agentforge/workspaces.json')
     .option('--limit <count>', 'Maximum rows to show', '20')
+    .option('--json', 'Print machine-readable JSON')
     .action(runCycleListAction);
 
   cycle
@@ -648,7 +650,24 @@ async function runCycleListAction(opts: CycleListOptions): Promise<void> {
 
   const cycles = listCycles(projectRoot).slice(0, limit);
   if (cycles.length === 0) {
+    if (opts.json) {
+      console.log(JSON.stringify({
+        projectRoot,
+        limit,
+        cycles: [],
+      }, null, 2));
+      return;
+    }
     console.log('(no cycles recorded)');
+    return;
+  }
+
+  if (opts.json) {
+    console.log(JSON.stringify({
+      projectRoot,
+      limit,
+      cycles,
+    }, null, 2));
     return;
   }
 

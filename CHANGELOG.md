@@ -11,6 +11,7 @@ All notable changes to AgentForge are documented in this file.
 - Added `agentforge cycle loop-guard status` and `agentforge cycle loop-guard reset` for operator visibility and recovery of `.agentforge/loop-state.json`, including deterministic handling of missing/corrupt state files.
 - Added `agentforge cycle loop-guard status --json` to emit deterministic machine-readable loop-guard state for automation and unattended operator checks.
 - Added `agentforge cycle loop-guard reset --json` to emit deterministic machine-readable reset confirmation and defaulted state for automation-driven recovery flows.
+- Added `agentforge cycle list --json` to emit deterministic machine-readable cycle summaries for unattended operator visibility and automation.
 - `ProposalToBacklog` now filters ids recorded in `.agentforge/backlog/completed.json`, preventing completed backlog items from being replayed in new autonomous cycle intake.
 
 ## [23.5.0] - 2026-05-18
