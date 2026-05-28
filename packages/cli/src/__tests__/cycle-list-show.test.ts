@@ -656,18 +656,20 @@ describe('cycle list/show summaries', () => {
     expect(parsed.entry.mergeEvidence?.status).toBeUndefined();
   });
 
-  it('omits stale open status from cycle.json streak merge evidence', async () => {
+  it('omits casing and whitespace variants of stale open status from agent-prs fallback streak merge evidence', async () => {
     const cycleId = 'cececece-cece-4cec-8cec-cececececece';
-    writeCycle(cycleId, {
+    const cycleDir = writeCycle(cycleId, {
       cycleId,
       stage: 'completed',
-      pr: {
-        number: 452,
-        url: 'https://github.com/seandonvaughan/AgentForge/pull/452',
-        status: 'open',
+    });
+    writeFileSync(join(cycleDir, 'agent-prs.json'), JSON.stringify([
+      {
+        prNumber: 452,
+        prUrl: 'https://github.com/seandonvaughan/AgentForge/pull/452',
+        status: ' OPEN ',
         openedAt: '2026-05-20T00:01:00.000Z',
       },
-    });
+    ], null, 2));
 
     await runCli(
       'cycle',
@@ -699,6 +701,53 @@ describe('cycle list/show summaries', () => {
       openedAt: '2026-05-20T00:01:00.000Z',
     });
     expect(parsed.entry.mergeEvidence?.status).toBeUndefined();
+  });
+
+  it('preserves non-open status from agent-prs fallback streak merge evidence', async () => {
+    const cycleId = 'cfcfcfcf-cfcf-4cfc-8cfc-cfcfcfcfcfcf';
+    const cycleDir = writeCycle(cycleId, {
+      cycleId,
+      stage: 'completed',
+    });
+    writeFileSync(join(cycleDir, 'agent-prs.json'), JSON.stringify([
+      {
+        prNumber: 453,
+        prUrl: 'https://github.com/seandonvaughan/AgentForge/pull/453',
+        status: 'Merged',
+        openedAt: '2026-05-20T00:02:00.000Z',
+      },
+    ], null, 2));
+
+    await runCli(
+      'cycle',
+      'streak',
+      'record',
+      cycleId,
+      '--project-root',
+      projectRoot,
+      '--pr',
+      '453',
+      '--result',
+      'success',
+      '--reason',
+      'Non-open fallback evidence test',
+      '--json',
+    );
+
+    const parsed = JSON.parse(output()) as {
+      entry: {
+        mergeEvidence?: {
+          prUrl?: string;
+          status?: string;
+          openedAt?: string;
+        };
+      };
+    };
+    expect(parsed.entry.mergeEvidence).toMatchObject({
+      prUrl: 'https://github.com/seandonvaughan/AgentForge/pull/453',
+      status: 'Merged',
+      openedAt: '2026-05-20T00:02:00.000Z',
+    });
   });
 
   it('resets consecutive streak count when the newest entry is a failure', async () => {

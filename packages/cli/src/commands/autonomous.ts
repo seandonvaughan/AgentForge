@@ -2061,11 +2061,7 @@ function readCycleStreakMergeEvidence(
   if (cyclePr && cyclePrNumber === prNumber) {
     const evidence = {
       ...(typeof cyclePr.url === 'string' && cyclePr.url.length > 0 ? { prUrl: cyclePr.url } : {}),
-      ...(typeof cyclePr.status === 'string' &&
-        cyclePr.status.length > 0 &&
-        cyclePr.status !== 'open'
-        ? { status: cyclePr.status }
-        : {}),
+      ...(typeof cyclePr.status === 'string' && cyclePr.status.length > 0 ? { status: cyclePr.status } : {}),
       ...(typeof cyclePr.mergedAt === 'string' && cyclePr.mergedAt.length > 0 ? { mergedAt: cyclePr.mergedAt } : {}),
       ...(typeof cyclePr.openedAt === 'string' && cyclePr.openedAt.length > 0 ? { openedAt: cyclePr.openedAt } : {}),
     };
@@ -2074,12 +2070,13 @@ function readCycleStreakMergeEvidence(
 
   const agentPr = latestCycleAgentPr(cycleDir);
   if (agentPr && agentPr.prNumber === prNumber) {
+    const agentPrStatus = typeof agentPr.status === 'string' ? agentPr.status : null;
     const evidence = {
       ...(typeof agentPr.prUrl === 'string' && agentPr.prUrl.length > 0 ? { prUrl: agentPr.prUrl } : {}),
-      ...(typeof agentPr.status === 'string' &&
-        agentPr.status.length > 0 &&
-        agentPr.status !== 'open'
-        ? { status: agentPr.status }
+      ...(agentPrStatus !== null &&
+        agentPrStatus.length > 0 &&
+        agentPrStatus.trim().toLowerCase() !== 'open'
+        ? { status: agentPrStatus }
         : {}),
       ...(typeof agentPr.openedAt === 'string' && agentPr.openedAt.length > 0 ? { openedAt: agentPr.openedAt } : {}),
     };
