@@ -368,7 +368,7 @@ describe('cycle launch options', () => {
       projectRoot,
     ]);
 
-    const output = consoleLog.mock.calls.map((call) => call.join(' ')).join('\n');
+    const output = consoleLog.mock.calls.map((call: unknown[]) => call.join(' ')).join('\n');
     expect(output).toContain('Sources:      backlog-file=2, research-plan=1, todo-marker=1');
   });
 
@@ -410,7 +410,7 @@ describe('cycle launch options', () => {
       '--json',
     ]);
 
-    const parsed = JSON.parse(consoleLog.mock.calls.map((call) => call.join(' ')).join('\n')) as {
+    const parsed = JSON.parse(consoleLog.mock.calls.map((call: unknown[]) => call.join(' ')).join('\n')) as {
       projectRoot: string;
       candidateCount: number;
       sourceBreakdown: Record<string, number>;
@@ -448,7 +448,7 @@ describe('cycle launch options', () => {
       '--json',
     ]);
 
-    const parsed = JSON.parse(consoleLog.mock.calls.map((call) => call.join(' ')).join('\n')) as {
+    const parsed = JSON.parse(consoleLog.mock.calls.map((call: unknown[]) => call.join(' ')).join('\n')) as {
       candidateCount: number;
       rankedItems: unknown[];
       sourceBreakdown: Record<string, number>;
@@ -482,7 +482,7 @@ describe('cycle launch options', () => {
       projectRoot,
     ]);
 
-    const output = consoleLog.mock.calls.map((call) => call.join(' ')).join('\n');
+    const output = consoleLog.mock.calls.map((call: unknown[]) => call.join(' ')).join('\n');
     expect(output).toContain('Ranked items:');
     expect(output).not.toContain('Sources:');
   });
