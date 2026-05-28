@@ -150,6 +150,46 @@ describe('cycle list/show summaries', () => {
     expect(output()).not.toContain('PR:           https://github.com/seandonvaughan/AgentForge/pull/102');
   });
 
+  it('prints machine-readable JSON for cycle show with --json', async () => {
+    const cycleId = '77777777-7777-4777-8777-777777777777';
+    writeCycle(cycleId, {
+      cycleId,
+      stage: 'completed',
+      sprintVersion: '10.8.1',
+      startedAt: '2026-05-20T00:00:00.000Z',
+      completedAt: '2026-05-20T00:05:00.000Z',
+      cost: { totalUsd: 2.5, budgetUsd: 10 },
+      tests: { passed: 8, total: 10 },
+      pr: { url: 'https://github.com/seandonvaughan/AgentForge/pull/777' },
+    }, [
+      { type: 'phase.start', phase: 'plan', at: '2026-05-20T00:00:01.000Z' },
+      { type: 'phase.complete', phase: 'plan', at: '2026-05-20T00:01:01.000Z' },
+    ]);
+
+    await runCli('cycle', 'show', cycleId, '--project-root', projectRoot, '--json');
+
+    const parsed = JSON.parse(output()) as {
+      projectRoot: string;
+      cycleId: string;
+      summary: {
+        stage: string;
+        testsPassed: number;
+        testsTotal: number;
+      };
+      eventsCount: number;
+      error: string | null;
+    };
+
+    expect(parsed.projectRoot).toBe(projectRoot);
+    expect(parsed.cycleId).toBe(cycleId);
+    expect(parsed.summary.stage).toBe('completed');
+    expect(parsed.summary.testsPassed).toBe(8);
+    expect(parsed.summary.testsTotal).toBe(10);
+    expect(parsed.eventsCount).toBe(2);
+    expect(parsed.error).toBeNull();
+    expect(output()).not.toContain('Cycle:');
+  });
+
   function writeCycle(
     cycleId: string,
     cycleJson: Record<string, unknown>,
