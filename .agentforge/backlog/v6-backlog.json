@@ -104,6 +104,20 @@
         "packages/cli/src/__tests__/loop-guard-command.test.ts",
         "CHANGELOG.md"
       ]
+    },
+    {
+      "id": "dogfood-008",
+      "title": "Add JSON output for cycle list",
+      "description": "Make cycle history automation-friendly by adding `--json` to `agentforge cycle list`. The JSON output should be deterministic and include projectRoot plus the cycle summaries currently shown by the text list, including id, status/stage, selected item count, test totals when available, gate verdict when available, cost when available, and PR metadata when available. Preserve the current text output when `--json` is omitted. Reuse the existing cycle-list loading and sorting behavior; do not change cycle execution semantics. Add focused CLI tests for JSON output shape, deterministic ordering, missing/partial cycle artifacts, and unchanged text output.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": ["feature", "dogfood", "autonomous", "operator-visibility", "json", "cli"],
+      "source": "dogfood-2026-05-27",
+      "files": [
+        "packages/cli/src/commands/autonomous.ts",
+        "packages/cli/src/__tests__/cycle-list-show.test.ts",
+        "CHANGELOG.md"
+      ]
     }
   ]
 }
