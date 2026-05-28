@@ -132,6 +132,52 @@
         "packages/cli/src/__tests__/cycle-list-show.test.ts",
         "CHANGELOG.md"
       ]
+    },
+    {
+      "id": "guided-large-001",
+      "title": "Use structured gate findings for retry correction prompts",
+      "description": "Improve autonomous self-correction by feeding rejected gate artifacts into retry execution as structured findings, not only prose rationale. When a gate rejection has criticalFindings, majorFindings, knownDebt, or named files in the gate artifact, buildGateRetryContext and execute retry prompts should preserve those fields, attach them to the implicated item, and tell the retry agent to fix the existing rejected branch in place with the smallest net-new correction. Preserve existing branch/PR ledger routing and baselineHead no-op detection. Add tests proving structured critical/major findings and file paths survive gate artifact -> retry context -> execute prompt, and that legacy prose-only gate rejections still work.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "tags": ["feature", "guided-large", "autonomous", "retry", "gate", "self-correction"],
+      "source": "guided-large-2026-05-27",
+      "files": [
+        "packages/core/src/autonomous/cycle-runner.ts",
+        "packages/core/src/autonomous/phase-handlers/execute-phase.ts",
+        "packages/core/src/autonomous/__tests__/cycle-runner-multi-pr.test.ts",
+        "tests/autonomous/unit/cycle-runner.test.ts",
+        "packages/core/src/autonomous/phase-handlers/__tests__/execute-phase-prompt-contract.test.ts"
+      ]
+    },
+    {
+      "id": "guided-large-002",
+      "title": "Make retry branch PR handling idempotent",
+      "description": "Harden multi-PR retry behavior so a correction pushed to an existing rejected branch updates the existing PR ledger entry instead of attempting to create duplicate PRs or duplicate open ledger records. MergeQueue should recognize a pushed branch that already has an open PR record for the current cycle, refresh its PR metadata when possible, and avoid appending duplicate records. Keep normal first-time branch PR creation unchanged. Add focused tests for repeated agent.branch.pushed events on the same branch, retry branches with existing PR numbers, and duplicate ledger prevention.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "tags": ["feature", "guided-large", "autonomous", "retry", "merge-queue", "multi-pr"],
+      "source": "guided-large-2026-05-27",
+      "files": [
+        "packages/core/src/runtime/merge-queue.ts",
+        "packages/core/src/runtime/__tests__/merge-queue.test.ts",
+        "packages/core/src/autonomous/__tests__/cycle-runner-multi-pr.test.ts"
+      ]
+    },
+    {
+      "id": "guided-large-003",
+      "title": "Expose runtime routing decisions in cycle artifacts and CLI JSON",
+      "description": "Make per-job runtime routing observable after the Stream B routing bridge. When execute items include runtimeMode or preferredProvider, persist the requested routing hints and resolved provider/runtime metadata into execute artifacts and cycle show/list JSON where available. Preserve default behavior for items without hints. Add tests proving routed and default items produce deterministic artifact/JSON output without changing execution semantics.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "tags": ["feature", "guided-large", "autonomous", "runtime-routing", "observability", "cli"],
+      "source": "guided-large-2026-05-27",
+      "files": [
+        "packages/core/src/autonomous/phase-handlers/execute-phase.ts",
+        "packages/core/src/autonomous/phase-handlers/__tests__/execute-phase-routing-options.test.ts",
+        "packages/cli/src/commands/autonomous.ts",
+        "packages/cli/src/__tests__/cycle-list-show.test.ts",
+        "CHANGELOG.md"
+      ]
     }
   ]
 }
