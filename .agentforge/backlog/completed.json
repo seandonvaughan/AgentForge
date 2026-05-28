@@ -168,6 +168,14 @@
       "cycleId": "50d4c9d8-6554-40ef-938c-d57f0f6e7c70",
       "prNumber": 205,
       "reason": "Merged green dogfood cycle: live cycle detail checkpoint metadata"
+    },
+    {
+      "itemId": "backlog-guided-large-013",
+      "completedAt": "2026-05-28T09:11:51.927Z",
+      "updatedAt": "2026-05-28T09:11:51.927Z",
+      "cycleId": "25e1b146-5435-4cec-83b4-73460706cafd",
+      "prNumber": 206,
+      "reason": "Merged green dogfood cycle: stale open PR streak evidence suppression"
     }
   ]
 }
