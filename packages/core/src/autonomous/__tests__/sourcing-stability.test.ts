@@ -112,6 +112,8 @@ function makeBacklogItem(overrides: Partial<BacklogItem> = {}): BacklogItem {
     confidence: 0.9,
     estimatedComplexity: 'low',
     files: ['packages/core/src/autonomous/scoring-pipeline.ts'],
+    runtimeMode: 'codex-cli',
+    preferredProvider: 'codex-cli',
     ...overrides,
   };
 }
@@ -219,6 +221,8 @@ describe('sourcing stability', () => {
     expect(result.withinBudget[0]?.files).toEqual([
       'packages/core/src/autonomous/scoring-pipeline.ts',
     ]);
+    expect(result.withinBudget[0]?.runtimeMode).toBe('codex-cli');
+    expect(result.withinBudget[0]?.preferredProvider).toBe('codex-cli');
   });
 
   it('copies BacklogItem.files onto fallback RankedItems', async () => {
@@ -236,9 +240,13 @@ describe('sourcing stability', () => {
     expect(effortResult.withinBudget[0]?.files).toEqual([
       'packages/core/src/autonomous/scoring-pipeline.ts',
     ]);
+    expect(effortResult.withinBudget[0]?.runtimeMode).toBe('codex-cli');
+    expect(effortResult.withinBudget[0]?.preferredProvider).toBe('codex-cli');
     expect(staticResult.withinBudget[0]?.files).toEqual([
       'packages/core/src/autonomous/scoring-pipeline.ts',
     ]);
+    expect(staticResult.withinBudget[0]?.runtimeMode).toBe('codex-cli');
+    expect(staticResult.withinBudget[0]?.preferredProvider).toBe('codex-cli');
   });
 
   it('writes RankedItem.files into sprint plan items', async () => {
@@ -256,6 +264,8 @@ describe('sourcing stability', () => {
       suggestedTags: ['fix'],
       withinBudget: true,
       files: ['packages/core/src/autonomous/sprint-generator.ts'],
+      runtimeMode: 'codex-cli',
+      preferredProvider: 'codex-cli',
     };
 
     const plan = await new SprintGenerator(tmpDir, makeConfig()).generate([rankedItem], CYCLE_ID);
@@ -265,5 +275,38 @@ describe('sourcing stability', () => {
 
     expect(plan.items[0]?.files).toEqual(['packages/core/src/autonomous/sprint-generator.ts']);
     expect(onDisk.items[0].files).toEqual(['packages/core/src/autonomous/sprint-generator.ts']);
+    expect(plan.items[0]?.runtimeMode).toBe('codex-cli');
+    expect(plan.items[0]?.preferredProvider).toBe('codex-cli');
+    expect(onDisk.items[0].runtimeMode).toBe('codex-cli');
+    expect(onDisk.items[0].preferredProvider).toBe('codex-cli');
+  });
+
+  it('reads runtime/provider hints from backlog files', async () => {
+    writeFileSync(
+      join(tmpDir, '.agentforge', 'backlog', 'items.json'),
+      JSON.stringify({
+        items: [
+          {
+            id: 'routed',
+            title: 'Route item',
+            priority: 'P1',
+            estimatedComplexity: 'low',
+            files: ['packages/core/src/runtime/provider-resolver.ts'],
+            runtimeMode: 'codex-cli',
+            preferredProvider: 'codex-cli',
+          },
+        ],
+      }),
+    );
+    const adapter: ProposalAdapter = {
+      getRecentFailedSessions: async () => [],
+      getCostAnomalies: async () => [],
+      getFailedTaskOutcomes: async () => [],
+      getFlakingTests: async () => [],
+    };
+
+    const items = await new ProposalToBacklog(adapter, tmpDir, makeConfig()).build();
+    expect(items[0]?.runtimeMode).toBe('codex-cli');
+    expect(items[0]?.preferredProvider).toBe('codex-cli');
   });
 });

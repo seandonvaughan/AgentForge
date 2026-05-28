@@ -11,6 +11,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { CycleConfig } from './types.js';
+import type { ExecutionProviderKind, RuntimeMode } from '../runtime/types.js';
 
 export interface BacklogItem {
   id: string;
@@ -25,6 +26,10 @@ export interface BacklogItem {
   estimatedComplexity?: 'low' | 'medium' | 'high';
   /** Declared file scope. Required for unattended auto-pick of backlog-file items. */
   files?: string[];
+  /** Optional per-item runtime routing hint from backlog files. */
+  runtimeMode?: RuntimeMode;
+  /** Optional per-item provider preference hint from backlog files. */
+  preferredProvider?: ExecutionProviderKind;
 }
 
 export interface ProposalAdapter {
@@ -483,6 +488,32 @@ function normalizeBacklogFileItem(raw: unknown, fileName: string): BacklogItem |
     : [];
   if (files.length > 0) {
     item.files = files;
+  }
+
+  const runtimeMode = typeof obj['runtimeMode'] === 'string'
+    ? obj['runtimeMode']
+    : undefined;
+  if (
+    runtimeMode === 'auto'
+    || runtimeMode === 'sdk'
+    || runtimeMode === 'claude-code-compat'
+    || runtimeMode === 'codex-cli'
+    || runtimeMode === 'openai-sdk'
+    || runtimeMode === 'anthropic-sdk'
+  ) {
+    item.runtimeMode = runtimeMode;
+  }
+
+  const preferredProvider = typeof obj['preferredProvider'] === 'string'
+    ? obj['preferredProvider']
+    : undefined;
+  if (
+    preferredProvider === 'claude-code-compat'
+    || preferredProvider === 'codex-cli'
+    || preferredProvider === 'openai-sdk'
+    || preferredProvider === 'anthropic-sdk'
+  ) {
+    item.preferredProvider = preferredProvider;
   }
 
   return item;

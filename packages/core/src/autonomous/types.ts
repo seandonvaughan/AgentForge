@@ -4,6 +4,7 @@
 
 import type { ModelTier } from '@agentforge/shared';
 import type { CostBreakdown } from './cost-breakdown.js';
+import type { ExecutionProviderKind, RuntimeMode } from '../runtime/types.js';
 
 export enum CycleStage {
   PLAN = 'plan',
@@ -215,6 +216,8 @@ export interface RankedItem {
   itemId: string;
   title: string;
   files?: string[];
+  runtimeMode?: RuntimeMode;
+  preferredProvider?: ExecutionProviderKind;
   rank: number;
   score: number;
   confidence: number;

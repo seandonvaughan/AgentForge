@@ -294,6 +294,8 @@ export class ScoringPipeline {
         suggestedTags: item.tags,
         withinBudget: true,
         ...(item.files !== undefined ? { files: [...item.files] } : {}),
+        ...(item.runtimeMode !== undefined ? { runtimeMode: item.runtimeMode } : {}),
+        ...(item.preferredProvider !== undefined ? { preferredProvider: item.preferredProvider } : {}),
       };
     });
 
@@ -357,6 +359,8 @@ export class ScoringPipeline {
       suggestedTags: item.tags,
       withinBudget: true,
       ...(item.files !== undefined ? { files: [...item.files] } : {}),
+      ...(item.runtimeMode !== undefined ? { runtimeMode: item.runtimeMode } : {}),
+      ...(item.preferredProvider !== undefined ? { preferredProvider: item.preferredProvider } : {}),
     }));
 
     // Enforce per-cycle budget
@@ -557,19 +561,26 @@ Do not include any text outside the JSON object.`;
   }
 
   private attachBacklogFiles(result: ScoringResult, backlog: BacklogItem[]): ScoringResult {
-    const filesByItemId = new Map(
-      backlog
-        .filter((item): item is BacklogItem & { files: string[] } => item.files !== undefined)
-        .map((item) => [item.id, [...item.files]] as const),
+    const hintsByItemId = new Map(
+      backlog.map((item) => [
+        item.id,
+        {
+          ...(item.files !== undefined ? { files: [...item.files] } : {}),
+          ...(item.runtimeMode !== undefined ? { runtimeMode: item.runtimeMode } : {}),
+          ...(item.preferredProvider !== undefined ? { preferredProvider: item.preferredProvider } : {}),
+        },
+      ] as const),
     );
 
-    if (filesByItemId.size === 0) return result;
+    const hasHints = Array.from(hintsByItemId.values()).some((hints) => Object.keys(hints).length > 0);
+    if (!hasHints) return result;
 
     return {
       ...result,
       rankings: result.rankings.map((ranking) => {
-        const files = filesByItemId.get(ranking.itemId);
-        return files === undefined ? ranking : { ...ranking, files: [...files] };
+        const hints = hintsByItemId.get(ranking.itemId);
+        if (!hints || Object.keys(hints).length === 0) return ranking;
+        return { ...ranking, ...hints };
       }),
     };
   }
