@@ -188,6 +188,7 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
         title: item.title,
         runtimeMode: item.runtimeMode ?? null,
         preferredProvider: item.preferredProvider ?? null,
+        scopeFiles: item.files ?? [],
       })),
     }, null, 2));
     return;
@@ -208,6 +209,7 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
 
   for (const item of activeScoped) {
     const hints = [
+      `scope=${(item.files ?? []).join(',')}`,
       item.runtimeMode ? `runtime=${item.runtimeMode}` : null,
       item.preferredProvider ? `provider=${item.preferredProvider}` : null,
     ].filter((hint): hint is string => hint !== null);

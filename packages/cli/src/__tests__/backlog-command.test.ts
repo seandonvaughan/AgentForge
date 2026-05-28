@@ -168,7 +168,7 @@ describe('agentforge backlog status', () => {
     process.exitCode = undefined;
   });
 
-  it('prints deterministic status counts and active scoped item ids/titles', async () => {
+  it('prints deterministic status counts and active scoped item ids/titles with scope', async () => {
     const backlogDir = join(projectRoot, '.agentforge', 'backlog');
     mkdirSync(backlogDir, { recursive: true });
     writeFileSync(
@@ -205,8 +205,8 @@ describe('agentforge backlog status', () => {
     expect(output).toContain('quarantinedIds: 1');
     expect(output).toContain('unattendedExcludedBacklogItems: 2');
     expect(output).toContain('runtimeRoutingHints: scoped=2 routed=1 default=1');
-    expect(output).toContain('- backlog-scoped-task: Scoped Task');
-    expect(output).toContain('- backlog-routed-task: Routed Task [runtime=codex-cli, provider=codex-cli]');
+    expect(output).toContain('- backlog-scoped-task: Scoped Task [scope=packages/cli/src/bin.ts]');
+    expect(output).toContain('- backlog-routed-task: Routed Task [scope=packages/cli/src/commands/backlog.ts, runtime=codex-cli, provider=codex-cli]');
     expect(output).not.toContain('High Task');
     expect(output).not.toContain('No Scope Task');
   });
@@ -253,8 +253,20 @@ describe('agentforge backlog status', () => {
         defaultItems: 1,
       },
       activeScopedItems: [
-        { id: 'backlog-routed-task', title: 'Routed Task', runtimeMode: 'codex-cli', preferredProvider: 'codex-cli' },
-        { id: 'backlog-scoped-task', title: 'Scoped Task', runtimeMode: null, preferredProvider: null },
+        {
+          id: 'backlog-routed-task',
+          title: 'Routed Task',
+          runtimeMode: 'codex-cli',
+          preferredProvider: 'codex-cli',
+          scopeFiles: ['packages/cli/src/commands/backlog.ts'],
+        },
+        {
+          id: 'backlog-scoped-task',
+          title: 'Scoped Task',
+          runtimeMode: null,
+          preferredProvider: null,
+          scopeFiles: ['packages/cli/src/bin.ts'],
+        },
       ],
     });
   });
@@ -296,7 +308,7 @@ describe('agentforge backlog status', () => {
     expect(output).toContain('quarantinedIds: 1');
     expect(output).toContain('unattendedExcludedBacklogItems: 0');
     expect(output).toContain('runtimeRoutingHints: scoped=1 routed=0 default=1');
-    expect(output).toContain('- backlog-items-json-no-id-uses-fallback: No ID uses fallback');
+    expect(output).toContain('- backlog-items-json-no-id-uses-fallback: No ID uses fallback [scope=README.md]');
     expect(output).not.toContain('Dogfood Raw');
     expect(output).not.toContain('Dogfood Canonical');
     expect(output).not.toContain('Dogfood Prefix Phrase');
@@ -324,7 +336,7 @@ describe('agentforge backlog status', () => {
     expect(output).toContain('quarantinedIds: 0');
     expect(output).toContain('unattendedExcludedBacklogItems: 0');
     expect(output).toContain('runtimeRoutingHints: scoped=1 routed=0 default=1');
-    expect(output).toContain('- backlog-visible: Visible Item');
+    expect(output).toContain('- backlog-visible: Visible Item [scope=README.md]');
     expect(process.exitCode).toBeUndefined();
   });
 
@@ -348,8 +360,8 @@ describe('agentforge backlog status', () => {
       .map((args: unknown[]) => String(args[0] ?? ''))
       .filter((line: string) => line.startsWith('    - '));
     expect(scopedLines).toEqual([
-      '    - backlog-alpha: Alpha',
-      '    - backlog-alpha: Zulu',
+      '    - backlog-alpha: Alpha [scope=README.md]',
+      '    - backlog-alpha: Zulu [scope=README.md]',
     ]);
   });
 
