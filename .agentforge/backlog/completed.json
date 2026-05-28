@@ -136,6 +136,14 @@
       "cycleId": "40c2dff4-d780-4ee3-b7d8-83e6b91d3d14",
       "prNumber": 201,
       "reason": "Merged retained value from failed cycle: cycle streak ledger command"
+    },
+    {
+      "itemId": "backlog-guided-large-009",
+      "completedAt": "2026-05-28T07:15:38.654Z",
+      "updatedAt": "2026-05-28T07:15:38.654Z",
+      "cycleId": "8de2c0b2-b176-48a5-9f3c-01398c185047",
+      "prNumber": 202,
+      "reason": "Merged retained value from failed cycle: cycle list stage filter"
     }
   ]
 }
