@@ -291,6 +291,36 @@
       "completedAt": "2026-05-28T19:14:24.397Z",
       "updatedAt": "2026-05-28T19:14:24.397Z",
       "reason": "v7 item 3 implemented manually via TDD: extractBreakdownFromAgentRun now prices each run by resolvedProvider (Anthropic tier table vs OpenAI/Codex table keyed off resolvedModelId); RuntimeAdapter (both call sites) + execute-phase fallback wire the resolved provider/model through. Anti-fake guard: codex modelId prices to OpenAI figure (15.75), not the Anthropic figure (18.00). 26 cost-breakdown + 250 phase-handler tests + tsc -b + eslint green. No cycle (manual)."
+    },
+    {
+      "itemId": "backlog-codex-auth-mapping-into-runtime",
+      "completedAt": "2026-05-28T20:02:54.240Z",
+      "updatedAt": "2026-05-28T20:02:54.240Z",
+      "reason": "v7 item 4 (manual TDD, commit 51f7985): resolveCodexAuth(env) derives authenticated|expired|missing from CODEX_HOME/auth.json contents with no subprocess (expiry from JWT exp + injectable clock). New retriable CodexAuthError; CodexCliTransport injectable authResolver refuses to dispatch when unauthenticated. provider-availability subprocess stub replaced with file check. 10 codex-auth tests; full runtime suite 301 green; tsc -b + eslint green."
+    },
+    {
+      "itemId": "backlog-converge-src-shims-to-packages",
+      "completedAt": "2026-05-28T20:02:54.240Z",
+      "updatedAt": "2026-05-28T20:02:54.240Z",
+      "reason": "v7 item 5 (fan-out agent + manual gate, commit d926446): scripts/check-no-legacy-src-imports.mjs flags concrete src/ imports and reports remaining-real-src count (163->162), exits non-zero on violation; fixture test asserts non-zero exit + count below baseline. src/index.ts converted to @agentforge/core re-export. NOTE: 7 pre-existing violations surfaced; check:legacy-src intentionally not yet in verify:gates."
+    },
+    {
+      "itemId": "backlog-one-cli-surface-parity",
+      "completedAt": "2026-05-28T20:02:54.240Z",
+      "updatedAt": "2026-05-28T20:02:54.240Z",
+      "reason": "v7 item 6 (fan-out agent + manual gate, commit afaf563): single registerAllCommands registry drives the agentforge binary; parity test introspects live Commander programs to enforce binary==registry SSOT. DEVIATION: Codex host is MCP-based (no second Commander program), so true binary<->MCP derivation parity is documented follow-up; delivered SSOT enforcement instead. Flagged to operator."
+    },
+    {
+      "itemId": "backlog-per-job-routing-policy-engine",
+      "completedAt": "2026-05-28T20:02:54.240Z",
+      "updatedAt": "2026-05-28T20:02:54.240Z",
+      "reason": "v7 item 7 (fan-out agent + manual gate, commit 6a3e99f): pure resolveJobRouting(item,policy,availability) -> {preferredProvider,runtimeMode,tier,effort}; security/high->Anthropic opus, bulk/docs/low->Codex, unavailable preferred->alternate. assign-phase reads availability once/plan and writes decision onto items; execute consumes preferredProvider. 11 tests prove >=2 providers in one plan + availability override via which stub transport ran. 250 phase-handler tests green."
+    },
+    {
+      "itemId": "backlog-runtime-auto-switch-on-failure",
+      "completedAt": "2026-05-28T20:02:54.240Z",
+      "updatedAt": "2026-05-28T20:02:54.240Z",
+      "reason": "v7 item 8 (manual TDD, commit 63edd1b): RunOptions.providerPreference drives runWithFailover over resolveOrdered candidates; isRetriableTransportError gates the switch (timeout/rate-limit/network/CodexAuth retry; auth-missing/invalid-request do not). RunResult.providerKind is the transport that actually ran (real re-dispatch) + providerSwitches hop trail; same transport never tried twice. 9 failover tests; 301 runtime tests + tsc -b + eslint green."
     }
   ]
 }
