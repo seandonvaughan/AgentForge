@@ -5,6 +5,7 @@
 //   - preview
 //   - list
 //   - show
+//   - assess-pr
 //   - approve
 //
 // `autonomous:cycle` remains as a compatibility alias for `cycle run`.
@@ -84,6 +85,10 @@ interface CycleShowOptions extends WorkspaceAwareOptions {
   json?: boolean;
 }
 
+interface CycleAssessPrOptions extends WorkspaceAwareOptions {
+  json?: boolean;
+}
+
 interface CycleApproveOptions extends WorkspaceAwareOptions {
   all?: boolean;
   approved?: string[];
@@ -155,6 +160,38 @@ interface RuntimeRoutingSummary {
   decisions: RuntimeRoutingDecision[];
 }
 
+interface MergeReadinessCheck {
+  id:
+    | 'cycle-completed'
+    | 'pr-linked'
+    | 'approval-state'
+    | 'cycle-error'
+    | 'gate-approved'
+    | 'review-findings'
+    | 'execute-failures'
+    | 'tests';
+  status: 'pass' | 'fail';
+  detail: string;
+}
+
+interface PrMergeAssessment {
+  cycleId: string;
+  mergeReady: boolean;
+  verdict: 'ready' | 'blocked';
+  prUrl: string | null;
+  checks: MergeReadinessCheck[];
+  blockingReasons: string[];
+  metrics: {
+    gateVerdict: 'APPROVE' | 'REJECT' | null;
+    criticalFindings: number;
+    majorFindings: number;
+    failedItems: number;
+    testsPassed: number;
+    testsTotal: number;
+    newFailures: number;
+  };
+}
+
 const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
 type ModelCap = 'opus' | 'sonnet' | 'haiku';
 type EffortCap = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
@@ -211,6 +248,14 @@ export function registerCycleCommand(program: Command): void {
     .option('--workspace <id>', 'Run against a registered workspace from ~/.agentforge/workspaces.json')
     .option('--json', 'Print machine-readable JSON')
     .action(runCycleShowAction);
+
+  cycle
+    .command('assess-pr <cycleId>')
+    .description('Assess post-cycle PR merge readiness from deterministic cycle artifacts')
+    .option('--project-root <path>', 'Project root', process.cwd())
+    .option('--workspace <id>', 'Run against a registered workspace from ~/.agentforge/workspaces.json')
+    .option('--json', 'Print machine-readable JSON')
+    .action(runCycleAssessPrAction);
 
   cycle
     .command('approve <cycleId>')
@@ -817,6 +862,58 @@ async function runCycleShowAction(cycleId: string, opts: CycleShowOptions): Prom
   }
 }
 
+async function runCycleAssessPrAction(cycleId: string, opts: CycleAssessPrOptions): Promise<void> {
+  const projectRoot = await resolveWorkspaceProjectRoot(opts);
+  if (!SAFE_ID.test(cycleId)) {
+    console.error(`Invalid cycle id: ${cycleId}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const cycleDir = join(projectRoot, '.agentforge', 'cycles', cycleId);
+  if (!existsSync(cycleDir)) {
+    console.error(`Cycle not found: ${cycleId}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const summary = summarizeCycle(cycleDir, cycleId);
+  if (!summary) {
+    console.error(`Cycle not found: ${cycleId}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const assessment = assessCyclePrMergeReadiness(cycleDir, summary);
+
+  if (opts.json) {
+    console.log(JSON.stringify({
+      projectRoot,
+      cycleId: summary.cycleId,
+      cycleDir,
+      assessment,
+    }, null, 2));
+    return;
+  }
+
+  console.log(`Cycle:        ${assessment.cycleId}`);
+  console.log(`PR:           ${assessment.prUrl ?? '(none)'}`);
+  console.log(`Merge ready:  ${assessment.mergeReady ? 'yes' : 'no'}`);
+  console.log(`Verdict:      ${assessment.verdict}`);
+  console.log('');
+  console.log('Checks:');
+  for (const check of assessment.checks) {
+    console.log(`  ${check.status.toUpperCase()} ${check.id}: ${check.detail}`);
+  }
+  if (assessment.blockingReasons.length > 0) {
+    console.log('');
+    console.log('Blocking reasons:');
+    for (const reason of assessment.blockingReasons) {
+      console.log(`  - ${reason}`);
+    }
+  }
+}
+
 async function runCycleApproveAction(cycleId: string, opts: CycleApproveOptions): Promise<void> {
   const projectRoot = await resolveWorkspaceProjectRoot(opts);
   if (!SAFE_ID.test(cycleId)) {
@@ -1215,6 +1312,197 @@ function readRuntimeRoutingSummary(cycleDir: string): RuntimeRoutingSummary | nu
     defaultItems: decisions.length - routedItems,
     decisions,
   };
+}
+
+function assessCyclePrMergeReadiness(cycleDir: string, summary: CycleSummary): PrMergeAssessment {
+  const cycleJson = readJsonIfExists(join(cycleDir, 'cycle.json')) as Record<string, unknown> | null;
+  const gateJson = readJsonIfExists(join(cycleDir, 'phases', 'gate.json')) as Record<string, unknown> | null;
+  const reviewJson = readJsonIfExists(join(cycleDir, 'phases', 'review.json')) as Record<string, unknown> | null;
+  const executeJson = readJsonIfExists(join(cycleDir, 'phases', 'execute.json')) as Record<string, unknown> | null;
+  const gateVerdict = readGateVerdict(cycleJson, gateJson);
+  const reviewFindingCounts = readReviewFindingCounts(reviewJson);
+  const failedItems = countFailedExecuteItems(executeJson);
+  const cycleError = cycleJson && typeof cycleJson.error === 'string' && cycleJson.error.trim().length > 0
+    ? cycleJson.error.trim()
+    : null;
+  const tests = cycleJson && typeof cycleJson.tests === 'object' && cycleJson.tests !== null
+    ? cycleJson.tests as Record<string, unknown>
+    : null;
+  const newFailures = tests && Array.isArray(tests.newFailures) ? tests.newFailures.length : 0;
+
+  const checks: MergeReadinessCheck[] = [
+    {
+      id: 'cycle-completed',
+      status: summary.stage === 'completed' ? 'pass' : 'fail',
+      detail: summary.stage === 'completed'
+        ? 'cycle stage is completed'
+        : `cycle stage is ${summary.stage}`,
+    },
+    {
+      id: 'pr-linked',
+      status: summary.prUrl ? 'pass' : 'fail',
+      detail: summary.prUrl ? 'cycle has an associated PR URL' : 'cycle has no associated PR URL',
+    },
+    {
+      id: 'approval-state',
+      status: summary.hasApprovalPending || summary.approvalDecision === 'rejected' ? 'fail' : 'pass',
+      detail: summary.hasApprovalPending
+        ? 'approval decision is still pending'
+        : summary.approvalDecision === 'rejected'
+          ? 'approval decision is rejected'
+          : summary.approvalDecision
+            ? `approval decision is ${summary.approvalDecision}`
+            : 'no blocking approval decision detected',
+    },
+    {
+      id: 'cycle-error',
+      status: cycleError ? 'fail' : 'pass',
+      detail: cycleError ? `cycle error recorded: ${cycleError}` : 'no cycle-level error recorded',
+    },
+    {
+      id: 'gate-approved',
+      status: gateVerdict === 'APPROVE' ? 'pass' : 'fail',
+      detail: gateVerdict === 'APPROVE'
+        ? 'gate verdict is APPROVE'
+        : gateVerdict === 'REJECT'
+          ? 'gate verdict is REJECT'
+          : 'gate verdict is missing',
+    },
+    {
+      id: 'review-findings',
+      status: reviewFindingCounts.critical === 0 && reviewFindingCounts.major === 0 ? 'pass' : 'fail',
+      detail: `review findings CRITICAL=${reviewFindingCounts.critical} MAJOR=${reviewFindingCounts.major}`,
+    },
+    {
+      id: 'execute-failures',
+      status: failedItems === 0 ? 'pass' : 'fail',
+      detail: failedItems === 0 ? 'no failed execute items detected' : `failed execute items=${failedItems}`,
+    },
+    {
+      id: 'tests',
+      status: summary.testsTotal > 0 && summary.testsPassed === summary.testsTotal && newFailures === 0 ? 'pass' : 'fail',
+      detail: `tests passed=${summary.testsPassed}/${summary.testsTotal} newFailures=${newFailures}`,
+    },
+  ];
+
+  const blockingReasons = checks
+    .filter((check) => check.status === 'fail')
+    .map((check) => `${check.id}: ${check.detail}`);
+  const mergeReady = blockingReasons.length === 0;
+
+  return {
+    cycleId: summary.cycleId,
+    mergeReady,
+    verdict: mergeReady ? 'ready' : 'blocked',
+    prUrl: summary.prUrl,
+    checks,
+    blockingReasons,
+    metrics: {
+      gateVerdict,
+      criticalFindings: reviewFindingCounts.critical,
+      majorFindings: reviewFindingCounts.major,
+      failedItems,
+      testsPassed: summary.testsPassed,
+      testsTotal: summary.testsTotal,
+      newFailures,
+    },
+  };
+}
+
+function readGateVerdict(
+  cycleJson: Record<string, unknown> | null,
+  gateJson: Record<string, unknown> | null,
+): 'APPROVE' | 'REJECT' | null {
+  const fromCycle = cycleJson?.gateVerdict;
+  if (fromCycle === 'APPROVE' || fromCycle === 'REJECT') {
+    return fromCycle;
+  }
+  const fromGate = gateJson?.verdict;
+  if (fromGate === 'APPROVE' || fromGate === 'REJECT') {
+    return fromGate;
+  }
+  return null;
+}
+
+function readReviewFindingCounts(reviewJson: Record<string, unknown> | null): { critical: number; major: number } {
+  const structuredSeverities = readStructuredReviewSeverities(reviewJson);
+  const severities = structuredSeverities.length > 0
+    ? structuredSeverities
+    : readReviewSeveritiesFromResponses(reviewJson);
+  return {
+    critical: severities.filter((severity) => severity === 'CRITICAL').length,
+    major: severities.filter((severity) => severity === 'MAJOR').length,
+  };
+}
+
+function readStructuredReviewSeverities(reviewJson: Record<string, unknown> | null): Array<'CRITICAL' | 'MAJOR'> {
+  if (!reviewJson) return [];
+
+  const severities: Array<'CRITICAL' | 'MAJOR'> = [];
+  const addFromFindings = (findings: unknown): void => {
+    if (!Array.isArray(findings)) return;
+    for (const finding of findings) {
+      if (!finding || typeof finding !== 'object') continue;
+      const severity = (finding as { severity?: unknown }).severity;
+      if (severity === 'CRITICAL' || severity === 'MAJOR') {
+        severities.push(severity);
+      }
+    }
+  };
+
+  addFromFindings(reviewJson.findings);
+  const agentRuns = Array.isArray(reviewJson.agentRuns) ? reviewJson.agentRuns : [];
+  for (const run of agentRuns) {
+    if (!run || typeof run !== 'object') continue;
+    addFromFindings((run as { findings?: unknown }).findings);
+  }
+  return severities;
+}
+
+function readReviewSeveritiesFromResponses(reviewJson: Record<string, unknown> | null): Array<'CRITICAL' | 'MAJOR'> {
+  if (!reviewJson || !Array.isArray(reviewJson.agentRuns)) return [];
+
+  const severities: Array<'CRITICAL' | 'MAJOR'> = [];
+  for (const run of reviewJson.agentRuns) {
+    if (!run || typeof run !== 'object') continue;
+    const response = (run as { response?: unknown }).response;
+    if (typeof response !== 'string') continue;
+    for (const line of response.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const match = /^[-*>\s]*\[?(CRITICAL|MAJOR)\]?\s*:/i.exec(trimmed);
+      if (match?.[1] === 'CRITICAL' || match?.[1] === 'MAJOR') {
+        severities.push(match[1]);
+      }
+    }
+  }
+  return severities;
+}
+
+function countFailedExecuteItems(executeJson: Record<string, unknown> | null): number {
+  if (!executeJson) return 0;
+
+  const itemResults = Array.isArray(executeJson.itemResults) ? executeJson.itemResults : [];
+  const agentRuns = Array.isArray(executeJson.agentRuns) ? executeJson.agentRuns : [];
+  const runs = itemResults.length > 0 ? itemResults : agentRuns;
+  if (runs.length === 0) return 0;
+
+  const seenItemIds = new Set<string>();
+  let failed = 0;
+  for (let index = 0; index < runs.length; index += 1) {
+    const run = runs[index];
+    if (!run || typeof run !== 'object') continue;
+    const itemId = typeof (run as { itemId?: unknown }).itemId === 'string'
+      ? (run as { itemId: string }).itemId
+      : null;
+    const dedupeKey = itemId && itemId.length > 0 ? itemId : `index:${index}`;
+    if (seenItemIds.has(dedupeKey)) continue;
+    seenItemIds.add(dedupeKey);
+    if ((run as { status?: unknown }).status === 'failed') {
+      failed += 1;
+    }
+  }
+  return failed;
 }
 
 function isIsoDateString(value: string): boolean {
