@@ -12,6 +12,7 @@ interface BacklogCompleteOptions {
 interface BacklogStatusOptions {
   projectRoot: string;
   json?: boolean;
+  source?: string;
 }
 
 interface CompletedBacklogEntry {
@@ -48,6 +49,8 @@ interface DuplicateNormalizedIdSummary {
   }>;
 }
 
+type BacklogStatusSourceFilter = 'all' | 'backlog-file' | 'research-plan';
+
 export function registerBacklogCommand(program: Command): void {
   const backlog = program
     .command('backlog')
@@ -74,6 +77,7 @@ export function registerBacklogCommand(program: Command): void {
     .description('Show deterministic backlog visibility before cycle replay')
     .option('--project-root <path>', 'Project root', process.cwd())
     .option('--json', 'Print machine-readable JSON')
+    .option('--source <source>', 'Filter active scoped items by source (all|backlog-file|research-plan)', 'all')
     .action(async (opts: BacklogStatusOptions) => {
       try {
         await printBacklogStatus(opts);
@@ -164,6 +168,7 @@ function readLedger(path: string): CompletedBacklogLedger {
 }
 
 async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
+  const sourceFilter = parseBacklogStatusSourceFilter(opts.source);
   const projectRoot = resolve(opts.projectRoot);
   const backlogDir = join(projectRoot, '.agentforge', 'backlog');
   const completed = readLedger(join(backlogDir, 'completed.json'));
@@ -175,13 +180,16 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
   const activeResearchItems = researchItems.filter((item) => !completedIds.has(item.id) && !quarantineIds.has(item.id));
   const activeItems = [...activeBacklogItems, ...activeResearchItems];
   const unattendedExcluded = activeItems.filter(isUnattendedExcludedBacklogItem);
-  const activeScoped = activeItems
+  const activeScopedUnfiltered = activeItems
     .filter((item) => !isUnattendedExcludedBacklogItem(item))
     .sort((a, b) => {
       const idCompare = a.id.localeCompare(b.id);
       if (idCompare !== 0) return idCompare;
       return a.title.localeCompare(b.title);
     });
+  const activeScoped = sourceFilter === 'all'
+    ? activeScopedUnfiltered
+    : activeScopedUnfiltered.filter((item) => getBacklogItemSource(item) === sourceFilter);
   const duplicateNormalizedIds = summarizeDuplicateNormalizedIds(activeScoped);
   const routedScoped = activeScoped.filter((item) => item.runtimeMode !== undefined || item.preferredProvider !== undefined);
   const defaultScoped = activeScoped.length - routedScoped.length;
@@ -190,6 +198,7 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
     const readyForCycle = activeScoped.length > 0;
     console.log(JSON.stringify({
       projectRoot,
+      sourceFilter,
       activeBacklogFileItems: activeBacklogItems.length,
       activeResearchPlanItems: activeResearchItems.length,
       completedLedgerEntries: completed.entries.length,
@@ -218,6 +227,9 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
 
   console.log('[backlog] status');
   console.log(`  projectRoot: ${projectRoot}`);
+  if (sourceFilter !== 'all') {
+    console.log(`  sourceFilter: ${sourceFilter}`);
+  }
   console.log(`  activeBacklogFileItems: ${activeBacklogItems.length}`);
   console.log(`  activeResearchPlanItems: ${activeResearchItems.length}`);
   console.log(`  completedLedgerEntries: ${completed.entries.length}`);
@@ -244,6 +256,16 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
     const suffix = hints.length > 0 ? ` [${hints.join(', ')}]` : '';
     console.log(`    - ${item.id}: ${item.title}${suffix}`);
   }
+}
+
+function parseBacklogStatusSourceFilter(raw: string | undefined): BacklogStatusSourceFilter {
+  if (raw === undefined) return 'all';
+  if (raw === 'all' || raw === 'backlog-file' || raw === 'research-plan') return raw;
+  throw new Error(`Invalid --source value "${raw}": expected one of all, backlog-file, research-plan`);
+}
+
+function getBacklogItemSource(item: BacklogFileItem): Exclude<BacklogStatusSourceFilter, 'all'> {
+  return item.sourceHint?.startsWith('research:') ? 'research-plan' : 'backlog-file';
 }
 
 function summarizeDuplicateNormalizedIds(items: BacklogFileItem[]): DuplicateNormalizedIdSummary[] {
