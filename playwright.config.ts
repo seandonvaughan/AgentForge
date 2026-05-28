@@ -4,7 +4,27 @@ function parseBooleanEnv(value: string | undefined): boolean {
   return /^(1|true|yes)$/i.test(value ?? '');
 }
 
-const reuseExistingServer = parseBooleanEnv(process.env.PLAYWRIGHT_REUSE_SERVER) && !process.env.CI;
+function parseDisableBooleanEnv(value: string | undefined): boolean {
+  return /^(0|false|no)$/i.test(value ?? '');
+}
+
+export function shouldReuseExistingServer(env: NodeJS.ProcessEnv): boolean {
+  if (env.CI) {
+    return false;
+  }
+
+  if (parseDisableBooleanEnv(env.PLAYWRIGHT_REUSE_SERVER)) {
+    return false;
+  }
+
+  if (parseBooleanEnv(env.PLAYWRIGHT_REUSE_SERVER)) {
+    return true;
+  }
+
+  return true;
+}
+
+const reuseExistingServer = shouldReuseExistingServer(process.env);
 
 /**
  * Read environment variables from file.
