@@ -9,7 +9,7 @@ function parseDisableBooleanEnv(value: string | undefined): boolean {
 }
 
 export function shouldReuseExistingServer(env: NodeJS.ProcessEnv): boolean {
-  if (env.CI) {
+  if (parseBooleanEnv(env.CI)) {
     return false;
   }
 
