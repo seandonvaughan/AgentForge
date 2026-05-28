@@ -14,9 +14,9 @@
 // when more than `config.limits.maxExecutePhaseFailureRate` (default 0.5)
 // of items fail. All-failures returns 'blocked'.
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, realpathSync } from 'node:fs';
 import { execFile } from 'node:child_process';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
@@ -452,7 +452,9 @@ export function isCoderClassItem(item: { assignee: string; tags?: string[] }): b
 }
 
 const GENERATED_RUNTIME_PATHS = [
+  '.agentforge/audit-worktrees/',
   '.agentforge/cycles/',
+  '.agentforge/run-logs/',
   '.agentforge/worktrees/',
   '.agentforge/knowledge/entities.jsonl',
   '.agentforge/knowledge/embeddings.db',
@@ -486,6 +488,44 @@ function isGeneratedRuntimePath(file: string): boolean {
   ));
 }
 
+function comparablePath(path: string): string {
+  let resolved: string;
+  try {
+    resolved = realpathSync.native(path);
+  } catch {
+    resolved = resolve(path);
+  }
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
+async function assertWorktreeGitRoot(worktreePath: string): Promise<void> {
+  if (!existsSync(worktreePath)) {
+    throw new Error(
+      `Worktree path ${worktreePath} does not exist; cannot verify agent changes.`,
+    );
+  }
+
+  let stdout: string | Buffer;
+  try {
+    ({ stdout } = await execFileAsync('git', ['rev-parse', '--show-toplevel'], {
+      cwd: worktreePath,
+      maxBuffer: 1024 * 1024,
+    }));
+  } catch {
+    throw new Error(
+      `Worktree path ${worktreePath} is not a git worktree; cannot verify agent changes.`,
+    );
+  }
+
+  const gitRoot = stdout.toString().trim();
+  if (comparablePath(gitRoot) !== comparablePath(worktreePath)) {
+    throw new Error(
+      `Worktree path ${worktreePath} resolves git root ${gitRoot}; ` +
+      'refusing to count changes outside the allocated worktree.',
+    );
+  }
+}
+
 async function gitChangedFiles(worktreePath: string, args: string[]): Promise<string[]> {
   const { stdout } = await execFileAsync('git', args, {
     cwd: worktreePath,
@@ -504,7 +544,23 @@ async function meaningfulWorktreeChanges(
   baseBranch = 'main',
   baselineHead?: string,
 ): Promise<string[]> {
-  if (!existsSync(worktreePath)) return ['__worktree_unverified__'];
+  const strictWorktree = baselineHead !== undefined && baselineHead.trim().length > 0;
+  if (!existsSync(worktreePath)) {
+    if (strictWorktree) {
+      throw new Error(
+        `Worktree path ${worktreePath} does not exist; cannot verify agent changes.`,
+      );
+    }
+    return ['__worktree_unverified__'];
+  }
+
+  try {
+    await assertWorktreeGitRoot(worktreePath);
+  } catch (err) {
+    if (strictWorktree) throw err;
+    return ['__worktree_unverified__'];
+  }
+
   let stdout: string | Buffer;
   try {
     ({ stdout } = await execFileAsync('git', ['status', '--porcelain', '--untracked-files=all'], {
@@ -512,6 +568,11 @@ async function meaningfulWorktreeChanges(
       maxBuffer: 10 * 1024 * 1024,
     }));
   } catch {
+    if (strictWorktree) {
+      throw new Error(
+        `Unable to read git status for worktree ${worktreePath}; cannot verify agent changes.`,
+      );
+    }
     return ['__worktree_unverified__'];
   }
   const worktreeStatusChanges = stdout

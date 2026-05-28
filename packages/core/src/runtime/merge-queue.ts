@@ -150,6 +150,14 @@ function appendToLedger(ledgerPath: string, entry: LedgerEntry): void {
   writeLedger(ledgerPath, entries);
 }
 
+function ledgerHasBranchEntry(ledgerPath: string, branch: string): boolean {
+  return readLedger(ledgerPath).some((entry) => entry.branch === branch);
+}
+
+function ledgerBranchKey(cycleId: string, branch: string): string {
+  return `${cycleId}\0${branch}`;
+}
+
 function resolveCycleDir(projectRoot: string, cycleId: string): string {
   return join(projectRoot, '.agentforge', 'cycles', cycleId);
 }
@@ -237,6 +245,7 @@ export class MergeQueue {
   private unsubscribe: (() => void) | null = null;
   /** Tracks in-flight handler promises so drain() can await them. */
   private readonly inFlight = new Set<Promise<void>>();
+  private readonly reservedBranches = new Set<string>();
 
   constructor(opts: MergeQueueOptions) {
     this.projectRoot = opts.projectRoot;
@@ -490,6 +499,13 @@ export class MergeQueue {
     }
 
     const ledgerPath = join(resolveCycleDir(this.projectRoot, cycleId), 'agent-prs.json');
+    const branchKey = ledgerBranchKey(cycleId, branch);
+
+    if (this.reservedBranches.has(branchKey) || ledgerHasBranchEntry(ledgerPath, branch)) {
+      console.log(`[MergeQueue] Skipping ${branch} (already recorded for cycle ${cycleId})`);
+      return;
+    }
+    this.reservedBranches.add(branchKey);
 
     // Determine parent branch: override > cycle.json > baseBranch > 'main'
     const parentBranch =

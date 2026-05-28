@@ -107,6 +107,42 @@ describe('commitAgentWork', () => {
     expect(result).toBeNull();
   });
 
+  it('returns null when only AgentForge audit worktree artifacts changed', async () => {
+    const dir = await createLocalRepo();
+    dirs.push(dir);
+    mkdirSync(join(dir, '.agentforge', 'audit-worktrees', 'pr-195'), { recursive: true });
+    writeFileSync(
+      join(dir, '.agentforge', 'audit-worktrees', 'pr-195', 'scratch.ts'),
+      'export const scratch = true;\n',
+    );
+
+    const result = await commitAgentWork({
+      worktreePath: dir,
+      branch: 'autonomous/agent-coder-abc',
+      agentId: 'agent-coder',
+      itemIds: ['ITEM-1'],
+    });
+
+    expect(result).toBeNull();
+  });
+
+  it('rejects a nested stale path instead of walking up to the parent repo', async () => {
+    const dir = await createLocalRepo();
+    dirs.push(dir);
+    const stalePath = join(dir, '.agentforge', 'worktrees', 'agent-coder-stale');
+    mkdirSync(stalePath, { recursive: true });
+    makeChange(dir, 'real-change.ts', 'export const realChange = true;\n');
+
+    await expect(
+      commitAgentWork({
+        worktreePath: stalePath,
+        branch: 'autonomous/agent-coder-abc',
+        agentId: 'agent-coder',
+        itemIds: ['ITEM-1'],
+      }),
+    ).rejects.toThrow('refusing to commit changes outside the allocated worktree');
+  });
+
   // ── 2. AGENT_AUTOCOMMIT_DISABLED → null ──────────────────────────────────
   it('returns null when AGENT_AUTOCOMMIT_DISABLED is set', async () => {
     const dir = await createLocalRepo();

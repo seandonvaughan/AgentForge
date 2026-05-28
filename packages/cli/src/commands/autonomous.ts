@@ -141,6 +141,20 @@ interface PendingApproval {
   sprintVersion?: string;
 }
 
+interface RuntimeRoutingDecision {
+  itemId: string;
+  decision: 'routed' | 'default';
+  runtimeMode: string | null;
+  preferredProvider: string | null;
+}
+
+interface RuntimeRoutingSummary {
+  totalItems: number;
+  routedItems: number;
+  defaultItems: number;
+  decisions: RuntimeRoutingDecision[];
+}
+
 const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
 type ModelCap = 'opus' | 'sonnet' | 'haiku';
 type EffortCap = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
@@ -716,6 +730,7 @@ async function runCycleShowAction(cycleId: string, opts: CycleShowOptions): Prom
   const scoring = readJsonIfExists(join(cycleDir, 'scoring.json')) as Record<string, unknown> | null;
   const eventsCount = countJsonlLines(join(cycleDir, 'events.jsonl'));
   const agentPr = latestCycleAgentPr(cycleDir);
+  const runtimeRouting = readRuntimeRoutingSummary(cycleDir);
 
   if (opts.json) {
     console.log(JSON.stringify({
@@ -738,6 +753,7 @@ async function runCycleShowAction(cycleId: string, opts: CycleShowOptions): Prom
       eventsCount,
       error: cycleJson && typeof cycleJson.error === 'string' ? cycleJson.error : null,
       scoring,
+      runtimeRouting,
       pendingApproval,
       decision,
     }, null, 2));
@@ -1156,6 +1172,49 @@ function countJsonlLines(path: string): number {
   } catch {
     return 0;
   }
+}
+
+function readRuntimeRoutingSummary(cycleDir: string): RuntimeRoutingSummary | null {
+  const execute = readJsonIfExists(join(cycleDir, 'phases', 'execute.json')) as {
+    itemResults?: Array<Record<string, unknown>>;
+    agentRuns?: Array<Record<string, unknown>>;
+  } | null;
+  if (!execute) return null;
+
+  const itemResults = Array.isArray(execute.itemResults) ? execute.itemResults : [];
+  const agentRuns = Array.isArray(execute.agentRuns) ? execute.agentRuns : [];
+  const runs = itemResults.length > 0 ? itemResults : agentRuns;
+  if (runs.length === 0) return null;
+
+  const decisionsByItemId = new Map<string, RuntimeRoutingDecision>();
+  for (const run of runs) {
+    const itemId = typeof run.itemId === 'string' ? run.itemId : null;
+    if (!itemId || decisionsByItemId.has(itemId)) continue;
+
+    const runtimeMode = typeof run.runtimeMode === 'string' && run.runtimeMode.length > 0
+      ? run.runtimeMode
+      : null;
+    const preferredProvider = typeof run.preferredProvider === 'string' && run.preferredProvider.length > 0
+      ? run.preferredProvider
+      : null;
+    decisionsByItemId.set(itemId, {
+      itemId,
+      decision: runtimeMode !== null || preferredProvider !== null ? 'routed' : 'default',
+      runtimeMode,
+      preferredProvider,
+    });
+  }
+
+  const decisions = [...decisionsByItemId.values()];
+  if (decisions.length === 0) return null;
+
+  const routedItems = decisions.filter((entry) => entry.decision === 'routed').length;
+  return {
+    totalItems: decisions.length,
+    routedItems,
+    defaultItems: decisions.length - routedItems,
+    decisions,
+  };
 }
 
 function isIsoDateString(value: string): boolean {

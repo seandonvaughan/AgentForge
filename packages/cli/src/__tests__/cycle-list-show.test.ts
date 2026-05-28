@@ -241,6 +241,176 @@ describe('cycle list/show summaries', () => {
     });
   });
 
+  it('deduplicates runtime routing decisions by itemId from itemResults in cycle show JSON', async () => {
+    const cycleId = '99999999-9999-4999-8999-999999999999';
+    const cycleDir = writeCycle(cycleId, {
+      cycleId,
+      stage: 'completed',
+      startedAt: '2026-05-20T00:00:00.000Z',
+      completedAt: '2026-05-20T00:05:00.000Z',
+    });
+    mkdirSync(join(cycleDir, 'phases'), { recursive: true });
+    writeFileSync(join(cycleDir, 'phases', 'execute.json'), JSON.stringify({
+      itemResults: [
+        {
+          itemId: 'item-routed',
+          status: 'completed',
+          runtimeMode: 'codex-cli',
+          preferredProvider: 'codex-cli',
+        },
+        {
+          itemId: 'item-routed',
+          status: 'completed',
+          runtimeMode: 'codex-cli',
+          preferredProvider: 'codex-cli',
+        },
+        {
+          itemId: 'item-default',
+          status: 'completed',
+        },
+        {
+          itemId: 'item-default',
+          status: 'completed',
+        },
+      ],
+    }, null, 2));
+
+    await runCli('cycle', 'show', cycleId, '--project-root', projectRoot, '--json');
+
+    const parsed = JSON.parse(output()) as {
+      runtimeRouting: {
+        totalItems: number;
+        routedItems: number;
+        defaultItems: number;
+        decisions: Array<{
+          itemId: string;
+          decision: string;
+          runtimeMode: string | null;
+          preferredProvider: string | null;
+        }>;
+      } | null;
+    };
+
+    expect(parsed.runtimeRouting).toBeTruthy();
+    expect(parsed.runtimeRouting).toMatchObject({
+      totalItems: 2,
+      routedItems: 1,
+      defaultItems: 1,
+    });
+    expect(parsed.runtimeRouting?.decisions).toEqual([
+      {
+        itemId: 'item-routed',
+        decision: 'routed',
+        runtimeMode: 'codex-cli',
+        preferredProvider: 'codex-cli',
+      },
+      {
+        itemId: 'item-default',
+        decision: 'default',
+        runtimeMode: null,
+        preferredProvider: null,
+      },
+    ]);
+  });
+
+  it('deduplicates runtime routing decisions from agentRuns when itemResults is absent', async () => {
+    const cycleId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const cycleDir = writeCycle(cycleId, {
+      cycleId,
+      stage: 'completed',
+      startedAt: '2026-05-20T00:00:00.000Z',
+      completedAt: '2026-05-20T00:05:00.000Z',
+    });
+    mkdirSync(join(cycleDir, 'phases'), { recursive: true });
+    writeFileSync(join(cycleDir, 'phases', 'execute.json'), JSON.stringify({
+      agentRuns: [
+        {
+          itemId: 'fallback-routed',
+          status: 'completed',
+          preferredProvider: 'codex-cli',
+        },
+        {
+          itemId: 'fallback-routed',
+          status: 'completed',
+          preferredProvider: 'codex-cli',
+        },
+        {
+          itemId: 'fallback-default',
+          status: 'completed',
+        },
+      ],
+    }, null, 2));
+
+    await runCli('cycle', 'show', cycleId, '--project-root', projectRoot, '--json');
+
+    const parsed = JSON.parse(output()) as {
+      runtimeRouting: {
+        totalItems: number;
+        routedItems: number;
+        defaultItems: number;
+        decisions: Array<{ itemId: string; decision: string }>;
+      } | null;
+    };
+
+    expect(parsed.runtimeRouting).toMatchObject({
+      totalItems: 2,
+      routedItems: 1,
+      defaultItems: 1,
+    });
+    expect(parsed.runtimeRouting?.decisions.map((decision) => decision.itemId)).toEqual([
+      'fallback-routed',
+      'fallback-default',
+    ]);
+  });
+
+  it('falls back to agentRuns when itemResults is empty and ignores invalid itemIds', async () => {
+    const cycleId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const cycleDir = writeCycle(cycleId, {
+      cycleId,
+      stage: 'completed',
+      startedAt: '2026-05-20T00:00:00.000Z',
+      completedAt: '2026-05-20T00:05:00.000Z',
+    });
+    mkdirSync(join(cycleDir, 'phases'), { recursive: true });
+    writeFileSync(join(cycleDir, 'phases', 'execute.json'), JSON.stringify({
+      itemResults: [],
+      agentRuns: [
+        {
+          itemId: '',
+          preferredProvider: 'codex-cli',
+        },
+        {
+          itemId: null,
+          preferredProvider: 'codex-cli',
+        },
+        {
+          itemId: 'fallback-valid',
+          preferredProvider: 'codex-cli',
+        },
+      ],
+    }, null, 2));
+
+    await runCli('cycle', 'show', cycleId, '--project-root', projectRoot, '--json');
+
+    const parsed = JSON.parse(output()) as {
+      runtimeRouting: {
+        totalItems: number;
+        routedItems: number;
+        defaultItems: number;
+        decisions: Array<{ itemId: string }>;
+      } | null;
+    };
+
+    expect(parsed.runtimeRouting).toMatchObject({
+      totalItems: 1,
+      routedItems: 1,
+      defaultItems: 0,
+    });
+    expect(parsed.runtimeRouting?.decisions).toEqual([
+      expect.objectContaining({ itemId: 'fallback-valid' }),
+    ]);
+  });
+
   function writeCycle(
     cycleId: string,
     cycleJson: Record<string, unknown>,
