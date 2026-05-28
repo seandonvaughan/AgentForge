@@ -712,6 +712,47 @@ describe('agentforge backlog status', () => {
     expect(parsed.activeScopedItemsCount).toBe(2);
   });
 
+  it('matches explicit --source all with default status output for scoped ids and counts', async () => {
+    const backlogDir = join(projectRoot, '.agentforge', 'backlog');
+    const researchRunDir = join(projectRoot, '.agentforge', 'research-runs', 'run-source-all-parity');
+    mkdirSync(backlogDir, { recursive: true });
+    mkdirSync(researchRunDir, { recursive: true });
+    writeFileSync(
+      join(backlogDir, 'items.json'),
+      JSON.stringify({
+        items: [
+          { id: 'backlog parity', title: 'Backlog Parity', estimatedComplexity: 'low', files: ['README.md'] },
+        ],
+      }),
+      'utf8',
+    );
+    writeFileSync(
+      join(researchRunDir, 'run.json'),
+      JSON.stringify({
+        plannedCycle: { ideaIds: ['idea-404'] },
+        ideas: [
+          { ideaId: 'idea-404', status: 'planned', title: 'Research Parity', risk: 'low', touchedAreas: ['packages/cli/src/commands/backlog.ts'] },
+        ],
+      }),
+      'utf8',
+    );
+
+    await runCli(['backlog', 'status', '--project-root', projectRoot, '--json']);
+    const defaultParsed = JSON.parse(consoleLog.mock.calls.map((args: unknown[]) => String(args[0] ?? '')).join('\n'));
+
+    consoleLog.mockClear();
+    await runCli(['backlog', 'status', '--project-root', projectRoot, '--json', '--source', 'all']);
+    const explicitAllParsed = JSON.parse(consoleLog.mock.calls.map((args: unknown[]) => String(args[0] ?? '')).join('\n'));
+
+    expect(explicitAllParsed.sourceFilter).toBe('all');
+    expect(explicitAllParsed.activeBacklogFileItems).toBe(defaultParsed.activeBacklogFileItems);
+    expect(explicitAllParsed.activeResearchPlanItems).toBe(defaultParsed.activeResearchPlanItems);
+    expect(explicitAllParsed.readyForCycle).toBe(defaultParsed.readyForCycle);
+    expect(explicitAllParsed.activeScopedItems.map((item: { id: string }) => item.id)).toEqual(
+      defaultParsed.activeScopedItems.map((item: { id: string }) => item.id),
+    );
+  });
+
   it('fails with clear error for invalid --source value', async () => {
     await runCli(['backlog', 'status', '--project-root', projectRoot, '--source', 'todo-marker']);
     const errorOutput = consoleError.mock.calls.map((args: unknown[]) => String(args[0] ?? '')).join('\n');
