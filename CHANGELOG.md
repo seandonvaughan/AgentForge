@@ -25,6 +25,7 @@ All notable changes to AgentForge are documented in this file.
 - Kept one-item cycle audit runs on the normal runtime timeout path so curated single-item cycles do not fail under a special five-minute cap.
 - Hardened Codex cycle worktrees by placing them outside the parent checkout and repairing registered worktree metadata before commit when the local `.git` file is missing or broken.
 - `ProposalToBacklog` now filters ids recorded in `.agentforge/backlog/completed.json`, preventing completed backlog items from being replayed in new autonomous cycle intake.
+- `ProposalToBacklog` now also sources planned R&D ideas from `.agentforge/research-runs/*/run.json` as deterministic `research-plan` backlog candidates, reuses completed/quarantine replay guards via normalized ids, and enforces unattended auto-pick gating to require low/medium risk plus non-empty scope.
 
 ## [23.5.0] - 2026-05-18
 
