@@ -8,9 +8,11 @@ import { getRequestModelProfile } from '../model-profiles.js';
 import { estimateOpenAiCostUsd } from '../openai-pricing.js';
 import { normalizeStrictOutputSchema } from '../output-schema.js';
 import {
+  CodexAuthError,
   TransportInvalidRequestError,
   classifyCodexCliError,
 } from '../transport-errors.js';
+import type { CodexAuthResult } from '../codex-auth.js';
 import type {
   AgentOutputSchema,
   CodexSandboxMode,
@@ -67,8 +69,43 @@ interface ParsedCodexOutput {
   events: unknown[];
 }
 
+export interface CodexCliTransportOptions {
+  /**
+   * When provided, execute()/executeStreaming() refuse to dispatch unless this
+   * resolver reports `authenticated`, throwing a retriable {@link CodexAuthError}
+   * otherwise (feeding the runtime auto-switch). Omit to preserve the legacy
+   * no-precheck behavior. Inject `resolveCodexAuth` in production wiring.
+   */
+  authResolver?: (env: NodeJS.ProcessEnv) => CodexAuthResult;
+  /** Environment passed to the auth resolver. Defaults to process.env at call time. */
+  env?: NodeJS.ProcessEnv;
+}
+
 export class CodexCliTransport implements ExecutionTransport {
   readonly kind = 'codex-cli' as const;
+
+  private readonly authResolver?: (env: NodeJS.ProcessEnv) => CodexAuthResult;
+  private readonly env?: NodeJS.ProcessEnv;
+
+  constructor(options: CodexCliTransportOptions = {}) {
+    if (options.authResolver) this.authResolver = options.authResolver;
+    if (options.env) this.env = options.env;
+  }
+
+  /**
+   * Refuse to dispatch when an injected auth resolver reports the operator is
+   * not authenticated. No-op when no resolver was injected (legacy behavior).
+   */
+  private assertAuthenticated(): void {
+    if (!this.authResolver) return;
+    const auth = this.authResolver(this.env ?? process.env);
+    if (auth.status !== 'authenticated') {
+      throw new CodexAuthError(
+        `Codex CLI cannot dispatch: ${auth.reason} (${auth.path})`,
+        { authPath: auth.path },
+      );
+    }
+  }
 
   isAvailable(): boolean {
     if (process.platform === 'win32') {
@@ -90,6 +127,7 @@ export class CodexCliTransport implements ExecutionTransport {
   }
 
   async execute(request: ExecutionRequest): Promise<ExecutionResult> {
+    this.assertAuthenticated();
     const profile = getRequestModelProfile(this.kind, request);
     const startedAt = Date.now();
 
@@ -137,6 +175,7 @@ export class CodexCliTransport implements ExecutionTransport {
     request: ExecutionRequest,
     options: ExecutionStreamOptions = {},
   ): Promise<ExecutionResult> {
+    this.assertAuthenticated();
     const profile = getRequestModelProfile(this.kind, request);
     const startedAt = Date.now();
     this.emitEvent(options, {

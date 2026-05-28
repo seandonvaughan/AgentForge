@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import yaml from 'js-yaml';
 import type { ModelTier } from '@agentforge/shared';
 import { resolveProviderModelProfile } from './model-profiles.js';
+import { resolveCodexAuth, type CodexAuthStatus } from './codex-auth.js';
 import { isCodexRuntimeAvailable } from './execution-service-mode.js';
 import {
   buildCodexSpawnCommand,
@@ -55,6 +56,9 @@ export interface CodexReadinessReport {
   codexLoginChecked: boolean;
   codexLoginOk: boolean | null;
   codexLoginMessage?: string;
+  /** File-based auth state from CODEX_HOME/auth.json (item 4 — no subprocess). */
+  codexAuthStatus: CodexAuthStatus;
+  codexAuthReason: string;
   agents: CodexReadinessAgent[];
   warnings: string[];
   ready: boolean;
@@ -86,6 +90,7 @@ export function buildCodexReadinessReport(options: {
   const login = options.checkLogin === false
     ? { checked: false, ok: null as boolean | null, message: undefined as string | undefined }
     : checkCodexLogin(codexSpawnOptions);
+  const codexAuth = resolveCodexAuth(env);
 
   const warnings: string[] = [];
   if (agents.length === 0) {
@@ -135,6 +140,8 @@ export function buildCodexReadinessReport(options: {
     codexLoginChecked: login.checked,
     codexLoginOk: login.ok,
     ...(login.message ? { codexLoginMessage: login.message } : {}),
+    codexAuthStatus: codexAuth.status,
+    codexAuthReason: codexAuth.reason,
     agents,
     warnings,
     ready: agents.length > 0

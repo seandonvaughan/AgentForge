@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
+import { isCodexAuthenticated } from './codex-auth.js';
 import { isCodexRuntimeAvailable } from './execution-service-mode.js';
-import { buildCodexSpawnCommand } from './transports/codex-cli-transport.js';
 import type { ExecutionProviderKind } from './types.js';
 
 /**
@@ -54,23 +54,12 @@ function defaultIsCodexCliAvailable(env: NodeJS.ProcessEnv): boolean {
 }
 
 /**
- * Best-effort default: probes `codex login status`. Item 4
- * (codex-auth-mapping-into-runtime) replaces this with file-based detection of
- * CODEX_HOME/auth.json so availability can be derived without a subprocess.
+ * File-based Codex auth detection (item 4): reads CODEX_HOME/auth.json contents
+ * via resolveCodexAuth — no subprocess. Authenticated only when a usable, non-
+ * expired credential is present.
  */
 function defaultIsCodexAuthenticated(env: NodeJS.ProcessEnv): boolean {
-  let command;
-  try {
-    command = buildCodexSpawnCommand(['login', 'status'], { env });
-  } catch {
-    return false;
-  }
-  const probe = spawnSync(command.command, command.args, {
-    stdio: 'ignore',
-    windowsHide: true,
-    ...(command.env ? { env: command.env } : {}),
-  });
-  return probe.status === 0;
+  return isCodexAuthenticated(env);
 }
 
 function computeAvailability(

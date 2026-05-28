@@ -86,6 +86,25 @@ export class TransportInvalidRequestError extends TransportError {
   }
 }
 
+/**
+ * Local Codex credentials are absent, expired, or malformed (no usable
+ * `CODEX_HOME/auth.json`). Unlike {@link TransportAuthError} this is marked
+ * **retryable** so the auto-switch path (provider failover) moves the job to the
+ * next eligible provider instead of failing the cycle: re-running Codex without
+ * a `codex login` cannot succeed, but another provider may. Carries the resolved
+ * auth file path for operator remediation.
+ */
+export class CodexAuthError extends TransportError {
+  readonly authPath?: string;
+
+  constructor(message: string, options: { authPath?: string; cause?: unknown } = {}) {
+    super(message, { retryable: true, cause: options.cause });
+    this.name = 'CodexAuthError';
+    if (options.authPath !== undefined) this.authPath = options.authPath;
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Helper: classify a raw error from the Anthropic SDK or node:child_process
 // into the appropriate TransportError subtype.

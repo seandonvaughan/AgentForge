@@ -1,5 +1,6 @@
 export * from './types.js';
 export * from './runtime-session.js';
+export * from './codex-auth.js';
 export * from './provider-availability.js';
 export * from './provider-resolver.js';
 export * from './execution-service.js';
