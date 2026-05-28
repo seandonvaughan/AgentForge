@@ -120,6 +120,22 @@
       "cycleId": "ed6bd5cf-a1d3-4578-a0b5-7bbccc57485a",
       "prNumber": 198,
       "reason": "Merged successful backlog scope visibility cycle after audit correction"
+    },
+    {
+      "itemId": "backlog-guided-large-007",
+      "completedAt": "2026-05-28T06:33:22.731Z",
+      "updatedAt": "2026-05-28T06:33:22.731Z",
+      "cycleId": "40c2dff4-d780-4ee3-b7d8-83e6b91d3d14",
+      "prNumber": 200,
+      "reason": "Merged retained value from failed cycle: cycle assess-pr command"
+    },
+    {
+      "itemId": "backlog-guided-large-008",
+      "completedAt": "2026-05-28T06:33:23.467Z",
+      "updatedAt": "2026-05-28T06:33:23.467Z",
+      "cycleId": "40c2dff4-d780-4ee3-b7d8-83e6b91d3d14",
+      "prNumber": 201,
+      "reason": "Merged retained value from failed cycle: cycle streak ledger command"
     }
   ]
 }
