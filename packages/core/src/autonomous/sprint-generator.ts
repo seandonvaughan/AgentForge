@@ -59,6 +59,8 @@ export interface SprintPlanItem {
   files?: string[];
   runtimeMode?: RuntimeMode;
   preferredProvider?: ExecutionProviderKind;
+  /** Scorer explanation kept separately from the backlog acceptance contract. */
+  rationale?: string;
 }
 
 const DEFAULT_STARTING_VERSION = '6.4.0';
@@ -119,12 +121,13 @@ export class SprintGenerator {
     const sprintItem: SprintPlanItem = {
       id: item.itemId,
       title: item.title,
-      description: item.rationale,
+      description: item.description ?? item.rationale,
       priority: this.rankToPriority(item.rank),
       assignee: item.suggestedAssignee,
       status: 'planned',
       estimatedCostUsd: item.estimatedCostUsd,
       tags: item.suggestedTags,
+      rationale: item.rationale,
     };
     if (item.files !== undefined) {
       sprintItem.files = [...item.files];

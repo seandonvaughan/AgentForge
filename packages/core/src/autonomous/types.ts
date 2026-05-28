@@ -215,6 +215,8 @@ export interface TestResult {
 export interface RankedItem {
   itemId: string;
   title: string;
+  /** Original backlog description/acceptance contract, preserved for planning and gate audit. */
+  description?: string;
   files?: string[];
   runtimeMode?: RuntimeMode;
   preferredProvider?: ExecutionProviderKind;

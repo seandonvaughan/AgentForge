@@ -68,7 +68,7 @@ function makeCtx(bus: ReturnType<typeof makeBus>, overrides: Partial<PhaseContex
 // When cycleId is set, execute-phase reads from cycles/{cycleId}/plan.json.
 // Write both locations so tests pass regardless of ctx.cycleId presence.
 function writeSprintFile(
-  items: Array<{ id: string; title: string; assignee: string; status?: string }> = [],
+  items: Array<{ id: string; title: string; assignee: string; status?: string; description?: string; files?: string[] }> = [],
   cycleId = 'cycle-test-1',
 ) {
   const data = {
@@ -79,7 +79,8 @@ function writeSprintFile(
       title: i.title,
       assignee: i.assignee,
       status: i.status ?? 'planned',
-      description: `Description for ${i.title}`,
+      description: i.description ?? `Description for ${i.title}`,
+      ...(i.files !== undefined ? { files: i.files } : {}),
     })),
   };
 
@@ -311,7 +312,14 @@ describe('gate-phase progress events', () => {
   });
 
   it('labels test-phase output as QA strategy rather than executable test results', async () => {
-    writeSprintFile([{ id: 'item-1', title: 'Task A', assignee: 'backend', status: 'completed' }]);
+    writeSprintFile([{
+      id: 'item-1',
+      title: 'Task A',
+      assignee: 'backend',
+      status: 'completed',
+      description: 'Add sourceFile to both text and JSON backlog status output.',
+      files: ['packages/cli/src/commands/backlog.ts'],
+    }]);
 
     const phasesDir = join(tmpRoot, '.agentforge', 'cycles', 'cycle-test-1', 'phases');
     mkdirSync(phasesDir, { recursive: true });
@@ -344,6 +352,11 @@ describe('gate-phase progress events', () => {
     await runGatePhase(ctx);
 
     expect(capturedTask.value).toContain('## QA strategy report (not executable test results)');
+    expect(capturedTask.value).toContain('Acceptance / backlog description: Add sourceFile to both text and JSON backlog status output.');
+    expect(capturedTask.value).toContain('Declared files: packages/cli/src/commands/backlog.ts');
+    expect(capturedTask.value).toContain('Enumerate every explicit requirement');
+    expect(capturedTask.value).toContain('text + JSON');
+    expect(capturedTask.value).toContain('missing explicit acceptance requirements are grounds for REJECT');
     expect(capturedTask.value).toContain('Do not treat the QA strategy report above as executable test evidence');
     expect(capturedTask.value).toContain('If the QA strategy says tests were not run, that is expected');
     expect(capturedTask.value).toContain('Do not use');

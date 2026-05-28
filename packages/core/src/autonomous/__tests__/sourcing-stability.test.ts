@@ -221,6 +221,9 @@ describe('sourcing stability', () => {
     expect(result.withinBudget[0]?.files).toEqual([
       'packages/core/src/autonomous/scoring-pipeline.ts',
     ]);
+    expect(result.withinBudget[0]?.description).toBe(
+      'Keep declared file scope through ranking and sprint planning.',
+    );
     expect(result.withinBudget[0]?.runtimeMode).toBe('codex-cli');
     expect(result.withinBudget[0]?.preferredProvider).toBe('codex-cli');
   });
@@ -240,11 +243,17 @@ describe('sourcing stability', () => {
     expect(effortResult.withinBudget[0]?.files).toEqual([
       'packages/core/src/autonomous/scoring-pipeline.ts',
     ]);
+    expect(effortResult.withinBudget[0]?.description).toBe(
+      'Keep declared file scope through ranking and sprint planning.',
+    );
     expect(effortResult.withinBudget[0]?.runtimeMode).toBe('codex-cli');
     expect(effortResult.withinBudget[0]?.preferredProvider).toBe('codex-cli');
     expect(staticResult.withinBudget[0]?.files).toEqual([
       'packages/core/src/autonomous/scoring-pipeline.ts',
     ]);
+    expect(staticResult.withinBudget[0]?.description).toBe(
+      'Keep declared file scope through ranking and sprint planning.',
+    );
     expect(staticResult.withinBudget[0]?.runtimeMode).toBe('codex-cli');
     expect(staticResult.withinBudget[0]?.preferredProvider).toBe('codex-cli');
   });
@@ -253,6 +262,7 @@ describe('sourcing stability', () => {
     const rankedItem: RankedItem = {
       itemId: 'backlog-scoped-fix',
       title: 'Fix scoped ranking source',
+      description: 'Original backlog acceptance: preserve text and JSON outputs.',
       rank: 1,
       score: 0.95,
       confidence: 0.9,
@@ -274,7 +284,11 @@ describe('sourcing stability', () => {
     );
 
     expect(plan.items[0]?.files).toEqual(['packages/core/src/autonomous/sprint-generator.ts']);
+    expect(plan.items[0]?.description).toBe('Original backlog acceptance: preserve text and JSON outputs.');
+    expect(plan.items[0]?.rationale).toBe('Scored by test runtime');
     expect(onDisk.items[0].files).toEqual(['packages/core/src/autonomous/sprint-generator.ts']);
+    expect(onDisk.items[0].description).toBe('Original backlog acceptance: preserve text and JSON outputs.');
+    expect(onDisk.items[0].rationale).toBe('Scored by test runtime');
     expect(plan.items[0]?.runtimeMode).toBe('codex-cli');
     expect(plan.items[0]?.preferredProvider).toBe('codex-cli');
     expect(onDisk.items[0].runtimeMode).toBe('codex-cli');

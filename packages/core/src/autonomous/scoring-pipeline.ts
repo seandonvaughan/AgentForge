@@ -293,6 +293,7 @@ export class ScoringPipeline {
         suggestedAssignee: 'coder',
         suggestedTags: item.tags,
         withinBudget: true,
+        description: item.description,
         ...(item.files !== undefined ? { files: [...item.files] } : {}),
         ...(item.runtimeMode !== undefined ? { runtimeMode: item.runtimeMode } : {}),
         ...(item.preferredProvider !== undefined ? { preferredProvider: item.preferredProvider } : {}),
@@ -358,6 +359,7 @@ export class ScoringPipeline {
       suggestedAssignee: 'coder',
       suggestedTags: item.tags,
       withinBudget: true,
+      description: item.description,
       ...(item.files !== undefined ? { files: [...item.files] } : {}),
       ...(item.runtimeMode !== undefined ? { runtimeMode: item.runtimeMode } : {}),
       ...(item.preferredProvider !== undefined ? { preferredProvider: item.preferredProvider } : {}),
@@ -565,6 +567,7 @@ Do not include any text outside the JSON object.`;
       backlog.map((item) => [
         item.id,
         {
+          description: item.description,
           ...(item.files !== undefined ? { files: [...item.files] } : {}),
           ...(item.runtimeMode !== undefined ? { runtimeMode: item.runtimeMode } : {}),
           ...(item.preferredProvider !== undefined ? { preferredProvider: item.preferredProvider } : {}),

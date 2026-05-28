@@ -407,7 +407,19 @@ export async function runGatePhase(
     const sprintObj = parsed.items ? parsed : parsed.sprints?.[0] ?? null;
     if (sprintObj?.items?.length) {
       items = sprintObj.items
-        .map((i: any) => `- [${i.id}] ${i.title} (${i.status ?? 'unknown'})`)
+        .map((i: any) => {
+          const description = typeof i.description === 'string' && i.description.trim().length > 0
+            ? i.description.trim()
+            : '(no description provided)';
+          const files = Array.isArray(i.files) && i.files.length > 0
+            ? i.files.join(', ')
+            : '(none declared)';
+          return [
+            `- [${i.id}] ${i.title} (${i.status ?? 'unknown'})`,
+            `  Acceptance / backlog description: ${description}`,
+            `  Declared files: ${files}`,
+          ].join('\n');
+        })
         .join('\n');
     }
   } catch {
@@ -511,7 +523,7 @@ export async function runGatePhase(
   // built to prevent.
   const knownDebtStep =
     knownDebt.length > 0
-      ? '\n5. Cross-check every finding against the "Known pre-existing debt" section above. ' +
+      ? '\n7. Cross-check every finding against the "Known pre-existing debt" section above. ' +
         'Any finding listed there is accepted pre-existing debt from a prior cycle and MUST NOT ' +
         'independently drive a REJECT verdict — even if you have verified it still reproduces in ' +
         'the current tree. Only findings that are BOTH (a) unresolved AND (b) absent from the ' +
@@ -536,10 +548,12 @@ $${costSoFar.toFixed(4)}
 ${knownDebtSection}## Verification protocol — READ CAREFULLY
 The code review above may have been produced against an intermediate execute-phase state. Before REJECTing on any CRITICAL or MAJOR finding, VERIFY it against the current working tree:
 
-1. For each CRITICAL or MAJOR finding that cites a specific file/line, use the execute-phase review targets above. If target branches are listed, inspect them with \`git diff origin/<base>...<branch>\` and \`git show <branch>:<file>\`; if only target worktrees are listed, use Read/Grep tools or direct file reads against the listed changed files. Do not inspect the clean parent checkout.
-2. Use Grep/Read tools, \`git show <branch>:<file>\`, or direct file reads to search for the problematic pattern described in the finding. Avoid worktree-scoped git commands and Git grep in Codex read-only sandbox.
-3. If the bug no longer reproduces (the line has been amended, the pattern is absent, or the finding's premise is otherwise false in the current code), treat that finding as RESOLVED. Do NOT let a resolved finding drive REJECT.
-4. Only unresolved CRITICAL or verified-still-present MAJOR findings are grounds for REJECT.${knownDebtStep}
+1. Treat each item's "Acceptance / backlog description" as part of the release contract. Enumerate every explicit requirement in that description, including mode pairs such as text + JSON, positive + negative cases, and "preserve existing behavior" clauses.
+2. Verify that each explicit requirement is implemented and, when the item asks for tests, covered by a focused test. If a required mode or case is missing, that is a MAJOR finding and must drive REJECT.
+3. For each CRITICAL or MAJOR finding that cites a specific file/line, use the execute-phase review targets above. If target branches are listed, inspect them with \`git diff origin/<base>...<branch>\` and \`git show <branch>:<file>\`; if only target worktrees are listed, use Read/Grep tools or direct file reads against the listed changed files. Do not inspect the clean parent checkout.
+4. Use Grep/Read tools, \`git show <branch>:<file>\`, or direct file reads to search for the problematic pattern described in the finding. Avoid worktree-scoped git commands and Git grep in Codex read-only sandbox.
+5. If the bug no longer reproduces (the line has been amended, the pattern is absent, or the finding's premise is otherwise false in the current code), treat that finding as RESOLVED. Do NOT let a resolved finding drive REJECT.
+6. Only unresolved CRITICAL, verified-still-present MAJOR findings, or missing explicit acceptance requirements are grounds for REJECT.${knownDebtStep}
 Do not treat the QA strategy report above as executable test evidence. It is a
 read-only analysis artifact; the cycle VERIFY stage enforces real test execution
 after this gate. If the QA strategy says tests were not run, that is expected
