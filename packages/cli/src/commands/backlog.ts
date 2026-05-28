@@ -168,6 +168,7 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
       if (idCompare !== 0) return idCompare;
       return a.title.localeCompare(b.title);
     });
+  const duplicateNormalizedIds = summarizeDuplicateNormalizedIds(activeScoped);
   const routedScoped = activeScoped.filter((item) => item.runtimeMode !== undefined || item.preferredProvider !== undefined);
   const defaultScoped = activeScoped.length - routedScoped.length;
 
@@ -183,6 +184,7 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
         routedItems: routedScoped.length,
         defaultItems: defaultScoped,
       },
+      duplicateNormalizedIds,
       activeScopedItems: activeScoped.map((item) => ({
         id: item.id,
         title: item.title,
@@ -202,6 +204,7 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
   console.log(`  quarantinedIds: ${quarantineIds.size}`);
   console.log(`  unattendedExcludedBacklogItems: ${unattendedExcluded.length}`);
   console.log(`  runtimeRoutingHints: scoped=${activeScoped.length} routed=${routedScoped.length} default=${defaultScoped}`);
+  console.log(`  duplicateNormalizedIds: ${formatDuplicateNormalizedIds(duplicateNormalizedIds)}`);
   console.log('  activeScopedItems:');
   if (activeScoped.length === 0) {
     console.log('    (none)');
@@ -218,6 +221,23 @@ async function printBacklogStatus(opts: BacklogStatusOptions): Promise<void> {
     const suffix = hints.length > 0 ? ` [${hints.join(', ')}]` : '';
     console.log(`    - ${item.id}: ${item.title}${suffix}`);
   }
+}
+
+function summarizeDuplicateNormalizedIds(items: BacklogFileItem[]): Array<{ id: string; count: number }> {
+  const counts = new Map<string, number>();
+  for (const item of items) {
+    counts.set(item.id, (counts.get(item.id) ?? 0) + 1);
+  }
+
+  return Array.from(counts.entries())
+    .filter(([, count]) => count > 1)
+    .map(([id, count]) => ({ id, count }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
+function formatDuplicateNormalizedIds(dupes: Array<{ id: string; count: number }>): string {
+  if (dupes.length === 0) return '(none)';
+  return dupes.map((entry) => `${entry.id} x${entry.count}`).join(', ');
 }
 
 function readBacklogFileItems(backlogDir: string): BacklogFileItem[] {
