@@ -452,6 +452,26 @@
         "packages/cli/src/commands/backlog.ts",
         "packages/cli/src/__tests__/backlog-command.test.ts"
       ]
+    },
+    {
+      "id": "guided-big-001",
+      "title": "Make local dashboard E2E reuse live dev servers by default",
+      "description": "Improve AgentForge dogfood gate reliability after the verified failure where `verify:gates` reached dashboard E2E and stopped because `http://localhost:4750/api/v5/health` was already in use. Update the Playwright dashboard E2E configuration so local, non-CI runs reuse existing API/dashboard servers by default, while CI still starts fresh servers and an explicit `PLAYWRIGHT_REUSE_SERVER=0|false|no` opt-out still disables reuse locally. Preserve the current positive env override behavior, dashboard base URL, webServer commands, and CI behavior. Add focused unit coverage for the reuse decision including default local reuse, local opt-out, local positive override, and CI no-reuse. Keep this scoped to Playwright config/test surfaces and do not modify product runtime APIs.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "tags": [
+        "feature",
+        "guided-big",
+        "dogfood",
+        "gates",
+        "dashboard",
+        "e2e"
+      ],
+      "source": "guided-big-2026-05-28",
+      "files": [
+        "playwright.config.ts",
+        "tests/playwright-config.test.ts"
+      ]
     }
   ]
 }
