@@ -1,6 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { ProviderResolver } from '../provider-resolver.js';
+import { getProviderAvailability } from '../provider-availability.js';
+import type { ProviderAvailabilityMap } from '../provider-availability.js';
 import type { ExecutionRequest, ExecutionTransport } from '../types.js';
+
+function availabilityMap(
+  overrides: Partial<ProviderAvailabilityMap> = {},
+): ProviderAvailabilityMap {
+  return {
+    'anthropic-sdk': { available: true, reason: 'ok' },
+    'claude-code-compat': { available: true, reason: 'ok' },
+    'codex-cli': { available: true, reason: 'ok' },
+    'openai-sdk': { available: true, reason: 'ok' },
+    ...overrides,
+  };
+}
 
 function buildTransport(
   kind: ExecutionTransport['kind'],
@@ -207,5 +221,62 @@ describe('ProviderResolver', () => {
 
     expect(result.transport.kind).toBe('openai-sdk');
     expect(result.runtimeModeResolved).toBe('openai-sdk');
+  });
+
+  describe('consumes provider availability', () => {
+    it('excludes a provider whose availability is false even though a transport exists', async () => {
+      const resolver = new ProviderResolver(
+        [buildTransport('anthropic-sdk'), buildTransport('claude-code-compat')],
+        () => availabilityMap({ 'anthropic-sdk': { available: false, reason: 'no key' } }),
+      );
+
+      const result = await resolver.resolve('auto', buildRequest());
+
+      expect(result.transport.kind).toBe('claude-code-compat');
+      expect(result.runtimeModeResolved).toBe('claude-code-compat');
+    });
+
+    it('drops an unavailable preferredProvider and falls back to the available default', async () => {
+      const resolver = new ProviderResolver(
+        [buildTransport('anthropic-sdk'), buildTransport('openai-sdk')],
+        () => availabilityMap({ 'openai-sdk': { available: false, reason: 'no key' } }),
+      );
+
+      const result = await resolver.resolve(
+        'auto',
+        buildRequest({ preferredProvider: 'openai-sdk' }),
+      );
+
+      expect(result.transport.kind).toBe('anthropic-sdk');
+    });
+
+    // Anti-fake guard: a removed credential must make the probe report
+    // available:false AND the resolver must exclude that provider. The
+    // requested/auto-preferred provider (anthropic) differs from the resolved
+    // one (claude-code-compat) precisely because the credential is gone.
+    it('removed credential => probe reports unavailable AND resolver excludes it', async () => {
+      const availability = () =>
+        getProviderAvailability(
+          {}, // no ANTHROPIC_API_KEY
+          {
+            probes: {
+              isClaudeCliAvailable: () => true,
+              isCodexCliAvailable: () => false,
+              isCodexAuthenticated: () => false,
+            },
+          },
+        );
+
+      expect(availability()['anthropic-sdk'].available).toBe(false);
+
+      const resolver = new ProviderResolver(
+        [buildTransport('anthropic-sdk'), buildTransport('claude-code-compat')],
+        availability,
+      );
+
+      const result = await resolver.resolve('auto', buildRequest());
+
+      expect(result.transport.kind).toBe('claude-code-compat');
+    });
   });
 });

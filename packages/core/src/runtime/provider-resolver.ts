@@ -1,7 +1,19 @@
+import type { ProviderAvailabilityMap } from './provider-availability.js';
 import type { ExecutionProviderKind, ExecutionRequest, ExecutionTransport, RuntimeMode } from './types.js';
 
 export class ProviderResolver {
-  constructor(private readonly transports: ExecutionTransport[]) {}
+  /**
+   * @param transports   Candidate transports, tried in their declared order.
+   * @param availability Optional env-based availability snapshot provider. When
+   *                     supplied, any provider it reports as `available: false`
+   *                     is excluded from selection even if a transport instance
+   *                     exists. Omitted in tests/contexts that rely solely on
+   *                     each transport's own `isAvailable` probe.
+   */
+  constructor(
+    private readonly transports: ExecutionTransport[],
+    private readonly availability?: () => ProviderAvailabilityMap,
+  ) {}
 
   async resolve(
     mode: RuntimeMode,
@@ -85,6 +97,7 @@ export class ProviderResolver {
     kind: ExecutionTransport['kind'],
     request: ExecutionRequest,
   ): Promise<ExecutionTransport | null> {
+    if (this.availability?.()[kind]?.available === false) return null;
     const transport = this.transports.find((candidate) => candidate.kind === kind);
     if (!transport) return null;
     return (await transport.isAvailable(request)) ? transport : null;

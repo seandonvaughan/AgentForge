@@ -279,6 +279,12 @@
       "updatedAt": "2026-05-28T16:40:51.457Z",
       "cycleId": "9a658f00-98e0-4dd8-a084-a5ea56c78252",
       "reason": "Merged to main after review+verify (cycle OOM-crashed in test phase; diff verified+merged manually)"
+    },
+    {
+      "itemId": "backlog-provider-availability-probe-cache",
+      "completedAt": "2026-05-28T18:44:23.403Z",
+      "updatedAt": "2026-05-28T18:44:23.403Z",
+      "reason": "v7 item 2 implemented manually via TDD: getProviderAvailability + createProviderAvailabilityProbe (TTL cache, injectable clock/probes); ProviderResolver consumes availability and excludes unavailable providers. 282 runtime tests + tsc -b + eslint green. No cycle (manual)."
     }
   ]
 }
