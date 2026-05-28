@@ -272,6 +272,13 @@
       "cycleId": "b5bfe272-e916-4a69-89ac-ab3afae72ee1",
       "prNumber": 218,
       "reason": "Clean guided big cycle 2: PR #218 merged without manual code correction after local audit and tests"
+    },
+    {
+      "itemId": "backlog-runtime-record-resolved-provider-per-item",
+      "completedAt": "2026-05-28T16:40:51.457Z",
+      "updatedAt": "2026-05-28T16:40:51.457Z",
+      "cycleId": "9a658f00-98e0-4dd8-a084-a5ea56c78252",
+      "reason": "Merged to main after review+verify (cycle OOM-crashed in test phase; diff verified+merged manually)"
     }
   ]
 }
