@@ -574,7 +574,7 @@ function normalizeResearchIdeaCandidate(raw: unknown, runId: string, plannedIds:
   const ideaId = typeof obj['ideaId'] === 'string' ? obj['ideaId'].trim() : '';
   if (!ideaId || !plannedIds.has(ideaId)) return null;
   const status = typeof obj['status'] === 'string' ? obj['status'] : '';
-  if (status !== 'planned' && status !== 'executed') return null;
+  if (status !== 'planned') return null;
 
   const title = typeof obj['title'] === 'string' ? obj['title'].trim() : '';
   if (!title) return null;

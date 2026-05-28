@@ -77,7 +77,7 @@ describe('ProposalToBacklog', () => {
       join(projectRoot, '.agentforge', 'research-runs', 'rd-run-001', 'run.json'),
       JSON.stringify({
         runId: 'rd-run-001',
-        plannedCycle: { ideaIds: ['idea-01'] },
+        plannedCycle: { ideaIds: ['idea-01', 'idea-04'] },
         ideas: [
           {
             ideaId: 'idea-01',
@@ -112,6 +112,17 @@ describe('ProposalToBacklog', () => {
             risk: 'low',
             status: 'proposed',
           },
+          {
+            ideaId: 'idea-04',
+            title: 'Executed idea',
+            problem: 'P4',
+            hypothesis: 'H4',
+            expectedImpact: 'E4',
+            acceptanceChecks: ['D1'],
+            touchedAreas: ['README.md'],
+            risk: 'low',
+            status: 'executed',
+          },
         ],
       }),
     );
@@ -130,6 +141,7 @@ describe('ProposalToBacklog', () => {
     expect(planned[0]?.description).toContain('Hypothesis: H');
     expect(planned[0]?.description).toContain('Expected impact: E');
     expect(planned[0]?.description).toContain('Acceptance checks: - A1; - A2');
+    expect(planned.some((item) => item.title === 'Executed idea')).toBe(false);
   });
 
   it('ignores malformed and partial research runs', async () => {
