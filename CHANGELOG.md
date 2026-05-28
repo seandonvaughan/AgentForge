@@ -9,6 +9,7 @@ All notable changes to AgentForge are documented in this file.
 - Added `agentforge backlog complete <itemId>` to record durable backlog completion entries in `.agentforge/backlog/completed.json` (idempotent upsert with optional `--cycle`, `--pr`, and `--reason` metadata).
 - Added `agentforge backlog status --project-root <path>` to print deterministic pre-cycle backlog visibility (active backlog-file count, completed/quarantined counts, unattended exclusions, and active scoped item IDs/titles), plus optional `--json` machine-readable output for automation.
 - Added runtime routing visibility to `agentforge backlog status` (text and `--json`) so operators can see scoped routed/default counts and per-item `runtimeMode`/`preferredProvider` hints before cycle run.
+- Added backlog item scope visibility to `agentforge backlog status` (text and `--json`) by emitting per-item `estimatedComplexity`/`scopeFiles` in JSON and `complexity=<level>`/`scope=<file,...>` in text output.
 - Added `agentforge cycle loop-guard status` and `agentforge cycle loop-guard reset` for operator visibility and recovery of `.agentforge/loop-state.json`, including deterministic handling of missing/corrupt state files.
 - Added `agentforge cycle loop-guard status --json` to emit deterministic machine-readable loop-guard state for automation and unattended operator checks.
 - Added `agentforge cycle loop-guard reset --json` to emit deterministic machine-readable reset confirmation and defaulted state for automation-driven recovery flows.
