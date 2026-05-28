@@ -216,6 +216,14 @@
       "cycleId": "f88484c3-80c2-4079-b0d7-0b0ed4fdd056",
       "prNumber": 211,
       "reason": "Green dogfood cycle: readyForCycle shipped via PR #211 without manual code correction"
+    },
+    {
+      "itemId": "backlog-guided-big-001",
+      "completedAt": "2026-05-28T12:03:22.169Z",
+      "updatedAt": "2026-05-28T12:03:22.169Z",
+      "cycleId": "cd821978-18fa-443d-9681-18f5fcf71ba7",
+      "prNumber": 212,
+      "reason": "Guided big cycle 1: dashboard E2E reuse default shipped via PR #212 without manual code correction"
     }
   ]
 }
