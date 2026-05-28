@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest';
-import { ProviderResolver } from '../provider-resolver.js';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import {
+  clearProviderAvailabilityCache,
+  getProviderAvailability,
+  ProviderResolver,
+} from '../provider-resolver.js';
 import type { ExecutionRequest, ExecutionTransport } from '../types.js';
 
 function buildTransport(
@@ -48,6 +52,23 @@ function buildAutoModeResolver(
 }
 
 describe('ProviderResolver', () => {
+  const originalAnthropic = process.env.ANTHROPIC_API_KEY;
+  const originalOpenAi = process.env.OPENAI_API_KEY;
+
+  beforeEach(() => {
+    clearProviderAvailabilityCache();
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+  });
+
+  afterEach(() => {
+    clearProviderAvailabilityCache();
+    if (originalAnthropic === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = originalAnthropic;
+    if (originalOpenAi === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = originalOpenAi;
+  });
+
   it('honors preferredProvider in auto mode when that transport is available', async () => {
     const resolver = new ProviderResolver([
       buildTransport('anthropic-sdk'),
@@ -205,6 +226,96 @@ describe('ProviderResolver', () => {
 
     const result = await resolver.resolve('openai-sdk', buildRequest());
 
+    expect(result.transport.kind).toBe('openai-sdk');
+    expect(result.runtimeModeResolved).toBe('openai-sdk');
+  });
+
+  it('returns stale availability within TTL and refreshes after the injected clock passes the TTL', () => {
+    const env: NodeJS.ProcessEnv = {
+      ANTHROPIC_API_KEY: 'anthropic-key',
+      OPENAI_API_KEY: 'openai-key',
+    };
+    let nowMs = 1_000;
+    let claudeAvailable = true;
+    let codexAuthed = true;
+
+    const readAvailability = () => getProviderAvailability(env, {
+      ttlMs: 5_000,
+      clock: { now: () => nowMs },
+      probeClaudeCodeCompatAvailable: () => claudeAvailable,
+      probeCodexCliAvailability: () => (
+        codexAuthed
+          ? { available: true, reason: 'codex CLI is authenticated.' }
+          : { available: false, reason: 'codex CLI is not authenticated.' }
+      ),
+    });
+
+    const first = readAvailability();
+    expect(first['anthropic-sdk'].available).toBe(true);
+    expect(first['claude-code-compat'].available).toBe(true);
+    expect(first['codex-cli'].available).toBe(true);
+    expect(first['openai-sdk'].available).toBe(true);
+
+    delete env.ANTHROPIC_API_KEY;
+    delete env.OPENAI_API_KEY;
+    claudeAvailable = false;
+    codexAuthed = false;
+
+    const stale = readAvailability();
+    expect(stale['anthropic-sdk'].available).toBe(true);
+    expect(stale['openai-sdk'].available).toBe(true);
+    expect(stale['codex-cli'].available).toBe(true);
+
+    nowMs += 5_001;
+    const refreshed = readAvailability();
+    expect(refreshed['anthropic-sdk']).toEqual({
+      available: false,
+      reason: 'Missing ANTHROPIC_API_KEY.',
+    });
+    expect(refreshed['openai-sdk']).toEqual({
+      available: false,
+      reason: 'Missing OPENAI_API_KEY.',
+    });
+    expect(refreshed['claude-code-compat'].available).toBe(false);
+    expect(refreshed['codex-cli']).toEqual({
+      available: false,
+      reason: 'codex CLI is not authenticated.',
+    });
+  });
+
+  it('excludes providers marked unavailable by the availability probe even when transport.isAvailable returns true', async () => {
+    const env: NodeJS.ProcessEnv = {
+      OPENAI_API_KEY: 'openai-key',
+    };
+    const resolver = new ProviderResolver(
+      [buildTransport('anthropic-sdk', true), buildTransport('openai-sdk', true)],
+      {
+        env,
+        getProviderAvailability: (probeEnv) => getProviderAvailability(probeEnv, {
+          ttlMs: 0,
+          probeClaudeCodeCompatAvailable: () => false,
+          probeCodexCliAvailability: () => ({
+            available: false,
+            reason: 'codex CLI is not authenticated.',
+          }),
+        }),
+      },
+    );
+
+    const availability = getProviderAvailability(env, {
+      ttlMs: 0,
+      probeClaudeCodeCompatAvailable: () => false,
+      probeCodexCliAvailability: () => ({
+        available: false,
+        reason: 'codex CLI is not authenticated.',
+      }),
+    });
+    expect(availability['anthropic-sdk']).toEqual({
+      available: false,
+      reason: 'Missing ANTHROPIC_API_KEY.',
+    });
+
+    const result = await resolver.resolve('auto', buildRequest());
     expect(result.transport.kind).toBe('openai-sdk');
     expect(result.runtimeModeResolved).toBe('openai-sdk');
   });
