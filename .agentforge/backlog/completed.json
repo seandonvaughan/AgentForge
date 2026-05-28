@@ -200,6 +200,14 @@
       "cycleId": "7c2eeec7-b26d-455c-bb0f-b81445192725",
       "prNumber": 209,
       "reason": "Merged green dogfood cycle: backlog source file on active status line"
+    },
+    {
+      "itemId": "backlog-guided-large-017",
+      "completedAt": "2026-05-28T10:46:36.749Z",
+      "updatedAt": "2026-05-28T10:46:36.749Z",
+      "cycleId": "7579d68f-7de9-4b49-ab45-8d2d2441b910",
+      "prNumber": 210,
+      "reason": "Green dogfood cycle: activeScopedItemsCount shipped via PR #210 without manual code correction"
     }
   ]
 }
