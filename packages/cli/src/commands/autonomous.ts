@@ -1121,12 +1121,14 @@ async function runCycleStreakStatusAction(opts: CycleStreakStatusOptions): Promi
   const entries = sortCycleStreakEntriesNewestFirst(ledger.entries);
   const consecutiveSuccesses = countConsecutiveSuccessesFromNewest(entries);
   const latestEntry = entries[0] ?? null;
-  const targetSuccesses = opts.target === undefined
-    ? undefined
-    : parseRequiredPositiveInteger(opts.target, '--target');
-  if (opts.target !== undefined && targetSuccesses === null) {
-    process.exitCode = 1;
-    return;
+  let targetSuccesses: number | undefined;
+  if (opts.target !== undefined) {
+    const parsedTarget = parseRequiredPositiveInteger(opts.target, '--target');
+    if (parsedTarget === null) {
+      process.exitCode = 1;
+      return;
+    }
+    targetSuccesses = parsedTarget;
   }
   const remainingSuccesses = targetSuccesses === undefined
     ? undefined

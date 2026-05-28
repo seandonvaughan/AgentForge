@@ -630,6 +630,32 @@ describe('cycle list/show summaries', () => {
     expect(parsed.goalMet).toBe(false);
   });
 
+  it('keeps streak status JSON unchanged when --target is omitted', async () => {
+    await runCli(
+      'cycle',
+      'streak',
+      'record',
+      'dfdfdfdf-dfdf-4dfd-8dfd-dfdfdfdfdfdf',
+      '--project-root',
+      projectRoot,
+      '--pr',
+      '306',
+      '--result',
+      'success',
+      '--reason',
+      'JSON no-target compatibility',
+    );
+    consoleLog.mockClear();
+
+    await runCli('cycle', 'streak', 'status', '--project-root', projectRoot, '--json');
+    const parsed = JSON.parse(output()) as Record<string, unknown>;
+
+    expect(parsed.consecutiveSuccesses).toBe(1);
+    expect(parsed).not.toHaveProperty('targetSuccesses');
+    expect(parsed).not.toHaveProperty('remainingSuccesses');
+    expect(parsed).not.toHaveProperty('goalMet');
+  });
+
   it('rejects invalid streak status --target values', async () => {
     const invalidValues = ['0', '-1', '1.5', 'abc'];
 
