@@ -80,7 +80,9 @@ interface CycleListOptions extends WorkspaceAwareOptions {
   json?: boolean;
 }
 
-interface CycleShowOptions extends WorkspaceAwareOptions {}
+interface CycleShowOptions extends WorkspaceAwareOptions {
+  json?: boolean;
+}
 
 interface CycleApproveOptions extends WorkspaceAwareOptions {
   all?: boolean;
@@ -193,6 +195,7 @@ export function registerCycleCommand(program: Command): void {
     .description('Show one autonomous cycle in detail')
     .option('--project-root <path>', 'Project root', process.cwd())
     .option('--workspace <id>', 'Run against a registered workspace from ~/.agentforge/workspaces.json')
+    .option('--json', 'Print machine-readable JSON')
     .action(runCycleShowAction);
 
   cycle
@@ -712,6 +715,34 @@ async function runCycleShowAction(cycleId: string, opts: CycleShowOptions): Prom
   const decision = readJsonIfExists(join(cycleDir, 'approval-decision.json')) as Record<string, unknown> | null;
   const scoring = readJsonIfExists(join(cycleDir, 'scoring.json')) as Record<string, unknown> | null;
   const eventsCount = countJsonlLines(join(cycleDir, 'events.jsonl'));
+  const agentPr = latestCycleAgentPr(cycleDir);
+
+  if (opts.json) {
+    console.log(JSON.stringify({
+      projectRoot,
+      cycleId: summary.cycleId,
+      cycleDir,
+      summary,
+      pr: {
+        url: summary.prUrl,
+        agentPr: agentPr
+          ? {
+              prNumber: typeof agentPr.prNumber === 'number' ? agentPr.prNumber : null,
+              prUrl: agentPr.prUrl ?? null,
+              branch: agentPr.branch ?? null,
+              status: agentPr.status ?? null,
+              openedAt: agentPr.openedAt ?? null,
+            }
+          : null,
+      },
+      eventsCount,
+      error: cycleJson && typeof cycleJson.error === 'string' ? cycleJson.error : null,
+      scoring,
+      pendingApproval,
+      decision,
+    }, null, 2));
+    return;
+  }
 
   console.log(`Cycle:        ${summary.cycleId}`);
   console.log(`Stage:        ${summary.stage}`);

@@ -150,6 +150,97 @@ describe('cycle list/show summaries', () => {
     expect(output()).not.toContain('PR:           https://github.com/seandonvaughan/AgentForge/pull/102');
   });
 
+  it('prints machine-readable JSON for cycle show with --json', async () => {
+    const cycleId = '77777777-7777-4777-8777-777777777777';
+    writeCycle(cycleId, {
+      cycleId,
+      stage: 'completed',
+      sprintVersion: '10.8.1',
+      startedAt: '2026-05-20T00:00:00.000Z',
+      completedAt: '2026-05-20T00:05:00.000Z',
+      cost: { totalUsd: 2.5, budgetUsd: 10 },
+      tests: { passed: 8, total: 10 },
+      pr: { url: 'https://github.com/seandonvaughan/AgentForge/pull/777' },
+    }, [
+      { type: 'phase.start', phase: 'plan', at: '2026-05-20T00:00:01.000Z' },
+      { type: 'phase.complete', phase: 'plan', at: '2026-05-20T00:01:01.000Z' },
+    ]);
+
+    await runCli('cycle', 'show', cycleId, '--project-root', projectRoot, '--json');
+
+    const parsed = JSON.parse(output()) as {
+      projectRoot: string;
+      cycleId: string;
+      summary: {
+        stage: string;
+        testsPassed: number;
+        testsTotal: number;
+      };
+      eventsCount: number;
+      error: string | null;
+    };
+
+    expect(parsed.projectRoot).toBe(projectRoot);
+    expect(parsed.cycleId).toBe(cycleId);
+    expect(parsed.summary.stage).toBe('completed');
+    expect(parsed.summary.testsPassed).toBe(8);
+    expect(parsed.summary.testsTotal).toBe(10);
+    expect(parsed.eventsCount).toBe(2);
+    expect(parsed.error).toBeNull();
+    expect(output()).not.toContain('Cycle:');
+  });
+
+  it('includes latest agent PR fallback metadata in cycle show JSON', async () => {
+    const cycleId = '88888888-8888-4888-8888-888888888888';
+    const cycleDir = writeCycle(cycleId, {
+      cycleId,
+      stage: 'completed',
+      startedAt: '2026-05-20T00:00:00.000Z',
+      completedAt: '2026-05-20T00:05:00.000Z',
+      pr: { url: null, number: null, draft: false },
+    });
+    writeFileSync(join(cycleDir, 'agent-prs.json'), JSON.stringify([
+      {
+        prNumber: 201,
+        prUrl: 'https://github.com/seandonvaughan/AgentForge/pull/201',
+        branch: 'codex/agent-test-old',
+        status: 'open',
+        openedAt: '2026-05-20T00:01:00.000Z',
+      },
+      {
+        prNumber: 202,
+        prUrl: 'https://github.com/seandonvaughan/AgentForge/pull/202',
+        branch: 'codex/agent-test-retry',
+        status: 'open',
+        openedAt: '2026-05-20T00:02:00.000Z',
+      },
+    ], null, 2));
+
+    await runCli('cycle', 'show', cycleId, '--project-root', projectRoot, '--json');
+
+    const parsed = JSON.parse(output()) as {
+      summary: { prUrl: string | null };
+      pr: {
+        url: string | null;
+        agentPr: {
+          prNumber: number | null;
+          prUrl: string | null;
+          branch: string | null;
+          status: string | null;
+        } | null;
+      };
+    };
+
+    expect(parsed.summary.prUrl).toBe('https://github.com/seandonvaughan/AgentForge/pull/202');
+    expect(parsed.pr.url).toBe('https://github.com/seandonvaughan/AgentForge/pull/202');
+    expect(parsed.pr.agentPr).toMatchObject({
+      prNumber: 202,
+      prUrl: 'https://github.com/seandonvaughan/AgentForge/pull/202',
+      branch: 'codex/agent-test-retry',
+      status: 'open',
+    });
+  });
+
   function writeCycle(
     cycleId: string,
     cycleJson: Record<string, unknown>,
