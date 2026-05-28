@@ -432,6 +432,26 @@
         "packages/cli/src/commands/backlog.ts",
         "packages/cli/src/__tests__/backlog-command.test.ts"
       ]
+    },
+    {
+      "id": "guided-large-018",
+      "title": "Show backlog cycle readiness in status headers",
+      "description": "Extend `agentforge backlog status` to make one-item cycle readiness explicit from the active scoped item count. In text output, add a deterministic line `readyForCycle: yes` when `activeScopedItemsCount` is greater than zero, otherwise `readyForCycle: no`, immediately after `activeScopedItemsCount: <n>` and before `activeScopedItems:`. In `--json` output, add top-level `readyForCycle` as a boolean derived from `activeScopedItems.length > 0`. Preserve existing counts, duplicate diagnostics, runtime routing hints, active item ordering, active item fields, and `activeScopedItemsCount` unchanged. Add focused CLI tests proving ready/no-ready behavior in both text and JSON output.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": [
+        "feature",
+        "guided-large",
+        "dogfood",
+        "operator-visibility",
+        "backlog",
+        "cli"
+      ],
+      "source": "guided-large-2026-05-28",
+      "files": [
+        "packages/cli/src/commands/backlog.ts",
+        "packages/cli/src/__tests__/backlog-command.test.ts"
+      ]
     }
   ]
 }
