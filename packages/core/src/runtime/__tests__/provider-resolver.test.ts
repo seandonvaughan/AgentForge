@@ -238,16 +238,18 @@ describe('ProviderResolver', () => {
     let nowMs = 1_000;
     let claudeAvailable = true;
     let codexAuthed = true;
+    const probeClaudeCodeCompatAvailable = () => claudeAvailable;
+    const probeCodexCliAvailability = () => (
+      codexAuthed
+        ? { available: true, reason: 'codex CLI is authenticated.' }
+        : { available: false, reason: 'codex CLI is not authenticated.' }
+    );
 
     const readAvailability = () => getProviderAvailability(env, {
       ttlMs: 5_000,
       clock: { now: () => nowMs },
-      probeClaudeCodeCompatAvailable: () => claudeAvailable,
-      probeCodexCliAvailability: () => (
-        codexAuthed
-          ? { available: true, reason: 'codex CLI is authenticated.' }
-          : { available: false, reason: 'codex CLI is not authenticated.' }
-      ),
+      probeClaudeCodeCompatAvailable,
+      probeCodexCliAvailability,
     });
 
     const first = readAvailability();
@@ -280,6 +282,80 @@ describe('ProviderResolver', () => {
     expect(refreshed['codex-cli']).toEqual({
       available: false,
       reason: 'codex CLI is not authenticated.',
+    });
+  });
+
+  it('does not leak cached availability across different env objects within TTL', () => {
+    let nowMs = 50_000;
+    const clock = { now: () => nowMs };
+    const envWithCredentials: NodeJS.ProcessEnv = {
+      ANTHROPIC_API_KEY: 'anthropic-key',
+      OPENAI_API_KEY: 'openai-key',
+    };
+    const envWithoutCredentials: NodeJS.ProcessEnv = {};
+
+    const withCredentials = getProviderAvailability(envWithCredentials, {
+      ttlMs: 10_000,
+      clock,
+      probeClaudeCodeCompatAvailable: () => false,
+      probeCodexCliAvailability: () => ({
+        available: false,
+        reason: 'codex CLI is not authenticated.',
+      }),
+    });
+    expect(withCredentials['anthropic-sdk'].available).toBe(true);
+    expect(withCredentials['openai-sdk'].available).toBe(true);
+
+    const withoutCredentials = getProviderAvailability(envWithoutCredentials, {
+      ttlMs: 10_000,
+      clock,
+      probeClaudeCodeCompatAvailable: () => false,
+      probeCodexCliAvailability: () => ({
+        available: false,
+        reason: 'codex CLI is not authenticated.',
+      }),
+    });
+    expect(withoutCredentials['anthropic-sdk']).toEqual({
+      available: false,
+      reason: 'Missing ANTHROPIC_API_KEY.',
+    });
+    expect(withoutCredentials['openai-sdk']).toEqual({
+      available: false,
+      reason: 'Missing OPENAI_API_KEY.',
+    });
+  });
+
+  it('does not reuse stale cached availability when a later call sets ttlMs to zero', () => {
+    let nowMs = 2_000;
+    const clock = { now: () => nowMs };
+    const env: NodeJS.ProcessEnv = {
+      ANTHROPIC_API_KEY: 'anthropic-key',
+    };
+
+    const cached = getProviderAvailability(env, {
+      ttlMs: 10_000,
+      clock,
+      probeClaudeCodeCompatAvailable: () => false,
+      probeCodexCliAvailability: () => ({
+        available: false,
+        reason: 'codex CLI is not authenticated.',
+      }),
+    });
+    expect(cached['anthropic-sdk'].available).toBe(true);
+
+    delete env.ANTHROPIC_API_KEY;
+    const uncached = getProviderAvailability(env, {
+      ttlMs: 0,
+      clock,
+      probeClaudeCodeCompatAvailable: () => false,
+      probeCodexCliAvailability: () => ({
+        available: false,
+        reason: 'codex CLI is not authenticated.',
+      }),
+    });
+    expect(uncached['anthropic-sdk']).toEqual({
+      available: false,
+      reason: 'Missing ANTHROPIC_API_KEY.',
     });
   });
 

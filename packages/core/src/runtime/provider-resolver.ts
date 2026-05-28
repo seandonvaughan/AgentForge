@@ -31,22 +31,30 @@ export interface ProviderResolverOptions {
 const DEFAULT_PROVIDER_AVAILABILITY_TTL_MS = 30_000;
 const SYSTEM_CLOCK: ProviderAvailabilityClock = { now: () => Date.now() };
 
-let providerAvailabilityCache:
-  | { expiresAtMs: number; value: ProviderAvailabilityMap }
-  | null = null;
+const providerAvailabilityCache = new Map<string, { expiresAtMs: number; value: ProviderAvailabilityMap }>();
+let providerAvailabilityObjectIds = new WeakMap<object, number>();
+let providerAvailabilityObjectIdCounter = 1;
 
 export function clearProviderAvailabilityCache(): void {
-  providerAvailabilityCache = null;
+  providerAvailabilityCache.clear();
+  providerAvailabilityObjectIds = new WeakMap<object, number>();
+  providerAvailabilityObjectIdCounter = 1;
 }
 
 export function getProviderAvailability(
   env: NodeJS.ProcessEnv = process.env,
   options: ProviderAvailabilityOptions = {},
 ): ProviderAvailabilityMap {
+  const ttlMs = options.ttlMs ?? DEFAULT_PROVIDER_AVAILABILITY_TTL_MS;
   const clock = options.clock ?? SYSTEM_CLOCK;
   const nowMs = clock.now();
-  if (providerAvailabilityCache && nowMs < providerAvailabilityCache.expiresAtMs) {
-    return providerAvailabilityCache.value;
+  const cacheKey = getProviderAvailabilityCacheKey(env, options, ttlMs);
+  const cached = providerAvailabilityCache.get(cacheKey);
+  if (cached && nowMs < cached.expiresAtMs) {
+    return cached.value;
+  }
+  if (cached) {
+    providerAvailabilityCache.delete(cacheKey);
   }
 
   const hasAnthropicKey = hasCredential(env['ANTHROPIC_API_KEY']);
@@ -71,11 +79,10 @@ export function getProviderAvailability(
       : { available: false, reason: 'Missing OPENAI_API_KEY.' },
   };
 
-  const ttlMs = options.ttlMs ?? DEFAULT_PROVIDER_AVAILABILITY_TTL_MS;
-  providerAvailabilityCache = {
+  providerAvailabilityCache.set(cacheKey, {
     expiresAtMs: nowMs + ttlMs,
     value: availability,
-  };
+  });
   return availability;
 }
 
@@ -281,4 +288,25 @@ function probeCodexCliAvailability(env: NodeJS.ProcessEnv): ProviderAvailability
     available: true,
     reason: 'codex CLI is authenticated.',
   };
+}
+
+function getProviderAvailabilityCacheKey(
+  env: NodeJS.ProcessEnv,
+  options: ProviderAvailabilityOptions,
+  ttlMs: number,
+): string {
+  return [
+    `env=${getProviderAvailabilityObjectId(env)}`,
+    `claudeProbe=${options.probeClaudeCodeCompatAvailable ? getProviderAvailabilityObjectId(options.probeClaudeCodeCompatAvailable) : 'default'}`,
+    `codexProbe=${options.probeCodexCliAvailability ? getProviderAvailabilityObjectId(options.probeCodexCliAvailability) : 'default'}`,
+    `ttl=${ttlMs}`,
+  ].join('|');
+}
+
+function getProviderAvailabilityObjectId(target: object): number {
+  const existing = providerAvailabilityObjectIds.get(target);
+  if (existing !== undefined) return existing;
+  const created = providerAvailabilityObjectIdCounter++;
+  providerAvailabilityObjectIds.set(target, created);
+  return created;
 }
