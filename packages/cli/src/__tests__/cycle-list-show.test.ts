@@ -57,6 +57,43 @@ describe('cycle list/show summaries', () => {
     expect(output()).toContain(`${cycleId}  plan`);
   });
 
+  it('prints machine-readable JSON for cycle list with --json', async () => {
+    const cycleId = '66666666-6666-4666-8666-666666666666';
+    writeCycle(cycleId, {
+      cycleId,
+      stage: 'completed',
+      sprintVersion: '10.8.0',
+      startedAt: '2026-05-20T00:00:00.000Z',
+      completedAt: '2026-05-20T00:05:00.000Z',
+      cost: { totalUsd: 1.25, budgetUsd: 10 },
+      tests: { passed: 12, total: 12 },
+      pr: { url: 'https://github.com/seandonvaughan/AgentForge/pull/666' },
+    });
+
+    await runCli('cycle', 'list', '--project-root', projectRoot, '--limit', '1', '--json');
+
+    const parsed = JSON.parse(output()) as {
+      projectRoot: string;
+      limit: number;
+      cycles: Array<{
+        cycleId: string;
+        stage: string;
+        sprintVersion: string | null;
+        testsPassed: number;
+        testsTotal: number;
+      }>;
+    };
+
+    expect(parsed.projectRoot).toBe(projectRoot);
+    expect(parsed.limit).toBe(1);
+    expect(parsed.cycles).toHaveLength(1);
+    expect(parsed.cycles[0]?.cycleId).toBe(cycleId);
+    expect(parsed.cycles[0]?.stage).toBe('completed');
+    expect(parsed.cycles[0]?.sprintVersion).toBe('10.8.0');
+    expect(parsed.cycles[0]?.testsPassed).toBe(12);
+    expect(parsed.cycles[0]?.testsTotal).toBe(12);
+  });
+
   it('shows PRs from agent-prs ledger when cycle.json has no cycle-level PR', async () => {
     const cycleId = '44444444-4444-4444-8444-444444444444';
     const cycleDir = writeCycle(cycleId, {
