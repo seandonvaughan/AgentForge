@@ -144,6 +144,14 @@
       "cycleId": "8de2c0b2-b176-48a5-9f3c-01398c185047",
       "prNumber": 202,
       "reason": "Merged retained value from failed cycle: cycle list stage filter"
+    },
+    {
+      "itemId": "backlog-guided-large-010",
+      "completedAt": "2026-05-28T07:44:26.741Z",
+      "updatedAt": "2026-05-28T07:44:26.741Z",
+      "cycleId": "2b8acae7-d088-427a-94c9-8cce8d0890e2",
+      "prNumber": 203,
+      "reason": "Merged retained value after audit correction: duplicate backlog diagnostics"
     }
   ]
 }
