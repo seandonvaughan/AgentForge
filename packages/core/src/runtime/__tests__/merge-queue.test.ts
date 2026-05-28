@@ -411,4 +411,40 @@ describe('MergeQueue', () => {
     const entries = readLedger(projectRoot, 'cycle-abc');
     expect(entries).toHaveLength(1);
   });
+
+  it('is idempotent for duplicate retry-branch events in live mode', async () => {
+    makeCycleDir(projectRoot, 'cycle-abc');
+
+    const draftPrOpener = vi.fn().mockResolvedValue({
+      prNumber: 321,
+      prUrl: 'https://github.com/seandonvaughan/AgentForge/pull/321',
+    });
+
+    const queue = new MergeQueue({
+      projectRoot,
+      bus,
+      dryRun: false,
+      draftPrOpener,
+      cycleId: 'cycle-abc',
+    });
+    queue.start();
+
+    const payload = buildPayload({
+      branch: 'codex/agent-test-retry-1',
+      pushedAt: '2026-05-20T01:01:07.957Z',
+    });
+    emitBranchPushed(bus, payload);
+    emitBranchPushed(bus, payload);
+
+    await new Promise((r) => setTimeout(r, 40));
+    await queue.drain();
+    queue.stop();
+
+    expect(draftPrOpener).toHaveBeenCalledTimes(1);
+    const entries = readLedger(projectRoot, 'cycle-abc') as Array<Record<string, unknown>>;
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!['branch']).toBe('codex/agent-test-retry-1');
+    expect(entries[0]!['prNumber']).toBe(321);
+    expect(entries[0]!['status']).toBe('open');
+  });
 });

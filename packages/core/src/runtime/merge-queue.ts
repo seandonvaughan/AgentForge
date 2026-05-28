@@ -150,6 +150,14 @@ function appendToLedger(ledgerPath: string, entry: LedgerEntry): void {
   writeLedger(ledgerPath, entries);
 }
 
+function findLedgerEntryByBranch(ledgerPath: string, branch: string): LedgerEntry | null {
+  const entries = readLedger(ledgerPath);
+  for (const entry of entries) {
+    if (entry.branch === branch) return entry;
+  }
+  return null;
+}
+
 function resolveCycleDir(projectRoot: string, cycleId: string): string {
   return join(projectRoot, '.agentforge', 'cycles', cycleId);
 }
@@ -237,6 +245,8 @@ export class MergeQueue {
   private unsubscribe: (() => void) | null = null;
   /** Tracks in-flight handler promises so drain() can await them. */
   private readonly inFlight = new Set<Promise<void>>();
+  /** In-memory dedupe for concurrent duplicate branch-pushed events. */
+  private readonly inFlightBranchKeys = new Set<string>();
 
   constructor(opts: MergeQueueOptions) {
     this.projectRoot = opts.projectRoot;
@@ -489,26 +499,105 @@ export class MergeQueue {
       return;
     }
 
-    const ledgerPath = join(resolveCycleDir(this.projectRoot, cycleId), 'agent-prs.json');
+    const branchKey = `${cycleId}::${branch}`;
+    if (this.inFlightBranchKeys.has(branchKey)) {
+      console.log(`[MergeQueue] Skipping duplicate in-flight branch event for ${branch}`);
+      return;
+    }
+    this.inFlightBranchKeys.add(branchKey);
+    try {
+      const ledgerPath = join(resolveCycleDir(this.projectRoot, cycleId), 'agent-prs.json');
 
-    // Determine parent branch: override > cycle.json > baseBranch > 'main'
-    const parentBranch =
-      this.parentBranchOverride ??
-      resolveCycleFromCycleJson(this.projectRoot, cycleId) ??
-      baseBranch ??
-      'main';
+      // Idempotency guard: retry/replay may emit the same branch push event
+      // more than once. Re-processing would open duplicate PRs and append
+      // duplicate ledger rows for the same branch.
+      const existing = findLedgerEntryByBranch(ledgerPath, branch);
+      if (existing) {
+        console.log(`[MergeQueue] Skipping duplicate branch event for ${branch} (already recorded)`);
+        return;
+      }
 
-    if (this.dryRun) {
-      const entry: LedgerEntry = {
-        prNumber: null,
-        prUrl: null,
-        branch,
-        agentId,
-        cycleId,
-        itemIds,
-        status: 'dry-run',
-        openedAt: new Date().toISOString(),
-      };
+      // Determine parent branch: override > cycle.json > baseBranch > 'main'
+      const parentBranch =
+        this.parentBranchOverride ??
+        resolveCycleFromCycleJson(this.projectRoot, cycleId) ??
+        baseBranch ??
+        'main';
+
+      if (this.dryRun) {
+        const entry: LedgerEntry = {
+          prNumber: null,
+          prUrl: null,
+          branch,
+          agentId,
+          cycleId,
+          itemIds,
+          status: 'dry-run',
+          openedAt: new Date().toISOString(),
+        };
+        appendToLedger(ledgerPath, entry);
+
+        this.bus.publish<MergeQueuePrOpenedPayload>({
+          from: 'system',
+          to: 'broadcast',
+          topic: 'merge-queue.pr.opened',
+          category: 'system',
+          payload: {
+            cycleId,
+            agentId,
+            branch,
+            prNumber: null,
+            status: 'dry-run',
+            prUrl: null,
+            openedAt: entry.openedAt,
+          },
+        });
+
+        console.log(`[MergeQueue] dry-run — recorded ${branch} (no gh call)`);
+        return;
+      }
+
+      // Live mode: attempt to open a draft PR
+      let entry: LedgerEntry;
+      try {
+        const { prNumber, prUrl } = await this.draftPrOpener({
+          parentBranch,
+          branch,
+          agentId,
+          itemIds,
+          diffSummary,
+          cycleId,
+          projectRoot: this.projectRoot,
+        });
+
+        entry = {
+          prNumber,
+          prUrl,
+          branch,
+          agentId,
+          cycleId,
+          itemIds,
+          status: 'open',
+          openedAt: pushedAt,
+        };
+
+        console.log(`[MergeQueue] Opened draft PR #${prNumber} for ${branch}: ${prUrl}`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[MergeQueue] gh pr create failed (${msg}); recording as skipped-no-gh`);
+
+        entry = {
+          prNumber: null,
+          prUrl: null,
+          branch,
+          agentId,
+          cycleId,
+          itemIds,
+          status: 'skipped-no-gh',
+          openedAt: pushedAt,
+        };
+      }
+
       appendToLedger(ledgerPath, entry);
 
       this.bus.publish<MergeQueuePrOpenedPayload>({
@@ -520,75 +609,15 @@ export class MergeQueue {
           cycleId,
           agentId,
           branch,
-          prNumber: null,
-          status: 'dry-run',
-          prUrl: null,
+          prNumber: entry.prNumber,
+          status: entry.status,
+          prUrl: entry.prUrl,
           openedAt: entry.openedAt,
         },
       });
-
-      console.log(`[MergeQueue] dry-run — recorded ${branch} (no gh call)`);
-      return;
+    } finally {
+      this.inFlightBranchKeys.delete(branchKey);
     }
-
-    // Live mode: attempt to open a draft PR
-    let entry: LedgerEntry;
-    try {
-      const { prNumber, prUrl } = await this.draftPrOpener({
-        parentBranch,
-        branch,
-        agentId,
-        itemIds,
-        diffSummary,
-        cycleId,
-        projectRoot: this.projectRoot,
-      });
-
-      entry = {
-        prNumber,
-        prUrl,
-        branch,
-        agentId,
-        cycleId,
-        itemIds,
-        status: 'open',
-        openedAt: pushedAt,
-      };
-
-      console.log(`[MergeQueue] Opened draft PR #${prNumber} for ${branch}: ${prUrl}`);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[MergeQueue] gh pr create failed (${msg}); recording as skipped-no-gh`);
-
-      entry = {
-        prNumber: null,
-        prUrl: null,
-        branch,
-        agentId,
-        cycleId,
-        itemIds,
-        status: 'skipped-no-gh',
-        openedAt: pushedAt,
-      };
-    }
-
-    appendToLedger(ledgerPath, entry);
-
-    this.bus.publish<MergeQueuePrOpenedPayload>({
-      from: 'system',
-      to: 'broadcast',
-      topic: 'merge-queue.pr.opened',
-      category: 'system',
-      payload: {
-        cycleId,
-        agentId,
-        branch,
-        prNumber: entry.prNumber,
-        status: entry.status,
-        prUrl: entry.prUrl,
-        openedAt: entry.openedAt,
-      },
-    });
   }
 }
 
