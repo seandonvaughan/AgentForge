@@ -609,6 +609,53 @@ describe('cycle list/show summaries', () => {
     });
   });
 
+  it('omits stale open status from agent-prs fallback streak merge evidence', async () => {
+    const cycleId = 'cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd';
+    const cycleDir = writeCycle(cycleId, {
+      cycleId,
+      stage: 'completed',
+    });
+    writeFileSync(join(cycleDir, 'agent-prs.json'), JSON.stringify([
+      {
+        prNumber: 451,
+        prUrl: 'https://github.com/seandonvaughan/AgentForge/pull/451',
+        status: 'open',
+        openedAt: '2026-05-20T00:00:00.000Z',
+      },
+    ], null, 2));
+
+    await runCli(
+      'cycle',
+      'streak',
+      'record',
+      cycleId,
+      '--project-root',
+      projectRoot,
+      '--pr',
+      '451',
+      '--result',
+      'success',
+      '--reason',
+      'Fallback evidence test',
+      '--json',
+    );
+
+    const parsed = JSON.parse(output()) as {
+      entry: {
+        mergeEvidence?: {
+          prUrl?: string;
+          status?: string;
+          openedAt?: string;
+        };
+      };
+    };
+    expect(parsed.entry.mergeEvidence).toMatchObject({
+      prUrl: 'https://github.com/seandonvaughan/AgentForge/pull/451',
+      openedAt: '2026-05-20T00:00:00.000Z',
+    });
+    expect(parsed.entry.mergeEvidence?.status).toBeUndefined();
+  });
+
   it('resets consecutive streak count when the newest entry is a failure', async () => {
     await runCli(
       'cycle',

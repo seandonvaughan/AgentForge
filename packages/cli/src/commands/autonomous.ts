@@ -2072,7 +2072,11 @@ function readCycleStreakMergeEvidence(
   if (agentPr && agentPr.prNumber === prNumber) {
     const evidence = {
       ...(typeof agentPr.prUrl === 'string' && agentPr.prUrl.length > 0 ? { prUrl: agentPr.prUrl } : {}),
-      ...(typeof agentPr.status === 'string' && agentPr.status.length > 0 ? { status: agentPr.status } : {}),
+      ...(typeof agentPr.status === 'string' &&
+        agentPr.status.length > 0 &&
+        agentPr.status !== 'open'
+        ? { status: agentPr.status }
+        : {}),
       ...(typeof agentPr.openedAt === 'string' && agentPr.openedAt.length > 0 ? { openedAt: agentPr.openedAt } : {}),
     };
     if (Object.keys(evidence).length > 0) return evidence;
