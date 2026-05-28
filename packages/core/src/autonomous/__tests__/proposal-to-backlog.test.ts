@@ -70,4 +70,83 @@ describe('ProposalToBacklog', () => {
       estimatedCostUsd: 1,
     });
   });
+
+  it('sources only planned research ideas from research runs', async () => {
+    mkdirSync(join(projectRoot, '.agentforge', 'research-runs', 'rd-run-001'), { recursive: true });
+    writeFileSync(
+      join(projectRoot, '.agentforge', 'research-runs', 'rd-run-001', 'run.json'),
+      JSON.stringify({
+        runId: 'rd-run-001',
+        plannedCycle: { ideaIds: ['idea-01'] },
+        ideas: [
+          {
+            ideaId: 'idea-01',
+            title: 'Planned idea',
+            problem: 'P',
+            hypothesis: 'H',
+            expectedImpact: 'E',
+            acceptanceChecks: ['A1', 'A2'],
+            touchedAreas: ['packages/core/src/autonomous/proposal-to-backlog.ts'],
+            risk: 'medium',
+            status: 'planned',
+          },
+          {
+            ideaId: 'idea-02',
+            title: 'Rejected idea',
+            problem: 'P2',
+            hypothesis: 'H2',
+            expectedImpact: 'E2',
+            acceptanceChecks: ['B1'],
+            touchedAreas: ['README.md'],
+            risk: 'low',
+            status: 'rejected',
+          },
+          {
+            ideaId: 'idea-03',
+            title: 'Proposed idea',
+            problem: 'P3',
+            hypothesis: 'H3',
+            expectedImpact: 'E3',
+            acceptanceChecks: ['C1'],
+            touchedAreas: ['README.md'],
+            risk: 'low',
+            status: 'proposed',
+          },
+        ],
+      }),
+    );
+
+    const backlog = await new ProposalToBacklog(adapter, projectRoot, config).build();
+    const planned = backlog.filter((item) => item.source === 'research-plan');
+    expect(planned).toHaveLength(1);
+    expect(planned[0]).toMatchObject({
+      id: 'backlog-research-rd-run-001-idea-01',
+      title: 'Planned idea',
+      source: 'research-plan',
+      estimatedComplexity: 'medium',
+      files: ['packages/core/src/autonomous/proposal-to-backlog.ts'],
+    });
+    expect(planned[0]?.description).toContain('Problem: P');
+    expect(planned[0]?.description).toContain('Hypothesis: H');
+    expect(planned[0]?.description).toContain('Expected impact: E');
+    expect(planned[0]?.description).toContain('Acceptance checks: - A1; - A2');
+  });
+
+  it('ignores malformed and partial research runs', async () => {
+    mkdirSync(join(projectRoot, '.agentforge', 'research-runs', 'rd-bad-json'), { recursive: true });
+    writeFileSync(join(projectRoot, '.agentforge', 'research-runs', 'rd-bad-json', 'run.json'), '{ bad');
+    mkdirSync(join(projectRoot, '.agentforge', 'research-runs', 'rd-missing-plan'), { recursive: true });
+    writeFileSync(
+      join(projectRoot, '.agentforge', 'research-runs', 'rd-missing-plan', 'run.json'),
+      JSON.stringify({ runId: 'rd-missing-plan', ideas: [] }),
+    );
+    mkdirSync(join(projectRoot, '.agentforge', 'research-runs', 'rd-empty-plan'), { recursive: true });
+    writeFileSync(
+      join(projectRoot, '.agentforge', 'research-runs', 'rd-empty-plan', 'run.json'),
+      JSON.stringify({ runId: 'rd-empty-plan', plannedCycle: { ideaIds: [] }, ideas: [] }),
+    );
+
+    const backlog = await new ProposalToBacklog(adapter, projectRoot, config).build();
+    expect(backlog.filter((item) => item.source === 'research-plan')).toEqual([]);
+  });
 });

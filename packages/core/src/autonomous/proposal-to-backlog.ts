@@ -19,7 +19,7 @@ export interface BacklogItem {
   description: string;
   priority: 'P0' | 'P1' | 'P2';
   tags: string[];
-  source: 'failed-session' | 'cost-anomaly' | 'task-outcome' | 'flaking-test' | 'todo-marker' | 'backlog-file';
+  source: 'failed-session' | 'cost-anomaly' | 'task-outcome' | 'flaking-test' | 'todo-marker' | 'backlog-file' | 'research-plan';
   confidence: number;
   estimatedCostUsd?: number;
   /** Declared complexity (from backlog files). Drives the unattended difficulty gate. */
@@ -157,6 +157,7 @@ export class ProposalToBacklog {
     }
 
     items.push(...this.readBacklogFiles());
+    items.push(...this.readResearchPlans());
 
     if (this.config.sourcing.includeTodoMarkers) {
       const markers = this.scanTodoMarkers();
@@ -245,9 +246,16 @@ export class ProposalToBacklog {
   private applyDifficultyGate(items: BacklogItem[]): BacklogItem[] {
     return items.filter((item) => {
       if (item.source === 'cost-anomaly') return false;
-      if (item.source !== 'backlog-file') return true;
-      if (item.estimatedComplexity === 'high') return false;
-      if (item.files === undefined || item.files.length === 0) return false;
+      if (item.source === 'backlog-file') {
+        if (item.estimatedComplexity === 'high') return false;
+        if (item.files === undefined || item.files.length === 0) return false;
+        return true;
+      }
+      if (item.source === 'research-plan') {
+        if (item.estimatedComplexity !== 'low' && item.estimatedComplexity !== 'medium') return false;
+        if (item.files === undefined || item.files.length === 0) return false;
+        return true;
+      }
       return true;
     });
   }
@@ -279,6 +287,47 @@ export class ProposalToBacklog {
       for (const raw of rawItems) {
         const item = normalizeBacklogFileItem(raw, file);
         if (item) items.push(item);
+      }
+    }
+
+    return items;
+  }
+
+  private readResearchPlans(): BacklogItem[] {
+    const researchDir = join(this.cwd, '.agentforge', 'research-runs');
+    let runIds: string[];
+    try {
+      runIds = readdirSync(researchDir, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort();
+    } catch {
+      return [];
+    }
+
+    const items: BacklogItem[] = [];
+    for (const runId of runIds) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(readFileSync(join(researchDir, runId, 'run.json'), 'utf8'));
+      } catch {
+        continue;
+      }
+
+      const run = parsed as Record<string, unknown>;
+      const plannedCycle = run['plannedCycle'];
+      if (!plannedCycle || typeof plannedCycle !== 'object') continue;
+
+      const ideaIds = Array.isArray((plannedCycle as { ideaIds?: unknown }).ideaIds)
+        ? (plannedCycle as { ideaIds: unknown[] }).ideaIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+        : [];
+      if (ideaIds.length === 0) continue;
+
+      const plannedSet = new Set(ideaIds);
+      const ideas = Array.isArray(run['ideas']) ? run['ideas'] : [];
+      for (const rawIdea of ideas) {
+        const idea = normalizeResearchIdeaCandidate(rawIdea, runId, plannedSet);
+        if (idea) items.push(idea);
       }
     }
 
@@ -517,6 +566,61 @@ function normalizeBacklogFileItem(raw: unknown, fileName: string): BacklogItem |
   }
 
   return item;
+}
+
+function normalizeResearchIdeaCandidate(raw: unknown, runId: string, plannedIds: Set<string>): BacklogItem | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const obj = raw as Record<string, unknown>;
+  const ideaId = typeof obj['ideaId'] === 'string' ? obj['ideaId'].trim() : '';
+  if (!ideaId || !plannedIds.has(ideaId)) return null;
+  const status = typeof obj['status'] === 'string' ? obj['status'] : '';
+  if (status !== 'planned' && status !== 'executed') return null;
+
+  const title = typeof obj['title'] === 'string' ? obj['title'].trim() : '';
+  if (!title) return null;
+  const problem = typeof obj['problem'] === 'string' ? obj['problem'].trim() : '';
+  const hypothesis = typeof obj['hypothesis'] === 'string' ? obj['hypothesis'].trim() : '';
+  const expectedImpact = typeof obj['expectedImpact'] === 'string' ? obj['expectedImpact'].trim() : '';
+  const acceptanceChecks = Array.isArray(obj['acceptanceChecks'])
+    ? obj['acceptanceChecks'].filter((check): check is string => typeof check === 'string' && check.trim().length > 0)
+    : [];
+  const touchedAreas = Array.isArray(obj['touchedAreas'])
+    ? obj['touchedAreas'].filter((area): area is string => typeof area === 'string' && area.trim().length > 0)
+    : [];
+  const risk = typeof obj['risk'] === 'string' ? obj['risk'].toLowerCase() : '';
+  const estimatedComplexity = risk === 'low' || risk === 'medium' || risk === 'high'
+    ? risk
+    : undefined;
+  const estimatedCostUsd = estimatedComplexity === 'low'
+    ? 1
+    : estimatedComplexity === 'medium'
+      ? 2
+      : estimatedComplexity === 'high'
+        ? 3
+        : undefined;
+
+  const normalizedId = normalizeBacklogId(`research-${runId}-${ideaId}`);
+  if (!normalizedId) return null;
+
+  const sections = [
+    `Problem: ${problem || '(not provided)'}`,
+    `Hypothesis: ${hypothesis || '(not provided)'}`,
+    `Expected impact: ${expectedImpact || '(not provided)'}`,
+    `Acceptance checks: ${acceptanceChecks.length > 0 ? acceptanceChecks.map((c) => `- ${c}`).join('; ') : '(not provided)'}`,
+  ];
+
+  return {
+    id: normalizedId,
+    title,
+    description: sections.join('\n'),
+    priority: 'P1',
+    tags: ['research', 'rd'],
+    source: 'research-plan',
+    confidence: 0.9,
+    ...(estimatedComplexity ? { estimatedComplexity } : {}),
+    ...(touchedAreas.length > 0 ? { files: touchedAreas } : {}),
+    ...(estimatedCostUsd !== undefined ? { estimatedCostUsd } : {}),
+  };
 }
 
 function costFromComplexity(value: unknown): number | undefined {
