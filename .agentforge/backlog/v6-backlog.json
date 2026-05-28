@@ -312,6 +312,26 @@
         "packages/cli/src/commands/codex.ts",
         "packages/cli/src/__tests__/codex-readiness-command.test.ts"
       ]
+    },
+    {
+      "id": "guided-large-012",
+      "title": "Surface checkpoint metadata on live cycle detail responses",
+      "description": "Extend `GET /api/v5/cycles/:id` so live `cycleInProgress: true` detail responses include the same checkpoint metadata already attached to terminal and partial cycle responses when `.agentforge/cycles/<id>/checkpoint.json` is valid. Return exactly `{ resumeFromPhase, capturedAt, completedPhases }` from the existing checkpoint reader. Keep missing or malformed checkpoint behavior unchanged: omit `checkpoint` and preserve the successful live response. Add focused tests in the cycle detail route test covering a live in-progress cycle with a valid checkpoint and confirming the existing malformed/missing tolerance remains intact.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": [
+        "feature",
+        "guided-large",
+        "dogfood",
+        "operator-visibility",
+        "cycles",
+        "api"
+      ],
+      "source": "guided-large-2026-05-28",
+      "files": [
+        "packages/server/src/routes/v5/cycles.ts",
+        "packages/server/src/routes/v5/__tests__/cycles-detail.test.ts"
+      ]
     }
   ]
 }
