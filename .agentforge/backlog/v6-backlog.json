@@ -292,6 +292,26 @@
         "packages/cli/src/__tests__/backlog-command.test.ts",
         "CHANGELOG.md"
       ]
+    },
+    {
+      "id": "guided-large-011",
+      "title": "Add direct CLI coverage for Codex readiness JSON mode",
+      "description": "Add a focused CLI test for `agentforge codex readiness --project-root <tmp> --json --skip-login`. Mock `buildCodexReadinessReport`, verify the command passes `checkLogin: false`, prints the report as JSON, and sets `process.exitCode = 1` when the mocked report is not ready. Keep production behavior unchanged unless the test exposes a small wiring bug. Add the new test in a dedicated `codex-readiness-command.test.ts` file and avoid touching autonomous cycle or backlog command surfaces.",
+      "priority": "P0",
+      "estimatedComplexity": "low",
+      "tags": [
+        "feature",
+        "guided-large",
+        "dogfood",
+        "codex",
+        "readiness",
+        "cli-test"
+      ],
+      "source": "guided-large-2026-05-28",
+      "files": [
+        "packages/cli/src/commands/codex.ts",
+        "packages/cli/src/__tests__/codex-readiness-command.test.ts"
+      ]
     }
   ]
 }
