@@ -40,6 +40,7 @@ interface SprintItem {
   assignment_hint?: AssignmentHint;
   // Per-job routing decision written by the assign phase; read by execute.
   preferredProvider?: ExecutionProviderKind;
+  providerPreference?: ExecutionProviderKind[];
   runtimeMode?: RuntimeMode;
   tier?: string;
   effort?: string;
@@ -202,6 +203,10 @@ export function applyJobRouting(
   // tier/effort are audit/metadata fields; always record the routed values.
   item.tier = decision.tier;
   item.effort = decision.effort;
+  // Ordered failover chain (preserve any explicit upstream chain).
+  if (item.providerPreference === undefined) {
+    item.providerPreference = decision.providerPreference;
+  }
 }
 
 export function makeAssignPhaseHandler() {
