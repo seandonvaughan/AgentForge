@@ -97,6 +97,10 @@ const PlanItemSchema = z
       .nullish(),
     estimatedCostUsd: NonNegative.nullish(),
     tags: z.array(z.string()).nullish(),
+    // Epic-decomposer fields (spec 2026-05-30). Absent on signal cycles.
+    parentEpicId: z.string().nullish(),
+    wave: z.number().int().min(0).nullish(),
+    predecessors: z.array(z.string()).nullish(),
   })
   .passthrough();
 
