@@ -206,6 +206,27 @@ describe('GET /api/v5/durability/checkpoints', () => {
     rmSync(fbRoot, { recursive: true, force: true });
   });
 
+  it('reads item progress from checkpoint-execute.json', async () => {
+    const execRoot = join(tmpdir(), `durability-exec-${process.pid}`);
+    const execCyclesDir = join(execRoot, '.agentforge', 'cycles');
+    mkdirSync(join(execCyclesDir, 'cycle-exec1'), { recursive: true });
+    writeFileSync(join(execCyclesDir, 'cycle-exec1', 'checkpoint-execute.json'), JSON.stringify({
+      cycleId: 'cycle-exec1', phase: 'execute', completedItemIds: ['a', 'b'],
+      currentItemId: null, totalItems: 3, lastUpdatedAt: NOW,
+      schemaVersion: 2,
+    }));
+    const app5 = Fastify({ logger: false });
+    await app5.register(durabilityRoutes, { projectRoot: execRoot });
+    await app5.ready();
+    const res = await app5.inject({ method: 'GET', url: '/api/v5/durability/checkpoints' });
+    const body = res.json<{ data: Array<{ cycleId: string; completedItemIds: string[] }> }>();
+    const rec = body.data.find((c) => c.cycleId === 'cycle-exec1');
+    expect(rec).toBeDefined();
+    expect(rec!.completedItemIds).toEqual(['a', 'b']);
+    await app5.close();
+    rmSync(execRoot, { recursive: true, force: true });
+  });
+
   it('rejects traversal attempts in cycleId (directory named ..)', async () => {
     // The readdir would return '..' only in unusual situations, but our
     // parseSafeCycleId regex blocks it.
