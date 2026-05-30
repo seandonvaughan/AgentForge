@@ -45,7 +45,10 @@ sourcing:
   includeTodoMarkers: true
   todoMarkerPattern: TODO\(autonomous\)|FIXME\(autonomous\)
 testing:
-  command: corepack pnpm exec vitest run --maxWorkers=2 --minWorkers=1
+  # NOTE: do NOT add --minWorkers — vitest 4.x rejects it with a fatal CACError
+  # ("Unknown option --minWorkers") and aborts before any test runs, which fails
+  # the VERIFY gate for every cycle of every size. --maxWorkers=2 is the OOM cap.
+  command: corepack pnpm exec vitest run --maxWorkers=2
   timeoutMinutes: 20
   reporter: json
   saveRawLog: true

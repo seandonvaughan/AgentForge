@@ -144,30 +144,55 @@ function comparablePath(path: string): string {
   return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
 }
 
+function worktreePathVariants(path: string): string[] {
+  const variants = [path, resolve(path)];
+  try {
+    variants.push(realpathSync.native(path));
+  } catch {
+    // Path may be missing; keep the resolvable variants above.
+  }
+  return [...new Set(variants)];
+}
+
+/** True once the worktree's git root resolves back to the worktree itself. */
+async function worktreeRootIsRepaired(worktreePath: string): Promise<boolean> {
+  try {
+    const top = await resolveWorktreeTopLevel(worktreePath);
+    return comparablePath(top) === comparablePath(worktreePath);
+  } catch {
+    return false;
+  }
+}
+
 async function repairWorktreeMetadata(
   projectRoot: string | undefined,
   worktreePath: string,
 ): Promise<boolean> {
   if (!projectRoot) return false;
-  const pathVariants = (path: string): string[] => {
-    const variants = [path, resolve(path)];
-    try {
-      variants.push(realpathSync.native(path));
-    } catch {
-      // Path may be missing; keep the resolvable variants above.
-    }
-    return [...new Set(variants)];
-  };
+  const roots = worktreePathVariants(projectRoot);
 
-  for (const root of pathVariants(projectRoot)) {
-    for (const path of pathVariants(worktreePath)) {
-      try {
-        await git(root, ['worktree', 'repair', path]);
-        return true;
-      } catch {
-        // Try the next normalized path combination.
-      }
+  // IMPORTANT: never trust `git worktree repair`'s exit code. When a worktree's
+  // .git file is MISSING, the path-arg form (`git worktree repair <path>`) prints
+  // "unable to locate repository; .git file broken" and exits 1 — even though it
+  // still recreates the .git file. The no-path form (`git worktree repair`) repairs
+  // all broken worktrees by their RECORDED paths and exits 0. We try the robust
+  // no-path form first, then path variants, and after EVERY attempt re-resolve the
+  // worktree's top level to decide success by the actual outcome, not the exit code.
+  const attempts: Array<{ cwd: string; args: string[] }> = [
+    ...roots.map((root) => ({ cwd: root, args: ['worktree', 'repair'] })),
+    ...roots.flatMap((root) =>
+      worktreePathVariants(worktreePath).map((p) => ({ cwd: root, args: ['worktree', 'repair', p] })),
+    ),
+  ];
+
+  for (const { cwd, args } of attempts) {
+    try {
+      await git(cwd, args);
+    } catch {
+      // `git worktree repair` can exit non-zero while still repairing — ignore
+      // the throw and verify the outcome below.
     }
+    if (await worktreeRootIsRepaired(worktreePath)) return true;
   }
   return false;
 }
@@ -200,12 +225,13 @@ async function assertCommitWorktreeRoot(
   }
 
   if (comparablePath(topLevel) !== comparablePath(worktreePath)) {
-    if (await repairWorktreeMetadata(projectRoot, worktreePath)) {
-      try {
-        topLevel = await resolveWorktreeTopLevel(worktreePath);
-      } catch {
-        // Fall through to the original diagnostic below.
-      }
+    await repairWorktreeMetadata(projectRoot, worktreePath);
+    // Always re-resolve after a repair attempt: `git worktree repair` may fix the
+    // .git file while still exiting non-zero, so the boolean return is advisory.
+    try {
+      topLevel = await resolveWorktreeTopLevel(worktreePath);
+    } catch {
+      // Fall through to the original diagnostic below.
     }
     if (comparablePath(topLevel) !== comparablePath(worktreePath)) {
       throw new Error(
