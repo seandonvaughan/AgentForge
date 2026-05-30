@@ -1,4 +1,9 @@
-runtime: codex-cli  # Execution transport mode: auto | sdk | cli | codex-cli | openai-sdk
+runtime: auto       # Execution transport mode: auto | sdk | cli | codex-cli | openai-sdk
+# auto registers the full transport fleet so per-item providerPreference failover
+# is live: bulk items stay codex-first (abundant tokens), security/high-complexity
+# items escalate to Claude, and a classified-retriable error auto-switches to the
+# next eligible provider. Non-routed phase calls default to codex-first in the
+# runtime-adapter, preserving the abundant-Codex strategy.
 effortCap: high     # High-throughput Codex preset while the Codex line is being hardened.
 #   auto: registers all transports; preserves existing Anthropic/Claude preference.
 #   sdk:  compatibility alias for anthropic-sdk.

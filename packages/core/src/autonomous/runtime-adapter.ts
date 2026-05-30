@@ -34,6 +34,30 @@ import {
 
 const TIER_RANK: Record<ModelTier, number> = { opus: 2, sonnet: 1, haiku: 0 };
 
+/**
+ * Default provider failover chain for calls that carry no explicit routing
+ * decision (the cycle's phase agents: audit/plan/gate/review/learn/scoring).
+ * Codex-primary (the abundant-token provider) with Claude Code CLI failover.
+ * Both are tool-capable transports — the Anthropic SDK transport is text-only
+ * (no allowedTools), so it is intentionally excluded from the default chain.
+ * Routed sprint items override this with their own chain.
+ */
+const DEFAULT_PROVIDER_PREFERENCE: ExecutionProviderKind[] = ['codex-cli', 'claude-code-compat'];
+
+/**
+ * The effective failover chain for a run: an explicit per-item preference wins;
+ * otherwise default to codex-first UNLESS a single runtimeMode was forced (in
+ * which case respect it — never override an explicit forced mode).
+ */
+export function effectiveProviderPreference(
+  options?: { providerPreference?: ExecutionProviderKind[]; runtimeMode?: RuntimeMode },
+): ExecutionProviderKind[] | undefined {
+  if (options?.providerPreference && options.providerPreference.length > 0) {
+    return options.providerPreference;
+  }
+  return options?.runtimeMode ? undefined : DEFAULT_PROVIDER_PREFERENCE;
+}
+
 interface RuntimeRunOptions {
   responseFormat?: string;
   allowedTools?: string[];
@@ -42,6 +66,7 @@ interface RuntimeRunOptions {
   codexSandbox?: CodexSandboxMode;
   runtimeMode?: RuntimeMode;
   preferredProvider?: ExecutionProviderKind;
+  providerPreference?: ExecutionProviderKind[];
 }
 
 function capModelTier(requested: ModelTier, cap: ModelTier): { model: ModelTier; effort?: string } {
@@ -174,6 +199,7 @@ export class RuntimeAdapter implements RuntimeForScoring {
       codexSandbox?: CodexSandboxMode;
       runtimeMode?: RuntimeMode;
       preferredProvider?: ExecutionProviderKind;
+      providerPreference?: ExecutionProviderKind[];
     } = { task };
     if (options?.allowedTools) runOpts.allowedTools = options.allowedTools;
     if (options?.timeoutMs !== undefined) runOpts.timeoutMs = options.timeoutMs;
@@ -181,6 +207,9 @@ export class RuntimeAdapter implements RuntimeForScoring {
     if (options?.codexSandbox !== undefined) runOpts.codexSandbox = options.codexSandbox;
     if (options?.runtimeMode !== undefined) runOpts.runtimeMode = options.runtimeMode;
     if (options?.preferredProvider !== undefined) runOpts.preferredProvider = options.preferredProvider;
+    // Ordered failover chain: item routing wins; phases default to codex-first.
+    const preference = effectiveProviderPreference(options);
+    if (preference) runOpts.providerPreference = preference;
     // Thread enableFallback from adapter options into each run call.
     if (this.options.enableFallback !== undefined) {
       runOpts.enableFallback = this.options.enableFallback;
@@ -274,6 +303,7 @@ export class RuntimeAdapter implements RuntimeForScoring {
         codexSandbox?: CodexSandboxMode;
         runtimeMode?: RuntimeMode;
         preferredProvider?: ExecutionProviderKind;
+        providerPreference?: ExecutionProviderKind[];
         signal: AbortSignal;
         onEvent: (event: ExecutionStreamEvent) => void;
       } = {
@@ -293,6 +323,8 @@ export class RuntimeAdapter implements RuntimeForScoring {
       if (options?.codexSandbox !== undefined) runOpts.codexSandbox = options.codexSandbox;
       if (options?.runtimeMode !== undefined) runOpts.runtimeMode = options.runtimeMode;
       if (options?.preferredProvider !== undefined) runOpts.preferredProvider = options.preferredProvider;
+      const preference = effectiveProviderPreference(options);
+      if (preference) runOpts.providerPreference = preference;
       if (this.options.enableFallback !== undefined) {
         runOpts.enableFallback = this.options.enableFallback;
       }

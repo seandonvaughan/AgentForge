@@ -43,6 +43,7 @@ function writeSprintFile(
     assignee: string;
     runtimeMode?: RuntimeMode;
     preferredProvider?: ExecutionProviderKind;
+    providerPreference?: ExecutionProviderKind[];
   }>,
 ) {
   const data = {
@@ -103,6 +104,40 @@ describe('execute-phase runtime routing options', () => {
     const defaultOptions = runtime.run.mock.calls[1]![2] as Record<string, unknown>;
     expect(defaultOptions).not.toHaveProperty('runtimeMode');
     expect(defaultOptions).not.toHaveProperty('preferredProvider');
+  });
+
+  it('forwards the item-level providerPreference failover chain only when present', async () => {
+    writeSprintFile([
+      {
+        id: 'item-chain',
+        title: 'Item carrying an explicit provider failover chain',
+        assignee: 'coder',
+        providerPreference: ['codex-cli', 'claude-code-compat'],
+      },
+      {
+        id: 'item-nochain',
+        title: 'Item with no chain',
+        assignee: 'backend-dev',
+      },
+    ]);
+
+    const runtime = {
+      run: vi.fn().mockResolvedValue({ output: 'done', costUsd: 0.01, status: 'completed' }),
+    };
+
+    await runExecutePhase(makeCtx(runtime), {
+      maxParallelism: 1,
+      maxItemRetries: 0,
+      disableWorktrees: true,
+      selfEvalDisabled: true,
+    });
+
+    expect(runtime.run).toHaveBeenCalledTimes(2);
+    const withChain = runtime.run.mock.calls[0]![2] as Record<string, unknown>;
+    expect(withChain.providerPreference).toEqual(['codex-cli', 'claude-code-compat']);
+
+    const withoutChain = runtime.run.mock.calls[1]![2] as Record<string, unknown>;
+    expect(withoutChain).not.toHaveProperty('providerPreference');
   });
 
   it('persists resolved provider/model/effort in execute artifacts using runtime-returned values', async () => {

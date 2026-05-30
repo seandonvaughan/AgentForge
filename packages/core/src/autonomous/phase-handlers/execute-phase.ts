@@ -259,6 +259,7 @@ interface SprintItem {
   tags?: string[];
   runtimeMode?: RuntimeMode;
   preferredProvider?: ExecutionProviderKind;
+  providerPreference?: ExecutionProviderKind[];
   /** v6.6.0 — Optional declared file paths the item will touch. If absent,
    *  the FileLockManager falls back to a heuristic regex over title +
    *  description, then to "empty" (conservative — serializes against all). */
@@ -270,6 +271,7 @@ interface ExecutePhaseRunOptions {
   cwd?: string;
   runtimeMode?: RuntimeMode;
   preferredProvider?: ExecutionProviderKind;
+  providerPreference?: ExecutionProviderKind[];
 }
 
 /** v6.6.0 — File-aware lock manager used by the execute-phase dispatch loop.
@@ -1153,6 +1155,9 @@ export async function runExecutePhase(
           }
           if (item.preferredProvider !== undefined) {
             runOptions.preferredProvider = item.preferredProvider;
+          }
+          if (item.providerPreference !== undefined) {
+            runOptions.providerPreference = item.providerPreference;
           }
           const result = await ctx.runtime.run(item.assignee, task, runOptions);
 
