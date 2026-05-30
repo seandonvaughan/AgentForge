@@ -264,6 +264,11 @@ interface SprintItem {
    *  the FileLockManager falls back to a heuristic regex over title +
    *  description, then to "empty" (conservative — serializes against all). */
   files?: string[];
+  /** Epic-decomposer fields (spec 2026-05-30). Read by the wave-aware
+   *  execute loop (PR-2). Absent on signal cycles. */
+  parentEpicId?: string;
+  wave?: number;
+  predecessors?: string[];
 }
 
 interface ExecutePhaseRunOptions {

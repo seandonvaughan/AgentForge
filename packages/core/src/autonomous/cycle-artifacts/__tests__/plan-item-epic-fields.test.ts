@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { PlanJsonSchema } from '../schemas.js';
+import type { SprintPlanItem } from '../../sprint-generator.js';
 
 describe('PlanItemSchema epic fields', () => {
   it('parses and preserves parentEpicId, wave, and predecessors as typed fields', () => {
@@ -35,5 +36,25 @@ describe('PlanItemSchema epic fields', () => {
     const parsed = PlanJsonSchema.parse({ items: [{ id: 'i1', title: 'fix bug' }] });
     expect(parsed.items[0]!.wave).toBeUndefined();
     expect(parsed.items[0]!.parentEpicId).toBeUndefined();
+  });
+});
+
+describe('SprintPlanItem epic fields', () => {
+  it('allows constructing an item with epic fields (compile + runtime)', () => {
+    const item: SprintPlanItem = {
+      id: 'child-1',
+      title: 'Add shared type',
+      description: 'd',
+      priority: 'P1',
+      assignee: 'coder',
+      status: 'planned',
+      estimatedCostUsd: 5,
+      tags: ['feature'],
+      parentEpicId: 'epic-abc12345',
+      wave: 0,
+      predecessors: [],
+    };
+    expect(item.wave).toBe(0);
+    expect(item.predecessors).toEqual([]);
   });
 });

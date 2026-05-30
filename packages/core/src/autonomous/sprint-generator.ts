@@ -61,6 +61,10 @@ export interface SprintPlanItem {
   preferredProvider?: ExecutionProviderKind;
   /** Scorer explanation kept separately from the backlog acceptance contract. */
   rationale?: string;
+  /** Epic-decomposer fields (spec 2026-05-30). Absent on signal cycles. */
+  parentEpicId?: string;
+  wave?: number;
+  predecessors?: string[];
 }
 
 const DEFAULT_STARTING_VERSION = '6.4.0';

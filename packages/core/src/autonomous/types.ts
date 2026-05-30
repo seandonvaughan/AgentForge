@@ -233,6 +233,9 @@ export interface RankedItem {
   estimatedCostUsd: number;
   estimatedDurationMinutes: number;
   rationale: string;
+  /** @deprecated Dead since the epic decomposer (spec 2026-05-30). The scorer
+   *  still emits `[]`; nothing reads it. Epic ordering uses `predecessors` on
+   *  the plan item, not this field. Slated for removal in a later cleanup PR. */
   dependencies: string[];
   suggestedAssignee: string;
   suggestedTags: string[];
