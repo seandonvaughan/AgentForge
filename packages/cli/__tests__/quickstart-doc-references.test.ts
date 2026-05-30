@@ -46,11 +46,12 @@ describe('commands referenced in quickstart exist in the CLI', () => {
   const quickstart = readDoc(QUICKSTART_PATH);
 
   it('agentforge init is registered in the CLI', () => {
-    // Verify the CLI source registers the `init` command
-    const binPath = join(REPO_ROOT, 'packages/cli/src/bin.ts');
-    expect(existsSync(binPath)).toBe(true);
-    const bin = readFileSync(binPath, 'utf8');
-    expect(bin).toContain("command('init')");
+    // Verify the CLI source registers the `init` command.
+    // Commands moved to the central registry; bin.ts delegates via registerAllCommands().
+    const registryPath = join(REPO_ROOT, 'packages/cli/src/commands/registry.ts');
+    expect(existsSync(registryPath)).toBe(true);
+    const registry = readFileSync(registryPath, 'utf8');
+    expect(registry).toContain("command('init')");
   });
 
   it('agentforge team forge is registered in the CLI', () => {
@@ -93,9 +94,9 @@ describe('commands referenced in quickstart exist in the CLI', () => {
   });
 
   it('agentforge start is registered in the CLI', () => {
-    const binPath = join(REPO_ROOT, 'packages/cli/src/bin.ts');
-    const bin = readFileSync(binPath, 'utf8');
-    expect(bin).toContain("command('start')");
+    const registryPath = join(REPO_ROOT, 'packages/cli/src/commands/registry.ts');
+    const registry = readFileSync(registryPath, 'utf8');
+    expect(registry).toContain("command('start')");
   });
 });
 
