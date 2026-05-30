@@ -50,6 +50,13 @@ export interface JobRoutingDecision {
   runtimeMode: RuntimeMode;
   tier: ModelTier;
   effort: string;
+  /**
+   * Ordered provider failover chain: [preferredProvider, ...remaining alternates],
+   * filtered to available providers and de-duplicated. Threaded to
+   * ExecutionService as `providerPreference` so a classified-retriable failure on
+   * the preferred provider auto-switches to the next eligible one.
+   */
+  providerPreference: ExecutionProviderKind[];
 }
 
 /**
@@ -177,29 +184,35 @@ function applyAvailability(
   const alternates = Array.isArray(profile.alternate)
     ? profile.alternate
     : [profile.alternate];
-  const chain: ExecutionProviderKind[] = [profile.preferredProvider, ...alternates];
+  // De-dupe the [primary, ...alternates] chain, preserving order.
+  const chain: ExecutionProviderKind[] = [...new Set([profile.preferredProvider, ...alternates])];
 
-  for (const candidate of chain) {
-    if (isAvailable(candidate, availability)) {
-      return {
-        preferredProvider: candidate,
-        runtimeMode:
-          candidate === profile.preferredProvider
-            ? profile.runtimeMode
-            : runtimeModeForProvider(candidate),
-        tier: profile.tier,
-        effort: profile.effort,
-      };
-    }
+  // Ordered failover chain limited to currently-available providers.
+  const available = chain.filter((candidate) => isAvailable(candidate, availability));
+
+  if (available.length > 0) {
+    const preferred = available[0]!;
+    return {
+      preferredProvider: preferred,
+      runtimeMode:
+        preferred === profile.preferredProvider
+          ? profile.runtimeMode
+          : runtimeModeForProvider(preferred),
+      tier: profile.tier,
+      effort: profile.effort,
+      providerPreference: available,
+    };
   }
 
-  // Nothing in the chain is available — return the primary so downstream still
-  // gets a concrete decision (the resolver will surface the real error later).
+  // Nothing in the chain is available — return the primary plus the full chain so
+  // downstream still gets a concrete decision and a failover order to try (the
+  // resolver will surface the real error later).
   return {
     preferredProvider: profile.preferredProvider,
     runtimeMode: profile.runtimeMode,
     tier: profile.tier,
     effort: profile.effort,
+    providerPreference: chain,
   };
 }
 

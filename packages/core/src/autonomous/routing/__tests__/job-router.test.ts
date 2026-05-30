@@ -294,3 +294,47 @@ describe('dispatch matrix (resolveJobRouting -> ProviderResolver -> transport.ex
     expect(calls).not.toContain('anthropic-sdk:sec');
   });
 });
+
+describe('resolveJobRouting — providerPreference failover chain', () => {
+  it('codex/bulk job: providerPreference is the codex chain, preferred first', () => {
+    const d = resolveJobRouting(
+      { itemId: 'b1', title: 'update README links', tags: ['docs'], estimatedComplexity: 'low' },
+      DEFAULT_JOB_ROUTING_POLICY,
+      ALL_AVAILABLE,
+    );
+    expect(d.preferredProvider).toBe('codex-cli');
+    expect(d.providerPreference).toEqual(['codex-cli', 'anthropic-sdk', 'claude-code-compat']);
+    expect(d.providerPreference[0]).toBe(d.preferredProvider);
+  });
+
+  it('anthropic/security job: providerPreference is the anthropic chain, preferred first', () => {
+    const d = resolveJobRouting(
+      { itemId: 's1', title: 'fix auth bypass', tags: ['security'], estimatedComplexity: 'high' },
+      DEFAULT_JOB_ROUTING_POLICY,
+      ALL_AVAILABLE,
+    );
+    expect(d.preferredProvider).toBe('anthropic-sdk');
+    expect(d.providerPreference).toEqual(['anthropic-sdk', 'claude-code-compat', 'codex-cli']);
+  });
+
+  it('excludes an unavailable provider and leads with the first available', () => {
+    const d = resolveJobRouting(
+      { itemId: 'b2', title: 'update README links', tags: ['docs'], estimatedComplexity: 'low' },
+      DEFAULT_JOB_ROUTING_POLICY,
+      availabilityMap({ 'codex-cli': { available: false, reason: 'no auth' } }),
+    );
+    expect(d.preferredProvider).toBe('anthropic-sdk');
+    expect(d.providerPreference).toEqual(['anthropic-sdk', 'claude-code-compat']);
+    expect(d.providerPreference).not.toContain('codex-cli');
+  });
+
+  it('providerPreference has no duplicates and starts with preferredProvider', () => {
+    const d = resolveJobRouting(
+      { itemId: 'x', title: 'misc work', estimatedComplexity: 'medium' },
+      DEFAULT_JOB_ROUTING_POLICY,
+      ALL_AVAILABLE,
+    );
+    expect(new Set(d.providerPreference).size).toBe(d.providerPreference.length);
+    expect(d.providerPreference[0]).toBe(d.preferredProvider);
+  });
+});
