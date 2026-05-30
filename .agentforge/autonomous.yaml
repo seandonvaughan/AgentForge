@@ -45,10 +45,24 @@ sourcing:
   includeTodoMarkers: true
   todoMarkerPattern: TODO\(autonomous\)|FIXME\(autonomous\)
 testing:
-  # NOTE: do NOT add --minWorkers — vitest 4.x rejects it with a fatal CACError
-  # ("Unknown option --minWorkers") and aborts before any test runs, which fails
-  # the VERIFY gate for every cycle of every size. --maxWorkers=2 is the OOM cap.
-  command: corepack pnpm exec vitest run --maxWorkers=2
+  # Memory-adaptive + affected-test VERIFY runner (scripts/run-verify-tests.mjs).
+  # Sizes vitest workers from live free memory, runs `vitest related` for the
+  # cycle's affected tests with a full-suite DEEP GATE safety net (core-glob diff,
+  # every Nth cycle, or unknown diff), and self-heals once on an OOM signature.
+  # RealTestRunner appends `-- --reporter=json --outputFile <path>`; the runner
+  # strips the separator and forwards those flags so it stays a drop-in.
+  # NEVER pass --minWorkers — vitest 4.x rejects it with a fatal CACError.
+  command: node scripts/run-verify-tests.mjs
+  affectedMode: auto            # auto | related | full
+  deepGateEveryNCycles: 5
+  coreGlobs:
+    - packages/core/src/runtime/**
+    - packages/core/src/autonomous/**
+    - packages/shared/**
+  memory:
+    reserveGb: 2.0
+    perWorkerGb: 1.0
+    heapCapMb: 2048
   timeoutMinutes: 20
   reporter: json
   saveRawLog: true
