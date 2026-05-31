@@ -42,7 +42,7 @@ pr:
     - autonomous
     - needs-review
   titleTemplate: 'autonomous(v{version}): {summary}'
-prMode: multi
+prMode: single
 autoMergePRs: false
 sourcing:
   lookbackDays: 7

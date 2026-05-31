@@ -407,6 +407,44 @@ interface ItemResult {
   step_score_ids?: string[];
 }
 
+export interface ProviderUsageEntry {
+  items: number;
+  costUsd: number;
+}
+
+export type ProviderUsage = Record<string, ProviderUsageEntry>;
+
+function roundCostUsd(value: number): number {
+  return Number(value.toFixed(6));
+}
+
+export function aggregateProviderUsage(
+  items: Array<{ resolvedProvider?: string; costUsd?: number }>,
+): ProviderUsage {
+  if (items.length === 0) return {};
+  const usage: ProviderUsage = {};
+
+  for (const item of items) {
+    const providerId =
+      typeof item.resolvedProvider === 'string' && item.resolvedProvider.trim().length > 0
+        ? item.resolvedProvider
+        : 'unknown';
+    const costUsd = typeof item.costUsd === 'number' && Number.isFinite(item.costUsd)
+      ? item.costUsd
+      : 0;
+    const current = usage[providerId] ?? { items: 0, costUsd: 0 };
+    current.items += 1;
+    current.costUsd += costUsd;
+    usage[providerId] = current;
+  }
+
+  for (const entry of Object.values(usage)) {
+    entry.costUsd = roundCostUsd(entry.costUsd);
+  }
+
+  return usage;
+}
+
 /** Coder-class agent-id prefixes / tags.  An item is considered "agent code
  *  work" eligible for worktree isolation when:
  *    a) its `tags` array includes any of these role keywords, OR
@@ -1007,6 +1045,7 @@ export async function runExecutePhase(
     try {
       mkdirSync(dirname(snapshotPath), { recursive: true });
       const runs = Array.from(liveResults.values());
+      const providerUsage = aggregateProviderUsage(runs);
       writeFileSync(
         snapshotPath,
         JSON.stringify(
@@ -1020,6 +1059,7 @@ export async function runExecutePhase(
             completedItems: runs.filter((r) => r.status === 'completed').length,
             failedItems: runs.filter((r) => r.status === 'failed').length,
             costUsd: totalCost,
+            providerUsage,
             agentRuns: runs,
             itemResults: runs,
             snapshotAt: new Date().toISOString(),
@@ -1503,6 +1543,7 @@ export async function runExecutePhase(
       // real-time cost + per-agent activity as items complete.
       snapshotExecuteProgress();
       const currentRuns = Array.from(liveResults.values());
+      const providerUsage = aggregateProviderUsage(currentRuns);
       ctx.bus.publish('execute.snapshot', {
         sprintId: ctx.sprintId,
         phase: 'execute',
@@ -1512,6 +1553,7 @@ export async function runExecutePhase(
         inFlightCount: inFlight.size,
         totalItems: items.length,
         costUsd: totalCost,
+        providerUsage,
       });
       // v6.7.4: feed result into the circuit breaker so a streak of
       // rate-limit failures dynamically halves parallelism.
@@ -1654,11 +1696,13 @@ export async function runExecutePhase(
   }
 
   const durationMs = Date.now() - startedAt;
-  const phaseResult: PhaseResult = {
+  const providerUsage = aggregateProviderUsage(itemResults);
+  const phaseResult: PhaseResult & { providerUsage: ProviderUsage } = {
     phase,
     status,
     durationMs,
     costUsd: totalCost,
+    providerUsage,
     agentRuns: itemResults,
     itemResults,
   };
@@ -1688,6 +1732,7 @@ export async function runExecutePhase(
             completedItems: completed,
             failedItems: failed,
             costUsd: totalCost,
+            providerUsage,
             durationMs,
             itemResults,
             // Wave 2: accumulated CostBreakdown across all completed agent runs.

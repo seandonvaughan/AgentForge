@@ -1,0 +1,22 @@
+{
+  "version": "wave-1-provider-usage",
+  "description": "Campaign wave 1 of 5: provider & cost observability, end-to-end. This wave adds the AGGREGATION layer on top of the per-item provider/cost data that already exists in the execute artifact.",
+  "items": [
+    {
+      "id": "wave1-aggregate-provider-usage-into-cycle-json",
+      "title": "Aggregate per-provider usage (item count + cost) into the execute artifact and cycle.json",
+      "description": "WHY: Every execute item already records `resolvedProvider` and `costUsd` (see ItemResult in packages/core/src/autonomous/phase-handlers/execute-phase.ts and runtime-adapter.ts). But nothing rolls those per-item values up into a per-provider summary, so an operator cannot answer 'how many items ran on codex vs claude this cycle, and what did each provider cost?' This wave adds that aggregation. It is the data foundation the later API and dashboard waves surface. It is PURELY ADDITIVE — do not change existing dispatch, routing, cost, or fallback logic; only read the values already present on each item result and write a new summary field.\n\nACCEPTANCE (ungameable):\n1. A new pure function (e.g. `aggregateProviderUsage(items)`) in execute-phase.ts (or a small sibling module) takes the array of per-item results and returns a `providerUsage` map keyed by provider id (the values of `resolvedProvider`, e.g. 'codex-cli', 'anthropic-sdk', 'claude-code-compat', plus an 'unknown' bucket for items with no resolvedProvider). Each entry is `{ items: number, costUsd: number }` where `costUsd` is the SUM of that provider's items' `costUsd` rounded to 6 decimals, and `items` is the COUNT.\n2. The execute phase writes this `providerUsage` object into the execute artifact (execute.json snapshot) alongside the existing `costUsd` total.\n3. cycle.json gains a top-level `providerUsage` field populated from the same aggregation (extend cycle-logger.ts where the execute result / cost is recorded). The sum of all providers' `costUsd` in `providerUsage` must equal the cycle's recorded execute `costUsd` total (within rounding).\n4. Unit test (new file under packages/core/src/autonomous/phase-handlers/__tests__/, e.g. provider-usage-aggregation.test.ts): feed a fixture array of >=3 item results spanning at least TWO DISTINCT providers (e.g. two 'codex-cli' items at $0.10 and $0.20, one 'anthropic-sdk' item at $0.50, and one item with no resolvedProvider). Assert the returned map has codex-cli {items:2, costUsd:0.30}, anthropic-sdk {items:1, costUsd:0.50}, unknown {items:1, costUsd:...}, and that the grand total equals the sum of all item costs.\n\nANTI-FAKE GUARD: A function that hardcodes a single provider, ignores the per-item `resolvedProvider`, or returns a fixed/empty object must FAIL. The test MUST include items from at least two different providers AND at least one item with a missing `resolvedProvider`, and assert that all buckets (both real providers and the 'unknown' bucket) are present with the correct counts and summed costs derived from the input — never echoed from a constant.\n\nSCOPE / SAFETY: Touch only the listed files. Keep all existing execute-phase tests green (run the full execute-phase suite). The aggregation must tolerate an empty item list (returns {}), items missing costUsd (treat as 0), and items missing resolvedProvider (counted under 'unknown'). Do NOT add new external dependencies. Use existing project patterns for JSON artifact writing.",
+      "priority": "P0",
+      "estimatedComplexity": "medium",
+      "valueClass": "external",
+      "tags": ["feature", "observability", "cost", "provider-routing", "campaign-wave-1"],
+      "confidence": 0.95,
+      "estimatedCostUsd": 8,
+      "files": [
+        "packages/core/src/autonomous/phase-handlers/execute-phase.ts",
+        "packages/core/src/autonomous/cycle-logger.ts",
+        "packages/core/src/autonomous/phase-handlers/__tests__/provider-usage-aggregation.test.ts"
+      ]
+    }
+  ]
+}
