@@ -13,6 +13,7 @@ export type {
 export * from './version-bumper.js';
 export * from './config-loader.js';
 export * from './cycle-logger.js';
+export * from './cycle-health.js';
 export * from './pr-body-renderer.js';
 export * from './kill-switch.js';
 export * from './preview-cycle.js';
