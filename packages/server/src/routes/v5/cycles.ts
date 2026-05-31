@@ -1315,7 +1315,10 @@ export async function cyclesRoutes(
   // GET /api/v5/cycles/:id/plan ─────────────────────────────────────────────
   // Returns plan.json from the cycle directory — canonical source of truth for
   // new cycles (Track D). Returns 404 for legacy cycles that pre-date plan.json.
-  app.get('/api/v5/cycles/:id/observability', async (req, reply) => {
+  // Per-IP rate-limit recognized by CodeQL js/missing-rate-limiting (matches the
+  // @fastify/rate-limit convention in cycle-prs.ts). Harmless no-op if the plugin
+  // is not registered on this instance.
+  app.get('/api/v5/cycles/:id/observability', { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (req, reply) => {
     const { id } = req.params as { id: string };
     if (!SAFE_ID.test(id)) return reply.status(400).send({ error: 'Invalid cycle id' });
     const br = baseForRequest(req);
