@@ -82,11 +82,16 @@ export function resolveCodexAuth(
   const tokens = parsed.tokens;
   const idToken = typeof tokens?.id_token === 'string' ? tokens.id_token : undefined;
   const accessToken = typeof tokens?.access_token === 'string' ? tokens.access_token : undefined;
-  const token = idToken ?? accessToken;
+  const refreshToken = typeof tokens?.refresh_token === 'string' ? tokens.refresh_token : undefined;
+  // The access_token is the bearer the Codex CLI actually uses; the id_token is
+  // identity-only and typically short-lived, so it must NOT gate usability. A
+  // present refresh_token lets the CLI transparently mint a fresh access_token,
+  // so Codex stays usable even when the stored access_token has lapsed.
+  const token = accessToken ?? idToken;
 
   if (token) {
     const expiresAt = decodeJwtExpMs(token);
-    if (expiresAt !== undefined && expiresAt <= now()) {
+    if (expiresAt !== undefined && expiresAt <= now() && !refreshToken) {
       return { status: 'expired', source: 'tokens', path, expiresAt, reason: 'Codex OAuth token has expired (run: codex login)' };
     }
     return {

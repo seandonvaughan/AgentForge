@@ -30,6 +30,8 @@ export interface CycleStatusUpdate {
   extra?: Record<string, unknown>;
 }
 
+type ProviderUsageMap = Record<string, { items: number; costUsd: number }>;
+
 export class CycleLogger {
   private readonly cycleDir: string;
   private readonly eventsPath: string;
@@ -149,11 +151,15 @@ export class CycleLogger {
           : undefined;
       const nextTotalUsd =
         existingTotalUsd === undefined ? totalUsd : Math.max(existingTotalUsd, totalUsd);
+      const providerUsage =
+        this.readExecuteProviderUsage()
+        ?? this.normalizeProviderUsage(base['providerUsage']);
       this.writeJson(cyclePath, {
         ...base,
         cycleId: this.cycleId,
         stage,
         cost: { ...existingCost, totalUsd: nextTotalUsd },
+        ...(providerUsage !== undefined ? { providerUsage } : {}),
       });
     } catch { /* non-fatal: observability write failure must not stop the cycle */ }
   }
@@ -234,23 +240,30 @@ export class CycleLogger {
   }
 
   logCycleResult(result: CycleResult): void {
+    const currentProviderUsage =
+      this.readProviderUsageFromCycleFile()
+      ?? this.normalizeProviderUsage((result as CycleResult & { providerUsage?: unknown }).providerUsage);
+    const cyclePayload: CycleResult & { providerUsage?: ProviderUsageMap } =
+      currentProviderUsage === undefined
+        ? result
+        : { ...result, providerUsage: currentProviderUsage };
     // Opt-in schema validation — warns on drift, never throws.
-    validateCycleJson(result);
-    this.writeJson(join(this.cycleDir, 'cycle.json'), result);
-    this.appendEvent({ type: 'cycle.complete', stage: result.stage, at: new Date().toISOString() });
+    validateCycleJson(cyclePayload);
+    this.writeJson(join(this.cycleDir, 'cycle.json'), cyclePayload);
+    this.appendEvent({ type: 'cycle.complete', stage: cyclePayload.stage, at: new Date().toISOString() });
     writeMemoryEntry(this.cwd, {
       type: 'cycle-outcome',
       value: JSON.stringify({
-        cycleId: result.cycleId,
-        sprintVersion: result.sprintVersion,
-        stage: result.stage,
-        costUsd: result.cost.totalUsd,
-        testsPassed: result.tests.passed,
-        gateVerdict: result.gateVerdict ?? null,
-        prUrl: result.pr.url,
+        cycleId: cyclePayload.cycleId,
+        sprintVersion: cyclePayload.sprintVersion,
+        stage: cyclePayload.stage,
+        costUsd: cyclePayload.cost.totalUsd,
+        testsPassed: cyclePayload.tests.passed,
+        gateVerdict: cyclePayload.gateVerdict ?? null,
+        prUrl: cyclePayload.pr.url,
       }),
-      source: result.cycleId,
-      tags: ['cycle', result.stage],
+      source: cyclePayload.cycleId,
+      tags: ['cycle', cyclePayload.stage],
     });
   }
 
@@ -289,5 +302,48 @@ export class CycleLogger {
 
   appendEvent(event: Record<string, unknown>): void {
     appendFileSync(this.eventsPath, JSON.stringify(event) + '\n');
+  }
+
+  private readExecuteProviderUsage(): ProviderUsageMap | undefined {
+    try {
+      const executePhasePath = join(this.cycleDir, 'phases', 'execute.json');
+      if (!existsSync(executePhasePath)) return undefined;
+      const raw = JSON.parse(readFileSync(executePhasePath, 'utf8')) as Record<string, unknown>;
+      return this.normalizeProviderUsage(raw['providerUsage']);
+    } catch {
+      return undefined;
+    }
+  }
+
+  private readProviderUsageFromCycleFile(): ProviderUsageMap | undefined {
+    try {
+      const cyclePath = join(this.cycleDir, 'cycle.json');
+      if (!existsSync(cyclePath)) return undefined;
+      const raw = JSON.parse(readFileSync(cyclePath, 'utf8')) as Record<string, unknown>;
+      return this.normalizeProviderUsage(raw['providerUsage']);
+    } catch {
+      return undefined;
+    }
+  }
+
+  private normalizeProviderUsage(value: unknown): ProviderUsageMap | undefined {
+    if (!value || typeof value !== 'object') return undefined;
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (entries.length === 0) return {};
+
+    const normalized: ProviderUsageMap = {};
+    for (const [providerId, metrics] of entries) {
+      if (!metrics || typeof metrics !== 'object') continue;
+      const record = metrics as Record<string, unknown>;
+      const items = record['items'];
+      const costUsd = record['costUsd'];
+      if (typeof items !== 'number' || !Number.isFinite(items)) continue;
+      if (typeof costUsd !== 'number' || !Number.isFinite(costUsd)) continue;
+      normalized[providerId] = {
+        items: Math.max(0, Math.trunc(items)),
+        costUsd,
+      };
+    }
+    return Object.keys(normalized).length > 0 ? normalized : undefined;
   }
 }
