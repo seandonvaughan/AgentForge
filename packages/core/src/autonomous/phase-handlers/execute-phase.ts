@@ -44,6 +44,13 @@ import { recordSelfEval } from '../self-eval/recorder.js';
 // Wave 5 T1 — per-item intra-phase checkpoint writer.
 import { ItemCheckpointWriter } from '../checkpoint/item-checkpoint.js';
 import { groupItemsByWave } from '../decompose/index.js';
+// PR-2c2 — epic wave local integration-branch orchestration.
+import {
+  epicIntegrationBranchName,
+  ensureIntegrationWorktree,
+  mergeBranchesIntoIntegration,
+  removeIntegrationWorktree,
+} from './wave-integration.js';
 
 // T4 — structured-output contract (inlined pending T1 merge onto origin/main).
 /**
@@ -680,6 +687,7 @@ async function allocateWorktreeForItem(
   pool: WorktreePoolLike,
   ctx: PhaseContext,
   item: SprintItem,
+  integrationBranch?: string,
 ): Promise<ExecuteWorktreeHandle> {
   const candidates = worktreeSessionCandidates(ctx, item);
   const rejectedBranch = shouldUseRejectedBranch(ctx, item);
@@ -696,7 +704,9 @@ async function allocateWorktreeForItem(
               sourceRef: `origin/${rejectedBranch}`,
               deleteBranchOnRelease: false,
             }
-          : {}),
+          : integrationBranch && item.parentEpicId
+            ? { sourceRef: integrationBranch }   // local ref — fork off the epic integration branch
+            : {}),
       });
     } catch (err) {
       lastErr = err;
@@ -1068,7 +1078,8 @@ export async function runExecutePhase(
     const retryRejectedBranch = shouldUseRejectedBranch(ctx, item);
     if (worktreePool !== undefined && itemRequiresWorktree) {
       try {
-        worktreeHandle = await allocateWorktreeForItem(worktreePool, ctx, item);
+        worktreeHandle = await allocateWorktreeForItem(worktreePool, ctx, item, integrationBranch);
+        itemBranchById.set(item.id, worktreeHandle.branch);
         ctx.bus.publish('execute.worktree.allocated', {
           sprintId: ctx.sprintId,
           phase,
@@ -1529,12 +1540,38 @@ export async function runExecutePhase(
     }
   };
 
+  // Epic cycle detection (spec §8.2): any item carrying parentEpicId means this
+  // is an epic; we maintain a local integration branch so each wave forks off
+  // the previous wave's merged code. Flat cycles skip all of this.
+  const epicParentId = items.find((it) => it.parentEpicId)?.parentEpicId;
+  const integrationBranch = epicParentId ? epicIntegrationBranchName(epicParentId) : undefined;
+  let integrationWorktreePath: string | undefined;
+  if (integrationBranch && worktreePool) {
+    try {
+      integrationWorktreePath = await ensureIntegrationWorktree(
+        ctx.projectRoot,
+        integrationBranch,
+        ctx.baseBranch ?? 'main',
+      );
+    } catch (err) {
+      // Non-fatal: fall back to flat behavior (children fork off origin/main).
+      ctx.bus.publish('execute.epic.integration-setup-failed', {
+        sprintId: ctx.sprintId, phase, cycleId: ctx.cycleId,
+        branch: integrationBranch,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      integrationWorktreePath = undefined;
+    }
+  }
+
   // Scheduling loop: for each item, wait until both numeric capacity AND
   // the file-lock manager allow dispatch, then launch.
   const inFlight = new Map<Promise<unknown>, string>();
   const settledResults: Array<PromiseSettledResult<ItemResult>> = [];
   const indexById = new Map<string, number>();
   items.forEach((it, idx) => indexById.set(it.id, idx));
+  // PR-2c2 — epic wave integration: track which branch each item is allocated to.
+  const itemBranchById = new Map<string, string>();
 
   // === safeguard #2 === Gate-retry finding routing.
   // On a gate-rejection retry, re-execute ONLY the items whose declared files
@@ -1631,8 +1668,29 @@ export async function runExecutePhase(
     // before starting the next wave. For flat (non-epic) cycles there is a
     // single wave, so this is exactly the prior end-of-loop barrier.
     await Promise.allSettled(inFlight.keys());
+
+    // Epic integration (PR-2c2): merge this wave's completed children into the
+    // integration branch so the next wave forks off their code.
+    if (integrationWorktreePath) {
+      const waveBranches = waveItems
+        .filter((it) => liveResults.get(it.id)?.status === 'completed')
+        .map((it) => itemBranchById.get(it.id))
+        .filter((b): b is string => typeof b === 'string');
+      if (waveBranches.length > 0) {
+        const { conflicted } = await mergeBranchesIntoIntegration(integrationWorktreePath, waveBranches);
+        if (conflicted.length > 0) {
+          ctx.bus.publish('execute.epic.wave-merge-conflict', {
+            sprintId: ctx.sprintId, phase, cycleId: ctx.cycleId,
+            branch: integrationBranch, conflicted,
+          });
+        }
+      }
+    }
   }
   await checkpointWriter.flush();
+  if (integrationBranch && integrationWorktreePath) {
+    await removeIntegrationWorktree(ctx.projectRoot, integrationBranch);
+  }
   const settled = settledResults;
   const itemResults: ItemResult[] = settled.map((s, i) => {
     if (s.status === 'fulfilled') return s.value;
