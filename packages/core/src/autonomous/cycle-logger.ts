@@ -1,9 +1,10 @@
 // packages/core/src/autonomous/cycle-logger.ts
-import { mkdirSync, writeFileSync, appendFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdirSync, writeFileSync, appendFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { CycleResult, TestResult, ScoringResult, KillSwitchTrip } from './types.js';
 import { writeMemoryEntry } from '../memory/types.js';
 import { validateCycleJson, validateScoringJson } from './cycle-artifacts/index.js';
+import { computeCycleStaleness, aggregatePhaseErrorSummary } from './cycle-health.js';
 
 export interface GitEvent {
   type: 'branch-created' | 'staged' | 'committed' | 'pushed' | 'rolled-back' | 'unreachable-skipped';
@@ -31,6 +32,7 @@ export interface CycleStatusUpdate {
 }
 
 type ProviderUsageMap = Record<string, { items: number; costUsd: number }>;
+type PhaseErrorSummary = Record<string, { failed: number; retried: number }>;
 
 export class CycleLogger {
   private readonly cycleDir: string;
@@ -154,11 +156,19 @@ export class CycleLogger {
       const providerUsage =
         this.readExecuteProviderUsage()
         ?? this.normalizeProviderUsage(base['providerUsage']);
+      const lastHeartbeatAt = this.normalizeHeartbeatAt(base['lastHeartbeatAt']);
+      const phaseErrorSummary =
+        this.readPhaseErrorSummary()
+        ?? this.normalizePhaseErrorSummary(base['phaseErrorSummary'])
+        ?? {};
+      const staleness = computeCycleStaleness(lastHeartbeatAt, Date.now());
       this.writeJson(cyclePath, {
         ...base,
         cycleId: this.cycleId,
         stage,
         cost: { ...existingCost, totalUsd: nextTotalUsd },
+        staleness,
+        phaseErrorSummary,
         ...(providerUsage !== undefined ? { providerUsage } : {}),
       });
     } catch { /* non-fatal: observability write failure must not stop the cycle */ }
@@ -192,6 +202,12 @@ export class CycleLogger {
         cycleId: this.cycleId,
         lastHeartbeatAt: new Date().toISOString(),
       };
+      const lastHeartbeatAt = this.normalizeHeartbeatAt(merged['lastHeartbeatAt']);
+      merged['staleness'] = computeCycleStaleness(lastHeartbeatAt, Date.now());
+      merged['phaseErrorSummary'] =
+        this.readPhaseErrorSummary()
+        ?? this.normalizePhaseErrorSummary(base['phaseErrorSummary'])
+        ?? {};
       if (!('stage' in base)) {
         delete merged['stage'];
       }
@@ -229,6 +245,12 @@ export class CycleLogger {
         lastHeartbeatAt: now,
         updatedAt: now,
       };
+      const lastHeartbeatAt = this.normalizeHeartbeatAt(merged['lastHeartbeatAt']);
+      merged['staleness'] = computeCycleStaleness(lastHeartbeatAt, Date.now());
+      merged['phaseErrorSummary'] =
+        this.readPhaseErrorSummary()
+        ?? this.normalizePhaseErrorSummary(base['phaseErrorSummary'])
+        ?? {};
 
       if (stage !== undefined) merged['stage'] = stage;
       if (update.status !== undefined) merged['status'] = update.status;
@@ -243,10 +265,21 @@ export class CycleLogger {
     const currentProviderUsage =
       this.readProviderUsageFromCycleFile()
       ?? this.normalizeProviderUsage((result as CycleResult & { providerUsage?: unknown }).providerUsage);
-    const cyclePayload: CycleResult & { providerUsage?: ProviderUsageMap } =
-      currentProviderUsage === undefined
-        ? result
-        : { ...result, providerUsage: currentProviderUsage };
+    const lastHeartbeatAt = this.readLastHeartbeatAtFromCycleFile();
+    const phaseErrorSummary =
+      this.readPhaseErrorSummary()
+      ?? this.readPhaseErrorSummaryFromCycleFile()
+      ?? {};
+    const cyclePayload: CycleResult & {
+      providerUsage?: ProviderUsageMap;
+      staleness: ReturnType<typeof computeCycleStaleness>;
+      phaseErrorSummary: PhaseErrorSummary;
+    } = {
+      ...result,
+      ...(currentProviderUsage !== undefined ? { providerUsage: currentProviderUsage } : {}),
+      staleness: computeCycleStaleness(lastHeartbeatAt, Date.now()),
+      phaseErrorSummary,
+    };
     // Opt-in schema validation — warns on drift, never throws.
     validateCycleJson(cyclePayload);
     this.writeJson(join(this.cycleDir, 'cycle.json'), cyclePayload);
@@ -326,6 +359,66 @@ export class CycleLogger {
     }
   }
 
+  private readLastHeartbeatAtFromCycleFile(): string | undefined {
+    try {
+      const cyclePath = join(this.cycleDir, 'cycle.json');
+      if (!existsSync(cyclePath)) return undefined;
+      const raw = JSON.parse(readFileSync(cyclePath, 'utf8')) as Record<string, unknown>;
+      return this.normalizeHeartbeatAt(raw['lastHeartbeatAt']);
+    } catch {
+      return undefined;
+    }
+  }
+
+  private readPhaseErrorSummary(): PhaseErrorSummary | undefined {
+    try {
+      const phaseDir = join(this.cycleDir, 'phases');
+      if (!existsSync(phaseDir)) return undefined;
+      const phaseArtifacts: Array<{
+        phase?: string;
+        agentRuns?: Array<{ status?: string; attempts?: number }>;
+      }> = [];
+      for (const entry of readdirSync(phaseDir, { withFileTypes: true })) {
+        if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
+        try {
+          const phasePath = join(phaseDir, entry.name);
+          const raw = JSON.parse(readFileSync(phasePath, 'utf8')) as Record<string, unknown>;
+          const agentRunsRaw = raw['agentRuns'];
+          const agentRuns = Array.isArray(agentRunsRaw)
+            ? agentRunsRaw.map((run): { status?: string; attempts?: number } => {
+                if (!run || typeof run !== 'object') return {};
+                const record = run as Record<string, unknown>;
+                const normalizedRun: { status?: string; attempts?: number } = {};
+                if (typeof record['status'] === 'string') normalizedRun.status = record['status'];
+                if (typeof record['attempts'] === 'number') normalizedRun.attempts = record['attempts'];
+                return normalizedRun;
+              })
+            : undefined;
+          const phaseArtifact: { phase?: string; agentRuns?: Array<{ status?: string; attempts?: number }> } = {};
+          if (typeof raw['phase'] === 'string') phaseArtifact.phase = raw['phase'];
+          if (agentRuns !== undefined) phaseArtifact.agentRuns = agentRuns;
+          phaseArtifacts.push(phaseArtifact);
+        } catch {
+          // Ignore unreadable phase artifacts — observability write must not fail.
+        }
+      }
+      return aggregatePhaseErrorSummary(phaseArtifacts);
+    } catch {
+      return undefined;
+    }
+  }
+
+  private readPhaseErrorSummaryFromCycleFile(): PhaseErrorSummary | undefined {
+    try {
+      const cyclePath = join(this.cycleDir, 'cycle.json');
+      if (!existsSync(cyclePath)) return undefined;
+      const raw = JSON.parse(readFileSync(cyclePath, 'utf8')) as Record<string, unknown>;
+      return this.normalizePhaseErrorSummary(raw['phaseErrorSummary']);
+    } catch {
+      return undefined;
+    }
+  }
+
   private normalizeProviderUsage(value: unknown): ProviderUsageMap | undefined {
     if (!value || typeof value !== 'object') return undefined;
     const entries = Object.entries(value as Record<string, unknown>);
@@ -345,5 +438,30 @@ export class CycleLogger {
       };
     }
     return Object.keys(normalized).length > 0 ? normalized : undefined;
+  }
+
+  private normalizePhaseErrorSummary(value: unknown): PhaseErrorSummary | undefined {
+    if (!value || typeof value !== 'object') return undefined;
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (entries.length === 0) return {};
+
+    const normalized: PhaseErrorSummary = {};
+    for (const [phase, metrics] of entries) {
+      if (!phase || typeof metrics !== 'object' || metrics === null) continue;
+      const record = metrics as Record<string, unknown>;
+      const failed = record['failed'];
+      const retried = record['retried'];
+      if (typeof failed !== 'number' || !Number.isFinite(failed)) continue;
+      if (typeof retried !== 'number' || !Number.isFinite(retried)) continue;
+      normalized[phase] = {
+        failed: Math.max(0, Math.trunc(failed)),
+        retried: Math.max(0, Math.trunc(retried)),
+      };
+    }
+    return Object.keys(normalized).length > 0 ? normalized : undefined;
+  }
+
+  private normalizeHeartbeatAt(value: unknown): string | undefined {
+    return typeof value === 'string' ? value : undefined;
   }
 }
