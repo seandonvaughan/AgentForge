@@ -117,7 +117,7 @@ describe('execute phase wave ordering', () => {
 
     // Verify all 3 items appear in completed items
     const completedIds = new Set(
-      result.itemResults.filter((r) => r.status === 'completed').map((r) => r.itemId),
+      (result.itemResults ?? []).filter((r: any) => r.status === 'completed').map((r: any) => r.itemId),
     );
     expect(completedIds).toEqual(new Set(['c1', 'c2', 'c3']));
   });
