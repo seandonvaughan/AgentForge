@@ -15,3 +15,5 @@ export {
   EPIC_PLANNER_AGENT_ID,
 } from './decompose-objective.js';
 export type { DecomposeRuntime, DecomposeResult } from './decompose-objective.js';
+export { flattenEpicPlanToPlanItems } from './flatten.js';
+export type { FlattenedPlanItem } from './flatten.js';
