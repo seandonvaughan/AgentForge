@@ -3,10 +3,15 @@
 // v6.5.2 — Real plan phase handler. CTO agent reads audit findings and
 // the sprint items, produces a technical plan.
 
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
 import { historicalQuality } from '../../scoring/historical-quality.js';
+import {
+  decomposeObjective,
+  flattenEpicPlanToPlanItems,
+  type EpicObjective,
+} from '../decompose/index.js';
 
 export const PLAN_PHASE_DEFAULT_TOOLS = ['Read', 'Bash', 'Glob', 'Grep'];
 
@@ -118,6 +123,14 @@ export async function runPlanPhase(
     cycleId: ctx.cycleId,
     startedAt: new Date(startedAt).toISOString(),
   });
+
+  // Epic-decomposer (spec 2026-05-30): when an objective is present, the plan
+  // phase decomposes it into wave-layered plan.json items instead of producing
+  // a signal-backlog text plan. Signal cycles (no objective) fall through to
+  // the existing architect path below.
+  if (ctx.objective) {
+    return runEpicDecompositionPlan(ctx, startedAt);
+  }
 
   // Read audit findings if present
   let auditFindings = '(no audit findings available)';
@@ -269,6 +282,127 @@ Do not write code. Plan only.`;
     cycleId: ctx.cycleId,
     result: phaseResult,
     completedAt: new Date().toISOString(),
+  });
+
+  return phaseResult;
+}
+
+/** Atomic JSON write (.tmp + rename), mirroring the cycle-checkpoint pattern. */
+function atomicWriteJson(finalPath: string, value: unknown): void {
+  mkdirSync(dirname(finalPath), { recursive: true });
+  const tmpPath = `${finalPath}.tmp`;
+  writeFileSync(tmpPath, JSON.stringify(value, null, 2), 'utf8');
+  renameSync(tmpPath, finalPath);
+}
+
+/**
+ * Epic path of the plan phase: decompose ctx.objective into a wave-layered
+ * EpicPlan, persist objective.json + decomposition.json, and overwrite
+ * plan.json items[] with the flattened children. (spec 2026-05-30 §6, §4 —
+ * folded into the plan phase rather than a distinct DECOMPOSE phase.)
+ */
+async function runEpicDecompositionPlan(
+  ctx: PhaseContext,
+  startedAt: number,
+): Promise<PhaseResult> {
+  const phase = 'plan' as const;
+  const objectiveText = ctx.objective ?? '';
+  const safeCycle = (ctx.cycleId ?? 'cycle').replace(/[^a-zA-Z0-9-]/g, '').slice(0, 8) || 'cycle';
+  const objective: EpicObjective = {
+    id: `epic-${safeCycle}`,
+    title: (objectiveText.split('\n')[0] ?? objectiveText).slice(0, 120),
+    description: objectiveText,
+    createdAt: new Date().toISOString(),
+  };
+
+  let status: PhaseResult['status'] = 'completed';
+  let error: string | undefined;
+  let costUsd = 0;
+  let childCount = 0;
+  let waveCount = 0;
+  let repaired = false;
+
+  try {
+    const result = await decomposeObjective(objective, ctx.runtime);
+    costUsd = result.costUsd;
+    childCount = result.plan.children.length;
+    waveCount = result.report.waveCount;
+    repaired = result.repaired;
+
+    if (ctx.cycleId) {
+      const cycleDir = join(ctx.projectRoot, '.agentforge', 'cycles', ctx.cycleId);
+      atomicWriteJson(join(cycleDir, 'objective.json'), objective);
+      atomicWriteJson(join(cycleDir, 'decomposition.json'), {
+        ...result.plan,
+        validationReport: result.report,
+      });
+      // Overwrite plan.json items with the flattened epic children, preserving
+      // the existing SprintPlan envelope (version/sprintId/title/budget/...).
+      const planPath = join(cycleDir, 'plan.json');
+      let envelope: Record<string, unknown> = {};
+      try {
+        envelope = JSON.parse(readFileSync(planPath, 'utf8')) as Record<string, unknown>;
+      } catch {
+        // No prior plan.json — start from a minimal envelope.
+      }
+      atomicWriteJson(planPath, {
+        ...envelope,
+        items: flattenEpicPlanToPlanItems(result.plan),
+        parentEpicId: objective.id,
+      });
+    }
+  } catch (err) {
+    status = 'failed';
+    error = err instanceof Error ? err.message : String(err);
+  }
+
+  const durationMs = Date.now() - startedAt;
+  const phaseResult: PhaseResult = {
+    phase,
+    status,
+    durationMs,
+    costUsd,
+    agentRuns: [
+      {
+        agentId: 'epic-planner',
+        costUsd,
+        durationMs,
+        ...(error ? { error } : {}),
+      },
+    ],
+    ...(error ? { error } : {}),
+  };
+
+  if (ctx.cycleId) {
+    const phaseJsonPath = join(ctx.projectRoot, '.agentforge', 'cycles', ctx.cycleId, 'phases', 'plan.json');
+    try {
+      atomicWriteJson(phaseJsonPath, {
+        phase,
+        mode: 'epic-decomposition',
+        sprintId: ctx.sprintId,
+        sprintVersion: ctx.sprintVersion,
+        cycleId: ctx.cycleId,
+        epicId: objective.id,
+        childCount,
+        waveCount,
+        repaired,
+        costUsd,
+        durationMs,
+        startedAt: new Date(startedAt).toISOString(),
+        completedAt: new Date().toISOString(),
+        ...(error ? { error } : {}),
+      });
+    } catch {
+      // non-fatal
+    }
+  }
+
+  ctx.bus.publish(status === 'failed' ? 'sprint.phase.failed' : 'sprint.phase.completed', {
+    sprintId: ctx.sprintId,
+    phase,
+    cycleId: ctx.cycleId,
+    ...(status === 'failed' ? { error } : { result: phaseResult }),
+    [status === 'failed' ? 'failedAt' : 'completedAt']: new Date().toISOString(),
   });
 
   return phaseResult;
