@@ -126,6 +126,12 @@ export interface PhaseContext {
    * Defaults to 0 when not provided.
    */
   budgetUsd?: number;
+  /**
+   * Epic-decomposer (spec 2026-05-30): the operator's objective text. When
+   * present, the plan phase decomposes it into wave-layered plan.json items
+   * instead of producing a signal-backlog text plan. Absent on signal cycles.
+   */
+  objective?: string;
 }
 
 export interface PhaseResult {
