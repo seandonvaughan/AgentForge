@@ -13,6 +13,7 @@
   import type { TypecheckFailure } from '$lib/components/cycles/TypecheckFailureBanner.svelte';
   import CostBreakdownTile from '$lib/components/cycles/CostBreakdownTile.svelte';
   import QualityTile from '$lib/components/cycles/QualityTile.svelte';
+  import ProviderUsageCard from '$lib/components/cycles/ProviderUsageCard.svelte';
 
   type Tab =
     | 'overview' | 'pipeline' | 'items' | 'agents'
@@ -143,6 +144,13 @@
     }>;
   }
   let scoring = $state<ScoringResponse | null>(null);
+
+  interface ObservabilityResponse {
+    providerUsage?: Record<string, { items: number; costUsd: number }>;
+    phaseErrorSummary?: Record<string, { failed: number; retried: number }>;
+    heartbeatStaleness?: 'healthy' | 'stale' | 'dead' | 'unknown';
+  }
+  let observability = $state<ObservabilityResponse | null>(null);
 
   // ── PRs tab ──────────────────────────────────────────────────────────────────
   interface PrCiInfo {
@@ -793,6 +801,17 @@
     } catch { /* silent */ }
   }
 
+  async function loadObservability(): Promise<void> {
+    try {
+      const res = await fetch(withWorkspace(`/api/v5/cycles/${id}/observability`));
+      if (res.status === 204 || res.status === 404) {
+        observability = null;
+        return;
+      }
+      if (res.ok) observability = (await res.json()) as ObservabilityResponse;
+    } catch { /* silent */ }
+  }
+
   async function loadTypecheckFailure(): Promise<void> {
     if (typecheckFailureLoaded) return;
     typecheckFailureLoaded = true;
@@ -877,6 +896,7 @@
       loadSprint(),
       loadAgents(),
       loadScoring(),
+      loadObservability(),
       loadEvents(),
       loadTypecheckFailure(),
     ]);
@@ -981,6 +1001,7 @@
         void loadCycle();
         void loadSprint();
         void loadAgents();
+        void loadObservability();
         // Poll events too — pipeline tab phase status is driven by events
         // (phase.start/result/failure). Without this, the pipeline view
         // never updates between phase boundaries.
@@ -1341,6 +1362,12 @@
             {/each}
           </Card>
         {/if}
+
+        <ProviderUsageCard
+          providerUsage={observability?.providerUsage ?? {}}
+          phaseErrorSummary={observability?.phaseErrorSummary ?? {}}
+          heartbeatStaleness={observability?.heartbeatStaleness ?? 'unknown'}
+        />
 
         <Card>
           <div class="section-title">HEALTH</div>
