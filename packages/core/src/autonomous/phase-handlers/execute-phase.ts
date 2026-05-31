@@ -43,6 +43,7 @@ import { parseSelfEval } from '../self-eval/parser.js';
 import { recordSelfEval } from '../self-eval/recorder.js';
 // Wave 5 T1 — per-item intra-phase checkpoint writer.
 import { ItemCheckpointWriter } from '../checkpoint/item-checkpoint.js';
+import { groupItemsByWave } from '../decompose/index.js';
 
 // T4 — structured-output contract (inlined pending T1 merge onto origin/main).
 /**
@@ -1561,7 +1562,8 @@ export async function runExecutePhase(
     if (implicated.size > 0) retryImplicatedIds = implicated;
   }
 
-  for (const item of items) {
+  for (const waveItems of groupItemsByWave(items)) {
+    for (const item of waveItems) {
     // Wave 5 T1 — skip items that were completed in a prior (crashed) run.
     if (resumeCompletedIds.has(item.id)) {
       item.status = 'completed';
@@ -1624,8 +1626,12 @@ export async function runExecutePhase(
       gateRelease();
     });
     inFlight.set(p, item.id);
+    }
+    // Wave barrier (spec §8.1): block until every item in this wave settles
+    // before starting the next wave. For flat (non-epic) cycles there is a
+    // single wave, so this is exactly the prior end-of-loop barrier.
+    await Promise.allSettled(inFlight.keys());
   }
-  await Promise.allSettled(inFlight.keys());
   await checkpointWriter.flush();
   const settled = settledResults;
   const itemResults: ItemResult[] = settled.map((s, i) => {
