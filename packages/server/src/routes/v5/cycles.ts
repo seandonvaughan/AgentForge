@@ -31,7 +31,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { globalStream } from './stream.js';
-import { getWorkspace } from '@agentforge/core';
+import { getWorkspace, computeCycleStaleness } from '@agentforge/core';
 import * as cycleSessions from '../../lib/cycle-sessions.js';
 import { openAuditDb, appendAuditEntry } from './audit.js';
 import { safeJoin } from '../../lib/safe-join.js';
@@ -1315,6 +1315,43 @@ export async function cyclesRoutes(
   // GET /api/v5/cycles/:id/plan ─────────────────────────────────────────────
   // Returns plan.json from the cycle directory — canonical source of truth for
   // new cycles (Track D). Returns 404 for legacy cycles that pre-date plan.json.
+  app.get('/api/v5/cycles/:id/observability', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!SAFE_ID.test(id)) return reply.status(400).send({ error: 'Invalid cycle id' });
+    const br = baseForRequest(req);
+    if ('error' in br) return reply.status(br.error.status).send(br.error.body);
+    const dir = safeJoin(br.base, id);
+    if (!dir || !existsSync(dir)) return reply.status(404).send({ error: 'Cycle not found' });
+
+    const cycleFile = join(dir, 'cycle.json');
+    if (!existsSync(cycleFile)) return reply.status(404).send({ error: 'cycle.json not found' });
+
+    const cycleJson = readJsonIfExists(cycleFile) as Record<string, unknown> | null;
+    if (cycleJson === null) return reply.status(500).send({ error: 'Failed to parse cycle.json' });
+
+    const providerUsageRaw = cycleJson['providerUsage'];
+    const phaseErrorSummaryRaw = cycleJson['phaseErrorSummary'];
+    const lastHeartbeatAtRaw = cycleJson['lastHeartbeatAt'];
+    const providerUsage =
+      providerUsageRaw && typeof providerUsageRaw === 'object' && !Array.isArray(providerUsageRaw)
+        ? providerUsageRaw
+        : {};
+    const phaseErrorSummary =
+      phaseErrorSummaryRaw && typeof phaseErrorSummaryRaw === 'object' && !Array.isArray(phaseErrorSummaryRaw)
+        ? phaseErrorSummaryRaw
+        : {};
+    const lastHeartbeatAt = typeof lastHeartbeatAtRaw === 'string' ? lastHeartbeatAtRaw : null;
+    const heartbeatStaleness = computeCycleStaleness(lastHeartbeatAt ?? undefined, Date.now());
+
+    return reply.send({
+      cycleId: id,
+      providerUsage,
+      phaseErrorSummary,
+      lastHeartbeatAt,
+      heartbeatStaleness,
+    });
+  });
+
   app.get('/api/v5/cycles/:id/plan', async (req, reply) => {
     const { id } = req.params as { id: string };
     if (!SAFE_ID.test(id)) return reply.status(400).send({ error: 'Invalid cycle id' });
