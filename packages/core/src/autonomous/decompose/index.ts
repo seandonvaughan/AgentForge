@@ -6,3 +6,12 @@ export { augmentFileOverlapEdges } from './file-overlap.js';
 export { layerWaves } from './wave-layering.js';
 export { validateAndLayerEpicPlan } from './validate-and-layer.js';
 export type { ValidateResult } from './validate-and-layer.js';
+export {
+  decomposeObjective,
+  buildEpicPlannerPrompt,
+  buildRepairPrompt,
+  extractEpicPlanJson,
+  DecomposeError,
+  EPIC_PLANNER_AGENT_ID,
+} from './decompose-objective.js';
+export type { DecomposeRuntime, DecomposeResult } from './decompose-objective.js';
