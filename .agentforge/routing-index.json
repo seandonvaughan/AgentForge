@@ -67,6 +67,21 @@
       "priority": 16
     },
     {
+      "id": "epic-planner",
+      "capability_tags": [
+        "epic-decomposition",
+        "dependency-dag",
+        "wave-scheduling",
+        "task-breakdown",
+        "campaign-planning"
+      ],
+      "owns_subsystems": [
+        "packages/core/src/autonomous/decompose"
+      ],
+      "tier": "opus",
+      "priority": 16
+    },
+    {
       "id": "chief-architect",
       "capability_tags": [
         "monorepo-architecture",
