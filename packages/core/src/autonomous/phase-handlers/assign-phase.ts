@@ -48,8 +48,8 @@ interface SprintItem {
   effort?: string;
   /** How item.tier was decided: 'adaptive' (learned) or 'policy' (static rules). */
   tierSource?: 'adaptive' | 'policy';
-  /** The AdaptiveRouter reason code behind tierSource. */
-  tierReason?: string;
+  /** The AdaptiveRouter reason code behind tierSource (undefined on non-adaptive paths). */
+  tierReason?: string | undefined;
   [key: string]: unknown;
 }
 
