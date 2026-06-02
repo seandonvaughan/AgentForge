@@ -264,6 +264,8 @@ interface SprintItem {
    *  the FileLockManager falls back to a heuristic regex over title +
    *  description, then to "empty" (conservative — serializes against all). */
   files?: string[];
+  /** Per-item model tier chosen by the assign phase (static or adaptive). */
+  tier?: ModelTier;
 }
 
 interface ExecutePhaseRunOptions {
@@ -272,6 +274,7 @@ interface ExecutePhaseRunOptions {
   runtimeMode?: RuntimeMode;
   preferredProvider?: ExecutionProviderKind;
   providerPreference?: ExecutionProviderKind[];
+  capabilityTier?: ModelTier;
 }
 
 /** v6.6.0 — File-aware lock manager used by the execute-phase dispatch loop.
@@ -477,6 +480,14 @@ export const CODER_CLASS_PATTERNS = [
 
 function isModelTier(value: unknown): value is ModelTier {
   return value === 'opus' || value === 'sonnet' || value === 'haiku';
+}
+
+/**
+ * The per-call capabilityTier override for an item: the assign-phase-chosen
+ * tier when it is a valid ModelTier, else undefined (keep the agent's tier).
+ */
+export function selectCapabilityTier(item: { tier?: unknown }): ModelTier | undefined {
+  return isModelTier(item.tier) ? item.tier : undefined;
 }
 
 /**
@@ -1198,6 +1209,10 @@ export async function runExecutePhase(
           }
           if (item.providerPreference !== undefined) {
             runOptions.providerPreference = item.providerPreference;
+          }
+          const capabilityTier = selectCapabilityTier(item);
+          if (capabilityTier !== undefined) {
+            runOptions.capabilityTier = capabilityTier;
           }
           const result = await ctx.runtime.run(item.assignee, task, runOptions);
 

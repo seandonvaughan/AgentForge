@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { PhaseContext } from '../../phase-scheduler.js';
 import type { ExecutionProviderKind, RuntimeMode } from '../../../runtime/types.js';
+import type { ModelTier } from '@agentforge/shared';
 import { runExecutePhase } from '../execute-phase.js';
 
 let tmpRoot: string;
@@ -44,6 +45,7 @@ function writeSprintFile(
     runtimeMode?: RuntimeMode;
     preferredProvider?: ExecutionProviderKind;
     providerPreference?: ExecutionProviderKind[];
+    tier?: ModelTier;
   }>,
 ) {
   const data = {
@@ -225,5 +227,46 @@ describe('execute-phase runtime routing options', () => {
       resolvedModelId: 'claude-sonnet-4-6',
       resolvedEffort: 'medium',
     });
+  });
+
+  it('forwards item.tier as capabilityTier only when it is a valid ModelTier', async () => {
+    writeSprintFile([
+      {
+        id: 'item-tiered',
+        title: 'Item with assign-phase tier set to haiku',
+        assignee: 'coder',
+        tier: 'haiku',
+      },
+      {
+        id: 'item-nottiered',
+        title: 'Item with no tier',
+        assignee: 'backend-dev',
+      },
+    ]);
+
+    const runtime = {
+      run: vi.fn().mockResolvedValue({
+        output: 'done',
+        costUsd: 0.01,
+        status: 'completed',
+      }),
+    };
+
+    await runExecutePhase(makeCtx(runtime), {
+      maxParallelism: 1,
+      maxItemRetries: 0,
+      disableWorktrees: true,
+      selfEvalDisabled: true,
+    });
+
+    expect(runtime.run).toHaveBeenCalledTimes(2);
+
+    // First call: item with tier: 'haiku' → capabilityTier must be 'haiku'
+    const tieredOptions = runtime.run.mock.calls[0]![2] as Record<string, unknown>;
+    expect(tieredOptions.capabilityTier).toBe('haiku');
+
+    // Second call: item with no tier → capabilityTier must be absent
+    const untieredOptions = runtime.run.mock.calls[1]![2] as Record<string, unknown>;
+    expect(untieredOptions).not.toHaveProperty('capabilityTier');
   });
 });
