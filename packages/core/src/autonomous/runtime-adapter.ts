@@ -67,6 +67,7 @@ interface RuntimeRunOptions {
   runtimeMode?: RuntimeMode;
   preferredProvider?: ExecutionProviderKind;
   providerPreference?: ExecutionProviderKind[];
+  capabilityTier?: ModelTier;
 }
 
 function capModelTier(requested: ModelTier, cap: ModelTier): { model: ModelTier; effort?: string } {
@@ -74,6 +75,15 @@ function capModelTier(requested: ModelTier, cap: ModelTier): { model: ModelTier;
   return downgraded
     ? { model: cap, effort: 'max' }
     : { model: requested };
+}
+
+/**
+ * The per-call model tier to dispatch, bounded by the operator's modelCap.
+ * A learned/adaptive recommendation must never exceed the cap: opus under a
+ * sonnet cap dispatches as sonnet. Reuses capModelTier's downgrade rule.
+ */
+export function cappedCallTier(requested: ModelTier, modelCap: ModelTier | undefined): ModelTier {
+  return modelCap ? capModelTier(requested, modelCap).model : requested;
 }
 
 /**
@@ -200,6 +210,7 @@ export class RuntimeAdapter implements RuntimeForScoring {
       runtimeMode?: RuntimeMode;
       preferredProvider?: ExecutionProviderKind;
       providerPreference?: ExecutionProviderKind[];
+      capabilityTier?: ModelTier;
     } = { task };
     if (options?.allowedTools) runOpts.allowedTools = options.allowedTools;
     if (options?.timeoutMs !== undefined) runOpts.timeoutMs = options.timeoutMs;
@@ -207,6 +218,9 @@ export class RuntimeAdapter implements RuntimeForScoring {
     if (options?.codexSandbox !== undefined) runOpts.codexSandbox = options.codexSandbox;
     if (options?.runtimeMode !== undefined) runOpts.runtimeMode = options.runtimeMode;
     if (options?.preferredProvider !== undefined) runOpts.preferredProvider = options.preferredProvider;
+    if (options?.capabilityTier !== undefined) {
+      runOpts.capabilityTier = cappedCallTier(options.capabilityTier, this.options.modelCap);
+    }
     // Ordered failover chain: item routing wins; phases default to codex-first.
     const preference = effectiveProviderPreference(options);
     if (preference) runOpts.providerPreference = preference;
@@ -304,6 +318,7 @@ export class RuntimeAdapter implements RuntimeForScoring {
         runtimeMode?: RuntimeMode;
         preferredProvider?: ExecutionProviderKind;
         providerPreference?: ExecutionProviderKind[];
+        capabilityTier?: ModelTier;
         signal: AbortSignal;
         onEvent: (event: ExecutionStreamEvent) => void;
       } = {
@@ -323,6 +338,9 @@ export class RuntimeAdapter implements RuntimeForScoring {
       if (options?.codexSandbox !== undefined) runOpts.codexSandbox = options.codexSandbox;
       if (options?.runtimeMode !== undefined) runOpts.runtimeMode = options.runtimeMode;
       if (options?.preferredProvider !== undefined) runOpts.preferredProvider = options.preferredProvider;
+      if (options?.capabilityTier !== undefined) {
+        runOpts.capabilityTier = cappedCallTier(options.capabilityTier, this.options.modelCap);
+      }
       const preference = effectiveProviderPreference(options);
       if (preference) runOpts.providerPreference = preference;
       if (this.options.enableFallback !== undefined) {
