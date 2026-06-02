@@ -18,9 +18,9 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v6.0.3
 
-      - uses: pnpm/action-setup@v6.0.7
+      - uses: pnpm/action-setup@v6.0.8
 
       - name: Setup Node.js
         uses: actions/setup-node@v6.4.0
@@ -38,7 +38,7 @@ jobs:
     name: Release Gates
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v6.0.3
 
       - name: Convergence gate — no deprecated root src/ directories
         run: |
@@ -58,7 +58,7 @@ jobs:
           fi
           echo "Convergence gate passed: src/server, src/builder, src/autonomous are absent."
 
-      - uses: pnpm/action-setup@v6.0.7
+      - uses: pnpm/action-setup@v6.0.8
 
       - name: Setup Node.js
         uses: actions/setup-node@v6.4.0
@@ -79,9 +79,9 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v6.0.3
 
-      - uses: pnpm/action-setup@v6.0.7
+      - uses: pnpm/action-setup@v6.0.8
 
       - name: Setup Node.js
         uses: actions/setup-node@v6.4.0
@@ -114,9 +114,9 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v6.0.3
 
-      - uses: pnpm/action-setup@v6.0.7
+      - uses: pnpm/action-setup@v6.0.8
 
       - name: Setup Node.js
         uses: actions/setup-node@v6.4.0
@@ -134,9 +134,9 @@ jobs:
     name: Dashboard Gates
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v6.0.3
 
-      - uses: pnpm/action-setup@v6.0.7
+      - uses: pnpm/action-setup@v6.0.8
 
       - name: Setup Node.js
         uses: actions/setup-node@v6.4.0
@@ -160,9 +160,9 @@ jobs:
     name: Product E2E
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v6.0.3
 
-      - uses: pnpm/action-setup@v6.0.7
+      - uses: pnpm/action-setup@v6.0.8
 
       - name: Setup Node.js
         uses: actions/setup-node@v6.4.0
@@ -191,9 +191,9 @@ jobs:
     name: Type Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v6.0.3
 
-      - uses: pnpm/action-setup@v6.0.7
+      - uses: pnpm/action-setup@v6.0.8
 
       - name: Setup Node.js
         uses: actions/setup-node@v6.4.0
@@ -223,10 +223,10 @@ jobs:
     needs: test
     if: always()
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v6.0.3
 
       - name: Download test results
-        uses: actions/download-artifact@v4.3.0
+        uses: actions/download-artifact@v8.0.1
         with:
           name: test-results
           path: test-results/

@@ -17,7 +17,7 @@ jobs:
     name: Test Suite
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v6.0.3
 
       - name: Convergence gate — no deprecated root src/ directories
         run: |
@@ -37,7 +37,7 @@ jobs:
           fi
           echo "Convergence gate passed: src/server, src/builder, src/autonomous are absent."
 
-      - uses: pnpm/action-setup@v6.0.7
+      - uses: pnpm/action-setup@v6.0.8
 
       - name: Setup Node.js
         uses: actions/setup-node@v6.4.0
@@ -74,11 +74,11 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v6.0.3
         with:
           fetch-depth: 0
 
-      - uses: pnpm/action-setup@v6.0.7
+      - uses: pnpm/action-setup@v6.0.8
 
       - name: Setup Node.js
         uses: actions/setup-node@v6.4.0
