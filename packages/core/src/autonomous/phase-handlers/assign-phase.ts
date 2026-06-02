@@ -20,6 +20,8 @@ import {
 import { getProviderAvailability } from '../../runtime/provider-availability.js';
 import type { ProviderAvailabilityMap } from '../../runtime/provider-availability.js';
 import type { ExecutionProviderKind, RuntimeMode } from '../../runtime/types.js';
+import { AdaptiveRouter } from '../../intelligence/adaptive-routing.js';
+import type { ModelTier } from '@agentforge/shared';
 
 interface AssignmentHint {
   agent_id: string;
@@ -44,6 +46,10 @@ interface SprintItem {
   runtimeMode?: RuntimeMode;
   tier?: string;
   effort?: string;
+  /** How item.tier was decided: 'adaptive' (learned) or 'policy' (static rules). */
+  tierSource?: 'adaptive' | 'policy';
+  /** The AdaptiveRouter reason code behind tierSource. */
+  tierReason?: string;
   [key: string]: unknown;
 }
 
@@ -209,6 +215,53 @@ export function applyJobRouting(
   }
 }
 
+function isModelTier(value: unknown): value is ModelTier {
+  return value === 'opus' || value === 'sonnet' || value === 'haiku';
+}
+
+/**
+ * Override item.tier with the AdaptiveRouter's learned-best model — but ONLY
+ * when the router has a real signal (pareto-utility or epsilon-explore). On
+ * cold-start / no-data / fallback, keep the static policy tier. Fail-safe:
+ * any router error leaves the static tier. Gated by AGENTFORGE_NO_QUALITY_BIAS.
+ *
+ * The learning loop is closed via .agentforge/memory/step-scores.jsonl, which
+ * the execute phase already writes — this connects the consumer, not new data.
+ */
+export function applyAdaptiveModel(item: SprintItem, router: AdaptiveRouter): void {
+  if (process.env['AGENTFORGE_NO_QUALITY_BIAS'] === '1') {
+    item.tierSource = 'policy';
+    item.tierReason = undefined;
+    return;
+  }
+  try {
+    const defaultModel: ModelTier = isModelTier(item.tier) ? item.tier : 'sonnet';
+    const capabilityTag = item.tags?.[0];
+    const input: {
+      agentId: string;
+      defaultModel: ModelTier;
+      capabilityTag?: string;
+    } = {
+      agentId: item.assignee ?? 'coder',
+      defaultModel,
+    };
+    if (capabilityTag) {
+      input.capabilityTag = capabilityTag;
+    }
+    const rec = router.recommendQualityAware(input);
+    if (rec.reason === 'pareto-utility' || rec.reason === 'epsilon-explore') {
+      item.tier = rec.model;
+      item.tierSource = 'adaptive';
+    } else {
+      item.tierSource = 'policy';
+    }
+    item.tierReason = rec.reason;
+  } catch {
+    item.tierSource = 'policy';
+    item.tierReason = undefined;
+  }
+}
+
 export function makeAssignPhaseHandler() {
   return (ctx: PhaseContext) => runAssignPhase(ctx);
 }
@@ -260,12 +313,22 @@ export async function runAssignPhase(ctx: PhaseContext): Promise<PhaseResult> {
       availability = undefined;
     }
 
+    // Adaptive per-item model selection. Reads the step-scores ledger once.
+    // Exploit-only by default for reproducible cycles; opt into ε-greedy
+    // exploration with AGENTFORGE_ADAPTIVE_EXPLORE=1.
+    const adaptiveRouter = new AdaptiveRouter({
+      feedbackFilePath: join(ctx.projectRoot, '.agentforge', 'memory', 'routing-feedback.jsonl'),
+      stepScoresPath: join(ctx.projectRoot, '.agentforge', 'memory', 'step-scores.jsonl'),
+      explorationEpsilon: process.env['AGENTFORGE_ADAPTIVE_EXPLORE'] === '1' ? 0.05 : 0,
+    });
+
     for (const item of items) {
       if (!item.assignee || item.assignee.trim() === '') {
         item.assignee = inferAssignee(item, ctx.projectRoot);
         assignmentCount += 1;
       }
       applyJobRouting(item, availability);
+      applyAdaptiveModel(item, adaptiveRouter);
       byAgent[item.assignee] = (byAgent[item.assignee] ?? 0) + 1;
     }
 
