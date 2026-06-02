@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ExecutionService } from '../execution-service.js';
 import type { AgentRuntimeConfig } from '../../agent-runtime/types.js';
+import { MODEL_IDS } from '../../agent-runtime/types.js';
 import type {
   ExecutionRequest,
   ExecutionResult,
@@ -224,5 +225,81 @@ describe('ExecutionService.runStreaming', () => {
     expect(result.response).toBe('fallback response');
     expect(chunks).toEqual(['fallback response']);
     expect(events.map((event) => event.type)).toEqual(['text_delta', 'done']);
+  });
+});
+
+describe('ExecutionService — per-call capabilityTier override', () => {
+  it('overrides the dispatched model + capabilityTier for a single call without mutating config', async () => {
+    let capturedAgentModel: string | undefined;
+    let capturedModelId: string | undefined;
+    let capturedProviderModelProfiles: ExecutionRequest['providerModelProfiles'];
+    const transport: ExecutionTransport = {
+      kind: 'anthropic-sdk',
+      isAvailable: () => true,
+      execute: vi.fn(async (req) => {
+        capturedAgentModel = req.agent.model;
+        capturedModelId = req.modelId;
+        capturedProviderModelProfiles = req.providerModelProfiles;
+        return buildExecutionResult('ok');
+      }),
+    };
+    const service = new ExecutionService({ transports: [transport] });
+
+    const result = await service.run(config, { task: 'route this', capabilityTier: 'haiku' });
+
+    expect(capturedAgentModel).toBe('haiku');
+    expect(capturedModelId).toBe(MODEL_IDS.haiku);
+    expect(result.capabilityTier).toBe('haiku');
+    expect(config.model).toBe('sonnet');
+    // providerModelProfiles for anthropic-sdk is deterministic (no env reads for
+    // this provider) — assert that it reflects the haiku model id.
+    expect(capturedProviderModelProfiles?.['anthropic-sdk']?.modelId).toBe(MODEL_IDS.haiku);
+  });
+
+  it('falls back to the agent config model when capabilityTier is absent', async () => {
+    let capturedAgentModel: string | undefined;
+    const transport: ExecutionTransport = {
+      kind: 'anthropic-sdk',
+      isAvailable: () => true,
+      execute: vi.fn(async (req) => {
+        capturedAgentModel = req.agent.model;
+        return buildExecutionResult('ok');
+      }),
+    };
+    const service = new ExecutionService({ transports: [transport] });
+
+    const result = await service.run(config, { task: 'no override' });
+
+    expect(capturedAgentModel).toBe('sonnet');
+    expect(result.capabilityTier).toBe('sonnet');
+  });
+
+  it('overrides the dispatched model + capabilityTier on the streaming path without mutating config', async () => {
+    let capturedAgentModel: string | undefined;
+    let capturedModelId: string | undefined;
+    // Use a transport without executeStreaming so the fallback path (execute) is
+    // taken — this is the simplest stub that exercises the capabilityTier override
+    // logic in runStreaming without requiring real provider resolution.
+    const transport: ExecutionTransport = {
+      kind: 'anthropic-sdk',
+      isAvailable: () => true,
+      execute: vi.fn(async (req) => {
+        capturedAgentModel = req.agent.model;
+        capturedModelId = req.modelId;
+        return buildExecutionResult('ok');
+      }),
+    };
+    const service = new ExecutionService({ transports: [transport] });
+
+    const result = await service.runStreaming(config, {
+      task: 'route streaming',
+      capabilityTier: 'haiku',
+      onEvent: () => {},
+    });
+
+    expect(capturedAgentModel).toBe('haiku');
+    expect(capturedModelId).toBe(MODEL_IDS.haiku);
+    expect(result.capabilityTier).toBe('haiku');
+    expect(config.model).toBe('sonnet');
   });
 });

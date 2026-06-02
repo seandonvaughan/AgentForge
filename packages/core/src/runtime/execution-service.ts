@@ -112,13 +112,18 @@ export class ExecutionService {
     apiKey?: string,
   ): Promise<RunResult> {
     const startedAt = new Date().toISOString();
-    const modelId = MODEL_IDS[config.model];
-    const request = this.buildRequest(config, opts, modelId, apiKey);
+    // Per-call model override (adaptive routing): use the requested tier for
+    // THIS call without mutating the shared, cached agent config object.
+    const cfg = opts.capabilityTier && opts.capabilityTier !== config.model
+      ? { ...config, model: opts.capabilityTier }
+      : config;
+    const modelId = MODEL_IDS[cfg.model];
+    const request = this.buildRequest(cfg, opts, modelId, apiKey);
     const session = new RuntimeSession({
       agentId: config.agentId,
       task: opts.task,
       model: modelId,
-      capabilityTier: config.model,
+      capabilityTier: cfg.model,
       startedAt,
       ...(adapter ? { adapter } : {}),
       ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
@@ -204,13 +209,18 @@ export class ExecutionService {
     apiKey?: string,
   ): Promise<RunResult> {
     const startedAt = new Date().toISOString();
-    const modelId = MODEL_IDS[config.model];
-    const request = this.buildRequest(config, opts, modelId, apiKey);
+    // Per-call model override (adaptive routing): use the requested tier for
+    // THIS call without mutating the shared, cached agent config object.
+    const cfg = opts.capabilityTier && opts.capabilityTier !== config.model
+      ? { ...config, model: opts.capabilityTier }
+      : config;
+    const modelId = MODEL_IDS[cfg.model];
+    const request = this.buildRequest(cfg, opts, modelId, apiKey);
     const session = new RuntimeSession({
       agentId: config.agentId,
       task: opts.task,
       model: modelId,
-      capabilityTier: config.model,
+      capabilityTier: cfg.model,
       startedAt,
       ...(adapter ? { adapter } : {}),
       ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),

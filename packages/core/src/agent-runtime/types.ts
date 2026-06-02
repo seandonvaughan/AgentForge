@@ -60,6 +60,14 @@ export interface RunOptions {
    * architectural decisions that are known to exceed the default ceiling.
    */
   timeoutMs?: number;
+  /**
+   * Per-call capability tier (model) override. When set, ExecutionService uses
+   * this tier instead of the agent config's baked `model` for THIS call only —
+   * concurrency-safe because it never mutates the shared, cached agent config.
+   * Used by adaptive routing to select the learned-best model per item.
+   * Absent → the agent's configured tier (legacy behavior).
+   */
+  capabilityTier?: ModelTier;
 }
 
 export interface RunResult {
