@@ -1,6 +1,11 @@
 import type { Command } from 'commander';
 import { generateCostReport } from '@agentforge/core';
 
+interface CostReportOptions {
+  projectRoot: string;
+  json?: boolean;
+}
+
 export function registerCostsCommand(program: Command): void {
   const costs = program
     .command('costs')
@@ -23,13 +28,19 @@ function registerCostReportCommand(
 ): void {
   command
     .option('--project-root <path>', 'Project root', process.cwd())
-    .action(async (commandOptions: { projectRoot: string }) => {
+    .option('--json', 'Print machine-readable JSON')
+    .action(async (commandOptions: CostReportOptions) => {
       if (options.compatibilityAlias) {
         console.warn('[compat] `cost-report` is a compatibility alias. Prefer `costs report`.');
       }
 
       try {
         const report = await generateCostReport(commandOptions.projectRoot);
+
+        if (commandOptions.json) {
+          console.log(JSON.stringify(report, null, 2));
+          return;
+        }
 
         if (report.source === 'empty') {
           console.log('No package-runtime sessions recorded yet.');
