@@ -43,7 +43,7 @@ describe('buildCodexReadinessReport', () => {
     expect(report.mcpServerAvailable).toBe(true);
     expect(report.agents[0]).toMatchObject({
       agentId: 'coder',
-      codexModel: 'gpt-5.3-codex',
+      codexModel: 'gpt-5.5',
       codexEffort: 'low',
       valid: true,
     });
