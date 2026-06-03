@@ -127,6 +127,7 @@ describe('package scripts', () => {
       'node scripts/run-pnpm.mjs -- check:versions',
       'node scripts/run-pnpm.mjs -- verify:product',
       'node scripts/run-pnpm.mjs -- verify:dashboard',
+      'node scripts/run-pnpm.mjs -- check:legacy-src',
       'node scripts/run-pnpm.mjs -- check:help',
       'node scripts/run-pnpm.mjs -- check:changelog',
       'node scripts/run-pnpm.mjs -- audit:deps',
@@ -161,6 +162,32 @@ describe('package scripts', () => {
     expect(result.ok).toBe(true);
     expect(playwrightRuns).toEqual([DASHBOARD_E2E_COMMAND]);
     expect(result.trace).not.toContain('playwright test');
+  });
+
+  it('runs the legacy src import guard during verify:gates', async () => {
+    const scripts = loadRootScripts();
+    const harness = new ScriptPipelineHarness(scripts, () => 0);
+
+    const result = await harness.run('verify:gates');
+
+    expect(result.ok).toBe(true);
+    expect(result.trace).toContain('node scripts/check-no-legacy-src-imports.mjs');
+  });
+
+  it('stops verify:gates before help and changelog checks when legacy src imports fail', async () => {
+    const scripts = loadRootScripts();
+    const harness = new ScriptPipelineHarness(scripts, (command) => {
+      return command === 'node scripts/check-no-legacy-src-imports.mjs' ? 1 : 0;
+    });
+
+    const result = await harness.run('verify:gates');
+
+    expect(result.ok).toBe(false);
+    expect(result.failedScript).toBe('check:legacy-src');
+    expect(result.failedCommand).toBe('node scripts/check-no-legacy-src-imports.mjs');
+    expect(result.trace).toContain('node scripts/check-no-legacy-src-imports.mjs');
+    expect(result.trace).not.toContain('node scripts/check-help-output.mjs');
+    expect(result.trace).not.toContain('node scripts/check-changelog.mjs');
   });
 
   it('stops verify:gates before dashboard checks when verify:product typecheck fails', async () => {
