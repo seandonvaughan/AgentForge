@@ -76,6 +76,25 @@ describe('legacy format — cycle.json', () => {
     expect(result!.pr?.number).toBe(99);
   });
 
+  it('preserves heartbeat metadata from cycle.json', () => {
+    const dir = cycleDir('hb-legacy'); writeCycleJson(dir, { cycleId: 'hb-legacy', lastHeartbeatAt: '2025-01-01T00:00:00.000Z', staleness: 'dead' }); const r = readCycleRecord(dir, 'hb-legacy'); expect(r!.lastHeartbeatAt).toBe('2025-01-01T00:00:00.000Z'); expect(r!.staleness).toBe('dead');
+  });
+
+  it('omits heartbeat metadata when cycle.json has no lastHeartbeatAt', () => {
+    const dir = cycleDir('hb-missing');
+    writeCycleJson(dir, {
+      cycleId: 'hb-missing',
+      stage: 'run',
+      staleness: 'unknown',
+    });
+
+    const result = readCycleRecord(dir, 'hb-missing');
+
+    expect(result).not.toBeNull();
+    expect(result!.lastHeartbeatAt).toBeUndefined();
+    expect(result!.staleness).toBeUndefined();
+  });
+
   it('falls through to event-stream reader when cycle.json is malformed JSON', () => {
     const dir = cycleDir('cycle-bad-json');
     writeFileSync(join(dir, 'cycle.json'), '{ invalid json %%% }');
@@ -114,6 +133,21 @@ describe('current format — events.jsonl reconstruction', () => {
     expect(result!.cost).toEqual({ totalUsd: 3.75 });
     expect(result!.tests).toEqual({ passed: 80, failed: 5, total: 85, passRate: 80 / 85 });
     expect(result!.pr).toEqual({ url: 'https://github.com/org/repo/pull/7', number: 7 });
+  });
+
+  it('preserves heartbeat metadata from the event stream when present', () => {
+    const dir = cycleDir('cycle-hb-events');
+    writeEventsJsonl(dir, [
+      { type: 'phase.start', at: '2026-03-01T10:00:00.000Z' },
+      { type: 'cycle.heartbeat', lastHeartbeatAt: '2026-03-01T10:05:00.000Z', staleness: 'healthy' },
+      { type: 'cycle.heartbeat', lastHeartbeatAt: '2026-03-01T10:15:00.000Z', staleness: 'stale' },
+    ]);
+
+    const result = readCycleRecord(dir, 'cycle-hb-events');
+
+    expect(result).not.toBeNull();
+    expect(result!.lastHeartbeatAt).toBe('2026-03-01T10:15:00.000Z');
+    expect(result!.staleness).toBe('stale');
   });
 
   it('accepts "opened" as an alias for "pr.opened"', () => {
@@ -184,6 +218,20 @@ describe('current format — events.jsonl reconstruction', () => {
     expect(result!.stage).toBeUndefined();
     expect(result!.completedAt).toBeUndefined();
     expect(result!.durationMs).toBeUndefined();
+  });
+
+  it('omits heartbeat metadata when the event stream has no heartbeat event', () => {
+    const dir = cycleDir('cycle-no-heartbeat');
+    writeEventsJsonl(dir, [
+      { type: 'phase.start', at: '2026-03-01T10:00:00.000Z' },
+      { type: 'tests.complete', at: '2026-03-01T11:00:00.000Z', passed: 10, failed: 0 },
+    ]);
+
+    const result = readCycleRecord(dir, 'cycle-no-heartbeat');
+
+    expect(result).not.toBeNull();
+    expect(result!.lastHeartbeatAt).toBeUndefined();
+    expect(result!.staleness).toBeUndefined();
   });
 
   it('returns null when events.jsonl contains only blank lines', () => {
