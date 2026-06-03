@@ -15,11 +15,13 @@ import type { RoutingIndex } from '../routing/routing-index.js';
 import {
   resolveJobRouting,
   DEFAULT_JOB_ROUTING_POLICY,
+  applyForcedRuntimeProvider,
   type RoutableJob,
 } from '../routing/job-router.js';
 import { getProviderAvailability } from '../../runtime/provider-availability.js';
 import type { ProviderAvailabilityMap } from '../../runtime/provider-availability.js';
 import type { ExecutionProviderKind, RuntimeMode } from '../../runtime/types.js';
+import { resolveMode } from '../../runtime/execution-service-mode.js';
 import { AdaptiveRouter } from '../../intelligence/adaptive-routing.js';
 import type { ModelTier } from '@agentforge/shared';
 
@@ -181,6 +183,7 @@ export function inferAssignee(item: SprintItem, projectRoot?: string): string {
 export function applyJobRouting(
   item: SprintItem,
   availability?: ProviderAvailabilityMap,
+  forcedMode?: RuntimeMode,
 ): void {
   const job: RoutableJob = {
     id: item.id,
@@ -198,20 +201,30 @@ export function applyJobRouting(
   };
 
   const decision = resolveJobRouting(job, DEFAULT_JOB_ROUTING_POLICY, availability);
+  // An operator-forced runtime (AGENTFORGE_RUNTIME != auto) overrides the
+  // cost-optimizing router's provider choice with the forced family. 'auto' /
+  // undefined leaves the decision byte-identical.
+  const finalDecision = applyForcedRuntimeProvider(
+    decision,
+    forcedMode,
+    DEFAULT_JOB_ROUTING_POLICY,
+    availability,
+  );
+  const runtimeForced = forcedMode !== undefined && forcedMode !== 'auto';
 
-  // Preserve any explicit upstream hint; otherwise write the routed decision.
-  if (item.preferredProvider === undefined) {
-    item.preferredProvider = decision.preferredProvider;
+  // When a runtime is force-pinned the operator's choice is authoritative and
+  // overrides any upstream provider hint; otherwise preserve explicit hints.
+  if (runtimeForced || item.preferredProvider === undefined) {
+    item.preferredProvider = finalDecision.preferredProvider;
   }
-  if (item.runtimeMode === undefined) {
-    item.runtimeMode = decision.runtimeMode;
+  if (runtimeForced || item.runtimeMode === undefined) {
+    item.runtimeMode = finalDecision.runtimeMode;
   }
   // tier/effort are audit/metadata fields; always record the routed values.
-  item.tier = decision.tier;
-  item.effort = decision.effort;
-  // Ordered failover chain (preserve any explicit upstream chain).
-  if (item.providerPreference === undefined) {
-    item.providerPreference = decision.providerPreference;
+  item.tier = finalDecision.tier;
+  item.effort = finalDecision.effort;
+  if (runtimeForced || item.providerPreference === undefined) {
+    item.providerPreference = finalDecision.providerPreference;
   }
 }
 
@@ -322,12 +335,14 @@ export async function runAssignPhase(ctx: PhaseContext): Promise<PhaseResult> {
       explorationEpsilon: process.env['AGENTFORGE_ADAPTIVE_EXPLORE'] === '1' ? 0.05 : 0,
     });
 
+    const forcedRuntimeMode = resolveMode(process.env, ctx.projectRoot);
+
     for (const item of items) {
       if (!item.assignee || item.assignee.trim() === '') {
         item.assignee = inferAssignee(item, ctx.projectRoot);
         assignmentCount += 1;
       }
-      applyJobRouting(item, availability);
+      applyJobRouting(item, availability, forcedRuntimeMode);
       applyAdaptiveModel(item, adaptiveRouter);
       byAgent[item.assignee] = (byAgent[item.assignee] ?? 0) + 1;
     }

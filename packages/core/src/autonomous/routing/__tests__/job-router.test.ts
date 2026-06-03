@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   resolveJobRouting,
   DEFAULT_JOB_ROUTING_POLICY,
+  applyForcedRuntimeProvider,
   type RoutableJob,
+  type JobRoutingDecision,
   type JobRoutingPolicy,
 } from '../job-router.js';
 import { ProviderResolver } from '../../../runtime/provider-resolver.js';
@@ -336,5 +338,115 @@ describe('resolveJobRouting — providerPreference failover chain', () => {
     );
     expect(new Set(d.providerPreference).size).toBe(d.providerPreference.length);
     expect(d.providerPreference[0]).toBe(d.preferredProvider);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyForcedRuntimeProvider
+// ---------------------------------------------------------------------------
+
+describe('applyForcedRuntimeProvider', () => {
+  // A representative cost-optimized codex decision (low-complexity docs item).
+  const codexDecision: JobRoutingDecision = resolveJobRouting(
+    { itemId: 'doc1', title: 'update README', tags: ['docs'], estimatedComplexity: 'low' },
+    DEFAULT_JOB_ROUTING_POLICY,
+    ALL_AVAILABLE,
+  );
+
+  // A representative anthropic decision (security item).
+  const anthropicDecision: JobRoutingDecision = resolveJobRouting(
+    { itemId: 'sec1', title: 'fix auth bypass', tags: ['security'], estimatedComplexity: 'high' },
+    DEFAULT_JOB_ROUTING_POLICY,
+    ALL_AVAILABLE,
+  );
+
+  it('returns a value deep-equal to the input when mode is "auto" (byte-identical guarantee)', () => {
+    const result = applyForcedRuntimeProvider(codexDecision, 'auto');
+    expect(result).toEqual(codexDecision);
+    // Must be the same object reference (unchanged)
+    expect(result).toBe(codexDecision);
+  });
+
+  it('returns a value deep-equal to the input when mode is undefined (byte-identical guarantee)', () => {
+    const result = applyForcedRuntimeProvider(codexDecision, undefined);
+    expect(result).toEqual(codexDecision);
+    expect(result).toBe(codexDecision);
+  });
+
+  it('forced claude-code-compat: preferredProvider is NOT codex-cli and IS a Claude-family provider', () => {
+    const result = applyForcedRuntimeProvider(codexDecision, 'claude-code-compat');
+    expect(result.preferredProvider).not.toBe('codex-cli');
+    expect(['anthropic-sdk', 'claude-code-compat'] as const).toContain(result.preferredProvider);
+  });
+
+  it('forced sdk: preferredProvider is NOT codex-cli and IS a Claude-family provider', () => {
+    const result = applyForcedRuntimeProvider(codexDecision, 'sdk');
+    expect(result.preferredProvider).not.toBe('codex-cli');
+    expect(['anthropic-sdk', 'claude-code-compat'] as const).toContain(result.preferredProvider);
+  });
+
+  it('tier and effort are unchanged from the input decision when a Claude transport is forced', () => {
+    const result = applyForcedRuntimeProvider(codexDecision, 'claude-code-compat');
+    expect(result.tier).toBe(codexDecision.tier);
+    expect(result.effort).toBe(codexDecision.effort);
+  });
+
+  it('forced claude-code-compat: providerPreference[0] is NOT codex-cli', () => {
+    const result = applyForcedRuntimeProvider(codexDecision, 'claude-code-compat');
+    expect(result.providerPreference[0]).not.toBe('codex-cli');
+  });
+
+  it('forced codex-cli applied to an anthropic-style decision: preferredProvider === "codex-cli"', () => {
+    const result = applyForcedRuntimeProvider(anthropicDecision, 'codex-cli');
+    expect(result.preferredProvider).toBe('codex-cli');
+  });
+
+  it('forced codex-cli: tier preserved from the anthropic decision input', () => {
+    const result = applyForcedRuntimeProvider(anthropicDecision, 'codex-cli');
+    expect(result.tier).toBe(anthropicDecision.tier);
+  });
+
+  it('availability is honored: anthropic-sdk unavailable + forced claude-code-compat => falls through to claude-code-compat', () => {
+    const avail = availabilityMap({ 'anthropic-sdk': { available: false, reason: 'no key' } });
+    const result = applyForcedRuntimeProvider(codexDecision, 'claude-code-compat', DEFAULT_JOB_ROUTING_POLICY, avail);
+    expect(result.preferredProvider).toBe('claude-code-compat');
+    expect(result.providerPreference).not.toContain('anthropic-sdk');
+  });
+
+  it('CROSS-FAMILY GUARANTEE: forcing Claude with the whole Claude family down never falls through to Codex', () => {
+    const avail = availabilityMap({
+      'anthropic-sdk': { available: false, reason: 'no key' },
+      'claude-code-compat': { available: false, reason: 'cli missing' },
+    });
+    const result = applyForcedRuntimeProvider(
+      codexDecision,
+      'claude-code-compat',
+      DEFAULT_JOB_ROUTING_POLICY,
+      avail,
+    );
+    // Even with no Claude provider available, the forced family must NOT cross
+    // over to Codex — the chain stays Claude-only (this is the regression the
+    // adversarial-correctness review caught).
+    expect(result.preferredProvider).not.toBe('codex-cli');
+    expect(result.preferredProvider).not.toBe('openai-sdk');
+    expect(result.providerPreference).not.toContain('codex-cli');
+    expect(result.providerPreference).not.toContain('openai-sdk');
+  });
+
+  it('CROSS-FAMILY GUARANTEE: forcing Codex with the whole Codex family down never falls through to Claude', () => {
+    const avail = availabilityMap({
+      'codex-cli': { available: false, reason: 'no auth' },
+      'openai-sdk': { available: false, reason: 'no key' },
+    });
+    const result = applyForcedRuntimeProvider(
+      anthropicDecision,
+      'codex-cli',
+      DEFAULT_JOB_ROUTING_POLICY,
+      avail,
+    );
+    expect(result.preferredProvider).not.toBe('anthropic-sdk');
+    expect(result.preferredProvider).not.toBe('claude-code-compat');
+    expect(result.providerPreference).not.toContain('anthropic-sdk');
+    expect(result.providerPreference).not.toContain('claude-code-compat');
   });
 });
