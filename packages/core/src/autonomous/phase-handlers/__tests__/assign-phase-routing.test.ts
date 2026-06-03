@@ -7,7 +7,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { runAssignPhase, clearRoutingIndexCache } from '../assign-phase.js';
+import { runAssignPhase, clearRoutingIndexCache, applyJobRouting } from '../assign-phase.js';
 import type { PhaseContext } from '../../phase-scheduler.js';
 
 // ---------------------------------------------------------------------------
@@ -198,5 +198,74 @@ describe('runAssignPhase with routing index', () => {
 
     // Pre-assigned value must be preserved
     expect(plan.items[0]!.assignee).toBe('architect');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyJobRouting — unit tests for per-item provider routing + forced mode
+// ---------------------------------------------------------------------------
+
+describe('applyJobRouting', () => {
+  it('REGRESSION GUARD: default path (no forcedMode) routes low-complexity item to codex-cli', () => {
+    const item: {
+      id: string;
+      title: string;
+      estimatedComplexity: 'low';
+      preferredProvider?: string;
+      runtimeMode?: string;
+      tier?: string;
+      effort?: string;
+      providerPreference?: string[];
+    } = {
+      id: 'reg-1',
+      title: 'update README links',
+      estimatedComplexity: 'low',
+    };
+    // Call with no forcedMode at all (undefined)
+    applyJobRouting(item as Parameters<typeof applyJobRouting>[0]);
+    expect(item.preferredProvider).toBe('codex-cli');
+    expect(item.tier).toBeDefined();
+  });
+
+  it('REGRESSION GUARD: explicit undefined forcedMode routes low-complexity item to codex-cli', () => {
+    const item: {
+      id: string;
+      title: string;
+      estimatedComplexity: 'low';
+      preferredProvider?: string;
+      runtimeMode?: string;
+      tier?: string;
+      effort?: string;
+      providerPreference?: string[];
+    } = {
+      id: 'reg-2',
+      title: 'update README links',
+      estimatedComplexity: 'low',
+    };
+    applyJobRouting(item as Parameters<typeof applyJobRouting>[0], undefined, undefined);
+    expect(item.preferredProvider).toBe('codex-cli');
+    expect(item.tier).toBeDefined();
+  });
+
+  it('forced claude-code-compat: low-complexity item gets a Claude-family preferredProvider', () => {
+    const item: {
+      id: string;
+      title: string;
+      estimatedComplexity: 'low';
+      preferredProvider?: string;
+      runtimeMode?: string;
+      tier?: string;
+      effort?: string;
+      providerPreference?: string[];
+    } = {
+      id: 'forced-1',
+      title: 'update README links',
+      estimatedComplexity: 'low',
+    };
+    applyJobRouting(item as Parameters<typeof applyJobRouting>[0], undefined, 'claude-code-compat');
+    expect(item.preferredProvider).not.toBe('codex-cli');
+    expect(['anthropic-sdk', 'claude-code-compat'] as const).toContain(item.preferredProvider as string);
+    expect(item.providerPreference?.[0]).not.toBe('codex-cli');
+    expect(item.tier).toBeDefined();
   });
 });

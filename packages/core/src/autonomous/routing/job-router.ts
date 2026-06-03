@@ -217,6 +217,123 @@ function applyAvailability(
 }
 
 // ---------------------------------------------------------------------------
+// Forced-runtime provider override
+// ---------------------------------------------------------------------------
+
+/**
+ * Provider families that a forced AGENTFORGE_RUNTIME pins the cycle to. 'auto'
+ * (and any unrecognized mode) is intentionally absent: when the runtime is auto
+ * the cost-optimizing job-router decides per-item exactly as before.
+ */
+const CLAUDE_RUNTIME_FAMILY: ReadonlySet<RuntimeMode> = new Set<RuntimeMode>([
+  'sdk',
+  'cli',
+  'anthropic-sdk',
+  'claude-cli',
+  'claude-code-compat',
+]);
+const CODEX_RUNTIME_FAMILY: ReadonlySet<RuntimeMode> = new Set<RuntimeMode>([
+  'codex-cli',
+  'openai-sdk',
+]);
+
+/**
+ * The concrete ExecutionProvider members of each runtime family. A forced
+ * family's failover chain is restricted to these so a force can NEVER cross
+ * over to the other family (forcing Claude must never dispatch Codex, and
+ * vice-versa).
+ */
+const CLAUDE_FAMILY_PROVIDERS: readonly ExecutionProviderKind[] = [
+  'anthropic-sdk',
+  'claude-code-compat',
+];
+const CODEX_FAMILY_PROVIDERS: readonly ExecutionProviderKind[] = ['codex-cli', 'openai-sdk'];
+
+/** Map a forced runtime mode to its concrete provider kind, when one exists. */
+function forcedProviderKind(mode: RuntimeMode): ExecutionProviderKind | undefined {
+  switch (mode) {
+    case 'sdk':
+    case 'anthropic-sdk':
+      return 'anthropic-sdk';
+    case 'claude-code-compat':
+      return 'claude-code-compat';
+    case 'codex-cli':
+      return 'codex-cli';
+    case 'openai-sdk':
+      return 'openai-sdk';
+    // 'cli' / 'claude-cli' have no distinct routing provider kind; the family
+    // chain (anthropic-sdk first) covers them.
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Honor an operator-forced runtime over the cost-optimizing router.
+ *
+ * When AGENTFORGE_RUNTIME pins a single provider family, the operator has
+ * explicitly chosen which provider runs the cycle. Override only the routed
+ * decision's PROVIDER + failover chain to that family while PRESERVING the
+ * cost-optimized tier/effort the router chose. The model then resolves to that
+ * family's model for the same tier (e.g. sonnet -> claude-sonnet on the Claude
+ * family, gpt-5.5 on the Codex family) so the dashboard reflects the provider
+ * that will actually run.
+ *
+ * The failover chain is restricted to SAME-FAMILY providers (and led by the
+ * exact forced transport when it maps to a concrete provider kind), so a forced
+ * Claude runtime can never fall through to Codex and vice-versa.
+ *
+ * For mode === 'auto' (and undefined / unrecognized modes) the decision is
+ * returned UNCHANGED — byte-identical to the router's output, so the default
+ * auto path has zero behavior change.
+ *
+ * PURE: depends only on its arguments. No env / clock / IO. Does not mutate input.
+ */
+export function applyForcedRuntimeProvider(
+  decision: JobRoutingDecision,
+  mode: RuntimeMode | undefined,
+  policy: JobRoutingPolicy = DEFAULT_JOB_ROUTING_POLICY,
+  availability?: ProviderAvailabilityMap,
+): JobRoutingDecision {
+  if (mode === undefined) return decision;
+  const isClaudeFamily = CLAUDE_RUNTIME_FAMILY.has(mode);
+  const isCodexFamily = CODEX_RUNTIME_FAMILY.has(mode);
+  if (!isClaudeFamily && !isCodexFamily) return decision; // 'auto' / unrecognized -> unchanged
+
+  const baseProfile = isClaudeFamily ? policy.profiles.anthropic : policy.profiles.codex;
+  const familyProviders = isClaudeFamily ? CLAUDE_FAMILY_PROVIDERS : CODEX_FAMILY_PROVIDERS;
+
+  // Build a same-family failover chain: exact forced transport first (when it
+  // maps to a concrete kind), then the profile's own chain, de-duped and
+  // filtered to this family. The base profile's preferred provider is always a
+  // member of its own family, so the result is never empty.
+  const baseChain: ExecutionProviderKind[] = [
+    baseProfile.preferredProvider,
+    ...(Array.isArray(baseProfile.alternate) ? baseProfile.alternate : [baseProfile.alternate]),
+  ];
+  const exact = forcedProviderKind(mode);
+  const orderedChain = [...(exact ? [exact] : []), ...baseChain];
+  const familyChain = [...new Set(orderedChain)].filter((p) => familyProviders.includes(p));
+
+  const sameFamilyProfile: JobRoutingProfile = {
+    preferredProvider: familyChain[0]!,
+    runtimeMode: runtimeModeForProvider(familyChain[0]!),
+    tier: baseProfile.tier,
+    effort: baseProfile.effort,
+    alternate: familyChain.slice(1),
+  };
+
+  const providerChoice = applyAvailability(sameFamilyProfile, availability);
+  return {
+    preferredProvider: providerChoice.preferredProvider,
+    runtimeMode: providerChoice.runtimeMode,
+    tier: decision.tier, // preserve cost-optimized tier
+    effort: decision.effort, // preserve cost-optimized effort
+    providerPreference: providerChoice.providerPreference,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Public API — the pure resolver
 // ---------------------------------------------------------------------------
 
