@@ -1,0 +1,22 @@
+{
+  "version": "wave-cycle-4",
+  "description": "Demonstration cycle 4 (width-1, CLAUDE CODE mode / claude-code-compat): a self-contained, ungameable pure helper computing the critical-path length of an epic-decomposer plan from raw predecessor edges. No integration — pure function + test in the decompose module shipped in #243.",
+  "items": [
+    {
+      "id": "cycle4-critical-path-length",
+      "title": "Add criticalPathLength(plan) — longest predecessor chain in an EpicPlan",
+      "description": "WHY: PR #243 landed the epic-decomposer (packages/core/src/autonomous/decompose/). layerWaves assigns a `wave` only AFTER layering; operators often want the critical-path depth (the minimum number of sequential waves, i.e. a wall-clock lower bound) computed directly from the raw `predecessors` edges BEFORE/without layering — e.g. for preview and cost estimation. Add a pure helper for it. This is distinct from cycle 3's waveCount (which counts distinct already-assigned wave values): criticalPathLength derives the same depth from the dependency DAG itself.\n\nIMPORTANT REPO CONVENTIONS (follow exactly):\n- TypeScript NodeNext ESM (.js import suffixes, node: builtins). exactOptionalPropertyTypes:true — never assign literal undefined to a ?: field.\n- PURE function only (no I/O). Live alongside the existing pure decompose helpers (e.g. packages/core/src/autonomous/decompose/wave-order.ts / flatten.ts). Read packages/core/src/autonomous/decompose/types.ts for the EXACT EpicPlan / EpicChild shapes (children[].predecessors: string[] defaults to []; children[].id: string; EpicPlanSchema requires children.min(1)).\n- Export it from the decompose barrel (packages/core/src/autonomous/decompose/index.ts) the same way the other helpers are exported.\n- Vitest test mirrors the existing decompose tests in packages/core/src/autonomous/decompose/__tests__/.\n\nACCEPTANCE (ungameable):\n1. New `packages/core/src/autonomous/decompose/critical-path.ts` exporting a PURE `criticalPathLength(plan: EpicPlan): number` = the maximum NUMBER OF NODES on any chain following predecessor edges (a child with no (existing) predecessors has depth 1; a child's depth = 1 + max depth over its predecessors that actually exist as children ids). Predecessor ids that do not match any child id in the plan are IGNORED (no throw, do not inflate depth). Must handle a self/cyclic-safe traversal defensively (memoize; if the input somehow contains a cycle, do not infinite-loop — treat a node already on the current DFS stack as contributing no additional depth). Returns 0 if children is empty (defensive even though the schema requires >=1).\n2. Exported from decompose/index.ts.\n3. Test `packages/core/src/autonomous/decompose/__tests__/critical-path.test.ts` using a KNOWN DAG fixture — children: a(preds []), b(preds [a]), c(preds [b]), d(preds []), e(preds [c,d]) → assert criticalPathLength===4 (chain a→b→c→e). Plus: a single child with no predecessors → 1. Plus: a child whose predecessor id is NOT in the plan (e.g. preds ['ghost']) is ignored — assert it does not throw and does not inflate the result. Plus: a defensively-constructed 2-node cycle (a preds [b], b preds [a]) does NOT infinite-loop (returns a finite number).\n\nANTI-FAKE GUARD: the test asserts the EXACT value 4 from the a→b→c→e fixture — a stub returning children.length (5), a constant, or the distinct-wave count FAILS. The ghost-predecessor and cycle cases assert no-throw + finite result.\n\nSCOPE: Touch ONLY packages/core/src/autonomous/decompose/critical-path.ts (new), packages/core/src/autonomous/decompose/index.ts (one export line), and the new test file. Do NOT modify execute-phase, other decompose files, wave-summary.ts, or anything else.",
+      "priority": "P2",
+      "estimatedComplexity": "low",
+      "valueClass": "internal",
+      "tags": ["feature", "decompose", "observability", "demo-cycle", "claude-mode"],
+      "confidence": 0.9,
+      "estimatedCostUsd": 8,
+      "files": [
+        "packages/core/src/autonomous/decompose/critical-path.ts",
+        "packages/core/src/autonomous/decompose/index.ts",
+        "packages/core/src/autonomous/decompose/__tests__/critical-path.test.ts"
+      ]
+    }
+  ]
+}
