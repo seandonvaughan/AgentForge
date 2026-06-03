@@ -64,6 +64,12 @@ function safeSegment(raw: string, label: string): string {
 
 function resolveCheckpointPath(projectRoot: string, cycleId: string): string {
   const safeId = safeSegment(cycleId, 'cycleId');
+  return join(projectRoot, '.agentforge', 'cycles', safeId, 'checkpoint-execute.json');
+}
+
+/** Legacy single-file name, kept for the one-release read-shim. */
+function resolveLegacyCheckpointPath(projectRoot: string, cycleId: string): string {
+  const safeId = safeSegment(cycleId, 'cycleId');
   return join(projectRoot, '.agentforge', 'cycles', safeId, 'checkpoint.json');
 }
 
@@ -88,6 +94,29 @@ function atomicWrite(finalPath: string, content: string): void {
   }
 
   renameSync(tmpPath, finalPath);
+}
+
+/**
+ * Attempt to parse and validate a progress file at the given path.
+ * Returns the parsed progress if valid, or null if the file doesn't exist,
+ * is malformed, or doesn't match the expected schema.
+ */
+function tryParseProgress(checkpointPath: string, cycleId: string): ExecuteProgress | null {
+  try {
+    const raw = readFileSync(checkpointPath, 'utf8');
+    const parsed = JSON.parse(raw) as Partial<ExecuteProgress>;
+    if (
+      parsed.schemaVersion === 2 &&
+      parsed.cycleId === cycleId &&
+      parsed.phase === 'execute' &&
+      Array.isArray(parsed.completedItemIds)
+    ) {
+      return parsed as ExecuteProgress;
+    }
+  } catch {
+    // ENOENT or malformed — fall through.
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -182,22 +211,13 @@ export class ItemCheckpointWriter {
   }
 
   private _readProgress(cycleId: string, checkpointPath: string): ExecuteProgress {
-    try {
-      const raw = readFileSync(checkpointPath, 'utf8');
-      const parsed = JSON.parse(raw) as Partial<ExecuteProgress>;
-      // Only trust records that declare schemaVersion: 2 (this writer's format).
-      if (
-        parsed.schemaVersion === 2 &&
-        parsed.cycleId === cycleId &&
-        parsed.phase === 'execute' &&
-        Array.isArray(parsed.completedItemIds)
-      ) {
-        return parsed as ExecuteProgress;
-      }
-    } catch {
-      // ENOENT or malformed — start fresh.
-    }
-
+    const fromNew = tryParseProgress(checkpointPath, cycleId);
+    if (fromNew) return fromNew;
+    const fromLegacy = tryParseProgress(
+      resolveLegacyCheckpointPath(this.projectRoot, cycleId),
+      cycleId,
+    );
+    if (fromLegacy) return fromLegacy;
     return {
       cycleId,
       phase: 'execute',
@@ -216,29 +236,20 @@ export class ItemCheckpointWriter {
   /**
    * Read an existing execute progress checkpoint. Returns null on ENOENT,
    * malformed JSON, or wrong schemaVersion — never throws.
+   *
+   * Tries the new path (checkpoint-execute.json) first, then falls back to the
+   * legacy path (checkpoint.json) for backwards compatibility.
    */
   static readProgress(projectRoot: string, cycleId: string): ExecuteProgress | null {
-    let checkpointPath: string;
+    let newPath: string;
+    let legacyPath: string;
     try {
-      checkpointPath = resolveCheckpointPath(projectRoot, cycleId);
+      newPath = resolveCheckpointPath(projectRoot, cycleId);
+      legacyPath = resolveLegacyCheckpointPath(projectRoot, cycleId);
     } catch {
       return null;
     }
-    try {
-      const raw = readFileSync(checkpointPath, 'utf8');
-      const parsed = JSON.parse(raw) as Partial<ExecuteProgress>;
-      if (
-        parsed.schemaVersion === 2 &&
-        parsed.cycleId === cycleId &&
-        parsed.phase === 'execute' &&
-        Array.isArray(parsed.completedItemIds)
-      ) {
-        return parsed as ExecuteProgress;
-      }
-      return null;
-    } catch {
-      return null;
-    }
+    return tryParseProgress(newPath, cycleId) ?? tryParseProgress(legacyPath, cycleId);
   }
 
   /**

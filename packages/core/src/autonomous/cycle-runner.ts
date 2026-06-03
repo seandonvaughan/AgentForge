@@ -538,6 +538,8 @@ export interface CycleRunnerOptions {
    * Supplied by the CLI when `--resume <cycleId>` is passed.
    */
   resumeCheckpoint?: CycleCheckpoint;
+  /** Epic-decomposer: operator objective threaded to the plan phase's epic path. */
+  objective?: string;
 }
 
 export interface MultiPrBranchVerificationRun {
@@ -1475,6 +1477,7 @@ export class CycleRunner {
           runtime: this.options.runtime,
           cycleId: this.cycleId,
           baseBranch: this.options.config.git.baseBranch,
+          ...(this.options.objective ? { objective: this.options.objective } : {}),
           ...(retryAttempt > 0 ? { retryAttempt, skipToPhase: 'execute' as PhaseName } : {}),
           ...(gateRetry !== undefined ? { gateRetry } : {}),
           ...(retryAttempt === 0 && skipToPhase !== undefined ? { skipToPhase } : {}),

@@ -318,7 +318,10 @@ function readCycleArtifacts(cycleDir: string): Record<string, unknown> {
     scoring: readJson(join(cycleDir, 'scoring.json')),
     approvalPending: readJson(join(cycleDir, 'approval-pending.json')),
     approvalDecision: readJson(join(cycleDir, 'approval-decision.json')),
-    checkpoint: readJson(join(cycleDir, 'checkpoint.json')),
+    checkpoint:
+      readJson(join(cycleDir, 'checkpoint-cycle.json')) ??
+      readJson(join(cycleDir, 'checkpoint-execute.json')) ??
+      readJson(join(cycleDir, 'checkpoint.json')),
   };
 }
 

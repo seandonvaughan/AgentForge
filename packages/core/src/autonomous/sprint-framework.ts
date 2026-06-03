@@ -56,6 +56,10 @@ export interface SprintItem {
    * Example: ["memory", "execute", "prompt-injection"]
    */
   tags?: string[];
+  /** Epic-decomposer fields (spec 2026-05-30). Absent on signal cycles. */
+  parentEpicId?: string;
+  wave?: number;
+  predecessors?: string[];
 }
 
 export interface SprintPlan {

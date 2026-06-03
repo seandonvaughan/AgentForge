@@ -320,7 +320,7 @@ describe('PhaseScheduler', () => {
     await expect(scheduler.run()).rejects.toThrow(/gate denied release/);
 
     const checkpoint = JSON.parse(
-      readFileSync(join(tmpDir, '.agentforge', 'cycles', cycleId, 'checkpoint.json'), 'utf8'),
+      readFileSync(join(tmpDir, '.agentforge', 'cycles', cycleId, 'checkpoint-cycle.json'), 'utf8'),
     );
     expect(checkpoint.resumeFromPhase).toBe('execute');
     expect(checkpoint.completedPhases).toEqual(['audit', 'plan', 'assign']);
@@ -366,7 +366,7 @@ describe('PhaseScheduler', () => {
     await expect(scheduler.run()).rejects.toThrow(/execute phase reported blocked/);
 
     const checkpoint = JSON.parse(
-      readFileSync(join(tmpDir, '.agentforge', 'cycles', cycleId, 'checkpoint.json'), 'utf8'),
+      readFileSync(join(tmpDir, '.agentforge', 'cycles', cycleId, 'checkpoint-cycle.json'), 'utf8'),
     );
     expect(checkpoint.resumeFromPhase).toBe('execute');
     expect(checkpoint.completedPhases).toEqual(['audit', 'plan', 'assign']);

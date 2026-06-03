@@ -44,11 +44,11 @@ describe('cycle-checkpoint', () => {
   });
 
   describe('writeCheckpoint', () => {
-    it('writes a valid checkpoint to checkpoint.json', () => {
+    it('writes a valid checkpoint to checkpoint-cycle.json', () => {
       const ckpt = makeCheckpoint();
       writeCheckpoint(cycleDir, ckpt);
 
-      const path = join(cycleDir, 'checkpoint.json');
+      const path = join(cycleDir, 'checkpoint-cycle.json');
       expect(existsSync(path)).toBe(true);
       const raw = JSON.parse(readFileSync(path, 'utf8'));
       expect(raw.v).toBe(1);
@@ -60,7 +60,7 @@ describe('cycle-checkpoint', () => {
     it('is atomic — never leaves a half-written .tmp behind on success', () => {
       writeCheckpoint(cycleDir, makeCheckpoint());
       const files = readdirSync(cycleDir);
-      expect(files).toContain('checkpoint.json');
+      expect(files).toContain('checkpoint-cycle.json');
       expect(files.some((f) => f.endsWith('.tmp'))).toBe(false);
     });
 
@@ -70,7 +70,7 @@ describe('cycle-checkpoint', () => {
         cycleDir,
         makeCheckpoint({ completedPhases: ['audit', 'plan'], resumeFromPhase: 'assign' }),
       );
-      const raw = JSON.parse(readFileSync(join(cycleDir, 'checkpoint.json'), 'utf8'));
+      const raw = JSON.parse(readFileSync(join(cycleDir, 'checkpoint-cycle.json'), 'utf8'));
       expect(raw.completedPhases).toEqual(['audit', 'plan']);
       expect(raw.resumeFromPhase).toBe('assign');
     });

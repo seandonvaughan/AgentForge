@@ -169,8 +169,10 @@ interface CycleCheckpoint {
  * request input) is used to construct the path, so the analyzer can trace
  * a sanitized value through to the file read.
  */
-function readCycleCheckpoint(dir: string): CycleCheckpoint | undefined {
-  const file = join(dir, 'checkpoint.json');
+export function readCycleCheckpoint(dir: string): CycleCheckpoint | undefined {
+  const newFile = join(dir, 'checkpoint-cycle.json');
+  const legacyFile = join(dir, 'checkpoint.json');
+  const file = existsSync(newFile) ? newFile : legacyFile;
   if (!existsSync(file)) return undefined;
   try {
     const raw = JSON.parse(readFileSync(file, 'utf-8')) as Record<string, unknown>;
