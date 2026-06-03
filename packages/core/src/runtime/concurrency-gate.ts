@@ -7,6 +7,15 @@
 //   - Queues callers when saturated; higher-priority callers unblock first
 //   - Force-releases stale slots after staleAcquireTimeoutMs (default 30 min)
 //     to prevent deadlock when callers forget to call the release function
+//
+// Optional free-memory admission floor (default-DISABLED):
+//   Set AGENTFORGE_MIN_FREE_MEM_GB (float, gigabytes) to enable. When unset,
+//   acquire() is count-only (byte-identical to prior behaviour). When enabled,
+//   admission additionally requires os.freemem() >= floor — but the floor is
+//   never applied when active===0 to guarantee at least one slot is always
+//   admitted (no deadlock).
+
+import { freemem } from 'node:os';
 
 const DEFAULT_MAX_PARALLEL = 8;
 const HARD_MAX_PARALLEL = 40;
@@ -28,6 +37,23 @@ export interface ConcurrencyGateOptions {
    * Defaults to 30 minutes.
    */
   staleAcquireTimeoutMs?: number;
+  /**
+   * Opt-in free-memory floor in gigabytes. When set to a positive value,
+   * acquire() will additionally require os.freemem() >= floor (unless
+   * active===0, which always admits to prevent deadlock).
+   *
+   * Default: DISABLED (0). When unset or <=0, the floor is disabled and
+   * acquire() behaves byte-identically to the count-only baseline.
+   *
+   * Can also be set via the AGENTFORGE_MIN_FREE_MEM_GB environment variable.
+   * This explicit option takes precedence over the env var.
+   */
+  minFreeMemGb?: number;
+  /**
+   * Injectable free-memory reader (bytes). Defaults to os.freemem().
+   * Provided for deterministic unit testing; do not set in production.
+   */
+  freeMemBytes?: () => number;
 }
 
 export interface ConcurrencyGateStats {
@@ -64,6 +90,10 @@ interface ActiveSlot {
 export class ConcurrencyGate {
   private readonly maxParallel: number;
   private readonly staleTimeoutMs: number;
+  /** Floor in bytes; 0 means disabled. */
+  private readonly minFreeMemBytes: number;
+  /** Free-memory reader — injectable for tests. */
+  private readonly freeMemBytes: () => number;
 
   private active = 0;
   private serialCounter = 0;
@@ -93,6 +123,20 @@ export class ConcurrencyGate {
 
     this.maxParallel = Math.max(1, Math.min(HARD_MAX_PARALLEL, raw));
     this.staleTimeoutMs = opts.staleAcquireTimeoutMs ?? DEFAULT_STALE_TIMEOUT_MS;
+
+    // Free-memory floor (default-DISABLED).
+    // Resolution order: explicit option → AGENTFORGE_MIN_FREE_MEM_GB env var → 0 (disabled).
+    this.freeMemBytes = opts.freeMemBytes ?? freemem;
+
+    let floorGb: number;
+    if (opts.minFreeMemGb !== undefined) {
+      floorGb = opts.minFreeMemGb;
+    } else {
+      const envFloor = process.env['AGENTFORGE_MIN_FREE_MEM_GB'];
+      floorGb = envFloor ? parseFloat(envFloor) : 0;
+    }
+    // Treat NaN, negative, or zero as disabled (0).
+    this.minFreeMemBytes = floorGb > 0 && isFinite(floorGb) ? floorGb * 1e9 : 0;
   }
 
   /**
@@ -106,7 +150,7 @@ export class ConcurrencyGate {
    * has no additional effect.
    */
   async acquire(priority = 0): Promise<() => void> {
-    if (this.active < this.maxParallel) {
+    if (this.active < this.maxParallel && this.memFloorCleared()) {
       // Fast path: slot available immediately.
       this.active++;
       this.totalAcquires++;
@@ -210,11 +254,22 @@ export class ConcurrencyGate {
    * Called after every release.
    */
   private drainQueue(): void {
-    while (this.queue.length > 0 && this.active < this.maxParallel) {
+    while (this.queue.length > 0 && this.active < this.maxParallel && this.memFloorCleared()) {
       const entry = this.queue.shift()!;
       this.active++;
       // Resolve the waiting caller (will call makeReleaseFunction).
       entry.resolve();
     }
+  }
+
+  /**
+   * Returns true when the free-memory floor is either disabled (minFreeMemBytes===0)
+   * or satisfied (free bytes >= floor), OR when active===0 (always admit at
+   * least one slot to prevent deadlock).
+   */
+  private memFloorCleared(): boolean {
+    if (this.minFreeMemBytes <= 0) return true;   // floor disabled
+    if (this.active === 0) return true;            // never deadlock
+    return this.freeMemBytes() >= this.minFreeMemBytes;
   }
 }
