@@ -21,3 +21,4 @@ export { groupItemsByWave } from './wave-order.js';
 export type { WaveOrderable } from './wave-order.js';
 export { summarizeWavePlan } from './wave-summary.js';
 export type { WavePlanSummary } from './wave-summary.js';
+export { criticalPathLength } from './critical-path.js';
