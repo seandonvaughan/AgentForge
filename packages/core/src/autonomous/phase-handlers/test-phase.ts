@@ -9,6 +9,10 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
 import {
+  appendLessonAttributions,
+  readLessonAttributions,
+} from '../../memory/lesson-attribution.js';
+import {
   formatExecuteReviewTargets,
   loadExecuteReviewTargets,
 } from './review-targets.js';
@@ -251,6 +255,58 @@ Do NOT run tests. The VERIFY stage will do that separately. You are only analyzi
       );
     } catch {
       // non-fatal
+    }
+  }
+
+  // Phase 0 — lesson-attribution: augment existing rows with verifyPassed.
+  // Read cycle.json to get the aggregate test result (tests.failed), which is
+  // written by the VERIFY stage (cycle-runner.ts) and represents the real
+  // test outcome for this cycle. Non-fatal: never blocks the phase.
+  if (ctx.cycleId) {
+    try {
+      // Read tests.failed from cycle.json (written by the VERIFY stage).
+      let testsFailed: number | undefined;
+      const cycleJsonPath = join(
+        ctx.projectRoot,
+        '.agentforge',
+        'cycles',
+        ctx.cycleId,
+        'cycle.json',
+      );
+      try {
+        const raw = readFileSync(cycleJsonPath, 'utf8');
+        const cycleData = JSON.parse(raw) as Record<string, unknown>;
+        const tests = cycleData['tests'];
+        if (tests !== null && typeof tests === 'object') {
+          const testsObj = tests as Record<string, unknown>;
+          if (typeof testsObj['failed'] === 'number') {
+            testsFailed = testsObj['failed'];
+          }
+        }
+      } catch {
+        // cycle.json absent or unparseable — skip augmentation
+      }
+
+      if (testsFailed !== undefined) {
+        const verifyPassed = testsFailed === 0;
+        const existingRows = readLessonAttributions(ctx.projectRoot).filter(
+          (r) => r.cycleId === ctx.cycleId,
+        );
+        if (existingRows.length > 0) {
+          const augmentedRows = existingRows.map((r) => ({
+            cycleId: r.cycleId,
+            itemId: r.itemId,
+            agentId: r.agentId,
+            lessonId: r.lessonId,
+            lessonText: r.lessonText,
+            scope: 'cycle' as const,
+            verifyPassed,
+          }));
+          appendLessonAttributions(ctx.projectRoot, augmentedRows);
+        }
+      }
+    } catch {
+      // non-fatal — phase result must not be affected by attribution failure
     }
   }
 

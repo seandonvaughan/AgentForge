@@ -8,6 +8,10 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
 import { writeMemoryEntry, readMemoryEntries, type GateVerdictMetadata } from '../../memory/types.js';
+import {
+  appendLessonAttributions,
+  readLessonAttributions,
+} from '../../memory/lesson-attribution.js';
 import { collectSprintItemTags } from './sprint-utils.js';
 import {
   formatExecuteReviewTargets,
@@ -717,6 +721,31 @@ Respond as JSON: { "verdict": "APPROVE" | "REJECT", "rationale": "..." }`;
       ...sprintDomainTags,
     ],
   });
+
+  // Phase 0 — lesson-attribution: augment existing rows with gate verdict.
+  // Read attribution rows written by execute-phase for this cycle; append
+  // new rows with gateVerdict filled in. Non-fatal: never blocks the gate.
+  if (ctx.cycleId) {
+    try {
+      const existingRows = readLessonAttributions(ctx.projectRoot).filter(
+        (r) => r.cycleId === ctx.cycleId,
+      );
+      if (existingRows.length > 0) {
+        const augmentedRows = existingRows.map((r) => ({
+          cycleId: r.cycleId,
+          itemId: r.itemId,
+          agentId: r.agentId,
+          lessonId: r.lessonId,
+          lessonText: r.lessonText,
+          scope: 'cycle' as const,
+          gateVerdict: verdictNorm,
+        }));
+        appendLessonAttributions(ctx.projectRoot, augmentedRows);
+      }
+    } catch {
+      // non-fatal — gate outcome must not be affected by attribution failure
+    }
+  }
 
   if (verdict.verdict === 'REJECT') {
     throw new GateRejectedError(verdict.rationale);
