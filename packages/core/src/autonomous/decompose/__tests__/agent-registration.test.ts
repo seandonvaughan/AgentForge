@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { load } from 'js-yaml';
 
@@ -15,8 +15,14 @@ describe('epic-planner agent registration', () => {
     expect(y.system_prompt.length).toBeGreaterThan(100);
   });
 
-  it('claude agent md has opus frontmatter', () => {
-    const md = readFileSync(join(ROOT, '.claude/agents/epic-planner.md'), 'utf8');
+  it('claude agent md (when generated) has opus frontmatter', () => {
+    // `.claude/` is gitignored; the .md is generated from the committed
+    // .agentforge yaml. Assert it only when present so a fresh checkout (CI)
+    // does not fail — the committed-yaml test above is the authoritative
+    // opus check (project lesson #7: assert behaviour, not generated files).
+    const mdPath = join(ROOT, '.claude/agents/epic-planner.md');
+    if (!existsSync(mdPath)) return;
+    const md = readFileSync(mdPath, 'utf8');
     expect(md).toMatch(/name:\s*epic-planner/);
     expect(md).toMatch(/model:\s*opus/);
   });
