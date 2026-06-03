@@ -409,6 +409,7 @@ export class WorkspaceAdapter {
     const db = new Database(options.dbPath);
     try {
       db.pragma('journal_mode = WAL');
+      db.pragma('busy_timeout = 5000');
       db.pragma('foreign_keys = ON');
       db.exec(WORKSPACE_DDL);
       this.db = db;
@@ -561,6 +562,10 @@ export class WorkspaceAdapter {
 
   getAllCosts(): CostRow[] {
     return this.db.prepare('SELECT * FROM costs ORDER BY created_at DESC').all() as CostRow[];
+  }
+
+  getCostsSince(sinceIso: string): CostRow[] {
+    return this.db.prepare('SELECT * FROM costs WHERE created_at >= ? ORDER BY created_at DESC').all(sinceIso) as CostRow[];
   }
 
   getAgentCosts(agentId: string): CostRow[] {
@@ -873,6 +878,16 @@ export class WorkspaceAdapter {
     return this.getRuntimeJob(id);
   }
 
+  markStaleJobsAsFailed(cutoffIso: string): number {
+    const now = nowIso();
+    const result = this.db.prepare(`
+      UPDATE runtime_jobs
+      SET status = 'failed', completed_at = COALESCE(completed_at, ?), updated_at = ?
+      WHERE status = 'running' AND updated_at < ?
+    `).run(now, now, cutoffIso);
+    return result.changes;
+  }
+
   listRuntimeJobs(filters: RuntimeJobFilters = {}): RuntimeJobRow[] {
     const conditions: string[] = [];
     const params: unknown[] = [];
@@ -1010,7 +1025,7 @@ export class WorkspaceAdapter {
         status === 'failed' ? 1 : 0,
         costUsd,
         latencyMs,
-        new Date().toISOString(),
+        nowIso(),
         agentId,
       );
     } else {
@@ -1024,7 +1039,7 @@ export class WorkspaceAdapter {
         status === 'failed' ? 1 : 0,
         costUsd,
         latencyMs,
-        new Date().toISOString(),
+        nowIso(),
       );
     }
   }
@@ -1902,6 +1917,7 @@ export class WorkspaceAdapter {
 
   // --- Lifecycle ---
 
+  /** Escape hatch for tests and migration tooling that need direct pragma/schema inspection. */
   getRawDb(): Database.Database {
     return this.db;
   }
