@@ -43,6 +43,9 @@ import { parseSelfEval } from '../self-eval/parser.js';
 import { recordSelfEval } from '../self-eval/recorder.js';
 // Wave 5 T1 — per-item intra-phase checkpoint writer.
 import { ItemCheckpointWriter } from '../checkpoint/item-checkpoint.js';
+// Phase 0 — lesson-attribution instrumentation.
+import { appendLessonAttributions } from '../../memory/lesson-attribution.js';
+import { computeLessonId } from '../../team/engine/learnings/lesson-id.js';
 
 // T4 — structured-output contract (inlined pending T1 merge onto origin/main).
 /**
@@ -408,6 +411,12 @@ interface ItemResult {
    * Additive: preserves existing fields; one entry per successful/failed run.
    */
   step_score_ids?: string[];
+  /**
+   * Phase 0 lesson-attribution — stable lesson IDs (computeLessonId) of the
+   * memory entries that were injected into this item's prompt via memoryEntries.
+   * Omitted (not set to undefined) when no memory entries were injected.
+   */
+  appliedLessons?: string[];
 }
 
 export interface ProviderUsageEntry {
@@ -1037,6 +1046,9 @@ export async function runExecutePhase(
   let totalCost = 0;
   let phaseBreakdown: CostBreakdown | undefined;
   const liveResults = new Map<string, ItemResult>();
+  // Phase 0 — lesson-attribution: maps "<itemId>:<lessonId>" → lessonText
+  // so the post-phase attribution writer can reconstruct the full entry.
+  const itemLessonTexts = new Map<string, string>();
 
   // Write an incremental execute.json snapshot so the dashboard can show
   // live cost + agent runs during the (long) execute phase instead of
@@ -1172,6 +1184,22 @@ export async function runExecutePhase(
         ctx.projectRoot,
         item.tags ?? [],
       );
+      // Phase 0 — compute stable lesson IDs for each injected memory entry.
+      // Using entry.value as the lesson text (the same text formatMemorySection
+      // renders into the prompt). Deduplicate so the same lesson isn't counted
+      // twice if it appears in multiple files.
+      // Guard: skip entries without a value (e.g. StepScore records that land
+      // in the memory dir but have no 'value' field — ParsedMemoryEntry.value
+      // is typed as string but callers may read arbitrary JSONL).
+      const appliedLessonsMap = new Map<string, string>(); // lessonId → lessonText
+      for (const e of memoryEntries) {
+        if (typeof e.value !== 'string' || e.value.length === 0) continue;
+        const lessonId = computeLessonId(e.value);
+        appliedLessonsMap.set(lessonId, e.value);
+        // Populate outer map for post-phase attribution writer
+        itemLessonTexts.set(`${item.id}:${lessonId}`, e.value);
+      }
+      const appliedLessons: string[] = [...appliedLessonsMap.keys()];
       for (let attempt = 0; attempt <= maxItemRetries; attempt++) {
         attempts = attempt + 1;
         const runtimeCwd = worktreeHandle?.path ?? ctx.projectRoot;
@@ -1405,6 +1433,8 @@ export async function runExecutePhase(
             ...(validatedOutput ? { validatedOutput } : {}),
             // T2: step score IDs for downstream traceability
             ...(stepScoreIds.length > 0 ? { step_score_ids: stepScoreIds } : {}),
+            // Phase 0: lesson IDs injected into this item's prompt
+            ...(appliedLessons.length > 0 ? { appliedLessons } : {}),
           };
           liveResults.set(item.id, completedResult as ItemResult);
           // Wave 5 T1 — write per-item checkpoint after each successful completion.
@@ -1454,6 +1484,8 @@ export async function runExecutePhase(
               error: lastError,
               agentId: item.assignee,
               ...(failStepScoreIds.length > 0 ? { step_score_ids: failStepScoreIds } : {}),
+              // Phase 0: lesson IDs injected into this item's prompt
+              ...(appliedLessons.length > 0 ? { appliedLessons } : {}),
             };
             liveResults.set(item.id, failedResult as ItemResult);
             // Wave 5 T1 — write per-item checkpoint after each failure (final attempt).
@@ -1694,6 +1726,40 @@ export async function runExecutePhase(
       error: s.reason instanceof Error ? s.reason.message : String(s.reason),
     };
   });
+
+  // ---- Phase 0: write lesson-attribution rows (one per item × appliedLesson) ----
+  // This is non-fatal: attribution failures never block the cycle.
+  if (ctx.cycleId) {
+    try {
+      const attributionRows: Parameters<typeof appendLessonAttributions>[1] = [];
+      for (const result of itemResults) {
+        const itemR = result as ItemResult & { agentId?: string };
+        const agentId = (itemR.agentId ?? '') as string;
+        const lessons = Array.isArray(result.appliedLessons) ? result.appliedLessons : [];
+        for (const lessonId of lessons) {
+          // Find the original lesson text for this lessonId from the collected
+          // memory entries. We stored all (itemId → appliedLessons[]) as IDs;
+          // we need the text too. Re-derive from the flat attribution map built
+          // per item above. Since this loop is outside the per-item closure,
+          // we search the full itemLessonTexts map.
+          const lessonText = itemLessonTexts.get(`${result.itemId}:${lessonId}`) ?? '';
+          attributionRows.push({
+            cycleId: ctx.cycleId,
+            itemId: result.itemId,
+            agentId,
+            lessonId,
+            lessonText,
+            scope: 'cycle',
+          });
+        }
+      }
+      if (attributionRows.length > 0) {
+        appendLessonAttributions(ctx.projectRoot, attributionRows);
+      }
+    } catch {
+      // non-fatal
+    }
+  }
 
   // ---- Compute phase status ----
   const total = itemResults.length;
