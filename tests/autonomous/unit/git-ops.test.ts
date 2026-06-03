@@ -328,4 +328,62 @@ describe('GitOps safety guards', () => {
     await expect(ops.stage(['does-not-exist-1.ts', 'does-not-exist-2.ts']))
       .rejects.toThrow(/No addable files/i);
   });
+
+  it('commit refuses staged diffs exceeding maxLinesPerCommit (throws GitSafetyError)', async () => {
+    const config = {
+      ...DEFAULT_CYCLE_CONFIG.git,
+      maxLinesPerCommit: 5,
+    };
+    const logger = new CycleLogger(tmpRepo, cycleId);
+    const ops = new GitOps(tmpRepo, config, logger);
+    await ops.createBranch('6.4.0');
+    // 10 added lines (>> ceiling of 5).
+    const body = Array.from({ length: 10 }, (_, i) => `export const x${i} = ${i};`).join('\n') + '\n';
+    writeFileSync(join(tmpRepo, 'big.ts'), body);
+    await ops.stage(['big.ts']);
+    await expect(ops.commit('autonomous: too big')).rejects.toThrow(GitSafetyError);
+    await expect(ops.commit('autonomous: too big')).rejects.toThrow(/maxLinesPerCommit/);
+  });
+
+  it('commit succeeds when staged diff is at or below maxLinesPerCommit', async () => {
+    const config = {
+      ...DEFAULT_CYCLE_CONFIG.git,
+      maxLinesPerCommit: 50,
+    };
+    const logger = new CycleLogger(tmpRepo, cycleId);
+    const ops = new GitOps(tmpRepo, config, logger);
+    await ops.createBranch('6.4.0');
+    writeFileSync(join(tmpRepo, 'small.ts'), 'export const x = 1;\n');
+    await ops.stage(['small.ts']);
+    const sha = await ops.commit('autonomous: small diff');
+    expect(sha).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  it('parseNumstatLine treats binary rows (`-`) as 0 lines and never returns NaN', () => {
+    // Mixed numeric, binary, and malformed rows. The binary row must contribute
+    // 0 (not NaN). The parser must not produce NaN for any well-formed git
+    // numstat input.
+    expect(GitOps.parseNumstatLine('5\t3\tsrc/a.ts')).toBe(8);
+    const binaryRow = ['-', '-', 'assets/logo.png'].join('\t');
+    expect(GitOps.parseNumstatLine(binaryRow)).toBe(0);
+    expect(Number.isNaN(GitOps.parseNumstatLine(binaryRow))).toBe(false);
+    // Malformed / short rows must also be safe.
+    expect(GitOps.parseNumstatLine('')).toBe(0);
+    expect(GitOps.parseNumstatLine('10')).toBe(0);
+  });
+
+  it('stagedChangedLineCount counts text rows and treats binary as zero', async () => {
+    const ops = makeOps();
+    await ops.createBranch('6.4.0');
+    // Add a real binary file (PNG signature) and a text file. PNG is detected
+    // by git as binary so its numstat row is `-\t-\tpath`.
+    const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x01, 0x02]);
+    writeFileSync(join(tmpRepo, 'logo.png'), pngSignature);
+    writeFileSync(join(tmpRepo, 'note.ts'), 'export const x = 1;\nexport const y = 2;\n');
+    await ops.stage(['logo.png', 'note.ts']);
+    const total = await ops.stagedChangedLineCount();
+    // Only the 2 added lines of note.ts count; the PNG contributes 0.
+    expect(total).toBe(2);
+    expect(Number.isNaN(total)).toBe(false);
+  });
 });

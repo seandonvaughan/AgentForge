@@ -63,6 +63,18 @@ export interface CycleConfig {
     refuseCommitToBaseBranch: boolean;
     includeDiagnosticBranchOnFailure: boolean;
     maxFilesPerCommit: number;
+    /**
+     * Hard ceiling on the total number of changed lines (additions + deletions)
+     * in a single commit's staged diff. Computed deterministically via
+     * `git diff --cached --numstat`. Binary files contribute 0 lines.
+     *
+     * Sibling to maxFilesPerCommit: a runaway agent can blow up a single file
+     * by thousands of lines and stay under the file-count cap. This is the
+     * coarse blast-radius guard for that failure mode. Enforced fail-closed
+     * inside GitOps.commit() — exceeding the ceiling throws GitSafetyError
+     * before the commit is created.
+     */
+    maxLinesPerCommit: number;
   };
   pr: {
     draft: boolean;
