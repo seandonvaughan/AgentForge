@@ -122,6 +122,10 @@ export interface ScoredEntry {
   score: number;
   severity: ProposedLearning["severity"];
   roleMatched: boolean;
+  /** Outcome confidence from Beta(1,1) posterior — injected by curator, not scorer. */
+  outcomeConfidence?: number;
+  /** Number of cycle×item observations for this lesson. */
+  attributedAppearances?: number;
 }
 
 /**

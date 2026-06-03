@@ -20,6 +20,10 @@ export interface ProposedLearning {
   rationale: 'role-tag' | 'subsystem' | 'recurring-pattern' | 'cross-agent';
   /** ISO timestamp of the source entry. */
   sourceCreatedAt: string;
+  /** Beta(1,1) outcome confidence, present only when attribution data exists. */
+  outcomeConfidence?: number;
+  /** Number of cycle×item observations for this lesson — present only when attribution data exists. */
+  attributedAppearances?: number;
 }
 
 export interface CurationInput {
