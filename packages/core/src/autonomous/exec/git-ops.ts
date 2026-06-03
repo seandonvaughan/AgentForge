@@ -5,7 +5,7 @@
 // a safety guard that has a corresponding negative test in
 // tests/autonomous/unit/git-ops.test.ts.
 //
-// Eleven safety guarantees encoded in `GitOps`:
+// Twelve safety guarantees encoded in `GitOps`:
 // 1. Never runs in a non-git directory.
 // 2. Never commits if there are no changes.
 // 3. Never commits directly to `main` (or configured `baseBranch`).
@@ -19,6 +19,10 @@
 // 10. All subprocess calls use `execFile`, never `exec` — no shell parsing.
 // 11. Filters unreachable pathspecs before `git add` so a single stale file
 //     in the execute-phase output does not roll back the entire stage.
+// 12. Refuses commits whose total staged changed-lines (additions + deletions
+//     across the cached diff, via `git diff --cached --numstat`) exceeds
+//     `maxLinesPerCommit`. Sibling guard to `maxFilesPerCommit`; closes the
+//     "single runaway file" blast-radius gap.
 //
 // See docs/superpowers/specs/2026-04-06-autonomous-loop-design.md §8.2
 // and docs/superpowers/plans/2026-04-06-autonomous-loop.md Task 11.
@@ -212,6 +216,54 @@ export class GitOps {
     return new Set(files);
   }
 
+  /**
+   * Parse a single `git diff --cached --numstat` row into a numeric line count.
+   * Numstat rows are tab-separated `added\tdeleted\tpath`. Binary files emit
+   * `-\t-\tpath`; we count those as 0 to avoid NaN. Any non-numeric token is
+   * treated as 0 (fail-safe; never produces NaN).
+   *
+   * Exposed as a static helper so the parser can be covered in isolation.
+   */
+  static parseNumstatLine(line: string): number {
+    const parts = line.split('\t');
+    if (parts.length < 3) return 0;
+    const added = Number.parseInt(parts[0] ?? '', 10);
+    const deleted = Number.parseInt(parts[1] ?? '', 10);
+    const safeAdded = Number.isFinite(added) ? added : 0;
+    const safeDeleted = Number.isFinite(deleted) ? deleted : 0;
+    return safeAdded + safeDeleted;
+  }
+
+  /**
+   * Total changed lines (added + deleted) across the cached/staged diff,
+   * computed deterministically from `git diff --cached --numstat`. Binary
+   * files contribute 0. Never returns NaN.
+   */
+  async stagedChangedLineCount(): Promise<number> {
+    const { stdout } = await this.git(['diff', '--cached', '--numstat']);
+    let total = 0;
+    for (const line of stdout.split('\n')) {
+      if (line.length === 0) continue;
+      total += GitOps.parseNumstatLine(line);
+    }
+    return total;
+  }
+
+  /**
+   * Fail-closed pre-commit guard. Throws GitSafetyError when the staged
+   * changed-line total exceeds `maxLinesPerCommit`. At or below the ceiling
+   * is a no-op.
+   */
+  async enforceLineCeiling(): Promise<void> {
+    const ceiling = this.config.maxLinesPerCommit;
+    const changed = await this.stagedChangedLineCount();
+    if (changed > ceiling) {
+      throw new GitSafetyError(
+        `REFUSED: ${changed} changed lines exceeds maxLinesPerCommit (${ceiling})`,
+      );
+    }
+  }
+
   async scanStagedForSecrets(): Promise<void> {
     const diff = (await this.git(['diff', '--cached'])).stdout;
     for (const pattern of SECRET_PATTERNS) {
@@ -232,6 +284,11 @@ export class GitOps {
 
     // Secret scan before commit
     await this.scanStagedForSecrets();
+
+    // Changed-line blast-radius guard (sibling to maxFilesPerCommit). Throws
+    // GitSafetyError BEFORE the commit is created when the staged diff
+    // exceeds maxLinesPerCommit.
+    await this.enforceLineCeiling();
 
     // Commit via stdin to avoid shell escaping
     await gitWithStdin(['commit', '-F', '-'], this.cwd, message);

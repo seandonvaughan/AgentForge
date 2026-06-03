@@ -46,6 +46,12 @@ export const DEFAULT_CYCLE_CONFIG: CycleConfig = Object.freeze({
     refuseCommitToBaseBranch: true,
     includeDiagnosticBranchOnFailure: true,
     maxFilesPerCommit: 100,
+    // Per-commit changed-line ceiling (additions + deletions, summed over
+    // the staged diff). Sibling to maxFilesPerCommit: a single runaway file
+    // can blow past tens of thousands of lines while still under the
+    // file-count cap. 4000 covers the largest legitimate generated-file
+    // updates we have observed without giving cover to true runaway diffs.
+    maxLinesPerCommit: 4000,
   }),
   pr: Object.freeze({
     draft: false,
@@ -195,6 +201,12 @@ function validateConfig(config: CycleConfig): void {
   }
   if (typeof config.git.baseBranch !== 'string') {
     throw new Error('git.baseBranch must be a string');
+  }
+  if (typeof config.git.maxFilesPerCommit !== 'number' || config.git.maxFilesPerCommit <= 0) {
+    throw new Error('git.maxFilesPerCommit must be a positive number');
+  }
+  if (typeof config.git.maxLinesPerCommit !== 'number' || config.git.maxLinesPerCommit <= 0) {
+    throw new Error('git.maxLinesPerCommit must be a positive number');
   }
   if (config.prMode !== undefined && config.prMode !== 'single' && config.prMode !== 'multi') {
     throw new Error('prMode must be "single" or "multi"');
