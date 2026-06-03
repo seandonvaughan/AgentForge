@@ -16,6 +16,12 @@ import { readMemoryEntries } from "./memory-reader.js";
 import type { MemoryEntry } from "./memory-reader.js";
 import { scoreEntry, parseSeverity } from "./scorer.js";
 import type { CurationInput, CurationResult, ProposedLearning } from "./types.js";
+import { computeLessonId } from "./lesson-id.js";
+import {
+  aggregateLessonOutcomes,
+  computeOutcomeConfidence,
+  readLessonAttributions,
+} from "../../../memory/lesson-attribution.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -278,6 +284,9 @@ export async function curateLearnings(opts: CurationInput): Promise<CurationResu
     "failure-pattern": failurePatternEntries.slice(0, maxEntriesPerSource),
   };
 
+  // Phase 1: load outcome attribution stats (empty map when no attribution file exists)
+  const attribution = aggregateLessonOutcomes(readLessonAttributions(projectRoot));
+
   // Build sourcesScanned metadata
   const sourcesScanned: CurationResult["sourcesScanned"] = MEMORY_TYPES.map((type) => {
     const filePath = join(projectRoot, ".agentforge", "memory", `${type}.jsonl`);
@@ -329,6 +338,16 @@ export async function curateLearnings(opts: CurationInput): Promise<CurationResu
         ? "role-tag"
         : deriveRationale(entry, agentTags);
 
+      // Phase 1: look up outcome attribution for this lesson
+      const lessonId = computeLessonId(lesson);
+      const outcomeStats = attribution.get(lessonId);
+      const outcomeFields = outcomeStats !== undefined
+        ? {
+            outcomeConfidence: computeOutcomeConfidence(outcomeStats.passes, outcomeStats.appearances),
+            attributedAppearances: outcomeStats.appearances,
+          }
+        : {};
+
       proposals.push({
         agentId,
         lesson,
@@ -337,14 +356,30 @@ export async function curateLearnings(opts: CurationInput): Promise<CurationResu
         severity: severity ?? parseSeverity(entry),
         rationale,
         sourceCreatedAt: entry.createdAt ?? new Date(0).toISOString(),
+        ...outcomeFields,
       });
 
       scoredCountByType[entry.type] = (scoredCountByType[entry.type] ?? 0) + 1;
     }
 
-    // Sort by score descending; cap at CAP_PER_AGENT
-    proposals.sort((a, b) => b.score - a.score);
-    byAgent[agentId] = proposals.slice(0, CAP_PER_AGENT);
+    // Phase 1: durable-slot gate
+    // Lessons with enough outcome data and high confidence get promoted to the
+    // front (durable slots).  When attribution is absent or sparse, eligible is
+    // empty and the output is byte-identical to the baseline sort-and-cap.
+    const N_MIN = 3;
+    const CONF_FLOOR = 0.6;
+    const DURABLE_SLOTS = 8;
+
+    const eligible = proposals.filter(
+      (p) => (p.attributedAppearances ?? 0) >= N_MIN && (p.outcomeConfidence ?? 0) >= CONF_FLOOR,
+    );
+    eligible.sort((a, b) => (b.outcomeConfidence! - a.outcomeConfidence!) || (b.score - a.score));
+    const durable = eligible.slice(0, DURABLE_SLOTS);
+    const durableIds = new Set(durable.map((p) => p.sourceId));
+    const fallback = proposals
+      .filter((p) => !durableIds.has(p.sourceId))
+      .sort((a, b) => b.score - a.score);
+    byAgent[agentId] = [...durable, ...fallback].slice(0, CAP_PER_AGENT);
   }
 
   // Update scored counts in sourcesScanned

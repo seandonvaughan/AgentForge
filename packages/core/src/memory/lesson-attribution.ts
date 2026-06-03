@@ -150,3 +150,73 @@ export function readLessonAttributions(projectRoot: string): LessonAttributionEn
     return [];
   }
 }
+
+// ---------------------------------------------------------------------------
+// Phase 1 — outcome-correlated promotion helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Outcome statistics for a single lesson.
+ */
+export interface LessonOutcomeStats {
+  appearances: number;
+  passes: number;
+  outcomeConfidence: number;
+}
+
+/**
+ * Beta(1,1) posterior mean, clamped to [0.05, 0.95].
+ *
+ * With zero data this returns 0.5 (uniform prior — "don't know").
+ * As passes and appearances grow the estimate converges toward the true rate,
+ * but is always kept within the clamp so extreme values (all-pass / all-fail)
+ * don't fully dominate the score.
+ */
+export function computeOutcomeConfidence(passes: number, appearances: number): number {
+  const conf = (passes + 1) / (appearances + 2);
+  return Math.min(0.95, Math.max(0.05, conf));
+}
+
+/**
+ * Aggregate raw attribution rows into a per-lessonId outcome map.
+ *
+ * Deduplication rules (matching the Phase 0 spec):
+ *   - Group rows by composite key `${cycleId} ${itemId} ${lessonId}`.
+ *   - Within each group keep only the latest row (by `ts`) that has a
+ *     `gateVerdict` set (rows without a verdict have not been augmented yet
+ *     and do NOT count as appearances).
+ *   - One group = one appearance.
+ *   - A "pass" = gateVerdict === 'approved' AND verifyPassed !== false.
+ *
+ * Returns a Map keyed by lessonId → { passes, appearances }.
+ */
+export function aggregateLessonOutcomes(
+  rows: LessonAttributionEntry[],
+): Map<string, { passes: number; appearances: number }> {
+  // Group rows by composite key → keep the latest row with a gateVerdict
+  const latestByKey = new Map<string, LessonAttributionEntry>();
+
+  for (const row of rows) {
+    // Only rows with a gateVerdict contribute to outcome statistics
+    if (row.gateVerdict === undefined) continue;
+
+    const key = `${row.cycleId} ${row.itemId} ${row.lessonId}`;
+    const existing = latestByKey.get(key);
+    if (existing === undefined || row.ts > existing.ts) {
+      latestByKey.set(key, row);
+    }
+  }
+
+  // Aggregate into per-lessonId pass/appearance counts
+  const result = new Map<string, { passes: number; appearances: number }>();
+
+  for (const row of latestByKey.values()) {
+    const stats = result.get(row.lessonId) ?? { passes: 0, appearances: 0 };
+    stats.appearances += 1;
+    const isPassed = row.gateVerdict === 'approved' && row.verifyPassed !== false;
+    if (isPassed) stats.passes += 1;
+    result.set(row.lessonId, stats);
+  }
+
+  return result;
+}
