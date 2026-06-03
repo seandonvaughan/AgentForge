@@ -172,7 +172,7 @@ describe('GET /api/v5/agents', () => {
       modelProfile: {
         provider: 'codex-cli',
         tier: 'sonnet',
-        modelId: 'gpt-5.3-codex',
+        modelId: 'gpt-5.5',
         effort: 'high',
       },
     });

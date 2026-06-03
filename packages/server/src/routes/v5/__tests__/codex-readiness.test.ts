@@ -71,7 +71,7 @@ describe('GET /api/v5/codex/readiness', () => {
     expect(loginCheck?.ok).toBeNull();
     expect(body.data.agents[0]).toMatchObject({
       agentId: 'coder',
-      codexModel: 'gpt-5.3-codex',
+      codexModel: 'gpt-5.5',
       codexEffort: 'high',
       valid: true,
     });

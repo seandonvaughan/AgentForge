@@ -41,7 +41,7 @@ providers:
         model: gpt-5.5
         effort: xhigh
       sonnet:
-        model: gpt-5.3-codex
+        model: gpt-5.5
         effort: high
       haiku:
         model: gpt-5.4-mini

@@ -10,12 +10,19 @@ import type {
 import { MODEL_IDS } from '../agent-runtime/types.js';
 
 export const DEFAULT_CODEX_MODEL_ID = 'gpt-5.3-codex';
+// codex-cli authenticates against a ChatGPT (Max/Pro) account, which REJECTS
+// the `-codex` model variants with `400 invalid_request_error: The
+// 'gpt-5.3-codex' model is not supported when using Codex with a ChatGPT
+// account`. Use a plain supported model for the codex-cli profile. The
+// openai-sdk (API-key) transport keeps DEFAULT_CODEX_MODEL_ID, where the
+// -codex models are valid.
+export const DEFAULT_CODEX_CLI_MODEL_ID = 'gpt-5.5';
 export const DEFAULT_OPUS_MODEL_ID = 'gpt-5.5';
 export const DEFAULT_HAIKU_MODEL_ID = 'gpt-5.4-mini';
 
 const CODEX_DEFAULTS: Record<ModelTier, ProviderModelProfile> = {
   opus: { modelId: DEFAULT_OPUS_MODEL_ID, effort: 'xhigh' },
-  sonnet: { modelId: DEFAULT_CODEX_MODEL_ID, effort: 'high' },
+  sonnet: { modelId: DEFAULT_CODEX_CLI_MODEL_ID, effort: 'high' },
   haiku: { modelId: DEFAULT_HAIKU_MODEL_ID, effort: 'medium' },
 };
 

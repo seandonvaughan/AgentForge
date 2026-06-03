@@ -11,7 +11,7 @@ describe('Codex/OpenAI model profiles', () => {
       effort: 'xhigh',
     });
     expect(resolveProviderModelProfile('codex-cli', 'sonnet', undefined, {}, '.')).toEqual({
-      modelId: 'gpt-5.3-codex',
+      modelId: 'gpt-5.5',
       effort: 'high',
     });
     expect(resolveProviderModelProfile('codex-cli', 'haiku', undefined, {}, '.')).toEqual({
@@ -43,7 +43,7 @@ describe('Codex/OpenAI model profiles', () => {
   it('uses per-agent effort for Codex/OpenAI profiles when env and config do not override it', () => {
     const projectRootWithoutConfig = join(tmpdir(), 'agentforge-no-model-config');
     expect(resolveProviderModelProfile('codex-cli', 'sonnet', 'low', {}, projectRootWithoutConfig)).toEqual({
-      modelId: 'gpt-5.3-codex',
+      modelId: 'gpt-5.5',
       effort: 'low',
     });
     expect(resolveProviderModelProfile('openai-sdk', 'sonnet', 'low', {}, projectRootWithoutConfig)).toEqual({
