@@ -124,6 +124,7 @@ export interface SynthesizeTeamOptions {
 
 const ROSTER_MIN = 12;
 const ROSTER_MAX = 30;
+const LEARNINGS_SEED_MAX = 8;
 const PR_MERGE_MANAGER_ID = "pr-merge-manager";
 
 // ---------------------------------------------------------------------------
@@ -295,7 +296,7 @@ function buildAgentYaml(agent: TeamPlanAgent): Record<string, unknown> {
       auto_include: agent.auto_include_files,
       project_specific: agent.owns_subsystems,
     },
-    learnings: agent.learnings_seed,
+    learnings: agent.learnings_seed.slice(0, LEARNINGS_SEED_MAX),
     owns_subsystems: agent.owns_subsystems,
     capability_tags: agent.capability_tags,
     ...(agent.skill_ids && agent.skill_ids.length > 0 ? { skill_ids: agent.skill_ids } : {}),

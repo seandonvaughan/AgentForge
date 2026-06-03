@@ -122,7 +122,11 @@ async function makeTmpRoot(): Promise<string> {
 }
 
 /** Build a valid TeamPlan JSON with a given agent count. */
-function buildTeamPlanJson(agentCount: number, includePmm = true): string {
+function buildTeamPlanJson(
+  agentCount: number,
+  includePmm = true,
+  architectLearningsSeed = ["watch for concurrent write conflicts in audit.db"],
+): string {
   const agents: TeamPlanAgent[] = [];
 
   if (includePmm) {
@@ -149,7 +153,7 @@ function buildTeamPlanJson(agentCount: number, includePmm = true): string {
     system_prompt:
       "You are the architect. Primary files: `packages/server/src/server.ts`, `packages/dashboard/src/routes/+layout.svelte`.",
     auto_include_files: ["packages/server/src/server.ts"],
-    learnings_seed: ["watch for concurrent write conflicts in audit.db"],
+    learnings_seed: architectLearningsSeed,
   });
 
   // Fill up to agentCount with implementation agents
@@ -436,6 +440,44 @@ describe("synthesizeTeam", () => {
         expect(parsed.name).toBe(agent.id);
         expect(parsed.model).toBe(agent.tier);
       }
+    });
+
+    it("caps emitted agent YAML learnings to 8 seed lessons", async () => {
+      const projectRoot = await makeTmpRoot();
+      const runtime = mockRuntime(
+        buildTeamPlanJson(12, true, [
+          "l1",
+          "l2",
+          "l3",
+          "l4",
+          "l5",
+          "l6",
+          "l7",
+          "l8",
+          "l9",
+          "l10",
+          "l11",
+          "l12",
+        ]),
+      );
+
+      const plan = await synthesizeTeam(buildOpts(runtime, projectRoot));
+
+      const writtenAgentPath = join(
+        projectRoot,
+        ".agentforge",
+        "agents",
+        "architect.yaml",
+      );
+      const content = await readFile(writtenAgentPath, "utf-8");
+      const learnings = (yaml.load(content) as { learnings: string[] }).learnings;
+
+      expect(
+        plan.agents.find((agent) => agent.id === "architect")?.learnings_seed,
+      ).toHaveLength(12);
+      expect(learnings).toHaveLength(8);
+      expect(learnings[7]).toBe("l8");
+      expect(learnings[8]).toBeUndefined();
     });
 
     it("creates .claude/agents/<id>.md per agent", async () => {
