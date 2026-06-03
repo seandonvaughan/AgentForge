@@ -8,6 +8,29 @@ type EmbeddingPipeline = (text: string | string[]) => Promise<EmbeddingOutput[]>
 let pipeline: EmbeddingPipeline | undefined;
 let pipelinePromise: Promise<EmbeddingPipeline> | undefined;
 
+/** Cached result of the @xenova/transformers availability probe. */
+let _realAvailableCache: boolean | undefined;
+
+/**
+ * Returns true if the real @xenova/transformers model is available in this
+ * environment, false if only the hash-based fallback will be used.
+ *
+ * The result is cached after the first call so subsequent calls are
+ * synchronous-cost (no extra import).  Use this to gate semantic reranking —
+ * hash embeddings would DEGRADE recall below deterministic tag-match order and
+ * must never be used for reranking.
+ */
+export async function isRealEncoderAvailable(): Promise<boolean> {
+  if (_realAvailableCache !== undefined) return _realAvailableCache;
+  try {
+    await import('@xenova/transformers');
+    _realAvailableCache = true;
+  } catch {
+    _realAvailableCache = false;
+  }
+  return _realAvailableCache;
+}
+
 const MODEL_ID = 'Xenova/all-MiniLM-L6-v2';
 
 function isEmbeddingOutput(value: unknown): value is EmbeddingOutput {

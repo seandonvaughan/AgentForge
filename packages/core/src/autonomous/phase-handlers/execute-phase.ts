@@ -46,6 +46,8 @@ import { ItemCheckpointWriter } from '../checkpoint/item-checkpoint.js';
 // Phase 0 — lesson-attribution instrumentation.
 import { appendLessonAttributions } from '../../memory/lesson-attribution.js';
 import { computeLessonId } from '../../team/engine/learnings/lesson-id.js';
+// Gem #2 — semantic reranking of memory entries.
+import { rankMemoriesBySemantic } from './semantic-memory.js';
 
 // T4 — structured-output contract (inlined pending T1 merge onto origin/main).
 /**
@@ -1180,10 +1182,17 @@ export async function runExecutePhase(
 
       // Read tag-filtered memory entries once per item (before retry loop) so
       // every attempt benefits from the same historical context.
-      const memoryEntries = readRelevantMemoryEntries(
+      const tagFilteredEntries = readRelevantMemoryEntries(
         ctx.projectRoot,
         item.tags ?? [],
       );
+      // Gem #2 — semantically rerank if the real embedding model is available.
+      // Falls back to tag-match order (byte-identical) when @xenova/transformers
+      // is absent or on any error — never degrades below the deterministic floor.
+      const itemText = item.description
+        ? `${item.title} ${item.description}`
+        : item.title;
+      const memoryEntries = await rankMemoriesBySemantic(itemText, tagFilteredEntries);
       // Phase 0 — compute stable lesson IDs for each injected memory entry.
       // Using entry.value as the lesson text (the same text formatMemorySection
       // renders into the prompt). Deduplicate so the same lesson isn't counted
