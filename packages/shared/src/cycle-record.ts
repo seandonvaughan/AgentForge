@@ -13,17 +13,27 @@ import { join } from 'node:path';
 // ── CycleRecord ────────────────────────────────────────────────────────────
 
 /**
+ * Heartbeat-derived health status for an autonomous cycle.
+ */
+export type CycleStaleness = 'healthy' | 'stale' | 'dead' | 'unknown';
+
+/**
  * The normalised in-memory representation of one autonomous cycle.
  * Fields are optional because not every cycle reaches every milestone (e.g. a
  * cycle aborted before tests run will have no `tests` entry).
  */
 export interface CycleRecord {
+  /** Stable identifier for the autonomous cycle. */
   cycleId: string;
   sprintVersion?: string | undefined;
   stage?: string | undefined;
   startedAt?: string | undefined;
   completedAt?: string | undefined;
   durationMs?: number | undefined;
+  /** Most recent heartbeat timestamp written by the cycle runner. */
+  lastHeartbeatAt?: string;
+  /** Health classification derived from `lastHeartbeatAt`. */
+  staleness?: CycleStaleness;
   cost?: { totalUsd?: number; budgetUsd?: number } | undefined;
   tests?: { passed?: number; failed?: number; total?: number; passRate?: number } | undefined;
   git?: { branch?: string; commitSha?: string; filesChanged?: string[] } | undefined;
@@ -33,6 +43,23 @@ export interface CycleRecord {
 // ── Internal types ─────────────────────────────────────────────────────────
 
 interface CycleEvent { type: string; at?: string; [key: string]: unknown }
+
+function isCycleStaleness(value: unknown): value is CycleStaleness {
+  return value === 'healthy' || value === 'stale' || value === 'dead' || value === 'unknown';
+}
+
+function readHeartbeatMetadata(source: Record<string, unknown>): Pick<CycleRecord, 'lastHeartbeatAt' | 'staleness'> {
+  const lastHeartbeatAt = typeof source['lastHeartbeatAt'] === 'string'
+    ? source['lastHeartbeatAt']
+    : undefined;
+  if (lastHeartbeatAt === undefined) return {};
+
+  const staleness = isCycleStaleness(source['staleness']) ? source['staleness'] : undefined;
+  return {
+    lastHeartbeatAt,
+    ...(staleness !== undefined ? { staleness } : {}),
+  };
+}
 
 // ── readCycleRecord ────────────────────────────────────────────────────────
 
@@ -52,7 +79,14 @@ export function readCycleRecord(cycleDir: string, cycleId: string): CycleRecord 
   const cycleFile = join(cycleDir, 'cycle.json');
   if (existsSync(cycleFile)) {
     try {
-      return JSON.parse(readFileSync(cycleFile, 'utf-8')) as CycleRecord;
+      const raw = JSON.parse(readFileSync(cycleFile, 'utf-8')) as Record<string, unknown>;
+      const record = { ...raw };
+      delete record['lastHeartbeatAt'];
+      delete record['staleness'];
+      return {
+        ...record,
+        ...readHeartbeatMetadata(raw),
+      } as CycleRecord;
     } catch { /* fall through to event-stream reader */ }
   }
 
@@ -79,6 +113,7 @@ export function readCycleRecord(cycleDir: string, cycleId: string): CycleRecord 
   const prEvt          = find(['pr.opened', 'opened']);
   const complete       = find('cycle.complete');
   const firstPhase     = find('phase.start');
+  const heartbeat      = [...events].reverse().find(e => typeof e.lastHeartbeatAt === 'string');
 
   // sprintVersion: prefer events, fall back to sprint-link.json
   let sprintVersion: string | undefined =
@@ -120,5 +155,6 @@ export function readCycleRecord(cycleDir: string, cycleId: string): CycleRecord 
     pr: prEvt
       ? { url: prEvt.url as string | null, number: prEvt.number as number | null }
       : undefined,
+    ...readHeartbeatMetadata(heartbeat ?? {}),
   };
 }
