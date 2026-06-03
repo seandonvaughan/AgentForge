@@ -326,7 +326,8 @@ The following capabilities shipped in the v23.5 night-shift arc and are availabl
 
 ### Per-item resume (T1)
 
-Each cycle item writes a checkpoint to `.agentforge/cycles/<id>/checkpoints/<item-id>.json`.
+Each cycle item's completion is recorded in `.agentforge/cycles/<id>/checkpoint-execute.json`
+(aggregated `completedItemIds[]`). Phase-level resume state is in `checkpoint-cycle.json`.
 Use `--resume <cycle-id>` to re-enter a cycle at the first incomplete item.
 Stale checkpoints (>72 h) block unattended runs unless `--resume` is explicitly passed.
 

@@ -9,7 +9,7 @@
 //   - Crash-resume: skip items in completedItemIds, re-run remaining
 //   - Invalid cycleId / itemId segments rejected (match-then-use)
 
-import { mkdtempSync, rmSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -31,7 +31,7 @@ function makeTmpRoot(): string {
 const CYCLE_ID = 'cycle-abcd1234';
 
 function checkpointPath(root: string): string {
-  return join(root, '.agentforge', 'cycles', CYCLE_ID, 'checkpoint.json');
+  return join(root, '.agentforge', 'cycles', CYCLE_ID, 'checkpoint-execute.json');
 }
 
 function readProgress(root: string): ExecuteProgress {
@@ -87,7 +87,7 @@ describe('ItemCheckpointWriter', () => {
     const { readdirSync } = await import('node:fs');
     const files = readdirSync(dir);
     expect(files.some((f) => f.endsWith('.tmp'))).toBe(false);
-    expect(files).toContain('checkpoint.json');
+    expect(files).toContain('checkpoint-execute.json');
   });
 
   // ── Deduplication ──────────────────────────────────────────────────────────
@@ -144,7 +144,7 @@ describe('ItemCheckpointWriter', () => {
 
       // Checkpoint must be valid JSON.
       const raw = readFileSync(
-        join(localRoot, '.agentforge', 'cycles', CYCLE_ID, 'checkpoint.json'),
+        join(localRoot, '.agentforge', 'cycles', CYCLE_ID, 'checkpoint-execute.json'),
         'utf8',
       );
       let progress: ExecuteProgress;
@@ -245,5 +245,51 @@ describe('ItemCheckpointWriter', () => {
   it('safeSegment validation via readProgress on bad cycleId', () => {
     expect(ItemCheckpointWriter.readProgress(root, 'bad!!id')).toBeNull();
     expect(ItemCheckpointWriter.readProgress(root, '')).toBeNull();
+  });
+});
+
+describe('item-checkpoint filename split (PR-1)', () => {
+  let root: string;
+
+  beforeEach(() => {
+    root = makeTmpRoot();
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('writes to checkpoint-execute.json, not checkpoint.json', async () => {
+    const w = new ItemCheckpointWriter(root, 2);
+    await w.enqueue(CYCLE_ID, 'i1', 'completed');
+    await w.flush();
+    const dir = join(root, '.agentforge', 'cycles', CYCLE_ID);
+    expect(existsSync(join(dir, 'checkpoint-execute.json'))).toBe(true);
+    expect(existsSync(join(dir, 'checkpoint.json'))).toBe(false);
+  });
+
+  it('static readProgress reads checkpoint-execute.json', async () => {
+    const w = new ItemCheckpointWriter(root, 2);
+    await w.enqueue(CYCLE_ID, 'i1', 'completed');
+    await w.flush();
+    expect(ItemCheckpointWriter.getCompletedItemIds(root, CYCLE_ID).has('i1')).toBe(true);
+  });
+
+  it('read-shim: falls back to legacy checkpoint.json when new file absent', () => {
+    const dir = join(root, '.agentforge', 'cycles', CYCLE_ID);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, 'checkpoint.json'),
+      JSON.stringify({
+        cycleId: CYCLE_ID,
+        phase: 'execute',
+        completedItemIds: ['i9'],
+        currentItemId: null,
+        totalItems: 1,
+        lastUpdatedAt: new Date().toISOString(),
+        schemaVersion: 2,
+      }),
+    );
+    expect(ItemCheckpointWriter.getCompletedItemIds(root, CYCLE_ID).has('i9')).toBe(true);
   });
 });

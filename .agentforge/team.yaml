@@ -7,6 +7,7 @@ agents:
     - chief-architect
     - forge-engine-architect
     - autonomy-strategist
+    - epic-planner
   implementation:
     - fastify-v5-engineer
     - fastify-v6-shim-engineer
@@ -36,6 +37,7 @@ model_routing:
     - chief-architect
     - forge-engine-architect
     - autonomy-strategist
+    - epic-planner
   sonnet:
     - fastify-v5-engineer
     - fastify-v6-shim-engineer
@@ -60,6 +62,7 @@ model_routing:
     - memory-curator
     - file-reader
 delegation_graph:
+  epic-planner: []
   chief-architect:
     - fastify-v5-engineer
     - fastify-v6-shim-engineer

@@ -72,7 +72,9 @@ function readCheckpoint(
   const safeId = parseSafeCycleId(cycleId);
   if (!safeId) return null;
 
-  const checkpointPath = resolve(join(cyclesBaseDir, safeId, 'checkpoint.json'));
+  const newPath = resolve(join(cyclesBaseDir, safeId, 'checkpoint-execute.json'));
+  const legacyPath = resolve(join(cyclesBaseDir, safeId, 'checkpoint.json'));
+  const checkpointPath = existsSync(newPath) ? newPath : legacyPath;
   // Ensure resolved path stays inside cyclesBaseDir (no traversal)
   const rel = relative(cyclesBaseDir, checkpointPath);
   if (rel.startsWith('..') || isAbsolute(rel)) {

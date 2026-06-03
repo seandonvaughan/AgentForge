@@ -65,6 +65,7 @@ interface CycleRunOptions extends WorkspaceAwareOptions {
   effortCap?: string;
   maxAgents?: string;
   fallback?: boolean;
+  objective?: string;
 }
 
 interface CyclePreviewOptions extends WorkspaceAwareOptions {
@@ -385,6 +386,7 @@ function registerCycleRunCommand(parent: Command, commandName: string, descripti
     .option('--max-agents <count>', 'Override maximum execute-phase parallel agents')
     .option('--fallback', 'Enable runtime fallback for this cycle')
     .option('--no-fallback', 'Disable runtime fallback for this cycle')
+    .option('--objective <text>', 'Decompose a high-level objective into a dependency-ordered epic instead of a signal backlog')
     .action(runCycleAction);
 }
 
@@ -610,6 +612,7 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
         ...(disableWorktrees ? { disableWorktrees: true } : {}),
         ...(opts.dryRun ? { dryRun: { prOpener: true } } : {}),
         ...(resumeCheckpoint !== null ? { resumeCheckpoint } : {}),
+        ...(opts.objective ? { objective: opts.objective } : {}),
       });
 
       const logDir = `.agentforge/cycles/${cycleId}`;

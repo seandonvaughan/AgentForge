@@ -42,8 +42,10 @@ interface CycleCheckpoint {
 
 import { existsSync, readFileSync } from 'node:fs';
 
-function readCycleCheckpoint(dir: string): CycleCheckpoint | undefined {
-  const file = join(dir, 'checkpoint.json');
+export function readCycleCheckpoint(dir: string): CycleCheckpoint | undefined {
+  const newFile = join(dir, 'checkpoint-cycle.json');
+  const legacyFile = join(dir, 'checkpoint.json');
+  const file = existsSync(newFile) ? newFile : legacyFile;
   if (!existsSync(file)) return undefined;
   try {
     const raw = JSON.parse(readFileSync(file, 'utf-8')) as Record<string, unknown>;
@@ -121,6 +123,19 @@ describe('readCycleCheckpoint — valid file', () => {
     writeFileSync(join(tmpDir, 'checkpoint.json'), JSON.stringify(data));
     const result = readCycleCheckpoint(tmpDir);
     expect(result).not.toBeUndefined();
+    expect(result!.completedPhases).toEqual(['audit', 'plan']);
+  });
+
+  it('reads phase checkpoint from checkpoint-cycle.json', () => {
+    mkdirSync(join(tmpDir, 'cycle-abc123'), { recursive: true });
+    writeFileSync(join(tmpDir, 'cycle-abc123', 'checkpoint-cycle.json'), JSON.stringify({
+      v: 1, cycleId: 'cycle-abc123', capturedAt: '2026-05-18T10:00:00.000Z',
+      resumeFromPhase: 'execute', completedPhases: ['audit', 'plan'],
+      budgetUsd: 50, spentUsd: 5,
+    }));
+    const result = readCycleCheckpoint(join(tmpDir, 'cycle-abc123'));
+    expect(result).not.toBeUndefined();
+    expect(result!.resumeFromPhase).toBe('execute');
     expect(result!.completedPhases).toEqual(['audit', 'plan']);
   });
 });

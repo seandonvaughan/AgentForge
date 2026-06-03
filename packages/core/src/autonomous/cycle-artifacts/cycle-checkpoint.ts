@@ -81,15 +81,30 @@ function safeCycleId(raw: string): string {
 }
 
 /**
- * Resolve the absolute path to checkpoint.json for a cycle directory.
+ * Resolve the absolute path to a named checkpoint file in the cycle directory.
  * Match-then-use: we re-validate the trailing segment as a cycleId.
  */
-function resolveCheckpointPath(cycleDir: string): string {
+function resolveNamedCheckpointPath(cycleDir: string, filename: string): string {
   const parts = cycleDir.split(/[\\/]/).filter(Boolean);
   const last = parts[parts.length - 1] ?? '';
   const safeId = safeCycleId(last);
   const parentDir = cycleDir.slice(0, cycleDir.length - last.length);
-  return join(parentDir, safeId, 'checkpoint.json');
+  return join(parentDir, safeId, filename);
+}
+
+/**
+ * Resolve the absolute path to checkpoint-cycle.json for a cycle directory.
+ * Match-then-use: we re-validate the trailing segment as a cycleId.
+ */
+function resolveCheckpointPath(cycleDir: string): string {
+  return resolveNamedCheckpointPath(cycleDir, 'checkpoint-cycle.json');
+}
+
+/**
+ * Legacy single-file name, kept for the one-release read-shim.
+ */
+function resolveLegacyCheckpointPath(cycleDir: string): string {
+  return resolveNamedCheckpointPath(cycleDir, 'checkpoint.json');
 }
 
 // ---------------------------------------------------------------------------
@@ -133,29 +148,32 @@ function renameReplacingExisting(tmpPath: string, finalPath: string): void {
  * Read a checkpoint if present. Returns null on ENOENT or any IO/parse error —
  * NEVER throws. Resume is best-effort: a corrupted checkpoint must not crash
  * the runner.
+ *
+ * Tries the new path (checkpoint-cycle.json) first, then falls back to the
+ * legacy path (checkpoint.json) for backwards compatibility.
  */
 export function readCheckpoint(cycleDir: string): CycleCheckpoint | null {
-  let finalPath: string;
-  try {
-    finalPath = resolveCheckpointPath(cycleDir);
-  } catch {
-    return null;
+  for (const resolver of [resolveCheckpointPath, resolveLegacyCheckpointPath]) {
+    let finalPath: string;
+    try {
+      finalPath = resolver(cycleDir);
+    } catch {
+      return null;
+    }
+    let raw: string;
+    try {
+      raw = readFileSync(finalPath, 'utf8');
+    } catch {
+      continue; // ENOENT or unreadable — try the next candidate.
+    }
+    try {
+      const json = JSON.parse(raw);
+      const result = CycleCheckpointSchema.safeParse(json);
+      if (result.success) return result.data;
+      // Wrong schema (e.g. a legacy file that held the execute checkpoint) — skip.
+    } catch {
+      // malformed JSON — skip to next candidate.
+    }
   }
-  let raw: string;
-  try {
-    raw = readFileSync(finalPath, 'utf8');
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT') return null;
-    return null;
-  }
-
-  try {
-    const json = JSON.parse(raw);
-    const result = CycleCheckpointSchema.safeParse(json);
-    if (!result.success) return null;
-    return result.data;
-  } catch {
-    return null;
-  }
+  return null;
 }

@@ -353,7 +353,7 @@ describe('CycleRunner', () => {
     deps.mockPhaseHandlers.audit = async (ctx: any) => {
       checkpointAtAuditStart = JSON.parse(
         readFileSync(
-          join(tmpDir, '.agentforge', 'cycles', ctx.cycleId, 'checkpoint.json'),
+          join(tmpDir, '.agentforge', 'cycles', ctx.cycleId, 'checkpoint-cycle.json'),
           'utf8',
         ),
       );

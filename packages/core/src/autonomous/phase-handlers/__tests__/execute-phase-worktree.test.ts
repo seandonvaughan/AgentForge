@@ -536,7 +536,7 @@ describe('execute-phase worktree integration', () => {
     });
 
     const checkpoint = JSON.parse(
-      readFileSync(join(tmpRoot, '.agentforge', 'cycles', 'cycle-wt-1', 'checkpoint.json'), 'utf8'),
+      readFileSync(join(tmpRoot, '.agentforge', 'cycles', 'cycle-wt-1', 'checkpoint-execute.json'), 'utf8'),
     ) as { completedItemIds?: string[]; schemaVersion?: number };
     expect(checkpoint.schemaVersion).toBe(2);
     expect(checkpoint.completedItemIds).toContain('item-1');
