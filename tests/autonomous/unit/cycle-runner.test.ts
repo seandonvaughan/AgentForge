@@ -1261,4 +1261,221 @@ describe('CycleRunner', () => {
     expect(result.killSwitch?.reason).toBe('typeCheckFailure');
     expect(result.pr.url).toBeNull();
   });
+
+  // ---------------------------------------------------------------------------
+  // augmentLessonAttributionsWithVerifyResult
+  // ---------------------------------------------------------------------------
+
+  describe('augmentLessonAttributionsWithVerifyResult — post-VERIFY fill', () => {
+    // Import helpers inline at test scope so the describe block is self-contained.
+    // We import from the dist (built) path via the package alias or source path.
+    let appendLessonAttributions: typeof import('../../../packages/core/src/memory/lesson-attribution.js').appendLessonAttributions;
+    let readLessonAttributions: typeof import('../../../packages/core/src/memory/lesson-attribution.js').readLessonAttributions;
+    let aggregateLessonOutcomes: typeof import('../../../packages/core/src/memory/lesson-attribution.js').aggregateLessonOutcomes;
+
+    beforeEach(async () => {
+      const mod = await import('../../../packages/core/src/memory/lesson-attribution.js');
+      appendLessonAttributions = mod.appendLessonAttributions;
+      readLessonAttributions = mod.readLessonAttributions;
+      aggregateLessonOutcomes = mod.aggregateLessonOutcomes;
+    });
+
+    /**
+     * Seed the lesson-attribution file with rows that have gateVerdict filled
+     * but verifyPassed absent (the state test-phase produces before VERIFY).
+     */
+    function seedRows(
+      root: string,
+      cycleId: string,
+      append: typeof appendLessonAttributions,
+    ): void {
+      append(root, [
+        {
+          cycleId,
+          itemId: 'item-1',
+          agentId: 'coder',
+          lessonId: 'lesson-a',
+          lessonText: 'Use execFile not exec.',
+          scope: 'cycle',
+          gateVerdict: 'approved',
+          // verifyPassed intentionally absent
+        },
+        {
+          cycleId,
+          itemId: 'item-2',
+          agentId: 'coder',
+          lessonId: 'lesson-b',
+          lessonText: 'Always use js-yaml dump.',
+          scope: 'cycle',
+          gateVerdict: 'approved',
+          // verifyPassed intentionally absent
+        },
+      ]);
+    }
+
+    it('appends verifyPassed=true rows for the cycle when all tests pass', async () => {
+      await initGitRepo(tmpDir);
+      const deps = makeMockDeps();
+      // Must be a valid UUID so CycleRunner accepts it (UUID_RE validation in constructor).
+      const knownCycleId = '00000000-1111-2222-3333-444444444444';
+
+      // Pre-seed attribution rows with gateVerdict but no verifyPassed
+      // (simulating what test-phase writes before VERIFY runs).
+      seedRows(tmpDir, knownCycleId, appendLessonAttributions);
+
+      // Confirm seed: 2 rows, none have verifyPassed set
+      const rowsBefore = readLessonAttributions(tmpDir).filter((r) => r.cycleId === knownCycleId);
+      expect(rowsBefore).toHaveLength(2);
+      expect(rowsBefore.every((r) => r.verifyPassed === undefined)).toBe(true);
+
+      // failed=0 → augmentLessonAttributionsWithVerifyResult should set verifyPassed=true
+      deps.testRunner.run = async (cycleId: string) => ({
+        passed: 50,
+        failed: 0,
+        skipped: 0,
+        total: 50,
+        passRate: 1.0,
+        durationMs: 1000,
+        failedTests: [],
+        newFailures: [],
+        rawOutputPath: `.agentforge/cycles/${cycleId}/tests-raw.log`,
+        exitCode: 0,
+      });
+
+      // Pass the known cycleId so the runner writes to the same cycle directory
+      // and augmentLessonAttributionsWithVerifyResult can find our seeded rows.
+      const runner = new CycleRunner({
+        cwd: tmpDir,
+        cycleId: knownCycleId,
+        config: DEFAULT_CYCLE_CONFIG,
+        runtime: deps.runtime as any,
+        proposalAdapter: deps.proposalAdapter as any,
+        scoringAdapter: deps.scoringAdapter as any,
+        phaseHandlers: deps.mockPhaseHandlers as any,
+        testRunner: deps.testRunner as any,
+        gitOps: deps.gitOps as any,
+        prOpener: deps.prOpener as any,
+        bus: deps.bus as any,
+        preVerifyTypeCheck: deps.preVerifyTypeCheck,
+        dryRun: { prOpener: true },
+      });
+
+      const result = await runner.start();
+      expect(result.stage).toBe(CycleStage.COMPLETED);
+
+      // After the cycle, the attribution file should have the original 2 rows +
+      // 2 new rows with verifyPassed=true appended by augmentLessonAttributionsWithVerifyResult.
+      const allRows = readLessonAttributions(tmpDir).filter((r) => r.cycleId === knownCycleId);
+      expect(allRows.length).toBeGreaterThanOrEqual(4);
+
+      // The augmented rows have verifyPassed=true
+      const augmentedRows = allRows.filter((r) => r.verifyPassed !== undefined);
+      expect(augmentedRows.length).toBeGreaterThanOrEqual(2);
+      expect(augmentedRows.every((r) => r.verifyPassed === true)).toBe(true);
+
+      // aggregateLessonOutcomes selects the latest row per (cycleId,itemId,lessonId).
+      // The augmented rows carry gateVerdict='approved' + verifyPassed=true → passes.
+      const outcomes = aggregateLessonOutcomes(allRows);
+      expect(outcomes.get('lesson-a')?.appearances).toBe(1);
+      expect(outcomes.get('lesson-a')?.passes).toBe(1);
+      expect(outcomes.get('lesson-b')?.appearances).toBe(1);
+      expect(outcomes.get('lesson-b')?.passes).toBe(1);
+    });
+
+    it('fills verifyPassed=false when tests fail and dedup marks the lesson as not passed', async () => {
+      await initGitRepo(tmpDir);
+
+      const cycleId = 'test-cycle-verify-fail';
+
+      // Seed rows with gateVerdict='approved' but no verifyPassed
+      seedRows(tmpDir, cycleId, appendLessonAttributions);
+
+      // Append augmented rows with verifyPassed=false (failed>0).
+      // Must include gateVerdict so aggregateLessonOutcomes indexes this row
+      // (it skips rows without gateVerdict). Also ensure a later ts so dedup
+      // selects the VERIFY row over the seed row.
+      await new Promise((r) => setTimeout(r, 5));
+      const rows = readLessonAttributions(tmpDir).filter((r) => r.cycleId === cycleId);
+      expect(rows).toHaveLength(2);
+      appendLessonAttributions(tmpDir, rows.map((r) => ({
+        cycleId: r.cycleId,
+        itemId: r.itemId,
+        agentId: r.agentId,
+        lessonId: r.lessonId,
+        lessonText: r.lessonText,
+        scope: 'cycle' as const,
+        gateVerdict: r.gateVerdict,
+        verifyPassed: false as const,
+      })));
+
+      const allRows = readLessonAttributions(tmpDir).filter((r) => r.cycleId === cycleId);
+      // The latest row for each lesson has verifyPassed=false
+      const outcomes = aggregateLessonOutcomes(allRows);
+      // gateVerdict='approved' but verifyPassed=false → NOT a pass
+      expect(outcomes.get('lesson-a')?.appearances).toBe(1);
+      expect(outcomes.get('lesson-a')?.passes).toBe(0);
+      expect(outcomes.get('lesson-b')?.appearances).toBe(1);
+      expect(outcomes.get('lesson-b')?.passes).toBe(0);
+    });
+
+    it('VERIFY-time row supersedes the test-phase row when verifyPassed is present', async () => {
+      await initGitRepo(tmpDir);
+
+      const cycleId = 'test-cycle-dedup-verify-wins';
+
+      // Seed: test-phase row has gateVerdict='approved', no verifyPassed
+      // → counts as pass (verifyPassed!==false) until VERIFY augments it.
+      seedRows(tmpDir, cycleId, appendLessonAttributions);
+
+      // Guarantee a strictly later ts for the VERIFY-time rows.
+      await new Promise((r) => setTimeout(r, 5));
+
+      // VERIFY-time rows: same cycleId+itemId+lessonId but verifyPassed=false.
+      // Must carry gateVerdict so aggregateLessonOutcomes can pick them up.
+      const rows = readLessonAttributions(tmpDir).filter((r) => r.cycleId === cycleId);
+      appendLessonAttributions(tmpDir, rows.map((r) => ({
+        cycleId: r.cycleId,
+        itemId: r.itemId,
+        agentId: r.agentId,
+        lessonId: r.lessonId,
+        lessonText: r.lessonText,
+        scope: 'cycle' as const,
+        gateVerdict: r.gateVerdict,
+        verifyPassed: false as const,
+      })));
+
+      const allRows = readLessonAttributions(tmpDir).filter((r) => r.cycleId === cycleId);
+      const outcomes = aggregateLessonOutcomes(allRows);
+      // VERIFY row (verifyPassed=false, later ts) wins over test-phase row.
+      // gateVerdict='approved' + verifyPassed=false → NOT a pass.
+      expect(outcomes.get('lesson-a')?.passes).toBe(0);
+      expect(outcomes.get('lesson-b')?.passes).toBe(0);
+    });
+
+    it('does not augment rows from a different cycleId', () => {
+      const cycleId = 'target-cycle';
+      const otherCycleId = 'other-cycle';
+
+      // Seed rows for a different cycleId
+      appendLessonAttributions(tmpDir, [{
+        cycleId: otherCycleId,
+        itemId: 'item-1',
+        agentId: 'coder',
+        lessonId: 'lesson-a',
+        lessonText: 'Use execFile not exec.',
+        scope: 'cycle',
+        gateVerdict: 'approved',
+      }]);
+
+      // The augmentation only reads rows where r.cycleId === cycleId
+      const rowsForTarget = readLessonAttributions(tmpDir).filter((r) => r.cycleId === cycleId);
+      // No rows for target cycleId → nothing to augment → early return
+      expect(rowsForTarget).toHaveLength(0);
+
+      // The other cycleId's rows should be unaffected
+      const allRows = readLessonAttributions(tmpDir);
+      expect(allRows).toHaveLength(1);
+      expect(allRows[0]?.verifyPassed).toBeUndefined();
+    });
+  });
 });

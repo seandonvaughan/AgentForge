@@ -92,6 +92,11 @@ import { MergeQueue } from '../runtime/merge-queue.js';
 import type { DrainAndMergeResult } from '../runtime/merge-queue.js';
 import type { MessageBusV2 } from '../message-bus/message-bus.js';
 import type { CycleCheckpoint } from './cycle-artifacts/cycle-checkpoint.js';
+import {
+  appendLessonAttributions,
+  readLessonAttributions,
+} from '../memory/lesson-attribution.js';
+import type { TestResult } from './types.js';
 
 /**
  * Build a PR title that's safe for `gh pr create` and never truncated mid-word.
@@ -1630,6 +1635,7 @@ export class CycleRunner {
       passRate: testResult.passRate,
       newFailures: testResult.newFailures,
     };
+    this.augmentLessonAttributionsWithVerifyResult(testResult);
 
     const regression = {
       detected: testResult.newFailures.length > 0,
@@ -1866,6 +1872,40 @@ export class CycleRunner {
       consecutiveFailures: 0,
     });
     if (trip) throw new CycleKilledError(trip);
+  }
+
+  /**
+   * Phase-0.5: after VERIFY, append augmented lesson-attribution rows for this
+   * cycle with the deterministic verifyPassed (failed===0). Dedup (latest wins)
+   * is handled by aggregateLessonOutcomes. Non-fatal — never blocks the cycle.
+   */
+  private augmentLessonAttributionsWithVerifyResult(testResult: TestResult): void {
+    try {
+      const verifyPassed = testResult.failed === 0;
+      const rows = readLessonAttributions(this.options.cwd).filter(
+        (r) => r.cycleId === this.cycleId,
+      );
+      if (rows.length === 0) return;
+      appendLessonAttributions(
+        this.options.cwd,
+        rows.map((r) => ({
+          cycleId: r.cycleId,
+          itemId: r.itemId,
+          agentId: r.agentId,
+          lessonId: r.lessonId,
+          lessonText: r.lessonText,
+          scope: 'cycle' as const,
+          // Preserve gateVerdict so aggregateLessonOutcomes can index this row
+          // (it skips rows without gateVerdict). exactOptionalPropertyTypes:
+          // conditional-spread to never assign `undefined`.
+          ...(r.gateVerdict !== undefined ? { gateVerdict: r.gateVerdict } : {}),
+          verifyPassed,
+        })),
+      );
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[autonomous:cycle] verifyPassed augmentation failed (non-fatal):', err);
+    }
   }
 
   /**
