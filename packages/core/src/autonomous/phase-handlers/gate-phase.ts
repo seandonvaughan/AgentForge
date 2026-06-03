@@ -369,6 +369,33 @@ export function resolveKnownDebt(projectRoot: string, override?: string[]): stri
   return prior.knownDebt ?? [...prior.criticalFindings, ...prior.majorFindings];
 }
 
+/**
+ * Verdict guardrail injected into the gate prompt. The gate grades from the
+ * diff and CANNOT execute tests, so it must not REJECT based on speculation
+ * about a present test's internal assertions (the exact field/column/value/
+ * runtime behavior it checks). The deterministic VERIFY stage runs every test
+ * and is the sole authority on assertion correctness — a present-but-wrong test
+ * fails there and blocks release, whereas a false REJECT here discards a
+ * possibly-correct implementation. (Regression guard: an LLM gate once rejected
+ * a correct `PRAGMA busy_timeout` test because it wrongly expected a
+ * `busy_timeout` column when SQLite returns `timeout`.)
+ *
+ * This guidance does NOT relax the iron law: missing functionality, a required
+ * behavior with NO test at all, fabricated/no-op work, and verified-still-present
+ * CRITICAL/MAJOR findings remain valid grounds for REJECT.
+ */
+export const GATE_ASSERTION_DEFERRAL_GUIDANCE =
+  'Likewise, do NOT REJECT based on speculation that a PRESENT test asserts the ' +
+  'wrong field, column, value, or runtime behavior. You cannot run tests at this ' +
+  'gate; the deterministic VERIFY stage runs every test and is the sole authority ' +
+  'on assertion correctness. A present-but-wrong test fails at VERIFY and blocks ' +
+  'release there, so a false REJECT here only discards a possibly-correct ' +
+  'implementation. If you suspect a present test’s assertion is off, note it ' +
+  'in your rationale and APPROVE, leaving the executable judgment to VERIFY. ' +
+  '(This does not relax the iron law: missing functionality, a required behavior ' +
+  'with NO test at all, fabricated/no-op work, and verified-still-present ' +
+  'CRITICAL/MAJOR findings still drive REJECT.)';
+
 export async function runGatePhase(
   ctx: PhaseContext,
   options: GatePhaseOptions = {},
@@ -553,7 +580,7 @@ ${knownDebtSection}## Verification protocol — READ CAREFULLY
 The code review above may have been produced against an intermediate execute-phase state. Before REJECTing on any CRITICAL or MAJOR finding, VERIFY it against the current working tree:
 
 1. Treat each item's "Acceptance / backlog description" as part of the release contract. Enumerate every explicit requirement in that description, including mode pairs such as text + JSON, positive + negative cases, and "preserve existing behavior" clauses.
-2. Verify that each explicit requirement is implemented and, when the item asks for tests, covered by a focused test. If a required mode or case is missing, that is a MAJOR finding and must drive REJECT.
+2. Verify that each explicit requirement is implemented and, when the item asks for tests, covered by a focused test. If a required behavior has NO test at all, that is a MAJOR finding and must drive REJECT. But judge only test PRESENCE and TARGETING here — whether a present test's internal assertion names the exact field, column, value, or runtime detail you would expect is something you cannot confirm without executing it, so it is NOT grounds for REJECT (see the VERIFY-deferral note below).
 3. For each CRITICAL or MAJOR finding that cites a specific file/line, use the execute-phase review targets above. If target branches are listed, inspect them with \`git diff origin/<base>...<branch>\` and \`git show <branch>:<file>\`; if only target worktrees are listed, use Read/Grep tools or direct file reads against the listed changed files. Do not inspect the clean parent checkout.
 4. Use Grep/Read tools, \`git show <branch>:<file>\`, or direct file reads to search for the problematic pattern described in the finding. Avoid worktree-scoped git commands and Git grep in Codex read-only sandbox.
 5. If the bug no longer reproduces (the line has been amended, the pattern is absent, or the finding's premise is otherwise false in the current code), treat that finding as RESOLVED. Do NOT let a resolved finding drive REJECT.
@@ -562,6 +589,8 @@ Do not treat the QA strategy report above as executable test evidence. It is a
 read-only analysis artifact; the cycle VERIFY stage enforces real test execution
 after this gate. If the QA strategy says tests were not run, that is expected
 for this phase and is not by itself a REJECT reason.
+
+${GATE_ASSERTION_DEFERRAL_GUIDANCE}
 
 Gate scope constraint: evaluate only this sprint's current execute-phase target
 branch/worktree and the current phase artifacts provided above. Do not use
