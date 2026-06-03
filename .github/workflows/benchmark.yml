@@ -1,0 +1,81 @@
+# Benchmark workflow — manual trigger ONLY.
+# Real spend ~$10–20 USD per run. Never runs on push/PR.
+# Trigger: GitHub UI → Actions → Benchmark → Run workflow.
+name: Benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      cycle_id:
+        description: "Existing cycle UUID for --dry-run (leave blank to run --live)"
+        required: false
+        default: ""
+      budget_usd:
+        description: "Budget cap in USD for --live mode"
+        required: false
+        default: "20"
+
+jobs:
+  benchmark:
+    name: Run benchmark
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: corepack pnpm install --frozen-lockfile
+
+      - name: Validate inputs
+        env:
+          # Move workflow_dispatch inputs into env vars BEFORE any shell
+          # interpolation so they cannot be used for command injection.
+          INPUT_CYCLE_ID: ${{ inputs.cycle_id }}
+          INPUT_BUDGET_USD: ${{ inputs.budget_usd }}
+        run: |
+          # Validate cycle_id: must be empty or a lowercase UUID (hex + hyphens only).
+          if [ -n "$INPUT_CYCLE_ID" ]; then
+            if ! echo "$INPUT_CYCLE_ID" | grep -qE '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'; then
+              echo "ERROR: cycle_id is not a valid UUID: $INPUT_CYCLE_ID" >&2
+              exit 1
+            fi
+          fi
+          # Validate budget_usd: must be a positive decimal number.
+          if ! echo "$INPUT_BUDGET_USD" | grep -qE '^[0-9]+(\.[0-9]+)?$'; then
+            echo "ERROR: budget_usd is not a valid number: $INPUT_BUDGET_USD" >&2
+            exit 1
+          fi
+
+      - name: Run benchmark (dry-run or live)
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Safe: inputs are validated above and passed via env, not shell interpolation.
+          INPUT_CYCLE_ID: ${{ inputs.cycle_id }}
+          INPUT_BUDGET_USD: ${{ inputs.budget_usd }}
+        run: |
+          if [ -n "$INPUT_CYCLE_ID" ]; then
+            echo "Running dry-run for cycle: $INPUT_CYCLE_ID"
+            node benchmarks/run-cycle-benchmark.mjs --dry-run --cycle "$INPUT_CYCLE_ID"
+          else
+            echo "Running live benchmark with budget \$$INPUT_BUDGET_USD"
+            node benchmarks/run-cycle-benchmark.mjs --live --budget "$INPUT_BUDGET_USD"
+          fi
+
+      - name: Upload result artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-result
+          path: benchmarks/results/
+          if-no-files-found: warn
