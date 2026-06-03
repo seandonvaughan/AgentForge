@@ -134,6 +134,9 @@ importers:
       '@agentforge/db':
         specifier: workspace:*
         version: link:../db
+      '@agentforge/embeddings':
+        specifier: workspace:*
+        version: link:../embeddings
       '@agentforge/shared':
         specifier: workspace:*
         version: link:../shared
