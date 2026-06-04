@@ -1,6 +1,6 @@
 import type { WorkspaceAdapter } from '@agentforge/db';
 import type { ModelTier } from '@agentforge/shared';
-import type { RunResult } from '../agent-runtime/types.js';
+import type { ProviderSwitchEvent, RunResult } from '../agent-runtime/types.js';
 import type {
   ExecutionProviderKind,
   ExecutionResult,
@@ -18,6 +18,10 @@ interface RuntimeSessionOptions {
   parentSessionId?: string;
   startedAt: string;
 }
+
+type ExecutionResultWithProviderSwitches = ExecutionResult & {
+  providerSwitches?: ProviderSwitchEvent[];
+};
 
 export class RuntimeSession {
   readonly startedAt: string;
@@ -44,13 +48,14 @@ export class RuntimeSession {
   }
 
   completeSuccess(
-    execution: ExecutionResult,
+    execution: ExecutionResultWithProviderSwitches,
     runtimeModeResolved: RuntimeMode,
   ): RunResult {
     const completedAt = new Date().toISOString();
     const inputTokens = this.sumInputTokens(execution.usage);
     const outputTokens = execution.usage.outputTokens ?? 0;
     const sessionId = this.sessionId ?? execution.remoteSessionId ?? '';
+    const providerSwitches = execution.providerSwitches ?? [];
 
     if (this.options.adapter && sessionId) {
       this.options.adapter.completeSession(sessionId, 'completed', execution.costUsd, {
@@ -83,6 +88,7 @@ export class RuntimeSession {
           runtimeModeResolved,
           model: execution.model,
           capabilityTier: this.options.capabilityTier,
+          providerSwitches,
           ...(execution.effort ? { effort: execution.effort } : {}),
         },
       });
