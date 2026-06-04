@@ -179,6 +179,52 @@ describe('ProposalExecutor execution modes', () => {
   });
 });
 
+describe('budget-exceeded guard', () => {
+  it('terminates execution with a synthetic failed stage when runtime cost exceeds budget after a stage', async () => {
+    const result = await new ProposalExecutor({
+      dryRun: false,
+      budgetUsd: 1,
+      runtime: {
+        async executeStage({ stage }) {
+          return {
+            output: `ran ${stage}`,
+            success: true,
+            durationMs: 10,
+            costUsd: 1.5,
+          };
+        },
+      },
+    }).execute(buildMediumProposal());
+
+    expect(result.status).toBe('failed');
+    expect(result.totalCostUsd).toBeCloseTo(1.5);
+    expect(result.stages.map((stage) => stage.stage)).toEqual(['planning', 'failed']);
+    expect(result.stages.at(-1)?.agentId).toBe('executor');
+    expect(result.stages.at(-1)?.error).toContain('Execution budget exceeded');
+  });
+
+  it('does not trigger when accumulated runtime cost is exactly at the budget cap', async () => {
+    const result = await new ProposalExecutor({
+      dryRun: false,
+      budgetUsd: 1,
+      runtime: {
+        async executeStage({ stageIndex, stage }) {
+          return {
+            output: `ran ${stage}`,
+            success: true,
+            durationMs: 10,
+            costUsd: stageIndex < 2 ? 0.5 : 0,
+          };
+        },
+      },
+    }).execute(buildLowComplexityProposal());
+
+    expect(result.status).toBe('passed');
+    expect(result.totalCostUsd).toBeCloseTo(1);
+    expect(result.stages.map((stage) => stage.stage)).toEqual(['planning', 'coding', 'testing', 'complete']);
+  });
+});
+
 function buildMediumProposal(): AgentProposal {
   return {
     id: 'proposal-1',
