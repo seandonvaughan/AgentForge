@@ -166,6 +166,12 @@ export async function notificationsRoutes(
     return reply.status(201).send({ data: rowToNotification(row) });
   });
 
+  // POST /api/v5/notifications/read-all
+  app.post('/api/v5/notifications/read-all', async (_req, reply) => {
+    const result = db.prepare('UPDATE notifications SET read = 1 WHERE read = 0').run();
+    return reply.send({ updated: result.changes });
+  });
+
   // PATCH /api/v5/notifications/:id/read
   app.patch<{ Params: { id: string } }>('/api/v5/notifications/:id/read', async (req, reply) => {
     const existing = db.prepare<[string], NotificationRow>(

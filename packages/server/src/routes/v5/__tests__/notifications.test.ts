@@ -125,6 +125,39 @@ describe('GET /api/v5/notifications', () => {
 });
 
 // ---------------------------------------------------------------------------
+// POST /api/v5/notifications/read-all
+// ---------------------------------------------------------------------------
+
+describe('POST /api/v5/notifications/read-all', () => {
+  it('marks only previously unread notifications as read', async () => {
+    await app.inject({ method: 'POST', url: '/api/v5/notifications', payload: makeBody({ title: 'Unread 1' }) });
+    const alreadyReadId = (
+      (await app.inject({ method: 'POST', url: '/api/v5/notifications', payload: makeBody({ title: 'Read' }) })).json() as {
+        data: { id: string };
+      }
+    ).data.id;
+    await app.inject({ method: 'POST', url: '/api/v5/notifications', payload: makeBody({ title: 'Unread 2' }) });
+    await app.inject({ method: 'PATCH', url: `/api/v5/notifications/${alreadyReadId}/read` });
+
+    const readAllRes = await app.inject({ method: 'POST', url: '/api/v5/notifications/read-all' });
+    expect(readAllRes.statusCode).toBe(200);
+    expect(readAllRes.json()).toEqual({ updated: 2 });
+
+    const listRes = await app.inject({ method: 'GET', url: '/api/v5/notifications' });
+    const body = listRes.json() as { data: Array<{ read: boolean }>; meta: { unread: number } };
+    expect(body.meta.unread).toBe(0);
+    expect(body.data).toHaveLength(3);
+    expect(body.data.every(n => n.read)).toBe(true);
+  });
+
+  it('returns zero when no unread notifications exist', async () => {
+    const res = await app.inject({ method: 'POST', url: '/api/v5/notifications/read-all' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ updated: 0 });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // PATCH /api/v5/notifications/:id/read
 // ---------------------------------------------------------------------------
 
