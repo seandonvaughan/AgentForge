@@ -46,6 +46,29 @@ export class QueryCache {
     for (const tag of tags) this.invalidateTag(tag);
   }
 
+  evictExpired(): number {
+    const now = Date.now();
+    let removed = 0;
+    for (const [key, entry] of this.entries) {
+      if (now > entry.expiresAt) {
+        this.evict(key);
+        removed += 1;
+      }
+    }
+    return removed;
+  }
+
+  stats(): { size: number; expiredCount: number } {
+    const now = Date.now();
+    let size = 0;
+    let expiredCount = 0;
+    for (const entry of this.entries.values()) {
+      if (now > entry.expiresAt) expiredCount += 1;
+      else size += 1;
+    }
+    return { size, expiredCount };
+  }
+
   private evict(key: string): void {
     const entry = this.entries.get(key);
     if (!entry) return;
