@@ -1,3 +1,4 @@
 export * from './types.js';
 export * from './plugin-base.js';
-export * from './plugin-host.js';
+export { validateManifest } from './validate-manifest.js';
+export { PluginHost } from './plugin-host.js';
