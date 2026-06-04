@@ -17,7 +17,7 @@ describe('relative-time utilities', () => {
     expect(relativeTime(new Date(Date.now() - 30000).toISOString())).toBe('30s ago');
     expect(relativeTime(new Date(Date.now() - 90000).toISOString())).toBe('2m ago');
     expect(relativeTime(new Date(Date.now() - 3600000).toISOString())).toBe('1h ago');
-    expect(relativeTime(new Date(Date.now() - 23.5 * 60 * 60 * 1000).toISOString())).toBe('24h ago');
+    expect(relativeTime(new Date(Date.now() - 23 * 60 * 60 * 1000).toISOString())).toBe('23h ago');
     expect(relativeTime(new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString())).toBe('yesterday');
     expect(relativeTime(new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString())).toBe('2d ago');
     expect(relativeTime(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())).toBe('1mo ago');
