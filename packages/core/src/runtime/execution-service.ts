@@ -180,7 +180,10 @@ export class ExecutionService {
       const { transport, runtimeModeResolved } = candidates[i]!;
       try {
         const execution = await transport.execute(request);
-        const result = session.completeSuccess(execution, runtimeModeResolved);
+        const result = session.completeSuccess(
+          switches.length > 0 ? { ...execution, providerSwitches: switches } : execution,
+          runtimeModeResolved,
+        );
         return switches.length > 0 ? { ...result, providerSwitches: switches } : result;
       } catch (error) {
         const next = candidates[i + 1];
