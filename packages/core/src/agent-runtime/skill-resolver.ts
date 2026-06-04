@@ -29,6 +29,7 @@ export interface AgentSkillResolution {
 }
 
 export type SkillLoader = (id: string) => Skill | null;
+export type SkillCatalogLoader = () => Skill[];
 
 export const LEGACY_SKILL_ID_MAP: Readonly<Record<string, readonly string[]>> = {
   bug_fixing: ['af-tdd'],
@@ -62,10 +63,13 @@ export function resolveRequestedSkillIds(agent: AgentSkillYamlFields): string[] 
 export function resolveAgentSkills(
   agent: AgentSkillYamlFields,
   loadSkill: SkillLoader,
+  agentId?: string,
+  listAllSkills?: SkillCatalogLoader,
 ): AgentSkillResolution {
   const skillIds = resolveRequestedSkillIds(agent);
   const resolvedSkills: ResolvedAgentSkillWithBody[] = [];
   const missingSkillIds: string[] = [];
+  const seenSkillIds = new Set(skillIds);
 
   for (const id of skillIds) {
     const skill = loadSkill(id);
@@ -74,6 +78,18 @@ export function resolveAgentSkills(
       continue;
     }
     resolvedSkills.push(toResolvedSkill(skill));
+  }
+
+  if (agentId && listAllSkills) {
+    for (const skill of listAllSkills()) {
+      const id = skill.frontmatter.id;
+      if (seenSkillIds.has(id) || !skill.frontmatter.mandatory_for?.includes(agentId)) {
+        continue;
+      }
+      seenSkillIds.add(id);
+      skillIds.push(id);
+      resolvedSkills.push(toResolvedSkill(skill));
+    }
   }
 
   return {
