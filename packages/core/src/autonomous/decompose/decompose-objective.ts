@@ -8,15 +8,63 @@
 import { EpicPlanSchema, type EpicObjective, type EpicPlan } from './types.js';
 import { validateAndLayerEpicPlan } from './validate-and-layer.js';
 import type { ValidationReport } from './types.js';
+import type { AgentOutputSchema } from '../../runtime/types.js';
 
 export const EPIC_PLANNER_AGENT_ID = 'epic-planner';
+
+/**
+ * Structured-output contract for the decomposition (mirrors EpicPlanSchema).
+ * Threaded through runtime.run so the SDK transport validates + retries once
+ * and the CLI transport bakes "You MUST return a JSON object matching: <schema>"
+ * into the system prompt. This is what keeps the plan parseable even when the
+ * provider falls back to a smaller model under plan-capacity pressure — the
+ * $50 acceptance run failed exactly here when opus→haiku fallback produced
+ * unparseable output twice (cycle 441c037f, reason: invalid-json).
+ *
+ * `files`/`capabilityTags`/`predecessors` are zod-defaulted so they are not
+ * required here; `wave` is layering-internal and deliberately absent (the
+ * schemas are .strict(), so a model emitting it would fail validation).
+ */
+export const EPIC_PLAN_OUTPUT_SCHEMA: AgentOutputSchema = {
+  name: 'epic_plan',
+  description: 'Dependency-ordered decomposition of one operator objective into child work items.',
+  schema: {
+    type: 'object',
+    properties: {
+      epicId: { type: 'string' },
+      rationale: { type: 'string' },
+      children: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            title: { type: 'string' },
+            description: { type: 'string' },
+            files: { type: 'array', items: { type: 'string' } },
+            capabilityTags: { type: 'array', items: { type: 'string' } },
+            suggestedAssignee: { type: 'string' },
+            estimatedCostUsd: { type: 'number' },
+            estimatedComplexity: { type: 'string', enum: ['low', 'medium', 'high'] },
+            predecessors: { type: 'array', items: { type: 'string' } },
+          },
+          required: ['id', 'title', 'description', 'suggestedAssignee', 'estimatedCostUsd', 'estimatedComplexity'],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ['epicId', 'rationale', 'children'],
+    additionalProperties: false,
+  },
+  strict: true,
+};
 
 /** Minimal runtime contract this orchestrator needs (satisfied by RuntimeAdapter). */
 export interface DecomposeRuntime {
   run(
     agentId: string,
     task: string,
-    options?: { allowedTools?: string[] },
+    options?: { allowedTools?: string[]; outputSchema?: AgentOutputSchema },
   ): Promise<{ output: string; costUsd?: number; model?: string }>;
 }
 
@@ -63,7 +111,30 @@ export function buildEpicPlannerPrompt(objective: EpicObjective): string {
     `Title: ${objective.title}`,
     `Objective: ${objective.description}${constraints}`,
     ``,
-    `Output ONLY the JSON object described in your system prompt (a fenced json block is acceptable).`,
+    // The exact output contract lives HERE in the task (not only in the agent
+    // YAML) so decomposition works on fresh repos whose forged epic-planner
+    // prompt was never hand-tuned, and under provider model fallback. The
+    // outputSchema threaded via runtime.run enforces the same shape at the
+    // transport layer.
+    `Output ONLY a JSON object of this exact shape (a fenced json block is acceptable):`,
+    `{`,
+    `  "epicId": "${objective.id}",`,
+    `  "rationale": "<2-4 sentences on how you split the work>",`,
+    `  "children": [`,
+    `    {`,
+    `      "id": "child-1",`,
+    `      "title": "<imperative, specific>",`,
+    `      "description": "<what to build + acceptance criteria + the CONSUMER that exercises it>",`,
+    `      "files": ["src/.../file.ts"],`,
+    `      "capabilityTags": ["<specific tag>"],`,
+    `      "suggestedAssignee": "<an agent id, e.g. coder>",`,
+    `      "estimatedCostUsd": 5,`,
+    `      "estimatedComplexity": "low|medium|high",`,
+    `      "predecessors": ["<child ids this depends on>"]`,
+    `    }`,
+    `  ]`,
+    `}`,
+    ``,
     `Use epicId "${objective.id}" exactly. The predecessor graph must be acyclic and every`,
     `predecessor must reference another child id in this plan.${budget}`,
   ].join('\n');
@@ -177,7 +248,10 @@ export async function decomposeObjective(
   objective: EpicObjective,
   runtime: DecomposeRuntime,
 ): Promise<DecomposeResult> {
-  const r1 = await runtime.run(EPIC_PLANNER_AGENT_ID, buildEpicPlannerPrompt(objective), { allowedTools: [] });
+  const r1 = await runtime.run(EPIC_PLANNER_AGENT_ID, buildEpicPlannerPrompt(objective), {
+    allowedTools: [],
+    outputSchema: EPIC_PLAN_OUTPUT_SCHEMA,
+  });
   let costUsd = r1.costUsd ?? 0;
   const a1 = attempt(r1.output, objective.budgetUsd);
   if (a1.ok) {
@@ -188,7 +262,7 @@ export async function decomposeObjective(
   const r2 = await runtime.run(
     EPIC_PLANNER_AGENT_ID,
     buildRepairPrompt(objective, r1.output, a1.reason, a1.report),
-    { allowedTools: [] },
+    { allowedTools: [], outputSchema: EPIC_PLAN_OUTPUT_SCHEMA },
   );
   costUsd += r2.costUsd ?? 0;
   const a2 = attempt(r2.output, objective.budgetUsd);

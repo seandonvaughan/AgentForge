@@ -87,19 +87,17 @@ describe('buildEpicPlannerPrompt with budgetUsd', () => {
 // ---- buildEpicPlannerPrompt: byte-identical without budget ----------------
 
 describe('buildEpicPlannerPrompt without budgetUsd', () => {
-  it('is byte-identical to the pre-budget output (regression guard)', () => {
-    const expected = [
-      `Decompose this objective into a dependency-ordered EpicPlan.`,
-      ``,
-      `epicId: epic-abc12345`,
-      `Title: RBAC`,
-      `Objective: Add multi-tenant RBAC`,
-      ``,
-      `Output ONLY the JSON object described in your system prompt (a fenced json block is acceptable).`,
-      `Use epicId "epic-abc12345" exactly. The predecessor graph must be acyclic and every`,
-      `predecessor must reference another child id in this plan.`,
-    ].join('\n');
-    expect(buildEpicPlannerPrompt(baseObjective)).toBe(expected);
+  it('the budget block is the ONLY difference vs the budgeted prompt (regression guard)', () => {
+    // The original guard pinned the full pre-budget prompt text; the prompt now
+    // inlines the JSON contract (acceptance-run fix, cycle 441c037f), so the
+    // invariant is asserted directly instead: a budgeted prompt must be the
+    // no-budget prompt with ONLY the budget block appended.
+    const noBudget = buildEpicPlannerPrompt(baseObjective);
+    const budgeted = buildEpicPlannerPrompt({ ...baseObjective, budgetUsd: 150 });
+    expect(budgeted.startsWith(noBudget)).toBe(true);
+    const appended = budgeted.slice(noBudget.length);
+    expect(appended).toContain('BUDGET — size this plan to fill the money it is given.');
+    expect(noBudget).not.toContain('BUDGET');
   });
 
   it('does not mention budget, spendable, or the cost table', () => {
