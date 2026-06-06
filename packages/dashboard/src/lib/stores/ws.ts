@@ -5,7 +5,16 @@ type WsStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
 const RECONNECT_DELAY_MS = 3000;
 const MAX_MESSAGES = 200;
-const WS_URL = 'ws://127.0.0.1:4750/api/v5/ws';
+// Derive the WS URL from the page origin so the connection rides the vite dev
+// proxy (`/api/v5/ws`, ws:true) — or, in production, the same host serving the
+// app. The previous hardcoded ws://127.0.0.1:4750 bypassed the proxy entirely,
+// which silently pointed any non-default dashboard instance (e.g. a second
+// instance monitoring an external project on another port) at the WRONG server.
+// The literal fallback only applies outside a browser context (SSR/tests).
+const WS_URL =
+  typeof location !== 'undefined'
+    ? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/v5/ws`
+    : 'ws://127.0.0.1:4750/api/v5/ws';
 const SUBSCRIBE_TOPICS = ['agent.*', 'session.*', 'system.*'];
 
 // Public stores
