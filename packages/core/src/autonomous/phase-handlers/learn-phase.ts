@@ -131,7 +131,7 @@ function collectAgentIds(summary: Record<string, unknown>, fallbackAgentId: stri
   return [...ids].sort();
 }
 
-function extractLearnedFact(retrospective: string): string {
+export function extractLearnedFact(retrospective: string): string {
   const lines = retrospective
     .split(/\r?\n/)
     .map((line) => line.replace(/^[-*#\s]+/, '').trim())
