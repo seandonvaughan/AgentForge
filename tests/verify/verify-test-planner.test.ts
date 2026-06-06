@@ -17,6 +17,8 @@ import {
   nextWorkersOnOom,
   buildVitestArgs,
   resolveVerifyConfig,
+  isTestFile,
+  selectAffectedFiles,
 } from '../../scripts/verify-test-planner.mjs';
 
 describe('computeWorkers', () => {
@@ -97,6 +99,64 @@ describe('nextWorkersOnOom', () => {
   });
 });
 
+describe('isTestFile', () => {
+  it('recognizes .test and .spec across ts/tsx/js/jsx/mjs/cjs', () => {
+    for (const f of [
+      'packages/core/src/foo.test.ts',
+      'packages/core/src/foo.spec.ts',
+      'a/b/c.test.tsx',
+      'a/b/c.spec.jsx',
+      'scripts/x.test.mjs',
+      'scripts/x.spec.cjs',
+      'tests/y.test.js',
+    ]) {
+      expect(isTestFile(f)).toBe(true);
+    }
+  });
+  it('normalizes Windows backslashes', () => {
+    expect(isTestFile('packages\\core\\src\\foo.test.ts')).toBe(true);
+  });
+  it('rejects non-test source files and similarly-named non-tests', () => {
+    expect(isTestFile('packages/core/src/foo.ts')).toBe(false);
+    expect(isTestFile('packages/core/src/test-helper.ts')).toBe(false);
+    expect(isTestFile('packages/core/src/footest.ts')).toBe(false);
+    expect(isTestFile('docs/foo.test.md')).toBe(false);
+  });
+});
+
+describe('selectAffectedFiles', () => {
+  it('force-includes a brand-new test file from the diff (PR #258 regression guard)', () => {
+    // `vitest related` resolved no tests (the new test imports nothing changed),
+    // but the new test file itself must still be in the affected set.
+    const affected = selectAffectedFiles({
+      changedFiles: ['packages/core/src/feature.ts', 'packages/core/src/__tests__/brand-new.test.ts'],
+      relatedFiles: [],
+    });
+    expect(affected).toContain('packages/core/src/__tests__/brand-new.test.ts');
+  });
+  it('unions related output with changed test files, related first, deduped', () => {
+    const affected = selectAffectedFiles({
+      changedFiles: ['src/a.test.ts', 'src/impl.ts'],
+      relatedFiles: ['src/existing.test.ts', 'src/a.test.ts'],
+    });
+    // related order preserved, then the forced test files not already present.
+    expect(affected).toEqual(['src/existing.test.ts', 'src/a.test.ts']);
+  });
+  it('does not force-include changed non-test source files (those drive related resolution)', () => {
+    const affected = selectAffectedFiles({
+      changedFiles: ['src/impl.ts'],
+      relatedFiles: ['src/impl.test.ts'],
+    });
+    expect(affected).toEqual(['src/impl.test.ts']);
+    expect(affected).not.toContain('src/impl.ts');
+  });
+  it('normalizes backslashes and is empty when nothing is supplied', () => {
+    expect(selectAffectedFiles({})).toEqual([]);
+    expect(selectAffectedFiles({ changedFiles: ['a\\b\\c.test.ts'] }))
+      .toEqual(['a/b/c.test.ts']);
+  });
+});
+
 describe('buildVitestArgs', () => {
   it('builds full-suite run args with NO --minWorkers (vitest 4 rejects it fatally)', () => {
     const args = buildVitestArgs({ mode: 'full', changedFiles: [], workers: 4 });
@@ -108,6 +168,17 @@ describe('buildVitestArgs', () => {
     const args = buildVitestArgs({ mode: 'related', changedFiles: ['a.ts', 'b.ts'], workers: 2 });
     expect(args).toEqual(['related', '--run', 'a.ts', 'b.ts', '--maxWorkers=2']);
     expect(args.some((a) => a.startsWith('--minWorkers'))).toBe(false);
+  });
+  it('force-includes a newly-added test file in the related set exactly once', () => {
+    // src/new.test.ts is both a source arg (drives related) and force-included;
+    // it must appear exactly once and the run must include it as a test.
+    const args = buildVitestArgs({
+      mode: 'related',
+      changedFiles: ['src/impl.ts', 'src/new.test.ts'],
+      workers: 2,
+    });
+    expect(args).toEqual(['related', '--run', 'src/impl.ts', 'src/new.test.ts', '--maxWorkers=2']);
+    expect(args.filter((a) => a === 'src/new.test.ts')).toHaveLength(1);
   });
   it('falls back to a full run when related mode has no changed files', () => {
     expect(buildVitestArgs({ mode: 'related', changedFiles: [], workers: 2 }))

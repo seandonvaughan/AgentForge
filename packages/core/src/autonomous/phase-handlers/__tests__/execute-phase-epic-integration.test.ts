@@ -133,6 +133,10 @@ describe('execute phase — epic wave integration (P0.4)', () => {
       maxParallelism: 2,
       maxItemRetries: 0,
       requireWorktrees: true,
+      // P0.5: this suite exercises ONLY the P0.4 wave-merge path on a bare git
+      // repo with no build/test environment; the per-child deterministic verify
+      // bar (typecheck + scoped tests) is covered in execute-phase-child-verify.
+      disableChildVerify: true,
     });
 
     expect(result.status).toBe('completed');
@@ -181,6 +185,8 @@ describe('execute phase — epic wave integration (P0.4)', () => {
       maxParallelism: 1, // deterministic order: c1 commits before c2
       maxItemRetries: 0,
       requireWorktrees: true,
+      // P0.5: see note above — wave-merge-only suite, no build/test env.
+      disableChildVerify: true,
     });
 
     // The conflict event still fires.

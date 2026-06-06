@@ -976,6 +976,9 @@ describe('CycleRunner', () => {
       cwd: tmpDir,
       config: {
         ...DEFAULT_CYCLE_CONFIG,
+        // FIX 2 — auto-reforge is opt-in; this test asserts it runs after the
+        // terminal FAILED result is recorded, so it must explicitly enable it.
+        autoReforge: true,
         retry: { ...DEFAULT_CYCLE_CONFIG.retry, maxAutoRetries: 0 },
       },
       runtime: deps.runtime as any,
@@ -1048,7 +1051,9 @@ describe('CycleRunner', () => {
 
     const runner = new CycleRunner({
       cwd: tmpDir,
-      config: DEFAULT_CYCLE_CONFIG,
+      // FIX 2 — auto-reforge is opt-in; enable it so this terminal-FAILED
+      // reforge path is exercised.
+      config: { ...DEFAULT_CYCLE_CONFIG, autoReforge: true },
       runtime: deps.runtime as any,
       proposalAdapter: deps.proposalAdapter as any,
       scoringAdapter: deps.scoringAdapter as any,
@@ -1093,7 +1098,9 @@ describe('CycleRunner', () => {
 
     const runner = new CycleRunner({
       cwd: tmpDir,
-      config: DEFAULT_CYCLE_CONFIG,
+      // FIX 2 — auto-reforge is opt-in; enable it so both the in-cycle (3.25)
+      // and terminal-FAILED reforge calls are exercised (asserted as 2 below).
+      config: { ...DEFAULT_CYCLE_CONFIG, autoReforge: true },
       runtime: deps.runtime as any,
       proposalAdapter: deps.proposalAdapter as any,
       scoringAdapter: deps.scoringAdapter as any,
@@ -1748,5 +1755,255 @@ describe('CycleRunner objective mode (P0.2)', () => {
 
     expect(scoreSpy).toHaveBeenCalledTimes(1);
     expect(approveSpy).toHaveBeenCalledTimes(1);
+  });
+
+  // ── FIX 1 — finally-restore the operator's branch ──────────────────────────
+  //
+  // Incident: every width-1 (legacy) cycle left the main working tree checked
+  // out on the autonomous branch (codex/vX.Y.Z). The runner now captures the
+  // operator's branch at run start and restores it on EVERY exit, unless the
+  // tree is too dirty to switch safely (in which case it warns instead).
+
+  async function currentBranch(dir: string): Promise<string> {
+    const { stdout } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: dir });
+    return stdout.toString().trim();
+  }
+
+  it('restores the operator branch after a successful cycle that switched branches', async () => {
+    await initGitRepo(tmpDir);
+    // Mirror production: .agentforge/ is gitignored so the cycle's own JSON
+    // artifacts do not count as a dirty tree.
+    writeFileSync(join(tmpDir, '.gitignore'), '.agentforge/\n');
+    await execFileAsync('git', ['add', '.gitignore'], { cwd: tmpDir });
+    await execFileAsync('git', ['commit', '-m', 'ignore agentforge'], { cwd: tmpDir });
+    // The operator starts on a non-default branch (mimics codex/vX.Y.Z).
+    await execFileAsync('git', ['checkout', '-b', 'codex/v99.0.0'], { cwd: tmpDir });
+
+    const deps = makeMockDeps();
+    const baseExecute = deps.mockPhaseHandlers.execute;
+    // Simulate the legacy GitOps path: switch to the autonomous branch and
+    // commit the work, leaving HEAD on the autonomous branch with a CLEAN tree.
+    deps.mockPhaseHandlers.execute = async (ctx: any) => {
+      await execFileAsync('git', ['checkout', '-b', 'autonomous/v6.3.6'], { cwd: tmpDir });
+      writeFileSync(join(tmpDir, 'feature.txt'), 'implemented\n');
+      await execFileAsync('git', ['add', 'feature.txt'], { cwd: tmpDir });
+      await execFileAsync('git', ['commit', '-m', 'work'], { cwd: tmpDir });
+      await baseExecute(ctx);
+    };
+
+    const runner = new CycleRunner({
+      cwd: tmpDir,
+      config: DEFAULT_CYCLE_CONFIG,
+      runtime: deps.runtime as any,
+      proposalAdapter: deps.proposalAdapter as any,
+      scoringAdapter: deps.scoringAdapter as any,
+      phaseHandlers: deps.mockPhaseHandlers as any,
+      testRunner: deps.testRunner as any,
+      gitOps: deps.gitOps as any,
+      prOpener: deps.prOpener as any,
+      bus: deps.bus as any,
+      preVerifyTypeCheck: deps.preVerifyTypeCheck,
+      dryRun: { prOpener: true },
+    });
+
+    const result = await runner.start();
+    expect(result.stage).toBe(CycleStage.COMPLETED);
+    // The operator's branch is restored even though the cycle switched it.
+    expect(await currentBranch(tmpDir)).toBe('codex/v99.0.0');
+  });
+
+  it('restores the operator branch after a thrown stage error', async () => {
+    await initGitRepo(tmpDir);
+    writeFileSync(join(tmpDir, '.gitignore'), '.agentforge/\n');
+    await execFileAsync('git', ['add', '.gitignore'], { cwd: tmpDir });
+    await execFileAsync('git', ['commit', '-m', 'ignore agentforge'], { cwd: tmpDir });
+    await execFileAsync('git', ['checkout', '-b', 'codex/v99.0.0'], { cwd: tmpDir });
+
+    const deps = makeMockDeps();
+    // Switch + commit (clean tree), then fail a LATER phase so the cycle ends
+    // FAILED while HEAD sits on the autonomous branch.
+    deps.mockPhaseHandlers.execute = async (ctx: any) => {
+      await execFileAsync('git', ['checkout', '-b', 'autonomous/v6.3.6'], { cwd: tmpDir });
+      writeFileSync(join(tmpDir, 'feature.txt'), 'implemented\n');
+      await execFileAsync('git', ['add', 'feature.txt'], { cwd: tmpDir });
+      await execFileAsync('git', ['commit', '-m', 'work'], { cwd: tmpDir });
+      const baseExecute = makeMockDeps().mockPhaseHandlers.execute;
+      await baseExecute(ctx);
+    };
+    deps.mockPhaseHandlers.gate = async () => {
+      throw new GateRejectedError('forced gate rejection');
+    };
+
+    const runner = new CycleRunner({
+      cwd: tmpDir,
+      config: { ...DEFAULT_CYCLE_CONFIG, retry: { ...DEFAULT_CYCLE_CONFIG.retry, maxAutoRetries: 0 } },
+      runtime: deps.runtime as any,
+      proposalAdapter: deps.proposalAdapter as any,
+      scoringAdapter: deps.scoringAdapter as any,
+      phaseHandlers: deps.mockPhaseHandlers as any,
+      testRunner: deps.testRunner as any,
+      gitOps: deps.gitOps as any,
+      prOpener: deps.prOpener as any,
+      bus: deps.bus as any,
+      preVerifyTypeCheck: deps.preVerifyTypeCheck,
+      dryRun: { prOpener: true },
+    });
+
+    const result = await runner.start();
+    expect(result.stage).toBe(CycleStage.FAILED);
+    // Restoration runs in the finally even on the failure exit.
+    expect(await currentBranch(tmpDir)).toBe('codex/v99.0.0');
+  });
+
+  it('does NOT switch when the tree is dirty; warns and leaves the autonomous branch checked out', async () => {
+    await initGitRepo(tmpDir);
+    await execFileAsync('git', ['checkout', '-b', 'codex/v99.0.0'], { cwd: tmpDir });
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const deps = makeMockDeps();
+    // Switch branch but leave the tree DIRTY (uncommitted file). Restoration
+    // must refuse to switch and warn instead.
+    deps.mockPhaseHandlers.execute = async (ctx: any) => {
+      await execFileAsync('git', ['checkout', '-b', 'autonomous/v6.3.6'], { cwd: tmpDir });
+      writeFileSync(join(tmpDir, 'feature.txt'), 'uncommitted\n');
+      const baseExecute = makeMockDeps().mockPhaseHandlers.execute;
+      await baseExecute(ctx);
+    };
+
+    const runner = new CycleRunner({
+      cwd: tmpDir,
+      config: DEFAULT_CYCLE_CONFIG,
+      runtime: deps.runtime as any,
+      proposalAdapter: deps.proposalAdapter as any,
+      scoringAdapter: deps.scoringAdapter as any,
+      phaseHandlers: deps.mockPhaseHandlers as any,
+      testRunner: deps.testRunner as any,
+      gitOps: deps.gitOps as any,
+      prOpener: deps.prOpener as any,
+      bus: deps.bus as any,
+      preVerifyTypeCheck: deps.preVerifyTypeCheck,
+      dryRun: { prOpener: true },
+    });
+
+    await runner.start();
+
+    // Tree is dirty → restoration must NOT switch back.
+    expect(await currentBranch(tmpDir)).toBe('autonomous/v6.3.6');
+    // A one-line warning naming the original branch was emitted.
+    const warned = warnSpy.mock.calls.some((args) =>
+      args.some((a) => typeof a === 'string' && a.includes('codex/v99.0.0')),
+    );
+    expect(warned).toBe(true);
+  });
+
+  // ── FIX 2 — auto-reforge is OPT-IN (default OFF) ───────────────────────────
+  //
+  // Incident: stage 3.25 auto-reforge mutated .agentforge/agents/*.yaml
+  // mid-cycle and leaked unrelated changes into PRs. It now runs only when
+  // explicitly opted in.
+
+  function makeSuccessfulExecuteDeps() {
+    const deps = makeMockDeps();
+    const baseExecute = deps.mockPhaseHandlers.execute;
+    deps.mockPhaseHandlers.execute = async (ctx: any) => {
+      writeFileSync(join(tmpDir, 'feature.txt'), 'implemented\n');
+      await baseExecute(ctx);
+    };
+    return deps;
+  }
+
+  it('does NOT invoke auto-reforge by default (opt-in gate)', async () => {
+    await initGitRepo(tmpDir);
+    const deps = makeSuccessfulExecuteDeps();
+    const reforgeSpy = vi.spyOn(autoReforgeModule, 'runAutoReforge').mockResolvedValue({
+      cycleId: 'x',
+      skipped: true,
+      durationMs: 0,
+    });
+
+    const runner = new CycleRunner({
+      cwd: tmpDir,
+      config: DEFAULT_CYCLE_CONFIG, // autoReforge unset → default OFF
+      runtime: deps.runtime as any,
+      proposalAdapter: deps.proposalAdapter as any,
+      scoringAdapter: deps.scoringAdapter as any,
+      phaseHandlers: deps.mockPhaseHandlers as any,
+      testRunner: deps.testRunner as any,
+      gitOps: deps.gitOps as any,
+      prOpener: deps.prOpener as any,
+      bus: deps.bus as any,
+      preVerifyTypeCheck: deps.preVerifyTypeCheck,
+      dryRun: { prOpener: true },
+    });
+
+    const result = await runner.start();
+    expect(result.stage).toBe(CycleStage.COMPLETED);
+    expect(reforgeSpy).not.toHaveBeenCalled();
+  });
+
+  it('invokes auto-reforge when config.autoReforge=true', async () => {
+    await initGitRepo(tmpDir);
+    const deps = makeSuccessfulExecuteDeps();
+    const reforgeSpy = vi.spyOn(autoReforgeModule, 'runAutoReforge').mockResolvedValue({
+      cycleId: 'x',
+      skipped: true,
+      durationMs: 0,
+    });
+
+    const runner = new CycleRunner({
+      cwd: tmpDir,
+      config: { ...DEFAULT_CYCLE_CONFIG, autoReforge: true },
+      runtime: deps.runtime as any,
+      proposalAdapter: deps.proposalAdapter as any,
+      scoringAdapter: deps.scoringAdapter as any,
+      phaseHandlers: deps.mockPhaseHandlers as any,
+      testRunner: deps.testRunner as any,
+      gitOps: deps.gitOps as any,
+      prOpener: deps.prOpener as any,
+      bus: deps.bus as any,
+      preVerifyTypeCheck: deps.preVerifyTypeCheck,
+      dryRun: { prOpener: true },
+    });
+
+    const result = await runner.start();
+    expect(result.stage).toBe(CycleStage.COMPLETED);
+    expect(reforgeSpy).toHaveBeenCalled();
+  });
+
+  it('invokes auto-reforge when AGENTFORGE_AUTO_REFORGE=1 even if config flag is unset', async () => {
+    await initGitRepo(tmpDir);
+    const prev = process.env['AGENTFORGE_AUTO_REFORGE'];
+    process.env['AGENTFORGE_AUTO_REFORGE'] = '1';
+    try {
+      const deps = makeSuccessfulExecuteDeps();
+      const reforgeSpy = vi.spyOn(autoReforgeModule, 'runAutoReforge').mockResolvedValue({
+        cycleId: 'x',
+        skipped: true,
+        durationMs: 0,
+      });
+
+      const runner = new CycleRunner({
+        cwd: tmpDir,
+        config: DEFAULT_CYCLE_CONFIG, // flag unset; env opts in
+        runtime: deps.runtime as any,
+        proposalAdapter: deps.proposalAdapter as any,
+        scoringAdapter: deps.scoringAdapter as any,
+        phaseHandlers: deps.mockPhaseHandlers as any,
+        testRunner: deps.testRunner as any,
+        gitOps: deps.gitOps as any,
+        prOpener: deps.prOpener as any,
+        bus: deps.bus as any,
+        preVerifyTypeCheck: deps.preVerifyTypeCheck,
+        dryRun: { prOpener: true },
+      });
+
+      const result = await runner.start();
+      expect(result.stage).toBe(CycleStage.COMPLETED);
+      expect(reforgeSpy).toHaveBeenCalled();
+    } finally {
+      if (prev === undefined) delete process.env['AGENTFORGE_AUTO_REFORGE'];
+      else process.env['AGENTFORGE_AUTO_REFORGE'] = prev;
+    }
   });
 });

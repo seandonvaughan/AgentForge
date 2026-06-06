@@ -56,6 +56,12 @@ import {
   ensureIntegrationWorktree,
   mergeBranchesIntoIntegration,
 } from './wave-integration.js';
+// P0.5 — deterministic per-child completion bar (no LLM judgement).
+import {
+  verifyChildWorktree,
+  formatChildVerifyError,
+  type ChildVerifyCommandRunner,
+} from './child-verify.js';
 
 // T4 — structured-output contract (inlined pending T1 merge onto origin/main).
 /**
@@ -284,6 +290,8 @@ interface SprintItem {
   parentEpicId?: string;
   wave?: number;
   predecessors?: string[];
+  /** P0.5 — when true, the per-child verify bar requires ≥1 changed test file. */
+  requiresTests?: boolean;
 }
 
 interface ExecutePhaseRunOptions {
@@ -528,6 +536,38 @@ export function isCoderClassItem(item: { assignee: string; tags?: string[] }): b
   if (CODER_CLASS_PATTERNS.some((p) => assigneeLower.includes(p))) return true;
   const tagSet = (item.tags ?? []).map((t) => t.toLowerCase());
   return tagSet.some((t) => CODER_CLASS_PATTERNS.some((p) => t.includes(p)));
+}
+
+/**
+ * P0.5 — Default per-child verify command runner: execFile (no shell), output
+ * tailed by the caller. Distinct from the parent worktree-change helpers so the
+ * runner can be swapped for a mock in unit tests via ExecutePhaseOptions.
+ */
+const defaultChildVerifyRunner: ChildVerifyCommandRunner = async (cmd, args, cwd) => {
+  try {
+    const { stdout, stderr } = await execFileAsync(cmd, args, {
+      cwd,
+      maxBuffer: 50 * 1024 * 1024,
+    });
+    return { ok: true, code: 0, output: `${stdout.toString()}${stderr.toString()}` };
+  } catch (err: unknown) {
+    const e = err as { code?: number; stdout?: string | Buffer; stderr?: string | Buffer };
+    const out = `${e.stdout?.toString() ?? ''}${e.stderr?.toString() ?? ''}`;
+    return { ok: false, code: typeof e.code === 'number' ? e.code : null, output: out };
+  }
+};
+
+/**
+ * P0.5 — Whether the per-child verify bar should require a test among the
+ * child's changed files. True when the item explicitly opts in
+ * (`requiresTests`) or carries a tag signalling test-mandatory work. Defaults
+ * to false so existing items aren't retroactively forced to add tests; the
+ * iron-law scope/diff/typecheck/affected-test checks still run regardless.
+ */
+function childRequiresTests(item: { requiresTests?: boolean; tags?: string[] }): boolean {
+  if (item.requiresTests === true) return true;
+  const tags = (item.tags ?? []).map((t) => t.toLowerCase());
+  return tags.includes('requires-tests') || tags.includes('tests-required');
 }
 
 const GENERATED_RUNTIME_PATHS = [
@@ -814,6 +854,27 @@ export interface ExecutePhaseOptions {
    * for `agentforge cycle run --resume` invocations.
    */
   resume?: boolean;
+  /**
+   * P0.5 — Injected command runner for the per-child deterministic verify bar
+   * (typecheck + scoped affected tests inside the child's worktree). Defaults to
+   * a real execFile wrapper. Unit tests pass a mock so no subprocess runs.
+   */
+  childVerifyRunner?: ChildVerifyCommandRunner;
+  /**
+   * P0.5 — Scoped typecheck/test command overrides for the per-child verify bar.
+   * When omitted, child-verify uses its built-in defaults
+   * (`corepack pnpm exec tsc -b --noEmit --pretty false` and
+   * `corepack pnpm exec vitest`).
+   */
+  childVerifyTypeCheckCommand?: string;
+  childVerifyTestCommand?: string;
+  /**
+   * P0.5 — Escape hatch: when true the per-child verify bar is skipped entirely
+   * even in epic-mode. Used by tests that exercise unrelated epic behaviour and
+   * don't want a real typecheck/vitest subprocess to run. The hook is ALSO
+   * inherently skipped for flat (non-epic / non-worktree-isolated) cycles.
+   */
+  disableChildVerify?: boolean;
 }
 
 export function makeExecutePhaseHandler(options: ExecutePhaseOptions = {}) {
@@ -851,6 +912,13 @@ export async function runExecutePhase(
   // the pool is not present in the context.
   const worktreePool = options.disableWorktrees ? undefined : ctx.worktreePool;
   const requireWorktrees = options.requireWorktrees === true;
+  // P0.5 — per-child deterministic verify bar config. The hook only runs in
+  // epic-mode (worktree-isolated) and can be disabled outright for tests that
+  // exercise unrelated epic behaviour. `childVerifyRequiresFullGates` is flipped
+  // by any child that touched a CI-config-class file and surfaced on the phase
+  // result so the cycle-runner runs verify:gates once at the epic level.
+  const childVerifyEnabled = options.disableChildVerify !== true;
+  let childVerifyRequiresFullGates = false;
 
   // T4.5 — ConcurrencyGate enforces MAX_PARALLEL_AGENTS. The gate's cap is
   // independent from execute-phase's own ceilingParallelism: ceilingParallelism
@@ -1310,6 +1378,53 @@ export async function runExecutePhase(
                 `Agent ${item.assignee} produced no source changes for item ${item.id}. ` +
                 `Response was: ${responseText.slice(0, 240) || '(empty)'}`,
               );
+            }
+          }
+
+          // P0.5 — DETERMINISTIC per-child completion bar (epic-mode only).
+          // Before an epic child is counted completed/merged, gate it in code:
+          // iron-law checks + scoped typecheck + scoped affected tests INSIDE the
+          // child's worktree. A failure throws here, so the catch below marks the
+          // item failed with the structured failures in its error — the same
+          // failed-item accounting the wave-merge step and any fix-up loop reads.
+          // Flat (non-epic) cycles skip this entirely (epicParentId === undefined).
+          if (
+            childVerifyEnabled &&
+            epicParentId !== undefined &&
+            worktreeHandle !== undefined
+          ) {
+            const changedForVerify = worktreeChangedFiles.filter(
+              (f) => f !== '__worktree_unverified__',
+            );
+            const childResult = await verifyChildWorktree({
+              worktreePath: worktreeHandle.path,
+              changedFiles: changedForVerify,
+              declaredFiles: itemFiles.get(item.id) ?? [],
+              requiresTests: childRequiresTests(item),
+              runner: options.childVerifyRunner ?? defaultChildVerifyRunner,
+              ...(options.childVerifyTypeCheckCommand !== undefined
+                ? { typeCheckCommand: options.childVerifyTypeCheckCommand }
+                : {}),
+              ...(options.childVerifyTestCommand !== undefined
+                ? { testCommand: options.childVerifyTestCommand }
+                : {}),
+            });
+            if (childResult.requiresFullGates) {
+              childVerifyRequiresFullGates = true;
+            }
+            ctx.bus.publish('execute.child.verified', {
+              sprintId: ctx.sprintId,
+              phase,
+              cycleId: ctx.cycleId,
+              itemId: item.id,
+              agentId: item.assignee,
+              ok: childResult.ok,
+              requiresFullGates: childResult.requiresFullGates,
+              affectedTests: childResult.affectedTests,
+              failures: childResult.failures,
+            });
+            if (!childResult.ok) {
+              throw new Error(formatChildVerifyError(childResult));
             }
           }
           item.status = 'completed';
@@ -1916,6 +2031,9 @@ export async function runExecutePhase(
           epicId: epicParentId,
           mergedBranches: [...mergedIntoIntegration],
           hadConflicts: integrationHadConflicts,
+          // P0.5 — surface CI-config-class touch so the cycle-runner runs
+          // verify:gates once at the epic level (never per child).
+          ...(childVerifyRequiresFullGates ? { requiresFullGates: true } : {}),
         }
       : undefined;
   const phaseResult: PhaseResult & { providerUsage: ProviderUsage } = {

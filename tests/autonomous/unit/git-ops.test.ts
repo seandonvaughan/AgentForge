@@ -386,4 +386,166 @@ describe('GitOps safety guards', () => {
     expect(total).toBe(2);
     expect(Number.isNaN(total)).toBe(false);
   });
+
+  // ── FIX 3 — secret-scan allowlist for pattern-definition sources ──────────
+  //
+  // Production forensics: the scan rejected commits that touched files which
+  // DEFINE secret-detection patterns (the scanner itself, gitleaks configs,
+  // **/secret*pattern* files). These legitimately contain secret-shaped tokens.
+
+  // Build a real ANTHROPIC-shaped key at runtime from disjoint pieces so static
+  // scanners don't flag THIS test file (matches the existing convention above).
+  function makeFakeAnthropicKey(): string {
+    const prefix = ['sk', 'a' + 'nt', 'a' + 'pi' + '03'].join('-');
+    const suffix = String.fromCharCode(97, 98, 99, 100) + '1234567890'.repeat(3) + 'ab';
+    return `ANTHROPIC_API_KEY=${prefix}-${suffix}`;
+  }
+
+  it('scanStagedForSecrets exempts pattern-definition files matching **/secret*pattern*', async () => {
+    await git(['checkout', '-b', 'autonomous/v6.4.0'], tmpRepo);
+    // A source file that DEFINES secret patterns — path contains both "secret"
+    // and "pattern". It legitimately embeds a secret-shaped fixture string.
+    mkdirSync(join(tmpRepo, 'src/scanners'), { recursive: true });
+    writeFileSync(
+      join(tmpRepo, 'src/scanners/secret-patterns.ts'),
+      `export const FIXTURE = '${makeFakeAnthropicKey()}';\n`,
+    );
+    await git(['add', 'src/scanners/secret-patterns.ts'], tmpRepo);
+
+    const ops = makeOps();
+    // Must NOT throw — the pattern-definition source is exempt.
+    await expect(ops.scanStagedForSecrets()).resolves.toBeUndefined();
+  });
+
+  it('scanStagedForSecrets exempts gitleaks config files', async () => {
+    await git(['checkout', '-b', 'autonomous/v6.4.0'], tmpRepo);
+    writeFileSync(
+      join(tmpRepo, '.gitleaksignore'),
+      `# fixture\n${makeFakeAnthropicKey()}\n`,
+    );
+    await git(['add', '-f', '.gitleaksignore'], tmpRepo);
+
+    const ops = makeOps();
+    await expect(ops.scanStagedForSecrets()).resolves.toBeUndefined();
+  });
+
+  it('scanStagedForSecrets honors a config secretScanAllowlist entry', async () => {
+    await git(['checkout', '-b', 'autonomous/v6.4.0'], tmpRepo);
+    // A path that is NOT a built-in pattern-definition source, but the operator
+    // has allowlisted it (e.g. a project-specific fixture catalog).
+    mkdirSync(join(tmpRepo, 'fixtures'), { recursive: true });
+    writeFileSync(
+      join(tmpRepo, 'fixtures/keys.fixture.ts'),
+      `export const SAMPLE = '${makeFakeAnthropicKey()}';\n`,
+    );
+    await git(['add', 'fixtures/keys.fixture.ts'], tmpRepo);
+
+    const config = {
+      ...DEFAULT_CYCLE_CONFIG.git,
+      secretScanAllowlist: ['fixtures/keys.fixture.ts'],
+    };
+    const logger = new CycleLogger(tmpRepo, cycleId);
+    const ops = new GitOps(tmpRepo, config, logger);
+    await expect(ops.scanStagedForSecrets()).resolves.toBeUndefined();
+  });
+
+  it('scanStagedForSecrets STILL rejects a real secret in a normal file (regression guard)', async () => {
+    await git(['checkout', '-b', 'autonomous/v6.4.0'], tmpRepo);
+    // Normal source path — NOT a pattern-definition source, NOT allowlisted.
+    writeFileSync(
+      join(tmpRepo, 'config.ts'),
+      `const key = '${makeFakeAnthropicKey()}';\n`,
+    );
+    await git(['add', 'config.ts'], tmpRepo);
+
+    const ops = makeOps();
+    await expect(ops.scanStagedForSecrets()).rejects.toThrow(/secret/i);
+  });
+
+  it('scanStagedForSecrets rejects a real secret even when a sibling pattern-definition file is also staged', async () => {
+    await git(['checkout', '-b', 'autonomous/v6.4.0'], tmpRepo);
+    // One exempt pattern-definition file + one normal file with a real secret.
+    // The exemption must be PER FILE — the normal file must still trip the scan.
+    mkdirSync(join(tmpRepo, 'src/scanners'), { recursive: true });
+    writeFileSync(
+      join(tmpRepo, 'src/scanners/secret-patterns.ts'),
+      `export const FIXTURE = '${makeFakeAnthropicKey()}';\n`,
+    );
+    writeFileSync(
+      join(tmpRepo, 'leaky.ts'),
+      `const k = '${makeFakeAnthropicKey()}';\n`,
+    );
+    await git(['add', 'src/scanners/secret-patterns.ts', 'leaky.ts'], tmpRepo);
+
+    const ops = makeOps();
+    await expect(ops.scanStagedForSecrets()).rejects.toThrow(/leaky\.ts/);
+  });
+
+  // ── FIX 4 — .agentforge mutations never ride PR branches ──────────────────
+  //
+  // Production forensics: epic-planner.yaml + backlog staging files were swept
+  // into PRs. stage() now drops any `.agentforge/` path UNLESS it is in the
+  // item's explicitly-declared files.
+
+  it('stage excludes undeclared .agentforge/ paths by default', async () => {
+    const ops = makeOps();
+    await ops.createBranch('6.4.0');
+    writeFileSync(join(tmpRepo, 'feature.ts'), 'export const x = 1;\n');
+    mkdirSync(join(tmpRepo, '.agentforge'), { recursive: true });
+    writeFileSync(join(tmpRepo, '.agentforge/epic-planner.yaml'), 'id: planner\n');
+
+    // No declared files → the .agentforge/ path is dropped, only feature.ts stages.
+    await ops.stage(['feature.ts', '.agentforge/epic-planner.yaml']);
+
+    const staged = (await git(['diff', '--cached', '--name-only'], tmpRepo)).stdout;
+    expect(staged.trim()).toBe('feature.ts');
+    expect(staged).not.toContain('.agentforge/epic-planner.yaml');
+  });
+
+  it('stage includes a .agentforge/ path when the item explicitly declares it', async () => {
+    const ops = makeOps();
+    await ops.createBranch('6.4.0');
+    writeFileSync(join(tmpRepo, 'feature.ts'), 'export const x = 1;\n');
+    mkdirSync(join(tmpRepo, '.agentforge'), { recursive: true });
+    writeFileSync(join(tmpRepo, '.agentforge/team.yaml'), 'team: x\n');
+
+    // The item declared the .agentforge/ path → it is staged alongside feature.ts.
+    await ops.stage(
+      ['feature.ts', '.agentforge/team.yaml'],
+      ['.agentforge/team.yaml'],
+    );
+
+    const staged = (await git(['diff', '--cached', '--name-only'], tmpRepo)).stdout
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .sort();
+    expect(staged).toEqual(['.agentforge/team.yaml', 'feature.ts']);
+  });
+
+  it('stage leaves normal (non-.agentforge) files unaffected', async () => {
+    const ops = makeOps();
+    await ops.createBranch('6.4.0');
+    writeFileSync(join(tmpRepo, 'a.ts'), 'export const a = 1;\n');
+    writeFileSync(join(tmpRepo, 'b.ts'), 'export const b = 2;\n');
+
+    await ops.stage(['a.ts', 'b.ts']);
+
+    const staged = (await git(['diff', '--cached', '--name-only'], tmpRepo)).stdout
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .sort();
+    expect(staged).toEqual(['a.ts', 'b.ts']);
+  });
+
+  it('stage throws when the only paths are undeclared .agentforge/ files', async () => {
+    const ops = makeOps();
+    await ops.createBranch('6.4.0');
+    mkdirSync(join(tmpRepo, '.agentforge'), { recursive: true });
+    writeFileSync(join(tmpRepo, '.agentforge/epic-planner.yaml'), 'id: planner\n');
+
+    await expect(ops.stage(['.agentforge/epic-planner.yaml']))
+      .rejects.toThrow(/excluding .* \.agentforge/i);
+  });
 });
