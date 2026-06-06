@@ -49,6 +49,58 @@ export async function runReviewPhase(
     startedAt: new Date(startedAt).toISOString(),
   });
 
+  // P0.6 — on the objective/epic path there is exactly ONE scheduled review
+  // call: the strong-model epic review that runs at the gate slot
+  // (epic-review.ts). Skip the per-diff code-reviewer dispatch here so the epic
+  // path does not pay for two reviews. Legacy (signal) cycles are untouched.
+  if (ctx.objective !== undefined) {
+    const durationMs = Date.now() - startedAt;
+    const skipResult: PhaseResult = {
+      phase,
+      status: 'completed',
+      durationMs,
+      costUsd: 0,
+      agentRuns: [],
+    };
+    if (ctx.cycleId) {
+      const phaseJsonPath = join(
+        ctx.projectRoot,
+        '.agentforge',
+        'cycles',
+        ctx.cycleId,
+        'phases',
+        'review.json',
+      );
+      try {
+        mkdirSync(dirname(phaseJsonPath), { recursive: true });
+        writeFileSync(
+          phaseJsonPath,
+          JSON.stringify(
+            {
+              phase,
+              skipped: true,
+              reason:
+                'epic path — single strong-model epic review runs at the gate slot',
+              costUsd: 0,
+            },
+            null,
+            2,
+          ),
+        );
+      } catch {
+        // non-fatal
+      }
+    }
+    ctx.bus.publish('sprint.phase.completed', {
+      sprintId: ctx.sprintId,
+      phase,
+      cycleId: ctx.cycleId,
+      result: skipResult,
+      completedAt: new Date().toISOString(),
+    });
+    return skipResult;
+  }
+
   const reviewTargets = loadExecuteReviewTargets(ctx.projectRoot, ctx.cycleId);
   const reviewTargetSection = formatExecuteReviewTargetSummary(
     reviewTargets,

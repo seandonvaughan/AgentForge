@@ -22,6 +22,7 @@ import type { RuntimeForScoring } from './scoring-pipeline.js';
 import type { ModelTier } from '@agentforge/shared';
 import type { RuntimeJobSupervisor } from '../runtime/runtime-job-supervisor.js';
 import type {
+  AgentOutputSchema,
   CodexSandboxMode,
   ExecutionProviderKind,
   ExecutionStreamEvent,
@@ -68,6 +69,13 @@ interface RuntimeRunOptions {
   preferredProvider?: ExecutionProviderKind;
   providerPreference?: ExecutionProviderKind[];
   capabilityTier?: ModelTier;
+  /**
+   * P0.6 — optional structured output schema. Threaded into the underlying
+   * AgentRuntime.run/runStreaming call; the SDK transport validates+retries
+   * once on mismatch, and `schemaValidation` is surfaced on the return shape so
+   * callers (e.g. the epic-review gate) can decide whether to trust the JSON.
+   */
+  outputSchema?: AgentOutputSchema;
 }
 
 function capModelTier(requested: ModelTier, cap: ModelTier): { model: ModelTier; effort?: string } {
@@ -189,6 +197,7 @@ export class RuntimeAdapter implements RuntimeForScoring {
     resolvedProvider?: ExecutionProviderKind;
     resolvedRuntimeMode?: RuntimeMode;
     breakdown: CostBreakdown;
+    schemaValidation?: { ok: boolean; error?: string };
   }> {
     // When a supervisor is wired, every agent run creates a durable runtime_job
     // row + runtime_events so the /jobs page has persistent history across
@@ -211,6 +220,7 @@ export class RuntimeAdapter implements RuntimeForScoring {
       preferredProvider?: ExecutionProviderKind;
       providerPreference?: ExecutionProviderKind[];
       capabilityTier?: ModelTier;
+      outputSchema?: AgentOutputSchema;
     } = { task };
     if (options?.allowedTools) runOpts.allowedTools = options.allowedTools;
     if (options?.timeoutMs !== undefined) runOpts.timeoutMs = options.timeoutMs;
@@ -221,6 +231,9 @@ export class RuntimeAdapter implements RuntimeForScoring {
     if (options?.capabilityTier !== undefined) {
       runOpts.capabilityTier = cappedCallTier(options.capabilityTier, this.options.modelCap);
     }
+    // P0.6 — thread the structured output schema so the transport validates the
+    // response and surfaces schemaValidation back to the caller.
+    if (options?.outputSchema !== undefined) runOpts.outputSchema = options.outputSchema;
     // Ordered failover chain: item routing wins; phases default to codex-first.
     const preference = effectiveProviderPreference(options);
     if (preference) runOpts.providerPreference = preference;
@@ -268,6 +281,10 @@ export class RuntimeAdapter implements RuntimeForScoring {
       ...(result.providerKind ? { resolvedProvider: result.providerKind } : {}),
       ...(result.runtimeModeResolved ? { resolvedRuntimeMode: result.runtimeModeResolved } : {}),
       breakdown,
+      // P0.6 — surface the transport's schema-validation outcome (present only
+      // when an outputSchema was requested). exactOptionalPropertyTypes: spread
+      // so the key is absent (not undefined) when the transport didn't validate.
+      ...(result.schemaValidation ? { schemaValidation: result.schemaValidation } : {}),
     };
   }
 
@@ -296,6 +313,7 @@ export class RuntimeAdapter implements RuntimeForScoring {
     resolvedProvider?: ExecutionProviderKind;
     resolvedRuntimeMode?: RuntimeMode;
     breakdown: CostBreakdown;
+    schemaValidation?: { ok: boolean; error?: string };
   }> {
     const supervisor = this.options.supervisor!;
     const runtime = await this.getOrCreateRuntime(agentId);
@@ -319,6 +337,7 @@ export class RuntimeAdapter implements RuntimeForScoring {
         preferredProvider?: ExecutionProviderKind;
         providerPreference?: ExecutionProviderKind[];
         capabilityTier?: ModelTier;
+        outputSchema?: AgentOutputSchema;
         signal: AbortSignal;
         onEvent: (event: ExecutionStreamEvent) => void;
       } = {
@@ -341,6 +360,8 @@ export class RuntimeAdapter implements RuntimeForScoring {
       if (options?.capabilityTier !== undefined) {
         runOpts.capabilityTier = cappedCallTier(options.capabilityTier, this.options.modelCap);
       }
+      // P0.6 — thread the structured output schema through the supervised path too.
+      if (options?.outputSchema !== undefined) runOpts.outputSchema = options.outputSchema;
       const preference = effectiveProviderPreference(options);
       if (preference) runOpts.providerPreference = preference;
       if (this.options.enableFallback !== undefined) {
@@ -392,6 +413,8 @@ export class RuntimeAdapter implements RuntimeForScoring {
       ...(runResult.providerKind ? { resolvedProvider: runResult.providerKind } : {}),
       ...(runResult.runtimeModeResolved ? { resolvedRuntimeMode: runResult.runtimeModeResolved } : {}),
       breakdown: supervisorBreakdown,
+      // P0.6 — surface schema-validation from the supervised path identically.
+      ...(runResult.schemaValidation ? { schemaValidation: runResult.schemaValidation } : {}),
     };
   }
 

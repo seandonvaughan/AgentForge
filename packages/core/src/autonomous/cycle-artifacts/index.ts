@@ -33,3 +33,19 @@ export type {
   ScoringJson,
   ExecutePhase,
 } from './schemas.js';
+
+// P0.8 — spend report + ledger + completed.json artifacts.
+export {
+  buildSpendReport,
+  writeSpendReport,
+  renderSpendReportMarkdown,
+  appendLedgerRow,
+  writeCompletedSnapshot,
+} from './spend-report.js';
+
+export type {
+  SpendReport,
+  SpendReportPerItem,
+  CycleLedgerRow,
+  BuildSpendReportArgs,
+} from './spend-report.js';
