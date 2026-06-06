@@ -107,15 +107,18 @@ export interface ProviderSwitchEvent {
   reason: string;
 }
 
-// Model pricing per 1M tokens (input / output)
+// Model pricing per 1M tokens (input / output).
+// As of 2026-06, sourced from the Anthropic models overview
+// (https://platform.claude.com/docs/en/about-claude/models/overview).
 export const MODEL_PRICING: Record<ModelTier, { input: number; output: number }> = {
-  opus:   { input: 15.00, output: 75.00 },
-  sonnet: { input: 3.00,  output: 15.00 },
-  haiku:  { input: 0.80,  output: 4.00  },
+  opus:   { input: 5.00, output: 25.00 },
+  sonnet: { input: 3.00, output: 15.00 },
+  haiku:  { input: 1.00, output: 5.00  },
 };
 
+// Current Claude model IDs as of 2026-06 (Anthropic models overview).
 export const MODEL_IDS: Record<ModelTier, string> = {
-  opus:   'claude-opus-4-7',
+  opus:   'claude-opus-4-8',
   sonnet: 'claude-sonnet-4-6',
-  haiku:  'claude-haiku-4-5-20251001',
+  haiku:  'claude-haiku-4-5',
 };

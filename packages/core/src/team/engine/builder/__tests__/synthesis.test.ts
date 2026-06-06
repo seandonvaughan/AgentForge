@@ -185,7 +185,7 @@ function mockRuntime(response: string): AgentRuntime {
     run: vi.fn().mockResolvedValue({
       sessionId: "mock-session",
       response,
-      model: "claude-opus-4-7",
+      model: "claude-opus-4-8",
       inputTokens: 100,
       outputTokens: 50,
       costUsd: 0.05,
@@ -202,7 +202,7 @@ function mockFailedRuntime(): AgentRuntime {
     run: vi.fn().mockResolvedValue({
       sessionId: "mock-session",
       response: "",
-      model: "claude-opus-4-7",
+      model: "claude-opus-4-8",
       inputTokens: 0,
       outputTokens: 0,
       costUsd: 0,

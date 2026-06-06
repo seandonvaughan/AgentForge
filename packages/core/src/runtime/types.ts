@@ -97,7 +97,7 @@ export interface ExecutionRequest {
   effort?: string;
   /**
    * When true, pass --fallback-model to the claude CLI subprocess.
-   * Ladder: opus → claude-sonnet-4-6, sonnet → claude-haiku-4-5-20251001.
+   * Ladder: opus → claude-sonnet-4-6, sonnet → claude-haiku-4-5.
    * Defaults to true when not explicitly set to false.
    */
   enableFallback?: boolean;

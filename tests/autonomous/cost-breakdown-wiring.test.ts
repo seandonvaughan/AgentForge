@@ -52,13 +52,13 @@ describe('extractBreakdownFromAgentRun', () => {
         cache_read_input_tokens: 100_000,
       },
     });
-    // opus: input=$15/M, read = 15*0.10 = $1.50/M for 100k = $0.15
+    // opus: input=$5/M, read = 5*0.10 = $0.50/M for 100k = $0.05
     // regularInput = max(0, 100k - 100k) = 0
     expect(bd.inputTokens.count).toBe(0);
     expect(bd.inputTokens.usd).toBeCloseTo(0, 6);
     expect(bd.cacheRead.tokens).toBe(100_000);
-    expect(bd.cacheRead.usd).toBeCloseTo(0.15, 4);
-    expect(bd.totalUsd).toBeCloseTo(0.15, 4);
+    expect(bd.cacheRead.usd).toBeCloseTo(0.05, 4);
+    expect(bd.totalUsd).toBeCloseTo(0.05, 4);
   });
 
   it('computes cache_creation at 125% of input rate', () => {
@@ -70,11 +70,11 @@ describe('extractBreakdownFromAgentRun', () => {
         cache_creation_input_tokens: 200_000,
       },
     });
-    // haiku: input=$0.80/M, creation = 0.80*1.25 = $1/M for 200k = $0.20
+    // haiku: input=$1.00/M, creation = 1.00*1.25 = $1.25/M for 200k = $0.25
     expect(bd.cacheCreation.tokens).toBe(200_000);
-    expect(bd.cacheCreation.usd).toBeCloseTo(0.20, 4);
+    expect(bd.cacheCreation.usd).toBeCloseTo(0.25, 4);
     expect(bd.inputTokens.count).toBe(0);
-    expect(bd.totalUsd).toBeCloseTo(0.20, 4);
+    expect(bd.totalUsd).toBeCloseTo(0.25, 4);
   });
 
   it('resolves full model-id strings (e.g. claude-sonnet-4-6)', () => {

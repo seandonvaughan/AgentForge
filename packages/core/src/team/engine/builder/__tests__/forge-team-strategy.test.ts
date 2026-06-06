@@ -138,7 +138,7 @@ function makeMockRuntime(): AgentRuntime {
     run: vi.fn().mockResolvedValue({
       sessionId: "mock-session",
       response: "",
-      model: "claude-opus-4-7",
+      model: "claude-opus-4-8",
       inputTokens: 10,
       outputTokens: 10,
       costUsd: 0.01,

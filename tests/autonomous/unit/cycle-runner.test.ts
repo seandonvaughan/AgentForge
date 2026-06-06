@@ -26,7 +26,14 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 
-import { CycleRunner, DEFAULT_CYCLE_CONFIG, CycleStage, MessageBusV2 } from '@agentforge/core';
+import {
+  CycleRunner,
+  DEFAULT_CYCLE_CONFIG,
+  CycleStage,
+  MessageBusV2,
+  ScoringPipeline,
+  BudgetApproval,
+} from '@agentforge/core';
 import * as autoReforgeModule from '../../../packages/core/src/autonomous/auto-reforge.js';
 import { GateRejectedError } from '../../../packages/core/src/autonomous/phase-handlers/gate-phase.js';
 import { runExecutePhase } from '../../../packages/core/src/autonomous/phase-handlers/execute-phase.js';
@@ -1477,5 +1484,163 @@ describe('CycleRunner', () => {
       expect(allRows).toHaveLength(1);
       expect(allRows[0]?.verifyPassed).toBeUndefined();
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P0.2 — Objective-mode bypass (empty backlog OK; scoring + approval skipped).
+//
+// When the CycleRunner is constructed with `objective`, STAGE 1 must:
+//   (a) NOT throw "No backlog items to work on — nothing to do" on an empty
+//       backlog (the epic decomposer in the plan phase is the planner);
+//   (b) bypass the ScoringPipeline ladder and the BudgetApproval gate.
+// The legacy (no-objective) path must behave exactly as before: it throws on
+// an empty backlog, and it runs scoring + approval on a non-empty backlog.
+// ---------------------------------------------------------------------------
+
+const NO_BACKLOG_MESSAGE = 'No backlog items to work on — nothing to do';
+
+/** A proposalAdapter that yields zero signals → an empty backlog. */
+function emptyProposalAdapter() {
+  return {
+    getRecentFailedSessions: async () => [],
+    getCostAnomalies: async () => [],
+    getFailedTaskOutcomes: async () => [],
+    getFlakingTests: async () => [],
+  };
+}
+
+describe('CycleRunner objective mode (P0.2)', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'agentforge-cr-obj-'));
+    mkdirSync(join(tmpDir, '.agentforge/sprints'), { recursive: true });
+    writeFileSync(
+      join(tmpDir, '.agentforge/sprints/v6.3.5.json'),
+      '{"sprints":[{"version":"6.3.5"}]}',
+    );
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it('does NOT throw "No backlog items" when an objective is set and the backlog is empty', async () => {
+    await initGitRepo(tmpDir);
+    const deps = makeMockDeps();
+    deps.proposalAdapter = emptyProposalAdapter();
+
+    const runner = new CycleRunner({
+      cwd: tmpDir,
+      config: DEFAULT_CYCLE_CONFIG,
+      runtime: deps.runtime as any,
+      proposalAdapter: deps.proposalAdapter as any,
+      scoringAdapter: deps.scoringAdapter as any,
+      phaseHandlers: deps.mockPhaseHandlers as any,
+      testRunner: deps.testRunner as any,
+      gitOps: deps.gitOps as any,
+      prOpener: deps.prOpener as any,
+      bus: deps.bus as any,
+      preVerifyTypeCheck: deps.preVerifyTypeCheck,
+      dryRun: { prOpener: true },
+      objective: 'Add a dark-mode toggle to the settings page',
+    });
+
+    const result = await runner.start();
+
+    // The defining regression guard: the empty-backlog throw must be skipped.
+    expect(result.error ?? '').not.toContain(NO_BACKLOG_MESSAGE);
+    // It must reach STAGE 2+ (planning); it must not be the FAILED-on-empty path.
+    expect(result.stage).not.toBe(CycleStage.FAILED);
+  });
+
+  it('STILL throws "No backlog items" when NO objective is set and the backlog is empty (legacy regression guard)', async () => {
+    await initGitRepo(tmpDir);
+    const deps = makeMockDeps();
+    deps.proposalAdapter = emptyProposalAdapter();
+
+    const runner = new CycleRunner({
+      cwd: tmpDir,
+      config: DEFAULT_CYCLE_CONFIG,
+      runtime: deps.runtime as any,
+      proposalAdapter: deps.proposalAdapter as any,
+      scoringAdapter: deps.scoringAdapter as any,
+      phaseHandlers: deps.mockPhaseHandlers as any,
+      testRunner: deps.testRunner as any,
+      gitOps: deps.gitOps as any,
+      prOpener: deps.prOpener as any,
+      bus: deps.bus as any,
+      preVerifyTypeCheck: deps.preVerifyTypeCheck,
+      dryRun: { prOpener: true },
+      // no objective
+    });
+
+    const result = await runner.start();
+
+    // start() catches the thrown Error and surfaces it as a FAILED result.
+    expect(result.stage).toBe(CycleStage.FAILED);
+    expect(result.error).toBe(NO_BACKLOG_MESSAGE);
+  });
+
+  it('skips the scoring ladder and BudgetApproval gate in objective mode', async () => {
+    await initGitRepo(tmpDir);
+    const deps = makeMockDeps();
+    deps.proposalAdapter = emptyProposalAdapter();
+
+    const scoreSpy = vi.spyOn(ScoringPipeline.prototype, 'scoreWithFallback');
+    const approveSpy = vi.spyOn(BudgetApproval.prototype, 'collect');
+
+    const runner = new CycleRunner({
+      cwd: tmpDir,
+      config: DEFAULT_CYCLE_CONFIG,
+      runtime: deps.runtime as any,
+      proposalAdapter: deps.proposalAdapter as any,
+      scoringAdapter: deps.scoringAdapter as any,
+      phaseHandlers: deps.mockPhaseHandlers as any,
+      testRunner: deps.testRunner as any,
+      gitOps: deps.gitOps as any,
+      prOpener: deps.prOpener as any,
+      bus: deps.bus as any,
+      preVerifyTypeCheck: deps.preVerifyTypeCheck,
+      dryRun: { prOpener: true },
+      objective: 'Add a dark-mode toggle to the settings page',
+    });
+
+    await runner.start();
+
+    expect(scoreSpy).not.toHaveBeenCalled();
+    expect(approveSpy).not.toHaveBeenCalled();
+  });
+
+  it('STILL runs the scoring ladder and BudgetApproval gate in legacy mode (non-empty backlog)', async () => {
+    await initGitRepo(tmpDir);
+    const deps = makeMockDeps();
+    // Default makeMockDeps proposalAdapter yields one failed session → non-empty.
+
+    const scoreSpy = vi.spyOn(ScoringPipeline.prototype, 'scoreWithFallback');
+    const approveSpy = vi.spyOn(BudgetApproval.prototype, 'collect');
+
+    const runner = new CycleRunner({
+      cwd: tmpDir,
+      config: DEFAULT_CYCLE_CONFIG,
+      runtime: deps.runtime as any,
+      proposalAdapter: deps.proposalAdapter as any,
+      scoringAdapter: deps.scoringAdapter as any,
+      phaseHandlers: deps.mockPhaseHandlers as any,
+      testRunner: deps.testRunner as any,
+      gitOps: deps.gitOps as any,
+      prOpener: deps.prOpener as any,
+      bus: deps.bus as any,
+      preVerifyTypeCheck: deps.preVerifyTypeCheck,
+      dryRun: { prOpener: true },
+      // no objective → legacy path
+    });
+
+    await runner.start();
+
+    expect(scoreSpy).toHaveBeenCalledTimes(1);
+    expect(approveSpy).toHaveBeenCalledTimes(1);
   });
 });

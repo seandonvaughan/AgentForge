@@ -16,7 +16,7 @@ function makeRequest(overrides: Partial<ExecutionRequest> = {}): ExecutionReques
     },
     task: 'do something',
     userContent: 'do something',
-    modelId: 'claude-opus-4-7',
+    modelId: 'claude-opus-4-8',
     ...overrides,
   };
 }
@@ -64,7 +64,7 @@ describe('ClaudeCodeCompatTransport.buildClaudeArgs', () => {
   describe('--fallback-model', () => {
     it('defaults to enabled: opus model gets sonnet fallback', () => {
       const args = buildArgs(
-        makeRequest({ agent: { agentId: 'coder', name: 'Coder', model: 'opus', systemPrompt: 'sp', workspaceId: 'w' }, modelId: 'claude-opus-4-7' }),
+        makeRequest({ agent: { agentId: 'coder', name: 'Coder', model: 'opus', systemPrompt: 'sp', workspaceId: 'w' }, modelId: 'claude-opus-4-8' }),
         'json',
       );
       const idx = args.indexOf('--fallback-model');
@@ -79,12 +79,12 @@ describe('ClaudeCodeCompatTransport.buildClaudeArgs', () => {
       );
       const idx = args.indexOf('--fallback-model');
       expect(idx).toBeGreaterThan(-1);
-      expect(args[idx + 1]).toBe('claude-haiku-4-5-20251001');
+      expect(args[idx + 1]).toBe('claude-haiku-4-5');
     });
 
     it('haiku gets no fallback (already at bottom of ladder)', () => {
       const args = buildArgs(
-        makeRequest({ agent: { agentId: 'coder', name: 'Coder', model: 'haiku', systemPrompt: 'sp', workspaceId: 'w' }, modelId: 'claude-haiku-4-5-20251001' }),
+        makeRequest({ agent: { agentId: 'coder', name: 'Coder', model: 'haiku', systemPrompt: 'sp', workspaceId: 'w' }, modelId: 'claude-haiku-4-5' }),
         'json',
       );
       expect(args).not.toContain('--fallback-model');
@@ -112,9 +112,9 @@ describe('ClaudeCodeCompatTransport.buildClaudeArgs', () => {
   });
 
   describe('MODEL_IDS opus bump', () => {
-    it('MODEL_IDS.opus is claude-opus-4-7', async () => {
+    it('MODEL_IDS.opus is claude-opus-4-8', async () => {
       const { MODEL_IDS } = await import('../../agent-runtime/types.js');
-      expect(MODEL_IDS.opus).toBe('claude-opus-4-7');
+      expect(MODEL_IDS.opus).toBe('claude-opus-4-8');
     });
   });
 });

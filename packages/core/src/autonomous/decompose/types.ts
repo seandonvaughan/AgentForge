@@ -13,6 +13,13 @@ export const EpicObjectiveSchema = z
     description: z.string(),
     constraints: z.array(z.string()).optional(),
     createdAt: z.string(),
+    /**
+     * Optional cycle budget in USD. When present, the planner is sized to fill
+     * this budget and the validator enforces Σ(children.estimatedCostUsd) within
+     * a [0.7, 1.0] band of the spendable amount (P0.3 budget-aware decomposer).
+     * Absent = today's behavior everywhere (no cost sizing, no cost validation).
+     */
+    budgetUsd: z.number().positive().optional(),
   })
   .strict();
 export type EpicObjective = z.infer<typeof EpicObjectiveSchema>;
@@ -49,4 +56,17 @@ export interface ValidationReport {
   missingPredecessors: Array<{ childId: string; missing: string[] }>;
   syntheticFileEdges: Array<{ from: string; to: string; sharedFiles: string[] }>;
   waveCount: number;
+  /**
+   * Budget-aware sizing audit. Present only when the objective carried a
+   * `budgetUsd`; absent otherwise (back-compat). `withinBand` is false when the
+   * children's estimated cost sum falls outside [0.7, 1.0] × `spendableUsd`.
+   */
+  budget?: {
+    budgetUsd: number;
+    spendableUsd: number;
+    sumUsd: number;
+    lowerUsd: number;
+    upperUsd: number;
+    withinBand: boolean;
+  };
 }

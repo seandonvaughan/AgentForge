@@ -71,7 +71,7 @@ const CACHE_CREATION_MULTIPLIER   = 1.25;
  * Resolve a model string to a pricing tier.
  *
  * Matches on model-name substrings so that both the full Anthropic model ID
- * (e.g. `claude-opus-4-7`) and the short tier alias (`opus`) resolve correctly.
+ * (e.g. `claude-opus-4-8`) and the short tier alias (`opus`) resolve correctly.
  * Falls back to `sonnet` if no match is found rather than throwing, keeping
  * the function safe for unknown future model IDs.
  */

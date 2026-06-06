@@ -66,6 +66,8 @@ interface CycleRunOptions extends WorkspaceAwareOptions {
   maxAgents?: string;
   fallback?: boolean;
   objective?: string;
+  /** Per-cycle budget in USD. Highest-precedence budget source. */
+  budget?: string;
 }
 
 interface CyclePreviewOptions extends WorkspaceAwareOptions {
@@ -387,6 +389,7 @@ function registerCycleRunCommand(parent: Command, commandName: string, descripti
     .option('--fallback', 'Enable runtime fallback for this cycle')
     .option('--no-fallback', 'Disable runtime fallback for this cycle')
     .option('--objective <text>', 'Decompose a high-level objective into a dependency-ordered epic instead of a signal backlog')
+    .option('--budget <usd>', 'Per-cycle budget in USD (overrides AUTONOMOUS_BUDGET_USD env and autonomous.yaml)')
     .action(runCycleAction);
 }
 
@@ -446,10 +449,25 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
     // (and by anyone driving the CLI directly). Mirrors the previewCycle
     // pattern in packages/core/src/autonomous/preview-cycle.ts so the preview
     // and run paths honour the same knobs.
-    const budgetOverride = parseEnvPositiveNumber(process.env['AUTONOMOUS_BUDGET_USD']);
-    if (budgetOverride !== null) {
-      config.budget.perCycleUsd = budgetOverride;
-      console.log(`[cycle] budget override: $${budgetOverride}`);
+    //
+    // Budget precedence (highest to lowest): --budget flag > AUTONOMOUS_BUDGET_USD
+    // env > autonomous.yaml. The --budget flag populates the same
+    // config.budget.perCycleUsd field the env override does today.
+    if (opts.budget !== undefined) {
+      const flagBudget = Number.parseFloat(opts.budget);
+      if (!Number.isFinite(flagBudget) || flagBudget <= 0) {
+        console.error(`Error: --budget must be a positive number, got "${opts.budget}".`);
+        process.exitCode = 1;
+        return;
+      }
+      config.budget.perCycleUsd = flagBudget;
+      console.log(`[cycle] budget override (--budget): $${flagBudget}`);
+    } else {
+      const budgetOverride = parseEnvPositiveNumber(process.env['AUTONOMOUS_BUDGET_USD']);
+      if (budgetOverride !== null) {
+        config.budget.perCycleUsd = budgetOverride;
+        console.log(`[cycle] budget override: $${budgetOverride}`);
+      }
     }
     const maxItemsOverride = parseEnvPositiveInteger(process.env['AUTONOMOUS_MAX_ITEMS']);
     if (maxItemsOverride !== null) {
