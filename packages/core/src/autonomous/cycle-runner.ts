@@ -30,6 +30,16 @@ import { isAbsolute, join, relative, resolve } from 'node:path';
 // keeps working without owning the canonical definitions.
 import { writeCheckpoint } from './cycle-artifacts/cycle-checkpoint.js';
 export { readCheckpoint } from './cycle-artifacts/cycle-checkpoint.js';
+// P0.8 — spend report + ledger + completed.json artifacts.
+import {
+  buildSpendReport,
+  writeSpendReport,
+  renderSpendReportMarkdown,
+  appendLedgerRow,
+  writeCompletedSnapshot,
+  type SpendReport,
+  type CycleLedgerRow,
+} from './cycle-artifacts/spend-report.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -416,6 +426,62 @@ export function buildGateRetryContext(
   attempt: number,
   rationale: string,
 ): GateRetryContext {
+  // P0.6 — epic-review fix-up routing. When the gate that rejected was the
+  // structured epic review, it wrote phases/epic-review.json with the EXACT
+  // faultedItems. Prefer that over the regex/PR-record extraction below so the
+  // execute-phase fix-up re-runs precisely the faulted plan items (and only
+  // those). Wrapped in try/catch: any failure (missing/corrupt file, legacy
+  // cycle with no epic-review.json) falls through to the legacy extraction,
+  // keeping signal cycles byte-identical.
+  try {
+    const epicReviewPath = join(
+      projectRoot,
+      '.agentforge',
+      'cycles',
+      cycleId,
+      'phases',
+      'epic-review.json',
+    );
+    const epicReview = JSON.parse(readFileSync(epicReviewPath, 'utf8')) as {
+      mode?: unknown;
+      faultedItems?: unknown;
+    };
+    if (
+      epicReview?.mode === 'epic-review' &&
+      Array.isArray(epicReview.faultedItems) &&
+      epicReview.faultedItems.length > 0
+    ) {
+      type FaultedItem = { itemId: string; reason: string; files: string[] };
+      const faulted: FaultedItem[] = [];
+      for (const raw of epicReview.faultedItems as unknown[]) {
+        if (!raw || typeof raw !== 'object') continue;
+        const r = raw as { itemId?: unknown; reason?: unknown; files?: unknown };
+        if (typeof r.itemId !== 'string' || r.itemId.length === 0) continue;
+        faulted.push({
+          itemId: r.itemId,
+          reason: typeof r.reason === 'string' ? r.reason : '',
+          files: Array.isArray(r.files)
+            ? r.files.filter((x: unknown): x is string => typeof x === 'string')
+            : [],
+        });
+      }
+      if (faulted.length > 0) {
+        const itemIds = faulted.map((f) => f.itemId);
+        const files = Array.from(new Set(faulted.flatMap((f) => f.files)));
+        const findings = faulted.map((f) => `[${f.itemId}] ${f.reason}`);
+        return {
+          attempt,
+          rationale,
+          itemIds,
+          files,
+          findings,
+        };
+      }
+    }
+  } catch {
+    // fall through to the legacy PR-record + rationale extraction below
+  }
+
   const records = readAgentPrRecords(projectRoot, cycleId);
   const branchFromRationale = extractBranchName(rationale);
   const prNumbersFromRationale = extractPrNumbers(rationale);
@@ -1509,6 +1575,13 @@ export class CycleRunner {
     // After requireApprovalAfter retries, block on human approval.
     // ─────────────────────────────────────────────────────────────────
     const retryConfig = this.options.config.retry;
+    // P0.6 — the epic path caps auto-retries at 2 (the funded fix-up loop is
+    // expensive; an epic review re-runs an opus review + a faulted-item subset
+    // each time). Signal cycles keep the operator-configured maxAutoRetries.
+    const effectiveMaxRetries =
+      this.options.objective !== undefined
+        ? Math.min(2, retryConfig.maxAutoRetries)
+        : retryConfig.maxAutoRetries;
     let retryAttempt = 0;
     let gateRetry: GateRetryContext | undefined;
     let runSummary!: SprintRunSummary;
@@ -1595,10 +1668,10 @@ export class CycleRunner {
           retryAttempt,
           err.rationale,
         );
-        this.logger.logPhaseFailure('gate', `retry ${retryAttempt}/${retryConfig.maxAutoRetries}: ${err.rationale.slice(0, 500)}`);
+        this.logger.logPhaseFailure('gate', `retry ${retryAttempt}/${effectiveMaxRetries}: ${err.rationale.slice(0, 500)}`);
 
         // Check if we've exhausted auto-retries
-        if (retryAttempt > retryConfig.maxAutoRetries) {
+        if (retryAttempt > effectiveMaxRetries) {
           throw err; // Propagate to start() → FAILED
         }
 
@@ -1624,7 +1697,7 @@ export class CycleRunner {
         this.checkKillSwitch();
 
         // eslint-disable-next-line no-console
-        console.log(`[autonomous:cycle] gate rejected (attempt ${retryAttempt}/${retryConfig.maxAutoRetries}) — retrying from execute phase`);
+        console.log(`[autonomous:cycle] gate rejected (attempt ${retryAttempt}/${effectiveMaxRetries}) — retrying from execute phase`);
       }
     }
 
@@ -1848,7 +1921,28 @@ export class CycleRunner {
       // tree is untouched. The PR opens only when the branch was actually
       // pushed (or local-only with a real HEAD); otherwise we log and skip.
       if (this.epicIntegrationPushedSha) {
-        const epicBody = this.buildEpicPrBody(plan.version, scored.summary);
+        // P0.8 — build the spend report and embed its markdown in the PR body.
+        // Failure-safe: a null report (no plan/execute signal) leaves the body
+        // unchanged; the write is best-effort and never throws.
+        let spendReportMarkdown: string | undefined;
+        try {
+          const report = buildSpendReport({
+            projectRoot: this.options.cwd,
+            cycleId: this.cycleId,
+            budgetUsd: this.options.config.budget.perCycleUsd,
+          });
+          if (report) {
+            writeSpendReport(this.options.cwd, this.cycleId, report);
+            spendReportMarkdown = renderSpendReportMarkdown(report);
+          }
+        } catch {
+          // non-fatal — a spend-report failure must never block the epic PR
+        }
+        const epicBody = this.buildEpicPrBody(
+          plan.version,
+          scored.summary,
+          spendReportMarkdown,
+        );
         const prRequest = {
           branch: this.branch,
           baseBranch: this.options.config.git.baseBranch,
@@ -2006,7 +2100,73 @@ export class CycleRunner {
     if (this.scoringFallback) {
       completedOverrides.scoringFallback = this.scoringFallback;
     }
-    return this.buildResult(CycleStage.COMPLETED, completedOverrides);
+    const result = this.buildResult(CycleStage.COMPLETED, completedOverrides);
+    // P0.8 — terminal artifacts for BOTH epic and legacy cycles. Every write is
+    // best-effort; an artifact failure must never turn a passed cycle into a
+    // failure. The ledger is universal — it is the calibration feed for future
+    // plan-phase cost estimates.
+    this.writeTerminalArtifacts(result);
+    return result;
+  }
+
+  /**
+   * P0.8 — write the terminal cycle artifacts: completed.json (the CycleResult
+   * snapshot), spend-report.json (planned-vs-actual reconciliation), and one
+   * cycle-ledger.jsonl row. Written for every COMPLETED cycle. EVERY write is
+   * try/caught here AND inside the artifact helpers, so this can never fail the
+   * cycle that just passed.
+   */
+  private writeTerminalArtifacts(result: CycleResult): void {
+    try {
+      writeCompletedSnapshot(this.options.cwd, this.cycleId, result);
+    } catch {
+      // non-fatal
+    }
+
+    let report: SpendReport | null = null;
+    try {
+      report = buildSpendReport({
+        projectRoot: this.options.cwd,
+        cycleId: this.cycleId,
+        budgetUsd: this.options.config.budget.perCycleUsd,
+      });
+      if (report) {
+        writeSpendReport(this.options.cwd, this.cycleId, report);
+      }
+    } catch {
+      report = null;
+    }
+
+    try {
+      const planned = report ? report.perItem.length : 0;
+      const completed = report
+        ? report.perItem.filter((i) => i.status === 'completed').length
+        : 0;
+      const failed = report
+        ? report.perItem.filter((i) => i.status === 'failed').length
+        : 0;
+      const totalUsd = report ? report.totalUsd : this.totalCostUsd;
+      const budgetUsd = this.options.config.budget.perCycleUsd;
+      const row: CycleLedgerRow = {
+        schemaVersion: 1,
+        cycleId: this.cycleId,
+        ...(report?.epicId !== undefined ? { epicId: report.epicId } : {}),
+        ...(this.options.objective !== undefined ? { objective: this.options.objective } : {}),
+        budgetUsd,
+        totalUsd,
+        utilization: budgetUsd > 0 ? totalUsd / budgetUsd : 0,
+        executionUsd: report ? report.executionUsd : 0,
+        overheadUsd: report ? report.overheadUsd : 0,
+        ...(this.prUrl !== null ? { prUrl: this.prUrl } : {}),
+        ...(this.prNumber !== null ? { prNumber: this.prNumber } : {}),
+        ...(this.gateVerdict !== undefined ? { gateVerdict: this.gateVerdict } : {}),
+        items: { planned, completed, failed },
+        completedAt: new Date().toISOString(),
+      };
+      appendLedgerRow(this.options.cwd, row);
+    } catch {
+      // non-fatal
+    }
   }
 
   /**
@@ -2516,7 +2676,11 @@ Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
    * (no shell, no template-string escaping concerns) describing the epic and the
    * children that landed on the branch.
    */
-  private buildEpicPrBody(version: string, summary: string): string {
+  private buildEpicPrBody(
+    version: string,
+    summary: string,
+    spendReportMarkdown?: string,
+  ): string {
     const epic = this.epicIntegration;
     const merged = epic?.mergedBranches ?? [];
     const mergedSection = merged.length > 0
@@ -2526,6 +2690,9 @@ Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
       ? '\n\n> Note: one or more child branches conflicted during wave integration ' +
         'and were excluded; their items are marked failed for follow-up.'
       : '';
+    // P0.8 — append the spend report section (when available) before the trailing
+    // Cycle line. Absent when the report could not be built (body unchanged).
+    const spendSection = spendReportMarkdown ? `\n${spendReportMarkdown}\n` : '';
     return `## Epic ${epic?.epicId ?? 'unknown'} (autonomous v${version})
 
 ${summary}
@@ -2534,7 +2701,7 @@ This PR accumulates every wave of the epic onto the integration branch \`${epic?
 
 ### Child branches merged into the integration branch
 ${mergedSection}${conflictNote}
-
+${spendSection}
 Cycle: ${this.cycleId}
 `;
   }

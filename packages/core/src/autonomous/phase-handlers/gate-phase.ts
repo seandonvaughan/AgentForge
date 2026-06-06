@@ -128,8 +128,11 @@ function tryExtractVerdict(fragment: string): GateVerdict | null {
  * When the rationale contained inline JSON or markdown braces, the match
  * truncated mid-object and JSON.parse choked. This balanced-brace walker
  * extracts the actual full object.
+ *
+ * Exported (P0.6) so the epic-review salvage chain can reuse this exact
+ * brace-walker without duplicating the string/escape-aware logic.
  */
-function extractBalancedJson(text: string, startIdx: number): string | null {
+export function extractBalancedJson(text: string, startIdx: number): string | null {
   if (text[startIdx] !== '{') return null;
   let depth = 0;
   let inString = false;
@@ -400,6 +403,14 @@ export async function runGatePhase(
   ctx: PhaseContext,
   options: GatePhaseOptions = {},
 ): Promise<PhaseResult> {
+  // P0.6 — on the objective/epic path, replace the legacy CEO gate with the
+  // strong-model structured epic review + funded fix-up loop. The legacy path
+  // below is BYTE-IDENTICAL when ctx.objective is absent (signal cycles).
+  if (ctx.objective !== undefined) {
+    const { runEpicReview } = await import('./epic-review.js');
+    return runEpicReview(ctx, options);
+  }
+
   const phase = 'gate' as const;
   const startedAt = Date.now();
   const allowedTools = options.allowedTools ?? GATE_PHASE_DEFAULT_TOOLS;

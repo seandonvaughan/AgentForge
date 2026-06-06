@@ -473,6 +473,124 @@ describe('gate retry context — agent PR ledger routing', () => {
 });
 
 // ---------------------------------------------------------------------------
+// P0.6 — epic-review fix-up routing preference in buildGateRetryContext.
+// When phases/epic-review.json exists with faultedItems, it takes precedence
+// over the legacy PR-record/rationale extraction so the fix-up re-runs the
+// EXACT faulted plan items.
+// ---------------------------------------------------------------------------
+
+function writeEpicReview(
+  projectRoot: string,
+  cycleId: string,
+  faultedItems: Array<{ itemId: string; reason: string; files: string[] }>,
+): void {
+  const dir = join(projectRoot, '.agentforge', 'cycles', cycleId, 'phases');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, 'epic-review.json'),
+    JSON.stringify({
+      phase: 'gate',
+      mode: 'epic-review',
+      cycleId,
+      verdict: 'REQUEST_CHANGES',
+      faultedItems,
+    }),
+  );
+}
+
+describe('gate retry context — epic-review preference (P0.6)', () => {
+  it('prefers epic-review.json faultedItems for exact itemIds/files/findings', () => {
+    const cycleId = 'cycle-epic-review-pref';
+    // A legacy ledger ALSO exists — the epic-review path must win over it.
+    writeLedger(projectRoot, cycleId, [
+      {
+        prNumber: 200,
+        branch: 'codex/agent-x',
+        itemIds: ['legacy-item'],
+        openedAt: '2026-06-06T01:00:00.000Z',
+      },
+    ]);
+    writeEpicReview(projectRoot, cycleId, [
+      { itemId: 'i1', reason: 'handler missing', files: ['src/a.ts', 'src/b.ts'] },
+      { itemId: 'i2', reason: 'no test', files: ['src/b.ts'] },
+    ]);
+
+    const context = buildGateRetryContext(projectRoot, cycleId, 1, 'Epic review requested changes.');
+
+    expect(context.itemIds).toEqual(['i1', 'i2']);
+    // files = dedup union across faulted items.
+    expect([...(context.files ?? [])].sort()).toEqual(['src/a.ts', 'src/b.ts']);
+    expect(context.findings).toEqual(['[i1] handler missing', '[i2] no test']);
+    // The legacy ledger itemId must NOT leak through.
+    expect(context.itemIds).not.toContain('legacy-item');
+  });
+
+  it('falls through to legacy extraction when epic-review.json is absent', () => {
+    const cycleId = 'cycle-no-epic-review';
+    writeLedger(projectRoot, cycleId, [
+      {
+        prNumber: 176,
+        branch: 'codex/agent-runtime-b',
+        itemIds: ['item-B'],
+        openedAt: '2026-05-25T01:01:00.000Z',
+      },
+    ]);
+    const context = buildGateRetryContext(
+      projectRoot,
+      cycleId,
+      1,
+      'Gate rejected the work against branch codex/agent-runtime-b.',
+    );
+    // Legacy behavior unchanged (byte-identical to the non-epic path).
+    expect(context.rejectedBranch).toBe('codex/agent-runtime-b');
+    expect(context.itemIds).toEqual(['item-B']);
+  });
+
+  it('falls through to legacy extraction when epic-review.json is corrupt', () => {
+    const cycleId = 'cycle-corrupt-epic-review';
+    makeCycleDir(projectRoot, cycleId);
+    const dir = join(projectRoot, '.agentforge', 'cycles', cycleId, 'phases');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'epic-review.json'), '{ not valid json ');
+    writeLedger(projectRoot, cycleId, [
+      {
+        prNumber: 176,
+        branch: 'codex/agent-runtime-b',
+        itemIds: ['item-B'],
+        openedAt: '2026-05-25T01:01:00.000Z',
+      },
+    ]);
+    const context = buildGateRetryContext(
+      projectRoot,
+      cycleId,
+      1,
+      'Gate rejected the work against branch codex/agent-runtime-b.',
+    );
+    expect(context.itemIds).toEqual(['item-B']);
+  });
+
+  it('falls through to legacy when epic-review.json has an empty faultedItems array', () => {
+    const cycleId = 'cycle-empty-faulted';
+    writeEpicReview(projectRoot, cycleId, []);
+    writeLedger(projectRoot, cycleId, [
+      {
+        prNumber: 176,
+        branch: 'codex/agent-runtime-b',
+        itemIds: ['item-B'],
+        openedAt: '2026-05-25T01:01:00.000Z',
+      },
+    ]);
+    const context = buildGateRetryContext(
+      projectRoot,
+      cycleId,
+      1,
+      'Gate rejected the work against branch codex/agent-runtime-b.',
+    );
+    expect(context.itemIds).toEqual(['item-B']);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 1–4: MergeQueue construction / start() gating
 // ---------------------------------------------------------------------------
 

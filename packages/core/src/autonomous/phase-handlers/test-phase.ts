@@ -130,6 +130,59 @@ export async function runTestPhase(
     startedAt: new Date(startedAt).toISOString(),
   });
 
+  // P0.6 — on the objective/epic path the advisory LLM QA-strategy report is
+  // redundant: every child already passed the deterministic per-child verify
+  // (P0.5 — scoped typecheck + affected tests inside its worktree) and the
+  // cycle-runner's VERIFY stage runs the full real test suite after the gate.
+  // Skip the report for $0. Legacy (signal) cycles are untouched.
+  if (ctx.objective !== undefined) {
+    const durationMs = Date.now() - startedAt;
+    const skipResult: PhaseResult = {
+      phase,
+      status: 'completed',
+      durationMs,
+      costUsd: 0,
+      agentRuns: [],
+    };
+    if (ctx.cycleId) {
+      const phaseJsonPath = join(
+        ctx.projectRoot,
+        '.agentforge',
+        'cycles',
+        ctx.cycleId,
+        'phases',
+        'test.json',
+      );
+      try {
+        mkdirSync(dirname(phaseJsonPath), { recursive: true });
+        writeFileSync(
+          phaseJsonPath,
+          JSON.stringify(
+            {
+              phase,
+              skipped: true,
+              reason:
+                'epic path — deterministic per-child verify + cycle VERIFY stage replace the advisory QA-strategy report',
+              costUsd: 0,
+            },
+            null,
+            2,
+          ),
+        );
+      } catch {
+        // non-fatal
+      }
+    }
+    ctx.bus.publish('sprint.phase.completed', {
+      sprintId: ctx.sprintId,
+      phase,
+      cycleId: ctx.cycleId,
+      result: skipResult,
+      completedAt: new Date().toISOString(),
+    });
+    return skipResult;
+  }
+
   // Load execute phase results if available.
   let itemResults: unknown[] = [];
   const reviewTargets = loadExecuteReviewTargets(ctx.projectRoot, ctx.cycleId);
