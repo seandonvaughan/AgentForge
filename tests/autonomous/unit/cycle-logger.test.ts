@@ -329,6 +329,98 @@ describe('CycleLogger', () => {
       expect(() => JSON.parse(line)).not.toThrow();
     }
   });
+
+  describe('logPhaseResult merge semantics (P0.1 phase-artifact clobber fix)', () => {
+    const phasePath = () =>
+      join(tmpDir, '.agentforge/cycles', cycleId, 'phases', 'audit.json');
+
+    it('merges the summary into a handler-written artifact, preserving handler keys', () => {
+      // Simulate runAuditPhase having written its rich artifact first.
+      writeFileSync(phasePath(), JSON.stringify({
+        findings: [{ id: 'f1' }],
+        custom: 'x',
+      }, null, 2));
+
+      logger.logPhaseResult('audit', {
+        phase: 'audit',
+        status: 'completed',
+        durationMs: 4200,
+        costUsd: 2.5,
+        agentRuns: [],
+      });
+
+      const data = JSON.parse(readFileSync(phasePath(), 'utf8'));
+      // Handler-written keys survive.
+      expect(data.findings[0].id).toBe('f1');
+      expect(data.custom).toBe('x');
+      // Logger summary fields are present on top.
+      expect(data.status).toBe('completed');
+      expect(data.durationMs).toBe(4200);
+      expect(data.costUsd).toBe(2.5);
+      expect(data.phase).toBe('audit');
+    });
+
+    it('logger summary fields refresh stale handler values on top of the merge', () => {
+      writeFileSync(phasePath(), JSON.stringify({
+        findings: 'AUDIT FINDINGS TEXT',
+        status: 'running',
+        costUsd: 0,
+      }, null, 2));
+
+      logger.logPhaseResult('audit', {
+        phase: 'audit',
+        status: 'completed',
+        durationMs: 100,
+        costUsd: 3.25,
+        agentRuns: [],
+      });
+
+      const data = JSON.parse(readFileSync(phasePath(), 'utf8'));
+      expect(data.findings).toBe('AUDIT FINDINGS TEXT');
+      expect(data.status).toBe('completed');
+      expect(data.costUsd).toBe(3.25);
+    });
+
+    it('writes the summary alone when no phase artifact pre-exists', () => {
+      expect(existsSync(phasePath())).toBe(false);
+
+      logger.logPhaseResult('audit', {
+        phase: 'audit',
+        status: 'completed',
+        durationMs: 50,
+        costUsd: 0.1,
+        agentRuns: [],
+      });
+
+      const data = JSON.parse(readFileSync(phasePath(), 'utf8'));
+      expect(data.status).toBe('completed');
+      expect(data.durationMs).toBe(50);
+      expect(data.costUsd).toBe(0.1);
+      expect('findings' in data).toBe(false);
+      expect(Object.keys(data).sort()).toEqual(
+        ['agentRuns', 'costUsd', 'durationMs', 'phase', 'status'],
+      );
+    });
+
+    it('falls back to a summary-only write without throwing when the artifact is corrupt', () => {
+      writeFileSync(phasePath(), '{ this is not valid JSON !!');
+
+      expect(() =>
+        logger.logPhaseResult('audit', {
+          phase: 'audit',
+          status: 'completed',
+          durationMs: 75,
+          costUsd: 0.2,
+          agentRuns: [],
+        }),
+      ).not.toThrow();
+
+      const data = JSON.parse(readFileSync(phasePath(), 'utf8'));
+      expect(data.status).toBe('completed');
+      expect(data.durationMs).toBe(75);
+      expect('findings' in data).toBe(false);
+    });
+  });
 });
 
 function readEvents(cwd: string, cycleId: string): any[] {
