@@ -137,6 +137,60 @@ export async function runAuditPhase(
     startedAt: new Date(startedAt).toISOString(),
   });
 
+  // P0.6 — on the objective/epic path the LLM repo audit is replaced by the
+  // deterministic digest inside the plan-phase decomposer (the operator's
+  // objective IS the work statement; the epic plan path never reads
+  // audit.json). Campaign forensics measured this phase at 49% of all spend
+  // while its findings were frozen out of plan.json — skip it for $0. Legacy
+  // (signal) cycles are untouched.
+  if (ctx.objective !== undefined) {
+    const durationMs = Date.now() - startedAt;
+    const skipResult: PhaseResult = {
+      phase,
+      status: 'completed',
+      durationMs,
+      costUsd: 0,
+      agentRuns: [],
+    };
+    if (ctx.cycleId) {
+      const phaseJsonPath = join(
+        ctx.projectRoot,
+        '.agentforge',
+        'cycles',
+        ctx.cycleId,
+        'phases',
+        'audit.json',
+      );
+      try {
+        mkdirSync(dirname(phaseJsonPath), { recursive: true });
+        writeFileSync(
+          phaseJsonPath,
+          JSON.stringify(
+            {
+              phase,
+              skipped: true,
+              reason:
+                'epic path — objective text drives the plan-phase decomposer; deterministic digest replaces the LLM audit',
+              costUsd: 0,
+            },
+            null,
+            2,
+          ),
+        );
+      } catch {
+        // non-fatal
+      }
+    }
+    ctx.bus.publish('sprint.phase.completed', {
+      sprintId: ctx.sprintId,
+      phase,
+      cycleId: ctx.cycleId,
+      result: skipResult,
+      completedAt: new Date().toISOString(),
+    });
+    return skipResult;
+  }
+
   // Inject cross-cycle memory so the agent doesn't repeat past mistakes.
   const memoryEntries = readRecentMemoryEntries(ctx.projectRoot, memoryLimit);
 
