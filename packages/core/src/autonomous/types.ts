@@ -75,6 +75,19 @@ export interface CycleConfig {
      * before the commit is created.
      */
     maxLinesPerCommit: number;
+    /**
+     * Operator-supplied allowlist for the staged-diff secret scan. Entries are
+     * matched against each changed file's repo-relative path using substring /
+     * prefix matching only (NEVER regex — paths are not regex-evaluated). A file
+     * whose path matches any entry is exempt from the secret-pattern scan.
+     *
+     * This sits ON TOP of the built-in allowlist for well-known
+     * pattern-definition sources (gitleaks configs, files named *secret*pattern*,
+     * and the scanner's own source file), which is always exempt regardless of
+     * this list. Use this to add project-specific fixtures or pattern catalogs
+     * that legitimately contain secret-shaped strings.
+     */
+    secretScanAllowlist?: string[];
   };
   pr: {
     draft: boolean;
@@ -155,10 +168,12 @@ export interface CycleConfig {
    */
   fallbackEnabled?: boolean;
   /**
-   * When true (default), automatically run the learning-curator + mutator
-   * after gate approval so all agents that participated in this cycle absorb
-   * the new lessons. Set to false to skip for smoke runs, tests, or when
-   * Workstreams P+Q are not yet available.
+   * OPT-IN (default false). When explicitly set to true — or the
+   * `AGENTFORGE_AUTO_REFORGE=1` env var is set — automatically run the
+   * learning-curator + mutator after gate approval so agents that participated
+   * in this cycle absorb the new lessons. Default OFF because stage 3.25 mutates
+   * `.agentforge/agents/*.yaml` and that leaked unrelated changes into PRs; run
+   * `agentforge team forge` out-of-band instead for routine reforges.
    */
   autoReforge?: boolean;
   /**

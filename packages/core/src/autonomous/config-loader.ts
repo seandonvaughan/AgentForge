@@ -208,6 +208,15 @@ function validateConfig(config: CycleConfig): void {
   if (typeof config.git.maxLinesPerCommit !== 'number' || config.git.maxLinesPerCommit <= 0) {
     throw new Error('git.maxLinesPerCommit must be a positive number');
   }
+  if (
+    config.git.secretScanAllowlist !== undefined &&
+    (
+      !Array.isArray(config.git.secretScanAllowlist) ||
+      config.git.secretScanAllowlist.some((entry) => typeof entry !== 'string')
+    )
+  ) {
+    throw new Error('git.secretScanAllowlist must be an array of strings');
+  }
   if (config.prMode !== undefined && config.prMode !== 'single' && config.prMode !== 'multi') {
     throw new Error('prMode must be "single" or "multi"');
   }

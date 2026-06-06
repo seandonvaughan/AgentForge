@@ -38,6 +38,47 @@ export function matchesCoreGlobs(file, globs) {
 }
 
 /**
+ * True when `file` is a test/spec file (any of .test|.spec × .ts|.tsx|.js|.jsx|.mjs|.cjs).
+ * String-only matching (no regex over user-controlled paths) per repo convention.
+ */
+export function isTestFile(file) {
+  const norm = String(file).split('\\').join('/');
+  const exts = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'];
+  return exts.some((ext) => norm.endsWith('.test' + ext) || norm.endsWith('.spec' + ext));
+}
+
+/**
+ * Force-include guard for affected-test selection. `vitest related` resolves
+ * tests that import the changed *source* files, but it does NOT run a NEWLY-ADDED
+ * test file whose own source-under-test was unchanged (or whose test body itself
+ * is the only change). A broken brand-new test therefore slips past the affected
+ * gate and only fails in full-suite CI (PR #258 incident). This returns the
+ * deduplicated union of `vitest related` output and every added/modified test
+ * file in the diff, so a changed test always runs in the affected set.
+ *
+ * Order is deterministic: related output first (preserving its order), then any
+ * forced test files not already present, in diff order.
+ *
+ * @param {{ changedFiles?: string[], relatedFiles?: string[] }} opts
+ * @returns {string[]}
+ */
+export function selectAffectedFiles({ changedFiles = [], relatedFiles = [] }) {
+  const out = [];
+  const seen = new Set();
+  const push = (file) => {
+    const norm = String(file).split('\\').join('/').trim();
+    if (norm.length === 0 || seen.has(norm)) return;
+    seen.add(norm);
+    out.push(norm);
+  };
+  for (const f of relatedFiles) push(f);
+  for (const f of changedFiles) {
+    if (isTestFile(f)) push(f);
+  }
+  return out;
+}
+
+/**
  * Decide the gate mode. 'full' overrides everything; 'related' forces affected
  * tests; 'auto' runs affected tests except when a deep-gate trigger fires
  * (core-glob diff, deep-gate cadence, or an unknown/empty diff).
@@ -71,6 +112,12 @@ export function nextWorkersOnOom(workers) {
 /**
  * Construct vitest CLI args. `related --run <files>` runs only affected tests once.
  *
+ * Force-include: every added/modified test file in the diff is appended to the
+ * `related` file list (via selectAffectedFiles) so a brand-new test ALWAYS runs.
+ * `vitest related` resolves tests that import the listed source files, which can
+ * miss a newly-added test whose subject was unchanged — the PR #258 regression.
+ * A changed test file is a valid argument to `related` and runs as itself.
+ *
  * IMPORTANT: only `--maxWorkers` is emitted. vitest 4.x rejects `--minWorkers`
  * with a fatal `CACError: Unknown option --minWorkers` before any test runs,
  * which is exactly the bug that broke the VERIFY gate for every cycle.
@@ -78,7 +125,11 @@ export function nextWorkersOnOom(workers) {
 export function buildVitestArgs({ mode, changedFiles = [], workers }) {
   const workerFlags = [`--maxWorkers=${workers}`];
   if (mode === 'related' && changedFiles.length > 0) {
-    return ['related', '--run', ...changedFiles, ...workerFlags];
+    // changedFiles already carry the source files for related-test resolution;
+    // selectAffectedFiles guarantees changed test files are also present so they
+    // run directly even when nothing imports their subject.
+    const files = selectAffectedFiles({ changedFiles, relatedFiles: changedFiles });
+    return ['related', '--run', ...files, ...workerFlags];
   }
   return ['run', ...workerFlags];
 }

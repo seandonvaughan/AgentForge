@@ -1233,6 +1233,13 @@ export class CycleRunner {
     // === end safeguard #1 ===
 
     let final: CycleResult;
+    // FIX 1 — capture the operator's checked-out branch at run start so we can
+    // restore it in the finally below. Every width-1 (legacy) cycle used to
+    // strand the main working tree on the autonomous branch (codex/vX.Y.Z); the
+    // epic path (PR #271) never switches the main tree, so this protects the
+    // LEGACY path and failure exits. Best-effort: a detached HEAD or non-repo
+    // cwd yields undefined and the restore step becomes a no-op.
+    const originalBranch = await this.captureCurrentBranch();
     // Heartbeat: every 30s, stamp lastHeartbeatAt on cycle.json so dashboards
     // can detect runners that died at the OS level (SIGKILL/OOM/terminal-close)
     // where the try/catch below never gets a chance to flush a terminal stage.
@@ -1269,6 +1276,12 @@ export class CycleRunner {
           error: err instanceof Error ? err.message : String(err),
         });
       }
+    } finally {
+      // FIX 1 — restore the operator's original branch on EVERY exit (success,
+      // kill, gate-reject, hard failure). Never mask the original outcome:
+      // restoreOriginalBranch only warns on failure and switches only when the
+      // tree is clean enough to do so safely.
+      await this.restoreOriginalBranch(originalBranch);
     }
 
     // Stop the heartbeat before the terminal write so the two writers don't
@@ -1618,11 +1631,13 @@ export class CycleRunner {
     this.checkKillSwitch();
 
     // ─────────────────────────────────────────────────────────────────
-    // STAGE 3.25 — AUTO-REFORGE
-    // After gate approval, run the learning-curator + mutator so agents
-    // absorb the lessons from this cycle before it is marked COMPLETED.
-    // Errors are swallowed — a reforge failure must never kill a passed
-    // cycle. Honoured by config.autoReforge (default true).
+    // STAGE 3.25 — AUTO-REFORGE (OPT-IN, default OFF)
+    // When explicitly enabled (config.autoReforge=true OR
+    // AGENTFORGE_AUTO_REFORGE=1), run the learning-curator + mutator so agents
+    // absorb this cycle's lessons before it is marked COMPLETED. Default is to
+    // SKIP: stage 3.25 previously mutated .agentforge/agents/*.yaml mid-cycle
+    // and leaked unrelated changes into PRs. Errors are swallowed — a reforge
+    // failure must never kill a passed cycle.
     // ─────────────────────────────────────────────────────────────────
     await this.runAutoReforgeStep();
     this.checkKillSwitch();
@@ -2157,19 +2172,106 @@ export class CycleRunner {
   }
 
   /**
+   * FIX 1 — read the repo's current branch at run start. Returns the branch
+   * name, or undefined when HEAD is detached (`git symbolic-ref` style "HEAD")
+   * or the cwd is not a git repo. Best-effort and never throws — branch capture
+   * must not be able to fail a cycle.
+   */
+  private async captureCurrentBranch(): Promise<string | undefined> {
+    try {
+      const { stdout } = await execFileAsync(
+        'git',
+        ['rev-parse', '--abbrev-ref', 'HEAD'],
+        { cwd: this.options.cwd, timeout: 30_000, maxBuffer: 1024 * 1024, windowsHide: true },
+      );
+      const branch = stdout.toString().trim();
+      // Detached HEAD reports literally "HEAD" — nothing to restore.
+      return branch.length > 0 && branch !== 'HEAD' ? branch : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * FIX 1 — restore the operator's original branch on cycle exit.
+   *
+   * The autonomous loop's legacy/width-1 path runs createBranch/commit/push on
+   * the main working tree, leaving it checked out on codex/vX.Y.Z after the
+   * cycle. This restores the branch the operator started on.
+   *
+   * Safety rules:
+   *   - No-op when the branch was not captured, or the tree is already on it.
+   *   - Only switches when the working tree is clean enough to do so safely;
+   *     a dirty tree (typical of a failure exit) gets a one-line WARNING naming
+   *     the branch instead of a forced switch that could clobber work.
+   *   - Wrapped so it ONLY warns — it must never throw and never mask the
+   *     cycle's original error/outcome.
+   */
+  private async restoreOriginalBranch(originalBranch: string | undefined): Promise<void> {
+    if (!originalBranch) return;
+    try {
+      const current = await this.captureCurrentBranch();
+      if (current === undefined || current === originalBranch) {
+        // Nothing changed the main tree (e.g. the epic path, or multi-PR mode),
+        // or HEAD is detached — leave it alone.
+        return;
+      }
+
+      // Is the tree clean enough to switch without losing work?
+      const { stdout } = await execFileAsync(
+        'git',
+        ['status', '--porcelain'],
+        { cwd: this.options.cwd, timeout: 30_000, maxBuffer: 10 * 1024 * 1024, windowsHide: true },
+      );
+      const dirty = stdout.toString().trim().length > 0;
+      if (dirty) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[autonomous:cycle] left working tree on branch '${current}' (could not restore '${originalBranch}': uncommitted changes present). Run \`git checkout ${originalBranch}\` after resolving them.`,
+        );
+        return;
+      }
+
+      await execFileAsync(
+        'git',
+        ['checkout', originalBranch],
+        { cwd: this.options.cwd, timeout: 60_000, maxBuffer: 10 * 1024 * 1024, windowsHide: true },
+      );
+      // eslint-disable-next-line no-console
+      console.log(`[autonomous:cycle] restored operator branch '${originalBranch}' (was '${current}')`);
+    } catch (err) {
+      // Restoration is best-effort: warn, never throw, never mask the cycle result.
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[autonomous:cycle] could not restore operator branch '${originalBranch}' (non-fatal): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
+  /**
    * Run the auto-reforge step (STAGE 3.25). Extracts the unique agent IDs
    * that ran in this cycle from phases/execute.json, then calls
    * runAutoReforge so those agents absorb the cycle's learnings.
    *
-   * Honoured by `config.autoReforge` (default true when the field is absent).
-   * Any error is caught and logged — a reforge failure MUST NOT kill a cycle.
+   * FIX 2 — auto-reforge is now OPT-IN (default OFF). Production forensics
+   * found stage 3.25 mutated `.agentforge/agents/*.yaml` mid-cycle and leaked
+   * those unrelated changes into PRs. It only runs when the operator explicitly
+   * enables it via `autoReforge: true` in autonomous.yaml OR the
+   * `AGENTFORGE_AUTO_REFORGE=1` env var. The module is intact — only the cycle
+   * trigger is gated. Any error is caught and logged — a reforge failure MUST
+   * NOT kill a cycle.
    */
   private async runAutoReforgeStep(): Promise<void> {
-    // Default true: existing configs without the field still trigger reforge.
-    const shouldReforge = this.options.config.autoReforge !== false;
+    // OPT-IN ONLY. Default false: a config that does not set the flag (and does
+    // not set AGENTFORGE_AUTO_REFORGE=1) skips reforge entirely so the cycle
+    // never mutates .agentforge/agents/*.yaml behind the operator's back.
+    const envOptIn = process.env['AGENTFORGE_AUTO_REFORGE'] === '1';
+    const shouldReforge = this.options.config.autoReforge === true || envOptIn;
     if (!shouldReforge) {
       // eslint-disable-next-line no-console
-      console.log('[autonomous:cycle] stage 3.25: auto-reforge skipped (autoReforge=false)');
+      console.debug('[autonomous:cycle] stage 3.25: auto-reforge skipped (opt-in; set autoReforge=true or AGENTFORGE_AUTO_REFORGE=1)');
       return;
     }
 

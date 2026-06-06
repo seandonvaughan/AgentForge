@@ -151,6 +151,14 @@ export interface EpicIntegrationResult {
   mergedBranches: string[];
   /** True when at least one wave-merge conflicted (owning items were failed). */
   hadConflicts: boolean;
+  /**
+   * P0.5 — true when any epic child touched a CI-config-class file
+   * (package.json, pnpm-lock.yaml, .github/workflows/**, scripts/**). The
+   * per-child bar deliberately does NOT run the full verify:gates pipeline; it
+   * surfaces this flag so the cycle-runner runs verify:gates once at the epic
+   * level. Absent/false on epics whose children only touched ordinary source.
+   */
+  requiresFullGates?: boolean;
 }
 
 export interface PhaseResult {

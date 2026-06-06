@@ -7,7 +7,15 @@ import { validateCycleJson, validateScoringJson } from './cycle-artifacts/index.
 import { computeCycleStaleness, aggregatePhaseErrorSummary } from './cycle-health.js';
 
 export interface GitEvent {
-  type: 'branch-created' | 'staged' | 'committed' | 'pushed' | 'rolled-back' | 'unreachable-skipped';
+  type:
+    | 'branch-created'
+    | 'staged'
+    | 'committed'
+    | 'pushed'
+    | 'rolled-back'
+    | 'unreachable-skipped'
+    | 'agentforge-paths-excluded'
+    | 'secret-scan-allowlisted';
   branch?: string;
   sha?: string;
   fromSha?: string;

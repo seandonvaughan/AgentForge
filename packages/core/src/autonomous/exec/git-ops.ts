@@ -111,6 +111,129 @@ const SECRET_PATTERNS = [
   /-----BEGIN (RSA |EC )?PRIVATE KEY-----/,
 ];
 
+// FIX 3 — Built-in allowlist for the staged-diff secret scan. Files whose
+// repo-relative path matches one of these well-known pattern-DEFINITION
+// locations legitimately contain secret-shaped tokens (they exist to DETECT
+// secrets, not to leak them). Production forensics flagged this exact class:
+// the scan rejected commits that touched the scanner's own source file and
+// gitleaks configs. Matching is substring / path-segment only — NEVER regex on
+// the path (regex on user-controlled paths is a CodeQL ReDoS class).
+const SECRET_SCAN_PATH_ALLOWLIST = [
+  // The scanner's own source file (this module) and any sibling secret-pattern
+  // catalogs. These DEFINE the SECRET_PATTERNS above.
+  'autonomous/exec/git-ops.ts',
+  'autonomous/exec/git-ops.js',
+  // gitleaks configuration / ignore files in any directory.
+  'gitleaks',
+  '.gitleaksignore',
+] as const;
+
+// Path segments that mark a file as a secret-pattern definition source, e.g.
+// `secret-patterns.ts`, `secretPatterns.json`, `redos-secret-pattern.fixture`.
+// Both substrings must appear in the lowercased path (order-independent).
+const SECRET_PATTERN_DEFINITION_MARKERS = ['secret', 'pattern'] as const;
+
+/**
+ * True when `relPath` is a known pattern-definition source and therefore exempt
+ * from the secret-pattern scan. Uses substring / startsWith matching only.
+ */
+function isSecretScanExemptPath(relPath: string, extraAllowlist: readonly string[]): boolean {
+  const normalized = relPath.replace(/\\/g, '/');
+  const lower = normalized.toLowerCase();
+
+  // Files that DEFINE secret-detection patterns (e.g. **/secret*pattern*).
+  if (
+    SECRET_PATTERN_DEFINITION_MARKERS.every((marker) => lower.includes(marker))
+  ) {
+    return true;
+  }
+
+  for (const entry of SECRET_SCAN_PATH_ALLOWLIST) {
+    if (lower.includes(entry.toLowerCase())) return true;
+  }
+
+  for (const entry of extraAllowlist) {
+    if (entry.length === 0) continue;
+    // Substring/startsWith only — operator entries are globs-as-substrings, not
+    // regex. Strip a single trailing/leading `**` so `**/foo` and `foo/**`
+    // degrade to a plain substring match.
+    const trimmed = entry.replace(/^\*\*\//, '').replace(/\/\*\*$/, '');
+    if (trimmed.length === 0) continue;
+    if (normalized.includes(trimmed) || normalized.startsWith(trimmed)) return true;
+  }
+
+  return false;
+}
+
+// FIX 4 — Any path under `.agentforge/` is excluded from staging UNLESS the
+// item's declared files explicitly include it. Workspace artifacts
+// (epic-planner.yaml, agents/*.yaml, backlog staging files, audit.db) are
+// mutated mid-cycle by other subsystems and must never ride a PR branch.
+function isAgentforgeWorkspacePath(relPath: string): boolean {
+  const normalized = relPath.replace(/\\/g, '/');
+  return normalized === '.agentforge' ||
+    normalized.startsWith('.agentforge/');
+}
+
+interface DiffSection {
+  path: string;
+  body: string;
+}
+
+/**
+ * Split a `git diff --cached` unified-diff blob into per-file sections so the
+ * secret scan can exempt pattern-definition sources individually. Each `git`
+ * file diff begins with a `diff --git a/<path> b/<path>` header; we key each
+ * section on the `b/` (destination) path. The header line itself is included in
+ * the section body. Lines before the first header (rare) are ignored.
+ *
+ * Path extraction is line-prefix based (`startsWith('diff --git ')`) — no regex
+ * is run against the path content itself.
+ */
+function splitUnifiedDiffByFile(diff: string): DiffSection[] {
+  const sections: DiffSection[] = [];
+  let current: { path: string; lines: string[] } | undefined;
+
+  const flush = (): void => {
+    if (current) {
+      sections.push({ path: current.path, body: current.lines.join('\n') });
+    }
+  };
+
+  for (const line of diff.split('\n')) {
+    if (line.startsWith('diff --git ')) {
+      flush();
+      current = { path: parseDiffGitDestinationPath(line), lines: [line] };
+    } else if (current) {
+      current.lines.push(line);
+    }
+  }
+  flush();
+
+  return sections;
+}
+
+/**
+ * Extract the destination ("b/") path from a `diff --git a/x b/y` header.
+ * Falls back to the "a/" path, then to the raw remainder. Splitting is done on
+ * whitespace tokens and ` b/` / ` a/` prefixes — substring operations only.
+ */
+function parseDiffGitDestinationPath(headerLine: string): string {
+  const rest = headerLine.slice('diff --git '.length).trim();
+  // Common case: `a/<path> b/<path>` with no spaces in the path.
+  const bMarker = ' b/';
+  const bIdx = rest.lastIndexOf(bMarker);
+  if (bIdx >= 0) {
+    const candidate = rest.slice(bIdx + bMarker.length).trim();
+    if (candidate.length > 0) return candidate;
+  }
+  if (rest.startsWith('a/')) {
+    const firstToken = rest.split(/\s+/)[0] ?? rest;
+    return firstToken.slice('a/'.length);
+  }
+  return rest;
+}
+
 export class GitOps {
   constructor(
     private readonly cwd: string,
@@ -140,10 +263,48 @@ export class GitOps {
     }
   }
 
-  async stage(files: string[]): Promise<void> {
+  /**
+   * Stage explicit file paths for commit.
+   *
+   * FIX 4 — paths under `.agentforge/` are dropped UNLESS they appear in
+   * `declaredFiles` (the item's explicitly-declared files). This prevents
+   * workspace artifacts mutated mid-cycle (epic-planner.yaml, agents/*.yaml,
+   * backlog staging files) from being swept into a PR branch. `declaredFiles`
+   * defaults to none, so the safe default is to exclude every `.agentforge/`
+   * path.
+   */
+  async stage(files: string[], declaredFiles: string[] = []): Promise<void> {
     if (files.length === 0) {
       throw new GitSafetyError('No files to stage');
     }
+
+    // FIX 4 — exclude .agentforge/ paths that were not explicitly declared by
+    // the item before any further processing. The line/file ceilings below then
+    // apply only to the paths that survive this filter.
+    const declaredSet = new Set(declaredFiles.map((f) => f.replace(/\\/g, '/')));
+    const excludedAgentforge: string[] = [];
+    const filteredFiles: string[] = [];
+    for (const file of files) {
+      const normalized = file.replace(/\\/g, '/');
+      if (isAgentforgeWorkspacePath(normalized) && !declaredSet.has(normalized)) {
+        excludedAgentforge.push(file);
+        continue;
+      }
+      filteredFiles.push(file);
+    }
+    if (excludedAgentforge.length > 0) {
+      this.logger.logGitEvent({
+        type: 'agentforge-paths-excluded',
+        files: excludedAgentforge,
+      });
+    }
+    if (filteredFiles.length === 0) {
+      throw new GitSafetyError(
+        `No files to stage after excluding ${excludedAgentforge.length} undeclared .agentforge/ path(s)`,
+      );
+    }
+    files = filteredFiles;
+
     if (files.length > this.config.maxFilesPerCommit) {
       throw new GitSafetyError(
         `REFUSED: ${files.length} files exceeds maxFilesPerCommit (${this.config.maxFilesPerCommit})`,
@@ -266,9 +427,25 @@ export class GitOps {
 
   async scanStagedForSecrets(): Promise<void> {
     const diff = (await this.git(['diff', '--cached'])).stdout;
-    for (const pattern of SECRET_PATTERNS) {
-      if (pattern.test(diff)) {
-        throw new GitSafetyError(`REFUSED: secret pattern matched (${pattern.source})`);
+    const extraAllowlist = Array.isArray(this.config.secretScanAllowlist)
+      ? this.config.secretScanAllowlist
+      : [];
+
+    // FIX 3 — scan PER FILE so pattern-definition sources (the scanner itself,
+    // gitleaks configs, **/secret*pattern* files) can be exempted without
+    // disabling the scan for normal files in the same commit. A whole-blob scan
+    // could not distinguish them.
+    for (const section of splitUnifiedDiffByFile(diff)) {
+      if (isSecretScanExemptPath(section.path, extraAllowlist)) {
+        this.logger.logGitEvent({ type: 'secret-scan-allowlisted', files: [section.path] });
+        continue;
+      }
+      for (const pattern of SECRET_PATTERNS) {
+        if (pattern.test(section.body)) {
+          throw new GitSafetyError(
+            `REFUSED: secret pattern matched (${pattern.source}) in ${section.path}`,
+          );
+        }
       }
     }
   }
