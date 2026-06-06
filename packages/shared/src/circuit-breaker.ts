@@ -7,6 +7,8 @@ export interface CircuitBreakerOptions {
   resetTimeoutMs?: number;
   /** Number of successes in HALF-OPEN to close again. Default: 2 */
   halfOpenSuccessThreshold?: number;
+  /** Called after the circuit transitions to a new state. */
+  onStateChange?: (next: CircuitState, prev: CircuitState, name: string) => void;
 }
 
 export interface CircuitBreakerStats {
@@ -23,16 +25,18 @@ export class CircuitBreaker {
   private halfOpenSuccesses = 0;
   private lastFailureAt?: string;
   private lastStateChange = new Date().toISOString();
-  private openedAt?: number;
+  private openedAt: number | undefined;
 
   private readonly failureThreshold: number;
   private readonly resetTimeoutMs: number;
   private readonly halfOpenSuccessThreshold: number;
+  private readonly onStateChange: ((next: CircuitState, prev: CircuitState, name: string) => void) | undefined;
 
   constructor(private readonly name: string, opts: CircuitBreakerOptions = {}) {
     this.failureThreshold = opts.failureThreshold ?? 5;
     this.resetTimeoutMs = opts.resetTimeoutMs ?? 60_000;
     this.halfOpenSuccessThreshold = opts.halfOpenSuccessThreshold ?? 2;
+    this.onStateChange = opts.onStateChange;
   }
 
   /** Execute a function through the circuit breaker. Throws if circuit is OPEN. */
@@ -73,10 +77,9 @@ export class CircuitBreaker {
 
   /** Manually reset to closed state. */
   reset(): void {
-    this.state = 'closed';
     this.failures = 0;
     this.halfOpenSuccesses = 0;
-    this.lastStateChange = new Date().toISOString();
+    this._transition('closed');
   }
 
   private _onSuccess(): void {
@@ -111,15 +114,20 @@ export class CircuitBreaker {
       if (Date.now() - this.openedAt >= this.resetTimeoutMs) {
         this._transition('half-open');
         this.halfOpenSuccesses = 0;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (this as any).openedAt = undefined;
+        this.openedAt = undefined;
       }
     }
   }
 
   private _transition(next: CircuitState): void {
+    const prev = this.state;
     this.state = next;
     this.lastStateChange = new Date().toISOString();
+    try {
+      this.onStateChange?.(next, prev, this.name);
+    } catch {
+      // Observability callbacks must not affect circuit-breaker control flow.
+    }
   }
 }
 
