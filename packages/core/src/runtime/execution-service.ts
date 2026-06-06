@@ -14,7 +14,10 @@ import { RuntimeSession } from './runtime-session.js';
 import { isRetriableTransportError } from './transport-errors.js';
 import { AnthropicSdkTransport } from './transports/anthropic-sdk-transport.js';
 import { ClaudeCodeCompatTransport } from './transports/claude-code-compat-transport.js';
-import { CodexCliTransport } from './transports/codex-cli-transport.js';
+import {
+  CodexCliTransport,
+  verifyCodexBinaryIdentity,
+} from './transports/codex-cli-transport.js';
 import { OpenAiSdkTransport } from './transports/openai-sdk-transport.js';
 import type {
   ExecutionProviderKind,
@@ -85,13 +88,22 @@ export class ExecutionService {
     } else if (mode === 'openai-sdk') {
       transports = [new OpenAiSdkTransport()];
     } else {
-      // 'auto' — register both, existing ProviderResolver selection logic applies
+      // 'auto' — Claude-primary, codex-auxiliary (2026-06-06). The Claude
+      // transports (tool-capable claude-code-compat + text-only anthropic-sdk)
+      // and the OpenAI SDK transport are ALWAYS registered. The codex-cli
+      // transport is registered ONLY when the binary passes identity validation
+      // (verifyCodexBinaryIdentity), so a missing/wrong `codex` on PATH degrades
+      // gracefully to Claude instead of registering a transport that would fail
+      // mid-cycle. The verdict is cached per-process inside the transport module,
+      // so this adds no subprocess spawns beyond the existing availability probe.
       transports = [
         new AnthropicSdkTransport(),
         new ClaudeCodeCompatTransport(),
-        new CodexCliTransport(),
         new OpenAiSdkTransport(),
       ];
+      if (verifyCodexBinaryIdentity().ok) {
+        transports.push(new CodexCliTransport());
+      }
     }
 
     this.resolver = new ProviderResolver(transports);

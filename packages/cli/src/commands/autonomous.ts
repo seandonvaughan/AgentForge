@@ -499,10 +499,20 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
     // isolated git worktree, preventing branch ping-pong in the main tree.
     // Skip when --no-worktrees flag is set or AUTONOMOUS_DISABLE_WORKTREES=1.
     // Commander maps --no-worktrees → opts.worktrees = false.
+    //
+    // P0.4 — KEYSTONE: objective/epic mode (--objective) also runs children in
+    // isolated worktrees and releases ONE PR from the integration branch, so it
+    // needs the pool just like multi-PR mode. Plain (non-objective) single-PR
+    // runs keep the prior no-pool behaviour and commit from the main tree.
+    const objectiveMode = typeof opts.objective === 'string' && opts.objective.trim().length > 0;
     const disableWorktreesFlag = opts.worktrees === false;
     const disableWorktreesEnv = process.env['AUTONOMOUS_DISABLE_WORKTREES'] === '1';
-    const worktreesSupportedForMode = config.prMode === 'multi';
-    const worktreesDisabled = disableWorktreesFlag || disableWorktreesEnv || !worktreesSupportedForMode;
+    const { worktreesDisabled } = resolveWorktreeMode({
+      prMode: config.prMode,
+      objectiveMode,
+      disableWorktreesFlag,
+      disableWorktreesEnv,
+    });
 
     let worktreePool: WorktreePool | undefined;
     let disableWorktrees = worktreesDisabled;
@@ -1360,6 +1370,34 @@ async function resolveWorkspaceProjectRoot(options: WorkspaceAwareOptions): Prom
   }
 
   return resolve(cwd);
+}
+
+/**
+ * P0.4 — KEYSTONE: decide whether the execute phase runs in isolated worktrees.
+ *
+ * Pure function (no IO) so it is directly unit-testable. A WorktreePool is built
+ * and threaded to the CycleRunner when worktrees are supported for the mode and
+ * not explicitly disabled:
+ *
+ *   - multi-PR mode (`prMode==='multi'`) requires isolated worktrees.
+ *   - objective/epic mode (`--objective`) runs children in worktrees and releases
+ *     ONE PR from the integration branch — so it needs the pool too.
+ *   - plain (non-objective) single-PR runs keep the prior no-pool behaviour and
+ *     commit from the main tree.
+ *
+ * `disableWorktrees` short-circuits regardless of mode (via `--no-worktrees` flag
+ * or `AUTONOMOUS_DISABLE_WORKTREES=1`).
+ */
+export function resolveWorktreeMode(input: {
+  prMode: string | undefined;
+  objectiveMode: boolean;
+  disableWorktreesFlag: boolean;
+  disableWorktreesEnv: boolean;
+}): { worktreesSupportedForMode: boolean; worktreesDisabled: boolean } {
+  const worktreesSupportedForMode = input.prMode === 'multi' || input.objectiveMode;
+  const worktreesDisabled =
+    input.disableWorktreesFlag || input.disableWorktreesEnv || !worktreesSupportedForMode;
+  return { worktreesSupportedForMode, worktreesDisabled };
 }
 
 function buildCycleWorktreeRootDir(projectRoot: string): string {

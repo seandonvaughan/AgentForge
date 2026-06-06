@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
 import type {
+  EpicIntegrationResult,
   GateRetryContext,
   PhaseContext,
   PhaseResult,
@@ -54,7 +55,6 @@ import {
   epicIntegrationBranchName,
   ensureIntegrationWorktree,
   mergeBranchesIntoIntegration,
-  removeIntegrationWorktree,
 } from './wave-integration.js';
 
 // T4 — structured-output contract (inlined pending T1 merge onto origin/main).
@@ -1145,6 +1145,7 @@ export async function runExecutePhase(
       try {
         worktreeHandle = await allocateWorktreeForItem(worktreePool, ctx, item, integrationBranch);
         itemBranchById.set(item.id, worktreeHandle.branch);
+        branchOwnerById.set(worktreeHandle.branch, item.id);
         ctx.bus.publish('execute.worktree.allocated', {
           sprintId: ctx.sprintId,
           phase,
@@ -1668,8 +1669,16 @@ export async function runExecutePhase(
   const settledResults: Array<PromiseSettledResult<ItemResult>> = [];
   const indexById = new Map<string, number>();
   items.forEach((it, idx) => indexById.set(it.id, idx));
-  // PR-2c2 — epic wave integration: track which branch each item is allocated to.
+  // PR-2c2 — epic wave integration: track which branch each item is allocated to,
+  // plus the reverse map (branch → owning itemId) so a conflicted wave-merge can
+  // attribute the failure back to the exact child item (PR-2d / P0.4).
   const itemBranchById = new Map<string, string>();
+  const branchOwnerById = new Map<string, string>();
+  // PR-2d / P0.4 — child branches successfully merged into the integration branch,
+  // accumulated across all waves. Surfaced on the phase result so the release path
+  // can name them in the single epic PR narrative.
+  const mergedIntoIntegration: string[] = [];
+  let integrationHadConflicts = false;
 
   // === safeguard #2 === Gate-retry finding routing.
   // On a gate-rejection retry, re-execute ONLY the items whose declared files
@@ -1775,8 +1784,46 @@ export async function runExecutePhase(
         .map((it) => itemBranchById.get(it.id))
         .filter((b): b is string => typeof b === 'string');
       if (waveBranches.length > 0) {
-        const { conflicted } = await mergeBranchesIntoIntegration(integrationWorktreePath, waveBranches);
+        const { merged, conflicted } = await mergeBranchesIntoIntegration(
+          integrationWorktreePath,
+          waveBranches,
+        );
+        mergedIntoIntegration.push(...merged);
         if (conflicted.length > 0) {
+          // PR-2d / P0.4 — a conflicted child is a HARD signal, not a silent drop.
+          // Mark the owning item failed with an explicit conflict error so the
+          // existing failed-item accounting (and the gate-retry / fix-up loop)
+          // sees it, in addition to the bus event below. Without this the epic
+          // PR would ship missing a child's work with no trace.
+          integrationHadConflicts = true;
+          for (const branch of conflicted) {
+            const itemId = branchOwnerById.get(branch);
+            if (!itemId) continue;
+            const conflictError =
+              `Epic wave-merge conflict: branch ${branch} could not be merged into ` +
+              `integration branch ${integrationBranch}. The child's work is excluded ` +
+              `from the epic PR until the conflict is resolved.`;
+            const idx = indexById.get(itemId);
+            const targetItem = idx !== undefined ? items[idx] : undefined;
+            if (targetItem) targetItem.status = 'failed';
+            const prior = liveResults.get(itemId);
+            const failedResult: ItemResult = {
+              ...(prior ?? {
+                itemId,
+                status: 'failed',
+                costUsd: 0,
+                durationMs: 0,
+                response: '',
+                attempts: 0,
+              }),
+              status: 'failed',
+              error: conflictError,
+            };
+            liveResults.set(itemId, failedResult);
+            if (idx !== undefined) {
+              settledResults[idx] = { status: 'fulfilled', value: failedResult };
+            }
+          }
           ctx.bus.publish('execute.epic.wave-merge-conflict', {
             sprintId: ctx.sprintId, phase, cycleId: ctx.cycleId,
             branch: integrationBranch, conflicted,
@@ -1786,9 +1833,11 @@ export async function runExecutePhase(
     }
   }
   await checkpointWriter.flush();
-  if (integrationBranch && integrationWorktreePath) {
-    await removeIntegrationWorktree(ctx.projectRoot, integrationBranch);
-  }
+  // P0.4 — KEYSTONE: do NOT remove the integration worktree here. The integrated
+  // waves must survive until the cycle's release stage pushes codex/epic-<id> and
+  // opens ONE PR from it. The cycle-runner removes the worktree after release via
+  // removeIntegrationWorktree(projectRoot, branch). (Previously this block deleted
+  // the worktree, stranding all integrated work with no push and no PR.)
   const settled = settledResults;
   const itemResults: ItemResult[] = settled.map((s, i) => {
     if (s.status === 'fulfilled') return s.value;
@@ -1856,6 +1905,19 @@ export async function runExecutePhase(
 
   const durationMs = Date.now() - startedAt;
   const providerUsage = aggregateProviderUsage(itemResults);
+  // P0.4 — KEYSTONE: surface the epic integration branch on the phase result so
+  // the cycle-runner's release stage pushes codex/epic-<id> and opens ONE PR from
+  // it, instead of committing to the operator's main tree. Only present when this
+  // was an epic cycle and the integration worktree was actually established.
+  const epicIntegration: EpicIntegrationResult | undefined =
+    integrationBranch && epicParentId && integrationWorktreePath
+      ? {
+          branch: integrationBranch,
+          epicId: epicParentId,
+          mergedBranches: [...mergedIntoIntegration],
+          hadConflicts: integrationHadConflicts,
+        }
+      : undefined;
   const phaseResult: PhaseResult & { providerUsage: ProviderUsage } = {
     phase,
     status,
@@ -1864,6 +1926,7 @@ export async function runExecutePhase(
     providerUsage,
     agentRuns: itemResults,
     itemResults,
+    ...(epicIntegration ? { epicIntegration } : {}),
   };
 
   // ---- Write phase JSON to cycle log dir ----
@@ -1896,6 +1959,8 @@ export async function runExecutePhase(
             itemResults,
             // Wave 2: accumulated CostBreakdown across all completed agent runs.
             ...(phaseBreakdown !== undefined ? { breakdown: phaseBreakdown } : {}),
+            // P0.4 — epic integration branch (present only on epic cycles).
+            ...(epicIntegration ? { epicIntegration } : {}),
             startedAt: new Date(startedAt).toISOString(),
             completedAt: new Date().toISOString(),
           },
