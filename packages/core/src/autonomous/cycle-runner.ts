@@ -55,7 +55,7 @@ import {
   type RuntimeForScoring,
   type ScoringPipelineResult,
 } from './scoring-pipeline.js';
-import { BudgetApproval } from './budget-approval.js';
+import { BudgetApproval, type ApprovalResult } from './budget-approval.js';
 import { SprintGenerator, type SprintPlan } from './sprint-generator.js';
 import {
   PhaseScheduler,
@@ -1393,37 +1393,72 @@ export class CycleRunner {
     );
     const backlog = await bridge.build();
 
-    if (backlog.length === 0) {
-      throw new Error('No backlog items to work on — nothing to do');
+    // OBJECTIVE MODE (P0.2): when the operator supplies an objective, the epic
+    // decomposer in the plan phase is the planner — it produces wave-layered
+    // plan.json items from the objective text, so the signal backlog is
+    // intentionally empty here. We therefore:
+    //   (a) skip the "No backlog items" throw — an empty backlog is expected;
+    //   (b) bypass the scoring ladder and BudgetApproval gate — the plan
+    //       preview is the approval surface for objective cycles, not the
+    //       per-item budget gate that ranks signal items.
+    // SprintGenerator.generate([], …) below still produces a valid plan shell;
+    // the plan phase fills in the real items. The legacy (no-objective) path
+    // below is unchanged.
+    const objectiveMode = this.options.objective !== undefined;
+
+    let scored: ScoringPipelineResult;
+    let approved: ApprovalResult;
+
+    if (objectiveMode) {
+      // Neutral, gate-free scoring/approval surface for the objective path.
+      scored = {
+        withinBudget: [],
+        requiresApproval: [],
+        totalEstimatedCostUsd: 0,
+        budgetOverflowUsd: 0,
+        summary: 'objective-driven cycle (epic decomposer plans in the plan phase)',
+        warnings: [],
+      };
+      approved = {
+        approvedItems: [],
+        rejectedItems: [],
+        finalBudgetUsd: 0,
+        decision: 'auto-approved',
+        decidedAt: new Date().toISOString(),
+        decidedBy: 'objective-mode',
+      };
+      this.checkKillSwitch();
+    } else {
+      if (backlog.length === 0) {
+        throw new Error('No backlog items to work on — nothing to do');
+      }
+
+      const scoring = new ScoringPipeline(
+        this.options.runtime,
+        this.options.scoringAdapter,
+        this.options.config,
+        this.logger,
+        this.options.cwd,
+      );
+      scored = await scoring.scoreWithFallback(backlog);
+      this.scoringFallback = scored.fallback;
+      this.checkKillSwitch();
+
+      // BUDGET APPROVAL GATE
+      // If everything fits within budget, this short-circuits with auto-approval.
+      // Otherwise it blocks on TTY prompt or approval-decision.json file.
+      const approval = new BudgetApproval(
+        this.options.cwd,
+        this.cycleId,
+        this.logger,
+      );
+      approved = await approval.collect({
+        withinBudget: scored.withinBudget,
+        requiresApproval: scored.requiresApproval,
+        budgetUsd: this.options.config.budget.perCycleUsd,
+        summary: scored.summary,
+      });
     }
-
-    const scoring = new ScoringPipeline(
-      this.options.runtime,
-      this.options.scoringAdapter,
-      this.options.config,
-      this.logger,
-      this.options.cwd,
-    );
-    const scored: ScoringPipelineResult = await scoring.scoreWithFallback(
-      backlog,
-    );
-    this.scoringFallback = scored.fallback;
-    this.checkKillSwitch();
-
-    // BUDGET APPROVAL GATE
-    // If everything fits within budget, this short-circuits with auto-approval.
-    // Otherwise it blocks on TTY prompt or approval-decision.json file.
-    const approval = new BudgetApproval(
-      this.options.cwd,
-      this.cycleId,
-      this.logger,
-    );
-    const approved = await approval.collect({
-      withinBudget: scored.withinBudget,
-      requiresApproval: scored.requiresApproval,
-      budgetUsd: this.options.config.budget.perCycleUsd,
-      summary: scored.summary,
-    });
 
     // ─────────────────────────────────────────────────────────────────
     // STAGE 2 — STAGE

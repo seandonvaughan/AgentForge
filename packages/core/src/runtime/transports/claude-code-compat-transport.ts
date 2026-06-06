@@ -467,7 +467,7 @@ export class ClaudeCodeCompatTransport implements ExecutionTransport {
       if (model === 'opus') {
         args.push('--fallback-model', 'claude-sonnet-4-6');
       } else if (model === 'sonnet') {
-        args.push('--fallback-model', 'claude-haiku-4-5-20251001');
+        args.push('--fallback-model', 'claude-haiku-4-5');
       }
     }
 

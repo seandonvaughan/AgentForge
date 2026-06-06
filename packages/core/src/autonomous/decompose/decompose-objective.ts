@@ -30,7 +30,7 @@ export interface DecomposeResult {
 export class DecomposeError extends Error {
   constructor(
     message: string,
-    readonly reason: 'invalid-json' | 'cycle' | 'missing-predecessors' | 'unknown',
+    readonly reason: 'invalid-json' | 'cycle' | 'missing-predecessors' | 'budget' | 'unknown',
     readonly report?: ValidationReport,
   ) {
     super(message);
@@ -38,10 +38,24 @@ export class DecomposeError extends Error {
   }
 }
 
+/**
+ * Pure budget math (P0.3). Spendable funds, after carving out judgment overhead
+ * and a fix-up reserve, is what the planner's children may sum to:
+ *
+ *   spendable = (budgetUsd − 6) / 1.2
+ *
+ * The $6 is fixed gate/judgment overhead; dividing by 1.2 reserves 20% of the
+ * remaining funds for fix-up work. Always returns a non-negative number.
+ */
+export function computeSpendableUsd(budgetUsd: number): number {
+  return Math.max(0, (budgetUsd - 6) / 1.2);
+}
+
 export function buildEpicPlannerPrompt(objective: EpicObjective): string {
   const constraints = objective.constraints?.length
     ? `\n\nConstraints:\n${objective.constraints.map((c) => `- ${c}`).join('\n')}`
     : '';
+  const budget = objective.budgetUsd !== undefined ? buildBudgetPromptBlock(objective.budgetUsd) : '';
   return [
     `Decompose this objective into a dependency-ordered EpicPlan.`,
     ``,
@@ -51,7 +65,37 @@ export function buildEpicPlannerPrompt(objective: EpicObjective): string {
     ``,
     `Output ONLY the JSON object described in your system prompt (a fenced json block is acceptable).`,
     `Use epicId "${objective.id}" exactly. The predecessor graph must be acyclic and every`,
-    `predecessor must reference another child id in this plan.`,
+    `predecessor must reference another child id in this plan.${budget}`,
+  ].join('\n');
+}
+
+/**
+ * Budget-sizing addendum for the planner prompt (P0.3). Returned as a leading-
+ * newline block so it can be appended to the final prompt line without altering
+ * the no-budget output (which never calls this). Shows the computed spendable
+ * number, the calibrated cost table, the spend band, and the consumer rule.
+ */
+function buildBudgetPromptBlock(budgetUsd: number): string {
+  const spendable = computeSpendableUsd(budgetUsd);
+  const lower = 0.7 * spendable;
+  const upper = 1.0 * spendable;
+  return [
+    ``,
+    ``,
+    `BUDGET — size this plan to fill the money it is given.`,
+    `Cycle budget: $${budgetUsd.toFixed(2)}.`,
+    `Spendable = (budget − 6 judgment overhead) / 1.2 (20% fix-up reserve) = $${spendable.toFixed(2)}.`,
+    ``,
+    `Calibrated child cost table (from production forensics — use these to estimate estimatedCostUsd):`,
+    `- small (tests / wiring): ~$1.65, ~2 min.`,
+    `- medium: ~$7.30, ~9 min.`,
+    `- feature-child: $15–30, 20–40 min of multi-file work with tests.`,
+    ``,
+    `The sum of every child's estimatedCostUsd MUST land between ` +
+      `$${lower.toFixed(2)} (0.7 × spendable) and $${upper.toFixed(2)} (1.0 × spendable). ` +
+      `An undersized plan wastes the cycle; an oversized plan blows the cap.`,
+    `EVERY child's description MUST name a concrete CONSUMER of what it builds — a caller, ` +
+      `a route, or a UI surface that uses it. No API nothing calls, no class nothing instantiates.`,
   ].join('\n');
 }
 
@@ -66,7 +110,14 @@ export function buildRepairPrompt(
       ? `Your previous plan had a dependency CYCLE involving: ${report?.cycle?.join(', ') ?? 'unknown'}. Break the cycle.`
       : reason === 'missing-predecessors'
         ? `Your previous plan referenced predecessor ids that do not exist: ${JSON.stringify(report?.missingPredecessors ?? [])}. Use only ids of children present in the plan.`
-        : `Your previous output was not a valid EpicPlan JSON object.`;
+        : reason === 'budget'
+          ? report?.budget
+            ? `Your previous plan's cost sum $${report.budget.sumUsd.toFixed(2)} was outside the required band ` +
+              `[$${report.budget.lowerUsd.toFixed(2)}, $${report.budget.upperUsd.toFixed(2)}] ` +
+              `(0.7–1.0 × spendable $${report.budget.spendableUsd.toFixed(2)}). ` +
+              `Resize the children so their estimatedCostUsd sum lands inside that band.`
+            : `Your previous plan's total estimatedCostUsd was outside the required budget band. Resize the children to fit.`
+          : `Your previous output was not a valid EpicPlan JSON object.`;
   return [
     `Your previous decomposition was invalid. ${detail}`,
     ``,
@@ -99,9 +150,11 @@ interface AttemptResult {
   plan?: EpicPlan;
   report?: ValidationReport;
   reason: DecomposeError['reason'];
+  /** Failure detail, currently populated for budget-band violations. */
+  message?: string;
 }
 
-function attempt(output: string): AttemptResult {
+function attempt(output: string, budgetUsd?: number): AttemptResult {
   let raw: unknown;
   try {
     raw = extractEpicPlanJson(output);
@@ -110,9 +163,14 @@ function attempt(output: string): AttemptResult {
   }
   const parsed = EpicPlanSchema.safeParse(raw);
   if (!parsed.success) return { ok: false, reason: 'invalid-json' };
-  const v = validateAndLayerEpicPlan(parsed.data);
+  const v = validateAndLayerEpicPlan(parsed.data, budgetUsd);
   if (v.ok) return { ok: true, plan: v.plan, report: v.report, reason: 'unknown' };
-  return { ok: false, reason: v.reason, report: v.report };
+  return {
+    ok: false,
+    reason: v.reason,
+    report: v.report,
+    ...(v.message !== undefined ? { message: v.message } : {}),
+  };
 }
 
 export async function decomposeObjective(
@@ -121,7 +179,7 @@ export async function decomposeObjective(
 ): Promise<DecomposeResult> {
   const r1 = await runtime.run(EPIC_PLANNER_AGENT_ID, buildEpicPlannerPrompt(objective), { allowedTools: [] });
   let costUsd = r1.costUsd ?? 0;
-  const a1 = attempt(r1.output);
+  const a1 = attempt(r1.output, objective.budgetUsd);
   if (a1.ok) {
     return { plan: a1.plan!, report: a1.report!, costUsd, repaired: false };
   }
@@ -133,12 +191,13 @@ export async function decomposeObjective(
     { allowedTools: [] },
   );
   costUsd += r2.costUsd ?? 0;
-  const a2 = attempt(r2.output);
+  const a2 = attempt(r2.output, objective.budgetUsd);
   if (a2.ok) {
     return { plan: a2.plan!, report: a2.report!, costUsd, repaired: true };
   }
   throw new DecomposeError(
-    `epic-planner produced an invalid decomposition after one repair retry (reason: ${a2.reason})`,
+    a2.message ??
+      `epic-planner produced an invalid decomposition after one repair retry (reason: ${a2.reason})`,
     a2.reason,
     a2.report,
   );

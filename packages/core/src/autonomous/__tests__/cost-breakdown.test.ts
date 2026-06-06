@@ -91,27 +91,27 @@ describe('extractBreakdownFromAgentRun', () => {
   });
 
   it('prices opus correctly', () => {
-    // Opus: $15/M input, $75/M output
+    // Opus: $5/M input, $25/M output
     const run = makeRun({
-      model: 'claude-opus-4-7',
+      model: 'claude-opus-4-8',
       usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
     });
     const bd = extractBreakdownFromAgentRun(run);
-    expect(bd.inputTokens.usd).toBeCloseTo(15.00, 6);
-    expect(bd.outputTokens.usd).toBeCloseTo(75.00, 6);
-    expect(bd.totalUsd).toBeCloseTo(90.00, 6);
+    expect(bd.inputTokens.usd).toBeCloseTo(5.00, 6);
+    expect(bd.outputTokens.usd).toBeCloseTo(25.00, 6);
+    expect(bd.totalUsd).toBeCloseTo(30.00, 6);
   });
 
   it('prices haiku correctly', () => {
-    // Haiku: $0.80/M input, $4/M output
+    // Haiku: $1/M input, $5/M output
     const run = makeRun({
-      model: 'claude-haiku-4-5-20251001',
+      model: 'claude-haiku-4-5',
       usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
     });
     const bd = extractBreakdownFromAgentRun(run);
-    expect(bd.inputTokens.usd).toBeCloseTo(0.80, 6);
-    expect(bd.outputTokens.usd).toBeCloseTo(4.00, 6);
-    expect(bd.totalUsd).toBeCloseTo(4.80, 6);
+    expect(bd.inputTokens.usd).toBeCloseTo(1.00, 6);
+    expect(bd.outputTokens.usd).toBeCloseTo(5.00, 6);
+    expect(bd.totalUsd).toBeCloseTo(6.00, 6);
   });
 
   it('applies cache-creation pricing at 125% of normal input rate', () => {
@@ -183,7 +183,7 @@ describe('extractBreakdownFromAgentRun', () => {
     });
     const bd = extractBreakdownFromAgentRun(run);
 
-    expect(bd.inputTokens.usd).toBeCloseTo(15.00, 6);
+    expect(bd.inputTokens.usd).toBeCloseTo(5.00, 6);
   });
 
   it('includes toolInvocations in the toolUse map', () => {
