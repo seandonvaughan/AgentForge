@@ -21,11 +21,63 @@
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 const execFileAsync = promisify(execFile);
 
-/** Default scoped typecheck command (mirrors autonomous.yaml testing.typeCheckCommand). */
-const DEFAULT_TYPECHECK_COMMAND = 'corepack pnpm exec tsc -b --noEmit --pretty false';
+/**
+ * Package-manager-aware command defaults, detected from the target worktree's
+ * lockfile. The original defaults hardcoded `corepack pnpm exec ...`, which
+ * deterministically failed EVERY child in any non-pnpm repository (observed on
+ * acceptance cycle 11955f95: ledgerline is an npm project, so the scoped
+ * typecheck exited 1 via corepack/pnpm.mjs before the child's code was even
+ * considered). AgentForge must work on external projects with zero config —
+ * the lockfile is the ground truth:
+ *
+ *   pnpm-lock.yaml     → corepack pnpm exec …  (AgentForge itself; -b for
+ *                        project-reference workspaces)
+ *   yarn.lock          → yarn …
+ *   anything else      → npx …  (npm / package-lock.json / no lockfile)
+ *
+ * Explicit VerifyChildWorktreeOptions overrides always win.
+ */
+export interface DetectedPackageCommands {
+  packageManager: 'pnpm' | 'yarn' | 'npm';
+  typeCheckCommand: string;
+  /** Vitest invocation prefix; child-verify appends `related --run <files>`. */
+  testCommand: string;
+  /** One-line tooling instruction for agent prompts in this repo. */
+  toolingNote: string;
+}
+
+export function detectPackageCommands(rootDir: string): DetectedPackageCommands {
+  if (existsSync(join(rootDir, 'pnpm-lock.yaml'))) {
+    return {
+      packageManager: 'pnpm',
+      typeCheckCommand: 'corepack pnpm exec tsc -b --noEmit --pretty false',
+      testCommand: 'corepack pnpm exec vitest',
+      toolingNote:
+        'use `corepack pnpm` for every package/test command in this repo (e.g. `corepack pnpm exec vitest run <file>`); do not use bare `pnpm` or `npx`. If the isolated worktree is missing installed workspace links, run `corepack pnpm install --frozen-lockfile` first.',
+    };
+  }
+  if (existsSync(join(rootDir, 'yarn.lock'))) {
+    return {
+      packageManager: 'yarn',
+      typeCheckCommand: 'yarn tsc --noEmit --pretty false',
+      testCommand: 'yarn vitest',
+      toolingNote:
+        'use `yarn` for every package/test command in this repo (e.g. `yarn vitest run <file>`). If dependencies are missing in the worktree, run `yarn install --frozen-lockfile` first.',
+    };
+  }
+  return {
+    packageManager: 'npm',
+    typeCheckCommand: 'npx tsc --noEmit --pretty false',
+    testCommand: 'npx vitest',
+    toolingNote:
+      'use `npm`/`npx` for every package/test command in this repo (e.g. `npx vitest run <file>`). If dependencies are missing in the worktree, run `npm ci` (or `npm install`) first.',
+  };
+}
 
 /** Max characters of captured subprocess output retained on a failure entry. */
 const OUTPUT_TAIL_LIMIT = 2000;
@@ -81,12 +133,16 @@ export interface VerifyChildWorktreeOptions {
   requiresTests?: boolean;
   /** Injected command runner; defaults to a real execFile wrapper. */
   runner?: ChildVerifyCommandRunner;
-  /** Scoped typecheck command override (defaults to the autonomous.yaml default). */
+  /**
+   * Scoped typecheck command override. Defaults to the worktree's detected
+   * package manager (see detectPackageCommands — pnpm/yarn/npx).
+   */
   typeCheckCommand?: string;
   /**
    * Vitest binary invocation used for the scoped affected-test run, as a single
    * command string (e.g. `corepack pnpm exec vitest`). The affected file list is
-   * appended as `related --run <files>`. Defaults to `corepack pnpm exec vitest`.
+   * appended as `related --run <files>`. Defaults to the worktree's detected
+   * package manager (see detectPackageCommands).
    */
   testCommand?: string;
 }
@@ -227,14 +283,17 @@ function tail(output: string): string {
 export async function verifyChildWorktree(
   opts: VerifyChildWorktreeOptions,
 ): Promise<ChildVerifyResult> {
+  // Package-manager-aware defaults: detect from the worktree's lockfile so the
+  // bar runs the repo's OWN toolchain (explicit opts always win).
+  const detected = detectPackageCommands(opts.worktreePath);
   const {
     worktreePath,
     changedFiles,
     declaredFiles = [],
     requiresTests = false,
     runner = realCommandRunner,
-    typeCheckCommand = DEFAULT_TYPECHECK_COMMAND,
-    testCommand = 'corepack pnpm exec vitest',
+    typeCheckCommand = detected.typeCheckCommand,
+    testCommand = detected.testCommand,
   } = opts;
 
   const failures: ChildVerifyFailure[] = [];

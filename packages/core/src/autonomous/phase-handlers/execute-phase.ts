@@ -60,6 +60,7 @@ import {
 import {
   verifyChildWorktree,
   formatChildVerifyError,
+  detectPackageCommands,
   type ChildVerifyCommandRunner,
 } from './child-verify.js';
 
@@ -2104,7 +2105,8 @@ export async function runExecutePhase(
   return phaseResult;
 }
 
-function buildItemPrompt(
+// Exported for unit tests (repo-neutral tooling + declared-scope contract).
+export function buildItemPrompt(
   item: SprintItem,
   cwd: string,
   attempt: number = 0,
@@ -2121,7 +2123,24 @@ function buildItemPrompt(
   const gateRetrySec = formatGateRetrySection(gateRetry);
   // Append self-eval fragment unless explicitly disabled.
   const selfEvalSec = selfEvalDisabled || !SELF_EVAL_FRAGMENT ? '' : `\n\n${SELF_EVAL_FRAGMENT}`;
-  const base = `${gateRetrySec}You are working on sprint item "${item.title}" in the AgentForge repository at ${cwd}.
+  // Repo-neutral tooling: detect the target repo's package manager from its
+  // lockfile. The previous prompt hardcoded AgentForge's `corepack pnpm`
+  // toolchain, which instructed agents to run pnpm inside npm/yarn projects
+  // (observed on acceptance cycle 11955f95 against an npm repo).
+  const pkg = detectPackageCommands(cwd);
+  // Declared file scope: the deterministic per-child verifier (P0.5) FAILS any
+  // epic child that edits a file outside item.files — so the agent must be
+  // told its scope explicitly. Without this section, children innocently
+  // touched shared barrels (src/index.ts) and were auto-failed.
+  const declaredFiles = (item.files ?? []).filter((f) => typeof f === 'string' && f.length > 0);
+  const scopeSec =
+    declaredFiles.length > 0
+      ? `\n## Declared file scope — ENFORCED by a deterministic verifier
+This item declares exactly these files:
+${declaredFiles.map((f) => `- ${f}`).join('\n')}
+Edit ONLY these files (creating a declared file is fine). A change to ANY other file fails this item automatically. If the task truly cannot be completed without touching an undeclared file, STOP and report the blocker instead of editing it.\n`
+      : '';
+  const base = `${gateRetrySec}You are working on sprint item "${item.title}" in the repository at ${cwd}.
 
 Description: ${description}
 Source: ${source} (e.g., TODO(autonomous) marker)
@@ -2129,15 +2148,15 @@ Tags: ${tags}
 ${memorySec}
 Your job: use the Read, Write, Edit, Bash, Glob, and Grep tools to make the code change required to resolve this item. Do not delegate this item to another agent or return a plan-only response. If you cannot make a concrete repository change, report the blocker clearly. Do NOT commit anything — the autonomous cycle's Git stage will commit everything that changed in the working tree after all items are done.
 
-Tooling: use \`corepack pnpm\` for every package/test command in this repo. Do not use bare \`pnpm\` or \`npx\`. If the isolated worktree is missing installed workspace links, run \`corepack pnpm install --frozen-lockfile\` before targeted tests. Prefer targeted checks first, for example \`corepack pnpm exec vitest run <test-file>\`, then broader checks when risk warrants it.
-
+Tooling: ${pkg.toolingNote} Prefer targeted checks first, then broader checks when risk warrants it.
+${scopeSec}
 ## Scope — keep the diff minimal
 Produce the smallest diff that resolves this item. Do not refactor, reformat, or "improve" unrelated code, and do not touch files outside this item's scope. Add or adjust at least one test that fails without your change and passes with it.
 
 ## Self-verify before you report done
 Before you report completion you MUST verify your own work and paste the passing output:
-1. Type-check the affected package(s): \`corepack pnpm exec tsc -b --noEmit\`
-2. Run the targeted tests you added or touched: \`corepack pnpm exec vitest run <files>\`
+1. Type-check: \`${pkg.typeCheckCommand}\`
+2. Run the targeted tests you added or touched: \`${pkg.testCommand} run <files>\`
 If either check fails, fix it before finishing. Never report done on unverified work.
 
 Work efficiently. Report what you changed when done.${selfEvalSec}`;

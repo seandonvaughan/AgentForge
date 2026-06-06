@@ -94,6 +94,10 @@ describe('execute-phase agent prompt contract', () => {
   it('requires self-verification (type-check + targeted tests) before reporting done', async () => {
     const prompt = await capturePrompt();
     expect(prompt).toContain('Self-verify before you report done');
-    expect(prompt).toContain('tsc -b --noEmit');
+    // Toolchain-agnostic since the repo-neutral fix: the exact tsc invocation is
+    // lockfile-detected (corepack pnpm exec tsc -b … / npx tsc …) — assert the
+    // type-check requirement itself, not one package manager's spelling.
+    expect(prompt).toContain('tsc');
+    expect(prompt).toContain('--noEmit');
   });
 });
