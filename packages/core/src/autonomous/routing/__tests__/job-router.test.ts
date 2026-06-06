@@ -128,16 +128,17 @@ describe('resolveJobRouting', () => {
     expect(decision.preferredProvider).toBe('claude-code-compat');
   });
 
-  it('routes a bulk / docs low-complexity item to the cost-conscious Claude profile', () => {
-    // Claude-primary (2026-06-06): even cheap/bulk work prefers a Claude
-    // transport; codex is only an availability-gated fallback.
+  it('routes a bulk / docs low-complexity item to codex-cli (gpt-5.5, high effort)', () => {
+    // Split-tier (2026-06-06 operator decision): sonnet-tier implementation
+    // prefers codex-cli (gpt-5.5 at high effort); Claude is the fallback chain.
     const decision = resolveJobRouting(
       { itemId: 'd1', title: 'update README links', tags: ['docs'], estimatedComplexity: 'low' },
       DEFAULT_JOB_ROUTING_POLICY,
       ALL_AVAILABLE,
     );
-    expect(decision.preferredProvider).toBe('claude-code-compat');
-    expect(decision.runtimeMode).toBe('claude-code-compat');
+    expect(decision.preferredProvider).toBe('codex-cli');
+    expect(decision.runtimeMode).toBe('codex-cli');
+    expect(decision.effort).toBe('high');
     expect(decision.tier === 'sonnet' || decision.tier === 'haiku').toBe(true);
   });
 
@@ -233,19 +234,21 @@ describe('dispatch matrix (resolveJobRouting -> ProviderResolver -> transport.ex
     { itemId: 'doc', title: 'update docs', tags: ['docs'], estimatedComplexity: 'low' },
   ];
 
-  it('routes every item to the Claude transport and dispatches each there; codex stays auxiliary', async () => {
+  it('split-tier dispatch: security stays on Claude, sonnet-tier work dispatches to codex', async () => {
     const decisions = plan.map((job) =>
       resolveJobRouting(job, DEFAULT_JOB_ROUTING_POLICY, ALL_AVAILABLE),
     );
-    // Claude-primary: both items prefer the tool-capable Claude transport.
-    expect(decisions.every((d) => d.preferredProvider === 'claude-code-compat')).toBe(true);
-    // ANTI-FAKE: the cheap/docs item lists codex as its LAST fallback, while the
-    // security item never lists codex at all. A hard-coded single chain fails here.
+    // ANTI-FAKE: the two items take DIFFERENT providers — a hard-coded single
+    // chain fails here. Security/judgment stays on Claude (codex never listed);
+    // sonnet-tier implementation leads with codex-cli (gpt-5.5) and falls back
+    // to the Claude chain.
     const secDecision = decisions[0]!;
     const docDecision = decisions[1]!;
+    expect(secDecision.preferredProvider).toBe('claude-code-compat');
     expect(secDecision.providerPreference).not.toContain('codex-cli');
-    expect(docDecision.providerPreference).toContain('codex-cli');
-    expect(docDecision.providerPreference.at(-1)).toBe('codex-cli');
+    expect(docDecision.preferredProvider).toBe('codex-cli');
+    expect(docDecision.effort).toBe('high');
+    expect(docDecision.providerPreference).toEqual(['codex-cli', 'claude-code-compat', 'anthropic-sdk']);
 
     const calls: string[] = [];
     const resolver = new ProviderResolver(
@@ -277,11 +280,11 @@ describe('dispatch matrix (resolveJobRouting -> ProviderResolver -> transport.ex
       );
     }
 
-    // Both items ran on the Claude transport; codex was never dispatched.
+    // Security ran on the Claude transport; the docs item ran on codex.
     expect(calls).toContain('claude-code-compat:sec');
-    expect(calls).toContain('claude-code-compat:doc');
+    expect(calls).toContain('codex-cli:doc');
     expect(calls).not.toContain('codex-cli:sec');
-    expect(calls).not.toContain('codex-cli:doc');
+    expect(calls).not.toContain('claude-code-compat:doc');
   });
 
   it('availability-driven override: claude-code-compat down => security item dispatches to its anthropic-sdk alternate', async () => {
@@ -346,15 +349,15 @@ describe('dispatch matrix (resolveJobRouting -> ProviderResolver -> transport.ex
 });
 
 describe('resolveJobRouting — providerPreference failover chain', () => {
-  it('cheap/bulk job: providerPreference is the Claude-primary chain with codex last', () => {
+  it('cheap/bulk job: providerPreference leads with codex-cli, Claude as fallback chain', () => {
     const d = resolveJobRouting(
       { itemId: 'b1', title: 'update README links', tags: ['docs'], estimatedComplexity: 'low' },
       DEFAULT_JOB_ROUTING_POLICY,
       ALL_AVAILABLE,
     );
-    expect(d.preferredProvider).toBe('claude-code-compat');
-    // Claude-primary (2026-06-06): codex is the LAST (auxiliary) fallback.
-    expect(d.providerPreference).toEqual(['claude-code-compat', 'anthropic-sdk', 'codex-cli']);
+    expect(d.preferredProvider).toBe('codex-cli');
+    // Split-tier (2026-06-06): codex-cli first for sonnet-tier work; Claude follows.
+    expect(d.providerPreference).toEqual(['codex-cli', 'claude-code-compat', 'anthropic-sdk']);
     expect(d.providerPreference[0]).toBe(d.preferredProvider);
   });
 
@@ -370,15 +373,18 @@ describe('resolveJobRouting — providerPreference failover chain', () => {
   });
 
   it('excludes an unavailable provider and leads with the first available', () => {
+    // The codex-is-unavailable case is the one that matters in production:
+    // the binary is absent or fails P0.7a identity validation, and the cheap
+    // profile must drop cleanly to the Claude chain (codex optional, never
+    // required).
     const d = resolveJobRouting(
       { itemId: 'b2', title: 'update README links', tags: ['docs'], estimatedComplexity: 'low' },
       DEFAULT_JOB_ROUTING_POLICY,
-      availabilityMap({ 'claude-code-compat': { available: false, reason: 'cli missing' } }),
+      availabilityMap({ 'codex-cli': { available: false, reason: 'identity validation failed' } }),
     );
-    expect(d.preferredProvider).toBe('anthropic-sdk');
-    // codex remains as the last auxiliary hop when claude-code-compat is down.
-    expect(d.providerPreference).toEqual(['anthropic-sdk', 'codex-cli']);
-    expect(d.providerPreference).not.toContain('claude-code-compat');
+    expect(d.preferredProvider).toBe('claude-code-compat');
+    expect(d.providerPreference).toEqual(['claude-code-compat', 'anthropic-sdk']);
+    expect(d.providerPreference).not.toContain('codex-cli');
   });
 
   it('providerPreference has no duplicates and starts with preferredProvider', () => {

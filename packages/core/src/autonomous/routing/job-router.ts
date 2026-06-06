@@ -104,21 +104,21 @@ export interface JobRoutingPolicy {
 }
 
 /**
- * Default routing policy — Claude-primary, codex-auxiliary (2026-06-06).
+ * Default routing policy — split-tier (2026-06-06 operator decision).
  *
- * Both profiles prefer the tool-capable Claude transport (`claude-code-compat`)
- * so file-editing work always has tools:
- * - anthropic profile (security / high-complexity / repeated-failure escalation):
- *   claude-code-compat + opus + high effort; alternate chain is anthropic-sdk
- *   ONLY. Codex is deliberately absent — judgment + security stay on Claude.
- * - codex profile (the cost-conscious DEFAULT for bulk / docs / low-complexity
- *   and unmarked work): claude-code-compat + sonnet + medium effort; alternate
- *   chain falls back to anthropic-sdk, then codex-cli as the LAST resort. Codex
- *   is auxiliary capacity used only when both Claude transports are unavailable.
- *
- * The profile key `codex` is retained for backward compatibility (forced-runtime
- * family mapping and existing call sites) even though it now prefers Claude; it
- * is the cost-optimized "non-escalated" profile, not a codex-first one.
+ * - anthropic profile (security / high-complexity / repeated-failure
+ *   escalation, and ALL judgment work): claude-code-compat + opus + high
+ *   effort; alternate chain is anthropic-sdk ONLY. Codex is deliberately
+ *   absent — judgment + security stay on Claude.
+ * - codex profile (sonnet-tier implementation: the DEFAULT for bulk / docs /
+ *   low-complexity and unmarked work): codex-cli running gpt-5.5 at HIGH
+ *   effort (the per-tier CODEX_DEFAULTS in model-profiles.ts supply the
+ *   model id; the effort here must agree with that table — 'medium' would
+ *   ride the resolution chain and override the correct 'high'). When the
+ *   codex binary is absent or fails identity validation (P0.7a), the
+ *   availability gate drops the decision to the Claude alternates, so the
+ *   product still works Claude-only: codex is used when available, never
+ *   required.
  */
 export const DEFAULT_JOB_ROUTING_POLICY: JobRoutingPolicy = {
   securityMarkers: [
@@ -144,12 +144,12 @@ export const DEFAULT_JOB_ROUTING_POLICY: JobRoutingPolicy = {
       alternate: ['anthropic-sdk'],
     },
     codex: {
-      preferredProvider: 'claude-code-compat',
-      runtimeMode: 'claude-code-compat',
+      preferredProvider: 'codex-cli',
+      runtimeMode: 'codex-cli',
       tier: 'sonnet',
-      effort: 'medium',
-      // Codex is the LAST fallback (auxiliary), after both Claude transports.
-      alternate: ['anthropic-sdk', 'codex-cli'],
+      effort: 'high',
+      // Claude is the fallback chain when codex is unavailable/identity-gated.
+      alternate: ['claude-code-compat', 'anthropic-sdk'],
     },
   },
 };
