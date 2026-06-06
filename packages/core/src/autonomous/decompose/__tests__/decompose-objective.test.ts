@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { decomposeObjective, extractEpicPlanJson, DecomposeError } from '../decompose-objective.js';
+import {
+  decomposeObjective,
+  extractEpicPlanJson,
+  buildEpicPlannerPrompt,
+  DecomposeError,
+  EPIC_PLAN_OUTPUT_SCHEMA,
+} from '../decompose-objective.js';
 import type { EpicObjective } from '../types.js';
 
 const objective: EpicObjective = {
@@ -62,5 +68,47 @@ describe('decomposeObjective', () => {
     await expect(
       decomposeObjective(objective, mockRuntime(['not json', 'still not json'])),
     ).rejects.toBeInstanceOf(DecomposeError);
+  });
+
+  // Acceptance-run fix (cycle 441c037f): the decompose calls must carry the
+  // structured-output schema so the transports enforce/hint the EpicPlan shape
+  // even under provider model fallback (opus→haiku produced invalid-json twice).
+  it('passes EPIC_PLAN_OUTPUT_SCHEMA on the initial call AND the repair retry', async () => {
+    const seenSchemas: Array<unknown> = [];
+    const outputs = [planJson(cyclicChildren), planJson(goodChildren)];
+    let i = 0;
+    const runtime = {
+      run: async (_agentId: string, _task: string, opts?: { outputSchema?: unknown }) => {
+        seenSchemas.push(opts?.outputSchema);
+        return { output: outputs[i++]!, costUsd: 0.5, model: 'opus' };
+      },
+    };
+    const r = await decomposeObjective(objective, runtime);
+    expect(r.repaired).toBe(true);
+    expect(seenSchemas).toHaveLength(2);
+    expect(seenSchemas[0]).toBe(EPIC_PLAN_OUTPUT_SCHEMA);
+    expect(seenSchemas[1]).toBe(EPIC_PLAN_OUTPUT_SCHEMA);
+  });
+
+  it('EPIC_PLAN_OUTPUT_SCHEMA mirrors EpicPlanSchema requireds and complexity enum', () => {
+    const schema = EPIC_PLAN_OUTPUT_SCHEMA.schema;
+    expect(schema.required).toEqual(['epicId', 'rationale', 'children']);
+    const child = (schema.properties['children'] as any).items;
+    expect(child.required).toEqual([
+      'id', 'title', 'description', 'suggestedAssignee', 'estimatedCostUsd', 'estimatedComplexity',
+    ]);
+    expect(child.properties.estimatedComplexity.enum).toEqual(['low', 'medium', 'high']);
+    // `wave` is layering-internal — the model must never be asked to emit it.
+    expect(child.properties.wave).toBeUndefined();
+  });
+
+  it('inlines the exact JSON contract in the task prompt (no agent-YAML dependency)', () => {
+    const prompt = buildEpicPlannerPrompt(objective);
+    expect(prompt).toContain('"epicId": "epic-abc12345"');
+    expect(prompt).toContain('"estimatedComplexity": "low|medium|high"');
+    expect(prompt).toContain('"suggestedAssignee"');
+    // The old prompt deferred the shape to the agent system prompt — that
+    // dependency is gone.
+    expect(prompt).not.toContain('described in your system prompt');
   });
 });
