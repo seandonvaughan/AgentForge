@@ -118,3 +118,58 @@ describe('ClaudeCodeCompatTransport.buildClaudeArgs', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// toExecutionResult — model fallback detection over modelUsage
+//
+// Regression (acceptance cycle 441c037f): the claude CLI runs auxiliary helper
+// calls (haiku) alongside the requested model, and modelUsage insertion order
+// puts the helper FIRST. The old Object.keys(...)[0] read reported the helper
+// as a "fallback" while opus had served the request — poisoning
+// ExecutionResult.model and misleading operators into a capacity hunt.
+// ---------------------------------------------------------------------------
+
+function toResult(cliResult: Record<string, unknown>, modelId = 'claude-opus-4-8') {
+  const transport = new ClaudeCodeCompatTransport();
+  return (transport as any).toExecutionResult(makeRequest({ modelId }), cliResult);
+}
+
+describe('ClaudeCodeCompatTransport.toExecutionResult — modelUsage fallback detection', () => {
+  it('aux helper listed FIRST does not mask the served requested model', () => {
+    const result = toResult({
+      result: 'ok',
+      modelUsage: {
+        'claude-haiku-4-5-20251001': { outputTokens: 120 },
+        'claude-opus-4-8': { outputTokens: 5400 },
+      },
+    });
+    expect(result.model).toBe('claude-opus-4-8');
+  });
+
+  it('a date-suffixed variant of the requested id counts as served', () => {
+    const result = toResult({
+      result: 'ok',
+      modelUsage: {
+        'claude-haiku-4-5-20251001': { outputTokens: 80 },
+        'claude-opus-4-8-20260115': { outputTokens: 3000 },
+      },
+    });
+    expect(result.model).toBe('claude-opus-4-8');
+  });
+
+  it('a REAL fallback resolves to the entry with the most output tokens', () => {
+    const result = toResult({
+      result: 'ok',
+      modelUsage: {
+        'claude-haiku-4-5-20251001': { outputTokens: 60 },
+        'claude-sonnet-4-6': { outputTokens: 4100 },
+      },
+    });
+    expect(result.model).toBe('claude-sonnet-4-6');
+  });
+
+  it('missing or empty modelUsage keeps the requested model', () => {
+    expect(toResult({ result: 'ok' }).model).toBe('claude-opus-4-8');
+    expect(toResult({ result: 'ok', modelUsage: {} }).model).toBe('claude-opus-4-8');
+  });
+});

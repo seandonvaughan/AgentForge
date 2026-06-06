@@ -131,11 +131,38 @@ export class ClaudeCodeCompatTransport implements ExecutionTransport {
 
     // Detect fallback: if the CLI used a different model than requested,
     // surface the actual model from modelUsage and log it for cost accounting.
+    //
+    // CRITICAL: modelUsage routinely contains MORE than the main model — the
+    // CLI runs auxiliary helper calls (e.g. claude-haiku-4-5-*) alongside the
+    // requested model, and insertion order puts the helper FIRST. The previous
+    // Object.keys(...)[0] read reported the helper as a "fallback", poisoning
+    // ExecutionResult.model/cost accounting and operator logs while opus had
+    // in fact served the request (observed on acceptance cycle 441c037f:
+    // requested=claude-opus-4-8, helper=claude-haiku-4-5-20251001 listed
+    // first). Resolution order:
+    //   1. Any modelUsage key matching the requested id (exact or
+    //      date-suffixed variant) → the request was served as asked.
+    //   2. Otherwise the entry with the most output tokens is the main model
+    //      → a REAL fallback; warn and surface it.
     let resolvedModel = request.modelId;
     if (cliResult.modelUsage && typeof cliResult.modelUsage === 'object') {
       const usedModels = Object.keys(cliResult.modelUsage);
-      if (usedModels.length > 0 && usedModels[0] !== request.modelId) {
-        resolvedModel = usedModels[0]!;
+      const served = usedModels.find(
+        (m) => m === request.modelId || m.startsWith(`${request.modelId}-`),
+      );
+      if (!served && usedModels.length > 0) {
+        const outputTokensOf = (key: string): number => {
+          const entry = (cliResult.modelUsage as Record<string, unknown>)[key];
+          if (!entry || typeof entry !== 'object') return 0;
+          const e = entry as Record<string, unknown>;
+          const v = e['outputTokens'] ?? e['output_tokens'];
+          return typeof v === 'number' ? v : 0;
+        };
+        let main = usedModels[0]!;
+        for (const m of usedModels) {
+          if (outputTokensOf(m) > outputTokensOf(main)) main = m;
+        }
+        resolvedModel = main;
         // eslint-disable-next-line no-console
         console.warn(
           `[claude-code-compat] model fallback detected: requested=${request.modelId} actual=${resolvedModel}`,

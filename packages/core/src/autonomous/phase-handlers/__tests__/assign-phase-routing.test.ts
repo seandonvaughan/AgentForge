@@ -206,9 +206,10 @@ describe('runAssignPhase with routing index', () => {
 // ---------------------------------------------------------------------------
 
 describe('applyJobRouting', () => {
-  it('CLAUDE-PRIMARY GUARD: default path (no forcedMode) routes low-complexity item to claude-code-compat', () => {
-    // Claude-primary (2026-06-06): even cheap/low-complexity work defaults to the
-    // tool-capable Claude transport; codex is only an availability-gated fallback.
+  it('SPLIT-TIER GUARD: default path (no forcedMode) routes low-complexity item to codex-cli (gpt-5.5)', () => {
+    // Split-tier (2026-06-06 operator decision): sonnet-tier implementation work
+    // prefers codex-cli running gpt-5.5 at high effort; Claude transports are
+    // the availability-gated fallback chain. Judgment/security stay on Claude.
     const item: {
       id: string;
       title: string;
@@ -225,11 +226,12 @@ describe('applyJobRouting', () => {
     };
     // Call with no forcedMode at all (undefined)
     applyJobRouting(item as Parameters<typeof applyJobRouting>[0]);
-    expect(item.preferredProvider).toBe('claude-code-compat');
+    expect(item.preferredProvider).toBe('codex-cli');
+    expect(item.effort).toBe('high');
     expect(item.tier).toBeDefined();
   });
 
-  it('CLAUDE-PRIMARY GUARD: explicit undefined forcedMode routes low-complexity item to claude-code-compat', () => {
+  it('SPLIT-TIER GUARD: explicit undefined forcedMode routes low-complexity item to codex-cli', () => {
     const item: {
       id: string;
       title: string;
@@ -245,7 +247,8 @@ describe('applyJobRouting', () => {
       estimatedComplexity: 'low',
     };
     applyJobRouting(item as Parameters<typeof applyJobRouting>[0], undefined, undefined);
-    expect(item.preferredProvider).toBe('claude-code-compat');
+    expect(item.preferredProvider).toBe('codex-cli');
+    expect(item.effort).toBe('high');
     expect(item.tier).toBeDefined();
   });
 
