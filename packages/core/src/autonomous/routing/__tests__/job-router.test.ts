@@ -90,25 +90,27 @@ describe('resolveJobRouting', () => {
     });
   });
 
-  it('routes a security / high-complexity item to the Anthropic profile (opus)', () => {
+  it('routes a security / high-complexity item to the Claude opus profile (tool-capable)', () => {
+    // Claude-primary (2026-06-06): security work runs on the tool-capable Claude
+    // transport at opus tier, never codex.
     const decision = resolveJobRouting(
       { itemId: 's1', title: 'fix auth bypass', tags: ['security'], estimatedComplexity: 'high' },
       DEFAULT_JOB_ROUTING_POLICY,
       ALL_AVAILABLE,
     );
-    expect(decision.preferredProvider).toBe('anthropic-sdk');
-    expect(decision.runtimeMode).toBe('sdk');
+    expect(decision.preferredProvider).toBe('claude-code-compat');
+    expect(decision.runtimeMode).toBe('claude-code-compat');
     expect(decision.tier).toBe('opus');
     expect(decision.effort).toBe('high');
   });
 
-  it('routes high-complexity (no security tag) to the Anthropic profile', () => {
+  it('routes high-complexity (no security tag) to the Claude opus profile', () => {
     const decision = resolveJobRouting(
       { itemId: 'h1', title: 'rework scheduler core', estimatedComplexity: 'high' },
       DEFAULT_JOB_ROUTING_POLICY,
       ALL_AVAILABLE,
     );
-    expect(decision.preferredProvider).toBe('anthropic-sdk');
+    expect(decision.preferredProvider).toBe('claude-code-compat');
     expect(decision.tier).toBe('opus');
   });
 
@@ -123,21 +125,23 @@ describe('resolveJobRouting', () => {
       DEFAULT_JOB_ROUTING_POLICY,
       ALL_AVAILABLE,
     );
-    expect(decision.preferredProvider).toBe('anthropic-sdk');
+    expect(decision.preferredProvider).toBe('claude-code-compat');
   });
 
-  it('routes a bulk / docs low-complexity item to the cheaper Codex profile', () => {
+  it('routes a bulk / docs low-complexity item to the cost-conscious Claude profile', () => {
+    // Claude-primary (2026-06-06): even cheap/bulk work prefers a Claude
+    // transport; codex is only an availability-gated fallback.
     const decision = resolveJobRouting(
       { itemId: 'd1', title: 'update README links', tags: ['docs'], estimatedComplexity: 'low' },
       DEFAULT_JOB_ROUTING_POLICY,
       ALL_AVAILABLE,
     );
-    expect(decision.preferredProvider).toBe('codex-cli');
-    expect(decision.runtimeMode).toBe('codex-cli');
+    expect(decision.preferredProvider).toBe('claude-code-compat');
+    expect(decision.runtimeMode).toBe('claude-code-compat');
     expect(decision.tier === 'sonnet' || decision.tier === 'haiku').toBe(true);
   });
 
-  it('escalates a job with prior failures up a profile (anthropic)', () => {
+  it('escalates a job with prior failures up to the Claude opus profile', () => {
     const decision = resolveJobRouting(
       {
         itemId: 'f1',
@@ -149,24 +153,26 @@ describe('resolveJobRouting', () => {
       DEFAULT_JOB_ROUTING_POLICY,
       ALL_AVAILABLE,
     );
-    expect(decision.preferredProvider).toBe('anthropic-sdk');
+    expect(decision.preferredProvider).toBe('claude-code-compat');
+    expect(decision.tier).toBe('opus');
   });
 
   it('falls back to the configured alternate when the preferred provider is unavailable', () => {
-    // A high-complexity job prefers anthropic; with anthropic unavailable it
-    // must land on the policy's configured alternate, returning a concrete
-    // decision (not anthropic, not undefined).
+    // A high-complexity job prefers claude-code-compat; with it unavailable it
+    // must land on the policy's configured alternate (anthropic-sdk), returning a
+    // concrete decision (not claude-code-compat, not undefined).
     const decision = resolveJobRouting(
       { itemId: 'o1', title: 'fix auth bypass', tags: ['security'], estimatedComplexity: 'high' },
       DEFAULT_JOB_ROUTING_POLICY,
-      availabilityMap({ 'anthropic-sdk': { available: false, reason: 'no key' } }),
+      availabilityMap({ 'claude-code-compat': { available: false, reason: 'cli missing' } }),
     );
-    expect(decision.preferredProvider).not.toBe('anthropic-sdk');
+    expect(decision.preferredProvider).not.toBe('claude-code-compat');
     const alternate = DEFAULT_JOB_ROUTING_POLICY.profiles.anthropic.alternate;
     const firstAlternate = Array.isArray(alternate) ? alternate[0] : alternate;
     expect(decision.preferredProvider).toBe(firstAlternate);
+    expect(decision.preferredProvider).toBe('anthropic-sdk');
     // concrete runtime mode aligned to the chosen alternate
-    expect(decision.runtimeMode).toBe('claude-code-compat');
+    expect(decision.runtimeMode).toBe('sdk');
   });
 
   it('defaults everything to available when availability is omitted', () => {
@@ -174,7 +180,7 @@ describe('resolveJobRouting', () => {
       { itemId: 'n1', title: 'fix auth bypass', tags: ['security'], estimatedComplexity: 'high' },
       DEFAULT_JOB_ROUTING_POLICY,
     );
-    expect(decision.preferredProvider).toBe('anthropic-sdk');
+    expect(decision.preferredProvider).toBe('claude-code-compat');
   });
 
   it('respects a custom policy alternate', () => {
@@ -188,20 +194,37 @@ describe('resolveJobRouting', () => {
     const decision = resolveJobRouting(
       { itemId: 'c1', title: 'fix auth bypass', tags: ['security'], estimatedComplexity: 'high' },
       policy,
-      availabilityMap({ 'anthropic-sdk': { available: false, reason: 'no key' } }),
+      availabilityMap({ 'claude-code-compat': { available: false, reason: 'cli missing' } }),
     );
     expect(decision.preferredProvider).toBe('codex-cli');
     expect(decision.runtimeMode).toBe('codex-cli');
   });
+
+  it('SECURITY PROFILE: contains no codex in its failover chain', () => {
+    // Claude-primary (2026-06-06): judgment + security never route to codex,
+    // even as a fallback. The full security chain is Claude-family only.
+    const decision = resolveJobRouting(
+      { itemId: 'sec-no-codex', title: 'fix auth bypass', tags: ['security'], estimatedComplexity: 'high' },
+      DEFAULT_JOB_ROUTING_POLICY,
+      ALL_AVAILABLE,
+    );
+    expect(decision.providerPreference).not.toContain('codex-cli');
+    expect(decision.providerPreference).not.toContain('openai-sdk');
+    expect(decision.providerPreference).toEqual(['claude-code-compat', 'anthropic-sdk']);
+  });
 });
 
 // ---------------------------------------------------------------------------
-// Dispatch matrix — ANTI-FAKE GUARD.
+// Dispatch matrix — ANTI-FAKE GUARD (Claude-primary, 2026-06-06).
 //
-// Two DIFFERENT items in the SAME plan must receive DIFFERENT preferredProvider
-// values, AND each must dispatch to the matching stub transport (verified by
-// which transport's execute() recorded the call). Plus an availability-driven
-// override that flips the chosen transport.
+// Under the Claude-primary product decision, BOTH a security item and a cheap
+// docs item default to the tool-capable Claude transport. The ungameable
+// invariants are now:
+//   (1) every item dispatches to claude-code-compat when Claude is available;
+//   (2) the security profile's chain contains NO codex, while the cheap profile
+//       lists codex only as the LAST fallback (auxiliary capacity);
+//   (3) availability overrides shift codex into play ONLY when the whole Claude
+//       family is unavailable AND the item is non-security.
 // ---------------------------------------------------------------------------
 
 describe('dispatch matrix (resolveJobRouting -> ProviderResolver -> transport.execute)', () => {
@@ -210,19 +233,24 @@ describe('dispatch matrix (resolveJobRouting -> ProviderResolver -> transport.ex
     { itemId: 'doc', title: 'update docs', tags: ['docs'], estimatedComplexity: 'low' },
   ];
 
-  it('routes >=2 distinct providers within one plan and dispatches each to its matching transport', async () => {
+  it('routes every item to the Claude transport and dispatches each there; codex stays auxiliary', async () => {
     const decisions = plan.map((job) =>
       resolveJobRouting(job, DEFAULT_JOB_ROUTING_POLICY, ALL_AVAILABLE),
     );
-    const chosenProviders = new Set(decisions.map((d) => d.preferredProvider));
-    // ANTI-FAKE: hard-coding one provider fails here.
-    expect(chosenProviders.size).toBeGreaterThanOrEqual(2);
-    expect(chosenProviders.has('anthropic-sdk')).toBe(true);
-    expect(chosenProviders.has('codex-cli')).toBe(true);
+    // Claude-primary: both items prefer the tool-capable Claude transport.
+    expect(decisions.every((d) => d.preferredProvider === 'claude-code-compat')).toBe(true);
+    // ANTI-FAKE: the cheap/docs item lists codex as its LAST fallback, while the
+    // security item never lists codex at all. A hard-coded single chain fails here.
+    const secDecision = decisions[0]!;
+    const docDecision = decisions[1]!;
+    expect(secDecision.providerPreference).not.toContain('codex-cli');
+    expect(docDecision.providerPreference).toContain('codex-cli');
+    expect(docDecision.providerPreference.at(-1)).toBe('codex-cli');
 
     const calls: string[] = [];
     const resolver = new ProviderResolver(
       [
+        buildRecordingTransport('claude-code-compat', calls),
         buildRecordingTransport('anthropic-sdk', calls),
         buildRecordingTransport('codex-cli', calls),
       ],
@@ -249,27 +277,27 @@ describe('dispatch matrix (resolveJobRouting -> ProviderResolver -> transport.ex
       );
     }
 
-    // security item ran on anthropic; docs item ran on codex.
-    expect(calls).toContain('anthropic-sdk:sec');
-    expect(calls).toContain('codex-cli:doc');
+    // Both items ran on the Claude transport; codex was never dispatched.
+    expect(calls).toContain('claude-code-compat:sec');
+    expect(calls).toContain('claude-code-compat:doc');
     expect(calls).not.toContain('codex-cli:sec');
-    expect(calls).not.toContain('anthropic-sdk:doc');
+    expect(calls).not.toContain('codex-cli:doc');
   });
 
-  it('availability-driven override: anthropic down => security item dispatches to its alternate transport', async () => {
+  it('availability-driven override: claude-code-compat down => security item dispatches to its anthropic-sdk alternate', async () => {
     const availability = availabilityMap({
-      'anthropic-sdk': { available: false, reason: 'no key' },
+      'claude-code-compat': { available: false, reason: 'cli missing' },
     });
     const secJob = plan[0]!;
     const decision = resolveJobRouting(secJob, DEFAULT_JOB_ROUTING_POLICY, availability);
-    // routing chose the alternate up front
-    expect(decision.preferredProvider).toBe('claude-code-compat');
+    // routing chose the (Claude-family) alternate up front, never codex
+    expect(decision.preferredProvider).toBe('anthropic-sdk');
 
     const calls: string[] = [];
     const resolver = new ProviderResolver(
       [
-        buildRecordingTransport('anthropic-sdk', calls),
         buildRecordingTransport('claude-code-compat', calls),
+        buildRecordingTransport('anthropic-sdk', calls),
       ],
       () => availability,
     );
@@ -290,44 +318,67 @@ describe('dispatch matrix (resolveJobRouting -> ProviderResolver -> transport.ex
       buildRequest({ agent, preferredProvider: decision.preferredProvider }),
     );
 
-    // The security item did NOT run on anthropic (it was unavailable) — it ran
-    // on the configured alternate transport.
-    expect(calls).toContain('claude-code-compat:sec');
-    expect(calls).not.toContain('anthropic-sdk:sec');
+    // The security item did NOT run on the (down) Claude CLI — it ran on the
+    // anthropic-sdk alternate, and never on codex.
+    expect(calls).toContain('anthropic-sdk:sec');
+    expect(calls).not.toContain('claude-code-compat:sec');
+    expect(calls).not.toContain('codex-cli:sec');
+  });
+
+  it('CODEX-IDENTITY-INVALID: codex unavailable => availability-filtered chain excludes codex; cheap item stays on Claude', () => {
+    // Simulate the merged identity probe reporting codex unavailable (wrong/
+    // missing binary). The cheap profile's chain must filter codex out entirely.
+    const availability = availabilityMap({
+      'codex-cli': {
+        available: false,
+        reason: 'codex CLI not found on PATH (or the resolved binary failed identity validation)',
+      },
+    });
+    const docDecision = resolveJobRouting(
+      { itemId: 'doc-no-codex', title: 'update README links', tags: ['docs'], estimatedComplexity: 'low' },
+      DEFAULT_JOB_ROUTING_POLICY,
+      availability,
+    );
+    expect(docDecision.preferredProvider).toBe('claude-code-compat');
+    expect(docDecision.providerPreference).not.toContain('codex-cli');
+    expect(docDecision.providerPreference).toEqual(['claude-code-compat', 'anthropic-sdk']);
   });
 });
 
 describe('resolveJobRouting — providerPreference failover chain', () => {
-  it('codex/bulk job: providerPreference is the codex chain, preferred first', () => {
+  it('cheap/bulk job: providerPreference is the Claude-primary chain with codex last', () => {
     const d = resolveJobRouting(
       { itemId: 'b1', title: 'update README links', tags: ['docs'], estimatedComplexity: 'low' },
       DEFAULT_JOB_ROUTING_POLICY,
       ALL_AVAILABLE,
     );
-    expect(d.preferredProvider).toBe('codex-cli');
-    expect(d.providerPreference).toEqual(['codex-cli', 'anthropic-sdk', 'claude-code-compat']);
+    expect(d.preferredProvider).toBe('claude-code-compat');
+    // Claude-primary (2026-06-06): codex is the LAST (auxiliary) fallback.
+    expect(d.providerPreference).toEqual(['claude-code-compat', 'anthropic-sdk', 'codex-cli']);
     expect(d.providerPreference[0]).toBe(d.preferredProvider);
   });
 
-  it('anthropic/security job: providerPreference is the anthropic chain, preferred first', () => {
+  it('security job: providerPreference is the Claude-only chain (no codex), preferred first', () => {
     const d = resolveJobRouting(
       { itemId: 's1', title: 'fix auth bypass', tags: ['security'], estimatedComplexity: 'high' },
       DEFAULT_JOB_ROUTING_POLICY,
       ALL_AVAILABLE,
     );
-    expect(d.preferredProvider).toBe('anthropic-sdk');
-    expect(d.providerPreference).toEqual(['anthropic-sdk', 'claude-code-compat', 'codex-cli']);
+    expect(d.preferredProvider).toBe('claude-code-compat');
+    expect(d.providerPreference).toEqual(['claude-code-compat', 'anthropic-sdk']);
+    expect(d.providerPreference).not.toContain('codex-cli');
   });
 
   it('excludes an unavailable provider and leads with the first available', () => {
     const d = resolveJobRouting(
       { itemId: 'b2', title: 'update README links', tags: ['docs'], estimatedComplexity: 'low' },
       DEFAULT_JOB_ROUTING_POLICY,
-      availabilityMap({ 'codex-cli': { available: false, reason: 'no auth' } }),
+      availabilityMap({ 'claude-code-compat': { available: false, reason: 'cli missing' } }),
     );
     expect(d.preferredProvider).toBe('anthropic-sdk');
-    expect(d.providerPreference).toEqual(['anthropic-sdk', 'claude-code-compat']);
-    expect(d.providerPreference).not.toContain('codex-cli');
+    // codex remains as the last auxiliary hop when claude-code-compat is down.
+    expect(d.providerPreference).toEqual(['anthropic-sdk', 'codex-cli']);
+    expect(d.providerPreference).not.toContain('claude-code-compat');
   });
 
   it('providerPreference has no duplicates and starts with preferredProvider', () => {
@@ -346,14 +397,17 @@ describe('resolveJobRouting — providerPreference failover chain', () => {
 // ---------------------------------------------------------------------------
 
 describe('applyForcedRuntimeProvider', () => {
-  // A representative cost-optimized codex decision (low-complexity docs item).
+  // A representative cost-optimized decision (low-complexity docs item). Under
+  // Claude-primary this prefers claude-code-compat at the cheap tier; the name is
+  // kept for continuity — these tests assert FORCED-runtime behavior, not the
+  // unforced provider.
   const codexDecision: JobRoutingDecision = resolveJobRouting(
     { itemId: 'doc1', title: 'update README', tags: ['docs'], estimatedComplexity: 'low' },
     DEFAULT_JOB_ROUTING_POLICY,
     ALL_AVAILABLE,
   );
 
-  // A representative anthropic decision (security item).
+  // A representative high-stakes decision (security item) — opus tier on Claude.
   const anthropicDecision: JobRoutingDecision = resolveJobRouting(
     { itemId: 'sec1', title: 'fix auth bypass', tags: ['security'], estimatedComplexity: 'high' },
     DEFAULT_JOB_ROUTING_POLICY,

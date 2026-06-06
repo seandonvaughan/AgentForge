@@ -299,6 +299,18 @@ export interface CycleResult {
   scoringFallback?: 'static' | 'effort-estimator';
   error?: string;
   gateVerdict?: 'APPROVE' | 'REJECT';
+  /**
+   * P0.4 — KEYSTONE. Present only on epic cycles. Records the local integration
+   * branch the cycle released from (codex/epic-<id>), the epic id, and whether
+   * it was pushed to origin. Lets operators audit that the single epic PR came
+   * from the integration branch and not the main working tree.
+   */
+  epicIntegration?: {
+    branch: string;
+    epicId: string;
+    pushed: boolean;
+    mergedBranches: string[];
+  };
 }
 
 export class CycleKilledError extends Error {

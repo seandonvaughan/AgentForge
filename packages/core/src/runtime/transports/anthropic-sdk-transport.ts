@@ -59,6 +59,27 @@ function validateAgainstSchema(
  */
 export const CACHE_CONTROL_CHAR_THRESHOLD = 4096;
 
+/**
+ * Sampling params (`temperature`, `top_p`, `top_k`) and the extended-thinking
+ * `budget_tokens` field are REJECTED with a 400 by the Opus 4.7/4.8 class of
+ * models. `supportsSamplingParams` returns false for those model ids so the
+ * transport never sends them. Sonnet/Haiku still accept `temperature`, so the
+ * gate is keyed on the model id rather than blanket-stripping it.
+ *
+ * Match is a defensive substring check (never regex on external text): any
+ * model id containing `opus-4-7`/`opus-4.7`/`opus-4-8`/`opus-4.8` is treated as
+ * sampling-param-rejecting.
+ */
+export function supportsSamplingParams(modelId: string): boolean {
+  const id = modelId.toLowerCase();
+  const rejecting =
+    id.includes('opus-4-7') ||
+    id.includes('opus-4.7') ||
+    id.includes('opus-4-8') ||
+    id.includes('opus-4.8');
+  return !rejecting;
+}
+
 // ---------------------------------------------------------------------------
 // Internal types — Anthropic wire format
 // ---------------------------------------------------------------------------
@@ -334,7 +355,11 @@ export class AnthropicSdkTransport implements ExecutionTransport {
           content: userContentBlock,
         },
       ],
-      ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
+      // Opus 4.7/4.8 reject `temperature` (and top_p/top_k/budget_tokens) with a
+      // 400 — only send sampling params to models that accept them.
+      ...(request.temperature !== undefined && supportsSamplingParams(request.modelId)
+        ? { temperature: request.temperature }
+        : {}),
       // outputFormat plumbing: fall back to response_format json_object since
       // @anthropic-ai/sdk does not expose a top-level outputFormat parameter.
       // Post-validation is handled in execute() via validateAgainstSchema().

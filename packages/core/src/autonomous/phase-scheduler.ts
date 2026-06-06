@@ -134,6 +134,25 @@ export interface PhaseContext {
   objective?: string;
 }
 
+/**
+ * P0.4 — KEYSTONE. When the execute phase ran an epic cycle (items carrying
+ * `parentEpicId`), it accumulates every wave's child branches onto a local
+ * integration branch `codex/epic-<id>` held in a dedicated worktree. This is
+ * surfaced on the execute PhaseResult so the cycle-runner's release stage can
+ * push that ONE branch and open ONE PR from it — instead of committing to the
+ * operator's main working tree. Absent on flat (non-epic) cycles.
+ */
+export interface EpicIntegrationResult {
+  /** The local integration branch, e.g. `codex/epic-abc12345`. */
+  branch: string;
+  /** Epic id the integration branch was derived from. */
+  epicId: string;
+  /** Child branches successfully merged into the integration branch (all waves). */
+  mergedBranches: string[];
+  /** True when at least one wave-merge conflicted (owning items were failed). */
+  hadConflicts: boolean;
+}
+
 export interface PhaseResult {
   phase: PhaseName;
   status: 'completed' | 'failed' | 'blocked';
@@ -142,6 +161,8 @@ export interface PhaseResult {
   agentRuns: unknown[];
   itemResults?: unknown[];
   error?: string;
+  /** P0.4 — present only on the execute phase of an epic cycle. */
+  epicIntegration?: EpicIntegrationResult;
 }
 
 export type PhaseHandler = (ctx: PhaseContext) => Promise<PhaseResult | void>;

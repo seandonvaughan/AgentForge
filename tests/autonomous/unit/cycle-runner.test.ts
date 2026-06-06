@@ -427,8 +427,17 @@ describe('CycleRunner', () => {
     expect(result.error).toContain('prMode=multi requires options.worktreePool');
   });
 
-  it('fails when a worktree pool is provided outside prMode=multi', async () => {
+  // P0.4 — KEYSTONE: a worktree pool with prMode!=multi is now VALID (single-PR
+  // epic cycles run children in worktrees and release ONE PR from the integration
+  // branch). This replaces the prior "throws outside prMode=multi" behaviour.
+  it('accepts a worktree pool in single-PR mode (no longer throws)', async () => {
+    await initGitRepo(tmpDir);
     const deps = makeMockDeps();
+    const baseExecute = deps.mockPhaseHandlers.execute;
+    deps.mockPhaseHandlers.execute = async (ctx: any) => {
+      writeFileSync(join(tmpDir, 'feature.txt'), 'implemented\n');
+      await baseExecute(ctx);
+    };
     const runner = new CycleRunner({
       cwd: tmpDir,
       config: DEFAULT_CYCLE_CONFIG,
@@ -442,13 +451,110 @@ describe('CycleRunner', () => {
       bus: deps.bus as any,
       preVerifyTypeCheck: deps.preVerifyTypeCheck,
       dryRun: { prOpener: true },
-      worktreePool: {} as any,
+      // Minimal pool stub — GC calls listActive(); no allocation happens because
+      // the mock execute handler does not request worktrees.
+      worktreePool: { listActive: async () => [] } as any,
     });
 
     const result = await runner.start();
 
-    expect(result.stage).toBe(CycleStage.FAILED);
-    expect(result.error).toContain('options.worktreePool currently requires prMode=multi');
+    expect(result.stage).toBe(CycleStage.COMPLETED);
+    // Non-epic single-PR path is unchanged: it still commits via the main-tree
+    // gitOps path (the mock execute wrote feature.txt) and opens one PR.
+    expect(result.pr.url).toBeDefined();
+    expect(result.epicIntegration).toBeUndefined();
+  });
+
+  // P0.4 — KEYSTONE: epic single-PR release.
+  // When the execute phase surfaces an epicIntegration signal, the release stage
+  // must (1) NOT run the main-tree gitOps createBranch/stage/commit path, (2) open
+  // exactly ONE PR from the integration branch, and (3) record the integration
+  // branch on the cycle result. The operator's main tree is never committed.
+  it('epic mode: opens ONE PR from the integration branch and skips the main-tree commit path', async () => {
+    await initGitRepo(tmpDir);
+    // Create a real local integration branch so pushIntegrationBranch finds a HEAD.
+    // No `origin` remote exists → the push step is skipped cleanly (local-only).
+    await execFileAsync('git', ['branch', 'codex/epic-test', 'main'], { cwd: tmpDir });
+
+    const deps = makeMockDeps();
+
+    // Spy on the main-tree git path — it MUST NOT be touched in epic mode.
+    const createBranch = vi.fn(async (v: string) => `autonomous/v${v}`);
+    const commit = vi.fn(async () => '0123456789abcdef0123456789abcdef01234567');
+    const stage = vi.fn(async (_files: string[]) => {});
+    const push = vi.fn(async (_branch: string) => {});
+    deps.gitOps.createBranch = createBranch;
+    deps.gitOps.commit = commit;
+    deps.gitOps.stage = stage;
+    deps.gitOps.push = push;
+
+    // Capture PR open calls.
+    const prCalls: any[] = [];
+    deps.prOpener.open = async (req: any) => {
+      prCalls.push(req);
+      return { url: 'https://github.com/x/y/pull/42', number: 42, draft: false };
+    };
+
+    // Execute handler emits the epicIntegration signal on its phase result.
+    const baseExecute = deps.mockPhaseHandlers.execute;
+    deps.mockPhaseHandlers.execute = async (ctx: any) => {
+      ctx.bus.publish('sprint.phase.completed', {
+        sprintId: ctx.sprintId,
+        phase: 'execute',
+        cycleId: ctx.cycleId,
+        result: {
+          phase: 'execute',
+          status: 'completed',
+          durationMs: 500,
+          costUsd: 1.0,
+          agentRuns: [],
+          itemResults: [],
+          epicIntegration: {
+            branch: 'codex/epic-test',
+            epicId: 'epic-test',
+            mergedBranches: ['codex/c1', 'codex/c2'],
+            hadConflicts: false,
+          },
+        },
+        completedAt: new Date().toISOString(),
+      });
+      void baseExecute;
+    };
+
+    const runner = new CycleRunner({
+      cwd: tmpDir,
+      config: DEFAULT_CYCLE_CONFIG,
+      runtime: deps.runtime as any,
+      proposalAdapter: deps.proposalAdapter as any,
+      scoringAdapter: deps.scoringAdapter as any,
+      phaseHandlers: deps.mockPhaseHandlers as any,
+      testRunner: deps.testRunner as any,
+      gitOps: deps.gitOps as any,
+      prOpener: deps.prOpener as any,
+      bus: deps.bus as any,
+      preVerifyTypeCheck: deps.preVerifyTypeCheck,
+      objective: 'ship the epic',
+      worktreePool: { listActive: async () => [] } as any,
+    });
+
+    const result = await runner.start();
+
+    expect(result.stage).toBe(CycleStage.COMPLETED);
+    // (1) main-tree commit path was NOT touched.
+    expect(createBranch).not.toHaveBeenCalled();
+    expect(commit).not.toHaveBeenCalled();
+    expect(stage).not.toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+    // (2) exactly ONE PR, opened FROM the integration branch.
+    expect(prCalls).toHaveLength(1);
+    expect(prCalls[0].branch).toBe('codex/epic-test');
+    expect(result.pr.number).toBe(42);
+    // (3) the integration branch is recorded on the cycle result.
+    expect(result.epicIntegration).toMatchObject({
+      branch: 'codex/epic-test',
+      epicId: 'epic-test',
+      mergedBranches: ['codex/c1', 'codex/c2'],
+    });
   });
 
   it('ignores a provided worktree pool when worktrees are disabled', async () => {

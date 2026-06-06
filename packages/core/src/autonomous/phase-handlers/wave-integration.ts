@@ -90,6 +90,66 @@ export async function mergeBranchesIntoIntegration(
   return { merged, conflicted };
 }
 
+/** Resolve the deterministic worktree path for an integration branch. Exported so
+ *  the release path can read the integrated HEAD before the worktree is removed. */
+export function integrationWorktreePathFor(projectRoot: string, branch: string): string {
+  return integrationWorktreePath(projectRoot, branch);
+}
+
+/** True when an `origin` remote is configured for the repo at `cwd`. */
+async function hasOriginRemote(cwd: string): Promise<boolean> {
+  const res = await gitSafe(cwd, ['remote']);
+  if (!res.ok) return false;
+  return res.out.split('\n').map((s) => s.trim()).includes('origin');
+}
+
+/**
+ * Result of pushing the integration branch at release time.
+ *   - `pushed`   — true when the branch was force-pushed to origin.
+ *   - `skipped`  — true when no `origin` remote exists (local-only repo / tests).
+ *   - `headSha`  — the integration branch HEAD commit (best-effort, '' if unknown).
+ *   - `error`    — populated only when the push attempt threw.
+ */
+export interface IntegrationPushResult {
+  pushed: boolean;
+  skipped: boolean;
+  headSha: string;
+  error?: string;
+}
+
+/**
+ * Push the local integration branch `branch` to origin with an explicit refspec
+ * (PR-2d / P0.4). Runs `git` via execFile from `projectRoot` — no shell, no
+ * interpolation of the branch into a command string. Force-with-lease keeps the
+ * push safe against a concurrently-advanced remote. Skips cleanly when no origin
+ * remote is configured (mirrors agent-commit's local-repo behaviour) so unit
+ * tests on bare local repos don't fail. Never throws — failures are reported in
+ * the result so the caller can still open the PR / clean up deterministically.
+ */
+export async function pushIntegrationBranch(
+  projectRoot: string,
+  branch: string,
+): Promise<IntegrationPushResult> {
+  const headRes = await gitSafe(projectRoot, ['rev-parse', branch]);
+  const headSha = headRes.ok ? headRes.out.trim() : '';
+
+  if (!(await hasOriginRemote(projectRoot))) {
+    return { pushed: false, skipped: true, headSha };
+  }
+
+  // Explicit refspec local-branch → remote-branch; no shell interpolation.
+  const res = await gitSafe(projectRoot, [
+    'push',
+    '--force-with-lease',
+    'origin',
+    `${branch}:${branch}`,
+  ]);
+  if (res.ok) {
+    return { pushed: true, skipped: false, headSha };
+  }
+  return { pushed: false, skipped: false, headSha, error: res.out };
+}
+
 /** Remove the integration worktree (best-effort). The branch is kept for release. */
 export async function removeIntegrationWorktree(projectRoot: string, branch: string): Promise<void> {
   const wtPath = integrationWorktreePath(projectRoot, branch);

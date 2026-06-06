@@ -9,9 +9,21 @@
 // calls it for every item and writes the decision onto the item so the execute
 // phase dispatches each item to the matching transport.
 //
-// Routing intent:
-//   - security OR high-complexity work  -> Anthropic profile (opus, sdk)
-//   - bulk / docs / low-complexity work -> cheaper Codex profile (sonnet/haiku)
+// Routing intent (Claude-primary product decision, 2026-06-06):
+//   AgentForge is ONE product with no modes. Claude is the default provider for
+//   EVERYTHING; codex is OPTIONAL auxiliary capacity that only enters a failover
+//   chain when its binary passes identity validation. Both profiles therefore
+//   PREFER a tool-capable Claude transport (`claude-code-compat`):
+//   - security OR high-complexity work  -> Claude opus (claude-code-compat),
+//     alternate: anthropic-sdk ONLY. Judgment + security stay on Claude — codex
+//     is intentionally NOT in this chain.
+//   - bulk / docs / low-complexity work -> Claude sonnet/haiku
+//     (claude-code-compat), alternate: anthropic-sdk then codex-cli. Codex is the
+//     LAST fallback (auxiliary), used only when both Claude transports are down.
+//
+//   NOTE: `anthropic-sdk` is a TEXT-ONLY transport (no tools). Items that edit
+//   files need `claude-code-compat`, which is why it leads both chains.
+//
 // If the chosen preferredProvider is unavailable in the supplied availability
 // snapshot, the decision falls back to the profile's configured alternate (and
 // keeps falling back along the chain until it finds an available provider, or
@@ -92,12 +104,21 @@ export interface JobRoutingPolicy {
 }
 
 /**
- * Default routing policy.
+ * Default routing policy — Claude-primary, codex-auxiliary (2026-06-06).
  *
- * - anthropic profile: anthropic-sdk + sdk + opus + high effort; alternate
- *   chain falls back to the Claude Code CLI, then Codex.
- * - codex profile: codex-cli + codex-cli mode + sonnet + medium effort;
- *   alternate chain falls back to anthropic, then the Claude Code CLI.
+ * Both profiles prefer the tool-capable Claude transport (`claude-code-compat`)
+ * so file-editing work always has tools:
+ * - anthropic profile (security / high-complexity / repeated-failure escalation):
+ *   claude-code-compat + opus + high effort; alternate chain is anthropic-sdk
+ *   ONLY. Codex is deliberately absent — judgment + security stay on Claude.
+ * - codex profile (the cost-conscious DEFAULT for bulk / docs / low-complexity
+ *   and unmarked work): claude-code-compat + sonnet + medium effort; alternate
+ *   chain falls back to anthropic-sdk, then codex-cli as the LAST resort. Codex
+ *   is auxiliary capacity used only when both Claude transports are unavailable.
+ *
+ * The profile key `codex` is retained for backward compatibility (forced-runtime
+ * family mapping and existing call sites) even though it now prefers Claude; it
+ * is the cost-optimized "non-escalated" profile, not a codex-first one.
  */
 export const DEFAULT_JOB_ROUTING_POLICY: JobRoutingPolicy = {
   securityMarkers: [
@@ -115,18 +136,20 @@ export const DEFAULT_JOB_ROUTING_POLICY: JobRoutingPolicy = {
   escalateAfterFailures: 2,
   profiles: {
     anthropic: {
-      preferredProvider: 'anthropic-sdk',
-      runtimeMode: 'sdk',
+      preferredProvider: 'claude-code-compat',
+      runtimeMode: 'claude-code-compat',
       tier: 'opus',
       effort: 'high',
-      alternate: ['claude-code-compat', 'codex-cli'],
+      // Security + judgment stay on Claude: anthropic-sdk only, never codex.
+      alternate: ['anthropic-sdk'],
     },
     codex: {
-      preferredProvider: 'codex-cli',
-      runtimeMode: 'codex-cli',
+      preferredProvider: 'claude-code-compat',
+      runtimeMode: 'claude-code-compat',
       tier: 'sonnet',
       effort: 'medium',
-      alternate: ['anthropic-sdk', 'claude-code-compat'],
+      // Codex is the LAST fallback (auxiliary), after both Claude transports.
+      alternate: ['anthropic-sdk', 'codex-cli'],
     },
   },
 };

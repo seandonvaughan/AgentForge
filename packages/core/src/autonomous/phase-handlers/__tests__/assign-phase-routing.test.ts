@@ -206,7 +206,9 @@ describe('runAssignPhase with routing index', () => {
 // ---------------------------------------------------------------------------
 
 describe('applyJobRouting', () => {
-  it('REGRESSION GUARD: default path (no forcedMode) routes low-complexity item to codex-cli', () => {
+  it('CLAUDE-PRIMARY GUARD: default path (no forcedMode) routes low-complexity item to claude-code-compat', () => {
+    // Claude-primary (2026-06-06): even cheap/low-complexity work defaults to the
+    // tool-capable Claude transport; codex is only an availability-gated fallback.
     const item: {
       id: string;
       title: string;
@@ -223,11 +225,11 @@ describe('applyJobRouting', () => {
     };
     // Call with no forcedMode at all (undefined)
     applyJobRouting(item as Parameters<typeof applyJobRouting>[0]);
-    expect(item.preferredProvider).toBe('codex-cli');
+    expect(item.preferredProvider).toBe('claude-code-compat');
     expect(item.tier).toBeDefined();
   });
 
-  it('REGRESSION GUARD: explicit undefined forcedMode routes low-complexity item to codex-cli', () => {
+  it('CLAUDE-PRIMARY GUARD: explicit undefined forcedMode routes low-complexity item to claude-code-compat', () => {
     const item: {
       id: string;
       title: string;
@@ -243,7 +245,7 @@ describe('applyJobRouting', () => {
       estimatedComplexity: 'low',
     };
     applyJobRouting(item as Parameters<typeof applyJobRouting>[0], undefined, undefined);
-    expect(item.preferredProvider).toBe('codex-cli');
+    expect(item.preferredProvider).toBe('claude-code-compat');
     expect(item.tier).toBeDefined();
   });
 

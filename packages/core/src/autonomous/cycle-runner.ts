@@ -59,11 +59,18 @@ import { BudgetApproval, type ApprovalResult } from './budget-approval.js';
 import { SprintGenerator, type SprintPlan } from './sprint-generator.js';
 import {
   PhaseScheduler,
+  type EpicIntegrationResult,
   type GateRetryContext,
   type PhaseHandler,
   type PhaseName,
   type SprintRunSummary,
 } from './phase-scheduler.js';
+// P0.4 — KEYSTONE: epic single-PR release pushes the local integration branch and
+// removes its worktree after the PR is opened (never strands integrated work).
+import {
+  pushIntegrationBranch,
+  removeIntegrationWorktree,
+} from './phase-handlers/wave-integration.js';
 import { KillSwitch } from './kill-switch.js';
 import { CycleLogger } from './cycle-logger.js';
 import { renderPrBody } from './pr-body-renderer.js';
@@ -1140,6 +1147,11 @@ export class CycleRunner {
   private prUrl: string | null = null;
   private prNumber: number | null = null;
   private prDraft = false;
+  // P0.4 — KEYSTONE: when the execute phase ran an epic cycle, it surfaces the
+  // local integration branch (codex/epic-<id>) here so the release stage pushes
+  // that ONE branch and opens ONE PR from it, never touching the operator's tree.
+  private epicIntegration: EpicIntegrationResult | null = null;
+  private epicIntegrationPushedSha: string | null = null;
   private totalCostUsd = 0;
   private testStats: CycleResult['tests'] = {
     passed: 0,
@@ -1317,11 +1329,13 @@ export class CycleRunner {
           'prMode=multi requires options.messageBus so agent branches can be pushed and opened as PRs.',
         );
       }
-    } else if (effectiveWorktreePool) {
-      throw new Error(
-        'options.worktreePool currently requires prMode=multi. Use disableWorktrees for single-PR cycles until merge-back is implemented.',
-      );
     }
+    // P0.4 — KEYSTONE: a worktreePool with prMode!=multi is now VALID. Single-PR
+    // epic cycles run children in isolated worktrees, accumulate every wave onto a
+    // local integration branch, and release ONE PR from that branch — the
+    // operator's working tree is never committed or branch-switched. (This
+    // replaces the prior throw that promised this exact work.) Multi-mode
+    // validations above are unchanged.
 
     // ─────────────────────────────────────────────────────────────────
     // T6 — RESUME: if a checkpoint was provided, emit an audit entry
@@ -1534,6 +1548,12 @@ export class CycleRunner {
       try {
         runSummary = await scheduler.run();
         this.totalCostUsd += runSummary.totalCostUsd;
+        // P0.4 — KEYSTONE: capture the epic integration signal from the execute
+        // phase result. When present, the release stage below pushes this ONE
+        // integration branch and opens ONE PR from it instead of committing to
+        // the operator's main working tree.
+        this.epicIntegration =
+          runSummary.completedPhases.find((p) => p.phase === 'execute')?.epicIntegration ?? null;
         // Gate approved — break out of retry loop
         this.gateVerdict = 'APPROVE';
         // Reconcile sprint file: mark all executed items as completed
@@ -1713,7 +1733,31 @@ export class CycleRunner {
     const filesToCommit = await this.collectChangedFiles(runSummary);
     this.filesChanged = filesToCommit;
 
-    if (this.options.config.prMode === 'multi') {
+    if (this.epicIntegration) {
+      // ── epic single-PR path (P0.4 KEYSTONE) ─────────────────────────
+      // Every wave's children were already merged onto the local integration
+      // branch codex/epic-<id> inside a dedicated worktree. We push THAT ONE
+      // branch to origin with an explicit refspec (execFile git — no shell) and
+      // open ONE PR from it in STAGE 6. We DO NOT run the main-tree
+      // createBranch/stage/commit/push path, so the operator's working tree is
+      // never committed or branch-switched.
+      const branch = this.epicIntegration.branch;
+      this.branch = branch;
+      const pushRes = await pushIntegrationBranch(this.options.cwd, branch);
+      this.epicIntegrationPushedSha = pushRes.headSha || null;
+      // commitSha reflects the integration HEAD so shouldOpenSingleCyclePr passes
+      // (this is the commit the epic PR is opened against — not a main-tree commit).
+      this.commitSha = pushRes.headSha || this.commitSha;
+      this.options.bus.publish('sprint.phase.commit.step', {
+        cycleId: this.cycleId,
+        step: pushRes.skipped ? 'skipped' : pushRes.pushed ? 'pushed' : 'push-failed',
+        detail: pushRes.skipped
+          ? `epic integration branch ${branch}: no origin remote — local-only (not pushed)`
+          : pushRes.pushed
+            ? `epic integration branch ${branch} pushed to origin`
+            : `epic integration branch ${branch} push failed: ${pushRes.error ?? 'unknown'}`,
+      });
+    } else if (this.options.config.prMode === 'multi') {
       this.options.bus.publish('sprint.phase.commit.step', {
         cycleId: this.cycleId,
         step: 'skipped',
@@ -1782,7 +1826,44 @@ export class CycleRunner {
     //   from the ledger, and optionally call drainAndMerge() when
     //   autoMergePRs=true.
     // ─────────────────────────────────────────────────────────────────
-    if (this.options.config.prMode === 'multi') {
+    if (this.epicIntegration) {
+      // ── epic single-PR path (P0.4 KEYSTONE) ─────────────────────────
+      // Open exactly ONE PR from the integration branch codex/epic-<id>. We
+      // never call the main-tree single-PR body path below, so the operator's
+      // tree is untouched. The PR opens only when the branch was actually
+      // pushed (or local-only with a real HEAD); otherwise we log and skip.
+      if (this.epicIntegrationPushedSha) {
+        const epicBody = this.buildEpicPrBody(plan.version, scored.summary);
+        const prRequest = {
+          branch: this.branch,
+          baseBranch: this.options.config.git.baseBranch,
+          title: sanitizePrTitle(plan.version, scored.summary),
+          body: epicBody,
+          draft: this.options.config.pr.draft,
+          labels: this.options.config.pr.labels,
+          ...(this.options.config.pr.assignReviewer
+            ? { reviewers: [this.options.config.pr.assignReviewer] }
+            : {}),
+          ...(this.options.dryRun?.prOpener ? { dryRun: true } : {}),
+        };
+        const prResult = await this.options.prOpener.open(prRequest);
+        this.prUrl = prResult.url;
+        this.prNumber = prResult.number;
+        this.prDraft = prResult.draft;
+        this.logger.logPREvent({
+          type: 'opened',
+          url: prResult.url,
+          number: prResult.number,
+          title: `autonomous(v${plan.version}) epic ${this.epicIntegration.epicId}`,
+        });
+      } else {
+        this.options.bus.publish('sprint.phase.review.step', {
+          cycleId: this.cycleId,
+          step: 'skipped',
+          detail: `epic integration branch ${this.branch} has no pushable HEAD — skipping epic PR`,
+        });
+      }
+    } else if (this.options.config.prMode === 'multi') {
       // ── multi-PR path ──────────────────────────────────────────────
       await this.runMultiPrDrain(plan.version, scored.summary);
     } else {
@@ -1858,6 +1939,20 @@ export class CycleRunner {
           step: 'skipped',
           detail: 'no commit was produced — skipping single-PR open',
         });
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // P0.4 — KEYSTONE: remove the epic integration worktree ONLY now, AFTER
+    // the integration branch was pushed and its PR opened. The branch itself
+    // is kept (the PR points at it); just the worktree checkout is reclaimed.
+    // Best-effort — a cleanup failure must never alter the cycle's result.
+    // ─────────────────────────────────────────────────────────────────
+    if (this.epicIntegration) {
+      try {
+        await removeIntegrationWorktree(this.options.cwd, this.epicIntegration.branch);
+      } catch {
+        // Non-fatal: the worktree GC pass below also prunes stale worktrees.
       }
     }
 
@@ -2313,6 +2408,36 @@ Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
   }
 
   /**
+   * P0.4 — KEYSTONE: render the PR body for an epic single-PR release. The PR is
+   * opened from the local integration branch codex/epic-<id>, which already
+   * carries every wave's merged child branches. This is deliberately plain text
+   * (no shell, no template-string escaping concerns) describing the epic and the
+   * children that landed on the branch.
+   */
+  private buildEpicPrBody(version: string, summary: string): string {
+    const epic = this.epicIntegration;
+    const merged = epic?.mergedBranches ?? [];
+    const mergedSection = merged.length > 0
+      ? merged.map((b) => `- ${b}`).join('\n')
+      : '- (none recorded)';
+    const conflictNote = epic?.hadConflicts
+      ? '\n\n> Note: one or more child branches conflicted during wave integration ' +
+        'and were excluded; their items are marked failed for follow-up.'
+      : '';
+    return `## Epic ${epic?.epicId ?? 'unknown'} (autonomous v${version})
+
+${summary}
+
+This PR accumulates every wave of the epic onto the integration branch \`${epic?.branch ?? this.branch}\` and is opened as a single PR. The operator's working tree was not modified.
+
+### Child branches merged into the integration branch
+${mergedSection}${conflictNote}
+
+Cycle: ${this.cycleId}
+`;
+  }
+
+  /**
    * Build a CycleResult with sane defaults for every field, then apply the
    * caller's overrides on top. Used for both intermediate (REVIEW) and
    * terminal (COMPLETED/KILLED/FAILED) results.
@@ -2355,6 +2480,16 @@ Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
     }
     if (this.gateVerdict !== undefined) {
       base.gateVerdict = this.gateVerdict;
+    }
+    // P0.4 — KEYSTONE: record the epic integration branch on every result so
+    // cycle.json proves the single PR came from codex/epic-<id>, not the main tree.
+    if (this.epicIntegration) {
+      base.epicIntegration = {
+        branch: this.epicIntegration.branch,
+        epicId: this.epicIntegration.epicId,
+        pushed: this.epicIntegrationPushedSha !== null,
+        mergedBranches: [...this.epicIntegration.mergedBranches],
+      };
     }
     const merged: CycleResult = { ...base, ...overrides };
     // v6.4.4 bug #2: propagate `error` field so FAILED cycles surface the

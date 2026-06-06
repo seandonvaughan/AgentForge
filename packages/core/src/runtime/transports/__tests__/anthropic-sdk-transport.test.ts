@@ -21,6 +21,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AnthropicSdkTransport,
   CACHE_CONTROL_CHAR_THRESHOLD,
+  supportsSamplingParams,
 } from '../anthropic-sdk-transport.js';
 import {
   TransportAuthError,
@@ -387,6 +388,66 @@ describe('AnthropicSdkTransport', () => {
       );
       const messages = params['messages'] as Array<{ role: string; content: unknown }>;
       expect(Array.isArray(messages[0]!.content)).toBe(true);
+    });
+  });
+
+  // ── Sampling-param hygiene (Opus 4.7/4.8 reject temperature/top_p/top_k) ──
+
+  describe('buildMessageParams — sampling-param hygiene', () => {
+    it('NEVER sends temperature to an opus-4-8 model even when one is requested', () => {
+      const params = transport.buildMessageParams(
+        makeRequest({ modelId: 'claude-opus-4-8', temperature: 0.7 }),
+      );
+      expect('temperature' in params).toBe(false);
+    });
+
+    it('NEVER sends temperature to an opus-4-7 model even when one is requested', () => {
+      const params = transport.buildMessageParams(
+        makeRequest({ modelId: 'claude-opus-4-7', temperature: 0.2 }),
+      );
+      expect('temperature' in params).toBe(false);
+    });
+
+    it('never emits top_p / top_k / budget_tokens for any model', () => {
+      const opusParams = transport.buildMessageParams(
+        makeRequest({ modelId: 'claude-opus-4-8', temperature: 0.7 }),
+      );
+      const sonnetParams = transport.buildMessageParams(
+        makeRequest({ modelId: 'claude-sonnet-4-6', temperature: 0.7 }),
+      );
+      for (const params of [opusParams, sonnetParams]) {
+        expect('top_p' in params).toBe(false);
+        expect('top_k' in params).toBe(false);
+        expect('budget_tokens' in params).toBe(false);
+        expect('thinking' in params).toBe(false);
+      }
+    });
+
+    it('still sends temperature to a sonnet model that accepts it', () => {
+      const params = transport.buildMessageParams(
+        makeRequest({ modelId: 'claude-sonnet-4-6', temperature: 0.3 }),
+      );
+      expect(params['temperature']).toBe(0.3);
+    });
+
+    it('omits temperature for sonnet when none is requested', () => {
+      const params = transport.buildMessageParams(makeRequest({ modelId: 'claude-sonnet-4-6' }));
+      expect('temperature' in params).toBe(false);
+    });
+  });
+
+  describe('supportsSamplingParams', () => {
+    it('returns false for opus-4-7 / opus-4-8 ids (dotted and dashed)', () => {
+      expect(supportsSamplingParams('claude-opus-4-8')).toBe(false);
+      expect(supportsSamplingParams('claude-opus-4-7')).toBe(false);
+      expect(supportsSamplingParams('claude-opus-4.8')).toBe(false);
+      expect(supportsSamplingParams('CLAUDE-OPUS-4-8[1m]')).toBe(false);
+    });
+
+    it('returns true for sonnet / haiku and older opus ids', () => {
+      expect(supportsSamplingParams('claude-sonnet-4-6')).toBe(true);
+      expect(supportsSamplingParams('claude-haiku-4-5')).toBe(true);
+      expect(supportsSamplingParams('claude-opus-4-1')).toBe(true);
     });
   });
 
