@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { isCodexAuthenticated } from './codex-auth.js';
-import { isCodexRuntimeAvailable } from './execution-service-mode.js';
+import { verifyCodexBinaryIdentity } from './transports/codex-cli-transport.js';
 import type { ExecutionProviderKind } from './types.js';
 
 /**
@@ -49,8 +49,16 @@ function defaultIsClaudeCliAvailable(): boolean {
   return probe.status === 0;
 }
 
+/**
+ * Codex presence + identity probe: resolves the binary (AGENTFORGE_CODEX_BIN →
+ * ~/.agentforge/bin/codex → PATH), runs `--version`, and requires the output
+ * to look like the real Codex CLI. A wrong binary answering on PATH (incident:
+ * macOS purged a /tmp shim and an unrelated homebrew `codex` took over)
+ * reports unavailable — runs degrade to Claude instead of dying mid-cycle.
+ * Identity verdicts are cached per-process inside the transport module.
+ */
 function defaultIsCodexCliAvailable(env: NodeJS.ProcessEnv): boolean {
-  return isCodexRuntimeAvailable({ env });
+  return verifyCodexBinaryIdentity({ env }).ok;
 }
 
 /**
@@ -91,7 +99,10 @@ function resolveCodexAvailability(
   codexCli: boolean,
 ): ProviderAvailability {
   if (!codexCli) {
-    return { available: false, reason: 'codex CLI not found on PATH' };
+    return {
+      available: false,
+      reason: 'codex CLI not found on PATH (or the resolved binary failed identity validation)',
+    };
   }
   if (!deps.isCodexAuthenticated(env)) {
     return { available: false, reason: 'codex CLI is not authenticated (run: codex login)' };

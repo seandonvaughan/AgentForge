@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -97,6 +97,7 @@ describe('buildCodexReadinessReport launch options', () => {
         platform: 'win32',
         arch: 'x64',
         candidates: [codexPackage.cmdShim],
+        exists: () => false, // hermetic: ignore any real ~/.agentforge/bin/codex
       },
     } as Parameters<typeof buildCodexReadinessReport>[0] & Record<string, unknown>);
 
@@ -110,7 +111,8 @@ describe('buildCodexReadinessReport launch options', () => {
         windowsHide: true,
         env: expect.objectContaining({
           CODEX_MANAGED_BY_NPM: '1',
-          CODEX_MANAGED_PACKAGE_ROOT: codexPackage.packageRoot,
+          // realpathSync: macOS tmpdir() lives under the /var -> /private/var symlink.
+          CODEX_MANAGED_PACKAGE_ROOT: realpathSync(codexPackage.packageRoot),
         }),
       }),
     );

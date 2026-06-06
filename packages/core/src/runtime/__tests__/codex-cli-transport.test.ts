@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { CodexCliTransport, buildCodexSpawnCommand } from '../transports/codex-cli-transport.js';
@@ -199,6 +199,7 @@ describe('buildCodexSpawnCommand', () => {
         PATH: '/tmp/codex-bin',
         CODEX_HOME: '/tmp/codex-home',
       },
+      exists: () => false, // hermetic: ignore any real ~/.agentforge/bin/codex
     });
 
     expect(command.command).toBe('codex');
@@ -217,6 +218,7 @@ describe('buildCodexSpawnCommand', () => {
         arch: 'x64',
         candidates: [tmp.cmdShim],
         env: { PATH: 'C:\\Windows\\System32' },
+        exists: () => false, // hermetic: ignore any real ~/.agentforge/bin/codex
       });
 
       expect(command.command).toBe(tmp.nativeExe);
@@ -224,7 +226,8 @@ describe('buildCodexSpawnCommand', () => {
       expect(command.launchKind).toBe('windows-native-package');
       expect(command.env?.PATH).toContain(tmp.pathDir);
       expect(command.env?.CODEX_MANAGED_BY_NPM).toBe('1');
-      expect(command.env?.CODEX_MANAGED_PACKAGE_ROOT).toBe(tmp.packageRoot);
+      // realpathSync: macOS tmpdir() lives under the /var -> /private/var symlink.
+      expect(command.env?.CODEX_MANAGED_PACKAGE_ROOT).toBe(realpathSync(tmp.packageRoot));
     } finally {
       rmSync(tmp.root, { recursive: true, force: true });
     }
@@ -238,6 +241,7 @@ describe('buildCodexSpawnCommand', () => {
         arch: 'x64',
         candidates: [tmp.cmdShim],
         env: { PATH: 'C:\\Windows\\System32' },
+        exists: () => false, // hermetic: ignore any real ~/.agentforge/bin/codex
       });
 
       expect(command.command).toBe(process.execPath);
@@ -254,6 +258,7 @@ describe('buildCodexSpawnCommand', () => {
       arch: 'x64',
       candidates: ['C:\\Users\\Agent\\AppData\\Local\\Microsoft\\WindowsApps\\codex.exe'],
       env: { PATH: 'C:\\Users\\Agent\\AppData\\Local\\Microsoft\\WindowsApps' },
+      exists: () => false, // hermetic: ignore any real ~/.agentforge/bin/codex
     })).toThrow(/Install Codex CLI from npm or provide a resolvable codex\.exe/i);
   });
 
@@ -269,6 +274,7 @@ describe('buildCodexSpawnCommand', () => {
         arch: 'x64',
         candidates: [cmdShim],
         env: { PATH: root },
+        exists: () => false, // hermetic: ignore any real ~/.agentforge/bin/codex
       })).toThrow(/native packaged codex\.exe or node entrypoint/i);
     } finally {
       rmSync(root, { recursive: true, force: true });

@@ -66,7 +66,31 @@ export class CycleLogger {
   }
 
   logPhaseResult(phase: string, result: unknown): void {
-    this.writeJson(join(this.cycleDir, 'phases', `${phase}.json`), result);
+    const phasePath = join(this.cycleDir, 'phases', `${phase}.json`);
+    // P0.1 — MERGE into a handler-written phase artifact instead of
+    // overwriting it. Phase handlers (e.g. runAuditPhase) write rich keys
+    // (findings, memoriesInjected, …) to phases/<phase>.json before the
+    // PhaseScheduler logs the bare PhaseResult summary here; an unconditional
+    // overwrite destroyed those keys before downstream consumers (plan-phase
+    // reads audit.json findings) ever saw them. Handler-written keys survive;
+    // the logger's own summary fields (status/durationMs/costUsd/…) are
+    // refreshed on top. If the file is missing, unparseable, or either side
+    // is not a plain JSON object, fall back to today's summary-only write.
+    // The merge path must never throw.
+    let payload: unknown = result;
+    if (typeof result === 'object' && result !== null && !Array.isArray(result)) {
+      try {
+        if (existsSync(phasePath)) {
+          const existing: unknown = JSON.parse(readFileSync(phasePath, 'utf8'));
+          if (typeof existing === 'object' && existing !== null && !Array.isArray(existing)) {
+            payload = { ...(existing as Record<string, unknown>), ...(result as Record<string, unknown>) };
+          }
+        }
+      } catch {
+        // Unreadable/corrupt existing artifact — fall back to summary-only write.
+      }
+    }
+    this.writeJson(phasePath, payload);
     this.appendEvent({ type: 'phase.result', phase, at: new Date().toISOString() });
   }
 

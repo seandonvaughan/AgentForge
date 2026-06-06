@@ -2,7 +2,7 @@ import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:chil
 import { randomUUID } from 'node:crypto';
 import { existsSync, realpathSync } from 'node:fs';
 import { readFile, unlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { getRequestModelProfile } from '../model-profiles.js';
 import { estimateOpenAiCostUsd } from '../openai-pricing.js';
@@ -25,6 +25,30 @@ import type {
 
 const CODEX_COMMAND = 'codex';
 const DEFAULT_CODEX_SANDBOX: CodexSandboxMode = 'workspace-write';
+
+/**
+ * Exact message raised when the Codex CLI exits 0 but never emits its final
+ * message. This is the ONLY failure the transient retry loop re-runs; every
+ * other error (non-zero exit, timeout, abort, spawn failure) propagates as-is.
+ */
+const CODEX_NO_FINAL_MESSAGE = 'codex CLI completed without a final message';
+
+/**
+ * Backoff schedule for the transient no-final-message flake: the invocation is
+ * retried up to `length` more times, waiting ~2s then ~5s between attempts.
+ */
+export const CODEX_NO_FINAL_MESSAGE_RETRY_DELAYS_MS: readonly number[] = [2_000, 5_000];
+
+function isCodexNoFinalMessageError(err: unknown): boolean {
+  return err instanceof TransportInvalidRequestError && err.message === CODEX_NO_FINAL_MESSAGE;
+}
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolveSleep) => {
+    const timer = setTimeout(resolveSleep, ms);
+    timer.unref?.();
+  });
+}
 
 function validateAgainstSchema(
   responseText: string,
@@ -79,6 +103,11 @@ export interface CodexCliTransportOptions {
   authResolver?: (env: NodeJS.ProcessEnv) => CodexAuthResult;
   /** Environment passed to the auth resolver. Defaults to process.env at call time. */
   env?: NodeJS.ProcessEnv;
+  /**
+   * Injectable backoff sleep used by the transient no-final-message retry.
+   * Tests inject an instant resolver; production uses a real (unref'd) timer.
+   */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export class CodexCliTransport implements ExecutionTransport {
@@ -86,10 +115,12 @@ export class CodexCliTransport implements ExecutionTransport {
 
   private readonly authResolver?: (env: NodeJS.ProcessEnv) => CodexAuthResult;
   private readonly env?: NodeJS.ProcessEnv;
+  private readonly sleep: (ms: number) => Promise<void> = defaultSleep;
 
   constructor(options: CodexCliTransportOptions = {}) {
     if (options.authResolver) this.authResolver = options.authResolver;
     if (options.env) this.env = options.env;
+    if (options.sleep) this.sleep = options.sleep;
   }
 
   /**
@@ -107,23 +138,13 @@ export class CodexCliTransport implements ExecutionTransport {
     }
   }
 
+  /**
+   * Codex is OPTIONAL auxiliary capacity (Claude-primary): resolution or
+   * identity-validation failures report `false` so runs degrade to other
+   * providers — never throw, and never let a wrong `codex` binary answer.
+   */
   isAvailable(): boolean {
-    if (process.platform === 'win32') {
-      try {
-        const command = buildCodexSpawnCommand(['--version']);
-        const probe = spawnSync(command.command, command.args, {
-          stdio: 'ignore',
-          windowsHide: true,
-          ...(command.env ? { env: command.env } : {}),
-        });
-        return probe.status === 0;
-      } catch {
-        return false;
-      }
-    }
-
-    const probe = spawnSync('which', ['codex'], { stdio: 'ignore', windowsHide: true });
-    return probe.status === 0;
+    return verifyCodexBinaryIdentity({ env: this.env ?? process.env }).ok;
   }
 
   async execute(request: ExecutionRequest): Promise<ExecutionResult> {
@@ -132,8 +153,7 @@ export class CodexCliTransport implements ExecutionTransport {
     const startedAt = Date.now();
 
     try {
-      const invocation = await this.invokeCodexCli(request);
-      const parsed = this.parseCodexOutput(invocation.stdout, invocation.outputText);
+      const { invocation, parsed } = await this.invokeCodexCliWithRetry(request);
       const response = parsed.response;
       const costWarnings = this.buildCostWarnings(request, parsed.webSearchCalls);
       const result: ExecutionResult = {
@@ -189,8 +209,7 @@ export class CodexCliTransport implements ExecutionTransport {
     });
 
     try {
-      const invocation = await this.invokeCodexCli(request, options);
-      const parsed = this.parseCodexOutput(invocation.stdout, invocation.outputText);
+      const { invocation, parsed } = await this.invokeCodexCliWithRetry(request, options);
       const response = parsed.response;
       const costWarnings = this.buildCostWarnings(request, parsed.webSearchCalls);
       const result: ExecutionResult = {
@@ -235,6 +254,43 @@ export class CodexCliTransport implements ExecutionTransport {
     } catch (err) {
       throw classifyCodexCliError(err, request.timeoutMs);
     }
+  }
+
+  /**
+   * Invoke the Codex CLI and parse its output, retrying ONLY the transient
+   * "completed without a final message" flake (exit 0 with a missing final
+   * message) up to {@link CODEX_NO_FINAL_MESSAGE_RETRY_DELAYS_MS} more times
+   * with short backoff. Real failures — non-zero exits, timeouts, aborts,
+   * spawn errors, invalid requests — propagate immediately without retry.
+   */
+  private async invokeCodexCliWithRetry(
+    request: ExecutionRequest,
+    streamOptions: ExecutionStreamOptions = {},
+  ): Promise<{ invocation: CodexInvocationResult; parsed: ParsedCodexOutput }> {
+    const maxRetries = CODEX_NO_FINAL_MESSAGE_RETRY_DELAYS_MS.length;
+    let lastNoFinalMessageError: unknown;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+      if (attempt > 0) {
+        const delayMs = CODEX_NO_FINAL_MESSAGE_RETRY_DELAYS_MS[attempt - 1] ?? 5_000;
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[agentforge] ${CODEX_NO_FINAL_MESSAGE}; retrying in ${delayMs}ms ` +
+            `(retry ${attempt}/${maxRetries})`,
+        );
+        await this.sleep(delayMs);
+      }
+
+      const invocation = await this.invokeCodexCli(request, streamOptions);
+      try {
+        return { invocation, parsed: this.parseCodexOutput(invocation.stdout, invocation.outputText) };
+      } catch (err) {
+        if (!isCodexNoFinalMessageError(err)) throw err;
+        lastNoFinalMessageError = err;
+      }
+    }
+
+    throw lastNoFinalMessageError;
   }
 
   private async invokeCodexCli(
@@ -507,7 +563,7 @@ export class CodexCliTransport implements ExecutionTransport {
     const metadata = this.extractMetadata(events);
 
     if (!response) {
-      throw new TransportInvalidRequestError('codex CLI completed without a final message', { stdout });
+      throw new TransportInvalidRequestError(CODEX_NO_FINAL_MESSAGE, { stdout });
     }
 
     return {
@@ -796,12 +852,92 @@ export interface CodexSpawnCommandOptions {
   arch?: NodeJS.Architecture;
   candidates?: string[];
   env?: NodeJS.ProcessEnv;
+  /** Test seam: home directory used for the `~/.agentforge/bin/codex` fallback. */
+  homeDir?: string;
+  /** Test seam: filesystem existence probe used during binary resolution. */
+  exists?: (path: string) => boolean;
+}
+
+/** Where the codex executable came from during resolution. */
+export type CodexBinarySource = 'env-override' | 'managed-bin' | 'path-lookup';
+
+export interface CodexBinaryResolution {
+  /** Executable to spawn: an explicit path for overrides, bare `codex` for PATH lookup. */
+  command: string;
+  source: CodexBinarySource;
+}
+
+export interface CodexBinaryResolutionOptions {
+  /** Environment to read `AGENTFORGE_CODEX_BIN` from. Defaults to process.env. */
+  env?: NodeJS.ProcessEnv;
+  /** Home directory for the managed-bin fallback. Defaults to os.homedir(). */
+  homeDir?: string;
+  /** Filesystem existence probe. Defaults to fs.existsSync. */
+  exists?: (path: string) => boolean;
+}
+
+/**
+ * Resolve which codex executable AgentForge should spawn. PATH alone is not
+ * trustworthy (incident: a purged /tmp shim let an unrelated homebrew `codex`
+ * answer), so explicit operator pins win first:
+ *
+ *   1. `AGENTFORGE_CODEX_BIN` env var (absolute path to the real codex CLI)
+ *   2. `~/.agentforge/bin/codex` when it exists (managed install location)
+ *   3. bare `codex` PATH lookup (legacy behavior)
+ *
+ * Pure given injected `env`/`homeDir`/`exists`; never throws.
+ */
+export function resolveCodexBinary(
+  options: CodexBinaryResolutionOptions = {},
+): CodexBinaryResolution {
+  const env = options.env ?? process.env;
+  const exists = options.exists ?? existsSync;
+
+  const envOverride = env['AGENTFORGE_CODEX_BIN']?.trim();
+  if (envOverride) {
+    return { command: envOverride, source: 'env-override' };
+  }
+
+  const homeDir = options.homeDir ?? safeHomedir();
+  if (homeDir) {
+    const managedBin = join(homeDir, '.agentforge', 'bin', 'codex');
+    if (exists(managedBin)) {
+      return { command: managedBin, source: 'managed-bin' };
+    }
+  }
+
+  return { command: CODEX_COMMAND, source: 'path-lookup' };
+}
+
+function safeHomedir(): string {
+  try {
+    return homedir();
+  } catch {
+    return '';
+  }
 }
 
 export function buildCodexSpawnCommand(
   args: string[],
   options: CodexSpawnCommandOptions = {},
 ): CodexSpawnCommand {
+  const resolution = resolveCodexBinary({
+    ...(options.env ? { env: options.env } : {}),
+    ...(options.homeDir !== undefined ? { homeDir: options.homeDir } : {}),
+    ...(options.exists ? { exists: options.exists } : {}),
+  });
+
+  // Explicit operator pins (env var or managed bin dir) win on every platform
+  // and bypass PATH/candidate scanning entirely.
+  if (resolution.source !== 'path-lookup') {
+    return {
+      command: resolution.command,
+      args,
+      ...(options.env ? { env: options.env } : {}),
+      launchKind: 'path-command',
+    };
+  }
+
   const platform = options.platform ?? process.platform;
   if (platform !== 'win32') {
     return {
@@ -845,6 +981,191 @@ export function resolveCodexSpawnLaunchKind(
   } catch {
     return undefined;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Codex binary identity validation
+//
+// Exit status 0 on `--version` is not proof the binary is the Codex CLI: an
+// unrelated homebrew tool named `codex` answers `--version` with
+// `0.1.2505172129` and then burns cycles that die with "completed without a
+// final message". The real CLI prints `codex-cli <semver>`. Identity verdicts
+// are cached per-process (keyed by the resolved command) so availability
+// checks never re-spawn `--version` per call.
+// ---------------------------------------------------------------------------
+
+/** What real Codex CLI `--version` output looks like (e.g. `codex-cli 0.135.0`). */
+export const CODEX_VERSION_OUTPUT_PATTERN = /codex-cli\s+\d+\.\d+/;
+
+const CODEX_IDENTITY_MAX_PROBE_CHARS = 512;
+
+/**
+ * Whether `--version` output looks like the real Codex CLI. Linear-time check
+ * on a bounded slice (no ReDoS surface).
+ */
+export function isCodexVersionOutputValid(versionOutput: string): boolean {
+  const head = versionOutput.trim().slice(0, CODEX_IDENTITY_MAX_PROBE_CHARS);
+  return head.startsWith('codex-cli ') || CODEX_VERSION_OUTPUT_PATTERN.test(head);
+}
+
+export interface CodexVersionProbeResult {
+  status: number | null;
+  stdout: string;
+  error?: Error;
+}
+
+export interface CodexBinaryIdentity {
+  ok: boolean;
+  /** The command that was checked (the resolved path when one is known). */
+  command: string;
+  /** Human-readable verdict, surfaced through provider availability. */
+  reason: string;
+  /** Trimmed `--version` output when the probe ran. */
+  versionOutput?: string;
+}
+
+export interface CodexBinaryIdentityOptions extends CodexSpawnCommandOptions {
+  /** Test seam: override the `--version` subprocess probe. */
+  runVersion?: (spawnCommand: CodexSpawnCommand) => CodexVersionProbeResult;
+  /** Test seam: override PATH location used to name the binary in warnings. */
+  locateOnPath?: (command: string, env?: NodeJS.ProcessEnv) => string | undefined;
+}
+
+const codexBinaryIdentityCache = new Map<string, CodexBinaryIdentity>();
+
+/** Clear the per-process identity cache (tests, or after repairing an install). */
+export function resetCodexBinaryIdentityCache(): void {
+  codexBinaryIdentityCache.clear();
+}
+
+/**
+ * Resolve the codex binary and verify it actually is the Codex CLI by running
+ * `--version` and matching {@link CODEX_VERSION_OUTPUT_PATTERN}. Never throws:
+ * resolution and validation failures return `ok: false` so the provider
+ * reports unavailable and runs degrade gracefully to Claude (Claude-primary,
+ * codex is optional auxiliary capacity). Spawned verdicts are cached
+ * per-process per resolved command.
+ */
+export function verifyCodexBinaryIdentity(
+  options: CodexBinaryIdentityOptions = {},
+): CodexBinaryIdentity {
+  let spawnCommand: CodexSpawnCommand;
+  try {
+    spawnCommand = buildCodexSpawnCommand(['--version'], options);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      ok: false,
+      command: CODEX_COMMAND,
+      reason: `codex CLI could not be resolved: ${message}`,
+    };
+  }
+
+  const cacheKey = [spawnCommand.command, ...spawnCommand.args].join('\u0000');
+  const cached = codexBinaryIdentityCache.get(cacheKey);
+  if (cached) return cached;
+
+  const identity = computeCodexBinaryIdentity(spawnCommand, options);
+  codexBinaryIdentityCache.set(cacheKey, identity);
+  return identity;
+}
+
+function computeCodexBinaryIdentity(
+  spawnCommand: CodexSpawnCommand,
+  options: CodexBinaryIdentityOptions,
+): CodexBinaryIdentity {
+  const runVersion = options.runVersion ?? defaultRunCodexVersion;
+
+  let probe: CodexVersionProbeResult;
+  try {
+    probe = runVersion(spawnCommand);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      ok: false,
+      command: spawnCommand.command,
+      reason: `codex --version probe failed: ${message}`,
+    };
+  }
+
+  if (probe.error) {
+    return {
+      ok: false,
+      command: spawnCommand.command,
+      reason: `codex --version could not be spawned: ${probe.error.message}`,
+    };
+  }
+  if (probe.status !== 0) {
+    return {
+      ok: false,
+      command: spawnCommand.command,
+      reason: `codex --version exited with status ${probe.status ?? 'null'}`,
+    };
+  }
+
+  const versionOutput = probe.stdout.trim().slice(0, CODEX_IDENTITY_MAX_PROBE_CHARS);
+  const firstLine = versionOutput.split(/\r?\n/, 1)[0] ?? '';
+
+  if (!isCodexVersionOutputValid(versionOutput)) {
+    const locateOnPath = options.locateOnPath ?? defaultLocateCommandOnPath;
+    const resolvedPath = spawnCommand.command === CODEX_COMMAND
+      ? locateOnPath(spawnCommand.command, spawnCommand.env ?? options.env) ?? spawnCommand.command
+      : spawnCommand.command;
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[agentforge] "${resolvedPath}" does not look like the Codex CLI ` +
+        `(--version printed "${firstLine}", expected to match ${CODEX_VERSION_OUTPUT_PATTERN}); ` +
+        'treating codex as unavailable.',
+    );
+    return {
+      ok: false,
+      command: resolvedPath,
+      reason:
+        `binary at ${resolvedPath} failed codex identity validation ` +
+        `("${firstLine}" does not match ${CODEX_VERSION_OUTPUT_PATTERN})`,
+      versionOutput,
+    };
+  }
+
+  return {
+    ok: true,
+    command: spawnCommand.command,
+    reason: `codex CLI identity verified (${firstLine})`,
+    versionOutput,
+  };
+}
+
+function defaultRunCodexVersion(spawnCommand: CodexSpawnCommand): CodexVersionProbeResult {
+  const probe = spawnSync(spawnCommand.command, spawnCommand.args, {
+    encoding: 'utf8',
+    windowsHide: true,
+    timeout: 10_000,
+    ...(spawnCommand.env ? { env: spawnCommand.env } : {}),
+  });
+  return {
+    status: probe.status,
+    stdout: typeof probe.stdout === 'string' ? probe.stdout : '',
+    ...(probe.error ? { error: probe.error } : {}),
+  };
+}
+
+/** Name the PATH-resolved binary in diagnostics (e.g. /opt/homebrew/bin/codex). */
+function defaultLocateCommandOnPath(
+  command: string,
+  env?: NodeJS.ProcessEnv,
+): string | undefined {
+  const locator = process.platform === 'win32' ? 'where' : 'which';
+  const probe = spawnSync(locator, [command], {
+    encoding: 'utf8',
+    windowsHide: true,
+    ...(env ? { env } : {}),
+  });
+  if (probe.status !== 0 || typeof probe.stdout !== 'string') return undefined;
+  for (const line of probe.stdout.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed) return trimmed;
+  }
+  return undefined;
 }
 
 function findWindowsCodexCandidates(env?: NodeJS.ProcessEnv): string[] {
