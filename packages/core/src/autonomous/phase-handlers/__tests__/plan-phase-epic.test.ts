@@ -63,4 +63,38 @@ describe('plan phase epic branch', () => {
     expect(existsSync(join(root, '.agentforge', 'cycles', CYCLE_ID, 'decomposition.json'))).toBe(false);
     expect(result.phase).toBe('plan');
   });
+
+  // P0.3 band enforcement (cycle 11955f95 follow-up): ctx.budgetUsd must reach
+  // the EpicObjective so the planner prompt carries the BUDGET block and
+  // validate-and-layer enforces the Σ(children) band. Budget 12.5 → spendable
+  // (12.5−6)/1.2 = 5.4167 → band [3.79, 5.42]; fixture children sum to 5 ✓.
+  it('threads ctx.budgetUsd onto the EpicObjective (prompt block + objective.json)', async () => {
+    const prompts: string[] = [];
+    const ctx = {
+      ...(makeCtx(root, 'Add multi-tenant RBAC') as unknown as Record<string, unknown>),
+      budgetUsd: 12.5,
+      runtime: {
+        run: async (_a: string, task: string) => {
+          prompts.push(task);
+          return { output: epicPlanJson(), costUsd: 0.5, model: 'opus' };
+        },
+      },
+    } as unknown as PhaseContext;
+
+    const result = await runPlanPhase(ctx);
+    expect(result.status).toBe('completed');
+    const objective = JSON.parse(
+      readFileSync(join(root, '.agentforge', 'cycles', CYCLE_ID, 'objective.json'), 'utf8'),
+    );
+    expect(objective.budgetUsd).toBe(12.5);
+    expect(prompts[0]).toContain('BUDGET — size this plan to fill the money it is given.');
+  });
+
+  it('omits budgetUsd from the objective when ctx has none (band check skipped)', async () => {
+    await runPlanPhase(makeCtx(root, 'Add multi-tenant RBAC'));
+    const objective = JSON.parse(
+      readFileSync(join(root, '.agentforge', 'cycles', CYCLE_ID, 'objective.json'), 'utf8'),
+    );
+    expect(objective.budgetUsd).toBeUndefined();
+  });
 });

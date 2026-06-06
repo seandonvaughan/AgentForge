@@ -313,6 +313,14 @@ async function runEpicDecompositionPlan(
     title: (objectiveText.split('\n')[0] ?? objectiveText).slice(0, 120),
     description: objectiveText,
     createdAt: new Date().toISOString(),
+    // P0.3 band enforcement: thread the cycle budget onto the objective so the
+    // decomposer gets the budget prompt block AND validate-and-layer enforces
+    // Σ(children.estimatedCostUsd) within [0.7, 1.0]×spendable. Without this
+    // the band check silently skipped (cycle 11955f95 planned $38.00 against
+    // an upper bound of $36.67 and sailed through).
+    ...(typeof ctx.budgetUsd === 'number' && ctx.budgetUsd > 0
+      ? { budgetUsd: ctx.budgetUsd }
+      : {}),
   };
 
   let status: PhaseResult['status'] = 'completed';

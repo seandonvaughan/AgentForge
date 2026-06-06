@@ -136,7 +136,18 @@ export function buildEpicPlannerPrompt(objective: EpicObjective): string {
     `}`,
     ``,
     `Use epicId "${objective.id}" exactly. The predecessor graph must be acyclic and every`,
-    `predecessor must reference another child id in this plan.${budget}`,
+    `predecessor must reference another child id in this plan.`,
+    ``,
+    // Scope discipline: the per-child verifier (P0.5) auto-fails any child that
+    // edits a file missing from its files[] — including innocent shared-barrel
+    // updates (src/index.ts), which failed 4/4 children on cycle 11955f95.
+    `files[] is an ENFORCED contract: each child may edit ONLY the files it declares, and a`,
+    `deterministic verifier fails any child that touches an undeclared file. Therefore declare`,
+    `EVERY file the child will edit — including shared barrel/index export files (e.g.`,
+    `src/index.ts), config, and README updates. When several children would all touch the same`,
+    `shared file (a barrel, a CLI dispatcher), do NOT have them race on it: leave it out of the`,
+    `parallel children and route ALL shared-file edits to one later integration child that`,
+    `depends on them.${budget}`,
   ].join('\n');
 }
 

@@ -1,0 +1,161 @@
+// Acceptance-run fixes (cycle 11955f95): AgentForge must run epic children in
+// FOREIGN repositories with zero config. Three bugs failed 4/4 children there:
+//   (a) child-verify hardcoded `corepack pnpm exec ...` → typecheck exited 1
+//       in an npm repo before the child's code was even considered;
+//   (b) the item prompt told agents to use `corepack pnpm` and never to use
+//       `npx`, inside an npm project;
+//   (c) the item prompt never listed the item's declared files while the
+//       deterministic verifier fails ANY out-of-scope edit — children
+//       innocently touched the shared barrel (src/index.ts) and were failed.
+// These tests pin the repo-neutral behavior: lockfile-detected toolchain and
+// an explicit declared-scope section.
+
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import {
+  detectPackageCommands,
+  verifyChildWorktree,
+  type ChildVerifyCommandResult,
+} from '../child-verify.js';
+import { buildItemPrompt } from '../execute-phase.js';
+
+/** The (module-local) SprintItem shape buildItemPrompt accepts. */
+type PromptItem = Parameters<typeof buildItemPrompt>[0];
+
+let dir: string;
+
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), 'af-repo-neutral-'));
+});
+afterEach(() => {
+  rmSync(dir, { recursive: true, force: true });
+});
+
+describe('detectPackageCommands', () => {
+  it('pnpm-lock.yaml → corepack pnpm commands (AgentForge-style workspace)', () => {
+    writeFileSync(join(dir, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
+    const d = detectPackageCommands(dir);
+    expect(d.packageManager).toBe('pnpm');
+    expect(d.typeCheckCommand).toBe('corepack pnpm exec tsc -b --noEmit --pretty false');
+    expect(d.testCommand).toBe('corepack pnpm exec vitest');
+  });
+
+  it('yarn.lock → yarn commands', () => {
+    writeFileSync(join(dir, 'yarn.lock'), '# yarn lockfile v1\n');
+    const d = detectPackageCommands(dir);
+    expect(d.packageManager).toBe('yarn');
+    expect(d.typeCheckCommand).toBe('yarn tsc --noEmit --pretty false');
+    expect(d.testCommand).toBe('yarn vitest');
+  });
+
+  it('no lockfile (npm / package-lock.json) → npx commands', () => {
+    const d = detectPackageCommands(dir);
+    expect(d.packageManager).toBe('npm');
+    expect(d.typeCheckCommand).toBe('npx tsc --noEmit --pretty false');
+    expect(d.testCommand).toBe('npx vitest');
+    expect(d.toolingNote).toContain('npx');
+  });
+});
+
+describe('verifyChildWorktree — lockfile-detected default commands', () => {
+  it('runs npx (not corepack pnpm) in an npm worktree', async () => {
+    const calls: Array<{ cmd: string; args: string[] }> = [];
+    const runner = async (cmd: string, args: string[]): Promise<ChildVerifyCommandResult> => {
+      calls.push({ cmd, args });
+      return { ok: true, code: 0, output: '' };
+    };
+    const result = await verifyChildWorktree({
+      worktreePath: dir, // no lockfile → npm
+      changedFiles: ['src/budget.ts', 'tests/budget.test.ts'],
+      declaredFiles: ['src/budget.ts', 'tests/budget.test.ts'],
+      runner,
+    });
+    expect(result.ok).toBe(true);
+    // First call = typecheck, second = scoped vitest related run.
+    expect(calls[0]).toEqual({
+      cmd: 'npx',
+      args: ['tsc', '--noEmit', '--pretty', 'false'],
+    });
+    expect(calls[1]?.cmd).toBe('npx');
+    expect(calls[1]?.args.slice(0, 3)).toEqual(['vitest', 'related', '--run']);
+  });
+
+  it('still runs corepack pnpm in a pnpm worktree (home-repo behavior unchanged)', async () => {
+    writeFileSync(join(dir, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
+    const calls: Array<{ cmd: string; args: string[] }> = [];
+    const runner = async (cmd: string, args: string[]): Promise<ChildVerifyCommandResult> => {
+      calls.push({ cmd, args });
+      return { ok: true, code: 0, output: '' };
+    };
+    await verifyChildWorktree({
+      worktreePath: dir,
+      changedFiles: ['src/a.ts'],
+      declaredFiles: ['src/a.ts'],
+      runner,
+    });
+    expect(calls[0]?.cmd).toBe('corepack');
+    expect(calls[0]?.args.slice(0, 2)).toEqual(['pnpm', 'exec']);
+  });
+
+  it('explicit command overrides still win over detection', async () => {
+    const calls: Array<{ cmd: string; args: string[] }> = [];
+    const runner = async (cmd: string, args: string[]): Promise<ChildVerifyCommandResult> => {
+      calls.push({ cmd, args });
+      return { ok: true, code: 0, output: '' };
+    };
+    await verifyChildWorktree({
+      worktreePath: dir,
+      changedFiles: ['src/a.ts'],
+      declaredFiles: ['src/a.ts'],
+      runner,
+      typeCheckCommand: 'my-tool check',
+      testCommand: 'my-tool test',
+    });
+    expect(calls[0]).toEqual({ cmd: 'my-tool', args: ['check'] });
+    expect(calls[1]?.cmd).toBe('my-tool');
+  });
+});
+
+function makeItem(over: Partial<PromptItem> = {}): PromptItem {
+  return {
+    id: 'child-1',
+    title: 'Add budget types',
+    description: 'Add the budget domain types',
+    status: 'pending',
+    ...over,
+  } as PromptItem;
+}
+
+describe('buildItemPrompt — repo-neutral tooling + declared scope', () => {
+  it('npm repo: prompt instructs npx, never corepack pnpm, and is repo-neutral', () => {
+    const prompt = buildItemPrompt(makeItem(), dir);
+    expect(prompt).toContain('the repository at');
+    expect(prompt).not.toContain('AgentForge repository');
+    expect(prompt).toContain('npx');
+    expect(prompt).not.toContain('corepack pnpm');
+  });
+
+  it('pnpm repo: prompt keeps the corepack pnpm tooling', () => {
+    writeFileSync(join(dir, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
+    const prompt = buildItemPrompt(makeItem(), dir);
+    expect(prompt).toContain('corepack pnpm');
+  });
+
+  it('declared files render as an ENFORCED scope section', () => {
+    const prompt = buildItemPrompt(
+      makeItem({ files: ['src/budget.ts', 'tests/budget.test.ts'] }),
+      dir,
+    );
+    expect(prompt).toContain('Declared file scope — ENFORCED');
+    expect(prompt).toContain('- src/budget.ts');
+    expect(prompt).toContain('- tests/budget.test.ts');
+    expect(prompt).toContain('Edit ONLY these files');
+  });
+
+  it('no declared files → no scope section (legacy items unchanged)', () => {
+    const prompt = buildItemPrompt(makeItem({ files: [] }), dir);
+    expect(prompt).not.toContain('Declared file scope');
+  });
+});

@@ -111,4 +111,15 @@ describe('decomposeObjective', () => {
     // dependency is gone.
     expect(prompt).not.toContain('described in your system prompt');
   });
+
+  // Cycle 11955f95 follow-up: 4/4 children were auto-failed for touching the
+  // shared barrel (src/index.ts) they never declared. The planner prompt must
+  // state that files[] is an enforced contract and route shared-file edits to
+  // a dedicated integration child.
+  it('states the enforced files[] contract and the shared-file integration-child rule', () => {
+    const prompt = buildEpicPlannerPrompt(objective);
+    expect(prompt).toContain('files[] is an ENFORCED contract');
+    expect(prompt).toContain('barrel/index export files');
+    expect(prompt).toContain('one later integration child');
+  });
 });

@@ -110,7 +110,10 @@ describe('runExecutePhase', () => {
     expect(result.itemResults).toHaveLength(3);
   });
 
-  it('tells agents to use corepack pnpm for repo package and test commands', async () => {
+  it('tells agents to use corepack pnpm when the repo has a pnpm lockfile', async () => {
+    // Repo-neutral toolchain (cycle 11955f95 fix): the tooling instruction is
+    // lockfile-detected from the project root, no longer hardcoded to pnpm.
+    writeFileSync(join(tmpDir, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
     writeSprintFile(tmpDir, '9.9.9', [
       { id: 'i1', title: 'fix tooling drift', assignee: 'coder' },
     ]);
@@ -126,8 +129,27 @@ describe('runExecutePhase', () => {
 
     const prompt = runtime.run.mock.calls[0]![1] as string;
     expect(prompt).toContain('use `corepack pnpm`');
-    expect(prompt).toContain('Do not use bare `pnpm` or `npx`');
-    expect(prompt).toContain('corepack pnpm exec vitest run <test-file>');
+    expect(prompt).toContain('do not use bare `pnpm` or `npx`');
+    expect(prompt).toContain('corepack pnpm exec vitest run <file>');
+  });
+
+  it('tells agents to use npx in a repo without a pnpm lockfile (foreign npm project)', async () => {
+    writeSprintFile(tmpDir, '9.9.9', [
+      { id: 'i1', title: 'fix tooling drift', assignee: 'coder' },
+    ]);
+    const runtime = {
+      run: vi.fn().mockResolvedValue({ output: 'done', costUsd: 0.01, durationMs: 5, model: 'm', usage: { input_tokens: 1, output_tokens: 1 } }),
+    };
+    const { bus } = makeMockBus();
+
+    await runExecutePhase(
+      makeCtx({ cwd: tmpDir, sprintVersion: '9.9.9', runtime, bus }),
+      { maxParallelism: 1, maxItemRetries: 0 },
+    );
+
+    const prompt = runtime.run.mock.calls[0]![1] as string;
+    expect(prompt).toContain('npx');
+    expect(prompt).not.toContain('corepack pnpm');
   });
 
   it('updates item status to completed in sprint JSON when runtime.run succeeds', async () => {
