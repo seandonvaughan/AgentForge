@@ -165,6 +165,16 @@ src/
   server/       Root compatibility server bootstrap
 ```
 
+## Documentation
+
+| Guide | What it covers |
+|---|---|
+| [Objective Mode](docs/guides/objective-mode.md) | `agentforge cycle run --objective`: budget-band math, the decomposition/epic-review/spend-report/ledger artifacts, and the `/objective` dashboard page. |
+| [Autonomous Loop Guide](docs/guides/autonomous-loop.md) | The 9-phase autonomous development cycle internals. |
+| [Configuration Reference](docs/guides/autonomous-config-reference.md) | Every `autonomous.yaml` option. |
+| [Autonomous Troubleshooting](docs/guides/autonomous-troubleshooting.md) | Common cycle failure modes and recovery. |
+| [Release and Security Gates](docs/release-and-security-gates.md) | Verification-gate policy and the release checklist. |
+
 ## License
 
 MIT
