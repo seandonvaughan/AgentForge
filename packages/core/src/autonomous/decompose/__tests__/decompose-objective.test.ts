@@ -198,3 +198,31 @@ describe('loadObservedChildCosts', () => {
     }
   });
 });
+
+// ---- planner grounding (cycle c5e6efb9) ------------------------------------
+
+describe('planner grounding', () => {
+  it('decompose calls carry read-only exploration tools on BOTH attempts', async () => {
+    const seenTools: Array<unknown> = [];
+    const outputs = [planJson(cyclicChildren), planJson(goodChildren)];
+    let i = 0;
+    const runtime = {
+      run: async (_a: string, _t: string, opts?: { allowedTools?: string[] }) => {
+        seenTools.push(opts?.allowedTools);
+        return { output: outputs[i++]!, costUsd: 0.5, model: 'opus' };
+      },
+    };
+    await decomposeObjective(objective, runtime);
+    expect(seenTools).toEqual([
+      ['Read', 'Glob', 'Grep'],
+      ['Read', 'Glob', 'Grep'],
+    ]);
+  });
+
+  it('the prompt requires verifying every declared path with tools', () => {
+    const prompt = buildEpicPlannerPrompt(objective);
+    expect(prompt).toContain('GROUND EVERY PATH');
+    expect(prompt).toContain('verify that EVERY existing file you put in files[]');
+    expect(prompt).toContain('Do not guess paths from convention');
+  });
+});

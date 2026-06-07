@@ -66,7 +66,12 @@ export interface DecomposeRuntime {
   run(
     agentId: string,
     task: string,
-    options?: { allowedTools?: string[]; outputSchema?: AgentOutputSchema },
+    options?: {
+      allowedTools?: string[];
+      outputSchema?: AgentOutputSchema;
+      /** Codex sandbox hint — the planner only ever explores read-only. */
+      codexSandbox?: 'read-only' | 'workspace-write' | 'danger-full-access';
+    },
   ): Promise<{ output: string; costUsd?: number; model?: string }>;
 }
 
@@ -155,7 +160,16 @@ export function buildEpicPlannerPrompt(
     `src/index.ts), config, and README updates. When several children would all touch the same`,
     `shared file (a barrel, a CLI dispatcher), do NOT have them race on it: leave it out of the`,
     `parallel children and route ALL shared-file edits to one later integration child that`,
-    `depends on them.${budget}`,
+    `depends on them.`,
+    ``,
+    // Path grounding (cycle c5e6efb9): a planner that guesses paths produces
+    // children that honor the scope contract by REFUSING to work. Ground every
+    // declared path in the actual tree before emitting the plan.
+    `GROUND EVERY PATH: use your Read/Glob/Grep tools to explore the repository BEFORE`,
+    `planning, and verify that EVERY existing file you put in files[] actually exists at that`,
+    `exact path. A child told to edit a nonexistent file will refuse and fail. Files a child`,
+    `will CREATE are allowed only when the description explicitly says the file is new and its`,
+    `parent directory exists. Do not guess paths from convention — check them.${budget}`,
   ].join('\n');
 }
 
@@ -346,11 +360,19 @@ export async function decomposeObjective(
 ): Promise<DecomposeResult> {
   const observed =
     opts.projectRoot !== undefined ? loadObservedChildCosts(opts.projectRoot) : null;
+  // Read-only repo exploration tools (cycle c5e6efb9 fix): a tool-less planner
+  // has never SEEN the repository and hallucinates plausible-but-wrong file
+  // paths on large codebases (declared packages/core/src/phases/… when the
+  // real tree is …/autonomous/phase-handlers/…). Children then honor the
+  // scope contract and report honest blockers — the plan, not the agents, is
+  // wrong. The prompt requires every declared path to be verified with these
+  // tools; this is the redesign's "grounded digest" realized as exploration.
   const r1 = await runtime.run(
     EPIC_PLANNER_AGENT_ID,
     buildEpicPlannerPrompt(objective, observed),
     {
-      allowedTools: [],
+      allowedTools: ['Read', 'Glob', 'Grep'],
+      codexSandbox: 'read-only',
       outputSchema: EPIC_PLAN_OUTPUT_SCHEMA,
     },
   );
@@ -364,7 +386,11 @@ export async function decomposeObjective(
   const r2 = await runtime.run(
     EPIC_PLANNER_AGENT_ID,
     buildRepairPrompt(objective, r1.output, a1.reason, a1.report),
-    { allowedTools: [], outputSchema: EPIC_PLAN_OUTPUT_SCHEMA },
+    {
+      allowedTools: ['Read', 'Glob', 'Grep'],
+      codexSandbox: 'read-only',
+      outputSchema: EPIC_PLAN_OUTPUT_SCHEMA,
+    },
   );
   costUsd += r2.costUsd ?? 0;
   const a2 = attempt(r2.output, objective.budgetUsd);
