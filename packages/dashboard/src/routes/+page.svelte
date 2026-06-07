@@ -16,6 +16,7 @@
    * gracefully on empty data, show a skeleton on first load, and show a
    * per-panel "couldn't load — retry" UI on error.
    */
+  import { browser } from '$app/environment';
   import { onMount, onDestroy } from 'svelte';
   import {
     AnimNum, Badge, Btn, Card, DistBar, KpiTile,
@@ -115,7 +116,7 @@
 
   let slowCounter = 0;
   function tickPoll(): void {
-    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+    if (browser && document.visibilityState !== 'visible') return;
     pollFast();
     slowCounter += 1;
     if (slowCounter % 6 === 0) pollSlow(); // every ~30s
@@ -425,6 +426,20 @@
   />
 </section>
 
+<!-- ── Quick actions ──────────────────────────────────────────────────────── -->
+<section class="cc-quick-actions" aria-label="Quick actions">
+  <a class="cc-objective-action" href="/objective" aria-label="Launch objective cycle">
+    <Card hover accent style="padding:14px 16px;">
+      <div class="cc-objective-action-top">
+        <span class="cc-objective-action-kicker">OBJECTIVE CYCLE</span>
+        <span class="cc-objective-action-arrow" aria-hidden="true">&rarr;</span>
+      </div>
+      <div class="cc-objective-action-title">Launch objective</div>
+      <div class="cc-objective-action-sub">Start a goal-driven cycle from the objective launcher.</div>
+    </Card>
+  </a>
+</section>
+
 <!-- ── Hero panel ──────────────────────────────────────────────────────────── -->
 <section class="cc-hero-wrap">
   <Card noPad>
@@ -703,6 +718,48 @@
   }
   @media (max-width: 980px) {
     .cc-kpis { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  /* ── Quick actions ─────────────────────────────────────────────────────── */
+  .cc-quick-actions {
+    display: grid;
+    grid-template-columns: minmax(220px, 360px);
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .cc-objective-action {
+    display: block;
+    color: inherit;
+    text-decoration: none;
+  }
+  .cc-objective-action-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .cc-objective-action-kicker {
+    color: var(--af-purple);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+  }
+  .cc-objective-action-arrow {
+    color: var(--af-dim);
+    font-size: 15px;
+    line-height: 1;
+  }
+  .cc-objective-action-title {
+    color: var(--af-text);
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .cc-objective-action-sub {
+    color: var(--af-muted);
+    font-size: 11px;
+    line-height: 1.35;
   }
 
   /* ── Hero panel ────────────────────────────────────────────────────────── */
