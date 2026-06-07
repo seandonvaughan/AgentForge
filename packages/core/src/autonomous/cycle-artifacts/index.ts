@@ -49,3 +49,12 @@ export type {
   CycleLedgerRow,
   BuildSpendReportArgs,
 } from './spend-report.js';
+
+export { buildDecompositionView } from './decomposition-view.js';
+
+export type {
+  BuildDecompositionViewArgs,
+  EpicDecompositionView,
+  EpicDecompositionViewChild,
+  EpicDecompositionViewWave,
+} from './decomposition-view.js';
