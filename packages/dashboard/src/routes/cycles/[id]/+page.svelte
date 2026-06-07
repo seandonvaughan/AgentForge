@@ -16,7 +16,7 @@
   import QualityTile from '$lib/components/cycles/QualityTile.svelte';
 
   type Tab =
-    | 'overview' | 'pipeline' | 'items' | 'epic' | 'agents'
+    | 'overview' | 'pipeline' | 'items' | 'epic' | 'spend' | 'agents'
     | 'scoring' | 'events' | 'files' | 'prs' | 'logs';
   type StageBrick = 'pending' | 'active' | 'done' | 'failed';
   type FileName = 'tests' | 'git' | 'pr' | 'approval-pending' | 'approval-decision';
@@ -128,6 +128,33 @@
   let epicLoading = $state(false);
   let epicError = $state<string | null>(null);
   let epicEmpty = $state(false);
+
+  interface SpendReportPerItem {
+    itemId: string;
+    title: string;
+    plannedUsd: number | null;
+    actualUsd: number;
+    status: string;
+  }
+
+  interface SpendReport {
+    schemaVersion?: number;
+    cycleId?: string;
+    epicId?: string;
+    objective?: string;
+    budgetUsd: number;
+    totalUsd: number;
+    executionUsd: number;
+    overheadUsd: number;
+    utilization: number;
+    perItem: SpendReportPerItem[];
+    generatedAt?: string;
+  }
+
+  let spendReport = $state<SpendReport | null>(null);
+  let spendLoading = $state(false);
+  let spendError = $state<string | null>(null);
+  let spendEmpty = $state(false);
 
   interface CycleEvent {
     type?: string;
@@ -658,6 +685,7 @@
       { id: 'pipeline', label: 'Pipeline', count: pipelinePhases.length },
       { id: 'items',    label: 'Items',    count: items.length },
       { id: 'epic',     label: 'Epic',     count: epicData?.summary?.waveCount ?? epicWaveGroups.length },
+      { id: 'spend',    label: 'Spend',    count: spendReport ? Math.round(spendReport.utilization * 100) : undefined },
       { id: 'agents',   label: 'Agents',   count: agentsData?.totalRuns },
       { id: 'scoring',  label: 'Scoring',  count: radarOverall },
       { id: 'events',   label: 'Events',   count: events.length },
@@ -848,6 +876,31 @@
       epicError = e instanceof Error ? e.message : String(e);
     } finally {
       epicLoading = false;
+    }
+  }
+
+  async function loadSpendReport(): Promise<void> {
+    if (!browser || !id) return;
+    spendLoading = true;
+    spendError = null;
+    try {
+      const res = await fetch(withWorkspace(`/api/v5/cycles/${id}/spend-report`));
+      if (res.status === 404) {
+        spendReport = null;
+        spendEmpty = true;
+        return;
+      }
+      if (!res.ok) {
+        spendError = `HTTP ${res.status}`;
+        return;
+      }
+      const json = (await res.json()) as { data?: SpendReport } | SpendReport;
+      spendReport = ('data' in json && json.data ? json.data : json) as SpendReport;
+      spendEmpty = false;
+    } catch (e) {
+      spendError = e instanceof Error ? e.message : String(e);
+    } finally {
+      spendLoading = false;
     }
   }
 
@@ -1071,6 +1124,7 @@
     activeTab = t as Tab;
     if (t === 'events' && events.length === 0) void loadEvents();
     if (t === 'epic' && !epicData && !epicLoading) void loadEpic();
+    if (t === 'spend' && !spendReport && !spendLoading && !spendEmpty) void loadSpendReport();
     if (t === 'logs' && logText[activeLog] === null && !logLoading[activeLog]) void loadLog(activeLog);
     if (t === 'files' && fileData[activeFile] === undefined) void loadFile(activeFile);
     if (t === 'prs') {
@@ -1180,6 +1234,37 @@
     return parts.filter((part): part is string => !!part).join(' - ');
   }
 
+  function spendUtilizationPct(report: SpendReport): number {
+    return Math.max(0, report.utilization * 100);
+  }
+
+  function spendUtilizationColor(report: SpendReport): string {
+    const pct = spendUtilizationPct(report);
+    if (pct > 100) return 'var(--af-danger)';
+    if (pct >= 85) return 'var(--af-warning)';
+    return 'var(--af-success)';
+  }
+
+  function spendDelta(item: SpendReportPerItem): number | null {
+    return item.plannedUsd == null ? null : item.actualUsd - item.plannedUsd;
+  }
+
+  function spendDeltaDisplay(item: SpendReportPerItem): string {
+    const delta = spendDelta(item);
+    if (delta === null) return '—';
+    return `${delta >= 0 ? '+' : ''}${formatUsd(delta)}`;
+  }
+
+  function spendIsOver(item: SpendReportPerItem): boolean {
+    const delta = spendDelta(item);
+    return delta !== null && delta > 0;
+  }
+
+  function spendIsUnder(item: SpendReportPerItem): boolean {
+    const delta = spendDelta(item);
+    return delta !== null && delta <= 0;
+  }
+
   const RADAR_SIZE = 260;
   function radarPoint(i: number, n: number, scale = 1): [number, number] {
     const cx = RADAR_SIZE / 2;
@@ -1237,6 +1322,100 @@
       </Card>
     {/each}
   </div>
+{/snippet}
+
+{#snippet UtilizationGauge(report: SpendReport)}
+  <Card>
+    <div class="spend-gauge-wrap">
+      <div
+        class="spend-gauge"
+        aria-label={`Spend utilization ${spendUtilizationPct(report).toFixed(0)}%`}
+        style={`background:conic-gradient(${spendUtilizationColor(report)} 0 ${Math.min(100, spendUtilizationPct(report))}%, var(--af-border) 0 100%)`}
+      >
+        <div class="spend-gauge-core">
+          <div class="spend-gauge-value af2-mono">{spendUtilizationPct(report).toFixed(0)}%</div>
+          <div class="spend-gauge-label">utilization</div>
+        </div>
+      </div>
+      <div class="spend-gauge-meta">
+        <div>
+          <div class="section-title">TOTAL SPEND</div>
+          <div class="spend-total af2-mono">{formatUsd(report.totalUsd)}</div>
+          <div class="muted spend-sub">of {formatUsd(report.budgetUsd)} budget</div>
+        </div>
+        {#if report.generatedAt}
+          <div class="spend-generated af2-mono">generated {relativeTime(report.generatedAt)}</div>
+        {/if}
+      </div>
+    </div>
+  </Card>
+{/snippet}
+
+{#snippet SpendReportTable(report: SpendReport)}
+  <div class="spend-stats-strip">
+    {#each [
+      { label: 'Execution', value: formatUsd(report.executionUsd), color: 'var(--af-purple)' },
+      { label: 'Overhead', value: formatUsd(report.overheadUsd), color: 'var(--af-warning)' },
+      { label: 'Utilization', value: `${spendUtilizationPct(report).toFixed(1)}%`, color: spendUtilizationColor(report) },
+    ] as stat (stat.label)}
+      <div class="spend-stat-cell">
+        <div class="spend-stat-val af2-mono" style="color:{stat.color}">{stat.value}</div>
+        <div class="spend-stat-label">{stat.label}</div>
+      </div>
+    {/each}
+  </div>
+
+  <Card noPad>
+    <div class="section-head">
+      <span class="section-title">PLANNED VS ACTUAL</span>
+      <span class="af2-mono section-tag">{report.perItem.length} item{report.perItem.length === 1 ? '' : 's'}</span>
+    </div>
+    <table class="spend-table">
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th>Planned</th>
+          <th>Actual</th>
+          <th>Delta</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#if report.perItem.length === 0}
+          <tr>
+            <td colspan="5" class="spend-empty-row">No item spend rows in this report.</td>
+          </tr>
+        {:else}
+          {#each report.perItem as item, i (`${item.itemId}:${i}`)}
+            <tr>
+              <td>
+                <div class="spend-item-id af2-mono">#{item.itemId}</div>
+                <div class="spend-item-title">{item.title}</div>
+              </td>
+              <td class="af2-mono">{item.plannedUsd == null ? '—' : formatUsd(item.plannedUsd)}</td>
+              <td class="af2-mono">{formatUsd(item.actualUsd)}</td>
+              <td
+                class="af2-mono"
+                class:spend-over={spendIsOver(item)}
+                class:spend-under={spendIsUnder(item)}
+              >
+                {spendDeltaDisplay(item)}
+              </td>
+              <td><Badge variant={epicStatusVariant(item.status)}>{item.status}</Badge></td>
+            </tr>
+          {/each}
+        {/if}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td>Total</td>
+          <td class="af2-mono">{formatUsd(report.perItem.reduce((sum, item) => sum + (item.plannedUsd ?? 0), 0))}</td>
+          <td class="af2-mono">{formatUsd(report.perItem.reduce((sum, item) => sum + item.actualUsd, 0))}</td>
+          <td class="af2-mono" colspan="2">execution {formatUsd(report.executionUsd)} · overhead {formatUsd(report.overheadUsd)}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </Card>
 {/snippet}
 
 <svelte:head><title>Cycle {id.slice(0, 8)} — AgentForge</title></svelte:head>
@@ -1716,6 +1895,49 @@
       </Card>
 
       {@render EpicWaveList(epicWaveGroups)}
+    {/if}
+  {/if}
+
+  {#if activeTab === 'spend'}
+    <div class="spend-bar">
+      <span class="section-title">SPEND RECONCILIATION</span>
+      <div style="flex:1"></div>
+      <Btn size="sm" onClick={loadSpendReport}>Refresh</Btn>
+    </div>
+
+    {#if spendLoading && !spendReport && !spendEmpty}
+      <Card>
+        <div class="skel" style="height:36px"></div>
+        <div class="skel" style="height:120px;margin-top:8px"></div>
+      </Card>
+    {:else if spendError}
+      <Card style="border-color:color-mix(in srgb,var(--af-danger) 33%,transparent)">
+        <div class="error-row">
+          <span>Failed to load spend report: <code>{spendError}</code></span>
+          <Btn size="sm" onClick={loadSpendReport}>Retry</Btn>
+        </div>
+      </Card>
+    {:else if spendEmpty}
+      <Card>
+        <div class="empty">No spend report found for this cycle.</div>
+      </Card>
+    {:else if spendReport}
+      <div class="spend-grid">
+        {@render UtilizationGauge(spendReport)}
+        <Card>
+          <div class="section-title">RECONCILIATION</div>
+          <div class="spend-summary">
+            Actual spend is reconciled from execution and overhead phase costs, then compared with planned item estimates.
+          </div>
+          {#if spendReport.epicId || spendReport.objective}
+            <div class="spend-context">
+              {#if spendReport.epicId}<span class="af2-mono">epic {spendReport.epicId}</span>{/if}
+              {#if spendReport.objective}<span>{spendReport.objective}</span>{/if}
+            </div>
+          {/if}
+        </Card>
+      </div>
+      {@render SpendReportTable(spendReport)}
     {/if}
   {/if}
 
@@ -2650,6 +2872,136 @@
   }
   @media (max-width: 680px) { .epic-child-cost { align-items: flex-start; } }
   .epic-child-cost small { color: var(--af-dim); font-size: 10px; }
+  .spend-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 4px 0 12px;
+  }
+  .spend-grid {
+    display: grid;
+    grid-template-columns: minmax(280px, 0.9fr) minmax(320px, 1.1fr);
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  @media (max-width: 760px) { .spend-grid { grid-template-columns: 1fr; } }
+  .spend-gauge-wrap {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+  }
+  .spend-gauge {
+    width: 118px;
+    height: 118px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+  }
+  .spend-gauge-core {
+    width: 86px;
+    height: 86px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    background: var(--af-surface);
+    border: 1px solid var(--af-border2);
+  }
+  .spend-gauge-value {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--af-text);
+    letter-spacing: -0.02em;
+  }
+  .spend-gauge-label {
+    font-size: 10px;
+    color: var(--af-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .spend-gauge-meta { min-width: 0; }
+  .spend-total {
+    margin-top: 4px;
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--af-text);
+    letter-spacing: -0.02em;
+  }
+  .spend-sub { font-size: 12px; margin-top: 2px; }
+  .spend-generated { font-size: 10px; color: var(--af-dim); margin-top: 10px; }
+  .spend-summary {
+    margin-top: 10px;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--af-muted);
+  }
+  .spend-context {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+    font-size: 11px;
+    color: var(--af-dim);
+  }
+  .spend-stats-strip {
+    display: flex;
+    gap: 0;
+    margin-bottom: 12px;
+    background: var(--af-surface);
+    border: 1px solid var(--af-border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .spend-stat-cell {
+    flex: 1;
+    padding: 14px 18px;
+    text-align: center;
+    border-right: 1px solid var(--af-border);
+  }
+  .spend-stat-cell:last-child { border-right: none; }
+  .spend-stat-val { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
+  .spend-stat-label { font-size: 11px; color: var(--af-dim); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .spend-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .spend-table thead tr {
+    background: var(--af-surface2);
+    border-bottom: 1px solid var(--af-border);
+  }
+  .spend-table th {
+    padding: 9px 14px;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--af-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+  }
+  .spend-table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid color-mix(in srgb, var(--af-border) 50%, transparent);
+    vertical-align: middle;
+    color: var(--af-text);
+  }
+  .spend-table tfoot td {
+    border-top: 1px solid var(--af-border);
+    border-bottom: none;
+    color: var(--af-muted);
+    font-weight: 600;
+  }
+  .spend-item-id { font-size: 10px; color: var(--af-dim); margin-bottom: 3px; }
+  .spend-item-title { color: var(--af-text); line-height: 1.35; }
+  .spend-over { color: var(--af-danger) !important; }
+  .spend-under { color: var(--af-success) !important; }
+  .spend-empty-row {
+    padding: 24px 14px !important;
+    text-align: center;
+    color: var(--af-muted) !important;
+  }
   .kanban {
     display: grid;
     gap: 12px;
