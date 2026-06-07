@@ -101,6 +101,15 @@ export interface ScorecardRow {
   last_updated: string;
 }
 
+export interface CycleRow {
+  id: string;
+  objective: string | null;
+  budget_usd: number | null;
+  config_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export type RuntimeJobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 export interface RuntimeJobRow {
@@ -414,6 +423,7 @@ export class WorkspaceAdapter {
       db.exec(WORKSPACE_DDL);
       this.db = db;
       this.ensureRuntimeTraceColumns();
+      this.ensureCycleColumns();
       this.ensureKnowledgeColumns();
     } catch (err) {
       db.close();
@@ -441,6 +451,15 @@ export class WorkspaceAdapter {
     this.ensureColumn('knowledge_entities', 'source_type', "TEXT NOT NULL DEFAULT 'cycle'");
     this.ensureColumn('knowledge_relationships', 'properties_json', "TEXT NOT NULL DEFAULT '{}'");
     this.db.prepare('CREATE INDEX IF NOT EXISTS idx_knowledge_entities_source_type ON knowledge_entities(source_type)').run();
+  }
+
+  private ensureCycleColumns(): void {
+    this.ensureColumn('cycles', 'objective', 'TEXT');
+    this.ensureColumn('cycles', 'budget_usd', 'REAL');
+    this.ensureColumn('cycles', 'config_json', "TEXT NOT NULL DEFAULT '{}'");
+    this.ensureColumn('cycles', 'created_at', "TEXT NOT NULL DEFAULT (datetime('now'))");
+    this.ensureColumn('cycles', 'updated_at', "TEXT NOT NULL DEFAULT (datetime('now'))");
+    this.db.prepare('CREATE INDEX IF NOT EXISTS idx_cycles_created ON cycles(created_at)').run();
   }
 
   private ensureColumn(table: string, column: string, definition: string): void {
@@ -541,6 +560,58 @@ export class WorkspaceAdapter {
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const row = this.db.prepare(`SELECT COUNT(*) as n FROM sessions ${where}`).get(...params) as { n: number };
     return row.n;
+  }
+
+  // --- Cycles ---
+
+  persistCycleLaunchConfig(data: {
+    cycleId: string;
+    objective?: string | null;
+    budgetUsd?: number | null;
+    config?: Record<string, unknown>;
+    createdAt?: string;
+    updatedAt?: string;
+  }): CycleRow {
+    const existing = this.getCycle(data.cycleId);
+    const createdAt = data.createdAt ?? existing?.created_at ?? nowIso();
+    const updatedAt = data.updatedAt ?? nowIso();
+    const existingConfig = existing ? parseObjectJson(existing.config_json) : {};
+    const objective = data.objective !== undefined ? data.objective : existing?.objective ?? null;
+    const budgetUsd = data.budgetUsd !== undefined ? data.budgetUsd : existing?.budget_usd ?? null;
+    const config = {
+      ...existingConfig,
+      ...(data.config ?? {}),
+      ...(data.objective !== undefined ? { objective: data.objective } : {}),
+      ...(data.budgetUsd !== undefined ? { budgetUsd: data.budgetUsd } : {}),
+    };
+    const configJson = JSON.stringify(config);
+
+    this.db.prepare(`
+      INSERT INTO cycles (id, objective, budget_usd, config_json, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        objective = excluded.objective,
+        budget_usd = excluded.budget_usd,
+        config_json = excluded.config_json,
+        updated_at = CASE
+          WHEN cycles.objective IS excluded.objective
+            AND cycles.budget_usd IS excluded.budget_usd
+            AND cycles.config_json = excluded.config_json
+          THEN cycles.updated_at
+          ELSE excluded.updated_at
+        END
+    `).run(data.cycleId, objective, budgetUsd, configJson, createdAt, updatedAt);
+    return this.getCycle(data.cycleId)!;
+  }
+
+  getCycle(id: string): CycleRow | undefined {
+    return this.db.prepare('SELECT * FROM cycles WHERE id = ?').get(id) as CycleRow | undefined;
+  }
+
+  listCycles(options: { limit?: number; offset?: number } = {}): CycleRow[] {
+    const limit = Math.min(options.limit ?? 50, 500);
+    const offset = options.offset ?? 0;
+    return this.db.prepare('SELECT * FROM cycles ORDER BY created_at DESC LIMIT ? OFFSET ?').all(limit, offset) as CycleRow[];
   }
 
   // --- Costs ---
@@ -1931,4 +2002,15 @@ function serializePayload(payload: unknown): string {
   if (payload === undefined) return '{}';
   if (typeof payload === 'string') return payload;
   return JSON.stringify(payload) ?? '{}';
+}
+
+function parseObjectJson(json: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(json) as unknown;
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
+  }
 }

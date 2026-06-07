@@ -161,6 +161,15 @@ export const WORKSPACE_DDL = `
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
+  CREATE TABLE IF NOT EXISTS cycles (
+    id TEXT PRIMARY KEY,
+    objective TEXT,
+    budget_usd REAL,
+    config_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   CREATE TABLE IF NOT EXISTS kv_store (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,
@@ -288,6 +297,7 @@ export const WORKSPACE_DDL = `
   CREATE INDEX IF NOT EXISTS idx_sessions_agent ON sessions(agent_id);
   CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
   CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started_at);
+  CREATE INDEX IF NOT EXISTS idx_cycles_created ON cycles(created_at);
   CREATE INDEX IF NOT EXISTS idx_costs_agent ON costs(agent_id);
   CREATE INDEX IF NOT EXISTS idx_costs_created ON costs(created_at);
   CREATE INDEX IF NOT EXISTS idx_feedback_agent ON feedback(agent_id);
