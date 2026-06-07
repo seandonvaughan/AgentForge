@@ -1181,6 +1181,11 @@ export async function runExecutePhase(
     } catch { /* non-fatal */ }
   }
 
+  function recordLiveItemResult(itemId: string, result: ItemResult): void {
+    liveResults.set(itemId, result);
+    snapshotExecuteProgress();
+  }
+
   // ---- Dispatch items in parallel with numeric + file-lock concurrency ----
   // v6.6.0 — FileLockManager serializes items whose declared (or inferred)
   // files overlap, while still running disjoint items in parallel up to
@@ -1263,7 +1268,7 @@ export async function runExecutePhase(
             worktreeAllocationError,
           agentId: item.assignee,
         };
-        liveResults.set(item.id, failedResult as ItemResult);
+        recordLiveItemResult(item.id, failedResult as ItemResult);
         return failedResult;
       }
 
@@ -1579,7 +1584,7 @@ export async function runExecutePhase(
             // Phase 0: lesson IDs injected into this item's prompt
             ...(appliedLessons.length > 0 ? { appliedLessons } : {}),
           };
-          liveResults.set(item.id, completedResult as ItemResult);
+          recordLiveItemResult(item.id, completedResult as ItemResult);
           // Wave 5 T1 — write per-item checkpoint after each successful completion.
           // Fire-and-forget: checkpoint write is non-blocking and never fails the phase.
           enqueueItemCheckpoint(item.id, 'completed', item.assignee);
@@ -1630,7 +1635,7 @@ export async function runExecutePhase(
               // Phase 0: lesson IDs injected into this item's prompt
               ...(appliedLessons.length > 0 ? { appliedLessons } : {}),
             };
-            liveResults.set(item.id, failedResult as ItemResult);
+            recordLiveItemResult(item.id, failedResult as ItemResult);
             // Wave 5 T1 — write per-item checkpoint after each failure (final attempt).
             enqueueItemCheckpoint(item.id, 'failed', item.assignee);
             return failedResult;
@@ -1650,7 +1655,7 @@ export async function runExecutePhase(
         error: lastError ?? 'unknown',
         agentId: item.assignee,
       };
-      liveResults.set(item.id, fallthroughResult as ItemResult);
+      recordLiveItemResult(item.id, fallthroughResult as ItemResult);
       return fallthroughResult;
     } finally {
       // T4.3: commit + push agent work BEFORE releasing the worktree so the
@@ -1835,7 +1840,7 @@ export async function runExecutePhase(
         response: '[skipped — already completed in prior run]',
         attempts: 0,
       };
-      liveResults.set(item.id, skippedResult);
+      recordLiveItemResult(item.id, skippedResult);
       settledResults[indexById.get(item.id)!] = { status: 'fulfilled', value: skippedResult };
       continue;
     }
@@ -1851,7 +1856,7 @@ export async function runExecutePhase(
         response: '[kept — not faulted by the gate retry; prior attempt branch/PR stands]',
         attempts: 0,
       };
-      liveResults.set(item.id, keptResult);
+      recordLiveItemResult(item.id, keptResult);
       settledResults[indexById.get(item.id)!] = { status: 'fulfilled', value: keptResult };
       continue;
     }
@@ -1935,7 +1940,7 @@ export async function runExecutePhase(
               status: 'failed',
               error: conflictError,
             };
-            liveResults.set(itemId, failedResult);
+            recordLiveItemResult(itemId, failedResult);
             if (idx !== undefined) {
               settledResults[idx] = { status: 'fulfilled', value: failedResult };
             }
