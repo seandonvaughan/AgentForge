@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { browser } from '$app/environment';
   import { page } from '$app/state';
   import { onMount } from 'svelte';
   import {
@@ -32,6 +33,7 @@
   // Pending approval count — drives the badge on the Approvals nav item.
   // Use $derived (rune mode) since the Sidebar already uses $state.
   const pendingApprovalCount = $derived($approvalsStore.pending.length);
+  const activePathname = $derived(browser ? page.url.pathname : '');
 
   const nav = [
     { section: 'Overview', items: [
@@ -41,6 +43,7 @@
     ]},
     { section: 'Autonomous', items: [
       { href: '/cycles', label: 'Cycles' },
+      { href: '/objective', label: 'Objective' },
       { href: '/cycles/new', label: 'Launch' },
       { href: '/sprints', label: 'Sprints' },
       { href: '/runner', label: 'Agent Runner' },
@@ -109,7 +112,7 @@
       <div class="nav-section">
         <div class="nav-label">{group.section}</div>
         {#each group.items as item}
-          <a href={item.href} class="nav-item" class:active={page.url.pathname === item.href}>
+          <a href={item.href} class="nav-item" class:active={activePathname === item.href}>
             {item.label}
             {#if item.href === '/approvals' && pendingApprovalCount > 0}
               <span class="nav-badge">{pendingApprovalCount}</span>
