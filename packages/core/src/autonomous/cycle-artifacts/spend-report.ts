@@ -90,9 +90,11 @@ function readExecuteActuals(
 ): Map<string, { actualUsd: number; status: string }> {
   const out = new Map<string, { actualUsd: number; status: string }>();
   if (!executeJson || typeof executeJson !== 'object') return out;
-  const sources: any[] = [];
-  if (Array.isArray(executeJson.itemResults)) sources.push(...executeJson.itemResults);
-  if (Array.isArray(executeJson.agentRuns)) sources.push(...executeJson.agentRuns);
+  const sources: any[] = Array.isArray(executeJson.itemResults)
+    ? executeJson.itemResults
+    : Array.isArray(executeJson.agentRuns)
+      ? executeJson.agentRuns
+      : [];
   for (const entry of sources) {
     if (!entry || typeof entry !== 'object') continue;
     const itemId = typeof entry.itemId === 'string' ? entry.itemId : undefined;
