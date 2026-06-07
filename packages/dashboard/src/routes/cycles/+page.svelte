@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { browser } from '$app/environment';
   import { goto } from '$app/navigation';
   import { withWorkspace } from '$lib/stores/workspace';
   import { relativeTime, formatDuration } from '$lib/util/relative-time';
@@ -30,6 +31,8 @@
     fallbackEnabled?: boolean | null;
     tags?: string[];
     dryRun?: boolean | null;
+    isEpic?: boolean;
+    childCount?: number | null;
   }
 
   type StageBrick = 'pending' | 'active' | 'done' | 'failed';
@@ -75,7 +78,7 @@
   }
 
   function managePolling(): void {
-    const paused = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+    const paused = browser && document.visibilityState === 'hidden';
     if (paused) {
       if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
       return;
@@ -271,14 +274,14 @@
 
   onMount(() => {
     void loadCycles();
-    if (typeof document !== 'undefined') {
+    if (browser) {
       document.addEventListener('visibilitychange', onVisibilityChange);
     }
   });
 
   onDestroy(() => {
     if (pollTimer) clearInterval(pollTimer);
-    if (typeof document !== 'undefined') {
+    if (browser) {
       document.removeEventListener('visibilitychange', onVisibilityChange);
     }
   });
@@ -451,6 +454,10 @@
                 <div class="cycle-cell">
                   {#if isLive}<PulseDot color="var(--af-purple)" size={5} />{/if}
                   <span class="af2-mono cycle-id">{shortId(c.cycleId)}</span>
+                  {#if c.isEpic}
+                    <Badge variant="purple">epic</Badge>
+                    <span class="epic-child-count af2-mono">{c.childCount ?? 0} children</span>
+                  {/if}
                 </div>
                 {#if hasCycleConfig(c)}
                   <div class="config-chips" aria-label="Cycle launch configuration">
@@ -789,6 +796,10 @@
   .col-check input { accent-color: var(--af-purple); cursor: pointer; }
   .cycle-cell { display: inline-flex; align-items: center; gap: 8px; }
   .cycle-id { font-weight: 600; color: var(--af-text); }
+  .epic-child-count {
+    color: var(--af-dim);
+    font-size: 10px;
+  }
   .config-chips {
     display: flex;
     align-items: center;
