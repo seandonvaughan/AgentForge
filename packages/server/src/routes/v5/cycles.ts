@@ -214,6 +214,10 @@ interface CycleListRow {
   approvalDecision: string | null;
   /** Agent ids that participated in this cycle, sourced from session data. */
   agents: string[];
+  /** True when the cycle was launched with an objective. */
+  isEpic: boolean;
+  /** Number of decomposition children for objective/epic cycles. */
+  childCount: number;
   runtimeMode?: string | null;
   branchPrefix?: string | null;
   baseBranch?: string | null;
@@ -586,6 +590,36 @@ function configuredBudgetUsd(config: Record<string, unknown>, fallback = 200): n
     : fallback;
 }
 
+function cycleListEpicFields(
+  cycleDir: string,
+  launchConfig: Record<string, unknown>,
+  cycleJson: Record<string, unknown> | null,
+): Pick<CycleListRow, 'isEpic' | 'childCount'> {
+  const configObjective = launchConfig['objective'];
+  const cycleObjective = cycleJson?.['objective'];
+  const hasObjective =
+    (typeof configObjective === 'string' && configObjective.trim().length > 0) ||
+    (typeof cycleObjective === 'string' && cycleObjective.trim().length > 0) ||
+    existsSync(join(cycleDir, 'objective.json'));
+  const decomposition = readJsonIfExists(join(cycleDir, 'decomposition.json'));
+  const children =
+    decomposition && typeof decomposition === 'object' && !Array.isArray(decomposition)
+      ? (decomposition as Record<string, unknown>)['children']
+      : null;
+
+  return {
+    isEpic: hasObjective,
+    childCount: Array.isArray(children)
+      ? children.filter((child) => (
+          child !== null &&
+          typeof child === 'object' &&
+          !Array.isArray(child) &&
+          typeof (child as Record<string, unknown>)['id'] === 'string'
+        )).length
+      : 0,
+  };
+}
+
 function attachLaunchConfig<T extends Record<string, unknown>>(cycleDir: string, payload: T): T {
   const config = readCycleLaunchConfig(cycleDir);
   const fields = launchConfigFields(config) as Record<string, unknown>;
@@ -684,6 +718,7 @@ function summarizeCycle(cycleDir: string, cycleId: string, projectRoot?: string)
   const cycleJson = readJsonIfExists(join(cycleDir, 'cycle.json')) as
     | Record<string, unknown>
     | null;
+  const epicFields = cycleListEpicFields(cycleDir, launchConfig, cycleJson);
 
   const approvalPending = existsSync(join(cycleDir, 'approval-pending.json'));
   const approvalDecisionFile = join(cycleDir, 'approval-decision.json');
@@ -751,6 +786,7 @@ function summarizeCycle(cycleDir: string, cycleId: string, projectRoot?: string)
       hasApprovalDecision,
       approvalDecision,
       agents: collectCycleAgentIds(cycleDir),
+      ...epicFields,
       ...configFields,
     };
   }
@@ -862,6 +898,7 @@ function summarizeCycle(cycleDir: string, cycleId: string, projectRoot?: string)
     hasApprovalDecision,
     approvalDecision,
     agents: collectCycleAgentIds(cycleDir),
+    ...epicFields,
     ...configFields,
   };
 }
