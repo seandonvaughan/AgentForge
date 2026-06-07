@@ -29,7 +29,20 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { AgentRuntime, loadAgentConfig, writeMemoryEntry, writeKnowledgeEntry, collectSprintItemTags, parseReviewFindingMetadata, extractFindingsByLevel, loadPriorGateKnownDebt, buildKnownDebtSection, resolveKnownDebt } from '@agentforge/core';
+import {
+  AgentRuntime,
+  buildKnownDebtSection,
+  collectSprintItemTags,
+  extractFindingsByLevel,
+  loadAgentConfig,
+  loadPriorGateKnownDebt,
+  parseReviewFindingMetadata,
+  resolveKnownDebt,
+  runGatePhase as runCoreGatePhase,
+  runReviewPhase as runCoreReviewPhase,
+  writeKnowledgeEntry,
+  writeMemoryEntry,
+} from '@agentforge/core';
 import type { RunResult, GateVerdictMetadata, ReviewFindingMetadata } from '@agentforge/core';
 import { generateId, nowIso } from '@agentforge/shared';
 import { globalStream } from '../routes/v5/stream.js';
@@ -279,6 +292,16 @@ export interface PhaseContext {
   bus: EventBus;
   /** Optional cycle id when invoked from the autonomous loop. */
   cycleId?: string;
+  /** Operator objective for epic-mode autonomous cycles. */
+  objective?: string;
+  /** Core runtime adapter for objective-mode review/gate delegation. */
+  runtime?: unknown;
+  /** Core adapter, threaded through for parity with core phase handlers. */
+  adapter?: unknown;
+  /** Base branch used by the core epic-review prompt. */
+  baseBranch?: string;
+  /** Gate retry attempt used by core epic-review artifacts. */
+  retryAttempt?: number;
 }
 
 export interface AgentRunSummary {
@@ -707,6 +730,10 @@ export async function runTestPhase(ctx: PhaseContext): Promise<PhaseResult> {
 }
 
 export async function runReviewPhase(ctx: PhaseContext): Promise<PhaseResult> {
+  if (ctx.objective !== undefined) {
+    return runCoreReviewPhase(ctx as Parameters<typeof runCoreReviewPhase>[0]) as Promise<PhaseResult>;
+  }
+
   const result = await runLlmPhase(ctx, 'review');
 
   // Write review-finding memory entries for CRITICAL and MAJOR findings so the
@@ -775,6 +802,10 @@ export async function runReviewPhase(ctx: PhaseContext): Promise<PhaseResult> {
 // from narrative prose ("no major concerns", "not a critical path change").
 
 export async function runGatePhase(ctx: PhaseContext): Promise<PhaseResult> {
+  if (ctx.objective !== undefined) {
+    return runCoreGatePhase(ctx as Parameters<typeof runCoreGatePhase>[0]) as Promise<PhaseResult>;
+  }
+
   // Capture any pre-existing gate verdict before the LLM re-evaluates.
   // When a prior gate result exists (e.g. seeded from a previous cycle), we
   // use that as the authoritative verdict for the memory entry so the
