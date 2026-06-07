@@ -331,7 +331,11 @@ async function runEpicDecompositionPlan(
   let repaired = false;
 
   try {
-    const result = await decomposeObjective(objective, ctx.runtime);
+    // Thread projectRoot so per-repo observed child costs (prior cycles'
+    // spend-report.json actuals) calibrate the planner's estimates.
+    const result = await decomposeObjective(objective, ctx.runtime, {
+      projectRoot: ctx.projectRoot,
+    });
     costUsd = result.costUsd;
     childCount = result.plan.children.length;
     waveCount = result.report.waveCount;

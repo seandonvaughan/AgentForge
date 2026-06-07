@@ -5,6 +5,8 @@
 // invalid-JSON result issue exactly one repair retry before failing.
 // (spec 2026-05-30 §6.3 + §9.2 fail-loud-not-silent)
 
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { EpicPlanSchema, type EpicObjective, type EpicPlan } from './types.js';
 import { validateAndLayerEpicPlan } from './validate-and-layer.js';
 import type { ValidationReport } from './types.js';
@@ -99,11 +101,17 @@ export function computeSpendableUsd(budgetUsd: number): number {
   return Math.max(0, (budgetUsd - 6) / 1.2);
 }
 
-export function buildEpicPlannerPrompt(objective: EpicObjective): string {
+export function buildEpicPlannerPrompt(
+  objective: EpicObjective,
+  observed?: ObservedChildCosts | null,
+): string {
   const constraints = objective.constraints?.length
     ? `\n\nConstraints:\n${objective.constraints.map((c) => `- ${c}`).join('\n')}`
     : '';
-  const budget = objective.budgetUsd !== undefined ? buildBudgetPromptBlock(objective.budgetUsd) : '';
+  const budget =
+    objective.budgetUsd !== undefined
+      ? buildBudgetPromptBlock(objective.budgetUsd, observed)
+      : '';
   return [
     `Decompose this objective into a dependency-ordered EpicPlan.`,
     ``,
@@ -152,15 +160,80 @@ export function buildEpicPlannerPrompt(objective: EpicObjective): string {
 }
 
 /**
+ * Per-repo observed child costs, read from prior cycles' spend-report.json
+ * artifacts (P0.8 writes one per completed cycle). This is the calibration
+ * flywheel's read side: the $50 acceptance run measured actual gpt-5.5
+ * children at $2.13–4.49 against a $7–11 planned table (codex-era forensics),
+ * i.e. ~3× over-estimation → 30% budget utilization. When observations exist
+ * for THIS repo they are surfaced to the planner alongside the static table.
+ */
+export interface ObservedChildCosts {
+  /** Number of completed child items with a positive recorded actual. */
+  count: number;
+  medianUsd: number;
+  meanUsd: number;
+}
+
+export function loadObservedChildCosts(projectRoot: string): ObservedChildCosts | null {
+  const actuals: number[] = [];
+  try {
+    const cyclesDir = join(projectRoot, '.agentforge', 'cycles');
+    for (const entry of readdirSync(cyclesDir)) {
+      try {
+        const report = JSON.parse(
+          readFileSync(join(cyclesDir, entry, 'spend-report.json'), 'utf8'),
+        ) as { perItem?: Array<{ actualUsd?: unknown; status?: unknown }> };
+        for (const item of report.perItem ?? []) {
+          if (
+            item &&
+            item.status === 'completed' &&
+            typeof item.actualUsd === 'number' &&
+            item.actualUsd > 0
+          ) {
+            actuals.push(item.actualUsd);
+          }
+        }
+      } catch {
+        // cycle without a spend report (failed/legacy) — skip
+      }
+    }
+  } catch {
+    return null; // no cycles dir — fresh repo
+  }
+  if (actuals.length === 0) return null;
+  actuals.sort((a, b) => a - b);
+  const mid = Math.floor(actuals.length / 2);
+  const medianUsd =
+    actuals.length % 2 === 1 ? actuals[mid]! : (actuals[mid - 1]! + actuals[mid]!) / 2;
+  const meanUsd = actuals.reduce((s, v) => s + v, 0) / actuals.length;
+  return { count: actuals.length, medianUsd, meanUsd };
+}
+
+/**
  * Budget-sizing addendum for the planner prompt (P0.3). Returned as a leading-
  * newline block so it can be appended to the final prompt line without altering
  * the no-budget output (which never calls this). Shows the computed spendable
- * number, the calibrated cost table, the spend band, and the consumer rule.
+ * number, the calibrated cost table, per-repo observed actuals when available,
+ * the spend band, and the consumer rule.
  */
-function buildBudgetPromptBlock(budgetUsd: number): string {
+function buildBudgetPromptBlock(budgetUsd: number, observed?: ObservedChildCosts | null): string {
   const spendable = computeSpendableUsd(budgetUsd);
   const lower = 0.7 * spendable;
   const upper = 1.0 * spendable;
+  // Static table re-fit 2026-06-06 from the $50 acceptance run: gpt-5.5
+  // children on a small repo ran $2.13–4.49 actual vs the codex-era $7.30
+  // medium / $15–30 feature predictions. Large-monorepo children carry more
+  // context, so the feature ceiling stays conservative rather than scaled
+  // fully down. Per-repo observations (below) override this table over time.
+  const observedLines =
+    observed && observed.count > 0
+      ? [
+          ``,
+          `OBSERVED in this repository (${observed.count} completed child item(s) from prior cycles): ` +
+            `median $${observed.medianUsd.toFixed(2)}, mean $${observed.meanUsd.toFixed(2)} per child. ` +
+            `Weight these observed actuals OVER the static table when estimating.`,
+        ]
+      : [];
   return [
     ``,
     ``,
@@ -168,14 +241,16 @@ function buildBudgetPromptBlock(budgetUsd: number): string {
     `Cycle budget: $${budgetUsd.toFixed(2)}.`,
     `Spendable = (budget − 6 judgment overhead) / 1.2 (20% fix-up reserve) = $${spendable.toFixed(2)}.`,
     ``,
-    `Calibrated child cost table (from production forensics — use these to estimate estimatedCostUsd):`,
-    `- small (tests / wiring): ~$1.65, ~2 min.`,
-    `- medium: ~$7.30, ~9 min.`,
-    `- feature-child: $15–30, 20–40 min of multi-file work with tests.`,
+    `Calibrated child cost table (re-fit 2026-06-06 from measured epic cycles — use these to estimate estimatedCostUsd):`,
+    `- small (tests / wiring / docs): ~$1.50, ~2 min.`,
+    `- medium (one module + its tests): ~$3.50, ~8 min.`,
+    `- feature-child (multi-file + tests): $5–12, 20–40 min; large-monorepo children trend toward the top of this range.`,
+    ...observedLines,
     ``,
     `The sum of every child's estimatedCostUsd MUST land between ` +
       `$${lower.toFixed(2)} (0.7 × spendable) and $${upper.toFixed(2)} (1.0 × spendable). ` +
       `An undersized plan wastes the cycle; an oversized plan blows the cap.`,
+    `Fill the band with SCOPE (more independent children), never by inflating per-child estimates.`,
     `EVERY child's description MUST name a concrete CONSUMER of what it builds — a caller, ` +
       `a route, or a UI surface that uses it. No API nothing calls, no class nothing instantiates.`,
   ].join('\n');
@@ -255,14 +330,30 @@ function attempt(output: string, budgetUsd?: number): AttemptResult {
   };
 }
 
+export interface DecomposeObjectiveOptions {
+  /**
+   * Project root for per-repo cost calibration: when set, prior cycles'
+   * spend-report.json actuals are surfaced to the planner alongside the
+   * static cost table (loadObservedChildCosts). Absent → static table only.
+   */
+  projectRoot?: string;
+}
+
 export async function decomposeObjective(
   objective: EpicObjective,
   runtime: DecomposeRuntime,
+  opts: DecomposeObjectiveOptions = {},
 ): Promise<DecomposeResult> {
-  const r1 = await runtime.run(EPIC_PLANNER_AGENT_ID, buildEpicPlannerPrompt(objective), {
-    allowedTools: [],
-    outputSchema: EPIC_PLAN_OUTPUT_SCHEMA,
-  });
+  const observed =
+    opts.projectRoot !== undefined ? loadObservedChildCosts(opts.projectRoot) : null;
+  const r1 = await runtime.run(
+    EPIC_PLANNER_AGENT_ID,
+    buildEpicPlannerPrompt(objective, observed),
+    {
+      allowedTools: [],
+      outputSchema: EPIC_PLAN_OUTPUT_SCHEMA,
+    },
+  );
   let costUsd = r1.costUsd ?? 0;
   const a1 = attempt(r1.output, objective.budgetUsd);
   if (a1.ok) {

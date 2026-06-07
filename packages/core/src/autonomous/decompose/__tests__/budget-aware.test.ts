@@ -65,10 +65,28 @@ describe('buildEpicPlannerPrompt with budgetUsd', () => {
     expect(prompt).toContain('(budget − 6 judgment overhead) / 1.2');
   });
 
-  it('shows the calibrated child cost table', () => {
-    expect(prompt).toContain('$1.65');
-    expect(prompt).toContain('$7.30');
-    expect(prompt).toContain('$15–30');
+  it('shows the calibrated child cost table (re-fit 2026-06-06 from measured cycles)', () => {
+    expect(prompt).toContain('$1.50');
+    expect(prompt).toContain('$3.50');
+    expect(prompt).toContain('$5–12');
+  });
+
+  it('fills the band with scope, never inflated estimates', () => {
+    expect(prompt).toContain('never by inflating per-child estimates');
+  });
+
+  it('omits the OBSERVED section when no per-repo observations exist', () => {
+    expect(prompt).not.toContain('OBSERVED in this repository');
+  });
+
+  it('surfaces per-repo observed actuals when provided', () => {
+    const withObserved = buildEpicPlannerPrompt(
+      { ...baseObjective, budgetUsd: 150 },
+      { count: 5, medianUsd: 2.5, meanUsd: 2.9 },
+    );
+    expect(withObserved).toContain('OBSERVED in this repository (5 completed child item(s)');
+    expect(withObserved).toContain('median $2.50, mean $2.90');
+    expect(withObserved).toContain('OVER the static table');
   });
 
   it('instructs the sum to land in the [0.7, 1.0] x spendable band', () => {
@@ -104,7 +122,7 @@ describe('buildEpicPlannerPrompt without budgetUsd', () => {
     const prompt = buildEpicPlannerPrompt(baseObjective);
     expect(prompt).not.toContain('BUDGET');
     expect(prompt).not.toContain('spendable');
-    expect(prompt).not.toContain('$1.65');
+    expect(prompt).not.toContain('$1.50');
   });
 });
 

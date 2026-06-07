@@ -123,3 +123,78 @@ describe('decomposeObjective', () => {
     expect(prompt).toContain('one later integration child');
   });
 });
+
+// ---- per-repo cost calibration (read side of the P0.8 ledger) -------------
+
+describe('loadObservedChildCosts', () => {
+  it('aggregates completed-item actuals across prior spend reports', async () => {
+    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { loadObservedChildCosts } = await import('../decompose-objective.js');
+    const root = mkdtempSync(join(tmpdir(), 'af-calib-'));
+    try {
+      const mk = (cycle: string, perItem: unknown[]): void => {
+        const dir = join(root, '.agentforge', 'cycles', cycle);
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(join(dir, 'spend-report.json'), JSON.stringify({ perItem }));
+      };
+      mk('c1', [
+        { itemId: 'a', status: 'completed', actualUsd: 2.0 },
+        { itemId: 'b', status: 'completed', actualUsd: 4.0 },
+        { itemId: 'x', status: 'failed', actualUsd: 9.0 }, // excluded: failed
+        { itemId: 'y', status: 'completed', actualUsd: 0 }, // excluded: zero
+      ]);
+      mk('c2', [{ itemId: 'c', status: 'completed', actualUsd: 3.0 }]);
+      // a cycle dir without a spend report must be skipped, not fatal
+      mkdirSync(join(root, '.agentforge', 'cycles', 'c3'), { recursive: true });
+
+      const obs = loadObservedChildCosts(root);
+      expect(obs).not.toBeNull();
+      expect(obs!.count).toBe(3);
+      expect(obs!.medianUsd).toBe(3.0);
+      expect(obs!.meanUsd).toBeCloseTo(3.0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('returns null for a fresh repo with no cycles', async () => {
+    const { mkdtempSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { loadObservedChildCosts } = await import('../decompose-objective.js');
+    const root = mkdtempSync(join(tmpdir(), 'af-calib-empty-'));
+    try {
+      expect(loadObservedChildCosts(root)).toBeNull();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('decomposeObjective threads projectRoot observations into the planner prompt', async () => {
+    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const root = mkdtempSync(join(tmpdir(), 'af-calib-thread-'));
+    try {
+      const dir = join(root, '.agentforge', 'cycles', 'c1');
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(
+        join(dir, 'spend-report.json'),
+        JSON.stringify({ perItem: [{ itemId: 'a', status: 'completed', actualUsd: 2.5 }] }),
+      );
+      const prompts: string[] = [];
+      const runtime = {
+        run: async (_a: string, task: string) => {
+          prompts.push(task);
+          return { output: planJson(goodChildren), costUsd: 0.5, model: 'opus' };
+        },
+      };
+      await decomposeObjective({ ...objective, budgetUsd: 12.5 }, runtime, { projectRoot: root });
+      expect(prompts[0]).toContain('OBSERVED in this repository (1 completed child item(s)');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
