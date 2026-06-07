@@ -11,7 +11,7 @@
 // an explicit declared-scope section.
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
@@ -82,8 +82,34 @@ describe('verifyChildWorktree — lockfile-detected default commands', () => {
     expect(calls[1]?.args.slice(0, 3)).toEqual(['vitest', 'related', '--run']);
   });
 
-  it('still runs corepack pnpm in a pnpm worktree (home-repo behavior unchanged)', async () => {
+  it('pnpm worktree without node_modules: installs deps FIRST, then runs the toolchain', async () => {
+    // Cycle cbe1ec58: a fresh pnpm worktree has no node_modules, so pnpm exec
+    // failed with "Command tsc not found" for all 22 children. The bar now
+    // provisions dependencies before the toolchain checks.
     writeFileSync(join(dir, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
+    const calls: Array<{ cmd: string; args: string[] }> = [];
+    const runner = async (cmd: string, args: string[]): Promise<ChildVerifyCommandResult> => {
+      calls.push({ cmd, args });
+      return { ok: true, code: 0, output: '' };
+    };
+    const result = await verifyChildWorktree({
+      worktreePath: dir,
+      changedFiles: ['src/a.ts'],
+      declaredFiles: ['src/a.ts'],
+      runner,
+    });
+    expect(result.ok).toBe(true);
+    expect(calls[0]).toEqual({
+      cmd: 'corepack',
+      args: ['pnpm', 'install', '--frozen-lockfile', '--prefer-offline'],
+    });
+    expect(calls[1]?.cmd).toBe('corepack');
+    expect(calls[1]?.args.slice(0, 2)).toEqual(['pnpm', 'exec']);
+  });
+
+  it('pnpm worktree WITH node_modules: no install call (home-repo behavior unchanged)', async () => {
+    writeFileSync(join(dir, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
+    mkdirSync(join(dir, 'node_modules'), { recursive: true });
     const calls: Array<{ cmd: string; args: string[] }> = [];
     const runner = async (cmd: string, args: string[]): Promise<ChildVerifyCommandResult> => {
       calls.push({ cmd, args });
@@ -95,8 +121,45 @@ describe('verifyChildWorktree — lockfile-detected default commands', () => {
       declaredFiles: ['src/a.ts'],
       runner,
     });
-    expect(calls[0]?.cmd).toBe('corepack');
+    expect(calls[0]?.args).not.toContain('install');
     expect(calls[0]?.args.slice(0, 2)).toEqual(['pnpm', 'exec']);
+  });
+
+  it('install failure → single structured deps failure, toolchain not attempted', async () => {
+    writeFileSync(join(dir, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
+    const calls: Array<{ cmd: string; args: string[] }> = [];
+    const runner = async (cmd: string, args: string[]): Promise<ChildVerifyCommandResult> => {
+      calls.push({ cmd, args });
+      return { ok: false, code: 1, output: 'ERR_PNPM_NO_OFFLINE store miss' };
+    };
+    const result = await verifyChildWorktree({
+      worktreePath: dir,
+      changedFiles: ['src/a.ts'],
+      declaredFiles: ['src/a.ts'],
+      runner,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]?.check).toBe('deps');
+    expect(result.failures[0]?.message).toContain('dependency install failed');
+    expect(calls).toHaveLength(1); // no typecheck/tests after a failed install
+  });
+
+  it('npm worktree WITH package-lock.json and no node_modules: runs npm ci first', async () => {
+    writeFileSync(join(dir, 'package-lock.json'), '{}\n');
+    const calls: Array<{ cmd: string; args: string[] }> = [];
+    const runner = async (cmd: string, args: string[]): Promise<ChildVerifyCommandResult> => {
+      calls.push({ cmd, args });
+      return { ok: true, code: 0, output: '' };
+    };
+    await verifyChildWorktree({
+      worktreePath: dir,
+      changedFiles: ['src/a.ts'],
+      declaredFiles: ['src/a.ts'],
+      runner,
+    });
+    expect(calls[0]).toEqual({ cmd: 'npm', args: ['ci'] });
+    expect(calls[1]?.cmd).toBe('npx');
   });
 
   it('explicit command overrides still win over detection', async () => {
