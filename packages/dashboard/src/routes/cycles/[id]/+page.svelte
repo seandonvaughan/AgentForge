@@ -247,6 +247,7 @@
   let prsCacheAt = $state<number>(0);
   const PRS_CACHE_MS = 30_000;
   let prsPollTimer: ReturnType<typeof setInterval> | null = null;
+  let epicPollTimer: ReturnType<typeof setInterval> | null = null;
 
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let elapsedTimer: ReturnType<typeof setInterval> | null = null;
@@ -991,6 +992,16 @@
     if (prsPollTimer) { clearInterval(prsPollTimer); prsPollTimer = null; }
   }
 
+  function startEpicPoll(): void {
+    stopEpicPoll();
+    if (!browser || document.visibilityState === 'hidden' || isTerminal) return;
+    epicPollTimer = setInterval(() => { void loadEpic(); }, 3000);
+  }
+
+  function stopEpicPoll(): void {
+    if (epicPollTimer) { clearInterval(epicPollTimer); epicPollTimer = null; }
+  }
+
   function fmtAge(isoDate: string): string {
     const ms = Math.max(0, Date.now() - new Date(isoDate).getTime());
     const totalSec = Math.floor(ms / 1000);
@@ -1125,19 +1136,26 @@
   }
 
   function manage(): void {
-    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+    if (!browser) return;
+    if (document.visibilityState === 'hidden') {
       if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
       if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
       stopPrsPoll();
+      stopEpicPoll();
       return;
     }
     if (activeTab === 'prs' && !prsPollTimer) startPrsPoll();
+    if (isTerminal) {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
+      stopEpicPoll();
+      return;
+    }
     if (!isTerminal && !pollTimer) {
       pollTimer = setInterval(() => {
         void loadCycle();
         void loadSprint();
         void loadAgents();
-        void loadEpic();
         void loadEpicReview();
         // Poll events too — pipeline tab phase status is driven by events
         // (phase.start/result/failure). Without this, the pipeline view
@@ -1148,10 +1166,7 @@
     if (!isTerminal && !elapsedTimer) {
       elapsedTimer = setInterval(() => { now = Date.now(); }, 1000);
     }
-    if (isTerminal) {
-      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-      if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
-    }
+    if (!epicPollTimer) startEpicPoll();
   }
 
   function onVisibility(): void { manage(); }
@@ -1249,6 +1264,7 @@
     if (pollTimer) clearInterval(pollTimer);
     if (elapsedTimer) clearInterval(elapsedTimer);
     stopPrsPoll();
+    stopEpicPoll();
     if (typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', onVisibility);
     }
