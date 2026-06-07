@@ -2142,6 +2142,7 @@ export async function cyclesRoutes(
     // loadCycleConfig() defaults, so dashboard-supplied budgets are silently
     // ignored — which is how cycle 75bfaf96 ran at $200 despite a $500 launch.
     const body = (req.body ?? {}) as {
+      objective?: unknown;
       budgetUsd?: unknown;
       maxItems?: unknown;
       modelCap?: string;
@@ -2157,6 +2158,11 @@ export async function cyclesRoutes(
       fallbackEnabled?: unknown;
     };
 
+    if (body.objective !== undefined) {
+      if (typeof body.objective !== 'string' || body.objective.trim().length === 0) {
+        return reply.status(400).send({ error: 'objective must be a non-empty string' });
+      }
+    }
     if (body.budgetUsd !== undefined) {
       if (typeof body.budgetUsd !== 'number' || !Number.isFinite(body.budgetUsd) || body.budgetUsd <= 0) {
         return reply.status(400).send({ error: 'budgetUsd must be a positive number' });
@@ -2213,8 +2219,10 @@ export async function cyclesRoutes(
       return reply.status(400).send({ error: 'fastMode must be a boolean' });
     }
 
-    const budgetEnv = typeof body.budgetUsd === 'number' && body.budgetUsd > 0
-      ? { AUTONOMOUS_BUDGET_USD: String(body.budgetUsd) }
+    const objective = typeof body.objective === 'string' ? body.objective.trim() : null;
+    const budgetUsd = typeof body.budgetUsd === 'number' ? body.budgetUsd : null;
+    const budgetEnv = budgetUsd !== null
+      ? { AUTONOMOUS_BUDGET_USD: String(budgetUsd) }
       : {};
     const maxItemsEnv = typeof body.maxItems === 'number' && body.maxItems > 0
       ? { AUTONOMOUS_MAX_ITEMS: String(body.maxItems) }
@@ -2282,13 +2290,17 @@ export async function cyclesRoutes(
       closeLogFd(logFd);
       return reply.status(500).send({ error: `AgentForge CLI entry not found at ${cliEntry}` });
     }
+    const cycleRunArgs = objective !== null
+      ? [cliEntry, 'cycle', 'run', '--objective', objective]
+      : [cliEntry, 'cycle', 'run'];
 
     // Fix 1: persist launch config to cycle-config.json so GET /cycles can surface it.
     const tags = Array.isArray(body.tags) ? (body.tags as string[]) : [];
     const cycleConfig: Record<string, unknown> = {
       cycleId,
       startedAt,
-      budgetUsd: body.budgetUsd ?? null,
+      objective,
+      budgetUsd,
       maxItems: body.maxItems ?? null,
       modelCap: body.modelCap ?? null,
       effortCap: effectiveEffortCap ?? null,
@@ -2312,7 +2324,7 @@ export async function cyclesRoutes(
     try {
       // detached: true makes the child a process group leader (pgid === pid),
       // which lets the stop endpoint kill the entire group via -pgid.
-      const child = spawn(nodeBin, [cliEntry, 'cycle', 'run'], {
+      const child = spawn(nodeBin, cycleRunArgs, {
         cwd: reqProjectRoot,
         detached: true,
         stdio: ['ignore', logFd, logFd],
@@ -2364,6 +2376,8 @@ export async function cyclesRoutes(
       pgid,
       runtimeMode: 'codex-cli',
       workspaceId,
+      objective,
+      budgetUsd,
       branchPrefix: typeof body.branchPrefix === 'string' ? body.branchPrefix.trim() : null,
       baseBranch: resolvedBaseBranch,
       dryRun: body.dryRun ?? null,
