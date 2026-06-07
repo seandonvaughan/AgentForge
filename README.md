@@ -117,6 +117,14 @@ AgentForge requires Node.js `>=22.13.0`. Node 18 and 20 are no longer supported 
 
 See [docs/release-and-security-gates.md](docs/release-and-security-gates.md) for the full policy and release checklist.
 
+## Documentation
+
+| Topic | Link |
+|---|---|
+| Autonomous loop | [docs/guides/autonomous-loop.md](docs/guides/autonomous-loop.md) |
+| Objective mode | [docs/guides/objective-mode.md](docs/guides/objective-mode.md) |
+| Release and security gates | [docs/release-and-security-gates.md](docs/release-and-security-gates.md) |
+
 ## Durable Jobs and Realtime Direction
 
 The current operator contract is package-first: durable cycle/session artifacts live under `.agentforge/*`, the package server owns `/api/v5/*`, and realtime dashboard updates flow through `/api/v5/stream`. New job orchestration should preserve that contract: make job state restart-safe before adding new dashboard affordances, and publish incremental status through the shared SSE stream rather than route-local polling.
