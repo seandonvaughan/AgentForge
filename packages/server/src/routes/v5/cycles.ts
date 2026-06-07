@@ -154,6 +154,10 @@ function readJsonIfExists(file: string): unknown | null {
   }
 }
 
+function readJsonFile(file: string): unknown {
+  return JSON.parse(readFileSync(file, 'utf-8'));
+}
+
 interface CycleCheckpoint {
   resumeFromPhase: string;
   capturedAt: string;
@@ -330,6 +334,158 @@ function phaseRunsFromArtifact(phase: Record<string, unknown>): Record<string, u
   }
 
   return runs;
+}
+
+interface DecompositionActual {
+  costUsd: number;
+  status: string;
+}
+
+interface DecompositionChildView extends Record<string, unknown> {
+  id: string;
+}
+
+interface DecompositionView {
+  cycleId: string;
+  epicId: string | null;
+  rationale: string | null;
+  decomposition: Record<string, unknown>;
+  children: DecompositionChildView[];
+  summary: {
+    childCount: number;
+    waveCount: number;
+    estimatedCostUsd: number;
+    actualCostUsd: number;
+    completedCount: number;
+    failedCount: number;
+    inProgressCount: number;
+  };
+}
+
+function readSpendReportActuals(cycleDir: string): Map<string, DecompositionActual> {
+  const out = new Map<string, DecompositionActual>();
+  const report = readJsonIfExists(join(cycleDir, 'spend-report.json'));
+  if (!report || typeof report !== 'object' || Array.isArray(report)) return out;
+  const perItem = (report as Record<string, unknown>)['perItem'];
+  if (!Array.isArray(perItem)) return out;
+  for (const item of perItem) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const row = item as Record<string, unknown>;
+    const itemId = typeof row['itemId'] === 'string' ? row['itemId'] : null;
+    if (!itemId) continue;
+    const costUsd = typeof row['actualUsd'] === 'number' ? row['actualUsd'] : 0;
+    const status = typeof row['status'] === 'string' ? row['status'] : 'unknown';
+    out.set(itemId, { costUsd, status });
+  }
+  return out;
+}
+
+function readExecuteActuals(cycleDir: string): Map<string, DecompositionActual> {
+  const out = new Map<string, DecompositionActual>();
+  const execute = readJsonIfExists(join(cycleDir, 'phases', 'execute.json'));
+  if (!execute || typeof execute !== 'object' || Array.isArray(execute)) return out;
+  const sources: unknown[] = [];
+  const executeRecord = execute as Record<string, unknown>;
+  if (Array.isArray(executeRecord['itemResults'])) sources.push(...executeRecord['itemResults']);
+  if (Array.isArray(executeRecord['agentRuns'])) sources.push(...executeRecord['agentRuns']);
+  for (const entry of sources) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const row = entry as Record<string, unknown>;
+    const itemId = typeof row['itemId'] === 'string' ? row['itemId'] : null;
+    if (!itemId) continue;
+    const costUsd = typeof row['costUsd'] === 'number' ? row['costUsd'] : 0;
+    const status = typeof row['status'] === 'string' ? row['status'] : 'unknown';
+    const prior = out.get(itemId);
+    if (!prior) {
+      out.set(itemId, { costUsd, status });
+      continue;
+    }
+    out.set(itemId, {
+      costUsd: Math.max(prior.costUsd, costUsd),
+      status: status !== 'unknown' ? status : prior.status,
+    });
+  }
+  return out;
+}
+
+function readDecompositionActuals(cycleDir: string): Map<string, DecompositionActual> {
+  const actuals = readSpendReportActuals(cycleDir);
+  for (const [itemId, actual] of readExecuteActuals(cycleDir)) {
+    actuals.set(itemId, actual);
+  }
+  return actuals;
+}
+
+function sumNumberField(rows: DecompositionChildView[], field: 'estimatedCostUsd' | 'costUsd'): number {
+  return rows.reduce((sum, row) => {
+    const value = row[field];
+    return sum + (typeof value === 'number' && Number.isFinite(value) ? value : 0);
+  }, 0);
+}
+
+function countStatus(rows: DecompositionChildView[], statuses: Set<string>): number {
+  return rows.reduce((count, row) => {
+    const status = typeof row['status'] === 'string' ? row['status'] : '';
+    return statuses.has(status) ? count + 1 : count;
+  }, 0);
+}
+
+export function buildDecompositionView(cycleDir: string, cycleId: string): DecompositionView | null {
+  const file = join(cycleDir, 'decomposition.json');
+  if (!existsSync(file)) return null;
+  const parsed = readJsonFile(file);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('decomposition.json must be an object');
+  }
+
+  const decomposition = parsed as Record<string, unknown>;
+  const actuals = readDecompositionActuals(cycleDir);
+  const rawChildren = Array.isArray(decomposition['children']) ? decomposition['children'] : [];
+  const children = rawChildren
+    .filter((child): child is Record<string, unknown> & { id: string } => (
+      child !== null &&
+      typeof child === 'object' &&
+      !Array.isArray(child) &&
+      typeof (child as Record<string, unknown>)['id'] === 'string'
+    ))
+    .map((child) => {
+      const actual = actuals.get(child.id);
+      const row: DecompositionChildView = {
+        ...child,
+        id: child.id,
+        ...(actual ? { costUsd: actual.costUsd, status: actual.status } : {}),
+      };
+      return row;
+    });
+
+  const validationReport = decomposition['validationReport'];
+  const validationWaveCount =
+    validationReport && typeof validationReport === 'object' && !Array.isArray(validationReport)
+      ? (validationReport as Record<string, unknown>)['waveCount']
+      : undefined;
+  const waveCount = typeof validationWaveCount === 'number' && Number.isFinite(validationWaveCount)
+    ? validationWaveCount
+    : new Set(children.map((child) => typeof child['wave'] === 'number' ? child['wave'] : 0)).size;
+
+  return {
+    cycleId,
+    epicId: typeof decomposition['epicId'] === 'string' ? decomposition['epicId'] : null,
+    rationale: typeof decomposition['rationale'] === 'string' ? decomposition['rationale'] : null,
+    decomposition: {
+      ...decomposition,
+      children,
+    },
+    children,
+    summary: {
+      childCount: children.length,
+      waveCount,
+      estimatedCostUsd: sumNumberField(children, 'estimatedCostUsd'),
+      actualCostUsd: sumNumberField(children, 'costUsd'),
+      completedCount: countStatus(children, new Set(['completed'])),
+      failedCount: countStatus(children, new Set(['failed', 'killed', 'crashed'])),
+      inProgressCount: countStatus(children, new Set(['in_progress', 'running'])),
+    },
+  };
 }
 
 function deriveCycleStatus(
@@ -1028,11 +1184,11 @@ export async function cyclesRoutes(
    */
   function baseForRequest(
     req: { query: unknown; headers: Record<string, unknown> },
-  ): { base: string; projectRoot: string } | { error: { status: number; body: unknown } } {
+  ): { base: string; projectRoot: string; workspaceId: string } | { error: { status: number; body: unknown } } {
     const r = resolveProjectRoot(req, opts.projectRoot);
     if ('error' in r) return r;
-    if (r.projectRoot === opts.projectRoot) return { base: defaultBase, projectRoot: opts.projectRoot };
-    return { base: cyclesBaseDir(r.projectRoot), projectRoot: r.projectRoot };
+    if (r.projectRoot === opts.projectRoot) return { base: defaultBase, projectRoot: opts.projectRoot, workspaceId: r.workspaceId };
+    return { base: cyclesBaseDir(r.projectRoot), projectRoot: r.projectRoot, workspaceId: r.workspaceId };
   }
 
   // GET /api/v5/cycles ─────────────────────────────────────────────────────
@@ -1372,6 +1528,29 @@ export async function cyclesRoutes(
     const parsed = readJsonIfExists(planFile);
     if (parsed === null) return reply.status(500).send({ error: 'Failed to parse plan.json' });
     return reply.send(parsed);
+  });
+
+  // GET /api/v5/cycles/:id/decomposition ───────────────────────────────────
+  app.get('/api/v5/cycles/:id/decomposition', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!SAFE_ID.test(id)) return reply.status(400).send({ error: 'Invalid cycle id' });
+    const br = baseForRequest(req);
+    if ('error' in br) return reply.status(br.error.status).send(br.error.body);
+    const dir = safeJoin(br.base, id);
+    if (!dir || !existsSync(dir)) return reply.status(404).send({ error: 'Cycle not found' });
+    try {
+      const view = buildDecompositionView(dir, id);
+      if (!view) return reply.status(404).send({ error: 'decomposition.json not found' });
+      return reply.send({
+        data: view,
+        meta: {
+          timestamp: new Date().toISOString(),
+          workspaceId: br.workspaceId,
+        },
+      });
+    } catch {
+      return reply.status(500).send({ error: 'Failed to parse decomposition.json' });
+    }
   });
 
   // GET /api/v5/cycles/:id/sprint ────────────────────────────────────────────
