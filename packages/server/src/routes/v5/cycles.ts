@@ -362,6 +362,35 @@ interface DecompositionView {
   };
 }
 
+interface EpicReviewView {
+  verdict: string | null;
+  rationale: string | null;
+  faultedItems: Record<string, unknown>[];
+}
+
+function buildEpicReviewView(cycleDir: string): EpicReviewView | null {
+  const file = join(cycleDir, 'phases', 'epic-review.json');
+  if (!existsSync(file)) return null;
+  const parsed = readJsonFile(file);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('epic-review.json must be an object');
+  }
+
+  const artifact = parsed as Record<string, unknown>;
+  const rawFaultedItems = artifact['faultedItems'];
+  return {
+    verdict: typeof artifact['verdict'] === 'string' ? artifact['verdict'] : null,
+    rationale: typeof artifact['rationale'] === 'string' ? artifact['rationale'] : null,
+    faultedItems: Array.isArray(rawFaultedItems)
+      ? rawFaultedItems.filter((item): item is Record<string, unknown> => (
+          item !== null &&
+          typeof item === 'object' &&
+          !Array.isArray(item)
+        ))
+      : [],
+  };
+}
+
 function readSpendReportActuals(cycleDir: string): Map<string, DecompositionActual> {
   const out = new Map<string, DecompositionActual>();
   const report = readJsonIfExists(join(cycleDir, 'spend-report.json'));
@@ -1550,6 +1579,29 @@ export async function cyclesRoutes(
       });
     } catch {
       return reply.status(500).send({ error: 'Failed to parse decomposition.json' });
+    }
+  });
+
+  // GET /api/v5/cycles/:id/epic-review ─────────────────────────────────────
+  app.get('/api/v5/cycles/:id/epic-review', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!SAFE_ID.test(id)) return reply.status(400).send({ error: 'Invalid cycle id' });
+    const br = baseForRequest(req);
+    if ('error' in br) return reply.status(br.error.status).send(br.error.body);
+    const dir = safeJoin(br.base, id);
+    if (!dir || !existsSync(dir)) return reply.status(404).send({ error: 'Cycle not found' });
+    try {
+      const view = buildEpicReviewView(dir);
+      if (!view) return reply.status(404).send({ error: 'epic-review.json not found' });
+      return reply.send({
+        data: view,
+        meta: {
+          timestamp: new Date().toISOString(),
+          workspaceId: br.workspaceId,
+        },
+      });
+    } catch {
+      return reply.status(500).send({ error: 'Failed to parse epic-review.json' });
     }
   });
 
