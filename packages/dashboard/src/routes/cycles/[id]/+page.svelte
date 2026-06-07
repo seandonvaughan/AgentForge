@@ -16,7 +16,7 @@
 
   type Tab =
     | 'overview' | 'pipeline' | 'items' | 'agents'
-    | 'scoring' | 'events' | 'files' | 'prs' | 'logs';
+    | 'scoring' | 'epic' | 'spend' | 'events' | 'files' | 'prs' | 'logs';
   type StageBrick = 'pending' | 'active' | 'done' | 'failed';
   type FileName = 'tests' | 'git' | 'pr' | 'approval-pending' | 'approval-decision';
   type LogName = 'cli-stdout' | 'tests-raw';
@@ -55,6 +55,7 @@
   interface SprintItem {
     id: string;
     title: string;
+    description?: string;
     status: 'planned' | 'in_progress' | 'completed' | 'failed' | 'killed' | 'pending';
     assignee?: string;
     rank?: number;
@@ -63,6 +64,10 @@
     durationMs?: number;
     model?: string;
     error?: string;
+    parentEpicId?: string;
+    wave?: number;
+    predecessors?: string[];
+    files?: string[];
   }
 
   const TERMINAL = new Set(['completed', 'failed', 'killed', 'crashed']);
@@ -143,6 +148,22 @@
     }>;
   }
   let scoring = $state<ScoringResponse | null>(null);
+
+  // ── Objective / epic integration artifacts ────────────────────────────────
+  interface EpicReviewArtifact {
+    mode?: string;
+    verdict?: string;
+    rationale?: string;
+    faultedItems?: Array<{ itemId?: string; reason?: string; files?: string[] }>;
+    schemaValidationOk?: boolean;
+    triageUsed?: boolean;
+    costUsd?: number;
+    durationMs?: number;
+    completedAt?: string;
+  }
+  let epicReview = $state<EpicReviewArtifact | null>(null);
+  let epicReviewLoading = $state(false);
+  let epicReviewError = $state<string | null>(null);
 
   // ── PRs tab ──────────────────────────────────────────────────────────────────
   interface PrCiInfo {
@@ -492,6 +513,61 @@
     });
   });
 
+  const objectiveText = $derived.by<string | null>(() => {
+    const cycleObjective = (cycle as { objective?: unknown })?.objective;
+    if (typeof cycleObjective === 'string' && cycleObjective.trim()) return cycleObjective.trim();
+    const launchObjective = (cycle as { launchConfig?: { objective?: unknown } })?.launchConfig?.objective;
+    if (typeof launchObjective === 'string' && launchObjective.trim()) return launchObjective.trim();
+    const sprintObjective = (sprint as { objective?: unknown } | null)?.objective;
+    if (typeof sprintObjective === 'string' && sprintObjective.trim()) return sprintObjective.trim();
+    return null;
+  });
+
+  const epicIntegration = $derived.by<{ branch?: string; epicId?: string; mergedBranches?: string[] } | null>(() => {
+    const raw = (cycle as { epicIntegration?: unknown })?.epicIntegration;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const rec = raw as Record<string, unknown>;
+    return {
+      ...(typeof rec.branch === 'string' ? { branch: rec.branch } : {}),
+      ...(typeof rec.epicId === 'string' ? { epicId: rec.epicId } : {}),
+      ...(Array.isArray(rec.mergedBranches)
+        ? { mergedBranches: rec.mergedBranches.filter((b): b is string => typeof b === 'string') }
+        : {}),
+    };
+  });
+
+  const epicItemRows = $derived.by<SprintItem[]>(() => {
+    return effectiveItems.filter((item) => item.parentEpicId || typeof item.wave === 'number' || (item.predecessors?.length ?? 0) > 0);
+  });
+
+  const isObjectiveCycle = $derived<boolean>(
+    objectiveText !== null ||
+    epicIntegration !== null ||
+    epicReview?.mode === 'epic-review' ||
+    epicItemRows.length > 0,
+  );
+
+  const epicId = $derived<string | null>(
+    epicIntegration?.epicId ?? epicItemRows.find((item) => item.parentEpicId)?.parentEpicId ?? null,
+  );
+
+  const epicWaves = $derived.by<Array<{ wave: number; items: SprintItem[] }>>(() => {
+    const byWave = new Map<number, SprintItem[]>();
+    for (const item of epicItemRows.length > 0 ? epicItemRows : effectiveItems) {
+      const wave = typeof item.wave === 'number' ? item.wave : 0;
+      byWave.set(wave, [...(byWave.get(wave) ?? []), item]);
+    }
+    return Array.from(byWave.entries())
+      .sort(([a], [b]) => a - b)
+      .map(([wave, items]) => ({ wave, items }));
+  });
+
+  const epicReviewVerdict = $derived<string | null>(
+    (typeof epicReview?.verdict === 'string' && epicReview.verdict.length > 0
+      ? epicReview.verdict
+      : ((cycle as { gateVerdict?: string })?.gateVerdict ?? null)),
+  );
+
   const itemsByStatus = $derived.by(() => {
     const items = effectiveItems;
     return {
@@ -536,6 +612,36 @@
       .map((name) => ({ name: name.toUpperCase(), costUsd: map[name] ?? 0 }))
       .filter((p) => p.costUsd > 0);
   });
+
+  interface SpendRow {
+    itemId: string;
+    title: string;
+    plannedUsd: number | null;
+    actualUsd: number;
+    status: SprintItem['status'];
+  }
+  const spendRows = $derived.by<SpendRow[]>(() => {
+    const executeActuals = new Map<string, number>();
+    for (const run of agentsData?.runs ?? []) {
+      if (run.phase !== 'execute' || !run.itemId) continue;
+      executeActuals.set(run.itemId, (executeActuals.get(run.itemId) ?? 0) + (run.costUsd ?? 0));
+    }
+    return effectiveItems.map((item) => ({
+      itemId: item.id,
+      title: item.title,
+      plannedUsd: typeof item.estimatedCostUsd === 'number' ? item.estimatedCostUsd : null,
+      actualUsd: typeof item.costUsd === 'number' ? item.costUsd : (executeActuals.get(item.id) ?? 0),
+      status: item.status,
+    }));
+  });
+  const spendPlannedUsd = $derived<number>(
+    spendRows.reduce((sum, row) => sum + (row.plannedUsd ?? 0), 0),
+  );
+  const spendExecutionUsd = $derived<number>(
+    spendRows.reduce((sum, row) => sum + row.actualUsd, 0),
+  );
+  const spendOverheadUsd = $derived<number>(Math.max(0, costUsd - spendExecutionUsd));
+  const spendUtilizationPct = $derived<number>(budgetUsd > 0 ? (costUsd / budgetUsd) * 100 : 0);
 
   interface AgentSummary {
     agentId: string;
@@ -613,17 +719,24 @@
 
   const tabs = $derived.by(() => {
     const items = sprint?.items ?? [];
-    return [
+    const baseTabs = [
       { id: 'overview', label: 'Overview' },
       { id: 'pipeline', label: 'Pipeline', count: pipelinePhases.length },
       { id: 'items',    label: 'Items',    count: items.length },
       { id: 'agents',   label: 'Agents',   count: agentsData?.totalRuns },
       { id: 'scoring',  label: 'Scoring',  count: radarOverall },
+      ...(isObjectiveCycle
+        ? [
+            { id: 'epic',  label: 'Epic',  count: epicItemRows.length || items.length },
+            { id: 'spend', label: 'Spend' },
+          ]
+        : []),
       { id: 'events',   label: 'Events',   count: events.length },
       { id: 'files',    label: 'Files' },
       { id: 'prs',      label: 'PRs',      count: prsData?.meta.total },
       { id: 'logs',     label: 'Logs' },
     ];
+    return baseTabs;
   });
 
   let rerunBusy = $state(false);
@@ -793,6 +906,27 @@
     } catch { /* silent */ }
   }
 
+  async function loadEpicReview(): Promise<void> {
+    if (!browser || !id) return;
+    epicReviewLoading = true;
+    epicReviewError = null;
+    try {
+      const res = await fetch(withWorkspace(`/api/v5/cycles/${id}/phases/gate`));
+      if (res.status === 204 || res.status === 404) {
+        epicReview = null;
+      } else if (res.ok) {
+        const body = (await res.json()) as EpicReviewArtifact;
+        epicReview = body?.mode === 'epic-review' ? body : null;
+      } else {
+        epicReviewError = `HTTP ${res.status}`;
+      }
+    } catch (e) {
+      epicReviewError = e instanceof Error ? e.message : String(e);
+    } finally {
+      epicReviewLoading = false;
+    }
+  }
+
   async function loadTypecheckFailure(): Promise<void> {
     if (typecheckFailureLoaded) return;
     typecheckFailureLoaded = true;
@@ -877,13 +1011,14 @@
       loadSprint(),
       loadAgents(),
       loadScoring(),
+      loadEpicReview(),
       loadEvents(),
       loadTypecheckFailure(),
     ]);
   }
 
   function ensureSse(): void {
-    if (eventSource || isTerminal) return;
+    if (!browser || eventSource || isTerminal) return;
     try {
       const es = new EventSource(withWorkspace('/api/v5/stream'));
       eventSource = es;
@@ -949,6 +1084,7 @@
   }
 
   function startLogStream(name: LogName): void {
+    if (!browser) return;
     teardownLogStream();
     try {
       const es = new EventSource(withWorkspace(`/api/v5/cycles/${id}/logs/${name}/stream`));
@@ -969,7 +1105,7 @@
   }
 
   function manage(): void {
-    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+    if (browser && document.visibilityState === 'hidden') {
       if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
       if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
       stopPrsPoll();
@@ -1004,6 +1140,7 @@
     if (t === 'events' && events.length === 0) void loadEvents();
     if (t === 'logs' && logText[activeLog] === null && !logLoading[activeLog]) void loadLog(activeLog);
     if (t === 'files' && fileData[activeFile] === undefined) void loadFile(activeFile);
+    if ((t === 'epic' || t === 'spend') && epicReview === null && !epicReviewLoading) void loadEpicReview();
     if (t === 'prs') {
       void loadPrs();
       startPrsPoll();
@@ -1018,6 +1155,21 @@
     if (l === 'failed' || l === 'killed' || l === 'crashed') return 'danger';
     if (TERMINAL.has(l)) return 'muted';
     return 'purple';
+  }
+
+  function epicVerdictVariant(v: string | null): 'success' | 'danger' | 'warning' | 'purple' | 'muted' {
+    const l = (v ?? '').toLowerCase();
+    if (l === 'approve' || l === 'approved') return 'success';
+    if (l === 'request_changes' || l === 'reject' || l === 'rejected') return 'danger';
+    if (l === 'triage' || l === 'pending') return 'warning';
+    return v ? 'purple' : 'muted';
+  }
+
+  function itemStatusVariant(s: SprintItem['status']): 'success' | 'danger' | 'purple' | 'muted' {
+    if (s === 'completed') return 'success';
+    if (s === 'failed' || s === 'killed') return 'danger';
+    if (s === 'in_progress') return 'purple';
+    return 'muted';
   }
 
   let eventFilter = $state<string>('all');
@@ -1055,7 +1207,7 @@
       if (!isTerminal) ensureSse();
       manage();
     })();
-    if (typeof document !== 'undefined') {
+    if (browser) {
       document.addEventListener('visibilitychange', onVisibility);
     }
   });
@@ -1066,7 +1218,7 @@
     if (pollTimer) clearInterval(pollTimer);
     if (elapsedTimer) clearInterval(elapsedTimer);
     stopPrsPoll();
-    if (typeof document !== 'undefined') {
+    if (browser) {
       document.removeEventListener('visibilitychange', onVisibility);
     }
   });
@@ -1075,6 +1227,10 @@
     void stage;
     if (isTerminal) { teardownSse(); teardownLogStream(); }
     manage();
+  });
+
+  $effect(() => {
+    if (!isObjectiveCycle && (activeTab === 'epic' || activeTab === 'spend')) activeTab = 'overview';
   });
 
   function pretty(value: unknown): string {
@@ -1182,6 +1338,33 @@
     </div>
     {#if actionError}
       <div class="action-error af2-mono">{actionError}</div>
+    {/if}
+    {#if isObjectiveCycle}
+      <div class="epic-verdict-card" aria-label="Epic review verdict">
+        <div>
+          <div class="section-title">EPIC REVIEW</div>
+          <div class="epic-verdict-main">
+            <Badge variant={epicVerdictVariant(epicReviewVerdict)}>
+              {epicReviewLoading ? 'LOADING' : (epicReviewVerdict ?? 'PENDING')}
+            </Badge>
+            {#if epicId}<span class="af2-mono epic-verdict-epic">{epicId}</span>{/if}
+          </div>
+          <div class="epic-verdict-copy">
+            {#if epicReview?.rationale}
+              {epicReview.rationale}
+            {:else if epicReviewError}
+              Verdict unavailable: {epicReviewError}
+            {:else}
+              Awaiting the structured epic-review verdict for this objective cycle.
+            {/if}
+          </div>
+        </div>
+        <div class="epic-verdict-meta">
+          <div><span>Faulted</span><strong>{epicReview?.faultedItems?.length ?? 0}</strong></div>
+          <div><span>Review cost</span><strong>${(epicReview?.costUsd ?? 0).toFixed(3)}</strong></div>
+          <div><span>Duration</span><strong>{epicReview?.durationMs != null ? formatDuration(epicReview.durationMs) : '—'}</strong></div>
+        </div>
+      </div>
     {/if}
   </div>
 
@@ -1783,6 +1966,145 @@
     {/if}
   {/if}
 
+  {#if activeTab === 'epic'}
+    <div class="epic-grid">
+      <Card>
+        <div class="section-title-row">
+          <span class="section-title">OBJECTIVE</span>
+          <Badge variant="purple">{epicId ?? 'objective cycle'}</Badge>
+        </div>
+        <div class="epic-objective">
+          {objectiveText ?? 'Objective text is not present in this cycle snapshot.'}
+        </div>
+        {#if epicIntegration}
+          <div class="epic-integration">
+            <div><span>Branch</span><strong class="af2-mono">{epicIntegration.branch ?? '—'}</strong></div>
+            <div><span>Merged branches</span><strong class="af2-mono">{epicIntegration.mergedBranches?.length ?? 0}</strong></div>
+          </div>
+        {/if}
+      </Card>
+
+      <Card>
+        <div class="section-title-row">
+          <span class="section-title">EPIC REVIEW VERDICT</span>
+          <Badge variant={epicVerdictVariant(epicReviewVerdict)}>{epicReviewVerdict ?? 'pending'}</Badge>
+        </div>
+        <div class="epic-review-body">
+          {#if epicReview?.rationale}
+            {epicReview.rationale}
+          {:else if epicReviewLoading}
+            Loading epic-review verdict…
+          {:else}
+            No epic-review verdict has been written yet.
+          {/if}
+        </div>
+        {#if epicReview?.faultedItems && epicReview.faultedItems.length > 0}
+          <div class="faulted-list">
+            {#each epicReview.faultedItems as fault, i (fault.itemId ?? i)}
+              <div class="faulted-row">
+                <span class="af2-mono">{fault.itemId ?? 'unknown'}</span>
+                <span>{fault.reason ?? 'No reason recorded.'}</span>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </Card>
+    </div>
+
+    <Card noPad style="margin-top:14px">
+      <div class="section-head">
+        <span class="section-title">EPIC WAVES</span>
+        <span class="af2-mono section-tag">{epicWaves.length} waves · {effectiveItems.length} items</span>
+      </div>
+      {#if effectiveItems.length === 0}
+        <div class="empty">No epic plan items yet.</div>
+      {:else}
+        <div class="epic-wave-list">
+          {#each epicWaves as wave (wave.wave)}
+            <div class="epic-wave">
+              <div class="epic-wave-head">
+                <span class="af2-mono">WAVE {wave.wave}</span>
+                <span>{wave.items.length} item{wave.items.length === 1 ? '' : 's'}</span>
+              </div>
+              <div class="epic-wave-items">
+                {#each wave.items as item, i (sprintItemKey(item, i, `epic-${wave.wave}`))}
+                  <div class="epic-item-row">
+                    <div>
+                      <div class="epic-item-title">{item.title}</div>
+                      <div class="epic-item-meta af2-mono">
+                        #{item.id.slice(0, 12)}
+                        {#if item.predecessors && item.predecessors.length > 0}
+                          · waits on {item.predecessors.join(', ')}
+                        {/if}
+                      </div>
+                    </div>
+                    <Badge variant={itemStatusVariant(item.status)}>{item.status.replace('_', ' ')}</Badge>
+                  </div>
+                {/each}
+              </div>
+            </div>
+          {/each}
+        </div>
+      {/if}
+    </Card>
+  {/if}
+
+  {#if activeTab === 'spend'}
+    <div class="spend-kpis">
+      {#each [
+        { label: 'Total', value: `$${costUsd.toFixed(2)}`, sub: `${spendUtilizationPct.toFixed(0)}% of budget` },
+        { label: 'Planned', value: `$${spendPlannedUsd.toFixed(2)}`, sub: `${spendRows.length} planned items` },
+        { label: 'Execution', value: `$${spendExecutionUsd.toFixed(2)}`, sub: 'child item spend' },
+        { label: 'Overhead', value: `$${spendOverheadUsd.toFixed(2)}`, sub: 'audit / plan / gates' },
+      ] as stat (stat.label)}
+        <Card>
+          <div class="spend-kpi-label">{stat.label}</div>
+          <div class="spend-kpi-value af2-mono">{stat.value}</div>
+          <div class="spend-kpi-sub">{stat.sub}</div>
+        </Card>
+      {/each}
+    </div>
+
+    <Card noPad style="margin-top:14px">
+      <div class="section-head">
+        <span class="section-title">SPEND REPORT</span>
+        <span class="af2-mono section-tag">planned vs actual</span>
+      </div>
+      {#if spendRows.length === 0}
+        <div class="empty">No spend rows yet.</div>
+      {:else}
+        <table class="spend-table">
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>Planned</th>
+              <th>Actual</th>
+              <th>Delta</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each spendRows as row (row.itemId)}
+              {@const delta = row.actualUsd - (row.plannedUsd ?? 0)}
+              <tr>
+                <td>
+                  <div class="spend-item-title">{row.title}</div>
+                  <div class="af2-mono spend-item-id">#{row.itemId.slice(0, 12)}</div>
+                </td>
+                <td class="af2-mono">{row.plannedUsd === null ? '—' : `$${row.plannedUsd.toFixed(2)}`}</td>
+                <td class="af2-mono">${row.actualUsd.toFixed(2)}</td>
+                <td class="af2-mono" style="color:{delta <= 0 ? 'var(--af-success)' : 'var(--af-warning)'}">
+                  {delta >= 0 ? '+' : ''}${delta.toFixed(2)}
+                </td>
+                <td><Badge variant={itemStatusVariant(row.status)}>{row.status.replace('_', ' ')}</Badge></td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {/if}
+    </Card>
+  {/if}
+
   {#if activeTab === 'events'}
     <div class="events-bar">
       {#each eventTypeOptions as t (t)}
@@ -2066,6 +2388,58 @@
     border: 1px solid color-mix(in srgb, var(--af-danger) 35%, transparent);
     border-radius: 6px;
     text-align: right;
+  }
+  .epic-verdict-card {
+    flex-basis: 100%;
+    display: grid;
+    grid-template-columns: minmax(260px, 1fr) auto;
+    gap: 16px;
+    align-items: center;
+    padding: 12px 14px;
+    background: color-mix(in srgb, var(--af-purple) 7%, var(--af-surface));
+    border: 1px solid color-mix(in srgb, var(--af-purple) 28%, transparent);
+    border-radius: 8px;
+  }
+  @media (max-width: 760px) { .epic-verdict-card { grid-template-columns: 1fr; } }
+  .epic-verdict-main {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 7px;
+    flex-wrap: wrap;
+  }
+  .epic-verdict-epic { font-size: 11px; color: var(--af-accent2); }
+  .epic-verdict-copy {
+    margin-top: 7px;
+    max-width: 900px;
+    color: var(--af-muted);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .epic-verdict-meta {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(84px, 1fr));
+    gap: 8px;
+  }
+  .epic-verdict-meta div {
+    padding: 8px 10px;
+    background: color-mix(in srgb, var(--af-surface2) 70%, transparent);
+    border: 1px solid var(--af-border2);
+    border-radius: 6px;
+  }
+  .epic-verdict-meta span {
+    display: block;
+    margin-bottom: 3px;
+    font-size: 9px;
+    color: var(--af-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .epic-verdict-meta strong {
+    font-family: var(--af-font-mono, 'JetBrains Mono', monospace);
+    font-size: 12px;
+    color: var(--af-text);
+    font-weight: 600;
   }
   .terminal-banner {
     display: grid;
@@ -2751,6 +3125,134 @@
     vertical-align: middle;
   }
   .rank-bar-fill { height: 100%; transition: width 500ms ease; }
+
+  .epic-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+    gap: 14px;
+  }
+  @media (max-width: 960px) { .epic-grid { grid-template-columns: 1fr; } }
+  .epic-objective {
+    margin-top: 10px;
+    color: var(--af-text);
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  .epic-integration {
+    display: grid;
+    grid-template-columns: 1fr 160px;
+    gap: 10px;
+    margin-top: 14px;
+  }
+  @media (max-width: 640px) { .epic-integration { grid-template-columns: 1fr; } }
+  .epic-integration div {
+    border: 1px solid var(--af-border2);
+    border-radius: 6px;
+    padding: 9px 10px;
+    background: var(--af-surface2);
+  }
+  .epic-integration span {
+    display: block;
+    color: var(--af-dim);
+    font-size: 10px;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .epic-integration strong { color: var(--af-text); font-size: 11px; font-weight: 600; }
+  .epic-review-body {
+    margin-top: 10px;
+    color: var(--af-muted);
+    font-size: 12px;
+    line-height: 1.55;
+  }
+  .faulted-list { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+  .faulted-row {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 1px solid color-mix(in srgb, var(--af-danger) 24%, transparent);
+    background: color-mix(in srgb, var(--af-danger) 7%, transparent);
+    border-radius: 6px;
+    font-size: 11px;
+    color: var(--af-muted);
+  }
+  .epic-wave-list { display: flex; flex-direction: column; gap: 0; }
+  .epic-wave { border-bottom: 1px solid var(--af-border); }
+  .epic-wave:last-child { border-bottom: none; }
+  .epic-wave-head {
+    display: flex;
+    justify-content: space-between;
+    padding: 11px 16px;
+    background: var(--af-surface2);
+    color: var(--af-muted);
+    font-size: 11px;
+  }
+  .epic-wave-items { display: flex; flex-direction: column; }
+  .epic-item-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+    padding: 12px 16px;
+    border-top: 1px solid color-mix(in srgb, var(--af-border) 55%, transparent);
+  }
+  .epic-item-title {
+    color: var(--af-text);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .epic-item-meta {
+    margin-top: 4px;
+    color: var(--af-dim);
+    font-size: 10px;
+  }
+  .spend-kpis {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+  }
+  @media (max-width: 900px) { .spend-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 520px) { .spend-kpis { grid-template-columns: 1fr; } }
+  .spend-kpi-label {
+    color: var(--af-dim);
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+  }
+  .spend-kpi-value {
+    margin-top: 7px;
+    color: var(--af-text);
+    font-size: 21px;
+    font-weight: 700;
+  }
+  .spend-kpi-sub { margin-top: 3px; color: var(--af-dim); font-size: 11px; }
+  .spend-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .spend-table th {
+    padding: 9px 14px;
+    text-align: left;
+    color: var(--af-dim);
+    background: var(--af-surface2);
+    border-bottom: 1px solid var(--af-border);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .spend-table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid color-mix(in srgb, var(--af-border) 55%, transparent);
+    color: var(--af-muted);
+    vertical-align: middle;
+  }
+  .spend-table tbody tr:last-child td { border-bottom: none; }
+  .spend-item-title { color: var(--af-text); font-weight: 500; line-height: 1.4; }
+  .spend-item-id { margin-top: 2px; color: var(--af-dim); font-size: 10px; }
 
   .events-bar {
     display: flex;
