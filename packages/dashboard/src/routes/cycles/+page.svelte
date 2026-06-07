@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { browser } from '$app/environment';
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import { withWorkspace } from '$lib/stores/workspace';
@@ -30,6 +31,16 @@
     fallbackEnabled?: boolean | null;
     tags?: string[];
     dryRun?: boolean | null;
+    objective?: string | null;
+    epicId?: string | null;
+    parentEpicId?: string | null;
+    childCount?: number | null;
+    epicChildCount?: number | null;
+    decomposition?: unknown;
+  }
+
+  interface EpicMeta {
+    childCount: number;
   }
 
   type StageBrick = 'pending' | 'active' | 'done' | 'failed';
@@ -45,6 +56,9 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let pollTimer: ReturnType<typeof setInterval> | null = null;
+  let epicMetaByCycle = $state<Record<string, EpicMeta>>({});
+  let epicCheckedByCycle = $state<Record<string, boolean>>({});
+  let decompositionRun = 0;
 
   let filter = $state<FilterId>('all');
   let sortCol = $state<SortCol>('startedAt');
@@ -62,6 +76,7 @@
       const json = (await res.json()) as { cycles?: CycleRow[] };
       cycles = (json.cycles ?? []).slice();
       error = null;
+      if (browser) void loadEpicBadges(cycles);
       managePolling();
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -75,7 +90,8 @@
   }
 
   function managePolling(): void {
-    const paused = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+    if (!browser) return;
+    const paused = document.visibilityState === 'hidden';
     if (paused) {
       if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
       return;
@@ -150,6 +166,82 @@
       typeof c.fallbackEnabled === 'boolean' ||
       typeof c.dryRun === 'boolean' ||
       (c.tags?.length ?? 0) > 0;
+  }
+
+  function isRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+  }
+
+  function childCountFromDecomposition(value: unknown): number | null {
+    if (!isRecord(value)) return null;
+    if (typeof value['childCount'] === 'number') return value['childCount'];
+    if (typeof value['epicChildCount'] === 'number') return value['epicChildCount'];
+
+    const decomposition = value['decomposition'];
+    if (isRecord(decomposition)) {
+      const nested = childCountFromDecomposition(decomposition);
+      if (nested !== null) return nested;
+    }
+
+    if (Array.isArray(value['children'])) return value['children'].length;
+
+    const items = Array.isArray(value['items']) ? value['items'] : [];
+    const epicItems = items.filter((item) => (
+      isRecord(item) &&
+      (typeof item['parentEpicId'] === 'string' || typeof item['wave'] === 'number')
+    ));
+    if (epicItems.length > 0) return epicItems.length;
+
+    return null;
+  }
+
+  function inlineEpicMeta(c: CycleRow): EpicMeta | null {
+    const childCount = childCountFromDecomposition(c) ?? childCountFromDecomposition(c.decomposition);
+    return childCount !== null ? { childCount } : null;
+  }
+
+  function epicMetaFor(c: CycleRow): EpicMeta | null {
+    return inlineEpicMeta(c) ?? epicMetaByCycle[c.cycleId] ?? null;
+  }
+
+  async function getDecomposition(cycleId: string): Promise<EpicMeta | null> {
+    if (!browser) return null;
+    try {
+      const res = await fetch(withWorkspace(`/api/v5/cycles/${encodeURIComponent(cycleId)}/plan`));
+      if (!res.ok) return null;
+      const json = await res.json() as unknown;
+      const childCount = childCountFromDecomposition(json);
+      return childCount !== null ? { childCount } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function loadEpicBadges(rows: CycleRow[]): Promise<void> {
+    if (!browser) return;
+    const run = ++decompositionRun;
+    const nextChecked = { ...epicCheckedByCycle };
+    const nextMeta = { ...epicMetaByCycle };
+    const pending = rows.filter((c) => (
+      !inlineEpicMeta(c) &&
+      !nextMeta[c.cycleId] &&
+      (!nextChecked[c.cycleId] || !isTerminal(c))
+    ));
+
+    for (let i = 0; i < pending.length; i += 8) {
+      const batch = pending.slice(i, i + 8);
+      const results = await Promise.all(batch.map(async (c) => ({
+        cycleId: c.cycleId,
+        meta: await getDecomposition(c.cycleId),
+      })));
+      if (run !== decompositionRun) return;
+      for (const result of results) {
+        nextChecked[result.cycleId] = true;
+        if (result.meta) nextMeta[result.cycleId] = result.meta;
+      }
+      epicCheckedByCycle = { ...nextChecked };
+      epicMetaByCycle = { ...nextMeta };
+    }
   }
 
   const filtered = $derived.by<CycleRow[]>(() => {
@@ -271,14 +363,14 @@
 
   onMount(() => {
     void loadCycles();
-    if (typeof document !== 'undefined') {
+    if (browser) {
       document.addEventListener('visibilitychange', onVisibilityChange);
     }
   });
 
   onDestroy(() => {
     if (pollTimer) clearInterval(pollTimer);
-    if (typeof document !== 'undefined') {
+    if (browser) {
       document.removeEventListener('visibilitychange', onVisibilityChange);
     }
   });
@@ -435,6 +527,7 @@
             {@const isSel = selected.includes(c.cycleId)}
             {@const isLive = !isTerminal(c)}
             {@const costPct = c.budgetUsd > 0 ? Math.min(100, (c.costUsd / c.budgetUsd) * 100) : 0}
+            {@const epic = epicMetaFor(c)}
             <tr
               class="row"
               class:row-selected={isSel}
@@ -451,6 +544,12 @@
                 <div class="cycle-cell">
                   {#if isLive}<PulseDot color="var(--af-purple)" size={5} />{/if}
                   <span class="af2-mono cycle-id">{shortId(c.cycleId)}</span>
+                  {#if epic}
+                    <span class="epic-badge" aria-label="Epic objective cycle">
+                      <span>epic</span>
+                      <span class="af2-mono">{epic.childCount} children</span>
+                    </span>
+                  {/if}
                 </div>
                 {#if hasCycleConfig(c)}
                   <div class="config-chips" aria-label="Cycle launch configuration">
@@ -789,6 +888,27 @@
   .col-check input { accent-color: var(--af-purple); cursor: pointer; }
   .cycle-cell { display: inline-flex; align-items: center; gap: 8px; }
   .cycle-id { font-weight: 600; color: var(--af-text); }
+  .epic-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 18px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    border: 1px solid color-mix(in srgb, var(--af-purple) 34%, var(--af-border2));
+    background: color-mix(in srgb, var(--af-purple) 12%, transparent);
+    color: var(--af-purple);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.35;
+    text-transform: uppercase;
+  }
+  .epic-badge .af2-mono {
+    color: var(--af-muted);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: none;
+  }
   .config-chips {
     display: flex;
     align-items: center;
