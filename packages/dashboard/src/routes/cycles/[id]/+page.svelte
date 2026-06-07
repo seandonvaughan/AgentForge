@@ -5,6 +5,7 @@
   import { goto } from '$app/navigation';
   import { withWorkspace } from '$lib/stores/workspace';
   import { relativeTime, formatDuration } from '$lib/util/relative-time';
+  import { formatUsd, groupChildrenByWave, type ObjectiveChild, type WaveGroup } from '$lib/util/objective-mode';
   import {
     Btn, Card, Badge, Tabs, StageRail, ModelChip, PulseDot, Ring, Sparkline, AnimNum,
   } from '$lib/components/v2';
@@ -15,7 +16,7 @@
   import QualityTile from '$lib/components/cycles/QualityTile.svelte';
 
   type Tab =
-    | 'overview' | 'pipeline' | 'items' | 'agents'
+    | 'overview' | 'pipeline' | 'items' | 'epic' | 'agents'
     | 'scoring' | 'events' | 'files' | 'prs' | 'logs';
   type StageBrick = 'pending' | 'active' | 'done' | 'failed';
   type FileName = 'tests' | 'git' | 'pr' | 'approval-pending' | 'approval-decision';
@@ -100,6 +101,33 @@
 
   let agentsData = $state<AgentsResponse | null>(null);
   let agentsLoading = $state(false);
+
+  interface EpicChild extends ObjectiveChild {
+    title?: string;
+    files?: string[] | null;
+    status?: string;
+  }
+
+  interface EpicDecompositionView {
+    cycleId: string;
+    epicId: string | null;
+    rationale: string | null;
+    children: EpicChild[];
+    summary?: {
+      childCount?: number;
+      waveCount?: number;
+      estimatedCostUsd?: number;
+      actualCostUsd?: number;
+      completedCount?: number;
+      failedCount?: number;
+      inProgressCount?: number;
+    };
+  }
+
+  let epicData = $state<EpicDecompositionView | null>(null);
+  let epicLoading = $state(false);
+  let epicError = $state<string | null>(null);
+  let epicEmpty = $state(false);
 
   interface CycleEvent {
     type?: string;
@@ -611,12 +639,25 @@
     Math.round(radarDims.reduce((s, d) => s + d.score, 0) / Math.max(1, radarDims.length)),
   );
 
+  const epicWaveGroups = $derived.by<WaveGroup<EpicChild>[]>(() => (
+    groupChildrenByWave<EpicChild>(epicData?.children ?? [])
+  ));
+
+  const epicChildCount = $derived<number>(
+    epicData?.summary?.childCount ?? epicData?.children.length ?? 0,
+  );
+
+  const epicActualCost = $derived<number>(
+    epicData?.summary?.actualCostUsd ?? (epicData?.children ?? []).reduce((sum, child) => sum + (child.costUsd ?? 0), 0),
+  );
+
   const tabs = $derived.by(() => {
     const items = sprint?.items ?? [];
     return [
       { id: 'overview', label: 'Overview' },
       { id: 'pipeline', label: 'Pipeline', count: pipelinePhases.length },
       { id: 'items',    label: 'Items',    count: items.length },
+      { id: 'epic',     label: 'Epic',     count: epicData?.summary?.waveCount ?? epicWaveGroups.length },
       { id: 'agents',   label: 'Agents',   count: agentsData?.totalRuns },
       { id: 'scoring',  label: 'Scoring',  count: radarOverall },
       { id: 'events',   label: 'Events',   count: events.length },
@@ -785,6 +826,31 @@
     finally { agentsLoading = false; }
   }
 
+  async function loadEpic(): Promise<void> {
+    if (!browser || !id) return;
+    epicLoading = true;
+    epicError = null;
+    try {
+      const res = await fetch(withWorkspace(`/api/v5/cycles/${id}/decomposition`));
+      if (res.status === 404) {
+        epicData = null;
+        epicEmpty = true;
+        return;
+      }
+      if (!res.ok) {
+        epicError = `HTTP ${res.status}`;
+        return;
+      }
+      const json = (await res.json()) as { data?: EpicDecompositionView } | EpicDecompositionView;
+      epicData = ('data' in json && json.data ? json.data : json) as EpicDecompositionView;
+      epicEmpty = false;
+    } catch (e) {
+      epicError = e instanceof Error ? e.message : String(e);
+    } finally {
+      epicLoading = false;
+    }
+  }
+
   async function loadScoring(): Promise<void> {
     try {
       const res = await fetch(withWorkspace(`/api/v5/cycles/${id}/scoring`));
@@ -876,6 +942,7 @@
     await Promise.allSettled([
       loadSprint(),
       loadAgents(),
+      loadEpic(),
       loadScoring(),
       loadEvents(),
       loadTypecheckFailure(),
@@ -981,6 +1048,7 @@
         void loadCycle();
         void loadSprint();
         void loadAgents();
+        void loadEpic();
         // Poll events too — pipeline tab phase status is driven by events
         // (phase.start/result/failure). Without this, the pipeline view
         // never updates between phase boundaries.
@@ -1002,6 +1070,7 @@
     const prev = activeTab;
     activeTab = t as Tab;
     if (t === 'events' && events.length === 0) void loadEvents();
+    if (t === 'epic' && !epicData && !epicLoading) void loadEpic();
     if (t === 'logs' && logText[activeLog] === null && !logLoading[activeLog]) void loadLog(activeLog);
     if (t === 'files' && fileData[activeFile] === undefined) void loadFile(activeFile);
     if (t === 'prs') {
@@ -1018,6 +1087,15 @@
     if (l === 'failed' || l === 'killed' || l === 'crashed') return 'danger';
     if (TERMINAL.has(l)) return 'muted';
     return 'purple';
+  }
+
+  function epicStatusVariant(s: string | undefined): 'success' | 'danger' | 'purple' | 'muted' | 'warning' {
+    const l = (s ?? '').toLowerCase();
+    if (l === 'completed') return 'success';
+    if (l === 'failed' || l === 'killed' || l === 'crashed') return 'danger';
+    if (l === 'in_progress' || l === 'running') return 'purple';
+    if (l === 'planned' || l === 'pending') return 'warning';
+    return 'muted';
   }
 
   let eventFilter = $state<string>('all');
@@ -1111,6 +1189,55 @@
     return [cx + r * scale * Math.cos(a), cy + r * scale * Math.sin(a)];
   }
 </script>
+
+{#snippet EpicWaveList(waves: WaveGroup<EpicChild>[])}
+  <div class="epic-waves">
+    {#each waves as wave (wave.wave)}
+      <Card noPad>
+        <div class="epic-wave-head">
+          <div>
+            <div class="section-title">{wave.label}</div>
+            <div class="epic-wave-meta af2-mono">
+              {wave.children.length} child{wave.children.length === 1 ? '' : 'ren'} · estimated {formatUsd(wave.estimatedCostUsd)}
+            </div>
+          </div>
+        </div>
+        <div class="epic-child-list">
+          {#each wave.children as child (child.id)}
+            <div class="epic-child-row">
+              <div class="epic-child-main">
+                <div class="epic-child-top">
+                  <span class="af2-mono epic-child-id">#{child.id}</span>
+                  <Badge variant={epicStatusVariant(child.status)}>{child.status ?? 'planned'}</Badge>
+                </div>
+                <div class="epic-child-title">{child.title ?? 'Untitled child'}</div>
+                <div class="epic-files">
+                  {#if child.files && child.files.length > 0}
+                    {#each child.files as file (file)}
+                      <span class="epic-file af2-mono">{file}</span>
+                    {/each}
+                  {:else}
+                    <span class="af2-mono dim">No declared files</span>
+                  {/if}
+                </div>
+              </div>
+              <div class="epic-child-cost af2-mono">
+                <span>{formatUsd(child.costUsd ?? child.estimatedCostUsd ?? 0)}</span>
+                {#if child.costUsd != null && child.estimatedCostUsd != null}
+                  <small>est {formatUsd(child.estimatedCostUsd)}</small>
+                {:else if child.costUsd == null && child.estimatedCostUsd != null}
+                  <small>estimated</small>
+                {:else}
+                  <small>cost</small>
+                {/if}
+              </div>
+            </div>
+          {/each}
+        </div>
+      </Card>
+    {/each}
+  </div>
+{/snippet}
 
 <svelte:head><title>Cycle {id.slice(0, 8)} — AgentForge</title></svelte:head>
 
@@ -1545,6 +1672,50 @@
           </div>
         </div>
       {/if}
+    {/if}
+  {/if}
+
+  {#if activeTab === 'epic'}
+    <div class="epic-bar">
+      <span class="section-title">EPIC DECOMPOSITION</span>
+      <div style="flex:1"></div>
+      <Btn size="sm" onClick={loadEpic}>Refresh</Btn>
+    </div>
+
+    {#if epicLoading && !epicData && !epicEmpty}
+      <Card>
+        <div class="skel" style="height:36px"></div>
+        <div class="skel" style="height:80px;margin-top:8px"></div>
+      </Card>
+    {:else if epicError}
+      <Card style="border-color:color-mix(in srgb,var(--af-danger) 33%,transparent)">
+        <div class="error-row">
+          <span>Failed to load epic decomposition: <code>{epicError}</code></span>
+          <Btn size="sm" onClick={loadEpic}>Retry</Btn>
+        </div>
+      </Card>
+    {:else if epicEmpty || epicWaveGroups.length === 0}
+      <Card>
+        <div class="empty">No epic decomposition found for this cycle.</div>
+      </Card>
+    {:else if epicData}
+      <Card style="margin-bottom:14px">
+        <div class="items-head">
+          <div>
+            <div class="af2-mono items-version">{epicData.epicId ?? 'epic'}</div>
+            <div class="items-title">{epicChildCount} children · {epicWaveGroups.length} waves</div>
+            {#if epicData.rationale}
+              <div class="items-rationale af2-mono">{epicData.rationale}</div>
+            {/if}
+          </div>
+          <div class="items-pct">
+            <div class="af2-mono items-pct-num">{formatUsd(epicActualCost)}</div>
+            <div class="items-pct-sub">actual cost</div>
+          </div>
+        </div>
+      </Card>
+
+      {@render EpicWaveList(epicWaveGroups)}
     {/if}
   {/if}
 
@@ -2414,6 +2585,71 @@
     background: var(--af-grad-h, linear-gradient(90deg, var(--af-accent), var(--af-purple)));
     transition: width 700ms ease;
   }
+  .epic-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 4px 0 12px;
+  }
+  .epic-waves {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .epic-wave-head {
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--af-border);
+  }
+  .epic-wave-meta { margin-top: 4px; font-size: 10px; color: var(--af-dim); }
+  .epic-child-list { display: flex; flex-direction: column; }
+  .epic-child-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 110px;
+    gap: 14px;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--af-border);
+  }
+  .epic-child-row:last-child { border-bottom: none; }
+  @media (max-width: 680px) { .epic-child-row { grid-template-columns: 1fr; } }
+  .epic-child-main { min-width: 0; }
+  .epic-child-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+  }
+  .epic-child-id { font-size: 10px; color: var(--af-dim); }
+  .epic-child-title { font-size: 13px; color: var(--af-text); line-height: 1.45; }
+  .epic-files {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+  }
+  .epic-file {
+    max-width: 240px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 2px 6px;
+    border: 1px solid var(--af-border2);
+    border-radius: 4px;
+    background: var(--af-surface2);
+    color: var(--af-muted);
+    font-size: 10px;
+  }
+  .epic-child-cost {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: flex-start;
+    gap: 2px;
+    color: var(--af-text);
+    font-size: 13px;
+  }
+  @media (max-width: 680px) { .epic-child-cost { align-items: flex-start; } }
+  .epic-child-cost small { color: var(--af-dim); font-size: 10px; }
   .kanban {
     display: grid;
     gap: 12px;
