@@ -29,8 +29,8 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { AgentRuntime, loadAgentConfig, writeMemoryEntry, writeKnowledgeEntry, collectSprintItemTags, parseReviewFindingMetadata, extractFindingsByLevel, loadPriorGateKnownDebt, buildKnownDebtSection, resolveKnownDebt } from '@agentforge/core';
-import type { RunResult, GateVerdictMetadata, ReviewFindingMetadata } from '@agentforge/core';
+import { AgentRuntime, loadAgentConfig, writeMemoryEntry, writeKnowledgeEntry, collectSprintItemTags, parseReviewFindingMetadata, extractFindingsByLevel, loadPriorGateKnownDebt, buildKnownDebtSection, resolveKnownDebt, runGatePhase as runCoreGatePhase, runReviewPhase as runCoreReviewPhase } from '@agentforge/core';
+import type { RunResult, GateVerdictMetadata, ReviewFindingMetadata, PhaseContext as CorePhaseContext } from '@agentforge/core';
 import { generateId, nowIso } from '@agentforge/shared';
 import { globalStream } from '../routes/v5/stream.js';
 import { careerHook } from './career-hook.js';
@@ -279,6 +279,8 @@ export interface PhaseContext {
   bus: EventBus;
   /** Optional cycle id when invoked from the autonomous loop. */
   cycleId?: string;
+  /** Operator objective; present on epic/objective cycles. */
+  objective?: string;
 }
 
 export interface AgentRunSummary {
@@ -707,6 +709,11 @@ export async function runTestPhase(ctx: PhaseContext): Promise<PhaseResult> {
 }
 
 export async function runReviewPhase(ctx: PhaseContext): Promise<PhaseResult> {
+  if (ctx.objective !== undefined) {
+    const result = await runCoreReviewPhase(ctx as unknown as CorePhaseContext);
+    return result as unknown as PhaseResult;
+  }
+
   const result = await runLlmPhase(ctx, 'review');
 
   // Write review-finding memory entries for CRITICAL and MAJOR findings so the
@@ -775,6 +782,11 @@ export async function runReviewPhase(ctx: PhaseContext): Promise<PhaseResult> {
 // from narrative prose ("no major concerns", "not a critical path change").
 
 export async function runGatePhase(ctx: PhaseContext): Promise<PhaseResult> {
+  if (ctx.objective !== undefined) {
+    const result = await runCoreGatePhase(ctx as unknown as CorePhaseContext);
+    return result as unknown as PhaseResult;
+  }
+
   // Capture any pre-existing gate verdict before the LLM re-evaluates.
   // When a prior gate result exists (e.g. seeded from a previous cycle), we
   // use that as the authoritative verdict for the memory entry so the
