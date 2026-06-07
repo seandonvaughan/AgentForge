@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import FastifyCors from '@fastify/cors';
-import { join, dirname } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { join, dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { MessageBusV2 } from '@agentforge/core';
 import type { WorkspaceAdapter, WorkspaceRegistry } from '@agentforge/db';
@@ -74,6 +75,70 @@ function registerSecurityHeaders(app: FastifyInstance): void {
       reply.raw.setHeader(name, value);
     }
   });
+}
+
+const SAFE_CYCLE_ARTIFACT_ID = /^[a-zA-Z0-9_-]+$/;
+
+const cycleArtifactRoutes = [
+  { url: '/api/v5/cycles/:cycleId/decomposition', artifact: 'decomposition', parts: ['decomposition.json'] },
+  { url: '/api/v5/cycles/:cycleId/epic-review', artifact: 'epic-review', parts: ['phases', 'epic-review.json'] },
+  { url: '/api/v5/cycles/:cycleId/spend-report', artifact: 'spend-report', parts: ['spend-report.json'] },
+] as const;
+
+function containedCycleArtifactPath(projectRoot: string, cycleId: string, parts: readonly string[]): string | null {
+  if (!SAFE_CYCLE_ARTIFACT_ID.test(cycleId)) return null;
+
+  const cyclesDir = resolve(projectRoot, '.agentforge', 'cycles');
+  const artifactPath = resolve(cyclesDir, cycleId, ...parts);
+  const cyclesPrefix = cyclesDir.endsWith(sep) ? cyclesDir : `${cyclesDir}${sep}`;
+  return artifactPath.startsWith(cyclesPrefix) ? artifactPath : null;
+}
+
+export async function registerCycleArtifactRoutes(
+  app: FastifyInstance,
+  opts: { projectRoot: string; workspaceId: string },
+): Promise<void> {
+  for (const route of cycleArtifactRoutes) {
+    app.get(route.url, async (req, reply) => {
+      const { cycleId } = req.params as { cycleId: string };
+      const artifactPath = containedCycleArtifactPath(opts.projectRoot, cycleId, route.parts);
+
+      if (artifactPath === null) {
+        return reply.status(400).send({
+          error: 'Invalid cycle id',
+          code: 'INVALID_CYCLE_ID',
+          details: { cycleId },
+        });
+      }
+
+      if (!existsSync(artifactPath)) {
+        return reply.status(404).send({
+          error: 'Cycle artifact not found',
+          code: 'CYCLE_ARTIFACT_NOT_FOUND',
+          details: { cycleId, artifact: route.artifact },
+        });
+      }
+
+      try {
+        const data = JSON.parse(readFileSync(artifactPath, 'utf8')) as unknown;
+        return reply.send({
+          data,
+          meta: {
+            cycleId,
+            artifact: route.artifact,
+            workspaceId: opts.workspaceId,
+            timestamp: new Date().toISOString(),
+          },
+        });
+      } catch {
+        return reply.status(500).send({
+          error: 'Cycle artifact is not valid JSON',
+          code: 'INVALID_CYCLE_ARTIFACT',
+          details: { cycleId, artifact: route.artifact },
+        });
+      }
+    });
+  }
 }
 
 export interface ServerOptionsV5 {
@@ -204,6 +269,11 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
     // Cross-instance federation — in-memory dry-run, no adapter required
     await federationRoutes(app);
   }
+
+  await registerCycleArtifactRoutes(app, {
+    projectRoot,
+    workspaceId: options.adapter?.workspaceId ?? 'default',
+  });
 
   // ── Agent routes (reads .agentforge/agents/*.yaml — no adapter required) ──────
   // v9.0.0: registerV5Routes already calls agentRoutes in adapter mode, so
