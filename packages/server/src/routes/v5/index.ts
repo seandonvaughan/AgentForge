@@ -63,6 +63,7 @@ import { billingRoutes } from './billing.js';
 import { kbsRoutes } from './kbs.js';
 import { workspacesActiveRoutes } from './workspaces-active.js';
 import { runStreamRoutes } from './run-stream.js';
+import { cyclesRoutes } from './cycles.js';
 import { cyclePrsRoutes } from './cycle-prs.js';
 import { cycleCostBreakdownRoutes } from './cycle-cost-breakdown.js';
 import { qualityRoutes } from './quality.js';
@@ -552,6 +553,9 @@ export async function registerV5Routes(
 
   // ── Per-run SSE stream (T5.2 — AnthropicSdkTransport cloud streaming) ────
   await runStreamRoutes(app);
+
+  // ── Cycles (reads .agentforge/cycles/*/) ────────────────────────────────
+  await cyclesRoutes(app, { projectRoot: opts.projectRoot ?? process.cwd() });
 
   // ── Cycle PR ledger (MergeQueue enriched with CI status) ─────────────────
   await cyclePrsRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});

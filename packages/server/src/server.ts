@@ -239,7 +239,10 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
   await sprintsRoutes(app, { projectRoot });
 
   // ── Cycles (reads .agentforge/cycles/*/ — no adapter required) ───────────────
-  await cyclesRoutes(app, { projectRoot });
+  // Guard: registerV5Routes already calls cyclesRoutes in adapter mode.
+  if (!options.adapter || !options.registry) {
+    await cyclesRoutes(app, { projectRoot });
+  }
   await cyclesPreviewRoutes(app, { projectRoot });
   await researchRunsRoutes(app, { projectRoot });
 
