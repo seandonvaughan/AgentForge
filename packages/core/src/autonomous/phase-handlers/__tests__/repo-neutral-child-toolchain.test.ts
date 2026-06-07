@@ -38,7 +38,8 @@ describe('detectPackageCommands', () => {
     writeFileSync(join(dir, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
     const d = detectPackageCommands(dir);
     expect(d.packageManager).toBe('pnpm');
-    expect(d.typeCheckCommand).toBe('corepack pnpm exec tsc -b --noEmit --pretty false');
+    // No --noEmit: tsc -b --noEmit fails TS6310 on project-reference repos.
+    expect(d.typeCheckCommand).toBe('corepack pnpm exec tsc -b --pretty false');
     expect(d.testCommand).toBe('corepack pnpm exec vitest');
   });
 
@@ -107,9 +108,10 @@ describe('verifyChildWorktree — lockfile-detected default commands', () => {
     expect(calls[1]?.args.slice(0, 2)).toEqual(['pnpm', 'exec']);
   });
 
-  it('pnpm worktree WITH node_modules: no install call (home-repo behavior unchanged)', async () => {
+  it('pnpm worktree with a COMPLETED install (.modules.yaml marker): no install call', async () => {
     writeFileSync(join(dir, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
     mkdirSync(join(dir, 'node_modules'), { recursive: true });
+    writeFileSync(join(dir, 'node_modules', '.modules.yaml'), 'installed\n');
     const calls: Array<{ cmd: string; args: string[] }> = [];
     const runner = async (cmd: string, args: string[]): Promise<ChildVerifyCommandResult> => {
       calls.push({ cmd, args });
@@ -123,6 +125,26 @@ describe('verifyChildWorktree — lockfile-detected default commands', () => {
     });
     expect(calls[0]?.args).not.toContain('install');
     expect(calls[0]?.args.slice(0, 2)).toEqual(['pnpm', 'exec']);
+  });
+
+  it('PARTIAL node_modules without the completion marker → install runs anyway', async () => {
+    // Cycle 72b6b50e: pooled worktrees reused from a killed run carried partial
+    // node_modules (no .bin links); a bare directory-existence check skipped
+    // provisioning and pnpm exec still failed "tsc not found".
+    writeFileSync(join(dir, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
+    mkdirSync(join(dir, 'node_modules', 'half-installed-pkg'), { recursive: true });
+    const calls: Array<{ cmd: string; args: string[] }> = [];
+    const runner = async (cmd: string, args: string[]): Promise<ChildVerifyCommandResult> => {
+      calls.push({ cmd, args });
+      return { ok: true, code: 0, output: '' };
+    };
+    await verifyChildWorktree({
+      worktreePath: dir,
+      changedFiles: ['src/a.ts'],
+      declaredFiles: ['src/a.ts'],
+      runner,
+    });
+    expect(calls[0]?.args.slice(0, 2)).toEqual(['pnpm', 'install']);
   });
 
   it('install failure → single structured deps failure, toolchain not attempted', async () => {

@@ -55,7 +55,11 @@ export function detectPackageCommands(rootDir: string): DetectedPackageCommands 
   if (existsSync(join(rootDir, 'pnpm-lock.yaml'))) {
     return {
       packageManager: 'pnpm',
-      typeCheckCommand: 'corepack pnpm exec tsc -b --noEmit --pretty false',
+      // NO --noEmit here: on project-reference workspaces `tsc -b --noEmit`
+      // fails with TS6310 ("referenced project may not disable emit") — child-5
+      // on cycle 72b6b50e failed exactly this way. Build mode emitting into the
+      // throwaway worktree's dist/ is harmless and matches `pnpm build`.
+      typeCheckCommand: 'corepack pnpm exec tsc -b --pretty false',
       testCommand: 'corepack pnpm exec vitest',
       toolingNote:
         'use `corepack pnpm` for every package/test command in this repo (e.g. `corepack pnpm exec vitest run <file>`); do not use bare `pnpm` or `npx`. If the isolated worktree is missing installed workspace links, run `corepack pnpm install --frozen-lockfile` first.',
@@ -255,14 +259,29 @@ async function ensureWorktreeDependencies(
   detected: DetectedPackageCommands,
   runner: ChildVerifyCommandRunner,
 ): Promise<ChildVerifyFailure | null> {
-  if (existsSync(join(worktreePath, 'node_modules'))) return null;
+  // Completion MARKERS, not bare existsSync(node_modules): a killed prior run
+  // leaves PARTIAL node_modules in pooled worktrees (no .bin links), which a
+  // directory-existence check happily skips — observed on cycle 72b6b50e where
+  // reused run-1 worktrees carried half-installed trees and `pnpm exec tsc`
+  // still failed "not found". Each manager writes its marker at install
+  // COMPLETION: pnpm → node_modules/.modules.yaml, npm → node_modules/
+  // .package-lock.json. No marker → (re-)install; installs are idempotent and
+  // near-instant on a warm store when the tree is actually complete.
+  const installed = (marker: string): boolean =>
+    existsSync(join(worktreePath, 'node_modules', marker));
   const install: { cmd: string; args: string[] } | null =
     detected.packageManager === 'pnpm'
-      ? { cmd: 'corepack', args: ['pnpm', 'install', '--frozen-lockfile', '--prefer-offline'] }
+      ? installed('.modules.yaml')
+        ? null
+        : { cmd: 'corepack', args: ['pnpm', 'install', '--frozen-lockfile', '--prefer-offline'] }
       : detected.packageManager === 'yarn'
-        ? { cmd: 'yarn', args: ['install', '--frozen-lockfile'] }
+        ? installed('.yarn-state.yml') || installed('.yarn-integrity')
+          ? null
+          : { cmd: 'yarn', args: ['install', '--frozen-lockfile'] }
         : existsSync(join(worktreePath, 'package-lock.json'))
-          ? { cmd: 'npm', args: ['ci'] }
+          ? installed('.package-lock.json')
+            ? null
+            : { cmd: 'npm', args: ['ci'] }
           : null; // npm repo without a lockfile — npx self-provisions; skip.
   if (!install) return null;
   let res: ChildVerifyCommandResult;
