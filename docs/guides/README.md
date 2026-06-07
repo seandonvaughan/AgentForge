@@ -18,6 +18,12 @@ Start here if you're new to autonomous cycles:
   - Running your first cycle
   - Understanding cycle output
 
+- **[Objective Mode Operator Guide](./objective-mode.md)** — Drive a high-level objective end to end
+  - Running `agentforge objective`
+  - Budget-band sizing for child work
+  - Objective artifacts and spend reports
+  - Dashboard Epic and Spend views
+
 ### Reference & Configuration
 
 Detailed reference and configuration options:
@@ -45,9 +51,12 @@ Detailed reference and configuration options:
 | Question | Answer |
 |---|---|
 | Run my first autonomous cycle? | [Autonomous Loop Guide → Running a Cycle](./autonomous-loop.md#running-a-cycle) |
+| Run a high-level objective? | [Objective Mode Guide → End-to-End Operator Flow](./objective-mode.md#end-to-end-operator-flow) |
 | Set budget limits? | [Configuration Reference → budget](./autonomous-config-reference.md#budget) |
+| Size an objective-mode budget? | [Objective Mode Guide → Budget Band Math](./objective-mode.md#budget-band-math) |
 | Mark code for autonomous work? | [Autonomous Loop Guide → TODO(autonomous) Markers](./autonomous-loop.md#todoautonomous-markers) |
 | Understand cycle costs? | [Autonomous Loop Guide → Cost & Budget](./autonomous-loop.md#cost--budget) |
+| Inspect objective artifacts? | [Objective Mode Guide → Cycle Artifacts](./objective-mode.md#cycle-artifacts) |
 | Debug a failed cycle? | [Troubleshooting → Cycle Stops Early](./autonomous-troubleshooting.md#cycle-stops-early) |
 | Lower my cycle costs? | [Troubleshooting → High Costs](./autonomous-troubleshooting.md#high-costs) |
 | Speed up my cycle? | [Configuration Reference → limits](./autonomous-config-reference.md#limits) |
