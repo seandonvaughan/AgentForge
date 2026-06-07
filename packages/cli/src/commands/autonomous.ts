@@ -577,6 +577,14 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
         execute: (ctx: PhaseContext) => runExecutePhase(ctx, {
           maxParallelism: config.limits.maxExecutePhaseParallelism,
           requireWorktrees: !disableWorktrees,
+          // Wave 5 T1 — per-item resume: without this flag the execute phase
+          // never consulted checkpoint-execute.json on `--resume`, so the
+          // CLI's per-item resume was inert (cycle 4e451e22 follow-up).
+          resume: Boolean(resumeCheckpoint),
+          // Known-flaky exclusion for the per-child scoped verify bar.
+          ...(config.testing.knownFlakyTestFiles !== undefined
+            ? { childVerifyExcludeTestFiles: config.testing.knownFlakyTestFiles }
+            : {}),
         }),
         test: (ctx: PhaseContext) => runTestPhase(ctx),
         review: (ctx: PhaseContext) => runReviewPhase(ctx),

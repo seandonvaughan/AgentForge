@@ -197,8 +197,12 @@ export class ItemCheckpointWriter {
     // Read existing progress (best-effort).
     let progress: ExecuteProgress = this._readProgress(cycleId, checkpointPath);
 
-    // Append item to completedItemIds (deduplicate).
-    if (!progress.completedItemIds.includes(record.itemId)) {
+    // Append item to completedItemIds (deduplicate) — but ONLY items that
+    // actually completed. Failed/skipped items must stay resumable: recording
+    // every settled item here made `--resume` skip FAILED children as if done
+    // (observed on cycle 4e451e22 — 10 verify-failed children landed in the
+    // skip set alongside the 7 that passed).
+    if (record.status === 'completed' && !progress.completedItemIds.includes(record.itemId)) {
       progress = {
         ...progress,
         completedItemIds: [...progress.completedItemIds, record.itemId],

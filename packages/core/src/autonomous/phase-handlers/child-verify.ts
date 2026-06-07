@@ -149,6 +149,19 @@ export interface VerifyChildWorktreeOptions {
    * package manager (see detectPackageCommands).
    */
   testCommand?: string;
+  /**
+   * Known-flaky / environment-specific test files to exclude from the scoped
+   * run (testing.knownFlakyTestFiles). `vitest related` transitively resolves
+   * tests by import graph, so a pre-existing darwin-only failure (e.g. the
+   * /var vs /private/var realpath tests) gets pulled into UNRELATED children's
+   * runs and fails them for an environmental issue that is not theirs —
+   * observed failing 9 children on cycle 4e451e22. Entries are passed to
+   * vitest as `--exclude <path>` globs and dropped from the force-include
+   * list. The cycle-level VERIFY still runs the FULL suite with its own
+   * newFailures-vs-baseline semantics, so nothing is silently skipped at
+   * release time.
+   */
+  excludeTestFiles?: string[];
 }
 
 export interface ChildVerifyResult {
@@ -358,10 +371,19 @@ export async function verifyChildWorktree(
     runner = realCommandRunner,
     typeCheckCommand = detected.typeCheckCommand,
     testCommand = detected.testCommand,
+    excludeTestFiles = [],
   } = opts;
 
   const failures: ChildVerifyFailure[] = [];
-  const affectedTests = selectChildAffectedFiles(changedFiles);
+  // Drop known-flaky files from the force-include list; the same entries are
+  // also passed to vitest as --exclude so `related` resolution cannot pull
+  // them back in transitively.
+  const excludeNorm = excludeTestFiles.map(normalizePath).filter((f) => f.length > 0);
+  const isExcluded = (file: string): boolean => {
+    const norm = normalizePath(file);
+    return excludeNorm.some((ex) => norm === ex || norm.endsWith('/' + ex));
+  };
+  const affectedTests = selectChildAffectedFiles(changedFiles).filter((f) => !isExcluded(f));
 
   // ── (1) Iron-law: non-empty diff ────────────────────────────────────────
   if (changedFiles.length === 0) {
@@ -467,7 +489,13 @@ export async function verifyChildWorktree(
   if (affectedTests.length > 0) {
     const vt = splitCommand(testCommand);
     if (vt.cmd.length > 0) {
-      const testArgs = [...vt.args, 'related', '--run', ...affectedTests];
+      // Full relative paths are valid vitest globs as-is; bare basenames need
+      // the **/ prefix to match at any depth.
+      const excludeArgs = excludeNorm.flatMap((ex) => [
+        '--exclude',
+        ex.includes('/') ? ex : `**/${ex}`,
+      ]);
+      const testArgs = [...vt.args, 'related', '--run', ...excludeArgs, ...affectedTests];
       let res: ChildVerifyCommandResult;
       try {
         res = await runner(vt.cmd, testArgs, worktreePath);

@@ -122,6 +122,14 @@ export interface CycleConfig {
      * branch verifier runs buildCommand, typeCheckCommand, then command.
      */
     multiPrVerifyCommands?: string[];
+    /**
+     * Known-flaky / environment-specific test files excluded from the
+     * per-child scoped verify run (epic mode). The cycle-level VERIFY still
+     * runs the full suite with newFailures-vs-baseline semantics, so these
+     * are never silently skipped at release time. Paths are repo-relative;
+     * bare basenames match at any depth.
+     */
+    knownFlakyTestFiles?: string[];
   };
   scoring: {
     agentId: string;

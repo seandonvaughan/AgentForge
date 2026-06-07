@@ -235,4 +235,13 @@ function validateConfig(config: CycleConfig): void {
   ) {
     throw new Error('testing.multiPrVerifyCommands must be an array of strings');
   }
+  if (
+    config.testing.knownFlakyTestFiles !== undefined &&
+    (
+      !Array.isArray(config.testing.knownFlakyTestFiles) ||
+      config.testing.knownFlakyTestFiles.some((f) => typeof f !== 'string')
+    )
+  ) {
+    throw new Error('testing.knownFlakyTestFiles must be an array of strings');
+  }
 }

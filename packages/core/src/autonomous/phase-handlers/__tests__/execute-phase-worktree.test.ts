@@ -539,7 +539,10 @@ describe('execute-phase worktree integration', () => {
       readFileSync(join(tmpRoot, '.agentforge', 'cycles', 'cycle-wt-1', 'checkpoint-execute.json'), 'utf8'),
     ) as { completedItemIds?: string[]; schemaVersion?: number };
     expect(checkpoint.schemaVersion).toBe(2);
-    expect(checkpoint.completedItemIds).toContain('item-1');
+    // Failed items stay OUT of the resume skip set (cycle 4e451e22 fix): the
+    // terminal checkpoint is persisted, but a failed allocation must be
+    // re-dispatched on --resume rather than skipped as if completed.
+    expect(checkpoint.completedItemIds).not.toContain('item-1');
   });
 
   it('reuses the original worktree session on gate retry', async () => {

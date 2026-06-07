@@ -870,6 +870,13 @@ export interface ExecutePhaseOptions {
   childVerifyTypeCheckCommand?: string;
   childVerifyTestCommand?: string;
   /**
+   * Known-flaky / environment-specific test files excluded from the per-child
+   * scoped test run (threaded from testing.knownFlakyTestFiles). See
+   * VerifyChildWorktreeOptions.excludeTestFiles for the rationale (cycle
+   * 4e451e22: a darwin-only realpath test failed 9 unrelated children).
+   */
+  childVerifyExcludeTestFiles?: string[];
+  /**
    * P0.5 — Escape hatch: when true the per-child verify bar is skipped entirely
    * even in epic-mode. Used by tests that exercise unrelated epic behaviour and
    * don't want a real typecheck/vitest subprocess to run. The hook is ALSO
@@ -1408,6 +1415,9 @@ export async function runExecutePhase(
                 : {}),
               ...(options.childVerifyTestCommand !== undefined
                 ? { testCommand: options.childVerifyTestCommand }
+                : {}),
+              ...(options.childVerifyExcludeTestFiles !== undefined
+                ? { excludeTestFiles: options.childVerifyExcludeTestFiles }
                 : {}),
             });
             if (childResult.requiresFullGates) {
