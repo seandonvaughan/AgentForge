@@ -244,3 +244,55 @@ describe('buildItemPrompt — repo-neutral tooling + declared scope', () => {
     expect(prompt).not.toContain('Declared file scope');
   });
 });
+
+describe('verifyChildWorktree — known-flaky test exclusion (cycle 4e451e22)', () => {
+  it('drops excluded files from the force-include list AND passes --exclude globs', async () => {
+    const calls: Array<{ cmd: string; args: string[] }> = [];
+    const runner = async (cmd: string, args: string[]): Promise<ChildVerifyCommandResult> => {
+      calls.push({ cmd, args });
+      return { ok: true, code: 0, output: '' };
+    };
+    await verifyChildWorktree({
+      worktreePath: dir, // npm, no lockfile → no install
+      changedFiles: [
+        'src/a.ts',
+        'src/__tests__/a.test.ts',
+        'packages/cli/src/__tests__/autonomous-worktree.test.ts',
+      ],
+      declaredFiles: ['src/a.ts', 'src/__tests__/a.test.ts', 'packages/cli/src/__tests__/autonomous-worktree.test.ts'],
+      runner,
+      excludeTestFiles: ['packages/cli/src/__tests__/autonomous-worktree.test.ts'],
+    });
+    const testCall = calls.find((c) => c.args.includes('related'));
+    expect(testCall).toBeDefined();
+    // The flaky path appears EXACTLY once — as the --exclude glob value — and
+    // is therefore not in the force-included file list that follows --run.
+    const flaky = 'packages/cli/src/__tests__/autonomous-worktree.test.ts';
+    const occurrences = testCall!.args.filter((a) => a === flaky);
+    expect(occurrences).toHaveLength(1);
+    const exIdx = testCall!.args.indexOf('--exclude');
+    expect(exIdx).toBeGreaterThan(-1);
+    expect(testCall!.args[exIdx + 1]).toBe(flaky);
+    // …and the real affected files still run.
+    expect(testCall!.args).toContain('src/a.ts');
+    expect(testCall!.args).toContain('src/__tests__/a.test.ts');
+  });
+
+  it('bare basenames get the **/ prefix in the exclude glob', async () => {
+    const calls: Array<{ cmd: string; args: string[] }> = [];
+    const runner = async (cmd: string, args: string[]): Promise<ChildVerifyCommandResult> => {
+      calls.push({ cmd, args });
+      return { ok: true, code: 0, output: '' };
+    };
+    await verifyChildWorktree({
+      worktreePath: dir,
+      changedFiles: ['src/a.ts'],
+      declaredFiles: ['src/a.ts'],
+      runner,
+      excludeTestFiles: ['flaky.test.ts'],
+    });
+    const testCall = calls.find((c) => c.args.includes('related'));
+    const exIdx = testCall!.args.indexOf('--exclude');
+    expect(testCall!.args[exIdx + 1]).toBe('**/flaky.test.ts');
+  });
+});

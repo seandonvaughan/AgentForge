@@ -67,16 +67,19 @@ describe('ItemCheckpointWriter', () => {
     expect(progress.totalItems).toBe(8);
   });
 
-  it('records failed status in completedItemIds', async () => {
+  // completedItemIds is `--resume`'s SKIP SET: anything in it is never
+  // re-dispatched. Failed/skipped items must stay resumable — recording every
+  // settled item made resume skip FAILED children as if done (cycle 4e451e22).
+  it('failed status is NOT recorded in completedItemIds (stays resumable)', async () => {
     await writer.enqueue(CYCLE_ID, 'item-aabbccdd', 'failed', 'coder-agent', null);
     const progress = readProgress(root);
-    expect(progress.completedItemIds).toContain('item-aabbccdd');
+    expect(progress.completedItemIds).not.toContain('item-aabbccdd');
   });
 
-  it('records skipped status in completedItemIds', async () => {
+  it('skipped status is NOT recorded in completedItemIds (stays resumable)', async () => {
     await writer.enqueue(CYCLE_ID, 'item-aabbccdd', 'skipped', 'coder-agent', null);
     const progress = readProgress(root);
-    expect(progress.completedItemIds).toContain('item-aabbccdd');
+    expect(progress.completedItemIds).not.toContain('item-aabbccdd');
   });
 
   // ── Atomic write ───────────────────────────────────────────────────────────
@@ -122,7 +125,9 @@ describe('ItemCheckpointWriter', () => {
     writer.enqueue(CYCLE_ID, 'item-aa000003', 'failed');
     await writer.flush();
     const progress = readProgress(root);
-    expect(progress.completedItemIds).toHaveLength(3);
+    // Only the two completed items land in the resume skip set.
+    expect(progress.completedItemIds).toHaveLength(2);
+    expect(progress.completedItemIds).not.toContain('item-aa000003');
   });
 
   // ── Concurrent-write serialisation fuzz ───────────────────────────────────
