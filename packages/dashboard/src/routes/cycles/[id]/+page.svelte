@@ -129,6 +129,22 @@
   let epicError = $state<string | null>(null);
   let epicEmpty = $state(false);
 
+  // ── Epic-review verdict (header card) ─────────────────────────────────────
+  // Only epic cycles have phases/epic-review.json; signal cycles 404 here, so
+  // a null `epicReview` doubles as the "not an epic cycle" signal and the card
+  // stays hidden.
+  interface EpicReviewFaultedItem {
+    itemId?: string;
+    reason?: string;
+    files?: string[];
+  }
+  interface EpicReviewView {
+    verdict: string | null;
+    rationale: string | null;
+    faultedItems: EpicReviewFaultedItem[];
+  }
+  let epicReview = $state<EpicReviewView | null>(null);
+
   interface SpendReportPerItem {
     itemId: string;
     title: string;
@@ -879,6 +895,25 @@
     }
   }
 
+  async function loadEpicReview(): Promise<void> {
+    if (!browser || !id) return;
+    try {
+      const res = await fetch(withWorkspace(`/api/v5/cycles/${id}/epic-review`));
+      if (res.status === 404) {
+        epicReview = null;
+        return;
+      }
+      if (!res.ok) return;
+      const json = (await res.json()) as { data?: EpicReviewView } | EpicReviewView;
+      const view = ('data' in json && json.data ? json.data : json) as EpicReviewView;
+      epicReview = {
+        verdict: view.verdict ?? null,
+        rationale: view.rationale ?? null,
+        faultedItems: Array.isArray(view.faultedItems) ? view.faultedItems : [],
+      };
+    } catch { /* silent — header card simply stays hidden */ }
+  }
+
   async function loadSpendReport(): Promise<void> {
     if (!browser || !id) return;
     spendLoading = true;
@@ -996,6 +1031,7 @@
       loadSprint(),
       loadAgents(),
       loadEpic(),
+      loadEpicReview(),
       loadScoring(),
       loadEvents(),
       loadTypecheckFailure(),
@@ -1102,6 +1138,7 @@
         void loadSprint();
         void loadAgents();
         void loadEpic();
+        void loadEpicReview();
         // Poll events too — pipeline tab phase status is driven by events
         // (phase.start/result/failure). Without this, the pipeline view
         // never updates between phase boundaries.
@@ -1150,6 +1187,20 @@
     if (l === 'in_progress' || l === 'running') return 'purple';
     if (l === 'planned' || l === 'pending') return 'warning';
     return 'muted';
+  }
+
+  function epicVerdictVariant(verdict: string | null): 'success' | 'danger' | 'warning' | 'muted' {
+    const v = (verdict ?? '').toUpperCase();
+    if (v === 'APPROVE' || v === 'APPROVED' || v === 'PASS') return 'success';
+    if (v === 'REQUEST_CHANGES' || v === 'REJECT' || v === 'REJECTED' || v === 'FAIL' || v === 'BLOCK') return 'danger';
+    if (v === 'COMMENT' || v === 'WARN' || v === 'WARNING') return 'warning';
+    return 'muted';
+  }
+
+  function epicRationaleExcerpt(text: string, max = 240): string {
+    const trimmed = text.trim();
+    if (trimmed.length <= max) return trimmed;
+    return `${trimmed.slice(0, max).trimEnd()}…`;
   }
 
   let eventFilter = $state<string>('all');
@@ -1274,6 +1325,33 @@
     return [cx + r * scale * Math.cos(a), cy + r * scale * Math.sin(a)];
   }
 </script>
+
+{#snippet EpicVerdictCard(review: EpicReviewView)}
+  <div class="epic-verdict-card" role="status" aria-label="Epic review verdict">
+    <div class="epic-verdict-head">
+      <span class="epic-verdict-label">EPIC REVIEW</span>
+      <Badge variant={epicVerdictVariant(review.verdict)}>
+        {(review.verdict ?? 'PENDING').toUpperCase().replace(/_/g, ' ')}
+      </Badge>
+    </div>
+    {#if review.rationale}
+      <p class="epic-verdict-rationale">{epicRationaleExcerpt(review.rationale)}</p>
+    {/if}
+    {#if review.faultedItems.length > 0}
+      <div class="epic-verdict-faulted">
+        <div class="epic-verdict-faulted-title af2-mono">
+          {review.faultedItems.length} faulted item{review.faultedItems.length === 1 ? '' : 's'}
+        </div>
+        {#each review.faultedItems as item, i (item.itemId ?? i)}
+          <div class="epic-verdict-faulted-row">
+            <span class="af2-mono epic-verdict-faulted-id">#{item.itemId ?? 'item'}</span>
+            {#if item.reason}<span class="epic-verdict-faulted-reason">{item.reason}</span>{/if}
+          </div>
+        {/each}
+      </div>
+    {/if}
+  </div>
+{/snippet}
 
 {#snippet EpicWaveList(waves: WaveGroup<EpicChild>[])}
   <div class="epic-waves">
@@ -1490,6 +1568,10 @@
       <div class="action-error af2-mono">{actionError}</div>
     {/if}
   </div>
+
+  {#if epicReview}
+    {@render EpicVerdictCard(epicReview)}
+  {/if}
 
   {#if showTerminalBanner}
     <div class="terminal-banner" role="alert">
@@ -2460,6 +2542,60 @@
     border-radius: 6px;
     text-align: right;
   }
+  .epic-verdict-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 16px;
+    margin-bottom: 12px;
+    background: color-mix(in srgb, var(--af-purple) 7%, var(--af-surface));
+    border: 1px solid color-mix(in srgb, var(--af-purple) 30%, transparent);
+    border-radius: 8px;
+    color: var(--af-text);
+  }
+  .epic-verdict-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .epic-verdict-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: var(--af-dim);
+  }
+  .epic-verdict-rationale {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--af-text);
+  }
+  .epic-verdict-faulted {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-top: 8px;
+    border-top: 1px solid var(--af-border);
+  }
+  .epic-verdict-faulted-title {
+    font-size: 11px;
+    color: var(--af-danger);
+  }
+  .epic-verdict-faulted-row {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    font-size: 12px;
+  }
+  .epic-verdict-faulted-id {
+    color: var(--af-dim);
+    flex-shrink: 0;
+  }
+  .epic-verdict-faulted-reason {
+    color: var(--af-text);
+    line-height: 1.4;
+  }
+
   .terminal-banner {
     display: grid;
     grid-template-columns: minmax(220px, 0.9fr) minmax(280px, 1.4fr);
