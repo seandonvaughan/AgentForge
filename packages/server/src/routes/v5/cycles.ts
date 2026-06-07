@@ -1605,6 +1605,29 @@ export async function cyclesRoutes(
     }
   });
 
+  // GET /api/v5/cycles/:id/spend-report ────────────────────────────────────
+  app.get('/api/v5/cycles/:id/spend-report', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!SAFE_ID.test(id)) return reply.status(400).send({ error: 'Invalid cycle id' });
+    const br = baseForRequest(req);
+    if ('error' in br) return reply.status(br.error.status).send(br.error.body);
+    const dir = safeJoin(br.base, id);
+    if (!dir || !existsSync(dir)) return reply.status(404).send({ error: 'Cycle not found' });
+
+    const reportFile = join(dir, 'spend-report.json');
+    if (!existsSync(reportFile)) return reply.status(404).send({ error: 'spend-report.json not found' });
+
+    const report = readJsonIfExists(reportFile);
+    if (report === null) return reply.status(500).send({ error: 'Failed to parse spend-report.json' });
+    return reply.send({
+      data: report,
+      meta: {
+        timestamp: new Date().toISOString(),
+        workspaceId: br.workspaceId,
+      },
+    });
+  });
+
   // GET /api/v5/cycles/:id/sprint ────────────────────────────────────────────
   // Returns the live sprint/plan for this cycle. Priority: (1) plan.json in cycle
   // dir (new cycles), (2) sprint-link.json → legacy sprints/ file, (3) timestamp
