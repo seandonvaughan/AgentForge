@@ -109,7 +109,7 @@ export type ChildVerifyCommandRunner = (
 /** A single deterministic failure (or warning) produced by a child-verify check. */
 export interface ChildVerifyFailure {
   /** Which check produced this entry. */
-  check: 'iron-law' | 'scope' | 'requires-tests' | 'typecheck' | 'tests' | 'ci-config';
+  check: 'iron-law' | 'scope' | 'requires-tests' | 'deps' | 'typecheck' | 'tests' | 'ci-config';
   /**
    * Severity. `failure` blocks the child (ok=false). `warning` is advisory and
    * does NOT by itself flip ok to false (e.g. out-of-scope files when no scope
@@ -237,6 +237,51 @@ export function selectChildAffectedFiles(changedFiles: string[]): string[] {
   return out;
 }
 
+/**
+ * Ensure the worktree has installed dependencies before running its toolchain.
+ *
+ * A fresh git worktree of a pnpm workspace has NO node_modules (pnpm links per
+ * package from the store), so `corepack pnpm exec tsc` fails with
+ * ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL "Command tsc not found" before the child's
+ * code is even considered — observed as 22/22 children failing on the first
+ * $300 epic run (cycle cbe1ec58). The multi-PR verify path already installs per
+ * worktree; the per-child bar now does the same, once, only when node_modules
+ * is absent. npm/yarn worktrees get the analogous install. A failed install is
+ * surfaced as a structured `deps` failure rather than a misleading
+ * typecheck/tests failure.
+ */
+async function ensureWorktreeDependencies(
+  worktreePath: string,
+  detected: DetectedPackageCommands,
+  runner: ChildVerifyCommandRunner,
+): Promise<ChildVerifyFailure | null> {
+  if (existsSync(join(worktreePath, 'node_modules'))) return null;
+  const install: { cmd: string; args: string[] } | null =
+    detected.packageManager === 'pnpm'
+      ? { cmd: 'corepack', args: ['pnpm', 'install', '--frozen-lockfile', '--prefer-offline'] }
+      : detected.packageManager === 'yarn'
+        ? { cmd: 'yarn', args: ['install', '--frozen-lockfile'] }
+        : existsSync(join(worktreePath, 'package-lock.json'))
+          ? { cmd: 'npm', args: ['ci'] }
+          : null; // npm repo without a lockfile — npx self-provisions; skip.
+  if (!install) return null;
+  let res: ChildVerifyCommandResult;
+  try {
+    res = await runner(install.cmd, install.args, worktreePath);
+  } catch (err) {
+    res = { ok: false, code: null, output: err instanceof Error ? err.message : String(err) };
+  }
+  if (res.ok) return null;
+  return {
+    check: 'deps',
+    severity: 'failure',
+    message:
+      `Worktree dependency install failed (exit ${res.code ?? 'signal'}): ` +
+      `${install.cmd} ${install.args.join(' ')}`,
+    outputTail: tail(res.output),
+  };
+}
+
 /** The default production command runner: execFile, no shell. Output is tailed. */
 const realCommandRunner: ChildVerifyCommandRunner = async (cmd, args, cwd) => {
   try {
@@ -358,6 +403,22 @@ export async function verifyChildWorktree(
         ciConfigChanges.map(normalizePath).join(', ') +
         '); the epic-level VERIFY must run verify:gates.',
     });
+  }
+
+  // ── (1.5) Worktree dependency provisioning (pnpm/yarn/npm-with-lockfile) ──
+  // Must precede the toolchain checks: without node_modules they fail with a
+  // misleading "Command tsc/vitest not found" regardless of the child's code.
+  const depsFailure = await ensureWorktreeDependencies(worktreePath, detected, runner);
+  if (depsFailure) {
+    failures.push(depsFailure);
+    // The toolchain cannot run — return the structural reason alone instead of
+    // burying it under bogus typecheck/tests failures.
+    return {
+      ok: false,
+      failures,
+      requiresFullGates,
+      affectedTests,
+    };
   }
 
   // ── (2) Scoped typecheck inside the worktree ────────────────────────────
