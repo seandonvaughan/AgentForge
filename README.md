@@ -165,6 +165,18 @@ src/
   server/       Root compatibility server bootstrap
 ```
 
+## Related Documentation
+
+| Guide | Description |
+|---|---|
+| [Objective Mode](docs/guides/objective-mode.md) | Run a single natural-language objective under a budget cap — decompose, execute, epic review, PR |
+| [Autonomous Loop](docs/guides/autonomous-loop.md) | 9-phase cycle internals: plan → assign → execute → test → review → gate → release → learn |
+| [Configuration Reference](docs/guides/autonomous-config-reference.md) | All `autonomous.yaml` options |
+| [Runtime Modes](docs/runtime-modes.md) | `AGENTFORGE_RUNTIME` deep-dive |
+| [API Reference](docs/api-reference.md) | v5 REST endpoint catalog |
+| [Release and Security Gates](docs/release-and-security-gates.md) | Gate policy and release checklist |
+| [Troubleshooting](docs/external-project-troubleshooting.md) | Common failure modes and fixes |
+
 ## License
 
 MIT
