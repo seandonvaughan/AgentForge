@@ -1901,6 +1901,8 @@ export async function cyclesRoutes(
       maxAgents?: number;
       tags?: unknown;
       fallbackEnabled?: unknown;
+      // objective-launch fields
+      objective?: unknown;
     };
 
     if (body.budgetUsd !== undefined) {
@@ -1958,6 +1960,11 @@ export async function cyclesRoutes(
     if (body.fastMode !== undefined && typeof body.fastMode !== 'boolean') {
       return reply.status(400).send({ error: 'fastMode must be a boolean' });
     }
+    if (body.objective !== undefined) {
+      if (typeof body.objective !== 'string' || body.objective.trim().length === 0) {
+        return reply.status(400).send({ error: 'objective must be a non-empty string' });
+      }
+    }
 
     const budgetEnv = typeof body.budgetUsd === 'number' && body.budgetUsd > 0
       ? { AUTONOMOUS_BUDGET_USD: String(body.budgetUsd) }
@@ -1993,6 +2000,9 @@ export async function cyclesRoutes(
       ? { AUTONOMOUS_BASE_BRANCH: resolvedBaseBranch }
       : {};
     const dryRunEnv = body.dryRun === true ? { AUTONOMOUS_DRY_RUN: 'true' } : {};
+    const objectiveEnv = typeof body.objective === 'string' && body.objective.trim().length > 0
+      ? { AUTONOMOUS_OBJECTIVE: body.objective.trim() }
+      : {};
 
     const cycleId = randomUUID();
     const startedAt = new Date().toISOString();
@@ -2048,6 +2058,7 @@ export async function cyclesRoutes(
       runtimeMode: 'codex-cli',
       workspaceId,
       fastMode: body.fastMode === true,
+      objective: typeof body.objective === 'string' && body.objective.trim().length > 0 ? body.objective.trim() : null,
     };
     try {
       writeFileSync(join(cycleDir, 'cycle-config.json'), JSON.stringify(cycleConfig, null, 2));
@@ -2076,6 +2087,7 @@ export async function cyclesRoutes(
           ...branchPrefixEnv,
           ...baseBranchEnv,
           ...dryRunEnv,
+          ...objectiveEnv,
         },
       });
       bindCycleChildLifecycle(child, cycleId);
@@ -2117,6 +2129,9 @@ export async function cyclesRoutes(
       tags,
       fallbackEnabled: body.fallbackEnabled ?? null,
       fastMode: body.fastMode === true,
+      ...(typeof body.objective === 'string' && body.objective.trim().length > 0
+        ? { objective: body.objective.trim() }
+        : {}),
     });
   });
 
