@@ -1590,6 +1590,11 @@ export async function runExecutePhase(
             ...(appliedLessons.length > 0 ? { appliedLessons } : {}),
           };
           liveResults.set(item.id, completedResult as ItemResult);
+          // Flush execute.json immediately so dashboard consumers (e.g. the
+          // Epic tab) see this item's costUsd as soon as the agent finishes —
+          // before the finally block's worktree git operations and before the
+          // sprint.phase.item.completed event fires.
+          snapshotExecuteProgress();
           // Wave 5 T1 — write per-item checkpoint after each successful completion.
           // Fire-and-forget: checkpoint write is non-blocking and never fails the phase.
           enqueueItemCheckpoint(item.id, 'completed', item.assignee);
@@ -1641,6 +1646,9 @@ export async function runExecutePhase(
               ...(appliedLessons.length > 0 ? { appliedLessons } : {}),
             };
             liveResults.set(item.id, failedResult as ItemResult);
+            // Flush execute.json immediately on failure so the snapshot is
+            // up-to-date before the finally block's event publish.
+            snapshotExecuteProgress();
             // Wave 5 T1 — write per-item checkpoint after each failure (final attempt).
             enqueueItemCheckpoint(item.id, 'failed', item.assignee);
             return failedResult;
