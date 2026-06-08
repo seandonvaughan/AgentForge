@@ -26,6 +26,7 @@ import { registerCodexCommand } from './codex.js';
 import { registerResearchCommand } from './research.js';
 import { registerBacklogCommand } from './backlog.js';
 import { registerLearningsCommand } from './learnings.js';
+import { registerObjectiveCommand } from './objective.js';
 
 interface InitializeWorkspaceImport {
   initializeWorkspace(options: {
@@ -167,4 +168,5 @@ export function registerAllCommands(program: Command): void {
   registerResearchCommand(program);
   registerBacklogCommand(program);
   registerLearningsCommand(program);
+  registerObjectiveCommand(program);
 }
