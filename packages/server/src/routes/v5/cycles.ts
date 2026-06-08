@@ -210,6 +210,10 @@ interface CycleListRow {
   approvalDecision: string | null;
   /** Agent ids that participated in this cycle, sourced from session data. */
   agents: string[];
+  /** True when the cycle was launched with a persisted objective (epic mode). */
+  objective: boolean;
+  /** Number of decomposition children across all waves; 0 when decomposition.json is absent. */
+  childCount: number;
   runtimeMode?: string | null;
   branchPrefix?: string | null;
   baseBranch?: string | null;
@@ -371,6 +375,39 @@ function readCycleLaunchConfig(cycleDir: string): Record<string, unknown> {
   return config && typeof config === 'object' && !Array.isArray(config)
     ? config as Record<string, unknown>
     : {};
+}
+
+/**
+ * Returns true when cycle-config.json contains a non-empty objective string,
+ * indicating the cycle was launched in objective (epic) mode.
+ */
+function readCycleObjectiveFlag(config: Record<string, unknown>): boolean {
+  return typeof config['objective'] === 'string' && config['objective'].length > 0;
+}
+
+/**
+ * Returns the total number of decomposition children across all waves in
+ * decomposition.json, or 0 when the file is absent or malformed.
+ */
+function readCycleChildCount(cycleDir: string): number {
+  const decompositionFile = join(cycleDir, 'decomposition.json');
+  if (!existsSync(decompositionFile)) return 0;
+  try {
+    const raw = JSON.parse(readFileSync(decompositionFile, 'utf-8')) as unknown;
+    if (!Array.isArray(raw)) return 0;
+    let count = 0;
+    for (const wave of raw) {
+      if (wave !== null && typeof wave === 'object' && !Array.isArray(wave)) {
+        const waveRecord = wave as Record<string, unknown>;
+        if (Array.isArray(waveRecord['children'])) {
+          count += (waveRecord['children'] as unknown[]).length;
+        }
+      }
+    }
+    return count;
+  } catch {
+    return 0;
+  }
 }
 
 function launchConfigFields(config: Record<string, unknown>): Pick<
@@ -566,6 +603,8 @@ function summarizeCycle(cycleDir: string, cycleId: string, projectRoot?: string)
       hasApprovalDecision,
       approvalDecision,
       agents: collectCycleAgentIds(cycleDir),
+      objective: readCycleObjectiveFlag(launchConfig),
+      childCount: readCycleChildCount(cycleDir),
       ...configFields,
     };
   }
@@ -677,6 +716,8 @@ function summarizeCycle(cycleDir: string, cycleId: string, projectRoot?: string)
     hasApprovalDecision,
     approvalDecision,
     agents: collectCycleAgentIds(cycleDir),
+    objective: readCycleObjectiveFlag(launchConfig),
+    childCount: readCycleChildCount(cycleDir),
     ...configFields,
   };
 }
