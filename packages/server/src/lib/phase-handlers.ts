@@ -719,6 +719,68 @@ export async function runTestPhase(ctx: PhaseContext): Promise<PhaseResult> {
 }
 
 export async function runReviewPhase(ctx: PhaseContext): Promise<PhaseResult> {
+  const phase: PhaseName = 'review';
+
+  // P0.6 — on the objective/epic path there is exactly ONE scheduled review
+  // call: the strong-model epic review that runs at the gate slot
+  // (runServerEpicGate). Skip the per-diff code-reviewer dispatch here so the
+  // epic path does not pay for two reviews. Legacy (signal) cycles are
+  // untouched. Mirrors core's runReviewPhase objective-skip (review-phase.ts).
+  if (ctx.objective !== undefined) {
+    const startMs = Date.now();
+
+    ctx.bus.publish('sprint.phase.started', {
+      sprintId: ctx.sprintId,
+      sprintVersion: ctx.sprintVersion,
+      phase,
+      cycleId: ctx.cycleId,
+      startedAt: nowIso(),
+    });
+
+    const durationMs = Date.now() - startMs;
+    const skipResult: PhaseResult = {
+      phase,
+      status: 'completed',
+      durationMs,
+      costUsd: 0,
+      agentRuns: [],
+    };
+
+    if (ctx.cycleId) {
+      try {
+        const phasesDir = join(ctx.agentforgeDir, 'cycles', ctx.cycleId, 'phases');
+        mkdirSync(phasesDir, { recursive: true });
+        writeFileSync(
+          join(phasesDir, 'review.json'),
+          JSON.stringify(
+            {
+              phase,
+              skipped: true,
+              reason: 'epic path — single strong-model epic review runs at the gate slot',
+              costUsd: 0,
+            },
+            null,
+            2,
+          ),
+          'utf-8',
+        );
+      } catch {
+        // Non-fatal — skip result must not depend on artifact write success.
+      }
+    }
+
+    ctx.bus.publish('sprint.phase.completed', {
+      sprintId: ctx.sprintId,
+      sprintVersion: ctx.sprintVersion,
+      phase,
+      cycleId: ctx.cycleId,
+      result: skipResult,
+      completedAt: nowIso(),
+    });
+
+    return skipResult;
+  }
+
   const result = await runLlmPhase(ctx, 'review');
 
   // Write review-finding memory entries for CRITICAL and MAJOR findings so the
