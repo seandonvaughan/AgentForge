@@ -9,3 +9,4 @@ export * from './cost-metrics.js';
 export * from './schemas/agent-output.js';
 export * from './schemas/step-score.js';
 export * from './schemas/rubric.js';
+export * from './objective-artifacts.js';
