@@ -18,12 +18,12 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v6
 
-      - uses: pnpm/action-setup@v6.0.7
+      - uses: pnpm/action-setup@v6.0.8
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6.4.0
+        uses: actions/setup-node@v6
         with:
           node-version-file: '.nvmrc'
           cache: pnpm
@@ -38,7 +38,7 @@ jobs:
     name: Release Gates
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v6
 
       - name: Convergence gate — no deprecated root src/ directories
         run: |
@@ -58,10 +58,10 @@ jobs:
           fi
           echo "Convergence gate passed: src/server, src/builder, src/autonomous are absent."
 
-      - uses: pnpm/action-setup@v6.0.7
+      - uses: pnpm/action-setup@v6.0.8
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6.4.0
+        uses: actions/setup-node@v6
         with:
           node-version-file: '.nvmrc'
           cache: pnpm
@@ -79,12 +79,12 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v6
 
-      - uses: pnpm/action-setup@v6.0.7
+      - uses: pnpm/action-setup@v6.0.8
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6.4.0
+        uses: actions/setup-node@v6
         with:
           node-version-file: '.nvmrc'
           cache: pnpm
@@ -100,7 +100,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: test-results
           path: test-results/
@@ -114,12 +114,12 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v6
 
-      - uses: pnpm/action-setup@v6.0.7
+      - uses: pnpm/action-setup@v6.0.8
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6.4.0
+        uses: actions/setup-node@v6
         with:
           node-version-file: '.nvmrc'
           cache: pnpm
@@ -134,12 +134,12 @@ jobs:
     name: Dashboard Gates
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v6
 
-      - uses: pnpm/action-setup@v6.0.7
+      - uses: pnpm/action-setup@v6.0.8
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6.4.0
+        uses: actions/setup-node@v6
         with:
           node-version-file: '.nvmrc'
           cache: pnpm
@@ -160,12 +160,12 @@ jobs:
     name: Product E2E
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v6
 
-      - uses: pnpm/action-setup@v6.0.7
+      - uses: pnpm/action-setup@v6.0.8
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6.4.0
+        uses: actions/setup-node@v6
         with:
           node-version-file: '.nvmrc'
           cache: pnpm
@@ -181,7 +181,7 @@ jobs:
 
       - name: Upload Playwright report
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: playwright-report/
@@ -191,12 +191,12 @@ jobs:
     name: Type Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v6
 
-      - uses: pnpm/action-setup@v6.0.7
+      - uses: pnpm/action-setup@v6.0.8
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6.4.0
+        uses: actions/setup-node@v6
         with:
           node-version-file: '.nvmrc'
           cache: pnpm
@@ -223,10 +223,10 @@ jobs:
     needs: test
     if: always()
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v6
 
       - name: Download test results
-        uses: actions/download-artifact@v4.3.0
+        uses: actions/download-artifact@v8.0.1
         with:
           name: test-results
           path: test-results/
