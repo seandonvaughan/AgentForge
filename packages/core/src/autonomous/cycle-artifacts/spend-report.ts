@@ -66,6 +66,14 @@ export interface BuildSpendReportArgs {
   budgetUsd: number;
 }
 
+/**
+ * Dashboard-facing artifact type for spend-report.json.  Mirrors
+ * SpendReportArtifact from @agentforge/shared — the dashboard Spend tab
+ * renders perItem rows ({itemId, plannedUsd, actualUsd}) and the
+ * execution/overhead/utilization totals.
+ */
+export type SpendReportArtifact = SpendReport;
+
 function tryReadJson(path: string): any | null {
   try {
     return JSON.parse(readFileSync(path, 'utf8'));
