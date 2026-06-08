@@ -29,7 +29,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { AgentRuntime, loadAgentConfig, writeMemoryEntry, writeKnowledgeEntry, collectSprintItemTags, parseReviewFindingMetadata, extractFindingsByLevel, loadPriorGateKnownDebt, buildKnownDebtSection, resolveKnownDebt } from '@agentforge/core';
+import { AgentRuntime, loadAgentConfig, writeMemoryEntry, writeKnowledgeEntry, collectSprintItemTags, parseReviewFindingMetadata, extractFindingsByLevel, loadPriorGateKnownDebt, buildKnownDebtSection, resolveKnownDebt, GateRejectedError } from '@agentforge/core';
 import type { RunResult, GateVerdictMetadata, ReviewFindingMetadata } from '@agentforge/core';
 import { generateId, nowIso } from '@agentforge/shared';
 import { globalStream } from '../routes/v5/stream.js';
@@ -279,6 +279,18 @@ export interface PhaseContext {
   bus: EventBus;
   /** Optional cycle id when invoked from the autonomous loop. */
   cycleId?: string;
+  /**
+   * Epic-mode: the operator's objective text. When set, runGatePhase delegates
+   * to the structured epic-review path (writing phases/epic-review.json and
+   * throwing GateRejectedError on REQUEST_CHANGES) instead of the legacy
+   * signal-backlog CEO gate. Absent on normal signal cycles.
+   */
+  objective?: string;
+  /**
+   * Epic-mode: the base branch that agent worktrees were forked from.
+   * Defaults to 'main' when absent.
+   */
+  baseBranch?: string;
 }
 
 export interface AgentRunSummary {
@@ -774,7 +786,427 @@ export async function runReviewPhase(ctx: PhaseContext): Promise<PhaseResult> {
 // @agentforge/core, which uses an anchored regex to prevent false positives
 // from narrative prose ("no major concerns", "not a critical path change").
 
+// ---------------------------------------------------------------------------
+// Epic-gate helpers — used by runGatePhase when ctx.objective is set.
+// Mirrors the objective-path delegation in core's runGatePhase → runEpicReview
+// (packages/core/src/autonomous/phase-handlers/epic-review.ts). runEpicReview
+// is intentionally not exported from the @agentforge/core barrel (it is imported
+// dynamically within core), so the equivalent logic is implemented here for the
+// server-side gate path. GateRejectedError IS exported from @agentforge/core.
+// ---------------------------------------------------------------------------
+
+interface EpicReviewFaultedItemServer {
+  itemId: string;
+  reason: string;
+  files: string[];
+}
+
+interface EpicVerdictServer {
+  verdict: 'APPROVE' | 'REQUEST_CHANGES' | 'TRIAGE';
+  rationale: string;
+  faultedItems: EpicReviewFaultedItemServer[];
+}
+
+interface EpicReviewArtifactServer {
+  phase: 'gate';
+  mode: 'epic-review';
+  cycleId: string;
+  attempt: number;
+  verdict: EpicVerdictServer['verdict'];
+  rationale: string;
+  faultedItems: EpicReviewFaultedItemServer[];
+  schemaValidationOk: boolean;
+  triageUsed: boolean;
+  costUsd: number;
+  durationMs: number;
+  completedAt: string;
+}
+
+/**
+ * Walk balanced braces from startIdx, return the enclosing JSON object string.
+ * Returns null when braces are unbalanced.
+ */
+function extractFirstJsonObject(text: string, startIdx: number): string | null {
+  let depth = 0;
+  let end = -1;
+  for (let i = startIdx; i < text.length; i++) {
+    if (text[i] === '{') depth++;
+    else if (text[i] === '}') {
+      depth--;
+      if (depth === 0) { end = i; break; }
+    }
+  }
+  if (end === -1) return null;
+  return text.slice(startIdx, end + 1);
+}
+
+function coerceEpicFaultedItems(raw: unknown): EpicReviewFaultedItemServer[] {
+  if (!Array.isArray(raw)) return [];
+  const out: EpicReviewFaultedItemServer[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue;
+    const e = entry as Record<string, unknown>;
+    if (typeof e['itemId'] !== 'string' || e['itemId'].length === 0) continue;
+    out.push({
+      itemId: e['itemId'],
+      reason: typeof e['reason'] === 'string' ? e['reason'] : '',
+      files: Array.isArray(e['files'])
+        ? (e['files'] as unknown[]).filter((f): f is string => typeof f === 'string')
+        : [],
+    });
+  }
+  return out;
+}
+
+/** Attempt to parse a single JSON fragment as an epic verdict. */
+function tryCoerceEpicVerdict(fragment: string): EpicVerdictServer | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fragment);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object') return null;
+  const p = parsed as Record<string, unknown>;
+  if (!('verdict' in p)) return null;
+  const v = String(p['verdict']).toUpperCase();
+  if (v !== 'APPROVE' && v !== 'REQUEST_CHANGES') return null;
+  const rationale = typeof p['rationale'] === 'string' ? p['rationale'] : '';
+  const faultedItems = coerceEpicFaultedItems(p['faultedItems']);
+  return { verdict: v as 'APPROVE' | 'REQUEST_CHANGES', rationale, faultedItems };
+}
+
+/**
+ * Parse an APPROVE/REQUEST_CHANGES verdict from raw agent output.
+ * Mirrors the salvage chain in core/epic-review.ts (salvageEpicReview).
+ * Returns TRIAGE when the output is unparseable even after all salvage attempts.
+ */
+function parseEpicVerdictInline(raw: string): EpicVerdictServer {
+  // 1. Full-text strict JSON parse.
+  const direct = tryCoerceEpicVerdict(raw);
+  if (direct) return direct;
+
+  // 2. ```json fenced blocks.
+  const fenceRe = /```(?:json)?\s*\n?([\s\S]*?)\n?```/g;
+  for (const m of raw.matchAll(fenceRe)) {
+    const body = (m[1] ?? '').trim();
+    if (!body.includes('"verdict"')) continue;
+    const fromFence = tryCoerceEpicVerdict(body);
+    if (fromFence) return fromFence;
+    const openIdx = body.indexOf('{');
+    if (openIdx >= 0) {
+      const balanced = extractFirstJsonObject(body, openIdx);
+      if (balanced) {
+        const fromBalanced = tryCoerceEpicVerdict(balanced);
+        if (fromBalanced) return fromBalanced;
+      }
+    }
+  }
+
+  // 3. Balanced-brace walk from every '{' that precedes a "verdict" key.
+  let idx = raw.indexOf('{');
+  while (idx >= 0) {
+    if (raw.slice(idx, idx + 8192).includes('"verdict"')) {
+      const balanced = extractFirstJsonObject(raw, idx);
+      if (balanced) {
+        const fromBalanced = tryCoerceEpicVerdict(balanced);
+        if (fromBalanced) return fromBalanced;
+      }
+    }
+    idx = raw.indexOf('{', idx + 1);
+  }
+
+  // 4. Fallback TRIAGE — the deterministic VERIFY stage is the release authority.
+  return {
+    verdict: 'TRIAGE',
+    rationale:
+      '[TRIAGE — review output unparseable; deterministic VERIFY remains the release authority]',
+    faultedItems: [],
+  };
+}
+
+/**
+ * P0.6 server-side — Run the epic-path gate when ctx.objective is set.
+ *
+ * Writes phases/epic-review.json (same artifact shape as core's runEpicReview),
+ * then throws GateRejectedError on REQUEST_CHANGES so the cycle-runner retry
+ * loop re-runs the faulted items. Returns a completed PhaseResult on
+ * APPROVE or TRIAGE.
+ */
+async function runServerEpicGate(ctx: PhaseContext): Promise<PhaseResult> {
+  const phase: PhaseName = 'gate';
+  const startMs = Date.now();
+  const agentId = 'ceo';
+
+  ctx.bus.publish('sprint.phase.started', {
+    sprintId: ctx.sprintId,
+    sprintVersion: ctx.sprintVersion,
+    phase,
+    cycleId: ctx.cycleId,
+    startedAt: nowIso(),
+  });
+
+  // Load integration context (best-effort) from phases/execute.json.
+  const baseBranch = ctx.baseBranch ?? 'main';
+  let epicBranch: string | null = null;
+  let epicId: string | null = null;
+  if (ctx.cycleId) {
+    const executePath = join(
+      ctx.agentforgeDir,
+      'cycles',
+      ctx.cycleId,
+      'phases',
+      'execute.json',
+    );
+    if (existsSync(executePath)) {
+      try {
+        const executeData = JSON.parse(readFileSync(executePath, 'utf-8')) as Record<string, unknown>;
+        const integ = executeData['epicIntegration'] as
+          | Record<string, unknown>
+          | undefined;
+        if (integ && typeof integ['branch'] === 'string') {
+          epicBranch = integ['branch'];
+          epicId = typeof integ['epicId'] === 'string' ? integ['epicId'] : null;
+        }
+      } catch {
+        // Non-fatal — fall back to defaults.
+      }
+    }
+  }
+  const branch = epicBranch ?? `codex/${ctx.cycleId ?? 'epic'}`;
+  const epId = epicId ?? (ctx.cycleId ?? 'unknown');
+  const objective = ctx.objective ?? '';
+
+  const task =
+    `You are the CEO of AgentForge reviewing a completed epic as ONE coherent feature for release.\n\n` +
+    `## Operator objective\n${objective}\n\n` +
+    `## Epic\nEpic id: ${epId}\nIntegration branch: ${branch}\nBase branch: ${baseBranch}\n\n` +
+    `## How to review\n` +
+    `This epic accumulated every child's work onto the single integration branch \`${branch}\`. ` +
+    `Review the WHOLE branch as one feature against the operator objective above.\n\n` +
+    `Inspect read-only with Bash: ` +
+    `\`git diff $(git merge-base ${baseBranch} ${branch})...${branch}\`\n\n` +
+    `## Verdict rules\n` +
+    `- APPROVE when the integration branch satisfies the operator objective — polish is not a release blocker.\n` +
+    `- REQUEST_CHANGES only when a required behavior is unimplemented, a child's work is absent, ` +
+    `or the branch has a concrete defect that breaks the feature.\n` +
+    `- Every entry in faultedItems MUST carry an exact itemId from the plan plus a concrete reason and the files involved.\n\n` +
+    `Respond ONLY with this JSON object (no prose, no code fence):\n` +
+    `{"verdict":"APPROVE"|"REQUEST_CHANGES","rationale":"...","faultedItems":[{"itemId":"...","reason":"...","files":["..."]}]}\n` +
+    `An APPROVE carries an empty faultedItems array.`;
+
+  // Run the CEO agent via the existing server infrastructure.
+  let agentRunResult: { result: RunResult; sessionId: string };
+  try {
+    agentRunResult = await runPhaseAgent({
+      agentId,
+      task,
+      version: ctx.sprintVersion,
+      phase,
+      agentforgeDir: ctx.agentforgeDir,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    globalStream.emit({
+      type: 'sprint_event',
+      category: 'sprint',
+      message: `Sprint v${ctx.sprintVersion} epic gate failed: ${message.slice(0, 200)}`,
+      data: { type: 'phase_failed', version: ctx.sprintVersion, phase, error: message },
+    });
+    ctx.bus.publish('sprint.phase.failed', {
+      sprintId: ctx.sprintId,
+      sprintVersion: ctx.sprintVersion,
+      phase,
+      cycleId: ctx.cycleId,
+      error: message,
+      failedAt: nowIso(),
+    });
+    throw err;
+  }
+
+  const { result: runResult, sessionId } = agentRunResult;
+  const durationMs = Date.now() - startMs;
+
+  // Parse the structured verdict from the agent response.
+  const verdictObj = parseEpicVerdictInline(runResult.response);
+
+  // Store the phase result in the sprint file (same pattern as runLlmPhase).
+  try {
+    const freshSprint = readSprint(ctx.projectRoot, ctx.sprintVersion);
+    if (freshSprint) {
+      if (!freshSprint.phaseResults) freshSprint.phaseResults = [];
+      freshSprint.phaseResults.push({
+        phase,
+        agentId,
+        sessionId,
+        response: runResult.response,
+        costUsd: runResult.costUsd,
+        inputTokens: runResult.inputTokens,
+        outputTokens: runResult.outputTokens,
+        status: verdictObj.verdict === 'REQUEST_CHANGES' ? 'failed' : 'completed',
+        ranAt: nowIso(),
+      });
+      freshSprint.budgetUsed = (freshSprint.budgetUsed ?? 0) + runResult.costUsd;
+      if (!freshSprint.agentsInvolved) freshSprint.agentsInvolved = [];
+      if (!freshSprint.agentsInvolved.includes(agentId)) {
+        freshSprint.agentsInvolved.push(agentId);
+      }
+      // Only advance the phase on a non-rejection outcome.
+      if (verdictObj.verdict !== 'REQUEST_CHANGES') {
+        const currentIdx = PHASE_ORDER.indexOf(phase);
+        freshSprint.phase = PHASE_ORDER[currentIdx + 1] as Phase;
+      }
+      writeSprint(ctx.projectRoot, ctx.sprintVersion, freshSprint);
+    }
+  } catch {
+    // Non-fatal — gate outcome must not depend on sprint-file write success.
+  }
+
+  // Write phases/epic-review.json (mirrors core's writeEpicReviewArtifact).
+  if (ctx.cycleId) {
+    try {
+      const artifact: EpicReviewArtifactServer = {
+        phase: 'gate',
+        mode: 'epic-review',
+        cycleId: ctx.cycleId,
+        attempt: 0,
+        verdict: verdictObj.verdict,
+        rationale: verdictObj.rationale,
+        faultedItems: verdictObj.faultedItems,
+        schemaValidationOk: false,
+        triageUsed: verdictObj.verdict === 'TRIAGE',
+        costUsd: runResult.costUsd,
+        durationMs,
+        completedAt: nowIso(),
+      };
+      const phasesDir = join(ctx.agentforgeDir, 'cycles', ctx.cycleId, 'phases');
+      mkdirSync(phasesDir, { recursive: true });
+      writeFileSync(
+        join(phasesDir, 'epic-review.json'),
+        JSON.stringify(artifact, null, 2),
+        'utf-8',
+      );
+    } catch {
+      // Non-fatal.
+    }
+  }
+
+  // Write a gate-verdict memory entry (mirrors core's writeGateVerdictMemory).
+  try {
+    const memVerdict: 'approved' | 'rejected' | 'pending' =
+      verdictObj.verdict === 'APPROVE'
+        ? 'approved'
+        : verdictObj.verdict === 'REQUEST_CHANGES'
+          ? 'rejected'
+          : 'pending';
+    const sprintDomainTags = collectSprintItemTags(ctx.projectRoot, ctx.sprintVersion);
+    const gateMetadata: GateVerdictMetadata = {
+      cycleId: ctx.cycleId ?? '',
+      verdict: memVerdict,
+      rationale: verdictObj.rationale.slice(0, 500),
+      criticalFindings: verdictObj.faultedItems.map((f) => `[${f.itemId}] ${f.reason}`),
+      majorFindings: [],
+    };
+    const summaryParts: string[] = [
+      `Epic review ${memVerdict}: ${verdictObj.rationale.slice(0, 500)}`,
+    ];
+    if (verdictObj.faultedItems.length > 0) {
+      summaryParts.push(
+        `Faulted: ${verdictObj.faultedItems.map((f) => `[${f.itemId}] ${f.reason}`).join('; ')}`,
+      );
+    }
+    writeMemoryEntry(ctx.projectRoot, {
+      type: 'gate-verdict',
+      value: summaryParts.join('. '),
+      metadata: gateMetadata,
+      ...(ctx.cycleId !== undefined ? { source: ctx.cycleId } : {}),
+      tags: [
+        `sprint:v${ctx.sprintVersion}`,
+        `verdict:${memVerdict}`,
+        'epic-review',
+        ...sprintDomainTags,
+      ],
+    });
+  } catch {
+    // Non-fatal.
+  }
+
+  // Emit SSE event.
+  const sseOutcome = verdictObj.verdict === 'REQUEST_CHANGES' ? 'rejected' : 'approved';
+  globalStream.emit({
+    type: 'sprint_event',
+    category: 'sprint',
+    message: `Sprint v${ctx.sprintVersion} epic gate ${sseOutcome}: ${verdictObj.rationale.slice(0, 200)}`,
+    data: {
+      type: verdictObj.verdict === 'REQUEST_CHANGES' ? 'phase_failed' : 'phase_completed',
+      version: ctx.sprintVersion,
+      phase,
+      epicReview: true,
+      verdict: verdictObj.verdict,
+      agentId,
+      sessionId,
+      costUsd: runResult.costUsd,
+    },
+  });
+
+  const phaseResult: PhaseResult = {
+    phase,
+    status: verdictObj.verdict === 'REQUEST_CHANGES' ? 'failed' : 'completed',
+    durationMs,
+    costUsd: runResult.costUsd,
+    agentRuns: [
+      {
+        agentId,
+        sessionId,
+        status: verdictObj.verdict === 'REQUEST_CHANGES' ? 'failed' : 'completed',
+        costUsd: runResult.costUsd,
+        inputTokens: runResult.inputTokens,
+        outputTokens: runResult.outputTokens,
+        durationMs,
+        ...(verdictObj.verdict === 'REQUEST_CHANGES'
+          ? { error: verdictObj.rationale }
+          : {}),
+      },
+    ],
+    notes: { epicReview: true, verdict: verdictObj.verdict },
+    ...(verdictObj.verdict === 'REQUEST_CHANGES'
+      ? { error: verdictObj.rationale }
+      : {}),
+  };
+
+  // REQUEST_CHANGES: write artifacts then throw so the cycle-runner retry loop
+  // fires and re-executes only the faulted plan items.
+  if (verdictObj.verdict === 'REQUEST_CHANGES') {
+    ctx.bus.publish('sprint.phase.failed', {
+      sprintId: ctx.sprintId,
+      sprintVersion: ctx.sprintVersion,
+      phase,
+      cycleId: ctx.cycleId,
+      error: verdictObj.rationale,
+      failedAt: nowIso(),
+    });
+    throw new GateRejectedError(verdictObj.rationale);
+  }
+
+  ctx.bus.publish('sprint.phase.completed', {
+    sprintId: ctx.sprintId,
+    sprintVersion: ctx.sprintVersion,
+    phase,
+    cycleId: ctx.cycleId,
+    result: phaseResult,
+    completedAt: nowIso(),
+  });
+
+  return phaseResult;
+}
+
 export async function runGatePhase(ctx: PhaseContext): Promise<PhaseResult> {
+  // P0.6 — on the objective/epic path, replace the legacy CEO gate with a
+  // structured epic-review (mirrors core's gate-phase.ts objective delegation).
+  if (ctx.objective !== undefined) {
+    return runServerEpicGate(ctx);
+  }
+
   // Capture any pre-existing gate verdict before the LLM re-evaluates.
   // When a prior gate result exists (e.g. seeded from a previous cycle), we
   // use that as the authoritative verdict for the memory entry so the
