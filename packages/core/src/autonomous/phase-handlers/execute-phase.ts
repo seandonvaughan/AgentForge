@@ -1272,6 +1272,40 @@ export async function runExecutePhase(
           branch: worktreeHandle.branch,
         });
       } catch (allocErr) {
+        // W4 — allocation pressure relief: run one worktree-GC pass (prunes
+        // aged/over-budget worktrees) and retry the allocation ONCE before
+        // falling back. Pool exhaustion mid-phase was previously terminal for
+        // the item even when stale worktrees were sitting on disk.
+        let retried: ExecuteWorktreeHandle | undefined;
+        try {
+          // The phase receives a structural WorktreePoolLike; GC needs the
+          // real pool's listActive/release surface — only attempt when present.
+          const gcPool = worktreePool as unknown as { listActive?: unknown };
+          if (typeof gcPool.listActive === 'function') {
+            const { WorktreeGc } = await import('../../runtime/worktree-gc.js');
+            await new WorktreeGc({
+              pool: worktreePool as unknown as ConstructorParameters<typeof WorktreeGc>[0]['pool'],
+              projectRoot: ctx.projectRoot,
+            }).run();
+            retried = await allocateWorktreeForItem(worktreePool, ctx, item, integrationBranch);
+          }
+        } catch { /* fall through to the existing failure handling */ }
+        if (retried !== undefined) {
+          worktreeHandle = retried;
+          itemBranchById.set(item.id, worktreeHandle.branch);
+          branchOwnerById.set(worktreeHandle.branch, item.id);
+          ctx.bus.publish('execute.worktree.allocated', {
+            sprintId: ctx.sprintId,
+            phase,
+            cycleId: ctx.cycleId,
+            itemId: item.id,
+            agentId: item.assignee,
+            worktreeId: worktreeHandle.id,
+            worktreePath: worktreeHandle.path,
+            branch: worktreeHandle.branch,
+            afterGc: true,
+          });
+        } else {
         // Allocation failure is non-fatal: fall back to main-tree execution.
         // This prevents a pool exhaustion or git error from blocking the item.
         ctx.bus.publish('execute.worktree.alloc-failed', {
@@ -1287,6 +1321,7 @@ export async function runExecutePhase(
           ? `Rejected branch checkout failed for ${retryRejectedBranch}: ${rawError}`
           : rawError;
         worktreeHandle = undefined;
+        }
       }
     } else if (requireWorktrees && itemRequiresWorktree) {
       worktreeAllocationError =

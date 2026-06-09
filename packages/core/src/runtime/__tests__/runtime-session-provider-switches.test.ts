@@ -76,6 +76,7 @@ function loadRuntimeTransportPayload(adapter: WorkspaceAdapter, sessionId: strin
 }
 
 afterEach(() => {
+    delete process.env['AGENTFORGE_BACKOFF_BASE_MS'];
   vi.useRealTimers();
 });
 
@@ -120,6 +121,9 @@ describe('RuntimeSession.completeSuccess provider switches', () => {
   });
 
   it('persists provider switch hops from the actual failover path', async () => {
+    // W4 — collapse the rate-limit backoff: real timers never fire under
+    // vi.useFakeTimers, so a non-zero base would hang this test.
+    process.env['AGENTFORGE_BACKOFF_BASE_MS'] = '0';
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-01-01T00:00:01.000Z'));
     const adapter = new WorkspaceAdapter({ dbPath: ':memory:', workspaceId: 'test' });
