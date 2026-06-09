@@ -11,6 +11,7 @@ import { EpicPlanSchema, type EpicObjective, type EpicPlan } from './types.js';
 import { validateAndLayerEpicPlan } from './validate-and-layer.js';
 import type { ValidationReport } from './types.js';
 import type { AgentOutputSchema } from '../../runtime/types.js';
+import { loadCostPriors, type CostPriors } from '../cycle-artifacts/cost-priors.js';
 
 export const EPIC_PLANNER_AGENT_ID = 'epic-planner';
 
@@ -111,13 +112,14 @@ export function computeSpendableUsd(budgetUsd: number): number {
 export function buildEpicPlannerPrompt(
   objective: EpicObjective,
   observed?: ObservedChildCosts | null,
+  priors?: CostPriors | null,
 ): string {
   const constraints = objective.constraints?.length
     ? `\n\nConstraints:\n${objective.constraints.map((c) => `- ${c}`).join('\n')}`
     : '';
   const budget =
     objective.budgetUsd !== undefined
-      ? buildBudgetPromptBlock(objective.budgetUsd, observed)
+      ? buildBudgetPromptBlock(objective.budgetUsd, observed, priors)
       : '';
   return [
     `Decompose this objective into a dependency-ordered EpicPlan.`,
@@ -232,7 +234,11 @@ export function loadObservedChildCosts(projectRoot: string): ObservedChildCosts 
  * number, the calibrated cost table, per-repo observed actuals when available,
  * the spend band, and the consumer rule.
  */
-function buildBudgetPromptBlock(budgetUsd: number, observed?: ObservedChildCosts | null): string {
+function buildBudgetPromptBlock(
+  budgetUsd: number,
+  observed?: ObservedChildCosts | null,
+  priors?: CostPriors | null,
+): string {
   const spendable = computeSpendableUsd(budgetUsd);
   const lower = 0.7 * spendable;
   const upper = 1.0 * spendable;
@@ -241,6 +247,24 @@ function buildBudgetPromptBlock(budgetUsd: number, observed?: ObservedChildCosts
   // medium / $15–30 feature predictions. Large-monorepo children carry more
   // context, so the feature ceiling stays conservative rather than scaled
   // fully down. Per-repo observations (below) override this table over time.
+  // W3 — repo-local per-complexity medians, refreshed by the learn phase from
+  // spend-report actuals. Ranked above the static table, below per-repo
+  // observed medians (which aggregate across complexities most recently).
+  const priorBucket = (label: string, b?: { medianUsd: number; count: number }): string | null =>
+    b ? `${label} ~$${b.medianUsd.toFixed(2)} (n=${b.count})` : null;
+  const priorParts = priors
+    ? [priorBucket('low', priors.low), priorBucket('medium', priors.medium), priorBucket('high', priors.high)].filter(
+        (p): p is string => p !== null,
+      )
+    : [];
+  const priorLines =
+    priorParts.length > 0
+      ? [
+          ``,
+          `CALIBRATED from this repository's completed cycles (${priors!.totalSamples} item(s)): ` +
+            `${priorParts.join(', ')} per child. Prefer these over the static table.`,
+        ]
+      : [];
   const observedLines =
     observed && observed.count > 0
       ? [
@@ -261,6 +285,7 @@ function buildBudgetPromptBlock(budgetUsd: number, observed?: ObservedChildCosts
     `- small (tests / wiring / docs): ~$1.50, ~2 min.`,
     `- medium (one module + its tests): ~$3.50, ~8 min.`,
     `- feature-child (multi-file + tests): $5–12, 20–40 min; large-monorepo children trend toward the top of this range.`,
+    ...priorLines,
     ...observedLines,
     ``,
     `The sum of every child's estimatedCostUsd MUST land between ` +
@@ -362,6 +387,7 @@ export async function decomposeObjective(
 ): Promise<DecomposeResult> {
   const observed =
     opts.projectRoot !== undefined ? loadObservedChildCosts(opts.projectRoot) : null;
+  const priors = opts.projectRoot !== undefined ? loadCostPriors(opts.projectRoot) : null;
   // Read-only repo exploration tools (cycle c5e6efb9 fix): a tool-less planner
   // has never SEEN the repository and hallucinates plausible-but-wrong file
   // paths on large codebases (declared packages/core/src/phases/… when the
@@ -371,7 +397,7 @@ export async function decomposeObjective(
   // tools; this is the redesign's "grounded digest" realized as exploration.
   const r1 = await runtime.run(
     EPIC_PLANNER_AGENT_ID,
-    buildEpicPlannerPrompt(objective, observed),
+    buildEpicPlannerPrompt(objective, observed, priors),
     {
       allowedTools: ['Read', 'Glob', 'Grep'],
       codexSandbox: 'read-only',
