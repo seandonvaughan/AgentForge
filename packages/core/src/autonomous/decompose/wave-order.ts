@@ -7,8 +7,10 @@
 
 export interface WaveOrderable {
   id: string;
-  wave?: number;
-  predecessors?: string[];
+  // `| undefined` keeps zod-inferred optionals (e.g. EpicChild.wave)
+  // assignable under exactOptionalPropertyTypes.
+  wave?: number | undefined;
+  predecessors?: string[] | undefined;
 }
 
 /**
