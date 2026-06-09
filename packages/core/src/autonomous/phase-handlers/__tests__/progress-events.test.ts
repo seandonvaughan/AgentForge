@@ -232,6 +232,60 @@ describe('execute-phase progress events', () => {
     expect(finalRow.startedAt).toBe(runningRow.startedAt);
     expect(finalRow.agentId).toBe('agent-1');
   });
+
+  it('W2: writes a distilled item-outcome + LEARNED notes to the assignee\'s personal memory', async () => {
+    writeSprintFile([
+      { id: 'item-1', title: 'Wire the widget', assignee: 'coder' },
+    ]);
+
+    const bus = makeBus();
+    const ctx = makeCtx(bus, {
+      runtime: {
+        run: vi.fn().mockResolvedValue({
+          output: 'All done.\nLEARNED: the widget registry rejects duplicate slugs silently\n',
+          costUsd: 0.25,
+          status: 'completed',
+        }),
+      } as any,
+    });
+
+    const { runExecutePhase } = await import('../execute-phase.js');
+    await runExecutePhase(ctx);
+
+    const { readAgentMemory } = await import('../../../memory/agent-memory.js');
+    const entries = readAgentMemory(tmpRoot, 'coder', 10);
+    const outcome = entries.find((e) => e.kind === 'item-outcome');
+    const note = entries.find((e) => e.kind === 'self-note');
+    expect(outcome).toBeDefined();
+    expect(outcome!.value).toContain('completed "Wire the widget"');
+    expect(outcome!.outcome).toBe('completed');
+    expect(outcome!.itemId).toBe('item-1');
+    expect(note).toBeDefined();
+    expect(note!.value).toContain('duplicate slugs');
+  });
+
+  it('W2: records failures with an error excerpt in the assignee\'s personal memory', async () => {
+    writeSprintFile([
+      { id: 'item-1', title: 'Doomed task', assignee: 'coder' },
+    ]);
+
+    const bus = makeBus();
+    const ctx = makeCtx(bus, {
+      runtime: {
+        run: vi.fn().mockRejectedValue(new Error('TS2339: property does not exist on type Widget')),
+      } as any,
+    });
+
+    const { runExecutePhase } = await import('../execute-phase.js');
+    await runExecutePhase(ctx, { maxItemRetries: 0 });
+
+    const { readAgentMemory } = await import('../../../memory/agent-memory.js');
+    const entries = readAgentMemory(tmpRoot, 'coder', 10);
+    const outcome = entries.find((e) => e.kind === 'item-outcome');
+    expect(outcome).toBeDefined();
+    expect(outcome!.outcome).toBe('failed');
+    expect(outcome!.value).toContain('TS2339');
+  });
 });
 
 // ---------------------------------------------------------------------------

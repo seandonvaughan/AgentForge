@@ -46,6 +46,7 @@ import { recordSelfEval } from '../self-eval/recorder.js';
 import { ItemCheckpointWriter } from '../checkpoint/item-checkpoint.js';
 // Phase 0 — lesson-attribution instrumentation.
 import { appendLessonAttributions } from '../../memory/lesson-attribution.js';
+import { appendAgentMemory, extractLearnedNotes } from '../../memory/agent-memory.js';
 import { computeLessonId } from '../../team/engine/learnings/lesson-id.js';
 // Gem #2 — semantic reranking of memory entries.
 import { rankMemoriesBySemantic } from './semantic-memory.js';
@@ -1624,6 +1625,26 @@ export async function runExecutePhase(
           // Wave 5 T1 — write per-item checkpoint after each successful completion.
           // Fire-and-forget: checkpoint write is non-blocking and never fails the phase.
           enqueueItemCheckpoint(item.id, 'completed', item.assignee);
+          // W2 — distill this outcome into the assignee's personal memory, plus
+          // any LEARNED: notes the agent chose to record. Non-fatal.
+          appendAgentMemory(ctx.projectRoot, item.assignee, {
+            kind: 'item-outcome',
+            value: `completed "${item.title}" (${attempts} attempt${attempts === 1 ? '' : 's'}, $${costUsd.toFixed(2)})${attempts > 1 ? ' — succeeded after retry' : ''}`,
+            cycleId: ctx.cycleId,
+            itemId: item.id,
+            outcome: 'completed',
+            costUsd,
+            files: item.files ?? [],
+            tags: item.tags ?? [],
+          });
+          for (const note of extractLearnedNotes(responseText)) {
+            appendAgentMemory(ctx.projectRoot, item.assignee, {
+              kind: 'self-note',
+              value: note,
+              cycleId: ctx.cycleId,
+              itemId: item.id,
+            });
+          }
           return completedResult;
         } catch (err) {
           lastError = stringifyExecuteError(err);
@@ -1675,6 +1696,17 @@ export async function runExecutePhase(
             liveResults.set(item.id, failedResult as ItemResult);
             // Wave 5 T1 — write per-item checkpoint after each failure (final attempt).
             enqueueItemCheckpoint(item.id, 'failed', item.assignee);
+            // W2 — record the failure (with a short error excerpt) in the
+            // assignee's personal memory so its next similar run sees it.
+            appendAgentMemory(ctx.projectRoot, item.assignee, {
+              kind: 'item-outcome',
+              value: `failed "${item.title}" after ${attempts} attempt${attempts === 1 ? '' : 's'}: ${(lastError ?? 'unknown').slice(0, 200)}`,
+              cycleId: ctx.cycleId,
+              itemId: item.id,
+              outcome: 'failed',
+              files: item.files ?? [],
+              tags: item.tags ?? [],
+            });
             return failedResult;
           }
         }
@@ -2201,6 +2233,12 @@ Before you report completion you MUST verify your own work and paste the passing
 1. Type-check: \`${pkg.typeCheckCommand}\`
 2. Run the targeted tests you added or touched: \`${pkg.testCommand} run <files>\`
 If either check fails, fix it before finishing. Never report done on unverified work.
+
+If you discover a durable, generalisable insight about this codebase (a
+convention, a gotcha, a build quirk), record it as a single line starting
+with \`LEARNED:\` in your final report — it is saved to your personal memory
+and shown to you on future tasks. At most 3 such lines; skip when nothing
+genuinely generalises.
 
 Work efficiently. Report what you changed when done.${selfEvalSec}`;
 

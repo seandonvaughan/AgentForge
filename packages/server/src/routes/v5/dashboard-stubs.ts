@@ -248,6 +248,48 @@ export async function dashboardStubRoutes(
         } catch { /* skip unreadable file */ }
       }
 
+      // ── Per-agent personal memory (W2): memory/agents/<agentId>.jsonl ────
+      // Surfaced with type 'agent-memory' and agentId derived from the
+      // filename so the agent detail page's existing agentId filter picks
+      // these up with zero UI changes.
+      const agentsMemDir = join(memoryDir, 'agents');
+      if (existsSync(agentsMemDir)) {
+        for (const file of readdirSync(agentsMemDir)) {
+          if (!file.endsWith('.jsonl')) continue;
+          const ownerAgentId = file.replace(/\.jsonl$/, '');
+          try {
+            const content = readFileSync(join(agentsMemDir, file), 'utf-8');
+            for (const line of content.split('\n')) {
+              const trimmed = line.trim();
+              if (!trimmed) continue;
+              try {
+                const entry = JSON.parse(trimmed) as {
+                  id?: string;
+                  kind?: string;
+                  value?: string;
+                  createdAt?: string;
+                  itemId?: string;
+                  cycleId?: string;
+                  outcome?: string;
+                  tags?: string[];
+                };
+                entries.push({
+                  id: entry.id ?? `${file}-${entries.length}`,
+                  key: `${ownerAgentId} · ${entry.kind ?? 'note'}`,
+                  value: entry.value ?? '',
+                  type: 'agent-memory',
+                  createdAt: entry.createdAt ?? new Date().toISOString(),
+                  agentId: ownerAgentId,
+                  source: ownerAgentId,
+                  ...(typeof entry.value === 'string' ? { summary: entry.value.slice(0, 160) } : {}),
+                  ...(entry.tags !== undefined ? { tags: entry.tags } : {}),
+                });
+              } catch { /* skip malformed line */ }
+            }
+          } catch { /* skip unreadable file */ }
+        }
+      }
+
       // ── Legacy JSON / Markdown files (fallback for older data) ───────────
       const legacyFiles = files.filter(f => f.endsWith('.json') || f.endsWith('.md'));
       for (const file of legacyFiles) {
