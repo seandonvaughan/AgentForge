@@ -71,6 +71,13 @@ testing:
   timeoutMinutes: 20
   reporter: json
   saveRawLog: true
+  # Known-flaky / environment-specific test files excluded from the PER-CHILD
+  # scoped verify only (vitest --exclude). Cycle 4e451e22: `vitest related`
+  # transitively pulled this darwin-only tmpdir-realpath test into 9 unrelated
+  # children's runs and failed them. The cycle-level VERIFY still runs the FULL
+  # suite with newFailures-vs-baseline semantics — nothing is skipped at release.
+  knownFlakyTestFiles:
+    - packages/cli/src/__tests__/autonomous-worktree.test.ts
   buildCommand: corepack pnpm build
   typeCheckCommand: corepack pnpm exec tsc -b --noEmit --pretty false
 scoring:
