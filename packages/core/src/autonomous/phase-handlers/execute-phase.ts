@@ -413,11 +413,19 @@ interface SprintFile {
 
 interface ItemResult {
   itemId: string;
-  status: 'completed' | 'failed';
+  status: 'completed' | 'failed' | 'running';
   costUsd: number;
   durationMs: number;
   response: string;
   attempts: number;
+  /** Assignee that ran (or is running) the item. */
+  agentId?: string;
+  /**
+   * ISO timestamp of dispatch start. Set when the item enters `running` and
+   * preserved on the terminal result so the dashboard can render live elapsed
+   * time from the incremental execute.json snapshot.
+   */
+  startedAt?: string;
   model?: string;
   effort?: string;
   resolvedModelId?: string;
@@ -1203,8 +1211,24 @@ export async function runExecutePhase(
 
   const dispatchItem = async (item: SprintItem): Promise<ItemResult> => {
     const itemStartedAt = Date.now();
+    const itemStartedAtIso = new Date(itemStartedAt).toISOString();
     let lastError: string | undefined;
     let attempts = 0;
+    // Live-progress: register a `running` entry immediately and snapshot, so
+    // the dashboard's incremental execute.json shows WHO is running WHAT and
+    // since WHEN while the (long) item executes. Terminal results overwrite
+    // this entry, preserving startedAt.
+    liveResults.set(item.id, {
+      itemId: item.id,
+      status: 'running',
+      costUsd: 0,
+      durationMs: 0,
+      response: '',
+      attempts: 0,
+      agentId: item.assignee,
+      startedAt: itemStartedAtIso,
+    } as ItemResult);
+    snapshotExecuteProgress();
     // Mark the item as in_progress and persist immediately so the dashboard
     // Items kanban shows it moving from Planned → In Progress the moment
     // the agent starts. Without this, items jump straight from planned to
@@ -1274,6 +1298,7 @@ export async function runExecutePhase(
             `Worktree allocation failed for ${item.assignee} on ${item.id}: ` +
             worktreeAllocationError,
           agentId: item.assignee,
+          startedAt: itemStartedAtIso,
         };
         liveResults.set(item.id, failedResult as ItemResult);
         return failedResult;
@@ -1573,6 +1598,7 @@ export async function runExecutePhase(
             response: responseText,
             attempts,
             agentId: item.assignee,
+            startedAt: itemStartedAtIso,
             // Wave 2: attach per-run breakdown for downstream accumulation.
             breakdown: runBreakdown,
             // v6.7.4: surface model + effort to the Agents tab
@@ -1641,6 +1667,7 @@ export async function runExecutePhase(
               attempts,
               error: lastError,
               agentId: item.assignee,
+              startedAt: itemStartedAtIso,
               ...(failStepScoreIds.length > 0 ? { step_score_ids: failStepScoreIds } : {}),
               // Phase 0: lesson IDs injected into this item's prompt
               ...(appliedLessons.length > 0 ? { appliedLessons } : {}),
@@ -1664,6 +1691,7 @@ export async function runExecutePhase(
         attempts,
         error: lastError ?? 'unknown',
         agentId: item.assignee,
+        startedAt: itemStartedAtIso,
       };
       liveResults.set(item.id, fallthroughResult as ItemResult);
       return fallthroughResult;

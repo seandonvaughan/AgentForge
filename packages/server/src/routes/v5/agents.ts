@@ -259,9 +259,17 @@ export async function agentRoutes(
       return reply.send({ data: [], meta: { total: 0, windowHours: 24 } });
     }
 
+    // Every phase artifact that records agentRuns — not just execute.json.
+    // Phase-level agents (epic-planner in plan.json, the epic-review reviewer,
+    // backlog-scorer in audit/plan, the gate judge, …) were invisible in the
+    // /agents activity rollup because only execute.json was scanned.
+    const phaseFiles = [
+      'audit', 'plan', 'assign', 'execute', 'test', 'review', 'epic-review', 'gate', 'release', 'learn',
+    ] as const;
+
     for (const id of cycleIds) {
-      const execPath = join(cyclesDir, id, 'phases', 'execute.json');
-      if (!existsSync(execPath)) continue;
+      const phasesDir = join(cyclesDir, id, 'phases');
+      if (!existsSync(phasesDir)) continue;
 
       // Per-cycle fallback timestamp — itemResults rows often lack their own
       // startedAt/completedAt, so we fall back to the parent cycle's
@@ -283,36 +291,43 @@ export async function agentRoutes(
         costUsd?: number;
         cost_usd?: number;
       }
-      let exec: { agentRuns?: Run[]; itemResults?: Run[] };
-      try {
-        exec = JSON.parse(readFileSync(execPath, 'utf8')) as typeof exec;
-      } catch { continue; }
 
-      // Newer cycles emit `agentRuns`; older ones emit `itemResults`. Both
-      // carry `agentId` + `costUsd`; agentRuns also has startedAt/completedAt.
-      const runs: Run[] = exec.agentRuns ?? exec.itemResults ?? [];
+      for (const phaseName of phaseFiles) {
+        const phasePath = join(phasesDir, `${phaseName}.json`);
+        if (!existsSync(phasePath)) continue;
+        let artifact: { agentRuns?: Run[]; itemResults?: Run[] };
+        try {
+          artifact = JSON.parse(readFileSync(phasePath, 'utf8')) as typeof artifact;
+        } catch { continue; }
 
-      for (const r of runs) {
-        const agentId = r.agentId;
-        if (!agentId) continue;
-        const ts = r.completedAt ?? r.startedAt;
-        const ms = ts ? new Date(ts).getTime() : cycleFallbackMs;
-        if (ms === null || ms < horizonMs) continue;
+        // Newer artifacts emit `agentRuns`; older execute artifacts emit
+        // `itemResults`. Both carry `agentId` + `costUsd`; agentRuns also has
+        // startedAt/completedAt. For execute.json the two arrays mirror each
+        // other, so prefer agentRuns and never read both.
+        const runs: Run[] = artifact.agentRuns ?? artifact.itemResults ?? [];
 
-        const cost = r.costUsd ?? r.cost_usd ?? 0;
+        for (const r of runs) {
+          const agentId = r.agentId;
+          if (!agentId) continue;
+          const ts = r.completedAt ?? r.startedAt;
+          const ms = ts ? new Date(ts).getTime() : cycleFallbackMs;
+          if (ms === null || ms < horizonMs) continue;
 
-        let row = byAgent.get(agentId);
-        if (!row) {
-          row = { agentId, invocations24h: 0, spend24h: 0, lastActiveAt: null, sparkline: new Array<number>(12).fill(0) };
-          byAgent.set(agentId, row);
+          const cost = r.costUsd ?? r.cost_usd ?? 0;
+
+          let row = byAgent.get(agentId);
+          if (!row) {
+            row = { agentId, invocations24h: 0, spend24h: 0, lastActiveAt: null, sparkline: new Array<number>(12).fill(0) };
+            byAgent.set(agentId, row);
+          }
+          row.invocations24h++;
+          row.spend24h += cost;
+          if (!row.lastActiveAt || ms > new Date(row.lastActiveAt).getTime()) {
+            row.lastActiveAt = new Date(ms).toISOString();
+          }
+          const bucketIdx = Math.min(11, Math.max(0, Math.floor((ms - horizonMs) / bucketMs)));
+          row.sparkline[bucketIdx]!++;
         }
-        row.invocations24h++;
-        row.spend24h += cost;
-        if (!row.lastActiveAt || ms > new Date(row.lastActiveAt).getTime()) {
-          row.lastActiveAt = new Date(ms).toISOString();
-        }
-        const bucketIdx = Math.min(11, Math.max(0, Math.floor((ms - horizonMs) / bucketMs)));
-        row.sparkline[bucketIdx]!++;
       }
     }
 

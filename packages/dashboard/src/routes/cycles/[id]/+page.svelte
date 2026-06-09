@@ -38,6 +38,7 @@
     status: string;
     costUsd: number;
     durationMs: number;
+    startedAt?: string;
     response?: string;
     error?: string;
     attempts?: number;
@@ -63,6 +64,13 @@
     durationMs?: number;
     model?: string;
     error?: string;
+    /** Full instructions the agent receives (plan.json carries these already). */
+    description?: string;
+    tags?: string[];
+    files?: string[];
+    wave?: number;
+    predecessors?: string[];
+    source?: string;
   }
 
   const TERMINAL = new Set(['completed', 'failed', 'killed', 'crashed']);
@@ -475,6 +483,18 @@
       const prev = m.get(r.itemId);
       // Promote: completed wins over in_progress; failed wins over in_progress
       if (!prev || (prev === 'in_progress' && s !== 'in_progress')) m.set(r.itemId, s);
+    }
+    return m;
+  });
+
+  // Live-progress: dispatch start time per item, from the execute snapshot's
+  // running/terminal rows (core now stamps startedAt on every ItemResult).
+  const itemStartedAt = $derived.by<Map<string, number>>(() => {
+    const m = new Map<string, number>();
+    for (const r of agentsData?.runs ?? []) {
+      if (r.phase !== 'execute' || !r.itemId || !r.startedAt) continue;
+      const t = new Date(r.startedAt).getTime();
+      if (Number.isFinite(t)) m.set(r.itemId, t);
     }
     return m;
   });
@@ -1498,6 +1518,17 @@
                     {#if it.costUsd != null} · ${it.costUsd.toFixed(3)}{/if}
                   </div>
                 {/if}
+                {#if it.status === 'in_progress' && itemStartedAt.has(it.id)}
+                  <div class="kan-meta af2-mono" style="color:var(--af-purple)">
+                    running · {formatDuration(Math.max(0, now - (itemStartedAt.get(it.id) ?? now)))}
+                  </div>
+                {/if}
+                {#if (it.status === 'planned' || it.status === 'pending') && ((it.predecessors?.length ?? 0) > 0 || it.wave != null)}
+                  <div class="kan-meta af2-mono dim">
+                    {#if it.wave != null}wave {it.wave}{/if}
+                    {#if (it.predecessors?.length ?? 0) > 0}{it.wave != null ? ' · ' : ''}after {(it.predecessors ?? []).join(', ')}{/if}
+                  </div>
+                {/if}
                 {#if it.error}<div class="kan-error af2-mono">{it.error}</div>{/if}
               </button>
             {/each}
@@ -1528,7 +1559,31 @@
                   {item.status.replace('_', ' ')}
                 </Badge>
                 {#if item.model}<ModelChip model={item.model} />{/if}
+                {#if item.wave != null}<Badge variant="muted">wave {item.wave}</Badge>{/if}
               </div>
+              {#if item.status === 'in_progress' && itemStartedAt.has(item.id)}
+                <div class="drawer-meta af2-mono" style="color:var(--af-purple)">
+                  running for {formatDuration(Math.max(0, now - (itemStartedAt.get(item.id) ?? now)))}
+                </div>
+              {/if}
+              {#if (item.status === 'planned' || item.status === 'pending') && (item.predecessors?.length ?? 0) > 0}
+                <div class="drawer-meta af2-mono dim">waiting on: {(item.predecessors ?? []).join(', ')}</div>
+              {/if}
+              {#if item.description}
+                <div class="drawer-section-title">INSTRUCTIONS</div>
+                <div class="drawer-markdown">
+                  <MarkdownRenderer content={item.description} />
+                </div>
+              {/if}
+              {#if (item.files?.length ?? 0) > 0}
+                <div class="drawer-section-title">DECLARED FILES</div>
+                <pre class="drawer-pre">{(item.files ?? []).join('\n')}</pre>
+              {/if}
+              {#if (item.tags?.length ?? 0) > 0}
+                <div class="drawer-badges">
+                  {#each item.tags ?? [] as tag (tag)}<span class="phase-chip">{tag}</span>{/each}
+                </div>
+              {/if}
               {#if item.error}
                 <div class="drawer-section-title">ERROR</div>
                 <pre class="drawer-pre">{item.error}</pre>

@@ -193,6 +193,45 @@ describe('execute-phase progress events', () => {
     expect(typeof payload.parallelism).toBe('number');
     expect(Array.isArray(payload.failedItems)).toBe(true);
   });
+
+  it('snapshots a running entry with startedAt while the item executes, and preserves startedAt on the terminal result', async () => {
+    writeSprintFile([
+      { id: 'item-1', title: 'Task A', assignee: 'agent-1' },
+    ]);
+
+    const bus = makeBus();
+    const execJsonPath = join(tmpRoot, '.agentforge', 'cycles', 'cycle-test-1', 'phases', 'execute.json');
+    // Capture the incremental snapshot at the moment the agent is running.
+    let midRunSnapshot: any = null;
+    const ctx = makeCtx(bus, {
+      cycleId: 'cycle-test-1',
+      runtime: {
+        run: vi.fn().mockImplementation(async () => {
+          const { readFileSync } = await import('node:fs');
+          midRunSnapshot = JSON.parse(readFileSync(execJsonPath, 'utf8'));
+          return { output: 'done', costUsd: 0.01, status: 'completed' };
+        }),
+      } as any,
+    });
+
+    const { runExecutePhase } = await import('../execute-phase.js');
+    await runExecutePhase(ctx);
+
+    // Mid-run: the live snapshot shows the item as running with a startedAt.
+    expect(midRunSnapshot).not.toBeNull();
+    const runningRow = (midRunSnapshot.itemResults as any[]).find((r) => r.itemId === 'item-1');
+    expect(runningRow.status).toBe('running');
+    expect(runningRow.agentId).toBe('agent-1');
+    expect(new Date(runningRow.startedAt).getTime()).toBeGreaterThan(0);
+
+    // Terminal: startedAt is preserved on the completed result.
+    const { readFileSync } = await import('node:fs');
+    const final = JSON.parse(readFileSync(execJsonPath, 'utf8'));
+    const finalRow = (final.itemResults as any[]).find((r) => r.itemId === 'item-1');
+    expect(finalRow.status).toBe('completed');
+    expect(finalRow.startedAt).toBe(runningRow.startedAt);
+    expect(finalRow.agentId).toBe('agent-1');
+  });
 });
 
 // ---------------------------------------------------------------------------
