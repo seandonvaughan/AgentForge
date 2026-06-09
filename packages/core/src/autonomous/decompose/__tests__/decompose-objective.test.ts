@@ -232,6 +232,36 @@ describe('loadObservedChildCosts', () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it('W1: appends relevant knowledge-base notes to the planner prompt', async () => {
+    const { mkdtempSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { writeKnowledgeEntry } = await import('../../../knowledge/persistence.js');
+    const root = mkdtempSync(join(tmpdir(), 'af-kb-planner-'));
+    try {
+      writeKnowledgeEntry(root, {
+        text: 'RBAC roles live in the tenancy module; multi-tenant checks go through TenantGuard.',
+        source: 'review',
+      });
+      const prompts: string[] = [];
+      const runtime = {
+        run: async (_a: string, task: string) => {
+          prompts.push(task);
+          return { output: planJson(goodChildren), costUsd: 0.5, model: 'fable' };
+        },
+      };
+      await decomposeObjective(
+        { ...objective, description: 'Add multi-tenant RBAC roles' },
+        runtime,
+        { projectRoot: root },
+      );
+      expect(prompts[0]).toContain('## Project knowledge');
+      expect(prompts[0]).toContain('TenantGuard');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 // ---- planner grounding (cycle c5e6efb9) ------------------------------------

@@ -101,7 +101,6 @@ export function writeKnowledgeEntry(
     }
   }
   const cappedNames = uniqueNames.slice(0, opts.maxEntities ?? 30);
-  if (cappedNames.length === 0) return [];
 
   const now = new Date().toISOString();
   const entities: Entity[] = cappedNames.map(name => ({
@@ -116,6 +115,31 @@ export function writeKnowledgeEntry(
     createdAt: now,
     updatedAt: now,
   }));
+
+  // W1 — in addition to the extracted TERMS above, persist one full-text NOTE
+  // entity carrying the source text itself. Terms make the graph queryable;
+  // notes make it USEFUL as prompt context (kb-retrieval injects note
+  // descriptions, not term soup, into agent and planner prompts).
+  const noteText = opts.text.replace(/\s+/g, ' ').trim();
+  if (noteText.length >= 20) {
+    const noteName = noteText.split(' ').slice(0, 8).join(' ');
+    entities.push({
+      id: randomUUID(),
+      name: noteName.length > 80 ? `${noteName.slice(0, 79)}…` : noteName,
+      type: 'concept',
+      description: noteText.length > 500 ? `${noteText.slice(0, 499)}…` : noteText,
+      properties: {
+        kind: 'note',
+        source: opts.source,
+        ...(opts.cycleId !== undefined ? { cycleId: opts.cycleId } : {}),
+        ...(opts.tags !== undefined ? { tags: opts.tags } : {}),
+      },
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  if (entities.length === 0) return [];
 
   try {
     const knowledgeDir = join(projectRoot, KNOWLEDGE_DIR);

@@ -34,6 +34,7 @@ import {
 } from './tools/af-codex-workflows.js';
 import { afKbLookup } from './tools/af-kb-lookup.js';
 import { afMemoryQuery } from './tools/af-memory-query.js';
+import { afKbSearch } from './tools/af-kb-search.js';
 
 const PROJECT_ROOT = process.env['AGENTFORGE_PROJECT_ROOT'] ?? process.cwd();
 
@@ -116,6 +117,28 @@ server.tool(
   },
   async ({ text, k }) => {
     const result = await afMemoryQuery({ text, k: k ?? 5 }, PROJECT_ROOT);
+    return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+  },
+);
+
+// Tool: af_kb_search
+server.tool(
+  'af_kb_search',
+  'Keyword search over the AgentForge knowledge base notes ' +
+    '(.agentforge/knowledge/entities.jsonl — accumulated review/audit/learn findings). Read-only.',
+  {
+    query: z.string().min(1).max(1024).describe('Free-text search query'),
+    k: z
+      .number()
+      .int()
+      .min(1)
+      .max(20)
+      .optional()
+      .default(5)
+      .describe('Number of results to return (default: 5)'),
+  },
+  async ({ query, k }) => {
+    const result = afKbSearch({ query, k: k ?? 5 }, PROJECT_ROOT);
     return { content: [{ type: 'text', text: JSON.stringify(result) }] };
   },
 );

@@ -264,6 +264,34 @@ describe('execute-phase progress events', () => {
     expect(note!.value).toContain('duplicate slugs');
   });
 
+  it('W1: splices task-relevant knowledge-base notes into the item prompt', async () => {
+    const { writeKnowledgeEntry } = await import('../../../knowledge/persistence.js');
+    writeKnowledgeEntry(tmpRoot, {
+      text: 'The widget registry rejects duplicate slugs silently — always check the return value.',
+      source: 'review',
+    });
+    writeSprintFile([
+      { id: 'item-1', title: 'Extend the widget registry', assignee: 'coder', description: 'add slugs support to registry' },
+    ]);
+
+    const prompts: string[] = [];
+    const bus = makeBus();
+    const ctx = makeCtx(bus, {
+      runtime: {
+        run: vi.fn().mockImplementation(async (_agent: string, task: string) => {
+          prompts.push(task);
+          return { output: 'done', costUsd: 0.01, status: 'completed' };
+        }),
+      } as any,
+    });
+
+    const { runExecutePhase } = await import('../execute-phase.js');
+    await runExecutePhase(ctx);
+
+    expect(prompts[0]).toContain('## Project knowledge');
+    expect(prompts[0]).toContain('duplicate slugs');
+  });
+
   it('W2: records failures with an error excerpt in the assignee\'s personal memory', async () => {
     writeSprintFile([
       { id: 'item-1', title: 'Doomed task', assignee: 'coder' },

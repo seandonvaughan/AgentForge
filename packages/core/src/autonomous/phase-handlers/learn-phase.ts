@@ -7,6 +7,7 @@ import { join, dirname } from 'node:path';
 import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
 import { writeMemoryEntry } from '../../memory/types.js';
 import { writeCostPriors } from '../cycle-artifacts/cost-priors.js';
+import { writeKnowledgeEntry } from '../../knowledge/persistence.js';
 import { clusterLowQuality } from '../../skills/flywheel/cluster-low-quality.js';
 import { proposeSkill } from '../../skills/flywheel/propose-skill.js';
 
@@ -258,6 +259,14 @@ Format as markdown with section headers.`;
       );
       writeFileSync(retrospectivePath, retrospective, 'utf8');
       if (status === 'completed' && retrospective.trim().length > 0) {
+        // W1 — persist the retrospective's recommendations into the knowledge
+        // base so future planners and item prompts can retrieve them.
+        writeKnowledgeEntry(ctx.projectRoot, {
+          text: retrospective.slice(0, 2000),
+          source: 'learn',
+          cycleId: ctx.cycleId,
+          tags: ['retrospective'],
+        });
         writeLearnedFacts({
           projectRoot: ctx.projectRoot,
           cycleId: ctx.cycleId,

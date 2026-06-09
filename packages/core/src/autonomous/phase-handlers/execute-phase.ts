@@ -47,6 +47,7 @@ import { ItemCheckpointWriter } from '../checkpoint/item-checkpoint.js';
 // Phase 0 — lesson-attribution instrumentation.
 import { appendLessonAttributions } from '../../memory/lesson-attribution.js';
 import { appendAgentMemory, extractLearnedNotes } from '../../memory/agent-memory.js';
+import { searchKnowledgeNotes, buildKbPromptBlock } from '../../knowledge/kb-retrieval.js';
 import { computeLessonId } from '../../team/engine/learnings/lesson-id.js';
 // Gem #2 — semantic reranking of memory entries.
 import { rankMemoriesBySemantic } from './semantic-memory.js';
@@ -1337,7 +1338,7 @@ export async function runExecutePhase(
       for (let attempt = 0; attempt <= maxItemRetries; attempt++) {
         attempts = attempt + 1;
         const runtimeCwd = worktreeHandle?.path ?? ctx.projectRoot;
-        const task = buildItemPrompt(
+        let task = buildItemPrompt(
           item,
           runtimeCwd,
           attempt,
@@ -1346,6 +1347,16 @@ export async function runExecutePhase(
           selfEvalDisabled,
           ctx.gateRetry,
         );
+        // W1 — splice task-relevant knowledge-base notes (accumulated review/
+        // audit/learn findings about THIS repo) into the prompt. Keyword
+        // retrieval, deterministic, empty on fresh repos. Read from
+        // ctx.projectRoot: worktrees do not carry .agentforge/knowledge.
+        try {
+          const kbBlock = buildKbPromptBlock(
+            searchKnowledgeNotes(ctx.projectRoot, `${item.title} ${item.description ?? ''}`, 3),
+          );
+          if (kbBlock) task = `${task}\n\n${kbBlock}`;
+        } catch { /* non-fatal */ }
         ctx.bus.publish('sprint.phase.item.started', {
           sprintId: ctx.sprintId,
           phase,

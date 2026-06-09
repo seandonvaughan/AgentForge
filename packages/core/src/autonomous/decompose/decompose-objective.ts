@@ -12,6 +12,7 @@ import { validateAndLayerEpicPlan } from './validate-and-layer.js';
 import type { ValidationReport } from './types.js';
 import type { AgentOutputSchema } from '../../runtime/types.js';
 import { loadCostPriors, type CostPriors } from '../cycle-artifacts/cost-priors.js';
+import { searchKnowledgeNotes, buildKbPromptBlock } from '../../knowledge/kb-retrieval.js';
 
 export const EPIC_PLANNER_AGENT_ID = 'epic-planner';
 
@@ -388,6 +389,17 @@ export async function decomposeObjective(
   const observed =
     opts.projectRoot !== undefined ? loadObservedChildCosts(opts.projectRoot) : null;
   const priors = opts.projectRoot !== undefined ? loadCostPriors(opts.projectRoot) : null;
+  // W1 — accumulated project knowledge (review/audit/learn findings) relevant
+  // to this objective, appended to the planner prompt so planning starts from
+  // what prior cycles already learned about this repo.
+  let kbBlock = '';
+  if (opts.projectRoot !== undefined) {
+    try {
+      kbBlock = buildKbPromptBlock(
+        searchKnowledgeNotes(opts.projectRoot, `${objective.title} ${objective.description}`, 5),
+      );
+    } catch { /* non-fatal */ }
+  }
   // Read-only repo exploration tools (cycle c5e6efb9 fix): a tool-less planner
   // has never SEEN the repository and hallucinates plausible-but-wrong file
   // paths on large codebases (declared packages/core/src/phases/… when the
@@ -397,7 +409,7 @@ export async function decomposeObjective(
   // tools; this is the redesign's "grounded digest" realized as exploration.
   const r1 = await runtime.run(
     EPIC_PLANNER_AGENT_ID,
-    buildEpicPlannerPrompt(objective, observed, priors),
+    kbBlock ? `${buildEpicPlannerPrompt(objective, observed, priors)}\n\n${kbBlock}` : buildEpicPlannerPrompt(objective, observed, priors),
     {
       allowedTools: ['Read', 'Glob', 'Grep'],
       codexSandbox: 'read-only',
