@@ -588,6 +588,8 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
           ...(config.testing.knownFlakyTestFiles !== undefined
             ? { childVerifyExcludeTestFiles: config.testing.knownFlakyTestFiles }
             : {}),
+          // W5 — preserve failed children's worktrees as diagnostic branches.
+          includeDiagnosticBranchOnFailure: config.git.includeDiagnosticBranchOnFailure,
         }),
         test: (ctx: PhaseContext) => runTestPhase(ctx),
         review: (ctx: PhaseContext) => runReviewPhase(ctx),

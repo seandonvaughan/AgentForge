@@ -476,6 +476,9 @@
     const m = new Map<string, SprintItem['status']>();
     for (const r of agentsData?.runs ?? []) {
       if (r.phase !== 'execute' || !r.itemId) continue;
+      // W5 — blocked items were never dispatched; leave them in the Planned
+      // column (their card shows the 'after: …' predecessor hint).
+      if (r.status === 'blocked') continue;
       const s = r.status === 'completed' ? 'completed'
               : r.status === 'failed'    ? 'failed'
               : r.status === 'killed'    ? 'killed'
