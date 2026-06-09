@@ -69,7 +69,7 @@ function asStringArray(value: unknown): string[] {
 interface CreateAgentBody {
   id: string;
   name: string;
-  model: 'opus' | 'sonnet' | 'haiku';
+  model: 'fable' | 'opus' | 'sonnet' | 'haiku';
   description: string;
   system_prompt: string;
   skills?: string[];
@@ -80,7 +80,7 @@ interface CreateAgentBody {
 
 interface UpdateAgentBody {
   name?: string;
-  model?: 'opus' | 'sonnet' | 'haiku';
+  model?: 'fable' | 'opus' | 'sonnet' | 'haiku';
   description?: string;
   system_prompt?: string;
   skills?: string[];
@@ -400,8 +400,8 @@ export async function agentCrudRoutes(
     }
 
     // Validate model tier
-    if (!['opus', 'sonnet', 'haiku'].includes(model)) {
-      return reply.status(400).send({ error: 'model must be one of: opus, sonnet, haiku' });
+    if (!['fable', 'opus', 'sonnet', 'haiku'].includes(model)) {
+      return reply.status(400).send({ error: 'model must be one of: fable, opus, sonnet, haiku' });
     }
 
     // Resolve and contain the file path (id already validated as kebab-case above)
@@ -461,8 +461,8 @@ export async function agentCrudRoutes(
       const { name, model, description, system_prompt, skills, reports_to, seniority } = req.body;
 
       // Validate model if provided
-      if (model !== undefined && !['opus', 'sonnet', 'haiku'].includes(model)) {
-        return reply.status(400).send({ error: 'model must be one of: opus, sonnet, haiku' });
+      if (model !== undefined && !['fable', 'opus', 'sonnet', 'haiku'].includes(model)) {
+        return reply.status(400).send({ error: 'model must be one of: fable, opus, sonnet, haiku' });
       }
 
       const updated: AgentYaml = {
@@ -568,8 +568,8 @@ export async function agentCrudRoutes(
         return reply.status(409).send({ error: `Agent "${newId}" already exists` });
       }
 
-      if (model !== undefined && !['opus', 'sonnet', 'haiku'].includes(model)) {
-        return reply.status(400).send({ error: 'model must be one of: opus, sonnet, haiku' });
+      if (model !== undefined && !['fable', 'opus', 'sonnet', 'haiku'].includes(model)) {
+        return reply.status(400).send({ error: 'model must be one of: fable, opus, sonnet, haiku' });
       }
 
       const forked: AgentYaml = {

@@ -91,7 +91,7 @@ describe("agent YAML files — manifest contract", () => {
 
     it(`${agentId} has a valid 'model' tier`, () => {
       const agent = loadAgent(agentId);
-      expect(["opus", "sonnet", "haiku"]).toContain(agent.model);
+      expect(["fable", "opus", "sonnet", "haiku"]).toContain(agent.model);
     });
 
     it(`${agentId} has a non-empty 'system_prompt'`, () => {

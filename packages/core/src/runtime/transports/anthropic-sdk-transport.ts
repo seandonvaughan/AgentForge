@@ -67,12 +67,15 @@ export const CACHE_CONTROL_CHAR_THRESHOLD = 4096;
  * gate is keyed on the model id rather than blanket-stripping it.
  *
  * Match is a defensive substring check (never regex on external text): any
- * model id containing `opus-4-7`/`opus-4.7`/`opus-4-8`/`opus-4.8` is treated as
- * sampling-param-rejecting.
+ * model id containing `opus-4-7`/`opus-4.7`/`opus-4-8`/`opus-4.8`, or the
+ * Fable family (`fable`), is treated as sampling-param-rejecting. Fable 5
+ * additionally 400s on an explicit `thinking: {type: "disabled"}` — this
+ * transport never sends a `thinking` param, which is the correct shape for it.
  */
 export function supportsSamplingParams(modelId: string): boolean {
   const id = modelId.toLowerCase();
   const rejecting =
+    id.includes('fable') ||
     id.includes('opus-4-7') ||
     id.includes('opus-4.7') ||
     id.includes('opus-4-8') ||

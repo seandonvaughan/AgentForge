@@ -133,9 +133,14 @@ async function scoreStep(input: ScoreStepInput): Promise<StepScore> {
     phase: 'execute',
     item_id: input.itemId,
     agent_id: input.agentId,
-    model: (['opus', 'sonnet', 'haiku'] as const).includes(input.model as 'opus' | 'sonnet' | 'haiku')
-      ? (input.model as 'opus' | 'sonnet' | 'haiku')
-      : 'sonnet',
+    // Step-score learning is keyed to the three bulk tiers; record a fable
+    // execution as opus (nearest capability) so its outcomes don't skew the
+    // sonnet stats the adaptive router learns from.
+    model: input.model === 'fable'
+      ? 'opus'
+      : (['opus', 'sonnet', 'haiku'] as const).includes(input.model as 'opus' | 'sonnet' | 'haiku')
+        ? (input.model as 'opus' | 'sonnet' | 'haiku')
+        : 'sonnet',
     capability_tags: [],
     skill_ids: [],
     output_schema_id: input.validatedOutput?.schemaName ?? null,

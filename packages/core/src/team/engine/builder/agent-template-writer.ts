@@ -21,7 +21,8 @@ const DUMP_OPTS: yaml.DumpOptions = {
 };
 
 /** Map an agent tier to its default reasoning-effort level. */
-function defaultEffortFor(tier: "opus" | "sonnet" | "haiku"): string {
+function defaultEffortFor(tier: "fable" | "opus" | "sonnet" | "haiku"): string {
+  if (tier === "fable") return "xhigh";
   if (tier === "opus") return "xhigh";
   if (tier === "sonnet") return "high";
   return "medium";

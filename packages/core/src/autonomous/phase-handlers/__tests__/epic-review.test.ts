@@ -137,7 +137,7 @@ describe('runEpicReview — APPROVE via schemaValidation.ok', () => {
     expect((mem[0]!.metadata as GateVerdictMetadata).verdict).toBe('approved');
   });
 
-  it('passes the outputSchema and opus capabilityTier to runtime.run', async () => {
+  it('passes the outputSchema and fable capabilityTier to runtime.run', async () => {
     writePlan([{ id: 'i1', title: 'item one' }]);
     writeExecute();
     const { ctx, calls } = makeCtx(() => ({
@@ -147,7 +147,7 @@ describe('runEpicReview — APPROVE via schemaValidation.ok', () => {
     }));
     await runEpicReview(ctx);
     expect(calls[0]!.opts.outputSchema).toBe(EPIC_REVIEW_SCHEMA);
-    expect(calls[0]!.opts.capabilityTier).toBe('opus');
+    expect(calls[0]!.opts.capabilityTier).toBe('fable');
     expect(calls[0]!.opts.codexSandbox).toBe('read-only');
   });
 });

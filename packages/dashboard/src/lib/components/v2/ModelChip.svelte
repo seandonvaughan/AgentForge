@@ -1,7 +1,7 @@
 <script lang="ts">
   import { codexProfileFor } from '$lib/modelProfiles';
 
-  type Model = 'opus' | 'sonnet' | 'haiku' | string;
+  type Model = 'fable' | 'opus' | 'sonnet' | 'haiku' | string;
   type Size = 'sm' | 'md';
 
   interface Props {
@@ -20,6 +20,7 @@
   const isCodexProfile = $derived(displayModel.toLowerCase().includes('codex') || displayModel.toLowerCase().startsWith('gpt-'));
 
   const color = $derived(
+    colorKey === 'fable'  ? 'var(--af-fable, var(--af-opus))' :
     colorKey === 'opus'   ? 'var(--af-opus)'   :
     colorKey === 'sonnet' ? 'var(--af-sonnet)' :
     colorKey === 'haiku'  ? 'var(--af-haiku)'  :

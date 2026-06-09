@@ -87,6 +87,8 @@ export class DecomposeError extends Error {
     message: string,
     readonly reason: 'invalid-json' | 'cycle' | 'missing-predecessors' | 'budget' | 'unknown',
     readonly report?: ValidationReport,
+    /** LLM spend already incurred before the failure (both planner calls). */
+    readonly costUsd?: number,
   ) {
     super(message);
     this.name = 'DecomposeError';
@@ -402,5 +404,6 @@ export async function decomposeObjective(
       `epic-planner produced an invalid decomposition after one repair retry (reason: ${a2.reason})`,
     a2.reason,
     a2.report,
+    costUsd,
   );
 }

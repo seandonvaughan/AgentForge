@@ -16,10 +16,10 @@ import { safeJoin } from '../../lib/safe-join.js';
 
 /** Agent IDs must be kebab-case slugs — no path separators, no traversal. */
 const SAFE_AGENT_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-type CapabilityTier = 'opus' | 'sonnet' | 'haiku';
+type CapabilityTier = 'fable' | 'opus' | 'sonnet' | 'haiku';
 
 function normalizeCapabilityTier(value: unknown): CapabilityTier {
-  return value === 'opus' || value === 'haiku' ? value : 'sonnet';
+  return value === 'fable' || value === 'opus' || value === 'haiku' ? value : 'sonnet';
 }
 
 function toCodexModelProfile(

@@ -134,7 +134,7 @@ export async function loadAgentConfig(
     const parsed = yaml.load(raw) as AgentYaml;
 
     const modelMap: Record<string, ModelTier> = {
-      opus: 'opus', sonnet: 'sonnet', haiku: 'haiku',
+      fable: 'fable', opus: 'opus', sonnet: 'sonnet', haiku: 'haiku',
     };
 
     const baseSystemPrompt =

@@ -5,7 +5,7 @@ import yaml from 'js-yaml';
 import { forgeTeamService, rebuildTeamService } from '@agentforge/core';
 import { globalStream } from './stream.js';
 
-type CapabilityTier = 'opus' | 'sonnet' | 'haiku';
+type CapabilityTier = 'fable' | 'opus' | 'sonnet' | 'haiku';
 
 interface TeamActionBody {
   dryRun?: boolean;
@@ -24,7 +24,7 @@ interface TeamStatus {
   modifiedAt: string | null;
 }
 
-const TIERS: CapabilityTier[] = ['opus', 'sonnet', 'haiku'];
+const TIERS: CapabilityTier[] = ['fable', 'opus', 'sonnet', 'haiku'];
 
 function safeString(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
@@ -42,7 +42,7 @@ function readYamlFile(filePath: string): Record<string, unknown> | null {
 }
 
 function countAgentsByModel(projectRoot: string): Pick<TeamStatus, 'agentCount' | 'modelCounts'> {
-  const modelCounts: Record<CapabilityTier, number> = { opus: 0, sonnet: 0, haiku: 0 };
+  const modelCounts: Record<CapabilityTier, number> = { fable: 0, opus: 0, sonnet: 0, haiku: 0 };
   const agentsDir = join(projectRoot, '.agentforge', 'agents');
   if (!existsSync(agentsDir)) return { agentCount: 0, modelCounts };
 

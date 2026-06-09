@@ -54,7 +54,7 @@ const CATEGORY_FLOOR: Record<AgentCategory, ModelTier> = {
 };
 
 /** Tier ordering for comparison. */
-const TIER_RANK: Record<ModelTier, number> = { haiku: 0, sonnet: 1, opus: 2 };
+const TIER_RANK: Record<ModelTier, number> = { haiku: 0, sonnet: 1, opus: 2, fable: 3 };
 
 function tierMax(a: ModelTier, b: ModelTier): ModelTier {
   return TIER_RANK[a] >= TIER_RANK[b] ? a : b;

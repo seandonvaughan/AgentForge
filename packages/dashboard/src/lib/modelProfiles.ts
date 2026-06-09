@@ -1,4 +1,4 @@
-export type CapabilityTier = 'opus' | 'sonnet' | 'haiku';
+export type CapabilityTier = 'fable' | 'opus' | 'sonnet' | 'haiku';
 
 export interface CodexModelProfile {
   modelId: string;
@@ -7,6 +7,9 @@ export interface CodexModelProfile {
 }
 
 const PROFILES: Record<CapabilityTier, CodexModelProfile> = {
+  // The fable tier is Claude-served (claude-fable-5); its codex failover
+  // profile mirrors opus since no GPT tier sits above it.
+  fable: { modelId: 'claude-fable-5', effort: 'xhigh', tier: 'fable' },
   opus: { modelId: 'gpt-5.5', effort: 'xhigh', tier: 'opus' },
   sonnet: { modelId: 'gpt-5.3-codex', effort: 'high', tier: 'sonnet' },
   haiku: { modelId: 'gpt-5.4-mini', effort: 'medium', tier: 'haiku' },
@@ -17,6 +20,9 @@ export function codexProfileFor(value: string | null | undefined, effort?: strin
   const normalizedEffort = (effort ?? '').toLowerCase();
   if (!raw && !normalizedEffort) return null;
 
+  if (raw.includes('fable')) {
+    return { ...PROFILES.fable, effort: effort ?? PROFILES.fable.effort };
+  }
   if (raw.includes('gpt-5.5') || raw.includes('opus') || normalizedEffort === 'xhigh') {
     return { ...PROFILES.opus, effort: effort ?? PROFILES.opus.effort };
   }

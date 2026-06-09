@@ -78,7 +78,7 @@
       "owns_subsystems": [
         "packages/core/src/autonomous/decompose"
       ],
-      "tier": "opus",
+      "tier": "fable",
       "priority": 16
     },
     {

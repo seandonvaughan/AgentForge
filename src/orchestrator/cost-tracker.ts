@@ -42,6 +42,7 @@ export interface CostReport {
  * Based on approximate Anthropic API pricing.
  */
 export const MODEL_COSTS: Record<ModelTier, { input: number; output: number }> = {
+  fable: { input: 10.0, output: 50.0 },
   opus: { input: 15.0, output: 75.0 },
   sonnet: { input: 3.0, output: 15.0 },
   haiku: { input: 0.25, output: 1.25 },
@@ -81,6 +82,7 @@ export class CostTracker {
    */
   getReport(): CostReport {
     const byModel: Record<ModelTier, { tokens: number; cost: number }> = {
+      fable: { tokens: 0, cost: 0 },
       opus: { tokens: 0, cost: 0 },
       sonnet: { tokens: 0, cost: 0 },
       haiku: { tokens: 0, cost: 0 },

@@ -4,6 +4,14 @@ All notable changes to AgentForge are documented in this file.
 
 ## [Unreleased]
 
+### Fable model tier
+
+- Added the `fable` capability tier (Claude Fable 5, model id `claude-fable-5`, $10/$50 per MTok) above `opus` across the model registry, pricing tables, tier ranking, cost-tier resolution, agent YAML schema, forge/team-writer model routing, server allowlists, dashboard surfaces, and the CLI `--model-cap` option. Existing opus/sonnet/haiku tiers are unchanged.
+- Routed the epic path's two strong-model calls to the fable tier: the epic planner agent (`.agentforge/agents/epic-planner.yaml`) and the structured epic review (`capabilityTier: 'fable'`). `modelCap` still caps both down (fable → opus injects `effort: max`).
+- Claude-CLI fallback ladder now starts at fable (`fable → opus → sonnet → haiku`); on OpenAI-family providers the fable tier mirrors the opus profile (gpt-5.5/xhigh) since no GPT tier sits above it.
+- The Anthropic SDK transport treats `claude-fable-5` as sampling-param-rejecting (same as Opus 4.7/4.8) and never sends a `thinking` param (Fable 5 400s on an explicit `thinking: disabled`).
+- `xhigh` effort is preserved on the fable tier (previously coerced to `max` for every non-opus tier); fable executions are recorded as `opus` in step-score learning so the bulk-tier adaptive router's stats stay clean, and the adaptive router never re-routes a deliberately-fable item.
+
 ### CLI
 
 - Added `agentforge backlog complete <itemId>` to record durable backlog completion entries in `.agentforge/backlog/completed.json` (idempotent upsert with optional `--cycle`, `--pr`, and `--reason` metadata).

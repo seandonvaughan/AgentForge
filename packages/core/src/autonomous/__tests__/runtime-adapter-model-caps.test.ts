@@ -38,7 +38,7 @@ afterEach(() => {
   rmSync(tmpDir, { recursive: true, force: true });
 });
 
-function writeAgentConfig(name: string, model: 'opus' | 'sonnet' | 'haiku', effort?: string): void {
+function writeAgentConfig(name: string, model: 'fable' | 'opus' | 'sonnet' | 'haiku', effort?: string): void {
   let yaml = `name: ${name}\nmodel: ${model}\nversion: '1.0'\ndescription: test agent\nsystem_prompt: test\n`;
   if (effort) {
     yaml += `effort: ${effort}\n`;
@@ -47,6 +47,42 @@ function writeAgentConfig(name: string, model: 'opus' | 'sonnet' | 'haiku', effo
 }
 
 describe('RuntimeAdapter modelCap and applyCaps()', () => {
+  describe('fable tier (above opus)', () => {
+    it('leaves a fable agent unchanged when cap is fable', async () => {
+      writeAgentConfig('fable-agent', 'fable');
+      const adapter = new RuntimeAdapter({ cwd: tmpDir, modelCap: 'fable' });
+
+      const runtime = await adapter['getOrCreateRuntime']('fable-agent');
+      expect(runtime['config'].model).toBe('fable');
+    });
+
+    it('downgrades a fable agent to opus (with effort:max) when cap is opus', async () => {
+      writeAgentConfig('fable-agent', 'fable');
+      const adapter = new RuntimeAdapter({ cwd: tmpDir, modelCap: 'opus' });
+
+      const runtime = await adapter['getOrCreateRuntime']('fable-agent');
+      expect(runtime['config'].model).toBe('opus');
+      expect(runtime['config'].effort).toBe('max');
+    });
+
+    it('keeps xhigh effort on a fable agent (xhigh is supported above sonnet)', async () => {
+      writeAgentConfig('fable-agent', 'fable', 'xhigh');
+      const adapter = new RuntimeAdapter({ cwd: tmpDir });
+
+      const runtime = await adapter['getOrCreateRuntime']('fable-agent');
+      expect(runtime['config'].model).toBe('fable');
+      expect(runtime['config'].effort).toBe('xhigh');
+    });
+
+    it('leaves an opus agent unchanged when cap is fable (below cap)', async () => {
+      writeAgentConfig('opus-agent', 'opus');
+      const adapter = new RuntimeAdapter({ cwd: tmpDir, modelCap: 'fable' });
+
+      const runtime = await adapter['getOrCreateRuntime']('opus-agent');
+      expect(runtime['config'].model).toBe('opus');
+    });
+  });
+
   describe('same-tier: agent at or below cap', () => {
     it('leaves sonnet agent unchanged when cap is sonnet', async () => {
       writeAgentConfig('sonnet-agent', 'sonnet');

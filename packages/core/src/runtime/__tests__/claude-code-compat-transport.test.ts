@@ -62,6 +62,16 @@ describe('ClaudeCodeCompatTransport.buildClaudeArgs', () => {
   });
 
   describe('--fallback-model', () => {
+    it('defaults to enabled: fable model gets opus fallback', () => {
+      const args = buildArgs(
+        makeRequest({ agent: { agentId: 'epic-planner', name: 'Epic Planner', model: 'fable', systemPrompt: 'sp', workspaceId: 'w' }, modelId: 'claude-fable-5' }),
+        'json',
+      );
+      const idx = args.indexOf('--fallback-model');
+      expect(idx).toBeGreaterThan(-1);
+      expect(args[idx + 1]).toBe('claude-opus-4-8');
+    });
+
     it('defaults to enabled: opus model gets sonnet fallback', () => {
       const args = buildArgs(
         makeRequest({ agent: { agentId: 'coder', name: 'Coder', model: 'opus', systemPrompt: 'sp', workspaceId: 'w' }, modelId: 'claude-opus-4-8' }),
@@ -115,6 +125,14 @@ describe('ClaudeCodeCompatTransport.buildClaudeArgs', () => {
     it('MODEL_IDS.opus is claude-opus-4-8', async () => {
       const { MODEL_IDS } = await import('../../agent-runtime/types.js');
       expect(MODEL_IDS.opus).toBe('claude-opus-4-8');
+    });
+  });
+
+  describe('MODEL_IDS fable tier', () => {
+    it('MODEL_IDS.fable is claude-fable-5 and priced at $10/$50 per MTok', async () => {
+      const { MODEL_IDS, MODEL_PRICING } = await import('../../agent-runtime/types.js');
+      expect(MODEL_IDS.fable).toBe('claude-fable-5');
+      expect(MODEL_PRICING.fable).toEqual({ input: 10.00, output: 50.00 });
     });
   });
 });

@@ -243,7 +243,7 @@ interface PrMergeAssessment {
 
 const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
 const CYCLE_STAGE_FILTER_RE = /^[a-z][a-z0-9_-]*$/;
-type ModelCap = 'opus' | 'sonnet' | 'haiku';
+type ModelCap = 'fable' | 'opus' | 'sonnet' | 'haiku';
 type EffortCap = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 interface CycleLaunchControls {
@@ -274,7 +274,7 @@ export function registerCycleCommand(program: Command): void {
     .option('--budget-usd <usd>', 'Override per-cycle budget for preview only')
     .option('--max-items <count>', 'Override max sprint items for preview only')
     .option('--fast-mode', 'Use the fast parallel launch preset (defaults effort cap to high unless --effort-cap is set)')
-    .option('--model-cap <tier>', 'Cap Codex model tier: opus, sonnet, or haiku')
+    .option('--model-cap <tier>', 'Cap Codex model tier: fable, opus, sonnet, or haiku')
     .option('--effort-cap <effort>', 'Cap Codex effort: low, medium, high, xhigh, or max')
     .option('--max-agents <count>', 'Override maximum execute-phase parallel agents')
     .option('--fallback', 'Enable runtime fallback for this preview')
@@ -383,7 +383,7 @@ function registerCycleRunCommand(parent: Command, commandName: string, descripti
     .option('--resume <cycleId>', 'Resume a previously-checkpointed cycle by id')
     .option('--cycle-name <name>', 'Optional display name for this cycle')
     .option('--fast-mode', 'Use the fast parallel launch preset (defaults effort cap to high unless --effort-cap is set)')
-    .option('--model-cap <tier>', 'Cap Codex model tier: opus, sonnet, or haiku')
+    .option('--model-cap <tier>', 'Cap Codex model tier: fable, opus, sonnet, or haiku')
     .option('--effort-cap <effort>', 'Cap Codex effort: low, medium, high, xhigh, or max')
     .option('--max-agents <count>', 'Override maximum execute-phase parallel agents')
     .option('--fallback', 'Enable runtime fallback for this cycle')
@@ -2025,7 +2025,7 @@ function applyCycleLaunchControls(
 
 function parseModelCap(raw: string | undefined): ModelCap | undefined | null {
   if (raw === undefined || raw === '') return undefined;
-  return raw === 'opus' || raw === 'sonnet' || raw === 'haiku' ? raw : null;
+  return raw === 'fable' || raw === 'opus' || raw === 'sonnet' || raw === 'haiku' ? raw : null;
 }
 
 function parseEffortCap(raw: string | undefined): EffortCap | undefined | null {

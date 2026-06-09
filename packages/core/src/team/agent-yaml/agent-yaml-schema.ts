@@ -41,7 +41,7 @@ export type AgentOutputSchema = z.infer<typeof AgentOutputSchemaSchema>;
 
 export const AgentYamlSchema = z.object({
   name: z.string().min(1),
-  model: z.enum(["opus", "sonnet", "haiku"]),
+  model: z.enum(["fable", "opus", "sonnet", "haiku"]),
   team: z.string().optional(),
   effort: z.string().optional(),
   version: z.string().optional(),

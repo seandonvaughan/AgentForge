@@ -42,6 +42,11 @@ export interface TeamAgents {
 
 /** Maps each model tier to the agent names that run on it. */
 export interface ModelRouting {
+  /**
+   * Agents routed to the Fable (top capability) tier. Optional — manifests
+   * written before the fable tier existed carry no such key.
+   */
+  fable?: string[];
   /** Agents routed to the Opus (highest capability) tier. */
   opus: string[];
   /** Agents routed to the Sonnet (balanced) tier. */
