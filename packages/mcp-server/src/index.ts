@@ -28,7 +28,9 @@ import { z } from 'zod';
 import { validateToken, extractBearer } from './auth.js';
 import { afAgentDispatch } from './tools/af-agent-dispatch.js';
 import {
+  afAgentInvoke,
   afCodexReadiness,
+  afCycleEvents,
   afCyclePreview,
   afCycleStatus,
 } from './tools/af-codex-workflows.js';
@@ -143,6 +145,43 @@ server.tool(
   },
 );
 
+// Tool: af_agent_invoke
+server.tool(
+  'af_agent_invoke',
+  'Dispatch ONE forged AgentForge agent with a hard budget cap (USD, ≤25, required). ' +
+    'Write-capable: the agent may modify the project per its tool hints. ' +
+    'Wraps `agentforge run invoke`.',
+  {
+    agentId: z.string().min(1).max(64).describe('Forged agent id (e.g. coder, epic-planner)'),
+    task: z.string().min(8).max(16384).describe('Task description for the agent'),
+    budgetUsd: z.number().positive().max(25).describe('Hard spend cap in USD (required)'),
+    tools: z.array(z.string().min(1).max(64)).max(16).optional().describe('Allowed tool hints (e.g. Read, Glob, Grep)'),
+  },
+  async ({ agentId, task, budgetUsd, tools }) => {
+    const result = await afAgentInvoke(
+      { agentId, task, budgetUsd, ...(tools !== undefined ? { tools } : {}) },
+      PROJECT_ROOT,
+    );
+    return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+  },
+);
+
+// Tool: af_cycle_events
+server.tool(
+  'af_cycle_events',
+  'Incremental tail of a running/completed cycle\'s events.jsonl. ' +
+    'Pass the returned nextCursor on subsequent calls to read only new events. Read-only.',
+  {
+    cycleId: z.string().min(8).max(64).describe('Cycle id (.agentforge/cycles/<id>)'),
+    cursor: z.number().int().min(0).optional().default(0).describe('Byte offset from the previous call (0 = start)'),
+    limit: z.number().int().min(1).max(500).optional().default(100).describe('Max events per page'),
+  },
+  async ({ cycleId, cursor, limit }) => {
+    const result = afCycleEvents({ cycleId, cursor: cursor ?? 0, limit: limit ?? 100 }, PROJECT_ROOT);
+    return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+  },
+);
+
 // Tool: af_codex_readiness
 server.tool(
   'af_codex_readiness',
@@ -173,8 +212,9 @@ server.tool(
 // Tool: af_cycle_preview
 server.tool(
   'af_cycle_preview',
-  'Run the existing AgentForge cycle preview path without starting a cycle. ' +
-    'Read-only/dry-run surface; returns CLI preview output and command metadata.',
+  'Run the AgentForge cycle preview without starting a cycle. With `objective`, ' +
+    'rehearses the epic decomposition (planner + deterministic validation, one ' +
+    'LLM call ~\$5) and returns the children/waves/budget-band JSON. Never executes.',
   {
     projectRoot: z
       .string()
@@ -183,10 +223,16 @@ server.tool(
       .optional()
       .describe('Project root to inspect (defaults to AGENTFORGE_PROJECT_ROOT or current working directory)'),
     budgetUsd: z.number().positive().optional().describe('Preview-only budget override'),
-    maxItems: z.number().int().positive().optional().describe('Preview-only max item override'),
+    maxItems: z.number().int().positive().optional().describe('Preview-only max item override (ignored in objective mode)'),
+    objective: z
+      .string()
+      .min(8)
+      .max(8192)
+      .optional()
+      .describe('Epic objective to decompose (rehearsal only — no cycle, no git, no execution)'),
   },
-  async ({ projectRoot, budgetUsd, maxItems }) => {
-    const result = await afCyclePreview({ projectRoot, budgetUsd, maxItems }, PROJECT_ROOT);
+  async ({ projectRoot, budgetUsd, maxItems, objective }) => {
+    const result = await afCyclePreview({ projectRoot, budgetUsd, maxItems, objective }, PROJECT_ROOT);
     return {
       content: [{ type: 'text', text: JSON.stringify(result) }],
       ...(result.ok ? {} : { isError: true }),

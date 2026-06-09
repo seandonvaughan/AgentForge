@@ -4,6 +4,16 @@ All notable changes to AgentForge are documented in this file.
 
 ## [Unreleased]
 
+### v24 platform upgrades (W1–W7)
+
+- **Visibility (W6):** cycle work items now show full instructions (description, declared files, tags, wave/predecessors) in an item drawer; running items show live elapsed time from per-item `startedAt` stamps in the incremental execute snapshot; pending items show what they wait on; phase agents (epic-planner, epic-review, backlog-scorer, gate) now appear in agent stats — `/api/v5/agents/activity` scans every phase artifact instead of execute.json only, and epic-review cost/runs join the per-cycle totals; objective previews are listed on the cycles page via the new `GET /api/v5/previews`.
+- **Per-agent memory (W2):** each agent accumulates its own `.agentforge/memory/agents/<id>.jsonl` (bounded, lock-safe) — execute-phase distills one outcome record per settled item and captures agent-emitted `LEARNED:` notes; fresh-context injects the agent's own history ahead of the shared pool; the agent detail Memory tab shows it.
+- **Learning loops (W3):** the learn phase auto-runs the skill flywheel clustering (propose-only, to `.agentforge/flywheel/proposals/`) and self-calibrates the estimator — per-complexity cost medians from spend-report actuals persist to `.agentforge/config/cost-priors.json` and rank above the static table in the epic planner's budget prompt; spend reports gain per-item `estimatedComplexity` and `estimateAccuracy`.
+- **Knowledge base (W1):** `writeKnowledgeEntry` now persists full-text note entities alongside extracted terms; the learn phase writes retrospectives into the KB; deterministic keyword retrieval (`kb-retrieval.ts`) injects task-relevant notes into every item prompt and objective-relevant notes into the epic planner prompt; new MCP `af_kb_search`; the `/knowledge` page joined the sidebar.
+- **Recovery (W5):** failed items carry a structured `failureClass` (deps/typecheck/tests/scope/iron-law/worktree/provider/timeout/budget); dependents of failed children are marked `blocked` without dispatching (checkpointed as resumable); retry prompts include the failure class plus class-specific guidance; `git.includeDiagnosticBranchOnFailure` is now implemented (failed worktrees push to `diagnostic/<cycleId>-<itemId>`).
+- **Scale (W4):** rate-limited transports back off (jittered exponential, env-tunable) and retry in place before provider failover; the concurrency hard cap rose 40 → 64; a failed worktree allocation triggers one GC pass and a retry before falling back.
+- **Claude Code (W7):** `af_cycle_preview` gains objective-mode (epic rehearsal JSON); new MCP tools `af_agent_invoke` (budget-cap required, ≤ $25) and `af_cycle_events` (cursor-based events tail); the plugin manifest registers the MCP server and slash commands; new `agentforge claude setup` wires `.mcp.json` and re-emits missing `.claude/agents` mirrors (fable → `claude-fable-5`); guide at docs/guides/claude-code-sessions.md.
+
 ### Fable model tier
 
 - Added the `fable` capability tier (Claude Fable 5, model id `claude-fable-5`, $10/$50 per MTok) above `opus` across the model registry, pricing tables, tier ranking, cost-tier resolution, agent YAML schema, forge/team-writer model routing, server allowlists, dashboard surfaces, and the CLI `--model-cap` option. Existing opus/sonnet/haiku tiers are unchanged.
