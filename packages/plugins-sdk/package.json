@@ -9,7 +9,7 @@
   "scripts": { "build": "tsc", "dev": "tsc --watch", "clean": "rm -rf dist" },
   "dependencies": { "@agentforge/shared": "workspace:*" },
   "devDependencies": {
-    "@types/node": "^25.7.0",
+    "@types/node": "^25.9.2",
     "typescript": "^6.0.3"
   },
   "engines": {
