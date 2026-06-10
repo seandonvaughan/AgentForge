@@ -29,7 +29,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { AgentRuntime, loadAgentConfig, writeMemoryEntry, writeKnowledgeEntry, collectSprintItemTags, parseReviewFindingMetadata, extractFindingsByLevel, loadPriorGateKnownDebt, buildKnownDebtSection, resolveKnownDebt } from '@agentforge/core';
+import { AgentRuntime, loadAgentConfig, writeMemoryEntry, writeKnowledgeEntry, collectSprintItemTags, parseReviewFindingMetadata, extractFindingsByLevel, loadPriorGateKnownDebt, buildKnownDebtSection, resolveKnownDebt, runGatePhase as runCoreGatePhase } from '@agentforge/core';
 import type { RunResult, GateVerdictMetadata, ReviewFindingMetadata } from '@agentforge/core';
 import { generateId, nowIso } from '@agentforge/shared';
 import { globalStream } from '../routes/v5/stream.js';
@@ -279,6 +279,26 @@ export interface PhaseContext {
   bus: EventBus;
   /** Optional cycle id when invoked from the autonomous loop. */
   cycleId?: string;
+  /**
+   * Operator objective text. When present, the gate phase delegates to the
+   * core epic-review path (structured verdict + funded fix-up loop) instead of
+   * the legacy CEO gate. Absent on signal (non-objective) cycles.
+   */
+  objective?: string;
+  /**
+   * Base branch for the epic integration diff. Defaults to 'main' when absent.
+   * Only consulted on the objective/epic path.
+   */
+  baseBranch?: string;
+  /**
+   * Runtime adapter required on the objective/epic gate path. The core's
+   * runEpicReview calls ctx.runtime.run(agentId, task, opts) to invoke the
+   * strong-model reviewer. Must be injected by the caller (e.g. child-5's
+   * POST handler) when creating an objective cycle PhaseContext.
+   * Absent (and unused) on legacy signal cycles.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  runtime?: any;
 }
 
 export interface AgentRunSummary {
@@ -775,6 +795,38 @@ export async function runReviewPhase(ctx: PhaseContext): Promise<PhaseResult> {
 // from narrative prose ("no major concerns", "not a critical path change").
 
 export async function runGatePhase(ctx: PhaseContext): Promise<PhaseResult> {
+  // P0.6 — on the objective/epic path, delegate to the core's strong-model
+  // structured epic review. Detection mirrors runGatePhase in @agentforge/core
+  // (packages/core/src/autonomous/phase-handlers/gate-phase.ts). The core's
+  // runGatePhase detects ctx.objective and dispatches to runEpicReview internally.
+  // Non-objective cycles fall through to the unchanged legacy path below.
+  if (ctx.objective !== undefined) {
+    // Build a minimal core-compatible PhaseContext. The core's PhaseContext has
+    // `adapter: any` and `runtime: any` (typed loosely intentionally), so the
+    // server-injected ctx.runtime satisfies the interface at runtime.
+    // bus.subscribe is a no-op stub — runEpicReview only calls bus.publish.
+    const coreCtx = {
+      sprintId: ctx.sprintId,
+      sprintVersion: ctx.sprintVersion,
+      projectRoot: ctx.projectRoot,
+      adapter: null,
+      bus: {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        publish: (topic: string, payload: any) => ctx.bus.publish(topic as any, payload),
+        subscribe: () => () => {},
+      },
+      runtime: ctx.runtime,
+      cycleId: ctx.cycleId,
+      objective: ctx.objective,
+      baseBranch: ctx.baseBranch ?? 'main',
+    };
+    // The core's PhaseResult.agentRuns is typed as unknown[] while the server's
+    // is AgentRunSummary[]; cast through unknown to satisfy the server's return type.
+    // The shapes are structurally compatible at runtime for all downstream consumers.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (await runCoreGatePhase(coreCtx as any)) as unknown as PhaseResult;
+  }
+
   // Capture any pre-existing gate verdict before the LLM re-evaluates.
   // When a prior gate result exists (e.g. seeded from a previous cycle), we
   // use that as the authoritative verdict for the memory entry so the
