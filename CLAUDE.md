@@ -110,7 +110,9 @@ The v25 team lives in `.agentforge/agents/` and `.agentforge/team.yaml`. It cont
 
 ---
 
-## Objective-driven epic cycles (the primary flow)
+## Running a cycle
+
+Objective-driven epic cycles are the primary flow.
 
 The primary way to use AgentForge is to hand it an objective and a budget:
 
@@ -166,7 +168,7 @@ agentforge start --project-root /path/to/your-project
 
 ## Runtime resolution (Claude-first)
 
-AgentForge is Claude-first. The default `auto` resolver prefers the Anthropic SDK, then the Claude Code CLI transport, then Codex CLI, then the OpenAI SDK — and when agent tools are requested, the Claude Code transport is preferred outright.
+AgentForge is Claude-first. The default `auto` resolver prefers the Anthropic SDK, then the Claude Code compatibility transport, then the Codex CLI, then the OpenAI SDK — and when agent tools are requested, the Claude Code transport is preferred outright.
 
 **Codex is auxiliary, never required.** The availability gate uses Codex only when the binary resolves (`AGENTFORGE_CODEX_BIN` → PATH) **and** passes identity validation (a wrong binary answering on PATH is rejected). Under the split-tier routing policy, `auto` routes sonnet-tier implementation children to Codex `gpt-5.5` at high effort when it is available; **judgment and security work always stays on Claude** (the anthropic profile's alternate chain is `anthropic-sdk` only — Codex is deliberately absent).
 
