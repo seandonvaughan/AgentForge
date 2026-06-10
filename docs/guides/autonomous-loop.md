@@ -1,30 +1,35 @@
 # Autonomous Development Loop
 
-**An end-to-end workflow where AgentForge plans sprints, executes them, tests the results, commits to git, and opens pull requests — all without manual intervention.**
+**An end-to-end workflow where AgentForge takes one operator directive, decomposes it, executes it with your forged team, verifies the result, and opens a pull request — all without manual intervention.**
 
 ---
 
 ## Overview
 
-The Autonomous Development Loop is AgentForge's most powerful feature. It transforms your team from a manual dispatch system into a self-directed development engine that scans for work, prioritizes it, executes it, verifies it, and submits it for review — all in one continuous cycle.
+The Autonomous Development Loop is AgentForge's most powerful feature. It transforms your team from a manual dispatch system into a self-directed development engine.
+
+There are two ways to drive a cycle:
+
+1. **Objective-driven epic cycles (primary)** — you supply one high-level goal and a budget; AgentForge decomposes it into a dependency-ordered epic and ships it as **one PR** with a spend report. This is the recommended loop for all new work.
+2. **The signal-backlog loop (legacy)** — AgentForge harvests `TODO(autonomous)` markers, test failures, and cost anomalies into a multi-item sprint. Retained for compatibility; superseded by objective mode.
 
 ### What It Does
 
-A single invocation of the autonomous loop:
+A single invocation of an objective cycle:
 
-1. **Plans** — Scans your codebase for work (`TODO(autonomous)` markers, test failures, performance metrics)
-2. **Scores** — Ranks candidates by feasibility and impact, estimates costs
-3. **Executes** — Dispatches your agent team to implement the work in parallel
-4. **Tests** — Runs the full test suite to verify correctness
-5. **Commits** — Makes real git commits with structured messages
-6. **Reviews** — Opens a pull request on GitHub for human approval
+1. **Decomposes** — The epic planner turns your objective into child work items sized against your budget
+2. **Waves** — Children are ordered into dependency waves; each wave runs in parallel
+3. **Executes** — Dispatches your agent team in isolated git worktrees, with a deterministic per-child verify
+4. **Integrates** — Every verified child merges onto one local integration branch
+5. **Reviews** — A structured Opus review judges the integration branch as one coherent feature
+6. **Releases** — Opens **one** pull request on GitHub, with a planned-vs-actual spend report
 
 The result is a **production-ready PR** ready for human code review and merge.
 
 ### When to Use It
 
+- **Feature delivery** — Hand AgentForge a concrete feature or refactor objective and a dollar budget
 - **Sprint automation** — Run autonomous cycles on a schedule (nightly, weekly)
-- **Backlog processing** — Automatically work through high-confidence items while humans focus on strategy
 - **Regression fixes** — Auto-fix test failures detected in CI
 - **Dependency updates** — Bulk-apply version upgrades and security patches
 - **Code quality** — Auto-apply linting, refactoring, and style improvements
@@ -34,13 +39,59 @@ The result is a **production-ready PR** ready for human code review and merge.
 - High-stakes architectural decisions → require human `TODO(strategy)` review first
 - Security vulnerabilities → run in supervised mode with approval gates
 - Cross-team coordination → coordinate manually, then mark work as autonomous
-- Brand new features → plan manually, execute autonomously
 
 ---
 
-## How It Works: The 5 Stages
+## The Objective Loop (primary)
 
-Every autonomous cycle moves through these stages in sequence:
+Objective mode is the primary loop: one directive in, one PR out. The full
+operator guide — flags, budget-band math, artifacts, troubleshooting — lives in
+**[Objective Mode](./objective-mode.md)**; this section is the flow summary.
+
+```bash
+# Rehearse the decomposition first (planner + validation only, ~$0.50–$2)
+agentforge cycle preview --objective "Add per-agent cost tracking to the dashboard" --budget-usd 50
+
+# Run it
+agentforge cycle run --objective "Add per-agent cost tracking to the dashboard" --budget 50
+```
+
+Every objective cycle moves through these steps (riding the same 9-phase
+scheduler: audit → plan → assign → execute → test → review → gate → release →
+learn — the epic path changes what the phases *do*, not their order):
+
+1. **Digest** — The `epic-planner` agent explores the repository with read-only tools (`Read`, `Glob`, `Grep`) so the plan is grounded in the actual tree, plus any accumulated knowledge-base notes from prior cycles.
+
+2. **Decompose** — The planner emits an `EpicPlan`: child items with declared `files[]`, cost estimates, complexity, and predecessor edges. The plan is validated deterministically — acyclic dependency graph, every predecessor present, child estimates within the budget band — with exactly one repair retry on failure. Written to `decomposition.json`.
+
+3. **Waves with per-child deterministic verify** — Children are layered into dependency waves; children in the same wave execute in parallel, each in an isolated git worktree. After each child finishes, a **deterministic verifier** (no LLM) runs a scoped typecheck and the related tests using the repo's lockfile-detected toolchain (`pnpm-lock.yaml` → corepack pnpm, `yarn.lock` → yarn, anything else → npx/npm), and fails any child that touched a file missing from its declared `files[]`.
+
+4. **Integration** — Each verified child merges onto a local integration branch (`codex/epic-<id>`) in a dedicated worktree. Conflicts surface at integration time, wave by wave — not at PR time.
+
+5. **Structured epic review** — One strong-model (Opus) structured review judges the whole integration branch as a single coherent feature, replacing the legacy per-item CEO gate. The verdict (`APPROVE` / `REQUEST_CHANGES` with `faultedItems`) is written to `phases/epic-review.json`; `REQUEST_CHANGES` drives a bounded fix-up loop that re-runs only the faulted children.
+
+6. **VERIFY** — The deterministic test/build/typecheck gate still runs on the integrated result. The epic review never replaces it.
+
+7. **One PR + spend report** — The release phase pushes the integration branch and opens **one** pull request. The learn phase writes `spend-report.json` (planned vs actual cost per child, overhead, budget utilization) and appends to `cycle-ledger.jsonl`, which feeds cost priors so future plans on this repo use observed actuals.
+
+There is also a top-level shorthand:
+
+```bash
+agentforge objective "Add per-agent cost tracking to the dashboard" --budget 50
+```
+
+---
+
+## Legacy: the signal-backlog loop
+
+> **Deprecation note:** The 5-stage signal-backlog loop below is the original
+> autonomous loop. It still works (`agentforge cycle run` without
+> `--objective`), but it is **legacy/secondary**: forensics on crumb-sized
+> backlog cycles showed most of the budget going to overhead rather than code.
+> Prefer [objective mode](./objective-mode.md) for new work; expect the signal
+> loop to receive maintenance only.
+
+Every signal-backlog cycle moves through these stages in sequence:
 
 ### Stage 1: PLAN — Identify Work
 
@@ -216,13 +267,18 @@ testing:
   typeCheck: 'tsc --noEmit'  # Type-check command
 ```
 
+These settings apply to both loops. In objective mode the `--budget` flag
+overrides `budget.perCycleUsd` (precedence: `--budget` flag >
+`AUTONOMOUS_BUDGET_USD` env > `autonomous.yaml`), and the planner sizes the
+epic against that number directly.
+
 ### Kill Switches: Safety & Control
 
 The cycle monitors these limits and **kills the cycle early** if any are exceeded:
 
 | Kill Switch | Condition | What Happens |
 |---|---|---|
-| **Budget overage** | Total cost > `perCycleUsd` | Prompts for approval; kills if rejected |
+| **Budget overage** | Planned cost > `perCycleUsd` at plan time | Prompts for approval; kills if rejected. (Mid-cycle, crossing `perCycleUsd` is warn-only — the cycle continues; in objective mode the `--budget` flag sizes the plan up front) |
 | **Duration timeout** | Elapsed time > `maxDurationMinutes` | Kills immediately, keeps current progress |
 | **Test floor** | Test pass rate < `testPassRateFloor` | Rolls back, commits diagnostic branch, kills |
 | **Build failure** | `npm run build` exits non-zero | Rolls back, kills |
@@ -259,22 +315,27 @@ your-project/
 ### Prerequisites
 
 1. **Team manifest** — Run `forge` or `genesis` to generate `.agentforge/team.yaml`
-2. **Configuration** — Create `.agentforge/autonomous.yaml` (or use defaults)
-3. **Git** — Working tree must be clean (commit or stash changes first)
-4. **Claude Code Authentication** — Be logged into Claude Code (Max plan recommended). See [API Reference § 1 — Authentication](../api-reference.md#-1--authentication)
-5. **GitHub CLI** — `gh` must be installed and authenticated (`gh auth login`)
+2. **Objective-mode agents** — Objective cycles invoke `epic-planner` (decomposition) and `ceo` (epic review) by ID. On a fresh repo, hand-add `.agentforge/agents/epic-planner.yaml` and `.agentforge/agents/ceo.yaml` until the forge ships them — without these the runtime falls back to a generic agent for planning and review
+3. **Configuration** — Create `.agentforge/autonomous.yaml` (or use defaults)
+4. **Git** — Working tree must be clean (commit or stash changes first)
+5. **Claude Code Authentication** — Be logged into Claude Code (Max plan recommended). See [API Reference § 1 — Authentication](../api-reference.md#-1--authentication)
+6. **GitHub CLI** — `gh` must be installed and authenticated (`gh auth login`)
 
 ### Run a Single Cycle
 
 ```bash
-npm run autonomous:cycle
+# Objective mode (primary): one directive, one PR
+agentforge cycle run --objective "your goal here" --budget 50
+
+# Legacy signal-backlog mode
+agentforge cycle run --project-root /path/to/your-project
 ```
 
 This:
 1. Loads `.agentforge/autonomous.yaml`
 2. Instantiates your team
-3. Plans, executes, tests, commits, and opens a PR
-4. Exits with status 0 (success), 1 (error), or 2 (kill switch tripped)
+3. Plans (decomposes, in objective mode), executes, tests, commits, and opens a PR
+4. Exits non-zero on error or a tripped kill switch
 
 ### Check Cycle Status
 
@@ -559,23 +620,22 @@ If `perCycleUsd` is exceeded:
 
 ## Next Steps: Scheduling & Dashboards
 
-### Cron-Based Cycles (Future)
+### Cron-Based Cycles
 
 Once you're confident in your configuration:
 
 ```bash
 # Run daily at 9 AM
-0 9 * * * cd /path/to/project && npm run autonomous:cycle
+0 9 * * * cd /path/to/project && agentforge cycle run --objective "..." --budget 50
 ```
 
-### Monitoring Dashboard (v7.0)
+### Monitoring Dashboard
 
-Coming in v7.0: a web dashboard showing:
-- Cycle history and success rates
-- Cost trends over time
-- Agent performance metrics
-- PR review metrics
-- Integration with GitHub Actions status
+Start the operator dashboard with `agentforge start` and open
+`http://localhost:4751`. It shows cycle history, live phase progress, cost
+trends, agent activity, and — for objective cycles — the **Epic** tab
+(children, waves, dependency arrows), the **Spend** tab (planned vs actual per
+child), and the epic-review verdict card on `/cycles/<id>`.
 
 ---
 
@@ -597,7 +657,8 @@ Coming in v7.0: a web dashboard showing:
 
 ## See Also
 
-- **[Configuration Guide](./autonomous-config.md)** — Deep dive into `autonomous.yaml` options
-- **[API Reference](../api/autonomous-api.md)** — Programmatic cycle invocation
+- **[Objective Mode](./objective-mode.md)** — The primary loop: flags, budget-band math, artifacts, troubleshooting
+- **[Configuration Reference](./autonomous-config-reference.md)** — Deep dive into `autonomous.yaml` options
+- **[API Reference](../api-reference.md)** — REST endpoints including `GET /api/v5/cycles/:id` epic artifacts
 - **[Architecture](../design.md#autonomous-loop)** — Design decisions and rationale
 - **[Troubleshooting](./autonomous-troubleshooting.md)** — Common issues and fixes
