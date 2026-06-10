@@ -3,8 +3,9 @@ import type { FastifyInstance } from 'fastify';
 import {
   AgentRuntime,
   loadAgentConfig,
+  readAgentMemoryFromDir,
   recordManualInvokeMemory,
-  resolveProviderModelProfile,
+  AGENT_MEMORY_MAX_ENTRIES,
   type AgentRuntimeConfig,
   type RunResult,
   type RuntimeMode,
@@ -23,17 +24,33 @@ function normalizeCapabilityTier(value: unknown): CapabilityTier {
   return value === 'fable' || value === 'opus' || value === 'haiku' ? value : 'sonnet';
 }
 
-function toCodexModelProfile(
-  projectRoot: string,
+// Provider-accurate display profiles — the UI must reflect the agent's YAML
+// tier on the PRIMARY Claude family, not the codex-cli fallback family.
+const CLAUDE_TIER_MODEL_IDS: Record<CapabilityTier, string> = {
+  fable: 'claude-fable-5',
+  opus: 'claude-opus-4-8',
+  sonnet: 'claude-sonnet-4-6',
+  haiku: 'claude-haiku-4-5',
+};
+
+const CLAUDE_TIER_DEFAULT_EFFORT: Record<CapabilityTier, string> = {
+  fable: 'xhigh',
+  opus: 'high',
+  sonnet: 'high',
+  haiku: 'medium',
+};
+
+function toClaudeModelProfile(
   tier: CapabilityTier,
   effort: string | null,
-): { provider: 'codex-cli'; tier: CapabilityTier; modelId: string; effort: string } {
-  const profile = resolveProviderModelProfile('codex-cli', tier, effort ?? undefined, process.env, projectRoot);
+): { provider: 'claude'; tier: CapabilityTier; modelId: string; effort: string } {
   return {
-    provider: 'codex-cli',
+    provider: 'claude',
     tier,
-    modelId: profile.modelId,
-    effort: profile.effort ?? effort ?? '',
+    modelId: CLAUDE_TIER_MODEL_IDS[tier],
+    // The agent's YAML effort is authoritative when present; otherwise fall
+    // back to the per-tier defaults.
+    effort: effort ?? CLAUDE_TIER_DEFAULT_EFFORT[tier],
   };
 }
 
@@ -111,7 +128,7 @@ export async function agentRoutes(
             name: typeof raw.name === 'string' ? raw.name : agentId,
             model,
             capabilityTier: model,
-            modelProfile: toCodexModelProfile(opts.projectRoot, model, effort),
+            modelProfile: toClaudeModelProfile(model, effort),
             description: typeof raw.description === 'string' ? raw.description.trim() : null,
             role: typeof raw.role === 'string' ? raw.role : null,
             team: typeof raw.team === 'string' ? raw.team : null,
@@ -158,7 +175,7 @@ export async function agentRoutes(
           name: typeof raw.name === 'string' ? raw.name : agentId,
           model,
           capabilityTier: model,
-          modelProfile: toCodexModelProfile(opts.projectRoot, model, effort),
+          modelProfile: toClaudeModelProfile(model, effort),
           description: typeof raw.description === 'string' ? raw.description.trim() : null,
           role: typeof raw.role === 'string' ? raw.role : null,
           effort,
@@ -207,7 +224,7 @@ export async function agentRoutes(
       ...(context !== undefined ? { context } : {}),
       ...(parentSessionId !== undefined ? { parentSessionId } : {}),
       ...(budgetUsd !== undefined ? { budgetUsd } : {}),
-      runtimeMode: runtimeMode ?? ('codex-cli' as RuntimeMode),
+      runtimeMode: runtimeMode ?? ('auto' as RuntimeMode),
     };
     let result;
     try {
@@ -232,6 +249,33 @@ export async function agentRoutes(
 
     return reply.send({ data: result });
   });
+
+  // GET /api/v5/agents/:id/memory — the agent's personal W2 memory, read from
+  // .agentforge/memory/agents/<id>.jsonl (newest first). readAgentMemoryFromDir
+  // sanitizes the id internally (match-then-use + resolve/startsWith
+  // containment) and returns [] for unknown or invalid agents.
+  app.get<{ Params: { id: string }; Querystring: { limit?: string } }>(
+    '/api/v5/agents/:id/memory',
+    {
+      config: {
+        // 60 req/min per remote address — reads a per-agent JSONL file off
+        // disk. Recognized by CodeQL js/missing-rate-limiting.
+        rateLimit: { max: RATE_LIMIT_MAX, timeWindow: RATE_LIMIT_WINDOW },
+      },
+    },
+    async (req, reply) => {
+      const agentId = req.params.id;
+      if (!SAFE_AGENT_ID.test(agentId)) return reply.status(400).send({ error: 'Invalid agent id' });
+
+      const limitRaw = Number.parseInt(req.query?.limit ?? '', 10);
+      const limit = Number.isFinite(limitRaw)
+        ? Math.min(Math.max(limitRaw, 1), AGENT_MEMORY_MAX_ENTRIES)
+        : AGENT_MEMORY_MAX_ENTRIES;
+
+      const entries = readAgentMemoryFromDir(join(agentforgeDir, 'memory'), agentId, limit);
+      return reply.send({ data: entries, meta: { total: entries.length } });
+    },
+  );
 
   // GET /api/v5/agents/:id/scorecard — performance score (requires adapter)
   app.get<{ Params: { id: string } }>('/api/v5/agents/:id/scorecard', async (req, reply) => {
