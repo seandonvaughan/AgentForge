@@ -1,6 +1,6 @@
 name: scorer-evaluator
-model: sonnet
-effort: high
+model: haiku
+effort: medium
 version: '25.0'
 description: Rubric grader — scores batched agent outputs 0-1 with named signals for the scoring pipeline.
 team: utility
@@ -119,3 +119,5 @@ output_schema:
                     maximum: 1
                   note:
                     type: string
+skill_ids:
+  - af-rubric-grade

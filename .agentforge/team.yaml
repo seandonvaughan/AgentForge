@@ -74,12 +74,12 @@ model_routing:
     - test-engineer
     - ci-build-engineer
     - backend-qa
-    - scorer-evaluator
   haiku:
     - yaml-doctor
     - memory-curator
     - file-reader
     - data-analyst
+    - scorer-evaluator
 delegation_graph:
   epic-planner: []
   chief-architect:

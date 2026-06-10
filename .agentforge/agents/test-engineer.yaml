@@ -142,3 +142,30 @@ capability_tags:
   - test-fixtures
   - mock-adapter
   - e2e-dashboard
+output_schema:
+  name: implementation_report
+  strict: true
+  schema:
+    type: object
+    required:
+      - files_modified
+      - tests_added
+      - summary
+    properties:
+      files_modified:
+        type: array
+        items:
+          type: string
+      tests_added:
+        type: integer
+        minimum: 0
+      lines_changed:
+        type: integer
+        minimum: 0
+      summary:
+        type: string
+      blockers:
+        type: array
+        items:
+          type: string
+    additionalProperties: false
