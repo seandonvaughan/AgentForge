@@ -205,6 +205,70 @@ describe('writeSpendReport', () => {
   });
 });
 
+describe('writeSpendReport — monotonic perItem guard (cycle 5242ca92)', () => {
+  function makeReport(perItem: SpendReport['perItem'], totalUsd: number): SpendReport {
+    return {
+      schemaVersion: 1,
+      cycleId,
+      budgetUsd: 100,
+      totalUsd,
+      executionUsd: totalUsd,
+      overheadUsd: 0,
+      utilization: totalUsd / 100,
+      perItem,
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  const richRows: SpendReport['perItem'] = [
+    { itemId: 'i1', title: 'one', plannedUsd: 10, actualUsd: 12, status: 'completed' },
+    { itemId: 'i2', title: 'two', plannedUsd: 5, actualUsd: 4, status: 'completed' },
+  ];
+
+  it('an empty incoming report never clobbers an existing report with perItem rows', () => {
+    const path = join(cycleDir(), 'spend-report.json');
+    writeSpendReport(tmpRoot, cycleId, makeReport(richRows, 16));
+    const before = readFileSync(path, 'utf8');
+
+    // A degraded resume rebuilds from a vacuous execute.json → empty perItem.
+    writeSpendReport(tmpRoot, cycleId, makeReport([], 3.93));
+
+    const after = readFileSync(path, 'utf8');
+    expect(after).toBe(before);
+    const parsed = JSON.parse(after);
+    expect(parsed.perItem).toHaveLength(2);
+    expect(parsed.totalUsd).toBe(16);
+  });
+
+  it('an empty → rich overwrite still proceeds', () => {
+    const path = join(cycleDir(), 'spend-report.json');
+    writeSpendReport(tmpRoot, cycleId, makeReport([], 0));
+    expect(JSON.parse(readFileSync(path, 'utf8')).perItem).toHaveLength(0);
+
+    writeSpendReport(tmpRoot, cycleId, makeReport(richRows, 16));
+    const parsed = JSON.parse(readFileSync(path, 'utf8'));
+    expect(parsed.perItem).toHaveLength(2);
+    expect(parsed.totalUsd).toBe(16);
+  });
+
+  it('rich → rich overwrites normally (later totals win)', () => {
+    const path = join(cycleDir(), 'spend-report.json');
+    writeSpendReport(tmpRoot, cycleId, makeReport(richRows, 16));
+    writeSpendReport(tmpRoot, cycleId, makeReport(richRows.slice(0, 1), 20));
+    const parsed = JSON.parse(readFileSync(path, 'utf8'));
+    expect(parsed.perItem).toHaveLength(1);
+    expect(parsed.totalUsd).toBe(20);
+  });
+
+  it('empty → empty overwrites (no existing rows to protect)', () => {
+    const path = join(cycleDir(), 'spend-report.json');
+    writeSpendReport(tmpRoot, cycleId, makeReport([], 1));
+    writeSpendReport(tmpRoot, cycleId, makeReport([], 2));
+    const parsed = JSON.parse(readFileSync(path, 'utf8'));
+    expect(parsed.totalUsd).toBe(2);
+  });
+});
+
 describe('appendLedgerRow', () => {
   it('appends two rows as two valid JSON lines', () => {
     const base: CycleLedgerRow = {

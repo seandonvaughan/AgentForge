@@ -165,6 +165,19 @@ src/
   server/       Root compatibility server bootstrap
 ```
 
+## Documentation
+
+| Guide | Description |
+|---|---|
+| [Autonomous Loop Guide](docs/guides/autonomous-loop.md) | 9-phase cycle internals — plan, execute, test, commit, review |
+| [Objective Mode Guide](docs/guides/objective-mode.md) | Single-directive epic cycles: `--objective "<text>" --budget <usd>`, budget math, artifacts |
+| [Configuration Reference](docs/guides/autonomous-config-reference.md) | All `autonomous.yaml` options |
+| [Troubleshooting](docs/guides/autonomous-troubleshooting.md) | Common failure modes and recovery |
+| [Runtime Modes](docs/runtime-modes.md) | `AGENTFORGE_RUNTIME` deep-dive |
+| [External Project Quickstart](docs/quickstart-external-project.md) | Full walkthrough for a new project |
+| [API Reference](docs/api-reference.md) | v5 REST endpoint catalog |
+| [Release and Security Gates](docs/release-and-security-gates.md) | CI policy and release checklist |
+
 ## License
 
 MIT

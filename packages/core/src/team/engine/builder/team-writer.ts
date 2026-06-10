@@ -18,6 +18,7 @@ import { writeFileAtomic } from "../fs/atomic-write.js";
 import type { AgentTemplate } from "../types/agent.js";
 import type { TeamManifest, ModelRouting, DelegationGraph, TeamAgents, TeamUnit } from "../types/team.js";
 import type { FullScanResult } from "../scanner/index.js";
+import { emitClaudeCodeAgents, type ClaudeCodeAgentSpec } from "./cc-agent-emitter.js";
 
 // ---------------------------------------------------------------------------
 // Merge helpers (P0-4: preserve manually-added agents on re-forge)
@@ -522,4 +523,23 @@ export async function writeTeam(
         .catch(() => writeYamlAtomic(existingPath, template));
     }),
   ]);
+
+  // .claude/agents/<id>.md mirrors — keep the legacy forge path on par with
+  // the agent-driven synthesis path. Non-fatal: a read-only .claude/ or any
+  // emitter failure must never break the forge itself.
+  try {
+    const specs: ClaudeCodeAgentSpec[] = [...agents.entries()].map(
+      ([name, template]) => ({
+        id: name,
+        description: template.description || `AgentForge agent ${name}`,
+        systemPrompt: template.system_prompt,
+        model: template.model,
+        ...(template.effort ? { effort: template.effort } : {}),
+      }),
+    );
+    await emitClaudeCodeAgents({ projectRoot, agents: specs });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    console.warn(`[team-writer] .claude/agents mirror emission skipped: ${detail}`);
+  }
 }

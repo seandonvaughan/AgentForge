@@ -97,6 +97,17 @@ name: Minimal Agent
       expect(template.context.project_specific).toEqual([]);
     });
 
+    it("should accept the fable model tier", async () => {
+      await writeFile(
+        join(tempDir, "epic-planner.yaml"),
+        "name: Epic Planner\nmodel: fable\n"
+      );
+
+      const template = await loadTemplate(join(tempDir, "epic-planner.yaml"));
+
+      expect(template.model).toBe("fable");
+    });
+
     it("should throw on missing name field", async () => {
       await writeFile(
         join(tempDir, "invalid.yaml"),

@@ -27,6 +27,7 @@ import { registerResearchCommand } from './research.js';
 import { registerBacklogCommand } from './backlog.js';
 import { registerLearningsCommand } from './learnings.js';
 import { registerClaudeCommand } from './claude-setup.js';
+import { registerObjectiveCommand } from './objective.js';
 
 interface InitializeWorkspaceImport {
   initializeWorkspace(options: {
@@ -169,4 +170,5 @@ export function registerAllCommands(program: Command): void {
   registerBacklogCommand(program);
   registerLearningsCommand(program);
   registerClaudeCommand(program);
+  registerObjectiveCommand(program);
 }

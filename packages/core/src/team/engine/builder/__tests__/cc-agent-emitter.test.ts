@@ -322,4 +322,27 @@ describe("buildAgentMarkdown", () => {
     const { body } = parseMd(md);
     expect(body).toContain("You are the architect.");
   });
+
+  it("maps the fable tier to its full model id (claude-fable-5)", () => {
+    const md = buildAgentMarkdown({
+      id: "epic-planner",
+      description: "Epic decomposition authority",
+      systemPrompt: "You decompose epics into PR-sized children.",
+      model: "fable",
+    });
+    const { frontmatter } = parseMd(md);
+    expect(frontmatter.model).toBe("claude-fable-5");
+  });
+
+  it("emits the effort field when provided", () => {
+    const md = buildAgentMarkdown({ ...AGENT_A, effort: "xhigh" });
+    const { frontmatter } = parseMd(md);
+    expect(frontmatter.effort).toBe("xhigh");
+  });
+
+  it("omits the effort field when not provided", () => {
+    const md = buildAgentMarkdown(AGENT_A);
+    const { frontmatter } = parseMd(md);
+    expect(frontmatter).not.toHaveProperty("effort");
+  });
 });

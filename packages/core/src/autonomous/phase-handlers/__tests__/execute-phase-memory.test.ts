@@ -9,15 +9,18 @@
  * repeating past mistakes.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import type { PhaseContext } from '../../phase-scheduler.js';
 import {
+  runExecutePhase,
   readRelevantMemoryEntries,
   formatMemorySection,
   type MemoryEntry,
 } from '../execute-phase.js';
+import { loadKnowledgeEntities } from '../../../knowledge/persistence.js';
 
 // ---------------------------------------------------------------------------
 // Test fixtures
@@ -294,5 +297,99 @@ describe('formatMemorySection', () => {
     ];
     const section = formatMemorySection(entries);
     expect(section).toContain('avoid repeating past mistakes');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v25 — cross-agent learning: LEARNED self-notes reach the shared W1
+// knowledge store (entities.jsonl) so other agents' KB retrieval sees them.
+// ---------------------------------------------------------------------------
+
+describe('runExecutePhase — LEARNED notes persist to the knowledge store (v25)', () => {
+  const CYCLE_ID = 'cycle-km-1';
+
+  function makeBus() {
+    return {
+      publish: () => undefined,
+      subscribe: () => () => undefined,
+    };
+  }
+
+  function writeSprintFixture(assignee: string): void {
+    const data = {
+      version: '1.0.0',
+      sprintId: 'sprint-km-1',
+      items: [
+        {
+          id: 'item-km-1',
+          title: 'Wire knowledge writes',
+          assignee,
+          status: 'planned',
+          tags: ['knowledge'],
+          description: 'Description for the knowledge item',
+        },
+      ],
+    };
+    const sprintsDir = join(tmpRoot, '.agentforge', 'sprints');
+    mkdirSync(sprintsDir, { recursive: true });
+    writeFileSync(join(sprintsDir, 'v1.0.0.json'), JSON.stringify(data));
+
+    const cycleDir = join(tmpRoot, '.agentforge', 'cycles', CYCLE_ID);
+    mkdirSync(cycleDir, { recursive: true });
+    writeFileSync(join(cycleDir, 'plan.json'), JSON.stringify(data));
+  }
+
+  function makeCtx(responseText: string): PhaseContext {
+    return {
+      projectRoot: tmpRoot,
+      sprintId: 'sprint-km-1',
+      sprintVersion: '1.0.0',
+      cycleId: CYCLE_ID,
+      adapter: undefined as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+      bus: makeBus(),
+      runtime: {
+        run: vi.fn().mockResolvedValue({ output: responseText, costUsd: 0.01 }),
+      },
+    } as unknown as PhaseContext;
+  }
+
+  it('persists each LEARNED self-note as a knowledge note with source agent-learned', async () => {
+    writeSprintFixture('coder');
+    const response = [
+      'All changes applied successfully.',
+      'LEARNED: Use conditional spreads for optional properties under exactOptionalPropertyTypes.',
+    ].join('\n');
+
+    await runExecutePhase(makeCtx(response), {
+      maxParallelism: 1,
+      maxItemRetries: 0,
+      disableWorktrees: true,
+    });
+
+    const notes = loadKnowledgeEntities(tmpRoot).filter(
+      e => e.properties.source === 'agent-learned',
+    );
+    expect(notes).toHaveLength(1);
+    const note = notes[0]!;
+    expect(note.properties.kind).toBe('note');
+    expect(note.description).toContain('conditional spreads');
+    // Tags carry [agentId, cycleId] so other agents' retrieval can attribute it.
+    expect(note.properties.tags).toEqual(['coder', CYCLE_ID]);
+    expect(note.properties.cycleId).toBe(CYCLE_ID);
+  });
+
+  it('writes no agent-learned knowledge entry when the response has no LEARNED line', async () => {
+    writeSprintFixture('coder');
+
+    await runExecutePhase(makeCtx('Task complete. No notable lessons here.'), {
+      maxParallelism: 1,
+      maxItemRetries: 0,
+      disableWorktrees: true,
+    });
+
+    const notes = loadKnowledgeEntities(tmpRoot).filter(
+      e => e.properties.source === 'agent-learned',
+    );
+    expect(notes).toHaveLength(0);
   });
 });

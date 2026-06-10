@@ -30,6 +30,7 @@ import type {
 } from "./recon/schemas.js";
 import { BASELINE_PR_MERGE_MANAGER } from "./pr-merge-manager-baseline.js";
 import { AgentOutputSchemaSchema } from "../../agent-yaml/agent-yaml-schema.js";
+import { buildAgentMarkdown, type ClaudeCodeAgentSpec } from "./cc-agent-emitter.js";
 
 // ---------------------------------------------------------------------------
 // TeamPlan Zod schema
@@ -41,6 +42,12 @@ export const TeamPlanAgentSchema = z.object({
   category: z.enum(["strategic", "implementation", "quality", "utility"]),
   owns_subsystems: z.array(z.string()),
   capability_tags: z.array(z.string().min(1)),
+  /**
+   * Single-sentence agent description used verbatim for the Claude Code
+   * `.md` mirror frontmatter. Falls back to joined capability_tags when
+   * absent (pre-v25 plans).
+   */
+  description: z.string().min(1).optional(),
   system_prompt: z.string().min(1),
   auto_include_files: z.array(z.string()),
   learnings_seed: z.array(z.string()),
@@ -279,7 +286,7 @@ function buildAgentYaml(agent: TeamPlanAgent): Record<string, unknown> {
     team: agent.category,
     effort: defaultEffortFor(agent.tier),
     version: "1.0",
-    description: agent.capability_tags.slice(0, 5).join(", "),
+    description: agentDescription(agent),
     system_prompt: agent.system_prompt,
     skills: agent.capability_tags,
     triggers: {
@@ -312,20 +319,22 @@ function buildAgentYaml(agent: TeamPlanAgent): Record<string, unknown> {
   return obj;
 }
 
-/** Build the CC-compatible .md frontmatter + body for an agent. */
-function buildAgentMarkdown(agent: TeamPlanAgent): string {
-  const frontmatter = [
-    "---",
-    `name: ${agent.id}`,
-    `description: >-`,
-    `  ${agent.capability_tags.slice(0, 5).join(", ")}`,
-    `tools: Read,Edit,Write,Bash,Grep,Glob`,
-    `model: ${agent.tier}`,
-    "---",
-    "",
-  ].join("\n");
+/** Derive the one-line description for an agent (explicit field preferred). */
+function agentDescription(agent: TeamPlanAgent): string {
+  return agent.description ?? agent.capability_tags.slice(0, 5).join(", ");
+}
 
-  return frontmatter + agent.system_prompt;
+/**
+ * Build the ClaudeCodeAgentSpec for an agent — the `.md` mirror itself is
+ * rendered by the shared cc-agent-emitter so fable maps to its full model id.
+ */
+function toClaudeCodeAgentSpec(agent: TeamPlanAgent): ClaudeCodeAgentSpec {
+  return {
+    id: agent.id,
+    description: agentDescription(agent),
+    systemPrompt: agent.system_prompt,
+    model: agent.tier,
+  };
 }
 
 /** Build team.yaml compatible with the current TeamManifest schema. */
@@ -342,6 +351,7 @@ function buildTeamYaml(
   };
 
   const modelRouting: Record<string, string[]> = {
+    fable: [],
     opus: [],
     sonnet: [],
     haiku: [],
@@ -406,9 +416,11 @@ export async function synthesizeTeam(
   // 2. Build user message
   const userMessage = buildUserMessage(reconResults, sourceCorpus);
 
-  // 3. Call runtime
+  // 3. Call runtime — the synthesis prompt rides along as context so even a
+  // default-constructed runtime (no per-call systemPrompt support) sees it.
   const result = await runtime.run({
     task: userMessage,
+    context: systemPrompt,
   });
 
   if (result.status === "failed") {
@@ -513,10 +525,11 @@ async function emitFiles(plan: TeamPlan, projectRoot: string): Promise<void> {
         yaml.dump(buildAgentYaml(agent), { lineWidth: 120, noRefs: true, sortKeys: false }),
       ),
 
-      // .claude/agents/<id>.md
+      // .claude/agents/<id>.md — rendered by the shared cc-agent-emitter so
+      // the fable tier maps to its full model id (claude-fable-5).
       writeAtomic(
         join(claudeAgentsDir, `${agent.id}.md`),
-        buildAgentMarkdown(agent),
+        buildAgentMarkdown(toClaudeCodeAgentSpec(agent)),
       ),
     ]),
   ]);

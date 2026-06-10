@@ -48,6 +48,9 @@ import { ItemCheckpointWriter } from '../checkpoint/item-checkpoint.js';
 import { appendLessonAttributions } from '../../memory/lesson-attribution.js';
 import { appendAgentMemory, extractLearnedNotes } from '../../memory/agent-memory.js';
 import { searchKnowledgeNotes, buildKbPromptBlock } from '../../knowledge/kb-retrieval.js';
+// v25 — cross-agent learning: LEARNED self-notes also land in the shared
+// knowledge store so other agents' KB retrieval can surface them.
+import { writeKnowledgeEntry } from '../../knowledge/persistence.js';
 import { computeLessonId } from '../../team/engine/learnings/lesson-id.js';
 // Gem #2 — semantic reranking of memory entries.
 import { rankMemoriesBySemantic } from './semantic-memory.js';
@@ -1046,6 +1049,25 @@ export async function runExecutePhase(
       ? ItemCheckpointWriter.getCompletedItemIds(ctx.projectRoot, ctx.cycleId)
       : new Set();
 
+  // Cycle 5242ca92 — on resume, the checkpoint contract (#282) is the ONLY
+  // authority on what is skippable: items whose id is NOT in completedItemIds
+  // are dispatched regardless of the status the failed attempt persisted into
+  // plan.json ('failed', 'blocked', 'in_progress', ...). Reset those stored
+  // statuses to 'pending' in memory so no status-based check downstream can
+  // drop a resumable item from the dispatch set.
+  if (options.resume === true) {
+    for (const item of items) {
+      if (resumeCompletedIds.has(item.id)) continue;
+      if (item.status !== 'pending') {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[execute-phase] resume: item ${item.id} status '${item.status}' → 'pending' (not in checkpoint completedItemIds — re-dispatching)`,
+        );
+        item.status = 'pending';
+      }
+    }
+  }
+
   // ── v6.7.4 Load Assessment ──────────────────────────────────────────────
   // Pick a parallelism that respects BOTH the configured ceiling and the
   // sprint's actual workload. The "team should assess the load" — instead
@@ -1677,6 +1699,12 @@ export async function runExecutePhase(
             ...(appliedLessons.length > 0 ? { appliedLessons } : {}),
           };
           liveResults.set(item.id, completedResult as ItemResult);
+          // Flush the updated cost to execute.json immediately so mid-flight
+          // readers (dashboard Epic tab, spend-report generator) can see this
+          // item's nonzero costUsd before the async worktree operations in the
+          // finally block (commit / push / release) complete.  Without this
+          // early flush, readers see costUsd: 0 until the whole phase ends.
+          snapshotExecuteProgress();
           // Wave 5 T1 — write per-item checkpoint after each successful completion.
           // Fire-and-forget: checkpoint write is non-blocking and never fails the phase.
           enqueueItemCheckpoint(item.id, 'completed', item.assignee);
@@ -1699,6 +1727,20 @@ export async function runExecutePhase(
               cycleId: ctx.cycleId,
               itemId: item.id,
             });
+            // v25 — also persist the LEARNED note to the shared W1 knowledge
+            // store so one agent's lesson reaches other agents' retrieval
+            // (searchKnowledgeNotes injects note entities into prompts).
+            // Non-fatal: a knowledge-write failure must never fail the item.
+            try {
+              writeKnowledgeEntry(ctx.projectRoot, {
+                text: note,
+                source: 'agent-learned',
+                tags: [item.assignee, ...(ctx.cycleId ? [ctx.cycleId] : [])],
+                cycleId: ctx.cycleId,
+              });
+            } catch {
+              // best-effort — never affects the item result
+            }
           }
           return completedResult;
         } catch (err) {
@@ -1750,6 +1792,9 @@ export async function runExecutePhase(
               ...(appliedLessons.length > 0 ? { appliedLessons } : {}),
             };
             liveResults.set(item.id, failedResult as ItemResult);
+            // Flush the failure state immediately (mirrors the success path's
+            // early flush) so mid-flight readers always see up-to-date results.
+            snapshotExecuteProgress();
             // Wave 5 T1 — write per-item checkpoint after each failure (final attempt).
             enqueueItemCheckpoint(item.id, 'failed', item.assignee);
             // W2 — record the failure (with a short error excerpt) in the
@@ -1922,8 +1967,18 @@ export async function runExecutePhase(
   // the previous wave's merged code. Flat cycles skip all of this.
   const epicParentId = items.find((it) => it.parentEpicId)?.parentEpicId;
   const integrationBranch = epicParentId ? epicIntegrationBranchName(epicParentId) : undefined;
+  // Cycle 5242ca92 — a resumed epic where EVERY item is already in the
+  // checkpoint's completedItemIds dispatches nothing, so no per-item worktrees
+  // are needed; but the release stage still requires the epicIntegration
+  // signal (branch + epicId) on the phase result to push codex/epic-<id> and
+  // open the single epic PR. Without it, the cycle-runner fell through to the
+  // legacy main-tree release. ensureIntegrationWorktree is idempotent
+  // (wave-integration.ts:43-62), so resolve the EXISTING integration branch /
+  // worktree in this all-skipped case even when no worktree pool is wired.
+  const allItemsSkippedViaResume =
+    items.length > 0 && items.every((it) => resumeCompletedIds.has(it.id));
   let integrationWorktreePath: string | undefined;
-  if (integrationBranch && worktreePool) {
+  if (integrationBranch && (worktreePool || allItemsSkippedViaResume)) {
     try {
       integrationWorktreePath = await ensureIntegrationWorktree(
         ctx.projectRoot,
