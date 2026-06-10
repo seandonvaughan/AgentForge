@@ -176,7 +176,7 @@ AgentForge is Claude-first. The default `auto` resolver prefers the Anthropic SD
 
 | Value | Transport |
 |---|---|
-| `auto` | Claude-first resolver (default) |
+| `auto` | Claude-first resolver (default): prefers the Anthropic SDK, then the Claude Code compatibility transport, then the Codex CLI, then the OpenAI SDK when available |
 | `sdk` / `anthropic-sdk` | Anthropic SDK (requires `ANTHROPIC_API_KEY`) |
 | `cli` / `claude-cli` / `claude-code-compat` | Claude Code CLI compatibility transport |
 | `codex-cli` | Codex CLI transport |
