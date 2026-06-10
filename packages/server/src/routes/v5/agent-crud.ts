@@ -10,6 +10,7 @@ import {
 } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
+import { emitClaudeCodeAgents } from '@agentforge/core';
 import { globalStream } from './stream.js';
 import { safeJoin } from '../../lib/safe-join.js';
 import { appendAuditEntry, openAuditDb } from './audit.js';
@@ -37,7 +38,9 @@ interface AgentYaml {
   system_prompt: string;
   seniority?: string;
   layer?: string;
+  effort?: string;
   skills?: string[];
+  tools?: string[];
   triggers?: {
     file_patterns?: string[];
     keywords?: string[];
@@ -66,13 +69,17 @@ function asStringArray(value: unknown): string[] {
 // Request body interfaces
 // ---------------------------------------------------------------------------
 
+type AgentEffort = 'xhigh' | 'high' | 'medium' | 'low';
+
 interface CreateAgentBody {
   id: string;
   name: string;
   model: 'fable' | 'opus' | 'sonnet' | 'haiku';
   description: string;
   system_prompt: string;
+  effort?: AgentEffort;
   skills?: string[];
+  tools?: string[];
   reports_to?: string;
   seniority?: string;
   layer?: string;
@@ -83,7 +90,9 @@ interface UpdateAgentBody {
   model?: 'fable' | 'opus' | 'sonnet' | 'haiku';
   description?: string;
   system_prompt?: string;
+  effort?: AgentEffort;
   skills?: string[];
+  tools?: string[];
   reports_to?: string;
   seniority?: string;
 }
@@ -125,6 +134,22 @@ function modelForSeniority(seniority: string): string {
   if (seniority === 'lead' || seniority === 'principal') return 'opus';
   if (seniority === 'junior') return 'haiku';
   return 'sonnet';
+}
+
+/** Valid reasoning-effort levels accepted on create/patch. */
+const VALID_EFFORTS: readonly string[] = ['xhigh', 'high', 'medium', 'low'];
+
+const VALID_MODEL_TIERS = ['fable', 'opus', 'sonnet', 'haiku'] as const;
+type ModelTier = (typeof VALID_MODEL_TIERS)[number];
+
+function asModelTier(value: string): ModelTier | null {
+  return (VALID_MODEL_TIERS as readonly string[]).includes(value) ? (value as ModelTier) : null;
+}
+
+/** True when `tools` is a valid string array (or absent). */
+function isValidToolsField(tools: unknown): tools is string[] | undefined {
+  if (tools === undefined) return true;
+  return Array.isArray(tools) && tools.every((t) => typeof t === 'string');
 }
 
 // ---------------------------------------------------------------------------
@@ -288,6 +313,43 @@ export async function agentCrudRoutes(
     return readYaml<AgentYaml>(p);
   }
 
+  /**
+   * Regenerate the Claude Code mirror at .claude/agents/<id>.md after a
+   * successful mutation, so the native Claude Code Agent tool always sees the
+   * current YAML state. Best-effort: a mirror failure must never fail the API
+   * call that triggered it.
+   */
+  async function regenerateClaudeMirror(agentId: string, agent: AgentYaml): Promise<void> {
+    try {
+      const tier = asModelTier(agent.model);
+      await emitClaudeCodeAgents({
+        projectRoot: root,
+        agents: [{
+          id: agentId,
+          description:
+            typeof agent.description === 'string' && agent.description.trim()
+              ? agent.description
+              : agent.name,
+          systemPrompt: agent.system_prompt,
+          ...(tier ? { model: tier } : {}),
+          ...(agent.tools?.length ? { tools: agent.tools } : {}),
+        }],
+      });
+    } catch {
+      // Mirror regen is best-effort — never fail the API mutation.
+    }
+  }
+
+  /** Best-effort removal of the Claude Code mirror when an agent is deleted. */
+  function removeClaudeMirror(agentId: string): void {
+    try {
+      const mirrorPath = safeJoin(join(root, '.claude', 'agents'), `${agentId}.md`);
+      if (mirrorPath && existsSync(mirrorPath)) unlinkSync(mirrorPath);
+    } catch {
+      // Best-effort — never fail the API mutation.
+    }
+  }
+
   // ── GET /api/v5/agents/:id/raw — Return raw YAML file content ────────────
 
   app.get<{ Params: { id: string } }>('/api/v5/agents/:id/raw', async (req, reply) => {
@@ -361,6 +423,9 @@ export async function agentCrudRoutes(
         details: { agentId: id, source: 'PUT /api/v5/agents/:id/raw' },
       });
 
+      // Keep the Claude Code mirror in sync with the new YAML (best-effort).
+      await regenerateClaudeMirror(id, parsed);
+
       globalStream.emit({
         type: 'agent_activity',
         category: 'agent_crud',
@@ -382,7 +447,7 @@ export async function agentCrudRoutes(
   // ── POST /api/v5/agents — Create a new agent ──────────────────────────────
 
   app.post<{ Body: CreateAgentBody }>('/api/v5/agents', async (req, reply) => {
-    const { id, name, model, description, system_prompt, skills, reports_to, seniority, layer } =
+    const { id, name, model, description, system_prompt, effort, skills, tools, reports_to, seniority, layer } =
       req.body;
 
     // Required field validation
@@ -404,6 +469,16 @@ export async function agentCrudRoutes(
       return reply.status(400).send({ error: 'model must be one of: fable, opus, sonnet, haiku' });
     }
 
+    // Validate effort if provided
+    if (effort !== undefined && !VALID_EFFORTS.includes(effort)) {
+      return reply.status(400).send({ error: 'effort must be one of: xhigh, high, medium, low' });
+    }
+
+    // Validate tools if provided
+    if (!isValidToolsField(tools)) {
+      return reply.status(400).send({ error: 'tools must be an array of strings' });
+    }
+
     // Resolve and contain the file path (id already validated as kebab-case above)
     const newFilePath = agentFilePath(id);
     if (!newFilePath) return reply.status(400).send({ error: 'Invalid agent id' });
@@ -419,9 +494,11 @@ export async function agentCrudRoutes(
       version: '1.0',
       description,
       system_prompt,
+      ...(effort ? { effort } : {}),
       ...(seniority ? { seniority } : {}),
       ...(layer ? { layer } : {}),
       ...(skills?.length ? { skills } : {}),
+      ...(tools?.length ? { tools } : {}),
       collaboration: {
         ...(reports_to ? { reports_to } : {}),
         can_delegate_to: [],
@@ -436,6 +513,16 @@ export async function agentCrudRoutes(
 
     // Register in model routing
     setModelRouting(mdlPath, id, model);
+
+    appendAuditEntry(auditDb, {
+      actor: 'api',
+      action: 'agent.create',
+      target: id,
+      details: { agentId: id, model, source: 'POST /api/v5/agents' },
+    });
+
+    // Keep the Claude Code mirror in sync (best-effort).
+    await regenerateClaudeMirror(id, agentYaml);
 
     globalStream.emit({
       type: 'agent_activity',
@@ -458,11 +545,21 @@ export async function agentCrudRoutes(
       const existing = readAgent(id);
       if (!existing) return reply.status(404).send({ error: `Agent "${id}" not found` });
 
-      const { name, model, description, system_prompt, skills, reports_to, seniority } = req.body;
+      const { name, model, description, system_prompt, effort, skills, tools, reports_to, seniority } = req.body;
 
       // Validate model if provided
       if (model !== undefined && !['fable', 'opus', 'sonnet', 'haiku'].includes(model)) {
         return reply.status(400).send({ error: 'model must be one of: fable, opus, sonnet, haiku' });
+      }
+
+      // Validate effort if provided
+      if (effort !== undefined && !VALID_EFFORTS.includes(effort)) {
+        return reply.status(400).send({ error: 'effort must be one of: xhigh, high, medium, low' });
+      }
+
+      // Validate tools if provided
+      if (!isValidToolsField(tools)) {
+        return reply.status(400).send({ error: 'tools must be an array of strings' });
       }
 
       const updated: AgentYaml = {
@@ -471,7 +568,9 @@ export async function agentCrudRoutes(
         ...(model !== undefined ? { model } : {}),
         ...(description !== undefined ? { description } : {}),
         ...(system_prompt !== undefined ? { system_prompt } : {}),
+        ...(effort !== undefined ? { effort } : {}),
         ...(skills !== undefined ? { skills } : {}),
+        ...(tools !== undefined ? { tools } : {}),
         ...(seniority !== undefined ? { seniority } : {}),
         collaboration: {
           ...existing.collaboration,
@@ -496,6 +595,16 @@ export async function agentCrudRoutes(
       if (model !== undefined) {
         setModelRouting(mdlPath, id, model);
       }
+
+      appendAuditEntry(auditDb, {
+        actor: 'api',
+        action: 'agent.patch',
+        target: id,
+        details: { agentId: id, fields: Object.keys(req.body ?? {}), source: 'PATCH /api/v5/agents/:id' },
+      });
+
+      // Keep the Claude Code mirror in sync (best-effort).
+      await regenerateClaudeMirror(id, updated);
 
       globalStream.emit({
         type: 'agent_activity',
@@ -531,6 +640,16 @@ export async function agentCrudRoutes(
     unlinkSync(deletePath);
     removeFromDelegation(delPath, id);
     removeFromModels(mdlPath, id);
+
+    appendAuditEntry(auditDb, {
+      actor: 'api',
+      action: 'agent.delete',
+      target: id,
+      details: { agentId: id, source: 'DELETE /api/v5/agents/:id' },
+    });
+
+    // Remove the stale Claude Code mirror (best-effort).
+    removeClaudeMirror(id);
 
     globalStream.emit({
       type: 'agent_activity',
@@ -590,6 +709,16 @@ export async function agentCrudRoutes(
         addToDelegation(delPath, forked.collaboration.reports_to, newId);
       }
 
+      appendAuditEntry(auditDb, {
+        actor: 'api',
+        action: 'agent.fork',
+        target: newId,
+        details: { agentId: newId, sourceAgentId: id, source: 'POST /api/v5/agents/:id/fork' },
+      });
+
+      // Keep the Claude Code mirror in sync (best-effort).
+      await regenerateClaudeMirror(newId, forked);
+
       globalStream.emit({
         type: 'agent_activity',
         category: 'agent_crud',
@@ -641,6 +770,16 @@ export async function agentCrudRoutes(
 
       // Sync model routing
       setModelRouting(mdlPath, id, newModel);
+
+      appendAuditEntry(auditDb, {
+        actor: 'api',
+        action: 'agent.promote',
+        target: id,
+        details: { agentId: id, newSeniority, newModel, approvedBy, source: 'POST /api/v5/agents/:id/promote' },
+      });
+
+      // Keep the Claude Code mirror in sync (best-effort).
+      await regenerateClaudeMirror(id, updated);
 
       globalStream.emit({
         type: 'agent_activity',

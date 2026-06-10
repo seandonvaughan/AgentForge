@@ -9,7 +9,7 @@ import type { PageServerLoad } from './$types';
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import yaml from 'js-yaml';
-import type { AgentListItem } from './agents-utils.js';
+import type { AgentListItem, CapabilityTier } from './agents-utils.js';
 import { resolveDashboardCodexProfile } from './codex-profile.server.js';
 export type { AgentListItem } from './agents-utils.js';
 
@@ -60,8 +60,8 @@ export function _loadAgents(root: string): AgentListItem[] {
       const content = readFileSync(join(agentsDir, f), 'utf-8');
       const raw = asRecord(yaml.load(content));
       const modelRaw = typeof raw.model === 'string' ? raw.model : 'sonnet';
-      const model: 'opus' | 'sonnet' | 'haiku' =
-        modelRaw === 'opus' || modelRaw === 'haiku' ? modelRaw : 'sonnet';
+      const model: CapabilityTier =
+        modelRaw === 'fable' || modelRaw === 'opus' || modelRaw === 'haiku' ? modelRaw : 'sonnet';
       const effort = typeof raw.effort === 'string' ? raw.effort : null;
       return [{
         agentId,
